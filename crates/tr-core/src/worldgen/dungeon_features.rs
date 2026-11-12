@@ -83,10 +83,8 @@ impl DungeonFootprint {
 
     /// `DungeonData.CanGenerateFeatureAt`'s ported terms.
     fn can_generate_at(&self, world: &World, x: i32, y: i32) -> bool {
-        if !in_world(world, x, y, 5) {
-            return false;
-        }
-        world.tiles[world.index(x, y)].wall != UNBREAKABLE_WALL
+        let i = world.index(x, y);
+        in_world(world, x, y, 5) && world.tiles[i].wall != UNBREAKABLE_WALL
     }
 
     /// `DungeonGlobalSpikes.Spikes_CanSupportSpike` (`:230-245`).
@@ -755,124 +753,6 @@ pub const CHANDELIER: u16 = 34;
 /// `TileID.Switch` — the wired wall switch the light pass leaves behind.
 pub const SWITCH: u16 = 136;
 
-
-/// `DungeonGlobalWallVariants.SpreadWallDungeon`
-/// (`DungeonGlobalWallVariants.cs:66-128`): a flood fill that repaints the
-/// dungeon's base brick wall with one of its painted variants.
-///
-/// The fill stops at cells whose wall is not the base brick wall (inside the
-/// entrance it must be the entrance's own brick wall), at the cursed wall
-/// (244), the cave wall (62) and at `DungeonData.CanGenerateFeatureAt`
-/// refusals. A solid cell takes the new wall but does not spread.
-pub fn spread_wall_dungeon(
-    world: &mut World,
-    fp: &DungeonFootprint,
-    entrance: Option<(i32, i32, i32, i32)>,
-    x: i32,
-    y: i32,
-    wall: u16,
-    dungeon_wall_only: bool,
-) {
-    if !in_world(world, x, y, 0) {
-        return;
-    }
-    let mut frontier: Vec<(i32, i32)> = vec![(x, y)];
-    let mut batch: Vec<(i32, i32)> = Vec::new();
-    let mut seen: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
-    while !frontier.is_empty() {
-        batch.clear();
-        batch.extend(frontier.drain(..));
-        while let Some((cx, cy)) = batch.pop() {
-            if !in_world(world, cx, cy, 1) {
-                continue;
-            }
-            seen.insert((cx, cy));
-            let i = world.index(cx, cy);
-            let cur = world.tiles[i].wall;
-            if cur == 0
-                || cur == wall
-                || cur == 244
-                || cur == 62
-                || !fp.can_generate_at(world, cx, cy)
-            {
-                continue;
-            }
-            if let Some(e) = entrance {
-                if cx >= e.0 && cx < e.2 && cy >= e.1 && cy < e.3 {
-                    // Inside the entrance only the entrance's own brick wall
-                    // converts, so the shaft keeps its first brick.
-                    if cur != fp.wall {
-                        continue;
-                    }
-                } else if dungeon_wall_only && cur != fp.wall {
-                    continue;
-                }
-            } else if dungeon_wall_only && cur != fp.wall {
-                continue;
-            }
-            if solid(world, cx, cy) {
-                if active(world, cx, cy) {
-                    world.tiles[i].wall = wall;
-                }
-                continue;
-            }
-            world.tiles[i].wall = wall;
-            for (nx, ny) in [(cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1)] {
-                if !seen.contains(&(nx, ny)) {
-                    frontier.push((nx, ny));
-                }
-            }
-        }
-    }
-}
-
-/// `DungeonGlobalWallVariants.WallVariants`
-/// (`DungeonGlobalWallVariants.cs:32-64`): five rounds over the dungeon's wall
-/// variants, each a disc of `Next(40, 240)` radius squared-off by the C#'s
-/// own loop, seeding a `SpreadWallDungeon` fill at every dungeon-wall cell
-/// inside the disc's inner 40%.
-///
-/// Returns the number of fills seeded (the tests' signal).
-#[allow(clippy::too_many_arguments)]
-pub fn wall_variants(
-    world: &mut World,
-    fp: &DungeonFootprint,
-    entrance: Option<(i32, i32, i32, i32)>,
-    wall_variants: [u16; 3],
-    world_surface: f64,
-    r: &mut HallSeed,
-) -> usize {
-    if fp.right <= fp.left || fp.bottom <= fp.top {
-        return 0;
-    }
-    let mut seeds = 0usize;
-    for _round in 0..5 {
-        for &variant in wall_variants.iter() {
-            let num2 = r.range(40, 240) as i32;
-            let cx = r.range(fp.left as u32, fp.right as u32) as i32;
-            let cy = r.range(fp.top as u32, fp.bottom as u32) as i32;
-            let radius_sq = (num2 as f32 * 0.4) * (num2 as f32 * 0.4);
-            for k in (cx - num2)..(cx + num2) {
-                for l in (cy - num2)..(cy + num2) {
-                    if (l as f64) <= world_surface || !in_world(world, k, l, 2) {
-                        continue;
-                    }
-                    let dx = (cx - k) as f32;
-                    let dy = (cy - l) as f32;
-                    if dx * dx + dy * dy >= radius_sq {
-                        continue;
-                    }
-                    if is_dungeon_wall(world.tiles[world.index(k, l)].wall) {
-                        spread_wall_dungeon(world, fp, entrance, k, l, variant, true);
-                        seeds += 1;
-                    }
-                }
-            }
-        }
-    }
-    seeds
-}
-
 #[allow(dead_code)]
 fn _uses_tile(_t: Tile) {}
 
@@ -1100,87 +980,6 @@ mod tests {
         }
         assert_eq!(cells, 9, "all nine cells");
         let _ = &mut r;
-    }
-
-
-    /// `SpreadWallDungeon` (`DungeonGlobalWallVariants.cs:66-128`): a flood
-    /// fill repaints the base brick wall and stops at any other wall. The
-    /// floor (solid brick) takes the wall but does not spread.
-    #[test]
-    fn the_wall_variant_spreads_through_the_rooms_but_not_the_rock() {
-        let (mut w, fp) = corridor(240);
-        // `corridor` paints wall 7 everywhere with the bricks 58-60 / 64+.
-        // Taint the leftmost two columns with cave wall 62 and the rightmost
-        // two with the cursed wall 244: the fill must not cross either, and
-        // the terrain beyond stays untouched.
-        for y in 0..w.height {
-            for x in [4, 5, 40, 41] {
-                let i = w.index(x, y);
-                w.tiles[i].wall = if x < 10 { 62 } else { 244 };
-            }
-        }
-        spread_wall_dungeon(&mut w, &fp, None, 20, 61, 94, true);
-        let air = w.tiles[w.index(20, 61)].wall;
-        assert_eq!(air, 94, "the open cell is repainted");
-        let far_air = w.tiles[w.index(21, 61)].wall;
-        assert_eq!(far_air, 94, "the fill walks to its neighbour");
-        let floor = w.tiles[w.index(20, 64)].wall;
-        assert_eq!(floor, 94, "a solid brick takes the wall too");
-        // But the fill does not leak into a different wall family.
-        assert_eq!(w.tiles[w.index(5, 61)].wall, 62, "cave wall survives");
-        assert_eq!(w.tiles[w.index(40, 61)].wall, 244, "cursed wall survives");
-        // And the rock beyond the corridor keeps its own wall.
-        assert_eq!(w.tiles[w.index(2, 100)].wall, 0, "out of the dungeon");
-    }
-
-    /// `WallVariants` (`DungeonGlobalWallVariants.cs:32-64`): five rounds per
-    /// variant, each a disc seeded from inside the dungeon box. The blue
-    /// family paints 94/95 and nothing else.
-    #[test]
-    fn the_wall_variants_paint_only_their_own_family() {
-        let (mut w, fp) = corridor(4200);
-        let mut r = HallSeed::new(0x7A11);
-        let styles = DungeonLightStyles::roll(fp.wall, &mut r);
-        assert_eq!(styles.wall_variants, [7, 94, 95]);
-        let seeds = wall_variants(&mut w, &fp, None, styles.wall_variants, 40.0, &mut r);
-        assert!(seeds > 0, "the pass seeds fills inside the dungeon");
-        let mut painted = 0usize;
-        let mut stray = 0usize;
-        for t in &w.tiles {
-            if matches!(t.wall, 94 | 95) {
-                painted += 1;
-            } else if matches!(t.wall, 98 | 99 | 96 | 97) {
-                stray += 1;
-            }
-        }
-        assert!(painted > 100, "the dungeon gets its painted walls ({painted})");
-        assert_eq!(stray, 0, "no other colour's variants");
-    }
-
-    /// The entrance keeps its own brick wall (`:93-101`): a fill seeded
-    /// outside the entrance never repaints a cell inside it whose wall is not
-    /// the base brick wall.
-    #[test]
-    fn the_entrance_keeps_the_wall_it_was_built_with() {
-        let (mut w, fp) = corridor(120);
-        // Two cells inside the entrance box: one on the base wall (7), one on
-        // a foreign wall (a painted variant from an earlier round).
-        let entrance = Some((10, 40, 40, 70));
-        for y in 0..w.height {
-            for x in 0..w.width {
-                let i = w.index(x, y);
-                w.tiles[i].wall = 7;
-            }
-        }
-        let i = w.index(20, 61);
-        w.tiles[i].wall = 95;
-        spread_wall_dungeon(&mut w, &fp, entrance, 20, 62, 94, true);
-        assert_eq!(
-            w.tiles[w.index(20, 61)].wall,
-            95,
-            "the foreign wall inside the entrance is left alone"
-        );
-        assert_eq!(w.tiles[w.index(20, 62)].wall, 94, "the base wall converts");
     }
 
     /// The same seed replays the same tiles — the pass draws only from its own

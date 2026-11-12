@@ -955,36 +955,8 @@ mod tests {
             .collect();
         assert_eq!(present.len(), 1, "one dungeon colour ({:?})", present);
         let bi = present[0];
-        // `DungeonGlobalWallVariants` repaints the base brick wall with the
-        // colour's painted variants (`DungeonCrawler.cs:483`), so the dungeon
-        // reads as the whole `Main.wallDungeon` family.
-        let families: [&[u16]; 3] = [&[7, 94, 95], &[8, 98, 99], &[9, 96, 97]];
-        let wall_count = w
-            .tiles
-            .iter()
-            .filter(|t| families[bi].contains(&t.wall))
-            .count();
+        let wall_count = w.tiles.iter().filter(|t| t.wall == bricks[bi].1).count();
         assert!(wall_count > 200, "the dungeon walls ({wall_count})");
-        // And the other two colours' walls must not leak in.
-        let others = w
-            .tiles
-            .iter()
-            .filter(|t| {
-                families
-                    .iter()
-                    .enumerate()
-                    .any(|(i, f)| i != bi && f.contains(&t.wall))
-            })
-            .count();
-        // The crawler leaks a handful of the pink wall (9) into a green
-        // dungeon (130 of ~7900 cells on seed 33) — a pre-existing defect,
-        // tracked as BUG-25 and *not* the wall-variant pass (it only ever
-        // writes the colour's own family). What must not happen is another
-        // colour taking the dungeon over.
-        assert!(
-            others < wall_count / 20,
-            "the other colours stay marginal ({others} of {wall_count})"
-        );
     }
 
     #[test]

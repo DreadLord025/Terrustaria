@@ -170,10 +170,6 @@ mod tests {
     // hive pass (`WorldGen.cs:15946-15968`), so every world with a hive
     // gains its `Next(5)` pockets. The determinism half of both tests
     // (a == b) still guards the stream.
-    // Re-pinned by M5-DUNGEON's wall-variant pass (`DungeonGlobalWallVariants`,
-    // `DungeonCrawler.cs:483`): five rounds of disc-seeded flood fills repaint
-    // the dungeon's base brick wall with the colour's painted variants
-    // (94/95, 98/99, 96/97), so every dungeon's walls move again.
     // Re-pinned by M5-DUNGEON's light pass (`DungeonGlobalLights`, the
     // `:0.94` step): lanterns, chandeliers and the wired switch each light
     // carries, plus the three lantern style rolls, so every dungeon's hash
@@ -185,8 +181,8 @@ mod tests {
     // halves, floors and ceilings), so every hash moves — `SEED42_512`
     // included (a 512-wide world draws 5 runs per half and lands at least
     // one).
-    const SEED42_512: u32 = 515403043;
-    const DEFAULT_WORLD: u32 = 2675667088;
+    const SEED42_512: u32 = 1360708804;
+    const DEFAULT_WORLD: u32 = 289070280;
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]

@@ -705,10 +705,10 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
             .seeds
             .contains(crate::seeds::SeedFlags::FOR_THE_WORTHY);
         super::dungeon_features::place_spikes(world, &fp, world.world_surface, 1.0, good_world, r);
-        // The style rolls `SetupDungeonDataVariables` makes
-        // (`DungeonCrawler.cs:213-280`), drawn before the crawl in the C# —
-        // the wall variants feed `DungeonGlobalWallVariants` and the lantern
-        // styles feed `DungeonGlobalLights`.
+        // `MakeDungeon`'s `:0.94` step: `DungeonGlobalLights`
+        // (`DungeonCrawler.cs:493`) — lanterns, chandeliers and the wired wall
+        // switch each one carries. The style rolls come from
+        // `SetupDungeonDataVariables` (`DungeonCrawler.cs:213-280`).
         let styles = super::dungeon_features::DungeonLightStyles::roll(wall, r);
         // `data.dungeonEntrance.Bounds`: the port's shaft is the 7-wide tower
         // around the anchor from `top - 8` down to `top + 30`.
@@ -718,19 +718,6 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
             x0 + 4,
             top + 30,
         ));
-        // `DungeonCrawler.cs:483`: `DungeonGlobalWallVariants` — five rounds of
-        // disc-seeded flood fills repainting the base brick wall with the
-        // colour's painted variants (94/95, 98/99, 96/97).
-        super::dungeon_features::wall_variants(
-            world,
-            &fp,
-            entrance,
-            styles.wall_variants,
-            world.world_surface,
-            r,
-        );
-        // `DungeonCrawler.cs:495`: `DungeonGlobalLights` — lanterns,
-        // chandeliers and the wired wall switch each one carries.
         super::dungeon_features::place_lights(world, &fp, entrance, &styles, 1.0, r);
     }
     let _ = setup.entrance_strength_y;
@@ -795,35 +782,6 @@ mod tests {
         assert_eq!(lanterns % 2, 0, "lantern cells are pairs");
     }
 
-    /// `DungeonCrawler.cs:483`: `DungeonGlobalWallVariants` runs after the
-    /// crawl, so the generated dungeon's interior walls carry the colour's
-    /// painted variants and not just the base brick wall.
-    #[test]
-    fn test_dungeon_features_the_painted_walls_land_after_the_crawl() {
-        let mut w = flat_world(4200, 600, 60);
-        let mut rng = HallSeed::new(0x5EED);
-        generate_dungeon(&mut w, 2100, 60, &mut rng);
-        let mut base = 0usize;
-        let mut painted = 0usize;
-        for t in &w.tiles {
-            match t.wall {
-                7 | 8 | 9 => base += 1,
-                94..=99 => painted += 1,
-                _ => {}
-            }
-        }
-        assert!(
-            base + painted > 500,
-            "the dungeon is walled ({})",
-            base + painted
-        );
-        assert!(
-            painted > 0,
-            "the painted variants land ({painted} of {})",
-            base + painted
-        );
-    }
-
     fn test_dungeon_1_the_color_roll_carries_its_bricks() {
         // `SetupDungeonGenVarVariables`'s triple: the brick/wall/cracked
         // rows stay in lockstep across the three colours.
@@ -875,10 +833,7 @@ mod tests {
                 let t = w.tile(x, y).unwrap();
                 if t.kind == super::super::dungeon_features::SPIKE && t.active() {
                     spikes += 1;
-                    // `DungeonUtils.IsConsideredDungeonWall`: the base walls
-                    // and the painted variants `DungeonGlobalWallVariants`
-                    // repaints them with (`Main.wallDungeon`).
-                    if super::super::dungeon_features::is_dungeon_wall(t.wall) {
+                    if matches!(t.wall, 7 | 8 | 9) {
                         on_dungeon_wall += 1;
                     }
                 }
