@@ -6,8 +6,10 @@
 //!
 //! * the **left** column is the navigation list — `General`, `Interface`, `Video`,
 //!   `Controls`, plus the action rows `Keybinds`, `Achievements`, `Close Menu`,
-//!   `Save & Exit` (`:214-330`; the `Invite Friends` row is the social-API arm and
-//!   stays out, AGENTS.md non-goals);
+//!   `Save & Exit` (`:214-330`; the `Invite Friends` row is the social-API arm
+//!   `flag5 = SocialAPI.Network != null && SocialAPI.Network.CanInvite()`
+//!   (`:178`, `num7 = 5 + (flag5 ? 1 : 0) + 2` `:179`) and stays out — AGENTS.md
+//!   non-goals, so the port's eight rows are the vanilla's no-social count);
 //! * the **right** column is the selected category's page, one row per setting
 //!   (`:400-1441`, 17/14/14/15 slots by `num11` at `:296-330`).
 //!
@@ -1752,6 +1754,26 @@ mod tests {
         // Save & Exit is the one `Lang.inter` row (`:311`).
         assert_eq!(LEFT_ROWS[7].inter, Some(35));
         assert!(LEFT_ROWS[..7].iter().all(|r| r.menu.is_some()));
+    }
+
+    /// The left column's slot count is the C#'s `num7` (`:178-179`):
+    /// `flag5 = SocialAPI.Network != null && SocialAPI.Network.CanInvite()`
+    /// and `num7 = 5 + (flag5 ? 1 : 0) + 2`. Without a social API (the port's
+    /// deliberate non-goal) `flag5` is false, so the `Invite Friends` row
+    /// (`:264`) and its `num9++` (`:273-276`) never run and `num7 = 7` →
+    /// eight slots (`for j = 0; j <= num7` `:187`).
+    #[test]
+    fn the_left_column_matches_the_c_sharp_num7_without_the_invite_row() {
+        // `SocialAPI.Network == null` in the port → `flag5 == false`.
+        let flag5 = false;
+        let num7 = 5 + if flag5 { 1 } else { 0 } + 2;
+        assert_eq!(num7, 7, "`num7 = 5 + 0 + 2`");
+        // The loop `for (int j = 0; j <= num7; j++)` (`:187`) → `num7 + 1`.
+        assert_eq!(LEFT_SLOTS, num7 + 1);
+        assert_eq!(LEFT_ROWS.len(), LEFT_SLOTS);
+        // The invite row's label is `Lang.menu[147]` (`:264`) — no port row
+        // may carry it while the social-API arm is absent.
+        assert!(LEFT_ROWS.iter().all(|r| r.menu != Some(147)));
     }
 
     /// The scale bands: the left `0.7..0.8` at `0.01` and the right
