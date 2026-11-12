@@ -3155,7 +3155,8 @@ impl Player {
                 156 => self.no_knockback = true,
                 // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
                 // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
-                49 => self.accessory_life_regen = 2,
+                // (The `Item.lifeRegen` rows are generic now — the loop after
+                // the accessory match adds every worn item's value.)
                 _ => {}
             }
         }
@@ -3164,6 +3165,38 @@ impl Player {
         // the C# never lets `statDefense` go negative (a negative value would
         // *raise* incoming damage through `CalculateDamagePlayersTake`).
         self.stat_defense = self.stat_defense.max(0);
+        // `Player.lifeRegen`'s equipment rows (`UpdateLifeRegen`'s input, fed
+        // through `accessory_life_regen` -> `extra_regen`): the armor pieces
+        // (`:13148` Stardust/Solar +4, `:13192` Spooky +8, `:13886-13900` the
+        // Solar Flare pieces +2 each — the C# also adds `Item.lifeRegen`,
+        // which the item table does not carry yet), the Regeneration buff
+        // (2, +4 at `:9950`) and the Dryad's Ward (165, +6 at `:10305`), and
+        // the Celestial Stone bundle's +2 (`:12991`).
+        for &kind in self.equipped[..10].iter() {
+            // `:13122`: `lifeRegen += armorPiece.lifeRegen` — the item's own
+            // row (the Band of Regeneration 2, Charm of Myths 2, Mana
+            // Regeneration Band 2, Restoration Shield 2, Mystic Arts Sash 2
+            // are the whole stock table).
+            if let Some(def) = crate::registry::get(kind) {
+                self.accessory_life_regen += def.life_regen;
+            }
+            self.accessory_life_regen += match kind {
+                3800 => 4,
+                3872 => 8,
+                2763 | 2764 | 2765 => 2,
+                _ => 0,
+            };
+        }
+        for bt in self.buffs.active_types() {
+            match bt {
+                2 => self.accessory_life_regen += 4,
+                165 => self.accessory_life_regen += 6,
+                _ => {}
+            }
+        }
+        if self.sky_stone_effects {
+            self.accessory_life_regen += 2;
+        }
         // The debug pins stand in for the granting equipment - re-applied
         // after the clear (the vanilla: the grants re-set per tick).
         for i in 0..9 {
@@ -6048,6 +6081,39 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-17 — the life-regen rows feed `extra_regen`.
+    #[test]
+    fn the_life_regen_rows_add_up() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 0);
+        // The Band of Regeneration (49): the item's own `lifeRegen` 2.
+        p.equipped[3] = 49;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 2);
+        // The Charm of Myths (860) carries the same `Item.lifeRegen` 2, and the
+        // row is the item's own field now, not a hardcoded match arm.
+        p.equipped[4] = 860;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 4);
+        p.equipped[4] = 0;
+        // The Regeneration buff (2) +4 and the Dryad's Ward (165) +6.
+        p.buffs.add_buff(2, 3600);
+        p.buffs.add_buff(165, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 12);
+        // The Solar Flare Breastplate (2764) +2 and the Celestial Stone +2.
+        p.equipped[1] = 2764;
+        p.equipped[4] = 1865;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 16);
+        // The Spooky Breastplate (3872) is the +8 row.
+        p.equipped[1] = 3872;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 22);
     }
 
     /// M3-EQUIP-16 — the lava immunity budget.
