@@ -135,6 +135,11 @@ pub struct Condition {
     pub kind: CondKind,
     /// The int tracker's progress (`ConditionIntTracker.Value`).
     pub value: i32,
+    /// `CustomFloatCondition`'s sub-unit fraction: the C# tracker is a float
+    /// (`CustomFloatCondition.cs:10`), and its hooks add `pixelsMoved`/
+    /// `coinsSpent` per event, so discarding the remainder would lose
+    /// distance. Unused (0) by the int and complete-on-event conditions.
+    pub frac: f32,
     /// The int tracker's target (`CustomIntCondition`'s max); 1 = the plain
     /// complete-on-event conditions.
     pub max: i32,
@@ -152,6 +157,7 @@ impl Condition {
             name,
             kind,
             value: 0,
+            frac: 0.0,
             max,
             completed: false,
         }
@@ -259,6 +265,14 @@ impl Condition {
     }
 }
 
+/// The C# hooks' increment: `Value++`/`Value += x` on an int or float
+/// condition (`AchievementsHelper.cs:403-427`).
+#[derive(Clone, Copy)]
+enum NotifyAmount {
+    Int(i32),
+    Float(f32),
+}
+
 /// `AchievementManager`: the registry + the notification surface.
 #[derive(Clone, Debug, Default)]
 pub struct AchievementManager {
@@ -288,6 +302,15 @@ impl AchievementManager {
     /// `AchievementManager.Register`'s completion event shape — the caller
     /// learns which achievement just finished (`OnAchievementCompleted`).
     pub fn notify(&mut self, kind: CondKind) -> Option<&'static str> {
+        self.notify_with(kind, NotifyAmount::Int(1))
+    }
+
+    /// The shared dispatch behind every notify wrapper. A plain condition is
+    /// `AchievementCondition.Complete()`d (`AchievementCondition.cs:44-67`);
+    /// the custom ones take `amount` through their `Value` setters, which
+    /// clamp to `[0, max]` and complete at the maximum
+    /// (`CustomIntCondition.cs:15-32`, `CustomFloatCondition.cs:14-33`).
+    fn notify_with(&mut self, kind: CondKind, amount: NotifyAmount) -> Option<&'static str> {
         let mut done = None;
         for a in &mut self.list {
             if a.completed {
@@ -299,7 +322,31 @@ impl AchievementManager {
                     continue;
                 }
                 touched = true;
-                c.value += 1;
+                match c.kind {
+                    CondKind::CustomFloat(..) => {
+                        let delta = match amount {
+                            NotifyAmount::Int(d) => d as f32,
+                            NotifyAmount::Float(d) => d,
+                        };
+                        // `Utils.Clamp(value, 0f, _maxValue)` on the float
+                        // accumulator (`:22`, `:28`).
+                        let total =
+                            (c.value as f32 + c.frac + delta).clamp(0.0, c.max as f32);
+                        c.value = total as i32;
+                        c.frac = total - c.value as f32;
+                    }
+                    CondKind::CustomInt(..) => {
+                        let delta = match amount {
+                            NotifyAmount::Int(d) => d,
+                            NotifyAmount::Float(d) => d as i32,
+                        };
+                        c.value = c.value.saturating_add(delta).clamp(0, c.max);
+                        c.frac = 0.0;
+                    }
+                    // `Complete()` sets the float/int tracker to its maximum;
+                    // the plain conditions only carry the flag.
+                    _ => c.value = c.max,
+                }
                 if c.value >= c.max {
                     c.completed = true;
                 }
@@ -315,6 +362,31 @@ impl AchievementManager {
             self.save();
         }
         done
+    }
+
+    /// `AchievementsHelper.NotifyProgressionEvent(int)` (`:186-196`) — the
+    /// `Main._progressionEvent` id keys `PROGRESSION_EVENT_<id>`
+    /// (`ProgressionEventCondition.cs:7`).
+    pub fn notify_progression(&mut self, id: u32) -> Option<&'static str> {
+        self.notify(CondKind::ProgressionEvent(id))
+    }
+
+    /// The `CustomFlagCondition` hook shape (`AchievementsHelper.cs:347`'s
+    /// `GetCondition("I_AM_LOOT", "Peek").Complete()`).
+    pub fn notify_custom(&mut self, flag: &'static str) -> Option<&'static str> {
+        self.notify(CondKind::Custom(flag))
+    }
+
+    /// `((CustomIntCondition)Main.Achievements.GetCondition(row, name)).Value++`
+    /// / `+= amount` (`AchievementsHelper.cs:403`, `:413-417`, `:427`).
+    pub fn notify_custom_int(&mut self, name: &'static str, amount: i32) -> Option<&'static str> {
+        self.notify_with(CondKind::CustomInt(name, 0), NotifyAmount::Int(amount))
+    }
+
+    /// `((CustomFloatCondition)Main.Achievements.GetCondition(row, name)).Value += amount`
+    /// (`AchievementsHelper.cs:408`, `:422`).
+    pub fn notify_custom_float(&mut self, name: &'static str, amount: f32) -> Option<&'static str> {
+        self.notify_with(CondKind::CustomFloat(name, 0), NotifyAmount::Float(amount))
     }
 
     /// `AchievementManager.Save()` (`AchievementManager.cs:57-63`): write the
@@ -365,7 +437,11 @@ impl AchievementManager {
             };
             for (cname, value, completed) in conds {
                 if let Some(c) = a.conditions.iter_mut().find(|c| c.name == cname) {
+                    // The port's text format stores the float tracker's whole
+                    // value; the fraction restarts at zero on load (the
+                    // vanilla JSON keeps it — the recorded format deviation).
                     c.value = value;
+                    c.frac = 0.0;
                     c.completed = completed;
                 }
             }
@@ -564,6 +640,83 @@ mod tests {
         assert!(!m.list.iter().any(|a| a.name == "DUNGEON_HEIST" && a.completed));
         m.notify(CondKind::ProgressionEvent(19));
         assert!(m.list.iter().any(|a| a.name == "DUNGEON_HEIST" && a.completed));
+    }
+
+    /// S1-E-18: the wrappers over C#'s `GetCondition(name, conditionName)`
+    /// (`AchievementsHelper.cs:347`, `:413`) — the caller names the row's
+    /// condition directly instead of hand-building a `CondKind`.
+    #[test]
+    fn the_progression_and_flag_rows_dispatch_by_id_and_name() {
+        let mut m = AchievementManager::registry();
+        // `AchievementsHelper.cs` calls `NotifyProgressionEvent(1)` for the
+        // first-night row; the event id keys `PROGRESSION_EVENT_1`
+        // (`ProgressionEventCondition.cs:7`).
+        assert_eq!(m.notify_progression(1), Some("YOU_CAN_DO_IT"));
+        // An event id no row listens for is a no-op.
+        assert_eq!(m.notify_progression(0), None);
+        // BOOK_WORM's row exists even though its notify site is blocked on
+        // S1-F-15 (`kills_needed_for`); the manager surface still dispatches.
+        assert_eq!(m.notify_progression(29), Some("BOOK_WORM"));
+        // I_AM_LOOT rides the `Peek` CustomFlag (`:347`).
+        assert_eq!(m.notify_custom("Peek"), Some("I_AM_LOOT"));
+        assert_eq!(m.notify_custom("Nope"), None);
+    }
+
+    /// `CustomIntCondition.Value` (`CustomIntCondition.cs:15-32`): the setter
+    /// clamps to `[0, _maxValue]` and completes at the maximum. The hook
+    /// passes a delta (`:403`'s `Value++`, `:414-417`).
+    #[test]
+    fn the_custom_int_setter_clamps_and_completes_at_the_maximum() {
+        let mut m = AchievementManager::registry();
+        let pick = |m: &AchievementManager| {
+            m.list
+                .iter()
+                .find(|a| a.name == "BULLDOZER")
+                .unwrap()
+                .conditions[0]
+                .value
+        };
+        m.notify_custom_int("Pick", 4);
+        assert_eq!(pick(&m), 4);
+        // The setter's `Utils.Clamp(value, 0, max)` floor: a negative delta
+        // cannot take the counter below zero.
+        m.notify_custom_int("Pick", -10);
+        assert_eq!(pick(&m), 0);
+        // Climb to one short of the ceiling — the row stays open.
+        assert_eq!(m.notify_custom_int("Pick", 9_999), None);
+        assert_eq!(pick(&m), 9_999);
+        assert!(!m
+            .list
+            .iter()
+            .any(|a| a.name == "BULLDOZER" && a.completed));
+        // The last pick clamps to 10 000 and completes.
+        assert_eq!(m.notify_custom_int("Pick", 5), Some("BULLDOZER"));
+        assert_eq!(pick(&m), 10_000);
+    }
+
+    /// `CustomFloatCondition.Value` (`CustomFloatCondition.cs:14-33`): the
+    /// float tracker keeps the sub-unit fraction — the running hook adds
+    /// `pixelsMoved` per tick (`AchievementsHelper.cs:422`), so truncating
+    /// each step would nearly double MARATHON_MEDALIST's real distance.
+    #[test]
+    fn the_custom_float_accumulates_sub_unit_steps() {
+        let mut m = AchievementManager::registry();
+        m.notify_custom_float("Move", 0.5);
+        m.notify_custom_float("Move", 0.5);
+        let row = m
+            .list
+            .iter()
+            .find(|a| a.name == "MARATHON_MEDALIST")
+            .unwrap();
+        assert_eq!(row.tracker_values(), Some((1, 1_106_688)));
+        // The rest of the marathon: the setter clamps at the ceiling.
+        assert_eq!(
+            m.notify_custom_float("Move", 1_106_687.0),
+            Some("MARATHON_MEDALIST")
+        );
+        // FREQUENT_FLYER's `Pay` float shares the implementation.
+        assert_eq!(m.notify_custom_float("Pay", 9_999.5), None);
+        assert_eq!(m.notify_custom_float("Pay", 0.5), Some("FREQUENT_FLYER"));
     }
 
     /// S1-E-18: `NPCKilledCondition.CreateMany` (`NPCKilledCondition.cs:70-79`)
