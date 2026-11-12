@@ -114,7 +114,7 @@ Verdict = the audit's judgement of the subsystem as a whole, not of a single row
 | 32 | Sound / audio engine | 🟡 | the XACT music engine, the attenuation maths and the music ladder are ported, but only **13 of 1 411** C# `PlaySound` call sites play, there is no pitch at all, no instance pool and no tracked-sound layer | [32](research/32-sound-audio.md) |
 | 33 | Localization | 🟡 | the **key coverage is 1:1** (delta 0 for all 12 cultures, the fallback chain is faithful) — but the name tables are unreachable: NPC names are 21 hardcoded keys, slime names are hardcoded English, and `MapObject` (79) / `ProjectileName` (1 036) / `BuffName` (352) / `EmojiName` (151) / `ItemTooltip` (2 790) have no accessor; the global substitutions are missing (204 en-US values render `{PlayerName}` literally) | [33](research/33-localization.md) |
 | 34 | ID sets (`Terraria.ID.*`) | 🟡 | `ItemID`/`TileID`/`WallID`/`BuffID` counts match, but `PrefixID` covers 78 of 97 ids, `ProjectileID` 213 constants, and `DustID`/`SoundID`/`ArmorIDs` have no counterpart; **7 protocol-id collisions** cause round-trip loss on live save and netcode paths | [34](research/34-id-sets-audit.md) |
-| 35 | RNG & utilities | 🟡 | the C# `UnifiedRandom` is .NET `System.Random` (not xoshiro) — **now ported** as `tr_core::UnifiedRandom` with C#-golden vectors (S1-A-1, 2026-11-12); the global stream is still replaced by 7 ad-hoc `u64` fields (the consumer migration = S1-A-2+); only `FastRandom` is wired as an exact-stream port; the "FNV proof" pins self-consistency only, not C# parity | [35](research/35-rng-utils.md) |
+| 35 | RNG & utilities | 🟡 | the C# `UnifiedRandom` is .NET `System.Random` (not xoshiro) — **now ported** as `tr_core::UnifiedRandom` with C#-golden vectors (S1-A-1, 2026-11-12); the global stream is still replaced by 7 ad-hoc `u64` fields for the other consumers (the consumer migration = S1-A-2+), though the runtime prefix rolls already consume a `UnifiedRandom` stream (`App::prefix_rng`, S1-A-5, 2026-11-12); only `FastRandom` is wired as an exact-stream port; the "FNV proof" pins self-consistency only, not C# parity | [35](research/35-rng-utils.md) |
 | 36 | Cinematics / film / Old One's Army | 🟡 | the film framework is **dead code in vanilla** (0 call sites) — parity is trivial; the OOA wave rosters are byte-identical, but the loss path, victory scene, medals, crystal drops and tier persistence are missing | [36](research/36-cinematics-film.md) |
 | 37 | ReLogic (content pipeline/XNA) | 🟡 | the Rust re-implements the XNB (LZX, not zlib) and XACT formats, but 23 retail files still fail to load; the asset-repository/async-loading model, content sources and text wrapping are not ported | [37](research/37-relogic-libs.md) |
 | 38 | Out-of-scope confirmation | ✅ | `Social/*` (72 files) is correctly excluded and documented; the **undocumented** absences are `Terraria/Testing/**` (34 files, incl. the vanilla's `RecordReplay`/`LockstepDebug` harness), `TimeLogger`, the crash handlers and dedicated-server mode | [38](research/38-out-of-scope-audit.md) |
@@ -145,12 +145,11 @@ Re-checked the state after other agents landed work on top of the audit base
   (BUG-21 `enter_loaded_world`/`static_sheets`, `touch_damage.rs`,
   `worldgen/dungeon_features.rs` passes, walker/town/dungeon anchors intact).
 - **ROADMAP claim status (focused sample):** no prioritized Stage-1 gaps were
-  confirmed CLOSED by these merges. Still-open confirmations include S1-C-2
-  (projectile→NPC skips `DamageVar`/defense), S1-J-1 (`.wld` writer omits wire
-  bits), S1-L-11 (`tools/gen_recipes.py --check` drift), S1-D-1 (hornet hover
-  constants), S1-A-3 (position-hash tile framing); S1-D-4 dispatch census may
-  need refresh after projectile/equip follow-ups. S1-C-9 (double item pickup) is
-  fixed on branch `S1-C9-item-pickup-double-count`.
+  confirmed CLOSED by these merges. Still-open confirmations include S1-J-1
+  (`.wld` writer omits wire bits), S1-L-11 (`tools/gen_recipes.py --check`
+  drift), S1-D-1 (hornet hover constants), S1-A-3 (position-hash tile framing);
+  S1-D-4 dispatch census may need refresh after projectile/equip follow-ups.
+  S1-C-9 (double item pickup) is fixed on branch `S1-C9-item-pickup-double-count`.
   Treat Stage 1A/1B as the gate; see report 92 for the per-row verdicts.
 
 
@@ -178,7 +177,7 @@ frozen until A1–A3 land.
 | S1-A-2 | Replace the 7 ad-hoc `u64` fields with the C#'s **named per-consumer streams** (`Main.SwapRandom` creates 13 keyed streams — `Main.cs:3204-3215`); `WorldGen.genRand` is an alias of `Main.rand` (`WorldGen.cs:4445`) | M | D | research/35; `Main.cs:3204-3215` | A1 | per-stream golden vectors; no shared stream consumed in a different order |
 | S1-A-3 | Tile framing: take `frameNumber`/`wallFrameNumber` from `genRand`/the save, not from a **position hash** (`framing.rs:138/1097`) | M | D+P | research/08-tile-framing.md; `framing.rs:138` | A1, A2 | regenerate a world twice → identical tile frames; golden `.wld` frame comparison |
 | S1-A-4 | Chest loot: roll at **generation** time on the worldgen RNG stream, not at load time from a splitmix seam (`chest_gen.rs`), restoring the vanilla genRand interleave and the cross-chest fairness flags | M | D | research/22-chest-loot-shops.md | A1, A2 | same seed → same chest contents as the C# (golden world) |
-| S1-A-5 | Prefix rolls must use `UnifiedRandom`, not the splitmix stand-in (`prefix.rs`); also the loot/shop/particle streams that inherited the stand-in | S | D | research/07-item-core.md | A1 | prefix distribution matches the C# over many seeds |
+| ✅ S1-A-5 | Prefix rolls must use `UnifiedRandom`, not the splitmix stand-in (`prefix.rs`); also the loot/shop/particle streams that inherited the stand-in | S | D | research/07-item-core.md | A1 | prefix distribution matches the C# over many seeds — **DONE 2026-11-12** (`S1-A-5-prefix-unified-random`): `prefix.rs` now draws through a one-method `PrefixRandom` seam (`UnifiedRandom::next_max` at runtime), the runtime roll sites (item drops `world_sim/items.rs:250`, npc drops `world_sim/npcs.rs:3531`, reforge `app/mod.rs:1118`) consume the new per-world `App::prefix_rng: UnifiedRandom` (`:638`, seeded `:2896`), and the worldgen chest seam keeps the splitmix stream byte-identical through `roll_prefix_splitmix` until S1-A-4. Verified by two `dotnet` oracles over the decompiled `UnifiedRandom`: 20 exact rolls x 4 seeds (`natural_roll_matches_the_csharp_stream`) and the 40 000-roll landed histogram (seeds 0..2000) — both fail on any stream/`Next(int)` drift (mutation-checked). The wider loot/shop/particle streams stay splitmix under S1-A-2 |
 | ✅ S1-A-6 | Lighting water-jitter must use `FastRandom.WithModifier(i).Next(98,100)` - the port hashes the index (`LightMap.cs:219` vs the Rust) — **DONE 2026-11-12** (`S1-A-6-water-jitter`): `lighting/blur.rs` samples water jitter as `blur_rng.with_modifier_u64(i).next_range(98,100)/100f` (`LightMap.cs:219`) and `LightMap.Blur` advances the blur seed once after two passes (`:86-91`). | S | P | research/10-lighting.md | - | golden water-tile frame sequence |
 | S1-A-7 | Worldgen parity proof: replace `deterministic_for_seed` (self-consistency) with a **comparison against a C#-generated world**; the FNV-ish hash is the port's own construction with constants re-pinned ~20× | L | D | research/35; `worldgen/mod.rs:259` | A1, A2 | byte-identical tile/chest/NPC sections vs a C# world file |
 | S1-A-8 | Liquid: restore the C#'s 2 500-slot active-list pass window; the port slices `ceil(len/10)` → ~10× different update frequency for small pools | M | D | research/11-liquid.md | — | lake settling reaches the C#'s equilibrium in the same number of ticks |
@@ -207,7 +206,7 @@ C#'s reference order is `Main.cs:17744-17822`.
 | id | Task | Size | Sev | Evidence | deps | Verify |
 | --- | --- | --- | --- | --- | --- | --- |
 | S1-C-1 | Port the **dodge family** — black belt / shadow dodge / mystic sash / brain / no-dodge-reductions — no dodge field exists anywhere in `crates/` | M | B | research/04; `Player.cs:38197-38567` vs `player.rs:2255-2295` | — | dodge chance test per source |
-| S1-C-2 | Projectile→NPC damage must apply `DamageVar` **and** the defence term (`Projectile.cs:12938`); today `projectile.rs:9703`→`npc.rs:4062` skips both | S | B | research/04 | — | damage-parity test vs the C# formula |
+| ✅ S1-C-2 | Projectile→NPC damage must apply `DamageVar` **and** the defence term (`Projectile.cs:12938`); today `projectile.rs:9703`→`npc.rs:4062` skips both | S | B | research/04 | — | damage-parity test vs the C# formula — **DONE 2026-11-12** (`S1-C-2-projectile-damage`): `projectile.rs` applies `Main.DamageVar` after the tag-damage base (`Projectile.cs:12938`) and `Main.CalculateDamageNPCsTake`/`StrikeNPC` defense+crit (`NPC.cs:81189,81239`) in `damage_pve` and `damage_pve_boxed` before `hurt_from_projectile`; regression test `projectile_pve_damage_applies_defense_s1_c_2`. |
 | ✅ S1-C-3 | Restore the `num2 < 1 → 1` floor (`Player.cs:38378-38381`) and the resulting 40-vs-20 iframes; a current test asserts the divergence | S | B | research/04; research/40 | — | floor test; delete the divergence-pinning test — **DONE 2026-11-12** (`S1-C-3-hurt-floor`): `player.rs::hurt_inner` floors `amount.max(1)` after the endurance multiply (`:38304`); the divergence-pinning test now asserts hp −1 + the 20-tick iframe, plus the dedicated test `a_sub_one_hit_floors_to_one_and_uses_the_short_iframe` |
 | S1-C-4 | `GetWeaponDamageMultiplier`: port the bow/gun/specialist arms (`Player.cs:53396-53398`); and move the truncation back before the ammo fuse | M | B | research/04 | — | per-class damage table test |
 | S1-C-5 | NPC→player contact damage must apply `DamageVar(..., -luck)` | S | B | research/04 | C2 | contact-damage test |
@@ -603,9 +602,9 @@ A task is done when its row's **verify** column is satisfied. The house rules
    S1-A-1…A-4, S1-C-3, S1-F-1/F-2 (the id collisions lose save data today).
 2. **The one FAIL and the two STALE rows** — S1-D-1 (hover presets), the
    stale snapshot rows and the M1.5 measurement tables.
-3. **The cheap correctness bugs with player-visible impact** — S1-C-2
-   (projectile damage), S1-C-8 (hitbox), S1-C-10 (right-click transfer);
-   S1-C-9 (2× item pickup) fixed on `S1-C9-item-pickup-double-count`.
+3. **The cheap correctness bugs with player-visible impact** — S1-C-9 (2× item
+   pickup) fixed on `S1-C9-item-pickup-double-count`; S1-C-2 (projectile damage),
+   S1-C-8 (hitbox), S1-C-10 (right-click transfer) are DONE.
 4. **Missing subsystems with the largest call-site censuses** — S1-E-1…E-4
    (dust/gore: 4 922 C# call sites), S1-E-5 (entity lights: 300+), S1-E-9
    (golf), S1-E-6/E-7 (the buff HUD and the effect table).

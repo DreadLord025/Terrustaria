@@ -84,8 +84,8 @@ Rust side:
 - `tr_core::worldgen::world_hash::world_hash` (`crates/tr-core/src/worldgen/world_hash.rs:44-63`).
 - `tr_app::spawner::FastRandom` (`crates/tr-app/src/spawner.rs:28-51`) — the `Main.rand`
   stand-in for the spawn pipeline.
-- `tr_app::prefix::roll_prefix` (`crates/tr-app/src/prefix.rs:455+`) — `Item.Prefix` on a
-  splitmix `u64`.
+- `tr_app::prefix::roll_prefix` (`crates/tr-app/src/prefix.rs:477+`) — `Item.Prefix` draws through a
+  one-method `PrefixRandom` seam: runtime rolls take `App::prefix_rng` (`UnifiedRandom`, S1-A-5); the worldgen chest seam adapts the splitmix `chest_rng` (`roll_prefix_splitmix`, `:568`).
 - `tr_app::chest_gen` (`crates/tr-app/src/chest_gen.rs:126-143`) — another splitmix stream.
 - `App::{npc_rng, craft_rng, item_rng, ambience_rng, clock_rng, light_rng_seed, growth_rng}`
   (`crates/tr-app/src/app/mod.rs:180, 301-303, 547-548, 568, 607-609, 611-612, 634`) — the
@@ -112,7 +112,7 @@ Rust side:
 
 | RNG source | C# algorithm & seed | Rust implementation | Exact stream? | Impact | Subsystems affected |
 | --- | --- | --- | --- | --- | --- |
-| `Main.rand` (global) | .NET `System.Random`, Knuth subtractive 56-int array; `SetSeed` (`UnifiedRandom.cs:28-60`); `Next(max)` = `(int)(Sample()*max)` | **PORTED (exact)** as `tr_core::unified_random::UnifiedRandom` (`unified_random.rs`, S1-A-1 — C#-golden vectors); the *consumers* still use splitmix/xorshift stand-ins (`spawner.rs:30-51`, `prefix.rs:434-445`, `chest_gen.rs:127-138`) | **YES** (type) / **NO** (not wired) | determinism + behaviour | everything (7 558 call sites) |
+| `Main.rand` (global) | .NET `System.Random`, Knuth subtractive 56-int array; `SetSeed` (`UnifiedRandom.cs:28-60`); `Next(max)` = `(int)(Sample()*max)` | **PORTED (exact)** as `tr_core::unified_random::UnifiedRandom` (`unified_random.rs`, S1-A-1 — C#-golden vectors); the *consumers* are mostly still splitmix/xorshift stand-ins (`spawner.rs:30-51`, `chest_gen.rs:127-138`), but the runtime prefix rolls already take a real `UnifiedRandom` (`App::prefix_rng`, S1-A-5; the `PrefixRandom` seam at `prefix.rs:438`, the field at `app/mod.rs:638`) | **YES** (type) / **PARTIAL** (prefix rolls wired) | determinism + behaviour | everything (7 558 call sites) |
 | `Main.SwapRandom(key)` named streams | `Main._rngs[key] = new UnifiedRandom(worldSeed)` (`Main.cs:3210-3212`), swapped per update stage (`:17749-17809`) | no named-stream registry; separate `u64` fields per consumer with arbitrary XOR constants (`app/mod.rs:2519, 2700, 2826, 2838, 2860, 2862, 2870`) | **NO** | determinism | world update (players, NPCs, items, projectiles, gores, dust, time) |
 | `WorldGen.genRand` | alias of `Main.rand` (`WorldGen.cs:4445`) — same stream, interleaved with gameplay draws | no equivalent (worldgen uses its own `Streams`) | **NO** | determinism | worldgen + `Item.Prefix` during generation |
 | vanilla per-pass stream | `Main.rand = new UnifiedRandom(this._seed)` before every pass (`WorldGenerator.cs:497`, quoted at `pipeline.rs:7, :110`) | `Streams::pass_rng(name)` = `Rng(seed ^ fnv1a64(name))` (`pipeline.rs:120-122`) | **NO** (deliberate) | determinism | worldgen chain |
@@ -132,9 +132,9 @@ Rust side:
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
 | `UnifiedRandom` (the type) | **PORTED (exact)** | `crates/tr-core/src/unified_random.rs` | Byte-faithful port (S1-A-1, 2026-11-12): `SetSeed`/`InternalSample`/`Sample`/`Peek`/`Next`/`NextDouble`/`NextBytes`/the large-range branch + the `NextFloat`/`NextFloatDirection`/`NextFromList` extensions, pinned by 11 golden tests against a real `dotnet` run of the decompiled class. Only the geometry helpers (`NextVector2*`/`NextFromRectangle`) are deferred — no shared `Vector2`/`Point`/`Rectangle`/`IntRange` types. |
-| `Main.rand` global stream | **PARTIAL** | `crates/tr-app/src/spawner.rs:30-51`, `prefix.rs:434-445`, `chest_gen.rs:127-138` | Per-consumer splitmix64 stand-ins; `spawner.rs`'s doc calls itself "xorshift64\*" but the code is the splitmix finaliser — the comment is wrong. |
+| `Main.rand` global stream | **PARTIAL** | `crates/tr-app/src/spawner.rs:30-51`, `chest_gen.rs:127-138`, `prefix.rs:455-461` (chest-seam adapter only) | Mostly per-consumer splitmix64 stand-ins; **S1-A-5** moved the runtime prefix rolls onto a real `UnifiedRandom` (`App::prefix_rng`), leaving only the worldgen chest seam on splitmix until S1-A-4; `spawner.rs`'s doc calls itself "xorshift64\*" but the code is the splitmix finaliser — the comment is wrong. |
 | `Main.SwapRandom` named streams | **MISSING** | `crates/tr-app/src/app/mod.rs:180-634` | No registry, no per-key `UnifiedRandom`; the C#'s 13 per-stage streams (`Main.cs:17749-17809`) are 7 ad-hoc `u64` fields. `ANALYSIS.md:4420-4430` admits the LCG is "the port's own xorshift core". |
-| `WorldGen.genRand` | **MISSING** | — | The alias itself is not modelled; `Item.Prefix` (which selects `genRand` during generation, `Item.cs:528`) draws from `prefix.rs`'s splitmix. |
+| `WorldGen.genRand` | **MISSING** | — | The alias itself is not modelled; the worldgen-time prefix rolls (chest stocking) still draw the splitmix `chest_rng` seam (`prefix.rs::roll_prefix_splitmix` `:568`) and the runtime rolls a separate `App::prefix_rng` (`UnifiedRandom`, S1-A-5); neither is the C#'s shared `genRand`/`Main.rand`. |
 | Vanilla per-pass re-seed | **PARTIAL** | `crates/tr-core/src/worldgen/pipeline.rs:109-122` | `pass_rng(name)` = `Rng(seed ^ fnv1a64(name))` instead of `new UnifiedRandom(worldSeed)`; admitted in the file's own comment ("xorshift stands in for the Knuth subtractive `UnifiedRandom`", `:113-114`). |
 | `FastRandom` | **PORTED (exact)** | `crates/tr-core/src/tile_light/palette.rs:19-111` | Multiplier/mask/`NextBits`/`WithModifier`/the rejection loop are byte-faithful (`FastRandom.cs:47-88`); `next_double` keeps the C#'s `float` widening (`palette.rs:77-79`). |
 | `Utils.RandomNext*` family | **PORTED (algorithm)** | `crates/tr-core/src/tile_light/palette.rs:34-36` | Same LCG; the *seed* is world-derived instead of `Guid`-derived. |
@@ -227,9 +227,12 @@ about.
    not seed-derived at all (`app/mod.rs:2700`). *Not admitted.*
 4. **`WorldGen.genRand` alias not modelled** — severity: **behavioural**.
    `WorldGen.cs:4445` returns `Main.rand`, so `Item.Prefix` during world generation draws
-   from the *same* stream as the worldgen. The Rust's `prefix.rs` uses an isolated
-   splitmix, so the prefix roll cannot drift the world (a divergence, but a *safe* one).
-   *Not admitted.*
+   from the *same* stream as the worldgen. The Rust keeps two isolated streams instead:
+   the runtime rolls take `App::prefix_rng` (a `UnifiedRandom`, S1-A-5) and the
+   worldgen chest seam still draws the splitmix `chest_rng` (`prefix.rs::roll_prefix_splitmix`
+   `:568`), so neither is the C#'s shared `genRand`/`Main.rand`. A divergence, but a *safe*
+   one — the prefix roll cannot drift the world. *Admitted* in `ANALYSIS.md`
+   ("Prefix rolls (S1-A-5)").
 5. **The vanilla per-pass re-seed is replaced by name-mixed streams** — severity:
    **determinism**. `pass_rng(name)` = `Rng(seed ^ fnv1a64(name))` vs vanilla's
    `new UnifiedRandom(worldSeed)` per pass (`pipeline.rs:109-122`). *Admitted* in the
@@ -245,7 +248,7 @@ about.
    `(float)(int/2^31)`; Rust: `u32/2^32` (`rng.rs:89-96`). Same `[0,1)` range, different
    quantum → different rounded values at ~2^-31 resolution. *Admitted* at `rng.rs:89-93`.
 9. **`spawner.rs`'s doc comment says "xorshift64\*" but the code is the splitmix64
-   finaliser** — severity: **cosmetic** (`spawner.rs:28-43` vs `prefix.rs:432-440`,
+   finaliser** — severity: **cosmetic** (`spawner.rs:28-43` vs `prefix.rs:453-461`,
    which calls the same shape "the splitmix step"). Misleading for the next reader.
 10. **`Utils.Clamp`'s argument-order semantics** — severity: **behavioural** (rare).
     C# `Clamp` returns `max` when `value > max` even if `min > max`
