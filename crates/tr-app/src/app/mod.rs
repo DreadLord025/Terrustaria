@@ -1715,6 +1715,9 @@ impl App {
             lookups,
             atlas_stats,
         );
+        // The fresh manager loaded its conditions in `App::new`; re-bind its
+        // `_savePath` (`AchievementManager.cs:41-55`) exactly as boot did.
+        self.bind_achievements_save_path();
         self.window = window;
         self.gpu = gpu;
         self.audio = audio;

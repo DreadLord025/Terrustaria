@@ -19,7 +19,7 @@
 //! `achievements.trdat` (documented deviation: writing the vanilla format
 //! would touch a real install's `achievements.dat`).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use crate::achievements_data::{Cond, Row, Tracker, ROWS};
 use crate::achievements_data::ROWS as REGISTRY;
@@ -135,6 +135,11 @@ pub struct Condition {
     pub kind: CondKind,
     /// The int tracker's progress (`ConditionIntTracker.Value`).
     pub value: i32,
+    /// `CustomFloatCondition`'s sub-unit fraction: the C# tracker is a float
+    /// (`CustomFloatCondition.cs:10`), and its hooks add `pixelsMoved`/
+    /// `coinsSpent` per event, so discarding the remainder would lose
+    /// distance. Unused (0) by the int and complete-on-event conditions.
+    pub frac: f32,
     /// The int tracker's target (`CustomIntCondition`'s max); 1 = the plain
     /// complete-on-event conditions.
     pub max: i32,
@@ -152,6 +157,7 @@ impl Condition {
             name,
             kind,
             value: 0,
+            frac: 0.0,
             max,
             completed: false,
         }
@@ -259,10 +265,23 @@ impl Condition {
     }
 }
 
+/// The C# hooks' increment: `Value++`/`Value += x` on an int or float
+/// condition (`AchievementsHelper.cs:403-427`).
+#[derive(Clone, Copy)]
+enum NotifyAmount {
+    Int(i32),
+    Float(f32),
+}
+
 /// `AchievementManager`: the registry + the notification surface.
 #[derive(Clone, Debug, Default)]
 pub struct AchievementManager {
     pub list: Vec<Achievement>,
+    /// `AchievementManager._savePath` (`AchievementManager.cs:25`, bound in the
+    /// constructor `:41-55`). The port binds it at bootstrap
+    /// (`App::bind_achievements_save_path`) so a headless test App never
+    /// touches the real `achievements.trdat`.
+    pub save_path: Option<PathBuf>,
 }
 
 impl AchievementManager {
@@ -276,12 +295,22 @@ impl AchievementManager {
                 .enumerate()
                 .map(|(id, row)| Achievement::from_row(row, id as u16))
                 .collect(),
+            save_path: None,
         }
     }
 
     /// `AchievementManager.Register`'s completion event shape — the caller
     /// learns which achievement just finished (`OnAchievementCompleted`).
     pub fn notify(&mut self, kind: CondKind) -> Option<&'static str> {
+        self.notify_with(kind, NotifyAmount::Int(1))
+    }
+
+    /// The shared dispatch behind every notify wrapper. A plain condition is
+    /// `AchievementCondition.Complete()`d (`AchievementCondition.cs:44-67`);
+    /// the custom ones take `amount` through their `Value` setters, which
+    /// clamp to `[0, max]` and complete at the maximum
+    /// (`CustomIntCondition.cs:15-32`, `CustomFloatCondition.cs:14-33`).
+    fn notify_with(&mut self, kind: CondKind, amount: NotifyAmount) -> Option<&'static str> {
         let mut done = None;
         for a in &mut self.list {
             if a.completed {
@@ -293,7 +322,31 @@ impl AchievementManager {
                     continue;
                 }
                 touched = true;
-                c.value += 1;
+                match c.kind {
+                    CondKind::CustomFloat(..) => {
+                        let delta = match amount {
+                            NotifyAmount::Int(d) => d as f32,
+                            NotifyAmount::Float(d) => d,
+                        };
+                        // `Utils.Clamp(value, 0f, _maxValue)` on the float
+                        // accumulator (`:22`, `:28`).
+                        let total =
+                            (c.value as f32 + c.frac + delta).clamp(0.0, c.max as f32);
+                        c.value = total as i32;
+                        c.frac = total - c.value as f32;
+                    }
+                    CondKind::CustomInt(..) => {
+                        let delta = match amount {
+                            NotifyAmount::Int(d) => d,
+                            NotifyAmount::Float(d) => d as i32,
+                        };
+                        c.value = c.value.saturating_add(delta).clamp(0, c.max);
+                        c.frac = 0.0;
+                    }
+                    // `Complete()` sets the float/int tracker to its maximum;
+                    // the plain conditions only carry the flag.
+                    _ => c.value = c.max,
+                }
                 if c.value >= c.max {
                     c.completed = true;
                 }
@@ -303,7 +356,48 @@ impl AchievementManager {
                 done = Some(a.name);
             }
         }
+        // `AchievementCompleted` (`AchievementManager.cs:180-187`): the manager
+        // saves the moment an achievement completes.
+        if done.is_some() {
+            self.save();
+        }
         done
+    }
+
+    /// `AchievementsHelper.NotifyProgressionEvent(int)` (`:186-196`) — the
+    /// `Main._progressionEvent` id keys `PROGRESSION_EVENT_<id>`
+    /// (`ProgressionEventCondition.cs:7`).
+    pub fn notify_progression(&mut self, id: u32) -> Option<&'static str> {
+        self.notify(CondKind::ProgressionEvent(id))
+    }
+
+    /// The `CustomFlagCondition` hook shape (`AchievementsHelper.cs:347`'s
+    /// `GetCondition("I_AM_LOOT", "Peek").Complete()`).
+    pub fn notify_custom(&mut self, flag: &'static str) -> Option<&'static str> {
+        self.notify(CondKind::Custom(flag))
+    }
+
+    /// `((CustomIntCondition)Main.Achievements.GetCondition(row, name)).Value++`
+    /// / `+= amount` (`AchievementsHelper.cs:403`, `:413-417`, `:427`).
+    pub fn notify_custom_int(&mut self, name: &'static str, amount: i32) -> Option<&'static str> {
+        self.notify_with(CondKind::CustomInt(name, 0), NotifyAmount::Int(amount))
+    }
+
+    /// `((CustomFloatCondition)Main.Achievements.GetCondition(row, name)).Value += amount`
+    /// (`AchievementsHelper.cs:408`, `:422`).
+    pub fn notify_custom_float(&mut self, name: &'static str, amount: f32) -> Option<&'static str> {
+        self.notify_with(CondKind::CustomFloat(name, 0), NotifyAmount::Float(amount))
+    }
+
+    /// `AchievementManager.Save()` (`AchievementManager.cs:57-63`): write the
+    /// bound `_savePath`. A manager with no path (a headless test App) is a
+    /// no-op — the port binds the path at bootstrap, its stand-in for the C#
+    /// constructor's `Main.SavePath/achievements.dat` (`:51`).
+    pub fn save(&self) {
+        let Some(path) = &self.save_path else { return };
+        if let Err(e) = save(path, self) {
+            log::warn!("achievements save failed: {e}");
+        }
     }
 
     /// `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the crafted
@@ -343,7 +437,11 @@ impl AchievementManager {
             };
             for (cname, value, completed) in conds {
                 if let Some(c) = a.conditions.iter_mut().find(|c| c.name == cname) {
+                    // The port's text format stores the float tracker's whole
+                    // value; the fraction restarts at zero on load (the
+                    // vanilla JSON keeps it — the recorded format deviation).
                     c.value = value;
+                    c.frac = 0.0;
                     c.completed = completed;
                 }
             }
@@ -482,11 +580,12 @@ mod tests {
         m.notify(CondKind::CustomInt("Pick", 10000));
         let b = m.list.iter().find(|a| a.name == "BULLDOZER").unwrap();
         assert_eq!(b.tracker_values(), Some((1, 10000)));
-        // SLAYER_OF_WORLDS rides the conditions-completed tracker: three
-        // `Any` conditions, one kill closes the first.
+        // SLAYER_OF_WORLDS rides the conditions-completed tracker: the
+        // initializer's three `Create` groups plus the 12-id `CreateMany`
+        // (`AchievementInitializer.cs:287-291`) — one kill closes the first.
         m.notify(CondKind::NpcKilled(13));
         let s = m.list.iter().find(|a| a.name == "SLAYER_OF_WORLDS").unwrap();
-        assert_eq!(s.tracker_values(), Some((1, 3)));
+        assert_eq!(s.tracker_values(), Some((1, 15)));
     }
 
     #[test]
@@ -518,10 +617,22 @@ mod tests {
 
     #[test]
     fn the_ported_hooks_still_complete_their_rows() {
-        // GELATIN_WORLD_TOUR's tracker shape from the initializer: the
-        // three gel net ids with the conditions-completed tracker.
+        // GELATIN_WORLD_TOUR's tracker shape from the initializer: the 22-id
+        // `CreateMany`, the three-gel `Create(183, -24, -25)` and `Create(-4)`
+        // — 24 distinct conditions (`AchievementInitializer.cs:187-189`).
         let mut m = AchievementManager::registry();
-        assert_eq!(m.notify(CondKind::NpcKilled(-25)), Some("GELATIN_WORLD_TOUR"));
+        // `-25` closes only the three-gel condition; the row stays open.
+        assert_eq!(m.notify(CondKind::NpcKilled(-25)), None);
+        for id in [
+            -5, -6, 1, 81, 71, -3, 147, 138, -10, 50, 59, 16, -7, 244, -8, -1, -2, 184, 204, 225,
+            -9, 141, -4,
+        ] {
+            m.notify(CondKind::NpcKilled(id));
+        }
+        assert!(m
+            .list
+            .iter()
+            .any(|a| a.name == "GELATIN_WORLD_TOUR" && a.completed));
         // DUNGEON_HEIST needs both of its conditions.
         let mut d = m.list.iter_mut().find(|a| a.name == "DUNGEON_HEIST").unwrap();
         assert!(!d.completed);
@@ -529,6 +640,183 @@ mod tests {
         assert!(!m.list.iter().any(|a| a.name == "DUNGEON_HEIST" && a.completed));
         m.notify(CondKind::ProgressionEvent(19));
         assert!(m.list.iter().any(|a| a.name == "DUNGEON_HEIST" && a.completed));
+    }
+
+    /// S1-E-18: the wrappers over C#'s `GetCondition(name, conditionName)`
+    /// (`AchievementsHelper.cs:347`, `:413`) — the caller names the row's
+    /// condition directly instead of hand-building a `CondKind`.
+    #[test]
+    fn the_progression_and_flag_rows_dispatch_by_id_and_name() {
+        let mut m = AchievementManager::registry();
+        // `AchievementsHelper.cs` calls `NotifyProgressionEvent(1)` for the
+        // first-night row; the event id keys `PROGRESSION_EVENT_1`
+        // (`ProgressionEventCondition.cs:7`).
+        assert_eq!(m.notify_progression(1), Some("YOU_CAN_DO_IT"));
+        // An event id no row listens for is a no-op.
+        assert_eq!(m.notify_progression(0), None);
+        // BOOK_WORM's row exists even though its notify site is blocked on
+        // S1-F-15 (`kills_needed_for`); the manager surface still dispatches.
+        assert_eq!(m.notify_progression(29), Some("BOOK_WORM"));
+        // I_AM_LOOT rides the `Peek` CustomFlag (`:347`).
+        assert_eq!(m.notify_custom("Peek"), Some("I_AM_LOOT"));
+        assert_eq!(m.notify_custom("Nope"), None);
+    }
+
+    /// `CustomIntCondition.Value` (`CustomIntCondition.cs:15-32`): the setter
+    /// clamps to `[0, _maxValue]` and completes at the maximum. The hook
+    /// passes a delta (`:403`'s `Value++`, `:414-417`).
+    #[test]
+    fn the_custom_int_setter_clamps_and_completes_at_the_maximum() {
+        let mut m = AchievementManager::registry();
+        let pick = |m: &AchievementManager| {
+            m.list
+                .iter()
+                .find(|a| a.name == "BULLDOZER")
+                .unwrap()
+                .conditions[0]
+                .value
+        };
+        m.notify_custom_int("Pick", 4);
+        assert_eq!(pick(&m), 4);
+        // The setter's `Utils.Clamp(value, 0, max)` floor: a negative delta
+        // cannot take the counter below zero.
+        m.notify_custom_int("Pick", -10);
+        assert_eq!(pick(&m), 0);
+        // Climb to one short of the ceiling — the row stays open.
+        assert_eq!(m.notify_custom_int("Pick", 9_999), None);
+        assert_eq!(pick(&m), 9_999);
+        assert!(!m
+            .list
+            .iter()
+            .any(|a| a.name == "BULLDOZER" && a.completed));
+        // The last pick clamps to 10 000 and completes.
+        assert_eq!(m.notify_custom_int("Pick", 5), Some("BULLDOZER"));
+        assert_eq!(pick(&m), 10_000);
+    }
+
+    /// `CustomFloatCondition.Value` (`CustomFloatCondition.cs:14-33`): the
+    /// float tracker keeps the sub-unit fraction — the running hook adds
+    /// `pixelsMoved` per tick (`AchievementsHelper.cs:422`), so truncating
+    /// each step would nearly double MARATHON_MEDALIST's real distance.
+    #[test]
+    fn the_custom_float_accumulates_sub_unit_steps() {
+        let mut m = AchievementManager::registry();
+        m.notify_custom_float("Move", 0.5);
+        m.notify_custom_float("Move", 0.5);
+        let row = m
+            .list
+            .iter()
+            .find(|a| a.name == "MARATHON_MEDALIST")
+            .unwrap();
+        assert_eq!(row.tracker_values(), Some((1, 1_106_688)));
+        // The rest of the marathon: the setter clamps at the ceiling.
+        assert_eq!(
+            m.notify_custom_float("Move", 1_106_687.0),
+            Some("MARATHON_MEDALIST")
+        );
+        // FREQUENT_FLYER's `Pay` float shares the implementation.
+        assert_eq!(m.notify_custom_float("Pay", 9_999.5), None);
+        assert_eq!(m.notify_custom_float("Pay", 0.5), Some("FREQUENT_FLYER"));
+    }
+
+    /// S1-E-18: `NPCKilledCondition.CreateMany` (`NPCKilledCondition.cs:70-79`)
+    /// builds **one condition per id**, so the port's folded `Any` sets were
+    /// lossy. Pin the four rows against `AchievementInitializer` — the full
+    /// name lists, in construction order, plus the tracker totals.
+    #[test]
+    fn the_create_many_rows_expand_to_one_condition_per_npc() {
+        let m = AchievementManager::registry();
+        let names = |name: &str| -> Vec<&str> {
+            m.list
+                .iter()
+                .find(|a| a.name == name)
+                .unwrap()
+                .conditions
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect()
+        };
+        // `AchievementInitializer.cs:95-97`: `Create(125, 126)` is one
+        // condition, `CreateMany(127, 134)` two more.
+        assert_eq!(
+            names("BUCKETS_OF_BOLTS"),
+            ["NPC_KILLED_125", "NPC_KILLED_127", "NPC_KILLED_134"]
+        );
+        // `:130-131`.
+        assert_eq!(
+            names("STAR_DESTROYER"),
+            ["NPC_KILLED_517", "NPC_KILLED_422", "NPC_KILLED_507", "NPC_KILLED_493"]
+        );
+        // `:187-189`: the 22-id `CreateMany`, then `Create(183, -24, -25)` and
+        // `Create(-4)`.
+        assert_eq!(
+            names("GELATIN_WORLD_TOUR"),
+            [
+                "NPC_KILLED_-5",
+                "NPC_KILLED_-6",
+                "NPC_KILLED_1",
+                "NPC_KILLED_81",
+                "NPC_KILLED_71",
+                "NPC_KILLED_-3",
+                "NPC_KILLED_147",
+                "NPC_KILLED_138",
+                "NPC_KILLED_-10",
+                "NPC_KILLED_50",
+                "NPC_KILLED_59",
+                "NPC_KILLED_16",
+                "NPC_KILLED_-7",
+                "NPC_KILLED_244",
+                "NPC_KILLED_-8",
+                "NPC_KILLED_-1",
+                "NPC_KILLED_-2",
+                "NPC_KILLED_184",
+                "NPC_KILLED_204",
+                "NPC_KILLED_225",
+                "NPC_KILLED_-9",
+                "NPC_KILLED_141",
+                "NPC_KILLED_183",
+                "NPC_KILLED_-4",
+            ]
+        );
+        // `:287-291`: three `Create` groups, then the 12-id `CreateMany`.
+        assert_eq!(
+            names("SLAYER_OF_WORLDS"),
+            [
+                "NPC_KILLED_13",
+                "NPC_KILLED_113",
+                "NPC_KILLED_125",
+                "NPC_KILLED_4",
+                "NPC_KILLED_266",
+                "NPC_KILLED_35",
+                "NPC_KILLED_50",
+                "NPC_KILLED_222",
+                "NPC_KILLED_134",
+                "NPC_KILLED_127",
+                "NPC_KILLED_262",
+                "NPC_KILLED_245",
+                "NPC_KILLED_439",
+                "NPC_KILLED_398",
+                "NPC_KILLED_370",
+            ]
+        );
+        // The conditions-completed trackers report the expanded totals.
+        let tracker = |name: &str| {
+            m.list
+                .iter()
+                .find(|a| a.name == name)
+                .unwrap()
+                .tracker_values()
+        };
+        assert_eq!(tracker("BUCKETS_OF_BOLTS"), Some((0, 3)));
+        assert_eq!(tracker("GELATIN_WORLD_TOUR"), Some((0, 24)));
+        assert_eq!(tracker("SLAYER_OF_WORLDS"), Some((0, 15)));
+        assert_eq!(tracker("STAR_DESTROYER"), None);
+        // The registry's condition total after the expansion (the audit's
+        // "139 of 180" figure).
+        assert_eq!(
+            m.list.iter().map(|a| a.conditions.len()).sum::<usize>(),
+            180
+        );
     }
 
     #[test]
@@ -549,7 +837,7 @@ mod tests {
             .iter()
             .find(|a| a.name == "SLAYER_OF_WORLDS")
             .unwrap();
-        // One of three conditions rode the save, so the row stays open.
+        // One of the fifteen conditions rode the save, so the row stays open.
         assert!(!slayer.completed);
         assert_eq!(slayer.conditions[0].completed, true);
         assert_eq!(slayer.conditions[1].completed, false);

@@ -159,6 +159,11 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         // `WorldGen.cs:66189-66261`), which the kill cascade emits per cell;
         // the generic `by_tile` fallback finds no placing item for them.
         5 | 323 | 596 | 616 | 634 => None,
+        // The demon/crimson altar (`KillTile_GetItemDrops`'s empty case 26
+        // group, `WorldGen.cs:65758` → `:66090`): the altar is destroyed, not
+        // dropped — the `by_tile` fallback would leak the Journey-mode item
+        // 5532 "Demon Altar". The ore seeding rides `SmashAltar` instead.
+        26 => None,
         _ => by_tile(tile),
     }
 }

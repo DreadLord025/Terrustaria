@@ -284,7 +284,14 @@ pub const ROWS: &[Row] = &[
 		// `AchievementInitializer.cs:95-97`
 		category: Category::Slayer,
 		icon: 25,
-		conditions: &[Cond::Npcs(&[125, 126])],
+		conditions: &[
+			// `Create(125, 126)` — one condition for the two Retinazer eyes.
+			Cond::Npcs(&[125, 126]),
+			// `CreateMany(127, 134)` — one condition per id
+			// (`NPCKilledCondition.cs:70-79`).
+			Cond::Npc(127),
+			Cond::Npc(134),
+		],
 		tracker: Some(Tracker::ConditionsCompleted),
 	},
 	Row {
@@ -372,7 +379,9 @@ pub const ROWS: &[Row] = &[
 		// `AchievementInitializer.cs:130-131`
 		category: Category::Slayer,
 		icon: 36,
-		conditions: &[],
+		// `AddConditions(NPCKilledCondition.CreateMany(517, 422, 507, 493))`
+		// — four conditions, no folded `Any` group.
+		conditions: &[Cond::Npc(517), Cond::Npc(422), Cond::Npc(507), Cond::Npc(493)],
 		tracker: None,
 	},
 	Row {
@@ -524,7 +533,37 @@ pub const ROWS: &[Row] = &[
 		// `AchievementInitializer.cs:187-189`
 		category: Category::Challenger,
 		icon: 55,
-		conditions: &[Cond::Npcs(&[183, -24, -25])],
+		conditions: &[
+			// `CreateMany(-5, -6, 1, 81, 71, -3, 147, 138, -10, 50, 59, 16,
+			// -7, 244, -8, -1, -2, 184, 204, 225, -9, 141)` — one condition per
+			// gel-family id (`NPCKilledCondition.cs:70-79`).
+			Cond::Npc(-5),
+			Cond::Npc(-6),
+			Cond::Npc(1),
+			Cond::Npc(81),
+			Cond::Npc(71),
+			Cond::Npc(-3),
+			Cond::Npc(147),
+			Cond::Npc(138),
+			Cond::Npc(-10),
+			Cond::Npc(50),
+			Cond::Npc(59),
+			Cond::Npc(16),
+			Cond::Npc(-7),
+			Cond::Npc(244),
+			Cond::Npc(-8),
+			Cond::Npc(-1),
+			Cond::Npc(-2),
+			Cond::Npc(184),
+			Cond::Npc(204),
+			Cond::Npc(225),
+			Cond::Npc(-9),
+			Cond::Npc(141),
+			// `Create(183, -24, -25)` — the three vanilla gel ids in one.
+			Cond::Npcs(&[183, -24, -25]),
+			// `Create(-4)`.
+			Cond::Npc(-4),
+		],
 		tracker: Some(Tracker::ConditionsCompleted),
 	},
 	Row {
@@ -764,7 +803,25 @@ pub const ROWS: &[Row] = &[
 		// `AchievementInitializer.cs:287-291`
 		category: Category::Challenger,
 		icon: 84,
-		conditions: &[Cond::Npcs(&[13, 14, 15]), Cond::Npcs(&[113, 114]), Cond::Npcs(&[125, 126])],
+		conditions: &[
+			Cond::Npcs(&[13, 14, 15]),
+			Cond::Npcs(&[113, 114]),
+			Cond::Npcs(&[125, 126]),
+			// `CreateMany(4, 266, 35, 50, 222, 134, 127, 262, 245, 439, 398,
+			// 370)` — one condition per id.
+			Cond::Npc(4),
+			Cond::Npc(266),
+			Cond::Npc(35),
+			Cond::Npc(50),
+			Cond::Npc(222),
+			Cond::Npc(134),
+			Cond::Npc(127),
+			Cond::Npc(262),
+			Cond::Npc(245),
+			Cond::Npc(439),
+			Cond::Npc(398),
+			Cond::Npc(370),
+		],
 		tracker: Some(Tracker::ConditionsCompleted),
 	},
 	Row {

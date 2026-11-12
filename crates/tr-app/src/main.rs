@@ -168,6 +168,10 @@ fn main() -> Result<()> {
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
     app.static_sheets = boot_static;
     app.fonts_cache = boot_fonts;
+    // `AchievementManager`'s constructor binds its save file
+    // (`AchievementManager.cs:41-55`): the production bootstrap is the port's
+    // equivalent, so the achievements save has a destination.
+    app.bind_achievements_save_path();
     app.load_map();
     // The bind table the `config.json` we just read carries (`Main.cs:4582`,
     // `PlayerInput.CurrentProfile`'s re-seed at `:4602`).

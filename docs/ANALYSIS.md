@@ -9203,20 +9203,44 @@ powers/research — each needs its own scope.
   same achievement would collide on `Achievement._conditions`' dictionary key.
   No shipped row does (each row's first ids differ), which the
   `every_row_carries_a_distinct_condition_key` test pins.
-- **`STAR_DESTROYER` has no conditions at all** — vanilla's
-  `IsCompleted => _completedCount == _conditions.Count` is `0 == 0`, so the row
-  is always complete (it always sorts to the top of the list). The port keeps
-  that quirk.
+- **`CreateMany` rows are now 1:1 (S1-E-18).** The four lossy rows are expanded
+  to the full 180 conditions (`NPCKilledCondition.CreateMany` → one condition per
+  id, `NPCKilledCondition.cs:70-79`): `STAR_DESTROYER` 4, `BUCKETS_OF_BOLTS` 3,
+  `GELATIN_WORLD_TOUR` 24, `SLAYER_OF_WORLDS` 15 (preserving folded groups where
+  the C# does). `STAR_DESTROYER` is therefore no longer vacuously complete.
 - **The category filter cannot name the `None` row.** Vanilla's `FilterList`
   indexes `_categoryButtons[(int)achievement.Category]`, and
   `GAIN_TORCH_GODS_FAVOR` is the one row `RegisterAchievementCategory` never
   touches (`AchievementCategory.None = -1`) — the C# would throw an
   `ArgumentOutOfRangeException` on a filter click. The port keeps the secret row
   visible in every filtered view instead of crashing (documented deviation).
-- **The vanilla save is not written.** `AchievementManager.Save` is
-  Rijndael-CBC+BSON under the "RELOGIC-TERRARIA" key (`:40-79`); the port keeps
-  its own `achievements.trdat` text format (the M6-ACH-1 deviation) — writing
-  the vanilla format would touch a real install's `achievements.dat`.
+- **Save path and persistence (S1-E-18).** The port still uses its own
+  `achievements.trdat` text format (not the vanilla Rijndael-CBC+BSON
+  `"RELOGIC-TERRARIA"` blob) — writing the vanilla format would touch a real
+  install's `achievements.dat`. The path is bound at bootstrap / world swap
+  (`App::bind_achievements_save_path`, `app/saveglue.rs`) so headless test apps
+  never write a real file; `save()` fires on achievement completion and from
+  `save_world`. `load_pairs` resets `Condition.frac` to 0 because the text
+  format stores only the whole `value` (a `CustomFloat` sub-unit fraction is
+  in-memory only until saved). `notify` persists on completion and returns only
+  the last completed achievement (C# fires `OnCompleted` per completion).
+- **Notify sites (S1-E-18, partial).** `notify_with` applies the C# `Value`-setter
+  semantics (clamp `[0,max]`, complete at `max`) with wrappers for progression,
+  custom flag/int/float. Wired sites: progression 1/3/5/6/8/9/16, altar smash
+  (break + `SmashAltar` + BEGONE_EVIL, `Player.cs:45665-45704` /
+  `WorldGen.cs:49107-49108`), town arrival (`WorldGen.cs:5576`), WoF
+  (`WorldGen.cs:31701-31712`, guarded by `!hard_mode`), King Slime slime-rain
+  stop (`NPC.cs:79405-79410`), angler `Finish` flag+int (`Main.cs:40260`,
+  `AchievementsHelper.cs:411-418`), acorn plant `Do` (`Player.cs:40139`), Shadow
+  chest `Peek` (`Player.cs:33243-33246`), grounded running `Move`
+  (`Player.cs:28233-28236`). `StopSlimeRain` sets the negative cooldown clock
+  (`Main.cs:64787-64820`). **Blocked/unported:** progression 29 BOOK_WORM waits
+  on S1-F-15 (bestiary tier/`completion_percent` bug); nurse `Pay`
+  (`Main.cs:40110`), IT_CAN_TALK 18 (no Truffle kind 160), REAL_ESTATE_AGENT 17
+  partial (missing 107/178/229/209/160/550), DUNGEON_HEIST 19 / BIG_BOOTY 20
+  (locked-chest unlock path), and most other progression/CustomFlag rows lack
+  owning systems. `tile_drop` returns `None` for altar 26 (C# empty drop group)
+  to avoid leaking the Journey altar item.
 - **The menu's `largeForOtherLanguages` flag is always `true`** (`flag = true` in
   `InitializePage`), which is what fixes the row height at `66 + 16 + 20 = 102`
   and the `MinWidth`/`MaxWidth` at 700/900. The in-game arm (`OnActivate`'s
