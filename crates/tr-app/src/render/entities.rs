@@ -424,160 +424,171 @@ impl NpcAssets {
     }
 }
 
+/// `sky_tex` for the NPC pass, with the sheet-packing audit folded in: asking
+/// the atlas for a name `load_static_sheets` never packed yields a silent
+/// no-draw (the M4-NPC-3v bug), so debug builds flag it outright.
+fn npc_tex(atlas: &Atlas, name: &str) -> Option<BgTex> {
+    debug_assert!(
+        crate::assets::STATIC_SHEET_NAMES.contains(&name),
+        "{name} is asked for by the NPC pass but never packed"
+    );
+    sky_tex(atlas, name, None)
+}
+
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
     NpcAssets {
-        slime: sky_tex(atlas, "NPC_1", None),
-        eye: sky_tex(atlas, "NPC_2", None),
-        wandering_eye: sky_tex(atlas, "NPC_133", None),
-        zombie: sky_tex(atlas, "NPC_3", None),
-        guide: sky_tex(atlas, "NPC_22", None),
-        merchant: sky_tex(atlas, "NPC_17", None),
-        dryad: sky_tex(atlas, "NPC_20", None),
-        nurse: sky_tex(atlas, "NPC_18", None),
-        arms_dealer: sky_tex(atlas, "NPC_19", None),
-        demolitionist: sky_tex(atlas, "NPC_38", None),
-        painter: sky_tex(atlas, "NPC_227", None),
-        witch_doctor: sky_tex(atlas, "NPC_228", None),
-        clothier: sky_tex(atlas, "NPC_54", None),
-        travelling_merchant: sky_tex(atlas, "NPC_368", None),
-        angler: sky_tex(atlas, "NPC_369", None),
-        wizard: sky_tex(atlas, "NPC_108", None),
-        bound_wizard: sky_tex(atlas, "NPC_106", None),
-        mechanic: sky_tex(atlas, "NPC_124", None),
-        bound_mechanic: sky_tex(atlas, "NPC_123", None),
-        stylist: sky_tex(atlas, "NPC_353", None),
-        webbed_stylist: sky_tex(atlas, "NPC_354", None),
-        tax_collector: sky_tex(atlas, "NPC_441", None),
-        golfer: sky_tex(atlas, "NPC_588", None),
-        sleeping_golfer: sky_tex(atlas, "NPC_589", None),
-        zoologist: sky_tex(atlas, "NPC_633", None),
-        princess: sky_tex(atlas, "NPC_663", None),
-        dye_trader: sky_tex(atlas, "NPC_207", None),
-        party_girl: sky_tex(atlas, "NPC_208", None),
-        sleeping_angler: sky_tex(atlas, "NPC_376", None),
-        eoc: sky_tex(atlas, "NPC_4", None),
-        queen_bee: sky_tex(atlas, "NPC_222", None),
-        skeletron_head: sky_tex(atlas, "NPC_35", None),
-        wof: sky_tex(atlas, "NPC_113", None),
-        destroyer: sky_tex(atlas, "NPC_134", None),
-        prime: sky_tex(atlas, "NPC_127", None),
-        retinazer: sky_tex(atlas, "NPC_125", None),
-        spazmatism: sky_tex(atlas, "NPC_126", None),
-        plantera: sky_tex(atlas, "NPC_262", None),
-        brain: sky_tex(atlas, "NPC_266", None),
-        creeper: sky_tex(atlas, "NPC_267", None),
-        bound_goblin: sky_tex(atlas, "NPC_105", None),
-        goblin_tinkerer: sky_tex(atlas, "NPC_107", None),
-        golem: sky_tex(atlas, "NPC_245", None),
-        golem_head: sky_tex(atlas, "NPC_246", None),
-        golem_fist: sky_tex(atlas, "NPC_247", None),
-        golem_head_free: sky_tex(atlas, "NPC_249", None),
-        deerclops: sky_tex(atlas, "NPC_668", None),
-        skeletron_hand: sky_tex(atlas, "NPC_36", None),
-        wof_eye: sky_tex(atlas, "NPC_114", None),
-        prime_cannon: sky_tex(atlas, "NPC_128", None),
-        prime_saw: sky_tex(atlas, "NPC_129", None),
-        prime_vice: sky_tex(atlas, "NPC_130", None),
-        prime_laser: sky_tex(atlas, "NPC_131", None),
+        slime: npc_tex(atlas, "NPC_1"),
+        eye: npc_tex(atlas, "NPC_2"),
+        wandering_eye: npc_tex(atlas, "NPC_133"),
+        zombie: npc_tex(atlas, "NPC_3"),
+        guide: npc_tex(atlas, "NPC_22"),
+        merchant: npc_tex(atlas, "NPC_17"),
+        dryad: npc_tex(atlas, "NPC_20"),
+        nurse: npc_tex(atlas, "NPC_18"),
+        arms_dealer: npc_tex(atlas, "NPC_19"),
+        demolitionist: npc_tex(atlas, "NPC_38"),
+        painter: npc_tex(atlas, "NPC_227"),
+        witch_doctor: npc_tex(atlas, "NPC_228"),
+        clothier: npc_tex(atlas, "NPC_54"),
+        travelling_merchant: npc_tex(atlas, "NPC_368"),
+        angler: npc_tex(atlas, "NPC_369"),
+        wizard: npc_tex(atlas, "NPC_108"),
+        bound_wizard: npc_tex(atlas, "NPC_106"),
+        mechanic: npc_tex(atlas, "NPC_124"),
+        bound_mechanic: npc_tex(atlas, "NPC_123"),
+        stylist: npc_tex(atlas, "NPC_353"),
+        webbed_stylist: npc_tex(atlas, "NPC_354"),
+        tax_collector: npc_tex(atlas, "NPC_441"),
+        golfer: npc_tex(atlas, "NPC_588"),
+        sleeping_golfer: npc_tex(atlas, "NPC_589"),
+        zoologist: npc_tex(atlas, "NPC_633"),
+        princess: npc_tex(atlas, "NPC_663"),
+        dye_trader: npc_tex(atlas, "NPC_207"),
+        party_girl: npc_tex(atlas, "NPC_208"),
+        sleeping_angler: npc_tex(atlas, "NPC_376"),
+        eoc: npc_tex(atlas, "NPC_4"),
+        queen_bee: npc_tex(atlas, "NPC_222"),
+        skeletron_head: npc_tex(atlas, "NPC_35"),
+        wof: npc_tex(atlas, "NPC_113"),
+        destroyer: npc_tex(atlas, "NPC_134"),
+        prime: npc_tex(atlas, "NPC_127"),
+        retinazer: npc_tex(atlas, "NPC_125"),
+        spazmatism: npc_tex(atlas, "NPC_126"),
+        plantera: npc_tex(atlas, "NPC_262"),
+        brain: npc_tex(atlas, "NPC_266"),
+        creeper: npc_tex(atlas, "NPC_267"),
+        bound_goblin: npc_tex(atlas, "NPC_105"),
+        goblin_tinkerer: npc_tex(atlas, "NPC_107"),
+        golem: npc_tex(atlas, "NPC_245"),
+        golem_head: npc_tex(atlas, "NPC_246"),
+        golem_fist: npc_tex(atlas, "NPC_247"),
+        golem_head_free: npc_tex(atlas, "NPC_249"),
+        deerclops: npc_tex(atlas, "NPC_668"),
+        skeletron_hand: npc_tex(atlas, "NPC_36"),
+        wof_eye: npc_tex(atlas, "NPC_114"),
+        prime_cannon: npc_tex(atlas, "NPC_128"),
+        prime_saw: npc_tex(atlas, "NPC_129"),
+        prime_vice: npc_tex(atlas, "NPC_130"),
+        prime_laser: npc_tex(atlas, "NPC_131"),
         npc_sheets: PILLAR_SHEETS
             .iter()
             .filter_map(|&id| {
-                sky_tex(atlas, &format!("NPC_{id}"), None).map(|t| (id as u16, t))
+                npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
             .collect(),
-        prime_eyes: sky_tex(atlas, "Bone_Eyes", None),
-        bone_laser: sky_tex(atlas, "Bone_Laser", None),
-        skeleton: sky_tex(atlas, "NPC_21", None),
-        undead_miner: sky_tex(atlas, "NPC_44", None),
-        cave_bat: sky_tex(atlas, "NPC_49", None),
-        jungle_bat: sky_tex(atlas, "NPC_51", None),
-        hellbat: sky_tex(atlas, "NPC_60", None),
-        voodoo_demon: sky_tex(atlas, "NPC_66", None),
-        eater_of_souls: sky_tex(atlas, "NPC_6", None),
-        hornet: sky_tex(atlas, "NPC_42", None),
-        meteor_head: sky_tex(atlas, "NPC_23", None),
-        goblin_sorcerer: sky_tex(atlas, "NPC_29", None),
-        snowman_gangsta: sky_tex(atlas, "NPC_143", None),
-        snow_balla: sky_tex(atlas, "NPC_144", None),
-        mystery_snowman: sky_tex(atlas, "NPC_145", None),
-        martian_officer: sky_tex(atlas, "NPC_383", None),
-        gray_grunt: sky_tex(atlas, "NPC_385", None),
-        martian_engineer: sky_tex(atlas, "NPC_386", None),
-        gigazapper: sky_tex(atlas, "NPC_389", None),
-        martian_walker_big: sky_tex(atlas, "NPC_520", None),
-        martian_probe: sky_tex(atlas, "NPC_399", None),
-        martian_drone: sky_tex(atlas, "NPC_388", None),
-        brain_scrambler: sky_tex(atlas, "NPC_381", None),
-        ray_gunner: sky_tex(atlas, "NPC_382", None),
-        scutlix_rider: sky_tex(atlas, "NPC_390", None),
-        scutlix: sky_tex(atlas, "NPC_391", None),
-        saucer: sky_tex(atlas, "NPC_392", None),
-        saucer_turret: sky_tex(atlas, "NPC_393", None),
-        saucer_cannon: sky_tex(atlas, "NPC_394", None),
-        saucer_core: sky_tex(atlas, "NPC_395", None),
-        dutchman: sky_tex(atlas, "NPC_491", None),
-        dutchman_cannon: sky_tex(atlas, "NPC_492", None),
-        dd2_goblins: sky_tex(atlas, "NPC_553", None),
-        dd2_bombers: sky_tex(atlas, "NPC_555", None),
-        dd2_javelins: sky_tex(atlas, "NPC_561", None),
-        dd2_goblin_t1: sky_tex(atlas, "NPC_552", None),
-        dd2_goblin_t3: sky_tex(atlas, "NPC_554", None),
-        dd2_skeletons: sky_tex(atlas, "NPC_566", None),
-        dark_mage: sky_tex(atlas, "NPC_564", None),
-        betsy: sky_tex(atlas, "NPC_551", None),
-        wither_beast: sky_tex(atlas, "NPC_568", None),
-        dd2_wyverns: sky_tex(atlas, "NPC_558", None),
-        dd2_gliders: sky_tex(atlas, "NPC_574", None),
-        dark_mage_t3: sky_tex(atlas, "NPC_565", None),
-        wither_beast_t3: sky_tex(atlas, "NPC_569", None),
-        dd2_drakins: sky_tex(atlas, "NPC_570", None),
-        dd2_kobolds: sky_tex(atlas, "NPC_572", None),
-        dd2_ogres: sky_tex(atlas, "NPC_576", None),
-        tavern: sky_tex(atlas, "NPC_550", None),
-        crystal: sky_tex(atlas, "NPC_548", None),
-        cultist: sky_tex(atlas, "NPC_422", None),
-        tower_stardust: sky_tex(atlas, "NPC_493", None),
-        tower_nebula: sky_tex(atlas, "NPC_507", None),
-        tower_solar: sky_tex(atlas, "NPC_517", None),
-        tower_vortex: sky_tex(atlas, "NPC_422", None),
-        ml_torso: sky_tex(atlas, "Extra_13", None),
-        ml_core_plate: sky_tex(atlas, "Extra_16", None),
-        ml_hand_base: sky_tex(atlas, "Extra_17", None),
-        ml_eye: sky_tex(atlas, "Extra_19", None),
-        glow_stardust: sky_tex(atlas, "Glow_132", None),
-        glow_nebula: sky_tex(atlas, "Glow_143", None),
-        glow_vortex: sky_tex(atlas, "Glow_149", None),
-        glow_solar: sky_tex(atlas, "Glow_162", None),
-        pirates: sky_tex(atlas, "NPC_212", None),
-        pirate_captain: sky_tex(atlas, "NPC_216", None),
-        goblin_thief: sky_tex(atlas, "NPC_27", None),
-        goblin_warrior: sky_tex(atlas, "NPC_28", None),
-        goblin_archer: sky_tex(atlas, "NPC_111", None),
-        goblin_peon: sky_tex(atlas, "NPC_26", None),
-        goblin_summoner: sky_tex(atlas, "NPC_471", None),
-        tim: sky_tex(atlas, "NPC_45", None),
-        dark_caster: sky_tex(atlas, "NPC_32", None),
-        fire_imp: sky_tex(atlas, "NPC_24", None),
-        chaos_ball: sky_tex(atlas, "NPC_30", None),
-        burning_sphere: sky_tex(atlas, "NPC_25", None),
-        water_sphere: sky_tex(atlas, "NPC_33", None),
-        goldfish: sky_tex(atlas, "NPC_55", None),
-        piranha: sky_tex(atlas, "NPC_58", None),
-        shark: sky_tex(atlas, "NPC_65", None),
-        devourer_head: sky_tex(atlas, "NPC_7", None),
-        devourer_body: sky_tex(atlas, "NPC_8", None),
-        devourer_tail: sky_tex(atlas, "NPC_9", None),
-        giant_worm_head: sky_tex(atlas, "NPC_10", None),
-        giant_worm_body: sky_tex(atlas, "NPC_11", None),
-        giant_worm_tail: sky_tex(atlas, "NPC_12", None),
-        eow_head: sky_tex(atlas, "NPC_13", None),
-        eow_body: sky_tex(atlas, "NPC_14", None),
-        eow_tail: sky_tex(atlas, "NPC_15", None),
-        king_slime: sky_tex(atlas, "NPC_50", None),
-        eye_of_cthulhu: sky_tex(atlas, "NPC_4", None),
-        servant_of_cthulhu: sky_tex(atlas, "NPC_5", None),
-        hungry: sky_tex(atlas, "NPC_115", None),
-        leech: sky_tex(atlas, "NPC_117", None),
+        prime_eyes: npc_tex(atlas, "Bone_Eyes"),
+        bone_laser: npc_tex(atlas, "Bone_Laser"),
+        skeleton: npc_tex(atlas, "NPC_21"),
+        undead_miner: npc_tex(atlas, "NPC_44"),
+        cave_bat: npc_tex(atlas, "NPC_49"),
+        jungle_bat: npc_tex(atlas, "NPC_51"),
+        hellbat: npc_tex(atlas, "NPC_60"),
+        voodoo_demon: npc_tex(atlas, "NPC_66"),
+        eater_of_souls: npc_tex(atlas, "NPC_6"),
+        hornet: npc_tex(atlas, "NPC_42"),
+        meteor_head: npc_tex(atlas, "NPC_23"),
+        goblin_sorcerer: npc_tex(atlas, "NPC_29"),
+        snowman_gangsta: npc_tex(atlas, "NPC_143"),
+        snow_balla: npc_tex(atlas, "NPC_144"),
+        mystery_snowman: npc_tex(atlas, "NPC_145"),
+        martian_officer: npc_tex(atlas, "NPC_383"),
+        gray_grunt: npc_tex(atlas, "NPC_385"),
+        martian_engineer: npc_tex(atlas, "NPC_386"),
+        gigazapper: npc_tex(atlas, "NPC_389"),
+        martian_walker_big: npc_tex(atlas, "NPC_520"),
+        martian_probe: npc_tex(atlas, "NPC_399"),
+        martian_drone: npc_tex(atlas, "NPC_388"),
+        brain_scrambler: npc_tex(atlas, "NPC_381"),
+        ray_gunner: npc_tex(atlas, "NPC_382"),
+        scutlix_rider: npc_tex(atlas, "NPC_390"),
+        scutlix: npc_tex(atlas, "NPC_391"),
+        saucer: npc_tex(atlas, "NPC_392"),
+        saucer_turret: npc_tex(atlas, "NPC_393"),
+        saucer_cannon: npc_tex(atlas, "NPC_394"),
+        saucer_core: npc_tex(atlas, "NPC_395"),
+        dutchman: npc_tex(atlas, "NPC_491"),
+        dutchman_cannon: npc_tex(atlas, "NPC_492"),
+        dd2_goblins: npc_tex(atlas, "NPC_553"),
+        dd2_bombers: npc_tex(atlas, "NPC_555"),
+        dd2_javelins: npc_tex(atlas, "NPC_561"),
+        dd2_goblin_t1: npc_tex(atlas, "NPC_552"),
+        dd2_goblin_t3: npc_tex(atlas, "NPC_554"),
+        dd2_skeletons: npc_tex(atlas, "NPC_566"),
+        dark_mage: npc_tex(atlas, "NPC_564"),
+        betsy: npc_tex(atlas, "NPC_551"),
+        wither_beast: npc_tex(atlas, "NPC_568"),
+        dd2_wyverns: npc_tex(atlas, "NPC_558"),
+        dd2_gliders: npc_tex(atlas, "NPC_574"),
+        dark_mage_t3: npc_tex(atlas, "NPC_565"),
+        wither_beast_t3: npc_tex(atlas, "NPC_569"),
+        dd2_drakins: npc_tex(atlas, "NPC_570"),
+        dd2_kobolds: npc_tex(atlas, "NPC_572"),
+        dd2_ogres: npc_tex(atlas, "NPC_576"),
+        tavern: npc_tex(atlas, "NPC_550"),
+        crystal: npc_tex(atlas, "NPC_548"),
+        cultist: npc_tex(atlas, "NPC_422"),
+        tower_stardust: npc_tex(atlas, "NPC_493"),
+        tower_nebula: npc_tex(atlas, "NPC_507"),
+        tower_solar: npc_tex(atlas, "NPC_517"),
+        tower_vortex: npc_tex(atlas, "NPC_422"),
+        ml_torso: npc_tex(atlas, ML_TORSO_SHEET),
+        ml_core_plate: npc_tex(atlas, ML_CORE_PLATE_SHEET),
+        ml_hand_base: npc_tex(atlas, ML_HAND_BASE_SHEET),
+        ml_eye: npc_tex(atlas, ML_EYE_SHEET),
+        glow_stardust: npc_tex(atlas, "Glow_132"),
+        glow_nebula: npc_tex(atlas, "Glow_143"),
+        glow_vortex: npc_tex(atlas, "Glow_149"),
+        glow_solar: npc_tex(atlas, "Glow_162"),
+        pirates: npc_tex(atlas, "NPC_212"),
+        pirate_captain: npc_tex(atlas, "NPC_216"),
+        goblin_thief: npc_tex(atlas, "NPC_27"),
+        goblin_warrior: npc_tex(atlas, "NPC_28"),
+        goblin_archer: npc_tex(atlas, "NPC_111"),
+        goblin_peon: npc_tex(atlas, "NPC_26"),
+        goblin_summoner: npc_tex(atlas, "NPC_471"),
+        tim: npc_tex(atlas, "NPC_45"),
+        dark_caster: npc_tex(atlas, "NPC_32"),
+        fire_imp: npc_tex(atlas, "NPC_24"),
+        chaos_ball: npc_tex(atlas, "NPC_30"),
+        burning_sphere: npc_tex(atlas, "NPC_25"),
+        water_sphere: npc_tex(atlas, "NPC_33"),
+        goldfish: npc_tex(atlas, "NPC_55"),
+        piranha: npc_tex(atlas, "NPC_58"),
+        shark: npc_tex(atlas, "NPC_65"),
+        devourer_head: npc_tex(atlas, "NPC_7"),
+        devourer_body: npc_tex(atlas, "NPC_8"),
+        devourer_tail: npc_tex(atlas, "NPC_9"),
+        giant_worm_head: npc_tex(atlas, "NPC_10"),
+        giant_worm_body: npc_tex(atlas, "NPC_11"),
+        giant_worm_tail: npc_tex(atlas, "NPC_12"),
+        eow_head: npc_tex(atlas, "NPC_13"),
+        eow_body: npc_tex(atlas, "NPC_14"),
+        eow_tail: npc_tex(atlas, "NPC_15"),
+        king_slime: npc_tex(atlas, "NPC_50"),
+        eye_of_cthulhu: npc_tex(atlas, "NPC_4"),
+        servant_of_cthulhu: npc_tex(atlas, "NPC_5"),
+        hungry: npc_tex(atlas, "NPC_115"),
+        leech: npc_tex(atlas, "NPC_117"),
     }
 }
 
@@ -1047,6 +1058,15 @@ pub(crate) fn npc_rows(net_id: u16) -> u32 {
 /// solar nebula/vortex pillar families and the Moon Lord's parts. Each one is
 /// its own `TextureAssets.Npc[type]` texture in the vanilla; the v1 loaded one
 /// sheet per FAMILY, so every kind but the first drew a row of a foreign sheet.
+/// The Moon Lord parts' extra overlay sheets (`Main.cs:24754-24756`,
+/// `:24797-24816`, `:24823`). Named constants so the sheet-packing audit can
+/// assert each one is in `assets::STATIC_SHEET_NAMES` — the M4-NPC-3v bug was
+/// a draw arm asking `sky_tex` for a sheet the atlas never packed.
+pub(crate) const ML_TORSO_SHEET: &str = "Extra_13";
+pub(crate) const ML_CORE_PLATE_SHEET: &str = "Extra_16";
+pub(crate) const ML_HAND_BASE_SHEET: &str = "Extra_17";
+pub(crate) const ML_EYE_SHEET: &str = "Extra_19";
+
 const PILLAR_SHEETS: &[u32] = &[
     396, 397, 398, 400, 401, // the Moon Lord's parts
     402, 403, 404, 405, 406, 407, // the stardust pillar's mobs
@@ -2862,6 +2882,59 @@ mod anchor_tests {
         for &(kind, rows) in cases {
             let net = texture_net_id(kind);
             assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+        }
+    }
+
+    #[test]
+    fn the_packing_list_has_no_duplicate_sheets() {
+        // A duplicate would just be decoded twice and packed twice — a silent
+        // atlas bloat, and a sign the list is drifting.
+        use crate::assets::STATIC_SHEET_NAMES;
+        let mut seen = std::collections::BTreeSet::new();
+        let mut dups: Vec<&str> = Vec::new();
+        for name in STATIC_SHEET_NAMES {
+            if !seen.insert(*name) {
+                dups.push(name);
+            }
+        }
+        assert!(dups.is_empty(), "duplicate sheet names: {dups:?}");
+    }
+
+    #[test]
+    fn every_sheet_a_draw_arm_asks_for_is_packed() {
+        // The M4-NPC-3v bug: `NpcAssets::npc_sheets` is built from the atlas by
+        // name, and `load_static_sheets`' list was missing `NPC_396-429`/`518`,
+        // so the whole lunar family silently drew nothing — the unit tests
+        // fabricated their own `BgTex` and could not see it. This audit pins
+        // the names the draw arms ask `sky_tex` for to the packing list.
+        use crate::assets::STATIC_SHEET_NAMES;
+        let packed = |name: &str| STATIC_SHEET_NAMES.contains(&name);
+        for &id in PILLAR_SHEETS {
+            let name = format!("NPC_{id}");
+            assert!(
+                packed(&name),
+                "{name} is asked for by `npc_sheet({id})` but never packed"
+            );
+        }
+        for name in [
+            ML_TORSO_SHEET,
+            ML_CORE_PLATE_SHEET,
+            ML_HAND_BASE_SHEET,
+            ML_EYE_SHEET,
+        ] {
+            assert!(packed(name), "{name} is asked for by the Moon Lord's parts");
+        }
+        // Every lunar kind must resolve to a sheet the pillar set carries —
+        // `npc_sheet(texture_net_id(kind))` is the draw's only source.
+        for net in 396u16..=430 {
+            let Some(kind) = NpcKind::from_u16(net) else {
+                continue;
+            };
+            let tex_id = texture_net_id(kind);
+            assert!(
+                PILLAR_SHEETS.contains(&(tex_id as u32)),
+                "{kind:?} draws from NPC_{tex_id}, outside PILLAR_SHEETS"
+            );
         }
     }
 

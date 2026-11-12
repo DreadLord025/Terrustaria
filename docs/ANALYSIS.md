@@ -10931,3 +10931,41 @@ the lineup screenshot shows the core's ribcage, both palms and the free eye.
 * The solar drakomire's `IsABestiaryIconDummy` arm (416) and the 416's
   parent lookup are not modelled: the port runs the parent machine on the rider
   instead of copying the parent's row.
+
+## The NPC sheet-packing guard (INFRA-npc-sheet-audit)
+
+The `NpcAssets` maker asks the atlas for its sheets by NAME
+(`sky_tex(atlas, "NPC_57")`), and `sky_tex` returns `None` when the name is not
+in the atlas — which `draw_npcs` turns into a silent `continue`, i.e. an
+invisible mob with no warning anywhere. M4-NPC-3v found this the hard way: the
+whole lunar family (`NPC_396-429`, `518`) was absent from
+`load_static_sheets`' list and drew nothing at all, while the unit tests passed
+because they fabricate their own `BgTex`.
+
+Three changes make that class of bug impossible to reintroduce silently:
+
+1. The whole-image list `load_static_sheets` iterates is now a named
+   `pub(crate) const STATIC_SHEET_NAMES: &[&str]` (`assets.rs`), so a test can
+   read exactly what gets packed.
+2. Every `sky_tex(atlas, …)` call in `make_npc_assets` goes through
+   `npc_tex`, which `debug_assert!`s the name is in that list. A debug build
+   now panics on the first missing sheet instead of drawing an empty mob
+   (release builds still degrade to the old silent `None`).
+3. Two tests pin the invariants: `every_sheet_a_draw_arm_asks_for_is_packed`
+   (every `PILLAR_SHEETS` id, the four Moon Lord overlay sheets from
+   `ML_*_SHEET`, and every lunar kind's `texture_net_id`) and
+   `the_packing_list_has_no_duplicate_sheets`.
+
+**What the guard immediately found.** 28 sheets the draw arms had been asking
+for since long before this branch, none of them packed — so those kinds were
+invisible in game: `NPC_5` (Servant of Cthulhu), `NPC_115`/`117`
+(the Cursed Skull pair's neighbours), `NPC_133` (Wandering Eye), `NPC_143`-`145`
+(the Twins' three parts), `NPC_212`/`216` (Moon Lord Leech Blob and the
+GigaZapper's sibling row), `NPC_471` (Sand Elemental), `NPC_548`, `NPC_550`,
+`NPC_551`-`558`, `NPC_561`, `NPC_564`-`570`, `NPC_572`, `NPC_574`, `NPC_576`
+(the Old One's Army lineup). The packing list also carried `NPC_422` twice —
+the Vortex pillar — which is now a single row.
+
+The guard covers the NPC pass only. The same missing-sheet risk exists for the
+projectile, item, gore and mount passes, each of which builds its list
+separately; the follow-up is to route them through the same const + helper.

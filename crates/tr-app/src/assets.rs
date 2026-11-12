@@ -141,15 +141,11 @@ pub fn load_world_sheets(
     Ok(images)
 }
 
-/// The world-independent half of [`load_world_images`]: the backgrounds, the
-/// player/NPC/armor/mount/projectile sheets, every item icon and the tile-side
-/// overlays. Reused as-is across a world swap (the content dir is fixed for a
-/// process, so the decoded pixels cannot go stale).
-pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
-    let mut images = Vec::new();
-
-    // Whole-image sheets used by the sky/background pass.
-    for name in [
+/// Every whole-image sheet the static half of the atlas packs, in a fixed
+/// order. Exposed so the renderer's tests can assert that a sheet a draw arm
+/// asks `sky_tex` for is actually in here — the M4-NPC-3v bug was exactly that
+/// (`NPC_396-429`/`518` were missing and every lunar kind drew nothing).
+pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Background_0",
         // Underground: `Background_1` is the surface transition row, `Background_2`
         // the tiled dirt backdrop (`_drawBackground_backTexture[0]/[1]`).
@@ -502,7 +498,9 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         "NPC_493",
         "NPC_507",
         "NPC_517",
-        "NPC_422",
+        // `NPC_422` (the Vortex pillar) is already packed with the vortex
+        // family above — the duplicate this block used to carry is gone (the
+        // `the_packing_list_has_no_duplicate_sheets` audit).
         // The Prime family's glow masks (`Main.cs:25585-25642`):
         // `Bone_Eyes` over the head, `Bone_Laser` over the laser limb —
         // both ride the body's own frame rect, so they must be packed
@@ -863,7 +861,101 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         "UI/WorldCreation/PreviewSizeLarge",
         "UI/VK_Shift",
         "UI/VK_Backspace",
-    ] {
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_133",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_143",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_144",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_145",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_553",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_555",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_561",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_552",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_554",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_566",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_564",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_551",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_568",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_558",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_574",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_565",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_569",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_570",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_572",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_576",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_550",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_548",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_212",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_216",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_471",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_5",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_115",
+        // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
+        // for this sheet and it was never packed (a silent no-draw).
+        "NPC_117",
+];
+
+/// The world-independent half of [`load_world_images`]: the backgrounds, the
+/// player/NPC/armor/mount/projectile sheets, every item icon and the tile-side
+/// overlays. Reused as-is across a world swap (the content dir is fixed for a
+/// process, so the decoded pixels cannot go stale).
+pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
+    let mut images = Vec::new();
+
+    // Whole-image sheets used by the sky/background pass.
+    for name in STATIC_SHEET_NAMES {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
             Err(_) => log::warn!("missing background texture {name}"),
