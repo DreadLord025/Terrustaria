@@ -2898,6 +2898,66 @@ impl Player {
                 // The Titan Glove's melee-speed row (`:15103-15107`); its
                 // `autoReuseGlove` flag has no port consumer yet.
                 211 => self.melee_speed_bonus += 0.12,
+                // The damage/crit accessories (`ApplyEquipFunctional`, the
+                // `Player.cs:15223-15560` block): the four class emblems at
+                // +15% (Sorcerer 489, Warrior 490, Ranger 491, Summoner 2998),
+                // the Avenger Emblem's +12% to all four (935), the melee-speed
+                // gloves (897/936/1343 — the Fire Gauntlet adds +12% melee
+                // damage), the Sniper Scope's +10 ranged crit/+10% ranged
+                // damage (1858), the Celestial Stone-style +8 crit/+10% all
+                // (1301), the Sorcerer's Magnet +15% magic (2220), the minion
+                // emblems +15%/+10% with their extra slot (1167/1864/1845),
+                // the Ankh/Stone rows' crit-and-damage mix (3015) and the
+                // Empress Brooch's +7.5% move (4989).
+                489 => self.magic_damage += 0.15,
+                490 => self.melee_damage += 0.15,
+                491 => self.ranged_damage += 0.15,
+                2998 => self.minion_damage += 0.15,
+                935 => {
+                    self.melee_damage += 0.12;
+                    self.ranged_damage += 0.12;
+                    self.magic_damage += 0.12;
+                    self.minion_damage += 0.12;
+                }
+                897 => self.melee_speed_bonus += 0.12,
+                936 => {
+                    self.melee_speed_bonus += 0.12;
+                    self.melee_damage += 0.12;
+                }
+                1343 => {
+                    self.melee_speed_bonus += 0.12;
+                    self.melee_damage += 0.12;
+                }
+                1858 => {
+                    self.ranged_crit += 10;
+                    self.ranged_damage += 0.1;
+                }
+                1301 => {
+                    self.melee_crit += 8;
+                    self.ranged_crit += 8;
+                    self.magic_crit += 8;
+                    self.melee_damage += 0.1;
+                    self.ranged_damage += 0.1;
+                    self.magic_damage += 0.1;
+                    self.minion_damage += 0.1;
+                }
+                3015 => {
+                    self.melee_crit += 5;
+                    self.ranged_crit += 5;
+                    self.magic_crit += 5;
+                    self.melee_damage += 0.05;
+                    self.ranged_damage += 0.05;
+                    self.magic_damage += 0.05;
+                    self.minion_damage += 0.05;
+                }
+                2220 => self.magic_damage += 0.15,
+                1167 => self.minion_damage += 0.15,
+                // 1864/1845 also carry `maxMinions++` in the C#; the budget
+                // half is `grant_summon_caps`' (`world_sim/player.rs`), so only
+                // the damage row lands here (the C# total counts once).
+                1864 => self.minion_damage += 0.15,
+                1845 => self.minion_damage += 0.1,
+                4989 => self.move_speed += 0.075,
                 // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
                 // Nature's Gift (`:15110-15113`, −0.06).
                 555 => self.mana_cost -= 0.08,
@@ -5792,6 +5852,34 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-10 — the class emblems and the crit/move accessories.
+    #[test]
+    fn the_damage_accessories_raise_their_class() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Warrior Emblem (490): melee +15%, nothing else.
+        p.equipped[3] = 490;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.15).abs() < 1e-4);
+        assert!((p.magic_damage - 1.0).abs() < 1e-4);
+        // Avenger Emblem (935): +12% to all four classes.
+        p.equipped[3] = 935;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.12).abs() < 1e-4);
+        assert!((p.minion_damage - 1.12).abs() < 1e-4);
+        // Necromantic Scroll (1301): +8 to three crits and +10% to four
+        // classes on top of the 4-point crit bases.
+        p.equipped[3] = 1301;
+        p.update(&w, PlayerInput::default());
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (12, 12, 12));
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        // Papyrus Scarab (1864): +15% minion damage (its `maxMinions++` half
+        // belongs to `grant_summon_caps`).
+        p.equipped[3] = 1864;
+        p.update(&w, PlayerInput::default());
+        assert!((p.minion_damage - 1.15).abs() < 1e-4);
     }
 
     /// M3-EQUIP-9 — `manaCost` folds the armor pieces, the accessories, the
