@@ -1096,7 +1096,15 @@ pub fn draw_hud(
         );
     }
     if let Some(text) = &housing_hover_text {
-        tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
+        tooltip::draw_mouse_text(
+            r,
+            lookups,
+            mouse_pos,
+            text,
+            screen,
+            pulse,
+            opaque_tooltip_box,
+        );
     }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
