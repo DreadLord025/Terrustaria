@@ -5,7 +5,7 @@ use rayon::prelude::*;
 
 use super::LightMap;
 use crate::tile::*;
-use crate::tile_light::light_blocked;
+use crate::tile_light::{light_blocked, FastRandom};
 use crate::tiledata as td;
 use crate::world::World;
 
@@ -36,17 +36,25 @@ impl Mask {
     }
 }
 
-/// `LightMap.Blur`: two passes over four line sweeps. Columns are swept first
-/// (sequential: row-major storage makes them strided) and rows afterwards — in
-/// parallel for the large rects that pass `PAR_LIGHT_MIN_CELLS`.
+/// `LightMap.Blur` (`LightMap.cs:86-91`): two blur passes, then advance the
+/// map's random seed once. The water-jitter reads `WithModifier(i).Next(98,100)`
+/// from the current seed (S1-A-6), so the base seed must stay fixed across both
+/// passes and advance only after them.
 pub(super) fn blur(map: &mut LightMap, parallel: bool) {
+    blur_pass(map, parallel);
+    blur_pass(map, parallel);
+    map.blur_rng.next_seed_in_place();
+}
+
+fn blur_pass(map: &mut LightMap, parallel: bool) {
     let (w, h, pad) = (map.w, map.h, NON_VISIBLE_PADDING.min(map.w.min(map.h) / 3));
     let wu = w as usize;
+    let rng = &map.blur_rng;
 
     for x in 0..w {
         // top -> bottom, then bottom -> top (stopping at the padding).
-        blur_line_v(&mut map.colors, &map.mask, wu, x, 0, 1, h - pad);
-        blur_line_v(&mut map.colors, &map.mask, wu, x, h - 1, -1, h - pad);
+        blur_line_v(&mut map.colors, &map.mask, wu, x, 0, 1, h - pad, rng);
+        blur_line_v(&mut map.colors, &map.mask, wu, x, h - 1, -1, h - pad, rng);
     }
     let count = w - pad;
     if parallel {
@@ -56,8 +64,8 @@ pub(super) fn blur(map: &mut LightMap, parallel: bool) {
             .enumerate()
             .for_each(|(ly, (colors, mask))| {
                 let base = ly * wu;
-                blur_line_h(colors, mask, base, 0, 1, count);
-                blur_line_h(colors, mask, base, w - 1, -1, count);
+                blur_line_h(colors, mask, base, 0, 1, count, rng);
+                blur_line_h(colors, mask, base, w - 1, -1, count, rng);
             });
     } else {
         for (ly, (colors, mask)) in map
@@ -67,10 +75,16 @@ pub(super) fn blur(map: &mut LightMap, parallel: bool) {
             .enumerate()
         {
             let base = ly * wu;
-            blur_line_h(colors, mask, base, 0, 1, count);
-            blur_line_h(colors, mask, base, w - 1, -1, count);
+            blur_line_h(colors, mask, base, 0, 1, count, rng);
+            blur_line_h(colors, mask, base, w - 1, -1, count, rng);
         }
     }
+}
+
+/// `LightMap.cs:219`: water cells jitter by `_random.WithModifier((ulong)i).Next(98, 100) / 100f` (S1-A-6).
+#[inline]
+pub(super) fn water_jitter(rng: &FastRandom, i: usize) -> f32 {
+    rng.with_modifier_u64(i as u64).next_range(98, 100) as f32 / 100.0
 }
 
 /// One vertical sweep through column `x`, carrying the brightest light seen so far
@@ -83,6 +97,7 @@ fn blur_line_v(
     y0: i32,
     dy: i32,
     count: i32,
+    rng: &FastRandom,
 ) {
     let mut carried = [0.0f32; 3];
     let mut done = [false; 3];
@@ -92,8 +107,7 @@ fn blur_line_v(
         let m = mask[i];
         let decay = m.decay();
         let jitter = if m == Mask::Water {
-            let j = (i as u32).wrapping_mul(2_654_435_761) % 15;
-            0.985 + j as f32 * 0.001
+            water_jitter(rng, i)
         } else {
             1.0
         };
@@ -122,9 +136,17 @@ fn blur_line_v(
 }
 
 /// One horizontal sweep through a single row slice. `base` is the global index of
-/// `colors[0]` in the full light map, so the water jitter stays bit-identical to the
-/// sequential implementation.
-fn blur_line_h(colors: &mut [[f32; 3]], mask: &[Mask], base: usize, x0: i32, dx: i32, count: i32) {
+/// `colors[0]` in the full light map, so the water jitter matches the sequential
+/// implementation (S1-A-6: `WithModifier(i).Next(98,100)`, `LightMap.cs:219`).
+fn blur_line_h(
+    colors: &mut [[f32; 3]],
+    mask: &[Mask],
+    base: usize,
+    x0: i32,
+    dx: i32,
+    count: i32,
+    rng: &FastRandom,
+) {
     let mut carried = [0.0f32; 3];
     let mut done = [false; 3];
     for k in 0..count.max(0) {
@@ -133,8 +155,7 @@ fn blur_line_h(colors: &mut [[f32; 3]], mask: &[Mask], base: usize, x0: i32, dx:
         let m = mask[lx];
         let decay = m.decay();
         let jitter = if m == Mask::Water {
-            let j = (i as u32).wrapping_mul(2_654_435_761) % 15;
-            0.985 + j as f32 * 0.001
+            water_jitter(rng, i)
         } else {
             1.0
         };
@@ -207,3 +228,4 @@ pub(super) fn mask_of(
     }
     Mask::Air
 }
+
