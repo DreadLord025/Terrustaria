@@ -10143,6 +10143,49 @@ The `TR_OPTIONS=1` pin opens the window at boot for the `TR_SHOT` fixture; the
 captured 1600x900 frame shows the title, the eight left rows (the selected
 category in gold) at the 42.3 px pitch and the seventeen General rows inside
 the panel.
+## The accessory hide ticks (M7-UI-8)
+
+`Player.hideVisibleAccessory` (`Player.cs:1708`) is the per-accessory "don't draw
+this one's visuals" flag. In vanilla every accessory row of the equipment column
+carries a `Inventory_Tick_On` / `Inventory_Tick_Off` toggle at its right edge
+(`Main.cs:41425-41460`), and the flag is read by the dye/visual update
+(`Player.cs:9610`, `:14378`). The port had **no field at all** — the only trace of
+the concept was `net.rs`'s `hide_visible_accessory: u16`, a decode-only field in
+the player-info packet — so the ticks were invisible, unclickable, and the flag
+could never affect anything.
+
+**What landed.** The whole row, in the vanilla's own geometry:
+
+| piece | C# | port |
+| --- | --- | --- |
+| position | `num41 = screenWidth - 58`, `num42 = (int)((num20 - 2) + num37*56*scale)`, `+num33` (4) when `num38 > 2` | `inventory::tick_pos` (the `- 2` is inside the truncation, so tick and slot can differ by a pixel) |
+| gates | `num38 > 2` (accessories only) **and** `Main.mouseItem.IsAir` for both the draw (`:41453`) and the hit (`:41430`) | `idx > 2`, `mouse_air` |
+| hit box | `new Rectangle(num41, num42, value3.Width, value3.Height).Contains(mouse)` — native size, `Rectangle.Contains` semantics | `inventory::tick_rect` + `in_tick` (half-open) |
+| draw | `spriteBatch.Draw(value3, ..., Color.White * 0.7f)`, unscaled | `chrome::sheet_frame` (whole sheet) at `[1,1,1,0.7]` |
+| hover text | `num43 = hidden ? 2 : 1` → `Lang.inter[58 + num43]`, and `Main.ClearHoverItem()` first | `HoverRef::HideAccessory(i)` → `lang::inter(59)` "Visible" / `inter(60)` "Hidden", item tooltip suppressed |
+| click | flip, `SoundEngine.PlaySound(12)`, `SendData(4)` in MP | flip, `Menu_Tick`, no packet (see below) |
+
+The click is checked **before** the slot grid in `handle_inventory_clicks`, because
+the vanilla's tick box sits over the slot's right edge and the C# handles the tick
+first.
+
+**Deviations.** (1) `NetMessage.SendData(4)` is not ported for this field: the
+port's `net.rs` `hide_visible_accessory` is a decode-only `u16` inside the
+player-info payload, so the flip stays local — the same shape as the PVP toggle's
+missing `SendData(30)`/`157` (ANALYSIS "The PVP toggle + team select cells").
+(2) The flag is not written to the `.plr` file: vanilla stores it as two `BitsByte`s
+(`Player.cs:54761-54771` / `:55176-55189`), and the port's `player_file.rs` does
+not write that block yet. (3) The misc column's `hideMisc` pair (pet / light pet,
+`Main.cs:41225-41255` → `Player.TogglePet`/`ToggleLight`) is a **separate** flag
+family on a page the port draws but the pet systems do not exist for, so it is
+still open.
+
+**Verification.** The draw cannot be seen in a frozen shot at 0.7 alpha over
+grass, so it was pinned by swapping the two sheets at runtime: the tick box at
+`(1542,574)` changes 8-16 px per row (`8,12,16,16,16,16,12,8` — the check's
+silhouette), which proves both the placement and that the on/off sheets are the
+distinct retail ones.
+
 ## The Settings button and window redraw (M7-UI-4b)
 
 `M7-UI-4` gave the in-game options window its vanilla *content*; the *chrome*
