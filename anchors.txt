@@ -73,3 +73,5 @@ crates/tr-app/src/npc.rs|182 => NpcKind::PirateDeckhand|S1-F-1 - the NPC protoco
 crates/tr-app/src/app/frame.rs|self.phase("projectiles");|S1-B-1 — the world branch follows Main.DoUpdateInWorld_Inner (Main.cs:17745-17822): projectiles before items, UpdateTime after dust, WorldGen wiring/TE/liquid/growth after time; pinned by app::frame::tests::the_world_branch_runs_in_the_csharp_update_order
 crates/tr-app/src/app/frame.rs|the_clock_only_advances_inside_the_world_branch|S1-B-2 — the front end never reaches Main.UpdateTime (Main.cs:17166-17175): the clock advance lives inside the in-world branch (landed with S1-B-1)
 crates/tr-app/src/projectile.rs|pub fn drain_ritual_bolts|S1-D-4c - vortex ritual aiStyle 88/108 dispatched and bolt intent drained (Projectile.cs:32145-32249,:33679-33988)
+crates/tr-app/src/npc.rs|fn update_goblin_summoner|S1-D-3b GoblinSummoner routed off aiStyle 8 caster to shadowflame machine
+crates/tr-app/src/npc.rs|fn update_lunatic_cultist|S1-D-3b AncientCultist uses aiStyle 84 cultist row not pillar aiStyle 94

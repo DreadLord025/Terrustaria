@@ -250,10 +250,7 @@ rows ROADMAP marks DONE are included and flagged.
 - **S — Delete the dead `to_u16`/`from_u16` arms** (`npc.rs:953-990`,
   `1207-1226`) and correct the "the unreachable dead copies are gone" comment
   at 881-886. No behaviour change; unblocks the next id-space merge.
-- **S — Remove the shadowed goblin arm** (`npc.rs:4163-4165`) so
-  `GoblinThief/Warrior/Peon` reach `update_skeleton` (4180-4183) as intended,
-  and pin the walk speed in a test. Also collapse the two harmless duplicate
-  arms (4218/4361, 4119/4358).
+- **DONE (S1-D-3b) — Removed the shadowed goblin arm** so `GoblinThief/Warrior/Peon` reach the skeleton walker; pinned by `s1_d_3b_tests::goblin_fighters_use_skeleton_walker_not_shadowed_goblin_arm`. (Harmless duplicate arms remain.)
 - **M — Wire `strike_npc_damage` + `check_armor_penetration` into the
   projectile path.** `projectile.rs::damage_pve` should reduce `dmg` through
   `tr_core::damage` before `hurt_from_projectile`, mirroring

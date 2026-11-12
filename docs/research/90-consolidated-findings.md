@@ -1295,7 +1295,7 @@ blast radius (how many other seeds depend on them).
 | 18 | **R-34-4** | Close the `from_u16` gap for ids 85-88 and 162-168 (11 kinds undecodable) | M | B (medium) | 34 | `S1-F-1`; a net message or save carrying one of those ids drops the NPC |
 | 19 | **R-40-4** | Port the arrow/bow arm of `GetWeaponDamageMultiplier` | M | B (medium) | 40 | `S1-C-4`; needs the ammo registry |
 | 20 | **R-16-1** | Wire `Wind::any_player_120_life` from the world tick | M | B (medium) | 16 | `S1-L-2`; the 0.35 wind cap is dead code today |
-| 21 | **R-05-3** | Remove the shadowed goblin arm | S | B (low-med) | 05 | `S1-D-3b`; the goblin army walks at the zombie's speed |
+| 21 | **R-05-3** | Remove the shadowed goblin arm | S | B (low-med) | 05 | **DONE S1-D-3b**; `GoblinThief/Warrior/Peon` reach skeleton walker |
 | 22 | **R-03-2** | `maxFallSpeed += 0.01f` + `PortalPhysicsEnabled = 35` + `vortexDebuff` gravity = 0 | S | B (high) | 03 | pairs with R-03-1; **no new ROADMAP task exists** |
 | 23 | **R-25-5** | A per-type speed table for the aiStyle-3 family | M | B (portfolio) | 25 | `S1-D-3`; 155 vanilla types collapse onto one walker speed |
 | 24 | **R-35-3** | `Main.SwapRandom` named-stream registry | L | D (critical) | 35 | `S1-A-2`; 13 per-stage streams are 7 ad-hoc `u64` fields today; unblocks R-35-4/5 |
