@@ -7635,11 +7635,18 @@ impl Npc {
             // the toward-player direction — the cone's 0..π half (the
             // player below).
             let angle = (vy * norm).atan2(vx * norm);
-            let can_hit = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            // `:35319`: `flag76 = CanHit(base.Center, 1, 1, player.Center, 1, 1)`.
+            let mut can_hit = crate::projectile::can_hit(
+                world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0,
+            );
+            // The ai[3] >= 120 argue-override: the drone stops dodging.
+            if self.ai[3] >= 120.0 {
+                can_hit = true;
+            }
+            // `:35325`: the cone gate applies after the override.
+            let can_hit = can_hit
                 && angle > std::f32::consts::PI / 8.0
                 && angle < std::f32::consts::PI - std::f32::consts::PI / 8.0;
-            // The ai[3] >= 120 argue-override: the drone stops dodging.
-            let can_hit = can_hit || self.ai[3] >= 120.0;
             let too_far = raw_dist > far_dist;
             if too_far || !can_hit {
                 // The 30-tick damp toward the above-the-player vector.
@@ -7846,7 +7853,17 @@ impl Npc {
             // 80-tick timer.
             if self.ai[1] <= 0.0
                 && player.hp > 0
-                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+                && crate::projectile::can_hit(
+                    world,
+                    self.x,
+                    self.y,
+                    w,
+                    h,
+                    player.x,
+                    player.y,
+                    crate::player::WIDTH,
+                    player.height,
+                )
             {
                 let mut ax = dx + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
                 let mut ay = dy + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
@@ -7928,7 +7945,17 @@ impl Npc {
         if self.hurt_cd > 0.0 {
             self.ai[1] = -30.0;
         }
-        if crate::npc_ai::line_clear(world, (ccx, ccy - 14.0), (pcx, pcy)) {
+        if crate::projectile::can_hit(
+            world,
+            self.x,
+            self.y,
+            w,
+            h,
+            player.x,
+            player.y,
+            crate::player::WIDTH,
+            player.height,
+        ) {
             let (px, py) = (pcx - cx, pcy - cy);
             if (px * px + py * py).sqrt() < 700.0 {
                 if self.ai[1] == 60.0 && (px > 0.0) == (self.facing == 1) {
@@ -7976,7 +8003,7 @@ impl Npc {
         // The 50-px stop: grounded + the player close + CanHit.
         if self.on_ground
             && ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt() < 50.0
-            && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            && crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0)
         {
             self.ai[2] = 1.0;
         }
@@ -8805,7 +8832,7 @@ impl Npc {
         // quarter height.
         let (pdx, pdy) = (pcx - cx, pcy - cy - player.height * 0.25);
         let dist = (pdx * pdx + pdy * pdy).sqrt();
-        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        let sight = crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
         match self.ai[0] as i32 {
             1 => {
                 // `:36989-37012`'s approach.
@@ -8994,7 +9021,19 @@ impl Npc {
             } else if dy > 20.0 && self.vy < 8.0 {
                 self.vy += 0.3;
             }
-        } else if pcy + 100.0 < self.y && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+        } else if pcy + 100.0 < self.y
+            && crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            )
+        {
             // `:58566-58571`'s leap arm.
             self.vy = -5.0;
             self.ai[2] = 1.0;
@@ -9009,7 +9048,9 @@ impl Npc {
         if self.ai[3] >= 0.0 && self.ai[3] <= 30.0 {
             let armed = reach < 800.0
                 && (pcy - cy).abs() <= (pcx - cx).abs()
-                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+                && crate::projectile::can_hit_line(
+                    world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0,
+                );
             self.ai[3] = (self.ai[3] + if armed { 1.0 } else { 0.0 }).clamp(0.0, 30.0);
         }
         if self.ai[3] >= 31.0 {
@@ -10068,7 +10109,8 @@ impl Npc {
         let aim = (self.facing as f32 * 20.0, 6.0);
         let (ax, ay) = (cx + aim.0, cy + aim.1);
         let (dx, dy) = (pcx - ax, pcy - ay);
-        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        // `:39513`: `flag104 = CanHit(base.Center, 1, 1, player.Center, 1, 1)`.
+        let sight = crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
         let far = (dx * dx + dy * dy).sqrt() > 400.0 || !sight;
         if far {
             // `:39580-39620`'s cruise: the 7-px cap toward the aim.
@@ -10139,7 +10181,7 @@ impl Npc {
         // `:36996`'s 421 reach vector reads the player's TOP.
         let (pdx, pdy) = (pcx - cx, pcy - player.height - cy);
         let dist = (pdx * pdx + pdy * pdy).sqrt();
-        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        let sight = crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
         if self.ai[0] == 5.0 {
             // `:37143-37162`'s attached ride: the snap, the obstruct buff
             // request and the zeroed velocity.
@@ -10404,7 +10446,22 @@ impl Npc {
             }
         }
         // `:58705-58709`'s leap arm.
-        if self.vy == 0.0 && pcy + 100.0 < self.y && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+        // `:58705`: `CanHit(base.position, base.width, base.height,
+        // player.position, player.width, player.height)`.
+        if self.vy == 0.0
+            && pcy + 100.0 < self.y
+            && crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            )
+        {
             self.vy = -5.0;
             self.ai[2] = 1.0;
         }
@@ -10575,9 +10632,7 @@ impl Npc {
                 let speed_exit = self.vx.hypot(self.vy) < min_speed;
                 let crash = glide
                     && (dx.hypot(dy) < 64.0
-                        || crate::npc_ai::line_clear(world, (self.x, self.y), (self.x + self.vx, self.y + self.vy)) == false
-                        && self.vx == 0.0
-                        && self.vy == 0.0);
+                        || crate::player::Player::solid_collision(world, self.x, self.y, w, h));
                 if timer_exit || speed_exit {
                     // `:65654-65667`'s exit: the 4-state rest with `ai[1] = 45`.
                     self.ai[0] = 4.0;
@@ -10871,7 +10926,7 @@ impl Npc {
         // no line of sight — the 578/579 projectiles at the player's tile.
         if player.hp > 0
             && (pcx - cx).hypot(pcy - cy) < 3240.0
-            && !crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            && !crate::projectile::can_hit_line(world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0)
         {
             self.ai[1] = 0.0;
             let ritual = 579u16;
@@ -11731,7 +11786,19 @@ impl Npc {
             if self.ai[2] >= 5.0 {
                 self.ai[2] = 0.0;
             }
-            if crate::npc_ai::line_clear(world, (cx, self.y + h * 0.5), (pcx, pcy)) {
+            // `:26167`: `CanHit(base.position, base.width, base.height,
+            // player.position, player.width, player.height)`.
+            if crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            ) {
                 self.wants_hostile_shot.push((
                     crate::projectile::EYE_LASER,
                     cx,
@@ -12171,8 +12238,8 @@ impl Npc {
                 // The beam volley (`:31261-31334`, the phase-1 arm): the
                 // cadence `num688` (solo 1) with the extra +1 adds at the
                 // life < 1/3, 1/4, 1/5 tiers and +4 while the head cannot
-                // hit the player (`Collision.CanHit` false — the
-                // `line_clear` stand-in); the vanilla's 60+Next(600)
+                // hit the player (`:31363`'s `!Collision.CanHit(Center,
+                // 1, 1, ...)`); the vanilla's 60+Next(600)
                 // trigger folds to the flat 300 average (the RNG stream
                 // discipline). Two arms by the turn: in-band (`head_turn`
                 // 0) fires the two-shot EyeBeam 259 (dmg 28) at the 11
@@ -12191,7 +12258,7 @@ impl Npc {
                     if self.hp < self.max_hp / 5 {
                         step += 1.0;
                     }
-                    if !crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                    if !crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0) {
                         step += 4.0;
                     }
                     self.ai[2] += step;
@@ -12374,15 +12441,15 @@ impl Npc {
                 // The fireball salvo (`:31421-31465`): the 300 cadence
                 // (doubled under the 10% body life, `:31432-31436`), the
                 // 258 dmg 20 at the 8 speed from Center - (0, 10). The
-                // C#'s `flag53` (the CanHit block hold, `:31446-31450`)
-                // pins `ai[1] = 20` while the line is blocked — the
-                // `line_clear` stand-in.
+                // C#'s `flag53` (`:31363`'s `!CanHit(Center, 1, 1, ...)`,
+                // the block hold `:31446-31450`) pins `ai[1] = 20` while
+                // the line is blocked.
                 let mut step = 1.0;
                 if world.golem_hp_ratio < 0.1 {
                     step += 1.0;
                 }
                 self.ai[1] += step;
-                if !crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                if !crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0) {
                     self.ai[1] = 20.0;
                 }
                 if self.ai[1] >= 300.0 {
@@ -12567,7 +12634,17 @@ impl Npc {
                 self.facing = if pcx >= cx { 1 } else { -1 };
                 self.sprite_dir = self.facing;
                 if self.ai[1] == 90.0 {
-                    if crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                    if crate::projectile::can_hit(
+                        world,
+                        self.x,
+                        self.y,
+                        w,
+                        h,
+                        player.x,
+                        player.y,
+                        crate::player::WIDTH,
+                        player.height,
+                    ) {
                         let mut dx = pcx - cx;
                         let mut dy = pcy - cy - dx.abs() * 0.1;
                         dx += crate::app::rand01(rng) * 81.0 - 40.0;
@@ -12619,15 +12696,27 @@ impl Npc {
             GRAVITY,
             MAX_FALL,
         );
-        // The shot gate (`:59658-59676`): grounded, the clear line, the
-        // distance < 700, the cooldown spent.
+        // The shot gate (`:59636`'s `flag21 = CanHit(position, width,
+        // height, player.position, player.width, player.height)`, then
+        // `:59680`'s `num178 < num179`, the 700-px default): grounded,
+        // the clear line, the distance < 700, the cooldown spent.
         let dx = pcx - cx;
         let dy = pcy - cy;
         let dist = (dx * dx + dy * dy).sqrt();
         if self.on_ground
             && self.ai[1] <= 0.0
             && dist < 700.0
-            && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            && crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            )
         {
             self.ai[2] = 1.0;
             self.ai[1] = 180.0;
@@ -12666,7 +12755,7 @@ impl Npc {
     /// `AI_016` through the framework's `swim_step` (`NPC.cs`'s aiStyle 16
     /// block): the wet path rides the machine — `flag25` folds the kind
     /// gate (`:23701`'s Goldfish exclusion), the player's `wet`/alive and
-    /// the `CanHit` stand-in; the dry path is the beached flop (`:23963-
+    /// `CanHit`; the dry path is the beached flop (`:23963-
     /// 23989`: the Shark's `velocity.X *= 0.94` snap, the others' random
     /// jump through `Main.rand`).
     fn update_swimmer(&mut self, world: &World, player: &Player, rng: &mut u64) {
@@ -12679,13 +12768,23 @@ impl Npc {
         self.wet = is_wet(world, self.x, self.y, w, h);
         if self.wet {
             let (pcx, pcy) = player.center();
-            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
             // `flag25` (`:23701-23707`): the kind gate + the player wet +
-            // alive + `Collision.CanHit`.
+            // alive + `CanHit(base.position, base.width, base.height,
+            // player.position, player.width, player.height)`.
             let aggro_ok = params.aggro
                 && player.wet
                 && !player.dead
-                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+                && crate::projectile::can_hit(
+                    world,
+                    self.x,
+                    self.y,
+                    w,
+                    h,
+                    player.x,
+                    player.y,
+                    crate::player::WIDTH,
+                    player.height,
+                );
             crate::npc_ai::swim_step(self, world, pcx, pcy, aggro_ok, params);
         } else {
             // The beached flop (`:23963-23989`).
@@ -13848,6 +13947,73 @@ mod tests {
 
     fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    /// The AI's line-of-sight gate is `Collision.CanHit`'s tile-corner walk, not
+    /// a centre-to-centre ray sample: `CanHit` blocks when *both* tiles flanking
+    /// a horizontally-stepped cell are solid (`Collision.cs:445-448`, the
+    /// opposite of `CanHitLine`'s any-of-three OR at `:694`), so a one-tile
+    /// air slit in a wall stops the walk while the straight y = 20 ray runs
+    /// through the gap. The Stardust Cell's approach (`:36989-37012`) drops
+    /// back to `ai[0] = 0` on `!CanHit`.
+    #[test]
+    fn the_stardust_cell_drops_its_chase_when_the_tile_walk_sees_a_wall() {
+        let mut w = ground();
+        // A vertical wall at x 35 with rows 19 and 21 solid and row 20
+        // clear: the ray (row 20) passes, the walk's (above, here, below)
+        // trio blocks.
+        for y in [19, 21] {
+            let i = w.index(35, y);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX + 8.0 - crate::player::WIDTH * 0.5;
+        player.y = 20.0 * TILE_PX + 8.0 - player.height * 0.5;
+        let mut cell = Npc::new(
+            NpcKind::StardustCellBig,
+            30.0 * TILE_PX + 8.0 - 22.0,
+            20.0 * TILE_PX + 8.0 - 22.0,
+            1,
+            0.0,
+        );
+        cell.ai[0] = 1.0;
+        cell.update_stardust_cell_big(&w, &player);
+        assert_eq!(cell.ai[0], 0.0, "the tile walk blocks the line");
+    }
+
+    /// The Vortex Rifleman's arming gate is the `CanHitLine` walk
+    /// (`NPC.cs:58587`, boxless centres): its any-of-(above, here, below)
+    /// OR (`Collision.cs:694`) blocks on a single solid tile under the
+    /// line, so the 30-tick window must not arm.
+    #[test]
+    fn the_vortex_rifleman_does_not_arm_through_the_tile_walk() {
+        let mut w = ground();
+        let i = w.index(35, 21);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX + 8.0 - crate::player::WIDTH * 0.5;
+        player.y = 20.0 * TILE_PX + 8.0 - player.height * 0.5;
+        let mut rifleman = Npc::new(
+            NpcKind::VortexRifleman,
+            30.0 * TILE_PX + 8.0 - 15.0,
+            20.0 * TILE_PX + 8.0 - 28.0,
+            1,
+            0.0,
+        );
+        rifleman.rifleman_rearmed = true;
+        rifleman.ai[3] = 0.0;
+        rifleman.vy = 0.0;
+        let mut rng = 1u64;
+        rifleman.update_vortex_rifleman(&w, &player, &mut rng);
+        assert_eq!(rifleman.ai[3], 0.0, "no arming through the blocked walk");
     }
 
     /// DW-3.4 — `NPC.CanBeChasedBy` (`NPC.cs:90030-90041`) over the gate's
