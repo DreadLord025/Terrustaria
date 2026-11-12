@@ -10841,6 +10841,50 @@ and a favorited row draws the gold sheet and refuses the shift transfer
 coin/ammo rows' items, so a row favorite is session-only until that writer lands
 — the grid favorites have the same shape.
 
+## The `PickItemMovementAction` gate table (S1-H-6)
+
+The coin/ammo rows used to run behind a hand-written `context_accepts` that
+gated contexts 1 and 2 and returned `true` for everything else. That meant the
+equip/dye/mount/pet contexts (`ItemSlot.Context` 8-12, 16-20, 23-27, 29, 33,
+38-39) would have accepted any held item the moment a click handler reached
+them. `clicks.rs::pick_item_movement_action` now ports the whole
+`ItemSlot.PickItemMovementAction` switch (`ItemSlot.cs:1484-1634`, returning the
+C# action id `-1/0..5`), and `context_accepts` is `pick_item_movement_action !=
+-1`.
+
+Expressible from the port's `ItemDef` (and covered by
+`pick_item_movement_action_ports_the_context_table`):
+
+* 0/3/6/30 → 0 (accept); 4/32 → 0 (the transfer gate never blocks — see below);
+* 1 → air or 71-74 (coins); 2 → `FitsAmmoSlot`; 7 → `material` or air;
+* 8-11 → air or `can_equip_in_armor_slot` (head/body/leg by `slot % 10`, the
+  `accessory` flag for the accessory rows);
+* 12/25/27/33 → 2 (any item dyes); 23/26 → head/body/leg (`> 0`) by slot;
+* 24 → air or `accessory`; 29 → 5 (air over a filled creative slot);
+* 15 → the shop ladder 3 (sell/same-stack) / 4 (buy into an empty slot).
+
+Deliberate approximations (the C# reads data the port does not carry, so the arm
+keeps the C#'s `type == 0` shortcut and accepts a non-air item — the same result
+the old `_ => true` gave):
+
+* ctx 5 (`CanHavePrefixes`/`GetRollablePrefixes`) — no prefix-eligibility set;
+* ctx 16 (`Main.projHook[shoot]`) — no hook table;
+* ctx 17/18/39 (`mountType` + `MountID.Sets.Cart`) — no mount field;
+* ctx 19/20 (`vanityPet`/`lightPet`) — no pet tables;
+* ctx 38 (`TEDisplayDoll.AcceptedInWeaponSlot`) — no display-doll model;
+* ctx 4/32 (`ChestUI.IsBlockedFromTransferIntoChest`) — it only blocks a
+  favorited money-trough/piggy item and the port has no `favorited` flag on the
+  slot yet;
+* `CanEquipInArmorSlot`'s duplicate half (`HasSameItemInSlot` against the live
+  armour set) and the `ItemID.Sets.DualEquipArmor` ({205, 5004, 4955}) bypass —
+  the port is permissive on a duplicate equip;
+* `CanEquipAccessoryInSlot`'s `HasIncompatibleAccessory` collision set — likewise.
+
+The gate is inert in-game today: the only `context_accepts` readers are the
+coin/ammo rows (contexts 1/2), and the equipment pages draw their cells without
+a click handler. The equip/dye *actions* (`LeftClick` cases 1/2) are the
+separate S1-H-5; once they land, this gate is what they run behind.
+
 ## The housing page (M7-UI-3b)
 
 The inventory's second tab (`EquipPage == 1`) is `Main.DrawNPCHousesInUI`

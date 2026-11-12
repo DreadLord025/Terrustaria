@@ -60,3 +60,4 @@ crates/tr-app/src/app/clicks.rs|fn right_click_split|S1-C-10 — the paced one-i
 crates/tr-app/src/projectile.rs|fn damage_hitbox|S1-C-8 — the PVE hit rectangle (Damage_GetHitbox, Projectile.cs:14959-15023)
 crates/tr-core/src/unified_random.rs|pub struct UnifiedRandom|S1-A-1 — the C# UnifiedRandom (Knuth subtractive) port + C#-golden vectors
 crates/tr-core/src/lighting/blur.rs|with_modifier_u64(i as u64).next_range(98, 100)|S1-A-6 — water blur jitter uses FastRandom.WithModifier(i).Next(98,100) (LightMap.cs:219)
+crates/tr-app/src/app/clicks.rs|fn pick_item_movement_action|S1-H-6 — the ItemSlot.PickItemMovementAction gate table (ItemSlot.cs:1484-1634)
