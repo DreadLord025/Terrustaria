@@ -25,6 +25,10 @@ impl App {
     /// request and the menu's Quit — so the dispatch below is the one place a
     /// save path is decided.
     pub(crate) fn save_world(&mut self) {
+        // `Player.InternalSavePlayer`'s first statement (`Player.cs:54700`):
+        // `Main.Achievements.Save()`. Achievements are global (one file, not
+        // per-world), so every save route writes it before the format branch.
+        self.achievements.save();
         if is_native_trwld(&self.world_path) {
             // `SaveChests` (`WorldFile.cs:1606-1676`): the world chests ride the
             // same stream as the world itself — a u32 count, then per chest the
@@ -190,6 +194,16 @@ impl App {
         data.bestiary = tr_core::wld::sections::bestiary::to_wld(&self.bestiary);
         data.creative_powers = crate::creative::persistent_powers(&self.creative_powers);
         data
+    }
+
+    /// Binds `AchievementManager._savePath` (`AchievementManager.cs:25`,
+    /// `:51`): the C# constructor resolves `Main.SavePath/achievements.dat`
+    /// when the manager is created, so the port's production bootstrap
+    /// (`main` and the world swap) calls this. A headless test App — built
+    /// through the same `App::new` — keeps `None` and therefore never writes
+    /// the developer's real `achievements.trdat`.
+    pub(crate) fn bind_achievements_save_path(&mut self) {
+        self.achievements.save_path = tr_core::save::achievements_path();
     }
 
     /// `MapHelper.SaveMap` (`MapHelper.cs:3007`): write `<world>.map` next to the
@@ -1158,6 +1172,80 @@ mod chest_save_tests {
         assert_eq!(world.ore_tiers, tr_core::ores::SavedOreTiers::new());
         let back = app_for(world, sections, PathBuf::new());
         assert_eq!(back.ore_tiers.copper, 7, "the static default, not the dropped roll");
+    }
+
+    /// A per-test scratch dir for the achievements writes (the sibling `tests`
+    /// module's pattern).
+    fn ach_scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tr-saveglue-ach-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
+    /// S1-E-18: `Player.InternalSavePlayer`'s first statement is
+    /// `Main.Achievements.Save()` (`Player.cs:54700`), so every save route must
+    /// write the manager's file — partial condition progress included.
+    #[test]
+    fn save_world_writes_the_achievement_condition_state() {
+        use crate::achievements::{self, AchievementManager, CondKind};
+        let dir = ach_scratch("achievements-save");
+        let path = dir.join("world.trwld");
+        let ach_path = dir.join("achievements.trdat");
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world_path = path.clone();
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.achievements.save_path = Some(ach_path.clone());
+        // One of SLAYER_OF_WORLDS' NPC conditions — the row itself stays open,
+        // so only the save call site can persist the partial state.
+        app.achievements.notify(CondKind::NpcKilled(13));
+        assert!(
+            !app
+                .achievements
+                .list
+                .iter()
+                .any(|a| a.name == "SLAYER_OF_WORLDS" && a.completed),
+            "the row stays open, so only a save call site can write this"
+        );
+        app.save_world();
+        assert!(ach_path.exists(), "save_world wrote the achievements file");
+        let mut fresh = AchievementManager::registry();
+        achievements::load(&ach_path, &mut fresh);
+        let slayer = fresh
+            .list
+            .iter()
+            .find(|a| a.name == "SLAYER_OF_WORLDS")
+            .unwrap();
+        assert!(slayer.conditions[0].completed, "the partial condition rode the save");
+    }
+
+    /// `AchievementManager.AchievementCompleted` (`AchievementManager.cs:180-187`)
+    /// saves on the completion event itself — the second vanilla call site.
+    #[test]
+    fn completing_an_achievement_writes_the_file_immediately() {
+        use crate::achievements::{self, AchievementManager, CondKind};
+        let dir = ach_scratch("achievements-completion");
+        let ach_path = dir.join("achievements.trdat");
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.achievements.save_path = Some(ach_path.clone());
+        assert_eq!(
+            app.achievements.notify(CondKind::NpcKilled(4)),
+            Some("EYE_ON_YOU")
+        );
+        assert!(ach_path.exists(), "the completion hook wrote the file");
+        let mut fresh = AchievementManager::registry();
+        achievements::load(&ach_path, &mut fresh);
+        assert!(
+            fresh
+                .list
+                .iter()
+                .any(|a| a.name == "EYE_ON_YOU" && a.completed),
+            "the completed row is on disk"
+        );
     }
 }
 

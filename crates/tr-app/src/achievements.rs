@@ -19,7 +19,7 @@
 //! `achievements.trdat` (documented deviation: writing the vanilla format
 //! would touch a real install's `achievements.dat`).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use crate::achievements_data::{Cond, Row, Tracker, ROWS};
 use crate::achievements_data::ROWS as REGISTRY;
@@ -263,6 +263,11 @@ impl Condition {
 #[derive(Clone, Debug, Default)]
 pub struct AchievementManager {
     pub list: Vec<Achievement>,
+    /// `AchievementManager._savePath` (`AchievementManager.cs:25`, bound in the
+    /// constructor `:41-55`). The port binds it at bootstrap
+    /// (`App::bind_achievements_save_path`) so a headless test App never
+    /// touches the real `achievements.trdat`.
+    pub save_path: Option<PathBuf>,
 }
 
 impl AchievementManager {
@@ -276,6 +281,7 @@ impl AchievementManager {
                 .enumerate()
                 .map(|(id, row)| Achievement::from_row(row, id as u16))
                 .collect(),
+            save_path: None,
         }
     }
 
@@ -303,7 +309,23 @@ impl AchievementManager {
                 done = Some(a.name);
             }
         }
+        // `AchievementCompleted` (`AchievementManager.cs:180-187`): the manager
+        // saves the moment an achievement completes.
+        if done.is_some() {
+            self.save();
+        }
         done
+    }
+
+    /// `AchievementManager.Save()` (`AchievementManager.cs:57-63`): write the
+    /// bound `_savePath`. A manager with no path (a headless test App) is a
+    /// no-op — the port binds the path at bootstrap, its stand-in for the C#
+    /// constructor's `Main.SavePath/achievements.dat` (`:51`).
+    pub fn save(&self) {
+        let Some(path) = &self.save_path else { return };
+        if let Err(e) = save(path, self) {
+            log::warn!("achievements save failed: {e}");
+        }
     }
 
     /// `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the crafted
