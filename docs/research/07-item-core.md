@@ -50,7 +50,7 @@ Rust side (all under `crates\tr-app\src\`):
   `NEGATIVE_DEFAULTS: [(i16, u16); 48]` `:7100`, `ON_CREATED: &[(u16, u16)]` `:7113`,
   `VariantOverride` `:7206` + `VARIANT_OVERRIDES` `:7213`, tests `:7308-7550`.
 - `registry.rs` — the accessor façade over the table + `ITEM_CORRECTIONS`.
-- `prefix.rs` (854 lines) — the whole prefix engine (tables, multipliers, roll, reforge).
+- `prefix.rs` (984 lines) — the whole prefix engine (tables, multipliers, roll, reforge).
 - `item.rs` — the in-memory slot/drop types (`ItemSlot`, `ItemDrop`), `slot_for_pickup`.
 - `world_sim\items.rs` — the fixed-step item world (pickup, void vault, lava, shimmer).
 - `ui\tooltip.rs` (646 lines) + `lang.rs` — the on-screen read-out.
@@ -98,19 +98,19 @@ Rust:
   `::tile_drop` `:130-163`, `::by_tile` `:166` / `::by_wall` `:171`, the coin helpers
   `:213-232`, and `::make_npc` `:106-108` (a documented stub — every kind maps to 0).
   `registry.rs` also holds `ITEM_CORRECTIONS` for id 6171 (`PORT_MAP.md:154`).
-- `crates\tr-app\src\prefix.rs::PREFIXES_FOR_*` `:22-53` — the eight roll tables;
-  `::SWORDS_HAMMERS_AXES_PICKS` `:56`, `::GUNS_BOWS` `:78`, `::MAGIC` `:86`,
-  `::SUMMON` `:93`, `::REDUCED_NATURAL_CHANCE` `:107`, `::CAN_GET_PREFIXES_EXCLUDED`
-  `:114` — the membership sets (sorted, binary-searched via `::in_set` `:126`).
-- `crates\tr-app\src\prefix.rs::rollable_prefixes` `:132` — `GetRollablePrefixes`'s
+- `crates\tr-app\src\prefix.rs::PREFIXES_FOR_*` `:25-53` — the eight roll tables;
+  `::SWORDS_HAMMERS_AXES_PICKS` `:59`, `::GUNS_BOWS` `:81`, `::MAGIC` `:89`,
+  `::SUMMON` `:96`, `::REDUCED_NATURAL_CHANCE` `:110`, `::CAN_GET_PREFIXES_EXCLUDED`
+  `:117` — the membership sets (sorted, binary-searched via `::in_set` `:129`).
+- `crates\tr-app\src\prefix.rs::rollable_prefixes` `:135` — `GetRollablePrefixes`'s
   order incl. the accessory denial-list arm for `IsAPrefixableAccessory`.
-- `crates\tr-app\src\prefix.rs::Multipliers::stat_switch` `:195` / `::value_multiplier`
-  `:293` / `::rejected` `:316` — the three `Item.Prefix` helpers.
-- `crates\tr-app\src\prefix.rs::prefixed_stats` `:367-402` — the application block,
+- `crates\tr-app\src\prefix.rs::Multipliers::stat_switch` `:198` / `::value_multiplier`
+  `:296` / `::rejected` `:319` — the three `Item.Prefix` helpers.
+- `crates\tr-app\src\prefix.rs::prefixed_stats` `:370-405` — the application block,
   recomputed from the kind's defaults; `round_bankers` for the integer fields.
-- `crates\tr-app\src\prefix.rs::shift_rare` `:406-428` — the rare ladder + clamp.
-- `crates\tr-app\src\prefix.rs::roll_prefix` `:455` / `::best_prefix_value` `:504` /
-  `::reforge_roll` `:528` / `::grant_prefix_benefits` `:540-591`.
+- `crates\tr-app\src\prefix.rs::shift_rare` `:409-431` — the rare ladder + clamp.
+- `crates\tr-app\src\prefix.rs::roll_prefix` `:477` / `::best_prefix_value` `:529` /
+  `::reforge_roll` `:553` / `::grant_prefix_benefits` `:577-628`.
 - `crates\tr-app\src\item.rs::ItemSlot` `:67` / `::MAX_STACK` `:78` / `::EMPTY_SLOT`
   `:80` / `::slot_for_pickup` `:91`; `::ItemDrop` `:132`.
 - `crates\tr-app\src\world_sim\items.rs::update_items` `:21-224` / `::spawn_item_drop`
@@ -136,7 +136,7 @@ Rust:
   draw (`ui\tooltip.rs::draw_item_tooltip`, driven by `hovered_slot` `:407`).
 - Shared data structures: `ItemDef` (the static table) is the only per-item source of
   truth; `ItemSlot`/`ItemDrop` are the two instance records (kind + count + prefix).
-  `PrefixedStats` (`prefix.rs:344-361`) is the derived-instance view.
+  `PrefixedStats` (`prefix.rs:346-364`) is the derived-instance view.
 
 ## Port status
 
@@ -147,15 +147,15 @@ Rust:
 | Dispatcher epilogue (`GetItemSettings`) | PARTIAL | `itemdata.rs::ITEMS` | the epilogue's `width`/`height` are modelled (`:85-88`); the C#'s other epilogue fields (shoot-speed class scaling, the `mech.SpawnChance`-style special hooks) are folded into the generated rows or absent — UNVERIFIED row-by-row |
 | `ItemVariants` (per-seed picks) | PARTIAL | `itemdata.rs::VARIANT_OVERRIDES` `:7213` | table present; `ROADMAP.md:521-523` records "conditions default false" until the seed system drives them |
 | `netDefaults` negative ids + `OnCreated` | PASS | `NEGATIVE_DEFAULTS` `:7100`, `ON_CREATED` `:7113` | both pinned by `itemdata.rs::tests::test_DW_1_2_negative_defaults_and_on_created` `:7498` and `registry.rs::tests::test_dw_2_2_net_defaults_and_on_created` `:385` |
-| `Clone`/`Refresh`/`DeepClone` | MISSING | — | the port has no instance snapshot; `prefix.rs::prefixed_stats` `:367` recomputes from the kind's defaults instead. Exact for a fresh `SetDefaults` item and (per `ROADMAP.md:1389`, M3-REFORGE-1) for a reforge, since the C# also resets before re-rolling |
+| `Clone`/`Refresh`/`DeepClone` | MISSING | — | the port has no instance snapshot; `prefix.rs::prefixed_stats` `:370` recomputes from the kind's defaults instead. Exact for a fresh `SetDefaults` item and (per `ROADMAP.md:1389`, M3-REFORGE-1) for a reforge, since the C# also resets before re-rolling |
 | `favorited`, `shopCustomPrice`, `buyOnce`, `isAShopItem`, `questItem`, `vanity`, `uniqueStack`, `tileWand`, `fishingPole`, `mountType` | MISSING | — | no `ItemDef` fields; the favourites ride the slot-index map (`ROADMAP.md:1392`, M3-STORE-3); the rest are consumers' gaps |
-| Prefix roll tables + membership sets | PASS | `prefix.rs:22-124` | counts 40/14/35/36/22/14 (terrarian/accessories also present) match `PrefixLegacy.cs:29-104`; sorted + binary-searched, pinned by `prefix.rs::tests::tables_are_sorted_and_prefix_lists_verbatim` `:605` |
-| Prefix application order/rounding | PASS | `prefix.rs::prefixed_stats` `:387-401` | integers through banker's rounding (`round_bankers`), floats multiply, crit/bonus added — same order as `Item.cs:575-598` |
-| Rare ladder + `value²` | PASS | `prefix.rs::shift_rare` `:406-428`, `value_multiplier` `:293` | ≥1.2 → +2, ≥1.05 → +1, ≤0.8 → −2, ≤0.95 → −1, clamp `[-1, 11]` skipped at ≤ −11; pinned by `value_and_rare_shift` `:750` |
-| Rejection retry (invisible prefix) | PASS | `prefix.rs::Multipliers::rejected` `:316` + `roll_prefix` `:455` | pinned by `invisible_changes_are_rejected_and_rolled_again` `:725` and `rejection_retry_never_lands_the_invisible_prefix` `:734` |
-| Roll modes (`Prefix(-1..-4)`) | PASS (mechanism) / PARTIAL (RNG) | `prefix.rs::roll_prefix` `:455`, `reforge_roll` `:528` | modes ported (`exact_and_special_modes` `:842`); the draw source is a splitmix stand-in (`next_u64` `:434`), **not** `UnifiedRandom` |
-| `GrantPrefixBenefits` 62-80 | PASS | `prefix.rs::grant_prefix_benefits` `:540-591` | arm-for-arm identical to `Player.cs:13953-14047`; C# `statManaMax2 += 20` `:13973` folds into the port's derived `mana_max` (`player.rs:590`, re-granted per tick at `:2655`/`:2681`) |
-| `BestPrefixValue` + reforge top tier | PASS | `prefix.rs::best_prefix_value` `:504`, `reforge_roll` `:528` | pinned by `best_prefix_value_matches_the_visible_table` `:809`, `reforge_roll_never_lands_none_and_flags_the_top_tier` `:823` |
+| Prefix roll tables + membership sets | PASS | `prefix.rs:25-127` | counts 40/14/35/36/22/14 (terrarian/accessories also present) match `PrefixLegacy.cs:29-104`; sorted + binary-searched, pinned by `prefix.rs::tests::tables_are_sorted_and_prefix_lists_verbatim` `:739` |
+| Prefix application order/rounding | PASS | `prefix.rs::prefixed_stats` `:390-404` | integers through banker's rounding (`round_bankers`), floats multiply, crit/bonus added — same order as `Item.cs:575-598` |
+| Rare ladder + `value²` | PASS | `prefix.rs::shift_rare` `:409-431`, `value_multiplier` `:296` | ≥1.2 → +2, ≥1.05 → +1, ≤0.8 → −2, ≤0.95 → −1, clamp `[-1, 11]` skipped at ≤ −11; pinned by `value_and_rare_shift` `:880` |
+| Rejection retry (invisible prefix) | PASS | `prefix.rs::Multipliers::rejected` `:319` + `roll_prefix` `:477` | pinned by `invisible_changes_are_rejected_and_rolled_again` `:859` and `rejection_retry_never_lands_the_invisible_prefix` `:868` |
+| Roll modes (`Prefix(-1..-4)`) | PASS | `prefix.rs::roll_prefix` `:477`, `reforge_roll` `:553` | modes ported (`exact_and_special_modes` `:972`); the draw source is the C# `Main.rand` algorithm — a per-world `prefix_rng: UnifiedRandom` (`app/mod.rs:638`, seeded `:2896`) — pinned by `natural_roll_matches_the_csharp_stream` `:648` and a 40 000-roll histogram vs a `dotnet` oracle `:688` (S1-A-5). The worldgen chest seam still feeds the splitmix `chest_rng` (`roll_prefix_splitmix` `:568`) until S1-A-4 |
+| `GrantPrefixBenefits` 62-80 | PASS | `prefix.rs::grant_prefix_benefits` `:577-628` | arm-for-arm identical to `Player.cs:13953-14047`; C# `statManaMax2 += 20` `:13973` folds into the port's derived `mana_max` (`player.rs:590`, re-granted per tick at `:2655`/`:2681`) |
+| `BestPrefixValue` + reforge top tier | PASS | `prefix.rs::best_prefix_value` `:529`, `reforge_roll` `:553` | pinned by `best_prefix_value_matches_the_visible_table` `:939`, `reforge_roll_never_lands_none_and_flags_the_top_tier` `:953` |
 | Reforge cost | PARTIAL | `shop.rs::reforge_cost` `:1272-1277` | `value × stack × PriceAdjustment / 3` matches the inline block `Main.cs:41584-41601`; the Discount-Card ×0.8 arm (`Main.cs:41588-41590`) is not modelled (no discount accessory) |
 | `GetItemExpectedPrice` | PARTIAL | `shop.rs::buy_price` `:1257`, `::sell_price` `:1282` | the non-`buyOnce` arms (×adjustment / ÷adjustment) match `Player.cs:35387-35388` incl. banker's rounding; but the port reads the **kind default** `ITEMS[i].value` while the C# reads the instance's `GetStoreValue()` (`Item.cs:49901-49908`, prefix `value²`), and the `buyOnce` + `discountAvailable` arms (`:35369-35383`, `:35390-35396`) are absent |
 | Rarity name colour | PARTIAL | `ui\tooltip.rs::item_name_color` `:107-129` | −11, −1, 1..10 and ≥11 are byte-identical to `Main.cs:20568-20619` (verified in this pass); the `diff == 1`/`diff == 2` master/journey overrides (`:20620-20627`) and the dynamic −12/−13 arms (`:20564-20567`) are not modelled |
@@ -181,16 +181,16 @@ Grep of `#[test]` over the module's files (line = the test's `fn` line):
   `test_DW_2_3_the_corrected_staff_rows_answer_the_item_cs_values` `:457`,
   `test_DW_2_3_a_prefixed_staff_rides_the_corrected_base` `:506`,
   `test_DW_2_3_the_placeholder_band_neighbours_stay_untouched` `:519`.
-- `prefix.rs` (13): `tables_are_sorted_and_prefix_lists_verbatim` `:605`,
-  `category_resolution_order` `:635`, `natural_roll_is_quarter_no_prefix` `:658`,
-  `non_prefixable_kinds_consume_no_draws` `:692`, `stat_switch_spot_checks` `:704`,
-  `invisible_changes_are_rejected_and_rolled_again` `:725`,
-  `rejection_retry_never_lands_the_invisible_prefix` `:734`,
-  `value_and_rare_shift` `:750`, `accessory_prefixes_bump_value_only` `:772`,
-  `grant_prefix_benefits_sums` `:785`,
-  `best_prefix_value_matches_the_visible_table` `:809`,
-  `reforge_roll_never_lands_none_and_flags_the_top_tier` `:823`,
-  `exact_and_special_modes` `:842`.
+- `prefix.rs` (15): `tables_are_sorted_and_prefix_lists_verbatim` `:739`,
+  `category_resolution_order` `:769`, `natural_roll_is_quarter_no_prefix` `:792`,
+  `non_prefixable_kinds_consume_no_draws` `:826`, `stat_switch_spot_checks` `:838`,
+  `invisible_changes_are_rejected_and_rolled_again` `:859`,
+  `rejection_retry_never_lands_the_invisible_prefix` `:868`,
+  `value_and_rare_shift` `:880`, `accessory_prefixes_bump_value_only` `:902`,
+  `grant_prefix_benefits_sums` `:915`,
+  `best_prefix_value_matches_the_visible_table` `:939`,
+  `reforge_roll_never_lands_none_and_flags_the_top_tier` `:953`,
+  `exact_and_special_modes` `:972`, `natural_roll_matches_the_csharp_stream` `:648`, `natural_roll_distribution_matches_the_csharp_over_many_seeds` `:688`.
 - `item.rs` (5): `pickup_prefers_stacks_then_empty_slots` `:364`,
   `registry_maps_items_to_tiles_walls_and_coins` `:406`,
   `drops_fall_and_rest_on_the_ground` `:426`, `drops_bounce_off_walls` `:440`,
@@ -242,11 +242,17 @@ vanilla tooltip) and for the *price* math (no money-format or discount-card test
    `ResetStats` assigns before any id-specific `maxStack`. Generated rows carry the
    correct per-id values, so only ids outside `0..6195` (modded/unregistered) or the
    air id are wrong. `registry.rs:321` acknowledges the 9999 baseline in a comment.
-3. **Prefix RNG is a stand-in** (determinism, medium, NOT admitted in this file's
-   sources). `prefix.rs::next_u64`/`next` `:434-453` is a splitmix stream shared with
-   `rain.rs`, not `UnifiedRandom`; `roll_prefix` consumes draws in the C# order, but
-   the concrete stream differs, so a vanilla-replay of prefix rolls cannot match. Only
-   matters for exact-parity/replay work.
+3. **Prefix RNG** (determinism, resolved by S1-A-5). Runtime prefix rolls now draw
+   from `prefix_rng: UnifiedRandom` (`app/mod.rs:638`, seeded from the world seed at
+   `:2896`), so the concrete stream is the C# `Main.rand` algorithm and the engine's
+   `Next(4)`/`Next(len)`/`Next(3)` order is pinned by a `dotnet` oracle over the
+   decompiled `UnifiedRandom` (`prefix.rs::natural_roll_matches_the_csharp_stream`
+   `:648`, histogram `:688`). What remains a deviation: (a) the stream is a
+   per-consumer field seeded from `world_seed`, not a replay of the C#'s *shared*
+   `Main.rand` (other consumers are still splitmix fields — S1-A-2); (b) the
+   worldgen chest prefix rolls still take the splitmix `chest_rng` seam
+   (`prefix.rs::roll_prefix_splitmix` `:568`) until S1-A-4 restores the vanilla
+   `genRand` interleave. Both are recorded in `ANALYSIS.md` ("Prefix rolls (S1-A-5)").
 4. **`GetStoreValue` is bypassed by the price helpers** (behavioural, medium, partially
    admitted). `shop.rs::buy_price` `:1257` / `::sell_price` `:1282` read
    `ITEMS[i].value` (kind default). The C# prices the *instance*:
@@ -321,6 +327,8 @@ pickup double-add above is the concrete reason it cannot be marked done.
   `itemdata.rs` and a machine-read of `Item.cs` (the existing tests are spot samples).
   This closes the "dispatcher epilogue" PARTIAL above and would also surface the
   `width`/`height`/`fishingPole` generator gaps.
-- **S — Decide the prefix RNG contract**: either document the splitmix stand-in in
-  `ANALYSIS.md` as an accepted deviation, or add a `UnifiedRandom`-compatible stream
-  for prefix rolls if exact replays become a requirement.
+- **S — Decide the prefix RNG contract: DONE (S1-A-5, 2026-11-12).** The prefix engine
+  takes a `PrefixRandom` draw (`UnifiedRandom::next_max` at runtime, the splitmix
+  adapter only for the `chest_gen` seam) and the runtime roll sites use the new
+  `App::prefix_rng`. The wider loot/shop/particle streams keep their splitmix fields
+  under S1-A-2 (named per-consumer streams) — see `ANALYSIS.md`.

@@ -1973,6 +1973,7 @@ pub(crate) mod front_flow_tests {
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             item_rng: 0,
+            prefix_rng: tr_core::UnifiedRandom::new(0),
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
             swing_style: 0,
@@ -2738,6 +2739,20 @@ pub(crate) mod front_flow_tests {
         } else {
             assert_eq!(app.reforge_cooldown, 0);
         }
+    }
+
+    #[test]
+    fn the_reforge_roll_consumes_the_prefix_stream() {
+        // `Prefix(-2)` (`Main.cs:41924`) draws from `Main.rand` — the port's
+        // `prefix_rng` (`S1-A-5`), never the npc stream.
+        let mut app = reforge_app();
+        let npc_rng = app.npc_rng;
+        let mut expect = tr_core::UnifiedRandom::new(0); // `flow_app`'s seed
+        let (expected, _) = crate::prefix::reforge_roll(app.reforge_slot.kind, &mut expect);
+        app.reforge_click();
+        assert_eq!(app.reforge_slot.prefix, expected);
+        assert_eq!(app.npc_rng, npc_rng, "the npc stream must not advance");
+        assert_eq!(app.prefix_rng.peek(), expect.peek());
     }
 
     #[test]
