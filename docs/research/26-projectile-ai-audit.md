@@ -165,9 +165,9 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
   need `proj_data` rows + arms).
 - **M** — Port `AI_001`'s remaining per-type arms (142 `type ==` checks) or split the
   style-1 arm into a per-kind table so the ~137 unported variants are explicit.
-- **M** — Port the 21 gap-list styles, grouped by family: the sentry/turret group
-  (120/123/130/134/137/138), the pillar group (88/108/133), and the small ones
-  (2/23/26/66/67/70/79/80/157/158/187/189).
+- **M** — Port the remaining gap-list styles, grouped by family: the sentry/turret group
+  (120/123/130/134/137/138), the pillar marker (133), and the small ones
+  (2/23/26/66/67/70/79/80/157/158/187/189). S1-D-4c wired 88/108.
 - **L** — Port `AI_099_1_Counterweights` (67380) + the counterweight rows 556-561/1079.
 - **L** — Port the remaining ~150 vanilla aiStyles (the 1.4 boss/event families 130-210
   and the pre-1.3 groups 30-99) as a batch, one family per ROADMAP row.
