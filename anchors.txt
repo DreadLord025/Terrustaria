@@ -69,6 +69,8 @@ crates/tr-core/src/lighting/blur.rs|with_modifier_u64(i as u64).next_range(98, 1
 crates/tr-app/src/app/rng.rs|struct NamedRngs|S1-A-2 — Main.SwapRandom named-stream registry (Main.cs:3204-3215): all 17 keys, per-world UnifiedRandom(worldSeed) reset, UpdateTime wired
 crates/tr-app/src/npc.rs|can_hit_line(world, cx, cy, 0.0, 0.0|S1-D-7 — the NPC AI line-of-sight sites use Collision.CanHit/CanHitLine/SolidCollision (the npc_ai.rs::line_clear stand-in is gone)
 crates/tr-app/src/app/clicks.rs|fn pick_item_movement_action|S1-H-6 — the ItemSlot.PickItemMovementAction gate table (ItemSlot.cs:1484-1634)
+crates/tr-app/src/app/mod.rs|fn active_player_difficulty|S1-H-12 — the world sort's active-player Journey key (UIWorldSelect.cs:179, Main.ActivePlayerFileData)
+crates/tr-app/src/ui/ingame_options.rs|the_left_column_matches_the_c_sharp_num7_without_the_invite_row|S1-H-14 — the 8-row left column matches the C# num7 without the flag5 invite row (IngameOptions.cs:178-179)
 crates/tr-app/src/achievements.rs|fn notify_with|S1-E-18 - achievement notify wrappers/save wiring (Value-setter semantics, completion persistence hook)
 crates/tr-app/src/npc.rs|182 => NpcKind::PirateDeckhand|S1-F-1 - the NPC protocol id bijection: the pirate/probe/drone band off the 78..84 Deerclops/Skeletron-Prime ids, 85..88 decodable, #[deny(unreachable_patterns)] on both tables
 crates/tr-app/src/app/frame.rs|self.phase("projectiles");|S1-B-1 — the world branch follows Main.DoUpdateInWorld_Inner (Main.cs:17745-17822): projectiles before items, UpdateTime after dust, WorldGen wiring/TE/liquid/growth after time; pinned by app::frame::tests::the_world_branch_runs_in_the_csharp_update_order
@@ -77,3 +79,5 @@ crates/tr-app/src/projectile.rs|pub fn drain_ritual_bolts|S1-D-4c - vortex ritua
 crates/tr-app/src/craft.rs|fn the_station_reach_region_matches_the_csharp_xna_rect|S1-L-11b refuted - the AdjTiles region is LX..=HX because XNA Rectangle.Right == X + Width (TileReachCheckSettings.cs:45-60, Player.cs:35671-35674)
 crates/tr-core/src/lighting/blur.rs|fn non_visible_padding_is_fixed_18_s1_g_10|S1-G-10 - NON_VISIBLE_PADDING is fixed 18 (LightMap.cs:99-108) not min(w,h)/3
 crates/tr-core/src/worldgen/world_hash.rs|the_fnv_constants_are_frozen_by_a_fixed_input|S1-K-5 — the FNV fold constants frozen against a fixed-input golden vector (independent derivation; mutation-checked)
+crates/tr-app/src/world_sim/weather.rs|fn the_world_tick_writes_any_player_120_life_into_wind|S1-L-2 - update_world_tick writes Wind.any_player_120_life (Main.cs:58863-58871) for the 0.35 cap
+crates/tr-app/src/rain.rs|Rain.MakeRain` (`Rain.cs:30-89`, S1-L-2)|S1-L-2 - MakeRain/NewRain spawn gates (ZoneRain/shimmer/atmo/snow/cloudAlpha budget)
