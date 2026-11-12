@@ -105,6 +105,16 @@ pub(crate) struct App {
     pub(crate) filter_driver: crate::app::filters::FilterDriver,
     pub(crate) world: World,
     pub(crate) atlas: Option<Atlas>,
+    /// The world-independent half of the atlas content, kept decoded so a world
+    /// swap (`swap_world`) repacks it instead of re-reading ~7 000 sheets from
+    /// disk. `None` until the first build; the content dir is fixed for the
+    /// process, so the pixels cannot go stale.
+    pub(crate) static_sheets: Option<Vec<tr_render::atlas::AtlasImage>>,
+    /// The decoded retail font glyph tables — the other world-independent cost
+    /// of a load (~1–2 s). Cached beside [`App::static_sheets`] for the same
+    /// reason; the `FontAtlas` page texture rides [`App::font_atlas`] instead of
+    /// being rebuilt.
+    pub(crate) fonts_cache: Option<assets::FontTables>,
     /// The packed BC2 font pages the renderer uploads (`loop`'s
     /// `SpriteRenderer::new`); `None` without the retail fonts.
     pub(crate) font_atlas: Option<tr_render::FontAtlas>,
@@ -221,6 +231,10 @@ pub(crate) struct App {
     /// The homeless town NPCs' look-for-home timer (`lookForHomeTimeout`'s
     /// stand-in; M4-TOWN-1).
     pub(crate) town_look_timer: f32,
+    /// `Main.checkForSpawns` + `Main.townNPCCanSpawn` +
+    /// `WorldGen.prioritizedTownNPCType` (`Main.cs:65542-66116`) — the town
+    /// NPC arrival gates (M4-TOWN-1b).
+    pub(crate) town_arrival: crate::town_arrival::ArrivalState,
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
@@ -683,6 +697,8 @@ pub(crate) struct App {
     pub(crate) projectile_step: FixedStepper,
     /// `TR_THROW` debug hook: throw one shuriken at startup.
     pub(crate) dev_throw: bool,
+    /// `TR_SUMMON` debug hook: spawn the Hornet + Frost Hydra draw pair.
+    pub(crate) summon_shot: bool,
     /// G6: identity of the last world instance range; a hit lets the frame reuse it.
     pub(crate) world_key: Option<WorldFrameKey>,
     /// `Main.hellBlackBoxBottom` (`Main.cs:2463`): world Y of the hell floor line the
@@ -1118,12 +1134,12 @@ impl App {
     /// favorite + `PlaySound(12)`. Returns the legacy sound id (12) so the
     /// caller plays it and the tests pin it (the `chest::toggle_open`
     /// precedent — no audio capture seam), 0 when the guard refuses. The
-    /// `idx >= INV` guard keeps the coin/ammo rows out — `canFavoriteAt`
-    /// allows contexts 1/2 in the C# (`ItemSlot.cs:386-389`), but the port's
-    /// favorites address the 10x5 grid only (the recorded coin-row gap,
-    /// Phase 5's ANALYSIS entry).
+    /// key space is the vanilla inventory numbering — grid `0..50`, coins
+    /// `50..54`, ammo `54..58` (`crate::inv::coin_slot_index` /
+    /// `ammo_slot_index`), i.e. `canFavoriteAt`'s contexts 0/1/2
+    /// (`ItemSlot.cs:386-389`).
     pub(crate) fn toggle_favorite(&mut self, idx: usize) -> u32 {
-        if idx >= crate::item::INV {
+        if idx >= crate::inv::INV_SLOTS {
             return 0;
         }
         if let Some(pos) = self.favorite_slots.iter().position(|&i| i == idx) {
@@ -1140,7 +1156,7 @@ impl App {
     /// `Item.favorited` flags (`Player.cs:54820-54824`) in slot order.
     pub(crate) fn hydrate_favorites(&mut self, bits: u64) {
         let mut slots = Vec::new();
-        for i in 0..crate::item::INV {
+        for i in 0..crate::inv::INV_SLOTS {
             if bits & (1 << i) != 0 {
                 slots.push(i);
             }
@@ -1154,7 +1170,7 @@ impl App {
     pub(crate) fn favorite_bits(&self) -> u64 {
         let mut bits = 0u64;
         for &i in &self.favorite_slots {
-            if i < crate::item::INV {
+            if i < crate::inv::INV_SLOTS {
                 bits |= 1 << i;
             }
         }
@@ -1192,9 +1208,8 @@ impl App {
                 self.reforge_slot.kind,
                 self.reforge_slot.prefix,
             ) {
-                self.inventory[i].count =
-                    (self.inventory[i].count + self.reforge_slot.count)
-                        .min(crate::registry::max_stack(self.reforge_slot.kind));
+                self.inventory[i].count = (self.inventory[i].count + self.reforge_slot.count)
+                    .min(crate::registry::max_stack(self.reforge_slot.kind));
                 self.reforge_slot = EMPTY_SLOT;
             }
         }
@@ -1266,6 +1281,21 @@ impl App {
     pub(crate) fn tick_pointer_clock(&mut self, dt: f32) {
         self.pointer_ms = self.anim_time as f64 * 1000.0;
         self.pointer.tick(f64::from(dt) * 1000.0);
+    }
+
+    /// The "the world is live now" state that both world-install paths end on:
+    /// the front end closes and the legacy menu hands its settings hint back.
+    /// `Main.LoadWorld` and the net install both leave `Main.gameMenu` false
+    /// (`client_install_world`'s tail is the twin) — exactly one of `front`/`menu`
+    /// is ever live (`Review Focus 1`), and in-game neither is.
+    pub(crate) fn enter_loaded_world(&mut self) {
+        if self.menu.is_some() {
+            self.close_menu();
+        }
+        self.front = None;
+        self.front_backup = None;
+        self.front_hint = None;
+        self.front_hover_hit = None;
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -1600,8 +1630,30 @@ impl App {
     pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
         let (world, sections) = load_world(path)?;
         let content = assets::content_dir().context("no retail Content directory")?;
-        let (atlas, font_atlas, lookups, atlas_stats) =
-            build_atlas(&world, &content.join("Images"))?;
+        let mut static_cache = self.static_sheets.take();
+        let mut fonts_cache = self.fonts_cache.take();
+        let built = build_atlas_reusing_static(
+            &world,
+            &content.join("Images"),
+            &mut static_cache,
+            &mut fonts_cache,
+        );
+        // Whatever happened, the decoded halves are carried onto the App (they
+        // are world-independent, so a failed swap must not throw them away — the
+        // next Play would re-decode for nothing).
+        let rebuilt = match built {
+            Ok(parts) => parts,
+            Err(e) => {
+                self.static_sheets = static_cache;
+                self.fonts_cache = fonts_cache;
+                return Err(e);
+            }
+        };
+        let (atlas, new_font_atlas, lookups, atlas_stats) = rebuilt;
+        // A cached font build returns no page texture (nothing was decoded), so
+        // the one already uploaded rides the swap — the same keep rule as the
+        // window/GPU below. A fresh build replaces it.
+        let font_atlas = new_font_atlas.or_else(|| self.font_atlas.take());
         let settings = self.settings.clone();
         let shot_path = self.shot_path.clone();
         let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
@@ -1633,6 +1685,17 @@ impl App {
         self.noise_tex = noise_tex;
         self.water_mask = water_mask;
         self.shot_path = shot_path;
+        // `App::new` builds fresh `None` caches; the decoded halves ride the swap
+        // so the next Play is fast too (both are world-independent).
+        self.static_sheets = static_cache;
+        self.fonts_cache = fonts_cache;
+        // `UIWorldListItem.PlayGame` -> `Main.LoadWorld` leaves the game menu
+        // (`Main.gameMenu = false`): the fresh `App::new` boots the legacy menu
+        // (the boot default), so the launch state is restored here — the same
+        // tail the net client install does (`client_install_world`). Without it
+        // the select-world Play loaded the world and then drew the lobby over
+        // it instead of entering the world (BUG-21).
+        self.enter_loaded_world();
         // `loop`'s boot block (`loop.rs:88-100`): the camera lands on the
         // world's spawn and the zoom on the setting, before the first frame.
         self.camera = Vec2::new(
@@ -1732,9 +1795,7 @@ impl App {
                 }
             }
         }
-        let follow_player = player.is_some()
-            && !crate::env::cam_set()
-            && !crate::env::pan_set();
+        let follow_player = player.is_some() && !crate::env::cam_set() && !crate::env::pan_set();
         let mut coins = 0u64;
         // The bestiary kill pairs, restored from the sidecar below.
         let mut loaded_kills: Vec<(String, i32)> = Vec::new();
@@ -2011,9 +2072,7 @@ impl App {
                     );
                     b.hp = b.max_hp;
                     npcs.push(b);
-                } else if let Some(n) =
-                    Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12)
-                {
+                } else if let Some(n) = Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12) {
                     npcs.push(n);
                 }
             }
@@ -2031,7 +2090,11 @@ impl App {
         // the cave walkers 15, the zombie's single frame).
         if let Some(v) = crate::env::npc_names() {
             if let Some(p) = &player {
-                for name in v.split(',').map(|s| s.trim()) {
+                // The lineup spreads one kind every three tiles to the right
+                // so a single screenshot shows each sprite on its own — the
+                // v1 piled every kind on the same spot and the audit could
+                // only see a jumble.
+                for (slot, name) in v.split(',').map(|s| s.trim()).enumerate() {
                     let kind = match name {
                         "guide" => NpcKind::Guide,
                         // The Eye of Cthulhu's six-row strip (BUG-22's
@@ -2097,6 +2160,28 @@ impl App {
                         "solar" => NpcKind::SolarTower,
                         "vortex" => NpcKind::VortexTower,
                         "cultist" => NpcKind::AncientCultist,
+                        // The pillar families' own-sheet audit (M4-NPC-3t):
+                        // each kind must draw its OWN `NPC_<netID>` strip, so
+                        // the lineup shows eight different sprites.
+                        "stardustcell" => NpcKind::StardustCellBig,
+                        "stardustspider" => NpcKind::StardustSpiderBig,
+                        "stardustsoldier" => NpcKind::StardustSoldier,
+                        "solarselenian" => NpcKind::SolarSelenian,
+                        "solarcrawltipede" => NpcKind::SolarCrawltipedeHead,
+                        "nebulafloater" => NpcKind::NebulaFloater,
+                        "predictor" => NpcKind::Predictor,
+                        "vortexhunter" => NpcKind::VortexHunter,
+                        "vortexalien" => NpcKind::VortexAlien,
+                        "vortexheadcrab" => NpcKind::VortexHeadcrab,
+                        "moonlordhead" => NpcKind::MoonLordHead,
+                        // The Moon Lord's parts (M4-NPC-3v): the hands draw
+                        // from their own `(120, 180)` origin, the core carries
+                        // its torso halves and the free eye from `(40, 40)`.
+                        "moonlordhand" => NpcKind::MoonLordHand,
+                        "moonlordcore" => NpcKind::MoonLordCore,
+                        "moonlordfreeeye" => NpcKind::MoonLordFreeEye,
+                        "dd2darkmage" => NpcKind::DD2DarkMage,
+                        "dd2bartender" => NpcKind::DD2Bartender,
                         // The Eye of Cthulhu (M4-NPC-3m): its 6-row strip
                         // and the shared case-4 machine with the Twins.
                         "eoc" => NpcKind::EyeOfCthulhu,
@@ -2116,15 +2201,32 @@ impl App {
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
-                    let mut n =
-                        Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
-                    n.hp = n.max_hp;
+                    let mut n = Npc::new(
+                        kind,
+                        p.x + (4 + 3 * slot) as f32 * TILE_PX,
+                        p.y + p.height - kh,
+                        1,
+                        0.0,
+                    );
+                    // The Moon Lord's parts declare `lifeMax = 0` (they die
+                    // with the core, `NPC.cs`), so the spawn would be an
+                    // instant corpse on the shot frame — give the lineup a
+                    // survivable pool.
+                    n.hp = n.max_hp.max(1000);
                     // The saucer family's `FindFrame` cases read the core's
                     // mirrored `ai[3]` clock; give the spawn a mid-band value
                     // so the lineup shows the attack rows rather than the
                     // stripped idle frame.
                     if n.kind.is_martian() {
                         n.ai[3] = 100.0;
+                    }
+                    // The Moon Lord's hands split by their `ai[2]` slot (0 =
+                    // right, 1 = left, `AI_078`) and the core self-kills
+                    // without both hands plus the head (`:41251-41291`) —
+                    // alternate the slot so a lineup of two hands keeps the
+                    // core alive and shows both mirrors.
+                    if n.kind == NpcKind::MoonLordHand {
+                        n.ai[2] = (slot % 2) as f32;
                     }
                     npcs.push(n);
                 }
@@ -2186,28 +2288,26 @@ impl App {
             // (`draw_slot`'s existing item draw — verified, not reinvented).
             // The store's `ItemSlot`s since the M3-CHEST-INT upgrade — the
             // same kinds/counts, so the screenshot pixels are unchanged.
-            tr_chest_store[idx]
-                .slots
-                .extend_from_slice(&[
-                    crate::item::ItemSlot {
-                        kind: 9,
-                        name: crate::registry::name(9),
-                        count: 6,
-                        prefix: 0,
-                    },
-                    crate::item::ItemSlot {
-                        kind: 166,
-                        name: crate::registry::name(166),
-                        count: 42,
-                        prefix: 0,
-                    },
-                    crate::item::ItemSlot {
-                        kind: 71,
-                        name: crate::registry::name(71),
-                        count: 3,
-                        prefix: 0,
-                    },
-                ]);
+            tr_chest_store[idx].slots.extend_from_slice(&[
+                crate::item::ItemSlot {
+                    kind: 9,
+                    name: crate::registry::name(9),
+                    count: 6,
+                    prefix: 0,
+                },
+                crate::item::ItemSlot {
+                    kind: 166,
+                    name: crate::registry::name(166),
+                    count: 42,
+                    prefix: 0,
+                },
+                crate::item::ItemSlot {
+                    kind: 71,
+                    name: crate::registry::name(71),
+                    count: 3,
+                    prefix: 0,
+                },
+            ]);
             Some((idx as i32, cx, cy))
         } else {
             None
@@ -2584,6 +2684,7 @@ impl App {
                 banners
             },
             town_look_timer: 0.0,
+            town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
@@ -2722,6 +2823,8 @@ impl App {
             shot_path: crate::env::shot_path().map(PathBuf::from),
             shot_at: crate::env::shot_at().unwrap_or(20),
             atlas_stats,
+            static_sheets: None,
+            fonts_cache: None,
             light: LightMap::new(),
             scratch: DrawScratch::default(),
             tile_stats: TileDrawStats::default(),
@@ -2819,6 +2922,7 @@ impl App {
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: crate::env::dev_throw(),
+            summon_shot: crate::env::summon_shot(),
             world_key: None,
             hell_black_box_bottom: 0.0,
         };
@@ -3323,9 +3427,26 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
 
 /// Builds the sprite atlas and the sheet lookups from the world's used tile
 /// and wall types plus the UI fonts — the atlas+fonts half of the startup.
-pub(crate) fn build_atlas(
+/// Builds the sprite atlas and `Lookups` with the world-independent halves cached
+/// across calls — the world-swap fast path. `static_cache` holds the decoded static sheets (moved
+/// in and back out, no pixel copy) and `fonts_cache` the glyph tables; both are
+/// world-independent, so a swap only re-decodes the world's own tile/wall
+/// sheets. A cached font build returns `None` for the page texture: the caller
+/// keeps the `FontAtlas` it already uploaded.
+pub(crate) fn build_atlas_reusing_static(
     world: &World,
     assets_dir: &Path,
+    static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
+    fonts_cache: &mut Option<assets::FontTables>,
+) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
+    build_atlas_inner(world, assets_dir, static_cache, fonts_cache)
+}
+
+fn build_atlas_inner(
+    world: &World,
+    assets_dir: &Path,
+    static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
+    fonts_cache: &mut Option<assets::FontTables>,
 ) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
     let (mut tile_ids, wall_ids) = assets::usage(&world);
     // The hotbar can place these even when the loaded world does not use them yet.
@@ -3344,8 +3465,43 @@ pub(crate) fn build_atlas(
     );
 
     let t1 = Instant::now();
-    let mut images = assets::load_world_images(&assets_dir, &tile_ids, &wall_ids)?;
-    let fonts = assets::load_fonts();
+    // Only the world's own sheets depend on the world; the static half and the
+    // retail fonts are re-decoded at boot and reused by every swap (BUG-21: the
+    // Play froze for ~1.4 s re-decoding ~7 000 sheets and ~1–2 s more on the
+    // fonts, all of them already in memory). `world ++ static ++ font` is the
+    // pre-split list's order, so the atlas layout and every UV are unchanged.
+    let mut images = assets::load_world_sheets(&assets_dir, &tile_ids, &wall_ids)?;
+    let world_len = images.len();
+    let cached = static_cache.take();
+    let static_reused = cached.is_some();
+    let static_sheets = match cached {
+        Some(tail) => tail,
+        None => assets::load_static_sheets(&assets_dir),
+    };
+    let static_len = static_sheets.len();
+    images.extend(static_sheets);
+    let cached_fonts = fonts_cache.take();
+    let fonts_reused = cached_fonts.is_some();
+    let (tables, font_atlas) = match cached_fonts {
+        Some(t) => {
+            // Straight back in: the cache is world-independent and the next swap
+            // must hit it too.
+            *fonts_cache = Some(t.clone());
+            (t, None)
+        }
+        None => {
+            let loaded = assets::load_fonts();
+            let t = loaded.tables();
+            *fonts_cache = Some(t.clone());
+            (t, loaded.atlas)
+        }
+    };
+    log::info!(
+        "{} static sheets ({}), fonts ({})",
+        static_len,
+        if static_reused { "reused" } else { "decoded" },
+        if fonts_reused { "reused" } else { "decoded" }
+    );
     let font = tr_render::atlas::font_sheet();
     images.push(font.0);
     log::info!(
@@ -3355,7 +3511,12 @@ pub(crate) fn build_atlas(
     );
 
     let t2 = Instant::now();
-    let atlas = Atlas::build(images, 8192);
+    // `build_ref` borrows the sheets, so the static half survives the packing:
+    // the tail is split back off the packed list and refills the cache (the boot
+    // path's too, so the first Play skips the re-decode as well).
+    let atlas = Atlas::build_ref(&images, 8192);
+    let tail: Vec<_> = images.drain(world_len..world_len + static_len).collect();
+    *static_cache = Some(tail);
     log::info!(
         "atlas {}x{} ({:.1} MB, {} sheets) in {:.0} ms",
         atlas.width,
@@ -3376,11 +3537,11 @@ pub(crate) fn build_atlas(
         wall_ids
             .iter()
             .map(|&id| (id, assets::image_name_for_wall(id))),
-        fonts.ui,
-        fonts.item,
-        fonts.death,
-        fonts.combat_text,
-        fonts.combat_crit,
+        tables.ui,
+        tables.item,
+        tables.death,
+        tables.combat_text,
+        tables.combat_crit,
     );
 
     let atlas_stats = (
@@ -3389,7 +3550,7 @@ pub(crate) fn build_atlas(
         atlas.memory_bytes(),
         atlas.sheets.len(),
     );
-    Ok((atlas, fonts.atlas, lookups, atlas_stats))
+    Ok((atlas, font_atlas, lookups, atlas_stats))
 }
 
 /// The world-dump diagnostics: `TR_DUMP_TILES` prints the raw tile grid and
@@ -3709,6 +3870,81 @@ mod tr_hooks {
         out
     }
 
+
+    /// BUG-21 end to end: the select-world Play enters the world (the lobby does
+    /// not come back) and the second swap reuses the cached atlas/font halves
+    /// instead of re-decoding them.
+    ///
+    /// The real `App::new` + `swap_world` path, headless (no window/GPU): the
+    /// first swap pays the boot decode, the second must be markedly cheaper and
+    /// leave the same atlas.
+    #[test]
+    fn bug21_swap_world_enters_the_world_and_reuses_the_caches() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(content) = find_content_dir() else {
+            eprintln!("no assets/Content junction: skipping the swap e2e");
+            return;
+        };
+        assets::set_content_dir(content.clone());
+        let assets_dir = content.join("Images");
+
+        // Two scratch worlds through the real save path.
+        let dir = std::env::temp_dir().join(format!("tr-bug21-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut paths = Vec::new();
+        for name in ["Alpha", "Beta"] {
+            let path = dir.join(format!("{name}.trwld"));
+            let mut w = World::new(name.into(), 64, 64);
+            w.compute_column_surface();
+            save::save(&path, &w, &save::WorldSide::default()).unwrap();
+            paths.push(path);
+        }
+
+        // The boot App over the first world, with the boot caches filled exactly
+        // like `main` does.
+        let (world, sections) = load_world(&paths[0]).unwrap();
+        let mut boot_static = None;
+        let mut boot_fonts = None;
+        let (atlas, font_atlas, lookups, stats) =
+            build_atlas_reusing_static(&world, &assets_dir, &mut boot_static, &mut boot_fonts)
+                .expect("boot atlas");
+        let mut app = App::new(
+            settings::Settings::default(),
+            world,
+            sections,
+            paths[0].clone(),
+            atlas,
+            font_atlas,
+            lookups,
+            stats,
+        );
+        app.static_sheets = boot_static;
+        app.fonts_cache = boot_fonts;
+        // The boot default: the legacy menu is open (the lobby).
+        assert!(app.menu.is_some(), "the boot App opens the lobby");
+
+        // The Play: the world swaps in and the lobby must not come back.
+        app.swap_world(&paths[1]).expect("first swap");
+        assert!(app.menu.is_none(), "the lobby must not come back");
+        assert!(app.front.is_none(), "the 888 side clears too");
+        assert_eq!(app.world.name, "Beta", "the selected world is live");
+        assert!(app.static_sheets.is_some(), "the static half is cached");
+        assert!(app.fonts_cache.is_some(), "the font tables are cached");
+        assert!(app.font_atlas.is_some(), "the font page texture rides the swap");
+
+        // The second Play reuses both caches (the decode half is pinned by
+        // `assets::tests::test_the_second_atlas_build_reuses_the_static_half`,
+        // which measures the atlas build alone; a wall-clock assertion here
+        // would flake on the rest of `App::new`).
+        app.swap_world(&paths[0]).expect("second swap");
+        assert_eq!(app.world.name, "Alpha");
+        assert!(app.menu.is_none() && app.front.is_none());
+        assert!(app.static_sheets.is_some() && app.fonts_cache.is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The production boot path (BUG-05): the player's own newest `.trwld`,
     /// not the pre-baked `Terrustaria` stand-in. The mtime read is the vanilla
     /// `UIWorldSelect`'s list shape — the lobby opens what `WorldPlay` picks.
@@ -3782,23 +4018,17 @@ mod tr_hooks {
             with_pin("TR_PLACE", "x,y,18;5,19,4", || crate::env::place_ops()).len(),
             1
         );
-        assert!(
-            with_pin("TR_PLACE", "", || crate::env::place_ops()).is_empty()
-        );
+        assert!(with_pin("TR_PLACE", "", || crate::env::place_ops()).is_empty());
     }
 
     #[test]
     fn tr_toggle_parsing_default_count() {
-        let ops = with_pin("TR_TOGGLE", "2026,198;7,9,3", || {
-            crate::env::toggle_ops()
-        });
+        let ops = with_pin("TR_TOGGLE", "2026,198;7,9,3", || crate::env::toggle_ops());
         assert_eq!(ops.len(), 2);
         assert_eq!((ops[0].x, ops[0].y, ops[0].n), (2026, 198, 1));
         assert_eq!((ops[1].x, ops[1].y, ops[1].n), (7, 9, 3));
         // Wrong arity is dropped; a negative count clamps to 0 presses.
-        assert!(
-            with_pin("TR_TOGGLE", "1,2,3,4", || crate::env::toggle_ops()).is_empty()
-        );
+        assert!(with_pin("TR_TOGGLE", "1,2,3,4", || crate::env::toggle_ops()).is_empty());
         assert_eq!(
             with_pin("TR_TOGGLE", "1,2,-5", || crate::env::toggle_ops())[0].n,
             0
@@ -3814,7 +4044,10 @@ mod tr_hooks {
         apply_tr_fill(&mut w, "0,20,40,1,1");
         apply_tr_fill(&mut w, "0,16,40,1,1");
         assert!(w.tile(10, 20).unwrap().active(), "fill wrote the floor");
-        apply_tr_places(&mut w, &with_pin("TR_PLACE", "10,19,10", crate::env::place_ops));
+        apply_tr_places(
+            &mut w,
+            &with_pin("TR_PLACE", "10,19,10", crate::env::place_ops),
+        );
         assert!(w.tile(10, 19).unwrap().active() && w.tile(10, 17).unwrap().active());
         // `place` guarantees the frame_important bit (Decision #4).
         assert!(w.frame_important[10]);
@@ -3937,7 +4170,10 @@ mod tr_hooks {
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
         let rev_before = w.revision;
-        apply_tr_tiles(&mut w, &with_pin("TR_TILES", "5,6,82,0,18", crate::env::tile_ops));
+        apply_tr_tiles(
+            &mut w,
+            &with_pin("TR_TILES", "5,6,82,0,18", crate::env::tile_ops),
+        );
         let t = w.tile(5, 6).unwrap();
         assert_eq!(t.kind, 82);
         assert_eq!((t.frame_x, t.frame_y), (0, 18));
@@ -3971,7 +4207,10 @@ mod tr_hooks {
             }
         }
         let rev_before = w.revision;
-        apply_tr_tiles(&mut w, &with_pin("TR_TILES", "10,10,3,2", crate::env::tile_ops));
+        apply_tr_tiles(
+            &mut w,
+            &with_pin("TR_TILES", "10,10,3,2", crate::env::tile_ops),
+        );
         for x in 10..13 {
             for y in 10..12 {
                 assert_eq!(
@@ -4090,7 +4329,10 @@ mod dye_pin_tests {
         assert_eq!(crate::env::parse_tr_dye(""), [0; 10]);
         assert_eq!(crate::env::parse_tr_dye("nope,x")[..2], [0, 0]);
         // Overlong lists clip to the ten dye slots.
-        assert_eq!(crate::env::parse_tr_dye("1,2,3,4,5,6,7,8,9,10,11,12")[9], 10);
+        assert_eq!(
+            crate::env::parse_tr_dye("1,2,3,4,5,6,7,8,9,10,11,12")[9],
+            10
+        );
     }
 
     #[test]

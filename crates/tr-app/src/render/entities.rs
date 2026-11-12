@@ -3,7 +3,7 @@
 //! head icon and the UI-space character preview.
 use super::BgTex;
 use super::player_layers::{
-    CompositeArmState, LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell,
+    CompositeArmState, LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell, hair_uv,
     swing_stand_in,
 };
 use super::sky::sky_tex;
@@ -32,6 +32,10 @@ pub(crate) struct PlayerAssets {
     /// `Player_0_5`: the under-skin torso layer drawn behind the back arm
     /// (`TextureAssets.Players[skinVar, 5]`, `PlayerDrawLayers.cs:1345`).
     pub(crate) undershirt: Option<BgTex>,
+    /// `Player_0_8`: the under-shirt sleeve on both arm stacks
+    /// (`TextureAssets.Players[skinVar, 8]`, `PlayerDrawLayers.cs:1357` and
+    /// `:3698`, tinted `colorUnderShirt`).
+    pub(crate) under_arm: Option<BgTex>,
     /// `Player_0_13`: the shirt sleeve over the back arm
     /// (`TextureAssets.Players[skinVar, 13]`, `PlayerDrawLayers.cs:1362`).
     pub(crate) arm_shirt: Option<BgTex>,
@@ -63,6 +67,7 @@ impl Default for PlayerAssets {
             shirt: None,
             arm: None,
             undershirt: None,
+            under_arm: None,
             arm_shirt: None,
             legs: None,
             pants: None,
@@ -96,11 +101,15 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         head: sky_tex(atlas, "Player_0_0", None),
         eye_whites: sky_tex(atlas, "Player_0_1", None),
         eyes: sky_tex(atlas, "Player_0_2", None),
-        // Torso and shirt sheets are 9 columns wide; keep only the first column.
-        torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 40, 224))),
-        shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 40, 224))),
+        // Torso and shirt sheets are 9 columns wide (`Player_0_3`/`_0_6` are
+        // 360x224 = 9x4 cells); keep the two columns `torso_cell` can reach,
+        // cell (0,0) plus the row-5 override's column 1 (`PlayerDrawSet.cs:
+        // 1940,1975`). The old 40-px crop clamped the override back to 0.
+        torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 80, 224))),
+        shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 80, 224))),
         arm: sky_tex(atlas, "Player_0_7", None),
         undershirt: sky_tex(atlas, "Player_0_5", None),
+        under_arm: sky_tex(atlas, "Player_0_8", None),
         arm_shirt: sky_tex(atlas, "Player_0_13", None),
         legs: sky_tex(atlas, "Player_0_10", None),
         pants: sky_tex(atlas, "Player_0_11", None),
@@ -270,16 +279,10 @@ pub(crate) struct NpcAssets {
     /// `NPC_420` — the NebulaFloater (6 rows of 40x40), `NPC_421` — the
     /// BrainSuckler (6 rows of 44x44), `NPC_424` — the Predictor (12
     /// rows of 22x56).
-    /// `NPC_409` — the StardustSpiderBig (4 rows), `NPC_410` — the
-    /// StardustSpiderSmall (11 rows), `NPC_411` — the StardustSoldier
-    /// (5 rows), `NPC_415` — the SolarDrakomire (1 row), `NPC_416` —
-    /// the rider (10 rows), `NPC_417` — the SolarSroller (10 rows),
-    /// `NPC_418` — the SolarCorite (15 rows), `NPC_419` — the
-    /// SolarSelenian (8 rows).
-    pub(crate) tower_mobs: Option<BgTex>,
-    pub(crate) nebula_trio: Option<BgTex>,
-    pub(crate) vortex_trio: Option<BgTex>,
-    pub(crate) moon_lord_parts: Option<BgTex>,
+    /// The pillar/Moon-Lord families' per-kind sheets, keyed by the vanilla
+    /// net id: `TextureAssets.Npc[type]` is one sheet PER KIND, and the v1
+    /// shared one sheet across a whole family (see [`Self::npc_sheet`]).
+    pub(crate) npc_sheets: std::collections::HashMap<u16, BgTex>,
     /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
     /// the Scutlix carrier (6 frames of 60x40).
     pub(crate) scutlix_rider: Option<BgTex>,
@@ -354,13 +357,24 @@ pub(crate) struct NpcAssets {
     /// `Images/Glow_132/143/149/162` — the per-pillar glow masks
     /// (`Main.cs:24159-24275`'s dedicated tower arm draws four ghost
     /// copies of each at the velocity-rotated offsets).
+    /// `TextureAssets.Extra[13]` — the Moon Lord core's two torso halves
+    /// (drawn at the core's Centre from origins `(w, 278)` and `(0, 278)`,
+    /// `Main.cs:24754-24755`).
+    pub(crate) ml_torso: Option<BgTex>,
+    /// `TextureAssets.Extra[16]` — the core's inner plate (origin `(112, 101)`,
+    /// `Main.cs:24756`).
+    pub(crate) ml_core_plate: Option<BgTex>,
+    /// `TextureAssets.Extra[17]` — the hand's base plate drawn at the hand's
+    /// Centre from the origin `(26, 42)` mirrored per side
+    /// (`Main.cs:24797-24816`).
+    pub(crate) ml_hand_base: Option<BgTex>,
+    /// `TextureAssets.Extra[19]` — the Moon Lord's eye sprite the hand and the
+    /// free eye both draw (`Main.cs:24823`, `:24960`).
+    pub(crate) ml_eye: Option<BgTex>,
     pub(crate) glow_stardust: Option<BgTex>,
     pub(crate) glow_nebula: Option<BgTex>,
     pub(crate) glow_vortex: Option<BgTex>,
     pub(crate) glow_solar: Option<BgTex>,
-    /// `NPC_406/407/423/425/429` — the pillar shards.
-    pub(crate) shards: Option<BgTex>,
-    pub(crate) shard_hovers: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -400,6 +414,14 @@ pub(crate) struct NpcAssets {
     pub(crate) hungry: Option<BgTex>,
     /// `NPC_117.xnb`/`NPC_118.xnb` — the Leech segments (1 frame).
     pub(crate) leech: Option<BgTex>,
+}
+
+impl NpcAssets {
+    /// `TextureAssets.Npc[type]` for the pillar/Moon-Lord families — the
+    /// sheet a kind draws from, by its vanilla net id.
+    pub(crate) fn npc_sheet(&self, id: u16) -> Option<&BgTex> {
+        self.npc_sheets.get(&id)
+    }
 }
 
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
@@ -457,10 +479,12 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         prime_saw: sky_tex(atlas, "NPC_129", None),
         prime_vice: sky_tex(atlas, "NPC_130", None),
         prime_laser: sky_tex(atlas, "NPC_131", None),
-        tower_mobs: sky_tex(atlas, "NPC_409", None),
-        nebula_trio: sky_tex(atlas, "NPC_420", None),
-        vortex_trio: sky_tex(atlas, "NPC_426", None),
-        moon_lord_parts: sky_tex(atlas, "NPC_396", None),
+        npc_sheets: PILLAR_SHEETS
+            .iter()
+            .filter_map(|&id| {
+                sky_tex(atlas, &format!("NPC_{id}"), None).map(|t| (id as u16, t))
+            })
+            .collect(),
         prime_eyes: sky_tex(atlas, "Bone_Eyes", None),
         bone_laser: sky_tex(atlas, "Bone_Laser", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
@@ -516,12 +540,14 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         tower_nebula: sky_tex(atlas, "NPC_507", None),
         tower_solar: sky_tex(atlas, "NPC_517", None),
         tower_vortex: sky_tex(atlas, "NPC_422", None),
+        ml_torso: sky_tex(atlas, "Extra_13", None),
+        ml_core_plate: sky_tex(atlas, "Extra_16", None),
+        ml_hand_base: sky_tex(atlas, "Extra_17", None),
+        ml_eye: sky_tex(atlas, "Extra_19", None),
         glow_stardust: sky_tex(atlas, "Glow_132", None),
         glow_nebula: sky_tex(atlas, "Glow_143", None),
         glow_vortex: sky_tex(atlas, "Glow_149", None),
         glow_solar: sky_tex(atlas, "Glow_162", None),
-        shards: sky_tex(atlas, "NPC_406", None),
-        shard_hovers: sky_tex(atlas, "NPC_425", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_27", None),
@@ -603,7 +629,7 @@ fn humanoid_draw<'a>(
         tex,
         fh,
         [fw, fh],
-        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
     )
 }
 
@@ -619,13 +645,13 @@ fn martian_draw<'a>(
     w: f32,
     h: f32,
 ) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
-    let fh = tex.map_or(40.0, |t| t.h / count as f32);
+    let fh = tex.map_or(40.0, |t| vanilla_row_h(t, count));
     let fw = tex.map_or(18.0, |t| t.w);
     (
         tex,
         fh,
         [fw, fh],
-        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
     )
 }
 
@@ -676,7 +702,7 @@ fn prime_draw<'a>(
         tex,
         fh,
         [fw, fh],
-        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
     )
 }
 
@@ -915,6 +941,261 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
 /// `[n.x + w/2 - W/2, n.y + h + 4 - H/count]` — the form every port draw
 /// uses. The `halfSize`/`num45`/`num46`/`num47` overrides are applied once
 /// in [`draw_npcs`] so this stays the shared seam.
+/// `Main.npcFrameCount` (`Main.cs:67082-67131`) verbatim: the sheet's row
+/// count per NET id, i.e. the divisor `NPC.SetFrameSize` uses
+/// (`NPC.cs:90780-90800`) for the per-row frame height.
+pub(crate) const NPC_FRAME_COUNT: [u32; 697] = [
+    1, 2, 2, 3, 6, 2, 2, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 2, 25, 23, 25, 21, 15, 26, 2, 10, 1, 16, 16,
+    16, 3, 1, 15, 6, 1, 3, 2, 2, 21, 25, 1, 1, 1,
+    3, 3, 15, 3, 7, 7, 6, 5, 6, 5, 3, 3, 23, 6,
+    3, 6, 6, 2, 5, 6, 5, 7, 7, 4, 5, 8, 1, 5,
+    1, 2, 4, 16, 5, 4, 4, 15, 16, 16, 16, 2, 4, 6,
+    6, 18, 16, 1, 1, 1, 1, 1, 1, 4, 3, 1, 1, 1,
+    1, 1, 1, 5, 6, 7, 16, 1, 1, 25, 23, 12, 20, 21,
+    1, 2, 2, 3, 6, 1, 1, 1, 15, 4, 11, 1, 23, 6,
+    6, 6, 1, 2, 2, 1, 3, 4, 1, 2, 1, 4, 2, 1,
+    15, 3, 25, 4, 5, 7, 3, 2, 12, 12, 4, 4, 4, 8,
+    8, 13, 5, 6, 4, 15, 23, 3, 15, 8, 5, 4, 13, 15,
+    12, 4, 14, 14, 3, 2, 5, 3, 2, 3, 23, 5, 14, 16,
+    5, 2, 2, 12, 3, 3, 3, 3, 2, 2, 2, 2, 2, 7,
+    14, 15, 16, 8, 3, 15, 15, 16, 2, 3, 20, 25, 23, 26,
+    4, 4, 16, 16, 20, 20, 20, 2, 2, 2, 2, 8, 12, 3,
+    4, 2, 4, 25, 26, 26, 6, 3, 3, 3, 3, 3, 5, 4,
+    4, 5, 4, 6, 7, 15, 4, 7, 6, 1, 1, 2, 4, 3,
+    5, 3, 3, 3, 4, 5, 6, 4, 2, 1, 8, 4, 4, 1,
+    8, 1, 4, 15, 15, 15, 15, 15, 15, 16, 15, 15, 15, 15,
+    15, 3, 3, 3, 3, 3, 3, 16, 3, 6, 12, 21, 21, 20,
+    16, 15, 15, 5, 5, 6, 6, 5, 2, 7, 2, 6, 6, 6,
+    6, 6, 15, 15, 15, 15, 15, 11, 4, 2, 2, 3, 3, 3,
+    16, 15, 16, 10, 14, 12, 1, 10, 8, 3, 3, 2, 2, 2,
+    2, 7, 15, 15, 15, 6, 3, 10, 10, 6, 9, 8, 9, 8,
+    20, 10, 6, 23, 1, 4, 24, 2, 4, 6, 6, 13, 15, 15,
+    15, 15, 4, 4, 26, 23, 8, 2, 4, 4, 4, 4, 2, 2,
+    4, 12, 12, 9, 9, 9, 1, 9, 11, 2, 2, 9, 5, 6,
+    4, 18, 8, 11, 1, 4, 5, 8, 4, 1, 1, 1, 1, 4,
+    2, 5, 4, 11, 5, 11, 1, 1, 1, 10, 10, 15, 8, 17,
+    6, 6, 1, 12, 12, 13, 15, 9, 5, 10, 7, 7, 7, 7,
+    7, 7, 7, 4, 4, 16, 16, 25, 5, 7, 3, 13, 2, 6,
+    2, 19, 19, 19, 20, 26, 3, 1, 1, 1, 1, 1, 16, 21,
+    9, 16, 7, 6, 18, 13, 20, 12, 12, 20, 6, 14, 14, 14,
+    14, 6, 1, 3, 25, 19, 20, 22, 2, 4, 4, 4, 11, 9,
+    8, 1, 9, 1, 8, 8, 12, 12, 11, 11, 11, 11, 11, 11,
+    11, 11, 11, 1, 6, 9, 1, 1, 1, 1, 1, 1, 4, 1,
+    10, 1, 8, 4, 1, 5, 8, 8, 8, 8, 9, 9, 5, 4,
+    8, 16, 8, 2, 3, 3, 6, 6, 7, 13, 4, 4, 4, 4,
+    1, 1, 1, 8, 25, 11, 14, 14, 14, 17, 17, 17, 5, 5,
+    5, 14, 14, 14, 9, 9, 9, 9, 17, 17, 16, 16, 18, 18,
+    10, 10, 10, 10, 4, 1, 6, 9, 6, 4, 4, 4, 14, 4,
+    25, 13, 3, 7, 6, 6, 1, 4, 4, 4, 4, 4, 4, 4,
+    15, 15, 8, 8, 2, 6, 15, 15, 6, 13, 5, 5, 7, 5,
+    14, 14, 4, 6, 21, 1, 1, 1, 11, 12, 6, 6, 17, 6,
+    16, 21, 16, 23, 5, 16, 2, 28, 28, 6, 6, 6, 6, 6,
+    6, 6, 7, 7, 7, 7, 7, 7, 7, 3, 4, 6, 27, 16,
+    2, 2, 4, 3, 4, 23, 6, 1, 1, 2, 8, 8, 14, 6,
+    6, 6, 6, 6, 2, 4, 14, 14, 14, 14, 14, 14, 14, 1,
+    1, 13, 6, 13, 1, 3, 16, 3, 30, 3, 1,
+];
+
+/// `TextureAssets.Npc[]` index for a kind — the sheet the draw arms sample and
+/// so the sheet whose row count the `FindFrame` machine must respect. For most
+/// kinds this is `NpcKind::net_id`; the lunar families spell it out because
+/// their bestiary rows were keyed on the art's first member, not the drawn
+/// kind.
+pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
+    match kind {
+        NpcKind::StardustWormHead => 402,
+        NpcKind::StardustCellBig => 405,
+        NpcKind::StardustCellSmall => 406,
+        NpcKind::StardustJellyfishBig => 407,
+        NpcKind::StardustSpiderBig => 409,
+        NpcKind::StardustSpiderSmall => 410,
+        NpcKind::StardustSoldier => 411,
+        NpcKind::SolarCrawltipedeHead => 412,
+        NpcKind::SolarCrawltipedeBody => 413,
+        NpcKind::SolarCrawltipedeTail => 414,
+        NpcKind::SolarDrakomire => 415,
+        NpcKind::SolarDrakomireRider => 416,
+        NpcKind::SolarSroller => 417,
+        NpcKind::SolarCorite => 418,
+        NpcKind::SolarSelenian => 419,
+        NpcKind::NebulaFloater => 420,
+        NpcKind::BrainSuckler => 421,
+        NpcKind::NebulaBeast => 423,
+        NpcKind::Predictor => 424,
+        NpcKind::VortexRifleman => 425,
+        NpcKind::VortexHunter => 426,
+        NpcKind::VortexAlien => 427,
+        NpcKind::VortexHeadcrab => 428,
+        NpcKind::VortexSoldier => 429,
+        NpcKind::SolarSpearman => 518,
+        NpcKind::MoonLordHead => 396,
+        NpcKind::MoonLordHand => 397,
+        NpcKind::MoonLordCore => 398,
+        NpcKind::MoonLordFreeEye => 400,
+        NpcKind::MoonLordLeechBlob => 401,
+        _ => kind.net_id() as u16,
+    }
+}
+
+/// The vanilla row count for a net id, falling back to a single-frame strip.
+pub(crate) fn npc_rows(net_id: u16) -> u32 {
+    NPC_FRAME_COUNT.get(net_id as usize).copied().unwrap_or(1)
+}
+
+/// The net ids whose sheets live in [`NpcAssets::npc_sheets`]: the stardust/
+/// solar nebula/vortex pillar families and the Moon Lord's parts. Each one is
+/// its own `TextureAssets.Npc[type]` texture in the vanilla; the v1 loaded one
+/// sheet per FAMILY, so every kind but the first drew a row of a foreign sheet.
+const PILLAR_SHEETS: &[u32] = &[
+    396, 397, 398, 400, 401, // the Moon Lord's parts
+    402, 403, 404, 405, 406, 407, // the stardust pillar's mobs
+    409, 410, 411, 412, 413, 414, // the stardust spiders/soldier/worm
+    415, 416, 417, 418, 419, // the solar pillar's mobs
+    420, 421, 423, 424, 425, // the nebula pillar's mobs
+    426, 427, 428, 429, // the vortex pillar's mobs
+    518, // the solar spear-man
+];
+
+/// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
+/// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
+/// sheet whose height is not a multiple of its row count loses the leftover
+/// pixels at the bottom instead of bleeding them into the last frame.
+fn vanilla_row_h(tex: &BgTex, rows: u32) -> f32 {
+    (tex.h as i32 / rows.max(1) as i32) as f32
+}
+
+/// The Moon Lord hand's / free eye's body draw: `DrawNPCDirect` puts the frame
+/// at the NPC's CENTRE with a fixed origin (`Main.cs:24765-24845`,
+/// `:24951-25059`) instead of the frame-centre origin the generic path uses.
+/// The hand mirrors its origin on the left side (`ai[2] != 0`):
+/// `origin.X = sheet.Width - origin.X`.
+fn ml_origin_draw<'a>(
+    tex: Option<&'a BgTex>,
+    rows: u32,
+    n: &Npc,
+    _w: f32,
+    _h: f32,
+    origin: [f32; 2],
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(40.0, |t| t.h / rows as f32);
+    let fw = tex.map_or(40.0, |t| t.w);
+    let (cx, cy) = n.center();
+    let ox = if n.kind == NpcKind::MoonLordHand && n.ai[2] != 0.0 {
+        fw - origin[0]
+    } else {
+        origin[0]
+    };
+    (tex, fh, [fw, fh], [cx - ox, cy - origin[1]])
+}
+
+/// The Moon Lord's extra parts — the core's two torso halves + inner plate and
+/// the hand's base plate (`Main.cs:24754-24756`, `:24797-24816`). The C# draws
+/// each at the NPC's Centre from a fixed origin; the second torso half is
+/// mirrored (`SpriteEffects.FlipHorizontally`).
+///
+/// Parked (ANALYSIS M4-NPC-3v): the arm CHAINS the core/hand draw between
+/// themselves (`Extra[14]`/`Extra[15]`, rotated toward the other part's centre
+/// and requiring the `ai[3]` owner lookup), the eye sprite each hand carries
+/// (its position rides the unported `localAI` ellipse) and the whole
+/// `GetMoonLordColoring` tint.
+fn ml_extra_parts(
+    n: &Npc,
+    torso: Option<BgTex>,
+    plate: Option<BgTex>,
+    base: Option<BgTex>,
+) -> Vec<(BgTex, [f32; 2], [f32; 2], bool)> {
+    let (cx, cy) = n.center();
+    let mut out = Vec::new();
+    match n.kind {
+        NpcKind::MoonLordCore => {
+            if let Some(t) = torso {
+                let (w, h) = (t.w, t.h);
+                // `origin14 = (width, 278)`, `origin15 = (0, 278)` on the same
+                // sheet; the second draw is horizontally flipped.
+                out.push((t, [cx - w, cy - 278.0], [w, h], false));
+                out.push((t, [cx, cy - 278.0], [w, h], true));
+            }
+            if let Some(t) = plate {
+                out.push((t, [cx - 112.0, cy - 101.0], [t.w, t.h], false));
+            }
+        }
+        NpcKind::MoonLordHand => {
+            if let Some(t) = base {
+                let ox = if n.ai[2] != 0.0 { t.w - 26.0 } else { 26.0 };
+                out.push((t, [cx - ox, cy - 42.0], [t.w, t.h], n.sprite_dir > 0));
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// The Moon Lord head's own draw (`Main.cs:24846-24927`): `NPC_396` is a
+/// 573x804 sheet of 3x3 cells (191x268 each) drawn at `scale = 2` from the
+/// origin `(191, 130) / 2` with the cell `Frame(3, 3, frame.Y / 3,
+/// frame.Y % 3)` — the column is `frame.Y / 3` and the row `frame.Y % 3`
+/// (`Main.npcFrameCount[396]` = 1 is only the dead generic path's divisor).
+fn moon_lord_head_draw<'a>(
+    tex: Option<&'a BgTex>,
+    n: &Npc,
+    _w: f32,
+    _h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let Some(t) = tex else {
+        return (None, 268.0, [382.0, 536.0], [n.x, n.y]);
+    };
+    let (cell_w, cell_h) = (t.w / 3.0, t.h / 3.0);
+    // `origin19` is the CELL's pixel origin `(191, 130) / 2` scaled by the
+    // draw's `2f`.
+    let (cx, cy) = n.center();
+    (
+        Some(t),
+        cell_h,
+        [cell_w * 2.0, cell_h * 2.0],
+        [cx - 191.0, cy - 130.0],
+    )
+}
+
+/// The Moon Lord head's 3x3 grid cell (`Main.cs:24926`'s
+/// `value40.Frame(3, 3, frame.Y / 3, frame.Y % 3)`): the column is
+/// `frame.Y / 3`, the row `frame.Y % 3`.
+fn moon_lord_head_uv(tex: &BgTex, cell: u32) -> [f32; 4] {
+    let span = (tex.uv[2] - tex.uv[0], tex.uv[3] - tex.uv[1]);
+    let (du, dv) = (span.0 / 3.0, span.1 / 3.0);
+    let (col, row) = ((cell / 3) as f32, (cell % 3) as f32);
+    [
+        tex.uv[0] + du * col,
+        tex.uv[1] + dv * row,
+        tex.uv[0] + du * (col + 1.0),
+        tex.uv[1] + dv * (row + 1.0),
+    ]
+}
+
+/// The `NPC.scale`-driven draws (the stardust cells' ramp, `AI()`'s aiStyle-95
+/// arm `NPC.cs:39393`): the vanilla multiplies the sprite by `npc.scale` about
+/// its `origin = frame size / 2` (`Main.cs:23124`'s `scale` argument), so the
+/// quad grows symmetrically about the frame's centre.
+fn scaled_anchor<'a>(
+    tex: Option<&'a BgTex>,
+    count: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let (tex, fh, size, pos) = generic_anchor(tex, count, n, w, h);
+    let s = n.scale;
+    (
+        tex,
+        fh,
+        [size[0] * s, size[1] * s],
+        [
+            pos[0] - size[0] * (s - 1.0) * 0.5,
+            pos[1] - size[1] * (s - 1.0) * 0.5,
+        ],
+    )
+}
+
 fn generic_anchor<'a>(
     tex: Option<&'a BgTex>,
     count: u32,
@@ -928,7 +1209,7 @@ fn generic_anchor<'a>(
         tex,
         fh,
         [fw, fh],
-        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
     )
 }
 
@@ -951,7 +1232,7 @@ fn boss_draw<'a>(
         tex,
         fh,
         [fw, fh],
-        [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
     )
 }
 
@@ -1314,11 +1595,15 @@ pub(crate) fn draw_player_preview(
         frame_uv(assets.eyes.as_ref(), body),
         eye,
     );
-    part(
-        assets.hair.as_ref(),
-        frame_uv(assets.hair.as_ref(), body),
-        hair,
-    );
+    // The hair rides its own trimmed frame (`PlayerDrawSet.cs:1770-1786`:
+    // `Height -= 2`, `Y -= 336` = six body rows up) — the preview animates rows
+    // 6..19 (`ui::char_creation::animated_frame_row`), which the body row would
+    // map straight past `Player_Hair_*`'s 14 rows.
+    if let Some(tex) = assets.hair.as_ref() {
+        let uv = flip_uv(hair_uv(tex, body), false);
+        r.push_ui_sprite(pos, [40.0 * scale, 54.0 * scale], uv, hair);
+        quads += 1;
+    }
     quads
 }
 
@@ -1427,7 +1712,7 @@ pub(crate) fn draw_npcs(
     let white = r.white_uv();
     let mut quads = 0;
     for npc in npcs {
-        // The C# wraps the whole NPC draw with `position += netOffset`
+        // The C# wraps the whole NPC draw with `position += offset`
         // (`Main.cs:22335`, restored at `:22450`) — the port clones the NPC
         // and adds the accumulator to its position, which every arm derives
         // its anchor from. Zero on the host / single-player.
@@ -1481,9 +1766,11 @@ pub(crate) fn draw_npcs(
             // anchor (the frame centred on the box's centre-X, its centre
             // 4 px below the box's bottom, `Main.cs:25511-25516`); the
             // rows ride each kind's `Main.npcFrameCount` (`npc.rs`'s
-            // `humanoid_frame_count`). The Zombie's sheet is the single
-            // 30x48 NPC_9 frame (no `FindFrame` case — static).
-            NpcKind::Zombie => humanoid_draw(assets.zombie.as_ref(), 1, n, w, h),
+            // `humanoid_frame_count`). The Zombie rides the same anchor over
+            // NPC_3 — 38x144, three 48-px rows (`Main.npcFrameCount[3]` = 3,
+            // `Main.cs:67082`); dividing by 1 squeezed all three rows into
+            // one quad.
+            NpcKind::Zombie => humanoid_draw(assets.zombie.as_ref(), 3, n, w, h),
             NpcKind::Guide => humanoid_draw(assets.guide.as_ref(), 26, n, w, h),
             NpcKind::Merchant => humanoid_draw(assets.merchant.as_ref(), 25, n, w, h),
             NpcKind::Dryad => humanoid_draw(assets.dryad.as_ref(), 21, n, w, h),
@@ -1784,185 +2071,76 @@ pub(crate) fn draw_npcs(
                 };
                 tower_draw(tex, n, w, h)
             }
-            // The shards: the cell/jellyfish/beast 2-row strips + the
-            // vortex walkers' 14-frame humanoid strips.
-            NpcKind::StardustCellBig => (
-                assets.shards.as_ref(),
-                assets.shards.as_ref().map_or(44.0, |t| t.h / 4.0),
-                [44.0 * n.scale, 44.0 * n.scale],
-                [n.x, n.y],
-            ),
+            // The pillar families' own sheets (the v1 drew every one of
+            // them off ONE sheet — NPC_409 for the whole stardust/solar
+            // set, NPC_420/426 for the nebula/vortex trios, NPC_406 for the
+            // shards, NPC_425 for the beast AND the vortex soldiers — so
+            // only the sheet's first kind ever showed its real art and the
+            // rest sampled a wrong row of a foreign sheet). Each arm now
+            // reads its own `NPC_<netID>` sheet at the vanilla row count
+            // (`Main.npcFrameCount`, `Main.cs:67082`) through the generic
+            // anchor (`Main.cs:25511-25516`), and the frame's real size
+            // (`NPC.SetFrameSize`, `NPC.cs:90780-90800`) is the quad.
+            NpcKind::StardustCellBig => scaled_anchor(assets.npc_sheet(405), 4, n, w, h),
             // The cell's ramp rides `n.scale` (`AI()`'s aiStyle-95 arm,
             // `NPC.cs:39393`) — the strip's own frame height stays put.
-            NpcKind::StardustCellSmall => (
-                assets.shards.as_ref(),
-                assets.shards.as_ref().map_or(22.0, |t| t.h / 2.0),
-                [22.0 * n.scale, 22.0 * n.scale],
-                [n.x, n.y],
-            ),
-            NpcKind::StardustJellyfishBig => (
-                assets.shards.as_ref(),
-                assets.shards.as_ref().map_or(60.0, |t| t.h / 5.0),
-                [40.0, 60.0],
-                [n.x, n.y],
-            ),
-            NpcKind::NebulaBeast => (
-                assets.shard_hovers.as_ref(),
-                assets.shard_hovers.as_ref().map_or(44.0, |t| t.h / 12.0),
-                [50.0, 44.0],
-                [n.x, n.y],
-            ),
-            // The vortex trio: the hunter's 50x62 / the alien's 40x28 /
-            // the headcrab's 24x26 over the 426 sheet's 15 rows.
-            NpcKind::VortexHunter => (
-                assets.vortex_trio.as_ref(),
-                assets.vortex_trio.as_ref().map_or(62.0, |t| t.h / 15.0),
-                [50.0, 62.0],
-                [n.x, n.y],
-            ),
-            NpcKind::VortexAlien => (
-                assets.vortex_trio.as_ref(),
-                assets.vortex_trio.as_ref().map_or(28.0, |t| t.h / 15.0),
-                [40.0, 28.0],
-                [n.x, n.y],
-            ),
-            NpcKind::VortexHeadcrab => (
-                assets.vortex_trio.as_ref(),
-                assets.vortex_trio.as_ref().map_or(26.0, |t| t.h / 15.0),
-                [24.0, 26.0],
-                [n.x, n.y],
-            ),
-            // The nebula trio: the floater 40x40 / the suckler 44x44 / the
-            // predictor 22x56 over the 420 sheet's 6 rows.
-            // The stardust/solar tower mobs' strips over the 409 sheet.
-            NpcKind::StardustSpiderBig => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(42.0, |t| t.h / 4.0),
-                [34.0, 42.0],
-                [n.x, n.y],
-            ),
-            NpcKind::StardustSpiderSmall => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(22.0, |t| t.h / 11.0),
-                [22.0, 22.0],
-                [n.x, n.y],
-            ),
-            NpcKind::StardustSoldier => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(56.0, |t| t.h / 5.0),
-                [22.0, 56.0],
-                [n.x, n.y],
-            ),
-            NpcKind::SolarDrakomire => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(40.0, |t| t.h / 1.0),
-                [60.0, 40.0],
-                [n.x, n.y],
-            ),
-            NpcKind::SolarDrakomireRider => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(40.0, |t| t.h / 13.0),
-                [18.0, 40.0],
-                [n.x, n.y],
-            ),
-            NpcKind::SolarSroller => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(52.0, |t| t.h / 10.0),
-                [46.0, 52.0],
-                [n.x, n.y],
-            ),
-            NpcKind::SolarCorite => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(38.0, |t| t.h / 15.0),
-                [38.0, 38.0],
-                [n.x, n.y],
-            ),
-            // The pillar worms: the crawltipede chain's 20x20 single
-            // frames (the vanilla assembles the chain from the head's
-            // spawn) and the stardust worm head.
-            NpcKind::SolarCrawltipedeHead
-            | NpcKind::SolarCrawltipedeBody
-            | NpcKind::SolarCrawltipedeTail => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(20.0, |t| t.h / 1.0),
-                [20.0, 20.0],
-                [n.x, n.y],
-            ),
-            NpcKind::StardustWormHead => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(32.0, |t| t.h / 1.0),
-                [32.0, 32.0],
-                [n.x, n.y],
-            ),
-            NpcKind::SolarSpearman => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(56.0, |t| t.h / 10.0),
-                [22.0, 56.0],
-                [n.x, n.y],
-            ),
-            NpcKind::SolarSelenian => (
-                assets.tower_mobs.as_ref(),
-                assets.tower_mobs.as_ref().map_or(56.0, |t| t.h / 8.0),
-                [22.0, 56.0],
-                [n.x, n.y],
-            ),
-            NpcKind::NebulaFloater => (
-                assets.nebula_trio.as_ref(),
-                assets.nebula_trio.as_ref().map_or(40.0, |t| t.h / 6.0),
-                [40.0, 40.0],
-                [n.x, n.y],
-            ),
-            NpcKind::BrainSuckler => (
-                assets.nebula_trio.as_ref(),
-                assets.nebula_trio.as_ref().map_or(44.0, |t| t.h / 6.0),
-                [44.0, 44.0],
-                [n.x, n.y],
-            ),
-            NpcKind::Predictor => (
-                assets.nebula_trio.as_ref(),
-                assets.nebula_trio.as_ref().map_or(56.0, |t| t.h / 6.0),
-                [22.0, 56.0],
-                [n.x, n.y],
-            ),
-            NpcKind::VortexRifleman | NpcKind::VortexSoldier => (
-                assets.shard_hovers.as_ref(),
-                assets.shard_hovers.as_ref().map_or(56.0, |t| t.h / 13.0),
-                [30.0, 56.0],
-                [n.x, n.y],
-            ),
-            // The Moon Lord family: the per-part rows (38x56 / 46x66 /
-            // 60x60 / 30x30) over the 396 sheet's strips — the core and
-            // the leech ride their own 1-row strips.
-            NpcKind::MoonLordHead => (
-                assets.moon_lord_parts.as_ref(),
-                assets.moon_lord_parts.as_ref().map_or(56.0, |t| t.h / 8.0),
-                [38.0, 56.0],
-                [n.x, n.y],
-            ),
-            NpcKind::MoonLordHand => (
-                assets.moon_lord_parts.as_ref(),
-                assets.moon_lord_parts.as_ref().map_or(66.0, |t| t.h / 8.0),
-                [46.0, 66.0],
-                [n.x, n.y],
-            ),
-            NpcKind::MoonLordCore => (
-                assets.moon_lord_parts.as_ref(),
-                assets.moon_lord_parts.as_ref().map_or(66.0, |t| t.h / 8.0),
-                [46.0, 66.0],
-                [n.x, n.y],
-            ),
-            NpcKind::MoonLordFreeEye => (
-                assets.moon_lord_parts.as_ref(),
-                assets.moon_lord_parts.as_ref().map_or(60.0, |t| t.h / 8.0),
-                [60.0, 60.0],
-                [n.x, n.y],
-            ),
-            NpcKind::MoonLordLeechBlob => (
-                assets.moon_lord_parts.as_ref(),
-                assets.moon_lord_parts.as_ref().map_or(30.0, |t| t.h / 8.0),
-                [30.0, 30.0],
-                [n.x, n.y],
-            ),
+            NpcKind::StardustCellSmall => scaled_anchor(assets.npc_sheet(406), 2, n, w, h),
+            NpcKind::StardustJellyfishBig => generic_anchor(assets.npc_sheet(407), 5, n, w, h),
+            NpcKind::NebulaBeast => generic_anchor(assets.npc_sheet(423), 12, n, w, h),
+            // The vortex trio: the hunter 426 (15 rows), the alien 427 (9)
+            // and the headcrab 428 (5) — one sheet each.
+            NpcKind::VortexHunter => generic_anchor(assets.npc_sheet(426), 15, n, w, h),
+            NpcKind::VortexAlien => generic_anchor(assets.npc_sheet(427), 9, n, w, h),
+            NpcKind::VortexHeadcrab => generic_anchor(assets.npc_sheet(428), 5, n, w, h),
+            // The stardust/solar tower mobs: one sheet per kind
+            // (`Main.npcFrameCount`: 409 = 11, 410 = 5, 411 = 11, 415 = 10,
+            // 416 = 10, 417 = 15, 418 = 8, 419 = 17, 518 = 10).
+            NpcKind::StardustSpiderBig => generic_anchor(assets.npc_sheet(409), 11, n, w, h),
+            NpcKind::StardustSpiderSmall => generic_anchor(assets.npc_sheet(410), 5, n, w, h),
+            NpcKind::StardustSoldier => generic_anchor(assets.npc_sheet(411), 11, n, w, h),
+            NpcKind::SolarDrakomire => generic_anchor(assets.npc_sheet(415), 10, n, w, h),
+            NpcKind::SolarDrakomireRider => generic_anchor(assets.npc_sheet(416), 10, n, w, h),
+            NpcKind::SolarSroller => generic_anchor(assets.npc_sheet(417), 15, n, w, h),
+            NpcKind::SolarCorite => generic_anchor(assets.npc_sheet(418), 8, n, w, h),
+            NpcKind::SolarSelenian => generic_anchor(assets.npc_sheet(419), 17, n, w, h),
+            NpcKind::SolarSpearman => generic_anchor(assets.npc_sheet(518), 10, n, w, h),
+            // The pillar worms: the crawltipede's three 1-row segments
+            // (412/413/414, `Main.npcFrameCount` 1 each) and the stardust
+            // worm head's single frame (402).
+            NpcKind::SolarCrawltipedeHead => generic_anchor(assets.npc_sheet(412), 1, n, w, h),
+            NpcKind::SolarCrawltipedeBody => generic_anchor(assets.npc_sheet(413), 1, n, w, h),
+            NpcKind::SolarCrawltipedeTail => generic_anchor(assets.npc_sheet(414), 1, n, w, h),
+            NpcKind::StardustWormHead => generic_anchor(assets.npc_sheet(402), 1, n, w, h),
+            // The nebula trio: the floater 420 (6 rows), the brain suckler
+            // 421 (6) and the predictor 424 (12).
+            NpcKind::NebulaFloater => generic_anchor(assets.npc_sheet(420), 6, n, w, h),
+            NpcKind::BrainSuckler => generic_anchor(assets.npc_sheet(421), 6, n, w, h),
+            NpcKind::Predictor => generic_anchor(assets.npc_sheet(424), 12, n, w, h),
+            // The vortex rifleman is net 425 (13 rows) and the soldier 429
+            // (10 rows) — the v1 drew both off NPC_425 over 13 rows.
+            NpcKind::VortexRifleman => generic_anchor(assets.npc_sheet(425), 13, n, w, h),
+            NpcKind::VortexSoldier => generic_anchor(assets.npc_sheet(429), 10, n, w, h),
+            // The Moon Lord family: the head 396 has a 3x3 GRID sheet drawn
+            // by its own block (`Main.cs:24846-24927`) — park that block handed
+            // in `moon_lord_head_draw`; the hand 397 (4 rows), the core 398
+            // (5), the free eye 400 (4) and the leech 401 (1) ride the
+            // generic arm at their `Main.npcFrameCount` rows (their custom
+            // blocks' extra parts are parked, ANALYSIS M4-NPC-3t).
+            NpcKind::MoonLordHead => moon_lord_head_draw(assets.npc_sheet(396), n, w, h),
+            // The hand's own block (`Main.cs:24765-24845`): the frame is drawn
+            // at the NPC's Centre from the origin `(120, 180)` — mirrored to
+            // `(width - 120, 180)` for the LEFT hand (`ai[2] != 0`), which is
+            // 44 px lower than the frame-centre anchor the generic path used.
+            NpcKind::MoonLordHand => ml_origin_draw(assets.npc_sheet(397), 4, n, w, h, [120.0, 180.0]),
+            // The core (`Main.cs:24701-24764`) draws its body at the Centre with
+            // `origin = frame.Size() / 2` — the generic anchor already does
+            // that; its torso halves and inner plate ride the extra pass.
+            NpcKind::MoonLordCore => generic_anchor(assets.npc_sheet(398), 5, n, w, h),
+            // The free eye (`Main.cs:24951-25059`) uses the fixed origin
+            // `(40, 40)` on a 78x120 row, i.e. 20 px higher than the frame
+            // centre.
+            NpcKind::MoonLordFreeEye => ml_origin_draw(assets.npc_sheet(400), 4, n, w, h, [40.0, 40.0]),
+            NpcKind::MoonLordLeechBlob => generic_anchor(assets.npc_sheet(401), 1, n, w, h),
             // The javelin throwers: NPC_561/562/563 are 84x1064 with 14 rows
             // (`Main.npcFrameCount[561..563] = 14`) — the v1 read the
             // bombers' NPC_556 sheet and divided by 14, drawing a 52-px
@@ -2072,7 +2250,7 @@ pub(crate) fn draw_npcs(
                     t,
                     fh,
                     [186.0, fh],
-                    [n.x + w * 0.5 - 93.0, n.y + h + 4.0 - fh * 0.5],
+                    [n.x + w * 0.5 - 93.0, n.y + h * 0.5 - fh * 0.5],
                 )
             }
             NpcKind::GolemHead | NpcKind::GolemHeadFree => {
@@ -2088,7 +2266,7 @@ pub(crate) fn draw_npcs(
                     t,
                     fh,
                     [112.0, fh],
-                    [n.x + w * 0.5 - 56.0, n.y + h + 4.0 - fh * 0.5],
+                    [n.x + w * 0.5 - 56.0, n.y + h * 0.5 - fh * 0.5],
                 )
             }
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
@@ -2098,7 +2276,7 @@ pub(crate) fn draw_npcs(
                     t,
                     fh,
                     [50.0, fh],
-                    [n.x + w * 0.5 - 25.0, n.y + h + 4.0 - fh * 0.5],
+                    [n.x + w * 0.5 - 25.0, n.y + h * 0.5 - fh * 0.5],
                 )
             }
             // The Deerclops: `DrawNPCDirect_Deerclops` (`Main.cs:26334-26412`)
@@ -2218,7 +2396,7 @@ pub(crate) fn draw_npcs(
                     tex,
                     fh,
                     [fw, fh],
-                    [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+                    [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
                 )
             }
             // The worms: the single-frame segments rotated along the chain
@@ -2260,7 +2438,7 @@ pub(crate) fn draw_npcs(
                     tex,
                     fh,
                     [fw, fh],
-                    [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+                    [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
                 )
             }
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
@@ -2283,7 +2461,7 @@ pub(crate) fn draw_npcs(
                     tex,
                     fh,
                     [fw, fh],
-                    [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+                    [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
                 )
             }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
@@ -2306,7 +2484,7 @@ pub(crate) fn draw_npcs(
                     t,
                     fh,
                     [fw, fh],
-                    [n.x + w * 0.5 - fw * 0.5, n.y + h + 4.0 - fh * 0.5],
+                    [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
                 )
             }
             NpcKind::KingSlime => (
@@ -2393,6 +2571,8 @@ pub(crate) fn draw_npcs(
         let flip_dir = n.sprite_dir;
         let uv = if n.kind == NpcKind::Deerclops {
             flip_uv(deerclops_frame_uv(tex, n.frame()), flip_dir < 0)
+        } else if n.kind == NpcKind::MoonLordHead {
+            flip_uv(moon_lord_head_uv(tex, n.frame()), flip_dir > 0)
         } else {
             flip_uv(npc_frame_uv(tex, frame_h, n.frame()), flip_dir > 0)
         };
@@ -2515,6 +2695,21 @@ pub(crate) fn draw_npcs(
         // OWN frame/rotation/anchor, so the same transform draws them a
         // second time off the overlay sheets (the Mech-Queen's chain block
         // and the trail after-images stay the documented deviations).
+        // The Moon Lord parts' fixed-origin extras (`Main.cs:24754-24756`,
+        // `:24797-24816`): unrotated, light-tinted overlays at the part's
+        // Centre.
+        for (t, top_left, size, mirror) in
+            ml_extra_parts(n, assets.ml_torso, assets.ml_core_plate, assets.ml_hand_base)
+        {
+            let euv = flip_uv(t.uv, mirror);
+            r.push_sprite(
+                snap_to_screen(top_left, camera, zoom, screen),
+                size,
+                euv,
+                tint,
+            );
+            quads += 1;
+        }
         let glow = match n.kind {
             NpcKind::SkeletronPrime => assets.prime_eyes.as_ref(),
             NpcKind::PrimeLaser => assets.bone_laser.as_ref(),
@@ -2580,6 +2775,223 @@ mod anchor_tests {
         }
     }
 
+    /// The nine 🟡 M4-NPC display rows' arithmetic: every one of these
+    /// strips must divide into `Main.npcFrameCount[type]` whole rows, which
+    /// is how each arm's row count was chosen. The sizes are the real
+    /// `assets/Content/Images/NPC_*.xnb` dimensions, so a wrong divisor
+    /// shows up as a fractional row here instead of a squashed sprite in
+    /// game. (`npcFrameCount` values are `Main.cs:67082`.)
+    #[test]
+    fn the_boss_strips_divide_into_their_vanilla_rows() {
+        // (kind, sheet w, sheet h, npcFrameCount[type], the arm)
+        let cases: &[(NpcKind, f32, f32, u32)] = &[
+            (NpcKind::EyeOfCthulhu, 110.0, 996.0, 6),      // NPC_4
+            (NpcKind::Retinazer, 110.0, 1200.0, 6),        // NPC_125
+            (NpcKind::Spazmatism, 110.0, 1200.0, 6),       // NPC_126
+            (NpcKind::QueenBee, 172.0, 1824.0, 12),        // NPC_222
+            (NpcKind::SkeletronHead, 114.0, 264.0, 2),     // NPC_35
+            (NpcKind::WallOfFlesh, 142.0, 212.0, 2),       // NPC_113
+            (NpcKind::WallOfFleshEye, 130.0, 212.0, 2),    // NPC_114
+            (NpcKind::Plantera, 116.0, 1232.0, 8),         // NPC_262
+            (NpcKind::BrainOfCthulhu, 200.0, 1456.0, 8),   // NPC_266
+            (NpcKind::KingSlime, 174.0, 720.0, 6),         // NPC_50
+            (NpcKind::PrimeSaw, 38.0, 156.0, 2),           // NPC_129
+            (NpcKind::PrimeVice, 40.0, 140.0, 2),          // NPC_130
+            (NpcKind::PrimeCannon, 38.0, 76.0, 1),         // NPC_128
+            (NpcKind::PrimeLaser, 40.0, 62.0, 1),          // NPC_131
+            (NpcKind::GrayGrunt, 40.0, 432.0, 9),          // NPC_381
+            (NpcKind::Zombie, 38.0, 144.0, 3),             // NPC_3
+            (NpcKind::StardustTower, 174.0, 364.0, 1),     // NPC_493
+            (NpcKind::NebulaTower, 174.0, 364.0, 1),       // NPC_507
+            (NpcKind::SolarTower, 174.0, 364.0, 1),        // NPC_517
+        ];
+        for &(kind, w, h, rows) in cases {
+            let t = sheet(w, h);
+            let npc = bare(kind);
+            let (tex, fh, size, _) = boss_draw(Some(&t), rows, &npc, 20.0, 40.0);
+            assert!(tex.is_some());
+            assert_eq!(
+                fh,
+                h / rows as f32,
+                "{kind:?}: {h} px over {rows} rows must be a whole row"
+            );
+            assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
+            // And the strip the machine walks never leaves those rows.
+            assert!(fh.fract() == 0.0, "{kind:?}: a fractional row means a wrong divisor");
+        }
+    }
+
+    #[test]
+    fn the_family_rows_match_between_the_draw_and_the_machine() {
+        // The draw arm slices the sheet by its own row literal and `FindFrame`
+        // walks `npc_rows(texture_net_id(kind))`; a drift between the two shows
+        // as a strip that only animates its first few rows. (396 is the 3x3
+        // grid: the generic path divides by `Main.npcFrameCount[396]` = 1.)
+        let cases: &[(NpcKind, u32)] = &[
+            (NpcKind::StardustWormHead, 1),
+            (NpcKind::StardustCellBig, 4),
+            (NpcKind::StardustCellSmall, 2),
+            (NpcKind::StardustJellyfishBig, 5),
+            (NpcKind::StardustSpiderBig, 11),
+            (NpcKind::StardustSpiderSmall, 5),
+            (NpcKind::StardustSoldier, 11),
+            (NpcKind::SolarCrawltipedeHead, 1),
+            (NpcKind::SolarCrawltipedeBody, 1),
+            (NpcKind::SolarCrawltipedeTail, 1),
+            (NpcKind::SolarDrakomire, 10),
+            (NpcKind::SolarDrakomireRider, 10),
+            (NpcKind::SolarSroller, 15),
+            (NpcKind::SolarCorite, 8),
+            (NpcKind::SolarSelenian, 17),
+            (NpcKind::NebulaFloater, 6),
+            (NpcKind::BrainSuckler, 6),
+            (NpcKind::NebulaBeast, 12),
+            (NpcKind::Predictor, 12),
+            (NpcKind::VortexRifleman, 13),
+            (NpcKind::VortexHunter, 15),
+            (NpcKind::VortexAlien, 9),
+            (NpcKind::VortexHeadcrab, 5),
+            (NpcKind::VortexSoldier, 10),
+            (NpcKind::SolarSpearman, 10),
+            (NpcKind::MoonLordHead, 1),
+            (NpcKind::MoonLordHand, 4),
+            (NpcKind::MoonLordCore, 5),
+            (NpcKind::MoonLordFreeEye, 4),
+            (NpcKind::MoonLordLeechBlob, 1),
+        ];
+        for &(kind, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+        }
+    }
+
+    #[test]
+    fn the_moon_lord_parts_draw_from_their_own_origins() {
+        // The hand (`Main.cs:24765-24845`): body at the NPC's CENTRE from the
+        // origin `(120, 180)`, mirrored to `(width - 120, 180)` for the left
+        // hand (`ai[2] != 0`). `NPC_397` is 246 px wide, four rows tall.
+        let hand_tex = sheet(246.0, 1088.0);
+        let mut hand = bare(NpcKind::MoonLordHand);
+        let (cx, cy) = hand.center();
+        let (_, fh, size, pos) = ml_origin_draw(Some(&hand_tex), 4, &hand, 0.0, 0.0, [120.0, 180.0]);
+        assert_eq!(fh, 272.0, "the hand's row height");
+        assert_eq!(size, [246.0, 272.0]);
+        assert_eq!(pos, [cx - 120.0, cy - 180.0], "the origin, not the frame centre");
+        // The left hand mirrors the origin about the sheet's width.
+        hand.ai[2] = 1.0;
+        let (_, _, _, pos_l) = ml_origin_draw(Some(&hand_tex), 4, &hand, 0.0, 0.0, [120.0, 180.0]);
+        assert_eq!(pos_l, [cx - 126.0, cy - 180.0], "(246 - 120, 180)");
+
+        // The free eye (`Main.cs:24951-25059`): origin `(40, 40)` on an 78x120
+        // row — 20 px above the frame centre the generic anchor would use.
+        let eye_tex = sheet(78.0, 480.0);
+        let eye = bare(NpcKind::MoonLordFreeEye);
+        let (ecx, ecy) = eye.center();
+        let (_, efh, esize, epos) = ml_origin_draw(Some(&eye_tex), 4, &eye, 0.0, 0.0, [40.0, 40.0]);
+        assert_eq!(efh, 120.0);
+        assert_eq!(esize, [78.0, 120.0]);
+        assert_eq!(epos, [ecx - 40.0, ecy - 40.0]);
+        assert_eq!(epos[1], ecy - 40.0);
+
+        // The core's extras (`Main.cs:24754-24756`): two torso halves from
+        // `(w, 278)` and `(0, 278)` (the second flipped) plus the inner plate
+        // from `(112, 101)`.
+        let torso = sheet(300.0, 400.0);
+        let plate = sheet(200.0, 200.0);
+        let core = bare(NpcKind::MoonLordCore);
+        let (ccx, ccy) = core.center();
+        let parts = ml_extra_parts(&core, Some(torso), Some(plate), None);
+        assert_eq!(parts.len(), 3, "two torso halves plus the plate");
+        assert_eq!(parts[0].1, [ccx - 300.0, ccy - 278.0], "the right half");
+        assert!(!parts[0].3, "drawn unflipped");
+        assert_eq!(parts[1].1, [ccx, ccy - 278.0], "the left half mirrors at x = 0");
+        assert!(parts[1].3, "the second half is FlipHorizontally");
+        assert_eq!(parts[2].1, [ccx - 112.0, ccy - 101.0], "the inner plate");
+        assert!(!parts[2].3);
+
+        // The hand's base plate (`Main.cs:24797-24816`) from `(26, 42)`, the
+        // origin mirrored on the left hand and the sprite flipped with the
+        // body.
+        let base = sheet(120.0, 120.0);
+        let mut hb = bare(NpcKind::MoonLordHand);
+        let (hx, hy) = hb.center();
+        let parts = ml_extra_parts(&hb, None, None, Some(base));
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].1, [hx - 26.0, hy - 42.0]);
+        hb.ai[2] = 1.0;
+        let parts = ml_extra_parts(&hb, None, None, Some(base));
+        assert_eq!(parts[0].1, [hx - 94.0, hy - 42.0], "(120 - 26, 42)");
+    }
+
+    #[test]
+    fn the_moon_lord_head_draws_its_grid_cell() {
+        // `Main.cs:24846-24927`: `NPC_396` (573x804) is a 3x3 grid of 191x268
+        // cells drawn at `scale = 2` from the origin `(191, 130) / 2`, the cell
+        // `Frame(3, 3, frame.Y / 3, frame.Y % 3)`.
+        let t = sheet(573.0, 804.0);
+        let n = bare(NpcKind::MoonLordHead);
+        let (cx, cy) = n.center();
+        // Frame 4 = column 1, row 1 of the grid.
+        let mut n2 = n;
+        n2.frame = 4;
+        let (_, fh, size, pos) = moon_lord_head_draw(Some(&t), &n2, 140.0, 140.0);
+        assert_eq!(fh, 268.0, "the cell height, not the whole sheet");
+        assert_eq!(size, [382.0, 536.0], "191x268 at the draw's 2x scale");
+        assert_eq!(pos, [cx - 191.0, cy - 130.0], "origin (95.5, 65) at 2x");
+        let uv = moon_lord_head_uv(&t, 4);
+        assert!((uv[0] - 1.0 / 3.0).abs() < 1e-6, "column 1 starts at 1/3");
+        assert!((uv[1] - 1.0 / 3.0).abs() < 1e-6, "row 1 starts at 1/3");
+        assert!((uv[2] - 2.0 / 3.0).abs() < 1e-6);
+        assert!((uv[3] - 2.0 / 3.0).abs() < 1e-6);
+        // Cell 0 is the top-left, cell 8 the bottom-right — the C# indexes the
+        // COLUMN with `frame.Y / 3` and the ROW with `frame.Y % 3`.
+        let uv8 = moon_lord_head_uv(&t, 8);
+        assert!((uv8[0] - 2.0 / 3.0).abs() < 1e-6, "cell 8 sits in column 2");
+        assert!((uv8[1] - 2.0 / 3.0).abs() < 1e-6, "and row 2");
+    }
+
+    #[test]
+    fn the_pillar_families_each_own_their_sheet() {
+        // The v1 pointed every stardust/solar/nebula/vortex kind at one shared
+        // family sheet (`tower_mobs` = NPC_409, `moon_lord_parts` = NPC_396…),
+        // so eight different mobs drew the same strip. Every family kind must
+        // now name its own `NPC_<netID>` and take that sheet's row count.
+        // The vanilla net ids (`NPCID.cs:11481-11533`, `:11713`).
+        let cases: &[(NpcKind, u16)] = &[
+            (NpcKind::StardustWormHead, 402),
+            (NpcKind::StardustCellBig, 405),
+            (NpcKind::StardustCellSmall, 406),
+            (NpcKind::StardustJellyfishBig, 407),
+            (NpcKind::StardustSpiderBig, 409),
+            (NpcKind::StardustSpiderSmall, 410),
+            (NpcKind::StardustSoldier, 411),
+            (NpcKind::SolarCrawltipedeHead, 412),
+            (NpcKind::SolarCrawltipedeBody, 413),
+            (NpcKind::SolarCrawltipedeTail, 414),
+            (NpcKind::SolarDrakomire, 415),
+            (NpcKind::SolarDrakomireRider, 416),
+            (NpcKind::SolarSroller, 417),
+            (NpcKind::SolarCorite, 418),
+            (NpcKind::SolarSelenian, 419),
+            (NpcKind::NebulaFloater, 420),
+            (NpcKind::BrainSuckler, 421),
+            (NpcKind::NebulaBeast, 423),
+            (NpcKind::Predictor, 424),
+            (NpcKind::VortexRifleman, 425),
+            (NpcKind::VortexHunter, 426),
+            (NpcKind::VortexAlien, 427),
+            (NpcKind::VortexHeadcrab, 428),
+            (NpcKind::VortexSoldier, 429),
+            (NpcKind::SolarSpearman, 518),
+        ];
+        for &(kind, net) in cases {
+            assert!(
+                PILLAR_SHEETS.contains(&(net as u32)),
+                "{kind:?}: NPC_{net} is not loaded"
+            );
+        }
+    }
+
     #[test]
     fn the_eoc_frame_is_one_of_the_sheets_six_rows() {
         // `Main.npcFrameCount[4]` = 6 (`Main.cs:67082`) and NPC_4 measures
@@ -2594,10 +3006,11 @@ mod anchor_tests {
         assert!(tex.is_some());
         assert_eq!(fh, 166.0, "996 / 6 rows");
         assert_eq!(size, [110.0, 166.0], "the frame is wider than the 100x110 box");
-        // The generic anchor: the frame centre lands 4 px below the box's
-        // bottom.
+        // The generic anchor: the frame's centre lands on the NPC's Centre
+        // (`Main.cs:25511-25516`'s `origin = halfSize` cancels the
+        // `- frame / 2` term, leaving `Center + num46 + num47`).
         assert_eq!(pos[0], n.x + w * 0.5 - 55.0);
-        assert_eq!(pos[1], n.y + h + 4.0 - 83.0);
+        assert_eq!(pos[1], n.y + h * 0.5 - 83.0);
         // One frame's UV spans exactly 1/6 of the strip.
         let uv = npc_frame_uv(&t, fh, 2);
         assert!((uv[1] - 2.0 / 6.0).abs() < 1e-6, "row 2 starts at 1/3");
@@ -2609,7 +3022,7 @@ mod anchor_tests {
         // `Main.npcFrameCount[26/27/28]` = 16 (`Main.cs:67082`); the stale v1
         // arm divided the strip by 3 and pinned the quad to magic
         // `[n.x - 10, n.y - 5]` offsets. The humanoid arm derives the frame
-        // from the sheet and anchors it at the vanilla's `box_bottom + 4`.
+        // from the sheet and centres it on the box
         let t = sheet(38.0, 768.0);
         let n = bare(NpcKind::GoblinPeon);
         let (w, h) = n.kind.size();
@@ -2617,7 +3030,7 @@ mod anchor_tests {
         assert_eq!(fh, 48.0, "768 / 16 rows");
         assert_eq!(size, [38.0, 48.0]);
         assert_eq!(pos[0], n.x + w * 0.5 - 19.0);
-        assert_eq!(pos[1], n.y + h + 4.0 - 24.0);
+        assert_eq!(pos[1], n.y + h * 0.5 - 24.0);
         let uv = npc_frame_uv(&t, fh, 5);
         assert!((uv[1] - 5.0 / 16.0).abs() < 1e-6);
         assert!((uv[3] - 6.0 / 16.0).abs() < 1e-6);

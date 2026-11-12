@@ -53,8 +53,34 @@ fn enumerate_item_icon_ids(images_dir: &Path) -> Vec<u16> {
     ids
 }
 
-/// Loads only the sheets referenced by the world (plus a dirt fallback).
+/// The two halves of the atlas content: the world-derived sheets (the tile and
+/// wall sheets this world's usage scan asked for) and the world-independent
+/// ones (backgrounds, NPCs, items, UI, …).
+///
+/// The split exists so a world swap can re-decode only the small world half and
+/// re-pack the previous static half: the static sheets are the bulk of the
+/// decode time (a full boot decode measured ~1.4 s with the retail content) and
+/// none of them depend on the world. Concatenating `world ++ static` reproduces
+/// the pre-split list's order exactly, so the atlas layout — and every UV — is
+/// unchanged.
+pub type WorldSheets = (Vec<AtlasImage>, Vec<AtlasImage>);
+
+/// Every sheet the atlas needs for `world`, as `(world_half, static_half)` —
+/// concatenate the two in that order to get the pre-split list.
 pub fn load_world_images(
+    dir: &Path,
+    tiles: &BTreeSet<u16>,
+    walls: &BTreeSet<u16>,
+) -> Result<WorldSheets> {
+    Ok((
+        load_world_sheets(dir, tiles, walls)?,
+        load_static_sheets(dir),
+    ))
+}
+
+/// The world-dependent half of [`load_world_images`]: the tile and wall sheets
+/// the usage scan asked for, plus the dirt fallback.
+pub fn load_world_sheets(
     dir: &Path,
     tiles: &BTreeSet<u16>,
     walls: &BTreeSet<u16>,
@@ -103,6 +129,24 @@ pub fn load_world_images(
             images.push(img);
         }
     }
+
+    if !missing.is_empty() {
+        log::warn!(
+            "{} world sheets have no matching texture (first 10: {:?})",
+            missing.len(),
+            &missing[..missing.len().min(10)]
+        );
+    }
+
+    Ok(images)
+}
+
+/// The world-independent half of [`load_world_images`]: the backgrounds, the
+/// player/NPC/armor/mount/projectile sheets, every item icon and the tile-side
+/// overlays. Reused as-is across a world swap (the content dir is fixed for a
+/// process, so the decoded pixels cannot go stale).
+pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
+    let mut images = Vec::new();
 
     // Whole-image sheets used by the sky/background pass.
     for name in [
@@ -231,6 +275,13 @@ pub fn load_world_images(
         // BUG-08: the invasion progress bar's icon sheets (`TextureAssets.Extra`
         // rows, each 32x32): frost moon 8, pumpkin moon 12, Old One's Army 79,
         // martians 10, pirates 11, frost legion 7, goblins 9 (`Main.cs:47737-47780`).
+        // The Moon Lord parts' dedicated draw blocks (`Main.cs:24701-24960`):
+        // the core's torso halves (13) + inner core (16), the hand's base plate
+        // (17) and the eye sprite both the hand and the free eye share (19).
+        "Extra_13",
+        "Extra_16",
+        "Extra_17",
+        "Extra_19",
         "Extra_7",
         "Extra_8",
         "Extra_9",
@@ -402,6 +453,45 @@ pub fn load_world_images(
         "NPC_394",
         "NPC_395",
         "NPC_399",
+        // The Moon Lord's parts + the four lunar pillars' mobs (M4-NPC-3t/3u):
+        // every one of these draws from its OWN `TextureAssets.Npc[id]` sheet,
+        // and NONE of them was in this list — the `npc_sheets` map that
+        // `NpcAssets` builds from the atlas came back empty at runtime, so the
+        // whole family (and the M4-NPC-3v parts' extras) drew nothing at all.
+        "NPC_396",
+        "NPC_397",
+        "NPC_398",
+        "NPC_400",
+        "NPC_401",
+        "NPC_402",
+        "NPC_403",
+        "NPC_404",
+        "NPC_405",
+        "NPC_406",
+        "NPC_407",
+        "NPC_408",
+        "NPC_409",
+        "NPC_410",
+        "NPC_411",
+        "NPC_412",
+        "NPC_413",
+        "NPC_414",
+        "NPC_415",
+        "NPC_416",
+        "NPC_417",
+        "NPC_418",
+        "NPC_419",
+        "NPC_420",
+        "NPC_421",
+        "NPC_422",
+        "NPC_423",
+        "NPC_424",
+        "NPC_425",
+        "NPC_426",
+        "NPC_427",
+        "NPC_428",
+        "NPC_429",
+        "NPC_518",
         "NPC_520",
         "NPC_491",
         "NPC_492",
@@ -477,12 +567,63 @@ pub fn load_world_images(
         "Projectile_560",
         "Projectile_561",
         "Projectile_1079",
+        // M4-PROJ-6b Phase 6: the followup caster families' sheets the
+        // frame-sliced draw keys on (`Lookups.proj_sheets`), plus the gem
+        // bolt's 6-frame sheet the trail pass slices (`Main.projFrames[34]`,
+        // `Main.cs:8454`).
+        "Projectile_34",
+        "Projectile_114",
+        "Projectile_115",
+        "Projectile_116",
+        "Projectile_132",
+        "Projectile_156",
+        "Projectile_157",
+        "Projectile_173",
+        "Projectile_206",
+        "Projectile_293",
+        "Projectile_297",
+        "Projectile_356",
+        "Projectile_409",
+        "Projectile_617",
+        "Projectile_618",
+        "Projectile_632",
+        "Projectile_633",
+        "Projectile_634",
+        "Projectile_635",
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
         "Inventory_Back5",
         "Inventory_Back9",
         "Inventory_Back14",
+        // `ItemSlot.cs:2154`: the gold frame a *favorited* stack draws
+        // (`Main.OurFavoriteColor` is only the tooltip tint).
+        "Inventory_Back10",
+        // `Main.DrawNPCHousesInUI`'s empty housing cell (`:42080`) and the head
+        // sheets it fills them with — one per town NPC the port ships
+        // (`NPC.TypeToDefaultHeadIndex`, `NPC.cs:7510-7553`).
+        "Inventory_Back11",
+        "NPC_Head_1",
+        "NPC_Head_2",
+        "NPC_Head_3",
+        "NPC_Head_4",
+        "NPC_Head_5",
+        "NPC_Head_6",
+        "NPC_Head_7",
+        "NPC_Head_8",
+        "NPC_Head_9",
+        "NPC_Head_10",
+        "NPC_Head_11",
+        "NPC_Head_14",
+        "NPC_Head_15",
+        "NPC_Head_17",
+        "NPC_Head_20",
+        "NPC_Head_21",
+        "NPC_Head_22",
+        "NPC_Head_23",
+        "NPC_Head_24",
+        "NPC_Head_25",
+        "NPC_Head_45",
         "Heart",
         "Bubble",
         "NPC_Head_Boss_7",
@@ -854,15 +995,7 @@ pub fn load_world_images(
         }
     }
 
-    if !missing.is_empty() {
-        log::warn!(
-            "{} world sheets have no matching texture (first 10: {:?})",
-            missing.len(),
-            &missing[..missing.len().min(10)]
-        );
-    }
-
-    Ok(images)
+    images
 }
 
 /// `Content` directory bundled with the project (the retail `.xnb` files copied into
@@ -956,6 +1089,33 @@ pub struct LoadedFonts {
     /// `Fonts/Death_Text`: the menu items (`FontAssets.DeathText`).
     pub death: Option<UiFont>,
     /// `Fonts/Combat_Text`/`Combat_Crit`: damage numbers (`FontAssets.CombatText`).
+    pub combat_text: Option<UiFont>,
+    pub combat_crit: Option<UiFont>,
+}
+
+impl LoadedFonts {
+    /// The glyph tables alone, without the BC2 page array — cheap to clone
+    /// relative to a decode (the world swap re-derives `Lookups` from these on
+    /// every load, and re-decoding ~38 636 glyphs costs ~1–2 s).
+    pub fn tables(&self) -> FontTables {
+        FontTables {
+            ui: self.ui.clone(),
+            item: self.item.clone(),
+            death: self.death.clone(),
+            combat_text: self.combat_text.clone(),
+            combat_crit: self.combat_crit.clone(),
+        }
+    }
+}
+
+/// The world-independent glyph tables [`LoadedFonts`] carries, cached on the App
+/// so a world swap does not re-decode the five retail fonts (the other ~1–2 s of
+/// a load, measured with the retail content).
+#[derive(Clone, Default)]
+pub struct FontTables {
+    pub ui: Option<UiFont>,
+    pub item: Option<UiFont>,
+    pub death: Option<UiFont>,
     pub combat_text: Option<UiFont>,
     pub combat_crit: Option<UiFont>,
 }
@@ -1312,6 +1472,16 @@ pub struct Lookups {
     pub ui_back_sel: Option<tr_render::SheetRect>,
     /// `Inventory_Back9`: the hotbar row frame inside the open inventory.
     pub ui_back_hotbar: Option<tr_render::SheetRect>,
+    /// `Inventory_Back10`: the gold frame a favorited stack draws
+    /// (`ItemSlot.cs:2154`).
+    pub ui_back10: Option<tr_render::SheetRect>,
+    /// `Inventory_Back11`: the empty cell of the housing page
+    /// (`Main.cs:42080`).
+    pub ui_back11: Option<tr_render::SheetRect>,
+    /// `TextureAssets.NpcHead[head]`, indexed by the vanilla head id
+    /// (`NPCHeadID`): the town heads the housing page draws. Absent entries are
+    /// heads the port ships no NPC for.
+    pub npc_heads: Vec<Option<tr_render::SheetRect>>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
     /// `Fonts/Mouse_Text` for UI labels and item names.
@@ -1605,15 +1775,6 @@ impl Lookups {
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
-            proj_sheets: crate::projectile::spawnable_kinds()
-                .into_iter()
-                .filter_map(|k| {
-                    atlas
-                        .sheet(&format!("Projectile_{k}"))
-                        .copied()
-                        .map(|r| (k, r))
-                })
-                .collect(),
             fishing_line: atlas.sheet("FishingLine").copied(),
             // The same prefix scan as `item_icons` — an id whose texture
             // file never made the atlas simply stays absent.
@@ -1629,11 +1790,29 @@ impl Lookups {
                     }
                 })
                 .collect(),
+            // `TextureAssets.Projectile[type]` for every kind the port spawns
+            // (`ProjectileID`'s table, `spawnable_kinds`): an id whose texture
+            // file never made the atlas simply stays absent, like `item_icons`
+            // — the shuriken stand-in covers it.
+            proj_sheets: crate::projectile::spawnable_kinds()
+                .into_iter()
+                .filter_map(|k| {
+                    atlas
+                        .sheet(&format!("Projectile_{k}"))
+                        .copied()
+                        .map(|r| (k, r))
+                })
+                .collect(),
             leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
+            ui_back10: atlas.sheet("Inventory_Back10").copied(),
+            ui_back11: atlas.sheet("Inventory_Back11").copied(),
+            npc_heads: (0..crate::ui::housing::HEAD_COUNT)
+                .map(|h| atlas.sheet(&format!("NPC_Head_{h}")).copied())
+                .collect(),
             ui_font,
             item_font,
             death_font,
@@ -2538,8 +2717,9 @@ mod tests {
             let images_dir = content.join("Images");
             let tiles = BTreeSet::new();
             let walls = BTreeSet::new();
-            let images =
+            let (mut images, static_sheets) =
                 load_world_images(&images_dir, &tiles, &walls).expect("world image decode");
+            images.extend(static_sheets);
             let atlas = tr_render::Atlas::build(images, 8192);
             let lookups = Lookups::build(
                 &atlas,
@@ -2629,6 +2809,91 @@ mod tests {
         );
     }
 
+    /// The world-swap fast path splits the sheet list in two (`world ++ static`)
+    /// so the static half can be cached across swaps. The concatenation must be
+    /// the pre-split list, in order — `Atlas::build`'s shelf sort breaks size ties
+    /// by input order, so a reordering would move every UV.
+    #[test]
+    fn test_the_world_and_static_split_concatenates_to_the_full_list() {
+        let content = crate::app::find_content_dir().unwrap();
+        // `load_png` resolves names through the process-global images dir, so the
+        // test must seed it exactly like startup does.
+        set_content_dir(content.clone());
+        let images_dir = content.join("Images");
+        let tiles: BTreeSet<u16> = [1u16, 2, 30].into_iter().collect();
+        let walls: BTreeSet<u16> = [1u16, 4].into_iter().collect();
+
+        let (world_half, static_half) = load_world_images(&images_dir, &tiles, &walls).unwrap();
+        let joined: Vec<String> = world_half
+            .iter()
+            .chain(static_half.iter())
+            .map(|i| i.name.clone())
+            .collect();
+
+        // The halves are exactly the two loaders, in the same order.
+        let world_only = load_world_sheets(&images_dir, &tiles, &walls).unwrap();
+        let static_only = load_static_sheets(&images_dir);
+        assert_eq!(
+            joined,
+            world_only
+                .iter()
+                .chain(static_only.iter())
+                .map(|i| i.name.clone())
+                .collect::<Vec<_>>(),
+            "split order"
+        );
+        // The world half holds only this world's sheets (plus the Tiles_0
+        // fallback); the static half carries the content-wide ones.
+        assert!(
+            world_half.len() < static_half.len(),
+            "{} world vs {} static",
+            world_half.len(),
+            static_half.len()
+        );
+        assert!(static_half.iter().any(|i| i.name.starts_with("Item_")));
+    }
+
+    /// The world-swap fast path: the second build reuses the decoded static half
+    /// and the font tables, so only the world's own sheets are re-decoded. Pinned
+    /// here because a regression (a fresh `App::new` dropping the caches) would
+    /// bring the multi-second Play freeze back.
+    #[test]
+    fn test_the_second_atlas_build_reuses_the_static_half() {
+        let content = crate::app::find_content_dir().unwrap();
+        set_content_dir(content.clone());
+        let images_dir = content.join("Images");
+        let world = tr_core::world::World::new("bench".into(), 64, 64);
+
+        let mut cache = None;
+        let mut fonts = None;
+        let t0 = std::time::Instant::now();
+        let first =
+            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+        let first_ms = t0.elapsed().as_millis();
+        assert!(first.is_ok(), "boot build");
+        assert!(cache.is_some(), "the boot build caches the static half");
+        assert!(fonts.is_some(), "the boot build caches the font tables");
+
+        let t1 = std::time::Instant::now();
+        let second =
+            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+        let second_ms = t1.elapsed().as_millis();
+        assert!(second.is_ok(), "swap build");
+        assert!(cache.is_some(), "the swap keeps the cache for the next one");
+        assert!(fonts.is_some(), "and the font tables");
+
+        // Same atlas either way — the swap must not change what is drawn.
+        let (a, _, _, sa) = first.unwrap();
+        let (b, _, _, sb) = second.unwrap();
+        assert_eq!(sa, sb, "identical atlas stats");
+        assert_eq!(a.pixels, b.pixels, "identical atlas pixels");
+
+        assert!(
+            second_ms * 2 < first_ms.max(1),
+            "the reuse must be markedly faster: {first_ms} ms then {second_ms} ms"
+        );
+    }
+
     #[test]
     fn test_DW_4_1_item_icons_cover_enumerated_content_files() {
         let (atlas, lookups) = content_lookups();
@@ -2713,6 +2978,55 @@ mod tests {
                 .all(|r| r.width > 0 && r.height > 0),
             "every registered rect is sane"
         );
+    }
+
+    #[test]
+    fn the_favorite_slot_sheet_packs() {
+        // `ItemSlot.cs:2154`: the gold frame a favorited stack swaps in. The
+        // sheet used to be absent from the pack list, so the draw code tinted
+        // the default background instead (`slot::favorited_slot_tint`).
+        let (_, lookups) = content_lookups();
+        let rect = lookups
+            .ui_back10
+            .expect("Inventory_Back10 must reach the atlas");
+        assert_eq!((rect.width, rect.height), (52, 52), "the step-1 sheet");
+        assert!(lookups.ui_back.is_some(), "the default sheet stays too");
+    }
+
+    #[test]
+    fn the_housing_page_sheets_pack() {
+        // `Main.cs:42079-42095`: an `Inventory_Back11` cell per town NPC plus
+        // the head sheet centred in it. The guide head (1) is the sheet the
+        // page draws for the port's most common town NPC.
+        let (_, lookups) = content_lookups();
+        let cell = lookups
+            .ui_back11
+            .expect("Inventory_Back11 must reach the atlas");
+        assert_eq!((cell.width, cell.height), (52, 52), "the step-1 cell");
+        let guide = lookups.npc_heads[1].expect("NPC_Head_1 must reach the atlas");
+        // The shipped content pack's heads are 24x22 (a texture pack may swap
+        // them); anything up to 36 px draws 1:1 and the rest shrinks
+        // (`housing.rs::head_rect`).
+        assert!(guide.width > 0 && guide.height > 0, "a real head sheet");
+        assert!(guide.width < 52 && guide.height < 52, "it fits the cell");
+        assert_eq!(lookups.npc_heads.len(), crate::ui::housing::HEAD_COUNT);
+        // Every head the ported town kinds resolve to is packed: none of them
+        // may draw an empty cell (`housing::head_of` → `type_to_head_index`).
+        for kind in [
+            crate::npc::NpcKind::Guide,
+            crate::npc::NpcKind::Merchant,
+            crate::npc::NpcKind::Nurse,
+            crate::npc::NpcKind::Dryad,
+            crate::npc::NpcKind::Painter,
+            crate::npc::NpcKind::Princess,
+        ] {
+            let head = crate::ui::housing::head_of(kind).expect("a head index");
+            assert!(
+                lookups.npc_heads[head].is_some(),
+                "{kind:?} wants NPC_Head_{head}"
+            );
+        }
+        assert!(lookups.npc_heads[0].is_none(), "the query cell has no head");
     }
 
     #[test]

@@ -63,6 +63,48 @@ record of who is working on what.
    git update-ref refs/heads/main $m $(git rev-parse main)
    git push origin main
    ```
+   **Then verify the merge actually landed** — a successful push is not proof that
+   your work survives. Several agents rewrite `main` by ref update, and a later
+   merge made from a tree that predates yours silently reverts it (no merge base is
+   recorded for a `commit-tree` merge, so git cannot even show it as a conflict).
+   This has already eaten BUG-21 twice and M4-NPC-3m once. So, immediately after
+   the push:
+   ```powershell
+   git fetch origin
+   git merge-base --is-ancestor $m origin/main   # exit 0 = your merge is in
+   # and check a SYMBOL from your change, not just the commit:
+   git show origin/main:crates/tr-app/src/app/mod.rs | Select-String 'enter_loaded_world'
+   ```
+   If either check fails, your merge was overwritten: re-fetch, rebuild the merge on
+   top of the new `origin/main` (`git merge origin/main` in your worktree, then the
+   `commit-tree` above again) and push again. Re-run these two checks once more after
+   `graphify` step 7 — and re-check them if you are still around when another agent
+   pushes main.
+
+   **The tree-wide canary**: `anchors.txt` at the repo root lists one row per
+   landed feature, `path|marker|feature name`. Two checks read it:
+   * `crates/tr-core/build.rs` — **the build fails** when a marker disappears
+     (escape hatch: `TR_SKIP_ANCHORS=1`), so a lossy merge cannot ship, and
+   * `cargo test -p tr-app --test main_anchors` — the same rows with a readable
+     failure inside the test run.
+
+   The failure names the lost feature, e.g.
+   `M5-DUNGEON — the DungeonGlobalWallVariants pass: ... no longer contains "fn wall_variants"`.
+   That means *some other agent's* merge dropped it — it has happened to BUG-21
+   twice and to the whole `dungeon_features.rs` twice (`9f89c99`, `cc6298a`).
+   Do not "fix" it by deleting rows from `anchors.txt`.
+
+   Recovery, without disturbing whoever is working in the primary checkout:
+   ```powershell
+   git log --oneline --all -- <dropped-file>            # find the commit that had it
+   git worktree add ../TR-RELAND -b RELAND origin/main
+   cd ../TR-RELAND                                     # (+ the two mklink junctions)
+   git cherry-pick <original-commit>                   # or -m 1 <merge-commit>
+   cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids
+   # push through the merge procedure above, then re-run the canary
+   ```
+   Add a row to `anchors.txt` for every feature you land (one line: path,
+   marker, name).
    Conflicts (when the merge is done as `git merge origin/main` inside the branch)
    must be resolved **thoughtfully**: a conflict means two tasks touched the same
    system — re-read the C# source for that system and decide what the *port* needs,
@@ -70,6 +112,10 @@ record of who is working on what.
    wholesale; never use `git merge -X ours/theirs`. If a conflict is semantic (two
    agents changed the same behaviour differently), stop and reconcile the intent
    first — the merged result must still be 1:1 with the source.
+   **Before you land anything, read `docs/MAIN-RULES.md`** — the short version of
+   steps 1-6 above plus the four documented work-losses, the banned merge forms
+   (`commit-tree`, `read-tree`, `-s ours`, `-X ours/theirs`, force-push) and a
+   copy-paste prompt for an AI agent.
 7. **Merge graphify, then clean up.** Immediately after the merge, on main, re-run
    step 1's graphify update + merge-graphs so main's graph includes the branch's
    code — this is the step that "pulls not only the code but the graph". Then delete

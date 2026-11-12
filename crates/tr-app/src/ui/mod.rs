@@ -15,6 +15,7 @@ pub mod color;
 pub mod crafting;
 pub mod cursor;
 pub mod ingame_options;
+pub mod housing;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
@@ -650,6 +651,8 @@ pub fn draw_hud(
     equip_page: i32,
     selected: usize,
     hotbar_scales: &[f32; HOTBAR],
+    // `Main.npc[]` — the housing page's source (`Main.cs:42008-42023`).
+    npcs: &[crate::npc::Npc],
     player: Option<&Player>,
     boss: Option<(i32, i32)>,
     // `BigProgressBarSystem.ShowText` — the `ShowBossBarHealthText` key
@@ -744,6 +747,13 @@ pub fn draw_hud(
     // `Main.mouseItem.IsAir` (`Main.cs:41430`): every accessory tick draw and hit
     // is gated on the cursor holding nothing.
     let mouse_item_is_air = mouse_item.kind == 0 || mouse_item.count == 0;
+    // The housing page's cell hover (`Main.cs:42059-42065`), which the tooltip
+    // layer prints instead of an item name.
+    let mut open_housing: Option<(usize, Option<usize>)> = None;
+    // `Main.hidePVPAndTeamIcons` — the housing page's columns run into the
+    // PVP/team icons (`Main.cs:42053-42056`); the C# clears it at the top of
+    // `DrawNPCHousesInUI` and reads it in `DrawPVPIcons`, which runs after.
+    let mut hide_pvp_icons = false;
     if inventory_open {
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
         // ammo columns, the equipment/vanity/dye columns (or the misc-equip page),
@@ -757,6 +767,7 @@ pub fn draw_hud(
             equip,
             selected,
             equip_page,
+            npcs,
             mouse_pos,
             m_h,
             bank,
@@ -769,6 +780,8 @@ pub fn draw_hud(
             mouse_item_is_air,
         );
         open_hover = hit.hovered;
+        open_housing = hit.housing;
+        hide_pvp_icons = hit.hide_pvp_icons;
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
         let num20 = 174.0 + m_h;
         // `Main.DrawPageIcons(num20 - 32)` (`Main.cs:41154`).
@@ -843,7 +856,9 @@ pub fn draw_hud(
         // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
         // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them
         // glued to the top while the minimap HUD pushed the panel down.
-        chrome::draw_pvp_icons(r, lookups, screen, equip_page, m_h, pvp, mouse_pos);
+        if !hide_pvp_icons {
+            chrome::draw_pvp_icons(r, lookups, screen, equip_page, m_h, pvp, mouse_pos);
+        }
         chrome::draw_hotbar_lock(r, lookups, false);
         // `Main.DrawInventory`'s map-style icon row (`Main.cs:41055-41126`),
         // after `DrawHotbarLockIcon` (`:41046`) and before the crafting panel
@@ -965,7 +980,9 @@ pub fn draw_hud(
     } else {
         None
     };
-    let hover_item: Option<&ItemSlot> = if pvp_hover_text.is_some() {
+    let housing_hover_text: Option<String> = open_housing
+        .and_then(|(head, npc)| housing::label(head, npc, npcs));
+    let hover_item: Option<&ItemSlot> = if pvp_hover_text.is_some() || housing_hover_text.is_some() {
         None
     } else if inventory_open {
         match open_hover {
@@ -990,6 +1007,9 @@ pub fn draw_hud(
     tooltip::draw_item_tooltip(r, lookups, mouse_pos, hover_item, screen, pulse);
     if let Some(text) = pvp_hover_text {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
+    }
+    if let Some(text) = &housing_hover_text {
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last

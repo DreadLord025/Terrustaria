@@ -14,9 +14,12 @@ use tr_core::{TILE_PX, World};
 
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
+use crate::npc::Npc;
 use crate::dye;
+use crate::item::{INV, ItemSlot};
 use crate::luck::LuckState;
 use crate::minecart;
+use crate::projectile::{BABY_BIRD, PROJ_COUNT, ProjectilePool};
 use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
 use glam::Vec2;
 
@@ -230,6 +233,33 @@ pub struct FrameInputs {
     pub grapple_dy: f32,
 }
 
+/// `ApplyEquipFunctional`'s `buffImmune[...] = true` rows (`Player.cs:
+/// 15300-15570`): the Ankh Shield's eleven debuffs (1612/1613), its parts
+/// (885-893 one each, 901-904 two each), the Chill/Frozen pair on 1921 and the
+/// 156/22 rows on 3781/5354. The `ResetEffects` head clears the table every
+/// tick (`Player.Update`'s `:25563` loop, the port's `reset_buff_immune`), so
+/// these re-apply inside the equipment pass.
+pub const BUFF_IMMUNITY_ROWS: &[(u16, &[i32])] = &[
+    (885, &[30]),
+    (886, &[36]),
+    (887, &[20]),
+    (888, &[22]),
+    (889, &[32]),
+    (890, &[35]),
+    (891, &[23]),
+    (892, &[33]),
+    (893, &[31]),
+    (901, &[33, 36]),
+    (902, &[30, 20]),
+    (903, &[32, 31]),
+    (904, &[35, 23]),
+    (1612, &[33, 36, 30, 20, 32, 31, 35, 23, 22, 156]),
+    (1613, &[46, 33, 36, 30, 20, 32, 31, 35, 23, 22, 156]),
+    (1921, &[46, 47]),
+    (3781, &[156]),
+    (5354, &[22, 156]),
+];
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -245,6 +275,73 @@ pub struct Player {
     /// class multiplier — the minion prefixes 69-72 add to it through
     /// `weapon_damage_multiplier`'s Summon arm.
     pub minion_damage: f32,
+    /// The per-player summon budget (M4-PROJ-8): `Player.maxMinions = 1`
+    /// (`Player.cs:1260`) — raised by the buffs 110/150 and the summon armor
+    /// rows, reset to 1 by `ResetEffects` (`:18448`).
+    pub max_minions: i32,
+    /// `Player.numMinions` (`Player.cs:1262`) — accumulated by the pool's
+    /// minion block (`Projectile.cs:16736`, Phase 3), zeroed at `:28279` and
+    /// on death (`:17009`); the buff-216 arm reads it (`:10706`).
+    pub num_minions: i32,
+    /// `Player.slotsMinions` (`Player.cs:1264`, float) — the 0.5-slot
+    /// spiders' fractional budget, accumulated beside `numMinions`.
+    pub slots_minions: f32,
+    /// `Player.maxTurrets = 1` (`Player.cs:2848`) — the sentry budget, raised
+    /// by buff 348 and reset by `ResetEffects` (`:18449`).
+    pub max_turrets: i32,
+    /// `Player.maxTurretsOld` (`Player.cs:2850`) — the last observed
+    /// `max_turrets`; a change drives the `UpdateMaxTurrets` sweep
+    /// (`:25709-25712`, Phase 5).
+    pub max_turrets_old: i32,
+    /// `Player.MinionAttackTargetNPC = -1` (`Player.cs:3008`) — the
+    /// right-click aim target; written by the use path (Phase 6).
+    pub minion_attack_target_npc: i32,
+    /// `Player.ownedProjectileCounts[ProjectileID.Count]` (`Player.cs:2992`)
+    /// — recounted every tick from the live pool (`:25565`); the summon
+    /// buff-arms and the keep-alive checks read exactly this.
+    pub owned_projectile_counts: [i32; PROJ_COUNT],
+    /// `Player.highestStormTigerGemOriginalDamage` (`Player.cs:1304`) — the
+    /// recount's type-831 maximum (`:12194-12215`).
+    pub highest_storm_tiger_gem_original_damage: i32,
+    /// `Player.highestAbigailCounterOriginalDamage` (`Player.cs:1314`) — the
+    /// recount's type-970 maximum; AI_062's 963 scaling reads it.
+    pub highest_abigail_counter_original_damage: i32,
+    /// The 29 summon keep-alive flags `ResetEffects` clears
+    /// (`Player.cs:18620-18646`+`:18741`) and `UpdateBuffs`' arms re-affirm
+    /// (`:10483-10972`); AI_062 reads them to pin `timeLeft = 2` (Phase 4).
+    /// Fields verbatim: `Player.cs:1268-1300` (order here groups the arm
+    /// table's pairs).
+    pub pygmy: bool,
+    pub raven: bool,
+    pub slime: bool,
+    pub hornet_minion: bool,
+    pub imp_minion: bool,
+    pub spider_minion: bool,
+    pub twins_minion: bool,
+    pub pirate_minion: bool,
+    pub vampire_frog: bool,
+    pub sharknado_minion: bool,
+    pub ufo_minion: bool,
+    pub stardust_minion: bool,
+    pub bats_of_light: bool,
+    pub baby_bird: bool,
+    pub dead_cells_mushroom_boi_minion: bool,
+    pub palworld_cattiva_minion: bool,
+    pub palworld_foxsparks_minion: bool,
+    pub palworld_trusty_cattiva_minion: bool,
+    pub palworld_trusty_foxsparks_minion: bool,
+    pub clay_pot_minion: bool,
+    pub forbidden_minion: bool,
+    pub flinx_minion: bool,
+    pub abigail_minion: bool,
+    pub storm_tiger: bool,
+    pub smolstar: bool,
+    pub empress_blade: bool,
+    pub stardust_guardian: bool,
+    pub stardust_dragon: bool,
+    /// `Player.DeadlySphereMinion` (`Player.cs:1288`) — buff 161's flag, the
+    /// chain's last arm (`:10957-10972`).
+    pub deadly_sphere_minion: bool,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
@@ -279,11 +376,6 @@ pub struct Player {
     pub golfer_score: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
-    /// `Player.MinionAttackTargetNPC` (`Player.cs`'s field; set by every
-    /// aiStyle-165 whip hit, `Projectile.cs:14261`): the NPC the minions
-    /// prefer while it stands. The consumers are the minion AIs
-    /// (M4-PROJ-8); the whip pass only writes it.
-    pub minion_attack_target_npc: i16,
     /// `Player.TagEffectStack` (`Player.cs`'s field): the whip tags this
     /// player applied (`tag_effects.rs`, M4-PROJ-7).
     pub tag_effects: crate::tag_effects::TagEffectStack,
@@ -515,12 +607,52 @@ pub struct Player {
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
+    /// `Player.lavaTime` / `lavaMax` (`Player.cs:1528-1530`): the lava
+    /// immunity budget — the Lava Charm family adds 420 ticks to the cap
+    /// (`:15168-15183`), and while the player stands in lava the timer drains
+    /// one tick per frame before the 80-damage hit lands (`:27681-27722`).
+    pub lava_time: i32,
+    pub lava_max: i32,
+    /// `Player.thorns` / `cactusThorns` / `turtleThorns` (`Player.cs:2800-2802`):
+    /// the contact reflection — `thorns` is the fraction of the NPC's damage
+    /// thrown back (the Thorns potion sets 1, the Dryad's Ward adds a half, the
+    /// Turtle set pins 2 through `turtle_thorns`), and `cactus_thorns` is the
+    /// Cactus set's flat 15.
+    pub thorns: f32,
+    pub cactus_thorns: bool,
+    pub turtle_thorns: bool,
+    /// `Player.skyStoneEffects` (`Player.cs:1120`): the Celestial Stone/Shell
+    /// and the day/night Sun/Moon Stones set it, and the one block below adds
+    /// the whole stat bundle (`:12988-13003`).
+    pub sky_stone_effects: bool,
+    /// `Player.endurance` (`Player.cs:1138`): the fraction of incoming damage
+    /// the player shrugs off — `Hurt` applies `(int)((1 - endurance) * damage)`
+    /// (`:38304`) after the defense reduction. `ResetEffects` zeroes it
+    /// (`:18497`); the Worm Scarf, the Turtle/Chlorophyte/Solar sets and the
+    /// Endurance/Ice-Barrier buffs add per tick.
+    pub endurance: f32,
     pub mana: i32,
+    /// `Player.manaCost` (`Player.cs:1884`): the magic items' cost
+    /// multiplier — `ResetEffects` sets 1f (`:18334`) and the armor pieces,
+    /// the accessory rows, the casters' set bonuses and `BuffID.MagicPower`
+    /// subtract from it. `CheckMana` pays `(int)(item.mana * manaCost)`
+    /// (`:5881-5884`).
+    pub mana_cost: f32,
     pub mana_max: i32,
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
     pub hurt_cd: f32,
+    /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
+    /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
+    /// `:18789`). `Hurt` (`:38203`), `KillMe` (`:38809`) and
+    /// `Update_NPCCollision` (`:31321`) all return early while it is set, and
+    /// `Main.UpdateWorld_Players` refills the three pools
+    /// (`Main.cs:17869-17873`).
+    pub creative_god_mode: bool,
+    /// `Player.tileRangeX/Y`'s journey half (`Player.cs:18815-18828`): the
+    /// `FarPlacementRangePower` toggle that doubles the default 5/3 range.
+    pub far_placement_range: bool,
     /// Remaining breath in ticks (`Player.breath`).
     pub breath: i32,
     breath_cd: i32,
@@ -792,6 +924,255 @@ pub struct Player {
     // the offset/cooldown are written inside a successful pick (`:53569-53577`)
 }
 
+/// One summon keep-alive arm of `Player.UpdateBuffs`' chain
+/// (`Player.cs:10483-10947`): the buff id, the projectile kinds whose live
+/// presence re-affirms the buff, and the `ResetEffects` flag the arm sets
+/// (`Player.cs:18620-18646`+`:18741` clear, the arm sets true).
+struct SummonBuffArm {
+    buff: i32,
+    kinds: &'static [u16],
+    flag: fn(&mut Player) -> &mut bool,
+}
+
+fn flag_pygmy(p: &mut Player) -> &mut bool {
+    &mut p.pygmy
+}
+fn flag_raven(p: &mut Player) -> &mut bool {
+    &mut p.raven
+}
+fn flag_slime(p: &mut Player) -> &mut bool {
+    &mut p.slime
+}
+fn flag_hornet_minion(p: &mut Player) -> &mut bool {
+    &mut p.hornet_minion
+}
+fn flag_imp_minion(p: &mut Player) -> &mut bool {
+    &mut p.imp_minion
+}
+fn flag_spider_minion(p: &mut Player) -> &mut bool {
+    &mut p.spider_minion
+}
+fn flag_twins_minion(p: &mut Player) -> &mut bool {
+    &mut p.twins_minion
+}
+fn flag_pirate_minion(p: &mut Player) -> &mut bool {
+    &mut p.pirate_minion
+}
+fn flag_vampire_frog(p: &mut Player) -> &mut bool {
+    &mut p.vampire_frog
+}
+fn flag_sharknado_minion(p: &mut Player) -> &mut bool {
+    &mut p.sharknado_minion
+}
+fn flag_ufo_minion(p: &mut Player) -> &mut bool {
+    &mut p.ufo_minion
+}
+fn flag_stardust_minion(p: &mut Player) -> &mut bool {
+    &mut p.stardust_minion
+}
+fn flag_bats_of_light(p: &mut Player) -> &mut bool {
+    &mut p.bats_of_light
+}
+fn flag_baby_bird(p: &mut Player) -> &mut bool {
+    &mut p.baby_bird
+}
+fn flag_dead_cells_mushroom_boi_minion(p: &mut Player) -> &mut bool {
+    &mut p.dead_cells_mushroom_boi_minion
+}
+fn flag_palworld_cattiva_minion(p: &mut Player) -> &mut bool {
+    &mut p.palworld_cattiva_minion
+}
+fn flag_palworld_foxsparks_minion(p: &mut Player) -> &mut bool {
+    &mut p.palworld_foxsparks_minion
+}
+fn flag_palworld_trusty_cattiva_minion(p: &mut Player) -> &mut bool {
+    &mut p.palworld_trusty_cattiva_minion
+}
+fn flag_palworld_trusty_foxsparks_minion(p: &mut Player) -> &mut bool {
+    &mut p.palworld_trusty_foxsparks_minion
+}
+fn flag_clay_pot_minion(p: &mut Player) -> &mut bool {
+    &mut p.clay_pot_minion
+}
+fn flag_forbidden_minion(p: &mut Player) -> &mut bool {
+    &mut p.forbidden_minion
+}
+fn flag_flinx_minion(p: &mut Player) -> &mut bool {
+    &mut p.flinx_minion
+}
+fn flag_abigail_minion(p: &mut Player) -> &mut bool {
+    &mut p.abigail_minion
+}
+fn flag_storm_tiger(p: &mut Player) -> &mut bool {
+    &mut p.storm_tiger
+}
+fn flag_smolstar(p: &mut Player) -> &mut bool {
+    &mut p.smolstar
+}
+fn flag_empress_blade(p: &mut Player) -> &mut bool {
+    &mut p.empress_blade
+}
+fn flag_stardust_guardian(p: &mut Player) -> &mut bool {
+    &mut p.stardust_guardian
+}
+fn flag_stardust_dragon(p: &mut Player) -> &mut bool {
+    &mut p.stardust_dragon
+}
+fn flag_deadly_sphere_minion(p: &mut Player) -> &mut bool {
+    &mut p.deadly_sphere_minion
+}
+
+/// The summon keep-alive arms in the C# chain's verbatim order
+/// (`Player.cs:10483-10972`). Buff 216 carries its own respawn arm and buffs
+/// 335/263 their status updaters — the driver special-cases those ids.
+const SUMMON_BUFF_ARMS: [SummonBuffArm; 29] = [
+    SummonBuffArm {
+        buff: 49,
+        kinds: &[191, 192, 193, 194],
+        flag: flag_pygmy,
+    }, // :10483
+    SummonBuffArm {
+        buff: 83,
+        kinds: &[317],
+        flag: flag_raven,
+    }, // :10505
+    SummonBuffArm {
+        buff: 64,
+        kinds: &[266],
+        flag: flag_slime,
+    }, // :10521
+    SummonBuffArm {
+        buff: 125,
+        kinds: &[373],
+        flag: flag_hornet_minion,
+    }, // :10537
+    SummonBuffArm {
+        buff: 126,
+        kinds: &[375],
+        flag: flag_imp_minion,
+    }, // :10553
+    SummonBuffArm {
+        buff: 133,
+        kinds: &[390, 391, 392],
+        flag: flag_spider_minion,
+    }, // :10569
+    SummonBuffArm {
+        buff: 134,
+        kinds: &[387, 388],
+        flag: flag_twins_minion,
+    }, // :10585
+    SummonBuffArm {
+        buff: 135,
+        kinds: &[393, 394, 395],
+        flag: flag_pirate_minion,
+    }, // :10601
+    SummonBuffArm {
+        buff: 214,
+        kinds: &[758],
+        flag: flag_vampire_frog,
+    }, // :10617
+    SummonBuffArm {
+        buff: 139,
+        kinds: &[407],
+        flag: flag_sharknado_minion,
+    }, // :10633
+    SummonBuffArm {
+        buff: 140,
+        kinds: &[423],
+        flag: flag_ufo_minion,
+    }, // :10649
+    SummonBuffArm {
+        buff: 182,
+        kinds: &[613],
+        flag: flag_stardust_minion,
+    }, // :10665
+    SummonBuffArm {
+        buff: 213,
+        kinds: &[755],
+        flag: flag_bats_of_light,
+    }, // :10681
+    SummonBuffArm {
+        buff: 216,
+        kinds: &[759],
+        flag: flag_baby_bird,
+    }, // :10697 (+respawn)
+    SummonBuffArm {
+        buff: 355,
+        kinds: &[1022],
+        flag: flag_dead_cells_mushroom_boi_minion,
+    }, // :10729
+    SummonBuffArm {
+        buff: 385,
+        kinds: &[1093],
+        flag: flag_palworld_cattiva_minion,
+    }, // :10745
+    SummonBuffArm {
+        buff: 393,
+        kinds: &[1118],
+        flag: flag_clay_pot_minion,
+    }, // :10761
+    SummonBuffArm {
+        buff: 394,
+        kinds: &[1119],
+        flag: flag_forbidden_minion,
+    }, // :10777
+    SummonBuffArm {
+        buff: 386,
+        kinds: &[1094],
+        flag: flag_palworld_foxsparks_minion,
+    }, // :10793
+    SummonBuffArm {
+        buff: 389,
+        kinds: &[1112],
+        flag: flag_palworld_trusty_cattiva_minion,
+    }, // :10809
+    SummonBuffArm {
+        buff: 390,
+        kinds: &[1113],
+        flag: flag_palworld_trusty_foxsparks_minion,
+    }, // :10825
+    SummonBuffArm {
+        buff: 325,
+        kinds: &[951],
+        flag: flag_flinx_minion,
+    }, // :10841
+    SummonBuffArm {
+        buff: 335,
+        kinds: &[970],
+        flag: flag_abigail_minion,
+    }, // :10857 (+status)
+    SummonBuffArm {
+        buff: 263,
+        kinds: &[831],
+        flag: flag_storm_tiger,
+    }, // :10877 (+status)
+    SummonBuffArm {
+        buff: 271,
+        kinds: &[864],
+        flag: flag_smolstar,
+    }, // :10897
+    SummonBuffArm {
+        buff: 322,
+        kinds: &[946],
+        flag: flag_empress_blade,
+    }, // :10912
+    SummonBuffArm {
+        buff: 187,
+        kinds: &[623],
+        flag: flag_stardust_guardian,
+    }, // :10928
+    SummonBuffArm {
+        buff: 188,
+        kinds: &[625],
+        flag: flag_stardust_dragon,
+    }, // :10944
+    SummonBuffArm {
+        buff: 161,
+        kinds: &[533],
+        flag: flag_deadly_sphere_minion,
+    }, // :10957
+];
+
 impl Player {
     /// `Player.EverySomeYoyoHits` (`Player.cs:4308-4316`): the counter's
     /// modulo against `amount` (C#'s truncated remainder, so the -1 start
@@ -861,6 +1242,43 @@ impl Player {
             ranged_damage: 1.0,
             magic_damage: 1.0,
             minion_damage: 1.0,
+            max_minions: 1,
+            num_minions: 0,
+            slots_minions: 0.0,
+            max_turrets: 1,
+            max_turrets_old: 1,
+            owned_projectile_counts: [0; PROJ_COUNT],
+            highest_storm_tiger_gem_original_damage: 0,
+            highest_abigail_counter_original_damage: 0,
+            pygmy: false,
+            raven: false,
+            slime: false,
+            hornet_minion: false,
+            imp_minion: false,
+            spider_minion: false,
+            twins_minion: false,
+            pirate_minion: false,
+            vampire_frog: false,
+            sharknado_minion: false,
+            ufo_minion: false,
+            stardust_minion: false,
+            bats_of_light: false,
+            baby_bird: false,
+            dead_cells_mushroom_boi_minion: false,
+            palworld_cattiva_minion: false,
+            palworld_foxsparks_minion: false,
+            palworld_trusty_cattiva_minion: false,
+            palworld_trusty_foxsparks_minion: false,
+            clay_pot_minion: false,
+            forbidden_minion: false,
+            flinx_minion: false,
+            abigail_minion: false,
+            storm_tiger: false,
+            smolstar: false,
+            empress_blade: false,
+            stardust_guardian: false,
+            stardust_dragon: false,
+            deadly_sphere_minion: false,
             x: sx,
             y: sy,
             prev_x: sx,
@@ -935,12 +1353,22 @@ impl Player {
             spawn_y: sy,
             hp: 100,
             max_hp: 100,
+            lava_time: 0,
+            lava_max: 0,
+            thorns: 0.0,
+            cactus_thorns: false,
+            turtle_thorns: false,
+            sky_stone_effects: false,
+            endurance: 0.0,
             mana: 20,
+            mana_cost: 1.0,
             mana_max: 20,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             breath: BREATH_MAX,
             breath_cd: 0,
+            creative_god_mode: false,
+            far_placement_range: false,
             regen: RegenState::default(),
             dot_death: None,
             luck_state: LuckState::default(),
@@ -1495,6 +1923,11 @@ impl Player {
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
     /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
     pub fn start_death(&mut self, world: &World, boss_near: bool, expert: bool) {
+        // `Player.KillMe`'s head (`Player.cs:38809-38812`): the godmode power
+        // (and an already-dead player) refuses the death entirely.
+        if self.creative_god_mode || self.dead {
+            return;
+        }
         // `Player.KillMe`'s counter arm (`Player.cs:38840-38844`): the PVP
         // flag splits the two counters; the port has no PVP, so every
         // death is PVE.
@@ -1586,6 +2019,11 @@ impl Player {
     pub fn update_dead(&mut self, jump: bool, boss_near: bool, danger_near: bool) -> bool {
         self.dead_time += 1;
         self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+        // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
+        // budget zeroes while dead — the pool stays until AI_062's dead-owner
+        // flag read (M4-PROJ-8 phase 4) despawns the minions.
+        self.num_minions = 0;
+        self.slots_minions = 0.0;
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near);
@@ -1604,6 +2042,233 @@ impl Player {
         self.respawn();
     }
 
+    /// `Player.ResetProjectileCaches` (`Player.cs:12217-12226`): the recount
+    /// input zeroed — called from the `ResetEffects` seam (`:18810`) and the
+    /// dead path (`:24752`).
+    pub fn reset_projectile_caches(&mut self) {
+        self.highest_storm_tiger_gem_original_damage = 0;
+        self.highest_abigail_counter_original_damage = 0;
+        self.owned_projectile_counts = [0; PROJ_COUNT];
+    }
+
+    /// `Player.UpdateProjectileCaches` (`Player.cs:12184-12215`): the per-tick
+    /// recount of the live pool's owned projectiles into
+    /// `owned_projectile_counts` plus the 831/970 `originalDamage` maxima.
+    /// The C# walks `Main.projectile[1000]` for `owner == i`; the port's
+    /// whoAmI stand-in is 0 (the single-player owner the spawner folds to).
+    pub fn update_projectile_caches(&mut self, pool: &ProjectilePool) {
+        for p in pool.slots() {
+            if !p.active || p.owner != 0 {
+                continue;
+            }
+            // A kind at or above `ProjectileID.Count` cannot exist in the C#
+            // id space; the count skips it instead of indexing out of range.
+            if let Some(count) = self.owned_projectile_counts.get_mut(usize::from(p.kind)) {
+                *count += 1;
+            }
+            match p.kind {
+                831 => {
+                    if self.highest_storm_tiger_gem_original_damage < p.original_damage {
+                        self.highest_storm_tiger_gem_original_damage = p.original_damage;
+                    }
+                }
+                970 => {
+                    if self.highest_abigail_counter_original_damage < p.original_damage {
+                        self.highest_abigail_counter_original_damage = p.original_damage;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// `Player.UpdateBuffs`' summon chain (`Player.cs:10483-10947`): the
+    /// slot-ordered keep-alive arms (with the cap effects `:10175-10183` and
+    /// the buff-216 respawn arm `:10697-10726`), driven by
+    /// `owned_projectile_counts`. Runs inside the fixed step at the
+    /// `UpdateBuffs` seam — the pool and the inventory ride in as parameters
+    /// because `Player::update` cannot see the App's.
+    ///
+    /// The ported order, pinned (the plan constraint — verified against the
+    /// decompile this phase):
+    /// - `Main.Update` → `UpdatePlayers` (`Main.cs:17754`) → `Player.Update`:
+    ///   `ResetEffects` (`:25491` — `maxMinions`/`maxTurrets` = 1 at
+    ///   `:18448-18449`, the summon flags `:18620-18646`+`:18741`,
+    ///   `ResetProjectileCaches` `:18810`) → the buffImmune reset
+    ///   (`:25562-25564`) → `UpdateProjectileCaches(i)` (`:25565`) →
+    ///   `UpdateBuffs(i)` (`:25566` — ONE `for j` loop: the timer head
+    ///   `:9869-9876`, then the else-if chain: the cap effects
+    ///   `:10175-10183`, the summon arms `:10483-10947`, `DelBuff(j); j--`
+    ///   rescanning the slot the compaction filled) → `UpdateEquips`
+    ///   (`:25633` — `grant_summon_caps`) → `numMinions = 0; slotsMinions =
+    ///   0f` (`:28279-28280`, before ItemCheck).
+    /// - `Main.Update` → `UpdateNPCs` (`:17767`) → `UpdateProjectiles`
+    ///   (`:17775` — the pool pass accumulates `numMinions`/`slotsMinions`,
+    ///   `Projectile.cs:16736-16737`, M4-PROJ-8 phase 3). So the value this
+    ///   chain reads for `numMinions` is the last pool pass's accumulation —
+    ///   the live pool's owned-minion count (the pool is unchanged between
+    ///   the passes).
+    /// The port realizes the same order across `update_with_grapple` (the
+    /// ResetEffects seam + the buff timer/effects), this method, the
+    /// `grant_*` seams and the pool's update — each counter's read order
+    /// matches. The buff timers decrement and the expired slots purge in
+    /// `update_with_grapple` before the arms run here; the C# arms run
+    /// before the `:25608` purge, but a summon buff's time is pinned at
+    /// 18000 by the refresh while its minion lives (and a dead-keep-alive
+    /// buff is DelBuff'd by the arm either way), so the swap is
+    /// unobservable.
+    pub fn update_summon_buff_arms(
+        &mut self,
+        pool: &mut ProjectilePool,
+        inventory: &[ItemSlot; INV],
+    ) {
+        // The slot-ordered chain with the C# `j--` rescan: after `DelBuff(j)`
+        // the compaction shifts the later buffs left, so index `j` is
+        // re-examined instead of advanced (the shifted-in buff's arm runs in
+        // the same tick, `Player.cs:10483-10947`).
+        let mut j = 0usize;
+        while j < MAX_BUFFS {
+            let buff = self.buffs.buff_type[j];
+            // The C# guard (`:9871-9874`) — the decrement already ran in
+            // `update_with_grapple`'s timer tick.
+            if buff <= 0 || self.buffs.buff_time[j] <= 0 {
+                j += 1;
+                continue;
+            }
+            let survives = match buff {
+                // `Player.cs:10175-10183` — the cap effects share the chain,
+                // slot-ordered with the arms (the buff-216 arm's `maxMinions`
+                // read at `:10706` sees the earlier slots' raises).
+                110 | 150 => {
+                    self.max_minions += 1;
+                    true
+                }
+                348 => {
+                    self.max_turrets += 1;
+                    true
+                }
+                216 => self.run_baby_bird_arm(pool, inventory, j),
+                _ => match SUMMON_BUFF_ARMS.iter().find(|a| a.buff == buff) {
+                    Some(arm) => {
+                        let kept = arm
+                            .kinds
+                            .iter()
+                            .any(|&k| self.owned_projectile_counts[usize::from(k)] > 0);
+                        if kept {
+                            *(arm.flag)(self) = true;
+                            self.buffs.buff_time[j] = 18000;
+                            true
+                        } else {
+                            self.buffs.del_buff(j);
+                            false
+                        }
+                    }
+                    // Not a summon arm — the chain leaves the slot alone.
+                    None => true,
+                },
+            };
+            if survives {
+                // `Player.cs:10874-10877` / `:10893-10896`: the companion
+                // updaters run after their arm kept the buff.
+                match buff {
+                    335 => self.update_abigail_status(),
+                    263 => self.update_storm_tiger_status(),
+                    _ => {}
+                }
+                j += 1;
+            }
+            // else: the slot was DelBuff'd — rescan index j.
+        }
+        // `Player.cs:28279-28280`: the per-tick zero before ItemCheck — the
+        // pool pass (Phase 3) accumulates the values the next tick's arms
+        // read.
+        self.num_minions = 0;
+        self.slots_minions = 0.0;
+    }
+
+    /// Buff 216's arm (`Player.cs:10697-10726`): keep-alive on the 759 count;
+    /// otherwise the respawn arm — below cap with the Baby Bird Staff (4281)
+    /// in the inventory, spawn the item's shoot at the player's top with the
+    /// item's damage/knockBack (`originalDamage = item.damage` at `:10713` —
+    /// the data-row spawn seam writes it for minion rows); at cap (or without
+    /// the staff) `DelBuff(j)` and no refresh (the C# `flag2` guard). Returns
+    /// false when the slot was deleted — the caller rescans the index.
+    fn run_baby_bird_arm(
+        &mut self,
+        pool: &mut ProjectilePool,
+        inventory: &[ItemSlot; INV],
+        j: usize,
+    ) -> bool {
+        if self.owned_projectile_counts[usize::from(BABY_BIRD)] > 0 {
+            self.baby_bird = true;
+        } else {
+            // `base.whoAmI == Main.myPlayer` always holds in the
+            // single-player port.
+            if self.num_minions < self.max_minions {
+                // `Player.FindItem` (`Player.cs:55972-55981`): the first
+                // inventory slot with the type and a stack.
+                if let Some(idx) = inventory.iter().position(|s| s.kind == 4281 && s.count > 0) {
+                    if let Some(def) = registry::get(inventory[idx].kind) {
+                        // `Projectile.NewProjectile(..., base.Top,
+                        // Vector2.Zero, item.shoot, item.damage,
+                        // item.knockBack, whoAmI)` — `Entity.Top` is the
+                        // hitbox's top center; item 4281's `Item.shoot` is
+                        // 759 (the generated row), so the verbatim data-row
+                        // slice (minion flag, 1.0 slots, timeLeft 18000,
+                        // the local pair) rides the spawn seam. The C#'s
+                        // pool-full sentinel crash stands in as "not
+                        // spawned".
+                        if pool
+                            .spawn_with_data_ai_owned(
+                                BABY_BIRD,
+                                0,
+                                self.x + WIDTH * 0.5,
+                                self.y,
+                                0.0,
+                                0.0,
+                                def.damage,
+                                def.knock_back,
+                                0.0,
+                                0.0,
+                            )
+                            .is_some()
+                        {
+                            self.baby_bird = true;
+                        }
+                    }
+                }
+            }
+            if !self.baby_bird {
+                self.buffs.del_buff(j);
+                return false;
+            }
+        }
+        self.buffs.buff_time[j] = 18000;
+        true
+    }
+
+    /// `Player.UpdateAbigailStatus` (`Player.cs:12274-12293`) — STUB. Kills
+    /// the 963 companions when the 970 count drops to 0 and spawns one beside
+    /// the newest Abigail otherwise; both halves need the pool spawn/AI work
+    /// (`FindNewestAI_164Minion`, the aiStyle-62 family) landing in M4-PROJ-8
+    /// phases 4/6. Until then an orphan companion self-despawns through
+    /// AI_062's flag read (`Projectile.cs:65045-65051`, Phase 4). Deviation
+    /// recorded for ANALYSIS.
+    fn update_abigail_status(&mut self) {}
+
+    /// `Player.UpdateStormTigerStatus` (`Player.cs:12295-12328`) — STUB, the
+    /// 833-835 rank management (`GetDesiredStormTigerMinionRank` + the
+    /// `StormTigerIds` sets); lands with phases 4/6 like the Abigail stub.
+    fn update_storm_tiger_status(&mut self) {}
+
+    /// The `ResetEffects` summon-flag clear (`Player.cs:18620-18646`,
+    /// `:18741`) — table-driven so the arms table stays the single source.
+    fn clear_summon_flags(&mut self) {
+        for arm in &SUMMON_BUFF_ARMS {
+            *(arm.flag)(self) = false;
+        }
+    }
+
     /// Contact damage / future combat. Returns true when the hit was accepted.
     pub fn hurt(&mut self, amount: i32, from_x: f32) -> bool {
         self.hurt_inner(amount, from_x, true)
@@ -1613,13 +2278,46 @@ impl Player {
     /// `hitDirection != 0` gate (`Player.cs:38519`): the fall-damage and
     /// petrify calls pass hitDirection 0 and skip the knock entirely (the
     /// fallStart reset inside that branch rides with it).
+    /// `Player.Update`'s contact reflection (`Player.cs:31373-31415`): the
+    /// damage an NPC takes for touching the player — `turtleThorns` pins the
+    /// multiplier at 2, else `thorns` scales the NPC's own damage, capped at
+    /// 1000; the Cactus set adds a flat 15 more.
+    pub fn thorns_damage(&self, incoming: i32) -> i32 {
+        let multiplier = if self.turtle_thorns {
+            2.0
+        } else {
+            self.thorns
+        };
+        let mut total = 0;
+        if multiplier > 0.0 {
+            total += ((incoming as f32 * multiplier) as i32).min(1000);
+        }
+        if self.cactus_thorns {
+            total += 15;
+        }
+        total
+    }
+
     pub(crate) fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
+        // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
+        // journey godmode power swallows the hit outright — before the
+        // iframes, the defense reduction and the knockback.
+        if self.creative_god_mode {
+            return false;
+        }
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2).
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
+        // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
+        // damage)` after the defense reduction.
+        // The C# truncates and does not re-floor here (`Main.
+        // CalculateDamagePlayersTake` floors the *defense* step at 1, `:66160`;
+        // the endurance multiply runs after it, so a 1-damage hit with enough
+        // endurance legitimately lands for 0).
+        let amount = ((1.0 - self.endurance) * amount as f32) as i32;
         self.hp = (self.hp - amount).max(0);
         // `Player.Hurt`'s immunity window (`Player.cs:38385`): 40 ticks
         // for normal damage (no long-invincibility source yet), 20 when
@@ -1651,6 +2349,32 @@ impl Player {
         self.hurt_inner(amount, cx, false)
     }
 
+    /// `Player.tileRangeX` (`Player.cs:2496`, `DefaultTileRangeX = 5` at
+    /// `:57113`) after `Player.ResetEffects`' journey block
+    /// (`:18815-18828`): the base 5, or `5 * 2 + 8 = 18` while the
+    /// `FarPlacementRangePower` is enabled. The C# gates the doubling on
+    /// `Main.IsJourneyMode`; the port has no journey-difficulty flag, so the
+    /// power's own toggle is the gate.
+    pub fn tile_range_x(&self) -> f32 {
+        let base = 5.0;
+        if self.far_placement_range {
+            base * 2.0 + 8.0
+        } else {
+            base
+        }
+    }
+
+    /// `Player.tileRangeY` (`DefaultTileRangeY = 3`, `Player.cs:57114`) with
+    /// the same journey doubling (`:18823-18825`): `3` or `14`.
+    pub fn tile_range_y(&self) -> f32 {
+        let base = 3.0;
+        if self.far_placement_range {
+            base * 2.0 + 8.0
+        } else {
+            base
+        }
+    }
+
     pub fn center(&self) -> (f32, f32) {
         (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
     }
@@ -1674,6 +2398,18 @@ impl Player {
     /// the C# point and survives the mount port.
     pub fn mounted_center(&self) -> (f32, f32) {
         self.center()
+    }
+
+    /// `Player.killGuide` / `Player.killClothier` (`Player.cs:2770`/`:2772`):
+    /// `ApplyEquipFunctional` arms them for the worn accessory slots 3..10
+    /// (`:14368`, the `UpdateEquips` loop `:12948-12954` — `IsItemSlotUnlockedAndUsable`
+    /// is not modelled, every slot counts as unlocked) and `ResetEffects`
+    /// clears them every tick (`:18365-18366`). The melee gate
+    /// (`ProcessHitAgainstNPC` `:44274`) and the projectile gate
+    /// (`Damage_PVE_Inner` `:12601`) both read this pair.
+    pub fn doll_flags(&self) -> (bool, bool) {
+        let worn = |k: u16| self.equipped[3..10].contains(&k);
+        (worn(267), worn(1307))
     }
 
     /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
@@ -1899,10 +2635,39 @@ impl Player {
         self.ranged_damage = 1.0;
         self.magic_damage = 1.0;
         self.minion_damage = 1.0;
+        // `ResetEffects`' summon budget bases (`Player.cs:18448-18449`): the
+        // cap buffs 110/150/348 (`:10175-10183`, the summon arms pass) and
+        // the armor/held rows (`:13258-13948`/`:15324-15329`,
+        // `grant_summon_caps`) re-add per tick.
+        self.max_minions = 1;
+        self.max_turrets = 1;
+        // The 28 summon keep-alive flags (`:18620-18646`+`:18741`) — the
+        // arms table is the single source of the flag set.
+        self.clear_summon_flags();
+        // `ResetProjectileCaches` (`:18810`): the recount inputs zeroed;
+        // `UpdateProjectileCaches` recounts them at the `:25565` seam (the
+        // summon arms pass in `world_sim/player.rs`).
+        self.reset_projectile_caches();
         self.mana_regen_bonus = 0;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
+        // `ResetEffects`' `statDefense = 0` (`Player.cs:18327`): the buff arms
+        // below and `GrantArmorBenefits` (`:13121`, the equipment pass at the
+        // bottom of this block) re-add per tick. Before M3-EQUIP-5 the field
+        // was assigned *outside* the tick (from `world_sim`), which silently
+        // dropped every buff and prefix defense arm.
+        self.stat_defense = 0;
+        // `:18334`: `manaCost = 1f` — the reductions re-apply below.
+        self.mana_cost = 1.0;
+        // `:18497`: `endurance = 0f` — the rows below re-apply.
+        self.endurance = 0.0;
+        // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
+        self.lava_max = 0;
+        // `:18376` + `:18726-18727`: the thorns flag clear.
+        self.thorns = 0.0;
+        self.cactus_thorns = false;
+        self.turtle_thorns = false;
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).
@@ -1914,15 +2679,176 @@ impl Player {
         self.melee_crit = 4;
         self.ranged_crit = 4;
         self.magic_crit = 4;
+        // `GrantArmorBenefits` (' armor/accessory rows, `Player.cs:13121`):
+        // every equipped wearable's `Item.defense` — the three armor slots AND
+        // the seven functional accessory slots (Shackle +1, Cobalt Shield +1,
+        // Ankh Shield +4, …), then the completed set's bonus
+        // (`ArmorSetBonuses.GetCompleteSet(...).Effect`).
+        for &kind in self.equipped[..10].iter() {
+            if kind == 0 {
+                continue;
+            }
+            if let Some(def) = crate::registry::get(kind) {
+                self.stat_defense += def.defense as i32;
+            }
+            // The piece's own damage/crit/speed row (`GrantArmorBenefits`'
+            // `switch (armorPiece.type)`, `Player.cs:13126-13950`).
+            if let Some(piece) = tr_core::armor_sets::armor_stats(kind) {
+                self.melee_damage += piece.melee_damage;
+                self.ranged_damage += piece.ranged_damage;
+                self.magic_damage += piece.magic_damage;
+                self.minion_damage += piece.minion_damage;
+                self.melee_crit += piece.melee_crit;
+                self.ranged_crit += piece.ranged_crit;
+                self.magic_crit += piece.magic_crit;
+                self.move_speed += piece.move_speed;
+                self.melee_speed_bonus += piece.melee_speed;
+            }
+            // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
+            // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
+            // Hat robes (1282-1287, −0.05…−0.15 by tier), the Crystal
+            // Assassin head (4982, −0.1), the Spectre hood/mask (1003 −0.17,
+            // 2189 −0.13), the Mystic Robe (2279, −0.1), the Apprentice/
+            // Dark Artist rows (3797 −0.1, 3875 −0.15).
+            self.mana_cost -= match kind {
+                1282 => 0.05,
+                1283 => 0.07,
+                1284 => 0.09,
+                1285 => 0.11,
+                1286 => 0.13,
+                1287 => 0.15,
+                2279 | 3797 | 4982 => 0.1,
+                2189 => 0.13,
+                3875 => 0.15,
+                1003 => 0.17,
+                _ => 0.0,
+            };
+        }
+        // `:12988-13003`: the Celestial Stone bundle. The flag is set by the
+        // three stones (`:15412-15424`): 1865 (Celestial Stone) and 3110
+        // (Celestial Shell) always, 899 (Sun Stone) by day, 900 (Moon Stone) by
+        // night or during an eclipse.
+        self.sky_stone_effects = self.equipped[..10].contains(&1865)
+            || self.equipped[..10].contains(&3110)
+            || (self.equipped[..10].contains(&899) && world.day_time)
+            || (self.equipped[..10].contains(&900) && (!world.day_time || world.eclipse));
+        if self.sky_stone_effects {
+            self.stat_defense += 4;
+            self.melee_speed_bonus += 0.1;
+            self.melee_damage += 0.1;
+            self.melee_crit += 2;
+            self.ranged_damage += 0.1;
+            self.ranged_crit += 2;
+            self.magic_damage += 0.1;
+            self.magic_crit += 2;
+            // `pickSpeed -= 0.15f` — the port's bonus field is the negation.
+            self.pick_speed_bonus += 0.15;
+            self.minion_damage += 0.1;
+        }
+        // The immunity rows: the worn accessories (`BUFF_IMMUNITY_ROWS`) and
+        // the completed Snow/Molten sets (`set_buff_immunity`).
+        for (kind, ids) in BUFF_IMMUNITY_ROWS {
+            if self.equipped[..10].contains(kind) {
+                for id in *ids {
+                    if let Some(slot) = self.buffs.buff_immune.get_mut(*id as usize) {
+                        *slot = true;
+                    }
+                }
+            }
+        }
+        let (armor_head, armor_body, armor_legs) = (
+            self.equipped[0] as i32,
+            self.equipped[1] as i32,
+            self.equipped[2] as i32,
+        );
+        self.stat_defense +=
+            tr_core::armor_sets::set_bonus_defense(armor_head, armor_body, armor_legs);
+        for id in tr_core::armor_sets::set_buff_immunity(armor_head, armor_body, armor_legs) {
+            if let Some(slot) = self.buffs.buff_immune.get_mut(*id as usize) {
+                *slot = true;
+            }
+        }
+        // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
+        // `ArmorSetBonuses.Initialize` triples, `:396-500`): the damage/crit/
+        // speed/mana/minion scalars of Necro, Pumpkin, Ninja, Wizard, Magic Hat,
+        // Molten, Frost, Mining, the Cobalt/Mythril/Adamantite head variants,
+        // Crystal Assassin, Tiki, Spooky, Spider and Bee.
+        if let Some((_set, set)) =
+            tr_core::armor_sets::set_stats(armor_head, armor_body, armor_legs)
+        {
+            self.melee_damage += set.melee_damage;
+            self.ranged_damage += set.ranged_damage;
+            self.magic_damage += set.magic_damage;
+            self.minion_damage += set.minion_damage;
+            self.melee_crit += set.melee_crit;
+            self.ranged_crit += set.ranged_crit;
+            self.magic_crit += set.magic_crit;
+            self.move_speed += set.move_speed;
+            self.melee_speed_bonus += set.melee_speed;
+            self.pick_speed_bonus += set.pick_speed;
+            self.mana_max += set.mana_max;
+            self.max_minions += set.max_minions;
+            self.mana_cost += set.mana_cost;
+            self.endurance += set.endurance;
+            self.thorns += set.thorns;
+            self.cactus_thorns |= set.cactus_thorns;
+            self.turtle_thorns |= set.turtle_thorns;
+            if set.dash_type != 0 {
+                self.dash_type = set.dash_type;
+            }
+        }
         for bt in self.buffs.active_types() {
             match bt {
                 22 => self.blind = true, // `BuffID.Darkness`
                 32 => self.slow = true,  // `BuffID.Slow`
+                // `:10201-10204` — `BuffID.Endurance` (114): +10%.
+                114 => self.endurance += 0.1,
+                // `:10461-10470` — the Ice Barrier (62, the Frozen Turtle
+                // Shell): +25% while at or below half life.
+                62 => {
+                    if self.hp as f32 <= self.max_hp as f32 * 0.5 {
+                        self.endurance += 0.25;
+                    }
+                }
+                // `:11887-11892` — `BuffID.MagicPower` (29): the crit, the
+                // damage, the 20 mana and the −0.02 cost.
+                29 => {
+                    self.magic_crit += 2;
+                    self.magic_damage += 0.05;
+                    self.mana_max += 20;
+                    self.mana_cost -= 0.02;
+                }
                 33 => {
                     self.weak_stacks += 1; // `BuffID.Weak`
                     self.melee_damage -= 0.051;
                     self.move_speed -= 0.1;
+                    // `:11915`: `statDefense -= 4` per Weak slot.
+                    self.stat_defense -= 4;
                 }
+                // `:9962` — `BuffID.Ironskin`: `statDefense += 8`.
+                5 => self.stat_defense += 8,
+                // `:10064` — `BuffID.Ichor`: `statDefense -= 15`.
+                69 => self.stat_defense -= 15,
+                // `:10108` — buff 215 (`BuffID.Warmth`'s neighbour row in the
+                // C#: `statDefense += 5`).
+                215 => self.stat_defense += 5,
+                // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
+                // `lifeRegen += 6` (the regen half has no consumer yet) and
+                // `thorns += 0.5` while under 1.
+                165 => {
+                    self.stat_defense += 8;
+                    if self.thorns < 1.0 {
+                        self.thorns += 0.5;
+                    }
+                }
+                // `:10005-10011` — `BuffID.Thorns` (14): `thorns = 1f` if lower.
+                14 => {
+                    if self.thorns < 1.0 {
+                        self.thorns = 1.0;
+                    }
+                }
+                // `:11921` — `BuffID.Tipsy`: `statDefense -= 4`.
+                25 => self.stat_defense -= 4,
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
                 // `:11001-11004`: the Sunflower buff's movement tier —
@@ -1933,11 +2859,13 @@ impl Player {
                 }
                 // `:9932-9934`: the Star in a Bottle's mana-regen add.
                 158 => self.mana_regen_bonus += 10,
-                // The WellFed tiers (`:11931-11969`): the per-slot stat adds.
-                // The `statDefense` half waits for the player-defense
-                // consumer (M3-EQUIP-3); the minion halves for M4-MINION.
+                // The WellFed tiers (`:11931-11969`): the per-slot stat adds —
+                // the defense rows (26 +2, 206 +3, 207 +4) since M3-EQUIP-5;
+                // the minion halves wait for M4-MINION.
                 26 => {
                     self.well_fed = true;
+                    // `:11934`: `statDefense += 2`.
+                    self.stat_defense += 2;
                     self.melee_crit += 2;
                     self.melee_damage += 0.05;
                     self.melee_speed_bonus += 0.05;
@@ -1950,6 +2878,8 @@ impl Player {
                 }
                 206 => {
                     self.well_fed = true;
+                    // `:11950`: `statDefense += 3`.
+                    self.stat_defense += 3;
                     self.melee_crit += 3;
                     self.melee_damage += 0.075;
                     self.melee_speed_bonus += 0.075;
@@ -1962,6 +2892,8 @@ impl Player {
                 }
                 207 => {
                     self.well_fed = true;
+                    // `:11966`: `statDefense += 4`.
+                    self.stat_defense += 4;
                     self.melee_crit += 4;
                     self.melee_damage += 0.1;
                     self.melee_speed_bonus += 0.1;
@@ -2032,6 +2964,12 @@ impl Player {
         self.rocket_boots = 0;
         self.no_knockback = false;
         self.has_jump_options = [false; 9];
+        // `:18701-18703`: `wingsLogic = 0; hasWings = false; wingTimeMax = 0`
+        // — the granting wing re-sets all three below, so taking the wings off
+        // ends the flight (and its budget) on the next tick.
+        self.wings_logic = 0;
+        self.has_wings = false;
+        self.wing_time_max = 0;
         self.accessory_life_regen = 0;
         let (kinds, prefixes) = (self.equipped, self.equipped_prefix);
         for (slot, prefix) in kinds[3..10].iter().zip(&prefixes[3..10]) {
@@ -2046,17 +2984,172 @@ impl Player {
                 987 => self.has_jump_options[ExtraJump::Blizzard.index()] = true,
                 1724 => self.has_jump_options[ExtraJump::Fart.index()] = true,
                 3201 => self.has_jump_options[ExtraJump::Sail.index()] = true,
-                // The balloons (`:14806/:15093-15101`, :14820 - the combos
-                // carry their bottle's option + jumpBoost; the horseshoe
-                // balloons add noFallDmg + the luck flag):
-                399 | 983 | 1163 | 1164 | 1250 | 1251 | 1252 | 3241 | 3250 | 3251 | 3252 => {
+                // The bottle combos (`:14822-14835`): 1164 (Bundle of
+                // Balloons) and 5331 (its Amber/Glass variant) carry all three
+                // bottles at once.
+                1164 | 5331 => {
+                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
                     self.jump_boost = true;
                 }
-                // The boots (`:15005-15008` Hermes - `accRunSpeed = 6f`; the
-                // Flurry variant `:15013-15016`):
-                54 | 1579 => self.acc_run_speed = 6.0,
+                // Every other bottle/balloon carries its own option *and*
+                // `jumpBoost` (`:14806/:15093-15103`, `:14797-14860`): `399`
+                // Shiny Red Balloon and `1250` Cloud in a Balloon the Cloud
+                // row, `1251`/`1163` the Blizzard one, `983`/`1252` the
+                // Sandstorm one, `1863`/`3250` the Fart one, `3252`/`3241` the
+                // Sail one. `3251` (honeycomb balloon) and `1249` (Honey
+                // Comb) carry only the boost, and so does `159`/`3225` (the
+                // Aglet-style `jumpSpeedBoost` rows).
+                399 | 1250 => {
+                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                    self.jump_boost = true;
+                }
+                1251 | 1163 => {
+                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
+                    self.jump_boost = true;
+                }
+                983 | 1252 => {
+                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                    self.jump_boost = true;
+                }
+                1863 | 3250 => {
+                    self.has_jump_options[ExtraJump::Fart.index()] = true;
+                    self.jump_boost = true;
+                }
+                3252 | 3241 => {
+                    self.has_jump_options[ExtraJump::Sail.index()] = true;
+                    self.jump_boost = true;
+                }
+                159 | 1249 | 3225 | 3251 => self.jump_boost = true,
+                // The boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
+                // `:15017-15020` Amphibian — `accRunSpeed = 6f`):
+                54 | 1579 | 3200 => self.acc_run_speed = 6.0,
                 // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
                 128 => self.rocket_boots = 1,
+                // The Spectre Boots (`:15213-15216` - tier 2).
+                405 => {
+                    self.acc_run_speed = 6.0;
+                    self.rocket_boots = 2;
+                }
+                // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
+                // +8% move).
+                898 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 2;
+                    self.move_speed += 0.08;
+                }
+                // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
+                // skates).
+                1862 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 3;
+                    self.move_speed += 0.08;
+                    self.ice_skate = true;
+                }
+                // The Terraspark Boots (`:15390-15396` - tier 4).
+                5000 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 4;
+                    self.move_speed += 0.08;
+                    self.ice_skate = true;
+                    // The Terraspark row (`:15168-15174`): the water/fire walk
+                    // and the lava charm's 420 ticks.
+                    self.lava_max += 420;
+                }
+                // The Hellfire Treads (`:15397-15401` - tier 5, 6f).
+                4874 => {
+                    self.acc_run_speed = 6.0;
+                    self.rocket_boots = 5;
+                }
+                _ if Self::wing_slot(*slot as i32) > 0 => {
+                    // `:15593-15602`: the accessory's `wingSlot` is both the
+                    // gameplay wing (`wingsLogic`) and the look (`wings`, same
+                    // field in the port), and `:15453` takes the flight budget
+                    // from the same id's `ArmorIDs.Wing.Sets.Stats`.
+                    let slot_id = Self::wing_slot(*slot as i32);
+                    self.wings_logic = slot_id;
+                    self.has_wings = true;
+                    self.wing_time_max = Self::wing_stats(slot_id).0;
+                }
+                // The Titan Glove's melee-speed row (`:15103-15107`); its
+                // `autoReuseGlove` flag has no port consumer yet.
+                211 => self.melee_speed_bonus += 0.12,
+                // The damage/crit accessories (`ApplyEquipFunctional`, the
+                // `Player.cs:15223-15560` block): the four class emblems at
+                // +15% (Sorcerer 489, Warrior 490, Ranger 491, Summoner 2998),
+                // the Avenger Emblem's +12% to all four (935), the melee-speed
+                // gloves (897/936/1343 — the Fire Gauntlet adds +12% melee
+                // damage), the Sniper Scope's +10 ranged crit/+10% ranged
+                // damage (1858), the Celestial Stone-style +8 crit/+10% all
+                // (1301), the Sorcerer's Magnet +15% magic (2220), the minion
+                // emblems +15%/+10% with their extra slot (1167/1864/1845),
+                // the Ankh/Stone rows' crit-and-damage mix (3015) and the
+                // Empress Brooch's +7.5% move (4989).
+                489 => self.magic_damage += 0.15,
+                490 => self.melee_damage += 0.15,
+                491 => self.ranged_damage += 0.15,
+                2998 => self.minion_damage += 0.15,
+                935 => {
+                    self.melee_damage += 0.12;
+                    self.ranged_damage += 0.12;
+                    self.magic_damage += 0.12;
+                    self.minion_damage += 0.12;
+                }
+                897 => self.melee_speed_bonus += 0.12,
+                936 => {
+                    self.melee_speed_bonus += 0.12;
+                    self.melee_damage += 0.12;
+                }
+                1343 => {
+                    self.melee_speed_bonus += 0.12;
+                    self.melee_damage += 0.12;
+                }
+                1858 => {
+                    self.ranged_crit += 10;
+                    self.ranged_damage += 0.1;
+                }
+                1301 => {
+                    self.melee_crit += 8;
+                    self.ranged_crit += 8;
+                    self.magic_crit += 8;
+                    self.melee_damage += 0.1;
+                    self.ranged_damage += 0.1;
+                    self.magic_damage += 0.1;
+                    self.minion_damage += 0.1;
+                }
+                3015 => {
+                    self.melee_crit += 5;
+                    self.ranged_crit += 5;
+                    self.magic_crit += 5;
+                    self.melee_damage += 0.05;
+                    self.ranged_damage += 0.05;
+                    self.magic_damage += 0.05;
+                    self.minion_damage += 0.05;
+                }
+                2220 => self.magic_damage += 0.15,
+                1167 => self.minion_damage += 0.15,
+                // 1864/1845 also carry `maxMinions++` in the C#; the budget
+                // half is `grant_summon_caps`' (`world_sim/player.rs`), so only
+                // the damage row lands here (the C# total counts once).
+                1864 => self.minion_damage += 0.15,
+                1845 => self.minion_damage += 0.1,
+                4989 => self.move_speed += 0.075,
+                // The Lava Charm family (`:15168-15183`): 906 (Lava Charm),
+                // 4038 (Molten Charm), 3999 (Molten Skull Rose) and 4003
+                // (Lava Waders) each add 420 ticks of lava immunity; 908
+                // (Lava Waders' older row) and 5000 (Terraspark Boots) also
+                // set the water/fire walk and the lava rose.
+                906 | 3999 | 4003 | 4038 => self.lava_max += 420,
+                // (The Terraspark Boots' own row rides its boot arm above —
+                // a duplicate pattern here would be unreachable.)
+                908 => self.lava_max += 420,
+                // The Worm Scarf (`:15081-15084`): +17% endurance.
+                3224 => self.endurance += 0.17,
+                // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
+                // Nature's Gift (`:15110-15113`, −0.06).
+                555 => self.mana_cost -= 0.08,
+                223 => self.mana_cost -= 0.06,
                 // The Ice Skates (`:15089-15092`).
                 950 => self.ice_skate = true,
                 // The Aglet / the Anklet of the Wind (`:15114-15121`).
@@ -2069,9 +3162,47 @@ impl Player {
                 156 => self.no_knockback = true,
                 // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
                 // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
-                49 => self.accessory_life_regen = 2,
+                // (The `Item.lifeRegen` rows are generic now — the loop after
+                // the accessory match adds every worn item's value.)
                 _ => {}
             }
+        }
+        // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
+        // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
+        // the C# never lets `statDefense` go negative (a negative value would
+        // *raise* incoming damage through `CalculateDamagePlayersTake`).
+        self.stat_defense = self.stat_defense.max(0);
+        // `Player.lifeRegen`'s equipment rows (`UpdateLifeRegen`'s input, fed
+        // through `accessory_life_regen` -> `extra_regen`): the armor pieces
+        // (`:13148` Stardust/Solar +4, `:13192` Spooky +8, `:13886-13900` the
+        // Solar Flare pieces +2 each — the C# also adds `Item.lifeRegen`,
+        // which the item table does not carry yet), the Regeneration buff
+        // (2, +4 at `:9950`) and the Dryad's Ward (165, +6 at `:10305`), and
+        // the Celestial Stone bundle's +2 (`:12991`).
+        for &kind in self.equipped[..10].iter() {
+            // `:13122`: `lifeRegen += armorPiece.lifeRegen` — the item's own
+            // row (the Band of Regeneration 2, Charm of Myths 2, Mana
+            // Regeneration Band 2, Restoration Shield 2, Mystic Arts Sash 2
+            // are the whole stock table).
+            if let Some(def) = crate::registry::get(kind) {
+                self.accessory_life_regen += def.life_regen;
+            }
+            self.accessory_life_regen += match kind {
+                3800 => 4,
+                3872 => 8,
+                2763 | 2764 | 2765 => 2,
+                _ => 0,
+            };
+        }
+        for bt in self.buffs.active_types() {
+            match bt {
+                2 => self.accessory_life_regen += 4,
+                165 => self.accessory_life_regen += 6,
+                _ => {}
+            }
+        }
+        if self.sky_stone_effects {
+            self.accessory_life_regen += 2;
         }
         // The debug pins stand in for the granting equipment - re-applied
         // after the clear (the vanilla: the grants re-set per tick).
@@ -3494,6 +4625,63 @@ impl Player {
         })
     }
 
+    /// `Item.wingSlot` (`Item.cs`'s `SetDefaults` cases — the 47 wings whose
+    /// `case` carries the assignment; the three that set it from a shared
+    /// helper stay 0 for now). The port reads it where the C# reads
+    /// `currentItem.wingSlot` (`Player.cs:15593-15602`).
+    pub fn wing_slot(item: i32) -> i32 {
+        match item {
+            492 => 1,
+            493 => 2,
+            665 => 3,
+            748 => 4,
+            749 => 5,
+            761 => 6,
+            785 => 7,
+            786 => 8,
+            821 => 9,
+            822 => 10,
+            823 => 11,
+            948 => 12,
+            1162 => 13,
+            1165 => 14,
+            1515 => 15,
+            1583 => 16,
+            1584 => 17,
+            1585 => 18,
+            1586 => 19,
+            1797 => 20,
+            1830 => 21,
+            1866 => 22,
+            1871 => 23,
+            2280 => 24,
+            2494 => 25,
+            2609 => 26,
+            2770 => 27,
+            3228 => 28,
+            3580 => 33,
+            3582 => 34,
+            3588 => 35,
+            3592 => 36,
+            3883 => 37,
+            3924 => 38,
+            3928 => 39,
+            4730 => 40,
+            4746 => 41,
+            4750 => 42,
+            4754 => 43,
+            4823 => 44,
+            4954 => 45,
+            4978 => 46,
+            5586 => 47,
+            5627 => 48,
+            5659 => 49,
+            5686 => 50,
+            6140 => 51,
+            _ => 0,
+        }
+    }
+
     /// `ArmorIDs.Wing.Sets.Stats` via `WingStatsInitializer.cs:11-61`:
     /// `(fly_time, acc_run_override, accel_mult, has_hover, hover_speed,
     /// hover_accel)`. `-1` = no run-speed override. The dev/misc wings share
@@ -4456,6 +5644,51 @@ impl Player {
         crate::luck::on_town_npc_death(&mut self.luck_state, npc_type, self.dead);
     }
 
+
+    /// `Player.MinionNPCTargetAim` (`Player.cs:56913-56931`): the summon
+    /// staff's right-click picks the nearest chaseable NPC to the mouse world
+    /// point; a second click on the same target clears it.
+    pub fn minion_npc_target_aim(&mut self, npcs: &[Npc], mouse_world: Vec2) {
+        let mut best: i32 = -1;
+        let mut best_d = f32::MAX;
+        for (i, n) in npcs.iter().enumerate() {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let (w, h) = n.size();
+            let d = (Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5 - mouse_world).length();
+            if best == -1 || d < best_d {
+                best = i as i32;
+                best_d = d;
+            }
+        }
+        if self.minion_attack_target_npc == best {
+            self.minion_attack_target_npc = -1;
+        } else {
+            self.minion_attack_target_npc = best;
+        }
+    }
+
+    /// `Player.MinionRestTargetAim`'s invalidation half (`Player.cs:57009-57011`):
+    /// a target that is no longer chaseable or drifted past 3000 px drops.
+    pub fn invalidate_minion_target(&mut self, npcs: &[Npc]) {
+        if self.minion_attack_target_npc == -1 {
+            return;
+        }
+        let ok = npcs
+            .get(self.minion_attack_target_npc as usize)
+            .is_some_and(|n| {
+                if !n.can_be_chased_by() {
+                    return false;
+                }
+                let (w, h) = n.size();
+                let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
+                (aim - Vec2::new(self.x, self.y)).length() <= 3000.0
+            });
+        if !ok {
+            self.minion_attack_target_npc = -1;
+        }
+    }
     fn update_survival(&mut self) {
         // The Wet-buff effects and the DoT derivation are the flag sources the
         // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
@@ -4510,15 +5743,28 @@ impl Player {
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
         // the original frame (`Player.cs:27630-27761` > `:25977`): a DoT kill
         // this tick wins over the lava hit.
-        if self.in_lava && self.hurt_cd <= 0.0 {
-            let cx = self.x + WIDTH * 0.5;
-            if self.hurt(30, cx) {
-                // The Hurt return `num81 > 0.0` gates the OnFire grant
-                // (`Player.cs:27710-27711`; remix/ashWood/lavaRose variants out
-                // of scope). `AddBuff` applies the expert ×2 itself (24 is in
-                // the difficulty set, `BuffID.cs:50`).
-                self.buffs.add_buff(24, 420);
+        // `Player.cs:27681-27722`: the lava timer. Standing in lava drains one
+        // tick of the immunity budget per frame; only when it is empty does the
+        // 80-damage hit land (and grant On Fire for 420). Out of the lava the
+        // budget refills up to `lavaMax` — the Lava Charm family's 420 ticks.
+        if self.in_lava {
+            if self.lava_time > 0 {
+                self.lava_time -= 1;
+            } else if self.hurt_cd <= 0.0 {
+                let cx = self.x + WIDTH * 0.5;
+                if self.hurt(80, cx) {
+                    // The Hurt return `num81 > 0.0` gates the OnFire grant
+                    // (`Player.cs:27710-27711`; remix/ashWood/lavaRose variants
+                    // out of scope). `AddBuff` applies the expert ×2 itself (24
+                    // is in the difficulty set, `BuffID.cs:50`).
+                    self.buffs.add_buff(24, 420);
+                }
             }
+        } else if self.lava_time < self.lava_max {
+            self.lava_time += 1;
+        }
+        if self.lava_time > self.lava_max {
+            self.lava_time = self.lava_max;
         }
         // Water extinguishes only OnFire (24) and OnFire3 (323) — Frostburn,
         // CursedInferno and Burning are immune to it — and only while not
@@ -4796,6 +6042,455 @@ mod tests {
         p.update_dye_cache();
         assert!(p.c_pet > 0);
         assert_eq!(p.c_light, 0);
+    }
+
+    /// M3-EQUIP-5 — `Player.statDefense` is derived inside the tick, in the
+    /// vanilla order: `ResetEffects` zeroes it (`Player.cs:18327`), the buff
+    /// arms add, `GrantArmorBenefits` adds the piece rows (`:13121`) and the
+    /// set bonus, `GrantPrefixBenefits` the accessory prefixes, then the floor
+    /// (`:25927`).
+    #[test]
+    fn stat_defense_sums_pieces_set_bonus_and_buffs() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Nothing worn, nothing buffed: 0.
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0);
+        // The copper set (89/80/76): 1 + 2 + 1 pieces + the MetalTier1 bonus 2.
+        p.equipped[0] = 89;
+        p.equipped[1] = 80;
+        p.equipped[2] = 76;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 6, "copper set: 4 pieces + 2");
+        // The accessories count too (`GetEffectiveArmor(0..10)`): the Shackle
+        // (216) +1 and the Cobalt Shield (156) +1 sit in slots 3/4. (The Ankh
+        // Shield would be +5 but it also grants immunity to Weak — see the
+        // immunity test — which would change the debuff rows below.)
+        p.equipped[3] = 216;
+        p.equipped[4] = 156;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 8, "8 = 4 + 2 + 1 + 1");
+        // Ironskin (buff 5) +8 and the fed tier (26) +2.
+        p.buffs.add_buff(5, 3600);
+        p.buffs.add_buff(26, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 18, "8 + 8 + 2");
+        // Ichor (69) −15 and Weak (33) −4: the sum can go below the armor, and
+        // the floor clamps it at 0 (`:25927`) instead of inflating damage.
+        p.buffs.add_buff(69, 3600);
+        p.buffs.add_buff(33, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0, "18 - 15 - 4 = -1, floored");
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.equipped[3] = 0;
+        p.equipped[4] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-17 — the life-regen rows feed `extra_regen`.
+    #[test]
+    fn the_life_regen_rows_add_up() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 0);
+        // The Band of Regeneration (49): the item's own `lifeRegen` 2.
+        p.equipped[3] = 49;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 2);
+        // The Charm of Myths (860) carries the same `Item.lifeRegen` 2, and the
+        // row is the item's own field now, not a hardcoded match arm.
+        p.equipped[4] = 860;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 4);
+        p.equipped[4] = 0;
+        // The Regeneration buff (2) +4 and the Dryad's Ward (165) +6.
+        p.buffs.add_buff(2, 3600);
+        p.buffs.add_buff(165, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 12);
+        // The Solar Flare Breastplate (2764) +2 and the Celestial Stone +2.
+        p.equipped[1] = 2764;
+        p.equipped[4] = 1865;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 16);
+        // The Spooky Breastplate (3872) is the +8 row.
+        p.equipped[1] = 3872;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 22);
+    }
+
+    /// M3-EQUIP-16 — the lava immunity budget.
+    #[test]
+    fn the_lava_charm_buys_immunity_ticks() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.lava_max, 0);
+        // The Lava Charm (906) adds 420 ticks; the Terraspark Boots (5000) too.
+        p.equipped[3] = 906;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.lava_max, 420);
+        p.equipped[4] = 5000;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.lava_max, 840, "the rows stack");
+        // Out of the lava the budget refills one tick per frame.
+        p.lava_time = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.lava_time, 1);
+        // Standing in lava drains it instead of burning: five frames of the
+        // budget leave the player untouched (`update_survival` is the sub-step
+        // the lava hit lives in).
+        p.lava_time = 5;
+        p.hp = 100;
+        p.hurt_cd = 0.0;
+        for _ in 0..5 {
+            p.in_lava = true;
+            p.update_survival();
+        }
+        assert_eq!(p.hp, 100, "the budget absorbed the lava");
+        assert_eq!(p.lava_time, 0);
+        // The next frame burns for the vanilla 80.
+        p.in_lava = true;
+        p.hurt_cd = 0.0;
+        p.update_survival();
+        assert_eq!(p.hp, 20, "the 80-damage lava hit");
+        assert!(p.buffs.find_buff_index(24).is_some(), "On Fire");
+    }
+
+    /// M3-EQUIP-15 — the thorns rows and the reflection arithmetic.
+    #[test]
+    fn the_thorns_rows_scale_the_reflection() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.thorns_damage(20), 0);
+        // The Thorns potion (14): the NPC's own damage comes back whole.
+        p.buffs.add_buff(14, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.thorns - 1.0).abs() < 1e-4);
+        assert_eq!(p.thorns_damage(20), 20);
+        // The Dryad's Ward (165) pushes it to 1.5 while under 1… it is already
+        // 1.0, so the half does not land — the C# `if (thorns < 1f)` guard.
+        p.buffs.add_buff(165, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.thorns - 1.0).abs() < 1e-4);
+        // The Turtle set pins the multiplier at 2 regardless of the potion.
+        p.equipped[0] = 1316;
+        p.equipped[1] = 1317;
+        p.equipped[2] = 1318;
+        p.update(&w, PlayerInput::default());
+        assert!(p.turtle_thorns);
+        assert_eq!(p.thorns_damage(20), 40);
+        assert_eq!(p.thorns_damage(2000), 1000, "the 1000 cap");
+        // The Cactus set adds its flat 15 on top.
+        p.equipped[0] = 894;
+        p.equipped[1] = 895;
+        p.equipped[2] = 896;
+        p.update(&w, PlayerInput::default());
+        assert!(p.cactus_thorns);
+        assert!(!p.turtle_thorns, "the turtle row is gone");
+        assert_eq!(p.thorns_damage(20), 35, "20 from the potion + the flat 15");
+    }
+
+    /// M3-EQUIP-14 — the Celestial Stone bundle and the day/night stones.
+    #[test]
+    fn the_sky_stones_add_their_bundle() {
+        let mut w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The Celestial Stone (1865): every row of the C# block.
+        p.equipped[3] = 1865;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+        assert_eq!(p.stat_defense, 4);
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        assert!((p.minion_damage - 1.1).abs() < 1e-4);
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (6, 6, 6));
+        assert!((p.pick_speed_bonus - 0.15).abs() < 1e-4);
+        // The Sun Stone (899) only works by day; the Moon Stone (900) by night.
+        p.equipped[3] = 899;
+        w.day_time = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+        w.day_time = false;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.sky_stone_effects);
+        p.equipped[3] = 900;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+        w.day_time = true;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.sky_stone_effects);
+        // An eclipse makes the Moon Stone work in daylight.
+        w.eclipse = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+    }
+
+    /// M3-EQUIP-13 — the armor pieces carry their own damage/crit/speed rows
+    /// (before this the worn armor only contributed defense).
+    #[test]
+    fn the_armor_pieces_add_their_stat_rows() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The Cobalt Mage Hat (371): +10% magic damage.
+        p.equipped[0] = 371;
+        p.update(&w, PlayerInput::default());
+        assert!((p.magic_damage - 1.1).abs() < 1e-4);
+        assert!((p.melee_damage - 1.0).abs() < 1e-4);
+        // The Fossil Greaves (552) add 7% to every class and +8% move; the
+        // Yoyo Bag-style rows stack per piece, so two pieces add twice.
+        p.equipped[1] = 552;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.07).abs() < 1e-4);
+        assert!((p.minion_damage - 1.07).abs() < 1e-4);
+        assert!((p.move_speed - 1.08).abs() < 1e-4);
+        // The Solar Flare Breastplate (2764) alone is +29% melee damage.
+        p.equipped[0] = 0;
+        p.equipped[1] = 2764;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.29).abs() < 1e-4);
+    }
+
+    /// M3-EQUIP-12 — the immunity rows of the accessories and the Snow/Molten
+    /// sets, re-applied after `ResetEffects`' clear.
+    #[test]
+    fn the_immunity_rows_block_their_debuffs() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.buffs.buff_immune[46]);
+        // The Snow set (803/804/805) is immune to Chilled (46) and Frozen (47).
+        p.equipped[0] = 803;
+        p.equipped[1] = 804;
+        p.equipped[2] = 805;
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.buff_immune[46]);
+        assert!(p.buffs.buff_immune[47]);
+        // The Ankh Shield (1613): On Fire is *not* on its list, Chilled is.
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.equipped[3] = 1613;
+        p.update(&w, PlayerInput::default());
+        for id in [46, 33, 36, 30, 20, 32, 31, 35, 23, 22, 156] {
+            assert!(p.buffs.buff_immune[id], "the ankh row {}", id);
+        }
+        assert!(!p.buffs.buff_immune[24], "On Fire is not an ankh immunity");
+        // The Molten set (231/232/233) is.
+        p.equipped[3] = 0;
+        p.equipped[0] = 231;
+        p.equipped[1] = 232;
+        p.equipped[2] = 233;
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.buff_immune[24]);
+        // Cheap proof the table gates the add: the debuff never lands.
+        p.buffs.add_buff(24, 600);
+        assert_eq!(p.buffs.find_buff_index(24), None);
+    }
+
+    /// M3-EQUIP-11 — `endurance` folds the rows and the hurt applies it.
+    #[test]
+    fn the_endurance_rows_cut_the_incoming_damage() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!((p.endurance - 0.0).abs() < 1e-4);
+        // The Worm Scarf (3224) is +17%.
+        p.equipped[3] = 3224;
+        p.update(&w, PlayerInput::default());
+        assert!((p.endurance - 0.17).abs() < 1e-4);
+        // The Turtle set (1316/1317/1318) is +15%.
+        p.equipped[0] = 1316;
+        p.equipped[1] = 1317;
+        p.equipped[2] = 1318;
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.endurance - 0.15).abs() < 1e-4);
+        // The Endurance buff (114) adds its 10% on top.
+        p.buffs.add_buff(114, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.endurance - 0.25).abs() < 1e-4);
+        // 40 damage with 15+10% endurance: 40 * 0.75 = 30 past the defense 0.
+        p.stat_defense = 0;
+        p.hp = 100;
+        p.hurt_cd = 0.0;
+        p.hurt_inner(40, p.x - 10.0, false);
+        assert_eq!(p.hp, 70, "the cut, not the raw 40");
+        // A 1-damage hit truncates to 0 past 25% endurance — the C# has no
+        // re-floor after the multiply.
+        p.hurt_cd = 0.0;
+        p.hurt_inner(1, p.x - 10.0, false);
+        assert_eq!(p.hp, 70, "0 damage past 25% endurance");
+    }
+
+    /// M3-EQUIP-10 — the class emblems and the crit/move accessories.
+    #[test]
+    fn the_damage_accessories_raise_their_class() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Warrior Emblem (490): melee +15%, nothing else.
+        p.equipped[3] = 490;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.15).abs() < 1e-4);
+        assert!((p.magic_damage - 1.0).abs() < 1e-4);
+        // Avenger Emblem (935): +12% to all four classes.
+        p.equipped[3] = 935;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.12).abs() < 1e-4);
+        assert!((p.minion_damage - 1.12).abs() < 1e-4);
+        // Necromantic Scroll (1301): +8 to three crits and +10% to four
+        // classes on top of the 4-point crit bases.
+        p.equipped[3] = 1301;
+        p.update(&w, PlayerInput::default());
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (12, 12, 12));
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        // Papyrus Scarab (1864): +15% minion damage (its `maxMinions++` half
+        // belongs to `grant_summon_caps`).
+        p.equipped[3] = 1864;
+        p.update(&w, PlayerInput::default());
+        assert!((p.minion_damage - 1.15).abs() < 1e-4);
+    }
+
+    /// M3-EQUIP-9 — `manaCost` folds the armor pieces, the accessories, the
+    /// casters' sets and Magic Power.
+    #[test]
+    fn the_mana_cost_multiplier_folds_every_row() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 1.0).abs() < 1e-4);
+        // Nature's Gift (223) −0.06 and the Mana Flower (555) −0.08.
+        p.equipped[3] = 223;
+        p.equipped[4] = 555;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 0.86).abs() < 1e-4);
+        // The Mystic Robe (2279) −0.1 as an armor piece.
+        p.equipped[1] = 2279;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 0.76).abs() < 1e-4);
+        // Magic Power (buff 29) −0.02 plus its other rows.
+        p.buffs.add_buff(29, 3600);
+        let mana_max_before = p.mana_max;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 0.74).abs() < 1e-4);
+        assert!(p.mana_max > mana_max_before, "the 20-mana row");
+        // The Mythril Caster set (376/379/380) −0.17.
+        p.equipped[0] = 376;
+        p.equipped[1] = 379;
+        p.equipped[2] = 380;
+        p.equipped[3] = 0;
+        p.equipped[4] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - (1.0 - 0.17 - 0.02)).abs() < 1e-4);
+    }
+
+    /// M3-EQUIP-8 — the wings grant `wingsLogic`/`wingTimeMax` themselves (the
+    /// `TR_WINGS` pin is no longer the only source).
+    #[test]
+    fn the_wing_accessories_grant_flight() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 0);
+        assert_eq!(p.wing_time_max, 0);
+        // Demon Wings (492 → `ArmorIDs.Wing` 1): 100 ticks of flight.
+        p.equipped[3] = 492;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 1);
+        assert!(p.has_wings);
+        assert_eq!(p.wing_time_max, Player::wing_stats(1).0);
+        // Bee Wings (1866 → 22) is the hover row: its stats carry the hover
+        // speeds, and the budget is its own.
+        p.equipped[3] = 1866;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 22);
+        assert_eq!(p.wing_time_max, Player::wing_stats(22).0);
+        assert!(Player::wing_stats(22).3, "the hover flag");
+        // Taking the wings off ends both.
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 0);
+        assert_eq!(p.wing_time_max, 0);
+        assert!(!p.has_wings);
+    }
+
+    /// M3-EQUIP-7 — the movement accessories grant the live flags (the
+    /// `TR_JUMPS`/`TR_BOOTS` pins stop being the only source).
+    #[test]
+    fn the_movement_accessories_grant_their_flags() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Bundle of Balloons (1164): Cloud + Sandstorm + Blizzard + jumpBoost.
+        // Before M3-EQUIP-7 only the jump boost was ported, so the item gave
+        // one extra jump instead of three.
+        p.equipped[3] = 1164;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        assert!(p.has_jump_options[ExtraJump::Blizzard.index()]);
+        assert!(p.jump_boost);
+        // Frostspark Boots (1862): tier 3, 6.75 accel, +8% move, ice skates.
+        p.equipped[3] = 1862;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.rocket_boots, 3);
+        assert!((p.acc_run_speed_value() - 6.75).abs() < 1e-4);
+        assert!((p.move_speed - 1.08).abs() < 1e-4);
+        assert!(p.ice_skate);
+        assert!(!p.has_jump_options[ExtraJump::Cloud.index()]);
+        // Hellfire Treads (4874): the tier-5 boots at the plain 6f.
+        p.equipped[3] = 4874;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.rocket_boots, 5);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4);
+        // A Sandstorm balloon (1252): the bottle's option and the boost.
+        p.equipped[3] = 0;
+        p.equipped[4] = 1252;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        assert!(p.jump_boost);
+    }
+
+    /// M3-EQUIP-5 — `ArmorSetBonuses.Benefits`' scalar rows ride the same pass.
+    #[test]
+    fn the_completed_set_grants_its_stat_row() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Crystal Assassin (4982/4983/4984): +10% every damage, +10 every crit,
+        // `dashType = 5`. The crit bases are 4 (`ResetEffects`), so 14.
+        p.equipped[0] = 4982;
+        p.equipped[1] = 4983;
+        p.equipped[2] = 4984;
+        p.update(&w, PlayerInput::default());
+        // The damage scalars start at 1.0 in the reset (`:2535-2538`): the
+        // set's `+= 0.1f` plus the slate's own +5% (4983, M3-EQUIP-13's piece
+        // row) read as 1.15.
+        assert!((p.melee_damage - 1.15).abs() < 1e-4);
+        assert!((p.minion_damage - 1.15).abs() < 1e-4);
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (14, 14, 14));
+        assert_eq!(p.dash_type, 5);
+        // Swapping to the Ninja set (256/257/258) keeps only its own row:
+        // `moveSpeed += 0.2f`.
+        p.equipped[0] = 256;
+        p.equipped[1] = 257;
+        p.equipped[2] = 258;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.0).abs() < 1e-4, "the base 1.0, no add");
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.move_speed - 1.2).abs() < 1e-4);
+        // The Mining set (88/410/411) is the `pickSpeed -= 0.1f` negation.
+        p.equipped[0] = 88;
+        p.equipped[1] = 410;
+        p.equipped[2] = 411;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.1).abs() < 1e-4);
+        // A partial set grants nothing.
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.0).abs() < 1e-4);
     }
 
     #[test]
@@ -5422,9 +7117,8 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let ground_y = p.y;
-        p.wings_logic = 1;
-        p.has_wings = true;
-        p.wing_time_max = 100;
+        // Demon Wings grant `wings_logic`/`wing_time_max` inside the tick.
+        p.equipped[3] = 492;
         p.wing_time = 100.0;
         let held = PlayerInput {
             jump: true,
@@ -5454,9 +7148,8 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.wings_logic = 1;
-        p.has_wings = true;
-        p.wing_time_max = 100;
+        // Demon Wings grant `wings_logic`/`wing_time_max` inside the tick.
+        p.equipped[3] = 492;
         p.wing_time = 30.0;
         // Land and release: the refill.
         p.update(&w, PlayerInput::default());
@@ -5515,10 +7208,10 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.wings_logic = 1;
-        p.has_wings = true;
-        p.wing_time_max = 100;
-        p.wing_time = 0.0;
+        // The wings come from the item now (Demon Wings = `ArmorIDs.Wing` 1,
+        // 100 ticks): the grant runs inside the tick, so the budget starts
+        // empty and the rocket fuel is the only source this tick.
+        p.equipped[3] = 492;
         p.pinned_rocket_boots = 2;
         p.rocket_boots = 2;
         p.rocket_time = 7;
@@ -5654,8 +7347,7 @@ mod tests {
     fn no_input_acceleration_while_dashing() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.wings_logic = 1;
-        p.has_wings = true;
+        p.equipped[3] = 492; // Demon Wings
         p.fall_start = 40;
         p.vy = 5.0;
         let held = PlayerInput {
@@ -5673,8 +7365,7 @@ mod tests {
     fn wings_nullify_the_fall_damage() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.wings_logic = 1;
-        p.has_wings = true;
+        p.equipped[3] = 492; // Demon Wings
         p.y = 25.0 * TILE_PX;
         p.fall_start = 25;
         for _ in 0..300 {
@@ -5692,9 +7383,8 @@ mod tests {
     fn hover_wings_dampen_the_descent() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.wings_logic = 22; // Hoverboard: HasDownHoverStats
-        p.has_wings = true;
-        p.wing_time_max = 170;
+        // Bee Wings (1866 → `ArmorIDs.Wing` 22, the `HasDownHoverStats` row).
+        p.equipped[3] = 1866;
         p.wing_time = 170.0;
         p.vy = 3.0;
         let held = PlayerInput {
@@ -5756,6 +7446,46 @@ mod tests {
         // The vanilla leaves `maxRunSpeed` at 3.0 — the boots only widen the
         // acceleration window (the continuation to accRunSpeed).
         assert!((p.max_run_speed_value() - 3.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_godmode_power_swallows_hits_death_and_refills() {
+        // `GodmodePower` -> `Player.creativeGodMode` (`Player.cs:25493-25497`);
+        // `Hurt` returns 0 before the iframes (`:38203-38206`) and `KillMe`
+        // refuses outright (`:38809-38812`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.creative_god_mode = true;
+        p.hurt_cd = 0.0;
+        let hp = p.hp;
+        assert!(!p.hurt(50, p.x + 100.0), "the hit is swallowed");
+        assert_eq!(p.hp, hp, "no damage");
+        assert_eq!(p.vx, 0.0, "no knockback");
+        p.start_death(&w, false, false);
+        assert!(!p.dead, "KillMe refuses while the power is on");
+        // Switching the power off restores both arms.
+        p.creative_god_mode = false;
+        assert!(p.hurt(10, p.x + 100.0));
+        p.hp = 0;
+        p.start_death(&w, false, false);
+        assert!(p.dead);
+    }
+
+    #[test]
+    fn the_far_placement_power_doubles_the_tile_range() {
+        // `Player.ResetEffects` (`Player.cs:18815-18828`): the default
+        // `tileRangeX/Y` 5/3 (`:57113-57114`) become `* 2 + 8` = 18/14 while
+        // `FarPlacementRangePower` is enabled (`CreativePowers.cs:730-767`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.tile_range_x(), 5.0);
+        assert_eq!(p.tile_range_y(), 3.0);
+        p.far_placement_range = true;
+        assert_eq!(p.tile_range_x(), 18.0);
+        assert_eq!(p.tile_range_y(), 14.0);
     }
 
     #[test]
@@ -7078,7 +8808,9 @@ mod tests {
         p.update_survival();
         let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
         assert_eq!(p.buffs.buff_time[idx], 420);
-        assert_eq!(p.hp, 1000 - 30); // the pre-existing 30-dmg lava hit
+        // `:27705` — the classic lava hit is 80 (`num79`), the 420-tick On
+        // Fire rides it.
+        assert_eq!(p.hp, 1000 - 80);
         // Inside the iframes the hit (and therefore the grant) repeats nothing.
         let hp = p.hp;
         p.update_survival();
@@ -8924,5 +10656,224 @@ mod tests {
         assert!(!p.sitting);
         assert!(!p.sleeping);
         assert_eq!(p.full_rotation, 0.0);
+    }
+}
+
+/// M4-PROJ-8 phase 2 — the summon keep-alive arms (`Player.cs:10483-10947`),
+/// the recount caches (`:12184-12226`) and the buff-216 respawn arm, driven
+/// on a bare Player + pool (the world_sim tick wires the same calls).
+#[cfg(test)]
+mod summon_tests {
+    use super::*;
+    use crate::item::EMPTY_SLOT;
+
+    /// `Player.FindItem`'s stand-in: the inventory with the staff (4281) in
+    /// slot 0 (the `ItemDef` verified this phase: shoot 759, damage 7,
+    /// knockBack 4.0).
+    fn staff_inventory() -> [ItemSlot; INV] {
+        let mut inv = [EMPTY_SLOT; INV];
+        inv[0] = ItemSlot {
+            kind: 4281,
+            name: registry::name(4281),
+            count: 1,
+            prefix: 0,
+        };
+        inv
+    }
+
+    fn empty_inventory() -> [ItemSlot; INV] {
+        [EMPTY_SLOT; INV]
+    }
+
+    /// Deactivates a slot through the public key path (`key_of` +
+    /// `kill_remote`, the `29` despawn) — the pool's `Kill` stand-in.
+    fn kill_pool_slot(pool: &mut ProjectilePool, slot: usize) {
+        let key = pool.key_of(slot);
+        let (owner, slot, generation) = crate::net::projectile_key_parts(key);
+        pool.kill_remote(slot, owner, generation);
+    }
+
+    /// DW-2.2 — buff 64 (`Slime`) tracks projectile 266 exactly: kept and
+    /// refreshed to 18000 while the pool holds it, dropped on the first pass
+    /// whose recount sees it gone (the C# reads the pool the previous frame's
+    /// pool pass left, `Player.cs:25565` → the arms `:10521-10534`).
+    #[test]
+    fn test_DW_2_2_buff_64_tracks_projectile_266() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let inv = empty_inventory();
+        let minion = pool
+            .spawn(266, 0, Vec2::new(200.0, 200.0), Vec2::ZERO, 10, 1.0, false)
+            .unwrap();
+        p.buffs.add_buff(64, 100);
+        // The live order: `ResetProjectileCaches` (`:18810`, the ResetEffects
+        // seam) then the recount (`:25565`) then the arms.
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert!(p.slime, "266 in the pool re-affirms the flag");
+        let b = p.buffs.find_buff_index(64).unwrap();
+        assert_eq!(p.buffs.buff_time[b], 18000, "the arm pins the refresh");
+        assert_eq!(p.owned_projectile_counts[266], 1);
+        // The boundary: the minion dies between ticks (the pool pass's kill)
+        // — the drop lands on exactly the next pass, not earlier.
+        kill_pool_slot(&mut pool, minion);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(
+            p.buffs.find_buff_index(64),
+            None,
+            "the buff drops the tick the recount sees 266 gone"
+        );
+        // The flag lifecycle: the arm only SETS it — `ResetEffects` clears it
+        // per tick (the full tick's seam, `:18622`). One real tick clears it.
+        p.update(&w, PlayerInput::default());
+        assert!(!p.slime, "the flag is only true while the arm re-affirms");
+        // A buff with no minion ever spawns drops immediately.
+        p.buffs.add_buff(64, 100);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(p.buffs.find_buff_index(64), None);
+    }
+
+    /// DW-2.2 boundary variant — buff 216's baby-bird respawn arm
+    /// (`Player.cs:10697-10726`): below cap with the staff spawns 759 from
+    /// the item's shoot/damage/knockBack (+ `originalDamage = item.damage`,
+    /// `:10713`); at cap it DelBuffs; without the staff it DelBuffs.
+    #[test]
+    fn test_DW_2_2_buff_216_respawn_arm() {
+        let w = World::new("t".into(), 64, 800);
+        let inv = staff_inventory();
+        // Below cap: the respawn arm fires.
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        p.buffs.add_buff(216, 100);
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert!(p.baby_bird, "the spawn re-affirms the flag");
+        let bird = pool
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 759)
+            .expect("759 spawned from the staff");
+        assert_eq!(bird.damage, 7);
+        assert_eq!(bird.original_damage, 7, "Player.cs:10713");
+        assert_eq!(bird.knock_back, 4.0);
+        assert_eq!(bird.owner, 0);
+        assert_eq!(bird.pos.x, p.x + WIDTH * 0.5);
+        assert_eq!(bird.pos.y, p.y, "Entity.Top — the hitbox's top center");
+        assert_eq!(bird.vel, Vec2::ZERO);
+        // The verbatim 759 slice rides the data-row spawn seam (the phase-1
+        // review fix): the 10×10 box and tile collide from the row, the
+        // 18000 lifetime, the minion flag and its 1.0 slot budget.
+        assert_eq!((bird.w, bird.h), (10.0, 10.0));
+        assert!(bird.tile_collide);
+        assert_eq!(bird.time_left, 18000);
+        assert!(bird.minion);
+        assert_eq!(bird.minion_slots, 1.0);
+        let b = p.buffs.find_buff_index(216).unwrap();
+        assert_eq!(p.buffs.buff_time[b], 18000);
+        // At cap (`numMinions == maxMinions`): DelBuff, no spawn. The
+        // counter is the pool pass's stand-in until Phase 3 writes it.
+        let mut p2 = Player::spawn(&w);
+        let mut pool2 = ProjectilePool::new();
+        p2.num_minions = 1;
+        p2.buffs.add_buff(216, 100);
+        p2.update_projectile_caches(&pool2);
+        p2.update_summon_buff_arms(&mut pool2, &inv);
+        assert!(
+            !pool2.slots().iter().any(|s| s.active && s.kind == 759),
+            "at cap the arm spawns nothing"
+        );
+        assert_eq!(p2.buffs.find_buff_index(216), None, "Player.cs:10719-10722");
+        // Below cap without the staff: DelBuff too.
+        let mut p3 = Player::spawn(&w);
+        let mut pool3 = ProjectilePool::new();
+        p3.buffs.add_buff(216, 100);
+        p3.update_projectile_caches(&pool3);
+        p3.update_summon_buff_arms(&mut pool3, &empty_inventory());
+        assert_eq!(p3.buffs.find_buff_index(216), None);
+    }
+
+    /// The C# `DelBuff(j); j--;` rescan (`:10483-10947`): a dropped arm's
+    /// neighbour shifts into its slot and still gets its arm the same tick.
+    #[test]
+    fn test_edge_the_arms_rescan_after_delbuff() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let inv = empty_inventory();
+        pool.spawn(317, 0, Vec2::new(200.0, 200.0), Vec2::ZERO, 10, 1.0, false)
+            .unwrap();
+        // Buff 64 at slot 0 (no 266 — dropped), buff 83 at slot 1 (317 alive
+        // — kept): after the drop, 83 shifts into slot 0 and is re-examined.
+        p.buffs.add_buff(64, 100);
+        p.buffs.add_buff(83, 100);
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(p.buffs.find_buff_index(64), None);
+        let raven = p.buffs.find_buff_index(83).expect("the rescan kept 83");
+        assert!(p.raven);
+        assert_eq!(p.buffs.buff_time[raven], 18000);
+    }
+
+    /// The cap effects share the arms' slot-ordered chain
+    /// (`Player.cs:10175-10183` before `:10706`): buff 110 in an earlier slot
+    /// raises `maxMinions` before buff 216's arm reads it, so a minion count
+    /// at the base cap still spawns.
+    #[test]
+    fn test_edge_cap_effects_are_slot_ordered_before_the_216_arm() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let inv = staff_inventory();
+        p.buffs.add_buff(110, 100); // slot 0 — the raise
+        p.buffs.add_buff(216, 100); // slot 1 — the read
+        p.num_minions = 1; // at the base cap of 1
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(p.max_minions, 2, "110 raised the cap");
+        assert!(
+            pool.slots().iter().any(|s| s.active && s.kind == 759),
+            "216 read the raised cap and spawned"
+        );
+    }
+
+    /// The chain's 29th arm — buff 161 (`DeadlySphereMinion`, kind 533,
+    /// `Player.cs:10957-10972`, review fix): the plain keep-alive shape, kept
+    /// and refreshed while 533 is owned, dropped the pass the recount sees
+    /// it gone.
+    #[test]
+    fn test_edge_buff_161_tracks_projectile_533() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let inv = empty_inventory();
+        let sphere = pool
+            .spawn(533, 0, Vec2::new(200.0, 200.0), Vec2::ZERO, 10, 1.0, false)
+            .unwrap();
+        p.buffs.add_buff(161, 100);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert!(
+            p.deadly_sphere_minion,
+            "533 in the pool re-affirms the flag"
+        );
+        let b = p.buffs.find_buff_index(161).unwrap();
+        assert_eq!(p.buffs.buff_time[b], 18000);
+        assert_eq!(p.owned_projectile_counts[533], 1);
+        // The drop: the minion leaves the pool, the buff follows one pass
+        // later — and the flag clears on the next tick's ResetEffects.
+        kill_pool_slot(&mut pool, sphere);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(p.buffs.find_buff_index(161), None);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.deadly_sphere_minion);
     }
 }

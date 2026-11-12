@@ -419,7 +419,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let (pcx, pcy) = p.center();
         let dx = tx as f32 * TILE_PX + 8.0 - pcx;
         let dy = ty as f32 * TILE_PX + 8.0 - pcy;
-        let reach = 6.0 * TILE_PX;
+        // The port's circular gate is the documented stand-in for the C#'s
+        // `IsInTileInteractionRange(..., TileReachCheckSettings.Simple)`
+        // rectangle (`TileReachCheckSettings.cs:22-70`, X 5 / Y 3) — and its
+        // radius now tracks `Player.tileRangeX` (`Player.cs:2496`), so the
+        // journey `FarPlacementRangePower`'s doubling (`:18815-18828`) widens
+        // the reach exactly as it does in the vanilla. Base 5 + 1 = the
+        // previous 6-tile constant, so nothing off the power moves.
+        let reach = (p.tile_range_x() + 1.0) * TILE_PX;
         dx * dx + dy * dy <= reach * reach
     });
     if !player_in_reach {
@@ -590,17 +597,46 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.shot_fired = false;
             app.world_key = None;
         }
+        // M4-PROJ-8 Phase 6 — `ItemCheck_MinionAltFeatureUse`
+        // (`Player.cs:49773-49780`): the summon staff's right-click picks the
+        // minions' target. The port's right-button press edge stands for the
+        // C#'s `altFunctionUse == 2`; the feature set gates which staves.
+        let targeting_staff = registry::projectile(held.kind)
+            .is_some_and(|proj| crate::projectile::MINION_TARGETING_FEATURE.contains(&proj));
+        if targeting_staff
+            && app.place_down
+            && !app.place_prev_down
+            && app.attack_cd <= 0.0
+            && app.reuse_delay <= 0.0
+        {
+            app.swing_max = shooter_swing_secs(held.kind, held.prefix);
+            app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
+            app.attack_cd = app.swing_max;
+            // `MinionNPCTargetAim` (`Player.cs:56913-56931`): the nearest
+            // chaseable NPC to the mouse world point; the same target clears.
+            let (sw, sh) = app.screen_size();
+            let mouse_world = Vec2::new(
+                app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+                app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+            );
+            if let Some(p) = app.player.as_mut() {
+                p.minion_npc_target_aim(&app.npcs, mouse_world);
+            }
+        }
         if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
-            // `Player.CheckMana` (`Player.cs:52576`): the magic items pay
-            // `item.mana * manaCost` (the multiplier is the 1f base — the
-            // accessories fold out); a failed check blocks the use. The pay
-            // resets the mana regen delay (`apply_mana_regen_delay`).
-            let mana_cost = held_fx.map(|s| s.mana).unwrap_or(0);
+            // `Player.CheckMana` (`Player.cs:5881-5884`): the magic items pay
+            // `(int)(item.mana * manaCost)` — the multiplier the armor pieces,
+            // the accessories, the casters' sets and Magic Power lower (M3-
+            // EQUIP-9). A failed check blocks the use; the pay resets the mana
+            // regen delay (`apply_mana_regen_delay`).
+            let base_mana = held_fx.map(|s| s.mana).unwrap_or(0);
             // The mutable player borrow covers the whole throw (the mana
             // pay + the reads the block makes through it).
             let Some(p) = app.player.as_mut() else {
                 unreachable!()
             };
+            let mana_cost = (base_mana as f32 * p.mana_cost) as i32;
             if mana_cost > 0 {
                 // `Player.CheckMana`'s pay arm: a failed check blocks the use.
                 if p.mana < mana_cost {
@@ -619,6 +655,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // `weaponDamage` (the class multiplier) and the item's knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
+                // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
+                // `Player.FreeUpPetsAndMinions` frees the budget at the use
+                // tick (`Player.cs:42780`) BEFORE the spawn, and the
+                // `item.buffType > 0` grant rides the same use
+                // (`Player.cs:42879-42884`, the 90/27 exclusions).
+                if def.buff_type > 0 && def.buff_type != 90 && def.buff_type != 27 {
+                    p.buffs.add_buff(def.buff_type, def.buff_time);
+                }
+                if proj > 0 {
+                    // The C# gates on `sItem.shoot` (`Player.cs:42780`) — the
+                    // projectile id, never the item type.
+                    app.projectiles.free_up_pets_and_minions(p, proj, app.local_id as u8);
+                }
                 let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
                 if dir != Vec2::ZERO {
@@ -652,12 +701,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                     let crit =
                         tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit);
+                    // `Player.cs:47119-47130` - the Nebula Blaze's pre-pass: a
+                    // 20% roll upgrades the bolt (634→635) at triple damage —
+                    // `Damage *= 3` on the weapon-damage int (`:42653`'s
+                    // `GetWeaponDamage` truncation, so the port triples the
+                    // truncated value) — and the miss decrements the shoot
+                    // speed BEFORE the aim vector is built.
+                    let mut proj = proj;
+                    let mut shot_speed = fx_spd;
+                    let mut blaze_damage = None;
+                    if held.kind == 3542 {
+                        if loot_rng.next_range(0, 100) < 20 {
+                            proj += 1;
+                            blaze_damage = Some((raw as i32) * 3);
+                        } else {
+                            shot_speed -= 1.0;
+                        }
+                    }
                     // `Player.ItemCheck_Shoot`'s per-item spawn arms - the
                     // magic staves replace the generic `Item.shoot` firing,
                     // each `return`ing in the C#; the port folds them into
                     // one if/else chain before the shared swing tail. The
                     // base velocity is the aim normalized to `shootSpeed`.
-                    let shot = Vec2::new(dir.x * fx_spd, dir.y * fx_spd);
+                    let shot = Vec2::new(dir.x * shot_speed, dir.y * shot_speed);
                     if GEM_STAFF_BOLTS.contains(&proj) {
                         // `Player.cs:49262-49375` - the gem-staff shoot.
                         // `PackGemStaffFeatures` (`:49470-49489`): the bits
@@ -845,6 +911,36 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
                         }
+                    } else if held.kind == 3542 {
+                        // `Player.cs:48778-48792` - the Nebula Blaze's spawn:
+                        // the aim angle within ±(π/4 · 0.7), up to 10 retries
+                        // against the line of sight (the angle draw precedes
+                        // the loop, each failed probe re-rolls), then the
+                        // velocity at one multiplier draw `0.95 + rand·0.3`
+                        // AFTER the loop.
+                        let mut angle = (loot_rng.next_float() - 0.5)
+                            * (std::f32::consts::PI / 4.0)
+                            * 0.7;
+                        for _ in 0..10 {
+                            let probe = spawn + shot.rotate(Vec2::from_angle(angle)) * 100.0;
+                            if crate::projectile::can_hit_line(
+                                &app.world, spawn.x, spawn.y, 0.0, 0.0, probe.x, probe.y, 0.0, 0.0,
+                            ) {
+                                break;
+                            }
+                            angle = (loot_rng.next_float() - 0.5)
+                                * (std::f32::consts::PI / 4.0)
+                                * 0.7;
+                        }
+                        let v = shot.rotate(Vec2::from_angle(angle))
+                            * (0.95 + loot_rng.next_float() * 0.3);
+                        let damage = blaze_damage.unwrap_or(raw as i32);
+                        let slot = app.projectiles.spawn_with_data_ai(
+                            proj, spawn.x, spawn.y, v.x, v.y, damage, fx_kb, 0.0, 0.0,
+                        );
+                        if let Some(slot) = slot {
+                            app.projectiles.set_crit(slot, crit);
+                        }
                     } else {
                         // The generic `Item.shoot` firing, with the two
                         // per-item tweaks: the Crystal Storm's +/-0.04 spread
@@ -863,8 +959,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         } else {
                             (0.0, 0.0)
                         };
+                        // `Player.cs:49426-49429` - the Leaf Blower's spawn
+                        // jitter rides the generic shot: the point takes
+                        // `NextVector2Circular(12, 12)` minus the full
+                        // velocity vector. `Utils.cs:1266-1269`: the unit
+                        // vector of one angle draw times the half-widths times
+                        // a second radial draw — two draws, in that order.
+                        let mut leaf_spawn = spawn;
+                        if proj == crate::projectile::LEAF {
+                            let angle = loot_rng.next_float() * std::f32::consts::TAU;
+                            let off = Vec2::from_angle(angle) * 12.0 * loot_rng.next_float();
+                            leaf_spawn += off - Vec2::new(vx, vy);
+                        }
                         let slot = app.projectiles.spawn_with_data_ai(
-                            proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
+                            proj, leaf_spawn.x, leaf_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
                         );
                         if let Some(slot) = slot {
                             app.projectiles.set_crit(slot, crit);
@@ -884,6 +992,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                             app.projectiles
                                 .set_whip_params(slot, tag_type, bonus_tag, animation_max);
                         }
+                    }
+                    // `Player.cs:48210` — the sentry spawns run the turret
+                    // sweep right after (the base cap of 1 would otherwise
+                    // accumulate unbounded sentries; the budget-change sweep
+                    // in the player tick only catches cap drops).
+                    if crate::projectile::proj_data(proj).is_some_and(|d| d.sentry) {
+                        app.projectiles.update_max_turrets(
+                            p.max_turrets,
+                            app.local_id as u8,
+                            tr_core::dd2::event_ongoing(),
+                        );
                     }
                     if def.consumable {
                         app.inventory[app.selected].count =
@@ -958,27 +1077,37 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
-            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44261-44264`):
-            // a town NPC takes no player melee unless the hit is the explicit
-            // easter egg — the Guide's Voodoo Doll (267) arms `killGuide`, the
-            // Clothier's curse (1307) arms `killClothier` (`Player.cs:15124`/
-            // `:15128`), and the whip's 5129/3351 pair rides the whip family.
-            // `dontTakeDamage` skips the shielded (the Brain's Creeper shield,
-            // the crystal's spawn shield). The vanilla also skips every
-            // `friendly` NPC — the port's town set is `is_town_npc` (the
-            // Travelling Merchant/Angler ride their own easter eggs). The
-            // vanilla arms the flags when the doll/curse is EQUIPPED
-            // (`Player.cs:15123-15129`); the port has no equip slot for them,
-            // so the inventory's presence arms the same flag (the recorded
-            // approximation — ANALYSIS). (Re-landed: the BUG-03 merge
-            // `6f9ec6f4` resolved main against a base that predated this gate
-            // and dropped it and its test.)
-            let easter_egg = matches!(held.kind, 267 | 1307)
-                || app.inventory[..50].iter().any(|s| matches!(s.kind, 267 | 1307));
+            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44272-44276`):
+            // `nPC.friendly && (nPC.type != 22 || !this.killGuide) &&
+            // (nPC.type != 54 || !this.killClothier) && (!nPC.isLikeATownNPC
+            // || (sItem.type != 5129 && sItem.type != 3351))` → `return`.
+            // So every friendly NPC (all town kinds plus the six
+            // bound/rescue forms, [`crate::npc::NpcKind::is_friendly`]) is
+            // refused except: the Guide under the Guide Voodoo Doll (267),
+            // the Clothier under the Clothier's Voodoo Doll (1307), and any
+            // town NPC under the Flymeal (5129) or the Tax Collector's Stick
+            // of Doom (3351) — the two items the C# whitelists by id.
+            // `dontTakeDamage` skips the shielded (the Brain's Creeper
+            // shield, the crystal's spawn shield). The dolls arm their flags
+            // through `ApplyEquipFunctional` (`Player.cs:14368`, the
+            // accessory slots 3..10 the `UpdateEquips` loop `:12948-12954`
+            // walks) and `ResetEffects` clears them every tick (`:18365-18366`
+            // — the port reads the per-tick `Player.equipped` snapshot, so a
+            // doll in the bag no longer counts; the pre-fix gate scanned the
+            // whole inventory).
+            let (kill_guide, kill_clothier) = app
+                .player
+                .as_ref()
+                .map(|p| p.doll_flags())
+                .unwrap_or((false, false));
+            let hits_town_npc = matches!(held.kind, 5129 | 3351);
             let hit_idx = app.npcs.iter().position(|n| {
                 n.contains(ax, ay)
                     && !n.dont_take_damage
-                    && (!n.kind.is_town_npc() || easter_egg)
+                    && (!n.kind.is_friendly()
+                        || (n.kind == NpcKind::Guide && kill_guide)
+                        || (n.kind == NpcKind::Clothier && kill_clothier)
+                        || (n.kind.is_town_npc_like() && hits_town_npc))
             });
             if let Some(idx) = hit_idx {
                 let n = &mut app.npcs[idx];
@@ -1009,6 +1138,15 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                         .as_ref()
                         .map(|p| p.weapon_damage_multiplier(class))
                         .unwrap_or(1.0);
+                // `if (nPC.isLikeATownNPC && sItem.type == 3351) dmg = 1;`
+                // (`Player.cs:44300-44304`): the Tax Collector's cane is a
+                // one-damage slap on the town (it showers coins on mobs,
+                // `:44362-44371` — the item drop rides the M3 item system).
+                let raw = if n.kind.is_town_npc_like() && held.kind == 3351 {
+                    1.0
+                } else {
+                    raw
+                };
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
                 // passes the raw value (`ProcessHitAgainstNPC`,
                 // `Player.cs:44342`; damage taken negates it, `:31387`).
@@ -1019,7 +1157,29 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     .unwrap_or((0.0, 0));
                 let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                 let crit = tr_core::damage::crit_roll(&mut loot_rng, class_crit + item_crit);
-                let dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
+                let mut dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
+                // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
+                // (`Player.cs:44344-44353`): the Flymeal takes full armour
+                // penetration (`armorPenetrationPercent = 1f`), doubles the
+                // rolled damage and doubles it again on the Nurse (type 18).
+                // The penetration adds to the damage amount like the C#
+                // (`num2 += nPC.checkArmorPenetration(...)`, `:44383`); the
+                // player's own `GetArmorPenetration` sum is not ported yet
+                // (no prefix/accessory arpen writer — the neutral 0).
+                if held.kind == 5129 && n.kind.is_town_npc_like() {
+                    dmg *= 2;
+                    if n.kind == NpcKind::Nurse {
+                        dmg *= 2;
+                    }
+                    dmg += tr_core::damage::check_armor_penetration(
+                        0,
+                        1.0,
+                        n.defense(),
+                        false,
+                        false,
+                        false,
+                    );
+                }
                 let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
@@ -3700,10 +3860,10 @@ mod tests {
 
 
     /// BUG-10: melee on a town NPC is refused (`ProcessHitAgainstNPC`'s
-    /// friendly gate, `Player.cs:44261-44264`) — the voodoo doll (267) and
-    /// the Clothier's curse (1307) are the only melee exceptions.
-    /// (Re-landed with the gate — the BUG-03 merge dropped this test with
-    /// the code.)
+    /// friendly gate, `Player.cs:44272-44276`) — the Guide Voodoo Doll (267)
+    /// and the Clothier's Voodoo Doll (1307) are the melee exceptions, and
+    /// they only arm while WORN (`ApplyEquipFunctional` over the accessory
+    /// slots 3..10, `Player.cs:14368`/`:12948-12954`).
     #[test]
     fn bug_10_melee_refuses_the_town_npcs() {
         // A Guide standing on the floor at the cursor.
@@ -3717,14 +3877,34 @@ mod tests {
         mine_frames(&mut a, 1);
         assert_eq!(a.npcs[0].hp, hp, "the town NPC is not hurt");
         assert_eq!(a.npcs[0].max_hp, hp_max);
-        // The voodoo doll arms the easter egg.
+        // The doll in the BAG arms nothing: `ResetEffects` clears the flag
+        // every tick and only `ApplyEquipFunctional` re-arms it, so the
+        // pre-fix inventory scan was over-permissive.
+        let mut bag = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&bag.world, 30).expect("the Guide spawns");
+        bag.npcs.clear();
+        bag.npcs.push(guide);
+        bag.inventory[bag.selected].kind = 24; // the sword does the hit
+        bag.inventory[0].kind = 267; // the voodoo doll in the bag
+        bag.inventory[0].count = 1;
+        bag.npcs[0].x = 30.0 * TILE_PX;
+        bag.npcs[0].y = 260.0 * TILE_PX;
+        let hp = bag.npcs[0].hp;
+        mine_frames(&mut bag, 1);
+        assert_eq!(bag.npcs[0].hp, hp, "a bagged doll does not arm the flag");
+        // The same doll WORN in an accessory slot arms it.
         let mut b = melee_app();
         let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
         b.npcs.clear();
         b.npcs.push(guide);
         b.inventory[b.selected].kind = 24; // the sword does the hit
-        b.inventory[0].kind = 267; // the voodoo doll arms the flag
-        b.inventory[0].count = 1;
+        // `Player.cs:15124` — the worn doll arms `killGuide`. The rig drives
+        // `update_editing` directly (no `update_player` tick), so the worn
+        // accessory is written into the per-tick `Player.equipped` snapshot
+        // the real loop fills from `App.equip.armor` (`world_sim/player.rs`).
+        b.player.as_mut().unwrap().equipped[3] = 267;
+        b.equip.armor[3].kind = 267;
+        b.equip.armor[3].count = 1;
         // The Guide spawns at the surface; the rig's cursor sits at
         // (30, 260) — park the Guide into the cursor's box the way the
         // slime rig does.
@@ -3733,6 +3913,95 @@ mod tests {
         let hp = b.npcs[0].hp;
         mine_frames(&mut b, 1);
         assert!(b.npcs[0].hp < hp, "the doll-armed hit lands on the Guide");
+    }
+
+    /// BUG-10, the `friendly` half: the C# refuses EVERY friendly NPC, not
+    /// just the ten housing kinds — the eleven seller town NPCs
+    /// (`is_town_npc_like`, `NPC.cs:6856`) and the six bound/rescue forms
+    /// (`NPC.cs:10257`/`:10493`/`:13502`/`:13796`/`:16652`).
+    #[test]
+    fn bug_10_melee_refuses_the_sellers_and_the_bound_forms() {
+        for kind in [
+            NpcKind::Angler,
+            NpcKind::Stylist,
+            NpcKind::TaxCollector,
+            NpcKind::Golfer,
+            NpcKind::Zoologist,
+            NpcKind::Princess,
+            NpcKind::DyeTrader,
+            NpcKind::PartyGirl,
+            NpcKind::Wizard,
+            NpcKind::Mechanic,
+            NpcKind::TravellingMerchant,
+            NpcKind::BoundGoblin,
+            NpcKind::BoundWizard,
+            NpcKind::BoundMechanic,
+            NpcKind::WebbedStylist,
+            NpcKind::SleepingAngler,
+            NpcKind::SleepingGolfer,
+        ] {
+            assert!(kind.is_friendly(), "{kind:?} is friendly in the C#");
+            let mut a = melee_app();
+            let mut npc = crate::npc::Npc::spawn_town(&a.world, 30, kind)
+                .unwrap_or_else(|| panic!("{kind:?} spawns"));
+            a.npcs.clear();
+            npc.x = 30.0 * TILE_PX;
+            npc.y = 260.0 * TILE_PX;
+            a.npcs.push(npc);
+            a.inventory[a.selected].kind = 24; // the wooden sword
+            let hp = a.npcs[0].hp;
+            mine_frames(&mut a, 1);
+            assert_eq!(a.npcs[0].hp, hp, "{kind:?} is not hurt by melee");
+        }
+    }
+
+    /// BUG-10, the two item exceptions: the Flymeal (5129) and the Tax
+    /// Collector's Stick of Doom (3351) are the only melee items the C#
+    /// lets through the friendly gate on a town NPC
+    /// (`Player.cs:44274`), and the cane's hit is forced to one damage
+    /// (`:44300-44304`) while the Flymeal doubles (x4 on the Nurse).
+    #[test]
+    fn bug_10_flymeal_and_stick_of_doom_hit_the_town() {
+        // The Flymeal on a Guide: `isLikeATownNPC`-gated, so it lands.
+        let mut a = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
+        a.npcs.clear();
+        a.npcs.push(guide);
+        a.npcs[0].x = 30.0 * TILE_PX;
+        a.npcs[0].y = 260.0 * TILE_PX;
+        a.inventory[a.selected].kind = 5129;
+        a.inventory[a.selected].count = 1;
+        let hp = a.npcs[0].hp;
+        mine_frames(&mut a, 1);
+        assert!(a.npcs[0].hp < hp, "the Flymeal gets through the friendly gate");
+        // The doubled 15 plus the 100 % armour penetration clears the
+        // Guide's defence 30 by a wide margin (the sword's ~0 would not).
+        assert!(
+            hp - a.npcs[0].hp > 20,
+            "the Flymeal doubles the roll ({} dmg)",
+            hp - a.npcs[0].hp
+        );
+        // The Stick of Doom lands for exactly one: `dmg = 1` before
+        // DamageVar and the defence floor (`CalculateDamageNPCsTake`'s
+        // max(1, 1 - 15) = 1).
+        let mut b = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
+        b.npcs.clear();
+        b.npcs.push(guide);
+        b.npcs[0].x = 30.0 * TILE_PX;
+        b.npcs[0].y = 260.0 * TILE_PX;
+        b.inventory[b.selected].kind = 3351;
+        b.inventory[b.selected].count = 1;
+        let hp = b.npcs[0].hp;
+        mine_frames(&mut b, 1);
+        assert_eq!(hp - b.npcs[0].hp, 1, "the cane slaps for one");
+        // A hostile is untouched by the friendly gate: the slime still takes
+        // the plain item damage (the sword's 6 on the rig's defence).
+        let mut c = melee_app();
+        let hp = c.npcs[0].hp;
+        c.inventory[c.selected].kind = 24;
+        mine_frames(&mut c, 1);
+        assert!(c.npcs[0].hp < hp, "the hostile is still hittable");
     }
 
     fn melee_app() -> App {
@@ -4905,6 +5174,38 @@ mod tests {
         for _ in 0..n {
             update_editing(app, 1.0 / 60.0, MINE_SCREEN);
         }
+    }
+
+    #[test]
+    fn the_far_placement_power_widens_the_edit_reach() {
+        // `FarPlacementRangePower` (`CreativePowers.cs:730-767`) doubles
+        // `Player.tileRangeX/Y` (`Player.cs:18815-18828`); the reach gate in
+        // `update_editing` tracks `tile_range_x` (its documented stand-in for
+        // `TileReachCheckSettings.Simple`).
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 260);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        // The target 13 tiles left of the player: outside the base 6-tile
+        // reach, inside the doubled 19.
+        app.player.as_mut().unwrap().x = 17.0 * TILE_PX;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert!(app.edit_target.is_none(), "out of the base reach");
+        assert!(app.mine_target.is_none(), "and nothing is mined");
+        app.player.as_mut().unwrap().far_placement_range = true;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(
+            app.edit_target,
+            Some((30, 260)),
+            "the power widens the reach to the cursor's tile"
+        );
     }
 
     /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries
@@ -6882,7 +7183,245 @@ mod tests {
             20 - 9,
             "the corrected mana cost"
         );
-    }}
+    }
+
+    // ---- M4-PROJ-6b phase 5: the shoot-path specials -----------------------
+
+    /// The shoot path's cursor world point — the same mapping the fire block
+    /// reads (`camera + (mouse - screen/2) / zoom`, `update_editing`'s
+    /// `world_pos`).
+    fn staff_aim(app: &App) -> Vec2 {
+        let (sw, sh) = app.screen_size();
+        app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom
+    }
+
+    /// The stream state after `n` splitmix rounds from `seed`.
+    fn draws_after(seed: u64, n: usize) -> u64 {
+        let mut state = seed;
+        for _ in 0..n {
+            crate::app::next_rand(&mut state);
+        }
+        state
+    }
+
+    #[test]
+    fn test_dw_5_1_the_leaf_blower_jitter_is_seed_deterministic() {
+        // `Player.cs:49426-49429`: the Leaf Blower's spawn point takes
+        // `NextVector2Circular(12, 12)` minus the full velocity vector —
+        // the same seed twice gives byte-equal spawns, and the displacement
+        // is the velocity's pull (3..27 px back along the aim) inside the
+        // 12 px circular jitter.
+        let run = || {
+            let mut app = staff_app(1178, "Leaf Blower");
+            app.item_rng = 0x1EAF;
+            fire_once(&mut app);
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .map(|p| (p.kind, p.pos, p.vel, p.ai))
+                .collect::<Vec<_>>()
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a, b, "the jittered spawn is seed-stable");
+        assert_eq!(a.len(), 1, "one leaf puff");
+        assert_eq!(a[0].0, crate::projectile::LEAF, "the Leaf Blower's shoot");
+        // The aim and the un-jittered spawn point, from the same mapping the
+        // fire block reads; the fired app's player and cursor did not move.
+        let mut app = staff_app(1178, "Leaf Blower");
+        app.item_rng = 0x1EAF;
+        fire_once(&mut app);
+        let bolt = app.projectiles.slots().iter().find(|p| p.active).unwrap();
+        let aim = staff_aim(&app);
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+        assert_eq!(bolt.vel, dir * 15.0, "the velocity keeps the full shootSpeed");
+        let offset = bolt.pos - (Vec2::new(cx, cy) + dir * 10.0);
+        let along = offset.dot(dir);
+        let perp = (offset - dir * along).length();
+        assert!(
+            (-27.0 - 1e-3..=-3.0 + 1e-3).contains(&along),
+            "the velocity vector is subtracted (along={along})"
+        );
+        assert!(
+            perp <= 12.0 + 1e-3,
+            "the circular jitter stays inside 12 (perp={perp})"
+        );
+    }
+
+    #[test]
+    fn test_dw_5_1_the_leaf_blower_jitter_spends_two_circular_draws() {
+        // `Utils.NextVector2Circular` (`Utils.cs:1266-1269`): one angle draw
+        // (`NextVector2Unit`'s NextFloat) then one radial draw — the whole
+        // shot spends exactly the crit's draw plus the pair.
+        let mut app = staff_app(1178, "Leaf Blower");
+        let seed = 0x1EAF_B07E;
+        app.item_rng = seed;
+        fire_once(&mut app);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "one shot"
+        );
+        assert_eq!(
+            app.item_rng,
+            draws_after(seed, 3),
+            "crit, then the circular pair in the C#'s order"
+        );
+    }
+
+    #[test]
+    fn test_dw_5_1_the_nebula_blaze_roll_chain_is_seed_deterministic() {
+        // `Player.cs:47119-47130` + `:48778-48792`: the pre-pass roll precedes
+        // the spawn-angle rolls on one stream — the same seed twice gives
+        // byte-equal spawns.
+        let run = || {
+            let mut app = staff_app(3542, "Nebula Blaze");
+            app.item_rng = 0xB1A2E;
+            fire_once(&mut app);
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .map(|p| (p.kind, p.pos, p.vel, p.damage))
+                .collect::<Vec<_>>()
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a, b, "the roll chain is seed-stable");
+        assert_eq!(a.len(), 1, "one bolt");
+    }
+
+    #[test]
+    fn test_dw_5_1_the_nebula_blaze_pre_pass_lands_on_both_sides_across_seeds() {
+        // The 20% gate splits the spawn (`Player.cs:47119-47130`): the miss
+        // keeps 634 at the plain weapon damage with the decremented speed
+        // (`else speed--`), the hit upgrades to 635 at the int ×3 with the
+        // full speed; the pre-pass is the stream's second draw (after the
+        // crit, BEFORE the spawn-angle rolls), the multiplier the fourth,
+        // and the angle stays inside ±(π/4 · 0.7) (`:48778-48792`).
+        let mut saw_miss = false;
+        let mut saw_hit = false;
+        for seed in 0..40u64 {
+            let s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            // The replay: draw 1 is the crit roll's, draw 2 is the pre-pass's
+            // `Main.rand.Next(100)` — the kind must follow it.
+            let mut state = s;
+            let _crit = crate::app::rand01(&mut state);
+            let hit = ((crate::app::rand01(&mut state) * 100.0) as i32) < 20;
+            let mut app = staff_app(3542, "Nebula Blaze");
+            app.item_rng = s;
+            fire_once(&mut app);
+            let bolts: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .collect();
+            assert_eq!(bolts.len(), 1, "seed {seed}: one bolt");
+            let bolt = bolts[0];
+            assert_eq!(
+                bolt.kind,
+                if hit { 635 } else { 634 },
+                "seed {seed}: the kind follows the pre-pass roll"
+            );
+            if hit {
+                saw_hit = true;
+                assert_eq!(bolt.damage, 390, "130 through the int ×3");
+            } else {
+                saw_miss = true;
+                assert_eq!(bolt.damage, 130, "the plain weapon damage");
+            }
+            // The multiplier is the stream's fourth draw (0.95 + rand·0.3)
+            // over the pre-pass's speed decision; the angle draw (third) is
+            // consumed between them.
+            let mut state = s;
+            let _ = crate::app::rand01(&mut state);
+            let _ = crate::app::rand01(&mut state);
+            let _angle = crate::app::rand01(&mut state);
+            let mult = 0.95 + crate::app::rand01(&mut state) * 0.3;
+            let want = if hit { 6.0 } else { 5.0 } * mult;
+            assert!(
+                (bolt.vel.length() - want).abs() < 1e-3,
+                "seed {seed}: |v|={} against the replayed {want}",
+                bolt.vel.length()
+            );
+            // The aim angle gate: the rotation stays inside ±(π/4 · 0.7).
+            let aim = staff_aim(&app);
+            let (cx, cy) = app.player.as_ref().unwrap().center();
+            let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+            let cross = dir.x * bolt.vel.y - dir.y * bolt.vel.x;
+            let dot = dir.x * bolt.vel.x + dir.y * bolt.vel.y;
+            let dev = cross.atan2(dot);
+            assert!(
+                dev.abs() <= std::f32::consts::PI / 4.0 * 0.7 + 1e-3,
+                "seed {seed}: the aim angle gate (dev={dev})"
+            );
+            assert_eq!(
+                app.item_rng,
+                draws_after(s, 4),
+                "seed {seed}: exactly crit, pre-pass, angle, multiplier"
+            );
+        }
+        assert!(
+            saw_miss && saw_hit,
+            "both sides of the 20% gate across seeds (miss={saw_miss} hit={saw_hit})"
+        );
+    }
+
+    #[test]
+    fn test_dw_5_1_the_last_prism_fires_once_per_press_and_the_channel_holds() {
+        // The Last Prism has NO shoot special — the C#'s generic spawn
+        // (`:49435`) fires once per press edge (`ItemCheck_AutoReuseLogic`
+        // `:52877` forces the re-fire only for autoReuse items; 3541 rides
+        // reuseDelay 5 + channel), and the Phase-4 holder keep-alive reads
+        // the channel the shoot block feeds (`Projectile.cs:66617`).
+        let mut app = staff_app(3541, "Last Prism");
+        let seed = 0x915E;
+        app.item_rng = seed;
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // The press edge: one released tick, then the press (`:42733`'s
+        // `controlUseItem && releaseUseItem` pair).
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let holders: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(holders.len(), 1, "one holder per press");
+        assert_eq!(
+            holders[0].kind,
+            crate::projectile::LAST_PRISM,
+            "the generic spawn fires 633"
+        );
+        let p = app.player.as_ref().unwrap();
+        assert!(p.channel, "the held channel feeds the holder");
+        assert_eq!(p.channel_item, 3541, "the holder's keep-alive item");
+        // Holding the button does not re-fire (non-autoReuse) and the
+        // channel stays armed for the holder's keep-alive.
+        for _ in 0..30 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active).count(),
+            1,
+            "the hold does not re-fire"
+        );
+        assert!(
+            app.player.as_ref().unwrap().channel,
+            "the hold keeps the channel alive"
+        );
+        // And no special-case rolls: the whole run spends exactly the crit's
+        // draw on the item stream.
+        assert_eq!(app.item_rng, draws_after(seed, 1), "the crit's draw only");
+    }
+}
 
 /// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
 /// the night gate, the roar (`SoundEngine.PlaySound(15, ...)`, `SoundID.Roar`
@@ -7654,4 +8193,92 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     app.swing = app.swing_max;
     app.attack_cd = app.swing_max;
     true
+}
+
+/// The full use-loop integration — a Slime Staff in hand fires through
+/// `update_editing`: the buff grant, the free-up, the spawn, then the pool's
+/// next tick books the slot.
+#[cfg(test)]
+
+/// The full use-loop integration — a Slime Staff in hand fires through
+/// `update_editing`: the buff grant, the free-up, the spawn, then the pool's
+/// next tick books the slot, and the player tick's arm keeps the buff alive.
+#[cfg(test)]
+mod use_loop_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+    use glam::Vec2;
+
+    fn app_with_staff(kind: u16) -> crate::app::App {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Single-player: the local player's id is 0 (the recount's owner).
+        app.local_id = 0;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // The cursor at the screen centre — the reach gate
+        // (`Player.cs`'s 6-tile arm) needs the aim tile near the player.
+        app.mouse_pos = Vec2::new(400.0, 300.0);
+        let mut p = app.player.as_mut().unwrap();
+        p.max_minions = 5;
+        p.max_turrets = 5;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: 1,
+            prefix: 0,
+        };
+        app
+    }
+
+    #[test]
+    fn the_slime_staff_use_grants_the_buff_and_spawns() {
+        let mut app = app_with_staff(1309); // the Slime Staff — shoot 266, buff 64
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        // One editing tick: the use fires (the swing starts, the free-up runs
+        // and the projectile spawns), and the verbatim `item.buffType > 0`
+        // grant lands (`Player.cs:42879`).
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert_eq!(
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|s| s.active && s.kind == 266)
+                .count(),
+            1,
+            "the Slime minion spawned"
+        );
+        // The staff's row carries `buffTime = 0` and the C#'s arm guard skips
+        // 0-time slots, so the grant alone is a ghost the sweep removes
+        // (verbatim, ANALYSIS); the keep-alive loop is asserted with a live
+        // buff: the arm refreshes it while the minion lives.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.buffs.add_buff(64, 600);
+        }
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        let b = p.buffs.find_buff_index(64).expect("buff 64 held");
+        assert_eq!(p.buffs.buff_time[b], 18000, "the arm's refresh");
+        assert!(p.slime, "the arm's flag");
+        // The pool's next tick books the minion against the budget.
+        app.mine_down = false;
+        let mut npcs = Vec::new();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let local = app.local_id as u8;
+        let host = !app.is_client();
+        app.projectiles.update(
+            &mut app.world,
+            &mut npcs,
+            None,
+            None,
+            app.player.as_mut(),
+            crate::projectile::YoyoInputs::default(),
+            crate::projectile::FlailInputs::default(),
+            &mut rng,
+            local,
+            host,
+        );
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.num_minions, 1, "the slot booked");
+        assert_eq!(p.slots_minions, 1.0);
+    }
 }

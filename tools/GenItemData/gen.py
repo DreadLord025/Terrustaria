@@ -240,7 +240,6 @@ THIS_SKIP_FIELDS = {
     "tileWand": "tile-wand id not provisioned",
     "fishingPole": "fishing-pole power not provisioned",
     "makeNPC": "critter npc id not provisioned",
-    "lifeRegen": "life regen not provisioned",
     "questItem": "quest flag not provisioned",
     "expert": "expert flag not provisioned",
     "expertOnly": "expert flag not provisioned",
@@ -1572,6 +1571,7 @@ def stock_row():
         "createWall": -1,
         "damage": -1,
         "defense": 0,
+        "lifeRegen": 0,   # Item.cs:49013 stock
         "healLife": 0,
         "holdStyle": 0,
         "knockBack": 0.0,
@@ -2003,6 +2003,7 @@ RUST_FIELDS = [
     ("body_slot", "bodySlot", "i16"),
     ("leg_slot", "legSlot", "i16"),
     ("defense", "defense", "u8"),
+    ("life_regen", "lifeRegen", "i32"),
     ("class", None, "class"),
     ("crit", "crit", "i32"),
     ("value", "value", "i32"),
@@ -2143,6 +2144,10 @@ pub struct ItemDef {
     pub leg_slot: i16,
     /// `Item.defense` (`Item.cs:49012`, stock 0).
     pub defense: u8,
+    /// `Item.lifeRegen` (`Item.cs:49013`, stock 0): the extra life-per-second
+    /// row the worn item carries (the Band of Regeneration's 2, the charm
+    /// line's larger values) — `Player.UpdateLifeRegen`'s `lifeRegen` input.
+    pub life_regen: i32,
     /// Derived from the `melee`/`ranged`/`magic`/`summon`/`thrown` flags
     /// (first of `Melee, Ranged, Magic, Summon, Thrown`; `None` when classless).
     pub class: DamageClass,

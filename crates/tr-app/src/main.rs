@@ -68,6 +68,8 @@ mod shimmer;
 mod sound;
 mod test_world_helpers;
 mod town;
+mod town_arrival;
+mod touch_damage;
 mod ui;
 mod world_sim;
 
@@ -137,7 +139,14 @@ fn main() -> Result<()> {
 
     app::log_world_diagnostics(&world);
 
-    let (atlas, font_atlas, lookups, atlas_stats) = app::build_atlas(&world, &assets_dir)?;
+    // The decoded static atlas half and the retail font tables are carried onto
+    // the App so the first world swap (`App::swap_world`) repacks them instead of
+    // re-reading ~7 000 sheets and re-decoding ~38 636 glyphs (BUG-21: the
+    // select-world Play froze for seconds on that work).
+    let mut boot_static: Option<Vec<tr_render::atlas::AtlasImage>> = None;
+    let mut boot_fonts: Option<assets::FontTables> = None;
+    let (atlas, font_atlas, lookups, atlas_stats) =
+        app::build_atlas_reusing_static(&world, &assets_dir, &mut boot_static, &mut boot_fonts)?;
 
     app::log_atlas_diagnostics(&atlas, &lookups);
 
@@ -157,6 +166,8 @@ fn main() -> Result<()> {
         atlas_stats,
     );
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
+    app.static_sheets = boot_static;
+    app.fonts_cache = boot_fonts;
     app.load_map();
     // The bind table the `config.json` we just read carries (`Main.cs:4582`,
     // `PlayerInput.CurrentProfile`'s re-seed at `:4602`).

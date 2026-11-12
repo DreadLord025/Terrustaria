@@ -1457,6 +1457,54 @@ NpcKind::SolarSelenian => 140,
         )
     }
 
+    /// `NPC.isLikeATownNPC` (`NPC.cs:6856-6864`: `townNPC || type == 453` —
+    /// the Skeleton Merchant, which the port does not ship): the vanilla
+    /// `townNPC` flag for every town kind the port carries — the housing set
+    /// of [`NpcKind::is_town_npc`] plus the eleven sellers that have no
+    /// ported housing entry yet (TravellingMerchant 368, Angler 369, Stylist
+    /// 353, TaxCollector 441, Golfer 588, Zoologist 633, Princess 663,
+    /// DyeTrader 207, PartyGirl 208, Wizard 108, Mechanic 124 — all
+    /// `this.townNPC = true` in `SetDefaults`, `NPC.cs:9011-17397`).
+    /// `ProcessHitAgainstNPC`'s melee exceptions read this set
+    /// (`Player.cs:44274`, `:44344`).
+    pub fn is_town_npc_like(self) -> bool {
+        self.is_town_npc()
+            || matches!(
+                self,
+                NpcKind::TravellingMerchant
+                    | NpcKind::Angler
+                    | NpcKind::Stylist
+                    | NpcKind::TaxCollector
+                    | NpcKind::Golfer
+                    | NpcKind::Zoologist
+                    | NpcKind::Princess
+                    | NpcKind::DyeTrader
+                    | NpcKind::PartyGirl
+                    | NpcKind::Wizard
+                    | NpcKind::Mechanic
+            )
+    }
+
+    /// `NPC.friendly` (`NPC.cs:8519`'s default `false` plus the `SetDefaults`
+    /// arms `:8983-9060`, `:10257`, `:10493-10507`, `:13502-13516`,
+    /// `:13796-13809`, `:16652-16665`): every town NPC and the six
+    /// bound/rescue forms the port ships. `ProcessHitAgainstNPC` refuses
+    /// every friendly NPC (`Player.cs:44272-44276`), and
+    /// `Damage_PVE_Inner` gates projectiles on the same flag
+    /// (`Projectile.cs:12601`).
+    pub fn is_friendly(self) -> bool {
+        self.is_town_npc_like()
+            || matches!(
+                self,
+                NpcKind::BoundGoblin
+                    | NpcKind::BoundWizard
+                    | NpcKind::BoundMechanic
+                    | NpcKind::WebbedStylist
+                    | NpcKind::SleepingAngler
+                    | NpcKind::SleepingGolfer
+            )
+    }
+
     /// `NPC.netID` as the `.wld` section writes it (`SaveNPCs:1718`): the
     /// vanilla id, which `crate::bestiary::ENTRIES` carries per kind.
     /// **Not** [`NpcKind::to_u16`] — that is the port's internal protocol id
@@ -2536,6 +2584,21 @@ pub struct Npc {
     /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
     /// it holds (the Brain of Cthulhu's Creeper shield).
     pub dont_take_damage: bool,
+    /// `NPC.chaseable` (`NPC.cs:6261`, the `SetDefaults` default `true`) — the
+    /// `CanBeChasedBy` gate's inner term: false = untargetable by minions and
+    /// sentries. The C#'s only `chaseable = false` writers are the case-345
+    /// family (`NPC.cs:13854`/`:14078`/`:14193`/`:14210` — the Dungeon
+    /// Guardian's group, unported kinds) and `:8549` re-affirms true, so every
+    /// ported kind keeps the stock value.
+    pub chaseable: bool,
+    /// `NPC.immortal` (`NPC.cs:6259`, the stock `false`) — the target-dummy
+    /// "alive but unhittable" flag; no ported kind's `SetDefaults` writes it,
+    /// so it holds the field default.
+    pub immortal: bool,
+    /// `NPC.friendly` (`NPC.cs:6563`, the stock `false`) — the town NPCs'
+    /// `friendly = true` writes (`NPC.cs:8983+`); the port derives it from the
+    /// existing `is_town_resident` list.
+    pub friendly: bool,
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
@@ -2723,6 +2786,23 @@ pub(crate) fn ground_clearance(world: &World, tile_x: i32, tile_y: i32) -> f32 {
 }
 
 impl Npc {
+    /// `NPC.CanBeChasedBy` (`NPC.cs:90030-90041`): the gate every minion and
+    /// sentry target search runs. The port's liveness is `hp > 0` (the NPC
+    /// list carries no `active` field — callers filter on `hp`); the
+    /// `lifeMax > 5` term keeps critters out; `dontTakeDamage`, `friendly` and
+    /// `immortal` each block the target. The
+    /// `DebugOptions.LetProjectilesAimAtTargetDummies` debug arm (the
+    /// immortal bypass) is the default-false path and stays unported — the
+    /// target dummies are unported kinds anyway.
+    pub fn can_be_chased_by(&self) -> bool {
+        self.hp > 0
+            && self.chaseable
+            && self.max_hp > 5
+            && !self.dont_take_damage
+            && !self.friendly
+            && !self.immortal
+    }
+
     pub fn spawn_slime(world: &World, x_tile: i32) -> Option<Self> {
         Self::spawn_slime_variant(world, x_tile, SlimeVariant::Blue)
     }
@@ -2956,6 +3036,20 @@ impl Npc {
         Some(npc)
     }
 
+    /// A town NPC standing on the given tile — `WorldGen.SpawnTownNPC`'s
+    /// `NewNPC` at the room position (`WorldGen.cs:5409-5500`), which is a
+    /// *room* tile, not the outdoor surface [`Self::spawn_guide`] uses for the
+    /// world-spawn Guide.
+    pub fn spawn_town_at(world: &World, tile_x: i32, tile_y: i32, kind: NpcKind) -> Option<Self> {
+        let (w, h) = kind.size();
+        let x = tile_x as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = tile_y as f32 * TILE_PX - h;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        Some(Self::new(kind, x, y, 1, 0.0))
+    }
+
     pub fn spawn_guide(world: &World, x_tile: i32) -> Option<Self> {
         let top = world.surface_of(x_tile);
         if top >= world.height - 2 {
@@ -3056,6 +3150,14 @@ impl Npc {
             wants_servant: None,
             defense_override: None,
             dont_take_damage: false,
+            // The `CanBeChasedBy` slice (`NPC.cs:6261`/`:6259`/`:6563`):
+            // `chaseable`'s stock true (the false writers are the unported
+            // case-345 family), `immortal`'s stock false, `friendly` the town
+            // residents' `friendly = true` write (`NPC.cs:8983+`) plus the
+            // Sleeping Angler's own arm (`:13798`).
+            chaseable: true,
+            immortal: false,
+            friendly: kind.is_town_resident() || kind == NpcKind::SleepingAngler,
             swarm_done: false,
             moon_local: [0.0; 3],
             moon_core_alive: false,
@@ -4369,6 +4471,41 @@ impl Npc {
         }
     }
 
+    /// `FindFrame`'s plain walker arm (`case 3` and its 20-sibling group,
+    /// `NPC.cs`): the ground flip, row 2 while airborne or turning, row 0
+    /// standing, and the `|vx|` accumulator's 8/16/24/32 bands stepping
+    /// rows 0/1/2/1 on the strip's three rows.
+    fn walker_frame(&mut self) {
+        if self.vy == 0.0 {
+            self.sprite_dir = self.facing;
+        }
+        if self.vy != 0.0
+            || (self.facing == -1 && self.vx > 0.0)
+            || (self.facing == 1 && self.vx < 0.0)
+        {
+            self.frame_counter = 0.0;
+            self.frame = 2;
+        } else if self.vx == 0.0 {
+            self.frame_counter = 0.0;
+            self.frame = 0;
+        } else {
+            // The C# leaves `frame.Y` alone in the last branch (its 0..32
+            // accumulator laps at row 1), so the row is not written there.
+            self.frame_counter += self.vx.abs();
+            if self.frame_counter < 8.0 {
+                self.frame = 0;
+            } else if self.frame_counter < 16.0 {
+                self.frame = 1;
+            } else if self.frame_counter < 24.0 {
+                self.frame = 2;
+            } else if self.frame_counter < 32.0 {
+                self.frame = 1;
+            } else {
+                self.frame_counter = 0.0;
+            }
+        }
+    }
+
     /// The shared `case 266`/`case 262` machine (the Brain of Cthulhu and
     /// Plantera, `NPC.cs`'s two identical arms): the frame advances every
     /// 6 ticks; `first_phase` (the shield-down / above-half-life gate) wraps
@@ -4399,6 +4536,69 @@ impl Npc {
     /// slime 2, demon eye 2, zombie 3, King Slime 6. `num2` is the motion class
     /// (`NPC.cs:66698-66703`): 2 jumping up, 3 falling, 1 moving, 0 idle —
     /// `aiAction == 4` (attacking) never happens for these kinds in the port.
+    /// The row count of this kind's own sheet — `Main.npcFrameCount[type]`,
+    /// the divisor `NPC.SetFrameSize` uses. The lunar machines read it instead
+    /// of hard-coding a strip length.
+    fn rows(&self) -> u32 {
+        crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind)).max(1)
+    }
+
+    /// `frame.Y += num; if (frame.Y / num >= count) frame.Y = 0;` — the wrap
+    /// the C# writes as the `+= num` + `>= Main.npcFrameCount` pair.
+    fn next_row(&self, step: u32) -> u32 {
+        (self.frame + step) % self.rows()
+    }
+
+    /// The row `Main.npcFrameCount - back` the attack bands pin.
+    fn last_row(&self, back: u32) -> u32 {
+        self.rows().saturating_sub(back)
+    }
+
+    /// `case 415`'s machine (`NPC.cs:70119-70168`), shared with the 416 rider:
+    /// `ai[2] < 0` is the charge that flips rows 8/9 off the 18-tick counter,
+    /// the grounded walk climbs rows 2..(count-2) at `|vx| * 0.5` a tick, and
+    /// the air holds row 1.
+    fn drakomire_frame(&mut self) {
+        let count = self.rows();
+        if self.ai[2] < 0.0 {
+            if self.frame != 8 && self.frame != 9 && self.frame != 0 {
+                self.frame_counter = 0.0;
+            }
+            self.frame_counter += 1.0;
+            let (num127, num128) = (18.0f32, 4.0f32);
+            let mut row = 0u32;
+            if self.frame_counter > num127 - num128 * 2.0 {
+                row = 8 + (self.frame_counter as u32) / 4 % 2;
+            }
+            if self.frame_counter > num127 + num128 * 6.0 {
+                row = 0;
+                self.frame_counter = 0.0;
+            }
+            self.frame = row.min(count.saturating_sub(1));
+        } else if self.vy == 0.0 {
+            if self.facing != 0 {
+                self.sprite_dir = self.facing;
+            }
+            if self.frame < 2 {
+                self.frame = 2;
+            }
+            self.frame_counter += self.vx.abs() * 0.5;
+            if self.frame_counter >= 8.0 {
+                self.frame += 1;
+                self.frame_counter = 0.0;
+            }
+            if self.frame >= count.saturating_sub(2) {
+                self.frame = 2;
+            }
+            if self.vx == 0.0 {
+                self.frame = 0;
+            }
+        } else {
+            self.frame_counter = 0.0;
+            self.frame = 1;
+        }
+    }
+
     fn find_frame(&mut self) {
         let num2 = if self.vy < 0.0 {
             2
@@ -4761,20 +4961,22 @@ impl Npc {
                     self.frame = (self.frame + 1) % 11;
                 }
             }
-            // The WitherBeast: the humanoid 14-frame strip.
+            // The WitherBeast: `Main.npcFrameCount[568/569]` = 17 rows.
             NpcKind::DD2WitherBeast => {
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 14;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
-            // The tavernkeeper: the humanoid 16-frame strip.
+            // The tavernkeeper: `Main.npcFrameCount[550]` = 25 rows.
             NpcKind::DD2Bartender => {
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 16;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
             // The Old One's Army's tier-2/3 families (M4-EVENT-19): the
@@ -4821,20 +5023,21 @@ impl Npc {
                 }
             }
             NpcKind::DD2DarkMageT3 => {
-                // `Main.npcFrameCount[564]` = 9 (`Main.cs:67140`) — the T3
-                // rides the T1's 20-frame caster strip in the port, scaled
-                // by the C#'s shared `case 564:` arm.
+                // `Main.npcFrameCount[564-567]` = 9 (`Main.cs:67140`).
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 20;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
             NpcKind::DD2WitherBeastT3 => {
+                // `Main.npcFrameCount[568/569]` = 17.
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 17;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
             NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 => {
@@ -4877,90 +5080,500 @@ impl Npc {
             NpcKind::DD2LanePortal => {
                 self.frame = 0;
             }
-            // The shards: the walker accumulator over their strips — the
-            // 405's 4 frames (`Main.npcFrameCount[405]` = 4), the 406's
-            // 2, the 407's 5, the 423's 12, the 425's 13 and the 429's 10.
-            NpcKind::StardustCellBig
-            | NpcKind::StardustCellSmall
-            | NpcKind::StardustJellyfishBig
-            | NpcKind::NebulaBeast
-            | NpcKind::VortexRifleman
-            | NpcKind::VortexSoldier => {
-                let count = match self.kind {
-                    NpcKind::StardustCellBig => 4,
-                    NpcKind::StardustCellSmall => 2,
-                    NpcKind::StardustJellyfishBig => 5,
-                    NpcKind::NebulaBeast => 12,
-                    NpcKind::VortexRifleman => 13,
-                    _ => 10,
-                };
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
+            // The lunar families' own machines - one `case` per vanilla id
+            // (`Main.npcFrameCount` = the row count of the kind's sheet, the
+            // same divisor `NPC.SetFrameSize` uses). The v1 ran ONE
+            // `|vx| + 0.6` accumulator over every member of each family with a
+            // hand-written row count, so the walk cadences, the air rows and
+            // the attack bands were all invented.
+            //
+            // 405/406 (the star cells, `NPC.cs:70727-70740`): a 4-tick full
+            // wrap over the strip.
+            NpcKind::StardustCellBig | NpcKind::StardustCellSmall => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % count;
+                    self.frame = self.next_row(1);
                 }
             }
-            // The tower mobs' strips: the spiders 4/11 rows, the soldier 5,
-            // the drakomire 1, its rider 10, the sroller 10, the corite 15
-            // and the selenian 8.
-            NpcKind::StardustSpiderBig
-            | NpcKind::StardustSpiderSmall
-            | NpcKind::StardustSoldier
-            | NpcKind::SolarDrakomire
-            | NpcKind::SolarDrakomireRider
-            | NpcKind::SolarSroller
-            | NpcKind::SolarCorite
-            | NpcKind::SolarCrawltipedeHead
+            // 407 (the big jellyfish, `:70716-70726`): the same wrap at 6
+            // ticks.
+            NpcKind::StardustJellyfishBig => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = self.next_row(1);
+                }
+            }
+            // 409 (the big stardust spider, `NPC.cs:70683-70703`): the
+            // `ai[1]` 1..30 attack band pins the last row, otherwise the walk
+            // steps every 6 ticks and wraps two rows before the sheet's end
+            // (the last two rows are the attack band).
+            NpcKind::StardustSpiderBig => {
+                if self.vy == 0.0 && self.ai[1] <= 30.0 && self.ai[1] > 0.0 {
+                    self.frame = self.last_row(1);
+                    self.frame_counter = 0.0;
+                } else {
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 6.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = self.next_row(1);
+                        if self.frame >= self.last_row(2) {
+                            self.frame = 0;
+                        }
+                    }
+                }
+            }
+            // 410 (the small spider, `:70704-70715`): the walk accumulator
+            // folds the row on every 10 px of horizontal speed.
+            NpcKind::StardustSpiderSmall => {
+                self.frame_counter += self.vx.abs();
+                if self.frame_counter >= 10.0 {
+                    self.frame_counter -= 10.0;
+                    self.frame = self.next_row(1);
+                }
+            }
+            // 411 (the stardust soldier, `:70642-70682`): the `ai[1]`
+            // 120..240 channel pins the last row (the arm-raised band), and
+            // the walk otherwise starts on row 2 and wraps one row before the
+            // end.
+            NpcKind::StardustSoldier => {
+                if self.ai[1] >= 120.0 && self.ai[1] < 240.0 {
+                    self.sprite_dir = -self.facing;
+                    self.frame = self.last_row(1);
+                    self.frame_counter = 0.0;
+                } else if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = -self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame_counter = 0.0;
+                            self.frame = self.next_row(1);
+                        }
+                        if self.frame >= self.last_row(1) {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // 415 (the solar drakomire, `NPC.cs:70119-70168`): the
+            // `ai[2] < 0` charge state rides the 8/9 flip pair off the 18-tick
+            // counter, the grounded walk rides rows 2..(count-2) with the
+            // `|vx| * 0.5` accumulator, and the air holds row 1.
+            NpcKind::SolarDrakomire => self.drakomire_frame(),
+            // 416 (the drakomire's rider, `NPC.cs:70172-70193`) copies its
+            // 415's ROW (`Main.npc[num140].frame.Y / row * num`), so the same
+            // machine reproduces it.
+            NpcKind::SolarDrakomireRider => self.drakomire_frame(),
+            // 417 (the solar sroller, `NPC.cs:70195-70263`): `ai[0] == 0`
+            // rolls rows `(counter / 6)` over the 48-tick loop, the `ai[0] ==
+            // 1` / `5` attack states climb 9..14 off `ai[1] / 6`, and every
+            // other state pins row 14.
+            NpcKind::SolarSroller => {
+                if self.ai[0] == 0.0 {
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                    } else if self.vy < 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame_counter += self.vx.abs() * 1.1;
+                    self.frame = ((self.frame_counter / 6.0) as u32).min(self.rows() - 1);
+                    if self.frame_counter >= 48.0 {
+                        self.frame_counter = 0.0;
+                    }
+                } else if self.ai[0] == 1.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (9 + (self.ai[1] / 6.0) as u32).min(self.rows() - 1);
+                } else if self.ai[0] == 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 13u32.saturating_sub((self.ai[1] / 6.0) as u32);
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 14.min(self.rows() - 1);
+                }
+            }
+            // 418 (the solar corite, `NPC.cs:70757-70803`): the idle/hover
+            // states (`ai[0]` 0, +/-1) walk rows 0..4 at 6 ticks, the
+            // `ai[0] == 2` dive splits `ai[1]` into rows 5/6/7, and the
+            // `ai[0] == -2` death spin walks 5..7 at 12 ticks.
+            NpcKind::SolarCorite => {
+                if self.ai[0] == 0.0 || self.ai[0] == 1.0 || self.ai[0] == -1.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 4 {
+                        self.frame = 0;
+                    }
+                } else if self.ai[0] == 2.0 {
+                    self.frame = if self.ai[1] < 10.0 {
+                        5
+                    } else if self.ai[1] < 20.0 {
+                        6
+                    } else {
+                        7
+                    };
+                } else if self.ai[0] == -2.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 12.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 7 {
+                        self.frame = 5;
+                    }
+                }
+            }
+            // 419 (the solar selenian, `NPC.cs:70266-70330`): the `ai[2] < 0`
+            // charge band rides rows 2..4 off the 6-tick counter and then
+            // wraps into 4..8; the grounded walk climbs from row 9 and wraps
+            // at the sheet's end; the air holds row 1.
+            NpcKind::SolarSelenian => {
+                if self.ai[2] < 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.frame >= 9 {
+                        self.frame = 2;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame < 2 {
+                        self.frame = 2;
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 10.0 {
+                        self.frame_counter = 8.0;
+                    }
+                    self.frame = if self.frame_counter < 6.0 {
+                        (2.0 + self.frame_counter / 3.0) as u32
+                    } else {
+                        (4.0 + (self.frame_counter - 6.0)) as u32
+                    };
+                } else if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() || self.frame < 9 {
+                            self.frame = 9;
+                        }
+                    }
+                } else {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // 425 (the vortex rifleman, `NPC.cs:70331-70372`): the `ai[2] ==
+            // 1` firing band cycles rows 10..12 at 3 ticks, the air holds row
+            // 1 and the walk runs rows 2..9 off `|vx|`.
+            NpcKind::VortexRifleman => {
+                if self.facing != 0 {
+                    self.sprite_dir = -self.facing;
+                }
+                if self.ai[2] == 1.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 3.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 12 || self.frame < 10 {
+                        self.frame = 10;
+                    }
+                } else if self.vy != 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 9 || self.frame < 2 {
+                        self.frame = 2;
+                    }
+                }
+            }
+            // 426 (the vortex hornet queen, `:70410-70464`): the `ai[1] >=
+            // 45` dive band cycles 12..15 at 2 ticks (row 8 on the ground),
+            // the plain air band 9..11, the walk 1..7 off `|vx|`.
+            NpcKind::VortexHunter => {
+                if self.facing != 0 {
+                    self.sprite_dir = self.facing;
+                }
+                if self.ai[1] >= 45.0 {
+                    if self.vy == 0.0 {
+                        self.frame = 8;
+                    } else {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter >= 2.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 15 || self.frame < 12 {
+                            self.frame = 12;
+                        }
+                    }
+                } else if self.vy != 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 2.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 12 || self.frame < 9 {
+                        self.frame = 9;
+                    }
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter >= 10.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 7 || self.frame < 1 {
+                        self.frame = 1;
+                    }
+                }
+            }
+            // 427 (the vortex hornet, `:70373-70409`): the air band cycles
+            // 6..8 at 2 ticks, the walk 1..5 off `|vx|`.
+            NpcKind::VortexAlien => {
+                if self.facing != 0 {
+                    self.sprite_dir = self.facing;
+                }
+                if self.vy != 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 2.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 9 || self.frame < 6 {
+                        self.frame = 6;
+                    }
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 5 || self.frame < 1 {
+                        self.frame = 1;
+                    }
+                }
+            }
+            // 428 (the vortex larva, `:70500-70536`): the grounded walk steps
+            // at 10 px and wraps one row before the end; the air folds into
+            // the single row 4 sprite after 10 ticks of falling.
+            NpcKind::VortexHeadcrab => {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 10.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.last_row(1) {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.frame != 4 {
+                    if self.frame_counter > 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame_counter -= 1.0;
+                    if self.frame_counter < -10.0 || self.vy > 0.6 {
+                        self.frame = 4;
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            // 429 (the vortex soldier, `:70465-70499`): the grounded walk
+            // starts on row 2 and wraps at the sheet's end; the air holds row
+            // 1.
+            NpcKind::VortexSoldier => {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // 518 (the solar spearman, `NPC.cs:70265`): the grounded walk
+            // starts on row 2 and wraps at the sheet's end with the doubled
+            // `|vx| + 1` accumulator; the air holds row 1.
+            NpcKind::SolarSpearman => {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                }
+            }
+            // The crawltipede's three links + the stardust worm's head have no
+            // `FindFrame` case at all (`NPC.cs:66684-77370`), so the row their
+            // `SetFrameSize` zero leaves stands.
+            NpcKind::SolarCrawltipedeHead
             | NpcKind::SolarCrawltipedeBody
             | NpcKind::SolarCrawltipedeTail
-            | NpcKind::StardustWormHead
-            | NpcKind::SolarSpearman
-            | NpcKind::SolarSelenian => {
-                let count = match self.kind {
-                    NpcKind::SolarDrakomire => 1,
-                    NpcKind::SolarCrawltipedeHead
-                    | NpcKind::SolarCrawltipedeBody
-                    | NpcKind::SolarCrawltipedeTail
-                    | NpcKind::StardustWormHead => 1,
-                    NpcKind::SolarSpearman => 10,
-                    NpcKind::SolarCorite => 15,
-                    NpcKind::StardustSpiderBig => 4,
-                    NpcKind::StardustSpiderSmall => 11,
-                    NpcKind::SolarDrakomireRider => 10,
-                    NpcKind::SolarSroller => 10,
-                    NpcKind::SolarSelenian => 8,
-                    _ => 5,
-                };
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
+            | NpcKind::StardustWormHead => {
+                self.frame = 0;
+            }
+            // 420 (the nebula floater, `:70631-70641`) and 421 (the brain
+            // suckler, `:70577-70591`): the plain 5-tick wrap, the suckler's
+            // `ai[0] == 5` state double-ticking the counter.
+            NpcKind::NebulaFloater => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % count;
+                    self.frame = self.next_row(1);
                 }
             }
-            // The nebula trio's 6/6/12-frame strips.
-            NpcKind::NebulaFloater | NpcKind::BrainSuckler | NpcKind::Predictor => {
-                let count = match self.kind {
-                    NpcKind::Predictor => 12,
-                    _ => 6,
-                };
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
+            NpcKind::BrainSuckler => {
+                if self.ai[0] == 5.0 {
+                    self.frame_counter += 1.0;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % count;
+                    self.frame = self.next_row(1);
                 }
             }
-            // The vortex trio's 15/9/5-frame strips over the walker
-            // accumulator.
-            NpcKind::VortexHunter | NpcKind::VortexAlien | NpcKind::VortexHeadcrab => {
-                let count = match self.kind {
-                    NpcKind::VortexHunter => 15,
-                    NpcKind::VortexAlien => 9,
-                    _ => 5,
-                };
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
+            // 423 (the nebula beast, `:70537-70576`): the `ai[2] == 1` charge
+            // band pins rows 2/3 off `ai[1]` 30..45, the air pins row 1, the
+            // walk runs rows 4.. off `1 + |vx| / 2` and wraps at the end.
+            NpcKind::NebulaBeast => {
+                if self.ai[2] == 1.0 {
+                    self.frame = if self.ai[1] >= 30.0 && self.ai[1] < 45.0 {
+                        3
+                    } else {
+                        2
+                    };
+                } else if self.vy != 0.0 {
+                    self.frame = 1;
+                } else if self.vx == 0.0 {
+                    self.frame = 0;
+                } else {
+                    self.sprite_dir = -(self.vx.signum() as i32);
+                    if self.frame < 4 {
+                        self.frame = 4;
+                    }
+                    self.frame_counter += 1.0 + self.vx.abs() / 2.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= self.rows() {
+                        self.frame = 4;
+                    }
+                }
+            }
+            // 424 (the nebula predictor, `:70592-70630`): the grounded
+            // `ai[2] > 0` aim band pins the last two rows off `ai[1]`, the walk
+            // runs rows 2..(count-2) off `|vx|`, the air holds row 1.
+            NpcKind::Predictor => {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = -self.facing;
+                    }
+                    if self.ai[2] > 0.0 {
+                        self.frame = if self.ai[1] > 90.0 {
+                            self.last_row(1)
+                        } else {
+                            self.rows() - 2
+                        };
+                        self.frame_counter = 0.0;
+                    } else if self.vx == 0.0 {
+                        self.frame = 0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs();
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() - 2 {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % count;
+                    self.frame = 1;
                 }
             }
             // The Moon Lord family: the 396's 4x8 accumulator (the
@@ -5013,12 +5626,14 @@ impl Npc {
             NpcKind::DD2EterniaCrystal => {
                 self.frame = 0;
             }
-            // The Dark Mage: the 20-frame caster strip.
+            // The Dark Mage: `Main.npcFrameCount[564]` = 9 rows (the v1
+            // walked a 20-row cycle five rows past the sheet).
             NpcKind::DD2DarkMage => {
                 self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 20;
+                    self.frame = (self.frame + 1)
+                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
                 }
             }
             // The Dutchman: the 1-frame ship strip; its cannons ride the
@@ -5192,13 +5807,16 @@ impl Npc {
                 }
             }
             NpcKind::Zombie => {
-                // `FindFrame` has no case 9: the vanilla zombie's
-                // `frame.Y` stays at its `SetFrameSize` 0 — the NPC_9 sheet
-                // is a single 30x48 frame (`Main.npcFrameCount[9] = 1`,
-                // `Main.cs:67082`). The port's v1 ran a 3-frame walker
-                // (the case-3 group's idiom) whose rows 1/2 sampled past
-                // the sheet.
-                self.frame = 0;
+                // `FindFrame`'s walker arm (`case 3` — a member of the
+                // `case 3/52/53/132/161/186-189/200/223/251/254/255/319-321/
+                // 331/332/342/536/590/691` group, `NPC.cs`): NPC_3 is
+                // 38x144 with `Main.npcFrameCount[3]` = 3 (`Main.cs:67082`),
+                // i.e. three 48-px rows — the stand (row 0) and the two walk
+                // poses. The v1 pinned row 0 and cited `npcFrameCount[9]`
+                // (the Devourer tail's single frame), so the most common
+                // night enemy never animated; and the draw divided the sheet
+                // by 1, so all three rows were squeezed into one 48-px quad.
+                self.walker_frame();
             }
             NpcKind::Skeleton | NpcKind::UndeadMiner => {
                 // The humanoid-group walk (the cave walkers ride the same
@@ -12112,6 +12730,12 @@ impl Npc {
     }
 
     fn contact(&mut self, player: &mut Player) {
+        // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
+        // journey godmode power returns before the whole collision pass — no
+        // NPC contact damage and none of the EoC shield-dash arm below.
+        if player.creative_god_mode {
+            return;
+        }
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
@@ -12183,8 +12807,26 @@ impl Npc {
                     self.damage_override
                         .unwrap_or_else(|| self.kind.contact_damage())
                 };
-                if dmg > 0 {
-                    player.hurt(dmg, cx);
+                if dmg > 0 && player.hurt(dmg, cx) {
+                    // `Player.cs:31373-31415`: the contact that lands also
+                    // bounces the thorns back — `thorns` scales the NPC's own
+                    // damage (2x on the Turtle set), the Cactus set adds its
+                    // flat 15. `dontTakeDamage` NPCs (the dummies) refuse it,
+                    // exactly like the C# `!Main.npc[i].dontTakeDamage` gate.
+                    if !self.dont_take_damage {
+                        let reflect = player.thorns_damage(dmg);
+                        if reflect > 0 {
+                            let (ncx, _) = self.center();
+                        let dir = if ncx < player.x + crate::player::WIDTH * 0.5 {
+                                -1.0
+                            } else {
+                                1.0
+                            };
+                            // The C# knocks the NPC away from the player
+                            // (`-num2`, knockback 10).
+                            self.hurt(reflect, ncx, 10.0 * dir, false);
+                        }
+                    }
                 }
             }
         }
@@ -12684,6 +13326,35 @@ mod tests {
         player.hurt_cd = 0.0;
         bat.contact(&mut player);
         assert!(player.hp < player.max_hp, "the bat bit for its contact dmg");
+        // M3-EQUIP-15 — the same contact with the Thorns potion up bounces
+        // the bat's own 13 back (`Player.cs:31373-31415`, `thorns = 1`).
+        let mut spiky = crate::player::Player::spawn(&w);
+        spiky.x = bat.x;
+        spiky.y = bat.y;
+        spiky.hurt_cd = 0.0;
+        spiky.buffs.add_buff(14, 3600);
+        spiky.update(&w, crate::player::PlayerInput::default());
+        let bat_hp = bat.hp;
+        spiky.hp = spiky.max_hp; // the contact must land for the reflection
+        bat.contact(&mut spiky);
+        assert!(
+            bat.hp < bat_hp,
+            "the thorns bit back: {} -> {}",
+            bat_hp,
+            bat.hp
+        );
+        // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
+        // journey godmode power returns before any contact arm runs.
+        let mut god = crate::player::Player::spawn(&w);
+        god.x = bat.x;
+        god.y = bat.y;
+        god.hurt_cd = 0.0;
+        god.creative_god_mode = true;
+        bat.contact(&mut god);
+        assert_eq!(
+            god.hp, god.max_hp,
+            "the godmode player takes no contact damage"
+        );
         // The bestiary entry maps.
         let e = crate::bestiary::entry_for_npc(NpcKind::CaveBat, SlimeVariant::Blue);
         assert_eq!(e.net_id, 49);
@@ -13103,6 +13774,40 @@ mod tests {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
     }
 
+    /// DW-3.4 — `NPC.CanBeChasedBy` (`NPC.cs:90030-90041`) over the gate's
+    /// truth table: alive, `chaseable`, `lifeMax > 5`, `!dontTakeDamage`,
+    /// `!friendly`, `!immortal`.
+    #[test]
+    fn test_DW_3_4_can_be_chased_by_matches_the_csharp() {
+        let mut e = bare(NpcKind::Slime);
+        e.max_hp = 30;
+        e.hp = 30;
+        assert!(e.can_be_chased_by(), "a live enemy is chaseable");
+        // `lifeMax > 5` — critters are out.
+        e.max_hp = 5;
+        assert!(!e.can_be_chased_by(), "critter (lifeMax 5)");
+        e.max_hp = 6;
+        assert!(e.can_be_chased_by(), "lifeMax 6 clears the bar");
+        // Dead.
+        e.hp = 0;
+        assert!(!e.can_be_chased_by());
+        e.hp = 30;
+        // `chaseable`, `dontTakeDamage`, `friendly`, `immortal` each block.
+        e.chaseable = false;
+        assert!(!e.can_be_chased_by());
+        e.chaseable = true;
+        e.dont_take_damage = true;
+        assert!(!e.can_be_chased_by());
+        e.dont_take_damage = false;
+        e.friendly = true;
+        assert!(!e.can_be_chased_by());
+        e.friendly = false;
+        e.immortal = true;
+        assert!(!e.can_be_chased_by());
+        e.immortal = false;
+        assert!(e.can_be_chased_by());
+    }
+
     #[test]
     fn slime_frames_cycle_every_eight_steps_and_speed_up_while_moving() {
         // NPC.cs:70801-70826: one counter tick per step, +1 when num2 > 0.
@@ -13129,26 +13834,23 @@ mod tests {
     }
 
     #[test]
-    fn the_zombie_sheet_is_a_single_static_frame() {
-        // `FindFrame` has no case 9: the vanilla zombie's `frame.Y` stays
-        // at its `SetFrameSize` 0 — the NPC_9 sheet is one 30x48 frame
-        // (`Main.npcFrameCount[9] = 1`, `Main.cs:67082`). The port's v1
-        // ran the case-3 group's walker (rows 0/1/2 sampled past the
-        // sheet); the town machine's rows 2.. belong to the humanoids
-        // (26-frame Guide et al.), never the zombie.
+    fn the_zombie_is_not_pinned_to_one_row() {
+        // The v1 read `FindFrame`'s missing `case 9` as "the zombie is a
+        // single NPC_9 frame". The zombie is type 3 and its arm IS in the
+        // walker group (`case 3` of `case 3/52/53/132/…`), over NPC_3 —
+        // 38x144, three 48-px rows (`Main.npcFrameCount[3]` = 3,
+        // `Main.cs:67082`). `the_zombie_walks_its_three_rows` pins the
+        // machine; this one keeps the sheet's row count honest.
         let mut z = bare(NpcKind::Zombie);
         z.vx = 0.9;
         z.frame = 5;
+        let mut seen = [false; 3];
         for _ in 0..40 {
             z.find_frame();
-            assert_eq!(z.frame, 0, "the zombie never animates");
+            assert!(z.frame < 3, "the zombie never leaves its three rows");
+            seen[z.frame as usize] = true;
         }
-        // The air and the backpedal do not move it either.
-        z.vy = 0.1;
-        z.facing = 1;
-        z.vx = -0.5;
-        z.find_frame();
-        assert_eq!(z.frame, 0, "airborne/backpedal holds the single frame");
+        assert_eq!(seen, [true, true, true], "all three rows animate");
     }
 
     #[test]
@@ -15426,6 +16128,364 @@ mod tests {
         assert_eq!(crate::world_sim::npcs::shop_index_for_kind(NpcKind::TravellingMerchant), Some(19));
     }
 
+    // M4-NPC-3t: EVERY ported kind must keep `FindFrame` inside its own
+    // sheet's row count (`Main.npcFrameCount[netID]`) — a row past the strip
+    // samples the neighbouring row (or the sheet's blank tail) and shows up as
+    // a scrambled or half-missing sprite. The kinds whose draw uses a GRID
+    // cell index instead of a row are listed with their cell bound.
+    #[test]
+    fn every_kind_finds_a_frame_inside_its_vanilla_strip() {
+        use crate::render::entities::{npc_rows, texture_net_id};
+        let mut bad: Vec<String> = Vec::new();
+        for net in 0u16..697 {
+            let Some(kind) = NpcKind::from_u16(net) else {
+                continue;
+            };
+
+            // A few kinds lack a bestiary row (a separate audit) and
+            // `NpcKind::net_id` reads the bestiary, so filter them first.
+            if !crate::bestiary::has_entry(kind, SlimeVariant::Blue) {
+                continue;
+            }
+            // The grid/cell draws: `MoonLordHead` walks the 3x3 grid (cell
+            // 0..8, `Main.cs:24926`) and the Deerclops the 5x5 one
+            // (`Main.cs:26334-26412`).
+            let rows = match kind {
+                NpcKind::MoonLordHead => 9,
+                NpcKind::Deerclops => 25,
+                _ => npc_rows(texture_net_id(kind)),
+            };
+            let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            for (vx, vy) in [(0.0, 0.0), (2.5, 0.0), (-2.5, 0.0), (0.0, 3.0), (0.0, -3.0)] {
+                for ai0 in [0.0, 1.0, 2.0, 5.0, 6.0, 30.0, 100.0, 210.0, 400.0] {
+                    for ai1 in [0.0, 20.0, 120.0, 300.0] {
+                        n.vx = vx;
+                        n.vy = vy;
+                        n.ai = [ai0, ai1, 0.0, ai0];
+                        n.frame = 0;
+                        n.frame_counter = 0.0;
+                        for _ in 0..24 {
+                            n.find_frame();
+                            if n.frame >= rows {
+                                bad.push(format!(
+                                    "{kind:?} (net {}): row {} of {rows}: ai {ai0}/{ai1}, v {vx}/{vy}",
+                                    kind.net_id(),
+                                    n.frame
+                                ));
+                                // One report per kind is enough to name the bug.
+                                break;
+                            }
+                        }
+                        if !bad.is_empty() && bad.last().unwrap().starts_with(&format!("{kind:?} ")) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        bad.sort();
+        bad.dedup();
+        assert!(bad.is_empty(), "{} kind(s) left their strip:
+{}", bad.len(), bad.join("
+"));
+    }
+
+    // M4-NPC-3t: the pillar/Moon-Lord families now draw from their OWN
+    // `NPC_<netID>` sheets, so a `FindFrame` row that lands outside
+    // `Main.npcFrameCount[netID]` would sample a neighbouring row of the same
+    // sheet (or the sheet's blank tail) instead of bleeding across a shared
+    // family sheet. Sweep the motion/AI states each machine branches on and
+    // assert every row stays inside the vanilla strip.
+    #[test]
+    fn the_pillar_family_rows_stay_inside_their_own_sheets() {
+        // (kind, `Main.npcFrameCount[netID]`)
+        let cases: &[(NpcKind, u32)] = &[
+            // `MoonLordHead` is a 3x3 GRID sheet (cell index 0..8, the
+            // custom block at `Main.cs:24846-24927`) — asserted separately.
+            (NpcKind::MoonLordHand, 4),
+            (NpcKind::MoonLordCore, 5),
+            (NpcKind::MoonLordFreeEye, 4),
+            (NpcKind::MoonLordLeechBlob, 1),
+            (NpcKind::StardustWormHead, 1),
+            (NpcKind::StardustCellBig, 4),
+            (NpcKind::StardustCellSmall, 2),
+            (NpcKind::StardustJellyfishBig, 5),
+            (NpcKind::StardustSpiderBig, 11),
+            (NpcKind::StardustSpiderSmall, 5),
+            (NpcKind::StardustSoldier, 11),
+            (NpcKind::SolarCrawltipedeHead, 1),
+            (NpcKind::SolarCrawltipedeBody, 1),
+            (NpcKind::SolarCrawltipedeTail, 1),
+            (NpcKind::SolarDrakomire, 10),
+            (NpcKind::SolarDrakomireRider, 10),
+            (NpcKind::SolarSroller, 15),
+            (NpcKind::SolarCorite, 8),
+            (NpcKind::SolarSelenian, 17),
+            (NpcKind::SolarSpearman, 10),
+            (NpcKind::NebulaFloater, 6),
+            (NpcKind::BrainSuckler, 6),
+            (NpcKind::NebulaBeast, 12),
+            (NpcKind::Predictor, 12),
+            (NpcKind::VortexRifleman, 13),
+            (NpcKind::VortexSoldier, 10),
+            (NpcKind::VortexHunter, 15),
+            (NpcKind::VortexAlien, 9),
+            (NpcKind::VortexHeadcrab, 5),
+        ];
+        for &(kind, rows) in cases {
+            let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            for (vx, vy) in [(0.0, 0.0), (2.0, 0.0), (-2.0, 0.0), (0.0, 2.0), (0.0, -2.0)] {
+                for ai0 in [0.0, 1.0, 2.0, 6.0, 30.0, 100.0, 200.0, 400.0] {
+                    for ai1 in [0.0, 20.0, 100.0, 280.0, 420.0] {
+                        n.vx = vx;
+                        n.vy = vy;
+                        n.ai = [ai0, ai1, 0.0, ai0];
+                        n.frame = 0;
+                        n.frame_counter = 0.0;
+                        for _ in 0..40 {
+                            n.find_frame();
+                            assert!(
+                                n.frame < rows,
+                                "{kind:?}: row {} left the {rows}-row strip                                  (vx {vx}, vy {vy}, ai {ai0}/{ai1})",
+                                n.frame
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // M4-NPC-3t: the pillar/Moon-Lord families now draw from their OWN
+    // `NPC_<netID>` sheets, so a `FindFrame` row that lands outside
+    // `Main.npcFrameCount[netID]` would sample a neighbouring row of the same
+    // sheet (or the sheet's blank tail) instead of bleeding across a shared
+    // family sheet. Sweep the motion/AI states each machine branches on and
+    // assert every row stays inside the vanilla strip.
+    #[test]
+
+    // The lunar families' machines are per-kind `FindFrame` cases now, so a
+    // state sweep must land on each case's own band (`NPC.cs:70119-70803`)
+    // instead of the shared `|vx| + 0.6` accumulator the v1 ran.
+    #[test]
+    fn the_lunar_find_frame_machines_walk_their_own_bands() {
+        let rows = |k: NpcKind| -> u32 {
+            crate::render::entities::npc_rows(crate::render::entities::texture_net_id(k))
+        };
+
+        // 405/406: the plain 4-tick wrap over the whole strip.
+        let mut cell = Npc::new(NpcKind::StardustCellBig, 0.0, 0.0, 1, 0.0);
+        let mut seen = Vec::new();
+        for _ in 0..(rows(NpcKind::StardustCellBig) * 4) {
+            cell.find_frame();
+            seen.push(cell.frame);
+        }
+        assert_eq!(seen, vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 0], "the 4-tick wrap");
+
+        // 407: the same wrap at 6 ticks.
+        let mut jelly = Npc::new(NpcKind::StardustJellyfishBig, 0.0, 0.0, 1, 0.0);
+        for _ in 0..5 {
+            jelly.find_frame();
+        }
+        assert_eq!(jelly.frame, 0, "six ticks a row");
+        jelly.find_frame();
+        assert_eq!(jelly.frame, 1);
+
+        // 409: the `ai[1]` 1..30 attack band pins the last row; the walk wraps
+        // two rows early.
+        let mut spider = Npc::new(NpcKind::StardustSpiderBig, 0.0, 0.0, 1, 0.0);
+        spider.ai[1] = 12.0;
+        spider.find_frame();
+        assert_eq!(spider.frame, rows(NpcKind::StardustSpiderBig) - 1, "the attack row");
+        spider.ai[1] = 0.0;
+        spider.frame = 0;
+        spider.frame_counter = 0.0;
+        for _ in 0..(6 * (rows(NpcKind::StardustSpiderBig) + 2)) {
+            spider.find_frame();
+            assert!(
+                spider.frame < rows(NpcKind::StardustSpiderBig) - 1,
+                "the walk never reaches the attack rows"
+            );
+        }
+
+        // 411: the `ai[1]` 120..240 channel pins the last row and flips the
+        // sprite; the walk starts on row 2.
+        let mut soldier = Npc::new(NpcKind::StardustSoldier, 10.0, 0.0, -1, 0.0);
+        soldier.vx = 2.0;
+        soldier.ai[1] = 150.0;
+        soldier.find_frame();
+        assert_eq!(soldier.frame, rows(NpcKind::StardustSoldier) - 1);
+        assert_eq!(soldier.sprite_dir, 1, "-direction");
+        soldier.ai[1] = 0.0;
+        soldier.vy = 0.0;
+        soldier.frame = 0;
+        soldier.find_frame();
+        assert!(soldier.frame >= 2, "the walk rides the 2.. band");
+
+        // 415: the `ai[2] < 0` charge flips rows 8/9 off the 18-tick counter;
+        // the grounded walk stays inside 2..count-2 and lands on row 0 at rest.
+        let mut drak = Npc::new(NpcKind::SolarDrakomire, 3.0, 0.0, 1, 0.0);
+        drak.vx = 3.0;
+        drak.ai[2] = -1.0;
+        let mut charge_rows = Vec::new();
+        for _ in 0..24 {
+            drak.find_frame();
+            charge_rows.push(drak.frame);
+        }
+        assert!(charge_rows.iter().any(|&r| r == 8), "the charge's row 8");
+        assert!(charge_rows.iter().any(|&r| r == 9), "and its row 9");
+        drak.ai[2] = 0.0;
+        drak.vx = 0.0;
+        drak.frame = 5;
+        drak.find_frame();
+        assert_eq!(drak.frame, 0, "standing still snaps to row 0");
+
+        // 417: `ai[0] == 1` / `5` climb 9..14 off `ai[1] / 6`, any other state
+        // pins row 14.
+        let mut sroller = Npc::new(NpcKind::SolarSroller, 0.0, 0.0, 1, 0.0);
+        sroller.ai[0] = 1.0;
+        sroller.ai[1] = 12.0;
+        sroller.find_frame();
+        assert_eq!(sroller.frame, 11, "9 + 12/6");
+        sroller.ai[0] = 5.0;
+        sroller.find_frame();
+        assert_eq!(sroller.frame, 11, "13 - 12/6");
+        sroller.ai[0] = 3.0;
+        sroller.find_frame();
+        assert_eq!(sroller.frame, 14, "the else arm pins 14");
+        sroller.ai[0] = 0.0;
+        sroller.vx = 0.0;
+        sroller.frame_counter = 0.0;
+        sroller.find_frame();
+        assert_eq!(sroller.frame, 0, "the roll starts on row 0");
+
+        // 418: the idle band walks 0..4, the `ai[0] == 2` dive splits `ai[1]`.
+        let mut corite = Npc::new(NpcKind::SolarCorite, 0.0, 0.0, 1, 0.0);
+        for _ in 0..7 {
+            corite.find_frame();
+        }
+        assert_eq!(corite.frame, 1, "the 6-tick idle step");
+        corite.ai[0] = 2.0;
+        for (ai1, want) in [(5.0, 5), (15.0, 6), (25.0, 7)] {
+            corite.ai[1] = ai1;
+            corite.find_frame();
+            assert_eq!(corite.frame, want, "the dive band at ai[1] {ai1}");
+        }
+
+        // 419: the `ai[2] < 0` charge climbs 2..8, the grounded walk starts on
+        // row 9 and the air holds row 1.
+        let mut selen = Npc::new(NpcKind::SolarSelenian, 4.0, 0.0, 1, 0.0);
+        selen.vx = 4.0;
+        selen.ai[2] = -1.0;
+        let mut charge = Vec::new();
+        for _ in 0..12 {
+            selen.find_frame();
+            charge.push(selen.frame);
+        }
+        assert!(charge.iter().all(|&r| (2..=8).contains(&r)), "the charge band 2..8: {charge:?}");
+        selen.ai[2] = 0.0;
+        selen.frame = 0;
+        selen.find_frame();
+        assert!(selen.frame >= 9, "the walk band starts at 9");
+        selen.vy = 2.0;
+        selen.find_frame();
+        assert_eq!(selen.frame, 1, "the air row");
+
+        // 423: the `ai[2] == 1` charge pins rows 2/3 off `ai[1]`, the walk
+        // rides rows 4.. and flips off the velocity sign.
+        let mut beast = Npc::new(NpcKind::NebulaBeast, 0.0, 0.0, 1, 0.0);
+        beast.ai[2] = 1.0;
+        beast.ai[1] = 35.0;
+        beast.find_frame();
+        assert_eq!(beast.frame, 3);
+        beast.ai[1] = 10.0;
+        beast.find_frame();
+        assert_eq!(beast.frame, 2);
+        beast.ai[2] = 0.0;
+        beast.vx = -2.0;
+        beast.find_frame();
+        assert_eq!(beast.sprite_dir, 1, "spriteDirection = sign(-vx)");
+        assert!(beast.frame >= 4);
+
+        // 424: the aim band pins the last two rows; the walk rides 2..count-2.
+        let mut pred = Npc::new(NpcKind::Predictor, 0.0, 0.0, 1, 0.0);
+        pred.ai[2] = 1.0;
+        pred.ai[1] = 120.0;
+        pred.find_frame();
+        assert_eq!(pred.frame, rows(NpcKind::Predictor) - 1);
+        pred.ai[1] = 40.0;
+        pred.find_frame();
+        assert_eq!(pred.frame, rows(NpcKind::Predictor) - 2);
+        pred.ai[2] = 0.0;
+        pred.vx = 1.0;
+        pred.frame = 0;
+        pred.find_frame();
+        assert_eq!(pred.frame, 2, "the walk floor");
+
+        // 425: the `ai[2] == 1` firing band cycles 10..12 at 3 ticks.
+        let mut rifle = Npc::new(NpcKind::VortexRifleman, 0.0, 0.0, 1, 0.0);
+        rifle.ai[2] = 1.0;
+        rifle.frame = 10;
+        for _ in 0..3 {
+            rifle.find_frame();
+        }
+        assert_eq!(rifle.frame, 11, "three ticks a row");
+        for _ in 0..9 {
+            rifle.find_frame();
+            assert!((10..=12).contains(&rifle.frame), "the firing band");
+        }
+
+        // 426: the `ai[1] >= 45` dive cycles 12..15, the plain air 9..11.
+        let mut queen = Npc::new(NpcKind::VortexHunter, 0.0, 0.0, 1, 0.0);
+        queen.vy = -2.0;
+        queen.ai[1] = 60.0;
+        queen.frame = 12;
+        for _ in 0..40 {
+            queen.find_frame();
+            assert!((12..=14).contains(&queen.frame), "the dive band");
+        }
+        queen.ai[1] = 0.0;
+        queen.frame = 9;
+        for _ in 0..20 {
+            queen.find_frame();
+            assert!((9..=11).contains(&queen.frame), "the plain air band");
+        }
+
+        // 427: the air band 6..8, the walk 1..5.
+        let mut hornet = Npc::new(NpcKind::VortexAlien, 0.0, 0.0, 1, 0.0);
+        hornet.vy = -2.0;
+        hornet.frame = 6;
+        for _ in 0..20 {
+            hornet.find_frame();
+            assert!((6..=8).contains(&hornet.frame), "the hornet's air band");
+        }
+
+        // 428: the grounded walk wraps one row early; the fall latches row 4.
+        let mut larva = Npc::new(NpcKind::VortexHeadcrab, 2.0, 0.0, 1, 0.0);
+        larva.vx = 2.0;
+        for _ in 0..(22 * rows(NpcKind::VortexHeadcrab)) {
+            larva.find_frame();
+            assert!(larva.frame < rows(NpcKind::VortexHeadcrab) - 1, "the walk band");
+        }
+        larva.vy = 2.0;
+        for _ in 0..12 {
+            larva.find_frame();
+        }
+        assert_eq!(larva.frame, 4, "the fall row");
+
+        // 429/518: the grounded walk starts on row 2, the air holds row 1.
+        for kind in [NpcKind::VortexSoldier, NpcKind::SolarSpearman] {
+            let mut n = Npc::new(kind, 2.0, 0.0, 1, 0.0);
+            n.vx = 2.0;
+            n.frame = 0;
+            n.find_frame();
+            assert!(n.frame >= 2, "{kind:?}: the walk floor");
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 1, "{kind:?}: the air row");
+        }
+    }
+
     #[test]
     fn the_tinkerer_kinds_stats_roundtrip_and_shop() {
         // `SetDefaults` 105 (`NPC.cs:10245-10257`) and 107 (`:10271-10283`):
@@ -15658,6 +16718,56 @@ mod tests {
         m.vx = 0.0;
         m.find_frame();
         assert_eq!(m.frame, 0, "standing still is row 0");
+    }
+
+    #[test]
+    fn the_zombie_walks_its_three_rows() {
+        // `FindFrame`'s walker arm (`case 3` of the
+        // `case 3/52/53/132/161/186-189/…` group, `NPC.cs`): NPC_3 is
+        // 38x144 with `Main.npcFrameCount[3]` = 3, so the strip is the
+        // stand row plus two walk poses. The v1 pinned row 0 and its draw
+        // divided the sheet by 1 (all three rows in one quad).
+        let mut z = bare(NpcKind::Zombie);
+        // Standing still: row 0.
+        z.vx = 0.0;
+        z.vy = 0.0;
+        z.frame = 7;
+        z.frame_counter = 5.0;
+        z.find_frame();
+        assert_eq!(z.frame, 0, "idle is row 0");
+        assert_eq!(z.frame_counter, 0.0, "and the accumulator resets");
+        // Walking: the `|vx|` bands 0..8 / 8..16 / 16..24 / 24..32.
+        let mut bands = Vec::new();
+        z.vx = 4.0;
+        z.frame_counter = 0.0;
+        for _ in 0..10 {
+            z.find_frame();
+            bands.push(z.frame);
+        }
+        // 4 px/tick: rows 0 (counter 4), 1 (8), 1 (12), 2 (16), 2 (20),
+        // 1 (24), 1 (28), then the lap back through 0.
+        assert_eq!(&bands[..7], &[0, 1, 1, 2, 2, 1, 1], "the four bands");
+        assert!(bands.iter().all(|f| *f < 3), "no row past the strip");
+        // Airborne and turning both hold row 2 and clear the accumulator.
+        z.vy = -1.0;
+        z.frame = 1;
+        z.frame_counter = 12.0;
+        z.find_frame();
+        assert_eq!(z.frame, 2, "airborne holds the jump row");
+        assert_eq!(z.frame_counter, 0.0);
+        z.vy = 0.0;
+        z.facing = -1;
+        z.vx = 3.0;
+        z.frame_counter = 9.0;
+        z.find_frame();
+        assert_eq!(z.frame, 2, "facing away from the motion");
+        // Grounded on the motion: the sprite faces the walk.
+        z.facing = 1;
+        z.vx = 3.0;
+        z.find_frame();
+        assert_eq!(z.sprite_dir, 1, "the ground flip");
+        // The drawn strip is three rows: the frame height is sheet / 3.
+        assert_eq!(z.kind.humanoid_frame_count(), 1, "not a town sheet");
     }
 
     #[test]
