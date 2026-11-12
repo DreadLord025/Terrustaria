@@ -1,0 +1,56 @@
+# 92 — ROADMAP.md re-verification (2026-11-12)
+
+## Scope + method
+
+- **Worktree:** `C:\Users\DreadLord\Desktop\TR-AUDIT-2-docs` (branch `AUDIT-2-docs-reverification`, HEAD `f3e2fcf merge origin/main into INFRA-npc-sheet-audit` at audit start).
+- **Source of claims:** `docs/ROADMAP.md` (rewritten 2026-11-12 from C# 1.4.5.8 decompile audit, base noted as `ad0af53` / research `f0a4937..ad0af53`). Focused on Stage 1 task catalog rows that make checkable claims about current Rust code, prioritizing `S1-A-*`, `S1-C-*`, `S1-F-1/F-2`, `S1-J-1`, `S1-E-1`, `S1-D-*`, `S1-L-11`, then sampling others.
+- **Method:** read ROADMAP claim rows; spot-checked current `crates/` symbols/behavior with `grep`/`Select-String`/file reads; checked recent merge history (`git log --oneline -15`) for landed follow-ups. No `cargo`, no git writes, no `graphify update/merge-graphs`. `graphify` not required (greps/read sufficient).
+- **Caveat:** this is a targeted re-verification, not a full re-audit of all ~180 rows. Verdicts below are based on direct code evidence where cited; sampled/unrechecked lower-priority rows are not exhaustively enumerated as CLOSED without proof.
+
+## Main table (focused/sample rows)
+
+| ROADMAP id | Claim (short) | Verdict | Evidence (Rust file:line + commit if closed) | Action |
+| --- | --- | --- | --- | --- |
+| S1-A-1 | No C# `UnifiedRandom` (.NET System.Random/Knuth subtractive) port; streams not C#-faithful | STILL-OPEN | No `UnifiedRandom` implementation found in `crates/` code; only comments/admissions (e.g. `crates/tr-core/src/worldgen/pipeline.rs:110-114` notes xorshift stands in for `UnifiedRandom`, `crates/tr-core/src/worldgen/dungeon.rs:106-131` uses `HallSeed` not `UnifiedRandom`). ROADMAP claim remains consistent. | Keep |
+| S1-A-2 | 7 ad-hoc `u64` streams instead of C# named `SwapRandom` streams / `genRand` alias semantics | STILL-OPEN | No evidence of named `UnifiedRandom` stream registry in sampled app/core code; worldgen uses per-pass `pass_rng`/xorshift seams (e.g. `crates/tr-core/src/worldgen/pipeline.rs:120-122`). | Keep |
+| S1-A-3 | Tile `frameNumber`/`wallFrameNumber` from position hash, not `genRand`/save | STILL-OPEN | `crates/tr-core/src/framing.rs:134-146` `variant(x,y)` is an avalanche hash "standing in for the `frameNumber` stored in the save file (we do not decode that field yet)" returning `(h % 3)`. | Keep |
+| S1-A-4 | Chest loot rolled at load time from splitmix seam instead of genRand interleave | UNVERIFIABLE (not directly checked this pass) | Not re-read in this focused pass; ROADMAP/research basis unchanged by inspected merges. | Keep; verify explicitly against `chest_gen`/worldgen loot path |
+| S1-A-5 | Prefix/loot/shop/particle rolls use splitmix stand-in, not `UnifiedRandom` | UNVERIFIABLE (sampled only) | Research/ROADMAP consistently state splitmix stand-ins; no evidence of `UnifiedRandom` migration seen. | Keep |
+| S1-A-9 | Projectile `timeLeft--`/`penetrate==0` kills run once per update instead of per AI sub-step (extra-update projectiles live ~2×) | UNVERIFIABLE (not re-verified in code this pass) | Claim not contradicted by inspected recent merges; requires projectile update-loop read. | Keep; verify in `projectile.rs` update loop |
+| S1-C-1 | Dodge family absent (black belt/shadow dodge/etc.) | UNVERIFIABLE (not searched exhaustively) | No contrary evidence seen in sampled combat paths. | Keep |
+| S1-C-2 | Projectile→NPC hits skip `DamageVar` and defense | STILL-OPEN | `crates/tr-app/src/projectile.rs:11504,11608` call `n.hurt_from_projectile(dmg/damage, ...)`; `crates/tr-app/src/npc.rs:4062-4078` `hurt_from_projectile` subtracts raw `amount` (`self.hp -= amount;`) with no `damage_var`/`strike_npc_damage`/defense term. | Keep |
+| S1-C-3 | `num2 < 1 → 1` floor / 40-vs-20 iframe result missing (divergence-pinning test noted) | UNVERIFIABLE (not re-verified this pass) | Not checked. | Keep |
+| S1-C-8 | Projectile PVE hit test uses point, not `Damage_GetHitbox()` rectangle | UNVERIFIABLE (not re-verified this pass) | Not checked. | Keep |
+| S1-C-9 | Item pickup counts stack twice | STILL-OPEN | `crates/tr-app/src/world_sim/items.rs:191-199`: `drop_count = remaining`; on pickup into inventory does `inventory[slot].count += drop_count;` (193) then `inventory[slot].count += drop.count;` (194) — double add. | Keep (high-priority bug) |
+| S1-C-10 | Right-click moves half stack instead of one item per transfer with pacing/held-repeat | UNVERIFIABLE (not re-verified this pass) | Not checked. | Keep |
+| S1-D-1 | Hover preset `HORNET` has wrong constants (3.25/0.018 vs 3.5/0.021), missing `2f-scale`, wrong damping scope | STILL-OPEN | `crates/tr-app/src/npc_ai.rs:177-181` defines `HoverParams::HORNET { max_speed: 3.25, accel: 0.018 }` with comment citing wrong anchor; ROADMAP/research claim still matches code. | Keep (was prior FAIL; still unfixed) |
+| S1-D-2 | No `aiStyle`-first dispatch axis on NPC side | STILL-OPEN (architectural) | No evidence of aiStyle-axis dispatch introduced; npc AI remains kind/archetype-oriented in sampled code. | Keep |
+| S1-D-4 | Projectile AI dispatch gaps (38 unique arms vs 210, duplicated unreachable arms, missing styles) | CHANGED/STALE granularity risk | Not fully re-censused, but recent merges include projectile/equip follow-ups (`17ff78d` M3-EQUIP-20, `937a350` M4-PROJ-6b related in history) — counts in ROADMAP may drift; core gap (many styles missing) remains plausible. | Reword: refresh dispatch-arm census before implementation; keep as open gap |
+| S1-D-4b/c | Missing dispatch arms for styles with data rows; refuted DONE rows (vortex ritual, `ai_bubble`) | UNVERIFIABLE (not fully rechecked) | Needs targeted dispatch-table audit. | Keep pending re-census |
+| S1-E-1 | Dust/gore module absent (no `Dust`/`Gore` type/pool/per-type table; tiny caller coverage) | STILL-OPEN | No central dust/gore subsystem found in `crates/tr-core/src` or `crates/tr-app/src` as a general module; only scattered particle-like helpers/usages exist elsewhere in repo history/search noise, but no `Dust`/`Gore` pool/types implementing C# semantics. ROADMAP claim of missing subsystem remains directionally true. | Keep (verify exact counts in a dedicated pass) |
+| S1-E-6/E-7 | Buff HUD absent / buff effect table ~15% | UNVERIFIABLE (not re-verified this pass) | Not checked. | Keep |
+| S1-F-1 | 7 protocol-id collisions (78..84) cause save/netcode round-trip loss | UNVERIFIABLE (mapping not fully inspected) | Custom bidirectional id mapping exists: `crates/tr-app/src/npc.rs:850-1105` `to_u16`/`from_u16`, used in `crates/tr-app/src/app/netglue.rs:385,1044,1048,1504,2060` and saveglue paths (per ROADMAP). Full collision/coverage audit of 182 kinds not completed in this pass. | Keep; requires exhaustive bijection/round-trip check |
+| S1-F-2 | Dead/contradictory id arms remain; pirate renumber collision unresolved | UNVERIFIABLE (not fully audited) | Same as above; needs full diff against C# ids and dead-arm scan. | Keep |
+| S1-J-1 | `.wld` tile writer drops four wire bits (and RLE boundaries diverge) | STILL-OPEN | `crates/tr-core/src/wld/sections/tiles.rs:10-12,103-104,217-218,221` explicitly states wire bits are **not** written ("wire bits ... are not written: the port keeps them in the `World.wires` side table..." / "the wire bits are absent by design...") and actuator is handled separately. | Keep (writer still omits wires) |
+| S1-L-11 | Recipe table stale; `gen_recipes.py --check` fails; station reach/filter/guide/craft depth issues | STILL-OPEN (partially verified) | `python tools/gen_recipes.py --check` in worktree failed with: `recipes_gen.rs is out of date - rerun tools/gen_recipes.py` (exit 1). Station-reach/filter/crafting-behavior subclaims not rechecked in code this pass. | Keep; regenerate/commit + add CI check as task states; keep sub-rows until verified |
+| S1-L-11b/c/d/e/f/g | Recipe reach/filter/qty/craft RNG/slot-count/regression constraints | UNVERIFIABLE (not re-verified individually) | Not checked in this pass beyond stale-table check. | Keep |
+| S1-G-* / S1-H-* / S1-I-* / S1-K-* / others sampled | Various rendering/UI/netcode/worldgen claims | UNVERIFIABLE (not in focus sample) | Not rechecked; no contrary merge evidence found in recent log for these specific claims. | Keep |
+
+## CLOSED rows — "what landed"
+
+- **None confirmed closed in this pass.** Recent merges observed (`M5-DUNGEON-banners`/`PlaceBanner` `2021d15`,`4fe9be4`; `M3-EQUIP-20-armor-pen` `17ff78d`,`2bba790`; `M7-UI-8` hide toggles in history; `M4-PROJ-6b` merge refs; dungeon/infra merges) do not provide direct evidence that the focused ROADMAP gap claims above (A1-A3, C2/C9, D1, E1, F1/F2, J1, L11 drift) were resolved. They may address other rows not fully re-verified here.
+
+## Deviations & risks (new problems found while checking)
+
+- **Confirmed player-visible correctness bug remains:** double item pickup increment in `crates/tr-app/src/world_sim/items.rs:193-194` (`+= drop_count` then `+= drop.count`) — every stack pickup into an existing/selected slot is over-counted (aligns with `S1-C-9`). High impact.
+- **Projectile damage pipeline still bypasses variance/defense:** `projectile.rs` routes to `Npc::hurt_from_projectile` (`npc.rs:4062`) which applies raw amount; reinforces `S1-C-2`.
+- **Persistence/wiring caveat explicit in writer:** `.wld` tile serialization intentionally omits wire bits (`crates/tr-core/src/wld/sections/tiles.rs` module/header comments and payload logic), so vanilla-shaped world saves cannot faithfully carry wiring state (`S1-J-1`).
+- **Recipe generator drift is active now:** `tools/gen_recipes.py --check` fails in this worktree, so committed recipes are not in sync with generator output (`S1-L-11`) — risk of silent crafting/content divergence and CI blindness if unchecked.
+- **Determinism/visual fidelity debt unchanged in hotspots:** position-hash tile variant (`framing.rs:134-146`) and wrong hornet hover constants (`npc_ai.rs:177-181`) remain easy regression anchors for downstream parity work.
+- **Scope risk:** because this pass sampled high-severity rows, other claims marked UNVERIFIABLE here may have changed in either direction; ROADMAP should not be mass-closed without row-level evidence.
+
+## Task seeds
+
+- **S:** Re-fix S1-C-9 double-pickup in `world_sim/items.rs` (remove duplicate add, add regression test for partial/full stack pickup). S: correct `HoverParams::HORNET` and add hover-parameter table test (S1-D-1). S: add/enable `gen_recipes.py --check` in verification to prevent drift reappearing (pairs with S1-L-11).
+- **M:** Restore projectile→NPC damage path to apply `DamageVar`+defense/luck/crit rules per C# (S1-C-2) with parity tests. M: implement/serialize wire bits correctly in `.wld` tile writer (and reader/RLE boundaries as needed) with golden `.wld` comparison (S1-J-1). M: regenerate and reconcile recipe table/generator contract (S1-L-11, 11b-f as applicable) and document reach/filter behavior changes.
+- **L:** Port/adopt C#-faithful `UnifiedRandom` and migrate named per-consumer streams + framing RNG/save semantics (S1-A-1/A-2/A-3/A-9 dependencies), with golden stream/world comparisons. L: complete id-protocol audit/fix for NPC kind <-> u16/save/net mappings and dead-arm cleanup (S1-F-1/F-2) with bijection/round-trip tests.
