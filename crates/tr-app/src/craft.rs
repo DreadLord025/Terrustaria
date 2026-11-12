@@ -318,6 +318,10 @@ pub(crate) struct Adjacent {
 /// `TileReachLimit = 20`; region math `:45-54`): the active tile kinds around
 /// the player hitbox and the liquid flags (the same region — the vanilla has
 /// no separate liquid radius; threshold `tile.liquid > 200`, `:35688-35693`).
+/// The region is inclusive of `HX`/`HY`: `GetTileRegion` returns
+/// `new Rectangle(LX, LY, HX-LX, HY-LY)` and the XNA `Rectangle.Right` is
+/// `X + Width` (exclusive), so `Player.cs:35672`'s `i <= Right` scans
+/// `LX..=HX` — the same inclusive loop below (S1-L-11b).
 pub(crate) fn scan_adjacent(world: &World, player: &Player) -> Adjacent {
     const REACH_X: i32 = 5;
     const REACH_Y: i32 = 3;
@@ -1191,6 +1195,35 @@ mod tests {
         let w2 = world_with_station(18, 100, 100);
         let adj2 = scan_adjacent(&w2, &p);
         assert!(!adj2.tiles.contains(&18), "{:?}", adj2.tiles);
+    }
+
+    #[test]
+    fn the_station_reach_region_matches_the_csharp_xna_rect() {
+        // `Player.AdjTiles` (`Player.cs:35671-35674`) scans
+        // `WorldUtils.ClampToWorld(TileReachCheckSettings.Simple.GetTileRegion(this))`.
+        // `GetTileRegion` returns `new Rectangle(LX, LY, HX - LX, HY - LY)`
+        // (`TileReachCheckSettings.cs:56-60`) and the **XNA** `Rectangle.Right`
+        // is `X + Width` (exclusive — the same convention as
+        // `tr_core::whip::Rect::right`), so `Right == HX` and the C#'s
+        // `for (i = Left; i <= Right; i++)` (`:35672`) covers `LX..=HX`.
+        // The port's inclusive `lx..=hx` is therefore 1:1; S1-L-11b's
+        // "one tile wider" claim assumed the System.Drawing
+        // `Right = X + Width - 1` convention (docs/research/21 D2).
+        let seen = |x: i32, y: i32| {
+            let w = world_with_station(18, x, y);
+            let mut p = Player::spawn(&w);
+            p.x = 20.0 * 16.0; // LX = 20-5 = 15, HX = ceil(340/16)-1+5 = 26
+            p.y = 20.0 * 16.0; // LY = 20-3 = 17, HY = ceil(362/16)-1+3 = 25
+            scan_adjacent(&w, &p).tiles.contains(&18)
+        };
+        assert!(seen(15, 20), "the left edge is in reach");
+        assert!(!seen(14, 20), "one tile left of the reach is out");
+        assert!(seen(26, 20), "HX is inclusive (XNA Rectangle.Right == X + Width)");
+        assert!(!seen(27, 20), "one tile past HX is out");
+        assert!(seen(20, 17), "the top edge is in reach");
+        assert!(!seen(20, 16), "one tile above the reach is out");
+        assert!(seen(20, 25), "HY is inclusive");
+        assert!(!seen(20, 26), "one tile below HY is out");
     }
 
     #[test]
