@@ -117,6 +117,8 @@ pub struct SetStats {
     pub dash_type: i32,
     /// `Player.manaCost -= x` (the casters' set bonuses).
     pub mana_cost: f32,
+    /// `Player.endurance += x` (the Turtle/Chlorophyte/Solar rows).
+    pub endurance: f32,
 }
 
 const fn stats() -> SetStats {
@@ -135,6 +137,7 @@ const fn stats() -> SetStats {
         max_minions: 0,
         dash_type: 0,
         mana_cost: 0.0,
+        endurance: 0.0,
     }
 }
 
@@ -338,6 +341,13 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         "Spider",
         (2370, 2371, 2372),
         SetStats { minion_damage: 0.12, ..stats() },
+    ),
+    // `:158` Benefits.Turtle — `endurance += 0.15f` (the thorns flags ride
+    // their own systems).
+    (
+        "Turtle",
+        (1316, 1317, 1318),
+        SetStats { endurance: 0.15, ..stats() },
     ),
     // `:456` Benefits.Jungle — `manaCost -= 0.16f`.
     (

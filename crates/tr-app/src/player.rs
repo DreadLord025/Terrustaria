@@ -574,6 +574,12 @@ pub struct Player {
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
+    /// `Player.endurance` (`Player.cs:1138`): the fraction of incoming damage
+    /// the player shrugs off — `Hurt` applies `(int)((1 - endurance) * damage)`
+    /// (`:38304`) after the defense reduction. `ResetEffects` zeroes it
+    /// (`:18497`); the Worm Scarf, the Turtle/Chlorophyte/Solar sets and the
+    /// Endurance/Ice-Barrier buffs add per tick.
+    pub endurance: f32,
     pub mana: i32,
     /// `Player.manaCost` (`Player.cs:1884`): the magic items' cost
     /// multiplier — `ResetEffects` sets 1f (`:18334`) and the armor pieces,
@@ -1295,6 +1301,7 @@ impl Player {
             spawn_y: sy,
             hp: 100,
             max_hp: 100,
+            endurance: 0.0,
             mana: 20,
             mana_cost: 1.0,
             mana_max: 20,
@@ -2226,6 +2233,13 @@ impl Player {
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2).
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
+        // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
+        // damage)` after the defense reduction.
+        // The C# truncates and does not re-floor here (`Main.
+        // CalculateDamagePlayersTake` floors the *defense* step at 1, `:66160`;
+        // the endurance multiply runs after it, so a 1-damage hit with enough
+        // endurance legitimately lands for 0).
+        let amount = ((1.0 - self.endurance) * amount as f32) as i32;
         self.hp = (self.hp - amount).max(0);
         // `Player.Hurt`'s immunity window (`Player.cs:38385`): 40 ticks
         // for normal damage (no long-invincibility source yet), 20 when
@@ -2568,6 +2582,8 @@ impl Player {
         self.stat_defense = 0;
         // `:18334`: `manaCost = 1f` — the reductions re-apply below.
         self.mana_cost = 1.0;
+        // `:18497`: `endurance = 0f` — the rows below re-apply.
+        self.endurance = 0.0;
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).
@@ -2639,6 +2655,7 @@ impl Player {
             self.mana_max += set.mana_max;
             self.max_minions += set.max_minions;
             self.mana_cost += set.mana_cost;
+            self.endurance += set.endurance;
             if set.dash_type != 0 {
                 self.dash_type = set.dash_type;
             }
@@ -2647,6 +2664,15 @@ impl Player {
             match bt {
                 22 => self.blind = true, // `BuffID.Darkness`
                 32 => self.slow = true,  // `BuffID.Slow`
+                // `:10201-10204` — `BuffID.Endurance` (114): +10%.
+                114 => self.endurance += 0.1,
+                // `:10461-10470` — the Ice Barrier (62, the Frozen Turtle
+                // Shell): +25% while at or below half life.
+                62 => {
+                    if self.hp as f32 <= self.max_hp as f32 * 0.5 {
+                        self.endurance += 0.25;
+                    }
+                }
                 // `:11887-11892` — `BuffID.MagicPower` (29): the crit, the
                 // damage, the 20 mana and the −0.02 cost.
                 29 => {
@@ -2958,6 +2984,8 @@ impl Player {
                 1864 => self.minion_damage += 0.15,
                 1845 => self.minion_damage += 0.1,
                 4989 => self.move_speed += 0.075,
+                // The Worm Scarf (`:15081-15084`): +17% endurance.
+                3224 => self.endurance += 0.17,
                 // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
                 // Nature's Gift (`:15110-15113`, −0.06).
                 555 => self.mana_cost -= 0.08,
@@ -5852,6 +5880,41 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-11 — `endurance` folds the rows and the hurt applies it.
+    #[test]
+    fn the_endurance_rows_cut_the_incoming_damage() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!((p.endurance - 0.0).abs() < 1e-4);
+        // The Worm Scarf (3224) is +17%.
+        p.equipped[3] = 3224;
+        p.update(&w, PlayerInput::default());
+        assert!((p.endurance - 0.17).abs() < 1e-4);
+        // The Turtle set (1316/1317/1318) is +15%.
+        p.equipped[0] = 1316;
+        p.equipped[1] = 1317;
+        p.equipped[2] = 1318;
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.endurance - 0.15).abs() < 1e-4);
+        // The Endurance buff (114) adds its 10% on top.
+        p.buffs.add_buff(114, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.endurance - 0.25).abs() < 1e-4);
+        // 40 damage with 15+10% endurance: 40 * 0.75 = 30 past the defense 0.
+        p.stat_defense = 0;
+        p.hp = 100;
+        p.hurt_cd = 0.0;
+        p.hurt_inner(40, p.x - 10.0, false);
+        assert_eq!(p.hp, 70, "the cut, not the raw 40");
+        // A 1-damage hit truncates to 0 past 25% endurance — the C# has no
+        // re-floor after the multiply.
+        p.hurt_cd = 0.0;
+        p.hurt_inner(1, p.x - 10.0, false);
+        assert_eq!(p.hp, 70, "0 damage past 25% endurance");
     }
 
     /// M3-EQUIP-10 — the class emblems and the crit/move accessories.
