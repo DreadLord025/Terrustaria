@@ -20328,22 +20328,39 @@ mod magic_ai_tests {
     #[test]
     fn test_the_mode_1_gate_records_only_on_the_frame_counter_boundary() {
         // `Projectile.cs:17101`: mode 1 records when `frameCounter == 0` (or the
-        // ring is empty) — the Vortex Ritual bolt (580) is the ported kind.
+        // ring is empty) - the Vortex Ritual bolt (580) is the ported kind.
+        // S1-D-4c wires aiStyle 88 into live dispatch, so the gate is exercised
+        // directly (not through `pool.update`) to keep the test independent of
+        // the bolt's AI side effects.
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data(VORTEX_RITUAL_BOLT, 100.0, 100.0, 0.0, 0.0, 10, 0.0)
             .unwrap();
-        let mut w = world();
-        step(&mut pool, &mut w);
-        assert_ne!(pool.slots()[slot].old_pos[0], Vec2::ZERO, "the first frame records");
+        pool.slots_mut()[slot].shift_trailing_history();
+        assert_ne!(
+            pool.slots()[slot].old_pos[0],
+            Vec2::ZERO,
+            "the first frame records"
+        );
         assert_eq!(pool.slots()[slot].old_pos[1], Vec2::ZERO, "one entry");
         pool.slots_mut()[slot].frame_counter = 1;
-        step(&mut pool, &mut w);
-        assert_eq!(pool.slots()[slot].old_pos[1], Vec2::ZERO, "the gate blocks the tick");
+        pool.slots_mut()[slot].shift_trailing_history();
+        assert_eq!(
+            pool.slots()[slot].old_pos[1],
+            Vec2::ZERO,
+            "the gate blocks the tick"
+        );
         pool.slots_mut()[slot].frame_counter = 0;
-        step(&mut pool, &mut w);
-        assert_ne!(pool.slots()[slot].old_pos[1], Vec2::ZERO, "the boundary records");
-        assert_eq!(pool.slots()[slot].old_rot[1], 0.0, "mode 1 records positions only");
+        pool.slots_mut()[slot].shift_trailing_history();
+        assert_ne!(
+            pool.slots()[slot].old_pos[1],
+            Vec2::ZERO,
+            "the boundary records"
+        );
+        assert_eq!(
+            pool.slots()[slot].old_rot[1], 0.0,
+            "mode 1 records positions only"
+        );
     }
 
     #[test]
