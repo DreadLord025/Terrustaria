@@ -682,6 +682,9 @@ pub fn draw_hud(
     // `Main.DrawPVPIcons`'s inputs (`Main.cs:42654`): the net mode / seed gates,
     // the local player's `hostile` + `team` and the `teamCooldown` timer.
     pvp: &chrome::PvpIconState,
+    // `Player.hideVisibleAccessory` — the accessory visible/hidden ticks beside
+    // the accessory column (`Main.cs:41425-41460`).
+    hide_visible_accessory: &[bool; 10],
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -741,6 +744,9 @@ pub fn draw_hud(
     }
 
     let mut open_hover: Option<inventory::HoverRef> = None;
+    // `Main.mouseItem.IsAir` (`Main.cs:41430`): every accessory tick draw and hit
+    // is gated on the cursor holding nothing.
+    let mouse_item_is_air = mouse_item.kind == 0 || mouse_item.count == 0;
     // The housing page's cell hover (`Main.cs:42059-42065`), which the tooltip
     // layer prints instead of an item name.
     let mut open_housing: Option<(usize, Option<usize>)> = None;
@@ -768,6 +774,10 @@ pub fn draw_hud(
             // `Main.ChestOrShopUIVisible` (`Main.cs:2939-2952`): the trash
             // slot shifts while a container or shop panel is open (bug 20).
             chest_panel.chest >= 0 || shop.is_some(),
+            // `Player.hideVisibleAccessory` + `Main.mouseItem.IsAir`: the
+            // accessory visible/hidden ticks (`Main.cs:41425-41460`).
+            hide_visible_accessory,
+            mouse_item_is_air,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;
@@ -951,8 +961,7 @@ pub fn draw_hud(
     // the slot hover under this pointer. The C# icon pass runs inside
     // `DrawInventory` (before `DrawPendingMouseText`), so its text is the one on
     // screen for those cells.
-    let pvp_hover_text = if inventory_open {
-        chrome::pvp_hit(
+    let pvp_hover_text = if inventory_open {        chrome::pvp_hit(
             screen,
             equip_page,
             m_h,
@@ -976,7 +985,21 @@ pub fn draw_hud(
     let hover_item: Option<&ItemSlot> = if pvp_hover_text.is_some() || housing_hover_text.is_some() {
         None
     } else if inventory_open {
-        open_hover.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0)))
+        match open_hover {
+            // `Main.cs:41462-41465`: the hovered tick shows `Lang.inter[58 +
+            // num43]` — `[59]` "Visible" while the accessory is drawn, `[60]`
+            // "Hidden" once it is not.
+            Some(inventory::HoverRef::HideAccessory(i)) => {
+                let label = if hide_visible_accessory[i] {
+                    crate::lang::inter(60)
+                } else {
+                    crate::lang::inter(59)
+                };
+                tooltip::draw_mouse_text(r, lookups, mouse_pos, &label, screen, pulse);
+                None
+            }
+            other => other.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0))),
+        }
     } else {
         tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
             .map(|i| &inventory[i])
@@ -1009,6 +1032,9 @@ fn hover_item_for<'a>(
         H::Bank(i) => bank.and_then(|b| b.get(i)),
         // The buttons carry no item: the tooltip stays off.
         H::BankButton(_) => None,
+        // `Main.cs:41462-41465`: the tick replaces the slot's tooltip with
+        // `Lang.inter[59]` / `[60]` ("Visible" / "Hidden"), so no item text.
+        H::HideAccessory(_) => None,
         H::Coin(i) => equip.coins.get(i),
         H::Ammo(i) => equip.ammo.get(i),
         H::Armor(i) => equip.armor.get(i),
