@@ -119,6 +119,11 @@ pub struct SetStats {
     pub mana_cost: f32,
     /// `Player.endurance += x` (the Turtle/Chlorophyte/Solar rows).
     pub endurance: f32,
+    /// `Player.thorns` / `turtleThorns` / `cactusThorns` (the Turtle and
+    /// Cactus sets).
+    pub thorns: f32,
+    pub turtle_thorns: bool,
+    pub cactus_thorns: bool,
 }
 
 const fn stats() -> SetStats {
@@ -138,6 +143,9 @@ const fn stats() -> SetStats {
         dash_type: 0,
         mana_cost: 0.0,
         endurance: 0.0,
+        thorns: 0.0,
+        turtle_thorns: false,
+        cactus_thorns: false,
     }
 }
 
@@ -342,12 +350,23 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         (2370, 2371, 2372),
         SetStats { minion_damage: 0.12, ..stats() },
     ),
-    // `:158` Benefits.Turtle — `endurance += 0.15f` (the thorns flags ride
-    // their own systems).
+    // `:158` Benefits.Turtle — `endurance += 0.15f; thorns = 1f;
+    // turtleThorns = true`.
     (
         "Turtle",
         (1316, 1317, 1318),
-        SetStats { endurance: 0.15, ..stats() },
+        SetStats {
+            endurance: 0.15,
+            thorns: 1.0,
+            turtle_thorns: true,
+            ..stats()
+        },
+    ),
+    // `:452` Benefits.Cactus — `cactusThorns = true`.
+    (
+        "Cactus",
+        (894, 895, 896),
+        SetStats { cactus_thorns: true, ..stats() },
     ),
     // `:456` Benefits.Jungle — `manaCost -= 0.16f`.
     (
