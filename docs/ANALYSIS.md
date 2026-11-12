@@ -1271,8 +1271,14 @@ sprite is loaded yet. UI text uses the original ReLogic `DynamicSpriteFont`s
 and slot numbers), decoded at runtime by `tr-content` and drawn with
 `DynamicSpriteFont.DrawString` metrics (`assets::UiFont`, `push_font_text`).
 Stack interaction is a port of the `ItemSlot.Handle` (context 0) subset: left click
-takes, places or swaps a whole stack, right click takes half or places one, stacks merge
-up to `Item.MAX_STACK = 999`, and the carried stack follows the cursor (`Main.mouseItem`).
+takes, places or swaps a whole stack; right click moves exactly one item onto the
+cursor per paced transfer (the `stackSplit > 1` gate, `superFastStack + 1` accelerator
+and `RefreshStackSplitCooldown`; a held right-click repeats — S1-C-10), stacks merge up
+to the kind's `maxStack`, and the carried stack follows the cursor (`Main.mouseItem`).
+The port also keeps its historical press-edge right-click carry (place one into an
+empty cell / merge one into a same-kind cell) when the cursor cannot take from the
+slot — a deliberate divergence from the C# `RightClick` (`ItemSlot.cs:1636-1715`),
+which only ever picks up.
 On the closed hotbar a left click selects the slot. While the inventory is open, mining
 and placing are suppressed like the original's `mouseInterface`. The model now holds all
 50 `Player.inventory` slots (sidecar save version 2); pickup follows `Player.PickupItem`
