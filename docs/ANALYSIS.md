@@ -3071,11 +3071,23 @@ not trigger anything — only the escape does.
 The task also landed a reconciliation pass over the node's parallel
 slices: the `to_u16` id map's pirate/martian collision (both families
 had taken 68-72 across merges) renumbered to 78-82/83 through all three
-tables, the duplicated dead arms removed, the bestiary `sheet_i` table
-re-derived from `bestiary_npc_sheets`' order at once (the frost trio's
-48-50 slot had silently drifted every later agent's rows), the Walker's
-11-frame slice corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/
-0.55 middle cut ported.
+tables, the bestiary `sheet_i` table re-derived from
+`bestiary_npc_sheets`' order at once (the frost trio's 48-50 slot had
+silently drifted every later agent's rows), the Walker's 11-frame slice
+corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/0.55 middle cut
+ported.
+
+> **Correction 2026-11-12 (S1-F-1, `research/34` deviation 3):** the original
+> text here claimed "the duplicated dead arms removed" — that claim was
+> **false** (and the matching `M4-EVENT-4b` DONE row in `ATLAS.md`, audit
+> verdict FAIL). The 29/21 dead and 2/7 contradictory arms survived the
+> renumber, and parking the pirates on 78-82/83 collided with the
+> Deerclops/Skeletron-Prime band: 7 kinds did not round-trip through
+> `to_u16`/`from_u16` on the live save (`saveglue.rs:107` ↔ `app/mod.rs:1980`)
+> and netcode (`netglue.rs:385`/`:1044`) paths. `S1-F-1` (`S1-F-1-npc-kind-map`)
+> fixed it: the pirate/probe/drone band moved to the free contiguous 182..188,
+> the dead arms deleted from both tables, `#[deny(unreachable_patterns)]` on
+> both fns, and the exhaustive round-trip test lands the invariant.
 
 ## The Martian Drone (M4-EVENT-4c)
 

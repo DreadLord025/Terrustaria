@@ -847,6 +847,13 @@ pub(crate) fn entry_stats(kind: NpcKind, variant: SlimeVariant) -> EntryStats {
 }
 
 impl NpcKind {
+    // The protocol id tables below must stay a single live arm per kind/id:
+    // the pirate/martian merges of 2026-11 appended duplicates that the
+    // compiler only warns about, so 60 dead `to_u16` arms and 28 dead
+    // `from_u16` arms silently survived — and two of them were the 78..84
+    // collision that sent saved Deerclops back as pirates (`S1-F-1`). A
+    // duplicate is a hard error here.
+    #[deny(unreachable_patterns)]
     pub fn to_u16(self) -> u16 {
         match self {
             NpcKind::Slime => 0,
@@ -878,19 +885,21 @@ impl NpcKind {
             NpcKind::MartianEngineer => 70,
             NpcKind::GigaZapper => 71,
             NpcKind::MartianWalker => 72,
-            // The pirates: the 73-77 slots went to the Golem family (the
-            // parallel merges), so the family rides 78-82 and the probe
-            // takes 83 — the port-local protocol ids, renumbered from the
-            // collided 68-72 slots the pirate merge shipped (the duplicated
-            // martian/snowman arms above were the merge leftovers; the
-            // unreachable dead copies are gone).
-            NpcKind::PirateDeckhand => 78,
-            NpcKind::PirateCaptainsMate => 79,
-            NpcKind::PirateArcher => 80,
-            NpcKind::PirateCorsair => 81,
-            NpcKind::PirateCaptain => 82,
-            NpcKind::MartianProbe => 83,
-            NpcKind::MartianDrone => 84,
+            // The pirates + the probe + the drone: the martian/snowman
+            // family owns 65-72 and the Golem family 73-77, so this band
+            // rides 182-188 — `S1-F-1` renumbered it off the 78-84 slots the
+            // Deerclops/Skeletron-Prime family owns (the 2026-11 pirate
+            // renumber parked the family on those ids and every Deerclops or
+            // Prime limb came back as a pirate). The ids deliberately sit
+            // above 181: the free holes in 0..181 (62, 148, 149, 152-155)
+            // are non-contiguous and the family must not split.
+            NpcKind::PirateDeckhand => 182,
+            NpcKind::PirateCaptainsMate => 183,
+            NpcKind::PirateArcher => 184,
+            NpcKind::PirateCorsair => 185,
+            NpcKind::PirateCaptain => 186,
+            NpcKind::MartianProbe => 187,
+            NpcKind::MartianDrone => 188,
             NpcKind::BrainScrambler => 85,
             NpcKind::RayGunner => 86,
             NpcKind::ScutlixRider => 87,
@@ -955,26 +964,6 @@ impl NpcKind {
             NpcKind::SolarCrawltipedeTail => 143,
             NpcKind::StardustWormHead => 144,
             NpcKind::SolarSpearman => 145,
-            NpcKind::SolarCrawltipedeHead => 141,
-            NpcKind::SolarCrawltipedeBody => 142,
-            NpcKind::SolarCrawltipedeTail => 143,
-            NpcKind::StardustWormHead => 144,
-            NpcKind::SolarSpearman => 145,
-            NpcKind::SolarCrawltipedeHead => 141,
-            NpcKind::SolarCrawltipedeBody => 142,
-            NpcKind::SolarCrawltipedeTail => 143,
-            NpcKind::StardustWormHead => 144,
-            NpcKind::SolarSpearman => 145,
-            NpcKind::SolarCrawltipedeHead => 141,
-            NpcKind::SolarCrawltipedeBody => 142,
-            NpcKind::SolarCrawltipedeTail => 143,
-            NpcKind::StardustWormHead => 144,
-            NpcKind::SolarSpearman => 145,
-            NpcKind::SolarCrawltipedeHead => 141,
-            NpcKind::SolarCrawltipedeBody => 142,
-            NpcKind::SolarCrawltipedeTail => 143,
-            NpcKind::StardustWormHead => 144,
-            NpcKind::SolarSpearman => 145,
             NpcKind::SolarSelenian => 140,
             NpcKind::NebulaFloater => 130,
             NpcKind::BrainSuckler => 131,
@@ -984,11 +973,6 @@ impl NpcKind {
             NpcKind::MoonLordCore => 124,
             NpcKind::MoonLordFreeEye => 125,
             NpcKind::MoonLordLeechBlob => 126,
-            NpcKind::VortexHunter => 426,
-            NpcKind::VortexAlien => 427,
-            NpcKind::VortexHeadcrab => 428,
-            NpcKind::DD2LanePortal => 549,
-            NpcKind::StardustCellSmall => 116,
             NpcKind::StardustJellyfishBig => 117,
             NpcKind::NebulaBeast => 118,
             NpcKind::VortexRifleman => 119,
@@ -1048,41 +1032,6 @@ impl NpcKind {
             NpcKind::PrimeSaw => 82,
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
-            NpcKind::VortexHunter => 426,
-            NpcKind::VortexAlien => 427,
-            NpcKind::VortexHeadcrab => 428,
-NpcKind::StardustSpiderBig => 133,
-NpcKind::StardustSpiderSmall => 134,
-NpcKind::StardustSoldier => 135,
-NpcKind::SolarDrakomire => 136,
-NpcKind::SolarDrakomireRider => 137,
-NpcKind::SolarSroller => 138,
-NpcKind::SolarCorite => 139,
-NpcKind::SolarSelenian => 140,
-            NpcKind::StardustSpiderBig => 409,
-            NpcKind::StardustSpiderSmall => 410,
-            NpcKind::StardustSoldier => 411,
-            NpcKind::SolarCrawltipedeHead => 412,
-            NpcKind::SolarCrawltipedeBody => 413,
-            NpcKind::SolarCrawltipedeTail => 414,
-            NpcKind::StardustWormHead => 402,
-            NpcKind::SolarSpearman => 518,
-            NpcKind::SolarDrakomire => 415,
-            NpcKind::SolarDrakomireRider => 416,
-            NpcKind::SolarSroller => 417,
-            NpcKind::SolarCorite => 418,
-            NpcKind::SolarSelenian => 419,
-            NpcKind::NebulaFloater => 420,
-            NpcKind::BrainSuckler => 421,
-            NpcKind::Predictor => 424,
-            NpcKind::NebulaFloater => 420,
-            NpcKind::BrainSuckler => 421,
-            NpcKind::Predictor => 424,
-            NpcKind::MoonLordHead => 396,
-            NpcKind::MoonLordHand => 397,
-            NpcKind::MoonLordCore => 398,
-            NpcKind::MoonLordFreeEye => 400,
-            NpcKind::MoonLordLeechBlob => 401,
             NpcKind::TravellingMerchant => 111,
             NpcKind::Angler => 150,
             NpcKind::SleepingAngler => 151,
@@ -1102,6 +1051,11 @@ NpcKind::SolarSelenian => 140,
         }
     }
 
+    /// The protocol id decode — the inverse of [`NpcKind::to_u16`], a
+    /// bijection over the 182-kind roster (`S1-F-1`); the unmatched ids
+    /// (the free 62/148/149/152-155 holes) decode to `None`. One live arm
+    /// per id: a duplicate is a hard error (`to_u16`'s guard above).
+    #[deny(unreachable_patterns)]
     pub fn from_u16(v: u16) -> Option<Self> {
         Some(match v {
             0 => NpcKind::Slime,
@@ -1133,15 +1087,13 @@ NpcKind::SolarSelenian => 140,
             70 => NpcKind::MartianEngineer,
             71 => NpcKind::GigaZapper,
             72 => NpcKind::MartianWalker,
-            // The pirates + the probe: to_u16's renumber (the Golem family
-            // owns 73-77).
-            78 => NpcKind::PirateDeckhand,
-            79 => NpcKind::PirateCaptainsMate,
-            80 => NpcKind::PirateArcher,
-            81 => NpcKind::PirateCorsair,
-            82 => NpcKind::PirateCaptain,
-            83 => NpcKind::MartianProbe,
-            84 => NpcKind::MartianDrone,
+            // The martian ground family: `to_u16` encoded the 85-88 ids but
+            // `from_u16` had no arms, so a save or net message carrying one
+            // decoded to `None` and the NPC was dropped (`S1-F-1`).
+            85 => NpcKind::BrainScrambler,
+            86 => NpcKind::RayGunner,
+            87 => NpcKind::ScutlixRider,
+            88 => NpcKind::Scutlix,
             89 => NpcKind::MartianSaucer,
             90 => NpcKind::MartianSaucerTurret,
             91 => NpcKind::MartianSaucerCannon,
@@ -1183,7 +1135,6 @@ NpcKind::SolarSelenian => 140,
             114 => NpcKind::NebulaTower,
             115 => NpcKind::SolarTower,
             146 => NpcKind::VortexTower,
-            147 => NpcKind::DD2LanePortal,
             116 => NpcKind::StardustCellSmall,
             117 => NpcKind::StardustJellyfishBig,
             118 => NpcKind::NebulaBeast,
@@ -1199,26 +1150,6 @@ NpcKind::SolarSelenian => 140,
             137 => NpcKind::SolarDrakomireRider,
             138 => NpcKind::SolarSroller,
             139 => NpcKind::SolarCorite,
-            141 => NpcKind::SolarCrawltipedeHead,
-            142 => NpcKind::SolarCrawltipedeBody,
-            143 => NpcKind::SolarCrawltipedeTail,
-            144 => NpcKind::StardustWormHead,
-            145 => NpcKind::SolarSpearman,
-            141 => NpcKind::SolarCrawltipedeHead,
-            142 => NpcKind::SolarCrawltipedeBody,
-            143 => NpcKind::SolarCrawltipedeTail,
-            144 => NpcKind::StardustWormHead,
-            145 => NpcKind::SolarSpearman,
-            141 => NpcKind::SolarCrawltipedeHead,
-            142 => NpcKind::SolarCrawltipedeBody,
-            143 => NpcKind::SolarCrawltipedeTail,
-            144 => NpcKind::StardustWormHead,
-            145 => NpcKind::SolarSpearman,
-            141 => NpcKind::SolarCrawltipedeHead,
-            142 => NpcKind::SolarCrawltipedeBody,
-            143 => NpcKind::SolarCrawltipedeTail,
-            144 => NpcKind::StardustWormHead,
-            145 => NpcKind::SolarSpearman,
             141 => NpcKind::SolarCrawltipedeHead,
             142 => NpcKind::SolarCrawltipedeBody,
             143 => NpcKind::SolarCrawltipedeTail,
@@ -1282,6 +1213,10 @@ NpcKind::SolarSelenian => 140,
             75 => NpcKind::GolemFistLeft,
             76 => NpcKind::GolemFistRight,
             77 => NpcKind::GolemHeadFree,
+            // 78-84: the Deerclops/Skeletron-Prime family — the band the
+            // pirates vacated in the `S1-F-1` renumber (`from_u16` resolved
+            // these ids to the pirates before it, which is how a saved
+            // Deerclops came back as a Pirate Deckhand).
             78 => NpcKind::Deerclops,
             79 => NpcKind::SkeletronHand,
             80 => NpcKind::WallOfFleshEye,
@@ -1305,6 +1240,16 @@ NpcKind::SolarSelenian => 140,
             166 => NpcKind::Princess,
             167 => NpcKind::DyeTrader,
             168 => NpcKind::PartyGirl,
+            // The pirates + the probe + the drone — the `S1-F-1` renumber
+            // (`to_u16` above): the family moved off the 78-84
+            // Deerclops/Skeletron-Prime band to the contiguous 182-188.
+            182 => NpcKind::PirateDeckhand,
+            183 => NpcKind::PirateCaptainsMate,
+            184 => NpcKind::PirateArcher,
+            185 => NpcKind::PirateCorsair,
+            186 => NpcKind::PirateCaptain,
+            187 => NpcKind::MartianProbe,
+            188 => NpcKind::MartianDrone,
             _ => return None,
         })
     }
@@ -15631,6 +15576,92 @@ mod tests {
         assert_eq!(
             crate::bestiary::entry_for_npc(NpcKind::PartyGirl, SlimeVariant::Blue).net_id,
             208
+        );
+    }
+
+    /// The full `NpcKind` roster in declaration order (the enum at
+    /// `npc.rs:31-686`: 182 kinds — the 8 slime colours are `SlimeVariant`,
+    /// not kinds). The driver for
+    /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
+    /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
+    /// the new arm), then this array's length.
+    const ALL_KINDS: [NpcKind; 182] = [
+        NpcKind::Slime, NpcKind::DemonEye, NpcKind::WanderingEye, NpcKind::Zombie, NpcKind::KingSlime, NpcKind::Guide,
+        NpcKind::Skeleton, NpcKind::UndeadMiner, NpcKind::CaveBat, NpcKind::JungleBat, NpcKind::Hellbat, NpcKind::VoodooDemon,
+        NpcKind::EaterOfSouls, NpcKind::Hornet, NpcKind::MeteorHead, NpcKind::GoblinThief, NpcKind::GoblinWarrior, NpcKind::GoblinArcher,
+        NpcKind::GoblinPeon, NpcKind::GoblinSummoner, NpcKind::SnowmanGangsta, NpcKind::SnowBalla, NpcKind::MysterySnowman, NpcKind::MartianOfficer,
+        NpcKind::GrayGrunt, NpcKind::MartianEngineer, NpcKind::GigaZapper, NpcKind::MartianWalker, NpcKind::MartianProbe, NpcKind::MartianDrone,
+        NpcKind::BrainScrambler, NpcKind::RayGunner, NpcKind::ScutlixRider, NpcKind::Scutlix, NpcKind::MartianSaucer, NpcKind::MartianSaucerTurret,
+        NpcKind::MartianSaucerCannon, NpcKind::FlyingDutchman, NpcKind::DD2GoblinT1, NpcKind::DD2GoblinT2, NpcKind::DD2GoblinT3, NpcKind::DD2GoblinBomberT1,
+        NpcKind::DD2GoblinBomberT2, NpcKind::DD2GoblinBomberT3, NpcKind::DD2JavelinT1, NpcKind::DD2JavelinT2, NpcKind::DD2JavelinT3, NpcKind::DD2SkeletonT1,
+        NpcKind::DD2SkeletonT3, NpcKind::StardustTower, NpcKind::NebulaTower, NpcKind::SolarTower, NpcKind::VortexTower, NpcKind::DD2LanePortal,
+        NpcKind::DD2WyvernT1, NpcKind::DD2WyvernT2, NpcKind::DD2WyvernT3, NpcKind::DD2DarkMageT3, NpcKind::DD2WitherBeastT3, NpcKind::DD2DrakinT2,
+        NpcKind::DD2DrakinT3, NpcKind::DD2KoboldWalkerT2, NpcKind::DD2KoboldWalkerT3, NpcKind::DD2KoboldFlyerT2, NpcKind::DD2KoboldFlyerT3, NpcKind::DD2OgreT2,
+        NpcKind::DD2OgreT3, NpcKind::StardustCellBig, NpcKind::StardustCellSmall, NpcKind::StardustJellyfishBig, NpcKind::NebulaBeast, NpcKind::VortexRifleman,
+        NpcKind::VortexSoldier, NpcKind::VortexHunter, NpcKind::VortexAlien, NpcKind::VortexHeadcrab, NpcKind::NebulaFloater, NpcKind::BrainSuckler,
+        NpcKind::Predictor, NpcKind::StardustSpiderBig, NpcKind::StardustSpiderSmall, NpcKind::StardustSoldier, NpcKind::SolarDrakomire, NpcKind::SolarDrakomireRider,
+        NpcKind::SolarSroller, NpcKind::SolarCorite, NpcKind::SolarSelenian, NpcKind::SolarCrawltipedeHead, NpcKind::SolarCrawltipedeBody, NpcKind::SolarCrawltipedeTail,
+        NpcKind::StardustWormHead, NpcKind::SolarSpearman, NpcKind::MoonLordHead, NpcKind::MoonLordHand, NpcKind::MoonLordCore, NpcKind::MoonLordFreeEye,
+        NpcKind::MoonLordLeechBlob, NpcKind::AncientCultist, NpcKind::DD2Bartender, NpcKind::DD2EterniaCrystal, NpcKind::DD2WitherBeast, NpcKind::DD2Betsy,
+        NpcKind::DD2DarkMage, NpcKind::FlyingDutchmanCannon, NpcKind::MartianSaucerCore, NpcKind::PirateDeckhand, NpcKind::PirateCaptainsMate, NpcKind::PirateArcher,
+        NpcKind::PirateCorsair, NpcKind::PirateCaptain, NpcKind::GoblinSorcerer, NpcKind::Tim, NpcKind::DarkCaster, NpcKind::FireImp,
+        NpcKind::ChaosBall, NpcKind::BurningSphere, NpcKind::WaterSphere, NpcKind::Goldfish, NpcKind::Piranha, NpcKind::Shark,
+        NpcKind::DevourerHead, NpcKind::DevourerBody, NpcKind::DevourerTail, NpcKind::GiantWormHead, NpcKind::GiantWormBody, NpcKind::GiantWormTail,
+        NpcKind::EaterOfWorldsHead, NpcKind::EaterOfWorldsBody, NpcKind::EaterOfWorldsTail, NpcKind::Merchant, NpcKind::Dryad, NpcKind::Nurse,
+        NpcKind::ArmsDealer, NpcKind::Demolitionist, NpcKind::Painter, NpcKind::WitchDoctor, NpcKind::Clothier, NpcKind::TravellingMerchant,
+        NpcKind::Angler, NpcKind::SleepingAngler, NpcKind::Stylist, NpcKind::WebbedStylist, NpcKind::TaxCollector, NpcKind::Golfer,
+        NpcKind::SleepingGolfer, NpcKind::Zoologist, NpcKind::Princess, NpcKind::DyeTrader, NpcKind::PartyGirl, NpcKind::Wizard,
+        NpcKind::BoundWizard, NpcKind::Mechanic, NpcKind::BoundMechanic, NpcKind::EyeOfCthulhu, NpcKind::QueenBee, NpcKind::SkeletronHead,
+        NpcKind::ServantOfCthulhu, NpcKind::WallOfFlesh, NpcKind::Hungry, NpcKind::LeechHead, NpcKind::LeechBody, NpcKind::TheDestroyer,
+        NpcKind::SkeletronPrime, NpcKind::Retinazer, NpcKind::Spazmatism, NpcKind::Plantera, NpcKind::BrainOfCthulhu, NpcKind::Creeper,
+        NpcKind::BoundGoblin, NpcKind::GoblinTinkerer, NpcKind::Golem, NpcKind::GolemHead, NpcKind::GolemFistLeft, NpcKind::GolemFistRight,
+        NpcKind::GolemHeadFree, NpcKind::Deerclops, NpcKind::SkeletronHand, NpcKind::WallOfFleshEye, NpcKind::PrimeCannon, NpcKind::PrimeSaw,
+        NpcKind::PrimeVice, NpcKind::PrimeLaser,
+    ];
+
+    #[test]
+    fn the_protocol_id_space_round_trips_every_kind() {
+        // `S1-F-1` (ROADMAP) / research/34-id-sets-audit.md deviation 1: the
+        // port-local protocol ids must be a bijection over the roster. The
+        // pirate/probe/drone band rode 78..84 — the ids the
+        // Deerclops/Skeletron-Prime family already owned — so a saved or
+        // remote Deerclops came back as a Pirate Deckhand (the save writes
+        // `to_u16` at `saveglue.rs:107` and reads `from_u16` at
+        // `app/mod.rs:1980`; the netcode codec is the same pair,
+        // `netglue.rs:385`/`:1044`). The 85..88 martian-ground ids carried
+        // no decode arm at all (deviation 5).
+        let mut ids = Vec::with_capacity(ALL_KINDS.len());
+        for &kind in ALL_KINDS.iter() {
+            let id = kind.to_u16();
+            assert_eq!(
+                NpcKind::from_u16(id),
+                Some(kind),
+                "{kind:?} does not round-trip through protocol id {id}"
+            );
+            // The `23` body's `kind` field is an i16 (`net.rs:612`) written as
+            // `to_u16() as i16` (`netglue.rs:385`/`:1517`) — an id above
+            // `i16::MAX` would wrap negative and the decode's `.max(0)` would
+            // clamp it to kind 0.
+            assert!(
+                id <= i16::MAX as u16,
+                "{kind:?} does not fit the 23 body's i16 kind field (id {id})"
+            );
+            ids.push(id);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(
+            ids.len(),
+            ALL_KINDS.len(),
+            "two kinds encode to the same protocol id"
+        );
+        let decodable = (0..=u16::MAX)
+            .filter(|v| NpcKind::from_u16(*v).is_some())
+            .count();
+        assert_eq!(
+            decodable,
+            ALL_KINDS.len(),
+            "from_u16 decodes an id no kind encodes to"
         );
     }
 
