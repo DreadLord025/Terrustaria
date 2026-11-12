@@ -128,14 +128,14 @@ and one persistent store per world (the `.wld` section 10 triple).
 | `Achievement` row model + `IsCompleted` | PARTIAL | `achievements.rs::Achievement` (165) | `is_completed()` = `all(conditions.completed)` (195) equals the C# count check, but the Rust `completed` flag is initialised `false` (188) while `is_completed()` on a zero-condition row is `true` — the two disagree after a save/load (`load_pairs` 350). |
 | `AchievementCondition` + `Complete()` | PORTED | `achievements.rs::Condition` (130), `CondKind` (96) | One-shot completion via the `completed` flag (297); the 10 condition kinds are modelled. |
 | `AchievementManager` registry + icon/category passes | PORTED | `achievements.rs::AchievementManager` (264), `achievements_data.rs::ROWS` | 137 rows, icons 0..136, exactly one `Category::None` row (`GAIN_TORCH_GODS_FAVOR`) — pinned by `the_registry_is_the_initializers_full_table`. |
-| Condition catalogue (the 180 conditions) | **PARTIAL** | `achievements_data.rs::Cond` (33) | 139 entries vs the C#'s 180. `CreateMany` is unrepresentable: the 4 rows using it lose 41 conditions — `STAR_DESTROYER` 4→0, `GELATIN_WORLD_TOUR` 24→1, `SLAYER_OF_WORLDS` 15→3, `BUCKETS_OF_BOLTS` 3→1. |
-| Condition evaluation order | PORTED | `achievements.rs::notify` (284-307) | Registry order, then condition order, matching the C#'s listener-list insertion order. The Rust returns only the **last** completed achievement (303) where the C# fires `OnCompleted` for every one (`Achievement.cs:93-108`). |
-| `AchievementTracker` / `ConditionsCompletedTracker` | PARTED | `achievements.rs::tracker_values` (201-214) | The two tracker shapes exist; the denominators inherit the `CreateMany` loss (e.g. `SLAYER_OF_WORLDS` shows `(1,3)`, vanilla shows `(1,15)`). |
-| `CustomInt` / `CustomFloat` counters | PARTIAL | `Cond::Int` / `Cond::Float` (56-59) | The rows exist (6 + 2) but only `CustomInt("Pick", 10000)` has a notify site (`world_sim/editing.rs:1791`). |
-| Notify sites: NPC kill / pickup / craft / tile | PORTED | `world_sim/npcs.rs:2531`, `items.rs:200`, `app/clicks.rs:409`, `editing.rs:1788` | All four wired. The C# also gates the kill/pickup/tile listeners on `player.whoAmI == Main.myPlayer` (`NPCKilledCondition.cs:49`); the port has one player, so it is equivalent. |
-| Notify sites: progression event / custom flag | **MISSING** | — | 43 `ProgressionEventCondition` + 37 `CustomFlagCondition` rows have **no** notify site anywhere in `crates/` — `NO_HOBO`, `BIG_BOOTY`, `WHERES_MY_HONEY`, `HOLD_ON_TIGHT`, … can never complete. |
-| `AchievementsHelper.TryGrantingBestiary100PercentAchievement` | MISSING | — | `NotifyProgressionEvent(29)` → the `BOOK_WORM` row. Never called; `ProgressionEvent` has no notify site either. |
-| `AchievementManager.Save`/`Load` (Rijndael+BSON) | PARTIAL (documented) | `achievements.rs::save` (395), `load` (409) | The port writes `achievements.trdat`, a plain text format (`achievements.rs:390-394`); the vanilla crypto format is not read. **But `save()` has zero call sites** — only `load` is wired (`app/mod.rs:1807`), so nothing is ever persisted. |
+| Condition catalogue (the 180 conditions) | PORTED | `achievements_data.rs::Cond` (33) | 180 entries (S1-E-18): the four `CreateMany` rows are expanded 1:1 (`STAR_DESTROYER` 4, `BUCKETS_OF_BOLTS` 3, `GELATIN_WORLD_TOUR` 24, `SLAYER_OF_WORLDS` 15), preserving folded groups where the C# does. |
+| Condition evaluation order | PORTED | `achievements.rs::notify` / `notify_with` | Registry order, then condition order, matching the C#'s listener-list insertion order. The Rust returns only the **last** completed achievement where the C# fires `OnCompleted` for every one (`Achievement.cs:93-108`). |
+| `AchievementTracker` / `ConditionsCompletedTracker` | PORTED (shape) | `achievements.rs::tracker_values` | Two tracker shapes; denominators now reflect the expanded 1:1 condition rows (S1-E-18). |
+| `CustomInt` / `CustomFloat` counters | PARTIAL | `achievements.rs::{notify_custom_int,notify_custom_float,notify_with}` | Wrappers + `Value`-setter semantics landed (S1-E-18). Wired: `Pick` (edit), `Finish` flag/int on angler turn-in (`npcs.rs`), `Do` on acorn plant (`editing.rs`), `Move` on grounded running (`world_sim/player.rs`). `Peek` custom flag wired (`chest.rs`). `Pay` and other custom counters remain without owning systems. |
+| Notify sites: NPC kill / pickup / craft / tile | PORTED | `world_sim/npcs.rs`, `items.rs`, `app/clicks.rs`, `editing.rs` | All four wired (single-player). |
+| Notify sites: progression event / custom flag | PARTIAL | `achievements.rs`, `world_sim/{clock,editing,npcs,weather}.rs`, `chest.rs` | S1-E-18 wires progression 1/3/5/6/8/9/16 and selected custom sites (`Finish`, `Peek`, `Do`, `Move`). Remaining progression/custom rows are blocked on missing systems (e.g. 17 partial, 18/19/20, nurse/service/chat/locked-chest paths) or S1-F-15 (29). |
+| `AchievementsHelper.TryGrantingBestiary100PercentAchievement` | MISSING | — | `NotifyProgressionEvent(29)` → `BOOK_WORM` still not wired; blocked on S1-F-15 (`completion_percent`/bestiary tier bug). |
+| `AchievementManager.Save`/`Load` (Rijndael+BSON) | PARTIAL (documented) | `achievements.rs::{save,load}`, `app/{mod,saveglue}.rs` | Port still writes `achievements.trdat` (plain text), not the vanilla Rijndael-CBC+BSON blob. S1-E-18 binds a save path at bootstrap/world swap and saves on completion and from `save_world`; headless test apps have no bound path. |
 | Achievement unlock popup / advisor / chat tag | MISSING | — | `AchievementUnlockedPopup` (`UI/InGamePopups.cs:13`), `AchievementAdvisor` (`UI/AchievementAdvisor.cs`), `AchievementTagHandler` (`UI/Chat/`) have no port. |
 | `SocialAPI.Achievements` (Steam stats) | OUT OF SCOPE | — | `PORT_MAP.md:268` marks the platform hooks as out of scope. |
 | `BestiaryEntry` + the 4 factories | PORTED (simplified) | `tr-app/src/bestiary.rs::BestiaryEntryDef` (13) | One flat struct (credit id, net id, kind, variant, quick_unlock, name) instead of the C#'s `Info` list of `IBestiaryInfoElement`s (`BestiaryEntry.cs:24-30`). |
@@ -155,12 +155,12 @@ and one persistent store per world (the `.wld` section 10 triple).
 | Achievement / bestiary group | C# count | Rust | Verdict |
 | --- | --- | --- | --- |
 | Achievement rows | 137 | 137 | **PASS** (order, ids, icons 0..136, one `Category::None`) |
-| Achievement conditions | 180 | 139 | **PARTIAL** — 41 lost, all in the 4 `CreateMany` rows |
+| Achievement conditions | 180 | 180 | **PASS** (S1-E-18, `CreateMany` expanded) |
 | Condition kinds modelled | 10 | 10 | **PASS** (`CondKind`) |
-| Condition kinds with a live notify site | 10 | 4 | **FAIL** — progression event, custom flag, custom int (5/6), custom float (2/2) are dormant |
-| Rows that can ever complete | 137 | 50 | **FAIL** — 87 rows carry a condition kind the port never fires |
-| Tracker shapes (`UseTracker*`) | 2 | 2 | **PASS** (shape), **FAIL** (the `ConditionsCompleted` denominators) |
-| Achievement save/load | 1 | 1 (text) | **PARTIAL** — format differs (documented); `save()` is never called |
+| Condition kinds with a live notify site | 10 | 10 | **PARTIAL** — wrappers exist for all kinds; only a subset of rows have reachable owning-system sites (many progression/custom rows still blocked) |
+| Rows that can ever complete | 137 | >50 (growing) | **PARTIAL** — additional progression/custom/int/float rows wired in S1-E-18; exact reachable count depends on ported systems |
+| Tracker shapes (`UseTracker*`) | 2 | 2 | **PASS** (shape and expanded denominators) |
+| Achievement save/load | 1 | 1 (text) | **PARTIAL** — different format (documented), but save is now wired (completion + `save_world`, path-bound bootstrap) |
 | Bestiary entry rows | whole NPC roster (1 per `NpcsByNetId`) + 44 manual | 172 | **PARTIAL** — port roster only; 2 sheet slots unmatched |
 | Bestiary unlock tiers | 5 | 5 | **PASS** (the ladder's shape) |
 | Entry unlock providers | 6 (`Common`/`Town`/`Critter`/`Gold`/`HighestOfMultiple`/`Salamander`) | 1 (`quick_unlock` bool) | **FAIL** — 5 providers missing |
@@ -208,9 +208,9 @@ and one persistent store per world (the `.wld` section 10 triple).
 
 | # | Deviation | Severity | Admitted? |
 | --- | --- | --- | --- |
-| 1 | `CreateMany` collapsed: `STAR_DESTROYER` 4→0 conditions (so it can never unlock and its `is_completed()` is vacuously true), `GELATIN_WORLD_TOUR` 24→1, `SLAYER_OF_WORLDS` 15→3, `BUCKETS_OF_BOLTS` 3→1. The port's own comment at `achievements.rs:162-163` calls the zero-condition `STAR_DESTROYER` "complete from the start, exactly as vanilla" — vanilla needs all four pillars. | behavioural | **No** |
-| 2 | `achievements::save` has **no call site**; only `load` is wired (`app/mod.rs:1807`). ROADMAP M6-ACH-1 claims "the save rides the F9/autosave pass" — false in the current tree. | behavioural | **No** (contradicts a DONE row) |
-| 3 | 87 of the 137 rows contain a condition kind with no notify site (43 progression, 37 custom flag, 5 of 6 custom int, 2 of 2 custom float). | behavioural | Partly — M6-ACH-1 says "the ported registry subset" |
+| 1 | `CreateMany` rows expanded to 1:1 (S1-E-18): all 180 conditions present. | behavioural | Resolved (S1-E-18) |
+| 2 | Save is now wired (S1-E-18): path bound at bootstrap/world swap, saved on completion and from `save_world`; headless apps have no bound path. Format remains the port's plain-text `achievements.trdat` (not vanilla Rijndael+BSON). | behavioural / interop | Partial — call sites wired, format differs by design |
+| 3 | Notify wrappers and additional sites landed (S1-E-18), but many progression/custom rows remain unreachable because their owning systems/paths are not ported (e.g. 17 partial, 18, 19/20, nurse `Pay`, and most other progression/custom flags). Progression 29 is explicitly blocked on S1-F-15. | behavioural | Partly — expanded, not complete |
 | 4 | `kills_needed_for` returns 0 for net ids outside the 11-pair banner table; 0 means "≥ full", so 164 of 172 entries report tier 4 (`CanShowDropsWithDropRates`) with zero kills. The C# default is 50. | behavioural | **No** |
 | 5 | `quick_unlock` on 5 entries instead of every boss + the override rows; the town NPC `Guide` wrongly carries it (the C# uses the chat provider). | behavioural | **No** |
 | 6 | The town-NPC (chat) and critter (sight) unlock providers are absent, and the `sights`/`chats` sets are never recorded. | behavioural | Yes — `tr-core/src/bestiary.rs:124-130`, ANALYSIS "the sightings/chats stay empty until the recording behaviour lands" |
@@ -226,17 +226,15 @@ and one persistent store per world (the `.wld` section 10 triple).
 | 16 | No MP sync of the bestiary kill counts (`NetBestiaryModule`). | behavioural (MP) | **No** |
 | 17 | `Player.HasAchievement`, `Main.achievementTracker` and a `BossAchievement` type **do not exist** in the 1.4.5.8 decompile. The boss kill requirement is the bestiary's banner→`KillsToBanner` chain, and the achievement query is `Main.Achievements.GetAchievement(name).IsCompleted`. | n/a | n/a |
 | 18 | `Achievement.completed` (flag) vs `is_completed()` (derived) disagree for a zero-condition row before and after a load. | behavioural (minor) | **No** |
+| 19 | `CustomFloat` sub-unit progress (`Condition.frac`) is in-memory only; `load_pairs` resets it because the text save stores the whole `value` only. | behavioural (minor) | **No** (documented, S1-E-18) |
+| 20 | Altar hammer smash is routed through `break_tile` + `smash_altar` in the active-tile branch (`app.ore_tiers` updated), firing BEGONE_EVIL; `tile_drop(26)=None` (C# empty drop group). Self-hurt/wraith halves of the C# refusal are follow-ups. | behavioural (partial) | Partly (S1-E-18) |
+| 21 | `StopSlimeRain` sets the negative cooldown clock (`Main.cs:64787-64820`); `stopMoonEvent` does not clear `bloodMoon` (cleared in `UpdateTime_StartDay`). | behavioural (closer) | Yes (S1-E-18) |
 
 ## Task seeds
 
-- **S** — Model `NPCKilledCondition.CreateMany` faithfully: add a "one condition
-  per id" variant to `Cond` and re-transcribe the 4 rows (46 conditions, not 5).
-  Fixes #1. Dep: none.
-- **S** — Call `achievements::save` from the autosave/F9 pass and add a
-  write→read round-trip test through the app path. Fixes #2. Dep: none.
-- **M** — Add the missing notify sites: `NotifyProgressionEvent` (43 rows),
-  the custom-flag `Complete()` calls (37 rows) and the `CustomInt`/`CustomFloat`
-  increments. Fixes #3. Dep: the S task above (so the rows exist).
+- ~~**S** — Model `NPCKilledCondition.CreateMany` faithfully~~ — **done (S1-E-18)**.
+- ~~**S** — Call `achievements::save` from the autosave/F9 pass~~ — **done (S1-E-18)** (save on completion + `save_world`, path-bound bootstrap).
+- **M** — Continue wiring notify sites for progression/custom rows as owning systems land (remaining: 17 partial, 18, 19/20, nurse `Pay`, most progression/custom flags; 29 blocked on S1-F-15). Partially done (S1-E-18). Dep: owning systems.
 - **S** — Make `kills_needed_for` fall back to
   `ItemID_Sets_DefaultKillsForBannerNeeded` (50) instead of 0, and pin it with a
   regression test that a fresh tracker leaves a non-quick entry at
