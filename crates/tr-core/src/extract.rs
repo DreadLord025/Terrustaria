@@ -527,9 +527,10 @@ pub fn chlorophyte_trade(held: u16, held_stack: u32) -> Option<(u16, u32)> {
 }
 
 /// A seeded replay stream for the tests: the port's `FastRandom`
-/// (`tile_light/palette.rs`) — not `Main.rand`'s `UnifiedRandom`, which has no
-/// port yet; the app rolls against its `item_rng` seam instead. A fixed stream
-/// is enough to pin the branch order and the distribution shapes.
+/// (`tile_light/palette.rs`) — not `Main.rand`'s `UnifiedRandom`, which is now
+/// ported as [`crate::UnifiedRandom`] (S1-A-1) but whose consumer migration is
+/// a later task (S1-A-2+); the app rolls against its `item_rng` seam instead. A
+/// fixed stream is enough to pin the branch order and the distribution shapes.
 #[cfg(test)]
 mod tests {
     use super::*;

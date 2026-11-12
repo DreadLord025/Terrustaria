@@ -525,8 +525,10 @@ pub fn is_desert_biome_sand(kind: u16) -> bool {
 ///
 /// The Severity transitions are pure; the start/severity-intention rolls draw
 /// from this struct's own `FastRandom` stream — vanilla pulls them from the
-/// shared `Main.rand` (`Sandstorm.cs:64,71,83,91,120`), but no UnifiedRandom
-/// port exists, and an isolated stream keeps the state machine deterministic.
+/// shared `Main.rand` (`Sandstorm.cs:64,71,83,91,120`). `Main.rand`'s
+/// `UnifiedRandom` is now ported ([`crate::UnifiedRandom`], S1-A-1) but not yet
+/// wired here (consumer migration is S1-A-2+), and an isolated stream keeps the
+/// state machine deterministic.
 /// `TR_SANDSTORM` (see [`SceneState::force`]) is the primary determinism lever.
 pub struct Sandstorm {
     /// `Sandstorm.Happening` (`Sandstorm.cs:14`).
