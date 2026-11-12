@@ -149,7 +149,7 @@ Re-checked the state after other agents landed work on top of the audit base
   (`.wld` writer omits wire bits), S1-L-11 (`tools/gen_recipes.py --check`
   drift), S1-D-1 (hornet hover constants), S1-A-3 (position-hash tile framing);
   S1-D-4 dispatch census may need refresh after projectile/equip follow-ups.
-  S1-C-9 (double item pickup) is fixed on branch `S1-C9-item-pickup-double-count`.
+  S1-C-9 (double item pickup) is landed on `main` (`1dbb335`, inventory receives `remaining` once; `pickup_transfers_the_stack_once`/`pickup_sends_only_the_vault_remainder_to_inventory`).
   **Landed after that snapshot:** S1-F-1 + S1-F-2 (the NPC protocol-id
   collisions and the dead arms) on `S1-F-1-npc-kind-map` — the `to_u16`/
   `from_u16` tables are now a bijection over all 182 kinds, watched RED then
@@ -220,7 +220,7 @@ C#'s reference order is `Main.cs:17744-17822`.
 | ✅ S1-C-6 | `behindTiles` (`NPC.cs:10355`) - the field does not exist in `crates/` | S | B+P | research/40; research/05 | - | NPC draws behind walls correctly — **DONE 2026-11-12** (`S1-C-6-behind-tiles`): `Npc.behind_tiles` defaults per kind (`NPC.cs:6517,8520,10355`); render splits NPCs into behind-tiles and normal passes (`Main.cs:22320,22336`, `render/entities.rs`, `render/tiles.rs`); regression `behind_tiles_field_matches_csharp_defaults_s1_c_6`. |
 | S1-C-7 | Port the remaining hurt-pipeline modifiers: retaliate, magic cuffs, paladin/beetle/solar, dismount-on-hit, net, combat text, death-by-reason | L | B | research/04 | — | per-modifier test |
 | ✅ S1-C-8 | Projectile PVE hit test must use `Damage_GetHitbox()`'s rectangle, not a slot-centre point (`Projectile.cs:12499` vs `projectile.rs:9574`) | M | B | research/06 | — | hitbox-overlap test (large targets) — **DONE 2026-11-12** (`S1-C-8-projectile-pve-hitbox`): `projectile.rs::damage_hitbox` ports `Damage_GetHitbox()` (`:14959-15023`, the phaseblade/301/383/262/101/1024/1023/85/1106/188/aiStyle-29/967 arms, the 301/383/262 `localAI[0]` consume included) and `damage_pve` tests it against `npc.getRect()` (`:12654`) in place of `n.contains(centre)`; `damage_pve_boxed` still serves the resized bursts. New tests `pve_hit_test_uses_the_projectile_box_not_its_centre` + `damage_hitbox_ports_the_base_rect_and_the_inflate_arms`; `tr_core::whip::Rect::inflate` is the XNA `Rectangle.Inflate` helper. The full `Colliding` overlay arms remain unported (ANALYSIS) |
-| S1-C-9 | Item pickup counts the stack **twice** (`world_sim/items.rs:191-194` adds `remaining` and then `drop.count`) — every stack pickup grants 2× | S | B | research/07-item-core.md | — | pickup test asserting the exact count |
+| ✅ S1-C-9 | Item pickup transfers the stack once: inventory receives `remaining` (after void-vault take) exactly once (`Player.cs:39330`, `world_sim/items.rs`) | S | B | research/07-item-core.md | — | pickup tests asserting exact count — **DONE 2026-11-13** (`1dbb335` on main): `pickup_transfers_the_stack_once` + `pickup_sends_only_the_vault_remainder_to_inventory` |
 | ✅ S1-C-10 | Right-click must move **exactly one item** per transfer, with the `stackSplit > 1` pacing and held-repeat (the port moves half the stack: `clicks.rs:911/238/813`) | M | B | research/20-ui-ingame.md | — | right-click transfer test + held-repeat — **DONE 2026-11-12** (`S1-C-10-rightclick-single-item`): `clicks.rs::right_click_split`/`pickup_one_into_mouse` port `ItemSlot.cs:1717-1784`; the inventory grid, coin/ammo rows, bank and chest cells all ride the paced one-per-transfer split (`stackSplit > 1` gate, `superFastStack + 1`, sound 12, `RefreshStackSplitCooldown`) and the held `Main.mouseRight` dispatch; tests `s1_c_10_*`, the repointed `ui_2b_the_rows_take_one_on_right_click`/`test_DW_4_1_without_alt_*` |
 | S1-C-11 | `GetStoreValue` price math (`Item.cs:49901`): the instance/prefix `value²` is bypassed and the `buyOnce`/discount arms are missing (`shop.rs::buy_price`/`sell_price`) | M | B | research/07; research/22 | — | price table vs the C# |
 | S1-C-12 | Equipment/accessory stat modifiers: the `UpdateEquip` hook chain (`Player.cs:12948-12954`, `:18365-18366`) and the per-slot bonus table | L | B | research/04; research/27 | — | per-accessory modifier test |
@@ -610,8 +610,7 @@ A task is done when its row's **verify** column is satisfied. The house rules
    S1-F-1/F-2 landed 2026-11-12 on `S1-F-1-npc-kind-map`).
 2. **The one FAIL and the two STALE rows** — S1-D-1 (hover presets), the
    stale snapshot rows and the M1.5 measurement tables.
-3. **The cheap correctness bugs with player-visible impact** — S1-C-9 (2× item
-   pickup) fixed on `S1-C9-item-pickup-double-count`; S1-C-2 (projectile damage),
+3. **The cheap correctness bugs with player-visible impact** — S1-C-9 (item pickup 2×) is DONE; S1-C-2 (projectile damage),
    S1-C-8 (hitbox), S1-C-10 (right-click transfer) are DONE.
 4. **Missing subsystems with the largest call-site censuses** — S1-E-1…E-4
    (dust/gore: 4 922 C# call sites), S1-E-5 (entity lights: 300+), S1-E-9
