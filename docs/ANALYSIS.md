@@ -1398,6 +1398,47 @@ Not ported: biome/event spawning rules and spawn rates, the other ~780 NPCs, AI 
 machines, full loot tables, defense/knockback resistances, crits, buffs/debuffs, the other
 bosses and multiplayer sync.
 
+## The hover archetype presets (S1-D-1, 2026-11-12)
+
+`npc_ai.rs::hover_step` is the shared `AI_005_EaterOfSouls` fly core — the `hover` row of
+the archetype table (`research/25`). The DONE-row re-verification (`research/40`) found its
+`HoverParams` table shipping wrong constants and the type-42/231-235 arm missing two rules;
+S1-D-1 restored them from `NPC.cs:50302-50383` + `:50418-50579`:
+
+* the per-kind `num`/`num2` pairs are now type-accurate, pinned by
+  `the_hover_presets_match_the_csharp_table`: the Hornet (type 42) is 3.5/0.021
+  (`:50341-50344`) — not type 205's 3.25/0.018 (`:50364-50367`) that the pre-fix table
+  shipped; the Eater of Souls (type 6) 4/0.02 (`:50304-50307`), the Servant of Cthulhu
+  (type 5) 5/0.03 (`:50379-50382`), the Meteor Head (type 23) 1/0.03 (`:50374-50377`);
+* the type-42/231-235 family applies `num`/`num2 *= 2f - this.scale` (`:50350-50351`) — a
+  no-op at the default Hornet scale 1.0, so the pre-fix numbers were the same there;
+* the same family's `velocity.Y` vertical damping (`:50352-50362`), `× 0.97` when the
+  target is 300+ px below (a climb) or < 80 px below (a dive), now runs **only above
+  `worldSurface`** (`base.position.Y / 16 < Main.worldSurface`) and is applied **before**
+  the approach (`:50547-50578`) — the source order. It used to run for every hover kind
+  and after the approach.
+
+The hover aim now flows through `HoverTarget`: the target centre (`targetData.Position +
+size/2`) drives the desired-velocity vector and the target top edge (`Player.position.Y`)
+drives the damping gate — the port's stand-in for `NPC.GetTargetData()` (`:50293-50424`),
+because the gate is the C#'s top-to-top `Main.player[target].position.Y - base.position.Y`
+(`:50354`), not a centre comparison.
+
+**Deliberate residuals** — all *inside* the core, all left to the full `AI_005` port
+(S1-D-3), because S1-D-1's scope is the V1 defect set (`research/40`):
+
+* the C# quantises the aim to the 8-px grid (`num4`/`vector.X` floored to 8,
+  `:50421-50424`); the port aims at the exact centre. The shift is < 0.5 px/tick at the
+  hovers' speeds (≤ 5) and does not change the approach's shape.
+* the approach's extra add on a sign reversal is gated by
+  `flag5 = type ∉ {6, 42, 94, 139, 173, 619} ∧ type ∉ [231, 235]` (`:50447`); the port
+  applies it unconditionally. So the port over-adds for the Eater of Souls (6) and the
+  Hornet (42) — the two kinds whose `flag5` is false — and is correct for the Meteor Head
+  (23) and the Servant of Cthulhu (5), whose `flag5` is true.
+* the per-difficulty / secret-seed overrides (`:50308-50316` expert-mode and remix for
+  type 6; `:50345-50348` type 231's 3/0.017) are constants-off: the presets are the
+  normal-mode values, like the other archetype tables.
+
 ## Asset pipeline
 
 - Terraria ships XNA **XNB v5** containers. Terraria's build uses Xbox `XMemCompress`

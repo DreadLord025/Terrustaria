@@ -53,4 +53,5 @@ crates/tr-app/src/player.rs|lava_max|M3-EQUIP-16 — lavaTime/lavaMax and the 80
 crates/tr-app/src/player.rs|the_life_regen_rows_add_up|M3-EQUIP-17 — the armor/buff/stone life-regen rows
 crates/tr-app/src/itemdata.rs|life_regen|M3-EQUIP-18 — Item.lifeRegen provisioned in the generated item table
 crates/tr-app/src/player.rs|fn get_armor_penetration|M3-EQUIP-20 — armorPenetration rows and the melee-hit consumer
+crates/tr-app/src/npc_ai.rs|surface_damped|S1-D-1 — the AI_005 hover presets (Hornet 3.5/0.021, the 2f-scale factor, the family+surface-gated damping)
 crates/tr-app/src/player.rs|amount.max(1)|S1-C-3 — the hurt `num2 < 1 -> 1` floor (Player.cs:38378-38381)
