@@ -113,7 +113,7 @@ Rust side:
 | RNG source | C# algorithm & seed | Rust implementation | Exact stream? | Impact | Subsystems affected |
 | --- | --- | --- | --- | --- | --- |
 | `Main.rand` (global) | .NET `System.Random`, Knuth subtractive 56-int array; `SetSeed` (`UnifiedRandom.cs:28-60`); `Next(max)` = `(int)(Sample()*max)` | **PORTED (exact)** as `tr_core::unified_random::UnifiedRandom` (`unified_random.rs`, S1-A-1 — C#-golden vectors); the *consumers* are mostly still splitmix/xorshift stand-ins (`spawner.rs:30-51`, `chest_gen.rs:127-138`), but the runtime prefix rolls already take a real `UnifiedRandom` (`App::prefix_rng`, S1-A-5; the `PrefixRandom` seam at `prefix.rs:438`, the field at `app/mod.rs:638`) | **YES** (type) / **PARTIAL** (prefix rolls wired) | determinism + behaviour | everything (7 558 call sites) |
-| `Main.SwapRandom(key)` named streams | `Main._rngs[key] = new UnifiedRandom(worldSeed)` (`Main.cs:3210-3212`), swapped per update stage (`:17749-17809`) | no named-stream registry; separate `u64` fields per consumer with arbitrary XOR constants (`app/mod.rs:2519, 2700, 2826, 2838, 2860, 2862, 2870`) | **NO** | determinism | world update (players, NPCs, items, projectiles, gores, dust, time) |
+| `Main.SwapRandom(key)` named streams | `Main._rngs[key] = new UnifiedRandom(worldSeed)` (`Main.cs:3210-3212`), swapped per update stage (`:17749-17809`) | **PORTED (registry, S1-A-2)** as `tr_app::app::rng::{NamedRngs, RngKey}` (`app/rng.rs`): all 17 keys, lazily `UnifiedRandom::new(worldSeed)`, cleared per world (`Main.cs:6465`). `UpdateTime` is the first migrated consumer (the clock's boundary rolls); the other stages still draw from world-seeded splitmix bridges (`npc_rng`, `item_rng`, `craft_rng`, `ambience_rng`, `growth_rng`, `prefix_rng`) until S1-A-11 | **YES** (registry) / **PARTIAL** (one stage wired) | determinism | world update (players, NPCs, items, projectiles, gores, dust, time) |
 | `WorldGen.genRand` | alias of `Main.rand` (`WorldGen.cs:4445`) — same stream, interleaved with gameplay draws | no equivalent (worldgen uses its own `Streams`) | **NO** | determinism | worldgen + `Item.Prefix` during generation |
 | vanilla per-pass stream | `Main.rand = new UnifiedRandom(this._seed)` before every pass (`WorldGenerator.cs:497`, quoted at `pipeline.rs:7, :110`) | `Streams::pass_rng(name)` = `Rng(seed ^ fnv1a64(name))` (`pipeline.rs:120-122`) | **NO** (deliberate) | determinism | worldgen chain |
 | `FastRandom` (48-bit LCG) | `(seed*25214903917 + 11) & 0xFFFFFFFFFFFF` (`FastRandom.cs:85-88`) | `tr_core::tile_light::palette::FastRandom` (`palette.rs:19-111`), worldgen hive (`desert.rs`) | **YES** | — | tile lighting, tile drawing, hive, granite |
@@ -133,7 +133,7 @@ Rust side:
 | --- | --- | --- | --- |
 | `UnifiedRandom` (the type) | **PORTED (exact)** | `crates/tr-core/src/unified_random.rs` | Byte-faithful port (S1-A-1, 2026-11-12): `SetSeed`/`InternalSample`/`Sample`/`Peek`/`Next`/`NextDouble`/`NextBytes`/the large-range branch + the `NextFloat`/`NextFloatDirection`/`NextFromList` extensions, pinned by 11 golden tests against a real `dotnet` run of the decompiled class. Only the geometry helpers (`NextVector2*`/`NextFromRectangle`) are deferred — no shared `Vector2`/`Point`/`Rectangle`/`IntRange` types. |
 | `Main.rand` global stream | **PARTIAL** | `crates/tr-app/src/spawner.rs:30-51`, `chest_gen.rs:127-138`, `prefix.rs:455-461` (chest-seam adapter only) | Mostly per-consumer splitmix64 stand-ins; **S1-A-5** moved the runtime prefix rolls onto a real `UnifiedRandom` (`App::prefix_rng`), leaving only the worldgen chest seam on splitmix until S1-A-4; `spawner.rs`'s doc calls itself "xorshift64\*" but the code is the splitmix finaliser — the comment is wrong. |
-| `Main.SwapRandom` named streams | **MISSING** | `crates/tr-app/src/app/mod.rs:180-634` | No registry, no per-key `UnifiedRandom`; the C#'s 13 per-stage streams (`Main.cs:17749-17809`) are 7 ad-hoc `u64` fields. `ANALYSIS.md:4420-4430` admits the LCG is "the port's own xorshift core". |
+| `Main.SwapRandom` named streams | **PORTED (registry) / PARTIAL (consumers)** | `crates/tr-app/src/app/rng.rs` | **S1-A-2**: `NamedRngs`/`RngKey` model `Main._rngs` exactly — all 17 keys, lazy `UnifiedRandom::new(worldSeed)` (`Main.cs:3204-3215`), cleared per world (`:6465`), with C#-golden and independence tests. `_rngs["UpdateTime"]` drives the clock's boundary rolls (drawn at the boundary, not per frame). The other stage keys exist but their stage bodies still draw from world-seeded splitmix bridges; wiring them is S1-A-11. |
 | `WorldGen.genRand` | **MISSING** | — | The alias itself is not modelled; the worldgen-time prefix rolls (chest stocking) still draw the splitmix `chest_rng` seam (`prefix.rs::roll_prefix_splitmix` `:568`) and the runtime rolls a separate `App::prefix_rng` (`UnifiedRandom`, S1-A-5); neither is the C#'s shared `genRand`/`Main.rand`. |
 | Vanilla per-pass re-seed | **PARTIAL** | `crates/tr-core/src/worldgen/pipeline.rs:109-122` | `pass_rng(name)` = `Rng(seed ^ fnv1a64(name))` instead of `new UnifiedRandom(worldSeed)`; admitted in the file's own comment ("xorshift stands in for the Knuth subtractive `UnifiedRandom`", `:113-114`). |
 | `FastRandom` | **PORTED (exact)** | `crates/tr-core/src/tile_light/palette.rs:19-111` | Multiplier/mask/`NextBits`/`WithModifier`/the rejection loop are byte-faithful (`FastRandom.cs:47-88`); `next_double` keeps the C#'s `float` widening (`palette.rs:77-79`). |
@@ -164,10 +164,19 @@ Cargo tests that cover this module (static read, not executed):
   only, no stream pin.
 - `crates/tr-core/src/worldgen/pipeline.rs::tests::test_DW_1_1_fnv1a64_known_vectors`
   (`:2889`) — the FNV mixer's own reference vectors.
+- **S1-A-2** `crates/tr-app/src/app/rng.rs::tests` (6): the exact `SwapRandom` key
+  literals (`the_registry_uses_the_csharp_key_names`), the C# seed-42 prefix on every
+  stream (`every_stream_is_seeded_with_the_world_seed`, vector from the same `dotnet`
+  run as S1-A-1's `GOLDEN_42`), stream independence
+  (`streams_are_independent`, `asking_twice_continues_the_same_stream`), lazy creation
+  and the per-world reset (`keys_are_created_lazily`,
+  `reset_restarts_every_stream_from_the_new_seed`). `world_sim/clock.rs::tests` (10)
+  now drive `advance_time` with a real `UnifiedRandom` (seeded so the first boundary
+  roll hits/misses), not a raw `roll01`.
 
-**Gap:** there is no test anywhere that compares a Rust RNG draw against the C#'s
-`UnifiedRandom` output for the same seed. The `FastRandom` pair above is the sole
-exact-stream proof in the module.
+**Gap:** the RNG *type* is proven against the C# (S1-A-1/2), but no test compares a
+migrated *stage's draw sequence* against the C# call order — that differential harness
+is research task seed 7, and the stage wiring itself is S1-A-11.
 
 ## The determinism proof the repo claims — what it actually pins
 
@@ -199,7 +208,7 @@ about.
 
 | ROADMAP claim | Verdict | Evidence |
 | --- | --- | --- |
-| "RNG discipline: every world stage runs under `Main.SwapRandom("<label>")` — a *named RNG stream* per stage" (`ROADMAP.md:102-106`) | **PARTIAL** | The C# side is read correctly (`Main.cs:3204-3215`, `:17749-17809`). The Rust side has **no** named-stream registry: `App` holds seven independent `u64` streams (`app/mod.rs:180, 303, 609, 612, 634`) seeded with arbitrary XOR constants, so the per-stage isolation *and* the "same seed ⇒ same sequence per stage" property are both lost. `ANALYSIS.md:4420-4430` admits the LCG is the port's own. |
+| "RNG discipline: every world stage runs under `Main.SwapRandom("<label>")` — a *named RNG stream* per stage" (`ROADMAP.md:102-106`) | **PARTIAL (registry landed)** | The C# side is read correctly (`Main.cs:3204-3215`, `:17749-17809`). **S1-A-2** added the exact registry (`app/rng.rs`: all 17 keys, same world seed per key, lazy create, per-world reset) and re-keyed every bridge seed off the world seed, so the "same seed ⇒ same sequence per stage" property now holds for `_rngs["UpdateTime"]` and is available for every stage. The stage bodies that still draw from splitmix bridges are S1-A-11. |
 | "keep `deterministic_for_seed` FNV proof" (`ROADMAP.md:334-335`) | **PARTIAL** | `deterministic_for_seed` has no FNV in it; the FNV-ish hash lives in `world_hash.rs` and is the port's own construction, re-pinned on every change. Reproducibility only. |
 | M4-SPAWN-1 "spawn engine core (multiplier chain + caps + **named RNG stream**)" (`ROADMAP.md:666`) | **PARTIAL** | `spawner.rs` reproduces the multiplier/cap chain, but the stream is `spawner::FastRandom` — a splitmix stand-in for `Main.rand` with a *different* seed (`app/mod.rs:2519` `npc_rng: world_seed`) and a per-tick advance that the C# does not have (`ANALYSIS.md:4420-4424`). The C#'s named stream is `Main._rngs["SpawnNPC"]`, seeded `new UnifiedRandom(worldSeed)`. |
 | "spawn RNG is the named `Main.SwapRandom("SpawnNPC")` stream" (`ROADMAP.md:619-621`) | **PARTIAL** | The named stream is a single `UnifiedRandom` per key; the Rust stream is a single `u64` per consumer. Structurally parallel, byte-wise different. |
@@ -219,12 +228,13 @@ about.
    In the C# a single stream serves the whole game; the order of the draws is the
    contract. The Rust splits it into seven fields, so there is no "order" to preserve
    and no way to align with vanilla without the type. *Not explicitly admitted.*
-3. **`Main.SwapRandom` named streams are not ported** — severity: **determinism**.
-   The C#'s per-stage streams are all seeded with the *same* world seed and diverge only
-   by draw count; the Rust's per-consumer streams use *different* seeds
-   (`world_seed ^ 0x5DEECE66D1A49B5F`, `^ 0x0A5CE17A1C1E5EED`, `^ 0x1DA91750E5C10C0C`,
-   `^ 0x2545F4914F6CDD1D`, `craft_rng: 1`). The `craft_rng: 1` constant in particular is
-   not seed-derived at all (`app/mod.rs:2700`). *Not admitted.*
+3. **`Main.SwapRandom` named streams: registry landed, consumers split** — severity:
+   **determinism**. **S1-A-2 (2026-11-12)** added the exact registry (`NamedRngs`,
+   all 17 keys, lazy `new UnifiedRandom(worldSeed)`) and re-keyed every App stream to
+   the world seed, deleting the XOR constants and `craft_rng: 1`; `UpdateTime` is
+   wired (the clock rolls at the boundary). The other stage bodies still draw from
+   world-seeded splitmix bridges whose *values* are not the C# stream, so their
+   outcomes still differ; **S1-A-11** migrates them.
 4. **`WorldGen.genRand` alias not modelled** — severity: **behavioural**.
    `WorldGen.cs:4445` returns `Main.rand`, so `Item.Prefix` during world generation draws
    from the *same* stream as the worldgen. The Rust keeps two isolated streams instead:
@@ -271,9 +281,9 @@ about.
 | --- | --- | --- | --- |
 | 1 | **Port `Terraria.Utilities.UnifiedRandom`** into `tr-core` (`rng.rs` or a new `unified_random.rs`): the 56-int `SeedArray`, the `SetSeed` warm-up, `InternalSample`, `Sample`, `Next(max)`, `Next(min,max)`, `NextDouble`, `NextBytes`. Add a `NextFloat`/`NextVector2*` extension set mirroring `Utils.cs:1198-1299`. Gate it behind `tr-core::rng` so the worldgen contract streams stay untouched. — **DONE 2026-11-12** (`S1-A-1-unified-random`): `crates/tr-core/src/unified_random.rs`; the scalar extensions are in, the `NextVector2*`/`NextFromRectangle` geometry helpers are deferred (no shared geometry types) | **L** | — |
 | 2 | **Golden-vector test for `UnifiedRandom`**: hard-code the first 64 `InternalSample()` values for seeds 0/1/42/-1 from a reference .NET run, so the port's stream is provably the C#'s. Without this, task 1 is unverifiable. — **DONE 2026-11-12**: 11 golden tests; the vectors were produced by `dotnet run` of the decompiled `UnifiedRandom.cs` (not by the Rust port) | **M** | 1 |
-| 3 | **`Main.SwapRandom` named-stream registry** in `App` (`HashMap<String, UnifiedRandom>` + a scope guard), mirroring `Main.cs:3204-3215` and the 13 stage names of `Main.cs:17749-17809`. Keep the port's `u64` fields as *aliases* until each stage is migrated, so nothing regresses mid-migration. | **L** | 1, 2 |
+| 3 | **`Main.SwapRandom` named-stream registry** in `App` (`HashMap<String, UnifiedRandom>` + a scope guard), mirroring `Main.cs:3204-3215` and the 13 stage names of `Main.cs:17749-17809`. Keep the port's `u64` fields as *aliases* until each stage is migrated, so nothing regresses mid-migration. — **DONE 2026-11-12** (`S1-A-2-named-rng-streams`): `crates/tr-app/src/app/rng.rs` (`NamedRngs`/`RngKey`, all 17 keys, lazy `UnifiedRandom::new(worldSeed)`, reset per world); `clock_rng` is already replaced by `_rngs["UpdateTime"]` and the remaining bridges are S1-A-11 | **L** | 1, 2 |
 | 4 | **Migrate the runtime consumers** (spawn, prefix, loot, chest, sandstorm, wind, item drops) off the splitmix stand-ins onto the `UnifiedRandom` streams, one call site group at a time, each with a before/after determinism pair. | **L** | 1, 3 |
-| 5 | **Re-key the per-consumer streams to the C#'s seed rule** (`new UnifiedRandom(worldSeed)` per named key) and delete the arbitrary XOR constants (`0x5DEECE66D1A49B5F`, `0x0A5CE17A1C1E5EED`, `0x1DA91750E5C10C0C`, `0x2545F4914F6CDD1D`) and the `craft_rng: 1` constant. | **M** | 3 |
+| 5 | **Re-key the per-consumer streams to the C#'s seed rule** (`new UnifiedRandom(worldSeed)` per named key) and delete the arbitrary XOR constants (`0x5DEECE66D1A49B5F`, `0x0A5CE17A1C1E5EED`, `0x1DA91750E5C10C0C`, `0x2545F4914F6CDD1D`) and the `craft_rng: 1` constant. — **DONE 2026-11-12** (`S1-A-2-named-rng-streams`): every App stream seed is now the world seed (`npc_rng`, `craft_rng`, `ambience_rng`, `item_rng`, `prefix_rng: UnifiedRandom::new(world_seed)`, `growth_rng: FastRandom::new(world_seed)`); the four XOR constants are gone from the App seeds. The same `0x2545F4914F6CDD1D` literal survives only in the wind/rain/sand/sky/chest/audio stand-ins, which are separate tasks | **M** | 3 |
 | 6 | **Fix the determinism proof**: rename `deterministic_for_seed` → `generation_is_reproducible_for_a_seed`, and split the worldgen contract into two tests — "reproducible" (the current one) and "byte-identical to the pinned pipeline hash" (`world_hash.rs`). Correct `ROADMAP.md:334-335` and the `ROADMAP`/ANALYSIS wording so "FNV proof" stops implying C# fidelity. | **S** | — |
 | 7 | **Add a `UnifiedRandom`-vs-port differential harness**: a `tools/` binary that, for a given seed, replays the C#'s draw order (transcribed from the decompiled call sites) and the port's, and reports the first divergence. This is the only way to prove the call ORDER, not just the algorithm. | **L** | 1, 2 |
 | 8 | **Audit `Utils.Clamp` / `Math.Round` / `NextFloat` numerics** across the Rust tree: replace `Ord::clamp` with a C#-order `clamp_cs`, use `round_ties_even` where `Utils.Round` is ported, and align the float quantum. | **M** | — |

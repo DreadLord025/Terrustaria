@@ -8674,7 +8674,7 @@ fn solid_tile(world: &World, x: i32, y: i32) -> bool {
 /// underworld cap); each step tests the pair of tiles beside the path for a
 /// full-height block and stops when it steps onto a solid tile. A coordinate
 /// outside the world reads as "cannot hit", like the C#'s null tiles.
-fn can_hit(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32, y2: f32, w2: f32, h2: f32) -> bool {
+pub(crate) fn can_hit(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32, y2: f32, w2: f32, h2: f32) -> bool {
     let mut ax = ((x1 as i32 + (w1 * 0.5) as i32) / 16).clamp(1, world.width - 1);
     let mut ay = ((y1 as i32 + (h1 * 0.5) as i32) / 16).clamp(1, (world.height - 40).max(1));
     let bx = ((x2 as i32 + (w2 * 0.5) as i32) / 16).clamp(1, world.width - 1);
@@ -8756,7 +8756,6 @@ fn npc_center(n: &Npc) -> Vec2 {
 /// tileSolid[type] && !tileSolidTop[type]` conjunction (`:694`, `:738`,
 /// `:766`) — unlike [`can_hit`]'s flank test it carries no slope or halfBrick
 /// term, so this helper does not reuse [`full_solid`].
-#[allow(dead_code)] // Phase 4's later arms (aiStyle 129, the riders) call it
 pub(crate) fn can_hit_line(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32, y2: f32, w2: f32, h2: f32) -> bool {
     // `:590-593`: the anchors — `(int)((X + (float)(Width / 2)) / 16f)`.
     let clx = |v: i32| v.clamp(1, world.width - 1);

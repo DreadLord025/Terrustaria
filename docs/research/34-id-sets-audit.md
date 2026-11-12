@@ -148,6 +148,7 @@ indirectly, and the coverage is uneven:
 ## Deviations & risks
 
 1. **The `NpcKind` protocol id space collides with itself on 7 ids (78..84).**
+   **RESOLVED 2026-11-12 by S1-F-1 — see Task seeds.**
    `to_u16` (`npc.rs:850`) maps **two** kinds onto each of these ids:
    `78 ← {PirateDeckhand, Deerclops}`, `79 ← {PirateCaptainsMate, SkeletronHand}`,
    `80 ← {PirateArcher, WallOfFleshEye}`, `81 ← {PirateCorsair, PrimeCannon}`,
@@ -167,7 +168,8 @@ indirectly, and the coverage is uneven:
    Severity: **behavioural / determinism, high**. Not admitted by ROADMAP or ANALYSIS
    (see deviation 3).
 
-2. **`to_u16` still carries 31 conflicting arms; `from_u16` 7.** `to_u16` has 29 dead
+2. **`to_u16` still carries 31 conflicting arms; `from_u16` 7.**
+   **RESOLVED 2026-11-12 by S1-F-1/S1-F-2 — see Task seeds.** `to_u16` has 29 dead
    duplicate arms (`SolarCrawltipedeHead` ×4 at `:953`/`:958`/`:963`/`:968`,
    `SolarSpearman` ×4, `StardustWormHead` ×4, `StardustCellSmall` ×2 at `:942`/`:991`,
    `VortexHunter`/`VortexAlien`/`VortexHeadcrab` ×2 at `:987`-`:989`/`:1051`-`:1053`, …)
@@ -181,7 +183,9 @@ indirectly, and the coverage is uneven:
    (deviation 1) is behavioural.
 
 3. **ROADMAP `M4-EVENT-4b` and ANALYSIS claim the dead arms were removed — they were
-   not.** `docs/ROADMAP.md:1469` ("done 2026-11-07 … the pirate/martian id collision
+   not.**
+   **RESOLVED 2026-11-12 by S1-F-1 — the claims are corrected (ROADMAP/ANALYSIS/ATLAS)
+   and the dead arms are gone.** `docs/ROADMAP.md:1469` ("done 2026-11-07 … the pirate/martian id collision
    68-72 renumbered to 78-82/83 (plus the render_key + from_u16 tables), **the
    duplicated dead arms removed**") and `docs/ANALYSIS.md:3024-3027` ("**the duplicated
    dead arms removed**") both assert the cleanup. Verified: the renumber landed
@@ -201,7 +205,8 @@ indirectly, and the coverage is uneven:
    Severity: **behavioural**, medium; the affected consumers are statue spawns and
    the mech-spawn caps.
 
-5. **11 kinds are unreachable through `from_u16`.** The protocol ids 85-88
+5. **11 kinds are unreachable through `from_u16`.**
+   **RESOLVED 2026-11-12 by S1-F-1 — all 182 kinds decode (the roster test proves it).** The protocol ids 85-88
    (`BrainScrambler`, `RayGunner`, `ScutlixRider`, `Scutlix`) and 162-168
    (`TaxCollector`, `Golfer`, `SleepingGolfer`, `Zoologist`, `Princess`, `DyeTrader`,
    `PartyGirl`) have **no** `from_u16` arm (`to_u16` assigns them, `from_u16` omits
@@ -252,24 +257,37 @@ indirectly, and the coverage is uneven:
 
 ## Task seeds
 
-- **S — Delete the dead `to_u16`/`from_u16` arms and fix the 78..84 collision.**
+- **LANDED 2026-11-12 (S1-F-1/F-2, `S1-F-1-npc-kind-map`) — Delete the dead `to_u16`/`from_u16` arms and fix the 78..84 collision.**
   (`npc.rs:953-990`, `:1054-1085`, `:1207-1226`, `:1285-1291`.) Remove the 29/21 dead
   duplicates, reconcile the 2/7 contradictory values, and move the pirate/probe
   family out of the Deerclops/Skeletron-Prime band (or give the Prime family its own
   free ids). Add `#[deny(unreachable_patterns)]` to both fns (the pattern already used
   by `render/entities.rs:1428` after BUG-22). Depends on nothing. Closes deviations 1,
   2, 3.
-- **S — Add the exhaustive id-round-trip test.** A table-driven test over all 182
+  *Resolution:* the pirates went to the contiguous 182..188 (the free 0..181 holes are
+  non-contiguous); every dead/duplicate/contradictory arm deleted from both tables; the
+  deny landed on both fns.
+- **LANDED 2026-11-12 (same commit) — Add the exhaustive id-round-trip test.** A table-driven test over all 182
   kinds asserting `from_u16(to_u16(k)) == Some(k)` and that the protocol id space is
   injective (no two kinds share an id). This is the test that would have caught
   deviation 1. Add it next to the existing round-trip assertions in
   `world_sim/npcs.rs:7386`-`:8230`. Depends on the previous task.
-- **S — Correct the ROADMAP/ANALYSIS claims.** `docs/ROADMAP.md:1469` and
+  *Resolution:* `npc::tests::the_protocol_id_space_round_trips_every_kind` (it also
+  asserts `from_u16` decodes exactly 182 ids and that no id exceeds the `23` body's
+  i16 `kind` field), plus the `netglue` wire-seam tests
+  (`npc_kind_wire_tests::*`).
+- **LANDED 2026-11-12 (same commit) — Correct the ROADMAP/ANALYSIS claims.** `docs/ROADMAP.md:1469` and
   `docs/ANALYSIS.md:3024-3027` assert "the duplicated dead arms removed"; amend both
   (and the `M4-EVENT-4b` status) to the verified state. Depends on the fix task.
-- **M — Close the `from_u16` gap for ids 85-88 and 162-168** (11 kinds currently
+  *Resolution:* ROADMAP rows S1-F-1/S1-F-2 marked landed, the ANALYSIS probe section
+  and the `ATLAS.md` M4-EVENT-4b row both carry the correction block, and
+  `90-consolidated-findings`' U-01/R-34-3 are closed.
+- **LANDED 2026-11-12 (same commit) — Close the `from_u16` gap for ids 85-88 and 162-168** (11 kinds currently
   undecodable, deviation 5) and add the missing `from_u16` arms. Depends on the
   dead-arm cleanup.
+  *Resolution:* 85..88 decode (`BrainScrambler`/`RayGunner`/`ScutlixRider`/`Scutlix`);
+  the roster test proves all 182 kinds are decodable (162..168's arms were live at
+  the time of the fix; the audit's 11-kind count dropped to 4 in-tree).
 - **M — Extend `cs_id` to the full roster** (43 → 182 kinds) so the statue spawns
   (`Wiring.cs:2424`/`:2452`) and the `MechSpawn` caps (`NPC.cs:7420`) can match every
   kind. Depends on the id-space decision (should `cs_id` be replaced by a single

@@ -594,27 +594,6 @@ impl SwimParams {
     };
 }
 
-/// `Collision.CanHit`'s stand-in: the segment sampled every half tile
-/// rejects solid tiles. The vanilla's exact shape walk lands with the
-/// projectile line-of-sight work.
-pub fn line_clear(world: &World, from: (f32, f32), to: (f32, f32)) -> bool {
-    let dx = to.0 - from.0;
-    let dy = to.1 - from.1;
-    let steps = ((dx * dx + dy * dy).sqrt() / (TILE_PX * 0.5)).ceil().max(1.0) as i32;
-    for i in 0..=steps {
-        let t = i as f32 / steps as f32;
-        let x = ((from.0 + dx * t) / TILE_PX) as i32;
-        let y = ((from.1 + dy * t) / TILE_PX) as i32;
-        if world
-            .tile(x, y)
-            .is_some_and(|tl| tl.active() && tr_core::tiledata::TILE_SOLID.has(tl.kind))
-        {
-            return false;
-        }
-    }
-    true
-}
-
 /// `AI_016`'s wet machine (`NPC.cs:23698-23961`). `aggro_ok` is `flag25` —
 /// the caller folds the kind gate (`:23701`'s exclusion), the player's
 /// `wet`/alive state and `CanHit`. The order is vanilla: the slope flips at

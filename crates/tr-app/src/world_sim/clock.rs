@@ -1,19 +1,19 @@
 //! The world clock (plan stage A4): `Main.time`'s day/night wrap, the `TR_DAY`
 //! freeze pin and the `Main.Disco*` colour cycle.
 
-use tr_core::World;
+use tr_core::{UnifiedRandom, World};
 
 use crate::app::App;
 
 /// `Main.time`: a 15-minute day (`0..54000`) and a 9-minute night (`0..32400`) at 60
 /// ticks per second, times the dial fast-forward rate. Returns the `(blood moon,
-/// eclipse)` starts so the host broadcasts them (`ChatColors.World`); `roll01` is
-/// the caller's dawn/dusk roll stream, `any_player_life_over_120` the
-/// `statLifeMax > 120` gate (`Main.cs:65342-65349`).
+/// eclipse)` starts so the host broadcasts them (`ChatColors.World`); `rng` is
+/// the `_rngs["UpdateTime"]` stream (`Main.cs:17795`), `any_player_life_over_120`
+/// the `statLifeMax > 120` gate (`Main.cs:65342-65349`).
 pub(crate) fn advance_time(
     world: &mut World,
     dt: f32,
-    roll01: f64,
+    rng: &mut UnifiedRandom,
     any_player_life_over_120: bool,
 ) -> (bool, bool) {
     let mut blood_moon_started = false;
@@ -33,9 +33,13 @@ pub(crate) fn advance_time(
             // moon) — event rolls land with M4.
             world.fast_forward_to_dusk = false;
             world.moondial_cooldown = world.moondial_cooldown.saturating_sub(1);
-            // `UpdateTime_StartNight`'s blood-moon roll (`Main.cs:65333-65352`).
+            // `UpdateTime_StartNight`'s blood-moon roll (`Main.cs:65333-65352`):
+            // one `Main.rand` draw at the boundary (`Next(maxValue)` in the C#;
+            // the port's uniform-threshold form), through the named `UpdateTime`
+            // stream the stage runs under.
+            let roll = rng.next_double();
             blood_moon_started =
-                world.roll_blood_moon(roll01, false, any_player_life_over_120, false);
+                world.roll_blood_moon(roll, false, any_player_life_over_120, false);
             // `Main.cs:65353-65354`: `Main.time = 0.0; Main.dayTime = false;` —
             // the overshoot past the boundary is discarded, not wrapped.
             t = 0.0;
@@ -69,8 +73,13 @@ pub(crate) fn advance_time(
         // `UpdateTime_StartDay`'s solar-eclipse roll (`Main.cs:65421-65430`),
         // after the `stopEvents` gate — the port has no stop-events system, so
         // the hardmode + mechs roll always applies.
-        eclipse_started = world.roll_eclipse(roll01, world.hard_mode, world.downed_mech_boss_any());
-        world.roll_morning_invasion(roll01);
+        // `UpdateTime_StartDay`'s solar-eclipse and invasion rolls draw once at the
+        // boundary from the same `UpdateTime` stream (the port keeps the C#'s
+        // single-roll approximation for the invasion cluster until M4 ports the
+        // per-`Next(n)` chain).
+        let roll = rng.next_double();
+        eclipse_started = world.roll_eclipse(roll, world.hard_mode, world.downed_mech_boss_any());
+        world.roll_morning_invasion(roll);
     }
     world.time = t;
     (blood_moon_started, eclipse_started)
@@ -91,15 +100,15 @@ pub(crate) fn advance_time(
 pub(crate) fn advance_time_with_events(
     app: &mut App,
     dt: f32,
-    roll01: f64,
     any_player_life_over_120: bool,
 ) -> (bool, bool) {
-    // Both flags are read before the clock can flip them.
     let eclipse_was_up = app.world.eclipse;
     let blood_moon_was_up = app.world.blood_moon;
     let was_day = app.world.day_time;
-    let (blood_moon_started, eclipse_started) =
-        advance_time(&mut app.world, dt, roll01, any_player_life_over_120);
+    let (blood_moon_started, eclipse_started) = {
+        let rng = app.rngs.stream(crate::app::rng::RngKey::UpdateTime);
+        advance_time(&mut app.world, dt, rng, any_player_life_over_120)
+    };
     if was_day && !app.world.day_time {
         // StartNight: the eclipse row, then the clear.
         if eclipse_was_up {
@@ -206,7 +215,8 @@ mod tests {
         w.sundial_cooldown = 4;
         w.moondial_cooldown = 2;
         // The roll in the 1-in-9 window with a 120+ player.
-        let (blood, eclipse) = advance_time(&mut w, 5.0, 0.1, true);
+        let mut rng = stream_with_first_roll(|r| r < 1.0 / 9.0);
+        let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true);
         assert!(blood);
         assert!(!eclipse);
         assert!(w.blood_moon);
@@ -224,7 +234,9 @@ mod tests {
         w.hard_mode = true;
         w.downed_mech_boss1 = true;
         w.sundial_cooldown = 6;
-        let (blood, eclipse) = advance_time(&mut w, 5.0, 0.02, true);
+        // The roll in the 1-in-20 window.
+        let mut rng = stream_with_first_roll(|r| r < 1.0 / 20.0);
+        let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true);
         assert!(!blood);
         assert!(eclipse);
         assert!(w.eclipse);
@@ -234,16 +246,28 @@ mod tests {
 
     use super::*;
 
+    /// A stream whose first `NextDouble()` satisfies `pred`. The boundary rolls
+    /// draw exactly once (`Main.cs:65333-65352`, `:65421-65430`), so a fresh
+    /// `UnifiedRandom` from the found seed reproduces that value.
+    fn stream_with_first_roll(pred: impl Fn(f64) -> bool) -> UnifiedRandom {
+        for seed in 0..10_000 {
+            if pred(UnifiedRandom::new(seed).next_double()) {
+                return UnifiedRandom::new(seed);
+            }
+        }
+        panic!("no seed in 0..10_000 has a first roll matching the predicate");
+    }
+
     #[test]
     fn day_night_clock_wraps() {
         let mut w = World::new("t".into(), 8, 8);
         w.time = 53999.0;
         w.day_time = true;
-        advance_time(&mut w, 1.0, 0.5, false);
+        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(0), false);
         assert!(!w.day_time);
         assert!(w.time < 100.0, "time {}", w.time);
         w.time = 32399.0;
-        advance_time(&mut w, 1.0, 0.5, false);
+        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(0), false);
         assert!(w.day_time);
         assert!(w.time < 100.0, "time {}", w.time);
     }
@@ -258,7 +282,7 @@ mod tests {
         w.time = 32040.0;
         w.moon_phase = 3;
         w.fast_forward_to_dawn = true;
-        advance_time(&mut w, 0.1, 0.5, false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
         assert!(w.day_time, "StartDay ran on the crossing tick");
         // `Main.cs:65382`/`:65389`: `Main.time = 0.0; Main.dayTime = true;` —
         // the overshoot is discarded, not wrapped into the new half.
@@ -275,7 +299,7 @@ mod tests {
         w.time = 53640.0;
         w.moon_phase = 2;
         w.fast_forward_to_dusk = true;
-        advance_time(&mut w, 0.1, 0.5, false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
         assert!(!w.day_time, "StartNight ran on the crossing tick");
         // `Main.cs:65353-65354`: `Main.time = 0.0; Main.dayTime = false;`.
         assert_eq!(w.time, 0.0);
@@ -294,7 +318,7 @@ mod tests {
         w.fast_forward_to_dawn = true;
         assert!(w.is_fast_forwarding());
         assert_eq!(w.day_rate(), 60);
-        advance_time(&mut w, 0.1, 0.5, false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
         assert!(
             !w.fast_forward_to_dawn,
             "the flag clears on the transition tick"
@@ -302,7 +326,7 @@ mod tests {
         assert!(!w.is_fast_forwarding());
         assert_eq!(w.day_rate(), 1);
         // The next add runs at dayRate 1: a 1 s step advances 60 ticks, not 3600.
-        advance_time(&mut w, 1.0, 0.5, false);
+        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(0), false);
         assert_eq!(w.time, 60.0);
     }
 
@@ -333,13 +357,13 @@ mod tests {
         w.time = 32395.0;
         w.sundial_cooldown = 3;
         w.moondial_cooldown = 5;
-        advance_time(&mut w, 0.1, 0.5, false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
         assert_eq!(w.sundial_cooldown, 2, "dawn decrements the sundial");
         assert_eq!(w.moondial_cooldown, 5, "StartDay leaves the moondial alone");
         // The following dusk decrements the moondial only.
         w.day_time = true;
         w.time = 53995.0;
-        advance_time(&mut w, 0.1, 0.5, false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
         assert_eq!(w.moondial_cooldown, 4, "dusk decrements the moondial");
         assert_eq!(w.sundial_cooldown, 2, "StartNight leaves the sundial alone");
     }
@@ -351,11 +375,11 @@ mod tests {
         let mut w = World::new("t".into(), 8, 8);
         w.day_time = false;
         w.time = 32395.0;
-        advance_time(&mut w, 0.1, 0.5, false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
         assert_eq!(w.sundial_cooldown, 0);
         w.day_time = true;
         w.time = 53995.0;
-        advance_time(&mut w, 0.1, 0.5, false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
         assert_eq!(w.moondial_cooldown, 0);
     }
 
@@ -372,12 +396,12 @@ mod tests {
         w.day_time = false;
         w.time = 32400.0 - 360.0;
         w.fast_forward_to_dawn = true;
-        advance_time(&mut w, 0.1, 0.5, false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
         assert!(w.day_time, "exactly one transition fired");
         assert_eq!(w.time, 0.0);
         // From the fresh day start (rate back to 1) the next step stays inside
         // the day half — no dusk this call.
-        advance_time(&mut w, 0.1, 0.5, false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
         assert!(w.day_time);
         assert!(
             (0.0..54000.0).contains(&w.time),
@@ -403,7 +427,7 @@ mod tests {
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.world.day_time = false;
         app.world.time = 32399.0;
-        let (blood, eclipse) = advance_time_with_events(&mut app, 5.0, 0.5, false);
+        let (blood, eclipse) = advance_time_with_events(&mut app, 5.0, false);
         assert!(!blood && !eclipse);
         assert!(done(&app, "YOU_CAN_DO_IT"), "progression 1 at every dawn");
         assert!(!done(&app, "BLOODBATH"));
@@ -414,7 +438,7 @@ mod tests {
         app.world.day_time = false;
         app.world.time = 32399.0;
         app.world.blood_moon = true;
-        advance_time_with_events(&mut app, 5.0, 0.5, false);
+        advance_time_with_events(&mut app, 5.0, false);
         assert!(app.world.day_time);
         assert!(done(&app, "BLOODBATH"), "progression 5 at the blood-moon dawn");
         assert!(!app.world.blood_moon, "StartDay clears the flag");
@@ -424,7 +448,7 @@ mod tests {
         app.world.day_time = true;
         app.world.time = 53999.0;
         app.world.eclipse = true;
-        advance_time_with_events(&mut app, 5.0, 0.5, false);
+        advance_time_with_events(&mut app, 5.0, false);
         assert!(!app.world.day_time);
         assert!(done(&app, "KILL_THE_SUN"), "progression 3 at the eclipse dusk");
         assert!(!app.world.eclipse, "StartNight clears the flag");
@@ -433,7 +457,7 @@ mod tests {
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.world.day_time = true;
         app.world.time = 53999.0;
-        advance_time_with_events(&mut app, 5.0, 0.5, false);
+        advance_time_with_events(&mut app, 5.0, false);
         assert!(!done(&app, "KILL_THE_SUN"));
         assert!(!done(&app, "BLOODBATH"));
     }

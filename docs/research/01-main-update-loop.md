@@ -56,7 +56,7 @@ per-frame update.
 
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
-| `DoUpdate` phase order | PARTIAL | `frame.rs::frame` | Order of the world branch (328-557): player → NPCs → liquids → waterfalls → wiring → tile entities → growth → `world_tick_step` → rain → scene scan → windy day → ambience → **items → projectiles** → editing → net → map. C# order (`DoUpdateInWorld_Inner` 17749-17821): particles → **players → spawn NPCs → NPCs → gores → projectiles → items → dust → leashed → floating text → time** → worldgen → net → chest frames → wind → camera pan → camera lerp → scene state. Three inversions: items/projectiles swapped (C# 17977 before 18031), time runs *before* entities in the port (C# 18083-18087 after 18072), growth/wiring/tile-entities/waterfalls run after NPCs (C# WorldGen.UpdateWorld is at 18105-18109, after dust/time). |
+| `DoUpdate` phase order | PASS (world branch, S1-B-1) | `frame.rs::frame` | The world branch now follows `DoUpdateInWorld_Inner` (`Main.cs:17745-17822`): players → all-asleep → spawn/NPCs → **projectiles → items** → dust → **time** → `WorldGen.UpdateWorld` (`WorldGen.cs:71495-71630`: wiring → tile entities → liquid → growth) → waterfalls → the port's environment cluster (weather → rain → scene state → windy day → ambience) → editing → net → map. Pinned per frame by `app::frame::tests::the_world_branch_runs_in_the_csharp_update_order`. Two known remaining gaps: the port's environment cluster (weather/rain/ambience) belongs to `Main.Update`'s pre-world half (`:17166-17233`) in the C#, and this branch keeps it inside; the gores / leashed-entities / floating-text passes are still unported. |
 | frame-skip accumulator / `TARGET_FRAME_TIME` | PARTIAL | `frame.rs:88-94` | C# 17006-17020 clamps `UpdateTimeAccumulator` into `[0, 3×TARGET]` and suppresses draws; the port clamps `dt` to `[0, 0.1]` (0.1 s = 6 steps, so `max_steps` 8 is never the binding cap) and never suppresses draws. No `successiveSkippedDraws`. |
 | `FixedStepper` 60 Hz accumulator | PASS | `world_sim/step.rs:9-63` | Faithful re-creation of the accumulator shape; `max_steps = 8` at `app/mod.rs:2475-2879` and tests `step.rs::tests::tick_runs_at_most_max_steps_per_frame`. |
 | adaptive `gfxQuality` → dust/liquid/light budgets | MISSING | — | C# 17054-17113 (`maxDustToDraw`, `Liquid.cycles`, `Liquid.curMaxLiquid`, `LegacyLighting.RenderPhases`) has no port; `settings.quality` exists as a menu toggle only. |
@@ -90,34 +90,33 @@ per-frame update.
   `escape_falls_through_to_the_inventory_when_the_map_is_shut`,
   `the_map_key_still_toggles_the_map`,
   `the_smart_cursor_toggle_flips_the_runtime_flag` (world-key routing).
-- `world_sim/camera.rs` — **no tests**. `frame.rs` has no in-module tests; the frame
-  driver is covered only indirectly by the deterministic screenshot harness
+- `world_sim/camera.rs` — **no tests**. `frame.rs` gained its first in-module tests with
+  S1-B-1: `app::frame::tests::the_world_branch_runs_in_the_csharp_update_order` (pins the
+  per-frame `phase` trace against `Main.cs:17745-17822`) and
+  `app::frame::tests::the_clock_only_advances_inside_the_world_branch` (S1-B-2). The frame
+  driver is otherwise covered indirectly by the deterministic screenshot harness
   (`docs/ANALYSIS.md` "Minecart riding" notes the `TR_SHOT` SHA256-equal pattern).
 
 ## Deviations & risks
 
-1. **Clock advances while a menu/front screen is open** — `advance_time` is called at
-   `frame.rs:160-189`, *outside* the `if self.menu.is_none() && self.front.is_none()`
-   gate (328). C# only reaches `UpdateTime` through `DoUpdateInWorld` (17278-17281),
-   which the `gameMenu` early return skips (17166-17175). Severity: **behavioural**
-   (a world left on the title screen keeps ageing). Mitigated for `front` by
-   `swap_world` reloading from disk (frame.rs:303-326), so it bites the `menu`
-   (legacy pause-menu) path and any future non-reloading menu. Not admitted in
-   ROADMAP/ANALYSIS.
+1. **Clock advanced while a menu/front screen is open** — *resolved (S1-B-2, landed with
+   S1-B-1)*. The `UpdateTime` call moved from the top of `frame` (outside the world gate)
+   to inside the world branch, where the `menu.is_none() && front.is_none()` gate mirrors
+   `DoUpdate`'s `gameMenu` early return (`Main.cs:17166-17175`; `DoUpdateInWorld` is only
+   reached at `:17278-17281`). Regression test:
+   `app::frame::tests::the_clock_only_advances_inside_the_world_branch`.
 2. **Camera follow runs in the fixed step, not the draw pass** — player.rs:334/666 vs
    `Main.cs:61832`/`62590-62649`. Severity: **behavioural/sub-pixel** (the port added
    `1-exp(-dt*12)` smoothing the vanilla does not have, plus `cameraX/cameraY`,
    `CurrentPan`, `cameraLerp` and the world clamp at `Main.cs:63948` are absent).
    ANALYSIS admits the interpolation intent (frame.rs:572-575) but not the missing
-   clamp/pan.
-3. **items after projectiles** — C# 17977 vs 18031 (port: items.rs after ambience,
-   projectiles.rs after items). Severity: **determinism** for any interaction where a
-   projectile drops/kills an item in the same tick, or RNG draw order between the two
-   streams. Not admitted.
-4. **`UpdateTime` runs before the entity pass** — C# 18083-18097 after dust/floating
-   text; the port advances the clock at the top of `frame`. Anything in `Player`/`NPC`
-   that reads `Main.time` (day/night gates, `Main.IsItDay`) sees a value one phase
-   ahead relative to the vanilla ordering. Severity: **behavioural**.
+   clamp/pan. (S1-B-4.)
+3. **items after projectiles** — *resolved (S1-B-1)*. The branch now draws projectiles
+   (`:17976`) before items (`:18004`) exactly as the C#; the ordering regression test runs
+   both phases on a real headless frame.
+4. **`UpdateTime` ran before the entity pass** — *resolved (S1-B-1)*. The clock now
+   advances in its `WorldGen`-preceding slot after dust, so `Main.time` readers in
+   `Player`/`NPC` see the vanilla value for the phase.
 5. **No `max_steps` bottleneck and no frame suppression** — dt clamp 0.1 s
    (frame.rs:88-94) silently turns the vanilla's `UpdateTimeAccumulator`/draw-skip
    policy into "drop at most 6 steps". Long stalls behave differently from
@@ -136,15 +135,15 @@ per-frame update.
 
 ## Task seeds
 
-- **M1.1-LOOP-1 (S)** — move `advance_time` (frame.rs:160-189) inside the
-  `menu.is_none() && front.is_none()` world branch, immediately before
-  `update_npcs`, and verify no screenshot/save drift (`TR_SHOT` SHA256 pair). Blocks
-  nothing; fixes deviation 1.
-- **M1.1-LOOP-2 (M)** — reorder `frame.rs:481-551` to the C# `DoUpdateInWorld_Inner`
-  order (spawn NPCs → NPCs → gores → projectiles → items → dust/floating text →
-  time → worldgen/wiring/growth/TE → scene state → camera). Requires the gore and
-  dust passes from modules 05/15 to exist; depends on those research rows. Fixes
-  deviations 3-4.
+- **M1.1-LOOP-1 (S) — DONE (S1-B-2, landed with S1-B-1)** — `advance_time` moved inside
+  the `menu.is_none() && front.is_none()` world branch. Regression test
+  `the_clock_only_advances_inside_the_world_branch`. Fixed deviation 1.
+- **M1.1-LOOP-2 (M) — DONE (S1-B-1)** — `frame.rs`'s world branch reordered to the C#
+  `DoUpdateInWorld_Inner` order (players → spawn NPCs → NPCs → **projectiles → items** →
+  dust → **time** → WorldGen wiring/TE/liquid/growth → …). The gores / leashed /
+  floating-text passes remain unported (no gore or floating-text module yet), so they are
+  absent rather than reordered. Fixed deviations 3-4; pinned by
+  `the_world_branch_runs_in_the_csharp_update_order`.
 - **M1.1-LOOP-3 (M)** — port `gamePaused`/`CanPauseGame` semantics: a single
   `paused` flag on `App` set when `inventory_open || ingame_options.open` (SP,
   `autoPause`-equivalent), skipping the steppers while still ticking UI/audio, plus
@@ -157,8 +156,9 @@ per-frame update.
   (18143-18157) and `ClampScreenPositionToWorld` (63948); move the follow out of the
   player fixed step or pin the port's smoothing as a documented deviation.
 - **M1.1-LOOP-6 (S)** — add `camera.rs` unit tests for `pan_camera` speed
-  (900 px/s ÷ zoom at zoom 1) and `screen_size`'s deterministic 1280×720 fallback,
-  plus a frame-level integration test asserting the branch order fixed by LOOP-2.
+  (900 px/s ÷ zoom at zoom 1) and `screen_size`'s deterministic 1280×720 fallback. The
+  "frame-level integration test asserting the branch order" half is **DONE** with S1-B-1
+  (`the_world_branch_runs_in_the_csharp_update_order`); the `camera.rs` half remains.
 - **M1.1-LOOP-7 (L)** — `ShouldUpdateEntities`-equivalent gate plus the world-loading
   state machine (`WorldPreparationState`), so `frame()` cannot tick a half-loaded
   world; depends on module 12's WorldGen research.

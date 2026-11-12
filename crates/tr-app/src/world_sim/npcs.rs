@@ -925,7 +925,11 @@ pub(crate) fn update_worms_in(
                     let (lw, lh) = npcs[i].size();
                     let cx = npcs[i].x + lw * 0.5;
                     let cy = npcs[i].y + lh * 0.5;
-                    if crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                    // `:49863`: `CanHit(base.position, base.width,
+                    // base.height, player.position, player.width,
+                    // player.height)` — the centres stand in for the
+                    // boxes (the anchor math is `centre / 16`).
+                    if crate::projectile::can_hit(world, npcs[i].x, npcs[i].y, lw, lh, pcx, pcy, 0.0, 0.0) {
                         let mut dx = pcx - cx + (rand01(rng) * 41.0 - 20.0);
                         let mut dy = pcy - cy + (rand01(rng) * 41.0 - 20.0);
                         let d = (dx * dx + dy * dy).sqrt().max(1.0);

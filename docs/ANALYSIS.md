@@ -1445,6 +1445,41 @@ because the gate is the C#'s top-to-top `Main.player[target].position.Y - base.p
   type 6; `:50345-50348` type 231's 3/0.017) are constants-off: the presets are the
   normal-mode values, like the other archetype tables.
 
+## The NPC AI line-of-sight walks (S1-D-7, 2026-11-12)
+
+The AI's line-of-sight gate used to be `npc_ai.rs::line_clear`, a half-tile segment
+sampler — a documented stand-in (`research/13` deviations 9/10), not a port. S1-D-7
+deletes it and routes every AI call site through the C#'s own walks:
+
+* `Collision.CanHit` (`Collision.cs:381-479`) → `projectile.rs::can_hit` (made
+  `pub(crate)`), with the C#'s argument forms: the `1,1` centre form
+  (`CanHit(centerA, 1, 1, centerB, 1, 1)`) for the targeting gates, and the
+  `position/width/height` box form where the C# passes boxes (the shooter/archer
+  stop gate `:59636`, the WoF eye `:26167`, the swimmer `:23704`, the VortexAlien
+  leap `:58705`, the Destroyer's segment laser `:49863`);
+* `Collision.CanHitLine` (`Collision.cs:588-778`) → `projectile.rs::can_hit_line`
+  (the `#[allow(dead_code)]` is gone): the Vortex Rifleman's arming gate
+  (`:58587`, centres `0,0`) and the Ancient Cultist's ritual gate (`:39275`,
+  centres `0,0`, negated);
+* `Collision.SolidCollision` (`Collision.cs:2700-2734`) → `player.rs::solid_collision`
+  (made `pub(crate)`): the diving flyer's crash gate (`NPC.cs:65679`) — that site was
+  never an LOS walk, so the old `line_clear` use there was doubly wrong.
+
+Two source-order defects fixed in passing: the martian drone's `:35319-35325` now
+applies `flag76 = CanHit(...)`, then the `ai[3] >= 120` override, then the ±π/8 cone
+gate (the port had the override after the cone); the diving flyer's crash is
+`SolidCollision` (the pre-existing 64-px proximity arm at `:65720` is kept folded
+into the dive state).
+
+**Behaviour change (intended, faithful).** NPC aggro/targeting outcomes now follow
+the tile-corner walk instead of the dense ray sample, so a wall with a one-tile slit
+blocks `CanHit` (both flanks solid, `:445-448`) that the sampler saw through, and
+`CanHitLine`'s any-of-three test (`:694`) blocks on a single flank tile. This is the
+determinism-sensitive shift `research/13`'s task seed calls out; it is the correct
+vanilla behaviour. Tests:
+`npc.rs::tests::the_stardust_cell_drops_its_chase_when_the_tile_walk_sees_a_wall`
+and `::the_vortex_rifleman_does_not_arm_through_the_tile_walk`.
+
 ## Asset pipeline
 
 - Terraria ships XNA **XNB v5** containers. Terraria's build uses Xbox `XMemCompress`
@@ -3071,11 +3106,23 @@ not trigger anything — only the escape does.
 The task also landed a reconciliation pass over the node's parallel
 slices: the `to_u16` id map's pirate/martian collision (both families
 had taken 68-72 across merges) renumbered to 78-82/83 through all three
-tables, the duplicated dead arms removed, the bestiary `sheet_i` table
-re-derived from `bestiary_npc_sheets`' order at once (the frost trio's
-48-50 slot had silently drifted every later agent's rows), the Walker's
-11-frame slice corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/
-0.55 middle cut ported.
+tables, the bestiary `sheet_i` table re-derived from
+`bestiary_npc_sheets`' order at once (the frost trio's 48-50 slot had
+silently drifted every later agent's rows), the Walker's 11-frame slice
+corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/0.55 middle cut
+ported.
+
+> **Correction 2026-11-12 (S1-F-1, `research/34` deviation 3):** the original
+> text here claimed "the duplicated dead arms removed" — that claim was
+> **false** (and the matching `M4-EVENT-4b` DONE row in `ATLAS.md`, audit
+> verdict FAIL). The 29/21 dead and 2/7 contradictory arms survived the
+> renumber, and parking the pirates on 78-82/83 collided with the
+> Deerclops/Skeletron-Prime band: 7 kinds did not round-trip through
+> `to_u16`/`from_u16` on the live save (`saveglue.rs:107` ↔ `app/mod.rs:1980`)
+> and netcode (`netglue.rs:385`/`:1044`) paths. `S1-F-1` (`S1-F-1-npc-kind-map`)
+> fixed it: the pirate/probe/drone band moved to the free contiguous 182..188,
+> the dead arms deleted from both tables, `#[deny(unreachable_patterns)]` on
+> both fns, and the exhaustive round-trip test lands the invariant.
 
 ## The Martian Drone (M4-EVENT-4c)
 
@@ -8791,9 +8838,9 @@ replay-pair tests and the wind tests) stay green unchanged.
 `decompiled/Terraria/Utilities/UnifiedRandom.cs:1-159` — the .NET Framework
 `System.Random` Knuth subtractive generator (56-int seed array), which is what
 `Main.rand` is. It is a *third* stream algorithm beside the worldgen
-`Xorshift64` (`rng.rs`) and the tile-light `FastRandom` (48-bit LCG); it is not
-wired into any consumer yet (that is S1-A-2+), so no generated world, frame or
-save changes.
+`Xorshift64` (`rng.rs`) and the tile-light `FastRandom` (48-bit LCG); S1-A-2 now owns
+the `Main.SwapRandom` registry (`app/rng.rs`) and the `UpdateTime` stage draws from it,
+while the remaining stage bodies still use world-seeded splitmix bridges (S1-A-11).
 
 Fidelity notes:
 
@@ -8836,20 +8883,56 @@ Deviations that remain, on purpose:
 
 - **One `prefix_rng`, not the C#'s shared `Main.rand`.** Vanilla's prefix draws
   interleave with every other `Main.rand` consumer (particles, weather, loot); the port
-  keeps its per-consumer field convention until S1-A-2 gives the singletons the C#'s
-  named streams. The algorithm and the draw order are the C#'s; the *position in the
-  shared stream* is not reproduced.
+  keeps its per-consumer field convention until S1-A-11 wires the remaining consumers to
+  the named streams (`prefix_rng` still keeps its own stream). The algorithm and the draw
+  order are the C#'s; the *position in the shared stream* is not reproduced.
 - **The seed is the port's, not vanilla's.** `prefix_rng` is seeded
-  `world_seed ^ 0x51ED_2701_A3F5_C9B7` (the per-consumer constant convention). Vanilla
-  seeds `Main.rand` from `Environment.TickCount`, which a deterministic port cannot
-  reproduce, so a seed-for-seed replay is only defined once S1-A-2/S1-A-7 pick a
-  deterministic seeding.
+  `UnifiedRandom::new(world_seed as i32)` (`app/mod.rs`, S1-A-2) — the C# per-key rule —
+  because vanilla seeds `Main.rand` from `Environment.TickCount`, which a deterministic
+  port cannot reproduce. S1-A-2's registry makes every stream share that seed.
 - **The worldgen chest seam stays splitmix.** `chest_gen.rs` still rolls its chest-row
   prefixes through `prefix::roll_prefix_splitmix` over the per-world `chest_rng`,
   byte-identical to before this change (no chest contents move); S1-A-4 owns that
   stream (the vanilla `WorldGen.genRand` interleave).
 - **`item_rng`'s other consumers are untouched** (loot, crit, luck, particles — ~97
   call sites keep the splitmix step); the prefix part of S1-A-5 does not reorder them.
+
+## Named RNG streams (`Main.SwapRandom`, S1-A-2)
+
+`crates/tr-app/src/app/rng.rs` ports `Main._rngs` (`Main.cs:1294-1295`) and
+`Main.SwapRandom` (`:3204-3215`) as `NamedRngs` + `RngKey`. The 17 keys are the exact
+strings the decompiled source passes to `SwapRandom`: the 13 nested stage wrappers of
+`DoUpdateInWorld_Inner` (`:17749-17809`) plus `DoUpdateInWorld` (`:17732`), `SpawnNPC`,
+`UpdateLiquid` and `UpdateWorldGen`. Each stream is created lazily as
+`new UnifiedRandom(Main.ActiveWorldFileData.Seed)` (`:3210-3212`) — i.e. every key starts
+from the *same* integer and the streams diverge only by how many draws each stage has
+consumed — and a world load throws the dictionary away (`Main.cs:6465`, modelled by
+`NamedRngs::reset`).
+
+The C# swaps the stage's stream into `Main.rand` for the duration of a `using` block.
+The port has no global `Main.rand`, so a stage asks the registry for its key and passes
+the `&mut UnifiedRandom` down: the isolation is the same, and the "no shared stream
+consumed in a different order" contract is expressible per stage instead of relying on
+the call stack.
+
+Seeding rule (S1-A-2 also deleted the ad-hoc constants): every App stream is now seeded
+from the world seed — `npc_rng`, `craft_rng` (was the literal `1`), `ambience_rng`,
+`item_rng` (were XOR constants), `prefix_rng` (`UnifiedRandom::new(world_seed)`),
+`growth_rng` (`FastRandom::new(world_seed)`). `light_rng_seed` keeps `world_seed | 1`
+because it seeds the tile-light `FastRandom` (`TileLightScanner._random`), not a
+`SwapRandom` key.
+
+Wired consumer: `clock_rng` is **gone**; the clock's dawn/dusk rolls now draw from
+`_rngs["UpdateTime"]` *inside* the boundary branch (`world_sim/clock.rs`). This also
+fixes a determinism bug: previously one `roll01` was drawn every frame and only used at
+a boundary, so the event roll depended on the frame count. The port keeps its
+uniform-threshold approximation of the C#'s `Next(n) == 0` rolls (the exact
+`Next` chain for the invasion cluster is deferred with the event-roll task).
+
+Remaining bridge streams (S1-A-11): the stage bodies for items/loot, NPCs/spawns,
+ambience, growth and prefix still draw from world-seeded splitmix bridges. Their seeds
+follow the C# rule, but their *values* are not the C# `UnifiedRandom` sequence yet;
+`docs/research/35-rng-utils.md` tracks the matrix.
 
 ## Magic staves (M4-PROJ-6)
 
@@ -11200,3 +11283,53 @@ the Vortex pillar — which is now a single row.
 The guard covers the NPC pass only. The same missing-sheet risk exists for the
 projectile, item, gore and mount passes, each of which builds its list
 separately; the follow-up is to route them through the same const + helper.
+
+## The world-branch update order (S1-B-1)
+
+The port's per-frame world pass predated a faithful reading of
+`Main.DoUpdateInWorld_Inner` (`Main.cs:17745-17822`), so the phases had drifted:
+items ran before projectiles, the clock ran at the top of the frame (before the
+entity pass), and the `WorldGen.UpdateWorld` cluster (wiring / tile entities /
+liquid / growth) ran in the wrong slot. S1-B-1 restores the source order; S1-B-2
+(the clock gate) lands with it because the correct `UpdateTime` slot lives inside
+the world branch.
+
+The order the branch now runs, and its C# citation:
+
+| Phase | C# |
+| --- | --- |
+| `players` | `UpdateWorld_Players` `:17825` (called `:17757`) |
+| all-asleep flag | `UpdateTimeRate` `:6199-6218` reads `CurrentFrameFlags.SleepingPlayersCount`, set at `:17859` |
+| `npcs` | `UpdateWorld_SpawnNPCs` `:17878` + `UpdateWorld_NPCs` `:17898` (one port pass) |
+| `projectiles` | `UpdateWorld_Projectiles` `:17976` |
+| `items` | `UpdateWorld_Items` `:18004` |
+| `dust` | `UpdateWorld_Dust` `:18047` (the port's minecart sparks) |
+| `time` | `UpdateWorld_Time` `:18083` (`Main.UpdateTime`) |
+| `wiring` → `tile_entities` → `liquids` → `growth` | `UpdateWorld_WorldGenAndInvasion` `:18105` → `WorldGen.UpdateWorld` `WorldGen.cs:71495-71630` |
+| `waterfalls` | the port's combined pass; the C#'s `FindWaterfalls` is draw-time (`:61841`), the animation is `DoUpdate_AnimateWaterfalls` (`:19545`, pre-world) |
+| `weather` → `rain` → `scene_state` → `windy_day` → `ambience` | the port's environment cluster; `Main.Update`'s pre-world half (`:17166-17233`) + `SceneState.Update` (`:17816`) |
+| `editing` → `net` → `map` | the port's tile-edit / client-server / minimap passes (no single C# slot) |
+
+- **Gores, leashed entities and floating text are absent, not misordered.** The C#
+  runs `UpdateWorld_Gores` (`:17971`), `LeashedEntity.UpdateEntities` (`:17874`)
+  and `UpdateWorld_FloatingText` (`:18072`) between NPCs and time; the port has no
+  gore or floating-text module yet, so nothing emits there. Rows for those passes
+  are still open.
+- **The pre-world cluster is deliberately not moved ahead of the branch.** In the
+  C#, `UpdateWindyDayState` (`:17166`), the `AmbienceServer`/`SkyManager` updates
+  (`:17139`/`:17214`) and the `dayRate` weather walk (`:17228-17231`) all run
+  *before* `DoUpdateInWorld` (`:17278`). The port keeps them inside the world
+  branch (after `WorldGen`), so a frame's weather-to-entity latency is one phase
+  off the source. This is the remaining documented deviation of S1-B-1; the
+  reorder that would close it is a follow-up (the branch split itself is S1-B-8).
+- **The phase trace is `cfg(test)`-only.** `App::phase` is a no-op in release
+  builds and pushes onto a thread-local `Vec` in tests;
+  `app::frame::tests::the_world_branch_runs_in_the_csharp_update_order` asserts
+  the exact 19-name sequence on two consecutive headless frames, and
+  `the_clock_only_advances_inside_the_world_branch` (S1-B-2) asserts the front end
+  neither ages the clock nor runs the branch.
+- **Determinism note.** Reordering the fixed steps *is* the point here — the C#
+  order is the correct one, so the pre-S1-B-1 phase order was the bug. No RNG
+  stream, `WorldFrameKey` input or world-seed value changes; only the sequence in
+  which the per-phase steppers run within a frame.
+

@@ -12,7 +12,7 @@ use tr_core::TILE_PX;
 use wgpu::util::DeviceExt;
 
 use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
-use crate::app::{App, WorldFrameKey};
+use crate::app::{App, RngKey, WorldFrameKey};
 use crate::assets;
 use crate::audio;
 use crate::craft;
@@ -31,6 +31,16 @@ use crate::ui::text::{hud_text, hud_text_width};
 use crate::world_sim::clock::advance_time_with_events;
 
 impl App {
+    /// Records one world-branch phase for the order-pinning test below
+    /// (`S1-B-1`). A no-op outside `cfg(test)` — the phase names exist to make
+    /// the `Main.DoUpdateInWorld_Inner` order (`Main.cs:17745-17822`) assertable
+    /// instead of only readable.
+    #[inline]
+    fn phase(&self, #[cfg_attr(not(test), allow(unused_variables))] name: &'static str) {
+        #[cfg(test)]
+        phase_trace::record(name);
+    }
+
     /// `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`), ticked
     /// per drawn frame before the interface handlers read it: the idle reset,
     /// then the `stackDelay` decay ladder (30/25/20/15/10/5 frames keyed on
@@ -94,6 +104,8 @@ impl App {
         };
         self.last_frame = now;
         self.frame_count += 1;
+        // Main.cs:16801-16815,18376 — view zoom keys (S1-B-5).
+        self.update_view_zoom_keys();
         self.anim_time += dt;
         // `UserInterface.Update`'s lockout countdown
         // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
@@ -149,47 +161,12 @@ impl App {
         if !self.follow_player {
             self.pan_camera(dt);
         }
-        // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the per-frame
-        // sleeping counts land before `UpdateTime` reads them — SP the
-        // all-asleep flag is the local player being fully asleep
-        // (`PlayerSleepingHelper.FullyFallenAsleep`, 120 ticks).
-        self.world.all_players_asleep = self
-            .player
-            .as_ref()
-            .is_some_and(|p| p.sleeping && p.sleep_time >= 120);
-        if !crate::env::day_pinned() {
-            // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
-            // `:1441`): the powers' multiplier folds into the clock tick
-            // (the freeze stops the advance entirely).
-            let rate = self.creative_powers.time_rate();
-            if rate > 0.0 {
-                // The dawn/dusk event rolls ride the clock's own stream
-                // (`Main.rand`'s time cluster — the C# rolls at both phase
-                // boundaries read the same stream), drawn once per advance.
-                let roll01 = f64::from(rand01(&mut self.clock_rng));
-                // `Main.cs:65342-65349`'s player gate.
-                let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
-                // `advance_time_with_events` folds in the phase-boundary
-                // achievement hooks (KILL_THE_SUN / BLOODBATH / YOU_CAN_DO_IT)
-                // and the flag clears (`Main.cs:65242-65246`, `:65383-65387`).
-                let (blood_moon, eclipse) =
-                    advance_time_with_events(self, dt * rate, roll01, any_over_120);
-                if blood_moon {
-                    crate::chat::broadcast_death_text(
-                        &mut self.chat,
-                        &crate::lang::text("LegacyMisc.8"),
-                        crate::chat::COLOR_WORLD,
-                    );
-                }
-                if eclipse {
-                    crate::chat::broadcast_death_text(
-                        &mut self.chat,
-                        &crate::lang::text("LegacyMisc.20"),
-                        crate::chat::COLOR_WORLD,
-                    );
-                }
-            }
-        }
+        // `Main.UpdateWorld_Time` (`Main.cs:18083-18097`, the `Main.UpdateTime`
+        // call) is the last phase of the world branch's entity half, and the C#
+        // never reaches it while `Main.gameMenu` is set (`Main.cs:17166-17175`
+        // returns before `DoUpdateInWorld`). It therefore runs *inside* the
+        // in-world branch below, after the dust pass — see the phase list there
+        // (S1-B-1) and `docs/ANALYSIS.md` "World update order".
         // `Main.cs:19751-19765`: with Autosave on, `WorldGen.saveAndPlay` runs
         // every 600000 ms (10 minutes); the player/map save rides along.
         if self.menu.is_none() && self.front.is_none() && self.settings.auto_save {
@@ -354,14 +331,18 @@ impl App {
                     *scale = (*scale - 0.05).max(target);
                 }
             }
+            // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
+            // pass. The sleeping counts it exports (`:17844-17859`) gate the
+            // clock's rate, so they land right after it.
+            self.phase("players");
             self.update_player(dt);
-            // `Dust.UpdateDust` (`Main.cs`'s dust pass — after the world
-            // update, once per frame): the minecart sparks ride the same
-            // per-frame slot the rain/sand dust get in
-            // `world_sim::scene_scan::update_scene`.
-            let (sw, sh) = self.screen_size();
-            self.minecart_sparks
-                .tick(self.camera, Vec2::new(sw, sh), self.zoom);
+            // `UpdateTimeRate` (`Main.cs:6199-6218`): the rate is ×5 while
+            // every active player is fully asleep
+            // (`PlayerSleepingHelper.FullyFallenAsleep`, 120 ticks).
+            self.world.all_players_asleep = self
+                .player
+                .as_ref()
+                .is_some_and(|p| p.sleeping && p.sleep_time >= 120);
             let hp = self.player.as_ref().map_or(0, |p| p.hp);
             if hp < self.last_hp {
                 self.audio.play("Player_Hit_0");
@@ -481,24 +462,88 @@ impl App {
                 music_box: self.scene_metrics.active_music_box,
                 music_box_silence: self.scene_metrics.music_box_silence,
             });
+            // `Main.UpdateWorld_SpawnNPCs` (`Main.cs:17878`) + `UpdateWorld_NPCs`
+            // (`:17898`) — the port runs spawn and update in one pass.
             if !self.is_client() {
+                self.phase("npcs");
                 self.update_npcs(dt);
             }
-            self.update_liquids(dt);
-            self.update_waterfalls(dt, screen);
+            // `Main.UpdateWorld_Projectiles` (`Main.cs:17976`) runs **before**
+            // `UpdateWorld_Items` (`:18004`).
+            self.phase("projectiles");
+            self.update_projectiles(dt);
+            self.phase("items");
+            self.update_items(dt);
+            // `Main.UpdateWorld_Dust` (`Main.cs:18047`): the minecart sparks
+            // ride this per-frame slot (the same slot the rain/sand dust get in
+            // `world_sim::scene_scan::update_scene`).
+            self.phase("dust");
+            let (sw, sh) = self.screen_size();
+            self.minecart_sparks
+                .tick(self.camera, Vec2::new(sw, sh), self.zoom);
+            // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
+            // runs after the entity half, never before it.
+            self.phase("time");
+            if !crate::env::day_pinned() {
+                // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
+                // `:1441`): the powers' multiplier folds into the clock tick
+                // (the freeze stops the advance entirely).
+                let rate = self.creative_powers.time_rate();
+                if rate > 0.0 {
+                    // The dawn/dusk event rolls ride the clock's own named
+                    // stream (`Main.SwapRandom("UpdateTime")`, `Main.cs:17795`)
+                    // inside `advance_time_with_events`, which also fires the
+                    // phase-boundary achievements and flag clears
+                    // (`Main.cs:65242-65246`, `:65383-65387`, `:65415`).
+                    let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
+                    let (blood_moon, eclipse) =
+                        advance_time_with_events(self, dt * rate, any_over_120);
+                    if blood_moon {
+                        crate::chat::broadcast_death_text(
+                            &mut self.chat,
+                            &crate::lang::text("LegacyMisc.8"),
+                            crate::chat::COLOR_WORLD,
+                        );
+                    }
+                    if eclipse {
+                        crate::chat::broadcast_death_text(
+                            &mut self.chat,
+                            &crate::lang::text("LegacyMisc.20"),
+                            crate::chat::COLOR_WORLD,
+                        );
+                    }
+                }
+            }
+            // `WorldGen.UpdateWorld` (`WorldGen.cs:71495-71630`): the
+            // `UpdateWorld_WorldGenAndInvasion` wrapper (`Main.cs:18099`) runs
+            // *after* the time pass and walks `Wiring.UpdateMech` →
+            // `TileEntity.PerformUpdates` → `Liquid.UpdateLiquid` → the growth
+            // loops, in that order.
+            self.phase("wiring");
             self.update_wiring(dt);
+            self.phase("tile_entities");
             self.update_tile_entities(dt);
+            self.phase("liquids");
+            self.update_liquids(dt);
+            self.phase("growth");
             self.update_growth(dt);
+            // `DoUpdate_AnimateWaterfalls` (`Main.cs:19545-19566`): the
+            // `WaterfallManager.UpdateFrame`/`FindWaterfalls` pass.
+            self.phase("waterfalls");
+            self.update_waterfalls(dt, screen);
             // M1.4-BG-22: the shared 60 Hz world tick — `Main.Update`'s
             // dayRate cluster (`Main.cs:17228-17231`): the `UpdateWeather`
             // thunder arm once, the wind walk ×`Main.dayRate`, then
             // `Sandstorm.UpdateTime` (`Main.cs:64966`).
+            self.phase("weather");
             crate::world_sim::weather::update_world_tick(self, dt);
+            self.phase("rain");
             self.update_rain(dt, screen);
             // M1.4-BG-18 phase 3: `Main.UpdateSceneMetrics` + `Main.SceneState.
             // Update` (`Main.cs:62560,17816`) — the scan, the fades and the
             // `ApplyVisuals` driver; the post branch consumes
             // `filter_driver.output`.
+            self.phase("scene_state");
             crate::world_sim::scene_scan::update_scene(self, dt, screen);
             // The SceneState blizzard loops' sound emitter rides inside
             // `update_scene` (`scene_scan.rs`'s `SceneState::update` call —
@@ -507,6 +552,7 @@ impl App {
             // the per-tick audio update): the sticky windy-day/storm flags the
             // ambience gates read; the hysteresis bands make the per-frame
             // evaluation equivalent.
+            self.phase("windy_day");
             self.wind.update_windy_day_state(
                 self.rain.visual_alpha(),
                 self.world.time,
@@ -515,6 +561,7 @@ impl App {
             // `Main.AmbienceServer.Update` (`Main.cs:17214-17216`) +
             // `SkyManager.Update` (`Main.cs:17139`): the ambient sky scheduler
             // and its entities, stepped on the 60 Hz accumulator.
+            self.phase("ambience");
             {
                 let ambience = &mut self.ambience;
                 let ambience_rng = &mut self.ambience_rng;
@@ -550,10 +597,11 @@ impl App {
                 };
                 ambience.update(dt, &ctx, ambience_rng);
             }
-            self.update_items(dt);
-            self.update_projectiles(dt);
+            self.phase("editing");
             self.update_editing(dt, screen);
+            self.phase("net");
             self.net_tick(dt);
+            self.phase("map");
             if let Some(m) = self.map.as_mut() {
                 m.update(&self.world, self.player.as_ref(), &self.light, dt);
             }
@@ -1805,6 +1853,125 @@ impl App {
         );
         self.bench_frames = None;
         std::process::exit(0);
+    }
+}
+
+/// `S1-B-1` order pin: the world branch records each phase name it runs, so a
+/// headless `App::frame` can *prove* the `Main.DoUpdateInWorld_Inner`
+/// (`Main.cs:17745-17822`) sequence instead of a reviewer only reading it.
+///
+/// Thread-local because the test binary runs cases on parallel threads, and
+/// `cfg(test)`-only so the release build pays nothing.
+#[cfg(test)]
+pub(crate) mod phase_trace {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static PHASES: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(crate) fn record(name: &'static str) {
+        PHASES.with(|p| p.borrow_mut().push(name));
+    }
+
+    /// Drains the current thread's trace (one frame's worth).
+    pub(crate) fn take() -> Vec<&'static str> {
+        PHASES.with(|p| std::mem::take(&mut *p.borrow_mut()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::phase_trace;
+    use crate::app::App;
+    use crate::app::flow::FrontScreen;
+
+    /// The world-branch sequence, transcribed from the C#:
+    ///
+    /// - players → spawn NPCs → NPCs (`Main.cs:17757`, `:17878`, `:17898`)
+    /// - gores (unported) → **projectiles** → **items** → dust → leashed
+    ///   (unported) → floating text (unported) → **time**
+    ///   (`:17971`, `:17976`, `:18004`, `:18047`, `:18083`)
+    /// - `WorldGen.UpdateWorld` (`WorldGen.cs:71495-71630`): wiring → tile
+    ///   entities → liquid → growth (`:18105`)
+    /// - then the port's environment cluster (weather / rain / scene state /
+    ///   windy day / ambience), the tile-edit pass, the net pass and the map.
+    ///
+    /// Every phase name is emitted once per in-world frame.
+    const WORLD_PHASES: [&str; 19] = [
+        "players",
+        "npcs",
+        "projectiles",
+        "items",
+        "dust",
+        "time",
+        "wiring",
+        "tile_entities",
+        "liquids",
+        "growth",
+        "waterfalls",
+        "weather",
+        "rain",
+        "scene_state",
+        "windy_day",
+        "ambience",
+        "editing",
+        "net",
+        "map",
+    ];
+
+    /// An in-world headless `App`: the flow fixture plus a spawned player, so
+    /// `frame()` takes the `menu.is_none() && front.is_none()` branch.
+    fn in_world_app() -> App {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app
+    }
+
+    #[test]
+    fn the_world_branch_runs_in_the_csharp_update_order() {
+        let mut app = in_world_app();
+        app.frame();
+        assert_eq!(
+            phase_trace::take(),
+            WORLD_PHASES,
+            "the world branch must follow Main.cs:17745-17822 (projectiles before \
+             items, time after dust, WorldGen after time)"
+        );
+        // A second frame records the same sequence: the trace is per frame.
+        app.frame();
+        assert_eq!(phase_trace::take(), WORLD_PHASES);
+    }
+
+    /// S1-B-2, landed with the clock move: the C# returns on `Main.gameMenu`
+    /// before `DoUpdateInWorld` (`Main.cs:17166-17175`), so `UpdateTime` never
+    /// runs while a front-end screen owns the frame.
+    #[test]
+    fn the_clock_only_advances_inside_the_world_branch() {
+        let mut app = in_world_app();
+        let before = app.world.time;
+        app.frame();
+        assert!(
+            app.world.time > before,
+            "the in-world clock advances ({before} -> {})",
+            app.world.time
+        );
+
+        // A front-end frame: no world branch, no clock.
+        phase_trace::take(); // drain the in-world frame's trace
+        app.front = Some(FrontScreen::CharSelect);
+        let frozen = app.world.time;
+        for _ in 0..3 {
+            app.frame();
+        }
+        assert_eq!(
+            app.world.time, frozen,
+            "a front-end screen must not age the world clock"
+        );
+        assert!(
+            phase_trace::take().is_empty(),
+            "the world branch did not run on the front end"
+        );
     }
 }
 
