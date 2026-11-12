@@ -2326,11 +2326,11 @@ impl Player {
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
         // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
         // damage)` after the defense reduction.
-        // The C# truncates and does not re-floor here (`Main.
-        // CalculateDamagePlayersTake` floors the *defense* step at 1, `:66160`;
-        // the endurance multiply runs after it, so a 1-damage hit with enough
-        // endurance legitimately lands for 0).
         let amount = ((1.0 - self.endurance) * amount as f32) as i32;
+        // `Player.cs:38378-38381`: the `num2 < 1 -> 1` floor. The endurance
+        // truncation can drive a hit to 0; the C# lifts it back to 1 (which
+        // also selects the 20-tick immunity window below, not 40).
+        let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
         // `Player.Hurt`'s immunity window (`Player.cs:38385`): 40 ticks
         // for normal damage (no long-invincibility source yet), 20 when
@@ -6366,11 +6366,32 @@ mod tests {
         p.hurt_cd = 0.0;
         p.hurt_inner(40, p.x - 10.0, false);
         assert_eq!(p.hp, 70, "the cut, not the raw 40");
-        // A 1-damage hit truncates to 0 past 25% endurance — the C# has no
-        // re-floor after the multiply.
+        // A 1-damage hit past 25% endurance truncates to 0, then the
+        // `num2 < 1 -> 1` floor (`Player.cs:38378-38381`) lifts it back to 1.
         p.hurt_cd = 0.0;
         p.hurt_inner(1, p.x - 10.0, false);
-        assert_eq!(p.hp, 70, "0 damage past 25% endurance");
+        assert_eq!(p.hp, 69, "the sub-one hit floors to 1, not 0");
+    }
+
+    /// S1-C-3 — the `num2 < 1 -> 1` floor (`Player.cs:38378-38381`): the
+    /// endurance multiply can truncate a hit to 0; the C# floors it to 1, which
+    /// also shortens the immunity window from 40 to 20 ticks (`:38385`:
+    /// `num2 != 1.0 ? 40 : 20`, via `damage.rs::iframes_for`).
+    #[test]
+    fn a_sub_one_hit_floors_to_one_and_uses_the_short_iframe() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // 25% endurance: (1 - 0.25) * 1 = 0.75, truncated to 0 before the floor.
+        p.endurance = 0.25;
+        p.stat_defense = 0;
+        p.hp = 100;
+        p.hurt_cd = 0.0;
+        assert!(p.hurt_inner(1, p.x - 10.0, false));
+        assert_eq!(p.hp, 99, "the hit lands for the floored 1, not 0");
+        assert!(
+            (p.hurt_cd - 20.0 / 60.0).abs() < 1e-6,
+            "the 1-damage immunity window is 20 ticks, not 40"
+        );
     }
 
     /// M3-EQUIP-10 — the class emblems and the crit/move accessories.
