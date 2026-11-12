@@ -292,8 +292,8 @@ pin_bool! {
 }
 
 pin_num! {
-    /// `TR_ZOOM=<f>`: the pinned in-game zoom (`loop.rs`, clamped to the
-    /// 1.0–2.0 in-game range there).
+    /// `TR_ZOOM=<f>`: the pinned in-game zoom (`loop.rs`/`mod.rs`), clamped to
+    /// the vanilla 1.0–2.0 range (S1-B-5, `Main.cs:16801-16815`).
     zoom_pin,
     "TR_ZOOM",
     f32
