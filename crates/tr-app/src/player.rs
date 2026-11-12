@@ -601,6 +601,14 @@ pub struct Player {
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
+    /// `Player.thorns` / `cactusThorns` / `turtleThorns` (`Player.cs:2800-2802`):
+    /// the contact reflection — `thorns` is the fraction of the NPC's damage
+    /// thrown back (the Thorns potion sets 1, the Dryad's Ward adds a half, the
+    /// Turtle set pins 2 through `turtle_thorns`), and `cactus_thorns` is the
+    /// Cactus set's flat 15.
+    pub thorns: f32,
+    pub cactus_thorns: bool,
+    pub turtle_thorns: bool,
     /// `Player.skyStoneEffects` (`Player.cs:1120`): the Celestial Stone/Shell
     /// and the day/night Sun/Moon Stones set it, and the one block below adds
     /// the whole stat bundle (`:12988-13003`).
@@ -1332,6 +1340,9 @@ impl Player {
             spawn_y: sy,
             hp: 100,
             max_hp: 100,
+            thorns: 0.0,
+            cactus_thorns: false,
+            turtle_thorns: false,
             sky_stone_effects: false,
             endurance: 0.0,
             mana: 20,
@@ -2252,6 +2263,26 @@ impl Player {
     /// `hitDirection != 0` gate (`Player.cs:38519`): the fall-damage and
     /// petrify calls pass hitDirection 0 and skip the knock entirely (the
     /// fallStart reset inside that branch rides with it).
+    /// `Player.Update`'s contact reflection (`Player.cs:31373-31415`): the
+    /// damage an NPC takes for touching the player — `turtleThorns` pins the
+    /// multiplier at 2, else `thorns` scales the NPC's own damage, capped at
+    /// 1000; the Cactus set adds a flat 15 more.
+    pub fn thorns_damage(&self, incoming: i32) -> i32 {
+        let multiplier = if self.turtle_thorns {
+            2.0
+        } else {
+            self.thorns
+        };
+        let mut total = 0;
+        if multiplier > 0.0 {
+            total += ((incoming as f32 * multiplier) as i32).min(1000);
+        }
+        if self.cactus_thorns {
+            total += 15;
+        }
+        total
+    }
+
     pub(crate) fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
         // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
         // journey godmode power swallows the hit outright — before the
@@ -2616,6 +2647,10 @@ impl Player {
         self.mana_cost = 1.0;
         // `:18497`: `endurance = 0f` — the rows below re-apply.
         self.endurance = 0.0;
+        // `:18376` + `:18726-18727`: the thorns flag clear.
+        self.thorns = 0.0;
+        self.cactus_thorns = false;
+        self.turtle_thorns = false;
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).
@@ -2738,6 +2773,9 @@ impl Player {
             self.max_minions += set.max_minions;
             self.mana_cost += set.mana_cost;
             self.endurance += set.endurance;
+            self.thorns += set.thorns;
+            self.cactus_thorns |= set.cactus_thorns;
+            self.turtle_thorns |= set.turtle_thorns;
             if set.dash_type != 0 {
                 self.dash_type = set.dash_type;
             }
@@ -2777,10 +2815,21 @@ impl Player {
                 // `:10108` — buff 215 (`BuffID.Warmth`'s neighbour row in the
                 // C#: `statDefense += 5`).
                 215 => self.stat_defense += 5,
-                // `:10306` — `BuffID.DryadsWard`: `statDefense += 8`
-                // (the `lifeRegen += 6` / `thorns += 0.5` halves wait for
-                // their systems).
-                165 => self.stat_defense += 8,
+                // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
+                // `lifeRegen += 6` (the regen half has no consumer yet) and
+                // `thorns += 0.5` while under 1.
+                165 => {
+                    self.stat_defense += 8;
+                    if self.thorns < 1.0 {
+                        self.thorns += 0.5;
+                    }
+                }
+                // `:10005-10011` — `BuffID.Thorns` (14): `thorns = 1f` if lower.
+                14 => {
+                    if self.thorns < 1.0 {
+                        self.thorns = 1.0;
+                    }
+                }
                 // `:11921` — `BuffID.Tipsy`: `statDefense -= 4`.
                 25 => self.stat_defense -= 4,
                 46 => self.chilled = true, // `BuffID.Chilled`
@@ -5964,6 +6013,41 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-15 — the thorns rows and the reflection arithmetic.
+    #[test]
+    fn the_thorns_rows_scale_the_reflection() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.thorns_damage(20), 0);
+        // The Thorns potion (14): the NPC's own damage comes back whole.
+        p.buffs.add_buff(14, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.thorns - 1.0).abs() < 1e-4);
+        assert_eq!(p.thorns_damage(20), 20);
+        // The Dryad's Ward (165) pushes it to 1.5 while under 1… it is already
+        // 1.0, so the half does not land — the C# `if (thorns < 1f)` guard.
+        p.buffs.add_buff(165, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.thorns - 1.0).abs() < 1e-4);
+        // The Turtle set pins the multiplier at 2 regardless of the potion.
+        p.equipped[0] = 1316;
+        p.equipped[1] = 1317;
+        p.equipped[2] = 1318;
+        p.update(&w, PlayerInput::default());
+        assert!(p.turtle_thorns);
+        assert_eq!(p.thorns_damage(20), 40);
+        assert_eq!(p.thorns_damage(2000), 1000, "the 1000 cap");
+        // The Cactus set adds its flat 15 on top.
+        p.equipped[0] = 894;
+        p.equipped[1] = 895;
+        p.equipped[2] = 896;
+        p.update(&w, PlayerInput::default());
+        assert!(p.cactus_thorns);
+        assert!(!p.turtle_thorns, "the turtle row is gone");
+        assert_eq!(p.thorns_damage(20), 35, "20 from the potion + the flat 15");
     }
 
     /// M3-EQUIP-14 — the Celestial Stone bundle and the day/night stones.
