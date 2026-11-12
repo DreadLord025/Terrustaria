@@ -3,8 +3,18 @@
 > Consolidated 2026-11-12 · sources: every completed file in `docs/research/` except
 > `INDEX.md`, `MODULE-TEMPLATE.md` and this file · read-only extraction, no new research.
 >
-> **Input set:** 33 module files (01–42, the numbers listed in §1). Modules 21, 23, 26, 27,
-> 30, 33, 36, 38, 39 have no completed research file and are therefore absent here.
+> **Input set:** **39 module files** — 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13,
+> 14, 15, 16, 17, 18, 19, 20, 22, 24, 25, **26, 27**, 28, 29, **30**, 31, 32, **36, 37, 38,
+> 39**, 40, 41, 42. Modules **21** (recipes/crafting), **23** (wiring/tile-entities) and
+> **33** (localization) have **no research file** yet (the new `docs/ROADMAP.md` links to
+> them anyway — see §4.3, U-60). `INDEX.md`, `MODULE-TEMPLATE.md` and this file are excluded.
+>
+> **Doc reorganisation (2026-11-12, after the research):** the old `docs/ROADMAP.md` is now
+> **`docs/ATLAS.md`** (the per-subsystem atlas + the legacy task rows, kept verbatim). A
+> **new `docs/ROADMAP.md`** was written from this audit (the scoreboard, the Stage-1/Stage-2
+> task catalog and a "Documentation corrections" table). Every `ROADMAP.md:NN` citation in
+> the research files therefore resolves against **`ATLAS.md:NN+7`** from line 64 onward.
+> §4 says where each claim now lives and whether the new ROADMAP already covers it.
 >
 > **Conventions used below**
 > * Task-seed ids are renumbered `R-<module#><n>` (`R-09-1` = module 09, seed 1) and are
@@ -51,19 +61,25 @@ Overall verdict is derived from the file's own status table (the `Status` column
 | 20 | In-game UI (options/inventory/chest/craft) | **PARTIAL** | Right-click takes half the stack instead of one item, and never repeats | 14 | 9 | 221 / 18 082 |
 | 22 | Chests / loot / shops / shopping | **PARTIAL** | The buy-price formula is incomplete — every `buyOnce` row costs 5× the vanilla | 10 | 8 | 241 / 17 999 |
 | 24 | Spawner, invasions & world events | **PARTIAL** | No `invaders` spawn-rate override — ~20× the vanilla invasion density | 14 | 10 | 283 / 27 958 |
-| 25 | NPC AI families (aiStyle dispatch) | **MOSTLY MISSING** | 74 of the 128 `aiStyle` arms have no Rust kind; aiStyle 3 and 7 are archetype approximations | 11 | 10 | 386 / 30 460 |
+| 25 | NPC AI families (aiStyle dispatch) | **MOSTLY MISSING** | 69 of the 128 `aiStyle` arms have no Rust kind; aiStyle 3 and 7 are archetype approximations | 11 | 10 | 385 / 29 792 |
+| 26 | Projectile AI families (aiStyle dispatch) | **MOSTLY MISSING** | 21 spawnable styles have a `proj_data` row but no dispatch arm — those projectiles hold position forever | 12 | 9 | 431 / 32 166 |
+| 27 | Mounts / pets / minecart / grapple | **MOSTLY PORTED** | Three C# activation rules are missing (the Cart/`CanUseHooks` grapple exemption, the `m == 56` wet rule, the Fishron halving) | 17 | 13 | 319 / 26 232 |
 | 28 | Buffs & debuffs (ids, rules, effects, UI, sync) | **MOSTLY PORTED** | The buff HUD is entirely missing — no icon, alpha, timer text or removal | 9 | 9 | 258 / 24 252 |
 | 29 | Town NPCs: housing, happiness, pylons | **PARTIAL** | `WorldGen.ScoreRoom` is not ported — a town NPC can be homed on a spot vanilla rejects | 13 | 10 | 308 / 27 339 |
+| 30 | Achievements / bestiary | **PARTIAL** | 87 of the 137 achievement rows carry a condition kind with no notify site; `achievements::save` has no call site | 18 | 12 | 265 / 24 264 |
 | 31 | Golf / ball physics | **MOSTLY MISSING** | The entire golf subsystem is absent from the Rust port | 8 | 11 | 208 / 18 532 |
 | 32 | Sound / audio engine | **PARTIAL** | No pitch, no per-style volume, no variation families, no instance pool | 18 | 9 | 249 / 27 499 |
 | 34 | ID sets completeness (`Terraria.ID.*`) | **MOSTLY MISSING** | The `NpcKind` protocol id space collides with itself on 7 ids (78..84) | 13 | 12 | 272 / 29 542 |
 | 35 | RNG & data-structure utils | **PARTIAL** | `UnifiedRandom` itself is not ported; the `Main.rand` call order is not modelled | 13 | 10 | 246 / 27 037 |
+| 36 | Cinematics / film / Old One's Army | **PARTIAL** | The OOA's loss path, victory scene, medals, crystal drops and tier persistence are missing (the film framework is dead code in vanilla) | 13 | 15 | 211 / 21 047 |
 | 37 | ReLogic libs (content pipeline, XNA, JSON) | **MOSTLY PORTED** | Text wrapping is not ported; the `.fx` effects are only name-parsed | 9 | 8 | 291 / 27 833 |
-| 40 | DONE hot-rows re-verification | **MOSTLY PORTED** | The Hornet's hover constants are wrong (the port ships the type-205 values) | 9 | 10 | 181 / 22 959 |
-| 41 | Render pipeline vs the C# graphics layer | **PARTIAL** | One blend state for the whole frame; the atlas merges textures vanilla keeps separate | 15 | 9 | 278 / 27 490 |
+| 38 | Out-of-scope confirmation (Social/Steam/Testing) | **PARTIAL** | Five absences are undocumented: `Terraria/Testing/**` (34 files), `TimeLogger`, the crash handlers, the dev screens and dedicated-server mode | 13 | 9 | 255 / 22 470 |
+| 39 | Rust port architecture inventory | **PARTIAL** | "The god-files are gone" is false for the entity half — 8 hand-written files exceed 5 000 lines and `App` has 257 fields (docs say 118) | 15 | 14 | 342 / 33 093 |
+| 40 | DONE hot-rows re-verification | **MOSTLY PORTED** | The Hornet's hover constants are wrong (the port ships the type-205 values) | 10 | 10 | 181 / 22 959 |
+| 41 | Render pipeline vs the C# graphics layer | **PARTIAL** | One blend state for the whole frame; the atlas merges textures vanilla keeps separate | 15 | 9 | 278 / 27 583 |
 | 42 | Save/load (IO) + Stage-2 compression hooks | **PARTIAL** | The `.wld` tile section drops the four wire bits — data loss on a `.wld` round trip | 8 | 12 | 281 / 25 256 |
 
-**Totals:** 33 modules reviewed · 395 deviation/risks rows · 299 task seeds.
+**Totals:** 39 modules reviewed · 483 deviation/risks rows · 371 task seeds.
 
 ---
 
@@ -85,6 +101,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-34-2 | Add the exhaustive id-round-trip test over all 182 kinds | 34 | S | determinism (high) | R-34-1 | 34-id-sets-audit.md:258 |
 | R-34-6 | Unify the three parallel NPC id spaces (protocol `u16`, vanilla `net_id`, partial `cs_id`) | 34 | M | structural/determinism (high) | R-34-1 | 34-id-sets-audit.md:271 |
 | R-01-2 | Reorder `frame.rs:481-551` to the C# `DoUpdateInWorld_Inner` order (spawn NPCs → NPCs → gores → projectiles → items → dust → time → worldgen) | 01 | M | determinism (high) | modules 05/15 research rows | 01-main-update-loop.md:143 |
+| R-26-1 | Delete the six duplicated match arms (10615/10616/10617/10618/10826/10884) and replace `_ => {}` with an assert-on-unknown-aiStyle arm | 26 | S | determinism (maintenance) | — | 26-projectile-ai-audit.md:155 |
 | R-35-2 | Golden-vector test for `UnifiedRandom` (first 64 `InternalSample()` values for seeds 0/1/42/-1) | 35 | M | determinism (high) | R-35-1 | 35-rng-utils.md:269 |
 | R-35-5 | Re-key the per-consumer streams to the C# seed rule and delete the arbitrary XOR constants + `craft_rng: 1` | 35 | M | determinism (medium) | R-35-3 | 35-rng-utils.md:272 |
 | R-35-8 | Audit `Utils.Clamp` / `Math.Round` / `NextFloat` numerics across the Rust tree | 35 | M | behavioural/pixel (medium) | — | 35-rng-utils.md:275 |
@@ -136,9 +153,12 @@ refer to the research file (`docs/research/NN-*.md`).
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
 | R-04-2 | Projectile hit chain: thread `Projectile.Damage`'s `DamageVar` + owner luck + `strike_npc_damage` into the PVE hit | 04 | L | behavioural + determinism (high) | R-35-1 (RNG decision) | 04-player-combat.md:184 |
+| R-39-9 | Port the `aiStyle` dispatch and introduce an `ai_style: u8` field on `Npc`, so "SoA by archetype" has a grouping key (74 of 128 styles unreferenced) | 39 | L | structural (high) | R-25-5 | 39-port-architecture.md:337 |
 | R-14-1 | Port `MapUpdateQueue` + `WorldMap.UpdateType` and feed them from the edit/net glue | 14 | S | behavioural (high) | — | 14-map-minimap.md:317 |
 | R-14-2 | Wire `ClearEdges` (`WorldMap.cs:260`, `BlackEdgeWidth = 40`) after load and after worldgen | 14 | S | behavioural (low-med) | — | 14-map-minimap.md:323 |
 | R-29-1 | Port `WorldGen.ScoreRoom` + the `hiScore > 0` gate and make `scan_spot` return the score-best `bestX/bestY` | 29 | M | behavioural (medium) | — | 29-town-npc-housing.md:297 |
+| R-27-9 | Hook fire from the item — port `QuickGrapple_GetItemToUse` + `ItemCheck_TryStartUse`, keeping `TR_HOOK` as the test pin | 27 | M | behavioural (medium) | — | 27-mounts-pets-vehicles.md:308 |
+| R-30-5 | Replace the `quick_unlock` bool with a per-entry provider enum (`CommonEnemy`/`TownNPC`/`Critter`/`HighestOfMultiple`/`GoldCritter`/`Salamander`) and record sightings and chats | 30 | M | behavioural (medium) | R-30-4 | 30-achievements-bestiary.md:244 |
 | R-25-5 | A per-type speed table for the aiStyle-3 family (the vanilla's per-type `velocity.X` rows) | 25 | M | behavioural (portfolio-wide) | — | 25-npc-ai-audit.md:399 |
 | R-05-8 | Port `ScaleStats` with a difficulty enum + `NPCID.Sets.NeedsExpertScaling`/`ProjectileNPC` tables | 05 | L | behavioural (high) | difficulty plumbing (module 24) | 05-npc-core.md:277 |
 | R-03-1 | Move the wet/shimmer statics into `update_with_grapple`: add `wet_gravity_and_cap()` from `Player.cs:24382-24437` | 03 | M | behavioural (critical) | — | 03-player-core.md:253 |
@@ -232,15 +252,48 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-01-6 | Add `camera.rs` unit tests + a frame-level integration test asserting the branch order fixed by LOOP-2 | 01 | S | verification (medium) | R-01-2 | 01-main-update-loop.md:159 |
 | R-02-1 | Write a test asserting the `frame.rs` phase order against `Main.cs:62229-62326` | 02 | S | verification (medium) | — | 02-main-draw-pipeline.md:126 |
 | R-03-9 | Verify the in-water ascent: decide whether C# supports `self.vy = -2.0` (marked **UNVERIFIED** deliberately) | 03 | S | behavioural (medium) | R-03-1 | 03-player-core.md:261 |
+| R-26-2 | Wire `ai_vortex_ritual`/`ai_vortex_bolt` into the dispatch (aiStyle 88/108) and fix the M4-EVENT-17 + PORT_MAP 236 "done" claims | 26 | S | behavioural (medium) | — | 26-projectile-ai-audit.md:158 |
+| R-26-3 | Add the aiStyle-70 arm and `ai_bubble` (the Flairon's bubble homing, C# 30304-30352) or correct PORT_MAP 157 | 26 | S | behavioural (medium) | — | 26-projectile-ai-audit.md:160 |
+| R-27-2 | Restore the `CanMount` arms — the `m == 56` wet rule and the Cart/`CanUseHooks` grapple exemption (C# `Mount.cs:6595-6602`) | 27 | S | behavioural (medium) | R-27-1 | 27-mounts-pets-vehicles.md:287 |
+| R-27-3 | Fishron halving — port `Player.cs:26655-26659` into `player.rs::update_mount` | 27 | S | behavioural (medium) | — | 27-mounts-pets-vehicles.md:290 |
+| R-27-4 | `SetMount`/`Dismount` extras — the type-44 velocity/dash reset, the 7/8 `fullRotationOrigin`, the `fullRotation` reset, the `noItems` clear for 55/56 | 27 | S | behavioural (low) | — | 27-mounts-pets-vehicles.md:293 |
+| R-27-6 | SuperCart constants — replace the `0.0` placeholders with 20/20/0.1/15/5.15 (`Mount.cs:6660-6664`) and add the `should_super_cart` writer | 27 | S | behavioural (latent) | — | 27-mounts-pets-vehicles.md:304 |
+| R-30-1 | Model `NPCKilledCondition.CreateMany` faithfully — a "one condition per id" variant + re-transcribe the 4 rows (46 conditions, not 5) | 30 | S | behavioural (high) | — | 30-achievements-bestiary.md:232 |
+| R-30-2 | Call `achievements::save` from the autosave/F9 pass + a write→read round-trip test through the app path | 30 | S | behavioural (medium) | — | 30-achievements-bestiary.md:235 |
+| R-30-4 | Make `kills_needed_for` fall back to `ItemID_Sets_DefaultKillsForBannerNeeded` (50) instead of 0 | 30 | S | behavioural (high) | — | 30-achievements-bestiary.md:240 |
+| R-30-7 | Fire `TryGrantingBestiary100PercentAchievement` from `KillTracker::set_kill_count_directly` | 30 | S | behavioural (low) | R-30-3 | 30-achievements-bestiary.md:251 |
+| R-36-6 | The per-kind/per-tier kill worth — port `GetMonsterPointsWorth` (`DD2Event.cs:546-554` → `:1106`, `:1199`, `:1509`) and drop the constant `KILL_WORTH_T1` | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:186 |
+| R-36-7 | The D1 wave-6 win transition — the `waveNumber`/`currentKillCount` write-back + the victory-scene call (`DD2Event.cs:998-1005`) | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:190 |
+| R-36-9 | The wave-break skip — `IsStandActive` + `RequestToSkipWaitTime` + `AttemptToSkipWaitTime` (`DD2Event.cs:1765-1801`) | 36 | S | behavioural (medium) | — | 36-cinematics-film.md:193 |
+| R-36-10 | `DropMedals` (`DD2Event.cs:802-813`, called at `:405-420`) → the Defender Medal item 3817 | 36 | S | behavioural (loot) | — | 36-cinematics-film.md:196 |
+| R-36-13 | The zone metric — `Player.SceneMetrics.CloseEnoughToDD2LanePortal` → `Player.ZoneOldOneArmy` + `NPC.ZoneOldOneArmy` + the `NPC.cs:799` despawn gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:204 |
+| R-36-14 | The OOA's invasion id — set `invasion_type = 3` (`DD2Event.cs:47`) and route the progress through `invasion_progress_icon = 3` | 36 | S | behavioural (UI) | — | 36-cinematics-film.md:207 |
+| R-36-15 | Replace the `DD2Event.Ongoing` stub (`dd2.rs:17-19`) with the world's real flag and re-enable the sentry-persistence gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:210 |
 
-### (d) missing subsystems — 33 seeds
+### (d) missing subsystems — 51 seeds
 
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
+| R-26-8 | Port `AI_099_1_Counterweights` (67380) + the counterweight rows 556-561/1079 | 26 | L | behavioural (medium) | — | 26-projectile-ai-audit.md:171 |
+| R-26-9 | Port the remaining ~150 vanilla aiStyles (the 1.4 boss/event families 130-210 and the pre-1.3 groups 30-99), one family per row | 26 | L | behavioural (high) | R-26-5 | 26-projectile-ai-audit.md:172 |
 | R-12-3 | Port the cheap missing passes (Life Crystals, Statues/Traps/Piles, Sunflowers, Flowers, Mushrooms, Herbs/Dye Plants) | 12 | M | behavioural (medium) | — | 12-worldgen.md:338 |
 | R-12-5 | Liquid settlement pass — a minimal `Liquid` update that satisfies `WorldGenerator.cs:508`'s invariant, then the two `Settle Liquids` passes | 12 | M | behavioural (high) | R-11-5 | 12-worldgen.md:353 |
 | R-11-5 | Port the liquid reactions (`LiquidCheck`, `GetLiquidMergeTypes`, `CreateLiquidMergeTile`, `LiquidOverwriteStrip`; tiles 56/229/230/659) | 11 | M | behavioural (high) | a tr-core `edit.rs` seam | 11-liquid.md:195 |
 | R-15-2 | Port the `Dust` record + the `NewDust` family behind a `DustPool` with `spawn/next_index` | 15 | M | behavioural+pixel (high) | R-15-1 | 15-dust-gore.md:259 |
+| R-26-4 | Port the aiStyle-53 / 197 sentry shot machines on top of the existing `store_sentry_aim` seam | 26 | M | behavioural (medium) | — | 26-projectile-ai-audit.md:162 |
+| R-26-5 | Port the aiStyle-62 minion attack-shot families (the six kinds' projectiles need `proj_data` rows + arms) | 26 | M | behavioural (medium) | — | 26-projectile-ai-audit.md:164 |
+| R-26-6 | Port `AI_001`'s remaining per-type arms (142 `type ==` checks) or split the style-1 arm into a per-kind table | 26 | M | behavioural (high) | — | 26-projectile-ai-audit.md:166 |
+| R-26-7 | Port the 21 gap-list styles (the sentry/turret group 120/123/130/134/137/138, the pillar group 88/108/133, the small ones 2/23/26/66/67/70/79/80/157/158/187/189) | 26 | M | behavioural (high) | R-26-2 | 26-projectile-ai-audit.md:168 |
+| R-27-7 | `Minecart.FrameTrack` — port the track-tile placement used by the item use (`Player.cs:46058`) | 27 | S | behavioural (low) | — | 27-mounts-pets-vehicles.md:306 |
+| R-27-8 | The missing 16 mount rows (ids 4, 17, 37, 45, 46, 52, 54, 55, 57-60, 62-65) with their C# constants and item→mount rows | 27 | M | behavioural (medium) | — | 27-mounts-pets-vehicles.md:296 |
+| R-27-10 | Petting — `Player.petting` state machine + `Mount.TryPettingMount` for the Chillets | 27 | M | behavioural (feature gap) | R-27-8 | 27-mounts-pets-vehicles.md:310 |
+| R-27-12 | Mount abilities — `UseAbility`/`StartAbilityCharge`/`AimAbility`/`UpdateDrill` + the dash mounts 62-65 | 27 | L | behavioural (medium) | R-27-8 | 27-mounts-pets-vehicles.md:316 |
+| R-30-3 | Add the missing notify sites: `NotifyProgressionEvent` (43 rows), the custom-flag `Complete()` calls (37 rows) and the `CustomInt`/`CustomFloat` increments | 30 | M | behavioural (high) | R-30-2 | 30-achievements-bestiary.md:237 |
+| R-30-6 | Port `ReportDroprates` — add a `report_droprates` method to the drop-rule traits and feed the rows into the bestiary entries | 30 | L | behavioural (medium) | — | 30-achievements-bestiary.md:248 |
+| R-36-4 | Port `DD2Film` (`DD2Film.cs:1-396`): the dryad/ogre/portal staging, the emote bubbles, `CombatText.clearAll`, the fade/dust, the friendly flip | 36 | M | behavioural (dead-code parity) | R-36-2 | 36-cinematics-film.md:180 |
+| R-36-5 | The OOA's loss path — `DD2Event.ReportLoss` + `StopInvasion(false)` → `update_dd2_event` must clear `dd2_event_ongoing` | 36 | M | behavioural (medium) | — | 36-cinematics-film.md:183 |
+| R-36-8 | `DD2Event.StartVictoryScene` (`DD2Event.cs:481-505`): the crystal's victory animation and the 549 portals' close | 36 | M | behavioural/visual (medium) | R-36-7 | 36-cinematics-film.md:193 |
+| R-36-12 | The event's cleanups — `WipeEntities`/`ClearAllTowersInGame`/`ClearAllDD2HostilesInGame`/`ClearAllDD2EnergyCrystalsInChests`, the arena hitbox and `ShouldBlockBuilding` | 36 | M | behavioural (medium) | — | 36-cinematics-film.md:201 |
 | R-15-3 | Port `UpdateDust`'s generic tail (position integration, the `!noGravity` arm, the screen-bottom kill, the `dCount` nibbles) | 15 | M | behavioural (high) | R-15-2 | 15-dust-gore.md:264 |
 | R-15-5 | Port `Gore` + `NewGore` + `Gore.Update` + `GoreID.Sets` (600-slot pool, `SpecialAI`/`IsDrip`/`DisappearSpeed`) | 15 | L | behavioural+pixel (high) | R-15-2 | 15-dust-gore.md:268 |
 | R-25-10 | The 68 unported `aiStyle` arms, grouped by content wave (1.4.4 critters, 1.4.5 bosses, the lunar leftovers) | 25 | L | behavioural (high) | R-25-5 | 25-npc-ai-audit.md:416 |
@@ -270,6 +323,8 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-13-2 | Port `HitTiles`/`HitTilesInACircle` + the tile-hit resolution (kill/drop path) | 13 | M | behavioural (medium-high) | the edit/kill events | 13-collision.md:148 |
 | R-01-7 | `ShouldUpdateEntities`-equivalent gate + the world-loading state machine (`WorldPreparationState`) | 01 | L | behavioural (medium) | module 12 (worldgen) | 01-main-update-loop.md:162 |
 | R-14-9 | Legacy `.map` migration — `DecompressChunk` + `LoadMapVersion1` / `LoadMapVersionCompressed` | 14 | L | behavioural (medium) | — | 14-map-minimap.md:347 |
+| R-36-2 | Port the film framework verbatim into `crates/tr-core/src/cinematics.rs` (`Film.cs:1-144` + `FrameEvent.cs` + `FrameEventData.cs` + `CinematicManager.cs:1-41`) + a `Main.cs:16789`-equivalent hook | 36 | S | behavioural (dead-code parity) | — | 36-cinematics-film.md:173 |
+| R-36-3 | Port `DSTFilm` (`DSTFilm.cs:1-177`): the `Main.hideUI` toggle, the `Player.isControlledByFilm` flag + the `Player.cs:24765` gate, the Deerclops/Chester spawns, the DST shader item 5113 | 36 | S | behavioural (dead-code parity) | R-36-1 | 36-cinematics-film.md:177 |
 
 ### (e) data / coverage gaps (includes doc-truth and verification work) — 63 seeds
 
@@ -322,6 +377,18 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-32-9 | Docs pass — refresh `docs/ROADMAP.md:78` and `docs/PORT_MAP.md:241` with the quantified audio coverage | 32 | S | doc (low) | — | 32-sound-audio.md:273 |
 | R-34-3 | Correct the ROADMAP/ANALYSIS claims ("the duplicated dead arms removed") and the `M4-EVENT-4b` status | 34 | S | doc (high) | R-34-1 | 34-id-sets-audit.md:261 |
 | R-34-12 | Add the "id census" test harness — parse the C# `Count` constants and compare them against the Rust constants | 34 | L | verification (medium) | R-34-8 | 34-id-sets-audit.md:301 |
+| R-38-1 | Refresh `README.md` "What is *not* implemented yet" (drop the multiplayer + in-game-options claims) and add a "Not included by design" list | 38 | S | doc (medium, player-facing) | — | 38-out-of-scope-audit.md:215 |
+| R-38-2 | Correct the ROADMAP non-goals: replace "until M6-NET is complete" with the real gap (the Steam transport/lobby/social layer), drop the "single-player-first" line, narrow the RGB path, name WeGame | 38 | S | doc (medium) | — | 38-out-of-scope-audit.md:219 |
+| R-38-3 | Add an ANALYSIS subsection "Excluded subsystems (platform & services)" enumerating the eight `SocialAPI` modules one by one | 38 | S | doc (medium) | — | 38-out-of-scope-audit.md:224 |
+| R-38-4 | Add PORT_MAP rows for the excluded C# paths (`Terraria/Social/**`, `Terraria/Testing/**`, `nativefiledialog.cs`, `TimeLogger.cs`, `CrashDump.cs`, `RGB/*Shader*.cs`) | 38 | S | doc (medium) | — | 38-out-of-scope-audit.md:229 |
+| R-38-7 | Verify the achievements split — confirm the vanilla's *local* unlock is inside `AchievementManager`, so only the Steam push is missing | 38 | M | doc (medium) | — | 38-out-of-scope-audit.md:244 |
+| R-38-9 | Do NOT schedule: Steam Workshop hub / mod browser, Steam Cloud, WeGame IPC, peripheral RGB, `Terraria.Mono`, the GameBanana browser — record them as closed non-goals | 38 | L | doc (low) | — | 38-out-of-scope-audit.md:252 |
+| R-27-1 | Mount-id sets as data — add the 13 `MountID.Sets` tables and consume them in `can_mount`, `can_dismount` and `quick_mount` | 27 | S | data coverage (medium) | — | 27-mounts-pets-vehicles.md:283 |
+| R-27-5 | Refresh the stale documentation — ANALYSIS "Mounts framework", ATLAS:1364 and PORT_MAP:96 from "12 rows" to the current 50, and delete the three stale in-code comments | 27 | S | doc (medium) | — | 27-mounts-pets-vehicles.md:300 |
+| R-27-11 | Replace `the_twelve_ground_rows_carry_the_exact_c_constants` with a 50-row table test (C# values pasted from `Mount.cs:696-2567`) | 27 | M | verification (medium) | — | 27-mounts-pets-vehicles.md:313 |
+| R-30-10 | Reconcile `ENTRIES` (172) with `BESTIARY_NPC_SHEET_IDS` (174) and add a test that every sheet slot has an entry and vice versa | 30 | S | data coverage (cosmetic) | — | 30-achievements-bestiary.md:259 |
+| R-30-12 | Add a data test that pins every Rust row's condition count against `AchievementInitializer.cs` (137 rows / 180 conditions) | 30 | S | verification (medium) | R-30-1 | 30-achievements-bestiary.md:263 |
+| R-39-13 | Refresh `docs/ARCHITECTURE.md` + `AGENTS.md`: the crate line counts, the `App` field count (118 → 257), `main.rs` (86 → 163), the graph node count (3 440 → 13 769) and the "god-files are gone" sentence | 39 | S | doc (high) | R-39-5, R-39-6, R-39-7 | 39-port-architecture.md:341 |
 | R-35-9 | Correct the premise in the audit docs (`Item.seed`, `NPC.seed`, `NPC.netSeed`, `Utils.GetPointHash` do not exist in 1.4.5.8) | 35 | S | doc (medium) | — | 35-rng-utils.md:276 |
 | R-35-10 | Fix the `spawner.rs` doc comment ("xorshift64\*" → splitmix64) and cross-link the three `next_u64` copies | 35 | S | doc (cosmetic) | R-35-1 | 35-rng-utils.md:277 |
 | R-37-1 | Fix the ReLogic citations in `docs/PORT_MAP.md` (`:250`) and `INDEX.md:62` ("content pipeline, XNA, JSON") | 37 | S | doc (cosmetic) | — | 37-relogic-libs.md:288 |
@@ -339,7 +406,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-03-11 | Correct ROADMAP §8's stale "Rust ⬜ (none yet)" header (`ROADMAP.md:401`) | 03 | S | doc (medium) | — | 03-player-core.md:263 |
 | R-12-1 | Fix the doc-level lies — the misnamed test, ANALYSIS's M5-STRUCT-5 pins, ROADMAP.md:69's world-gen row | 12 | S | doc (medium) | — | 12-worldgen.md:328 |
 
-### (f) netcode / multiplayer — 14 seeds
+### (f) netcode / multiplayer — 16 seeds
 
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -353,12 +420,14 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-06-7 | Port the `ProjectileKey` table (`slotGenerations` + `keyToIndex`, `Projectile.cs:10852-10858`) | 06 | L | determinism (MP) | — | 06-projectile-core.md:149 |
 | R-28-7 | Buff net sync — the buff rows in the player-state message and the `55 PlayerBuff` message | 28 | M | behavioural (medium) | R-17-1, R-28-1 | 28-buffs-debuffs.md:266 |
 | R-31-10 | Golf netcode — `NetMessage` 59 / 128 / 27 and the `Wiring.HitSwitch` cup press | 31 | S | behavioural (medium) | R-17-1 | 31-golf-ball-physics.md:224 |
+| R-27-13 | Mount net sync — msg 13 (`Mount.cs:6174`, `:6224`) | 27 | L | behavioural (MP) | the MP design | 27-mounts-pets-vehicles.md:318 |
+| R-30-11 | Port `NetBestiaryModule` — broadcast `SerializeKillCount` on a kill and sync the counts on player join | 30 | M | behavioural (MP) | the netcode module's shape | 30-achievements-bestiary.md:261 |
 | R-17-1 | Map the ported client onto real ids (replace `201-205` with the C# ids they stand in for) | 17 | S | behavioural (wire-incompatible) | — | 17-netcode.md:300 |
 | R-17-2 | Rename `WORLD_COMPLETE` (49) — confirm the semantic against `MessageBuffer.cs:2447-2453` | 17 | S | behavioural (medium) | — | 17-netcode.md:303 |
 | R-17-3 | Port ping as id 154 (`Net/Ping.cs:23-35`) alongside module 2 and expose `CurrentPing` to the HUD | 17 | S | behavioural (medium) | — | 17-netcode.md:306 |
 | R-03-10 | Replace the `whoAmI = 0` stand-in (`player.rs:2001-2003`) with the real index once multi-player netsession ids land | 03 | M | determinism/behavioural (medium) | R-17-1 | 03-player-core.md:262 |
 
-### (g) UI — 20 seeds
+### (g) UI — 23 seeds
 
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -382,6 +451,9 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-14-3 | Minimap alpha config — a `MapMinimapAlpha` key in `settings.rs`, clamped 0.01..1 | 14 | S | cosmetic (low) | — | 14-map-minimap.md:325 |
 | R-07-2 | Add the tooltip's missing gates (`heal_life`/`heal_mana`, `quest_item`, `vanity`, `tile_wand`, the fishing-pole pair) | 07 | S | cosmetic (medium) | R-07-6 | 07-item-core.md:302 |
 | R-19-11 | Cloud save UI — the cloud favourite buttons and the `IsCloudSave`/`MoveToCloud` arms | 19 | L | UI (low) | — | 19-ui-screens-frontend.md:490 |
+| R-30-8 | Bestiary UI parity — the filter list (`Filters.cs`), the sort steps (`SortingSteps.cs`), the flavour-text/rarity-star/spawn-condition info elements | 30 | M | UI (medium) | R-30-6 | 30-achievements-bestiary.md:254 |
+| R-30-9 | Add the achievement unlock toast and fire `OnCompleted` for every completed achievement (not only the last) | 30 | S | UI (medium) | R-30-2 | 30-achievements-bestiary.md:257 |
+| R-36-1 | Verify/port the F11 UI-hide toggle (`Main.cs:2085`, `:18402-18424`) and the `Main.hideUI` state the films need | 36 | S | UI (cosmetic) | — | 36-cinematics-film.md:171 |
 
 ### (h) audio — 8 seeds
 
@@ -396,14 +468,30 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-32-8 | Wire the two orphaned emitters (the critter cue table, the liquid-merge cue table) | 32 | S | scope (low) | module 25, R-11-5 | 32-sound-audio.md:270 |
 | R-31-11 | Golf chat/effects — `Game.BallBounceResultGolf_Single/Plural` text and `EmitGolfballExplosion` | 31 | S | audio (low) | the localization port | 31-golf-ball-physics.md:226 |
 
-### (i) architecture & concurrency prep — 16 seeds
+### (i) architecture & concurrency prep — 32 seeds
 
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
+| R-39-1 | Split `World` into `WorldTiles` (immutable geometry) and `WorldState` (the ~50 runtime/event flags) | 39 | L | structural (high) | — | 39-port-architecture.md:329 |
+| R-39-3 | Introduce a typed event buffer (`enum SimEvent { SpawnNpc, SpawnProjectile, Damage, DropItem, BreakTile, Sound, NetSync }`) with per-thread buffers + a deterministic merge | 39 | L | structural (high) | R-39-2 | 39-port-architecture.md:331 |
+| R-39-4 | Build the spatial hash over stable entity ids (a monotonic `entity_id` so `Vec` compaction cannot move an entity) + replace the 15 linear NPC scans | 39 | L | structural (high) | R-39-3 | 39-port-architecture.md:332 |
+| R-39-5 | Split `tr-app/src/npc.rs` (17 134) into `npc/{entity,stats,kinds,ai,buffs}.rs` | 39 | L | structural (medium) | — | 39-port-architecture.md:333 |
+| R-39-6 | Split `tr-app/src/projectile.rs` (17 411) into `projectile/{entity,data,ai,damage}.rs` | 39 | L | structural (medium) | — | 39-port-architecture.md:334 |
+| R-39-7 | Split `tr-app/src/player.rs` (10 098) into `player/{entity,physics,buffs,inventory,draw_state}.rs` (`Player` has 239 fields) | 39 | L | structural (medium) | — | 39-port-architecture.md:335 |
 | R-12-6 | Verifiable world parity harness — re-implement `WorldGenSnapshot`/`WorldManifest` end-to-end + a `--worldgen-audit` dev flag | 12 | L | architecture (high) | R-12-2 | 12-worldgen.md:355 |
 | R-42-8 | The compressor seam — a `Compression` switch in `wld::to_bytes` that deflates the tile-section body and bumps `FORMAT_VERSION` to 327 | 42 | M | architecture (Stage-2) | R-42-2 | 42-save-load-audit.md:291 |
 | R-09-6 | Reintroduce the deferred `_specialTilesX/Y` registry (`TileCounterType`, `AddSpecialPoint`) so tiles draw in C#'s order | 09 | L | architecture/z-order (high) | — | 09-tile-drawing.md:247 |
 | R-37-7 | An `AssetRepository` equivalent in Rust (name → lazy load, `AssetRequestMode`, resource-pack overlays) | 37 | L | architecture (feature gap) | a roadmap decision (no mod support) | 37-relogic-libs.md:314 |
+| R-39-2 | Extract the fixed-step order out of `app/frame.rs` into a data-driven tick plan (`[(system, phase)]`) + a test that pins the C# order (`Main.DoUpdateInWorld_Inner` `Main.cs:17749-17821`) | 39 | M | structural (high) | R-39-1 | 39-port-architecture.md:330 |
+| R-39-8 | Split `tr-core/src/edit.rs` (6 791) into `edit/{kill,place,actuation,objects}.rs` and merge the app-side `world_sim/editing.rs` wrappers onto the core seam | 39 | M | structural (medium) | R-39-5 | 39-port-architecture.md:336 |
+| R-39-11 | Move the read-only `scene_scan` scan from `tr-app/world_sim/scene_scan.rs` into `tr-core::scene` | 39 | M | structural (medium) | R-39-1 | 39-port-architecture.md:339 |
+| R-36-11 | The OOA's persistence — `DD2Event.Save`/`Load` (`DD2Event.cs:151-170`), the three downed-tier flags in the world save | 36 | M | determinism/persistence (medium) | module 42 | 36-cinematics-film.md:199 |
+| R-38-5 | Decide the `Terraria/Testing` harness: record the exclusion in ROADMAP non-goals + ANALYSIS, or port a Rust equivalent of `RecordReplay`/`StateSnapshot` | 38 | M | structural (medium) | — | 38-out-of-scope-audit.md:233 |
+| R-38-6 | Decide and document the dedicated-server story (host-in-window only vs a headless `-server` mode) | 38 | M | structural (medium) | R-38-1 | 38-out-of-scope-audit.md:239 |
+| R-39-10 | Re-home the duplicated helpers (`hsl_to_rgb`, `move_towards`, `update_rain` → one owner each in `tr-core`; `collision_empty_tile` → the app-side `collision.rs`) | 39 | S | structural (low) | — | 39-port-architecture.md:338 |
+| R-39-12 | Replace `World.extras: HashMap<u32,u8>` with an ordered structure (or forbid iteration) to remove the nondeterministic-iteration hazard | 39 | S | determinism (medium) | R-39-1 | 39-port-architecture.md:340 |
+| R-39-14 | Add an architecture lint: fail the build when a hand-written file exceeds 5 000 lines or when a `pub fn` name exists in both `tr-core` and `tr-app` | 39 | S | structural (medium) | — | 39-port-architecture.md:342 |
+| R-38-8 | Optional: a trait-shaped `SocialApi` seam in Rust (a `NoSocial` impl behind the C# method names) | 38 | L | structural (low) | the owner's choice | 38-out-of-scope-audit.md:248 |
 | R-19-10 | `.trwld` metadata fields — GameMode, evil, creation time, play time, Moon-Lord/seed flags in the `tr_core::save` header | 19 | L | architecture (medium) | module 42 | 19-ui-screens-frontend.md:485 |
 | R-12-2 | Make the config view real for one pass — thread `pass_config` into `caves.rs::ores_and_shinies` and delete the hard-coded constants | 12 | S | architecture (medium) | — | 12-worldgen.md:333 |
 | R-18-9 | Layer stack — a named ordered layer list (`GameInterfaceLayer` analogue) in `app/frame.rs` with `InterfaceScaleType` spaces | 18 | L | architecture (medium) | — | 18-ui-framework.md:284 |
@@ -875,8 +963,105 @@ The `deferred special points → inline drawing` deviation is admitted at `tiles
 | 42-7 | cosmetic/architectural | The port has two world formats | Claim: (silent) · Reality: `.wld` vanilla-shaped and `.trwld` native, chosen by file extension at save time (`saveglue.rs:27-28`) → the save surface doubles for Stage-2 (two compressors, two readers) | SILENT |
 | 42-8 | unknown | The C#'s "temp" save snapshot is not verified | Claim: (silent) · Reality: the C# snapshots day/time/weather into `_temp*` and restores it on load (`SetTempToOngoing` 1040-1066 / `SetOngoingToTemps` 152-179); the Rust flags writer emits the world's own values and the exact temp mechanism was not checked | SILENT |
 
-**Register totals:** 395 deviation/risks rows surveyed → **276 unadmitted** (of which **44** are
-CLAIM-OTHERWISE, i.e. the docs assert the opposite) · 70 admitted · 49 partially admitted
+### 26 — projectile AI families (8)
+
+| Source | Severity | One-line risk | Claim vs reality | Status |
+| --- | --- | --- | --- | --- |
+| 26-2 | determinism (maintenance) | Six duplicated match arms | Claim: (silent) · Reality: aiStyle 1 (10432 wins / 10615 dead), 3 (10439 / 10616), 14 (10503 / 10617), 16 (10504 / 10618), 115 (10619 / 10826), 99 (10678 / 10884) — Rust matches the **first** arm, so the later copies are dead code; the 99 pair is byte-identical | SILENT |
+| 26-3 | behavioural | The Vortex ritual is never dispatched | Claim: M4-EVENT-17 and PORT_MAP 236 both claim "done" · Reality: `ai_vortex_ritual`/`ai_vortex_bolt` exist and are unit-tested but **no dispatch arm calls them** — only the test module does (15771-15839) → the Vortex ritual projectiles never animate in the live sim | CLAIM-OTHERWISE |
+| 26-4 | behavioural | The Flairon's bubble has no arm and no `ai_bubble` function | Claim: PORT_MAP 157 lists `ai_bubble` as ported · Reality: no arm and no `ai_bubble` anywhere in `crates/`; the style-70 row (FLAIRON_BUBBLE 405) has data but no behaviour | CLAIM-OTHERWISE |
+| 26-7 | behavioural | `AI_001`'s ~137 remaining per-type arms are absent | Claim: (silent) · Reality: C# `AI_001` has **142 distinct per-type arms** (197 `type ==` checks at 54002-57826); the port covers only the 4 M4-PROJ-6 riders + the Book of Skulls → one generic arrow flight covers 32 arm groups / 36 kinds | SILENT |
+| 26-9 | behavioural | aiStyle 99: the counterweights are absent | Claim: (silent) · Reality: `AI_099_1_Counterweights` (types 556-561/1079, `Projectile.cs:33153`) has neither a `proj_data` row nor a dispatch arm | SILENT |
+| 26-10 | behavioural/structural | `ai_shuriken` is a Rust-invented approximation | Claim: (silent) · Reality: the port's shuriken (3610) is a 2 half-step / 0.6-bounce stand-in for the C# aiStyle-2 block (23205-23689), a 480-line per-type machine covering ~40 vanilla types; it is gated by **kind** (10385) and has no `proj_data` row, so it bypasses the aiStyle table entirely | SILENT |
+| 26-11 | behavioural | 21 spawnable styles have a data row but no dispatch arm | Claim: (silent) · Reality: styles 2, 23, 26, 66, 67, 70, 79, 80, 88, 108, 120, 123, 130, 133, 134, 137, 138, 157, 158, 187, 189 hold position and never animate, damage or expire | SILENT |
+| 26-12 | behavioural | The aiStyle-84 arm is kind-gated | Claim: (silent) · Reality: one vanilla style now serves two unrelated C# families — LAST_PRISM_LASER vs the Phantasmal Deathray (10635-10643) | SILENT |
+
+### 27 — mounts / pets / minecart / grapple (12)
+
+| Source | Severity | One-line risk | Claim vs reality | Status |
+| --- | --- | --- | --- | --- |
+| 27-D1 | documentation | The "12 rows" story is stale | Claim: ANALYSIS "Mounts framework (M2-MOUNT-1)" says *"a 12-row ground table"* / *"Partial table (12 of `MountID.Count` 66)"`, ATLAS:1364 says *"the 12-row `MountData` table"*, PORT_MAP:96 says *"the 12-row ground table"* · Reality: the code now carries **50 rows** (`mount.rs:1305-1356` = 12 ground + 11 flyer + 27 cart) — the deviation list is right in substance but its count is wrong | CLAIM-OTHERWISE |
+| 27-D2 | behavioural | `can_mount` drops the Cart/`CanUseHooks` grapple exemption | Claim: (silent) · Reality: C# `Mount.cs:6599-6602` returns false only when `!Cart[m] && !CanUseHooks[m] && grappling[0] >= 0`; the Rust (`player.rs:4665-4667`) returns false for **any** grappling mount, and its comment ("no row in this table is in the CanUseHooks set") is true for `CanUseHooks {54,57,58,59,60}` but **false for `MountID.Sets.Cart`** — 27 cart rows are present, so vanilla allows mounting a minecart while a hook is out and the port refuses it | SILENT |
+| 27-D3 | behavioural | `can_mount` drops the bat-wet rule | Claim: (silent) · Reality: C# `Mount.cs:6595-6598` (`m == 56 && (wet \|\| dripping \|\| WetCollision(...))` → cannot mount); the Rust has no such arm and its comment is **false** since row 56 (Bat) is in the table (`mount.rs:1022`) | SILENT |
+| 27-D4 | behavioural | The Fishron halving is missing | Claim: (silent) · Reality: C# `Player.cs:26655-26659` halves `runAcceleration`/`maxRunSpeed` for `mount.Type == 12`; the Rust (`player.rs:4776-4779`) skips it with the comment *"have no rows in this table yet"* — row 12 (`CUTE_FISHRON`) **is** in the table (`mount.rs:865`) → the CuteFishron runs at full speed | SILENT |
+| 27-D5 | behavioural | `SetMount` per-type extras are missing | Claim: (silent) · Reality: C# `Mount.cs:6228-6235` (type 44 Pirate Ship: `velocity *= 0.2f` + dash reset), `:6279-6282` (types 7/8: `fullRotationOrigin = centre`), `:6287-6298` (`_mountSpecificData` for 8/35/54), `:6283-6286` (the PalChillet sound for 62-65), `:6301-6304` (the type-38 achievement); the Rust `set_mount` covers only the guards, the fly-time reset, the fatigue max, `_flipDraw` and the 9/46 ability cooldowns. Rows 44, 7, 8, 35 exist → the first three are reachable today | SILENT |
+| 27-D6 | behavioural | `Dismount` housekeeping is missing | Claim: (silent) · Reality: C# `Mount.cs:6152-6155` clears `noItems` for types 55/56 and `:6161-6162` resets `fullRotation`/`fullRotationOrigin`; the Rust restores the hitbox and the buff only. Row 56 (Bat) exists | SILENT |
+| 27-D7 | behavioural | `CanDismountWithResult`'s CC gate is missing | Claim: (silent) · Reality: C# `Mount.cs:6615-6618` returns `FailedCCed` for `DontDismountWhenCCed {55,56,61}`; the Rust only probes the space. 55 is un-equippable but 56 (Bat) and 61 (Pixie) are not | SILENT |
+| 27-D8 | behavioural | `QuickMount` diverges | Claim: (silent) · Reality: C# `Player.cs:6190` skips `MountID.Sets.Cart` items and falls through to `QuickMinecart()` (:6097), and gates on `Mount.DismountsOnItemUse(item.mountType) && TryingToUseItem()` (:6082-6085); the Rust takes *any* inventory slot with a known `mount_type` — the 26 cart items are in `MOUNT_ITEMS`, so a minecart item is mounted through the normal path. The Rust comment ("the cart items are skipped by the table itself (no cart rows)") is stale | SILENT |
+| 27-D9 | behavioural | 16 mount ids are absent | Claim: admitted in ANALYSIS ("partial table") but with a stale count · Reality: missing rows 4 (Turtle), 17 (Golf Cart), 37 (Flamingo), 45 (Spooky Wood), 46 (Santank), 52 (Wolf), 54 (Velociraptor), 55 (Rat), 57-60 (roller skates), 62-65 (Chillet); `set_mount` returns `None` for them (`mount.rs:1814`) → the saddles do nothing | SILENT |
+| 27-D12 | cosmetic | `MountState::check_mount_buff` is dead code | Claim: (silent) · Reality: `mount.rs:1861-1863` has no caller; the equivalent check lives inline at `player.rs:2550` | SILENT |
+| 27-D13 | determinism | The minecart ride block is relocated | Claim: (silent) · Reality: C# puts the cart/`OnTrack` branch *inside* the mount merge block (`Player.cs:26665-26682`, before `HorizontalMovement`); the Rust runs it in the separate cart path (`player.rs:3116-3500`) → the `runSlowdown = runAcceleration` assignment is ordered differently relative to the movement merge | SILENT |
+| 27-D14 | behavioural | `FrameTrack` is missing | Claim: (silent) · Reality: C# places track tiles from the item use (`Player.cs:46058` → `Minecart.FrameTrack`); no `FrameTrack` symbol exists in `minecart.rs` | SILENT |
+
+### 30 — achievements / bestiary (9)
+
+| Source | Severity | One-line risk | Claim vs reality | Status |
+| --- | --- | --- | --- | --- |
+| 30-1 | behavioural | `CreateMany` is collapsed | Claim: (silent) · Reality: `STAR_DESTROYER` 4→0 conditions (so it can never unlock and its `is_completed()` is vacuously true), `GELATIN_WORLD_TOUR` 24→1, `SLAYER_OF_WORLDS` 15→3, `BUCKETS_OF_BOLTS` 3→1; the port's own comment at `achievements.rs:162-163` calls the zero-condition `STAR_DESTROYER` "complete from the start, exactly as vanilla" — vanilla needs all four pillars | SILENT |
+| 30-2 | behavioural | `achievements::save` has no call site | Claim: ROADMAP M6-ACH-1 says "the save rides the F9/autosave pass" · Reality: only `load` is wired (`app/mod.rs:1807`) → nothing is ever persisted | CLAIM-OTHERWISE |
+| 30-4 | behavioural | `kills_needed_for` returns 0 outside the banner table | Claim: (silent) · Reality: 0 means "≥ full", so **164 of 172** bestiary entries report tier 4 with zero kills; the C# default is 50 (`ItemID.Sets.DefaultKillsForBannerNeeded`) | SILENT |
+| 30-5 | behavioural | `quick_unlock` covers 5 entries instead of every boss | Claim: (silent) · Reality: the C# sets it on **every** boss (`BestiaryEntry.cs:37-41`) plus the salamander and `HighestOfMultiple` overrides; the town NPC `Guide` wrongly carries it (the C# uses the chat provider) | SILENT |
+| 30-10 | cosmetic/behavioural | The unlock popup, advisor and chat tag handler are missing | Claim: (silent) · Reality: `AchievementUnlockedPopup` (`UI/InGamePopups.cs:13`), `AchievementAdvisor` and `AchievementTagHandler` have no port | SILENT |
+| 30-11 | behavioural | `notify` returns only the last completed achievement | Claim: (silent) · Reality: the C# fires `OnCompleted` (and a save) for every one (`Achievement.cs:93-108`) | SILENT |
+| 30-12 | behavioural | `completion_percent` divides by the port's 172-entry roster | Claim: (silent) · Reality: combined with #4 it reads ~95 % at world start, which gates the Zoologist's shop (`Chest.cs:3265`) | SILENT |
+| 30-16 | behavioural (MP) | There is no MP sync of the bestiary kill counts | Claim: (silent) · Reality: `NetBestiaryModule.cs` has no port | SILENT |
+| 30-18 | behavioural | `Achievement.completed` vs `is_completed()` disagree | Claim: (silent) · Reality: the Rust `completed` flag is initialised `false` (188) while `is_completed()` on a zero-condition row is `true` → the two disagree after a save/load (`load_pairs` 350) | SILENT |
+
+### 36 — cinematics / film / Old One's Army (12)
+
+| Source | Severity | One-line risk | Claim vs reality | Status |
+| --- | --- | --- | --- | --- |
+| 36-D1 | cosmetic | The whole `Terraria/Cinematics/` framework is absent | Claim: no ROADMAP row and no ANALYSIS section cover the cinematics — a **documentation gap**, not an acknowledged deviation | SILENT |
+| 36-D2 | cosmetic (scope risk) | The films are dead code in vanilla | Claim: not recorded anywhere · Reality: `PlayFilm` has **0 call sites** → porting them buys no player-visible behaviour | SILENT |
+| 36-D3 | behavioural | The kill worth is a constant 1.0 | Claim: (silent) · Reality: `dd2_report_kill` uses `KILL_WORTH_T1 = 1.0` instead of the per-kind/per-tier `GetMonsterPointsWorth` (`DD2Event.cs:546-554`, `:1106`, `:1199`, `:1509`) → the wave budget burns at the wrong rate for every tier ≥ 2 | SILENT |
+| 36-D4 | behavioural | Kills outside the current wave's roster are dropped | Claim: (silent) · Reality: `npcs.rs:1481-1484` filters by roster; the C# scores every OOA kill | SILENT |
+| 36-D6 | behavioural (narrow) | The 139 kill-cap is unconditional | Claim: (silent) · Reality: the C# caps only when the T1 Dark Mage is *not* downed (`DD2Event.cs:993-996`) | SILENT |
+| 36-D7 | behavioural | The event's **loss** path is absent | Claim: (silent) · Reality: a destroyed Etherian Crystal never ends the event (`DD2Event.cs:507-515` vs `npcs.rs:1690-1715`) | SILENT |
+| 36-D8 | behavioural | The victory scene, wave-break skip, medals, crystal drops, arena/building block, entity wipes and tier persistence are all missing | Claim: the ROADMAP rows stop at "the wave engine" · Reality: `StartVictoryScene` (`:481-505`), `RequestToSkipWaitTime` (`:1779-1801`), `DropMedals` (`:802`), `ShouldDropCrystals` (`:815`), `FindArenaHitbox` (`:753`), `WipeEntities` (`:629-693`) and `DD2Event.Save/Load` (`:151-170`) are all absent | SILENT |
+| 36-D10 | behavioural (UI) | The OOA never enters the invasion framework | Claim: (silent) · Reality: `invasion_type` stays 0 instead of `INVASION_ID = 3` (`DD2Event.cs:47`) → the OOA's wave bar is outside the vanilla's invasion-progress path (`Main.cs:64344`, `:47687-47694`) | SILENT |
+| 36-D11 | behavioural | `ZoneOldOneArmy` is absent | Claim: (silent) · Reality: the OOA enemies' aggro/despawn gate (`NPC.cs:799`) and the "close to a lane portal" metric (`Player.cs:16720`) do not exist | SILENT |
+| 36-D13 | cosmetic | The `DD2Event.DamageTracker` is missing | Claim: (silent) · Reality: `DD2Event.cs:17-39` (started at `:277`) — the kill-time/boss-health display has no port | SILENT |
+| 36-D5 | behavioural (the win transition) | The D1 wave-6 branch is a bare `1` | Claim: ROADMAP M4-EVENT-5o claims "the wave-6 sentinel is the win (`WonThisRun`)" · Reality: the sentinel is there, the `waveNumber = 5` / `currentKillCount = 1` write-back and the `StartVictoryScene` call (`DD2Event.cs:998-1005`) are not | CLAIM-OTHERWISE |
+
+### 38 — out-of-scope confirmation (13)
+
+| Source | Severity | One-line risk | Claim vs reality | Status |
+| --- | --- | --- | --- | --- |
+| 38-1 | cosmetic (doc), player-facing | README is stale on multiplayer | Claim: `README.md:171` lists "**Networking** (multiplayer)" under "What is *not* implemented yet" · Reality: `net.rs` (3 392 lines) + `netglue.rs` (2 897) + `netmodules.rs` (528) and the M6-NET-1..5 rows (done 2026-11-09) contradict it — **FALSE** | CLAIM-OTHERWISE |
+| 38-2 | cosmetic (doc) | README is stale on the in-game options window | Claim: `README.md:166-168` says "only the in-game options window vanilla opens over the inventory is still missing" · Reality: M7-UI-4 is **done 2026-11-11** — **FALSE** | CLAIM-OTHERWISE |
+| 38-3 | cosmetic (doc), planning-relevant | The "until M6-NET is complete" non-goal is stale | Claim: ATLAS:1747-1751 frames the network gap as "until M6-NET is complete" / "the entity/tile/module sync is still single-player-first" · Reality: M6-NET-1..5 all landed (2026-11-09); the *real* remaining gap is the excluded Steam transport/lobby layer — **FALSE/STALE** | CLAIM-OTHERWISE |
+| 38-4 | cosmetic | The RGB non-goal is over-broad by path | Claim: ATLAS:1157-1158 and ATLAS:1759-1760 exclude "RGB peripheral lighting (`GameContent/RGB/*`)" · Reality: that folder also holds `VirtualKeyboard.cs` (450 — **ported**, PORT_MAP:180), `DebugKeyboard.cs` (48), `CommonConditions.cs` (399) and `NoiseHelper.cs` (82) → the exclusion must name the `*Shader*.cs` files plus the peripheral packages | CLAIM-OTHERWISE |
+| 38-5 | behavioural (doc) | `Terraria.Social` is excluded as a *path*, never as modules | Claim: (silent) · Reality: no doc enumerates the eight modules; a reader sees a **fully ported** achievement UI and can only guess that the Steam *unlock* is absent | SILENT |
+| 38-6 | medium | `Terraria/Testing/**` (34 files, ≈6 000 lines) is an undocumented absence | Claim: nothing in ROADMAP/ANALYSIS/PORT_MAP admits it · Reality: it contains the vanilla's deterministic replay/snapshot harness (`RecordReplay.cs` 177, `StateSnapshot.cs` 473, `LockstepDebug.cs` 258, `QuickLoad.cs` 406) — precisely the tool a "1:1 reimplementation" project would use to prove parity | SILENT |
+| 38-7 | cosmetic | The in-game dev screens are an undocumented absence | Claim: ATLAS:962 lists "BestiaryTest 17" as a C# screen with no port/exclusion marker · Reality: `UIBestiaryTest.cs` + `UITextWrappingTest.cs` have no port | SILENT |
+| 38-8 | low | `TimeLogger.cs` (839) and the crash handlers are undocumented absences | Claim: (silent) · Reality: `Terraria/Utilities/CrashDump.cs` (119) + `CrashWatcher.cs` (84) — the port has no crash handler at all | SILENT |
+| 38-9 | medium (behavioural) | Dedicated-server mode is an undocumented absence | Claim: the non-goals only promise a "port-internal" handshake · Reality: the vanilla's headless `-server` mode (`Main.dedServ`, **169 sites**) is not ported; the port hosts in-window on TCP 7777 | SILENT |
+| 38-10 | cosmetic | `Terraria.Social.WeGame.*` (26 files, ≈2 850 lines) is never named | Claim: only the path `Social/*` covers it | SILENT |
+| 38-11 | cosmetic | README never mentions the platform exclusions at all | Claim: (silent) · Reality: `README.md:142-172` lists gameplay gaps but says nothing about Steam/WeGame, cloud saves, the Workshop/mod browser, peripheral RGB or dedicated server, while the README's pitch is "the same game with a different engine underneath" (`README.md:3-8`) | SILENT |
+| 38-12 | cosmetic | Dead user-facing row | Claim: documented in ANALYSIS:1942-1951 · Reality: the Multiplayer's "Join via Steam" row is a hint only (`menu/pages.rs:~404-412`) — a visible dead end | SILENT |
+| 38-13 | behavioural | The Steam P2P transport divergence is undocumented | Claim: (silent) · Reality: the port is **TCP-only**; the vanilla's Steam P2P and the lobby browser have no analogue — "not stated anywhere in ROADMAP/ANALYSIS" | SILENT |
+
+### 39 — port architecture inventory (15)
+
+| Source | Severity | One-line risk | Claim vs reality | Status |
+| --- | --- | --- | --- | --- |
+| 39-1 | structural | "The god-files are gone" is false as stated | Claim: AGENTS.md: "**The god-files are gone.** Extend the matching module; never grow a new god-file." · Reality: **8 hand-written files exceed 5 000 lines** (`projectile.rs` 17 411, `npc.rs` 17 134, `player.rs` 10 098, `world_sim/npcs.rs` 9 057, `world_sim/editing.rs` 7 738, `edit.rs` 6 791, `growth.rs` 5 305, `smart_cursor.rs` 5 197) — true only for the bootstrap (`main.rs` 163) | CLAIM-OTHERWISE |
+| 39-2 | structural | "App state (118 fields)" is stale | Claim: AGENTS.md + ARCHITECTURE.md both say 118 · Reality: `App` has **257** direct fields (`app/mod.rs` L82) | CLAIM-OTHERWISE |
+| 39-3 | cosmetic (docs) | ARCHITECTURE.md's crate/module line counts are ~2× low | Claim: `app/` ~5.5 k lines, `render/` ~4.5 k, `ui/` ~15.5 k, `main.rs` 86 lines · Reality: actual **18 371 / 11 301 / 24 424 / 163** | CLAIM-OTHERWISE |
+| 39-4 | cosmetic (docs) | ARCHITECTURE.md's graph node count is stale | Claim: "the graph is rebuilt (graphify: 3 440 nodes / 7 933 edges Rust-side)" · Reality: the current `graphify-out/graph.json` holds **13 769 nodes** (12 712 from `crates/`, 409 `docs`, 293 `tools`) and **35 496 links** | CLAIM-OTHERWISE |
+| 39-5 | structural | "the 2026-11-01 refactor split the two god files" is only partly true | Claim: ARCHITECTURE.md/ANALYSIS · Reality: `main.rs` and `menu.rs` were split; the *entity* god files (NPC/Projectile/Player/WorldGen) were never split — they were re-homed into `tr-app`/`tr-core` leaves | CLAIM-OTHERWISE |
+| 39-6 | structural | The "C# seams" table covers UI and rendering only | Claim: ARCHITECTURE.md lists 3 seams (`FrontScreenBehaviours`, `LightEngine`, `PassPrologue`) · Reality: there is **no seam at the entity/sim boundary**, which is precisely where Stage 2 needs one | SILENT |
+| 39-7 | structural | The SoA/spatial-hash plan is aspiration only | Claim: ATLAS "Entities (M4) — data-oriented plan" · Reality: **no** spatial hash, **no** SoA, **no** event buffers, and the sim is `&mut App` end-to-end — the plan is not started | SILENT |
+| 39-10 | structural | `World` holds runtime event flags | Claim: not in any doc · Reality: `World`'s 132 fields mix tile data with ~50 runtime event flags (`downed_*`, `invasion_*`, `tower_*`, `slime_rain*`, `ore_tiers`, `seeds`) that `world_sim/{clock,npcs,weather}.rs` write → `tr-core` is **not** read-only during a tick, which blocks the read-only phase A | SILENT |
+| 39-11 | behavioural/determinism | `App.npcs` index instability vs `ProjectilePool::local_immunity` | Claim: documented in-code ("stable between death compactions") · Reality: the `Vec` free list (no `GetAvailableNPCSlot` protocol, research 05) means a compaction **does** shift indices → a spatial hash keyed on the `Vec` index would inherit the bug | SILENT |
+| 39-12 | determinism | `World.extras: HashMap<u32,u8>` | Claim: (silent) · Reality: `HashMap` iteration order is nondeterministic → a determinism hazard for any future phase-A pass over it | SILENT |
+| 39-13 | cosmetic | Duplicated helpers across crates | Claim: (silent) · Reality: `tr_core::scene::move_towards` vs `tr_app::ambient_sound::move_towards`; `hsl_to_rgb` twice; 15 cross-crate name collisions (`break_wall`, `place_tile`, `update_rain`, `move_towards`, `hsl_to_rgb`, …) — a house-style violation | SILENT |
+| 39-14 | behavioural (latent) | Two homes for `Collision.EmptyTile` | Claim: PORT_MAP already records the move as pending · Reality: `tr-core::smart_cursor::collision_empty_tile` vs `tr-app::collision.rs` | SILENT |
+| 39-15 | cosmetic | `main.rs` still declares 70 modules | Claim: (silent) · Reality: 163 lines of bootstrap but 70 `mod` lines — cosmetic only; the bootstrap body is genuinely thin | SILENT |
+| 39-8 | none (accurate) | The parallel-light/framing/decode rows | Claim: ATLAS "C1/C3 parallel light, C4 framing, C5 decode: done" · Reality: verified — the only parallelism in the tree is `tr-core/{framing,lighting/{mod,blur}}.rs` + `tr-app/assets.rs` | ADMITTED |
+
+**Register totals:** 483 deviation/risks rows surveyed → **345 unadmitted** (of which **62** are
+CLAIM-OTHERWISE, i.e. the docs assert the opposite) · 79 admitted · 59 partially admitted
 (admitted in code comments or in one doc only).
 
 ---
