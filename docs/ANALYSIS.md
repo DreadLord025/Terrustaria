@@ -8791,9 +8791,9 @@ replay-pair tests and the wind tests) stay green unchanged.
 `decompiled/Terraria/Utilities/UnifiedRandom.cs:1-159` — the .NET Framework
 `System.Random` Knuth subtractive generator (56-int seed array), which is what
 `Main.rand` is. It is a *third* stream algorithm beside the worldgen
-`Xorshift64` (`rng.rs`) and the tile-light `FastRandom` (48-bit LCG); it is not
-wired into any consumer yet (that is S1-A-2+), so no generated world, frame or
-save changes.
+`Xorshift64` (`rng.rs`) and the tile-light `FastRandom` (48-bit LCG); S1-A-2 now owns
+the `Main.SwapRandom` registry (`app/rng.rs`) and the `UpdateTime` stage draws from it,
+while the remaining stage bodies still use world-seeded splitmix bridges (S1-A-11).
 
 Fidelity notes:
 
@@ -8836,20 +8836,56 @@ Deviations that remain, on purpose:
 
 - **One `prefix_rng`, not the C#'s shared `Main.rand`.** Vanilla's prefix draws
   interleave with every other `Main.rand` consumer (particles, weather, loot); the port
-  keeps its per-consumer field convention until S1-A-2 gives the singletons the C#'s
-  named streams. The algorithm and the draw order are the C#'s; the *position in the
-  shared stream* is not reproduced.
+  keeps its per-consumer field convention until S1-A-11 wires the remaining consumers to
+  the named streams (`prefix_rng` still keeps its own stream). The algorithm and the draw
+  order are the C#'s; the *position in the shared stream* is not reproduced.
 - **The seed is the port's, not vanilla's.** `prefix_rng` is seeded
-  `world_seed ^ 0x51ED_2701_A3F5_C9B7` (the per-consumer constant convention). Vanilla
-  seeds `Main.rand` from `Environment.TickCount`, which a deterministic port cannot
-  reproduce, so a seed-for-seed replay is only defined once S1-A-2/S1-A-7 pick a
-  deterministic seeding.
+  `UnifiedRandom::new(world_seed as i32)` (`app/mod.rs`, S1-A-2) — the C# per-key rule —
+  because vanilla seeds `Main.rand` from `Environment.TickCount`, which a deterministic
+  port cannot reproduce. S1-A-2's registry makes every stream share that seed.
 - **The worldgen chest seam stays splitmix.** `chest_gen.rs` still rolls its chest-row
   prefixes through `prefix::roll_prefix_splitmix` over the per-world `chest_rng`,
   byte-identical to before this change (no chest contents move); S1-A-4 owns that
   stream (the vanilla `WorldGen.genRand` interleave).
 - **`item_rng`'s other consumers are untouched** (loot, crit, luck, particles — ~97
   call sites keep the splitmix step); the prefix part of S1-A-5 does not reorder them.
+
+## Named RNG streams (`Main.SwapRandom`, S1-A-2)
+
+`crates/tr-app/src/app/rng.rs` ports `Main._rngs` (`Main.cs:1294-1295`) and
+`Main.SwapRandom` (`:3204-3215`) as `NamedRngs` + `RngKey`. The 17 keys are the exact
+strings the decompiled source passes to `SwapRandom`: the 13 nested stage wrappers of
+`DoUpdateInWorld_Inner` (`:17749-17809`) plus `DoUpdateInWorld` (`:17732`), `SpawnNPC`,
+`UpdateLiquid` and `UpdateWorldGen`. Each stream is created lazily as
+`new UnifiedRandom(Main.ActiveWorldFileData.Seed)` (`:3210-3212`) — i.e. every key starts
+from the *same* integer and the streams diverge only by how many draws each stage has
+consumed — and a world load throws the dictionary away (`Main.cs:6465`, modelled by
+`NamedRngs::reset`).
+
+The C# swaps the stage's stream into `Main.rand` for the duration of a `using` block.
+The port has no global `Main.rand`, so a stage asks the registry for its key and passes
+the `&mut UnifiedRandom` down: the isolation is the same, and the "no shared stream
+consumed in a different order" contract is expressible per stage instead of relying on
+the call stack.
+
+Seeding rule (S1-A-2 also deleted the ad-hoc constants): every App stream is now seeded
+from the world seed — `npc_rng`, `craft_rng` (was the literal `1`), `ambience_rng`,
+`item_rng` (were XOR constants), `prefix_rng` (`UnifiedRandom::new(world_seed)`),
+`growth_rng` (`FastRandom::new(world_seed)`). `light_rng_seed` keeps `world_seed | 1`
+because it seeds the tile-light `FastRandom` (`TileLightScanner._random`), not a
+`SwapRandom` key.
+
+Wired consumer: `clock_rng` is **gone**; the clock's dawn/dusk rolls now draw from
+`_rngs["UpdateTime"]` *inside* the boundary branch (`world_sim/clock.rs`). This also
+fixes a determinism bug: previously one `roll01` was drawn every frame and only used at
+a boundary, so the event roll depended on the frame count. The port keeps its
+uniform-threshold approximation of the C#'s `Next(n) == 0` rolls (the exact
+`Next` chain for the invasion cluster is deferred with the event-roll task).
+
+Remaining bridge streams (S1-A-11): the stage bodies for items/loot, NPCs/spawns,
+ambience, growth and prefix still draw from world-seeded splitmix bridges. Their seeds
+follow the C# rule, but their *values* are not the C# `UnifiedRandom` sequence yet;
+`docs/research/35-rng-utils.md` tracks the matrix.
 
 ## Magic staves (M4-PROJ-6)
 

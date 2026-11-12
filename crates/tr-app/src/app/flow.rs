@@ -1113,7 +1113,7 @@ pub(crate) mod front_flow_tests {
     // A7 moved `App`/`NetRole` and their satellite types into `crate::app`
     // (and the render/rng modules); the crate-root glob no longer carries
     // them, so the headless-App fixture imports them directly.
-    use crate::app::{App, NetRole};
+    use crate::app::{App, NamedRngs, NetRole};
     use crate::item::{EMPTY_SLOT, HOTBAR};
     use crate::rain::Rain;
     use crate::render::debug::{DebugCache, StatsAcc};
@@ -1953,7 +1953,7 @@ pub(crate) mod front_flow_tests {
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
-            growth_rng: tr_core::tile_light::FastRandom::new(0x2545_F491_4F6C_DD1D),
+            growth_rng: tr_core::tile_light::FastRandom::new(0),
             ore_tiers: tr_core::ores::SavedOreTiers::new(),
             rain: Rain::new(1),
             sand: crate::sand::Sand::new(1),
@@ -1964,7 +1964,6 @@ pub(crate) mod front_flow_tests {
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             ambience: crate::ambience::Ambience::new(),
             ambience_rng: 1,
-            clock_rng: 7,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
@@ -1974,6 +1973,7 @@ pub(crate) mod front_flow_tests {
             items: Vec::new(),
             item_rng: 0,
             prefix_rng: tr_core::UnifiedRandom::new(0),
+            rngs: NamedRngs::new(0),
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
             swing_style: 0,
