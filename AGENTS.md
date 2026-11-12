@@ -399,6 +399,31 @@ merge if the change is code-shape relevant); avoid two agents racing on
   touches them, prove byte-equality of the affected outputs (see the worldgen FNV
   proof and `deterministic_for_seed` for the pattern).
 
+## Working with docs (find/read/edit efficiently)
+
+The doc set is large; read **targeted** slices, not whole files.
+
+| Doc | Role (source of truth for…) | How to use |
+| --- | --- | --- |
+| `docs/ROADMAP.md` | **Audited task catalog & status claims** (S1/S2 rows, severities, evidence, verification). Where it disagrees with ATLAS, it wins. | Start here for "what is broken/missing". Grep the task id (`S1-*`) or subsystem; read the row + its cited report, not the whole file. |
+| `docs/ATLAS.md` | Legacy per-subsystem atlas & historical task rows (descriptive). | Use for background/legacy context; do not treat its marks as verified truth. |
+| `docs/research/90-consolidated-findings.md` | Cross-module register: scoreboard, task seeds, risks, unadmitted claims, priority list. | Fastest overview of audit findings and what to tackle next. |
+| `docs/research/NN-*.md`, `40/41/42`, `91/92` | Per-module audits and re-verification passes (evidence, deviations, seeds). | Open the specific report named by a ROADMAP row; prefer over re-deriving claims. |
+| `docs/ARCHITECTURE.md` | Where code lives (module map). | "Where do I extend this?" before creating files. |
+| `docs/PORT_MAP.md` | C# → Rust symbol/map (cross-language). | Update when you start/finish a system; check before duplicating. |
+| `docs/ANALYSIS.md` | Deliberate deviations, invariants, proofs (e.g. determinism notes). | Record any intentional divergence here (and ROADMAP if it is a task). |
+| `docs/UI.md`, `docs/BUG_REPORT.md`, `docs/MAIN-RULES.md` | UI/front-end map, known bugs, merge-safety rules. | Consult the one that matches the work; MAIN-RULES is mandatory before landing. |
+| `README.md` | Player-facing only. | Update only for visible features. |
+| `anchors.txt` | Landed-feature canary (path\|marker\|name). | Add a row for every landed feature; never delete rows to silence failures. |
+
+**Rules of thumb**
+- **Find before reading:** `grep`/`Select-String` for the task id, symbol, or C# anchor (`file.cs:line`) to jump to the exact row/section; use `graphify query/explain/path` for codebase questions (see the graphify section) instead of broad greps.
+- **Read narrowly:** these files are large (ROADMAP/ATLAS/ANALYSIS). Read the relevant section/line range; follow citations into the named research report or source file rather than scrolling the whole doc.
+- **Edit surgically:** make the smallest change that records the fact (status/evidence/deviation). Keep rows consistent (size/severity/evidence/deps/verify). When you land or re-verify work, update `ROADMAP.md` (and the matching research note if adding evidence), `PORT_MAP.md`, and `ANALYSIS.md` as applicable; add an `anchors.txt` row.
+- **Don't guess:** if a claim lacks C#/Rust citations, treat it as unverified and re-check against source before acting or marking done. Prefer `docs/research/` evidence over memory.
+- **Stay in sync:** after a pull/merge, refresh the graph (step 1) so doc/code navigation reflects current state; never run concurrent graphify updates.
+
+
 ## Housekeeping
 
 - Do not run `cargo fmt` on the generated `crates/tr-core/src/tiledata/` data files

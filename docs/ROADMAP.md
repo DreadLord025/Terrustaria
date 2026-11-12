@@ -129,6 +129,30 @@ The 🟡 verdicts are mostly *small, located* gaps rather than absent systems �
 which is why Stage 1 below is a catalogue of concrete, sized tasks rather than
 a rebuild.
 
+## Post-audit re-verification (2026-11-12, after additional merges)
+
+Re-checked the state after other agents landed work on top of the audit base
+(`f0a4937` → `origin/main` at `f3e2fcf`). Full reports:
+[`docs/research/91-post-audit-landed.md`](research/91-post-audit-landed.md) and
+[`docs/research/92-roadmap-reverification.md`](research/92-roadmap-reverification.md).
+
+- **Landed during the audit window (re-verified):** 14 task merges —
+  M3-EQUIP-12..20, M7-UI-8, M4-PROJ-6b, M5-DUNGEON-lights/banners,
+  INFRA-main-rules, INFRA-npc-sheet-audit — **13 PASS, 1 PARTIAL** (provenance
+  only), 0 FAIL/0 OVERCLAIMED. `INFRA-npc-sheet-audit` is present in the tree
+  but no task-named merge commit was found in the inspected range.
+- **Work-loss canary:** all documented losses are present in the current tree
+  (BUG-21 `enter_loaded_world`/`static_sheets`, `touch_damage.rs`,
+  `worldgen/dungeon_features.rs` passes, walker/town/dungeon anchors intact).
+- **ROADMAP claim status (focused sample):** no prioritized Stage-1 gaps were
+  confirmed CLOSED by these merges. Still-open confirmations include S1-C-9
+  (double item pickup), S1-C-2 (projectile→NPC skips `DamageVar`/defense),
+  S1-J-1 (`.wld` writer omits wire bits), S1-L-11 (`tools/gen_recipes.py --check`
+  drift), S1-D-1 (hornet hover constants), S1-A-3 (position-hash tile framing);
+  S1-D-4 dispatch census may need refresh after projectile/equip follow-ups.
+  Treat Stage 1A/1B as the gate; see report 92 for the per-row verdicts.
+
+
 ---
 
 # Task catalog
