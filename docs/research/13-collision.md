@@ -16,10 +16,10 @@ damage, sticky-tile adhesion, and the line-of-sight walks the AI uses to decide
 Rust: `crates/tr-app/src/collision.rs` (the ported subset, module doc :1-5 lists it as
 `TileCollision`/`SlopeCollision`/`StepUp`/`StepDown` only) consumed by
 `crates/tr-app/src/player.rs::move_vanilla` (`:5584-5687`) and the minecart resize
-(`:1666`, `:4628`); AI line-of-sight lives in `crates/tr-app/src/npc_ai.rs::line_clear`
-(`:559-575`); the faithful `CanHit`/`CanHitLine` walks in
-`crates/tr-app/src/projectile.rs::can_hit` (`:6956-6997`) and `::can_hit_line`
-(`:7030+`, currently `#[allow(dead_code)]`). There is no `world_sim/player/collision.rs`
+(`:1666`, `:4628`); the AI's line-of-sight is the faithful `CanHit`/`CanHitLine`/
+`SolidCollision` set in `crates/tr-app/src/projectile.rs::can_hit` (`:8669-8718`)
+and `::can_hit_line` (`:8745+`) plus `player.rs::solid_collision` (`:1476-1501`,
+all three `pub(crate)` and called by the NPC AI). There is no `world_sim/player/collision.rs`
 — module 03's note pointed at `crates/tr-app/src/collision.rs`, which is where the code
 actually is.
 
@@ -41,8 +41,8 @@ Rust:
 - `collision.rs::step_up` (`:405-499`), `::step_down` (`:611-661`), `::tile_collision_in_steps_of_16` (`:505-545`), `::try_changing_size_from_bottom_center` (`:552-606`).
 - Helpers `solid` (`:15-26`, includes the `WorldGen.cs:15715` leaf-192 carve-out), `support_solid` (`:37-39`), `scan_bottom` (`:54-60`).
 - `player.rs::move_vanilla` (`:5584-5687`) — DryCollision/WetCollision pipeline; wet flags from the mid tile (`:2484-2493`); the liquid displacement (`:5643-5660`); `liquid_move_speed` (`:755-758`).
-- `npc_ai.rs::line_clear` (`:559-575`) — a documented stand-in, not a port of `CanHitLine`.
-- `projectile.rs::can_hit` (`:6956`) / `::can_hit_line` (`:7030`) — faithful ports, cited to the C# line ranges.
+- `player.rs::solid_collision` (`:1476-1501`, `pub(crate)`) — a 1:1 `Collision.SolidCollision`, the diving flyer's crash gate (`NPC.cs:65679`).
+- `projectile.rs::can_hit` (`:8669`) / `::can_hit_line` (`:8745`) — faithful ports, cited to the C# line ranges; both `pub(crate)` and called by the NPC AI sites (S1-D-7).
 
 ## Dependencies
 
@@ -76,9 +76,9 @@ Rust:
 | `noSlopeCollision` (`:2033-2133`) | MISSING | — | Only used by the hoik/minecart-cart paths; nothing ported |
 | `AdvancedTileCollision` (`:4422-4546`) | MISSING | — | Forced-ignore-tile walk absent |
 | `DrownCollision` / `GetWaterLine` (`:1383-1569`) | MISSING | — | No `water_line`/`drown` symbols in `crates/` |
-| `CanHit` (`:371-423`) | PORTED | `projectile.rs::can_hit` `:6956-6997` | Anchor clamps, dominant-axis walk, full-height flank test, do/while exit — cited to `:388-423`, `:476-477` |
-| `CanHitLine` (`:588-778`) | PORTED (unused) | `projectile.rs::can_hit_line` `:7030+` | Faithful; `#[allow(dead_code)]` — no caller yet (mounts/Life Drain/ranged re-target) |
-| AI line-of-sight stand-in | PARTIAL | `npc_ai.rs::line_clear` `:559-575` | Half-tile segment sampling vs the C# tile-corner walk — the doc comment itself admits it ("the vanilla's exact shape walk lands with the projectile line-of-sight work"). Used by ~17 NPC sites (`npc.rs:7153`, `:7364`, `:8323`, …) |
+| `CanHit` (`:371-423`) | PORTED | `projectile.rs::can_hit` `:8669-8718` | Anchor clamps, dominant-axis walk, full-height flank test, do/while exit — cited to `:388-423`, `:476-477`. `pub(crate)`; the 15 `1,1`-anchor and box-form NPC AI sites call it (S1-D-7) |
+| `CanHitLine` (`:588-778`) | PORTED | `projectile.rs::can_hit_line` `:8745+` | Faithful; called by the Vortex Rifleman arm (`NPC.cs:58587`) and the Ancient Cultist's ritual gate (`NPC.cs:39275`) — the `#[allow(dead_code)]` is gone (S1-D-7) |
+| AI line-of-sight | PORTED (S1-D-7) | `projectile.rs::can_hit` / `can_hit_line` + `player.rs::solid_collision` (S1-D-7) | The old `npc_ai.rs::line_clear` half-tile sampler is deleted; the sites now run the faithful walks (centres `1,1` for `CanHit`, `0,0` for `CanHitLine`, `position/width/height` boxes where the C# boxes) |
 | `EmptyTile` (`:1359-1382`) | PORTED | `growth.rs::empty_tile_check` `:366` (+ `biome_detail.rs:116`) | PORT_MAP `:50` marks done (M7-SMARTCURSOR-1) — the `ignoreTiles: false` arm only |
 | `TileCollisionInStepsOf16` (`:2455-2483`) | PORTED | `collision.rs::tile_collision_in_steps_of_16` `:505-545` | `Width−1` slope probes, `vector5.Length()` return |
 | `TryChangingSizeFromBottomCenter` (`:2486-2533`) | PORTED | `collision.rs:552-606` | Split arithmetic kept verbatim incl. the no-op second add |
@@ -95,8 +95,11 @@ in the 4 598-line file is absent.
   `ceiling_slopes_block_by_their_triangle` (`:8099`), `standing_on_a_ground_slope`
   (`:8122`), plus the collides-filtered companions around `:5757`.
 - `wiring.rs::solid_tiles` (`:1086`) covers the actuation-aware solid test.
+- `npc.rs::tests` (S1-D-7): `the_stardust_cell_drops_its_chase_when_the_tile_walk_sees_a_wall`
+  (`CanHit`'s both-flanks-solid block) and `the_vortex_rifleman_does_not_arm_through_the_tile_walk`
+  (`CanHitLine`'s any-of-three block).
 - No test covers: `StickyTiles`, `HitTiles`, `AnyHurtingTiles`, `WetCollision`'s liquid
-  surface offset, `CanHitLine` (dead code), `line_clear` vs the C# walk.
+  surface offset.
 
 ## Deviations & risks
 
@@ -130,13 +133,15 @@ in the 4 598-line file is absent.
 8. **`step_up` ignores `specialChecksMode`** (behavioural, low today). The
    `IgnoredByNpcStepUp` set is not plumbed; only the player calls `step_up`, so no live
    divergence, but the NPC reuse path inherits it.
-9. **AI LOS is an approximation** (behavioural, medium). `npc_ai.rs::line_clear` samples
-   the segment every 8 px instead of running `CanHitLine`/`CanHit`'s tile-corner walk;
-   NPCs can see/aggro through geometry the vanilla blocks (and vice versa). The port
-   ships the faithful walks (`projectile.rs::can_hit_line`) but leaves them dead code.
-10. **`line_clear` uses `TILE_SOLID` only** (behavioural, low). No `!inActive`/`!active`
-    handling of actuated tiles and no `tileSolidTop` exemption (`projectile.rs:6989-6992`
-    shows the correct conjunction exists in the other helper).
+9. **AI LOS (RESOLVED, S1-D-7)**. The old `npc_ai.rs::line_clear` half-tile sampler is
+   deleted; the 18 `npc.rs` AI sites plus the Destroyer's segment laser
+   (`world_sim/npcs.rs:921`) now call the faithful `projectile.rs::can_hit` /
+   `::can_hit_line` / `player.rs::solid_collision` with the C# argument forms. The
+   sample-vs-walk divergence (NPCs seeing/aggroing through geometry the vanilla blocks)
+   is gone.
+10. **`line_clear` used `TILE_SOLID` only (RESOLVED, S1-D-7)**. The replacements inherit
+    `projectile.rs::full_solid`'s `!inActive`/`active`/`tileSolidTop`/slope/halfBrick
+    conjunction, so actuated and platform tiles are treated as the C# does.
 
 ## Task seeds
 
@@ -152,11 +157,11 @@ in the 4 598-line file is absent.
 - **M — Port `StickyTiles`, `AnyHurtingTiles`/`CanTileHurt`, `SwitchTiles`**
   (deviations 2/4): three small self-contained scans; `CanTileHurt` needs the per-id
   damage table (`TileID.Sets` hurting ids) which lives in `tiledata`.
-- **S — Switch the AI to the faithful LOS walks**: replace `npc_ai::line_clear` call
-  sites with `projectile.rs::can_hit_line`/`can_hit` (drop the `allow(dead_code)`),
-  keep `line_clear` only where the C# uses a cheap sampling test. Depends on the LOS
-  test above; a determinism-sensitive change (aggro outcomes shift) — needs a
-  before/after sweep.
+- **S — Switch the AI to the faithful LOS walks (DONE, S1-D-7)**: the `npc_ai::line_clear`
+  call sites now use `projectile.rs::can_hit_line`/`can_hit` and `player.rs::solid_collision`
+  (the `allow(dead_code)` is gone, `line_clear` deleted). The full workspace suite is
+  green; the change is determinism-sensitive (aggro outcomes shift), so a before/after
+  screenshot sweep is still owed before landing.
 - **S — Generalise `tile_collision`/`slope_collision` signatures**: expose `gravDir`,
   `ignore_doors`, `ignore_aetherium_platforms`, `special_checks_mode` (deviations 5/8),
   with the current call sites passing today's defaults so behaviour is frozen.

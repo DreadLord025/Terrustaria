@@ -1445,6 +1445,41 @@ because the gate is the C#'s top-to-top `Main.player[target].position.Y - base.p
   type 6; `:50345-50348` type 231's 3/0.017) are constants-off: the presets are the
   normal-mode values, like the other archetype tables.
 
+## The NPC AI line-of-sight walks (S1-D-7, 2026-11-12)
+
+The AI's line-of-sight gate used to be `npc_ai.rs::line_clear`, a half-tile segment
+sampler — a documented stand-in (`research/13` deviations 9/10), not a port. S1-D-7
+deletes it and routes every AI call site through the C#'s own walks:
+
+* `Collision.CanHit` (`Collision.cs:381-479`) → `projectile.rs::can_hit` (made
+  `pub(crate)`), with the C#'s argument forms: the `1,1` centre form
+  (`CanHit(centerA, 1, 1, centerB, 1, 1)`) for the targeting gates, and the
+  `position/width/height` box form where the C# passes boxes (the shooter/archer
+  stop gate `:59636`, the WoF eye `:26167`, the swimmer `:23704`, the VortexAlien
+  leap `:58705`, the Destroyer's segment laser `:49863`);
+* `Collision.CanHitLine` (`Collision.cs:588-778`) → `projectile.rs::can_hit_line`
+  (the `#[allow(dead_code)]` is gone): the Vortex Rifleman's arming gate
+  (`:58587`, centres `0,0`) and the Ancient Cultist's ritual gate (`:39275`,
+  centres `0,0`, negated);
+* `Collision.SolidCollision` (`Collision.cs:2700-2734`) → `player.rs::solid_collision`
+  (made `pub(crate)`): the diving flyer's crash gate (`NPC.cs:65679`) — that site was
+  never an LOS walk, so the old `line_clear` use there was doubly wrong.
+
+Two source-order defects fixed in passing: the martian drone's `:35319-35325` now
+applies `flag76 = CanHit(...)`, then the `ai[3] >= 120` override, then the ±π/8 cone
+gate (the port had the override after the cone); the diving flyer's crash is
+`SolidCollision` (the pre-existing 64-px proximity arm at `:65720` is kept folded
+into the dive state).
+
+**Behaviour change (intended, faithful).** NPC aggro/targeting outcomes now follow
+the tile-corner walk instead of the dense ray sample, so a wall with a one-tile slit
+blocks `CanHit` (both flanks solid, `:445-448`) that the sampler saw through, and
+`CanHitLine`'s any-of-three test (`:694`) blocks on a single flank tile. This is the
+determinism-sensitive shift `research/13`'s task seed calls out; it is the correct
+vanilla behaviour. Tests:
+`npc.rs::tests::the_stardust_cell_drops_its_chase_when_the_tile_walk_sees_a_wall`
+and `::the_vortex_rifleman_does_not_arm_through_the_tile_walk`.
+
 ## Asset pipeline
 
 - Terraria ships XNA **XNB v5** containers. Terraria's build uses Xbox `XMemCompress`
