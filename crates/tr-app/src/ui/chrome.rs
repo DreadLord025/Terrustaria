@@ -47,6 +47,14 @@ fn frame(rect: &SheetRect, atlas: (u32, u32), cols: u32, rows: u32, fx: u32, fy:
     }
 }
 
+/// A whole sheet drawn at its native size (no frame grid): the accessory
+/// visible/hidden ticks (`Main.cs:41455` — `spriteBatch.Draw(value3, new
+/// Vector2(num41, num42), Color.White * 0.7f)`).
+pub fn sheet_frame(rect: &SheetRect, atlas: (u32, u32)) -> ([f32; 4], f32, f32) {
+    let f = frame(rect, atlas, 1, 1, 0, 0);
+    (f.uv, f.w, f.h)
+}
+
 /// One `MouseText` line height (`DynamicSpriteFont.MeasureString(...).Y`); the
 /// built-in bitmap fallback draws 8 px glyphs (matches `ui::tooltip::line_height`).
 fn line_height(lookups: &assets::Lookups) -> f32 {

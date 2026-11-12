@@ -37,3 +37,17 @@ crates/tr-core/src/worldgen/world_hash.rs|fn world_hash|the world-gen determinis
 crates/tr-app/src/ui/housing.rs|fn |M7-UI-3c — the housing hover UI module
 docs/MAIN-RULES.md|The only merge procedure|infra — the multi-agent main rules every agent must read
 crates/tr-core/build.rs|a merge dropped landed work|infra — the build-time anchor tripwire
+crates/tr-app/src/player.rs|fn stat_defense|M3-EQUIP-5 — statDefense derived inside the tick (piece defense + set bonus + buffs, floored)
+crates/tr-core/src/armor_sets.rs|SET_STATS|M3-EQUIP-6 — the scalar set-bonus rows
+crates/tr-app/src/player.rs|the_movement_accessories_grant_their_flags|M3-EQUIP-7 — the accessory movement flags (bottles, balloons, boots, glove)
+crates/tr-app/src/player.rs|fn wing_slot|M3-EQUIP-8 — the wings grant flight (wingSlot -> wingsLogic + wingTimeMax)
+crates/tr-app/src/player.rs|mana_cost|M3-EQUIP-9 — Player.manaCost folds the robe/accessory/set rows
+crates/tr-app/src/player.rs|the_damage_accessories_raise_their_class|M3-EQUIP-10 — the class emblems and crit accessories
+crates/tr-app/src/player.rs|endurance|M3-EQUIP-11 — Player.endurance (Worm Scarf, Turtle set, buff 114, Ice Barrier)
+crates/tr-app/src/player.rs|BUFF_IMMUNITY_ROWS|M3-EQUIP-12 — the buff-immunity rows (Ankh Shield, its parts, sets)
+crates/tr-core/src/armor_sets.rs|ARMOR_STATS|M3-EQUIP-13 — the 109 generated armor-piece stat rows
+crates/tr-app/src/player.rs|the_sky_stones_add_their_bundle|M3-EQUIP-14 — the Celestial/Sun/Moon stone bundle
+crates/tr-app/src/player.rs|fn thorns_damage|M3-EQUIP-15 — thorns: the reflection arithmetic and the contact bounce
+crates/tr-app/src/player.rs|lava_max|M3-EQUIP-16 — lavaTime/lavaMax and the 80-damage lava hit
+crates/tr-app/src/player.rs|the_life_regen_rows_add_up|M3-EQUIP-17 — the armor/buff/stone life-regen rows
+crates/tr-app/src/itemdata.rs|life_regen|M3-EQUIP-18 — Item.lifeRegen provisioned in the generated item table

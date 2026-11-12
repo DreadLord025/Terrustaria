@@ -642,6 +642,11 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         "Trash",
         "Extra_54",
         "Extra_58",
+        // `Inventory_Tick_On`/`Inventory_Tick_Off` — the accessory
+        // visible/hidden ticks (`Main.cs:41436-41460`,
+        // `TextureAssets.InventoryTickOn/Off`).
+        "Inventory_Tick_On",
+        "Inventory_Tick_Off",
         "UI/DisplaySlots_0",
         "UI/DisplaySlots_1",
         "UI/DisplaySlots_2",
@@ -1531,6 +1536,10 @@ pub struct Lookups {
     pub pvp: [Option<tr_render::SheetRect>; 3],
     /// `Extra_58`: the defence shield (`DrawDefenseCounter`, `Main.cs:42148`).
     pub ui_defense_shield: Option<tr_render::SheetRect>,
+    /// `Inventory_Tick_On` / `Inventory_Tick_Off` — the little eye toggles at
+    /// the right of every accessory row (`Main.cs:41436-41460`).
+    pub ui_tick_on: Option<tr_render::SheetRect>,
+    pub ui_tick_off: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
     pub ui_back18: Option<tr_render::SheetRect>,
     /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
@@ -1845,6 +1854,8 @@ impl Lookups {
             ui_trash: atlas.sheet("Trash").copied(),
             ui_equip_glyph: atlas.sheet("Extra_54").copied(),
             ui_defense_shield: atlas.sheet("Extra_58").copied(),
+            ui_tick_on: atlas.sheet("Inventory_Tick_On").copied(),
+            ui_tick_off: atlas.sheet("Inventory_Tick_Off").copied(),
             ui_back18: atlas.sheet("Inventory_Back18").copied(),
             ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),
