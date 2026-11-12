@@ -12807,8 +12807,26 @@ impl Npc {
                     self.damage_override
                         .unwrap_or_else(|| self.kind.contact_damage())
                 };
-                if dmg > 0 {
-                    player.hurt(dmg, cx);
+                if dmg > 0 && player.hurt(dmg, cx) {
+                    // `Player.cs:31373-31415`: the contact that lands also
+                    // bounces the thorns back — `thorns` scales the NPC's own
+                    // damage (2x on the Turtle set), the Cactus set adds its
+                    // flat 15. `dontTakeDamage` NPCs (the dummies) refuse it,
+                    // exactly like the C# `!Main.npc[i].dontTakeDamage` gate.
+                    if !self.dont_take_damage {
+                        let reflect = player.thorns_damage(dmg);
+                        if reflect > 0 {
+                            let (ncx, _) = self.center();
+                        let dir = if ncx < player.x + crate::player::WIDTH * 0.5 {
+                                -1.0
+                            } else {
+                                1.0
+                            };
+                            // The C# knocks the NPC away from the player
+                            // (`-num2`, knockback 10).
+                            self.hurt(reflect, ncx, 10.0 * dir, false);
+                        }
+                    }
                 }
             }
         }
@@ -13308,6 +13326,23 @@ mod tests {
         player.hurt_cd = 0.0;
         bat.contact(&mut player);
         assert!(player.hp < player.max_hp, "the bat bit for its contact dmg");
+        // M3-EQUIP-15 — the same contact with the Thorns potion up bounces
+        // the bat's own 13 back (`Player.cs:31373-31415`, `thorns = 1`).
+        let mut spiky = crate::player::Player::spawn(&w);
+        spiky.x = bat.x;
+        spiky.y = bat.y;
+        spiky.hurt_cd = 0.0;
+        spiky.buffs.add_buff(14, 3600);
+        spiky.update(&w, crate::player::PlayerInput::default());
+        let bat_hp = bat.hp;
+        spiky.hp = spiky.max_hp; // the contact must land for the reflection
+        bat.contact(&mut spiky);
+        assert!(
+            bat.hp < bat_hp,
+            "the thorns bit back: {} -> {}",
+            bat_hp,
+            bat.hp
+        );
         // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
         // journey godmode power returns before any contact arm runs.
         let mut god = crate::player::Player::spawn(&w);
