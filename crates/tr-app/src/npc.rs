@@ -847,6 +847,13 @@ pub(crate) fn entry_stats(kind: NpcKind, variant: SlimeVariant) -> EntryStats {
 }
 
 impl NpcKind {
+    // The protocol id tables below must stay a single live arm per kind/id:
+    // the pirate/martian merges of 2026-11 appended duplicates that the
+    // compiler only warns about, so 60 dead `to_u16` arms and 28 dead
+    // `from_u16` arms silently survived — and two of them were the 78..84
+    // collision that sent saved Deerclops back as pirates (`S1-F-1`). A
+    // duplicate is a hard error here.
+    #[deny(unreachable_patterns)]
     pub fn to_u16(self) -> u16 {
         match self {
             NpcKind::Slime => 0,
@@ -878,19 +885,21 @@ impl NpcKind {
             NpcKind::MartianEngineer => 70,
             NpcKind::GigaZapper => 71,
             NpcKind::MartianWalker => 72,
-            // The pirates: the 73-77 slots went to the Golem family (the
-            // parallel merges), so the family rides 78-82 and the probe
-            // takes 83 — the port-local protocol ids, renumbered from the
-            // collided 68-72 slots the pirate merge shipped (the duplicated
-            // martian/snowman arms above were the merge leftovers; the
-            // unreachable dead copies are gone).
-            NpcKind::PirateDeckhand => 78,
-            NpcKind::PirateCaptainsMate => 79,
-            NpcKind::PirateArcher => 80,
-            NpcKind::PirateCorsair => 81,
-            NpcKind::PirateCaptain => 82,
-            NpcKind::MartianProbe => 83,
-            NpcKind::MartianDrone => 84,
+            // The pirates + the probe + the drone: the martian/snowman
+            // family owns 65-72 and the Golem family 73-77, so this band
+            // rides 182-188 — `S1-F-1` renumbered it off the 78-84 slots the
+            // Deerclops/Skeletron-Prime family owns (the 2026-11 pirate
+            // renumber parked the family on those ids and every Deerclops or
+            // Prime limb came back as a pirate). The ids deliberately sit
+            // above 181: the free holes in 0..181 (62, 148, 149, 152-155)
+            // are non-contiguous and the family must not split.
+            NpcKind::PirateDeckhand => 182,
+            NpcKind::PirateCaptainsMate => 183,
+            NpcKind::PirateArcher => 184,
+            NpcKind::PirateCorsair => 185,
+            NpcKind::PirateCaptain => 186,
+            NpcKind::MartianProbe => 187,
+            NpcKind::MartianDrone => 188,
             NpcKind::BrainScrambler => 85,
             NpcKind::RayGunner => 86,
             NpcKind::ScutlixRider => 87,
@@ -955,26 +964,6 @@ impl NpcKind {
             NpcKind::SolarCrawltipedeTail => 143,
             NpcKind::StardustWormHead => 144,
             NpcKind::SolarSpearman => 145,
-            NpcKind::SolarCrawltipedeHead => 141,
-            NpcKind::SolarCrawltipedeBody => 142,
-            NpcKind::SolarCrawltipedeTail => 143,
-            NpcKind::StardustWormHead => 144,
-            NpcKind::SolarSpearman => 145,
-            NpcKind::SolarCrawltipedeHead => 141,
-            NpcKind::SolarCrawltipedeBody => 142,
-            NpcKind::SolarCrawltipedeTail => 143,
-            NpcKind::StardustWormHead => 144,
-            NpcKind::SolarSpearman => 145,
-            NpcKind::SolarCrawltipedeHead => 141,
-            NpcKind::SolarCrawltipedeBody => 142,
-            NpcKind::SolarCrawltipedeTail => 143,
-            NpcKind::StardustWormHead => 144,
-            NpcKind::SolarSpearman => 145,
-            NpcKind::SolarCrawltipedeHead => 141,
-            NpcKind::SolarCrawltipedeBody => 142,
-            NpcKind::SolarCrawltipedeTail => 143,
-            NpcKind::StardustWormHead => 144,
-            NpcKind::SolarSpearman => 145,
             NpcKind::SolarSelenian => 140,
             NpcKind::NebulaFloater => 130,
             NpcKind::BrainSuckler => 131,
@@ -984,11 +973,6 @@ impl NpcKind {
             NpcKind::MoonLordCore => 124,
             NpcKind::MoonLordFreeEye => 125,
             NpcKind::MoonLordLeechBlob => 126,
-            NpcKind::VortexHunter => 426,
-            NpcKind::VortexAlien => 427,
-            NpcKind::VortexHeadcrab => 428,
-            NpcKind::DD2LanePortal => 549,
-            NpcKind::StardustCellSmall => 116,
             NpcKind::StardustJellyfishBig => 117,
             NpcKind::NebulaBeast => 118,
             NpcKind::VortexRifleman => 119,
@@ -1048,41 +1032,6 @@ impl NpcKind {
             NpcKind::PrimeSaw => 82,
             NpcKind::PrimeVice => 83,
             NpcKind::PrimeLaser => 84,
-            NpcKind::VortexHunter => 426,
-            NpcKind::VortexAlien => 427,
-            NpcKind::VortexHeadcrab => 428,
-NpcKind::StardustSpiderBig => 133,
-NpcKind::StardustSpiderSmall => 134,
-NpcKind::StardustSoldier => 135,
-NpcKind::SolarDrakomire => 136,
-NpcKind::SolarDrakomireRider => 137,
-NpcKind::SolarSroller => 138,
-NpcKind::SolarCorite => 139,
-NpcKind::SolarSelenian => 140,
-            NpcKind::StardustSpiderBig => 409,
-            NpcKind::StardustSpiderSmall => 410,
-            NpcKind::StardustSoldier => 411,
-            NpcKind::SolarCrawltipedeHead => 412,
-            NpcKind::SolarCrawltipedeBody => 413,
-            NpcKind::SolarCrawltipedeTail => 414,
-            NpcKind::StardustWormHead => 402,
-            NpcKind::SolarSpearman => 518,
-            NpcKind::SolarDrakomire => 415,
-            NpcKind::SolarDrakomireRider => 416,
-            NpcKind::SolarSroller => 417,
-            NpcKind::SolarCorite => 418,
-            NpcKind::SolarSelenian => 419,
-            NpcKind::NebulaFloater => 420,
-            NpcKind::BrainSuckler => 421,
-            NpcKind::Predictor => 424,
-            NpcKind::NebulaFloater => 420,
-            NpcKind::BrainSuckler => 421,
-            NpcKind::Predictor => 424,
-            NpcKind::MoonLordHead => 396,
-            NpcKind::MoonLordHand => 397,
-            NpcKind::MoonLordCore => 398,
-            NpcKind::MoonLordFreeEye => 400,
-            NpcKind::MoonLordLeechBlob => 401,
             NpcKind::TravellingMerchant => 111,
             NpcKind::Angler => 150,
             NpcKind::SleepingAngler => 151,
@@ -1102,6 +1051,11 @@ NpcKind::SolarSelenian => 140,
         }
     }
 
+    /// The protocol id decode — the inverse of [`NpcKind::to_u16`], a
+    /// bijection over the 182-kind roster (`S1-F-1`); the unmatched ids
+    /// (the free 62/148/149/152-155 holes) decode to `None`. One live arm
+    /// per id: a duplicate is a hard error (`to_u16`'s guard above).
+    #[deny(unreachable_patterns)]
     pub fn from_u16(v: u16) -> Option<Self> {
         Some(match v {
             0 => NpcKind::Slime,
@@ -1133,15 +1087,13 @@ NpcKind::SolarSelenian => 140,
             70 => NpcKind::MartianEngineer,
             71 => NpcKind::GigaZapper,
             72 => NpcKind::MartianWalker,
-            // The pirates + the probe: to_u16's renumber (the Golem family
-            // owns 73-77).
-            78 => NpcKind::PirateDeckhand,
-            79 => NpcKind::PirateCaptainsMate,
-            80 => NpcKind::PirateArcher,
-            81 => NpcKind::PirateCorsair,
-            82 => NpcKind::PirateCaptain,
-            83 => NpcKind::MartianProbe,
-            84 => NpcKind::MartianDrone,
+            // The martian ground family: `to_u16` encoded the 85-88 ids but
+            // `from_u16` had no arms, so a save or net message carrying one
+            // decoded to `None` and the NPC was dropped (`S1-F-1`).
+            85 => NpcKind::BrainScrambler,
+            86 => NpcKind::RayGunner,
+            87 => NpcKind::ScutlixRider,
+            88 => NpcKind::Scutlix,
             89 => NpcKind::MartianSaucer,
             90 => NpcKind::MartianSaucerTurret,
             91 => NpcKind::MartianSaucerCannon,
@@ -1183,7 +1135,6 @@ NpcKind::SolarSelenian => 140,
             114 => NpcKind::NebulaTower,
             115 => NpcKind::SolarTower,
             146 => NpcKind::VortexTower,
-            147 => NpcKind::DD2LanePortal,
             116 => NpcKind::StardustCellSmall,
             117 => NpcKind::StardustJellyfishBig,
             118 => NpcKind::NebulaBeast,
@@ -1199,26 +1150,6 @@ NpcKind::SolarSelenian => 140,
             137 => NpcKind::SolarDrakomireRider,
             138 => NpcKind::SolarSroller,
             139 => NpcKind::SolarCorite,
-            141 => NpcKind::SolarCrawltipedeHead,
-            142 => NpcKind::SolarCrawltipedeBody,
-            143 => NpcKind::SolarCrawltipedeTail,
-            144 => NpcKind::StardustWormHead,
-            145 => NpcKind::SolarSpearman,
-            141 => NpcKind::SolarCrawltipedeHead,
-            142 => NpcKind::SolarCrawltipedeBody,
-            143 => NpcKind::SolarCrawltipedeTail,
-            144 => NpcKind::StardustWormHead,
-            145 => NpcKind::SolarSpearman,
-            141 => NpcKind::SolarCrawltipedeHead,
-            142 => NpcKind::SolarCrawltipedeBody,
-            143 => NpcKind::SolarCrawltipedeTail,
-            144 => NpcKind::StardustWormHead,
-            145 => NpcKind::SolarSpearman,
-            141 => NpcKind::SolarCrawltipedeHead,
-            142 => NpcKind::SolarCrawltipedeBody,
-            143 => NpcKind::SolarCrawltipedeTail,
-            144 => NpcKind::StardustWormHead,
-            145 => NpcKind::SolarSpearman,
             141 => NpcKind::SolarCrawltipedeHead,
             142 => NpcKind::SolarCrawltipedeBody,
             143 => NpcKind::SolarCrawltipedeTail,
@@ -1282,6 +1213,10 @@ NpcKind::SolarSelenian => 140,
             75 => NpcKind::GolemFistLeft,
             76 => NpcKind::GolemFistRight,
             77 => NpcKind::GolemHeadFree,
+            // 78-84: the Deerclops/Skeletron-Prime family — the band the
+            // pirates vacated in the `S1-F-1` renumber (`from_u16` resolved
+            // these ids to the pirates before it, which is how a saved
+            // Deerclops came back as a Pirate Deckhand).
             78 => NpcKind::Deerclops,
             79 => NpcKind::SkeletronHand,
             80 => NpcKind::WallOfFleshEye,
@@ -1305,6 +1240,16 @@ NpcKind::SolarSelenian => 140,
             166 => NpcKind::Princess,
             167 => NpcKind::DyeTrader,
             168 => NpcKind::PartyGirl,
+            // The pirates + the probe + the drone — the `S1-F-1` renumber
+            // (`to_u16` above): the family moved off the 78-84
+            // Deerclops/Skeletron-Prime band to the contiguous 182-188.
+            182 => NpcKind::PirateDeckhand,
+            183 => NpcKind::PirateCaptainsMate,
+            184 => NpcKind::PirateArcher,
+            185 => NpcKind::PirateCorsair,
+            186 => NpcKind::PirateCaptain,
+            187 => NpcKind::MartianProbe,
+            188 => NpcKind::MartianDrone,
             _ => return None,
         })
     }
@@ -4412,7 +4357,7 @@ impl Npc {
             | NpcKind::LeechBody => {}
         }
         self.find_frame();
-        self.contact(player);
+        self.contact(player, rng);
     }
 
     /// `NPC._deerclopsAttack1Frames` (`NPC.cs:95277-95279`): the 12-frame
@@ -7635,11 +7580,18 @@ impl Npc {
             // the toward-player direction — the cone's 0..π half (the
             // player below).
             let angle = (vy * norm).atan2(vx * norm);
-            let can_hit = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            // `:35319`: `flag76 = CanHit(base.Center, 1, 1, player.Center, 1, 1)`.
+            let mut can_hit = crate::projectile::can_hit(
+                world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0,
+            );
+            // The ai[3] >= 120 argue-override: the drone stops dodging.
+            if self.ai[3] >= 120.0 {
+                can_hit = true;
+            }
+            // `:35325`: the cone gate applies after the override.
+            let can_hit = can_hit
                 && angle > std::f32::consts::PI / 8.0
                 && angle < std::f32::consts::PI - std::f32::consts::PI / 8.0;
-            // The ai[3] >= 120 argue-override: the drone stops dodging.
-            let can_hit = can_hit || self.ai[3] >= 120.0;
             let too_far = raw_dist > far_dist;
             if too_far || !can_hit {
                 // The 30-tick damp toward the above-the-player vector.
@@ -7846,7 +7798,17 @@ impl Npc {
             // 80-tick timer.
             if self.ai[1] <= 0.0
                 && player.hp > 0
-                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+                && crate::projectile::can_hit(
+                    world,
+                    self.x,
+                    self.y,
+                    w,
+                    h,
+                    player.x,
+                    player.y,
+                    crate::player::WIDTH,
+                    player.height,
+                )
             {
                 let mut ax = dx + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
                 let mut ay = dy + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
@@ -7928,7 +7890,17 @@ impl Npc {
         if self.hurt_cd > 0.0 {
             self.ai[1] = -30.0;
         }
-        if crate::npc_ai::line_clear(world, (ccx, ccy - 14.0), (pcx, pcy)) {
+        if crate::projectile::can_hit(
+            world,
+            self.x,
+            self.y,
+            w,
+            h,
+            player.x,
+            player.y,
+            crate::player::WIDTH,
+            player.height,
+        ) {
             let (px, py) = (pcx - cx, pcy - cy);
             if (px * px + py * py).sqrt() < 700.0 {
                 if self.ai[1] == 60.0 && (px > 0.0) == (self.facing == 1) {
@@ -7976,7 +7948,7 @@ impl Npc {
         // The 50-px stop: grounded + the player close + CanHit.
         if self.on_ground
             && ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt() < 50.0
-            && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            && crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0)
         {
             self.ai[2] = 1.0;
         }
@@ -8805,7 +8777,7 @@ impl Npc {
         // quarter height.
         let (pdx, pdy) = (pcx - cx, pcy - cy - player.height * 0.25);
         let dist = (pdx * pdx + pdy * pdy).sqrt();
-        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        let sight = crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
         match self.ai[0] as i32 {
             1 => {
                 // `:36989-37012`'s approach.
@@ -8994,7 +8966,19 @@ impl Npc {
             } else if dy > 20.0 && self.vy < 8.0 {
                 self.vy += 0.3;
             }
-        } else if pcy + 100.0 < self.y && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+        } else if pcy + 100.0 < self.y
+            && crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            )
+        {
             // `:58566-58571`'s leap arm.
             self.vy = -5.0;
             self.ai[2] = 1.0;
@@ -9009,7 +8993,9 @@ impl Npc {
         if self.ai[3] >= 0.0 && self.ai[3] <= 30.0 {
             let armed = reach < 800.0
                 && (pcy - cy).abs() <= (pcx - cx).abs()
-                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+                && crate::projectile::can_hit_line(
+                    world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0,
+                );
             self.ai[3] = (self.ai[3] + if armed { 1.0 } else { 0.0 }).clamp(0.0, 30.0);
         }
         if self.ai[3] >= 31.0 {
@@ -10068,7 +10054,8 @@ impl Npc {
         let aim = (self.facing as f32 * 20.0, 6.0);
         let (ax, ay) = (cx + aim.0, cy + aim.1);
         let (dx, dy) = (pcx - ax, pcy - ay);
-        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        // `:39513`: `flag104 = CanHit(base.Center, 1, 1, player.Center, 1, 1)`.
+        let sight = crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
         let far = (dx * dx + dy * dy).sqrt() > 400.0 || !sight;
         if far {
             // `:39580-39620`'s cruise: the 7-px cap toward the aim.
@@ -10139,7 +10126,7 @@ impl Npc {
         // `:36996`'s 421 reach vector reads the player's TOP.
         let (pdx, pdy) = (pcx - cx, pcy - player.height - cy);
         let dist = (pdx * pdx + pdy * pdy).sqrt();
-        let sight = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+        let sight = crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
         if self.ai[0] == 5.0 {
             // `:37143-37162`'s attached ride: the snap, the obstruct buff
             // request and the zeroed velocity.
@@ -10404,7 +10391,22 @@ impl Npc {
             }
         }
         // `:58705-58709`'s leap arm.
-        if self.vy == 0.0 && pcy + 100.0 < self.y && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+        // `:58705`: `CanHit(base.position, base.width, base.height,
+        // player.position, player.width, player.height)`.
+        if self.vy == 0.0
+            && pcy + 100.0 < self.y
+            && crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            )
+        {
             self.vy = -5.0;
             self.ai[2] = 1.0;
         }
@@ -10575,9 +10577,7 @@ impl Npc {
                 let speed_exit = self.vx.hypot(self.vy) < min_speed;
                 let crash = glide
                     && (dx.hypot(dy) < 64.0
-                        || crate::npc_ai::line_clear(world, (self.x, self.y), (self.x + self.vx, self.y + self.vy)) == false
-                        && self.vx == 0.0
-                        && self.vy == 0.0);
+                        || crate::player::Player::solid_collision(world, self.x, self.y, w, h));
                 if timer_exit || speed_exit {
                     // `:65654-65667`'s exit: the 4-state rest with `ai[1] = 45`.
                     self.ai[0] = 4.0;
@@ -10871,7 +10871,7 @@ impl Npc {
         // no line of sight — the 578/579 projectiles at the player's tile.
         if player.hp > 0
             && (pcx - cx).hypot(pcy - cy) < 3240.0
-            && !crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            && !crate::projectile::can_hit_line(world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0)
         {
             self.ai[1] = 0.0;
             let ritual = 579u16;
@@ -11731,7 +11731,19 @@ impl Npc {
             if self.ai[2] >= 5.0 {
                 self.ai[2] = 0.0;
             }
-            if crate::npc_ai::line_clear(world, (cx, self.y + h * 0.5), (pcx, pcy)) {
+            // `:26167`: `CanHit(base.position, base.width, base.height,
+            // player.position, player.width, player.height)`.
+            if crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            ) {
                 self.wants_hostile_shot.push((
                     crate::projectile::EYE_LASER,
                     cx,
@@ -12171,8 +12183,8 @@ impl Npc {
                 // The beam volley (`:31261-31334`, the phase-1 arm): the
                 // cadence `num688` (solo 1) with the extra +1 adds at the
                 // life < 1/3, 1/4, 1/5 tiers and +4 while the head cannot
-                // hit the player (`Collision.CanHit` false — the
-                // `line_clear` stand-in); the vanilla's 60+Next(600)
+                // hit the player (`:31363`'s `!Collision.CanHit(Center,
+                // 1, 1, ...)`); the vanilla's 60+Next(600)
                 // trigger folds to the flat 300 average (the RNG stream
                 // discipline). Two arms by the turn: in-band (`head_turn`
                 // 0) fires the two-shot EyeBeam 259 (dmg 28) at the 11
@@ -12191,7 +12203,7 @@ impl Npc {
                     if self.hp < self.max_hp / 5 {
                         step += 1.0;
                     }
-                    if !crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                    if !crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0) {
                         step += 4.0;
                     }
                     self.ai[2] += step;
@@ -12374,15 +12386,15 @@ impl Npc {
                 // The fireball salvo (`:31421-31465`): the 300 cadence
                 // (doubled under the 10% body life, `:31432-31436`), the
                 // 258 dmg 20 at the 8 speed from Center - (0, 10). The
-                // C#'s `flag53` (the CanHit block hold, `:31446-31450`)
-                // pins `ai[1] = 20` while the line is blocked — the
-                // `line_clear` stand-in.
+                // C#'s `flag53` (`:31363`'s `!CanHit(Center, 1, 1, ...)`,
+                // the block hold `:31446-31450`) pins `ai[1] = 20` while
+                // the line is blocked.
                 let mut step = 1.0;
                 if world.golem_hp_ratio < 0.1 {
                     step += 1.0;
                 }
                 self.ai[1] += step;
-                if !crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                if !crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0) {
                     self.ai[1] = 20.0;
                 }
                 if self.ai[1] >= 300.0 {
@@ -12567,7 +12579,17 @@ impl Npc {
                 self.facing = if pcx >= cx { 1 } else { -1 };
                 self.sprite_dir = self.facing;
                 if self.ai[1] == 90.0 {
-                    if crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                    if crate::projectile::can_hit(
+                        world,
+                        self.x,
+                        self.y,
+                        w,
+                        h,
+                        player.x,
+                        player.y,
+                        crate::player::WIDTH,
+                        player.height,
+                    ) {
                         let mut dx = pcx - cx;
                         let mut dy = pcy - cy - dx.abs() * 0.1;
                         dx += crate::app::rand01(rng) * 81.0 - 40.0;
@@ -12619,15 +12641,27 @@ impl Npc {
             GRAVITY,
             MAX_FALL,
         );
-        // The shot gate (`:59658-59676`): grounded, the clear line, the
-        // distance < 700, the cooldown spent.
+        // The shot gate (`:59636`'s `flag21 = CanHit(position, width,
+        // height, player.position, player.width, player.height)`, then
+        // `:59680`'s `num178 < num179`, the 700-px default): grounded,
+        // the clear line, the distance < 700, the cooldown spent.
         let dx = pcx - cx;
         let dy = pcy - cy;
         let dist = (dx * dx + dy * dy).sqrt();
         if self.on_ground
             && self.ai[1] <= 0.0
             && dist < 700.0
-            && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            && crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            )
         {
             self.ai[2] = 1.0;
             self.ai[1] = 180.0;
@@ -12666,7 +12700,7 @@ impl Npc {
     /// `AI_016` through the framework's `swim_step` (`NPC.cs`'s aiStyle 16
     /// block): the wet path rides the machine — `flag25` folds the kind
     /// gate (`:23701`'s Goldfish exclusion), the player's `wet`/alive and
-    /// the `CanHit` stand-in; the dry path is the beached flop (`:23963-
+    /// `CanHit`; the dry path is the beached flop (`:23963-
     /// 23989`: the Shark's `velocity.X *= 0.94` snap, the others' random
     /// jump through `Main.rand`).
     fn update_swimmer(&mut self, world: &World, player: &Player, rng: &mut u64) {
@@ -12679,13 +12713,23 @@ impl Npc {
         self.wet = is_wet(world, self.x, self.y, w, h);
         if self.wet {
             let (pcx, pcy) = player.center();
-            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
             // `flag25` (`:23701-23707`): the kind gate + the player wet +
-            // alive + `Collision.CanHit`.
+            // alive + `CanHit(base.position, base.width, base.height,
+            // player.position, player.width, player.height)`.
             let aggro_ok = params.aggro
                 && player.wet
                 && !player.dead
-                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+                && crate::projectile::can_hit(
+                    world,
+                    self.x,
+                    self.y,
+                    w,
+                    h,
+                    player.x,
+                    player.y,
+                    crate::player::WIDTH,
+                    player.height,
+                );
             crate::npc_ai::swim_step(self, world, pcx, pcy, aggro_ok, params);
         } else {
             // The beached flop (`:23963-23989`).
@@ -12736,7 +12780,7 @@ impl Npc {
         }
     }
 
-    fn contact(&mut self, player: &mut Player) {
+    fn contact(&mut self, player: &mut Player, rng: &mut u64) {
         // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
         // journey godmode power returns before the whole collision pass — no
         // NPC contact damage and none of the EoC shield-dash arm below.
@@ -12808,11 +12852,31 @@ impl Npc {
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
             ) {
-                let dmg = if self.kind == NpcKind::Slime {
+                let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
                 } else {
                     self.damage_override
                         .unwrap_or_else(|| self.kind.contact_damage())
+                };
+                // Player.cs:31387 — `Main.DamageVar((float)npc.damage * damageMultiplier, 0f - luck)`.
+                // S1-C-5: contact damage rolls variance with the player's luck inverted.
+                let dmg = if base_dmg > 0 {
+                    struct U64DropRng<'a>(&'a mut u64);
+                    impl tr_core::loot::DropRng for U64DropRng<'_> {
+                        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                            let range = (max - min) as u32;
+                            if range == 0 {
+                                return min;
+                            }
+                            min + (crate::app::frame::next_rand(self.0) % range as u64) as i32
+                        }
+                        fn next_float(&mut self) -> f32 {
+                            crate::app::frame::rand01(self.0)
+                        }
+                    }
+                    tr_core::damage::damage_var(&mut U64DropRng(rng), base_dmg as f32, -player.luck_state.luck)
+                } else {
+                    0
                 };
                 if dmg > 0 && player.hurt(dmg, cx) {
                     // `Player.cs:31373-31415`: the contact that lands also
@@ -12820,6 +12884,7 @@ impl Npc {
                     // damage (2x on the Turtle set), the Cactus set adds its
                     // flat 15. `dontTakeDamage` NPCs (the dummies) refuse it,
                     // exactly like the C# `!Main.npc[i].dontTakeDamage` gate.
+                    // Thorns reflect the varied contact damage (`num3`, Player.cs:31387-31400).
                     if !self.dont_take_damage {
                         let reflect = player.thorns_damage(dmg);
                         if reflect > 0 {
@@ -13366,6 +13431,77 @@ mod tests {
     }
 
     #[test]
+    fn contact_damage_applies_damage_var_with_negative_luck_s1_c_5() {
+        // S1-C-5 / Player.cs:31387: `Main.DamageVar(npc.damage * damageMultiplier, 0f - luck)`.
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+
+        // No-luck: contact damage is varied within the ±15% band (not a fixed raw value).
+        let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
+        bat.damage_override = Some(100);
+        let mut rng = 1u64;
+        let mut saw_varied = false;
+        for _ in 0..16 {
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = bat.x;
+            player.y = bat.y;
+            player.hurt_cd = 0.0;
+            player.luck_state.luck = 0.0;
+            let hp0 = player.hp;
+            bat.contact(&mut player, &mut rng);
+            let dealt = hp0 - player.hp;
+            assert!(
+                (85..=115).contains(&dealt),
+                "S1-C-5: contact damage must apply DamageVar (base 100, got {dealt})"
+            );
+            if dealt != 100 {
+                saw_varied = true;
+            }
+        }
+        assert!(saw_varied, "S1-C-5: contact damage variance never observed over samples");
+
+        // Positive player luck -> negative luck passed to DamageVar (0f - luck),
+        // which rerolls and keeps the lower damage (Player.cs:31387).
+        let mut rng_good = 7u64;
+        let mut rng_bad = 7u64;
+        let mut total_good = 0i32;
+        let mut total_bad = 0i32;
+        for _ in 0..24 {
+            let mut good = crate::player::Player::spawn(&w);
+            good.x = bat.x;
+            good.y = bat.y;
+            good.hurt_cd = 0.0;
+            good.luck_state.luck = 1.0;
+            let hp0 = good.hp;
+            bat.contact(&mut good, &mut rng_good);
+            total_good += hp0 - good.hp;
+
+            let mut bad = crate::player::Player::spawn(&w);
+            bad.x = bat.x;
+            bad.y = bat.y;
+            bad.hurt_cd = 0.0;
+            bad.luck_state.luck = -1.0;
+            let hp0 = bad.hp;
+            bat.contact(&mut bad, &mut rng_bad);
+            total_bad += hp0 - bad.hp;
+        }
+        assert!(
+            total_good <= total_bad,
+            "S1-C-5: positive player luck must not increase contact damage (good {total_good} > bad {total_bad})"
+        );
+    }
+
+    #[test]
     fn the_cave_bat_spawn_flies_and_bites() {
         // The Cave Bat (49): spawns in the cave air (the open tile), flies
         // via the flyer machine, the contact bites for 13.
@@ -13395,15 +13531,16 @@ mod tests {
         let vd = Npc::spawn_cave_flyer(&w, 26, 30, NpcKind::VoodooDemon)
             .expect("the voodoo demon spawns");
         assert_eq!(vd.max_hp, 140);
-        // The contact: an overlapping player takes 13 (the vanilla dmg).
+        // The contact: an overlapping player takes the bat's contact damage.
+        let mut rng = 0u64;
         let mut player = crate::player::Player::spawn(&w);
         player.x = bat.x;
         player.y = bat.y;
         player.hurt_cd = 0.0;
-        bat.contact(&mut player);
+        bat.contact(&mut player, &mut rng);
         assert!(player.hp < player.max_hp, "the bat bit for its contact dmg");
         // M3-EQUIP-15 — the same contact with the Thorns potion up bounces
-        // the bat's own 13 back (`Player.cs:31373-31415`, `thorns = 1`).
+        // the varied contact damage back (`Player.cs:31373-31415,31387`).
         let mut spiky = crate::player::Player::spawn(&w);
         spiky.x = bat.x;
         spiky.y = bat.y;
@@ -13412,7 +13549,7 @@ mod tests {
         spiky.update(&w, crate::player::PlayerInput::default());
         let bat_hp = bat.hp;
         spiky.hp = spiky.max_hp; // the contact must land for the reflection
-        bat.contact(&mut spiky);
+        bat.contact(&mut spiky, &mut rng);
         assert!(
             bat.hp < bat_hp,
             "the thorns bit back: {} -> {}",
@@ -13426,7 +13563,7 @@ mod tests {
         god.y = bat.y;
         god.hurt_cd = 0.0;
         god.creative_god_mode = true;
-        bat.contact(&mut god);
+        bat.contact(&mut god, &mut rng);
         assert_eq!(
             god.hp, god.max_hp,
             "the godmode player takes no contact damage"
@@ -13848,6 +13985,73 @@ mod tests {
 
     fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    /// The AI's line-of-sight gate is `Collision.CanHit`'s tile-corner walk, not
+    /// a centre-to-centre ray sample: `CanHit` blocks when *both* tiles flanking
+    /// a horizontally-stepped cell are solid (`Collision.cs:445-448`, the
+    /// opposite of `CanHitLine`'s any-of-three OR at `:694`), so a one-tile
+    /// air slit in a wall stops the walk while the straight y = 20 ray runs
+    /// through the gap. The Stardust Cell's approach (`:36989-37012`) drops
+    /// back to `ai[0] = 0` on `!CanHit`.
+    #[test]
+    fn the_stardust_cell_drops_its_chase_when_the_tile_walk_sees_a_wall() {
+        let mut w = ground();
+        // A vertical wall at x 35 with rows 19 and 21 solid and row 20
+        // clear: the ray (row 20) passes, the walk's (above, here, below)
+        // trio blocks.
+        for y in [19, 21] {
+            let i = w.index(35, y);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX + 8.0 - crate::player::WIDTH * 0.5;
+        player.y = 20.0 * TILE_PX + 8.0 - player.height * 0.5;
+        let mut cell = Npc::new(
+            NpcKind::StardustCellBig,
+            30.0 * TILE_PX + 8.0 - 22.0,
+            20.0 * TILE_PX + 8.0 - 22.0,
+            1,
+            0.0,
+        );
+        cell.ai[0] = 1.0;
+        cell.update_stardust_cell_big(&w, &player);
+        assert_eq!(cell.ai[0], 0.0, "the tile walk blocks the line");
+    }
+
+    /// The Vortex Rifleman's arming gate is the `CanHitLine` walk
+    /// (`NPC.cs:58587`, boxless centres): its any-of-(above, here, below)
+    /// OR (`Collision.cs:694`) blocks on a single solid tile under the
+    /// line, so the 30-tick window must not arm.
+    #[test]
+    fn the_vortex_rifleman_does_not_arm_through_the_tile_walk() {
+        let mut w = ground();
+        let i = w.index(35, 21);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX + 8.0 - crate::player::WIDTH * 0.5;
+        player.y = 20.0 * TILE_PX + 8.0 - player.height * 0.5;
+        let mut rifleman = Npc::new(
+            NpcKind::VortexRifleman,
+            30.0 * TILE_PX + 8.0 - 15.0,
+            20.0 * TILE_PX + 8.0 - 28.0,
+            1,
+            0.0,
+        );
+        rifleman.rifleman_rearmed = true;
+        rifleman.ai[3] = 0.0;
+        rifleman.vy = 0.0;
+        let mut rng = 1u64;
+        rifleman.update_vortex_rifleman(&w, &player, &mut rng);
+        assert_eq!(rifleman.ai[3], 0.0, "no arming through the blocked walk");
     }
 
     /// DW-3.4 — `NPC.CanBeChasedBy` (`NPC.cs:90030-90041`) over the gate's
@@ -15631,6 +15835,92 @@ mod tests {
         assert_eq!(
             crate::bestiary::entry_for_npc(NpcKind::PartyGirl, SlimeVariant::Blue).net_id,
             208
+        );
+    }
+
+    /// The full `NpcKind` roster in declaration order (the enum at
+    /// `npc.rs:31-686`: 182 kinds — the 8 slime colours are `SlimeVariant`,
+    /// not kinds). The driver for
+    /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
+    /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
+    /// the new arm), then this array's length.
+    const ALL_KINDS: [NpcKind; 182] = [
+        NpcKind::Slime, NpcKind::DemonEye, NpcKind::WanderingEye, NpcKind::Zombie, NpcKind::KingSlime, NpcKind::Guide,
+        NpcKind::Skeleton, NpcKind::UndeadMiner, NpcKind::CaveBat, NpcKind::JungleBat, NpcKind::Hellbat, NpcKind::VoodooDemon,
+        NpcKind::EaterOfSouls, NpcKind::Hornet, NpcKind::MeteorHead, NpcKind::GoblinThief, NpcKind::GoblinWarrior, NpcKind::GoblinArcher,
+        NpcKind::GoblinPeon, NpcKind::GoblinSummoner, NpcKind::SnowmanGangsta, NpcKind::SnowBalla, NpcKind::MysterySnowman, NpcKind::MartianOfficer,
+        NpcKind::GrayGrunt, NpcKind::MartianEngineer, NpcKind::GigaZapper, NpcKind::MartianWalker, NpcKind::MartianProbe, NpcKind::MartianDrone,
+        NpcKind::BrainScrambler, NpcKind::RayGunner, NpcKind::ScutlixRider, NpcKind::Scutlix, NpcKind::MartianSaucer, NpcKind::MartianSaucerTurret,
+        NpcKind::MartianSaucerCannon, NpcKind::FlyingDutchman, NpcKind::DD2GoblinT1, NpcKind::DD2GoblinT2, NpcKind::DD2GoblinT3, NpcKind::DD2GoblinBomberT1,
+        NpcKind::DD2GoblinBomberT2, NpcKind::DD2GoblinBomberT3, NpcKind::DD2JavelinT1, NpcKind::DD2JavelinT2, NpcKind::DD2JavelinT3, NpcKind::DD2SkeletonT1,
+        NpcKind::DD2SkeletonT3, NpcKind::StardustTower, NpcKind::NebulaTower, NpcKind::SolarTower, NpcKind::VortexTower, NpcKind::DD2LanePortal,
+        NpcKind::DD2WyvernT1, NpcKind::DD2WyvernT2, NpcKind::DD2WyvernT3, NpcKind::DD2DarkMageT3, NpcKind::DD2WitherBeastT3, NpcKind::DD2DrakinT2,
+        NpcKind::DD2DrakinT3, NpcKind::DD2KoboldWalkerT2, NpcKind::DD2KoboldWalkerT3, NpcKind::DD2KoboldFlyerT2, NpcKind::DD2KoboldFlyerT3, NpcKind::DD2OgreT2,
+        NpcKind::DD2OgreT3, NpcKind::StardustCellBig, NpcKind::StardustCellSmall, NpcKind::StardustJellyfishBig, NpcKind::NebulaBeast, NpcKind::VortexRifleman,
+        NpcKind::VortexSoldier, NpcKind::VortexHunter, NpcKind::VortexAlien, NpcKind::VortexHeadcrab, NpcKind::NebulaFloater, NpcKind::BrainSuckler,
+        NpcKind::Predictor, NpcKind::StardustSpiderBig, NpcKind::StardustSpiderSmall, NpcKind::StardustSoldier, NpcKind::SolarDrakomire, NpcKind::SolarDrakomireRider,
+        NpcKind::SolarSroller, NpcKind::SolarCorite, NpcKind::SolarSelenian, NpcKind::SolarCrawltipedeHead, NpcKind::SolarCrawltipedeBody, NpcKind::SolarCrawltipedeTail,
+        NpcKind::StardustWormHead, NpcKind::SolarSpearman, NpcKind::MoonLordHead, NpcKind::MoonLordHand, NpcKind::MoonLordCore, NpcKind::MoonLordFreeEye,
+        NpcKind::MoonLordLeechBlob, NpcKind::AncientCultist, NpcKind::DD2Bartender, NpcKind::DD2EterniaCrystal, NpcKind::DD2WitherBeast, NpcKind::DD2Betsy,
+        NpcKind::DD2DarkMage, NpcKind::FlyingDutchmanCannon, NpcKind::MartianSaucerCore, NpcKind::PirateDeckhand, NpcKind::PirateCaptainsMate, NpcKind::PirateArcher,
+        NpcKind::PirateCorsair, NpcKind::PirateCaptain, NpcKind::GoblinSorcerer, NpcKind::Tim, NpcKind::DarkCaster, NpcKind::FireImp,
+        NpcKind::ChaosBall, NpcKind::BurningSphere, NpcKind::WaterSphere, NpcKind::Goldfish, NpcKind::Piranha, NpcKind::Shark,
+        NpcKind::DevourerHead, NpcKind::DevourerBody, NpcKind::DevourerTail, NpcKind::GiantWormHead, NpcKind::GiantWormBody, NpcKind::GiantWormTail,
+        NpcKind::EaterOfWorldsHead, NpcKind::EaterOfWorldsBody, NpcKind::EaterOfWorldsTail, NpcKind::Merchant, NpcKind::Dryad, NpcKind::Nurse,
+        NpcKind::ArmsDealer, NpcKind::Demolitionist, NpcKind::Painter, NpcKind::WitchDoctor, NpcKind::Clothier, NpcKind::TravellingMerchant,
+        NpcKind::Angler, NpcKind::SleepingAngler, NpcKind::Stylist, NpcKind::WebbedStylist, NpcKind::TaxCollector, NpcKind::Golfer,
+        NpcKind::SleepingGolfer, NpcKind::Zoologist, NpcKind::Princess, NpcKind::DyeTrader, NpcKind::PartyGirl, NpcKind::Wizard,
+        NpcKind::BoundWizard, NpcKind::Mechanic, NpcKind::BoundMechanic, NpcKind::EyeOfCthulhu, NpcKind::QueenBee, NpcKind::SkeletronHead,
+        NpcKind::ServantOfCthulhu, NpcKind::WallOfFlesh, NpcKind::Hungry, NpcKind::LeechHead, NpcKind::LeechBody, NpcKind::TheDestroyer,
+        NpcKind::SkeletronPrime, NpcKind::Retinazer, NpcKind::Spazmatism, NpcKind::Plantera, NpcKind::BrainOfCthulhu, NpcKind::Creeper,
+        NpcKind::BoundGoblin, NpcKind::GoblinTinkerer, NpcKind::Golem, NpcKind::GolemHead, NpcKind::GolemFistLeft, NpcKind::GolemFistRight,
+        NpcKind::GolemHeadFree, NpcKind::Deerclops, NpcKind::SkeletronHand, NpcKind::WallOfFleshEye, NpcKind::PrimeCannon, NpcKind::PrimeSaw,
+        NpcKind::PrimeVice, NpcKind::PrimeLaser,
+    ];
+
+    #[test]
+    fn the_protocol_id_space_round_trips_every_kind() {
+        // `S1-F-1` (ROADMAP) / research/34-id-sets-audit.md deviation 1: the
+        // port-local protocol ids must be a bijection over the roster. The
+        // pirate/probe/drone band rode 78..84 — the ids the
+        // Deerclops/Skeletron-Prime family already owned — so a saved or
+        // remote Deerclops came back as a Pirate Deckhand (the save writes
+        // `to_u16` at `saveglue.rs:107` and reads `from_u16` at
+        // `app/mod.rs:1980`; the netcode codec is the same pair,
+        // `netglue.rs:385`/`:1044`). The 85..88 martian-ground ids carried
+        // no decode arm at all (deviation 5).
+        let mut ids = Vec::with_capacity(ALL_KINDS.len());
+        for &kind in ALL_KINDS.iter() {
+            let id = kind.to_u16();
+            assert_eq!(
+                NpcKind::from_u16(id),
+                Some(kind),
+                "{kind:?} does not round-trip through protocol id {id}"
+            );
+            // The `23` body's `kind` field is an i16 (`net.rs:612`) written as
+            // `to_u16() as i16` (`netglue.rs:385`/`:1517`) — an id above
+            // `i16::MAX` would wrap negative and the decode's `.max(0)` would
+            // clamp it to kind 0.
+            assert!(
+                id <= i16::MAX as u16,
+                "{kind:?} does not fit the 23 body's i16 kind field (id {id})"
+            );
+            ids.push(id);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(
+            ids.len(),
+            ALL_KINDS.len(),
+            "two kinds encode to the same protocol id"
+        );
+        let decodable = (0..=u16::MAX)
+            .filter(|v| NpcKind::from_u16(*v).is_some())
+            .count();
+        assert_eq!(
+            decodable,
+            ALL_KINDS.len(),
+            "from_u16 decodes an id no kind encodes to"
         );
     }
 

@@ -1445,6 +1445,41 @@ because the gate is the C#'s top-to-top `Main.player[target].position.Y - base.p
   type 6; `:50345-50348` type 231's 3/0.017) are constants-off: the presets are the
   normal-mode values, like the other archetype tables.
 
+## The NPC AI line-of-sight walks (S1-D-7, 2026-11-12)
+
+The AI's line-of-sight gate used to be `npc_ai.rs::line_clear`, a half-tile segment
+sampler — a documented stand-in (`research/13` deviations 9/10), not a port. S1-D-7
+deletes it and routes every AI call site through the C#'s own walks:
+
+* `Collision.CanHit` (`Collision.cs:381-479`) → `projectile.rs::can_hit` (made
+  `pub(crate)`), with the C#'s argument forms: the `1,1` centre form
+  (`CanHit(centerA, 1, 1, centerB, 1, 1)`) for the targeting gates, and the
+  `position/width/height` box form where the C# passes boxes (the shooter/archer
+  stop gate `:59636`, the WoF eye `:26167`, the swimmer `:23704`, the VortexAlien
+  leap `:58705`, the Destroyer's segment laser `:49863`);
+* `Collision.CanHitLine` (`Collision.cs:588-778`) → `projectile.rs::can_hit_line`
+  (the `#[allow(dead_code)]` is gone): the Vortex Rifleman's arming gate
+  (`:58587`, centres `0,0`) and the Ancient Cultist's ritual gate (`:39275`,
+  centres `0,0`, negated);
+* `Collision.SolidCollision` (`Collision.cs:2700-2734`) → `player.rs::solid_collision`
+  (made `pub(crate)`): the diving flyer's crash gate (`NPC.cs:65679`) — that site was
+  never an LOS walk, so the old `line_clear` use there was doubly wrong.
+
+Two source-order defects fixed in passing: the martian drone's `:35319-35325` now
+applies `flag76 = CanHit(...)`, then the `ai[3] >= 120` override, then the ±π/8 cone
+gate (the port had the override after the cone); the diving flyer's crash is
+`SolidCollision` (the pre-existing 64-px proximity arm at `:65720` is kept folded
+into the dive state).
+
+**Behaviour change (intended, faithful).** NPC aggro/targeting outcomes now follow
+the tile-corner walk instead of the dense ray sample, so a wall with a one-tile slit
+blocks `CanHit` (both flanks solid, `:445-448`) that the sampler saw through, and
+`CanHitLine`'s any-of-three test (`:694`) blocks on a single flank tile. This is the
+determinism-sensitive shift `research/13`'s task seed calls out; it is the correct
+vanilla behaviour. Tests:
+`npc.rs::tests::the_stardust_cell_drops_its_chase_when_the_tile_walk_sees_a_wall`
+and `::the_vortex_rifleman_does_not_arm_through_the_tile_walk`.
+
 ## Asset pipeline
 
 - Terraria ships XNA **XNB v5** containers. Terraria's build uses Xbox `XMemCompress`
@@ -3071,11 +3106,23 @@ not trigger anything — only the escape does.
 The task also landed a reconciliation pass over the node's parallel
 slices: the `to_u16` id map's pirate/martian collision (both families
 had taken 68-72 across merges) renumbered to 78-82/83 through all three
-tables, the duplicated dead arms removed, the bestiary `sheet_i` table
-re-derived from `bestiary_npc_sheets`' order at once (the frost trio's
-48-50 slot had silently drifted every later agent's rows), the Walker's
-11-frame slice corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/
-0.55 middle cut ported.
+tables, the bestiary `sheet_i` table re-derived from
+`bestiary_npc_sheets`' order at once (the frost trio's 48-50 slot had
+silently drifted every later agent's rows), the Walker's 11-frame slice
+corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/0.55 middle cut
+ported.
+
+> **Correction 2026-11-12 (S1-F-1, `research/34` deviation 3):** the original
+> text here claimed "the duplicated dead arms removed" — that claim was
+> **false** (and the matching `M4-EVENT-4b` DONE row in `ATLAS.md`, audit
+> verdict FAIL). The 29/21 dead and 2/7 contradictory arms survived the
+> renumber, and parking the pirates on 78-82/83 collided with the
+> Deerclops/Skeletron-Prime band: 7 kinds did not round-trip through
+> `to_u16`/`from_u16` on the live save (`saveglue.rs:107` ↔ `app/mod.rs:1980`)
+> and netcode (`netglue.rs:385`/`:1044`) paths. `S1-F-1` (`S1-F-1-npc-kind-map`)
+> fixed it: the pirate/probe/drone band moved to the free contiguous 182..188,
+> the dead arms deleted from both tables, `#[deny(unreachable_patterns)]` on
+> both fns, and the exhaustive round-trip test lands the invariant.
 
 ## The Martian Drone (M4-EVENT-4c)
 
@@ -10912,6 +10959,50 @@ and a favorited row draws the gold sheet and refuses the shift transfer
 (`:631-634`). Known limit: the port's `.plr` writer still stores zeros for the
 coin/ammo rows' items, so a row favorite is session-only until that writer lands
 — the grid favorites have the same shape.
+
+## The `PickItemMovementAction` gate table (S1-H-6)
+
+The coin/ammo rows used to run behind a hand-written `context_accepts` that
+gated contexts 1 and 2 and returned `true` for everything else. That meant the
+equip/dye/mount/pet contexts (`ItemSlot.Context` 8-12, 16-20, 23-27, 29, 33,
+38-39) would have accepted any held item the moment a click handler reached
+them. `clicks.rs::pick_item_movement_action` now ports the whole
+`ItemSlot.PickItemMovementAction` switch (`ItemSlot.cs:1484-1634`, returning the
+C# action id `-1/0..5`), and `context_accepts` is `pick_item_movement_action !=
+-1`.
+
+Expressible from the port's `ItemDef` (and covered by
+`pick_item_movement_action_ports_the_context_table`):
+
+* 0/3/6/30 → 0 (accept); 4/32 → 0 (the transfer gate never blocks — see below);
+* 1 → air or 71-74 (coins); 2 → `FitsAmmoSlot`; 7 → `material` or air;
+* 8-11 → air or `can_equip_in_armor_slot` (head/body/leg by `slot % 10`, the
+  `accessory` flag for the accessory rows);
+* 12/25/27/33 → 2 (any item dyes); 23/26 → head/body/leg (`> 0`) by slot;
+* 24 → air or `accessory`; 29 → 5 (air over a filled creative slot);
+* 15 → the shop ladder 3 (sell/same-stack) / 4 (buy into an empty slot).
+
+Deliberate approximations (the C# reads data the port does not carry, so the arm
+keeps the C#'s `type == 0` shortcut and accepts a non-air item — the same result
+the old `_ => true` gave):
+
+* ctx 5 (`CanHavePrefixes`/`GetRollablePrefixes`) — no prefix-eligibility set;
+* ctx 16 (`Main.projHook[shoot]`) — no hook table;
+* ctx 17/18/39 (`mountType` + `MountID.Sets.Cart`) — no mount field;
+* ctx 19/20 (`vanityPet`/`lightPet`) — no pet tables;
+* ctx 38 (`TEDisplayDoll.AcceptedInWeaponSlot`) — no display-doll model;
+* ctx 4/32 (`ChestUI.IsBlockedFromTransferIntoChest`) — it only blocks a
+  favorited money-trough/piggy item and the port has no `favorited` flag on the
+  slot yet;
+* `CanEquipInArmorSlot`'s duplicate half (`HasSameItemInSlot` against the live
+  armour set) and the `ItemID.Sets.DualEquipArmor` ({205, 5004, 4955}) bypass —
+  the port is permissive on a duplicate equip;
+* `CanEquipAccessoryInSlot`'s `HasIncompatibleAccessory` collision set — likewise.
+
+The gate is inert in-game today: the only `context_accepts` readers are the
+coin/ammo rows (contexts 1/2), and the equipment pages draw their cells without
+a click handler. The equip/dye *actions* (`LeftClick` cases 1/2) are the
+separate S1-H-5; once they land, this gate is what they run behind.
 
 ## The housing page (M7-UI-3b)
 

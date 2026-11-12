@@ -94,7 +94,7 @@ digits, equip glyphs) — all interaction is in `clicks.rs`.
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
 | `LeftClick` action 0 (generic move, merge-capped) | PORTED | `clicks.rs::left_click_movement:67-89` | merge gate is same kind **and** same prefix (`ItemSlot.cs:980-998`); the cap is `registry::max_stack` |
-| `PickItemMovementAction` gates | PARTIAL | `clicks.rs::context_accepts:122-128` | only ctx 1 (coins 71-74) and ctx 2 (ammo) are gated; every other context falls through `_ => true`, so the equip/dye/mount/pet gates (`:1490-1627`) are absent |
+| `PickItemMovementAction` gates | PORTED | `clicks.rs::pick_item_movement_action`, `context_accepts` | the whole `:1484-1634` switch: ctx 0/3/6/30 accept (0), coin/ammo rows, the material guide gate (7), the armour/vanity/accessory rows by `slot % 10` (8-11), dye (12/25/27/33 → 2), display-doll armour/accessory (23/24), hat rack (26), creative (29 → 5) and shop (15 → 3/4). The arms reading unported data (ctx 5 `CanHavePrefixes`, 16 `projHook`, 17/18/39 `mountType`, 19/20 pet tables, 38 `TEDisplayDoll`) keep the C# `type == 0` shortcut (accept non-air) — docs/ANALYSIS.md; tests `pick_item_movement_action_ports_the_context_table` |
 | `LeftClick` actions 1/2/3/4/5 | MISSING | — | equip (`:1019-1120`), dye (`:1121-1218`), shop (`:1219-1241`), Journey duplication (`:1242-1251`) have no port arm |
 | `RightClick` alternate actions | MISSING | — | openable bag (`:1660-1667`), `HasItemSwap` (`:1668-1675`), `SwapVanityEquip` (`:1678-1684`), `SwapEquip` (`:1685-1697`) — the port's right click never equips |
 | `RightClick` one-per-transfer split | PORTED | `clicks.rs::right_click_split`, `pickup_one_into_mouse` | one item per transfer (`PickupItemIntoMouse:1717-1772`), `superFastStack+1` per gated call; shared by the inventory grid, coin/ammo rows, bank and chest (S1-C-10) |
@@ -162,8 +162,13 @@ Representative names (`clicks.rs`): `dw_4_1_take_place_swap_stack_on_chest_slots
    vanilla cadence.
 3. **No right-click equip/dye/swap actions** — `SwapEquip` (`:1685-1697`),
    `SwapVanityEquip`, `HasItemSwap`, openable bags. Equipping an accessory or
-   armour by right-click is impossible; the dye/mount/pet pages accept any held
-   item because `context_accepts` only gates contexts 1/2. **Behavioural**,
+   armour by right-click is impossible. The *gate* is now faithful (S1-H-6:
+   `clicks.rs::pick_item_movement_action` ports `ItemSlot.cs:1484-1634`), so
+   the equip/dye/mount/pet contexts no longer accept any held item — but the
+   equip pages still draw without a left-click handler (`LeftClick` actions
+   1/2 are the separate S1-H-5), so the gate is inert in-game until then. The
+   arms whose data the port lacks (ctx 5/16/17/18/19/20/38/39) keep the C#
+   `type == 0` shortcut and accept non-air (docs/ANALYSIS.md). **Behavioural**,
    not admitted (M7-UI-3 admits only the *dye drag*).
 4. **Favourites follow the slot, not the item** — `MouseItemSwap` clears both
    sides (`:1255-1263`); the port's slot-index favourites survive a move and
