@@ -119,6 +119,11 @@ pub struct SetStats {
     pub mana_cost: f32,
     /// `Player.endurance += x` (the Turtle/Chlorophyte/Solar rows).
     pub endurance: f32,
+    /// `Player.thorns` / `turtleThorns` / `cactusThorns` (the Turtle and
+    /// Cactus sets).
+    pub thorns: f32,
+    pub turtle_thorns: bool,
+    pub cactus_thorns: bool,
 }
 
 const fn stats() -> SetStats {
@@ -138,6 +143,9 @@ const fn stats() -> SetStats {
         dash_type: 0,
         mana_cost: 0.0,
         endurance: 0.0,
+        thorns: 0.0,
+        turtle_thorns: false,
+        cactus_thorns: false,
     }
 }
 
@@ -342,12 +350,23 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
         (2370, 2371, 2372),
         SetStats { minion_damage: 0.12, ..stats() },
     ),
-    // `:158` Benefits.Turtle — `endurance += 0.15f` (the thorns flags ride
-    // their own systems).
+    // `:158` Benefits.Turtle — `endurance += 0.15f; thorns = 1f;
+    // turtleThorns = true`.
     (
         "Turtle",
         (1316, 1317, 1318),
-        SetStats { endurance: 0.15, ..stats() },
+        SetStats {
+            endurance: 0.15,
+            thorns: 1.0,
+            turtle_thorns: true,
+            ..stats()
+        },
+    ),
+    // `:452` Benefits.Cactus — `cactusThorns = true`.
+    (
+        "Cactus",
+        (894, 895, 896),
+        SetStats { cactus_thorns: true, ..stats() },
     ),
     // `:456` Benefits.Jungle — `manaCost -= 0.16f`.
     (
@@ -386,6 +405,23 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
     ),
 ];
 
+/// `ArmorSetBonuses.Benefits`' immunity rows: the Snow set's `buffImmune[46]`
+/// and `buffImmune[47]` (`ArmorSetBonuses.cs:298-302`) and the Molten set's
+/// `buffImmune[24]` (`:288-295`). Returns the debuff ids the completed set
+/// makes the player immune to.
+pub fn set_buff_immunity(head: i32, body: i32, legs: i32) -> &'static [i32] {
+    const SNOW: [(i32, i32, i32); 2] = [(803, 804, 805), (978, 979, 980)];
+    const MOLTEN: (i32, i32, i32) = (231, 232, 233);
+    let triple = (head, body, legs);
+    if SNOW.contains(&triple) {
+        &[46, 47]
+    } else if triple == MOLTEN {
+        &[24]
+    } else {
+        &[]
+    }
+}
+
 /// `ArmorSetBonuses.GetCompleteSet` (`:14-20`) over [`SET_STATS`]: the benefit
 /// of the worn triple, if the port models one. `head`/`body`/`legs` are the
 /// raw item ids (0 = empty slot).
@@ -394,4 +430,129 @@ pub fn set_stats(head: i32, body: i32, legs: i32) -> Option<(&'static str, SetSt
         .iter()
         .find(|(_, (h, b, l), _)| *h == head && *b == body && *l == legs)
         .map(|(name, _, stats)| (*name, *stats))
+}
+
+/// The per-piece stat rows of `GrantArmorBenefits`' `switch (armorPiece.type)`
+/// (`Player.cs:13126-13950`) — the damage/crit/speed scalars every ported armor
+/// piece adds while worn. The `manaCost` rows are in `Player::update`'s piece
+/// match (they predate this table) and the `maxMinions` rows belong to
+/// `grant_summon_caps`, so neither appears here.
+pub const ARMOR_STATS: &[(u16, SetStats)] = &[
+    (123, SetStats { magic_damage: 0.09, ..stats() }),
+    (151, SetStats { ranged_damage: 0.05, ..stats() }),
+    (229, SetStats { magic_damage: 0.06, ..stats() }),
+    (232, SetStats { melee_damage: 0.07, ..stats() }),
+    (233, SetStats { melee_speed: 0.07, ..stats() }),
+    (238, SetStats { magic_damage: 0.05, ..stats() }),
+    (371, SetStats { magic_damage: 0.1, ..stats() }),
+    (372, SetStats { move_speed: 0.1, melee_damage: 0.15, ..stats() }),
+    (373, SetStats { ranged_damage: 0.1, ..stats() }),
+    (375, SetStats { ranged_damage: 0.03, melee_damage: 0.03, magic_damage: 0.03, minion_damage: 0.03, move_speed: 0.1, ..stats() }),
+    (376, SetStats { magic_damage: 0.15, ..stats() }),
+    (377, SetStats { melee_damage: 0.1, ..stats() }),
+    (378, SetStats { ranged_damage: 0.12, ..stats() }),
+    (379, SetStats { ranged_damage: 0.07, melee_damage: 0.07, magic_damage: 0.07, minion_damage: 0.07, ..stats() }),
+    (400, SetStats { magic_damage: 0.12, ..stats() }),
+    (401, SetStats { melee_damage: 0.14, ..stats() }),
+    (402, SetStats { ranged_damage: 0.14, ..stats() }),
+    (403, SetStats { ranged_damage: 0.08, melee_damage: 0.08, magic_damage: 0.08, minion_damage: 0.08, ..stats() }),
+    (404, SetStats { move_speed: 0.05, ..stats() }),
+    (552, SetStats { ranged_damage: 0.07, melee_damage: 0.07, magic_damage: 0.07, minion_damage: 0.07, move_speed: 0.08, ..stats() }),
+    (553, SetStats { ranged_damage: 0.15, ..stats() }),
+    (558, SetStats { magic_damage: 0.12, ..stats() }),
+    (559, SetStats { melee_damage: 0.1, melee_speed: 0.1, ..stats() }),
+    (684, SetStats { ranged_damage: 0.16, melee_damage: 0.16, ..stats() }),
+    (686, SetStats { move_speed: 0.08, melee_speed: 0.1, ..stats() }),
+    (792, SetStats { melee_damage: 0.03, ranged_damage: 0.03, magic_damage: 0.03, minion_damage: 0.03, ..stats() }),
+    (1001, SetStats { melee_damage: 0.16, ..stats() }),
+    (1002, SetStats { ranged_damage: 0.16, ..stats() }),
+    (1003, SetStats { magic_damage: 0.16, ..stats() }),
+    (1004, SetStats { melee_damage: 0.05, magic_damage: 0.05, ranged_damage: 0.05, minion_damage: 0.05, ..stats() }),
+    (1005, SetStats { move_speed: 0.05, ..stats() }),
+    (1159, SetStats { minion_damage: 0.15, ..stats() }),
+    (1205, SetStats { melee_damage: 0.12, melee_speed: 0.12, ..stats() }),
+    (1206, SetStats { ranged_damage: 0.09, ..stats() }),
+    (1207, SetStats { magic_damage: 0.09, ..stats() }),
+    (1208, SetStats { melee_damage: 0.03, ranged_damage: 0.03, magic_damage: 0.03, minion_damage: 0.03, ..stats() }),
+    (1209, SetStats { melee_damage: 0.02, ranged_damage: 0.02, magic_damage: 0.02, minion_damage: 0.02, ..stats() }),
+    (1210, SetStats { melee_damage: 0.11, melee_speed: 0.11, move_speed: 0.07, ..stats() }),
+    (1211, SetStats { move_speed: 0.08, ..stats() }),
+    (1214, SetStats { move_speed: 0.11, melee_damage: 0.08, ranged_damage: 0.08, magic_damage: 0.08, minion_damage: 0.08, ..stats() }),
+    (1215, SetStats { melee_damage: 0.09, melee_speed: 0.09, ..stats() }),
+    (1216, SetStats { ranged_damage: 0.16, ..stats() }),
+    (1217, SetStats { magic_damage: 0.16, ..stats() }),
+    (1218, SetStats { melee_damage: 0.04, ranged_damage: 0.04, magic_damage: 0.04, minion_damage: 0.04, ..stats() }),
+    (1219, SetStats { melee_damage: 0.03, ranged_damage: 0.03, magic_damage: 0.03, minion_damage: 0.03, move_speed: 0.06, ..stats() }),
+    (1316, SetStats { melee_damage: 0.06, ..stats() }),
+    (1317, SetStats { melee_damage: 0.08, ..stats() }),
+    (1504, SetStats { magic_damage: 0.07, ..stats() }),
+    (1505, SetStats { magic_damage: 0.08, move_speed: 0.08, ..stats() }),
+    (1549, SetStats { ranged_damage: 0.13, ..stats() }),
+    (1550, SetStats { move_speed: 0.12, ..stats() }),
+    (1832, SetStats { minion_damage: 0.11, ..stats() }),
+    (1833, SetStats { minion_damage: 0.11, ..stats() }),
+    (1834, SetStats { move_speed: 0.2, minion_damage: 0.11, ..stats() }),
+    (2189, SetStats { magic_damage: 0.1, ..stats() }),
+    (2199, SetStats { melee_damage: 0.06, ..stats() }),
+    (2200, SetStats { melee_damage: 0.08, melee_speed: 0.06, move_speed: 0.06, ..stats() }),
+    (2201, SetStats { melee_damage: 0.05, ..stats() }),
+    (2202, SetStats { melee_speed: 0.06, move_speed: 0.06, ..stats() }),
+    (2275, SetStats { magic_damage: 0.06, ..stats() }),
+    (2277, SetStats { magic_damage: 0.05, melee_damage: 0.05, ranged_damage: 0.05, minion_damage: 0.05, melee_speed: 0.1, move_speed: 0.1, ..stats() }),
+    (2279, SetStats { magic_damage: 0.06, ..stats() }),
+    (2361, SetStats { minion_damage: 0.04, ..stats() }),
+    (2362, SetStats { minion_damage: 0.04, ..stats() }),
+    (2363, SetStats { minion_damage: 0.05, ..stats() }),
+    (2372, SetStats { minion_damage: 0.06, ..stats() }),
+    (2757, SetStats { ranged_damage: 0.16, ..stats() }),
+    (2758, SetStats { ranged_damage: 0.12, ..stats() }),
+    (2759, SetStats { ranged_damage: 0.08, move_speed: 0.1, ..stats() }),
+    (2760, SetStats { magic_damage: 0.07, ..stats() }),
+    (2761, SetStats { magic_damage: 0.09, ..stats() }),
+    (2762, SetStats { move_speed: 0.1, magic_damage: 0.1, ..stats() }),
+    (2764, SetStats { melee_damage: 0.29, ..stats() }),
+    (2765, SetStats { melee_speed: 0.15, move_speed: 0.15, ..stats() }),
+    (3266, SetStats { minion_damage: 0.08, ..stats() }),
+    (3268, SetStats { minion_damage: 0.08, ..stats() }),
+    (3375, SetStats { ranged_damage: 0.05, ..stats() }),
+    (3381, SetStats { minion_damage: 0.22, ..stats() }),
+    (3382, SetStats { minion_damage: 0.22, ..stats() }),
+    (3776, SetStats { magic_damage: 0.15, minion_damage: 0.15, ..stats() }),
+    (3777, SetStats { minion_damage: 0.1, ..stats() }),
+    (3778, SetStats { magic_damage: 0.1, ..stats() }),
+    (3797, SetStats { magic_damage: 0.1, ..stats() }),
+    (3798, SetStats { magic_damage: 0.1, minion_damage: 0.2, ..stats() }),
+    (3799, SetStats { minion_damage: 0.1, move_speed: 0.2, ..stats() }),
+    (3801, SetStats { melee_damage: 0.15, minion_damage: 0.15, ..stats() }),
+    (3802, SetStats { minion_damage: 0.15, move_speed: 0.15, ..stats() }),
+    (3804, SetStats { ranged_damage: 0.2, minion_damage: 0.2, ..stats() }),
+    (3805, SetStats { minion_damage: 0.1, move_speed: 0.2, ..stats() }),
+    (3806, SetStats { melee_speed: 0.2, ..stats() }),
+    (3807, SetStats { melee_damage: 0.2, minion_damage: 0.2, ..stats() }),
+    (3808, SetStats { minion_damage: 0.1, move_speed: 0.2, ..stats() }),
+    (3871, SetStats { melee_damage: 0.1, minion_damage: 0.1, ..stats() }),
+    (3872, SetStats { minion_damage: 0.3, ..stats() }),
+    (3873, SetStats { minion_damage: 0.2, move_speed: 0.2, ..stats() }),
+    (3874, SetStats { magic_damage: 0.15, minion_damage: 0.15, ..stats() }),
+    (3875, SetStats { minion_damage: 0.25, magic_damage: 0.1, ..stats() }),
+    (3876, SetStats { minion_damage: 0.2, move_speed: 0.2, ..stats() }),
+    (3877, SetStats { minion_damage: 0.1, ..stats() }),
+    (3878, SetStats { minion_damage: 0.25, ranged_damage: 0.25, ..stats() }),
+    (3879, SetStats { minion_damage: 0.25, move_speed: 0.2, ..stats() }),
+    (3880, SetStats { minion_damage: 0.2, melee_damage: 0.2, ..stats() }),
+    (3881, SetStats { melee_speed: 0.2, minion_damage: 0.2, ..stats() }),
+    (3882, SetStats { minion_damage: 0.2, move_speed: 0.3, ..stats() }),
+    (4873, SetStats { minion_damage: 0.1, ..stats() }),
+    (4983, SetStats { ranged_damage: 0.05, melee_damage: 0.05, magic_damage: 0.05, minion_damage: 0.05, ..stats() }),
+    (4984, SetStats { melee_speed: 0.1, move_speed: 0.2, ..stats() }),
+    (5068, SetStats { minion_damage: 0.05, ..stats() }),
+    (5524, SetStats { minion_damage: 0.16, ..stats() }),
+];
+
+/// The worn piece's [`ARMOR_STATS`] row, if any.
+pub fn armor_stats(item: u16) -> Option<SetStats> {
+    ARMOR_STATS
+        .iter()
+        .find(|(id, _)| *id == item)
+        .map(|(_, stats)| *stats)
 }

@@ -2090,7 +2090,11 @@ impl App {
         // the cave walkers 15, the zombie's single frame).
         if let Some(v) = crate::env::npc_names() {
             if let Some(p) = &player {
-                for name in v.split(',').map(|s| s.trim()) {
+                // The lineup spreads one kind every three tiles to the right
+                // so a single screenshot shows each sprite on its own — the
+                // v1 piled every kind on the same spot and the audit could
+                // only see a jumble.
+                for (slot, name) in v.split(',').map(|s| s.trim()).enumerate() {
                     let kind = match name {
                         "guide" => NpcKind::Guide,
                         // The Eye of Cthulhu's six-row strip (BUG-22's
@@ -2156,6 +2160,28 @@ impl App {
                         "solar" => NpcKind::SolarTower,
                         "vortex" => NpcKind::VortexTower,
                         "cultist" => NpcKind::AncientCultist,
+                        // The pillar families' own-sheet audit (M4-NPC-3t):
+                        // each kind must draw its OWN `NPC_<netID>` strip, so
+                        // the lineup shows eight different sprites.
+                        "stardustcell" => NpcKind::StardustCellBig,
+                        "stardustspider" => NpcKind::StardustSpiderBig,
+                        "stardustsoldier" => NpcKind::StardustSoldier,
+                        "solarselenian" => NpcKind::SolarSelenian,
+                        "solarcrawltipede" => NpcKind::SolarCrawltipedeHead,
+                        "nebulafloater" => NpcKind::NebulaFloater,
+                        "predictor" => NpcKind::Predictor,
+                        "vortexhunter" => NpcKind::VortexHunter,
+                        "vortexalien" => NpcKind::VortexAlien,
+                        "vortexheadcrab" => NpcKind::VortexHeadcrab,
+                        "moonlordhead" => NpcKind::MoonLordHead,
+                        // The Moon Lord's parts (M4-NPC-3v): the hands draw
+                        // from their own `(120, 180)` origin, the core carries
+                        // its torso halves and the free eye from `(40, 40)`.
+                        "moonlordhand" => NpcKind::MoonLordHand,
+                        "moonlordcore" => NpcKind::MoonLordCore,
+                        "moonlordfreeeye" => NpcKind::MoonLordFreeEye,
+                        "dd2darkmage" => NpcKind::DD2DarkMage,
+                        "dd2bartender" => NpcKind::DD2Bartender,
                         // The Eye of Cthulhu (M4-NPC-3m): its 6-row strip
                         // and the shared case-4 machine with the Twins.
                         "eoc" => NpcKind::EyeOfCthulhu,
@@ -2175,14 +2201,32 @@ impl App {
                         _ => continue,
                     };
                     let (kw, kh) = kind.size();
-                    let mut n = Npc::new(kind, p.x + 4.0 * TILE_PX, p.y + p.height - kh, 1, 0.0);
-                    n.hp = n.max_hp;
+                    let mut n = Npc::new(
+                        kind,
+                        p.x + (4 + 3 * slot) as f32 * TILE_PX,
+                        p.y + p.height - kh,
+                        1,
+                        0.0,
+                    );
+                    // The Moon Lord's parts declare `lifeMax = 0` (they die
+                    // with the core, `NPC.cs`), so the spawn would be an
+                    // instant corpse on the shot frame — give the lineup a
+                    // survivable pool.
+                    n.hp = n.max_hp.max(1000);
                     // The saucer family's `FindFrame` cases read the core's
                     // mirrored `ai[3]` clock; give the spawn a mid-band value
                     // so the lineup shows the attack rows rather than the
                     // stripped idle frame.
                     if n.kind.is_martian() {
                         n.ai[3] = 100.0;
+                    }
+                    // The Moon Lord's hands split by their `ai[2]` slot (0 =
+                    // right, 1 = left, `AI_078`) and the core self-kills
+                    // without both hands plus the head (`:41251-41291`) —
+                    // alternate the slot so a lineup of two hands keeps the
+                    // core alive and shows both mirrors.
+                    if n.kind == NpcKind::MoonLordHand {
+                        n.ai[2] = (slot % 2) as f32;
                     }
                     npcs.push(n);
                 }

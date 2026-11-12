@@ -275,6 +275,13 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         // BUG-08: the invasion progress bar's icon sheets (`TextureAssets.Extra`
         // rows, each 32x32): frost moon 8, pumpkin moon 12, Old One's Army 79,
         // martians 10, pirates 11, frost legion 7, goblins 9 (`Main.cs:47737-47780`).
+        // The Moon Lord parts' dedicated draw blocks (`Main.cs:24701-24960`):
+        // the core's torso halves (13) + inner core (16), the hand's base plate
+        // (17) and the eye sprite both the hand and the free eye share (19).
+        "Extra_13",
+        "Extra_16",
+        "Extra_17",
+        "Extra_19",
         "Extra_7",
         "Extra_8",
         "Extra_9",
@@ -446,6 +453,45 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         "NPC_394",
         "NPC_395",
         "NPC_399",
+        // The Moon Lord's parts + the four lunar pillars' mobs (M4-NPC-3t/3u):
+        // every one of these draws from its OWN `TextureAssets.Npc[id]` sheet,
+        // and NONE of them was in this list — the `npc_sheets` map that
+        // `NpcAssets` builds from the atlas came back empty at runtime, so the
+        // whole family (and the M4-NPC-3v parts' extras) drew nothing at all.
+        "NPC_396",
+        "NPC_397",
+        "NPC_398",
+        "NPC_400",
+        "NPC_401",
+        "NPC_402",
+        "NPC_403",
+        "NPC_404",
+        "NPC_405",
+        "NPC_406",
+        "NPC_407",
+        "NPC_408",
+        "NPC_409",
+        "NPC_410",
+        "NPC_411",
+        "NPC_412",
+        "NPC_413",
+        "NPC_414",
+        "NPC_415",
+        "NPC_416",
+        "NPC_417",
+        "NPC_418",
+        "NPC_419",
+        "NPC_420",
+        "NPC_421",
+        "NPC_422",
+        "NPC_423",
+        "NPC_424",
+        "NPC_425",
+        "NPC_426",
+        "NPC_427",
+        "NPC_428",
+        "NPC_429",
+        "NPC_518",
         "NPC_520",
         "NPC_491",
         "NPC_492",
@@ -521,6 +567,29 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         "Projectile_560",
         "Projectile_561",
         "Projectile_1079",
+        // M4-PROJ-6b Phase 6: the followup caster families' sheets the
+        // frame-sliced draw keys on (`Lookups.proj_sheets`), plus the gem
+        // bolt's 6-frame sheet the trail pass slices (`Main.projFrames[34]`,
+        // `Main.cs:8454`).
+        "Projectile_34",
+        "Projectile_114",
+        "Projectile_115",
+        "Projectile_116",
+        "Projectile_132",
+        "Projectile_156",
+        "Projectile_157",
+        "Projectile_173",
+        "Projectile_206",
+        "Projectile_293",
+        "Projectile_297",
+        "Projectile_356",
+        "Projectile_409",
+        "Projectile_617",
+        "Projectile_618",
+        "Projectile_632",
+        "Projectile_633",
+        "Projectile_634",
+        "Projectile_635",
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
@@ -1697,15 +1766,6 @@ impl Lookups {
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
-            proj_sheets: crate::projectile::spawnable_kinds()
-                .into_iter()
-                .filter_map(|k| {
-                    atlas
-                        .sheet(&format!("Projectile_{k}"))
-                        .copied()
-                        .map(|r| (k, r))
-                })
-                .collect(),
             fishing_line: atlas.sheet("FishingLine").copied(),
             // The same prefix scan as `item_icons` — an id whose texture
             // file never made the atlas simply stays absent.
@@ -1719,6 +1779,19 @@ impl Lookups {
                     } else {
                         None
                     }
+                })
+                .collect(),
+            // `TextureAssets.Projectile[type]` for every kind the port spawns
+            // (`ProjectileID`'s table, `spawnable_kinds`): an id whose texture
+            // file never made the atlas simply stays absent, like `item_icons`
+            // — the shuriken stand-in covers it.
+            proj_sheets: crate::projectile::spawnable_kinds()
+                .into_iter()
+                .filter_map(|k| {
+                    atlas
+                        .sheet(&format!("Projectile_{k}"))
+                        .copied()
+                        .map(|r| (k, r))
                 })
                 .collect(),
             leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),

@@ -682,6 +682,62 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
     }
     // The crawler from the shaft's foot.
     crawl_layout(world, x0, top + 40, setup.steps, brick, cracked, wall, world.height, r);
+    // `MakeDungeon`'s feature tail (`DungeonCrawler.cs:463-505`): the crawl
+    // only paints bricks and walls, then the `DungeonGlobal*` passes fill the
+    // rooms. The first one is `DungeonGlobalSpikes` (`:0.75`, `:477`) — the
+    // spike hazard every dungeon floor carries.
+    let fp = super::dungeon_features::DungeonFootprint::scan(
+        world,
+        (
+            0,
+            (top - 200).max(0),
+            world.width,
+            (bottom + 60).min(world.height),
+        ),
+        wall,
+        cracked,
+    );
+    if let Some(fp) = fp {
+        // `WorldGen.getGoodWorldGen` (`get fixed boi`) triples the spike
+        // count; `variants::WorldVariants` uses `FOR_THE_WORTHY` as the port's
+        // proxy for it, so the dungeon pass does too.
+        let good_world = world
+            .seeds
+            .contains(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+        super::dungeon_features::place_spikes(world, &fp, world.world_surface, 1.0, good_world, r);
+        // The style rolls `SetupDungeonDataVariables` makes
+        // (`DungeonCrawler.cs:213-280`), drawn before the crawl in the C# —
+        // the wall variants feed `DungeonGlobalWallVariants` and the lantern
+        // styles feed `DungeonGlobalLights`.
+        let styles = super::dungeon_features::DungeonLightStyles::roll(wall, r);
+        // `data.dungeonEntrance.Bounds`: the port's shaft is the 7-wide tower
+        // around the anchor from `top - 8` down to `top + 30`.
+        let entrance = Some((
+            x0 - 3,
+            top - 8,
+            x0 + 4,
+            top + 30,
+        ));
+        // `DungeonCrawler.cs:483`: `DungeonGlobalWallVariants` — five rounds of
+        // disc-seeded flood fills repainting the base brick wall with the
+        // colour's painted variants (94/95, 98/99, 96/97).
+        super::dungeon_features::wall_variants(
+            world,
+            &fp,
+            entrance,
+            styles.wall_variants,
+            world.world_surface,
+            r,
+        );
+        // `DungeonCrawler.cs:495`: `DungeonGlobalLights` — lanterns,
+        // chandeliers and the wired wall switch each one carries.
+        super::dungeon_features::place_lights(world, &fp, entrance, &styles, 1.0, r);
+        // `DungeonCrawler.cs:497`: `DungeonGlobalTraps` — the dart traps
+        // (`8.4 * maxTilesX / 4200 * globalFeatureScalar` of them) with their
+        // pressure plates and wiring. The dual dungeon's mayan traps need the
+        // crawler's halls/rooms as objects and stay out of scope.
+        super::dungeon_features::place_traps(world, &fp, world.world_surface, 1.0, r);
+    }
     let _ = setup.entrance_strength_y;
     let _ = setup.entrance_strength_x2;
     let _ = setup.entrance_strength_y2;
@@ -715,6 +771,89 @@ mod tests {
     }
 
     #[test]
+    /// `MakeDungeon`'s `:0.94` step: the crawl and the spikes leave the rooms
+    /// dark, then `DungeonGlobalLights` (`DungeonCrawler.cs:493`) hangs its
+    /// lanterns and chandeliers and wires a switch to each.
+    #[test]
+    fn test_dungeon_features_the_lights_land_after_the_crawl() {
+        let mut w = flat_world(4200, 600, 60);
+        let mut rng = HallSeed::new(0x5EED);
+        generate_dungeon(&mut w, 2100, 60, &mut rng);
+        let mut lanterns = 0usize;
+        let mut chandeliers = 0usize;
+        for t in &w.tiles {
+            if !t.active() {
+                continue;
+            }
+            if t.kind == super::super::dungeon_features::LANTERN {
+                lanterns += 1;
+            }
+            if t.kind == super::super::dungeon_features::CHANDELIER {
+                chandeliers += 1;
+            }
+        }
+        assert!(
+            lanterns > 0 || chandeliers > 0,
+            "the light pass hangs at least one light (lanterns {lanterns}, chandeliers {chandeliers})"
+        );
+        // A lantern is a 1x2-top object: its cells always come in pairs.
+        assert_eq!(lanterns % 2, 0, "lantern cells are pairs");
+    }
+
+    /// `DungeonCrawler.cs:483`: `DungeonGlobalWallVariants` runs after the
+    /// crawl, so the generated dungeon's interior walls carry the colour's
+    /// painted variants and not just the base brick wall.
+    #[test]
+    fn test_dungeon_features_the_painted_walls_land_after_the_crawl() {
+        let mut w = flat_world(4200, 600, 60);
+        let mut rng = HallSeed::new(0x5EED);
+        generate_dungeon(&mut w, 2100, 60, &mut rng);
+        let mut base = 0usize;
+        let mut painted = 0usize;
+        for t in &w.tiles {
+            match t.wall {
+                7 | 8 | 9 => base += 1,
+                94..=99 => painted += 1,
+                _ => {}
+            }
+        }
+        assert!(
+            base + painted > 500,
+            "the dungeon is walled ({})",
+            base + painted
+        );
+        assert!(
+            painted > 0,
+            "the painted variants land ({painted} of {})",
+            base + painted
+        );
+    }
+
+    /// `DungeonCrawler.cs:497`: `DungeonGlobalTraps` runs after the lights, so
+    /// the generated dungeon carries dart traps (137) with their plates (135).
+    #[test]
+    fn test_dungeon_features_the_traps_land_after_the_crawl() {
+        let mut w = flat_world(4200, 600, 60);
+        let mut rng = HallSeed::new(0x5EED);
+        generate_dungeon(&mut w, 2100, 60, &mut rng);
+        let traps = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 137)
+            .count();
+        let plates = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 135)
+            .count();
+        // The pass spends its budget on attempts, so a dungeon that offers no
+        // 5..50-tile pocket below the surface line places none — but when it
+        // places a dart it always leaves the plate behind it. That the pass
+        // does place is proven in `dungeon_features::tests::the_trap_pass_
+        // spends_its_budget`; this test guards the wiring order.
+        assert_eq!(traps, plates, "one plate per dart trap ({traps} vs {plates})");
+    }
+
     fn test_dungeon_1_the_color_roll_carries_its_bricks() {
         // `SetupDungeonGenVarVariables`'s triple: the brick/wall/cracked
         // rows stay in lockstep across the three colours.
@@ -750,6 +889,38 @@ mod tests {
     }
 
     #[test]
+    /// `MakeDungeon`'s feature tail: the crawl leaves the rooms bare, then
+    /// `DungeonGlobalSpikes` (`DungeonCrawler.cs:477`) fills the floors and
+    /// ceilings with spike runs. A world wide enough for the `42 * maxTilesX /
+    /// 4200` budget (`DungeonGlobalSpikes.cs:37`) has to end with spikes.
+    #[test]
+    fn test_dungeon_features_the_spikes_land_after_the_crawl() {
+        let mut w = flat_world(4200, 600, 60);
+        let mut rng = HallSeed::new(0x5EED);
+        generate_dungeon(&mut w, 2100, 60, &mut rng);
+        let mut spikes = 0usize;
+        let mut on_dungeon_wall = 0usize;
+        for y in 0..w.height {
+            for x in 0..w.width {
+                let t = w.tile(x, y).unwrap();
+                if t.kind == super::super::dungeon_features::SPIKE && t.active() {
+                    spikes += 1;
+                    // `DungeonUtils.IsConsideredDungeonWall`: the base walls
+                    // and the painted variants `DungeonGlobalWallVariants`
+                    // repaints them with (`Main.wallDungeon`).
+                    if super::super::dungeon_features::is_dungeon_wall(t.wall) {
+                        on_dungeon_wall += 1;
+                    }
+                }
+            }
+        }
+        assert!(spikes > 0, "the spike pass runs inside generate_dungeon");
+        assert_eq!(
+            spikes, on_dungeon_wall,
+            "and every spike sits under a dungeon wall"
+        );
+    }
+
     fn test_dungeon_1_the_pass_carves_the_dungeon_grid() {
         // The crawler from the anchor: brick tiles, dungeon walls and
         // carved air all land inside the world bounds.

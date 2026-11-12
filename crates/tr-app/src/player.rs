@@ -233,6 +233,33 @@ pub struct FrameInputs {
     pub grapple_dy: f32,
 }
 
+/// `ApplyEquipFunctional`'s `buffImmune[...] = true` rows (`Player.cs:
+/// 15300-15570`): the Ankh Shield's eleven debuffs (1612/1613), its parts
+/// (885-893 one each, 901-904 two each), the Chill/Frozen pair on 1921 and the
+/// 156/22 rows on 3781/5354. The `ResetEffects` head clears the table every
+/// tick (`Player.Update`'s `:25563` loop, the port's `reset_buff_immune`), so
+/// these re-apply inside the equipment pass.
+pub const BUFF_IMMUNITY_ROWS: &[(u16, &[i32])] = &[
+    (885, &[30]),
+    (886, &[36]),
+    (887, &[20]),
+    (888, &[22]),
+    (889, &[32]),
+    (890, &[35]),
+    (891, &[23]),
+    (892, &[33]),
+    (893, &[31]),
+    (901, &[33, 36]),
+    (902, &[30, 20]),
+    (903, &[32, 31]),
+    (904, &[35, 23]),
+    (1612, &[33, 36, 30, 20, 32, 31, 35, 23, 22, 156]),
+    (1613, &[46, 33, 36, 30, 20, 32, 31, 35, 23, 22, 156]),
+    (1921, &[46, 47]),
+    (3781, &[156]),
+    (5354, &[22, 156]),
+];
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -574,6 +601,24 @@ pub struct Player {
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
+    /// `Player.lavaTime` / `lavaMax` (`Player.cs:1528-1530`): the lava
+    /// immunity budget — the Lava Charm family adds 420 ticks to the cap
+    /// (`:15168-15183`), and while the player stands in lava the timer drains
+    /// one tick per frame before the 80-damage hit lands (`:27681-27722`).
+    pub lava_time: i32,
+    pub lava_max: i32,
+    /// `Player.thorns` / `cactusThorns` / `turtleThorns` (`Player.cs:2800-2802`):
+    /// the contact reflection — `thorns` is the fraction of the NPC's damage
+    /// thrown back (the Thorns potion sets 1, the Dryad's Ward adds a half, the
+    /// Turtle set pins 2 through `turtle_thorns`), and `cactus_thorns` is the
+    /// Cactus set's flat 15.
+    pub thorns: f32,
+    pub cactus_thorns: bool,
+    pub turtle_thorns: bool,
+    /// `Player.skyStoneEffects` (`Player.cs:1120`): the Celestial Stone/Shell
+    /// and the day/night Sun/Moon Stones set it, and the one block below adds
+    /// the whole stat bundle (`:12988-13003`).
+    pub sky_stone_effects: bool,
     /// `Player.endurance` (`Player.cs:1138`): the fraction of incoming damage
     /// the player shrugs off — `Hurt` applies `(int)((1 - endurance) * damage)`
     /// (`:38304`) after the defense reduction. `ResetEffects` zeroes it
@@ -1301,6 +1346,12 @@ impl Player {
             spawn_y: sy,
             hp: 100,
             max_hp: 100,
+            lava_time: 0,
+            lava_max: 0,
+            thorns: 0.0,
+            cactus_thorns: false,
+            turtle_thorns: false,
+            sky_stone_effects: false,
             endurance: 0.0,
             mana: 20,
             mana_cost: 1.0,
@@ -2220,6 +2271,26 @@ impl Player {
     /// `hitDirection != 0` gate (`Player.cs:38519`): the fall-damage and
     /// petrify calls pass hitDirection 0 and skip the knock entirely (the
     /// fallStart reset inside that branch rides with it).
+    /// `Player.Update`'s contact reflection (`Player.cs:31373-31415`): the
+    /// damage an NPC takes for touching the player — `turtleThorns` pins the
+    /// multiplier at 2, else `thorns` scales the NPC's own damage, capped at
+    /// 1000; the Cactus set adds a flat 15 more.
+    pub fn thorns_damage(&self, incoming: i32) -> i32 {
+        let multiplier = if self.turtle_thorns {
+            2.0
+        } else {
+            self.thorns
+        };
+        let mut total = 0;
+        if multiplier > 0.0 {
+            total += ((incoming as f32 * multiplier) as i32).min(1000);
+        }
+        if self.cactus_thorns {
+            total += 15;
+        }
+        total
+    }
+
     pub(crate) fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
         // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
         // journey godmode power swallows the hit outright — before the
@@ -2584,6 +2655,12 @@ impl Player {
         self.mana_cost = 1.0;
         // `:18497`: `endurance = 0f` — the rows below re-apply.
         self.endurance = 0.0;
+        // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
+        self.lava_max = 0;
+        // `:18376` + `:18726-18727`: the thorns flag clear.
+        self.thorns = 0.0;
+        self.cactus_thorns = false;
+        self.turtle_thorns = false;
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).
@@ -2607,6 +2684,19 @@ impl Player {
             if let Some(def) = crate::registry::get(kind) {
                 self.stat_defense += def.defense as i32;
             }
+            // The piece's own damage/crit/speed row (`GrantArmorBenefits`'
+            // `switch (armorPiece.type)`, `Player.cs:13126-13950`).
+            if let Some(piece) = tr_core::armor_sets::armor_stats(kind) {
+                self.melee_damage += piece.melee_damage;
+                self.ranged_damage += piece.ranged_damage;
+                self.magic_damage += piece.magic_damage;
+                self.minion_damage += piece.minion_damage;
+                self.melee_crit += piece.melee_crit;
+                self.ranged_crit += piece.ranged_crit;
+                self.magic_crit += piece.magic_crit;
+                self.move_speed += piece.move_speed;
+                self.melee_speed_bonus += piece.melee_speed;
+            }
             // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
             // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
             // Hat robes (1282-1287, −0.05…−0.15 by tier), the Crystal
@@ -2627,6 +2717,38 @@ impl Player {
                 _ => 0.0,
             };
         }
+        // `:12988-13003`: the Celestial Stone bundle. The flag is set by the
+        // three stones (`:15412-15424`): 1865 (Celestial Stone) and 3110
+        // (Celestial Shell) always, 899 (Sun Stone) by day, 900 (Moon Stone) by
+        // night or during an eclipse.
+        self.sky_stone_effects = self.equipped[..10].contains(&1865)
+            || self.equipped[..10].contains(&3110)
+            || (self.equipped[..10].contains(&899) && world.day_time)
+            || (self.equipped[..10].contains(&900) && (!world.day_time || world.eclipse));
+        if self.sky_stone_effects {
+            self.stat_defense += 4;
+            self.melee_speed_bonus += 0.1;
+            self.melee_damage += 0.1;
+            self.melee_crit += 2;
+            self.ranged_damage += 0.1;
+            self.ranged_crit += 2;
+            self.magic_damage += 0.1;
+            self.magic_crit += 2;
+            // `pickSpeed -= 0.15f` — the port's bonus field is the negation.
+            self.pick_speed_bonus += 0.15;
+            self.minion_damage += 0.1;
+        }
+        // The immunity rows: the worn accessories (`BUFF_IMMUNITY_ROWS`) and
+        // the completed Snow/Molten sets (`set_buff_immunity`).
+        for (kind, ids) in BUFF_IMMUNITY_ROWS {
+            if self.equipped[..10].contains(kind) {
+                for id in *ids {
+                    if let Some(slot) = self.buffs.buff_immune.get_mut(*id as usize) {
+                        *slot = true;
+                    }
+                }
+            }
+        }
         let (armor_head, armor_body, armor_legs) = (
             self.equipped[0] as i32,
             self.equipped[1] as i32,
@@ -2634,6 +2756,11 @@ impl Player {
         );
         self.stat_defense +=
             tr_core::armor_sets::set_bonus_defense(armor_head, armor_body, armor_legs);
+        for id in tr_core::armor_sets::set_buff_immunity(armor_head, armor_body, armor_legs) {
+            if let Some(slot) = self.buffs.buff_immune.get_mut(*id as usize) {
+                *slot = true;
+            }
+        }
         // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
         // `ArmorSetBonuses.Initialize` triples, `:396-500`): the damage/crit/
         // speed/mana/minion scalars of Necro, Pumpkin, Ninja, Wizard, Magic Hat,
@@ -2656,6 +2783,9 @@ impl Player {
             self.max_minions += set.max_minions;
             self.mana_cost += set.mana_cost;
             self.endurance += set.endurance;
+            self.thorns += set.thorns;
+            self.cactus_thorns |= set.cactus_thorns;
+            self.turtle_thorns |= set.turtle_thorns;
             if set.dash_type != 0 {
                 self.dash_type = set.dash_type;
             }
@@ -2695,10 +2825,21 @@ impl Player {
                 // `:10108` — buff 215 (`BuffID.Warmth`'s neighbour row in the
                 // C#: `statDefense += 5`).
                 215 => self.stat_defense += 5,
-                // `:10306` — `BuffID.DryadsWard`: `statDefense += 8`
-                // (the `lifeRegen += 6` / `thorns += 0.5` halves wait for
-                // their systems).
-                165 => self.stat_defense += 8,
+                // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
+                // `lifeRegen += 6` (the regen half has no consumer yet) and
+                // `thorns += 0.5` while under 1.
+                165 => {
+                    self.stat_defense += 8;
+                    if self.thorns < 1.0 {
+                        self.thorns += 0.5;
+                    }
+                }
+                // `:10005-10011` — `BuffID.Thorns` (14): `thorns = 1f` if lower.
+                14 => {
+                    if self.thorns < 1.0 {
+                        self.thorns = 1.0;
+                    }
+                }
                 // `:11921` — `BuffID.Tipsy`: `statDefense -= 4`.
                 25 => self.stat_defense -= 4,
                 46 => self.chilled = true, // `BuffID.Chilled`
@@ -2905,6 +3046,9 @@ impl Player {
                     self.rocket_boots = 4;
                     self.move_speed += 0.08;
                     self.ice_skate = true;
+                    // The Terraspark row (`:15168-15174`): the water/fire walk
+                    // and the lava charm's 420 ticks.
+                    self.lava_max += 420;
                 }
                 // The Hellfire Treads (`:15397-15401` - tier 5, 6f).
                 4874 => {
@@ -2984,6 +3128,15 @@ impl Player {
                 1864 => self.minion_damage += 0.15,
                 1845 => self.minion_damage += 0.1,
                 4989 => self.move_speed += 0.075,
+                // The Lava Charm family (`:15168-15183`): 906 (Lava Charm),
+                // 4038 (Molten Charm), 3999 (Molten Skull Rose) and 4003
+                // (Lava Waders) each add 420 ticks of lava immunity; 908
+                // (Lava Waders' older row) and 5000 (Terraspark Boots) also
+                // set the water/fire walk and the lava rose.
+                906 | 3999 | 4003 | 4038 => self.lava_max += 420,
+                // (The Terraspark Boots' own row rides its boot arm above —
+                // a duplicate pattern here would be unreachable.)
+                908 => self.lava_max += 420,
                 // The Worm Scarf (`:15081-15084`): +17% endurance.
                 3224 => self.endurance += 0.17,
                 // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
@@ -5550,15 +5703,28 @@ impl Player {
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
         // the original frame (`Player.cs:27630-27761` > `:25977`): a DoT kill
         // this tick wins over the lava hit.
-        if self.in_lava && self.hurt_cd <= 0.0 {
-            let cx = self.x + WIDTH * 0.5;
-            if self.hurt(30, cx) {
-                // The Hurt return `num81 > 0.0` gates the OnFire grant
-                // (`Player.cs:27710-27711`; remix/ashWood/lavaRose variants out
-                // of scope). `AddBuff` applies the expert ×2 itself (24 is in
-                // the difficulty set, `BuffID.cs:50`).
-                self.buffs.add_buff(24, 420);
+        // `Player.cs:27681-27722`: the lava timer. Standing in lava drains one
+        // tick of the immunity budget per frame; only when it is empty does the
+        // 80-damage hit land (and grant On Fire for 420). Out of the lava the
+        // budget refills up to `lavaMax` — the Lava Charm family's 420 ticks.
+        if self.in_lava {
+            if self.lava_time > 0 {
+                self.lava_time -= 1;
+            } else if self.hurt_cd <= 0.0 {
+                let cx = self.x + WIDTH * 0.5;
+                if self.hurt(80, cx) {
+                    // The Hurt return `num81 > 0.0` gates the OnFire grant
+                    // (`Player.cs:27710-27711`; remix/ashWood/lavaRose variants
+                    // out of scope). `AddBuff` applies the expert ×2 itself (24
+                    // is in the difficulty set, `BuffID.cs:50`).
+                    self.buffs.add_buff(24, 420);
+                }
             }
+        } else if self.lava_time < self.lava_max {
+            self.lava_time += 1;
+        }
+        if self.lava_time > self.lava_max {
+            self.lava_time = self.lava_max;
         }
         // Water extinguishes only OnFire (24) and OnFire3 (323) — Frostburn,
         // CursedInferno and Burning are immune to it — and only while not
@@ -5857,22 +6023,24 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 6, "copper set: 4 pieces + 2");
         // The accessories count too (`GetEffectiveArmor(0..10)`): the Shackle
-        // (216) +1 and the Ankh Shield (1613) +5 sit in slots 3/4.
+        // (216) +1 and the Cobalt Shield (156) +1 sit in slots 3/4. (The Ankh
+        // Shield would be +5 but it also grants immunity to Weak — see the
+        // immunity test — which would change the debuff rows below.)
         p.equipped[3] = 216;
-        p.equipped[4] = 1613;
+        p.equipped[4] = 156;
         p.update(&w, PlayerInput::default());
-        assert_eq!(p.stat_defense, 12, "12 = 4 + 2 + 1 + 5");
+        assert_eq!(p.stat_defense, 8, "8 = 4 + 2 + 1 + 1");
         // Ironskin (buff 5) +8 and the fed tier (26) +2.
         p.buffs.add_buff(5, 3600);
         p.buffs.add_buff(26, 3600);
         p.update(&w, PlayerInput::default());
-        assert_eq!(p.stat_defense, 22, "12 + 8 + 2");
+        assert_eq!(p.stat_defense, 18, "8 + 8 + 2");
         // Ichor (69) −15 and Weak (33) −4: the sum can go below the armor, and
         // the floor clamps it at 0 (`:25927`) instead of inflating damage.
         p.buffs.add_buff(69, 3600);
         p.buffs.add_buff(33, 3600);
         p.update(&w, PlayerInput::default());
-        assert_eq!(p.stat_defense, 3, "22 - 15 - 4 = 3");
+        assert_eq!(p.stat_defense, 0, "18 - 15 - 4 = -1, floored");
         p.equipped[0] = 0;
         p.equipped[1] = 0;
         p.equipped[2] = 0;
@@ -5880,6 +6048,175 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-16 — the lava immunity budget.
+    #[test]
+    fn the_lava_charm_buys_immunity_ticks() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.lava_max, 0);
+        // The Lava Charm (906) adds 420 ticks; the Terraspark Boots (5000) too.
+        p.equipped[3] = 906;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.lava_max, 420);
+        p.equipped[4] = 5000;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.lava_max, 840, "the rows stack");
+        // Out of the lava the budget refills one tick per frame.
+        p.lava_time = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.lava_time, 1);
+        // Standing in lava drains it instead of burning: five frames of the
+        // budget leave the player untouched (`update_survival` is the sub-step
+        // the lava hit lives in).
+        p.lava_time = 5;
+        p.hp = 100;
+        p.hurt_cd = 0.0;
+        for _ in 0..5 {
+            p.in_lava = true;
+            p.update_survival();
+        }
+        assert_eq!(p.hp, 100, "the budget absorbed the lava");
+        assert_eq!(p.lava_time, 0);
+        // The next frame burns for the vanilla 80.
+        p.in_lava = true;
+        p.hurt_cd = 0.0;
+        p.update_survival();
+        assert_eq!(p.hp, 20, "the 80-damage lava hit");
+        assert!(p.buffs.find_buff_index(24).is_some(), "On Fire");
+    }
+
+    /// M3-EQUIP-15 — the thorns rows and the reflection arithmetic.
+    #[test]
+    fn the_thorns_rows_scale_the_reflection() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.thorns_damage(20), 0);
+        // The Thorns potion (14): the NPC's own damage comes back whole.
+        p.buffs.add_buff(14, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.thorns - 1.0).abs() < 1e-4);
+        assert_eq!(p.thorns_damage(20), 20);
+        // The Dryad's Ward (165) pushes it to 1.5 while under 1… it is already
+        // 1.0, so the half does not land — the C# `if (thorns < 1f)` guard.
+        p.buffs.add_buff(165, 3600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.thorns - 1.0).abs() < 1e-4);
+        // The Turtle set pins the multiplier at 2 regardless of the potion.
+        p.equipped[0] = 1316;
+        p.equipped[1] = 1317;
+        p.equipped[2] = 1318;
+        p.update(&w, PlayerInput::default());
+        assert!(p.turtle_thorns);
+        assert_eq!(p.thorns_damage(20), 40);
+        assert_eq!(p.thorns_damage(2000), 1000, "the 1000 cap");
+        // The Cactus set adds its flat 15 on top.
+        p.equipped[0] = 894;
+        p.equipped[1] = 895;
+        p.equipped[2] = 896;
+        p.update(&w, PlayerInput::default());
+        assert!(p.cactus_thorns);
+        assert!(!p.turtle_thorns, "the turtle row is gone");
+        assert_eq!(p.thorns_damage(20), 35, "20 from the potion + the flat 15");
+    }
+
+    /// M3-EQUIP-14 — the Celestial Stone bundle and the day/night stones.
+    #[test]
+    fn the_sky_stones_add_their_bundle() {
+        let mut w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The Celestial Stone (1865): every row of the C# block.
+        p.equipped[3] = 1865;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+        assert_eq!(p.stat_defense, 4);
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        assert!((p.minion_damage - 1.1).abs() < 1e-4);
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (6, 6, 6));
+        assert!((p.pick_speed_bonus - 0.15).abs() < 1e-4);
+        // The Sun Stone (899) only works by day; the Moon Stone (900) by night.
+        p.equipped[3] = 899;
+        w.day_time = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+        w.day_time = false;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.sky_stone_effects);
+        p.equipped[3] = 900;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+        w.day_time = true;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.sky_stone_effects);
+        // An eclipse makes the Moon Stone work in daylight.
+        w.eclipse = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+    }
+
+    /// M3-EQUIP-13 — the armor pieces carry their own damage/crit/speed rows
+    /// (before this the worn armor only contributed defense).
+    #[test]
+    fn the_armor_pieces_add_their_stat_rows() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The Cobalt Mage Hat (371): +10% magic damage.
+        p.equipped[0] = 371;
+        p.update(&w, PlayerInput::default());
+        assert!((p.magic_damage - 1.1).abs() < 1e-4);
+        assert!((p.melee_damage - 1.0).abs() < 1e-4);
+        // The Fossil Greaves (552) add 7% to every class and +8% move; the
+        // Yoyo Bag-style rows stack per piece, so two pieces add twice.
+        p.equipped[1] = 552;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.07).abs() < 1e-4);
+        assert!((p.minion_damage - 1.07).abs() < 1e-4);
+        assert!((p.move_speed - 1.08).abs() < 1e-4);
+        // The Solar Flare Breastplate (2764) alone is +29% melee damage.
+        p.equipped[0] = 0;
+        p.equipped[1] = 2764;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.29).abs() < 1e-4);
+    }
+
+    /// M3-EQUIP-12 — the immunity rows of the accessories and the Snow/Molten
+    /// sets, re-applied after `ResetEffects`' clear.
+    #[test]
+    fn the_immunity_rows_block_their_debuffs() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.buffs.buff_immune[46]);
+        // The Snow set (803/804/805) is immune to Chilled (46) and Frozen (47).
+        p.equipped[0] = 803;
+        p.equipped[1] = 804;
+        p.equipped[2] = 805;
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.buff_immune[46]);
+        assert!(p.buffs.buff_immune[47]);
+        // The Ankh Shield (1613): On Fire is *not* on its list, Chilled is.
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.equipped[3] = 1613;
+        p.update(&w, PlayerInput::default());
+        for id in [46, 33, 36, 30, 20, 32, 31, 35, 23, 22, 156] {
+            assert!(p.buffs.buff_immune[id], "the ankh row {}", id);
+        }
+        assert!(!p.buffs.buff_immune[24], "On Fire is not an ankh immunity");
+        // The Molten set (231/232/233) is.
+        p.equipped[3] = 0;
+        p.equipped[0] = 231;
+        p.equipped[1] = 232;
+        p.equipped[2] = 233;
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.buff_immune[24]);
+        // Cheap proof the table gates the add: the debuff never lands.
+        p.buffs.add_buff(24, 600);
+        assert_eq!(p.buffs.find_buff_index(24), None);
     }
 
     /// M3-EQUIP-11 — `endurance` folds the rows and the hurt applies it.
@@ -6055,10 +6392,11 @@ mod tests {
         p.equipped[1] = 4983;
         p.equipped[2] = 4984;
         p.update(&w, PlayerInput::default());
-        // The damage scalars start at 1.0 in the reset (`:2535-2538`), so the
-        // set's `+= 0.1f` reads as 1.1.
-        assert!((p.melee_damage - 1.1).abs() < 1e-4);
-        assert!((p.minion_damage - 1.1).abs() < 1e-4);
+        // The damage scalars start at 1.0 in the reset (`:2535-2538`): the
+        // set's `+= 0.1f` plus the slate's own +5% (4983, M3-EQUIP-13's piece
+        // row) read as 1.15.
+        assert!((p.melee_damage - 1.15).abs() < 1e-4);
+        assert!((p.minion_damage - 1.15).abs() < 1e-4);
         assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (14, 14, 14));
         assert_eq!(p.dash_type, 5);
         // Swapping to the Ninja set (256/257/258) keeps only its own row:
@@ -8397,7 +8735,9 @@ mod tests {
         p.update_survival();
         let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
         assert_eq!(p.buffs.buff_time[idx], 420);
-        assert_eq!(p.hp, 1000 - 30); // the pre-existing 30-dmg lava hit
+        // `:27705` — the classic lava hit is 80 (`num79`), the 420-tick On
+        // Fire rides it.
+        assert_eq!(p.hp, 1000 - 80);
         // Inside the iframes the hit (and therefore the grant) repeats nothing.
         let hp = p.hp;
         p.update_survival();
