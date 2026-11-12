@@ -126,16 +126,13 @@ ANALYSIS.md:7288-7293).
 | 14 | PlayerActive | `id::PLAYER_ACTIVE` | `net.rs:66` |
 | 15 | Unknown15 | NOT-FOUND | deprecated (`MessageID.cs:38-39`) |
 | 16 | PlayerLifeMana | `id::PLAYER_HP` | `net.rs:73` |
-| 17 | TileManipulation | NOT-FOUND | superseded by `20 AreaTileChange` (`MessageID.cs:43`) |
-| 18 | SetTime | NOT-FOUND | clock rides internal `205` instead (ANALYSIS.md:7275-7278) |
-| 19 | ToggleDoorState | NOT-FOUND | no `SendData` arm |
+| 17-19 | TileManipulation, SetTime, ToggleDoorState | NOT-FOUND | 17 superseded by 20 (`MessageID.cs:43`); 18's clock rides internal `205` (ANALYSIS.md:7275-7278) |
 | 20 | AreaTileChange | `id::SECTION_RANGE` | `net.rs:72`; arm `:543-644` |
 | 21 | SyncItem | `id::ITEM_DROP` | `net.rs:79`; auto-converts to 151 when air (`NetMessage.cs:89-100`) |
 | 22 | ItemOwner | `id::ITEM_OWNER` | `net.rs:80`; reservation expiry (`:675-685`) |
 | 23 | SyncNPC | `id::NPC_INFO` | `net.rs:82`; arm `:686-748` |
 | 24 | UnusedMeleeStrike | NOT-FOUND | dead (`MessageID.cs:57`) |
-| 25 | Unused25 | NOT-FOUND | deprecated, use NetTextModule (`MessageID.cs:59-60`) |
-| 26 | Unused26 | NOT-FOUND | deprecated (`MessageID.cs:62-63`) |
+| 25-26 | Unused25 / Unused26 | NOT-FOUND | deprecated; 25 for NetTextModule (`MessageID.cs:59-60`) |
 | 27 | SyncProjectile | `id::PROJECTILE` | `net.rs:70`; arm `:780-841` |
 | 28 | DamageNPC | `id::NPC_STRIKE` | `net.rs:69`; cascades a 23 when `spawnNeedsSyncing` (`:102-107`) |
 | 29 | KillProjectile | `id::PROJECTILE_DEAD` | `net.rs:71` |
@@ -144,60 +141,24 @@ ANALYSIS.md:7288-7293).
 | 38 | SendPassword | `id::PASSWORD` | `net.rs:75`; the one message the gate lets through at State -1 |
 | 39-48 | ReleaseItemOwnership … LiquidUpdate | NOT-FOUND | no `SendData` arm; 42/68 gate-whitelisted; 48 deprecated for NetLiquidModule (`MessageID.cs:108-109`) |
 | 49 | InitialSpawn | `id::WORLD_COMPLETE` | `net.rs:77` — **renamed**, C# means "client is spawning in", not "world done" |
-| 50 | PlayerBuffs | NOT-FOUND | |
-| 51 | MiscDataSync | NOT-FOUND | |
-| 52 | LockAndUnlock | NOT-FOUND | |
-| 53-57 | AddNPCBuff…Unknown57 | NOT-FOUND | |
-| 58 | InstrumentSound | NOT-FOUND | |
-| 59 | HitSwitch | NOT-FOUND | |
-| 60 | Unknown60 | NOT-FOUND | |
-| 61 | SpawnBossUseLicenseStartEvent | NOT-FOUND | |
-| 62 | SyncDodge | NOT-FOUND | |
-| 63-64 | SyncTilePaintOrCoating / Wall | NOT-FOUND | |
-| 65 | TeleportEntity | NOT-FOUND | |
-| 66-68 | Unknown66/67/68 | NOT-FOUND | 68 is gate-whitelisted but unwritten |
-| 69 | ChestName | NOT-FOUND | |
-| 70-71 | BugCatching / BugReleasing | NOT-FOUND | |
-| 72 | TravelMerchantItems | NOT-FOUND | C# has a dedicated `SendTravelShop` (`NetMessage.cs:2645`) |
-| 73 | RequestTeleportationByServer | NOT-FOUND | |
-| 74-76 | AnglerQuest / Finished / QuestsCountSync | NOT-FOUND | |
-| 77 | TemporaryAnimation | NOT-FOUND | `SendTemporaryAnimation` (`NetMessage.cs:2590`) unported |
-| 78 | InvasionProgressReport | NOT-FOUND | |
-| 79 | PlaceObject | NOT-FOUND | `SendObjectPlacement` (`NetMessage.cs:2573`) unported |
-| 80 | SyncPlayerChestIndex | NOT-FOUND | |
-| 81 | CombatTextInt | NOT-FOUND | |
+| 50-81 | PlayerBuffs … CombatTextInt | NOT-FOUND | 72 has `SendTravelShop` (`NetMessage.cs:2645`); 77 `SendTemporaryAnimation` (:2590); 79 `SendObjectPlacement` (:2573) |
 | 82 | NetModules | `id::NET_MODULE` | `net.rs:68`; the C# arm is `switch (b4)` (`NetMessage.cs:746`) |
 | 83 | Unused83 | NOT-FOUND | deprecated (`MessageID.cs:179-180`) |
-| 84-92 | PlayerStealth…SyncExtraValue | NOT-FOUND | |
-| 93 | SocialHandshake | NOT-FOUND | gate-whitelisted, no `SendData` arm |
-| 94 | DevCommands | NOT-FOUND | |
-| 95-96 | MurderSomeoneElsesPortal / TeleportPlayer | NOT-FOUND | |
-| 97-102 | Achievement messages…NebulaLevelupRequest | NOT-FOUND | |
-| 103-110 | MoonlordHorror…MassWireOperationPay | NOT-FOUND | |
-| 111-116 | ToggleParty…CrystalInvasionSendWaitTime | NOT-FOUND | |
-| 117-119 | PlayerHurtV2 / PlayerDeathV2 / CombatTextString | NOT-FOUND | `SendPlayerHurt`/`SendPlayerDeath` (`NetMessage.cs:2598,2607`) unported |
-| 120 | Emoji | NOT-FOUND | |
-| 121-128 | TEDisplayDollDataSync…LandGolfBallInCup | NOT-FOUND | |
+| 84-96 | PlayerStealth … TeleportPlayer | NOT-FOUND | 93 gate-whitelisted, no `SendData` arm |
+| 97-119 | Achievement msgs … CombatTextString | NOT-FOUND | `SendPlayerHurt`/`SendPlayerDeath` (`NetMessage.cs:2598,2607`) unported |
+| 120-128 | Emoji … LandGolfBallInCup | NOT-FOUND | |
 | 129 | FinishedConnectingToServer | NOT-FOUND | no body either side |
-| 130-137 | FishOutNPC…RequestNPCBuffRemoval | NOT-FOUND | |
+| 130-137 | FishOutNPC … RequestNPCBuffRemoval | NOT-FOUND | |
 | 138 | ClientSyncedInventory | NOT-FOUND | **the one id `GetData` never dispatches** |
-| 139-141 | SetCountsAsHostForGameplay…RequestLucyPopup | NOT-FOUND | C# has `DoesPlayerSlotCountAsAHost` (`NetMessage.cs:2876`) |
-| 142 | SyncProjectileTrackers | NOT-FOUND | |
-| 143-144 | CrystalInvasionRequestedToSkipWaitTime / RequestQuestEffect | NOT-FOUND | |
+| 139-142 | SetCountsAsHostForGameplay … Trackers | NOT-FOUND | C# has `DoesPlayerSlotCountAsAHost` (`NetMessage.cs:2876`) |
+| 143-144 | CrystalInvasionSkip / RequestQuestEffect | NOT-FOUND | |
 | 145 | SyncItemsWithShimmerDeprecated | NOT-FOUND | **not read by `GetData`** |
-| 146 | ShimmerActions | NOT-FOUND | |
-| 147 | SyncLoadout | NOT-FOUND | gate-whitelisted |
+| 146-147 | ShimmerActions / SyncLoadout | NOT-FOUND | 147 gate-whitelisted |
 | 148 | SyncItemCannotBeTakenByEnemiesDeprecated | NOT-FOUND | **not read by `GetData`** |
-| 149-153 | DeadCellsDisplayJar…NPCDebuffDamage | NOT-FOUND | |
+| 149-153, 155-158 | DeadCellsDisplayJar … ExtraSpawnSection | NOT-FOUND | includes `SyncItemDespawn` (151) and `SyncChestSize` (155) |
 | 154 | Ping | NOT-FOUND | C# sends it every 250 ms (`Net/Ping.cs:31`); the port has no ping msg |
-| 155 | SyncChestSize | NOT-FOUND | |
-| 156 | TELeashedEntityAnchorPlaceItem | NOT-FOUND | |
-| 157 | TeamChangeFromUI | NOT-FOUND | |
-| 158 | ExtraSpawnSectionLoaded | NOT-FOUND | |
-| 159 | RequestSection | NOT-FOUND | the port streams sections unrequested on join instead |
-| 160 | ItemPosition | NOT-FOUND | `SendData(160)` arm exists in C# |
-| 161 | HostToken | NOT-FOUND | C# compares against `Netplay.HostToken` (`MessageBuffer.cs:4471-4476`) |
-| 162 | DamageNPCAck | NOT-FOUND | the C# ack arm for 28 |
+| 159 | RequestSection | NOT-FOUND | the port streams sections unrequested on join (`host_stream_sections`) |
+| 160-162 | ItemPosition / HostToken / DamageNPCAck | NOT-FOUND | `161` compares against `Netplay.HostToken` (`MessageBuffer.cs:4471-4476`) |
 | 201-205 | *(internal)* | `INT_EDIT/PICKUP/JOINED/LEFT/TIME` | `net.rs:90-94`, deliberately outside 1..162 so the gate rejects them pre-spawn |
 
 NetModules map 11/12: Liquid, Text, Ping, Ambience, Bestiary, CreativeUnlocks,
