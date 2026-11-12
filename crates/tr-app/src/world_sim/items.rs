@@ -190,8 +190,10 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 }
                 let drop_count = remaining;
                 if let Some(slot) = slot_for_pickup(inventory, drop.kind, drop.prefix) {
+                    // `Player.GetItem` (`Player.cs:39330`): the transfer moves the stack once -
+                    // the vault took `drop.count - remaining`, so the inventory receives only
+                    // `remaining` (S1-C-9).
                     inventory[slot].count = inventory[slot].count.saturating_add(drop_count);
-                    inventory[slot].count = inventory[slot].count.saturating_add(drop.count);
                     let c = drop.center();
                     audio.play_at("Item_1", c.x, c.y, 1.0);
                     // `AchievementsHelper.NotifyItemPickup` — the pickup
@@ -568,5 +570,105 @@ mod lava_burn_tests {
             app.npcs.iter().any(|n| n.kind == NpcKind::WallOfFlesh),
             "the wall awoke"
         );
+    }
+}
+
+#[cfg(test)]
+mod pickup_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::{ItemDrop, EMPTY_SLOT};
+    use crate::player::Player;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::world::World;
+
+    fn pickup_world() -> App {
+        let mut w = World::new("pickup".into(), 40, 40);
+        for x in 0..40 {
+            for y in 20..40 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 18.0 * TILE_PX;
+        app.player = Some(player);
+        app.inventory = std::array::from_fn(|_| EMPTY_SLOT);
+        app
+    }
+
+    fn collectable_drop(kind: u16, count: u32, x: f32, y: f32) -> ItemDrop {
+        let mut d = ItemDrop::new(kind, count, 0, x, y, 0.0, 0.0, 0.0);
+        d.age = 1.0;
+        d
+    }
+
+    #[test]
+    fn pickup_transfers_the_stack_once() {
+        // `S1-C-9`: the drop must add `remaining` exactly once to the slot
+        // (`Player.cs:39330` / `world_sim/items.rs:191-206`).
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(3, 5, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the drop was consumed");
+        let slot = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 3)
+            .expect("stone landed in inventory");
+        assert_eq!(slot.count, 5, "the stack transferred once");
+        assert_eq!(app.inventory.iter().filter(|s| s.kind == 3).count(), 1);
+    }
+
+    #[test]
+    fn pickup_sends_only_the_vault_remainder_to_inventory() {
+        // Player.cs:39395-39423 / GetItem_VoidVault: the vault takes what
+        // fits, the leftover falls through to the inventory once.
+        let mut app = pickup_world();
+        let mut player = app.player.take().unwrap();
+        player.void_vault_enabled = true;
+        let max_stack = crate::registry::max_stack(3);
+        for slot in player.banks[3].iter_mut() {
+            *slot = crate::item::ItemSlot {
+                kind: 2,
+                name: crate::registry::name(2),
+                count: max_stack,
+                prefix: 0,
+            };
+        }
+        player.banks[3][0] = crate::item::ItemSlot {
+            kind: 3,
+            name: crate::registry::name(3),
+            count: max_stack.saturating_sub(3),
+            prefix: 0,
+        };
+        app.player = Some(player);
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(3, 5, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the drop was consumed");
+        let in_vault: u32 = app.player.as_ref().unwrap().banks[3]
+            .iter()
+            .filter(|s| s.kind == 3)
+            .map(|s| s.count)
+            .sum();
+        let in_inv: u32 = app
+            .inventory
+            .iter()
+            .filter(|s| s.kind == 3)
+            .map(|s| s.count)
+            .sum();
+        assert_eq!(in_vault, max_stack, "the vault took exactly 3");
+        assert_eq!(in_inv, 2, "only the remainder reached inventory");
     }
 }
