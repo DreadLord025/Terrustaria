@@ -499,10 +499,20 @@ transparent part of shoreline slope/edge frames.
 
 The system is completed by `tr-core/src/liquid.rs`, a port of `Liquid.UpdateLiquid` and
 `Liquid.Update`: a 25 000-entry active-cell list (with the 50 000-entry overflow buffer),
-one tenth pumped every second 60 Hz tick, per-cell gravity plus the six-neighbour
-leveling passes (3/4/5/7-cell averages, edge openness, `Math.Round` banker's rounding),
-and retirement after eight quiet passes. Falling water keeps the original's 254→255
-quirk. Block edits wake the surrounding liquid cells, so a breach visibly drains.
+per-cell gravity plus the six-neighbour leveling passes (3/4/5/7-cell averages, edge
+openness, `Math.Round` banker's rounding), and retirement after eight quiet passes.
+Falling water keeps the original's 254→255 quirk. Block edits wake the surrounding liquid
+cells, so a breach visibly drains.
+
+The pass window matches `Liquid.cs:1069-1106` (S1-A-8, 2026-11-13): every
+`Liquid.UpdateLiquid` call advances `Liquid.wetCounter` and walks one
+`curMaxLiquid / cycles` = 25 000 / 10 = 2 500-entry stride, and the `numLiquid` clamp
+(`:1077-1082`) re-walks the whole list — retiring its dead entries — whenever the active
+list is shorter than one stride, so a small pool is simulated every call instead of once
+per ten. Single-player keeps `curMaxLiquid` at 25 000; the multiplayer scaling by the
+active-player count (`:998`) stays out of scope. (The earlier `ceil(len/10)` slice, which
+made short pools update ~10× too slowly, is gone.) Still not ported: `skipLiquid`
+(`Liquid.cs:586-587/1096-1103`) and the `quickFall`/`quickSettle` delay seeding.
 
 Not ported: the `Liquid` wave mask/vertex displacement, the water-style fountains and
 shimmer sparkles.

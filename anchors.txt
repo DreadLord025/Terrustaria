@@ -28,6 +28,7 @@ crates/tr-app/src/npc.rs|fn extra_frames_count|BUG-22 — NPCID.Sets.ExtraFrames
 crates/tr-app/src/town_arrival.rs|fn update_time_spawn_town_npcs|M4-TOWN-1b — the town NPC arrival gates
 crates/tr-app/src/touch_damage.rs|fn apply_touch_damage|M4-HAZARD-1 — tile contact damage (dungeon spikes)
 crates/tr-app/src/touch_damage.rs|TOUCH_DAMAGE_IMMEDIATE|M4-HAZARD-1 — the TileID.Sets.TouchDamageImmediate table
+crates/tr-core/src/liquid.rs|cur_max_liquid: usize|S1-A-8 — the C# liquid pass window (curMaxLiquid/cycles stride)
 crates/tr-core/src/worldgen/dungeon_features.rs|fn place_spikes|M5-DUNGEON — the DungeonGlobalSpikes pass
 crates/tr-core/src/worldgen/dungeon_features.rs|fn place_lights|M5-DUNGEON — the DungeonGlobalLights pass
 crates/tr-core/src/worldgen/dungeon_features.rs|fn wall_variants|M5-DUNGEON — the DungeonGlobalWallVariants pass
