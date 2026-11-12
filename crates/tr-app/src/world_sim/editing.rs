@@ -1303,9 +1303,16 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         // (the baseline timings assume the copper pick's 35).
         let tool_pick = registry::get(held.kind).map(|d| d.pick).unwrap_or(0);
         let tool_axe = registry::get(held.kind).map(|d| d.axe).unwrap_or(0);
+        // `Main.tileHammer[26]` (`Player.cs:45665`): the demon altar takes the
+        // hammer arm — a pick or axe alone can never damage it (`:45656`,
+        // `:45668`, `:45672`).
+        let tool_hammer = registry::get(held.kind).map(|d| d.hammer).unwrap_or(0);
+        let altar = tile.kind == 26;
         let axe_tile = tr_core::tool::is_axe_tile(tile.kind);
         let below_surface = (ty as f64) > app.world.world_surface;
-        let can_mine = if axe_tile {
+        let can_mine = if altar {
+            tool_hammer > 0
+        } else if axe_tile {
             tool_axe > 0
         } else {
             tool_pick > 0
@@ -1329,34 +1336,79 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             if refused {
                 app.mine_target = None;
                 app.mine_timer = 0.0;
+            } else if altar {
+                // The hammer arm (`Player.cs:45665-45704`): the hammer damage
+                // builds (`hitTile.AddDamage(x, y, sItem.hammer) >= 100` to
+                // break); a sub-80 hammer or a pre-hardmode world zeroes it
+                // (`:45675-45679`) — the self-`Hurt`/`Main.bloodMoon` half of
+                // that refusal is a follow-up, the smash simply does not happen.
+                // The swing cadence mirrors the wall hammer (the baseline
+                // assumes the copper hammer's 35).
+                if tool_hammer < 80 || !app.world.hard_mode {
+                    app.mine_target = None;
+                    app.mine_timer = 0.0;
+                } else {
+                    if app.mine_target == Some((tx, ty)) {
+                        app.mine_timer += dt;
+                    } else {
+                        app.mine_target = Some((tx, ty));
+                        app.mine_timer = 0.0;
+                    }
+                    let hardness = 0.35 * 35.0 / tool_hammer.max(1) as f32;
+                    if app.mine_timer >= hardness {
+                        app.mine_timer = 0.0;
+                        // `WorldGen.KillTile`'s case 26 (`:49444-49449`): the
+                        // altar dies first (the tile + its `NotifyTileDestroyed`
+                        // ride `break_tile`), then `SmashAltar` seeds the
+                        // hardmode ore (`:48927+`, the `altarCount` order is the
+                        // port's saved ore-tier state) and fires BEGONE_EVIL
+                        // (`:49107-49108`).
+                        break_tile(app, tx, ty);
+                        let altars = app.world.altars_smashed;
+                        let mut rng = app.growth_rng;
+                        rng.next_seed_in_place();
+                        let ore = tr_core::ores::smash_altar(
+                            &mut app.world,
+                            &mut app.ore_tiers,
+                            altars,
+                            &mut rng,
+                        );
+                        app.world.altars_smashed = altars + 1;
+                        let _ = app.achievements.notify_progression(6);
+                        let _ = ore;
+                        app.world_key = None;
+                    }
+                }
             } else if app.mine_target == Some((tx, ty)) {
                 app.mine_timer += dt;
             } else {
                 app.mine_target = Some((tx, ty));
                 app.mine_timer = 0.0;
             }
-            let base = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
-                0.55
-            } else {
-                0.25
-            };
-            // `Player.pickSpeed`'s WellFed discount (`:11945`) — the lower
-            // the faster; the port folds it into the dig time.
-            let fed_speed = 1.0
-                - app
-                    .player
-                    .as_ref()
-                    .map(|p| p.pick_speed_bonus)
-                    .unwrap_or(0.0);
-            let hardness = if axe_tile {
-                base * 7.0 / tool_axe.max(1) as f32
-            } else {
-                base * tr_core::tool::pick_speed_scale(tool_pick as i32) * fed_speed.max(0.25)
-            };
-            if app.mine_timer >= hardness {
-                break_tile(app, tx, ty);
-                app.mine_target = None;
-                app.mine_timer = 0.0;
+            if !altar {
+                let base = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
+                    0.55
+                } else {
+                    0.25
+                };
+                // `Player.pickSpeed`'s WellFed discount (`:11945`) — the lower
+                // the faster; the port folds it into the dig time.
+                let fed_speed = 1.0
+                    - app
+                        .player
+                        .as_ref()
+                        .map(|p| p.pick_speed_bonus)
+                        .unwrap_or(0.0);
+                let hardness = if axe_tile {
+                    base * 7.0 / tool_axe.max(1) as f32
+                } else {
+                    base * tr_core::tool::pick_speed_scale(tool_pick as i32) * fed_speed.max(0.25)
+                };
+                if app.mine_timer >= hardness {
+                    break_tile(app, tx, ty);
+                    app.mine_target = None;
+                    app.mine_timer = 0.0;
+                }
             }
         }
     } else if app.mine_down && !tile.active() && tile.wall != 0 && !app.inventory_open {
@@ -1374,34 +1426,13 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         }
         // The walls need a hammer (`Main.tileHammer`'s rule — the port
         // gates on the held hammer power alone) and the hammer paces the
-        // dig (the baseline assumes the copper hammer's 35).
+        // dig (the baseline assumes the copper hammer's 35). The demon altar
+        // is an *active* tile, so its hammer arm lives in the branch above
+        // (`Player.cs:45665`), never here.
         let tool_hammer = registry::get(held.kind).map(|d| d.hammer).unwrap_or(0);
         if tool_hammer <= 0 {
             app.mine_target = None;
             app.mine_timer = 0.0;
-        } else if tile.active() && tile.kind == 26 {
-            // The demon/crimson altar (`KillTile`'s case 26): the hammer
-            // smash runs the hardmode ore tier (`WorldGen.cs:48920+`) —
-            // the hammer-power gate (≥ 80) and the WoF prerequisite are
-            // the follow-ups; the port smashes in hardmode.
-            if app.mine_timer >= 0.35 && app.world.hard_mode {
-                app.mine_timer = 0.0;
-                let altars = app.world.altars_smashed;
-                let mut rng = app.growth_rng;
-                rng.next_seed_in_place();
-                let ore = tr_core::ores::smash_altar(
-                    &mut app.world,
-                    &mut app.ore_tiers,
-                    altars,
-                    &mut rng,
-                );
-                app.world.altars_smashed += 1;
-                app.audio
-                    .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
-                app.request_edit(tx, ty, 2, 0);
-                let _ = ore;
-                app.world_key = None;
-            }
         } else {
             let hardness =
                 (if tile.wall == 1 { 0.7 } else { 0.35 }) * 35.0 / tool_hammer.max(1) as f32;
@@ -5253,6 +5284,67 @@ mod tests {
             Some((30, 260)),
             "the power widens the reach to the cursor's tile"
         );
+    }
+
+    /// S1-E-18: the demon altar takes the hammer arm of
+    /// `ItemCheck_UseMiningTools_ActuallyUseMiningTool` (`Player.cs:45665-45704`).
+    /// A ≥ 80-power hammer in hardmode builds to a kill, running `SmashAltar`
+    /// (`WorldGen.cs:48920+`) and BEGONE_EVIL (`:49108`); a pre-hardmode world
+    /// refuses (`:45675-45679`).
+    #[test]
+    fn the_altar_hammer_smash_seeds_ore_and_fires_begone_evil() {
+        let mut w = World::new("t".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile {
+            kind: 26,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.world.hard_mode = true;
+        app.inventory[app.selected].kind = 367; // the Pwnhammer (hammer 80)
+        mine_frames(&mut app, 30);
+        // The smash removes the altar tile (`WorldGen.KillTile`'s case 26) and
+        // advances `altarCount` exactly once — a second swing finds no tile.
+        assert_eq!(app.world.altars_smashed, 1, "the altar smashes exactly once");
+        assert!(
+            !app.world.tile(30, 260).is_some_and(|t| t.active()),
+            "the altar tile dies with the smash"
+        );
+        assert!(
+            matches!(app.ore_tiers.cobalt, 107 | 221),
+            "the first smash seeds Cobalt (SmashAltar's tier 0, 50/50 to 221): {}",
+            app.ore_tiers.cobalt
+        );
+        assert!(
+            app.achievements
+                .list
+                .iter()
+                .any(|a| a.name == "BEGONE_EVIL" && a.completed),
+            "progression 6 rode the hammer's smash"
+        );
+
+        // The pre-hardmode refusal (`Player.cs:45675-45679`): the same hammer
+        // never lands a smash and never clears the altar.
+        let mut w2 = World::new("t".into(), 64, 800);
+        let i2 = w2.index(30, 260);
+        w2.tiles[i2] = Tile {
+            kind: 26,
+            ..Default::default()
+        };
+        w2.tiles[i2].flags |= FLAG_ACTIVE;
+        w2.compute_column_surface();
+        let mut app2 = mining_app(w2, 30, 260);
+        app2.inventory[app.selected].kind = 367;
+        mine_frames(&mut app2, 60);
+        assert_eq!(app2.world.altars_smashed, 0, "pre-hardmode refuses the altar");
+        assert!(app2.world.tile(30, 260).is_some_and(|t| t.active()));
+        assert!(!app2
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "BEGONE_EVIL" && a.completed));
     }
 
     /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries
