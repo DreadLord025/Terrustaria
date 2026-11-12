@@ -57,3 +57,4 @@ crates/tr-app/src/npc_ai.rs|surface_damped|S1-D-1 — the AI_005 hover presets (
 crates/tr-app/src/player.rs|amount.max(1)|S1-C-3 — the hurt `num2 < 1 -> 1` floor (Player.cs:38378-38381)
 crates/tr-app/src/world_sim/items.rs|remaining` (S1-C-9)|S1-C-9 — item pickup transfers the stack once (Player.cs:39330)
 crates/tr-core/src/unified_random.rs|pub struct UnifiedRandom|S1-A-1 — the C# UnifiedRandom (Knuth subtractive) port + C#-golden vectors
+crates/tr-app/src/prefix.rs|pub trait PrefixRandom|S1-A-5 — prefix rolls draw from UnifiedRandom (App::prefix_rng) with a dotnet-oracle golden + 40k-roll histogram

@@ -11,10 +11,13 @@
 //!
 //! The RNG seam follows the vanilla draw order: `Prefix(-1)` checks
 //! `CanHavePrefixes` first and returns before any roll, so non-prefixable
-//! kinds consume no stream draws.
+//! kinds consume no stream draws. The draws are the C# `Main.rand`
+//! (`UnifiedRandom`) stream (`S1-A-5`); the worldgen chest seam still feeds the
+//! splitmix stream until S1-A-4 migrates it ([`roll_prefix_splitmix`]).
 
 use crate::itemdata::{self, ItemDef};
 use crate::player::Player;
+use tr_core::UnifiedRandom;
 use tr_core::damage::round_bankers;
 
 // --- The roll tables (`PrefixLegacy.Prefixes`, static ctor :29-59) ----------
@@ -429,8 +432,26 @@ fn shift_rare(rare: i32, prefix: u16, m: &Multipliers) -> i32 {
 
 // --- The roll engine --------------------------------------------------------
 
+/// The one draw the engine takes: the C# `UnifiedRandom.Next(int)` (`[0, max)`).
+/// Runtime prefix rolls consume the app's `prefix_rng` ([`UnifiedRandom`]); the
+/// worldgen chest seam adapts its splitmix state ([`SplitMixPrefix`]).
+pub trait PrefixRandom {
+    fn next_max(&mut self, max: i32) -> i32;
+}
+
+impl PrefixRandom for UnifiedRandom {
+    fn next_max(&mut self, max: i32) -> i32 {
+        UnifiedRandom::next_max(self, max)
+    }
+}
+
+/// The still-splitmix worldgen chest stream (`chest_gen.rs`), used only through
+/// [`roll_prefix_splitmix`] until S1-A-4 restores the vanilla `genRand`
+/// interleave. A `u64` state, one draw = one add-mix.
+struct SplitMixPrefix<'a>(&'a mut u64);
+
 /// The splitmix step the app's per-consumer streams share (`rain.rs`'s
-/// `next_u64` shape — a `u64` state, one draw = one add-mix).
+/// `next_u64` shape).
 fn next_u64(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
     let mut z = *state;
@@ -439,9 +460,10 @@ fn next_u64(state: &mut u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// `UnifiedRandom.Next(n)` — `[0, n)`.
-fn next(rng: &mut u64, n: u64) -> u64 {
-    next_u64(rng) % n
+impl PrefixRandom for SplitMixPrefix<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        (next_u64(self.0) % max as u64) as i32
+    }
 }
 
 /// `Item.Prefix(prefixWeWant)` (`Item.cs:504-610`): returns the rolled prefix
@@ -452,7 +474,7 @@ fn next(rng: &mut u64, n: u64) -> u64 {
 /// the reduced set 1/3 none); `-2` rolls a non-zero prefix (the best-value
 /// marker feeds `rolledPrefixIsTopTier`, which the port does not need); `-3`
 /// keeps the current prefix (a no-op here); `-4` clears to none.
-pub fn roll_prefix(kind: u16, prefix_want: i32, rng: &mut u64) -> u16 {
+pub fn roll_prefix(kind: u16, prefix_want: i32, rng: &mut impl PrefixRandom) -> u16 {
     let Some(rollable) = rollable_prefixes(kind) else {
         // `CanHavePrefixes` gate — no roll, no draws (`Item.cs:515-518`).
         return 0;
@@ -466,7 +488,7 @@ pub fn roll_prefix(kind: u16, prefix_want: i32, rng: &mut u64) -> u16 {
     };
     let mut rolled: i32 = prefix_want;
     loop {
-        if rolled == -1 && next(rng, 4) == 0 {
+        if rolled == -1 && rng.next_max(4) == 0 {
             rolled = 0;
         }
         if prefix_want < -1 {
@@ -474,9 +496,12 @@ pub fn roll_prefix(kind: u16, prefix_want: i32, rng: &mut u64) -> u16 {
         }
         if (-3..=-1).contains(&rolled) {
             // `RollAPrefix` (`Item.cs:1141-1153`).
-            rolled = rollable[next(rng, rollable.len() as u64) as usize] as i32;
+            rolled = rollable[rng.next_max(rollable.len() as i32) as usize] as i32;
         }
-        if prefix_want == -1 && in_set(REDUCED_NATURAL_CHANCE, rolled as u16) && next(rng, 3) != 0 {
+        if prefix_want == -1
+            && in_set(REDUCED_NATURAL_CHANCE, rolled as u16)
+            && rng.next_max(3) != 0
+        {
             rolled = 0;
         }
         if prefix_want == -4 {
@@ -525,11 +550,23 @@ pub(crate) fn best_prefix_value(kind: u16) -> f32 {
 /// bool is `rolledPrefixIsTopTier` — the rolled value multiplier equals the
 /// table's best (`Item.cs:575`), which drives the BestReforge sound and the
 /// 60-tick cooldown.
-pub(crate) fn reforge_roll(kind: u16, rng: &mut u64) -> (u16, bool) {
+pub(crate) fn reforge_roll(kind: u16, rng: &mut impl PrefixRandom) -> (u16, bool) {
     let rolled = roll_prefix(kind, -2, rng);
     let m = Multipliers::stat_switch(rolled);
     let best = best_prefix_value(kind);
-    (rolled, best > 0.0 && Multipliers::value_multiplier(rolled, &m) == best)
+    (
+        rolled,
+        best > 0.0 && Multipliers::value_multiplier(rolled, &m) == best,
+    )
+}
+
+/// The worldgen chest seam's entry (`chest_gen.rs`): the same engine over the
+/// splitmix `chest_rng` stream, kept byte-identical until S1-A-4 puts the chest
+/// loot back on the vanilla `WorldGen.genRand` interleave. Do not use it for
+/// runtime prefix rolls — those take [`roll_prefix`] with the app's
+/// `prefix_rng`.
+pub(crate) fn roll_prefix_splitmix(kind: u16, prefix_want: i32, rng: &mut u64) -> u16 {
+    roll_prefix(kind, prefix_want, &mut SplitMixPrefix(rng))
 }
 
 // --- The equipment pass -----------------------------------------------------
@@ -596,9 +633,106 @@ pub(crate) fn grant_prefix_benefits(prefix: u16, p: &mut Player) {
 mod tests {
     use super::*;
 
-    /// A splitmix stream seeded like the app's (`seed ^ const | 1` shape).
-    fn test_rng(seed: u64) -> u64 {
-        (seed ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1
+    /// The C# `Main.rand` stand-in: `new UnifiedRandom(seed)` (`S1-A-5`).
+    fn test_rng(seed: i32) -> UnifiedRandom {
+        UnifiedRandom::new(seed)
+    }
+
+    /// The exact C# stream: 20 natural rolls of the Iron Pickaxe (kind 1) from
+    /// `UnifiedRandom::new(seed)` land the ids the decompiled `Item.Prefix`
+    /// draws (`Item.cs:529-574`). Generated by a `dotnet` oracle that runs the
+    /// decompiled `UnifiedRandom` through the same `Next(4)` / `Next(len)` /
+    /// `Next(3)` order with the vanilla Iron Pickaxe tables — this is the
+    /// test that fails if the engine ever goes back to a stand-in stream.
+    #[test]
+    fn natural_roll_matches_the_csharp_stream() {
+        for (seed, expected) in [
+            (
+                0,
+                [
+                    0, 0, 38, 11, 57, 81, 0, 81, 13, 0, 0, 0, 39, 0, 57, 2, 14, 5, 59, 14,
+                ],
+            ),
+            (
+                42,
+                [
+                    6, 0, 7, 0, 10, 13, 0, 0, 0, 0, 0, 0, 0, 6, 43, 8, 0, 0, 0, 6,
+                ],
+            ),
+            (
+                -7,
+                [
+                    50, 43, 0, 0, 60, 5, 37, 14, 2, 40, 36, 0, 1, 44, 0, 0, 0, 0, 0, 5,
+                ],
+            ),
+            (
+                123_456_789,
+                [
+                    0, 59, 4, 0, 81, 53, 0, 0, 0, 36, 42, 5, 0, 59, 42, 6, 7, 50, 15, 45,
+                ],
+            ),
+        ] {
+            let mut rng = test_rng(seed);
+            let got: Vec<u16> = (0..20).map(|_| roll_prefix(1, -1, &mut rng)).collect();
+            assert_eq!(got, expected, "seed {seed}");
+        }
+    }
+
+    /// The landed distribution over many seeds, again vs the C#: seeds `0..2000`
+    /// x 20 natural rolls of the Iron Pickaxe = 40 000 landings, tallied by
+    /// prefix id. The C# oracle produced this exact histogram (same loop, same
+    /// `UnifiedRandom`), so this is a deterministic equality check, not a
+    /// tolerance band: the rejected invisible-damage ids (3/12/46/51/55 — table
+    /// positions 2/11/30/35/20) never land; 0 is the gate + reduced-set funnel.
+    #[test]
+    fn natural_roll_distribution_matches_the_csharp_over_many_seeds() {
+        let expected: [(u16, u32); 36] = [
+            (0, 17695),
+            (1, 823),
+            (2, 848),
+            (4, 854),
+            (5, 804),
+            (6, 840),
+            (7, 282),
+            (8, 280),
+            (9, 261),
+            (10, 261),
+            (11, 283),
+            (13, 819),
+            (14, 814),
+            (15, 850),
+            (36, 800),
+            (37, 804),
+            (38, 858),
+            (39, 269),
+            (40, 273),
+            (41, 269),
+            (42, 828),
+            (43, 820),
+            (44, 804),
+            (45, 884),
+            (47, 274),
+            (48, 265),
+            (49, 262),
+            (50, 852),
+            (53, 847),
+            (54, 816),
+            (56, 280),
+            (57, 810),
+            (59, 804),
+            (60, 817),
+            (61, 855),
+            (81, 795),
+        ];
+        let mut counts = std::collections::BTreeMap::new();
+        for seed in 0..2000 {
+            let mut rng = test_rng(seed);
+            for _ in 0..20 {
+                *counts.entry(roll_prefix(1, -1, &mut rng)).or_insert(0u32) += 1;
+            }
+        }
+        let got: Vec<(u16, u32)> = counts.into_iter().collect();
+        assert_eq!(got, expected.to_vec());
     }
 
     #[test]
@@ -693,11 +827,11 @@ mod tests {
         // The `CanHavePrefixes` early return keeps the stream intact — the
         // state after 100 dirt-drop rolls equals the state after none.
         let mut rng = test_rng(7);
+        let before = rng.peek();
         for _ in 0..100 {
             assert_eq!(roll_prefix(2, -1, &mut rng), 0);
         }
-        let untouched = rng;
-        assert_eq!(untouched, test_rng(7), "the gate must consume no draws");
+        assert_eq!(rng.peek(), before, "the gate must consume no draws");
     }
 
     #[test]
@@ -738,11 +872,7 @@ mod tests {
         // rejection: the retry picks from the swords table, never landing 29.
         let mut rng = test_rng(3);
         for _ in 0..50 {
-            assert_ne!(
-                roll_prefix(1, 29, &mut rng),
-                29,
-                "0 mana ×1.1 is invisible"
-            );
+            assert_ne!(roll_prefix(1, 29, &mut rng), 29, "0 mana ×1.1 is invisible");
         }
     }
 

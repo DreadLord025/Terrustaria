@@ -32,7 +32,7 @@ use tr_core::framing;
 use tr_core::lighting::{LightMap, LightMode};
 use tr_core::liquid::LiquidSystem;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World, edit, save, wld, worldgen};
+use tr_core::{TILE_PX, UnifiedRandom, World, edit, save, wld, worldgen};
 use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::keyboard::KeyCode;
 use winit::window::Window;
@@ -632,6 +632,10 @@ pub(crate) struct App {
     /// World item drops (`Terraria.Item` first pass).
     pub(crate) items: Vec<ItemDrop>,
     pub(crate) item_rng: u64,
+    /// The C# `Main.rand` stream the prefix rolls consume (`Item.Prefix`,
+    /// `Item.cs:528`): `UnifiedRandom`, separate from the splitmix streams so a
+    /// prefix roll never perturbs loot/crit/particle draws (`S1-A-5`).
+    pub(crate) prefix_rng: UnifiedRandom,
     pub(crate) item_step: FixedStepper,
     /// Remaining seconds of the current held-item swing.
     pub(crate) swing: f32,
@@ -1092,7 +1096,9 @@ impl App {
     /// defaults + `Prefix(-2)` — the port recomputes the stats from the
     /// kind's defaults, so the reset is the prefix-field write — and the
     /// top-tier 60-tick cooldown (`Main.cs:41924`). The vanilla plays
-    /// `BestReforge`/`Item37`; the port's cue set has no such key yet.
+    /// `BestReforge`/`Item37`; the port's cue set has no such key yet. The roll
+    /// consumes the shared `prefix_rng` (`Main.rand`), like every natural roll
+    /// (`S1-A-5`).
     pub(crate) fn reforge_click(&mut self) {
         let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
             return;
@@ -1108,9 +1114,8 @@ impl App {
             return;
         }
         self.coins -= cost;
-        let mut rng = self.npc_rng;
-        let (prefix, top_tier) = crate::prefix::reforge_roll(self.reforge_slot.kind, &mut rng);
-        self.npc_rng = rng;
+        let (prefix, top_tier) =
+            crate::prefix::reforge_roll(self.reforge_slot.kind, &mut self.prefix_rng);
         self.reforge_slot.prefix = prefix;
         if top_tier {
             self.reforge_cooldown = 60;
@@ -2886,6 +2891,9 @@ impl App {
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
+            // A per-consumer stream like the splitmix fields above, but the
+            // C# `Main.rand` algorithm (the prefix rolls, `S1-A-5`).
+            prefix_rng: UnifiedRandom::new((world_seed ^ 0x51ED_2701_A3F5_C9B7) as i32),
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
             swing_style: 0,

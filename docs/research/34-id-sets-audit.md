@@ -50,7 +50,7 @@ armor_sets.rs,bestiary.rs}`, `crates/tr-app/src/app/{mod,netglue,saveglue}.rs`,
 - `crates/tr-app/src/npc.rs:1512` `net_id` → `crates/tr-app/src/bestiary.rs:1482` `entry_for_npc(...).net_id` — the **vanilla** `NPC.type`.
 - `crates/tr-app/src/npc.rs:1789` `cs_id` — a **partial** vanilla-id map (43 of 182 kinds; the rest return `u16::MAX`).
 - `crates/tr-app/src/projectile.rs:1046` `proj_data(kind: u16) -> Option<ProjData>` — the per-projectile defaults; 213 `pub const …: u16` id constants in the file (max `KRAKEN_WAVE = 1135`).
-- `crates/tr-app/src/prefix.rs:195` `stat_switch(prefix: u16)` — the prefix stat multipliers; 78 arms (ids 1..61, 81..97).
+- `crates/tr-app/src/prefix.rs:198` `stat_switch(prefix: u16)` — the prefix stat multipliers; 78 arms (ids 1..61, 81..97).
 - `crates/tr-app/src/bestiary.rs` — 174 `BestiaryEntryDef` literals (the net-id → sheet/entry table); `crates/tr-app/src/registry.rs:88` `item(id: u16)` / `:95` `get(id: u16)` — the item lookup over `ITEMS`.
 
 ## Dependencies
@@ -70,7 +70,7 @@ armor_sets.rs,bestiary.rs}`, `crates/tr-app/src/app/{mod,netglue,saveglue}.rs`,
 | WallID | 367 (`WallID.cs:845`) | 367 (`tiledata/mod.rs:14`) | **0** (space) | 0..366 bounds | **PASS** for the space; wall sets partial |
 | BuffID | 401 (`BuffID.cs:997`) | 401 (`buffs.rs:23`) | **0** (space) | id space only — no per-buff effect rows | **PASS** for the space, **MISSING** for the effects (`buffs.rs:17-19` says so) |
 | MusicID | 105 (`MusicID.cs:228`) | 105 (`audio.rs:18`) | **0** | 0..104 | **PASS** |
-| PrefixID | 98 (`PrefixID.cs:216`; consts 1..97) | 78 arms (`prefix.rs:196`-`:274`) | **19** (ids 62..80) | 1..61, 81..97 | **PARTIAL** — behavioural, ids 62..80 (Hard…Violent, the melee-prefix family) fall into the `_ =>` identity arm and get **no** vanilla bonuses |
+| PrefixID | 98 (`PrefixID.cs:216`; consts 1..97) | 78 arms (`prefix.rs:199`-`:277`) | **19** (ids 62..80) | 1..61, 81..97 | **PARTIAL** — behavioural, ids 62..80 (Hard…Violent, the melee-prefix family) fall into the `_ =>` identity arm and get **no** vanilla bonuses |
 | ProjectileID | 1136 (`ProjectileID.cs:2832`) | 213 id constants (`projectile.rs`), 174 `proj_data` arms | ~**960** ids without a Rust constant | a hand-picked subset (max id 1135) | **PARTIAL** — behavioural; `proj_data` returns `None` for every unlisted id |
 | NPCID | 697 + 66 negative (`NPCID.cs:12581`, `:10545`) | 182 kinds (`npc.rs:31`-`:701`) | **515+66** unported kinds | 182 kinds, port-local protocol ids 0..181 | **PARTIAL** — structural (see deviations 4-6) |
 | DustID | 332 (`DustID.cs:423`) | 0 | **332** | two hard-coded literals only (`rain.rs:96` `DustID.Snowflake` = 76; `tr-core/src/waterfall/mod.rs:54` `DustID.Sparkle`) | **MISSING** — no dust id table (module 15) |
@@ -115,7 +115,7 @@ crate-wide grep for `pub static …(BUFF|DUST|GORE|GLOW|SOUND|MUSIC|PREFIX|RARIT
 | `TileID` / `WallID` (754 / 367) | PORTED (bounds) / PARTIAL (sets) | `crates/tr-core/src/tiledata/mod.rs:11`,`:14`; `tiledata/sets.rs` | `TILE_COUNT`/`WALL_COUNT` match exactly. `TileSet::has` (`mod.rs:29`) bounds-checks against `TILE_COUNT`, so an out-of-range tile id is silently false — a safe failure mode. The `TileID.Sets.*` family is only ~45 sets; the rest of `TileID.cs`'s 100+ sets are absent. |
 | `BuffID` (401) | PARTIAL | `crates/tr-app/src/buffs.rs:23` | `BUFF_ID_COUNT = 401` matches; the per-buff *effect* chain (`Player.cs:9875-12000`) is absent (`buffs.rs:17-19`). The five `Main` tables (`debuff` 76, `lightPet` 12, `vanityPet` 74, `meleeBuff` 8, `pvpBuff` 20) are transcribed verbatim (`buffs.rs:28`/`:36`/`:39`/`:47`/`:52`). |
 | `MusicID` (105) | PORTED | `crates/tr-app/src/audio.rs:18` | `MAX_MUSIC: usize = 105` == `MusicID.cs:228`. |
-| `PrefixID` (98) | PARTIAL | `crates/tr-app/src/prefix.rs:195` | `stat_switch` has 78 arms: ids 1..61 and 81..97. **Ids 62..80 are absent** and fall to the `_ =>` identity arm (`:275`). The C# `PrefixID` consts 62..80 are the melee-only family (`Hard` 62 … `Violent` 80) and carry their own damage/knockback values in `Item.Prefix`. |
+| `PrefixID` (98) | PARTIAL | `crates/tr-app/src/prefix.rs:198` | `stat_switch` has 78 arms: ids 1..61 and 81..97. **Ids 62..80 are absent** and fall to the `_ =>` identity arm (`:278`). The C# `PrefixID` consts 62..80 are the melee-only family (`Hard` 62 … `Violent` 80) and carry their own damage/knockback values in `Item.Prefix`. |
 | `ProjectileID` (1136) | PARTIAL | `crates/tr-app/src/projectile.rs:1046` (`proj_data`) | 213 `pub const …: u16` id constants (max `KRAKEN_WAVE = 1135`); `proj_data`'s match has 174 const-name arms. Unlisted ids return `None` → the projectile spawns with vanilla defaults. The id *constants* are the vanilla `ProjectileID` values (verified: `WOODEN_ARROW = 1`, `SHURIKEN = 3`, `HOOK = 13` — matching `ProjectileID.cs`), so the space is shared, just sparsely populated. |
 | `NPCID` (697 + 66) | PARTIAL | `crates/tr-app/src/npc.rs:31` | 182 kinds vs 763 vanilla slots. The roster is a **kind list**, not an id table: `NpcKind` carries the vanilla behaviour per kind but not the vanilla id, so id-indexed vanilla tables (`NPCID.Sets.*`, `Main.npcFrameCount[696]`) have no Rust carrier. |
 | `DustID` (332) | MISSING | — | No table. Two literals only (`rain.rs:96`, `tr-core/src/waterfall/mod.rs:54`). |
@@ -221,7 +221,7 @@ indirectly, and the coverage is uneven:
    by the port's own tests. Not verified in this pass whether `entry_for_npc` panics,
    falls back, or mis-maps for those kinds. Severity: **behavioural**, medium.
 
-8. **Prefix ids 62..80 are unmodelled.** `stat_switch` (`prefix.rs:196`-`:275`) covers
+8. **Prefix ids 62..80 are unmodelled.** `stat_switch` (`prefix.rs:199`-`:278`) covers
    1..61 and 81..97; ids 62..80 (`Hard` … `Violent`, `PrefixID.cs:130`-`:200`) hit the
    `_ =>` identity arm. A melee weapon rolled with, say, `Hard` (62) gets the vanilla
    melee damage bonus in C# and **nothing** in Rust. Severity: **behavioural**, medium

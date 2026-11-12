@@ -295,7 +295,7 @@ Architecture-specific coverage (no cargo run performed — static inspection onl
   `the_crawltipede_assembles_its_thirty_segments`.
 - `tr-app/src/itemdata.rs::tests::test_DW_1_2_negative_defaults_and_on_created` (L7498),
   `tr-app/src/registry.rs::tests::test_dw_2_2_net_defaults_and_on_created` (L385),
-  `tr-app/src/prefix.rs::tests::tables_are_sorted_and_prefix_lists_verbatim` (L605).
+  `tr-app/src/prefix.rs::tests::tables_are_sorted_and_prefix_lists_verbatim` (L739).
 - `tr-core/src/scene.rs` — 58 tests over the filter board and parameter functions.
 - `tr-app/src/ui/pointer.rs` — 12 tests (`dw_1_1..dw_1_3`) over the pointer machine.
 - Coverage gap: **no test asserts the fixed-step order**, the App/World field
