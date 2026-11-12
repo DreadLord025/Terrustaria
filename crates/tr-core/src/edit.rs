@@ -77,6 +77,39 @@ pub struct PileLootEvent {
     pub y: i32,
 }
 
+/// One killed tree cell's drop record — `WorldGen.KillTile_GetTreeDrops`
+/// (`WorldGen.cs:66189-66261`) for the trunk kinds (5/596/616/634) and the
+/// `case 323` palm arm of `KillTile_GetItemDrops` (`:65232-65266`). The C#
+/// rolls its RNG inside the drop; the core has no stream, so the event carries
+/// everything the rolls need and the app resolves them in the C# order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TreeDropEvent {
+    /// A trunk cell — `KillTile_GetTreeDrops`.
+    Trunk {
+        x: i32,
+        y: i32,
+        /// The killed cell's `frameX`/`frameY` — the canopy marker test
+        /// (`frameX >= 22 && frameY >= 198`, `:66191`).
+        frame_x: i16,
+        frame_y: i16,
+        /// `WorldGen.GetTreeTypeAndTreeBottom` — the family of the ground
+        /// under the tree and the trunk column's ground cell.
+        tree_type: crate::tree::TreeType,
+        bottom_x: i32,
+        bottom_y: i32,
+    },
+    /// A palm cell — `KillTile_GetItemDrops`'s `case 323`.
+    Palm {
+        x: i32,
+        y: i32,
+        /// The killed cell's `frameX` — the acorn marker (`88..=132`).
+        frame_x: i16,
+        /// The wood the ground names (2504 by default, 911/621/619 on the
+        /// crimson/hallow/ebon sand).
+        item: u16,
+    },
+}
+
 /// The result of `kill_tile`: the kind of the hit cell plus every object
 /// destruction the cascade performed, in `SquareTileFrame` visit order, every
 /// loot pot the cascade broke, every cascade-killed herb cell and every broken
@@ -89,6 +122,12 @@ pub struct TileKill {
     pub events: Vec<PotEvent>,
     pub herb_events: Vec<HerbEvent>,
     pub pile_events: Vec<PileLootEvent>,
+    /// Every killed tree cell's drop record.
+    pub tree_events: Vec<TreeDropEvent>,
+    /// The palm cells whose canopy frame the C# re-rolls
+    /// (`WorldGen.CheckPalmTree`, `WorldGen.cs:54385-54388`) — the roll needs
+    /// the `genRand` stream, so the app resolves it and writes the frame.
+    pub palm_frame_rolls: Vec<(i32, i32)>,
 }
 
 // The ring walk's re-entrancy cap (`square_tile_frame` → the check → the
@@ -169,17 +208,92 @@ fn kill_tile_cascading(
     // :63519-63521 (bounds) and :63529-63532 (inactive) — `remove_tile`
     // covers both; the cell keeps its wall and liquid (:63885-63917 clear
     // everything but wall/liquid state on the C# side).
+    //
+    // The tree drop record is read BEFORE the cell is cleared: the C# drops
+    // the wood while the tile is still active (`KillTile_DropItems` at
+    // :63863 runs before the clear at :63885), and `GetTreeBottom` walks the
+    // still-standing trunk column.
+    let tree_drop = if no_item {
+        None
+    } else {
+        tree_drop_record(world, x, y)
+    };
     let kind = remove_tile(world, x, y)?;
     let mut kill = TileKill {
         kind,
         ..Default::default()
     };
+    if let Some(event) = tree_drop {
+        kill.tree_events.push(event);
+    }
     square_tile_frame(world, x, y, no_item, destroy_object, &mut kill);
     // The reframing half of the C# `TileFrame` calls: neighbours re-derive
     // their frames; `frame_important` kinds keep theirs and unsupported
     // torches fall (`reframe_area` = the non-object arm of `TileFrame`).
     after_edit(world, x, y);
     Some(kill)
+}
+
+/// The tree drop record of the cell about to die — `KillTile_GetItemDrops`'s
+/// tree arms (`WorldGen.cs:65214-65266`).
+///
+/// The trunk kinds (5/596/616/634) run `KillTile_GetTreeDrops`
+/// (`:66189-66261`): the family comes from `GetTreeTypeAndTreeBottom` (the
+/// ground under the trunk column), the acorn marker is the canopy cell's
+/// frame. The palm (323) walks down to the first solid ground and takes the
+/// biome wood (`:65243-65261`).
+fn tree_drop_record(world: &World, x: i32, y: i32) -> Option<TreeDropEvent> {
+    let cell = world.tile(x, y)?;
+    if !cell.active() {
+        return None;
+    }
+    let kind = cell.kind;
+    match kind {
+        5 | 596 | 616 | 634 => {
+            let (tree_type, bottom_x, bottom_y) = crate::tree::tree_type_and_bottom(world, x, y);
+            Some(TreeDropEvent::Trunk {
+                x,
+                y,
+                frame_x: cell.frame_x,
+                frame_y: cell.frame_y,
+                tree_type,
+                bottom_x,
+                bottom_y,
+            })
+        }
+        323 => {
+            // `case 323` (`:65232-65266`): the palm wood, then the ground
+            // walk down to the first solid tile (`:65243-65261`).
+            let mut item = 2504u16;
+            let mut j = y;
+            while j < world.height as i32 - 1 {
+                let Some(t) = world.tile(x, j) else {
+                    break;
+                };
+                if t.active() && td::TILE_SOLID.has(t.kind) {
+                    break;
+                }
+                j += 1;
+            }
+            if let Some(t) = world.tile(x, j) {
+                if t.active() {
+                    item = match t.kind {
+                        234 => 911, // the crimson sand → Shadewood
+                        116 => 621, // the hallow sand → Pearlwood
+                        112 => 619, // the ebon sand → Ebonwood
+                        _ => item,
+                    };
+                }
+            }
+            Some(TreeDropEvent::Palm {
+                x,
+                y,
+                frame_x: cell.frame_x,
+                item,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// `WorldGen.SquareTileFrame` (`WorldGen.cs:80185-80196`) with the
@@ -216,6 +330,21 @@ fn square_tile_frame(
             .copied()
             .unwrap_or(false);
         if !cell.active() || (crate::tileobject::def_for_tile(cell.kind).is_none() && !important) {
+            continue;
+        }
+        // `TileFrameImportant`'s tree arms (`WorldGen.cs:85876-85911`):
+        // `CheckTree` (the forest tree 5), `CheckTreeWithSettings` (the
+        // variant kinds 583-589/596/616/634) and `CheckPalmTree` (323). The
+        // routines kill the tree cells that lost their support and carry no
+        // `WorldGen.destroyObject` guard — the C#'s `TileFrameImportant` does
+        // not read the flag for them.
+        if let Some(variant) = crate::tree::TreeVariant::of(cell.kind) {
+            match variant {
+                crate::tree::TreeVariant::Palm => {
+                    check_palm_tree(world, cx, cy, no_item, destroy_object, kill)
+                }
+                _ => check_tree(world, cx, cy, variant, no_item, destroy_object, kill),
+            }
             continue;
         }
         // `Check*` re-entrancy guard (`WorldGen.destroyObject`, read at
@@ -338,6 +467,8 @@ fn kill_plan_cells(
             kill.events.extend(inner.events);
             kill.herb_events.extend(inner.herb_events);
             kill.pile_events.extend(inner.pile_events);
+            kill.tree_events.extend(inner.tree_events);
+            kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
         }
     }
 }
@@ -441,7 +572,308 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     }
 }
 
-/// `WorldGen.CheckOrb` (`:54169-54344`) — the 2x2 object arm shared
+/// The type of a cell, or `-1` when the cell is empty (the C#'s
+/// `Main.tile[x, y] != null && Main.tile[x, y].active()` probe).
+fn type_at(world: &World, x: i32, y: i32) -> i32 {
+    match world.tile(x, y) {
+        Some(t) if t.active() => i32::from(t.kind),
+        _ => -1,
+    }
+}
+
+// The recursion cap of the tree cascade: `CheckTree`'s `KillTile` chain walks
+// up the trunk column, so the depth is the tree's height (the vanilla's trees
+// are ≤ 30 tall). The cap only guards the port's pathological nests.
+thread_local! {
+    static TREE_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// `WorldGen.CheckTree` (the forest tree, `WorldGen.cs:54570-54780`) and
+/// `WorldGen.CheckTreeWithSettings` (the variant kinds, `:54402-54568`).
+///
+/// The two routines are the same machine with a different ground test: the
+/// forest tree folds the grass family onto plain dirt (`:54611-54642`), the
+/// variants use `GemTreeGroundTest` (`:30304`), `VanityTreeGroundTest`
+/// (`:30317`) and `AshTreeGroundTest` (`:30330`). The port keeps one body and
+/// parameterises the ground test.
+///
+/// The routine's kills are the vanilla's `WorldGen.KillTile(i, j)` — a real
+/// kill that drops the cell's wood and re-frames the neighbours, which is what
+/// makes the whole trunk collapse when its base goes.
+fn check_tree(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    variant: crate::tree::TreeVariant,
+    no_item: bool,
+    destroy_object: &mut bool,
+    kill: &mut TileKill,
+) {
+    let Some(cell) = world.tile(x, y) else {
+        return;
+    };
+    if !cell.active() {
+        return;
+    }
+    let kind = i32::from(cell.kind);
+    let fx0 = i32::from(cell.frame_x);
+    let fy0 = i32::from(cell.frame_y);
+
+    let left = type_at(world, x - 1, y);
+    let right = type_at(world, x + 1, y);
+    let above = type_at(world, x, y - 1);
+    let below = variant.ground_type(type_at(world, x, y + 1));
+    let ground_ok = variant.ground_valid(type_at(world, x, y + 1));
+
+    let mut fx = fx0;
+    let mut fy = fy0;
+
+    // (1) The trunk's base lost its ground (`:54643-54646`).
+    if !ground_ok
+        && below != kind
+        && ((fx == 0 && fy <= 130) || (fx == 22 && fy <= 130) || (fx == 44 && fy <= 130))
+    {
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        // The C#'s later arms read the cleared cell: `KillTile` resets the
+        // frames to `-1` (`:63887-63888`).
+        fx = -1;
+        fy = -1;
+    }
+
+    // (2) The branch/root row (`:54647-54657`).
+    if (22..=44).contains(&fx) && (132..=176).contains(&fy) {
+        if !ground_ok {
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            fx = -1;
+            fy = -1;
+        } else if (fx != 22 || left != kind) && (fx != 44 || right != kind) {
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            fx = -1;
+            fy = -1;
+        }
+    } else if (fx == 88 && (0..=44).contains(&fy))
+        || (fx == 66 && (66..=130).contains(&fy))
+        || (fx == 110 && (66..=110).contains(&fy))
+        || (fx == 132 && (0..=176).contains(&fy))
+    {
+        // (3) The branch's frame follows its neighbours (`:54658-54681`).
+        let num5 = fy % 66;
+        if left == kind && right == kind {
+            fx = 110;
+            fy = 66 + num5;
+        } else if left == kind {
+            fx = 88;
+            fy = num5;
+        } else if right == kind {
+            fx = 66;
+            fy = 66 + num5;
+        } else {
+            fx = 0;
+            fy = num5;
+        }
+    }
+
+    // (4) The root row (`:54682-54709`). The forest tree's frame chain is a
+    // separate `if` (it writes the frames even after the kill); the variants'
+    // chain is an `else if` (`:54473-54497`).
+    if (132..=176).contains(&fy) && (fx == 0 || fx == 66 || fx == 88) {
+        let num6 = fy % 66;
+        if !ground_ok {
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            fx = -1;
+            fy = -1;
+        }
+        if variant == crate::tree::TreeVariant::Forest || ground_ok {
+            if left != kind && right != kind {
+                fx = 0;
+                fy = num6;
+            } else if left != kind {
+                fx = 0;
+                fy = 132 + num6;
+            } else if right != kind {
+                fx = 66;
+                fy = 132 + num6;
+            } else {
+                fx = 88;
+                fy = 132 + num6;
+            }
+        }
+    }
+
+    // (5) The canopy marker without its trunk column (`:54710-54727`). The
+    // forest tree's `num4 == 23` arm is dead code — the ground fold at
+    // `:54611-54614` already turned 23 into 2.
+    if (fx == 66 && (fy == 0 || fy == 22 || fy == 44))
+        || (fx == 44 && (fy == 198 || fy == 220 || fy == 242))
+    {
+        if right != kind {
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            fx = -1;
+            fy = -1;
+        }
+    } else if (fx == 88 && (fy == 66 || fy == 88 || fy == 110))
+        || (fx == 66 && (fy == 198 || fy == 220 || fy == 242))
+    {
+        if left != kind {
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            fx = -1;
+            fy = -1;
+        }
+    } else if below == -1 {
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        fx = -1;
+        fy = -1;
+    } else if above != kind && fy < 198 && ((fx != 22 && fx != 44) || fy < 132) {
+        // (6) The trunk's frame follows its neighbours (`:54728-54772`).
+        let num7 = fy % 66;
+        if left == kind || right == kind {
+            if below == kind {
+                if left == kind && right == kind {
+                    fx = 132;
+                    fy = 132 + num7;
+                } else if left == kind {
+                    fx = 132;
+                    fy = num7;
+                } else {
+                    fx = 132;
+                    fy = 66 + num7;
+                }
+            } else if left == kind && right == kind {
+                fx = 154;
+                fy = 132 + num7;
+            } else if left == kind {
+                fx = 154;
+                fy = num7;
+            } else {
+                fx = 154;
+                fy = 66 + num7;
+            }
+        } else {
+            fx = 110;
+            fy = num7;
+        }
+    }
+
+    // The rewritten frames go back to the cell (the C# writes them into
+    // `Main.tile[i, j]`).
+    if fx != fx0 || fy != fy0 {
+        if let Some(cell) = world.tile_mut(x, y) {
+            cell.frame_x = fx as i16;
+            cell.frame_y = fy as i16;
+        }
+    }
+
+    // (7) The frame changed → re-frame the neighbours (`:54773-54779`).
+    if fx != fx0 && fy != fy0 && fx0 >= 0 && fy0 >= 0 {
+        tree_ring(world, x, y, no_item, destroy_object, kill);
+    }
+}
+
+/// `WorldGen.CheckPalmTree` (`WorldGen.cs:54346-54400`): the palm's ground
+/// must be sand; a palm that lost it dies, and the palm's canopy frame is
+/// re-rolled when the cell above it is gone.
+fn check_palm_tree(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    no_item: bool,
+    destroy_object: &mut bool,
+    kill: &mut TileKill,
+) {
+    let Some(cell) = world.tile(x, y) else {
+        return;
+    };
+    if !cell.active() {
+        return;
+    }
+    let kind = i32::from(cell.kind);
+    let fx0 = i32::from(cell.frame_x);
+    let fy0 = i32::from(cell.frame_y);
+    let above = type_at(world, x, y - 1);
+    // The evil and hallowed sands read as plain sand (`:54361-54376`).
+    let mut below = type_at(world, x, y + 1);
+    if below == 234 || below == 116 || below == 112 {
+        below = 53;
+    }
+    let mut fx = fx0;
+    let mut fy = fy0;
+    // The palm's ground must be sand (`:54377-54384`).
+    if below != 53 && below != kind {
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        fx = -1;
+        fy = -1;
+    }
+    if (fx == 66 || fx == 220) && below != 53 {
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        fx = -1;
+        fy = -1;
+    }
+    if above != kind && fx <= 44 {
+        // `Main.tile[i, j].frameX = (short)(WorldGen.genRand.Next(7, 10) * 22);`
+        // (`:54385-54388`) — the roll needs the `genRand` stream, so the port
+        // records the request and the app resolves it (the frame is written
+        // after the cascade; the C#'s ring does not fire for this arm because
+        // `frameY` is unchanged).
+        kill.palm_frame_rolls.push((x, y));
+    } else if above != kind && fx == 66 {
+        fx = 220;
+    }
+    if fx != fx0 || fy != fy0 {
+        if let Some(cell) = world.tile_mut(x, y) {
+            cell.frame_x = fx as i16;
+            cell.frame_y = fy as i16;
+        }
+    }
+    // The frame changed → re-frame the neighbours (`:54393-54399`).
+    if fx != fx0 && fy != fy0 && fx0 >= 0 && fy0 >= 0 {
+        tree_ring(world, x, y, no_item, destroy_object, kill);
+    }
+}
+
+/// The `CheckTree`/`CheckPalmTree` tail's `TileFrame` ring
+/// (`WorldGen.cs:54773-54779`, `:54393-54399`): the four neighbours of the
+/// re-framed cell.
+fn tree_ring(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    no_item: bool,
+    destroy_object: &mut bool,
+    kill: &mut TileKill,
+) {
+    let depth = TREE_DEPTH.with(|d| d.get());
+    if depth >= 64 {
+        return;
+    }
+    TREE_DEPTH.with(|d| d.set(depth + 1));
+    for (mx, my) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
+        square_tile_frame(world, mx, my, no_item, destroy_object, kill);
+    }
+    TREE_DEPTH.with(|d| d.set(depth));
+}
+
+/// Kills a tree cell the way the C#'s `CheckTree` does — `WorldGen.KillTile(i, j)`
+/// — and folds the nested record into `kill`: the nested kill runs the whole
+/// cascade (its own drops, pot loot, herb rolls and pile loot all surface).
+fn kill_tree_cell(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    no_item: bool,
+    destroy_object: &mut bool,
+    kill: &mut TileKill,
+) {
+    if let Some(inner) = kill_tile_cascading(world, x, y, no_item, destroy_object) {
+        kill.object_drops.extend(inner.object_drops);
+        kill.events.extend(inner.events);
+        kill.herb_events.extend(inner.herb_events);
+        kill.pile_events.extend(inner.pile_events);
+        kill.tree_events.extend(inner.tree_events);
+        kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
+    }
+}
+
+/// `WorldGen.CheckOrb` (`WorldGen.cs:54169-54344`) — the 2x2 object arm shared
 /// by the Shadow Orb (31), the Crimson Heart (12, the +36 frameX) and
 /// the Mana Crystal (639): the top-left anchor snap, the integrity scan,
 /// the break plan, and the world-state flags (`shadowOrbSmashed =
@@ -3165,6 +3597,134 @@ mod tests {
         w.compute_column_surface();
         w.compute_chunks();
         w
+    }
+
+    /// A tree over a dirt ground: a trunk column of `tree::TREE` cells with
+    /// the canopy marker on top.
+    fn tree_world(ground: u16, height: i32) -> World {
+        let mut w = ground_world();
+        w.frame_important[5] = true;
+        // The ground the tree grows on.
+        for x in 8..14 {
+            let i = w.index(x, 20);
+            w.tiles[i].kind = ground;
+        }
+        // The trunk column at x = 10, the base at y = 19.
+        for dy in 0..height {
+            let i = w.index(10, 19 - dy);
+            let (fx, fy) = if dy == height - 1 {
+                (22, 198) // the canopy marker
+            } else {
+                (0, 0)
+            };
+            w.tiles[i] = Tile {
+                kind: 5,
+                frame_x: fx,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    /// BUG-16: felling the base of a tree collapses the whole trunk
+    /// (`WorldGen.CheckTree`'s `KillTile` chain, `WorldGen.cs:54643-54727`:
+    /// the cell above a missing ground dies, and its own `TileFrame` ring
+    /// reaches the next one up).
+    #[test]
+    fn BUG_16_the_felled_tree_collapses_whole() {
+        let mut w = tree_world(2, 8);
+        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        // Every trunk cell is gone — the trunk does not float.
+        for dy in 0..8 {
+            assert!(
+                !w.tile(10, 19 - dy).unwrap().active(),
+                "the cell at dy {dy} survived"
+            );
+        }
+        // One drop record per killed cell (the C#'s `KillTile_DropItems` runs
+        // for every killed cell).
+        assert_eq!(kill.tree_events.len(), 8, "one wood drop per cell");
+        // The family comes from the ground under the trunk column.
+        for event in &kill.tree_events {
+            match event {
+                TreeDropEvent::Trunk { tree_type, .. } => {
+                    assert_eq!(*tree_type, crate::tree::TreeType::Forest);
+                }
+                TreeDropEvent::Palm { .. } => panic!("not a palm"),
+            }
+        }
+    }
+
+    /// BUG-16: the jungle ground names the tree's wood family
+    /// (`WorldGen.GetTreeType`, `WorldGen.cs:63079-63109`).
+    #[test]
+    fn BUG_16_the_tree_family_comes_from_the_ground() {
+        let mut w = tree_world(60, 4);
+        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        assert_eq!(kill.tree_events.len(), 4);
+        for event in &kill.tree_events {
+            match event {
+                TreeDropEvent::Trunk { tree_type, .. } => {
+                    assert_eq!(*tree_type, crate::tree::TreeType::Jungle);
+                }
+                TreeDropEvent::Palm { .. } => panic!("not a palm"),
+            }
+        }
+    }
+
+    /// BUG-16: the canopy marker carries the acorn roll (`frameX >= 22 &&
+    /// frameY >= 198`, `WorldGen.cs:66191`) — only the top cell does.
+    #[test]
+    fn BUG_16_only_the_canopy_marker_may_drop_an_acorn() {
+        let mut w = tree_world(2, 5);
+        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        let markers = kill
+            .tree_events
+            .iter()
+            .filter(|e| match e {
+                TreeDropEvent::Trunk {
+                    frame_x, frame_y, ..
+                } => *frame_x >= 22 && *frame_y >= 198,
+                TreeDropEvent::Palm { .. } => false,
+            })
+            .count();
+        assert_eq!(markers, 1, "only the canopy cell carries the acorn roll");
+    }
+
+    /// BUG-16: a palm over sand dies with the sand (`WorldGen.CheckPalmTree`,
+    /// `WorldGen.cs:54377-54384`) and drops the palm wood
+    /// (`KillTile_GetItemDrops`'s `case 323`, `:65232-65261`).
+    #[test]
+    fn BUG_16_the_palm_dies_with_its_sand() {
+        let mut w = ground_world();
+        w.frame_important[323] = true;
+        // The palm column at x = 10 over the sand at y = 20.
+        for dy in 0..4 {
+            let i = w.index(10, 19 - dy);
+            w.tiles[i] = Tile {
+                kind: 323,
+                frame_x: 0,
+                frame_y: 0,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        let i = w.index(10, 20);
+        w.tiles[i].kind = 53; // the sand
+        // Chop the sand away: the palm above loses its ground.
+        let kill = kill_tile(&mut w, 10, 20, false).expect("the sand dies");
+        assert!(
+            !w.tile(10, 19).unwrap().active(),
+            "the palm below the lost sand survived"
+        );
+        assert!(
+            kill.tree_events
+                .iter()
+                .any(|e| matches!(e, TreeDropEvent::Palm { item: 2504, .. }))
+        );
     }
 
     #[test]

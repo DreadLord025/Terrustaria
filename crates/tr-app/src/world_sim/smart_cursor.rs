@@ -79,15 +79,21 @@ pub(crate) fn repoint(app: &mut App, tx: i32, ty: i32, mouse: (f32, f32)) -> Opt
         tile_boost(app),
     );
     // `SmartCursorHelper.cs:106-116` — the `_grappleTargets` fill: the
-    // player's grappling projectiles' centers over 16. The port runs a
-    // single hook (`App.grapple`), so the list holds 0 or 1 cell; the
-    // hook's `pos` is its center (`grapple::GrappleHook::fire` starts it at
-    // the player's center).
+    // player's grappling projectiles' centers over 16. The hooks live in the
+    // pool as aiStyle-7 slots (`AI_007_GrapplingHooks`), so the scan is the
+    // same-owner walk over them; the slot's `pos` is its top-left, hence the
+    // half-box offset to its center.
+    let local = app.local_id as u8;
     let grapple_targets = smart_cursor::grapple_target_cells(
-        &app.grapple
-            .as_ref()
-            .map(|h| (h.pos.x, h.pos.y))
-            .into_iter()
+        &app.projectiles
+            .slots()
+            .iter()
+            .filter(|pr| {
+                pr.active
+                    && pr.owner == local
+                    && crate::projectile::proj_data(pr.kind).is_some_and(|d| d.ai_style == 7)
+            })
+            .map(|pr| (pr.grapple_center.x, pr.grapple_center.y))
             .collect::<Vec<_>>(),
     );
     let lookup = Lookup {
@@ -183,16 +189,20 @@ mod tests {
     fn the_lookup_carries_the_grapple_hook_cell() {
         // `SmartCursorHelper.cs:106-116` — the reach rect's off-screen gate
         // fills `_grappleTargets` from the player's grappling projectiles.
-        // The port's single `App.grapple` hook contributes its position
-        // cell; the torch step still re-points (the targets only gate the
-        // pickaxe-solids walk).
+        // The hooks are aiStyle-7 pool slots owned by the local player, so the
+        // test spawns one through `spawn_hook`; the torch step still
+        // re-points (the targets only gate the pickaxe-solids walk).
         let mut app = wiring_app();
-        app.grapple = Some(crate::grapple::GrappleHook::fire(
-            0,
+        app.projectiles.spawn_hook(
+            crate::projectile::HOOK,
             glam::Vec2::new(40.0 * 16.0, 42.0 * 16.0),
             glam::Vec2::new(41.0 * 16.0, 42.0 * 16.0),
             16.0,
-        ));
+            0,
+            0.0,
+            app.local_id as u8,
+            1,
+        );
         let found = repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0));
         assert_eq!(found, Some((35, 39)), "the torch step still re-points");
     }
@@ -236,16 +246,18 @@ mod tests {
             None,
             "the runtime state off: no re-point"
         );
-        // The press edge turns it on and the lookup runs.
-        app.world_key(winit::keyboard::KeyCode::ShiftLeft);
-        assert!(app.smart_cursor_used, "the Shift press turns it on");
+        // The press edge turns it on and the lookup runs. `Player.controlSmart`
+        // is `Main.cSmart` — **LeftControl** (`Main.cs:67175`), not `cTorch`'s
+        // LeftShift (`:67173`).
+        app.world_key(winit::keyboard::KeyCode::ControlLeft);
+        assert!(app.smart_cursor_used, "the Control press turns it on");
         assert_eq!(
             repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),
             Some((35, 39)),
             "the runtime state on: the torch step re-points"
         );
         // The second press turns it back off and the lookup stands down.
-        app.world_key(winit::keyboard::KeyCode::ShiftLeft);
+        app.world_key(winit::keyboard::KeyCode::ControlLeft);
         assert!(!app.smart_cursor_used, "the second press turns it off");
         assert_eq!(
             repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),

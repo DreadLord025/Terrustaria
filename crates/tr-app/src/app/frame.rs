@@ -7,8 +7,8 @@
 use std::time::Instant;
 
 use glam::Vec2;
-use tr_core::TILE_PX;
 use tr_core::lighting::{LightParams, LightStyle};
+use tr_core::TILE_PX;
 use wgpu::util::DeviceExt;
 
 use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
@@ -103,6 +103,46 @@ impl App {
         // must not sit inside the in-game branch below — see
         // [`App::tick_pointer_clock`].
         self.tick_pointer_clock(dt);
+        // `Main.cs:17048-17051`: the PVP/team-change lockout counts down once per
+        // update, beside the UI-state tick (`UpdateAudio`/`ItemSlot.UpdateInterface`
+        // neighbours) — not on the fixed world step.
+        if self.team_cooldown > 0 {
+            self.team_cooldown -= 1;
+        }
+        // `IngameOptions.Draw`'s per-frame hover/animation state and its
+        // `SoundEngine.PlaySound(12)`/`(10)` cues (`IngameOptions.cs:157-199`,
+        // `:421-436`) — plus the sticky bar drag (`:424`). Runs on every frame
+        // like the vanilla's, and before the HUD borrows the state.
+        if let Some(cue) =
+            crate::ui::ingame_options::update(self, self.pointer.left_held())
+        {
+            self.audio.play(cue);
+        }
+        // `Main.DrawInterface_29_SettingsButton` (`Main.cs:45513-45527`): the
+        // Settings button's position, its `exitScale` hover animation and the
+        // `_settingsButtonIsPushedToSide` latch. Runs every frame the button is
+        // visible (`playerInventory || ingameOptionsWindow || dead`) because the
+        // inventory's accessory column reads the latch.
+        if self.inventory_open || self.ingame_options.open {
+            let (sw, sh) = self.screen_size();
+            let (m_h, mouse) = (self.main_m_h(), self.mouse_pos);
+            let dead = self.player.as_ref().is_some_and(|p| p.dead);
+            crate::ui::ingame_options::refresh_button(
+                &mut self.ingame_options,
+                &self.lookups,
+                Vec2::new(sw, sh),
+                m_h,
+                dead,
+                mouse,
+                crate::ui::inventory::extra_accessory_slots(),
+                false,
+            );
+        }
+        // `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): the drawn page is
+        // whatever the held item forces (`ItemSlot.SelectEquipPage`), else the
+        // page the player selected with the tabs. Recomputed every frame so the
+        // auto-jump is undone the moment the cursor stack empties.
+        self.resolve_equip_page();
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
@@ -128,10 +168,7 @@ impl App {
                 // boundaries read the same stream), drawn once per advance.
                 let roll01 = f64::from(rand01(&mut self.clock_rng));
                 // `Main.cs:65342-65349`'s player gate.
-                let any_over_120 = self
-                    .player
-                    .as_ref()
-                    .is_some_and(|p| p.max_hp > 120);
+                let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
                 let (blood_moon, eclipse) =
                     advance_time(&mut self.world, dt * rate, roll01, any_over_120);
                 if blood_moon {
@@ -265,7 +302,19 @@ impl App {
         // world branch runs, so the swap never interleaves a half-ticked world.
         if let Some(path) = self.play_world.take() {
             match self.swap_world(&path) {
-                Ok(()) => log::info!("world: {}", path.display()),
+                Ok(()) => {
+                    // `Main.LoadWorld` leaves `Main.gameMenu` false, so nothing
+                    // may draw over the world the swap just installed (BUG-21:
+                    // the lobby used to come back and the Play looked like it
+                    // "dropped back" to the menu). `swap_world` ends on
+                    // `enter_loaded_world`; this is the tripwire for any path
+                    // that reinstates an overlay after it.
+                    debug_assert!(
+                        self.menu.is_none() && self.front.is_none(),
+                        "the world swap must close both front-end sides"
+                    );
+                    log::info!("world: {}", path.display())
+                }
                 Err(e) => {
                     // A failed load keeps the current world: the menu stays
                     // alive with its own world rather than a black screen (the
@@ -530,27 +579,8 @@ impl App {
             .as_ref()
             .filter(|p| !p.dead)
             .map(|p| p.interpolated(player_alpha));
-        // `PlayerFrame` item-use branch: while a swing is active the body shows the use
-        // rows instead of the idle/air pose; `swing / swing_max` is
-        // `itemAnimation / itemAnimationMax`. At rest a `holdStyle == 1` item
-        // (the torch) pins the body to row 3 (`Player.cs:36455-36459`).
-        let held_hold_style = self
-            .inventory
-            .get(self.selected)
-            .filter(|s| s.count > 0)
-            .map_or(0, |s| item::hold_style(s.kind));
-        if let Some(p) = render_player.as_mut() {
-            if self.swing > 0.0 && self.inventory[self.selected].count > 0 {
-                let aim_relative = self.swing_aim * p.facing as f32;
-                p.apply_item_use_frame(
-                    self.swing / self.swing_max.max(f32::EPSILON),
-                    self.swing_style,
-                    aim_relative,
-                );
-            } else if held_hold_style == 1 {
-                p.body_frame = 3;
-            }
-        }
+        // The body rows — the item-use rows included — are all computed by
+        // `Player::update_frames` (`PlayerFrame()`) inside the fixed step.
         let player_key = render_player.as_ref().map_or(0, |p| p.render_key());
         let npc_key = npc::render_key(&self.npcs);
         let mut stats = tr_render::sprite::RenderStats::default();
@@ -571,6 +601,9 @@ impl App {
         // per-chest slot count from the file (`Chest.maxItems`), the default
         // 40 for every port-created chest.
         let chest_max_items = crate::chest::chest_max_items(&self.world_chests, chest_open);
+        // `Main.DrawPVPIcons`'s state block, snapshotted before the disjoint
+        // borrow below (it reads `self.player` / `self.net`).
+        let pvp_icon_state = self.pvp_icon_state();
 
         {
             let App {
@@ -1082,10 +1115,13 @@ impl App {
                         // `Player.armor[0..3]`'s item kinds — the armor draw
                         // input (head/body/legs, 0 = the empty slot).
                         [
-                            self.equip
-                                .armor
-                                .first()
-                                .map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+                            self.equip.armor.first().map_or(0, |s| {
+                                if s.count > 0 {
+                                    s.kind
+                                } else {
+                                    0
+                                }
+                            }),
                             self.equip
                                 .armor
                                 .get(1)
@@ -1174,13 +1210,10 @@ impl App {
 
                 let boss = npcs
                     .iter()
-                    .find(
-                        |n| {
-                            (n.kind == NpcKind::KingSlime
-                                || n.kind == NpcKind::EyeOfCthulhu)
-                                && n.hp > 0
-                        },
-                    )
+                    .find(|n| {
+                        (n.kind == NpcKind::KingSlime || n.kind == NpcKind::EyeOfCthulhu)
+                            && n.hp > 0
+                    })
                     .map(|n| (n.hp, n.max_hp));
                 // `Main.cs:62147-62181`: while the fullscreen map is open `Main.Draw`
                 // returns early after `DrawMap`, before `DrawInterface` (`62432`), so
@@ -1334,6 +1367,7 @@ impl App {
                         self.equip_page,
                         *selected,
                         &self.hotbar_scales,
+                        &npcs[..],
                         player.as_ref(),
                         boss,
                         // `BigProgressBarSystem.ShowText` (`ShowBossBarHealthText`,
@@ -1422,12 +1456,26 @@ impl App {
                             crate::bank::bank_for_chest(p.chest)
                                 .map(|bi| (&p.banks[bi][..], p.chest))
                         }),
+                        // `Main.DrawPVPIcons`'s state (`Main.cs:42654`): the
+                        // net-mode / team-based-spawns gates, the local
+                        // player's `hostile` + `team` and `Main.teamCooldown`.
+                        &pvp_icon_state,
                     );
                     // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
                     // the death broadcast + the softcore "Dropped coins"
                     // line while the respawn timer runs.
                     if let Some(p) = player.as_ref() {
                         if p.hp <= 0 {
+                            // `Main._framesWithRespawnSkipAvailable`
+                            // (`Main.cs:45348-45376`): the counter the C#
+                            // ticks inside `DrawDeathText` — up while the skip
+                            // is allowed, zeroed otherwise.
+                            if self.respawn_skip_available {
+                                self.respawn_skip_frames =
+                                    self.respawn_skip_frames.saturating_add(1);
+                            } else {
+                                self.respawn_skip_frames = 0;
+                            }
                             ui::draw_death_screen(
                                 renderer,
                                 lookups,
@@ -1436,6 +1484,7 @@ impl App {
                                 self.lost_coins,
                                 &self.lost_coin_string,
                                 p.respawn_timer,
+                                self.respawn_skip_frames,
                             );
                         }
                     }
@@ -1449,6 +1498,7 @@ impl App {
                         self.invasion_progress,
                         self.invasion_progress_max,
                         self.invasion_progress_icon,
+                        self.invasion_progress_wave,
                         self.invasion_progress_alpha,
                     );
                 } else if let Some(menu) = menu.as_mut() {
@@ -1561,14 +1611,15 @@ impl App {
                         rain.drop_count(),
                         rain.snow_count(),
                     );
-
                 }
 
                 // The debug cheat-sheet panel (the self-contained
                 // debug_panel.rs) — independent of F1.
                 if self.debug_panel.open {
                     crate::debug_panel::draw(
-                        renderer, lookups, screen,
+                        renderer,
+                        lookups,
+                        screen,
                         &self.debug_panel,
                         npcs,
                         world,

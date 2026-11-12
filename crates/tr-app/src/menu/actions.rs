@@ -369,9 +369,13 @@ impl Menu {
         // captured too — vanilla's `GetPressedKeys` sees them first (only
         // XNA's `Keys.None` is skipped at `:50575`/`:50470`, which has no
         // winit equivalent).
+        //
+        // The name is the XNA `Keys` spelling (`string.Concat(pressedKeys[0])`,
+        // `:50572`), not winit's debug name: the same string is what
+        // `config.json` carries and what [`crate::input_map`] matches against.
         if self.set_key.is_some() && matches!(self.page, Page::Keybindings | Page::MapKeys) {
             let index = self.set_key.unwrap();
-            let name = format!("{code:?}");
+            let name = crate::input_map::key_name(code);
             if self.page == Page::Keybindings {
                 if let Some(slot) = self.keybinds.get_mut(index) {
                     *slot = name;

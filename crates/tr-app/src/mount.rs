@@ -1429,6 +1429,23 @@ const MOUNT_ITEMS: [(u16, i32); 49] = [
 ];
 
 /// `Item.mountType` for the ported rows.
+/// `MountID.Sets.DoesNotOverrideLegFrames` (`MountID.cs:39`) — the roller-skate
+/// mounts (57-60) let the legs keep their own rows.
+pub(crate) fn does_not_override_leg_frames(id: i32) -> bool {
+    matches!(id, 57..=60)
+}
+
+/// `MountID.Sets.DoesNotOverrideBodyFrames` (`MountID.cs:38`) — the same set.
+pub(crate) fn does_not_override_body_frames(id: i32) -> bool {
+    does_not_override_leg_frames(id)
+}
+
+/// `MountID.Sets.IsRollerSkates` (`MountID.cs:42`) — the same set again; the
+/// walk branch locks their leg counter to `2` at full speed.
+pub(crate) fn is_roller_skates(id: i32) -> bool {
+    does_not_override_leg_frames(id)
+}
+
 pub(crate) fn mount_type_of_item(item: u16) -> Option<i32> {
     MOUNT_ITEMS
         .iter()

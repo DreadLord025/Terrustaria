@@ -38,7 +38,18 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// M5-SEED-2 `World.micro_seeds` u64); the C# `.wld` stores the nine
 /// booleans in the flags block and re-derives the micro seeds from the seed
 /// text, so the port carries both as its own tail block.
-pub const VERSION: u32 = 12;
+/// v13 appended the signs and the weighted pressure plates (`LoadSigns` /
+/// `LoadWeightedPressurePlates`, `WorldFile.cs:1666-1685` / `:3373-3384`).
+/// Both are `World` fields the port already loaded from the C# `.wld`
+/// (M6-SAVE-1), so a `.trwld` round trip used to drop them.
+///
+/// **Not** in this version, and why: the TownManager rooms
+/// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
+/// (`Bestiary.Sights`/`Chats`) and the CreativePowers table live on the
+/// App side in this port (`tr-app/src/town.rs`, `bestiary.rs`, `creative.rs`),
+/// and `tr-core` cannot see them — they need a `WorldSide` twin on the app's
+/// save path, which is the recorded M6-SAVE-1b remainder.
+pub const VERSION: u32 = 13;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -354,6 +365,28 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // (`World.micro_seeds`, the 37 `SecretSeed` flags).
     w.write_all(&world.seeds.sum().to_le_bytes())?;
     w.write_all(&world.micro_seeds.sum().to_le_bytes())?;
+    // v13: the signs and the weighted pressure plates. Both are `World`
+    // fields (loaded from the C# `.wld` in M6-SAVE-1), so the `.trwld` used
+    // to lose them on reload. Sorted by position for a deterministic file —
+    // the two vectors are load-order dependent (`apply_loaded` appends).
+    let mut signs: Vec<&crate::wld::sections::WldSign> = world.signs.iter().collect();
+    signs.sort_by_key(|s| (s.x, s.y));
+    w.write_all(&(signs.len() as u32).to_le_bytes())?;
+    for sign in signs {
+        let text = sign.text.as_bytes();
+        w.write_all(&(text.len() as u32).to_le_bytes())?;
+        w.write_all(text)?;
+        w.write_all(&sign.x.to_le_bytes())?;
+        w.write_all(&sign.y.to_le_bytes())?;
+    }
+    let mut plates: Vec<&crate::wld::sections::WldPressurePlate> =
+        world.pressure_plates.iter().collect();
+    plates.sort_by_key(|p| (p.x, p.y));
+    w.write_all(&(plates.len() as u32).to_le_bytes())?;
+    for plate in plates {
+        w.write_all(&plate.x.to_le_bytes())?;
+        w.write_all(&plate.y.to_le_bytes())?;
+    }
     Ok(())
 }
 
@@ -677,6 +710,31 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.seeds = crate::seeds::SeedFlags::from_sum(r.u16()?);
         world.micro_seeds = crate::seeds::MicroSeedFlags::from_sum(r.u64()?);
     }
+    // v13: the signs and the weighted pressure plates.
+    if version >= 13 {
+        let count = r.u32()? as usize;
+        world.signs = Vec::with_capacity(count.min(4096));
+        for _ in 0..count {
+            let len = r.u32()? as usize;
+            // The file's string convention (u32 length + UTF-8), the same one
+            // the world name and the chest names use.
+            let text = String::from_utf8(r.take(len)?.to_vec())
+                .map_err(|e| anyhow!("sign text at {len} bytes is not UTF-8: {e}"))?;
+            world.signs.push(crate::wld::sections::WldSign {
+                text,
+                x: r.i32()?,
+                y: r.i32()?,
+            });
+        }
+        let count = r.u32()? as usize;
+        world.pressure_plates = Vec::with_capacity(count.min(65536));
+        for _ in 0..count {
+            world.pressure_plates.push(crate::wld::sections::WldPressurePlate {
+                x: r.i32()?,
+                y: r.i32()?,
+            });
+        }
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -902,7 +960,7 @@ mod tests {
         w.moondial_cooldown = 8;
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        assert_eq!(&buf[8..12], &[12, 0, 0, 0], "the writer emits the current v12");
+        assert_eq!(&buf[8..12], &[13, 0, 0, 0], "the writer emits the current v13");
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
         assert_eq!(back.moondial_cooldown, 8);
@@ -928,13 +986,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v9 (the flags/wires/TE/chests/banners/
-        // bestiary/npc/ore-tiers tail) is now the current format, so the gate pins 12.
+        // current one (`save.rs` version gate). v13 (the signs + weighted
+        // pressure plates tail) is now the current format, so the gate pins 13.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&13u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 13 is unsupported");
+        buf[8..12].copy_from_slice(&14u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 14 is unsupported");
     }
 
     #[test]
@@ -1060,12 +1118,65 @@ mod tests {
         assert_eq!(back_micro(&buf), w.micro_seeds.sum());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, w.micro_seeds);
-        // A v11 file (the same stream minus the v12 block, the version byte
-        // restored) loads as the classic world it was.
-        buf.truncate(buf.len() - 10);
+        // A v11 file (the same stream minus the v12 block and the v13 tail,
+        // the version byte restored) loads as the classic world it was.
+        buf.truncate(buf.len() - 10 - EMPTY_V13_TAIL);
         buf[8..12].copy_from_slice(&11u32.to_le_bytes());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
+    }
+
+    #[test]
+    fn m6_save_1b_the_signs_and_plates_round_trip_in_v13() {
+        // M6-SAVE-1b: the signs and the weighted pressure plates are `World`
+        // fields the C# `.wld` already loads (`LoadSigns`,
+        // `WorldFile.cs:1666-1685`; `LoadWeightedPressurePlates`, `:3373-3384`),
+        // but the `.trwld` had no twin, so a native save dropped them.
+        let mut w = World::new("Test".into(), 32, 32);
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.signs.is_empty(), "an empty world writes no signs");
+        assert!(back.pressure_plates.is_empty());
+
+        w.signs = vec![
+            crate::wld::sections::WldSign { text: "second".into(), x: 9, y: 4 },
+            // Out of order on purpose: the writer sorts by position so the
+            // file is deterministic, and the reader keeps that order.
+            crate::wld::sections::WldSign { text: "first — ünïcode".into(), x: 3, y: 7 },
+        ];
+        w.pressure_plates = vec![
+            crate::wld::sections::WldPressurePlate { x: 12, y: 5 },
+            crate::wld::sections::WldPressurePlate { x: 2, y: 1 },
+        ];
+        buf.clear();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.signs.len(), 2);
+        assert_eq!(back.signs[0].text, "first — ünïcode", "sorted by x");
+        assert_eq!((back.signs[0].x, back.signs[0].y), (3, 7));
+        assert_eq!(back.signs[1].text, "second");
+        assert_eq!((back.signs[1].x, back.signs[1].y), (9, 4));
+        assert_eq!(
+            back.pressure_plates
+                .iter()
+                .map(|p| (p.x, p.y))
+                .collect::<Vec<_>>(),
+            vec![(2, 1), (12, 5)],
+            "the plates sort by position too"
+        );
+
+        // A v12 file (the same stream minus the v13 block) loads as the
+        // sign-less world it was — the version gate, not a length guess.
+        let v13_len = buf.len();
+        let mut v12 = buf.clone();
+        // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes.
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8;
+        v12.truncate(v13_len - tail);
+        v12[8..12].copy_from_slice(&12u32.to_le_bytes());
+        let (back, _) = parse(&v12).unwrap();
+        assert!(back.signs.is_empty(), "a v12 file has no sign block");
+        assert!(back.pressure_plates.is_empty());
     }
 
     /// A `WorldSide` carrying only the chest records (the v7 tests).
@@ -1075,13 +1186,21 @@ mod tests {
 
     /// The v6 block's u16 bitmask, read back out of the written buffer — the
     /// two bytes ahead of the fixed v7 flags block.
+    /// The empty-world v13 tail: the signs' u32 count + the plates' u32 count
+    /// (0 + 0). The v12 fixtures below write a world with no signs or plates,
+    /// so the two blocks ahead of it sit this many bytes from the end.
+    const EMPTY_V13_TAIL: usize = 8;
+
     fn back_flags(buf: &[u8]) -> u16 {
-        u16::from_le_bytes([buf[buf.len() - 10], buf[buf.len() - 9]])
+        let end = buf.len() - EMPTY_V13_TAIL;
+        u16::from_le_bytes([buf[end - 10], buf[end - 9]])
     }
 
-    /// The v12 block's micro u64 bitmask (the buffer's last eight bytes).
+    /// The v12 block's micro u64 bitmask (the eight bytes ahead of the v13
+    /// tail).
     fn back_micro(buf: &[u8]) -> u64 {
-        u64::from_le_bytes(buf[buf.len() - 8..].try_into().unwrap())
+        let end = buf.len() - EMPTY_V13_TAIL;
+        u64::from_le_bytes(buf[end - 8..end].try_into().unwrap())
     }
 
     #[test]
@@ -1275,7 +1394,7 @@ mod tests {
         ];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
-        assert_eq!(&buf[8..12], &[12, 0, 0, 0], "the writer emits the current v12");
+        assert_eq!(&buf[8..12], &[13, 0, 0, 0], "the writer emits the current v13");
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
         assert_eq!(back_chests, chests);

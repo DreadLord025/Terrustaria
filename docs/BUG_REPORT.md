@@ -303,6 +303,39 @@ never stored on the `App` nor drawn.
    `lang::misc` (localization is already wired).
 4. Test: kill the player, advance 60 ticks, the drawn string contains "9".
 
+**Status: FIXED 2026-11-11** (`BUG-06b-respawn-skip-prompt`).
+
+The countdown half had already landed (`ui::draw_death_screen`'s
+`Game.RespawnInSuffix` tail, `Player::update_dead`'s tick and the
+`GetRespawnTime` ladder). What was still missing was the **skip prompt** and the
+gate that feeds it:
+
+- `Main.DrawDeathText`'s `AllowsRespawnTimerSkip` block (`Main.cs:45347-45378`):
+  the `Game.RespawnSkip` line ("{InputTrigger_Jump} to skip"), ramped in by
+  `Main._framesWithRespawnSkipAvailable` — `num4 = Remap(frames, 0, 60, 0, 1)`
+  for the alpha and the 70 → 20 px slide, `num5 = Remap(frames, 0, 30, 0.5, 0)^2`
+  for the scale pulse. Both ramps are the vanilla's **unclamped** `Utils.Remap`,
+  ported verbatim (past frame 60 the prompt breathes back up; the gate normally
+  resets first). The trigger tag resolves to `Space`, the port's jump key — the
+  input-binding table is M7-UI-5.
+- The gate itself: `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`)
+  — a live invasion NPC inside the centred 1920x1080 view rect inflated by
+  320 px vetoes the skip. The world tick now passes that `danger_near` into
+  `update_dead` (it was hardcoded `false`), so a goblin army around the corpse
+  no longer lets the player skip the timer. The
+  `DangerThatPreventsOtherDangers` arm has no ported members and stays empty.
+- `App::respawn_skip_frames` / `respawn_skip_available` carry the counter and the
+  gate; the frame's death arm ticks the counter exactly where the C# does
+  (inside the draw pass), and the revive path clears both.
+- `ui::death_layout` is the C#'s `num` walk as a pure function (broadcast −60,
+  coins +50/−26, the prompt's slide, the countdown +70), so the row arithmetic is
+  testable without a GPU.
+
+4 tests (the ramp values and the localized label, the row walk, the NPC gate).
+`TR_DIE=1` kills the player on the first tick with the lockout spent — the
+`TR_SHOT` fixture; `docs/screenshots/bug-06b-death-skip-prompt.png` shows the
+three centred lines (broadcast, "Space to skip", "Respawn in 11").
+
 ---
 
 ## 7. NPC/boss sprite facing is wrong, and parts of the animation set are missing — S2 / High
@@ -348,6 +381,41 @@ correct, but the remaining families still rely on the generic fallback.
    used by `M4-NPC-3c`'s `humanoid_frame_count`/`humanoid_draw`).
 4. Regression: a `TR_NPC=<kind>` lineup screenshot per fixed family, SHA256-stable;
    assert `sprite_dir != facing` cases render flipped.
+
+**Status: closed 2026-11-11** (`BUG-07-npc-sprite-direction` +
+`BUG-07-npc-anchor-trash` + `BUG-07-npc-findframe-families`).
+
+- **Flip.** `render/entities.rs`'s `flip_dir` is `n.sprite_dir` alone — the
+  whitelist is gone from the tree. The machine audit of the 24 sites found two
+  whose source is the entity's *own aim*, not the body's `direction` and neither of
+  which the port had: aiStyle 13's demon eye (`NPC.cs:22740-22752`) and aiStyle 29's
+  Wall-of-Flesh iris (`:26393-26403`). Both now write from their own `num215` /
+  `num391`; the eye keeps its previous flip when the aim is exactly 0 (the C#'s two
+  one-sided `if`s). The Deerclops rides aiStyle 40 (`:29716`), which pins the flip
+  at -1 and carries the aim in `rotation` — its walk no longer writes the flip. The
+  other 22 sites (`aiStyle 0/10/12/13/22/25/27/28/33/34/35/36/38/39/40` and the
+  `FindFrame`-arm writes) already matched the port's machines.
+- **Anchor.** The real cause of the "wrong display" half of this report was never
+  the flip: the generic draw carried no vertical anchor table at all. `Main.NPCAddHeight`
+  (`Main.cs:22002-22184`) is ported in full (the terms the port models, with the
+  reused net ids 108/124/64 disambiguated by rank), together with the
+  `num45`/`num46`/`num47` chain (`:22991-23115`): the `halfSize` overrides
+  (`4/125/126` → 55/107, Plantera 77+26, the golem head 21+16, the Brain's
+  `50 × scale`, the `+4`/`+8` humanoid groups) and the DD2 support ring's
+  *overwrite* group (`:23214-23243`). The DD2 family also read the wrong sheets
+  (one shared `NPC_553`/`NPC_556` for every tier), so the 17- and 14-row strips
+  divided by a foreign row count; each kind now has its own art through the new
+  `generic_anchor`.
+- **FindFrame.** Audited all 602 `FindFrame` cases against the port's 202 net ids:
+  every kind either has its C# case ported or falls through to a generic arm the
+  port already implements (the humanoid town/skeleton group's `|vx| * 2 + 1` walk,
+  the martians' ground group, the DD2 goblins/skeletons, the saucers, the lunar
+  pillars). No blind `(frame + 1) % count` fallback is reachable for a modelled
+  kind.
+- **Regression.** 3 new/updated tests (`the_anchor_nudges_follow_the_c_sharp_switch`,
+  `bug_07_the_demon_eye_keeps_its_flip_on_a_dead_centre_aim`,
+  `bug_07_the_wof_eye_flips_on_its_own_aim`) plus the SHA-stable lineup capture
+  `docs/screenshots/npc_anchor_check.png`.
 
 ---
 
@@ -635,6 +703,38 @@ generic single-tile kill exists.
    trunk cell + the acorn roll; a world-hash/determinism test is unaffected
    (runtime only).
 
+**Status: FIXED 2026-11-11 (`BUG-16-tree-collapse`).**
+
+What landed: the cascade arm `TileFrameImportant` dispatches for the tree
+kinds (`WorldGen.cs:85876-85911`) was missing — the port's `square_tile_frame`
+only ran the multi-tile `Check*` object routines, so a tree cell that lost its
+ground stayed in the air and the trunk never collapsed. `tr-core/src/edit.rs`
+now carries `check_tree` (the forest tree 5 — `WorldGen.CheckTree`,
+`WorldGen.cs:54570-54780`) and `check_palm_tree` (323 — `WorldGen.CheckPalmTree`,
+`:54346-54400`), with `CheckTreeWithSettings`'s variant kinds
+(`:54402-54568`) parameterised by their ground test
+(`GemTreeGroundTest`/`VanityTreeGroundTest`/`AshTreeGroundTest`, `:30304-30341`).
+The routine's `KillTile` chain is what makes the trunk fall: the cell above a
+missing ground dies, and its own `TileFrame` ring reaches the next one up.
+
+The drop layer: `tr-core/src/tree.rs` gained `GetTreeType` (`:63075-63110`),
+`GetTreeBottom` (`:63436-63482`), `GetTreeTypeAndTreeBottom` (`:63055-63066`),
+`TreeTypeDropsAcorns` (`:63112-63119`) and the wood table; `edit::TreeDropEvent`
+carries the per-cell record (the core has no RNG stream) and the app resolves
+the C#'s roll order — `KillTile_GetTreeDrops` (`:66189-66261`): the canopy
+marker's acorn `Next(2)`, the mushroom's `Next(2)`, the bonus wood
+`Next(35) <= axe` and its `Main.rand.Next(3)` second chance; the palm's
+`case 323` arm of `KillTile_GetItemDrops` (`:65232-65266`) with the biome
+ground walk. The tree kinds 72/583-589/596/616/634 are now frame-important
+like the C# (`Main.cs:7678/:7760-7775`), so the cascade reaches them.
+
+Deviations: the palm's canopy re-roll (`CheckPalmTree`, `:54385-54388`) needs
+the `genRand` stream, so the core records the request and the app resolves it
+after the cascade (the C#'s ring does not fire for that arm — `frameY` is
+unchanged); the `Check*` kills propagate the ambient `noItem` like the other
+object checks (the C#'s `KillTile(i, j)` defaults to `noItem: false`, so the
+worldgen pass drops no wood here). 5 tests.
+
 ---
 
 ## 17. Front-end clicks are silent (no UI sounds) — S3 / High
@@ -697,6 +797,25 @@ helper.
    measurement and the draw agree.
 3. Test: the emote Back label equality with the bestiary Back label in the
    non-English locale fixture.
+
+**Status: FIXED 2026-11-11** (`BUG-18-emote-back-lang`).
+
+The label was the literal `"Back"`: `UIEmotesMenu.cs:78` builds the panel as
+`UITextPanel<LocalizedText>(Language.GetText("UI.Back"), 0.7f, large: true)`,
+so the port now reads `lang::text(BACK_KEY)` (`BACK_KEY = "UI.Back"`, the same
+key the bestiary's `UIBestiaryTest.cs:366` and achievements' back panels use)
+and no literal remains. The mis-centring had a second, separate cause the
+report's plan did not name: `back_hit`/the draw borrowed
+`bestiary::back_rect`, whose `Top(-25)` is the **bestiary's**
+(`UIBestiaryTest.cs:371`) — the emote wheel's own panel is `Top(-45)`
+(`UIEmotesMenu.cs:82`), so the button sat 20 px too low. `ui/emotes.rs` now
+owns `back_rect` with the wheel's `-45` and `back_hit` reads it. 2 tests: the
+ru-RU label resolves to "Назад" (never the English literal) through the
+shared language fixture, and the wheel's Back box is centred with its own
+`-45` box 20 px above the bestiary's. Found on the way (not fixed, out of
+this row's scope): the port draws a bespoke `"Emotes"` panel title that has
+no C# counterpart — the vanilla shows the `UI.EmoteCategory*` group headers
+(`UIEmotesMenu.cs:91-97`) instead.
 
 ---
 
@@ -796,11 +915,11 @@ should ride the same fix branches:
 | Tree drops | `tile_drop` also lacks the sword-shrine/fake-sword special cases and the palm arm (`#16`) | `registry.rs:60-88` |
 | NPC display | the `FindFrame` fallback still animates kinds with no case using a blind strip (the `#7` animation half) | `npc.rs:4361+` |
 | NPC display | `sprite_dir` write sites missing in the walker/flyer/boss machines (24 C# sites) | `npc.rs` AI arms |
-| Settings | `blood`, the smart-cursor trio, `placement_preview`, `mouse_border_color` are stored but have no consumer | `settings.rs` |
-| Map | the map key is a hardcoded toggle; `Main.Input` rebinding not applied | `app/loop.rs:298-307` |
+| Settings | `blood`, the smart-cursor trio, `placement_preview`, `mouse_border_color` are stored but have no consumer. **Partly closed / partly not a bug (re-checked 2026-11-12)**: `Main.placementPreview` is the *kite* placement preview only (`Player.UpdatePlacementPreview` `Player.cs:43402-43415` + `GetPlacementPreviewOpacity` `:43389-43400`), so it has no consumer until kites are ported; `blood` is `ChildSafety.Disabled` (`Main.cs:4101`), which gates gore, and the port spawns no blood gore yet — both are "nothing to gate yet", not dead wiring. The smart-cursor trio and `mouse_border_color` stay open | `settings.rs` |
+| Map | ~~the map key is a hardcoded toggle; `Main.Input` rebinding not applied~~ — **stale (re-checked 2026-11-12)**: the toggle reads `settings.map_binds` through `input_map::map_action_for`/`App::is_map_bound` (`app/loop.rs:568`), and `input_map`'s tests pin the default `M` plus a rebind | — |
 | Cactus | `GetTileDrawData case 80`'s `tileTop = 2` is present, but the draw-local rectangle contract is not modelled | `tr-core/drawdata.rs` |
-| Trash | chest/shop scale `0.755` (vs `0.85`) not applied with the offset | `ui/inventory.rs:483-490` |
-| Bestiary | remaining literal `bestiary_npc_sheets[N]` indices besides `174` | `ui/bestiary.rs` |
+| Trash | ~~chest/shop scale `0.755` (vs `0.85`) not applied with the offset~~ — **closed by BUG-20**: `ui::inventory::trash_rect(chest_or_shop)` returns `(448, 258)` at 0.85 or `(453, 426)` at 0.755, and both the draw and hit test read it (`Main.cs:42351-42356`) | — |
+| Bestiary | ~~remaining literal `bestiary_npc_sheets[N]` indices besides `174`~~ — **closed by BUG-15**: every read goes through `bestiary_sheet_index`, and the sheet table lookups are indexed by `net_id` | — |
 | Saves | `.trwld` still has no native twins for signs/plates/town rooms/bestiary sights (M6-SAVE-1b) | `tr-core/wld` |
 | World select | `WorldPlay` also skips the `valid`/path gates on the Play button | `app/flow.rs:186` |
 

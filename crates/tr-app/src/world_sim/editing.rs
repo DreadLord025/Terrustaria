@@ -419,7 +419,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let (pcx, pcy) = p.center();
         let dx = tx as f32 * TILE_PX + 8.0 - pcx;
         let dy = ty as f32 * TILE_PX + 8.0 - pcy;
-        let reach = 6.0 * TILE_PX;
+        // The port's circular gate is the documented stand-in for the C#'s
+        // `IsInTileInteractionRange(..., TileReachCheckSettings.Simple)`
+        // rectangle (`TileReachCheckSettings.cs:22-70`, X 5 / Y 3) — and its
+        // radius now tracks `Player.tileRangeX` (`Player.cs:2496`), so the
+        // journey `FarPlacementRangePower`'s doubling (`:18815-18828`) widens
+        // the reach exactly as it does in the vanilla. Base 5 + 1 = the
+        // previous 6-tile constant, so nothing off the power moves.
+        let reach = (p.tile_range_x() + 1.0) * TILE_PX;
         dx * dx + dy * dy <= reach * reach
     });
     if !player_in_reach {
@@ -590,6 +597,33 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.shot_fired = false;
             app.world_key = None;
         }
+        // M4-PROJ-8 Phase 6 — `ItemCheck_MinionAltFeatureUse`
+        // (`Player.cs:49773-49780`): the summon staff's right-click picks the
+        // minions' target. The port's right-button press edge stands for the
+        // C#'s `altFunctionUse == 2`; the feature set gates which staves.
+        let targeting_staff = registry::projectile(held.kind)
+            .is_some_and(|proj| crate::projectile::MINION_TARGETING_FEATURE.contains(&proj));
+        if targeting_staff
+            && app.place_down
+            && !app.place_prev_down
+            && app.attack_cd <= 0.0
+            && app.reuse_delay <= 0.0
+        {
+            app.swing_max = shooter_swing_secs(held.kind, held.prefix);
+            app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
+            app.attack_cd = app.swing_max;
+            // `MinionNPCTargetAim` (`Player.cs:56913-56931`): the nearest
+            // chaseable NPC to the mouse world point; the same target clears.
+            let (sw, sh) = app.screen_size();
+            let mouse_world = Vec2::new(
+                app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+                app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+            );
+            if let Some(p) = app.player.as_mut() {
+                p.minion_npc_target_aim(&app.npcs, mouse_world);
+            }
+        }
         if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
             // `Player.CheckMana` (`Player.cs:52576`): the magic items pay
             // `item.mana * manaCost` (the multiplier is the 1f base — the
@@ -619,6 +653,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // `weaponDamage` (the class multiplier) and the item's knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
+                // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
+                // `Player.FreeUpPetsAndMinions` frees the budget at the use
+                // tick (`Player.cs:42780`) BEFORE the spawn, and the
+                // `item.buffType > 0` grant rides the same use
+                // (`Player.cs:42879-42884`, the 90/27 exclusions).
+                if def.buff_type > 0 && def.buff_type != 90 && def.buff_type != 27 {
+                    p.buffs.add_buff(def.buff_type, def.buff_time);
+                }
+                if proj > 0 {
+                    // The C# gates on `sItem.shoot` (`Player.cs:42780`) — the
+                    // projectile id, never the item type.
+                    app.projectiles.free_up_pets_and_minions(p, proj, app.local_id as u8);
+                }
                 let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
                 if dir != Vec2::ZERO {
@@ -944,6 +991,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                                 .set_whip_params(slot, tag_type, bonus_tag, animation_max);
                         }
                     }
+                    // `Player.cs:48210` — the sentry spawns run the turret
+                    // sweep right after (the base cap of 1 would otherwise
+                    // accumulate unbounded sentries; the budget-change sweep
+                    // in the player tick only catches cap drops).
+                    if crate::projectile::proj_data(proj).is_some_and(|d| d.sentry) {
+                        app.projectiles.update_max_turrets(
+                            p.max_turrets,
+                            app.local_id as u8,
+                            tr_core::dd2::event_ongoing(),
+                        );
+                    }
                     if def.consumable {
                         app.inventory[app.selected].count =
                             app.inventory[app.selected].count.saturating_sub(1);
@@ -1017,27 +1075,37 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
-            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44261-44264`):
-            // a town NPC takes no player melee unless the hit is the explicit
-            // easter egg — the Guide's Voodoo Doll (267) arms `killGuide`, the
-            // Clothier's curse (1307) arms `killClothier` (`Player.cs:15124`/
-            // `:15128`), and the whip's 5129/3351 pair rides the whip family.
-            // `dontTakeDamage` skips the shielded (the Brain's Creeper shield,
-            // the crystal's spawn shield). The vanilla also skips every
-            // `friendly` NPC — the port's town set is `is_town_npc` (the
-            // Travelling Merchant/Angler ride their own easter eggs). The
-            // vanilla arms the flags when the doll/curse is EQUIPPED
-            // (`Player.cs:15123-15129`); the port has no equip slot for them,
-            // so the inventory's presence arms the same flag (the recorded
-            // approximation — ANALYSIS). (Re-landed: the BUG-03 merge
-            // `6f9ec6f4` resolved main against a base that predated this gate
-            // and dropped it and its test.)
-            let easter_egg = matches!(held.kind, 267 | 1307)
-                || app.inventory[..50].iter().any(|s| matches!(s.kind, 267 | 1307));
+            // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44272-44276`):
+            // `nPC.friendly && (nPC.type != 22 || !this.killGuide) &&
+            // (nPC.type != 54 || !this.killClothier) && (!nPC.isLikeATownNPC
+            // || (sItem.type != 5129 && sItem.type != 3351))` → `return`.
+            // So every friendly NPC (all town kinds plus the six
+            // bound/rescue forms, [`crate::npc::NpcKind::is_friendly`]) is
+            // refused except: the Guide under the Guide Voodoo Doll (267),
+            // the Clothier under the Clothier's Voodoo Doll (1307), and any
+            // town NPC under the Flymeal (5129) or the Tax Collector's Stick
+            // of Doom (3351) — the two items the C# whitelists by id.
+            // `dontTakeDamage` skips the shielded (the Brain's Creeper
+            // shield, the crystal's spawn shield). The dolls arm their flags
+            // through `ApplyEquipFunctional` (`Player.cs:14368`, the
+            // accessory slots 3..10 the `UpdateEquips` loop `:12948-12954`
+            // walks) and `ResetEffects` clears them every tick (`:18365-18366`
+            // — the port reads the per-tick `Player.equipped` snapshot, so a
+            // doll in the bag no longer counts; the pre-fix gate scanned the
+            // whole inventory).
+            let (kill_guide, kill_clothier) = app
+                .player
+                .as_ref()
+                .map(|p| p.doll_flags())
+                .unwrap_or((false, false));
+            let hits_town_npc = matches!(held.kind, 5129 | 3351);
             let hit_idx = app.npcs.iter().position(|n| {
                 n.contains(ax, ay)
                     && !n.dont_take_damage
-                    && (!n.kind.is_town_npc() || easter_egg)
+                    && (!n.kind.is_friendly()
+                        || (n.kind == NpcKind::Guide && kill_guide)
+                        || (n.kind == NpcKind::Clothier && kill_clothier)
+                        || (n.kind.is_town_npc_like() && hits_town_npc))
             });
             if let Some(idx) = hit_idx {
                 let n = &mut app.npcs[idx];
@@ -1068,6 +1136,15 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                         .as_ref()
                         .map(|p| p.weapon_damage_multiplier(class))
                         .unwrap_or(1.0);
+                // `if (nPC.isLikeATownNPC && sItem.type == 3351) dmg = 1;`
+                // (`Player.cs:44300-44304`): the Tax Collector's cane is a
+                // one-damage slap on the town (it showers coins on mobs,
+                // `:44362-44371` — the item drop rides the M3 item system).
+                let raw = if n.kind.is_town_npc_like() && held.kind == 3351 {
+                    1.0
+                } else {
+                    raw
+                };
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
                 // passes the raw value (`ProcessHitAgainstNPC`,
                 // `Player.cs:44342`; damage taken negates it, `:31387`).
@@ -1078,7 +1155,29 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     .unwrap_or((0.0, 0));
                 let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                 let crit = tr_core::damage::crit_roll(&mut loot_rng, class_crit + item_crit);
-                let dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
+                let mut dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
+                // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
+                // (`Player.cs:44344-44353`): the Flymeal takes full armour
+                // penetration (`armorPenetrationPercent = 1f`), doubles the
+                // rolled damage and doubles it again on the Nurse (type 18).
+                // The penetration adds to the damage amount like the C#
+                // (`num2 += nPC.checkArmorPenetration(...)`, `:44383`); the
+                // player's own `GetArmorPenetration` sum is not ported yet
+                // (no prefix/accessory arpen writer — the neutral 0).
+                if held.kind == 5129 && n.kind.is_town_npc_like() {
+                    dmg *= 2;
+                    if n.kind == NpcKind::Nurse {
+                        dmg *= 2;
+                    }
+                    dmg += tr_core::damage::check_armor_penetration(
+                        0,
+                        1.0,
+                        n.defense(),
+                        false,
+                        false,
+                        false,
+                    );
+                }
                 let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
@@ -1782,15 +1881,41 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // path sets for held 213/5295): the port reads the held slot at the
     // break moment.
     let staff_bonus = staff_of_regrowth(app.inventory[app.selected].kind);
+    // `Player.FindClosest` (`WorldGen.cs:66255-66256`) picks the player
+    // nearest the tree's ground cell and reads their held item's axe power —
+    // the bonus-wood roll's threshold. The port has one player.
+    let axe_power = registry::get(app.inventory[app.selected].kind)
+        .map(|d| i32::from(d.axe))
+        .unwrap_or(0);
     let ctx = drop_ctx(app);
     let (drops, portals) = {
         let mut main_rng = super::npcs::LootRng(&mut app.item_rng);
-        break_drop_events(&kill, &app.world, hit, staff_bonus, &mut main_rng, &ctx)
+        break_drop_events(
+            &kill,
+            &app.world,
+            hit,
+            staff_bonus,
+            axe_power,
+            &mut main_rng,
+            &ctx,
+        )
     };
     for (id, count, x, y) in drops {
         spawn_item_drop(app, id, count, x, y);
         app.audio
             .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
+    }
+    // `WorldGen.CheckPalmTree`'s canopy re-roll (`:54385-54388`): the palm
+    // cells whose cell above is gone take a fresh canopy frame. The roll
+    // needs the `genRand` stream, so the core recorded the request and the
+    // app resolves it here (one `item_rng` throw seeds the `FastRandom`).
+    for (px, py) in &kill.palm_frame_rolls {
+        let mut gen_stream =
+            tr_core::tile_light::FastRandom::new(crate::app::next_rand(&mut app.item_rng));
+        let frame_x = (gen_stream.next_range(7, 10) * 22) as i16;
+        if let Some(cell) = app.world.tile_mut(*px, *py) {
+            cell.frame_x = frame_x;
+        }
     }
     // The Coin Portal projectile of the pot loot (:57176-57182); the port
     // has no 518 family yet — `spawn_with_data` declines it and the break
@@ -1950,6 +2075,7 @@ fn break_drop_events(
     world: &World,
     hit: Option<HitCell>,
     staff_of_regrowth: bool,
+    axe_power: i32,
     main_rng: &mut super::npcs::LootRng<'_>,
     ctx: &DropCtx,
 ) -> (Vec<(u16, u32, i32, i32)>, Vec<(i32, i32)>) {
@@ -1969,6 +2095,49 @@ fn break_drop_events(
             .or_else(|| registry::tile_drop(drop.tile_kind, 0));
         if let Some(id) = id {
             events.push((id, 1, drop.x, drop.y));
+        }
+    }
+    // The killed tree cells' wood and acorns (`WorldGen.KillTile_GetTreeDrops`,
+    // `WorldGen.cs:66189-66261`, and the palm arm of `KillTile_GetItemDrops`,
+    // `:65232-65266`).
+    for event in &kill.tree_events {
+        match event {
+            edit::TreeDropEvent::Palm {
+                x,
+                y,
+                frame_x,
+                item,
+            } => {
+                if *item != 0 {
+                    events.push((*item, 1, *x, *y));
+                }
+                // `if (tileCache.frameX <= 132 && tileCache.frameX >= 88)
+                // secondaryItem = 27;` (`:65239-65242`).
+                if (88..=132).contains(frame_x) {
+                    events.push((27, 1, *x, *y));
+                }
+            }
+            edit::TreeDropEvent::Trunk {
+                x,
+                y,
+                frame_x,
+                frame_y,
+                tree_type,
+                ..
+            } => {
+                let mut gen_stream =
+                    tr_core::tile_light::FastRandom::new(crate::app::next_rand(main_rng.0));
+                for (id, count) in trunk_tree_drops(
+                    *tree_type,
+                    *frame_x,
+                    *frame_y,
+                    axe_power,
+                    &mut gen_stream,
+                    main_rng,
+                ) {
+                    events.push((id, count, *x, *y));
+                }
+            }
         }
     }
     // `SpawnThingsFromPot` per pot event: one `item_rng` throw seeds the
@@ -2033,6 +2202,71 @@ fn break_drop_events(
         }
     }
     (events, portals)
+}
+
+/// `WorldGen.KillTile_GetTreeDrops` (`WorldGen.cs:66189-66261`) — the killed
+/// trunk cell's wood and the canopy marker's acorn.
+///
+/// The C# rolls in this order: the acorn roll (`genRand.Next(2)`, the canopy
+/// marker cell only — `frameX >= 22 && frameY >= 198`), the mushroom roll
+/// (`genRand.Next(2)`), the bonus wood (`genRand.Next(35) <= axe`) and its
+/// second chance (`Main.rand.Next(3) == 0`, short-circuited). The port's
+/// seam: one `item_rng` throw seeds the `FastRandom` that stands in for the
+/// C#'s `genRand` stream, and the `Main.rand` roll spends the item stream
+/// directly — the house convention (PORT_MAP's "the RNG seam").
+fn trunk_tree_drops(
+    tree_type: tr_core::tree::TreeType,
+    frame_x: i16,
+    frame_y: i16,
+    axe_power: i32,
+    gen_stream: &mut tr_core::tile_light::FastRandom,
+    main_rng: &mut super::npcs::LootRng<'_>,
+) -> Vec<(u16, u32)> {
+    let mut drop_item = 0u16;
+    let mut secondary_item = 0u16;
+    // The canopy marker's acorn roll (`:66191-66212`).
+    if frame_x >= 22 && frame_y >= 198 {
+        if gen_stream.next(2) == 0 {
+            drop_item = 9;
+            if tr_core::tree::tree_type_drops_acorns(tree_type) {
+                secondary_item = 27;
+            }
+        } else {
+            drop_item = 9;
+        }
+    } else {
+        drop_item = 9;
+    }
+    if drop_item != 9 {
+        return Vec::new();
+    }
+    // The family's wood (`:66224-66254`).
+    match tree_type {
+        tr_core::tree::TreeType::Ash => drop_item = 5215,
+        tr_core::tree::TreeType::Corrupt => drop_item = 619,
+        tr_core::tree::TreeType::Crimson => drop_item = 911,
+        tr_core::tree::TreeType::Jungle => drop_item = 620,
+        tr_core::tree::TreeType::Hallowed => drop_item = 621,
+        tr_core::tree::TreeType::Snow => drop_item = 2503,
+        // The glowing mushroom drops the mushroom itself half the time and
+        // nothing the other half (`:66241-66250`).
+        tr_core::tree::TreeType::Mushroom => {
+            drop_item = if gen_stream.next(2) == 0 { 183 } else { 0 };
+        }
+        _ => {}
+    }
+    // The bonus wood (`:66255-66260`): the held axe's power against a 1-in-35
+    // roll, with a 1-in-3 roll as the second chance.
+    let bonus = gen_stream.next(35) <= axe_power || main_rng.next_range(0, 3) == 0;
+    let stack = if bonus { 2u32 } else { 1u32 };
+    let mut drops = Vec::new();
+    if drop_item != 0 {
+        drops.push((drop_item, stack));
+    }
+    if secondary_item != 0 {
+        drops.push((secondary_item, 1));
+    }
+    drops
 }
 
 /// `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`): only the
@@ -3492,6 +3726,84 @@ mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
+    /// BUG-16: the killed trunk cell's drop — the wood of the tree's family
+    /// and the canopy marker's acorn (`WorldGen.KillTile_GetTreeDrops`,
+    /// `WorldGen.cs:66189-66261`).
+    #[test]
+    fn bug_16_the_trunk_drop_is_the_family_wood_and_the_acorn() {
+        let mut state = 0u64;
+        let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(1);
+        // A plain trunk cell: the wood of the tree's family, no acorn (the
+        // acorn roll is the canopy marker's only — `frameX >= 22 && frameY >= 198`).
+        let drops = trunk_tree_drops(
+            tr_core::tree::TreeType::Forest,
+            0,
+            0,
+            0,
+            &mut gen_stream,
+            &mut rng,
+        );
+        assert_eq!(drops[0].0, 9, "the forest tree drops Wood");
+        assert!(
+            !drops.iter().any(|(id, _)| *id == 27),
+            "a plain trunk cell never drops an acorn"
+        );
+        // The jungle family drops Rich Mahogany (`GetTreeType`'s switch).
+        let mut state = 0u64;
+        let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(3);
+        let drops = trunk_tree_drops(
+            tr_core::tree::TreeType::Jungle,
+            0,
+            0,
+            0,
+            &mut gen_stream,
+            &mut rng,
+        );
+        assert_eq!(drops[0].0, 620, "the jungle tree drops Rich Mahogany");
+        // The canopy marker rolls the acorn (half the time, for every family
+        // but the mushroom and the jungle).
+        let mut acorns = 0;
+        for seed in 0..24u64 {
+            let mut state = 0u64;
+            let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+            let mut gen_stream = tr_core::tile_light::FastRandom::new(seed);
+            let drops = trunk_tree_drops(
+                tr_core::tree::TreeType::Forest,
+                22,
+                198,
+                0,
+                &mut gen_stream,
+                &mut rng,
+            );
+            assert_eq!(drops[0].0, 9, "the canopy cell drops wood too");
+            if drops.iter().any(|(id, _)| *id == 27) {
+                acorns += 1;
+            }
+        }
+        assert!(acorns > 0, "the canopy marker rolls acorns");
+        // The jungle never does (`TreeTypeDropsAcorns`, `WorldGen.cs:63112`).
+        let mut jungle_acorns = 0;
+        for seed in 0..24u64 {
+            let mut state = 0u64;
+            let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+            let mut gen_stream = tr_core::tile_light::FastRandom::new(seed);
+            let drops = trunk_tree_drops(
+                tr_core::tree::TreeType::Jungle,
+                22,
+                198,
+                0,
+                &mut gen_stream,
+                &mut rng,
+            );
+            if drops.iter().any(|(id, _)| *id == 27) {
+                jungle_acorns += 1;
+            }
+        }
+        assert_eq!(jungle_acorns, 0, "the jungle tree never drops acorns");
+    }
+
     /// DW-3.2 — the melee-hit rig: the `mining_app` shape with a blue slime
     /// parked under the screen-centre cursor and no tile there, so the
     /// `mine_down` arm takes the NPC branch (`ItemCheck_MeleeHitNPCs` →
@@ -3546,10 +3858,10 @@ mod tests {
 
 
     /// BUG-10: melee on a town NPC is refused (`ProcessHitAgainstNPC`'s
-    /// friendly gate, `Player.cs:44261-44264`) — the voodoo doll (267) and
-    /// the Clothier's curse (1307) are the only melee exceptions.
-    /// (Re-landed with the gate — the BUG-03 merge dropped this test with
-    /// the code.)
+    /// friendly gate, `Player.cs:44272-44276`) — the Guide Voodoo Doll (267)
+    /// and the Clothier's Voodoo Doll (1307) are the melee exceptions, and
+    /// they only arm while WORN (`ApplyEquipFunctional` over the accessory
+    /// slots 3..10, `Player.cs:14368`/`:12948-12954`).
     #[test]
     fn bug_10_melee_refuses_the_town_npcs() {
         // A Guide standing on the floor at the cursor.
@@ -3563,14 +3875,34 @@ mod tests {
         mine_frames(&mut a, 1);
         assert_eq!(a.npcs[0].hp, hp, "the town NPC is not hurt");
         assert_eq!(a.npcs[0].max_hp, hp_max);
-        // The voodoo doll arms the easter egg.
+        // The doll in the BAG arms nothing: `ResetEffects` clears the flag
+        // every tick and only `ApplyEquipFunctional` re-arms it, so the
+        // pre-fix inventory scan was over-permissive.
+        let mut bag = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&bag.world, 30).expect("the Guide spawns");
+        bag.npcs.clear();
+        bag.npcs.push(guide);
+        bag.inventory[bag.selected].kind = 24; // the sword does the hit
+        bag.inventory[0].kind = 267; // the voodoo doll in the bag
+        bag.inventory[0].count = 1;
+        bag.npcs[0].x = 30.0 * TILE_PX;
+        bag.npcs[0].y = 260.0 * TILE_PX;
+        let hp = bag.npcs[0].hp;
+        mine_frames(&mut bag, 1);
+        assert_eq!(bag.npcs[0].hp, hp, "a bagged doll does not arm the flag");
+        // The same doll WORN in an accessory slot arms it.
         let mut b = melee_app();
         let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
         b.npcs.clear();
         b.npcs.push(guide);
         b.inventory[b.selected].kind = 24; // the sword does the hit
-        b.inventory[0].kind = 267; // the voodoo doll arms the flag
-        b.inventory[0].count = 1;
+        // `Player.cs:15124` — the worn doll arms `killGuide`. The rig drives
+        // `update_editing` directly (no `update_player` tick), so the worn
+        // accessory is written into the per-tick `Player.equipped` snapshot
+        // the real loop fills from `App.equip.armor` (`world_sim/player.rs`).
+        b.player.as_mut().unwrap().equipped[3] = 267;
+        b.equip.armor[3].kind = 267;
+        b.equip.armor[3].count = 1;
         // The Guide spawns at the surface; the rig's cursor sits at
         // (30, 260) — park the Guide into the cursor's box the way the
         // slime rig does.
@@ -3579,6 +3911,95 @@ mod tests {
         let hp = b.npcs[0].hp;
         mine_frames(&mut b, 1);
         assert!(b.npcs[0].hp < hp, "the doll-armed hit lands on the Guide");
+    }
+
+    /// BUG-10, the `friendly` half: the C# refuses EVERY friendly NPC, not
+    /// just the ten housing kinds — the eleven seller town NPCs
+    /// (`is_town_npc_like`, `NPC.cs:6856`) and the six bound/rescue forms
+    /// (`NPC.cs:10257`/`:10493`/`:13502`/`:13796`/`:16652`).
+    #[test]
+    fn bug_10_melee_refuses_the_sellers_and_the_bound_forms() {
+        for kind in [
+            NpcKind::Angler,
+            NpcKind::Stylist,
+            NpcKind::TaxCollector,
+            NpcKind::Golfer,
+            NpcKind::Zoologist,
+            NpcKind::Princess,
+            NpcKind::DyeTrader,
+            NpcKind::PartyGirl,
+            NpcKind::Wizard,
+            NpcKind::Mechanic,
+            NpcKind::TravellingMerchant,
+            NpcKind::BoundGoblin,
+            NpcKind::BoundWizard,
+            NpcKind::BoundMechanic,
+            NpcKind::WebbedStylist,
+            NpcKind::SleepingAngler,
+            NpcKind::SleepingGolfer,
+        ] {
+            assert!(kind.is_friendly(), "{kind:?} is friendly in the C#");
+            let mut a = melee_app();
+            let mut npc = crate::npc::Npc::spawn_town(&a.world, 30, kind)
+                .unwrap_or_else(|| panic!("{kind:?} spawns"));
+            a.npcs.clear();
+            npc.x = 30.0 * TILE_PX;
+            npc.y = 260.0 * TILE_PX;
+            a.npcs.push(npc);
+            a.inventory[a.selected].kind = 24; // the wooden sword
+            let hp = a.npcs[0].hp;
+            mine_frames(&mut a, 1);
+            assert_eq!(a.npcs[0].hp, hp, "{kind:?} is not hurt by melee");
+        }
+    }
+
+    /// BUG-10, the two item exceptions: the Flymeal (5129) and the Tax
+    /// Collector's Stick of Doom (3351) are the only melee items the C#
+    /// lets through the friendly gate on a town NPC
+    /// (`Player.cs:44274`), and the cane's hit is forced to one damage
+    /// (`:44300-44304`) while the Flymeal doubles (x4 on the Nurse).
+    #[test]
+    fn bug_10_flymeal_and_stick_of_doom_hit_the_town() {
+        // The Flymeal on a Guide: `isLikeATownNPC`-gated, so it lands.
+        let mut a = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&a.world, 30).expect("the Guide spawns");
+        a.npcs.clear();
+        a.npcs.push(guide);
+        a.npcs[0].x = 30.0 * TILE_PX;
+        a.npcs[0].y = 260.0 * TILE_PX;
+        a.inventory[a.selected].kind = 5129;
+        a.inventory[a.selected].count = 1;
+        let hp = a.npcs[0].hp;
+        mine_frames(&mut a, 1);
+        assert!(a.npcs[0].hp < hp, "the Flymeal gets through the friendly gate");
+        // The doubled 15 plus the 100 % armour penetration clears the
+        // Guide's defence 30 by a wide margin (the sword's ~0 would not).
+        assert!(
+            hp - a.npcs[0].hp > 20,
+            "the Flymeal doubles the roll ({} dmg)",
+            hp - a.npcs[0].hp
+        );
+        // The Stick of Doom lands for exactly one: `dmg = 1` before
+        // DamageVar and the defence floor (`CalculateDamageNPCsTake`'s
+        // max(1, 1 - 15) = 1).
+        let mut b = melee_app();
+        let guide = crate::npc::Npc::spawn_guide(&b.world, 30).expect("the Guide spawns");
+        b.npcs.clear();
+        b.npcs.push(guide);
+        b.npcs[0].x = 30.0 * TILE_PX;
+        b.npcs[0].y = 260.0 * TILE_PX;
+        b.inventory[b.selected].kind = 3351;
+        b.inventory[b.selected].count = 1;
+        let hp = b.npcs[0].hp;
+        mine_frames(&mut b, 1);
+        assert_eq!(hp - b.npcs[0].hp, 1, "the cane slaps for one");
+        // A hostile is untouched by the friendly gate: the slime still takes
+        // the plain item damage (the sword's 6 on the rig's defence).
+        let mut c = melee_app();
+        let hp = c.npcs[0].hp;
+        c.inventory[c.selected].kind = 24;
+        mine_frames(&mut c, 1);
+        assert!(c.npcs[0].hp < hp, "the hostile is still hittable");
     }
 
     fn melee_app() -> App {
@@ -3753,6 +4174,7 @@ mod tests {
             &object_world(),
             hit,
             false,
+            0,
             &mut main,
             &DropCtx::default(),
         )
@@ -4750,6 +5172,38 @@ mod tests {
         for _ in 0..n {
             update_editing(app, 1.0 / 60.0, MINE_SCREEN);
         }
+    }
+
+    #[test]
+    fn the_far_placement_power_widens_the_edit_reach() {
+        // `FarPlacementRangePower` (`CreativePowers.cs:730-767`) doubles
+        // `Player.tileRangeX/Y` (`Player.cs:18815-18828`); the reach gate in
+        // `update_editing` tracks `tile_range_x` (its documented stand-in for
+        // `TileReachCheckSettings.Simple`).
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 260);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        // The target 13 tiles left of the player: outside the base 6-tile
+        // reach, inside the doubled 19.
+        app.player.as_mut().unwrap().x = 17.0 * TILE_PX;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert!(app.edit_target.is_none(), "out of the base reach");
+        assert!(app.mine_target.is_none(), "and nothing is mined");
+        app.player.as_mut().unwrap().far_placement_range = true;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(
+            app.edit_target,
+            Some((30, 260)),
+            "the power widens the reach to the cursor's tile"
+        );
     }
 
     /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries
@@ -7737,4 +8191,92 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     app.swing = app.swing_max;
     app.attack_cd = app.swing_max;
     true
+}
+
+/// The full use-loop integration — a Slime Staff in hand fires through
+/// `update_editing`: the buff grant, the free-up, the spawn, then the pool's
+/// next tick books the slot.
+#[cfg(test)]
+
+/// The full use-loop integration — a Slime Staff in hand fires through
+/// `update_editing`: the buff grant, the free-up, the spawn, then the pool's
+/// next tick books the slot, and the player tick's arm keeps the buff alive.
+#[cfg(test)]
+mod use_loop_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+    use glam::Vec2;
+
+    fn app_with_staff(kind: u16) -> crate::app::App {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Single-player: the local player's id is 0 (the recount's owner).
+        app.local_id = 0;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // The cursor at the screen centre — the reach gate
+        // (`Player.cs`'s 6-tile arm) needs the aim tile near the player.
+        app.mouse_pos = Vec2::new(400.0, 300.0);
+        let mut p = app.player.as_mut().unwrap();
+        p.max_minions = 5;
+        p.max_turrets = 5;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: 1,
+            prefix: 0,
+        };
+        app
+    }
+
+    #[test]
+    fn the_slime_staff_use_grants_the_buff_and_spawns() {
+        let mut app = app_with_staff(1309); // the Slime Staff — shoot 266, buff 64
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        // One editing tick: the use fires (the swing starts, the free-up runs
+        // and the projectile spawns), and the verbatim `item.buffType > 0`
+        // grant lands (`Player.cs:42879`).
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert_eq!(
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|s| s.active && s.kind == 266)
+                .count(),
+            1,
+            "the Slime minion spawned"
+        );
+        // The staff's row carries `buffTime = 0` and the C#'s arm guard skips
+        // 0-time slots, so the grant alone is a ghost the sweep removes
+        // (verbatim, ANALYSIS); the keep-alive loop is asserted with a live
+        // buff: the arm refreshes it while the minion lives.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.buffs.add_buff(64, 600);
+        }
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        let b = p.buffs.find_buff_index(64).expect("buff 64 held");
+        assert_eq!(p.buffs.buff_time[b], 18000, "the arm's refresh");
+        assert!(p.slime, "the arm's flag");
+        // The pool's next tick books the minion against the budget.
+        app.mine_down = false;
+        let mut npcs = Vec::new();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let local = app.local_id as u8;
+        let host = !app.is_client();
+        app.projectiles.update(
+            &mut app.world,
+            &mut npcs,
+            None,
+            None,
+            app.player.as_mut(),
+            crate::projectile::YoyoInputs::default(),
+            crate::projectile::FlailInputs::default(),
+            &mut rng,
+            local,
+            host,
+        );
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.num_minions, 1, "the slot booked");
+        assert_eq!(p.slots_minions, 1.0);
+    }
 }

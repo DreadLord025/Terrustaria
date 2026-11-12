@@ -14,9 +14,12 @@ use tr_core::{TILE_PX, World};
 
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
+use crate::npc::Npc;
 use crate::dye;
+use crate::item::{INV, ItemSlot};
 use crate::luck::LuckState;
 use crate::minecart;
+use crate::projectile::{BABY_BIRD, PROJ_COUNT, ProjectilePool};
 use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
 use glam::Vec2;
 
@@ -186,6 +189,50 @@ pub fn liquid_fall_cap() -> f32 {
     MAX_FALL / 3.0
 }
 
+/// `Main.OffsetsPlayerHeadgear[i].Y` (`Main.cs:66638-66660`): the per-body-row
+/// headgear lift the draw and the Moon Lord leg rows read. Rows 7-9 and 14-16
+/// are the `0` entries.
+pub fn offsets_player_headgear_y(row: usize) -> f32 {
+    match row.min(19) {
+        7..=9 | 14..=16 => 0.0,
+        _ => 2.0,
+    }
+}
+
+/// The held-item inputs of `PlayerFrame()` (`Player.cs:36144-36147`). The C#
+/// reads `this.inventory[this.selectedItem]` straight out of the player; the
+/// port keeps the inventory in the app, so the app hands the same fields in
+/// before each fixed step (`world_sim/player.rs`, beside `swing_aim`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FrameInputs {
+    /// `inventory[selectedItem].useStyle` — drives the item-use body chain.
+    pub use_style: u8,
+    /// `flag6` (`:36146`): `useStyle != 10 && != 14 && != 15`. Those three
+    /// styles (the fishing rod family and the like) skip the item-use rows.
+    pub use_style_blocks_frames: bool,
+    /// `inventory[selectedItem].type` — the useStyle 5 torch carve-out and the
+    /// `type == 0` empty-hand share of the useStyle 1 branch.
+    pub item_type: i32,
+    /// `inventory[selectedItem].holdStyle` — the idle hold rows.
+    pub hold_style: i32,
+    /// `flag5` = `CanVisuallyHoldItem(HeldItem)` (`:36143`).
+    pub can_visually_hold: bool,
+    /// `itemAnimation > 0`.
+    pub swing_active: bool,
+    /// `itemAnimation / itemAnimationMax` (1 at the start, 0 at the end).
+    pub swing_remaining: f32,
+    /// `itemRotation * direction` — the useStyle 5 aim.
+    pub aim_relative: f32,
+    /// `!wet || !item.noWet` — the two held-item arms that the water kills.
+    pub hold_style_dry: bool,
+    /// `!happyFunTorchTime || createTile != 4` — the torch hold override.
+    pub torch_hold_ok: bool,
+    /// The grapple body arm's lean — the hooks' centroid minus the body centre
+    /// (`Player.cs:36502-36520`).
+    pub grapple_dx: f32,
+    pub grapple_dy: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -201,6 +248,73 @@ pub struct Player {
     /// class multiplier — the minion prefixes 69-72 add to it through
     /// `weapon_damage_multiplier`'s Summon arm.
     pub minion_damage: f32,
+    /// The per-player summon budget (M4-PROJ-8): `Player.maxMinions = 1`
+    /// (`Player.cs:1260`) — raised by the buffs 110/150 and the summon armor
+    /// rows, reset to 1 by `ResetEffects` (`:18448`).
+    pub max_minions: i32,
+    /// `Player.numMinions` (`Player.cs:1262`) — accumulated by the pool's
+    /// minion block (`Projectile.cs:16736`, Phase 3), zeroed at `:28279` and
+    /// on death (`:17009`); the buff-216 arm reads it (`:10706`).
+    pub num_minions: i32,
+    /// `Player.slotsMinions` (`Player.cs:1264`, float) — the 0.5-slot
+    /// spiders' fractional budget, accumulated beside `numMinions`.
+    pub slots_minions: f32,
+    /// `Player.maxTurrets = 1` (`Player.cs:2848`) — the sentry budget, raised
+    /// by buff 348 and reset by `ResetEffects` (`:18449`).
+    pub max_turrets: i32,
+    /// `Player.maxTurretsOld` (`Player.cs:2850`) — the last observed
+    /// `max_turrets`; a change drives the `UpdateMaxTurrets` sweep
+    /// (`:25709-25712`, Phase 5).
+    pub max_turrets_old: i32,
+    /// `Player.MinionAttackTargetNPC = -1` (`Player.cs:3008`) — the
+    /// right-click aim target; written by the use path (Phase 6).
+    pub minion_attack_target_npc: i32,
+    /// `Player.ownedProjectileCounts[ProjectileID.Count]` (`Player.cs:2992`)
+    /// — recounted every tick from the live pool (`:25565`); the summon
+    /// buff-arms and the keep-alive checks read exactly this.
+    pub owned_projectile_counts: [i32; PROJ_COUNT],
+    /// `Player.highestStormTigerGemOriginalDamage` (`Player.cs:1304`) — the
+    /// recount's type-831 maximum (`:12194-12215`).
+    pub highest_storm_tiger_gem_original_damage: i32,
+    /// `Player.highestAbigailCounterOriginalDamage` (`Player.cs:1314`) — the
+    /// recount's type-970 maximum; AI_062's 963 scaling reads it.
+    pub highest_abigail_counter_original_damage: i32,
+    /// The 29 summon keep-alive flags `ResetEffects` clears
+    /// (`Player.cs:18620-18646`+`:18741`) and `UpdateBuffs`' arms re-affirm
+    /// (`:10483-10972`); AI_062 reads them to pin `timeLeft = 2` (Phase 4).
+    /// Fields verbatim: `Player.cs:1268-1300` (order here groups the arm
+    /// table's pairs).
+    pub pygmy: bool,
+    pub raven: bool,
+    pub slime: bool,
+    pub hornet_minion: bool,
+    pub imp_minion: bool,
+    pub spider_minion: bool,
+    pub twins_minion: bool,
+    pub pirate_minion: bool,
+    pub vampire_frog: bool,
+    pub sharknado_minion: bool,
+    pub ufo_minion: bool,
+    pub stardust_minion: bool,
+    pub bats_of_light: bool,
+    pub baby_bird: bool,
+    pub dead_cells_mushroom_boi_minion: bool,
+    pub palworld_cattiva_minion: bool,
+    pub palworld_foxsparks_minion: bool,
+    pub palworld_trusty_cattiva_minion: bool,
+    pub palworld_trusty_foxsparks_minion: bool,
+    pub clay_pot_minion: bool,
+    pub forbidden_minion: bool,
+    pub flinx_minion: bool,
+    pub abigail_minion: bool,
+    pub storm_tiger: bool,
+    pub smolstar: bool,
+    pub empress_blade: bool,
+    pub stardust_guardian: bool,
+    pub stardust_dragon: bool,
+    /// `Player.DeadlySphereMinion` (`Player.cs:1288`) — buff 161's flag, the
+    /// chain's last arm (`:10957-10972`).
+    pub deadly_sphere_minion: bool,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
@@ -210,6 +324,13 @@ pub struct Player {
     /// `Player.numberOfDeathsPVP` (`Player.cs:836`, `:38840`): the PVP death
     /// counter `/pvpdeath` reads (`PVPDeathCommand`).
     pub deaths_pvp: u32,
+    /// `Player.hostile` (`Player.cs:2570`): the PVP toggle the inventory's
+    /// `DrawPVPIcons` reads and toggles (`Main.cs:42664`, `:42692`). Gates the
+    /// PVP damage rules (`damage::*`, `Player.Damage_PVP`).
+    pub hostile: bool,
+    /// `Player.team` (`Player.cs:1430`): 0 = none, 1..=5 = Red/Green/Blue/
+    /// Yellow/Pink (`PlayerTeamID`). The `DrawPVPIcons` row index.
+    pub team: i32,
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
@@ -222,11 +343,6 @@ pub struct Player {
     pub golfer_score: i32,
     /// `Player.respawnTimer`: the ticks left until the respawn.
     pub respawn_timer: i32,
-    /// `Player.MinionAttackTargetNPC` (`Player.cs`'s field; set by every
-    /// aiStyle-165 whip hit, `Projectile.cs:14261`): the NPC the minions
-    /// prefer while it stands. The consumers are the minion AIs
-    /// (M4-PROJ-8); the whip pass only writes it.
-    pub minion_attack_target_npc: i16,
     /// `Player.TagEffectStack` (`Player.cs`'s field): the whip tags this
     /// player applied (`tag_effects.rs`, M4-PROJ-7).
     pub tag_effects: crate::tag_effects::TagEffectStack,
@@ -392,6 +508,41 @@ pub struct Player {
     /// `Player.legFrameCounter`: accumulates `|velocity.X| * 1.3` while walking and
     /// advances a leg row every `8.0`.
     leg_frame_counter: f32,
+    /// `Player.bodyFrameCounter` (`Player.cs:36594`): only the `legs == 140`
+    /// walk branch accumulates it (`|velocity.X| * 0.5`); every other body arm
+    /// either zeroes it or leaves it alone.
+    body_frame_counter: f32,
+    /// `Player.swimTime` (`Player.cs:35756-35762`): the merman/flipper swim
+    /// window; `PlayerFrame` decrements it and clears it out of water.
+    pub swim_time: i32,
+    /// `Player.miscCounter`: ticked once per update in the original; the
+    /// sandstorm leg pose turns the player every 4 ticks on it
+    /// (`Player.cs:36302`).
+    pub misc_counter: u32,
+    /// `Player.pulley` / `Player.pulleyDir` (`Player.cs:1070`): the rope
+    /// pose — body rows 1 (dir 2) and 2 (dir 1).
+    pub pulley: bool,
+    pub pulley_dir: u8,
+    /// `Player.shieldRaised` (`Player.cs:36481`): body row 10.
+    pub shield_raised: bool,
+    /// `Player.sliding` (`Player.cs`): the slope/ice slide pose (body row 3 in
+    /// the air). No port source sets it yet, so the arm is coded but
+    /// unreachable.
+    pub sliding: bool,
+    /// `Player.sandStorm` (`Player.cs:36298`): the Sandstorm-in-a-Bottle dash
+    /// pose (leg row 0, body row 6, a 4-tick turn cadence).
+    pub sand_storm: bool,
+    /// `Player.carpetFrame` (`Player.cs:1094`, init `-1`): the Magic Carpet
+    /// glide pose (leg row 0, body row 6).
+    pub carpet_frame: i32,
+    /// `Player.legs` (`Player.cs:35766`): the effective legs armour texture id
+    /// (`Item.legSlot`). The Moon Lord carve-out (`140`) and the sitting
+    /// carve-out (`217`) read it; `0` = the default legs sheet.
+    pub legs_armor: i32,
+    /// The held-item half of `PlayerFrame()` — the C# reads
+    /// `inventory[selectedItem]` directly, the port feeds the summary in from
+    /// the app before the tick (`world_sim/player.rs`).
+    pub frame_inputs: FrameInputs,
     /// `Player.wet` — the head/body in WATER (`Player.cs:27728`).
     pub wet: bool,
     /// `Player.lavaWet` — in LAVA.
@@ -429,6 +580,16 @@ pub struct Player {
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
     pub hurt_cd: f32,
+    /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
+    /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
+    /// `:18789`). `Hurt` (`:38203`), `KillMe` (`:38809`) and
+    /// `Update_NPCCollision` (`:31321`) all return early while it is set, and
+    /// `Main.UpdateWorld_Players` refills the three pools
+    /// (`Main.cs:17869-17873`).
+    pub creative_god_mode: bool,
+    /// `Player.tileRangeX/Y`'s journey half (`Player.cs:18815-18828`): the
+    /// `FarPlacementRangePower` toggle that doubles the default 5/3 range.
+    pub far_placement_range: bool,
     /// Remaining breath in ticks (`Player.breath`).
     pub breath: i32,
     breath_cd: i32,
@@ -477,11 +638,6 @@ pub struct Player {
     /// `Player.GoingDownWithGrapple` (`Player.cs:808`): the pull points
     /// downward — the platforms fall through.
     pub going_down_with_grapple: bool,
-    /// The grapple hook's attached center, set by the caller per tick (the
-    /// vanilla `GrappleMovement` reads `Main.projectile` directly).
-    pub grapple_hook_center: Vec2,
-    /// The attached hook's type (the pull-speed table lookup).
-    pub grapple_hook_type: i32,
     /// `Player.wingTime` / `wingTimeMax` (`Player.cs:1330,1338`): the flight
     /// budget in ticks and its refill cap.
     pub wing_time: f32,
@@ -705,6 +861,255 @@ pub struct Player {
     // the offset/cooldown are written inside a successful pick (`:53569-53577`)
 }
 
+/// One summon keep-alive arm of `Player.UpdateBuffs`' chain
+/// (`Player.cs:10483-10947`): the buff id, the projectile kinds whose live
+/// presence re-affirms the buff, and the `ResetEffects` flag the arm sets
+/// (`Player.cs:18620-18646`+`:18741` clear, the arm sets true).
+struct SummonBuffArm {
+    buff: i32,
+    kinds: &'static [u16],
+    flag: fn(&mut Player) -> &mut bool,
+}
+
+fn flag_pygmy(p: &mut Player) -> &mut bool {
+    &mut p.pygmy
+}
+fn flag_raven(p: &mut Player) -> &mut bool {
+    &mut p.raven
+}
+fn flag_slime(p: &mut Player) -> &mut bool {
+    &mut p.slime
+}
+fn flag_hornet_minion(p: &mut Player) -> &mut bool {
+    &mut p.hornet_minion
+}
+fn flag_imp_minion(p: &mut Player) -> &mut bool {
+    &mut p.imp_minion
+}
+fn flag_spider_minion(p: &mut Player) -> &mut bool {
+    &mut p.spider_minion
+}
+fn flag_twins_minion(p: &mut Player) -> &mut bool {
+    &mut p.twins_minion
+}
+fn flag_pirate_minion(p: &mut Player) -> &mut bool {
+    &mut p.pirate_minion
+}
+fn flag_vampire_frog(p: &mut Player) -> &mut bool {
+    &mut p.vampire_frog
+}
+fn flag_sharknado_minion(p: &mut Player) -> &mut bool {
+    &mut p.sharknado_minion
+}
+fn flag_ufo_minion(p: &mut Player) -> &mut bool {
+    &mut p.ufo_minion
+}
+fn flag_stardust_minion(p: &mut Player) -> &mut bool {
+    &mut p.stardust_minion
+}
+fn flag_bats_of_light(p: &mut Player) -> &mut bool {
+    &mut p.bats_of_light
+}
+fn flag_baby_bird(p: &mut Player) -> &mut bool {
+    &mut p.baby_bird
+}
+fn flag_dead_cells_mushroom_boi_minion(p: &mut Player) -> &mut bool {
+    &mut p.dead_cells_mushroom_boi_minion
+}
+fn flag_palworld_cattiva_minion(p: &mut Player) -> &mut bool {
+    &mut p.palworld_cattiva_minion
+}
+fn flag_palworld_foxsparks_minion(p: &mut Player) -> &mut bool {
+    &mut p.palworld_foxsparks_minion
+}
+fn flag_palworld_trusty_cattiva_minion(p: &mut Player) -> &mut bool {
+    &mut p.palworld_trusty_cattiva_minion
+}
+fn flag_palworld_trusty_foxsparks_minion(p: &mut Player) -> &mut bool {
+    &mut p.palworld_trusty_foxsparks_minion
+}
+fn flag_clay_pot_minion(p: &mut Player) -> &mut bool {
+    &mut p.clay_pot_minion
+}
+fn flag_forbidden_minion(p: &mut Player) -> &mut bool {
+    &mut p.forbidden_minion
+}
+fn flag_flinx_minion(p: &mut Player) -> &mut bool {
+    &mut p.flinx_minion
+}
+fn flag_abigail_minion(p: &mut Player) -> &mut bool {
+    &mut p.abigail_minion
+}
+fn flag_storm_tiger(p: &mut Player) -> &mut bool {
+    &mut p.storm_tiger
+}
+fn flag_smolstar(p: &mut Player) -> &mut bool {
+    &mut p.smolstar
+}
+fn flag_empress_blade(p: &mut Player) -> &mut bool {
+    &mut p.empress_blade
+}
+fn flag_stardust_guardian(p: &mut Player) -> &mut bool {
+    &mut p.stardust_guardian
+}
+fn flag_stardust_dragon(p: &mut Player) -> &mut bool {
+    &mut p.stardust_dragon
+}
+fn flag_deadly_sphere_minion(p: &mut Player) -> &mut bool {
+    &mut p.deadly_sphere_minion
+}
+
+/// The summon keep-alive arms in the C# chain's verbatim order
+/// (`Player.cs:10483-10972`). Buff 216 carries its own respawn arm and buffs
+/// 335/263 their status updaters — the driver special-cases those ids.
+const SUMMON_BUFF_ARMS: [SummonBuffArm; 29] = [
+    SummonBuffArm {
+        buff: 49,
+        kinds: &[191, 192, 193, 194],
+        flag: flag_pygmy,
+    }, // :10483
+    SummonBuffArm {
+        buff: 83,
+        kinds: &[317],
+        flag: flag_raven,
+    }, // :10505
+    SummonBuffArm {
+        buff: 64,
+        kinds: &[266],
+        flag: flag_slime,
+    }, // :10521
+    SummonBuffArm {
+        buff: 125,
+        kinds: &[373],
+        flag: flag_hornet_minion,
+    }, // :10537
+    SummonBuffArm {
+        buff: 126,
+        kinds: &[375],
+        flag: flag_imp_minion,
+    }, // :10553
+    SummonBuffArm {
+        buff: 133,
+        kinds: &[390, 391, 392],
+        flag: flag_spider_minion,
+    }, // :10569
+    SummonBuffArm {
+        buff: 134,
+        kinds: &[387, 388],
+        flag: flag_twins_minion,
+    }, // :10585
+    SummonBuffArm {
+        buff: 135,
+        kinds: &[393, 394, 395],
+        flag: flag_pirate_minion,
+    }, // :10601
+    SummonBuffArm {
+        buff: 214,
+        kinds: &[758],
+        flag: flag_vampire_frog,
+    }, // :10617
+    SummonBuffArm {
+        buff: 139,
+        kinds: &[407],
+        flag: flag_sharknado_minion,
+    }, // :10633
+    SummonBuffArm {
+        buff: 140,
+        kinds: &[423],
+        flag: flag_ufo_minion,
+    }, // :10649
+    SummonBuffArm {
+        buff: 182,
+        kinds: &[613],
+        flag: flag_stardust_minion,
+    }, // :10665
+    SummonBuffArm {
+        buff: 213,
+        kinds: &[755],
+        flag: flag_bats_of_light,
+    }, // :10681
+    SummonBuffArm {
+        buff: 216,
+        kinds: &[759],
+        flag: flag_baby_bird,
+    }, // :10697 (+respawn)
+    SummonBuffArm {
+        buff: 355,
+        kinds: &[1022],
+        flag: flag_dead_cells_mushroom_boi_minion,
+    }, // :10729
+    SummonBuffArm {
+        buff: 385,
+        kinds: &[1093],
+        flag: flag_palworld_cattiva_minion,
+    }, // :10745
+    SummonBuffArm {
+        buff: 393,
+        kinds: &[1118],
+        flag: flag_clay_pot_minion,
+    }, // :10761
+    SummonBuffArm {
+        buff: 394,
+        kinds: &[1119],
+        flag: flag_forbidden_minion,
+    }, // :10777
+    SummonBuffArm {
+        buff: 386,
+        kinds: &[1094],
+        flag: flag_palworld_foxsparks_minion,
+    }, // :10793
+    SummonBuffArm {
+        buff: 389,
+        kinds: &[1112],
+        flag: flag_palworld_trusty_cattiva_minion,
+    }, // :10809
+    SummonBuffArm {
+        buff: 390,
+        kinds: &[1113],
+        flag: flag_palworld_trusty_foxsparks_minion,
+    }, // :10825
+    SummonBuffArm {
+        buff: 325,
+        kinds: &[951],
+        flag: flag_flinx_minion,
+    }, // :10841
+    SummonBuffArm {
+        buff: 335,
+        kinds: &[970],
+        flag: flag_abigail_minion,
+    }, // :10857 (+status)
+    SummonBuffArm {
+        buff: 263,
+        kinds: &[831],
+        flag: flag_storm_tiger,
+    }, // :10877 (+status)
+    SummonBuffArm {
+        buff: 271,
+        kinds: &[864],
+        flag: flag_smolstar,
+    }, // :10897
+    SummonBuffArm {
+        buff: 322,
+        kinds: &[946],
+        flag: flag_empress_blade,
+    }, // :10912
+    SummonBuffArm {
+        buff: 187,
+        kinds: &[623],
+        flag: flag_stardust_guardian,
+    }, // :10928
+    SummonBuffArm {
+        buff: 188,
+        kinds: &[625],
+        flag: flag_stardust_dragon,
+    }, // :10944
+    SummonBuffArm {
+        buff: 161,
+        kinds: &[533],
+        flag: flag_deadly_sphere_minion,
+    }, // :10957
+];
+
 impl Player {
     /// `Player.EverySomeYoyoHits` (`Player.cs:4308-4316`): the counter's
     /// modulo against `amount` (C#'s truncated remainder, so the -1 start
@@ -747,6 +1152,8 @@ impl Player {
             angler_quests_finished: 0,
             golfer_score: 0,
             deaths_pvp: 0,
+            hostile: false,
+            team: 0,
             dead_time: 0,
             respawn_timer: 0,
             minion_attack_target_npc: -1,
@@ -771,6 +1178,43 @@ impl Player {
             ranged_damage: 1.0,
             magic_damage: 1.0,
             minion_damage: 1.0,
+            max_minions: 1,
+            num_minions: 0,
+            slots_minions: 0.0,
+            max_turrets: 1,
+            max_turrets_old: 1,
+            owned_projectile_counts: [0; PROJ_COUNT],
+            highest_storm_tiger_gem_original_damage: 0,
+            highest_abigail_counter_original_damage: 0,
+            pygmy: false,
+            raven: false,
+            slime: false,
+            hornet_minion: false,
+            imp_minion: false,
+            spider_minion: false,
+            twins_minion: false,
+            pirate_minion: false,
+            vampire_frog: false,
+            sharknado_minion: false,
+            ufo_minion: false,
+            stardust_minion: false,
+            bats_of_light: false,
+            baby_bird: false,
+            dead_cells_mushroom_boi_minion: false,
+            palworld_cattiva_minion: false,
+            palworld_foxsparks_minion: false,
+            palworld_trusty_cattiva_minion: false,
+            palworld_trusty_foxsparks_minion: false,
+            clay_pot_minion: false,
+            forbidden_minion: false,
+            flinx_minion: false,
+            abigail_minion: false,
+            storm_tiger: false,
+            smolstar: false,
+            empress_blade: false,
+            stardust_guardian: false,
+            stardust_dragon: false,
+            deadly_sphere_minion: false,
             x: sx,
             y: sy,
             prev_x: sx,
@@ -782,6 +1226,17 @@ impl Player {
             leg_frame: 0,
             body_frame: 0,
             leg_frame_counter: 0.0,
+            body_frame_counter: 0.0,
+            swim_time: 0,
+            misc_counter: 0,
+            pulley: false,
+            pulley_dir: 0,
+            shield_raised: false,
+            sliding: false,
+            sand_storm: false,
+            carpet_frame: -1,
+            legs_armor: 0,
+            frame_inputs: FrameInputs::default(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
@@ -840,6 +1295,8 @@ impl Player {
             hurt_cd: 0.0,
             breath: BREATH_MAX,
             breath_cd: 0,
+            creative_god_mode: false,
+            far_placement_range: false,
             regen: RegenState::default(),
             dot_death: None,
             luck_state: LuckState::default(),
@@ -851,8 +1308,6 @@ impl Player {
             has_wings: false,
             grappling_active: false,
             going_down_with_grapple: false,
-            grapple_hook_center: Vec2::ZERO,
-            grapple_hook_type: 13,
             wing_time: 0.0,
             wing_time_max: 0,
             wings_logic: 0,
@@ -1340,6 +1795,14 @@ impl Player {
         self.leg_frame = 0;
         self.body_frame = 0;
         self.leg_frame_counter = 0.0;
+        self.body_frame_counter = 0.0;
+        self.swim_time = 0;
+        self.pulley = false;
+        self.pulley_dir = 0;
+        self.shield_raised = false;
+        self.sliding = false;
+        self.sand_storm = false;
+        self.carpet_frame = -1;
         self.hp = self.max_hp;
         self.hurt_cd = 0.0;
         self.breath = BREATH_MAX;
@@ -1388,6 +1851,11 @@ impl Player {
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
     /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
     pub fn start_death(&mut self, world: &World, boss_near: bool, expert: bool) {
+        // `Player.KillMe`'s head (`Player.cs:38809-38812`): the godmode power
+        // (and an already-dead player) refuses the death entirely.
+        if self.creative_god_mode || self.dead {
+            return;
+        }
         // `Player.KillMe`'s counter arm (`Player.cs:38840-38844`): the PVP
         // flag splits the two counters; the port has no PVP, so every
         // death is PVE.
@@ -1426,6 +1894,40 @@ impl Player {
         })
     }
 
+    /// `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`): a live
+    /// NPC inside the centred `Main.MaxWorldViewSize` (1920x1080) rect inflated
+    /// by 320 px blocks the respawn skip — an invasion NPC while its invasion
+    /// runs (`NPC.GetNPCInvasionGroup(type) == Main.invasionType`), or a
+    /// `NPCID.Sets.DangerThatPreventsOtherDangers` member (the port has none
+    /// yet, so only the invasion arm fires).
+    pub fn near_any_npcs_that_block_respawn(
+        &self,
+        npcs: &[crate::npc::Npc],
+        invasion_live: bool,
+    ) -> bool {
+        // `Utils.CenteredRectangle(Center, Main.MaxWorldViewSize)` then
+        // `Inflate(320, 320)` (`:38992-38998`).
+        const VIEW_W: f32 = 1920.0;
+        const VIEW_H: f32 = 1080.0;
+        const INFLATE: f32 = 320.0;
+        let (cx, cy) = self.center();
+        let half_w = VIEW_W * 0.5 + INFLATE;
+        let half_h = VIEW_H * 0.5 + INFLATE;
+        npcs.iter().any(|n| {
+            let (nx, ny) = n.center();
+            let (w, h) = n.size();
+            let overlaps = (nx - cx).abs() <= half_w + w * 0.5
+                && (ny - cy).abs() <= half_h + h * 0.5;
+            if !overlaps {
+                return false;
+            }
+            // `NPC.GetNPCInvasionGroup(nPC.type) > 0 && == Main.invasionType`
+            // (`:39005-39008`); the danger-set arm (`:39009-39012`) has no
+            // ported members.
+            invasion_live && n.kind.is_invasion_npc()
+        })
+    }
+
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
     /// 90-tick lockout, with no boss hindering and no danger NPCs nearby.
     /// `ghost`/`pvpDeath`/event branches are unreachable in the port.
@@ -1445,6 +1947,11 @@ impl Player {
     pub fn update_dead(&mut self, jump: bool, boss_near: bool, danger_near: bool) -> bool {
         self.dead_time += 1;
         self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+        // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
+        // budget zeroes while dead — the pool stays until AI_062's dead-owner
+        // flag read (M4-PROJ-8 phase 4) despawns the minions.
+        self.num_minions = 0;
+        self.slots_minions = 0.0;
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near);
@@ -1463,6 +1970,233 @@ impl Player {
         self.respawn();
     }
 
+    /// `Player.ResetProjectileCaches` (`Player.cs:12217-12226`): the recount
+    /// input zeroed — called from the `ResetEffects` seam (`:18810`) and the
+    /// dead path (`:24752`).
+    pub fn reset_projectile_caches(&mut self) {
+        self.highest_storm_tiger_gem_original_damage = 0;
+        self.highest_abigail_counter_original_damage = 0;
+        self.owned_projectile_counts = [0; PROJ_COUNT];
+    }
+
+    /// `Player.UpdateProjectileCaches` (`Player.cs:12184-12215`): the per-tick
+    /// recount of the live pool's owned projectiles into
+    /// `owned_projectile_counts` plus the 831/970 `originalDamage` maxima.
+    /// The C# walks `Main.projectile[1000]` for `owner == i`; the port's
+    /// whoAmI stand-in is 0 (the single-player owner the spawner folds to).
+    pub fn update_projectile_caches(&mut self, pool: &ProjectilePool) {
+        for p in pool.slots() {
+            if !p.active || p.owner != 0 {
+                continue;
+            }
+            // A kind at or above `ProjectileID.Count` cannot exist in the C#
+            // id space; the count skips it instead of indexing out of range.
+            if let Some(count) = self.owned_projectile_counts.get_mut(usize::from(p.kind)) {
+                *count += 1;
+            }
+            match p.kind {
+                831 => {
+                    if self.highest_storm_tiger_gem_original_damage < p.original_damage {
+                        self.highest_storm_tiger_gem_original_damage = p.original_damage;
+                    }
+                }
+                970 => {
+                    if self.highest_abigail_counter_original_damage < p.original_damage {
+                        self.highest_abigail_counter_original_damage = p.original_damage;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// `Player.UpdateBuffs`' summon chain (`Player.cs:10483-10947`): the
+    /// slot-ordered keep-alive arms (with the cap effects `:10175-10183` and
+    /// the buff-216 respawn arm `:10697-10726`), driven by
+    /// `owned_projectile_counts`. Runs inside the fixed step at the
+    /// `UpdateBuffs` seam — the pool and the inventory ride in as parameters
+    /// because `Player::update` cannot see the App's.
+    ///
+    /// The ported order, pinned (the plan constraint — verified against the
+    /// decompile this phase):
+    /// - `Main.Update` → `UpdatePlayers` (`Main.cs:17754`) → `Player.Update`:
+    ///   `ResetEffects` (`:25491` — `maxMinions`/`maxTurrets` = 1 at
+    ///   `:18448-18449`, the summon flags `:18620-18646`+`:18741`,
+    ///   `ResetProjectileCaches` `:18810`) → the buffImmune reset
+    ///   (`:25562-25564`) → `UpdateProjectileCaches(i)` (`:25565`) →
+    ///   `UpdateBuffs(i)` (`:25566` — ONE `for j` loop: the timer head
+    ///   `:9869-9876`, then the else-if chain: the cap effects
+    ///   `:10175-10183`, the summon arms `:10483-10947`, `DelBuff(j); j--`
+    ///   rescanning the slot the compaction filled) → `UpdateEquips`
+    ///   (`:25633` — `grant_summon_caps`) → `numMinions = 0; slotsMinions =
+    ///   0f` (`:28279-28280`, before ItemCheck).
+    /// - `Main.Update` → `UpdateNPCs` (`:17767`) → `UpdateProjectiles`
+    ///   (`:17775` — the pool pass accumulates `numMinions`/`slotsMinions`,
+    ///   `Projectile.cs:16736-16737`, M4-PROJ-8 phase 3). So the value this
+    ///   chain reads for `numMinions` is the last pool pass's accumulation —
+    ///   the live pool's owned-minion count (the pool is unchanged between
+    ///   the passes).
+    /// The port realizes the same order across `update_with_grapple` (the
+    /// ResetEffects seam + the buff timer/effects), this method, the
+    /// `grant_*` seams and the pool's update — each counter's read order
+    /// matches. The buff timers decrement and the expired slots purge in
+    /// `update_with_grapple` before the arms run here; the C# arms run
+    /// before the `:25608` purge, but a summon buff's time is pinned at
+    /// 18000 by the refresh while its minion lives (and a dead-keep-alive
+    /// buff is DelBuff'd by the arm either way), so the swap is
+    /// unobservable.
+    pub fn update_summon_buff_arms(
+        &mut self,
+        pool: &mut ProjectilePool,
+        inventory: &[ItemSlot; INV],
+    ) {
+        // The slot-ordered chain with the C# `j--` rescan: after `DelBuff(j)`
+        // the compaction shifts the later buffs left, so index `j` is
+        // re-examined instead of advanced (the shifted-in buff's arm runs in
+        // the same tick, `Player.cs:10483-10947`).
+        let mut j = 0usize;
+        while j < MAX_BUFFS {
+            let buff = self.buffs.buff_type[j];
+            // The C# guard (`:9871-9874`) — the decrement already ran in
+            // `update_with_grapple`'s timer tick.
+            if buff <= 0 || self.buffs.buff_time[j] <= 0 {
+                j += 1;
+                continue;
+            }
+            let survives = match buff {
+                // `Player.cs:10175-10183` — the cap effects share the chain,
+                // slot-ordered with the arms (the buff-216 arm's `maxMinions`
+                // read at `:10706` sees the earlier slots' raises).
+                110 | 150 => {
+                    self.max_minions += 1;
+                    true
+                }
+                348 => {
+                    self.max_turrets += 1;
+                    true
+                }
+                216 => self.run_baby_bird_arm(pool, inventory, j),
+                _ => match SUMMON_BUFF_ARMS.iter().find(|a| a.buff == buff) {
+                    Some(arm) => {
+                        let kept = arm
+                            .kinds
+                            .iter()
+                            .any(|&k| self.owned_projectile_counts[usize::from(k)] > 0);
+                        if kept {
+                            *(arm.flag)(self) = true;
+                            self.buffs.buff_time[j] = 18000;
+                            true
+                        } else {
+                            self.buffs.del_buff(j);
+                            false
+                        }
+                    }
+                    // Not a summon arm — the chain leaves the slot alone.
+                    None => true,
+                },
+            };
+            if survives {
+                // `Player.cs:10874-10877` / `:10893-10896`: the companion
+                // updaters run after their arm kept the buff.
+                match buff {
+                    335 => self.update_abigail_status(),
+                    263 => self.update_storm_tiger_status(),
+                    _ => {}
+                }
+                j += 1;
+            }
+            // else: the slot was DelBuff'd — rescan index j.
+        }
+        // `Player.cs:28279-28280`: the per-tick zero before ItemCheck — the
+        // pool pass (Phase 3) accumulates the values the next tick's arms
+        // read.
+        self.num_minions = 0;
+        self.slots_minions = 0.0;
+    }
+
+    /// Buff 216's arm (`Player.cs:10697-10726`): keep-alive on the 759 count;
+    /// otherwise the respawn arm — below cap with the Baby Bird Staff (4281)
+    /// in the inventory, spawn the item's shoot at the player's top with the
+    /// item's damage/knockBack (`originalDamage = item.damage` at `:10713` —
+    /// the data-row spawn seam writes it for minion rows); at cap (or without
+    /// the staff) `DelBuff(j)` and no refresh (the C# `flag2` guard). Returns
+    /// false when the slot was deleted — the caller rescans the index.
+    fn run_baby_bird_arm(
+        &mut self,
+        pool: &mut ProjectilePool,
+        inventory: &[ItemSlot; INV],
+        j: usize,
+    ) -> bool {
+        if self.owned_projectile_counts[usize::from(BABY_BIRD)] > 0 {
+            self.baby_bird = true;
+        } else {
+            // `base.whoAmI == Main.myPlayer` always holds in the
+            // single-player port.
+            if self.num_minions < self.max_minions {
+                // `Player.FindItem` (`Player.cs:55972-55981`): the first
+                // inventory slot with the type and a stack.
+                if let Some(idx) = inventory.iter().position(|s| s.kind == 4281 && s.count > 0) {
+                    if let Some(def) = registry::get(inventory[idx].kind) {
+                        // `Projectile.NewProjectile(..., base.Top,
+                        // Vector2.Zero, item.shoot, item.damage,
+                        // item.knockBack, whoAmI)` — `Entity.Top` is the
+                        // hitbox's top center; item 4281's `Item.shoot` is
+                        // 759 (the generated row), so the verbatim data-row
+                        // slice (minion flag, 1.0 slots, timeLeft 18000,
+                        // the local pair) rides the spawn seam. The C#'s
+                        // pool-full sentinel crash stands in as "not
+                        // spawned".
+                        if pool
+                            .spawn_with_data_ai_owned(
+                                BABY_BIRD,
+                                0,
+                                self.x + WIDTH * 0.5,
+                                self.y,
+                                0.0,
+                                0.0,
+                                def.damage,
+                                def.knock_back,
+                                0.0,
+                                0.0,
+                            )
+                            .is_some()
+                        {
+                            self.baby_bird = true;
+                        }
+                    }
+                }
+            }
+            if !self.baby_bird {
+                self.buffs.del_buff(j);
+                return false;
+            }
+        }
+        self.buffs.buff_time[j] = 18000;
+        true
+    }
+
+    /// `Player.UpdateAbigailStatus` (`Player.cs:12274-12293`) — STUB. Kills
+    /// the 963 companions when the 970 count drops to 0 and spawns one beside
+    /// the newest Abigail otherwise; both halves need the pool spawn/AI work
+    /// (`FindNewestAI_164Minion`, the aiStyle-62 family) landing in M4-PROJ-8
+    /// phases 4/6. Until then an orphan companion self-despawns through
+    /// AI_062's flag read (`Projectile.cs:65045-65051`, Phase 4). Deviation
+    /// recorded for ANALYSIS.
+    fn update_abigail_status(&mut self) {}
+
+    /// `Player.UpdateStormTigerStatus` (`Player.cs:12295-12328`) — STUB, the
+    /// 833-835 rank management (`GetDesiredStormTigerMinionRank` + the
+    /// `StormTigerIds` sets); lands with phases 4/6 like the Abigail stub.
+    fn update_storm_tiger_status(&mut self) {}
+
+    /// The `ResetEffects` summon-flag clear (`Player.cs:18620-18646`,
+    /// `:18741`) — table-driven so the arms table stays the single source.
+    fn clear_summon_flags(&mut self) {
+        for arm in &SUMMON_BUFF_ARMS {
+            *(arm.flag)(self) = false;
+        }
+    }
+
     /// Contact damage / future combat. Returns true when the hit was accepted.
     pub fn hurt(&mut self, amount: i32, from_x: f32) -> bool {
         self.hurt_inner(amount, from_x, true)
@@ -1473,6 +2207,12 @@ impl Player {
     /// petrify calls pass hitDirection 0 and skip the knock entirely (the
     /// fallStart reset inside that branch rides with it).
     pub(crate) fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
+        // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
+        // journey godmode power swallows the hit outright — before the
+        // iframes, the defense reduction and the knockback.
+        if self.creative_god_mode {
+            return false;
+        }
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
@@ -1510,6 +2250,32 @@ impl Player {
         self.hurt_inner(amount, cx, false)
     }
 
+    /// `Player.tileRangeX` (`Player.cs:2496`, `DefaultTileRangeX = 5` at
+    /// `:57113`) after `Player.ResetEffects`' journey block
+    /// (`:18815-18828`): the base 5, or `5 * 2 + 8 = 18` while the
+    /// `FarPlacementRangePower` is enabled. The C# gates the doubling on
+    /// `Main.IsJourneyMode`; the port has no journey-difficulty flag, so the
+    /// power's own toggle is the gate.
+    pub fn tile_range_x(&self) -> f32 {
+        let base = 5.0;
+        if self.far_placement_range {
+            base * 2.0 + 8.0
+        } else {
+            base
+        }
+    }
+
+    /// `Player.tileRangeY` (`DefaultTileRangeY = 3`, `Player.cs:57114`) with
+    /// the same journey doubling (`:18823-18825`): `3` or `14`.
+    pub fn tile_range_y(&self) -> f32 {
+        let base = 3.0;
+        if self.far_placement_range {
+            base * 2.0 + 8.0
+        } else {
+            base
+        }
+    }
+
     pub fn center(&self) -> (f32, f32) {
         (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
     }
@@ -1533,6 +2299,18 @@ impl Player {
     /// the C# point and survives the mount port.
     pub fn mounted_center(&self) -> (f32, f32) {
         self.center()
+    }
+
+    /// `Player.killGuide` / `Player.killClothier` (`Player.cs:2770`/`:2772`):
+    /// `ApplyEquipFunctional` arms them for the worn accessory slots 3..10
+    /// (`:14368`, the `UpdateEquips` loop `:12948-12954` — `IsItemSlotUnlockedAndUsable`
+    /// is not modelled, every slot counts as unlocked) and `ResetEffects`
+    /// clears them every tick (`:18365-18366`). The melee gate
+    /// (`ProcessHitAgainstNPC` `:44274`) and the projectile gate
+    /// (`Damage_PVE_Inner` `:12601`) both read this pair.
+    pub fn doll_flags(&self) -> (bool, bool) {
+        let worn = |k: u16| self.equipped[3..10].contains(&k);
+        (worn(267), worn(1307))
     }
 
     /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
@@ -1603,7 +2381,7 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
-        self.update_with_grapple(world, input, None, false, false)
+        self.update_with_grapple(world, input, &[], false, false)
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -1615,14 +2393,18 @@ impl Player {
         &mut self,
         world: &World,
         input: PlayerInput,
-        grapple: Option<(Vec2, i32)>,
+        // `Player.grappling[]`/`grapCount` as a `(ProjectileID, center,
+        // rotation)` triple per registered hook (`Player.cs:2742`/`:2744`) —
+        // the pool rebuilds it on its own pass, so the caller only hands the
+        // set over. The rotation is read by the Squirrel Hook's steering alone.
+        grapple: &[(u16, Vec2, f32)],
         item_in_use: bool,
         danger_near: bool,
     ) {
         // `Player.grappling[0] != -1` is rebuilt per tick by the attached
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
-        // caller passes the attached state, so derive it here.
-        self.grappling_active = grapple.is_some();
+        // caller passes the registered set, so derive it here.
+        self.grappling_active = !grapple.is_empty();
         // The buff-frame head of `Player.Update` (`Player.cs:25555-25616`): the
         // `buffImmune` reset precedes `UpdateBuffs` and every re-grant; the
         // end-of-update purge consumes the table at `:26011-26016`.
@@ -1754,6 +2536,19 @@ impl Player {
         self.ranged_damage = 1.0;
         self.magic_damage = 1.0;
         self.minion_damage = 1.0;
+        // `ResetEffects`' summon budget bases (`Player.cs:18448-18449`): the
+        // cap buffs 110/150/348 (`:10175-10183`, the summon arms pass) and
+        // the armor/held rows (`:13258-13948`/`:15324-15329`,
+        // `grant_summon_caps`) re-add per tick.
+        self.max_minions = 1;
+        self.max_turrets = 1;
+        // The 28 summon keep-alive flags (`:18620-18646`+`:18741`) — the
+        // arms table is the single source of the flag set.
+        self.clear_summon_flags();
+        // `ResetProjectileCaches` (`:18810`): the recount inputs zeroed;
+        // `UpdateProjectileCaches` recounts them at the `:25565` seam (the
+        // summon arms pass in `world_sim/player.rs`).
+        self.reset_projectile_caches();
         self.mana_regen_bonus = 0;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
@@ -2215,7 +3010,7 @@ impl Player {
         // vector to the attached hook center clamped to the pull speed. The
         // fall origin refreshes per tick (no fall damage accrues).
         if grappling {
-            self.grapple_movement(grapple, input);
+            self.grapple_movement(grapple, input, item_in_use);
         }
 
         // The flight section (`Player.cs:26744-27360`): the wings and the
@@ -2548,27 +3343,46 @@ impl Player {
         }
     }
 
-    /// `PlayerFrame()` (legs + the locomotion part of the body). The original runs this
-    /// every tick after movement:
-    /// - idle: legs and body row `0` (the rest pose);
-    /// - airborne (`velocity.Y != 0`): row `5` (the jump/fall pose);
-    /// - walking (`velocity.X != 0`): legs advance one row per `8.0` of
-    ///   `legFrameCounter += |velocity.X| * 1.3`, cycling the walk band rows `7..=19`,
-    ///   and the body copies the leg row.
+    /// `PlayerFrame()` (`Player.cs:35755-36647`) — the legs and body rows of
+    /// every pose. The chain order is the vanilla one: the swim window, the
+    /// mount animator (`flag7` plus `DoesNotOverrideLegFrames`), the leg rows,
+    /// then the body rows (item use → pulley → hold styles → shield → mount →
+    /// grapple → water → swim → air → walk → idle).
     ///
-    /// The wings/mount/pulley/hold-style branches of the original are not modelled yet,
-    /// and item-use body frames are applied by the app via [`Player::apply_item_use_frame`]
-    /// while a swing is active.
+    /// The C# reads the held item out of `inventory[selectedItem]`; the port
+    /// keeps the inventory in the app, which hands the same fields in through
+    /// [`FrameInputs`] before each fixed step (`world_sim/player.rs`, beside
+    /// `swing_aim`).
+    ///
+    /// Arms whose granting equipment has no port field yet stay coded but
+    /// unreachable until it lands: Sandstorm in a Bottle (`sand_storm`), the
+    /// Magic Carpet (`carpet_frame`), flippers (`ShouldFloatInWater`), the
+    /// pulley/rope item (`pulley`) and the raised shield (`shield_raised`).
     fn update_frames(&mut self, world: &World) {
-        // `Player.cs:36148-36217`: while mounted, the mount owns the leg
-        // frames and runs its own animator — the unmounted logic below is
-        // gated off exactly like the original's `flag7`.
+        let held = self.frame_inputs;
+        // `:35756-35762`: the swim window ticks down and dies out of water.
+        if self.swim_time > 0 {
+            self.swim_time -= 1;
+            if !self.wet {
+                self.swim_time = 0;
+            }
+        }
+        // `:36148-36240`: `flag7` — the mount owns the leg frames unless it is
+        // one of the 57-60 roller-skate mounts
+        // (`MountID.Sets.DoesNotOverrideLegFrames`, `MountID.cs:39`). Every
+        // mount still runs its own animator, so this block does not return.
+        let mut mount_owns_legs = false;
         if self.mount.is_active() {
-            // `:36150-36161`: the leg frames force to row 6 (the rows 0
-            // carve-out is for 23/45/48 — no rows here).
-            self.leg_frame_counter = 0.0;
-            self.leg_frame = 6;
-            // `:36155-36216`: the state selection.
+            let kind = self.mount.kind();
+            if !crate::mount::does_not_override_leg_frames(kind) {
+                mount_owns_legs = true;
+                // `:36150-36161`: row 6; the 23/45/48 carve-out forces row 0.
+                self.leg_frame_counter = 0.0;
+                self.leg_frame = 6;
+                if matches!(kind, 23 | 45 | 48) {
+                    self.leg_frame = 0;
+                }
+            }
             if self.vy != 0.0 && self.mount.running_grace_time() <= 0 {
                 if self.mount.fly_time() > 0
                     && self.jump == 0
@@ -2626,50 +3440,244 @@ impl Player {
                     self.control_down,
                 );
             }
-            // `:36488`: the body frame locks to the mount's row.
-            self.body_frame = self.mount.data().map_or(0, |d| d.body_frame) as u32;
-            return;
         }
-        if self.vy != 0.0 {
-            self.leg_frame_counter = 0.0;
-            self.leg_frame = 5;
-        } else if self.vx != 0.0 {
-            self.leg_frame_counter += self.vx.abs() * 1.3;
-            while self.leg_frame_counter > 8.0 {
-                self.leg_frame_counter -= 8.0;
-                self.leg_frame += 1;
+
+        // `:36219-36291`: the leg rows.
+        if !mount_owns_legs && self.legs_armor != 140 {
+            if self.swim_time > 0 {
+                // `:36221-36233`: the swim paddle — a flat 2 per tick.
+                self.leg_frame_counter += 2.0;
+                while self.leg_frame_counter > 8.0 {
+                    self.leg_frame_counter -= 8.0;
+                    self.leg_frame += 1;
+                }
+                if self.leg_frame < 7 {
+                    self.leg_frame = 19;
+                } else if self.leg_frame > 19 {
+                    self.leg_frame = 7;
+                }
+            } else if self.vy != 0.0 || self.grappling_active {
+                // `:36234-36240`: the jump/fall/hang row 5; the three
+                // always-animated wing sets keep row 0.
+                self.leg_frame_counter = 0.0;
+                self.leg_frame = 5;
+                if matches!(self.wings_logic, 22 | 28 | 45)
+                    && self.should_draw_wings_that_are_always_animated()
+                {
+                    self.leg_frame = 0;
+                }
+            } else if self.vx != 0.0 {
+                // `:36242-36275`: the walk cycle. The slippery no-input arm
+                // (and the roller skates, `MountID.Sets.IsRollerSkates`) pins
+                // the rest row.
+                let roller_skates =
+                    self.mount.is_active() && crate::mount::is_roller_skates(self.mount.kind());
+                if ((self.slippy || self.slippy2) | roller_skates)
+                    && !self.control_left
+                    && !self.control_right
+                {
+                    self.leg_frame_counter = 0.0;
+                    self.leg_frame = 0;
+                } else {
+                    let mut num19 = self.vx.abs() * 1.3;
+                    // `:36255-36258`: the skates lock to 2 at full speed.
+                    if roller_skates && self.vx.abs() >= self.max_run_speed {
+                        num19 = 2.0;
+                    }
+                    self.leg_frame_counter += num19;
+                    while self.leg_frame_counter > 8.0 {
+                        self.leg_frame_counter -= 8.0;
+                        self.leg_frame += 1;
+                    }
+                    if self.leg_frame < 7 {
+                        self.leg_frame = 19;
+                    } else if self.leg_frame > 19 {
+                        self.leg_frame = 7;
+                    }
+                }
+            } else {
+                // `:36276-36282`: the rest row.
+                self.leg_frame_counter = 0.0;
+                self.leg_frame = 0;
             }
-            if self.leg_frame < 7 {
-                self.leg_frame = 19;
-            } else if self.leg_frame > 19 {
-                self.leg_frame = 7;
-            }
-        } else {
+        }
+        // `:36292-36297`: the Magic Carpet glide pins the rest row.
+        if self.carpet_frame >= 0 {
             self.leg_frame_counter = 0.0;
             self.leg_frame = 0;
         }
-
-        if self.vy != 0.0 {
-            self.body_frame = 5;
-        } else if self.vx != 0.0 {
-            self.body_frame = self.leg_frame;
-        } else {
+        // `:36298-36311`: the sandstorm dash pins the rest row and turns the
+        // player every 4 ticks while no item is in use.
+        if self.sand_storm {
+            if self.grappling_active {
+                self.sand_storm = false;
+            }
+            if self.misc_counter % 4 == 0 && !held.swing_active {
+                self.facing = -self.facing;
+            }
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = 0;
+        } else if held.swing_active && held.use_style_blocks_frames {
+            // `:36312-36444`: the item-use rows per useStyle.
+            self.apply_item_use_frame(held.swing_remaining, held.use_style, held.aim_relative);
+        } else if self.pulley {
+            // `:36445-36454`: the rope pose.
+            self.body_frame = if self.pulley_dir == 2 { 1 } else { 2 };
+        } else if held.can_visually_hold
+            && held.hold_style == 1
+            && held.hold_style_dry
+            && held.torch_hold_ok
+        {
+            // `:36455-36459`: the torch hold (row 3).
+            self.body_frame = 3;
+        } else if held.can_visually_hold && held.hold_style == 2 && held.hold_style_dry {
+            // `:36460-36464`: the held-up item (row 2).
+            self.body_frame = 2;
+        } else if held.can_visually_hold && held.hold_style == 3 {
+            self.body_frame = 3;
+        } else if held.can_visually_hold && held.hold_style == 5 {
+            self.body_frame = 3;
+        } else if held.can_visually_hold && held.hold_style == 7 {
+            // `:36477-36481`: the holdStyle 7 row 11.
+            self.body_frame = 11;
+        } else if held.can_visually_hold && held.hold_style == 4 && self.vy == 0.0 {
+            // `:36483-36488`: the umbrella hold rests on row 0. (The C# also
+            // requires `gravDir == 1`; the port has no gravity flip.)
             self.body_frame = 0;
+        } else if self.shield_raised {
+            // `:36489-36492`: the raised shield (row 10).
+            self.body_frame = 10;
+        } else if self.mount.is_active()
+            && !crate::mount::does_not_override_body_frames(self.mount.kind())
+        {
+            // `:36493-36497`: the mount body row.
+            self.body_frame_counter = 0.0;
+            self.body_frame = self.mount.data().map_or(0, |d| d.body_frame) as u32;
+        } else if self.grappling_active {
+            // `:36498-36535`: the grapple pose leans with the hooks' centroid.
+            self.sand_storm = false;
+            let dx = held.grapple_dx;
+            let dy = held.grapple_dy;
+            if dy < 0.0 && dy.abs() > dx.abs() {
+                self.body_frame = 2;
+            } else if dy > 0.0 && dy.abs() > dx.abs() {
+                self.body_frame = 4;
+            } else {
+                self.body_frame = 3;
+            }
+        } else if self.wet && self.should_float_in_water() {
+            // `:36536-36539`: the float pose (row 10).
+            self.body_frame = 10;
+        } else if self.swim_time > 0 {
+            // `:36540-36558`: the swim window — row 0 at the edges, row 5 in
+            // the middle.
+            self.body_frame = if self.swim_time > 20 {
+                0
+            } else if self.swim_time > 10 {
+                5
+            } else {
+                0
+            };
+        } else if self.vy != 0.0 {
+            // `:36559-36600`: the airborne rows.
+            if self.sliding {
+                self.body_frame = 3;
+            } else if self.sand_storm || self.carpet_frame >= 0 {
+                self.body_frame = 6;
+            } else if self.eoc_dash > 0 {
+                self.body_frame = 6;
+            } else if self.wings_logic > 0 {
+                self.body_frame = if matches!(self.wings_logic, 22 | 28 | 45) {
+                    0
+                } else if self.vy > 0.0 {
+                    if self.control_jump {
+                        6
+                    } else {
+                        5
+                    }
+                } else {
+                    6
+                };
+            } else {
+                self.body_frame = 5;
+            }
+            self.body_frame_counter = 0.0;
+        } else if self.vx != 0.0 {
+            // `:36602-36623`: the walk rows. The Moon Lord legs (140) run
+            // their own counter at `|velocity.X| * 0.5`; everything else
+            // copies the leg row.
+            if self.legs_armor == 140 {
+                self.body_frame_counter += self.vx.abs() * 0.5;
+                while self.body_frame_counter > 8.0 {
+                    self.body_frame_counter -= 8.0;
+                    self.body_frame += 1;
+                }
+                if self.body_frame < 7 {
+                    self.body_frame = 19;
+                } else if self.body_frame > 19 {
+                    self.body_frame = 7;
+                }
+            } else {
+                self.body_frame_counter += self.vx.abs() * 1.5;
+                self.body_frame = self.leg_frame;
+            }
+        } else {
+            // `:36624-36633`: the rest row.
+            self.body_frame_counter = 0.0;
+            self.body_frame = 0;
+        }
+
+        // `:36634-36644`: the Moon Lord legs override their own rows after the
+        // body chain — row 5 in the air, row 0 at rest, and row 7 whenever the
+        // body row's headgear offset is zero.
+        if self.legs_armor == 140 {
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = if self.vy != 0.0 { 5 } else { 0 };
+            if offsets_player_headgear_y(self.body_frame as usize) == 0.0 {
+                self.leg_frame = 7;
+            }
+            if matches!(self.wings_logic, 22 | 28) {
+                self.leg_frame = 0;
+            }
+        }
+        // `:36645-36651`: the sitting/sleeping legs (217) pin row 5.
+        if self.legs_armor == 217 && (self.sitting || self.sleeping) {
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = 5;
         }
     }
 
-    /// `PlayerFrame()`'s item-use branch (`Player.cs:36307-36444`): the body
+    /// `Player.ShouldDrawWingsThatAreAlwaysAnimated` (`Player.cs:30737-30748`):
+    /// the three always-animated wing sets keep the rest legs while airborne.
+    fn should_draw_wings_that_are_always_animated(&self) -> bool {
+        self.vy != 0.0
+            && !self.grappling_active
+            && (!self.wet || !self.should_float_in_water())
+            && self.mount.data().is_some_and(|d| d.can_use_wings)
+    }
+
+    /// `Player.ShouldFloatInWater` (`Player.cs:3872-3885`): `canFloatInWater`
+    /// (flippers or the merman buff) while not holding down; mounted, only the
+    /// Water Strider's mount (37) floats. No accessory grants
+    /// `canFloatInWater` in the port yet, so this stays false and the pose arm
+    /// is coded but unreachable.
+    fn should_float_in_water(&self) -> bool {
+        false
+    }
+
+    /// `PlayerFrame()`'s item-use branch (`Player.cs:36312-36444`): the body
     /// rows per useStyle while `itemAnimation > 0`. `remaining` is
     /// `itemAnimation / itemAnimationMax` (1 at the swing's start, 0 at the
     /// end — the C# compares `itemAnimation` against the fractions directly);
-    /// `aim_relative` is `itemRotation * direction` (the shooting styles'
-    /// rows read it). The quirks are verbatim: style 3's both branches are
-    /// row 3, style 5 reads the aim, style 13 mirrors style 1.
-    pub fn apply_item_use_frame(&mut self, remaining: f32, use_style: u8, aim_relative: f32) {
+    /// `aim_relative` is `itemRotation * direction` (the shooting styles' rows
+    /// read it). The quirks are verbatim: style 3's both branches are row 3,
+    /// style 5 reads the aim, style 13 mirrors style 1.
+    fn apply_item_use_frame(&mut self, remaining: f32, use_style: u8, aim_relative: f32) {
         // The inverted remaining: `itemAnimation > max * frac` ==
         // `remaining < (1 - frac)` (itemAnimation runs 1 -> 0).
         let inv = 1.0 - remaining;
         match use_style {
+
             // `:36312-36326` (blocks/placeables; `type == 0` shares it) —
             // rows 1 -> 2 -> 3 by thirds.
             1 | 0 => {
@@ -3689,10 +4697,17 @@ impl Player {
     /// `Player.GrappleMovement` (`Player.cs:22613-22740`): the pull replaces
     /// the velocity; the jump-off detaches. `hook` is `(center, type)` of the
     /// attached hook (the param already filters to the attached state).
-    fn grapple_movement(&mut self, hook: Option<(Vec2, i32)>, input: PlayerInput) {
-        let Some((hook_center, hook_type)) = hook else {
+    fn grapple_movement(
+        &mut self,
+        hooks: &[(u16, Vec2, f32)],
+        input: PlayerInput,
+        item_in_use: bool,
+    ) {
+        // `GetGrapplingForces` (`Player.cs:22757-22856`): zero registered hooks
+        // carries the current velocity through untouched.
+        if hooks.is_empty() {
             return;
-        };
+        }
         // `RefreshMovementAbilities` (`Player.cs:22858-22867`): the flight
         // budgets refill every tick while grappling.
         self.wing_time = self.wing_time_max as f32;
@@ -3702,33 +4717,45 @@ impl Player {
         // `:22645`: the fall origin refreshes per tick — no fall damage.
         self.fall_start = (self.y / TILE_PX) as i32;
 
-        // `GetGrapplingForces` (`Player.cs:22820-22846`): the velocity = the
-        // vector to the hook center clamped to the per-type pull speed.
-        let to_hook = hook_center - Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5);
-        let dist = to_hook.length();
-        let pull_speed = crate::grapple::hook_spec(hook_type).pull_speed;
-        let pull = if dist > 0.001 {
-            to_hook * (pull_speed / dist).min(1.0)
-        } else {
-            Vec2::ZERO
+        // `GetGrapplingForces` (`Player.cs:22757-22856`): the steering-adjusted
+        // average of every registered hook's center, clamped to
+        // `grappling[0]`'s type pull speed. The tuple's third element is the
+        // hook's rotation (only the Squirrel Hook reads it).
+        let pull = crate::grapple::grapple_pull(
+            hooks,
+            Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5),
+            // `PlayerInput` has no `up` arm (nothing consumes it in the
+            // port); the C# reads `controlUp` here.
+            crate::grapple::steering_stick(input.left, input.right, false, input.down),
+        );
+        let Some(pull) = pull else {
+            // `:22845-22847`: no registered hook carries the velocity through.
+            return;
         };
-        // `:22659`: `flag3` = the pull points down while the CURRENT velocity
-        // is zero (a grounded pull) — read before the replacement.
-        let flag3 = pull.y > 0.0 && self.vy == 0.0;
+        // `:22659`: `flag3` = the pull points down while the CURRENT velocity is
+        // zero (a grounded pull) — read before the replacement.
+        let flag3 = pull.vel.y > 0.0 && self.vy == 0.0;
         // `:22660-22661`: the pull replaces the velocity outright.
-        self.vx = pull.x;
-        self.vy = pull.y;
+        self.vx = pull.vel.x;
+        self.vy = pull.vel.y;
         // `:22655-22658`: the pull points downward → the platforms fall
         // through (`GoingDownWithGrapple`).
-        self.going_down_with_grapple = pull.y > 0.0;
-        // `:22655-22658`: the pull points downward → the platforms fall
-        // through (`GoingDownWithGrapple`).
+        self.going_down_with_grapple = pull.going_down;
 
-        // `:22670-22673`: the direction follows the pull.
-        if self.vx > 0.0 {
-            self.facing = 1;
-        } else if self.vx < 0.0 {
-            self.facing = -1;
+        // `:22670-22676`: the direction follows the pull; an exactly-zero X
+        // takes the Squirrel Hook's preferred direction instead. The C# gates
+        // the block on `itemAnimation == 0`, which the sim passes in.
+        if !item_in_use {
+            if self.vx == 0.0 {
+                if let Some(d) = pull.dir {
+                    self.facing = d;
+                }
+            }
+            if self.vx > 0.0 {
+                self.facing = 1;
+            } else if self.vx < 0.0 {
+                self.facing = -1;
+            }
         }
 
         // `:22705-22739`: the jump-off.
@@ -4079,6 +5106,51 @@ impl Player {
         crate::luck::on_town_npc_death(&mut self.luck_state, npc_type, self.dead);
     }
 
+
+    /// `Player.MinionNPCTargetAim` (`Player.cs:56913-56931`): the summon
+    /// staff's right-click picks the nearest chaseable NPC to the mouse world
+    /// point; a second click on the same target clears it.
+    pub fn minion_npc_target_aim(&mut self, npcs: &[Npc], mouse_world: Vec2) {
+        let mut best: i32 = -1;
+        let mut best_d = f32::MAX;
+        for (i, n) in npcs.iter().enumerate() {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let (w, h) = n.size();
+            let d = (Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5 - mouse_world).length();
+            if best == -1 || d < best_d {
+                best = i as i32;
+                best_d = d;
+            }
+        }
+        if self.minion_attack_target_npc == best {
+            self.minion_attack_target_npc = -1;
+        } else {
+            self.minion_attack_target_npc = best;
+        }
+    }
+
+    /// `Player.MinionRestTargetAim`'s invalidation half (`Player.cs:57009-57011`):
+    /// a target that is no longer chaseable or drifted past 3000 px drops.
+    pub fn invalidate_minion_target(&mut self, npcs: &[Npc]) {
+        if self.minion_attack_target_npc == -1 {
+            return;
+        }
+        let ok = npcs
+            .get(self.minion_attack_target_npc as usize)
+            .is_some_and(|n| {
+                if !n.can_be_chased_by() {
+                    return false;
+                }
+                let (w, h) = n.size();
+                let aim = Vec2::new(n.x, n.y) + Vec2::new(w, h) * 0.5;
+                (aim - Vec2::new(self.x, self.y)).length() <= 3000.0
+            });
+        if !ok {
+            self.minion_attack_target_npc = -1;
+        }
+    }
     fn update_survival(&mut self) {
         // The Wet-buff effects and the DoT derivation are the flag sources the
         // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
@@ -4614,6 +5686,38 @@ mod tests {
         assert_eq!(p.respawn_timer, 3600);
     }
 
+    /// BUG-06b: `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`)
+    /// — the live invasion's members inside the view rect inflated by 320 px
+    /// block the skip; the same NPCs do not while the invasion is over, and a
+    /// non-invasion NPC never does (the danger-set arm has no ported members).
+    #[test]
+    fn bug_06b_only_the_live_invasions_npcs_block_the_respawn_skip() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let (px, py) = p.center();
+        let goblin = crate::npc::Npc::new(crate::npc::NpcKind::GoblinWarrior, px + 200.0, py, 1, 0.0);
+        let slime = crate::npc::Npc::new(crate::npc::NpcKind::Slime, px + 200.0, py, 1, 0.0);
+        // Inside the rect while the invasion runs — blocked.
+        assert!(p.near_any_npcs_that_block_respawn(&[goblin.clone()], true));
+        // The invasion ended: the same goblin no longer blocks.
+        assert!(!p.near_any_npcs_that_block_respawn(&[goblin.clone()], false));
+        // A commoner NPC is not an invasion group member.
+        assert!(!p.near_any_npcs_that_block_respawn(&[slime], true));
+        // Out of the inflated view rect (1920x1080 + 320 px): no block.
+        let far = crate::npc::Npc::new(
+            crate::npc::NpcKind::GoblinWarrior,
+            px + 4000.0,
+            py,
+            1,
+            0.0,
+        );
+        assert!(!p.near_any_npcs_that_block_respawn(&[far], true));
+        // The gate itself: a nearby danger NPC vetoes the skip.
+        p.dead_time = 200;
+        assert!(p.allows_respawn_timer_skip(false, false));
+        assert!(!p.allows_respawn_timer_skip(false, true));
+    }
+
     #[test]
     fn the_skip_needs_the_90_tick_lockout_and_a_jump_edge() {
         let w = World::new("t".into(), 64, 800);
@@ -5128,7 +6232,8 @@ mod tests {
         let w = ground_world();
         let mut p = Player::spawn(&w);
         let hook_center = Vec2::new(p.x + 80.0, p.y - 60.0);
-        let grapple = Some((hook_center, 13));
+        // One registered Hook — the multi-hook seam's single-member case.
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, hook_center, 0.0)];
         p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
@@ -5149,7 +6254,8 @@ mod tests {
         let w = ground_world();
         let mut p = Player::spawn(&w);
         let start_row = (p.y / TILE_PX) as i32;
-        let grapple = Some((Vec2::new(p.x, p.y - 300.0), 13));
+        let center = Vec2::new(p.x, p.y - 300.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         for _ in 0..40 {
             p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
             // GrappleMovement refreshes the origin BEFORE the position
@@ -5175,10 +6281,9 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.grappling_active = true;
-        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
-        p.grapple_hook_type = 13;
-        let grapple = Some((p.grapple_hook_center, 13));
+        // The registered set (`grappling[]`/`grapCount`): one attached Hook.
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         // The press edge: the jump-off.
         p.update_with_grapple(
             &w,
@@ -5203,10 +6308,9 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.grappling_active = true;
-        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
-        p.grapple_hook_type = 13;
-        let grapple = Some((p.grapple_hook_center, 13));
+        // The registered set (`grappling[]`/`grapCount`): one attached Hook.
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         p.update_with_grapple(
             &w,
             PlayerInput {
@@ -5231,10 +6335,9 @@ mod tests {
     fn downward_pull_sets_going_down() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.grappling_active = true;
-        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
-        p.grapple_hook_type = 13;
-        let grapple = Some((p.grapple_hook_center, 13));
+        // One attached Hook below the player.
+        let center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
+        let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
         assert!(p.going_down_with_grapple, "the pull points down");
     }
@@ -5351,6 +6454,46 @@ mod tests {
     }
 
     #[test]
+    fn the_godmode_power_swallows_hits_death_and_refills() {
+        // `GodmodePower` -> `Player.creativeGodMode` (`Player.cs:25493-25497`);
+        // `Hurt` returns 0 before the iframes (`:38203-38206`) and `KillMe`
+        // refuses outright (`:38809-38812`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.creative_god_mode = true;
+        p.hurt_cd = 0.0;
+        let hp = p.hp;
+        assert!(!p.hurt(50, p.x + 100.0), "the hit is swallowed");
+        assert_eq!(p.hp, hp, "no damage");
+        assert_eq!(p.vx, 0.0, "no knockback");
+        p.start_death(&w, false, false);
+        assert!(!p.dead, "KillMe refuses while the power is on");
+        // Switching the power off restores both arms.
+        p.creative_god_mode = false;
+        assert!(p.hurt(10, p.x + 100.0));
+        p.hp = 0;
+        p.start_death(&w, false, false);
+        assert!(p.dead);
+    }
+
+    #[test]
+    fn the_far_placement_power_doubles_the_tile_range() {
+        // `Player.ResetEffects` (`Player.cs:18815-18828`): the default
+        // `tileRangeX/Y` 5/3 (`:57113-57114`) become `* 2 + 8` = 18/14 while
+        // `FarPlacementRangePower` is enabled (`CreativePowers.cs:730-767`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.tile_range_x(), 5.0);
+        assert_eq!(p.tile_range_y(), 3.0);
+        p.far_placement_range = true;
+        assert_eq!(p.tile_range_x(), 18.0);
+        assert_eq!(p.tile_range_y(), 14.0);
+    }
+
+    #[test]
     fn the_horseshoe_and_the_shield_grant_their_flags() {
         // `Player.cs:15029-15033` (noFallDmg) + `:15025-15028` (noKnockback).
         let p = player_with_accessory(158);
@@ -5460,6 +6603,171 @@ mod tests {
         granted.ammo_box = true;
         granted.magic_quiver = true;
         assert!(granted.ammo_flags().ammo_box && granted.ammo_flags().magic_quiver);
+    }
+
+    /// Spawns on flat ground and settles (the first update is the spawn tick).
+    fn settled() -> (World, Player) {
+        let w = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        (w, p)
+    }
+
+    #[test]
+    fn the_leg_rows_cover_the_missing_playerframe_arms() {
+        // `Player.cs:36219-36291`: the leg chain. Each arm is driven from the
+        // state the C# reads, in the vanilla order.
+        let (w, mut p) = settled();
+        // The swim paddle (`:36221-36233`): a flat 2 per tick regardless of
+        // velocity, cycling rows 7..=19.
+        p.swim_time = 10;
+        p.wet = true;
+        p.vy = 0.0;
+        p.leg_frame = 7;
+        p.leg_frame_counter = 0.0;
+        // `while (counter > 8.0)` is strict, so the 8.0 sum needs a fifth tick.
+        for _ in 0..6 {
+            p.update_frames(&w);
+        }
+        assert_eq!(p.leg_frame, 8, "2 per tick crosses 8.0 on the fifth tick");
+        // Out of water the window dies (`:35759-35761`).
+        p.wet = false;
+        p.update_frames(&w);
+        assert_eq!(p.swim_time, 0);
+        // The hover set pins row 5 (`:36234-36240`): the grapple holds the
+        // legs at the fall row even at rest.
+        let (w, mut p) = settled();
+        p.grappling_active = true;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 5, "the hooks hold the fall row");
+        // The rest row (`:36276-36282`).
+        p.grappling_active = false;
+        p.vy = 0.0;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 0);
+        // The slippery no-input arm (`:36244-36250`): on ice with no steering
+        // the legs rest even while sliding.
+        p.vy = 0.0;
+        p.vx = 6.0;
+        p.slippy = true;
+        p.control_left = false;
+        p.control_right = false;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 0, "the ice slide pins the rest row");
+        // The walk cycle (`:36251-36275`) once the player steers.
+        p.control_right = true;
+        p.leg_frame = 7;
+        p.leg_frame_counter = 0.0;
+        for _ in 0..2 {
+            p.update_frames(&w);
+        }
+        assert!(p.leg_frame > 7, "the counter advanced the row");
+    }
+
+    #[test]
+    fn the_moon_lord_legs_overrun_the_body_rows() {
+        // `Player.cs:36634-36644`: the 140 legs re-derive their row from the
+        // body row's headgear offset after the body chain.
+        let (w, mut p) = settled();
+        p.legs_armor = 140;
+        assert_eq!(offsets_player_headgear_y(7), 0.0);
+        // Body row 7-9 has a zero headgear offset -> the leg row is pinned 7.
+        p.vy = 0.0;
+        p.vx = 4.0;
+        p.leg_frame = 9;
+        p.body_frame = 9;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 9, "the legs-140 walk keeps its own rows");
+        assert_eq!(p.leg_frame, 7, "the zero offset pins the leg row");
+        // Airborne the leg row follows `velocity.Y != 0` -> 5.
+        p.vy = 3.0;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 5);
+        // The always-animated wings (22/28) still force row 0.
+        p.wings_logic = 22;
+        p.update_frames(&w);
+        assert_eq!(p.leg_frame, 0);
+    }
+
+    #[test]
+    fn the_body_chain_order_matches_playerframe() {
+        // `Player.cs:36445-36633`: the body rows after the item-use arm, in the
+        // vanilla `else if` order.
+        let (w, mut p) = settled();
+        p.vx = 0.0;
+        // The rope pose (`:36445-36454`).
+        p.pulley = true;
+        p.pulley_dir = 2;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 1);
+        p.pulley_dir = 1;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 2);
+        p.pulley = false;
+        // holdStyle 1 (the torch) -> row 3 (`:36455-36459`); it beats the walk
+        // row because the arm comes first.
+        p.frame_inputs = FrameInputs {
+            hold_style: 1,
+            can_visually_hold: true,
+            hold_style_dry: true,
+            torch_hold_ok: true,
+            use_style_blocks_frames: true,
+            ..FrameInputs::default()
+        };
+        p.vx = 3.0;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 3, "the torch hold wins over the walk row");
+        // holdStyle 2 -> row 2 (`:36460-36464`).
+        p.frame_inputs.hold_style = 2;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 2);
+        // holdStyle 7 -> row 11 (`:36477-36481`).
+        p.frame_inputs.hold_style = 7;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 11);
+        // The umbrella (4) only rests on the ground.
+        p.frame_inputs.hold_style = 4;
+        p.vy = 0.0;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 0);
+        // The raised shield -> row 10 (`:36489-36492`).
+        p.frame_inputs = FrameInputs::default();
+        p.shield_raised = true;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 10);
+        p.shield_raised = false;
+        // With nothing held the walk row copies the legs (`:36619-36622`).
+        p.vy = 0.0;
+        p.leg_frame = 12;
+        p.vx = 3.0;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, p.leg_frame);
+        assert!(p.leg_frame >= 12, "the walk advanced the leg row");
+        assert!(p.body_frame_counter > 0.0, "the 1.5x counter accumulated");
+        // At rest the body rests (`:36624-36633`).
+        p.vx = 0.0;
+        p.update_frames(&w);
+        assert_eq!(p.body_frame, 0);
+    }
+
+    #[test]
+    fn the_airborne_body_rows_follow_the_wings() {
+        // `Player.cs:36559-36600`: the airborne rows per wing state.
+        let (_, mut p) = settled();
+        p.vy = 2.0;
+        p.wings_logic = 0;
+        p.update_frames(&World::new("t".into(), 8, 8));
+        assert_eq!(p.body_frame, 5, "no wings: the plain fall row");
+        p.wings_logic = 4;
+        p.control_jump = true;
+        p.update_frames(&World::new("t".into(), 8, 8));
+        assert_eq!(p.body_frame, 6, "rising under thrust: row 6");
+        p.vy = -2.0;
+        p.update_frames(&World::new("t".into(), 8, 8));
+        assert_eq!(p.body_frame, 6, "rising: row 6");
+        p.wings_logic = 22;
+        p.update_frames(&World::new("t".into(), 8, 8));
+        assert_eq!(p.body_frame, 0, "the always-animated set rests in the air");
     }
 
     #[test]
@@ -8351,5 +9659,224 @@ mod tests {
         assert!(!p.sitting);
         assert!(!p.sleeping);
         assert_eq!(p.full_rotation, 0.0);
+    }
+}
+
+/// M4-PROJ-8 phase 2 — the summon keep-alive arms (`Player.cs:10483-10947`),
+/// the recount caches (`:12184-12226`) and the buff-216 respawn arm, driven
+/// on a bare Player + pool (the world_sim tick wires the same calls).
+#[cfg(test)]
+mod summon_tests {
+    use super::*;
+    use crate::item::EMPTY_SLOT;
+
+    /// `Player.FindItem`'s stand-in: the inventory with the staff (4281) in
+    /// slot 0 (the `ItemDef` verified this phase: shoot 759, damage 7,
+    /// knockBack 4.0).
+    fn staff_inventory() -> [ItemSlot; INV] {
+        let mut inv = [EMPTY_SLOT; INV];
+        inv[0] = ItemSlot {
+            kind: 4281,
+            name: registry::name(4281),
+            count: 1,
+            prefix: 0,
+        };
+        inv
+    }
+
+    fn empty_inventory() -> [ItemSlot; INV] {
+        [EMPTY_SLOT; INV]
+    }
+
+    /// Deactivates a slot through the public key path (`key_of` +
+    /// `kill_remote`, the `29` despawn) — the pool's `Kill` stand-in.
+    fn kill_pool_slot(pool: &mut ProjectilePool, slot: usize) {
+        let key = pool.key_of(slot);
+        let (owner, slot, generation) = crate::net::projectile_key_parts(key);
+        pool.kill_remote(slot, owner, generation);
+    }
+
+    /// DW-2.2 — buff 64 (`Slime`) tracks projectile 266 exactly: kept and
+    /// refreshed to 18000 while the pool holds it, dropped on the first pass
+    /// whose recount sees it gone (the C# reads the pool the previous frame's
+    /// pool pass left, `Player.cs:25565` → the arms `:10521-10534`).
+    #[test]
+    fn test_DW_2_2_buff_64_tracks_projectile_266() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let inv = empty_inventory();
+        let minion = pool
+            .spawn(266, 0, Vec2::new(200.0, 200.0), Vec2::ZERO, 10, 1.0, false)
+            .unwrap();
+        p.buffs.add_buff(64, 100);
+        // The live order: `ResetProjectileCaches` (`:18810`, the ResetEffects
+        // seam) then the recount (`:25565`) then the arms.
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert!(p.slime, "266 in the pool re-affirms the flag");
+        let b = p.buffs.find_buff_index(64).unwrap();
+        assert_eq!(p.buffs.buff_time[b], 18000, "the arm pins the refresh");
+        assert_eq!(p.owned_projectile_counts[266], 1);
+        // The boundary: the minion dies between ticks (the pool pass's kill)
+        // — the drop lands on exactly the next pass, not earlier.
+        kill_pool_slot(&mut pool, minion);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(
+            p.buffs.find_buff_index(64),
+            None,
+            "the buff drops the tick the recount sees 266 gone"
+        );
+        // The flag lifecycle: the arm only SETS it — `ResetEffects` clears it
+        // per tick (the full tick's seam, `:18622`). One real tick clears it.
+        p.update(&w, PlayerInput::default());
+        assert!(!p.slime, "the flag is only true while the arm re-affirms");
+        // A buff with no minion ever spawns drops immediately.
+        p.buffs.add_buff(64, 100);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(p.buffs.find_buff_index(64), None);
+    }
+
+    /// DW-2.2 boundary variant — buff 216's baby-bird respawn arm
+    /// (`Player.cs:10697-10726`): below cap with the staff spawns 759 from
+    /// the item's shoot/damage/knockBack (+ `originalDamage = item.damage`,
+    /// `:10713`); at cap it DelBuffs; without the staff it DelBuffs.
+    #[test]
+    fn test_DW_2_2_buff_216_respawn_arm() {
+        let w = World::new("t".into(), 64, 800);
+        let inv = staff_inventory();
+        // Below cap: the respawn arm fires.
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        p.buffs.add_buff(216, 100);
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert!(p.baby_bird, "the spawn re-affirms the flag");
+        let bird = pool
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 759)
+            .expect("759 spawned from the staff");
+        assert_eq!(bird.damage, 7);
+        assert_eq!(bird.original_damage, 7, "Player.cs:10713");
+        assert_eq!(bird.knock_back, 4.0);
+        assert_eq!(bird.owner, 0);
+        assert_eq!(bird.pos.x, p.x + WIDTH * 0.5);
+        assert_eq!(bird.pos.y, p.y, "Entity.Top — the hitbox's top center");
+        assert_eq!(bird.vel, Vec2::ZERO);
+        // The verbatim 759 slice rides the data-row spawn seam (the phase-1
+        // review fix): the 10×10 box and tile collide from the row, the
+        // 18000 lifetime, the minion flag and its 1.0 slot budget.
+        assert_eq!((bird.w, bird.h), (10.0, 10.0));
+        assert!(bird.tile_collide);
+        assert_eq!(bird.time_left, 18000);
+        assert!(bird.minion);
+        assert_eq!(bird.minion_slots, 1.0);
+        let b = p.buffs.find_buff_index(216).unwrap();
+        assert_eq!(p.buffs.buff_time[b], 18000);
+        // At cap (`numMinions == maxMinions`): DelBuff, no spawn. The
+        // counter is the pool pass's stand-in until Phase 3 writes it.
+        let mut p2 = Player::spawn(&w);
+        let mut pool2 = ProjectilePool::new();
+        p2.num_minions = 1;
+        p2.buffs.add_buff(216, 100);
+        p2.update_projectile_caches(&pool2);
+        p2.update_summon_buff_arms(&mut pool2, &inv);
+        assert!(
+            !pool2.slots().iter().any(|s| s.active && s.kind == 759),
+            "at cap the arm spawns nothing"
+        );
+        assert_eq!(p2.buffs.find_buff_index(216), None, "Player.cs:10719-10722");
+        // Below cap without the staff: DelBuff too.
+        let mut p3 = Player::spawn(&w);
+        let mut pool3 = ProjectilePool::new();
+        p3.buffs.add_buff(216, 100);
+        p3.update_projectile_caches(&pool3);
+        p3.update_summon_buff_arms(&mut pool3, &empty_inventory());
+        assert_eq!(p3.buffs.find_buff_index(216), None);
+    }
+
+    /// The C# `DelBuff(j); j--;` rescan (`:10483-10947`): a dropped arm's
+    /// neighbour shifts into its slot and still gets its arm the same tick.
+    #[test]
+    fn test_edge_the_arms_rescan_after_delbuff() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let inv = empty_inventory();
+        pool.spawn(317, 0, Vec2::new(200.0, 200.0), Vec2::ZERO, 10, 1.0, false)
+            .unwrap();
+        // Buff 64 at slot 0 (no 266 — dropped), buff 83 at slot 1 (317 alive
+        // — kept): after the drop, 83 shifts into slot 0 and is re-examined.
+        p.buffs.add_buff(64, 100);
+        p.buffs.add_buff(83, 100);
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(p.buffs.find_buff_index(64), None);
+        let raven = p.buffs.find_buff_index(83).expect("the rescan kept 83");
+        assert!(p.raven);
+        assert_eq!(p.buffs.buff_time[raven], 18000);
+    }
+
+    /// The cap effects share the arms' slot-ordered chain
+    /// (`Player.cs:10175-10183` before `:10706`): buff 110 in an earlier slot
+    /// raises `maxMinions` before buff 216's arm reads it, so a minion count
+    /// at the base cap still spawns.
+    #[test]
+    fn test_edge_cap_effects_are_slot_ordered_before_the_216_arm() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let inv = staff_inventory();
+        p.buffs.add_buff(110, 100); // slot 0 — the raise
+        p.buffs.add_buff(216, 100); // slot 1 — the read
+        p.num_minions = 1; // at the base cap of 1
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(p.max_minions, 2, "110 raised the cap");
+        assert!(
+            pool.slots().iter().any(|s| s.active && s.kind == 759),
+            "216 read the raised cap and spawned"
+        );
+    }
+
+    /// The chain's 29th arm — buff 161 (`DeadlySphereMinion`, kind 533,
+    /// `Player.cs:10957-10972`, review fix): the plain keep-alive shape, kept
+    /// and refreshed while 533 is owned, dropped the pass the recount sees
+    /// it gone.
+    #[test]
+    fn test_edge_buff_161_tracks_projectile_533() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let inv = empty_inventory();
+        let sphere = pool
+            .spawn(533, 0, Vec2::new(200.0, 200.0), Vec2::ZERO, 10, 1.0, false)
+            .unwrap();
+        p.buffs.add_buff(161, 100);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert!(
+            p.deadly_sphere_minion,
+            "533 in the pool re-affirms the flag"
+        );
+        let b = p.buffs.find_buff_index(161).unwrap();
+        assert_eq!(p.buffs.buff_time[b], 18000);
+        assert_eq!(p.owned_projectile_counts[533], 1);
+        // The drop: the minion leaves the pool, the buff follows one pass
+        // later — and the flag clears on the next tick's ResetEffects.
+        kill_pool_slot(&mut pool, sphere);
+        p.reset_projectile_caches();
+        p.update_projectile_caches(&pool);
+        p.update_summon_buff_arms(&mut pool, &inv);
+        assert_eq!(p.buffs.find_buff_index(161), None);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.deadly_sphere_minion);
     }
 }

@@ -25,6 +25,9 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         let world = &mut app.world;
         // The port has no freeze-time power and runs at the day rate 1
         // (`Main.desiredWorldTilesUpdateRate` = `dayRate`).
+        // `WorldGen.UpdateWorld`'s infection flag (`WorldGen.cs:71502-71507`):
+        // the journey `StopBiomeSpreadPower` freezes the evil/hallow spread.
+        let allowed_to_spread = app.creative_powers.allowed_to_spread_infections();
         // The shell-pile arm's weather inputs: the live rain intensity and
         // the wind speed (`Main.maxRaining`/`Main.windSpeedCurrent`).
         tr_core::growth::update_world(
@@ -32,6 +35,7 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
             1,
             raining,
             false,
+            allowed_to_spread,
             day_time,
             app.rain.max_raining(),
             app.wind.speed_current,
@@ -42,7 +46,7 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         // M5-HARDFORCE; `downedPlantBoss` false = the full rate).
         let sx = rng.next_range(10, world.width - 10);
         let sy = rng.next_range(world.rock_layer as i32, world.height - 40);
-        tr_core::spread::hard_update_world(world, sx, sy, false, true, &mut rng);
+        tr_core::spread::hard_update_world(world, sx, sy, false, allowed_to_spread, &mut rng);
     });
     app.growth_step.cap_backlog();
 }

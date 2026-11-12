@@ -2,8 +2,9 @@
 //! (`decompiled/Terraria/Main.cs:41001-42367`).
 //!
 //! Covers the 10x5 main grid, the coin and ammo columns, the three equipment
-//! columns (`EquipPage == 0`), the misc-equip / misc-dye page (`EquipPage == 2`),
-//! the trash slot and the three `Lang.inter` labels. The interaction
+//! columns (`EquipPage == 0`), the NPC housing page (`EquipPage == 1`, see
+//! `ui::housing`), the misc-equip / misc-dye page (`EquipPage == 2`), the trash
+//! slot and the three `Lang.inter` labels. The interaction
 //! (`ItemSlot.Handle`) lives elsewhere; this module only resolves the hovered
 //! slot so the controller can wire tooltips (`InventoryHit`).
 //!
@@ -13,6 +14,7 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
+use super::housing;
 use super::{bestiary, slot, text};
 use crate::assets;
 use crate::inv::EquipSlots;
@@ -65,8 +67,17 @@ const MASTER_SLOT: bool = false;
 const BASE_ACCESSORY_SLOTS: i32 = 8;
 const EXTRA_ACCESSORY_SLOTS: i32 = 0;
 
+/// `Player.GetAmountOfExtraAccessorySlotsToShow()` (`Player.cs:43950-43972`) as
+/// the layout sees it — read by `Main.RefreshSettingsButtonStatus` (`:45508`)
+/// and by the equipment column's own row count.
+pub fn extra_accessory_slots() -> i32 {
+    EXTRA_ACCESSORY_SLOTS
+}
+
 /// `Main.EquipPage == 2`: the misc-equip / misc-dye page.
 const EQUIP_PAGE_MISC: i32 = 2;
+/// `EquipPage == 1` (`Main.cs:41368`): the NPC housing page.
+const EQUIP_PAGE_HOUSING: i32 = 1;
 
 /// `ItemSlot.LoadoutSlotColors[0, 0..2]` (`ItemSlot.cs:365-371`) — the loadout-1
 /// (green) palette. `TryGetSlotColor` (`ItemSlot.cs:2807-2819`) maps context 8/10
@@ -137,6 +148,10 @@ pub struct InventoryHit {
     /// origin and the **last** accessory row's `y` (`Main.cs:41421-41424`, where
     /// `num37 == num35`). `None` on the misc page, where the counter is not drawn.
     pub defense_anchor: Option<(f32, f32)>,
+    /// The hovered housing cell as `(head, npc)` (`Main.cs:42059-42065`) — the
+    /// tooltip layer turns it into a name (`housing::label`). Copy-friendly, so
+    /// the hit stays `Copy`.
+    pub housing: Option<(usize, Option<usize>)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +229,44 @@ fn hit_test(mouse: Vec2, x: f32, y: f32, scale: f32, cell: f32) -> bool {
     mouse.x >= x && mouse.x <= x + cell * scale && mouse.y >= y && mouse.y <= y + cell * scale
 }
 
+/// One coin/ammo cell through the shared draw path: the favorited arm swaps the
+/// gold sheet, everything else keeps `Main.inventoryBack`.
+fn draw_row_slot(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &crate::item::ItemSlot,
+    x: f32,
+    y: f32,
+    context: i32,
+    scale: f32,
+    favored: bool,
+) {
+    if favored {
+        slot::draw_slot_favorited(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK);
+    } else {
+        slot::draw_slot(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK);
+    }
+}
+
+/// The ctx-1 (coin) and ctx-2 (ammo) cells as `(context, index)`:
+/// `Main.cs:41752-41782` draws the four coins at x 497 and the four ammo cells
+/// at x 534, both `inventoryScale` 0.6 with the shared `coin_ammo_y` rows. The
+/// draw pass hovers with this and the click pass resolves the same cell, so the
+/// two geometry copies cannot drift.
+pub(crate) fn coin_ammo_hit(mouse: Vec2, cell: f32) -> Option<(i32, usize)> {
+    for k in 0..crate::inv::COINS {
+        if hit_test(mouse, 497.0, coin_ammo_y(k, COIN_SCALE), COIN_SCALE, cell) {
+            return Some((1, k));
+        }
+    }
+    for k in 0..crate::inv::AMMO {
+        if hit_test(mouse, 534.0, coin_ammo_y(k, AMMO_SCALE), AMMO_SCALE, cell) {
+            return Some((2, k));
+        }
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Draw
 // ---------------------------------------------------------------------------
@@ -232,6 +285,7 @@ pub fn draw(
     equip: &EquipSlots,
     selected: usize,
     equip_page: i32,
+    npcs: &[crate::npc::Npc],
     mouse: Vec2,
     m_h: f32,
     bank: Option<(&[ItemSlot], i32)>,
@@ -261,30 +315,39 @@ pub fn draw(
             let slot_idx = i + j * GRID_COLS;
             let p = grid_pos(i, j, INVENTORY_SCALE);
             // `ItemSlot.cs:2149-2156`: the favorited arm swaps the slot's
-            // background to the gold `Inventory_Back10`; the port's atlas
-            // lacks the sheet, so the fallback tints the default one
-            // (`slot::favorited_slot_tint` — the plan-authorized fallback).
-            let tint = if slot::favorited_background_active(
+            // background to the gold `Inventory_Back10` (`slot::draw_slot_favorited`)
+            // and keeps `Main.inventoryBack` as the tint.
+            if slot::favorited_background_active(
                 0,
                 favorites.contains(&slot_idx),
                 &inventory[slot_idx],
             ) {
-                slot::favorited_slot_tint(INVENTORY_BACK)
+                slot::draw_slot_favorited(
+                    r,
+                    lookups,
+                    &inventory[slot_idx],
+                    p.x,
+                    p.y,
+                    0,
+                    slot_idx as i32,
+                    slot_idx == selected,
+                    INVENTORY_SCALE,
+                    INVENTORY_BACK,
+                );
             } else {
-                INVENTORY_BACK
-            };
-            slot::draw_slot(
-                r,
-                lookups,
-                &inventory[slot_idx],
-                p.x,
-                p.y,
-                0,
-                slot_idx as i32,
-                slot_idx == selected,
-                INVENTORY_SCALE,
-                tint,
-            );
+                slot::draw_slot(
+                    r,
+                    lookups,
+                    &inventory[slot_idx],
+                    p.x,
+                    p.y,
+                    0,
+                    slot_idx as i32,
+                    slot_idx == selected,
+                    INVENTORY_SCALE,
+                    INVENTORY_BACK,
+                );
+            }
             if hit.hovered.is_none() && hit_test(mouse, p.x, p.y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Grid(slot_idx));
             }
@@ -296,19 +359,24 @@ pub fn draw(
     // `Main.cs:41752-41764`: coins at x 497, context 1, scale 0.6, index -1.
     for k in 0..crate::inv::COINS {
         let y = coin_ammo_y(k, COIN_SCALE);
-        slot::draw_slot(
+        // `ItemSlot.cs:2149-2156`: a favorited stack draws the gold sheet; the
+        // row's key is its vanilla inventory index (`inv::coin_slot_index`).
+        let favored = slot::favorited_background_active(
+            1,
+            favorites.contains(&crate::inv::coin_slot_index(k)),
+            &equip.coins[k],
+        );
+        draw_row_slot(
             r,
             lookups,
             &equip.coins[k],
             497.0,
             y,
             1,
-            -1,
-            false,
             COIN_SCALE,
-            INVENTORY_BACK,
+            favored,
         );
-        if hit.hovered.is_none() && hit_test(mouse, 497.0, y, COIN_SCALE, cell) {
+        if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((1, k)) {
             hit.hovered = Some(HoverRef::Coin(k));
         }
     }
@@ -318,19 +386,22 @@ pub fn draw(
     // `Main.cs:41770-41782`: ammo at x 534, context 2, scale 0.6, index -1.
     for k in 0..crate::inv::AMMO {
         let y = coin_ammo_y(k, AMMO_SCALE);
-        slot::draw_slot(
+        let favored = slot::favorited_background_active(
+            2,
+            favorites.contains(&crate::inv::ammo_slot_index(k)),
+            &equip.ammo[k],
+        );
+        draw_row_slot(
             r,
             lookups,
             &equip.ammo[k],
             534.0,
             y,
             2,
-            -1,
-            false,
             AMMO_SCALE,
-            INVENTORY_BACK,
+            favored,
         );
-        if hit.hovered.is_none() && hit_test(mouse, 534.0, y, AMMO_SCALE, cell) {
+        if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((2, k)) {
             hit.hovered = Some(HoverRef::Ammo(k));
         }
     }
@@ -388,6 +459,29 @@ pub fn draw(
                 }
             }
         }
+    } else if equip_page == EQUIP_PAGE_HOUSING {
+        // `Main.cs:41993-42107`: the housing page — one `Inventory_Back11` cell
+        // per town NPC type the world holds, in `NPCHeadID.Sets.HeadListOrder`,
+        // starting at the equipment columns' top row (`inventoryTop`) on the
+        // right edge. Vanilla draws no armour on this page, so the `else` arm
+        // below stays page 0/3.
+        let base_y = equip_base_y(
+            screen.y,
+            m_h,
+            BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+            INVENTORY_SCALE,
+        );
+        let cells = housing::layout(
+            &housing::heads_for(npcs),
+            [screen.x, screen.y],
+            base_y,
+            INVENTORY_SCALE,
+        );
+        housing::draw(r, lookups, &cells, INVENTORY_SCALE);
+        // `:42059-42065`: the mouse-text probe (`Main.mouseText = true`, then
+        // the cell's name). Vanilla also sets `player.mouseInterface`, i.e. this
+        // text is the one on screen for the page.
+        hit.housing = housing::hover(&cells, [mouse.x, mouse.y], INVENTORY_SCALE);
     } else {
         // `Main.cs:41372-41524`: equipment columns (`EquipPage == 0`, and the
         // page-3 fallthrough).
