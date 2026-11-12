@@ -607,6 +607,11 @@ pub struct Player {
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
+    /// `Player.armorPenetration` / `meleeArmorPenetration` (`Player.cs:1918-1920`):
+    /// the flat penetration the hit adds to `NPC.checkArmorPenetration`
+    /// (`:44383`). `meleeArmorPenetration` only counts for melee hits.
+    pub armor_penetration: i32,
+    pub melee_armor_penetration: i32,
     /// `Player.lavaTime` / `lavaMax` (`Player.cs:1528-1530`): the lava
     /// immunity budget — the Lava Charm family adds 420 ticks to the cap
     /// (`:15168-15183`), and while the player stands in lava the timer drains
@@ -1353,6 +1358,8 @@ impl Player {
             spawn_y: sy,
             hp: 100,
             max_hp: 100,
+            armor_penetration: 0,
+            melee_armor_penetration: 0,
             lava_time: 0,
             lava_max: 0,
             thorns: 0.0,
@@ -2282,6 +2289,12 @@ impl Player {
     /// damage an NPC takes for touching the player — `turtleThorns` pins the
     /// multiplier at 2, else `thorns` scales the NPC's own damage, capped at
     /// 1000; the Cactus set adds a flat 15 more.
+    /// `Player.GetArmorPenetration` (`Player.cs:4365-4373`): the flat sum,
+    /// plus the melee-only row when the hit is melee (`sItem.melee`).
+    pub fn get_armor_penetration(&self, melee: bool) -> i32 {
+        self.armor_penetration + if melee { self.melee_armor_penetration } else { 0 }
+    }
+
     pub fn thorns_damage(&self, incoming: i32) -> i32 {
         let multiplier = if self.turtle_thorns {
             2.0
@@ -2662,6 +2675,9 @@ impl Player {
         self.mana_cost = 1.0;
         // `:18497`: `endurance = 0f` — the rows below re-apply.
         self.endurance = 0.0;
+        // `:18323-18324`: the penetration reset.
+        self.armor_penetration = 0;
+        self.melee_armor_penetration = 0;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18376` + `:18726-18727`: the thorns flag clear.
@@ -2803,6 +2819,9 @@ impl Player {
                 32 => self.slow = true,  // `BuffID.Slow`
                 // `:10201-10204` — `BuffID.Endurance` (114): +10%.
                 114 => self.endurance += 0.1,
+                // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
+                // +12 armor penetration.
+                159 => self.melee_armor_penetration += 12,
                 // `:10461-10470` — the Ice Barrier (62, the Frozen Turtle
                 // Shell): +25% while at or below half life.
                 62 => {
@@ -3135,6 +3154,10 @@ impl Player {
                 1864 => self.minion_damage += 0.15,
                 1845 => self.minion_damage += 0.1,
                 4989 => self.move_speed += 0.075,
+                // The penetration rows: the Shark Tooth Necklace (3212,
+                // `:13286-13289`) and the Honey Comb (4007, `:14485-14489`)
+                // add a flat 5 each.
+                3212 | 4007 => self.armor_penetration += 5,
                 // The Lava Charm family (`:15168-15183`): 906 (Lava Charm),
                 // 4038 (Molten Charm), 3999 (Molten Skull Rose) and 4003
                 // (Lava Waders) each add 420 ticks of lava immunity; 908
@@ -6088,6 +6111,29 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-20 — the armor-penetration rows and the melee-only split.
+    #[test]
+    fn the_penetration_rows_add_up() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.get_armor_penetration(true), 0);
+        // The Shark Tooth Necklace (3212) and the Honey Comb (4007): +5 each,
+        // both class-independent.
+        p.equipped[3] = 3212;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.get_armor_penetration(true), 5);
+        assert_eq!(p.get_armor_penetration(false), 5);
+        p.equipped[4] = 4007;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.get_armor_penetration(false), 10);
+        // The Sharpened buff (159) adds 12 that only melee hits see.
+        p.buffs.add_buff(159, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.get_armor_penetration(true), 22);
+        assert_eq!(p.get_armor_penetration(false), 10);
     }
 
     /// M3-EQUIP-17 — the life-regen rows feed `extra_regen`.

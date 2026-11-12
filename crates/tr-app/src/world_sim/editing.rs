@@ -1075,6 +1075,12 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         let ax = world_pos.x;
         let ay = world_pos.y;
         let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
+        // `:44383`'s `this.GetArmorPenetration(sItem.melee)` sum, read before
+        // the `app.npcs` borrow below.
+        let melee_pen = app
+            .player
+            .as_ref()
+            .map_or(0, |p| p.get_armor_penetration(true));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
             // `ProcessHitAgainstNPC`'s friendly gate (`Player.cs:44272-44276`):
@@ -1162,24 +1168,27 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 // (`Player.cs:44344-44353`): the Flymeal takes full armour
                 // penetration (`armorPenetrationPercent = 1f`), doubles the
                 // rolled damage and doubles it again on the Nurse (type 18).
-                // The penetration adds to the damage amount like the C#
-                // (`num2 += nPC.checkArmorPenetration(...)`, `:44383`); the
-                // player's own `GetArmorPenetration` sum is not ported yet
-                // (no prefix/accessory arpen writer — the neutral 0).
+                let mut pen_percent = 0.0f32;
                 if held.kind == 5129 && n.kind.is_town_npc_like() {
+                    pen_percent = 1.0;
                     dmg *= 2;
                     if n.kind == NpcKind::Nurse {
                         dmg *= 2;
                     }
-                    dmg += tr_core::damage::check_armor_penetration(
-                        0,
-                        1.0,
-                        n.defense(),
-                        false,
-                        false,
-                        false,
-                    );
                 }
+                // `:44383`: `num2 += nPC.checkArmorPenetration(
+                // this.GetArmorPenetration(sItem.melee), armorPenetrationPercent)`
+                // — the player's own penetration sum (the Shark Tooth
+                // Necklace 3212, the Honey Comb 4007, the Sharpened buff 159's
+                // melee-only +12) joins the Flymeal's full percent.
+                dmg += tr_core::damage::check_armor_penetration(
+                    melee_pen,
+                    pen_percent,
+                    n.defense(),
+                    false,
+                    false,
+                    false,
+                );
                 let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
@@ -3858,6 +3867,44 @@ mod tests {
         assert_eq!(c.npcs[0].hp, hp_c, "the tile target runs, not the NPC hit");
     }
 
+
+    /// M3-EQUIP-20 — the melee penetration row raises the hit
+    /// (`Player.cs:44383` `num2 += nPC.checkArmorPenetration(...)`).
+    #[test]
+    fn m3_equip_20_the_penetration_raises_the_melee_hit() {
+        // The same wooden sword as BUG-09's rig: 7 through DamageVar, the
+        // slime's defense 2 halves to 1 -> 6.
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24;
+        a.inventory[a.selected].count = 1;
+        let hp_0 = a.npcs[0].hp;
+        mine_frames(&mut a, 1);
+        let plain = hp_0 - a.npcs[0].hp;
+        assert_eq!(plain, 6, "the baseline hit");
+        // The Shark Tooth Necklace (3212) adds a flat 5 of penetration;
+        // `checkArmorPenetration` caps it at defense / 2 = 1, so the hit
+        // gains exactly 1.
+        let mut b = melee_app();
+        b.inventory[b.selected].kind = 24;
+        b.inventory[b.selected].count = 1;
+        // The derived field is what the hit reads (`Player::update` fills it
+        // from the worn slots — covered by
+        // `player::tests::the_penetration_rows_add_up`); this rig drives only
+        // the editing frame, so the value is set here directly.
+        if let Some(p) = b.player.as_mut() {
+            p.armor_penetration = 5;
+        }
+        let hp_b = b.npcs[0].hp;
+        mine_frames(&mut b, 2);
+        let poked = hp_b - b.npcs[0].hp;
+        assert_eq!(
+            poked,
+            plain + 1,
+            "the necklace's 1 point of penetration (equipped={:?}, pen={})",
+            b.player.as_ref().map(|p| p.equipped[3]),
+            b.player.as_ref().map_or(0, |p| p.get_armor_penetration(true))
+        );
+    }
 
     /// BUG-10: melee on a town NPC is refused (`ProcessHitAgainstNPC`'s
     /// friendly gate, `Player.cs:44272-44276`) — the Guide Voodoo Doll (267)
