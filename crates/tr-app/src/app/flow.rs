@@ -277,6 +277,10 @@ pub(crate) struct FrontDraw<'a> {
     pub(crate) players: &'a [ui::save_list::PlayerEntry],
     /// `_worldSelectMenu`'s card list (`App.worlds`).
     pub(crate) worlds: &'a [ui::save_list::WorldEntry],
+    /// `Main.ActivePlayerFileData.Player.difficulty` (`UIWorldSelect.cs:179`):
+    /// the active player's difficulty, gating the card grey-out so it matches
+    /// the sort key (`App::active_player_difficulty`).
+    pub(crate) active_difficulty: u8,
     pub(crate) player_assets: &'a PlayerAssets,
     /// `Main.GlobalTimeWrappedHourly`'s port — the creation preview's clock.
     pub(crate) anim_time: f32,
@@ -370,11 +374,17 @@ impl FrontScreenBehaviours for FrontScreen {
                 let header_w = self.header_w(d);
                 // The active player's difficulty for the joinable grey-out
                 // (`Main.ActivePlayerFileData.Player.difficulty`,
-                // `UIWorldSelect.cs:179`): the port's active character is the
-                // fresh session player — difficulty 0 (`Player.cs:1654`'s
-                // default).
+                // `UIWorldSelect.cs:179`): the session character's
+                // (`App::active_player_difficulty`) — the same key the sort
+                // uses, so the grey-out and the order agree.
                 ui::world_select::draw(
-                    d.renderer, d.lookups, d.screen, header_w, d.worlds, 0, d.mouse,
+                    d.renderer,
+                    d.lookups,
+                    d.screen,
+                    header_w,
+                    d.worlds,
+                    d.active_difficulty,
+                    d.mouse,
                 );
             }
             FrontScreen::CharCreation(state) => {
@@ -819,7 +829,7 @@ impl FrontScreenBehaviours for FrontScreen {
                                 }
                             }
                         }
-                        ui::world_select::sort_worlds(&mut app.worlds, false);
+                        app.resort_worlds();
                         None
                     }
                     // `RenameButtonClick` (`UIWorldListItem.cs:415-421`): the
@@ -2145,6 +2155,49 @@ pub(crate) mod front_flow_tests {
         assert_eq!(draft.difficulty, 0);
         assert_eq!(draft.evil, 0);
         assert!(app.menu.is_none(), "the invariant holds");
+    }
+
+    #[test]
+    fn resort_worlds_uses_the_active_players_difficulty() {
+        // `UpdateWorldsList`'s first key (`UIWorldSelect.cs:156`) is
+        // `CanWorldBeJoinedByActivePlayer` (`:177-180`): the active player's
+        // Journey flag (difficulty 3) must match the world's GameMode 3.
+        // `enter_front`'s re-list and the favourite toggle both ride
+        // `App::resort_worlds`, so the key is no longer the hardcoded `false`.
+        fn world(name: &str, difficulty: u8) -> ui::save_list::WorldEntry {
+            ui::save_list::WorldEntry {
+                difficulty,
+                ..world_entry(name)
+            }
+        }
+        // A Classic session player (`difficulty 0`, the default): the Classic
+        // world joins, the Journey world does not, so Classic sorts first.
+        let mut app = flow_app(
+            Some(FrontScreen::WorldSelect),
+            vec![],
+            vec![world("Journey", 3), world("Classic", 0)],
+        );
+        app.resort_worlds();
+        let names: Vec<&str> = app.worlds.iter().map(|w| w.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Classic", "Journey"],
+            "a Classic player joins Classic worlds first"
+        );
+        // A Journey session player (`Main.ActivePlayerFileData.Player.difficulty
+        // == 3`): the Journey world sorts first.
+        app.session_draft = Some(ui::char_creation::NewPlayerDraft {
+            difficulty: 3,
+            ..Default::default()
+        });
+        app.worlds = vec![world("Classic", 0), world("Journey", 3)];
+        app.resort_worlds();
+        let names: Vec<&str> = app.worlds.iter().map(|w| w.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Journey", "Classic"],
+            "a Journey player joins Journey worlds first"
+        );
     }
 
     #[test]

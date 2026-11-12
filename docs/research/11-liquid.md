@@ -147,6 +147,9 @@ still open items in ROADMAP §3.
    10× more often per wall-clock second and retires `kill`-ed entries immediately.
    Not admitted (ROADMAP's "Hidden" line mentions `skipCount > 1`, which is a *different*
    mechanism and is ported as `% 2 == 0` in `world_sim/liquids.rs:18`).
+   **(b) FIXED 2026-11-13 (S1-A-8):** the port now walks the fixed `curMaxLiquid / cycles`
+   stride with the `numLiquid` clamp (`liquid.rs::LiquidSystem::update`), matching
+   `Liquid.cs:1069-1106`; (a) `skipLiquid` is still unported.
 5. **Missing `genRand` nudge (determinism, low-med).** `Liquid.cs:892-895`
    (`num == 254 && WorldGen.genRand.Next(30) == 0 → 255`) is absent; the C# call also
    consumes a shared RNG draw, so settled-surface levels differ by 1 unit on ~1/30 of

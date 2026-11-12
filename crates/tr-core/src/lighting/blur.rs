@@ -10,6 +10,9 @@ use crate::tiledata as td;
 use crate::world::World;
 
 /// Edge rows/columns that are not blurred (`LightingEngine.NON_VISIBLE_PADDING`).
+///
+/// `LightMap.cs` keeps this as a fixed 18 (`LightMap.NonVisiblePadding`, set by
+/// `LightingEngine`); the Rust blur must not shrink it by map size (S1-G-10).
 const NON_VISIBLE_PADDING: i32 = 18;
 
 /// Light carried through a tile; matches `LightMaskMode`.
@@ -47,7 +50,10 @@ pub(super) fn blur(map: &mut LightMap, parallel: bool) {
 }
 
 fn blur_pass(map: &mut LightMap, parallel: bool) {
-    let (w, h, pad) = (map.w, map.h, NON_VISIBLE_PADDING.min(map.w.min(map.h) / 3));
+    // `LightMap.cs:99-108`: the pad is the fixed `NonVisiblePadding` (18);
+    // `BlurLine`'s loop is range-guarded (`i != endIndex + stride`), so
+    // tiny test maps simply yield a non-positive span and no sweep (S1-G-10).
+    let (w, h, pad) = (map.w, map.h, NON_VISIBLE_PADDING);
     let wu = w as usize;
     let rng = &map.blur_rng;
 
@@ -85,6 +91,34 @@ fn blur_pass(map: &mut LightMap, parallel: bool) {
 #[inline]
 pub(super) fn water_jitter(rng: &FastRandom, i: usize) -> f32 {
     rng.with_modifier_u64(i as u64).next_range(98, 100) as f32 / 100.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_visible_padding_is_fixed_18_s1_g_10() {
+        // `LightMap.cs:99-108`: `NonVisiblePadding` is a fixed 18 (set by
+        // `LightingEngine`), not `min(map, map/3)`. On a 30-tile map the old
+        // `/3` clamp would yield 10; the fixed pad must keep the horizontal
+        // sweep span at `w - 18` (12) so the rightward pass starts at 0 and
+        // ends at index 11, not 19.
+        assert_eq!(NON_VISIBLE_PADDING, 18);
+        let w = 30i32;
+        let h = 30i32;
+        let pad = NON_VISIBLE_PADDING;
+        assert_eq!(w - pad, 12, "horizontal sweep count must use the fixed pad");
+        assert_eq!(h - pad, 12, "vertical sweep count must use the fixed pad");
+        // Tiny maps: `BlurLine`'s range-guarded loop produces a non-positive
+        // span, so the blur is a no-op rather than an underflow/panic.
+        let mut map = LightMap::new();
+        map.w = 20;
+        map.h = 20;
+        map.colors = vec![[0.0; 3]; 400];
+        map.mask = vec![Mask::Air; 400];
+        blur(&mut map, false);
+    }
 }
 
 /// One vertical sweep through column `x`, carrying the brightest light seen so far

@@ -662,6 +662,10 @@ impl App {
             .as_ref()
             .map(|p| p.hide_visible_accessory)
             .unwrap_or([false; 10]);
+        // `Main.ActivePlayerFileData.Player.difficulty` for the world-select
+        // grey-out (`UIWorldSelect.cs:179`) — snapshotted before the disjoint
+        // borrow below (it reads `self.session_draft`).
+        let active_difficulty = self.active_player_difficulty();
 
         {
             let App {
@@ -1344,6 +1348,7 @@ impl App {
                         screen,
                         players: &self.players,
                         worlds: &self.worlds,
+                        active_difficulty,
                         player_assets: &*player_assets,
                         anim_time,
                         mouse: self.mouse_pos,
