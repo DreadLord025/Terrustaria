@@ -200,7 +200,9 @@ stands in for the family), **MISSING** (no Rust kind / no machine).
 | 82 | the Moon Leech Clot | `update_moon_leech_blob` (10348) | PORTED | cosmetic |
 | 83 | the ritual spawn points | — | MISSING | behavioural |
 | 84 | the Lunatic Cultist (`AI_084`) | — (the Rust `AncientCultist` runs the aiStyle-94 machine) | MISSING | behavioural |
+| 85 | the Stardust CellBig / Nebula Headcrab hover + attach (405, 421, 467) | `update_stardust_cell_big` (8315), `update_brain_suckler` (9650) | PORTED (2 of 3 types) | behavioural |
 | 86 | the sentries | — | MISSING | behavioural |
+| 87 | the Big Mimic family (473-476) — the dormant→awakening cycle | — | MISSING | behavioural |
 | 88 | the bronze/copper sentries | — | MISSING | behavioural |
 | 89 | the hovering sentry | — | MISSING | behavioural |
 | 90 | the sandninja | — | MISSING | behavioural |
@@ -237,15 +239,16 @@ stands in for the family), **MISSING** (no Rust kind / no machine).
 | 121 | the Queen Slime (`AI_121`) | — | MISSING | behavioural |
 | 122 | the pirate ghost | — | MISSING | behavioural |
 | 123 | the Deerclops (the 9-state machine) | `update_deerclops` (11336) | PORTED | behavioural |
+| 124 | the elder slime chest (a gravity-only fall, `AI_124_ElderSlimeChest`) | — | MISSING | cosmetic |
 | 125 | the clumsy slime balloon | — | MISSING | cosmetic |
 | 126 | the statue mimic (`AI_126`) | — | MISSING | behavioural |
 | 127 | the Pal (`AI_127`) | — | MISSING | behavioural |
 
-**Totals:** 128 arms · **~60 have at least one Rust kind** · 68 arms have no
-Rust kind (of which 1 — style 98 — is dead in the vanilla too) · of the ~60
-covered arms, 24 are **PORTED** (a dedicated machine reproducing the family),
-12 are **PARTIAL**, 5 are **APPROXIMATE** (a shared archetype stands in for
-the family), 2 are **PARTIAL by omission** (0, 1).
+**Totals (128 arms):** **PORTED 38** (a dedicated machine reproducing the
+family, some only for the ported subset) · **PARTIAL 10** (a machine exists
+but arms are missing) · **APPROXIMATE 6** (a shared archetype stands in for
+the family) · **MISSING 74** (no Rust kind; style 98 is dead in the vanilla
+too, and style 124's owner type is not a spawning NPC).
 
 ## Archetype fidelity — 1:1 vs "a generic archetype stands in"
 
