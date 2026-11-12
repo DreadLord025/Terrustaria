@@ -247,7 +247,7 @@ pub(crate) fn spawn_item_drop_px(app: &mut App, kind: u16, count: u32, pos: Vec2
     // (`WorldGen.cs:54248+`): the natural roll, drawn after the velocity
     // like the C# spawn order. Non-prefixable kinds draw nothing
     // (`Prefix(-1)`'s `CanHavePrefixes` gate).
-    let prefix = crate::prefix::roll_prefix(kind, -1, &mut app.item_rng);
+    let prefix = crate::prefix::roll_prefix(kind, -1, &mut app.prefix_rng);
     let drop = ItemDrop::new(
         kind,
         count.max(1),
@@ -430,6 +430,34 @@ mod shimmer_tests {
         update_items(&mut app, 1.0 / 60.0);
         // The rise: `velocity.Y -= 0.05` while over shimmer (`WorldItem.cs:474-483`).
         assert!(app.items[0].pos.y < before, "the item rises");
+    }
+}
+
+#[cfg(test)]
+mod spawn_rng_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::UnifiedRandom;
+
+    /// `Item.NewItem`'s velocity/phase draws stay on the splitmix `item_rng`;
+    /// the `prefix: -1` roll takes the C# `Main.rand` stream (`prefix_rng`,
+    /// `S1-A-5`), so a prefix roll never perturbs loot draws.
+    #[test]
+    fn the_prefix_roll_consumes_the_prefix_stream_only() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.prefix_rng = UnifiedRandom::new(4242);
+        let mut expect_prefix_rng = UnifiedRandom::new(4242);
+        let expected_prefix = crate::prefix::roll_prefix(1, -1, &mut expect_prefix_rng);
+        let mut expect_item_rng = app.item_rng;
+        let _ = rand01(&mut expect_item_rng);
+        let _ = rand01(&mut expect_item_rng);
+        let _ = rand01(&mut expect_item_rng);
+
+        spawn_item_drop_px(&mut app, 1, 1, Vec2::new(5.0, 5.0));
+
+        assert_eq!(app.items[0].prefix, expected_prefix);
+        assert_eq!(app.item_rng, expect_item_rng, "three velocity draws only");
+        assert_eq!(app.prefix_rng.peek(), expect_prefix_rng.peek());
     }
 }
 

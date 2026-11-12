@@ -8850,6 +8850,42 @@ Fidelity notes:
 - No `Default`: the C# parameterless ctor seeds from `Environment.TickCount`
   (`:18-21`), which a deterministic port must never do.
 
+## Prefix rolls (S1-A-5)
+
+`App::prefix_rng` (`crates/tr-app/src/app/mod.rs:638`) is a `tr_core::UnifiedRandom`
+seeded from the world seed (`:2896`) and is now the stream every *runtime* prefix roll
+consumes: tile/pot loot drops (`world_sim/items.rs:250`), NPC drops
+(`world_sim/npcs.rs:3531`) and the reforge (`app/mod.rs:1118`). Before S1-A-5 those
+three drew from the splitmix `item_rng`/`npc_rng` fields, so the rolled ids came from a
+non-C# stream. The engine keeps one draw seam, `prefix::PrefixRandom` (one method =
+`UnifiedRandom.Next(int)`), so the item-id/stat tables and the draw order are unchanged.
+
+Verified against the C#, not the port: a `dotnet` oracle that runs the decompiled
+`UnifiedRandom` through the `Item.Prefix(-1)` loop (`Item.cs:529-574`) with the vanilla
+Iron Pickaxe tables pins 20 consecutive rolls for seeds 0/42/-7/123456789 and the
+landed histogram over seeds `0..2000` x 20 rolls (40 000 landings). Both tests fail on
+any stream or `Next(int)` drift (mutation-checked with a wrong draw), so the tests prove
+C# parity rather than self-consistency.
+
+Deviations that remain, on purpose:
+
+- **One `prefix_rng`, not the C#'s shared `Main.rand`.** Vanilla's prefix draws
+  interleave with every other `Main.rand` consumer (particles, weather, loot); the port
+  keeps its per-consumer field convention until S1-A-2 gives the singletons the C#'s
+  named streams. The algorithm and the draw order are the C#'s; the *position in the
+  shared stream* is not reproduced.
+- **The seed is the port's, not vanilla's.** `prefix_rng` is seeded
+  `world_seed ^ 0x51ED_2701_A3F5_C9B7` (the per-consumer constant convention). Vanilla
+  seeds `Main.rand` from `Environment.TickCount`, which a deterministic port cannot
+  reproduce, so a seed-for-seed replay is only defined once S1-A-2/S1-A-7 pick a
+  deterministic seeding.
+- **The worldgen chest seam stays splitmix.** `chest_gen.rs` still rolls its chest-row
+  prefixes through `prefix::roll_prefix_splitmix` over the per-world `chest_rng`,
+  byte-identical to before this change (no chest contents move); S1-A-4 owns that
+  stream (the vanilla `WorldGen.genRand` interleave).
+- **`item_rng`'s other consumers are untouched** (loot, crit, luck, particles — ~97
+  call sites keep the splitmix step); the prefix part of S1-A-5 does not reorder them.
+
 ## Magic staves (M4-PROJ-6)
 
 The port's caster families land in `crates/tr-app/src/projectile.rs` beside

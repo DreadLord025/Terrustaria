@@ -3532,7 +3532,7 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             app.items.push(ItemDrop::new(
                 req.item as u16,
                 req.stack as u32,
-                crate::prefix::roll_prefix(req.item as u16, -1, &mut app.item_rng),
+                crate::prefix::roll_prefix(req.item as u16, -1, &mut app.prefix_rng),
                 x,
                 y,
                 vx,

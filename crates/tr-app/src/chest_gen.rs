@@ -16,7 +16,9 @@
 //! `y < worldSurface+25` / mid `y < rockLayer` / deep
 //! `y < maxTilesY-250` / else), the rows with their verbatim probabilities
 //! (`Next(6) == 0` etc), the stack ranges, and the `Prefix(-1)` calls
-//! routed through the ported `prefix::roll_prefix(kind, -1, rng)`.
+//! routed through the ported `prefix::roll_prefix_splitmix(kind, -1, rng)` — the
+//! engine over the splitmix chest stream until S1-A-4 restores the vanilla
+//! `genRand` interleave.
 //! Out of scope here (documented in the ROADMAP row): the seed-flavour rows
 //! (vampire/errorWorld/rainbow/tenthAnniversary, `SecretSeed`/`Main`
 //! statics the port does not generate), the `GenVars` cross-chest fairness
@@ -446,12 +448,12 @@ fn context_at(world: &World, x: i32, y: i32) -> Context {
 }
 
 /// `ItemSlot::Prefix(-1)` on a row: the natural roll through the ported
-/// engine (the `roll_prefix(kind, -1, rng)` — the 1/4 no-prefix gate, the
+/// engine (the `roll_prefix_splitmix(kind, -1, rng)` — the 1/4 no-prefix gate, the
 /// ReducedNaturalChance arm, the rejection retry). The prefix lands on the
 /// row's id; the id kinds outside the ported engine roll 0 (no prefix) with
 /// **no stream draws** (the `CanHavePrefixes` early return).
 fn roll_prefix_on(rng: &mut u64, row: &mut Row) {
-    row.prefix = prefix::roll_prefix(row.kind, -1, rng);
+    row.prefix = prefix::roll_prefix_splitmix(row.kind, -1, rng);
 }
 
 /// The surface band's weapon row (`:36269-36331`): the `Next(11)` weapon
@@ -1391,7 +1393,7 @@ fn prefix_item_from_options(slot: &mut ItemSlot, options: &[u16], rng: &mut u64)
     while !list.is_empty() {
         let index = (next(rng, list.len() as u64)) as usize;
         let num = list[index];
-        let rolled = prefix::roll_prefix(slot.kind, num as i32, rng);
+        let rolled = prefix::roll_prefix_splitmix(slot.kind, num as i32, rng);
         slot.prefix = rolled;
         if rolled == num {
             return;

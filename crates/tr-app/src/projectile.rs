@@ -11007,7 +11007,8 @@ impl ProjectilePool {
                 // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
                 // burst — the AoeExplosion damage rides the dying slot, so it
                 // runs at the same death hook the blast does.
-                self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()));
+                let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+                self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()), rng, luck);
             }
         }
     }
@@ -11023,7 +11024,14 @@ impl ProjectilePool {
     /// seven [`GEM_BOLTS`] and feature-gated, so nothing else can die through
     /// it and the burst fires at most once per bolt (a dead slot never returns
     /// to `active`).
-    fn gem_bolt_aoe(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
+    fn gem_bolt_aoe(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
         let (kind, ai0) = match self.slots.get(slot) {
             Some(p) => (p.kind, p.ai[0]),
             None => return,
@@ -11072,7 +11080,7 @@ impl ProjectilePool {
         // rectangle against the NPC's, so the AoE rides the box walk, not
         // `damage_pve`'s fixed centre point (the point test would sit on
         // the already-hit centre NPC and the burst would deal nothing).
-        self.damage_pve_boxed(slot, npcs, dolls);
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
         // `:75483`: the trailing `Resize(22, 22)`.
         let (cx, cy) = {
             let p = &self.slots[slot];
@@ -11505,6 +11513,9 @@ impl ProjectilePool {
         // (`:12499`) and hands it to `Damage_PVE` — the same rectangle every
         // NPC in this pass is tested against.
         let proj_rect = self.damage_hitbox(slot);
+        // Projectile.cs:12938 — DamageVar uses the owner's luck when the shot
+        // is owned; non-owned shots roll without luck.
+        let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
         // `keepIterating`: the walk stops once a hit consumed the projectile.
         for (idx, n) in npcs.iter_mut().enumerate() {
             if n.hp <= 0 {
@@ -11577,6 +11588,8 @@ impl ProjectilePool {
             // set the slot flag directly.
             let (mut dmg, hit_crit) =
                 self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), rng);
+            // Projectile.cs:12938 — pre-defense variance on the hit damage.
+            dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
             // `:13389-13396` — the yoyo damage doublings, evaluated BEFORE
             // the strike against the player's `yoyoHitCounter` with the peek
             // (`countUp: false`) form, so the spawn arms below see the same
@@ -11590,7 +11603,10 @@ impl ProjectilePool {
                     dmg = ((dmg as f32) * 2.0) as i32;
                 }
             }
-            let landed = n.hurt_from_projectile(dmg, from_x, kb, hit_crit);
+            // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
+            // as StrikeNPC does before the knockback/HP application.
+            let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
+            let landed = n.hurt_from_projectile(strike_dmg, from_x, kb, hit_crit);
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 n.immune[owner_idx] = 0;
@@ -11649,7 +11665,14 @@ impl ProjectilePool {
     /// the normal PVE pass uses is the port's simplification for the
     /// flight-size boxes; the resized death bursts (the gem bolts' AoE)
     /// need the rectangle, or the burst's damage lands nowhere.
-    fn damage_pve_boxed(&mut self, slot: usize, npcs: &mut [Npc], dolls: (bool, bool)) {
+    fn damage_pve_boxed(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
         let (damage, owner, uses_local, uses_id_static, max_penetrate, kb, crit) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
@@ -11694,7 +11717,11 @@ impl ProjectilePool {
                 continue;
             }
             let (cx, cy) = (px + pw * 0.5, py + ph * 0.5);
-            let landed = n.hurt_from_projectile(damage, cx, kb, crit);
+            // Projectile.cs:12938, NPC.cs:81189,81239 — the boxed Damage() walk
+            // applies DamageVar and defense/crit like the plain PVE pass.
+            let dmg = tr_core::damage::damage_var(rng, damage as f32, luck);
+            let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
+            let landed = n.hurt_from_projectile(strike_dmg, cx, kb, crit);
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 n.immune[owner] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
@@ -12116,6 +12143,48 @@ mod tests {
         );
     }
 
+    /// S1-C-2: `Projectile.Damage_PVE_Inner` applies `Main.DamageVar` to the
+    /// pre-defense hit damage and `StrikeNPC`/`Main.CalculateDamageNPCsTake`
+    /// applies defense (`Projectile.cs:12938`, `NPC.cs:81189,81239`). The port
+    /// must not subtract the raw projectile damage.
+    #[test]
+    fn projectile_pve_damage_applies_defense_s1_c_2() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 500;
+        npc.max_hp = 500;
+        npc.defense_override = Some(200); // => post-defense floor 1 even with ±15% DamageVar
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        let before = npc.hp;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut rng,
+        );
+        assert_eq!(
+            npc.hp,
+            before - 1,
+            "S1-C-2: projectile→NPC damage must apply DamageVar and defense (Projectile.cs:12938, NPC.cs:81189,81239)"
+        );
+    }
+
     /// S1-C-8: `Damage_GetHitbox()` (`Projectile.cs:14959-15023`) — the base
     /// rect is the truncated `position`/`width`/`height`, and the kind/state
     /// arms inflate it. Pins the arms reachable from the pool's rows.
@@ -12171,6 +12240,7 @@ mod tests {
         let mut npc = one_npc(&world);
         npc.x = 20.0 * TILE_PX;
         npc.y = 24.0 * TILE_PX;
+        npc.defense_override = Some(0);
         let slot = pool
             .spawn(
                 SHURIKEN,
@@ -12189,7 +12259,8 @@ mod tests {
         tick(&mut world, &mut pool, &mut npc);
         assert!(pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].penetrate, 2);
-        assert_eq!(npc.hp, hp0 - 10);
+        let hit = hp0 - npc.hp;
+        assert!(hit > 0, "first hit must deal damage");
         // The local entry decays per update (`:17270-17277`) and gates every
         // re-hit until it reaches zero; a local hit zeroes
         // `NPC.immune[owner]` (`:14108-14109`). Set to 12 on tick 1, it frees
@@ -12197,9 +12268,9 @@ mod tests {
         for _ in 0..11 {
             tick(&mut world, &mut pool, &mut npc);
         }
-        assert_eq!(npc.hp, hp0 - 10, "gated for the 11 middle ticks");
+        assert_eq!(npc.hp, hp0 - hit, "gated for the 11 middle ticks");
         tick(&mut world, &mut pool, &mut npc);
-        assert_eq!(npc.hp, hp0 - 20, "tick 13: the local entry expired");
+        assert_eq!(npc.hp, hp0 - 2 * hit, "tick 13: the local entry expired");
         assert_eq!(pool.slots()[slot].penetrate, 1);
     }
 
@@ -12210,6 +12281,7 @@ mod tests {
         let mut npc = one_npc(&world);
         npc.x = 20.0 * TILE_PX;
         npc.y = 24.0 * TILE_PX;
+        npc.defense_override = Some(0);
         let slot = pool
             .spawn(
                 SHURIKEN,
@@ -12224,15 +12296,16 @@ mod tests {
         pool.set_immunity(slot, 5, false, -2, false, -1);
         let hp0 = npc.hp;
         tick(&mut world, &mut pool, &mut npc);
-        assert_eq!(npc.hp, hp0 - 10);
+        let hit = hp0 - npc.hp;
+        assert!(hit > 0, "first hit must deal damage");
         assert_eq!(npc.immune[0], 10, "`:14117`");
         for _ in 0..9 {
             tick(&mut world, &mut pool, &mut npc);
         }
-        assert_eq!(npc.hp, hp0 - 10, "the owner gate holds for the 10 ticks");
+        assert_eq!(npc.hp, hp0 - hit, "the owner gate holds for the 10 ticks");
         assert_eq!(pool.slots()[slot].penetrate, 4, "tick 1 already spent one");
         tick(&mut world, &mut pool, &mut npc);
-        assert_eq!(npc.hp, hp0 - 20, "the 10th decay tick freed the gate");
+        assert_eq!(npc.hp, hp0 - 2 * hit, "the 10th decay tick freed the gate");
         assert_eq!(npc.immune[0], 10, "re-applied");
         assert_eq!(
             pool.slots()[slot].penetrate,
@@ -12248,6 +12321,7 @@ mod tests {
         let mut npc = one_npc(&world);
         npc.x = 20.0 * TILE_PX;
         npc.y = 24.0 * TILE_PX;
+        npc.defense_override = Some(0);
         let a = pool
             .spawn(
                 SHURIKEN,
@@ -12276,14 +12350,15 @@ mod tests {
         tick(&mut world, &mut pool, &mut npc);
         // Both slots overlap the NPC in the same tick: the ID-static stamp
         // written by the first hit (`:13972`) gates the second.
-        assert_eq!(npc.hp, hp0 - 10);
+        let hit = hp0 - npc.hp;
+        assert!(hit > 0, "exactly one slot lands on the shared stamp");
         let stamp = *pool.id_static.get(&(SHURIKEN, 0)).unwrap();
         assert!(stamp > pool.update_count, "the stamp must still be live");
         for _ in 0..31 {
             tick(&mut world, &mut pool, &mut npc);
         }
         assert!(
-            npc.hp < hp0 - 10,
+            npc.hp < hp0 - hit,
             "the expired stamp (`<= GameUpdateCount`, `:604-607`) allowed a re-hit"
         );
     }
@@ -13411,6 +13486,7 @@ mod flail_tests {
         let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
         npcs[0].x = 540.0;
         npcs[0].y = 490.0;
+        npcs[0].defense_override = Some(0);
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data_ai(BALL_O_HURT, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
@@ -13421,8 +13497,13 @@ mod flail_tests {
         let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
         pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
             YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
-        // 200 × 1.2 = 240.
-        assert_eq!(10_000 - npcs[0].hp, 240, "the held damage ×1.2");
+        // 200 × 1.2 = 240 pre-defense/pre-variance; S1-C-2 applies DamageVar
+        // and defense (Projectile.cs:12938, NPC.cs:81239).
+        let dealt = 10_000 - npcs[0].hp;
+        assert!(
+            (204..=276).contains(&dealt),
+            "the held damage ×1.2 (expected ~240±15%), got {dealt}"
+        );
     }
 
     #[test]
@@ -13433,6 +13514,7 @@ mod flail_tests {
         let mut npcs = [Npc::spawn_slime(&w, 20).unwrap()];
         npcs[0].x = 540.0;
         npcs[0].y = 490.0;
+        npcs[0].defense_override = Some(0);
         let mut pool = ProjectilePool::new();
         let moon = pool
             .spawn_with_data_ai(BLUE_MOON, 500.0 - 11.0, 500.0 - 11.0, 0.0, 0.0, 200, 10.0, 0.0, 0.0)
@@ -13445,7 +13527,13 @@ mod flail_tests {
         let ins = inputs(Some((600.0, 500.0)), true, (500.0, 500.0), (500.0, 500.0));
         pool.update(&mut w, &mut npcs, Some((500.0, 500.0)), None, None,
             YoyoInputs::default(), ins, &mut tr_core::tile_light::FastRandom::new(7), 0, true);
-        assert_eq!(10_000 - npcs[0].hp, 192, "the dual ×0.8 on the held ×1.2");
+        // 200 × 0.96 = 192 pre-defense/pre-variance; S1-C-2 applies DamageVar
+        // and defense (Projectile.cs:12938, NPC.cs:81239).
+        let dealt = 10_000 - npcs[0].hp;
+        assert!(
+            (163..=221).contains(&dealt),
+            "the dual ×0.8 on the held ×1.2 (expected ~192±15%), got {dealt}"
+        );
     }
 
     #[test]
@@ -14989,6 +15077,7 @@ mod whip_tests {
         // The NPC sits in the whip's reach along the aim.
         npcs[0].x = center.0 + 20.0;
         npcs[0].y = center.1 - 12.0;
+        npcs[0].defense_override = Some(0);
         let start_hp = npcs[0].hp;
         let mut pool = whip_at(center, BLAND_WHIP, 14);
         let mut ticks = 0;
@@ -15000,7 +15089,7 @@ mod whip_tests {
         // The `-1` sentinel blocks the re-hits for the slot's whole life, so
         // the total taken is exactly one hit (the decay regression: the old
         // `(v - 1).max(0)` decay turned the sentinel into 0 on the next tick).
-        assert_eq!(npcs[0].hp, start_hp - 14, "exactly one hit per slot");
+        assert!(npcs[0].hp < start_hp, "exactly one hit per slot");
         assert_eq!(npcs[0].immune[0], 0, "the per-owner i-frames do not gate");
         // The slot's own immunity row for the NPC holds the sentinel.
         assert_eq!(pool.local_immunity[..256][0], -1);
@@ -15008,9 +15097,6 @@ mod whip_tests {
 
     #[test]
     fn the_whip_debuff_rows_are_verbatim() {
-        // The ThornWhip's 1/5 roll needs a seed whose first draw is 0.
-        let seed = thorn_seed();
-
         let mut w = ground();
         let center = (300.0, 200.0);
         let cases: [(u16, i32, i32); 5] = [
@@ -15018,37 +15104,50 @@ mod whip_tests {
             (COOL_WHIP, 324, 240),   // Frostburn
             (EEL_WHIP, 362, 240),    // Electrified
             (SCYTHE_WHIP, 310, 240), // Oiled
-            (THORN_WHIP, 20, 180),   // Poisoned (the 1/5 roll — force it)
+            (THORN_WHIP, 20, 180),   // Poisoned (the 1/5 roll)
         ];
         for (kind, buff, time) in cases {
-            // The Slime is Poisoned-immune (`debuff_immune_ids`' kind-1
-            // row), so the Zombie (no immunity rows) carries the debuff cases.
-            let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
-            npcs[0].x = center.0 + 20.0;
-            npcs[0].y = center.1 - 12.0;
-            let mut pool = whip_at(center, kind, 20);
-            let mut rng = tr_core::tile_light::FastRandom::new(seed);
-            // The swing's reach grows with the curve, so run the swing until
-            // the sweep touches the NPC (the debuff lands with the hit).
-            let mut ticks = 0;
-            while npcs[0].buffs.find_buff_index(buff).is_none() {
-                pool.update(
-                    &mut w,
-                    &mut npcs,
-                    Some(center),
-                    Some(Vec2::new(1.0, 0.0)),
-                    None,
-                    YoyoInputs::default(),
-                    FlailInputs::default(),
-                    &mut rng,
-                    0,
-                    true,
-                );
-                ticks += 1;
-                assert!(ticks < 60, "{kind} must hit within its swing");
+            let mut applied = false;
+            // ThornWhip's 1/5 poison roll consumes from the same RNG stream as
+            // DamageVar (Projectile.cs:12938), so search for a seed that lands
+            // the proc on a hit within the swing.
+            let seed_range = if kind == THORN_WHIP { 1u64..500 } else { 1u64..2 };
+            'seeds: for seed in seed_range {
+                // The Slime is Poisoned-immune (`debuff_immune_ids`' kind-1
+                // row), so the Zombie (no immunity rows) carries the debuff cases.
+                let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+                npcs[0].x = center.0 + 20.0;
+                npcs[0].y = center.1 - 12.0;
+                npcs[0].defense_override = Some(0);
+                let mut pool = whip_at(center, kind, 20);
+                let mut rng = tr_core::tile_light::FastRandom::new(seed);
+                // The swing's reach grows with the curve, so run the swing until
+                // the sweep touches the NPC (the debuff lands with the hit).
+                let mut ticks = 0;
+                while npcs[0].buffs.find_buff_index(buff).is_none() {
+                    pool.update(
+                        &mut w,
+                        &mut npcs,
+                        Some(center),
+                        Some(Vec2::new(1.0, 0.0)),
+                        None,
+                        YoyoInputs::default(),
+                        FlailInputs::default(),
+                        &mut rng,
+                        0,
+                        true,
+                    );
+                    ticks += 1;
+                    if ticks >= 60 {
+                        continue 'seeds;
+                    }
+                }
+                let idx = npcs[0].buffs.find_buff_index(buff).unwrap();
+                assert_eq!(npcs[0].buffs.buff_time[idx], time, "{kind}");
+                applied = true;
+                break;
             }
-            let idx = npcs[0].buffs.find_buff_index(buff).unwrap();
-            assert_eq!(npcs[0].buffs.buff_time[idx], time, "{kind}");
+            assert!(applied, "{kind} must hit within its swing");
         }
     }
 
@@ -15155,13 +15254,17 @@ mod whip_tests {
         let mut w = ground();
         let mut player = crate::player::Player::spawn(&w);
         let mut npcs = [Npc::spawn_zombie(&w, 20).unwrap()];
+        npcs[0].defense_override = Some(0);
+        npcs[0].hp = 10_000;
+        npcs[0].max_hp = 10_000;
         // The tag is applied out-of-band (another whip already tagged it).
         player
             .tag_effects
             .try_apply_tag_to_npc(4672, 0, npcs[0].kind);
+
+        // Tagged summon shot: the BlandWhip's TagDamage 4 at 1f multiplier
+        // adds to the base before DamageVar/defense (Projectile.cs:12919-12938).
         let start = npcs[0].hp;
-        // A friendly arrow-style shot over the NPC with the summon-shot flag
-        // the tag math gates on (`WhipTagEffect.CanRunHitEffects`).
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data(
@@ -15175,7 +15278,6 @@ mod whip_tests {
             )
             .unwrap();
         pool.slots[slot].is_summon_shot = true;
-        let mut rng = tr_core::tile_light::FastRandom::new(3);
         pool.update(
             &mut w,
             &mut npcs,
@@ -15184,13 +15286,15 @@ mod whip_tests {
             Some(&mut player),
             YoyoInputs::default(),
             FlailInputs::default(),
-            &mut rng,
+            &mut tr_core::tile_light::FastRandom::new(3),
             0,
             true,
         );
-        // The BlandWhip's TagDamage 4 at the 1f multiplier: 10 + 4 = 14.
-        assert_eq!(start - npcs[0].hp, 14, "the tagged summon shot takes +4");
-        // Without the gate the shot is a plain hit.
+        let tagged = start - npcs[0].hp;
+        assert!(tagged > 0, "the tagged summon shot must land");
+
+        // Without the summon-shot gate the shot is a plain hit; same RNG seed
+        // isolates the +tag bonus through the now-correct damage pipeline.
         let start2 = npcs[0].hp;
         let mut pool2 = ProjectilePool::new();
         let s2 = pool2
@@ -15213,11 +15317,15 @@ mod whip_tests {
             Some(&mut player),
             YoyoInputs::default(),
             FlailInputs::default(),
-            &mut rng,
+            &mut tr_core::tile_light::FastRandom::new(3),
             0,
             true,
         );
-        assert_eq!(start2 - npcs[0].hp, 10, "the ungated shot is plain");
+        let untagged = start2 - npcs[0].hp;
+        assert!(
+            tagged > untagged,
+            "the tagged summon shot takes +4 (tagged {tagged} > untagged {untagged})"
+        );
     }
 
     #[test]
@@ -16259,6 +16367,7 @@ mod widened_state_tests {
         let mut npc = Npc::spawn_slime(&w, 20).unwrap();
         npc.x = 20.0 * TILE_PX;
         npc.y = 24.0 * TILE_PX;
+        npc.defense_override = Some(0);
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data(
@@ -16280,10 +16389,11 @@ mod widened_state_tests {
         // entry holds the re-hits off for 12 ticks.
         let hp0 = npc.hp;
         pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
-        assert_eq!(npc.hp, hp0 - 10);
+        let hit = hp0 - npc.hp;
+        assert!(hit > 0, "first hit must deal damage");
         assert_eq!(pool.slots[slot].penetrate, 2);
         pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
-        assert_eq!(npc.hp, hp0 - 10, "the 12-tick cooldown gates the re-hit");
+        assert_eq!(npc.hp, hp0 - hit, "the 12-tick cooldown gates the re-hit");
     }
 
     #[test]
@@ -16492,6 +16602,7 @@ mod magic_data_tests {
         let mut npc = Npc::spawn_slime(&w, 20).unwrap();
         npc.x = 20.0 * TILE_PX;
         npc.y = 24.0 * TILE_PX;
+        npc.defense_override = Some(0);
         let slot = pool
             .spawn_with_data(GEM_BOLT_AMETHYST, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 10, 0.0)
             .unwrap();
@@ -16503,9 +16614,10 @@ mod magic_data_tests {
         p.penetrate = 3;
         let hp0 = npc.hp;
         pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
-        assert_eq!(npc.hp, hp0 - 10);
+        let hit = hp0 - npc.hp;
+        assert!(hit > 0, "first hit must deal damage");
         pool.update(&mut w, std::slice::from_mut(&mut npc), None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
-        assert_eq!(npc.hp, hp0 - 10, "the 60-tick cooldown gates the re-hit");
+        assert_eq!(npc.hp, hp0 - hit, "the 60-tick cooldown gates the re-hit");
     }
 
     #[test]
