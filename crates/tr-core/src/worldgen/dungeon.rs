@@ -705,6 +705,20 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
             .seeds
             .contains(crate::seeds::SeedFlags::FOR_THE_WORTHY);
         super::dungeon_features::place_spikes(world, &fp, world.world_surface, 1.0, good_world, r);
+        // `MakeDungeon`'s `:0.94` step: `DungeonGlobalLights`
+        // (`DungeonCrawler.cs:493`) — lanterns, chandeliers and the wired wall
+        // switch each one carries. The style rolls come from
+        // `SetupDungeonDataVariables` (`DungeonCrawler.cs:213-280`).
+        let styles = super::dungeon_features::DungeonLightStyles::roll(wall, r);
+        // `data.dungeonEntrance.Bounds`: the port's shaft is the 7-wide tower
+        // around the anchor from `top - 8` down to `top + 30`.
+        let entrance = Some((
+            x0 - 3,
+            top - 8,
+            x0 + 4,
+            top + 30,
+        ));
+        super::dungeon_features::place_lights(world, &fp, entrance, &styles, 1.0, r);
     }
     let _ = setup.entrance_strength_y;
     let _ = setup.entrance_strength_x2;
@@ -739,6 +753,35 @@ mod tests {
     }
 
     #[test]
+    /// `MakeDungeon`'s `:0.94` step: the crawl and the spikes leave the rooms
+    /// dark, then `DungeonGlobalLights` (`DungeonCrawler.cs:493`) hangs its
+    /// lanterns and chandeliers and wires a switch to each.
+    #[test]
+    fn test_dungeon_features_the_lights_land_after_the_crawl() {
+        let mut w = flat_world(4200, 600, 60);
+        let mut rng = HallSeed::new(0x5EED);
+        generate_dungeon(&mut w, 2100, 60, &mut rng);
+        let mut lanterns = 0usize;
+        let mut chandeliers = 0usize;
+        for t in &w.tiles {
+            if !t.active() {
+                continue;
+            }
+            if t.kind == super::super::dungeon_features::LANTERN {
+                lanterns += 1;
+            }
+            if t.kind == super::super::dungeon_features::CHANDELIER {
+                chandeliers += 1;
+            }
+        }
+        assert!(
+            lanterns > 0 || chandeliers > 0,
+            "the light pass hangs at least one light (lanterns {lanterns}, chandeliers {chandeliers})"
+        );
+        // A lantern is a 1x2-top object: its cells always come in pairs.
+        assert_eq!(lanterns % 2, 0, "lantern cells are pairs");
+    }
+
     fn test_dungeon_1_the_color_roll_carries_its_bricks() {
         // `SetupDungeonGenVarVariables`'s triple: the brick/wall/cracked
         // rows stay in lockstep across the three colours.
