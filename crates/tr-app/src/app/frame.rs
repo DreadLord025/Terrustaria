@@ -12,7 +12,7 @@ use tr_core::TILE_PX;
 use wgpu::util::DeviceExt;
 
 use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
-use crate::app::{App, WorldFrameKey};
+use crate::app::{App, RngKey, WorldFrameKey};
 use crate::assets;
 use crate::audio;
 use crate::craft;
@@ -163,14 +163,17 @@ impl App {
             // (the freeze stops the advance entirely).
             let rate = self.creative_powers.time_rate();
             if rate > 0.0 {
-                // The dawn/dusk event rolls ride the clock's own stream
-                // (`Main.rand`'s time cluster — the C# rolls at both phase
-                // boundaries read the same stream), drawn once per advance.
-                let roll01 = f64::from(rand01(&mut self.clock_rng));
+                // The dawn/dusk event rolls ride the clock's own named stream
+                // (`Main.SwapRandom("UpdateTime")`, `Main.cs:17795`), drawn
+                // inside the boundary branch, not once per frame.
                 // `Main.cs:65342-65349`'s player gate.
                 let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
-                let (blood_moon, eclipse) =
-                    advance_time(&mut self.world, dt * rate, roll01, any_over_120);
+                let (blood_moon, eclipse) = advance_time(
+                    &mut self.world,
+                    dt * rate,
+                    self.rngs.stream(RngKey::UpdateTime),
+                    any_over_120,
+                );
                 if blood_moon {
                     crate::chat::broadcast_death_text(
                         &mut self.chat,
