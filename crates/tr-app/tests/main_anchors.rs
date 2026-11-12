@@ -4,113 +4,76 @@
 //! sometimes wholesale (`git commit-tree` over a tree built from one side), so
 //! a merge can silently DELETE another agent's landed work while leaving no
 //! conflict and no deletion commit of its own. That has happened repeatedly:
-//! BUG-21's `enter_loaded_world` vanished twice, and the whole
-//! `worldgen/dungeon_features.rs` (spikes + lights) plus `touch_damage.rs` were
-//! dropped by `9f89c99` before being re-landed.
+//! BUG-21's `enter_loaded_world` vanished twice, `touch_damage.rs` once and the
+//! whole `worldgen/dungeon_features.rs` twice.
 //!
-//! Each entry below is a (source file, marker) pair naming one landed feature
-//! that must stay in the tree. The test fails with a message that names the
-//! feature, so a dropped merge is caught by the normal `cargo test` run
-//! instead of by a screenshot or a player report a day later.
+//! The rows live in `anchors.txt` at the repo root (one `path|marker|feature`
+//! line each) and are checked in two places: `crates/tr-core/build.rs` (so a
+//! dropped feature stops the build) and this test (so `cargo test` names it).
+//! The build script is the one that cannot be forgotten; this test exists to
+//! give a readable failure inside the test run, and reads the shared list so
+//! the two can never drift.
 //!
-//! How to maintain it: add an anchor when a feature lands (one per major
-//! module/entry point), and when a refactor legitimately renames something,
-//! update the marker in the same commit. Never remove an anchor to make a test
-//! pass — that is exactly the failure the file exists to catch.
+//! Maintain the list, never the assertions: add a row when a feature lands and
+//! update a marker when a refactor legitimately renames it.
 
-/// (file, marker, feature name) — the marker is the smallest string that only
-/// exists while the feature does.
-const ANCHORS: &[(&str, &str, &str)] = &[
-    (
-        "src/app/mod.rs",
-        "fn enter_loaded_world",
-        "BUG-21 — single-player world entry (Play must leave the lobby)",
-    ),
-    (
-        "src/app/mod.rs",
-        "static_sheets",
-        "BUG-21 — the cached world-independent atlas half",
-    ),
-    (
-        "src/npc.rs",
-        "fn walker_frame",
-        "BUG-22/24 — the walker NPC row band",
-    ),
-    (
-        "src/npc.rs",
-        "fn extra_frames_count",
-        "BUG-22 — NPCID.Sets.ExtraFramesCount",
-    ),
-    (
-        "src/town_arrival.rs",
-        "fn update_time_spawn_town_npcs",
-        "M4-TOWN-1b — the town NPC arrival gates",
-    ),
-    (
-        "src/touch_damage.rs",
-        "fn apply_touch_damage",
-        "M4-HAZARD-1 — tile contact damage (dungeon spikes)",
-    ),
-    (
-        "src/touch_damage.rs",
-        "TOUCH_DAMAGE_IMMEDIATE",
-        "M4-HAZARD-1 — the TileID.Sets.TouchDamageImmediate table",
-    ),
-    (
-        "../tr-core/src/worldgen/dungeon_features.rs",
-        "fn place_spikes",
-        "M5-DUNGEON — the DungeonGlobalSpikes pass",
-    ),
-    (
-        "../tr-core/src/worldgen/dungeon_features.rs",
-        "fn place_lights",
-        "M5-DUNGEON — the DungeonGlobalLights pass",
-    ),
-    (
-        "../tr-core/src/worldgen/dungeon_features.rs",
-        "fn wall_variants",
-        "M5-DUNGEON — the DungeonGlobalWallVariants pass",
-    ),
-    (
-        "../tr-core/src/worldgen/dungeon.rs",
-        "fn generate_dungeon",
-        "M5-DUNGEON — the faithful dungeon crawler",
-    ),
-    (
-        "../tr-core/src/worldgen/world_hash.rs",
-        "fn world_hash",
-        "the world-gen determinism pins",
-    ),
-    (
-        "src/ui/housing.rs",
-        "fn ",
-        "M7-UI-3c — the housing hover UI module",
-    ),
-];
+use std::path::{Path, PathBuf};
 
-/// Every anchor's marker must be present in its file.
 #[test]
 fn every_landed_feature_is_still_in_the_tree() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let root = manifest
+        .parent()
+        .and_then(Path::parent)
+        .expect("crates/<crate> sits two levels under the repo root")
+        .to_path_buf();
+    let list_path = root.join("anchors.txt");
+    let list = std::fs::read_to_string(&list_path).unwrap_or_else(|e| {
+        panic!(
+            "{} could not be read ({e}) — the anchor list is part of the tree, \
+             so its absence means a merge dropped it",
+            list_path.display()
+        )
+    });
     let mut missing = Vec::new();
-    for (file, marker, feature) in ANCHORS {
-        let path = root.join(file);
-        let text = match std::fs::read_to_string(&path) {
-            Ok(t) => t,
-            Err(_) => {
-                missing.push(format!("{feature}: {file} is gone entirely"));
-                continue;
-            }
+    let mut rows = 0usize;
+    for line in list.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        rows += 1;
+        let mut parts = line.splitn(3, '|');
+        let (Some(path), Some(marker), Some(feature)) =
+            (parts.next(), parts.next(), parts.next())
+        else {
+            missing.push(format!("malformed anchors.txt row: {line}"));
+            continue;
         };
-        if !text.contains(marker) {
-            missing.push(format!(
-                "{feature}: {file} no longer contains {marker:?}"
-            ));
+        let file = root.join(path.trim());
+        match std::fs::read_to_string(&file) {
+            Ok(text) => {
+                if !text.contains(marker) {
+                    missing.push(format!(
+                        "{}: {} no longer contains {:?}",
+                        feature.trim(),
+                        path.trim(),
+                        marker
+                    ));
+                }
+            }
+            Err(_) => missing.push(format!(
+                "{}: {} is gone entirely",
+                feature.trim(),
+                path.trim()
+            )),
         }
     }
+    assert!(rows >= 10, "the anchor list carries the landed features ({rows})");
     assert!(
         missing.is_empty(),
-        "a merge dropped landed work (the lossy-merge failure mode):\n  - {}",
+        "a merge dropped landed work (the lossy-merge failure mode) — \
+         re-land it (AGENTS.md step 6) instead of editing the list:\n  - {}",
         missing.join("\n  - ")
     );
 }

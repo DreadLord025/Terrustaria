@@ -81,27 +81,30 @@ record of who is working on what.
    `graphify` step 7 — and re-check them if you are still around when another agent
    pushes main.
 
-   **The tree-wide canary**: `crates/tr-app/tests/main_anchors.rs` lists one anchor
-   (file + marker) per landed feature. Run it before you start work, right after your
-   own merge, and whenever you notice main moving:
-   ```powershell
-   cargo test -p tr-app --test main_anchors
-   ```
-   A failure names the lost feature, e.g.
-   `M5-DUNGEON — the DungeonGlobalLights pass: ... no longer contains "fn place_lights"`.
-   That means *some other agent's* merge dropped it (it has happened to BUG-21 twice
-   and to the whole `dungeon_features.rs` once — see `9f89c99`). Do not "fix" the test.
+   **The tree-wide canary**: `anchors.txt` at the repo root lists one row per
+   landed feature, `path|marker|feature name`. Two checks read it:
+   * `crates/tr-core/build.rs` — **the build fails** when a marker disappears
+     (escape hatch: `TR_SKIP_ANCHORS=1`), so a lossy merge cannot ship, and
+   * `cargo test -p tr-app --test main_anchors` — the same rows with a readable
+     failure inside the test run.
+
+   The failure names the lost feature, e.g.
+   `M5-DUNGEON — the DungeonGlobalWallVariants pass: ... no longer contains "fn wall_variants"`.
+   That means *some other agent's* merge dropped it — it has happened to BUG-21
+   twice and to the whole `dungeon_features.rs` twice (`9f89c99`, `cc6298a`).
+   Do not "fix" it by deleting rows from `anchors.txt`.
 
    Recovery, without disturbing whoever is working in the primary checkout:
    ```powershell
-   git log --oneline origin/main -- <dropped-file>      # find the last commit that had it
+   git log --oneline --all -- <dropped-file>            # find the commit that had it
    git worktree add ../TR-RELAND -b RELAND origin/main
    cd ../TR-RELAND                                     # (+ the two mklink junctions)
-   git cherry-pick -m 1 <merge-commit-that-had-it>     # or cherry-pick <original-commit>
+   git cherry-pick <original-commit>                   # or -m 1 <merge-commit>
    cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids
    # push through the merge procedure above, then re-run the canary
    ```
-   Add an anchor for every feature you land (one line: file, marker, name).
+   Add a row to `anchors.txt` for every feature you land (one line: path,
+   marker, name).
    Conflicts (when the merge is done as `git merge origin/main` inside the branch)
    must be resolved **thoughtfully**: a conflict means two tasks touched the same
    system — re-read the C# source for that system and decide what the *port* needs,
