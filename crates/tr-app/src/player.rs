@@ -233,6 +233,33 @@ pub struct FrameInputs {
     pub grapple_dy: f32,
 }
 
+/// `ApplyEquipFunctional`'s `buffImmune[...] = true` rows (`Player.cs:
+/// 15300-15570`): the Ankh Shield's eleven debuffs (1612/1613), its parts
+/// (885-893 one each, 901-904 two each), the Chill/Frozen pair on 1921 and the
+/// 156/22 rows on 3781/5354. The `ResetEffects` head clears the table every
+/// tick (`Player.Update`'s `:25563` loop, the port's `reset_buff_immune`), so
+/// these re-apply inside the equipment pass.
+pub const BUFF_IMMUNITY_ROWS: &[(u16, &[i32])] = &[
+    (885, &[30]),
+    (886, &[36]),
+    (887, &[20]),
+    (888, &[22]),
+    (889, &[32]),
+    (890, &[35]),
+    (891, &[23]),
+    (892, &[33]),
+    (893, &[31]),
+    (901, &[33, 36]),
+    (902, &[30, 20]),
+    (903, &[32, 31]),
+    (904, &[35, 23]),
+    (1612, &[33, 36, 30, 20, 32, 31, 35, 23, 22, 156]),
+    (1613, &[46, 33, 36, 30, 20, 32, 31, 35, 23, 22, 156]),
+    (1921, &[46, 47]),
+    (3781, &[156]),
+    (5354, &[22, 156]),
+];
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2627,6 +2654,17 @@ impl Player {
                 _ => 0.0,
             };
         }
+        // The immunity rows: the worn accessories (`BUFF_IMMUNITY_ROWS`) and
+        // the completed Snow/Molten sets (`set_buff_immunity`).
+        for (kind, ids) in BUFF_IMMUNITY_ROWS {
+            if self.equipped[..10].contains(kind) {
+                for id in *ids {
+                    if let Some(slot) = self.buffs.buff_immune.get_mut(*id as usize) {
+                        *slot = true;
+                    }
+                }
+            }
+        }
         let (armor_head, armor_body, armor_legs) = (
             self.equipped[0] as i32,
             self.equipped[1] as i32,
@@ -2634,6 +2672,11 @@ impl Player {
         );
         self.stat_defense +=
             tr_core::armor_sets::set_bonus_defense(armor_head, armor_body, armor_legs);
+        for id in tr_core::armor_sets::set_buff_immunity(armor_head, armor_body, armor_legs) {
+            if let Some(slot) = self.buffs.buff_immune.get_mut(*id as usize) {
+                *slot = true;
+            }
+        }
         // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
         // `ArmorSetBonuses.Initialize` triples, `:396-500`): the damage/crit/
         // speed/mana/minion scalars of Necro, Pumpkin, Ninja, Wizard, Magic Hat,
@@ -5857,22 +5900,24 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 6, "copper set: 4 pieces + 2");
         // The accessories count too (`GetEffectiveArmor(0..10)`): the Shackle
-        // (216) +1 and the Ankh Shield (1613) +5 sit in slots 3/4.
+        // (216) +1 and the Cobalt Shield (156) +1 sit in slots 3/4. (The Ankh
+        // Shield would be +5 but it also grants immunity to Weak — see the
+        // immunity test — which would change the debuff rows below.)
         p.equipped[3] = 216;
-        p.equipped[4] = 1613;
+        p.equipped[4] = 156;
         p.update(&w, PlayerInput::default());
-        assert_eq!(p.stat_defense, 12, "12 = 4 + 2 + 1 + 5");
+        assert_eq!(p.stat_defense, 8, "8 = 4 + 2 + 1 + 1");
         // Ironskin (buff 5) +8 and the fed tier (26) +2.
         p.buffs.add_buff(5, 3600);
         p.buffs.add_buff(26, 3600);
         p.update(&w, PlayerInput::default());
-        assert_eq!(p.stat_defense, 22, "12 + 8 + 2");
+        assert_eq!(p.stat_defense, 18, "8 + 8 + 2");
         // Ichor (69) −15 and Weak (33) −4: the sum can go below the armor, and
         // the floor clamps it at 0 (`:25927`) instead of inflating damage.
         p.buffs.add_buff(69, 3600);
         p.buffs.add_buff(33, 3600);
         p.update(&w, PlayerInput::default());
-        assert_eq!(p.stat_defense, 3, "22 - 15 - 4 = 3");
+        assert_eq!(p.stat_defense, 0, "18 - 15 - 4 = -1, floored");
         p.equipped[0] = 0;
         p.equipped[1] = 0;
         p.equipped[2] = 0;
@@ -5880,6 +5925,43 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-12 — the immunity rows of the accessories and the Snow/Molten
+    /// sets, re-applied after `ResetEffects`' clear.
+    #[test]
+    fn the_immunity_rows_block_their_debuffs() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.buffs.buff_immune[46]);
+        // The Snow set (803/804/805) is immune to Chilled (46) and Frozen (47).
+        p.equipped[0] = 803;
+        p.equipped[1] = 804;
+        p.equipped[2] = 805;
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.buff_immune[46]);
+        assert!(p.buffs.buff_immune[47]);
+        // The Ankh Shield (1613): On Fire is *not* on its list, Chilled is.
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.equipped[3] = 1613;
+        p.update(&w, PlayerInput::default());
+        for id in [46, 33, 36, 30, 20, 32, 31, 35, 23, 22, 156] {
+            assert!(p.buffs.buff_immune[id], "the ankh row {}", id);
+        }
+        assert!(!p.buffs.buff_immune[24], "On Fire is not an ankh immunity");
+        // The Molten set (231/232/233) is.
+        p.equipped[3] = 0;
+        p.equipped[0] = 231;
+        p.equipped[1] = 232;
+        p.equipped[2] = 233;
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.buff_immune[24]);
+        // Cheap proof the table gates the add: the debuff never lands.
+        p.buffs.add_buff(24, 600);
+        assert_eq!(p.buffs.find_buff_index(24), None);
     }
 
     /// M3-EQUIP-11 — `endurance` folds the rows and the hurt applies it.
