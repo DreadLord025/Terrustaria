@@ -77,7 +77,7 @@ The Rust side is two files:
 | AI sub-step count `1 + extraUpdates` | PASS | `sub_steps` (8549), test 10224 | `extra_updates_runs_the_ai_twice_per_tick` (10224) pins the 2× 22 px = 44 px step. |
 | `AI()` dispatch (23201-36803) | PARTIAL | `match data.ai_style` (8617) | 32 unique arms — 1,3,7,8,9,14,15,16,18,22,24,28,29,40,47,48,50,53,62,82,83,84,85,99,102,103,115,122,129,165,197,210 of the C#'s 210 (`:23201`..`:36803`); `_ => {}` (9026) silences the rest. **Defect:** aiStyles 1, 3, 14, 99 and 115 each appear **twice** (8624/8728, 8631/8729, 8695/8730, 8777/8983, 8732/8925) — the second copies are unreachable dead arms (the 99/15 arms are byte-duplicated bodies). |
 | `timeLeft` / `penetrate` bookkeeping (17199-17208) | PARTIAL | 9079-9090 | `timeLeft--` and `penetrate == 0` → deactivate match, but both run **once per `update`** while C# runs them **inside the sub-step loop** (17201/17206 are within `while (numUpdates >= 0)`, 16676). A kind with `extraUpdates = 1` therefore burns its `timeLeft` at half the vanilla rate. Pinned by `time_left_expires_the_slot` (10198) with the ported behaviour. |
-| `Damage()` → PVE walk | PARTIAL | `::damage_pve` (9460) | Order, immunity systems (12448/12562-12624/14087-14119) and the tag/yoyo/whip on-hit arms are ported. The hit test is `n.contains(center.x, center.y)` (9574) — a **point** test, not `Damage_GetHitbox()`'s rectangle; the rectangle is only used by `damage_pve_boxed` (9658) for the gem AoE and the comment at 9652-9657 admits it. |
+| `Damage()` → PVE walk | PARTIAL | `::damage_pve` (9460) | Order, immunity systems (12448/12562-12624/14087-14119) and the tag/yoyo/whip on-hit arms are ported. The hit test is `damage_hitbox` (`Damage_GetHitbox()`, `:14959-15023`) ∩ `npc.getRect()` (`:12654`) — a **rectangle** overlap, not a centre point (S1-C-8); `damage_pve_boxed` still serves the resized gem/bomb bursts. The full `Colliding` per-type overlay arms (gem-staff `oldPos` sweep, types 698/973/985/…, `Collision.CanHit`) remain unported. |
 | `Damage_PVP` / hostile contact | PARTIAL | `::damage_player` (9730) | Box overlap → `Player.hurt` + the shot dies (M4-PROJ-1a). No `Damage_EVP`, no PVP player-vs-player, no net-mode branch. |
 | `Kill()` | PARTIAL | `::kill` (7716) | Deactivate + `time_left = 0` only. The bomb half rides `::explode_bomb` (9069) and the Inferno/gem death arms ride 9094-9100. Not ported: `TryCancelChannel` / `DontCancelChannelOnKill` (70652-70659), `SelfHurtPlayers` (70669), the non-bomb `Kill_*` arms, gore/dust/sound, `Damage()`'s recursive call at 70796+ for the remaining types. |
 | Owner / minion ownership | PASS | `owner: u8` (2430), the sim gate (8531-8535) | `owner == local_owner \|\| (owner == 255 && hostile_local)` mirrors `Update`'s `this.owner != Main.myPlayer` skip (17210) and `NewProjectile`'s 255 default (10864-10866); the minion rescue (8568-8573) mirrors 16684-16695. |
@@ -116,7 +116,7 @@ The Rust side is two files:
 | Deviation | Severity | Admitted? |
 | --- | --- | --- |
 | `timeLeft--` / `penetrate == 0` → kill run once per update, not once per sub-step (`projectile.rs:9079-9090` vs `Projectile.cs:17201/17206` inside the `while` at 16676). Every `extraUpdates > 0` kind (lasers 83/100, the Blowgun dart 645, the Ray Gunner bolt 438, the EyeFire 101, deathrays) lives ~2× longer than vanilla | behavioural | No |
-| `damage_pve` uses the slot centre point instead of `Damage_GetHitbox()`'s rectangle (`:9574` vs `:12499`): a projectile whose box is larger than a point can hit an NPC its box does not cover, and vice versa for wide NPCs | behavioural | Partially — the comment at 9652-9657 admits it for the boxed path |
+| `damage_pve` now tests `Damage_GetHitbox()`'s rect (`:14959-15023`) against `npc.getRect()` (`:12654`), but `Damage_PVE_Inner` calls the full `Colliding`, whose per-type overlay arms (gem-staff `oldPos` sweep, 698/973/985/1115/1116/554/301/…, the `Collision.CanHit` line tests) are unported — those kinds get the plain overlap only (S1-C-8 closed the point→rect half) | behavioural | Yes — `damage_hitbox`'s doc + `docs/ANALYSIS.md` |
 | Duplicate unreachable match arms for aiStyles 1/3/14/99/115 (8624+8728, 8631+8729, 8695+8730, 8777+8983, 8732+8925) — dead code, two copies of the yoyo/flail dispatch bodies to keep in sync; the second `99` arm could silently become the live one under a refactor | determinism (maintenance) | No |
 | `spawn_with_data_ai_owned` declines on a full pool (`slot?`, 8149) while C# recycles the oldest non-netImportant slot (10823-10846) | behavioural | Implicitly — `the_summon_fixture_respects_a_full_pool` (world_sim 288) locks the decline in |
 | Plain `spawn` (7808) recycles by lowest `timeLeft` without the `!netImportant` filter of `FindOldestProjectile` (10814) | behavioural | No |
@@ -140,8 +140,11 @@ The Rust side is two files:
   then a trail draw pass (`TrailingMode` 5 included).
 - **M** — Port `Projectile.light` into the slot (`proj_data` column + the draw's light
   emission) for the ~40 kinds whose `SetDefaults` sets it.
-- **M** — Replace the point hit test with `Damage_GetHitbox()`'s rectangle for the
-  flight-size boxes, keeping `damage_pve_boxed` for the resized bursts.
+- ✅ **M** — DONE 2026-11-12 (`S1-C-8-projectile-pve-hitbox`): `Damage_GetHitbox()`'s
+  rectangle (`projectile.rs::damage_hitbox`) replaces the point test in `damage_pve`,
+  keeping `damage_pve_boxed` for the resized bursts. Follow-up: port `Colliding`'s
+  per-type overlay arms (the gem-staff `oldPos` sweep, the `Collision.CanHit` line
+  tests).
 - **M** — Complete the spawn protocol: `FindOldestProjectile` with the `netImportant`
   filter on both spawn paths, the golf-ball 10-cap, and
   `CopiesOwnerAttackCDToLocalImmunityOnSpawn` (10934-10968).
