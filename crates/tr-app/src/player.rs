@@ -1477,7 +1477,7 @@ impl Player {
     /// solid non-solidTop tile overlapping the box — the `-1/+2` sample
     /// expansion, the half-brick top cut and the C#'s `maxTilesY - 40`
     /// bottom clamp included.
-    fn solid_collision(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
+    pub(crate) fn solid_collision(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
         let value = (x / 16.0) as i32 - 1;
         let value2 = ((x + w) / 16.0) as i32 + 2;
         let value3 = (y / 16.0) as i32 - 1;
