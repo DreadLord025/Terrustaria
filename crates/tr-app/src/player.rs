@@ -601,6 +601,10 @@ pub struct Player {
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
+    /// `Player.skyStoneEffects` (`Player.cs:1120`): the Celestial Stone/Shell
+    /// and the day/night Sun/Moon Stones set it, and the one block below adds
+    /// the whole stat bundle (`:12988-13003`).
+    pub sky_stone_effects: bool,
     /// `Player.endurance` (`Player.cs:1138`): the fraction of incoming damage
     /// the player shrugs off — `Hurt` applies `(int)((1 - endurance) * damage)`
     /// (`:38304`) after the defense reduction. `ResetEffects` zeroes it
@@ -1328,6 +1332,7 @@ impl Player {
             spawn_y: sy,
             hp: 100,
             max_hp: 100,
+            sky_stone_effects: false,
             endurance: 0.0,
             mana: 20,
             mana_cost: 1.0,
@@ -2666,6 +2671,27 @@ impl Player {
                 1003 => 0.17,
                 _ => 0.0,
             };
+        }
+        // `:12988-13003`: the Celestial Stone bundle. The flag is set by the
+        // three stones (`:15412-15424`): 1865 (Celestial Stone) and 3110
+        // (Celestial Shell) always, 899 (Sun Stone) by day, 900 (Moon Stone) by
+        // night or during an eclipse.
+        self.sky_stone_effects = self.equipped[..10].contains(&1865)
+            || self.equipped[..10].contains(&3110)
+            || (self.equipped[..10].contains(&899) && world.day_time)
+            || (self.equipped[..10].contains(&900) && (!world.day_time || world.eclipse));
+        if self.sky_stone_effects {
+            self.stat_defense += 4;
+            self.melee_speed_bonus += 0.1;
+            self.melee_damage += 0.1;
+            self.melee_crit += 2;
+            self.ranged_damage += 0.1;
+            self.ranged_crit += 2;
+            self.magic_damage += 0.1;
+            self.magic_crit += 2;
+            // `pickSpeed -= 0.15f` — the port's bonus field is the negation.
+            self.pick_speed_bonus += 0.15;
+            self.minion_damage += 0.1;
         }
         // The immunity rows: the worn accessories (`BUFF_IMMUNITY_ROWS`) and
         // the completed Snow/Molten sets (`set_buff_immunity`).
@@ -5938,6 +5964,40 @@ mod tests {
         p.equipped[4] = 0;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-14 — the Celestial Stone bundle and the day/night stones.
+    #[test]
+    fn the_sky_stones_add_their_bundle() {
+        let mut w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The Celestial Stone (1865): every row of the C# block.
+        p.equipped[3] = 1865;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+        assert_eq!(p.stat_defense, 4);
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        assert!((p.minion_damage - 1.1).abs() < 1e-4);
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (6, 6, 6));
+        assert!((p.pick_speed_bonus - 0.15).abs() < 1e-4);
+        // The Sun Stone (899) only works by day; the Moon Stone (900) by night.
+        p.equipped[3] = 899;
+        w.day_time = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+        w.day_time = false;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.sky_stone_effects);
+        p.equipped[3] = 900;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
+        w.day_time = true;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.sky_stone_effects);
+        // An eclipse makes the Moon Stone work in daylight.
+        w.eclipse = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.sky_stone_effects);
     }
 
     /// M3-EQUIP-13 — the armor pieces carry their own damage/crit/speed rows
