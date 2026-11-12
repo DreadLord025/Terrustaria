@@ -2634,6 +2634,19 @@ impl Player {
             if let Some(def) = crate::registry::get(kind) {
                 self.stat_defense += def.defense as i32;
             }
+            // The piece's own damage/crit/speed row (`GrantArmorBenefits`'
+            // `switch (armorPiece.type)`, `Player.cs:13126-13950`).
+            if let Some(piece) = tr_core::armor_sets::armor_stats(kind) {
+                self.melee_damage += piece.melee_damage;
+                self.ranged_damage += piece.ranged_damage;
+                self.magic_damage += piece.magic_damage;
+                self.minion_damage += piece.minion_damage;
+                self.melee_crit += piece.melee_crit;
+                self.ranged_crit += piece.ranged_crit;
+                self.magic_crit += piece.magic_crit;
+                self.move_speed += piece.move_speed;
+                self.melee_speed_bonus += piece.melee_speed;
+            }
             // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
             // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
             // Hat robes (1282-1287, −0.05…−0.15 by tier), the Crystal
@@ -5927,6 +5940,31 @@ mod tests {
         assert_eq!(p.stat_defense, 0, "the floor holds at 0");
     }
 
+    /// M3-EQUIP-13 — the armor pieces carry their own damage/crit/speed rows
+    /// (before this the worn armor only contributed defense).
+    #[test]
+    fn the_armor_pieces_add_their_stat_rows() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The Cobalt Mage Hat (371): +10% magic damage.
+        p.equipped[0] = 371;
+        p.update(&w, PlayerInput::default());
+        assert!((p.magic_damage - 1.1).abs() < 1e-4);
+        assert!((p.melee_damage - 1.0).abs() < 1e-4);
+        // The Fossil Greaves (552) add 7% to every class and +8% move; the
+        // Yoyo Bag-style rows stack per piece, so two pieces add twice.
+        p.equipped[1] = 552;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.07).abs() < 1e-4);
+        assert!((p.minion_damage - 1.07).abs() < 1e-4);
+        assert!((p.move_speed - 1.08).abs() < 1e-4);
+        // The Solar Flare Breastplate (2764) alone is +29% melee damage.
+        p.equipped[0] = 0;
+        p.equipped[1] = 2764;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.29).abs() < 1e-4);
+    }
+
     /// M3-EQUIP-12 — the immunity rows of the accessories and the Snow/Molten
     /// sets, re-applied after `ResetEffects`' clear.
     #[test]
@@ -6137,10 +6175,11 @@ mod tests {
         p.equipped[1] = 4983;
         p.equipped[2] = 4984;
         p.update(&w, PlayerInput::default());
-        // The damage scalars start at 1.0 in the reset (`:2535-2538`), so the
-        // set's `+= 0.1f` reads as 1.1.
-        assert!((p.melee_damage - 1.1).abs() < 1e-4);
-        assert!((p.minion_damage - 1.1).abs() < 1e-4);
+        // The damage scalars start at 1.0 in the reset (`:2535-2538`): the
+        // set's `+= 0.1f` plus the slate's own +5% (4983, M3-EQUIP-13's piece
+        // row) read as 1.15.
+        assert!((p.melee_damage - 1.15).abs() < 1e-4);
+        assert!((p.minion_damage - 1.15).abs() < 1e-4);
         assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (14, 14, 14));
         assert_eq!(p.dash_type, 5);
         // Swapping to the Ninja set (256/257/258) keeps only its own row:
