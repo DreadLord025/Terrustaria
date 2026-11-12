@@ -386,6 +386,23 @@ pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
     ),
 ];
 
+/// `ArmorSetBonuses.Benefits`' immunity rows: the Snow set's `buffImmune[46]`
+/// and `buffImmune[47]` (`ArmorSetBonuses.cs:298-302`) and the Molten set's
+/// `buffImmune[24]` (`:288-295`). Returns the debuff ids the completed set
+/// makes the player immune to.
+pub fn set_buff_immunity(head: i32, body: i32, legs: i32) -> &'static [i32] {
+    const SNOW: [(i32, i32, i32); 2] = [(803, 804, 805), (978, 979, 980)];
+    const MOLTEN: (i32, i32, i32) = (231, 232, 233);
+    let triple = (head, body, legs);
+    if SNOW.contains(&triple) {
+        &[46, 47]
+    } else if triple == MOLTEN {
+        &[24]
+    } else {
+        &[]
+    }
+}
+
 /// `ArmorSetBonuses.GetCompleteSet` (`:14-20`) over [`SET_STATS`]: the benefit
 /// of the worn triple, if the port models one. `head`/`body`/`legs` are the
 /// raw item ids (0 = empty slot).

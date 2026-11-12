@@ -40,7 +40,7 @@ const MAP_KEY_ROWS: [&str; 6] = [
 /// (`MinimapFrameManager.cs:25-33`) — the same order as
 /// `ui::minimap::FRAME_STYLES`, so the stored key stays the live renderer's
 /// input (`main.rs` maps it through `ui::minimap::style_index`).
-pub(crate) const MINIMAP_FRAME_KEYS: [&str; 9] = [
+pub(super) const MINIMAP_FRAME_KEYS: [&str; 9] = [
     "Default",
     "Golden",
     "Remix",
@@ -54,7 +54,7 @@ pub(crate) const MINIMAP_FRAME_KEYS: [&str; 9] = [
 
 /// The six `PlayerResourceSetsManager` set keys in load order
 /// (`PlayerResourceSetsManager.cs:42-47`).
-pub(crate) const RESOURCE_SET_KEYS: [&str; 6] = [
+pub(super) const RESOURCE_SET_KEYS: [&str; 6] = [
     "New",
     "Default",
     "HorizontalBarsWithFullText",
@@ -98,7 +98,7 @@ fn resource_set_label(key: &str) -> &'static str {
 /// unknown current key normalizes to the first option first
 /// (`SetActiveFrame(string)`, `SelectionHolder.cs:67-78`), which also wraps to
 /// the last.
-pub(crate) fn cycle_previous(order: &[&str], current: &str) -> String {
+pub(super) fn cycle_previous(order: &[&str], current: &str) -> String {
     match order.iter().position(|key| *key == current) {
         Some(0) | None => order[order.len() - 1].to_string(),
         Some(i) => order[i - 1].to_string(),
