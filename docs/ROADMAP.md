@@ -90,12 +90,12 @@ Verdict = the audit's judgement of the subsystem as a whole, not of a single row
 | 08 | Tile / framing / TileObjectData | 🟡 | `frameNumber`/`wallFrameNumber` come from a position hash instead of `genRand`/the save (determinism + pixel); `SelfFrame8Way` and 4 `WallFrame` gates missing; 36 hand-written `TileObjectData` defs against a 5 328-line C# registry | [08](research/08-tile-framing.md) |
 | 09 | TileDrawing / DrawData / paint | ❌ | 1 of 17 C# draw passes fully ported (6 partial, 10 missing); the `DrawData` table covers ~113 of ~376 cases; chests, vines, ropes, animated tiles and particles are not drawn | [09](research/09-tile-drawing.md) |
 | 10 | Lighting / TileLightScanner / LightMap | 🟡 | the engine core and the scanner seeds are faithful, but **300+ C# `AddLight` entity-light call sites are unported** and the 1 442-line legacy engine is approximated | [10](research/10-lighting.md) |
-| 11 | Liquid / buffer / types | 🟡 | water flow is 1:1, but the non-water surface is absent (lava/honey/shimmer delays, merge tiles, evaporation); `skipLiquid` missing; the pass window changed by ~10× for small pools | [11](research/11-liquid.md) |
-| 12 | WorldGen / WorldBuilding passes | 🟡 | the ~110-pass pipeline is largely ported, but special-seed pruning, several biomes and the genRand interleave diverge | [12](research/12-worldgen.md) |
+| 11 | Liquid / buffer / types | 🟡 | water flow is 1:1, but the non-water surface is absent — **lava+honey never become obsidian / honey block / shimmer** (the merge tiles 56/229/230/659), the lava/honey/shimmer delays and the underworld evaporation are missing, `skipLiquid` is absent, and the pass window changed by ~10× for small pools | [11](research/11-liquid.md) |
+| 12 | WorldGen / WorldBuilding passes | 🟡 | **52 of the 106 classic passes have no executed step**; the special-seed pruning and several biomes diverge | [12](research/12-worldgen.md) |
 | 13 | Collision / HitTile / scans | 🟡 | the movement collision is 1:1, but `HitTiles`, `StickyTiles`, `SwitchTiles`, `AdvancedTileCollision` and `DrownCollision` are missing; wet flags read one tile instead of a box scan | [13](research/13-collision.md) |
-| 14 | Map / MapHelper / minimap | 🟡 | colour tables and `.map` IO are ported, but the reveal/queue/edge logic and the overlay layers are only partial | [14](research/14-map-minimap.md) |
+| 14 | Map / MapHelper / minimap | 🟡 | colour tables and `.map` IO are ported, but there is **no `MapUpdateQueue`** — tile changes outside the reveal window are silently lost; the reveal/queue/edge logic and the overlay layers are only partial | [14](research/14-map-minimap.md) |
 | 15 | Dust / Gore | ❌ | **the module does not exist**: 3 279 dust call sites across 36 C# files → 3 ported; 1 643 gore sites → 1; no `Dust`/`Gore` type, no pool, no per-type table | [15](research/15-dust-gore.md) |
-| 16 | Weather / rain / clouds / scene metrics | 🟡 | rain and clouds are ported; the ambience/event scheduling and the scene-metric counters that gate spawning are partial | [16](research/16-weather.md) |
+| 16 | Weather / rain / clouds / scene metrics | 🟡 | rain and clouds are ported, but `any_player_120_life` has **no writer** (the 0.35 wind cap is dead code) and the ambience/event scheduling and the scene-metric counters that gate spawning are partial | [16](research/16-weather.md) |
 | 17 | Netcode (messages/sockets/Netplay) | 🟡 | the stack is real (TCP transport, frame codec, both state machines) but only 25 of 163 C# message ids are ported; `InitialSpawn` renamed with wrong semantics; prediction smoothing is port-invented | [17](research/17-netcode.md) |
 | 18 | UI framework (UIElement/UIState) | 🟡 | layout + pointer machines are faithful pure ports, but ~40 element classes and 17 `UIState` screens have no counterpart; no event bubbling, no scissor, UI scale pinned to 1.0 | [18](research/18-ui-framework.md) |
 | 19 | Front-end screens | ✅ | the front end is 1:1 (16 of 17 state hops PASS) — only the loading screen, the cloud UI and the creator's Randomize/Copy/Paste are missing | [19](research/19-ui-screens-frontend.md) |
@@ -121,7 +121,7 @@ Verdict = the audit's judgement of the subsystem as a whole, not of a single row
 | 39 | Port architecture inventory | 🟡 | **the "god-files are gone" claim is false for the entity half**: 8 files exceed 5 000 lines; `App` has 257 fields (docs say 118); no spatial hash (15 linear scans), no SoA, no event buffers | [39](research/39-port-architecture.md) |
 | 40 | DONE-row re-verification | ✅ | 32 rows re-checked: 27 PASS · 3 PARTIAL · 1 FAIL · 2 STALE. The one FAIL is `M4-NPC-4` (hover presets) | [40](research/40-port-done-verification.md) |
 | 41 | Render pipeline vs the C# graphics layer | 🟡 | the atlas + instanced pipeline holds, but one blend state cannot express the C#'s additive/multiiply batches, `pow(tint,2.2)` is not the sRGB EOTF, there is no scissor, and `MoonLordShake` is inert | [41](research/41-render-pipeline.md) |
-| 42 | Save/load (IO) + compression hooks | 🟡 | the 11-section `.wld` layout matches, but the writer **drops the four wire bits** (and diverges on RLE boundaries), the header writes placeholders, and no golden fixture compares against a C#-written file | [42](research/42-save-load-audit.md) |
+| 42 | Save/load (IO) + compression hooks | 🟡 | the 11-section `.wld` layout matches, but the writer **drops the four wire bits** (and diverges on RLE boundaries), the header writes placeholders (GUID/world id/generator version/`LastPlayed`), the `.plr` writer stores only the sanitised name + starter items, there are no rolling backups, and no golden fixture compares against a C#-written file | [42](research/42-save-load-audit.md) |
 
 **Scoreboard roll-up:** 4 subsystems ✅ (items, front end, out-of-scope, DONE-verification),
 2 ❌ (tile drawing, dust/gore) plus golf ❌ in the catalogue, 36 🟡.
@@ -331,7 +331,10 @@ transport redesign (S2-4) starts.
 | S1-J-2 | Header placeholders: GUID, world id, generator version and `LastPlayed` are written as placeholders | S | D | research/42 | — | header byte comparison |
 | S1-J-3 | **Golden fixture**: a C#-written `.wld`/`.plr` in `assets/test/` compared byte-for-byte — today every fixture is Rust-internal | M | D | research/42 | J1 | fixture test in CI |
 | S1-J-4 | `.bak` rolling backups + post-write validation (the port has neither) | M | B | research/42 | — | backup/restore test |
-| S1-J-5 | The `.plr` writer is a subset mirror of the C# writer | M | B | research/42 | J3 | `.plr` byte comparison |
+| S1-J-5 | The `.plr` writer is a subset mirror of the C# `Player.Serialize` — it writes only the sanitised name + the starter items, so the port's `.plr` is **not byte-comparable with a vanilla one** | M | B | research/42; `Player.cs` `Serialize` | J3 | `.plr` byte comparison |
+| S1-J-6 | Autosave cadence parity: the 600 s branch (`Main.cs:19751-19765`) is ported, the 300 s single-player **player-only** save (`Main.cs:19743-19749`) is unverified | S | B | research/42 → risk 42-6 | — | autosave timing test |
+| S1-J-7 | The C#'s "temp" snapshot mechanism (`SetTempToOngoing` / `SetOngoingToTemps`) — the day/time/weather snapshot restored on load — is not verified in the port | S | B | research/42 → risk 42-8 | — | load-after-quit keeps the world state |
+| S1-J-8 | Decide the world-format story: the port has **two** formats (`.wld` vanilla-shaped and `.trwld` native, chosen by extension at save time) — for Stage 2 that doubles the compressor/reader surface. Either converge them or document the split as the contract | M | X | research/42 → risk 42-7 | — | documented in `docs/ANALYSIS.md` |
 | S1-J-6 | Cloud save — ⛔ Steam-scoped (see Non-goals); keep the exclusion explicit in the docs | S | X | research/38 | — | documented |
 
 ## Stage 1K — World generation
@@ -349,7 +352,7 @@ transport redesign (S2-4) starts.
 | id | Task | Size | Sev | Evidence | deps | Verify |
 | --- | --- | --- | --- | --- | --- | --- |
 | S1-L-1 | Scene metrics: the counters that gate spawning (`SceneMetrics.Scan`/`ScanTiles`/`AggregateTileCounts`/`CalculateZones`) — the C# uses them for the music/zones and the spawn budget | M | B | research/16-weather.md | — | counter parity test |
-| S1-L-2 | Rain/cloud: the `atmo` factor, the snow-tile suppression, the `waterStyle*3 + rand(3)` frame type and the `maxRain * cloudAlpha` slot budget | S | B | research/16 | — | rain count/position test |
+| S1-L-2 | Rain/cloud: the `atmo` factor, the snow-tile suppression, the `waterStyle*3 + rand(3)` frame type and the `maxRain * cloudAlpha` slot budget; and give `any_player_120_life` a writer (the 0.35 wind cap is dead code without it) | S | B | research/16 | — | rain count/position test + the wind-cap test |
 | S1-L-3 | Map: the reveal/queue/edge logic (`WorldMap.UpdateLighting`/`UpdateType`/`QueueUpdate`/`UnlockMapSection`/`UnlockMapTilePretty`/`ClearEdges`) | M | B+P | research/14-map-minimap.md | — | reveal test + minimap screenshot |
 | S1-L-4 | Map overlay layers: ping, spawn, team-spawn, teleport-pylon, boss-bag, digtoise | M | P | research/14 | — | per-layer screenshot |
 | S1-L-5 | Map paint multiply (`MapColor`, `MapHelper.cs:1823-1874`) and the `.map` chunk compression parity | S | P | research/14 | — | `.map` byte comparison |
