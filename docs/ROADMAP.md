@@ -145,12 +145,11 @@ Re-checked the state after other agents landed work on top of the audit base
   (BUG-21 `enter_loaded_world`/`static_sheets`, `touch_damage.rs`,
   `worldgen/dungeon_features.rs` passes, walker/town/dungeon anchors intact).
 - **ROADMAP claim status (focused sample):** no prioritized Stage-1 gaps were
-  confirmed CLOSED by these merges. Still-open confirmations include S1-C-2
-  (projectile→NPC skips `DamageVar`/defense), S1-J-1 (`.wld` writer omits wire
-  bits), S1-L-11 (`tools/gen_recipes.py --check` drift), S1-D-1 (hornet hover
-  constants), S1-A-3 (position-hash tile framing); S1-D-4 dispatch census may
-  need refresh after projectile/equip follow-ups. S1-C-9 (double item pickup) is
-  fixed on branch `S1-C9-item-pickup-double-count`.
+  confirmed CLOSED by these merges. Still-open confirmations include S1-J-1
+  (`.wld` writer omits wire bits), S1-L-11 (`tools/gen_recipes.py --check`
+  drift), S1-D-1 (hornet hover constants), S1-A-3 (position-hash tile framing);
+  S1-D-4 dispatch census may need refresh after projectile/equip follow-ups.
+  S1-C-9 (double item pickup) is fixed on branch `S1-C9-item-pickup-double-count`.
   Treat Stage 1A/1B as the gate; see report 92 for the per-row verdicts.
 
 
@@ -207,7 +206,7 @@ C#'s reference order is `Main.cs:17744-17822`.
 | id | Task | Size | Sev | Evidence | deps | Verify |
 | --- | --- | --- | --- | --- | --- | --- |
 | S1-C-1 | Port the **dodge family** — black belt / shadow dodge / mystic sash / brain / no-dodge-reductions — no dodge field exists anywhere in `crates/` | M | B | research/04; `Player.cs:38197-38567` vs `player.rs:2255-2295` | — | dodge chance test per source |
-| S1-C-2 | Projectile→NPC damage must apply `DamageVar` **and** the defence term (`Projectile.cs:12938`); today `projectile.rs:9703`→`npc.rs:4062` skips both | S | B | research/04 | — | damage-parity test vs the C# formula |
+| ✅ S1-C-2 | Projectile→NPC damage must apply `DamageVar` **and** the defence term (`Projectile.cs:12938`); today `projectile.rs:9703`→`npc.rs:4062` skips both | S | B | research/04 | — | damage-parity test vs the C# formula — **DONE 2026-11-12** (`S1-C-2-projectile-damage`): `projectile.rs` applies `Main.DamageVar` after the tag-damage base (`Projectile.cs:12938`) and `Main.CalculateDamageNPCsTake`/`StrikeNPC` defense+crit (`NPC.cs:81189,81239`) in `damage_pve` and `damage_pve_boxed` before `hurt_from_projectile`; regression test `projectile_pve_damage_applies_defense_s1_c_2`. |
 | ✅ S1-C-3 | Restore the `num2 < 1 → 1` floor (`Player.cs:38378-38381`) and the resulting 40-vs-20 iframes; a current test asserts the divergence | S | B | research/04; research/40 | — | floor test; delete the divergence-pinning test — **DONE 2026-11-12** (`S1-C-3-hurt-floor`): `player.rs::hurt_inner` floors `amount.max(1)` after the endurance multiply (`:38304`); the divergence-pinning test now asserts hp −1 + the 20-tick iframe, plus the dedicated test `a_sub_one_hit_floors_to_one_and_uses_the_short_iframe` |
 | S1-C-4 | `GetWeaponDamageMultiplier`: port the bow/gun/specialist arms (`Player.cs:53396-53398`); and move the truncation back before the ammo fuse | M | B | research/04 | — | per-class damage table test |
 | S1-C-5 | NPC→player contact damage must apply `DamageVar(..., -luck)` | S | B | research/04 | C2 | contact-damage test |
@@ -603,9 +602,9 @@ A task is done when its row's **verify** column is satisfied. The house rules
    S1-A-1…A-4, S1-C-3, S1-F-1/F-2 (the id collisions lose save data today).
 2. **The one FAIL and the two STALE rows** — S1-D-1 (hover presets), the
    stale snapshot rows and the M1.5 measurement tables.
-3. **The cheap correctness bugs with player-visible impact** — S1-C-2
-   (projectile damage), S1-C-8 (hitbox), S1-C-10 (right-click transfer);
-   S1-C-9 (2× item pickup) fixed on `S1-C9-item-pickup-double-count`.
+3. **The cheap correctness bugs with player-visible impact** — S1-C-9 (2× item
+   pickup) fixed on `S1-C9-item-pickup-double-count`; S1-C-2 (projectile damage),
+   S1-C-8 (hitbox), S1-C-10 (right-click transfer) are DONE.
 4. **Missing subsystems with the largest call-site censuses** — S1-E-1…E-4
    (dust/gore: 4 922 C# call sites), S1-E-5 (entity lights: 300+), S1-E-9
    (golf), S1-E-6/E-7 (the buff HUD and the effect table).
