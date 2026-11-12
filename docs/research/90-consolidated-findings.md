@@ -70,7 +70,7 @@ Overall verdict is derived from the file's own status table (the `Status` column
 | 31 | Golf / ball physics | **MOSTLY MISSING** | The entire golf subsystem is absent from the Rust port | 8 | 11 | 208 / 18 532 |
 | 32 | Sound / audio engine | **PARTIAL** | No pitch, no per-style volume, no variation families, no instance pool | 18 | 9 | 249 / 27 499 |
 | 34 | ID sets completeness (`Terraria.ID.*`) | **MOSTLY MISSING** | The `NpcKind` protocol id space collides with itself on 7 ids (78..84) | 13 | 12 | 272 / 29 542 |
-| 35 | RNG & data-structure utils | **PARTIAL** | `UnifiedRandom` itself is not ported; the `Main.rand` call order is not modelled | 13 | 10 | 246 / 27 037 |
+| 35 | RNG & data-structure utils | **PARTIAL** | `UnifiedRandom` is now ported (`tr_core::UnifiedRandom`, S1-A-1, C#-golden) but the consumers still use stand-ins and the `Main.rand` call order is not modelled | 13 | 10 | 246 / 27 037 |
 | 36 | Cinematics / film / Old One's Army | **PARTIAL** | The OOA's loss path, victory scene, medals, crystal drops and tier persistence are missing (the film framework is dead code in vanilla) | 13 | 15 | 211 / 21 047 |
 | 37 | ReLogic libs (content pipeline, XNA, JSON) | **MOSTLY PORTED** | Text wrapping is not ported; the `.fx` effects are only name-parsed | 9 | 8 | 291 / 27 833 |
 | 38 | Out-of-scope confirmation (Social/Steam/Testing) | **PARTIAL** | Five absences are undocumented: `Terraria/Testing/**` (34 files), `TimeLogger`, the crash handlers, the dev screens and dedicated-server mode | 13 | 9 | 255 / 22 470 |
@@ -93,7 +93,7 @@ refer to the research file (`docs/research/NN-*.md`).
 
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
-| R-35-1 | Port `Terraria.Utilities.UnifiedRandom` (56-int `SeedArray`, `SetSeed`, `InternalSample`, `Sample`, `Next(max)`, `Next(min,max)`, `NextDouble`, `NextBytes`) | 35 | L | determinism (critical) | — | 35-rng-utils.md:268 |
+| R-35-1 | Port `Terraria.Utilities.UnifiedRandom` (56-int `SeedArray`, `SetSeed`, `InternalSample`, `Sample`, `Next(max)`, `Next(min,max)`, `NextDouble`, `NextBytes`) | 35 | L | determinism (critical) | — | 35-rng-utils.md:268 — **DONE 2026-11-12** (`S1-A-1-unified-random`: `tr-core/src/unified_random.rs` + 11 golden tests) |
 | R-35-3 | `Main.SwapRandom` named-stream registry in `App` (mirrors `Main.cs:3204-3215`, the 13 stage names of `Main.cs:17749-17809`) | 35 | L | determinism (critical) | R-35-1, R-35-2 | 35-rng-utils.md:270 |
 | R-35-4 | Migrate the runtime consumers (spawn, prefix, loot, chest, sandstorm, wind, item drops) off the splitmix stand-ins onto the `UnifiedRandom` streams | 35 | L | determinism (high) | R-35-1, R-35-3 | 35-rng-utils.md:271 |
 | R-35-7 | Add a `UnifiedRandom`-vs-port differential harness that replays the C# draw order | 35 | L | determinism (medium) | R-35-1, R-35-2 | 35-rng-utils.md:274 |
@@ -102,7 +102,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-34-6 | Unify the three parallel NPC id spaces (protocol `u16`, vanilla `net_id`, partial `cs_id`) | 34 | M | structural/determinism (high) | R-34-1 | 34-id-sets-audit.md:271 |
 | R-01-2 | Reorder `frame.rs:481-551` to the C# `DoUpdateInWorld_Inner` order (spawn NPCs → NPCs → gores → projectiles → items → dust → time → worldgen) | 01 | M | determinism (high) | modules 05/15 research rows | 01-main-update-loop.md:143 |
 | R-26-1 | Delete the six duplicated match arms (10615/10616/10617/10618/10826/10884) and replace `_ => {}` with an assert-on-unknown-aiStyle arm | 26 | S | determinism (maintenance) | — | 26-projectile-ai-audit.md:155 |
-| R-35-2 | Golden-vector test for `UnifiedRandom` (first 64 `InternalSample()` values for seeds 0/1/42/-1) | 35 | M | determinism (high) | R-35-1 | 35-rng-utils.md:269 |
+| R-35-2 | Golden-vector test for `UnifiedRandom` (first 64 `InternalSample()` values for seeds 0/1/42/-1) | 35 | M | determinism (high) | R-35-1 | 35-rng-utils.md:269 — **DONE 2026-11-12** (vectors from a `dotnet run` of the decompiled class) |
 | R-35-5 | Re-key the per-consumer streams to the C# seed rule and delete the arbitrary XOR constants + `craft_rng: 1` | 35 | M | determinism (medium) | R-35-3 | 35-rng-utils.md:272 |
 | R-35-8 | Audit `Utils.Clamp` / `Math.Round` / `NextFloat` numerics across the Rust tree | 35 | M | behavioural/pixel (medium) | — | 35-rng-utils.md:275 |
 | R-22-1 | Chest-gen determinism study: decide whether `AddBuriedChest` moves onto the worldgen stream; pin a golden fixture | 22 | L | determinism (medium) | — | 22-chest-loot-shops.md:225 |

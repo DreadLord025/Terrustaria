@@ -112,7 +112,7 @@ Rust side:
 
 | RNG source | C# algorithm & seed | Rust implementation | Exact stream? | Impact | Subsystems affected |
 | --- | --- | --- | --- | --- | --- |
-| `Main.rand` (global) | .NET `System.Random`, Knuth subtractive 56-int array; `SetSeed` (`UnifiedRandom.cs:28-60`); `Next(max)` = `(int)(Sample()*max)` | **no port** — per-consumer splitmix/xorshift stand-ins (`spawner.rs:30-51`, `prefix.rs:434-445`, `chest_gen.rs:127-138`) | **NO** | determinism + behaviour | everything (7 558 call sites) |
+| `Main.rand` (global) | .NET `System.Random`, Knuth subtractive 56-int array; `SetSeed` (`UnifiedRandom.cs:28-60`); `Next(max)` = `(int)(Sample()*max)` | **PORTED (exact)** as `tr_core::unified_random::UnifiedRandom` (`unified_random.rs`, S1-A-1 — C#-golden vectors); the *consumers* still use splitmix/xorshift stand-ins (`spawner.rs:30-51`, `prefix.rs:434-445`, `chest_gen.rs:127-138`) | **YES** (type) / **NO** (not wired) | determinism + behaviour | everything (7 558 call sites) |
 | `Main.SwapRandom(key)` named streams | `Main._rngs[key] = new UnifiedRandom(worldSeed)` (`Main.cs:3210-3212`), swapped per update stage (`:17749-17809`) | no named-stream registry; separate `u64` fields per consumer with arbitrary XOR constants (`app/mod.rs:2519, 2700, 2826, 2838, 2860, 2862, 2870`) | **NO** | determinism | world update (players, NPCs, items, projectiles, gores, dust, time) |
 | `WorldGen.genRand` | alias of `Main.rand` (`WorldGen.cs:4445`) — same stream, interleaved with gameplay draws | no equivalent (worldgen uses its own `Streams`) | **NO** | determinism | worldgen + `Item.Prefix` during generation |
 | vanilla per-pass stream | `Main.rand = new UnifiedRandom(this._seed)` before every pass (`WorldGenerator.cs:497`, quoted at `pipeline.rs:7, :110`) | `Streams::pass_rng(name)` = `Rng(seed ^ fnv1a64(name))` (`pipeline.rs:120-122`) | **NO** (deliberate) | determinism | worldgen chain |
@@ -131,7 +131,7 @@ Rust side:
 
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
-| `UnifiedRandom` (the type) | **MISSING** | — | No port exists. Stated in-repo twice: `crates/tr-core/src/extract.rs:529-532` ("not `Main.rand`'s `UnifiedRandom`, which has no port yet") and `crates/tr-core/src/scene.rs:528` ("no UnifiedRandom port exists"). |
+| `UnifiedRandom` (the type) | **PORTED (exact)** | `crates/tr-core/src/unified_random.rs` | Byte-faithful port (S1-A-1, 2026-11-12): `SetSeed`/`InternalSample`/`Sample`/`Peek`/`Next`/`NextDouble`/`NextBytes`/the large-range branch + the `NextFloat`/`NextFloatDirection`/`NextFromList` extensions, pinned by 11 golden tests against a real `dotnet` run of the decompiled class. Only the geometry helpers (`NextVector2*`/`NextFromRectangle`) are deferred — no shared `Vector2`/`Point`/`Rectangle`/`IntRange` types. |
 | `Main.rand` global stream | **PARTIAL** | `crates/tr-app/src/spawner.rs:30-51`, `prefix.rs:434-445`, `chest_gen.rs:127-138` | Per-consumer splitmix64 stand-ins; `spawner.rs`'s doc calls itself "xorshift64\*" but the code is the splitmix finaliser — the comment is wrong. |
 | `Main.SwapRandom` named streams | **MISSING** | `crates/tr-app/src/app/mod.rs:180-634` | No registry, no per-key `UnifiedRandom`; the C#'s 13 per-stage streams (`Main.cs:17749-17809`) are 7 ad-hoc `u64` fields. `ANALYSIS.md:4420-4430` admits the LCG is "the port's own xorshift core". |
 | `WorldGen.genRand` | **MISSING** | — | The alias itself is not modelled; `Item.Prefix` (which selects `genRand` during generation, `Item.cs:528`) draws from `prefix.rs`'s splitmix. |
@@ -142,7 +142,7 @@ Rust side:
 | `Utils.Lerp/Clamp/SmoothStep/Remap` | **PARTIAL** | ad-hoc | `Clamp` is order-sensitive (`>max` then `<min`) — Rust `clamp` panics on `min > max` where C# returns `max`. Banker's rounding (`Utils.cs:114`) is not exercised by the Rust side. |
 | `Terraria.DataStructures.Point16` | **MISSING** | — | The Rust side uses its own point types; no 16-bit tile point. |
 | `DropAttemptInfo.rng` (loot) | **PARTIAL** | `crates/tr-core/src/loot.rs:11-14` (`DropRng` trait) | The trait abstracts the source, but no implementation is the C#'s `UnifiedRandom`. |
-| `Sandstorm` RNG | **PARTIAL** | `crates/tr-core/src/scene.rs:528` | "no UnifiedRandom port exists, and an isolated stream keeps the state machine deterministic". |
+| `Sandstorm` RNG | **PARTIAL** | `crates/tr-core/src/scene.rs:528` | Still draws from an isolated `FastRandom`; the C#-exact `UnifiedRandom` now exists (`tr_core::UnifiedRandom`, S1-A-1) but is not wired here — consumer migration is S1-A-2+. |
 
 ## Tests
 
@@ -209,11 +209,12 @@ about.
 
 ## Deviations & risks
 
-1. **`UnifiedRandom` itself is not ported** — severity: **determinism** (behavioural
-   consequence). The C#'s global stream is the Knuth subtractive generator; the port uses
-   splitmix64/xorshift64 per consumer. Every RNG-driven outcome differs from vanilla:
-   loot rolls, prefix rolls, spawn picks, chest contents, star fields, wind counters.
-   *ROADMAP/ANALYSIS admit it* (`extract.rs:530`, `scene.rs:528`, `ANALYSIS.md:4429-4430`).
+1. **`UnifiedRandom` itself was not ported — RESOLVED for the type (S1-A-1, 2026-11-12)**;
+   the *consumers* are still on splitmix64/xorshift64 stand-ins (S1-A-2+), so every
+   RNG-driven outcome still differs from vanilla: loot rolls, prefix rolls, spawn picks,
+   chest contents, star fields, wind counters. The type now lives in
+   `tr-core/src/unified_random.rs` and is byte-pinned by the golden tests; the remaining
+   work is wiring (R-35-3/R-35-4).
 2. **The `Main.rand` call ORDER is not modelled at all** — severity: **determinism**.
    In the C# a single stream serves the whole game; the order of the draws is the
    contract. The Rust splits it into seven fields, so there is no "order" to preserve
@@ -265,8 +266,8 @@ about.
 
 | # | Task | Size | Depends on |
 | --- | --- | --- | --- |
-| 1 | **Port `Terraria.Utilities.UnifiedRandom`** into `tr-core` (`rng.rs` or a new `unified_random.rs`): the 56-int `SeedArray`, the `SetSeed` warm-up, `InternalSample`, `Sample`, `Next(max)`, `Next(min,max)`, `NextDouble`, `NextBytes`. Add a `NextFloat`/`NextVector2*` extension set mirroring `Utils.cs:1198-1299`. Gate it behind `tr-core::rng` so the worldgen contract streams stay untouched. | **L** | — |
-| 2 | **Golden-vector test for `UnifiedRandom`**: hard-code the first 64 `InternalSample()` values for seeds 0/1/42/-1 from a reference .NET run, so the port's stream is provably the C#'s. Without this, task 1 is unverifiable. | **M** | 1 |
+| 1 | **Port `Terraria.Utilities.UnifiedRandom`** into `tr-core` (`rng.rs` or a new `unified_random.rs`): the 56-int `SeedArray`, the `SetSeed` warm-up, `InternalSample`, `Sample`, `Next(max)`, `Next(min,max)`, `NextDouble`, `NextBytes`. Add a `NextFloat`/`NextVector2*` extension set mirroring `Utils.cs:1198-1299`. Gate it behind `tr-core::rng` so the worldgen contract streams stay untouched. — **DONE 2026-11-12** (`S1-A-1-unified-random`): `crates/tr-core/src/unified_random.rs`; the scalar extensions are in, the `NextVector2*`/`NextFromRectangle` geometry helpers are deferred (no shared geometry types) | **L** | — |
+| 2 | **Golden-vector test for `UnifiedRandom`**: hard-code the first 64 `InternalSample()` values for seeds 0/1/42/-1 from a reference .NET run, so the port's stream is provably the C#'s. Without this, task 1 is unverifiable. — **DONE 2026-11-12**: 11 golden tests; the vectors were produced by `dotnet run` of the decompiled `UnifiedRandom.cs` (not by the Rust port) | **M** | 1 |
 | 3 | **`Main.SwapRandom` named-stream registry** in `App` (`HashMap<String, UnifiedRandom>` + a scope guard), mirroring `Main.cs:3204-3215` and the 13 stage names of `Main.cs:17749-17809`. Keep the port's `u64` fields as *aliases* until each stage is migrated, so nothing regresses mid-migration. | **L** | 1, 2 |
 | 4 | **Migrate the runtime consumers** (spawn, prefix, loot, chest, sandstorm, wind, item drops) off the splitmix stand-ins onto the `UnifiedRandom` streams, one call site group at a time, each with a before/after determinism pair. | **L** | 1, 3 |
 | 5 | **Re-key the per-consumer streams to the C#'s seed rule** (`new UnifiedRandom(worldSeed)` per named key) and delete the arbitrary XOR constants (`0x5DEECE66D1A49B5F`, `0x0A5CE17A1C1E5EED`, `0x1DA91750E5C10C0C`, `0x2545F4914F6CDD1D`) and the `craft_rng: 1` constant. | **M** | 3 |
