@@ -732,6 +732,11 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
         // `DungeonCrawler.cs:495`: `DungeonGlobalLights` — lanterns,
         // chandeliers and the wired wall switch each one carries.
         super::dungeon_features::place_lights(world, &fp, entrance, &styles, 1.0, r);
+        // `DungeonCrawler.cs:497`: `DungeonGlobalTraps` — the dart traps
+        // (`8.4 * maxTilesX / 4200 * globalFeatureScalar` of them) with their
+        // pressure plates and wiring. The dual dungeon's mayan traps need the
+        // crawler's halls/rooms as objects and stay out of scope.
+        super::dungeon_features::place_traps(world, &fp, world.world_surface, 1.0, r);
     }
     let _ = setup.entrance_strength_y;
     let _ = setup.entrance_strength_x2;
@@ -822,6 +827,31 @@ mod tests {
             "the painted variants land ({painted} of {})",
             base + painted
         );
+    }
+
+    /// `DungeonCrawler.cs:497`: `DungeonGlobalTraps` runs after the lights, so
+    /// the generated dungeon carries dart traps (137) with their plates (135).
+    #[test]
+    fn test_dungeon_features_the_traps_land_after_the_crawl() {
+        let mut w = flat_world(4200, 600, 60);
+        let mut rng = HallSeed::new(0x5EED);
+        generate_dungeon(&mut w, 2100, 60, &mut rng);
+        let traps = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 137)
+            .count();
+        let plates = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 135)
+            .count();
+        // The pass spends its budget on attempts, so a dungeon that offers no
+        // 5..50-tile pocket below the surface line places none — but when it
+        // places a dart it always leaves the plate behind it. That the pass
+        // does place is proven in `dungeon_features::tests::the_trap_pass_
+        // spends_its_budget`; this test guards the wiring order.
+        assert_eq!(traps, plates, "one plate per dart trap ({traps} vs {plates})");
     }
 
     fn test_dungeon_1_the_color_roll_carries_its_bricks() {

@@ -873,6 +873,328 @@ pub fn wall_variants(
     seeds
 }
 
+
+/// `TileID.Sets.Boulders`-adjacent constant the trap pass needs: tile 379
+/// (`TileID.GeyserTrap`) is flipped to non-solid for the duration of
+/// `DungeonGlobalTraps.Traps` (`DungeonGlobalTraps.cs:38`).
+const GEYSER_TRAP: u16 = 379;
+/// `TileID.PressurePlates`.
+const PRESSURE_PLATE: u16 = 135;
+/// `TileID.Traps` — the dart trap the dungeon's plates fire.
+const DART_TRAP: u16 = 137;
+/// `TileID.CrackedBlueDungeonBrick`/green/pink — `Main.tileCracked`
+/// (`TileID.Sets.CrackedBricks`), the "wall a dart can come out of".
+const CRACKED_BRICKS: &[u16] = &[481, 482, 483];
+
+/// `WorldGen.SolidTile` with the `Main.tileSolid[379] = false` window the trap
+/// pass opens (`DungeonGlobalTraps.cs:38`), so the walk ignores geyser traps.
+fn solid_for_trap(world: &World, x: i32, y: i32) -> bool {
+    if !in_world(world, x, y, 0) {
+        return false;
+    }
+    let t = &world.tiles[world.index(x, y)];
+    if t.kind == GEYSER_TRAP {
+        return false;
+    }
+    solid(world, x, y)
+}
+
+/// `WorldGen.Place1x2Top`'s sibling for a 1x1 frame-important object:
+/// `WorldGen.PlaceTile(x, y, kind, style)` writes `frame_x = style * 18`.
+fn place_1x1(world: &mut World, x: i32, y: i32, kind: u16, style: u16) {
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let i = world.index(x, y);
+    world.tiles[i].kind = kind;
+    world.tiles[i].flags |= FLAG_ACTIVE;
+    world.tiles[i].frame_x = (style * 18) as i16;
+    world.tiles[i].frame_y = 0;
+    mark_important(world, kind);
+}
+
+/// `WorldGen.placeTrap_CanContinue` (`WorldGen.cs:8909-8920`) for a
+/// single-dungeon world: the unbreakable dungeon wall blocks the walk (the
+/// dual-dungeon half needs `GenVars.DualDungeon_AllowTrapGenerationInDungeon`,
+/// which only the dual dungeon ever sets).
+fn trap_can_continue(world: &World, x: i32, y: i32) -> bool {
+    if !in_world(world, x, y, 0) {
+        return false;
+    }
+    world.tiles[world.index(x, y)].wall != UNBREAKABLE_WALL
+}
+
+/// `WorldGen.IsTileNearby` (`WorldGen.cs:8862-8884`).
+fn is_tile_nearby(world: &World, x: i32, y: i32, kind: u16, distance: i32) -> bool {
+    let step = if kind == 235 { 3 } else { 1 };
+    let mut i = x - distance;
+    while i <= x + distance {
+        for j in (y - distance)..=(y + distance) {
+            if in_world(world, i, j, 0) && kind_at(world, i, j) == kind && active(world, i, j) {
+                return true;
+            }
+        }
+        i += step;
+    }
+    false
+}
+
+/// `WorldGen.CanGeneratePressurePlateAt` (`WorldGen.cs:11029-11049`).
+fn can_generate_pressure_plate_at(world: &World, i: i32, j: i32) -> bool {
+    if !in_world(world, i, j, 3) {
+        return false;
+    }
+    if !solid_allow_bottom_slope(world, i, j + 1) {
+        return false;
+    }
+    let below = &world.tiles[world.index(i, j + 1)];
+    if below.wall == UNBREAKABLE_WALL {
+        return false;
+    }
+    true
+}
+
+/// `WorldGen.SolidTileAllowBottomSlope` (`WorldGen.cs:70167-70190`): out of
+/// world counts as solid, otherwise `active && (solid || solidTop) &&
+/// (!topSlope || platform) && !halfBrick && !inActive`.
+fn solid_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
+    if !in_world(world, x, y, 0) {
+        return true;
+    }
+    let t = &world.tiles[world.index(x, y)];
+    t.active()
+        && (crate::tiledata::TILE_SOLID.has(t.kind) || crate::tiledata::TILE_SOLID_TOP.has(t.kind))
+        && (!t.top_slope() || crate::tiledata::SET_PLATFORMS.has(t.kind))
+        && !t.half_brick()
+        && !t.inactive()
+}
+
+/// `Tile.nactive()`: active and not actuated.
+fn nactive(world: &World, x: i32, y: i32) -> bool {
+    in_world(world, x, y, 0) && {
+        let t = &world.tiles[world.index(x, y)];
+        t.active() && !t.inactive()
+    }
+}
+
+/// `WorldGen.placeTrap(x2, y2, 0)` — the dart trap
+/// (`WorldGen.cs:8922-9200`, case 0 only; the dungeon pass never asks for the
+/// boulder/explosive variants).
+///
+/// The trap is a pressure plate (135) on the floor at `(x2, num)`, a dart trap
+/// (137) in the wall found 5..50 tiles to one side, and the wire run between
+/// them.
+pub fn place_dart_trap(world: &mut World, x2: i32, y2: i32, r: &mut HallSeed) -> bool {
+    if !trap_can_continue(world, x2, y2) {
+        return false;
+    }
+    // `TileID.Shimmer` proximity (`:8933`) is skipped: the port has no
+    // shimmer position in `World` yet.
+    let mut num = y2;
+    let mut near_underworld = false;
+    while !solid_for_trap(world, x2, num) {
+        num += 1;
+        if num > world.height - 10 || !trap_can_continue(world, x2, num) {
+        return false;
+        }
+        if num >= world.height - 300 {
+            near_underworld = true;
+        }
+    }
+    num -= 1;
+    // A boulder (70) within 20 tiles already owns this corner.
+    if is_tile_nearby(world, x2, num, 70, 20) {
+        return false;
+    }
+    if !in_world(world, x2, num, 0) {
+        return false;
+    }
+    let floor_wall = world.tiles[world.index(x2, num)].wall;
+    if floor_wall == 87 || floor_wall == UNBREAKABLE_WALL {
+        return false;
+    }
+    let at = &world.tiles[world.index(x2, num)];
+    let lava_here = at.liquid > 0 && at.flags & crate::tile::FLAG_LIQUID_LAVA != 0;
+    // `type` is 0 here, so both the lava and the near-underworld guards reject.
+    if lava_here || near_underworld {
+        return false;
+    }
+    if !in_world(world, x2, num, 3) {
+        return false;
+    }
+    // The 3x3 box above the plate must be free (`:9026`).
+    for dx in -1..=1 {
+        for dy in -3..=-1 {
+            if nactive(world, x2 + dx, num + dy) {
+        return false;
+            }
+        }
+    }
+    // And the tile below must not already be a spike.
+    if matches!(kind_at(world, x2, num + 1), 48 | 232) && active(world, x2, num + 1) {
+        return false;
+    }
+    if !can_generate_pressure_plate_at(world, x2, num) {
+        return false;
+    }
+    // The dart's row (`:9130`): the plate's row minus a 0..2 roll.
+    let num11 = num - r.next(3) as i32;
+    // Walk left to the first solid/cracked cell.
+    let mut num10 = x2;
+    loop {
+        let stuck = solid_for_trap(world, num10, num11)
+            || (active(world, num10, num11) && CRACKED_BRICKS.contains(&kind_at(world, num10, num11)));
+        if stuck {
+            break;
+        }
+        num10 -= 1;
+        if num10 < 0 || !trap_can_continue(world, num10, num11) {
+        return false;
+        }
+    }
+    let left = num10;
+    // Walk right the same way.
+    num10 = x2;
+    loop {
+        let stuck = solid_for_trap(world, num10, num11)
+            || (active(world, num10, num11) && CRACKED_BRICKS.contains(&kind_at(world, num10, num11)));
+        if stuck {
+            break;
+        }
+        num10 += 1;
+        if num10 >= world.width || !trap_can_continue(world, num10, num11) {
+        return false;
+        }
+    }
+    let right = num10;
+    let left_dist = x2 - left;
+    let right_dist = right - x2;
+    let mut left_ok = (6..50).contains(&left_dist);
+    let mut right_ok = (6..50).contains(&right_dist);
+    if left_ok && !solid_for_trap(world, left, num11 + 1) {
+        left_ok = false;
+    }
+    if right_ok && !solid_for_trap(world, right, num11 + 1) {
+        right_ok = false;
+    }
+    // Doors and platforms make a bad housing for the dart.
+    let bad = |w: &World, x: i32| {
+        matches!(kind_at(w, x, num11), 10 | 48) && active(w, x, num11)
+            || matches!(kind_at(w, x, num11 + 1), 10 | 48) && active(w, x, num11 + 1)
+    };
+    if left_ok && bad(world, left) {
+        left_ok = false;
+    }
+    if right_ok && bad(world, right) {
+        right_ok = false;
+    }
+    let (wall_x, from_left) = if left_ok && right_ok {
+        if r.next(2) == 0 {
+            (right, false)
+        } else {
+            (left, true)
+        }
+    } else if right_ok {
+        (right, false)
+    } else if left_ok {
+        (left, true)
+    } else {
+        return false;
+    };
+    if kind_at(world, wall_x, num11) == 190 {
+        return false;
+    }
+    if world.tiles[world.index(wall_x, num11)].wall == UNBREAKABLE_WALL {
+        return false;
+    }
+    // The plate: style 2 when it sits on a wall, else a 2..3 roll (`:9154`).
+    let plate_style = if floor_wall > 0 {
+        2
+    } else {
+        r.range(2, 4) as u16
+    };
+    place_1x1(world, x2, num, PRESSURE_PLATE, plate_style);
+    // `WorldGen.KillTile(wall_x, num11)` — the dart carves its own niche.
+    {
+        let i = world.index(wall_x, num11);
+        let wall = world.tiles[i].wall;
+        world.tiles[i] = Tile::default();
+        world.tiles[i].wall = wall;
+    }
+    place_1x1(world, wall_x, num11, DART_TRAP, 0);
+    if from_left {
+        let i = world.index(wall_x, num11);
+        world.tiles[i].frame_x += 18;
+    }
+    // The wire walk (`:9186-9204`): x first, then y, red wire.
+    let (mut wx, mut wy) = (x2, num);
+    while wx != wall_x || wy != num11 {
+        world
+            .wires
+            .set(wx, wy, crate::wiring::WireColor::Red, true);
+        if wx > wall_x {
+            wx -= 1;
+        }
+        if wx < wall_x {
+            wx += 1;
+        }
+        world
+            .wires
+            .set(wx, wy, crate::wiring::WireColor::Red, true);
+        if wy > num11 {
+            wy -= 1;
+        }
+        if wy < num11 {
+            wy += 1;
+        }
+        world
+            .wires
+            .set(wx, wy, crate::wiring::WireColor::Red, true);
+    }
+    true
+}
+
+/// `DungeonGlobalTraps.Traps` (`DungeonGlobalTraps.cs:29-56`): the dungeon's
+/// dart traps, `8.4 * maxTilesX / 4200 * globalFeatureScalar` of them, each
+/// rolled from a point on a dungeon wall between the surface and the dungeon's
+/// floor. The dual-dungeon arm (`:57-...`, mayan traps) is out of scope until
+/// the crawler materialises halls/rooms as objects.
+///
+/// Returns the number of traps placed (the C#'s `num4`).
+pub fn place_traps(
+    world: &mut World,
+    fp: &DungeonFootprint,
+    world_surface: f64,
+    global_feature_scalar: f64,
+    r: &mut HallSeed,
+) -> usize {
+    if fp.right <= fp.left || fp.bottom <= fp.top {
+        return 0;
+    }
+    let num = world.width as f64 / 4200.0;
+    let budget = (8.4 * num * global_feature_scalar) as i32;
+    let mut attempts = 0;
+    let mut placed = 0usize;
+    let max_attempts = 1000;
+    let lo = (world_surface as i32).max(fp.top);
+    if lo >= fp.bottom {
+        return 0;
+    }
+    while placed < budget.max(0) as usize {
+        attempts += 1;
+        let x = r.range(fp.left as u32, fp.right as u32) as i32;
+        let y = r.range(lo as u32, fp.bottom as u32) as i32;
+        if is_dungeon_wall(world.tiles[world.index(x, y)].wall) && place_dart_trap(world, x, y, r) {
+            attempts = max_attempts;
+        }
+        if attempts > max_attempts {
+            attempts = 0;
+            placed += 1;
+        }
+    }
+    placed
+}
+
 #[allow(dead_code)]
 fn _uses_tile(_t: Tile) {}
 
@@ -1181,6 +1503,118 @@ mod tests {
             "the foreign wall inside the entrance is left alone"
         );
         assert_eq!(w.tiles[w.index(20, 62)].wall, 94, "the base wall converts");
+    }
+
+
+    /// A corridor with the vertical brick pillars a dart trap needs on its
+    /// sides: air rows 61-80, brick floor from row 81, brick pillars every
+    /// `pillar` columns through the air band. The world is 400 rows tall so the
+    /// trap's `maxTilesY - 300` underworld guard stays out of the way (the real
+    /// dungeon sits far above it).
+    fn trap_corridor(width: i32, pillar: i32) -> (World, DungeonFootprint) {
+        let mut w = World::new("trap-test".into(), width, 400);
+        for x in 0..width {
+            for y in 0..400 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 7;
+                let ceiling = (58..=60).contains(&y);
+                let floor = y >= 81;
+                let pillar_cell = pillar > 0 && x % pillar == 0 && (61..=80).contains(&y);
+                if ceiling || floor || pillar_cell {
+                    w.tiles[i].kind = 41;
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+        }
+        let fp = DungeonFootprint {
+            left: 8,
+            right: width - 8,
+            top: 40,
+            bottom: 80,
+            wall: 7,
+            cracked: 481,
+        };
+        (w, fp)
+    }
+
+    /// `WorldGen.placeTrap(x, y, 0)`: the pressure plate (135) lands on the
+    /// floor, the dart trap (137) in a wall 5..50 tiles to one side, and the
+    /// wire connects them (`WorldGen.cs:9152-9204`).
+    #[test]
+    fn a_dart_trap_lands_with_its_plate_and_wire() {
+        let (mut w, _fp) = trap_corridor(240, 40);
+        let mut r = HallSeed::new(0x1234);
+        assert!(place_dart_trap(&mut w, 60, 61, &mut r), "the trap places");
+        // The plate sits on the floor the walk found.
+        let plate = (0..w.height)
+            .flat_map(|y| (0..w.width).map(move |x| (x, y)))
+            .find(|&(x, y)| {
+                let t = w.tiles[w.index(x, y)];
+                t.kind == PRESSURE_PLATE && t.active()
+            })
+            .expect("a pressure plate");
+        assert_eq!(plate.0, 60, "the plate is under the roll point");
+        assert_eq!(plate.1, 80, "and rests on the floor row");
+        // The dart trap is one of the two pillars beside the roll point.
+        let dart = (0..w.height)
+            .flat_map(|y| (0..w.width).map(move |x| (x, y)))
+            .find(|&(x, y)| {
+                let t = w.tiles[w.index(x, y)];
+                t.kind == DART_TRAP && t.active()
+            })
+            .expect("a dart trap");
+        assert!(
+            dart.0 == 40 || dart.0 == 80,
+            "the dart sits in a pillar ({dart:?})"
+        );
+        assert!(
+            (77..=80).contains(&dart.1),
+            "at the plate's own row band ({dart:?})"
+        );
+        let t = w.tiles[w.index(dart.0, dart.1)];
+        assert!(
+            t.frame_x == 0 || t.frame_x == 18,
+            "the trap's facing frame ({})",
+            t.frame_x
+        );
+        let wires = (0..w.height)
+            .flat_map(|y| (0..w.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| w.wires.get(x, y, crate::wiring::WireColor::Red))
+            .count();
+        assert!(wires > 0, "the plate and the trap are wired ({wires})");
+    }
+
+    /// The trap refuses a room narrower than the dart's 5-tile minimum reach
+    /// (`WorldGen.cs:9206-9214`).
+    #[test]
+    fn a_room_too_narrow_pockets_no_dart() {
+        // Pillars 4 apart: neither side clears the `> 5` distance.
+        let (mut w, _fp) = trap_corridor(120, 4);
+        let mut r = HallSeed::new(9);
+        assert!(!place_dart_trap(&mut w, 60, 61, &mut r));
+        assert!(
+            !w.tiles.iter().any(|t| t.kind == DART_TRAP && t.active()),
+            "no dart trap in a 3-wide pocket"
+        );
+    }
+
+    /// `DungeonGlobalTraps.Traps` spends `8.4 * maxTilesX / 4200` traps
+    /// (`DungeonGlobalTraps.cs:37`).
+    #[test]
+    fn the_trap_pass_spends_its_budget() {
+        let (mut w, fp) = trap_corridor(4200, 40);
+        let mut r = HallSeed::new(0x77);
+        let placed = place_traps(&mut w, &fp, 40.0, 1.0, &mut r);
+        assert_eq!(placed, 8, "the 4200-wide budget");
+        let darts = w.tiles.iter().filter(|t| t.kind == DART_TRAP && t.active()).count();
+        assert!(darts > 0, "and at least one dart trap lands ({darts})");
+        // Every dart trap sits behind a plate's wire run.
+        let plates = w
+            .tiles
+            .iter()
+            .filter(|t| t.kind == PRESSURE_PLATE && t.active())
+            .count();
+        assert_eq!(plates, darts, "one plate per dart ({plates} vs {darts})");
     }
 
     /// The same seed replays the same tiles — the pass draws only from its own
