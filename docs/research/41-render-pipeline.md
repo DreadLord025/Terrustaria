@@ -9,7 +9,8 @@
 ## Scope
 
 C# side: the XNA/MonoGame-equivalent sprite stack — `Terraria/Main.cs` (67 317 lines;
-`Main.spriteBatch` is used in 121 `Begin`/`End` pairs and 824 `Draw` calls),
+`Main.spriteBatch` is used in 105 `Begin` calls plus 16 more on a private
+`mySpriteBatch`, with 824 `Draw` calls in the file),
 `Terraria/GameContent/Drawing/TileDrawing.cs` (9 656 lines; 2 `Begin`, 3 `End`,
 13 `Draw`), `Terraria/Graphics/TileBatch.cs` (681 lines — Terraria's *own* batcher,
 not `SpriteBatch`), `Terraria/Graphics/Camera.cs` (the `GameViewMatrix`/screen-position
@@ -31,8 +32,9 @@ format and alpha behaviour as the vanilla XNA stack, so the frame is pixel-ident
 
 ## Key entities
 
-- `Terraria/Main.cs::Main.spriteBatch` — the vanilla `SpriteBatch`. 121 `Begin` calls
-  across `Main.cs` with **six different blend/sampler/rasterizer combinations**:
+- `Terraria/Main.cs::Main.spriteBatch` — the vanilla `SpriteBatch`. 105 `Begin` calls
+  on `Main.spriteBatch` (plus 16 on a private `mySpriteBatch`) across `Main.cs` with
+  **six different blend/sampler/rasterizer combinations**:
   - `Main.cs:22193` — `Begin(Deferred, BlendState.AlphaBlend, DefaultSamplerState,
     DepthStencilState.None, Main.Rasterizer, null, Main.Transform)` — the world pass.
   - `Main.cs:27473` — a custom "multiply" `BlendState` built at `Main.cs:27462-27471`:
