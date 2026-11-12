@@ -171,7 +171,7 @@ No `render/tiles.rs` test targets the sliced/flat light paths or the 9-slice geo
   `blur_line_*`; precedent: `palette.rs` stream test.
 - **[S] `slotGetFinalLight` in the sliced path** — apply actuation ×0.4 / `light_scale` /
   paint tint per slice in `push_sliced` (`tiles.rs:1340`), matching `TileDrawing.cs:3578-3601`.
-- **[S] `NON_VISIBLE_PADDING` fixed 18** — drop the `/3` clamp in `blur.rs:43`.
+- **[S] `NON_VISIBLE_PADDING` fixed 18** — done (S1-G-10, 2026-11-13): `blur_pass` uses the fixed 18 pad, matching `LightMap.cs:99-108`.
 - **[M] Per-column vs global surface cutoff A/B** — `TR_SHOT` pair with `world_surface`
   fallback; record the result in ANALYSIS.md; keep `surface_cutoff` only if the diff is
   intentional and documented.

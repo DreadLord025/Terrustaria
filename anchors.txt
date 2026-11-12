@@ -28,6 +28,7 @@ crates/tr-app/src/npc.rs|fn extra_frames_count|BUG-22 — NPCID.Sets.ExtraFrames
 crates/tr-app/src/town_arrival.rs|fn update_time_spawn_town_npcs|M4-TOWN-1b — the town NPC arrival gates
 crates/tr-app/src/touch_damage.rs|fn apply_touch_damage|M4-HAZARD-1 — tile contact damage (dungeon spikes)
 crates/tr-app/src/touch_damage.rs|TOUCH_DAMAGE_IMMEDIATE|M4-HAZARD-1 — the TileID.Sets.TouchDamageImmediate table
+crates/tr-core/src/liquid.rs|cur_max_liquid: usize|S1-A-8 — the C# liquid pass window (curMaxLiquid/cycles stride)
 crates/tr-core/src/worldgen/dungeon_features.rs|fn place_spikes|M5-DUNGEON — the DungeonGlobalSpikes pass
 crates/tr-core/src/worldgen/dungeon_features.rs|fn place_lights|M5-DUNGEON — the DungeonGlobalLights pass
 crates/tr-core/src/worldgen/dungeon_features.rs|fn wall_variants|M5-DUNGEON — the DungeonGlobalWallVariants pass
@@ -75,3 +76,4 @@ crates/tr-app/src/app/frame.rs|self.phase("projectiles");|S1-B-1 — the world b
 crates/tr-app/src/app/frame.rs|the_clock_only_advances_inside_the_world_branch|S1-B-2 — the front end never reaches Main.UpdateTime (Main.cs:17166-17175): the clock advance lives inside the in-world branch (landed with S1-B-1)
 crates/tr-app/src/projectile.rs|pub fn drain_ritual_bolts|S1-D-4c - vortex ritual aiStyle 88/108 dispatched and bolt intent drained (Projectile.cs:32145-32249,:33679-33988)
 crates/tr-app/src/craft.rs|fn the_station_reach_region_matches_the_csharp_xna_rect|S1-L-11b refuted - the AdjTiles region is LX..=HX because XNA Rectangle.Right == X + Width (TileReachCheckSettings.cs:45-60, Player.cs:35671-35674)
+crates/tr-core/src/lighting/blur.rs|fn non_visible_padding_is_fixed_18_s1_g_10|S1-G-10 - NON_VISIBLE_PADDING is fixed 18 (LightMap.cs:99-108) not min(w,h)/3
