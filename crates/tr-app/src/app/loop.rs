@@ -90,9 +90,11 @@ impl ApplicationHandler for App {
         if let Some((x, y)) = crate::env::camera_pin() {
             self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
         }
-        self.zoom = self.settings.zoom;
+        self.zoom = self.settings.zoom.clamp(1.0, 2.0);
         if let Some(z) = crate::env::zoom_pin() {
-            self.zoom = z.clamp(0.25, 8.0);
+            // Main.cs:16801-16815 — vanilla GameZoomTarget clamps to 1.0..2.0;
+            // TR_ZOOM must not widen it (S1-B-5).
+            self.zoom = z.clamp(1.0, 2.0);
             self.zoom_pinned = true;
         }
         if self.follow_player {

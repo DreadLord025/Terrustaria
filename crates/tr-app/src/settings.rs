@@ -1328,6 +1328,21 @@ mod tests {
     }
 
     #[test]
+    fn tr_zoom_clamp_stays_in_vanilla_range_s1_b_5() {
+        // S1-B-5 / Main.cs:16801-16815: GameZoomTarget clamps to 1.0..2.0 and
+        // TR_ZOOM must not widen it.
+        assert_eq!(0.25f32.clamp(1.0, 2.0), 1.0);
+        assert_eq!(8.0f32.clamp(1.0, 2.0), 2.0);
+        assert_eq!(1.0f32.clamp(1.0, 2.0), 1.0);
+        assert_eq!(2.0f32.clamp(1.0, 2.0), 2.0);
+        assert_eq!(1.5f32.clamp(1.0, 2.0), 1.5);
+        let s = Settings::parse("{\n  \"Zoom\": 9.0\n}\n");
+        assert_eq!(s.zoom, 2.0, "persisted zoom must clamp to vanilla range");
+        let s = Settings::parse("{\n  \"Zoom\": 0.1\n}\n");
+        assert_eq!(s.zoom, 1.0, "persisted zoom must clamp to vanilla range");
+    }
+
+    #[test]
     fn test_DW_2_2_legacy_port_names_load_through_the_aliases() {
         // The port's own pre-parity config (all twelve old spellings) must keep
         // every value it stored; the alias arms exist for exactly this file.

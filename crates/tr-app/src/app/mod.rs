@@ -930,6 +930,35 @@ impl App {
         m.pos = map::map_clamp_pos(m.pos, &self.world);
     }
 
+    /// `Main.UpdateViewZoomKeys` (`Main.cs:16801-16815`): ViewZoomIn/Out adjust
+    /// `GameZoomTarget` by 0.02 per update while held, clamped to 1.0..2.0.
+    /// Port uses default keys OemPlus/OemMinus (`KeyCode::Equal`/`Minus`);
+    /// skipped while in fancy UI / front/menu screens.
+    pub(crate) fn update_view_zoom_keys(&mut self) {
+        // S1-B-5: TR_ZOOM pins the zoom for screenshots and must not be moved
+        // by key input (and must not widen the vanilla 1.0..2.0 clamp).
+        if self.zoom_pinned {
+            return;
+        }
+        if self.menu.is_some() || self.front.is_some() {
+            return;
+        }
+        let mut changed = false;
+        if self.keys.contains(&KeyCode::Equal) {
+            self.zoom = (self.zoom + 0.02).clamp(1.0, 2.0);
+            changed = true;
+        }
+        if self.keys.contains(&KeyCode::Minus) {
+            self.zoom = (self.zoom - 0.02).clamp(1.0, 2.0);
+            changed = true;
+        }
+        if changed {
+            self.settings.zoom = self.zoom;
+        }
+    }
+
+
+
     /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
     pub(crate) fn advance_disco(&mut self) {
         world_sim::clock::advance_disco(self);
@@ -1714,9 +1743,11 @@ impl App {
         if let Some((x, y)) = crate::env::camera_pin() {
             self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
         }
-        self.zoom = self.settings.zoom;
+        self.zoom = self.settings.zoom.clamp(1.0, 2.0);
         if let Some(z) = crate::env::zoom_pin() {
-            self.zoom = z.clamp(0.25, 8.0);
+            // Main.cs:16801-16815 — vanilla GameZoomTarget clamps to 1.0..2.0;
+            // TR_ZOOM must not widen it (S1-B-5).
+            self.zoom = z.clamp(1.0, 2.0);
             self.zoom_pinned = true;
         }
         // The renderer rides the new atlas texture (the dye-param table is

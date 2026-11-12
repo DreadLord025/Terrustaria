@@ -94,6 +94,8 @@ impl App {
         };
         self.last_frame = now;
         self.frame_count += 1;
+        // Main.cs:16801-16815,18376 — view zoom keys (S1-B-5).
+        self.update_view_zoom_keys();
         self.anim_time += dt;
         // `UserInterface.Update`'s lockout countdown
         // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
