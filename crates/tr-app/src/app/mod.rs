@@ -2174,6 +2174,12 @@ impl App {
                         "vortexalien" => NpcKind::VortexAlien,
                         "vortexheadcrab" => NpcKind::VortexHeadcrab,
                         "moonlordhead" => NpcKind::MoonLordHead,
+                        // The Moon Lord's parts (M4-NPC-3v): the hands draw
+                        // from their own `(120, 180)` origin, the core carries
+                        // its torso halves and the free eye from `(40, 40)`.
+                        "moonlordhand" => NpcKind::MoonLordHand,
+                        "moonlordcore" => NpcKind::MoonLordCore,
+                        "moonlordfreeeye" => NpcKind::MoonLordFreeEye,
                         "dd2darkmage" => NpcKind::DD2DarkMage,
                         "dd2bartender" => NpcKind::DD2Bartender,
                         // The Eye of Cthulhu (M4-NPC-3m): its 6-row strip
@@ -2202,13 +2208,25 @@ impl App {
                         1,
                         0.0,
                     );
-                    n.hp = n.max_hp;
+                    // The Moon Lord's parts declare `lifeMax = 0` (they die
+                    // with the core, `NPC.cs`), so the spawn would be an
+                    // instant corpse on the shot frame — give the lineup a
+                    // survivable pool.
+                    n.hp = n.max_hp.max(1000);
                     // The saucer family's `FindFrame` cases read the core's
                     // mirrored `ai[3]` clock; give the spawn a mid-band value
                     // so the lineup shows the attack rows rather than the
                     // stripped idle frame.
                     if n.kind.is_martian() {
                         n.ai[3] = 100.0;
+                    }
+                    // The Moon Lord's hands split by their `ai[2]` slot (0 =
+                    // right, 1 = left, `AI_078`) and the core self-kills
+                    // without both hands plus the head (`:41251-41291`) —
+                    // alternate the slot so a lineup of two hands keeps the
+                    // core alive and shows both mirrors.
+                    if n.kind == NpcKind::MoonLordHand {
+                        n.ai[2] = (slot % 2) as f32;
                     }
                     npcs.push(n);
                 }

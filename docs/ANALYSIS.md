@@ -10877,11 +10877,50 @@ The three row helpers (`rows`, `next_row`, `last_row`) read
 `npc_rows(texture_net_id(kind))`, so a machine can never walk past its sheet;
 `drakomire_frame` is the shared 415/416 body.
 
+**The Moon Lord parts' own draw blocks (M4-NPC-3v).** The three parts had been
+riding the generic frame-centre anchor, which is wrong for two of them, and
+their extra sprites were never drawn:
+
+* **The hand (397)** (`Main.cs:24765-24845`) draws its frame at the NPC's
+  CENTRE from the fixed origin `(120, 180)` — mirrored to
+  `(sheet.Width - 120, 180)` for the LEFT hand (`ai[2] != 0`). On the 246x272
+  row that is 44 px lower than the frame centre the generic path used.
+  `ml_origin_draw` carries it.
+* **The free eye (400)** (`Main.cs:24951-25059`) uses the origin `(40, 40)` on
+  its 78x120 row — 20 px above the frame centre.
+* **The core (398)** (`Main.cs:24701-24764`) really does draw its body at the
+  Centre with `origin = frame.Size() / 2`, so the generic anchor was already
+  right; what was missing is its two torso halves (`Extra[13]` at the Centre
+  from `(w, 278)` and `(0, 278)`, the second `FlipHorizontally`) and its inner
+  plate (`Extra[16]` from `(112, 101)`).
+* **The hand's base plate** (`Extra[17]`, `Main.cs:24797-24816`) draws at the
+  hand's Centre from `(26, 42)`, mirrored on the left hand and flipped with the
+  body.
+
+`ml_extra_parts` returns the unrotated overlays (top-left, size, mirror) and
+`draw_npcs` pushes them after the body, light-tinted like the body.
+
+**The lunar sheets were never packed (found while verifying M4-NPC-3v).** The
+`npc_sheets` map `NpcAssets` builds from `PILLAR_SHEETS` came back EMPTY at
+runtime: `load_static_sheets`' whole-image list carried `NPC_390-395`/`399` but
+none of `NPC_396-401`, `NPC_402-429` or `NPC_518`, so `atlas.sheet("NPC_397")`
+was `None` and every lunar kind — the whole M4-NPC-3t per-kind-sheet work and
+the M4-NPC-3u machines — drew NOTHING. The unit tests passed because they
+fabricate their own `BgTex`. The ids are now in the list (32 sheets load) and
+the lineup screenshot shows the core's ribcage, both palms and the free eye.
+
 **Parked (documented follow-ups).**
-* The Moon Lord hand (397), core (398) and free eye (400) custom blocks
-  (`Main.cs:24701-24951`) — their extra parts (the arms, the tail, the eye's
-  laser sprites) stay undrawn; the parts draw one frame each at the generic
-  anchor.
+* The Moon Lord's arm CHAINS (`Extra[14]`/`Extra[15]`, `Main.cs:24720-24750`,
+  `:24800-24810`): each is drawn rotated toward the OTHER part's centre, which
+  needs the `ai[3]` owner lookup and a rotated quad; the port draws the parts
+  unrotated only.
+* The eye sprite each hand carries (`Extra[19]`, `Main.cs:24823`) and the free
+  eye's own (`:24960`): its position rides the unported `localAI[0..2]`
+  ellipse, so the port has no `local_ai` array to read.
+* `GetMoonLordColoring` (`Main.cs:24640-24660`): the vanilla tints the parts
+  with a rotating colour ramp; the port uses the light map's tint.
+* The hand's death state (`Extra[26]`, `Main.cs:24818-24822`) and the
+  `ai[0] == 3` beam sparkles/lines.
 * `spriteDirection` write sites outside the ported machines (`NPC.cs`'s 24
   `spriteDirection =` sites) — the flip rides `n.sprite_dir`, which several
   machines never write.

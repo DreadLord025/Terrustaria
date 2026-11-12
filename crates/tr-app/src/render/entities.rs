@@ -357,6 +357,20 @@ pub(crate) struct NpcAssets {
     /// `Images/Glow_132/143/149/162` — the per-pillar glow masks
     /// (`Main.cs:24159-24275`'s dedicated tower arm draws four ghost
     /// copies of each at the velocity-rotated offsets).
+    /// `TextureAssets.Extra[13]` — the Moon Lord core's two torso halves
+    /// (drawn at the core's Centre from origins `(w, 278)` and `(0, 278)`,
+    /// `Main.cs:24754-24755`).
+    pub(crate) ml_torso: Option<BgTex>,
+    /// `TextureAssets.Extra[16]` — the core's inner plate (origin `(112, 101)`,
+    /// `Main.cs:24756`).
+    pub(crate) ml_core_plate: Option<BgTex>,
+    /// `TextureAssets.Extra[17]` — the hand's base plate drawn at the hand's
+    /// Centre from the origin `(26, 42)` mirrored per side
+    /// (`Main.cs:24797-24816`).
+    pub(crate) ml_hand_base: Option<BgTex>,
+    /// `TextureAssets.Extra[19]` — the Moon Lord's eye sprite the hand and the
+    /// free eye both draw (`Main.cs:24823`, `:24960`).
+    pub(crate) ml_eye: Option<BgTex>,
     pub(crate) glow_stardust: Option<BgTex>,
     pub(crate) glow_nebula: Option<BgTex>,
     pub(crate) glow_vortex: Option<BgTex>,
@@ -526,6 +540,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         tower_nebula: sky_tex(atlas, "NPC_507", None),
         tower_solar: sky_tex(atlas, "NPC_517", None),
         tower_vortex: sky_tex(atlas, "NPC_422", None),
+        ml_torso: sky_tex(atlas, "Extra_13", None),
+        ml_core_plate: sky_tex(atlas, "Extra_16", None),
+        ml_hand_base: sky_tex(atlas, "Extra_17", None),
+        ml_eye: sky_tex(atlas, "Extra_19", None),
         glow_stardust: sky_tex(atlas, "Glow_132", None),
         glow_nebula: sky_tex(atlas, "Glow_143", None),
         glow_vortex: sky_tex(atlas, "Glow_149", None),
@@ -1045,6 +1063,72 @@ const PILLAR_SHEETS: &[u32] = &[
 /// pixels at the bottom instead of bleeding them into the last frame.
 fn vanilla_row_h(tex: &BgTex, rows: u32) -> f32 {
     (tex.h as i32 / rows.max(1) as i32) as f32
+}
+
+/// The Moon Lord hand's / free eye's body draw: `DrawNPCDirect` puts the frame
+/// at the NPC's CENTRE with a fixed origin (`Main.cs:24765-24845`,
+/// `:24951-25059`) instead of the frame-centre origin the generic path uses.
+/// The hand mirrors its origin on the left side (`ai[2] != 0`):
+/// `origin.X = sheet.Width - origin.X`.
+fn ml_origin_draw<'a>(
+    tex: Option<&'a BgTex>,
+    rows: u32,
+    n: &Npc,
+    _w: f32,
+    _h: f32,
+    origin: [f32; 2],
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(40.0, |t| t.h / rows as f32);
+    let fw = tex.map_or(40.0, |t| t.w);
+    let (cx, cy) = n.center();
+    let ox = if n.kind == NpcKind::MoonLordHand && n.ai[2] != 0.0 {
+        fw - origin[0]
+    } else {
+        origin[0]
+    };
+    (tex, fh, [fw, fh], [cx - ox, cy - origin[1]])
+}
+
+/// The Moon Lord's extra parts — the core's two torso halves + inner plate and
+/// the hand's base plate (`Main.cs:24754-24756`, `:24797-24816`). The C# draws
+/// each at the NPC's Centre from a fixed origin; the second torso half is
+/// mirrored (`SpriteEffects.FlipHorizontally`).
+///
+/// Parked (ANALYSIS M4-NPC-3v): the arm CHAINS the core/hand draw between
+/// themselves (`Extra[14]`/`Extra[15]`, rotated toward the other part's centre
+/// and requiring the `ai[3]` owner lookup), the eye sprite each hand carries
+/// (its position rides the unported `localAI` ellipse) and the whole
+/// `GetMoonLordColoring` tint.
+fn ml_extra_parts(
+    n: &Npc,
+    torso: Option<BgTex>,
+    plate: Option<BgTex>,
+    base: Option<BgTex>,
+) -> Vec<(BgTex, [f32; 2], [f32; 2], bool)> {
+    let (cx, cy) = n.center();
+    let mut out = Vec::new();
+    match n.kind {
+        NpcKind::MoonLordCore => {
+            if let Some(t) = torso {
+                let (w, h) = (t.w, t.h);
+                // `origin14 = (width, 278)`, `origin15 = (0, 278)` on the same
+                // sheet; the second draw is horizontally flipped.
+                out.push((t, [cx - w, cy - 278.0], [w, h], false));
+                out.push((t, [cx, cy - 278.0], [w, h], true));
+            }
+            if let Some(t) = plate {
+                out.push((t, [cx - 112.0, cy - 101.0], [t.w, t.h], false));
+            }
+        }
+        NpcKind::MoonLordHand => {
+            if let Some(t) = base {
+                let ox = if n.ai[2] != 0.0 { t.w - 26.0 } else { 26.0 };
+                out.push((t, [cx - ox, cy - 42.0], [t.w, t.h], n.sprite_dir > 0));
+            }
+        }
+        _ => {}
+    }
+    out
 }
 
 /// The Moon Lord head's own draw (`Main.cs:24846-24927`): `NPC_396` is a
@@ -1628,7 +1712,7 @@ pub(crate) fn draw_npcs(
     let white = r.white_uv();
     let mut quads = 0;
     for npc in npcs {
-        // The C# wraps the whole NPC draw with `position += netOffset`
+        // The C# wraps the whole NPC draw with `position += offset`
         // (`Main.cs:22335`, restored at `:22450`) — the port clones the NPC
         // and adds the accumulator to its position, which every arm derives
         // its anchor from. Zero on the host / single-player.
@@ -2043,9 +2127,19 @@ pub(crate) fn draw_npcs(
             // generic arm at their `Main.npcFrameCount` rows (their custom
             // blocks' extra parts are parked, ANALYSIS M4-NPC-3t).
             NpcKind::MoonLordHead => moon_lord_head_draw(assets.npc_sheet(396), n, w, h),
-            NpcKind::MoonLordHand => generic_anchor(assets.npc_sheet(397), 4, n, w, h),
+            // The hand's own block (`Main.cs:24765-24845`): the frame is drawn
+            // at the NPC's Centre from the origin `(120, 180)` — mirrored to
+            // `(width - 120, 180)` for the LEFT hand (`ai[2] != 0`), which is
+            // 44 px lower than the frame-centre anchor the generic path used.
+            NpcKind::MoonLordHand => ml_origin_draw(assets.npc_sheet(397), 4, n, w, h, [120.0, 180.0]),
+            // The core (`Main.cs:24701-24764`) draws its body at the Centre with
+            // `origin = frame.Size() / 2` — the generic anchor already does
+            // that; its torso halves and inner plate ride the extra pass.
             NpcKind::MoonLordCore => generic_anchor(assets.npc_sheet(398), 5, n, w, h),
-            NpcKind::MoonLordFreeEye => generic_anchor(assets.npc_sheet(400), 4, n, w, h),
+            // The free eye (`Main.cs:24951-25059`) uses the fixed origin
+            // `(40, 40)` on a 78x120 row, i.e. 20 px higher than the frame
+            // centre.
+            NpcKind::MoonLordFreeEye => ml_origin_draw(assets.npc_sheet(400), 4, n, w, h, [40.0, 40.0]),
             NpcKind::MoonLordLeechBlob => generic_anchor(assets.npc_sheet(401), 1, n, w, h),
             // The javelin throwers: NPC_561/562/563 are 84x1064 with 14 rows
             // (`Main.npcFrameCount[561..563] = 14`) — the v1 read the
@@ -2601,6 +2695,21 @@ pub(crate) fn draw_npcs(
         // OWN frame/rotation/anchor, so the same transform draws them a
         // second time off the overlay sheets (the Mech-Queen's chain block
         // and the trail after-images stay the documented deviations).
+        // The Moon Lord parts' fixed-origin extras (`Main.cs:24754-24756`,
+        // `:24797-24816`): unrotated, light-tinted overlays at the part's
+        // Centre.
+        for (t, top_left, size, mirror) in
+            ml_extra_parts(n, assets.ml_torso, assets.ml_core_plate, assets.ml_hand_base)
+        {
+            let euv = flip_uv(t.uv, mirror);
+            r.push_sprite(
+                snap_to_screen(top_left, camera, zoom, screen),
+                size,
+                euv,
+                tint,
+            );
+            quads += 1;
+        }
         let glow = match n.kind {
             NpcKind::SkeletronPrime => assets.prime_eyes.as_ref(),
             NpcKind::PrimeLaser => assets.bone_laser.as_ref(),
@@ -2754,6 +2863,64 @@ mod anchor_tests {
             let net = texture_net_id(kind);
             assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
         }
+    }
+
+    #[test]
+    fn the_moon_lord_parts_draw_from_their_own_origins() {
+        // The hand (`Main.cs:24765-24845`): body at the NPC's CENTRE from the
+        // origin `(120, 180)`, mirrored to `(width - 120, 180)` for the left
+        // hand (`ai[2] != 0`). `NPC_397` is 246 px wide, four rows tall.
+        let hand_tex = sheet(246.0, 1088.0);
+        let mut hand = bare(NpcKind::MoonLordHand);
+        let (cx, cy) = hand.center();
+        let (_, fh, size, pos) = ml_origin_draw(Some(&hand_tex), 4, &hand, 0.0, 0.0, [120.0, 180.0]);
+        assert_eq!(fh, 272.0, "the hand's row height");
+        assert_eq!(size, [246.0, 272.0]);
+        assert_eq!(pos, [cx - 120.0, cy - 180.0], "the origin, not the frame centre");
+        // The left hand mirrors the origin about the sheet's width.
+        hand.ai[2] = 1.0;
+        let (_, _, _, pos_l) = ml_origin_draw(Some(&hand_tex), 4, &hand, 0.0, 0.0, [120.0, 180.0]);
+        assert_eq!(pos_l, [cx - 126.0, cy - 180.0], "(246 - 120, 180)");
+
+        // The free eye (`Main.cs:24951-25059`): origin `(40, 40)` on an 78x120
+        // row — 20 px above the frame centre the generic anchor would use.
+        let eye_tex = sheet(78.0, 480.0);
+        let eye = bare(NpcKind::MoonLordFreeEye);
+        let (ecx, ecy) = eye.center();
+        let (_, efh, esize, epos) = ml_origin_draw(Some(&eye_tex), 4, &eye, 0.0, 0.0, [40.0, 40.0]);
+        assert_eq!(efh, 120.0);
+        assert_eq!(esize, [78.0, 120.0]);
+        assert_eq!(epos, [ecx - 40.0, ecy - 40.0]);
+        assert_eq!(epos[1], ecy - 40.0);
+
+        // The core's extras (`Main.cs:24754-24756`): two torso halves from
+        // `(w, 278)` and `(0, 278)` (the second flipped) plus the inner plate
+        // from `(112, 101)`.
+        let torso = sheet(300.0, 400.0);
+        let plate = sheet(200.0, 200.0);
+        let core = bare(NpcKind::MoonLordCore);
+        let (ccx, ccy) = core.center();
+        let parts = ml_extra_parts(&core, Some(torso), Some(plate), None);
+        assert_eq!(parts.len(), 3, "two torso halves plus the plate");
+        assert_eq!(parts[0].1, [ccx - 300.0, ccy - 278.0], "the right half");
+        assert!(!parts[0].3, "drawn unflipped");
+        assert_eq!(parts[1].1, [ccx, ccy - 278.0], "the left half mirrors at x = 0");
+        assert!(parts[1].3, "the second half is FlipHorizontally");
+        assert_eq!(parts[2].1, [ccx - 112.0, ccy - 101.0], "the inner plate");
+        assert!(!parts[2].3);
+
+        // The hand's base plate (`Main.cs:24797-24816`) from `(26, 42)`, the
+        // origin mirrored on the left hand and the sprite flipped with the
+        // body.
+        let base = sheet(120.0, 120.0);
+        let mut hb = bare(NpcKind::MoonLordHand);
+        let (hx, hy) = hb.center();
+        let parts = ml_extra_parts(&hb, None, None, Some(base));
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].1, [hx - 26.0, hy - 42.0]);
+        hb.ai[2] = 1.0;
+        let parts = ml_extra_parts(&hb, None, None, Some(base));
+        assert_eq!(parts[0].1, [hx - 94.0, hy - 42.0], "(120 - 26, 42)");
     }
 
     #[test]
