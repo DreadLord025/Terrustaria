@@ -607,6 +607,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // (`Player.cs:57009-57011`): an unchaseable or >3000-px whip
             // target drops every tick.
             p.invalidate_minion_target(&app.npcs);
+            // `Player.cs:27608-27614`: right after the NPC collision pass,
+            // the tile-contact damage check (`GetHurtTile` +
+            // `ApplyTouchDamage`) — the spike hazard the dungeon pass paints.
+            crate::touch_damage::apply_touch_damage(
+                &app.world,
+                p,
+                &mut app.item_rng,
+                crate::player::WIDTH as i32,
+                crate::player::HEIGHT as i32,
+            );
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires
             // `Wiring.HitSwitch` at the magnet tile (net message 59 is out of

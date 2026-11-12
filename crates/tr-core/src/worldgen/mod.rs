@@ -16,6 +16,7 @@
 mod biome_detail;
 mod biomes;
 pub mod dungeon;
+pub mod dungeon_features;
 mod caves;
 mod config;
 mod desert;
