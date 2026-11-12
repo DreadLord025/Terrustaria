@@ -51,6 +51,7 @@ static ITEM_CORRECTIONS: [ItemDef; 1] = [
             body_slot: -1,
             leg_slot: -1,
             defense: 0,
+            life_regen: 0,
             class: DamageClass::Magic,
             crit: 0,
             value: 50000,

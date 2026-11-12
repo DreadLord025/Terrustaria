@@ -3155,7 +3155,8 @@ impl Player {
                 156 => self.no_knockback = true,
                 // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
                 // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
-                49 => self.accessory_life_regen += 2,
+                // (The `Item.lifeRegen` rows are generic now — the loop after
+                // the accessory match adds every worn item's value.)
                 _ => {}
             }
         }
@@ -3172,6 +3173,13 @@ impl Player {
         // (2, +4 at `:9950`) and the Dryad's Ward (165, +6 at `:10305`), and
         // the Celestial Stone bundle's +2 (`:12991`).
         for &kind in self.equipped[..10].iter() {
+            // `:13122`: `lifeRegen += armorPiece.lifeRegen` — the item's own
+            // row (the Band of Regeneration 2, Charm of Myths 2, Mana
+            // Regeneration Band 2, Restoration Shield 2, Mystic Arts Sash 2
+            // are the whole stock table).
+            if let Some(def) = crate::registry::get(kind) {
+                self.accessory_life_regen += def.life_regen;
+            }
             self.accessory_life_regen += match kind {
                 3800 => 4,
                 3872 => 8,
@@ -6086,6 +6094,12 @@ mod tests {
         p.equipped[3] = 49;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.accessory_life_regen_value(), 2);
+        // The Charm of Myths (860) carries the same `Item.lifeRegen` 2, and the
+        // row is the item's own field now, not a hardcoded match arm.
+        p.equipped[4] = 860;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.accessory_life_regen_value(), 4);
+        p.equipped[4] = 0;
         // The Regeneration buff (2) +4 and the Dryad's Ward (165) +6.
         p.buffs.add_buff(2, 3600);
         p.buffs.add_buff(165, 3600);
