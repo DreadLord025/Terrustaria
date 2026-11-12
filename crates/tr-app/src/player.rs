@@ -575,6 +575,12 @@ pub struct Player {
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
     pub mana: i32,
+    /// `Player.manaCost` (`Player.cs:1884`): the magic items' cost
+    /// multiplier — `ResetEffects` sets 1f (`:18334`) and the armor pieces,
+    /// the accessory rows, the casters' set bonuses and `BuffID.MagicPower`
+    /// subtract from it. `CheckMana` pays `(int)(item.mana * manaCost)`
+    /// (`:5881-5884`).
+    pub mana_cost: f32,
     pub mana_max: i32,
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
@@ -1290,6 +1296,7 @@ impl Player {
             hp: 100,
             max_hp: 100,
             mana: 20,
+            mana_cost: 1.0,
             mana_max: 20,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
@@ -2553,6 +2560,14 @@ impl Player {
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
+        // `ResetEffects`' `statDefense = 0` (`Player.cs:18327`): the buff arms
+        // below and `GrantArmorBenefits` (`:13121`, the equipment pass at the
+        // bottom of this block) re-add per tick. Before M3-EQUIP-5 the field
+        // was assigned *outside* the tick (from `world_sim`), which silently
+        // dropped every buff and prefix defense arm.
+        self.stat_defense = 0;
+        // `:18334`: `manaCost = 1f` — the reductions re-apply below.
+        self.mana_cost = 1.0;
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).
@@ -2564,15 +2579,102 @@ impl Player {
         self.melee_crit = 4;
         self.ranged_crit = 4;
         self.magic_crit = 4;
+        // `GrantArmorBenefits` (' armor/accessory rows, `Player.cs:13121`):
+        // every equipped wearable's `Item.defense` — the three armor slots AND
+        // the seven functional accessory slots (Shackle +1, Cobalt Shield +1,
+        // Ankh Shield +4, …), then the completed set's bonus
+        // (`ArmorSetBonuses.GetCompleteSet(...).Effect`).
+        for &kind in self.equipped[..10].iter() {
+            if kind == 0 {
+                continue;
+            }
+            if let Some(def) = crate::registry::get(kind) {
+                self.stat_defense += def.defense as i32;
+            }
+            // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
+            // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
+            // Hat robes (1282-1287, −0.05…−0.15 by tier), the Crystal
+            // Assassin head (4982, −0.1), the Spectre hood/mask (1003 −0.17,
+            // 2189 −0.13), the Mystic Robe (2279, −0.1), the Apprentice/
+            // Dark Artist rows (3797 −0.1, 3875 −0.15).
+            self.mana_cost -= match kind {
+                1282 => 0.05,
+                1283 => 0.07,
+                1284 => 0.09,
+                1285 => 0.11,
+                1286 => 0.13,
+                1287 => 0.15,
+                2279 | 3797 | 4982 => 0.1,
+                2189 => 0.13,
+                3875 => 0.15,
+                1003 => 0.17,
+                _ => 0.0,
+            };
+        }
+        let (armor_head, armor_body, armor_legs) = (
+            self.equipped[0] as i32,
+            self.equipped[1] as i32,
+            self.equipped[2] as i32,
+        );
+        self.stat_defense +=
+            tr_core::armor_sets::set_bonus_defense(armor_head, armor_body, armor_legs);
+        // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
+        // `ArmorSetBonuses.Initialize` triples, `:396-500`): the damage/crit/
+        // speed/mana/minion scalars of Necro, Pumpkin, Ninja, Wizard, Magic Hat,
+        // Molten, Frost, Mining, the Cobalt/Mythril/Adamantite head variants,
+        // Crystal Assassin, Tiki, Spooky, Spider and Bee.
+        if let Some((_set, set)) =
+            tr_core::armor_sets::set_stats(armor_head, armor_body, armor_legs)
+        {
+            self.melee_damage += set.melee_damage;
+            self.ranged_damage += set.ranged_damage;
+            self.magic_damage += set.magic_damage;
+            self.minion_damage += set.minion_damage;
+            self.melee_crit += set.melee_crit;
+            self.ranged_crit += set.ranged_crit;
+            self.magic_crit += set.magic_crit;
+            self.move_speed += set.move_speed;
+            self.melee_speed_bonus += set.melee_speed;
+            self.pick_speed_bonus += set.pick_speed;
+            self.mana_max += set.mana_max;
+            self.max_minions += set.max_minions;
+            self.mana_cost += set.mana_cost;
+            if set.dash_type != 0 {
+                self.dash_type = set.dash_type;
+            }
+        }
         for bt in self.buffs.active_types() {
             match bt {
                 22 => self.blind = true, // `BuffID.Darkness`
                 32 => self.slow = true,  // `BuffID.Slow`
+                // `:11887-11892` — `BuffID.MagicPower` (29): the crit, the
+                // damage, the 20 mana and the −0.02 cost.
+                29 => {
+                    self.magic_crit += 2;
+                    self.magic_damage += 0.05;
+                    self.mana_max += 20;
+                    self.mana_cost -= 0.02;
+                }
                 33 => {
                     self.weak_stacks += 1; // `BuffID.Weak`
                     self.melee_damage -= 0.051;
                     self.move_speed -= 0.1;
+                    // `:11915`: `statDefense -= 4` per Weak slot.
+                    self.stat_defense -= 4;
                 }
+                // `:9962` — `BuffID.Ironskin`: `statDefense += 8`.
+                5 => self.stat_defense += 8,
+                // `:10064` — `BuffID.Ichor`: `statDefense -= 15`.
+                69 => self.stat_defense -= 15,
+                // `:10108` — buff 215 (`BuffID.Warmth`'s neighbour row in the
+                // C#: `statDefense += 5`).
+                215 => self.stat_defense += 5,
+                // `:10306` — `BuffID.DryadsWard`: `statDefense += 8`
+                // (the `lifeRegen += 6` / `thorns += 0.5` halves wait for
+                // their systems).
+                165 => self.stat_defense += 8,
+                // `:11921` — `BuffID.Tipsy`: `statDefense -= 4`.
+                25 => self.stat_defense -= 4,
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
                 // `:11001-11004`: the Sunflower buff's movement tier —
@@ -2583,11 +2685,13 @@ impl Player {
                 }
                 // `:9932-9934`: the Star in a Bottle's mana-regen add.
                 158 => self.mana_regen_bonus += 10,
-                // The WellFed tiers (`:11931-11969`): the per-slot stat adds.
-                // The `statDefense` half waits for the player-defense
-                // consumer (M3-EQUIP-3); the minion halves for M4-MINION.
+                // The WellFed tiers (`:11931-11969`): the per-slot stat adds —
+                // the defense rows (26 +2, 206 +3, 207 +4) since M3-EQUIP-5;
+                // the minion halves wait for M4-MINION.
                 26 => {
                     self.well_fed = true;
+                    // `:11934`: `statDefense += 2`.
+                    self.stat_defense += 2;
                     self.melee_crit += 2;
                     self.melee_damage += 0.05;
                     self.melee_speed_bonus += 0.05;
@@ -2600,6 +2704,8 @@ impl Player {
                 }
                 206 => {
                     self.well_fed = true;
+                    // `:11950`: `statDefense += 3`.
+                    self.stat_defense += 3;
                     self.melee_crit += 3;
                     self.melee_damage += 0.075;
                     self.melee_speed_bonus += 0.075;
@@ -2612,6 +2718,8 @@ impl Player {
                 }
                 207 => {
                     self.well_fed = true;
+                    // `:11966`: `statDefense += 4`.
+                    self.stat_defense += 4;
                     self.melee_crit += 4;
                     self.melee_damage += 0.1;
                     self.melee_speed_bonus += 0.1;
@@ -2682,6 +2790,12 @@ impl Player {
         self.rocket_boots = 0;
         self.no_knockback = false;
         self.has_jump_options = [false; 9];
+        // `:18701-18703`: `wingsLogic = 0; hasWings = false; wingTimeMax = 0`
+        // — the granting wing re-sets all three below, so taking the wings off
+        // ends the flight (and its budget) on the next tick.
+        self.wings_logic = 0;
+        self.has_wings = false;
+        self.wing_time_max = 0;
         self.accessory_life_regen = 0;
         let (kinds, prefixes) = (self.equipped, self.equipped_prefix);
         for (slot, prefix) in kinds[3..10].iter().zip(&prefixes[3..10]) {
@@ -2696,17 +2810,158 @@ impl Player {
                 987 => self.has_jump_options[ExtraJump::Blizzard.index()] = true,
                 1724 => self.has_jump_options[ExtraJump::Fart.index()] = true,
                 3201 => self.has_jump_options[ExtraJump::Sail.index()] = true,
-                // The balloons (`:14806/:15093-15101`, :14820 - the combos
-                // carry their bottle's option + jumpBoost; the horseshoe
-                // balloons add noFallDmg + the luck flag):
-                399 | 983 | 1163 | 1164 | 1250 | 1251 | 1252 | 3241 | 3250 | 3251 | 3252 => {
+                // The bottle combos (`:14822-14835`): 1164 (Bundle of
+                // Balloons) and 5331 (its Amber/Glass variant) carry all three
+                // bottles at once.
+                1164 | 5331 => {
+                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
                     self.jump_boost = true;
                 }
-                // The boots (`:15005-15008` Hermes - `accRunSpeed = 6f`; the
-                // Flurry variant `:15013-15016`):
-                54 | 1579 => self.acc_run_speed = 6.0,
+                // Every other bottle/balloon carries its own option *and*
+                // `jumpBoost` (`:14806/:15093-15103`, `:14797-14860`): `399`
+                // Shiny Red Balloon and `1250` Cloud in a Balloon the Cloud
+                // row, `1251`/`1163` the Blizzard one, `983`/`1252` the
+                // Sandstorm one, `1863`/`3250` the Fart one, `3252`/`3241` the
+                // Sail one. `3251` (honeycomb balloon) and `1249` (Honey
+                // Comb) carry only the boost, and so does `159`/`3225` (the
+                // Aglet-style `jumpSpeedBoost` rows).
+                399 | 1250 => {
+                    self.has_jump_options[ExtraJump::Cloud.index()] = true;
+                    self.jump_boost = true;
+                }
+                1251 | 1163 => {
+                    self.has_jump_options[ExtraJump::Blizzard.index()] = true;
+                    self.jump_boost = true;
+                }
+                983 | 1252 => {
+                    self.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+                    self.jump_boost = true;
+                }
+                1863 | 3250 => {
+                    self.has_jump_options[ExtraJump::Fart.index()] = true;
+                    self.jump_boost = true;
+                }
+                3252 | 3241 => {
+                    self.has_jump_options[ExtraJump::Sail.index()] = true;
+                    self.jump_boost = true;
+                }
+                159 | 1249 | 3225 | 3251 => self.jump_boost = true,
+                // The boots (`:15005-15008` Hermes / `:15013-15016` Flurry /
+                // `:15017-15020` Amphibian — `accRunSpeed = 6f`):
+                54 | 1579 | 3200 => self.acc_run_speed = 6.0,
                 // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
                 128 => self.rocket_boots = 1,
+                // The Spectre Boots (`:15213-15216` - tier 2).
+                405 => {
+                    self.acc_run_speed = 6.0;
+                    self.rocket_boots = 2;
+                }
+                // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
+                // +8% move).
+                898 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 2;
+                    self.move_speed += 0.08;
+                }
+                // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
+                // skates).
+                1862 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 3;
+                    self.move_speed += 0.08;
+                    self.ice_skate = true;
+                }
+                // The Terraspark Boots (`:15390-15396` - tier 4).
+                5000 => {
+                    self.acc_run_speed = 6.75;
+                    self.rocket_boots = 4;
+                    self.move_speed += 0.08;
+                    self.ice_skate = true;
+                }
+                // The Hellfire Treads (`:15397-15401` - tier 5, 6f).
+                4874 => {
+                    self.acc_run_speed = 6.0;
+                    self.rocket_boots = 5;
+                }
+                _ if Self::wing_slot(*slot as i32) > 0 => {
+                    // `:15593-15602`: the accessory's `wingSlot` is both the
+                    // gameplay wing (`wingsLogic`) and the look (`wings`, same
+                    // field in the port), and `:15453` takes the flight budget
+                    // from the same id's `ArmorIDs.Wing.Sets.Stats`.
+                    let slot_id = Self::wing_slot(*slot as i32);
+                    self.wings_logic = slot_id;
+                    self.has_wings = true;
+                    self.wing_time_max = Self::wing_stats(slot_id).0;
+                }
+                // The Titan Glove's melee-speed row (`:15103-15107`); its
+                // `autoReuseGlove` flag has no port consumer yet.
+                211 => self.melee_speed_bonus += 0.12,
+                // The damage/crit accessories (`ApplyEquipFunctional`, the
+                // `Player.cs:15223-15560` block): the four class emblems at
+                // +15% (Sorcerer 489, Warrior 490, Ranger 491, Summoner 2998),
+                // the Avenger Emblem's +12% to all four (935), the melee-speed
+                // gloves (897/936/1343 — the Fire Gauntlet adds +12% melee
+                // damage), the Sniper Scope's +10 ranged crit/+10% ranged
+                // damage (1858), the Celestial Stone-style +8 crit/+10% all
+                // (1301), the Sorcerer's Magnet +15% magic (2220), the minion
+                // emblems +15%/+10% with their extra slot (1167/1864/1845),
+                // the Ankh/Stone rows' crit-and-damage mix (3015) and the
+                // Empress Brooch's +7.5% move (4989).
+                489 => self.magic_damage += 0.15,
+                490 => self.melee_damage += 0.15,
+                491 => self.ranged_damage += 0.15,
+                2998 => self.minion_damage += 0.15,
+                935 => {
+                    self.melee_damage += 0.12;
+                    self.ranged_damage += 0.12;
+                    self.magic_damage += 0.12;
+                    self.minion_damage += 0.12;
+                }
+                897 => self.melee_speed_bonus += 0.12,
+                936 => {
+                    self.melee_speed_bonus += 0.12;
+                    self.melee_damage += 0.12;
+                }
+                1343 => {
+                    self.melee_speed_bonus += 0.12;
+                    self.melee_damage += 0.12;
+                }
+                1858 => {
+                    self.ranged_crit += 10;
+                    self.ranged_damage += 0.1;
+                }
+                1301 => {
+                    self.melee_crit += 8;
+                    self.ranged_crit += 8;
+                    self.magic_crit += 8;
+                    self.melee_damage += 0.1;
+                    self.ranged_damage += 0.1;
+                    self.magic_damage += 0.1;
+                    self.minion_damage += 0.1;
+                }
+                3015 => {
+                    self.melee_crit += 5;
+                    self.ranged_crit += 5;
+                    self.magic_crit += 5;
+                    self.melee_damage += 0.05;
+                    self.ranged_damage += 0.05;
+                    self.magic_damage += 0.05;
+                    self.minion_damage += 0.05;
+                }
+                2220 => self.magic_damage += 0.15,
+                1167 => self.minion_damage += 0.15,
+                // 1864/1845 also carry `maxMinions++` in the C#; the budget
+                // half is `grant_summon_caps`' (`world_sim/player.rs`), so only
+                // the damage row lands here (the C# total counts once).
+                1864 => self.minion_damage += 0.15,
+                1845 => self.minion_damage += 0.1,
+                4989 => self.move_speed += 0.075,
+                // The Mana Flower (`:12962-12965`, `manaFlower` −0.08) and the
+                // Nature's Gift (`:15110-15113`, −0.06).
+                555 => self.mana_cost -= 0.08,
+                223 => self.mana_cost -= 0.06,
                 // The Ice Skates (`:15089-15092`).
                 950 => self.ice_skate = true,
                 // The Aglet / the Anklet of the Wind (`:15114-15121`).
@@ -2723,6 +2978,11 @@ impl Player {
                 _ => {}
             }
         }
+        // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
+        // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
+        // the C# never lets `statDefense` go negative (a negative value would
+        // *raise* incoming damage through `CalculateDamagePlayersTake`).
+        self.stat_defense = self.stat_defense.max(0);
         // The debug pins stand in for the granting equipment - re-applied
         // after the clear (the vanilla: the grants re-set per tick).
         for i in 0..9 {
@@ -4144,6 +4404,63 @@ impl Player {
         })
     }
 
+    /// `Item.wingSlot` (`Item.cs`'s `SetDefaults` cases — the 47 wings whose
+    /// `case` carries the assignment; the three that set it from a shared
+    /// helper stay 0 for now). The port reads it where the C# reads
+    /// `currentItem.wingSlot` (`Player.cs:15593-15602`).
+    pub fn wing_slot(item: i32) -> i32 {
+        match item {
+            492 => 1,
+            493 => 2,
+            665 => 3,
+            748 => 4,
+            749 => 5,
+            761 => 6,
+            785 => 7,
+            786 => 8,
+            821 => 9,
+            822 => 10,
+            823 => 11,
+            948 => 12,
+            1162 => 13,
+            1165 => 14,
+            1515 => 15,
+            1583 => 16,
+            1584 => 17,
+            1585 => 18,
+            1586 => 19,
+            1797 => 20,
+            1830 => 21,
+            1866 => 22,
+            1871 => 23,
+            2280 => 24,
+            2494 => 25,
+            2609 => 26,
+            2770 => 27,
+            3228 => 28,
+            3580 => 33,
+            3582 => 34,
+            3588 => 35,
+            3592 => 36,
+            3883 => 37,
+            3924 => 38,
+            3928 => 39,
+            4730 => 40,
+            4746 => 41,
+            4750 => 42,
+            4754 => 43,
+            4823 => 44,
+            4954 => 45,
+            4978 => 46,
+            5586 => 47,
+            5627 => 48,
+            5659 => 49,
+            5686 => 50,
+            6140 => 51,
+            _ => 0,
+        }
+    }
+
     /// `ArmorIDs.Wing.Sets.Stats` via `WingStatsInitializer.cs:11-61`:
     /// `(fly_time, acc_run_override, accel_mult, has_hover, hover_speed,
     /// hover_accel)`. `-1` = no run-speed override. The dev/misc wings share
@@ -5493,6 +5810,215 @@ mod tests {
         assert_eq!(p.c_light, 0);
     }
 
+    /// M3-EQUIP-5 — `Player.statDefense` is derived inside the tick, in the
+    /// vanilla order: `ResetEffects` zeroes it (`Player.cs:18327`), the buff
+    /// arms add, `GrantArmorBenefits` adds the piece rows (`:13121`) and the
+    /// set bonus, `GrantPrefixBenefits` the accessory prefixes, then the floor
+    /// (`:25927`).
+    #[test]
+    fn stat_defense_sums_pieces_set_bonus_and_buffs() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Nothing worn, nothing buffed: 0.
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0);
+        // The copper set (89/80/76): 1 + 2 + 1 pieces + the MetalTier1 bonus 2.
+        p.equipped[0] = 89;
+        p.equipped[1] = 80;
+        p.equipped[2] = 76;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 6, "copper set: 4 pieces + 2");
+        // The accessories count too (`GetEffectiveArmor(0..10)`): the Shackle
+        // (216) +1 and the Ankh Shield (1613) +5 sit in slots 3/4.
+        p.equipped[3] = 216;
+        p.equipped[4] = 1613;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 12, "12 = 4 + 2 + 1 + 5");
+        // Ironskin (buff 5) +8 and the fed tier (26) +2.
+        p.buffs.add_buff(5, 3600);
+        p.buffs.add_buff(26, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 22, "12 + 8 + 2");
+        // Ichor (69) −15 and Weak (33) −4: the sum can go below the armor, and
+        // the floor clamps it at 0 (`:25927`) instead of inflating damage.
+        p.buffs.add_buff(69, 3600);
+        p.buffs.add_buff(33, 3600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 3, "22 - 15 - 4 = 3");
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.equipped[3] = 0;
+        p.equipped[4] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0, "the floor holds at 0");
+    }
+
+    /// M3-EQUIP-10 — the class emblems and the crit/move accessories.
+    #[test]
+    fn the_damage_accessories_raise_their_class() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Warrior Emblem (490): melee +15%, nothing else.
+        p.equipped[3] = 490;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.15).abs() < 1e-4);
+        assert!((p.magic_damage - 1.0).abs() < 1e-4);
+        // Avenger Emblem (935): +12% to all four classes.
+        p.equipped[3] = 935;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.12).abs() < 1e-4);
+        assert!((p.minion_damage - 1.12).abs() < 1e-4);
+        // Necromantic Scroll (1301): +8 to three crits and +10% to four
+        // classes on top of the 4-point crit bases.
+        p.equipped[3] = 1301;
+        p.update(&w, PlayerInput::default());
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (12, 12, 12));
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        // Papyrus Scarab (1864): +15% minion damage (its `maxMinions++` half
+        // belongs to `grant_summon_caps`).
+        p.equipped[3] = 1864;
+        p.update(&w, PlayerInput::default());
+        assert!((p.minion_damage - 1.15).abs() < 1e-4);
+    }
+
+    /// M3-EQUIP-9 — `manaCost` folds the armor pieces, the accessories, the
+    /// casters' sets and Magic Power.
+    #[test]
+    fn the_mana_cost_multiplier_folds_every_row() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 1.0).abs() < 1e-4);
+        // Nature's Gift (223) −0.06 and the Mana Flower (555) −0.08.
+        p.equipped[3] = 223;
+        p.equipped[4] = 555;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 0.86).abs() < 1e-4);
+        // The Mystic Robe (2279) −0.1 as an armor piece.
+        p.equipped[1] = 2279;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 0.76).abs() < 1e-4);
+        // Magic Power (buff 29) −0.02 plus its other rows.
+        p.buffs.add_buff(29, 3600);
+        let mana_max_before = p.mana_max;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - 0.74).abs() < 1e-4);
+        assert!(p.mana_max > mana_max_before, "the 20-mana row");
+        // The Mythril Caster set (376/379/380) −0.17.
+        p.equipped[0] = 376;
+        p.equipped[1] = 379;
+        p.equipped[2] = 380;
+        p.equipped[3] = 0;
+        p.equipped[4] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.mana_cost - (1.0 - 0.17 - 0.02)).abs() < 1e-4);
+    }
+
+    /// M3-EQUIP-8 — the wings grant `wingsLogic`/`wingTimeMax` themselves (the
+    /// `TR_WINGS` pin is no longer the only source).
+    #[test]
+    fn the_wing_accessories_grant_flight() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 0);
+        assert_eq!(p.wing_time_max, 0);
+        // Demon Wings (492 → `ArmorIDs.Wing` 1): 100 ticks of flight.
+        p.equipped[3] = 492;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 1);
+        assert!(p.has_wings);
+        assert_eq!(p.wing_time_max, Player::wing_stats(1).0);
+        // Bee Wings (1866 → 22) is the hover row: its stats carry the hover
+        // speeds, and the budget is its own.
+        p.equipped[3] = 1866;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 22);
+        assert_eq!(p.wing_time_max, Player::wing_stats(22).0);
+        assert!(Player::wing_stats(22).3, "the hover flag");
+        // Taking the wings off ends both.
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wings_logic, 0);
+        assert_eq!(p.wing_time_max, 0);
+        assert!(!p.has_wings);
+    }
+
+    /// M3-EQUIP-7 — the movement accessories grant the live flags (the
+    /// `TR_JUMPS`/`TR_BOOTS` pins stop being the only source).
+    #[test]
+    fn the_movement_accessories_grant_their_flags() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Bundle of Balloons (1164): Cloud + Sandstorm + Blizzard + jumpBoost.
+        // Before M3-EQUIP-7 only the jump boost was ported, so the item gave
+        // one extra jump instead of three.
+        p.equipped[3] = 1164;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        assert!(p.has_jump_options[ExtraJump::Blizzard.index()]);
+        assert!(p.jump_boost);
+        // Frostspark Boots (1862): tier 3, 6.75 accel, +8% move, ice skates.
+        p.equipped[3] = 1862;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.rocket_boots, 3);
+        assert!((p.acc_run_speed_value() - 6.75).abs() < 1e-4);
+        assert!((p.move_speed - 1.08).abs() < 1e-4);
+        assert!(p.ice_skate);
+        assert!(!p.has_jump_options[ExtraJump::Cloud.index()]);
+        // Hellfire Treads (4874): the tier-5 boots at the plain 6f.
+        p.equipped[3] = 4874;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.rocket_boots, 5);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4);
+        // A Sandstorm balloon (1252): the bottle's option and the boost.
+        p.equipped[3] = 0;
+        p.equipped[4] = 1252;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        assert!(p.jump_boost);
+    }
+
+    /// M3-EQUIP-5 — `ArmorSetBonuses.Benefits`' scalar rows ride the same pass.
+    #[test]
+    fn the_completed_set_grants_its_stat_row() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Crystal Assassin (4982/4983/4984): +10% every damage, +10 every crit,
+        // `dashType = 5`. The crit bases are 4 (`ResetEffects`), so 14.
+        p.equipped[0] = 4982;
+        p.equipped[1] = 4983;
+        p.equipped[2] = 4984;
+        p.update(&w, PlayerInput::default());
+        // The damage scalars start at 1.0 in the reset (`:2535-2538`), so the
+        // set's `+= 0.1f` reads as 1.1.
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        assert!((p.minion_damage - 1.1).abs() < 1e-4);
+        assert_eq!((p.melee_crit, p.ranged_crit, p.magic_crit), (14, 14, 14));
+        assert_eq!(p.dash_type, 5);
+        // Swapping to the Ninja set (256/257/258) keeps only its own row:
+        // `moveSpeed += 0.2f`.
+        p.equipped[0] = 256;
+        p.equipped[1] = 257;
+        p.equipped[2] = 258;
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_damage - 1.0).abs() < 1e-4, "the base 1.0, no add");
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.move_speed - 1.2).abs() < 1e-4);
+        // The Mining set (88/410/411) is the `pickSpeed -= 0.1f` negation.
+        p.equipped[0] = 88;
+        p.equipped[1] = 410;
+        p.equipped[2] = 411;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.1).abs() < 1e-4);
+        // A partial set grants nothing.
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed_bonus - 0.0).abs() < 1e-4);
+    }
+
     #[test]
     fn dye_cache_ignores_non_dye_kinds() {
         // Dirty: a non-dye in a dye slot renders plain — the C# reads
@@ -6117,9 +6643,8 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let ground_y = p.y;
-        p.wings_logic = 1;
-        p.has_wings = true;
-        p.wing_time_max = 100;
+        // Demon Wings grant `wings_logic`/`wing_time_max` inside the tick.
+        p.equipped[3] = 492;
         p.wing_time = 100.0;
         let held = PlayerInput {
             jump: true,
@@ -6149,9 +6674,8 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.wings_logic = 1;
-        p.has_wings = true;
-        p.wing_time_max = 100;
+        // Demon Wings grant `wings_logic`/`wing_time_max` inside the tick.
+        p.equipped[3] = 492;
         p.wing_time = 30.0;
         // Land and release: the refill.
         p.update(&w, PlayerInput::default());
@@ -6210,10 +6734,10 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        p.wings_logic = 1;
-        p.has_wings = true;
-        p.wing_time_max = 100;
-        p.wing_time = 0.0;
+        // The wings come from the item now (Demon Wings = `ArmorIDs.Wing` 1,
+        // 100 ticks): the grant runs inside the tick, so the budget starts
+        // empty and the rocket fuel is the only source this tick.
+        p.equipped[3] = 492;
         p.pinned_rocket_boots = 2;
         p.rocket_boots = 2;
         p.rocket_time = 7;
@@ -6349,8 +6873,7 @@ mod tests {
     fn no_input_acceleration_while_dashing() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.wings_logic = 1;
-        p.has_wings = true;
+        p.equipped[3] = 492; // Demon Wings
         p.fall_start = 40;
         p.vy = 5.0;
         let held = PlayerInput {
@@ -6368,8 +6891,7 @@ mod tests {
     fn wings_nullify_the_fall_damage() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.wings_logic = 1;
-        p.has_wings = true;
+        p.equipped[3] = 492; // Demon Wings
         p.y = 25.0 * TILE_PX;
         p.fall_start = 25;
         for _ in 0..300 {
@@ -6387,9 +6909,8 @@ mod tests {
     fn hover_wings_dampen_the_descent() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
-        p.wings_logic = 22; // Hoverboard: HasDownHoverStats
-        p.has_wings = true;
-        p.wing_time_max = 170;
+        // Bee Wings (1866 → `ArmorIDs.Wing` 22, the `HasDownHoverStats` row).
+        p.equipped[3] = 1866;
         p.wing_time = 170.0;
         p.vy = 3.0;
         let held = PlayerInput {

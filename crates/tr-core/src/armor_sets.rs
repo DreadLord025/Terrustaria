@@ -88,3 +88,300 @@ mod tests {
         assert_eq!(reduce_damage(1, 40), 1);
     }
 }
+
+// ---------------------------------------------------------------------------
+// The stat halves of the set benefits
+// ---------------------------------------------------------------------------
+
+/// The `Player`-scalar effects of a completed set — only the rows of
+/// `ArmorSetBonuses.Benefits` (`DataStructures/ArmorSetBonuses.cs:8-383`) whose
+/// targets the port models. Flag rows (`shadowArmor`, `fireWalk`, `buffImmune`,
+/// `ammoCost80`, `spaceGun`, `onHitDodge`, the Beetle/Solar/Vortex machinery)
+/// belong to their own systems and are not represented here.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SetStats {
+    pub melee_damage: f32,
+    pub ranged_damage: f32,
+    pub magic_damage: f32,
+    pub minion_damage: f32,
+    pub melee_crit: i32,
+    pub ranged_crit: i32,
+    pub magic_crit: i32,
+    pub move_speed: f32,
+    pub melee_speed: f32,
+    /// `Player.pickSpeed -= 0.1f` in the C# — the port stores the bonus with the
+    /// opposite sign (`pick_speed_bonus`, the fed tiers' convention).
+    pub pick_speed: f32,
+    pub mana_max: i32,
+    pub max_minions: i32,
+    pub dash_type: i32,
+    /// `Player.manaCost -= x` (the casters' set bonuses).
+    pub mana_cost: f32,
+}
+
+const fn stats() -> SetStats {
+    SetStats {
+        melee_damage: 0.0,
+        ranged_damage: 0.0,
+        magic_damage: 0.0,
+        minion_damage: 0.0,
+        melee_crit: 0,
+        ranged_crit: 0,
+        magic_crit: 0,
+        move_speed: 0.0,
+        melee_speed: 0.0,
+        pick_speed: 0.0,
+        mana_max: 0,
+        max_minions: 0,
+        dash_type: 0,
+        mana_cost: 0.0,
+    }
+}
+
+/// `(name, (head, body, legs), stats)` — the registration triples of
+/// `ArmorSetBonuses.Initialize` (`:396-500`) for the sets whose benefit is a
+/// scalar stat. The `PartType.Head` rows keep their concrete triples (the
+/// Wizard Hat/Magic Hat pairs carry `0` for the unneeded pieces, which is what
+/// the port's empty armor slots hold).
+pub const SET_STATS: &[(&str, (i32, i32, i32), SetStats)] = &[
+    // `:417` Benefits.Necro — `rangedCrit += 10`.
+    (
+        "Necro",
+        (151, 152, 153),
+        SetStats { ranged_crit: 10, ..stats() },
+    ),
+    (
+        "Necro",
+        (959, 152, 153),
+        SetStats { ranged_crit: 10, ..stats() },
+    ),
+    // `:413` Benefits.Pumpkin — every damage class `+= 0.1f`.
+    (
+        "Pumpkin",
+        (1731, 1732, 1733),
+        SetStats {
+            melee_damage: 0.1,
+            ranged_damage: 0.1,
+            magic_damage: 0.1,
+            minion_damage: 0.1,
+            ..stats()
+        },
+    ),
+    // `:415` Benefits.Ninja — `moveSpeed += 0.2f`.
+    (
+        "Ninja",
+        (256, 257, 258),
+        SetStats { move_speed: 0.2, ..stats() },
+    ),
+    // `:421-431` Benefits.Wizard (head-only rows).
+    (
+        "Wizard",
+        (238, 1282, 0),
+        SetStats { magic_crit: 10, ..stats() },
+    ),
+    (
+        "Wizard",
+        (238, 1283, 0),
+        SetStats { magic_crit: 10, ..stats() },
+    ),
+    (
+        "Wizard",
+        (238, 1284, 0),
+        SetStats { magic_crit: 10, ..stats() },
+    ),
+    (
+        "Wizard",
+        (238, 1285, 0),
+        SetStats { magic_crit: 10, ..stats() },
+    ),
+    (
+        "Wizard",
+        (238, 1286, 0),
+        SetStats { magic_crit: 10, ..stats() },
+    ),
+    (
+        "Wizard",
+        (238, 1287, 0),
+        SetStats { magic_crit: 10, ..stats() },
+    ),
+    (
+        "Wizard",
+        (238, 2279, 0),
+        SetStats { magic_crit: 10, ..stats() },
+    ),
+    (
+        "Wizard",
+        (238, 4256, 0),
+        SetStats { magic_crit: 10, ..stats() },
+    ),
+    // `:437-447` Benefits.MagicHat — `statManaMax2 += 60`.
+    (
+        "MagicHat",
+        (2275, 1282, 0),
+        SetStats { mana_max: 60, ..stats() },
+    ),
+    (
+        "MagicHat",
+        (2275, 1283, 0),
+        SetStats { mana_max: 60, ..stats() },
+    ),
+    (
+        "MagicHat",
+        (2275, 1284, 0),
+        SetStats { mana_max: 60, ..stats() },
+    ),
+    (
+        "MagicHat",
+        (2275, 1285, 0),
+        SetStats { mana_max: 60, ..stats() },
+    ),
+    (
+        "MagicHat",
+        (2275, 1286, 0),
+        SetStats { mana_max: 60, ..stats() },
+    ),
+    (
+        "MagicHat",
+        (2275, 1287, 0),
+        SetStats { mana_max: 60, ..stats() },
+    ),
+    (
+        "MagicHat",
+        (2275, 2279, 0),
+        SetStats { mana_max: 60, ..stats() },
+    ),
+    (
+        "MagicHat",
+        (2275, 4256, 0),
+        SetStats { mana_max: 60, ..stats() },
+    ),
+    // `:451` Benefits.Molten — `meleeDamage += 0.1f` (the `fireWalk` and
+    // `buffImmune[24]` rows ride their own systems).
+    (
+        "Molten",
+        (231, 232, 233),
+        SetStats { melee_damage: 0.1, ..stats() },
+    ),
+    // `:454` Benefits.Frost — `meleeDamage += 0.1f; rangedDamage += 0.1f`.
+    (
+        "Frost",
+        (684, 685, 686),
+        SetStats { melee_damage: 0.1, ranged_damage: 0.1, ..stats() },
+    ),
+    // `:459` Benefits.Mining — `pickSpeed -= 0.1f` (the port's bonus is the
+    // negation).
+    (
+        "Mining",
+        (88, 410, 411),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (5588, 5589, 5590),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    (
+        "Mining",
+        (4008, 410, 411),
+        SetStats { pick_speed: 0.1, ..stats() },
+    ),
+    // `:470` Benefits.CobaltMelee — `meleeSpeed += 0.15f`.
+    (
+        "CobaltMelee",
+        (372, 374, 375),
+        SetStats { melee_speed: 0.15, ..stats() },
+    ),
+    // `:477` Benefits.MythrilMelee — `meleeCrit += 10`.
+    (
+        "MythrilMelee",
+        (377, 379, 380),
+        SetStats { melee_crit: 10, ..stats() },
+    ),
+    // `:483` Benefits.AdamantiteMelee — `meleeSpeed += 0.2f; moveSpeed += 0.2f`.
+    (
+        "AdamantiteMelee",
+        (401, 403, 404),
+        SetStats { melee_speed: 0.2, move_speed: 0.2, ..stats() },
+    ),
+    // `:474` Benefits.CrystalAssassin — every class `+= 0.1f`, every crit
+    // `+= 10`, `dashType = 5`.
+    (
+        "CrystalAssassin",
+        (4982, 4983, 4984),
+        SetStats {
+            melee_damage: 0.1,
+            ranged_damage: 0.1,
+            magic_damage: 0.1,
+            minion_damage: 0.1,
+            melee_crit: 10,
+            ranged_crit: 10,
+            magic_crit: 10,
+            dash_type: 5,
+            ..stats()
+        },
+    ),
+    // `:475` Benefits.Tiki — `maxMinions++` (the `whipRangeMultiplier` row has
+    // no consumer yet).
+    (
+        "Tiki",
+        (1159, 1160, 1161),
+        SetStats { max_minions: 1, ..stats() },
+    ),
+    // `:476` Benefits.Spooky — `minionDamage += 0.25f`.
+    (
+        "Spooky",
+        (1832, 1833, 1834),
+        SetStats { minion_damage: 0.25, ..stats() },
+    ),
+    // `:478` Benefits.Spider — `minionDamage += 0.12f`.
+    (
+        "Spider",
+        (2370, 2371, 2372),
+        SetStats { minion_damage: 0.12, ..stats() },
+    ),
+    // `:456` Benefits.Jungle — `manaCost -= 0.16f`.
+    (
+        "Jungle",
+        (228, 229, 230),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    (
+        "Jungle",
+        (960, 961, 962),
+        SetStats { mana_cost: -0.16, ..stats() },
+    ),
+    // `:466` Benefits.CobaltCaster — `manaCost -= 0.14f`.
+    (
+        "CobaltCaster",
+        (371, 374, 375),
+        SetStats { mana_cost: -0.14, ..stats() },
+    ),
+    // `:474` Benefits.MythrilCaster — `manaCost -= 0.17f`.
+    (
+        "MythrilCaster",
+        (376, 379, 380),
+        SetStats { mana_cost: -0.17, ..stats() },
+    ),
+    // `:480` Benefits.AdamantiteCaster — `manaCost -= 0.19f`.
+    (
+        "AdamantiteCaster",
+        (400, 403, 404),
+        SetStats { mana_cost: -0.19, ..stats() },
+    ),
+    // `:477` Benefits.Bee — `minionDamage += 0.1f`.
+    (
+        "Bee",
+        (2361, 2362, 2363),
+        SetStats { minion_damage: 0.1, ..stats() },
+    ),
+];
+
+/// `ArmorSetBonuses.GetCompleteSet` (`:14-20`) over [`SET_STATS`]: the benefit
+/// of the worn triple, if the port models one. `head`/`body`/`legs` are the
+/// raw item ids (0 = empty slot).
+pub fn set_stats(head: i32, body: i32, legs: i32) -> Option<(&'static str, SetStats)> {
+    SET_STATS
+        .iter()
+        .find(|(_, (h, b, l), _)| *h == head && *b == body && *l == legs)
+        .map(|(name, _, stats)| (*name, *stats))
+}

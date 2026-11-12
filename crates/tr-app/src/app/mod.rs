@@ -231,6 +231,10 @@ pub(crate) struct App {
     /// The homeless town NPCs' look-for-home timer (`lookForHomeTimeout`'s
     /// stand-in; M4-TOWN-1).
     pub(crate) town_look_timer: f32,
+    /// `Main.checkForSpawns` + `Main.townNPCCanSpawn` +
+    /// `WorldGen.prioritizedTownNPCType` (`Main.cs:65542-66116`) — the town
+    /// NPC arrival gates (M4-TOWN-1b).
+    pub(crate) town_arrival: crate::town_arrival::ArrivalState,
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
@@ -1133,12 +1137,12 @@ impl App {
     /// favorite + `PlaySound(12)`. Returns the legacy sound id (12) so the
     /// caller plays it and the tests pin it (the `chest::toggle_open`
     /// precedent — no audio capture seam), 0 when the guard refuses. The
-    /// `idx >= INV` guard keeps the coin/ammo rows out — `canFavoriteAt`
-    /// allows contexts 1/2 in the C# (`ItemSlot.cs:386-389`), but the port's
-    /// favorites address the 10x5 grid only (the recorded coin-row gap,
-    /// Phase 5's ANALYSIS entry).
+    /// key space is the vanilla inventory numbering — grid `0..50`, coins
+    /// `50..54`, ammo `54..58` (`crate::inv::coin_slot_index` /
+    /// `ammo_slot_index`), i.e. `canFavoriteAt`'s contexts 0/1/2
+    /// (`ItemSlot.cs:386-389`).
     pub(crate) fn toggle_favorite(&mut self, idx: usize) -> u32 {
-        if idx >= crate::item::INV {
+        if idx >= crate::inv::INV_SLOTS {
             return 0;
         }
         if let Some(pos) = self.favorite_slots.iter().position(|&i| i == idx) {
@@ -1155,7 +1159,7 @@ impl App {
     /// `Item.favorited` flags (`Player.cs:54820-54824`) in slot order.
     pub(crate) fn hydrate_favorites(&mut self, bits: u64) {
         let mut slots = Vec::new();
-        for i in 0..crate::item::INV {
+        for i in 0..crate::inv::INV_SLOTS {
             if bits & (1 << i) != 0 {
                 slots.push(i);
             }
@@ -1169,7 +1173,7 @@ impl App {
     pub(crate) fn favorite_bits(&self) -> u64 {
         let mut bits = 0u64;
         for &i in &self.favorite_slots {
-            if i < crate::item::INV {
+            if i < crate::inv::INV_SLOTS {
                 bits |= 1 << i;
             }
         }
@@ -2639,6 +2643,7 @@ impl App {
                 banners
             },
             town_look_timer: 0.0,
+            town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on

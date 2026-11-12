@@ -827,6 +827,13 @@ pub fn draw_hud(
     }
 
     let mut open_hover: Option<inventory::HoverRef> = None;
+    // The housing page's cell hover (`Main.cs:42059-42065`), which the tooltip
+    // layer prints instead of an item name.
+    let mut open_housing: Option<(usize, Option<usize>)> = None;
+    // `Main.hidePVPAndTeamIcons` — the housing page's columns run into the
+    // PVP/team icons (`Main.cs:42053-42056`); the C# clears it at the top of
+    // `DrawNPCHousesInUI` and reads it in `DrawPVPIcons`, which runs after.
+    let mut hide_pvp_icons = false;
     if inventory_open {
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
         // ammo columns, the equipment/vanity/dye columns (or the misc-equip page),
@@ -849,6 +856,8 @@ pub fn draw_hud(
             chest_panel.chest >= 0 || shop.is_some(),
         );
         open_hover = hit.hovered;
+        open_housing = hit.housing;
+        hide_pvp_icons = hit.hide_pvp_icons;
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
         let num20 = 174.0 + m_h;
         // `Main.DrawPageIcons(num20 - 32)` (`Main.cs:41154`).
@@ -923,7 +932,9 @@ pub fn draw_hud(
         // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
         // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them
         // glued to the top while the minimap HUD pushed the panel down.
-        chrome::draw_pvp_icons(r, lookups, screen, equip_page, m_h, pvp, mouse_pos);
+        if !hide_pvp_icons {
+            chrome::draw_pvp_icons(r, lookups, screen, equip_page, m_h, pvp, mouse_pos);
+        }
         chrome::draw_hotbar_lock(r, lookups, false);
         // `Main.DrawInventory`'s map-style icon row (`Main.cs:41055-41126`),
         // after `DrawHotbarLockIcon` (`:41046`) and before the crafting panel
@@ -1054,7 +1065,9 @@ pub fn draw_hud(
     } else {
         None
     };
-    let hover_item: Option<&ItemSlot> = if pvp_hover_text.is_some() {
+    let housing_hover_text: Option<String> = open_housing
+        .and_then(|(head, npc)| housing::label(head, npc, npcs));
+    let hover_item: Option<&ItemSlot> = if pvp_hover_text.is_some() || housing_hover_text.is_some() {
         None
     } else if inventory_open {
         open_hover.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0)))
@@ -1081,6 +1094,9 @@ pub fn draw_hud(
             pulse,
             opaque_tooltip_box,
         );
+    }
+    if let Some(text) = &housing_hover_text {
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
