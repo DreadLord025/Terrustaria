@@ -44,6 +44,7 @@ pub mod pylons;
 pub mod rng;
 pub mod tile_entities;
 pub mod torch;
+pub mod unified_random;
 pub mod tree;
 pub mod waterfall;
 pub mod wiring;
@@ -53,6 +54,7 @@ pub mod world;
 pub mod worldgen;
 
 pub use tile::Tile;
+pub use unified_random::UnifiedRandom;
 pub use world::World;
 
 /// Size of one tile in world pixels (the game renders everything in pixels).

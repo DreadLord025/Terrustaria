@@ -95,7 +95,8 @@ objects stay data: one `TileObjectDef` entry with the C# numbers in the doc comm
   `object_world()`/`mining_app()` (`world_sim/editing.rs` tests). Movement features drive
   the Player tick; the grapple tests (`player.rs:3247+`) are the model.
 - RNG-dependent logic takes an explicit seeded stream: `FastRandom::new(seed)` in tests
-  (the exact C# `UnifiedRandom` stream), `LootRng(&mut app.item_rng)` in the app (one
+  (the exact C# **`FastRandom`** 48-bit LCG — not `UnifiedRandom`; use
+  `UnifiedRandom::new(seed)` for `Main.rand` streams), `LootRng(&mut app.item_rng)` in the app (one
   item-stream draw per event, C# call order in the comment). Determinism-critical work
   proves state equality across seeds, never one lucky seed.
 - In-development features get a `TR_<FEATURE>` env pin for screenshots/tests
@@ -131,8 +132,9 @@ objects stay data: one `TileObjectDef` entry with the C# numbers in the doc comm
 ## 8. Technology Decisions
 
 - RNG layering (order matters when choosing): (1) `FastRandom` (`tr-core/tile_light/
-  palette.rs:20`) is the exact C# `UnifiedRandom` stream — replay C# streams with it;
-  (2) the drop engine (`tr-core/src/loot.rs`) is RNG-generic (`&mut dyn DropRng`), driven
+  palette.rs:20`) is the exact C# **`FastRandom`** 48-bit LCG, and `UnifiedRandom`
+  (`tr-core/unified_random.rs`, S1-A-1) is the exact C# `Main.rand` Knuth stream — replay
+  each C# stream with its own port, never conflate them; (2) the drop engine (`tr-core/src/loot.rs`) is RNG-generic (`&mut dyn DropRng`), driven
   from `App.item_rng`; (3) other per-consumer randomness uses named u64 streams through
   `next_rand`/`rand01` (`app/frame.rs:1413/:1421`, one stream per consumer); (4) worldgen +
   the wind walk share one xorshift core — `Xorshift64` (`tr-core/src/rng.rs`); (5) a pinned

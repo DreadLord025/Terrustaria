@@ -248,6 +248,16 @@ impl Rect {
     pub fn centered(cx: i32, cy: i32, w: i32, h: i32) -> Self {
         Self::new(cx - w / 2, cy - h / 2, w, h)
     }
+    /// XNA `Rectangle.Inflate(horizontalAmount, verticalAmount)`: pushes the
+    /// edges out by the given amounts (a negative amount shrinks them) —
+    /// `X -= h`, `Width += 2h`, `Y -= v`, `Height += 2v`. Matches the C#
+    /// `r.Inflate(-1, -1)` reading used at `Terraria/Chest.cs:31119`.
+    pub fn inflate(&mut self, horizontal_amount: i32, vertical_amount: i32) {
+        self.x -= horizontal_amount;
+        self.y -= vertical_amount;
+        self.w += horizontal_amount * 2;
+        self.h += vertical_amount * 2;
+    }
     /// XNA `Rectangle.Union`.
     pub fn union(self, other: Rect) -> Rect {
         let x = self.left().min(other.left());
