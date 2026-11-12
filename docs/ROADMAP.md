@@ -145,11 +145,12 @@ Re-checked the state after other agents landed work on top of the audit base
   (BUG-21 `enter_loaded_world`/`static_sheets`, `touch_damage.rs`,
   `worldgen/dungeon_features.rs` passes, walker/town/dungeon anchors intact).
 - **ROADMAP claim status (focused sample):** no prioritized Stage-1 gaps were
-  confirmed CLOSED by these merges. Still-open confirmations include S1-C-9
-  (double item pickup), S1-C-2 (projectile→NPC skips `DamageVar`/defense),
-  S1-J-1 (`.wld` writer omits wire bits), S1-L-11 (`tools/gen_recipes.py --check`
-  drift), S1-D-1 (hornet hover constants), S1-A-3 (position-hash tile framing);
-  S1-D-4 dispatch census may need refresh after projectile/equip follow-ups.
+  confirmed CLOSED by these merges. Still-open confirmations include S1-C-2
+  (projectile→NPC skips `DamageVar`/defense), S1-J-1 (`.wld` writer omits wire
+  bits), S1-L-11 (`tools/gen_recipes.py --check` drift), S1-D-1 (hornet hover
+  constants), S1-A-3 (position-hash tile framing); S1-D-4 dispatch census may
+  need refresh after projectile/equip follow-ups. S1-C-9 (double item pickup) is
+  fixed on branch `S1-C9-item-pickup-double-count`.
   Treat Stage 1A/1B as the gate; see report 92 for the per-row verdicts.
 
 
@@ -602,9 +603,9 @@ A task is done when its row's **verify** column is satisfied. The house rules
    S1-A-1…A-4, S1-C-3, S1-F-1/F-2 (the id collisions lose save data today).
 2. **The one FAIL and the two STALE rows** — S1-D-1 (hover presets), the
    stale snapshot rows and the M1.5 measurement tables.
-3. **The four cheap correctness bugs with player-visible impact** — S1-C-9
-   (2× item pickup), S1-C-2 (projectile damage), S1-C-8 (hitbox), S1-C-10
-   (right-click transfer).
+3. **The cheap correctness bugs with player-visible impact** — S1-C-2
+   (projectile damage), S1-C-8 (hitbox), S1-C-10 (right-click transfer);
+   S1-C-9 (2× item pickup) fixed on `S1-C9-item-pickup-double-count`.
 4. **Missing subsystems with the largest call-site censuses** — S1-E-1…E-4
    (dust/gore: 4 922 C# call sites), S1-E-5 (entity lights: 300+), S1-E-9
    (golf), S1-E-6/E-7 (the buff HUD and the effect table).
