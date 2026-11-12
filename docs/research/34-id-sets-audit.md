@@ -12,17 +12,15 @@ carry the whole game's addressing: `ItemID`/`NPCID`/`ProjectileID`/`TileID`/`Wal
 are array indices in the C# (`Main.item[]`, `Main.npc[]`, `Main.projectile[]`,
 `Main.tile[]`, `Main.wall[]`), so a missing row is not a cosmetic gap — it is an
 off-by-N in every table that indexes by id. The audit therefore also audits the
-**id-space translations** the port introduced (`NpcKind::to_u16`/`from_u16`,
-`net_id`, `cs_id`), because a port-local protocol space that collides with itself
-loses kinds on every save/load and net-message round-trip.
+**id-space translations** the port introduced (`NpcKind::to_u16`/`from_u16`, `net_id`,
+`cs_id`), because a port-local protocol space that collides with itself loses kinds on
+every save/load and net-message round-trip.
 
 Files read: `decompiled/Terraria/ID/*.cs` (60 files, `Count` constants harvested by
 grep), `crates/tr-app/src/{itemdata,npc,projectile,prefix,buffs,bestiary,audio,sound,
 registry,variants,mount}.rs`, `crates/tr-core/src/{tiledata/mod.rs,tiledata/sets.rs,
 armor_sets.rs,bestiary.rs}`, `crates/tr-app/src/app/{mod,netglue,saveglue}.rs`,
-`crates/tr-app/src/world_sim/npcs.rs`. No cargo run, no graphify write.
-
-## Key entities
+`crates/tr-app/src/world_sim/npcs.rs`. No cargo run, no graphify write.## Key entities
 
 ### C# — the `Count` census (declaration line → assignment line → value)
 
@@ -41,7 +39,6 @@ armor_sets.rs,bestiary.rs}`, `crates/tr-app/src/app/{mod,netglue,saveglue}.rs`,
 - `decompiled/Terraria/ID/ArmorIDs.cs` — 15 per-slot sub-spaces, each with its own `Count`: Head `:633`→`:637` **293**, Body `:1129`→`:1133` **262**, Legs `:1622`→`:1626` **254**, HandOn `:1720` **33**, HandOff `:1783` **19**, Back `:1894` **42**, Front `:1963` **18**, Shoe `:2051` **31**, Waist `:2113` **18**, Wing `:2240` **52**, Shield `:2274` **13**, Neck `:2325` **15**, Face `:2415` **24**, Balloon `:2479` **20**, Beard `:2527` **5**.
 - Remaining sets with a `Count` (declaration → assignment → value): `ChainID.cs:39`→`:43` **17**, `CloudID.cs:115`→`:119` **42**, `ExtrasID.cs:637`→`:641` **316**, `GlowMaskID.cs:777`→`:781` **384**, `GoreID.cs:1611`→`:1615` **1407**, `ImmunityCooldownID.cs:70`→`:81` **6**, `InvasionID.cs:23`→`:27` **5**, `LiquidID.cs:13`→`:17` **4**, `MessageID.cs:340`→`:344` **163**, `MountID.cs:185`→`:189` **66**, `NPCHeadID.cs:194`→`:198` **81**, `PlayerTeamID.cs:17`→`:21` **6**, `PlayerTextureID.cs:37`→`:41` **16**, `PlayerVariantID.cs:51`→`:55` **12**, `ProjectileSourceID.cs:45`→`:49` **23**, `TorchID.cs:133`→`:185` **24**, `WaterStyleID.cs:31`→`:35` **13**, `GameModeID.cs:13` **4**, `PlayerVoiceID.cs:30` **4**, `SurfaceBackgroundID.cs:55` **16**.
 - **Not found**: no `NPCPaint*` id set and no `Recipe*` id set exist in 1.4.5.8's `Terraria.ID` — the paint ids live in `ID/PaintID.cs` / `ID/PaintCoatingID.cs` (no `Count` constant in either), and recipes are keyed by item id. "NPCPaintID" does not exist.
-
 ### Rust — the port's id tables
 
 - `crates/tr-app/src/itemdata.rs:120` `pub static ITEMS: [ItemDef; 6196]` — the generated item table (6196 `ItemDef { … }` literals, `id: 0..6195`), the port's only complete id table.
@@ -54,12 +51,11 @@ armor_sets.rs,bestiary.rs}`, `crates/tr-app/src/app/{mod,netglue,saveglue}.rs`,
 - `crates/tr-app/src/npc.rs:1789` `cs_id` — a **partial** vanilla-id map (43 of 182 kinds; the rest return `u16::MAX`).
 - `crates/tr-app/src/projectile.rs:1046` `proj_data(kind: u16) -> Option<ProjData>` — the per-projectile defaults; 213 `pub const …: u16` id constants in the file (max `KRAKEN_WAVE = 1135`).
 - `crates/tr-app/src/prefix.rs:195` `stat_switch(prefix: u16)` — the prefix stat multipliers; 78 arms (ids 1..61, 81..97).
-- `crates/tr-app/src/bestiary.rs` — 174 `BestiaryEntryDef` literals (the net-id → sheet/entry table).
-- `crates/tr-app/src/registry.rs:88` `item(id: u16)` / `:95` `get(id: u16)` — the item lookup over `ITEMS`.
+- `crates/tr-app/src/bestiary.rs` — 174 `BestiaryEntryDef` literals (the net-id → sheet/entry table); `crates/tr-app/src/registry.rs:88` `item(id: u16)` / `:95` `get(id: u16)` — the item lookup over `ITEMS`.
 
 ## Dependencies
 
-- Calls into: `NpcKind::to_u16`/`from_u16` are consumed by the **netcode** (`crates/tr-app/src/app/netglue.rs:385`, `:1044`, `:1048`, `:1504`, `:2060`) and by the **app save** (`crates/tr-app/src/app/saveglue.rs:107` writes `kind: n.kind.to_u16()`; `crates/tr-app/src/app/mod.rs:1980` reads `NpcKind::from_u16(rec.kind)`); `crates/tr-app/src/world_sim/npcs.rs:1520`, `:1911` decode a kind from an id.
+- Calls into: `NpcKind::to_u16`/`from_u16` are consumed by the **netcode** (`crates/tr-app/src/app/netglue.rs:385`, `:1044`, `:1048`, `:1504`, `:2060`) and by the **app save** (`app/saveglue.rs:107` writes `kind: n.kind.to_u16()`; `app/mod.rs:1980` reads `NpcKind::from_u16(rec.kind)`); `world_sim/npcs.rs:1520`, `:1911` decode a kind from an id.
 - Called by: every subsystem that indexes by id — `registry::item` (items), `tiledata::TILE_COUNT`/`WALL_COUNT` (framing, worldgen, lighting), `proj_data` (projectiles), `stat_switch` (prefixes), `net_id` (loot db, save/load, bestiary UI).
 - Shared data structures: the **item id space** is shared verbatim between the C# and the Rust (`u16` id, 0..6195 — no translation layer); the **NPC id space is not shared** — the Rust has three parallel spaces (protocol `u16`, vanilla `net_id`, partial `cs_id`), and the world `.wld` (`crates/tr-core/src/wld/sections/npcs.rs`, `SAVES_AND_LOADS`) keys on `net_id` while the app's own save keys on the protocol `u16`.
 
@@ -149,7 +145,6 @@ indirectly, and the coverage is uneven:
 - `crates/tr-app/src/app/netglue.rs` — the netcode kind codec, no exhaustive id test.
 - **No test** asserts `ITEMS.len() == ItemID.Count`, `TILE_COUNT`, `WALL_COUNT`,
   `BUFF_ID_COUNT`, `MAX_MUSIC`, or the prefix table's coverage.
-
 ## Deviations & risks
 
 1. **The `NpcKind` protocol id space collides with itself on 7 ids (78..84).**
@@ -210,8 +205,8 @@ indirectly, and the coverage is uneven:
    (`BrainScrambler`, `RayGunner`, `ScutlixRider`, `Scutlix`) and 162-168
    (`TaxCollector`, `Golfer`, `SleepingGolfer`, `Zoologist`, `Princess`, `DyeTrader`,
    `PartyGirl`) have **no** `from_u16` arm (`to_u16` assigns them, `from_u16` omits
-   them). A net message or save record carrying one of those ids decodes to
-   `None` → the NPC is dropped. Severity: **behavioural**, medium.
+   them). A net message or save record carrying one of those ids decodes to `None` →
+   the NPC is dropped. Severity: **behavioural**, medium.
 
 6. **Three parallel NPC id spaces.** The vanilla `NPC.type` is reachable through
    `net_id` (`npc.rs:1512`, via the bestiary table), the port's protocol id through
@@ -224,8 +219,7 @@ indirectly, and the coverage is uneven:
    `net_id` is resolved through `bestiary::entry_for_npc` (`bestiary.rs:1482`), so at
    least 8 kinds have no entry row and their `net_id` resolution path is not covered
    by the port's own tests. Not verified in this pass whether `entry_for_npc` panics,
-   falls back, or mis-maps for those kinds. Severity: **behavioural**, medium —
-   needs a follow-up verification.
+   falls back, or mis-maps for those kinds. Severity: **behavioural**, medium.
 
 8. **Prefix ids 62..80 are unmodelled.** `stat_switch` (`prefix.rs:196`-`:275`) covers
    1..61 and 81..97; ids 62..80 (`Hard` … `Violent`, `PrefixID.cs:130`-`:200`) hit the
@@ -302,9 +296,8 @@ indirectly, and the coverage is uneven:
   (the dynamic slot registry), `ExtrasID` (316), `GlowMaskID` (384), `GoreID` (1407),
   `NPCHeadID` (81), `MessageID` (163), `CloudID` (42), `ChainID` (17),
   `ProjectileSourceID` (23), `ImmunityCooldownID` (6), `SurfaceBackgroundID` (16),
-  `PlayerTextureID` (16), `PlayerVoiceID` (4), `PaintID`/`PaintCoatingID`,
-  `ItemRarity`'s 12 colours. Each needs a generated table (`tools/GenTileData` is the
-  house pattern). Split per set into S/M rows.
+  `PlayerTextureID` (16), `PaintID`/`PaintCoatingID`, `ItemRarity`'s 12 colours. Each
+  needs a generated table (`tools/GenTileData` is the house pattern); split per set.
 - **L — Add the "id census" test harness.** A test that parses the C# `Count`
   constants out of `decompiled/Terraria/ID/*.cs` and compares them against the Rust
   constants (`TILE_COUNT`, `WALL_COUNT`, `BUFF_ID_COUNT`, `MAX_MUSIC`, `ITEMS.len()`,
