@@ -13,6 +13,7 @@ pub(crate) mod frame;
 mod r#loop;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
+mod rng;
 pub(crate) mod saveglue;
 pub(crate) mod session;
 pub(crate) mod settings_ui;
@@ -20,6 +21,7 @@ pub(crate) mod settings_ui;
 // The RNG helpers live in `frame` with their main consumer, but the world
 // simulation and the sky reach them through the app root.
 pub(crate) use frame::{next_rand, rand01};
+pub(crate) use rng::{NamedRngs, RngKey};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -607,9 +609,6 @@ pub(crate) struct App {
     /// The scheduler's `Main.rand` stand-in stream (the seed the inlined
     /// `NetAmbienceModule` loopback hands to `FastRandom`).
     pub(crate) ambience_rng: u64,
-    /// The dawn/dusk event rolls' `Main.rand` cluster stream
-    /// (`Main.cs:65333-65352`'s blood moon, `:65421-65430`'s eclipse).
-    pub(crate) clock_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -636,6 +635,11 @@ pub(crate) struct App {
     /// `Item.cs:528`): `UnifiedRandom`, separate from the splitmix streams so a
     /// prefix roll never perturbs loot/crit/particle draws (`S1-A-5`).
     pub(crate) prefix_rng: UnifiedRandom,
+    /// `Main._rngs` (`Main.cs:1294-1295`): the `Main.SwapRandom` named streams,
+    /// one `UnifiedRandom` per stage key, all seeded from the world seed
+    /// (`:3210-3212`). Stages take their stream from here instead of reading a
+    /// shared `Main.rand` (`app/rng.rs`).
+    pub(crate) rngs: NamedRngs,
     pub(crate) item_step: FixedStepper,
     /// Remaining seconds of the current held-item swing.
     pub(crate) swing: f32,
@@ -2720,7 +2724,7 @@ impl App {
             cursor_override: -1,
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
-            craft_rng: 1,
+            craft_rng: world_seed,
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             menu: menu_state,
@@ -2858,7 +2862,7 @@ impl App {
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
-            growth_rng: tr_core::tile_light::FastRandom::new(world_seed ^ 0x2545_F491_4F6C_DD1D),
+            growth_rng: tr_core::tile_light::FastRandom::new(world_seed),
             // M6-SAVE-1f: the tiers ride the World (the worldgen setup roll
             // wrote them there; a loaded save's v11 section restored them),
             // so the runtime copy reads them back instead of the static
@@ -2880,9 +2884,8 @@ impl App {
                 }
                 ambience
             },
-            ambience_rng: world_seed ^ 0x0A5C_E17A_1C1E_5EED,
+            ambience_rng: world_seed,
 
-            clock_rng: world_seed ^ 0x1D_A9_17_50_E5_C1_0C,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
@@ -2890,10 +2893,13 @@ impl App {
             leaves: Vec::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
-            item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
+            item_rng: world_seed,
             // A per-consumer stream like the splitmix fields above, but the
             // C# `Main.rand` algorithm (the prefix rolls, `S1-A-5`).
-            prefix_rng: UnifiedRandom::new((world_seed ^ 0x51ED_2701_A3F5_C9B7) as i32),
+            prefix_rng: UnifiedRandom::new(world_seed as i32),
+            // The C# seeds every `SwapRandom` key with the world seed
+            // (`Main.cs:3212`); the registry creates them lazily.
+            rngs: NamedRngs::new(world_seed as i32),
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
             swing_style: 0,

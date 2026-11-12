@@ -24,6 +24,7 @@ an agent needs before touching code.
 | Bootstrap (world path, Content dir, atlas build, window) | `crates/tr-app/src/main.rs` (86 lines) → `app/mod.rs` (`App::new`, `load_world`, `build_atlas`) |
 | winit event loop, input routes, redraw pump | `app/loop.rs` |
 | Frame orchestration: `Main.Draw`, light params, the G6 world cache, benchmark epilogue | `app/frame.rs` |
+| RNG: `Main._rngs`/`Main.SwapRandom` named per-stage streams (17 keys, `UnifiedRandom::new(worldSeed)`, per-world reset) | `app/rng.rs` (S1-A-2) |
 | HUD clicks, inventory stack moves, legacy `Action` dispatch | `app/clicks.rs` |
 | Front-end UIState screens (character/world select + create, virtual keyboard) | `app/flow.rs` (+ `ui/char_select.rs`, `ui/world_select.rs`, `ui/char_creation.rs`, `ui/world_creation.rs`, `ui/keyboard.rs`, `ui/uistate.rs`, `ui/save_list.rs`) |
 | Legacy menu (`Main.DrawMenu`): settings, multiplayer, confirms, credits | `menu/` — `mod.rs` (items/state) + `pages.rs` (rows) + `actions.rs` (semantics); `app/settings_ui.rs` |
