@@ -209,6 +209,15 @@ pub fn hover(cells: &[Cell], mouse: [f32; 2], scale: f32) -> Option<(usize, Opti
     })
 }
 
+/// `Main.hidePVPAndTeamIcons` (`Main.cs:42053-42056`): when a wrap pushes the
+/// column offset to `-144` or further left, vanilla drops the PVP/team icons so
+/// the third housing column does not collide with them. The offset is
+/// `x - (screenWidth - 64 - 28)` (`:42044`'s `num3`).
+pub fn hide_pvp_icons(cells: &[Cell], screen_width: f32) -> bool {
+    let origin = screen_width - 64.0 - 28.0;
+    cells.iter().any(|c| (c.x - origin) <= -144.0)
+}
+
 /// The `NPCName` localization key of a town kind — the C# reads
 /// `Main.npc[num].FullName`, which is the *given* name ("Andrew") plus the
 /// type name; the port stores no per-NPC names, so the type name is what the
@@ -406,6 +415,26 @@ mod tests {
         assert_eq!(hover(&cells, [1540.0, 400.0], 0.85), Some((2, Some(7))));
         assert_eq!(hover(&cells, [1540.0, 330.0], 0.85), Some((HOUSING_QUERY, None)));
         assert_eq!(hover(&cells, [1400.0, 330.0], 0.85), None);
+    }
+
+    #[test]
+    fn a_third_column_hides_the_pvp_icons() {
+        // `Main.cs:42053-42056`: `num3 <= -144` sets `hidePVPAndTeamIcons`.
+        let two = vec![
+            Cell { head: HOUSING_QUERY, npc: None, x: 1508.0, y: 324.0 },
+            Cell { head: 2, npc: Some(0), x: 1460.0, y: 324.0 },
+            Cell { head: 3, npc: Some(1), x: 1412.0, y: 324.0 },
+        ];
+        // Two wraps put the third column at `-96` (`1508 - 96 = 1412`), still
+        // right of the `-144` cut, so the icons stay.
+        assert!(!hide_pvp_icons(&two, 1600.0), "third column is -96");
+        let three = vec![
+            Cell { head: HOUSING_QUERY, npc: None, x: 1508.0, y: 324.0 },
+            Cell { head: 2, npc: Some(0), x: 1412.0, y: 324.0 },
+            Cell { head: 3, npc: Some(1), x: 1364.0, y: 324.0 },
+        ];
+        assert!(hide_pvp_icons(&three, 1600.0), "the fourth column is -144");
+        assert!(!hide_pvp_icons(&three[..1], 1600.0));
     }
 
     #[test]

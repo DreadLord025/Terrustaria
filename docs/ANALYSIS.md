@@ -10755,5 +10755,140 @@ showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
 * **Not ported**: the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
   because the port has no `Main.mouseNPC` housing query at all; the
   `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
-  still lacks (the same reason the grid's `_17` highlight is open); and
-  `Main.hidePVPAndTeamIcons` on a third column.
+  still lacks (the same reason the grid's `_17` highlight is open).
+* **The PVP-icon cut** (`:42050-42056`, M7-UI-3d): a wrap that pushes the column
+  offset to `-144` sets `Main.hidePVPAndTeamIcons`, and `DrawPVPIcons` — which
+  runs after the housing page in the same frame — then draws nothing.
+  `housing::hide_pvp_icons` reports it on `InventoryHit` and `ui::draw_hud` skips
+  the icons. Only reachable in a world with ~30 town NPCs (three columns).
+
+## The defense stat (M3-EQUIP-5)
+
+`Player.statDefense` had a consumer since M3-EQUIP-2 (the `Hurt` reduction) but
+two writers that disagreed: `Player::update`'s buff/prefix/equipment passes added
+into it, and `world_sim::player` then **assigned** `pieces + set` over the result
+right before the tick ran. So the armor pieces worked, and every other contributor
+was silently thrown away: Ironskin (buff 5, +8), Ichor (69, −15), the Cat
+Bastet's Blessing (215, +5), the Dryad's Ward (165, +8), Tipsy (25, −4), Weak
+(33, −4 per slot), the fed tiers (26/206/207 = +2/+3/+4) and the accessory
+prefixes 62-65 (`GrantPrefixBenefits`, +1..+4).
+
+The fix is an ordering fix, not a new table: the field is now derived entirely
+inside `Player::update`, in the C#'s own order — `ResetEffects` zeroes it
+(`:18327`), `UpdateBuffs` adds its arms (`:9962`, `:10064`, `:10108`, `:10306`,
+`:11915`, `:11921`, `:11934`, `:11950`, `:11966`), `UpdateEquips`'s
+`GrantArmorBenefits` adds every wearable's `Item.defense` over the ten functional
+slots (`:13121`, so the seven accessories count — a Shackle +1, an Ankh Shield
++4) plus the completed set's bonus, `GrantPrefixBenefits` adds the accessory
+prefix rows, and the tail clamps `statDefense < 0` to 0 (`:25927`) so a stack of
+debuffs can never *raise* incoming damage.
+
+Not ported yet, and why: buff 28 (Werewolf, +3) needs the `wolfAcc` item flag the
+port does not carry; the `/2` halvings at `:26021-26025` belong to armor-set
+abilities that are still unported (see M3-EQUIP-2's early-metal-only set table),
+as does the `:25716` +20 row.
+
+## The mob draw audit (M4-NPC-3t)
+
+The lunar-event families were the worst-served art in the port: the
+`NpcAssets` struct loaded **one shared sheet per family** and pointed every
+member at it, so eight different mobs drew the same strip —
+
+| family field (v1) | sheet | member kinds |
+| --- | --- | --- |
+| `tower_mobs` | `NPC_409` | all eleven stardust/solar tower mobs |
+| `nebula_trio` | `NPC_420` | floater, brain suckler, predictor |
+| `vortex_trio` | `NPC_426` | hunter, alien, headcrab |
+| `shards` | `NPC_406` | big/small star cell, jellyfish |
+| `shard_hovers` | `NPC_425` | nebula beast, vortex soldier/rifleman |
+| `moon_lord_parts` | `NPC_396` | all five Moon Lord parts |
+
+Vanilla gives every one of them its own `TextureAssets.Npc[type]`
+(`NPCID.cs:11481-11533`, `:11713`) and slices it by
+`Main.npcFrameCount[type]` (`Main.cs:67082-67131`, the divisor
+`NPC.SetFrameSize` uses, `NPC.cs:90780-90800`). The port now ports that
+table (`render/entities.rs`'s `NPC_FRAME_COUNT`), loads `NPC_402-407`,
+`NPC_409-414`, `NPC_415-421`, `NPC_423-429` and `NPC_518` into
+`NpcAssets::npc_sheets`, and every arm reads `npc_sheet(texture_net_id(kind))`
+at `npc_rows(...)` rows.
+
+`texture_net_id` exists because the port's `NpcKind::net_id` is
+**bestiary-driven** (`bestiary::entry_for_npc(...).net_id`) and several of the
+lunar rows were keyed on the art's first member rather than the drawn kind
+(`MoonLordHead` resolves to 397, `MoonLordLeechBlob` to 212). Those bestiary
+ids are a separate audit; the draw uses the vanilla texture ids.
+
+**The generic anchor was wrong for every generic-anchored kind.** The C#'s
+generic path draws with `origin = halfSize` at
+`position = Center - frame.Size()/2 + halfSize + offsets`
+(`Main.cs:25505-25516`), so with the default `halfSize = frame.Size()/2` the
+frame's **centre lands on the NPC's Centre**. The v1 put the frame's centre at
+`box_bottom + 4`, i.e. `h/2 - 4` (≈ 24 px on a 40-px humanoid) too low — every
+humanoid's feet were buried in the grass (the TR_NPC lineup screenshot was the
+give-away). All twelve such arms (the humanoid/martian/prime/boss/generic
+helpers plus the inline arms) now use `n.y + h * 0.5 - fh * 0.5`; the
+half-`Size` overrides (`boss_half_size`, `npc_anchor_nudge`) still apply after
+the match, as in the C#.
+
+**The Moon Lord head is a grid, not a strip.** `Main.npcFrameCount[396]` is 1,
+which only means the dead generic path would show the whole 573x804 sheet;
+the real draw is `Main.cs:24846-24927`:
+`value40.Frame(3, 3, frame.Y / 3, frame.Y % 3)` at `scale = 2` from the origin
+`(191, 130) / 2` — a 3x3 grid of 191x268 cells with the **column** indexed by
+`frame.Y / 3` and the **row** by `frame.Y % 3` (so `FindFrame`'s 0..8 cell
+counter is right). `moon_lord_head_draw`/`moon_lord_head_uv` port exactly that.
+
+**Row-count fixes.** `FindFrame`'s arms for the shards/towers/nebula/vortex
+groups were placeholders with hand-written counts (`StardustSpiderSmall` walked
+11 rows over a 5-row sheet, five rows of which do not exist). They now ride
+`npc_rows(texture_net_id(kind))`. The DD2 rows were corrected against
+`Main.npcFrameCount`: the Dark Mage 20 → 9 (564-567), the Bartender 16 → 25
+(550), the Wither Beast 14 → 17 (568/569).
+
+**The per-kind `FindFrame` machines (M4-NPC-3u).** The arms above still shared
+one `frame_counter += |vx| + 0.6` accumulator, so the walk cadences, the air rows
+and the attack bands were invented. Every lunar machine is now ported from its
+own `case` (`NPC.cs:70119-70803`), one per vanilla id:
+
+| id | kind | machine |
+| --- | --- | --- |
+| 405/406 | star cells | 4-tick full wrap |
+| 407 | big jellyfish | 6-tick full wrap |
+| 409 | big stardust spider | `ai[1]` 1..30 pins the last row, else 6-tick walk wrapping two rows early |
+| 410 | small stardust spider | row folds every 10 px of `|vx|`, wraps at the end |
+| 411 | stardust soldier | `ai[1]` 120..240 pins the last row + flips; walk from row 2, wraps one early |
+| 415 | solar drakomire | `ai[2] < 0` charge flips rows 8/9 off the 18-tick counter; walk rows 2..count-2 at `|vx| * 0.5`; air row 1; stand row 0 |
+| 416 | drakomire rider | copies its 415's row in the C# — the same machine |
+| 417 | solar sroller | `ai[0] == 0` rolls `counter / 6` over 48 ticks; `ai[0]` 1/5 climb 9..14 off `ai[1] / 6`; else row 14 |
+| 418 | solar corite | `ai[0]` 0/±1 walks 0..4 at 6 ticks; `ai[0] == 2` splits `ai[1]` into 5/6/7; `ai[0] == -2` spins 5..7 at 12 |
+| 419 | solar selenian | `ai[2] < 0` charge climbs 2..8; walk from row 9, wraps at the end; air row 1 |
+| 420/421 | nebula floater / brain suckler | 5-tick wrap; the suckler's `ai[0] == 5` double-ticks the counter |
+| 423 | nebula beast | `ai[2] == 1` pins rows 2/3 off `ai[1]` 30..45; air row 1; walk rows 4.. at `1 + |vx| / 2`, flips off `-sign(vx)` |
+| 424 | nebula predictor | `ai[2] > 0` pins the last two rows off `ai[1] > 90`; walk rows 2..count-2; air row 1 |
+| 425 | vortex rifleman | `ai[2] == 1` cycles 10..12 at 3 ticks; walk rows 2..9 at `|vx|`; air row 1; flips off `-direction` |
+| 426 | vortex hornet queen | `ai[1] >= 45` cycles 12..15 at 2 ticks (row 8 grounded); air 9..11; walk 1..7 at 10 px |
+| 427 | vortex hornet | air cycles 6..8 at 2 ticks; walk 1..5 at 8 px |
+| 428 | vortex larva | walk wraps one row early at 10 px; the fall latches row 4 after 10 ticks or `vy > 0.6` |
+| 429 | vortex soldier | walk from row 2 at `|vx| + 1`, wraps at the end; air row 1 |
+| 518 | solar spearman | the same shape as 429 |
+| 402, 412-414 | stardust worm head, crawltipede links | no `case` at all — row 0 |
+
+The three row helpers (`rows`, `next_row`, `last_row`) read
+`npc_rows(texture_net_id(kind))`, so a machine can never walk past its sheet;
+`drakomire_frame` is the shared 415/416 body.
+
+**Parked (documented follow-ups).**
+* The Moon Lord hand (397), core (398) and free eye (400) custom blocks
+  (`Main.cs:24701-24951`) — their extra parts (the arms, the tail, the eye's
+  laser sprites) stay undrawn; the parts draw one frame each at the generic
+  anchor.
+* `spriteDirection` write sites outside the ported machines (`NPC.cs`'s 24
+  `spriteDirection =` sites) — the flip rides `n.sprite_dir`, which several
+  machines never write.
+* The kinds whose bestiary `net_id` disagrees with their texture id:
+  `MoonLordHead` resolves to 397, `MoonLordLeechBlob` to 212, and the lunar
+  families are keyed on the art's first member. The draw uses
+  `texture_net_id`, the bestiary keeps its own ids — the two need one audit.
+* The solar drakomire's `IsABestiaryIconDummy` arm (416) and the 416's
+  parent lookup are not modelled: the port runs the parent machine on the rider
+  instead of copying the parent's row.
