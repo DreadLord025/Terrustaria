@@ -1379,6 +1379,26 @@ impl App {
         world_sim::projectiles::update_projectiles(self, dt);
     }
 
+    /// `Main.ActivePlayerFileData.Player.difficulty`'s port stand-in
+    /// (`UIWorldSelect.cs:179` / `UIWorldCreation.cs:319`): the session
+    /// character's difficulty. The port loads nothing per-entry on the
+    /// character select (`CharPlay` is routing-only, spec §9.4), so the
+    /// seeded session draft (`session_entry`'s source) is the active player —
+    /// 0 (`Player.cs:1654`) while no character has been created.
+    pub(crate) fn active_player_difficulty(&self) -> u8 {
+        self.session_draft.as_ref().map_or(0, |d| d.difficulty)
+    }
+
+    /// Re-sorts `App.worlds` through the active player's Journey flag — the
+    /// first key of `UpdateWorldsList` (`UIWorldSelect.cs:156`,
+    /// `CanWorldBeJoinedByActivePlayer` `:177-180`). The lone sort site so the
+    /// list hop and the favourite toggle cannot disagree (`enter_front`'s
+    /// re-list, `flow.rs`'s `UpdateOrder`).
+    pub(crate) fn resort_worlds(&mut self) {
+        let active_is_creative = self.active_player_difficulty() == 3;
+        ui::world_select::sort_worlds(&mut self.worlds, active_is_creative);
+    }
+
     /// Enters a front screen the way `OpenCharacterSelectUI`/
     /// `OpenWorldSelectUI` do (`Main.cs:52346-52350`, `:52362-52366`): the
     /// singleton state is set and `OnActivate` re-lists (`LoadPlayers`/
@@ -1403,7 +1423,9 @@ impl App {
                 // `Main.cs:67065-67075`; `save.rs:20-29`).
                 let dir = save::default_world_dir().unwrap_or_default();
                 self.worlds = ui::save_list::list_worlds(&dir, fakes);
-                ui::world_select::sort_worlds(&mut self.worlds, false);
+                // `UpdateWorldsList` (`UIWorldSelect.cs:153-166`): the re-list
+                // sorts by the active player's Journey flag first (`:177-180`).
+                self.resort_worlds();
             }
             // The keyboard re-lists nothing (`UIVirtualKeyboard.OnActivate`'s
             // only setup is the gamepad snap point, `:843-850` — out of scope,
