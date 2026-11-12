@@ -6977,7 +6977,14 @@ impl Npc {
     /// tunables; the 2-frame/3-frame flaps ride the anim clock.
     fn update_hover(&mut self, world: &World, player: &Player, params: HoverParams) {
         let (pcx, pcy) = player.center();
-        crate::npc_ai::hover_step(self, world, pcx, pcy, params);
+        // `NPC.GetTargetData`: the centre drives the velocity aim, the top
+        // edge (`Player.position.Y`) the surface-damping gate (`NPC.cs:50354`).
+        let target = crate::npc_ai::HoverTarget {
+            center_x: pcx,
+            center_y: pcy,
+            top_y: player.y,
+        };
+        crate::npc_ai::hover_step(self, world, target, params);
         self.frame_counter += 1.0;
         if self.frame_counter >= 8.0 {
             self.frame_counter = 0.0;
@@ -13247,18 +13254,87 @@ mod tests {
         }
         w.compute_column_surface();
         let mut npc = Npc::new(NpcKind::EaterOfSouls, 90.0 * 16.0, 100.0 * 16.0, 1, 0.0);
-        let target = (60.0 * 16.0, 100.0 * 16.0);
+        let target = crate::npc_ai::HoverTarget {
+            center_x: 60.0 * 16.0,
+            center_y: 100.0 * 16.0,
+            // A player's top edge, ~21 px (half the 42-px hitbox) above centre.
+            top_y: 100.0 * 16.0 - 21.0,
+        };
         for _ in 0..200 {
             crate::npc_ai::hover_step(
                 &mut npc,
                 &w,
-                target.0,
-                target.1,
+                target,
                 crate::npc_ai::HoverParams::EATER_OF_SOULS,
             );
         }
-        let dist = ((npc.x - target.0) / 16.0).abs();
+        let dist = ((npc.x - target.center_x) / 16.0).abs();
         assert!(dist < 20.0, "the hover homed (dist {dist} tiles)");
+    }
+
+    #[test]
+    fn the_hornet_surface_damping_is_surface_and_family_gated() {
+        // `NPC.cs:50352-50362`: the ×0.97 climb/dive damping fires only for
+        // the type-42/231-235 family AND only above `worldSurface`.
+        let mut w = World::new("t".into(), 64, 200);
+        w.world_surface = 100.0;
+        // The target sits at the NPC's own centre, so the velocity aim is a
+        // no-op (`dist == 0` ⇒ the desired velocity = the current velocity)
+        // and the damping is the only `vy` change. The climb arm wants the
+        // target top 300+ px below the NPC top and an upward `vy`.
+        let probe = |params: crate::npc_ai::HoverParams, y: f32| {
+            let mut npc = Npc::new(NpcKind::Hornet, 32.0 * 16.0, y, 1, 0.0);
+            npc.vy = -5.0;
+            let target = crate::npc_ai::HoverTarget {
+                center_x: npc.x + npc.size().0 * 0.5,
+                center_y: npc.y + npc.size().1 * 0.5,
+                top_y: npc.y + 400.0,
+            };
+            crate::npc_ai::hover_step(&mut npc, &w, target, params);
+            npc.vy
+        };
+        // The Hornet above the surface damps the climb (×0.97).
+        let above = probe(crate::npc_ai::HoverParams::HORNET, 50.0 * 16.0);
+        assert!((above + 5.0 * 0.97).abs() < 1e-4, "damped vy {above}");
+        // Below the surface rows: no damping.
+        let below = probe(crate::npc_ai::HoverParams::HORNET, 150.0 * 16.0);
+        assert!((below + 5.0).abs() < 1e-4, "undamped vy {below}");
+        // A non-family hover (the Eater of Souls) above the surface: no damping.
+        let other = probe(crate::npc_ai::HoverParams::EATER_OF_SOULS, 50.0 * 16.0);
+        assert!((other + 5.0).abs() < 1e-4, "family-gated vy {other}");
+    }
+
+    #[test]
+    fn the_hornet_speed_takes_the_two_minus_scale_factor() {
+        // `NPC.cs:50350`: `num *= 2 - scale` (the type-42/231-235 arm only).
+        let mut w = World::new("t".into(), 400, 400);
+        w.world_surface = 50.0; // the NPC flies well below it — no damping
+        let run = |scale: f32| {
+            let mut npc = Npc::new(NpcKind::Hornet, 300.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+            npc.scale = scale;
+            // Far to the left so the desired speed saturates before the NPC
+            // reaches the target (no overshoot).
+            let target = crate::npc_ai::HoverTarget {
+                center_x: npc.x - 8000.0,
+                center_y: npc.y + npc.size().1 * 0.5,
+                top_y: npc.y,
+            };
+            for _ in 0..600 {
+                crate::npc_ai::hover_step(
+                    &mut npc,
+                    &w,
+                    target,
+                    crate::npc_ai::HoverParams::HORNET,
+                );
+            }
+            npc.vx
+        };
+        // The default-scale Hornet caps at num = 3.5.
+        let base = run(1.0);
+        assert!((base + 3.5).abs() < 0.05, "default vx {base}");
+        // A half-scale Hornet caps at 3.5 × (2 - 0.5) = 5.25.
+        let scaled = run(0.5);
+        assert!((scaled + 5.25).abs() < 0.05, "scaled vx {scaled}");
     }
 
     #[test]

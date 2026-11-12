@@ -159,93 +159,134 @@ pub fn flyer_step(
 }
 
 /// The hover tunables — `AI_005_EaterOfSouls`'s per-kind `num`/`num2`
-/// pairs (`NPC.cs:50294-50330`: the max speed / the acceleration).
+/// pairs (`NPC.cs:50302-50383`: the max speed / the acceleration). The table
+/// is pinned by `the_hover_presets_match_the_csharp_table`, so the anchors
+/// cannot drift again (the pre-audit HORNET carried type 205's pair).
 #[derive(Clone, Copy, Debug)]
 pub struct HoverParams {
     /// `num` — the desired speed (the target vector scaled to it).
     pub max_speed: f32,
     /// `num2` — the velocity approach per tick.
     pub accel: f32,
+    /// The type-42/231-235 family arm (`NPC.cs:50341-50362`): its `num`/`num2`
+    /// take the `2f - scale` factor and its `velocity.Y` the surface-gated
+    /// ×0.97 climb/dive damping. `false` for every other hover kind, which
+    /// keeps the plain `num`/`num2` and never damps.
+    pub surface_damped: bool,
 }
 
 impl HoverParams {
-    /// The Eater of Souls (`NPC.cs:50304-50305`: num 4, num2 0.02).
+    /// The Eater of Souls (type 6; `NPC.cs:50304-50307`: num 4, num2 0.02).
     pub const EATER_OF_SOULS: Self = Self {
         max_speed: 4.0,
         accel: 0.02,
+        surface_damped: false,
     };
-    /// The Hornet (`NPC.cs:50322-50323`: num 3.25, num2 0.018).
+    /// The Hornet (type 42; `NPC.cs:50341-50344`: num 3.5, num2 0.021).
+    /// Type 205 is the *other* hover kind (`NPC.cs:50364-50367`: 3.25/0.018) —
+    /// this preset must not carry its pair.
     pub const HORNET: Self = Self {
-        max_speed: 3.25,
-        accel: 0.018,
+        max_speed: 3.5,
+        accel: 0.021,
+        surface_damped: true,
     };
-    /// The Servant of Cthulhu (`NPC.cs:50299-50301`: num 5, num2 0.03).
+    /// The Servant of Cthulhu (type 5; `NPC.cs:50379-50382`: num 5, num2 0.03).
     pub const SERVANT_OF_CTHULHU: Self = Self {
         max_speed: 5.0,
         accel: 0.03,
+        surface_damped: false,
     };
-    /// The Meteor Head (`NPC.cs:50328-50329`: num 1, num2 0.03).
+    /// The Meteor Head (type 23; `NPC.cs:50374-50377`: num 1, num2 0.03).
     pub const METEOR_HEAD: Self = Self {
         max_speed: 1.0,
         accel: 0.03,
+        surface_damped: false,
     };
 }
 
-/// `AI_005_EaterOfSouls`'s fly core (`NPC.cs:50392-50370`): the desired
-/// velocity = the normalized target vector × max_speed; the velocity
-/// approaches it by `accel` per tick with the double-add on the sign flips;
-/// the vertical damping (`:50355-50360`) caps the climb/dive when the
-/// target is far above/below.
+/// The hover AI's aim (`NPC.GetTargetData`): the centre drives the desired
+/// velocity vector (`NPC.cs:50419-50424`: `position + size/2`), the top edge
+/// drives the type-42/231-235 vertical-damping gate (`NPC.cs:50354`/`:50358`:
+/// `Main.player[target].position.Y - base.position.Y` — a top-to-top
+/// comparison, taken before the 8-px grid floor at `:50421-50424`).
+#[derive(Clone, Copy, Debug)]
+pub struct HoverTarget {
+    /// The target's centre X (`targetData.Position.X + Width/2`).
+    pub center_x: f32,
+    /// The target's centre Y (`targetData.Position.Y + Height/2`).
+    pub center_y: f32,
+    /// The target's top edge Y (`targetData.Position.Y`) — the damping gate.
+    pub top_y: f32,
+}
+
+/// `AI_005_EaterOfSouls`'s fly core (`NPC.cs:50418-50579`, ahead of the
+/// per-kind dash/attack arms): the desired velocity = the normalized target
+/// vector × `num`; the velocity approaches it by `num2` per tick with the
+/// double-add on the sign flips (`:50547-50578`). The type-42/231-235 family
+/// also takes the `num`/`num2` `2f - scale` factor (`:50350-50351`) and the
+/// surface-gated ×0.97 vertical damping (`:50352-50362`), applied to
+/// `velocity.Y` before the approach like the source.
 pub fn hover_step(
     npc: &mut Npc,
     world: &World,
-    target_x: f32,
-    target_y: f32,
+    target: HoverTarget,
     params: HoverParams,
 ) {
     let (w, h) = (npc_size_w(npc), npc_size_h(npc));
+    // The type-42/231-235 arm (`NPC.cs:50350-50351`): `num`/`num2` scale by
+    // `2f - this.scale` (identity for a default-scale Hornet).
+    let (max_speed, accel) = if params.surface_damped {
+        let f = 2.0 - npc.scale;
+        (params.max_speed * f, params.accel * f)
+    } else {
+        (params.max_speed, params.accel)
+    };
+    // The same family's vertical damping (`NPC.cs:50352-50362`): only above
+    // `worldSurface`, `velocity.Y *= 0.97` when the target is 300+ px below
+    // (climb) or < 80 px below (dive). Applied before the approach (`:50547`).
+    if params.surface_damped && (npc.y / TILE_PX) < world.world_surface as f32 {
+        let top_dy = target.top_y - npc.y;
+        if top_dy > 300.0 && npc.vy < 0.0 {
+            npc.vy *= 0.97;
+        }
+        if top_dy < 80.0 && npc.vy > 0.0 {
+            npc.vy *= 0.97;
+        }
+    }
     let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
-    let mut dx = target_x - cx;
-    let mut dy = target_y - cy;
+    let mut dx = target.center_x - cx;
+    let mut dy = target.center_y - cy;
     let dist = (dx * dx + dy * dy).sqrt();
     if dist != 0.0 {
-        let scale = params.max_speed / dist;
+        let scale = max_speed / dist;
         dx *= scale;
         dy *= scale;
     } else {
         dx = npc.vx;
         dy = npc.vy;
     }
-    // The approach with the double-add on the sign flips (`:50371-50377`).
+    // The approach with the double-add on the sign flips (`NPC.cs:50547-50578`).
     if npc.vx < dx {
-        npc.vx += params.accel;
+        npc.vx += accel;
         if dx > 0.0 && npc.vx < 0.0 {
-            npc.vx += params.accel;
+            npc.vx += accel;
         }
     } else if npc.vx > dx {
-        npc.vx -= params.accel;
+        npc.vx -= accel;
         if dx < 0.0 && npc.vx > 0.0 {
-            npc.vx -= params.accel;
+            npc.vx -= accel;
         }
     }
     if npc.vy < dy {
-        npc.vy += params.accel;
+        npc.vy += accel;
         if dy > 0.0 && npc.vy < 0.0 {
-            npc.vy += params.accel;
+            npc.vy += accel;
         }
     } else if npc.vy > dy {
-        npc.vy -= params.accel;
+        npc.vy -= accel;
         if dy < 0.0 && npc.vy > 0.0 {
-            npc.vy -= params.accel;
+            npc.vy -= accel;
         }
-    }
-    // The vertical damping (`:50355-50360`): the target 300+ px below
-    // damps the climb, 80 px above damps the dive (×0.97).
-    if target_y - cy > 300.0 && npc.vy < 0.0 {
-        npc.vy *= 0.97;
-    }
-    if target_y - cy < 80.0 && npc.vy > 0.0 {
-        npc.vy *= 0.97;
     }
     let nx = npc.x + npc.vx;
     if !crate::player::collides_rect(world, nx, npc.y, w, h) {
@@ -259,7 +300,7 @@ pub fn hover_step(
     } else {
         npc.vy = -npc.vy * 0.5;
     }
-    npc.facing = if target_x >= cx { 1 } else { -1 };
+    npc.facing = if target.center_x >= cx { 1 } else { -1 };
 }
 
 /// `AI_008`'s per-kind constants (`NPC.cs`'s aiStyle 8 block).
@@ -765,5 +806,55 @@ mod tests {
         }
         let dist = ((npc.x - target.0) / 16.0).abs();
         assert!(dist < 20.0, "the flyer homed (dist {dist} tiles)");
+    }
+
+    #[test]
+    fn the_hover_presets_match_the_csharp_table() {
+        // The per-kind `num`/`num2` pairs, re-read from `NPC.cs` (1.4.5.8).
+        // The pre-audit bug shipped type 205's pair under the Hornet, so pin
+        // every row against its own C# branch (`surface_damped` = the
+        // type-42/231-235 arm at `NPC.cs:50341-50362`).
+        let table: [(HoverParams, f32, f32, bool, &str); 4] = [
+            (
+                HoverParams::EATER_OF_SOULS,
+                4.0,
+                0.02,
+                false,
+                "NPC.cs:50304-50307 (type 6)",
+            ),
+            (
+                HoverParams::HORNET,
+                3.5,
+                0.021,
+                true,
+                "NPC.cs:50341-50344 (type 42)",
+            ),
+            (
+                HoverParams::SERVANT_OF_CTHULHU,
+                5.0,
+                0.03,
+                false,
+                "NPC.cs:50379-50382 (type 5)",
+            ),
+            (
+                HoverParams::METEOR_HEAD,
+                1.0,
+                0.03,
+                false,
+                "NPC.cs:50374-50377 (type 23)",
+            ),
+        ];
+        for (p, num, num2, flap, src) in table {
+            assert_eq!(p.max_speed, num, "{src}: num");
+            assert_eq!(p.accel, num2, "{src}: num2");
+            assert_eq!(p.surface_damped, flap, "{src}: the family arm");
+        }
+        // The regression the DONE-row re-verification caught: the Hornet
+        // carried type 205's pair (3.25/0.018, `NPC.cs:50364-50367`).
+        assert_ne!(
+            (HoverParams::HORNET.max_speed, HoverParams::HORNET.accel),
+            (3.25, 0.018),
+            "the Hornet must not ship type 205's constants"
+        );
     }
 }
