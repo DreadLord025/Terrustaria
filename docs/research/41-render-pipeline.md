@@ -217,10 +217,11 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   a raw scale matrix (`Main.Transform` = `GameViewMatrix.TransformationMatrix`,
   `Main.cs:2743`; zoom clamped 1..2 at `Main.cs:16808/16812`); the port snaps the
   camera to the zoom grid (`frame.rs:817`, per module 02) and clamps zoom in the
-  settings loader only (`settings.rs:446`). `Main.ForcedMinimumZoom` (`Main.cs:243`)
-  has **no located equivalent** — the port therefore renders a wider world view than
-  vanilla on wide screens. Module 01/02 own the camera; flagged here because it is a
-  *graphics-layer* contract.
+  settings loader only (`settings.rs:446`). `Main.ForcedMinimumZoom` (`Main.cs:243`,
+  assigned at `Main.cs:61991`/`61994`, folded into `GameViewMatrix.Zoom` at
+  `Main.cs:61999`) has **no located equivalent** — the port therefore renders a wider
+  world view than vanilla on wide screens. Module 01/02 own the camera; flagged here
+  because it is a *graphics-layer* contract.
 - **D-9 — Scissor clipping absent (behavioural + pixel, medium).** Vanilla scissors
   UI lists (`Main.ScissorState`, `Main.cs:2329`; `Main.cs:40405-40414`,
   `25403-25424`). The port has no scissor (`char_creation.rs:1859`); clipped UI
