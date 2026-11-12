@@ -8811,10 +8811,17 @@ Deliberate deviations and skips (all one-line-cited in the code):
   and the faithful behaviour is "no wind" either way. The C#'s
   `MathHelper.Clamp` on the tail line discards its return (a no-op in the
   source) — ported as written.
-- **The PVE walk's fixed centre point stands in for the boxes** in the
-  normal (flight-size) pass; the resized death bursts (the gem bolts' AoE)
-  ride the new `damage_pve_boxed` rectangle walk `Projectile.Damage` actually
-  runs — without it the burst's 160×160 box would deal no damage.
+- **The PVE hit test is `Damage_GetHitbox()`'s rectangle** (S1-C-8): the normal
+  walk (`damage_pve`) intersects `damage_hitbox` — `Damage_GetHitbox()`
+  (`Projectile.cs:14959-15023`, every kind/state inflate arm, the 301/383/262
+  `localAI[0]` consume included) — with `npc.getRect()` (`:12654`), the same
+  rectangle `Damage()` computes once (`:12499`). `Colliding`'s per-type overlay
+  arms (the gem-staff `oldPos` sweep, types 698/973/985/1115/1116/554/301/…, and
+  the `Collision.CanHit` line tests) stay unported: those kinds read the plain
+  overlap (`Colliding`'s own fallback). The resized death bursts (the gem bolts'
+  AoE, the bombs' `PrepareBombToBlow`) keep the `damage_pve_boxed` walk over the
+  raw resized box — against a 160 px burst the `Damage_GetHitbox` inflations are
+  ≤ 4 px.
 - **The channel reads a one-tick-old aim**: the frame runs
   `update_projectiles` before `update_editing`, so the aim the spell reads
   was written on the previous tick — the same net state as the C#, where
@@ -10727,7 +10734,7 @@ if ((!this.friendly || (!flag && !NPCID.Sets.ZappingJellyfish[targetNPC.type])) 
     return;
 ```
 
-The gate runs in **both** PVE walks: the plain point walk (`damage_pve`) and the
+The gate runs in **both** PVE walks: the plain rect walk (`damage_pve`) and the
 resized death bursts (`damage_pve_boxed` — the gem bolts' AoE and the bombs'
 `PrepareBombToBlow` walk), because the C# funnels all of them through
 `Projectile.Damage()` → `Damage_PVE` → `Damage_PVE_Inner`. The refusal sits

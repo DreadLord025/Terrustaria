@@ -8964,6 +8964,13 @@ fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 
+/// `ProjectileID.Sets.IsAPhaseblade` (`Terraria/ID/ProjectileID.cs:192`): the
+/// 19 phaseblade/phaser shots (1059-1072, 1074-1076, 1101, 1102 — 1073 is
+/// NOT in the set). Read by `Damage_GetHitbox`'s `ai[0] == 2` narrowing.
+fn is_a_phaseblade(kind: u16) -> bool {
+    matches!(kind, 1059..=1072 | 1074 | 1075 | 1076 | 1101 | 1102)
+}
+
 /// `MathHelper.WrapAngle` (XNA's body: the `IEEERemainder(angle, TwoPi)`
 /// remainder plus the ±2π fix-up). `round_ties_even` is
 /// `IEEERemainder`'s round-to-nearest-integer.
@@ -11356,10 +11363,83 @@ impl ProjectilePool {
         })
     }
 
+    /// `Projectile.Damage_GetHitbox()` (`:14959-15023`): the rectangle the
+    /// damage walks test against the target's box. The base rect is the
+    /// slot's `position`/`width`/`height` truncated to ints
+    /// (`new Rectangle((int)position.X, (int)position.Y, width, height)`),
+    /// then inflated per kind/state. The type 301/383/262 arms CONSUME
+    /// `localAI[0]` (`:14970`/`:14976`/`:14982`) — kept, so a following
+    /// `Damage()` call reads the -1 sentinel, exactly like the C#.
+    ///
+    /// Not ported here: `Damage_PVE_Inner` calls the full `Colliding`
+    /// (`:12654`), whose per-type overlay arms (the gem staffs' `oldPos`
+    /// sweep, types 698/973/985/1115/1116/554/301/…, and the
+    /// `Collision.CanHit` line tests) are still unported — see
+    /// `docs/ANALYSIS.md` (S1-C-8). The plain overlap below is
+    /// `Colliding`'s fallback (`myRect.Intersects(targetRect)`).
+    fn damage_hitbox(&mut self, slot: usize) -> tr_core::whip::Rect {
+        let (kind, ai0, lai0, vel, mut rect) = {
+            let p = &self.slots[slot];
+            (
+                p.kind,
+                p.ai[0],
+                p.local_ai[0],
+                p.vel,
+                tr_core::whip::Rect::new(p.pos.x as i32, p.pos.y as i32, p.w as i32, p.h as i32),
+            )
+        };
+        // `:14962-14965`: the phaseblades' `ai[0] == 2` swing narrows X.
+        if is_a_phaseblade(kind) && ai0 == 2.0 {
+            rect.inflate(-14, 0);
+        }
+        // `:14966-14983`: the 301/383/262 arms shrink to a point then grow by
+        // the radius cached in `localAI[0]`, and consume it.
+        if matches!(kind, 301 | 383 | 262) && lai0 > 0.0 {
+            let (w, h) = (self.slots[slot].w as i32, self.slots[slot].h as i32);
+            rect.inflate(-w / 2, -h / 2);
+            rect.inflate((lai0 / 2.0) as i32, lai0 as i32 / 2);
+            self.slots[slot].local_ai[0] = -1.0;
+        }
+        if kind == 101 {
+            rect.inflate(30, 30); // `:14984-14987`
+        }
+        if kind == 1024 {
+            rect.inflate(6, 6); // `:14988-14991`
+        }
+        if kind == 1023 {
+            rect.inflate(8, 8); // `:14992-14995`
+        }
+        if kind == 85 {
+            // `:14996-15000`: the 10..40 px radius off `localAI[0]`'s 0..72 ramp.
+            let num = remap(lai0, 0.0, 72.0, 10.0, 40.0) as i32;
+            rect.inflate(num, num);
+        }
+        if kind == 1106 {
+            // `:15001-15009`: the 0..20 px ramp, doubled +10 past 10 px/tick.
+            let mut num = remap(lai0, 0.0, 72.0, 0.0, 20.0) as i32;
+            if vel.length() > 10.0 {
+                num = num * 2 + 10;
+            }
+            rect.inflate(num, num);
+        }
+        if kind == 188 {
+            rect.inflate(20, 20); // `:15010-15013`
+        }
+        // `:15014-15017`: every `aiStyle == 29` shot (the gem-staff family)
+        // carries the 4 px pad.
+        if proj_data(kind).is_some_and(|d| d.ai_style == 29) {
+            rect.inflate(4, 4);
+        }
+        if kind == 967 {
+            rect.inflate(10, 10); // `:15018-15021`
+        }
+        rect
+    }
+
     /// `Damage_PVE` + `Damage_PVE_Inner` (`:12562-12700`) with the on-hit
     /// immunity application (`:14087-14119`). Single-hit slots bypass the
     /// per-owner gate (`flag3`, `:12620-12624`) and set no immunity
-    /// (`:14112-14119`). The whips replace the point test with the
+    /// (`:14112-14119`). The whips replace the rect test with the
     /// swept-span curve (`Projectile.Colliding`'s whip arm `:15716-15737`)
     /// and run their on-hit arms (`:13579-13956`).
     fn damage_pve(
@@ -11422,6 +11502,10 @@ impl ProjectilePool {
         } else {
             (Vec::new(), Vec::new())
         };
+        // `Damage()` computes `projRectangle` once before the walk
+        // (`:12499`) and hands it to `Damage_PVE` — the same rectangle every
+        // NPC in this pass is tested against.
+        let proj_rect = self.damage_hitbox(slot);
         // `keepIterating`: the walk stops once a hit consumed the projectile.
         for (idx, n) in npcs.iter_mut().enumerate() {
             if n.hp <= 0 {
@@ -11476,7 +11560,13 @@ impl ProjectilePool {
                 // The flail state-0 ellipse already decided the hit.
                 true
             } else {
-                n.contains(center.x, center.y)
+                // `Damage_PVE_Inner`'s `Colliding(projRectangle, npc.getRect())`
+                // (`:12654`): the projectile's damage box against the NPC's
+                // raw rect. `npc.getRect()` is exact (no +4 point-test pad).
+                let (nw, nh) = n.size();
+                proj_rect.intersects(tr_core::whip::Rect::new(
+                    n.x as i32, n.y as i32, nw as i32, nh as i32,
+                ))
             };
             if !touches {
                 continue;
@@ -11975,6 +12065,104 @@ mod tests {
         assert!(npc.hp < npc.max_hp);
         // `:14112-14119`: a single-hit projectile applies no immunity.
         assert_eq!(npc.immune[0], 0);
+    }
+
+    /// S1-C-8: `Damage()`'s PVE hit test is `Colliding(Damage_GetHitbox(),
+    /// npc.getRect())` (`Projectile.cs:12499`/`:12654`) — a rectangle overlap,
+    /// not the slot-centre point. A shot whose box covers the NPC while its
+    /// centre sits outside the NPC's box still hits; the old
+    /// `n.contains(centre)` test missed it.
+    #[test]
+    fn pve_hit_test_uses_the_projectile_box_not_its_centre() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        // The slime's 24x18 box at (320, 384) → [320,344]x[384,402].
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX - 38.0, 24.0 * TILE_PX + 6.0),
+                Vec2::ZERO,
+                10,
+                12.0,
+                false,
+            )
+            .unwrap();
+        // A 40x40 box anchored at pos (282, 390) → [282,322]x[390,430]: it
+        // overlaps the NPC's rect, but the centre (302, 410) is outside the
+        // NPC's box (and outside its +4 point-test tolerance).
+        pool.slots_mut()[slot].w = 40.0;
+        pool.slots_mut()[slot].h = 40.0;
+        let (cx, cy) = (20.0 * TILE_PX - 18.0, 24.0 * TILE_PX + 26.0);
+        assert!(
+            !npc.contains(cx, cy),
+            "the centre is outside the NPC's box, so the point test misses"
+        );
+        let before = npc.hp;
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut rng,
+        );
+        assert!(
+            npc.hp < before,
+            "the overlapping box lands the hit even with the centre outside"
+        );
+    }
+
+    /// S1-C-8: `Damage_GetHitbox()` (`Projectile.cs:14959-15023`) — the base
+    /// rect is the truncated `position`/`width`/`height`, and the kind/state
+    /// arms inflate it. Pins the arms reachable from the pool's rows.
+    #[test]
+    fn damage_hitbox_ports_the_base_rect_and_the_inflate_arms() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(100.9, 200.4),
+                Vec2::ZERO,
+                10,
+                0.0,
+                false,
+            )
+            .unwrap();
+        // `:14961`: `new Rectangle((int)position.X, (int)position.Y, width, height)`.
+        assert_eq!(
+            pool.damage_hitbox(slot),
+            tr_core::whip::Rect::new(100, 200, 6, 6)
+        );
+        // `:14984-14987`: type 101 inflates 30 px on each side.
+        pool.slots_mut()[slot].kind = 101;
+        assert_eq!(
+            pool.damage_hitbox(slot),
+            tr_core::whip::Rect::new(70, 170, 66, 66)
+        );
+        // `:15014-15017`: every aiStyle-29 (gem-staff) shot pads by 4 px.
+        pool.slots_mut()[slot].kind = GEM_BOLT_AMETHYST;
+        assert_eq!(
+            pool.damage_hitbox(slot),
+            tr_core::whip::Rect::new(96, 196, 14, 14)
+        );
+        // `:14996-15000`: type 85's `localAI[0]` 0..72 → 10..40 px ramp.
+        pool.slots_mut()[slot].kind = 85;
+        pool.slots_mut()[slot].local_ai[0] = 0.0;
+        assert_eq!(
+            pool.damage_hitbox(slot),
+            tr_core::whip::Rect::new(90, 190, 26, 26)
+        );
+        pool.slots_mut()[slot].local_ai[0] = 72.0;
+        assert_eq!(
+            pool.damage_hitbox(slot),
+            tr_core::whip::Rect::new(60, 160, 86, 86)
+        );
     }
 
     #[test]

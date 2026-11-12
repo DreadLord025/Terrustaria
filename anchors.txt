@@ -56,3 +56,4 @@ crates/tr-app/src/player.rs|fn get_armor_penetration|M3-EQUIP-20 — armorPenetr
 crates/tr-app/src/npc_ai.rs|surface_damped|S1-D-1 — the AI_005 hover presets (Hornet 3.5/0.021, the 2f-scale factor, the family+surface-gated damping)
 crates/tr-app/src/player.rs|amount.max(1)|S1-C-3 — the hurt `num2 < 1 -> 1` floor (Player.cs:38378-38381)
 crates/tr-app/src/world_sim/items.rs|remaining` (S1-C-9)|S1-C-9 — item pickup transfers the stack once (Player.cs:39330)
+crates/tr-app/src/projectile.rs|fn damage_hitbox|S1-C-8 — the PVE hit rectangle (Damage_GetHitbox, Projectile.cs:14959-15023)
