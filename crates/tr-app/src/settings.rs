@@ -48,13 +48,6 @@ pub struct Settings {
     /// (`Put` `Main.cs:4151`, `Get` `:4427`) — the port's old key was
     /// `"GamepadInstructions"`.
     pub gamepad_instructions: bool,
-    /// `Main.SettingsEnabled_OpaqueBoxBehindTooltips` (`Main.cs:269`, default
-    /// **true** — `static Main()` `:66513`; persisted as
-    /// `"SettingsEnabled_OpaqueBoxBehindTooltips"`, `Put` `:4155`, `Get`
-    /// `:4542`): the "Hover Text Boxes" row of the Interface page
-    /// (`IngameOptions.cs:832-840`). Off drops the `DrawInvBG` box and the
-    /// `(8, 2)` text shift, and clamps with `num4 = 4` (`Main.cs:20380-20402`).
-    pub opaque_tooltip_box: bool,
     /// `Main.bgScroll` (`Main.cs:2429`, a plain static): the "Parallax" slider
     /// value, 0..=100 — the bar stores `(int)(value * 100f)` (`Main.cs:51642`)
     /// and the backdrop scrolls by `caveParallax = 1 - bgScroll / 500`
@@ -262,9 +255,6 @@ impl Default for Settings {
             highlight_new_items: true,
             tile_grid: false,
             gamepad_instructions: true,
-            // `Main.SettingsEnabled_OpaqueBoxBehindTooltips = true`
-            // (`Main.cs:66513`).
-            opaque_tooltip_box: true,
             parallax_scroll: 60,
             // `Main.FrameSkipMode = FrameSkipMode.Subtle` (`Main.cs:67204`), i.e.
             // the enum's 2 (`Terraria/Enums/FrameSkipMode.cs:3-8`).
@@ -413,10 +403,6 @@ impl Settings {
                 // spelling paired here, it was the port's own invention.
                 "GamepadDisableInstructionsDisplay" => me.gamepad_instructions = boolean(value),
                 "GamepadInstructions" => me.gamepad_instructions = boolean(value),
-                // `configuration.Put("SettingsEnabled_OpaqueBoxBehindTooltips",
-                // Main.SettingsEnabled_OpaqueBoxBehindTooltips)` (`Main.cs:4155`),
-                // read back at `:4542`.
-                "SettingsEnabled_OpaqueBoxBehindTooltips" => me.opaque_tooltip_box = boolean(value),
                 // `configuration.Get("BackgroundParallax", ref Main.bgScroll)`
                 // (`Main.cs:4407`); the slider only writes 0..=100 (`:51642`).
                 "BackgroundParallax" => {
@@ -671,8 +657,7 @@ impl Settings {
              \"GamepadDisableInstructionsDisplay\": {},\n  \"BackgroundParallax\": {},\n  \
              \"FrameSkipMode\": {},\n  \
              \"LightingMode\": {},\n  \"GraphicsQuality\": {},\n  \"BackgroundEnabled\": {},\n  \
-             \"GoreVisualsAllowed\": {},\n  \"SettingsEnabled_OpaqueBoxBehindTooltips\": {}, \n  \
-             \"SettingsEnabled_MinersWobble\": {},\n  \
+             \"GoreVisualsAllowed\": {},\n  \"SettingsEnabled_MinersWobble\": {},\n  \
              \"SettingsEnabled_TilesSwayInWind\": {},\n  \
              \"UseStormEffect\": {},\n  \"UseHeatDistortion\": {},\n  \
              \"ForegroundSunlightEffects\": {},\n  \"WaveQuality\": {},\n  \
@@ -711,8 +696,6 @@ impl Settings {
             self.quality,
             self.background,
             self.blood,
-            // `SettingsEnabled_OpaqueBoxBehindTooltips` (`Main.cs:4155`).
-            self.opaque_tooltip_box,
             self.miners_wobble,
             self.tiles_sway,
             // The menuMode 2008 toggles, written under the vanilla keys in the
@@ -996,11 +979,7 @@ mod tests {
         s.portrait_preference = 2;
         s.boss_bar_text = false;
         s.flashy_effects_interface = false;
-        // `Main.SettingsEnabled_OpaqueBoxBehindTooltips` (`Main.cs:4155`).
-        assert!(s.opaque_tooltip_box, "the default is on (`Main.cs:66513`)");
-        s.opaque_tooltip_box = false;
         let back = Settings::parse(&s.to_json());
-        assert!(!back.opaque_tooltip_box);
         assert_eq!(back.auto_save, s.auto_save);
         assert_eq!(back.auto_pause, s.auto_pause);
         assert_eq!(back.map_enabled, s.map_enabled);

@@ -1343,37 +1343,6 @@ impl App {
                         .map_or(crate::bank::CHEST_CLOSED, |p| p.chest);
                     let (panel_chest_x, panel_chest_y) =
                         player.as_ref().map_or((0, 0), |p| (p.chest_x, p.chest_y));
-                    // `DrawInterface_6_TileGridOption` (`Main.cs:46233`): the
-                    // building-grid crosshair, gated by `settings.tile_grid`
-                    // (the Interface page's `Lang.menu[229]/[230]` row).
-                    {
-                        let mouse_world = Vec2::new(
-                            camera.x + (self.mouse_pos.x - screen.x * 0.5) / *zoom,
-                            camera.y + (self.mouse_pos.y - screen.y * 0.5) / *zoom,
-                        );
-                        let (velocity, dead) = player
-                            .as_ref()
-                            .map_or((Vec2::ZERO, false), |p| (Vec2::new(p.vx, p.vy), p.dead));
-                        ui::draw_tile_grid(
-                            renderer,
-                            lookups,
-                            screen,
-                            *camera,
-                            *zoom,
-                            mouse_world,
-                            velocity,
-                            // `Player.gravDir` is always 1 in the port (flipped
-                            // gravity is a P7 item).
-                            false,
-                            &mut self.mouse_building_grid_alpha,
-                            settings.tile_grid,
-                            self.smart_cursor_used,
-                            dead,
-                            // `PlayerInput.CursorIsBusy` — the port's equivalent
-                            // is any open interface panel.
-                            self.inventory_open,
-                        );
-                    }
                     ui::draw_hud(
                         renderer,
                         *camera,
@@ -1393,10 +1362,6 @@ impl App {
                         // `BigProgressBarSystem.cs:231`/`:236`): the gate on the
                         // boss bar's numbers (`BigProgressBarHelper.cs:53-55`).
                         settings.boss_bar_text,
-                        // `Main.SettingsEnabled_OpaqueBoxBehindTooltips`
-                        // (`IngameOptions.cs:832-840`): the tooltip box on/off
-                        // (`Main.cs:20380-20402`).
-                        settings.opaque_tooltip_box,
                         self.inventory_open,
                         self.crafting_open,
                         &self.mouse_item,

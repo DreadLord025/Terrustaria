@@ -20,7 +20,7 @@
 //! surface); everything above it is the original layout.
 
 mod actions;
-pub(crate) mod pages;
+mod pages;
 
 pub use actions::Action;
 

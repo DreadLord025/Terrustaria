@@ -15,9 +15,6 @@ use crate::registry;
 const TOOL_TIP_DISTANCE: f32 = 6.0;
 /// Opaque-box margin (`num4 = 18`, `Main.cs:20385`) used for the on-screen clamp.
 const BOX_MARGIN: f32 = 18.0;
-/// The plain-text clamp margin (`num4 = 4`, `Main.cs:20380`) when
-/// `Main.SettingsEnabled_OpaqueBoxBehindTooltips` is off.
-const TEXT_MARGIN: f32 = 4.0;
 /// Opaque box offset (`X += 8; Y += 2`, `Main.cs:20383-20384`).
 const BOX_OFFSET: Vec2 = Vec2::new(8.0, 2.0);
 /// Box left/top inset from the text origin (`num8 = 14`, `num9 = 9`, `Main.cs:20400-20401`).
@@ -136,32 +133,21 @@ pub fn item_name_color(rare: i32) -> [f32; 4] {
 /// opaque-box `(8, 2)` offset (`Main.cs:20383-20384`); clamped so the text plus the
 /// 18 px margin stays on-screen (`Main.cs:20389-20395`). The returned rect is the
 /// `DrawInvBG` box `(X-14, Y-9, w+28, h+13)` (`Main.cs:20402`).
-pub fn tooltip_box_rect(mouse: Vec2, w: f32, h: f32, screen: Vec2, opaque: bool) -> [f32; 4] {
-    let (ox, oy) = if opaque {
-        (BOX_OFFSET.x, BOX_OFFSET.y)
-    } else {
-        (0.0, 0.0)
-    };
-    let margin = if opaque { BOX_MARGIN } else { TEXT_MARGIN };
-    let mut x = mouse.x + 14.0 + TOOL_TIP_DISTANCE + ox;
-    let mut y = mouse.y + 14.0 + TOOL_TIP_DISTANCE + oy;
-    if x + w + margin > screen.x {
-        x = screen.x - w - margin;
+pub fn tooltip_box_rect(mouse: Vec2, w: f32, h: f32, screen: Vec2) -> [f32; 4] {
+    let mut x = mouse.x + 14.0 + TOOL_TIP_DISTANCE + BOX_OFFSET.x;
+    let mut y = mouse.y + 14.0 + TOOL_TIP_DISTANCE + BOX_OFFSET.y;
+    if x + w + BOX_MARGIN > screen.x {
+        x = screen.x - w - BOX_MARGIN;
     }
-    if y + h + margin > screen.y {
-        y = screen.y - h - margin;
+    if y + h + BOX_MARGIN > screen.y {
+        y = screen.y - h - BOX_MARGIN;
     }
-    if opaque {
-        [
-            x - BOX_INSET.x,
-            y - BOX_INSET.y,
-            w + BOX_INSET.x * 2.0,
-            h + BOX_HEIGHT_PAD,
-        ]
-    } else {
-        // No box: the returned rect is the bare text rect the caller draws into.
-        [x, y, w, h]
-    }
+    [
+        x - BOX_INSET.x,
+        y - BOX_INSET.y,
+        w + BOX_INSET.x * 2.0,
+        h + BOX_HEIGHT_PAD,
+    ]
 }
 
 /// One `MouseText` line height (`DynamicSpriteFont.MeasureString(...).Y`). The built-in
@@ -319,7 +305,6 @@ pub fn draw_item_tooltip(
     hover: Option<&ItemSlot>,
     screen: Vec2,
     pulse: UiPulse,
-    opaque: bool,
 ) {
     let Some(item) = hover else {
         return;
@@ -341,17 +326,11 @@ pub fn draw_item_tooltip(
         w = w.max(hud_text_width(r, lookups, text, 1.0));
         h += lh;
     }
-    let rect = tooltip_box_rect(mouse, w, h, screen, opaque);
-    if opaque {
-        draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
-    }
-    // Text origin: the box's top-left plus the `(14, 9)` inset (`Main.cs:20400-20402`),
-    // or the bare rect when the box is off.
-    let (tx, ty) = if opaque {
-        (rect[0] + BOX_INSET.x, rect[1] + BOX_INSET.y)
-    } else {
-        (rect[0], rect[1])
-    };
+    let rect = tooltip_box_rect(mouse, w, h, screen);
+    draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
+    // Text origin: the box's top-left plus the `(14, 9)` inset (`Main.cs:20400-20402`).
+    let tx = rect[0] + BOX_INSET.x;
+    let ty = rect[1] + BOX_INSET.y;
     // `Main.cs:20406-20407`: each line colour is multiplied by `mouseTextColor/255`
     // with the raw `mouseTextColor` as its alpha.
     let tint = pulse.text;
@@ -393,7 +372,6 @@ pub fn draw_mouse_text(
     text: &str,
     screen: Vec2,
     pulse: UiPulse,
-    opaque: bool,
 ) {
     if text.is_empty() {
         return;
@@ -401,17 +379,12 @@ pub fn draw_mouse_text(
     let lh = line_height(lookups);
     // `Main.cs:20367-20377`: the single line's measured width, one line tall.
     let w = hud_text_width(r, lookups, text, 1.0);
-    let rect = tooltip_box_rect(mouse, w, lh, screen, opaque);
-    if opaque {
-        draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
-    }
+    let rect = tooltip_box_rect(mouse, w, lh, screen);
+    draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
     // The same `(14, 9)` inset and `mouseTextColor` tint the tooltip uses
-    // (`Main.cs:20400-20407`) — dropped with the box, like the item tooltip.
-    let (tx, ty) = if opaque {
-        (rect[0] + BOX_INSET.x, rect[1] + BOX_INSET.y)
-    } else {
-        (rect[0], rect[1])
-    };
+    // (`Main.cs:20400-20407`).
+    let tx = rect[0] + BOX_INSET.x;
+    let ty = rect[1] + BOX_INSET.y;
     let tint = pulse.text;
     for dir in [(-2.0f32, 0.0f32), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
         hud_text(
@@ -546,47 +519,8 @@ mod tests {
 
     #[test]
     fn tooltip_clamps_to_the_screen() {
-        let r = tooltip_box_rect(
-            Vec2::new(1590.0, 880.0),
-            200.0,
-            40.0,
-            Vec2::new(1600.0, 900.0),
-            true,
-        );
+        let r = tooltip_box_rect(Vec2::new(1590.0, 880.0), 200.0, 40.0, Vec2::new(1600.0, 900.0));
         assert!(r[0] + r[2] <= 1600.0 && r[1] + r[3] <= 900.0);
-        // The plain-text path clamps with `num4 = 4` instead of 18
-        // (`Main.cs:20380`) and adds no box inset.
-        let t = tooltip_box_rect(
-            Vec2::new(1590.0, 880.0),
-            200.0,
-            40.0,
-            Vec2::new(1600.0, 900.0),
-            false,
-        );
-        assert!(t[0] + t[2] <= 1600.0 && t[1] + t[3] <= 900.0);
-        assert_eq!(t[2], 200.0, "no `(14, 14)` box inset");
-        assert_eq!(t[3], 40.0, "no `+13` box padding");
-    }
-
-    /// `Main.SettingsEnabled_OpaqueBoxBehindTooltips` (`Main.cs:20380-20402`):
-    /// on, the tooltip is the `DrawInvBG` rect inset by `(14, 9)` with the
-    /// `(8, 2)` text shift and the `num4 = 18` clamp margin; off, it is the bare
-    /// text rect clamped with `num4 = 4`.
-    #[test]
-    fn the_opaque_box_setting_shifts_the_tooltip_rect() {
-        let mouse = Vec2::new(100.0, 100.0);
-        let screen = Vec2::new(1600.0, 900.0);
-        let on = tooltip_box_rect(mouse, 80.0, 20.0, screen, true);
-        let off = tooltip_box_rect(mouse, 80.0, 20.0, screen, false);
-        // `X = mouseX + 14 + 6 + 8` (`Main.cs:20383`), then the box inset.
-        assert_eq!(on[0], 100.0 + 14.0 + TOOL_TIP_DISTANCE + 8.0 - 14.0);
-        assert_eq!(on[1], 100.0 + 14.0 + TOOL_TIP_DISTANCE + 2.0 - 9.0);
-        // Without the box: no `(8, 2)` shift and no inset, so the text origin is
-        // the rect origin.
-        assert_eq!(off[0], 100.0 + 14.0 + TOOL_TIP_DISTANCE);
-        assert_eq!(off[1], 100.0 + 14.0 + TOOL_TIP_DISTANCE);
-        assert_eq!([off[2], off[3]], [80.0, 20.0]);
-        assert_eq!([on[2], on[3]], [80.0 + 28.0, 20.0 + 13.0]);
     }
 
     #[test]

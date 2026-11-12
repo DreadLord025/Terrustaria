@@ -639,88 +639,6 @@ fn draw_anchored_text(
     );
 }
 
-/// The `Main.MouseBuildingGridAlpha` step of `DrawInterface_6_TileGridOption`
-/// (`Main.cs:46245-46266`).
-///
-/// On: `MathHelper.Lerp(value2: Lerp(0f, 0.7f, Clamp(1f - velocity.Length() / 6f,
-/// 0f, 1f)), value1: Main.MouseBuildingGridAlpha, amount: 0.2f)` — the C#'s
-/// `Lerp(value1, value2, amount)` is `value1 + (value2 - value1) * amount`, so
-/// the stored alpha eases 20 % toward the speed-scaled target.
-/// Off: `Clamp(Main.MouseBuildingGridAlpha - 0.05f, 0f, 1f)`.
-pub fn building_grid_alpha_step(alpha: f32, velocity: Vec2, active: bool) -> f32 {
-    if active {
-        let target = 0.7 * (1.0 - velocity.length() / 6.0).clamp(0.0, 1.0);
-        alpha + (target - alpha) * 0.2
-    } else {
-        (alpha - 0.05).clamp(0.0, 1.0)
-    }
-}
-
-/// `Main.DrawInterface_6_TileGridOption` (`Main.cs:46233-46269`): the building
-/// grid crosshair on the mouse tile.
-///
-/// The alpha is the C#'s own two-branch lerp: while the grid is on and the
-/// cursor is free it eases 20 % per tick toward
-/// `Lerp(0, 0.7, Clamp(1 - |velocity| / 6, 0, 1))` (`:46245`), otherwise it
-/// decays by `0.05` per tick (`:46266`).
-///
-/// The sprite is drawn in the world transform (`Main.spriteBatch` with
-/// `GameViewMatrix`), so it lands on the tile and scales with `zoom` — the
-/// same as every other world sprite in the port.
-pub fn draw_tile_grid(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    screen: Vec2,
-    camera: Vec2,
-    zoom: f32,
-    mouse_world: Vec2,
-    velocity: Vec2,
-    gravity_flipped: bool,
-    alpha: &mut f32,
-    enabled: bool,
-    smart_cursor_used: bool,
-    dead: bool,
-    cursor_busy: bool,
-) {
-    // `bool flag = Main.MouseShowBuildingGrid && !Main.SmartCursorIsUsed;`
-    // (`Main.cs:46235`).
-    let flag = enabled && !smart_cursor_used;
-    *alpha = building_grid_alpha_step(*alpha, velocity, flag && !dead && !cursor_busy);
-    if *alpha <= 0.0 {
-        return;
-    }
-    let Some(rect) = lookups.ui_radial else {
-        return;
-    };
-    let Some(uv) = lookups.hud_uv(Some(&rect)) else {
-        return;
-    };
-    // `Vector2 position = Main.MouseWorld.ToTileCoordinates().ToVector2() * 16f;`
-    // then `+= new Vector2(8f)` (`:46248`, `:46257`) — `ToTileCoordinates`
-    // truncates toward zero like the C# `int` cast.
-    let tx = (mouse_world.x / 16.0) as i32 as f32;
-    let ty = (mouse_world.y / 16.0) as i32 as f32;
-    let mut pos = Vec2::new(tx * 16.0 + 8.0, ty * 16.0 + 8.0);
-    // The world -> screen projection every world sprite uses.
-    pos = (pos - camera) * zoom + screen * 0.5;
-    // `if (Main.player[Main.myPlayer].gravDir == -1f) position.Y =
-    // Main.screenHeight - position.Y;` (`:46258-46261`).
-    if gravity_flipped {
-        pos.y = screen.y - pos.y;
-    }
-    // `spriteBatch.Draw(value, position, null, Color.White * 0.5f * alpha, 0f,
-    // value.Size() / 2f, 1f, ...)` (`:46262`) — origin-centred, one-to-one scale
-    // inside the zoom transform.
-    let size = Vec2::new(rect.width as f32, rect.height as f32) * zoom;
-    let a = 0.5 * *alpha;
-    r.push_ui_sprite(
-        [(pos.x - size.x * 0.5).round(), (pos.y - size.y * 0.5).round()],
-        [size.x, size.y],
-        uv,
-        [a, a, a, a],
-    );
-}
-
 pub fn draw_hud(
     r: &mut SpriteRenderer,
     camera: Vec2,
@@ -742,10 +660,6 @@ pub fn draw_hud(
     // with it off the boss bar draws without its `current / max` numbers
     // (`BigProgressBarHelper.cs:53-55`).
     boss_bar_text: bool,
-    // `Main.SettingsEnabled_OpaqueBoxBehindTooltips` — the Interface page's
-    // "Hover Text Boxes" row (`Main.cs:20380-20402` gates the box + the
-    // `(8, 2)` shift on it).
-    opaque_tooltip_box: bool,
     inventory_open: bool,
     crafting_open: bool,
     mouse_item: &ItemSlot,
@@ -957,15 +871,7 @@ pub fn draw_hud(
                     count,
                     prefix: 0,
                 };
-                tooltip::draw_item_tooltip(
-                    r,
-                    lookups,
-                    mouse_pos,
-                    Some(&hover),
-                    screen,
-                    pulse,
-                    opaque_tooltip_box,
-                );
+                tooltip::draw_item_tooltip(r, lookups, mouse_pos, Some(&hover), screen, pulse);
             }
         }
     } else {
@@ -1075,36 +981,12 @@ pub fn draw_hud(
         tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
             .map(|i| &inventory[i])
     };
-    tooltip::draw_item_tooltip(
-        r,
-        lookups,
-        mouse_pos,
-        hover_item,
-        screen,
-        pulse,
-        opaque_tooltip_box,
-    );
+    tooltip::draw_item_tooltip(r, lookups, mouse_pos, hover_item, screen, pulse);
     if let Some(text) = pvp_hover_text {
-        tooltip::draw_mouse_text(
-            r,
-            lookups,
-            mouse_pos,
-            &text,
-            screen,
-            pulse,
-            opaque_tooltip_box,
-        );
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
     }
     if let Some(text) = &housing_hover_text {
-        tooltip::draw_mouse_text(
-            r,
-            lookups,
-            mouse_pos,
-            text,
-            screen,
-            pulse,
-            opaque_tooltip_box,
-        );
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
@@ -1140,31 +1022,6 @@ fn hover_item_for<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `Main.cs:46245`/`:46266`: the crosshair alpha eases toward
-    /// `0.7 * Clamp(1 - |velocity| / 6)` at 20 % per tick while the grid is on,
-    /// and decays by `0.05` per tick (floored at 0) when it is off.
-    #[test]
-    fn the_building_grid_alpha_eases_and_decays() {
-        // Standing still: the target is the full 0.7.
-        assert!((building_grid_alpha_step(0.0, Vec2::ZERO, true) - 0.14).abs() < 1e-6);
-        // At or above `Player.maxRunSpeed`-ish 6 px/tick the target is 0.
-        assert!((building_grid_alpha_step(0.7, Vec2::new(6.0, 0.0), true) - 0.56).abs() < 1e-6);
-        // Half speed: the target halves.
-        let half = 0.7 * 0.5;
-        assert!(
-            (building_grid_alpha_step(0.0, Vec2::new(3.0, 0.0), true) - half * 0.2).abs() < 1e-6
-        );
-        // Off: a flat 0.05 decay, clamped at zero.
-        assert!((building_grid_alpha_step(0.3, Vec2::ZERO, false) - 0.25).abs() < 1e-6);
-        assert_eq!(building_grid_alpha_step(0.01, Vec2::ZERO, false), 0.0);
-        // The steady state converges on the target instead of overshooting.
-        let mut a = 0.0;
-        for _ in 0..200 {
-            a = building_grid_alpha_step(a, Vec2::ZERO, true);
-        }
-        assert!((a - 0.7).abs() < 1e-3, "converged to {a}");
-    }
 
     #[test]
     fn in_rect_is_inclusive_exclusive_like_rectangle_contains() {
