@@ -90,9 +90,9 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
 | aiStyle 27/40/51/59/71/75/84/118/119 — the 2026-11-12 caster wave | PORTED | 4522/6987/4662/4907/4766/5246/5383/4992/5155 | M4-PROJ-6b-magic-followups; the aiStyle-84 arm is kind-gated (LAST_PRISM_LASER vs the Phantasmal Deathray, 10635-10643). |
 | aiStyle 53 / 197 — sentries | PARTIAL | `::sentry_npc_targeting` (3483) + `store_sentry_aim` (2830) | Only the aim is computed and parked in `local_ai`; **the per-kind shot machine never fires** (arm comments 10777-10781, 10804+). |
 | aiStyle 62 — minions | PARTIAL | `::ai_flying_minion` (2904) + arm 10827 | The follow/attack/return machine is ported; the **attack-shot families are not** ("the spawn drops until the shot families land"). |
-| aiStyle 70 — Flairon bubble | MISSING | — | No arm and no `ai_bubble` function anywhere in `crates/` (PORT_MAP 157 lists one). |
+| aiStyle 70 — Flairon bubble | MISSING | — | No arm and no `ai_bubble` function anywhere in `crates/` (PORT_MAP previously claimed one; corrected S1-D-4c). |
 | aiStyle 82/83/84/85/102/103/122 — lunar battery | PORTED | 4070/4137/4176/4250/4454/4428/4483 | M4-EVENT-16 done (PORT_MAP 233). |
-| aiStyle 88 / 108 — Vortex ritual | MISSING (wired) | `::ai_vortex_ritual` (4308), `::ai_vortex_bolt` (4378) | The functions exist and are unit-tested, but **no dispatch arm calls them** — only the test module does (15771-15839). M4-EVENT-17 claims done; PORT_MAP 236 claims done. |
+| aiStyle 88 / 108 — Vortex ritual | PORTED (S1-D-4c) | `::ai_vortex_ritual` (4308), `::ai_vortex_bolt` (4378), dispatch + `drain_ritual_bolts` | Functions were unit-tested but not dispatched; S1-D-4c wires aiStyle 88/108 in live dispatch and resolves the 580 spawn intent in `world_sim/projectiles.rs`. |
 | aiStyle 99 — yoyos | PARTIAL | `::ai_yoyo` (3642) | `AI_099_2_Yoyos` ported; `AI_099_1_Counterweights` (types 556-561/1079) has no row and no arm. |
 | aiStyle 115 / 210 — Terrarian beam, yoyo shots | PORTED | `::ai_yoyo_beam` (4032), `::ai_yoyo_shot` (3997) | M4-PROJ-4b done. |
 | aiStyle 165 — whips | PORTED | `::ai_whip` (5679) | M4-PROJ-7 done; the render ribbon is deferred. |
@@ -155,19 +155,19 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
 - **S** — Delete the six duplicated arms (10615/10616/10617/10618/10826/10884) and
   replace `_ => {}` with an assert-on-unknown-aiStyle arm gated by an allow-list, so a
   new `proj_data` row cannot silently miss its AI. (Independent of everything below.)
-- **S** — Wire `ai_vortex_ritual`/`ai_vortex_bolt` into the dispatch (aiStyle 88/108)
-  and fix the M4-EVENT-17 + PORT_MAP 236 "done" claims. The functions already exist.
+- ~~**S** — Wire `ai_vortex_ritual`/`ai_vortex_bolt` into the dispatch (aiStyle 88/108)
+  and fix the M4-EVENT-17 + PORT_MAP 236 "done" claims.~~ **Done (S1-D-4c):** dispatched 88/108, drained/spawned 580 intent, corrected PORT_MAP vortex row and removed the false `ai_bubble` claim.
 - **S** — Add the aiStyle-70 arm and `ai_bubble` (the Flairon's bubble homing, C#
-  30304-30352) or correct PORT_MAP 157.
+  30304-30352). PORT_MAP claim corrected (S1-D-4c); implementation still missing (see S1-D-4b).
 - **M** — Port the aiStyle-53 / 197 sentry shot machines on top of the existing
   `store_sentry_aim` seam (the aim is already there; only the fire is missing).
 - **M** — Port the aiStyle-62 minion attack-shot families (the six kinds' projectiles
   need `proj_data` rows + arms).
 - **M** — Port `AI_001`'s remaining per-type arms (142 `type ==` checks) or split the
   style-1 arm into a per-kind table so the ~137 unported variants are explicit.
-- **M** — Port the 21 gap-list styles, grouped by family: the sentry/turret group
-  (120/123/130/134/137/138), the pillar group (88/108/133), and the small ones
-  (2/23/26/66/67/70/79/80/157/158/187/189).
+- **M** — Port the remaining gap-list styles, grouped by family: the sentry/turret group
+  (120/123/130/134/137/138), the pillar marker (133), and the small ones
+  (2/23/26/66/67/70/79/80/157/158/187/189). S1-D-4c wired 88/108.
 - **L** — Port `AI_099_1_Counterweights` (67380) + the counterweight rows 556-561/1079.
 - **L** — Port the remaining ~150 vanilla aiStyles (the 1.4 boss/event families 130-210
   and the pre-1.3 groups 30-99) as a batch, one family per ROADMAP row.
@@ -175,7 +175,7 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
 ## Gap list — projectile kinds in the Rust data table with no faithful AI
 
 The Rust `proj_data` table binds **60 distinct aiStyles** across 172 arm groups
-(229 kinds). The **21 styles below have a data row but no dispatch arm**, so those
+(229 kinds). The **19 styles below have a data row but no dispatch arm** (88/108 wired S1-D-4c), so those
 projectiles hold position and never animate, damage or expire:
 
 | style | Rust kinds (ids) | C# behaviour | Severity |
@@ -188,8 +188,6 @@ projectiles hold position and never animate, damage or expire:
 | 70 | FLAIRON_BUBBLE (405) | NPC-scan homing within 650 px (30304-30352) | behavioural |
 | 79 | SAUCER_DEATHRAY (447) | the saucer deathray, aimed at the mounted NPC (30791) | behavioural |
 | 80 | SAUCER_MISSILE (448) | the saucer missile (30911) | behavioural |
-| 88 | VORTEX_RITUAL_BOLT (580) | the 900-wrap latch + the tile stop (31937-32261) | behavioural |
-| 108 | VORTEX_LIGHTNING (578), VORTEX_PORTAL (579) | the ritual timeline, the aim rotation, the 580/427 spawns (33679-33988) | behavioural |
 | 120 | STARDUST_GUARDIAN (623) | `AI_120_StardustGuardian` (44634) | behavioural |
 | 123 | MOONLORD_TURRET (641), RAINBOW_CRYSTAL (643) | `AI_123_FloatingTurrets` (34966) | behavioural |
 | 130 | FLAME_BURST_TOWER_1/2/3 (663/…) | `AI_130_FlameBurstTower` (36310) | behavioural |
