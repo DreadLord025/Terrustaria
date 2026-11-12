@@ -51,3 +51,4 @@ crates/tr-app/src/player.rs|fn thorns_damage|M3-EQUIP-15 — thorns: the reflect
 crates/tr-app/src/player.rs|lava_max|M3-EQUIP-16 — lavaTime/lavaMax and the 80-damage lava hit
 crates/tr-app/src/player.rs|the_life_regen_rows_add_up|M3-EQUIP-17 — the armor/buff/stone life-regen rows
 crates/tr-app/src/itemdata.rs|life_regen|M3-EQUIP-18 — Item.lifeRegen provisioned in the generated item table
+crates/tr-app/src/player.rs|fn get_armor_penetration|M3-EQUIP-20 — armorPenetration rows and the melee-hit consumer
