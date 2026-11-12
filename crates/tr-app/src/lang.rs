@@ -224,6 +224,10 @@ mod tests {
         // `Lang.cs:497`/`:485` — `LegacyTooltip.{i}` / `LegacyInterface.{i}`.
         // Without the shipped resources the manager answers the key itself
         // (vanilla's unknown-key behaviour), which is what pins the format here.
+        // The manager's language is global state — the sibling test flips it
+        // mid-run — so the two reads need the same guard the other language
+        // tests take, or a parallel `set_language` lands between them.
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(tip(2), text("LegacyTooltip.2"));
         assert_eq!(inter(65), text("LegacyInterface.65"));
         // A missing key falls back to the key text, not a crash.

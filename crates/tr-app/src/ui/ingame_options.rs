@@ -1672,6 +1672,13 @@ mod tests {
     /// and `:359-360`), both 50 px below the panel's top (`num3 * 5 / 2`).
     #[test]
     fn the_columns_are_quarter_split_and_start_fifty_below_the_top() {
+        // The active culture is global state the sibling tests flip mid-run;
+        // hold the guard the lang module's tests use and pin English, so the
+        // culture branches inside these helpers stay deterministic.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::set_language(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
         let l = left_anchor(screen);
         assert_eq!(l[1] - 300.0, 50.0, "the left column's y is num3 * 5 / 2");
@@ -1751,6 +1758,13 @@ mod tests {
     /// `1.0..1.001` at `0.001` (`:157-166`, `:296-343`).
     #[test]
     fn the_scale_bands_are_the_c_sharp_defaults() {
+        // The active culture is global state the sibling tests flip mid-run;
+        // hold the guard the lang module's tests use and pin English, so the
+        // culture branches inside these helpers stay deterministic.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::set_language(GameCulture::English);
         let (lmin, lmax, lspeed) = left_scale_band();
         assert!((lmin - 0.7).abs() < 1e-6);
         assert!((lmax - 0.8).abs() < 1e-6);
@@ -1781,6 +1795,13 @@ mod tests {
     /// vanilla's `PlaySound(12)` on a hover change (`:187-195`).
     #[test]
     fn hovering_a_left_row_tickles_its_scale_and_cues_the_sound() {
+        // The active culture is global state the sibling tests flip mid-run;
+        // hold the guard the lang module's tests use and pin English, so the
+        // culture branches inside these helpers stay deterministic.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::set_language(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
         let mut st = IngameOptions::new();
         st.open = true;
@@ -1797,6 +1818,13 @@ mod tests {
     /// (`:333-380`).
     #[test]
     fn the_right_scale_clamps_at_its_band() {
+        // The active culture is global state the sibling tests flip mid-run;
+        // hold the guard the lang module's tests use and pin English, so the
+        // culture branches inside these helpers stay deterministic.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::set_language(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
         let mut st = IngameOptions::new();
         st.open = true;
@@ -1917,6 +1945,13 @@ mod tests {
     /// (`:946`), `[59 + qaStyle]` (`:964`) and the two-state pairs.
     #[test]
     fn the_cycle_labels_follow_their_state() {
+        // The active culture is global state the sibling tests flip mid-run;
+        // hold the guard the lang module's tests use and pin English, so the
+        // culture branches inside these helpers stay deterministic.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::set_language(GameCulture::English);
         let mut s = Settings::default();
         for mode in 0..3u8 {
             s.frame_skip = mode;
@@ -2006,6 +2041,13 @@ mod tests {
     /// columns must not spill out of the 670x480 box (`:125-129`).
     #[test]
     fn every_row_sits_inside_the_panel() {
+        // The active culture is global state the sibling tests flip mid-run;
+        // hold the guard the lang module's tests use and pin English, so the
+        // culture branches inside these helpers stay deterministic.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::set_language(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
         let o = panel_origin(screen);
         let (top, bottom) = (o[1], o[1] + PANEL_H);
@@ -2051,6 +2093,13 @@ mod tests {
     /// which therefore drew as the key itself.
     #[test]
     fn the_general_preferences_are_localised_and_clickable() {
+        // The active culture is global state the sibling tests flip mid-run;
+        // hold the guard the lang module's tests use and pin English, so the
+        // culture branches inside these helpers stay deterministic.
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::set_language(GameCulture::English);
         let mut s = Settings::default();
         let rows = page(0);
         // `:644-657`: the doors row cycles Disabled -> Everything -> Gamepad.

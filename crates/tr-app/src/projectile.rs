@@ -408,37 +408,6 @@ pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
 pub const KRAKEN_WAVE: u16 = 1135;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
-/// The whole aiStyle-99 weapon set — the kinds `DefaultToYoyo` covers.
-/// `Main.projFrames[type]` (`Main.cs:8441-8816`) for the kinds the port can
-/// spawn: every row defaults to 1 (`:8441`) and only these exceed it. The draw
-/// slices the sheet into `frames` equal rows and picks `Projectile.frame`
-/// (`Main.DrawProj`'s `Frame(1, projFrames[type], 0, frame)`); the per-family
-/// animators that advance `frame`/`frameCounter` land with their AI arms, so a
-/// row here without one draws frame 0.
-pub const fn proj_frames(kind: u16) -> u32 {
-    match kind {
-        34 => 6,
-        102 => 2,
-        254 => 5,
-        436 => 4,
-        447 => 4,
-        448 => 3,
-        450 => 5,
-        454 => 2,
-        456 => 4,
-        462 => 5,
-        519 => 4,
-        574 => 2,
-        206 => 5,
-        601 => 2,
-        645 => 7,
-        652 => 6,
-        659 => 4,
-        837 => 3,
-        1130 => 6,
-        _ => 1,
-    }
-}
 
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
@@ -561,6 +530,62 @@ pub const SPIRIT_FLAME: u16 = 659;
 pub const SKY_FRACTURE: u16 = 660;
 /// `ProjectileID.BookOfSkullsSkull` (837) — the Book of Skulls' rider.
 pub const BOOK_OF_SKULLS: u16 = 837;
+/// The followup caster families of M4-PROJ-6b: the kind ids below are the
+/// verbatim `ProjectileID` values, their `SetDefaults` arms cited per row in
+/// [`proj_data`]. The aiStyles 27/40/51/59/71/118/119/75/84 they declare
+/// reach the dispatch in Phases 2-4; the rows alone land here.
+/// `ProjectileID.UnholyTridentFriendly` (114) — the aiStyle-27 family's own
+/// shot (`extraUpdates = 2`, `timeLeft = 180`, `armorPenetration = 25`).
+pub const UNHOLY_TRIDENT: u16 = 114;
+/// `ProjectileID.UnholyTridentHostile` (115) — the hostile twin: the same
+/// 16x16 box with `penetrate = -1` and no friendly flag.
+pub const UNHOLY_TRIDENT_HOSTILE: u16 = 115;
+/// `ProjectileID.SwordBeam` (116) — the Beam Sword's beam
+/// (`Item.cs:9827-9836`'s `shoot = 116`, melee, pen 2).
+pub const SWORD_BEAM: u16 = 116;
+/// `ProjectileID.TerraBeam` (132) — an aiStyle-27 rider carrying the family's
+/// local-immunity group (`localNPCHitCooldown = 10`).
+pub const TERRA_BEAM: u16 = 132;
+/// `ProjectileID.LightBeam` (156) — the second rider with the same local
+/// immunity group (melee, pen 2).
+pub const LIGHT_BEAM: u16 = 156;
+/// `ProjectileID.NightBeam` (157) — the 32x32 rider (`scale = 1.2f`).
+pub const NIGHT_BEAM: u16 = 157;
+/// `ProjectileID.EnchantedBeam` (173) — the Enchanted Sword's beam
+/// (`Item.cs:12756-12764`'s `shoot = 173`, melee, pen 1).
+pub const ENCHANTED_BEAM: u16 = 173;
+/// `ProjectileID.Leaf` (206) — the Leaf Blower's leaf (aiStyle 40).
+pub const LEAF: u16 = 206;
+/// `ProjectileID.LostSoulHostile` (293) — the Spectre Staff's hostile soul.
+pub const LOST_SOUL_HOSTILE: u16 = 293;
+/// `ProjectileID.LostSoulFriendly` (297) — the friendly soul: `penetrate = 3`
+/// with the id-static group (`idStaticNPCHitCooldown = 10`).
+pub const LOST_SOUL: u16 = 297;
+/// `ProjectileID.SpectreWrath` (356) — the set-bonus's ghost shot (aiStyle
+/// 59, `tileCollide = false`, `extraUpdates = 3`).
+pub const SPECTRE_WRATH: u16 = 356;
+/// `ProjectileID.Typhoon` (409) — the Razorblade Typhoon's vortex (aiStyle
+/// 71, 30x30, `penetrate = -1`, `timeLeft = 300`).
+pub const TYPHOON: u16 = 409;
+/// `ProjectileID.NebulaArcanum` (617) — the Arcanum's homing bolt (aiStyle
+/// 118, local-immunity 8).
+pub const NEBULA_ARCANUM: u16 = 617;
+/// `ProjectileID.NebulaArcanumSubshot` (618) — the Arcanum's arm (aiStyle
+/// 119, 18x30, `timeLeft = 420`, local-immunity 20).
+pub const NEBULA_ARCANUM_SUBSHOT: u16 = 618;
+/// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
+/// 14x18, `penetrate = -1`, `tileCollide = false`).
+pub const LAST_PRISM: u16 = 633;
+/// `ProjectileID.LastPrismLaser` (632) — the holder's beam (aiStyle 84,
+/// 18x18, `alpha = 255`, `penetrate = -1`).
+pub const LAST_PRISM_LASER: u16 = 632;
+/// `ProjectileID.NebulaBlaze1` (634) — the Nebula Blaze's first arm: an
+/// aiStyle-1 rider with `extraUpdates = 2` (the plain-[`ai_arrow`] flight).
+pub const NEBULA_BLAZE_1: u16 = 634;
+/// `ProjectileID.NebulaBlaze2` (635) — the 20%-roll twin: aiStyle 1 with
+/// `extraUpdates = 3` (the C# arm sets `friendly` twice — a verbatim quirk
+/// with no effect on the port's `friendly` default).
+pub const NEBULA_BLAZE_2: u16 = 635;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -860,6 +885,45 @@ struct FlailSpawnRequest {
     knock_back: f32,
     /// `NewProjectile`'s `ai0` — the Flairon seeds its bubbles with -10f.
     ai0: f32,
+}
+
+/// One Nebula Arcanum subshot spawn — the family's `Projectile.NewProjectile`
+/// (`Projectile.cs:34753-34758`: kind 618, `this.damage / 2`, `ai1 = this.key`).
+/// The arm rolls the spawn angle from the pool's rng; the key and the owner
+/// ride out through the dispatch (the slot's own `key_of`), the same shape as
+/// `FlailSpawnRequest`.
+struct NebulaSubshot {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    damage: i32,
+}
+
+/// The Last Prism holder's 6× laser spawn (`Projectile.cs:66622-66626`:
+/// kind 632 at `this.damage`, `this.knockBack`, `ai0 = m` (0..5), `ai1 =
+/// this.key`). The six shots share everything but `ai[0]`, so the arm hands
+/// back one shape and the dispatch rides the loop out (the NebulaSubshot
+/// pattern, with the knock back the C# passes through).
+struct PrismLasers {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    damage: i32,
+    knock_back: f32,
+}
+
+/// The laser's read-only view of its holder 633 — the fields the
+/// aiStyle-84 arm consumes per tick (`Projectile.cs:31427-31509`: the
+/// velocity for the direction/angle, `ai[0]` for the charge envelope, the
+/// damage the beam copies). Resolved through the slot key (`TryGetActive`
+/// shape, `prism_parent`).
+struct PrismParent {
+    center: Vec2,
+    vel: Vec2,
+    charge: f32,
+    damage: i32,
 }
 
 /// One flail hit-side decision — the multipliers plus whether the
@@ -1639,6 +1703,82 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (the rider hook), alpha 255, `penetrate = 3`, `timeLeft =
             // 480`, `tileCollide = false`.
             BOOK_OF_SKULLS => (26.0, 26.0, 1, 3, 480, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // The followup caster families (M4-PROJ-6b, Phase 1): the verbatim
+            // `SetDefaults` rows in `ProjectileID` order, the aiStyles the
+            // Phases 2-4 arms dispatch on. The C#'s `light`, `magic`/`melee`,
+            // `hostile`, `ignoreWater`, `drawLayer` and `armorPenetration`
+            // fields have no `ProjData` consumer — dropped, as everywhere else.
+            // aiStyle 27 (`:2023-2035` UnholyTridentFriendly): 16x16, magic,
+            // light 0.5, alpha 255, `extraUpdates = 2`, `timeLeft = 180`
+            // (`armorPenetration = 25` dropped). The arm itself counts `ai[0]`
+            // up from the zeroed scratch array (`:26426-26440`), so the row
+            // sets no ai convention.
+            UNHOLY_TRIDENT => (16.0, 16.0, 27, 1, 180, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2036-2046` UnholyTridentHostile — the same 16x16 box with
+            // `penetrate = -1` and no `timeLeft`/`extraUpdates` override (the
+            // 3600 reset holds; `hostile` has no field in this port) — alpha
+            // 255, as the friendly twin's row.
+            UNHOLY_TRIDENT_HOSTILE => (16.0, 16.0, 27, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2047-2056` SwordBeam — 16x16, melee, `penetrate = 2`,
+            // light 0.5, alpha 255.
+            SWORD_BEAM => (16.0, 16.0, 27, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2209-2222` TerraBeam — 16x16, melee, `penetrate = 3`, alpha
+            // 255, the family's local-immunity group (cooldown 10).
+            TERRA_BEAM => (16.0, 16.0, 27, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 255, 1.0)),
+            // `:2434-2446` LightBeam — 16x16, melee, `penetrate = 2`, alpha
+            // 255, local-immunity 10.
+            LIGHT_BEAM => (16.0, 16.0, 27, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 255, 1.0)),
+            // `:2447-2456` NightBeam — the 32x32 rider with `scale = 1.2f`
+            // and light 0.5, alpha 255; no local-immunity pair (the port's
+            // overlay leaves the row's own group alone).
+            NIGHT_BEAM => (32.0, 32.0, 27, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.2)),
+            // `:2591-2600` EnchantedBeam — 16x16, melee, `penetrate = 1`,
+            // light 0.2, alpha 255.
+            ENCHANTED_BEAM => (16.0, 16.0, 27, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:2937-2945` Leaf — 14x14, aiStyle 40, `penetrate = 1`, alpha
+            // 255, `timeLeft = 360`.
+            LEAF => (14.0, 14.0, 40, 1, 360, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:3826-3837` LostSoulHostile — 12x12, aiStyle 51, alpha 255,
+            // `tileCollide = false`, `penetrate = -1`, `extraUpdates = 1`
+            // (the `293` arm's hunt lands in Phase 3).
+            LOST_SOUL_HOSTILE => (12.0, 12.0, 51, -1, TIME_LEFT_DEFAULT, 1, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:3870-3882` LostSoulFriendly — 12x12, aiStyle 51, alpha 255,
+            // `penetrate = 3`, `extraUpdates = 1` and the id-static group
+            // with the 10-tick cooldown.
+            LOST_SOUL => (12.0, 12.0, 51, 3, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, true, 10, 255, 1.0)),
+            // `:4464-4473` SpectreWrath — 6x6, aiStyle 59, alpha 255,
+            // `tileCollide = false`, `extraUpdates = 3`; the row keeps the
+            // stock `penetrate = 1` and the 3600 reset (the ghostHurt spawn
+            // is Phase 3's documented skip).
+            SPECTRE_WRATH => (6.0, 6.0, 59, 1, TIME_LEFT_DEFAULT, 3, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:4903-4915` Typhoon — 30x30, aiStyle 71, `penetrate = -1`,
+            // alpha 255, `timeLeft = 300`, `extraUpdates = 2`, `ignoreWater`
+            // dropped.
+            TYPHOON => (30.0, 30.0, 71, -1, 300, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:6644-6657` NebulaArcanum — 32x32, aiStyle 118, alpha 255,
+            // `penetrate = 3`, local-immunity with the 8-tick cooldown
+            // (`ignoreWater`/`drawLayer` dropped).
+            NEBULA_ARCANUM => (32.0, 32.0, 118, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 8, false, -1, 255, 1.0)),
+            // `:6658-6670` NebulaArcanumSubshot — 18x30, aiStyle 119,
+            // `tileCollide = false`, `penetrate = -1`, `timeLeft = 420`,
+            // local-immunity 20; alpha at the 0 reset.
+            NEBULA_ARCANUM_SUBSHOT => (18.0, 30.0, 119, -1, 420, 0, false, false, false, (true, 20, false, -1, 0, 1.0)),
+            // `:6793-6804` LastPrism — 14x18, aiStyle 75, `penetrate = -1`,
+            // `tileCollide = false` (`drawLayer = 7`/`ignoreWater` dropped);
+            // the channel keep-alive and the 6x laser spawn are Phase 4's.
+            LAST_PRISM => (14.0, 18.0, 75, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `:6805-6815` LastPrismLaser — 18x18, aiStyle 84, `penetrate =
+            // -1`, alpha 255, `tileCollide = false`. Phase 4 splits the
+            // style-84 dispatch by kind so 455 keeps its own arm.
+            LAST_PRISM_LASER => (18.0, 18.0, 84, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:6816-6826` NebulaBlaze1 — 40x40, aiStyle 1 (the plain
+            // [`ai_arrow`] flight), alpha 255, `extraUpdates = 2`
+            // (`ignoreWater` dropped).
+            NEBULA_BLAZE_1 => (40.0, 40.0, 1, 1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:6827-6836` NebulaBlaze2 — the same 40x40 box with
+            // `extraUpdates = 3`; the C# sets `friendly` twice (kept verbatim
+            // in the row's doc, no effect on the port).
+            NEBULA_BLAZE_2 => (40.0, 40.0, 1, 1, TIME_LEFT_DEFAULT, 3, true, false, false, (false, -2, false, -1, 255, 1.0)),
             CODE1_YOYO
             | WOOD_YOYO
             | CORRUPT_YOYO
@@ -2469,14 +2609,35 @@ pub struct Projectile {
     pub alpha: i32,
     /// `Projectile.scale` (`:320`, reset `:785`).
     pub scale: f32,
-    /// `Projectile.frame` (`:451`, reset `:805`) — the row the draw slices out
-    /// of the `proj_frames`-many strip. The per-family animators that advance
-    /// it land with their AI arms.
-    pub frame: u32,
-    /// `Projectile.frameCounter` (`:452`, reset `:806`) — the per-family
-    /// cadence that advances [`Self::frame`].
-    pub frame_counter: u32,
-    /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
+    /// `Projectile.frame` (`:331`, reset `:786`) — the animation sheet row the
+    /// per-type arms index into `Main.projFrames[type]` and the render pass
+    /// slices by. Only the Typhoon's `localAI[1] / 3 % 3` writes it today
+    /// (`:30381`); its per-tick counter rides `local_ai[1]`, so the slot field
+    /// is the one thing Phase 6's frame-sliced draw needs from this phase.
+    /// `frameCounter` joins it with the animating kinds 206/633 (Phase 6).
+    pub frame: i32,
+    /// `Projectile.frameCounter` (`:332`, reset `:787`) — the per-frame tick
+    /// accumulator of the animating kinds. The Leaf Blower's 5-frames-at-3 arm
+    /// (`AI_040_LeafBlower`, `Projectile.cs:38018-38027`) writes it now; Phase
+    /// 6's frame-sliced draw consumes it with the 633 holder. It cannot ride
+    /// `local_ai` — the leaf's C# arm owns all three `localAI` slots (the age,
+    /// the tick counter, the spin-sign latch).
+    pub frame_counter: i32,
+    /// `Projectile.oldPos` (`Projectile.cs:388`) — the 10-entry position ring the
+    /// `TrailingMode` chain shifts once per update call (`:17091-17195`),
+    /// newest first (index 0 = this tick's position). M4-PROJ-6b Phase 7's
+    /// trail quads walk it (`Main.DrawTrail`'s cheap fallback,
+    /// `Main.cs:27886-27905`); an unwritten slot reads `Vec2::ZERO`, the C#'s
+    /// "no entry" marker.
+    pub old_pos: [Vec2; 10],
+    /// `Projectile.oldRot` (`:390`) — the rotations the modes 2-5 record beside
+    /// the ring positions (the C# orients the strip's width axis by them,
+    /// `VertexStrip.cs:151-156`; the quad approximation orients by the segment
+    /// direction instead, so the ring's rotations are state only here).
+    pub old_rot: [f32; 10],
+    /// `Projectile.oldSpriteDirection` (`:392`) — the sprite directions the
+    /// modes 2-5 records beside the ring positions.
+    pub old_sprite_direction: [i32; 10],    /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
     pub w: f32,
     pub h: f32,
     /// `Projectile.tileCollide` (the default true, `:787`-defaults).
@@ -2579,12 +2740,15 @@ impl Default for Projectile {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
-            frame: 0,
-            frame_counter: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
             alpha: 0,
             scale: 1.0,
+            frame: 0,
+            frame_counter: 0,
+            old_pos: [Vec2::ZERO; 10],
+            old_rot: [0.0; 10],
+            old_sprite_direction: [0; 10],
             w: SIZE,
             h: SIZE,
             tile_collide: true,
@@ -4343,6 +4507,974 @@ impl Projectile {
         false
     }
 
+    /// `AI()`'s aiStyle-27 block (`Projectile.cs:26420-26548`) — the Unholy
+    /// Trident (114) with its riders (116 the Sword Beam, 132 the Terra Beam,
+    /// 156 the Light Beam, 157 the Night Beam, 173 the Enchanted Beam) and the
+    /// hostile twin (115). The family's dust (114's trail `:26459-26467`, the
+    /// 19-step 115 trail `:26471-26485`, the 173/132 riders `:26486-26506`, the
+    /// post-15 pulse dust `:26512-26524`) and the one-shot sound latch
+    /// `:26526-26535` have no layer in the pool — documented skips whose state
+    /// markers (`ai[1]`) are kept so the first tick stays a silent no-op.
+    ///
+    /// The AI body carries no movement of its own — `HandleMovement`
+    /// (`:17469`) integrates the position, so the per-kind collision arms of
+    /// that half close the arm here (see `unholy_step`).
+    fn ai_unholy_trident(&mut self, world: &World) {
+        // `:26422-26429` — the hostile twin: `ai[0]++` and the ×1.125 while
+        // `ai[0] < 30f`, freezing the speed from the 30th sub-step on.
+        if self.kind == UNHOLY_TRIDENT_HOSTILE {
+            self.ai[0] += 1.0;
+            if self.ai[0] < 30.0 {
+                self.vel *= 1.125;
+            }
+        }
+        // `:26430-26458` — the friendly Trident: the fixed 1.5 scale, the spawn
+        // speed cached into `localAI[0]` on the first tick, the ×0.98 decay of
+        // both the flight and the cache past `ai[0] >= 20f`, the kill when the
+        // cached speed falls under 1, and the alpha read back off the cache
+        // through the descending 2 → 0 `Remap`. The C# `Kill()` does not abort
+        // the body (and `Update`'s `Damage()` at `:17078` is not gated on
+        // `active` either), so the arm keeps running after the kill.
+        if self.kind == UNHOLY_TRIDENT {
+            self.scale = 1.5;
+            self.ai[0] += 1.0;
+            if self.local_ai[0] == 0.0 {
+                self.local_ai[0] = self.vel.length();
+            }
+            if self.ai[0] >= 20.0 {
+                self.vel *= 0.98;
+                self.local_ai[0] *= 0.98;
+                if self.local_ai[0] < 1.0 {
+                    self.active = false;
+                    self.time_left = 0;
+                }
+            }
+            let cached_speed = remap(self.local_ai[0], 2.0, 0.0, 1.0, 0.0);
+            self.alpha = (cached_speed * 255.0) as i32;
+        }
+        // `:26468-26470` — the hostile twin's first-hit trail latch: the pulse
+        // counter is pinned to 5 on the first sub-step (the 19-step dust
+        // skipped), so the shared pulse starts a full 15 away from the cap.
+        if self.kind == UNHOLY_TRIDENT_HOSTILE && self.local_ai[1] < 5.0 {
+            self.local_ai[1] = 5.0;
+        }
+        // `:26507-26525` — the shared pulse: `localAI[1]` counts up to 15 and
+        // holds there; past it every non-114 kind oscillates its scale ±0.02
+        // against alpha ±30, flipping phase through `localAI[0]` at the 250
+        // ceiling and the 0 floor. 114 spends `localAI[0]` on its cached speed,
+        // so it never enters the oscillation — the C# `type != 114` guard.
+        if self.local_ai[1] < 15.0 {
+            self.local_ai[1] += 1.0;
+        } else if self.kind != UNHOLY_TRIDENT {
+            if self.local_ai[0] == 0.0 {
+                self.scale -= 0.02;
+                self.alpha += 30;
+                if self.alpha >= 250 {
+                    self.alpha = 255;
+                    self.local_ai[0] = 1.0;
+                }
+            } else if self.local_ai[0] == 1.0 {
+                self.scale += 0.02;
+                self.alpha -= 30;
+                if self.alpha <= 0 {
+                    self.alpha = 0;
+                    self.local_ai[0] = 0.0;
+                }
+            }
+        }
+        // `:26536-26544` — the rotation: the 157 spins on its `direction` (and
+        // carries it into `spriteDirection`), every other kind faces the
+        // flight at `atan2(velocity.Y, velocity.X) + 0.785f`.
+        if self.kind == NIGHT_BEAM {
+            self.rot += self.direction as f32 * 0.4;
+            self.sprite_direction = self.direction;
+        } else {
+            self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_4;
+        }
+        // `:26545-26548` — the fall clamp at 16 px per sub-step.
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        self.unholy_step(world);
+    }
+
+    /// `HandleMovement`'s half for the aiStyle-27 family
+    /// (`Projectile.cs:17469-17890`): the C#'s AI body carries no movement, so
+    /// the position integrates here with the per-kind arms of the blocked-move
+    /// chain (`:18136-19851`). The port's probe is the per-axis
+    /// destination-box test the arrow/bomb arms use (`kill_step`), standing in
+    /// for the C#'s swept `Collision.TileCollision`.
+    fn unholy_step(&mut self, world: &World) {
+        if !self.tile_collide {
+            self.pos += self.vel;
+            return;
+        }
+        let last = self.vel;
+        let nx = self.pos.x + self.vel.x;
+        let ny = self.pos.y + self.vel.y;
+        let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+        let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+        if hit_x || hit_y {
+            match self.kind {
+                // `:18081-18086` — the Trident stops dead on contact: a last
+                // 0.99-scaled step into the tile, then the flight falls to the
+                // normalised pre-collision direction at 0.0001 px per tick.
+                UNHOLY_TRIDENT => {
+                    self.pos += self.vel * 0.99;
+                    self.vel = safe_normalize(last) * 0.0001;
+                    return;
+                }
+                // `:19803-19827` — the Sword Beam reflects full-axis for three
+                // impacts (`ai[2] < 4f`) and dies on the fourth; its sound and
+                // 30-dust burst are skipped.
+                SWORD_BEAM => {
+                    self.ai[2] += 1.0;
+                    if self.ai[2] < 4.0 {
+                        if hit_x {
+                            self.vel.x = -last.x;
+                        }
+                        if hit_y {
+                            self.vel.y = -last.y;
+                        }
+                        self.pos += self.vel;
+                        return;
+                    }
+                }
+                // Every other kind of the family (115, 132, 156, 157, 173)
+                // has no arm of its own and falls to the chain's terminal
+                // default `:19848-19851` — `position += velocity; Kill()`.
+                _ => {}
+            }
+        }
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-51 block (`Projectile.cs:28402-28503`) — the Spectre
+    /// Staff's Lost Soul (297) and its hostile twin (293). The 297 homes on the
+    /// tightest-Manhattan chaseable NPC inside the 400f `Distance` + `CanHit`
+    /// scan at turn speed 6; the 293 hunts the nearest living player inside the
+    /// Manhattan 200f scan (`:28448-28475`) at turn speed 3, both through the
+    /// same `(v * n + d) / (n + 1)` blend. The 297's five-dust burst
+    /// (`:28407-28416`) and the 293's nine-dust burst + one-shot sound latch
+    /// (`:28422-28437`) have no dust/sound layer — documented skips whose state
+    /// markers (`localAI[0]`) the arm keeps advancing so the C#'s tick order
+    /// stays observable.
+    fn ai_spectre_shot(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        owner: Option<(f32, f32)>,
+        player: Option<&crate::player::Player>,
+    ) {
+        let _ = owner;
+        if self.kind != LOST_SOUL {
+            // `:28420-28437` — the 293's sound latch: `localAI[0] == 0f` plays
+            // Item8 once and increments (the sound SKIPPED, the latch kept).
+            if self.local_ai[0] == 0.0 {
+                self.local_ai[0] += 1.0;
+            }
+            // `:28448-28475` — the player hunt: `num362` resets to 200f and the
+            // scan walks `Main.player` for `active && !dead`, keeping the
+            // tightest Manhattan centre-to-centre distance. The port's single
+            // player rides the `player` context; `None` reads as the C#'s
+            // inactive `Main.player[i]` — no target, no steering.
+            let Some(p) = player.filter(|p| !p.dead) else {
+                return;
+            };
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let (pcx, pcy) = p.center();
+            let target = Vec2::new(pcx, pcy);
+            let manhattan = (center.x - pcx).abs() + (center.y - pcy).abs();
+            // `:28484-28499` — the 293 blend: turn speed 3 through
+            // `(v * 100 + d) / 101`.
+            if manhattan < 200.0 {
+                self.steer_blend(target, center, 3.0, 101.0);
+            }
+            // The 293's row keeps `tileCollide = false`, so `HandleMovement`'s
+            // terminal default integrates without a collision probe — the
+            // `kill_step` shape below.
+            self.kill_step(world);
+            return;
+        }
+        // `:28404-28412` — the dust latch: `localAI[0]++` gates the burst that
+        // only opens past 4 (the five no-gravity dust SKIPPED, no dust layer).
+        self.local_ai[0] += 1.0;
+        // `:28413-28474` — the acquire scan. `num362` opens at 400 and carries
+        // the *running minimum*, which both of the C#'s tests read: the
+        // centre-to-centre `Distance` gate and the Manhattan tie-break that
+        // replaces it — so the scan keeps the tightest Manhattan target among
+        // the NPCs that pass both gates, not the first, and not the closest by
+        // Euclid alone.
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let mut scan = 400.0f32;
+        let mut target = center;
+        let mut found = false;
+        for n in npcs {
+            // `:28425` `Main.npc[i].CanBeChasedBy(this)` — the chaseable gate.
+            if !chaseable(n) {
+                continue;
+            }
+            let n_center = npc_center(n);
+            if center.distance(n_center) >= scan {
+                continue;
+            }
+            // `:28426` `Collision.CanHit(...)` — the tile line of sight.
+            let (nw, nh) = n.size();
+            if !can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh) {
+                continue;
+            }
+            let manhattan = (center.x - n_center.x).abs() + (center.y - n_center.y).abs();
+            if manhattan < scan {
+                scan = manhattan;
+                target = n_center;
+                found = true;
+            }
+        }
+        // `:28476-28497` — the steering blend: the flight steers one part in 21
+        // toward a unit vector at the turn speed 6 (`num372`, the 297 value —
+        // the 293 arm reads 3). The C# divides by the unscaled length without a
+        // guard, which an exactly-coincident centre would turn into NaN; the
+        // pool's other scans clamp the divisor (`gem_bolt_steer`), so the same
+        // epsilon stands in here.
+        if found {
+            let turn_speed = 6.0f32;
+            let delta = target - center;
+            let length = delta.length().max(f32::EPSILON);
+            let step = delta * (turn_speed / length);
+            self.vel.x = (self.vel.x * 20.0 + step.x) / 21.0;
+            self.vel.y = (self.vel.y * 20.0 + step.y) / 21.0;
+        }
+        // `HandleMovement`'s terminal default (`:19848-19851`): the 297 keeps
+        // its row's `tileCollide`, so a blocked move steps into the tile and
+        // dies — what `kill_step` models.
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-71 block (`Projectile.cs:30355-30454`) — the Razorblade
+    /// Typhoon (409). The six-dust ring (`:30359-30375`) and the
+    /// `Lighting.AddLight` (`:30382`) have no layer in the pool — documented
+    /// skips.
+    ///
+    /// Deviation from the source: the C# opens the whole fade/spin/frame block
+    /// with `Main.rand.Next(3) == 0` (`:30358`) as well as `localAI[1] > 10f`,
+    /// because the dust that block ends with is rolled on the same branch. The
+    /// pool takes no RNG this phase, so the port runs it every sub-step past
+    /// the 10th (the alpha reaches its 50 floor sooner and the frame advances
+    /// three times as fast as the source's average). The slot's `alpha` has no
+    /// draw consumer yet (`draw_with_hand` ignores it), so nothing visible
+    /// moves; the roll is a follow-up row.
+    fn ai_typhoon(&mut self, world: &World, npcs: &[Npc]) {
+        // `:30357-30383` — the age counter and the fade: past its 10th sub-step
+        // the alpha loses 5 with the 50 floor, the rotation spins by the
+        // flight's own X and the frame rides `localAI[1] / 3 % 3` — the slot's
+        // `frame` field this phase adds, with `localAI[1]` as its counter.
+        self.local_ai[1] += 1.0;
+        if self.local_ai[1] > 10.0 {
+            self.alpha -= 5;
+            if self.alpha < 50 {
+                self.alpha = 50;
+            }
+            self.rot += self.vel.x * 0.1;
+            self.frame = (self.local_ai[1] / 3.0) as i32 % 3;
+        }
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let mut target = center;
+        // `:30385-30399` — the re-acquire cooldown: `localAI[0]` counts down,
+        // and while it has spent with no lock held the scan takes the nearest
+        // chaseable NPC within 500f with a clear `Collision.CanHit` line,
+        // committing `ai[0] = index + 1`.
+        if self.local_ai[0] > 0.0 {
+            self.local_ai[0] -= 1.0;
+        }
+        if self.ai[0] == 0.0 && self.local_ai[0] == 0.0 {
+            let mut scan = 500.0f32;
+            let mut best: i32 = -1;
+            for (i, n) in npcs.iter().enumerate() {
+                if !chaseable(n) {
+                    continue;
+                }
+                let n_center = npc_center(n);
+                let distance = n_center.distance(target);
+                if distance < scan {
+                    let (nw, nh) = n.size();
+                    if can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh) {
+                        scan = distance;
+                        target = n_center;
+                        best = i as i32;
+                    }
+                }
+            }
+            if best >= 0 {
+                self.ai[0] = (best + 1) as f32;
+            }
+            // `:30400-30403` — a fruitless scan arms the 30-sub-step cooldown,
+            // so the typhoon flies blind (and unsteered) until it has spent.
+            if self.ai[0] == 0.0 {
+                self.local_ai[0] = 30.0;
+            }
+        }
+        // `:30404-30418` — the lock validity: the held index must still name a
+        // live NPC that takes damage and carries no owner i-frame for this
+        // slot, and its Manhattan distance must stay under 1000f. The C# clears
+        // `ai[0]` only for a dead / invulnerable / immune target — a merely
+        // distant one keeps its index and re-steers when it comes back (the
+        // same nuance the Book of Skulls tests pin).
+        let mut locked = false;
+        if self.ai[0] != 0.0 {
+            let held = (self.ai[0] - 1.0) as usize;
+            if let Some(n) = npcs.get(held) {
+                if !n.dont_take_damage && n.immune[self.owner as usize] == 0 {
+                    let n_center = npc_center(n);
+                    let manhattan = (center.x - n_center.x).abs() + (center.y - n_center.y).abs();
+                    if manhattan < 1000.0 {
+                        locked = true;
+                        target = n_center;
+                    }
+                }
+            }
+            if !locked {
+                self.ai[0] = 0.0;
+            }
+        }
+        // `:30419-30430` — the turn: 0.1 rad toward the target per sub-step,
+        // the wrapped difference of the two rotations (the length survives the
+        // rotation, as the C#'s `RotatedBy` keeps it).
+        if locked {
+            let delta = wrap_angle((target - center).to_angle() - self.vel.to_angle());
+            self.vel = rotate(self.vel, delta * 0.1);
+        }
+        // `:30431-30435` — the accel: the speed grows by 0.0025 per sub-step,
+        // the direction untouched.
+        let speed = self.vel.length();
+        self.vel = safe_normalize(self.vel) * (speed + 0.0025);
+        // `HandleMovement`'s 409 arm (`:18517-18525`): the typhoon bounces off a
+        // blocked tile at full strength on every axis that caught, the pre-
+        // collision velocity negated. The port's per-axis destination-box probe
+        // stands in for the C#'s swept `Collision.TileCollision`, which snaps
+        // the blocked axis and leaves the other one sliding.
+        if self.tile_collide {
+            let last = self.vel;
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x {
+                self.vel.x = -last.x;
+            }
+            if hit_y {
+                self.vel.y = -last.y;
+            }
+        }
+        self.pos += self.vel;
+    }
+
+    /// The C# caster families' steering blend —
+    /// `velocity = (velocity * (num - 1) + d) / num` where `d` is the
+    /// to-target direction at `speed` px per tick (`Projectile.cs:28489-28496`'s
+    /// shape). The Spectre Staff's 293 reads 101 at turn speed 3
+    /// (`:28477-28484`), the Spectre Wrath 30 at speed 4 (`:28972-28991`), the
+    /// Nebula Arcanum 8 at speed 4 (`:34779-34805`). The divisor stays clamped
+    /// by the epsilon guard the pool's other scans use — an exactly-coincident
+    /// centre would divide by zero in the C# too.
+    fn steer_blend(&mut self, target: Vec2, center: Vec2, speed: f32, num: f32) {
+        let delta = target - center;
+        let length = delta.length().max(f32::EPSILON);
+        let d = delta * (speed / length);
+        self.vel = Vec2::new(
+            (self.vel.x * (num - 1.0) + d.x) / num,
+            (self.vel.y * (num - 1.0) + d.y) / num,
+        );
+    }
+
+    /// `AI()`'s aiStyle-59 block (`Projectile.cs:28938-28993`) — the Spectre
+    /// Wrath (356). The ghost set bonus spawns it hostile with the victim as
+    /// `ai[0]` (`ghostHurt`, `:12060` — the spawn path itself is the
+    /// documented M3-EQUIP skip); `ai[1]` counts 60 ticks before the flip to
+    /// `friendly` arms the homing: an owner-side re-pick collects every
+    /// chaseable NPC inside the Manhattan 800f and takes a **uniform** rng
+    /// pick (`array[Main.rand.Next(num427)]`, `:28966` — `Kill()` when the
+    /// scan comes back empty), then the held target steers through the
+    /// `(v * 29 + d) / 30` blend at speed 4.
+    ///
+    /// The five-dust ring (`:28992-28996`) rolls nothing and is SKIPPED. The
+    /// re-pick gate folds `Main.myPlayer == this.owner` to `owner != 255` —
+    /// the update's simulation gate already restricts the arm to this
+    /// machine's slots, and the 255-hostile slots must not re-pick. The
+    /// stored index is the **raw** npc index (the C# keeps `num428`
+    /// verbatim — no `+ 1`, unlike the typhoon/arcanum locks). The row's
+    /// `tileCollide = false` makes `HandleMovement`'s half a plain
+    /// integration.
+    fn ai_spectre_wrath(&mut self, npcs: &[Npc], rng: &mut dyn tr_core::loot::DropRng) {
+        // `:28940-28941` — the hostile window counter (the row's
+        // `extraUpdates = 3` runs the arm four times per update).
+        self.ai[1] += 1.0;
+        // `:28942` — the flip: the PVE pass reads `friendly`. The C# writes it
+        // once past 60 over `SetDefaults`' hostile reset (`:788`); the pool's
+        // slot spawns `friendly = true` by default, so the arm holds the C#
+        // state machine explicitly — hostile below 60, friendly at and past
+        // it — which is every real 356's state (the only spawner is
+        // `ghostHurt`'s SetDefaults-fresh spawn).
+        self.friendly = self.ai[1] >= 60.0;
+        if self.ai[1] >= 60.0 {
+            let mut held = self.ai[0] as i32;
+            // `:28943-28965` — the owner-only re-pick: an unset or stale
+            // target re-scans; a still-chaseable hold keeps steering without
+            // a roll.
+            if self.owner != 255
+                && (held == -1 || npcs.get(held as usize).is_none_or(|n| !chaseable(n)))
+            {
+                held = -1;
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                let mut candidates: Vec<usize> = Vec::new();
+                for (i, n) in npcs.iter().enumerate() {
+                    if !chaseable(n) {
+                        continue;
+                    }
+                    let c = npc_center(n);
+                    let manhattan = (c.x - center.x).abs() + (c.y - center.y).abs();
+                    if manhattan < 800.0 {
+                        candidates.push(i);
+                    }
+                }
+                // `:28957-28960` — an empty scan kills and aborts the arm.
+                if candidates.is_empty() {
+                    self.active = false;
+                    self.time_left = 0;
+                    return;
+                }
+                // `:28961-28964` — the uniform pick; `netUpdate` is net code.
+                held = candidates[rng.next_range(0, candidates.len() as i32) as usize] as i32;
+                self.ai[0] = held as f32;
+            }
+            // `:28968-28991` — the steering blend: `num434 = 30`, the target
+            // direction at speed 4. The `get()` guards the owner-255 path the
+            // re-pick gate skips — a wild `ai[0]` there would be the C#'s
+            // IndexOutOfRange, which the pool answers with a steering-less
+            // tick instead of a panic.
+            if held != -1 {
+                if let Some(n) = npcs.get(held as usize) {
+                    let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                    let target = npc_center(n);
+                    self.steer_blend(target, center, 4.0, 30.0);
+                }
+            }
+        }
+        // The five-dust ring (`:28992-28996`) — SKIPPED (no dust layer, no
+        // rolls to consume).
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-118 block (`Projectile.cs:34638-34807`) — the Nebula
+    /// Arcanum (617). Two flight modes picked per tick off the speed: above
+    /// 4.0 the fast spin (`rotation -= PI/30`, the 0.98 decay + the 0.0074468083
+    /// scale climb past `ai[0] >= 30`, the re-snap to exactly 4 when the speed
+    /// falls under 4.1 with the `ai[0]` reset), at or below 4.0 the homing mode
+    /// (the 800f `Distance` + `CanHit` scan committing `ai[1] = index + 1`, the
+    /// held target's `CanBeChasedBy(ignoreDontTakeDamage: true)` + 1000f
+    /// validity — a merely distant hold keeps its index, a dead one flies dumb,
+    /// the C# never re-scans — and the `(v * 7 + d) / 8` blend at speed 4,
+    /// gated on `friendly`). The subshot (618, `damage / 2`, `ai1 = this.key`)
+    /// rolls every 30 ticks while `ai[0] < 241` and rides out through the
+    /// dispatch like `FlailSpawnRequest`.
+    ///
+    /// The per-mode dust bursts (`:34657-34673` fast, `:34693-34719` homing)
+    /// are SKIPPED — no dust layer — with every gate and `RotatedByRandom`
+    /// draw consumed on the pool's rng (`Utils.cs:1697-1701` takes two values
+    /// per call), so the subshot's angle lands at its C# stream position. The
+    /// `Lighting.AddLight` (`:34798`) and the `netUpdate` writes are skipped.
+    /// The 617's HandleMovement arm (`:18267-18276`) reflects a blocked axis
+    /// at `* 0.35f` instead of the terminal kill. The collision-box resize
+    /// (`:20002`, 20×scale) has no pool consumer.
+    ///
+    /// Deviation from the source: the mode is picked from the speed **before**
+    /// this tick's decay, exactly as the C# reads `velocity.Length() <= 4f` at
+    /// the block's top — a 4.05-speed spawn re-snaps to 4.0 on its first tick.
+    fn ai_nebula_arcanum(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<NebulaSubshot> {
+        let mut spawn = None;
+        // `:34641-34651` — the age counter, the mode pick (homing at |v| <= 4)
+        // and the fade-in: 15 per tick with the 0 floor.
+        self.ai[0] += 1.0;
+        let homing = self.vel.length() <= 4.0;
+        self.alpha -= 15;
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        if !homing {
+            // `:34655-34656` — the fast spin.
+            self.rot -= std::f32::consts::PI / 30.0;
+            // The mode-0 dust — SKIPPED; the `Next(3)` gate, the inner
+            // `Next(2)` and the taken branch's `RotatedByRandom` pair stay on
+            // the stream (both inner branches roll one pair).
+            if rng.next_range(0, 3) == 0 {
+                if rng.next_range(0, 2) == 0 {
+                    let _ = (rng.next_float(), rng.next_float());
+                } else {
+                    let _ = (rng.next_float(), rng.next_float());
+                }
+            }
+            // `:34674-34683` — the decay + the scale climb + the extra spin
+            // once the counter passes 30.
+            if self.ai[0] >= 30.0 {
+                self.vel *= 0.98;
+                self.scale += 0.0074468083;
+                if self.scale > 1.3 {
+                    self.scale = 1.3;
+                }
+                self.rot -= std::f32::consts::PI / 180.0;
+            }
+            // `:34684-34689` — the re-snap: under 4.1 the flight normalises to
+            // exactly 4 and the counter resets, which hands the next tick to
+            // the homing mode.
+            if self.vel.length() < 4.1 {
+                self.vel = safe_normalize(self.vel) * 4.0;
+                self.ai[0] = 0.0;
+            }
+        } else {
+            // `:34691-34692` — the homing spin.
+            self.rot -= std::f32::consts::PI / 30.0;
+            // The mode-1 dust — SKIPPED; the `Next(2)` gate, then the taken
+            // branch's two `RotatedByRandom` pairs (4 draws) or the else's
+            // one pair (2 draws).
+            if rng.next_range(0, 2) == 0 {
+                let _ = (rng.next_float(), rng.next_float(), rng.next_float(), rng.next_float());
+            } else {
+                let _ = (rng.next_float(), rng.next_float());
+            }
+            // `:34720-34723` — the subshot window: `ai[0] % 30 == 0` and under
+            // 241, on the owner's machine (`Main.myPlayer == owner` folds to
+            // `owner != 255`, the same fold the Wrath's re-pick uses). The
+            // angle is `UnitY.RotatedByRandom(2π) * 12` — two draws.
+            if self.ai[0] % 30.0 == 0.0 && self.ai[0] < 241.0 && self.owner != 255 {
+                let a = rng.next_float() * 6.2831854820251465
+                    - rng.next_float() * 6.2831854820251465;
+                let v = rotate(Vec2::new(0.0, 1.0), a) * 12.0;
+                spawn = Some(NebulaSubshot {
+                    x: self.pos.x + self.w * 0.5,
+                    y: self.pos.y + self.h * 0.5,
+                    vx: v.x,
+                    vy: v.y,
+                    damage: self.damage / 2,
+                });
+            }
+            // `:34724-34771` — the homing scan: the acquire only while no
+            // lock is held (`ai[1] == 0`), the tightest chaseable NPC inside
+            // 800f with a clear `CanHit` line committing `ai[1] = index + 1`;
+            // the held target re-validates every tick through the
+            // ignoreDontTakeDamage chase gate and the 1000f radius, never
+            // clearing on a miss (the C# `ai[1]` has no reset arm).
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let mut target = center;
+            let mut steer = false;
+            if self.ai[1] == 0.0 {
+                let mut scan = 800.0f32;
+                let mut best: i32 = -1;
+                for (i, n) in npcs.iter().enumerate() {
+                    if !chaseable(n) {
+                        continue;
+                    }
+                    let n_center = npc_center(n);
+                    let distance = center.distance(n_center);
+                    if distance < scan
+                        && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, n.size().0, n.size().1)
+                    {
+                        scan = distance;
+                        target = n_center;
+                        best = i as i32;
+                    }
+                }
+                if best >= 0 {
+                    self.ai[1] = best as f32 + 1.0;
+                }
+            }
+            if self.ai[1] != 0.0 {
+                let held = self.ai[1] as i32 - 1;
+                if let Some(n) = npcs.get(held as usize) {
+                    if chaseable_held(n) && center.distance(npc_center(n)) < 1000.0 {
+                        steer = true;
+                        target = npc_center(n);
+                    }
+                }
+            }
+            if !self.friendly {
+                steer = false;
+            }
+            // `:34776-34805` — the blend: `num874 = 8`, the target direction
+            // at speed 4.
+            if steer {
+                self.steer_blend(target, center, 4.0, 8.0);
+            }
+        }
+        // `:34802-34806` — the 600-tick life end (the homing counter never
+        // resets once past the mode switch, so this is the mode-1 lifetime).
+        if self.ai[0] >= 600.0 {
+            self.active = false;
+            self.time_left = 0;
+        }
+        // `HandleMovement`'s 617 arm (`:18267-18276`): a blocked axis
+        // reflects at `* 0.35f` — the typhoon's probe shape with the
+        // restitution.
+        if self.tile_collide {
+            let last = self.vel;
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x {
+                self.vel.x = -last.x * 0.35;
+            }
+            if hit_y {
+                self.vel.y = -last.y * 0.35;
+            }
+        }
+        self.pos += self.vel;
+        spawn
+    }
+
+    /// `AI()`'s aiStyle-119 block (`Projectile.cs:34809-34887`) — the Nebula
+    /// Arcanum's arm (618): it trails its parent 617, accelerating 0.15 per
+    /// tick toward the parent's centre (the `Math.Sign` step, capped at
+    /// speed 6), for the 420-tick window, and latches `alpha = 255` every
+    /// tick. The parent resolves through the key the spawn carried in
+    /// `ai[1]` (`nebula_parent`'s `TryGetActive` shape); a missing parent
+    /// latches `ai[0] = 420` and kills, with the AI running on into the
+    /// alpha tail exactly as the C#'s no-return `Kill()` does.
+    ///
+    /// Deviation from the source (recorded): the C# shift reads the parent's
+    /// `oldPos[1]` ring — the parent's movement since the child's previous
+    /// tick. The port's oldPos ring is Phase 7's, so the arm keeps the
+    /// last-seen parent position in `localAI[0..1]` (with the seen-flag in
+    /// `localAI[2]`) and shifts from the second sighting on: the delta
+    /// matches the C#'s per-tick movement exactly, but the first tick
+    /// carries one tick of follow slack where the C# reads the parent's
+    /// already-warm ring.
+    fn ai_nebula_arm(&mut self, parent: Option<(Vec2, Vec2)>, rng: &mut dyn tr_core::loot::DropRng) {
+        // The 618 constants (`:34817-34822`): the parent type 617, the 420
+        // window, the 0.15 per-axis accel. The C#'s `flag62`/`flag63` arms are
+        // the decompiler's always-false locals — folded.
+        // `:34831-34834` — the counter and the window: past 420 the arm is
+        // inert (the `return` skips the shift, the accel and the alpha tail).
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 420.0 {
+            return;
+        }
+        match parent {
+            Some((parent_pos, _)) => {
+                // `:34843-34847` — the parent-follow shift: the delta since the
+                // last sighting (the C#'s `position - oldPos[1]`), taken from
+                // the second tick on.
+                if self.local_ai[2] != 0.0 {
+                    let delta =
+                        parent_pos - Vec2::new(self.local_ai[0], self.local_ai[1]);
+                    self.pos += delta;
+                    // `:34848-34852` — the NaN guard: `Center.HasNaNs()` kills
+                    // and aborts.
+                    if (self.pos.x + self.w * 0.5).is_nan()
+                        || (self.pos.y + self.h * 0.5).is_nan()
+                    {
+                        self.active = false;
+                        self.time_left = 0;
+                        return;
+                    }
+                }
+                self.local_ai[0] = parent_pos.x;
+                self.local_ai[1] = parent_pos.y;
+                self.local_ai[2] = 1.0;
+            }
+            None => {
+                // `:34853-34857` — the parent-missing latch: `ai[0] = 420`,
+                // `Kill()` — and the AI runs on into the alpha tail (the C#
+                // `Kill()` does not return here).
+                self.ai[0] = 420.0;
+                self.active = false;
+                self.time_left = 0;
+            }
+        }
+        // `:34858-34864` — the accel: one `Math.Sign` step per axis toward the
+        // parent's centre (0 when exactly equal — the C# `Math.Sign`, not the
+        // ±1 signum), capped at speed 6.
+        if let Some((_, parent_center)) = parent {
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let dx = parent_center.x - center.x;
+            let dy = parent_center.y - center.y;
+            self.vel += Vec2::new(
+                if dx > 0.0 {
+                    1.0
+                } else if dx < 0.0 {
+                    -1.0
+                } else {
+                    0.0
+                } * 0.15,
+                if dy > 0.0 {
+                    1.0
+                } else if dy < 0.0 {
+                    -1.0
+                } else {
+                    0.0
+                } * 0.15,
+            );
+            let speed = self.vel.length();
+            if speed > 6.0 {
+                self.vel *= 6.0 / speed;
+            }
+        }
+        // `:34866-34875` — the dust roll (`Next(2)`) stays on the stream, the
+        // dust itself SKIPPED; the alpha latches at 255 every tick, the kill
+        // tick included.
+        if rng.next_range(0, 2) == 0 {
+            // The dust — SKIPPED.
+        }
+        self.alpha = 255;
+        // `HandleMovement`'s half for the tileCollide-false kind: the plain
+        // integration after the AI body.
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-75 block's Last Prism arm (`Projectile.cs:66539-66637`)
+    /// — the channel holder: the per-tick damage re-read, the charge counters,
+    /// the mouse retarget at the 0.92 hold, the 30/15/5 shot interval with
+    /// `CheckMana`'s pay arm, the frame animation, the 6× laser spawn at
+    /// `ai[0] == 1` and the Kill the moment the channel gate drops.
+    ///
+    /// Folds (recorded): the `soundDelay`/`SoundEngine` block
+    /// (`:66588-66598`) and the `netUpdate` writes have no port arms; the
+    /// `!player.noItems` gate has no port field (`:4364`'s fold).
+    fn ai_last_prism(
+        &mut self,
+        owner: Option<(f32, f32)>,
+        mut player: Option<&mut crate::player::Player>,
+    ) -> Option<PrismLasers> {
+        // `:66540-66546` — the shot interval thresholds read the
+        // PRE-increment charge (30, 15 past 90, 5 past 120), and the damage
+        // re-reads `item.damage * player.magicDamage` every tick. The port
+        // reads the held item through the channel (`channel_item` is the
+        // shoot path's held kind, `world_sim/editing.rs`), falling back to
+        // the spawn damage when the row is missing.
+        let interval = if self.ai[0] > 120.0 {
+            5.0
+        } else if self.ai[0] > 90.0 {
+            15.0
+        } else {
+            30.0
+        };
+        let item = player
+            .as_deref()
+            .and_then(|p| crate::registry::item(p.channel_item));
+        if let (Some(p), Some(item)) = (player.as_deref(), item) {
+            self.damage = (item.damage as f32 * p.magic_damage) as i32;
+        }
+        self.ai[0] += 1.0;
+        self.ai[1] += 1.0;
+        let interval_tick = self.ai[0] % interval == 0.0;
+        // `:66563-66590` — `ai[1]` resets every tick, so `flag9` holds every
+        // tick and the retarget runs per tick: the mouse direction held 8%
+        // against the current heading (the `Lerp(aim, dir, 0.92)` hold) at
+        // the item's shoot speed times the scale. The origin is
+        // `RotatedRelativePoint`'s hand stand-in (the owner centre); the
+        // NaN/zero guard is the C#'s `-Vector2.UnitY`, and the C#'s
+        // unguarded second `Normalize` is made NaN-safe here.
+        let mut fire_window = interval_tick;
+        if self.ai[1] >= 1.0 {
+            self.ai[1] = 0.0;
+            fire_window = true;
+            // `Main.myPlayer == this.owner` — the port's local player is
+            // owner 0 (the magic-missile arm's fold).
+            if self.owner == 0 {
+                if let Some(p) = player.as_deref() {
+                    if let Some(item) = item {
+                        let hand = match owner {
+                            Some(h) => h,
+                            None => p.center(),
+                        };
+                        let aim = safe_normalize(Vec2::new(
+                            p.channel_target.x - hand.0,
+                            p.channel_target.y - hand.1,
+                        ));
+                        let aim = if aim == Vec2::ZERO {
+                            Vec2::new(0.0, -1.0)
+                        } else {
+                            aim
+                        };
+                        let held = safe_normalize(self.vel);
+                        let blend = aim + (held - aim) * 0.92;
+                        self.vel = safe_normalize(blend) * (item.shoot_speed * self.scale);
+                    }
+                }
+            }
+        }
+        // `:66599-66610` — the frame animation: 4 ticks per frame while
+        // charging, 1 per frame once past 120.
+        self.frame_counter += 1;
+        let rate = if self.ai[0] < 120.0 { 4 } else { 1 };
+        if self.frame_counter >= rate {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 5 {
+                self.frame = 0;
+            }
+        }
+        // `:66615-66636` — the fire window: the mana pays only on the
+        // interval ticks (`flag10 = !flag8 || CheckMana(mana, pay: true)`,
+        // `Player.cs:52576-52594`'s pay arm at the 1f multiplier), and the
+        // channel gate spawns the six beams at `ai[0] == 1` or kills.
+        let mut spawn = None;
+        if fire_window && self.owner == 0 {
+            if let Some(p) = player.as_deref_mut() {
+                let mana_ok = !interval_tick
+                    || match item {
+                        Some(item) => {
+                            if p.mana >= item.mana {
+                                p.mana -= item.mana;
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        None => true,
+                    };
+                if p.channel && mana_ok && !p.cced() {
+                    if self.ai[0] == 1.0 {
+                        // `:66617-66620` — the beam direction, NaN-guarded.
+                        let mut dir = safe_normalize(self.vel);
+                        if dir == Vec2::ZERO {
+                            dir = Vec2::new(0.0, -1.0);
+                        }
+                        let center =
+                            Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                        spawn = Some(PrismLasers {
+                            x: center.x,
+                            y: center.y,
+                            vx: dir.x,
+                            vy: dir.y,
+                            damage: self.damage,
+                            knock_back: self.knock_back,
+                        });
+                    }
+                } else {
+                    // `this.Kill()` (`:66635-66636`).
+                    self.active = false;
+                    self.time_left = 0;
+                }
+            }
+        }
+        // `Projectile.UpdatePosition` (`Projectile.cs:20433-20438`): the
+        // holder's aiStyle 75 is not in the skip list, so the generic
+        // `position += velocity` rides every tick (the aiStyle-84 lasers
+        // are skipped there — their position is AI-set).
+        self.pos += self.vel;
+        spawn
+    }
+
+    /// `AI()`'s aiStyle-84 block's Last Prism laser arm
+    /// (`Projectile.cs:31424-31509` + the shared tail `:31542-31550` and the
+    /// LaserScan smoothing `:31552-31632`) — the hexagon orbit around the
+    /// holder 633, the charge envelope (spacing 20→1.75, reach 20→6, push
+    /// −22→−2), the scale ramp with the ×3 damage past charge 180, the
+    /// friendly flip at charge 30 and the beam-length lerp.
+    ///
+    /// Folds (recorded): the `Opacity` writes (`:31448/:31453/:31458/:31462`)
+    /// and the dust/shader tail (`:31707-31757`) have no port fields/arms;
+    /// `proj.gfxOffY` is 0. The C#'s dead `num662 = num661 * π/6` initial
+    /// (`:31434`, unconditionally overwritten at `:31464`) is not carried.
+    fn ai_last_prism_laser(
+        &mut self,
+        world: &World,
+        owner: (f32, f32),
+        parent: Option<PrismParent>,
+    ) {
+        // `:31379-31382` — the aiStyle-84 head guard (`HasNaNs || Zero`).
+        if self.vel.is_nan() || self.vel == Vec2::ZERO {
+            self.vel = Vec2::new(0.0, -1.0);
+        }
+        let Some(par) = parent else {
+            // `:31429-31433` — `TryGetActive(633)` failing kills.
+            self.active = false;
+            self.time_left = 0;
+            return;
+        };
+        // `:31425-31427` — the beam's ordinal (`ai[0] = m`, 0..5, the
+        // spawn's `ai0`) and the holder's unit direction.
+        let m = self.ai[0] as i32 as f32 - 2.5;
+        let dir = safe_normalize(par.vel);
+        // `:31435-31462` — the charge envelope.
+        let mut spacing = 20.0f32;
+        let mut fade = 1.0f32;
+        let mut reach = 15.0f32;
+        let mut push = -2.0f32;
+        if par.charge < 180.0 {
+            fade = 1.0 - par.charge / 180.0;
+            reach = 20.0 - par.charge / 180.0 * 14.0;
+            if par.charge < 120.0 {
+                spacing = 20.0 - 4.0 * (par.charge / 120.0);
+            } else {
+                spacing = 16.0 - 10.0 * ((par.charge - 120.0) / 60.0);
+            }
+            push = -22.0 + par.charge / 180.0 * 20.0;
+        } else {
+            fade = 0.0;
+            spacing = 1.75;
+            reach = 6.0;
+            push = -2.0;
+        }
+        // `:31463-31466` — the hexagon phase, the wobble
+        // (`UnitY.RotatedBy(hex).Y`, i.e. `cos(hex)`) and the orbit offset.
+        let hex = (par.charge + m * spacing) / (spacing * 6.0) * std::f32::consts::TAU;
+        let wobble = rotate(Vec2::new(0.0, 1.0), hex).y * std::f32::consts::FRAC_PI_6 * fade;
+        let orbit = rotate(
+            rotate(Vec2::new(0.0, 1.0), hex) * Vec2::new(4.0, reach),
+            par.vel.to_angle(),
+        );
+        // `:31467-31471` — the position: 16 px off the holder along its
+        // heading, the push-off along the same heading, then the orbit.
+        self.pos = par.center + dir * 16.0 - Vec2::new(self.w * 0.5, self.h * 0.5)
+            + Vec2::new(par.vel.to_angle().cos(), par.vel.to_angle().sin()) * push
+            + orbit;
+        // `:31472` — the beam heading, wobbled off the holder's direction.
+        self.vel = rotate(dir, wobble);
+        // `:31473-31481` — the ramps and the copies.
+        self.scale = 1.4 * (1.0 - fade);
+        self.damage = par.damage;
+        let mut sampling = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        if par.charge >= 180.0 {
+            self.damage *= 3;
+            sampling = par.center;
+        }
+        // `:31506-31509` — a blocked line to the holder re-samples the beam
+        // from the owner's centre (`CanHitLine`'s 0-sized boxes).
+        if !can_hit_line(
+            world,
+            owner.0,
+            owner.1,
+            0.0,
+            0.0,
+            par.center.x,
+            par.center.y,
+            0.0,
+            0.0,
+        ) {
+            sampling = Vec2::new(owner.0, owner.1);
+        }
+        // `:31616-31621` — `friendly = projectile2.ai[0] > 30f` (strict).
+        self.friendly = par.charge > 30.0;
+        // `:31540-31550` — the second NaN/zero guard, then the rotation
+        // re-normalise the family tail runs.
+        if self.vel.is_nan() || self.vel == Vec2::ZERO {
+            self.vel = Vec2::new(0.0, -1.0);
+        }
+        let heading = self.vel.to_angle();
+        self.rot = heading - std::f32::consts::FRAC_PI_2;
+        self.vel = Vec2::new(heading.cos(), heading.sin());
+        // `:31573/:31591/:31598-31606/:31629-31632` — the beam length: the
+        // width-0 LaserScan fold (one tile ray, `laser_ray_len`) smoothed at
+        // the 0.75 lerp.
+        let len = laser_ray_len(world, sampling, self.vel, 2400.0);
+        self.local_ai[1] += (len - self.local_ai[1]) * 0.75;
+    }
+
     /// The approach helper shared by the eye machines (`:31282-31313`'s
     /// per-axis accel with the cross-zero double-step).
     fn approach(current: f32, target: f32, acc: f32) -> f32 {
@@ -5847,15 +6979,22 @@ impl Projectile {
     /// SKIPPED — no dust layer in the pool — while the drift draw
     /// `Main.rand.Next(-100, 101) * 6E-05f` (`:38038-38039`) **is** drawn from
     /// the pool's shared `Main.rand` stand-in (`hook_rng`), because it steers
-    /// the flight and skipping it would change the trajectory.
-    fn ai_leaf_blower(&mut self, rng: &mut u64) {
+    /// the flight and skipping it would change the trajectory. The two dust
+    /// windows' own gate and `RotatedByRandom` draws stay on that stream too
+    /// (`Utils.cs:1697-1701` takes two values per call), so the draws keep
+    /// their 1:1 positions. `HandleMovement` has no 206 arm, so the blocked
+    /// move dies through the terminal default (`kill_step`).
+    fn ai_leaf_blower(&mut self, world: &World, rng: &mut u64) {
         // `localAI[0]++` and the two-sided alpha ramp: fade in at 50/tick once
         // the first 3 ticks are past, fade out at 2/tick after tick 50.
         self.local_ai[0] += 1.0;
         if self.local_ai[0] > 50.0 {
             self.alpha += 2;
             if self.alpha >= 255 {
+                // `Kill()` (`Projectile.cs:10661-10673`) also zeroes the life
+                // and aborts the body — the movement never runs.
                 self.active = false;
+                self.time_left = 0;
                 return;
             }
         } else if self.local_ai[0] > 3.0 {
@@ -5885,6 +7024,17 @@ impl Projectile {
             // `:38039-38040` — one RNG draw pair per petal, ±0.006/tick².
             self.ai[0] = rand_range(rng, -100, 101) * 6E-05;
             self.ai[1] = rand_range(rng, -100, 101) * 6E-05;
+            // `:38041-38048` — the first-tick dust burst: SKIPPED (no dust
+            // layer), its `Next(3)` gate and the taken branch's
+            // `RotatedByRandom` pair stay on the stream.
+            if rand_range(rng, 0, 3) != 0.0 {
+                let _ = (crate::app::rand01(rng), crate::app::rand01(rng));
+            }
+        }
+        // `:38049-38056` — the 1-in-60 dust window below the 60th tick: the
+        // same shape, the same skip with the draws kept.
+        if self.local_ai[1] < 60.0 && rand_range(rng, 0, 60) == 0.0 {
+            let _ = (crate::app::rand01(rng), crate::app::rand01(rng));
         }
         // `:38058-38062` — after the 10-tick grace the flight curves: the
         // velocity is rotated by the signed |ai[0]| ramp and damped 3%/tick.
@@ -5904,6 +7054,9 @@ impl Projectile {
         }
         // `:38080` — the sprite faces along the flight, flipped 180°.
         self.rot = self.vel.y.atan2(self.vel.x) + 3.14;
+        // `HandleMovement` has no 206 arm — the shared blocked-move default:
+        // the integration plus the tile-collision kill.
+        self.kill_step(world);
     }
 
     fn ai_frost_bolt(&mut self, world: &World) {
@@ -6731,6 +7884,56 @@ impl Projectile {
         }
     }
 
+    /// `AI()`'s `TrailingMode` chain (`Projectile.cs:17091-17195`): the history
+    /// rings shift **once per update call** — after the AI sub-steps, ahead of
+    /// the `timeLeft--` at `:17201` — so a sub-stepped kind records one entry
+    /// per tick, not one per sub-step. The modes 4/5 arms (`:17168-17196`) are
+    /// absent: their kinds (933/1100/106) are not ported.
+    fn shift_trailing_history(&mut self) {
+        let mode = trailing_mode(self.kind);
+        if mode < 0 {
+            return;
+        }
+        // `:17101`: mode 1's animation-boundary gate. The 466/580 dust spawns
+        // that share the branch (`:17108-17125`) are SKIPPED (no dust layer).
+        if mode == 1 && self.frame_counter != 0 && self.old_pos[0] != Vec2::ZERO {
+            return;
+        }
+        // Modes 2-5 record the rotations and the sprite directions beside the
+        // positions; modes 0/1 the positions only.
+        let with_rotations = mode >= 2;
+        shift_ring(&mut self.old_pos);
+        if with_rotations {
+            shift_ring(&mut self.old_rot);
+            shift_ring(&mut self.old_sprite_direction);
+        }
+        self.old_pos[0] = self.pos;
+        if with_rotations {
+            self.old_rot[0] = self.rot;
+            self.old_sprite_direction[0] = self.sprite_direction;
+        }
+        if mode == 3 {
+            // `:17151-17166`: the 0.65 smoothing pass — every filled entry
+            // walks toward its newer neighbour when the pair is more than 2 px
+            // apart — then the rotations recomputed from the smoothed positions
+            // (`SafeNormalize(Vector2.Zero).ToRotation()`; a zero delta reads 0).
+            const PASSES: usize = 1; // `num25` (`:17152`)
+            const AMOUNT: f32 = 0.65; // `amount` (`:17151`)
+            for _ in 0..PASSES {
+                for i in (1..self.old_pos.len()).rev() {
+                    if self.old_pos[i] != Vec2::ZERO {
+                        if self.old_pos[i].distance(self.old_pos[i - 1]) > 2.0 {
+                            self.old_pos[i] =
+                                Vec2::lerp(self.old_pos[i], self.old_pos[i - 1], AMOUNT);
+                        }
+                        self.old_rot[i] =
+                            (self.old_pos[i - 1] - self.old_pos[i]).normalize_or_zero().to_angle();
+                    }
+                }
+            }
+        }
+    }
+
     /// The per-slot draw (unchanged from the first pass).
 
     /// `Main.cs:27941`'s `proj.aiStyle == 99` gate — the string's own
@@ -6844,13 +8047,16 @@ impl Projectile {
         camera: Vec2,
         zoom: f32,
         screen: Vec2,
+        global_time: f32,
     ) {
-        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None);
+        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None, global_time);
     }
 
     /// The draw entry the frame calls with the player in scope: the yoyo
     /// family takes the string path (`Main.DrawProjDirect`'s aiStyle-99 arm),
-    /// everything else keeps the shuriken stub.
+    /// the trail families their quad-ribbon trails, the rest keep the
+    /// shuriken stub. `global_time` is the frame's `Main.GlobalTimeWrappedHourly`
+    /// analogue — the Rainbow Rod's trail hue scrolls by it.
     pub fn draw_with_hand(
         &self,
         r: &mut SpriteRenderer,
@@ -6860,21 +8066,29 @@ impl Projectile {
         zoom: f32,
         screen: Vec2,
         owner_hand: Option<(f32, f32)>,
+        global_time: f32,
     ) {
         if crate::yoyo_string::is_yoyo_sprite(self.kind) {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // The ported trail families' quad-ribbon trails (M4-PROJ-6b Phase 7):
+        // the C# draws the strip ahead of the sprite (`Main.cs:28182-28243`'s
+        // drawers, before the emit at `:30857-30909`), so the quads push first
+        // and the sprite arm below runs unchanged behind them.
+        let white = r.white_uv();
+        for q in self.trail_quads(camera, zoom, screen, global_time) {
+            r.push_ui_sprite_rot(q.tl, q.size, white, q.tint, q.rot);
+        }
         // `Main.DrawProj`'s sprite: the kind's own sheet at
         // `Frame(1, projFrames[type], 0, frame)` (`Main.cs:27929-27943`), or the
         // shuriken stand-in when the sheet is not packed.
-        let (uv, sprite_w, sprite_h) = match lookups.proj_frame(self.kind, self.frame) {
+        let (uv, sprite_w, sprite_h) = match lookups.proj_frame(self.kind, self.frame.max(0) as u32) {
             Some((uv, w, h)) => (uv, w, h),
             None => match lookups.shuriken_uv() {
                 Some(uv) => (uv, SIZE, SIZE),
                 None => return,
-            },
-        };
+            },        };
         let tx = (self.pos.x / TILE_PX) as i32;
         let ty = (self.pos.y / TILE_PX) as i32;
         let c = if light.w > 0 && light.h > 0 {
@@ -6901,6 +8115,141 @@ impl Projectile {
             self.rot,
         );
     }
+
+    /// The followup kinds' frame-sliced quad, computed pure so the unit tests
+    /// pin it without a GPU: the ui range takes screen-px positions, so the
+    /// anchor converts like the rain pass's `to_screen`, and the returned
+    /// top-left is already shifted by `origin − R·origin` (the
+    /// `push_sprite_origin_rot` math — the pipeline rotates about the
+    /// top-left, this keeps the C# pivot pinned).
+    fn frame_quad(
+        &self,
+        sheet: &tr_render::SheetRect,
+        atlas_size: (u32, u32),
+        light: &LightMap,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+    ) -> FrameQuad {
+        let frames = proj_frames(self.kind);
+        let uv = frame_slice_uv(sheet, atlas_size, self.frame, frames);
+        // The quad matches the source rect: `(sheet.width, frameH) · scale`
+        // (`Main.cs:34435`'s scale argument).
+        let frame_h = (sheet.height / frames.max(1)) as f32;
+        let size = [
+            sheet.width as f32 * self.scale * zoom,
+            frame_h * self.scale * zoom,
+        ];
+        // `Main.cs:29834`'s `num153 = (sheet.W − box.w)/2 + box.w/2` (=
+        // sheet.W/2) and the `:34435` anchor `(position.X + num153,
+        // position.Y + height/2)` carrying the origin `(num153, height/2 +
+        // num151)` — `num151`/`num152` (`Main.cs:29608+`'s per-type tweaks)
+        // are 0 for every kind this arm serves. The ui batch's globals run
+        // cam `[w/2, h/2]`, zoom 1 (`sprite.rs`), so its positions are screen
+        // pixels — the same conversion the rain pass's `to_screen` does.
+        let anchor = [
+            (self.pos.x + sheet.width as f32 * 0.5 - camera.x) * zoom + screen.x * 0.5,
+            (self.pos.y + self.h * 0.5 - camera.y) * zoom + screen.y * 0.5,
+        ];
+        // The origin in scaled pixels: XNA multiplies the texture-space
+        // origin by the scale, so the sprite-local pivot is
+        // `(sheet.W/2, box.h/2) · scale · zoom`.
+        let origin = [
+            sheet.width as f32 * 0.5 * self.scale * zoom,
+            self.h * 0.5 * self.scale * zoom,
+        ];
+        let (s, c) = self.rot.sin_cos();
+        let tl = [
+            anchor[0] - (origin[0] * c - origin[1] * s),
+            anchor[1] - (origin[0] * s + origin[1] * c),
+        ];
+        // The default `GetAlpha` tint (`Projectile.cs:79744-79757`): the
+        // light rgb and the alpha both scale by `(255 − alpha)/255` — alpha
+        // 255 invisible, 0 opaque — read at the box centre's tile
+        // (`Lighting.GetColor` at `(position + width/2, position +
+        // height/2) / 16`).
+        let c = crate::rain::light_at(light, Vec2::new(
+            self.pos.x + self.w * 0.5,
+            self.pos.y + self.h * 0.5,
+        ));
+        let fade = (1.0 - self.alpha as f32 / 255.0).clamp(0.0, 1.0);
+        FrameQuad {
+            tl,
+            size,
+            uv,
+            tint: [c[0] * fade, c[1] * fade, c[2] * fade, fade],
+        }
+    }
+
+    /// The trail quads in the ui range's screen pixels ([`Projectile::draw_with_hand`]'s
+    /// trail pass): the `trail_segments` walk converted like `frame_quad`'s anchor
+    /// (the ui batch's globals run cam `[w/2, h/2]`, zoom 1, so its positions are
+    /// screen pixels) and shifted by `origin − R·origin` — the C#'s
+    /// `origin = (W / 2, H)` of `Main.cs:27902`, the anchor's own bottom-centre,
+    /// which the instance pipeline rotates about the top-left instead.
+    ///
+    /// The drawers draw their strip from `-Main.screenPosition + proj.Size / 2`
+    /// (`MagicMissileDrawer.cs:18` and its peers), which `trail_segments` folds
+    /// into each anchor; `global_time` is the `Main.GlobalTimeWrappedHourly` the
+    /// Rainbow Rod's hue scrolls by.
+    fn trail_quads(
+        &self,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+        global_time: f32,
+    ) -> Vec<TrailQuad> {
+        trail_segments(
+            self.kind,
+            self.w,
+            self.h,
+            self.local_ai[0],
+            &self.old_pos,
+            global_time,
+        )
+        .into_iter()
+        .map(|seg| {
+            let anchor = [
+                (seg.x - camera.x) * zoom + screen.x * 0.5,
+                (seg.y - camera.y) * zoom + screen.y * 0.5,
+            ];
+            let size = [seg.width * zoom, seg.len * zoom];
+            // `Main.cs:27902`'s `origin = (W / 2, Height)` over the scaled quad.
+            let origin = [size[0] * 0.5, size[1]];
+            let (s, c) = seg.rot.sin_cos();
+            TrailQuad {
+                tl: [
+                    anchor[0] - (origin[0] * c - origin[1] * s),
+                    anchor[1] - (origin[0] * s + origin[1] * c),
+                ],
+                size,
+                tint: seg.tint,
+                rot: seg.rot,
+            }
+        })
+        .collect()
+    }
+}
+
+/// The followup kinds' frame-sliced draw quad ([`Projectile::frame_quad`]'s
+/// output): the ui pipeline's top-left, the scaled quad size, the frame-rect
+/// uv and the default-`GetAlpha` tint.
+struct FrameQuad {
+    tl: [f32; 2],
+    size: [f32; 2],
+    uv: [f32; 4],
+    tint: [f32; 4],
+}
+
+/// One trail quad in screen space (`trail_segments`' output after the ui
+/// range's conversion): the pipeline's unrotated top-left — already shifted by
+/// `origin − R·origin` the way `frame_quad` does — the scaled size, the tint and
+/// the rotation to hand `push_ui_sprite_rot`.
+struct TrailQuad {
+    tl: [f32; 2],
+    size: [f32; 2],
+    tint: [f32; 4],
+    rot: f32,
 }
 
 /// The magic (caster) families' shared constants (M4-PROJ-6, Phase 3).
@@ -6909,6 +8258,378 @@ impl Projectile {
 pub(crate) const MAGICAL_ICE_BLOCK: u16 = 127;
 /// `Main.windPhysicsStrength` (`Main.cs:66842`).
 const WIND_PHYSICS_STRENGTH: f32 = 0.1;
+
+/// The followup caster families the frame-sliced draw arm serves (M4-PROJ-6b
+/// Phase 6): the aiStyle-27 family, the leaf, the Spectre pair, the Typhoon,
+/// the Arcanum pair, the Last Prism pair and the Nebula Blaze pair. The ported
+/// trail families stay absent: Phase 7 draws only their quad-ribbon trail ahead
+/// of the shuriken stub their sprite keeps, and kind 3 keeps that stub exactly
+/// as it shipped.
+fn is_followup_draw(kind: u16) -> bool {
+    matches!(
+        kind,
+        UNHOLY_TRIDENT
+            | UNHOLY_TRIDENT_HOSTILE
+            | SWORD_BEAM
+            | TERRA_BEAM
+            | LIGHT_BEAM
+            | NIGHT_BEAM
+            | ENCHANTED_BEAM
+            | LEAF
+            | LOST_SOUL_HOSTILE
+            | LOST_SOUL
+            | SPECTRE_WRATH
+            | TYPHOON
+            | NEBULA_ARCANUM
+            | NEBULA_ARCANUM_SUBSHOT
+            | LAST_PRISM
+            | LAST_PRISM_LASER
+            | NEBULA_BLAZE_1
+            | NEBULA_BLAZE_2
+    )
+}
+
+/// `Main.projFrames` (`Main.cs:1223` — the array `Initialize_TileAndNPCData1`
+/// fills with 1 for every id at `Main.cs:8441-8443` and overrides per kind at
+/// `:8444+`): the vertical frame count the draw slices `Projectile_<id>.xnb`
+/// by. The slice carries the animated followup kinds, the Nebula Blaze pair
+/// and the gem bolt's trail count; the 1.4.5.8 overrides outside the ported
+/// rows (72/86/87/102/111/112/127/175/…, `Main.cs:8444-8722`) default here —
+/// every id the slice omits reads 1, as the source's init sets.
+pub(crate) const fn proj_frames(kind: u16) -> u32 {
+    // The C#'s `Main.projFrames` table (`Main.cs:8434-8727`, defaulted to 1 by
+    // the loop at `:8439-8442`) — the whole row set the atlas packs, so the
+    // frame slicing covers every animated sheet, not only this task's kinds.
+    match kind {
+        34 => 6,
+        102 => 2,
+        206 => 5,
+        254 => 5,
+        436 => 4,
+        447 => 4,
+        448 => 3,
+        450 => 5,
+        454 => 2,
+        456 => 4,
+        462 => 5,
+        519 => 4,
+        574 => 2,
+        601 => 2,
+        645 => 7,
+        652 => 6,
+        659 => 4,
+        837 => 3,
+        1130 => 6,
+        // The Flamelash's 6-frame sheet (`Main.cs:8454`). Its AI's
+        // `frameCounter++`/`frame` writes (`Projectile.cs:43216-43222`) are a
+        // Phase-6 documented skip, so `frame` stays 0 and the slice reads the
+        // top row; the trail Phase 7 draws does not key on it.
+        LEAF => 5,
+        // The Typhoon's 3-frame sheet (`Main.cs:8524`) —
+        // `localAI[1] / 3 % 3` slices it.
+        TYPHOON => 3,
+        // The Last Prism holder's 5-frame sheet (`Main.cs:8498`, rate 4 → 1).
+        LAST_PRISM => 5,
+        // The Nebula Blaze pair (`Main.cs:8552-8553`). The animating AI_001
+        // hook (`Projectile.cs:54561-54569`) is unported, so `frame` stays 0.
+        NEBULA_BLAZE_1 | NEBULA_BLAZE_2 => 4,
+        _ => 1,
+    }
+}
+
+/// The frame rect of `Main.DrawProjDirect`'s default emit — `Main.cs:34386-34388`
+/// builds it (`num474 = value134.Height / Main.projFrames[proj.type]`,
+/// `y23 = num474 * proj.frame`) and `:34435` draws it; the trail after-image's
+/// copy at `:30135-30136` slices the same way. A 1-frame kind's frame is the
+/// full sheet. `frame` clamps into the sheet: the C#'s per-type arms keep
+/// `frame` inside `projFrames` (the leaf wraps 5, the Typhoon mods 3, the
+/// holder wraps 5), so the clamp only guards a stray frame from sampling the
+/// next row.
+pub(crate) fn frame_slice_uv(
+    sheet: &tr_render::SheetRect,
+    atlas_size: (u32, u32),
+    frame: i32,
+    frames: u32,
+) -> [f32; 4] {
+    let frames = frames.max(1);
+    let frame_h = (sheet.height / frames).max(1);
+    let frame = frame.clamp(0, frames as i32 - 1);
+    assets::uv_rect(
+        sheet,
+        atlas_size,
+        0,
+        frame * frame_h as i32,
+        sheet.width,
+        frame_h,
+    )
+}
+
+/// `Projectile.cs:17093-17096`'s ring shift (and `:17131-17134`'s for the
+/// rotation rings): every entry takes its newer neighbour's value, which frees
+/// index 0 for the current one.
+fn shift_ring<T: Copy>(ring: &mut [T]) {
+    for i in (1..ring.len()).rev() {
+        ring[i] = ring[i - 1];
+    }
+}
+
+/// `ProjectileID.Sets.TrailingMode` (`ProjectileID.cs:521`) — the history-ring
+/// mode per kind: 0 records `oldPos` only, 1 the same gated on `frameCounter ==
+/// 0`, 2/3 record the rotations and the sprite directions beside them (3 then
+/// smooths), 4/5 the same with an owner-delta / velocity rotation. The C#'s
+/// `CreateIntSet(-1, …)` default −1 records nothing.
+///
+/// The table is the in-scope slice over the ported kinds (`Projectile.cs`
+/// `17091-17195`'s chain). The C# set's 1120 (the Forbidden sign's shot) and the
+/// rest of the unported kinds default to −1 here, as the source's factory
+/// default does for every id the set omits. Modes 4/5 have no ported kind
+/// (933/1100/106) and no arm.
+pub(crate) fn trailing_mode(kind: u16) -> i32 {
+    match kind {
+        // `:17091`'s mode-0 kinds among the ported rows (the positions only;
+        // no trail drawer reads them yet — the after-image path is its own row).
+        CRYSTAL_STORM | TYPHOON | BRAIN_SCRAMBLER | RAY_GUNNER | PHANTASMAL_EYE
+        | PHANTASMAL_BOLT | CANNON_EXPLOSIVE | NEBULA_ARCANUM | SKY_FRACTURE
+        | DARK_MAGE_FLAME | SHADOW_HAND => 0,
+        // `:17099`'s mode 1 — the Vortex Ritual's bolt.
+        VORTEX_RITUAL_BOLT => 1,
+        // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
+        // Betsy's fireball.
+        GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
+        | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND
+        | GEM_BOLT_AMBER => 2,
+        // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
+        MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
+        _ => -1,
+    }
+}
+
+/// The four C# trail drawers (`Main.cs:28182-28243`'s call site) the port's
+/// quad-ribbon approximation serves: the gem bolts ride `GemStaffShotDrawer`
+/// with their per-kind colour triple, the three aimed spells their own drawer.
+/// The true VertexStrip pipeline (the shader pass) is the follow-up render row.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TrailFamily {
+    /// `GemStaffShotDrawer`'s three `Color` inputs, in 0..1 — `Main.cs:28193-28229`'s
+    /// per-kind table (`trailColor1`, `trailColor2`, `trailColor3`).
+    Gem { c1: [f32; 3], c2: [f32; 3], c3: [f32; 3] },
+    /// `MagicMissileDrawer`'s White → Violet.
+    MagicMissile,
+    /// `RainbowRodDrawer`'s HSL sweep.
+    RainbowRod,
+    /// `FlameLashDrawer`'s White → Orange → Red.
+    FlameLash,
+}
+
+/// The XNA `Color` constants the drawers name, in 0..1 (the gem table's
+/// `Main.cs:28193-28229` values).
+const VIOLET: [f32; 3] = [0xEE as f32 / 255.0, 0x82 as f32 / 255.0, 0xEE as f32 / 255.0];
+const PURPLE: [f32; 3] = [0x80 as f32 / 255.0, 0.0, 0x80 as f32 / 255.0];
+const ORANGE: [f32; 3] = [1.0, 0xA5 as f32 / 255.0, 0.0];
+const ORANGE_RED: [f32; 3] = [1.0, 0x45 as f32 / 255.0, 0.0];
+const DARK_ORANGE: [f32; 3] = [1.0, 0x8C as f32 / 255.0, 0.0];
+const LIME_GREEN: [f32; 3] = [0x32 as f32 / 255.0, 0xCD as f32 / 255.0, 0x32 as f32 / 255.0];
+const GREEN: [f32; 3] = [0.0, 0x80 as f32 / 255.0, 0.0];
+const RED: [f32; 3] = [1.0, 0.0, 0.0];
+const SILVER: [f32; 3] = [0xC0 as f32 / 255.0, 0xC0 as f32 / 255.0, 0xC0 as f32 / 255.0];
+/// `Main.cs:28205`'s `new Color(60, 90, 255)` — the sapphire bolt's triple (its
+/// per-channel `A /= 2` writes are the VertexStrip alpha the approximation drops).
+const SAPPHIRE_GEM: [f32; 3] = [60.0 / 255.0, 90.0 / 255.0, 1.0];
+
+/// `Main.cs:28182-28243`'s trail-drawing kinds and the drawer that serves them.
+/// Every kind the C# has no drawer call for draws no trail, however its ring
+/// may be recorded (`trailing_mode`).
+fn trail_family(kind: u16) -> Option<TrailFamily> {
+    let gem = |c1, c2, c3| Some(TrailFamily::Gem { c1, c2, c3 });
+    match kind {
+        // `:28197-28229`'s switch: the amethyst (121) keeps the call site's
+        // default Violet/Purple/White, and 1120 (unported) would take it too.
+        GEM_BOLT_AMETHYST => gem(VIOLET, PURPLE, [1.0; 3]),
+        // `:28199-28203`.
+        GEM_BOLT_TOPAZ => gem(ORANGE, ORANGE, [1.0; 3]),
+        // `:28204-28212`.
+        GEM_BOLT_SAPPHIRE => gem(SAPPHIRE_GEM, SAPPHIRE_GEM, SAPPHIRE_GEM),
+        // `:28213-28216`.
+        GEM_BOLT_EMERALD => gem(LIME_GREEN, GREEN, [1.0; 3]),
+        // `:28217-28220`.
+        GEM_BOLT_AMBER => gem(ORANGE_RED, DARK_ORANGE, [1.0; 3]),
+        // `:28221-28224`.
+        GEM_BOLT_RUBY => gem(RED, RED, [1.0; 3]),
+        // `:28225-28228`.
+        GEM_BOLT_DIAMOND => gem(SILVER, SILVER, [1.0; 3]),
+        // `:28188`, `:28184`, `:28242`.
+        MAGIC_MISSILE => Some(TrailFamily::MagicMissile),
+        FLAMELASH => Some(TrailFamily::FlameLash),
+        RAINBOW_ROD_BULLET => Some(TrailFamily::RainbowRod),
+        _ => None,
+    }
+}
+
+/// `FlameLashDrawer.Draw`'s `transitToDark` (`FlameLashDrawer.cs:14`) — the
+/// `localAI[0]`-driven 0..1 ramp the family's colours and width read. Every
+/// other family leaves it at 0.
+fn flame_transit(local_ai0: f32) -> f32 {
+    get_lerp_value(0.0, 6.0, local_ai0)
+}
+
+/// The drawers' `StripWidth` — the C# `StripHalfWidthFunction`'s value, so the
+/// quad spans twice it (`VertexStrip.cs:151-156`'s `± vector` pair).
+fn trail_half_width(family: TrailFamily, progress: f32, transit: f32) -> f32 {
+    match family {
+        // `GemStaffShotDrawer.cs:35-38` — the constant 16.
+        TrailFamily::Gem { .. } => 16.0,
+        // `MagicMissileDrawer.cs:31-33`.
+        TrailFamily::MagicMissile => {
+            remap(progress, 0.0, 0.2, 26.0, 32.0) * get_lerp_value(0.0, 0.07, progress)
+        }
+        // `RainbowRodDrawer.cs:32-35` — `Lerp(0, 32, 1 - (1 - t)^2)`.
+        TrailFamily::RainbowRod => {
+            let t = get_lerp_value(0.0, 0.2, progress);
+            remap(1.0 - (1.0 - t) * (1.0 - t), 0.0, 1.0, 0.0, 32.0)
+        }
+        // `FlameLashDrawer.cs:33-35`.
+        TrailFamily::FlameLash => {
+            let t = get_lerp_value(0.0, 0.06 + transit * 0.01, progress);
+            remap(progress, 0.0, 1.0, 24.0 + transit * 16.0, 8.0)
+                * (1.0 - (1.0 - t) * (1.0 - t))
+        }
+    }
+}
+
+/// The drawers' `StripColors` (`GemStaffShotDrawer.cs:30-33`,
+/// `MagicMissileDrawer.cs:23-28`, `RainbowRodDrawer.cs:23-28`,
+/// `FlameLashDrawer.cs:25-29`) — the RGB lerp chain times the C#'s end fade
+/// `(1 - GetLerpValue(0, 0.98, progress))`. `global_time` is the caller's
+/// `Main.GlobalTimeWrappedHourly` (the Rainbow Rod's hue offset).
+///
+/// The C#'s alpha writes on the same colours (the MagicMissile's `A /= 2`, the
+/// FlameLash's `A /= 8`, the RainbowRod's `A = 0`) feed the VertexStrip and the
+/// misc shaders the approximation has no path for: carrying them verbatim would
+/// blank the Rainbow Rod's strip, so the tint's alpha rides the end fade alone
+/// (recorded deviation — the true strip's row carries them).
+fn trail_strip_color(
+    family: TrailFamily,
+    progress: f32,
+    transit: f32,
+    global_time: f32,
+) -> [f32; 4] {
+    // `(1 - GetLerpValue(0, 0.98, progress))` — every drawer's tail fade.
+    let fade = 1.0 - get_lerp_value(0.0, 0.98, progress);
+    let rgb = match family {
+        // `GemStaffShotDrawer.cs:32` — `Lerp(Lerp(c1, c2, p), c3, GetLerpValue(-0.2, 0.5, p))`.
+        TrailFamily::Gem { c1, c2, c3 } => {
+            let inner = lerp_rgb(c1, c2, progress);
+            lerp_rgb(inner, c3, get_lerp_value(-0.2, 0.5, progress))
+        }
+        // `MagicMissileDrawer.cs:25` — `Lerp(White, Violet, GetLerpValue(0, 0.7, p))`.
+        TrailFamily::MagicMissile => {
+            lerp_rgb([1.0; 3], VIOLET, get_lerp_value(0.0, 0.7, progress))
+        }
+        // `RainbowRodDrawer.cs:25` — the HSL hue at `(p * 1.6 - GlobalTimeWrappedHourly) % 1`
+        // (`Main.hslToRgb`, `Main.cs:47890`), lerped toward White.
+        TrailFamily::RainbowRod => {
+            let hsl =
+                tr_core::tile_light::hsl_to_rgb((progress * 1.6 - global_time) % 1.0, 1.0, 0.5);
+            lerp_rgb(hsl, [1.0; 3], get_lerp_value(-0.2, 0.5, progress))
+        }
+        // `FlameLashDrawer.cs:26` — `Lerp(Lerp(White, Orange, transit * 0.5), Red, GetLerpValue(-0.1 * transit, 0.7 - 0.2 * transit, p))`.
+        TrailFamily::FlameLash => {
+            let base = lerp_rgb([1.0; 3], ORANGE, transit * 0.5);
+            let t = get_lerp_value(-0.1 * transit, 0.7 - 0.2 * transit, progress);
+            lerp_rgb(base, RED, t)
+        }
+    };
+    [
+        rgb[0] * fade,
+        rgb[1] * fade,
+        rgb[2] * fade,
+        fade,
+    ]
+}
+
+/// `Color.Lerp(value1, value2, amount)` — XNA's per-channel lerp, the drawers'
+/// colour ramp.
+fn lerp_rgb(a: [f32; 3], b: [f32; 3], amount: f32) -> [f32; 3] {
+    [
+        lerp(a[0], b[0], amount),
+        lerp(a[1], b[1], amount),
+        lerp(a[2], b[2], amount),
+    ]
+}
+
+/// `MathHelper.Lerp(a, b, amount)` — XNA's `a + (b − a) * amount`.
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// One trail segment's quad — `Main.DrawTrail`'s cheap fallback shape
+/// (`Main.cs:27894-27902`): a stretched quad anchored at the history ring entry
+/// (the C# anchors at the *older* end of the pair, and its `rotation + π/2`
+/// swings the length axis 180° off the flight direction — a verbatim quirk of
+/// the pet-trail fallback the port keeps rather than corrects).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TrailSegment {
+    /// The anchor's world position — `oldPos[i] + proj.Size / 2` (`:27888`/
+    /// `:27898`), the box centre of that history entry.
+    x: f32,
+    y: f32,
+    /// The rotation to hand the pipeline — `v.ToRotation() + π/2` (`:27902`).
+    rot: f32,
+    /// The quad's length — `v.Length()` (`:27900`), the pair's distance.
+    len: f32,
+    /// The quad's width — twice the drawer's half-width, the C#'s `scale.X`.
+    width: f32,
+    /// The drawer's `StripColors` at this segment's progress.
+    tint: [f32; 4],
+}
+
+/// The trail walk (`Main.DrawTrail`, `Main.cs:27886-27905`): one segment per
+/// pair of adjacent filled ring entries, **oldest pair first** — the C#'s
+/// `num2` walks from the ring's last index down to 1, skipping the unwritten
+/// zero entries (`:27896`). Each carries the C#'s anchor, rotation and length,
+/// the family's width and the drawer's colour at the segment's progress —
+/// `progress = i / (count − 1)` over the filled depth, the VertexStrip's own
+/// mapping (`VertexStrip.cs:113-116`) minus its CatmullRom procedural padding.
+///
+/// A kind with no drawer (`trail_family`), a ring with a single filled entry
+/// (the first frame's partial strip) or an empty ring returns no segments.
+fn trail_segments(
+    kind: u16,
+    box_w: f32,
+    box_h: f32,
+    local_ai0: f32,
+    old_pos: &[Vec2],
+    global_time: f32,
+) -> Vec<TrailSegment> {
+    let Some(family) = trail_family(kind) else {
+        return Vec::new();
+    };
+    // `:27896`'s zero-skip: the ring fills from index 0 downward, so the filled
+    // depth is the leading run of non-zero entries.
+    let count = old_pos.iter().take_while(|p| **p != Vec2::ZERO).count();
+    if count < 2 {
+        return Vec::new();
+    }
+    let transit = flame_transit(local_ai0);
+    let mut segments = Vec::with_capacity(count - 1);
+    for i in (1..count).rev() {
+        let anchor = old_pos[i] + Vec2::new(box_w * 0.5, box_h * 0.5);
+        let delta = old_pos[i - 1] - old_pos[i];
+        let len = delta.length();
+        // `:27901`'s `ToRotation()` — a zero delta reads 0 (`Atan2(0, 0)`).
+        let dir = if len > 0.0 { delta.to_angle() } else { 0.0 };
+        let progress = i as f32 / (count - 1) as f32;
+        segments.push(TrailSegment {
+            x: anchor.x,
+            y: anchor.y,
+            rot: dir + std::f32::consts::FRAC_PI_2,
+            len,
+            width: trail_half_width(family, progress, transit) * 2.0,
+            tint: trail_strip_color(family, progress, transit, global_time),
+        });
+    }
+    segments
+}
 
 /// The aiStyle-1 rider kinds of M4-PROJ-6 Phase 3 (`AI_001`'s per-type hooks):
 /// GreenLaser 20, PurpleLaser 88, VenomFang 355, SkyFracture 660 — the fifth
@@ -7004,6 +8725,15 @@ fn can_hit(world: &World, x1: f32, y1: f32, w1: f32, h1: f32, x2: f32, y2: f32, 
 /// plus its separate `!dontTakeDamage` test lands on the same predicate.
 fn chaseable(n: &Npc) -> bool {
     n.hp > 0 && n.max_hp > 5 && !n.dont_take_damage
+}
+
+/// `CanBeChasedBy(attacker, ignoreDontTakeDamage: true)` (`NPC.cs:90030-90041`)
+/// — the ignore variant the Nebula Arcanum's held-target validity reads
+/// (`Projectile.cs:34773`): a `dontTakeDamage` NPC keeps a lock it already
+/// holds, while the acquire scans (`:34764`, the Wrath's `:28954`) use the
+/// plain [`chaseable`] gate that excludes it.
+fn chaseable_held(n: &Npc) -> bool {
+    n.hp > 0 && n.max_hp > 5
 }
 
 /// `NPC.Center` (`Entity.cs`: `position + Size / 2f`) for the pool's slots.
@@ -7277,6 +9007,30 @@ fn safe_normalize(v: Vec2) -> Vec2 {
     } else {
         v.normalize()
     }
+}
+
+/// The width-0 `Collision.LaserScan` fold (`Collision.cs:4568-4582`): with
+/// `samplingWidth = 0` the Last Prism laser's two samples trace the same
+/// ray, so the scan's average is one tile walk — the deathray arm's
+/// 32-px-step shape (`ai_phasmal_deathray`), capped at `max`.
+fn laser_ray_len(world: &World, from: Vec2, dir: Vec2, max: f32) -> f32 {
+    let mut hit = max;
+    let mut steps = 0;
+    while (steps as f32) * 32.0 < max {
+        let sx = from.x + dir.x * (steps as f32 * 32.0);
+        let sy = from.y + dir.y * (steps as f32 * 32.0);
+        let tx = (sx / TILE_PX) as i32;
+        let ty = (sy / TILE_PX) as i32;
+        if world
+            .tile(tx, ty)
+            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+        {
+            hit = steps as f32 * 32.0;
+            break;
+        }
+        steps += 1;
+    }
+    hit
 }
 
 /// `Vector2.MoveTowards(this Vector2, Vector2, float)` (`Utils.cs:1772-1786`):
@@ -7625,6 +9379,51 @@ impl ProjectilePool {
     pub fn key_of(&self, slot: usize) -> i32 {
         let p = &self.slots[slot];
         crate::net::projectile_key(p.owner, slot, p.generation)
+    }
+
+    /// `((ProjectileKey)this.ai[1]).TryGetActive(expectedType)` (`Projectile.cs:34824`,
+    /// `DataStructures/ProjectileKey.cs:100-108`): the ai slot carries the key's
+    /// **raw bit pattern** reinterpreted as f32 — the C# union's `floatBits`
+    /// member, so `from_bits`/`to_bits` round-trip every 32 bits (a numeric
+    /// cast would lose the generations above 2^24 the C# never loses). The
+    /// lookup validates the packed slot's active + owner + generation and the
+    /// expected kind; a recycled slot fails the generation match and the
+    /// caller's arm kills, exactly as `TryLookup` (`Projectile.cs:632-639`)
+    /// answers through the key equality. Shared by the key-linked pairs (the
+    /// Nebula 617→618 pair and the Last Prism 633→632 pair, whose C# arms run
+    /// the identical `TryGetActive` shape).
+    fn key_parent(&self, key: f32, kind: u16) -> Option<&Projectile> {
+        let (owner, slot, generation) = crate::net::projectile_key_parts(key.to_bits() as i32);
+        let p = self.slots.get(slot)?;
+        if p.active
+            && p.kind == kind
+            && p.owner == owner
+            && p.generation == generation
+            && crate::net::projectile_key(p.owner, slot, p.generation) == key.to_bits() as i32
+        {
+            Some(p)
+        } else {
+            None
+        }
+    }
+
+    /// The 618 arm's view of its parent 617 — the position and centre the
+    /// arm shifts by and steers toward (`Projectile.cs:34827-34852`).
+    pub fn nebula_parent(&self, key: f32) -> Option<(Vec2, Vec2)> {
+        self.key_parent(key, NEBULA_ARCANUM)
+            .map(|p| (p.pos, Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)))
+    }
+
+    /// The 632 laser's view of its holder 633 (`((ProjectileKey)this.ai[1])
+    /// .TryGetActive(633, out proj)`, `Projectile.cs:31428-31430`) — the
+    /// snapshot the arm's envelope reads each tick.
+    fn prism_parent(&self, key: f32) -> Option<PrismParent> {
+        self.key_parent(key, LAST_PRISM).map(|p| PrismParent {
+            center: Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+            vel: p.vel,
+            charge: p.ai[0],
+            damage: p.damage,
+        })
     }
 
     /// The `29` despawn: the slot dies only when the key matches its current
@@ -8603,6 +10402,15 @@ impl ProjectilePool {
                 //                 owner: Option<(f32, f32)>, player: Option<&Player>)
                 // ```
                 //
+                // The rng-rolling followup families (Phase 3) widen the
+                // contract with the pool's seeded stream — the arm takes
+                // `rng: &mut dyn tr_core::loot::DropRng` the way the flail and
+                // the yoyo do, and the pool-level spawns ride back out as a
+                // request struct (`FlailSpawnRequest`'s shape). The 119 arm
+                // receives its parent through the key lookup the dispatch
+                // resolves (`nebula_parent`) — the slot arm cannot see the
+                // slot array.
+                //
                 // `owner` is the slot's owner center (the C# `Main.player
                 // [this.owner]`); `spawn_with_data_ai` hardcodes
                 // `owner: 0` = the local player, so a `None` owner center
@@ -8636,7 +10444,7 @@ impl ProjectilePool {
                         // (`Projectile.cs:27780-27783`) -> `AI_040_LeafBlower`.
                         40 => {
                             let mut rng = self.hook_rng;
-                            self.slots[i].ai_leaf_blower(&mut rng);
+                            self.slots[i].ai_leaf_blower(world, &mut rng);
                             self.hook_rng = rng;
                         }
                         7 => {
@@ -8703,6 +10511,85 @@ impl ProjectilePool {
                         24 => self.slots[i].ai_crystal_storm(world),
                         28 => self.slots[i].ai_frost_bolt(world),
                         50 => self.slots[i].ai_inferno_fork(world),
+                        // The aiStyle-27 followup caster family
+                        // (`Projectile.cs:26420-26554`): the Unholy Trident
+                        // plus its riders and the hostile twin. The arm reads
+                        // only the tiles, so it rides the plain
+                        // `(world)` shape.
+                        27 => self.slots[i].ai_unholy_trident(world),
+                        // The aiStyle-51 Spectre Staff (`:28402-28503`): the
+                        // 297's NPC scan and blend plus the 293 hostile twin's
+                        // player hunt, on the family signature (`owner` centre,
+                        // `player` for the dead gate).
+                        51 => {
+                            self.slots[i].ai_spectre_shot(world, &npcs[..], owner, player.as_deref())
+                        }
+                        // The Spectre Wrath (`:28938-28993`): the hostile
+                        // window, the uniform re-pick (one rng draw) and the
+                        // (v*29+d)/30 blend.
+                        59 => self.slots[i].ai_spectre_wrath(&npcs[..], rng),
+                        // The aiStyle-71 Typhoon (`:30355-30454`): the lock,
+                        // the turn, the accel and the full tile reflect.
+                        71 => self.slots[i].ai_typhoon(world, &npcs[..]),
+                        // The Nebula Arcanum pair (`:34638-34887`): the two
+                        // flight modes + the homing + the subshot roll; the
+                        // 618's spawn rides back out (`FlailTick.spawn`'s
+                        // shape) because the pool owns the slot array, and its
+                        // `ai1` carries the parent's `ProjectileKey` bit
+                        // pattern. The 119 arm resolves the parent slot
+                        // through the same key (`nebula_parent`).
+                        118 => {
+                            if let Some(s) =
+                                self.slots[i].ai_nebula_arcanum(world, &npcs[..], rng)
+                            {
+                                let owner_id = self.slots[i].owner;
+                                let key = self.key_of(i) as u32;
+                                self.spawn_with_data_ai_owned(
+                                    NEBULA_ARCANUM_SUBSHOT,
+                                    owner_id,
+                                    s.x,
+                                    s.y,
+                                    s.vx,
+                                    s.vy,
+                                    s.damage,
+                                    0.0,
+                                    0.0,
+                                    f32::from_bits(key),
+                                );
+                            }
+                        }
+                        119 => {
+                            let parent = self.nebula_parent(self.slots[i].ai[1]);
+                            self.slots[i].ai_nebula_arm(parent, rng);
+                        }
+                        // The Last Prism holder (`:66539-66637`): the channel
+                        // gate, the mana pay and the per-tick damage re-read
+                        // ride the player arg; the 6× laser 632 spawn rides
+                        // back out (the 118 shape) with `ai0 = m` and `ai1 =
+                        // this.key`'s raw bits (`:66622-66626`).
+                        75 => {
+                            let spawn =
+                                self.slots[i]
+                                    .ai_last_prism(owner, player.as_deref_mut());
+                            if let Some(s) = spawn {
+                                let owner_id = self.slots[i].owner;
+                                let key = self.key_of(i) as u32;
+                                for m in 0..6u32 {
+                                    self.spawn_with_data_ai_owned(
+                                        LAST_PRISM_LASER,
+                                        owner_id,
+                                        s.x,
+                                        s.y,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        m as f32,
+                                        f32::from_bits(key),
+                                    );
+                                }
+                            }
+                        }
                         // The aiStyle-29 gem bolts (`Projectile.cs:37643-38001`):
                         // the owner-aware arm of the family signature — its
                         // `FindTargetWithLineOfSight` refresh reads `Main.npc`,
@@ -8739,7 +10626,21 @@ impl ProjectilePool {
                             self.slots[i].ai_phasmal_eye(npcs, player)
                         }
                         83 => self.slots[i].ai_phasmal_sphere(&npcs[..]),
-                        84 => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..]),
+                        // The aiStyle-84 laser family, split by kind: the
+                        // Last Prism beam (632) resolves its holder through
+                        // the slot key (`prism_parent`'s `TryGetActive`
+                        // shape) and runs the orbit/envelope arm; every
+                        // other kind in the family (455 today) keeps the
+                        // PhantasmalDeathray arm (`:31385-31639`).
+                        84 => match self.slots[i].kind {
+                            LAST_PRISM_LASER => {
+                                let parent = self.prism_parent(self.slots[i].ai[1]);
+                                let origin = owner.unwrap_or((0.0, 0.0));
+                                self.slots[i]
+                                    .ai_last_prism_laser(&*world, origin, parent);
+                            }
+                            _ => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..]),
+                        },
                         85 => {
                             if let Some(p) = player.as_deref_mut() {
                                 self.slots[i].ai_moon_leech(&npcs[..], p);
@@ -9076,6 +10977,10 @@ impl ProjectilePool {
             if self.slots[i].active && !self.slots[i].friendly {
                 self.damage_player(i, player.as_deref_mut());
             }
+            // `AI()`'s `TrailingMode` chain (`Projectile.cs:17091-17195`), the
+            // last statement ahead of the `timeLeft--` the C# runs at `:17201`:
+            // the history rings shift once per update call, after the sub-steps.
+            self.slots[i].shift_trailing_history();
             // `:17199-17208`.
             let (time_left, penetrate) = {
                 let p = &self.slots[i];
@@ -9790,21 +11695,23 @@ mod tests {
             ..Default::default()
         };
         let mut rng = 12345u64;
+        // An empty world: the arm's `kill_step` only reads its bounds.
+        let w = tr_core::World::new("t".into(), 512, 64);
         // Ticks 1-3: the alpha holds at 255 (the `> 3f` gate at `:38017`).
         for _ in 0..3 {
-            p.ai_leaf_blower(&mut rng);
+            p.ai_leaf_blower(&w, &mut rng);
         }
         assert_eq!(p.alpha, 255);
         assert_eq!(p.local_ai[0], 3.0);
         // Tick 4 on fades 50/tick, so by tick 10 the alpha is zero.
         for _ in 0..7 {
-            p.ai_leaf_blower(&mut rng);
+            p.ai_leaf_blower(&w, &mut rng);
         }
         assert_eq!(p.alpha, 0, "the fade-in lands on 0 by localAI[0] = 10");
         // The flap: 3 ticks per frame, wrapping at 5 (`:38024-38032`).
         let mut seen = std::collections::BTreeSet::new();
         for _ in 0..30 {
-            p.ai_leaf_blower(&mut rng);
+            p.ai_leaf_blower(&w, &mut rng);
             seen.insert(p.frame);
         }
         assert_eq!(seen.len(), 5, "all 5 frames of projFrames[206] ride");
@@ -9822,7 +11729,7 @@ mod tests {
         // Past tick 50 the alpha ramps back up 2/tick and kills at 255.
         let mut ticks = 0;
         while p.active && ticks < 400 {
-            p.ai_leaf_blower(&mut rng);
+            p.ai_leaf_blower(&w, &mut rng);
             ticks += 1;
         }
         assert!(!p.active, "the petal fades out and dies");
@@ -13597,6 +15504,9 @@ mod phasmal_projectile_tests {
             trap: false,
             bounces: 0,
             blast_spawned: false,
+            old_pos: [Vec2::ZERO; 10],
+            old_rot: [0.0; 10],
+            old_sprite_direction: [0; 10],
         }
     }
 
@@ -13830,6 +15740,9 @@ mod ritual_projectile_tests {
             trap: false,
             bounces: 0,
             blast_spawned: false,
+            old_pos: [Vec2::ZERO; 10],
+            old_rot: [0.0; 10],
+            old_sprite_direction: [0; 10],
         }
     }
 
@@ -14190,12 +16103,14 @@ mod widened_state_tests {
     fn test_dw_1_2_an_unported_kind_spawns_nothing() {
         // The seam Phase 2 rides: a kind without a row returns `None` instead
         // of an inert slot (the M4-PROJ-1 silent-None trap). The magic kinds
-        // have rows now (Phase 2); the follow-up aiStyles stay rowless.
+        // and the follow-up aiStyles have rows now (M4-PROJ-6 Phases 1-2 and
+        // M4-PROJ-6b Phase 1), so the examples move to the OUT list: the
+        // style-75 gun rider 600 and the flame jet 187.
         let mut pool = ProjectilePool::new();
         assert!(
-            pool.spawn_with_data(114, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
+            pool.spawn_with_data(600, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
                 .is_none(),
-            "the Unholy Trident bolt (aiStyle 27) is a follow-up row"
+            "the Last Prism gun rider (style 75) stays rowless"
         );
         assert!(
             pool.spawn_with_data(187, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
@@ -14408,16 +16323,23 @@ mod magic_data_tests {
 
     #[test]
     fn test_dw_2_1_the_out_of_scope_kinds_stay_rowless() {
-        // The follow-up aiStyles keep no row: the unported-kind spawn must
-        // reach the caller as `None`, never an inert slot (the plan's OUT
-        // list — the follow-up row and the hostile riders; the Golem's
-        // fireball 258 already rides a pre-existing row, the hostile
-        // style-8 rider of the same kind, and keeps it).
-        // 206 left the list with M4-PROJ-6b: the Leaf Blower's petal now
-        // carries its own row and `AI_040_LeafBlower`.
-        for kind in [114u16, 116, 297, 356, 409, 502, 617, 633] {
+        // M4-PROJ-6b Phase 1 moved the boundary: the followup kinds
+        // (114/115/116/132/156/157/173, 206, 293/297, 356, 409, 617/618,
+        // 632/633, 634/635) now carry rows, so the rowless set is the plan's
+        // documented OUT list — the 75/84 gun riders (439/445/460/595/600/
+        // 611/735/927; 615/630/705/714 already ride the ammo-resolution row)
+        // and the hostile lasers (461/537/642), plus the flame jet 187 and
+        // 502. The unported-kind spawn must still reach the caller as `None`,
+        // never an inert slot.
+        for kind in [
+            439u16, 445, 460, 595, 600, 611, 735, 927, 461, 537, 642, 187, 502,
+        ] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
+        // The Golem's fireball 258 already rides a pre-existing row, the
+        // hostile style-8 rider of the same kind, and keeps it.
+        // The Leaf Blower's petal carries its own row now
+        // (M4-PROJ-6b-leaf), so it leaves the unported list.
         assert_eq!(proj_data(LEAF_BLOWER).unwrap().ai_style, 40);
         assert!(proj_data(GOLEM_FIREBALL).is_some(), "the Golem's 258 row stays");
         // The saucer stand-ins (447/450, aiStyle 79/80 as style numbers) are
@@ -14428,6 +16350,244 @@ mod magic_data_tests {
         assert_eq!(proj_data(ICE_BLOCK).unwrap().ai_style, 22);
         assert_eq!(proj_data(MAGIC_MISSILE).unwrap().ai_style, 9);
         assert_eq!(proj_data(BALL_OF_FROST).unwrap().ai_style, 8);
+    }
+}
+
+/// The followup caster families' data rows (M4-PROJ-6b Phase 1) — the same
+/// table pattern as `magic_data_tests`, with the immunity groups broken out
+/// so the 297/617/618/132/156 rows can be asserted field by field.
+#[cfg(test)]
+mod followup_data_tests {
+    use super::*;
+
+    /// Every in-scope followup kind with its verbatim `SetDefaults` slice:
+    /// (kind, w, h, aiStyle, penetrate, timeLeft, extraUpdates, tileCollide,
+    /// alpha, scale, usesLocalNPCImmunity, localNPCHitCooldown,
+    /// usesIDStaticNPCImmunity, idStaticNPCHitCooldown). `timeLeft`'s 3600 is
+    /// the reset value (`Projectile.cs:787`); the C# citation per arm rides
+    /// the comment under each line.
+    const FOLLOWUP_ROWS: [(
+        u16,
+        f32,
+        f32,
+        u8,
+        i32,
+        i32,
+        u32,
+        bool,
+        i32,
+        f32,
+        bool,
+        i32,
+        bool,
+        i32,
+    ); 18] = [
+        // `:2023-2035` UnholyTridentFriendly — 16x16, aiStyle 27, alpha 255,
+        // extraUpdates 2, timeLeft 180.
+        (UNHOLY_TRIDENT, 16.0, 16.0, 27, 1, 180, 2, true, 255, 1.0, false, -2, false, -1),
+        // `:2036-2046` UnholyTridentHostile — the same box, penetrate -1,
+        // the 3600 reset (no extraUpdates), alpha 255.
+        (UNHOLY_TRIDENT_HOSTILE, 16.0, 16.0, 27, -1, 3600, 0, true, 255, 1.0, false, -2, false, -1),
+        // `:2047-2056` SwordBeam — 16x16, penetrate 2.
+        (SWORD_BEAM, 16.0, 16.0, 27, 2, 3600, 0, true, 255, 1.0, false, -2, false, -1),
+        // `:2209-2222` TerraBeam — penetrate 3, local-immunity 10.
+        (TERRA_BEAM, 16.0, 16.0, 27, 3, 3600, 0, true, 255, 1.0, true, 10, false, -1),
+        // `:2434-2446` LightBeam — penetrate 2, local-immunity 10.
+        (LIGHT_BEAM, 16.0, 16.0, 27, 2, 3600, 0, true, 255, 1.0, true, 10, false, -1),
+        // `:2447-2456` NightBeam — the 32x32 rider, scale 1.2.
+        (NIGHT_BEAM, 32.0, 32.0, 27, 1, 3600, 0, true, 255, 1.2, false, -2, false, -1),
+        // `:2591-2600` EnchantedBeam — penetrate 1.
+        (ENCHANTED_BEAM, 16.0, 16.0, 27, 1, 3600, 0, true, 255, 1.0, false, -2, false, -1),
+        // `:2937-2945` Leaf — 14x14, aiStyle 40, penetrate 1, timeLeft 360.
+        (LEAF, 14.0, 14.0, 40, 1, 360, 0, true, 255, 1.0, false, -2, false, -1),
+        // `:3826-3837` LostSoulHostile — 12x12, aiStyle 51, penetrate -1,
+        // tileCollide false, extraUpdates 1.
+        (LOST_SOUL_HOSTILE, 12.0, 12.0, 51, -1, 3600, 1, false, 255, 1.0, false, -2, false, -1),
+        // `:3870-3882` LostSoulFriendly — penetrate 3, id-static 10.
+        (LOST_SOUL, 12.0, 12.0, 51, 3, 3600, 1, true, 255, 1.0, false, -2, true, 10),
+        // `:4464-4473` SpectreWrath — 6x6, aiStyle 59, tileCollide false,
+        // extraUpdates 3.
+        (SPECTRE_WRATH, 6.0, 6.0, 59, 1, 3600, 3, false, 255, 1.0, false, -2, false, -1),
+        // `:4903-4915` Typhoon — 30x30, aiStyle 71, penetrate -1, timeLeft
+        // 300, extraUpdates 2.
+        (TYPHOON, 30.0, 30.0, 71, -1, 300, 2, true, 255, 1.0, false, -2, false, -1),
+        // `:6644-6657` NebulaArcanum — 32x32, aiStyle 118, penetrate 3,
+        // local-immunity 8.
+        (NEBULA_ARCANUM, 32.0, 32.0, 118, 3, 3600, 0, true, 255, 1.0, true, 8, false, -1),
+        // `:6658-6670` NebulaArcanumSubshot — 18x30, aiStyle 119, penetrate
+        // -1, timeLeft 420, tileCollide false, local-immunity 20, alpha 0.
+        (NEBULA_ARCANUM_SUBSHOT, 18.0, 30.0, 119, -1, 420, 0, false, 0, 1.0, true, 20, false, -1),
+        // `:6793-6804` LastPrism — 14x18, aiStyle 75, penetrate -1,
+        // tileCollide false, the reset state group.
+        (LAST_PRISM, 14.0, 18.0, 75, -1, 3600, 0, false, 0, 1.0, false, -2, false, -1),
+        // `:6805-6815` LastPrismLaser — 18x18, aiStyle 84, penetrate -1,
+        // alpha 255, tileCollide false.
+        (LAST_PRISM_LASER, 18.0, 18.0, 84, -1, 3600, 0, false, 255, 1.0, false, -2, false, -1),
+        // `:6816-6826` NebulaBlaze1 — 40x40, aiStyle 1, alpha 255,
+        // extraUpdates 2.
+        (NEBULA_BLAZE_1, 40.0, 40.0, 1, 1, 3600, 2, true, 255, 1.0, false, -2, false, -1),
+        // `:6827-6836` NebulaBlaze2 — the same box, extraUpdates 3.
+        (NEBULA_BLAZE_2, 40.0, 40.0, 1, 1, 3600, 3, true, 255, 1.0, false, -2, false, -1),
+    ];
+
+    #[test]
+    fn the_followup_family_data_map_is_verbatim() {
+        // DW-1.1: every in-scope followup kind has its `proj_data` row, the
+        // verbatim `SetDefaults` slice against the C# arms cited per row.
+        for &(
+            kind,
+            w,
+            h,
+            ai,
+            pen,
+            tl,
+            ex,
+            tc,
+            alpha,
+            scale,
+            uses_local,
+            local_cd,
+            uses_id_static,
+            id_static_cd,
+        ) in &FOLLOWUP_ROWS
+        {
+            let row = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} lost its row"));
+            assert_eq!(
+                (
+                    row.w, row.h, row.ai_style, row.penetrate, row.time_left, row.extra_updates, row.tile_collide
+                ),
+                (w, h, ai, pen, tl, ex, tc),
+                "kind {kind}"
+            );
+            assert_eq!((row.alpha, row.scale), (alpha, scale), "kind {kind}");
+            assert_eq!(
+                (row.uses_local_immunity, row.local_hit_cooldown),
+                (uses_local, local_cd),
+                "kind {kind}"
+            );
+            assert_eq!(
+                (row.uses_id_static_immunity, row.id_static_hit_cooldown),
+                (uses_id_static, id_static_cd),
+                "kind {kind}"
+            );
+            // No followup row is an arrow or a trap: every one is a magic or
+            // a melee/ranged projectile in the C# (the `arrow`/`trap` fields
+            // stay at their reset, `Projectile.cs:704-706`/`:764-765`).
+            assert!(!row.arrow && !row.trap, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn test_DW_1_1_every_followup_row_reaches_the_spawner() {
+        // DW-1.1's other half: the rows are not dead data — each in-scope
+        // kind spawns through `spawn_with_data` with the row's slice on the
+        // slot, and the spawner's damage/knockback ride on top. Before
+        // Phase 1 every one of these returned `None` and the shot was
+        // silently dropped.
+        let mut pool = ProjectilePool::new();
+        for (i, &(kind, w, h, ai, pen, tl, ex, tc, alpha, scale, ..)) in
+            FOLLOWUP_ROWS.iter().enumerate()
+        {
+            let slot = pool
+                .spawn_with_data(kind, 32.0 * i as f32, 32.0, 4.0, 0.0, 21, 5.0)
+                .unwrap_or_else(|| panic!("kind {kind} spawns nothing"));
+            let p = &pool.slots[slot];
+            assert_eq!(p.kind, kind);
+            assert_eq!(p.owner, 0, "kind {kind}");
+            assert_eq!((p.w, p.h), (w, h), "kind {kind}");
+            assert_eq!(proj_data(kind).unwrap().ai_style, ai, "kind {kind}");
+            assert_eq!((p.penetrate, p.max_penetrate), (pen, pen), "kind {kind}");
+            assert_eq!(p.time_left, tl, "kind {kind}");
+            assert_eq!(p.extra_updates, ex, "kind {kind}");
+            assert_eq!(p.tile_collide, tc, "kind {kind}");
+            assert_eq!((p.alpha, p.scale), (alpha, scale), "kind {kind}");
+            // The spawner's inputs stay the spawner's.
+            assert_eq!((p.damage, p.knock_back), (21, 5.0), "kind {kind}");
+            // `SetDefaults` zeroes the scratch arrays (`:736-740`) — the
+            // followup arms' phase counters start at 0.
+            assert_eq!(p.ai, [0.0; 4], "kind {kind}");
+            assert_eq!(p.local_ai, [0.0; 3], "kind {kind}");
+            assert_eq!(pool.active_count(), i + 1);
+        }
+    }
+
+    #[test]
+    fn test_DW_1_2_the_immunity_groups_reach_the_spawner() {
+        // DW-1.2: the four immunity groups the plan names initialise through
+        // `spawn_with_data` — 297's id-static 10 and the local-immunity pairs
+        // of 617/618 and 132/156.
+        let mut pool = ProjectilePool::new();
+        // (kind, uses_local, local_cd, uses_id_static, id_static_cd)
+        let cases: [(u16, bool, i32, bool, i32); 5] = [
+            (LOST_SOUL, false, -2, true, 10),
+            (NEBULA_ARCANUM, true, 8, false, -1),
+            (NEBULA_ARCANUM_SUBSHOT, true, 20, false, -1),
+            (TERRA_BEAM, true, 10, false, -1),
+            (LIGHT_BEAM, true, 10, false, -1),
+        ];
+        for &(kind, local, local_cd, id_static, id_static_cd) in &cases {
+            let slot = pool
+                .spawn_with_data(kind, 32.0, 32.0, 0.0, 0.0, 15, 3.0)
+                .unwrap_or_else(|| panic!("kind {kind} spawns nothing"));
+            let p = &pool.slots[slot];
+            assert_eq!(p.uses_local_immunity, local, "kind {kind}");
+            assert_eq!(p.local_hit_cooldown, local_cd, "kind {kind}");
+            assert_eq!(p.uses_id_static_immunity, id_static, "kind {kind}");
+            assert_eq!(p.id_static_hit_cooldown, id_static_cd, "kind {kind}");
+        }
+        // The rows that carry no immunity group keep the C# reset on the slot
+        // (`:464-466`, `:714-715`): the Trident pair's three riders, the
+        // Wrath, the Typhoon, the Prism pair and the Blaze twins.
+        for kind in [
+            UNHOLY_TRIDENT,
+            UNHOLY_TRIDENT_HOSTILE,
+            SWORD_BEAM,
+            NIGHT_BEAM,
+            ENCHANTED_BEAM,
+            LEAF,
+            LOST_SOUL_HOSTILE,
+            SPECTRE_WRATH,
+            TYPHOON,
+            LAST_PRISM,
+            LAST_PRISM_LASER,
+            NEBULA_BLAZE_1,
+            NEBULA_BLAZE_2,
+        ] {
+            let slot = pool.spawn_with_data(kind, 32.0, 32.0, 0.0, 0.0, 15, 3.0).unwrap();
+            let p = &pool.slots[slot];
+            assert!(!p.uses_local_immunity, "kind {kind}");
+            assert_eq!(p.local_hit_cooldown, -2, "kind {kind}");
+            assert!(!p.uses_id_static_immunity, "kind {kind}");
+            assert_eq!(p.id_static_hit_cooldown, -1, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn test_DW_1_2_the_ai_styles_reach_the_dispatch_tables() {
+        // The rows declare the aiStyles the Phase 2-4 arms dispatch on, and
+        // the Nebula Blaze pair declare the plain aiStyle-1 flight (the
+        // shared `ai_arrow`, not a rider hook). The Last Prism laser shares
+        // aiStyle 84 with the Phantasmal Deathray 455 — the per-kind split
+        // of that arm is Phase 4's, and the two keep distinct rows.
+        assert_eq!(proj_data(UNHOLY_TRIDENT).unwrap().ai_style, 27);
+        assert_eq!(proj_data(TERRA_BEAM).unwrap().ai_style, 27);
+        assert_eq!(proj_data(LEAF).unwrap().ai_style, 40);
+        assert_eq!(proj_data(LOST_SOUL).unwrap().ai_style, 51);
+        assert_eq!(proj_data(SPECTRE_WRATH).unwrap().ai_style, 59);
+        assert_eq!(proj_data(TYPHOON).unwrap().ai_style, 71);
+        assert_eq!(proj_data(NEBULA_ARCANUM).unwrap().ai_style, 118);
+        assert_eq!(proj_data(NEBULA_ARCANUM_SUBSHOT).unwrap().ai_style, 119);
+        assert_eq!(proj_data(LAST_PRISM).unwrap().ai_style, 75);
+        assert_eq!(proj_data(LAST_PRISM_LASER).unwrap().ai_style, 84);
+        assert_eq!(proj_data(NEBULA_BLAZE_1).unwrap().ai_style, 1);
+        assert_eq!(proj_data(NEBULA_BLAZE_2).unwrap().ai_style, 1);
+        // 455 keeps its own style-84 row untouched (the plan's constraint).
+        let deathray = proj_data(PHANTASMAL_DEATHRAY).unwrap();
+        assert_eq!((deathray.w, deathray.h), (36.0, 36.0));
+        assert_eq!(deathray.ai_style, 84);
+        assert_eq!(deathray.time_left, 600);
+        // The ids stay distinct across the two rows.
+        assert_ne!(proj_data(LAST_PRISM_LASER).unwrap().w, deathray.w);
     }
 }
 
@@ -16412,6 +18572,1571 @@ mod magic_ai_tests {
         assert_eq!(
             pool.slots()[slot].ai[0], 1.0,
             "the nearer candidate wins regardless of the scan order"
+        );
+    }
+
+    // ---------------------------------------------------------------- Phase 3
+    // DW-3.1: the leaf (40), the wrath (59), the arcanum pair (118/119) and
+    // the style-51 else branch. Every assertion names its `Projectile.cs` line
+    // range; the seeded rolls replay the arm's draw order off the pool's own
+    // stream — a fresh `FastRandom::new(7)` for the arms that take the update's
+    // rng, the 0-seeded `hook_rng` for the `Main.rand` stand-in.
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_rolls_its_seeded_deltas_at_local_ai_1() {
+        // `:38034-38039`: exactly one `Next(-100, 101)` pair per projectile,
+        // at `localAI[1] == 1`, scaled by `6E-05f`. The velocity add
+        // (`:38029-38030`) runs before the roll, so the deltas apply from the
+        // second tick on. The stream is the pool's `Main.rand` stand-in
+        // (`hook_rng`), which a fresh pool starts unseeded at 0.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 13.0, 0.0, 20, 0.0);
+        let mut st: u64 = 0;
+        let e0 = rand_range(&mut st, -100, 101) * 6.0e-5;
+        let e1 = rand_range(&mut st, -100, 101) * 6.0e-5;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        assert_eq!(p.ai[0], e0, "the stream's first draw is ai[0]'s drift");
+        assert_eq!(p.ai[1], e1, "the second draw is ai[1]'s drift");
+        assert!(
+            (p.vel.x - 13.0).abs() < 1e-9 && p.vel.y == 0.0,
+            "the spawn tick adds the pre-roll ai (still zeros)"
+        );
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        assert!(
+            (p.vel.x - (13.0 + e0)).abs() < 1e-9,
+            "the rolled deltas apply from the second tick"
+        );
+        assert!((p.vel.y - e1).abs() < 1e-9, "the y drift rides ai[1]");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_fades_in_then_out_and_kills_at_alpha_255() {
+        // `:38004-38016`: the first three ticks hold the spawn alpha 255,
+        // ticks 4..50 pull 50 per tick to the 0 floor, past 50 the +2 walk
+        // kills at alpha >= 255 — and the kill's `return` skips the tail.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 13.0, 0.0, 20, 0.0);
+        let mut w = world();
+        for _ in 0..3 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[0].alpha, 255, "`localAI[0] > 3f` gates the fade");
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].alpha, 205, "the first 50-step fade");
+        for _ in 0..5 {
+            step(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[0].alpha, 0, "the fade clamps at the 0 floor");
+        assert_eq!(pool.slots()[0].frame, 3, "nine ticks advanced three frames");
+        pool.slots_mut()[0].local_ai[0] = 50.0;
+        pool.slots_mut()[0].alpha = 253;
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        assert_eq!(p.alpha, 255, "the +2 walk reaches 255");
+        assert!(!p.active, "alpha >= 255 kills (`:38011-38013`)");
+        assert_eq!(p.frame, 3, "the kill's return skips the anim");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_spins_after_tick_10_and_holds_the_speed_band() {
+        // `:38057-38070`: past `localAI[1] > 10` the flight rotates by
+        // `localAI[2] * |ai[0]| * localAI[1] * 0.35f` (an absolute angle that
+        // grows with the tick count) then shrinks 0.97; the Manhattan band
+        // pulls 0.95 over 16 and pushes 1.05 under 12.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 16.0, 0.0, 20, 0.0);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        // The drift preset: the arm re-rolls only at `localAI[1] == 1`, so the
+        // test's values survive; the counter jumps past the spin gate.
+        pool.slots_mut()[0].ai[0] = 0.006;
+        pool.slots_mut()[0].ai[1] = 0.0;
+        pool.slots_mut()[0].local_ai[1] = 10.0;
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        let angle = -1.0 * 0.006 * 11.0 * 0.35;
+        let spun = rotate(Vec2::new(16.0 + 0.006, 0.0), angle) * 0.97;
+        assert!(
+            (p.vel.x - spun.x).abs() < 1e-4 && (p.vel.y - spun.y).abs() < 1e-4,
+            "the spin angle grows with the tick count, then 0.97"
+        );
+        // The over-16 pull with the spin gate closed (`localAI[1]` stays low).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 20.0, 0.0, 20, 0.0);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(
+            (pool.slots()[0].vel.x - 19.0).abs() < 1e-6,
+            "20 pulls to 19 (`:38062-38065`)"
+        );
+        // The under-12 push.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 10.0, 0.0, 20, 0.0);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(
+            (pool.slots()[0].vel.x - 10.5).abs() < 1e-6,
+            "10 pushes to 10.5 (`:38066-38070`)"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_spin_sign_latches_on_the_first_tick() {
+        // `:38031-38033`: `localAI[2] = (!(velocity.X > 0f)) ? 1 : -1` — the
+        // latch runs only while `localAI[1] == 0`, so a later sign flip of the
+        // velocity never re-latches.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, -13.0, 0.0, 20, 0.0);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].local_ai[2], 1.0, "a -X flight spins positive");
+        pool.slots_mut()[0].vel.x = 5.0;
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[0].local_ai[2], 1.0, "the latch holds");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_40_the_leaf_anim_cycles_5_frames_at_rate_3() {
+        // `:38018-38027`: `frameCounter` ticks 3 per frame, 5 frames wrap to 0.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 13.0, 0.0, 20, 0.0);
+        let mut w = world();
+        for t in 1..=15u32 {
+            step(&mut pool, &mut w);
+            let expected = match t {
+                3 => 1,
+                6 => 2,
+                9 => 3,
+                12 => 4,
+                15 => 0, // frame 5 wraps to 0
+                _ => continue,
+            };
+            assert_eq!(pool.slots()[0].frame, expected, "tick {t}");
+        }
+    }
+
+    #[test]
+    fn test_dw_3_1_style_59_the_wrath_stays_hostile_until_ai_1_60_then_flips_and_steers() {
+        // `:28940-28942`: `ai[1]++` gates the flip and the homing at 60 — the
+        // row's `extraUpdates = 3` runs four sub-steps per update, so update 15
+        // lands `ai[1] = 60` on its last sub-step (one blend). `:28968-28991`:
+        // the held target blends `(v*29 + d)/30` at speed 4.
+        let mut w = world();
+        let npc = Npc::spawn_slime_sky(20.0 * TILE_PX + 320.0, 24.0 * TILE_PX, SlimeVariant::Blue);
+        let mut npcs = vec![npc];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SPECTRE_WRATH, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        for _ in 0..14 {
+            tick_npcs(&mut w, &mut pool, &mut npcs);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 56.0, "four sub-steps per update");
+        assert!(!p.friendly, "the hostile window holds");
+        assert!(p.vel == Vec2::ZERO, "no steering before the 60th tick");
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert!(p.friendly, "the flip at ai[1] >= 60");
+        // The 60th sub-step's single blend from rest: v = d / 30, d = the
+        // target direction at speed 4 (the wrath's box is 6x6).
+        let center = Vec2::new(20.0 * TILE_PX + 3.0, 24.0 * TILE_PX + 3.0);
+        let delta = npc_center(&npcs[0]) - center;
+        let expected = delta * (4.0 / delta.length()) / 30.0;
+        assert!(
+            (p.vel.x - expected.x).abs() < 1e-5 && (p.vel.y - expected.y).abs() < 1e-5,
+            "one (v*29 + d)/30 blend from rest"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_59_the_wrath_repicks_uniformly_within_manhattan_800_and_kills_on_an_empty_scan() {
+        // `:28943-28964`: an unset (`ai[0] == -1`) or stale target rescans the
+        // chaseable NPCs inside the Manhattan 800f and takes
+        // `array[Main.rand.Next(num427)]`; an empty scan kills. The dust ring
+        // rolls nothing, so the pick is the update's first stream draw.
+        let mut w = world();
+        let mut npcs = vec![
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 100.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 200.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 300.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+        ];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SPECTRE_WRATH, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        for _ in 0..15 {
+            tick_npcs(&mut w, &mut pool, &mut npcs);
+        }
+        let pick = tr_core::tile_light::FastRandom::new(7).next_range(0, 3) as usize;
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], pick as f32, "the uniform pick lands the raw npc index");
+        assert!(p.friendly, "the flip precedes the re-pick");
+        let center = Vec2::new(20.0 * TILE_PX + 3.0, 24.0 * TILE_PX + 3.0);
+        let delta = npc_center(&npcs[pick]) - center;
+        let expected = delta * (4.0 / delta.length()) / 30.0;
+        assert!(
+            (p.vel.x - expected.x).abs() < 1e-5,
+            "the blend targets the picked slime"
+        );
+        // An empty scan kills (`:28957-28960`).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SPECTRE_WRATH, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        let mut w2 = world();
+        for _ in 0..15 {
+            step(&mut pool, &mut w2);
+        }
+        assert!(!pool.slots()[slot].active, "no candidate inside 800f kills");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_51_the_293_hunts_the_player_and_blends_at_101() {
+        // `:28448-28475`: the hostile 293 hunts the nearest living player
+        // inside the Manhattan 200f; `:28484-28499`: the blend `(v*100 + d)/101`
+        // at turn speed 3. The row's `extraUpdates = 1` runs two sub-steps per
+        // update — two blends from rest — and the sound latch (`:28422-28425`)
+        // increments `localAI[0]` once.
+        let mut w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        // The soul's centre (pos + 6) sits exactly 100 px left of the player's,
+        // so d = (+3, 0) each blend.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(LOST_SOUL_HOSTILE, pcx - 106.0, pcy - 6.0, 1.0, 0.0, 80, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((pcx, pcy)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert_eq!(p.local_ai[0], 1.0, "the sound latch fires once");
+        let v1 = (1.0 * 100.0 + 3.0) / 101.0;
+        let v2 = (v1 * 100.0 + 3.0) / 101.0;
+        assert!((p.vel.x - v2).abs() < 1e-5, "two (v*100 + d)/101 blends");
+        assert!(p.vel.y.abs() < 1e-9, "the colinear hunt leaves y alone");
+        // 300f sits outside the Manhattan 200f hunt.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(LOST_SOUL_HOSTILE, pcx - 306.0, pcy - 6.0, 1.0, 0.0, 80, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((pcx, pcy)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        assert!(
+            (pool.slots()[slot].vel.x - 1.0).abs() < 1e-9,
+            "300f is out of the hunt"
+        );
+        // The dead gate (`:28459`'s `!Main.player[num368].dead`).
+        player.dead = true;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(LOST_SOUL_HOSTILE, pcx - 106.0, pcy - 6.0, 1.0, 0.0, 80, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w,
+            &mut [],
+            Some((pcx, pcy)),
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        assert!(
+            (pool.slots()[slot].vel.x - 1.0).abs() < 1e-9,
+            "a dead player is unhunted"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_118_the_arcanum_fast_mode_decays_after_30_and_snaps_below_4p1() {
+        // `:34644-34689`: the fast mode runs while |v| > 4; the 0.98 decay +
+        // the 0.0074468083 scale climb start at `ai[0] >= 30`; under 4.1 the
+        // flight snaps to exactly 4 and the counter resets, handing the next
+        // tick to the homing mode.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 6.0, 0.0, 100, 0.0)
+            .unwrap();
+        let mut w = world();
+        for _ in 0..29 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert!((p.vel.x - 6.0).abs() < 1e-6, "no decay before ai[0] = 30");
+        assert_eq!(p.ai[0], 29.0);
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!((p.vel.x - 6.0 * 0.98).abs() < 1e-6, "the first 0.98 decay at ai[0] = 30");
+        assert!(
+            (p.scale - (1.0 + 0.0074468083)).abs() < 1e-9,
+            "the scale climb (`:34678`)"
+        );
+        let mut speed = 6.0f32 * 0.98;
+        for _ in 0..17 {
+            speed *= 0.98;
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert!(
+            (p.vel.x - speed).abs() < 1e-5 && p.vel.x > 4.1,
+            "18 decays total stay above the snap line"
+        );
+        assert_eq!(p.ai[0], 47.0);
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.x, 4.0, "under 4.1 snaps to exactly 4 (`:34684-34689`)");
+        assert_eq!(p.ai[0], 0.0, "the counter resets on the snap");
+        // The 1.3 scale clamp (`:34679-34682`).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 6.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].scale = 1.2955;
+        pool.slots_mut()[slot].ai[0] = 30.0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].scale, 1.3, "the clamp at 1.3");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_118_the_arcanum_resnaps_4p05_and_homes_in_mode_1() {
+        // `:34644-34646` picks the mode off `velocity.Length() <= 4f` before
+        // the tick's decay; a 4.0625-speed spawn runs the fast arm once and
+        // re-snaps on its first tick (4.0625 < 4.1), handing tick 2 to the
+        // homing scan (`:34724-34750`) and the `(v*7 + d)/8` blend
+        // (`:34776-34805`). 4.0625 is dyadic, so the snap's
+        // `Normalize() * 4f` is bit-exact.
+        let mut w = world();
+        let npc = Npc::spawn_slime_sky(20.0 * TILE_PX, 24.0 * TILE_PX + 64.0, SlimeVariant::Blue);
+        let mut npcs = vec![npc];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 20.0 * TILE_PX, 24.0 * TILE_PX, 4.0625, 0.0, 100, 0.0)
+            .unwrap();
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.x, 4.0, "4.0625 re-snaps to exactly 4 on tick 1");
+        assert_eq!(p.ai[0], 0.0, "the snap resets the counter");
+        assert!(
+            (p.rot + std::f32::consts::PI / 30.0).abs() < 1e-9,
+            "the fast spin ran (`:34655`)"
+        );
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 1.0, "the homing scan locks the slime (`ai[1] = idx + 1`)");
+        assert!(
+            (p.rot + 2.0 * std::f32::consts::PI / 30.0).abs() < 1e-9,
+            "the homing spin (`:34691`)"
+        );
+        // The blend reads the pre-integration centre: tick 2's tail already
+        // added the blended velocity, so back it out.
+        let center = p.pos - p.vel + Vec2::new(16.0, 16.0);
+        let delta = npc_center(&npcs[0]) - center;
+        let d = delta * (4.0 / delta.length());
+        let expected = Vec2::new((4.0 * 7.0 + d.x) / 8.0, (0.0 * 7.0 + d.y) / 8.0);
+        assert!(
+            (p.vel.x - expected.x).abs() < 1e-5 && (p.vel.y - expected.y).abs() < 1e-5,
+            "one (v*7 + d)/8 blend from the snapped 4"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_118_the_arcanum_subshot_cadence_30_and_the_key_linkage() {
+        // `:34720-34723`: the subshot rolls when `ai[0] % 30 == 0` and
+        // `ai[0] < 241`, spawning 618 with `damage / 2` and `ai1 = this.key` —
+        // the key's raw bit pattern (`DataStructures/ProjectileKey.cs:7-14`'s
+        // union). The spawn angle (`UnitY.RotatedByRandom(2PI) * 12`) replays
+        // the update's draw order: the mode-1 dust gate (1 + 2|4 draws), then
+        // the subshot's two draws. The stationary parent (speed 0 homes) keeps
+        // the geometry pinned; the child's first tick adds the one-tick
+        // 0.15 sign-step toward the parent's centre and the 6-speed cap.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let mut w = world();
+        for _ in 0..29 {
+            step(&mut pool, &mut w);
+        }
+        assert!(
+            pool.slots().iter().all(|p| p.kind != NEBULA_ARCANUM_SUBSHOT),
+            "ai[0] = 29 rolls nothing"
+        );
+        step(&mut pool, &mut w);
+        let child = pool
+            .slots()
+            .iter()
+            .position(|p| p.kind == NEBULA_ARCANUM_SUBSHOT)
+            .expect("the 30th tick spawns the arm");
+        let parent = &pool.slots()[slot];
+        let child = &pool.slots()[child];
+        assert_eq!(child.damage, 50, "damage / 2 (`:34722`)");
+        assert_eq!(
+            child.ai[1].to_bits(),
+            pool.key_of(slot) as u32,
+            "ai1 carries the key's bit pattern"
+        );
+        // The child's spawn point is the parent's centre; its first tick
+        // integrates one 0.15 sign-step (-9, -15 both negative) and caps at 6.
+        let mut r = tr_core::tile_light::FastRandom::new(7);
+        if r.next_range(0, 2) == 0 {
+            let _ = (r.next_float(), r.next_float(), r.next_float(), r.next_float());
+        } else {
+            let _ = (r.next_float(), r.next_float());
+        }
+        let a = r.next_float() * 6.2831854820251465 - r.next_float() * 6.2831854820251465;
+        let mut expected = rotate(Vec2::new(0.0, 1.0), a) * 12.0 + Vec2::new(-0.15, -0.15);
+        let speed = expected.length();
+        if speed > 6.0 {
+            expected *= 6.0 / speed;
+        }
+        assert!(
+            (child.vel.x - expected.x).abs() < 1e-4 && (child.vel.y - expected.y).abs() < 1e-4,
+            "the subshot angle replays the seeded stream"
+        );
+        assert!(
+            (child.pos.x - child.vel.x - (parent.pos.x + 16.0)).abs() < 1e-5
+                && (child.pos.y - child.vel.y - (parent.pos.y + 16.0)).abs() < 1e-5,
+            "the arm spawns at the parent's centre"
+        );
+        // The < 241 gate (`:34720`): ai[0] = 270 passes the modulo and still
+        // rolls nothing.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = 269.0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(
+            pool.slots().iter().all(|p| p.kind != NEBULA_ARCANUM_SUBSHOT),
+            "past 241 the cadence stops"
+        );
+    }
+
+    #[test]
+    fn test_dw_3_1_style_119_the_arm_follows_the_parent_and_kills_when_it_dies() {
+        // `:34843-34847`: the arm shifts by the parent's movement since the
+        // child's last tick (the C# `position - oldPos[1]` — the port keeps
+        // the last-seen parent position in localAI; the recorded deviation is
+        // the first tick's slack). `:34858-34864`: the 0.15 sign-step accel;
+        // `:34853-34857`: a missing parent latches `ai[0] = 420` and kills.
+        // The boxes: the parent's centre sits +16, the child's +9/+15.
+        let mut pool = ProjectilePool::new();
+        let parent = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = f32::from_bits(pool.key_of(parent) as u32);
+        let child = pool
+            .spawn_with_data_ai_owned(
+                NEBULA_ARCANUM_SUBSHOT,
+                0,
+                10.0 * TILE_PX + 16.0,
+                10.0 * TILE_PX + 16.0,
+                3.0,
+                -4.0,
+                50,
+                0.0,
+                0.0,
+                key,
+            )
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert_eq!(c.alpha, 255, "the alpha latches every tick (`:34874`)");
+        assert!(
+            c.vel.x == 3.0 - 0.15 && c.vel.y == -4.0 - 0.15,
+            "one 0.15 sign-step toward the parent's centre"
+        );
+        assert!(
+            (c.pos.x - c.vel.x - (10.0 * TILE_PX + 16.0)).abs() < 1e-6,
+            "the first sighting stores, no shift yet"
+        );
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert!(
+            c.vel.x == (3.0 - 0.15) - 0.15 && c.vel.y == (-4.0 - 0.15) - 0.15,
+            "the accel steps every tick"
+        );
+        // The shift: the parent moved +4 x since the stored sighting.
+        assert!(
+            (c.pos.x - c.vel.x - (10.0 * TILE_PX + 16.0 + (3.0 - 0.15) + 4.0)).abs() < 1e-5,
+            "the second tick shifts by the parent's delta"
+        );
+        pool.slots_mut()[parent].active = false;
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert!(!c.active, "a dead parent kills the arm (`:34853-34857`)");
+        assert_eq!(c.ai[0], 420.0, "the missing-parent latch");
+    }
+
+    #[test]
+    fn test_dw_3_1_style_119_the_arm_caps_speed_and_latches_the_420_window() {
+        // `:34861-34864`: the accel caps at speed 6; `:34831-34834`: past 420
+        // the arm returns before the shift, the accel and the alpha tail; the
+        // NaN guard (`:34848-34852`) kills a NaN-shifted centre.
+        let mut pool = ProjectilePool::new();
+        // The parent's centre aligns with the child's y (159 + 16 = 175), so
+        // the cap math stays one-axis.
+        let parent = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX + 64.0, 10.0 * TILE_PX - 1.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = f32::from_bits(pool.key_of(parent) as u32);
+        let child = pool
+            .spawn_with_data_ai_owned(
+                NEBULA_ARCANUM_SUBSHOT,
+                0,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                10.0,
+                0.0,
+                50,
+                0.0,
+                0.0,
+                key,
+            )
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert!(
+            (c.vel.x - 6.0).abs() < 1e-5 && c.vel.y == 0.0,
+            "10 + 0.15 clamps through `* 6f / length`"
+        );
+        // The 420 window: the arm goes inert past it.
+        let mut pool = ProjectilePool::new();
+        let parent = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = f32::from_bits(pool.key_of(parent) as u32);
+        let child = pool
+            .spawn_with_data_ai_owned(
+                NEBULA_ARCANUM_SUBSHOT,
+                0,
+                10.0 * TILE_PX + 16.0,
+                10.0 * TILE_PX + 16.0,
+                0.0,
+                0.0,
+                50,
+                0.0,
+                0.0,
+                key,
+            )
+            .unwrap();
+        pool.slots_mut()[child].ai[0] = 419.0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let c = &pool.slots()[child];
+        assert_eq!(c.ai[0], 420.0, "the counter runs into the window");
+        assert_eq!(c.alpha, 0, "the alpha tail is skipped past 420");
+        assert!(c.vel == Vec2::ZERO, "no accel past the window");
+        assert_eq!(c.pos.x, 10.0 * TILE_PX + 16.0, "no integration past the window");
+        // The NaN parent position (`:34848-34852`): the shift of a NaN
+        // position poisons the centre. The pool's own loop cannot deliver one
+        // — the top-of-tick out-of-world guard (`Projectile.cs:16684`) has
+        // already deactivated that parent, exactly as the C# does — so the
+        // child sees the missing-parent latch (`:34853-34857`) and dies on
+        // its first tick with the window latched.
+        let mut pool = ProjectilePool::new();
+        let parent = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = f32::from_bits(pool.key_of(parent) as u32);
+        let child = pool
+            .spawn_with_data_ai_owned(
+                NEBULA_ARCANUM_SUBSHOT,
+                0,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                0.0,
+                0.0,
+                50,
+                0.0,
+                0.0,
+                key,
+            )
+            .unwrap();
+        pool.slots_mut()[parent].pos = Vec2::new(f32::NAN, f32::NAN);
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(
+            !pool.slots()[child].active,
+            "the NaN parent is gone before the arm runs (`:16684`)"
+        );
+        assert_eq!(
+            pool.slots()[child].ai[0],
+            420.0,
+            "the missing-parent latch (`:34853-34857`)"
+        );
+        // The guard itself, driven straight at the arm (the one case the
+        // update loop cannot produce): a live parent reporting a NaN position
+        // poisons the shift from the second sighting on.
+        let mut pool = ProjectilePool::new();
+        let child = pool
+            .spawn_with_data_ai_owned(
+                NEBULA_ARCANUM_SUBSHOT,
+                0,
+                10.0 * TILE_PX,
+                10.0 * TILE_PX,
+                0.0,
+                0.0,
+                50,
+                0.0,
+                0.0,
+                f32::from_bits(7),
+            )
+            .unwrap();
+        pool.slots_mut()[child].local_ai[2] = 1.0;
+        let nan = Vec2::new(f32::NAN, f32::NAN);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.slots_mut()[child].ai_nebula_arm(Some((nan, nan)), &mut rng);
+        assert!(
+            !pool.slots()[child].active,
+            "the NaN shift kills (`:34848-34852`)"
+        );
+        assert_eq!(pool.slots()[child].time_left, 0, "the kill tick's life");
+    }
+
+    #[test]
+    fn test_edge_style_118_the_arcanum_dies_at_ai_0_600() {
+        // `:34802-34806`: `ai[0] >= 600` kills — the homing counter never
+        // resets past the mode switch, so this is the mode-1 lifetime.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 10.0 * TILE_PX, 10.0 * TILE_PX, 4.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = 599.0;
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "ai[0] = 600 kills");
+    }
+
+    #[test]
+    fn test_edge_style_118_the_hold_persists_past_1000f_and_the_cadence_never_rescans() {
+        // `:34753-34771`: a merely distant hold keeps its index and stops
+        // steering; a dead one keeps it too (the C# has no reset arm), and the
+        // acquire never re-runs while `ai[1] != 0`.
+        let mut w = world();
+        let npc = Npc::spawn_slime_sky(20.0 * TILE_PX + 64.0, 24.0 * TILE_PX + 64.0, SlimeVariant::Blue);
+        let mut npcs = vec![npc];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 20.0 * TILE_PX, 24.0 * TILE_PX, 4.0625, 0.0, 100, 0.0)
+            .unwrap();
+        tick_npcs(&mut w, &mut pool, &mut npcs); // the snap
+        tick_npcs(&mut w, &mut pool, &mut npcs); // the lock + the blend
+        let held_vel = pool.slots()[slot].vel;
+        assert_eq!(pool.slots()[slot].ai[1], 1.0, "the lock lands");
+        npcs[0].x += 2000.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 1.0, "a distant hold keeps its index");
+        assert!(p.vel == held_vel, "no steering past the 1000f validity");
+        npcs[0].hp = 0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[1], 1.0, "a dead hold keeps its index (no reset arm)");
+        assert!(p.vel == held_vel, "no steering on a dead hold");
+        assert!(p.active, "the arcanum flies on regardless");
+    }
+
+    // ---------------------------------------------------------------- DW-4.1
+    // The Last Prism pair: the holder's cadence + the 6-beam spawn + the
+    // release kill, the laser's orbit/envelope + the ramps + the ×3 + the
+    // parent-missing kill. Every assertion names its `Projectile.cs` lines.
+
+    /// One pool update with the local player driving — the channel arms
+    /// read `channel`/`channel_item`/`channel_target` and pay the mana
+    /// (the `:15300` fixture shape of the main `mod tests`).
+    fn step_player(pool: &mut ProjectilePool, w: &mut World, player: &mut crate::player::Player) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+
+        let mut npcs: Vec<Npc> = Vec::new();
+        let center = player.center();
+        pool.update(
+            w,
+            &mut npcs,
+            Some(center),
+            None,
+            Some(player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+    }
+
+    /// The Last Prism rig: player 0 parked at (100, 100) mid-channel on the
+    /// Last Prism row (item 3541: damage 100, mana 12, shoot_speed 30), the
+    /// holder spawned at centre (800, 160) heading east at the shoot speed
+    /// with the item's knock back, `friendly` as the C# `SetDefaults` sets
+    /// it (`:6793-6804`), aiming east of its centre.
+    fn prism_rig() -> (World, ProjectilePool, crate::player::Player, usize) {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 100.0;
+        player.channel = true;
+        player.channel_item = 3541;
+        player.mana = 120;
+        let center = player.center();
+        player.channel_target = Vec2::new(center.0 + 1040.0, center.1);
+        let holder = pool
+            .spawn_with_data_ai_owned(LAST_PRISM, 0, 793.0, 151.0, 30.0, 0.0, 100, 0.25, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[holder].friendly = true;
+        (w, pool, player, holder)
+    }
+
+    /// `Projectile.cs:31424-31509` transcribed with the C#'s names — the
+    /// expected-value oracle for the laser tests. The rig's holder heads
+    /// east (`velocity.ToRotation() == 0`, the unit vector `(1, 0)`), so the
+    /// `vector76`-driven terms reduce to their x-forms; the laser copies the
+    /// holder's 100 damage (the rig's `item.damage · magicDamage`).
+    #[allow(clippy::many_single_char_names)]
+    fn csharp_laser(charge: f32, m: i32, holder_center: (f32, f32)) -> (Vec2, Vec2, f32, f32, i32, bool) {
+        // `:31425-31427` — the ordinal and the holder's unit direction.
+        let num661 = m as f32 - 2.5;
+        // `:31435-31462` — the charge envelope.
+        let (num663, num664, num665, num666) = if charge < 180.0 {
+            let fade = 1.0 - charge / 180.0;
+            let reach = 20.0 - charge / 180.0 * 14.0;
+            let spacing = if charge < 120.0 {
+                20.0 - 4.0 * (charge / 120.0)
+            } else {
+                16.0 - 10.0 * ((charge - 120.0) / 60.0)
+            };
+            let push = -22.0 + charge / 180.0 * 20.0;
+            (spacing, fade, reach, push)
+        } else {
+            (1.75, 0.0, 6.0, -2.0)
+        };
+        // `:31463-31466` — the hexagon phase, the wobble, the orbit.
+        let num667 = (charge + num661 * num663) / (num663 * 6.0) * std::f32::consts::TAU;
+        let num662 = rotate(Vec2::new(0.0, 1.0), num667).y
+            * (std::f32::consts::PI / 6.0)
+            * num664;
+        let zero2 = rotate(
+            rotate(Vec2::new(0.0, 1.0), num667) * Vec2::new(4.0, num665),
+            0.0,
+        );
+        // `:31467-31472` — the position (the push rides the heading's unit).
+        let position = Vec2::new(holder_center.0, holder_center.1)
+            + Vec2::new(16.0, 0.0)
+            - Vec2::new(9.0, 9.0)
+            + Vec2::new(num666, 0.0)
+            + zero2;
+        let velocity = rotate(Vec2::new(1.0, 0.0), num662);
+        // `:31473-31481` — the ramps and the copies; `friendly` is strict.
+        let mut damage = 100;
+        if charge >= 180.0 {
+            damage *= 3;
+        }
+        let friendly = charge > 30.0;
+        (position, velocity, 1.4 * (1.0 - num664), num662, damage, friendly)
+    }
+
+    #[test]
+    fn test_dw_4_1_the_holder_charges_and_retargets() {
+        // `:66540-66578`: the charge counters, the per-tick damage re-read
+        // and the 0.92 mouse hold; `:66599-66610` the frame rate 4 below
+        // charge 120.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        {
+            let p = &pool.slots()[holder];
+            assert_eq!(p.ai[0], 1.0, "the charge ticks once");
+            assert_eq!(p.ai[1], 0.0, "the retarget flag resets every tick");
+            assert_eq!(p.damage, 100, "the re-read: item 100 × magicDamage 1.0");
+            assert!(p.vel == Vec2::new(30.0, 0.0), "the aim east held east is exact");
+            assert_eq!(p.pos.x, 823.0, "`UpdatePosition` integrates the holder");
+            assert!(p.friendly, "the holder's friendly is untouched by the arm");
+            assert_eq!(p.frame_counter, 1, "the frame accumulator runs at rate 4");
+        }
+        // The aim 45° up-east: the hold keeps 92% of the heading.
+        let center = player.center();
+        player.channel_target = Vec2::new(center.0 + 1120.0, center.1 - 1120.0);
+        player.magic_damage = 1.5;
+        step_player(&mut pool, &mut w, &mut player);
+        let p = &pool.slots()[holder];
+        assert_eq!(p.damage, 150, "the re-read tracks the magic multiplier");
+        assert!((p.vel.x - 29.949819).abs() < 1e-3, "the 0.92 hold, x");
+        assert!((p.vel.y - -1.7347650).abs() < 1e-3, "the 0.92 hold, y");
+        assert_eq!(p.frame_counter, 2, "still at rate 4 (charge 2)");
+        for _ in 0..2 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        let p = &pool.slots()[holder];
+        assert_eq!(p.frame, 1, "the 5-frame sheet advances after 4 ticks");
+        assert_eq!(p.frame_counter, 0, "the accumulator reset with the frame");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_holder_spawns_six_lasers_at_ai_0_1() {
+        // `:66617-66630`: the first tick spawns six 632 beams at the
+        // holder's centre, `ai0 = m` (0..5), `ai1 = this.key`'s raw bits,
+        // the holder's damage and knock back, the normalised direction.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        let key = pool.key_of(holder) as u32;
+        for m in 0..6usize {
+            let laser = &pool.slots()[m + 1];
+            assert!(laser.active, "laser {m} spawned");
+            assert_eq!(laser.kind, LAST_PRISM_LASER);
+            assert_eq!(laser.ai[0], m as f32, "ai0 = m (`:66626`)");
+            assert_eq!(
+                laser.ai[1].to_bits(),
+                key,
+                "ai1 carries the key's bit pattern"
+            );
+            assert_eq!(laser.damage, 100, "the spawn rides the holder's damage");
+            assert_eq!(laser.knock_back, 0.25, "the C# passes this.knockBack");
+            // The spawn direction itself is pinned by the orbit test below:
+            // the beams' first AI tick runs in this same pass and overwrites
+            // `vel` with the wobbled heading (`:31472`).
+        }
+        assert!(!pool.slots()[7].active, "exactly six beams spawn");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_holder_kills_on_release_and_cc() {
+        // `:66615-66636`: the gate fails the moment `channel` drops or the
+        // player is CCed (`noItems` has no port field, `:4364`'s fold).
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(pool.slots()[holder].active);
+        player.channel = false;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[holder].active, "the release kills");
+
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.frozen = true;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[holder].active, "CCed kills");
+
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.mana = 11;
+        for _ in 0..29 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert!(pool.slots()[holder].active, "no interval tick yet");
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(
+            !pool.slots()[holder].active,
+            "the 30th tick's failed `CheckMana` kills (`:66617-66621`)"
+        );
+
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.mana = 12;
+        for _ in 0..30 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        let p = &pool.slots()[holder];
+        assert!(p.active, "12 mana pays exactly (`statMana >= num`)");
+        assert_eq!(player.mana, 0, "the pay zeroes the mana");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_holder_pays_mana_on_the_interval_cadence() {
+        // `:66540-66546` + `:66617-66621`: the interval reads the
+        // PRE-increment charge — 30, 15 past 90, 5 past 120 — so the pays
+        // land at posts 30/60/90, then 105/120, then 125/130/135. 8 pays ×
+        // the item's mana 12 = 96 of the 120 pool.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        for _ in 0..29 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(player.mana, 120, "no interval tick before post 30");
+        assert!(pool.slots()[holder].active);
+        for _ in 0..(135 - 29) {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(player.mana, 24, "8 interval pays of 12");
+        assert!(pool.slots()[holder].active, "mana never ran short");
+    }
+    #[test]
+    fn test_dw_4_1_the_laser_orbits_on_the_csharp_envelope() {
+        // `:31424-31481`: the six beams' first AI tick (the same pass that
+        // spawns them — the holder's tick-1 charge is 1 and its centre has
+        // integrated to (830, 160)) rides the C# hexagon envelope. The
+        // oracle is the transcribed C# (`csharp_laser`); the structural
+        // pins are the m=0/m=3 phase opposition and the hexagon centroid.
+        let (mut w, mut pool, mut player, _holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        let holder_center = (830.0, 160.0);
+        let mut sum = Vec2::ZERO;
+        for m in 0..6i32 {
+            let laser = &pool.slots()[(m + 1) as usize];
+            let (pos, vel, scale, wobble, damage, friendly) =
+                csharp_laser(1.0, m, holder_center);
+            assert!(
+                (laser.pos - pos).length() < 1e-3,
+                "laser {m} rides the C# position (`:31467-31471`)"
+            );
+            assert!(
+                (laser.vel - vel).length() < 1e-4,
+                "laser {m} wobbles off the heading (`:31472`)"
+            );
+            assert!(
+                (laser.rot - (wobble - std::f32::consts::FRAC_PI_2)).abs() < 1e-4,
+                "laser {m} rotation = heading − π/2 (`:31543-31550`)"
+            );
+            assert!((laser.scale - scale).abs() < 1e-6, "laser {m} scale ramp");
+            assert_eq!(laser.damage, damage, "laser {m} copies the holder");
+            assert!(!friendly && !laser.friendly, "charge 1 is unfriendly");
+            sum += laser.pos;
+        }
+        // The opposite-phase pair (hex differs by TAU/2) averages to the
+        // envelope centre: `holder.center + dir·16 − size/2 + push`.
+        let common = Vec2::new(830.0 + 16.0 - 9.0 + -21.888889, 160.0 - 9.0);
+        assert!(
+            ((pool.slots()[1].pos + pool.slots()[4].pos) * 0.5 - common).length() < 1e-3,
+            "m=0 and m=3 oppose in phase (`:31464`)"
+        );
+        assert!(
+            (sum / 6.0 - common).length() < 1e-3,
+            "the hexagon centroids on the envelope centre"
+        );
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_envelope_ramps_reach_the_charged_state() {
+        // `:31435-31462`: at charge 180 the envelope snaps (fade 0, spacing
+        // 1.75, reach 6, push −2, wobble 0) and the beam sampling moves to
+        // the holder's centre (`:31501-31505`); mid-charge 90 pins the fade
+        // ramp's scale 0.7.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        pool.slots_mut()[holder].ai[0] = 179.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert_eq!(player.mana, 108, "post 180 is an interval tick (5)");
+        let holder_center = (860.0, 160.0);
+        for m in 0..6i32 {
+            let laser = &pool.slots()[(m + 1) as usize];
+            let (pos, vel, scale, _wobble, damage, friendly) =
+                csharp_laser(180.0, m, holder_center);
+            assert!((laser.pos - pos).length() < 1e-3, "laser {m} charged pos");
+            assert!((laser.vel - vel).length() < 1e-5, "the wobble died at 180");
+            assert!((laser.rot - -std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+            assert!((laser.scale - scale).abs() < 1e-6, "scale 1.4 charged");
+            assert_eq!(laser.damage, damage, "the ×3 damage (`:31476-31479`)");
+            assert!(laser.friendly && friendly, "charge 180 is friendly");
+        }
+        // Mid-charge: the fade ramp's half-way scale.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        pool.slots_mut()[holder].ai[0] = 89.0;
+        step_player(&mut pool, &mut w, &mut player);
+        let laser = &pool.slots()[1];
+        assert!((laser.scale - 0.7).abs() < 1e-6, "charge 90 → fade 0.5");
+        let (pos, _, _, _, _, _) = csharp_laser(90.0, 0, (860.0, 160.0));
+        assert!((laser.pos - pos).length() < 1e-3, "the mid envelope");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_damage_follows_the_holder_and_triples_at_180() {
+        // `:31475-31479`: the laser copies the holder's per-tick re-read
+        // (`item.damage · magicDamage`) and triples once charged.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.magic_damage = 2.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert_eq!(pool.slots()[holder].damage, 200, "the re-read × 2.0");
+        assert_eq!(pool.slots()[1].damage, 200, "the laser copied it");
+        pool.slots_mut()[holder].ai[0] = 179.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert_eq!(pool.slots()[1].damage, 600, "200 × 3 at charge ≥ 180");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_friendly_flips_at_charge_30() {
+        // `:31616-31621`: `friendly = projectile2.ai[0] > 30f` — strictly
+        // past 30, so the flip lands between charge 30 and 31.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[1].friendly, "charge 1 unfriendly");
+        pool.slots_mut()[holder].ai[0] = 29.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(
+            !pool.slots()[1].friendly,
+            "charge 30 is still unfriendly (strict `>`)"
+        );
+        pool.slots_mut()[holder].ai[0] = 30.0;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(pool.slots()[1].friendly, "charge 31 flips friendly");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_kills_when_the_parent_is_gone() {
+        // `:31429-31433`: a `TryGetActive(633)` miss (dead slot, recycled
+        // generation or the wrong kind behind the key) kills the beam.
+        let mut pool = ProjectilePool::new();
+        let holder = pool
+            .spawn_with_data(LAST_PRISM, 100.0, 100.0, 30.0, 0.0, 100, 0.25)
+            .unwrap();
+        let key = pool.key_of(holder) as u32;
+        pool.slots_mut()[holder].active = false;
+        pool.spawn_with_data_ai_owned(
+            LAST_PRISM_LASER, 0, 100.0, 100.0, 1.0, 0.0, 100, 0.25, 0.0,
+            f32::from_bits(key),
+        )
+        .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[1].active, "a dead holder's key fails");
+
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        pool.slots_mut()[holder].active = false;
+        step_player(&mut pool, &mut w, &mut player);
+        for m in 1..7usize {
+            assert!(!pool.slots()[m].active, "the pair dies with its holder");
+        }
+
+        let mut pool = ProjectilePool::new();
+        let other = pool
+            .spawn_with_data(NEBULA_ARCANUM, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let key = pool.key_of(other) as u32;
+        pool.spawn_with_data_ai_owned(
+            LAST_PRISM_LASER, 0, 100.0, 100.0, 1.0, 0.0, 100, 0.25, 0.0,
+            f32::from_bits(key),
+        )
+        .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[1].active, "a non-633 key fails the lookup");
+    }
+
+    #[test]
+    fn test_dw_4_1_the_laser_beam_length_lerps_and_falls_back_to_the_owner() {
+        // `:31598-31606` + `:31629-31632`: the beam length lerps at 0.75
+        // toward the width-0 LaserScan (2400 open-air → 1800 on the first
+        // tick); `:31506-31509`: a blocked line re-samples from the owner's
+        // centre, whose ray the wall cuts short.
+        let (mut w, mut pool, mut player, _holder) = prism_rig();
+        step_player(&mut pool, &mut w, &mut player);
+        for m in 1..7usize {
+            assert!(
+                (pool.slots()[m].local_ai[1] - 1800.0).abs() < 1e-4,
+                "the 0.75 lerp from 0 toward 2400"
+            );
+        }
+        // The wall between the owner and the holder: columns 29-31, rows
+        // 2-20. The m=4 beam's wobble is near zero, so its owner-sampled
+        // ray walks east into the wall well before 2400.
+        let (mut w, mut pool, mut player, _holder) = prism_rig();
+        for x in 29..=31 {
+            for y in 2..=20 {
+                put_tile(&mut w, x, y, 1);
+            }
+        }
+        step_player(&mut pool, &mut w, &mut player);
+        let len = pool.slots()[5].local_ai[1];
+        assert!(
+            len > 0.0 && len < 1800.0,
+            "the owner-sampled ray hit the wall ({len})"
+        );
+    }
+
+    #[test]
+    fn test_edge_style_84_the_deathray_kind_keeps_its_arm() {
+        // The style-84 split by kind: 455 keeps the PhantasmalDeathray arm
+        // (its lifetime counter `localAI[0]` runs), only 632 takes the
+        // prism laser arm.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(PHANTASMAL_DEATHRAY, 200.0, 100.0, 1.0, 0.0, 50, 0.0)
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[0];
+        assert!(p.active, "the deathray flies on without a host");
+        assert_eq!(p.local_ai[0], 1.0, "the deathray lifetime counter ran");
+    }
+
+    #[test]
+    fn test_edge_style_75_the_release_mid_beam_ends_the_pair() {
+        // The Test Plan's dirty row: a release mid-beam kills the holder,
+        // and the beams die on the next tick through the parent-missing
+        // kill (`:31429-31433`).
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        for _ in 0..5 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert!(pool.slots()[holder].active, "channelled through tick 5");
+        for m in 1..7usize {
+            assert!(pool.slots()[m].active, "the beams orbit");
+        }
+        player.channel = false;
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[holder].active, "the release kills");
+        step_player(&mut pool, &mut w, &mut player);
+        for m in 1..7usize {
+            assert!(!pool.slots()[m].active, "the beams follow (`:31429`)");
+        }
+    }
+
+    // ---- DW-6: the render pass — frames ------------------------------------
+
+    #[test]
+    fn test_dw_6_1_the_typhoon_rides_its_frame_off_the_tick_counter() {
+        // `:30376-30377` (`Projectile.cs`): `frame = (int)(localAI[1] / 3) % 3`
+        // — the age counter into the 3-frame sheet, unwrapped by proj_frames.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TYPHOON, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 0.0, 40, 5.0)
+            .unwrap();
+        let mut w = world();
+        for _ in 0..7 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        // `extraUpdates = 2` runs the AI three sub-steps per tick (`:16668`),
+        // so seven ticks advance the counter 21 — the frame rides 21/3 % 3.
+        assert_eq!(p.local_ai[1], 21.0, "the sub-stepped tick counter");
+        assert_eq!(p.frame, 1, "21 / 3 = 7 % 3 — the modulo bounds the sheet");
+        assert_eq!(proj_frames(TYPHOON), 3, "the Typhoon's projFrames slice");
+        for _ in 0..5 {
+            step(&mut pool, &mut w);
+        }
+        // 36 / 3 = 12 — the twelfth frame wraps to the first sheet row.
+        assert_eq!(pool.slots()[slot].frame, 0, "36 / 3 = 12 % 3 — the wrap");
+    }
+
+    #[test]
+    fn test_dw_6_1_the_unlisted_kinds_default_to_one_frame() {
+        // The C# `Main.projFrames` init sets every id to 1 (`Main.cs:8439-8441`)
+        // — the slice's default must be that value, so a kind the slice omits
+        // slices its whole sheet.
+        assert_eq!(proj_frames(WOODEN_ARROW), 1, "an unlisted arrow reads 1");
+        assert_eq!(proj_frames(SHURIKEN), 1, "the shuriken sheet is single-frame");
+        assert_eq!(proj_frames(LAST_PRISM), 5, "the holder's 5-frame sheet");
+        assert_eq!(proj_frames(LEAF), 5, "the leaf's 5-frame puff");
+    }
+
+    #[test]
+    fn test_dw_6_1_the_frame_rect_slices_the_sheet_by_proj_frames() {
+        // `Main.cs:34386-34388`'s default emit: the frame height is
+        // `sheet.height / projFrames` and the rect starts at `frame * frameH`.
+        // A synthetic 3-frame 30x90 sheet pins both divisions without the
+        // atlas: the middle frame's rect, the wrap's, and the default-1 slice.
+        let sheet = tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 30,
+            height: 90,
+            plain_frame: (0, 0),
+        };
+        let atlas = (512u32, 512u32);
+        // Middle frame (1): rows 30..60 of 90, x 0..30.
+        let mid = frame_slice_uv(&sheet, atlas, 1, 3);
+        let (u0, v0, u1, v1) = (mid[0], mid[1], mid[2], mid[3]);
+        assert!((u1 - u0 - 30.0 / 512.0).abs() < 1e-6, "the full width rides the rect");
+        assert!((v1 - v0 - 30.0 / 512.0).abs() < 1e-6, "the third-height frame");
+        // The clamp: a frame past the count reads the LAST sheet row (the
+        // helper's `frame.clamp(0, frames - 1)`), not an empty one.
+        let clamped = frame_slice_uv(&sheet, atlas, 7, 3);
+        let last = frame_slice_uv(&sheet, atlas, 2, 3);
+        assert_eq!(clamped, last, "an out-of-range frame clamps to the last row");
+        // The default-1 kind slices the whole sheet.
+        let full = frame_slice_uv(&sheet, atlas, 0, 1);
+        assert!((full[3] - full[1] - 90.0 / 512.0).abs() < 1e-6, "one frame = the sheet");
+    }
+
+    // ---- DW-7: the render pass — trails ------------------------------------
+
+    /// A `spawn_with_data` + `step` drive for the ring tests: the tile-free
+    /// world keeps the flight straight, so the ring's positions are exact.
+    fn drive(kind: u16, x: f32, y: f32, vx: f32, vy: f32, ticks: usize) -> (ProjectilePool, usize) {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(kind, x, y, vx, vy, 20, 0.0)
+            .expect("the row");
+        let mut w = world();
+        for _ in 0..ticks {
+            step(&mut pool, &mut w);
+        }
+        (pool, slot)
+    }
+
+    #[test]
+    fn test_dw_7_1_the_gem_bolt_history_ring_records_the_mode_2_shift() {
+        // `Projectile.cs:17091-17195`'s chain: mode 2 (`ProjectileID.cs:521`'s
+        // `121, 2`) shifts all three rings once per update call, newest first.
+        let (pool, slot) = drive(GEM_BOLT_AMETHYST, 100.0, 100.0, 4.0, 0.0, 5);
+        let p = &pool.slots()[slot];
+        assert_eq!(trailing_mode(GEM_BOLT_AMETHYST), 2, "the gem bolt's mode");
+        // The flight's `pos += vel` runs once per tick (`extraUpdates = 0`), so
+        // the ring holds the five post-tick positions, oldest last.
+        for (i, want) in [120.0, 116.0, 112.0, 108.0, 104.0].iter().enumerate() {
+            assert_eq!(p.old_pos[i], Vec2::new(*want, 100.0), "ring entry {i}");
+            assert_eq!(p.old_rot[i], 0.0, "the flight's rotation rides along");
+            assert_eq!(p.old_sprite_direction[i], 1, "and the sprite direction");
+        }
+        assert_eq!(p.old_pos[5], Vec2::ZERO, "the ring is 10 deep (`:388`)");
+        assert_eq!(p.old_rot[5], 0.0, "an unwritten rotation reads 0");
+        // A kind the C#'s set omits records nothing at all.
+        let (arrow_pool, arrow) = drive(WOODEN_ARROW, 100.0, 100.0, 4.0, 0.0, 3);
+        assert_eq!(trailing_mode(WOODEN_ARROW), -1, "the set's default");
+        assert_eq!(arrow_pool.slots()[arrow].old_pos[0], Vec2::ZERO);
+    }
+
+    #[test]
+    fn test_dw_7_1_the_gem_bolt_strip_is_one_quad_per_history_segment() {
+        // The strip's shape (`Main.DrawTrail`, `Main.cs:27894-27902`): one
+        // segment per pair of filled ring entries, anchored at the older end's
+        // box centre, the gem's 16 half-width (`GemStaffShotDrawer.cs:37`) drawn
+        // as a 32-wide quad (`VertexStrip.cs:151-156`'s ±half-width pair).
+        let (pool, slot) = drive(GEM_BOLT_AMETHYST, 100.0, 100.0, 4.0, 0.0, 5);
+        let p = &pool.slots()[slot];
+        let segs = trail_segments(p.kind, p.w, p.h, p.local_ai[0], &p.old_pos, 0.0);
+        assert_eq!(segs.len(), 4, "five filled entries make four segments");
+        // The C#'s downward loop (`:27894`) walks the oldest pair first: the
+        // anchor is that pair's older end, `oldPos[4] + Size/2` — the 10x10
+        // box's centre.
+        assert_eq!((segs[0].x, segs[0].y), (109.0, 105.0), "the oldest pair's anchor");
+        assert_eq!(segs[0].len, 4.0, "the pair's distance (`:27900`)");
+        // A +X flight: `v.ToRotation() + π/2` (`:27902`).
+        assert!(
+            (segs[0].rot - std::f32::consts::FRAC_PI_2).abs() < 1e-6,
+            "the rotation swings the length axis 90° off the flight"
+        );
+        assert_eq!(segs[0].width, 32.0, "twice the 16 half-width");
+        // The oldest pair's progress is 1, so the tail fade blanks it.
+        assert_eq!(segs[0].tint, [0.0, 0.0, 0.0, 0.0], "progress 1 fades out");
+        // The newest pair's progress is 1/4: the amethyst's Violet→Purple lerp
+        // at 0.25, 0.2857 toward White, times `1 - 0.25/0.98`
+        // (`GemStaffShotDrawer.cs:32`).
+        assert_eq!((segs[3].x, segs[3].y), (121.0, 105.0), "the newest pair's anchor");
+        assert!((segs[3].tint[3] - 0.7448980).abs() < 1e-3, "the end fade");
+        assert!((segs[3].tint[0] - 0.6984725).abs() < 1e-3, "the violet-red");
+        assert!((segs[3].tint[1] - 0.5805822).abs() < 1e-3, "the green dip");
+        assert!((segs[3].tint[2] - segs[3].tint[0]).abs() < 1e-6, "the gem's r == b");
+    }
+
+    #[test]
+    fn test_dw_7_1_the_trail_quads_keep_the_anchor_in_screen_space() {
+        // The ui range's screen-px conversion (`frame_quad`'s shape) plus the
+        // `origin − R·origin` shift that keeps `Main.cs:27902`'s bottom-centre
+        // origin pinned under the pipeline's top-left rotation.
+        let (pool, slot) = drive(GEM_BOLT_AMETHYST, 100.0, 100.0, 4.0, 0.0, 5);
+        let p = &pool.slots()[slot];
+        let quads = p.trail_quads(Vec2::ZERO, 1.0, Vec2::new(100.0, 100.0), 0.0);
+        assert_eq!(quads.len(), 4, "the same walk");
+        // The oldest pair's anchor (109, 105) → screen (159, 155); size
+        // (32, 4); origin (16, 4); rot π/2 → the top-left shifts to
+        // (159 + 4, 155 − 16).
+        assert!((quads[0].tl[0] - 163.0).abs() < 1e-4, "the shifted top-left x");
+        assert!((quads[0].tl[1] - 139.0).abs() < 1e-4, "the shifted top-left y");
+        assert_eq!(quads[0].size, [32.0, 4.0], "width × segment length");
+        assert_eq!(quads[0].tint, [0.0, 0.0, 0.0, 0.0], "progress 1 draws nothing");
+        assert!(quads[3].tint[3] > 0.0, "the newest pair draws");
+    }
+
+    #[test]
+    fn test_the_trailing_mode_table_matches_the_c_sharp_set() {
+        // `ProjectileID.cs:521`'s `CreateIntSet(-1, …)` over the ported kinds.
+        for kind in [MAGIC_MISSILE, FLAMELASH, RAINBOW_ROD_BULLET] {
+            assert_eq!(trailing_mode(kind), 3, "kind {kind} records the rotations");
+        }
+        for kind in [
+            GEM_BOLT_AMETHYST,
+            GEM_BOLT_TOPAZ,
+            GEM_BOLT_SAPPHIRE,
+            GEM_BOLT_EMERALD,
+            GEM_BOLT_RUBY,
+            GEM_BOLT_DIAMOND,
+            GEM_BOLT_AMBER,
+            GRADIENT_YOYO,
+            BETSY_FIREBALL,
+        ] {
+            assert_eq!(trailing_mode(kind), 2, "kind {kind} records the triple");
+        }
+        assert_eq!(trailing_mode(VORTEX_RITUAL_BOLT), 1, "the animated-boundary mode");
+        for kind in [CRYSTAL_STORM, TYPHOON, NEBULA_ARCANUM, SKY_FRACTURE] {
+            assert_eq!(trailing_mode(kind), 0, "kind {kind} records the positions only");
+        }
+        // 1120 is in the C#'s set but its row is out of scope, and every kind
+        // the set omits reads the −1 factory default.
+        assert_eq!(trailing_mode(1120), -1, "the unported kind defaults");
+        assert_eq!(trailing_mode(WOODEN_ARROW), -1, "the arrows have no history");
+    }
+
+    #[test]
+    fn test_the_typhoon_records_one_history_slot_per_update_call() {
+        // The chain runs once per update call (`Projectile.cs:17091`), not per
+        // sub-step: the Typhoon's `extraUpdates = 2` runs the AI three times per
+        // tick, yet five ticks fill five ring entries.
+        let (pool, slot) = drive(TYPHOON, 100.0, 100.0, 2.0, 0.0, 5);
+        let p = &pool.slots()[slot];
+        assert_eq!(trailing_mode(TYPHOON), 0, "the mode-0 kind");
+        assert_eq!(p.local_ai[1], 15.0, "the sub-stepped tick counter");
+        for i in 0..5 {
+            assert_ne!(p.old_pos[i], Vec2::ZERO, "one entry per tick");
+        }
+        assert_eq!(p.old_pos[5], Vec2::ZERO, "and no more than one");
+        // Mode 0 records the positions only (`:17093-17097`).
+        assert_eq!(p.old_rot[0], 0.0, "no rotation ring");
+        assert_eq!(p.old_sprite_direction[0], 0, "no sprite-direction ring");
+    }
+
+    #[test]
+    fn test_the_mode_3_chain_smooths_the_ring_and_recomputes_old_rot() {
+        // `Projectile.cs:17151-17166`: the 0.65 smoothing walk toward the newer
+        // neighbour, then the rotations recomputed from the smoothed positions
+        // (`SafeNormalize(Zero).ToRotation()`) — not the projectile's own one.
+        let (mut pool, slot) = drive(MAGIC_MISSILE, 100.0, 100.0, 8.0, 0.0, 2);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.pos.x, 116.0, "the cruise's two ticks");
+        // The second entry walked 0.65 of the way from 108 toward 116.
+        assert!((p.old_pos[1].x - 113.2).abs() < 1e-4, "the 0.65 lerp");
+        assert_eq!(p.old_pos[2], Vec2::ZERO, "only two entries after two ticks");
+        let mut w = world();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!((p.old_pos[0].x - 124.0).abs() < 1e-4, "the head rides the flight");
+        assert!((p.old_pos[1].x - 121.2).abs() < 1e-4, "the second lerp");
+        assert!((p.old_pos[2].x - 115.02).abs() < 1e-4, "the third, from the smoothed 113.2");
+        // A diagonal flight recomputes the stored rotation from the pair's
+        // direction — the arm itself keeps `rot` at 0.
+        let (pool, slot) = drive(MAGIC_MISSILE, 100.0, 100.0, 6.0, 6.0, 2);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.rot, 0.0, "the aimed spell's own rotation stays 0");
+        assert!((p.old_rot[0] - 0.0).abs() < 1e-6, "the slot's rotation is recorded");
+        assert!(
+            (p.old_rot[1] - std::f32::consts::FRAC_PI_4).abs() < 1e-4,
+            "the smoothed pair's 45° direction"
+        );
+    }
+
+    #[test]
+    fn test_the_mode_1_gate_records_only_on_the_frame_counter_boundary() {
+        // `Projectile.cs:17101`: mode 1 records when `frameCounter == 0` (or the
+        // ring is empty) — the Vortex Ritual bolt (580) is the ported kind.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(VORTEX_RITUAL_BOLT, 100.0, 100.0, 0.0, 0.0, 10, 0.0)
+            .unwrap();
+        let mut w = world();
+        step(&mut pool, &mut w);
+        assert_ne!(pool.slots()[slot].old_pos[0], Vec2::ZERO, "the first frame records");
+        assert_eq!(pool.slots()[slot].old_pos[1], Vec2::ZERO, "one entry");
+        pool.slots_mut()[slot].frame_counter = 1;
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].old_pos[1], Vec2::ZERO, "the gate blocks the tick");
+        pool.slots_mut()[slot].frame_counter = 0;
+        step(&mut pool, &mut w);
+        assert_ne!(pool.slots()[slot].old_pos[1], Vec2::ZERO, "the boundary records");
+        assert_eq!(pool.slots()[slot].old_rot[1], 0.0, "mode 1 records positions only");
+    }
+
+    #[test]
+    fn test_the_trail_family_table_matches_the_c_sharp_drawers() {
+        // `Main.cs:28197-28229`'s per-kind gem table, the three aimed spells'
+        // own drawers (`:28188`/`:28184`/`:28242`).
+        assert_eq!(
+            trail_family(GEM_BOLT_AMETHYST),
+            Some(TrailFamily::Gem { c1: VIOLET, c2: PURPLE, c3: [1.0; 3] }),
+            "the default Violet/Purple/White"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_TOPAZ),
+            Some(TrailFamily::Gem { c1: ORANGE, c2: ORANGE, c3: [1.0; 3] }),
+            "the topaz's orange pair"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_SAPPHIRE),
+            Some(TrailFamily::Gem { c1: SAPPHIRE_GEM, c2: SAPPHIRE_GEM, c3: SAPPHIRE_GEM }),
+            "the sapphire's (60, 90, 255) triple"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_AMBER),
+            Some(TrailFamily::Gem { c1: ORANGE_RED, c2: DARK_ORANGE, c3: [1.0; 3] }),
+            "the amber's OrangeRed/DarkOrange pair"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_RUBY),
+            Some(TrailFamily::Gem { c1: RED, c2: RED, c3: [1.0; 3] }),
+            "the ruby's red pair"
+        );
+        assert_eq!(
+            trail_family(GEM_BOLT_DIAMOND),
+            Some(TrailFamily::Gem { c1: SILVER, c2: SILVER, c3: [1.0; 3] }),
+            "the diamond's silver pair"
+        );
+        assert_eq!(trail_family(MAGIC_MISSILE), Some(TrailFamily::MagicMissile));
+        assert_eq!(trail_family(FLAMELASH), Some(TrailFamily::FlameLash));
+        assert_eq!(trail_family(RAINBOW_ROD_BULLET), Some(TrailFamily::RainbowRod));
+        // The Gradient yoyo records a mode-2 ring but has no drawer call, so it
+        // draws no trail — the yoyo path keeps its shipped output.
+        assert_eq!(trail_family(GRADIENT_YOYO), None, "no drawer, no trail");
+        assert_eq!(trail_family(TYPHOON), None, "nor the mode-0 kinds");
+        assert_eq!(trail_family(SHURIKEN), None);
+    }
+
+    #[test]
+    fn test_the_gem_strip_colours_lerp_through_the_per_kind_table() {
+        // `GemStaffShotDrawer.cs:32`: `Lerp(Lerp(c1, c2, p), c3, GetLerpValue(-0.2,
+        // 0.5, p)) * (1 - GetLerpValue(0, 0.98, p))`.
+        let gem = |kind| trail_family(kind).unwrap();
+        // Progress 0: the call site's colour, 0.2857 toward White, no fade.
+        let head = trail_strip_color(gem(GEM_BOLT_AMETHYST), 0.0, 0.0, 0.0);
+        assert!((head[3] - 1.0).abs() < 1e-6, "no fade at the head");
+        assert!((head[0] - 0.9523810).abs() < 1e-3, "violet lifted toward white");
+        assert!((head[1] - 0.6498599).abs() < 1e-3, "the green channel's dip");
+        // Progress 1: the tail fade blanks the strip.
+        assert_eq!(trail_strip_color(gem(GEM_BOLT_AMETHYST), 1.0, 0.0, 0.0), [0.0; 4]);
+        // The topaz's pair is constant across the strip's first ramp.
+        let mid = trail_strip_color(gem(GEM_BOLT_TOPAZ), 0.5, 0.0, 0.0);
+        let fade = 1.0 - 0.5 / 0.98;
+        let t = get_lerp_value(-0.2, 0.5, 0.5);
+        for c in 0..3 {
+            let want = (ORANGE[c] + (1.0 - ORANGE[c]) * t) * fade;
+            assert!((mid[c] - want).abs() < 1e-3, "channel {c}");
+        }
+        assert!((mid[3] - fade).abs() < 1e-6, "the fade rides the alpha");
+    }
+
+    #[test]
+    fn test_the_magic_missile_width_ramps_and_colour_lerp() {
+        // `MagicMissileDrawer.cs:23-33`: the width ramps 26 → 32 over the first
+        // 0.2 of the strip and is scaled to 0 at the head by the 0.07 ramp; the
+        // colours run White → Violet.
+        let family = trail_family(MAGIC_MISSILE).unwrap();
+        assert!(trail_half_width(family, 0.0, 0.0) < 1e-6, "the head tapers to nothing");
+        assert!((trail_half_width(family, 0.07, 0.0) - 28.1).abs() < 1e-4, "26 + 6·0.35");
+        assert!((trail_half_width(family, 0.2, 0.0) - 32.0).abs() < 1e-4, "the 32 end");
+        assert!((trail_half_width(family, 0.5, 0.0) - 32.0).abs() < 1e-4, "held past 0.2");
+        // White at the head (`:25`'s Lerp amount is 0), Violet by 0.7.
+        assert_eq!(trail_strip_color(family, 0.0, 0.0, 0.0), [1.0, 1.0, 1.0, 1.0]);
+        let violet = trail_strip_color(family, 0.7, 0.0, 0.0);
+        let fade = 1.0 - 0.7 / 0.98;
+        assert!((violet[0] - VIOLET[0] * fade).abs() < 1e-4, "violet-red");
+        assert!((violet[1] - VIOLET[1] * fade).abs() < 1e-4, "violet-green");
+        assert!((violet[3] - fade).abs() < 1e-6, "the tail fade");
+    }
+
+    #[test]
+    fn test_the_rainbow_rod_width_and_hsl_hue() {
+        // `RainbowRodDrawer.cs:25`/`:32-35`: the width eases 0 → 32 over the
+        // first 0.2 (`Lerp(0, 32, 1 - (1 - t)^2)`), the hue rides
+        // `(p * 1.6 - GlobalTimeWrappedHourly) % 1`.
+        let family = trail_family(RAINBOW_ROD_BULLET).unwrap();
+        assert!(trail_half_width(family, 0.0, 0.0) < 1e-6, "the head starts at 0");
+        assert!((trail_half_width(family, 0.1, 0.0) - 24.0).abs() < 1e-4, "the ease's midpoint");
+        assert!((trail_half_width(family, 0.2, 0.0) - 32.0).abs() < 1e-4, "the 32 end");
+        // Hue 0 at time 0 is pure red, 0.2857 toward White (no fade at the head).
+        let red = trail_strip_color(family, 0.0, 0.0, 0.0);
+        assert!((red[3] - 1.0).abs() < 1e-6, "the head is opaque");
+        assert!((red[0] - 1.0).abs() < 1e-4, "red stays red");
+        assert!((red[1] - 0.2857143).abs() < 1e-3, "green lifts toward white");
+        // The time scroll: a half-hour shift moves the hue off red.
+        let scrolled = trail_strip_color(family, 0.0, 0.0, 0.5);
+        assert!((scrolled[1] - red[1]).abs() > 1e-3, "the hue scrolled");
+        assert!((scrolled[3] - 1.0).abs() < 1e-6, "the head is still opaque");
+    }
+
+    #[test]
+    fn test_the_flame_lash_width_and_transit_colour() {
+        // `FlameLashDrawer.cs:12-35`: `transitToDark` from `localAI[0]` widens
+        // the head (24 → 40) and darkens the colours toward red.
+        let family = trail_family(FLAMELASH).unwrap();
+        assert!((flame_transit(0.0) - 0.0).abs() < 1e-6, "no transit at the spawn");
+        assert!((flame_transit(3.0) - 0.5).abs() < 1e-6, "half the ramp");
+        assert!((flame_transit(6.0) - 1.0).abs() < 1e-6, "full transit");
+        assert!((flame_transit(12.0) - 1.0).abs() < 1e-6, "clamped past 6");
+        // `Lerp(24 + transit*16, 8, p) * (1 - (1 - t)^2)`.
+        assert!(trail_half_width(family, 0.0, 0.0) < 1e-6, "the head tapers");
+        assert!((trail_half_width(family, 1.0, 0.0) - 8.0).abs() < 1e-4, "the 8 tail");
+        assert!((trail_half_width(family, 0.5, 1.0) - 24.0).abs() < 1e-4, "the widened 40 → 24 head");
+        // White at the spawn, red at full transit mid-strip, both faded.
+        let birth = trail_strip_color(family, 0.0, 0.0, 0.0);
+        assert_eq!(birth, [1.0, 1.0, 1.0, 1.0], "the white birth end");
+        let dark = trail_strip_color(family, 0.5, 1.0, 0.0);
+        let fade = 1.0 - 0.5 / 0.98;
+        assert!((dark[0] - fade).abs() < 1e-4, "the red ramp at the midpoint");
+        assert!(dark[1] < 1e-6, "green is gone");
+        assert!((dark[3] - fade).abs() < 1e-6, "the tail fade rides the alpha");
+    }
+
+    #[test]
+    fn test_the_trail_segments_walk_the_filled_depth_only() {
+        // `Main.cs:27896`'s zero-skip and the ring's contiguous fill: only the
+        // leading non-zero entries walk, so a single entry (the first frame's
+        // partial strip) draws nothing.
+        let empty = [Vec2::ZERO; 10];
+        assert!(trail_segments(GEM_BOLT_AMETHYST, 10.0, 10.0, 0.0, &empty, 0.0).is_empty());
+        let one = {
+            let mut ring = [Vec2::ZERO; 10];
+            ring[0] = Vec2::new(4.0, 4.0);
+            ring
+        };
+        assert!(
+            trail_segments(GEM_BOLT_AMETHYST, 10.0, 10.0, 0.0, &one, 0.0).is_empty(),
+            "one filled entry is the first frame's partial strip"
+        );
+        assert!(
+            trail_segments(SHURIKEN, 10.0, 10.0, 0.0, &one, 0.0).is_empty(),
+            "no drawer, no quads"
+        );
+        // Three entries moving −X: two segments (backwards flight), anchored at
+        // the older ends and rotated 180° off the +X case. The entries avoid
+        // the exact origin — `Main.cs:27896`'s zero-skip reads an entry at
+        // (0, 0) as unfilled, as the C#'s own marker does.
+        let mut ring = [Vec2::ZERO; 10];
+        ring[0] = Vec2::new(0.0, 10.0);
+        ring[1] = Vec2::new(10.0, 10.0);
+        ring[2] = Vec2::new(20.0, 10.0);
+        let segs = trail_segments(GEM_BOLT_AMETHYST, 10.0, 10.0, 0.0, &ring, 0.0);
+        assert_eq!(segs.len(), 2, "three entries make two segments");
+        assert_eq!((segs[0].x, segs[0].y), (25.0, 15.0), "the oldest pair's anchor");
+        assert_eq!((segs[1].x, segs[1].y), (15.0, 15.0), "the newest pair's anchor");
+        assert_eq!(segs[0].len, 10.0, "the pair's distance");
+        let want_rot = std::f32::consts::PI + std::f32::consts::FRAC_PI_2;
+        for s in &segs {
+            assert!((s.rot - want_rot).abs() < 1e-6, "the −X flight's rotation");
+        }
+        // A parked projectile: every pair is degenerate, so the segments keep
+        // their count with a zero length — and `Atan2(0, 0)` reads 0, so the
+        // rotation is the same π/2 as every other segment's (the C#'s verbatim
+        // `ToRotation()` on a zero vector).
+        let parked = [Vec2::new(50.0, 50.0); 3];
+        let still = trail_segments(GEM_BOLT_AMETHYST, 10.0, 10.0, 0.0, &parked, 0.0);
+        assert_eq!(still.len(), 2, "the degenerate pairs still walk");
+        assert_eq!(still[0].len, 0.0, "a zero-length segment");
+        assert!(
+            (still[0].rot - std::f32::consts::FRAC_PI_2).abs() < 1e-6,
+            "the zero vector's rotation"
         );
     }
 }

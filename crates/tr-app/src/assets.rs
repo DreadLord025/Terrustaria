@@ -521,6 +521,29 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         "Projectile_560",
         "Projectile_561",
         "Projectile_1079",
+        // M4-PROJ-6b Phase 6: the followup caster families' sheets the
+        // frame-sliced draw keys on (`Lookups.proj_sheets`), plus the gem
+        // bolt's 6-frame sheet the trail pass slices (`Main.projFrames[34]`,
+        // `Main.cs:8454`).
+        "Projectile_34",
+        "Projectile_114",
+        "Projectile_115",
+        "Projectile_116",
+        "Projectile_132",
+        "Projectile_156",
+        "Projectile_157",
+        "Projectile_173",
+        "Projectile_206",
+        "Projectile_293",
+        "Projectile_297",
+        "Projectile_356",
+        "Projectile_409",
+        "Projectile_617",
+        "Projectile_618",
+        "Projectile_632",
+        "Projectile_633",
+        "Projectile_634",
+        "Projectile_635",
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
@@ -1697,15 +1720,6 @@ impl Lookups {
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
-            proj_sheets: crate::projectile::spawnable_kinds()
-                .into_iter()
-                .filter_map(|k| {
-                    atlas
-                        .sheet(&format!("Projectile_{k}"))
-                        .copied()
-                        .map(|r| (k, r))
-                })
-                .collect(),
             fishing_line: atlas.sheet("FishingLine").copied(),
             // The same prefix scan as `item_icons` — an id whose texture
             // file never made the atlas simply stays absent.
@@ -1719,6 +1733,19 @@ impl Lookups {
                     } else {
                         None
                     }
+                })
+                .collect(),
+            // `TextureAssets.Projectile[type]` for every kind the port spawns
+            // (`ProjectileID`'s table, `spawnable_kinds`): an id whose texture
+            // file never made the atlas simply stays absent, like `item_icons`
+            // — the shuriken stand-in covers it.
+            proj_sheets: crate::projectile::spawnable_kinds()
+                .into_iter()
+                .filter_map(|k| {
+                    atlas
+                        .sheet(&format!("Projectile_{k}"))
+                        .copied()
+                        .map(|r| (k, r))
                 })
                 .collect(),
             leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
