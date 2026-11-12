@@ -116,15 +116,156 @@ fn fits_ammo_slot(kind: u16) -> bool {
     registry::get(kind).is_some_and(|d| d.ammo > 0 || d.bait > 0)
 }
 
-/// The accepted-move gate `PickItemMovementAction` gives a context before the
-/// shared action-0 move runs (`:1341-1379`): context 0/3 always allow, the
-/// ctx-1 coin row takes coins, the ctx-2 ammo row takes the ammo set.
-pub(crate) fn context_accepts(context: i32, kind: u16) -> bool {
-    match context {
-        1 => kind == 0 || is_coin_kind(kind),
-        2 => fits_ammo_slot(kind),
-        _ => true,
+/// `ItemSlot.CanEquipInArmorSlot` (`ItemSlot.cs:1424-1482`) over the port's
+/// data: the `slot % 10` armour kinds (head `>= 0`, body, leg) for the three
+/// armour rows, the `accessory` flag for the accessory rows. The C#'s
+/// duplicate half (`HasSameItemInSlot` against the live armour set) and the
+/// `ItemID.Sets.DualEquipArmor` bypass (`ItemID.cs:336`) read
+/// `Main.LocalPlayer`'s arrays and are not modelled — the port stays permissive
+/// there (docs/ANALYSIS.md).
+fn can_equip_in_armor_slot(check: &ItemSlot, slot: usize) -> bool {
+    let Some(d) = registry::get(check.kind) else {
+        return false;
+    };
+    match slot % 10 {
+        0 => d.head_slot >= 0,
+        1 => d.body_slot >= 0,
+        2 => d.leg_slot >= 0,
+        _ => d.accessory,
     }
+}
+
+/// `ItemSlot.PickItemMovementAction` (`ItemSlot.cs:1484-1634`) — the action id
+/// the C# assigns to the cursor's `check` item over `slot` of `context`: `-1`
+/// refuses the move, `0` is the generic move, `1` an equip, `2` a dye, `3`/`4`
+/// the shop arms, `5` the Journey duplicate. `target` is the C#'s `inv[slot]`,
+/// read by the ctx 15/29 arms only.
+///
+/// Contexts whose C# arm reads data the port does not carry (`CanHavePrefixes`
+/// for ctx 5, `Main.projHook` for ctx 16, `mountType` for 17/18/39, the
+/// `vanityPet`/`lightPet` tables for 19/20, `TEDisplayDoll` for 24/38) keep the
+/// C#'s `type == 0` shortcut and accept a non-air item — the same result the
+/// old `_ => true` gave, recorded as the approximation in docs/ANALYSIS.md.
+pub(crate) fn pick_item_movement_action(
+    context: i32,
+    check: &ItemSlot,
+    slot: usize,
+    target: &ItemSlot,
+) -> i32 {
+    let air = check.kind == 0;
+    let def = registry::get(check.kind);
+    let mut result = -1;
+    match context {
+        // `:1490-1492`
+        0 => result = 0,
+        // `:1493-1498`
+        1 => {
+            if air || is_coin_kind(check.kind) {
+                result = 0;
+            }
+        }
+        // `:1499-1504`
+        2 => {
+            if fits_ammo_slot(check.kind) {
+                result = 0;
+            }
+        }
+        // `:1505-1507`
+        3 => result = 0,
+        // `:1508-1514` — `ChestUI.IsBlockedFromTransferIntoChest` only blocks a
+        // favorited money-trough / piggy item; the port carries no `favorited`
+        // flag yet, so the gate never blocks.
+        4 | 32 => result = 0,
+        // `:1515-1520` — `CanHavePrefixes` (`GetRollablePrefixes`) is not
+        // modelled: the C# air branch is kept, a non-air item accepts.
+        5 => result = 1,
+        // `:1521-1523`
+        6 => result = 0,
+        // `:1524-1529`
+        7 => {
+            if def.is_some_and(|d| d.material) || air {
+                result = 0;
+            }
+        }
+        // `:1530-1538`
+        8 | 9 | 10 | 11 => {
+            if air || can_equip_in_armor_slot(check, slot) {
+                result = 1;
+            }
+        }
+        // `:1560-1565`
+        12 | 25 | 27 | 33 => result = 2,
+        // `:1566-1579` — the shop buy/sell ladder.
+        15 => {
+            let max = registry::max_stack(check.kind);
+            if air && target.kind > 0 {
+                result = 3;
+            } else if check.kind == target.kind
+                && check.kind > 0
+                && check.count < max
+                && target.count > 0
+            {
+                result = 3;
+            } else if target.kind == 0 && check.kind > 0 && !is_coin_kind(check.kind) {
+                result = 4;
+            }
+        }
+        // `:1580-1585` — `Main.projHook[shoot]` not modelled: air branch kept.
+        16 => result = 1,
+        // `:1586-1597`, `:1610-1615` — `mountType` not modelled: air branch kept.
+        17 | 18 | 39 => result = 1,
+        // `:1604-1609`, `:1616-1621` — `vanityPet`/`lightPet` not modelled.
+        19 | 20 => result = 1,
+        // `:1539-1544`
+        23 => {
+            if air
+                || (slot == 0 && def.is_some_and(|d| d.head_slot > 0))
+                || (slot == 1 && def.is_some_and(|d| d.body_slot > 0))
+                || (slot == 2 && def.is_some_and(|d| d.leg_slot > 0))
+            {
+                result = 1;
+            }
+        }
+        // `:1551-1559` — `CanEquipAccessoryInSlot`'s collision set is not
+        // modelled; the `accessory` flag is the whole port test.
+        24 => {
+            if air || def.is_some_and(|d| d.accessory) {
+                result = 1;
+            }
+        }
+        // `:1545-1550`
+        26 => {
+            if air || def.is_some_and(|d| d.head_slot > 0) {
+                result = 1;
+            }
+        }
+        // `:1622-1627`
+        29 => {
+            if air && target.kind > 0 {
+                result = 5;
+            }
+        }
+        // `:1629-1632`
+        30 => result = 0,
+        // `:1598-1603` — `TEDisplayDoll.AcceptedInWeaponSlot` not modelled.
+        38 => result = 1,
+        _ => {}
+    }
+    result
+}
+
+/// The accepted-move gate `PickItemMovementAction` gives a context before the
+/// shared action-0 move runs: `result != -1`. The coin/ammo callers carry no
+/// slot or target, so the slot-only arms (8-11, 23, 26) and the ctx 15/29
+/// target arms answer for the empty slot — neither row reaches them.
+pub(crate) fn context_accepts(context: i32, kind: u16) -> bool {
+    let check = ItemSlot {
+        kind,
+        name: "",
+        count: u32::from(kind != 0),
+        prefix: 0,
+    };
+    pick_item_movement_action(context, &check, 0, &EMPTY_SLOT) != -1
 }
 
 impl App {
@@ -1599,6 +1740,77 @@ mod tests {
             prefix,
             ..slot(kind, count)
         }
+    }
+
+    /// S1-H-6: `context_accepts` must reflect `ItemSlot.PickItemMovementAction`
+    /// (`ItemSlot.cs:1484-1634`) instead of accepting every context past 1/2.
+    #[test]
+    fn context_accepts_matches_the_pick_item_movement_action_table() {
+        // ctx 7 (GuideItem, `:1524-1529`): the material flag (or air) is the
+        // whole gate.
+        assert!(context_accepts(7, 0), "air is accepted");
+        assert!(context_accepts(7, 2), "a material item is accepted");
+        assert!(!context_accepts(7, 4), "a non-material item is refused");
+    }
+
+    /// S1-H-6: the rest of the `PickItemMovementAction` table — the slot- and
+    /// target-dependent arms that `context_accepts` cannot express.
+    #[test]
+    fn pick_item_movement_action_ports_the_context_table() {
+        let air = EMPTY_SLOT;
+        // Fixtures: 89 Copper Helmet (head), 80 Copper Chainmail (body),
+        // 76 Copper Greaves (leg), 15 Copper Watch (accessory),
+        // 2 Dirt Block (material), 4 Iron Broadsword (plain), 71 Copper Coin,
+        // 40 Wooden Arrow (ammo).
+        let head = slot(89, 1);
+        let body = slot(80, 1);
+        let leg = slot(76, 1);
+        let acc = slot(15, 1);
+        let mat = slot(2, 1);
+        let plain = slot(4, 1);
+
+        // `:1490-1492`, `:1505-1507`, `:1521-1523`, `:1629-1632`: the
+        // unconditional accept contexts (action 0).
+        for ctx in [0, 3, 6, 30] {
+            assert_eq!(pick_item_movement_action(ctx, &plain, 0, &air), 0);
+        }
+        // `:1493-1498`, `:1499-1504`: the coin/ammo rows.
+        assert_eq!(pick_item_movement_action(1, &slot(71, 1), 0, &air), 0);
+        assert_eq!(pick_item_movement_action(1, &air, 0, &air), 0);
+        assert_eq!(pick_item_movement_action(1, &plain, 0, &air), -1);
+        assert_eq!(pick_item_movement_action(2, &slot(40, 1), 0, &air), 0);
+        assert_eq!(pick_item_movement_action(2, &plain, 0, &air), -1);
+        // `:1524-1529`.
+        assert_eq!(pick_item_movement_action(7, &mat, 0, &air), 0);
+        assert_eq!(pick_item_movement_action(7, &plain, 0, &air), -1);
+        // `:1530-1538`: the armour/vanity/accessory rows by `slot % 10`.
+        assert_eq!(pick_item_movement_action(8, &head, 0, &air), 1);
+        assert_eq!(pick_item_movement_action(8, &body, 0, &air), -1);
+        assert_eq!(pick_item_movement_action(9, &body, 1, &air), 1);
+        assert_eq!(pick_item_movement_action(10, &acc, 3, &air), 1);
+        assert_eq!(pick_item_movement_action(10, &head, 3, &air), -1);
+        assert_eq!(pick_item_movement_action(11, &leg, 2, &air), 1);
+        // `:1560-1565`: the dye rows take anything (action 2).
+        assert_eq!(pick_item_movement_action(12, &plain, 0, &air), 2);
+        assert_eq!(pick_item_movement_action(33, &plain, 0, &air), 2);
+        // `:1539-1544`: display-doll armour, strictly `> 0`.
+        assert_eq!(pick_item_movement_action(23, &head, 0, &air), 1);
+        assert_eq!(pick_item_movement_action(23, &body, 0, &air), -1);
+        assert_eq!(pick_item_movement_action(23, &acc, 0, &air), -1);
+        // `:1551-1559`: display-doll accessory.
+        assert_eq!(pick_item_movement_action(24, &acc, 0, &air), 1);
+        assert_eq!(pick_item_movement_action(24, &head, 0, &air), -1);
+        // `:1545-1550`: the hat rack takes a head item.
+        assert_eq!(pick_item_movement_action(26, &head, 0, &air), 1);
+        assert_eq!(pick_item_movement_action(26, &body, 0, &air), -1);
+        // `:1622-1627`: the creative arm (air over a filled slot, action 5).
+        assert_eq!(pick_item_movement_action(29, &air, 0, &plain), 5);
+        assert_eq!(pick_item_movement_action(29, &air, 0, &air), -1);
+        assert_eq!(pick_item_movement_action(29, &plain, 0, &mat), -1);
+        // `:1566-1579`: the shop sell (3) / buy (4) ladder.
+        assert_eq!(pick_item_movement_action(15, &air, 0, &plain), 3);
+        assert_eq!(pick_item_movement_action(15, &plain, 0, &air), 4);
+        assert_eq!(pick_item_movement_action(15, &plain, 0, &mat), -1);
     }
 
     /// A headless app with the inventory open and an open chest (index 0,
