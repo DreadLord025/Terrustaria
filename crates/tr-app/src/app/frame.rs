@@ -28,7 +28,7 @@ use crate::render::tiles::draw_tiles;
 use crate::sound;
 use crate::ui;
 use crate::ui::text::{hud_text, hud_text_width};
-use crate::world_sim::clock::advance_time;
+use crate::world_sim::clock::advance_time_with_events;
 
 impl App {
     /// `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`), ticked
@@ -169,8 +169,11 @@ impl App {
                 let roll01 = f64::from(rand01(&mut self.clock_rng));
                 // `Main.cs:65342-65349`'s player gate.
                 let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
+                // `advance_time_with_events` folds in the phase-boundary
+                // achievement hooks (KILL_THE_SUN / BLOODBATH / YOU_CAN_DO_IT)
+                // and the flag clears (`Main.cs:65242-65246`, `:65383-65387`).
                 let (blood_moon, eclipse) =
-                    advance_time(&mut self.world, dt * rate, roll01, any_over_120);
+                    advance_time_with_events(self, dt * rate, roll01, any_over_120);
                 if blood_moon {
                     crate::chat::broadcast_death_text(
                         &mut self.chat,

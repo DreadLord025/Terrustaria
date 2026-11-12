@@ -76,6 +76,47 @@ pub(crate) fn advance_time(
     (blood_moon_started, eclipse_started)
 }
 
+/// [`advance_time`] plus the two phase-boundary achievement hooks the C#
+/// runs inside `UpdateTime_StartNight`/`UpdateTime_StartDay`:
+///
+/// * dusk (`:65242-65246`): KILL_THE_SUN (progression 3) when the ending day
+///   was an eclipse, then `Main.eclipse = false`;
+/// * dawn (`:65383-65387`, `:65415`): BLOODBATH (progression 5) when the
+///   ending night was a blood moon, then `Main.bloodMoon = false`, then
+///   YOU_CAN_DO_IT (progression 1) on every dawn.
+///
+/// The C# clears `Main.eclipse` on every `StartNight` and `Main.bloodMoon`
+/// on every `StartDay` (`stopMoonEvent` does **not** touch the blood moon),
+/// so the clears ride the same boundary branches here.
+pub(crate) fn advance_time_with_events(
+    app: &mut App,
+    dt: f32,
+    roll01: f64,
+    any_player_life_over_120: bool,
+) -> (bool, bool) {
+    // Both flags are read before the clock can flip them.
+    let eclipse_was_up = app.world.eclipse;
+    let blood_moon_was_up = app.world.blood_moon;
+    let was_day = app.world.day_time;
+    let (blood_moon_started, eclipse_started) =
+        advance_time(&mut app.world, dt, roll01, any_player_life_over_120);
+    if was_day && !app.world.day_time {
+        // StartNight: the eclipse row, then the clear.
+        if eclipse_was_up {
+            let _ = app.achievements.notify_progression(3);
+        }
+        app.world.eclipse = false;
+    } else if !was_day && app.world.day_time {
+        // StartDay: the blood-moon row, the clear, then the dawn row.
+        if blood_moon_was_up {
+            let _ = app.achievements.notify_progression(5);
+        }
+        app.world.blood_moon = false;
+        let _ = app.achievements.notify_progression(1);
+    }
+    (blood_moon_started, eclipse_started)
+}
+
 /// `Main.cs:64995-65003`'s tax pump: while a Tax Collector is alive the
 /// player's `taxTimer` counts the dayRate iterations and every
 /// `Player.taxRate` (3600) ticks collects the taxes.
@@ -343,5 +384,57 @@ mod tests {
             "no dusk this call: {}",
             w.time
         );
+    }
+
+    /// S1-E-18: the phase-boundary achievements. `UpdateTime_StartNight`
+    /// fires KILL_THE_SUN when the ending night overlapped an eclipse and
+    /// clears `Main.eclipse` (`Main.cs:65242-65246`); `UpdateTime_StartDay`
+    /// fires BLOODBATH on a blood-moon night and YOU_CAN_DO_IT every dawn
+    /// (`:65383-65387`, `:65415`).
+    #[test]
+    fn the_boundary_crossings_fire_the_event_rows_and_clear_the_flags() {
+        let done = |app: &crate::app::App, name: &str| {
+            app.achievements
+                .list
+                .iter()
+                .any(|a| a.name == name && a.completed)
+        };
+        // A plain dawn fires the night-survived row alone.
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.day_time = false;
+        app.world.time = 32399.0;
+        let (blood, eclipse) = advance_time_with_events(&mut app, 5.0, 0.5, false);
+        assert!(!blood && !eclipse);
+        assert!(done(&app, "YOU_CAN_DO_IT"), "progression 1 at every dawn");
+        assert!(!done(&app, "BLOODBATH"));
+        assert!(!done(&app, "KILL_THE_SUN"));
+
+        // A blood-moon night ending at dawn fires BLOODBATH and clears the flag.
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.day_time = false;
+        app.world.time = 32399.0;
+        app.world.blood_moon = true;
+        advance_time_with_events(&mut app, 5.0, 0.5, false);
+        assert!(app.world.day_time);
+        assert!(done(&app, "BLOODBATH"), "progression 5 at the blood-moon dawn");
+        assert!(!app.world.blood_moon, "StartDay clears the flag");
+
+        // A day ending with an eclipse up fires KILL_THE_SUN and clears it.
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.day_time = true;
+        app.world.time = 53999.0;
+        app.world.eclipse = true;
+        advance_time_with_events(&mut app, 5.0, 0.5, false);
+        assert!(!app.world.day_time);
+        assert!(done(&app, "KILL_THE_SUN"), "progression 3 at the eclipse dusk");
+        assert!(!app.world.eclipse, "StartNight clears the flag");
+
+        // A plain dusk fires neither row.
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.day_time = true;
+        app.world.time = 53999.0;
+        advance_time_with_events(&mut app, 5.0, 0.5, false);
+        assert!(!done(&app, "KILL_THE_SUN"));
+        assert!(!done(&app, "BLOODBATH"));
     }
 }
