@@ -5468,19 +5468,28 @@ The scaffold wraps the already-landed passes in the vanilla pipeline shape
   (e.g. the living-tree count stays `Next(4)` per side, not the vanilla
   `Micro Biomes.LivingTreeCount 6-11`) — future passes read their options
   from there.
-- **Determinism, proven.** Vanilla gives every pass a fresh
+- **Determinism, proven (reproducible), frozen (algorithm).** Vanilla gives every pass a fresh
   `UnifiedRandom(worldSeed)` (`WorldGenerator.cs:497`) — pass streams are
   independent, which is what makes its fixed chain insertion-safe. The port
   keeps its three contract streams (main `seed ^ 0xA076_1D64_78BD_642F`,
   detail `seed ^ 0x5DEE_CE66_D1A4_9B5F`, structures
   `seed ^ 0x9E37_79B9_7F4A_7C15`); a FUTURE pass slots between existing
   steps only with its own stream (`Rng(seed ^ fnv(pass_name))`), never by
-  joining these. The proof: `worldgen/world_hash.rs` ports
+  joining these. Two pins with distinct meanings: `worldgen/world_hash.rs` ports
   `WorldGenerator.HashWorld` (`:517-545`) — the per-column
-  `rotl13(h)*5 + 3864292196` FNV fold over every stored `Tile` field — and
-  pins the constants captured from the PRE-scaffold output (512×512/seed 42
-  `3510339375`, the default 4200×1200/seed-1 world `3248003836`); the pins
-  held through the rewiring. The seam test additionally proved the runner
+  `rotl13(h)*5 + 3864292196` FNV fold over every stored `Tile` field. The
+  **algorithm** (the fold constants and their order) is frozen by
+  `the_fnv_constants_are_frozen_by_a_fixed_input` over a fixed synthetic grid,
+  whose expected value was derived from an *independent* implementation of the
+  fold (S1-K-5) — it moves only if the hash itself changes. The
+  **generator output** constants (`SEED42_512`, `DEFAULT_WORLD`) are a
+  regression tripwire for the port's *own* pipeline: every faithful worldgen
+  change moves them (they have been re-pinned ~20×; 512×512/seed 42 read
+  `3510339375` at scaffold time and reads `3615544309` today), so they prove
+  reproducibility, **not** C# fidelity — the per-tile field mix is the port's own
+  and the number is not comparable to vanilla's `HashWorld` (that proof is
+  S1-A-7). `generation_is_reproducible_for_a_seed` (`worldgen/mod.rs`) is the
+  same-binary replay-pair. The seam test additionally proved the runner
   tile-for-tile equal to the old straight-line body before it was replaced.
 
 ## Biome passes (M1.4-WGEN-1)

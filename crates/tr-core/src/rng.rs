@@ -6,7 +6,7 @@
 //! the full word with its high half for the modulo). The triple and the word
 //! extraction are identical, so one core now carries both draw conventions
 //! **byte-exactly** — every generated world's streams and every wind history
-//! are unchanged (pinned by `deterministic_for_seed`, the worldgen replay-pair
+//! are unchanged (pinned by `generation_is_reproducible_for_a_seed`, the worldgen replay-pair
 //! tests and the wind tests).
 //!
 //! Determinism is a hard invariant: the step, the word extraction and the

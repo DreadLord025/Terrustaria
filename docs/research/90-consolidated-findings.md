@@ -115,7 +115,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-08-4 | Decide + document the `frameNumber` policy (decode the stored byte or keep the hash) | 08 | S | determinism/pixel (medium) | a shipped test `.wld` | 08-tile-framing.md:161 |
 | R-10-4 | Exact water jitter — replace the multiplicative hash with `FastRandom::with_modifier` semantics in `blur_line_*` | 10 | S | pixel (low-med) | — | 10-lighting.md:169 |
 | R-16-10 | Verify against a vanilla `.wld`/video for one full in-game day of `windCounter` walks | 16 | S | determinism (verification) | — | 16-weather.md:320 |
-| R-35-6 | Fix the determinism proof: rename `deterministic_for_seed` → `generation_is_reproducible_for_a_seed` and split the two tests | 35 | S | doc (determinism claim) | — | 35-rng-utils.md:273 |
+| R-35-6 | Fix the determinism proof: rename `deterministic_for_seed` → `generation_is_reproducible_for_a_seed` and split the two tests | 35 | S | doc (determinism claim) | — | 35-rng-utils.md:273 — DONE (S1-K-5, 2026-11-13) |
 
 ### (b) pixel / visual identity — 26 seeds
 

@@ -10,8 +10,10 @@
 //!
 //! The work is split into passes that [`generate`] calls in a fixed order — terrain
 //! (surface map + fill), caves/ores, liquids, then the surface dressing. The call
-//! order and every RNG draw are part of the world contract; `deterministic_for_seed`
-//! pins them.
+//! order and every RNG draw are part of the world contract; `generation_is_reproducible_for_a_seed`
+//! pins them (reproducibility of the port's own generator — the FNV-style hash in
+//! `world_hash.rs` pins the port's own pipeline, not C# parity; the C#-fidelity proof is
+//! S1-A-7).
 
 mod biome_detail;
 mod biomes;
@@ -256,8 +258,12 @@ mod tests {
         }
     }
 
+    /// Reproducibility of the port's **own** generator: the same seed yields the
+    /// same world on the same binary. This is *self-consistency*, not a fidelity
+    /// proof against the C# generator — for that see S1-A-7; the frozen hash
+    /// constants live in `world_hash.rs`.
     #[test]
-    fn deterministic_for_seed() {
+    fn generation_is_reproducible_for_a_seed() {
         let opts = GenOptions {
             width: 512,
             height: 512,

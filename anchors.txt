@@ -76,3 +76,4 @@ crates/tr-app/src/app/frame.rs|the_clock_only_advances_inside_the_world_branch|S
 crates/tr-app/src/projectile.rs|pub fn drain_ritual_bolts|S1-D-4c - vortex ritual aiStyle 88/108 dispatched and bolt intent drained (Projectile.cs:32145-32249,:33679-33988)
 crates/tr-app/src/craft.rs|fn the_station_reach_region_matches_the_csharp_xna_rect|S1-L-11b refuted - the AdjTiles region is LX..=HX because XNA Rectangle.Right == X + Width (TileReachCheckSettings.cs:45-60, Player.cs:35671-35674)
 crates/tr-core/src/lighting/blur.rs|fn non_visible_padding_is_fixed_18_s1_g_10|S1-G-10 - NON_VISIBLE_PADDING is fixed 18 (LightMap.cs:99-108) not min(w,h)/3
+crates/tr-core/src/worldgen/world_hash.rs|the_fnv_constants_are_frozen_by_a_fixed_input|S1-K-5 — the FNV fold constants frozen against a fixed-input golden vector (independent derivation; mutation-checked)

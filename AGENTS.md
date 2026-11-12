@@ -396,8 +396,9 @@ merge if the change is code-shape relevant); avoid two agents racing on
   features, not internal work. Commit one task per branch; imperative commit messages.
 - Determinism is a hard invariant: RNG streams (`FastRandom`, worldgen xorshift), the
   G6 `WorldFrameKey` contents and the fixed-step order must not change. If your change
-  touches them, prove byte-equality of the affected outputs (see the worldgen FNV
-  proof and `deterministic_for_seed` for the pattern).
+  touches them, prove byte-equality of the affected outputs (see the frozen-input
+  golden test in `worldgen/world_hash.rs` and `generation_is_reproducible_for_a_seed`
+  for the pattern).
 
 ## Working with docs (find/read/edit efficiently)
 
