@@ -121,7 +121,7 @@ and render the list of craftable recipes in the panel.
 | `Recipe` record fields | PARTIAL | `craft.rs::Recipe` (39-64) | Ported: `createItem`, `requiredItem`, `requiredTile`, `needWater/needHoney/needLava/needSnowBiome/needGraveyardBiome`, `alchemy`, `notDecraftable`. Missing: `needTorchGodsFavor`, `needMechdusa` (no port systems), `customShimmerResults`, `crimson`, `corruption` (decraft/shimmer bookkeeping only). |
 | The group registry (`SetupRecipeGroups`) | PORTED | `craft.rs::GROUPS` (151-238) | **34/34** groups, id = registration order, `icon` = C# `Items[0]`, `members` = C# `ValidItems` (e.g. Birds 2015/2016/2017 ↔ `Recipe.cs:499`). Verified by `the_group_table_is_the_setuprecipegroups_order`. |
 | The group-expansion rule | PORTED | `craft.rs::Requirement::matches` (256-263) + `gen_recipes.py` (317-343) | C# `CreateRequiredItemQuickLookups` (15162-15191) substitutes the fake id only when the authored item is a member; the generator binds a group to a member slot and leaves an unbound group as the exact item (the Lesion rows) — the same outcome. The C#'s fake-id bucket (`FakeItemIdOffset = 1000000`) is folded per-requirement in Rust; the totals agree (the port's own note, `craft.rs` 446-450). |
-| The station check (`requiredTile` + reach) | PARTIAL | `craft.rs::scan_adjacent` (321-358) + `satisfies_station` (287-298) | The chain and the reach X5/Y3 are right, but the scanned region is **one tile larger** than the C#'s (`Rectangle.Right = HX-1`). See deviation D2. |
+| The station check (`requiredTile` + reach) | PORTED | `craft.rs::scan_adjacent` (321-358) + `satisfies_station` (287-298) | The chain and the reach X5/Y3 are exact; the scan is inclusive of `HX`/`HY`, which is also the C#'s `Left..=Right` once the XNA-exclusive `Rectangle.Right == X + Width` is applied (deviation D2, refuted). The extender / Artisan-Bread boosts remain absent (S1-L-11d). |
 | `TileCountsAs` inheritance | PORTED | `craft.rs::TILE_COUNTS_AS` (269-279) | The 9 pairs are verbatim (`Recipe.cs:562-570`), and the C#'s `SetAdjTile` recursion is expressed as a chain walk to the same reachability. |
 | The environment flags | PARTIAL (5/5 ported) | `craft.rs::meets_environment` (476-486) | water/honey/lava/snow/graveyard all check the same source (`adjWaterSource`, `adjHoney`, `adjLava`, `ZoneSnow`, `ZoneGraveyard`). 2 C# flags have no port system. |
 | The available-recipe filter | PARTIAL | `craft.rs::available` (513-527) | env + enough-ingredients is ported, but the C#'s **`RecipeFilterHack`** (`NewCraftingUI.cs:78-171`) and the **guide-item mode** (`CollectGuideRecipes`) are not; the filter strip in `ui/crafting.rs` is draw-only. |
@@ -174,13 +174,21 @@ below passes the suite.
   registration order: 2479 authored + 284 derived" as DONE, and no drift check exists.
   The port currently offers 27 craftable recipes the vanilla table does not have (or is
   missing 27 it should — the direction depends on which registry is right).
-- **D2 — the station reach region is one tile too large (behavioural, medium).**
-  `Player.AdjTiles` (`Player.cs:35671-35674`) iterates
-  `Rectangle(LX, LY, HX-LX, HY-LY)`, whose `Right`/`Bottom` are `HX-1`/`HY-1` — the C#
-  scans `LX..HX-1`. `craft.rs::scan_adjacent` (324-330) loops `lx..=hx` with
-  `hx = ceil((x+width)/16)-1+REACH_X` — i.e. **one extra column and row** on the
-  right/bottom. A station one tile beyond the vanilla reach counts as adjacent in the
-  port. **Not admitted** in ROADMAP/ANALYSIS.
+- **D2 — REFUTED (was "the station reach region is one tile too large").**
+  `Player.AdjTiles` (`Player.cs:35671-35674`) scans
+  `WorldUtils.ClampToWorld(TileReachCheckSettings.Simple.GetTileRegion(this))`.
+  `GetTileRegion` builds `new Rectangle(LX, LY, HX-LX, HY-LY)`
+  (`TileReachCheckSettings.cs:56-60`), and the **XNA** `Rectangle.Right` is
+  `X + Width` (*exclusive* — the same convention the port's own
+  `tr_core::whip::Rect::right` follows), so `Right == HX` and the
+  `for (i = Left; i <= Right; i++)` loop covers `LX..=HX`. The port's inclusive
+  `lx..=hx` (`craft.rs::scan_adjacent`) is therefore 1:1; the earlier claim
+  assumed the `System.Drawing` `Right = X + Width - 1` convention. Verified
+  2026-11-13 (`S1-L-11b-craft-reach`) and locked by
+  `craft::tests::the_station_reach_region_matches_the_csharp_xna_rect`
+  (left/right/top/bottom boundary, one tile outside on each side). The
+  remaining real reach gaps are the extender/Artisan-Bread boosts
+  (`Player.cs:35671`'s `TB = ateArtisanBread ? 4 : 0`), tracked under S1-L-11d.
 - **D3 — the inventory drain is 50 slots wide, the C#'s 58 (behavioural, low-medium).**
   `CraftingRequests.ConsumeItemsFrom` is called with `58`
   (`CraftingRequests.cs:227`); the port's `INV = 50` (`crates/tr-app/src/item.rs:20`).
