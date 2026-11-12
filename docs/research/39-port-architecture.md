@@ -120,8 +120,9 @@ research modules keep hitting.
 Three of the top ten are generated data tables and are *not* god modules in the
 architectural sense. The other eight are hand-written monoliths that mix the entity
 model, the AI machines, the data tables and the tests in one file — exactly the shape
-the refactor was supposed to kill. `npc.rs` at 17 k lines holds 84-field entity
-structs, 182 `NpcKind` variants, the per-kind stat tables and ~1 000 test lines.
+the refactor was supposed to kill. `npc.rs` at 17 k lines holds an 84-field entity
+struct, a ~190-variant `NpcKind` enum, the per-kind stat tables and 154 `#[test]`
+functions in one file.
 
 ### 2. Cross-module mutable state — `World` and `App` are two god objects
 
@@ -132,9 +133,9 @@ structs, 182 `NpcKind` variants, the per-kind stat tables and ~1 000 test lines.
   `light_rng_seed`), the UI state and the render caches. Every `world_sim` function
   takes `&mut App`, so **no two systems can ever run concurrently**.
 - `World` (**132 fields**, `tr-core/src/world.rs`) mixes immutable tile geometry with
-  **runtime event state**: 20 `downed_*` boss flags, `invasion_*` (5 fields),
-  `tower_shield_*` (4), `tower_active_*` (4), `slime_rain*` (3), `moon_*`,
-  `ore_tiers`, `seeds`, `micro_seeds`, `altars_smashed`. Those are `Main.cs` statics
+  **runtime event state**: 21 `downed_*` boss flags, 8 `invasion_*` fields,
+  8 `tower_*` fields, `slime_rain*` (3), `moon_*`, `ore_tiers`, `seeds`,
+  `micro_seeds`, `altars_smashed`. Those are `Main.cs` statics
   in C#; here they live in the *tile container*. `tr-core` is therefore **not**
   read-only during a tick — `world_sim/clock.rs`, `world_sim/npcs.rs` and
   `world_sim/weather.rs` all write into it.
@@ -224,9 +225,9 @@ enforce. Secondary hazard: `World.extras: HashMap<u32,u8>` — a `HashMap` itera
 nondeterministic order, so any phase-A pass that iterates it is a determinism hazard.
 The spatial hash itself does not exist yet (see §5): it must be built, and it must be
 built over **stable slots**, because `App.npcs` is a `Vec` whose indices shift on
-compaction (`world_sim/npcs.rs` `retain`s dead NPCs) — the projectile immunity table
-already documents this hazard ("the NPC's position in the app's `Vec<Npc>`: stable
-between death compactions", `projectile.rs` L7312).
+compaction (`world_sim/npcs.rs` L781 / L1711 `app.npcs.retain(...)` drops the dead) —
+the projectile immunity table already documents this hazard ("the NPC's position in
+the app's `Vec<Npc>`: stable between death compactions", `projectile.rs` L7312).
 
 **Phase B — sequential in C# order.**
 The order is currently a property of `app/frame.rs`'s call sequence, not of a data
@@ -308,7 +309,7 @@ Architecture-specific coverage (no cargo run performed — static inspection onl
 | 1 | AGENTS.md: "**The god-files are gone.** Extend the matching module; never grow a new god-file." | **FALSE as stated** — 8 hand-written files > 5 000 lines (`projectile.rs` 17 411, `npc.rs` 17 134, `player.rs` 10 098, `world_sim/npcs.rs` 9 057, `world_sim/editing.rs` 7 738, `edit.rs` 6 791, `growth.rs` 5 305, `smart_cursor.rs` 5 197). True only for the bootstrap (`main.rs` 163). | **structural** (this file *is* the refactor's undo bill) |
 | 2 | AGENTS.md: "App state (118 fields)" | Stale — `App` has **257** direct fields (`app/mod.rs` L82). | structural |
 | 3 | ARCHITECTURE.md: `app/` ~5.5 k lines, `render/` ~4.5 k, `ui/` ~15.5 k, `main.rs` 86 lines | Stale — actual **18 371 / 11 301 / 24 424 / 163**. The map is directionally right, the sizes are ~2× low. | cosmetic (docs) |
-| 4 | ARCHITECTURE.md: "the graph is rebuilt (graphify: 3 440 nodes / 7 933 edges Rust-side)" | Stale — the current Rust graph reports **13 769 nodes**. | cosmetic (docs) |
+| 4 | ARCHITECTURE.md: "the graph is rebuilt (graphify: 3 440 nodes / 7 933 edges Rust-side)" | Stale — the current `graphify-out/graph.json` holds **13 769 nodes** (12 712 from `crates/`, 409 `docs`, 293 `tools`) and **35 496 links**. The doc's figure predates ~9 months of porting. | cosmetic (docs) |
 | 5 | ARCHITECTURE.md/ANALYSIS: "the 2026-11-01 refactor split the two god files" | Partly true: `main.rs` and `menu.rs` were split; the *entity* god files (NPC/Projectile/Player/WorldGen) were never split — they were re-homed into `tr-app`/`tr-core` leaves. | structural |
 | 6 | ARCHITECTURE.md "C# seams" table (3 seams: `FrontScreenBehaviours`, `LightEngine`, `PassPrologue`) | Accurate, but the seams cover *UI and rendering* only — there is **no seam at the entity/sim boundary**, which is precisely where Stage 2 needs one. | structural |
 | 7 | ROADMAP "Entities (M4) — data-oriented plan" (SoA by archetype, spatial hash, per-thread output buffers, no shared mutable state) | Aspiration only: **no** spatial hash, **no** SoA, **no** event buffers, and the sim is `&mut App` end-to-end. The plan is not started. | structural |
