@@ -4305,7 +4305,7 @@ impl Projectile {
     ///
     /// Deviations: the dust arms (229/240/5, the `ai[1] == 1f` burst) are
     /// unmodelled; the late-stage clone spawn rides the 580's own machine.
-    fn ai_vortex_ritual(&mut self, player: (f32, f32), rng: &mut u64) {
+    fn ai_vortex_ritual(&mut self, player: (f32, f32), rng: &mut dyn tr_core::loot::DropRng) {
         // `:33696-33700`'s first-tick sound latch.
         if self.local_ai[1] == 0.0 {
             self.local_ai[1] = 1.0;
@@ -4358,8 +4358,8 @@ impl Projectile {
                 // `:33844-33856`'s two VortexAliens (427) at the centre
                 // with `-UnitY.RotatedByRandom(2*PI) * rand(4, 9) - UnitY*2`.
                 for _ in 0..2 {
-                    let ang = crate::app::rand01(rng) * std::f32::consts::PI * 2.0;
-                    let mag = 4.0 + crate::app::rand01(rng) * 5.0;
+                    let ang = rng.next_float() * std::f32::consts::PI * 2.0;
+                    let mag = 4.0 + rng.next_float() * 5.0;
                     let (vx, vy) = (-ang.sin() * mag, -ang.cos() * mag - 2.0);
                     self.wants_mark_spawn =
                         Some((NpcKind::VortexAlien.to_u16(), self.pos.x, self.pos.y, vx, vy));
@@ -4375,7 +4375,7 @@ impl Projectile {
     ///
     /// Deviations: the dust/light arms are unmodelled; the wand's
     /// `UnifiedRandom((int)ai[1])` reseed folds into the shared stream.
-    fn ai_vortex_bolt(&mut self, world: &World, rng: &mut u64) {
+    fn ai_vortex_bolt(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
         // `:32151-32153`'s 900-wrap latch.
         if self.local_ai[1] == 0.0 && self.ai[0] >= 900.0 {
             self.ai[0] -= 1000.0;
@@ -4395,7 +4395,7 @@ impl Projectile {
             }
         } else if self.vel == Vec2::ZERO {
             // `:32156-32174`'s stationary wait + kill: a stopped bolt dies
-            // after \`extraUpdates * 2\` ticks (the port's counter rides
+            // after `extraUpdates * 2` ticks (the port's counter rides
             // local_ai[2]).
             self.local_ai[2] += 1.0;
             if self.local_ai[2] > (self.extra_updates * 2) as f32 {
@@ -4403,19 +4403,19 @@ impl Projectile {
                 return;
             }
         } else {
-            // \`:32195-32249\`'s wand: the per-step lateral jitter, the 100-roll
+            // `:32195-32249`'s wand: the per-step lateral jitter, the 100-roll
             // rejection loop, the localAI[0] wander.
-        let spin = self.ai[0] + std::f32::consts::FRAC_PI_2;
-        let mut wander = self.local_ai[0];
-        let mut wander_y = 0.0f32;
-        for _ in 0..100 {
-            let a = crate::app::rand01(rng) * std::f32::consts::PI * 2.0;
-            wander = a.cos() * (self.extra_updates as f32 + 1.0) * 2.0;
-            wander_y = a.sin() * (self.extra_updates as f32 + 1.0) * 2.0;
-            if wander_y <= -0.02 && wander.abs() <= 40.0 {
-                break;
+            let spin = self.ai[0] + std::f32::consts::FRAC_PI_2;
+            let mut wander = self.local_ai[0];
+            let mut wander_y = 0.0f32;
+            for _ in 0..100 {
+                let a = rng.next_float() * std::f32::consts::PI * 2.0;
+                wander = a.cos() * (self.extra_updates as f32 + 1.0) * 2.0;
+                wander_y = a.sin() * (self.extra_updates as f32 + 1.0) * 2.0;
+                if wander_y <= -0.02 && wander.abs() <= 40.0 {
+                    break;
+                }
             }
-        }
             self.local_ai[0] += wander;
             self.vel = Vec2::new(spin.cos() * wander, spin.sin() * wander + wander_y);
         }
@@ -10023,6 +10023,19 @@ impl ProjectilePool {
         out
     }
 
+    /// `AI_108`'s 578 bolt spawn (`Projectile.cs:33838-33841`): the lightning
+    /// marker resolves into a `VORTEX_RITUAL_BOLT` (580) with the marker's
+    /// owner/damage/knockBack and the aim payload `(x, y, vx, vy, ai0)`.
+    pub fn drain_ritual_bolts(&mut self) -> Vec<(u8, i32, f32, f32, f32, f32, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some((x, y, vx, vy, ai0)) = p.wants_ritual_bolt.take() {
+                out.push((p.owner, p.damage, p.knock_back, x, y, vx, vy, ai0));
+            }
+        }
+        out
+    }
+
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
     /// family's gameplay rolls take from it (`AI_165_Whip`'s arm budget + spin,
     /// `:47671`/`:47710`; the ThornWhip's debuff roll `:11738`; the tag crit
@@ -10680,6 +10693,20 @@ impl ProjectilePool {
                                 // The clamp `:72946-72948`'s shape.
                                 *shield = (*shield - dmg).max(0);
                             }
+                        }
+                        88 => {
+                            // `AI()`'s aiStyle-88 block (`Projectile.cs:32145-32249`):
+                            // the Vortex ritual bolt (580) — wrap latch, tile stop,
+                            // stationary kill and the wand step.
+                            self.slots[i].ai_vortex_bolt(world, rng);
+                        }
+                        108 => {
+                            // `AI()`'s aiStyle-108 block (`Projectile.cs:33679-33988`):
+                            // the Vortex ritual markers (578 lightning / 579 portal).
+                            let player_pos = owner
+                                .or(inputs.aim)
+                                .unwrap_or((self.slots[i].pos.x, self.slots[i].pos.y));
+                            self.slots[i].ai_vortex_ritual(player_pos, rng);
                         }
                         99 => {
                             // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
@@ -16061,7 +16088,7 @@ mod ritual_projectile_tests {
         // `AI_108`'s 579 arm (`Projectile.cs:33844-33856`): the 90th tick
         // spawns two VortexAliens at the portal's centre.
         let mut p = rspawn(VORTEX_PORTAL, 200.0, 200.0);
-        let mut rng = 3u64;
+        let mut rng = tr_core::tile_light::FastRandom::new(3);
         for t in 0..90 {
             p.ai_vortex_ritual((300.0, 300.0), &mut rng);
             if t == 88 {
@@ -16077,8 +16104,10 @@ mod ritual_projectile_tests {
         assert_eq!(drained.len(), 1, "the intent holds one of the pair");
         let (kind, _x, _y, vx, vy) = drained[0];
         assert_eq!(kind, NpcKind::VortexAlien.to_u16());
-        assert!(vy <= 2.0 && vy >= -11.0, "the launch's spread: {}", vy);
-        assert!(vx.abs() > 0.0, "and sideways");
+        // `Projectile.cs:33844-33856`: `-UnitY.RotatedByRandom(2*PI)*rand(4,9) - UnitY*2`
+        // => vy in [-11, 7), vx in (-9, 9).
+        assert!((-11.0..=7.0).contains(&vy), "the launch's spread: {vy}");
+        assert!(vx.abs() < 9.0, "the sideways spread: {vx}");
     }
 
     #[test]
@@ -16086,7 +16115,7 @@ mod ritual_projectile_tests {
         // `AI_108`'s 578 arm: the aim rotation on the first tick, the
         // scale/alpha ramp over the charge, and the 580 spawn at 90.
         let mut p = rspawn(VORTEX_LIGHTNING, 200.0, 200.0);
-        let mut rng = 5u64;
+        let mut rng = tr_core::tile_light::FastRandom::new(5);
         p.ai_vortex_ritual((260.0, 200.0), &mut rng);
         assert!((p.ai[1]).abs() < 0.01, "the aim is +X: {}", p.ai[1]);
         for _ in 0..89 {
@@ -16108,7 +16137,7 @@ mod ritual_projectile_tests {
         // `:33944-33950`'s dissolve: the scale shrinks, the alpha climbs and
         // the marker dies at the end.
         let mut p = rspawn(VORTEX_PORTAL, 200.0, 200.0);
-        let mut rng = 9u64;
+        let mut rng = tr_core::tile_light::FastRandom::new(9);
         for _ in 0..185 {
             p.ai_vortex_ritual((300.0, 300.0), &mut rng);
         }
@@ -16123,7 +16152,7 @@ mod ritual_projectile_tests {
         p.extra_updates = 4;
         p.ai[0] = 1000.0; // The wrap latch's arm.
         let world = surface_world();
-        let mut rng = 11u64;
+        let mut rng = tr_core::tile_light::FastRandom::new(11);
         for _ in 0..4 {
             p.ai_vortex_bolt(&world, &mut rng);
         }
@@ -16134,6 +16163,64 @@ mod ritual_projectile_tests {
             p.ai_vortex_bolt(&world, &mut rng);
         }
         assert!(!p.active, "the bolt dies standing");
+    }
+
+    #[test]
+    fn dispatch_reaches_ai_styles_88_and_108() {
+        // S1-D-4c: the live pool dispatch must call the vortex ritual/bolt
+        // machines (Projectile.cs:32145-32249, :33679-33988) rather than
+        // leaving 578/579/580 static.
+        let world = surface_world();
+        let mut npcs = Vec::new();
+
+        // aiStyle 108 (578 lightning marker): one update ticks the ritual.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(VORTEX_LIGHTNING, 0, 200.0, 200.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("slot");
+        pool.update(
+            &mut world.clone(),
+            &mut npcs,
+            Some((260.0, 200.0)),
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(5),
+            0,
+            false,
+        );
+        assert_eq!(pool.slots()[slot].ai[0], 1.0, "aiStyle 108 dispatched");
+
+        // aiStyle 88 (580 bolt): one update advances the 900-wrap latch.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                VORTEX_RITUAL_BOLT,
+                0,
+                200.0,
+                200.0,
+                0.0,
+                0.0,
+                10,
+                0.0,
+                1000.0,
+                0.0,
+            )
+            .expect("slot");
+        pool.update(
+            &mut world.clone(),
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(11),
+            0,
+            false,
+        );
+        assert_eq!(pool.slots()[slot].ai[0], 0.0, "aiStyle 88 dispatched");
     }
 }
 }

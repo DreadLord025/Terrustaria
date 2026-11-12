@@ -201,6 +201,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.worm_id = 1;
         app.npcs.push(n);
     }
+    // `AI_108`'s 578 bolt spawn (`Projectile.cs:33838-33841`): the lightning
+    // marker resolves into the ritual bolt (580) with the marker's payload.
+    for (owner, damage, kb, x, y, vx, vy, ai0) in app.projectiles.drain_ritual_bolts() {
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::VORTEX_RITUAL_BOLT,
+            owner,
+            x,
+            y,
+            vx,
+            vy,
+            damage,
+            kb,
+            ai0,
+            0.0,
+        );
+    }
 }
 
 #[cfg(test)]
