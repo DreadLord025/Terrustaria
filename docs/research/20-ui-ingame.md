@@ -97,15 +97,15 @@ digits, equip glyphs) — all interaction is in `clicks.rs`.
 | `PickItemMovementAction` gates | PARTIAL | `clicks.rs::context_accepts:122-128` | only ctx 1 (coins 71-74) and ctx 2 (ammo) are gated; every other context falls through `_ => true`, so the equip/dye/mount/pet gates (`:1490-1627`) are absent |
 | `LeftClick` actions 1/2/3/4/5 | MISSING | — | equip (`:1019-1120`), dye (`:1121-1218`), shop (`:1219-1241`), Journey duplication (`:1242-1251`) have no port arm |
 | `RightClick` alternate actions | MISSING | — | openable bag (`:1660-1667`), `HasItemSwap` (`:1668-1675`), `SwapVanityEquip` (`:1678-1684`), `SwapEquip` (`:1685-1697`) — the port's right click never equips |
-| `RightClick` one-per-transfer split | PARTIAL | `clicks.rs:909-940`, `:236-270`, `:811-836` | port takes `(count + 1) / 2` (half the stack); C# moves **one** item (`PickupItemIntoMouse:1717-1772`) |
-| `stackSplit` pacing on the grid | MISSING | `clicks.rs::chest_slot_stack_split:1241-1296` only | the chest panel implements the 30 / `stackDelay 7` pacing (tests `dw_4_3_*`), the inventory grid, coin/ammo rows and bank do not |
+| `RightClick` one-per-transfer split | PORTED | `clicks.rs::right_click_split`, `pickup_one_into_mouse` | one item per transfer (`PickupItemIntoMouse:1717-1772`), `superFastStack+1` per gated call; shared by the inventory grid, coin/ammo rows, bank and chest (S1-C-10) |
+| `stackSplit` pacing on the grid | PORTED | `clicks.rs::right_click_split` | all four surfaces ride the `stackSplit > 1` gate + `RefreshStackSplitCooldown` (`:1700`, `:1774-1784`); chest tests `dw_4_3_*` plus the S1-C-10 grid/coin/bank tests |
 | `GetAlternateClickAction` Shift arms | PORTED | `clicks.rs::evaluate_cursor_override:1088-1132` | ctx-3 from-chest cursor 8, to-chest cursor 9 (incl. the coin/ammo arms `:657-665`), quick-trash tail `:679-682`; the head guard (air/favorited) is in `chest_transfer_source:179-201` |
 | `OverrideLeftClick` Alt/favourite + quick-trash | PORTED | `clicks.rs:882-898`, `coin_ammo_click:213-219` | favorite cursor 3 and trash cursor 6 consume the press; the Journey-research exception inside cursor 6 (`ItemSlot.cs:762`) is out |
 | `MouseItemSwap` favourite clearing | PARTIAL | `clicks.rs::left_click_movement:85` | C# clears both sides unless `retainFavoriteOnMoveAt[context]` (`:1255-1263`); the port tracks favourites by **slot index** (`App::favorite_slots`), so a favourite follows the slot, not the item |
 | Hotbar (closed) + stack icons | PORTED | `ui/slot.rs::closed_hotbar_metrics`, `hotbar_digit:165-188`, `stack_number_pos:229` | `GUIHotbarDrawInner` (`Main.cs:43614-43639`), 17 tests incl. `closed_hotbar_metrics_match_guihotbardrawinner` |
 | Slot background / context textures | PORTED | `ui/slot.rs::context_texture_index:23-76` | the per-context `Inventory_Back*` table (incl. trash 6 → Back7, `:34`) and the equip glyph table (`:105-146`) |
 | Chest panel (slots, scroll, buttons, rename) | PARTIAL | `ui/chest.rs:131-502`, `clicks.rs:1141-1296` | LootAll/DepositAll/QuickStack/Restock dispatch + the keyboard rename landed; the **Sort** button (`ChestUI.cs` id 4) has no click arm, and the name field blinker/hover ramp are draw-only |
-| Bank panel (ctx 4/32) | PARTIAL | `ui/inventory.rs::bank_slot_at:707`, `clicks.rs:769-841` | uses the action-0 move with the half-stack right-click; the ctx-4/32 shift route has no cursor-8/9 (`clicks.rs:1092-1094` admits it) |
+| Bank panel (ctx 4/32) | PARTIAL | `ui/inventory.rs::bank_slot_at`, `clicks.rs` bank block | uses the action-0 move + the paced one-item right-click split (S1-C-10); the ctx-4/32 shift route has no cursor-8/9 (`evaluate_cursor_override` admits it) |
 | Crafting UI | PARTIAL | `ui/crafting.rs` (draw + `hit_test:328`), `clicks.rs:347-412` | left-click craft-one works; the recipe filter strip and search bar are **draw-only** (`draw_filter_strip:690`, `draw_search_bar:737` — no hit test); no `focusRecipe`/`_selectedRecipeIndex`, no guide item, no Shift ×10 craft-all, no held-repeat pacing |
 | Equipment / dye page | PARTIAL | `ui/inventory.rs:282-676`, `ui/chrome.rs::draw_page_icons` | page-tab clicks landed (M7-UI-3a); the dye drag needs `Item.dye` (ROADMAP M7-UI-3 open) |
 | Trash slot (BUG-20) | PORTED | `ui/inventory.rs::trash_rect:729-736`, `app/mod.rs::trash_swap:1192` | `(448,258)` @0.85 / `+5,+168` @0.755 (`Main.cs:42349-42366`), quick-trash cursor 6, death clears (`Player.cs:54304`) — 3 `bug20_*` tests |
@@ -151,16 +151,15 @@ Representative names (`clicks.rs`): `dw_4_1_take_place_swap_stack_on_chest_slots
 
 ## Deviations & risks
 
-1. **Right-click takes half the stack, not one item** — `clicks.rs:911-922`
-   (`(count + 1) / 2`) against `PickupItemIntoMouse` (`ItemSlot.cs:1717-1772`),
-   which does `mouseItem.stack++`. Same shape in the coin/ammo rows
-   (`clicks.rs:238`) and the bank panel (`:813`). The chest panel does it
-   correctly. **Behavioural**, not admitted in ROADMAP/ANALYSIS.
-2. **The inventory right-click is not paced and does not repeat** — C# gates on
-   `Main.stackSplit > 1` (`:1700`) and re-fires while the button is *held*
-   (`:1654`); the port consumes an edge (`loop.rs:438`) with no `stack_split`
-   read on that path, so a held right-click yields exactly one half-stack.
-   **Behavioural**, not admitted.
+1. ~~**Right-click takes half the stack, not one item**~~ — **RESOLVED
+   2026-11-12 (S1-C-10)**: `clicks.rs::right_click_split` /
+   `pickup_one_into_mouse` move exactly one item per transfer on the
+   inventory grid, coin/ammo rows, bank and chest (`ItemSlot.cs:1717-1784`).
+2. ~~**The inventory right-click is not paced and does not repeat**~~ —
+   **RESOLVED 2026-11-12 (S1-C-10)**: `handle_inventory_clicks` dispatches on
+   `Main.mouseRight` (`place_down`), and the shared split reads the
+   `stackSplit > 1` cooldown, so a held right-click repeats one item at the
+   vanilla cadence.
 3. **No right-click equip/dye/swap actions** — `SwapEquip` (`:1685-1697`),
    `SwapVanityEquip`, `HasItemSwap`, openable bags. Equipping an accessory or
    armour by right-click is impossible; the dye/mount/pet pages accept any held
@@ -170,10 +169,12 @@ Representative names (`clicks.rs`): `dw_4_1_take_place_swap_stack_on_chest_slots
    sides (`:1255-1263`); the port's slot-index favourites survive a move and
    block the shift-transfer of the receiving slot. **Behavioural**, admitted in
    M3-STORE-3's wording but not measured against the C#.
-5. **`MAX_STACK` (flat 999) in the right-click merge arm** — `clicks.rs:934` uses
+5. **`MAX_STACK` (flat 999) in the right-click merge arm** — `clicks.rs:984` uses
    `item::MAX_STACK` while every sibling uses `registry::max_stack(kind)`; the C#
    gate is `Main.mouseItem.maxStack` (`ItemSlot.cs:683`, `:1707`). Diverges for
-   any kind whose `maxStack` is not 999. **Behavioural**, cosmetic-sized today.
+   any kind whose `maxStack` is not 999. The arm is now the port's **press-edge
+   carry** only (the C# right click never deposits); the same-kind pickup wins
+   when the cursor has room (S1-C-10). **Behavioural**, cosmetic-sized today.
 6. **Crafting UI is one click deep** — no Shift ×10 craft-all, no `superFastStack`,
    no `stackSplit` pacing, no `focusRecipe`/`_selectedRecipeIndex` select step
    (`NewCraftingUI.cs:499-528`), no filter/search hit tests, no guide item, no

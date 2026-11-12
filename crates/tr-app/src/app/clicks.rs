@@ -204,7 +204,7 @@ impl App {
     /// cells: left runs the shared action-0 move behind
     /// `PickItemMovementAction`'s gate, right the `:1700-1772` split, Alt the
     /// favorite toggle on the row's own key (`row_favorite_index`).
-    fn coin_ammo_click(&mut self, context: i32, k: usize, left: bool) {
+    fn coin_ammo_click(&mut self, context: i32, k: usize, left: bool, right_edge: bool) {
         if k >= crate::inv::COINS {
             return;
         }
@@ -223,6 +223,11 @@ impl App {
         } else {
             self.equip.ammo[k]
         };
+        // The `:1707` pickup gate: an air cursor, or the same kind/prefix with
+        // cursor room.
+        let can_take = held.count == 0
+            || (crate::bank::can_stack(&held, &target)
+                && held.count < registry::max_stack(target.kind));
         if left {
             // `PickItemMovementAction`: a refused move never runs, and the
             // held stack stays on the cursor (the C# `result == -1` falls to
@@ -233,42 +238,39 @@ impl App {
             if left_click_movement(&mut held, &mut target) {
                 self.audio.play("Grab");
             }
-        } else if held.count == 0 {
-            if target.count > 0 {
-                let take = (target.count + 1) / 2;
-                held = ItemSlot {
-                    kind: target.kind,
-                    name: target.name,
-                    count: take,
-                    prefix: target.prefix,
+            self.mouse_item = held;
+        } else if can_take {
+            // `RightClick`'s pickup block (`ItemSlot.cs:1700-1713`): the paced
+            // one-per-transfer `PickupItemIntoMouse` split (held-repeat
+            // included).
+            target = self.right_click_split(target);
+        } else if right_edge {
+            // The port's press-edge place-one / merge-one carry (research/20
+            // §5, the flat-`MAX_STACK` deviation) — not the C#'s pickup
+            // direction, kept on the edge so a held button cannot spam it.
+            if target.count == 0 {
+                if !context_accepts(context, held.kind) {
+                    return;
+                }
+                target = ItemSlot {
+                    kind: held.kind,
+                    name: held.name,
+                    count: 1,
+                    prefix: held.prefix,
                 };
-                target.count -= take;
-                if target.count == 0 {
-                    target = EMPTY_SLOT;
+                held.count -= 1;
+                if held.count == 0 {
+                    held = EMPTY_SLOT;
+                }
+            } else if target.kind == held.kind && target.count < registry::max_stack(target.kind) {
+                target.count += 1;
+                held.count -= 1;
+                if held.count == 0 {
+                    held = EMPTY_SLOT;
                 }
             }
-        } else if target.count == 0 {
-            if !context_accepts(context, held.kind) {
-                return;
-            }
-            target = ItemSlot {
-                kind: held.kind,
-                name: held.name,
-                count: 1,
-                prefix: held.prefix,
-            };
-            held.count -= 1;
-            if held.count == 0 {
-                held = EMPTY_SLOT;
-            }
-        } else if target.kind == held.kind && target.count < registry::max_stack(target.kind) {
-            target.count += 1;
-            held.count -= 1;
-            if held.count == 0 {
-                held = EMPTY_SLOT;
-            }
+            self.mouse_item = held;
         }
-        self.mouse_item = held;
         if context == 1 {
             self.equip.coins[k] = target;
         } else {
@@ -556,7 +558,12 @@ impl App {
 
     pub(crate) fn handle_inventory_clicks(&mut self) {
         let left = self.ui_left_press;
-        let right = self.ui_right_press;
+        let right_edge = self.ui_right_press;
+        // `ItemSlot.RightClick` reads `Main.mouseRight` (`:1654`), not the
+        // press edge: the held state drives the paced one-per-transfer pickup
+        // (`:1700-1713`). The port's own reversed place/merge arms stay on the
+        // edge (`right_edge`) so a held button cannot spam them.
+        let right = right_edge || self.place_down;
         self.ui_left_press = false;
         self.ui_right_press = false;
         if !left && !right {
@@ -815,12 +822,21 @@ impl App {
                     ui::inventory::bank_slot_at(self.mouse_pos, m_h)
                 })
             {
-                let Some(p) = self.player.as_mut() else {
-                    return;
-                };
-                let mut held = std::mem::replace(&mut self.mouse_item, crate::item::EMPTY_SLOT);
                 let bi = crate::bank::bank_for_chest(chest_open).unwrap();
-                let mut target = p.banks[bi][bank_idx];
+                // Read the cell and the cursor up front so the `&mut self`
+                // pickup helper never overlaps the player borrow; the cell is
+                // written back once the branch settles.
+                let mut target = self
+                    .player
+                    .as_ref()
+                    .map(|p| p.banks[bi][bank_idx])
+                    .unwrap_or(crate::item::EMPTY_SLOT);
+                let mut held = self.mouse_item;
+                // The `:1707` pickup gate: an air cursor, or the same
+                // kind/prefix with cursor room.
+                let can_take = held.count == 0
+                    || (crate::bank::can_stack(&held, &target)
+                        && held.count < crate::registry::max_stack(target.kind));
                 if left {
                     if held.count == 0 {
                         held = target;
@@ -842,34 +858,32 @@ impl App {
                     } else {
                         std::mem::swap(&mut held, &mut target);
                     }
-                } else if held.count == 0 {
-                    if target.count > 0 {
-                        let take = (target.count + 1) / 2;
-                        held = ItemSlot {
-                            kind: target.kind,
-                            name: target.name,
-                            count: take,
-                            prefix: target.prefix,
+                    self.mouse_item = held;
+                } else if can_take {
+                    // `RightClick`'s pickup block (`ItemSlot.cs:1700-1713`):
+                    // the paced one-per-transfer `PickupItemIntoMouse` split.
+                    target = self.right_click_split(target);
+                } else if right_edge {
+                    // The port's press-edge place-one carry (research/20 §5)
+                    // — not the C#'s pickup direction, kept on the edge so a
+                    // held button cannot spam it.
+                    if target.count == 0 {
+                        target = ItemSlot {
+                            kind: held.kind,
+                            name: held.name,
+                            count: 1,
+                            prefix: held.prefix,
                         };
-                        target.count -= take;
-                        if target.count == 0 {
-                            target = crate::item::EMPTY_SLOT;
+                        held.count -= 1;
+                        if held.count == 0 {
+                            held = crate::item::EMPTY_SLOT;
                         }
-                    }
-                } else if target.count == 0 {
-                    target = ItemSlot {
-                        kind: held.kind,
-                        name: held.name,
-                        count: 1,
-                        prefix: held.prefix,
-                    };
-                    held.count -= 1;
-                    if held.count == 0 {
-                        held = crate::item::EMPTY_SLOT;
+                        self.mouse_item = held;
                     }
                 }
-                self.mouse_item = held;
-                p.banks[bi][bank_idx] = target;
+                if let Some(p) = self.player.as_mut() {
+                    p.banks[bi][bank_idx] = target;
+                }
                 return;
             }
         }
@@ -895,7 +909,7 @@ impl App {
         // probe below knows nothing about them (`slot_at_mouse` covers the
         // 10x5 grid and the closed hotbar).
         if let Some((ctx, k)) = self.coin_ammo_at_mouse() {
-            self.coin_ammo_click(ctx, k, left);
+            self.coin_ammo_click(ctx, k, left, right_edge);
             return;
         }
         let Some(slot) = self.slot_at_mouse() else {
@@ -933,6 +947,11 @@ impl App {
         }
         let mut held = self.mouse_item;
         let mut target = self.inventory[slot];
+        // The `:1707` pickup gate: an air cursor, or the same kind/prefix with
+        // cursor room. This decides pickup vs the port's press-edge carry.
+        let can_take = held.count == 0
+            || (crate::bank::can_stack(&held, &target)
+                && held.count < registry::max_stack(target.kind));
         if left {
             // The action-0 movement shared with the chest grid
             // (`left_click_movement`); the C# plays 7 when an item sits on
@@ -940,40 +959,38 @@ impl App {
             if left_click_movement(&mut held, &mut target) {
                 self.audio.play("Grab");
             }
-        } else if held.count == 0 {
-            if target.count > 0 {
-                let take = (target.count + 1) / 2;
-                held = ItemSlot {
-                    kind: target.kind,
-                    name: target.name,
-                    count: take,
-                    prefix: target.prefix,
+            self.mouse_item = held;
+            self.inventory[slot] = target;
+        } else if can_take {
+            // `RightClick`'s pickup block (`ItemSlot.cs:1700-1713`): the paced
+            // one-per-transfer `PickupItemIntoMouse` split (held-repeat
+            // included).
+            self.inventory[slot] = self.right_click_split(target);
+        } else if right_edge {
+            // The port's press-edge place-one / merge-one carry (research/20
+            // §5, the flat-`MAX_STACK` deviation) — not the C#'s pickup
+            // direction, kept on the edge so a held button cannot spam it.
+            if target.count == 0 {
+                target = ItemSlot {
+                    kind: held.kind,
+                    name: held.name,
+                    count: 1,
+                    prefix: held.prefix,
                 };
-                target.count -= take;
-                if target.count == 0 {
-                    target = EMPTY_SLOT;
+                held.count -= 1;
+                if held.count == 0 {
+                    held = EMPTY_SLOT;
+                }
+            } else if target.kind == held.kind && target.count < MAX_STACK {
+                target.count += 1;
+                held.count -= 1;
+                if held.count == 0 {
+                    held = EMPTY_SLOT;
                 }
             }
-        } else if target.count == 0 {
-            target = ItemSlot {
-                kind: held.kind,
-                name: held.name,
-                count: 1,
-                prefix: held.prefix,
-            };
-            held.count -= 1;
-            if held.count == 0 {
-                held = EMPTY_SLOT;
-            }
-        } else if target.kind == held.kind && target.count < MAX_STACK {
-            target.count += 1;
-            held.count -= 1;
-            if held.count == 0 {
-                held = EMPTY_SLOT;
-            }
+            self.mouse_item = held;
+            self.inventory[slot] = target;
         }
-        self.mouse_item = held;
-        self.inventory[slot] = target;
     }
 
     /// The chest panel's slot dispatch (M3-CHEST-UI phase 4) — the ctx-3 half
@@ -1265,67 +1282,88 @@ impl App {
         }
     }
 
+    /// `ItemSlot.PickupItemIntoMouse` (`ItemSlot.cs:1717-1747`): move exactly
+    /// one item from `slot` onto the cursor. An air cursor clones the slot at
+    /// stack 0 — name and prefix included (`:1721`'s `inv[slot].Clone()`) —
+    /// then `mouseItem.stack++` / `slot--` (`:1738-1742`); the emptied slot
+    /// turns to air (`:1743-1746`). Returns false when the `:1707` gate
+    /// refuses (an air slot, or an alien/full cursor). The `:1728-1735`
+    /// favourite carry is unreachable here — the port's right-click slots
+    /// cannot be favourited.
+    fn pickup_one_into_mouse(&mut self, slot: &mut ItemSlot) -> bool {
+        if slot.kind == 0 || slot.count == 0 {
+            return false;
+        }
+        let max = registry::max_stack(slot.kind);
+        // `:1707` — `(CanStack(mouseItem, inv[slot]) && mouseItem.stack <
+        // maxStack) || mouseItem.type == 0` (`Item.CanStack` = same kind AND
+        // same prefix, `Item.cs:49865-49871`).
+        let can_take = self.mouse_item.count == 0
+            || (crate::bank::can_stack(&self.mouse_item, slot) && self.mouse_item.count < max);
+        if !can_take {
+            return false;
+        }
+        if self.mouse_item.count == 0 {
+            self.mouse_item = ItemSlot {
+                count: 0,
+                ..*slot
+            };
+        }
+        self.mouse_item.count += 1; // `:1738`
+        slot.count -= 1; // `:1741`
+        if slot.count == 0 {
+            *slot = EMPTY_SLOT; // `:1743-1746`
+        }
+        true
+    }
+
+    /// `ItemSlot.RightClick`'s pickup block (`ItemSlot.cs:1700-1713`): the
+    /// `stackSplit > 1` gate, then `superFastStack + 1` one-item
+    /// `PickupItemIntoMouse` transfers, sound 12 (`:1710`) and
+    /// `RefreshStackSplitCooldown` (`:1774-1784`) after each. Returns the
+    /// (possibly drained) slot so the caller can write it back to its
+    /// container. The ctx-0/3 `SwapEquip` arm (`:1685-1697`) and the
+    /// OpenableBag/HasItemSwap arms (`:1660-1675`) have no equip/swap state in
+    /// the port.
+    fn right_click_split(&mut self, mut slot: ItemSlot) -> ItemSlot {
+        if self.stack_split > 1 || slot.kind == 0 || slot.count == 0 {
+            return slot; // `:1700`
+        }
+        let transfers = self.super_fast_stack + 1; // `:1704`
+        for _ in 0..transfers {
+            if !self.pickup_one_into_mouse(&mut slot) {
+                break; // `:1707` refuses
+            }
+            self.audio.play("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
+            // `RefreshStackSplitCooldown` (`:1774-1784`).
+            self.stack_split = if self.stack_split == 0 {
+                30 // `:1778`
+            } else {
+                self.stack_delay // `:1782`
+            };
+            if slot.count == 0 {
+                break;
+            }
+        }
+        slot
+    }
+
     /// `ItemSlot.RightClick`'s stack-split for context 3 (`ItemSlot.cs:
-    /// 1636-1715` + `PickupItemIntoMouse` `:1717-1747`): one item per gated
-    /// drawn frame while the right button is held — `superFastStack + 1` once
-    /// the accelerator bottoms out — sound 12 per transfer and
-    /// `RefreshStackSplitCooldown` (`:1774-1784`) after each. The ctx-0/3
-    /// `SwapEquip` arm (`:1685-1697`) and the OpenableBag/HasItemSwap arms
-    /// (`:1660-1675`) have no equip/swap state in the port.
+    /// 1636-1715`) — the ctx-3 chest cell rides the shared paced
+    /// one-per-transfer split (`right_click_split`).
     fn chest_slot_stack_split(&mut self, abs: usize) {
         if self.stack_split > 1 {
             return; // `:1700`
         }
         let chest_idx = self.open_container() as usize;
-        let transfers = self.super_fast_stack + 1; // `:1704`
-        for _ in 0..transfers {
-            let Some(s) = chest::chest_slot(&self.world_chests, chest_idx, abs) else {
-                break;
-            };
-            if s.kind == 0 || s.count == 0 {
-                break; // `:1700`'s `inv[slot].IsAir`
-            }
-            let max = registry::max_stack(s.kind);
-            // `:1707` — `CanStack(mouseItem, inv[slot]) && mouseItem.stack <
-            // maxStack`, or an air cursor (`Item.CanStack` = same type AND
-            // same prefix, `Item.cs:49865-49871`).
-            let can_take = (crate::bank::can_stack(&self.mouse_item, &s)
-                && self.mouse_item.count < max)
-                || self.mouse_item.count == 0;
-            if !can_take {
-                break;
-            }
-            // `PickupItemIntoMouse` (`:1717-1747`): an air cursor clones the
-            // slot at stack 0 — name and prefix included (`:1721`'s
-            // `inv[slot].Clone()`) — then +1/−1; the emptied slot turns to
-            // air (`:1743-1746`). (The `:1728-1735` favorite carry is
-            // unreachable — chest slots cannot be favorited.)
-            if self.mouse_item.count == 0 {
-                self.mouse_item = s;
-                self.mouse_item.count = 0;
-            }
-            self.mouse_item.count += 1;
-            let left_in_slot = s.count - 1;
-            chest::set_chest_slot(
-                &mut self.world_chests,
-                chest_idx,
-                abs,
-                ItemSlot {
-                    count: left_in_slot,
-                    ..s
-                },
-            );
-            self.audio.play("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
-            // `RefreshStackSplitCooldown` (`:1774-1784`).
-            self.stack_split = if self.stack_split == 0 {
-                30
-            } else {
-                self.stack_delay
-            };
-            if left_in_slot == 0 {
-                break;
-            }
+        let Some(s) = chest::chest_slot(&self.world_chests, chest_idx, abs) else {
+            return;
+        };
+        if s.kind == 0 || s.count == 0 {
+            return; // `:1700`'s `inv[slot].IsAir` — no write, no resize
         }
+        let s = self.right_click_split(s);
+        chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, s);
     }
 
     /// Applies a menu action (start singleplayer, host on a port, join a server).
@@ -2567,15 +2605,86 @@ mod tests {
         assert_eq!(app.equip.ammo[0], slot(40, 120));
     }
 
+    /// S1-C-10 — the coin/ammo rows' right click is the `RightClick` pickup
+    /// block (`ItemSlot.cs:1700-1713`): one item per paced transfer
+    /// (`PickupItemIntoMouse`, `:1717-1747`), not the old half-stack split.
     #[test]
-    fn ui_2b_the_rows_split_on_right_click() {
+    fn ui_2b_the_rows_take_one_on_right_click() {
         let mut app = inv_app();
         app.equip.coins[1] = slot(72, 11);
         app.mouse_pos = Vec2::new(505.0, 145.0); // coin row 1
         app.ui_right_press = true;
         app.handle_inventory_clicks();
-        assert_eq!(app.mouse_item, slot(72, 6), "the half rounded up");
-        assert_eq!(app.equip.coins[1], slot(72, 5), "the cell keeps the rest");
+        assert_eq!(app.mouse_item, slot(72, 1), "one coin onto the cursor");
+        assert_eq!(app.equip.coins[1], slot(72, 10), "the cell keeps the rest");
+        assert!(app.stack_split > 1, "the transfer armed the split cooldown");
+    }
+
+    /// S1-C-10 — the inventory grid's right click takes one item, arms the
+    /// `RefreshStackSplitCooldown` pacing (`ItemSlot.cs:1774-1784`) and then
+    /// repeats only after the cooldown drains (the held `Main.mouseRight`
+    /// dispatch, `:1654`). This is the reported "moves half the stack" bug.
+    #[test]
+    fn s1_c_10_inventory_right_click_takes_one_and_repeats_when_paced() {
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 6);
+        app.mouse_pos = INV_SLOT_5;
+        // The press edge: exactly one item onto the cursor.
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(9, 1), "one item onto the cursor");
+        assert_eq!(app.inventory[5], slot(9, 5), "the slot keeps the rest");
+        assert!(app.stack_split > 1, "the transfer armed the cooldown");
+
+        // A held frame inside the cooldown moves nothing.
+        app.ui_right_press = false;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 1, "the cooldown paces the hold");
+        assert_eq!(app.inventory[5].count, 5);
+
+        // Once the cooldown drains, the held button takes one more.
+        app.stack_split = 1;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 2, "the held button repeats");
+        assert_eq!(app.inventory[5].count, 4);
+    }
+
+    /// S1-C-10 — the accelerator half of `RightClick` (`ItemSlot.cs:1704`):
+    /// one gated call runs `superFastStack + 1` one-item transfers.
+    #[test]
+    fn s1_c_10_inventory_right_click_honours_the_accelerator() {
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 10);
+        app.mouse_pos = INV_SLOT_5;
+        app.stack_delay = 7;
+        app.super_fast_stack = 2; // `superFastStack + 1` = 3 transfers
+        app.stack_split = 1;
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 3, "three one-item transfers");
+        assert_eq!(app.inventory[5].count, 7);
+    }
+
+    /// S1-C-10 — the bank panel's right click takes one item (the same
+    /// `RightClick` pickup block, `ItemSlot.cs:1700-1713`) and is paced.
+    #[test]
+    fn s1_c_10_bank_right_click_takes_one_item() {
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().banks[0][0] = slot(9, 7);
+        app.mouse_item = EMPTY_SLOT;
+        app.mouse_pos = Vec2::new(20.0, 330.0); // bank row 0 at m_h 60
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(9, 1), "one item onto the cursor");
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[0][0],
+            slot(9, 6),
+            "the bank cell keeps the rest"
+        );
+        assert!(app.stack_split > 1, "the transfer armed the split cooldown");
     }
 
     /// M7-UI-2c — shift+click on a coin/ammo cell transfers into the open
@@ -2759,8 +2868,8 @@ mod tests {
         app.handle_chest_clicks();
         app.handle_inventory_clicks();
         assert!(app.favorite_slots.is_empty(), "right-click never toggles");
-        assert_eq!(app.mouse_item.count, 3, "the half-take ran");
-        assert_eq!(app.inventory[5].count, 3);
+        assert_eq!(app.mouse_item.count, 1, "one item onto the cursor");
+        assert_eq!(app.inventory[5].count, 5);
     }
 
     /// DW-4.1 (dirty) — Alt+click on an empty slot never toggles: air returns
