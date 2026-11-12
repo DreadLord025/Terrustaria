@@ -1,6 +1,10 @@
 # 26 — Projectile AI families (aiStyle dispatch)
 
 > Wave 3 · researched 2026-11-12 · sources: decompiled + crates + ROADMAP/ANALYSIS/PORT_MAP
+>
+> **Snapshot note.** `crates/tr-app/src/projectile.rs` was rewritten by a concurrent
+> agent during this research (mtime 2026-11-12 14:40, 21 666 lines, 240 `#[test]`s).
+> Every Rust line cite below is against **that** revision; the C# cites are stable.
 
 ## Scope
 
@@ -15,7 +19,7 @@ the **family-behaviour layer** of the projectile AI: the `AI()` dispatch chain
 module 06; this module is the **behaviour** layer the core deferred.
 
 The Rust side is two files: `crates/tr-app/src/projectile.rs` — the
-`match data.ai_style` dispatch (`projectile.rs:8617`) plus the ~40 ported `ai_*`
+`match data.ai_style` dispatch (`projectile.rs:10425`) plus the ~50 ported `ai_*`
 family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines), the
 60 Hz driver that feeds the owner/aim/channel/death snapshots into the pool.
 
@@ -30,27 +34,32 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
 - `Terraria/Projectile.cs::Projectile.ShouldUseWindPhysics` (22101-22136) — the wind
   list (aiStyles 1,2,8,10,14,16,17,21,24,28,29,32,33,34,35,49,72,93,96,106) plus the
   `ProjectileID.Sets.WindPhysicsImmunity` per-type override.
-- `crates/tr-app/src/projectile.rs::ProjectilePool::update` (8505-9102) — the pass; the
-  `match data.ai_style` sits at 8617 with **32 unique arms** and `_ => {}` at 9026.
-- `::Projectile::ai_style1_flight` (5277) + `::ai_style1_rider` (5313) +
-  `::ai_book_of_skulls` (5389) — the aiStyle-1 family (generic arrow flight + the four
+- `crates/tr-app/src/projectile.rs::ProjectilePool::update` (10304-…) — the pass; the
+  `match data.ai_style` sits at 10425 with **38 unique arms** (10432-10884) and
+  `_ => {}` at 10927.
+- `::Projectile::ai_style1_flight` (6409) + `::ai_style1_rider` (6445) +
+  `::ai_book_of_skulls` (6521) — the aiStyle-1 family (generic arrow flight + the four
   M4-PROJ-6 riders + the Book of Skulls).
-- `::ai_boomerang` (4452), `::ai_flail` (4643), `::ai_flail_bounce` (4950),
-  `::ai_bomb` (5168), `::ai_yoyo` (3478), `::ai_yoyo_shot` (3833), `::ai_yoyo_beam`
-  (3868), `::ai_whip` (4547), `::ai_flying_minion` (2740), `::minion_separation` (2689),
-  `::ai_shuriken` (3446).
-- `::ai_ball_of_fire` (5501), `::ai_demon_scythe` (5606), `::ai_ice_block` (5637),
-  `::ai_crystal_storm` (5812), `::ai_frost_bolt` (5909), `::ai_inferno_fork` (5927),
-  `::ai_magic_missile` (5970), `::ai_gem_staff` (6195), `::ai_magnet_sphere` (6463),
-  `::ai_magnet_bolt` (6527), `::ai_spirit_flame` (6562), `::ai_leaf_blower` (5851).
-- `::ai_phasmal_eye` (3906), `::ai_phasmal_sphere` (3973), `::ai_phasmal_deathray`
-  (4012), `::ai_moon_leech` (4086), `::ai_nebula_eye` (4290), `::ai_stardust_mark`
-  (4264), `::ai_tower_damage_bolt` (4319), `::ai_vortex_ritual` (4144),
-  `::ai_vortex_bolt` (4214).
-- `::store_sentry_aim` (2666) + `::sentry_npc_targeting` (3319) — the sentry aiming
+- Core families: `::ai_boomerang` (5584), `::ai_flail` (5775), `::ai_flail_bounce`
+  (6082), `::ai_bomb` (6300), `::ai_yoyo` (3642), `::ai_yoyo_shot` (3997),
+  `::ai_yoyo_beam` (4032), `::ai_whip` (5679), `::ai_flying_minion` (2904),
+  `::minion_separation` (2853), `::ai_shuriken` (3610).
+- Caster families: `::ai_ball_of_fire` (6633), `::ai_demon_scythe` (6738),
+  `::ai_ice_block` (6769), `::ai_crystal_storm` (6944), `::ai_frost_bolt` (7062),
+  `::ai_inferno_fork` (7080), `::ai_magic_missile` (7123), `::ai_gem_staff` (7348),
+  `::ai_magnet_sphere` (7616), `::ai_magnet_bolt` (7680), `::ai_spirit_flame` (7715),
+  `::ai_leaf_blower` (6987).
+- Lunar battery: `::ai_phasmal_eye` (4070), `::ai_phasmal_sphere` (4137),
+  `::ai_phasmal_deathray` (4176), `::ai_moon_leech` (4250), `::ai_nebula_eye` (4454),
+  `::ai_stardust_mark` (4428), `::ai_tower_damage_bolt` (4483).
+- The 2026-11-12 caster wave: `::ai_unholy_trident` (4522), `::ai_spectre_shot` (4662),
+  `::ai_typhoon` (4766), `::ai_spectre_wrath` (4907), `::ai_nebula_arcanum` (4992),
+  `::ai_nebula_arm` (5155), `::ai_last_prism` (5246), `::ai_last_prism_laser` (5383).
+- `::ai_vortex_ritual` (4308), `::ai_vortex_bolt` (4378) — **defined but not dispatched**.
+- `::store_sentry_aim` (2830) + `::sentry_npc_targeting` (3483) — the sentry aiming
   seam; the per-kind shot machine is **not** ported.
-- `crates/tr-app/src/projectile.rs::proj_data` (1046-2257) — the `ai_style` column of
-  the data table: **172 arm groups / 229 projectile kinds / 60 distinct aiStyles**.
+- `crates/tr-app/src/projectile.rs::proj_data` (1110-2365) — the `ai_style` column:
+  **172 arm groups / 229 projectile kinds / 60 distinct aiStyles**.
 - `crates/tr-app/src/world_sim/projectiles.rs::update_projectiles` (13-204) — the
   fixed-step driver; builds `YoyoInputs` (121) and `FlailInputs` (148) and drains
   `drain_mark_spawns` (195).
@@ -62,7 +71,8 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
   `tr_core::whip`, `tr_core::edit` (the Ice Rod tile writes), `tr_core::tile`.
 - Called by: `world_sim/projectiles.rs::update_projectiles` ← `App`'s fixed step;
   `world_sim/editing.rs` (the shoot path); `npcs.rs` (hostile shots); `wiring.rs`.
-- Shared data structures: the `Projectile` slot (`local_ai` carries the sentry aim),
+- Shared data structures: the `Projectile` slot (`local_ai` carries the sentry aim,
+  `old_pos`/`old_rot`/`old_sprite_direction` the trail rings — 2626-2640),
   `ProjData.ai_style`, `YoyoInputs`/`FlailInputs`, `hook_reg`, the `wants_ritual_bolt` /
   `wants_mark_spawn` intents.
 
@@ -70,57 +80,65 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
 
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
-| `AI()` dispatch chain (23199-36815) | PARTIAL | `projectile.rs:8617` | 32 unique arms for the C#'s 210 aiStyles; `_ => {}` (9026) silently no-ops the other 178. |
-| aiStyle 1 — arrow/bullet family | PARTIAL | `::ai_arrow` (4387), `::ai_style1_flight` (5277) | The generic flight is faithful; C# `AI_001` has **142 distinct per-type arms** (197 `type ==` checks at 54002-57826) — the port covers only the 4 M4-PROJ-6 riders + the Book of Skulls. |
-| aiStyle 3 — boomerang | PORTED | `::ai_boomerang` (4452) | out/return, the bounce, the 3000 px cut-off. |
-| aiStyle 7 — grappling hooks | PORTED | `::ai_hook` (grapple.rs) + arm 8642 | M4-PROJ-5 done; the chain/sprite rendering is deferred (PORT_MAP 152). |
-| aiStyle 8/9/18/22/24/28/29/47/48/50/129 — casters | PORTED | 5501/5970/5606/5637/5812/5909/6195/6463/6527/5927/6562 | M4-PROJ-6 done (PORT_MAP 154). |
-| aiStyle 15 — flails | PARTIAL | `::ai_flail` (4643) | M4-PROJ-3b done for the family, but the **helper rows 928/248/405 are not**: there is no `ai_bubble` and no aiStyle-70 arm. |
-| aiStyle 16 — bombs | PORTED | `::ai_bomb` (5168) | M4-PROJ-9 done. |
-| aiStyle 40 — leaf blower | PORTED | `::ai_leaf_blower` (5851) | M4-PROJ-6b-leaf done. |
-| aiStyle 53 / 197 — sentries | PARTIAL | `::sentry_npc_targeting` (3319) + `store_sentry_aim` (2666) | Only the aim is computed and parked in `local_ai`; **the per-kind shot machine never fires** (arm comments 8876-8901, 8904-8923). |
-| aiStyle 62 — minions | PARTIAL | `::ai_flying_minion` (2740) + arm 8926 | The follow/attack/return machine is ported; the **attack-shot families are not** ("the spawn drops until the shot families land", 8933). |
+| `AI()` dispatch chain (23199-36815) | PARTIAL | `projectile.rs:10425` | 38 unique arms for the C#'s 210 aiStyles; `_ => {}` (10927) silently no-ops the other 172. |
+| aiStyle 1 — arrow/bullet family | PARTIAL | `::ai_arrow` (5519), `::ai_style1_flight` (6409) | The generic flight is faithful; C# `AI_001` has **142 distinct per-type arms** (197 `type ==` checks at 54002-57826) — the port covers only the 4 M4-PROJ-6 riders + the Book of Skulls. |
+| aiStyle 3 — boomerang | PORTED | `::ai_boomerang` (5584) | out/return, the bounce, the 3000 px cut-off. |
+| aiStyle 7 — grappling hooks | PORTED | `::ai_hook` (grapple.rs) + arm 10450 | M4-PROJ-5 done; the chain/sprite rendering is deferred (PORT_MAP 152). |
+| aiStyle 8/9/18/22/24/28/29/47/48/50/129 — casters | PORTED | 6633/7123/6738/6769/6944/7062/7348/7616/7680/7080/7715 | M4-PROJ-6 done (PORT_MAP 154). |
+| aiStyle 15 — flails | PARTIAL | `::ai_flail` (5775) | M4-PROJ-3b done for the family, but the **helper rows 928/248/405 are not**: there is no `ai_bubble` and no aiStyle-70 arm. |
+| aiStyle 16 — bombs | PORTED | `::ai_bomb` (6300) | M4-PROJ-9 done. |
+| aiStyle 27/40/51/59/71/75/84/118/119 — the 2026-11-12 caster wave | PORTED | 4522/6987/4662/4907/4766/5246/5383/4992/5155 | M4-PROJ-6b-magic-followups; the aiStyle-84 arm is kind-gated (LAST_PRISM_LASER vs the Phantasmal Deathray, 10635-10643). |
+| aiStyle 53 / 197 — sentries | PARTIAL | `::sentry_npc_targeting` (3483) + `store_sentry_aim` (2830) | Only the aim is computed and parked in `local_ai`; **the per-kind shot machine never fires** (arm comments 10777-10781, 10804+). |
+| aiStyle 62 — minions | PARTIAL | `::ai_flying_minion` (2904) + arm 10827 | The follow/attack/return machine is ported; the **attack-shot families are not** ("the spawn drops until the shot families land"). |
 | aiStyle 70 — Flairon bubble | MISSING | — | No arm and no `ai_bubble` function anywhere in `crates/` (PORT_MAP 157 lists one). |
-| aiStyle 82/83/84/85/102/103/122 — lunar battery | PORTED | 3906/3973/4012/4086/4290/4264/4319 | M4-EVENT-16 done (PORT_MAP 233). |
-| aiStyle 88 / 108 — Vortex ritual | MISSING (wired) | `::ai_vortex_ritual` (4144), `::ai_vortex_bolt` (4214) | The functions exist and are unit-tested, but **no dispatch arm calls them** — only the test module does (13858-13926). M4-EVENT-17 claims done; PORT_MAP 236 claims done. |
-| aiStyle 99 — yoyos | PARTIAL | `::ai_yoyo` (3478) | `AI_099_2_Yoyos` ported; `AI_099_1_Counterweights` (types 556-561/1079) has no row and no arm. |
-| aiStyle 115 / 210 — Terrarian beam, yoyo shots | PORTED | `::ai_yoyo_beam` (3868), `::ai_yoyo_shot` (3833) | M4-PROJ-4b done. |
-| aiStyle 165 — whips | PORTED | `::ai_whip` (4547) | M4-PROJ-7 done; the render ribbon is deferred. |
-| `ShouldUseWindPhysics` (22101) | PARTIAL | `::uses_wind_physics` (6923) | Rust matches only aiStyles 8/24/28/29; the C# list has 20 styles, so the ported arrow (1), shuriken (2) and bomb (16) arms get **no wind**. |
+| aiStyle 82/83/84/85/102/103/122 — lunar battery | PORTED | 4070/4137/4176/4250/4454/4428/4483 | M4-EVENT-16 done (PORT_MAP 233). |
+| aiStyle 88 / 108 — Vortex ritual | MISSING (wired) | `::ai_vortex_ritual` (4308), `::ai_vortex_bolt` (4378) | The functions exist and are unit-tested, but **no dispatch arm calls them** — only the test module does (15771-15839). M4-EVENT-17 claims done; PORT_MAP 236 claims done. |
+| aiStyle 99 — yoyos | PARTIAL | `::ai_yoyo` (3642) | `AI_099_2_Yoyos` ported; `AI_099_1_Counterweights` (types 556-561/1079) has no row and no arm. |
+| aiStyle 115 / 210 — Terrarian beam, yoyo shots | PORTED | `::ai_yoyo_beam` (4032), `::ai_yoyo_shot` (3997) | M4-PROJ-4b done. |
+| aiStyle 165 — whips | PORTED | `::ai_whip` (5679) | M4-PROJ-7 done; the render ribbon is deferred. |
+| `ShouldUseWindPhysics` (22101) | PARTIAL | `::uses_wind_physics` (8644) | Rust matches only aiStyles 8/24/28/29; the C# list has 20 styles, so the ported arrow (1), shuriken (2) and bomb (16) arms get **no wind**. |
 | `AI_001`'s per-type arms (142 types) | MISSING | — | Only the generic flight + 4 riders + Book of Skulls; the remaining ~137 type variants fall back to the generic flight. |
-| The other 178 aiStyles | MISSING | — | No arm and no data row: the projectiles are not spawnable and behave as inert points if forced. |
+| The other 172 aiStyles | MISSING | — | No arm and no data row: the projectiles are not spawnable and behave as inert points if forced. |
 
 ## Tests
 
-`crates/tr-app/src/projectile.rs` — 193 `#[test]`s. Family-relevant names:
-`the_boomerang_data_is_verbatim` (10653), `the_boomerang_switches_to_the_return_at_30_ticks`
-(10666), `the_outbound_boomerang_bounces_off_a_wall` (10704), `the_returning_boomerang_passes_tiles_and_is_caught`
-(10751), `the_stray_boomerang_dies_past_3000_px` (10795), `DW_3_6_the_dual_flail_inverts_the_throw`
-(10974), `DW_4_3_the_drippler_spawns_its_extra_ball_on_the_arm_end` (11186), `DW_5_2_the_dual_flail_discounts_the_damage`
-(11335), `the_bomb_data_is_verbatim` (11402), `the_bomb_detonates_and_digs_the_crater`
-(11419), `the_yoyo_data_is_verbatim` (11595), `a_yoyo_spawns_through_the_dispatch_arm` (11664),
-`the_yoyo_shot_fades_out_and_dies_at_twenty` (11977), `the_whip_swing_flies_out_from_the_anchor_and_dies`
-(12846), `the_whip_hits_each_npc_once_across_the_swing` (12891), `the_moon_lord_whip_spawns_its_arms`
-(12962), `test_dw_3_1_style_8_gravity_starts_at_ai_1_20` (14525), `test_dw_3_1_style_18_the_scythe_accelerates_from_ai_0_30_and_clamps_at_100`
-(14671), `test_dw_3_1_style_22_the_placed_block_drains_ai_0_and_is_mined_away_at_minus_900`
-(14722), `test_dw_3_1_style_24_the_crystal_storm_fades_after_ai_1_130` (14882),
-`test_dw_3_1_the_styles_without_a_bounce_arm_die_on_tile_contact` (15125),
-`test_dw_3_1_the_rider_kinds_take_the_rider_arm_not_the_plain_arrow_arm` (15156),
-`test_dw_3_3_the_style_8_arm_takes_the_wind_tail_at_a_known_vector` (15593),
-`test_dw_3_3_the_ported_arrow_arm_stays_wind_free` (15666), `test_dw_4a_the_gem_staff_features_round_trip_through_ai0`
-(15746), `test_dw_4b_the_magnet_sphere_fires_its_bolt_past_the_cooldown` (16192),
-`test_dw_4b_the_spirit_flame_retargets_inside_400f_and_caps_the_life` (16262),
-`the_portal_spawns_two_aliens_on_the_90th_tick` (13852), `test_edge_unported_ai_style_holds_position`
-(16945), `the_040_leaf_blower_fades_flaps_and_drifts` (9781).
-`crates/tr-app/src/world_sim/projectiles.rs` — `the_summon_fixture_spawns_one_pair_per_activation`
-(229), `the_summon_fixture_respects_a_full_pool` (288).
+`crates/tr-app/src/projectile.rs` — 240 `#[test]`s. Family-relevant names:
+`the_boomerang_data_is_verbatim`, `the_boomerang_switches_to_the_return_at_30_ticks`,
+`the_outbound_boomerang_bounces_off_a_wall`, `the_returning_boomerang_passes_tiles_and_is_caught`,
+`the_stray_boomerang_dies_past_3000_px`, `DW_3_6_the_dual_flail_inverts_the_throw`,
+`DW_4_3_the_drippler_spawns_its_extra_ball_on_the_arm_end`, `DW_5_2_the_dual_flail_discounts_the_damage`,
+`the_bomb_data_is_verbatim`, `the_bomb_detonates_and_digs_the_crater`,
+`the_yoyo_data_is_verbatim`, `a_yoyo_spawns_through_the_dispatch_arm`,
+`the_yoyo_shot_fades_out_and_dies_at_twenty`, `the_whip_swing_flies_out_from_the_anchor_and_dies`,
+`the_whip_hits_each_npc_once_across_the_swing`, `the_moon_lord_whip_spawns_its_arms`,
+`test_dw_3_1_style_8_gravity_starts_at_ai_1_20`,
+`test_dw_3_1_style_18_the_scythe_accelerates_from_ai_0_30_and_clamps_at_100`,
+`test_dw_3_1_style_22_the_placed_block_drains_ai_0_and_is_mined_away_at_minus_900`,
+`test_dw_3_1_style_24_the_crystal_storm_fades_after_ai_1_130`,
+`test_dw_3_1_the_styles_without_a_bounce_arm_die_on_tile_contact`,
+`test_dw_3_1_the_rider_kinds_take_the_rider_arm_not_the_plain_arrow_arm`,
+`test_dw_3_3_the_style_8_arm_takes_the_wind_tail_at_a_known_vector`,
+`test_dw_3_3_the_ported_arrow_arm_stays_wind_free`,
+`test_dw_4a_the_gem_staff_features_round_trip_through_ai0`,
+`test_dw_4b_the_magnet_sphere_fires_its_bolt_past_the_cooldown`,
+`test_dw_4b_the_spirit_flame_retargets_inside_400f_and_caps_the_life`,
+`test_dw_3_1_style_118_the_arcanum_fast_mode_decays_after_30_and_snaps_below_4p1` (18879),
+`test_dw_3_1_style_118_the_arcanum_resnaps_4p05_and_homes_in_mode_1` (18930),
+`test_dw_3_1_style_118_the_arcanum_subshot_cadence_30_and_the_key_linkage` (18972),
+`test_edge_style_118_the_arcanum_dies_at_ai_0_600` (19230),
+`test_dw_6_1_the_typhoon_rides_its_frame_off_the_tick_counter` (19712),
+`the_typhoon_records_one_history_slot_per_update_call` (19896),
+`the_portal_spawns_two_aliens_on_the_90th_tick`, `test_edge_unported_ai_style_holds_position`,
+`the_040_leaf_blower_fades_flaps_and_drifts`.
+`world_sim/projectiles.rs` — `the_summon_fixture_spawns_one_pair_per_activation` (229),
+`the_summon_fixture_respects_a_full_pool` (288).
 
 ## Deviations & risks
 
 | Deviation | Severity | Admitted? |
 | --- | --- | --- |
-| The dispatch covers **32 of 210** aiStyles; the other 178 hit `_ => {}` (9026) and hold position | behavioural | Partly — module 06 admits "the rest silently no-op" |
-| **6 duplicated match arms** (module 06 says 5): aiStyle 1 (8624 wins / 8728 dead), 3 (8631 / 8729), 14 (8695 / 8730), **16 (8696 / 8731 — the 6th, missed by module 06)**, 115 (8732 / 8925), 99 (8777 / 8983, byte-identical bodies). Rust matches the **first** arm, so the later copies are dead code | determinism (maintenance) | No |
+| The dispatch covers **38 of 210** aiStyles; the other 172 hit `_ => {}` (10927) and hold position | behavioural | Partly — module 06 admits "the rest silently no-op" |
+| **6 duplicated match arms**: aiStyle 1 (10432 wins / 10615 dead), 3 (10439 / 10616), 14 (10503 / 10617), 16 (10504 / 10618), 115 (10619 / 10826), 99 (10678 / 10884). Rust matches the **first** arm, so the later copies are dead code; the 99 pair is byte-identical (verified by diff — only the trailing arm differs) | determinism (maintenance) | No |
 | aiStyle 88 / 108: `ai_vortex_ritual`/`ai_vortex_bolt` exist and are tested but **no dispatch arm calls them** — the Vortex ritual projectiles never animate in the live sim | behavioural | No — M4-EVENT-17 and PORT_MAP 236 both claim "done" |
 | aiStyle 70 (the Flairon's bubble 405): **no arm and no `ai_bubble` function**; PORT_MAP 157 lists `ai_bubble` as ported | behavioural | No |
 | aiStyle 53 / 197 sentries compute an aim and park it in `local_ai`; the shot machine never fires | behavioural | Yes (ANALYSIS "Minions & sentries") |
@@ -128,15 +146,15 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
 | `AI_001`'s ~137 remaining per-type arms are absent — one generic arrow flight covers 32 arm groups / 36 kinds | behavioural | No |
 | `ShouldUseWindPhysics`: Rust matches 8/24/28/29, the C# lists 20 styles → the arrow/shuriken/bomb arms get no wind | behavioural | Partly (module 06) |
 | aiStyle 99: `AI_099_1_Counterweights` (556-561/1079) has neither a row nor an arm | behavioural | No |
-| The Rust `ai_shuriken` (3446) is a Rust-invented approximation (2 half-steps, 0.6 bounce) of the C# aiStyle-2 block (23205-23689), a 480-line per-type machine covering ~40 vanilla types | behavioural | No |
-| The 28 spawnable styles with a data row but no arm — see the gap list below | behavioural | No |
-| The shuriken (kind 3) has **no `proj_data` row**; it is spawned through the plain `spawn` (9607) and AI'd by an explicit kind check (8585), bypassing the aiStyle table entirely | cosmetic / structural | No |
+| The Rust `ai_shuriken` (3610) is a Rust-invented approximation (2 half-steps, 0.6 bounce) of the C# aiStyle-2 block (23205-23689), a 480-line per-type machine covering ~40 vanilla types; the shuriken is gated by **kind** (10385) and has no `proj_data` row, so it bypasses the aiStyle table entirely | behavioural / structural | No |
+| The 21 spawnable styles with a data row but no arm — see the gap list below | behavioural | No |
+| The aiStyle-84 arm is kind-gated (LAST_PRISM_LASER vs the Phantasmal Deathray, 10635-10643): one vanilla style now serves two unrelated C# families | behavioural | No |
 
 ## Task seeds
 
-- **S** — Delete the six duplicated arms (8728/8729/8730/8731/8925/8983) and replace
-  `_ => {}` with an assert-on-unknown-aiStyle arm gated by an allow-list, so a new
-  `proj_data` row cannot silently miss its AI. (Independent of everything below.)
+- **S** — Delete the six duplicated arms (10615/10616/10617/10618/10826/10884) and
+  replace `_ => {}` with an assert-on-unknown-aiStyle arm gated by an allow-list, so a
+  new `proj_data` row cannot silently miss its AI. (Independent of everything below.)
 - **S** — Wire `ai_vortex_ritual`/`ai_vortex_bolt` into the dispatch (aiStyle 88/108)
   and fix the M4-EVENT-17 + PORT_MAP 236 "done" claims. The functions already exist.
 - **S** — Add the aiStyle-70 arm and `ai_bubble` (the Flairon's bubble homing, C#
@@ -147,9 +165,9 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
   need `proj_data` rows + arms).
 - **M** — Port `AI_001`'s remaining per-type arms (142 `type ==` checks) or split the
   style-1 arm into a per-kind table so the ~137 unported variants are explicit.
-- **M** — Port the 28 gap-list styles, grouped by family: the sentry/turret group
-  (120/123/130/134/137/138), the pillar group (88/108/133), the beam/weapon group
-  (27/51/59/71/75/118/119), and the small ones (2/23/26/66/67/70/79/80/157/158/187/189).
+- **M** — Port the 21 gap-list styles, grouped by family: the sentry/turret group
+  (120/123/130/134/137/138), the pillar group (88/108/133), and the small ones
+  (2/23/26/66/67/70/79/80/157/158/187/189).
 - **L** — Port `AI_099_1_Counterweights` (67380) + the counterweight rows 556-561/1079.
 - **L** — Port the remaining ~150 vanilla aiStyles (the 1.4 boss/event families 130-210
   and the pre-1.3 groups 30-99) as a batch, one family per ROADMAP row.
@@ -157,7 +175,7 @@ family functions — and `crates/tr-app/src/world_sim/projectiles.rs` (318 lines
 ## Gap list — projectile kinds in the Rust data table with no faithful AI
 
 The Rust `proj_data` table binds **60 distinct aiStyles** across 172 arm groups
-(229 kinds). The **28 styles below have a data row but no dispatch arm**, so those
+(229 kinds). The **21 styles below have a data row but no dispatch arm**, so those
 projectiles hold position and never animate, damage or expire:
 
 | style | Rust kinds (ids) | C# behaviour | Severity |
@@ -165,20 +183,13 @@ projectiles hold position and never animate, damage or expire:
 | 2 | DUTCHMAN_SHELL (240) | aiStyle-2 machine: wind, per-type dust/rotation (23205-23689) | behavioural |
 | 23 | EYE_FIRE (101) | 20-tick alpha fade-in + the expected-type switch (33165) | behavioural |
 | 26 | SLIME_MINION (266) | `AI_026` (58102): the shared minion/sentry machine | behavioural |
-| 27 | UNHOLY_TRIDENT (114), UNHOLY_TRIDENT_HOSTILE (115), SWORD_BEAM (116), TERRA_BEAM (132), LIGHT_BEAM (156), NIGHT_BEAM (157), ENCHANTED_BEAM (173) | the beam machine: the velocity 1.125 accel, the per-type tails (26420) | behavioural |
-| 51 | LOST_SOUL_HOSTILE (293), LOST_SOUL (297) | the 5-shot volley after the 4-tick charge (28504) | behavioural |
-| 59 | SPECTRE_WRATH (356) | the 60-tick charge then the friendly flip + the target hunt (28938) | behavioural |
 | 66 | RETANIMINI (387), SPAZMAMINI (388) | the owner-centre aim + the death kill (29604) | behavioural |
 | 67 | STORM_TIGER_1/2/3 (833/834/835) | `AI_067_FreakingPirates` (49121) | behavioural |
 | 70 | FLAIRON_BUBBLE (405) | NPC-scan homing within 650 px (30304-30352) | behavioural |
-| 71 | TYPHOON (409) | the 6-shot fan + the dust spray (30355) | behavioural |
-| 75 | LAST_PRISM (633) | `AI_075` (30617) — the held-item machine | behavioural |
 | 79 | SAUCER_DEATHRAY (447) | the saucer deathray, aimed at the mounted NPC (30791) | behavioural |
 | 80 | SAUCER_MISSILE (448) | the saucer missile (30911) | behavioural |
 | 88 | VORTEX_RITUAL_BOLT (580) | the 900-wrap latch + the tile stop (31937-32261) | behavioural |
 | 108 | VORTEX_LIGHTNING (578), VORTEX_PORTAL (579) | the ritual timeline, the aim rotation, the 580/427 spawns (33679-33988) | behavioural |
-| 118 | NEBULA_ARCANUM (617) | the alpha ramp + the velocity-4 gate (34638) | behavioural |
-| 119 | NEBULA_ARCANUM_SUBSHOT (618) | the expected-type switch + the 420-speed spawn (34809) | behavioural |
 | 120 | STARDUST_GUARDIAN (623) | `AI_120_StardustGuardian` (44634) | behavioural |
 | 123 | MOONLORD_TURRET (641), RAINBOW_CRYSTAL (643) | `AI_123_FloatingTurrets` (34966) | behavioural |
 | 130 | FLAME_BURST_TOWER_1/2/3 (663/…) | `AI_130_FlameBurstTower` (36310) | behavioural |
@@ -196,8 +207,9 @@ Partial-AI kinds (an arm exists but the family is incomplete): the aiStyle-53 se
 (DEAD_CELLS_BARNACLE — aim only), the aiStyle-62 minions (HORNET, FLYING_IMP, TEMPEST,
 UFO_MINION, STARDUST_CELL, ABIGAIL — no attack shots), the aiStyle-1 kinds other than
 the 5 riders (32 arm groups / 36 kinds share one generic flight), the aiStyle-15 helper
-rows 928 (DRIPPLER_EXTRA_BALL) / 248 (FLOWER_POW_PETAL) / 405 (FLAIRON_BUBBLE), and the
-counterweights (556-561/1079, no rows at all).
+rows 928 (DRIPPLER_EXTRA_BALL) / 248 (FLOWER_POW_PETAL) / 405 (FLAIRON_BUBBLE), the
+aiStyle-84 kinds other than LAST_PRISM_LASER (the Phantasmal Deathray shares the
+kind-gated arm), and the counterweights (556-561/1079, no rows at all).
 
 ## Coverage table — every C# aiStyle → its Rust arm
 
@@ -208,7 +220,7 @@ Rust data row, so nothing spawns it).
 | aiStyle | C# behaviour (arm line) | Rust arm | Verdict | Sev | Note |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `AI_001` arrow/bullet flight, 142 per-type arms (54002) | `ai_arrow`/`ai_style1_flight` + riders | Pa | behavioural | one generic arm for 36 kinds; only 5 kinds special-cased |
-| 2 | inline: wind + per-type dust/rotation (23205) | `ai_shuriken` (3446), kind-gated | Pa | behavioural | DutchmanShell has a row but no arm |
+| 2 | inline: wind + per-type dust/rotation (23205) | `ai_shuriken` (3610), kind-gated | Pa | behavioural | DutchmanShell has a row but no arm |
 | 3 | `AI_003_Boomerang` (23690) | `ai_boomerang` | P | — | |
 | 4 | inline: net-mode timers, per-type tails (23694) | — | M | n/a | |
 | 5 | inline: localAI timers (23830) | — | M | n/a | |
@@ -233,7 +245,7 @@ Rust data row, so nothing spawns it).
 | 24 | inline: Crystal Storm shard rotation (25936) | `ai_crystal_storm` | P | — | |
 | 25 | inline: net timer + surface rain (26015) | — | M | n/a | |
 | 26 | `AI_026` minion machine (26416) | — | M | behavioural | SLIME_MINION row |
-| 27 | inline: the beam accel 1.125 + per-type tails (26420) | — | M | behavioural | 7 rows (the Trident + the beams) |
+| 27 | inline: the beam accel 1.125 + per-type tails (26420) | `ai_unholy_trident` | P | — | the Trident + the 6 beam riders |
 | 28 | inline: Frost Staff bolt (26555) | `ai_frost_bolt` | P | — | |
 | 29 | `AI_029_GemStaffs` (26676) | `ai_gem_staff` | P | — | |
 | 30 | inline: alpha/dust ramp (26680) | — | M | n/a | |
@@ -257,7 +269,7 @@ Rust data row, so nothing spawns it).
 | 48 | inline: magnet bolt travel (28204) | `ai_magnet_bolt` | P | — | |
 | 49 | inline: hostile switch (28243) | — | M | n/a | |
 | 50 | inline: Inferno Fork bolts (28323) | `ai_inferno_fork` | P | — | |
-| 51 | inline: the 5-shot volley (28504) | — | M | behavioural | LOST_SOUL rows |
+| 51 | inline: the 5-shot volley (28504) | `ai_spectre_shot` | P | — | |
 | 52 | inline: the player-relative aim (28560) | — | M | n/a | |
 | 53 | `AI_053_FrostHydra` (28564) | `sentry_npc_targeting` | Pa | behavioural | aim only, no shot |
 | 54 | inline: the raven flag (28773) | — | M | n/a | |
@@ -265,7 +277,7 @@ Rust data row, so nothing spawns it).
 | 56 | inline: rotation from ai[0] (28867) | — | M | n/a | |
 | 57 | inline: ai[0] cap 30 + gravity (28906) | — | M | n/a | |
 | 58 | inline: alpha fade (28938) | — | M | n/a | |
-| 59 | inline: the 60-tick charge + friendly flip (28938 arm) | — | M | behavioural | SPECTRE_WRATH row |
+| 59 | inline: the 60-tick charge + friendly flip (28938 arm) | `ai_spectre_wrath` | P | — | |
 | 60 | inline: scale shrink → velocity boost (28994) | — | M | n/a | |
 | 61 | `AI_061_FishingBobber` (29310) | — | M | n/a | |
 | 62 | `AI_062` minion machine (29314) | `ai_flying_minion` | Pa | behavioural | no attack shots |
@@ -277,11 +289,11 @@ Rust data row, so nothing spawns it).
 | 68 | inline: rotation + direction (30166) | — | M | n/a | |
 | 69 | inline: faces the owner (30240) | — | M | n/a | |
 | 70 | inline: NPC-scan homing (30304) | — | M | behavioural | Flairon bubble row |
-| 71 | inline: the 6-shot fan (30355) | — | M | behavioural | TYPHOON row |
+| 71 | inline: the 6-shot fan (30355) | `ai_typhoon` | P | — | |
 | 72 | inline: alpha fade (30455) | — | M | n/a | |
 | 73 | inline: the tile-338 check (30480) | — | M | n/a | |
 | 74 | inline: extraUpdates multiply (30605) | — | M | n/a | |
-| 75 | `AI_075` the held item (30617) | — | M | behavioural | LAST_PRISM row |
+| 75 | `AI_075` the held item (30617) | `ai_last_prism` | P | — | |
 | 76 | inline: heldProj + mount check (30621) | — | M | n/a | |
 | 77 | inline: the active sound (30671) | — | M | n/a | |
 | 78 | inline: alpha −30 (30762) | — | M | n/a | |
@@ -290,7 +302,7 @@ Rust data row, so nothing spawns it).
 | 81 | inline: penetrate-based (31001) | — | M | n/a | |
 | 82 | inline: the Phantasmal Eye homing (31214) | `ai_phasmal_eye` | P | — | |
 | 83 | inline: the Phantasmal Sphere (31322) | `ai_phasmal_sphere` | P | — | |
-| 84 | inline: the Deathray (31377) | `ai_phasmal_deathray` | P | — | |
+| 84 | inline: the Deathray (31377) | `ai_phasmal_deathray` + `ai_last_prism_laser` | P | — | kind-gated: two C# families share one arm |
 | 85 | inline: the Moon Leech (31758) | `ai_moon_leech` | P | — | |
 | 86 | inline: sound + ai[0]++ (31827) | — | M | n/a | |
 | 87 | inline: position.Y = ai[0] (31901) | — | M | n/a | |
@@ -324,8 +336,8 @@ Rust data row, so nothing spawns it).
 | 115 | inline: the Terrarian beam, light + 0.985 damp (34414) | `ai_yoyo_beam` | P | — | |
 | 116 | inline: rotation from ai[1] (34438) | — | M | n/a | |
 | 117 | inline: per-type flags (34459) | — | M | n/a | |
-| 118 | inline: the alpha ramp + the velocity-4 gate (34638) | — | M | behavioural | NEBULA_ARCANUM row |
-| 119 | inline: the expected-type switch (34809) | — | M | behavioural | NEBULA_ARCANUM_SUBSHOT row |
+| 118 | inline: the alpha ramp + the velocity-4 gate (34638) | `ai_nebula_arcanum` | P | — | |
+| 119 | inline: the expected-type switch (34809) | `ai_nebula_arm` | P | — | |
 | 120 | `AI_120_StardustGuardian` (34888) | — | M | behavioural | STARDUST_GUARDIAN row |
 | 121 | `AI_121_StardustDragon` (34892) | — | M | n/a | |
 | 122 | inline: the tower damage bolt (34896) | `ai_tower_damage_bolt` | P | — | |
