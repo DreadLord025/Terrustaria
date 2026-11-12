@@ -564,6 +564,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
         let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
+            // `TryAllowingItemReuse`'s `autoReuseAllWeapons` arm
+            // (`Player.cs:52912`, set from `Main.SettingsEnabled_AutoReuseAllItems`
+            // at `Player.cs:24454`).
+            || (app.settings.auto_reuse_all
+                && registry::get(held.kind).is_some_and(|d| d.damage > 0))
             || (prev_mine_released && !prev_mine_down);
         // The ammo shooters take the shooter path below — the throw's
         // `Item.projectile` is the ammo's projectile for them, and the shot
@@ -1372,7 +1377,18 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         app.attack_cd = app.attack_cd.max(0.2);
     }
     let swing_over = app.swing <= 0.0;
-    let reuse_ready = auto_reuse || (prev_place_released && !prev_place_down);
+    // `Player.TryAllowingItemReuse` (`Player.cs:52904-52918`):
+    // `if ((stressBall || autoReuseAllWeapons) && sItem.damage > 0 &&
+    // (!sItem.channel || !this.channel)) flag = true; if (flag)
+    // releaseUseItem = true;` — so the "Settings: Autofire" row
+    // (`Main.SettingsEnabled_AutoReuseAllItems`, copied into
+    // `Player.autoReuseAllWeapons` at `Player.cs:24454`) makes any damaging,
+    // non-channeling item reusable while the button is held, exactly like the
+    // per-item `Item.autoReuse` flag above.
+    let autofire_all = app.settings.auto_reuse_all
+        && timings.is_some_and(|d| d.damage > 0)
+        && !(timings.is_some_and(|d| d.channel) && channels);
+    let reuse_ready = auto_reuse || autofire_all || (prev_place_released && !prev_place_down);
     let starting = swing_over && reuse_ready;
     let inside_swing = app.swing > 0.0 && app.item_time <= 0.0;
     // Tile interactions (`Player.Update` order: LookForTileInteractions

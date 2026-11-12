@@ -10071,19 +10071,20 @@ port's flat six-row list:
 **Deviations (all deliberate, each row cited in `page()`):**
 
 1. **Parked rows.** A vanilla row whose state the port has no field for is
-   drawn dimmed and inert rather than invented: the UI scale (`:561`), the
-   door-opening preference (`:644`), auto-reuse-all (`:677`), the map frame /
-   health style / portrait preference / opaque tooltip box (`:751-840`), the
-   window mode + resolution (`:876-910`), the cursor/border colour pickers
-   (`:1075-1371`). Their settings are the named follow-ups of M7-UI-3
+   drawn dimmed and inert rather than invented: the UI scale (`:561`), the map
+   frame's colour picker (`:766-798`), the window mode + resolution
+   (`:876-910`), the cursor/border colour pickers (`:1075-1371`). (The
+   door-opening, auto-reuse, map-border, health-style, portrait and hover-text
+   rows were parked here until M7-UI-4c wired them — see «The settings rows
+   (M7-UI-4c)».) Their settings are the named follow-ups of M7-UI-3
    (equipment/dye), M7-UI-5 (keybinds) and the window backend row.
 2. **The video page's slot count.** The C# sets `num11 = 14` for the video
    category but draws 15 rows and compensates with `vector7.Y -= 2f`
    (`:362-365`); the port keeps both verbatim (`right_slots(2) == 14`,
    `right_pitch(2) - 2`).
-3. **The wave-quality label.** `:1022-1036` switches on the level with a
-   per-level `GameUI.*` key; the port renders `GameUI.WaveQuality` plus the
-   level ordinal instead of inventing key names.
+3. **The wave-quality label** was `GameUI.WaveQuality` plus the level ordinal;
+   M7-UI-4c replaced it with the C#'s own `GameUI.Quality{Off,Low,Medium,High}`
+   argument and its fourth state (`:1022-1036`).
 4. **Keybinds / Save & Exit.** The C# calls `IngameFancyUI.OpenKeybinds()` and
    `WorldGen.SaveAndQuit()` inline (`:252-256`, `:300-310`); the port records
    the action on `IngameOptions::pending` and closes, because the keybinding
@@ -10185,6 +10186,85 @@ it is stored and named faithfully but nothing reads it yet (the door-opening
 helper itself is unported). `HoverControlMode` is likewise stored and named but
 unread, since the port's hover control is implicitly "hold". Both are recorded
 here rather than silently wired to a guess.
+
+## The settings rows (M7-UI-4c)
+
+`M7-UI-4`/`4b` got the window's content and chrome right for the rows the port
+modelled, but fourteen of the drawn rows still printed a **localization key
+instead of text**: the port had invented key names that the retail
+`Terraria.Localization.Content.*.json` files do not carry, so
+`LanguageManager::get_text_value` echoed the key — the vanilla
+unknown-key fallback — straight into the panel. A sweep of `IngameOptions.cs`
+against the en-US files found every one of them, and each is now the C#'s own
+key (or its own `On`/`Off` pair).
+
+### The label sweep
+
+| Row (`IngameOptions.cs`) | was | now |
+| --- | --- | --- |
+| lighting mode (`:955`) | `UI.LightMode_{n}` | `UI.LightMode_{Color,White,Retro,Trippy}` (`LightMode.cs:3-9`; the json has no numeric key) |
+| event progress (`:702`) | toggle over `GameUI.EventProgressBar` | `Lang.menu[123]` + `Lang.menu[124 + mode]` — a **three-state cycle** (`Main.invasionProgressMode`), Off / Timed / On |
+| wave quality (`:1022`) | `GameUI.WaveQuality` + ordinal | `Language.GetTextValue("GameUI.WaveQuality", <level>)` with `GameUI.Quality{Off,Low,Medium,High}` — and **four** states, `% 4` (`:1032`) |
+| boss-bar text (`:823`) | `GameUI.BigProgressBar` + Enabled | `UI.ShowBossLifeTextOn/Off` |
+| hover text boxes (`:832`) | `UI.OpaqueBoxBehindTooltips` (Parked) | `GameUI.HoverTextBoxesOn/Off`, now a live toggle |
+| flashy effects (`:863`, `:1055`) | `UI.FlashyEffects{Interface,World}` + Enabled | `UI.FlashyEffects{Interface,World}On/Off` |
+| tiles sway (`:1037`) | `UI.TilesSwayInWind` + Enabled | `UI.TilesSwayInWindOn/Off` |
+| map border (`:751`) | `UI.SelectMapBorder` (Parked) | `UI.SelectMapBorder` formatted with `UI.MinimapFrame_{key}`, now a live cycle |
+| health/mana style (`:799`) | `UI.SelectHealthStyle` (Parked) | `UI.SelectHealthStyle` + `UI.HealthManaStyle_{key}`, live cycle |
+| portraits (`:808`) | `UI.PortraitPreference` (Parked) | `UI.Portraits{Detailed,CloseUp,FullBody,Disabled}`, live cycle |
+| cursor/border colour bars (`:1079-1371`) | `UI.MouseColorR/G/B/A`, `UI.MouseBorderR/G/B/A` | `Label::Blank` — vanilla passes `DrawRightSide(sb, "", ...)`, the bars are unlabelled |
+
+The regression pin is `every_page_row_label_resolves_to_real_text`: it walks
+every row of all four pages, every state of every toggle and cycle, and fails
+on a `{0}` left in the string or a label that still starts with `UI.`/`GameUI.`
+(a missing key). Two older label tests gained the `lang::test_lock` guard for
+the same reason.
+
+### The three new consumers
+
+Four settings that the window already toggled had no reader anywhere in the
+crate; three of them are now wired to their vanilla consumers.
+
+1. **`SettingsEnabled_OpaqueBoxBehindTooltips`** (new field, default **on** —
+   `Main.cs:66513`, key `Main.cs:4155`/`:4542`). `Main.MouseText` draws the
+   `DrawInvBG` box and the `(8, 2)` text shift only when it is set
+   (`Main.cs:20380-20402`), and clamps with `num4 = 18`; with the box off the
+   text is drawn alone and clamped with `num4 = 4`. `ui::tooltip` takes the
+   flag, so both the item tooltip and the PVP mouse text follow it.
+2. **`SettingsEnabled_AutoReuseAllItems`** (`auto_reuse_all`).
+   `Player.TryAllowingItemReuse` (`Player.cs:52904-52918`) sets
+   `releaseUseItem = true` for any item with `damage > 0` that is not mid
+   channel when `Player.autoReuseAllWeapons` is on — that field is
+   `Main.SettingsEnabled_AutoReuseAllItems` (`Player.cs:24454`). Both the
+   placement gate and the weapon/mine gate in `world_sim::editing` now treat it
+   exactly like the per-item `Item.autoReuse` flag.
+3. **`MouseShowBuildingGrid`** (`tile_grid`). `Main.DrawInterface_6_TileGridOption`
+   (`Main.cs:46233-46269`) draws `TextureAssets.CursorRadial`
+   (`Images/UI/Radial`, `AssetInitializer.cs:502`) at the mouse tile's centre
+   in `Color.White * 0.5 * Main.MouseBuildingGridAlpha`, gated on
+   `MouseShowBuildingGrid && !SmartCursorIsUsed`, a live player and a free
+   cursor. The alpha is the C#'s two-branch lerp: 20 % a tick toward
+   `Lerp(0, 0.7, Clamp(1 - |velocity| / 6))` while on (`:46245`), else a flat
+   `-0.05` decay (`:46266`). The port stores that alpha on `App`
+   (`mouse_building_grid_alpha`) and draws the radial in the world transform,
+   so it scales with zoom like every other world sprite. `UI/Radial` joined the
+   static-sheet allowlist.
+
+`placement_preview` still has no renderer (the ghost half of
+`TileDrawing.cs:737` needs `TileObject.DrawPreview`'s object composition) and
+stays listed in the BUG_REPORT appendix.
+
+**Verification.** The label sweep: the new 4-page/state-walking test plus the
+`TR_OPTIONS_CAT` pin (a new `TR_OPTIONS_CAT=0..3` screenshot selector) show
+the Interface page's thirteen rows and the Video page's fifteen as real text
+("Minimap Border: Default", "Hover Text Boxes On", "Lighting: Color", "Waves
+Quality: High", …). The tooltip box is a `TR_INV=1 TR_MOUSE=60,60` A/B: with
+the box on the tooltip is the navy nine-slice, off it is bare text (pixel diff
+4491 px inside the tooltip rect). The building grid is a `TR_MOUSE=800,450
+TR_CAM=800,450` A/B with `MouseShowBuildingGrid` on/off: a 106x106 px radial at
+the mouse tile, peak alpha 78/255 = `white * 0.5 * 0.7 * 255` as computed. Both
+fixture runs are byte-identical across repeats (`TR_SHOT` SHA256 twin runs), and
+`cargo test --workspace` is 2154 + 1251 green.
 
 ## The PVP toggle + team select cells (M7-UI-7)
 

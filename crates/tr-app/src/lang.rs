@@ -221,6 +221,9 @@ mod tests {
 
     #[test]
     fn tip_and_inter_keys_follow_the_c_sharp_prefixes() {
+        // The comparison below reads the global manager twice; a concurrent
+        // `init` would flip the culture between the calls.
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Lang.cs:497`/`:485` — `LegacyTooltip.{i}` / `LegacyInterface.{i}`.
         // Without the shipped resources the manager answers the key itself
         // (vanilla's unknown-key behaviour), which is what pins the format here.

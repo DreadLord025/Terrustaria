@@ -611,6 +611,15 @@ pin_bool! {
     "TR_OPTIONS"
 }
 
+pin_num! {
+    /// `TR_OPTIONS_CAT`: the category the `TR_OPTIONS` fixture opens
+    /// (0 General, 1 Interface, 2 Video, 3 Controls) — the per-page screenshot
+    /// pin for M7-UI-4c's label sweep.
+    ingame_options_category,
+    "TR_OPTIONS_CAT",
+    u8
+}
+
 pin_bool! {
     /// `TR_POSE`: keeps the capture scene empty — a contact-damage NPC
     /// would knock the pinned player off the furniture.

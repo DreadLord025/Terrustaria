@@ -23,6 +23,7 @@
 //! `docs/ANALYSIS.md` "The in-game options window (M7-UI-4)".
 
 use crate::assets::Lookups;
+use crate::menu::pages::{cycle_previous, MINIMAP_FRAME_KEYS, RESOURCE_SET_KEYS};
 use crate::settings::Settings;
 use crate::ui::sliders;
 use crate::ui::text;
@@ -179,9 +180,6 @@ pub enum Toggle {
     /// `Lang.menu[71]/[72]` + `Main.hidePlayerCraftingMenu`-style pickup text
     /// (`:693-701`, the Interface page's first row).
     PickupText,
-    /// `Lang.menu[123]` `Main.showItemToolTips`-paired progress-bar row
-    /// (`:702-714`).
-    EventProgress,
     /// `Lang.menu[128]/[129]` + `Main.placePreview` (`:715-723`).
     PlacementPreview,
     /// `Lang.inter[117]/[116]` + `Main.highlightNewItems` (`:724-732`).
@@ -197,6 +195,9 @@ pub enum Toggle {
     /// `UI.AutoReuseAll{On,Off}` + `Main.SettingsEnabled_AutoReuseAllItems`
     /// (`:677-684`) → `auto_reuse_all`.
     AutoReuseAll,
+    /// `Main.SettingsEnabled_OpaqueBoxBehindTooltips` (`:832-840`) →
+    /// `opaque_tooltip_box`.
+    OpaqueTooltipBox,
     /// `Lang.menu[100]/[101]` + `Main.BackgroundEnabled` (`:977-985`).
     Background,
     /// `Lang.menu[132]/[133]` + `ChildSafety.Disabled` (`:986-994`).
@@ -224,6 +225,9 @@ pub enum Cycle {
     LightMode,
     /// `Lang.menu[59 + Main.qaStyle]` (`:964-976`) → `quality`.
     Quality,
+    /// `Lang.menu[123] + " " + Lang.menu[124 + Main.invasionProgressMode]`
+    /// (`:702-714`) → `event_progress`.
+    EventProgress,
     /// `GameUI.WaveQuality` (`:1022-1036`) → `wave_quality`.
     WaveQuality,
     /// `Lang.menu[253/224/223]` — the quick-trash key (`:841-862`).
@@ -240,6 +244,15 @@ pub enum Cycle {
     /// `UI.HoverControlSettingIs{Hold,Click}` — `Player.Settings.HoverControl`
     /// (`:659-675`, `Player.cs:379-383`).
     HoverControl,
+    /// `UI.SelectMapBorder` + `UI.MinimapFrame_{key}` (`:751-765`) →
+    /// `minimap_frame`.
+    MapBorder,
+    /// `UI.SelectHealthStyle` + `UI.HealthManaStyle_{key}` (`:799-807`) →
+    /// `resource_sets`.
+    HealthStyle,
+    /// `UI.Portraits{Detailed,CloseUp,FullBody,Disabled}` (`:808-822`) →
+    /// `portrait_preference`.
+    PortraitPreference,
 }
 
 /// The page table for a category (`:400-1441`). Rows are in the vanilla order and
@@ -301,8 +314,11 @@ static GENERAL: &[Row] = &[
 static INTERFACE: &[Row] = &[
     // 0 pickup text (`:693`).
     Row { label: Label::Menu(71), act: RowAct::Toggle(Toggle::PickupText) },
-    // 1 event progress bar (`:702`).
-    Row { label: Label::Menu(123), act: RowAct::Toggle(Toggle::EventProgress) },
+    // 1 event progress bar (`:702-714`) — a three-state cycle, not a toggle.
+    Row {
+        label: Label::Blank,
+        act: RowAct::Cycle(Cycle::EventProgress),
+    },
     // 2 placement preview (`:715`).
     Row { label: Label::Menu(128), act: RowAct::Toggle(Toggle::PlacementPreview) },
     // 3 highlight new items (`:724`).
@@ -311,25 +327,35 @@ static INTERFACE: &[Row] = &[
     Row { label: Label::Menu(229), act: RowAct::Toggle(Toggle::TileGrid) },
     // 5 gamepad instructions (`:742`).
     Row { label: Label::Menu(241), act: RowAct::Toggle(Toggle::GamepadInstructions) },
-    // 6 `UI.SelectMapBorder` — the map-frame cycle (`:751-765`) — no port field.
-    Row { label: Label::Text("UI.SelectMapBorder"), act: RowAct::Parked },
+    // 6 `UI.SelectMapBorder` — the map-frame cycle (`:751-765`); the label
+    // composes the frame's own `UI.MinimapFrame_{key}` name.
+    Row {
+        label: Label::Blank,
+        act: RowAct::Cycle(Cycle::MapBorder),
+    },
     // 7 the map-frame colour picker (`:766-798`).
     Row { label: Label::Blank, act: RowAct::Parked },
     // 8 `UI.SelectHealthStyle` (`:799-807`).
-    Row { label: Label::Text("UI.SelectHealthStyle"), act: RowAct::Parked },
+    Row {
+        label: Label::Blank,
+        act: RowAct::Cycle(Cycle::HealthStyle),
+    },
     // 9 the dialogue-portrait preference (`:808-822`).
-    Row { label: Label::Text("UI.PortraitPreference"), act: RowAct::Parked },
+    Row {
+        label: Label::Blank,
+        act: RowAct::Cycle(Cycle::PortraitPreference),
+    },
     // 10 the big progress-bar text (`:823-831`).
-    Row { label: Label::Text("GameUI.BigProgressBar"), act: RowAct::Toggle(Toggle::BossBarText) },
+    Row { label: Label::Blank, act: RowAct::Toggle(Toggle::BossBarText) },
     // 11 the opaque tooltip box (`:832-840`).
-    Row { label: Label::Text("UI.OpaqueBoxBehindTooltips"), act: RowAct::Parked },
+    Row {
+        label: Label::Blank,
+        act: RowAct::Toggle(Toggle::OpaqueTooltipBox),
+    },
     // 12 the quick-trash key (`:841-862`).
     Row { label: Label::Menu(253), act: RowAct::Cycle(Cycle::QuickTrash) },
     // 13 flashy interface effects (`:863-871`).
-    Row {
-        label: Label::Text("UI.FlashyEffectsInterface"),
-        act: RowAct::Toggle(Toggle::FlashyEffectsInterface),
-    },
+    Row { label: Label::Blank, act: RowAct::Toggle(Toggle::FlashyEffectsInterface) },
 ];
 
 /// The `Video` page (`:873-1064`, `num11 = 14` and 15 drawn rows — the vanilla's
@@ -344,7 +370,7 @@ static VIDEO: &[Row] = &[
     // 3 frame skip (`:946-954`).
     Row { label: Label::Menu(247), act: RowAct::Cycle(Cycle::FrameSkip) },
     // 4 lighting mode (`:955-963`).
-    Row { label: Label::Text("UI.LightMode_0"), act: RowAct::Cycle(Cycle::LightMode) },
+    Row { label: Label::Blank, act: RowAct::Cycle(Cycle::LightMode) },
     // 5 quality (`:964-976`).
     Row { label: Label::Menu(59), act: RowAct::Cycle(Cycle::Quality) },
     // 6 background (`:977-985`).
@@ -360,11 +386,11 @@ static VIDEO: &[Row] = &[
     // 11 wave quality (`:1022-1036`).
     Row { label: Label::Text("GameUI.WaveQuality"), act: RowAct::Cycle(Cycle::WaveQuality) },
     // 12 tiles sway in wind (`:1037-1045`).
-    Row { label: Label::Text("UI.TilesSwayInWind"), act: RowAct::Toggle(Toggle::TilesSway) },
+    Row { label: Label::Blank, act: RowAct::Toggle(Toggle::TilesSway) },
     // 13 screen shake (`:1046-1054`).
     Row { label: Label::Text("GameUI.ScreenShake"), act: RowAct::Toggle(Toggle::ScreenShake) },
     // 14 flashy world effects (`:1055-1063`).
-    Row { label: Label::Text("UI.FlashyEffectsWorld"), act: RowAct::Toggle(Toggle::FlashyEffectsWorld) },
+    Row { label: Label::Blank, act: RowAct::Toggle(Toggle::FlashyEffectsWorld) },
 ];
 
 /// The `Controls` page (`:1065-1441`, `num11 = 15`): the cursor-colour block
@@ -373,18 +399,21 @@ static VIDEO: &[Row] = &[
 static CONTROLS: &[Row] = &[
     // 0 `Lang.menu[64]` "Cursor Color" (`:1075`).
     Row { label: Label::Menu(64), act: RowAct::Header },
-    // 1-4 the four cursor-colour bars R/G/B/A (`:1079-1194`).
-    Row { label: Label::Text("UI.MouseColorR"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseColorG"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseColorB"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseColorA"), act: RowAct::Parked },
+    // 1-4 the four cursor-colour bars (`:1079-1194`). Vanilla passes `sb` with
+    // an empty label (`DrawRightSide(sb, "", ...)`) — the bars are
+    // unlabelled, they are not R/G/B/A rows.
+    Row { label: Label::Blank, act: RowAct::Parked },
+    Row { label: Label::Blank, act: RowAct::Parked },
+    Row { label: Label::Blank, act: RowAct::Parked },
+    Row { label: Label::Blank, act: RowAct::Parked },
     // 5 `Lang.menu[217]` "Border Color" (`:1203`).
     Row { label: Label::Menu(217), act: RowAct::Header },
-    // 6-10 the four border-colour bars + the caption row (`:1207-1371`).
-    Row { label: Label::Text("UI.MouseBorderR"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseBorderG"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseBorderB"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseBorderA"), act: RowAct::Parked },
+    // 6-10 the four border-colour bars + the caption row (`:1207-1371`), also
+    // drawn with an empty label (`:1231` onward).
+    Row { label: Label::Blank, act: RowAct::Parked },
+    Row { label: Label::Blank, act: RowAct::Parked },
+    Row { label: Label::Blank, act: RowAct::Parked },
+    Row { label: Label::Blank, act: RowAct::Parked },
     Row { label: Label::Blank, act: RowAct::Parked },
     // 11-14 the smart-cursor block (`:1372-1440`).
     Row { label: Label::Menu(215), act: RowAct::Cycle(Cycle::SmartBlocks) },
@@ -758,7 +787,6 @@ pub fn toggle_state(settings: &Settings, t: Toggle) -> bool {
         Toggle::PlayWhenUnfocused => settings.play_when_unfocused,
         Toggle::ReversedArmorBonuses => settings.reversed_armor_bonuses,
         Toggle::PickupText => settings.pickup_text,
-        Toggle::EventProgress => settings.event_progress > 0,
         Toggle::PlacementPreview => settings.placement_preview,
         Toggle::HighlightNewItems => settings.highlight_new_items,
         Toggle::TileGrid => settings.tile_grid,
@@ -775,6 +803,8 @@ pub fn toggle_state(settings: &Settings, t: Toggle) -> bool {
         Toggle::FlashyEffectsWorld => settings.flashy_effects_world,
         // `Main.SettingsEnabled_AutoReuseAllItems` (`:677-684`).
         Toggle::AutoReuseAll => settings.auto_reuse_all,
+        // `Main.SettingsEnabled_OpaqueBoxBehindTooltips` (`:832-840`).
+        Toggle::OpaqueTooltipBox => settings.opaque_tooltip_box,
     }
 }
 
@@ -787,7 +817,6 @@ pub fn flip_toggle(settings: &mut Settings, t: Toggle) {
         Toggle::PlayWhenUnfocused => settings.play_when_unfocused = on,
         Toggle::ReversedArmorBonuses => settings.reversed_armor_bonuses = on,
         Toggle::PickupText => settings.pickup_text = on,
-        Toggle::EventProgress => settings.event_progress = u8::from(on),
         Toggle::PlacementPreview => settings.placement_preview = on,
         Toggle::HighlightNewItems => settings.highlight_new_items = on,
         Toggle::TileGrid => settings.tile_grid = on,
@@ -803,6 +832,7 @@ pub fn flip_toggle(settings: &mut Settings, t: Toggle) {
         Toggle::ScreenShake => settings.use_screen_shake = on,
         Toggle::FlashyEffectsWorld => settings.flashy_effects_world = on,
         Toggle::AutoReuseAll => settings.auto_reuse_all = on,
+        Toggle::OpaqueTooltipBox => settings.opaque_tooltip_box = on,
     }
 }
 
@@ -820,10 +850,6 @@ pub fn toggle_label(settings: &Settings, t: Toggle) -> String {
         }),
         Toggle::ReversedArmorBonuses => crate::lang::menu(if on { 220 } else { 221 }),
         Toggle::PickupText => crate::lang::menu(if on { 71 } else { 72 }),
-        Toggle::EventProgress => crate::lang::text_args(
-            "GameUI.EventProgressBar",
-            &[enabled_word(on)],
-        ),
         Toggle::PlacementPreview => crate::lang::menu(if on { 128 } else { 129 }),
         Toggle::HighlightNewItems => {
             crate::lang::inter(if on { 117 } else { 116 })
@@ -831,14 +857,20 @@ pub fn toggle_label(settings: &Settings, t: Toggle) -> String {
         Toggle::TileGrid => crate::lang::menu(if on { 229 } else { 230 }),
         // `Lang.menu[242]` "Gamepad Instructions On" / `[241]` "… Off".
         Toggle::GamepadInstructions => crate::lang::menu(if on { 242 } else { 241 }),
-        Toggle::BossBarText => crate::lang::text_args(
-            "GameUI.BigProgressBar",
-            &[enabled_word(on)],
-        ),
-        Toggle::FlashyEffectsInterface => crate::lang::text_args(
-            "UI.FlashyEffectsInterface",
-            &[enabled_word(on)],
-        ),
+        // `BigProgressBarSystem.ShowText ? "UI.ShowBossLifeTextOn" :
+        // "UI.ShowBossLifeTextOff"` (`:823`).
+        Toggle::BossBarText => crate::lang::text(if on {
+            "UI.ShowBossLifeTextOn"
+        } else {
+            "UI.ShowBossLifeTextOff"
+        }),
+        // `Main.FlashyEffectsInterface ? "UI.FlashyEffectsInterfaceOn" :
+        // "UI.FlashyEffectsInterfaceOff"` (`:863`).
+        Toggle::FlashyEffectsInterface => crate::lang::text(if on {
+            "UI.FlashyEffectsInterfaceOn"
+        } else {
+            "UI.FlashyEffectsInterfaceOff"
+        }),
         Toggle::Background => crate::lang::menu(if on { 100 } else { 101 }),
         Toggle::Blood => crate::lang::menu(if on { 132 } else { 133 }),
         Toggle::ForegroundSunlight => crate::lang::text_args(
@@ -852,16 +884,23 @@ pub fn toggle_label(settings: &Settings, t: Toggle) -> String {
         Toggle::StormEffects => {
             crate::lang::text_args("GameUI.StormEffects", &[enabled_word(on)])
         }
-        Toggle::TilesSway => {
-            crate::lang::text_args("UI.TilesSwayInWind", &[enabled_word(on)])
-        }
+        // `"UI.TilesSwayInWind" + (Main.SettingsEnabled_TilesSwayInWind ? "On" :
+        // "Off")` (`:1037`).
+        Toggle::TilesSway => crate::lang::text(if on {
+            "UI.TilesSwayInWindOn"
+        } else {
+            "UI.TilesSwayInWindOff"
+        }),
         Toggle::ScreenShake => {
             crate::lang::text_args("GameUI.ScreenShake", &[enabled_word(on)])
         }
-        Toggle::FlashyEffectsWorld => crate::lang::text_args(
-            "UI.FlashyEffectsWorld",
-            &[enabled_word(on)],
-        ),
+        // `Main.FlashyEffectsWorld ? "UI.FlashyEffectsWorldOn" :
+        // "UI.FlashyEffectsWorldOff"` (`:1055`).
+        Toggle::FlashyEffectsWorld => crate::lang::text(if on {
+            "UI.FlashyEffectsWorldOn"
+        } else {
+            "UI.FlashyEffectsWorldOff"
+        }),
         // `Main.SettingsEnabled_AutoReuseAllItems ? "UI.AutoReuseAllOn" :
         // "UI.AutoReuseAllOff"` (`:677`).
         Toggle::AutoReuseAll => crate::lang::text(if on {
@@ -869,6 +908,31 @@ pub fn toggle_label(settings: &Settings, t: Toggle) -> String {
         } else {
             "UI.AutoReuseAllOff"
         }),
+        // `Main.SettingsEnabled_OpaqueBoxBehindTooltips ? "GameUI.HoverTextBoxesOn"
+        // : "GameUI.HoverTextBoxesOff"` (`:832`).
+        Toggle::OpaqueTooltipBox => crate::lang::text(if on {
+            "GameUI.HoverTextBoxesOn"
+        } else {
+            "GameUI.HoverTextBoxesOff"
+        }),
+    }
+}
+
+/// The stored minimap-frame key as the live renderer's style name — unknown
+/// names fall back to the first option (`ui::minimap::style_index`'s rule).
+fn minimap_frame_name(key: &str) -> &str {
+    match MINIMAP_FRAME_KEYS.iter().find(|k| **k == key) {
+        Some(k) => k,
+        None => MINIMAP_FRAME_KEYS[0],
+    }
+}
+
+/// The stored resource-set key as the `UI.HealthManaStyle_{key}` json key spells
+/// it (`PlayerResourceSetsManager` load order, `ui::resources`' drawing set).
+fn resource_set_name(key: &str) -> &str {
+    match RESOURCE_SET_KEYS.iter().find(|k| **k == key) {
+        Some(k) => k,
+        None => RESOURCE_SET_KEYS[0],
     }
 }
 
@@ -877,17 +941,35 @@ pub fn cycle_label(settings: &Settings, c: Cycle) -> String {
     match c {
         // `Lang.menu[(int)(247 + Main.FrameSkipMode)]` (`:946`).
         Cycle::FrameSkip => crate::lang::menu(247 + settings.frame_skip as usize),
-        // `"UI.LightMode_" + Lighting.Mode` (`:955`).
-        Cycle::LightMode => crate::lang::text(&format!("UI.LightMode_{}", settings.light_mode)),
+        // `"UI.LightMode_" + Lighting.Mode` (`:955`): the C# `LightMode` members
+        // are `Color`/`White`/`Retro`/`Trippy` (`LightMode.cs:3-9`) and the json
+        // has no numeric `LightMode_0`, so the key is spelled by state (the
+        // port's order matches the enum).
+        Cycle::LightMode => crate::lang::text(match settings.light_mode {
+            1 => "UI.LightMode_White",
+            2 => "UI.LightMode_Retro",
+            3 => "UI.LightMode_Trippy",
+            _ => "UI.LightMode_Color",
+        }),
         // `Lang.menu[59 + Main.qaStyle]` (`:964`).
         Cycle::Quality => crate::lang::menu(59 + settings.quality as usize),
-        // `GameUI.WaveQuality` (`:1022-1036`): the vanilla switches on the level;
-        // the port names the level through the same Enabled/Disabled pair the
-        // neighbouring rows use, plus the level's own ordinal.
-        Cycle::WaveQuality => format!(
+        // `Lang.menu[123].Value + " " + Lang.menu[124 + Main.invasionProgressMode]`
+        // (`:702`): "Event Progress Bar" + Off / Timed / On.
+        Cycle::EventProgress => format!(
             "{} {}",
-            crate::lang::text("GameUI.WaveQuality"),
-            settings.wave_quality
+            crate::lang::menu(123),
+            crate::lang::menu(124 + settings.event_progress as usize)
+        ),
+        // `Language.GetTextValue("GameUI.WaveQuality", <level>)` (`:1022`), the
+        // level being `GameUI.Quality{Off,Low,Medium,High}` (`:1025-1029`).
+        Cycle::WaveQuality => crate::lang::text_args(
+            "GameUI.WaveQuality",
+            &[crate::lang::text(match settings.wave_quality {
+                1 => "GameUI.QualityLow",
+                2 => "GameUI.QualityMedium",
+                3 => "GameUI.QualityHigh",
+                _ => "GameUI.QualityOff",
+            })],
         ),
         // `Lang.menu[253]` Disabled / `[224]` Left Control / `[223]` Left Shift
         // (`:841-862`): the C# `PreferenceSettings` switch.
@@ -925,6 +1007,31 @@ pub fn cycle_label(settings: &Settings, c: Cycle) -> String {
         } else {
             "UI.HoverControlSettingIsClick"
         }),
+        // `Language.GetTextValue("UI.SelectMapBorder", Language.GetTextValue(
+        // "UI.MinimapFrame_" + ActiveSelectionKeyName))` (`:751`).
+        Cycle::MapBorder => crate::lang::text_args(
+            "UI.SelectMapBorder",
+            &[crate::lang::text(&format!(
+                "UI.MinimapFrame_{}",
+                minimap_frame_name(&settings.minimap_frame)
+            ))],
+        ),
+        // `Language.GetTextValue("UI.SelectHealthStyle", Language.GetTextValue(
+        // "UI.HealthManaStyle_" + ActiveSetKeyName))` (`:799`).
+        Cycle::HealthStyle => crate::lang::text_args(
+            "UI.SelectHealthStyle",
+            &[crate::lang::text(&format!(
+                "UI.HealthManaStyle_{}",
+                resource_set_name(&settings.resource_sets)
+            ))],
+        ),
+        // `Main.DialoguePortraitPreference switch` (`:808-814`).
+        Cycle::PortraitPreference => crate::lang::text(match settings.portrait_preference {
+            1 => "UI.PortraitsCloseUp",
+            2 => "UI.PortraitsFullBody",
+            3 => "UI.PortraitsDisabled",
+            _ => "UI.PortraitsDetailed",
+        }),
     }
 }
 
@@ -934,7 +1041,10 @@ pub fn advance_cycle(settings: &mut Settings, c: Cycle) {
         Cycle::FrameSkip => settings.frame_skip = (settings.frame_skip + 1) % 3,
         Cycle::LightMode => settings.light_mode = (settings.light_mode + 1) % 4,
         Cycle::Quality => settings.quality = (settings.quality + 1) % 4,
-        Cycle::WaveQuality => settings.wave_quality = (settings.wave_quality + 1) % 3,
+        // `Main.invasionProgressMode++` wrapping at 3 (`:707-710`).
+        Cycle::EventProgress => settings.event_progress = (settings.event_progress + 1) % 3,
+        // `Main.WaveQuality = (Main.WaveQuality + 1) % 4` (`:1032`).
+        Cycle::WaveQuality => settings.wave_quality = (settings.wave_quality + 1) % 4,
         Cycle::QuickTrash => {
             // Disabled -> Left Control -> Left Shift -> Disabled (`:841-862`).
             if !settings.quick_trash {
@@ -965,6 +1075,22 @@ pub fn advance_cycle(settings: &mut Settings, c: Cycle) {
         // `Player.Settings.CycleHoverControl` (`Player.cs:379-383`) — the row
         // only distinguishes Hold from everything else (`IngameOptions.cs:660`).
         Cycle::HoverControl => settings.hover_control = if settings.hover_control == 0 { 1 } else { 0 },
+        // `MinimapFrameManager.CycleSelection()` activates the option *before*
+        // the current one (`SelectionHolder.cs:44-58`); the stored key feeds
+        // `ui::minimap::style_index` live.
+        Cycle::MapBorder => {
+            settings.minimap_frame = cycle_previous(&MINIMAP_FRAME_KEYS, &settings.minimap_frame);
+        }
+        // `PlayerResourceSetsManager.CycleResourceSet()` — the same backwards
+        // walk (`PlayerResourceSetsManager.cs:84-101`).
+        Cycle::HealthStyle => {
+            settings.resource_sets = cycle_previous(&RESOURCE_SET_KEYS, &settings.resource_sets);
+        }
+        // `Main.CycleNPCPortraitMode()` (`Main.cs:40297-40315`): Detailed ->
+        // CloseUp -> FullBodyRetro -> Disabled -> Detailed.
+        Cycle::PortraitPreference => {
+            settings.portrait_preference = (settings.portrait_preference + 1) % 4
+        }
     }
 }
 
@@ -1847,7 +1973,6 @@ mod tests {
             Toggle::PlayWhenUnfocused,
             Toggle::ReversedArmorBonuses,
             Toggle::PickupText,
-            Toggle::EventProgress,
             Toggle::PlacementPreview,
             Toggle::HighlightNewItems,
             Toggle::TileGrid,
@@ -1862,6 +1987,7 @@ mod tests {
             Toggle::TilesSway,
             Toggle::ScreenShake,
             Toggle::FlashyEffectsWorld,
+            Toggle::OpaqueTooltipBox,
         ];
         let mut s = Settings::default();
         for t in all {
@@ -1897,9 +2023,16 @@ mod tests {
         s.light_mode = 3;
         advance_cycle(&mut s, Cycle::LightMode);
         assert_eq!(s.light_mode, 0);
+        // `Main.WaveQuality = (Main.WaveQuality + 1) % 4` (`:1032`) — four
+        // levels, Off/Low/Medium/High.
         s.wave_quality = 2;
         advance_cycle(&mut s, Cycle::WaveQuality);
-        assert_eq!(s.wave_quality, 0);
+        assert_eq!(s.wave_quality, 3);
+        advance_cycle(&mut s, Cycle::WaveQuality);
+        assert_eq!(s.wave_quality, 0, "the ladder wraps");
+        s.event_progress = 2;
+        advance_cycle(&mut s, Cycle::EventProgress);
+        assert_eq!(s.event_progress, 0, "invasionProgressMode wraps at 3");
 
         // The three boolean cycles are two-state rows.
         s.smart_blocks = true;
@@ -1917,6 +2050,8 @@ mod tests {
     /// (`:946`), `[59 + qaStyle]` (`:964`) and the two-state pairs.
     #[test]
     fn the_cycle_labels_follow_their_state() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut s = Settings::default();
         for mode in 0..3u8 {
             s.frame_skip = mode;
@@ -1926,11 +2061,25 @@ mod tests {
             s.quality = qa;
             assert_eq!(cycle_label(&s, Cycle::Quality), crate::lang::menu(59 + qa as usize));
         }
-        for mode in 0..4u8 {
+        for (mode, key) in [
+            (0u8, "UI.LightMode_Color"),
+            (1, "UI.LightMode_White"),
+            (2, "UI.LightMode_Retro"),
+            (3, "UI.LightMode_Trippy"),
+        ] {
             s.light_mode = mode;
+            assert_eq!(cycle_label(&s, Cycle::LightMode), crate::lang::text(key));
+        }
+        // `:702`: "Event Progress Bar" + Off / Timed / On.
+        for mode in 0..3u8 {
+            s.event_progress = mode;
             assert_eq!(
-                cycle_label(&s, Cycle::LightMode),
-                crate::lang::text(&format!("UI.LightMode_{mode}"))
+                cycle_label(&s, Cycle::EventProgress),
+                format!(
+                    "{} {}",
+                    crate::lang::menu(123),
+                    crate::lang::menu(124 + mode as usize)
+                )
             );
         }
         s.smart_axes_labels();
@@ -2051,6 +2200,8 @@ mod tests {
     /// which therefore drew as the key itself.
     #[test]
     fn the_general_preferences_are_localised_and_clickable() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut s = Settings::default();
         let rows = page(0);
         // `:644-657`: the doors row cycles Disabled -> Everything -> Gamepad.
@@ -2097,5 +2248,148 @@ mod tests {
             let l = row_label(&rows[i], &s);
             assert!(!l.starts_with("UI."), "row {i} still draws a bare key: {l}");
         }
+    }
+
+    /// Every row of every page must draw real localised text. A `Label::Text`
+    /// key the language files do not carry degrades to the key itself
+    /// (`lang.rs:122` returns the key when the file lacks it), and a `{0}`
+    /// left in the string is the same bug caught before it reaches a
+    /// screenshot.
+    ///
+    /// This is the regression pin for the M7-UI-4c label sweep: before it,
+    /// `UI.LightMode_0`, `GameUI.BigProgressBar`, `UI.OpaqueBoxBehindTooltips`,
+    /// `UI.FlashyEffects{Interface,World}`, `UI.TilesSwayInWind`,
+    /// `UI.PortraitPreference` and the eight cursor-colour rows all drew their
+    /// raw keys.
+    #[test]
+    fn every_page_row_label_resolves_to_real_text() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let s = Settings::default();
+        for cat in 0..4u8 {
+            for (i, row) in page(cat).iter().enumerate() {
+                if row.act == RowAct::Parked {
+                    continue; // never drawn as a value row
+                }
+                // Walk every state of the multi-state rows, not just the default
+                // one: the C# label is a per-state key pair.
+                let states: Vec<Settings> = match row.act {
+                    RowAct::Toggle(t) => {
+                        let mut a = s.clone();
+                        flip_toggle(&mut a, t);
+                        vec![s.clone(), a]
+                    }
+                    RowAct::Cycle(c) => {
+                        let mut out = vec![s.clone()];
+                        let mut cur = s.clone();
+                        for _ in 0..4 {
+                            advance_cycle(&mut cur, c);
+                            out.push(cur.clone());
+                        }
+                        out
+                    }
+                    _ => vec![s.clone()],
+                };
+                for st in states {
+                    let label = row_label(row, &st);
+                    assert!(
+                        !label.contains('{'),
+                        "cat {cat} row {i}: unresolved format placeholder in {label:?}"
+                    );
+                    assert!(
+                        !label.starts_with("UI.") && !label.starts_with("GameUI."),
+                        "cat {cat} row {i} draws a bare localization key: {label:?}"
+                    );
+                    if let Label::Text(key) = row.label {
+                        assert_ne!(label, key, "cat {cat} row {i}: key {key} is missing");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The Interface page's three formerly-parked rows are live now, and each
+    /// carries its vanilla key (`:751-765`, `:799-807`, `:808-822`) with the
+    /// state's own name appended.
+    #[test]
+    fn the_interface_selector_rows_are_live_and_named() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut s = Settings::default();
+        let rows = page(1);
+        // Row 6: the map border, `UI.SelectMapBorder` + `UI.MinimapFrame_Default`.
+        assert_eq!(rows[6].act, RowAct::Cycle(Cycle::MapBorder));
+        assert_eq!(
+            row_label(&rows[6], &s),
+            crate::lang::text_args(
+                "UI.SelectMapBorder",
+                &[crate::lang::text("UI.MinimapFrame_Default")]
+            )
+        );
+        // The cycle walks the `MinimapFrameManager` order backwards
+        // (`SelectionHolder.cs:44-58`), so Default -> Valkyrie (the last key).
+        advance_cycle(&mut s, Cycle::MapBorder);
+        assert_eq!(s.minimap_frame, "Valkyrie");
+        assert_eq!(
+            row_label(&rows[6], &s),
+            crate::lang::text_args(
+                "UI.SelectMapBorder",
+                &[crate::lang::text("UI.MinimapFrame_Valkyrie")]
+            )
+        );
+        // Row 8: the health / mana style (`PlayerResourceSetsManager`).
+        assert_eq!(rows[8].act, RowAct::Cycle(Cycle::HealthStyle));
+        assert_eq!(
+            row_label(&rows[8], &s),
+            crate::lang::text_args(
+                "UI.SelectHealthStyle",
+                &[crate::lang::text(&format!(
+                    "UI.HealthManaStyle_{}",
+                    s.resource_sets
+                ))]
+            )
+        );
+        advance_cycle(&mut s, Cycle::HealthStyle);
+        assert!(s.resource_sets != Settings::default().resource_sets);
+        // Row 9: the dialogue portraits (`Main.CycleNPCPortraitMode`).
+        assert_eq!(rows[9].act, RowAct::Cycle(Cycle::PortraitPreference));
+        assert_eq!(
+            row_label(&rows[9], &s),
+            crate::lang::text("UI.PortraitsDetailed")
+        );
+        advance_cycle(&mut s, Cycle::PortraitPreference);
+        assert_eq!(
+            row_label(&rows[9], &s),
+            crate::lang::text("UI.PortraitsCloseUp")
+        );
+    }
+
+    /// `:832-840`: the hover-text-box row is a real toggle over
+    /// `Main.SettingsEnabled_OpaqueBoxBehindTooltips`, and its label is the
+    /// `GameUI.HoverTextBoxesOn/Off` pair — not the invented
+    /// `UI.OpaqueBoxBehindTooltips` key that drew raw.
+    #[test]
+    fn the_hover_text_box_row_toggles_the_tooltip_box() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut s = Settings::default();
+        let rows = page(1);
+        assert_eq!(rows[11].act, RowAct::Toggle(Toggle::OpaqueTooltipBox));
+        // `Main.cs:66513` — on by default.
+        assert!(s.opaque_tooltip_box);
+        assert_eq!(
+            row_label(&rows[11], &s),
+            crate::lang::text("GameUI.HoverTextBoxesOn")
+        );
+        flip_toggle(&mut s, Toggle::OpaqueTooltipBox);
+        assert!(!s.opaque_tooltip_box);
+        assert_eq!(
+            row_label(&rows[11], &s),
+            crate::lang::text("GameUI.HoverTextBoxesOff")
+        );
+        assert_ne!(
+            crate::lang::text("GameUI.HoverTextBoxesOff"),
+            "GameUI.HoverTextBoxesOff"
+        );
     }
 }

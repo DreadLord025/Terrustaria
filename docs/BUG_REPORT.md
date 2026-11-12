@@ -915,7 +915,7 @@ should ride the same fix branches:
 | Tree drops | `tile_drop` also lacks the sword-shrine/fake-sword special cases and the palm arm (`#16`) | `registry.rs:60-88` |
 | NPC display | the `FindFrame` fallback still animates kinds with no case using a blind strip (the `#7` animation half) | `npc.rs:4361+` |
 | NPC display | `sprite_dir` write sites missing in the walker/flyer/boss machines (24 C# sites) | `npc.rs` AI arms |
-| Settings | `blood`, the smart-cursor trio, `placement_preview`, `mouse_border_color` are stored but have no consumer | `settings.rs` |
+| Settings | `blood`, the smart-cursor trio and `placement_preview` are stored but have no consumer (`tile_grid`, `auto_reuse_all` and the tooltip-box flag got theirs in M7-UI-4c) | `settings.rs` |
 | Map | the map key is a hardcoded toggle; `Main.Input` rebinding not applied | `app/loop.rs:298-307` |
 | Cactus | `GetTileDrawData case 80`'s `tileTop = 2` is present, but the draw-local rectangle contract is not modelled | `tr-core/drawdata.rs` |
 | Trash | chest/shop scale `0.755` (vs `0.85`) not applied with the offset | `ui/inventory.rs:483-490` |

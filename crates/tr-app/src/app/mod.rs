@@ -491,6 +491,9 @@ pub(crate) struct App {
     /// (`Main.cSmartCursorModeIsToggleAndNotHold`, `Main.cs:67178`), **not**
     /// this state.
     pub(crate) smart_cursor_used: bool,
+    /// `Main.MouseBuildingGridAlpha` (`Main.cs:291`, default 0): the fading
+    /// alpha of the building-grid crosshair (`Main.cs:46245-46265`).
+    pub(crate) mouse_building_grid_alpha: f32,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
@@ -2745,11 +2748,17 @@ impl App {
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
+            // `Main.MouseBuildingGridAlpha` (`Main.cs:291`).
+            mouse_building_grid_alpha: 0.0,
             ingame_options: {
                 // `TR_OPTIONS` (the M7-UI-4 screenshot fixture): the window opens
                 // at boot so `TR_SHOT` captures the panel.
                 let mut o = crate::ui::ingame_options::IngameOptions::new();
                 o.open = crate::env::ingame_options_open();
+                // `TR_OPTIONS_CAT`: the CATEGORIES row the fixture opens on.
+                if let Some(cat) = crate::env::ingame_options_category() {
+                    o.category = cat.min(3);
+                }
                 o
             },
             world_path: world_path.clone(),

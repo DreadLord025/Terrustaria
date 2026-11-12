@@ -561,6 +561,10 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         "UI/UI_BossBar",
         "UI/Cursor_0",
         "UI/Cursor_1",
+        // `TextureAssets.CursorRadial` (`AssetInitializer.cs:502` loads
+        // `Images/UI/Radial`): the building-grid crosshair
+        // (`Main.cs:46261`).
+        "UI/Radial",
         "Mana",
         "Inventory_Back13",
         // P2 inventory panels: coins/ammo/misc/trash backgrounds, page tabs and
@@ -1433,6 +1437,10 @@ pub struct Lookups {
     /// `Images/UI/Cursor_0` / `Cursor_1`: the vanilla mouse cursor
     /// (`Main.DrawCursor`; `[0]` normal, `[1]` smart).
     pub cursor: [Option<tr_render::SheetRect>; 2],
+    /// `TextureAssets.CursorRadial` (`AssetInitializer.cs:502` loads
+    /// `Images/UI/Radial`): the building-grid crosshair
+    /// (`Main.DrawInterface_6_TileGridOption`, `Main.cs:46261`).
+    pub ui_radial: Option<tr_render::SheetRect>,
     /// `Images/Mana`: the mana stars (`ClassicPlayerResourcesDisplaySet.DrawMana`).
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
@@ -1761,6 +1769,7 @@ impl Lookups {
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
             ui_boss_head: atlas.sheet("NPC_Head_Boss_7").copied(),
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
+            ui_radial: atlas.sheet("UI/Radial").copied(),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
             ui_back3: atlas.sheet("Inventory_Back3").copied(),
