@@ -67,6 +67,11 @@ const ANCHORS: &[(&str, &str, &str)] = &[
         "M5-DUNGEON — the DungeonGlobalLights pass",
     ),
     (
+        "../tr-core/src/worldgen/dungeon_features.rs",
+        "fn wall_variants",
+        "M5-DUNGEON — the DungeonGlobalWallVariants pass",
+    ),
+    (
         "../tr-core/src/worldgen/dungeon.rs",
         "fn generate_dungeon",
         "M5-DUNGEON — the faithful dungeon crawler",
