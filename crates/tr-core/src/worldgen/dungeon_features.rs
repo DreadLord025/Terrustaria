@@ -1195,6 +1195,147 @@ pub fn place_traps(
     placed
 }
 
+
+/// `TileID.Banners` (`TileID.cs`): the hanging banner, one column of three.
+pub const BANNER: u16 = 91;
+
+/// `WorldGen.PlaceBanner` (`WorldGen.cs:46258-46300`): a banner hangs from a
+/// solid, non-solid-top ceiling and occupies three rows. Styles wrap 111 to a
+/// sheet row (`num3 -= 111; num -= 1998; num2 += 54`).
+pub fn place_banner(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    if !in_world(world, x, y - 1, 0) || !in_world(world, x, y + 2, 0) {
+        return;
+    }
+    let mut frame_x = style * 18;
+    let mut frame_y = 0;
+    let mut wrapped = style;
+    while wrapped >= 111 {
+        wrapped -= 111;
+        frame_x -= 1998;
+        frame_y += 54;
+    }
+    let above = &world.tiles[world.index(x, y - 1)];
+    let hangs = above.active()
+        && !above.inactive()
+        && crate::tiledata::TILE_SOLID.has(above.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(above.kind);
+    if !hangs || active(world, x, y) || active(world, x, y + 1) || active(world, x, y + 2) {
+        return;
+    }
+    for row in 0..3 {
+        let i = world.index(x, y + row);
+        world.tiles[i].kind = kind;
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        world.tiles[i].frame_x = frame_x as i16;
+        world.tiles[i].frame_y = (frame_y + row * 18) as i16;
+        mark_important(world, kind);
+    }
+}
+
+/// `DungeonGenerationStyleData.BannerItemTypes`' fallback half of
+/// `DungeonGlobalBanners.Banners` (`DungeonGlobalBanners.cs:29-103`): the
+/// dungeon's banners, `200 * maxTilesX / 4200 * max(1, scalar * 0.75)` of them,
+/// each hung from a solid ceiling under a dungeon wall with four free rows.
+///
+/// The style comes from `bannerStyles` (`DungeonCrawler.cs:280-286`: 10..15)
+/// picked by the wall variant: `variant * 2 + Next(2)`.
+///
+/// Returns the number of banners placed.
+#[allow(clippy::too_many_arguments)]
+pub fn place_banners(
+    world: &mut World,
+    fp: &DungeonFootprint,
+    wall_variants: [u16; 3],
+    banner_styles: [i32; 6],
+    global_feature_scalar: f64,
+    r: &mut HallSeed,
+) -> usize {
+    if fp.right <= fp.left || fp.bottom <= fp.top {
+        return 0;
+    }
+    let num = (200.0
+        * (world.width as f64 / 4200.0)
+        * (global_feature_scalar * 0.75).max(1.0)) as i32;
+    let mut placed = 0usize;
+    for _ in 0..num.max(0) {
+        let mut x = r.range(fp.left as u32, fp.right as u32) as i32;
+        let mut y = r.range(fp.top as u32, fp.bottom as u32) as i32;
+        // The dungeon-wall retry (`:22-36`).
+        let mut tries = 1000;
+        while !is_dungeon_wall_at(world, x, y) || active(world, x, y) {
+            tries -= 1;
+            if tries <= 0 {
+                break;
+            }
+            x = r.range(fp.left as u32, fp.right as u32) as i32;
+            y = r.range(fp.top as u32, fp.bottom as u32) as i32;
+        }
+        // Walk up to the ceiling (`:37-47`).
+        let mut tries = 1000;
+        while !solid(world, x, y) && y > 10 {
+            tries -= 1;
+            if tries <= 0 {
+                break;
+            }
+            y -= 1;
+        }
+        y += 1;
+        // The placement guards (`:48-52`).
+        if !in_world(world, x, y + 3, 0)
+            || !fp.can_generate_at(world, x, y)
+            || !is_dungeon_wall_at(world, x, y)
+            || kind_at(world, x, y - 1) == 48
+            || active(world, x, y)
+            || active(world, x, y + 1)
+            || active(world, x, y + 2)
+            || active(world, x, y + 3)
+        {
+            continue;
+        }
+        // Doors, platforms and other banners crowd the spot (`:53-66`).
+        let mut free = true;
+        for j in (x - 1)..=(x + 1) {
+            for k in y..=(y + 3) {
+                if active(world, j, k) && matches!(kind_at(world, j, k), 10 | 11 | 91) {
+                    free = false;
+                }
+            }
+        }
+        if !free {
+            continue;
+        }
+        // The style roll (`:73-84`).
+        let wall = wall_at(world, x, y);
+        let mut idx = 0usize;
+        if wall == wall_variants[1] {
+            idx = 1;
+        }
+        if wall == wall_variants[2] {
+            idx = 2;
+        }
+        let idx = idx * 2 + r.next(2) as usize;
+        let style = banner_styles[idx.min(banner_styles.len() - 1)];
+        place_banner(world, x, y, BANNER, style);
+        if kind_at(world, x, y) == BANNER {
+            placed += 1;
+        }
+    }
+    placed
+}
+
+/// The wall behind a cell (`Main.tile[x, y].wall`).
+fn wall_at(world: &World, x: i32, y: i32) -> u16 {
+    if !in_world(world, x, y, 0) {
+        return 0;
+    }
+    world.tiles[world.index(x, y)].wall
+}
+
+/// `DungeonUtils.IsConsideredDungeonWall(Main.tile[x, y].wall)`.
+fn is_dungeon_wall_at(world: &World, x: i32, y: i32) -> bool {
+    is_dungeon_wall(wall_at(world, x, y))
+}
+
 #[allow(dead_code)]
 fn _uses_tile(_t: Tile) {}
 
@@ -1615,6 +1756,93 @@ mod tests {
             .filter(|t| t.kind == PRESSURE_PLATE && t.active())
             .count();
         assert_eq!(plates, darts, "one plate per dart ({plates} vs {darts})");
+    }
+
+
+    /// A corridor tall enough for banners: air rows 61-70, brick ceiling
+    /// 58-60, brick floor 71+, dungeon wall 7 throughout.
+    fn banner_corridor(width: i32) -> (World, DungeonFootprint) {
+        let mut w = World::new("banner-test".into(), width, 200);
+        for x in 0..width {
+            for y in 0..200 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 7;
+                if (58..=60).contains(&y) || y >= 71 {
+                    w.tiles[i].kind = 41;
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+        }
+        let fp = DungeonFootprint {
+            left: 8,
+            right: width - 8,
+            top: 40,
+            bottom: 71,
+            wall: 7,
+            cracked: 481,
+        };
+        (w, fp)
+    }
+
+    /// `WorldGen.PlaceBanner` (`WorldGen.cs:46258-46300`): three rows hanging
+    /// from a solid, non-solid-top ceiling, `frame_y` 0/18/36 and `frame_x =
+    /// style * 18`.
+    #[test]
+    fn a_banner_hangs_three_rows_below_its_ceiling() {
+        let (mut w, _fp) = banner_corridor(60);
+        place_banner(&mut w, 20, 61, BANNER, 13);
+        for row in 0..3 {
+            let t = w.tiles[w.index(20, 61 + row)];
+            assert_eq!(t.kind, BANNER, "row {row}");
+            assert!(t.active());
+            assert_eq!(t.frame_x, 13 * 18, "the style column");
+            assert_eq!(t.frame_y as i32, row * 18, "row {row} of the sheet");
+        }
+        // A banner needs a solid ceiling: mid-air and on the floor it refuses.
+        place_banner(&mut w, 25, 65, BANNER, 13);
+        assert_eq!(w.tiles[w.index(25, 65)].kind, 0, "no ceiling, no banner");
+        place_banner(&mut w, 26, 69, BANNER, 13);
+        assert_eq!(w.tiles[w.index(26, 69)].kind, 0, "the floor blocks it");
+    }
+
+    /// `DungeonGlobalBanners.Banners` (`DungeonGlobalBanners.cs:29-103`): the
+    /// banners hang under the dungeon's ceilings in the colour's styles
+    /// (`bannerStyles` 10..15 selected by the wall variant).
+    #[test]
+    fn the_banner_pass_hangs_the_dungeon_banners() {
+        let (mut w, fp) = banner_corridor(4200);
+        let mut r = HallSeed::new(0xBA);
+        const STYLES: [i32; 6] = [10, 11, 12, 13, 14, 15];
+        let placed = place_banners(&mut w, &fp, [7, 94, 95], STYLES, 1.0, &mut r);
+        assert!(placed > 0, "banners land");
+        assert!(placed <= 200, "the 4200-wide budget is 200 ({placed})");
+        let mut cells = 0usize;
+        for y in 0..w.height {
+            for x in 0..w.width {
+                let t = w.tiles[w.index(x, y)];
+                if t.kind != BANNER || !t.active() {
+                    continue;
+                }
+                cells += 1;
+                let style = t.frame_x as i32 / 18;
+                assert!(STYLES.contains(&style), "a dungeon banner style ({style})");
+                assert!(
+                    (0..3).contains(&(t.frame_y as i32 / 18)),
+                    "one of its three rows"
+                );
+            }
+        }
+        assert_eq!(cells, placed * 3, "three cells per banner ({cells})");
+    }
+
+    /// The budget scales with the world width (`:18`).
+    #[test]
+    fn the_banner_budget_scales_with_the_world() {
+        let mut r = HallSeed::new(7);
+        let (mut small, fp_small) = banner_corridor(420);
+        const STYLES: [i32; 6] = [10, 11, 12, 13, 14, 15];
+        let small_placed = place_banners(&mut small, &fp_small, [7, 94, 95], STYLES, 1.0, &mut r);
+        assert!(small_placed <= 20, "a tenth of the budget ({small_placed})");
     }
 
     /// The same seed replays the same tiles — the pass draws only from its own
