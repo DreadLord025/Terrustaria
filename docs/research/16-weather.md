@@ -218,10 +218,11 @@ of them exist.
 ## Deviations & risks
 
 1. **`any_player_120_life` has no writer — the 0.35 wind cap is dead code** —
-   `tr-core/src/wind.rs:75/108` vs `Main.cs:58863-58871` (`flag`) and `:58889`
-   (`lowWindLimit`). Severity: **behavioural**. Not admitted anywhere; the ROADMAP row
-   claims it "already ported and verified". Risk: wind never damps to ≤ 0.35 for a
-   low-life player, so the walk stays gustier than vanilla on fresh characters.
+   *fixed 2026-11-13 (S1-L-2, `S1-L-2-rain-gates`)*: `world_sim::weather::update_world_tick`
+   now writes `Wind.any_player_120_life` from the port's single-player
+   `statLifeMax >= 120` scan (`Main.cs:58863-58871` / `:64899-64909`), and
+   `the_world_tick_writes_any_player_120_life_into_wind` locks the flag. The
+   ROADMAP row's "already ported and verified" claim is corrected.
 2. **`Sandstorm.cs:58-59`'s hardMode denominator not taken** — `scene.rs:591` pins
    `21600 * 3` with the stale comment "hardmode is not ported yet" (`World::hard_mode`
    exists). Severity: **behavioural** (sandstorms start 1.5× too often in hardmode).
@@ -241,10 +242,13 @@ of them exist.
    `:811`) vs vanilla's per-tick `Main.windSpeedCurrent` (`Rain.cs:56`,
    `Cloud.cs:391`). Severity: **behavioural/pixel** (sheeting rain does not bend with a
    gust). Admitted in a code comment only.
-6. **`NewRain`'s spawn factors missing** — `gfxQuality` (`Rain.cs:176-180`), the snow
-   suppression `(1-(snow/max)²)` (`:181-182`), the `atmo⁹`/`atmo<0.4` gates
-   (`:183-186`) and the `waterStyle*3` frames (`:205`) vs `rain.rs:798-837`. Severity:
-   **behavioural/pixel** (drop density underwater/deep/at low quality differs).
+6. **`NewRain`'s spawn factors missing** — *partially fixed 2026-11-13 (S1-L-2)*:
+   `Rain::spawn` now gates on `!ZoneRain || shimmerAlpha > 0` (`Rain.cs:30-35`) and
+   applies the `NewRain` active budget with `cloudAlpha`, snow suppression
+   `(1 - (SnowTileCount/SnowTileThreshold)^2)` (`:181-182`) and `atmo^9` / `atmo < 0.4`
+   (`:183-186`), threaded through `Rain::update`; drop type uses `waterStyle*3+rand(3)`.
+   Still unported: `gfxQuality` scaling (`:176-180`), `NPC.AnyDanger` throttle (`:37-45`),
+   and full spawn-window/player-velocity shaping. Remaining: **pixel**.
    Not admitted in ANALYSIS.
 7. **No lightning bolt geometry** — the flash is a full-screen overlay
    (`Main.lightning`); the `ParticleOrchestrator` bolt spawner and the

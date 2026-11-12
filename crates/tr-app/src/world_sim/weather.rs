@@ -28,8 +28,27 @@ use tr_core::TILE_PX;
 pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     let snow = is_snow_biome(&app.world, app.camera);
     let day_rate = app.world.day_rate();
-    app.rain
-        .update(&app.world, app.camera, screen, app.zoom, dt, snow, day_rate);
+    let shimmer_alpha = app.scene_state.shimmer_alpha;
+    let atmo = crate::render::sky::atmosphere_factor(
+        app.camera.y,
+        app.world.world_surface,
+        app.world.width,
+    );
+    let snow_tile_count = app.scene_metrics.snow_tile_count;
+    let zone_rain = app.scene_metrics.zone_rain;
+    app.rain.update(
+        &app.world,
+        app.camera,
+        screen,
+        app.zoom,
+        dt,
+        snow,
+        day_rate,
+        shimmer_alpha,
+        atmo,
+        snow_tile_count,
+        zone_rain,
+    );
 }
 
 /// The cross-system inputs of the vanilla lightning chain
@@ -107,8 +126,11 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // live per call; the port snapshots them per frame like `update_rain`).
     let weather = thunder_inputs(app);
     // `Main.cs:64899`'s `statLifeMax >= 120` scan, folded to the port's one
-    // player (`Main.player[i].statLifeMax`).
+    // player (`Main.player[i].statLifeMax`). The same flag feeds
+    // `Wind.any_player_120_life` (`Main.cs:58863-58871`, `:58889-58892`) — the
+    // 0.35 walk cap applies until some player crosses 120 max life (S1-L-2).
     let any_player_120 = app.player.as_ref().is_some_and(|p| p.max_hp >= 120);
+    app.wind.any_player_120_life = any_player_120;
     // The crossing samples: the Deerclops's midnight (`Main.cs:65121`'s
     // `num4 < 16200 && time >= 16200`) and the night bookend's dusk
     // (`Main.cs:65230`'s `UpdateTime_StartDay` at 32400).
@@ -626,6 +648,10 @@ mod tests {
             STEP,
             false,
             1,
+            0.0,
+            1.0,
+            0,
+            true,
         );
         assert_eq!(app.rain.max_raining(), 0.8);
         app.wind.speed_current = 0.55;
@@ -661,6 +687,10 @@ mod tests {
             STEP,
             false,
             1,
+            0.0,
+            1.0,
+            0,
+            true,
         );
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;
@@ -1054,6 +1084,33 @@ mod tests {
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.world.downed_deerclops, "the death flag");
     }
+    #[test]
+    fn the_world_tick_writes_any_player_120_life_into_wind() {
+        // `Main.cs:58863-58871`: the target-walk scan writes the
+        // `any_player_120_life` flag the 0.35 cap reads (`Wind::update_rain`,
+        // S1-L-2). The port folds the 255-player scan to its single player.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.world_surface = 200.0;
+        app.wind.frozen = true; // observe the flag, not the walk
+        app.wind.any_player_120_life = true;
+        let mut low = crate::player::Player::spawn(&app.world);
+        low.max_hp = 100;
+        app.player = Some(low);
+        update_world_tick(&mut app, STEP);
+        assert!(
+            !app.wind.any_player_120_life,
+            "a <120-HP player clears the strong-wind flag"
+        );
+        let mut high = crate::player::Player::spawn(&app.world);
+        high.max_hp = 120;
+        app.player = Some(high);
+        update_world_tick(&mut app, STEP);
+        assert!(
+            app.wind.any_player_120_life,
+            "statLifeMax >= 120 arms the strong-wind flag"
+        );
+    }
+
     #[test]
     fn the_meteor_roll_and_boss_death_flag() {
         // The night roll (`Main.cs:65230`) gates on the boss-2 downing;
