@@ -737,6 +737,17 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
         // pressure plates and wiring. The dual dungeon's mayan traps need the
         // crawler's halls/rooms as objects and stay out of scope.
         super::dungeon_features::place_traps(world, &fp, world.world_surface, 1.0, r);
+        // `DungeonCrawler.cs:503`: `DungeonGlobalBanners` — the dungeon's
+        // banners (tile 91), `bannerStyles` 10..15 picked by the wall variant.
+        const BANNER_STYLES: [i32; 6] = [10, 11, 12, 13, 14, 15];
+        super::dungeon_features::place_banners(
+            world,
+            &fp,
+            styles.wall_variants,
+            BANNER_STYLES,
+            1.0,
+            r,
+        );
     }
     let _ = setup.entrance_strength_y;
     let _ = setup.entrance_strength_x2;
@@ -852,6 +863,22 @@ mod tests {
         // does place is proven in `dungeon_features::tests::the_trap_pass_
         // spends_its_budget`; this test guards the wiring order.
         assert_eq!(traps, plates, "one plate per dart trap ({traps} vs {plates})");
+    }
+
+    /// `DungeonCrawler.cs:503`: `DungeonGlobalBanners` runs last, so the
+    /// generated dungeon carries banners (91) in runs of three.
+    #[test]
+    fn test_dungeon_features_the_banners_land_after_the_crawl() {
+        let mut w = flat_world(4200, 600, 60);
+        let mut rng = HallSeed::new(0x5EED);
+        generate_dungeon(&mut w, 2100, 60, &mut rng);
+        let cells = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 91)
+            .count();
+        assert_eq!(cells % 3, 0, "banner cells come in threes ({cells})");
+        assert!(cells > 0, "the pass hangs banners in the test dungeon");
     }
 
     fn test_dungeon_1_the_color_roll_carries_its_bricks() {

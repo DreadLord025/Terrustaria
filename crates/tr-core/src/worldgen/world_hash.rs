@@ -170,6 +170,9 @@ mod tests {
     // hive pass (`WorldGen.cs:15946-15968`), so every world with a hive
     // gains its `Next(5)` pockets. The determinism half of both tests
     // (a == b) still guards the stream.
+    // Re-pinned by M5-DUNGEON's banner pass (`DungeonGlobalBanners`,
+    // `DungeonCrawler.cs:503`): `200 * maxTilesX / 4200` banners (tile 91, three
+    // rows each) in the colour's `bannerStyles` 10..15, so every dungeon moves.
     // Re-pinned by M5-DUNGEON's trap pass (`DungeonGlobalTraps`,
     // `DungeonCrawler.cs:497`): dart traps with their pressure plates and wire
     // runs, so every dungeon's hash moves once more. (The 512-wide test world
@@ -190,8 +193,8 @@ mod tests {
     // halves, floors and ceilings), so every hash moves — `SEED42_512`
     // included (a 512-wide world draws 5 runs per half and lands at least
     // one).
-    const SEED42_512: u32 = 2809457153;
-    const DEFAULT_WORLD: u32 = 2675667088;
+    const SEED42_512: u32 = 3615544309;
+    const DEFAULT_WORLD: u32 = 1207823499;
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]
