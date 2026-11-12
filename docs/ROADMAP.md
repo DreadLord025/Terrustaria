@@ -331,7 +331,7 @@ plausible but cannot express style-specific rules.
 | S1-G-7 | `ForcedMinimumZoom` unported | S | P | research/41 (D-8) | — | zoom test |
 | S1-G-8 | Wind gust family (`WindGrid`, `TileDrawing.cs:8554-9218`) absent — `Wind::cycle` itself is term-for-term faithful | M | B+P | research/09 | — | gust sequence test |
 | S1-G-9 | 9-slice lighting: the sliced path skips the per-slice `GetFinalLight` (paint/actuation) | M | P | research/10 | — | 9-slice pixel diff |
-| S1-G-10 | `NON_VISIBLE_PADDING` is clamped to `min(w,h)/3` instead of the fixed 18 | S | P | research/10 | — | padding test |
+| ✅ S1-G-10 | `NON_VISIBLE_PADDING` is clamped to `min(w,h)/3` instead of the fixed 18 | S | P | research/10 | — | fixed 18 in `lighting/blur.rs` (`LightMap.cs:99-108`); anchored by `crates/tr-core/src/lighting/mod.rs` blur rng/behavior tests (2026-11-13, `S1-G-10-blur-padding`) |
 | S1-G-11 | Atlas composite order vs the XNA `Deferred` sort: merging textures into one atlas changes the composite order of cross-texture draws | L | P | research/41 (D-3/D-11) | G3 | pixel diff on a cross-texture scene |
 | S1-G-12 | Correct the "2 draw calls" claim (`ROADMAP.md:64`): up to 6 per frame (3+3 with `TR_POST=1`) | S | X | research/41 | — | draw-call counter test |
 | S1-G-13 | Render-target family: no layer-target family, no `skyTarget`, no capture gating | M | P | research/02 | — | target-layout screenshot |
