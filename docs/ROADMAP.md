@@ -150,7 +150,13 @@ Re-checked the state after other agents landed work on top of the audit base
   drift), S1-D-1 (hornet hover constants), S1-A-3 (position-hash tile framing);
   S1-D-4 dispatch census may need refresh after projectile/equip follow-ups.
   S1-C-9 (double item pickup) is fixed on branch `S1-C9-item-pickup-double-count`.
-  Treat Stage 1A/1B as the gate; see report 92 for the per-row verdicts.
+  **Landed after that snapshot:** S1-F-1 + S1-F-2 (the NPC protocol-id
+  collisions and the dead arms) on `S1-F-1-npc-kind-map` — the `to_u16`/
+  `from_u16` tables are now a bijection over all 182 kinds, watched RED then
+  GREEN with the roster round-trip test and the `netglue` wire-seam tests; the
+  `M4-EVENT-4b`/ANALYSIS "dead arms removed" claims are corrected to the
+  verified state. Treat Stage 1A/1B as the gate; see report 92 for the per-row
+  verdicts.
 
 
 ---
@@ -293,8 +299,8 @@ plausible but cannot express style-specific rules.
 
 | id | Task | Size | Sev | Evidence | deps | Verify |
 | --- | --- | --- | --- | --- | --- | --- |
-| S1-F-1 | **Fix the 7 protocol-id collisions** (`to_u16`/`from_u16` ids 78..84: pirates/probe vs Deerclops/Skeletron-Prime) — they cause round-trip loss on the live **save** (`saveglue.rs:107` ↔ `mod.rs:1980`) and **netcode** (`netglue.rs`) paths | M | D+B | research/34-id-sets-audit.md | — | save→load round-trip test over all 182 kinds; netcode round-trip test |
-| S1-F-2 | Delete the dead/contradictory arms the DONE row claims are gone: 29 dead + 2 contradictory arms in `to_u16`, 21 + 7 in `from_u16` — and **undo the pirate renumber** that created the 78..84 collision | M | D | research/34 (M4-EVENT-4b FAIL); research/26 (6 duplicated arms) | F1 | no dead arm; `#[deny(unreachable_patterns)]`; bijection test on the id map |
+| ✅ S1-F-1 | **Fix the 7 protocol-id collisions** (`to_u16`/`from_u16` ids 78..84: pirates/probe vs Deerclops/Skeletron-Prime) — they cause round-trip loss on the live **save** (`saveglue.rs:107` ↔ `mod.rs:1980`) and **netcode** (`netglue.rs`) paths | M | D+B | research/34-id-sets-audit.md | — | save→load round-trip test over all 182 kinds; netcode round-trip test — **landed 2026-11-12** (`S1-F-1-npc-kind-map`): the pirate/probe/drone band moved off 78..84 to the contiguous 182..188 (`npc.rs` `to_u16`/`from_u16`; the free 0..181 holes 62/148/149/152-155 are non-contiguous and the family must not split), so Deerclops/SkeletronHand/WallOfFleshEye/PrimeCannon/PrimeSaw/PrimeVice/PrimeLaser keep their ids and every one of the 182 kinds now round-trips — tests: `the_protocol_id_space_round_trips_every_kind` (all 182 kinds round-trip, the ids are injective, `from_u16` decodes exactly 182 ids, no id exceeds the `23` body's i16 field) and the wire-seam tests `the_collision_family_round_trips_on_the_wire` / `the_previously_undecodable_ids_round_trips_on_the_wire` (a `net::NpcInfo`'s i16 `kind` through `npc_from_net` — the exact `netglue.rs:385`/`:1517` encode and `:1044`/`:2060` decode; both watched RED before the fix: "Deerclops (id 78) must not arrive as another npc") |
+| ✅ S1-F-2 | Delete the dead/contradictory arms the DONE row claims are gone: 29 dead + 2 contradictory arms in `to_u16`, 21 + 7 in `from_u16` — and **undo the pirate renumber** that created the 78..84 collision | M | D | research/34 (M4-EVENT-4b FAIL); research/26 (6 duplicated arms) | F1 | no dead arm; `#[deny(unreachable_patterns)]`; bijection test on the id map — **landed 2026-11-12** with S1-F-1 (`S1-F-1-npc-kind-map`): every dead/duplicate/contradictory arm deleted from both tables (the unindented stale block included), the pirate band renumbered off the Deerclops/Skeletron-Prime ids (78..84 → 182..188), `#[deny(unreachable_patterns)]` on `to_u16` and `from_u16` so a duplicate arm is now a compile error, and the bijection test `the_protocol_id_space_round_trips_every_kind` locks it |
 | S1-F-3 | `cs_id` covers only 43 of 182 kinds — complete the vanilla `NPC.type` mapping used by the statue/wiring rosters | M | X | research/34 | F1 | per-kind `cs_id` table test |
 | S1-F-4 | `PrefixID`: 78 of 97 ids ported (62..80 missing) | M | B+X | research/34; research/07 | — | prefix id coverage test |
 | S1-F-5 | `ProjectileID`: 213 constants ported — complete the table or generate it | M | X | research/34 | — | id coverage test |
@@ -599,7 +605,8 @@ A task is done when its row's **verify** column is satisfied. The house rules
 1. **Stage 1A (determinism) + 1B (tick order) — the gate.** Until the tick
    order matches the C# and the RNG streams are the C#'s, every measurement and
    every optimisation is measuring the wrong thing. Start with S1-B-1…B-3,
-   S1-A-1…A-4, S1-C-3, S1-F-1/F-2 (the id collisions lose save data today).
+   S1-A-1…A-4, S1-C-3, S1-F-1/F-2 (the id collisions lose save data today —
+   S1-F-1/F-2 landed 2026-11-12 on `S1-F-1-npc-kind-map`).
 2. **The one FAIL and the two STALE rows** — S1-D-1 (hover presets), the
    stale snapshot rows and the M1.5 measurement tables.
 3. **The cheap correctness bugs with player-visible impact** — S1-C-9 (2× item

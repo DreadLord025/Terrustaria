@@ -2895,3 +2895,84 @@ mod handshake_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod npc_kind_wire_tests {
+    //! The `23` NPC body's protocol id round-trip (`S1-F-1`): the host writes
+    //! `NpcKind::to_u16()` into the i16 `kind` field (`netglue.rs:385`,
+    //! `:1517`) and the client reads it back with `from_u16(kind.max(0))`
+    //! (`:1044`, `:2060`). Seven kinds once shared ids `78..84`, so a
+    //! Deerclops arrived as a Skeletron Prime part, ids `85..88` had no decode
+    //! arm at all, and the pirates are now the contiguous `182..188` band.
+
+    use super::*;
+
+    /// Pushes one kind through the exact wire path of a `23` body: the i16
+    /// field carries the host's encode, `npc_from_net` decodes it.
+    fn wire_round_trip(kind: crate::npc::NpcKind) -> crate::npc::NpcKind {
+        let kind_id = kind.to_u16() as i16;
+        let info = net::NpcInfo {
+            slot: 0,
+            generation: 1,
+            spawn: true,
+            kind: kind_id,
+            x: 8.0 * 16.0,
+            y: 8.0 * 16.0,
+            vx: 0.0,
+            vy: 0.0,
+            dir_right: true,
+            dir_y_down: false,
+            sprite_right: true,
+            life_full: true,
+            hp: 100,
+        };
+        let world = tr_core::World::new("wire".into(), 64, 64);
+        npc_from_net(&world, &info)
+            .unwrap_or_else(|| panic!("{kind:?} did not decode from wire id {kind_id}"))
+            .kind
+    }
+
+    #[test]
+    fn the_collision_family_round_trips_on_the_wire() {
+        // Both sides of every id `78..84` that was shared: the
+        // Deerclops/Skeletron-Prime parts and the band that used to alias
+        // them.
+        for kind in [
+            crate::npc::NpcKind::Deerclops,
+            crate::npc::NpcKind::SkeletronHand,
+            crate::npc::NpcKind::WallOfFleshEye,
+            crate::npc::NpcKind::PrimeCannon,
+            crate::npc::NpcKind::PrimeSaw,
+            crate::npc::NpcKind::PrimeVice,
+            crate::npc::NpcKind::PrimeLaser,
+            crate::npc::NpcKind::PirateDeckhand,
+            crate::npc::NpcKind::PirateCaptainsMate,
+            crate::npc::NpcKind::PirateArcher,
+            crate::npc::NpcKind::PirateCorsair,
+            crate::npc::NpcKind::PirateCaptain,
+            crate::npc::NpcKind::MartianProbe,
+            crate::npc::NpcKind::MartianDrone,
+        ] {
+            assert_eq!(
+                wire_round_trip(kind),
+                kind,
+                "{kind:?} (id {}) must not arrive as another npc",
+                kind.to_u16()
+            );
+        }
+    }
+
+    #[test]
+    fn the_previously_undecodable_ids_round_trip_on_the_wire() {
+        // `85..88` carried no decode arm: the client logged "unknown npc kind"
+        // and dropped the slot for the martian ground family.
+        for kind in [
+            crate::npc::NpcKind::BrainScrambler,
+            crate::npc::NpcKind::RayGunner,
+            crate::npc::NpcKind::ScutlixRider,
+            crate::npc::NpcKind::Scutlix,
+        ] {
+            assert_eq!(wire_round_trip(kind), kind);
+        }
+    }
+}
