@@ -80,6 +80,7 @@ re-implement something that already exists, or to port the wrong file.
 | C# source (under `Terraria/`) | Rust target | State |
 | --- | --- | --- |
 | `Main.cs` (loop, update, draw orchestration) | `crates/tr-app/src/app/` (`loop.rs` the winit handler, `frame.rs` the `Main.Draw` orchestrator, `mod.rs` the `Main` state) | wip |
+| `Main.cs` `DoUpdateInWorld_Inner` (`:17745-17822`) + the `UpdateWorld_*` family (`:17824-18157`) — the ordered world pass | `crates/tr-app/src/app/frame.rs` (`App::frame`'s world branch; the `phase` trace + `app::frame::tests`) | done (S1-B-1: players → NPCs → projectiles → items → dust → time → WorldGen wiring/TE/liquid/growth → …; gores / leashed / floating-text passes unported) |
 | `Program.cs` (entry) | `crates/tr-app/src/main.rs` (`fn main`, the bootstrap) | done |
 | `Main.DrawBackground` underground tree (`DrawBackground_*`, `Main.cs:52798-53402`) | `crates/tr-app/src/render/bg.rs` (shared prologue `PassPrologue`) | done (classic style set; per-biome cave sets + 9-slice documented deviations) |
 | `Main.DrawSurfaceBG`/`DrawSunAndMoon` (sky, clouds, parallax stack) | `crates/tr-app/src/render/sky.rs` (+ `biome.rs` for the style/alpha transitions) | partial |

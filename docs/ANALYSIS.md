@@ -11259,3 +11259,53 @@ the Vortex pillar — which is now a single row.
 The guard covers the NPC pass only. The same missing-sheet risk exists for the
 projectile, item, gore and mount passes, each of which builds its list
 separately; the follow-up is to route them through the same const + helper.
+
+## The world-branch update order (S1-B-1)
+
+The port's per-frame world pass predated a faithful reading of
+`Main.DoUpdateInWorld_Inner` (`Main.cs:17745-17822`), so the phases had drifted:
+items ran before projectiles, the clock ran at the top of the frame (before the
+entity pass), and the `WorldGen.UpdateWorld` cluster (wiring / tile entities /
+liquid / growth) ran in the wrong slot. S1-B-1 restores the source order; S1-B-2
+(the clock gate) lands with it because the correct `UpdateTime` slot lives inside
+the world branch.
+
+The order the branch now runs, and its C# citation:
+
+| Phase | C# |
+| --- | --- |
+| `players` | `UpdateWorld_Players` `:17825` (called `:17757`) |
+| all-asleep flag | `UpdateTimeRate` `:6199-6218` reads `CurrentFrameFlags.SleepingPlayersCount`, set at `:17859` |
+| `npcs` | `UpdateWorld_SpawnNPCs` `:17878` + `UpdateWorld_NPCs` `:17898` (one port pass) |
+| `projectiles` | `UpdateWorld_Projectiles` `:17976` |
+| `items` | `UpdateWorld_Items` `:18004` |
+| `dust` | `UpdateWorld_Dust` `:18047` (the port's minecart sparks) |
+| `time` | `UpdateWorld_Time` `:18083` (`Main.UpdateTime`) |
+| `wiring` → `tile_entities` → `liquids` → `growth` | `UpdateWorld_WorldGenAndInvasion` `:18105` → `WorldGen.UpdateWorld` `WorldGen.cs:71495-71630` |
+| `waterfalls` | the port's combined pass; the C#'s `FindWaterfalls` is draw-time (`:61841`), the animation is `DoUpdate_AnimateWaterfalls` (`:19545`, pre-world) |
+| `weather` → `rain` → `scene_state` → `windy_day` → `ambience` | the port's environment cluster; `Main.Update`'s pre-world half (`:17166-17233`) + `SceneState.Update` (`:17816`) |
+| `editing` → `net` → `map` | the port's tile-edit / client-server / minimap passes (no single C# slot) |
+
+- **Gores, leashed entities and floating text are absent, not misordered.** The C#
+  runs `UpdateWorld_Gores` (`:17971`), `LeashedEntity.UpdateEntities` (`:17874`)
+  and `UpdateWorld_FloatingText` (`:18072`) between NPCs and time; the port has no
+  gore or floating-text module yet, so nothing emits there. Rows for those passes
+  are still open.
+- **The pre-world cluster is deliberately not moved ahead of the branch.** In the
+  C#, `UpdateWindyDayState` (`:17166`), the `AmbienceServer`/`SkyManager` updates
+  (`:17139`/`:17214`) and the `dayRate` weather walk (`:17228-17231`) all run
+  *before* `DoUpdateInWorld` (`:17278`). The port keeps them inside the world
+  branch (after `WorldGen`), so a frame's weather-to-entity latency is one phase
+  off the source. This is the remaining documented deviation of S1-B-1; the
+  reorder that would close it is a follow-up (the branch split itself is S1-B-8).
+- **The phase trace is `cfg(test)`-only.** `App::phase` is a no-op in release
+  builds and pushes onto a thread-local `Vec` in tests;
+  `app::frame::tests::the_world_branch_runs_in_the_csharp_update_order` asserts
+  the exact 19-name sequence on two consecutive headless frames, and
+  `the_clock_only_advances_inside_the_world_branch` (S1-B-2) asserts the front end
+  neither ages the clock nor runs the branch.
+- **Determinism note.** Reordering the fixed steps *is* the point here — the C#
+  order is the correct one, so the pre-S1-B-1 phase order was the bug. No RNG
+  stream, `WorldFrameKey` input or world-seed value changes; only the sequence in
+  which the per-phase steppers run within a frame.
+
