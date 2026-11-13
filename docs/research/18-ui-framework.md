@@ -98,8 +98,8 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 | Scroll wheel `Update` :219-223 | PORTED | `pointer.rs::queue_scroll` / `scroll_wheel` :238-262 → the per-screen consumers (`chest.rs`, `emotes.rs`, `achievements.rs`) | the machine owns `PlayerInput.ScrollWheelDeltaForUI` (accumulate + consume once); `PointerEvent::ScrollWheel { delta }` is `UIScrollWheelEvent.ScrollWheelValue` (`UIScrollWheelEvent.cs:7`); tests `dw_1_4_*` |
 | `MouseCaptured` :113-124 | PORTED | `pointer.rs::mouse_captured` :226 | `left_held` read by `ingame_options` (`frame.rs:117`) |
 | `ResetState`/200 ms lockout :165-179 | PORTED | `pointer.rs::reset_on_state_change` :142 | test `dw_1_2_the_state_change_disable_swallows_the_next_press` |
-| `OverflowHidden` scissor :199-238 | MISSING | `char_select.rs:856`, `world_select.rs:818`, `char_creation.rs:1859` | admitted: "the port has no scissor, so they are skipped" — rows break-gated out of draw *and* hit |
-| `GetClippingRectangle` :252-269 | MISSING | — | same root cause |
+| `OverflowHidden` scissor :199-238 | PORTED | `tr-render/src/clip.rs` + `SpriteRenderer::push_clip`/`pop_clip`; wired in `char_select.rs`, `world_select.rs`, `char_creation.rs` (`draw_hairstyles_menu`) | the clip is a per-instance `clip` vec4 + `discard` in `sprite.wgsl` (one instanced draw); nested pushes intersect as `GetClippingRectangle` does. S1-H-2 |
+| `GetClippingRectangle` :252-269 | PORTED | `clip.rs::intersect`/`ClipStack` + `uistate::inner` at the call sites | reads the element's **inner** rect (`:254`), which is what the screens push; S1-H-2 |
 | Snap points `:124-145, :271-283`, `SnapPoint.cs` | MISSING | — | gamepad navigation absent |
 | Gamepad / `UILinkPointNavigator` (`UserInterface.cs:184-187`) | MISSING | — | NoGamepadSupport / gamepad branch unported |
 | `Activate`/`Deactivate`/`Initialize` :548-605 | MISSING | — | immediate mode; screens carry their own reset |
@@ -119,9 +119,9 @@ Screens already covered by immediate ports are listed for completeness at the en
 | C# class (file) | Provides | Rust counterpart | Status | Impact |
 | --- | --- | --- | --- | --- |
 | `UIElement` fields: margins, `MaxWidth`/`MaxHeight`/`Min*`, `OverrideSamplerState`, `UseImmediateMode`, `IgnoresMouseInteraction`(partial), `PassThroughMouseInteraction` | layout + draw modifiers | `uistate.rs` covers px/pct/H/VAlign/padding only | PARTIAL | behavioural if a future element sets them |
-| `UIElement.Recalculate/RecalculateChildren` as tree ops | whole-tree relayout | per-screen per-frame derivation | MISSING (by design) | the `UIList` ∞-height case diverges |
+| `UIElement.Recalculate/RecalculateChildren` as tree ops | whole-tree relayout | per-screen per-frame derivation | MISSING (by design) | the `UIList` ∞-height case is now modelled (`resolve_in_list`, S1-H-2) |
 | `UIElement` event bubble (`:414-547`) | ancestor handlers + ancestor `IsMouseHovering` | `framework.rs::bubble_chain` + `Element` parent links | PORTED (S1-H-1) | the `MouseOver`-driven ancestor hovering is the same chain (`:510-521`) |
-| `UIElement.Draw` `OverflowHidden` path + `GetClippingRectangle` | clipping | none (break-gate) | MISSING | pixel: a straddling row is fully drawn or absent instead of half-clipped |
+| `UIElement.Draw` `OverflowHidden` path + `GetClippingRectangle` | clipping | `tr-render/src/clip.rs` + `SpriteRenderer::push_clip`/`pop_clip` + `Element.viewport` for the hit side | PORTED (S1-H-2) | the clip cuts pixels in the fragment stage; hit-testing stops descending through an ancestor that does not contain the point (`UIElement.cs:327-341`) |
 | `UIElement.GetSnapPoints`, `SetSnapPoint` ; `SnapPoint.cs` | gamepad nav anchors | none | MISSING | gamepad only |
 | `UIElement.Activate/Deactivate/Initialize/ExecuteRecursively/CopyStyle` | lifecycle | none | MISSING | none today (immediate screens) |
 | `UserInterface` (object, `_currentState`, `_history`) | element stack, `GoBack`, 32-entry history | `flow.rs` table | MISSING/partial | `GoBack` semantics (2-state pop) not modelled |
@@ -202,9 +202,12 @@ fns across 31 files (framework-relevant subset):
   `dw_2_3_the_fat_buttons_do_not_double_click_into_play`), `world_select` 17 (same pair),
   `chest` 13 (`dw_3_2_*` scroll math + `dw_3_2_scroll_wheel_gate_matches_doscrollingininventory`),
   `emotes` 6, `ingame_options` 27, `char_creation` 23, `keyboard` 13.
-- No test covers: margins, the `UIList` ∞-height case, `OverflowHidden` clipping,
-  snap points, or the layer stack. (The child→parent bubble is covered by
-  `framework.rs`'s `the_event_bubble_*` tests, S1-H-1.)
+- No test covers: margins, snap points, or the layer stack. (The `UIList`
+  ∞-height case is covered by `resolve_in_list_gives_the_child_an_infinite_parent_height`;
+  `OverflowHidden` clipping by `clip.rs`'s stack/edge-rule tests,
+  `dw_2_1_a_row_outside_its_list_viewport_is_unreachable` and
+  `the_hair_list_clip_rect_bounds_the_grid_content`. The child→parent bubble is
+  covered by `framework.rs`'s `the_event_bubble_*` tests, S1-H-1.)
 
 ## Deviations & risks
 
@@ -215,12 +218,15 @@ fns across 31 files (framework-relevant subset):
 2. **`MaxHeight` clamp uses `f32::MAX`** (`uistate.rs:101`) instead of
    `MaxHeight.GetValue(parentH)` (`UIElement.cs:314,316`). Same as the `Fill`
    default; a percent-valued `MaxHeight` cannot be expressed. Behavioural, latent.
-3. **`UIList` infinite-height parent special case not modelled**
-   (`uistate.rs:73-75`, C# `UIElement.cs:288-291`). Percent-height children of a
-   list resolve against the list rect instead of ∞. The screens derive rows
-   arithmetically, so it is untested by the current callers. Behavioural; admitted
-   in code, absent from ROADMAP §23 (which *does* list it at :937-938 — so ROADMAP
-   is ahead of the port here).
+3. ~~**`UIList` infinite-height parent special case not modelled**~~
+   **FIXED 2026-11-13 (`S1-H-2-uilst-scissor`)**: `uistate::resolve_with_max_h` /
+   `resolve_in_list` port `UIElement.cs:288-291` (`if (Parent is UIList) num3 =
+   float.PositiveInfinity`), so percent-height children of a list resolve against
+   ∞. `resolve` delegates with `list_parent = false`, which keeps every non-list
+   caller byte-identical. Test
+   `resolve_in_list_gives_the_child_an_infinite_parent_height`; the hair grid and
+   the select-screen rows use it. The earlier text read: percent-height children
+   of a list resolve against the list rect instead of ∞.
 4. ~~**No child→parent event bubble** (`UIElement.cs:414-547` vs `pointer.rs:154-224`).~~
    **FIXED 2026-11-13 (`S1-H-1-event-bubbling`)**: `framework.rs::bubble_chain`
    ports the `:420-423` recursion as a parent-chain walk over `Element.parent`
@@ -233,13 +239,25 @@ fns across 31 files (framework-relevant subset):
    never set (ROADMAP:938-939's "ported" claim was wrong for the Rust side).
    Also still unmodelled: the C#'s Out-then-Over double-toggle when the pointer
    moves child→parent inside one frame (`UserInterface.cs:205-213`).
-5. **No scissor / `OverflowHidden`** — rows past a list bottom are *skipped*
-   rather than clipped (`char_select.rs:856`, `world_select.rs:818`,
-   `char_creation.rs:1859`). A row straddling the edge draws whole (C#: half);
-   a fully past-edge row that C# still hit-tests (`GetElementAt` does not cull
-   clipped children, `char_creation.rs:1861-1863` notes this) is unhittable in the
-   port because the same gate prunes the element list. Pixel + behavioural;
-   admitted per-screen, not in ROADMAP.
+5. ~~**No scissor / `OverflowHidden`**~~ — **FIXED 2026-11-13
+   (`S1-H-2-uilst-scissor`)**: `tr-render/src/clip.rs` carries `NO_CLIP`,
+   `intersect` and a `ClipStack`; `SpriteInstance.clip` is stamped on every
+   instance and `sprite.wgsl` discards fragments outside it, so a row straddling
+   a list edge is half-painted exactly as the C# device scissor cuts it. The
+   break-gates in `char_select.rs`/`world_select.rs`/`char_creation.rs` are gone.
+   The hit side is `Element.viewport` (`Element::row`/`row_child`): `get_element_at`
+   now descends only through an ancestor that contains the point
+   (`UIElement.cs:327-341`), which reproduces the C# *without* the old
+   approximation (a row fully past the edge is unreachable, which is what the C#
+   does because the list parent rejects the point first). Tests
+   `dw_2_1_a_row_outside_its_list_viewport_is_unreachable`,
+   `the_hair_list_clip_rect_bounds_the_grid_content`, `clip.rs`'s 7.
+   Screenshot: the hair grid loses 140 949 px at `y >= 484` with the scissor on,
+   two runs SHA256-equal. **Deviation:** the clip is a per-instance attribute +
+   fragment `discard`, not `set_scissor_rect` device state — the renderer batches
+   all UI into one instanced draw, so a device scissor would need one pass per
+   rect. Pixel-equivalent at the C# rule (`left <= x < right`), recorded in
+   `docs/ANALYSIS.md`.
 6. **UI scale applied only at two sites** — `Main.UIScale`/`GameUI.UIScale` are
    now ported (`settings::ui_scale_max`, `Settings::ui_scale`, the ingame-options
    bar, S1-H-3), but the `UserInterface.GetDimensions()` division
@@ -278,19 +296,26 @@ fns across 31 files (framework-relevant subset):
 - **M — Port margins into `uistate::resolve`.** Add `margin: [f32;4]` to the
   signature and reproduce `:293-297`/`:317-318` (add then subtract), with a test
   against a C# hand-computed case. Closes deviation 1 for future callers.
-- **M — Model the `UIList` ∞-height parent.** A `list_parent: bool` flag on
-  `resolve` that sets `parent[3] = f32::MAX` (`UIElement.cs:288-291`), plus a test
-  on a percent-height child. Unblocks the scrolling screens of module 20.
+- ✅ **M — Model the `UIList` ∞-height parent.** DONE 2026-11-13
+  (`S1-H-2-uilst-scissor`): `uistate::resolve_in_list` sets
+  `parent[3] = f32::POSITIVE_INFINITY` (`UIElement.cs:288-291`), tested by
+  `resolve_in_list_gives_the_child_an_infinite_parent_height`. The scrolling
+  screens' rows use it.
 - ✅ **M — Ancestor bubble.** DONE 2026-11-13 (`S1-H-1-event-bubbling`): the
   parent chain lives in `framework.rs` (`Element.parent`/`Element::child` +
   `bubble_chain`, `UIElement.cs:414-547`), not `pointer.rs` — the C#'s recursion
   is in `UIElement`, so `UIElement` (the framework module) is its faithful home.
   The chain is the event's raise list *and* the ancestor-`IsMouseHovering` set;
   it is wired to the select screens' card buttons. Deviation 4 closed for hover.
-- **L — Clipping.** Implement a scissor/rect-clip in `tr_render` and wire
-  `OverflowHidden` into the list screens, replacing the break-gates in
-  `char_select.rs:856` / `world_select.rs:818` / `char_creation.rs:1859`.
-  Depends on a renderer change; pixel-verify with `TR_SHOT`.
+- ✅ **L — Clipping.** DONE 2026-11-13 (`S1-H-2-uilst-scissor`): the scissor is a
+  per-instance `clip` vec4 in `tr-render/src/clip.rs` + `SpriteInstance.clip`,
+  discarded in `sprite.wgsl` (one instanced draw ⇒ no device scissor state),
+  wired into `char_select.rs`/`world_select.rs`/`char_creation.rs` in place of the
+  break-gates. Pixel-verified with `TR_SHOT` (140 949 px removed below the hair
+  list's inner bottom; two runs SHA256-equal) and the hit side by
+  `Element.viewport`. Remaining: the *scrollbar* is still static on those screens
+  (the `UIScrollbar` drag element is untouched) and `UIInnerList.RecalculateChildren`
+  is still per-screen arithmetic.
 - **M — `UIWorldCreationAdvanced` + secret-seeds list** (ROADMAP:953): a
   `ui/world_creation_advanced.rs` immediate port; unblocks seed selection.
   Depends on the `UIList` seed above for its option rows.

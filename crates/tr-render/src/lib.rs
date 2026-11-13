@@ -1,6 +1,7 @@
 //! GPU side: sprite atlas, instanced quad renderer, Vulkan device setup.
 
 pub mod atlas;
+pub mod clip;
 pub mod font_atlas;
 pub mod gpu;
 pub mod post;
@@ -11,6 +12,7 @@ pub mod water_mask;
 mod test_gpu;
 
 pub use atlas::{Atlas, AtlasImage, SheetLayout, SheetRect};
+pub use clip::{intersect as clip_intersect, ClipStack, NO_CLIP};
 pub use font_atlas::{FontAtlas, FontPageData, PageRect};
 pub use gpu::Gpu;
 pub use post::{
