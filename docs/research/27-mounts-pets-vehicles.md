@@ -111,11 +111,11 @@ slices), `crates/tr-app/src/world_sim/player.rs` (the fixed-step wiring),
 | `SetAsMinecart` body | `Mount.cs:2747-2799` (13/13/0.04, jump 15/5.15, boost 10) | `mount.rs::cart` :1092-1152 + `cart_vo` :1160 | PORTED 1:1 | — |
 | `SetMount` guards / swap | `Mount.cs:6196-6243` | `mount.rs::set_mount` :1812-1841 + `player.rs::set_mount` :4595-4605 | PARTIAL (no type-44 velocity/dash reset, no `fullRotationOrigin` for 7/8, no `_mountSpecificData` for 8/35/54) | behavioural (low) |
 | `Dismount` | `Mount.cs:6142-6194` | `mount.rs::dismount` :1848 + `player.rs::dismount` :4618-4642 | PARTIAL (no `fullRotation` reset, no `noItems` clear for 55/56, no net msg 13) | behavioural (low) |
-| `CanMount` (3 gates) | `Mount.cs:6581-6604` | `player.rs::can_mount` :4657-4669 | PARTIAL (missing the `Cart`/`CanUseHooks` grapple exemption and the `m == 56` wet rule; the fit probe is the `collides_rect` stand-in) | behavioural (medium) |
+| `CanMount` (3 gates) | `Mount.cs:6581-6604` | `player.rs::can_mount` :4890-4923 + `wet_collision` :6086 (`Collision.cs:1572-1651`) + `mount.rs::is_cart` :1451/`can_use_hooks` :1460 (`MountID.cs:30,43`) | PORTED (the fit probe is the `collides_rect` stand-in; the PlayerSize delegate cannot fire on the 50 rows) | - |
 | `CanDismountWithResult` CC gate | `Mount.cs:6615-6618` (`DontDismountWhenCCed {55,56,61}`) | `player.rs::can_dismount` :1665-1680 (size probe only) | MISSING | behavioural (low-medium) |
 | `DismountsOnItemUse` / `CanVisuallyHoldItem` | `Mount.cs:642-652`, `:6567-6579` | `mount.rs::dismount_on_item_use` :2183; `world_sim/player.rs:509-517` (`55\|56\|61` = `MountID.cs:46`) | PORTED | — |
 | Stat merge (additive / max-while-flying / replace) + wings suppression | `Player.cs:26625-26654` | `player.rs::update_mount` :4741-4775 | PORTED 1:1 | — |
-| Fishron halving (`Type == 12`) | `Player.cs:26655-26659` | absent (row 12 exists) | MISSING | behavioural (medium) |
+| Fishron halving (`Type == 12`) | `Player.cs:26655-26659` + `MountFishronSpecial` `:4044-4056` + the counter writers `Mount.cs:4982-5008`, decay `Player.cs:25625-25628` | `player.rs::update_mount` :5009 + `mount_fishron_special` :4946 + `mount_fishron_special_counter` | PORTED 1:1 (60-tick hurt / 420-tick wet-or-rain window) | - |
 | Roller-skate movement arm | `Player.cs:26660-26663` | `is_roller_skates` helper only (rows 57-60 absent) | MISSING (table gap) | behavioural (low) |
 | Drill ability (`UpdateDrill`/`UseAbility`) | `Mount.cs:2898-3340`, `Player.cs:26683-26686` | absent | MISSING | behavioural (low) |
 | `ItemCheck_HandleMount` | `Player.cs:52922-52950` | absent (no gravDir model) | MISSING | behavioural (low) |
@@ -190,9 +190,11 @@ slices), `crates/tr-app/src/world_sim/player.rs` (the fixed-step wiring),
 - `crates/tr-app/src/world_sim/player.rs`: `update_player_drains_cart_sparks_into_the_pool`
   (:1057) and the minion-budget tests (:1391-1513).
 
-Gap: no test covers `can_mount`'s grapple/Cart exemption, the bat-wet rule, the Fishron
-halving, or the per-row constants of the 11 flyer and 27 cart rows beyond the
-`SetAsMinecart` body.
+Gap: the per-row constants of the 11 flyer and 27 cart rows beyond the
+`SetAsMinecart` body are still untested, and the `CanDismountWithResult` CC gate
+(D7 below) remains absent. `can_mount`'s three gates and the Fishron halving are
+now covered by `s1_l_8_can_mount_applies_the_bat_and_grapple_sets` and
+`s1_l_8_fishron_halves_run_stats_outside_the_special`.
 
 ## Deviations & risks
 - **D1 — the "12 rows" story is stale (documentation, cosmetic).** `docs/ANALYSIS.md`
@@ -202,22 +204,27 @@ halving, or the per-row constants of the 11 flyer and 27 cart rows beyond the
   now carries **50 rows** (`mount.rs:1305-1356` = 12 ground + 11 flyer + 27 cart) after
   M2-MOUNT-2/-3 — the deviation list is right in substance but its count is wrong.
 - **D2 — `can_mount` drops the Cart / CanUseHooks grapple exemption (behavioural,
-  medium).** C# `Mount.cs:6599-6602`: `if (!MountID.Sets.Cart[m] && !MountID.Sets.CanUseHooks[m]
-  && mountingPlayer.grappling[0] >= 0) return false;`. Rust `player.rs:4665-4667` returns
+  medium) — RESOLVED (S1-L-8).** C# `Mount.cs:6599-6602`: `if (!MountID.Sets.Cart[m] && !MountID.Sets.CanUseHooks[m]
+  && mountingPlayer.grappling[0] >= 0) return false;`. Rust `player.rs::can_mount` returned
   false for **any** grappling mount. The Rust comment (*"no row in this table is in the
   CanUseHooks set"*) is true for `CanUseHooks {54,57,58,59,60}` but **false for
   `MountID.Sets.Cart`** — 27 cart rows are present, so vanilla allows mounting a minecart
-  while a hook is out and the port refuses it. Not admitted in ANALYSIS.
-- **D3 — `can_mount` drops the bat-wet rule (behavioural, medium).** C# `Mount.cs:6595-6598`:
-  `m == 56 && (wet || dripping || WetCollision(...))` → cannot mount. Rust `player.rs:4657`
+  while a hook is out and the port refused it. Now gated by `mount::is_cart`
+  (`mount.rs:1451`) / `mount::can_use_hooks` (`:1460`) in the C# order.
+- **D3 — `can_mount` drops the bat-wet rule (behavioural, medium) — RESOLVED
+  (S1-L-8).** C# `Mount.cs:6595-6598`:
+  `m == 56 && (wet || dripping || WetCollision(...))` → cannot mount. Rust `player.rs::can_mount`
   has no such arm, and its comment (*"the PlayerSize-delegate and bat-wet arms cannot fire
   on this table"*) is **false** since row 56 (Bat) is in the table (`mount.rs:1022`).
-  Not admitted in ANALYSIS.
-- **D4 — the Fishron halving is missing (behavioural, medium).** C# `Player.cs:26655-26659`
+  Now checks `wet`/`dripping` (buff 103) and the faithful `Collision.WetCollision`
+  probe (`player.rs::wet_collision`).
+- **D4 — the Fishron halving is missing (behavioural, medium) — RESOLVED
+  (S1-L-8).** C# `Player.cs:26655-26659`
   halves `runAcceleration`/`maxRunSpeed` for `mount.Type == 12` unless `MountFishronSpecial`.
-  Rust `player.rs:4776-4779` skips it with the comment *"have no rows in this table yet"* —
-  row 12 (`CUTE_FISHRON`) **is** in the table (`mount.rs:865`). The CuteFishron therefore
-  runs at full speed in the port. Not admitted in ANALYSIS.
+  Rust skipped it with the comment *"have no rows in this table yet"* —
+  row 12 (`CUTE_FISHRON`) **is** in the table (`mount.rs:865`). The halving now runs with
+  the `MountFishronSpecialCounter` (60 hurt / 420 wet-or-rain) and the
+  `Player.cs:4044-4056` getter.
 - **D5 — `SetMount` per-type extras missing (behavioural, low).** C# `Mount.cs:6228-6235`
   (type 44 Pirate Ship: `velocity *= 0.2f` + dash reset), `:6279-6282` (types 7/8:
   `fullRotationOrigin = centre`), `:6287-6298` (`_mountSpecificData` for 8/35/54),
@@ -283,13 +290,16 @@ halving, or the per-row constants of the 11 flyer and 27 cart rows beyond the
 - **S — mount-id sets as data.** Add the 13 `MountID.Sets` tables to `mount.rs`
   (`MountID.cs:36-47`) and consume them in `can_mount` (the Cart/CanUseHooks exemption,
   D2), `can_dismount` (the CC gate, D7) and `quick_mount` (the Cart skip, D8).
-  Depends on nothing; unblocks D2/D3/D7/D8.
+  Depends on nothing; unblocks D2/D3/D7/D8. **Partial (S1-L-8):** `Cart`
+  (`mount.rs::is_cart`) and `CanUseHooks` (`can_use_hooks`) landed; the remaining sets
+  stay for D7/D8.
 - **S — restore the `CanMount` arms.** Add the `m == 56` wet rule (D3) and the
   Cart/CanUseHooks exemption (D2) to `player.rs::can_mount`, with the C# order
-  (fit → wet → grapple).
+  (fit → wet → grapple). **DONE (S1-L-8).**
 - **S — Fishron halving.** Port `Player.cs:26655-26659` into `player.rs::update_mount`
   (the `MountFishronSpecial` counter has no port model — decide between a constant-off
-  arm and a new field). D4.
+  arm and a new field). D4. **DONE (S1-L-8)**: the counter field and the
+  60/420-tick writers landed with it.
 - **S — `SetMount`/`Dismount` extras.** The type-44 velocity/dash reset, the 7/8
   `fullRotationOrigin`, the `fullRotation` reset on dismount, and the `noItems` clear for
   55/56 (D5, D6).

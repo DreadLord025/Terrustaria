@@ -4525,7 +4525,7 @@ bottom-anchored (`:6264-6277`) and restores through the shrink path of
 `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2513`).
 
 Deviations:
-- **Partial table (12 of `MountID.Count` 66)** — `set_mount` rejects ids outside the
+- **Partial table (50 of `MountID.Count` 66)** — `set_mount` rejects ids outside the
   table where vanilla fills every row; the remaining categories land with
   M2-MOUNT-2/3/4.
 - **No net sync** — `SetMount`/`Dismount`'s msg 13 (`Mount.cs:6222-6225`, `:6172-6175`)
@@ -4542,9 +4542,11 @@ Deviations:
   + `PlayerNoSpaceTeleport` (`:6052-6070`) cannot fire; the grow-probe half of
   `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2490-2508`) returns `None`
   until a consumer appears.
-- **Cart/ability branches reserved** — the OnTrack/roller-skate/Fishron/drill arms of
+- **Cart/ability branches reserved** — the OnTrack/roller-skate/drill arms of
   the per-tick block are comment-marked (M2-MOUNT-3/4); the SuperCart stat overrides
   read 0; `Mount.Hover` (hover mounts) cannot fire while no row sets `usesHover`.
+  The Fishron arm (id 12) is ported: the 60/420-tick `MountFishronSpecialCounter`
+  and the halving gate the Cute Fishron's run stats (`Player.cs:26655-26659`).
 - **Charge/stomp damage deferred** — the dash-contact damage (`Player.cs:20108-20170`)
   and the slime stomp (`:20533-20560`) wait for M2-MOUNT-4 with the other mount combat.
 - **Queen Slime draw** — the render-target swap and the extra passes (`Mount.cs:5536-5544`,

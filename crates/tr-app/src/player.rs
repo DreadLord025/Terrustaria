@@ -706,6 +706,11 @@ pub struct Player {
     /// `Player.GoingDownWithGrapple` (`Player.cs:808`): the pull points
     /// downward — the platforms fall through.
     pub going_down_with_grapple: bool,
+    /// `Player.MountFishronSpecialCounter` (`Player.cs:3004`): the Cute
+    /// Fishron's 60/420-tick "special" window (`Mount.cs:5001-5008`), one
+    /// tick of decay per update (`Player.cs:25625-25628`). While positive it
+    /// forces [`Self::mount_fishron_special`] true.
+    mount_fishron_special_counter: f32,
     /// `Player.wingTime` / `wingTimeMax` (`Player.cs:1330,1338`): the flight
     /// budget in ticks and its refill cap.
     pub wing_time: f32,
@@ -1387,6 +1392,7 @@ impl Player {
             has_wings: false,
             grappling_active: false,
             going_down_with_grapple: false,
+            mount_fishron_special_counter: 0.0,
             wing_time: 0.0,
             wing_time_max: 0,
             wings_logic: 0,
@@ -1894,6 +1900,8 @@ impl Player {
         self.honey_wet = false;
         self.shimmer_wet = false;
         self.in_lava = false;
+        // `Player.UpdateDead` (`Player.cs:16929`): death zeroes the special.
+        self.mount_fishron_special_counter = 0.0;
         self.gfx_off_y = 0.0;
         self.prev_gfx_off_y = 0.0;
         // `Player.KillMe` dismounts the mount (`Player.cs:38907`); the respawn
@@ -2493,7 +2501,7 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
-        self.update_with_grapple(world, input, &[], false, false)
+        self.update_with_grapple(world, input, &[], false, false, false, None)
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -2512,6 +2520,10 @@ impl Player {
         grapple: &[(u16, Vec2, f32)],
         item_in_use: bool,
         danger_near: bool,
+        // `Main.raining` + the wind model: the Cute Fishron's special getter
+        // (`Player.cs:4048-4056`) needs both; `update` passes calm defaults.
+        raining: bool,
+        wind: Option<&tr_core::wind::Wind>,
     ) {
         // `Player.grappling[0] != -1` is rebuilt per tick by the attached
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
@@ -2524,6 +2536,11 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.cs:25625-25628`: the Cute Fishron's special window decays
+        // one per tick; `Mount.UpdateEffects` re-arms it later in the tick.
+        if self.mount_fishron_special_counter > 0.0 {
+            self.mount_fishron_special_counter -= 1.0;
+        }
         // `Player.cs:24591`: the tag stack's update right after the buff head —
         // the `maxTagEffects` cap plus the per-NPC mark/proc timers.
         self.tag_effects.update_tick();
@@ -3398,7 +3415,7 @@ impl Player {
             // same C# lines, `cart_mounted`-gated) runs where Phase 2 placed
             // it — the two never fire together (no cart row in the mount
             // table; M2-MOUNT-3 bridges them).
-            self.update_mount();
+            self.update_mount(world, raining, wind);
             self.horizontal_movement();
         }
 
@@ -4867,19 +4884,78 @@ impl Player {
 
     /// `Mount.CanMount` (`Mount.cs:6581-6604`): the grown box must fit in
     /// space (`CanFitInSpaceWithSize` -> `Collision.IsClearSpotTest`, stand-in
-    /// [`collision::collides_rect`]) and a grapple in flight blocks the mount
-    /// (no row in this table is in the CanUseHooks set, `:6599-6601`). The
-    /// PlayerSize-delegate and bat-wet arms cannot fire on this table.
+    /// [`collision::collides_rect`]), the bat (56) refuses water (`:6595`) and
+    /// a grapple in flight blocks every mount outside `Cart`/`CanUseHooks`
+    /// (`:6599-6601`). The PlayerSize-delegate arm cannot fire on this table.
     pub(crate) fn can_mount(&self, world: &World, m: i32) -> bool {
         let Some(row) = crate::mount::mount_data(m) else {
             return false;
         };
-        let size_h = HEIGHT + row.height_boost as f32;
+        let size_h = self.height + row.height_boost as f32;
         if collides_rect(world, self.x, self.y + self.height - size_h, WIDTH, size_h) {
             return false;
         }
-        if self.grappling_active {
+        // `:6595`: `Collision.WetCollision(Bottom - size * 0.5, size)` - the
+        // probe is the grown box centred on the body's bottom point.
+        if m == 56
+            && (self.wet
+                || self.dripping()
+                // `Bottom.X - size.X / 2` = `position.X` for the fixed width.
+                || wet_collision(
+                    world,
+                    self.x,
+                    self.y + self.height - size_h / 2.0,
+                    WIDTH,
+                    size_h,
+                ))
+        {
             return false;
+        }
+        // `:6599`: `!Cart[m] && !CanUseHooks[m] && grappling[0] >= 0`.
+        if !crate::mount::is_cart(m)
+            && !crate::mount::can_use_hooks(m)
+            && self.grappling_active
+        {
+            return false;
+        }
+        true
+    }
+
+    /// `Player.dripping` (`Player.cs:11743-11747`): buff 103 (`Wet`) keeps the
+    /// player dripping until lava deletes it; the bat's wet gate reads it.
+    fn dripping(&self) -> bool {
+        self.holding(103) && !self.lava_wet
+    }
+
+    /// `WorldGen.InAPlaceWithWind(position, width, height)`
+    /// (`WorldGen.cs:86841-86846`): the tile rectangle the body covers.
+    fn wind_here(&self, world: &World, wind: Option<&tr_core::wind::Wind>) -> bool {
+        let Some(wind) = wind else {
+            return false;
+        };
+        let x0 = (self.x / TILE_PX) as i32;
+        let y0 = (self.y / TILE_PX) as i32;
+        let x1 = ((self.x + WIDTH) / TILE_PX) as i32;
+        let y1 = ((self.y + self.height) / TILE_PX) as i32;
+        wind.in_a_place_with_wind(world, x0, y0, 1 + x1 - x0, 1 + y1 - y0)
+    }
+
+    /// `Player.MountFishronSpecial` (`Player.cs:4044-4056`): full run stats for
+    /// the Cute Fishron (12) while hurt, not in plain water (lava/honey are
+    /// exempt), dripping, inside the 60/420-tick window, or under rain that
+    /// reaches the body.
+    fn mount_fishron_special(
+        &self,
+        world: &World,
+        raining: bool,
+        wind: Option<&tr_core::wind::Wind>,
+    ) -> bool {
+        if self.hp >= self.max_hp / 2
+            && (!self.wet || self.lava_wet || self.honey_wet)
+            && !self.dripping()
+            && !(self.mount_fishron_special_counter > 0.0)
+        {
+            return raining && self.wind_here(world, wind);
         }
         true
     }
@@ -4926,17 +5002,32 @@ impl Player {
     }
 
     /// The per-tick mount block — `Player.cs:26623-26688` with the
-    /// `UpdateEffects` head (`Mount.cs:4795-4803`, `:4949-4981`) and the
+    /// `UpdateEffects` head (`Mount.cs:4795-4803`, `:4949-5008`) and the
     /// `UpdateJumpHeight` mount merge (`:26011` → `:19619-19637`). Vanilla
     /// runs those at :25656/:26011, both before the run-speed merge — the
     /// combined method keeps their relative order. Only reachable while not
     /// grappling (the caller's `:26622` branch).
-    fn update_mount(&mut self) {
+    fn update_mount(
+        &mut self,
+        world: &World,
+        raining: bool,
+        wind: Option<&tr_core::wind::Wind>,
+    ) {
         if !self.mount.is_active() {
             return;
         }
         // `Mount.cs:4797`: the mount head-sets the auto-jump flag per tick.
         self.auto_jump = self.mount.auto_jump();
+        // `Mount.cs:4982-5008` (`UpdateEffects` case 12): the Cute Fishron
+        // re-arms its special window when hurt or standing in water/rain.
+        if self.mount.kind() == 12 {
+            if self.hp <= self.max_hp / 2 {
+                self.mount_fishron_special_counter = 60.0;
+            }
+            if self.wet || (raining && self.wind_here(world, wind)) {
+                self.mount_fishron_special_counter = 420.0;
+            }
+        }
         // `Mount.cs:4949-4981`: the ground-dash mounts arm their extra jumps
         // (the PHYS-8 priority chain consumes them) and pin knockback off
         // above the charge speed.
@@ -4989,10 +5080,16 @@ impl Player {
             self.acc_run_speed = self.mount.dash_speed();
             self.run_acceleration = self.mount.acceleration();
         }
-        // `:26655-26659` (the Fishron halving), `:26660-26663` (the roller
-        // skates), `:26665-26682` (the cart/OnTrack block — M2-MOUNT-3) and
-        // `:26683-26686` (`UpdateDrill` — M2-MOUNT-4) have no rows in this
-        // table yet; the ability counters still tick (`:26663`).
+        // `:26655-26659`: the Cute Fishron runs at half acceleration/top
+        // speed unless `MountFishronSpecial` is true.
+        if self.mount.kind() == 12 && !self.mount_fishron_special(world, raining, wind) {
+            self.run_acceleration /= 2.0;
+            self.max_run_speed /= 2.0;
+        }
+        // `:26660-26663` (the roller skates), `:26665-26682` (the cart/OnTrack
+        // block — M2-MOUNT-3) and `:26683-26686` (`UpdateDrill` —
+        // M2-MOUNT-4) have no rows in this table yet; the ability counters
+        // still tick (`:26663`).
         self.mount.ability_recovery();
     }
 
@@ -5981,6 +6078,61 @@ pub fn collides_player(world: &World, x: f32, y: f32) -> bool {
 /// Generic solid-tile AABB test used by NPCs and the player.
 pub fn collides_rect(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     collides_filtered(world, x, y, w, h, false)
+}
+
+/// `Collision.WetCollision` (`Collision.cs:1572-1651`): true when a liquid
+/// tile's surface overlaps the inset probe rectangle. The C# `honey`/`shimmer`
+/// out-params have no consumer here and are not modelled. The bat mount's
+/// activation gate calls this (`Mount.cs:6595`).
+pub fn wet_collision(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
+    let wi = w as i32;
+    let hi = h as i32;
+    let inset_w = 10.min(wi);
+    let inset_h = (hi / 2).min(hi);
+    let px = x + (wi / 2) as f32 - (inset_w / 2) as f32;
+    let py = y + (hi / 2) as f32 - (inset_h / 2) as f32;
+    let max_y = (world.height - 40).max(0);
+    let x0 = (((x / TILE_PX) as i32) - 1).clamp(0, world.width - 1);
+    let x1 = ((((x + wi as f32) / TILE_PX) as i32) + 2).clamp(0, world.width - 1);
+    let y0 = (((y / TILE_PX) as i32) - 1).clamp(0, max_y);
+    let y1 = ((((y + hi as f32) / TILE_PX) as i32) + 2).clamp(0, max_y);
+    for tx in x0..x1 {
+        for ty in y0..y1 {
+            let Some(t) = world.tile(tx, ty) else {
+                continue;
+            };
+            let left = tx as f32 * TILE_PX;
+            if t.liquid > 0 {
+                // `num5 = (256 - liquid) / 32`; the surface rises by
+                // `num5 * 2` and the solid part shrinks by the same amount.
+                let num5 = (256 - t.liquid as i32) as f32 / 32.0;
+                let top = ty as f32 * TILE_PX + num5 * 2.0;
+                let depth = 16.0 - (num5 * 2.0) as i32 as f32;
+                if px + inset_w as f32 > left
+                    && px < left + 16.0
+                    && py + inset_h as f32 > top
+                    && py < top + depth
+                {
+                    return true;
+                }
+            } else if t.active()
+                && t.slope() != 0
+                && ty > 0
+                && world.tile(tx, ty - 1).is_some_and(|above| above.liquid > 0)
+            {
+                // The sloped-tile branch (`:1625-1645`): the liquid above a
+                // slope still counts even though this cell is dry.
+                if px + inset_w as f32 > left
+                    && px < left + 16.0
+                    && py + inset_h as f32 > ty as f32 * TILE_PX
+                    && py < ty as f32 * TILE_PX + 16.0
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slopes: bool) -> bool {
@@ -7299,7 +7451,7 @@ mod tests {
         let hook_center = Vec2::new(p.x + 80.0, p.y - 60.0);
         // One registered Hook — the multi-hook seam's single-member case.
         let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, hook_center, 0.0)];
-        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
+        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None);
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
         // The speed cap 11 px/tick for the Hook (13).
@@ -7322,7 +7474,7 @@ mod tests {
         let center = Vec2::new(p.x, p.y - 300.0);
         let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         for _ in 0..40 {
-            p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
+            p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None);
             // GrappleMovement refreshes the origin BEFORE the position
             // integrates — one row behind the current position, like the
             // original's call order (:27645 vs the collision block).
@@ -7359,6 +7511,8 @@ mod tests {
             grapple,
             false,
             false,
+            false,
+            None,
         );
         assert!(!p.grappling_active, "detached");
         assert!(p.vy < 0.0, "the full jump impulse: vy={}", p.vy);
@@ -7386,6 +7540,8 @@ mod tests {
             grapple,
             false,
             false,
+            false,
+            None,
         );
         assert!(!p.grappling_active, "detached");
         // The nudge path (`velocity.Y += 0.01f`) does NOT grant the jump
@@ -7403,7 +7559,7 @@ mod tests {
         // One attached Hook below the player.
         let center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
         let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
-        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
+        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None);
         assert!(p.going_down_with_grapple, "the pull points down");
     }
 
@@ -10063,12 +10219,12 @@ mod tests {
         p.wings_logic = 22;
         p.vy = -1.0; // airborne so flag17 can arm
         p.mount.set_test_overrides(Some(true), None); // the M2-MOUNT-2 row
-        p.update_mount();
+        p.update_mount(&w, false, None);
         assert_eq!(p.acc_run_speed_value(), 6.0, "max(6.0, 4.0)");
         // without the wings the same merge replaces: 4.0
         p.mount.set_test_overrides(Some(false), None);
         p.wings_logic = 22;
-        p.update_mount();
+        p.update_mount(&w, false, None);
         assert_eq!(p.acc_run_speed_value(), 4.0, "replaced while grounded");
     }
 
@@ -10083,7 +10239,7 @@ mod tests {
         }
         p.set_mount(3, false);
         p.mount.set_test_overrides(None, Some(true));
-        p.update_mount();
+        p.update_mount(&w, false, None);
         assert_eq!(p.max_run_speed_value(), 3.0 + 4.0, "3 + Slime runSpeed");
         assert_eq!(p.acc_run_speed_value(), 3.0 + 4.0, "3 + Slime dashSpeed");
     }
@@ -10095,13 +10251,13 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.set_mount(10, false); // Unicorn — no scaling branch
         p.vx = 16.0;
-        p.update_mount();
+        p.update_mount(&w, false, None);
         assert_eq!(p.jump_height, 10);
         assert_eq!(p.jump_speed, 8.01);
         p.dismount(&w, false);
         p.set_mount(0, false); // Rudolph, type 0
         p.vx = 4.0;
-        p.update_mount();
+        p.update_mount(&w, false, None);
         assert_eq!(p.jump_height, 18, "17 + (int)(4/4f)");
         assert_eq!(p.jump_speed, 5.31 + 4.0 / 7.0);
     }
@@ -10387,6 +10543,81 @@ mod tests {
         p.y = 918.0; // resting on the row-60 ground inside the cavity
         assert!(!p.can_mount(&w, 10), "76px does not fit in the 64px cavity");
         assert!(p.can_mount(&w, 3), "62px fits");
+    }
+
+    #[test]
+    fn s1_l_8_can_mount_applies_the_bat_and_grapple_sets() {
+        // `Mount.cs:6595` (the bat wet rule) and `:6599-6601` (the
+        // `Cart`/`CanUseHooks` grapple exemption).
+        let mut w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        // Dry and grounded: the bat (56) fits.
+        assert!(p.can_mount(&w, 56));
+        // `wet` blocks it; so does the Wet buff's `dripping` flag.
+        p.wet = true;
+        assert!(!p.can_mount(&w, 56), "the bat refuses water");
+        p.wet = false;
+        p.buffs.add_buff(103, 600); // `Player.cs:11743-11747`
+        assert!(!p.can_mount(&w, 56), "dripping blocks the bat");
+        p.clear_buff_type(103);
+        // `Collision.WetCollision` on the `Bottom - size/2` probe: a puddle
+        // in the feet row still blocks while the mid tile stays dry.
+        let feet = ((p.y + p.height) / TILE_PX) as i32;
+        let col = ((p.x + WIDTH / 2.0) / TILE_PX) as i32;
+        let i = w.index(col, feet);
+        w.tiles[i].liquid = 255;
+        assert!(!p.wet, "the body itself is dry");
+        assert!(!p.can_mount(&w, 56), "the wet probe reaches the feet row");
+        w.tiles[i].liquid = 0;
+        assert!(p.can_mount(&w, 56));
+        // A live grapple refuses the ordinary mounts but not the carts or the
+        // CanUseHooks set.
+        p.grappling_active = true;
+        assert!(!p.can_mount(&w, 0), "Rudolph refuses a live grapple");
+        assert!(p.can_mount(&w, 6), "the minecart keeps the grapple");
+        assert!(p.can_mount(&w, 13), "the wood cart keeps it");
+        assert!(p.can_mount(&w, 53), "the terra fart cart keeps it");
+        assert!(crate::mount::can_use_hooks(54));
+        assert!(crate::mount::can_use_hooks(57) && crate::mount::can_use_hooks(60));
+        assert!(!crate::mount::can_use_hooks(56));
+        assert!(!crate::mount::is_cart(56));
+    }
+
+    #[test]
+    fn s1_l_8_fishron_halves_run_stats_outside_the_special() {
+        // `Player.cs:26655-26659` with the getter at `:4044-4056`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(12, false); // Cute Fishron
+        p.hp = p.max_hp;
+        p.mount_fishron_special_counter = 0.0;
+        p.update_mount(&w, false, None);
+        let row = crate::mount::mount_data(12).unwrap();
+        assert_eq!(p.max_run_speed_value(), row.run_speed / 2.0);
+        assert_eq!(p.run_acceleration, row.acceleration / 2.0);
+        // Hurt (`hp <= statLifeMax2 / 2`) arms the 60-tick window: no halving.
+        p.hp = p.max_hp / 2;
+        p.update_mount(&w, false, None);
+        assert_eq!(p.mount_fishron_special_counter, 60.0);
+        assert_eq!(p.max_run_speed_value(), row.run_speed);
+        // The window survives the tick's one-point decay (`:25625-25628`).
+        p.update_with_grapple(&w, PlayerInput::default(), &[], false, false, false, None);
+        assert!(p.mount_fishron_special_counter > 0.0);
+        // The full tick leaves the mount in its air frame; the `+13.5` arm
+        // (`Mount.cs:461-464`) would mask the halving probe, so put it back
+        // on the ground state the wading case runs in.
+        p.mount
+            .test_set_frame_state(crate::mount::FRAME_STANDING);
+        // Wading re-arms the 420-tick window (`Mount.cs:5005-5008`).
+        p.mount_fishron_special_counter = 0.0;
+        p.hp = p.max_hp;
+        p.wet = true;
+        p.update_mount(&w, false, None);
+        assert_eq!(p.mount_fishron_special_counter, 420.0);
+        assert_eq!(p.max_run_speed_value(), row.run_speed);
     }
 
     #[test]

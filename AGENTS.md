@@ -28,8 +28,9 @@ record of who is working on what.
    task, in slug form: `M1.4-BG-11-cloud-parallax`, `M2-DRAW-1-player-layers`,
    `refactor-app-env-flags`, `fix-crafting-scrollbar`. One branch = one task; do not
    stack unrelated work. A FRESH worktree lacks the gitignored trees — create the
-   symlinks before the first build or the localization tests fail with false
-   "unknown key" errors:
+   symlinks before the first build or the **localization** tests fail with false
+   "unknown key" errors: the language JSON lives in the **`decompiled/`** junction
+   (there is none under `assets/`, which supplies fonts and content):
    ```powershell
    cd ..\{task-dir}
    cmd /c mklink /J assets ..\Terraria-Rust\assets

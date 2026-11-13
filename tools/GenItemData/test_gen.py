@@ -250,12 +250,35 @@ def _negative_table():
     return dict(pairs)
 
 
+# ---------------------------------------------------------------------------
+# DW-1.5 — the committed table is current (the S1-F-17 freeze)
+# ---------------------------------------------------------------------------
+def test_dw_1_5_committed_table_is_current():
+    """A fresh pipeline run must reproduce the committed `itemdata.rs` exactly.
+
+    This is the generator round-trip that freezes the 6 196-row table (S1-F-17):
+    if the decompiled `Item.cs` changes, the generator output changes and this
+    fails; if someone hand-edits `itemdata.rs`, it fails too. `gen.check` is the
+    same comparison the `--check` mode runs, so the test exercises the shipping
+    path rather than a private copy of the logic.
+    """
+    committed = gen.OUT
+    check(committed.exists(), "committed itemdata.rs is missing: %s" % committed)
+    before = committed.read_text(encoding="utf-8")
+    rc = gen.check(committed)
+    check(rc == 0, "gen.check reported drift (rc=%d)" % rc)
+    after = committed.read_text(encoding="utf-8")
+    check(before == after, "gen.check rewrote the committed file (must be read-only)")
+    print("ok DW-1.5 committed itemdata.rs is current (%d bytes)" % len(before))
+
+
 def main():
     test_dw_1_1_idempotent_regen()
     test_dw_1_2_spot_sample()
     test_dw_1_2_variants()
     test_dw_1_3_unknown_form_fails_loud()
     test_dw_1_4_form_coverage()
+    test_dw_1_5_committed_table_is_current()
     shutil.rmtree(TMP, ignore_errors=True)
     print("ALL GEN TESTS PASSED")
 
