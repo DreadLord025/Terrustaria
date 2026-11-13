@@ -2401,6 +2401,24 @@ Two deliberate deviations remain, recorded here rather than silently:
   whole UI is still open (the M-sized follow-up noted against S1-H-3 in
   `docs/research/18-ui-framework.md`).
 
+## Scroll wheel (S1-H-4, 2026-11-13)
+
+`UserInterface.Update`'s scroll arm (`UserInterface.cs:219-223`) now lives in the
+pointer machine: `PointerState::queue_scroll` accumulates
+`PlayerInput.ScrollWheelDeltaForUI` and `PointerState::scroll_wheel` dispatches it
+to the element under the pointer, zeroing the accumulator **whatever the hit**
+(the C# `= 0` runs even when `uIElement` is null, `:222`); `PointerEvent::ScrollWheel`
+carries the int delta (`UIScrollWheelEvent.cs:7`). `loop.rs` routes the
+achievements/emotes/chest surfaces through the machine and hands the consumed delta
+back; the hotbar and the fullscreen-`map` zoom fallbacks stay raw because neither
+is a `UserInterface` element in 1.4.5.8.
+
+* **Fidelity note.** The machine's delta is an `i32` (matching C#'s int
+  `ScrollWheelDeltaForUI`), so the achievements arm now fires only when the rounded
+  delta is non-zero. Previously it scrolled on sub-notch `PixelDelta` values
+  (`|d| < 0.5`), which C# cannot produce; the magnitude still passes through
+  unrounded (`scroll_achievements(d)`), so only that degenerate case changed.
+
 ## Architecture refactor (2026-11-01)
 
 The god-file split (`docs/superpowers/plans/2026-11-01-architecture-refactor.md`,
