@@ -7260,9 +7260,9 @@ mod cultist_tests {
 
     #[test]
     fn the_cultist_bobs_and_regen_when_far() {
-        // `AI()`'s aiStyle-94 block (`NPC.cs:38968+`): the sine bob
-        // (velocity.Y = sin(2π·ai[0]/300)·0.5) and the +200 regen per 60
-        // ticks while the player stays 2000+ px.
+        // `AI()`'s aiStyle-94 block (`NPC.cs:38968+`): the sine bob and the
+        // +200 regen per 60 ticks while the player stays 2000+ px.
+        // (S1-D-3b: Lunar Pillar machine, not CultistBoss 439's AI_084.)
         let (mut app, mut player) = {
             let mut a = base_app();
             let p = Player::spawn(&a.world);
@@ -7270,7 +7270,7 @@ mod cultist_tests {
         };
         let world = surface_world_fixture();
         let mut n = Npc::new(
-            NpcKind::AncientCultist,
+            NpcKind::VortexTower,
             150.0 * TILE_PX,
             112.0 * TILE_PX,
             1,
@@ -7292,6 +7292,7 @@ mod cultist_tests {
     #[test]
     fn the_cultist_dissolves_after_the_180_tick_ritual() {
         // The ai[2] timer's 180-tick dissolve (`:39060-39066`): life 0.
+        // (S1-D-3b: aiStyle 94 Lunar Pillar behavior.)
         let (_app, mut player) = {
             let mut a = base_app();
             let p = Player::spawn(&a.world);
@@ -7299,7 +7300,7 @@ mod cultist_tests {
         };
         let world = surface_world_fixture();
         let mut n = Npc::new(
-            NpcKind::AncientCultist,
+            NpcKind::VortexTower,
             150.0 * TILE_PX,
             112.0 * TILE_PX,
             1,
