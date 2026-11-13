@@ -181,16 +181,20 @@ pub(crate) fn pass_cave_houses(
         {
             continue;
         }
-        // The frame: the wood box.
+        // The frame: the wood box — `WoodHouseBuilder.cs:12`, `TileType = 30`
+        // (`TileID.WoodBlock`; the old 27 was the Sunflower tile).
         for px in (x - hw)..=(x + hw) {
             for py in (y - hh)..=(y + hh) {
-                put(world, px, py, 27); // `TileID.WoodBlock`? — the wood frame tile
+                put(world, px, py, 30);
             }
         }
-        // The interior: carved with the wood walls.
+        // The interior: carved with the planked walls — `WoodHouseBuilder.cs:13`,
+        // `WallType = 27` (`WallID.Planked`; BUG-25: this was the pink dungeon
+        // wall 9, `WallID.PinkDungeonUnsafe`, leaking foreign dungeon walls
+        // into every world).
         for px in (x - hw + 1)..=(x + hw - 1) {
             for py in (y - hh + 1)..=(y + hh - 1) {
-                clear(world, px, py, 9);
+                clear(world, px, py, 27);
             }
         }
         // The floor: the wood platform row (the tile 19 — the platform).
@@ -652,12 +656,13 @@ mod tests {
         w
     }
 
-    /// The wood-frame tiles (27) a placed house leaves behind.
+    /// The wood-frame tiles (`WoodHouseBuilder.cs:12` — `TileType` 30, the
+    /// `WoodBlock`) a placed house leaves behind.
     fn frame_tiles(world: &World) -> usize {
         world
             .tiles
             .iter()
-            .filter(|t| t.active() && t.kind == 27)
+            .filter(|t| t.active() && t.kind == 30)
             .count()
     }
 

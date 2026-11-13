@@ -6424,11 +6424,18 @@ The micro-biome decorators over the finished world:
 
 - **The cave houses** (`CaveHouseBiome`, `:34-92`): 8-12 wood-framed
   cabins in the underground dirt/stone band — the 25-tile chest/wire
-  exclusion scan (`:38-52`), the wood-frame box (the tile 27), the carved
-  interior with the wood walls (9), the platform row (19), the torches and
-  the chest (`place_chest`'s quads). The C#'s `HouseBuilder` chest
-  variants (the ice/jungle/granite/marble/mushroom/desert chances) resolve
-  to the plain gold chest — the port's chests hold no inventories yet.
+  exclusion scan (`:38-52`), the wood-frame box (`WoodHouseBuilder.cs:12` —
+  the tile 30, `WoodBlock`), the carved interior with the planked walls
+  (`WoodHouseBuilder.cs:13` — the wall 27, `Planked`), the platform row
+  (19), the torches and the chest (`place_chest`'s quads). BUG-25 (fixed
+  2026-11-13): the frame was the Sunflower tile 27 and the interior walls
+  were the pink dungeon wall 9 — every world leaked foreign dungeon-wall
+  cells; the two constants now match `WoodHouseBuilder`. The C#'s
+  `HouseBuilder` chest variants (the ice/jungle/granite/marble/mushroom/
+  desert chances) resolve to the plain gold chest — the port's chests hold
+  no inventories yet. Still compact against `HouseBuilder.Place`: no
+  `AgeRoom` wall-aging pass (the C#'s underground planked walls are dithered
+  clear), the platform row is the room width, no per-style furniture.
 - **The desert campsites** (`CampsiteBiome`, `:9-55`): the disc of the
   radius `Next(6, 10)` with the solid-count gate (the solid cells within 5
   of the total), the tent tiles (196 + `Next(4)`) replacing the sand
