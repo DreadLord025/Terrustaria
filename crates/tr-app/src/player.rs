@@ -2520,7 +2520,6 @@ impl Player {
         }
     }
 
-<<<<<<< HEAD
     /// Contact damage / future combat. Returns true when the hit was accepted,
     /// false when it was dodged or swallowed. `rng` is the caller's active
     /// stream (the C# dodge rolls draw from `Main.rand`, the S1-A-10 contract)
@@ -7622,12 +7621,19 @@ mod tests {
         let w = World::new("t".into(), 64, 128);
         let mut p = Player::spawn(&w);
         p.respawn();
-        assert!(!p.hurt(50, 0.0), "the i-frames swallow the hit");
+        let mut scratch = tr_core::UnifiedRandom::default();
+        assert!(
+            !p.hurt(50, 0.0, &mut scratch, true),
+            "the i-frames swallow the hit"
+        );
         p.immune_time = 1;
         p.update_immunity();
         assert!(!p.immune, "the countdown cleared the flag");
         assert!(!p.immune_no_blink);
-        assert!(p.hurt(50, 0.0), "the damage lands after the i-frames");
+        assert!(
+            p.hurt(50, 0.0, &mut scratch, true),
+            "the damage lands after the i-frames"
+        );
     }
 
     #[test]
@@ -11804,6 +11810,17 @@ mod tests {
         p
     }
 
+    /// Runs the dodge window out the way `UpdateImmunity` does in the C# —
+    /// the dodge's `SetImmuneTimeForAllTypes` writes `immune`/`immuneTime`
+    /// (R-03-5's ported fields, now gating `hurt_inner`'s General flag), so a
+    /// next hit in these tests needs the expired window, not just a cleared
+    /// `hurt_cd`.
+    fn expire_dodge_window(p: &mut Player) {
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+    }
+
     #[test]
     fn s1_c_1_dw_1_1_dodge_flags_arm_from_items_and_buff_and_clear() {
         // `ApplyEquipFunctional`: 963 (`:15060`) and 984 (`:15064`) arm
@@ -11855,7 +11872,7 @@ mod tests {
         assert_eq!(p.hp, hp, "no damage on the dodge");
         assert_eq!(rng.draws, vec![(0, 10)]);
         // A missed roll lands the hit through the same source.
-        p.hurt_cd = 0.0;
+        expire_dodge_window(&mut p);
         let mut rng = DodgeRng::with_rolls(&[1]);
         assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
         assert!(p.hp < hp);
@@ -11871,7 +11888,7 @@ mod tests {
         assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the belt dodge fires");
         assert_eq!(p.hp, hp);
         assert_eq!(rng.draws, vec![(0, 10)]);
-        p.hurt_cd = 0.0;
+        expire_dodge_window(&mut p);
         let mut rng = DodgeRng::with_rolls(&[1]);
         assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
         assert!(p.hp < hp);
@@ -11891,7 +11908,7 @@ mod tests {
         // The dodge armed buff 321 itself (240 ticks): the next hit roll is
         // still drawn, but no dodge comes out of it.
         assert!(p.buffs.find_buff_index(321).is_some());
-        p.hurt_cd = 0.0;
+        expire_dodge_window(&mut p);
         let hp = p.hp;
         let mut rng = DodgeRng::with_rolls(&[0]);
         assert!(p.hurt(20, p.x + 100.0, &mut rng, true), "buff 321 gates the dodge");
@@ -11955,7 +11972,7 @@ mod tests {
         assert_eq!(p.hp, hp);
         assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4, "the 80-tick dodge window");
         // `longInvince` lifts the pair to 120.
-        p.hurt_cd = 0.0;
+        expire_dodge_window(&mut p);
         p.long_invince = true;
         let mut rng = DodgeRng::with_rolls(&[0]);
         assert!(!p.hurt(50, p.x + 100.0, &mut rng, true));
@@ -12088,7 +12105,7 @@ mod tests {
         assert_eq!(p.hp, hp, "the belt ate the lava hit");
         assert!(p.buffs.find_buff_index(24).is_none(), "no OnFire on a dodge");
         // The counterpart: a missed roll lands the 80 damage and grants.
-        p.hurt_cd = 0.0;
+        expire_dodge_window(&mut p);
         let mut rng = DodgeRng::with_rolls(&[1]);
         p.update_survival(&mut rng);
         assert!(p.hp < hp);
