@@ -2088,6 +2088,7 @@ pub(crate) mod front_flow_tests {
             dev_break: None,
             dev_place: Vec::new(),
             camera: Vec2::ZERO,
+            camera_state: Default::default(),
             zoom: 1.0,
             zoom_pinned: false,
             debug: false,
