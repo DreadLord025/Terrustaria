@@ -11655,3 +11655,39 @@ deviation: `SortInventory`'s `withSync` half (`:1669-1679`) is a
 `NetMessage.SendData` loop gated on `Main.netMode == 1`, and the port is
 single-player, so only the sort runs.
 
+
+## The shop price chain (S1-C-11, 2026-11-13)
+
+`Item.GetStoreValue` (`Item.cs:49901-49908`), `Player.GetItemExpectedPrice`
+(`Player.cs:35359-35396`) and `Player.SellItem`'s per-item math
+(`:35168-35192`) are ported 1:1 into `crates/tr-app/src/shop.rs`
+(`get_store_value`, `get_item_expected_price`, `sell_price`), with the stock
+row (`ShopEntry`) carrying the C# instance's per-row price fields
+(`shopCustomPrice`/`buyOnce`/`isAShopItem` — the vanilla stamps them on the
+stock *instances*: `Chest.cs:2972-3149`, `Chest.cs:701`,
+`Chest.cs:3538-3541`). The buy charge is `calcForBuying`
+(`UI/ItemSlot.cs:2059-2060`, `app/mod.rs::buy_shop_item`); the displayed
+price follows `Main.cs:20457` verbatim — buyOnce/isAShopItem rows display
+the buying value, every other row the *selling* value, so the two diverge
+whenever `PriceAdjustment != 1` (a vanilla display quirk, not a port bug).
+
+Three scope notes, none of which change the ported numbers:
+
+- **The `shopSpecialCurrency != -1` arm is not ported** (`:35361-35365`):
+  it routes to `CustomCurrencyManager.GetPrices` — the defender-medal
+  currency system (`Chest.cs:2987+`, the Tavernkeep's DD2 rows) is not in
+  the port yet. Those rows must not reach the price helper until that
+  subsystem lands; the ported shops (case 1 and the rest of M4-TOWN) never
+  set the field.
+- **`discountAvailable` has no writer yet**: the C# refreshes it from
+  `discountEquipped` (`Player.cs:25638`), which the Discount Card accessory
+  sets (`:14973`/`:14995`). The equipment/update-equips pass is S1-C-12;
+  `App::discount_available` defaults `false` (the exact pre-Discount-Card
+  state) and the price arms already consume it.
+- **The f32 casts are part of the contract**: the discount multiply
+  truncates through the C#'s `(int)` cast (no rounding — 7 × 0.8f = 5, not
+  6), the adjustment multiply/divide round through `Math.Round`'s
+  banker's rounding on f32, and `SellItem` divides by 5 *after* that round
+  (`40000 @ 0.75` sells for 10666, not the 10667 the old port printed by
+  dividing first). Golden vectors pin every arm in
+  `shop.rs::tests`.
