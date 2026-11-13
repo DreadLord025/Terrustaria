@@ -13266,27 +13266,33 @@ impl Npc {
                     self.damage_override
                         .unwrap_or_else(|| self.kind.contact_damage())
                 };
+                // The NPC-stage `u64` stream wraps into the `DropRng` the hurt
+                // rolls draw from (the C# `Main.rand` at the contact site).
+                struct U64DropRng<'a>(&'a mut u64);
+                impl tr_core::loot::DropRng for U64DropRng<'_> {
+                    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                        let range = (max - min) as u32;
+                        if range == 0 {
+                            return min;
+                        }
+                        min + (crate::app::frame::next_rand(self.0) % range as u64) as i32
+                    }
+                    fn next_float(&mut self) -> f32 {
+                        crate::app::frame::rand01(self.0)
+                    }
+                }
                 // Player.cs:31387 — `Main.DamageVar((float)npc.damage * damageMultiplier, 0f - luck)`.
                 // S1-C-5: contact damage rolls variance with the player's luck inverted.
                 let dmg = if base_dmg > 0 {
-                    struct U64DropRng<'a>(&'a mut u64);
-                    impl tr_core::loot::DropRng for U64DropRng<'_> {
-                        fn next_range(&mut self, min: i32, max: i32) -> i32 {
-                            let range = (max - min) as u32;
-                            if range == 0 {
-                                return min;
-                            }
-                            min + (crate::app::frame::next_rand(self.0) % range as u64) as i32
-                        }
-                        fn next_float(&mut self) -> f32 {
-                            crate::app::frame::rand01(self.0)
-                        }
-                    }
                     tr_core::damage::damage_var(&mut U64DropRng(rng), base_dmg as f32, -player.luck_state.luck)
                 } else {
                     0
                 };
-                if dmg > 0 && player.hurt(dmg, cx) {
+                // The mechanical Phase-1 threading: the in-scope stream and
+                // `Hurt`'s default `dodgeable = true` — zero behaviour change
+                // (Phase 2 restructures this site to the C# contact order and
+                // the real `IsDamageDodgeable` gate, `Player.cs:31423`).
+                if dmg > 0 && player.hurt(dmg, cx, &mut U64DropRng(rng), true) {
                     // `Player.cs:31373-31415`: the contact that lands also
                     // bounces the thorns back — `thorns` scales the NPC's own
                     // damage (2x on the Turtle set), the Cactus set adds its

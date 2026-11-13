@@ -192,7 +192,10 @@ pub fn apply_touch_damage(
     let mut loot = crate::world_sim::npcs::LootRng(rng);
     let dmg = tr_core::damage::damage_var(&mut loot, raw, -player.luck());
     let cx = player.x + width as f32 * 0.5;
-    player.hurt(dmg, cx)
+    // The same `LootRng` stream feeds the hurt's dodge rolls; `dodgeable`
+    // keeps `Hurt`'s default `true` (a black belt eats spike damage —
+    // research S1-C-1 §1.4; the per-source gates ride Phase 2).
+    player.hurt(dmg, cx, &mut loot, true)
 }
 
 #[cfg(test)]

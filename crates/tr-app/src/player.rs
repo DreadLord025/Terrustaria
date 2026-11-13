@@ -752,6 +752,30 @@ pub struct Player {
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
     pub hurt_cd: f32,
+    /// The dodge-family flags (`Player.blackBelt`/`mysticSashDodge`/
+    /// `brainOfConfusionItem`/`shadowDodge`/`longInvince`, `Player.cs:1178-
+    /// 1184,2402`): armed per tick in the fold from items 963/984
+    /// (`:15060`/`:15064`), 6189 (`:14633`), 3223 (`:15087` — the C# carries
+    /// the `Item` reference, the port's bool is the armed-flag equivalent) and
+    /// buff 59 (`:10075-10077`); `long_invince` is consume-only here, its
+    /// arming sources (6187 et al.) ride C-7. `ResetEffects` clears them every
+    /// frame (`:18440/:18617/:18661-18662`/`:18719`) and the `Hurt` roll block
+    /// (`:38214-38241`) consumes them.
+    pub black_belt: bool,
+    pub mystic_sash_dodge: bool,
+    pub brain_of_confusion: bool,
+    pub shadow_dodge: bool,
+    pub long_invince: bool,
+    /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
+    /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
+    /// in `Player.Update` (`:25461-25464`).
+    pub shadow_dodge_timer: i32,
+    /// `Player.brainOfConfusionDodgeAnimationCounter` (`Player.cs:1158`): the
+    /// 300-tick animation window a brain dodge opens (`:38049`); decayed in
+    /// `ResetEffects` (`:18794-18797`), zeroed on death (`UpdateDead`,
+    /// `:16932`). No render consumer yet — carried for state parity (the
+    /// S1-A-9 dead-slot convention).
+    pub brain_of_confusion_dodge_animation_counter: i32,
     /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
     /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
     /// `:18789`). `Hurt` (`:38203`), `KillMe` (`:38809`) and
@@ -1486,6 +1510,13 @@ impl Player {
             mana_max: 20,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
+            black_belt: false,
+            mystic_sash_dodge: false,
+            brain_of_confusion: false,
+            shadow_dodge: false,
+            long_invince: false,
+            shadow_dodge_timer: 0,
+            brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
             breath_cd: 0,
             creative_god_mode: false,
@@ -1999,6 +2030,9 @@ impl Player {
         self.carpet_frame = -1;
         self.hp = self.max_hp;
         self.hurt_cd = 0.0;
+        // `UpdateDead`'s brain-counter zero (`Player.cs:16932`): the death tail
+        // clears the animation window with the rest of the per-life state.
+        self.brain_of_confusion_dodge_animation_counter = 0;
         self.breath = BREATH_MAX;
         self.breath_cd = 0;
         self.regen = RegenState::default();
@@ -2393,9 +2427,65 @@ impl Player {
         }
     }
 
-    /// Contact damage / future combat. Returns true when the hit was accepted.
-    pub fn hurt(&mut self, amount: i32, from_x: f32) -> bool {
-        self.hurt_inner(amount, from_x, true)
+    /// Contact damage / future combat. Returns true when the hit was accepted,
+    /// false when it was dodged or swallowed. `rng` is the caller's active
+    /// stream (the C# dodge rolls draw from `Main.rand`, the S1-A-10 contract)
+    /// and `dodgeable` is `Hurt`'s parameter (`Player.cs:38197` — the
+    /// contact path passes `IsDamageDodgeable`, which rides Phase 2).
+    pub fn hurt(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+    ) -> bool {
+        self.hurt_inner(amount, from_x, true, rng, dodgeable)
+    }
+
+    /// `Player.SetImmuneTimeForAllTypes` (`Player.cs:38013-38021`): the port's
+    /// collapsed General cooldown carries the whole write — `immune`/`immuneTime`
+    /// have no port fields (the M4-HAZARD-1 admission) — and the per-cooldown
+    /// array is the one `hurt_cd`. The dodge handlers pass the 120/80 pair
+    /// directly; `iframes_for` (the normal-hurt window) is not involved.
+    fn set_immune_time_for_all_types(&mut self, time: i32) {
+        self.hurt_cd = time as f32 / 60.0;
+    }
+
+    /// `Player.ShadowDodge` (`Player.cs:38023-38042`) minus the NetMessage:
+    /// the 120/80 immunity, buff 59 deleted by the same single-pass `for` with
+    /// `DelBuff`'s compaction (`:38030-38040`), the Hallowed set-bonus
+    /// cooldown armed (`PutHallowedArmorSetBonusOnCooldown` `:38037-38039` —
+    /// it keeps the 30 s buff-59 cycle from re-granting).
+    fn do_shadow_dodge(&mut self) {
+        self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
+        for i in 0..crate::buffs::MAX_BUFFS {
+            if self.buffs.buff_time[i] > 0 && self.buffs.buff_type[i] == 59 {
+                self.buffs.del_buff(i);
+            }
+        }
+        self.shadow_dodge_timer = 1800;
+    }
+
+    /// `Player.BrainOfConfusionDodge` (`Player.cs:38046-38055`) minus the
+    /// NetMessage: the 120/80 immunity, the 300-tick animation window and the
+    /// brain's own cooldown buff 321 (240 ticks — the roll's
+    /// `FindBuffIndex(321)` gate).
+    fn brain_of_confusion_dodge(&mut self) {
+        self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
+        self.brain_of_confusion_dodge_animation_counter = 300;
+        self.buffs.add_buff(321, 240);
+    }
+
+    /// `Player.DoMysticSashDodge` (`Player.cs:38057-38059`): the 120/80
+    /// immunity; the 50x dust + gore burst is deferred to S1-E-1.
+    fn do_mystic_sash_dodge(&mut self) {
+        self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
+    }
+
+    /// `Player.NinjaDodge` (`Player.cs:38119-38121`): the 120/80 immunity; the
+    /// 100x dust + gore burst is deferred to S1-E-1.
+    fn ninja_dodge(&mut self) {
+        self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
 
     /// The shared hurt body. `knock_back` mirrors the original's
@@ -2428,7 +2518,14 @@ impl Player {
         total
     }
 
-    pub(crate) fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
+    pub(crate) fn hurt_inner(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        knock_back: bool,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+    ) -> bool {
         // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
         // journey godmode power swallows the hit outright — before the
         // iframes, the defense reduction and the knockback.
@@ -2437,6 +2534,37 @@ impl Player {
         }
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
+        }
+        // The dodge roll block (`Player.cs:38214-38241`), slotted after the
+        // cooldown early-return (the port's `hurt_cd`-gate IS the C# `flag`
+        // for the General counter) and before the defense reduction.
+        // `whoAmI == Main.myPlayer` collapses in the single-player port. The
+        // roll order is sash -> belt -> brain -> shadow; each `Next` draws
+        // only while its source is armed and the previous source did not
+        // dodge (the early returns short-circuit the rest). The brain's
+        // `Next(6)` precedes the buff-321 check in the C# `&&` chain — the
+        // draw happens whenever the item is armed, buff 321 only gates the
+        // dodge itself; shadow draws nothing.
+        if dodgeable {
+            if self.mystic_sash_dodge && rng.next_range(0, 10) == 0 {
+                self.do_mystic_sash_dodge();
+                return false;
+            }
+            if self.black_belt && rng.next_range(0, 10) == 0 {
+                self.ninja_dodge();
+                return false;
+            }
+            if self.brain_of_confusion
+                && rng.next_range(0, 6) == 0
+                && self.buffs.find_buff_index(321).is_none()
+            {
+                self.brain_of_confusion_dodge();
+                return false;
+            }
+            if self.shadow_dodge {
+                self.do_shadow_dodge();
+                return false;
+            }
         }
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2).
@@ -2473,10 +2601,13 @@ impl Player {
     /// The fall-damage landing hit (`Player.cs:25361-25370`): the normal branch
     /// forces `immune = false` BEFORE the Hurt — the hit lands through any
     /// iframes — and hitDirection 0 means no knockback and no fallStart reset.
-    fn hurt_fall(&mut self, amount: i32) -> bool {
+    fn hurt_fall(&mut self, amount: i32, rng: &mut dyn tr_core::loot::DropRng) -> bool {
         self.hurt_cd = 0.0;
         let cx = self.x + WIDTH * 0.5;
-        self.hurt_inner(amount, cx, false)
+        // The landing hit keeps `Hurt`'s default `dodgeable = true` — a
+        // black-belt dodge eats fall damage in the vanilla (research S1-C-1
+        // §1.4).
+        self.hurt_inner(amount, cx, false, rng, true)
     }
 
     /// `Player.tileRangeX` (`Player.cs:2496`, `DefaultTileRangeX = 5` at
@@ -2651,8 +2782,15 @@ impl Player {
     }
 
     /// One fixed 60 Hz step.
+    /// The test-facing tick wrapper: the C# `Player.Update` reads the global
+    /// `Main.rand`; the port threads the caller's stream (`update_with_grapple`).
+    /// Production always goes through the world-sim's `UpdatePlayers` stage
+    /// stream, so this wrapper supplies a scratch seed-0 stream for the
+    /// gear-less test players (an armed dodge source would draw from it
+    /// deterministically — nothing else).
     pub fn update(&mut self, world: &World, input: PlayerInput) {
-        self.update_with_grapple(world, input, &[], false, false, false, None)
+        let mut scratch = tr_core::UnifiedRandom::default();
+        self.update_with_grapple(world, input, &[], false, false, false, None, &mut scratch)
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
@@ -2675,6 +2813,11 @@ impl Player {
         // (`Player.cs:4048-4056`) needs both; `update` passes calm defaults.
         raining: bool,
         wind: Option<&tr_core::wind::Wind>,
+        // The stage stream the C# swaps in for the player update
+        // (`Main.cs:17755-17757`): the world-sim passes the `UpdatePlayers`
+        // named stream; the dodge rolls and the lava `Hurt` inside the tick
+        // draw from it (S1-A-10 — no new persistent stream).
+        rng: &mut dyn tr_core::loot::DropRng,
     ) {
         // `Player.grappling[0] != -1` is rebuilt per tick by the attached
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
@@ -2719,6 +2862,12 @@ impl Player {
         self.prev_y = self.y;
         self.prev_gfx_off_y = self.gfx_off_y;
         self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
+        // `Player.Update`'s Hallowed-cooldown decay (`Player.cs:25461-25464`,
+        // right after `UpdateImmunity`): one tick off the 1800 shadow-dodge
+        // cycle timer per frame.
+        if self.shadow_dodge_timer > 0 {
+            self.shadow_dodge_timer -= 1;
+        }
         // `Player.Update`'s frozen/webbed control lock: the frozen flag
         // zeroes the movement controls (`Player.cs:10057`'s flag gates the
         // run keys), the webbed one zeroes velocity outright (the scan
@@ -2879,6 +3028,20 @@ impl Player {
         self.thorns = 0.0;
         self.cactus_thorns = false;
         self.turtle_thorns = false;
+        // The dodge-family clears (`ResetEffects`): `shadowDodge = false`
+        // (`:18440`), `brainOfConfusionItem = null` (`:18617`),
+        // `blackBelt = false` / `mysticSashDodge = false` (`:18661-18662`),
+        // `longInvince = false` (`:18719`) — the fold's equipped/buff arms
+        // below re-arm from the live sources. The brain's animation counter
+        // decays here like the C# (`:18794-18797`).
+        self.shadow_dodge = false;
+        self.brain_of_confusion = false;
+        self.black_belt = false;
+        self.mystic_sash_dodge = false;
+        self.long_invince = false;
+        if self.brain_of_confusion_dodge_animation_counter > 0 {
+            self.brain_of_confusion_dodge_animation_counter -= 1;
+        }
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).
@@ -3012,6 +3175,11 @@ impl Player {
             match bt {
                 22 => self.blind = true, // `BuffID.Darkness`
                 32 => self.slow = true,  // `BuffID.Slow`
+                // `Player.UpdateBuffs`' shadow-dodge arm (`Player.cs:10075-
+                // 10077`): the Hallowed set's buff 59 arms `shadowDodge` for
+                // the tick; the buff is granted by the set bonus's
+                // `onHitDodge` scan, which is an armor-set row (out of scope).
+                59 => self.shadow_dodge = true,
                 // `:10201-10204` — `BuffID.Endurance` (114): +10%.
                 114 => self.endurance += 0.1,
                 // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
@@ -3378,6 +3546,16 @@ impl Player {
                 158 | 1250 | 1251 | 1252 | 3250 | 3251 | 3252 => self.no_fall_dmg = true,
                 // `Player.cs:15025-15028` - the Cobalt Shield.
                 156 => self.no_knockback = true,
+                // The dodge family (`ApplyEquipFunctional`): the Black Belt
+                // 963 (`:15059-15062`) and the Master Ninja Gear 984
+                // (`:15063-15067`, whose dash/spiked-boots rows ride the
+                // dash granters) both arm `blackBelt`; the Mystic Arts Sash
+                // 6189 (`:14632-14635`) arms `mysticSashDodge` and the Brain
+                // of Confusion 3223 (`:15085-15089`) arms the (bool
+                // stand-in for the) `brainOfConfusionItem` reference.
+                963 | 984 => self.black_belt = true,
+                6189 => self.mystic_sash_dodge = true,
+                3223 => self.brain_of_confusion = true,
                 // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
                 // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
                 // (The `Item.lifeRegen` rows are generic now — the loop after
@@ -3880,7 +4058,7 @@ impl Player {
         let stoned = self.buffs.find_buff_index(156).is_some();
         if stoned && !self.last_stoned {
             let cx = self.x + WIDTH * 0.5;
-            self.hurt_inner(20, cx, false);
+            self.hurt_inner(20, cx, false, rng, true);
         }
         self.last_stoned = stoned;
 
@@ -3940,7 +4118,7 @@ impl Player {
                 let dmg = (fell - 2) * 20;
                 if dmg > 0 {
                     let cx = self.x + WIDTH * 0.5;
-                    self.hurt_inner(dmg, cx, false);
+                    self.hurt_inner(dmg, cx, false, rng, true);
                     self.hurt_cd = 0.0;
                 }
             } else if (fell > threshold) && !self.no_fall_dmg && !self.has_wings {
@@ -3955,7 +4133,7 @@ impl Player {
                 } else {
                     (fell - threshold) * 10
                 };
-                self.hurt_fall(dmg);
+                self.hurt_fall(dmg, rng);
             }
             self.fall_start = (self.y / TILE_PX) as i32;
         }
@@ -3974,7 +4152,7 @@ impl Player {
             self.floor_visuals(world);
         }
 
-        self.update_survival();
+        self.update_survival(rng);
 
         if self.x < 0.0 {
             self.x = 0.0;
@@ -5985,7 +6163,7 @@ impl Player {
             self.minion_attack_target_npc = -1;
         }
     }
-    fn update_survival(&mut self) {
+    fn update_survival(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
         // The Wet-buff effects and the DoT derivation are the flag sources the
         // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
         // (`Player.cs:11740-11751, 18949-19103`).
@@ -6048,7 +6226,11 @@ impl Player {
                 self.lava_time -= 1;
             } else if self.hurt_cd <= 0.0 {
                 let cx = self.x + WIDTH * 0.5;
-                if self.hurt(80, cx) {
+                // The lava hit rolls the dodge block like any `Hurt` — the
+                // stream rides in from the `UpdatePlayers` stage through the
+                // update chain, `dodgeable` keeps `Hurt`'s default `true`
+                // (research S1-C-1 §1.4).
+                if self.hurt(80, cx, rng, true) {
                     // The Hurt return `num81 > 0.0` gates the OnFire grant
                     // (`Player.cs:27710-27711`; remix/ashWood/lavaRose variants
                     // out of scope). `AddBuff` applies the expert ×2 itself (24
@@ -6585,14 +6767,14 @@ mod tests {
         p.hurt_cd = 0.0;
         for _ in 0..5 {
             p.in_lava = true;
-            p.update_survival();
+            p.update_survival(&mut tr_core::UnifiedRandom::default());
         }
         assert_eq!(p.hp, 100, "the budget absorbed the lava");
         assert_eq!(p.lava_time, 0);
         // The next frame burns for the vanilla 80.
         p.in_lava = true;
         p.hurt_cd = 0.0;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 20, "the 80-damage lava hit");
         assert!(p.buffs.find_buff_index(24).is_some(), "On Fire");
     }
@@ -6754,12 +6936,12 @@ mod tests {
         p.stat_defense = 0;
         p.hp = 100;
         p.hurt_cd = 0.0;
-        p.hurt_inner(40, p.x - 10.0, false);
+        p.hurt_inner(40, p.x - 10.0, false, &mut tr_core::UnifiedRandom::default(), true);
         assert_eq!(p.hp, 70, "the cut, not the raw 40");
         // A 1-damage hit past 25% endurance truncates to 0, then the
         // `num2 < 1 -> 1` floor (`Player.cs:38378-38381`) lifts it back to 1.
         p.hurt_cd = 0.0;
-        p.hurt_inner(1, p.x - 10.0, false);
+        p.hurt_inner(1, p.x - 10.0, false, &mut tr_core::UnifiedRandom::default(), true);
         assert_eq!(p.hp, 69, "the sub-one hit floors to 1, not 0");
     }
 
@@ -6776,7 +6958,7 @@ mod tests {
         p.stat_defense = 0;
         p.hp = 100;
         p.hurt_cd = 0.0;
-        assert!(p.hurt_inner(1, p.x - 10.0, false));
+        assert!(p.hurt_inner(1, p.x - 10.0, false, &mut tr_core::UnifiedRandom::default(), true));
         assert_eq!(p.hp, 99, "the hit lands for the floored 1, not 0");
         assert!(
             (p.hurt_cd - 20.0 / 60.0).abs() < 1e-6,
@@ -6967,11 +7149,11 @@ mod tests {
         // of UpdateLifeRegen; update_survival parks it on the player for the
         // death pipeline (the default generic attribution here = Burned, 8).
         let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.dot_death, None); // a healthy tick records nothing
         p.hp = 8;
         p.regen.life_regen_count = -1200;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Burned));
     }
@@ -6984,13 +7166,13 @@ mod tests {
         p.hurt_cd = 0.0;
         p.stat_defense = 20; // 10 damage reduction
         p.hp = 100;
-        p.hurt(20, 0.0);
+        p.hurt(20, 0.0, &mut tr_core::UnifiedRandom::default(), true);
         assert_eq!(p.hp, 90, "20 - 20*0.5 = 10 taken");
         // The floor: a huge defense leaves 1.
         p.hurt_cd = 0.0;
         p.hp = 100;
         p.stat_defense = 400;
-        p.hurt(20, 0.0);
+        p.hurt(20, 0.0, &mut tr_core::UnifiedRandom::default(), true);
         assert_eq!(p.hp, 99);
     }
 
@@ -7837,7 +8019,7 @@ mod tests {
         let hook_center = Vec2::new(p.x + 80.0, p.y - 60.0);
         // One registered Hook — the multi-hook seam's single-member case.
         let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, hook_center, 0.0)];
-        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None);
+        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None, &mut tr_core::UnifiedRandom::default());
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
         // The speed cap 11 px/tick for the Hook (13).
@@ -7860,7 +8042,7 @@ mod tests {
         let center = Vec2::new(p.x, p.y - 300.0);
         let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         for _ in 0..40 {
-            p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None);
+            p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None, &mut tr_core::UnifiedRandom::default());
             // GrappleMovement refreshes the origin BEFORE the position
             // integrates — one row behind the current position, like the
             // original's call order (:27645 vs the collision block).
@@ -7899,6 +8081,7 @@ mod tests {
             false,
             false,
             None,
+            &mut tr_core::UnifiedRandom::default(),
         );
         assert!(!p.grappling_active, "detached");
         assert!(p.vy < 0.0, "the full jump impulse: vy={}", p.vy);
@@ -7928,6 +8111,7 @@ mod tests {
             false,
             false,
             None,
+            &mut tr_core::UnifiedRandom::default(),
         );
         assert!(!p.grappling_active, "detached");
         // The nudge path (`velocity.Y += 0.01f`) does NOT grant the jump
@@ -7945,7 +8129,7 @@ mod tests {
         // One attached Hook below the player.
         let center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
         let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
-        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None);
+        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None, &mut tr_core::UnifiedRandom::default());
         assert!(p.going_down_with_grapple, "the pull points down");
     }
 
@@ -8077,14 +8261,14 @@ mod tests {
         p.creative_god_mode = true;
         p.hurt_cd = 0.0;
         let hp = p.hp;
-        assert!(!p.hurt(50, p.x + 100.0), "the hit is swallowed");
+        assert!(!p.hurt(50, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true), "the hit is swallowed");
         assert_eq!(p.hp, hp, "no damage");
         assert_eq!(p.vx, 0.0, "no knockback");
         p.start_death(&w, false, false);
         assert!(!p.dead, "KillMe refuses while the power is on");
         // Switching the power off restores both arms.
         p.creative_god_mode = false;
-        assert!(p.hurt(10, p.x + 100.0));
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
         p.hp = 0;
         p.start_death(&w, false, false);
         assert!(p.dead);
@@ -8120,7 +8304,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true));
         assert_eq!(p.vx, 0.0, "the shield eats the knockback");
         // Without the shield: the knockback lands.
         let mut p = player_with_accessory(0);
@@ -8128,7 +8312,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true));
         assert!(p.vx != 0.0);
     }
 
@@ -9318,7 +9502,7 @@ mod tests {
             p.buffs.expert_mode = expert;
             p.buffs.add_buff(id, 600);
             for _ in 0..300 {
-                p.update_survival();
+                p.update_survival(&mut tr_core::UnifiedRandom::default());
             }
             assert_eq!(
                 p.regen.life_regen, regen,
@@ -9341,7 +9525,7 @@ mod tests {
             p.buffs.add_buff(id, 600);
             p.in_water = true;
             p.wet = true;
-            p.update_survival();
+            p.update_survival(&mut tr_core::UnifiedRandom::default());
             assert!(
                 p.buffs.find_buff_index(id).is_none(),
                 "water must cure buff {id}"
@@ -9352,7 +9536,7 @@ mod tests {
             p.buffs.add_buff(id, 600);
             p.in_water = true;
             p.wet = true;
-            p.update_survival();
+            p.update_survival(&mut tr_core::UnifiedRandom::default());
             assert!(
                 p.buffs.find_buff_index(id).is_some(),
                 "water must not cure buff {id}"
@@ -9370,7 +9554,7 @@ mod tests {
         p.wet = true;
         p.in_lava = true;
         p.lava_wet = true;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert!(
             p.buffs.find_buff_index(24).is_some(),
             "lavaWet blocks the cure"
@@ -9388,7 +9572,7 @@ mod tests {
         p.buffs.add_buff(24, 600);
         p.in_water = true; // the physics probe covers water | honey
         p.honey_wet = true;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert!(
             p.buffs.find_buff_index(24).is_some(),
             "honey must not cure OnFire"
@@ -9405,10 +9589,10 @@ mod tests {
         p.buffs.add_buff(323, 600);
         p.in_water = true;
         p.wet = true;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         let left = p.buffs.active_types();
         assert_eq!(left.len(), 1, "one fire buff survives the shift-skip");
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert!(
             p.buffs.active_types().is_empty(),
             "the second falls next tick"
@@ -9421,7 +9605,7 @@ mod tests {
         // AddBuff(24, 420); while the iframes run (`num81 == 0`) nothing lands.
         let mut p = drain_rig();
         p.in_lava = true;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
         assert_eq!(p.buffs.buff_time[idx], 420);
         // `:27705` — the classic lava hit is 80 (`num79`), the 420-tick On
@@ -9429,14 +9613,14 @@ mod tests {
         assert_eq!(p.hp, 1000 - 80);
         // Inside the iframes the hit (and therefore the grant) repeats nothing.
         let hp = p.hp;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, hp, "no second lava hit inside the iframes");
         // Expert doubles the buff time through the AddBuff chain
         // (`AddBuff_DetermineBuffTimeToAdd`, 24 is in the difficulty set).
         let mut p = drain_rig();
         p.buffs.expert_mode = true;
         p.in_lava = true;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         let idx = p.buffs.find_buff_index(24).unwrap();
         assert_eq!(p.buffs.buff_time[idx], 840);
     }
@@ -9525,7 +9709,7 @@ mod tests {
         let mut p = drain_rig();
         p.buffs.add_buff(103, 600);
         p.in_lava = true;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert!(p.buffs.find_buff_index(103).is_none());
         assert!(!p.buffs.buff_immune[24], "no fire immunity without Wet");
     }
@@ -9538,19 +9722,19 @@ mod tests {
         p.buffs.add_buff(20, 600); // Poisoned −4
         p.buffs.add_buff(48, 600); // Honey
         for _ in 0..300 {
-            p.update_survival();
+            p.update_survival(&mut tr_core::UnifiedRandom::default());
         }
         assert_eq!(p.regen.life_regen, 0, "−4 + 4 clamps at 0");
         assert_eq!(p.hp, 1000, "a softened −4 drains nothing");
         let mut p = drain_rig();
         p.buffs.add_buff(70, 600); // Venom −30
         p.buffs.add_buff(48, 600);
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -26, "−30 + 4 stays negative");
         // Honey without a drain never adds anything (the +2 aura is M2-BUFF-5).
         let mut p = drain_rig();
         p.buffs.add_buff(48, 600);
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, 0);
         assert_eq!(p.hp, 1000);
     }
@@ -9562,20 +9746,20 @@ mod tests {
         let mut p = drain_rig();
         p.buffs.add_buff(24, 600); // OnFire −8
         p.buffs.add_buff(324, 600); // Frostburn2 −16
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -24);
         let mut p = drain_rig();
         p.buffs.add_buff(24, 600);
         p.buffs.add_buff(324, 600);
         p.buffs.add_buff(137, 600); // drippingSlime
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -48, "drip doubles both fire parts");
         // A poison part is not doubled by the drip.
         let mut p = drain_rig();
         p.buffs.add_buff(20, 600); // Poisoned −4
         p.buffs.add_buff(24, 600); // OnFire −8
         p.buffs.add_buff(137, 600);
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -20, "−4 poison + (−8×2) fire");
     }
 
@@ -9586,7 +9770,7 @@ mod tests {
         // The classic row first — the flag is off on a classic world.
         let mut p = drain_rig();
         p.buffs.add_buff(24, 600);
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -8);
         // The seeded world: the flag rides the world's micro seeds, captured
         // at `Player::spawn` (`WorldGen.cs:555-558`).
@@ -9596,19 +9780,19 @@ mod tests {
         let mut p = drain_rig_in(&w);
         assert!(p.vampirism, "the flag reaches the player");
         p.buffs.add_buff(24, 600);
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -100, "the vampirism OnFire drain");
         // The drip double is 100 too, and only the fire family is affected.
         let mut p = drain_rig_in(&w);
         p.buffs.add_buff(24, 600);
         p.buffs.add_buff(137, 600);
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -200, "drip doubles the 100");
         let mut p = drain_rig_in(&w);
         p.buffs.add_buff(20, 600); // Poisoned −4 (unchanged)
         p.buffs.add_buff(24, 600); // OnFire −100
         p.buffs.add_buff(137, 600);
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -204, "−4 poison + (−100×2) fire");
     }
 
@@ -9618,15 +9802,15 @@ mod tests {
         // controlRight` (the run keys, not velocity).
         let mut p = drain_rig();
         p.buffs.add_buff(144, 600);
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -8);
         p.control_left = true;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -40, "−8 −32 with the left key");
         let mut p = drain_rig();
         p.buffs.add_buff(144, 600);
         p.control_right = true;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -40, "−8 −32 with the right key");
     }
 
@@ -9676,14 +9860,14 @@ mod tests {
         p.buffs.add_buff(68, 600); // suffocating → fast lane, reason 7
         p.regen.life_regen_count = -600;
         p.hp = 3;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Suffocation));
         let mut p = drain_rig();
         p.buffs.add_buff(20, 600); // poisoned → generic lane, reason 9
         p.regen.life_regen_count = -120;
         p.hp = 1;
-        p.update_survival();
+        p.update_survival(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Poison));
     }
@@ -10997,7 +11181,7 @@ mod tests {
         assert_eq!(p.mount_fishron_special_counter, 60.0);
         assert_eq!(p.max_run_speed_value(), row.run_speed);
         // The window survives the tick's one-point decay (`:25625-25628`).
-        p.update_with_grapple(&w, PlayerInput::default(), &[], false, false, false, None);
+        p.update_with_grapple(&w, PlayerInput::default(), &[], false, false, false, None, &mut tr_core::UnifiedRandom::default());
         assert!(p.mount_fishron_special_counter > 0.0);
         // The full tick leaves the mount in its air frame; the `+13.5` arm
         // (`Mount.cs:461-464`) would mask the halving probe, so put it back
@@ -11347,6 +11531,367 @@ mod tests {
         assert!(!p.sitting);
         assert!(!p.sleeping);
         assert_eq!(p.full_rotation, 0.0);
+    }
+    // ---- S1-C-1: the dodge family (`Player.cs:38214-38241` + the fold) ----
+
+    /// The scripted stream the dodge-roll tests drive: `rolls` feed
+    /// `next_range` in order (exhausted -> the largest in-range value, which
+    /// never rolls `== 0`), `draws` records every call so the S1-A-10
+    /// draw-order contract is asserted directly.
+    struct DodgeRng {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl DodgeRng {
+        fn with_rolls(rolls: &[i32]) -> Self {
+            Self {
+                rolls: rolls.to_vec(),
+                draws: Vec::new(),
+            }
+        }
+    }
+    impl tr_core::loot::DropRng for DodgeRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() {
+                return max - 1;
+            }
+            self.rolls.remove(0)
+        }
+        fn next_float(&mut self) -> f32 {
+            0.5
+        }
+    }
+
+    /// A ground player with `items` in the accessory slots, the fold run
+    /// twice (`player_with_accessory`'s multi-source form).
+    fn dodge_player_with(items: &[u16]) -> Player {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for (i, &kind) in items.iter().enumerate() {
+            p.equipped[3 + i] = kind;
+        }
+        for _ in 0..2 {
+            p.update(&w, PlayerInput::default());
+        }
+        p
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_1_dodge_flags_arm_from_items_and_buff_and_clear() {
+        // `ApplyEquipFunctional`: 963 (`:15060`) and 984 (`:15064`) arm
+        // `blackBelt`, 6189 (`:14633`) arms `mysticSashDodge`, 3223
+        // (`:15087`) arms the brain; `ResetEffects` clears them per frame
+        // (`:18661-18662`/`:18617`) and the fold re-arms from the live
+        // sources.
+        let p = dodge_player_with(&[963]);
+        assert!(p.black_belt);
+        let p = dodge_player_with(&[984]);
+        assert!(p.black_belt, "the Master Ninja Gear arms the same flag");
+        let p = dodge_player_with(&[6189]);
+        assert!(p.mystic_sash_dodge);
+        let p = dodge_player_with(&[3223]);
+        assert!(p.brain_of_confusion);
+        let p = dodge_player_with(&[0]);
+        assert!(!p.black_belt && !p.mystic_sash_dodge && !p.brain_of_confusion);
+        // Buff 59 arms `shadowDodge` through the buff scan
+        // (`UpdateBuffs`, `:10075-10077`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(!p.shadow_dodge);
+        p.buffs.add_buff(59, 1800);
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge, "buff 59 arms the shadow dodge");
+        let i = p.buffs.find_buff_index(59).unwrap();
+        p.buffs.del_buff(i);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.shadow_dodge, "the fold clears it without the buff");
+        // The fold-order half: armed while equipped, cleared by the next
+        // fold without the source.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 963;
+        p.update(&w, PlayerInput::default());
+        assert!(p.black_belt);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.black_belt, "the next fold without the source clears it");
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_2_sash_roll_dodges_on_next_10_zero() {
+        // `mysticSashDodge && Main.rand.Next(10) == 0` (`:38215-38219`).
+        let mut p = dodge_player_with(&[6189]);
+        let hp = p.hp;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the sash dodge fires");
+        assert_eq!(p.hp, hp, "no damage on the dodge");
+        assert_eq!(rng.draws, vec![(0, 10)]);
+        // A missed roll lands the hit through the same source.
+        p.hurt_cd = 0.0;
+        let mut rng = DodgeRng::with_rolls(&[1]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(p.hp < hp);
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_2_belt_roll_dodges_on_next_10_zero() {
+        // `blackBelt && Main.rand.Next(10) == 0` -> `NinjaDodge()`
+        // (`:38220-38223`).
+        let mut p = dodge_player_with(&[963]);
+        let hp = p.hp;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the belt dodge fires");
+        assert_eq!(p.hp, hp);
+        assert_eq!(rng.draws, vec![(0, 10)]);
+        p.hurt_cd = 0.0;
+        let mut rng = DodgeRng::with_rolls(&[1]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(p.hp < hp);
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_2_brain_roll_gates_on_armed_flag_and_buff_321() {
+        // `brainOfConfusionItem != null && !IsAir && Main.rand.Next(6) == 0
+        // && FindBuffIndex(321) == -1` (`:38224-38227`): the armed flag folds
+        // the two item checks into one bool, and the roll PRECEDES the
+        // buff-321 check in the C# `&&` chain — the draw happens while armed
+        // even with 321 active, the buff only gates the dodge itself.
+        let mut p = dodge_player_with(&[3223]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the brain dodge fires");
+        assert_eq!(rng.draws, vec![(0, 6)]);
+        // The dodge armed buff 321 itself (240 ticks): the next hit roll is
+        // still drawn, but no dodge comes out of it.
+        assert!(p.buffs.find_buff_index(321).is_some());
+        p.hurt_cd = 0.0;
+        let hp = p.hp;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true), "buff 321 gates the dodge");
+        assert_eq!(rng.draws, vec![(0, 6)], "the draw happened anyway (C# order)");
+        assert!(p.hp < hp);
+        // Unarmed: a would-be-hitting roll draws nothing at all.
+        let mut p = dodge_player_with(&[0]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(rng.draws.is_empty(), "no brain draw without the item");
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_2_shadow_dodges_without_a_roll() {
+        // `shadowDodge -> ShadowDodge()` is deterministic (`:38229-38232`) —
+        // no `Next` draw at all.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(59, 1800);
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        let hp = p.hp;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(rng.draws.is_empty(), "the shadow dodge draws nothing");
+        assert_eq!(p.hp, hp);
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_6_draw_order_sash_belt_brain_when_nothing_hits() {
+        // The S1-A-10 draw-order contract, asserted on the recorded stream:
+        // all three rolled sources armed + a stream that never hits draws
+        // exactly sash -> belt -> brain, one `Next` each, in that order
+        // (`:38215-38227`); shadow (not armed here) draws nothing.
+        let mut p = dodge_player_with(&[6189, 963, 3223]);
+        let mut rng = DodgeRng::with_rolls(&[]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true), "no dodge, the hit lands");
+        assert_eq!(rng.draws, vec![(0, 10), (0, 10), (0, 6)]);
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_6_first_source_hit_consumes_no_later_draw() {
+        // The early return short-circuits: a sash hit consumes no belt/brain
+        // draw (`:38217-38218`).
+        let mut p = dodge_player_with(&[6189, 963, 3223]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert_eq!(rng.draws, vec![(0, 10)]);
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_3_dodge_sets_the_80_tick_window_and_leaves_hp() {
+        // The handlers' `SetImmuneTimeForAllTypes(longInvince ? 120 : 80)`
+        // (`:38013-38021`, `:38025` et al.) — the dodge pair writes the
+        // collapsed General cooldown directly, NOT `iframes_for`'s 40/20
+        // normal-hurt window.
+        let mut p = dodge_player_with(&[963]);
+        let hp = p.hp;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true));
+        assert_eq!(p.hp, hp);
+        assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4, "the 80-tick dodge window");
+        // `longInvince` lifts the pair to 120.
+        p.hurt_cd = 0.0;
+        p.long_invince = true;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true));
+        assert!((p.hurt_cd - 120.0 / 60.0).abs() < 1e-4, "the 120-tick window");
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_3_brain_dodge_bookkeeping_runs_exactly_once() {
+        // `BrainOfConfusionDodge` (`:38046-38055`): the 300 counter, ONE
+        // buff-321 add (240 ticks), the 120/80 window.
+        let mut p = dodge_player_with(&[3223]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert_eq!(p.brain_of_confusion_dodge_animation_counter, 300);
+        let count = p
+            .buffs
+            .active_types()
+            .iter()
+            .filter(|&&b| b == 321)
+            .count();
+        assert_eq!(count, 1, "one buff-321 add");
+        let i = p.buffs.find_buff_index(321).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 240);
+        assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_3_shadow_dodge_bookkeeping_runs_exactly_once() {
+        // `ShadowDodge` (`:38023-38042`): buff 59 deleted, the Hallowed
+        // cooldown set to 1800, the 120/80 window.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(59, 1800);
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        let mut rng = DodgeRng::with_rolls(&[]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert_eq!(p.buffs.find_buff_index(59), None, "buff 59 deleted");
+        assert_eq!(p.shadow_dodge_timer, 1800);
+        assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_4_no_draw_no_dodge_while_hurt_cd_live() {
+        // The cooldown early-return (`:38207-38213`) precedes the roll block:
+        // with `hurt_cd` live no `Next` is drawn and no dodge fires (the C#
+        // `flag` gate). Dirty test: the hitting stream would dodge if the
+        // block ran.
+        let mut p = dodge_player_with(&[963]);
+        p.hurt_cd = 1.0;
+        let hp = p.hp;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(rng.draws.is_empty(), "no draw while the cooldown is live");
+        assert_eq!(p.hp, hp);
+        assert!((p.hurt_cd - 1.0).abs() < 1e-6, "the cooldown untouched");
+    }
+
+    #[test]
+    fn s1_c_1_dw_1_5_dodge_short_circuits_before_defense_endurance_and_iframes() {
+        // The roll block sits after the cooldown gate and before the defense
+        // reduction (`Player.cs:38214` > `:38304`): a dodged lethal hit
+        // leaves hp/regen/knockback untouched and carries the DODGE window
+        // (80/60), not `iframes_for`'s 40/60 — the early return proves the
+        // defense/endurance/immunity steps never ran.
+        let mut p = dodge_player_with(&[963]);
+        p.hp = 5;
+        p.endurance = 0.5;
+        p.stat_defense = 100;
+        let regen_time = p.regen.life_regen_time;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(
+            !p.hurt(50, p.x + 100.0, &mut rng, true),
+            "the belt eats the lethal hit"
+        );
+        assert_eq!(p.hp, 5, "no damage, no death pipeline");
+        assert!(
+            (p.hurt_cd - 80.0 / 60.0).abs() < 1e-4,
+            "the dodge window, not the 40-tick hurt window"
+        );
+        assert_eq!(
+            p.regen.life_regen_time, regen_time,
+            "the regen reset did not run"
+        );
+        assert_eq!(p.vx, 0.0, "no knockback on the dodge");
+    }
+
+    #[test]
+    fn s1_c_1_godmode_returns_before_the_dodge_rolls() {
+        // `creativeGodMode` returns before the roll block (`:38205-38207`) —
+        // an armed belt draws nothing under the power.
+        let mut p = dodge_player_with(&[963]);
+        p.creative_god_mode = true;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(rng.draws.is_empty(), "godmode precedes the rolls");
+        assert_eq!(p.hurt_cd, 0.0, "no immunity window written");
+    }
+
+    #[test]
+    fn s1_c_1_no_rolls_when_dodgeable_is_false() {
+        // `Hurt`'s `dodgeable` parameter gates the whole block (`:38214`):
+        // false -> no draw, no dodge. Phase 2 threads the real
+        // `IsDamageDodgeable` values through this parameter.
+        let mut p = dodge_player_with(&[963]);
+        let hp = p.hp;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, false));
+        assert!(rng.draws.is_empty());
+        assert!(p.hp < hp);
+    }
+
+    #[test]
+    fn s1_c_1_a_dodged_lava_hit_skips_the_on_fire_grant() {
+        // The lava site (`update_survival`, `Player.cs:27681-27722`): the
+        // OnFire grant rides the `Hurt` return (`:27710-27711`) — a dodge
+        // returns false, so no buff 24; the counterpart roll lands and
+        // grants, proving the UpdatePlayers stream reaches the lava hurt.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 963;
+        for _ in 0..2 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.in_lava = true;
+        p.lava_time = 0;
+        let hp = p.hp;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        p.update_survival(&mut rng);
+        assert_eq!(p.hp, hp, "the belt ate the lava hit");
+        assert!(p.buffs.find_buff_index(24).is_none(), "no OnFire on a dodge");
+        // The counterpart: a missed roll lands the 80 damage and grants.
+        p.hurt_cd = 0.0;
+        let mut rng = DodgeRng::with_rolls(&[1]);
+        p.update_survival(&mut rng);
+        assert!(p.hp < hp);
+        assert!(p.buffs.find_buff_index(24).is_some(), "OnFire on the landed hit");
+    }
+
+    #[test]
+    fn s1_c_1_the_shadow_dodge_timer_decays_one_per_tick() {
+        // `Player.Update`'s decay (`:25461-25464`), riding the tick head.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shadow_dodge_timer = 1800;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shadow_dodge_timer, 1799);
+        p.shadow_dodge_timer = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shadow_dodge_timer, 0, "no underflow");
+    }
+
+    #[test]
+    fn s1_c_1_the_brain_counter_decays_and_clears_on_respawn() {
+        // The fold decay (`ResetEffects`, `:18794-18797`) and `UpdateDead`'s
+        // zero (`:16932`, the port's `respawn`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.brain_of_confusion_dodge_animation_counter = 300;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.brain_of_confusion_dodge_animation_counter, 299);
+        p.respawn();
+        assert_eq!(p.brain_of_confusion_dodge_animation_counter, 0);
     }
 }
 

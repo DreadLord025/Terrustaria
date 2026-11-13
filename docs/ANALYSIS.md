@@ -11854,3 +11854,42 @@ Two documented gaps, both unreachable today:
   (`Projectile.cs:57828`). The port's hostile-spawn seam carries no ai
   payload; the throw's `timeLeft = 300` rides the resolution's explicit
   override (`world_sim/npcs.rs`).
+
+## The dodge family (S1-C-1, 2026-11-13)
+
+`Player.Hurt`'s dodge roll block (`Player.cs:38214-38241`) lands in
+`player.rs::hurt_inner` — sash → belt → brain → shadow, each roll drawn from
+the caller's stream (`&mut dyn DropRng`, the `damage_var` parameter pattern)
+only while its source is armed and no earlier source dodged; a dodge returns
+`false` (hp untouched) after `SetImmuneTimeForAllTypes`'s collapsed write
+`hurt_cd = (long_invince ? 120 : 80)/60` — the 120/80 pair is its own value
+set, `iframes_for` (the normal 40/20 window) is not involved. The brain's
+`Next(6)` precedes the `FindBuffIndex(321)` check in the C# `&&` chain, so the
+draw happens whenever item 3223 is armed even while buff 321 is active (buff
+321 only gates the dodge itself) — the port keeps that draw order verbatim.
+The armed-flag equivalents fold in `ResetEffects`' stand-in: items
+963/984/6189/3223 re-arm per tick from `equipped[..10]`, buff 59 arms
+`shadow_dodge` in the buff scan; `shadow_dodge_timer` decays at the tick head
+(`:25461-25464`), the brain's animation counter in the fold (`:18794-18797`)
+and zeroes on respawn (`UpdateDead` `:16932`).
+
+Documented gaps, all deliberate:
+
+- **The dust/gore bursts** (`DoMysticSashDodge`'s 50x dust 267 + 5x gore,
+  `NinjaDodge`'s 100x dust 31 + 5x gore) have no particle/gore pool —
+  deferred to **S1-E-1**; the handlers carry the immunity + bookkeeping only.
+- **The shimmer-dodge arm** (`shimmering && AllowShimmerDodge(...)`,
+  `:38201-38204`) needs the `shimmering` absorbed-state machine and the
+  `PlayerDeathReason`/`CanHitPastShimmer` model — neither is ported; the
+  block's order reserves the arm's slot (first in `Hurt`) for it.
+- **The Hallowed `onHitDodge` grant** (`:6938-6941`, buff 59's source) is an
+  armor-set row — the buff can be granted only by tests/debug today.
+- **`long_invince` is consume-only**: the 120/80 read exists, its arming
+  sources (item 6187 et al., `:14590/:14627/:15147/:15589`) ride C-7.
+- **The panic/squire hurt buffs** (`:38242-38247`, `AddBuff(63, 480)` /
+  `AddBuff(205, 300)`) ride S1-C-7.
+- **`brain_of_confusion_dodge_animation_counter`** has no render consumer
+  (the S1-A-9 dead-slot convention) — carried for state parity.
+- **The contact/thorns restructure** (a dodged contact still reflects thorns,
+  `Update_NPCCollision`'s pre-hit gate `:31390-31420`) and the
+  `IsDamageDodgeable` per-caller gates ride **Phase 2** of this task.

@@ -11009,7 +11009,7 @@ impl ProjectilePool {
                 // single-player stand-in): the box overlap -> `Player.hurt`
                 // (the iframes gate inside), the shot dies on the hit.
                 if self.slots[i].active && !self.slots[i].friendly {
-                    self.damage_player(i, player.as_deref_mut());
+                    self.damage_player(i, player.as_deref_mut(), rng);
                 }
                 // `Projectile.cs:17197-17209` — the per-sub-step lifetime
                 // block (S1-A-9): the C# runs it inside the `numUpdates`
@@ -11819,8 +11819,14 @@ impl ProjectilePool {
     /// The hostile shot's player contact: the box overlap with the
     /// player's rect hurts through `Player.hurt` (its iframe gate holds
     /// the per-tick repeats off) and kills the shot (the single-hit
-    /// default).
-    fn damage_player(&mut self, slot: usize, player: Option<&mut crate::player::Player>) {
+    /// default). `rng` is the update loop's stream (the C# `Main.rand`
+    /// the dodge rolls draw from).
+    fn damage_player(
+        &mut self,
+        slot: usize,
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
         let Some(player) = player else {
             return;
         };
@@ -11837,7 +11843,10 @@ impl ProjectilePool {
         if !inside {
             return;
         }
-        player.hurt(p.damage, cx);
+        // The mechanical Phase-1 threading: `dodgeable` keeps `Hurt`'s
+        // default `true`; the real `Projectile.IsDamageDodgeable` gate rides
+        // Phase 2 (`Projectile.cs:14650`).
+        player.hurt(p.damage, cx, rng, true);
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
