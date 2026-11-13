@@ -1969,7 +1969,6 @@ pub(crate) mod front_flow_tests {
             favorite_slots: Vec::new(),
             play_world: None,
             invasion_spawn_timer: 0.0,
-            npc_rng: 0,
             spawn_no_cycle: false,
             attack_cd: 0.0,
             inventory: std::array::from_fn(|_| EMPTY_SLOT),
@@ -2955,13 +2954,22 @@ pub(crate) mod front_flow_tests {
         // `Prefix(-2)` (`Main.cs:41924`) draws from `Main.rand` — the port's
         // `prefix_rng` (`S1-A-5`), never the npc stream.
         let mut app = reforge_app();
-        let npc_rng = app.npc_rng;
         let mut expect = tr_core::UnifiedRandom::new(0); // `flow_app`'s seed
         let (expected, _) = crate::prefix::reforge_roll(app.reforge_slot.kind, &mut expect);
         app.reforge_click();
         assert_eq!(app.reforge_slot.prefix, expected);
-        assert_eq!(app.npc_rng, npc_rng, "the npc stream must not advance");
-        assert_eq!(app.prefix_rng.peek(), expect.peek());
+        // The npcs pass's streams must not advance (the reforge rides the
+        // global stand-in).
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            tr_core::UnifiedRandom::new(0),
+            "UpdateNPCs untouched"
+        );
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::SpawnNpc),
+            tr_core::UnifiedRandom::new(0),
+            "SpawnNPC untouched"
+        );
     }
 
     #[test]

@@ -1450,10 +1450,16 @@ mod tests {
             want_cooldown, -522_000.0,
             "the seed-0 draw is 5220 (the twin replay already proved the shape)"
         );
-        assert_eq!(
+        // The value pin above already proves the stop's draw is the FIRST
+        // `UpdateNPCs` draw of the death tick (a prior draw would shift the
+        // cooldown off the twin's first `Next(3024, 6048)`). Since P3 the
+        // same tick's NPCLoot half (coins/loot) also draws `UpdateNPCs` —
+        // the stream sits past the twin by the King's loot sequence, pinned
+        // per-group in DW-3.2's loot test.
+        assert_ne!(
             *app.rngs.stream(crate::app::RngKey::UpdateNpcs),
             twin,
-            "the death tick consumed exactly the one stop draw from UpdateNPCs"
+            "the death tick drew past the stop (the loot sequence follows)"
         );
         // The weather stream is untouched by the kill path (the two callers'
         // streams differ exactly as the C#'s swaps make them).

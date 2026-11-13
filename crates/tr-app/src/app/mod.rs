@@ -13,7 +13,7 @@ pub(crate) mod frame;
 mod r#loop;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
-mod rng;
+pub(crate) mod rng;
 pub(crate) mod saveglue;
 pub(crate) mod session;
 pub(crate) mod settings_ui;
@@ -179,7 +179,6 @@ pub(crate) struct App {
     /// `Main.reforgeCooldown` (`Main.cs:67053`): 60 ticks after a top-tier
     /// roll (`:41924`), decremented per tick (`:17121-17123`).
     pub(crate) reforge_cooldown: i32,
-    pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
     pub(crate) spawn_no_cycle: bool,
@@ -2597,7 +2596,6 @@ impl App {
             favorite_slots: Vec::new(),
             play_world: None,
             invasion_spawn_timer: 0.0,
-            npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
             inventory,

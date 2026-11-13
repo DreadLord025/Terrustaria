@@ -8,6 +8,7 @@
 //! the vanilla numbers".
 
 use crate::npc::{Npc, NpcKind};
+use tr_core::UnifiedRandom;
 use tr_core::TILE_PX;
 use tr_core::World;
 
@@ -356,7 +357,7 @@ pub struct CasterPhase {
 /// velocity-prediction rect is dropped.
 fn find_teleport_spot(
     world: &World,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
     target_tile: (i32, i32),
     self_tile: (i32, i32),
     radius: i32,
@@ -366,10 +367,12 @@ fn find_teleport_spot(
     for _ in 0..100 {
         let x = target_tile.0
             - radius
-            + (crate::app::frame::rand01(rng) * (2 * radius + 1) as f32) as i32;
+            // `Main.rand.Next(-radius, radius + 1)` per axis
+            // (`NPC.cs:18948`).
+            + rng.next_range(-radius, radius + 1) as i32;
         let y_start = target_tile.1
             - radius
-            + (crate::app::frame::rand01(rng) * (2 * radius + 1) as f32) as i32;
+            + rng.next_range(-radius, radius + 1) as i32;
         for y in y_start..target_tile.1 + radius {
             if (x - self_tile.0).abs() <= 1 && (y - self_tile.1).abs() <= 1 {
                 continue;
@@ -441,7 +444,7 @@ pub fn caster_cycle(
     world: &World,
     target_x: f32,
     target_y: f32,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
     params: CasterParams,
     phase: &mut CasterPhase,
 ) -> bool {

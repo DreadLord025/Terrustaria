@@ -6,7 +6,7 @@
 
 use crate::app::App;
 use crate::npc::{Npc, NpcKind};
-use tr_core::TILE_PX;
+use tr_core::{TILE_PX, UnifiedRandom, World};
 use crate::world_sim::npcs;
 
 /// `WorldGen.TriggerLunarApocalypse`'s tower list (`WorldGen.cs:86628`) —
@@ -32,28 +32,37 @@ pub const SIGIL_COUNTDOWN: i32 = 720;
 /// constants-off (the port has no remix worlds); the retry's downward scan
 /// from the surface folds into `tower_slot_clear`; the net-sync and the
 /// sound are unmodelled.
-pub fn trigger_lunar_apocalypse(app: &mut App, seed: u64) {
-    let width = app.world.width;
+/// `world`/`npcs` are the trigger's only App touches (the width/flags and
+/// the tower pushes) — the split lets the caller bind the `UpdateNPCs`
+/// stream beside them (`checkDead` runs under the `UpdateNPCs` swap,
+/// `NPC.cs:79393-79396`, `Main.cs:17767-17769`).
+pub fn trigger_lunar_apocalypse(
+    world: &mut World,
+    npcs: &mut Vec<Npc>,
+    rng: &mut UnifiedRandom,
+) {
+    let width = world.width;
     let span = width / 5;
-    let shield_max = npcs::tower_shield_max(&app.world);
-    // The draw-out (`:86630-86634`): each slot takes a random unused id.
+    let shield_max = npcs::tower_shield_max(world);
+    // The draw-out (`:86630-86634`): `list[Main.rand.Next(list.Count)]`
+    // per slot.
     let mut pool: Vec<NpcKind> = TOWER_ORDER.to_vec();
     let mut picked = [NpcKind::SolarTower; 4];
-    let mut rng = seed;
     for slot in picked.iter_mut() {
-        let idx = (crate::app::rand01(&mut rng) * pool.len() as f32) as usize % pool.len();
+        let idx = rng.next_max(pool.len() as i32) as usize;
         *slot = pool.remove(idx);
     }
     for (j, kind) in picked.iter().enumerate() {
         let center = span * (1 + j as i32);
         let mut spot: Option<(i32, i32)> = None;
         for _attempt in 0..30 {
-            let jitter = (crate::app::rand01(&mut rng) * 200.0 - 100.0) as i32;
+            // `Main.rand.Next(-100, 101)` (`WorldGen.cs:86643`).
+            let jitter = rng.next_range(-100, 101);
             let x = (center + jitter).clamp(2, width - 3);
             // `:86663`'s downward scan from the world surface.
-            let mut y = app.world.world_surface as i32;
+            let mut y = world.world_surface as i32;
             while y > 100 {
-                if tower_slot_clear(&app.world, x, y) {
+                if tower_slot_clear(world, x, y) {
                     break;
                 }
                 y -= 1;
@@ -63,21 +72,21 @@ pub fn trigger_lunar_apocalypse(app: &mut App, seed: u64) {
                 break;
             }
         }
-        let (tx, ty) = spot.unwrap_or((center, (app.world.world_surface as i32 - 40).max(2)));
+        let (tx, ty) = spot.unwrap_or((center, (world.world_surface as i32 - 40).max(2)));
         let mut n = Npc::new(*kind, tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1, 0.0);
         n.hp = n.max_hp;
-        app.npcs.push(n);
+        npcs.push(n);
     }
     // `:86686-86688`'s flag writes.
-    app.world.tower_active_solar = true;
-    app.world.tower_active_vortex = true;
-    app.world.tower_active_nebula = true;
-    app.world.tower_active_stardust = true;
-    app.world.lunar_apocalypse_is_up = true;
-    app.world.tower_shield_solar = shield_max;
-    app.world.tower_shield_vortex = shield_max;
-    app.world.tower_shield_nebula = shield_max;
-    app.world.tower_shield_stardust = shield_max;
+    world.tower_active_solar = true;
+    world.tower_active_vortex = true;
+    world.tower_active_nebula = true;
+    world.tower_active_stardust = true;
+    world.lunar_apocalypse_is_up = true;
+    world.tower_shield_solar = shield_max;
+    world.tower_shield_vortex = shield_max;
+    world.tower_shield_nebula = shield_max;
+    world.tower_shield_stardust = shield_max;
 }
 
 /// `WorldGen.MessageLunarApocalypse` (`WorldGen.cs:86778-86801`): the

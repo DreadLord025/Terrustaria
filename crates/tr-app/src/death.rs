@@ -8,23 +8,25 @@
 
 use glam::Vec2;
 
-use crate::app::App;
+use crate::app::{App, RngKey};
 use crate::regen::DotDeath;
-use tr_core::TILE_PX;
+use tr_core::{TILE_PX, UnifiedRandom};
 
 /// `Player.DropItems(gemsOnly: true)` (`Player.cs:54302-54315`): softcore
 /// death drops only the large gems from the inventory
 /// (`ItemID` 1522-1527 = LargeAmethyst..LargeDiamond, 3643 = LargeAmber).
 fn drop_gems(app: &mut App, x: f32, y: f32) {
     let GEMS: [u16; 7] = [1522, 1523, 1524, 1525, 1526, 1527, 3643];
-    let mut rng_state = app.item_rng;
+    let rng = app.rngs.stream(RngKey::UpdatePlayers);
     for slot in app.inventory.iter() {
         if slot.count == 0 || !GEMS.contains(&slot.kind) {
             continue;
         }
-        let vx = (crate::app::rand01(&mut rng_state) * 2.0 - 1.0) * 1.2;
-        let vy = -1.5 - crate::app::rand01(&mut rng_state);
-        let phase = crate::app::rand01(&mut rng_state) * std::f32::consts::TAU;
+        // The port's ItemDrop velocity model — three draws per drop (the
+        // C# `Item.NewItem`'s scatter, on the same stream).
+        let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+        let vy = -1.5 - rng.next_float();
+        let phase = rng.next_float() * std::f32::consts::TAU;
         app.items.push(crate::item::ItemDrop::new(
             slot.kind, slot.count, slot.prefix, x, y, vx, vy, phase,
         ));
@@ -32,7 +34,6 @@ fn drop_gems(app: &mut App, x: f32, y: f32) {
         // The slot identity matters (gems are stackable), so the caller's
         // slot is zeroed through the shared &mut.
     }
-    app.item_rng = rng_state;
     for slot in app.inventory.iter_mut() {
         if GEMS.contains(&slot.kind) {
             slot.count = 0;
@@ -106,7 +107,7 @@ pub fn drop_coins(app: &mut App, x: f32, y: f32) -> u64 {
         return 0;
     }
     app.coins -= dropped;
-    let mut rng_state = app.item_rng;
+    let rng = app.rngs.stream(RngKey::UpdatePlayers);
     let mut rest = dropped;
     for (coin_item, denom, cap) in [
         (74u16, 1_000_000u64, 999u64),
@@ -119,9 +120,9 @@ pub fn drop_coins(app: &mut App, x: f32, y: f32) -> u64 {
             continue;
         }
         rest -= count * denom;
-        let vx = (crate::app::rand01(&mut rng_state) * 2.0 - 1.0) * 1.2;
-        let vy = -1.5 - crate::app::rand01(&mut rng_state);
-        let phase = crate::app::rand01(&mut rng_state) * std::f32::consts::TAU;
+        let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+        let vy = -1.5 - rng.next_float();
+        let phase = rng.next_float() * std::f32::consts::TAU;
         app.items.push(crate::item::ItemDrop::new(
             coin_item,
             count as u32,
@@ -137,9 +138,9 @@ pub fn drop_coins(app: &mut App, x: f32, y: f32) -> u64 {
     // last tier beyond the stack limit; stacks > 999 would split — the ported
     // coin totals stay under it).
     if rest > 0 {
-        let vx = (crate::app::rand01(&mut rng_state) * 2.0 - 1.0) * 1.2;
-        let vy = -1.5 - crate::app::rand01(&mut rng_state);
-        let phase = crate::app::rand01(&mut rng_state) * std::f32::consts::TAU;
+        let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+        let vy = -1.5 - rng.next_float();
+        let phase = rng.next_float() * std::f32::consts::TAU;
         app.items.push(crate::item::ItemDrop::new(
             71,
             rest as u32,
@@ -151,7 +152,6 @@ pub fn drop_coins(app: &mut App, x: f32, y: f32) -> u64 {
             phase,
         ));
     }
-    app.item_rng = rng_state;
     dropped
 }
 
@@ -172,22 +172,17 @@ pub struct TombFall {
 /// coinsOwned > 100000 -> a rich grave (`Next(5) + 527`), else `Next(6)`:
 /// 0 -> the plain Tombstone (43), else a grave marker (`200 + roll`).
 /// The X velocity: `Next(-35, 36) * 0.1` until the magnitude clears 2.
-pub fn roll_tombstone(rng_state: &mut u64, coins_owned: u64) -> TombFall {
-    let mut next = |lo: i32, hi: i32| -> i32 {
-        // `Main.rand.Next(lo, hi)` — hi exclusive, on the app's item stream.
-        if hi <= lo {
-            return lo;
-        }
-        let span = (hi - lo) as f32;
-        lo + (crate::app::rand01(rng_state) * span) as i32
-    };
-    let mut vx = next(-35, 36) as f32 * 0.1;
+pub fn roll_tombstone(rng: &mut tr_core::UnifiedRandom, coins_owned: u64) -> TombFall {
+    // `Player.DropTombstone` (`Player.cs:39091-39115`): `Next(-35, 36)`,
+    // the |vx| >= 2 retry with `Next(-30, 31)`, `Next(6)` and the rich
+    // grave's `Next(5) + 527` — integer draws on the caller's stream.
+    let mut vx = rng.next_range(-35, 36) as f32 * 0.1;
     while vx >= -2.0 && vx <= 2.0 {
-        vx += next(-30, 31) as f32 * 0.1;
+        vx += rng.next_range(-30, 31) as f32 * 0.1;
     }
-    let roll = next(0, 6);
+    let roll = rng.next_max(6);
     let kind = if coins_owned > 100_000 {
-        next(0, 5) as u16 + 527
+        rng.next_max(5) as u16 + 527
     } else if roll != 0 {
         200 + roll as u16
     } else {
@@ -261,16 +256,15 @@ pub fn death_text_key(death: DotDeath) -> (&'static str, u32) {
 
 /// `PlayerDeathReason.GetDeathText`: the `DeathText.{base}_{variant}` row
 /// formatted with the dead player's name (the key rows carry `{0}`).
-/// `roll` is the C# `Main.rand.Next(variants)` — the caller draws it from its
-/// own stream (the port's split-stream model; documented in ANALYSIS).
-pub fn death_message(death: DotDeath, roll: f32, player_name: &str) -> String {
+/// `variant` is the C# `Main.rand.Next(variants) + 1` result — the caller
+/// draws it from its own named stream (`Lang.cs:1057-1127`).
+pub fn death_message(death: DotDeath, variant: i32, player_name: &str) -> String {
     let (base, variants) = death_text_key(death);
     // The single-variant rows (`DeathText.Poisoned`, `Slain`, `Spored`) carry
-    // no `_N` suffix; the families append the rolled index.
+    // no `_N` suffix; the families append the drawn index.
     let key = if variants <= 1 {
         base.to_string()
     } else {
-        let variant = (roll.max(0.0) * variants as f32) as usize % variants as usize + 1;
         format!("{base}_{variant}")
     };
     crate::lang::text_args(&key, &[player_name.to_string()])
@@ -300,7 +294,10 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     app.lost_coins = lost;
     app.lost_coin_string = value_to_coins(lost);
     app.death_text = death_text.to_string();
-    let mut tomb = roll_tombstone(&mut app.item_rng, app.coins);
+    let mut tomb = {
+        let rng = app.rngs.stream(RngKey::UpdatePlayers);
+        roll_tombstone(rng, app.coins)
+    };
     tomb.pos = Vec2::new(x, y);
     tomb.text = death_text.to_string();
     app.tomb_falls.push(tomb);
@@ -331,12 +328,12 @@ mod tests {
     fn death_message_picks_the_variant_and_formats_the_name() {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         crate::lang::init(tr_core::localization::GameCulture::English);
-        // roll 0.0 and 0.999 both stay inside the 2-variant family.
-        assert_eq!(death_message(DotDeath::Suffocation, 0.0, "Bob"), "Bob couldn't breathe.");
-        assert_eq!(death_message(DotDeath::Suffocation, 0.99, "Bob"), "Bob was buried alive.");
-        // A single-variant family ignores the roll.
+        // The C# variant index — `Next(2) + 1` → 1 or 2.
+        assert_eq!(death_message(DotDeath::Suffocation, 1, "Bob"), "Bob couldn't breathe.");
+        assert_eq!(death_message(DotDeath::Suffocation, 2, "Bob"), "Bob was buried alive.");
+        // A single-variant family ignores the index.
         assert_eq!(
-            death_message(DotDeath::Poison, 0.5, "Bob"),
+            death_message(DotDeath::Poison, 1, "Bob"),
             "Bob couldn't find the antidote."
         );
         assert_eq!(slain_message("Bob"), "Bob was slain...");
@@ -347,17 +344,16 @@ mod tests {
         // Player.cs:39091-39115: normal deaths roll Next(6) -> 0 is the plain
         // Tombstone (43), 1..5 are the grave markers (201-205); rich deaths
         // (coins > 100000) roll Next(5) + 527 (the rich gravestones).
-        let mut state = 1u64;
-        for _ in 0..200 {
-            let t = roll_tombstone(&mut state, 50);
+        for seed in 1..200i32 {
+            let t = roll_tombstone(&mut UnifiedRandom::new(seed), 50);
             assert!(
                 t.kind == 43 || (201..=205).contains(&t.kind),
                 "normal roll produced kind {}",
                 t.kind
             );
         }
-        for _ in 0..200 {
-            let t = roll_tombstone(&mut state, 200_000);
+        for seed in 1..200i32 {
+            let t = roll_tombstone(&mut UnifiedRandom::new(seed), 200_000);
             assert!(
                 (527..=531).contains(&t.kind),
                 "rich roll produced kind {}",
@@ -370,9 +366,8 @@ mod tests {
     fn tombstone_x_scatter_clears_two_pixels() {
         // Player.cs:39093-39095: the X velocity repeats Next(-30,31)*0.1
         // until it clears the 2 px dead zone.
-        let mut state = 2u64;
-        for _ in 0..100 {
-            let t = roll_tombstone(&mut state, 50);
+        for seed in 1..100i32 {
+            let t = roll_tombstone(&mut UnifiedRandom::new(seed), 50);
             assert!(t.vel.x < -2.0 || t.vel.x > 2.0, "vx {}", t.vel.x);
         }
     }
