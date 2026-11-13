@@ -44,6 +44,12 @@ struct Instance {
     /// Which texture to sample: 0 = the main atlas, otherwise the 1-based
     /// layer into the font texture array (`fonts`).
     @location(8) layer: u32,
+    /// The UI scissor rect `[x, y, w, h]` in framebuffer pixels at push time
+    /// (`UIElement.cs:222-237`'s `OverflowHidden`); `clip.rs::NO_CLIP` leaves
+    /// everything visible. Applied as a fragment discard — the instanced
+    /// pipeline has one draw call, so XNA's device scissor becomes a per-instance
+    /// pixel mask.
+    @location(9) clip: vec4<f32>,
 };
 
 struct VsOut {
@@ -60,6 +66,8 @@ struct VsOut {
     @location(4) grad_v: f32,
     // The texture selector, corner-uniform; integer varyings need `flat`.
     @location(5) @interpolate(flat) layer: u32,
+    // The UI scissor rect, corner-uniform (see `Instance.clip`).
+    @location(6) clip: vec4<f32>,
 };
 
 @vertex
@@ -107,6 +115,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     out.dye = inst.dye;
     out.layer = inst.layer;
     out.grad_v = c.y;
+    out.clip = inst.clip;
     return out;
 }
 
@@ -207,6 +216,15 @@ fn sample_tex(uv: vec2<f32>, layer: u32) -> vec4<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    // The `OverflowHidden` scissor (`UIElement.cs:222-237`): XNA's device
+    // scissor test discards fragments outside the rect; this pipeline batches
+    // the whole interface into one draw, so the rect rides the instance and the
+    // test happens per fragment. `@builtin(position)` is framebuffer space with
+    // a top-left origin (y grows downwards), the same space `clip` is in.
+    let p = in.position.xy;
+    if (p.x < in.clip.x || p.y < in.clip.y || p.x >= in.clip.x + in.clip.z || p.y >= in.clip.y + in.clip.w) {
+        discard;
+    }
     var tex = sample_tex(in.uv, in.layer);
     if (tex.a < 0.01) {
         discard;

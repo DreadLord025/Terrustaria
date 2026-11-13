@@ -941,10 +941,10 @@ M2-MOUNT-3 minecart system, M2-MOUNT-4 special-ability mounts.
 `ui/uistate.rs` (layout pass ported), front-end screens ✅, `menu/` ✅ · 🟡.
 
 - UIElement: StyleDimension px/percent + H/VAlign; `Recalculate` outer→inner (margins →
-  padding), parent `UIList` gives infinite height (`UIElement.cs:285-321`); hit tests
+  padding), parent `UIList` gives infinite height (`UIElement.cs:285-321`, ported S1-H-2: `uistate::resolve_in_list`); hit tests
   iterate children **back-to-front** (324-352); events **bubble child→parent** (ported, S1-H-1: `framework.rs::bubble_chain`); double
   click 500 ms, state-change click lockout 200 ms (`UserInterface.cs:41-47`); draw uses
-  `Main.UIScaleMatrix`, `OverflowHidden` = scissor rect.
+  `Main.UIScaleMatrix`, `OverflowHidden` = scissor rect (ported S1-H-2: per-instance `clip` + fragment `discard`).
 - Inventory UX: ItemSlot contexts 0-43 (`ItemSlot.cs:44-130`); actions 0-5
   (`PickItemMovementAction` 1484-1633); cursorOverride special clicks: 6 Trash,
   7 TransferToBackpack/Unequip, 8 TransferFromChest, 9 TransferToChest, 10 Sell

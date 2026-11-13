@@ -370,6 +370,11 @@ pub fn name_empty() -> String {
 
 // --- Layout -------------------------------------------------------------------
 
+/// `UIList.SetPadding(4)` for the hairstyle list (`UICharacterCreation.cs:271`) —
+/// the list's inner rect (its `OverflowHidden` scissor, `UIElement.cs:254`) and
+/// the parent rect its grid content resolves against.
+pub const HAIR_LIST_PADDING: [f32; 4] = [4.0; 4];
+
 /// Every static rect, resolved through `uistate::resolve` exactly as the
 /// source's construction order does. `name_w` is the measured "Name:" width
 /// (the Mouse-font title the name plate draws at `Left 10` — the P3
@@ -418,6 +423,10 @@ pub struct Layout {
     /// (559, 339, 464, 1056) — the hair-grid content box (`:267-302`): the
     /// 46/48 grid of 213 buttons (`hair_button`).
     pub hair_grid: [f32; 4],
+    /// The hair `UIList` itself (`:267-273`): `Width (-18, 1)`, `Height (-6, 1)`,
+    /// `SetPadding(4)`. Its inner rect is the `OverflowHidden` scissor
+    /// (`GetClippingRectangle` reads `_innerDimensions`, `UIElement.cs:254`).
+    pub hair_list: [f32; 4],
     /// (1025, 345, 20, 127) — the hair scrollbar (`:274-282`).
     pub hair_scrollbar: [f32; 4],
     /// (555, 335, 490, 157) — the hairstyles menu container (`:257-265`); the
@@ -789,9 +798,12 @@ pub fn layout(screen: Vec2, name_w: f32) -> Layout {
         [4.0; 4],
     );
     // The grid content: `Width 100%`, `Height 48 * rows` of the list inner
-    // (`:284-289`).
+    // (`:284-289`). Its `Parent` is the `UIList`, so `Top`/`Height` resolve
+    // against the ∞ parent height (`UIElement.cs:288-291`,
+    // `uistate::resolve_in_list`) — the pixel `Height` is unaffected, and the
+    // `Width 100%` still comes from the list's real inner width.
     let rows = (HAIRSTYLES.len() / 10 + usize::from(HAIRSTYLES.len() % 10 != 0)) as f32;
-    let hair_grid = uistate::resolve(
+    let hair_grid = uistate::resolve_in_list(
         uistate::inner(hair_list, [4.0; 4]),
         uistate::Style::px(0.0),
         uistate::Style::px(0.0),
@@ -1010,6 +1022,7 @@ pub fn layout(screen: Vec2, name_w: f32) -> Layout {
         hsl_hex_panel,
         hsl_buttons,
         hair_grid,
+        hair_list,
         hair_scrollbar,
         hair_menu,
         cloth_buttons,
@@ -2154,14 +2167,14 @@ fn draw_hsl_menu(
 }
 
 /// `MakeHairstylesMenu` (`:254-304`): the 46/48 grid of hair buttons and the
-/// scrollbar. Rows past the container bottom would be clipped by the
-/// `UIList`'s `OverflowHidden`; the port has no scissor, so they are skipped.
-/// The scrollbar draws statically — it never scrolls, leaving the ~40 first
-/// of the 213 styles visible — while clicks on the clipped rows stay valid
-/// (the source's `UIElement.GetElementAt` does not cull clipped children
-/// either). The boundary row (row 3 at the 1600x900 reference: top 484) has
-/// only ~8 px above the menu's bottom edge (492) and hangs ~36 px below it,
-/// an artifact C# clips away to that sliver.
+/// scrollbar. The grid is a `UIList` child (`:284-289`), so its rows are clipped
+/// by the list's `OverflowHidden` (`UIElement.cs:222-237`) — the scissor is
+/// [`Layout::hair_list`]'s inner rect, and a row straddling the bottom edge is
+/// half-painted, exactly as the C# device scissor cuts it. Clicks on rows past
+/// the edge stay valid where they overlap the view: `UIElement.GetElementAt`
+/// descends through any child that contains the point (`:327-341`) and does not
+/// cull by the clip rect, so the two halves stay independent (the artifact the
+/// old break-gate guessed at is now the real clip).
 fn draw_hairstyles_menu(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -2169,14 +2182,13 @@ fn draw_hairstyles_menu(
     l: &Layout,
     mouse: Vec2,
 ) {
-    let bottom = l.hair_menu[1] + l.hair_menu[3];
+    // `GetClippingRectangle` reads the list's inner dimensions (`:254`).
+    r.push_clip(uistate::inner(l.hair_list, HAIR_LIST_PADDING));
     for (i, hair) in HAIRSTYLES.iter().enumerate() {
         let rect = hair_button(l.hair_grid, i);
-        if rect[1] >= bottom {
-            break;
-        }
         draw_hair_button(r, lookups, rect, state.draft.hair == *hair, in_rect(mouse, rect));
     }
+    r.pop_clip();
     panel::draw_scrollbar(r, lookups, l.hair_scrollbar, l.hair_menu[3], l.hair_grid[3], false);
 }
 
@@ -2470,6 +2482,43 @@ mod tests {
         assert_eq!(hair_button(l.hair_grid, 10), [565.0, 340.0 + 48.0, 44.0, 44.0]);
         // The scrollbar: HAlign 1, Top 10, H 127 (`:274-280`).
         assert_eq!(l.hair_scrollbar, [1025.0, 345.0, 20.0, 127.0]);
+    }
+
+    #[test]
+    fn the_hair_list_clip_rect_bounds_the_grid_content() {
+        // `UIList.OverflowHidden = true` (`UIList.cs:64`) plus `GetClippingRectangle`
+        // reading the list's **inner** dimensions (`UIElement.cs:254`): the
+        // scissor is the list rect shrunk by `SetPadding(4)` (`:271`). The grid
+        // content is 48 rows (~1056 px) inside a 147 px view, so most of it is
+        // clipped away — that is the C# behaviour, not a bug.
+        let l = layout(SCREEN, 40.0);
+        let view = super::super::uistate::inner(l.hair_list, HAIR_LIST_PADDING);
+        assert_eq!(l.hair_list, [555.0, 335.0, 472.0, 151.0]);
+        assert_eq!(view, [559.0, 339.0, 464.0, 143.0]);
+        // The grid starts exactly at the clip rect's top-left corner (the list
+        // inner is the grid's parent) and overflows the bottom by ~913 px.
+        assert_eq!([l.hair_grid[0], l.hair_grid[1]], [view[0], view[1]]);
+        assert!(l.hair_grid[3] > view[3], "the grid overflows the view");
+        // Every row past the clip bottom is entirely invisible. 143 px of view
+        // with 48 px rows fits exactly three: rows 0..=2 end at 480, and row 3
+        // starts at 484 — below the 482 edge, so nothing straddles here (the
+        // pixel the old break-gate worried about does not exist at the
+        // 1600x900 reference).
+        let view_bottom = view[1] + view[3];
+        let full_rows = (0..HAIRSTYLES.len())
+            .filter(|i| hair_button(l.hair_grid, *i)[1] + 44.0 <= view_bottom)
+            .count();
+        assert_eq!(full_rows, 30, "3 rows of 10");
+        let first_hidden = hair_button(l.hair_grid, 30);
+        assert_eq!(first_hidden[1], 484.0);
+        assert!(first_hidden[1] >= view_bottom, "row 3 is fully clipped");
+        // A row can straddle when the view is not a whole multiple of the row
+        // pitch: at 1600x900 it happens to be flush, so assert the general
+        // rule on a synthetic view whose bottom lands inside a row.
+        let mid_row = [559.0, 339.0, 464.0, 48.0 * 3.0 + 20.0];
+        let straddler = hair_button(l.hair_grid, 30);
+        assert!(straddler[1] < mid_row[1] + mid_row[3]);
+        assert!(straddler[1] + 44.0 > mid_row[1] + mid_row[3]);
     }
 
     #[test]

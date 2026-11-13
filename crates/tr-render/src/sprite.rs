@@ -6,6 +6,7 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::atlas::Atlas;
+use crate::clip::{ClipStack, Rect as ClipRect};
 use crate::font_atlas::FontAtlas;
 use crate::gpu::Gpu;
 
@@ -44,6 +45,12 @@ pub struct SpriteInstance {
     /// 1-based layer into the BC2 font array (`font_atlas::FontAtlas`) — the
     /// retail `DynamicSpriteFont` glyph pages (`Fonts/*.xnb`).
     pub layer: u32,
+    /// The scissor rect in force when the instance was pushed, as
+    /// `[x, y, w, h]` in framebuffer pixels ([`crate::clip::NO_CLIP`] when
+    /// unclipped). `UIElement.Draw`'s `OverflowHidden` path
+    /// (`UIElement.cs:222-237`) is a device scissor in the C#; the port bakes
+    /// the rect into the instance and the fragment shader discards outside it.
+    pub clip: [f32; 4],
 }
 
 /// One dye uniform-table row: the pass mode and the two colors. Mirrors
@@ -115,6 +122,10 @@ pub struct SpriteRenderer {
     pub font_glyph_px: f32,
     /// RGB split applied to the world pass (light mode "Trippy"); 0 disables it.
     pub aberration: f32,
+    /// The `GraphicsDevice.ScissorRectangle` stack (`UIElement.cs:222-237`): every
+    /// instance pushed while an `OverflowHidden` element is open carries
+    /// [`ClipStack::current`] and the fragment shader discards outside it.
+    clip: ClipStack,
     font_uv0: [f32; 2],
     font_uv1: [f32; 2],
     white_uv: [f32; 4],
@@ -310,6 +321,7 @@ impl SpriteRenderer {
                         6 => Float32,
                         7 => Uint32,
                         8 => Uint32,
+                        9 => Float32x4,
                     ],
                 })],
                 compilation_options: Default::default(),
@@ -418,6 +430,7 @@ impl SpriteRenderer {
             atlas_size: (atlas.width, atlas.height),
             font_glyph_px: font_glyph_px as f32,
             aberration: 0.0,
+            clip: ClipStack::new(),
             font_uv0,
             font_uv1,
             white_uv,
@@ -617,6 +630,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -639,6 +653,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -662,6 +677,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -686,6 +702,7 @@ impl SpriteRenderer {
             paint: paint as f32,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -713,6 +730,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -747,6 +765,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -792,6 +811,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -815,6 +835,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -830,6 +851,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -845,6 +867,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -860,6 +883,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -885,6 +909,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer,
+            clip: self.clip.current(),
         });
     }
 
@@ -907,6 +932,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -928,6 +954,7 @@ impl SpriteRenderer {
             paint: 0.0,
             dye: 0,
             layer: 0,
+            clip: self.clip.current(),
         });
     }
 
@@ -952,6 +979,7 @@ impl SpriteRenderer {
                     paint: 0.0,
                     dye: 0,
                     layer: 0,
+                    clip: self.clip.current(),
                 });
             }
             cx += gw * scale;
@@ -974,6 +1002,7 @@ impl SpriteRenderer {
         self.map_back.clear();
         self.map.clear();
         self.ui.clear();
+        self.clip.clear();
     }
 
     /// G6: clear only the UI range and keep the previous frame's world instances. The
@@ -986,6 +1015,31 @@ impl SpriteRenderer {
         self.map_back.clear();
         self.map.clear();
         self.ui.clear();
+        self.clip.clear();
+    }
+
+    /// `UIElement.Draw`'s `OverflowHidden` enter (`UIElement.cs:222-229`): the
+    /// new scissor is `GetClippingRectangle` — `rect` intersected with the
+    /// enclosing one (`:265-268`) — and every sprite pushed until the matching
+    /// [`pop_clip`](Self::pop_clip) is discarded outside it.
+    ///
+    /// `rect` is in framebuffer pixels with a top-left origin: the UI camera is
+    /// identity (`Globals`'s `cam = screen/2`, `zoom = 1`), so
+    /// `GetClippingRectangle`'s `Vector2.Transform(..., Main.UIScaleMatrix)` is
+    /// the identity at UI scale 1 (`:256-258`).
+    pub fn push_clip(&mut self, rect: ClipRect) {
+        self.clip.push(rect);
+    }
+
+    /// `UIElement.Draw`'s restore (`:231-237`): back to the enclosing scissor.
+    pub fn pop_clip(&mut self) {
+        self.clip.pop();
+    }
+
+    /// The scissor every sprite pushed now is clipped to
+    /// (`GraphicsDevice.ScissorRectangle`).
+    pub fn clip_rect(&self) -> ClipRect {
+        self.clip.current()
     }
 
     /// The full composite in the source order: background, world, world
@@ -1105,8 +1159,10 @@ impl SpriteRenderer {
         }
 
         // B1: no per-frame `collect`. The world and UI ranges are written straight
-        // into one buffer at their final offsets (56-byte instances keep 4-byte
-        // alignment, so a single `write_buffer` copy of each slice is valid). The
+        // into one buffer at their final offsets (80-byte instances — four
+        // pairs of floats, the 16-byte color, three scalars, the `layer` word
+        // and the 16-byte `clip` rect — which is a multiple of 4, so the
+        // per-range `write_buffer` copies stay valid). The
         // offsets follow the full concatenated layout in both halves of the split
         // post path — a half only uploads (and draws) its own ranges.
         let idx = self.frame_index;
@@ -1274,5 +1330,49 @@ fn probe(pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
                 color[3]
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_instance_stride_is_a_multiple_of_four() {
+        // `draw_ranges` copies each range straight into the instance ring at
+        // `range_index * size_of::<SpriteInstance>()` (no per-range staging
+        // buffer), so the stride must be 4-byte aligned for `write_buffer` —
+        // wgpu's `COPY_BUFFER_ALIGNMENT`. 80 today: 2+2+2+2 floats (32), color
+        // (16), rot/paint (8), dye/layer (8), clip (16).
+        let stride = std::mem::size_of::<SpriteInstance>();
+        assert_eq!(stride % wgpu::COPY_BUFFER_ALIGNMENT as usize, 0, "stride {stride}");
+        // And the vertex layout's `array_stride` is that same stride, so the
+        // shader's `Instance` struct and the CPU struct cannot drift apart
+        // without this failing first.
+        assert_eq!(stride, 80, "the fields documented above add up to 80 bytes");
+    }
+
+    #[test]
+    fn the_shader_locations_cover_every_instance_field() {
+        // The vertex attributes declared in `new` (`vertex_attr_array!`) map
+        // 1:1 onto `sprite.wgsl`'s `Instance`, and the last one is the scissor
+        // rect (`@location(9)`, `clip`). Attribute order encodes the offsets,
+        // so the two lists must not be reordered independently.
+        let attrs = wgpu::vertex_attr_array![
+            0 => Float32x2,
+            1 => Float32x2,
+            2 => Float32x2,
+            3 => Float32x2,
+            4 => Float32x4,
+            5 => Float32,
+            6 => Float32,
+            7 => Uint32,
+            8 => Uint32,
+            9 => Float32x4,
+        ];
+        let total: u64 = attrs.iter().map(|a| a.format.size()).sum();
+        assert_eq!(total, std::mem::size_of::<SpriteInstance>() as u64);
+        assert_eq!(attrs[9].shader_location, 9);
+        assert_eq!(attrs[9].format, wgpu::VertexFormat::Float32x4);
     }
 }

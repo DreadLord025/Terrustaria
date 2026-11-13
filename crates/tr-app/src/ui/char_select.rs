@@ -579,43 +579,45 @@ pub fn card_hit(
     (Some(card), action)
 }
 
-/// The screen's flat element list in the C#'s append order — the `UIList`'s
-/// `OverflowHidden` clips the rows past the list bottom, so a clipped row is
-/// not an element at all (the same gate the draw's `break` uses; a row
-/// straddling the edge stays hit, like the draw that still paints it).
+/// The screen's flat element list in the C#'s append order. The rows carry the
+/// `UIList`'s viewport: `GetElementAt` cannot descend into a row whose ancestors
+/// do not contain the point (`UIElement.cs:327-341`) and the draw clips at the
+/// same rect (`OverflowHidden`, `:222-237`), so a row scrolled fully past the
+/// list's bottom edge is neither painted nor clickable, while a row straddling
+/// the edge is half-painted and still hit above it.
 fn elements(l: &Layout, favorites: &[bool]) -> Vec<super::framework::Element> {
     let mut out = Vec::with_capacity(favorites.len() * select_hit::PARTS as usize + 2);
     for i in 0..favorites.len() {
-        let row_top = l.list[1] + i as f32 * CARD_PITCH;
-        if row_top >= l.list[1] + l.list[3] {
-            break;
-        }
         let c = card_layout(l.list, i);
         // The body first: the buttons are the card's appended children
         // (`UICharacterListItem.cs:71-121`), so the reverse walk tests them
         // before the panel they sit on. Each button carries the panel as its
         // `Parent` so a click on one bubbles to the card (`UIElement.cs:444-447`).
         let body = select_hit::card_part(i, select_hit::PART_BODY);
-        out.push(super::framework::Element::hit(c.card, body));
-        out.push(super::framework::Element::child(
+        out.push(super::framework::Element::row(c.card, body, l.list));
+        out.push(super::framework::Element::row_child(
             c.play,
             select_hit::card_part(i, select_hit::PART_PLAY),
             body,
+            l.list,
         ));
-        out.push(super::framework::Element::child(
+        out.push(super::framework::Element::row_child(
             c.favorite,
             select_hit::card_part(i, select_hit::PART_FAVORITE),
             body,
+            l.list,
         ));
-        out.push(super::framework::Element::child(
+        out.push(super::framework::Element::row_child(
             c.rename,
             select_hit::card_part(i, select_hit::PART_RENAME),
             body,
+            l.list,
         ));
-        out.push(super::framework::Element::child(
+        out.push(super::framework::Element::row_child(
             c.delete,
             select_hit::card_part(i, select_hit::PART_DELETE),
             body,
+            l.list,
         ));
     }
     out.push(super::framework::Element::hit(l.back, select_hit::BACK));
@@ -860,17 +862,17 @@ pub fn draw(
     panel::draw_panel(r, lookups, lookups.ui_panel_bg, l.panel, color::tint(CONTAINER_PANEL_BG));
     panel::draw_panel(r, lookups, lookups.ui_panel_border, l.panel, color::tint(uistate::TEXT_PANEL_BORDER));
 
-    // The cards, in list order. Rows past the list bottom would be clipped by
-    // the `UIList`'s `OverflowHidden`; the port has no scissor, so they are
-    // skipped (a row straddling the edge still draws — the Back/New buttons
-    // cover the small strip below the panel).
-    let list_bottom = l.list[1] + l.list[3];
+    // The cards, in list order, inside the `UIList`'s `OverflowHidden` scissor
+    // (`UIElement.cs:222-237`, `UIList.cs:59`): a row straddling the list's
+    // bottom edge is painted only down to that edge, exactly as the C# device
+    // scissor clips it. The scissor is the list's OUTER rect, not the inner one:
+    // `GetClippingRectangle` reads `_innerDimensions` (`:254`), which for the
+    // zero-padding `UIList` is the same rect.
+    r.push_clip(l.list);
     for (i, entry) in players.iter().enumerate() {
-        if l.list[1] + i as f32 * CARD_PITCH >= list_bottom {
-            break;
-        }
         draw_card(r, lookups, player_assets, &l, i, entry, mouse);
     }
+    r.pop_clip();
     // The scrollbar draws only while attached (a `Recalculate`-appended panel
     // child, `:100`), the view over the content height `UIList.UpdateScrollbar`
     // fed it (`UIList.cs:130-136`).
@@ -1246,10 +1248,20 @@ mod tests {
         assert!(in_rect(p, c5.delete));
         assert!(in_rect(p, l.new));
         assert_eq!(card_hit(&l, &favorites, p, false), (None, Some(CardAction::New)));
-        // Just above the fat buttons the card still owns the click (a
-        // hovered body, no button).
+        // Just above the fat buttons but past the list's bottom edge (778):
+        // card 5's rect still covers y 800, yet the C# cannot reach it —
+        // `GetElementAt` filters every child by `ContainsPoint` on the way down
+        // (`UIElement.cs:327-333`), and the click lands outside the `UIList`'s
+        // own rect, so the list is skipped and the point falls through to
+        // nothing. The draw agrees: `OverflowHidden` clips card 5 at 778
+        // (`:222-237`).
         assert_eq!(
             card_hit(&l, &favorites, Vec2::new(550.0, 800.0), false),
+            (None, None)
+        );
+        // One pixel above the edge the same card is hit.
+        assert_eq!(
+            card_hit(&l, &favorites, Vec2::new(550.0, 777.0), false),
             (Some(5), None)
         );
     }

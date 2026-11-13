@@ -48,6 +48,20 @@ pub struct Element {
     /// bubbles to (`:420-423`). `None` is the C#'s `Parent == null` (a root or
     /// a flat element), where the recursion stops.
     pub parent: Option<u32>,
+    /// The view rect of the ancestor `UIList` this element sits in — the list's
+    /// inner dimensions (`UIElement.GetViewCullingArea`, `:359-362`, which
+    /// `UIInnerList` overrides to `Parent.GetDimensions().ToRectangle()`,
+    /// `UIList.cs:34-37`).
+    ///
+    /// It bounds the element twice, exactly as the C# does:
+    /// * **hit** — `GetElementAt` only descends into a child whose ancestors
+    ///   contain the point (`:327-341`), so a row scrolled past the list's bottom
+    ///   edge is unreachable;
+    /// * **pixels** — the same rect is the `OverflowHidden` scissor
+    ///   (`:222-237`, `ClipStack`), so a row straddling the edge is half-painted.
+    ///
+    /// `None` is an element outside a list (a screen's root-level buttons).
+    pub viewport: Option<[f32; 4]>,
 }
 
 impl Element {
@@ -59,6 +73,7 @@ impl Element {
             id,
             ignores_mouse: false,
             parent: None,
+            viewport: None,
         }
     }
 
@@ -71,6 +86,29 @@ impl Element {
             id,
             ignores_mouse: false,
             parent: Some(parent),
+            viewport: None,
+        }
+    }
+
+    /// [`Element::hit`] inside a `UIList`'s viewport (`Element.viewport`).
+    pub fn row(rect: [f32; 4], id: u32, viewport: [f32; 4]) -> Self {
+        Self {
+            rect,
+            id,
+            ignores_mouse: false,
+            parent: None,
+            viewport: Some(viewport),
+        }
+    }
+
+    /// [`Element::child`] inside a `UIList`'s viewport.
+    pub fn row_child(rect: [f32; 4], id: u32, parent: u32, viewport: [f32; 4]) -> Self {
+        Self {
+            rect,
+            id,
+            ignores_mouse: false,
+            parent: Some(parent),
+            viewport: Some(viewport),
         }
     }
 
@@ -78,6 +116,16 @@ impl Element {
     /// inclusive left/top and exclusive right/bottom edges `ui::in_rect` ports.
     pub fn contains_point(&self, point: glam::Vec2) -> bool {
         in_rect(point, self.rect)
+    }
+
+    /// Whether `GetElementAt` can reach this element at `point`: the element's
+    /// own rect and its list's viewport must both contain it (the ancestor
+    /// containment `:327-341` performs on the way down).
+    pub fn hit_at(&self, point: glam::Vec2) -> bool {
+        self.contains_point(point)
+            && self
+                .viewport
+                .is_none_or(|view| in_rect(point, view))
     }
 }
 
@@ -87,6 +135,11 @@ impl Element {
 /// hit wins — the C#'s `break` on `!PassThroughMouseInteraction` (`:333`), which
 /// every element satisfies because the flag is never set.
 ///
+/// The C# recursion (`:339-341`) descends only through a child that contains the
+/// point, and each level re-tests its own `ContainsPoint` (`:347`), so a row out
+/// of its list's view is unreachable however large its rect — [`Element::hit_at`]
+/// carries that ancestor test for a flat table.
+///
 /// Returns the winning element's id, exactly the object reference the C# returns
 /// (`pointer.InputPointerCache.LastDown`/`LastClicked` compare it).
 pub fn get_element_at(elements: &[Element], point: glam::Vec2) -> Option<u32> {
@@ -94,7 +147,7 @@ pub fn get_element_at(elements: &[Element], point: glam::Vec2) -> Option<u32> {
         if element.ignores_mouse {
             continue;
         }
-        if element.contains_point(point) {
+        if element.hit_at(point) {
             return Some(element.id);
         }
     }
@@ -172,6 +225,7 @@ mod tests {
                 id: NEW,
                 ignores_mouse: true,
                 parent: None,
+                viewport: None,
             },
         ];
         assert_eq!(get_element_at(&elements, Vec2::new(50.0, 50.0)), Some(CARD_0));
@@ -184,6 +238,7 @@ mod tests {
                     id: NEW,
                     ignores_mouse: true,
                     parent: None,
+                    viewport: None,
                 }],
                 Vec2::new(50.0, 50.0)
             ),
@@ -211,6 +266,34 @@ mod tests {
         assert!(e.contains_point(Vec2::new(49.9, 79.9)));
         assert!(!e.contains_point(Vec2::new(50.0, 40.0)));
         assert!(!e.contains_point(Vec2::new(30.0, 80.0)));
+    }
+
+    #[test]
+    fn dw_2_1_a_row_outside_its_list_viewport_is_unreachable() {
+        // `GetElementAt` descends only through a child whose ancestors contain
+        // the point (`UIElement.cs:327-341`) — the `UIList`'s inner rect is that
+        // bound (`UIInnerList.ContainsPoint` is `true`, but the list itself is
+        // the contain-test at the level above, and `GetViewCullingArea`
+        // (`UIList.cs:34-37`) is the same rect).
+        let list = [100.0, 100.0, 200.0, 50.0]; // 100..300 x 100..150
+        let table = [
+            // A row straddling the bottom edge: top 140, 96 tall.
+            Element::row([100.0, 140.0, 200.0, 96.0], 1, list),
+            // A row fully past it: top 200.
+            Element::row([100.0, 200.0, 200.0, 96.0], 2, list),
+            // A root-level button outside any list.
+            Element::hit([400.0, 100.0, 50.0, 20.0], 3),
+        ];
+        // Inside the list, above the edge: the straddling row is hit.
+        assert_eq!(get_element_at(&table, Vec2::new(150.0, 145.0)), Some(1));
+        // Below the edge (inside the phantom row's rect but past the viewport).
+        assert_eq!(get_element_at(&table, Vec2::new(150.0, 160.0)), None);
+        // The root-level button is not bounded by any viewport.
+        assert_eq!(get_element_at(&table, Vec2::new(420.0, 110.0)), Some(3));
+        // `hit_at` says the same thing directly.
+        assert!(table[0].hit_at(Vec2::new(150.0, 145.0)));
+        assert!(!table[0].hit_at(Vec2::new(150.0, 160.0)));
+        assert!(!table[1].hit_at(Vec2::new(150.0, 210.0)));
     }
 
     #[test]
