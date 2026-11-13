@@ -4023,6 +4023,23 @@ impl Npc {
         wx >= self.x - 4.0 && wx <= self.x + w + 4.0 && wy >= self.y - 4.0 && wy <= self.y + h + 4.0
     }
 
+    /// `NPC.IsDamageDodgeable` (`NPC.cs:78744-78753`): the contact's
+    /// `Hurt(dodgeable: ..)` value (`Player.cs:31423`). The Skeletron heads
+    /// are dodgeable only outside their `ai[1] == 2f` state (`case 35`
+    /// `NPCID.SkeletronHead`, `case 127` `NPCID.SkeletronPrime`; the Dungeon
+    /// Guardian, `case 68`, rides the same arm but has no port kind yet).
+    /// The port's Prime machine maintains `ai[1]` (`update_prime`); the
+    /// Skeletron Head's stand-in leaves it 0 — also `!= 2f`, the C#'s
+    /// non-spin state. Everything else defaults true; the Empress of Light's
+    /// `case 636` arm (`!ShouldEmpressBeEnraged()`) is out with its unported
+    /// kind (docs/ANALYSIS.md, "The dodge family").
+    pub fn is_damage_dodgeable(&self) -> bool {
+        match self.kind {
+            NpcKind::SkeletronHead | NpcKind::SkeletronPrime => self.ai[1] != 2.0,
+            _ => true,
+        }
+    }
+
     /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81389-81458`): the
     /// soft-capped impulse applied by `tr_core::damage::knock_back_npc`.
     /// `hit_direction` is the knockback side (+1 = pushed right) and
@@ -13308,51 +13325,62 @@ impl Npc {
                     self.damage_override
                         .unwrap_or_else(|| self.kind.contact_damage())
                 };
+                // The NPC-stage `u64` stream wraps into the `DropRng` the hurt
+                // rolls draw from (the C# `Main.rand` at the contact site).
+                struct U64DropRng<'a>(&'a mut u64);
+                impl tr_core::loot::DropRng for U64DropRng<'_> {
+                    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                        let range = (max - min) as u32;
+                        if range == 0 {
+                            return min;
+                        }
+                        min + (crate::app::frame::next_rand(self.0) % range as u64) as i32
+                    }
+                    fn next_float(&mut self) -> f32 {
+                        crate::app::frame::rand01(self.0)
+                    }
+                }
                 // Player.cs:31387 — `Main.DamageVar((float)npc.damage * damageMultiplier, 0f - luck)`.
                 // S1-C-5: contact damage rolls variance with the player's luck inverted.
                 let dmg = if base_dmg > 0 {
-                    struct U64DropRng<'a>(&'a mut u64);
-                    impl tr_core::loot::DropRng for U64DropRng<'_> {
-                        fn next_range(&mut self, min: i32, max: i32) -> i32 {
-                            let range = (max - min) as u32;
-                            if range == 0 {
-                                return min;
-                            }
-                            min + (crate::app::frame::next_rand(self.0) % range as u64) as i32
-                        }
-                        fn next_float(&mut self) -> f32 {
-                            crate::app::frame::rand01(self.0)
-                        }
-                    }
-                    tr_core::damage::damage_var(
-                        &mut U64DropRng(rng),
-                        base_dmg as f32,
-                        -player.luck_state.luck,
-                    )
+                    tr_core::damage::damage_var(&mut U64DropRng(rng), base_dmg as f32, -player.luck_state.luck)
                 } else {
                     0
                 };
-                if dmg > 0 && player.hurt(dmg, cx) {
-                    // `Player.cs:31373-31415`: the contact that lands also
-                    // bounces the thorns back — `thorns` scales the NPC's own
-                    // damage (2x on the Turtle set), the Cactus set adds its
-                    // flat 15. `dontTakeDamage` NPCs (the dummies) refuse it,
-                    // exactly like the C# `!Main.npc[i].dontTakeDamage` gate.
-                    // Thorns reflect the varied contact damage (`num3`, Player.cs:31387-31400).
-                    if !self.dont_take_damage {
-                        let reflect = player.thorns_damage(dmg);
-                        if reflect > 0 {
-                            let (ncx, _) = self.center();
-                            let dir = if ncx < player.x + crate::player::WIDTH * 0.5 {
-                                -1.0
-                            } else {
-                                1.0
-                            };
-                            // The C# knocks the NPC away from the player
-                            // (`-num2`, knockback 10).
-                            self.hurt(reflect, ncx, 10.0 * dir, false);
-                        }
+                // `Player.cs:31390` — `flag4 = !this.immune`: the PRE-hit
+                // immunity gates the thorns arms (`:31397-31418`), so a
+                // contact that dodges (`Hurt` runs after, `:31423`) still
+                // reflects. The port's `hurt_cd <= 0` is the `!immune`
+                // stand-in (the collapsed General cooldown, M4-HAZARD-1).
+                let pre_hit_not_immune = player.hurt_cd <= 0.0;
+                // `Player.cs:31397-31410`: the contact bounces the thorns
+                // back — `thorns` scales the NPC's own damage (2x on the
+                // Turtle set), the Cactus set adds its flat 15.
+                // `dontTakeDamage` NPCs (the dummies) refuse it, exactly like
+                // the C# `!Main.npc[i].dontTakeDamage` gate. The reflect
+                // carries the varied contact damage (`num3`, `:31387`) and
+                // runs BEFORE `Hurt` — a dodged hit reflects too.
+                if pre_hit_not_immune && dmg > 0 && !self.dont_take_damage {
+                    let reflect = player.thorns_damage(dmg);
+                    if reflect > 0 {
+                        let (ncx, _) = self.center();
+                        let dir = if ncx < player.x + crate::player::WIDTH * 0.5 {
+                            -1.0
+                        } else {
+                            1.0
+                        };
+                        // The C# knocks the NPC away from the player
+                        // (`-num2`, knockback 10).
+                        self.hurt(reflect, ncx, 10.0 * dir, false);
                     }
+                }
+                // `Player.cs:31423` — `Hurt(damageSource: ByNPC(i), Damage:
+                // num3, hitDirection: num2, .., dodgeable:
+                // Main.npc[i].IsDamageDodgeable())`; the `> 0 && !dead` tail
+                // gates `StatusFromNPC`, whose debuff body the port carries
+                // elsewhere (unchanged).
+                if dmg > 0 {
+                    player.hurt(dmg, cx, &mut U64DropRng(rng), self.is_damage_dodgeable());
                 }
             }
         }
@@ -13993,6 +14021,153 @@ mod tests {
         assert!(
             total_good <= total_bad,
             "S1-C-5: positive player luck must not increase contact damage (good {total_good} > bad {total_bad})"
+        );
+    }
+
+    #[test]
+    fn s1_c_1_dw_2_2_a_dodged_contact_still_reflects_thorns() {
+        // `Player.Update_NPCCollision`'s order (`Player.cs:31387-31426`): the
+        // thorns arms (`:31397-31418`) run BEFORE the `Hurt` arm (`:31423`),
+        // gated on the PRE-hit `flag4 = !immune` (`:31390`) — so a contact the
+        // black belt dodges still reflects, because the dodge handlers run
+        // after the arms. The pre-restructure port coupled the reflect to
+        // `hurt` returning true and silently dropped it on a dodge.
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
+        bat.damage_override = Some(100);
+        let mut dodged_seen = false;
+        // The contact stream is the NPC-stage `u64` (splitmix); the sweep
+        // re-derives the dodging seeds each run — the assert covers every
+        // one of them, not one pinned draw sequence.
+        for seed in 0..256u64 {
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = bat.x;
+            player.y = bat.y;
+            player.hp = 10_000;
+            player.max_hp = 10_000;
+            player.equipped[3] = 963; // the Black Belt
+            player.buffs.add_buff(14, 3600); // the Thorns Potion
+            player.update(&w, crate::player::PlayerInput::default());
+            assert!(player.black_belt, "the belt armed");
+            assert!(player.thorns > 0.0, "the thorns armed");
+            // A fresh NPC per seed: the reflect's own `Npc::hurt` cooldown
+            // must not leak across sweep iterations (the C#'s per-tick NPC
+            // immunity is contact-tick state this test does not model).
+            bat.hurt_cd = 0.0;
+            bat.hp = 10_000;
+            bat.max_hp = 10_000;
+            let bat_hp = bat.hp;
+            let mut rng = seed;
+            bat.contact(&mut player, &mut rng);
+            if player.hp == player.max_hp {
+                // The belt dodged: hp untouched — and the thorns must still
+                // have bounced (the PRE-hit gate at `:31390` holds).
+                dodged_seen = true;
+                assert!(
+                    bat.hp < bat_hp,
+                    "seed {seed}: a dodged contact must still reflect thorns"
+                );
+            }
+        }
+        assert!(dodged_seen, "no seed in the sweep dodged — the test lost its dodge case");
+    }
+
+    #[test]
+    fn s1_c_1_dw_2_1_npc_is_damage_dodgeable_table() {
+        // `NPC.IsDamageDodgeable` (`NPC.cs:78744-78753`): the Skeletron heads
+        // — `case 35` (`NPCID.SkeletronHead`) and `case 127`
+        // (`NPCID.SkeletronPrime`), with the unported Dungeon Guardian
+        // (`case 68`) on the same arm — are dodgeable only outside their
+        // `ai[1] == 2f` state; everything else defaults true. The Empress of
+        // Light's `case 636` arm (`!ShouldEmpressBeEnraged()`) is out with
+        // its unported kind (docs/ANALYSIS.md, "The dodge family").
+        let mut head = Npc::new(NpcKind::SkeletronHead, 0.0, 0.0, 1, 0.0);
+        assert!(
+            head.is_damage_dodgeable(),
+            "ai[1] 0 (the port's stand-in state) is dodgeable"
+        );
+        head.ai[1] = 1.0;
+        assert!(head.is_damage_dodgeable(), "the 1f state is dodgeable");
+        head.ai[1] = 2.0;
+        assert!(
+            !head.is_damage_dodgeable(),
+            "the 35 arm: ai[1] == 2f is not dodgeable"
+        );
+        let mut prime = Npc::new(NpcKind::SkeletronPrime, 0.0, 0.0, 1, 0.0);
+        assert!(prime.is_damage_dodgeable(), "the 127 arm mirrors 35 at ai[1] 0");
+        prime.ai[1] = 2.0;
+        assert!(!prime.is_damage_dodgeable(), "the 127 arm gates at 2f");
+        prime.ai[1] = 3.0;
+        assert!(prime.is_damage_dodgeable(), "the 3f state is dodgeable");
+        for kind in [NpcKind::CaveBat, NpcKind::Zombie, NpcKind::EyeOfCthulhu] {
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert!(n.is_damage_dodgeable(), "{kind:?} defaults true");
+        }
+    }
+
+    #[test]
+    fn s1_c_1_dw_2_3_non_dodgeable_contact_lands_without_a_dodge_draw() {
+        // The contact feeds `Hurt(dodgeable: npc.IsDamageDodgeable())`
+        // (`Player.cs:31423`); `Hurt`'s gate is `(whoAmI == Main.myPlayer) &
+        // dodgeable` (`:38214`) — a non-dodgeable NPC skips the whole roll
+        // block, so the armed belt draws nothing and the hit lands.
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut head = Npc::new(NpcKind::SkeletronHead, 32.0, 16.0, 1, 0.0);
+        head.damage_override = Some(20);
+        head.ai[1] = 2.0;
+        assert!(!head.is_damage_dodgeable(), "the stand-in head is not dodgeable");
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = head.x;
+        player.y = head.y;
+        player.hp = 10_000;
+        player.max_hp = 10_000;
+        player.equipped[3] = 963; // the Black Belt
+        player.update(&w, crate::player::PlayerInput::default());
+        assert!(player.black_belt, "the belt armed");
+        let hp0 = player.hp;
+        let mut rng = 9u64;
+        head.contact(&mut player, &mut rng);
+        assert!(
+            player.hp < hp0,
+            "the non-dodgeable head lands despite the belt"
+        );
+        // The stream consumed exactly the contact's `DamageVar` draws and
+        // nothing for the dodge: the same seed through a belt-less control
+        // NPC with the same base damage must end in the identical state.
+        let mut plain = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
+        plain.damage_override = Some(20);
+        let mut control = crate::player::Player::spawn(&w);
+        control.x = plain.x;
+        control.y = plain.y;
+        control.hp = 10_000;
+        control.max_hp = 10_000;
+        let mut rng2 = 9u64;
+        plain.contact(&mut control, &mut rng2);
+        assert_eq!(
+            rng, rng2,
+            "no dodge draw — the stream matches the belt-less control"
         );
     }
 

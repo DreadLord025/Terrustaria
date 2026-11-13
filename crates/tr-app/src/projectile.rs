@@ -3581,6 +3581,18 @@ impl Projectile {
         (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5)
     }
 
+    /// `Projectile.IsDamageDodgeable` (`Projectile.cs:15064-15071`): the
+    /// hostile-contact `Hurt(dodgeable: ..)` value (`:14862`'s arm — the
+    /// port's `damage_player`). The Moon Lord family's 9999-damage shots
+    /// (871-874 `Phantasmal*`, 919, 923-924) are not dodgeable; everything
+    /// else keeps `Hurt`'s default. The port's `kind` is the vanilla
+    /// `Projectile.type`.
+    pub fn is_damage_dodgeable(&self) -> bool {
+        let kind = self.kind;
+        !((871..=874).contains(&kind) || kind == 919 || (923..=924).contains(&kind))
+            || self.damage != 9999
+    }
+
     /// `AI_007_GrapplingHooks` (`Projectile.cs:52565-52866`) on this slot — the
     /// flight, the tile attach and the retract; the state machine and the
     /// per-kind tables live in `crate::grapple`.
@@ -11009,7 +11021,7 @@ impl ProjectilePool {
                 // single-player stand-in): the box overlap -> `Player.hurt`
                 // (the iframes gate inside), the shot dies on the hit.
                 if self.slots[i].active && !self.slots[i].friendly {
-                    self.damage_player(i, player.as_deref_mut());
+                    self.damage_player(i, player.as_deref_mut(), rng);
                 }
                 // `Projectile.cs:17197-17209` — the per-sub-step lifetime
                 // block (S1-A-9): the C# runs it inside the `numUpdates`
@@ -11819,8 +11831,14 @@ impl ProjectilePool {
     /// The hostile shot's player contact: the box overlap with the
     /// player's rect hurts through `Player.hurt` (its iframe gate holds
     /// the per-tick repeats off) and kills the shot (the single-hit
-    /// default).
-    fn damage_player(&mut self, slot: usize, player: Option<&mut crate::player::Player>) {
+    /// default). `rng` is the update loop's stream (the C# `Main.rand`
+    /// the dodge rolls draw from).
+    fn damage_player(
+        &mut self,
+        slot: usize,
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
         let Some(player) = player else {
             return;
         };
@@ -11837,7 +11855,11 @@ impl ProjectilePool {
         if !inside {
             return;
         }
-        player.hurt(p.damage, cx);
+        // `Projectile.cs:14862-14870` — `bool dodgeable =
+        // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`.
+        // The single-hit kill below runs after `Hurt` regardless of the
+        // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
+        player.hurt(p.damage, cx, rng, p.is_damage_dodgeable());
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
@@ -11998,6 +12020,131 @@ mod tests {
             true,
         );
         assert_eq!(player2.hp, player2.max_hp, "the friendly shot spares");
+    }
+
+    /// The scripted `DropRng` the dodge tests feed `damage_player` (the
+    /// fn draws nothing before `hurt`, so the roll list is exact).
+    struct DodgeScript {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl DodgeScript {
+        fn with_rolls(rolls: &[i32]) -> Self {
+            Self {
+                rolls: rolls.to_vec(),
+                draws: Vec::new(),
+            }
+        }
+    }
+    impl tr_core::loot::DropRng for DodgeScript {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() {
+                return max - 1;
+            }
+            self.rolls.remove(0)
+        }
+        fn next_float(&mut self) -> f32 {
+            0.5
+        }
+    }
+
+    /// A belt-armed player folded on the ground world.
+    fn belt_player(w: &World) -> crate::player::Player {
+        let mut player = crate::player::Player::spawn(w);
+        player.equipped[3] = 963; // the Black Belt
+        player.update(w, crate::player::PlayerInput::default());
+        assert!(player.black_belt, "the belt armed");
+        player
+    }
+
+    #[test]
+    fn s1_c_1_dw_2_1_projectile_is_damage_dodgeable_table() {
+        // `Projectile.IsDamageDodgeable` (`Projectile.cs:15064-15071`): the
+        // Moon Lord family's exactly-9999 shots — 871-874, 919, 923-924 —
+        // are not dodgeable; everything else keeps `Hurt`'s default.
+        for kind in [871u16, 872, 873, 874, 919, 923, 924] {
+            let p = Projectile {
+                kind,
+                damage: 9999,
+                ..Default::default()
+            };
+            assert!(!p.is_damage_dodgeable(), "kind {kind} @ 9999 is not dodgeable");
+            let p = Projectile {
+                kind,
+                damage: 100,
+                ..Default::default()
+            };
+            assert!(p.is_damage_dodgeable(), "kind {kind} below 9999 keeps the default");
+            let p = Projectile {
+                kind,
+                damage: 10000,
+                ..Default::default()
+            };
+            assert!(p.is_damage_dodgeable(), "only exactly 9999 gates kind {kind}");
+        }
+        for kind in [1u16, 100, 918, 920, 922, 925] {
+            let p = Projectile {
+                kind,
+                damage: 9999,
+                ..Default::default()
+            };
+            assert!(p.is_damage_dodgeable(), "kind {kind} is outside the family");
+        }
+    }
+
+    #[test]
+    fn s1_c_1_dw_2_4_a_dodged_shot_still_dies() {
+        // The hostile contact kills the single-hit shot after `Hurt`
+        // regardless of the dodge (`Projectile.cs:14862-14870`'s `Hurt`
+        // arm; the kill block follows it) — the belt dodges, hp is
+        // untouched, the shot is still gone, and exactly the belt's
+        // `Next(10)` was drawn.
+        let w = ground();
+        let mut player = belt_player(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile(
+                100,
+                Vec2::new(pcx - 5.0, pcy - 5.0),
+                Vec2::new(2.0, 0.0),
+                25,
+                0.0,
+            )
+            .expect("the hostile shot spawns");
+        let mut rng = DodgeScript::with_rolls(&[0]);
+        pool.damage_player(slot, Some(&mut player), &mut rng);
+        assert_eq!(player.hp, player.max_hp, "the belt dodged the shot");
+        assert!(!pool.slots()[slot].active, "the single-hit kill still fires");
+        assert_eq!(rng.draws, vec![(0, 10)], "exactly the belt roll was drawn");
+    }
+
+    #[test]
+    fn s1_c_1_dw_2_4_the_moon_lord_9999_shot_is_undodgeable() {
+        // `Projectile.cs:15064-15071` + `:14862`: the 9999-damage Moon Lord
+        // shots pass `dodgeable = false` — the armed belt draws nothing and
+        // the hit lands.
+        let w = ground();
+        let mut player = belt_player(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        // Kind 871 has no port spawn data — the slot is laid in directly:
+        // the test targets the dodgeable gate, not the spawn path.
+        pool.slots[0] = Projectile {
+            active: true,
+            kind: 871,
+            friendly: false,
+            damage: 9999,
+            pos: Vec2::new(pcx - 5.0, pcy - 5.0),
+            ..Default::default()
+        };
+        let slot = 0;
+        let hp0 = player.hp;
+        let mut rng = DodgeScript::with_rolls(&[0]);
+        pool.damage_player(slot, Some(&mut player), &mut rng);
+        assert!(player.hp < hp0, "the 9999 shot lands through the belt");
+        assert!(rng.draws.is_empty(), "no dodge roll ran");
     }
 
     /// BUG-23: the friendly refusal on the player's shots —
