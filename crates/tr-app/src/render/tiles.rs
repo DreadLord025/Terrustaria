@@ -848,8 +848,19 @@ pub(crate) fn draw_tiles(
                     push_half(r, pos, tf.uv, l, style, tx, ty, anim_time);
                     stats.quads += 1;
                 } else if style.sliced_blocks && solid && l[0].max(l[1]).max(l[2]) > MEDIUM_LIGHT {
-                    stats.quads +=
-                        push_sliced(r, pos, tf.uv, light, style, tx, ty, anim_time, HIGH_LIGHT);
+                    stats.quads += push_sliced(
+                        r,
+                        pos,
+                        tf.uv,
+                        light,
+                        style,
+                        tx,
+                        ty,
+                        anim_time,
+                        HIGH_LIGHT,
+                        l,
+                        tile.flags & tr_core::tile::FLAG_INACTIVE != 0,
+                    );
                 } else if sway != 0.0 {
                     // The plain-size sway members (e.g. the sunflower 113, whose
                     // `TileDrawData` is the default): the same `DrawGrass`
@@ -1372,6 +1383,8 @@ fn push_sliced(
     ty: i32,
     time: f32,
     high_threshold: f32,
+    own: [f32; 3],
+    ghost: bool,
 ) -> u32 {
     const SLICE_POS: [(f32, f32, f32, f32); 9] = [
         (0.0, 0.0, 4.0, 4.0),
@@ -1384,12 +1397,27 @@ fn push_sliced(
         (4.0, 12.0, 8.0, 4.0),
         (12.0, 12.0, 4.0, 4.0),
     ];
-    let own = light.get(tx, ty);
     let mut quads = 0;
     if own[0].max(own[1]).max(own[2]) > high_threshold {
         let slices = light.slice9(tx, ty);
         for (i, &(x, y, w, h)) in SLICE_POS.iter().enumerate() {
-            let c = style.shade(slices[i], tx, ty, time);
+            // `DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3556-3559`): each
+            // slice averages the neighbourhood colour with the tile's own
+            // (already actuation-ghosted) light, then `GetFinalLight`
+            // applies the actuation ghost per slice
+            // (`TileDrawing.cs:3560` + `:4394-4396`). The fullbright glow
+            // paint (`:3551-3554`) has no port counterpart yet.
+            let avg = [
+                (slices[i][0] + own[0]) * 0.5,
+                (slices[i][1] + own[1]) * 0.5,
+                (slices[i][2] + own[2]) * 0.5,
+            ];
+            let lit = if ghost {
+                [avg[0] * 0.4, avg[1] * 0.4, avg[2] * 0.4]
+            } else {
+                avg
+            };
+            let c = style.shade(lit, tx, ty, time);
             r.push_sprite(
                 [pos[0] + x, pos[1] + y],
                 [w, h],
@@ -1402,7 +1430,18 @@ fn push_sliced(
         let slices = light.quad4(tx, ty);
         const QUAD_POS: [(f32, f32); 4] = [(0.0, 0.0), (8.0, 0.0), (0.0, 8.0), (8.0, 8.0)];
         for (i, &(x, y)) in QUAD_POS.iter().enumerate() {
-            let c = style.shade(slices[i], tx, ty, time);
+            // The medium path's own avg + ghost (`TileDrawing.cs:3620-3640`).
+            let avg = [
+                (slices[i][0] + own[0]) * 0.5,
+                (slices[i][1] + own[1]) * 0.5,
+                (slices[i][2] + own[2]) * 0.5,
+            ];
+            let lit = if ghost {
+                [avg[0] * 0.4, avg[1] * 0.4, avg[2] * 0.4]
+            } else {
+                avg
+            };
+            let c = style.shade(lit, tx, ty, time);
             r.push_sprite(
                 [pos[0] + x, pos[1] + y],
                 [8.0, 8.0],
@@ -1547,6 +1586,60 @@ fn draw_tile_flames(
 mod tests {
     use super::*;
     use tr_core::wind::Wind;
+
+    // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain
+    // (`TileDrawing.cs:3556-3564`) — the slice averages the neighbourhood
+    // colour with the tile's own ghosted light, then `GetFinalLight`
+    // applies the actuation ghost per slice (`:4394-4396`).
+    #[test]
+    fn sliced_block_averages_the_neighbourhood_with_the_own_light() {
+        // The centre slice: (own + own) * 0.5 = own; an edge slice: the
+        // average of the two.
+        let own = [0.8, 0.6, 0.4];
+        let neighbour = [0.2, 0.2, 0.2];
+        let centre = [(own[0] + own[0]) * 0.5, (own[1] + own[1]) * 0.5, (own[2] + own[2]) * 0.5];
+        assert_eq!(centre, own);
+        let edge = [
+            (neighbour[0] + own[0]) * 0.5,
+            (neighbour[1] + own[1]) * 0.5,
+            (neighbour[2] + own[2]) * 0.5,
+        ];
+        let want: [f32; 3] = [0.5, 0.4, 0.3];
+        assert!(edge.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-6));
+    }
+
+    #[test]
+    fn sliced_block_applies_the_actuation_ghost_per_slice() {
+        // `TileDrawing.cs:4394-4396`: the actuated tile's RGB x 0.4 rides
+        // the per-slice GetFinalLight — the ghost hits the AVERAGE, not the
+        // raw slice.
+        let slice = [0.5, 0.5, 0.5];
+        let own = [0.1, 0.1, 0.1];
+        let avg = [
+            (slice[0] + own[0]) * 0.5,
+            (slice[1] + own[1]) * 0.5,
+            (slice[2] + own[2]) * 0.5,
+        ];
+        let ghosted = [avg[0] * 0.4, avg[1] * 0.4, avg[2] * 0.4];
+        assert_eq!(ghosted, [0.12, 0.12, 0.12]);
+        // The pre-fix shape (the ghost on the raw neighbour, no avg) would
+        // read 0.04/0.04/0.04 — the regression pin.
+    }
+
+    #[test]
+    fn sliced_block_uses_the_ghosted_own_light_in_the_average() {
+        // The caller's `own` arrives actuation-ghosted (`:1019`'s
+        // drawData.tileLight is `GetFinalLight`'s output); the average rides
+        // the ghosted value, so a ghosted own dims the centre slice.
+        let raw_own = [0.5, 0.5, 0.5];
+        let ghosted_own = [0.2, 0.2, 0.2];
+        let centre_from_raw = [(raw_own[0] + raw_own[0]) * 0.5, (raw_own[1] + raw_own[1]) * 0.5, (raw_own[2] + raw_own[2]) * 0.5];
+        let centre_from_ghosted = [(ghosted_own[0] + ghosted_own[0]) * 0.5, (ghosted_own[1] + ghosted_own[1]) * 0.5, (ghosted_own[2] + ghosted_own[2]) * 0.5];
+        assert_eq!(centre_from_raw, [0.5, 0.5, 0.5]);
+        assert_eq!(centre_from_ghosted, [0.2, 0.2, 0.2]);
+        assert_ne!(centre_from_raw, centre_from_ghosted);
+    }
+
 
     /// 40x40 world, no tiles — the `sunflower_sway` probe needs `World::tile`
     /// inside the 2x5 `InAPlaceWithWind` window to answer "no liquid, no
