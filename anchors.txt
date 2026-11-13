@@ -124,3 +124,7 @@ crates/tr-core/src/wld/mod.rs|fn s1_j_2_world_header_identity_roundtrips_in_wld|
 crates/tr-core/src/world.rs|pub generator_version|S1-J-2 - world identity fields stored on World for .wld header/footer/flags
 crates/tr-app/tests/itemdata_freeze.rs|fn the_generated_item_table_is_frozen|S1-F-17 - the 6196-row Item.SetDefaults table is frozen (generator round-trip + FNV data pin)
 crates/tr-core/src/localization/mod.rs|the English localization resources are missing from|S1-L-12d - the English localization test fails (not skips) when the decompiled tree is absent
+crates/tr-app/src/player.rs|fn can_mount|S1-L-8 - Mount.CanMount's bat-wet rule (id 56: wet/buff-103 dripping/Collision.WetCollision) and the Cart/CanUseHooks grapple exemption (Mount.cs:6595-6601)
+crates/tr-app/src/player.rs|fn s1_l_8_can_mount_applies_the_bat_and_grapple_sets|S1-L-8 - per-id activation gates: the bat refuses water/dripping/wet probe; carts + CanUseHooks keep a live grapple
+crates/tr-app/src/player.rs|fn s1_l_8_fishron_halves_run_stats_outside_the_special|S1-L-8 - Cute Fishron MountFishronSpecialCounter (60 hurt / 420 wet-or-rain) and the Player.cs:26655 halving
+crates/tr-app/src/mount.rs|fn is_cart|S1-L-8 - MountID.Sets.Cart (27 ids) and CanUseHooks ({54,57-60}) for Mount.CanMount's grapple gate
