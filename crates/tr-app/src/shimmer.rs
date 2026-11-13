@@ -404,10 +404,14 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
             }
             ShimmerOutcome::SlimeRainStart => {
                 // `:1736-1746` — `Main.StartSlimeRain()` (the SP branch's
-                // duration), the stack-- or `shimmered = true`.
-                let mut rng_state = app.item_rng;
-                crate::world_sim::weather::start_slime_rain(&mut app.world, &mut rng_state);
-                app.item_rng = rng_state;
+                // duration), the stack-- or `shimmered = true`. The C# call
+                // runs in `WorldItem.UpdateItem` under the `UpdateItems`
+                // swap (`Main.cs:18024`) — the duration draw rides
+                // `UpdateItems` (S1-A-11 P4 formalizes the items pass).
+                crate::world_sim::weather::start_slime_rain(
+                    &mut app.world,
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
+                );
                 drop_mut.count = drop_mut.count.saturating_sub(1);
                 if drop_mut.count == 0 {
                     air_out(app, idx);

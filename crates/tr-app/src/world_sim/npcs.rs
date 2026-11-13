@@ -2515,8 +2515,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 if !was_down {
                     app.world.spawn_meteor = true;
                 } else {
-                    app.world.spawn_meteor =
-                        tr_core::worldgen::meteor::boss_death_roll(&mut app.item_rng, true);
+                    // `NPC.cs:79450-79456` draws `Next(2)` under the
+                    // `UpdateNPCs` swap (`checkDead` -> `DoDeathEvents`
+                    // inside `NPC.UpdateNPC`, `Main.cs:17767-17769`) — the
+                    // stream S1-A-11's npcs pass lands on in P3.
+                    app.world.spawn_meteor = tr_core::worldgen::meteor::boss_death_roll(
+                        app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+                        true,
+                    );
                 }
                 app.world.downed_eow = true;
             }
@@ -2600,7 +2606,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // slime rain is up calls `Main.StopSlimeRain()` and fires
                 // STICKY_SITUATION (progression 16).
                 if app.world.slime_rain {
-                    crate::world_sim::weather::stop_slime_rain(&mut app.world, &mut app.npc_rng);
+                    // `NPC.cs:79405-79410` (case 50): `Main.StopSlimeRain()`
+                    // fires from `checkDead` under the `UpdateNPCs` swap —
+                    // the duration draw rides `UpdateNPCs`, not the weather
+                    // tick's `UpdateTime` (the other caller).
+                    crate::world_sim::weather::stop_slime_rain(
+                        &mut app.world,
+                        app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+                    );
                     let _ = app.achievements.notify_progression(16);
                 }
             }

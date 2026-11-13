@@ -7,7 +7,7 @@
 //! Merchant (17) through the shop index 1).
 
 use crate::itemdata::ITEMS;
-use tr_core::World;
+use tr_core::{UnifiedRandom, World};
 
 /// The world state the stock gates read — `SetupShop`'s if-gates collapse
 /// into one struct the caller fills (the port's flags exist for all of
@@ -610,22 +610,24 @@ pub fn setup_shop(
 /// Pal Metal armor (5735/5736) into the merchant's stock.
 const TRAVEL_ARMOR_GATES: [u16; 10] = [5667, 5663, 5664, 5665, 5666, 6174, 6148, 6149, 6150, 6151];
 
-/// `Main.rand.Next(min, max)` over the port's LCG.
-fn roll_int(rng: &mut u64, min: i32, max: i32) -> i32 {
-    min + (crate::app::rand01(rng) * (max - min) as f32) as i32
-}
-
 /// `Player.RollLuck` -> `Luck.RollLuck` (`Player.cs:18188-18191`,
 /// `Luck.cs:5-16`): a hit is the returned roll landing on 0, so the base
 /// chance is `1 / range` with the luck narrowing/widening the range.
-fn roll_luck(luck: f32, range: i32, rng: &mut u64) -> i32 {
-    if luck > 0.0 && crate::app::rand01(rng) < luck {
-        return roll_int(rng, range / 2, range);
+fn roll_luck(luck: f32, range: i32, rng: &mut UnifiedRandom) -> i32 {
+    // `Luck.RollLuck` (`Luck.cs:5-16`): the luck hit narrows (or widens) the
+    // range, then the OUTER roll happens inside it -- `Next(Next(range/2,
+    // range))`, two draws, the hit being the outer 0.
+    if luck > 0.0 && rng.next_float() < luck {
+        // `Next(Next(range/2, range))` — the inner draw picks the outer
+        // range, the outer draw rolls in it (sequential, not nested borrows).
+        let outer_range = rng.next_range(range / 2, range);
+        return rng.next_max(outer_range);
     }
-    if luck < 0.0 && crate::app::rand01(rng) < -luck {
-        return roll_int(rng, range, range * 2);
+    if luck < 0.0 && rng.next_float() < -luck {
+        let outer_range = rng.next_range(range, range * 2);
+        return rng.next_max(outer_range);
     }
-    roll_int(rng, 0, range)
+    rng.next_max(range)
 }
 
 /// `Chest.SetupTravelShop` (`Chest.cs:1275-1358`) — the travelling merchant's
@@ -640,12 +642,12 @@ fn roll_luck(luck: f32, range: i32, rng: &mut u64) -> i32 {
 ///
 /// `luck` is `Player.GetPlayerWithHighestLuck().luck` (`:1281`) — the port's
 /// single player.
-pub fn setup_travel_shop(world: &World, luck: f32, rng: &mut u64) -> [u16; 40] {
+pub fn setup_travel_shop(world: &World, luck: f32, rng: &mut UnifiedRandom) -> [u16; 40] {
     // `Main.travelShop` (`Main.cs:1779`) — the 40 slots start zeroed, which
     // shop index 19's walk reads as the empty ones.
     let mut shop = [0u16; 40];
     // `:1282`: the slot count `Main.rand.Next(4, 7)`.
-    let mut num = roll_int(rng, 4, 7);
+    let mut num = rng.next_range(4, 7);
     // `:1283-1298`: the four `RollLuck` rows (the expert-mode `RollLuck(2)`
     // at `:1299` and the satchel/tenth-anniversary rows sit constants-off).
     if roll_luck(luck, 4, rng) == 0 {
@@ -761,7 +763,7 @@ fn add_to_shop(
     added: &mut usize,
     count: &mut usize,
     item: u16,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
 ) {
     if item == 0 {
         return;
@@ -789,7 +791,7 @@ fn add_to_shop(
         // `:764-793`: the staff family replaces its own row with one pair
         // out of six.
         *count -= 1;
-        let pair: &[u16] = match roll_int(rng, 0, 6) {
+        let pair: &[u16] = match rng.next_max(6) {
             0 => &[3637, 3642],
             1 => &[3621, 3622],
             2 => &[3634, 3639],
@@ -817,12 +819,12 @@ fn get_travel_item(
     it: &mut u16,
     minimum_rarity: i32,
     world: &World,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
 ) {
     let (r0, r1, r2, r3, r4, r5) = (rarity[0], rarity[1], rarity[2], rarity[3], rarity[4], rarity[5]);
     // `NPC.downedMechBossAny` (`NPC.cs:984`'s gates) — the port's three fields.
     let mech_any = world.downed_mech_boss1 || world.downed_mech_boss2 || world.downed_mech_boss3;
-    let hit = |denom: u16, rng: &mut u64| roll_luck(luck, denom as i32, rng) == 0;
+    let hit = |denom: u16, rng: &mut UnifiedRandom| roll_luck(luck, denom as i32, rng) == 0;
     // `:986-997`'s first three rows.
     if minimum_rarity <= 4 && hit(r4, rng) {
         *it = 3309;
@@ -1031,7 +1033,7 @@ fn get_travel_item(
         *it = 2266;
     }
     if hit(r0, rng) {
-        *it = (2281 + roll_int(rng, 0, 3)) as u16;
+        *it = (2281 + rng.next_max(3)) as u16;
     }
     if hit(r0, rng) {
         *it = 2258;
@@ -1068,10 +1070,10 @@ fn get_travel_painting(
     it: &mut u16,
     minimum_rarity: i32,
     world: &World,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
 ) {
     let (r1, r2, r3) = (rarity[1], rarity[2], rarity[3]);
-    let hit = |denom: u16, rng: &mut u64| roll_luck(luck, denom as i32, rng) == 0;
+    let hit = |denom: u16, rng: &mut UnifiedRandom| roll_luck(luck, denom as i32, rng) == 0;
     // `:823-838`'s rarity-3 rows (the C# rolls each of the four separately,
     // so the last success wins).
     if hit(r3, rng) {
@@ -1369,19 +1371,19 @@ mod tests {
     #[test]
     fn the_travel_stock_rolls_its_bundles_dup_free() {
         let w = World::new("t".into(), 200, 200);
-        let stock = setup_travel_shop(&w, 0.0, &mut 7);
-        // The seed-7 snapshot — 4 main rows (the `Next(4, 7)` = 4 at luck 0)
-        // plus the closing painting (5232 here), with the 4323 bundle's two
-        // tails (4324/4365) and the staff family's 3635/3640 pair.
+        let stock = setup_travel_shop(&w, 0.0, &mut UnifiedRandom::new(7));
+        // The seed-7 snapshot — 7 rows under the named stream (S1-A-11 P2:
+        // the splitmix stream re-pinned to `UnifiedRandom`, and `roll_luck`
+        // now ports `Luck.RollLuck`'s two-draw shape, `Luck.cs:5-16`).
         assert_eq!(
-            &stock[..10],
-            &[3119, 4323, 4324, 4365, 2267, 5136, 3635, 3640, 4561, 5633],
+            &stock[..7],
+            &[2274, 4420, 2281, 2266, 3118, 3099, 5636],
             "the generated rows"
         );
         // The zeros: the tail slots are the empty ones (`Main.travelShop`'s
         // zero fill) and no slot repeats an id.
-        assert_eq!(stock[..10].iter().filter(|v| **v != 0).count(), 10);
-        assert!(stock[10..].iter().all(|v| *v == 0), "the tail is empty");
+        assert_eq!(stock[..7].iter().filter(|v| **v != 0).count(), 7);
+        assert!(stock[7..].iter().all(|v| *v == 0), "the tail is empty");
         let seen: Vec<u16> = stock.iter().copied().filter(|v| *v != 0).collect();
         for (i, id) in seen.iter().enumerate() {
             assert!(!seen[i + 1..].contains(id), "the duplicate {id}");
@@ -1391,22 +1393,54 @@ mod tests {
         let hm = {
             let mut w2 = World::new("t".into(), 200, 200);
             w2.hard_mode = true;
-            setup_travel_shop(&w2, 0.0, &mut 99)
+            setup_travel_shop(&w2, 0.0, &mut UnifiedRandom::new(99))
         };
-        assert_eq!(&hm[..4], &[4091, 2279, 4555, 4556]);
-        assert_eq!(hm[4], 4557, "the 4555 bundle's second tail");
-        assert_eq!(&hm[5..8], &[2277, 2260, 2261]);
-        assert_eq!(hm[8], 2262, "the Dynasty Wood bundle");
-        // The hardmode arm's `minimumRarity = 2` tier reaches the hardmode
-        // row (4091) — the first slot is a tier-3 row, never a rarity-0 one.
-        assert!([2270, 4760, 2223, 4091, 4348].contains(&hm[0]), "the tier row");
-        // The luck rows widen the stock: the same seed at luck 0.3 fills more
-        // than the plain band's 4.
-        let lucky = setup_travel_shop(&w, 0.3, &mut 7);
-        assert!(
-            lucky.iter().filter(|v| **v != 0).count() > 4,
-            "the luck rolls add slots"
+        assert_eq!(
+            &hm[..9],
+            &[4666, 4664, 4665, 4605, 1988, 3636, 3641, 4091, 5123],
+            "the hardmode stock (S1-A-11 P2 re-pin)"
         );
+        // The bundle structure survives the re-pin: the 4666 head carries its
+        // 4664/4665 tails and the 3637 staff family's 3636/3641 pair rides
+        // together (the `AddToShop` tail arms).
+        // The hardmode arm's `minimumRarity = 2` tier — the first slot is a
+        // tier-2+ row (4666 = r2, `Chest.cs:1170`), never a rarity-0/1-only
+        // row.
+        assert!(
+            ![2266u16, 2242, 2260, 3637, 4420, 3119, 3118, 3099, 2216, 2217, 3624, 2273, 2274]
+                .contains(&hm[0]),
+            "the first slot is a tier-2+ row"
+        );
+        // The luck rows: the same seed at luck 0.3 — the four luck rolls
+        // all miss on seed 7's prefix, so the stock stays at the plain
+        // band's 7 (the widening mechanic itself is pinned directly on
+        // `roll_luck` below).
+        let lucky = setup_travel_shop(&w, 0.3, &mut UnifiedRandom::new(7));
+        let lucky_rows = lucky.iter().filter(|v| **v != 0).count();
+        assert_eq!(lucky_rows, 7, "seed 7's luck rolls all miss");
+    }
+
+    /// `Luck.RollLuck`'s two-draw hit path (`Luck.cs:5-16`), pinned directly:
+    /// with a strong positive luck the seed-42 prefix hits on the first call
+    /// — `NextFloat() < luck` (draw 1), the narrowed `Next(range/2, range)`
+    /// (draw 2) and the outer `Next(...)` (draw 3), the hit being the outer
+    /// 0. Exactly three draws (twin equality), and the pre-P2 shape (one
+    /// draw returning the narrowed range) could never land this hit.
+    #[test]
+    fn the_roll_luck_hit_is_the_outer_zero_of_two_draws() {
+        let mut rng = UnifiedRandom::new(42);
+        assert_eq!(roll_luck(0.9, 4, &mut rng), 0, "the luck hit lands");
+        let mut twin = UnifiedRandom::new(42);
+        assert!(twin.next_float() < 0.9, "draw 1: the NextFloat gate");
+        let outer_range = twin.next_range(4 / 2, 4);
+        assert_eq!(outer_range, 2, "draw 2: the narrowed range");
+        assert_eq!(twin.next_max(outer_range), 0, "draw 3: the outer hit");
+        // ...and the base path (luck 0) is one plain `Next(range)` draw.
+        let mut base = UnifiedRandom::new(42);
+        let hit = roll_luck(0.0, 4, &mut base);
+        let mut twin2 = UnifiedRandom::new(42);
+        assert_eq!(hit, twin2.next_max(4), "the base roll is one Next(range)");
+        assert_eq!(base, twin2, "exactly one draw on the base path");
     }
 
     /// `Chest.cs:2791-2810`'s shop index 19: the stock is the merchant's
@@ -1414,7 +1448,11 @@ mod tests {
     /// the inventory gate and every row is `Always`.
     #[test]
     fn the_travel_shop_index_19_rides_the_generated_stock() {
-        let stock = setup_travel_shop(&World::new("t".into(), 200, 200), 0.0, &mut 7);
+        let stock = setup_travel_shop(
+            &World::new("t".into(), 200, 200),
+            0.0,
+            &mut UnifiedRandom::new(7),
+        );
         let flags = ShopFlags {
             travel_stock: stock,
             ..Default::default()
@@ -1422,7 +1460,7 @@ mod tests {
         let rows = resolve_stock(19, &flags, &[]);
         assert_eq!(
             rows,
-            vec![3119, 4323, 4324, 4365, 2267, 5136, 3635, 3640, 4561, 5633],
+            vec![2274, 4420, 2281, 2266, 3118, 3099, 5636],
             "the shop rides the stock"
         );
         // The Palworld gate (`:2794-2800`): the Digtoise 5667 (or any of the
