@@ -5727,6 +5727,62 @@ the filters cover the world, never the map or the HUD.
 Verification: rain/sand/leaf shots with the fullscreen map and the
 minimap — no particle over either; the sandstorm filter no longer paints
 the minimap (the twins SHA256-equal); the workspace suite 1261/0.
+## World chest loot (S1-A-4)
+
+The chest loot rolls at GENERATION time now, exactly the C#'s inline shape:
+each placement site (the seven `place_chest` analogues — the jungle shrines,
+the cavern scatter, the pyramids, the hell forts, the cave houses, the sky
+houses, the spider caves) resolves the anchor's context and band
+(`tr_core::worldgen::chest_stock`'s `context_at`/`band_for` — the same
+world-state probes `AddBuriedChest` computes at `:36010-36205`), hands a
+`ChestSiteEvent` to the stocking hook the app passes into
+`generate_with_chest_stock`, and writes the rolled rows into `World.chests`
+(the `Main.chest[]` of the end of generation). The save's native v7 section
+carries the records; nothing rolls at load — a `.wld`'s store is the file's
+own chests (`LoadChests`, `WorldFile.cs:2723-2805`), a `.trwld`'s store is
+its native records. `chest_gen.rs` keeps the tables (the stock bands, the
+family mains, the prefix rolls) behind the hook, plus the load-side
+`store_from_records`/`merge_store`.
+
+RNG-order contract (S1-A-10) entry — stream and order:
+- **Stream**: each chest's draws ride the PLACING pass's own stream
+  (`srng` for every chest-placing pass but the islands' `drng`). This is
+  the pass-granularity stand-in for the C#'s single `WorldGen.genRand`
+  threaded through all passes — the port's per-pass stream model
+  (`WorldGenerator.cs:497`) cannot reproduce the vanilla draw POSITIONS,
+  so the same-seed chest contents equal vanilla's only after S1-A-7's
+  C#-world parity work. Within the port, the draws are fully
+  deterministic per seed.
+- **Order** (per chest): the site's own draws first (the shrines'
+  `GetNextJungleChestItem` + the `Next(2)` x-jitter, the pyramid's Pharaoh
+  double-roll, the hell house's `832`/`4281` roll, the sky houses'
+  `skyIslandHouseCount` cycle — the counters ride `GenVars` as the C#'s
+  do), then the hook's row draws and the `Prefix(-1)` rolls — the same
+  stream, so prefixes interleave with rows exactly like the C#'s
+  (`Item.Prefix`'s `isGeneratingOrLoadingWorld → WorldGen.genRand` arm,
+  `Item.cs:531`; the splitmix bridge is retired).
+- **The Reset window**: the hell-chest table's shuffle
+  (`WorldGen.cs:11246-11258`) rides `UnifiedRandom(seed)` — the vanilla
+  Knuth-subtractive algorithm seeded with the world seed, the closest
+  stand-in for the pre-pass `genRand` state the C# shuffles against.
+
+The resolved `num9` style (`:35978-35988` — the caller's `chestStyle`
+when `>= 0`, else the gold chest below `worldSurface + 25`) rides the
+chest frames now, so the style rows (`:37453`'s pottery, the temple's
+furnace pair) key on the real placement style instead of the load-time
+surroundings guess.
+
+Deviations still open: the `generatedShadowKey`/`generatedRamRune`
+fairness flags (their underworld/water arms have no gen-time sites yet —
+the ocean/temple/dungeon chests are M5-CHEST-gen's), the seed-flavour
+rows (M5-SEED-1/2), and the `improve_all_chest_contents` tenth-anniversary
+sweep keeps its own stream until M5-SEED-1 can generate those worlds.
+Discovered en route: the port's temple pass writes its brick directly over
+buried-chest tiles the C#'s `PlaceTile` would refuse — a gen-time record
+whose anchor the temple destroyed reads as the C#'s stale save, and
+`store_from_records`'s `FixAgainstExploits` cull drops it at the App
+conversion; a `PlaceTile`-faithful temple writer is the follow-up.
+
 - **The jungle chest cycle** (`GetNextJungleChestItem`, `WorldGen.cs:10170-10196`
   — the M5-CHEST-gen jungle slice): the jungle family's slot-0 main item
   rides the `JungleItemCount % 4` table {211, 212, 213, 964} with the two

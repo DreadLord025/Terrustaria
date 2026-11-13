@@ -2459,24 +2459,15 @@ impl App {
         // with a pinned seed, so the creature skies stay screenshotable
         // without waiting for the 10-120 s scheduler. Test harness only.
         let ambience_pin = crate::env::ambience_pin();
-        // The chests roll their loot here — before the struct literal moves
-        // `world` (`AddBuriedChest`'s stock inline with the placement, the
-        // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
-        // chest merges in (its anchor is already stocked — the roll skips).
-        //
-        // M6-SAVE-1: a `.wld` load takes the file's chests instead — they are
-        // the player's own contents, and the roll only fills the anchors the
-        // file does not carry (`chest_gen::displace_loaded_chests`, the C#'s
-        // `LoadChests` shape: `Main.chest` is the file, nothing rolls). The
-        // `TR_CHEST` fixture is a generated-world screenshot hook, so it never
-        // merges into a `.wld` store; the `.trwld` path keeps `merge_store`
-        // byte-for-byte. Both branches run here because they read `world`.
-        let world_chests = crate::chest_gen::generate_world_chests(&world);
-        // M6-SAVE-1b: the save's own chests seed the store ahead of the roll —
-        // `LoadChests` (`WorldFile.cs:2723-2805`)'s records as the seed half of
-        // `merge_store`, whose collision rule drops a rolled anchor a saved
-        // chest already claims (so the saved slots win, exactly the anchor this
-        // branch exists for).
+        // The chests' loot is fixed at GENERATION time (S1-A-4): the
+        // placement sites rolled it through the stocking hook and the
+        // records ride `World.chests`, so a freshly generated world's store
+        // reads them directly — the C#'s `AddBuriedChest` inline shape. A
+        // `.wld` load runs no worldgen, so its store is the file's own
+        // chests (`LoadChests`, `WorldFile.cs:2723-2805` — `Main.chest` is
+        // the file, nothing rolls); a `.trwld` load's store is the file's
+        // native records (the gen-time loot the save carried). The
+        // `TR_CHEST` fixture merges in as before.
         let ore_tiers_seed = world.ore_tiers;
         let seeded_chests = crate::chest_gen::store_from_records(&world, &sections.native.chests);
         // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
@@ -2484,14 +2475,6 @@ impl App {
         // them inside the world-flags block.
         let seeded_banners: Vec<(i32, i32)> =
             sections.native.banners.iter().map(|b| (b.banner, b.kills)).collect();
-        // Hoisted shadowing of the roll: a `.wld` load takes the file's chests
-        // instead — they are the player's own contents, and the roll only fills
-        // the anchors the file does not carry (`chest_gen::displace_loaded_chests`,
-        // the C#'s `LoadChests` shape: `Main.chest` is the file, nothing rolls).
-        // The `TR_CHEST` fixture is a generated-world screenshot hook, so it
-        // never merges into a `.wld` store; the `.trwld` path keeps
-        // `merge_store` byte-for-byte. Both branches run here because they
-        // read `world`.
         let world_chests = if sections.from_wld {
             let mut loaded = crate::chest::from_wld(&sections.data.chests);
             // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
@@ -2500,12 +2483,12 @@ impl App {
             if sections.version < 115 {
                 crate::chest::fix_dresser_chests(&mut loaded, &world);
             }
-            crate::chest_gen::displace_loaded_chests(world_chests, loaded)
+            loaded
         } else {
-            crate::chest_gen::merge_store(
-                crate::chest_gen::merge_store(world_chests, seeded_chests),
-                tr_chest_store,
-            )
+            // The `.trwld`/fresh-world path: the file's native records (the
+            // gen-time loot for a saved generated world) + the `TR_CHEST`
+            // fixture. Nothing rolls (S1-A-4).
+            crate::chest_gen::merge_store(seeded_chests, tr_chest_store)
         };
         // `LoadBestiary:3402` + `LoadCreativePowers:3418` (the last two
         // sections, applied to their state owners). A `.wld`'s bestiary tracker
@@ -3887,11 +3870,21 @@ pub(crate) fn terrstaria_world() -> Result<PathBuf> {
     if !path.exists() || regen {
         let seed = crate::env::seed().unwrap_or(1);
         let t = Instant::now();
-        let world = worldgen::generate(&worldgen::GenOptions {
-            seed,
+        // `GenOptions::default()` carries no seed flags — no remix table.
+        let mut chest_stock = crate::chest_gen::chest_stock_hook(seed, false);
+        let world = worldgen::generate_with_chest_stock(
+            &worldgen::GenOptions {
+                seed,
+                ..Default::default()
+            },
+            Some(&mut chest_stock),
+        );
+        // The gen-time chest loot rides the save's native v7 section (S1-A-4).
+        let side = save::WorldSide {
+            chests: world.chests.clone(),
             ..Default::default()
-        });
-        save::save(&path, &world, &save::WorldSide::default())?;
+        };
+        save::save(&path, &world, &side)?;
         log::info!(
             "generated '{}' (seed {seed}) in {:.0} ms -> {}",
             world.name,

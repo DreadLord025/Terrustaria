@@ -748,28 +748,40 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
     let (width, height) = size_dimensions(draft.size);
     let seed = seed_value(name, &draft.seed);
     let (flags, micro_flags) = seed_identity(&draft.seed);
-    let mut world = tr_core::worldgen::generate(&tr_core::worldgen::GenOptions {
-        name: name.to_string(),
-        width,
-        height,
-        seed,
-        // `FinishCreatingWorld` (`UIWorldCreation.cs:852+`): the `_optionEvil`
-        // choice feeds `WorldGen.crimson` — 0 Random rolls from the seed.
-        crimson: match draft.evil {
-            1 => false,
-            2 => true,
-            _ => tr_core::worldgen::roll_crimson(seed),
+    // The chest loot stocks at GENERATION time (S1-A-4): the hook rolls
+    // `AddBuriedChest`'s block at each placement site, and the records ride
+    // the save's native v7 section (`SaveChests`, `WorldFile.cs:1606-1676`).
+    let remix = flags.contains(tr_core::seeds::SeedFlags::REMIX);
+    let mut chest_stock = crate::chest_gen::chest_stock_hook(seed, remix);
+    let mut world = tr_core::worldgen::generate_with_chest_stock(
+        &tr_core::worldgen::GenOptions {
+            name: name.to_string(),
+            width,
+            height,
+            seed,
+            // `FinishCreatingWorld` (`UIWorldCreation.cs:852+`): the `_optionEvil`
+            // choice feeds `WorldGen.crimson` — 0 Random rolls from the seed.
+            crimson: match draft.evil {
+                1 => false,
+                2 => true,
+                _ => tr_core::worldgen::roll_crimson(seed),
+            },
+            flags,
+            micro_flags,
         },
-        flags,
-        micro_flags,
-    });
+        Some(&mut chest_stock),
+    );
     // `generate` seeds its noise/RNG but leaves `World::new`'s `seed: 0` —
     // the header records the draft's (`save.rs:61`'s `world.seed` write).
     world.seed = seed;
     let path = worlds_dir.join(format!("{name}.trwld"));
-    // A freshly generated world carries no chest records — the store rolls at
-    // `App::new` (`SaveChests`'s write-side twin lives on the autosave).
-    tr_core::save::save(&path, &world, &tr_core::save::WorldSide::default())?;
+    // `SaveChests`'s v7 section carries the gen-time loot (S1-A-4) — a load
+    // reads it as the store, nothing re-rolls.
+    let side = tr_core::save::WorldSide {
+        chests: world.chests.clone(),
+        ..Default::default()
+    };
+    tr_core::save::save(&path, &world, &side)?;
     Ok(path)
 }
 

@@ -684,6 +684,62 @@ mod tests {
         assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
     }
 
+    /// S1-A-4: the chest stocking runs at GENERATION time — each placement
+    /// site hands its event to the hook and writes the rolled rows into
+    /// `World.chests` (the C#'s `AddBuriedChest` inline shape), and two
+    /// generations of the same seed agree chest-for-chest (the site draws
+    /// are stream-deterministic; the hook here is a fixed-row stub — the
+    /// loot-table determinism rides the tr-app driver's tests). A record
+    /// whose anchor a LATER pass destroyed (the port's temple writes brick
+    /// over the tiles the C#'s `PlaceTile` would refuse) reads as the C#'s
+    /// stale record: `store_from_records`'s `FixAgainstExploits` cull drops
+    /// it at the App conversion, so only the SURVIVING records must sit on
+    /// chest anchors.
+    #[test]
+    fn the_chests_stock_at_generation_time_s1_a_4() {
+        let hook = |_ev: &chest_stock::ChestSiteEvent,
+                    _rng: &mut dyn chest_stock::WorldGenRand| {
+            vec![crate::save::ChestItem { stack: 1, kind: 9, prefix: 0 }]
+        };
+        let mut a = hook;
+        let opts = GenOptions {
+            seed: 33,
+            ..Default::default()
+        };
+        let w = generate_with_chest_stock(&opts, Some(&mut a));
+        assert!(
+            !w.chests.is_empty(),
+            "the placement sites stocked the world ({})",
+            w.chests.len()
+        );
+        let mut survivors = 0usize;
+        for c in &w.chests {
+            let t = w
+                .tile(c.x, c.y)
+                .expect("the record's anchor is inside the world");
+            if t.active() && (t.kind == 21 || t.kind == 341) {
+                survivors += 1;
+            }
+        }
+        assert!(
+            survivors >= w.chests.len() - 4,
+            "the anchors survive except the few a later pass writes over ({} of {})",
+            survivors,
+            w.chests.len()
+        );
+        // A second generation of the same seed agrees chest-for-chest.
+        let mut b = |_ev: &chest_stock::ChestSiteEvent,
+                     _rng: &mut dyn chest_stock::WorldGenRand| {
+            vec![crate::save::ChestItem { stack: 1, kind: 9, prefix: 0 }]
+        };
+        let w2 = generate_with_chest_stock(&opts, Some(&mut b));
+        assert_eq!(w.chests.len(), w2.chests.len());
+        for (ca, cb) in w.chests.iter().zip(w2.chests.iter()) {
+            assert_eq!((ca.x, ca.y), (cb.x, cb.y));
+            assert_eq!(ca.slots, cb.slots);
+        }
+    }
+
     #[test]
     fn the_micro_biomes_place_the_content() {
         // The 4200-world carries the cave houses (the wood frames 27 + the

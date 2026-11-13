@@ -57,6 +57,16 @@ pub struct ChestCtx {
     pub water: bool,
 }
 
+impl ChestCtx {
+    /// The port's merged wood family — the pre-existing approximation arms
+    /// (the pottery and the 2198 rows) ran on one flag before the flag4 /
+    /// flag6 split; they keep the combined gate so their behaviour is
+    /// unchanged.
+    pub fn wood_family(&self) -> bool {
+        self.jungle || self.living_tree
+    }
+}
+
 /// The anchor's depth band (`AddBuriedChest`'s four arms, `:36222`/`:36503`/
 /// `:36803`/`:37162`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,7 +178,10 @@ pub struct ChestSiteEvent {
 /// The pass's stream, as the stocking sees it — the C#'s `genRand` draws
 /// (`Next(max)`, `Next(min, max)`) narrowed to the two shapes the stocking
 /// block and the prefix engine use. Implemented by the port's pass stream
-/// ([`Xorshift64`], the `WorldGenerator.cs:497` per-pass stand-in).
+/// ([`Xorshift64`], the `WorldGenerator.cs:497` per-pass stand-in) and by
+/// [`UnifiedRandom`] — whose impl is the C#'s own `Next` semantics, so the
+/// Reset-window draws (the hell-chest shuffle, `WorldGen.cs:11246-11258`)
+/// ride the vanilla algorithm exactly.
 pub trait WorldGenRand {
     /// `UnifiedRandom.Next(max)` — `[0, max)`.
     fn next(&mut self, max: i32) -> i32;
@@ -186,6 +199,16 @@ impl WorldGenRand for Xorshift64 {
 
     fn range(&mut self, lo: i32, hi: i32) -> i32 {
         Xorshift64::range(self, lo, hi)
+    }
+}
+
+impl WorldGenRand for crate::UnifiedRandom {
+    fn next(&mut self, max: i32) -> i32 {
+        self.next_max(max)
+    }
+
+    fn range(&mut self, lo: i32, hi: i32) -> i32 {
+        self.next_range(lo, hi)
     }
 }
 
