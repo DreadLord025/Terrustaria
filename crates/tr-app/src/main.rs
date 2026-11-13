@@ -34,6 +34,7 @@ mod lang;
 mod loot_db;
 mod loot_db_gen;
 mod map;
+mod map_layers;
 mod menu;
 mod minecart;
 mod mount;
