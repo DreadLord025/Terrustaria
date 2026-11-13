@@ -110,3 +110,4 @@ crates/tr-app/src/world_sim/weather.rs|fn the_world_tick_writes_any_player_120_l
 crates/tr-app/src/rain.rs|Rain.MakeRain` (`Rain.cs:30-89`, S1-L-2)|S1-L-2 - MakeRain/NewRain spawn gates (ZoneRain/shimmer/atmo/snow/cloudAlpha budget)
 crates/tr-app/src/lang.rs|fn refresh_global_substitutions|S1-L-12b - 65 global substitutions producer refreshed from live app state (Lang.cs:100-167)
 crates/tr-app/src/lang.rs|fn global_substitutions_resolve_world_player_and_npc_tokens|S1-L-12b - key global substitution tokens resolve via LanguageManager
+crates/tr-app/src/lang.rs|fn init|S1-L-12c - deterministic sorted registration order for localization resource files (Lang.cs manifest-order parity)
