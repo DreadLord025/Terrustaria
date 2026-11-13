@@ -171,3 +171,4 @@ crates/tr-app/src/app/saveglue.rs|fn rolling_backups|S1-J-4 - the post-write val
 crates/tr-render/src/sprite.rs|PASS_BUFFERS|S1-G-12 - the honest draw-call bound (up to 6 instance-buffer passes) pinned against the docs claims
 crates/tr-app/src/projectile_id.rs|pub const PROJECTILE_ID|S1-F-5 - the verbatim ProjectileID walk (ProjectileID.cs, 1137 constants over ids 0..=1135 incl. the FixedDamageForRockets/MythrilDrill 60 alias, Count = 1136 :2832); the constant spellings are the Projectile.{name} localization keys (Lang.cs:477)
 docs/ANALYSIS.md|The world-format contract|S1-J-8 - the two-format split stays: .trwld canonical (the versioned tails), .wld vanilla-interchange (the byte-shape parity)
+crates/tr-app/src/npc.rs|s1_f_3_every_kind|S1-F-3 - cs_id covers all 182 kinds (the loot-db net ids via try_entry_for_npc; the Zombie/Skeleton/UndeadMiner/MeteorHead hand rows corrected)
