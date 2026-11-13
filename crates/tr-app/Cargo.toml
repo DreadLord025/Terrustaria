@@ -15,6 +15,7 @@ tr-render = { path = "../tr-render" }
 
 aes.workspace = true
 anyhow.workspace = true
+arboard.workspace = true
 bytemuck.workspace = true
 env_logger.workspace = true
 flate2.workspace = true
@@ -24,6 +25,7 @@ log.workspace = true
 pollster.workspace = true
 rayon.workspace = true
 rodio.workspace = true
+serde_json.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 

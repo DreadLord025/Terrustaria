@@ -355,13 +355,20 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
    (`UIWorldListItem.cs:71-93`, `:186-199`); `world_select::overlay_rects`
    `:353` is `#[allow(dead_code)]` with tested geometry only. Severity:
    cosmetic/pixel. Admitted in code (`:343-350`), **not** in ANALYSIS.
-7. **The creator's Randomize/Copy/Paste arms do nothing.**
-   `HoverTarget` carries `CopyHex`/`PasteHex`/`RandomizeColor`/
-   `CopyTemplate`/`PasteTemplate`/`RandomizePlayer`
-   (`char_creation.rs:1286-1294`) but `click_at` (`:1233-1278`) routes none of
-   them — `Click_RandomizePlayer` (`UICharacterCreation.cs:1545-1657`) is
-   unported and there is no clipboard bridge. Severity: behavioural (feature
-   absent). Partially admitted in the `click_at` doc (`:1230-1232`).
+7. **The creator's Randomize/Copy/Paste arms do nothing.** ✅ **Fixed
+   2026-11-13 (`S1-H-11-randomize-copy-paste`).** `click_at` now routes all six
+   buttons (`CopyHex`/`PasteHex`/`RandomizeColor`, `CopyTemplate`/
+   `PasteTemplate`/`RandomizePlayer`), porting `Click_RandomizePlayer`
+   (`UICharacterCreation.cs:1545-1657`), `Click_RandomizeSingleColor`
+   (`:1779-1787`), the hex path (`Click_CopyHex`/`Click_PasteHex`/`GetHexColor`,
+   `:1331-1347`, `:1764-1777`) and the template path
+   (`GetPlayerTemplateValues`/`Click_CopyPlayerTemplate`/`Click_PastePlayerTemplate`,
+   `:1349-1412`, `:1414-1510`); `ui/clipboard.rs` is the new
+   `Platform.Get<IClipboard>()` bridge. The historical gap was: `HoverTarget`
+   carried `CopyHex`/`PasteHex`/`RandomizeColor`/`CopyTemplate`/`PasteTemplate`/
+   `RandomizePlayer` (`char_creation.rs:1286-1294`) but `click_at`
+   (`:1233-1278`) routed none of them — `Click_RandomizePlayer` was unported and
+   there was no clipboard bridge. Severity: behavioural (feature absent).
 8. **`GameTipsDisplay` is not ported** (`UICharacterCreation.cs:170`,
    `:1998-2005`). Severity: cosmetic. Admitted (ANALYSIS `:2161-2162`).
 9. **No loading screen.** `UIWorldLoad`/`UIGenProgressBar`/`UIWorldGenDebug`

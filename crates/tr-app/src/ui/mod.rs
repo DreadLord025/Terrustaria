@@ -9,6 +9,7 @@ pub mod framework;
 pub mod cards;
 pub mod char_creation;
 pub mod char_select;
+pub mod clipboard;
 pub(crate) mod chest;
 pub mod chrome;
 pub mod color;
