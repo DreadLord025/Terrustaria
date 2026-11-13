@@ -207,6 +207,8 @@ impl Audio {
                 ambient_volume: 1.0,
                 quiet_ambient_sounds: false,
                 game_menu: false,
+                generating_or_loading: false,
+                server: false,
             },
         }
     }

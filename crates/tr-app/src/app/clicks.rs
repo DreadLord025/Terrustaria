@@ -498,8 +498,21 @@ impl App {
     /// only what fits — see docs/ANALYSIS.md). Consumes the press only when a
     /// recipe was crafted.
     pub(crate) fn handle_crafting_clicks(&mut self) -> bool {
-        if !self.crafting_open || !self.ui_left_press {
+        // `Main.HoverOverCraftingItemButton` runs every held frame
+        // (`Main.cs:42252-42305`): the click edge selects the recipe, the
+        // held frames craft through the stack-split pacing.
+        if !self.crafting_open {
             return false;
+        }
+        // `:42301-42305`: the buttons releasing reset the focus click's
+        // lock and the held-repeat's recipe pin.
+        if !self.mine_down {
+            self.prevent_craft_click = false;
+            self.current_recipe_being_crafted = -1;
+            return false;
+        }
+        if !self.ui_left_press && self.stack_split > 1 {
+            return true; // the held frame between repeats
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
@@ -532,7 +545,46 @@ impl App {
             return false;
         };
         let recipe = &craft::RECIPES[idx];
-        let Some((kind, count)) = craft::try_craft(
+        // `Main.cs:42256-42262` + `:42295-42299`: the first click on an
+        // unfocused row selects it (`focusRecipe = recipeIndex`,
+        // `stackSplit = 15`, the click-consumed lock, the MenuTick sound);
+        // the craft runs only on the focused row.
+        if self.focus_recipe != idx as i32 {
+            if self.ui_left_press {
+                self.focus_recipe = idx as i32;
+                self.stack_split = 15;
+                self.prevent_craft_click = true;
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.ui_left_press = false;
+            }
+            return true;
+        }
+        // `:42266-42290`: the focused row crafts. `flag4` blocks the
+        // held-repeat when a DIFFERENT recipe is being crafted or the
+        // product is non-stacking; `TryAllowingToCraftRecipe`'s
+        // mouse-blocking fetch (`:42278`) has no port counterpart (the
+        // mouse item never blocks the craft here). The
+        // `UsingOrReusingItem`/`IsStackingItems` gates of `flag3`
+        // (`Player.cs:23098`) are unmodelled item-use state.
+        let flag3 = !self.prevent_craft_click;
+        let flag4 = (self.current_recipe_being_crafted != -1
+            && self.current_recipe_being_crafted != idx as i32)
+            | (self.current_recipe_being_crafted != -1
+                && crate::registry::max_stack(recipe.create.0) == 1);
+        let mut num = (self.super_fast_stack + 1).max(1) as u32;
+        if shift_in_use(self) {
+            num *= 10; // `Main.cs:42272-42274`: the Shift x10
+        }
+        if self.stack_split > 1 {
+            return true; // `:42280`: the held-repeat pacing
+        }
+        if !flag3 || flag4 {
+            return true;
+        }
+        // `try_craft_qty` crafts as many of `num` as the ingredients allow
+        // (the request loop's net effect); count 0 = the partial-set row's
+        // no-op (`Main.cs:42250` hover only).
+        let (kind, count) = craft::try_craft_qty(
             &mut self.inventory,
             &mut self.world_chests,
             &in_range,
@@ -540,22 +592,31 @@ impl App {
             &adj,
             &zones,
             &mut self.craft_rng,
-        ) else {
-            // The recipe row shows with a partial ingredient set; a click
-            // without the full set does nothing (`Main.cs:42250` hover only).
-            return false;
-        };
-        if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind, 0) {
-            self.inventory[i].count =
-                (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
+            num,
+        );
+        if count > 0 {
+            if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind, 0) {
+                self.inventory[i].count = (self.inventory[i].count + count)
+                    .min(crate::registry::max_stack(kind));
+            }
+            // `SoundEngine.PlaySound(7)` — the grant sound
+            // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
+            self.audio.play("Grab");
+            // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
+            // crafted item's id rides the event, so `BENCHED`'s workbench set
+            // matches the crafted item and not any craft.
+            let _ = self.achievements.notify_craft(kind);
+            // `:42282-42285`: the first craft pins the held-repeat's recipe
+            // and refreshes the split cooldown (`ItemSlot.cs:1774-1784`).
+            if self.current_recipe_being_crafted == -1 {
+                self.current_recipe_being_crafted = idx as i32;
+            }
+            self.stack_split = if self.stack_split == 0 {
+                30
+            } else {
+                self.stack_delay
+            };
         }
-        // `SoundEngine.PlaySound(7)` — the grant sound
-        // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
-        self.audio.play("Grab");
-        // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
-        // crafted item's id rides the event, so `BENCHED`'s workbench set
-        // matches the crafted item and not any craft.
-        let _ = self.achievements.notify_craft(kind);
         self.ui_left_press = false;
         true
     }
@@ -3635,5 +3696,160 @@ mod tests {
         app.ui_left_press = true;
         app.handle_inventory_clicks();
         assert_eq!(app.player.as_ref().unwrap().team, 0);
+    }
+}
+
+#[cfg(test)]
+mod s1_h_7_tests {
+    use super::*;
+    use crate::craft;
+
+    fn craft_app() -> App {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.crafting_open = true;
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app
+    }
+
+    /// The mouse over the TORCH recipe's cell (the grid origin + the 44 px
+    /// pitch — `ui::crafting::hit_test`'s geometry).
+    fn torch_mouse(app: &App) -> Vec2 {
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap());
+        let zones = craft::Zones::default();
+        let in_range = craft::chests_in_range(
+            &app.world,
+            app.player.as_ref().unwrap(),
+            &app.world_chests,
+            false,
+        );
+        let available = craft::available(&app.inventory, &app.world_chests, &in_range, &adj, &zones);
+        let pos = available
+            .iter()
+            .position(|&r| craft::RECIPES[r].create.0 == 8)
+            .expect("the torch recipe is available");
+        let l = ui::crafting::layout(screen, 0.0, false);
+        let cols = ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
+        let col = pos as f32 % cols;
+        let row = (pos as f32) / cols;
+        Vec2::new(l.grid[0] + col * 44.0 + 20.0, l.grid[1] + row * 44.0 + 20.0)
+    }
+
+    #[test]
+    fn the_first_click_focuses_and_the_next_crafts() {
+        // `Main.cs:42295-42299`: the unfocused click selects
+        // (`focusRecipe`, `stackSplit = 15`, the lock, MenuTick) and the
+        // focused click crafts (`:42266-42290`).
+        let mut app = craft_app();
+        // Torch x3 = 1 gel + 1 wood, by hand (recipes_gen row 0).
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 30,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 30,
+            prefix: 0,
+        };
+        let mouse = torch_mouse(&app);
+        app.mouse_pos = mouse;
+        // The torch (row 0) starts UNfocused — `Main.focusRecipe` defaults
+        // to 0 and the torch IS row 0, so the test parks the focus on
+        // another row to exercise the select step (`Main.cs:42295-42299`).
+        app.focus_recipe = 1;
+        // The first press: the focus.
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert!(app.prevent_craft_click, "the focus click's lock");
+        assert_eq!(app.stack_split, 15);
+        assert!(
+            !app.inventory.iter().any(|s| s.kind == 8),
+            "nothing crafted yet"
+        );
+        // The second press: the release resets the lock, the held frames
+        // decay `stackSplit` (`frame.rs`'s per-tick decrement) below the
+        // pacing gate.
+        app.mine_down = false;
+        app.handle_crafting_clicks();
+        app.stack_split = 0;
+        app.mine_down = true;
+        app.ui_left_press = true;
+        assert!(app.handle_crafting_clicks());
+        let torches = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 8)
+            .expect("the focused click crafted");
+        assert_eq!(torches.count, 3, "one craft = three torches");
+    }
+
+    #[test]
+    fn shift_crafts_ten_at_once() {
+        // `Main.cs:42272-42274`: `num *= 10` behind `ItemSlot.ShiftInUse`.
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 300,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 300,
+            prefix: 0,
+        };
+        let mouse = torch_mouse(&app);
+        app.mouse_pos = mouse;
+        // The torch (row 0) is pre-focused (`Main.focusRecipe` defaults to
+        // 0) — one shift-click crafts the x10
+        // (`Main.cs:42272-42274`).
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.ui_left_press = true;
+        app.mine_down = true;
+        app.handle_crafting_clicks();
+        let torches = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 8)
+            .expect("the x10 craft");
+        assert_eq!(torches.count, 30, "the shift x10 = 10 crafts of 3");
+    }
+
+    #[test]
+    fn the_qty_craft_respects_the_ingredients() {
+        // The request loop's net effect: a partial ingredient set crafts as
+        // many as it can.
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 3,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 300,
+            prefix: 0,
+        };
+        let mouse = torch_mouse(&app);
+        app.mouse_pos = mouse;
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.ui_left_press = true;
+        app.mine_down = true;
+        app.handle_crafting_clicks();
+        let torches = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 8)
+            .expect("the partial craft");
+        assert_eq!(torches.count, 9, "only 3 wood -> 3 crafts of 3");
     }
 }

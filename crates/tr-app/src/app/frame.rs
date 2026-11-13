@@ -110,6 +110,11 @@ impl App {
         self.frame_count += 1;
         // Main.cs:16801-16815,18376 — view zoom keys (S1-B-5).
         self.update_view_zoom_keys();
+        // The adaptive fps loop's counter (`Main.cs:16961-16964`, S1-B-6):
+        // the per-second arms run off the measured frames, dt-pinned under
+        // `TR_SHOT` like the rest of the clock.
+        self.gfx_quality
+            .count_frame(dt, if self.shot_path.is_some() { 60 } else { 1 });
         // S1-B-3 — the step keys' snapshot pair (`WorldUpdateStepper.cs:39-43`):
         // `down` reads live (the frame's events have landed), then the
         // previous-frame pin shifts — the `Main.oldKeyState = Main.keyState`
@@ -229,6 +234,12 @@ impl App {
             ambient_volume: self.settings.ambient_volume,
             quiet_ambient_sounds: false,
             game_menu: self.menu.is_some() || self.front.is_some(),
+            // The worldgen worker never plays (the port's generation runs to
+            // completion before the frame loop starts); `netMode == 2` is the
+            // `NetRole::Host` server role (`LegacySoundPlayer.cs:382-388`,
+            // S1-E-24).
+            generating_or_loading: false,
+            server: matches!(self.net, crate::app::NetRole::Host(_)),
         });
 
         // `Main.Ambience` (`Main.cs:13466-13515`): every 15 ticks (¼ s) the
@@ -697,11 +708,21 @@ impl App {
             // is the draw-side lighting export: Draw keeps running on
             // stepper-blocked frames, so vanilla keeps revealing the map
             // while the world steps are frozen. No update-side `UpdateMap`
-            // exists in the 1.4.5.8 decompile to gate it on.
+            // exists in the 1.4.5.8 decompile to gate it on. The edit-side
+            // refresh drain (`Main.cs:61862`) is itself `!gamePaused`-gated
+            // in the C# (`Main.updateMap.HasValue && !Main.gamePaused`), so
+            // it rides the same gate here.
             if !paused {
                 self.phase("map");
                 if let Some(m) = self.map.as_mut() {
                     m.update(&self.world, self.player.as_ref(), &self.light, dt);
+                    // `MapUpdateQueue.Update()` (`Main.cs:61862`): the edit-side
+                    // refresh drains through `WorldMap.UpdateType`; the changed
+                    // tiles re-upload (`MapRenderer.QueueChange`'s analog).
+                    let changed = self
+                        .map_queue
+                        .update(&self.world, m);
+                    m.push_dirty(changed);
                 }
             }
             // The world-branch tail's camera walks (`Main.cs:17814-17815`):
@@ -727,6 +748,12 @@ impl App {
                 self.phase("scene_state");
                 crate::world_sim::scene_scan::update_scene(self, dt, screen);
             }
+            // The gfx-quality budgets (`Main.cs:17056-17101`, S1-B-6): the
+            // `qaStyle` overrides, `maxDustToDraw`, `Gore.goreTime`, the
+            // liquid pass pair and the legacy render phases.
+            let mut gfx = std::mem::take(&mut self.gfx_quality);
+            gfx.apply(self);
+            self.gfx_quality = gfx;
         }
         // S1-B-3 — `WorldUpdateStepper.DrawnThisUpdate = true`
         // (`Main.cs:62478`, Draw's stack-split block `:62470-62477`). The
@@ -802,6 +829,15 @@ impl App {
         // `Main.DrawPVPIcons`'s state block, snapshotted before the disjoint
         // borrow below (it reads `self.player` / `self.net`).
         let pvp_icon_state = self.pvp_icon_state();
+        // The buff bar's inputs (`Main.DrawInterface_Resources_Buffs`,
+        // `Main.cs:43203`): the right-release edge (`Main.mouseRightRelease`)
+        // and the vampire-seed gate (`Main.vampireSeed`, the duration hides
+        // `:43298`). The removals drain in the tick.
+        let right_release = std::mem::take(&mut self.ui_right_release);
+        let vampire_seed = self
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
         // `Player.hideVisibleAccessory` (`Player.cs:1708`) — snapshotted for the
         // same reason (the accessory ticks, `Main.cs:41425-41460`).
         let hide_visible_accessory = self
@@ -1687,6 +1723,11 @@ impl App {
                         // accessory visible/hidden ticks in `DrawInventory`
                         // (`Main.cs:41425-41460`).
                         &hide_visible_accessory,
+                        // The buff bar (`Main.DrawInterface_Resources_Buffs`).
+                        &mut self.buff_alpha,
+                        &mut self.buff_removals,
+                        right_release,
+                        vampire_seed,
                     );
                     // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                     // the coin cells' animation clocks step per frame after

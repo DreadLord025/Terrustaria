@@ -748,6 +748,37 @@ pub(crate) fn can_craft(
 /// `Consume :218-254`): the inventory first, then each chest in collection
 /// order, one `ConsumeItemsFrom`-shaped pass per container matching
 /// `RequiredItemEntry.Matches` (any group member for a group entry).
+/// `CraftingRequests.CraftItem(recipe, num)` (`Main.cs:42286`) — the C#'s
+/// request queue processes the quantity; the port loops the single craft
+/// (each iteration re-checks the ingredient availability, so a partial set
+/// crafts as many as it can — the vanilla request loop's net effect). The
+/// per-craft draw rides the shared `rng` (the alchemy discount's stream).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn try_craft_qty(
+    inv: &mut [ItemSlot; INV],
+    chests: &mut [WorldChest],
+    in_range: &[usize],
+    recipe: &Recipe,
+    adj: &Adjacent,
+    zones: &Zones,
+    rng: &mut UnifiedRandom,
+    qty: u32,
+) -> (u16, u32) {
+    let mut crafted = 0u32;
+    for _ in 0..qty {
+        match try_craft(inv, chests, in_range, recipe, adj, zones, rng) {
+            Some((kind, count)) => {
+                crafted += count;
+                if crafted == 0 {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    (recipe.create.0, crafted)
+}
+
 pub(crate) fn try_craft(
     inv: &mut [ItemSlot; INV],
     chests: &mut [WorldChest],

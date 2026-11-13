@@ -642,6 +642,9 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         crate::happiness::process_mood(&app.world, &app.npcs, &app.npcs[idx], (pcx, pcy), false);
     let flags = crate::shop::ShopFlags {
         hard_mode: app.world.hard_mode,
+        downed_slime_king: app.world.downed_slime_king,
+        downed_queen_slime: app.world.downed_queen_slime,
+        downed_moon_lord: app.world.downed_moon_lord,
         night: !app.world.day_time,
         blood_moon: app.world.blood_moon,
         zone_snow: app.scene_metrics.zone_snow,

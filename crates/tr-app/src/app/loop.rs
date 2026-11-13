@@ -476,6 +476,10 @@ impl ApplicationHandler for App {
                         self.place_down = pressed;
                         if pressed {
                             self.ui_right_press = true;
+                        } else {
+                            // `Main.mouseRightRelease` — the release edge the
+                            // buff bar's removal reads (`Main.cs:43342`).
+                            self.ui_right_release = true;
                         }
                     }
                     // `PlayerInput.MouseInfo.XButton1 == ButtonState.Pressed`'s

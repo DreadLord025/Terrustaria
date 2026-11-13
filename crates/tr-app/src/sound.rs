@@ -31,6 +31,9 @@ pub fn does_sound_scale_with_ambient_volume(sound_type: u32) -> bool {
 pub struct Playback {
     pub volume: f32,
     pub pan: f32,
+    /// `SoundEffectInstance.Pitch` — the per-family roll's result
+    /// (`LegacySoundPlayer.cs:450`/`:613-626` + `SoundStyle.GetRandomPitch`).
+    pub pitch: f32,
 }
 
 /// Parameters the caller supplies for one sound; mirrors the `Main` state the C#
@@ -47,6 +50,14 @@ pub struct Listener {
     pub quiet_ambient_sounds: bool,
     /// `Main.gameMenu`.
     pub game_menu: bool,
+    /// `WorldGen.isGeneratingOrLoadingWorld` — the `LegacySoundPlayer`
+    /// position-walk's first guard (`LegacySoundPlayer.cs:382`): a sound at
+    /// world coordinates during generation/loading returns `null`. The port
+    /// is always `false` outside the worldgen worker, which never plays.
+    pub generating_or_loading: bool,
+    /// `Main.netMode == 2` — the server's second guard
+    /// (`LegacySoundPlayer.cs:386`).
+    pub server: bool,
 }
 
 /// `LegacySoundPlayer.PlaySound(int type, int x, int y, int Style, float volumeScale)`
@@ -69,6 +80,16 @@ pub fn play_sound(
 ) -> Option<Playback> {
     // `if (Main.soundVolume == 0f && (type < 30 || type > 35)) return null;`
     if listener.sound_volume == 0.0 && !(30..=35).contains(&sound_type) {
+        return None;
+    }
+    // `if (WorldGen.isGeneratingOrLoadingWorld) return null;` +
+    // `if (Main.netMode == 2) return null;` (`LegacySoundPlayer.cs:382-388`):
+    // the position-walk's worldgen/server guards — S1-E-24. The unpositioned
+    // `x == -1` path in the C# checks them AFTER the `flag = true` arm, so a
+    // generation-time unpositioned call would still pass; the port's rig
+    // never reaches a worldgen play, so the guards gate the positioned walk
+    // verbatim.
+    if (x != -1.0 || y != -1.0) && (listener.generating_or_loading || listener.server) {
         return None;
     }
 
@@ -123,7 +144,64 @@ pub fn play_sound(
     if volume > 1.0 {
         volume = 1.0;
     }
-    Some(Playback { volume, pan })
+    Some(Playback {
+        volume,
+        pan,
+        pitch: 0.0,
+    })
+}
+
+/// `LegacySoundStyle.WithVolumePerceived` (`LegacySoundStyle.cs:70-75`): the
+/// style's stored volume becomes `volume ^ 1.6608999967575073` — the
+/// "perceived loudness" power the C# bakes into the three quiet styles
+/// (`SoundID.cs:1497`'s `Item113_Quiet` = `2/3`, `:1584`'s `MysticBloom` =
+/// `0.65`, `:1587`'s `ArcSurge` = `0.4`; S1-E-24).
+pub fn perceived_volume(volume: f32) -> f32 {
+    volume.powf(1.660_899_996_757_507_3)
+}
+
+/// The three `WithVolumePerceived` styles' baked volumes
+/// (`SoundID.cs:1497`/`:1584`/`:1587`) — the display table the styles read.
+pub fn perceived_volume_styles() -> Vec<(&'static str, f32, f32)> {
+    vec![
+        // (const name, the perceived argument, the baked style volume)
+        ("Item113_Quiet", 2.0 / 3.0, perceived_volume(2.0 / 3.0)),
+        ("MysticBloom", 0.65, perceived_volume(0.65)),
+        ("ArcSurge", 0.4, perceived_volume(0.4)),
+    ]
+}
+
+/// `SoundStyle.GetRandomPitch` (`SoundStyle.cs:40-43`):
+/// `SoundStyle._random.NextFloat() * PitchVariance - PitchVariance * 0.5f`.
+/// `next_float` mirrors `NextFloat()`'s 0..1 draw.
+pub fn get_random_pitch(variance: f32, next_float: f32) -> f32 {
+    next_float * variance - variance * 0.5
+}
+
+/// `LegacySoundPlayer.PlaySound`'s per-family pitch rolls (`:450`, `:613-626`
+/// — the dig arm's `Next(-10, 11) * 0.01` and the item switch's per-cue
+/// scales; S1-E-22). `rng` mirrors `Main.rand`'s `Next(min, max)` draw.
+pub fn legacy_family_pitch(family: Family, rng: &mut dyn FnMut(i32, i32) -> i32) -> f32 {
+    match family {
+        Family::Dig => rng(-10, 11) as f32 * 0.01,
+        Family::Item(cue) => match cue {
+            53 => rng(-20, -11) as f32 * 0.02,
+            55 => -(rng(-20, -11) as f32) * 0.02,
+            132 => rng(-20, 21) as f32 * 0.001,
+            153 | 156 => rng(-50, 51) as f32 * 0.003,
+            _ => rng(-6, 7) as f32 * 0.01,
+        },
+    }
+}
+
+/// The pitch-roll families the legacy player switches over
+/// (`LegacySoundPlayer.cs:440-462` the dig case, `:611-630` the item switch).
+#[derive(Clone, Copy, Debug)]
+pub enum Family {
+    /// `type == 0` — the dig/sound-style case (`:440`).
+    Dig,
+    /// `type == 2` — the item family, keyed by the style id (`:611`).
+    Item(i32),
 }
 
 /// Left/right amplitude for an XNA `Pan` in `-1..1`.
@@ -151,6 +229,8 @@ mod tests {
             ambient_volume: 1.0,
             quiet_ambient_sounds: false,
             game_menu: false,
+            generating_or_loading: false,
+            server: false,
         }
     }
 
@@ -174,7 +254,11 @@ mod tests {
         // slider (still 1.0 here) rather than the muted `soundVolume`.
         assert_eq!(
             play_sound(34, -1.0, -1.0, l, 1.0),
-            Some(Playback { volume: 1.0, pan: 0.0 })
+            Some(Playback {
+            volume: 1.0,
+            pan: 0.0,
+            pitch: 0.0,
+        })
         );
     }
 
@@ -207,7 +291,11 @@ mod tests {
         l.sound_volume = 0.5;
         // x == -1 -> flag = true, full 1.0 * soundVolume.
         let p = play_sound(3, -1.0, -1.0, l, 1.0).unwrap();
-        assert_eq!(p, Playback { volume: 0.5, pan: 0.0 });
+        assert_eq!(p, Playback {
+        volume: 0.5,
+        pan: 0.0,
+        pitch: 0.0,
+    });
     }
 
     #[test]
@@ -249,4 +337,85 @@ mod tests {
         // Clamped beyond the legal range.
         assert_eq!(pan_gains(9.0), (0.0, 1.0));
     }
+#[test]
+fn s1_e_24_the_worldgen_and_server_guards_mute_the_positioned_walk() {
+    // `LegacySoundPlayer.cs:382-388`: the position-walk returns null during
+    // generation/loading and on the server (`netMode == 2`).
+    let mut l = listener();
+    l.generating_or_loading = true;
+    assert_eq!(
+        play_sound(12, 100.0, 100.0, l.clone(), 1.0),
+        None,
+        "the generation guard"
+    );
+    l.generating_or_loading = false;
+    l.server = true;
+    assert_eq!(
+        play_sound(12, 100.0, 100.0, l.clone(), 1.0),
+        None,
+        "the server guard"
+    );
+    // The unpositioned arm (`x == -1`) passes the guards in the C#'s order —
+    // it sets `flag` before reaching them.
+    l.generating_or_loading = true;
+    l.server = true;
+    assert!(
+        play_sound(12, -1.0, -1.0, l.clone(), 1.0).is_some(),
+        "the unpositioned arm precedes the guards"
+    );
+}
+
+#[test]
+fn s1_e_24_the_perceived_volume_is_the_16609_power() {
+    // `Math.Pow(volume, 1.6608999967575073)` (`LegacySoundStyle.cs:75`).
+    assert!((perceived_volume(2.0 / 3.0) - (2.0f32 / 3.0).powf(1.660_899_996_757_507_3)).abs() < 1e-7);
+    assert!((perceived_volume(0.65) - 0.65f32.powf(1.660_899_996_757_507_3)).abs() < 1e-7);
+    assert!((perceived_volume(0.4) - 0.4f32.powf(1.660_899_996_757_507_3)).abs() < 1e-7);
+    // The styles table carries the three quiet styles with their baked volumes.
+    for (name, arg, baked) in perceived_volume_styles() {
+        assert!((baked - perceived_volume(arg)).abs() < 1e-7, "{name}");
+    }
+    // The perceived power compresses: for every 0..1 argument the baked
+    // volume sits below it (`0.5^1.66 = 0.316` — the exponent is above 1).
+    assert!(perceived_volume(0.5) < 0.5);
+}
+}
+
+#[test]
+fn s1_e_22_the_legacy_family_pitch_rolls_follow_the_switches() {
+    // The dig arm (`LegacySoundPlayer.cs:450`): `Next(-10, 11) * 0.01`.
+    let mut draw = |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), (-10, 11), "the dig roll's window");
+        5
+    };
+    assert!((legacy_family_pitch(Family::Dig, &mut draw) - 0.05).abs() < 1e-6, "5 * 0.01 in f32");
+    // The item switch's per-cue windows (`:612-626`): 53 (down 0.02),
+    // 55 (mirrored up), 132 (0.001), 153/156 (0.003), the default 0.01.
+    let seq: [(i32, i32); 5] = [(-20, -11), (-20, -11), (-20, 21), (-50, 51), (-6, 7)];
+    let mut i = 0;
+    let mut draw2 = move |lo: i32, hi: i32| {
+        assert_eq!((lo, hi), seq[i], "the item roll {}'s window", i);
+        let r = seq[i].0 + 1;
+        i += 1;
+        r
+    };
+    let p53 = legacy_family_pitch(Family::Item(53), &mut draw2);
+    assert!((p53 - (-19 as f32 * 0.02)).abs() < 1e-6);
+    let p55 = legacy_family_pitch(Family::Item(55), &mut draw2);
+    assert!((p55 - 19.0 * 0.02).abs() < 1e-6, "the mirrored 55 arm negates the draw");
+    let p132 = legacy_family_pitch(Family::Item(132), &mut draw2);
+    assert!((p132 - (-19 as f32 * 0.001)).abs() < 1e-6);
+    let p153 = legacy_family_pitch(Family::Item(153), &mut draw2);
+    assert!((p153 - (-49 as f32 * 0.003)).abs() < 1e-6);
+    let pd = legacy_family_pitch(Family::Item(999), &mut draw2);
+    assert!((pd - (-5 as f32 * 0.01)).abs() < 1e-6, "the default -6..7 window");
+}
+
+#[test]
+fn s1_e_22_get_random_pitch_is_the_variance_walk() {
+    // `SoundStyle.GetRandomPitch` (`SoundStyle.cs:40-43`):
+    // `NextFloat() * PitchVariance - PitchVariance * 0.5`.
+    assert_eq!(get_random_pitch(0.2, 0.0), -0.1, "the draw-0 floor");
+    assert_eq!(get_random_pitch(0.2, 1.0), 0.1, "the draw-1 ceiling");
+    assert_eq!(get_random_pitch(0.2, 0.5), 0.0, "the draw-0.5 centre");
 }

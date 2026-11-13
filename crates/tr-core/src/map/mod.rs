@@ -307,6 +307,152 @@ pub fn update_map_lighting(
     true
 }
 
+/// `WorldMap.UpdateType` (`WorldMap.cs:65-93`): the queued tile re-derives
+/// its type from the current world state, keeping its light. The
+/// `Main.sectionManager.TileLoaded(x, y)` gate (`:80`) passes in the port —
+/// the whole world is loaded single-player (the section manager is the MP
+/// section tracker).
+pub fn update_type(world: &World, map: &mut [MapTile], x: i32, y: i32) -> bool {
+    if !world.in_bounds(x, y) {
+        return false;
+    }
+    let idx = world.index(x, y);
+    let mut map_tile = map[idx];
+    if !map_tile.update_queued() {
+        return false; // :71-74
+    }
+    // `:75` writes through the C#'s `ref mapTile` — the clear persists on
+    // every early-return path (the port's copy needs the explicit
+    // write-back).
+    map_tile.set_update_queued(false);
+    map[idx] = map_tile;
+    if map_tile.light == 0 {
+        return false; // :76-79
+    }
+    // `:81-83`: `backgroundOverride = IsBackground(mapTile.Type) ? Type : 0`.
+    let bg = if is_background(map_tile.ty) { map_tile.ty } else { 0 };
+    let new = create_map_tile(world, map, x, y, map_tile.light, bg);
+    if new.equals_all(&map_tile) {
+        return false; // :84-87
+    }
+    map[idx] = new;
+    true
+}
+
+/// `WorldMap.QueueUpdate` (`WorldMap.cs:95-105`): arms the re-derive flag —
+/// a dark tile or an already-queued one refuses.
+pub fn queue_update(map: &mut [MapTile], x: i32, y: i32, width: i32, height: i32) -> bool {
+    if x < 0 || y < 0 || x >= width || y >= height {
+        return false;
+    }
+    let idx = y as usize * width as usize + x as usize;
+    let map_tile = map[idx];
+    if map_tile.light == 0 || map_tile.update_queued() {
+        return false; // :99-102
+    }
+    map[idx].set_update_queued(true); // :103-105
+    true
+}
+
+/// `WorldMap.UnlockMapSection` (`WorldMap.cs:109-133`): the 200x150 section
+/// clamped into the world inset 40 — the `DebugOptions.unlockMap == 2`
+/// pretty walk or the full `UpdateLighting(255)` sweep. The debug-option
+/// read rides the caller.
+pub fn unlock_map_section(world: &World, map: &mut [MapTile], sx: i32, sy: i32, pretty: bool) {
+    let mut x0 = sx * 200;
+    let mut x1 = x0 + 200;
+    let mut y0 = sy * 150;
+    let mut y1 = y0 + 150;
+    // `:115`: the inset 40 (`num3`).
+    let clamp = |v: i32, max: i32| v.clamp(40, max - 40);
+    x0 = clamp(x0, world.width);
+    x1 = clamp(x1, world.width);
+    y0 = clamp(y0, world.height);
+    y1 = clamp(y1, world.height);
+    if pretty {
+        for i in x0..x1 {
+            for j in y0..y1 {
+                unlock_map_tile_pretty(world, map, i, j);
+            }
+        }
+        return;
+    }
+    for k in x0..x1 {
+        for l in y0..y1 {
+            update_map_lighting(world, map, k, l, u8::MAX);
+        }
+    }
+}
+
+/// `WorldMap.UnlockMapTilePretty` (`WorldMap.cs:135-174`): the 11x11
+/// Manhattan falloff reveal — solid tiles and non-lava liquid cells skip,
+/// a wall multiplies the light 0.8 and underground 0.7.
+pub fn unlock_map_tile_pretty(world: &World, map: &mut [MapTile], x: i32, y: i32) {
+    // `WorldGen.InWorld(x, y, 12)` + `WorldGen.SolidTile(x, y)` (`:136-139`).
+    if x < 12 || y < 12 || x >= world.width - 12 || y >= world.height - 12 {
+        return;
+    }
+    let tile = world.tiles[world.index(x, y)];
+    if tile.active()
+        && tile.flags & crate::tile::FLAG_INACTIVE == 0
+        && crate::tiledata::TILE_SOLID.has(tile.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(tile.kind)
+        && !tile.half_brick()
+        && tile.slope() == 0
+    {
+        return;
+    }
+    let num = 5i32;
+    let mut num2 = 255.0f32;
+    if tile.liquid > 0 && tile.liquid_kind() != LiquidKind::Lava {
+        return; // :144-147
+    }
+    if tile.wall > 0 {
+        num2 *= 0.8; // :148-151
+    }
+    if y as f64 >= world.world_surface {
+        num2 *= 0.7; // :152-155
+    }
+    for i in -num..=num {
+        for j in -num..=num {
+            let x2 = x + i;
+            let y2 = y + j;
+            let num3 = num as f32 - (i.abs() + j.abs()) as f32;
+            if num3 >= 0.0 {
+                update_map_lighting(world, map, x2, y2, (num2 * (num3 / num as f32)) as u8);
+            }
+        }
+    }
+}
+
+/// `WorldMap.ClearEdges` (`WorldMap.cs:260-285`): the 40-tile world border
+/// bands clear after a map load (`:210`).
+pub fn clear_edges(map: &mut [MapTile], width: i32, height: i32) {
+    let w = width as usize;
+    let h = height as usize;
+    let clear = |map: &mut [MapTile], x: usize, y: usize| map[y * w + x].clear();
+    for i in 0..w {
+        for j in 0..40.min(h) {
+            clear(map, i, j);
+        }
+        if h > 40 {
+            for j in (h - 40)..h {
+                clear(map, i, j);
+            }
+        }
+    }
+    if w > 40 {
+        for m in 0..40 {
+            for n in 40..h.saturating_sub(40) {
+                clear(map, m, n);
+            }
+            for n in 40..h.saturating_sub(40) {
+                clear(map, w - 40 + m, n);
+            }
+        }
+    }
+}
+
 /// `LightingEngine.ExportToMiniMap` (`LightingEngine.cs:246-270`): sample the
 /// light map per tile with `light = min(255, max(r, g, b) * 255)` and reveal only
 /// the tiles whose pixels changed (Task 6 uploads exactly these). Tiles outside

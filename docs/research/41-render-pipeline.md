@@ -158,7 +158,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
 
 ## Deviations & risks
 
-- **D-1 — "2 draw calls" in ROADMAP is wrong (documentation, cosmetic).**
+- **D-1 — "2 draw calls" in ROADMAP is wrong (documentation, cosmetic).** **CLOSED 2026-11-13** (`S1-G-12-draw-call-claim`: the ARCHITECTURE.md claims corrected to the 6-buffer structure and pinned by `sprite.rs::PASS_BUFFERS` + `tests/doc_claims.rs`). The original text follows.
   `ROADMAP.md:64` claims the renderer issues 2 draw calls; `sprite.rs::draw_ranges`
   issues **one `pass.draw` per non-empty range** (1195-1239) → up to 6 per frame, and
   with `TR_POST=1` the frame is 3 + 3 plus 1..4 filter passes (`post.rs::MAX_CHAIN`).
@@ -222,7 +222,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   `Main.cs:61999`) has **no located equivalent** — the port therefore renders a wider
   world view than vanilla on wide screens. Module 01/02 own the camera; flagged here
   because it is a *graphics-layer* contract.
-- **D-9 — Scissor clipping absent (behavioural + pixel, medium).** Vanilla scissors
+- **D-9 — Scissor clipping absent (behavioural + pixel, medium).** Vanilla scissors** **VERIFIED-DONE 2026-11-14 (S1-G-5):** the scissor landed with S1-H-2 (the `ClipStack` + the per-instance clip rect + the WGSL discard; the clipped UI rows = the lists and the achievements). The original text follows.
   UI lists (`Main.ScissorState`, `Main.cs:2329`; `Main.cs:40406-40414`,
   `25403-25424`). The port has no scissor (`char_creation.rs:1859`); clipped UI
   regions (inventory/scroll lists, `UIList.OverflowHidden`) bleed or are skipped.

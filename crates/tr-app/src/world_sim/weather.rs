@@ -36,6 +36,9 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     );
     let snow_tile_count = app.scene_metrics.snow_tile_count;
     let zone_rain = app.scene_metrics.zone_rain;
+    // The snow spawn cap scales with the gfx quality (S1-B-6,
+    // `Main.cs:13057`).
+    app.rain.gfx_quality = app.gfx_quality.quality;
     app.rain.update(
         &app.world,
         app.camera,
@@ -176,8 +179,30 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             // (the C# falls back to a fresh `Player()`).
             app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
         );
-        // (4) `Main.cs:64966`; the TR_SANDSTORM pin freezes the state machine
-        // (the periodic intention roll would fight the pin — phase-1 glue doc).
+        // (4) `Main.cs:64963-64966`: the event walks — CultistRitual
+        // (the delay decay + the recheck window's AnyDanger arm),
+        // BirthdayParty/LanternNight (the persistence clears riding the
+        // sky edges), then Sandstorm; the TR_SANDSTORM pin freezes the
+        // state machine (the periodic intention roll would fight the pin —
+        // phase-1 glue doc). S1-F-14.
+        // The cultist delay's decay: the `recheck` window's `AnyDanger` arm
+        // walks the port's boss-flagged kinds (`CultistRitual.UpdateTime`).
+        let any_danger = world.invasion_type > 0
+            || app.npcs
+                .iter()
+                .any(|n| n.hp > 0 && crate::revenge::BOSS_KINDS.contains(&n.kind));
+        if crate::world_events::update_time_cultist(&mut app.world_events, day_rate, any_danger) {
+            // The ritual window opened — the spawn rides the caller's
+            // floor/LOS gates (S1-F-14's TrySpawning predicate contract).
+        }
+        crate::world_events::update_time_party(&mut app.world_events);
+        // `LanternNight.UpdateTime`'s persistence gate: the lanterns ride
+        // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`).
+        let lantern_can_persist = !world.day_time;
+        let _ = crate::world_events::update_time_lanterns(
+            &mut app.world_events,
+            lantern_can_persist,
+        );
         if scene_state.forced_severity.is_none() {
             sandstorm.update_time(day_rate, wind.speed_current);
         }

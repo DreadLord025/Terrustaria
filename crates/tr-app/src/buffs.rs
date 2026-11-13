@@ -35,6 +35,44 @@ const DEBUFF_IDS: [i32; 76] = [
 /// `Main.lightPet` — 12 entries, verbatim from `Main.cs:9288+`.
 const LIGHT_PET_IDS: [i32; 12] = [19, 27, 57, 101, 102, 152, 155, 190, 201, 294, 298, 299];
 
+/// `Main.buffNoTimeDisplay` (`Main.cs:9074-9199`'s writes) — the duration
+/// text hides for these (`Main.TryGetBuffTime`, `Main.cs:43290-43305`).
+const BUFF_NO_TIME_DISPLAY: [i32; 124] = [
+    19, 27, 28, 29, 34, 37, 38, 40, 41, 42, 43, 45,
+    49, 60, 62, 64, 68, 81, 82, 83, 93, 95, 96, 97,
+    98, 99, 100, 101, 102, 125, 126, 133, 134, 135, 136, 139,
+    140, 150, 159, 161, 163, 165, 170, 171, 172, 182, 186, 187,
+    188, 199, 200, 201, 202, 213, 214, 216, 217, 219, 258, 259,
+    260, 261, 262, 263, 264, 266, 267, 268, 271, 274, 284, 285,
+    286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297,
+    298, 299, 300, 301, 302, 303, 304, 312, 317, 322, 325, 327,
+    328, 329, 330, 331, 334, 335, 341, 345, 348, 349, 351, 352,
+    353, 354, 355, 356, 365, 366, 371, 372, 373, 382, 385, 386,
+    389, 390, 393, 394,
+];
+
+/// `Main.buffNoTimeDisplay[b]` — see [`BUFF_NO_TIME_DISPLAY`].
+pub fn is_no_time_display(buff_type: i32) -> bool {
+    in_set(&BUFF_NO_TIME_DISPLAY, buff_type)
+}
+
+/// `BuffID.Sets.NurseCannotRemoveDebuff` (`BuffID.cs:52`): the debuffs the
+/// Nurse refuses to remove — they neither clear at the heal nor count in
+/// `GetNurseHealCost`'s price (`Main.cs:40061-40064`/`:40147`).
+// Sorted for `in_set`'s binary search — the C# `CreateBoolSet` order is
+// preserved in the comment below.
+const NURSE_CANNOT_REMOVE_DEBUFF: [i32; 20] = [
+    // CreateBoolSet(28, 34, 87, 89, 21, 86, 199, 332, 333, 334, 165, 146,
+    //               48, 158, 157, 350, 215, 147, 321, 43)
+    21, 28, 34, 43, 48, 86, 87, 89, 146, 147, 157, 158, 165, 199, 215, 321,
+    332, 333, 334, 350,
+];
+
+/// `BuffID.Sets.NurseCannotRemoveDebuff[b]` — see [`NURSE_CANNOT_REMOVE_DEBUFF`].
+pub fn nurse_cannot_remove(buff_type: i32) -> bool {
+    in_set(&NURSE_CANNOT_REMOVE_DEBUFF, buff_type)
+}
+
 /// `Main.vanityPet` — 74 entries, verbatim from `Main.cs:9214+`.
 const VANITY_PET_IDS: [i32; 74] = [
     40, 41, 42, 45, 50, 51, 52, 53, 54, 55, 56, 61, 65, 66, 81, 82, 84, 85, 91, 92, 127, 136,
