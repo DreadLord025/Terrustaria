@@ -28,7 +28,7 @@ const MSEED: i32 = 161803398;
 
 /// The `Terraria.Utilities.UnifiedRandom` state: the ring cursor plus the
 /// 56-int subtractive seed array (`UnifiedRandom.cs:14-16`).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnifiedRandom {
     /// `inext` (`UnifiedRandom.cs:14`).
     inext: u32,
@@ -36,12 +36,25 @@ pub struct UnifiedRandom {
     seed_array: [i32; 56],
 }
 
+/// A fixed seed-0 placeholder, so structs that hold a stream can keep
+/// `#[derive(Default)]`. This is deliberately **not** the C# parameterless
+/// ctor, which seeds from `Environment.TickCount` (`UnifiedRandom.cs:18-21`)
+/// and must never be reproduced by a deterministic port: a consumer seeds its
+/// stream explicitly (`new`/`set_seed`, e.g. the wiring engine's
+/// [`crate::wiring::Wiring::seed_rand`]) before drawing.
+impl Default for UnifiedRandom {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 impl UnifiedRandom {
     /// `new UnifiedRandom(int Seed)` (`UnifiedRandom.cs:23-26`) → `SetSeed`.
     ///
-    /// There is deliberately no `Default`: the C# parameterless ctor seeds from
-    /// `Environment.TickCount` (`:18-21`), which a deterministic port must
-    /// never do.
+    /// This is the only seeded constructor; the [`Default`] instance is a fixed
+    /// seed-0 placeholder, never the C# parameterless ctor (which is
+    /// clock-seeded, `:18-21`) — a stream is only meaningful once a consumer
+    /// seeds it explicitly.
     pub fn new(seed: i32) -> Self {
         let mut r = Self {
             inext: 0,

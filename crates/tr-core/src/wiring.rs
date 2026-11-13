@@ -32,6 +32,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::tile::LiquidKind;
 use crate::tile::{FLAG_ACTUATOR, FLAG_INACTIVE};
+use crate::unified_random::UnifiedRandom;
 use crate::world::World;
 
 /// A statue spawn request (`HitWireSingle`'s case 105, `Wiring.cs:2125-2478`, and case 531,
@@ -224,9 +225,14 @@ pub struct Wiring {
     gates_next: std::collections::VecDeque<(i32, i32)>,
     /// `Wiring._GatesDone` (`:699-706`).
     gates_done: HashMap<(i32, i32), bool>,
-    /// The deterministic stand-in for `Main.rand` (the faulty-lamp roll,
-    /// `:812`): the port's xorshift core seeded from the world seed.
-    faulty_rng: u64,
+    /// The wiring RNG: the port's deterministic stand-in for the C# `Main.rand`
+    /// (a `UnifiedRandom`, `Utilities/UnifiedRandom.cs`) — the one stream every
+    /// wiring draw shares (the faulty-lamp roll `Wiring.cs:811`, the statue
+    /// `Utils.SelectRandom` fills `:2167`/`:2229`/`:2251`/`:2354`, the cannon
+    /// and firework variants `:1393`/`:1472`/`:1543`). Vanilla seeds `Main.rand`
+    /// from the clock (`Main.cs:6461-6463`), so it is not reproducible; the
+    /// port seeds the same generator from the world ([`Self::seed_rand`]).
+    rand: UnifiedRandom,
     /// `Wiring._teleport[2]`: the two teleporter pad anchors in tile coords
     /// (the y carries the halfBrick +0.5), reset to (-1, -1) per colour pass
     /// (`Wiring.cs:554-557`).
@@ -364,28 +370,21 @@ impl Wiring {
         Self::default()
     }
 
-    /// Seeds the faulty-lamp roll stream (call once per world load).
-    pub fn seed_faulty_rng(&mut self, seed: u64) {
-        self.faulty_rng = seed ^ 0x9E37_79B9_7F4A_7C15;
+    /// Seeds the wiring RNG stream (call once per world load) — the port's
+    /// deterministic stand-in for the C# `Main.rand` global, which vanilla
+    /// seeds from the clock (`Main.cs:6461-6463`) and is therefore not
+    /// reproducible; the port seeds the same generator from the world.
+    pub fn seed_rand(&mut self, seed: u64) {
+        self.rand = UnifiedRandom::new(seed as i32);
     }
 
-    fn faulty_next(&mut self, n: i32) -> i32 {
-        self.faulty_rng = self
-            .faulty_rng
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        let z = self.faulty_rng;
-        let z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        let z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        ((z ^ (z >> 31)) % n.max(1) as u64) as i32
-    }
-
-    /// `Main.rand.Next(n)` for the app layer's wire rolls (the teleporting
-    /// statues' single candidate pick, `Wiring.cs:2436`/`:2464`): the same
-    /// engine stream, so a statue roll and the flood's rolls interleave in one
-    /// deterministic order.
+    /// `Main.rand.Next(n)` (`Utilities/UnifiedRandom.cs:134-141`) — the one
+    /// stream every wiring draw shares: the faulty-lamp share (`Wiring.cs:811`),
+    /// `Utils.SelectRandom`'s fills (`:2167`/`:2229`/`:2251`/`:2354`), the cannon
+    /// and firework variants (`:1393`/`:1472`/`:1543`) and, through this public
+    /// method, the app-side statue teleport pick (`:2436`/`:2464`).
     pub fn rand_next(&mut self, n: i32) -> i32 {
-        self.faulty_next(n)
+        self.rand.next_max(n.max(0))
     }
 
     /// `Wiring.CheckMech` (`Wiring.cs:455-471`): one cooldown entry per tile
@@ -648,7 +647,7 @@ impl Wiring {
         // `Main.rand.Next(lo, hi)` → the deterministic engine stream.
         let roll = |wiring: &mut Self, lo: i32, hi: i32| -> f32 {
             let span = (hi - lo).max(1);
-            (wiring.faulty_next(span) + lo) as f32
+            (wiring.rand_next(span) + lo) as f32
         };
         match variant {
             // `Wiring.cs:1772-1801`: the shared `CheckMech(200)` arm.
@@ -1051,7 +1050,7 @@ impl Wiring {
     /// `Utils.SelectRandom(Main.rand, choices)` (`Utils.cs:2459-2462`): exactly one roll of
     /// the engine stream into the C# id list — duplicate entries carry the weights.
     fn select_random(&mut self, choices: &[i16]) -> i16 {
-        let index = self.faulty_next(choices.len() as i32);
+        let index = self.rand_next(choices.len() as i32);
         choices[index as usize]
     }
 
@@ -1364,9 +1363,9 @@ impl Wiring {
         }
         self.snowball_cannon_cooldown = 15;
         // `:1400-1402`: the three rolls, in this order.
-        let speed = 12.0 + self.faulty_next(450) as f32 * 0.01;
-        let mut vx = self.faulty_next_range(85, 105) as f32;
-        let vy = self.faulty_next_range(-35, 11) as f32;
+        let speed = 12.0 + self.rand_next(450) as f32 * 0.01;
+        let mut vx = self.rand_next_range(85, 105) as f32;
+        let vy = self.rand_next_range(-35, 11) as f32;
         // `:1405-1409`: the left variant fires backwards from 12 px further left.
         let mut vector_x = (num53 + 2) as f32 * 16.0 - 8.0;
         let vector_y = (num54 + 2) as f32 * 16.0 - 8.0;
@@ -1455,7 +1454,7 @@ impl Wiring {
             y -= 1;
         }
         // `:62189-62193`: `415 + Next(4)`, no damage, straight up.
-        let kind = 415 + self.faulty_next(4) as u16;
+        let kind = 415 + self.rand_next(4) as u16;
         self.device_shots.push(DeviceShot {
             kind,
             x: x as f32 * 16.0 + 16.0,
@@ -1485,7 +1484,7 @@ impl Wiring {
             return;
         }
         // `:1540-1544`: `419 + Next(4)`, anchored at the fountain tile.
-        let kind = 419 + self.faulty_next(4) as u16;
+        let kind = 419 + self.rand_next(4) as u16;
         self.device_shots.push(DeviceShot {
             kind,
             x: num70 as f32 * 16.0 + 8.0,
@@ -1637,9 +1636,11 @@ impl Wiring {
         }
     }
 
-    /// `Main.rand.Next(lo, hi)` on the engine stream: uniform in `lo..hi`.
-    fn faulty_next_range(&mut self, lo: i32, hi: i32) -> i32 {
-        self.faulty_next((hi - lo).max(1)) + lo
+    /// `Main.rand.Next(lo, hi)` (`Utilities/UnifiedRandom.cs:120-132`) — the
+    /// snowball cannon speeds (`Wiring.cs:1394-1396`) and the trap spreads
+    /// (`:1849-1850`/`:1956-1957`): uniform in `lo..hi`.
+    fn rand_next_range(&mut self, lo: i32, hi: i32) -> i32 {
+        self.rand.next_range(lo, hi.max(lo))
     }
 
     /// The player-teleportation suppress flag (`Wiring.cs:3126` guard); the
@@ -1826,7 +1827,7 @@ impl Wiring {
                         if num3 == 0 || num2 == 0 {
                             flag7 = false;
                         }
-                        flag7 = self.faulty_next(num2) < num3;
+                        flag7 = self.rand_next(num2) < num3;
                     }
                     if flag5 {
                         flag7 = false;
@@ -2587,7 +2588,7 @@ mod tests {
         w.wires.set(10, 20, WireColor::Red, true);
         w.wires.set(10, 19, WireColor::Red, true);
         let mut wiring = Wiring::new();
-        wiring.seed_faulty_rng(0xC0FF_EE00);
+        wiring.seed_rand(0xC0FF_EE00);
         wiring.hit_wire_single(&mut w, 10, 19);
         wiring.logic_gate_pass(&mut w);
         let f = gate_frame(&w);
@@ -2599,10 +2600,39 @@ mod tests {
         w2.wires.set(10, 20, WireColor::Red, true);
         w2.wires.set(10, 19, WireColor::Red, true);
         let mut wiring2 = Wiring::new();
-        wiring2.seed_faulty_rng(0xC0FF_EE00);
+        wiring2.seed_rand(0xC0FF_EE00);
         wiring2.hit_wire_single(&mut w2, 10, 19);
         wiring2.logic_gate_pass(&mut w2);
         assert_eq!(f, gate_frame(&w2), "the faulty roll is deterministic");
+    }
+
+    #[test]
+    fn the_wire_rolls_come_from_the_unified_random_stream() {
+        // Every wiring draw is `Main.rand.Next(...)`, and `Main.rand` is a
+        // `UnifiedRandom` (`Utilities/UnifiedRandom.cs`): the faulty-lamp share
+        // (`Wiring.cs:811`), `Utils.SelectRandom`'s fills
+        // (`:2167`/`:2229`/`:2251`/`:2354`), the cannon/firework variants
+        // (`:1393`/`:1472`/`:1543`) and the trap spreads
+        // (`:1849-1850`/`:1956-1957`). The port must draw from that generator,
+        // not its old xorshift stand-in: a `Wiring` seeded with `seed` must roll
+        // exactly what a `UnifiedRandom` seeded with the same `seed` rolls.
+        let seed = 0x1234_5678u64;
+        let mut w = Wiring::new();
+        w.seed_rand(seed);
+        let mut oracle = UnifiedRandom::new(seed as i32);
+        // `Main.rand.Next(n)`: the faulty-lamp share (`:811`), the
+        // `SelectRandom` fill (`:2167`) and the cannon speed (`:1393`).
+        assert_eq!(w.rand_next(100), oracle.next_max(100));
+        assert_eq!(w.rand_next(6), oracle.next_max(6));
+        assert_eq!(w.rand_next(450), oracle.next_max(450));
+        // `Main.rand.Next(lo, hi)`: the cannon speeds (`:1394-1396`) and the
+        // trap spreads (`:1849-1850`/`:1956-1957`).
+        assert_eq!(w.rand_next_range(85, 105), oracle.next_range(85, 105));
+        assert_eq!(w.rand_next_range(-35, 11), oracle.next_range(-35, 11));
+        // The floor/ceiling spread is drawn as `Next(-20, 21)`; the port writes
+        // it as `Next(41) - 20`, which is the same draw (`next_range(lo, hi)`
+        // == `next_max(hi - lo) + lo`).
+        assert_eq!(w.rand_next(41) - 20, oracle.next_range(-20, 21));
     }
 
     #[test]
@@ -3229,12 +3259,12 @@ mod statue_tests {
         // the same stream state.
         let seed = 0x5EED_1351;
         let mut tripped = Wiring::new();
-        tripped.seed_faulty_rng(seed);
+        tripped.seed_rand(seed);
         let mut w = world_with_statue(51, 0);
         tripped.trip_wire(&mut w, 9, 20, 1, 1);
         let spawns = tripped.take_statue_spawns();
         let mut manual = Wiring::new();
-        manual.seed_faulty_rng(seed);
+        manual.seed_rand(seed);
         let rolled = manual.select_random(&[299, 538]);
         assert_eq!(
             spawns,
@@ -3246,25 +3276,25 @@ mod statue_tests {
             }]
         );
         assert_eq!(
-            tripped.faulty_rng, manual.faulty_rng,
+            tripped.rand, manual.rand,
             "the trigger consumed exactly one roll"
         );
         // The roll precedes the gate: a cooldown-blocked style STILL rolls
         // (`Wiring.cs:2166-2168` runs before `:2266`).
         let mut once = Wiring::new();
-        once.seed_faulty_rng(seed);
+        once.seed_rand(seed);
         let mut w1 = world_with_statue(51, 0);
         once.trip_wire(&mut w1, 9, 20, 1, 1);
         once.take_statue_spawns();
         let mut twice = Wiring::new();
-        twice.seed_faulty_rng(seed);
+        twice.seed_rand(seed);
         let mut w2 = world_with_statue(51, 0);
         twice.trip_wire(&mut w2, 9, 20, 1, 1);
         twice.take_statue_spawns();
         twice.trip_wire(&mut w2, 9, 20, 1, 1);
         assert!(twice.take_statue_spawns().is_empty());
         assert_ne!(
-            once.faulty_rng, twice.faulty_rng,
+            once.rand, twice.rand,
             "the blocked second hit rolled too"
         );
     }
@@ -3289,11 +3319,11 @@ mod statue_tests {
         w.wires.set(14, 20, WireColor::Red, true);
         let seed = 0x51_5151;
         let mut wiring = Wiring::new();
-        wiring.seed_faulty_rng(seed);
+        wiring.seed_rand(seed);
         wiring.trip_wire(&mut w, 9, 20, 1, 1);
         let spawns = wiring.take_statue_spawns();
         let mut manual = Wiring::new();
-        manual.seed_faulty_rng(seed);
+        manual.seed_rand(seed);
         let first = manual.select_random(&[299, 538]);
         let second = manual.select_random(&[299, 538]);
         assert_eq!(
@@ -3313,7 +3343,7 @@ mod statue_tests {
                 },
             ]
         );
-        assert_eq!(wiring.faulty_rng, manual.faulty_rng, "two rolls total");
+        assert_eq!(wiring.rand, manual.rand, "two rolls total");
     }
 
     #[test]
@@ -3385,25 +3415,25 @@ mod statue_tests {
         // non-rolling style consumes none).
         let seed = 0xAB_C1;
         let mut blocked = Wiring::new();
-        blocked.seed_faulty_rng(seed);
+        blocked.seed_rand(seed);
         let mut w = world_with_statue(71, 0);
         put_solid(&mut w, 8, 21);
         blocked.trip_wire(&mut w, 9, 20, 1, 1);
         assert!(blocked.take_statue_spawns().is_empty());
         let mut once = Wiring::new();
-        once.seed_faulty_rng(seed);
+        once.seed_rand(seed);
         let mut w2 = world_with_statue(71, 0);
         once.trip_wire(&mut w2, 9, 20, 1, 1);
         assert_eq!(
-            blocked.faulty_rng, once.faulty_rng,
+            blocked.rand, once.rand,
             "the blocked pigron rolled exactly once"
         );
         let mut plain = Wiring::new();
-        plain.seed_faulty_rng(seed);
+        plain.seed_rand(seed);
         let mut w3 = world_with_statue(64, 0);
         plain.trip_wire(&mut w3, 9, 20, 1, 1);
         assert_ne!(
-            blocked.faulty_rng, plain.faulty_rng,
+            blocked.rand, plain.rand,
             "style 64 consumes no roll"
         );
     }
@@ -3428,7 +3458,7 @@ mod statue_tests {
         ] {
             let mut w = world_with_statue(style, 0);
             let mut wiring = Wiring::new();
-            wiring.seed_faulty_rng(seed);
+            wiring.seed_rand(seed);
             wiring.trip_wire(&mut w, 9, 20, 1, 1);
             let spawns = wiring.take_statue_spawns();
             assert_eq!(spawns.len(), 1, "style {style} spawns");
@@ -3449,7 +3479,7 @@ mod statue_tests {
             assert!(choices.contains(&npc_id), "style {style} picked {npc_id}");
             let mut w2 = world_with_statue(style, 0);
             let mut wiring2 = Wiring::new();
-            wiring2.seed_faulty_rng(seed);
+            wiring2.seed_rand(seed);
             wiring2.trip_wire(&mut w2, 9, 20, 1, 1);
             assert_eq!(
                 wiring2.take_statue_spawns(),
@@ -3513,12 +3543,12 @@ mod statue_tests {
         // hit consumes none (unlike the first table's arms).
         let seed = 0xB1_1D_28;
         let mut wiring = Wiring::new();
-        wiring.seed_faulty_rng(seed);
+        wiring.seed_rand(seed);
         let mut w = world_with_statue(28, 0);
         wiring.trip_wire(&mut w, 9, 20, 1, 1);
         let spawns = wiring.take_statue_spawns();
         let mut manual = Wiring::new();
-        manual.seed_faulty_rng(seed);
+        manual.seed_rand(seed);
         let npc_id = manual.select_random(&[74, 297, 298]);
         assert_eq!(
             spawns,
@@ -3529,11 +3559,11 @@ mod statue_tests {
                 cap_ids: &[74],
             }]
         );
-        assert_eq!(wiring.faulty_rng, manual.faulty_rng);
+        assert_eq!(wiring.rand, manual.rand);
         wiring.trip_wire(&mut w, 9, 20, 1, 1);
         assert!(wiring.take_statue_spawns().is_empty());
         assert_eq!(
-            wiring.faulty_rng, manual.faulty_rng,
+            wiring.rand, manual.rand,
             "the blocked arm consumed no roll"
         );
     }
@@ -4164,9 +4194,9 @@ mod trap_tests {
     /// (`Next(-20, 21)` → span 41), then `speedY` (`Next(0, 21)` → span 21).
     fn ceiling_rolls(seed: u64) -> (f32, f32) {
         let mut wiring = Wiring::new();
-        wiring.seed_faulty_rng(seed);
-        let sx = (wiring.faulty_next(41) - 20) as f32 * 0.05;
-        let sy = 4.0 + wiring.faulty_next(21) as f32 * 0.05;
+        wiring.seed_rand(seed);
+        let sx = (wiring.rand_next(41) - 20) as f32 * 0.05;
+        let sy = 4.0 + wiring.rand_next(21) as f32 * 0.05;
         (sx, sy)
     }
 
@@ -4180,7 +4210,7 @@ mod trap_tests {
         let mut w = world();
         put_trap(&mut w, 10, 20, 0, -126);
         let mut wiring = Wiring::new();
-        wiring.seed_faulty_rng(7);
+        wiring.seed_rand(7);
         wiring.trip_wire(&mut w, 8, 20, 1, 1);
         let reqs = wiring.take_trap_requests();
         assert_eq!(reqs.len(), 2, "F2: the ceiling fires twice");
@@ -4203,10 +4233,10 @@ mod trap_tests {
         // second request and no draw in the flood: the next draw continues
         // the replayed stream.
         let mut replay = Wiring::new();
-        replay.seed_faulty_rng(7);
-        replay.faulty_next(41);
-        replay.faulty_next(21);
-        assert_eq!(wiring.faulty_next(41), replay.faulty_next(41));
+        replay.seed_rand(7);
+        replay.rand_next(41);
+        replay.rand_next(21);
+        assert_eq!(wiring.rand_next(41), replay.rand_next(41));
     }
 
     #[test]
@@ -4555,13 +4585,13 @@ mod device_tests {
         // fires backwards from 12 px further left, and the speed normalization
         // keeps the magnitude at the rolled speed.
         let mut probe = Wiring::new();
-        probe.seed_faulty_rng(42);
-        let speed = 12.0 + probe.faulty_next(450) as f32 * 0.01;
-        let vx = probe.faulty_next_range(85, 105) as f32 * -1.0;
-        let vy = probe.faulty_next_range(-35, 11) as f32;
+        probe.seed_rand(42);
+        let speed = 12.0 + probe.rand_next(450) as f32 * 0.01;
+        let vx = probe.rand_next_range(85, 105) as f32 * -1.0;
+        let vy = probe.rand_next_range(-35, 11) as f32;
         let norm = (vx * vx + vy * vy).sqrt();
         let (mut wiring, mut w) = rig(212, 18, 0); // column 1, left half
-        wiring.seed_faulty_rng(42);
+        wiring.seed_rand(42);
         let shots = trip(&mut wiring, &mut w);
         assert_eq!(shots.len(), 1, "the snowball fires");
         let shot = shots[0];
@@ -4641,8 +4671,8 @@ mod device_tests {
         // constant).
         let (mut a, mut wa) = rig(335, 0, 0);
         let (mut b, mut wb) = rig(335, 0, 0);
-        a.seed_faulty_rng(7);
-        b.seed_faulty_rng(7);
+        a.seed_rand(7);
+        b.seed_rand(7);
         assert_eq!(
             trip(&mut a, &mut wa)[0].kind,
             trip(&mut b, &mut wb)[0].kind,
