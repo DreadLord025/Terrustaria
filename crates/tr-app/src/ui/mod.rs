@@ -676,7 +676,7 @@ pub fn draw_hud(
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
     ingame_options: Option<(&Settings, &ingame_options::IngameOptions)>,
-    shop: Option<(&[u16], f32)>,
+    shop: Option<(&[crate::shop::ShopEntry], f32, bool)>,
     chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
     bank: Option<(&[ItemSlot], i32)>,
@@ -800,12 +800,15 @@ pub fn draw_hud(
         // happiness-adjusted prices in a text column above the inventory
         // grid (the vanilla draws the item slots at (406, 258+); the slot
         // frames land with the slot-work pass).
-        if let Some((stock, mood)) = shop {
+        if let Some((stock, mood, discount)) = shop {
             text::hud_text(r, lookups, 40.0, 34.0, 0.85, [1.0; 4], "Shop");
-            for (i, id) in stock.iter().enumerate().take(10) {
+            for (i, entry) in stock.iter().enumerate().take(10) {
                 let y = 50.0 + i as f32 * 16.0;
-                let def = &crate::itemdata::ITEMS[*id as usize];
-                let price = crate::shop::buy_price(*id, mood);
+                let def = &crate::itemdata::ITEMS[entry.item as usize];
+                // The displayed price follows `Main.cs:20457`: buyOnce/
+                // isAShopItem rows show the buying value, the rest the
+                // selling value.
+                let price = crate::shop::display_price_row(entry, discount, mood);
                 text::hud_text(
                     r,
                     lookups,

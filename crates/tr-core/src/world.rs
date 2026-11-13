@@ -42,6 +42,22 @@ pub struct World {
     pub tiles: Vec<Tile>,
     /// `Main.tileFrameImportant`: tile types whose frames are stored in the save file.
     pub frame_important: Vec<bool>,
+    /// Per-tile framing variants packed 2+2 bits — `Tile.bTileHeader2` bits 4-5
+    /// (`frameNumber`) and bits 6-7 (`wallFrameNumber`) (`Tile.cs:464-482`).
+    /// Keyed by `index(x, y)`: `frameNumber | wallFrameNumber << 2`. These are
+    /// runtime-only fields in the C# (`SaveWorldTiles` `WorldFile.cs:1432-1604`
+    /// never writes them), rolled from `WorldGen.genRand.Next(0, 3)` when a
+    /// framing event resets (`WorldGen.cs:81705-81729`, `Framing.cs:318-321`,
+    /// `Framing.cs:390-396`) and reused from storage otherwise.
+    pub variants: Vec<u8>,
+    /// The runtime reset-roll stream of the framing variants — the port's
+    /// `WorldGen.genRand` stand-in for `SquareTileFrame`'s centre re-roll
+    /// (`WorldGen.cs:81705-81709`, `Framing.cs:389-395`), the same shape as
+    /// [`crate::wiring::WireState`]'s `rand` (S1-L-6c). Vanilla reseeds
+    /// `Main.rand` from the clock on load, so the runtime rolls are not
+    /// reproducible there; the port seeds deterministically from the world seed
+    /// via [`World::seed_frame_rng`].
+    pub frame_rng: crate::unified_random::UnifiedRandom,
     /// Y of the first solid tile at the center of the map (approx. spawn altitude).
     pub spawn_y: i32,
     /// The bed spawn override (`Player.SpawnX/SpawnY`, `Player.cs:54635`'s
@@ -107,11 +123,24 @@ pub struct World {
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
-    /// `Main.eclipse` — runtime event flag; no M1 event sets it (readers:
-    /// `AmbienceServer.cs:34`, `:66`). Runtime-only, not saved.
+    /// `Main.eclipse` — the hardmode event flag (readers: `AmbienceServer
+    /// .cs:34`, `:66`). Persisted in the flags block — the C# writes the
+    /// save-time snapshot `_tempEclipse` (`WorldFile.cs:1280`).
     pub eclipse: bool,
-    /// `Main.bloodMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
+    /// `Main.bloodMoon` (`AmbienceServer.cs:50`); persisted the same way
+    /// (`_tempBloodMoon`, `WorldFile.cs:1279`).
     pub blood_moon: bool,
+    /// `Main.raining` / `Main.rainTime` / `Main.maxRaining` — the rain
+    /// event's persisted state. The C#'s flag block writes the save-time
+    /// snapshot (`_tempRaining`/`_tempRainTime`/`_tempMaxRain`,
+    /// `WorldFile.cs:1312-1314`; `SetTempToOngoing` `:1058-1060` copies the
+    /// live values before the write) and `SetOngoingToTemps` (`:159-162`)
+    /// restores them on load — `Main.cloudAlpha` comes back as `maxRaining`.
+    /// The live state lives on the App's `Rain` (`tr-app/src/rain.rs`);
+    /// these are the file payload the save path syncs both ways (S1-J-7).
+    pub raining: bool,
+    pub rain_time: i32,
+    pub max_raining: f32,
     /// `CurrentFrameFlags.SleepingPlayersCount == ActivePlayersCount &&
     /// SleepingPlayersCount > 0` (`Main.cs:17856-17859` → `UpdateTimeRate`'s
     /// all-asleep flag, `Main.cs:6209`): every present player is fully asleep
@@ -240,7 +269,6 @@ pub struct World {
     /// `NPC.downedMoonlord` — the final boss beaten (halves the shield max).
     pub downed_moon_lord: bool,
     /// `NPC.downedAncientCultist` (`NPC.cs:79393`): the cultist beaten.
-
     pub downed_ancient_cultist: bool,
 
     /// `NPC.LunarApocalypseIsUp` (`NPC.cs:6419`) — the towers' apocalypse
@@ -251,7 +279,7 @@ pub struct World {
     /// (`StartImpendingDoom`'s writes, `Main.cs:64987`'s tick).
     pub moon_lord_countdown: i32,
     pub max_moon_lord_countdown: i32,
-        /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
+    /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
     pub tower_active_solar: bool,
     pub tower_active_vortex: bool,
     pub tower_active_nebula: bool,
@@ -393,6 +421,8 @@ impl World {
             width,
             height,
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
+            variants: vec![0; (width as usize) * (height as usize)],
+            frame_rng: crate::unified_random::UnifiedRandom::new(0),
             wires: crate::wiring::WireState::default(),
             tile_entities: crate::tile_entities::TileEntities::default(),
             signs: Vec::new(),
@@ -458,6 +488,9 @@ impl World {
             extras: std::collections::HashMap::new(),
             eclipse: false,
             blood_moon: false,
+            raining: false,
+            rain_time: 0,
+            max_raining: 0.0,
             all_players_asleep: false,
             pumpkin_moon: false,
             snow_moon: false,
@@ -774,6 +807,47 @@ impl World {
     #[inline]
     pub fn extras_at(&self, idx: usize) -> u8 {
         self.extras.get(&(idx as u32)).copied().unwrap_or(0)
+    }
+
+    /// Seeds the framing reset-roll stream from the world seed (the port's
+    /// `genRand` stand-in — vanilla seeds `Main.rand` from the clock on load,
+    /// `Main.cs:6461-6463`, so its runtime rolls are not reproducible; the
+    /// wiring engine carries the same world-seeded shape). Call once per
+    /// generated or loaded world, before any edit can reframe.
+    pub fn seed_frame_rng(&mut self) {
+        self.frame_rng = crate::unified_random::UnifiedRandom::new(self.seed as i32);
+    }
+
+    /// `Tile.frameNumber()` (`Tile.cs:464-470`, `bTileHeader2` bits 4-5).
+    #[inline]
+    pub fn frame_number(&self, idx: usize) -> u8 {
+        self.variants.get(idx).copied().unwrap_or(0) & 0x3
+    }
+
+    /// `Tile.frameNumber(byte)` (`Tile.cs:468-470`).
+    #[inline]
+    pub fn set_frame_number(&mut self, idx: usize, n: u8) {
+        let slot = self
+            .variants
+            .get_mut(idx)
+            .expect("variants sized with the tile grid");
+        *slot = (*slot & !0x3) | (n & 0x3);
+    }
+
+    /// `Tile.wallFrameNumber()` (`Tile.cs:472-478`, `bTileHeader2` bits 6-7).
+    #[inline]
+    pub fn wall_frame_number(&self, idx: usize) -> u8 {
+        (self.variants.get(idx).copied().unwrap_or(0) >> 2) & 0x3
+    }
+
+    /// `Tile.wallFrameNumber(byte)` (`Tile.cs:476-478`).
+    #[inline]
+    pub fn set_wall_frame_number(&mut self, idx: usize, n: u8) {
+        let slot = self
+            .variants
+            .get_mut(idx)
+            .expect("variants sized with the tile grid");
+        *slot = (*slot & !0xC) | ((n & 0x3) << 2);
     }
 
     #[inline]

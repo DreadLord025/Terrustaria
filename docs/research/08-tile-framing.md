@@ -105,25 +105,28 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 - No test pins the `frameNumber`/`wallFrameNumber` variant question, and no golden
   `.wld`-load framing test exists.
 
-## Deviations & risks
+- **~~`frameNumber` is a hash, not the stored/RNG value~~ — RESOLVED by S1-A-3 (2026-11-13)** with a
+   correction: the claim above that the C# "stores per-tile `frameNumber`/`wallFrameNumber`
+   in the save" is **wrong** — `SaveWorldTiles` (`WorldFile.cs:1432-1604`) and
+   `LoadWorldTiles` (`:2519-2685`) never touch those bits; they live only in the runtime
+   `Tile.bTileHeader2` bits 4-7 (`Tile.cs:464-482`) and reset on load. The port now carries
+   the same mechanism: `World::variants` (2+2 bits), the reset roll from per-band
+   `UnifiedRandom` streams in the full passes and `World::frame_rng` at the edit sites
+   (the ANALYSIS "Autotiling" section records the deliberate stream deviations), the
+   phlebas/lazure wall lookups with their re-store (which exposed the missing fourth
+   `wallFrameLookup` column) and the wall-21 quirk. The hash functions are gone
+   (framing.rs no longer has `variant`/`wall_variant`).
 
-- **`frameNumber` is a hash, not the stored/RNG value** (framing.rs:134-146, :1095-1103) —
-   *determinism/pixel*. C# stores per-tile `frameNumber`/`wallFrameNumber` in the save
-   (`Tile.cs:464-482`) and re-rolls them from `WorldGen.genRand` when framing
-   (`Framing.cs:319`, `:390-395`). The port admits "we do not decode that field yet" and
-   substitutes an avalanche hash, so a port of an original world reframes non-important
-   tiles with a different variant pattern than the original binary (visually plausible,
-   byte-different from reference screenshots). Internally deterministic. Not admitted in
-   ANALYSIS as a fidelity gap beyond the code comment.
 - **`Framing.SelfFrame8Way` not ported** — *behavioural*. Its only caller is
   `WorldGen.cs:84833` for ids 255-268; those tile ids get the generic merge path in the
   port (no `self_frame` symbol exists). Touched ids include torch/statue-family frames.
 - **`WallFrame` incomplete** — *behavioural/pixel*. Missing: the `TruncatesWalls[tile.type]`
   neighbour condition (`Framing.cs:348/356/364/372`), the `ShouldShowInvisibleBlocksAndWalls`
-  / `invisibleWall()` gate (`:344`), the `wallLargeFrames == 1/2` phlebas/lazure arms
-  (`:378-387`), the wall-21 third-variant roll (`:391-394`), and the `wall == 0` →
+  / `invisibleWall()` gate (`:344`), and the `wall == 0` →
   `wallColor(0)` + `ClearWallPaintAndCoating()` reset (`:337-342`). Consequence: walls
-  behind echo-coated/invisible blocks and large-frame walls frame one variant off.
+  behind echo-coated/invisible blocks frame one variant off. (S1-A-3 landed the rest of
+  this list: the `wallLargeFrames == 1/2` phlebas/lazure arms with their re-store and
+  the wall-21 third-variant roll.)
 - **Wiring + coatings moved out of `Tile`** — *cosmetic/structural*. `WireState` uses four
   `HashSet<(i32,i32)>` (`wiring.rs:91-96`) and wall paint/coatings use
   `World::extras: HashMap<u32,u8>` (`world.rs:20`, `wld/mod.rs:460-511`). Memory/perf

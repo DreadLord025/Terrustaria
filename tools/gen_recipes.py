@@ -39,9 +39,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# The decompiled tree is a local (untracked) reference; it lives in the main
-# checkout next to the worktrees.
-DECOMP = Path(r"C:/Users/DreadLord/Desktop/Terraria-Rust/decompiled") / "Terraria"
+# The decompiled tree is a local (untracked) reference — reached through the
+# checkout's own `decompiled` junction (a fresh worktree creates it per
+# AGENTS.md; a junction-less checkout fails loudly instead of silently
+# reading another checkout's tree). S1-L-11e / research-21 D8.
+DECOMP = ROOT / "decompiled" / "Terraria"
 OUT = ROOT / "crates" / "tr-app" / "src" / "recipes_gen.rs"
 
 FLAG_MAP = {

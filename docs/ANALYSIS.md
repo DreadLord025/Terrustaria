@@ -220,10 +220,43 @@ multiplayer-client path, never a single-player or menu one (research/42, finding
 
 ## Autotiling
 
-`num6` / `Tile.frameNumber` **is not stored in the save file** (the tile header only carries
-frame X/Y for important tiles). Both `frameNumber` and the wall variant are generated at
-load time in the original and always from `WorldGen.genRand`; we replace them with a
-deterministic per-position hash, which is why two loads of the same world look identical.
+`num6` / `Tile.frameNumber` and `wallFrameNumber` **are not stored in the save file** (the
+tile header only carries frame X/Y for important tiles; `SaveWorldTiles`
+`WorldFile.cs:1432-1604` never writes the runtime `bTileHeader2` bits 4-7 —
+S1-A-3 verified the claim in `docs/research/08-tile-framing.md`'s deviation row that they
+are "stored in the save" is wrong). The C# keeps them in the runtime `Tile.bTileHeader2`
+(`Tile.cs:464-482`), rolls them from `WorldGen.genRand.Next(0, 3)` at reset events
+(`TileFrame`'s `resetFrame` arm, `WorldGen.cs:81705-81709`; `Framing.WallFrame`'s,
+`Framing.cs:389-395`) and reuses the stored value otherwise (`:81713`, `Framing.cs:399`).
+
+The port (S1-A-3) follows the same mechanism — no position hash anywhere:
+
+- **Storage**: `World::variants` packs the two 2-bit fields per tile (`bTileHeader2`
+  bits 4-7 verbatim); `Tile` stays 12 bytes.
+- **The full-world passes** (`frame_world`/`frame_walls` — the app's load-time and
+  worldgen framing) roll one `UnifiedRandom::Next(0, 3)` per framed tile **in band
+  order** and store it, mirroring the reset arm. **Deviation (deliberate):** the C#
+  frames incrementally during worldgen with `genRand` draws interleaved between every
+  other pass; the port frames in one parallel pass, so a shared sequential stream is
+  impossible — each 128-row band seeds its own stream `seed + band_index` instead
+  (the same per-pass stand-in M5-GEN-1 documents). Same seed → same bands → identical
+  frames; the variants will still differ from a C# world's until S1-A-7's parity work.
+- **Edit reframes** (`reframe_area` = `SquareTileFrame(i, j, resetFrame)` with the
+  default `true`, `WorldGen.cs:80185`): the centre tile/wall re-rolls from
+  `World::frame_rng` (a `UnifiedRandom` seeded from the world seed — vanilla seeds
+  `Main.rand` from the clock on load, `Main.cs:6461-6463`, so the port's deterministic
+  seeding is *stricter* than vanilla, per the S1-L-6c wiring precedent); the ring
+  re-frames with the stored values. Per-site `reset` flags follow each call site's C#
+  counterpart (`SquareTileFrame` default true at place/kill tails, plain `TileFrame`
+  default false at the door loops and `RangeFrame`).
+- **The large-frame lookups** replace the variant per position exactly as the C#:
+  tiles `tileLargeFrames` 1/2 (`WorldGen.cs:81719-81729`, override without re-storing
+  — the roll stays in the field), walls `wallLargeFrames` 1 (phlebas) / 2 (lazure)
+  (`Framing.cs:378-388`, override WITH re-storing — the lookup value lands in the
+  field and can be 3, hence `wallFrameLookup`'s fourth column per row).
+- **Wall 21 quirk** (`Framing.cs:390-394`): the reset roll draws `Next(0, 3)` then
+  `Next(2)` and forces variant 2 half the time — the extra draw is consumed only for
+  wall 21 (the RNG-order contract).
 
 Ported pieces (`tr-core/src/framing.rs`):
 
@@ -235,11 +268,12 @@ Ported pieces (`tr-core/src/framing.rs`):
    `NeedsGrassFraming` (+ `NeedsGrassFramingDirt`), `OreMergesWithMud`, moss/moss-brick,
    `BlockMergesWithMergeAllBlock`, plus 2 228 directed pairs extracted mechanically from the
    per-type `switch (num)` cases in `TileFrameCosmetic`.
-3. **Wall frames** — the complete `wallFrameLookup` (20 masks × 3 variants),
+3. **Wall frames** — the complete `wallFrameLookup` (20 masks × 4 variants),
    `centerWallFrameLookup` and the 36 px cell geometry; comparisons use the wall's own
    visibility rules minus invisible walls.
-4. **Large frames** — `Main.tileLargeFrames` 1 (4-row pattern) and 2 (2×2 pattern) override
-   the variant instead of using the hash.
+4. **Large frames** — `Main.tileLargeFrames` 1 (4-row pattern) and 2 (2×2 pattern)
+   override the rolled/stored variant, and `Main.wallLargeFrames` 1 (phlebas) / 2
+   (lazure) do the same for walls (S1-A-3).
 5. **Grass family** — the full `TileFrameCosmetic` grass path (`WorldGen.cs:82184-84836`):
    the merge preparation (dirt normalisation, grass↔ore, the Weird merge of non-solid
    neighbours into "open"), the base selection (`NeedsGrassFramingDirt`, mud for jungle
@@ -6426,13 +6460,15 @@ near the table. The discount itself: `GetIngredientCraftingDiscount`
 consumed stacks — the availability check counts full stacks (the split is
 the vanilla's). Port: `try_craft` subtracts the rolled-off units from each
 requirement's drain (group entries discount on the folded stack), the rolls
-come from the App's `craft_rng` stream (the per-consumer RNG convention —
-vanilla rolls the shared `Main.rand`; the seed is fixed like the other
-streams, so crafting is seed-deterministic). The subset gains the two
-placed-bottle potions: Lesser Healing Potion ×2 (1 Mushroom + 2 Gel +
-2 Bottle, `Recipe.cs:1586-1597`) and Healing Potion (2 LHP +
-1 Glowing Mushroom, `:1606-1611`). The 1/3 rolls consume stream state, so
-the discount depends on every prior craft — the documented determinism
+come from the App's `craft_rng` stream — since S1-L-11e the exact C#
+`UnifiedRandom` generator (the splitmix stand-in is gone), seeded per world
+`world_seed | 1` like the wiring RNG (vanilla rolls the shared `Main.rand`
+seeded from the clock, `Main.cs:6461-6463`; the shared-stream interleave is
+the port-wide S1-A-11 residual, so crafting is seed-deterministic). The
+subset gains the two placed-bottle potions: Lesser Healing Potion ×2 (1
+Mushroom + 2 Gel + 2 Bottle, `Recipe.cs:1586-1597`) and Healing Potion (2
+LHP + 1 Glowing Mushroom, `:1606-1611`). The 1/3 rolls consume stream state,
+so the discount depends on every prior craft — the documented determinism
 caveat mirrors the vanilla (Main.rand's shared stream).
 ## Hardmode switch (M5-HARDFORCE)
 
@@ -11675,3 +11711,39 @@ deviation: `SortInventory`'s `withSync` half (`:1669-1679`) is a
 `NetMessage.SendData` loop gated on `Main.netMode == 1`, and the port is
 single-player, so only the sort runs.
 
+
+## The shop price chain (S1-C-11, 2026-11-13)
+
+`Item.GetStoreValue` (`Item.cs:49901-49908`), `Player.GetItemExpectedPrice`
+(`Player.cs:35359-35396`) and `Player.SellItem`'s per-item math
+(`:35168-35192`) are ported 1:1 into `crates/tr-app/src/shop.rs`
+(`get_store_value`, `get_item_expected_price`, `sell_price`), with the stock
+row (`ShopEntry`) carrying the C# instance's per-row price fields
+(`shopCustomPrice`/`buyOnce`/`isAShopItem` — the vanilla stamps them on the
+stock *instances*: `Chest.cs:2972-3149`, `Chest.cs:701`,
+`Chest.cs:3538-3541`). The buy charge is `calcForBuying`
+(`UI/ItemSlot.cs:2059-2060`, `app/mod.rs::buy_shop_item`); the displayed
+price follows `Main.cs:20457` verbatim — buyOnce/isAShopItem rows display
+the buying value, every other row the *selling* value, so the two diverge
+whenever `PriceAdjustment != 1` (a vanilla display quirk, not a port bug).
+
+Three scope notes, none of which change the ported numbers:
+
+- **The `shopSpecialCurrency != -1` arm is not ported** (`:35361-35365`):
+  it routes to `CustomCurrencyManager.GetPrices` — the defender-medal
+  currency system (`Chest.cs:2987+`, the Tavernkeep's DD2 rows) is not in
+  the port yet. Those rows must not reach the price helper until that
+  subsystem lands; the ported shops (case 1 and the rest of M4-TOWN) never
+  set the field.
+- **`discountAvailable` has no writer yet**: the C# refreshes it from
+  `discountEquipped` (`Player.cs:25638`), which the Discount Card accessory
+  sets (`:14973`/`:14995`). The equipment/update-equips pass is S1-C-12;
+  `App::discount_available` defaults `false` (the exact pre-Discount-Card
+  state) and the price arms already consume it.
+- **The f32 casts are part of the contract**: the discount multiply
+  truncates through the C#'s `(int)` cast (no rounding — 7 × 0.8f = 5, not
+  6), the adjustment multiply/divide round through `Math.Round`'s
+  banker's rounding on f32, and `SellItem` divides by 5 *after* that round
+  (`40000 @ 0.75` sells for 10666, not the 10667 the old port printed by
+  dividing first). Golden vectors pin every arm in
+  `shop.rs::tests`.

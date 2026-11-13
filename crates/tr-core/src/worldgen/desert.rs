@@ -770,7 +770,7 @@ fn place_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
 
 /// `CleanupArea` (`DesertBiome.cs:55-71`): the hive ±20 wall/tile reframe.
 fn cleanup_area(world: &mut World, hive: Rect) {
-    reframe_area(world, hive.center_x(), hive.y + hive.h / 2, hive.w / 2 + 20);
+    reframe_area(world, hive.center_x(), hive.y + hive.h / 2, hive.w / 2 + 20, true);
 }
 
 /// `Full Desert` (`WorldGen.cs:12500-12543` + `DesertBiome.Place`): one

@@ -29,6 +29,15 @@ impl App {
         // `Main.Achievements.Save()`. Achievements are global (one file, not
         // per-world), so every save route writes it before the format branch.
         self.achievements.save();
+        // `SetTempToOngoing` (`WorldFile.cs:1058-1060`, called from
+        // `InternalSaveWorld:913` before the write): the save snapshots the
+        // live rain state into the world's file payload — `SetOngoingToTemps`
+        // (`:159-162`) restores it on load. The `.trwld` v14 block carries
+        // the triple (S1-J-7); the vanilla-shaped `.wld` writer still
+        // zero-fills its rain block (the recorded M6-SAVE value subset).
+        self.world.raining = self.rain.is_raining();
+        self.world.rain_time = self.rain.rain_time();
+        self.world.max_raining = self.rain.max_raining();
         if is_native_trwld(&self.world_path) {
             // `SaveChests` (`WorldFile.cs:1606-1676`): the world chests ride the
             // same stream as the world itself — a u32 count, then per chest the
@@ -60,7 +69,11 @@ impl App {
                         .iter()
                         .map(|slot| {
                             if slot.kind == 0 || slot.count == 0 {
-                                ChestItem { stack: 0, kind: 0, prefix: 0 }
+                                ChestItem {
+                                    stack: 0,
+                                    kind: 0,
+                                    prefix: 0,
+                                }
                             } else {
                                 ChestItem {
                                     // The stack cap is `Item.maxStack`
@@ -96,7 +109,10 @@ impl App {
                 .bestiary
                 .kills
                 .pairs()
-                .map(|(id, kills)| save::BestiaryKill { credit_id: id.to_string(), kills })
+                .map(|(id, kills)| save::BestiaryKill {
+                    credit_id: id.to_string(),
+                    kills,
+                })
                 .collect();
             // `SaveNPCs`'s block B (`WorldFile.cs:1703-1750`): the live town
             // NPCs — the kind, the given name, the pixel position, the
@@ -130,7 +146,13 @@ impl App {
                 ore.mythril,
                 ore.adamantite,
             ];
-            let side = save::WorldSide { chests, banners, bestiary, npcs, ore_tiers: Some(ore_tiers) };
+            let side = save::WorldSide {
+                chests,
+                banners,
+                bestiary,
+                npcs,
+                ore_tiers: Some(ore_tiers),
+            };
             match save::save(&self.world_path, &self.world, &side) {
                 Ok(()) => log::info!("saved {}", self.world_path.display()),
                 Err(e) => log::warn!("save failed: {e:#}"),
@@ -242,13 +264,14 @@ mod tests {
     use crate::item::ItemSlot;
     use crate::registry;
     use crate::test_world_helpers::{build_furnished_room, ground};
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
     use tr_core::World;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// A per-test scratch dir under the system temp dir (tr-app has no
     /// tempfile dev-dependency — the `wld/mod.rs` tests' pattern).
     fn scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("tr-saveglue-p7-{}-{name}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("tr-saveglue-p7-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch dir");
         dir
@@ -306,8 +329,13 @@ mod tests {
         }];
         // NPCs: a housed Merchant and a homeless Nurse (the re-validation's
         // two arms), both named, one carrying the shimmer payload.
-        let mut merchant =
-            crate::npc::Npc::new(crate::npc::NpcKind::Merchant, 65.0 * 16.0, 130.0 * 16.0, 1, 0.0);
+        let mut merchant = crate::npc::Npc::new(
+            crate::npc::NpcKind::Merchant,
+            65.0 * 16.0,
+            130.0 * 16.0,
+            1,
+            0.0,
+        );
         merchant.given_name = "Hal".into();
         merchant.home = Some((65, 105));
         merchant.variation_index = 3;
@@ -325,8 +353,7 @@ mod tests {
             x: 30,
             y: 20,
         }];
-        app.world.pressure_plates =
-            vec![tr_core::wld::sections::WldPressurePlate { x: 33, y: 21 }];
+        app.world.pressure_plates = vec![tr_core::wld::sections::WldPressurePlate { x: 33, y: 21 }];
         // Tile entities: the item frame's item and the kite anchor's item type.
         let frame_id = app
             .world
@@ -409,20 +436,21 @@ mod tests {
         // --- signs (section 5): the text and its tile ----------------------
         assert_eq!(
             sections.signs,
-            vec![
-                tr_core::wld::sections::WldSign {
-                    text: "hello".into(),
-                    x: 30,
-                    y: 20
-                }
-            ]
+            vec![tr_core::wld::sections::WldSign {
+                text: "hello".into(),
+                x: 30,
+                y: 20
+            }]
         );
         // The world-state halves are the app's load job (`load_world`), so
         // call them the way the startup does and compare the store.
         let mut world = loaded.world;
         tr_core::wld::sections::signs::apply_loaded(&mut world, &sections.signs);
         assert_eq!(world.signs, sections.signs, "applied on load");
-        tr_core::wld::sections::pressure_plates::apply_loaded(&mut world, &sections.pressure_plates);
+        tr_core::wld::sections::pressure_plates::apply_loaded(
+            &mut world,
+            &sections.pressure_plates,
+        );
         assert_eq!(world.pressure_plates, sections.pressure_plates);
         // --- NPCs (section 6): both records, the town rooms, the bitmap ----
         assert_eq!(sections.npcs.town.len(), 2, "both town NPCs");
@@ -433,7 +461,10 @@ mod tests {
             (65, 105)
         );
         assert_eq!(sections.npcs.town[1].given_name, "Nurse");
-        assert!(sections.npcs.town[1].homeless, "the homeless record says so");
+        assert!(
+            sections.npcs.town[1].homeless,
+            "the homeless record says so"
+        );
         assert!(sections.npcs.town[1].homeless_despawn);
         assert_eq!(
             sections.town_rooms,
@@ -516,8 +547,7 @@ mod tests {
         assert!(path.exists(), "the first save wrote the world file");
 
         let first = std::fs::read(&path).expect("read back");
-        let table =
-            tr_core::wld::SectionTable::open(&first).expect("opens");
+        let table = tr_core::wld::SectionTable::open(&first).expect("opens");
         assert_eq!(table.metadata().revision, 1, "a first save starts at 1");
         assert_eq!(table.metadata().ty, 2, "FileType.World");
         // The written sections hold the live state (the autosave path saved
@@ -557,7 +587,10 @@ mod tests {
         assert!(loaded.sections.chests.is_empty(), "no chests");
         assert!(loaded.sections.signs.is_empty(), "no signs");
         assert!(loaded.sections.npcs.town.is_empty(), "no town NPCs");
-        assert!(loaded.sections.npcs.shimmered.is_empty(), "no shimmered NPCs");
+        assert!(
+            loaded.sections.npcs.shimmered.is_empty(),
+            "no shimmered NPCs"
+        );
         assert!(loaded.sections.tile_entities.is_empty(), "no tile entities");
         assert!(loaded.sections.pressure_plates.is_empty(), "no plates");
         assert!(loaded.sections.town_rooms.is_empty(), "no town rooms");
@@ -629,7 +662,10 @@ mod tests {
         std::fs::write(&path, &file).expect("write the legacy file");
         let loaded = tr_core::wld::load_with_sections(&path).expect("the legacy file loads");
         assert_eq!(loaded.world.name, "Legacy");
-        assert!(loaded.sections.chests.is_empty(), "no chest section present");
+        assert!(
+            loaded.sections.chests.is_empty(),
+            "no chest section present"
+        );
         assert!(loaded.sections.signs.is_empty(), "no sign section present");
         assert!(
             loaded.sections.tile_entities.is_empty(),
@@ -677,7 +713,10 @@ mod tests {
         // write appeared beside it.
         let (world, _native) = tr_core::save::load(&path).expect("reads back");
         assert_eq!(world.name, "t", "the `ground()` fixture world");
-        assert!(!dir.join("native.wld").exists(), "no `.wld` beside a `.trwld`");
+        assert!(
+            !dir.join("native.wld").exists(),
+            "no `.wld` beside a `.trwld`"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -685,14 +724,14 @@ mod chest_save_tests {
     use super::*;
     use crate::app::WorldSections;
     use crate::assets;
+    use crate::item::{EMPTY_SLOT, ItemSlot};
     use crate::npc::{Npc, NpcKind};
     use crate::player::Player;
-    use std::path::PathBuf;
-    use crate::item::{ItemSlot, EMPTY_SLOT};
     use crate::registry;
     use crate::settings;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use std::path::PathBuf;
     use tr_core::World;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// The `chest_gen` test rig's world: a floor row at y = 200, so the anchors
     /// on y = 197/198 sit on it and inside the surface band.
@@ -794,28 +833,50 @@ mod chest_save_tests {
         // three writes below leave.
         app.world_chests[stocked].slots.clear();
         for (slot, item) in [
-            (0usize, ItemSlot { kind: 9, name: registry::name(9), count: 6, prefix: 0 }),
+            (
+                0usize,
+                ItemSlot {
+                    kind: 9,
+                    name: registry::name(9),
+                    count: 6,
+                    prefix: 0,
+                },
+            ),
             (1, EMPTY_SLOT),
             (
                 2,
-                ItemSlot { kind: 3507, name: registry::name(3507), count: 1, prefix: 84 },
+                ItemSlot {
+                    kind: 3507,
+                    name: registry::name(3507),
+                    count: 1,
+                    prefix: 84,
+                },
             ),
         ] {
-            assert!(chest::set_chest_slot(&mut app.world_chests, stocked, slot, item));
+            assert!(chest::set_chest_slot(
+                &mut app.world_chests,
+                stocked,
+                slot,
+                item
+            ));
         }
         // The renamed chest takes the entry down and re-creates it, the
         // `CreateChest` call the open path makes for a tile the roll missed.
-        let rolled_b = chest::find_chest(&app.world_chests, bx, by).expect("the second anchor rolled");
+        let rolled_b =
+            chest::find_chest(&app.world_chests, bx, by).expect("the second anchor rolled");
         chest::remove_chest(&mut app.world_chests, rolled_b);
         let renamed = chest::create_chest(&mut app.world_chests, bx, by);
-        assert!(
-            chest::set_chest_slot(
-                &mut app.world_chests,
-                renamed,
-                0,
-                ItemSlot { kind: 71, name: registry::name(71), count: 3, prefix: 0 },
-            )
-        );
+        assert!(chest::set_chest_slot(
+            &mut app.world_chests,
+            renamed,
+            0,
+            ItemSlot {
+                kind: 71,
+                name: registry::name(71),
+                count: 3,
+                prefix: 0
+            },
+        ));
         // `ChestUI.RenameChestSubmit`'s write (`:853-860`) into the entity's
         // name (M6-SAVE-1 phase 3's fold).
         app.world_chests[renamed].name = "Gold Stash".into();
@@ -826,12 +887,21 @@ mod chest_save_tests {
 
         let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(sections.native.chests.len(), 2, "one record per live store entry");
-        let saved_b = sections.native.chests
+        assert_eq!(
+            sections.native.chests.len(),
+            2,
+            "one record per live store entry"
+        );
+        let saved_b = sections
+            .native
+            .chests
             .iter()
             .find(|r| (r.x, r.y) == (bx, by))
             .expect("the renamed chest's record");
-        assert_eq!(&saved_b.name, "Gold Stash", "the effective name rides the record");
+        assert_eq!(
+            &saved_b.name, "Gold Stash",
+            "the effective name rides the record"
+        );
         assert_eq!(saved_b.slots[0].kind, 71);
 
         // S1-A-4: nothing re-rolls at load — the store IS the file's records
@@ -839,20 +909,37 @@ mod chest_save_tests {
         // stocks the anchor" control is structural now.
 
         let back = app_for(world, sections, path);
-        let stocked = chest::find_chest(&back.world_chests, ax, ay).expect("the saved anchor survives");
+        let stocked =
+            chest::find_chest(&back.world_chests, ax, ay).expect("the saved anchor survives");
         assert_eq!(
             back.world_chests[stocked].slots,
             vec![
-                ItemSlot { kind: 9, name: registry::name(9), count: 6, prefix: 0 },
+                ItemSlot {
+                    kind: 9,
+                    name: registry::name(9),
+                    count: 6,
+                    prefix: 0
+                },
                 EMPTY_SLOT, // the interior air
-                ItemSlot { kind: 3507, name: registry::name(3507), count: 1, prefix: 84 },
+                ItemSlot {
+                    kind: 3507,
+                    name: registry::name(3507),
+                    count: 1,
+                    prefix: 84
+                },
             ],
             "the seeded slots replace the roll exactly — no band rows appended"
         );
-        let renamed = chest::find_chest(&back.world_chests, bx, by).expect("the renamed chest survives");
+        let renamed =
+            chest::find_chest(&back.world_chests, bx, by).expect("the renamed chest survives");
         assert_eq!(
             chest::chest_slot(&back.world_chests, renamed, 0),
-            Some(ItemSlot { kind: 71, name: registry::name(71), count: 3, prefix: 0 })
+            Some(ItemSlot {
+                kind: 71,
+                name: registry::name(71),
+                count: 3,
+                prefix: 0
+            })
         );
         assert_eq!(chest::chest_name(&back, renamed as i32), "Gold Stash");
         assert_eq!(
@@ -881,13 +968,21 @@ mod chest_save_tests {
                 x: ax,
                 y: ay,
                 name: "Vault".into(),
-                slots: vec![ChestItem { stack: 12, kind: 166, prefix: 0 }],
+                slots: vec![ChestItem {
+                    stack: 12,
+                    kind: 166,
+                    prefix: 0,
+                }],
             },
             ChestRecord {
                 x: bx,
                 y: by,
                 name: "Ghost".into(),
-                slots: vec![ChestItem { stack: 5, kind: 9, prefix: 0 }],
+                slots: vec![ChestItem {
+                    stack: 5,
+                    kind: 9,
+                    prefix: 0,
+                }],
             },
         ];
         let app = app_for(
@@ -902,10 +997,16 @@ mod chest_save_tests {
             PathBuf::new(),
         );
 
-        let idx = chest::find_chest(&app.world_chests, ax, ay).expect("the valid record seeds the store");
+        let idx =
+            chest::find_chest(&app.world_chests, ax, ay).expect("the valid record seeds the store");
         assert_eq!(
             chest::chest_slot(&app.world_chests, idx, 0),
-            Some(ItemSlot { kind: 166, name: registry::name(166), count: 12, prefix: 0 })
+            Some(ItemSlot {
+                kind: 166,
+                name: registry::name(166),
+                count: 12,
+                prefix: 0
+            })
         );
         assert_eq!(chest::chest_name(&app, idx as i32), "Vault");
         // The culled record leaves no entry and no name behind.
@@ -918,7 +1019,10 @@ mod chest_save_tests {
             "the culled record's name lands nowhere"
         );
         assert_eq!(
-            app.world_chests.iter().filter(|c| !c.name.is_empty()).count(),
+            app.world_chests
+                .iter()
+                .filter(|c| !c.name.is_empty())
+                .count(),
             1,
             "only the surviving record's name rides an entity"
         );
@@ -934,7 +1038,11 @@ mod chest_save_tests {
         let path = std::env::temp_dir().join("tr-dw-2-3-banner-roundtrip.trwld");
         let _ = std::fs::remove_file(&path);
 
-        let mut app = app_for(world, WorldSections::native(save::WorldSide::default()), path.clone());
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
         // Two NPC families (the Blue Slime 1 → the banner 69, the Green Slime
         // -4 → the banner 151, `bestiary::npc_to_banner`) — the production
         // call the death pass makes (`world_sim/npcs.rs`'s kill hook).
@@ -950,7 +1058,11 @@ mod chest_save_tests {
 
         let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(sections.native.banners.len(), 2, "one record per tallied banner");
+        assert_eq!(
+            sections.native.banners.len(),
+            2,
+            "one record per tallied banner"
+        );
         let back = app_for(world, sections, path);
         let pairs: Vec<(i32, i32)> = back.banners.pairs().collect();
         assert_eq!(pairs, vec![(69, 7), (151, 3)], "the counts ride the store");
@@ -958,7 +1070,11 @@ mod chest_save_tests {
         // The control: a fresh App over the same world starts empty — the
         // records above are what carried the tally, not a re-derived one.
         let mut world2 = chest_rig();
-        let control = app_for(world2.clone(), WorldSections::native(save::WorldSide::default()), PathBuf::new());
+        let control = app_for(
+            world2.clone(),
+            WorldSections::native(save::WorldSide::default()),
+            PathBuf::new(),
+        );
         assert_eq!(control.banners.pairs().count(), 0, "no records — no tally");
     }
 
@@ -972,7 +1088,11 @@ mod chest_save_tests {
         let path = std::env::temp_dir().join("tr-dw-2-4-bestiary-roundtrip.trwld");
         let _ = std::fs::remove_file(&path);
 
-        let mut app = app_for(world, WorldSections::native(save::WorldSide::default()), path.clone());
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
         // The kill pass's registration (`world_sim/npcs.rs`'s death hook):
         // two credit ids, one of them past the 999999999 clamp range's floor.
         for _ in 0..9 {
@@ -985,14 +1105,62 @@ mod chest_save_tests {
 
         let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(sections.native.bestiary.len(), 2, "one record per tallied credit id");
+        assert_eq!(
+            sections.native.bestiary.len(),
+            2,
+            "one record per tallied credit id"
+        );
         let back = app_for(world, sections, path);
         assert_eq!(back.bestiary.kills.get_kill_count("BlueSlime"), 9);
         assert_eq!(back.bestiary.kills.get_kill_count("KingSlime"), 1);
 
         // The control: a fresh App starts empty — the records carried the tally.
-        let control = app_for(chest_rig(), WorldSections::native(save::WorldSide::default()), PathBuf::new());
+        let control = app_for(
+            chest_rig(),
+            WorldSections::native(save::WorldSide::default()),
+            PathBuf::new(),
+        );
         assert_eq!(control.bestiary.kills.get_kill_count("BlueSlime"), 0);
+    }
+
+    /// S1-J-7: the rain event's save → load round-trip through the App path —
+    /// the C#'s `SetTempToOngoing` (`WorldFile.cs:1058-1060`) snapshots the
+    /// live state before the write and `SetOngoingToTemps` (`:159-162`)
+    /// restores it on load, `Main.cloudAlpha` := `maxRaining`. The port's
+    /// `save_world` syncs the live `Rain` into the world's file payload and
+    /// the loaded world re-seeds the `Rain` (`enter_loaded_world`).
+    #[test]
+    fn s1_j_7_a_saved_rain_event_round_trips_through_the_app() {
+        let world = chest_rig();
+        let path = std::env::temp_dir().join("tr-s1-j-7-rain-roundtrip.trwld");
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
+        // The load-time restore shape (S1-J-7's own seam) doubles as the
+        // event setup: an active rain event at 0.75 target.
+        app.rain.restore_saved(true, 12_345, 0.75);
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        // The file payload carried the snapshot.
+        assert!(world.raining && world.rain_time == 12_345, "the file block");
+        assert!((world.max_raining - 0.75).abs() < f32::EPSILON);
+        // The reload applies it (`SetOngoingToTemps`'s effect).
+        let back = app_for(world, sections, path);
+        assert!(back.rain.is_raining(), "the event survives the reload");
+        assert_eq!(back.rain.rain_time(), 12_345);
+        assert!((back.rain.max_raining() - 0.75).abs() < f32::EPSILON);
+        assert!(
+            (back.rain.visual_alpha() - 0.75).abs() < f32::EPSILON,
+            "cloudAlpha := maxRaining (WorldFile.cs:162)"
+        );
     }
 
     /// DW-2.4 (the back-compat fallback): a world saved before v9 (the
@@ -1004,7 +1172,11 @@ mod chest_save_tests {
         let path = std::env::temp_dir().join("tr-dw-2-4-sidecar-fallback.trwld");
         let _ = std::fs::remove_file(&path);
         // A v8 payload: the current writer's stream with the version patched.
-        let mut app = app_for(chest_rig(), WorldSections::native(save::WorldSide::default()), path.clone());
+        let mut app = app_for(
+            chest_rig(),
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
         app.player = None;
         app.settings.map_enabled = false;
         app.save_world();
@@ -1040,7 +1212,11 @@ mod chest_save_tests {
         let path = std::env::temp_dir().join("tr-dw-2-5-npc-roundtrip.trwld");
         let _ = std::fs::remove_file(&path);
 
-        let mut app = app_for(chest_rig(), WorldSections::native(save::WorldSide::default()), path.clone());
+        let mut app = app_for(
+            chest_rig(),
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
         // A housed Merchant with a given name at a solid column (the town
         // spawner's surface scan) — the rig's floor row at y=200.
         let x_tile = 100;
@@ -1110,7 +1286,11 @@ mod chest_save_tests {
         let mut world = chest_rig();
         world.spawn_x = 50;
         let path = PathBuf::new();
-        let app = app_for(world, WorldSections::native(save::WorldSide::default()), path);
+        let app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path,
+        );
         let guide = app
             .npcs
             .iter()
@@ -1128,7 +1308,11 @@ mod chest_save_tests {
         let path = std::env::temp_dir().join("tr-dw-2-6-ore-tiers.trwld");
         let _ = std::fs::remove_file(&path);
 
-        let mut app = app_for(chest_rig(), WorldSections::native(save::WorldSide::default()), path.clone());
+        let mut app = app_for(
+            chest_rig(),
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
         // The altar smash's outcome (the App's runtime copy `smash_altar`
         // advances): the hardmode trio flips off the -1 sentinels.
         app.ore_tiers.cobalt = 107;
@@ -1140,13 +1324,19 @@ mod chest_save_tests {
         app.save_world();
 
         let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
-        let tiers = sections.native.ore_tiers.expect("the v11 section rides the tiers");
+        let tiers = sections
+            .native
+            .ore_tiers
+            .expect("the v11 section rides the tiers");
         assert_eq!(tiers, [166, 6, 9, 8, 107, 108, 111]);
         assert_eq!(world.ore_tiers.cobalt, 107);
 
         let back = app_for(world, sections, path);
         assert_eq!(back.ore_tiers.copper, 166, "the alternate flip survives");
-        assert_eq!(back.ore_tiers.cobalt, 107, "the smashed hardmode tier survives");
+        assert_eq!(
+            back.ore_tiers.cobalt, 107,
+            "the smashed hardmode tier survives"
+        );
         assert_eq!(back.ore_tiers.mythril, 108);
         assert_eq!(back.ore_tiers.adamantite, 111);
     }
@@ -1160,7 +1350,11 @@ mod chest_save_tests {
         world.ore_tiers.copper = 166; // a generation-time roll the old save dropped
         let path = std::env::temp_dir().join("tr-dw-2-6-defaults.trwld");
         let _ = std::fs::remove_file(&path);
-        let mut app = app_for(world, WorldSections::native(save::WorldSide::default()), path.clone());
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
         app.player = None;
         app.settings.map_enabled = false;
         app.save_world();
@@ -1173,16 +1367,17 @@ mod chest_save_tests {
         assert!(sections.native.ore_tiers.is_none());
         assert_eq!(world.ore_tiers, tr_core::ores::SavedOreTiers::new());
         let back = app_for(world, sections, PathBuf::new());
-        assert_eq!(back.ore_tiers.copper, 7, "the static default, not the dropped roll");
+        assert_eq!(
+            back.ore_tiers.copper, 7,
+            "the static default, not the dropped roll"
+        );
     }
 
     /// A per-test scratch dir for the achievements writes (the sibling `tests`
     /// module's pattern).
     fn ach_scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "tr-saveglue-ach-{}-{name}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("tr-saveglue-ach-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch dir");
         dir
@@ -1206,8 +1401,7 @@ mod chest_save_tests {
         // so only the save call site can persist the partial state.
         app.achievements.notify(CondKind::NpcKilled(13));
         assert!(
-            !app
-                .achievements
+            !app.achievements
                 .list
                 .iter()
                 .any(|a| a.name == "SLAYER_OF_WORLDS" && a.completed),
@@ -1222,7 +1416,10 @@ mod chest_save_tests {
             .iter()
             .find(|a| a.name == "SLAYER_OF_WORLDS")
             .unwrap();
-        assert!(slayer.conditions[0].completed, "the partial condition rode the save");
+        assert!(
+            slayer.conditions[0].completed,
+            "the partial condition rode the save"
+        );
     }
 
     /// `AchievementManager.AchievementCompleted` (`AchievementManager.cs:180-187`)
@@ -1250,4 +1447,3 @@ mod chest_save_tests {
         );
     }
 }
-

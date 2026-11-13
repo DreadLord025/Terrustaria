@@ -122,13 +122,19 @@ foreach (Match m in Regex.Matches(mainSrc,
     if (idx >= 0 && idx < WallCount) wallLight[idx] = true;
 }
 
+var wallLargeFrames = new byte[WallCount];
 foreach (Match m in Regex.Matches(mainSrc,
-             @"^\s*(?:Main\.)?(tileSolid|tileSolidTop|tileBrick|tileStone|tileRope|tilePile|tileMoss|tileBlendAll|tileMergeDirt|tileBlockLight|tileNoSunLight|tileLighted|tileLargeFrames)\[(\d+)\]\s*=\s*(true|false|\d+)\s*;",
+             @"^\s*(?:Main\.)?(tileSolid|tileSolidTop|tileBrick|tileStone|tileRope|tilePile|tileMoss|tileBlendAll|tileMergeDirt|tileBlockLight|tileNoSunLight|tileLighted|tileLargeFrames|wallLargeFrames)\[(\d+)\]\s*=\s*(true|false|\d+)\s*;",
              RegexOptions.Multiline))
 {
     var arr = m.Groups[1].Value;
     var idx = int.Parse(m.Groups[2].Value);
     var val = m.Groups[3].Value;
+    if (arr == "wallLargeFrames")
+    {
+        if (idx >= 0 && idx < WallCount) wallLargeFrames[idx] = byte.Parse(val);
+        continue;
+    }
     if (idx < 0 || idx >= TileCount) continue;
     if (arr == "tileLargeFrames")
     {
@@ -424,9 +430,10 @@ sbLight.AppendLine("use super::{TILE_COUNT, WALL_COUNT};");
 
 var sbMerge = new StringBuilder();
 EmitHeader(sbMerge, "Directed merge relation from `WorldGen.TileFrameCosmetic` plus the framing",
-                 "layout tables (`Main.tileLargeFrames`, `TileID.Sets.NeedsGrassFramingDirt`).");
+                 "layout tables (`Main.tileLargeFrames`, `Main.wallLargeFrames`,",
+                 "`TileID.Sets.NeedsGrassFramingDirt`).");
 sbMerge.AppendLine();
-sbMerge.AppendLine("use super::TILE_COUNT;");
+sbMerge.AppendLine("use super::{TILE_COUNT, WALL_COUNT};");
 
 static void EmitHeader(StringBuilder sb, params string[] docLines)
 {
@@ -537,6 +544,17 @@ for (int i = 0; i < TileCount; i += 32)
 {
     sbMerge.Append("    ");
     for (int k = i; k < Math.Min(i + 32, TileCount); k++) sbMerge.Append($"{largeFrames[k]}, ");
+    sbMerge.AppendLine();
+}
+sbMerge.AppendLine("];");
+
+sbMerge.AppendLine();
+sbMerge.AppendLine("/// `Main.wallLargeFrames`: 0 = normal, 1 = phlebas / 2 = lazure large-wall layouts.");
+sbMerge.AppendLine("pub static WALL_LARGE_FRAMES: [u8; WALL_COUNT] = [");
+for (int i = 0; i < WallCount; i += 32)
+{
+    sbMerge.Append("    ");
+    for (int k = i; k < Math.Min(i + 32, WallCount); k++) sbMerge.Append($"{wallLargeFrames[k]}, ");
     sbMerge.AppendLine();
 }
 sbMerge.AppendLine("];");

@@ -716,7 +716,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         .filter(|sl| sl.kind != 0 && sl.count > 0)
         .map(|sl| sl.kind)
         .collect();
-    app.shop_stock = crate::shop::resolve_stock(shop, &flags, &inv_ids);
+    app.shop_stock = crate::shop::resolve_stock_entries(shop, &flags, &inv_ids);
     app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
     // `TinkererReforge` (`NPCInteractions.cs:407-423`) opens the reforge

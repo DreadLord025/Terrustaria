@@ -162,11 +162,18 @@ pub(crate) struct App {
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
-    /// The stock captured at the open (`Chest.item[]`).
-    pub(crate) shop_stock: Vec<u16>,
+    /// The stock captured at the open (`Chest.item[]`) — the rows carry
+    /// their per-row price fields (`Item.shopCustomPrice`/`buyOnce`/
+    /// `isAShopItem`), priced by `Item.GetStoreValue`.
+    pub(crate) shop_stock: Vec<crate::shop::ShopEntry>,
     /// The happiness multiplier captured at the open
     /// (`currentShoppingSettings.PriceAdjustment`).
     pub(crate) shop_mood: f32,
+    /// `Player.discountAvailable` (`Player.cs:25638`): refreshed from
+    /// `discountEquipped` when no shop is open; the Discount Card writer
+    /// lands with the equipment pass (S1-C-12) — the price arms
+    /// (`Player.cs:35369-35378`) consume it today.
+    pub(crate) discount_available: bool,
     /// The closed shop — the state cleared (`Main.npcShop = -1`'s
     /// equivalent).
     pub(crate) shop_closed_flag: bool,
@@ -300,9 +307,10 @@ pub(crate) struct App {
     /// `Main.instance.textBlinkerCount/State` (`Main.cs:2287-2289`) — the
     /// chest-panel name editor's caret blinker (`ui::chest::TextBlinker`).
     pub(crate) text_blinker: ui::chest::TextBlinker,
-    /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
-    /// alchemy discount rolls.
-    pub(crate) craft_rng: u64,
+    /// The crafting RNG stream — the alchemy discount rolls
+    /// (`Recipe.cs:221`'s `Main.rand.Next(3)`; the exact C# `UnifiedRandom`
+    /// generator seeded per world like the wiring RNG, S1-L-6c).
+    pub(crate) craft_rng: tr_core::unified_random::UnifiedRandom,
     /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
     /// .cs:315`): the cached coin carriers. Session-only — cleared on the
     /// world unload (the vanilla never saves them).
@@ -897,20 +905,16 @@ impl App {
         }
         // `Main.cs:67191-67192`: `cMapZoomIn = "Add"`, `cMapZoomOut =
         // "Subtract"` — the menuMode 272727 rows, not a fixed key.
-        if self
-            .keys
-            .iter()
-            .any(|k| map_binds[crate::input_map::MapAction::ZoomIn.index()].as_str()
-                == crate::input_map::key_name(*k))
-        {
+        if self.keys.iter().any(|k| {
+            map_binds[crate::input_map::MapAction::ZoomIn.index()].as_str()
+                == crate::input_map::key_name(*k)
+        }) {
             m.scale = map::map_key_scale(m.scale, true);
         }
-        if self
-            .keys
-            .iter()
-            .any(|k| map_binds[crate::input_map::MapAction::ZoomOut.index()].as_str()
-                == crate::input_map::key_name(*k))
-        {
+        if self.keys.iter().any(|k| {
+            map_binds[crate::input_map::MapAction::ZoomOut.index()].as_str()
+                == crate::input_map::key_name(*k)
+        }) {
             m.scale = map::map_key_scale(m.scale, false);
         }
         // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
@@ -956,8 +960,6 @@ impl App {
             self.settings.zoom = self.zoom;
         }
     }
-
-
 
     /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
     pub(crate) fn advance_disco(&mut self) {
@@ -1081,10 +1083,16 @@ impl App {
     /// slot_for_pickup). Returns false when the purse is short or the slot
     /// is out of range.
     pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
-        let Some(item) = self.shop_stock.get(slot).copied() else {
+        // `ItemSlot.HandleShopSlot` (`UI/ItemSlot.cs:2059-2060`): the
+        // charge is `GetItemExpectedPrice`'s buying value for the stock
+        // ROW (the row's `shopCustomPrice`/`buyOnce` ride
+        // `Item.GetStoreValue`, `Item.cs:49901-49908`).
+        let Some(entry) = self.shop_stock.get(slot) else {
             return false;
         };
-        let price = crate::shop::buy_price(item, self.shop_mood) as u64;
+        let item = entry.item;
+        let price = crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood)
+            as u64;
         if self.coins < price {
             return false;
         }
@@ -1361,7 +1369,8 @@ impl App {
             pvp_draw,
             // `Main.cs:2911-2919`: `ShouldTeamSelectDraw` — always inside the
             // PVP gate, else the team-based-spawns seed (not ported: false).
-            team_select_draw: pvp_draw,            hide: self.hide_pvp_and_team_icons,
+            team_select_draw: pvp_draw,
+            hide: self.hide_pvp_and_team_icons,
             hostile,
             team,
             team_cooldown: self.team_cooldown,
@@ -1717,8 +1726,10 @@ impl App {
         let settings = self.settings.clone();
         let shot_path = self.shot_path.clone();
         let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
-        let music =
-            std::mem::replace(&mut self.music, audio::MusicSystem::new(assets::content_dir()));
+        let music = std::mem::replace(
+            &mut self.music,
+            audio::MusicSystem::new(assets::content_dir()),
+        );
         let window = self.window.take();
         let gpu = self.gpu.take();
         let post = self.post.take();
@@ -2398,7 +2409,11 @@ impl App {
         // is the source, so a remix world's rain starts like vanilla.
         wind.remix_world = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
         let liquids_sim = LiquidSystem::new(&world);
-        let rain = Rain::new(world_seed);
+        let mut rain = Rain::new(world_seed);
+        // `SetOngoingToTemps` (`WorldFile.cs:159-162`): the load applies the
+        // save-time snapshot — the rain event comes back, `cloudAlpha` :=
+        // `maxRaining`. The triple rode the `.trwld` v14 block (S1-J-7).
+        rain.restore_saved(world.raining, world.rain_time, world.max_raining);
         let ambient_waterfall = (0.0, 0.0, 0.0);
         let ambient_lavafall = (0.0, 0.0, 0.0);
         let ambient_counter = 0.0f32;
@@ -2576,6 +2591,7 @@ impl App {
             reforge_slot: EMPTY_SLOT,
             reforge_cooldown: 0,
             shop_mood: 1.0,
+            discount_available: false,
             shop_closed_flag: false,
             creative_powers,
             debug_panel: crate::debug_panel::DebugPanel::new(),
@@ -2763,7 +2779,11 @@ impl App {
             cursor_override: -1,
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
-            craft_rng: world_seed,
+            // The craft RNG (`Main.rand` in the C#, `Recipe.cs:221`) seeds
+            // from the world; vanilla seeds `Main.rand` from the clock
+            // (`Main.cs:6461-6463`) — the same deterministic stand-in as the
+            // wiring RNG (S1-L-6c).
+            craft_rng: tr_core::unified_random::UnifiedRandom::new(world_seed as i32 | 1),
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             menu: menu_state,
@@ -3232,6 +3252,10 @@ pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
     }
 
     let t_frame = Instant::now();
+    // The variant reset-roll stream rides the world seed (S1-A-3): vanilla
+    // reseeds `Main.rand` from the clock on load (`Main.cs:6461-6463`), the
+    // port pins it deterministically.
+    world.seed_frame_rng();
     let framed = framing::frame_world(&mut world);
     let tile_frame_ms = t_frame.elapsed().as_secs_f32() * 1000.0;
     let t_walls = Instant::now();
@@ -3491,7 +3515,12 @@ pub(crate) fn build_atlas_reusing_static(
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
-) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(
+    Atlas,
+    Option<tr_render::FontAtlas>,
+    assets::Lookups,
+    (u32, u32, usize, usize),
+)> {
     build_atlas_inner(world, assets_dir, static_cache, fonts_cache)
 }
 
@@ -3500,7 +3529,12 @@ fn build_atlas_inner(
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
-) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(
+    Atlas,
+    Option<tr_render::FontAtlas>,
+    assets::Lookups,
+    (u32, u32, usize, usize),
+)> {
     let (mut tile_ids, wall_ids) = assets::usage(&world);
     // The hotbar can place these even when the loaded world does not use them yet.
     tile_ids.insert(4); // torch
@@ -3846,10 +3880,7 @@ pub(crate) fn latest_own_world() -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
-        let is_trwld = path
-            .extension()
-            .is_some_and(|e| e == "trwld")
-            && path.is_file();
+        let is_trwld = path.extension().is_some_and(|e| e == "trwld") && path.is_file();
         if !is_trwld {
             continue;
         }
@@ -3933,7 +3964,6 @@ mod tr_hooks {
         out
     }
 
-
     /// BUG-21 end to end: the select-world Play enters the world (the lobby does
     /// not come back) and the second swap reuses the cached atlas/font halves
     /// instead of re-decoding them.
@@ -3994,7 +4024,10 @@ mod tr_hooks {
         assert_eq!(app.world.name, "Beta", "the selected world is live");
         assert!(app.static_sheets.is_some(), "the static half is cached");
         assert!(app.fonts_cache.is_some(), "the font tables are cached");
-        assert!(app.font_atlas.is_some(), "the font page texture rides the swap");
+        assert!(
+            app.font_atlas.is_some(),
+            "the font page texture rides the swap"
+        );
 
         // The second Play reuses both caches (the decode half is pinned by
         // `assets::tests::test_the_second_atlas_build_reuses_the_static_half`,
@@ -4314,7 +4347,12 @@ mod tr_hooks {
         // A minimal `.trwld` through the real save path — `load_world` reads
         // a file (the scratch-file pattern of persist.rs's tests).
         let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
+        save::save(
+            &path,
+            &World::new("pins".into(), 32, 32),
+            &save::WorldSide::default(),
+        )
+        .unwrap();
 
         // Edition 2024: env mutation is `unsafe` (a parallel reader could
         // observe a half-update); the ENV_LOCK above is that serialization.
@@ -4358,7 +4396,12 @@ mod tr_hooks {
         unsafe { std::env::remove_var("TR_MOONDIAL") };
 
         let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
+        save::save(
+            &path,
+            &World::new("pins".into(), 32, 32),
+            &save::WorldSide::default(),
+        )
+        .unwrap();
         let (world, sections) = load_world(&path).expect("scratch world loads");
         let _ = std::fs::remove_file(&path);
 

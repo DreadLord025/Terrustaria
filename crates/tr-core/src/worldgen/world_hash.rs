@@ -204,15 +204,22 @@ mod tests {
     // `TileType` 30 (`WoodBlock`) frame and the `WallType` 27 (`Planked`)
     // interior walls — instead of the Sunflower tile 27 frame and the pink
     // dungeon wall 9 interior, so every world's tile/wall fields move.
-    // Re-pinned by S1-A-4 (the gen-time chest stocking, slice B): the chest
-    // sites draw on their pass's stream now — the shrines' jungle item +
-    // `Next(2)` x-jitter (`WorldGen.cs:10170-10196`/`:17220`), the pyramid's
-    // main-item double roll (`:27853-27873`) and the hell house's
-    // `832`/`4281` roll (`:29292-29297`) — and every chest writes its
-    // resolved `num9` style into the frames (`:35978-35988`), so the srng
-    // tail and the chest tiles move.
-    const SEED42_512: u32 = 3207865736;
-    const DEFAULT_WORLD: u32 = 538901504;
+    // Re-pinned again by S1-A-3 (framing variants): the full-world framing
+    // passes now roll a `genRand.Next(0, 3)` variant per framed tile and store
+    // it (`WorldGen.cs:81705-81709` / `Framing.cs:376-404`) instead of the
+    // position hash, so every merge-variant/large-frame tile's frame_x/frame_y
+    // changes — every hash moves. (The `variants` field itself is not hashed;
+    // the frame pixels are.) Values measured on the merged tree (BUG-25 +
+    // S1-A-3 together).
+    const SEED42_512: u32 = 2673964944;
+    const DEFAULT_WORLD: u32 = 594519700;
+    // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
+    // on their pass's stream now — the shrines' jungle item + `Next(2)`
+    // x-jitter (`WorldGen.cs:10170-10196`/`:17220`), the pyramid's main-item
+    // double roll (`:27853-27873`) and the hell house's `832`/`4281` roll
+    // (`:29292-29297`) — and every chest writes its resolved `num9` style
+    // into the frames (`:35978-35988`), so the srng tail and the chest tiles
+    // move. Values re-measured on the merged tree (S1-A-3's pins + S1-A-4).
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]
