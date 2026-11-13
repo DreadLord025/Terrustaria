@@ -759,6 +759,16 @@ pub struct Player {
     /// `Main.UpdateWorld_Players` refills the three pools
     /// (`Main.cs:17869-17873`).
     pub creative_god_mode: bool,
+    /// `Player.immune` (`Player.cs:2636`-ish): the spawn i-frames flag —
+    /// true while `immuneTime` counts down (`UpdateImmunity`,
+    /// `Player.cs:18856-18869`).
+    pub immune: bool,
+    /// `Player.immuneTime`: 180 on the death revive, 60 on the other spawn
+    /// contexts (`Player.cs:37661-37668`).
+    pub immune_time: i32,
+    /// `Player.immuneNoBlink` (`:37669-37671`): true while the i-frames run
+    /// and the player is not hostile (the PVP flag — always false here).
+    pub immune_no_blink: bool,
     /// `Player.tileRangeX/Y`'s journey half (`Player.cs:18815-18828`): the
     /// `FarPlacementRangePower` toggle that doubles the default 5/3 range.
     pub far_placement_range: bool,
@@ -1334,6 +1344,9 @@ impl Player {
             hide_visible_accessory: [false; 10],
             dead_time: 0,
             respawn_timer: 0,
+            immune: false,
+            immune_time: 0,
+            immune_no_blink: false,
             minion_attack_target_npc: -1,
             tag_effects: crate::tag_effects::TagEffectStack::default(),
             prev_jump_input: false,
@@ -1997,7 +2010,18 @@ impl Player {
         self.sliding = false;
         self.sand_storm = false;
         self.carpet_frame = -1;
-        self.hp = self.max_hp;
+        // `Player.Spawn`'s revive life (`Player.cs:37598-37608`): the pool
+        // is `max(statLifeMax, statLifeMax2)` — the port's single `max_hp`
+        // is the effective max — and the life is `max(pool / 2, 100)`. A
+        // fresh 100-life character revives FULL; the `spawnMax` Journey arm
+        // (`:37609-37611`) has no port counterpart.
+        self.hp = (self.max_hp / 2).max(100).min(self.max_hp.max(100));
+        // `:37614-37618`: the i-frames — `immune = true`, the context arm
+        // below lands 180 (the port's respawn is always the death revive;
+        // the 60 arm rides the other `PlayerSpawnContext`s).
+        self.immune = true;
+        self.immune_time = 180;
+        self.immune_no_blink = true;
         self.hurt_cd = 0.0;
         self.breath = BREATH_MAX;
         self.breath_cd = 0;
@@ -2125,10 +2149,20 @@ impl Player {
     }
 
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
-    /// 90-tick lockout, with no boss hindering and no danger NPCs nearby.
-    /// `ghost`/`pvpDeath`/event branches are unreachable in the port.
-    pub fn allows_respawn_timer_skip(&self, boss_near: bool, danger_near: bool) -> bool {
-        !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near)
+    /// 90-tick lockout, with no boss hindering, no danger NPCs nearby and
+    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The
+    /// `ghost`/`pvpDeath` branches stay unreachable in the port.
+    pub fn allows_respawn_timer_skip(
+        &self,
+        boss_near: bool,
+        danger_near: bool,
+        moon_event_live: bool,
+    ) -> bool {
+        !(self.ghost_like()
+            || self.dead_time < 90
+            || boss_near
+            || danger_near
+            || moon_event_live)
     }
 
     /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
@@ -2140,7 +2174,13 @@ impl Player {
     /// respawn decrement clamped to `respawnTimerMax` (3600), and the
     /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
     /// player should respawn now.
-    pub fn update_dead(&mut self, jump: bool, boss_near: bool, danger_near: bool) -> bool {
+    pub fn update_dead(
+        &mut self,
+        jump: bool,
+        boss_near: bool,
+        danger_near: bool,
+        moon_event_live: bool,
+    ) -> bool {
         self.dead_time += 1;
         self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
         // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
@@ -2150,7 +2190,7 @@ impl Player {
         self.slots_minions = 0.0;
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
-        let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near);
+        let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
         if can_skip && jump_edge && self.respawn_timer > 0 {
             return true;
         }
@@ -2394,6 +2434,19 @@ impl Player {
     }
 
     /// Contact damage / future combat. Returns true when the hit was accepted.
+    /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
+    /// countdown — `immune` clears at 0 and `immuneNoBlink` rides with it;
+    /// the `immuneAlpha` blinkVisual half is draw-side and stays out.
+    pub fn update_immunity(&mut self) {
+        if self.immune {
+            self.immune_time -= 1;
+            if self.immune_time <= 0 {
+                self.immune = false;
+                self.immune_no_blink = false;
+            }
+        }
+    }
+
     pub fn hurt(&mut self, amount: i32, from_x: f32) -> bool {
         self.hurt_inner(amount, from_x, true)
     }
@@ -2433,6 +2486,12 @@ impl Player {
         // journey godmode power swallows the hit outright — before the
         // iframes, the defense reduction and the knockback.
         if self.creative_god_mode {
+            return false;
+        }
+        // `Player.Hurt`'s General-cooldown gate (`Player.cs:38210-38216`):
+        // the port's single damage lane rides `ImmunityCooldownID.General`,
+        // whose flag is `!immune` — the spawn i-frames swallow the hit.
+        if self.immune {
             return false;
         }
         if self.hurt_cd > 0.0 || self.hp <= 0 {
@@ -2687,6 +2746,9 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.Update` → `UpdateImmunity` (`Player.cs:25456`): the spawn
+        // i-frames count down before the AI.
+        self.update_immunity();
         // `Player.cs:25625-25628`: the Cute Fishron's special window decays
         // one per tick; `Mount.UpdateEffects` re-arms it later in the tick.
         if self.mount_fishron_special_counter > 0.0 {
@@ -7266,7 +7328,7 @@ mod tests {
         // the last tick reports the respawn.
         let mut revived_at = None;
         for tick in 0..700 {
-            if p.update_dead(false, false, false) {
+            if p.update_dead(false, false, false, false) {
                 revived_at = Some(tick);
                 break;
             }
@@ -7286,9 +7348,57 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, true, true);
         p.respawn_timer = 4000; // the save-load can exceed the cap
-        p.update_dead(false, false, false);
+        p.update_dead(false, false, false, false);
         // The clamp catches the decrement result (Player.cs:17049).
         assert_eq!(p.respawn_timer, 3600);
+    }
+
+    #[test]
+    fn respawn_life_is_half_the_pool_floored_at_100() {
+        // `Player.cs:37598-37608`: the pool is `max(statLifeMax,
+        // statLifeMax2)` — the port's single `max_hp` is the effective max —
+        // and the life is `max(pool / 2, 100)`: a fresh 100-life character
+        // revives FULL, 400 revives at 200.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.max_hp = 400;
+        p.hp = 0;
+        p.respawn();
+        assert_eq!(p.hp, 200);
+        assert_eq!(p.breath, BREATH_MAX);
+        // The i-frames (`:37614-37618` + `:37661-37668`): the death revive
+        // arms 180 with `immuneNoBlink` (the player is never hostile here).
+        assert!(p.immune);
+        assert_eq!(p.immune_time, 180);
+        assert!(p.immune_no_blink);
+    }
+
+    #[test]
+    fn spawn_iframes_swallow_hits_and_expire() {
+        // `Player.cs:38210-38216`: the General cooldown flag is `!immune` —
+        // the spawn i-frames swallow the hit; `UpdateImmunity`
+        // (`:18856-18869`) clears it at 0 and the damage lands again.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.respawn();
+        assert!(!p.hurt(50, 0.0), "the i-frames swallow the hit");
+        p.immune_time = 1;
+        p.update_immunity();
+        assert!(!p.immune, "the countdown cleared the flag");
+        assert!(!p.immune_no_blink);
+        assert!(p.hurt(50, 0.0), "the damage lands after the i-frames");
+    }
+
+    #[test]
+    fn the_moon_events_block_the_respawn_skip() {
+        // `Player.cs:38984-38986`: `Main.snowMoon || Main.pumpkinMoon ||
+        // DD2Event.Ongoing` refuses the timer skip.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.dead_time = 200;
+        p.respawn_timer = 600;
+        assert!(p.allows_respawn_timer_skip(false, false, false));
+        assert!(!p.allows_respawn_timer_skip(false, false, true));
     }
 
     /// BUG-06b: `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`)
@@ -7319,8 +7429,8 @@ mod tests {
         assert!(!p.near_any_npcs_that_block_respawn(&[far], true));
         // The gate itself: a nearby danger NPC vetoes the skip.
         p.dead_time = 200;
-        assert!(p.allows_respawn_timer_skip(false, false));
-        assert!(!p.allows_respawn_timer_skip(false, true));
+        assert!(p.allows_respawn_timer_skip(false, false, false));
+        assert!(!p.allows_respawn_timer_skip(false, true, false));
     }
 
     #[test]
@@ -7331,13 +7441,13 @@ mod tests {
         // Inside the 90-tick lockout: no skip even on the jump edge (the
         // held jump's edge is consumed while the lockout runs).
         for _ in 0..89 {
-            assert!(!p.update_dead(true, false, false));
+            assert!(!p.update_dead(true, false, false, false));
         }
         // The lockout expired but the held jump has no fresh edge; a release
         // and a new press do.
-        assert!(!p.update_dead(true, false, false));
-        assert!(!p.update_dead(false, false, false));
-        assert!(p.update_dead(true, false, false));
+        assert!(!p.update_dead(true, false, false, false));
+        assert!(!p.update_dead(false, false, false, false));
+        assert!(p.update_dead(true, false, false, false));
     }
 
     #[test]
@@ -7346,10 +7456,10 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(false, false, false);
+            p.update_dead(false, false, false, false);
         }
-        assert!(!p.allows_respawn_timer_skip(true, false));
-        assert!(p.allows_respawn_timer_skip(false, false));
+        assert!(!p.allows_respawn_timer_skip(true, false, false));
+        assert!(p.allows_respawn_timer_skip(false, false, false));
     }
 
     #[test]
@@ -7360,13 +7470,13 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(true, false, false);
+            p.update_dead(true, false, false, false);
         }
         // The held jump consumed its edge at the lockout expiry...
-        assert!(!p.update_dead(true, false, false));
+        assert!(!p.update_dead(true, false, false, false));
         // ...release and press again: the edge fires.
-        p.update_dead(false, false, false);
-        assert!(p.update_dead(true, false, false));
+        p.update_dead(false, false, false, false);
+        assert!(p.update_dead(true, false, false, false));
     }
 
     use super::*;

@@ -11854,3 +11854,24 @@ Two documented gaps, both unreachable today:
   (`Projectile.cs:57828`). The port's hostile-spawn seam carries no ai
   payload; the throw's `timeLeft = 300` rides the resolution's explicit
   override (`world_sim/npcs.rs`).
+
+## The respawn fidelity (R-03-5, 2026-11-13)
+
+`Player.Spawn`'s revive half (`Player.cs:37598-37668`) is ported into
+`player.rs::respawn`: the life is `max(max(statLifeMax, statLifeMax2)/2,
+100)` over the port's single `max_hp` (a fresh 100-life character revives
+FULL — the old unconditional full-hp stand-in diverged for every character
+past 100), and the death revive arms `immune = true` with
+`immuneTime = 180` + `immuneNoBlink` (the `!hostile` gate is always true
+single-player). `Player.UpdateImmunity` (`:18856-18869`) rides the tick at
+`Player.cs:25456`'s slot, and `Player.Hurt`'s General-cooldown flag
+(`:38210-38216`, `!immune`) gates `hurt_inner` — the port's single damage
+lane is the General slot. `AllowsRespawnTimerSkip` carries the
+`Main.snowMoon || Main.pumpkinMoon || DD2Event.Ongoing` refusal
+(`:38984-38986`) fed from the World's event flags.
+
+Scope notes: the `immuneTime = 60` arm belongs to the non-death
+`PlayerSpawnContext`s — the port's only `Spawn` callers are both death
+revives, so it lands with a spawn-context split; the `spawnMax` Journey arm
+(`:37609-37611`) and the `pvpDeath` 300 arm (`:37657-37660`) have no port
+counterparts (Journey powers / MP).
