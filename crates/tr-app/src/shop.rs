@@ -15,6 +15,11 @@ use tr_core::World;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShopFlags {
     pub hard_mode: bool,
+    /// `NPC.downedSlimeKing`/`downedQueenSlime`/`downedMoonlord` — the
+    /// Skeleton Merchant's rank gates (`Chest.cs:3428-3434`, S1-F-16).
+    pub downed_slime_king: bool,
+    pub downed_queen_slime: bool,
+    pub downed_moon_lord: bool,
     pub night: bool,
     pub blood_moon: bool,
     pub zone_snow: bool,
@@ -65,6 +70,9 @@ impl Default for ShopFlags {
     fn default() -> Self {
         Self {
             hard_mode: false,
+            downed_slime_king: false,
+            downed_queen_slime: false,
+            downed_moon_lord: false,
             night: false,
             blood_moon: false,
             zone_snow: false,
@@ -104,6 +112,12 @@ impl ShopFlags {
     /// Dryad's 4385/4386 split rides the caller's own field.
     pub fn from_world(world: &World) -> Self {
         Self {
+            hard_mode: world.hard_mode,
+            downed_slime_king: world.downed_slime_king,
+            downed_queen_slime: world.downed_queen_slime,
+            downed_moon_lord: world.downed_moon_lord,
+            night: !world.day_time,
+            blood_moon: world.blood_moon,
             vampirism: world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
@@ -216,11 +230,7 @@ pub enum StockWhen {
 /// Merchant's shop (index 1, `Chest.cs:1371-1483`); the other indexes land
 /// with their NPCs (M4-TOWN umbrella). The order is the vanilla's `num`
 /// order (the UI fills the slots left to right).
-pub fn setup_shop(
-    shop_index: u32,
-    inventory_ids: &[u16],
-    flags: &ShopFlags,
-) -> Vec<ShopEntry> {
+pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> Vec<ShopEntry> {
     let _ = inventory_ids;
     match shop_index {
         // The Merchant (`Chest.cs:1371-1483`).
@@ -833,7 +843,9 @@ fn get_travel_item(
     world: &World,
     rng: &mut u64,
 ) {
-    let (r0, r1, r2, r3, r4, r5) = (rarity[0], rarity[1], rarity[2], rarity[3], rarity[4], rarity[5]);
+    let (r0, r1, r2, r3, r4, r5) = (
+        rarity[0], rarity[1], rarity[2], rarity[3], rarity[4], rarity[5],
+    );
     // `NPC.downedMechBossAny` (`NPC.cs:984`'s gates) — the port's three fields.
     let mech_any = world.downed_mech_boss1 || world.downed_mech_boss2 || world.downed_mech_boss3;
     let hit = |denom: u16, rng: &mut u64| roll_luck(luck, denom as i32, rng) == 0;
@@ -867,10 +879,7 @@ fn get_travel_item(
         return;
     }
     // `:1022-1085`'s rarity-3 tier.
-    if hit(r3, rng)
-        && world.hard_mode
-        && mech_any
-    {
+    if hit(r3, rng) && world.hard_mode && mech_any {
         *it = 2223;
     }
     if hit(r3, rng) {
@@ -1252,16 +1261,10 @@ pub fn resolve_stock_entries_moon(
                 !flags.hard_mode && flags.vampirism && flags.infected_seed
             }
             StockWhen::VampirismInfectedCrimson => {
-                !flags.hard_mode
-                    && flags.vampirism
-                    && flags.infected_seed
-                    && flags.crimson_world
+                !flags.hard_mode && flags.vampirism && flags.infected_seed && flags.crimson_world
             }
             StockWhen::VampirismInfectedCorrupt => {
-                !flags.hard_mode
-                    && flags.vampirism
-                    && flags.infected_seed
-                    && !flags.crimson_world
+                !flags.hard_mode && flags.vampirism && flags.infected_seed && !flags.crimson_world
             }
             StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
             StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
@@ -1282,8 +1285,10 @@ pub fn resolve_stock_entries_moon(
             StockWhen::MoonPhaseNight0 => moon_phase == 0 && flags.night,
             StockWhen::BloodMoonNight => flags.night && flags.blood_moon,
             StockWhen::BestiaryCompletion(min) => flags.bestiary_completion >= min,
-            StockWhen::HardModeMoonlord => false, // `downedMoonlord` is not ported yet
-            StockWhen::DownedBothSlimes => false, // `downedQueenSlime` is not ported yet
+            // `Chest.cs:3432-3434` (`Main.hardMode && NPC.downedMoonlord`).
+            StockWhen::HardModeMoonlord => flags.hard_mode && flags.downed_moon_lord,
+            // `Chest.cs:3428-3430` (`NPC.downedSlimeKing && downedQueenSlime`).
+            StockWhen::DownedBothSlimes => flags.downed_slime_king && flags.downed_queen_slime,
             StockWhen::GolfScore(min, inclusive) => {
                 if inclusive {
                     flags.golfer_score >= min
@@ -1381,7 +1386,8 @@ pub(crate) fn display_price_row(
     discount_available: bool,
     price_adjustment: f32,
 ) -> i64 {
-    let (calc_for_selling, calc_for_buying) = row_prices(entry, discount_available, price_adjustment);
+    let (calc_for_selling, calc_for_buying) =
+        row_prices(entry, discount_available, price_adjustment);
     if entry.buy_once || entry.is_a_shop_item {
         calc_for_buying
     } else {
@@ -1434,6 +1440,47 @@ fn round_half_to_even(v: f32) -> i32 {
     r as i32
 }
 
+#[cfg(test)]
+mod s1_f_16_tests {
+    use super::*;
+
+    #[test]
+    fn the_princess_rank_gates_read_the_real_flags() {
+        // `Chest.cs:3428-3434` (the Princess's shop, index 24): the 5266 row
+        // needs `downedSlimeKing && downedQueenSlime`, the 5044 row
+        // `hardMode && downedMoonlord` — the port's gates read the World
+        // flags through `ShopFlags` (`from_world`) instead of the hard-false
+        // stand-ins.
+        let mut flags = ShopFlags::default();
+        flags.hard_mode = true;
+        flags.downed_moon_lord = true;
+        let stock = resolve_stock(24, &flags, &[]);
+        assert!(stock.contains(&5044), "the moonlord row shows: {:?}", stock);
+        let mut flags = ShopFlags::default();
+        flags.downed_slime_king = true;
+        flags.downed_queen_slime = true;
+        let stock = resolve_stock(24, &flags, &[]);
+        assert!(
+            stock.contains(&5266),
+            "the both-slimes row shows: {:?}",
+            stock
+        );
+        // The plain defaults keep both rows hidden.
+        let stock = resolve_stock(24, &ShopFlags::default(), &[]);
+        assert!(!stock.contains(&5044) && !stock.contains(&5266));
+    }
+
+    #[test]
+    fn from_world_carries_the_downed_flags() {
+        let mut w = World::new("t".into(), 64, 48);
+        w.downed_slime_king = true;
+        w.downed_queen_slime = true;
+        w.downed_moon_lord = true;
+        w.hard_mode = true;
+        let f = ShopFlags::from_world(&w);
+        assert!(f.downed_slime_king && f.downed_queen_slime && f.downed_moon_lord && f.hard_mode);
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1499,7 +1546,6 @@ mod tests {
         assert!(resolve_stock(30, &ShopFlags::default(), &[]).is_empty());
     }
 
-
     /// `Chest.SetupTravelShop` (`Chest.cs:1275-1358`): the visit's stock —
     /// the seed-7 roll pins the whole ladder (the `Next(4, 7)` count, the
     /// luck rolls, the main loop, the painting tail) and the output proves
@@ -1538,7 +1584,10 @@ mod tests {
         assert_eq!(hm[8], 2262, "the Dynasty Wood bundle");
         // The hardmode arm's `minimumRarity = 2` tier reaches the hardmode
         // row (4091) — the first slot is a tier-3 row, never a rarity-0 one.
-        assert!([2270, 4760, 2223, 4091, 4348].contains(&hm[0]), "the tier row");
+        assert!(
+            [2270, 4760, 2223, 4091, 4348].contains(&hm[0]),
+            "the tier row"
+        );
         // The luck rows widen the stock: the same seed at luck 0.3 fills more
         // than the plain band's 4.
         let lucky = setup_travel_shop(&w, 0.3, &mut 7);
@@ -1601,8 +1650,14 @@ mod tests {
     fn the_rounding_is_the_bankers_midpoint() {
         // `Math.Round`'s midpoint → even: 5×0.5f = 2.5f → 2, 15×0.5f =
         // 7.5f → 8 (`Player.cs:35387-35388`).
-        assert_eq!(get_item_expected_price(5, false, false, false, 0.5), (10, 2));
-        assert_eq!(get_item_expected_price(15, false, false, false, 0.5), (30, 8));
+        assert_eq!(
+            get_item_expected_price(5, false, false, false, 0.5),
+            (10, 2)
+        );
+        assert_eq!(
+            get_item_expected_price(15, false, false, false, 0.5),
+            (30, 8)
+        );
         // The buyOnce divide rounds first, then `/5`: 1/2f = 0.5f → 0
         // (even) → the `storeValue != 0` clamp lifts it to 1.
         assert_eq!(get_item_expected_price(1, true, false, false, 2.0), (0, 1));
@@ -1613,11 +1668,17 @@ mod tests {
         // `Player.cs:35369-35378`: the 0.8 multiply TRUNCATES (the
         // `(int)` cast — no rounding), and only `isAShopItem` rows mirror
         // it into the sell value.
-        assert_eq!(get_item_expected_price(40000, false, false, true, 1.0), (40000, 32000));
+        assert_eq!(
+            get_item_expected_price(40000, false, false, true, 1.0),
+            (40000, 32000)
+        );
         // (int)((float)7 * 0.8f) = (int)5.599999904632568f = 5 — a
         // rounding here would say 6.
         assert_eq!(get_item_expected_price(7, false, false, true, 1.0), (7, 5));
-        assert_eq!(get_item_expected_price(40000, false, true, true, 1.0), (32000, 32000));
+        assert_eq!(
+            get_item_expected_price(40000, false, true, true, 1.0),
+            (32000, 32000)
+        );
     }
 
     #[test]
@@ -1627,10 +1688,16 @@ mod tests {
         // value ÷ the adjustment ÷ 5 — the sell value keeps the plain
         // divide; the `< 1` clamp fires only for a non-zero store value
         // (`storeValue != 0`, `:35392-35394`).
-        assert_eq!(get_item_expected_price(40000, true, false, false, 1.0), (40000, 8000));
+        assert_eq!(
+            get_item_expected_price(40000, true, false, false, 1.0),
+            (40000, 8000)
+        );
         // The round-then-divide order: 53333 / 5 = 10666 (the port used to
         // divide first and round — 10667).
-        assert_eq!(get_item_expected_price(40000, true, false, false, 0.75), (53333, 10666));
+        assert_eq!(
+            get_item_expected_price(40000, true, false, false, 0.75),
+            (53333, 10666)
+        );
         assert_eq!(get_item_expected_price(3, true, false, false, 1.0), (3, 1));
         // A zero-value buyOnce row stays 0 (no clamp on a zero store value).
         assert_eq!(get_item_expected_price(0, true, false, false, 1.0), (0, 0));
@@ -1655,7 +1722,10 @@ mod tests {
             is_a_shop_item: false,
         };
         assert_eq!(buy_price_row(&custom, false, 1.0), 50);
-        assert_eq!(buy_price_row(&row(88, StockWhen::Always), false, 1.0), 40000);
+        assert_eq!(
+            buy_price_row(&row(88, StockWhen::Always), false, 1.0),
+            40000
+        );
         // The display quirk (`Main.cs:20457`): a plain row DISPLAYS the
         // selling value — 53333 at the 0.75 mood, not the 30000 charge —
         // while buyOnce/isAShopItem rows display the charge.
@@ -1676,9 +1746,11 @@ mod tests {
         let ids = resolve_stock(1, &ShopFlags::default(), &[]);
         let entries = resolve_stock_entries(1, &ShopFlags::default(), &[]);
         assert_eq!(ids, entries.iter().map(|e| e.item).collect::<Vec<_>>());
-        assert!(entries
-            .iter()
-            .all(|e| e.shop_custom_price.is_none() && !e.buy_once && !e.is_a_shop_item));
+        assert!(
+            entries
+                .iter()
+                .all(|e| e.shop_custom_price.is_none() && !e.buy_once && !e.is_a_shop_item)
+        );
     }
 
     // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
@@ -1708,7 +1780,10 @@ mod tests {
         let tail = seeded.len() - base.len();
         assert_eq!(tail, 2, "the torch plus the world-evil torch");
         assert!(seeded.contains(&8), "the Torch 8");
-        assert!(seeded.contains(&4385), "the Corrupt Torch (no crimson flag)");
+        assert!(
+            seeded.contains(&4385),
+            "the Corrupt Torch (no crimson flag)"
+        );
         assert!(!seeded.contains(&4386), "the Crimson Torch stays out");
         // `WorldGen.crimson` flips the split.
         let crimson = ShopFlags {
@@ -1716,7 +1791,10 @@ mod tests {
             ..both
         };
         let rows = resolve_stock_moon(3, &crimson, &[], 0);
-        assert!(rows.contains(&4386) && !rows.contains(&4385), "the crimson split");
+        assert!(
+            rows.contains(&4386) && !rows.contains(&4385),
+            "the crimson split"
+        );
         // Hardmode closes the arm entirely (`:1733`'s `!Main.hardMode`).
         let hard = ShopFlags {
             hard_mode: true,
@@ -1727,7 +1805,10 @@ mod tests {
         // A vampirism-only world (no `infectedSeed`): the Dryad arm stays off
         // and the Bestiary Girl's opens instead.
         let girl = resolve_stock(23, &vamp, &[]);
-        assert!(girl.contains(&8), "the Bestiary Girl's vampirism torch: {girl:?}");
+        assert!(
+            girl.contains(&8),
+            "the Bestiary Girl's vampirism torch: {girl:?}"
+        );
         assert!(
             !resolve_stock(23, &classic, &[]).contains(&8),
             "a classic world gets no vampirism torch"
@@ -1818,4 +1899,3 @@ mod town5_tests {
         assert!(resolve_stock_moon(9, &ShopFlags::default(), &[], 0).is_empty());
     }
 }
-

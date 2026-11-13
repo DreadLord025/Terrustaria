@@ -152,6 +152,10 @@ pub struct World {
     /// the world-persistent boss states. The save wire rides the .wld
     /// flags block (M6-SAVE's world sections).
     pub downed_slime_king: bool,
+    /// `NPC.downedQueenSlime` (`Chest.cs:3428`'s stock gate) — the vanilla
+    /// `.wld` flags block carries it (`WorldFile.cs:1396`); the port's own
+    /// save rides the v15 tail (S1-F-16).
+    pub downed_queen_slime: bool,
     pub downed_eoc: bool,
     pub downed_eow: bool,
     pub downed_skeletron: bool,
@@ -440,6 +444,7 @@ impl World {
             moon_type: 0,
             moon_phase: 0,
             downed_slime_king: false,
+            downed_queen_slime: false,
             downed_eoc: false,
             downed_eow: false,
             downed_skeletron: false,
