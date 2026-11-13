@@ -361,6 +361,11 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
         rate.max_spawns = (DEFAULT_MAX_SPAWNS as f64 * (2.0 + 0.3 * 1.0)) as i32;
         rate.spawn_rate = 20;
     }
+    // The invaders override (NPC.cs:781-785): same pacing as moon events.
+    if ctx.invaders {
+        rate.max_spawns = (DEFAULT_MAX_SPAWNS as f64 * (2.0 + 0.3 * 1.0)) as i32;
+        rate.spawn_rate = 20;
+    }
     if f.zone_dungeon && !f.downed_boss3 {
         rate.spawn_rate = 10;
     }
@@ -1374,6 +1379,16 @@ mod tests {
         let w = ground();
         let mut c = ctx(&w, 25.0 * 16.0, false);
         c.flags.moon_event = true;
+        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+    }
+
+    #[test]
+    fn invaders_override_forces_the_raid_pacing() {
+        // NPC.cs:781-785: maxSpawns = 5 x (2 + 0.3x1) = 11, spawnRate = 20.
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.invaders = true;
         let r = get_spawn_rate(&c, &mut FastRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
     }
