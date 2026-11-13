@@ -10,7 +10,8 @@ The vanilla item defaults are `Item.SetDefaults` (dispatcher `Item.cs:48663-4892
 mechanically here so the Rust port can never drift from the decompiled source.
 `itemdata.rs` is generated: never hand-edit it, re-run this script instead
 (`python tools/GenItemData/gen.py` from the repo root); a second run must produce
-an empty diff.
+an empty diff. `python tools/GenItemData/gen.py --check` verifies the committed
+table is current (exits 1 on drift, S1-F-17).
 
 Supported statement forms (the parser fails loudly on anything it does not know,
 naming `Item.cs:<line>`, so a source change cannot be silently dropped):
@@ -58,6 +59,8 @@ Main.cs:6612-6624).
 
 from pathlib import Path
 import re
+import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DEC = ROOT / "decompiled" / "Terraria"
@@ -2687,7 +2690,40 @@ def run_pipeline(out_path):
         OUT = saved
 
 
+def check(out_path):
+    """Regenerate to a scratch path and compare with the committed file.
+
+    ``--check`` (S1-F-17): the freezer for the 6 196-row table. A fresh run must
+    reproduce the committed `itemdata.rs` byte-for-byte, so the table cannot
+    drift from the decompiled `Item.cs` without the check failing. Prints the
+    first differing line for a readable failure instead of a mystery diff.
+    Exits 1 on drift (0 = up to date), exactly like `tools/gen_recipes.py --check`.
+    """
+    with tempfile.TemporaryDirectory(prefix="genitemdata-check-") as tmp:
+        fresh = Path(tmp) / "itemdata.rs"
+        run_pipeline(fresh)
+        want = fresh.read_text(encoding="utf-8")
+    current = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
+    if current == want:
+        print("check ok (%d rows, %d bytes)" % (ITEM_COUNT, len(want)))
+        return 0
+    want_lines = want.splitlines()
+    cur_lines = current.splitlines()
+    for i in range(max(len(want_lines), len(cur_lines))):
+        a = cur_lines[i] if i < len(cur_lines) else "<missing>"
+        b = want_lines[i] if i < len(want_lines) else "<missing>"
+        if a != b:
+            print("%s is out of date - rerun tools/GenItemData/gen.py" % OUT)
+            print("first difference at line %d:" % (i + 1))
+            print("  committed: %s" % a[:160])
+            print("  generated: %s" % b[:160])
+            break
+    return 1
+
+
 def main():
+    if "--check" in sys.argv[1:]:
+        sys.exit(check(OUT))
     _main_inner()
 
 
