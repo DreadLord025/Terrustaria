@@ -210,91 +210,413 @@ impl WorldBestiary {
     }
 }
 
-/// `CommonEnemyUICollectionInfoProvider.GetKillCountNeeded`
-/// (`CommonEnemyUICollectionInfoProvider.cs:24-37`) narrowed to the port's
-/// NPC family: `BannerSystem.NPCtoBanner(netId)` (`BannerSystem.cs:341-427`
-/// cases) → `BannerToItem` (`:341-401` bands) →
-/// `ItemID.Sets.KillsToBanner[item]` (`ItemID.cs:1303-1304` — the
-/// `CreateIntSet` default 50 with the explicit overrides). `0` = the boss
-/// entries have no banner; their providers are the quick-unlock kind.
-/// `BannerSystem.NPCtoBanner` (`BannerSystem.cs:341+`) narrowed to the
-/// port's family — the `(net id, banner id)` pairs (`BannerSystem.cs`: 1→69
-/// at `:588`, -3→119 at `:881`, -4→151 at `:802`, -5→146 at `:788`, -6→90
-/// at `:879`, -7→155 at `:885`, -8→159 at `:887`, -9→183 at `:889`, 2→86 at
-/// `:467`, 3→87 at `:645`, 133→288 at `:1141`). `0` = no banner.
+/// `BannerSystem.NPCtoBanner` (`BannerSystem.cs:403-1150`): the npc type /
+/// BannerID to banner index map (0 when no banner).
 pub fn npc_to_banner(net_id: i32) -> i32 {
-    const BANNERS: &[(i32, i32)] = &[
-        (1, 69),
-        (-3, 119),
-        (-4, 151),
-        (-5, 146),
-        (-6, 90),
-        (-7, 155),
-        (-8, 159),
-        (-9, 183),
-        (2, 86),
-        (3, 87),
-        (133, 288),
-    ];
-    BANNERS
-        .iter()
-        .find(|(net, _)| *net == net_id)
-        .map(|(_, banner)| *banner)
-        .unwrap_or(0)
+    match net_id {
+        -10 => 131,
+        -9 => 183,
+        -8 => 159,
+        -7 => 155,
+        -6 => 90,
+        -5 | 16 => 146,
+        -4 => 151,
+        -3 => 119,
+        -2 | 121 => 167,
+        -1 | 81 => 99,
+        1 | 302 | 333 | 334 | 335 | 336 => 69,
+        2 | 190 | 191 | 192 | 193 | 194 | 317 | 318 => 25,
+        3 | 132 | 186 | 187 | 188 | 189 | 200 | 319 | 320 | 321 | 331 | 332 | 430 | 432 | 433 | 434 | 435 | 436 | 590 | 591 | 632 | 691 => 87,
+        6 => 27,
+        7 | 8 | 9 => 104,
+        10 | 11 | 12 | 95 | 96 | 97 => 84,
+        21 | 201 | 202 | 203 | 322 | 323 | 324 | 449 | 450 | 451 | 452 => 67,
+        23 => 55,
+        24 | 25 => 50,
+        26 => 40,
+        27 => 38,
+        28 => 42,
+        29 | 30 => 39,
+        31 | 294 | 295 | 296 => 247,
+        32 | 33 => 68,
+        34 => 102,
+        39 | 40 | 41 => 13,
+        42 | 231 | 232 | 233 | 234 | 235 => 47,
+        43 => 54,
+        44 => 178,
+        45 | 665 => 177,
+        46 | 303 | 337 | 540 => 14,
+        47 => 18,
+        48 => 44,
+        49 => 7,
+        51 => 130,
+        52 => 106,
+        53 => 176,
+        55 | 230 => 43,
+        56 => 168,
+        57 => 19,
+        58 => 61,
+        59 => 135,
+        60 => 45,
+        61 => 79,
+        62 | 66 => 24,
+        63 => 51,
+        64 => 243,
+        65 => 66,
+        67 => 20,
+        69 => 4,
+        71 => 107,
+        73 => 41,
+        74 | 297 | 298 => 8,
+        75 => 63,
+        77 => 6,
+        78 => 57,
+        79 => 245,
+        80 => 246,
+        82 => 85,
+        83 => 23,
+        84 => 28,
+        85 | 629 => 16,
+        86 => 77,
+        87 | 88 | 89 | 90 | 91 | 92 => 86,
+        93 => 114,
+        94 | 112 => 100,
+        98 | 99 | 100 => 83,
+        101 => 96,
+        102 => 1,
+        103 => 244,
+        104 => 81,
+        109 | 378 => 17,
+        110 => 164,
+        111 => 118,
+        120 => 15,
+        122 => 37,
+        133 => 288,
+        137 => 128,
+        138 => 129,
+        140 => 153,
+        141 => 75,
+        143 => 170,
+        144 => 145,
+        145 => 169,
+        147 => 126,
+        148 | 149 => 150,
+        150 => 124,
+        151 => 134,
+        152 => 116,
+        153 => 74,
+        154 => 248,
+        155 => 82,
+        156 => 242,
+        157 => 5,
+        158 | 159 => 78,
+        161 | 431 => 29,
+        162 => 34,
+        163 | 238 => 9,
+        164 | 165 => 71,
+        166 => 73,
+        167 => 179,
+        168 => 98,
+        169 => 48,
+        170 | 171 | 180 => 60,
+        172 => 160,
+        173 => 21,
+        174 => 46,
+        175 => 88,
+        176 => 287,
+        177 => 26,
+        179 => 22,
+        181 => 30,
+        182 => 31,
+        183 => 101,
+        184 => 171,
+        185 => 70,
+        195 | 196 => 80,
+        197 => 89,
+        198 | 199 => 53,
+        204 => 172,
+        205 => 56,
+        206 => 49,
+        212 => 62,
+        213 => 239,
+        214 => 238,
+        215 => 240,
+        216 => 237,
+        217 => 97,
+        218 => 103,
+        219 => 133,
+        220 => 250,
+        221 => 174,
+        223 => 64,
+        224 => 32,
+        225 => 76,
+        226 => 33,
+        236 | 237 => 52,
+        239 | 240 => 12,
+        241 => 10,
+        242 => 11,
+        243 => 125,
+        244 => 157,
+        250 => 2,
+        251 => 111,
+        252 => 59,
+        253 => 65,
+        254 | 255 => 72,
+        256 => 36,
+        257 => 3,
+        258 => 58,
+        259 | 260 | 261 => 35,
+        268 => 127,
+        269 | 270 | 271 | 272 => 161,
+        273 | 274 | 275 | 276 => 91,
+        277 | 278 | 279 | 280 => 121,
+        281 | 282 => 156,
+        283 | 284 => 147,
+        285 | 286 => 105,
+        287 => 95,
+        288 => 108,
+        289 => 115,
+        290 => 149,
+        291 => 166,
+        292 => 175,
+        293 => 165,
+        301 => 158,
+        304 => 123,
+        305 | 306 | 307 | 308 | 309 | 310 | 311 | 312 | 313 | 314 => 162,
+        315 => 120,
+        316 => 113,
+        326 => 173,
+        329 => 122,
+        330 => 152,
+        338 | 339 | 340 => 185,
+        341 => 154,
+        342 => 117,
+        343 => 184,
+        347 => 110,
+        348 | 349 => 148,
+        350 => 109,
+        351 => 132,
+        352 => 112,
+        379 => 92,
+        380 => 180,
+        381 => 136,
+        382 => 142,
+        383 | 384 => 141,
+        385 => 140,
+        386 => 138,
+        387 => 144,
+        388 => 137,
+        389 => 139,
+        390 => 143,
+        391 => 163,
+        402 | 403 | 404 => 217,
+        405 => 221,
+        406 => 220,
+        407 | 408 => 218,
+        409 | 410 => 219,
+        411 => 216,
+        412 | 413 | 414 => 224,
+        415 | 516 => 226,
+        416 | 518 => 225,
+        417 => 223,
+        418 => 222,
+        419 => 227,
+        420 => 230,
+        421 => 229,
+        423 => 231,
+        424 => 228,
+        425 => 236,
+        426 => 233,
+        427 => 234,
+        428 => 232,
+        429 => 235,
+        438 => 93,
+        460 => 196,
+        461 => 191,
+        462 => 190,
+        463 => 199,
+        464 => 281,
+        465 => 282,
+        466 => 197,
+        467 => 198,
+        468 => 192,
+        469 => 195,
+        470 => 283,
+        471 | 472 => 186,
+        473 => 284,
+        474 => 285,
+        475 => 286,
+        477 | 478 | 479 => 193,
+        480 => 201,
+        481 => 202,
+        482 => 204,
+        483 => 203,
+        489 => 205,
+        490 => 206,
+        494 | 495 => 189,
+        496 | 497 => 188,
+        498 | 499 | 500 | 501 | 502 | 503 | 504 | 505 | 506 => 187,
+        508 | 580 => 210,
+        509 | 581 => 209,
+        510 | 511 | 512 => 208,
+        513 | 514 | 515 => 207,
+        520 => 241,
+        524 | 525 | 526 | 527 => 211,
+        528 | 529 => 212,
+        530 | 531 => 215,
+        532 => 214,
+        533 => 213,
+        536 => 267,
+        537 => 249,
+        541 => 251,
+        542 => 252,
+        543 => 253,
+        544 => 254,
+        545 => 255,
+        546 => 256,
+        552 | 553 | 554 => 258,
+        555 | 556 | 557 => 257,
+        558 | 559 | 560 => 264,
+        561 | 562 | 563 => 265,
+        566 | 567 => 259,
+        568 | 569 => 263,
+        570 | 571 => 260,
+        572 | 573 => 262,
+        574 | 575 => 261,
+        578 => 266,
+        582 => 280,
+        586 => 268,
+        587 => 269,
+        618 => 273,
+        619 => 270,
+        620 => 272,
+        621 | 622 | 623 => 271,
+        624 => 275,
+        628 => 274,
+        630 => 277,
+        631 => 276,
+        634 => 279,
+        635 => 278,
+        676 => 289,
+        692 => 290,
+        693 => 291,
+        694 => 292,
+        _ => 0,
+    }
 }
 
-/// `NPC.BannerToNPC`'s family inverse — the net id a banner announces.
-pub fn banner_to_npc(banner: i32) -> i32 {
-    const PAIRS: &[(i32, i32)] = &[
-        (69, 1),
-        (119, -3),
-        (151, -4),
-        (146, -5),
-        (90, -6),
-        (155, -7),
-        (159, -8),
-        (183, -9),
-        (86, 2),
-        (87, 3),
-        (288, 133),
-    ];
-    PAIRS
-        .iter()
-        .find(|(b, _)| *b == banner)
-        .map(|(_, net)| *net)
-        .unwrap_or(0)
-}
-
+/// `CommonEnemyUICollectionInfoProvider.GetKillCountNeeded`
+/// (`CommonEnemyUICollectionInfoProvider.cs:21-34`): the full kill count is
+/// `ItemID.Sets.KillsToBanner[BannerToItem(NPCtoBanner(BannerID()))]`, with
+/// `ItemID.Sets.DefaultKillsForBannerNeeded` (50, `ItemID.cs:1303`) for every
+/// banner item that has no override (`ItemID.cs:1304`). The `quickUnlock` flag
+/// is checked at the entry/unlock-state level, not by zeroing the count.
 pub fn kills_needed_for(net_id: i32) -> i32 {
     let banner = npc_to_banner(net_id);
-    if banner <= 0 {
-        return 0;
-    }
     let item = banner_to_item(banner);
-    // The `KillsToBanner` overrides the family hits (`ItemID.cs:1304`):
-    // only Pinky's banner item 2960 carries an explicit 25.
-    if item == 2960 {
-        25
-    } else {
-        ItemID_Sets_DefaultKillsForBannerNeeded
-    }
+    kills_to_banner_item(item)
 }
 
 /// `ItemID.Sets.DefaultKillsForBannerNeeded` (`ItemID.cs:1303`).
 pub const ItemID_Sets_DefaultKillsForBannerNeeded: i32 = 50;
 
-/// `BannerSystem.BannerToItem` (`BannerSystem.cs:341-401`): the banded
-/// +offset map. Only the bands the family's banners land in are kept.
+/// `ItemID.Sets.KillsToBanner` (`ItemID.cs:1304`): the per-banner-item kill
+/// count, defaulting to `ItemID_Sets_DefaultKillsForBannerNeeded` (50). The
+/// override pairs are the `CreateIntSet(default, item, count, ...)` arguments.
+pub fn kills_to_banner_item(item: i32) -> i32 {
+    match item {
+        3838 => 1000,
+        3845 => 200,
+        3837 => 500,
+        3844 => 200,
+        3839 => 150,
+        3840 => 100,
+        3842 => 200,
+        3841 => 100,
+        2971 => 150,
+        2982 => 150,
+        2931 => 100,
+        2961 => 100,
+        2994 => 100,
+        2985 => 10,
+        4541 => 10,
+        2969 => 10,
+        2986 => 10,
+        2915 => 10,
+        4602 => 10,
+        4542 => 25,
+        4543 => 25,
+        4546 => 25,
+        4545 => 25,
+        2901 => 25,
+        2902 => 25,
+        1631 => 25,
+        2913 => 25,
+        4688 => 25,
+        3390 => 25,
+        4973 => 25,
+        4974 => 25,
+        4975 => 25,
+        2934 => 25,
+        1670 => 25,
+        1694 => 25,
+        2958 => 25,
+        2960 => 25,
+        3441 => 25,
+        3780 => 25,
+        3397 => 25,
+        3403 => 25,
+        _ => ItemID_Sets_DefaultKillsForBannerNeeded,
+    }
+}
+
+/// `BannerSystem.BannerToItem` (`BannerSystem.cs:341-401`): the banner-id to
+/// placeable banner item map.
 pub fn banner_to_item(banner: i32) -> i32 {
+    if banner == 292 {
+        return 5673;
+    }
+    if banner == 291 {
+        return 5672;
+    }
+    if banner == 290 {
+        return 5651;
+    }
+    if banner == 289 {
+        return 5352;
+    }
     if banner >= 276 {
         return 4965 + banner - 276;
+    }
+    if banner >= 274 {
+        return 4687 + banner - 274;
+    }
+    if banner == 273 {
+        return 4602;
+    }
+    if banner >= 267 {
+        return 4541 + banner - 267;
+    }
+    if banner >= 257 {
+        return 3837 + banner - 257;
+    }
+    if banner >= 252 {
+        return 3794 + banner - 252;
+    }
+    if banner >= 244 {
+        return 3398 + banner - 244;
+    }
+    if banner >= 241 {
+        return 3390 + banner - 241;
     }
     if banner >= 88 {
         return 2897 + banner - 88;
     }
+    if banner >= 24 {
+        return 1683 + banner - 24;
+    }
     1615 + banner - 1
 }
-
 /// `ItemID.BannerEffect(1f)` sampled at the Classic difficulty — the
 /// damage-dealt ×1.5 / damage-received ×0.75 pair every non-DD2 banner
 /// carries (`ItemID.cs:11-31`: DamageDealt classic `1 + 1*0.5`, Damage
@@ -481,19 +803,50 @@ mod tests {
 
     #[test]
     fn the_family_banner_chain() {
-        // BlueSlime: banner 69 → item 1683 → the default 50.
-        assert_eq!(banner_to_item(69), 1683);
+        // BlueSlime: banner 69 -> item 1728 -> the default 50.
+        // `BannerSystem.BannerToItem` (`BannerSystem.cs:341-401`, the `>= 24`
+        // band `1683 + banner - 24`).
+        assert_eq!(banner_to_item(69), 1728);
         assert_eq!(kills_needed_for(1), 50);
-        // Pinky: banner 151 → item 2960 → the explicit 25.
+        // Pinky: banner 151 -> item 2960 -> the explicit 25
+        // (`ItemID.Sets.KillsToBanner` override, `ItemID.cs:1304`).
         assert_eq!(banner_to_item(151), 2960);
         assert_eq!(kills_needed_for(-4), 25);
         // The rest of the family: the default.
         for net in [-3, -5, -6, -7, -8, -9, 2, 3, 133] {
             assert_eq!(kills_needed_for(net), 50, "net id {net}");
         }
-        // The bosses have no banner — the entry's quick-unlock flag governs.
-        assert_eq!(kills_needed_for(50), 0);
-        // Unknown ids: no banner either.
-        assert_eq!(kills_needed_for(17), 0);
+        // No banner -> `BannerToItem(0)` = 1614, whose `KillsToBanner` entry is
+        // the default 50 (`CommonEnemyUICollectionInfoProvider.GetKillCountNeeded`
+        // `:21-34`, `BannerSystem.cs:341-401`, `ItemID.cs:1303-1304`). Quick-unlock
+        // is a separate flag, not a zero full-kill count.
+        assert_eq!(banner_to_item(0), 1614);
+        assert_eq!(kills_needed_for(50), 50);
+        assert_eq!(kills_needed_for(17), 50);
     }
+
+    #[test]
+    fn kills_needed_for_honors_kills_to_banner_overrides() {
+        // `ItemID.Sets.KillsToBanner` (`ItemID.cs:1304`) pairs item ids with a
+        // non-default kill count; every other banner item keeps
+        // `DefaultKillsForBannerNeeded` (50, `ItemID.cs:1303`). The full count
+        // comes from `CommonEnemyUICollectionInfoProvider.GetKillCountNeeded`
+        // (`CommonEnemyUICollectionInfoProvider.cs:21-34`):
+        // `BannerToItem(NPCtoBanner(BannerID()))` -> `KillsToBanner[item]`.
+        assert_eq!(kills_needed_for(45), 10, "Tim banner 177 -> item 2986 -> 10");
+        assert_eq!(
+            kills_needed_for(552),
+            1000,
+            "DD2GoblinT1 banner 257 -> item 3837 -> 1000"
+        );
+        assert_eq!(
+            kills_needed_for(520),
+            25,
+            "MartianWalker banner 205 -> item 3014 -> 25"
+        );
+        // The unknown persistent-id / absent net-id fallback is the default 50
+        // (`GetKillCountNeeded:23-31`).
+        assert_eq!(kills_needed_for(999_999), 50);
+    }
+
 }

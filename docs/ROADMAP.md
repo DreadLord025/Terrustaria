@@ -314,7 +314,7 @@ plausible but cannot express style-specific rules.
 | S1-F-12 | Spawner: the `invaders` rate override (`NPC.cs:781-785`) is missing — invasion spawns fire once per tick, uncapped, at a fixed `(x-600, y-400)` offset instead of `FindSpawnTile` | M | B | research/24 | — | invasion spawn placement test |
 | S1-F-13 | Pumpkin Moon / Snow Moon have no wave rosters (`spawn_npc_at` never reads `moon_event`) | M | B | research/24 | — | wave roster test |
 | S1-F-14 | Missing world events: Lantern Night, Birthday Party, the Sandstorm event and the cultist delay (grep-verified absent) | M | B | research/24 | — | per-event test |
-| S1-F-15 | Bestiary unlock ladder: `kills_needed_for` returns 0 outside an 11-pair banner table (0 = "≥ full" → tier 4 at zero kills) — wrong for 164 of 172 entries; the C# default is 50 | M | B | research/30 | — | per-entry ladder test |
+| S1-F-15 | Bestiary unlock ladder (landed): `kills_needed_for` now follows `CommonEnemyUICollectionInfoProvider.GetKillCountNeeded` / `BannerSystem.NPCtoBanner`+`BannerToItem` / `ItemID.Sets.KillsToBanner` (default 50, per-item overrides), so bannerless and overridden entries get correct full-kill counts; quick-unlock still short-circuits at unlock state. | M | B | research/30 | - | tr-core bestiary tests (tier/override/banner chain) |
 | S1-F-16 | Chest icon tables (`chestTypeToIcon`/`chestTypeToIcon2`/`dresserTypeToIcon`) and the shop `StockWhen` gates hard-false | S | B | research/22 | — | icon/gate test |
 | S1-F-17 | Item `SetDefaults` table: 6 196 rows ✅ — freeze it with a generator round-trip test so it cannot drift | S | D | research/07 | — | generator diff is empty (the AGENTS.md pattern) |
 
