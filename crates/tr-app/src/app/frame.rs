@@ -7,8 +7,8 @@
 use std::time::Instant;
 
 use glam::Vec2;
-use tr_core::lighting::{LightParams, LightStyle};
 use tr_core::TILE_PX;
+use tr_core::lighting::{LightParams, LightStyle};
 use wgpu::util::DeviceExt;
 
 use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
@@ -129,9 +129,7 @@ impl App {
         // `SoundEngine.PlaySound(12)`/`(10)` cues (`IngameOptions.cs:157-199`,
         // `:421-436`) — plus the sticky bar drag (`:424`). Runs on every frame
         // like the vanilla's, and before the HUD borrows the state.
-        if let Some(cue) =
-            crate::ui::ingame_options::update(self, self.pointer.left_held())
-        {
+        if let Some(cue) = crate::ui::ingame_options::update(self, self.pointer.left_held()) {
             self.audio.play(cue);
         }
         // `Main.DrawInterface_29_SettingsButton` (`Main.cs:45513-45527`): the
@@ -1192,13 +1190,10 @@ impl App {
                         // `Player.armor[0..3]`'s item kinds — the armor draw
                         // input (head/body/legs, 0 = the empty slot).
                         [
-                            self.equip.armor.first().map_or(0, |s| {
-                                if s.count > 0 {
-                                    s.kind
-                                } else {
-                                    0
-                                }
-                            }),
+                            self.equip
+                                .armor
+                                .first()
+                                .map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
                             self.equip
                                 .armor
                                 .get(1)
