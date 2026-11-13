@@ -92,6 +92,11 @@ pub enum PointerEvent {
     Click,
     /// `element.LeftDoubleClick/RghtDoubleClick(evt)` (`:238`).
     DoubleClick,
+    /// `element.ScrollWheel(UIScrollWheelEvent)` (`UserInterface.cs:221`): the
+    /// one-shot wheel dispatch, fired only when an element is under the pointer.
+    /// The delta is the accumulated `PlayerInput.ScrollWheelDeltaForUI` the
+    /// machine consumed.
+    ScrollWheel { delta: i32 },
 }
 
 /// The whole machine (`UserInterface`'s pointer half). The `CurrentState`, hover
@@ -104,6 +109,9 @@ pub struct PointerState {
     /// `_clickDisabledTimeRemaining` (`:97`) — ms left of the state-change
     /// lockout.
     click_disabled_ms: f64,
+    /// `PlayerInput.ScrollWheelDeltaForUI` (`:219-222`) — the wheel delta the
+    /// input layer accumulates and `Update` consumes **once** per frame.
+    scroll_delta_for_ui: i32,
 }
 
 impl Default for PointerState {
@@ -112,6 +120,7 @@ impl Default for PointerState {
             left: PointerCache::default(),
             right: PointerCache::default(),
             click_disabled_ms: 0.0,
+            scroll_delta_for_ui: 0,
         }
     }
 }
@@ -225,6 +234,29 @@ impl PointerState {
     /// (either button), which the C#'s input-routing guards read.
     pub fn mouse_captured(&self) -> bool {
         self.left.was_down || self.right.was_down
+    }
+
+    /// `PlayerInput`'s wheel accumulation into `ScrollWheelDeltaForUI` — the sum
+    /// `UserInterface.Update` later reads at `:219` (`+=` in
+    /// `PlayerInput.HandleInput`, so two notches in one frame add).
+    pub fn queue_scroll(&mut self, delta: i32) {
+        self.scroll_delta_for_ui += delta;
+    }
+
+    /// `Update`'s scroll arm (`UserInterface.cs:219-223`): the pending delta is
+    /// dispatched to the element under the pointer (`hit` is `GetElementAt`'s
+    /// result) and the accumulator is zeroed **whatever the hit**
+    /// (`PlayerInput.ScrollWheelDeltaForUI = 0`, `:222`). A zero delta fires
+    /// nothing (`:219`'s `!= 0` guard) and leaves nothing pending.
+    pub fn scroll_wheel(&mut self, hit: Option<u32>) -> Option<PointerEvent> {
+        let delta = self.scroll_delta_for_ui;
+        self.scroll_delta_for_ui = 0;
+        if delta == 0 {
+            return None;
+        }
+        // `uIElement?.ScrollWheel(...)` (`:221`) — the null-conditional means a
+        // miss raises no event, but the `= 0` above still consumed the delta.
+        hit.map(|_| PointerEvent::ScrollWheel { delta })
     }
 }
 
@@ -428,5 +460,45 @@ mod tests {
             n.press(1499.0, PointerButton::Left, Some(2)),
             Some(PointerEvent::DoubleClick)
         );
+    }
+
+    /// S1-H-4: `Update`'s scroll arm (`UserInterface.cs:219-223`) — the
+    /// accumulated `PlayerInput.ScrollWheelDeltaForUI` is dispatched to the
+    /// element under the pointer and consumed **once**.
+    #[test]
+    fn dw_1_4_the_scroll_wheel_fires_once_on_the_element_under_the_pointer() {
+        let mut m = PointerState::default();
+        // Two notches in one frame `+=` into `ScrollWheelDeltaForUI`.
+        m.queue_scroll(1);
+        m.queue_scroll(2);
+        // `uIElement?.ScrollWheel(new UIScrollWheelEvent(..., delta))` (`:221`)
+        // with the summed delta.
+        assert_eq!(
+            m.scroll_wheel(Some(7)),
+            Some(PointerEvent::ScrollWheel { delta: 3 })
+        );
+        // `PlayerInput.ScrollWheelDeltaForUI = 0` (`:222`) — the next read in
+        // the same frame fires nothing (the `!= 0` guard at `:219`).
+        assert_eq!(m.scroll_wheel(Some(7)), None);
+    }
+
+    #[test]
+    fn dw_1_4_a_scroll_with_no_element_still_consumes_the_delta() {
+        let mut m = PointerState::default();
+        m.queue_scroll(-1);
+        // `uIElement?.` (`:221`): a `GetElementAt` miss raises nothing...
+        assert_eq!(m.scroll_wheel(None), None);
+        // ... but the trailing `= 0` still ran: no stale delta leaks into the
+        // next read.
+        assert_eq!(m.scroll_wheel(Some(7)), None);
+    }
+
+    #[test]
+    fn dw_1_4_a_zero_delta_fires_nothing() {
+        let mut m = PointerState::default();
+        // The `!= 0` guard (`:219`) skips the whole arm for a zero wheel.
+        assert_eq!(m.scroll_wheel(Some(7)), None);
+        m.queue_scroll(0);
+        assert_eq!(m.scroll_wheel(Some(7)), None);
     }
 }
