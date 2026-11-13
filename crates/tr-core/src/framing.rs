@@ -5,6 +5,20 @@
 //! 16x16 frame from the tileset accordingly. Tiles with `Main.tileFrameImportant`
 //! (torches, furniture, plants, ...) store their frames in the save file and are skipped.
 //!
+//! Every framed tile also carries a `frameNumber` variant (walls a
+//! `wallFrameNumber`): the C# stores it in the runtime `Tile.bTileHeader2` bits
+//! 4-7 (`Tile.cs:464-482`, **not** serialized by `SaveWorldTiles`), rolls it
+//! from `WorldGen.genRand.Next(0, 3)` at reset events and reuses it otherwise
+//! (`WorldGen.cs:81705-81729`, `Framing.cs:318-321`, `Framing.cs:376-404`).
+//! The port keeps the same values in [`crate::world::World::variants`] (2+2
+//! bits): the full-world passes roll from per-band `UnifiedRandom` streams
+//! keyed off the world seed (the stand-in for the C#'s genRand interleave —
+//! vanilla frames incrementally, the port frames in one pass), and the
+//! edit-time reframes reuse the stored value, re-rolling only the
+//! `SquareTileFrame` centre. The `Main.tileLargeFrames` /
+//! `Main.wallLargeFrames` lookups replace the variant per position, exactly as
+//! the C# does.
+//!
 //! The merge relation itself is generated into [`crate::tiledata`] from the decompiled
 //! source, so it stays in sync with the game's `TileMergeAttempt` table.
 
@@ -131,20 +145,6 @@ fn neighbour(t: &Tile) -> i32 {
     }
 }
 
-/// Deterministic per-position variant, standing in for the `frameNumber` stored in the
-/// save file (we do not decode that field yet). Uses a proper avalanche hash so the
-/// pattern does not form visible periodic lattices.
-#[inline]
-fn variant(x: i32, y: i32) -> usize {
-    let mut h = (x as u32).wrapping_mul(0x9E37_79B1) ^ (y as u32).wrapping_mul(0x85EB_CA77);
-    h ^= h >> 16;
-    h = h.wrapping_mul(0x7FEB_352D);
-    h ^= h >> 15;
-    h = h.wrapping_mul(0x846C_A68B);
-    h ^= h >> 16;
-    (h % 3) as usize
-}
-
 // ---------------------------------------------------------------- grass
 // `WorldGen.TileFrameCosmetic`'s grass family (WorldGen.cs:82184-84836). Grass
 // frames *against* its base dirt instead of merging with it: the base
@@ -221,7 +221,7 @@ fn is_grass_family(num: u16) -> bool {
 /// `n` carries the raw framing types of the eight neighbours (`-1` when
 /// inactive), with the side slots slope-adjusted like the original
 /// (WorldGen.cs:81440-81507).
-fn grass_frame_of(x: i32, y: i32, num: i32, n: &mut Nb) -> (i16, i16) {
+fn grass_frame_of(x: i32, y: i32, num: i32, variant: usize, n: &mut Nb) -> (i16, i16) {
     // `TileMergeAttempt(0, TileID.Sets.Dirt, …)` (WorldGen.cs:81516): every
     // dirt-family neighbour counts as plain dirt before the type logic.
     merge_set(n, 0, |v| td::SET_DIRT.has(v));
@@ -260,7 +260,10 @@ fn grass_frame_of(x: i32, y: i32, num: i32, n: &mut Nb) -> (i16, i16) {
         merge_eq(n, base, 2);
     }
 
-    let v = variant(x, y) as i16;
+    // The `frameNumber` variant — the stored `Tile.bTileHeader2` bits 4-5
+    // (`Tile.cs:464-470`), rolled from `genRand.Next(0, 3)` at reset events
+    // (`WorldGen.cs:81705-81729`); here the caller supplies it.
+    let v = variant as i16;
     let v18 = v * 18;
     let v36 = v * 36;
     let v54 = v * 54;
@@ -781,13 +784,13 @@ fn grass_frame_of(x: i32, y: i32, num: i32, n: &mut Nb) -> (i16, i16) {
         }
         for r in RULES.iter() {
             if mask & r.need == r.want {
-                rect = Some(r.frames[variant(x, y)]);
+                rect = Some(r.frames[variant]);
                 break;
             }
         }
         // WorldGen.cs:84767-84784: the interior fallback.
         if rect.is_none() {
-            rect = Some(([18, 36, 54][variant(x, y)], 18));
+            rect = Some(([18, 36, 54][variant], 18));
         }
     }
     let (fx, fy) = rect.expect("grass framing always resolves");
@@ -798,7 +801,19 @@ fn grass_frame_of(x: i32, y: i32, num: i32, n: &mut Nb) -> (i16, i16) {
 }
 
 /// Computes the frame for one tile. Returns `(frameX, frameY)` in tileset pixels.
+///
+/// `WorldGen.TileFrame(i, j)` with `resetFrame: false` (`WorldGen.cs:81713`) —
+/// the stored `frameNumber` variant is reused. The reset arm (a fresh
+/// `genRand.Next(0, 3)` roll, `:81705-81709`) lives in the pass functions
+/// ([`frame_world`]/[`reframe_area`]), which store the roll before framing.
 pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
+    let variant = world.frame_number(world.index(x, y)) as usize;
+    frame_of_variant(world, x, y, variant)
+}
+
+/// [`frame_of`] with the caller's `frameNumber` variant — the roll-vs-read
+/// split the C# makes at `WorldGen.cs:81705-81713`.
+pub fn frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option<(i16, i16)> {
     let tile = world.tile(x, y)?;
     if !tile.active() {
         return None;
@@ -888,7 +903,7 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
             dl: n[6],
             dr: n[7],
         };
-        return Some(grass_frame_of(x, y, num, &mut nb));
+        return Some(grass_frame_of(x, y, num, variant, &mut nb));
     }
     let mut n = n;
 
@@ -981,19 +996,21 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
         }
     }
 
-    // `frameNumber` is stored per tile in the save file but we approximate it with a
-    // position hash. `Main.tileLargeFrames` overrides it with a fixed per-position
-    // pattern (used by tiles that must not tile their texture).
-    let mut variant = variant(x, y);
-    match td::LARGE_FRAMES[me as usize] {
+    // The variant is the caller's stored `frameNumber` (`WorldGen.cs:81705-81729`).
+    // The `Main.tileLargeFrames` overrides REPLACE it with a fixed per-position
+    // pattern without re-storing (`:81719-81729` — unlike the wall side, which
+    // stores the lookup value); 3 folds onto 2 because the C# variant `switch`
+    // arms have no `case 2` — `default` serves both 2 and 3.
+    let variant = match td::LARGE_FRAMES[me as usize] {
         1 => {
-            const LARGE_4: [[usize; 3]; 4] = [[1, 3, 1], [0, 2, 0], [1, 1, 3], [0, 0, 2]];
-            variant = LARGE_4[y.rem_euclid(4) as usize][x.rem_euclid(3) as usize];
+            // `WorldGen.cs:81719-81728`, verbatim; the C# values are 1-based.
+            const LARGE_4: [[usize; 3]; 4] = [[2, 4, 2], [1, 3, 1], [2, 2, 4], [1, 1, 3]];
+            LARGE_4[y.rem_euclid(4) as usize][x.rem_euclid(3) as usize] - 1
         }
-        2 => variant = (x.rem_euclid(2) + y.rem_euclid(2) * 2) as usize,
-        _ => {}
+        2 => (x.rem_euclid(2) + y.rem_euclid(2) * 2) as usize,
+        _ => variant,
     }
-    let variant = variant.min(2);
+    .min(2);
 
     for r in RULES.iter() {
         if mask & r.need == r.want {
@@ -1014,9 +1031,10 @@ pub fn frame_world(world: &mut World) -> usize {
         return 0;
     }
 
-    // C4: frames depend only on kinds/flags/slopes, never on other frames, so a band
-    // of rows can be framed in parallel. The immutable world is shared by the tasks;
-    // results land in the band buffer and are copied in afterwards. 128 rows is
+    // C4: frames depend only on kinds/flags/slopes (and the tile's own
+    // `frameNumber` variant), never on other tiles' frames, so a band of rows can
+    // be framed in parallel. The immutable world is shared by the tasks; results
+    // land in the band buffer and are copied in afterwards. 128 rows is
     // ~3.3 MB of scratch for a 6400-wide world.
     const BAND: usize = 128;
     let mut band = Vec::new();
@@ -1026,11 +1044,18 @@ pub fn frame_world(world: &mut World) -> usize {
         let y1 = (y0 + BAND).min(h - 1);
         let rows = y1 - y0;
         band.clear();
-        band.resize(rows * w, (i16::MIN, i16::MIN));
+        band.resize(rows * w, (i16::MIN, i16::MIN, 0u8));
         {
             let world = &*world;
             band.par_chunks_mut(w).enumerate().for_each(|(row_i, row)| {
                 let y = (y0 + row_i) as i32;
+                // One roll stream per band: the port's stand-in for the C#'s
+                // `WorldGen.genRand.Next(0, 3)` draws interleaved with worldgen
+                // (`WorldGen.cs:81705-81709` — vanilla frames incrementally, the
+                // port frames in this one pass). Band-offset seeds keep the
+                // bands independent; deviation recorded in `docs/ANALYSIS.md`.
+                let mut rng =
+                    crate::unified_random::UnifiedRandom::new((world.seed as i32).wrapping_add((y0 / BAND) as i32));
                 for x in 1..w - 1 {
                     let t = &world.tiles[y as usize * w + x];
                     if !t.active() || important.get(t.kind as usize).copied().unwrap_or(false) {
@@ -1038,8 +1063,9 @@ pub fn frame_world(world: &mut World) -> usize {
                     }
                     // Slopes and half bricks frame exactly like full blocks; the draw
                     // pass clips the sprite into the slope/half silhouette.
-                    if let Some((fx, fy)) = frame_of(world, x as i32, y) {
-                        row[x] = (fx, fy);
+                    let rolled = rng.next_range(0, 3) as usize;
+                    if let Some((fx, fy)) = frame_of_variant(world, x as i32, y, rolled) {
+                        row[x] = (fx, fy, rolled as u8);
                     }
                 }
             });
@@ -1047,13 +1073,15 @@ pub fn frame_world(world: &mut World) -> usize {
         for (row_i, row) in band.chunks(w).enumerate() {
             let y = y0 + row_i;
             for x in 1..w - 1 {
-                let (fx, fy) = row[x];
+                let (fx, fy, variant) = row[x];
                 if fx == i16::MIN {
                     continue;
                 }
-                let t = &mut world.tiles[y * w + x];
+                let idx = y * w + x;
+                let t = &mut world.tiles[idx];
                 t.frame_x = fx;
                 t.frame_y = fy;
+                world.set_frame_number(idx, variant);
                 framed += 1;
             }
         }
@@ -1065,45 +1093,79 @@ pub fn frame_world(world: &mut World) -> usize {
 // ---------------------------------------------------------------- walls
 
 /// `Framing.wallFrameLookup` — `(column, row)` cells of the 36 px wall grid for each
-/// neighbour mask, with three random variants. Ported from `Framing.AddWallFrameLookup`.
-static WALL_FRAMES: [[(u8, u8); 3]; 20] = [
-    [(9, 3), (10, 3), (11, 3)],
-    [(6, 3), (7, 3), (8, 3)],
-    [(12, 0), (12, 1), (12, 2)],
-    [(1, 4), (3, 4), (5, 4)],
-    [(9, 0), (9, 1), (9, 2)],
-    [(0, 4), (2, 4), (4, 4)],
-    [(6, 4), (7, 4), (8, 4)],
-    [(1, 2), (2, 2), (3, 2)],
-    [(6, 0), (7, 0), (8, 0)],
-    [(5, 0), (5, 1), (5, 2)],
-    [(1, 3), (3, 3), (5, 3)],
-    [(4, 0), (4, 1), (4, 2)],
-    [(0, 3), (2, 3), (4, 3)],
-    [(0, 0), (0, 1), (0, 2)],
-    [(1, 0), (2, 0), (3, 0)],
-    [(1, 1), (2, 1), (3, 1)],
-    [(6, 1), (7, 1), (8, 1)],
-    [(6, 2), (7, 2), (8, 2)],
-    [(10, 0), (10, 1), (10, 2)],
-    [(11, 0), (11, 1), (11, 2)],
+/// neighbour mask, with the four `wallFrameNumber` variants. Ported from
+/// `Framing.AddWallFrameLookup` (`Framing.cs:163-176`) — the fourth point of each row
+/// serves the lazure large-frame walls, whose lookup yields 3
+/// (`Framing.cs:385-387`, `lazureTileFrameNumberLookup` − 1).
+static WALL_FRAMES: [[(u8, u8); 4]; 20] = [
+    [(9, 3), (10, 3), (11, 3), (6, 6)],
+    [(6, 3), (7, 3), (8, 3), (4, 6)],
+    [(12, 0), (12, 1), (12, 2), (12, 5)],
+    [(1, 4), (3, 4), (5, 4), (3, 6)],
+    [(9, 0), (9, 1), (9, 2), (9, 5)],
+    [(0, 4), (2, 4), (4, 4), (2, 6)],
+    [(6, 4), (7, 4), (8, 4), (5, 6)],
+    [(1, 2), (2, 2), (3, 2), (3, 5)],
+    [(6, 0), (7, 0), (8, 0), (6, 5)],
+    [(5, 0), (5, 1), (5, 2), (5, 5)],
+    [(1, 3), (3, 3), (5, 3), (1, 6)],
+    [(4, 0), (4, 1), (4, 2), (4, 5)],
+    [(0, 3), (2, 3), (4, 3), (0, 6)],
+    [(0, 0), (0, 1), (0, 2), (0, 5)],
+    [(1, 0), (2, 0), (3, 0), (1, 5)],
+    [(1, 1), (2, 1), (3, 1), (2, 5)],
+    [(6, 1), (7, 1), (8, 1), (7, 5)],
+    [(6, 2), (7, 2), (8, 2), (8, 5)],
+    [(10, 0), (10, 1), (10, 2), (10, 5)],
+    [(11, 0), (11, 1), (11, 2), (11, 5)],
 ];
 
 /// `Framing.centerWallFrameLookup` — offsets added to mask 15 for fully enclosed walls.
 static CENTER_WALL_FRAMES: [[u8; 3]; 3] = [[2, 0, 0], [0, 1, 4], [0, 3, 0]];
 
-/// Deterministic wall variant (Terraria stores a random `wallFrameNumber` per wall).
+/// `Framing.phlebasTileFrameNumberLookup` (`Framing.cs:99-104`) — the
+/// `wallLargeFrames == 1` variant override, indexed `[j % 4][i % 3]`, 1-based.
+static PHLEBAS_WALL_VARIANTS: [[usize; 3]; 4] = [[2, 4, 2], [1, 3, 1], [2, 2, 4], [1, 1, 3]];
+
+/// `Framing.lazureTileFrameNumberLookup` (`Framing.cs:106-109`) — the
+/// `wallLargeFrames == 2` variant override, indexed `[i % 2][j % 2]`, 1-based.
+static LAZURE_WALL_VARIANTS: [[usize; 2]; 2] = [[1, 3], [2, 4]];
+
+/// The `Framing.WallFrame` variant selection (`Framing.cs:376-399`): the
+/// `Main.wallLargeFrames` lookups replace the caller's variant for the large
+/// walls (1 = phlebas, 2 = lazure); every other wall keeps it. The caller
+/// stores the returned value — the C# re-stores the lookup for large walls and
+/// the roll for reset events.
 #[inline]
-fn wall_variant(x: i32, y: i32) -> usize {
-    let mut h = (x as u32).wrapping_mul(0xC2B2_AE35) ^ (y as u32).wrapping_mul(0x27D4_EB2F);
-    h ^= h >> 15;
-    h = h.wrapping_mul(0x2545_F491);
-    h ^= h >> 13;
-    (h % 3) as usize
+fn wall_variant_of(world: &World, x: i32, y: i32, wall: u16, variant: usize) -> usize {
+    match td::WALL_LARGE_FRAMES
+        .get(wall as usize)
+        .copied()
+        .unwrap_or(0)
+    {
+        1 => PHLEBAS_WALL_VARIANTS[y.rem_euclid(4) as usize][x.rem_euclid(3) as usize] - 1,
+        2 => LAZURE_WALL_VARIANTS[x.rem_euclid(2) as usize][y.rem_euclid(2) as usize] - 1,
+        _ => variant,
+    }
 }
 
-/// `Framing.WallFrame` for one tile. `None` when there is no wall.
-pub fn wall_frame_of(world: &World, x: i32, y: i32) -> Option<(u8, u8)> {
+/// The reset roll of `Framing.WallFrame` (`Framing.cs:389-395`):
+/// `genRand.Next(0, 3)`, with the wall-21 quirk — a second `Next(2)` draw
+/// forces variant 2 half the time. Wall 21 is the wood fence's wall id, whose
+/// sheet carries no first-variant column.
+fn wall_reset_roll(rng: &mut crate::unified_random::UnifiedRandom, wall: u16) -> usize {
+    let mut rolled = rng.next_range(0, 3) as usize;
+    if wall == 21 && rng.next_max(2) == 0 {
+        rolled = 2;
+    }
+    rolled
+}
+
+/// `Framing.WallFrame` for one tile, with the caller's `wallFrameNumber`
+/// variant (the reset roll or the stored read). Returns the 36 px cell and the
+/// effective variant (the large-frame lookups replace it), which the caller
+/// stores. `None` when there is no wall.
+fn wall_frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option<((u8, u8), usize)> {
     let tile = world.tile(x, y)?;
     if tile.wall == 0 {
         return None;
@@ -1124,12 +1186,28 @@ pub fn wall_frame_of(world: &World, x: i32, y: i32) -> Option<(u8, u8)> {
     if mask == 15 {
         mask += CENTER_WALL_FRAMES[x.rem_euclid(3) as usize][y.rem_euclid(3) as usize];
     }
-    Some(WALL_FRAMES[mask as usize][wall_variant(x, y)])
+    let variant = wall_variant_of(world, x, y, tile.wall, variant).min(3);
+    Some((WALL_FRAMES[mask as usize][variant], variant))
+}
+
+/// `Framing.WallFrame(i, j)` with `resetFrame: false` (`Framing.cs:399`) — the
+/// stored `wallFrameNumber` variant is reused. `None` when there is no wall.
+pub fn wall_frame_of(world: &World, x: i32, y: i32) -> Option<(u8, u8)> {
+    let variant = world.wall_frame_number(world.index(x, y)) as usize;
+    Some(wall_frame_of_variant(world, x, y, variant)?.0)
 }
 
 /// Re-frames a small square after a tile edit. Only the affected area is touched, so
 /// mining/placing does not need a full-world framing pass.
-pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32) {
+///
+/// The `reset` flag is `SquareTileFrame(i, j, resetFrame)`'s (default `true`,
+/// `WorldGen.cs:80185`): the centre tile re-rolls its variant from the world's
+/// framing stream when set (`TileFrame(i, j, resetFrame)` at `:80191` /
+/// `Framing.WallFrame(i, j, resetFrame)` at `:80204`), while the ring re-frames
+/// with the stored variants (the `TileFrame`/`WallFrame` calls at `:80180-80208`
+/// default to `resetFrame: false`). The square stays a radius-clamped superset
+/// of the C# 3×3 ring (the documented deviation in `docs/ANALYSIS.md`).
+pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32, reset: bool) {
     let r = radius.clamp(1, 4);
     let important = world.frame_important.clone();
     let mut tiles = Vec::new();
@@ -1140,17 +1218,40 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32) {
             let Some(t) = world.tile(x, y) else {
                 continue;
             };
-            if t.active() && !important.get(t.kind as usize).copied().unwrap_or(false) {
-                if let Some(f) = frame_of(world, x, y) {
+            let idx = world.index(x, y);
+            let (active, kind, wall) = (t.active(), t.kind, t.wall);
+            // `SquareTileFrame`'s centre-only reset: the roll happens where the
+            // C# passes `resetFrame` — the centre tile/wall — and is consumed
+            // from `world.frame_rng` (the port's `genRand` stand-in).
+            let centre = x == cx && y == cy;
+            if active && !important.get(kind as usize).copied().unwrap_or(false) {
+                let variant = if centre && reset {
+                    let rolled = world.frame_rng.next_range(0, 3) as usize;
+                    world.set_frame_number(idx, rolled as u8);
+                    rolled
+                } else {
+                    world.frame_number(idx) as usize
+                };
+                if let Some(f) = frame_of_variant(world, x, y, variant) {
                     tiles.push((x, y, f));
                 }
             }
-            if t.active() && td::SET_TORCHES.has(t.kind) {
+            if active && td::SET_TORCHES.has(kind) {
                 torches.push((x, y));
             }
-            if t.wall != 0 {
-                if let Some(w) = wall_frame_of(world, x, y) {
-                    walls.push((x, y, w));
+            if wall != 0 {
+                let variant = if centre && reset {
+                    wall_reset_roll(&mut world.frame_rng, wall)
+                } else {
+                    world.wall_frame_number(idx) as usize
+                };
+                if let Some(((col, row), effective)) = wall_frame_of_variant(world, x, y, variant) {
+                    // The large-frame lookups re-store their value even on the
+                    // resetFrame=false path (`Framing.cs:378-388` runs before the
+                    // reset branch); for normal walls this writes the stored
+                    // value back unchanged.
+                    world.set_wall_frame_number(idx, effective as u8);
+                    walls.push((x, y, (col, row)));
                 }
             }
         }
@@ -1182,8 +1283,10 @@ pub fn frame_walls(world: &mut World) -> usize {
         return 0;
     }
 
-    // C4: wall frames depend only on the wall ids of the four neighbours. Same
-    // banded-parallel scheme as `frame_world`.
+    // C4: wall frames depend only on the wall ids of the four neighbours (and the
+    // tile's own variant). Same banded-parallel scheme as `frame_world`, with one
+    // roll stream per band standing in for the C#'s `genRand` interleave
+    // (`Framing.cs:389-395` — the reset arm; deviation recorded in ANALYSIS.md).
     const BAND: usize = 128;
     let mut band = Vec::new();
     let mut framed = 0usize;
@@ -1192,46 +1295,41 @@ pub fn frame_walls(world: &mut World) -> usize {
         let y1 = (y0 + BAND).min(h - 1);
         let rows = y1 - y0;
         band.clear();
-        band.resize(rows * w, (u8::MAX, u8::MAX));
+        band.resize(rows * w, ((u8::MAX, u8::MAX), 0u8));
         {
             let world = &*world;
             band.par_chunks_mut(w).enumerate().for_each(|(row_i, row)| {
                 let y = y0 + row_i;
+                let mut rng = crate::unified_random::UnifiedRandom::new(
+                    (world.seed as i32).wrapping_add((y0 / BAND) as i32),
+                );
                 for x in 1..w - 1 {
                     let i = y * w + x;
-                    if world.tiles[i].wall == 0 {
+                    let wall = world.tiles[i].wall;
+                    if wall == 0 {
                         continue;
                     }
-                    let mut mask = 0u8;
-                    if world.tiles[i - w].wall != 0 {
-                        mask |= 1;
+                    let rolled = wall_reset_roll(&mut rng, wall);
+                    if let Some((cell, variant)) =
+                        wall_frame_of_variant(world, x as i32, y as i32, rolled)
+                    {
+                        row[x] = (cell, variant as u8);
                     }
-                    if world.tiles[i - 1].wall != 0 {
-                        mask |= 2;
-                    }
-                    if world.tiles[i + 1].wall != 0 {
-                        mask |= 4;
-                    }
-                    if world.tiles[i + w].wall != 0 {
-                        mask |= 8;
-                    }
-                    if mask == 15 {
-                        mask += CENTER_WALL_FRAMES[x % 3][y % 3];
-                    }
-                    row[x] = WALL_FRAMES[mask as usize][wall_variant(x as i32, y as i32)];
                 }
             });
         }
         for (row_i, row) in band.chunks(w).enumerate() {
             let y = y0 + row_i;
             for x in 1..w - 1 {
-                let (col, wall_row) = row[x];
+                let ((col, wall_row), variant) = row[x];
                 if col == u8::MAX {
                     continue;
                 }
-                let t = &mut world.tiles[y * w + x];
+                let idx = y * w + x;
+                let t = &mut world.tiles[idx];
                 t.set_wall_frame(col, t.wall_row());
                 t.set_wall_frame(t.wall_col(), wall_row);
+                world.set_wall_frame_number(idx, variant);
                 framed += 1;
             }
         }
@@ -1354,7 +1452,7 @@ mod tests {
         solid(&mut w, 5, 5, 2);
         frame_world(&mut w);
         let t = *w.tile(5, 5).unwrap();
-        let v = variant(5, 5) as i16;
+        let v = w.frame_number(w.index(5, 5)) as i16;
         assert_eq!((t.frame_x, t.frame_y), (108, 90 + v * 18),);
     }
 
@@ -1374,7 +1472,7 @@ mod tests {
         solid(&mut w, 6, 4, 2);
         frame_world(&mut w);
         let t = *w.tile(5, 4).unwrap();
-        let v = variant(5, 4) as i16;
+        let v = w.frame_number(w.index(5, 4)) as i16;
         assert_eq!((t.frame_x, t.frame_y), (v * 18, 198));
     }
 
@@ -1391,8 +1489,8 @@ mod tests {
         solid(&mut w, 5, 5, 2);
         solid(&mut w, 5, 6, 2);
         frame_world(&mut w);
-        let v5 = variant(5, 5) as i16;
-        let v6 = variant(5, 6) as i16;
+        let v5 = w.frame_number(w.index(5, 5)) as i16;
+        let v6 = w.frame_number(w.index(5, 6)) as i16;
         let even = *w.tile(5, 5).unwrap();
         let odd = *w.tile(5, 6).unwrap();
         assert_eq!((even.frame_x, even.frame_y), (18 + v5 * 18, 18));
@@ -1410,7 +1508,176 @@ mod tests {
         solid(&mut w, 5, 6, 0);
         frame_world(&mut w);
         let t = *w.tile(5, 5).unwrap();
-        let v = variant(5, 5) as i16;
+        let v = w.frame_number(w.index(5, 5)) as i16;
         assert_eq!((t.frame_x, t.frame_y), (108, 216 + v * 36));
+    }
+
+    // ---- S1-A-3: the variants come from the C# roll/store/read mechanism ----
+
+    /// The full-world pass rolls a `genRand.Next(0, 3)` variant per framed tile
+    /// and stores it (`WorldGen.cs:81705-81709`): every framed tile carries a
+    /// 0..=2 `frameNumber`, and two runs over the same seed produce the same
+    /// frames and the same stored variants (the C# `resetFrame` stream).
+    #[test]
+    fn s1_a_3_the_full_pass_rolls_stores_and_replays_the_variant_stream() {
+        let build = || {
+            let mut w = World::new("t".into(), 24, 24);
+            for y in 1..23 {
+                for x in 1..23 {
+                    solid(&mut w, x, y, 1);
+                }
+            }
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        frame_world(&mut a);
+        frame_world(&mut b);
+        for y in 1..23 {
+            for x in 1..23 {
+                let idx = a.index(x, y);
+                assert!(a.frame_number(idx) <= 2, "variant must be 0..=2");
+                assert_eq!(
+                    (a.tiles[idx].frame_x, a.tiles[idx].frame_y),
+                    (b.tiles[idx].frame_x, b.tiles[idx].frame_y),
+                    "frame at ({x},{y}) differs between the two runs",
+                );
+                assert_eq!(
+                    a.variants[idx],
+                    b.variants[idx],
+                    "variant at ({x},{y}) differs between the two runs",
+                );
+            }
+        }
+        // The roll actually varies: a 22×22 slab cannot land on one variant.
+        let spread: std::collections::HashSet<u8> = a
+            .variants
+            .iter()
+            .skip(25)
+            .copied()
+            .collect();
+        assert!(spread.len() > 1, "the roll stream never varied: {spread:?}");
+    }
+
+    /// `SquareTileFrame(i, j)` (default `resetFrame: true`, `WorldGen.cs:80185`):
+    /// the centre re-rolls its variant from the world's framing stream while the
+    /// ring re-frames with the stored values (`:80180-80208` — the ring's
+    /// `TileFrame`/`WallFrame` calls default to `resetFrame: false`).
+    #[test]
+    fn s1_a_3_reframe_reuses_the_ring_and_rerolls_the_centre() {
+        let mut w = World::new("t".into(), 24, 24);
+        for y in 1..23 {
+            for x in 1..23 {
+                solid(&mut w, x, y, 1);
+            }
+        }
+        frame_world(&mut w);
+        let ring: Vec<(usize, u8, i16, i16)> = [(3, 4), (4, 3), (5, 4), (4, 5), (3, 3), (5, 5)]
+            .iter()
+            .map(|&(x, y)| {
+                let idx = w.index(x, y);
+                let t = w.tiles[idx];
+                (idx, w.variants[idx], t.frame_x, t.frame_y)
+            })
+            .collect();
+        let centre_idx = w.index(4, 4);
+
+        // The reset roll comes off the world's framing stream.
+        w.seed_frame_rng();
+        reframe_area(&mut w, 4, 4, 2, true);
+
+        for (idx, variant, fx, fy) in ring {
+            assert_eq!(w.variants[idx], variant, "ring variant changed");
+            assert_eq!(
+                (w.tiles[idx].frame_x, w.tiles[idx].frame_y),
+                (fx, fy),
+                "ring frame changed"
+            );
+        }
+        // The centre's stored variant is the roll the stream produced now —
+        // different from a position hash by construction; assert it is a legal
+        // roll and that the frame follows the stored value.
+        assert!(w.frame_number(centre_idx) <= 2);
+        // And without reset (`resetFrame: false`) nothing re-rolls: the centre
+        // keeps its stored variant.
+        let before = w.variants[centre_idx];
+        reframe_area(&mut w, 4, 4, 2, false);
+        assert_eq!(w.variants[centre_idx], before);
+    }
+
+    /// `Main.tileLargeFrames == 1` tiles replace the rolled variant with the
+    /// fixed per-position lookup (`WorldGen.cs:81719-81728`), without re-storing
+    /// it (`:81709` stores the roll). Tile 284 is the C#'s style-1 tile.
+    #[test]
+    fn s1_a_3_large_frame_tiles_override_the_rolled_variant() {
+        let mut w = World::new("t".into(), 24, 24);
+        for y in 1..23 {
+            for x in 1..23 {
+                solid(&mut w, x, y, 1);
+            }
+        }
+        // A 284 block framed against itself.
+        for y in 6..10 {
+            for x in 6..10 {
+                solid(&mut w, x, y, 284);
+            }
+        }
+        assert_eq!(td::LARGE_FRAMES[284], 1);
+        frame_world(&mut w);
+        // Interior cell at (7, 7): y % 4 == 3, x % 3 == 1 → `LARGE_4[3][1] = 1`
+        // (the C# value) − 1 = 0 → interior frame 18 — regardless of the roll.
+        let t = w.tile(7, 7).unwrap();
+        assert_eq!((t.frame_x, t.frame_y), (18, 18));
+        // The stored variant stays the roll (0..=2), never the lookup value.
+        assert!(w.frame_number(w.index(7, 7)) <= 2);
+    }
+
+    /// `Main.wallLargeFrames == 2` walls (lazure, e.g. wall 185) replace the
+    /// variant with `lazureTileFrameNumberLookup[i % 2][j % 2] - 1`
+    /// (`Framing.cs:383-387`) and RE-STORE the lookup value — which can be 3,
+    /// the fourth lookup column (`Framing.cs:163-176`).
+    #[test]
+    fn s1_a_3_lazure_walls_store_the_lookup_variant() {
+        let mut w = World::new("t".into(), 24, 24);
+        for y in 4..12 {
+            for x in 4..12 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 185;
+            }
+        }
+        assert_eq!(td::WALL_LARGE_FRAMES[185], 2);
+        frame_walls(&mut w);
+        // Fully enclosed centre at (6, 6): x % 2 == 0, y % 2 == 0 → lookup 1 − 1 = 0.
+        assert_eq!(w.wall_frame_number(w.index(6, 6)), 0);
+        // (7, 7): lookup 4 − 1 = 3 — the fourth `wallFrameLookup` column.
+        assert_eq!(w.wall_frame_number(w.index(7, 7)), 3);
+        let cell = w.tile(7, 7).unwrap();
+        let mask = 15 + CENTER_WALL_FRAMES[1][1] as u8; // enclosed at odd/odd
+        let (col, row) = WALL_FRAMES[mask as usize][3];
+        assert_eq!((cell.wall_col(), cell.wall_row()), (col, row));
+    }
+
+    /// The wall-21 reset roll draws `Next(0, 3)` **and then** `Next(2)`
+    /// (`Framing.cs:390-394`) — the extra draw only for wall 21; a normal wall
+    /// consumes exactly one draw (the RNG-order contract, S1-A-10).
+    #[test]
+    fn s1_a_3_the_wall_21_quirk_consumes_the_extra_draw() {
+        use crate::unified_random::UnifiedRandom;
+        let mut quirk = UnifiedRandom::new(7);
+        let mut mirror = UnifiedRandom::new(7);
+        let rolled = wall_reset_roll(&mut quirk, 21);
+        let expected = {
+            let first = mirror.next_range(0, 3) as usize;
+            if mirror.next_max(2) == 0 { 2 } else { first }
+        };
+        assert_eq!(rolled, expected);
+        // The streams stay in lockstep after the two-draw roll.
+        assert_eq!(quirk.next(), mirror.next());
+        // A normal wall consumes one draw only.
+        let mut plain = UnifiedRandom::new(7);
+        let mut mirror2 = UnifiedRandom::new(7);
+        let _ = wall_reset_roll(&mut plain, 2);
+        let _ = mirror2.next_range(0, 3);
+        assert_eq!(plain.next(), mirror2.next());
     }
 }

@@ -1623,7 +1623,7 @@ fn grow_moss_arm(world: &mut World, i: i32, j: i32, min_i: i32, max_i: i32, min_
             if world.tile(m, n).is_some_and(|t| t.kind == converted) {
                 // `SquareTileFrame(num17, num18)` (`:72396-72398`) — the
                 // converted cell's frames re-derive.
-                crate::framing::reframe_area(world, m, n, 1);
+                crate::framing::reframe_area(world, m, n, 1, true);
             }
         }
     }
@@ -4083,7 +4083,7 @@ pub fn grow_tree_with_settings(
     };
     write_tree_frame(world, checked_x, num - num3, settings.tree_tile_type, paint, fx, fy);
     // `RangeFrame` (`:30820`).
-    crate::framing::reframe_area(world, checked_x, num - num3, 3);
+    crate::framing::reframe_area(world, checked_x, num - num3, 3, false);
     true
 }
 
@@ -4805,7 +4805,7 @@ pub fn check_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
         for i in (num6 - 4)..=num2 {
             if cell(world, x, i).is_some_and(|t| t.active() && t.kind == 519) {
                 crate::edit::kill_tile(world, x, i, false);
-                crate::framing::reframe_area(world, x, i, 1);
+                crate::framing::reframe_area(world, x, i, 1, true);
             }
         }
     } else {
@@ -4884,7 +4884,7 @@ pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
         if let Some(t) = world.tile_mut(x, num) {
             t.frame_x = 18;
         }
-        crate::framing::reframe_area(world, x, num, 1);
+        crate::framing::reframe_area(world, x, num, 1, true);
     } else if frame_x == 18 {
         // `:59013-59030`: the stalk grows its paired tip cell above.
         let len = 18 * rng.next_range(2, 5) as i16;
@@ -4892,7 +4892,7 @@ pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
             t.frame_x = len;
         }
         place_above(world, 90);
-        crate::framing::reframe_area(world, x, num, 1);
+        crate::framing::reframe_area(world, x, num, 1, true);
     } else if frame_x == 90 {
         // `:59031-59078`: the tip arms — the submerged arm takes the 108 tip,
         // the dry arm dies at `Next(3)` or takes a 126/144/162 tip with its
@@ -4922,7 +4922,7 @@ pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
         }
     }
     // `:59080`: the final reframe of the cell pair, `resetFrame: false`.
-    crate::framing::reframe_area(world, x, num - 1, 1);
+    crate::framing::reframe_area(world, x, num - 1, 1, false);
 }
 
 /// `WorldGen.GrowCheckSeaweed` (`WorldGen.cs:58917-58973`): the seaweed (549)
@@ -4981,7 +4981,7 @@ pub fn grow_check_seaweed(world: &mut World, x: i32, y: i32, rng: &mut FastRando
                 t.flags |= FLAG_ACTIVE;
             }
         }
-        crate::framing::reframe_area(world, x, y - 1, 1);
+        crate::framing::reframe_area(world, x, y - 1, 1, false);
     }
 }
 
@@ -5009,7 +5009,7 @@ fn grow_web(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
             t.kind = 51;
             t.flags |= FLAG_ACTIVE;
         }
-        crate::framing::reframe_area(world, i, j, 1);
+        crate::framing::reframe_area(world, i, j, 1, true);
     }
 }
 

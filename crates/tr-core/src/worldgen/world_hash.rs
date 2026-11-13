@@ -204,8 +204,15 @@ mod tests {
     // `TileType` 30 (`WoodBlock`) frame and the `WallType` 27 (`Planked`)
     // interior walls — instead of the Sunflower tile 27 frame and the pink
     // dungeon wall 9 interior, so every world's tile/wall fields move.
-    const SEED42_512: u32 = 1445035279;
-    const DEFAULT_WORLD: u32 = 1520389681;
+    // Re-pinned again by S1-A-3 (framing variants): the full-world framing
+    // passes now roll a `genRand.Next(0, 3)` variant per framed tile and store
+    // it (`WorldGen.cs:81705-81709` / `Framing.cs:376-404`) instead of the
+    // position hash, so every merge-variant/large-frame tile's frame_x/frame_y
+    // changes — every hash moves. (The `variants` field itself is not hashed;
+    // the frame pixels are.) Values measured on the merged tree (BUG-25 +
+    // S1-A-3 together).
+    const SEED42_512: u32 = 3221031423;
+    const DEFAULT_WORLD: u32 = 235359465;
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]

@@ -3249,6 +3249,10 @@ pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
     }
 
     let t_frame = Instant::now();
+    // The variant reset-roll stream rides the world seed (S1-A-3): vanilla
+    // reseeds `Main.rand` from the clock on load (`Main.cs:6461-6463`), the
+    // port pins it deterministically.
+    world.seed_frame_rng();
     let framed = framing::frame_world(&mut world);
     let tile_frame_ms = t_frame.elapsed().as_secs_f32() * 1000.0;
     let t_walls = Instant::now();

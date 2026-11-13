@@ -220,10 +220,43 @@ multiplayer-client path, never a single-player or menu one (research/42, finding
 
 ## Autotiling
 
-`num6` / `Tile.frameNumber` **is not stored in the save file** (the tile header only carries
-frame X/Y for important tiles). Both `frameNumber` and the wall variant are generated at
-load time in the original and always from `WorldGen.genRand`; we replace them with a
-deterministic per-position hash, which is why two loads of the same world look identical.
+`num6` / `Tile.frameNumber` and `wallFrameNumber` **are not stored in the save file** (the
+tile header only carries frame X/Y for important tiles; `SaveWorldTiles`
+`WorldFile.cs:1432-1604` never writes the runtime `bTileHeader2` bits 4-7 —
+S1-A-3 verified the claim in `docs/research/08-tile-framing.md`'s deviation row that they
+are "stored in the save" is wrong). The C# keeps them in the runtime `Tile.bTileHeader2`
+(`Tile.cs:464-482`), rolls them from `WorldGen.genRand.Next(0, 3)` at reset events
+(`TileFrame`'s `resetFrame` arm, `WorldGen.cs:81705-81709`; `Framing.WallFrame`'s,
+`Framing.cs:389-395`) and reuses the stored value otherwise (`:81713`, `Framing.cs:399`).
+
+The port (S1-A-3) follows the same mechanism — no position hash anywhere:
+
+- **Storage**: `World::variants` packs the two 2-bit fields per tile (`bTileHeader2`
+  bits 4-7 verbatim); `Tile` stays 12 bytes.
+- **The full-world passes** (`frame_world`/`frame_walls` — the app's load-time and
+  worldgen framing) roll one `UnifiedRandom::Next(0, 3)` per framed tile **in band
+  order** and store it, mirroring the reset arm. **Deviation (deliberate):** the C#
+  frames incrementally during worldgen with `genRand` draws interleaved between every
+  other pass; the port frames in one parallel pass, so a shared sequential stream is
+  impossible — each 128-row band seeds its own stream `seed + band_index` instead
+  (the same per-pass stand-in M5-GEN-1 documents). Same seed → same bands → identical
+  frames; the variants will still differ from a C# world's until S1-A-7's parity work.
+- **Edit reframes** (`reframe_area` = `SquareTileFrame(i, j, resetFrame)` with the
+  default `true`, `WorldGen.cs:80185`): the centre tile/wall re-rolls from
+  `World::frame_rng` (a `UnifiedRandom` seeded from the world seed — vanilla seeds
+  `Main.rand` from the clock on load, `Main.cs:6461-6463`, so the port's deterministic
+  seeding is *stricter* than vanilla, per the S1-L-6c wiring precedent); the ring
+  re-frames with the stored values. Per-site `reset` flags follow each call site's C#
+  counterpart (`SquareTileFrame` default true at place/kill tails, plain `TileFrame`
+  default false at the door loops and `RangeFrame`).
+- **The large-frame lookups** replace the variant per position exactly as the C#:
+  tiles `tileLargeFrames` 1/2 (`WorldGen.cs:81719-81729`, override without re-storing
+  — the roll stays in the field), walls `wallLargeFrames` 1 (phlebas) / 2 (lazure)
+  (`Framing.cs:378-388`, override WITH re-storing — the lookup value lands in the
+  field and can be 3, hence `wallFrameLookup`'s fourth column per row).
+- **Wall 21 quirk** (`Framing.cs:390-394`): the reset roll draws `Next(0, 3)` then
+  `Next(2)` and forces variant 2 half the time — the extra draw is consumed only for
+  wall 21 (the RNG-order contract).
 
 Ported pieces (`tr-core/src/framing.rs`):
 
@@ -235,11 +268,12 @@ Ported pieces (`tr-core/src/framing.rs`):
    `NeedsGrassFraming` (+ `NeedsGrassFramingDirt`), `OreMergesWithMud`, moss/moss-brick,
    `BlockMergesWithMergeAllBlock`, plus 2 228 directed pairs extracted mechanically from the
    per-type `switch (num)` cases in `TileFrameCosmetic`.
-3. **Wall frames** — the complete `wallFrameLookup` (20 masks × 3 variants),
+3. **Wall frames** — the complete `wallFrameLookup` (20 masks × 4 variants),
    `centerWallFrameLookup` and the 36 px cell geometry; comparisons use the wall's own
    visibility rules minus invisible walls.
-4. **Large frames** — `Main.tileLargeFrames` 1 (4-row pattern) and 2 (2×2 pattern) override
-   the variant instead of using the hash.
+4. **Large frames** — `Main.tileLargeFrames` 1 (4-row pattern) and 2 (2×2 pattern)
+   override the rolled/stored variant, and `Main.wallLargeFrames` 1 (phlebas) / 2
+   (lazure) do the same for walls (S1-A-3).
 5. **Grass family** — the full `TileFrameCosmetic` grass path (`WorldGen.cs:82184-84836`):
    the merge preparation (dirt normalisation, grass↔ore, the Weird merge of non-solid
    neighbours into "open"), the base selection (`NeedsGrassFramingDirt`, mud for jungle

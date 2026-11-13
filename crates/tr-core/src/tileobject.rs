@@ -2158,7 +2158,7 @@ pub fn place_with_def(
                     && (tile_cut(tile.kind) || breakable_when_placing(tile.kind))
                 {
                     crate::edit::remove_tile(world, num6 + i, num7 + j);
-                    crate::framing::reframe_area(world, num6 + i, num7 + j, 2);
+                    crate::framing::reframe_area(world, num6 + i, num7 + j, 2, true);
                 }
             }
         }
@@ -3131,7 +3131,7 @@ mod tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         // Re-frame the whole area around every object cell and the control.
         for (x, y) in [(8, 19), (9, 19), (20, 17), (20, 18), (20, 19), (14, 19)] {
-            crate::framing::reframe_area(&mut w, x, y, 2);
+            crate::framing::reframe_area(&mut w, x, y, 2, true);
         }
         for (x, y, kind, fx, fy) in object_frames {
             let t = *w.tile(x, y).unwrap();
