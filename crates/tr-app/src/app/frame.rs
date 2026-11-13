@@ -110,6 +110,11 @@ impl App {
         self.frame_count += 1;
         // Main.cs:16801-16815,18376 — view zoom keys (S1-B-5).
         self.update_view_zoom_keys();
+        // The adaptive fps loop's counter (`Main.cs:16961-16964`, S1-B-6):
+        // the per-second arms run off the measured frames, dt-pinned under
+        // `TR_SHOT` like the rest of the clock.
+        self.gfx_quality
+            .count_frame(dt, if self.shot_path.is_some() { 60 } else { 1 });
         self.anim_time += dt;
         // `UserInterface.Update`'s lockout countdown
         // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
@@ -616,6 +621,12 @@ impl App {
                 crate::world_sim::camera::update_camera_lerp(self, &mut camera_state);
                 self.camera_state = camera_state;
             }
+            // The gfx-quality budgets (`Main.cs:17056-17101`, S1-B-6): the
+            // `qaStyle` overrides, `maxDustToDraw`, `Gore.goreTime`, the
+            // liquid pass pair and the legacy render phases.
+            let mut gfx = std::mem::take(&mut self.gfx_quality);
+            gfx.apply(self);
+            self.gfx_quality = gfx;
         }
         // `TR_NET_EDIT=tx,ty`: one client edit request, used to verify the round trip.
         if self.is_client() && self.frame_count == 90 {

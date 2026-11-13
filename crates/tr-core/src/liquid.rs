@@ -16,7 +16,11 @@ use crate::world::World;
 pub const MAX_ACTIVE: usize = 25_000;
 /// `Liquid.maxLiquidBuffer`: overflow queue for extra woken tiles.
 pub const MAX_BUFFER: usize = 50_000;
-/// `Liquid.cycles`: number of `update` calls a full list pass takes.
+/// `Liquid.cycles`' default (`Liquid.cs:88`/`:1673`): number of `update` calls
+/// a full list pass takes. The gfx-quality pass overrides it per update at
+/// runtime (`Main.cs:17078` — `17 - 10 * gfxQuality`), so the runtime value
+/// rides the [`LiquidSystem::cycles`] field; the const stays the generator /
+/// pre-quality default the unit tests pin.
 pub const CYCLES: usize = 10;
 /// `Liquid` removes entries after this many passes without a change.
 const KILL_PASSES: u16 = 8;
@@ -47,6 +51,9 @@ pub struct LiquidSystem {
     /// `Liquid.curMaxLiquid`: 25 000 in single-player. Multiplayer scales it by the
     /// active-player count (`Liquid.cs:998`), which stays out of scope here.
     cur_max_liquid: usize,
+    /// `Liquid.cycles` (`Liquid.cs:25`): the runtime value the gfx-quality
+    /// pass overrides (`Main.cs:17078`); the default is the statics' 10.
+    cycles: usize,
     /// Set when any level changed during the current [`LiquidSystem::update`].
     dirty: bool,
     /// `Liquid.quickFall` (`Liquid.cs:34`): the quick-settle mode sets it and
@@ -64,6 +71,31 @@ pub struct LiquidSystem {
 }
 
 impl LiquidSystem {
+    /// `Liquid.maxLiquid` (`Liquid.cs:1672`) — the active-list capacity the
+    /// quality pass scales `curMaxLiquid` against.
+    pub fn max_active(&self) -> usize {
+        MAX_ACTIVE
+    }
+
+    /// `Liquid.cycles` — the runtime value the gfx-quality pass overrides
+    /// (`Main.cs:17078`), read by the pass stride.
+    pub fn cycles(&self) -> usize {
+        self.cycles
+    }
+
+    pub fn set_cycles(&mut self, cycles: usize) {
+        self.cycles = cycles.max(1);
+    }
+
+    /// `Liquid.curMaxLiquid` — the quality-scaled active-list window.
+    pub fn cur_max_liquid(&self) -> usize {
+        self.cur_max_liquid
+    }
+
+    pub fn set_cur_max_liquid(&mut self, cur_max_liquid: usize) {
+        self.cur_max_liquid = cur_max_liquid.max(1);
+    }
+
     pub fn new(world: &World) -> Self {
         let bits = world.tiles.len().div_ceil(64);
         Self {
@@ -74,6 +106,7 @@ impl LiquidSystem {
             buffer: Vec::new(),
             wet_counter: 0,
             cur_max_liquid: MAX_ACTIVE,
+            cycles: CYCLES,
             dirty: false,
             quick_fall: false,
             generating: false,
@@ -152,15 +185,15 @@ impl LiquidSystem {
         // shorter than one stride, so a small active list is simulated every call
         // instead of once per ten.
         self.wet_counter += 1;
-        let stride = self.cur_max_liquid / CYCLES;
+        let stride = self.cur_max_liquid / self.cycles;
         let mut start = stride * (self.wet_counter - 1);
         let mut end = stride * self.wet_counter;
-        if self.wet_counter == CYCLES {
+        if self.wet_counter == self.cycles {
             end = self.active.len();
         }
         if end > self.active.len() {
             end = self.active.len();
-            self.wet_counter = CYCLES;
+            self.wet_counter = self.cycles;
         }
         if start > end {
             start = end;
@@ -180,7 +213,7 @@ impl LiquidSystem {
             self.active[i].kill = kill;
             self.active[i].delay = delay;
         }
-        if self.wet_counter >= CYCLES {
+        if self.wet_counter >= self.cycles {
             self.wet_counter = 0;
             self.end_pass(world);
         }
