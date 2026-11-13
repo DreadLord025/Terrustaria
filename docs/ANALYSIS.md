@@ -12064,3 +12064,26 @@ Scope notes:
   is fully loaded.
 - **The fullscreen-map call site** (`Main.cs:41335`'s column layout) rides
   the map tasks (S1-L-4's layers).
+
+## The crafting focus + quantity (S1-H-7, 2026-11-13)
+
+`Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into
+`clicks.rs::handle_crafting_clicks`: the unfocused click selects the row
+(`focusRecipe` — the port keys the focus by the recipe id rather than the
+C#'s list position, which keeps it stable across the frame's re-sort),
+`stackSplit = 15`, the click-consumed lock and the MenuTick sound; the
+focused click crafts through the held-frame pacing (`stackSplit <= 1`,
+`frame.rs`'s per-tick decay), with `num = (superFastStack + 1)` ×10 behind
+`ItemSlot.ShiftInUse` and `flag4`'s reset arms (a different recipe being
+crafted, or a non-stacking product). `craft.rs::try_craft_qty` is
+`CraftingRequests.CraftItem(recipe, num)` (`Main.cs:42286`) — the C#'s
+request queue processes the quantity asynchronously; the port loops the
+single craft synchronously, each iteration re-checking the ingredients, so
+a partial set crafts as many as it can (the request loop's net effect).
+
+Scope notes: the filter/search bars stay draw-only (the station-filter
+semantics are S1-L-11c's row and the search box rides the keyboard work);
+`TryAllowingToCraftRecipe`'s mouse-blocking fetch (`:42278`) has no port
+counterpart (the mouse item never blocks the craft here); the
+`UsingOrReusingItem`/`IsStackingItems` gates of `flag3` (`Player.cs:23098`)
+are unmodelled item-use state.
