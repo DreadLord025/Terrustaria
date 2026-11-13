@@ -482,6 +482,16 @@ pub(crate) struct App {
     /// The buff bar's right-click removal requests — the C# removes in the
     /// draw pass (`Main.cs:43348`); the port drains them in the tick.
     pub(crate) buff_removals: Vec<usize>,
+    /// `Main.focusRecipe` (`Main.cs:1729`): the selected recipe row's index
+    /// into the available list — the first click focuses, the next crafts.
+    pub(crate) focus_recipe: i32,
+    /// `Main._currentRecipeBeingCrafted` (`Main.cs:2352`): the held-repeat's
+    /// recipe lock — a different recipe or a maxStack-1 product resets it.
+    pub(crate) current_recipe_being_crafted: i32,
+    /// `Main._preventCraftingBecauseClickWasUsedToChangeFocusedRecipe`
+    /// (`Main.cs:2353`): the focus click's lock, cleared when the buttons
+    /// release (`:42301-42305`).
+    pub(crate) prevent_craft_click: bool,
     /// `UserInterface`'s pointer machine (`UserInterface.cs:53-91`, `:230-255`):
     /// the press/release → click/`DoubleClick` caches with the 500 ms window and
     /// the 200 ms state-change lockout. Fed by `app/loop.rs` (the front screens'
@@ -2923,6 +2933,9 @@ impl App {
             ui_right_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),
+            focus_recipe: 0,
+            current_recipe_being_crafted: -1,
+            prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),
             pointer_ms: 0.0,
             pointer_event: None,
