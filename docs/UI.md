@@ -548,15 +548,17 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 
 ## Deviations
 
-* The framework ports the **flat/event halves** of `UIElement`/`UserInterface` only:
-  the retained tree, event bubbling (`UIElement.cs:414-546`'s child→parent walk),
-  `OverflowHidden` scissoring (`:47`, 6 C# users), `IsElementUnderMouse`/
-  `MouseCaptured` as a general predicate, `UIList`'s scroll mechanics and
-  `UIScrollbar`'s drag/handle are deliberately out (the immediate-mode ruling +
-  no ported consumer); `MouseOver`/`MouseOut` *edges* have no ported counterpart
-  because hover is draw-derived and the colour swaps are `ui::hover_pair`
-  (sound 12 is already a recorded deviation). See `docs/ANALYSIS.md` →
-  "UIElement framework (M7-UI-1)" for the full gap list.
+* The framework ports the **flat/event halves** of `UIElement`/`UserInterface`:
+  the retained tree, `OverflowHidden` scissoring (`:47`, 6 C# users),
+  `IsElementUnderMouse`/`MouseCaptured` as a general predicate, `UIList`'s scroll
+  mechanics and `UIScrollbar`'s drag/handle are deliberately out (the
+  immediate-mode ruling + no ported consumer). The child→parent **event bubble**
+  (`UIElement.cs:414-546`) *is* ported (`framework.rs::bubble_chain` + `Element`
+  parent links, S1-H-1) and drives the select screens' card-button resolution;
+  `MouseOver`/`MouseOut` *edges* still have no ported counterpart because hover is
+  draw-derived and the colour swaps are `ui::hover_pair` (sound 12 is already a
+  recorded deviation). See `docs/ANALYSIS.md` → "UIElement framework (M7-UI-1)"
+  for the full gap list.
 * The world behind the menu is our own surface render (the original draws the world at the
   surface with `Main.DrawMenu`'s camera); the logo, items, font and colours are the
   original's.

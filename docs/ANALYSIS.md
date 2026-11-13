@@ -2353,8 +2353,13 @@ and a third was the click gate the geometry feeds):
 Open gaps (deliberately out, each with its reason):
 
 * **Event bubbling** (`UIElement.cs:414-546`: every mouse event fires the
-  element's handler and then the *parent's*) — a no-op on flat screens; the port's
-  click tables return one action.
+  element's handler and then the *parent's*) — **ported** (`framework.rs::bubble_chain`,
+  S1-H-1, 2026-11-13): `Element.parent`/`Element::child` carry the `Parent`
+  links and the chain is both the raise list and the ancestor-`IsMouseHovering`
+  set. The select screens' card buttons link to their card panel; a screen whose
+  click table returns one action directly (every other front screen) has a
+  single-element chain, so the walk is a no-op there exactly as the flat model
+  was.
 * **`MouseOver`/`MouseOut` edges** — hover is draw-derived (`in_rect` at draw
   time) and the colour swaps are `ui::hover_pair`; the edge itself has no ported
   consumer, and the sound 12 it drives is a recorded deviation.
