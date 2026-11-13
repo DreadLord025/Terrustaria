@@ -25,6 +25,18 @@ impl DropRng for crate::tile_light::FastRandom {
     }
 }
 
+/// The named-stage streams (`Main._rngs`, `app/rng.rs`) draw through the same
+/// trait — `UnifiedRandom.Next(min, max)`/`NextFloat()` are the C# methods the
+/// trait mirrors (`UnifiedRandom.cs`).
+impl DropRng for crate::unified_random::UnifiedRandom {
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        crate::unified_random::UnifiedRandom::next_range(self, min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        crate::unified_random::UnifiedRandom::next_float(self)
+    }
+}
+
 /// `DropAttemptInfo` (`DropAttemptInfo.cs`): the roll inputs. The NPC and the
 /// player references stay with the caller; the engine only reads the scalars
 /// the rules consume.

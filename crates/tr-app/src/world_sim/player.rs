@@ -622,6 +622,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             let run_eligible = !p.mount.is_active()
                 && !(0..crate::buffs::MAX_BUFFS)
                     .any(|i| p.buffs.buff_time[i] > 0 && p.buffs.buff_type[i] == 38);
+            // The player stage's named stream (`Main.SwapRandom`, the C#
+            // stage swap `Main.cs:17755-17757`): the tick's hurt rolls (the
+            // dodge block, the lava `Hurt`) draw from it (S1-A-10).
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -630,6 +634,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 false,
                 app.rain.is_raining(),
                 Some(&app.wind),
+                rng,
             );
             if run_eligible && p.vy == 0.0 {
                 run_pixels += (p.x - run_x0).abs();
@@ -801,7 +806,7 @@ mod tests {
         let p = app.player.as_mut().unwrap();
         assert!(!p.creative_god_mode);
         p.hurt_cd = 0.0;
-        assert!(p.hurt(10, 0.0), "the hurt lands once the power is off");
+        assert!(p.hurt(10, 0.0, &mut tr_core::UnifiedRandom::default(), true), "the hurt lands once the power is off");
     }
 
     /// An equipment row carrying `kind`.
