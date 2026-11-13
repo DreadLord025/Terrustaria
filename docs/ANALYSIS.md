@@ -11993,3 +11993,42 @@ World's downed flags, and the Discount Card's
 `(int)((float)num * 0.8f)` truncation rides before the happiness multiply.
 The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
 plumbing is R-03-6's row.
+
+## The map reveal + refresh (S1-L-3, 2026-11-13)
+
+The audit's D10 is closed: `WorldMap::update`'s reveal window now follows
+`LightingEngine.ExportToMiniMap` (`LightingEngine.cs:246-262`) — the
+engine's processed area shrunk 28 px per side, intersected with the world
+bounds inset 40 and `MapHelper.sceneArea` (the scene-metrics scan's
+player-centred `SceneMetrics.ZoneScanSize` box, `SceneMetrics.cs:917-919` =
+169×124 tiles). The old fixed player-centred 75×47 box (smaller than
+vanilla, trail-prone at speed) is gone; a stale/empty scene area intersects
+to nothing, exactly like the C#'s `Rectangle.Empty` static. The view
+centre rides the processed area (camera-centred), matching every other map
+consumer.
+
+The refresh machinery is ported whole: `WorldMap.UpdateType`/`QueueUpdate`
+(`WorldMap.cs:65-105` — the queued re-derive keeps the light; the C#'s
+`ref mapTile` flag-clear write-through is explicit in the port so the
+clear persists on the early returns), `MapUpdateQueue`'s two queues with
+the `WorldMap.QueueUpdate` dedupe (`MapUpdateQueue.cs:21-108`), the
+per-frame drain (`Main.cs:61862`) feeding the minimap upload (the
+`MapRenderer.QueueChange` analog), `UnlockMapSection`/`UnlockMapTilePretty`
+(`WorldMap.cs:109-174` — the Manhattan falloff with the solid/lava skips
+and the wall 0.8 / underground 0.7 tints) and `ClearEdges` at the map load
+(`:210`).
+
+Scope notes:
+
+- **The edit hooks cover the player-edit paths** (the pickaxe/hammer/
+  placement funnel in `world_sim/editing.rs`): the edited tile's
+  `SquareTileFrame` ring queues (`WorldGen.cs:81334`'s head over
+  `:80185-80197`'s walk). The projectile-side craters (the bombs, the
+  magical ice) run inside the AI with a world-only signature — their map
+  refresh rides the follow-up; the reveal pass still re-derives any tile
+  it covers, so in-window craters refresh naturally.
+- **`Main.sectionManager.TileLoaded(x, y)` passes** (`WorldMap.cs:80`): the
+  section manager is the MP section tracker; the port's single-player world
+  is fully loaded.
+- **The fullscreen-map call site** (`Main.cs:41335`'s column layout) rides
+  the map tasks (S1-L-4's layers).
