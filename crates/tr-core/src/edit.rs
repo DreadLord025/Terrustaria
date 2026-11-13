@@ -2623,7 +2623,7 @@ pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32,
             // `WorldGen.SquareTileFrame(tileTargetX, tileTargetY)`
             // (`Player.cs:40121`); `reframe_area` leaves `frame_important` tiles
             // intact, so the object's stored frames survive (DW-1.6 guarantee).
-            framing::reframe_area(world, x, y, 2);
+            framing::reframe_area(world, x, y, 2, true);
             return true;
         }
     }
@@ -3373,7 +3373,7 @@ pub fn open_door(
     // The trailing `WorldGen.TileFrame` 4x4 loop (:37778-37784): door cells
     // keep their frames (frame-important), neighbours re-derive theirs.
     ensure_frame_important(world, 11);
-    framing::reframe_area(world, num6, num, 2);
+    framing::reframe_area(world, num6, num, 2, false);
     true
 }
 
@@ -3480,7 +3480,7 @@ pub fn close_door(
     // `Wiring.SkipWire` ×3 (:31893-31898) — no wiring in the port.
     // The trailing `WorldGen.TileFrame` 3x4 loop (:31900-31905).
     ensure_frame_important(world, 10);
-    framing::reframe_area(world, num2, num3, 2);
+    framing::reframe_area(world, num2, num3, 2, false);
     // `SoundEngine.PlaySound(9, i*16, j*16)` (:31906) — app-side, via
     // `TileInteraction::DoorClosed`.
     true
@@ -3567,12 +3567,12 @@ fn touch(world: &mut World, x: i32, y: i32) {
 
 fn after_wall_edit(world: &mut World, x: i32, y: i32) {
     touch(world, x, y);
-    framing::reframe_area(world, x, y, 2);
+    framing::reframe_area(world, x, y, 2, true);
 }
 
 fn after_edit(world: &mut World, x: i32, y: i32) {
     world.recompute_column_surface(x);
-    framing::reframe_area(world, x, y, 2);
+    framing::reframe_area(world, x, y, 2, true);
 }
 
 #[cfg(test)]

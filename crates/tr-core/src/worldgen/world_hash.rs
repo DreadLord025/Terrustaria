@@ -205,8 +205,14 @@ mod tests {
     // halves, floors and ceilings), so every hash moves — `SEED42_512`
     // included (a 512-wide world draws 5 runs per half and lands at least
     // one).
-    const SEED42_512: u32 = 3615544309;
-    const DEFAULT_WORLD: u32 = 1207823499;
+    const SEED42_512: u32 = 241764280;
+    const DEFAULT_WORLD: u32 = 3230671921;
+    // >>> S1-A-3 (framing variants): the full-world framing passes now roll a
+    // `genRand.Next(0, 3)` variant per framed tile and store it
+    // (`WorldGen.cs:81705-81709` / `Framing.cs:376-404`) instead of the
+    // position hash, so every merge-variant/large-frame tile's frame_x/frame_y
+    // changes — every hash moves. (The `variants` field itself is not hashed;
+    // the frame pixels are.)
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]

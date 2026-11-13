@@ -42,6 +42,22 @@ pub struct World {
     pub tiles: Vec<Tile>,
     /// `Main.tileFrameImportant`: tile types whose frames are stored in the save file.
     pub frame_important: Vec<bool>,
+    /// Per-tile framing variants packed 2+2 bits — `Tile.bTileHeader2` bits 4-5
+    /// (`frameNumber`) and bits 6-7 (`wallFrameNumber`) (`Tile.cs:464-482`).
+    /// Keyed by `index(x, y)`: `frameNumber | wallFrameNumber << 2`. These are
+    /// runtime-only fields in the C# (`SaveWorldTiles` `WorldFile.cs:1432-1604`
+    /// never writes them), rolled from `WorldGen.genRand.Next(0, 3)` when a
+    /// framing event resets (`WorldGen.cs:81705-81729`, `Framing.cs:318-321`,
+    /// `Framing.cs:390-396`) and reused from storage otherwise.
+    pub variants: Vec<u8>,
+    /// The runtime reset-roll stream of the framing variants — the port's
+    /// `WorldGen.genRand` stand-in for `SquareTileFrame`'s centre re-roll
+    /// (`WorldGen.cs:81705-81709`, `Framing.cs:389-395`), the same shape as
+    /// [`crate::wiring::WireState`]'s `rand` (S1-L-6c). Vanilla reseeds
+    /// `Main.rand` from the clock on load, so the runtime rolls are not
+    /// reproducible there; the port seeds deterministically from the world seed
+    /// via [`World::seed_frame_rng`].
+    pub frame_rng: crate::unified_random::UnifiedRandom,
     /// Y of the first solid tile at the center of the map (approx. spawn altitude).
     pub spawn_y: i32,
     /// The bed spawn override (`Player.SpawnX/SpawnY`, `Player.cs:54635`'s
@@ -383,6 +399,8 @@ impl World {
             width,
             height,
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
+            variants: vec![0; (width as usize) * (height as usize)],
+            frame_rng: crate::unified_random::UnifiedRandom::new(0),
             wires: crate::wiring::WireState::default(),
             tile_entities: crate::tile_entities::TileEntities::default(),
             signs: Vec::new(),
@@ -763,6 +781,47 @@ impl World {
     #[inline]
     pub fn extras_at(&self, idx: usize) -> u8 {
         self.extras.get(&(idx as u32)).copied().unwrap_or(0)
+    }
+
+    /// Seeds the framing reset-roll stream from the world seed (the port's
+    /// `genRand` stand-in — vanilla seeds `Main.rand` from the clock on load,
+    /// `Main.cs:6461-6463`, so its runtime rolls are not reproducible; the
+    /// wiring engine carries the same world-seeded shape). Call once per
+    /// generated or loaded world, before any edit can reframe.
+    pub fn seed_frame_rng(&mut self) {
+        self.frame_rng = crate::unified_random::UnifiedRandom::new(self.seed as i32);
+    }
+
+    /// `Tile.frameNumber()` (`Tile.cs:464-470`, `bTileHeader2` bits 4-5).
+    #[inline]
+    pub fn frame_number(&self, idx: usize) -> u8 {
+        self.variants.get(idx).copied().unwrap_or(0) & 0x3
+    }
+
+    /// `Tile.frameNumber(byte)` (`Tile.cs:468-470`).
+    #[inline]
+    pub fn set_frame_number(&mut self, idx: usize, n: u8) {
+        let slot = self
+            .variants
+            .get_mut(idx)
+            .expect("variants sized with the tile grid");
+        *slot = (*slot & !0x3) | (n & 0x3);
+    }
+
+    /// `Tile.wallFrameNumber()` (`Tile.cs:472-478`, `bTileHeader2` bits 6-7).
+    #[inline]
+    pub fn wall_frame_number(&self, idx: usize) -> u8 {
+        (self.variants.get(idx).copied().unwrap_or(0) >> 2) & 0x3
+    }
+
+    /// `Tile.wallFrameNumber(byte)` (`Tile.cs:476-478`).
+    #[inline]
+    pub fn set_wall_frame_number(&mut self, idx: usize, n: u8) {
+        let slot = self
+            .variants
+            .get_mut(idx)
+            .expect("variants sized with the tile grid");
+        *slot = (*slot & !0xC) | ((n & 0x3) << 2);
     }
 
     #[inline]
