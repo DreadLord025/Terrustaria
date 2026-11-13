@@ -345,6 +345,31 @@ pub(crate) trait FrontScreenBehaviours {
     fn key(&self, _app: &mut App, _event: &KeyEvent) {}
 }
 
+/// `UIWorldListItem.PlayGame`'s gate (`UIWorldListItem.cs:360-385`): a Play
+/// click (button press or `OnLeftDoubleClick`) enters only for a valid world
+/// that passes `TryMovingToRejectionMenuIfNeeded`. An invalid world's click is
+/// silent (`base._data.IsValid` false, `:362`); a rejection plays the menu cue
+/// (`SoundEngine.PlaySound(10)` `:391/:400/:407`), sets the notice
+/// (`Main.statusText`, surfaced through `App::front_hint`) and stops before
+/// `SetAsActive`/`WorldGen.playWorld`.
+fn world_play_click(app: &mut App, i: usize) -> Option<FlowClick> {
+    let (valid, game_mode) = match app.worlds.get(i) {
+        Some(w) => (w.valid, w.difficulty),
+        None => return None,
+    };
+    if !valid {
+        return None; // `base._data.IsValid` (`:362`) - a dead click
+    }
+    match ui::world_select::rejection_key(app.active_player_difficulty() == 3, game_mode) {
+        Some(key) => {
+            app.audio.play("Menu_Open"); // `SoundEngine.PlaySound(10)`
+            app.front_hint = Some(crate::lang::text(key));
+            None
+        }
+        None => Some(FlowClick::WorldPlay(i)),
+    }
+}
+
 impl FrontScreenBehaviours for FrontScreen {
     fn header(&self) -> String {
         match self {
@@ -796,22 +821,17 @@ impl FrontScreenBehaviours for FrontScreen {
                         app.worlds.len(),
                         app.session_entry().difficulty,
                     )),
-                    // `PlayGame` (`:360-374`): `_data.IsValid` gates the
-                    // launch; an invalid world's click is dead, like the
-                    // source's rejection route (out of scope, spec §9.4).
-                    Some(ui::world_select::CardAction::Play(i))
-                        if app.worlds.get(i).is_some_and(|w| w.valid) =>
-                    {
-                        Some(FlowClick::WorldPlay(i))
-                    }
+                    // `PlayGame` (`:360-385`): `_data.IsValid` then
+                    // `TryMovingToRejectionMenuIfNeeded` gate the launch. An
+                    // invalid world's click is dead; a Journey mismatch sets
+                    // the notice and refuses (the port has no `menuMode
+                    // 1000000` page — ANALYSIS "World select (S1-H-10)").
+                    Some(ui::world_select::CardAction::Play(i)) => world_play_click(app, i),
                     // `OnLeftDoubleClick += PlayGame`
                     // (`UIWorldListItem.cs:69`/`:99`): the same card, the
-                    // second press inside 500 ms. Routing only — the port has
-                    // no per-card selection state (spec §9.4).
-                    Some(ui::world_select::CardAction::DoubleClickPlay(i))
-                        if app.worlds.get(i).is_some_and(|w| w.valid) =>
-                    {
-                        Some(FlowClick::WorldPlay(i))
+                    // second press inside 500 ms, through the same gate.
+                    Some(ui::world_select::CardAction::DoubleClickPlay(i)) => {
+                        world_play_click(app, i)
                     }
                     // `FavoriteButtonClick` (`:439-458`): `ToggleFavorite`
                     // saves (`FileData.cs:38-40`) and the list re-orders. The
@@ -1625,6 +1645,87 @@ pub(crate) mod front_flow_tests {
             app.front,
             Some(FrontScreen::CharSelect),
             "Back hops to the character select"
+        );
+    }
+
+    #[test]
+    fn world_select_play_gates_validity_and_the_journey_mismatch() {
+        // `UIWorldListItem.PlayGame` (`:360-385`): `base._data.IsValid` then
+        // `TryMovingToRejectionMenuIfNeeded`. The port surfaces `Main.statusText`
+        // through `App::front_hint` (no `menuMode == 1000000` page) and must not
+        // park a world.
+        let reject = crate::lang::text("UI.PlayerIsCreativeAndWorldIsNotCreative");
+
+        // A Journey player on a Classic world: refused, notice set, cue played.
+        let mut app = flow_app(None, Vec::new(), Vec::new());
+        open_world_select(&mut app, vec![world_entry("Classic")]);
+        app.session_draft = Some(ui::char_creation::NewPlayerDraft {
+            difficulty: 3,
+            ..Default::default()
+        });
+        frames(&mut app, 13);
+        assert!(!app.pointer.clicks_disabled());
+        let (_, l, _) = world_screen(&app);
+        app.mouse_pos = centre(ui::world_select::card_layout(l.list, 0, false).play);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert!(
+            matches!(app.front, Some(FrontScreen::WorldSelect)),
+            "a Journey mismatch must not leave world select"
+        );
+        assert!(app.play_world.is_none(), "no world is parked on a rejection");
+        assert_eq!(
+            app.front_hint.as_deref(),
+            Some(reject.as_str()),
+            "`Main.statusText` carries the source's rejection wording"
+        );
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the rejection plays `SoundEngine.PlaySound(10)`"
+        );
+
+        // The mirror: a Classic player on a Journey world.
+        let mut app = flow_app(None, Vec::new(), Vec::new());
+        let mut journey = world_entry("Journey");
+        journey.difficulty = 3;
+        open_world_select(&mut app, vec![journey]);
+        frames(&mut app, 13);
+        let (_, l, _) = world_screen(&app);
+        app.mouse_pos = centre(ui::world_select::card_layout(l.list, 0, false).play);
+        front_press(&mut app);
+        assert!(matches!(app.front, Some(FrontScreen::WorldSelect)));
+        assert_eq!(
+            app.front_hint.as_deref(),
+            Some(crate::lang::text("UI.PlayerIsNotCreativeAndWorldIsCreative").as_str())
+        );
+
+        // An invalid world's Play is a silent dead click (`:362`): no notice,
+        // no cue, no launch.
+        let mut app = flow_app(None, Vec::new(), Vec::new());
+        let mut broken = world_entry("Broken");
+        broken.valid = false;
+        open_world_select(&mut app, vec![broken]);
+        frames(&mut app, 13);
+        let (_, l, _) = world_screen(&app);
+        app.mouse_pos = centre(ui::world_select::card_layout(l.list, 0, false).play);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert!(matches!(app.front, Some(FrontScreen::WorldSelect)));
+        assert!(app.play_world.is_none());
+        assert!(app.front_hint.is_none(), "an invalid world notices nothing");
+        assert_eq!(app.audio.played_count(), before);
+
+        // The agreeing pair still launches (Classic + Classic).
+        let mut app = flow_app(None, Vec::new(), Vec::new());
+        open_world_select(&mut app, vec![world_entry("Classic")]);
+        frames(&mut app, 13);
+        let (_, l, _) = world_screen(&app);
+        app.mouse_pos = centre(ui::world_select::card_layout(l.list, 0, false).play);
+        front_press(&mut app);
+        assert_eq!(
+            app.front, None,
+            "a joinable world launches (`FlowClick::WorldPlay`)"
         );
     }
 

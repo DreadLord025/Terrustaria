@@ -2218,8 +2218,9 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` →
   a scanned `.plr` is skipped like `Player.GetFileData`'s null return.
 * **World metadata stand-ins.** Favourites are a `<world>.trfav` marker file
   (`Main.LocalFavoriteData` has no port); creation time is the file's mtime;
-  there is no GameMode field (every entry reads Classic, so
-  `sort_worlds`' `CanWorldBeJoinedByActivePlayer` Journey gate is vacuous);
+  the world writer stores no `GameMode`, so every real entry reads Classic
+  (`WorldEntry::difficulty`), which is why the Journey rejection (S1-H-10) can
+  only fire for a Journey session player today;
   the world card icon is a fixed `IconCrimson` (no evil data to pick the
   sprite); the playtime panel is a fixed `00:00:00` (no play-time tracking).
   Invalid worlds bucket to Small (vanilla shows Unknown — no Unknown
@@ -2418,6 +2419,22 @@ is a `UserInterface` element in 1.4.5.8.
   delta is non-zero. Previously it scrolled on sub-notch `PixelDelta` values
   (`|d| < 0.5`), which C# cannot produce; the magnitude still passes through
   unrounded (`scroll_achievements(d)`), so only that degenerate case changed.
+
+## World select (S1-H-10, 2026-11-13)
+
+`UIWorldListItem.PlayGame` (`UIWorldListItem.cs:360-385`) runs `base._data.IsValid`
+then `TryMovingToRejectionMenuIfNeeded` (`:387-413`). The port now reproduces both:
+`flow.rs::world_play_click` requires `WorldEntry::valid` and asks
+`world_select::rejection_key` whether the world must be refused — an invalid
+`GameModeID` (`GameModeID.cs:19-26`, modes 0..=3), a Journey player on a
+non-Journey world, or a non-Journey player on a Journey world. Both the Play
+button and `OnLeftDoubleClick`'s `PlayGame` route through it.
+
+* **Rejection surface.** C# sets `Main.statusText` and `menuMode = 1000000`
+  (the "cannot load" page). The port has no such page, so the wording is carried
+  by `App::front_hint` (already drawn under the front panel) and the launch is
+  refused — the deviation is the *page*, not the gate. The `SoundEngine.PlaySound(10)`
+  cue is kept (`Audio::play("Menu_Open")`).
 
 ## Architecture refactor (2026-11-01)
 

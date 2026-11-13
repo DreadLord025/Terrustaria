@@ -55,13 +55,12 @@ pub fn write_world_head(w: &mut Writer, world: &World) {
     // with `parse::<u64>`; see `super::flags::read`). Deviation: a non-numeric
     // seed text cannot be represented, and lands as 0 on read.
     w.cs_string(&world.seed.to_string());
-    // `Main.ActiveWorldFileData.WorldGeneratorVersion` — unowned (the port has
-    // no generator build); `WorldFileData.cs:355`'s init value.
-    w.u64(0);
-    // `Main.ActiveWorldFileData.UniqueId.ToByteArray()` — unowned; `Guid.Empty`.
-    w.bytes(&[0u8; 16]);
-    // `Main.ActiveWorldFileData.WorldId` — the port keeps no world id.
-    w.i32(0);
+    // `Main.ActiveWorldFileData.WorldGeneratorVersion` (`WorldFile.cs:1225`).
+    w.u64(world.generator_version);
+    // `Main.ActiveWorldFileData.UniqueId.ToByteArray()` (`WorldFile.cs:1226`).
+    w.bytes(&world.unique_id);
+    // `Main.ActiveWorldFileData.WorldId` (`WorldFile.cs:1227`).
+    w.i32(world.world_id);
     // The world bounds (`WorldGen.cs:6551-6554`: right = maxTilesX * 16,
     // bottom = maxTilesY * 16, left/top stay 0) — derived from the owned dims.
     w.i32(0);
