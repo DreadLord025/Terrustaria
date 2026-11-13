@@ -1409,7 +1409,10 @@ impl App {
     /// - unconditional arms: the in-game options window (`ingameOptionsWindow`)
     ///   and the `InGameUI` overlay states — the achievements menu ports to
     ///   [`App::achievements_open`] (the controls-rebind half of the C#'s
-    ///   `CurrentState == ManageControlsMenu` has no port UI — deviation);
+    ///   `CurrentState == ManageControlsMenu` has no port UI — deviation). The
+    ///   bestiary overlay is an `InGameUI` state but **not** one of the two
+    ///   named ones — it never pauses unconditionally (the review-pass
+    ///   correction; see the code comment);
     /// - the `autoPause` arm adds `playerInventory` ([`App::inventory_open`])
     ///   and the other visible in-game UIState (`InGameUI.IsVisible` ≈ the
     ///   achievements + bestiary overlays; `LocalPlayer.sign >= 0` has no sign
@@ -1417,9 +1420,17 @@ impl App {
     ///
     /// Nothing here draws or rolls RNG: the pause removes phases, adds none.
     pub(crate) fn can_pause_game(&self) -> bool {
-        // `flag |= ingameOptionsWindow | (InGameUI.IsVisible && (…ManageControlsMenu || …AchievementsMenu))`.
-        let mut flag = self.ingame_options.open || self.achievements_open || self.bestiary_open;
-        // `if (autoPause) flag |= playerInventory | (LocalPlayer.sign >= 0) | InGameUI.IsVisible`.
+        // `flag |= ingameOptionsWindow | (InGameUI.IsVisible && (…ManageControlsMenu || …AchievementsMenu))`
+        // (`Main.cs:17320`). The bestiary is an `InGameUI` state too
+        // (`IngameFancyUI.OpenUIState(Main.BestiaryUI)` →
+        // `Main.InGameUI.SetState`, `Main.cs:42459`/`IngameFancyUI.cs:78`), but
+        // its `CurrentState` is neither of the two named ones — it is caught
+        // only by the autoPause arm's bare `InGameUI.IsVisible` below, so the
+        // bestiary open never pauses by itself.
+        let mut flag = self.ingame_options.open || self.achievements_open;
+        // `if (autoPause) flag |= playerInventory | (LocalPlayer.sign >= 0) | InGameUI.IsVisible`
+        // (`Main.cs:17322-17324`) — the bare `InGameUI.IsVisible` half is the
+        // achievements + bestiary overlays; the inventory rides its own arm.
         if self.settings.auto_pause {
             flag |= self.inventory_open || self.achievements_open || self.bestiary_open;
         }

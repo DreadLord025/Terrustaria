@@ -2182,7 +2182,14 @@ mod tests {
         assert!(app.can_pause_game(), "the achievements overlay pauses");
         app.achievements_open = false;
         app.bestiary_open = true;
-        assert!(app.can_pause_game(), "the bestiary overlay pauses");
+        // The bestiary is an `InGameUI` state (`Main.cs:42459`) but its
+        // `CurrentState` is neither `ManageControlsMenu` nor `AchievementsMenu`
+        // (`Main.cs:17320`), so without autoPause it never pauses — only the
+        // autoPause arm's bare `InGameUI.IsVisible` catches it (`:17323`).
+        assert!(
+            !app.can_pause_game(),
+            "the bestiary overlay alone never pauses without autoPause"
+        );
         app.bestiary_open = false;
         // The autoPause arm (`flag |= playerInventory | … | InGameUI.IsVisible`).
         app.settings.auto_pause = true;
