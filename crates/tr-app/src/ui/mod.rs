@@ -12,6 +12,7 @@ pub mod char_select;
 pub mod clipboard;
 pub(crate) mod chest;
 pub mod chrome;
+pub(crate) mod coin_slot;
 pub mod color;
 pub mod crafting;
 pub mod cursor;

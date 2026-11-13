@@ -2007,6 +2007,7 @@ pub(crate) mod front_flow_tests {
             // `enter_loaded_world` re-seeds it from the world seed
             // (`app/mod.rs`).
             craft_rng: tr_core::unified_random::UnifiedRandom::new(1),
+            coin_slot: crate::ui::coin_slot::CoinSlotState::new(),
             menu: None,
             front,
             front_backup: None,
