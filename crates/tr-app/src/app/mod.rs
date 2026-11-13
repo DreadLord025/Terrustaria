@@ -961,6 +961,31 @@ impl App {
         }
     }
 
+    /// `Main.MaxWorldViewSize` (`Main.cs:677-681`): the design view the zoom
+    /// floor keeps the world inside.
+    pub(crate) const MAX_WORLD_VIEW_SIZE: (f32, f32) = (1920.0, 1200.0);
+    /// `Main.SupportWideScreen` (`Main.cs:1819`) — the C# init `false`
+    /// (`Main.cs:67046`). The port has no settings row for it (the settings
+    /// work owns the row), so the computed arm runs (S1-G-7).
+    pub(crate) const SUPPORT_WIDE_SCREEN: bool = false;
+
+    /// `Main.ForcedMinimumZoom` (`Main.cs:61989-61994`, computed per draw):
+    /// `max(max(1f, screenWidth / MaxWorldViewSize.X), screenHeight /
+    /// MaxWorldViewSize.Y)` — the zoom floor that keeps the visible world
+    /// inside the design size. `Main.SupportWideScreen` forces it to 1f
+    /// (`:61992-61994`). The two view matrices consume it split:
+    /// `BackgroundViewMatrix.Zoom = ForcedMinimumZoom` (`:61998`) and
+    /// `GameViewMatrix.Zoom = ForcedMinimumZoom * Clamp(GameZoomTarget, 1f,
+    /// 2f)` (`:61999`) — the port's `zoom` is that clamp (S1-B-5).
+    pub(crate) fn forced_minimum_zoom(screen: (f32, f32)) -> f32 {
+        if Self::SUPPORT_WIDE_SCREEN {
+            return 1.0;
+        }
+        let val = screen.0 / Self::MAX_WORLD_VIEW_SIZE.0;
+        let y_arm = screen.1 / Self::MAX_WORLD_VIEW_SIZE.1;
+        val.max(1.0).max(y_arm)
+    }
+
     /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
     pub(crate) fn advance_disco(&mut self) {
         world_sim::clock::advance_disco(self);
@@ -4427,6 +4452,34 @@ mod tr_hooks {
 /// constants-off.
 pub(crate) fn nurse_heal_cost_for(missing: i32, debuff_count: i32, mood: f32) -> i32 {
     ((missing + debuff_count * 100) as f32 * mood) as i32
+}
+
+#[cfg(test)]
+mod s1_g_7_tests {
+    use super::*;
+
+    #[test]
+    fn forced_minimum_zoom_matches_the_c_sharp_computation() {
+        // Main.cs:61989-61994: `val = screenWidth / MaxWorldViewSize.X`,
+        // `ForcedMinimumZoom = max(max(1f, val), screenHeight /
+        // MaxWorldViewSize.Y)` — the floor keeps the visible world inside the
+        // 1920x1200 design size (Main.cs:677-681). At or below it the floor
+        // is 1; either arm alone lifts it.
+        assert_eq!(App::forced_minimum_zoom((1920.0, 1200.0)), 1.0);
+        assert_eq!(App::forced_minimum_zoom((960.0, 600.0)), 1.0);
+        assert!((App::forced_minimum_zoom((2560.0, 1200.0)) - 2560.0 / 1920.0).abs() < f32::EPSILON);
+        assert!((App::forced_minimum_zoom((1920.0, 1440.0)) - 1440.0 / 1200.0).abs() < f32::EPSILON);
+        assert!((App::forced_minimum_zoom((3840.0, 2400.0)) - 2.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn support_wide_screen_is_the_c_sharp_init_default() {
+        // Main.cs:67046 (`Main.SupportWideScreen = false`): the port carries
+        // no settings row for it, so the computed arm runs and the toggle
+        // stays unported (S1-G-7). The arm itself: `Main.SupportWideScreen`
+        // forces the floor to 1f (`:61992-61994`).
+        assert!(!App::SUPPORT_WIDE_SCREEN);
+    }
 }
 
 #[cfg(test)]

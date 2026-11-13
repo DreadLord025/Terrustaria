@@ -213,7 +213,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   happens. The camera itself is unaffected in vanilla either (no camera-offset shake
   exists), so this is purely the missing filter. `Main.UseScreenShake` is ported as a
   settings flag (`settings.rs:180,291`) but gates nothing.
-- **D-8 — Zoom model differs from `GameViewMatrix` (pixel, medium).** Vanilla applies
+- **D-8 — Zoom model differs from `GameViewMatrix` (pixel, medium).** **CLOSED 2026-11-13** (`S1-G-7-forced-minimum-zoom`): `App::forced_minimum_zoom` (`app/mod.rs`) ports the per-draw floor — `max(max(1f, sw/1920), sh/1200)` (`Main.cs:61989-61994` over `MaxWorldViewSize` `:677-681`), `SupportWideScreen` forcing 1f (`:61992-61994`; the C# init `false` `:67046` is the port's constants-off value, no settings row yet) — and the draw scope splits the matrices: `bg_zoom` (the bare floor, `BackgroundViewMatrix.Zoom` `:61998`) drives the sky/background chain and `world_zoom = bg_zoom * zoom` (`GameViewMatrix.Zoom` `:61999`) drives tiles/liquids/dust/wires/entities/the GPU passes, the draw_cam pixel snap, the waterfall view box and the G6 `WorldFrameKey`'s effective zoom. A/B: the default 1600x900 window at zoom 1.0 is byte-identical pre/post (SHA256 `6d80f51c...`), TR_ZOOM=1.5 replays SHA256-equal (`13c4e162...` x2). The original text follows. Vanilla applies
   a raw scale matrix (`Main.Transform` = `GameViewMatrix.TransformationMatrix`,
   `Main.cs:2743`; zoom clamped 1..2 at `Main.cs:16808/16812`); the port snaps the
   camera to the zoom grid (`frame.rs:817`, per module 02) and clamps zoom in the
