@@ -10569,6 +10569,74 @@ dry gates are always open. `gravDir == -1` arms are coded as the `== 1` value on
 port has no gravity flip. The armour-set dust/VFX side effects inside `PlayerFrame`
 (`:35819-36140`, ~400 lines of per-set particles) stay with the armour tasks.
 
+## The composite arm stacks (S1-G-15, 2026-11-13)
+
+The player's two composite arm stacks are built from the same `PlayerDrawSet`
+cells, but the C# draws them in two different places, and the two places
+disagree on what a chest armor replaces. The port had merged both into one
+"arm stack" helper, so two layers came out missing and a third was drawn that
+the vanilla never draws.
+
+**The back arm** — `DrawPlayer_12_SkinComposite_BackArmShirt`
+(`PlayerDrawLayers.cs:1260-1393`). The vanilla draws the `Players[skinVar, 5]`
+under-skin layer on BOTH armor paths: with a chest armor the
+`flag2 && missingArm` block paints it right behind the arm skin
+(`:1294-1302`), without one the `!flag6` block paints it (`:1346-1353`).
+`missingArm` is true for every body id except 83 (`PlayerDrawSet.cs:377-384`),
+so the armor path is the normal one. The port dropped the layer under armor
+(the `BackUnder` push was gated on `body_armor < 0`), so the armor's
+under-arm art showed through where the vanilla paints the skin. The
+under-shirt sleeve (`Players[8]`) and the shirt sleeve (`Players[13]`) do
+live in the `!flag3` block (`:1355-1360`), so those two stay armor-only skips.
+
+**The front arm** — `DrawPlayer_28_ArmOverItemComposite`
+(`PlayerDrawLayers.cs:3576-3737`). Its armor branch paints the skin arm
+(`Players[7]`) at the ARM frame (`:3611`) and the hand (`Players[9]`, `:3618`
+— the `missingHand` list of `PlayerDrawSet.cs:373`) — but never a skin piece
+at the SHOULDER frame: the shoulder skin only exists in the no-armor branch
+(`:3670`). The port's shared stack helper painted the shoulder skin in both
+cases, so a bare shoulder stripe showed through the armor.
+
+The C#'s `i`-loop order is reproduced verbatim: `num2`/`num3`/`num4` pick the
+shoulder slot, the arm slot and the skin slot out of the two passes, so row 0
+(`compShoulderOverFrontArm`) gives skin arm → armor arm → armor shoulder, and
+rows 1/2/5 give armor shoulder → skin arm → armor arm.
+
+The port's armor slots are the vanilla body ids 1-4 (copper/iron/silver/gold —
+the `body_slot` of the worn chest piece, `render/entities.rs:1378`); none of
+them is in the `missingHand` list, so the `Players[9]` hand layer is correctly
+absent for the port's armors.
+
+**The shoulders on the falling row** — `PlayerDrawSet.cs:1933-1937` reads
+`ArmorIDs.Body.Sets.showsShouldersWhileJumping[body]` into `flag`, and the
+body-row-5 arm of the frame switch raises `hideCompositeShoulders` when the
+armor does not show its shoulders while jumping (`:1984-1987`); the flag is
+cleared at `:1932` and raised for a coat (`:1940`) or a front accessory
+(`:1944`) — the port has neither. The vanilla then skips the shoulder pieces
+(`PlayerDrawLayers.cs:1307` the back shoulder, `:3624` the front one). None of
+the port's armor ids is in `showsShouldersWhileJumping` (`ID/ArmorIDs.cs:714`),
+so a worn chest armor loses its shoulders on body row 5 — the falling pose.
+The port drew them on every row.
+
+### The animation inputs that are still unreachable
+
+The `PlayerFrame` chain is fully ported, but six of its inputs have no writer
+in the port, so the poses they select can never be reached. Each row is the
+C# writer, so the follow-ups can be opened without re-reading the source:
+
+| state | C# writer | what the port is missing |
+| --- | --- | --- |
+| `sliding` (body row 3, `Player.cs:36552`) | `Player.WallClimbMovement` (`:21607-21706`, the set at `:21705`) and `Player.WallslideMovement` (`:21750-21840`, the sets at `:21812`/`:21825`) | the port has no `slideDir` and no `spikedBoots`; the wall slide needs the Spiked Boots accessory and the wall climb the grappling climb |
+| `pulley` / `pulleyDir` (the rope pose, `Player.cs:36444-36448`) | `Player.FindPulley` (`:19644-19749`) + the update block (`:26120-26300`) | the port has no rope tiles (`WorldGen.IsRope`), so the pulley can never be found |
+| `shield_raised` (body row 10, `Player.cs:36481`) | `Player.ItemCheck_ManageRightClickFeatures_ShieldRaise` (`:31706-31739`) + `TryTogglingShield` (`:31741-31764`) | the port has no `hasRaisableShield` and no shield accessory row |
+| `carpet_frame` (body row 6, `Player.cs:36556`) | `Player.CarpetMovement` (`:21842-21890`) | the port has no Magic Carpet mount |
+| `sand_storm` (body row 6, `Player.cs:36556`) | the Sandstorm jump chain (`:21919` sets it; `:26743`/`:26770`/`:26810` clear it) | the port has no Sandstorm in a Bottle accessory |
+| `can_float_in_water` (the float pose, `Player.cs:36527`) | `Player.ShouldFloatInWater` (`:3872-3886`); writers: accessory 4404 (Floating Tube, `:13265-13268`) and buff 265 (Flamingo, `:9895-9899`); reset in `ResetEffects` (`:18332`) | the port has no accessory-effect flag table, so `should_float_in_water()` returns false (`player.rs:4361`) |
+
+Note that `PlayerFrame` reads `accFlipper` nowhere: the flipper *pose* is
+selected by `ShouldFloatInWater`, while `accFlipper` drives the movement
+(`Player.cs:20637`/`:20681`) and the merman block (`:25577-25589`).
+
 ## The player-audit fixes 11-15 (2026-11-10)
 
 The five S1/S2/S3 rows of `BUG_REPORT.md` closed on one branch:
