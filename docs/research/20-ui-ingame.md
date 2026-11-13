@@ -104,7 +104,7 @@ digits, equip glyphs) — all interaction is in `clicks.rs`.
 | `MouseItemSwap` favourite clearing | PARTIAL | `clicks.rs::left_click_movement:85` | C# clears both sides unless `retainFavoriteOnMoveAt[context]` (`:1255-1263`); the port tracks favourites by **slot index** (`App::favorite_slots`), so a favourite follows the slot, not the item |
 | Hotbar (closed) + stack icons | PORTED | `ui/slot.rs::closed_hotbar_metrics`, `hotbar_digit:165-188`, `stack_number_pos:229` | `GUIHotbarDrawInner` (`Main.cs:43614-43639`), 17 tests incl. `closed_hotbar_metrics_match_guihotbardrawinner` |
 | Slot background / context textures | PORTED | `ui/slot.rs::context_texture_index:23-76` | the per-context `Inventory_Back*` table (incl. trash 6 → Back7, `:34`) and the equip glyph table (`:105-146`) |
-| Chest panel (slots, scroll, buttons, rename) | PARTIAL | `ui/chest.rs:131-502`, `clicks.rs:1141-1296` | LootAll/DepositAll/QuickStack/Restock dispatch + the keyboard rename landed; the **Sort** button (`ChestUI.cs` id 4) has no click arm, and the name field blinker/hover ramp are draw-only |
+| Chest panel (slots, scroll, buttons, rename) | PORTED | `ui/chest.rs:131-502`, `clicks.rs:1141-1296`, `item_sorting.rs`, `sortdata.rs` | LootAll/DepositAll/QuickStack/Restock dispatch + the keyboard rename + the **Sort** button (id 4 → `ItemSorting.SortChest`, the full 52-layer engine, S1-H-8) landed; the name field blinker/hover ramp are draw-only, and the `withFeedback` `ItemSlot.SetGlow` half is a no-glow-system no-op |
 | Bank panel (ctx 4/32) | PARTIAL | `ui/inventory.rs::bank_slot_at`, `clicks.rs` bank block | uses the action-0 move + the paced one-item right-click split (S1-C-10); the ctx-4/32 shift route has no cursor-8/9 (`evaluate_cursor_override` admits it) |
 | Crafting UI | PARTIAL | `ui/crafting.rs` (draw + `hit_test:328`), `clicks.rs:347-412` | left-click craft-one works; the recipe filter strip and search bar are **draw-only** (`draw_filter_strip:690`, `draw_search_bar:737` — no hit test); no `focusRecipe`/`_selectedRecipeIndex`, no guide item, no Shift ×10 craft-all, no held-repeat pacing |
 | Equipment / dye page | PARTIAL | `ui/inventory.rs:282-676`, `ui/chrome.rs::draw_page_icons` | page-tab clicks landed (M7-UI-3a); the dye drag needs `Item.dye` (ROADMAP M7-UI-3 open) |
@@ -203,8 +203,10 @@ Representative names (`clicks.rs`): `dw_4_1_take_place_swap_stack_on_chest_slots
 12. **UI scale pinned to 1.0** (module 18 deviation 6) — `UserInterface`'s scale
     spaces cannot be exercised; the port's grids hard-code 0.85 / 0.755.
     **Behavioural/pixel**, admitted.
-13. **Sort button and name-field editing are partial** — the rename keyboard
-    path landed; `ChestUI`'s Sort (id 4) has no click arm. **Behavioural**.
+13. **Chest Sort is ported; name-field editing is partial** — the rename keyboard
+    path landed, and the Sort button (id 4) now dispatches `ItemSorting.SortChest`
+    (S1-H-8, 2026-11-13); the name field blinker/hover ramp stays draw-only.
+    **Behavioural**.
 14. **BUG-20 is implemented but its catalog row is not closed** — the code and
     three `bug20_*` tests are on main, yet `ROADMAP.md:1696` still reads
     "trash slot: quick-trash … clear on death … the +5/+168 chest-shop offset"

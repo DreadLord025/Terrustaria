@@ -138,3 +138,6 @@ crates/tr-app/src/player.rs|fn s1_l_8_fishron_halves_run_stats_outside_the_speci
 crates/tr-app/src/mount.rs|fn is_cart|S1-L-8 - MountID.Sets.Cart (27 ids) and CanUseHooks ({54,57-60}) for Mount.CanMount's grapple gate
 crates/tr-app/src/spawner.rs|invaders_override_forces_the_raid_pacing|S1-F-12 - invaders spawn-rate override (NPC.cs:781-785): maxSpawns=11, spawnRate=20
 crates/tr-app/src/world_sim/npcs.rs|invaders|S1-F-12 - invasion spawn picks ride GetSpawnRate + nearby<maxSpawns + rng.next(spawnRate) gates
+crates/tr-app/src/item_sorting.rs|pub fn sort_chest|S1-H-8 - the ItemSorting chest Sort engine (52 layers, SortIndicesStable + SetupSortingPriorities order, ItemSorting.cs:1492-1653)
+crates/tr-app/src/sortdata.rs|pub const TILE_FRAME_IMPORTANT|S1-H-8 - the generated ItemSorting lookup tables (SortingPriority* int sets, IsFood/fish/crate, projHook, tileFrameImportant)
+crates/tr-app/src/ui/chest.rs|pub(crate) const BUTTON_SORT|S1-H-8 - the chest Sort button (inter[122]) and its ItemSorting.SortChest dispatch (ChestUI.cs:227,304-306)

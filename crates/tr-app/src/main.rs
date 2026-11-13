@@ -28,6 +28,8 @@ mod wiring_stub;
 mod yoyo_string;
 mod item;
 mod itemdata;
+mod item_sorting;
+mod sortdata;
 mod lang;
 mod loot_db;
 mod loot_db_gen;
