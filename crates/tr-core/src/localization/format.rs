@@ -20,7 +20,7 @@ impl Substitution {
 
     fn display(&self) -> String {
         match self {
-            Substitution::Bool(b) => b.to_string(),
+            Substitution::Bool(b) => if *b { "True" } else { "False" }.to_string(),
             Substitution::Int(i) => i.to_string(),
             Substitution::Float(f) => f.to_string(),
             Substitution::Text(t) => t.clone(),

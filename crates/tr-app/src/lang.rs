@@ -394,13 +394,27 @@ fn npc_type_name(npc_type: i32) -> &'static str {
 }
 
 /// Fallback stand-in for `PlayerInput.GenerateInputTag_ForCurrentGamemode`.
-/// The port has no full trigger-tag renderer yet; return a stable label so
-/// substituted UI text stays readable.
+/// The port has no full trigger-tag renderer yet; return stable labels that
+/// approximate the default keyboard/mouse bindings where known.
 fn input_tag(_gameplay: bool, action: &str, using_gamepad: bool) -> String {
     if using_gamepad {
-        format!("[{action}]")
-    } else {
-        format!("<{action}>")
+        return format!("[{action}]");
+    }
+    match action {
+        "Jump" => "Space".to_string(),
+        "MouseLeft" => "Left Click".to_string(),
+        "MouseRight" => "Right Click".to_string(),
+        "Grapple" => "E".to_string(),
+        "QuickMount" => "R".to_string(),
+        "SmartCursor" => "Left Ctrl".to_string(),
+        "SmartSelect" => "Left Shift".to_string(),
+        "QuickHeal" => "H".to_string(),
+        "QuickMana" => "J".to_string(),
+        "QuickBuff" => "B".to_string(),
+        "LockOn" => "Lock On".to_string(),
+        "HotbarMinus" => "Hotbar-".to_string(),
+        "HotbarPlus" => "Hotbar+".to_string(),
+        _ => format!("<{action}>"),
     }
 }
 
