@@ -32,3 +32,4 @@ __pycache__/
 
 # local verification artifacts (TR_SHOT captures)
 /tmp/
+.qoder_tmp/
