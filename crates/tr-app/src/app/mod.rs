@@ -2996,9 +2996,9 @@ impl App {
             world_key: None,
             hell_black_box_bottom: 0.0,
         };
-        // The faulty-lamp roll stream seeds from the world (`Main.rand`'s
-        // role in `Wiring`'s random branch, `Wiring.cs:812`).
-        app.wiring.seed_faulty_rng(world_seed | 1);
+        // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
+        // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).
+        app.wiring.seed_rand(world_seed | 1);
         // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {

@@ -2218,8 +2218,9 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` →
   a scanned `.plr` is skipped like `Player.GetFileData`'s null return.
 * **World metadata stand-ins.** Favourites are a `<world>.trfav` marker file
   (`Main.LocalFavoriteData` has no port); creation time is the file's mtime;
-  there is no GameMode field (every entry reads Classic, so
-  `sort_worlds`' `CanWorldBeJoinedByActivePlayer` Journey gate is vacuous);
+  the world writer stores no `GameMode`, so every real entry reads Classic
+  (`WorldEntry::difficulty`), which is why the Journey rejection (S1-H-10) can
+  only fire for a Journey session player today;
   the world card icon is a fixed `IconCrimson` (no evil data to pick the
   sprite); the playtime panel is a fixed `00:00:00` (no play-time tracking).
   Invalid worlds bucket to Small (vanilla shows Unknown — no Unknown
@@ -2418,6 +2419,22 @@ is a `UserInterface` element in 1.4.5.8.
   delta is non-zero. Previously it scrolled on sub-notch `PixelDelta` values
   (`|d| < 0.5`), which C# cannot produce; the magnitude still passes through
   unrounded (`scroll_achievements(d)`), so only that degenerate case changed.
+
+## World select (S1-H-10, 2026-11-13)
+
+`UIWorldListItem.PlayGame` (`UIWorldListItem.cs:360-385`) runs `base._data.IsValid`
+then `TryMovingToRejectionMenuIfNeeded` (`:387-413`). The port now reproduces both:
+`flow.rs::world_play_click` requires `WorldEntry::valid` and asks
+`world_select::rejection_key` whether the world must be refused — an invalid
+`GameModeID` (`GameModeID.cs:19-26`, modes 0..=3), a Journey player on a
+non-Journey world, or a non-Journey player on a Journey world. Both the Play
+button and `OnLeftDoubleClick`'s `PlayGame` route through it.
+
+* **Rejection surface.** C# sets `Main.statusText` and `menuMode = 1000000`
+  (the "cannot load" page). The port has no such page, so the wording is carried
+  by `App::front_hint` (already drawn under the front panel) and the launch is
+  refused — the deviation is the *page*, not the gate. The `SoundEngine.PlaySound(10)`
+  cue is kept (`Audio::play("Menu_Open")`).
 
 ## Architecture refactor (2026-11-01)
 
@@ -4684,10 +4701,16 @@ filler kind is inert, but the id belongs to the lamp. The mechanics:
   gate's whole wire line, toggling every logic lamp on it, which is how gates
   chain downstream.
 - The faulty lamp (the poked lamp at `frameX == 36` — `flag6`) rolls the
-  output: `Main.rand.Next(num2) < num3` (`:812`). The port consumes its own
-  xorshift stream seeded per world (`Wiring::seed_faulty_rng`) — the C#'s
-  `Main.rand` sequence is not reproduced (the port-wide RNG deviation), but
-  the roll is deterministic per seed.
+  output: `Main.rand.Next(num2) < num3` (`:812`). The port draws the whole
+  wiring RNG from `tr-core/src/unified_random.rs::UnifiedRandom` — the exact C#
+  `Main.rand` generator — seeded once per world (`Wiring::seed_rand`, S1-L-6c),
+  so every wiring roll (the faulty lamp, the statue `Utils.SelectRandom` fills,
+  the cannon/firework variants and the trap spreads) matches the C# algorithm
+  for the same seed. Vanilla seeds `Main.rand` from the clock
+  (`Main.cs:6461-6463`), so its specific sequence is still not reproduced, and
+  the port-wide shared-stream *order* (one global `Main.rand` all consumers
+  interleave) remains unmodelled; the roll is deterministic per seed
+  (`the_wire_rolls_come_from_the_unified_random_stream`).
 - A gate with a lamp on its own tile flip-flops within one pass: the output
   flip re-trips the gate's wire, the flood re-toggles the stack lamp and the
   gate re-evaluates to the opposite — the verbatim C# outcome, covered by
@@ -4771,8 +4794,10 @@ Deviations:
   dedupe read the app's pools, so the engine emits the request with its roll
   results and the app gates the spawn. Consequence: a blocked spawn still
   consumes the engine's rolls (the C# evaluates its cap before its rolls) —
-  invisible outside the port's stand-in RNG stream, which is not byte-equal
-  to `Main.rand` anyway (ANALYSIS "Wiring engine (M7-WIRE-1)"). The cannon's
+  invisible outside the port's RNG stream, which is the exact `UnifiedRandom`
+  generator but seeded deterministically per world rather than from the clock
+  and not interleaved with the other consumers' draws (ANALYSIS "Wiring engine
+  (M7-WIRE-1)", S1-L-6c). The cannon's
   static/per-tile cooldowns are assigned before the app-side gate, as in the
   C#, so a bunny-blocked shot still leaves them standing.
 - **The ceiling spiky ball's shared cap decision**: the C# evaluates the cap

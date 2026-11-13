@@ -97,6 +97,7 @@ crates/tr-app/src/app/mod.rs|fn active_player_difficulty|S1-H-12 — the world s
 crates/tr-app/src/settings.rs|fn ui_scale_max|S1-H-3 — the vanilla UI-scale factor: Main.UIScaleMax (Main.cs:2576-2583) + the setter's applied clamp (Main.cs:2563-2572), driving Settings::ui_scale and the ingame-options GameUI.UIScale bar
 crates/tr-app/src/ui/ingame_options.rs|the_left_column_matches_the_c_sharp_num7_without_the_invite_row|S1-H-14 — the 8-row left column matches the C# num7 without the flag5 invite row (IngameOptions.cs:178-179)
 crates/tr-app/src/ui/pointer.rs|fn scroll_wheel|S1-H-4 — the scroll wheel lives in the pointer machine: ScrollWheelDeltaForUI accumulated + consumed once against the element under the pointer (UserInterface.cs:219-223, UIScrollWheelEvent.cs:7)
+crates/tr-app/src/ui/world_select.rs|fn rejection_key|S1-H-10 — the world select Play gate: IsValid + TryMovingToRejectionMenuIfNeeded (UIWorldListItem.cs:362,387-410) rejects invalid game modes and Journey mismatches via App::front_hint
 crates/tr-app/src/achievements.rs|fn notify_with|S1-E-18 - achievement notify wrappers/save wiring (Value-setter semantics, completion persistence hook)
 crates/tr-app/src/npc.rs|182 => NpcKind::PirateDeckhand|S1-F-1 - the NPC protocol id bijection: the pirate/probe/drone band off the 78..84 Deerclops/Skeletron-Prime ids, 85..88 decodable, #[deny(unreachable_patterns)] on both tables
 crates/tr-app/src/app/frame.rs|self.phase("projectiles");|S1-B-1 �?" the world branch follows Main.DoUpdateInWorld_Inner (Main.cs:17745-17822): projectiles before items, UpdateTime after dust, WorldGen wiring/TE/liquid/growth after time; pinned by app::frame::tests::the_world_branch_runs_in_the_csharp_update_order
@@ -112,6 +113,7 @@ crates/tr-app/src/rain.rs|Rain.MakeRain` (`Rain.cs:30-89`, S1-L-2)|S1-L-2 - Make
 crates/tr-app/src/lang.rs|fn refresh_global_substitutions|S1-L-12b - 65 global substitutions producer refreshed from live app state (Lang.cs:100-167)
 crates/tr-app/src/lang.rs|fn global_substitutions_resolve_world_player_and_npc_tokens|S1-L-12b - key global substitution tokens resolve via LanguageManager
 crates/tr-app/src/lang.rs|fn init|S1-L-12c - deterministic sorted registration order for localization resource files (Lang.cs manifest-order parity)
+crates/tr-core/src/wiring.rs|the_wire_rolls_come_from_the_unified_random_stream|S1-L-6c - the wiring RNG is UnifiedRandom (the C# Main.rand generator), seeded per world via seed_rand
 crates/tr-app/src/item.rs|fn s1_f_10_item_slot_clone_and_refresh_snapshot|S1-F-10 - ItemSlot clone/refresh snapshot and CommonMaxStack 9999 default
 crates/tr-app/src/registry.rs|pub fn max_stack|S1-F-10 - unregistered item max_stack defaults to Item.CommonMaxStack 9999 (Item.cs:49017,49966)
 crates/tr-core/src/wld/mod.rs|fn s1_j_2_world_header_identity_roundtrips_in_wld|S1-J-2 - world header identity fields (generator version, GUID, world id, LastPlayed) persisted and roundtripped (WorldFile.cs:1225-1227,1251,1756)

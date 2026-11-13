@@ -296,7 +296,10 @@ cannot live per-frame: the hit *order* and the click *timing*.
   through new indexed `FlowClick::CharPlay(usize)`/`WorldPlay(usize)` arms.
   **Routing only**: the port has no per-card selection state and its play path
   closes the front flow instead of loading the entry (spec §9.4), so the index is
-  information, not a load.
+  information, not a load. The world card's `PlayGame` acceptance gate (`IsValid`
+  + `TryMovingToRejectionMenuIfNeeded`, `UIWorldListItem.cs:362`/`:387-410`)
+  lands in `world_select::rejection_key` + `flow.rs::world_play_click`
+  (S1-H-10): a refused click sets `App::front_hint` instead of launching.
 
 ## In-game interface (`crates/tr-app/src/ui/`)
 
