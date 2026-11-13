@@ -391,6 +391,16 @@ pub struct World {
     /// the save can carry it (M6-SAVE-1f — the vanilla writes it in the
     /// world-flags block, `WorldFile.cs:1315-1321` + `:1444-1450`).
     pub ore_tiers: crate::ores::SavedOreTiers,
+    /// `Main.chest[]` as it exists at the end of generation — the vanilla
+    /// stocks every chest's inventory **inline with its placement** inside
+    /// `AddBuriedChest` (`WorldGen.cs:35871-37580`), and the records save
+    /// with the world. S1-A-4 moved the port's stocking from the load-time
+    /// re-roll to these gen-time rolls: a freshly generated world carries
+    /// its own loot, a `.wld` load's records come from the file (the C#'s
+    /// `LoadChests` — `Main.chest` is the file, nothing rolls), and the
+    /// empty list simply means "no chest placed yet". The App's runtime
+    /// store materialises from these at `enter_loaded_world`.
+    pub chests: Vec<crate::save::ChestRecord>,
 
     // --- world identity / file metadata (S1-J-2, `IO/WorldFile.cs`) ---------
     /// `Main.ActiveWorldFileData.WorldGeneratorVersion` (`WorldFile.cs:1225`).
@@ -419,6 +429,7 @@ impl World {
             pressure_plates: Vec::new(),
             frame_important: Vec::new(),
             ore_tiers: crate::ores::SavedOreTiers::new(),
+            chests: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,
