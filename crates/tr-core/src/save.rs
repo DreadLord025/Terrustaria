@@ -1006,8 +1006,8 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[13, 0, 0, 0],
-            "the writer emits the current v13"
+            &[14, 0, 0, 0],
+            "the writer emits the current v14"
         );
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
@@ -1034,13 +1034,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v13 (the signs + weighted
-        // pressure plates tail) is now the current format, so the gate pins 13.
+        // current one (`save.rs` version gate). v14 (the rain event triple)
+        // is now the current format, so the gate pins 14.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&14u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 14 is unsupported");
+        buf[8..12].copy_from_slice(&15u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 15 is unsupported");
     }
 
     #[test]
@@ -1166,9 +1166,9 @@ mod tests {
         assert_eq!(back_micro(&buf), w.micro_seeds.sum());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, w.micro_seeds);
-        // A v11 file (the same stream minus the v12 block and the v13 tail,
-        // the version byte restored) loads as the classic world it was.
-        buf.truncate(buf.len() - 10 - EMPTY_V13_TAIL);
+        // A v11 file (the same stream minus the v12 block and the v13+v14
+        // tails, the version byte restored) loads as the classic world it was.
+        buf.truncate(buf.len() - 10 - EMPTY_V14_TAIL);
         buf[8..12].copy_from_slice(&11u32.to_le_bytes());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
@@ -1222,13 +1222,15 @@ mod tests {
             "the plates sort by position too"
         );
 
-        // A v12 file (the same stream minus the v13 block) loads as the
-        // sign-less world it was — the version gate, not a length guess.
-        let v13_len = buf.len();
+        // A v12 file (the same stream minus the v13 block and the v14 tail)
+        // loads as the sign-less world it was — the version gate, not a
+        // length guess.
+        let cur_len = buf.len();
         let mut v12 = buf.clone();
-        // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes.
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8;
-        v12.truncate(v13_len - tail);
+        // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
+        // v14 rain block (9 bytes).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9;
+        v12.truncate(cur_len - tail);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
         assert!(back.signs.is_empty(), "a v12 file has no sign block");
@@ -1252,16 +1254,19 @@ mod tests {
     /// (0 + 0). The v12 fixtures below write a world with no signs or plates,
     /// so the two blocks ahead of it sit this many bytes from the end.
     const EMPTY_V13_TAIL: usize = 8;
+    /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
+    /// for an empty rain event).
+    const EMPTY_V14_TAIL: usize = EMPTY_V13_TAIL + 9;
 
     fn back_flags(buf: &[u8]) -> u16 {
-        let end = buf.len() - EMPTY_V13_TAIL;
+        let end = buf.len() - EMPTY_V14_TAIL;
         u16::from_le_bytes([buf[end - 10], buf[end - 9]])
     }
 
     /// The v12 block's micro u64 bitmask (the eight bytes ahead of the v13
     /// tail).
     fn back_micro(buf: &[u8]) -> u64 {
-        let end = buf.len() - EMPTY_V13_TAIL;
+        let end = buf.len() - EMPTY_V14_TAIL;
         u64::from_le_bytes(buf[end - 8..end].try_into().unwrap())
     }
 
@@ -1523,8 +1528,8 @@ mod tests {
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[13, 0, 0, 0],
-            "the writer emits the current v13"
+            &[14, 0, 0, 0],
+            "the writer emits the current v14"
         );
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
