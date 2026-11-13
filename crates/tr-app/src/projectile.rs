@@ -4,13 +4,17 @@
 //! Source map (line numbers into `decompiled/Terraria/`):
 //! - pool / spawn: `NewProjectileSetup` `:10823-10880`, `FindOldestProjectile`
 //!   `:10811-10821`, the 1000-slot array `Main.cs:66992`
-//! - per-tick bookkeeping: `Projectile.Update` `:17199-17208` (`timeLeft--` →
-//!   `Kill`, `penetrate == 0` → `Kill`) with the AI sub-step count
-//!   `1 + extraUpdates` (`:16668`)
-//! - the PVE damage walk: `Damage` `:12487-12511`, `Damage_PVE` `:12562-12600`
-//!   (the target-selection immunity gates), `Damage_PVE_Inner` `:12600+`
-//!   (the per-owner gate `:12620-12624`) and the on-hit immunity application
-//!   `:14087-14119`
+//! - per-tick bookkeeping: `Projectile.Update`'s `numUpdates` while
+//!   (`:16676-16678`, the body runs `1 + extraUpdates` times — `:16668`)
+//!   carries the lifetime block per sub-step (`:17197-17209`: the unported
+//!   DD2-turret `timeLeft++`, `timeLeft--`, the `timeLeft <= 0` /
+//!   `penetrate == 0` kills) and guards the AI on `active` (`:16770-16772`)
+//!   — S1-A-9 moved the block inside the sub-step loop
+//! - the PVE damage walk: `Damage` `:12487-12511` — called per sub-step from
+//!   `Update` (`:17078`, includes `Damage_PVP` `:12509`), `Damage_PVE`
+//!   `:12562-12600` (the target-selection immunity gates), `Damage_PVE_Inner`
+//!   `:12600+` (the per-owner gate `:12620-12624`) and the on-hit immunity
+//!   application `:14087-14119`
 //! - the ID-static system: `IsNPCIndexImmuneToProjectileType` `:604-607`
 //!   (a hit is allowed when the stored stamp is `<= GameUpdateCount`), the
 //!   stamp write `:13972`
@@ -10400,6 +10404,15 @@ impl ProjectilePool {
                 if sub + 1 == sub_steps {
                     self.summon_tick_block(i, &mut player, local_owner);
                 }
+                // `Projectile.cs:16770-16772` — `if (this.active) { this.AI(); }`:
+                // a slot killed by an earlier sub-step (the hook arm's dead
+                // flag, the lifetime block at the body's end) skips the AI on
+                // the remaining sub-steps. A dead slot pays nothing further —
+                // the C#'s post-death decrements land on a slot nothing reads
+                // (the port zeroes `time_left` on death, its own convention).
+                if !self.slots[i].active {
+                    continue;
+                }
                 if self.slots[i].kind == SHURIKEN {
                     self.slots[i].ai_shuriken(world);
                 }
@@ -10977,12 +10990,49 @@ impl ProjectilePool {
                     let vel = self.slots[i].vel;
                     self.slots[i].pos += vel;
                 }
+                // `Projectile.cs:17078` — `this.Damage()` runs per sub-step
+                // inside `Update` (it calls `Damage_PVP` internally,
+                // `:12509`), between the AI and the lifetime block: the hit
+                // lands and `penetrate` drops within the same sub-step, so a
+                // single-hit shot dies at that sub-step's end (the old
+                // post-loop call made hit-killed shots survive one frame —
+                // S1-A-9). The immunity gates make the repeated calls
+                // idempotent, exactly like the C#'s.
+                self.damage_pve(i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng);
+                // The hostile shots' player contact (`Damage_PVP`'s
+                // single-player stand-in): the box overlap -> `Player.hurt`
+                // (the iframes gate inside), the shot dies on the hit.
+                if self.slots[i].active && !self.slots[i].friendly {
+                    self.damage_player(i, player.as_deref_mut());
+                }
+                // `Projectile.cs:17197-17209` — the per-sub-step lifetime
+                // block (S1-A-9): the C# runs it inside the `numUpdates`
+                // while, so an `extraUpdates = n` projectile spends
+                // `1 + n` timeLeft per frame and dies `ceil(timeLeft / (1+n))`
+                // frames after spawn — the old once-per-update block let
+                // extra-update shots live ~2× too long. The DD2 turret's
+                // `timeLeft++` arm right above it (`IsADD2Turret`,
+                // `:17198-17199`) is unported (the DD2 event stub, ANALYSIS).
+                // The two kills ride `Kill()`'s `!active` head
+                // (`:70644-70648`), so only the first death transitions the
+                // slot; `Kill()` zeroes `timeLeft` (`:70646-70648`).
+                if self.slots[i].active {
+                    let p = &mut self.slots[i];
+                    p.time_left -= 1;
+                    if p.time_left <= 0 || p.penetrate == 0 {
+                        p.time_left = 0;
+                        p.active = false;
+                    }
+                }
             }
             if let Some(tile_kind) = self.slots[i].falling_tile {
                 // The landing: the bottom edge inside a solid tile → place
-                // the tile back and kill the projectile.
+                // the tile back and kill the projectile. A slot the sub-steps
+                // killed mid-loop never lands — the C#'s landing is AI-side
+                // (`if (active) AI()`), skipped for the dead.
                 let p = &self.slots[i];
-                if tr_core::falling::landed(world, p.pos.x, p.pos.y)
+                if p.active
+                    && tr_core::falling::landed(world, p.pos.x, p.pos.y)
                     && tr_core::falling::can_place_back(world, p.pos.x, p.pos.y, tile_kind)
                 {
                     let tx = (p.pos.x / 16.0) as i32;
@@ -11003,28 +11053,17 @@ impl ProjectilePool {
             if self.slots[i].detonated {
                 self.explode_bomb(i, world, npcs);
             }
-            self.damage_pve(i, npcs, Some(flail_inputs), owner, player.as_deref_mut(), rng);
-            // The hostile shots' player contact (`Projectile.Damage_PVP`'s
-            // single-player stand-in): the box overlap -> `Player.hurt`
-            // (the iframes gate inside), the shot dies on the hit.
-            if self.slots[i].active && !self.slots[i].friendly {
-                self.damage_player(i, player.as_deref_mut());
-            }
+            // The per-sub-step `Damage()` calls (`Projectile.cs:17078`) moved
+            // inside the sub-step loop (S1-A-9) — see the block at the loop
+            // body's end.
             // `AI()`'s `TrailingMode` chain (`Projectile.cs:17091-17195`), the
             // last statement ahead of the `timeLeft--` the C# runs at `:17201`:
             // the history rings shift once per update call, after the sub-steps.
+            // (The C# shifts per sub-step inside the while — a trail-density
+            // divergence, recorded in ANALYSIS, left to the trail work.)
             self.slots[i].shift_trailing_history();
-            // `:17199-17208`.
-            let (time_left, penetrate) = {
-                let p = &self.slots[i];
-                (p.time_left - 1, p.penetrate)
-            };
-            let p = &mut self.slots[i];
-            p.time_left = time_left;
-            if time_left <= 0 || penetrate == 0 {
-                p.active = false;
-                p.time_left = 0;
-            }
+            // The lifetime block (`:17197-17209`) moved inside the sub-step
+            // loop (S1-A-9) — see the block at the loop body's end.
             // `Kill()`'s type-295 arm (`:74341-74350`): the Inferno Fork
             // bolt's death — whichever of the three paths above ended it —
             // spawns the blast, exactly once (the flag) and only for the bolt
@@ -12448,6 +12487,102 @@ mod tests {
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
             pool.slots()[slot].pos.x - 10.0 * TILE_PX
+        );
+    }
+
+    /// S1-A-9: `timeLeft--` and the `timeLeft <= 0` kill sit inside the
+    /// `numUpdates` while (`Projectile.cs:17200-17205`), so an
+    /// `extraUpdates = 1` projectile spends two timeLeft per frame and dies
+    /// on frame 5 with timeLeft = 10. The old once-per-update block let it
+    /// live the full 10 frames.
+    #[test]
+    fn extra_updates_spends_time_left_per_sub_step_s1_a_9() {
+        let mut world = ground();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(10.0 * TILE_PX, 20.0 * TILE_PX),
+                Vec2::ZERO,
+                10,
+                0.0,
+                false,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 10;
+        pool.slots_mut()[slot].extra_updates = 1;
+        for frame in 1..=5 {
+            pool.update(
+                &mut world,
+                &mut [],
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+            if frame < 5 {
+                assert!(
+                    pool.slots()[slot].active,
+                    "died on frame {frame} (the C# dies on frame 5)"
+                );
+            }
+        }
+        assert!(
+            !pool.slots()[slot].active,
+            "extraUpdates = 1 must die on frame 5, not frame 10"
+        );
+        assert_eq!(pool.slots()[slot].time_left, 0);
+    }
+
+    /// S1-A-9: the sub-step spend rounds up — `timeLeft = 11` with
+    /// `extraUpdates = 2` (three spends per frame, `:16668`'s
+    /// `numUpdates = extraUpdates` + the zero pass) dies on frame 4
+    /// (`ceil(11 / 3)`), not frame 11.
+    #[test]
+    fn the_sub_step_spend_rounds_the_lifetime_up_s1_a_9() {
+        let mut world = ground();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(10.0 * TILE_PX, 20.0 * TILE_PX),
+                Vec2::ZERO,
+                10,
+                0.0,
+                false,
+            )
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 11;
+        pool.slots_mut()[slot].extra_updates = 2;
+        for frame in 1..=4 {
+            pool.update(
+                &mut world,
+                &mut [],
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+            if frame < 4 {
+                assert!(
+                    pool.slots()[slot].active,
+                    "died on frame {frame} (the C# dies on frame 4)"
+                );
+            }
+        }
+        assert!(
+            !pool.slots()[slot].active,
+            "extraUpdates = 2 with timeLeft = 11 must die on frame 4"
         );
     }
 }
@@ -18774,19 +18909,26 @@ mod magic_ai_tests {
     #[test]
     fn test_dw_4b_the_magnet_bolt_snapshots_at_the_delay_and_fades_out_of_world() {
         // `:28204-28242` + `AI_048_GetStartPositionSettingDelay` (`:53986-
-        // 54000`): the 255's delay is 4 ticks, and the out-of-world kill
-        // fires on the 5-tile margin.
+        // 54000`): the 255's delay is 4 ticks, and the arm's margin kill
+        // fires on the 5-tile margin. S1-A-9: the row's `timeLeft = 100`
+        // (`Projectile.cs:3379-3391`) spends per sub-step, so the bolt gets
+        // exactly 100 AI runs and dies within its first update — the C#'s
+        // own lifetime design for the kind (the AI never refreshes
+        // `timeLeft`).
         let mut pool = ProjectilePool::new();
-        // The row's extraUpdates 100 runs the arm 101 sub-steps per tick,
-        // so one tick probes the delay-4 snapshot: the 5th sub-step sees
-        // the box at 100 + 4 * 0.6, centre 106.4.
+        // The row's extraUpdates 100 runs the arm up to 101 sub-steps per
+        // tick, so one tick probes the delay-4 snapshot: the 5th sub-step
+        // sees the box at 100 + 4 * 0.6, centre 106.4.
         let slot = pool
             .spawn_with_data(MAGNET_SPHERE_BOLT, 100.0, 100.0, 0.6, 0.0, 20, 0.0)
             .unwrap();
         let mut w = world();
         step(&mut pool, &mut w);
         let bolt = &pool.slots()[slot];
-        assert_eq!(bolt.local_ai[0], 101.0, "one sub-step per AI run");
+        assert_eq!(
+            bolt.local_ai[0], 100.0,
+            "the 100 timeLeft cap the AI runs at 100 sub-steps (S1-A-9)"
+        );
         assert!(
             (bolt.local_ai[1] - 106.4).abs() < 1e-3,
             "the snapshot rides the 5th sub-step's centre (got {})",
@@ -18794,14 +18936,11 @@ mod magic_ai_tests {
         );
         assert!((bolt.local_ai[2] - 104.0).abs() < 1e-3, "the y snapshot");
         assert_eq!(bolt.alpha, 255, "the alpha write (`:28216`)");
-        // Past the margin: the bolt dies.
-        pool.slots_mut()[slot].pos.x = (w.width - 3) as f32 * TILE_PX;
-        pool.slots_mut()[slot].pos.y = 100.0;
-        step(&mut pool, &mut w);
         assert!(
             !pool.slots()[slot].active,
-            "outside the 5-tile margin the bolt dies"
+            "timeLeft 100 spent by the 100 sub-steps — dead in its first update"
         );
+        assert_eq!(pool.slots()[slot].time_left, 0, "`Kill()` zeroes timeLeft");
     }
 
     #[test]
