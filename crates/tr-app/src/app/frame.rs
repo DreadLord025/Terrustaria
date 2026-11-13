@@ -632,8 +632,9 @@ impl App {
                 self.world.day_time,
             );
             // S1-B-3: the post-gate tail — `Main.AmbienceServer.Update`'s own
-            // `!gamePaused` arm (`Main.cs:17214`), then the in-world tile-edit,
-            // net and map passes (the C#'s `DoUpdateInWorld` neighbours).
+            // `!gamePaused` arm (`Main.cs:17214`). The tile-edit and net
+            // passes move under the step gate below (batch review fix 1); the
+            // map reveal keeps the pause gate only (see its block).
             if !paused {
                 // `Main.AmbienceServer.Update` (`Main.cs:17214-17216`) +
                 // `SkyManager.Update` (`Main.cs:17139`): the ambient sky scheduler
@@ -674,10 +675,30 @@ impl App {
                     };
                     ambience.update(dt, &ctx, ambience_rng);
                 }
+            }
+            // S1-B-3 (batch review fix 1) — the `DoUpdateInWorld` body's
+            // tile-edit and net halves move under the step gate: the C#'s
+            // `LookForTileInteractions`/`ItemCheck` (the mining and placing)
+            // ride `Player.Update` inside `DoUpdateInWorld`
+            // (`Player.cs:27430`), and `UpdateWorld_ServerOrClient` sits in
+            // its tail (`Main.cs:17808`) — a stepper-blocked frame cannot
+            // mine, place or sync, exactly like the vanilla. The pass order
+            // is unchanged (ambience → editing → net → map → the
+            // camera/SceneState tail), so no RNG stream reorders: the gate
+            // only removes draws.
+            if step_allowed {
                 self.phase("editing");
                 self.update_editing(dt, screen);
                 self.phase("net");
                 self.net_tick(dt);
+            }
+            // The map reveal keeps the pause gate only — its C# source,
+            // `LightingEngine.ExportToMiniMap` (`LightingEngine.cs:246-270`),
+            // is the draw-side lighting export: Draw keeps running on
+            // stepper-blocked frames, so vanilla keeps revealing the map
+            // while the world steps are frozen. No update-side `UpdateMap`
+            // exists in the 1.4.5.8 decompile to gate it on.
+            if !paused {
                 self.phase("map");
                 if let Some(m) = self.map.as_mut() {
                     m.update(&self.world, self.player.as_ref(), &self.light, dt);
@@ -2053,6 +2074,7 @@ mod tests {
     use super::phase_trace;
     use crate::app::App;
     use crate::app::flow::FrontScreen;
+    use glam::Vec2;
     use winit::keyboard::KeyCode;
 
     /// The world-branch sequence, transcribed from the C#:
@@ -2697,6 +2719,153 @@ mod tests {
             phase_trace::take(),
             WORLD_PHASES,
             "the stepping frame runs the full pinned branch, scene_state at the tail"
+        );
+    }
+
+    /// Batch review fix 1 — the step gate now encloses the whole C#
+    /// `DoUpdateInWorld` body: a stepper-blocked frame cannot mine. The C#'s
+    /// `LookForTileInteractions`/`ItemCheck` ride `Player.Update` inside
+    /// `DoUpdateInWorld` (`Player.cs:27430`), so vanilla cannot mine while
+    /// the stepper has the world frozen — the port's `update_editing` used to
+    /// run under the plain pause gate and mined anyway (the reviewer's
+    /// probe). The positive control runs the identical rig unblocked, proving
+    /// the fixture mines at all.
+    #[test]
+    fn s1_b_3_a_stepper_blocked_frame_cannot_mine() {
+        let mut app = mining_rig();
+        // `pauseworld` — the stepper's own pause, no step key held.
+        app.stepper.toggle_paused(app.game_update_count);
+        for _ in 0..89 {
+            // The camera re-pins each frame so the screen-centre cursor stays
+            // on the target tile (the camera walks are step-gated and would
+            // drift toward the player otherwise).
+            app.camera = Vec2::new(30.0 * tr_core::TILE_PX + 8.0, 260.0 * tr_core::TILE_PX + 8.0);
+            step_one_frame(&mut app);
+            phase_trace::take();
+        }
+        app.camera = Vec2::new(30.0 * tr_core::TILE_PX + 8.0, 260.0 * tr_core::TILE_PX + 8.0);
+        step_one_frame(&mut app);
+        assert_eq!(
+            app.game_update_count, 65536,
+            "90 blocked frames stepped nothing"
+        );
+        assert_eq!(
+            app.world.tile(30, 260).map(|t| t.kind),
+            Some(1),
+            "a stepper-blocked frame never mines the dirt"
+        );
+        // The blocked frame's trace pins the gate composition: the pre-gate
+        // cluster + ambience + the map reveal (draw-side in the C#) — the
+        // tile-edit and net halves are inside the gate now.
+        assert_eq!(
+            phase_trace::take(),
+            ["waterfalls", "weather", "rain", "windy_day", "ambience", "map"],
+            "a stepper-blocked frame runs no editing or net pass"
+        );
+
+        // The positive control: the identical rig, gate open — the tile mines.
+        let mut app = mining_rig();
+        for _ in 0..90 {
+            app.camera = Vec2::new(30.0 * tr_core::TILE_PX + 8.0, 260.0 * tr_core::TILE_PX + 8.0);
+            step_one_frame(&mut app);
+        }
+        assert_ne!(
+            app.game_update_count, 65536,
+            "the unblocked rig stepped"
+        );
+        assert_eq!(
+            app.world.tile(30, 260).map(|t| t.kind),
+            Some(0),
+            "the unblocked rig mines the dirt"
+        );
+    }
+
+    /// The mining rig — the `mining_app` fixture shape (`world_sim/editing.rs`'s
+    /// tests) driven through `frame()` instead of `update_editing` directly:
+    /// a dirt row, the player beside the target, the Iron Pickaxe (pick 40)
+    /// held, LMB (`mine_down`) held, the cursor at the screen centre (the
+    /// headless screen is 1280x720, so the centre maps onto the camera).
+    fn mining_rig() -> App {
+        let mut app = in_world_app();
+        let mut w = tr_core::World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 260);
+            w.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app.liquids = tr_core::liquid::LiquidSystem::new(&app.world);
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 33.0 * tr_core::TILE_PX;
+        // The hitbox top sits one player-height above the row top, so the
+        // player STANDS on the dirt row (spawning inside it depenetrates
+        // downward into the air below the one-tile row and falls out of
+        // reach mid-mine).
+        p.y = 260.0 * tr_core::TILE_PX - crate::player::HEIGHT as f32;
+        app.player = Some(p);
+        app.inventory[app.selected].kind = 1; // the Iron Pickaxe (pick 40)
+        app.inventory[app.selected].count = 1;
+        app.camera = Vec2::new(30.0 * tr_core::TILE_PX + 8.0, 260.0 * tr_core::TILE_PX + 8.0);
+        // The screen centre of frame()'s headless screen (1600x900 —
+        // `frame()`'s `screen` differs from the editing tests' MINE_SCREEN),
+        // so the cursor's world point is exactly the camera = the tile.
+        app.mouse_pos = Vec2::new(800.0, 450.0);
+        app.mine_down = true;
+        app
+    }
+
+    /// Batch review fix 2's App-level half — the NumpadAdd arm rides the same
+    /// `keys` set End does (the frame-head snapshot pins it into
+    /// `step_input_down`), and the XButton1 arm steps through
+    /// `mouse_back_held` alone. Each arm alone paces to a step at the 12th
+    /// held frame, through the real `Main.cs:17278` gate.
+    #[test]
+    fn s1_b_3_step_key_arms_drive_the_gate_numpadadd_and_mouse_back() {
+        // The NumpadAdd arm (`Keys.Add`).
+        let mut app = stepper_app();
+        app.stepper.toggle_paused(app.game_update_count);
+        app.keys.insert(KeyCode::NumpadAdd);
+        let count0 = app.game_update_count;
+        for _ in 0..11 {
+            step_one_frame(&mut app);
+        }
+        assert_eq!(
+            app.game_update_count, count0,
+            "NumpadAdd-held frames 1-11 step nothing"
+        );
+        assert!(
+            app.step_input_down,
+            "the frame head pinned the NumpadAdd arm into step_input_down"
+        );
+        step_one_frame(&mut app);
+        assert_eq!(
+            app.game_update_count,
+            count0 + 1,
+            "the 12th NumpadAdd-held frame steps"
+        );
+
+        // The XButton1 arm (`PlayerInput.MouseInfo.XButton1` — the port's
+        // `mouse_back_held`, fed by loop.rs's `MouseButton::Back`), no key held.
+        let mut app = stepper_app();
+        app.stepper.toggle_paused(app.game_update_count);
+        app.mouse_back_held = true;
+        let count0 = app.game_update_count;
+        for _ in 0..11 {
+            step_one_frame(&mut app);
+        }
+        assert_eq!(
+            app.game_update_count, count0,
+            "mouse-back-held frames 1-11 step nothing"
+        );
+        step_one_frame(&mut app);
+        assert_eq!(
+            app.game_update_count,
+            count0 + 1,
+            "the 12th mouse-back-held frame steps"
         );
     }
 }

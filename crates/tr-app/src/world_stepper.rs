@@ -310,3 +310,50 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod step_key_arms {
+    use super::*;
+
+    /// The review fix's arm-coverage test — the three step-key arms as the
+    /// C# ors them (`WorldUpdateStepper.cs:41-42`).
+    #[test]
+    fn s1_b_3_step_key_state_ors_the_three_step_key_arms() {
+        let mut keys = HashSet::new();
+        // Nothing held -> no step input.
+        assert!(
+            !WorldUpdateStepper::get_step_key_state(&keys, false),
+            "no key, no mouse-back -> down = false"
+        );
+        // The End arm (`Main.keyState.IsKeyDown(Keys.End)`).
+        keys.insert(KeyCode::End);
+        assert!(
+            WorldUpdateStepper::get_step_key_state(&keys, false),
+            "End held -> down"
+        );
+        // The NumpadAdd arm (`Main.keyState.IsKeyDown(Keys.Add)` -- the
+        // review's zero-coverage arm).
+        keys.remove(&KeyCode::End);
+        keys.insert(KeyCode::NumpadAdd);
+        assert!(
+            WorldUpdateStepper::get_step_key_state(&keys, false),
+            "NumpadAdd held -> down"
+        );
+        // Both keyboard arms held together stay down.
+        keys.insert(KeyCode::End);
+        assert!(WorldUpdateStepper::get_step_key_state(&keys, false));
+        // The XButton1 arm (`PlayerInput.MouseInfo.XButton1 == Pressed` --
+        // the port's `mouse_back_held`) with no key held.
+        keys.clear();
+        assert!(
+            WorldUpdateStepper::get_step_key_state(&keys, true),
+            "mouse-back held -> down"
+        );
+        // An unrelated key never counts.
+        keys.insert(KeyCode::KeyA);
+        assert!(
+            !WorldUpdateStepper::get_step_key_state(&keys, false),
+            "an unrelated held key is not a step key"
+        );
+    }
+}
