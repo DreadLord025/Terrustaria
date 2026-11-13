@@ -617,6 +617,13 @@ impl App {
             self.phase("map");
             if let Some(m) = self.map.as_mut() {
                 m.update(&self.world, self.player.as_ref(), &self.light, dt);
+                // `MapUpdateQueue.Update()` (`Main.cs:61862`): the edit-side
+                // refresh drains through `WorldMap.UpdateType`; the changed
+                // tiles re-upload (`MapRenderer.QueueChange`'s analog).
+                let changed = self
+                    .map_queue
+                    .update(&self.world, m);
+                m.push_dirty(changed);
             }
             // The world-branch tail's camera walks (`Main.cs:17814-17815`):
             // `UpdateCameraPan` (the tracking/pan target's MoveTowards) and

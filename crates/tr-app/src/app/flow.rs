@@ -2051,6 +2051,7 @@ pub(crate) mod front_flow_tests {
             net_rtt_ms: 0,
             join_target: None,
             map: None,
+            map_queue: crate::map::MapUpdateQueue::default(),
             map_grab: None,
             minimap_hover: None,
             map_style: 1,

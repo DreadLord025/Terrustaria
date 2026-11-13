@@ -5,7 +5,10 @@
 
 use glam::Vec2;
 use tr_core::lighting::LightMap;
-use tr_core::map::{MapTile, get_map_tile_color, reveal_rect};
+use tr_core::map::{
+    MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect, unlock_map_tile_pretty,
+    update_map_lighting, update_type,
+};
 use tr_core::{TILE_PX, World};
 use tr_render::SpriteRenderer;
 
@@ -386,6 +389,10 @@ pub fn draw_map_background(r: &mut SpriteRenderer, bg: MapBg, screen: Vec2, sky:
 pub struct WorldMap {
     /// Row-major `y * width + x`, matching `World::index`.
     pub tiles: Vec<MapTile>,
+    /// The tile-grid dims (`tiles`' row-major shape); `WorldMap.QueueUpdate`
+    /// bounds-checks against them (`WorldMap.cs:96`).
+    tiles_w: usize,
+    tiles_h: usize,
     pub open: bool,
     /// `Main.mapFullscreenScale` (px per tile) and `Main.mapFullscreenPos` (tiles).
     pub scale: f32,
@@ -409,6 +416,8 @@ impl WorldMap {
     pub fn new(world: &World) -> Self {
         Self {
             tiles: vec![MapTile::default(); (world.width as usize) * (world.height as usize)],
+            tiles_w: world.width as usize,
+            tiles_h: world.height as usize,
             open: false,
             scale: MAP_FULLSCREEN_SCALE_DEFAULT,
             pos: [0.0, 0.0],
@@ -421,26 +430,81 @@ impl WorldMap {
         }
     }
 
-    /// Reveals a `75x47` window around the player 4x/second from `light`.
+    /// Reveals 4x/second from `light` — the `LightingEngine.ExportToMiniMap`
+    /// rect (`LightingEngine.cs:246-262`): the engine's processed area
+    /// shrunk 28 px on every side, intersected with the world bounds inset
+    /// 40 and the scene area (`MapHelper.sceneArea`,
+    /// `MapHelper.cs:1819` = the player tile centre's
+    /// `SceneMetrics.ZoneScanSize` box — `SceneMetrics.cs:917-919`'s
+    /// 1920x1200 / 16 + the 25 px padding). The port used to reveal a fixed
+    /// player-centred 75x47 box (the audit's D10) — a smaller, trail-prone
+    /// window than the vanilla's view-derived one.
     pub fn update(&mut self, world: &World, player: Option<&Player>, light: &LightMap, dt: f32) {
-        let Some(p) = player else { return };
         self.timer += dt;
         if self.timer < 0.25 {
             return;
         }
         self.timer = 0.0;
-        let px = (p.x / TILE_PX) as i32;
-        let py = (p.y / TILE_PX) as i32;
-        let changed = reveal_rect(
-            world,
-            &mut self.tiles,
-            light,
-            px - 37,
-            py - 23,
-            px + 37,
-            py + 23,
-        );
+        // `:256`: `MapHelper.sceneArea` is the scene-metrics scan's
+        // player-centred box — its C# static defaults to `Rectangle.Empty`,
+        // so without a scan (no player) the intersect is empty and nothing
+        // reveals.
+        let Some(p) = player else {
+            return;
+        };
+        // `LightingEngine.cs:252`: the processed area minus 28 px per side.
+        let (ax, ay, aw, ah) = (light.x0, light.y0, light.w, light.h);
+        let mut x0 = ax + 28;
+        let mut y0 = ay + 28;
+        let mut x1 = ax + aw - 28;
+        let mut y1 = ay + ah - 28;
+        // `:253-255`: the world bounds inset 40.
+        x0 = x0.max(40);
+        y0 = y0.max(40);
+        x1 = x1.min(world.width - 40);
+        y1 = y1.min(world.height - 40);
+        // The player tile centre's 169x124 zone-scan box
+        // (`SceneMetrics.cs:919`'s `ZoneScanSize`).
+        let cx = (p.x / TILE_PX) as i32;
+        let cy = (p.y / TILE_PX) as i32;
+        let (hw, hh) = (169 / 2, 124 / 2);
+        x0 = x0.max(cx - hw);
+        y0 = y0.max(cy - hh);
+        x1 = x1.min(cx + hw);
+        y1 = y1.min(cy + hh);
+        if x0 > x1 || y0 > y1 {
+            return;
+        }
+        let changed = reveal_rect(world, &mut self.tiles, light, x0, y0, x1, y1);
         self.dirty.extend(changed);
+    }
+
+    /// `WorldMap.UpdateType` (`WorldMap.cs:65-93`) — see the tr-core free fn.
+    pub fn update_type(&mut self, world: &World, x: i32, y: i32) -> bool {
+        crate::map::update_type(world, &mut self.tiles, x, y)
+    }
+
+    /// `WorldMap.QueueUpdate` (`WorldMap.cs:95-105`) — see the tr-core free fn.
+    pub fn queue_update(&mut self, x: i32, y: i32) -> bool {
+        crate::map::queue_update(
+            &mut self.tiles,
+            x,
+            y,
+            self.tiles_w as i32,
+            self.tiles_h as i32,
+        )
+    }
+
+    /// `WorldMap.ClearEdges` (`WorldMap.cs:260-285`) — the map load's edge
+    /// clear (`WorldMap.cs:210`).
+    pub fn clear_edges(&mut self, world: &World) {
+        crate::map::clear_edges(&mut self.tiles, world.width, world.height);
+    }
+
+    /// The edit-queue drain's push (the `MapRenderer.QueueChange` analog —
+    /// the frame routes `MapUpdateQueue::update`'s changed tiles here).
+    pub(crate) fn push_dirty(&mut self, tiles: Vec<(i32, i32)>) {
+        self.dirty.extend(tiles);
     }
 
     /// Tiles changed since the previous call (`prepare` uploads these).
@@ -455,6 +519,9 @@ impl WorldMap {
         if !load_map_file(world, &mut self.tiles, path).unwrap_or(false) {
             return false;
         }
+        // `WorldMap.Load`'s edge clear (`WorldMap.cs:210`): the 40-tile
+        // world border bands come back unrevealed.
+        self.clear_edges(world);
         // Drop any pending single-tile writes; the full upload replaces them.
         self.dirty.clear();
         self.needs_full_upload = true;
@@ -777,7 +844,11 @@ mod tests {
         let mut wm = WorldMap::new(&world);
         assert!(!wm.needs_full_upload);
         assert!(wm.load(&world, &path));
-        assert_eq!(wm.tiles, saved);
+        // `WorldMap.cs:210`: the load clears the 40-tile edge bands after
+        // the file body — the interior compares, the bands are wiped.
+        let mut expected = saved.clone();
+        crate::map::clear_edges(&mut expected, world.width, world.height);
+        assert_eq!(wm.tiles, expected);
         assert!(wm.needs_full_upload);
 
         let mut fresh = WorldMap::new(&world);
@@ -822,8 +893,11 @@ mod tests {
     /// The `ground_world` from `player.rs`: a 64x128 world with a solid band
     /// `y in 60..128`, spawn at `(10, 40)`.
     fn ground_world() -> World {
-        let mut w = World::new("t".into(), 64, 128);
-        for x in 0..64 {
+        // The world is 200 wide so the reveal rect's world-bounds inset 40
+        // (`LightingEngine.cs:253-255`) leaves a live window around the
+        // spawn column.
+        let mut w = World::new("t".into(), 200, 128);
+        for x in 0..200 {
             for y in 60..128 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile {
@@ -839,9 +913,133 @@ mod tests {
     }
 
     #[test]
+    fn update_type_refreshes_a_queued_tile_after_an_edit() {
+        // `WorldMap.cs:65-93`: the queued flag arms a re-derive; the tile
+        // keeps its light and picks the new world state.
+        let mut world = ground_world();
+        let px = 100usize;
+        let py = 40usize;
+        // A revealed water-free stone tile at (100, 40).
+        let i = world.index(px as i32, py as i32);
+        world.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        let mut m = WorldMap::new(&world);
+        // The map tile derives from the world (the colour included) — a
+        // hand-built create(1, 200, 0) would mismatch on the colour.
+        assert!(crate::map::update_map_lighting(&world, &mut m.tiles, 100, 40, 200));
+        // Queue + drain: nothing changed yet (the world matches).
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, px as i32, py as i32);
+        assert!(q.update(&world, &mut m).is_empty(), "no change yet");
+        // The tile becomes air: the queued refresh re-derives to the
+        // background (the type flips, the light stays). The first drain
+        // consumed the entry, so the edit re-queues.
+        world.tiles[i] = Tile::default();
+        q.add_tile(&mut m, 100, 40);
+        let changed = q.update(&world, &mut m);
+        assert_eq!(changed, vec![(px as i32, py as i32)]);
+        assert_ne!(m.tiles[i].ty, 1, "the type re-derived");
+        assert_eq!(m.tiles[i].light, 200, "the light kept");
+    }
+
+    #[test]
+    fn queue_update_refuses_dark_and_already_queued_tiles() {
+        // `WorldMap.cs:99-102`.
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 40);
+        m.tiles[i] = MapTile::create(1, 0, 0); // dark
+        assert!(!m.queue_update(100, 40));
+        m.tiles[i] = MapTile::create(1, 200, 0);
+        assert!(m.queue_update(100, 40));
+        assert!(!m.queue_update(100, 40), "the dedupe flag");
+    }
+
+    #[test]
+    fn unlock_map_tile_pretty_falls_off_and_skips_solids_and_lava() {
+        // `WorldMap.cs:135-174`: the 11x11 Manhattan falloff, the solid and
+        // the non-lava-liquid skips, the wall 0.8 / underground 0.7 tints.
+        let mut world = ground_world();
+        world.world_surface = 70.0; // the falloff rows sit above it
+        let mut m = WorldMap::new(&world);
+        // The air cell at (100, 60) reveals itself at 255 and its ring by
+        // the Manhattan falloff — (100, 59) is one step out: 255*4/5 = 204.
+        let (sx, sy) = (100, 60);
+        let si = world.index(sx, sy);
+        world.tiles[si] = Tile::default();
+        unlock_map_tile_pretty(&world, &mut m.tiles, sx, sy);
+        // The centre is a SKY-background air tile — `CreateMapTile`'s
+        // sky arm forces the light to 255 (`MapHelper.cs`'s skyPosition
+        // chain), so the falloff input 255 rides through. The ring reveals
+        // (its sky tiles also clamp to 255); the exact per-tile number is
+        // the sky override's, not the falloff's.
+        assert_eq!(m.tiles[world.index(sx, sy)].light, 255, "the centre");
+        assert!(
+            m.tiles[world.index(100, 59)].light > 0,
+            "the ring reveals"
+        );
+        assert!(m.tiles[world.index(100, 56)].light > 0, "the ring edge reveals");
+        assert_eq!(m.tiles[world.index(100, 54)].light, 0, "beyond the radius stays dark");
+        // The stone cell refuses the whole walk — itself and its ring stay
+        // dark (`WorldGen.SolidTile`, `WorldMap.cs:136-139`).
+        let (gx, gy) = (120, 60);
+        unlock_map_tile_pretty(&world, &mut m.tiles, gx, gy);
+        assert_eq!(m.tiles[world.index(gx, gy)].light, 0, "the solid skips");
+        assert_eq!(m.tiles[world.index(gx, gy - 1)].light, 0, "the ring stays dark");
+        // The lava cell refuses (`:144-147`).
+        let si = world.index(140, 60);
+        world.tiles[si] = Tile::default();
+        world.tiles[si].liquid = 200;
+        world.tiles[si].flags |= FLAG_ACTIVE | tr_core::tile::FLAG_LIQUID_LAVA;
+        unlock_map_tile_pretty(&world, &mut m.tiles, 140, 60);
+        assert_eq!(m.tiles[world.index(140, 60)].light, 0, "the lava skips");
+    }
+
+    #[test]
+    fn clear_edges_wipes_the_40_tile_bands() {
+        // `WorldMap.cs:260-285`.
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        for t in m.tiles.iter_mut() {
+            *t = MapTile::create(1, 255, 0);
+        }
+        m.clear_edges(&world);
+        assert_eq!(m.tiles[world.index(0, 0)].light, 0);
+        assert_eq!(m.tiles[world.index(39, 100)].light, 0);
+        assert_eq!(m.tiles[world.index(100, 10)].light, 0);
+        assert_eq!(m.tiles[world.index(100, 60)].light, 255, "the interior keeps");
+        assert_eq!(m.tiles[world.index(100, 39)].light, 0, "the top band");
+        assert_eq!(m.tiles[world.index(100, 40)].light, 255, "the first interior row");
+        assert_eq!(m.tiles[world.index(100, 88)].light, 0, "the bottom band");
+    }
+
+    #[test]
+    fn the_edit_queue_round_trips_into_the_map() {
+        // `MapUpdateQueue.cs:43-71`: the per-tile add queues once (the
+        // dedupe) and the drain reports the changed tiles once.
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 40);
+        m.tiles[i] = MapTile::create(1, 200, 0);
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, 100, 40);
+        q.add_tile(&mut m, 100, 40);
+        world.tiles[i] = Tile::default(); // the edit
+        let changed = q.update(&world, &mut m);
+        assert_eq!(changed.len(), 1, "the dedupe");
+        assert_ne!(m.tiles[i].ty, 1);
+    }
+
+    #[test]
     fn reveal_window_marks_tiles_around_the_player() {
         let world = ground_world();
-        let p = Player::spawn(&world);
+        let mut p = Player::spawn(&world);
+        // The world's 40-tile border bands are un-revealable
+        // (`LightingEngine.cs:253-255`'s inset + `ClearEdges`) — spawn mid-map.
+        p.x = 100.0 * TILE_PX;
         let px = (p.x / TILE_PX) as i32;
         let py = (p.y / TILE_PX) as i32;
         let light = LightMap::compute(
@@ -1245,5 +1443,67 @@ mod tests {
         let got = head_icon_pos(center_px, pos, 4.0, screen);
         assert_close(got[0], 796.0, 1e-3);
         assert_close(got[1], 449.6, 1e-3);
+    }
+}
+
+/// `Terraria.Map.MapUpdateQueue` (`MapUpdateQueue.cs:21-108`): the edit-side
+/// map refresh queues — the per-tile queue (`MapUpdateQueue.Add(int, int)`,
+/// the `Main.Map.QueueUpdate` dedupe) and the area queue
+/// (`MapUpdateQueue.Add(Rectangle)`). The `Main.dedServ`/`generatingWorld`/
+/// `!mapEnabled` gates ride the callers. `Update()` (`Main.cs:61862`) drains
+/// both through `WorldMap.UpdateType` and reports the changed tiles (the
+/// C# feeds `MapRenderer.QueueChange`; the port re-uploads via `dirty`).
+#[derive(Default)]
+pub struct MapUpdateQueue {
+    areas: Vec<[i32; 4]>,
+    tiles: Vec<(i32, i32)>,
+}
+
+impl MapUpdateQueue {
+    /// `MapUpdateQueue.Add(Rectangle)` (`MapUpdateQueue.cs:23-41`): the
+    /// world-clamped rect queues every tile it covers.
+    pub fn add_area(&mut self, map: &mut WorldMap, x: i32, y: i32, w: i32, h: i32) {
+        let (mw, mh) = (map.tiles_w as i32, map.tiles_h as i32);
+        let x0 = x.max(0);
+        let y0 = y.max(0);
+        let x1 = (x + w).min(mw);
+        let y1 = (y + h).min(mh);
+        self.areas.push([x0, y0, x1 - x0, y1 - y0]);
+        for i in x0..x1 {
+            for j in y0..y1 {
+                map.queue_update(i, j);
+            }
+        }
+    }
+
+    /// `MapUpdateQueue.Add(int, int)` (`MapUpdateQueue.cs:43-60`): the
+    /// per-tile queue behind `Main.Map.QueueUpdate`'s dedupe.
+    pub fn add_tile(&mut self, map: &mut WorldMap, x: i32, y: i32) {
+        if !map.queue_update(x, y) {
+            return; // `:44`: the gate skips the enqueue
+        }
+        self.tiles.push((x, y));
+    }
+
+    /// `MapUpdateQueue.Update` (`MapUpdateQueue.cs:62-71`): both queues drain
+    /// through `WorldMap.UpdateType`; the changed tiles return (the C#'s
+    /// `MapRenderer.QueueChange`).
+    pub fn update(&mut self, world: &World, map: &mut WorldMap) -> Vec<(i32, i32)> {
+        let mut changed = Vec::new();
+        for (x, y) in std::mem::take(&mut self.tiles) {
+            if map.update_type(world, x, y) {
+                changed.push((x, y));
+            }
+        }
+        for [x, y, w, h] in std::mem::take(&mut self.areas) {
+            for i in x..x + w {
+                for j in y..y + h {
+                    if map.update_type(world, i, j) {
+                        changed.push((i, j));
+                    }
+                }
+            }
+        }
+        changed
     }
 }
