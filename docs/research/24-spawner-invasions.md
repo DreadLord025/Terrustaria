@@ -119,7 +119,7 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
 | `GetSpawnRate` `this.invaders` override (rate 20, max `5·(2+0.3·players)`) (`:781-785`) | MISSING | — | no `invaders` branch in `get_spawn_rate`; the invasion path has its own unrated loop (see deviations) |
 | `GetSpawnRate` pre-Skeletron dungeon rate 10 (`:786-789`) | PORTED | `:364-366` | `dungeon_pre_skeletron_is_rate_ten` (10 / 180 post) |
 | `GetSpawnRate` getGoodWorld / Journey / Skyblock (`:757-770`, `:790-793`) | MISSING (documented constants-off) | `:197-201` | needs M5-SEED-1 / M6-CREATIVE-1 |
-| `GetSpawnRate` town-NPC distribution block with `Main.rand` (`:799-923`) | MISSING | — | `townNPCs` 1/2/≥3 × depth × graveyard → `noWorms`/`spawnFriendly`/`×1.25…×3`; the port's only town coupling is the jungle-zone tier table (`:257-276`) |
+| `GetSpawnRate` town-NPC distribution block with `Main.rand` (`:799-923`) | PORTED | `get_spawn_rate` `:406-510` | the S1-F-11 block — `townNPCs` 1/2/≥3 × depth × graveyard → `noWorms`/`spawnFriendly` on `SpawnRate`, the ×1.25…×3 rescales with the vanilla casts; skyblock/shadow-candle/expertMode/OOA/remix constants-off, the graveyard input in `SpawnFlags` for the M2-BUFF scan; mutation-checked draw-order tests |
 | `GetSpawnRate` `RollOnlyBadLuckExtreme(50)` tail (`:924-928`) | MISSING | — | luck does not reach the spawn stream |
 | `GetSpawnArea` + `FindSpawnTile` + tile gates | PORTED (partial) | `get_spawn_area` `:155`, `try_spawn_an_npc` `:588-675`, `has_tile_spawn_space` `:372`, `check_not_spawning_on_screen` `:396`, `find_ground_tile` `:416`, `post_check_chosen_spawn_tile` `:436` | the scope/biome-gun range extension (`NPC.cs:943-967`) and the `wallHouse` arm of the solid check are unported (documented `:151-154`, `:622-624`) |
 | `SpawnNPC` latch + named stream | PORTED | `spawn_npc_call` `:472-484` | `the_latch_consumes_one_call_and_clears`, `the_named_stream_is_deterministic_per_seed` |
@@ -200,14 +200,17 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
 ## Deviations & risks
 
 1. **`GetSpawnRate`'s town-NPC distribution block is unported** (`NPC.cs:799-923`) — *behavioural,
-   high*. The C# draws `Main.rand` there (`:807`, `:811`, `:824`, `:828`, `:840`, `:844`, `:860-916`)
-   to set `noWorms`/`spawnFriendly` and re-scale `spawnRate` by ×1.25/×1.5/×2/×2.33/×3 (and the
-   graveyard ×1.66/×2.33/×3). The port has no equivalent: `get_spawn_rate` ends its town coupling
-   at the jungle-zone tier table (`spawner.rs:257-276`). Not admitted in ROADMAP (M4-SPAWN-1 claims
-   the chain "ported in the vanilla order"); the doc comment at `spawner.rs:193-196` even claims
-   "Random town-NPC sub-branches (`Main.rand` inside) are kept with the spawner's own RNG", but the
-   function discards its `rng` (`:203`). Risk: any world with town NPCs and no event/blood/eclipse
-   over-spawns relative to C#.
+   high*. **CLOSED 2026-11-13** (`S1-F-11-town-spawn-rng`): the block is ported verbatim into
+   `get_spawn_rate` — the gate, the underworld/surface ladders, the graveyard arms, the
+   `noWorms`/`spawnFriendly` carry-outs on `SpawnRate` and the consumer wiring (skyMob `:980/:984`,
+   piranha `:1929`, Devourer `:3701`, Giant Worm `:4816`); the discarded `rng` is consumed in the
+   C# order (mutation-checked). Constants-off inside the block: skyblock `lowTiles`, the shadow
+   candle's `townNPCs = 0`, `Main.expertMode`, `ZoneOldOneArmy`, `inRemixStartingArea`; the
+   graveyard input landed in `SpawnFlags` (`zone_graveyard`) awaiting the M2-BUFF scene scan.
+   **Errata found while porting**: the port's moon-event pacing arm (`spawner.rs:360-363`) applies
+   unconditionally, but the C# gates it on `(Main.remixWorld || player.position.Y < worldSurface *
+   16.0)` (`NPC.cs:771`) — an underground player during a moon event should keep the un-paced rate.
+   Pre-existing, one row for a follow-up (S1-F-13's neighbourhood).
 2. **No `invaders` spawn-rate override** (`NPC.cs:781-785`) — *behavioural, high*. C# forces
    `spawnRate = 20` / `maxSpawns = 5·(2+0.3·players)` while an invasion window is open. The port
    instead fires `invasion_spawn_pick` **once per fixed step** with no rate roll and no nearby cap
@@ -280,7 +283,10 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
 - **M — Port `GetSpawnRate`'s town-NPC distribution block** (`NPC.cs:799-923`), including the
   graveyard arms and the `noWorms`/`spawnFriendly` writes; requires a `SpawnFlags`-adjacent
   carry-out struct plus a graveyard flag in the scene scan. Depends on the graveyard scene work
-  (M2-BUFF family). Closes deviation #1.
+  (M2-BUFF family). Closes deviation #1. — **DONE 2026-11-13** (`S1-F-11-town-spawn-rng`): the
+  carry-outs ride `SpawnRate` (`no_worms`/`spawn_friendly`), the graveyard flag landed in
+  `SpawnFlags` (constants-off until the M2-BUFF scan feeds it), the consumers (skyMob, piranha,
+  Devourer, Giant Worm) read the flags.
 - **M — Moon-event wave rosters** (`SpawnAnNPC`'s pumpkin/snow-moon arms `NPC.cs:2560-2960`):
   the per-wave kind tables behind `World.pumpkin_moon`/`snow_moon` in `spawn_npc_at`, plus the
   wave counter. Bigger than it looks — most of the wave kinds are already ported by M4-EVENT-8..19.
