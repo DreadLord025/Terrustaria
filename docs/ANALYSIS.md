@@ -11978,3 +11978,18 @@ Deliberate sequencing (not silent gaps):
 - The buff icons pack into the atlas by enumeration (`Buff_<id>.xnb`,
   sorted ids like the items), so an id whose texture is absent simply
   never draws an icon (the alpha keeps its state).
+
+## The Nurse rules (S1-E-8, 2026-11-13)
+
+`BuffID.Sets.NurseCannotRemoveDebuff` (`BuffID.cs:52`, the 20 protected
+ids) gates both halves of the service: `GetNurseHealCost`'s debuff count
+counts only `Main.debuff[b] && buffTime > 60 && !protected` slots
+(`Main.cs:40058-40065` — the `> 60` time gate the port used to skip), and
+`NPCChatText_DoNurseHeal`'s removal clears only `buffTime > 0` non-
+protected ones (`:40147`). The price ladder is ported whole
+(`Main.cs:40069-40096`): the Golem 200×/Plant 150×/mechs 100×/hardmode 60×/
+Skeletron-or-Queen-Bee 25×/boss2 10×/boss1 3× if/else-if chain reads the
+World's downed flags, and the Discount Card's
+`(int)((float)num * 0.8f)` truncation rides before the happiness multiply.
+The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
+plumbing is R-03-6's row.
