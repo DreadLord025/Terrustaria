@@ -15135,13 +15135,44 @@ mod tests {
     fn the_nurse_heal_cost_math() {
         // `GetNurseHealCost`'s core: the missing life + the debuffs x100,
         // x the happiness multiplier; the rounding truncates (the C# cast).
-        assert_eq!(crate::app::nurse_heal_cost_for(40, 0, 1.0), 40);
-        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.0), 140);
-        assert_eq!(crate::app::nurse_heal_cost_for(0, 2, 1.0), 200);
+        let classic = crate::app::NurseCostFlags {
+            downed_golem: false,
+            downed_plant_boss: false,
+            downed_mech_any: false,
+            hard_mode: false,
+            downed_boss3_or_queen_bee: false,
+            downed_boss2: false,
+            downed_boss1: false,
+            discount_available: false,
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 0, 1.0, &classic), 40);
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.0, &classic), 140);
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 2, 1.0, &classic), 200);
         // The content forest Guide multiplier (0.89) rides the service too.
-        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 0.89), 124);
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 0.89, &classic), 124);
         // The ceiling 1.5.
-        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.5), 210);
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.5, &classic), 210);
+        // The boss ladder (`Main.cs:40069-40088`): the Golem 200x, the
+        // Plant 150x, the mechs 100x, hardmode 60x, the Skeletron/Queen-Bee
+        // pair 25x, boss2 10x, boss1 3x — first match wins.
+        let golem = crate::app::NurseCostFlags { downed_golem: true, ..classic };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &golem), 20_000);
+        let plant = crate::app::NurseCostFlags { downed_plant_boss: true, ..classic };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &plant), 15_000);
+        let mech = crate::app::NurseCostFlags { downed_mech_any: true, ..classic };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &mech), 10_000);
+        let hard = crate::app::NurseCostFlags { hard_mode: true, ..classic };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &hard), 6_000);
+        let b3 = crate::app::NurseCostFlags { downed_boss3_or_queen_bee: true, ..classic };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &b3), 2_500);
+        let b2 = crate::app::NurseCostFlags { downed_boss2: true, ..classic };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &b2), 1_000);
+        let b1 = crate::app::NurseCostFlags { downed_boss1: true, ..classic };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &b1), 300);
+        // The Discount Card's `(int)((float)num * 0.8f)` truncation rides
+        // before the mood (`:40094-40096`): 140 → 112.
+        let disc = crate::app::NurseCostFlags { discount_available: true, ..classic };
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.0, &disc), 112);
     }
 
     #[test]

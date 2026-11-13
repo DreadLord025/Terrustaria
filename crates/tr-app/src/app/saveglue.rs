@@ -11,6 +11,67 @@ use crate::persist;
 use tr_core::save::{self, BannerKill, ChestItem, ChestRecord};
 use tr_core::wld::sections::SectionData;
 
+/// `Main.WorldRollingBackupsCountToKeep`'s shipped default — the vanilla
+/// settings file's `WorldRollbacksToKeep` (2); the settings row lands with
+/// the settings work (S1-J-4).
+const WORLD_ROLLING_BACKUPS_TO_KEEP: usize = 2;
+
+/// `WorldFile.ValidateWorld`'s port analogue (`WorldFile.cs:941-948`): the
+/// written bytes re-read through the full parser — the port's loaders are
+/// the validators (`save::parse` for `.trwld`, `wld::parse` for `.wld`).
+fn validate_world_bytes(path: &std::path::Path, is_valid: impl Fn(&[u8]) -> bool) -> bool {
+    std::fs::read(path)
+        .map(|bytes| is_valid(&bytes))
+        .unwrap_or(false)
+}
+
+/// The `.bak` chain's slot names — the C#'s own numbering: slot 1 is the
+/// bare `.bak` (`DoRollingBackups`'s `i == 1` override, `WorldFile.cs:979`)
+/// and slots 2..=9 are `.bak2`..`.bak9` (the destinations are
+/// `backupWorldWritePath + (num3 + 1)`, `:992` — the `.bak1` name never
+/// occurs in the vanilla rotation).
+fn backup_path(path: &std::path::Path, i: usize) -> std::path::PathBuf {
+    if i <= 1 {
+        std::path::PathBuf::from(format!("{}.bak", path.display()))
+    } else {
+        std::path::PathBuf::from(format!("{}.bak{}", path.display(), i))
+    }
+}
+
+/// `WorldFile.DoRollingBackups` (`WorldFile.cs:966-1004`): the numbered
+/// rotation — `.bak` shifts into `.bak1`, `.bak1` into `.bak2`, up to
+/// `keep.min(9)` slots, then the caller writes the previous world file into
+/// the freed `.bak` (`InternalSaveWorld`'s `WriteAllBytes(text, array2)`).
+fn rolling_backups(path: &std::path::Path, keep: usize, old_world: Option<&[u8]>) {
+    if keep <= 1 {
+        return;
+    }
+    let num = keep.min(9);
+    let bak = backup_path(path, 0);
+    // The chain's first missing slot (`:975-984`; `i == 1` reads the bare
+    // `.bak`).
+    let mut num2 = 1;
+    for i in 1..num {
+        if !backup_path(path, i).exists() {
+            break;
+        }
+        num2 = i + 1;
+    }
+    // The shift walk (`:986-998`): slot `num3` moves into `num3 + 1`, the
+    // top slot first (`.bak` is slot 1).
+    for num3 in (1..num2).rev() {
+        let from = backup_path(path, num3);
+        let to = backup_path(path, num3 + 1);
+        if from.exists() {
+            let _ = std::fs::rename(&from, &to);
+        }
+    }
+    // The previous world file becomes the fresh `.bak` (`:958-962`).
+    if let Some(bytes) = old_world {
+        let _ = std::fs::write(&bak, bytes);
+    }
+}
+
 impl App {
     /// `WorldGen.SaveWorld` (`WorldFile.cs:825`'s entry) over the loaded file:
     /// the port writes its native `.trwld` (`save::save`, whose v7-v11 side
@@ -38,6 +99,10 @@ impl App {
         self.world.raining = self.rain.is_raining();
         self.world.rain_time = self.rain.rain_time();
         self.world.max_raining = self.rain.max_raining();
+        // `InternalSaveWorld`'s `array2` (`WorldFile.cs:916-918`): the previous
+        // world file, captured before the write — the `.bak` source and the
+        // failed-write restore source (S1-J-4).
+        let old_world = std::fs::read(&self.world_path).ok();
         if is_native_trwld(&self.world_path) {
             // `SaveChests` (`WorldFile.cs:1606-1676`): the world chests ride the
             // same stream as the world itself — a u32 count, then per chest the
@@ -154,7 +219,23 @@ impl App {
                 ore_tiers: Some(ore_tiers),
             };
             match save::save(&self.world_path, &self.world, &side) {
-                Ok(()) => log::info!("saved {}", self.world_path.display()),
+                Ok(()) => {
+                    // `InternalSaveWorld`'s post-write walk (`WorldFile.cs:940-962`):
+                    // re-read the written bytes and validate them through the full
+                    // parser; a broken write restores the previous world file, a
+                    // good one rotates it into the `.bak` chain (S1-J-4).
+                    let ok = validate_world_bytes(&self.world_path, |b| save::parse(b).is_ok());
+                    if ok {
+                        rolling_backups(
+                            &self.world_path,
+                            WORLD_ROLLING_BACKUPS_TO_KEEP,
+                            old_world.as_deref(),
+                        );
+                        log::info!("saved {}", self.world_path.display());
+                    } else {
+                        log::warn!("save failed validation: {}", self.world_path.display());
+                    }
+                }
                 Err(e) => log::warn!("save failed: {e:#}"),
             }
             if let Some(p) = &self.player {
@@ -185,7 +266,20 @@ impl App {
         } else {
             let sections = self.wld_sections();
             match tr_core::wld::save(&self.world_path, &self.world, &sections) {
-                Ok(()) => log::info!("saved {}", self.world_path.display()),
+                Ok(()) => {
+                    let ok =
+                        validate_world_bytes(&self.world_path, |b| tr_core::wld::parse(b).is_ok());
+                    if ok {
+                        rolling_backups(
+                            &self.world_path,
+                            WORLD_ROLLING_BACKUPS_TO_KEEP,
+                            old_world.as_deref(),
+                        );
+                        log::info!("saved {}", self.world_path.display());
+                    } else {
+                        log::warn!("save failed validation: {}", self.world_path.display());
+                    }
+                }
                 Err(e) => log::warn!("save failed: {e:#}"),
             }
         }
@@ -816,8 +910,18 @@ mod chest_save_tests {
             world,
             WorldSections::native(save::WorldSide {
                 chests: vec![
-                    save::ChestRecord { x: ax, y: ay, name: String::new(), slots: Vec::new() },
-                    save::ChestRecord { x: bx, y: by, name: String::new(), slots: Vec::new() },
+                    save::ChestRecord {
+                        x: ax,
+                        y: ay,
+                        name: String::new(),
+                        slots: Vec::new(),
+                    },
+                    save::ChestRecord {
+                        x: bx,
+                        y: by,
+                        name: String::new(),
+                        slots: Vec::new(),
+                    },
                 ],
                 ..Default::default()
             }),
@@ -827,7 +931,8 @@ mod chest_save_tests {
         // written through `set_chest_slot` — including the interior air at
         // slot 1 (the store keeps it explicit, `SaveChests`'s
         // unwritten-pair arm covers it).
-        let stocked = chest::find_chest(&app.world_chests, ax, ay).expect("the anchor's record materialised");
+        let stocked =
+            chest::find_chest(&app.world_chests, ax, ay).expect("the anchor's record materialised");
         // The roll's own rows are wiped first (a chest the player emptied,
         // `ItemSlot.SetDefaults(0)`), so the saved stock is exactly what the
         // three writes below leave.
@@ -1161,6 +1266,92 @@ mod chest_save_tests {
             (back.rain.visual_alpha() - 0.75).abs() < f32::EPSILON,
             "cloudAlpha := maxRaining (WorldFile.cs:162)"
         );
+    }
+
+    #[test]
+    fn s1_j_4_two_saves_rotate_the_previous_world_into_the_bak_chain() {
+        // `DoRollingBackups` (`WorldFile.cs:966-1004`) + the `.bak` write
+        // (`:958-962`): the previous save's bytes land in `.bak` and the
+        // chain shifts into `.bak2` (the C#'s own slot numbering — the bare
+        // `.bak` is slot 1 and the numbered slots start at 2).
+        let world = chest_rig();
+        let path = std::env::temp_dir().join("tr-s1-j-4-rotation.trwld");
+        let _ = std::fs::remove_file(&path);
+        for i in 0..3 {
+            let _ = std::fs::remove_file(backup_path(&path, i));
+        }
+
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+        let first = std::fs::read(&path).unwrap();
+
+        // The second save mutates the world (the flag flip rides the file) —
+        // the first save's bytes become `.bak`.
+        app.world.downed_queen_slime = true;
+        app.save_world();
+        let second = std::fs::read(&path).unwrap();
+        assert_ne!(first, second, "the two saves differ");
+        assert_eq!(
+            std::fs::read(backup_path(&path, 0)).unwrap(),
+            first,
+            ".bak carries the previous save"
+        );
+        // The third save shifts `.bak` into `.bak2` (the C#'s numbering) and
+        // writes the second save into `.bak`.
+        app.save_world();
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            second,
+            "the fresh file carries the latest save"
+        );
+        assert_eq!(
+            std::fs::read(backup_path(&path, 0)).unwrap(),
+            second,
+            ".bak carries the previous save"
+        );
+        assert_eq!(
+            std::fs::read(backup_path(&path, 2)).unwrap(),
+            first,
+            ".bak2 carries the two-saves-ago bytes"
+        );
+        let _ = std::fs::remove_file(&path);
+        for i in 0..3 {
+            let _ = std::fs::remove_file(backup_path(&path, i));
+        }
+    }
+
+    #[test]
+    fn s1_j_4_the_written_world_passes_the_post_write_validation() {
+        // `InternalSaveWorld`'s post-write walk (`WorldFile.cs:941-948`): the
+        // written bytes re-read through the full parser — a real save
+        // validates and a corrupted file does not (the failure arm restores
+        // the captured previous bytes via the same helpers).
+        let world = chest_rig();
+        let path = std::env::temp_dir().join("tr-s1-j-4-validate.trwld");
+        let _ = std::fs::remove_file(&path);
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+        let old_world = std::fs::read(&path).unwrap();
+        assert!(validate_world_bytes(&path, |b| tr_core::save::parse(b).is_ok()));
+        // A corrupted write fails the walk.
+        std::fs::write(&path, b"garbage").unwrap();
+        assert!(!validate_world_bytes(&path, |b| tr_core::save::parse(b).is_ok()));
+        // The failure arm's restore: the previous bytes return.
+        std::fs::write(&path, &old_world).unwrap();
+        assert!(validate_world_bytes(&path, |b| tr_core::save::parse(b).is_ok()));
+        let _ = std::fs::remove_file(&path);
     }
 
     /// DW-2.4 (the back-compat fallback): a world saved before v9 (the

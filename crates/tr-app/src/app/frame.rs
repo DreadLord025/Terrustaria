@@ -691,6 +691,15 @@ impl App {
         // `Main.DrawPVPIcons`'s state block, snapshotted before the disjoint
         // borrow below (it reads `self.player` / `self.net`).
         let pvp_icon_state = self.pvp_icon_state();
+        // The buff bar's inputs (`Main.DrawInterface_Resources_Buffs`,
+        // `Main.cs:43203`): the right-release edge (`Main.mouseRightRelease`)
+        // and the vampire-seed gate (`Main.vampireSeed`, the duration hides
+        // `:43298`). The removals drain in the tick.
+        let right_release = std::mem::take(&mut self.ui_right_release);
+        let vampire_seed = self
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
         // `Player.hideVisibleAccessory` (`Player.cs:1708`) — snapshotted for the
         // same reason (the accessory ticks, `Main.cs:41425-41460`).
         let hide_visible_accessory = self
@@ -1576,6 +1585,11 @@ impl App {
                         // accessory visible/hidden ticks in `DrawInventory`
                         // (`Main.cs:41425-41460`).
                         &hide_visible_accessory,
+                        // The buff bar (`Main.DrawInterface_Resources_Buffs`).
+                        &mut self.buff_alpha,
+                        &mut self.buff_removals,
+                        right_release,
+                        vampire_seed,
                     );
                     // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                     // the coin cells' animation clocks step per frame after

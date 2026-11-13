@@ -11943,3 +11943,53 @@ Scope notes: the `immuneTime = 60` arm belongs to the non-death
 revives, so it lands with a spawn-context split; the `spawnMax` Journey arm
 (`:37609-37611`) and the `pvpDeath` 300 arm (`:37657-37660`) have no port
 counterparts (Journey powers / MP).
+
+## The buff HUD (S1-E-6, 2026-11-13)
+
+`Main.DrawBuffIcon` (`Main.cs:43307-43368`) and `TryRemovingBuff`
+(`:43370-43402`) are ported into `ui/resources.rs::draw_buffs` +
+`player.rs::try_removing_buff`, over `DrawInterface_Resources_Buffs`'s grid
+(`:43203-43250`: 11 icons per row from x=32/y=76, the 38/50 pitch, the
+occupied slots packing). The per-slot alpha (`Main.buffAlpha`) lives on the
+App (`buff_alpha`, initialised 0.4 — the C#'s first-draw clamp lands the
+same value), the hover raises it 0.1 and the rest decays 0.05 clamped to
+[0.4, 1]; the duration text gates through `TryGetBuffTime` (the
+vanity/light-pet sets — already ported — plus the generated 124-id
+`BUFF_NO_TIME_DISPLAY` table, the honey-48 wet gate, the expert wet-46
+gate and the vampire seed's sub-10 hides for 23/24/32) and formats through
+`Lang.LocalizedDuration`'s abbreviated ceilings (`Lang.cs:1158-1207`). The
+right-click release (`Main.mouseRightRelease`) removes via
+`Player::try_removing_buff` — the non-debuff gate, the 60/151 guards, the
+mount's own buff dismounting instead of `DelBuff` — and the
+`SoundEngine.PlaySound(12)` MenuTick cue rides the tick drain.
+
+Deliberate sequencing (not silent gaps):
+
+- **The removal is a request**, not an in-draw mutation: the C# deletes the
+  buff inside the draw pass; the port's HUD draw is immutable, so the
+  hovered slot lands on `App::buff_removals` and the player tick drains it
+  (the `wants_hostile_shot` pattern) — one frame later, same outcome.
+- **The hover name/tooltip block** (`:43250-43270`, `Lang.GetBuffName` +
+  `GetBuffTooltip`) stays out of this pass — it rides the localization
+  tooltip work. `TryRemovingBuff`'s `CheckBuffHideMisc` arms
+  (`:43391-43402`) ride the misc-equips pets (no `miscEquips` yet).
+- **The fullscreen-map call site** (`:41335`'s column layout) rides the
+  map tasks (S1-L-3/4).
+- The buff icons pack into the atlas by enumeration (`Buff_<id>.xnb`,
+  sorted ids like the items), so an id whose texture is absent simply
+  never draws an icon (the alpha keeps its state).
+
+## The Nurse rules (S1-E-8, 2026-11-13)
+
+`BuffID.Sets.NurseCannotRemoveDebuff` (`BuffID.cs:52`, the 20 protected
+ids) gates both halves of the service: `GetNurseHealCost`'s debuff count
+counts only `Main.debuff[b] && buffTime > 60 && !protected` slots
+(`Main.cs:40058-40065` — the `> 60` time gate the port used to skip), and
+`NPCChatText_DoNurseHeal`'s removal clears only `buffTime > 0` non-
+protected ones (`:40147`). The price ladder is ported whole
+(`Main.cs:40069-40096`): the Golem 200×/Plant 150×/mechs 100×/hardmode 60×/
+Skeletron-or-Queen-Bee 25×/boss2 10×/boss1 3× if/else-if chain reads the
+World's downed flags, and the Discount Card's
+`(int)((float)num * 0.8f)` truncation rides before the happiness multiply.
+The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
+plumbing is R-03-6's row.

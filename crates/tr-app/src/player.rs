@@ -2206,6 +2206,59 @@ impl Player {
         self.respawn();
     }
 
+    /// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
+    /// right-click removal — non-debuffs only, and not Petrified 60 /
+    /// Webbed 151; the mount's own buff dismounts instead of removing the
+    /// buff (`Mount.CheckBuff`, `Mount.cs` — `data.buff == b`). The
+    /// `TryRemovingBuff_CheckBuffHideMisc` arms (`:43391-43402`) ride the
+    /// misc-equips pets (unported). Returns whether the arm entered (the
+    /// caller plays `SoundEngine.PlaySound(12)`'s MenuTick cue).
+    pub fn try_removing_buff(&mut self, i: usize, b: i32) -> bool {
+        if !crate::buffs::is_debuff(b) && b != 60 && b != 151 {
+            if self.mount.is_active() && self.mount.data().map(|d| d.buff) == Some(b) {
+                if let Some(buff) = self.mount.dismount() {
+                    self.clear_buff_type(buff);
+                }
+            } else {
+                self.buffs.del_buff(i);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// `GetNurseHealCost`'s slot count (`Main.cs:40058-40065`): a debuff
+    /// slot counts when `Main.debuff[b] && buffTime > 60 &&
+    /// !NurseCannotRemoveDebuff[b]`.
+    pub fn remountable_debuff_count(&self) -> i32 {
+        let mut count = 0;
+        for i in 0..crate::buffs::MAX_BUFFS {
+            let b = self.buffs.buff_type[i];
+            if crate::buffs::is_debuff(b)
+                && self.buffs.buff_time[i] > 60
+                && !crate::buffs::nurse_cannot_remove(b)
+            {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// `NPCChatText_DoNurseHeal`'s removal pass (`Main.cs:40147`): the
+    /// debuff slots with `buffTime > 0` and the Nurse's protected list
+    /// clear.
+    pub fn clear_nurse_removable_debuffs(&mut self) {
+        for i in 0..crate::buffs::MAX_BUFFS {
+            let b = self.buffs.buff_type[i];
+            if crate::buffs::is_debuff(b)
+                && self.buffs.buff_time[i] > 0
+                && !crate::buffs::nurse_cannot_remove(b)
+            {
+                self.buffs.clear_buff(b);
+            }
+        }
+    }
+
     /// `Player.ResetProjectileCaches` (`Player.cs:12217-12226`): the recount
     /// input zeroed — called from the `ResetEffects` seam (`:18810`) and the
     /// dead path (`:24752`).
@@ -7387,6 +7440,64 @@ mod tests {
         assert!(!p.immune, "the countdown cleared the flag");
         assert!(!p.immune_no_blink);
         assert!(p.hurt(50, 0.0), "the damage lands after the i-frames");
+    }
+
+    #[test]
+    fn the_nurse_skips_protected_debuffs_in_both_gates() {
+        // `BuffID.Sets.NurseCannotRemoveDebuff` (`BuffID.cs:52`): the
+        // protected Potion Sickness 21 neither counts in the price
+        // (`Main.cs:40061-40064`, the `> 60` time gate too) nor clears at
+        // the heal (`:40147`); the unprotected Poisoned 20 does both.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(21, 3600); // protected
+        p.buffs.add_buff(20, 3600); // removable
+        assert_eq!(p.remountable_debuff_count(), 1, "the protected one stays out of the price");
+        p.clear_nurse_removable_debuffs();
+        assert!(p.buffs.find_buff_index(21).is_some(), "the protected one survives");
+        assert_eq!(p.buffs.find_buff_index(20), None, "the removable clears");
+    }
+
+    #[test]
+    fn the_nurse_price_ignores_young_debuffs() {
+        // `Main.cs:40062`: the cost counts only `buffTime > 60` slots; the
+        // removal (`:40147`) takes any `buffTime > 0`.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(20, 50); // under the 60-tick price gate
+        assert_eq!(p.remountable_debuff_count(), 0);
+        p.buffs.buff_time[p.buffs.find_buff_index(20).unwrap()] = 1;
+        p.clear_nurse_removable_debuffs();
+        assert_eq!(p.buffs.find_buff_index(20), None, "the removal clears at time 1");
+    }
+
+    #[test]
+    fn buff_removal_refuses_debuffs_and_dels_the_rest() {
+        // `Main.cs:43370-43389`: the non-debuff arm dels the slot; a debuff
+        // (or 60/151) refuses.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(5, 3600); // Ironskin — a non-debuff
+        p.buffs.add_buff(20, 3600); // Poisoned — a debuff
+        let poison = p.buffs.find_buff_index(20).unwrap();
+        let iron = p.buffs.find_buff_index(5).unwrap();
+        assert!(!p.try_removing_buff(poison, 20), "a debuff refuses");
+        assert!(p.try_removing_buff(iron, 5), "the non-debuff removes");
+        assert_eq!(p.buffs.find_buff_index(5), None);
+    }
+
+    #[test]
+    fn buff_removal_dismounts_the_mount_buff_without_del() {
+        // `Main.cs:43376-43380`: the mount's own buff (`Mount.CheckBuff` =
+        // `data.buff == b`) dismounts and clears the buff — no `DelBuff`.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.mount_cart();
+        let mount_buff = p.mount.data().unwrap().buff;
+        p.buffs.add_buff(mount_buff, 3600);
+        let slot = p.buffs.find_buff_index(mount_buff).unwrap();
+        assert!(p.try_removing_buff(slot, mount_buff), "the arm entered");
+        assert!(!p.mount.is_active(), "the mount dismounted");
     }
 
     #[test]
