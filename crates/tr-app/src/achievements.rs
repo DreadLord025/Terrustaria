@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 pub use crate::achievements_data::{Cond, Row, Tracker, ROWS};
 use crate::achievements_data::ROWS as REGISTRY;
+use tr_core::bestiary::KillTracker;
 
 /// `AchievementCategory.cs` — `None = -1` is the secret row
 /// (`GAIN_TORCH_GODS_FAVOR`, which `AchievementInitializer` never passes to
@@ -369,6 +370,18 @@ impl AchievementManager {
     /// (`ProgressionEventCondition.cs:7`).
     pub fn notify_progression(&mut self, id: u32) -> Option<&'static str> {
         self.notify(CondKind::ProgressionEvent(id))
+    }
+
+    /// `AchievementsHelper.TryGrantingBestiary100PercentAchievement` (`:81-84`):
+    /// when the bestiary completion reaches 100%, fire progression event 29
+    /// (`BOOK_WORM`).
+    pub fn try_grant_bestiary_100(&mut self, kills: &tr_core::bestiary::KillTracker) -> Option<&'static str> {
+        let pct = crate::bestiary::completion_percent(kills);
+        if pct >= 1.0 {
+            self.notify_progression(29)
+        } else {
+            None
+        }
     }
 
     /// The `CustomFlagCondition` hook shape (`AchievementsHelper.cs:347`'s
