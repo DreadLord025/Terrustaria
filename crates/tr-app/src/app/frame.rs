@@ -221,6 +221,12 @@ impl App {
             ambient_volume: self.settings.ambient_volume,
             quiet_ambient_sounds: false,
             game_menu: self.menu.is_some() || self.front.is_some(),
+            // The worldgen worker never plays (the port's generation runs to
+            // completion before the frame loop starts); `netMode == 2` is the
+            // `NetRole::Host` server role (`LegacySoundPlayer.cs:382-388`,
+            // S1-E-24).
+            generating_or_loading: false,
+            server: matches!(self.net, crate::app::NetRole::Host(_)),
         });
 
         // `Main.Ambience` (`Main.cs:13466-13515`): every 15 ticks (¼ s) the
