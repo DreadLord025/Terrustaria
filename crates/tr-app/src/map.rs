@@ -410,6 +410,10 @@ pub struct WorldMap {
     needs_full_upload: bool,
     /// `Main.resetMapFull`: recentre on the next `prepare`.
     reset_pos: bool,
+    /// `PingMapLayer`'s pool (`PingMapLayer.cs:16-19`): the ping positions
+    /// in world tiles + their age in seconds (the C# stamps `DateTime.Now`
+    /// and compares `TotalSeconds > 15`).
+    pub pings: Vec<([f32; 2], f32)>,
 }
 
 impl WorldMap {
@@ -427,6 +431,7 @@ impl WorldMap {
             uploaded: false,
             needs_full_upload: false,
             reset_pos: true,
+            pings: Vec::new(),
         }
     }
 
@@ -505,6 +510,25 @@ impl WorldMap {
     /// the frame routes `MapUpdateQueue::update`'s changed tiles here).
     pub(crate) fn push_dirty(&mut self, tiles: Vec<(i32, i32)>) {
         self.dirty.extend(tiles);
+    }
+
+    /// `PingMapLayer.Add` (`PingMapLayer.cs:47-51`): up to 100 pings; the
+    /// position is world tiles. The C# caller rides the ping net message —
+    /// the port has no multiplayer, so the pool stays empty in-game (the
+    /// seam exists for the net task).
+    pub fn add_ping(&mut self, pos: [f32; 2]) {
+        if self.pings.len() < 100 {
+            self.pings.push((pos, 0.0));
+        }
+    }
+
+    /// `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:37-40`): the pings
+    /// older than 15 s drop.
+    pub fn age_pings(&mut self, dt: f32) {
+        for p in self.pings.iter_mut() {
+            p.1 += dt;
+        }
+        self.pings.retain(|p| p.1 <= 15.0);
     }
 
     /// Tiles changed since the previous call (`prepare` uploads these).
@@ -632,7 +656,9 @@ impl WorldMap {
         _lookups: &assets::Lookups,
         world: &World,
         screen: Vec2,
-    ) {
+    ) -> ([f32; 2], f32) {
+        // The callers need the overlay context's offset/scale
+        // (`Main.cs:55996`'s `MapIcons.Draw` arguments) — return the pair.
         // `Main.cs:55431-55485`: the wooden scroll frame (928x248).
         if let Some(uv) = r.uv("Map", 0.0, 0.0, 928.0, 248.0) {
             let rect = map_frame_rect(self.pos, self.scale, screen, world);
@@ -651,6 +677,13 @@ impl WorldMap {
             q.uv,
             [1.0; 4],
         );
+        // `Main.cs:55996`: the overlay offset is the map's top-left px minus
+        // the 10-px frame inset, and the draw scale rides the map scale
+        // (`num77`'s formula — `Main.cs:55975-55985`).
+        (
+            [q.dest[0] - 10.0 * self.scale, q.dest[1] - 10.0 * self.scale],
+            self.scale,
+        )
     }
 }
 

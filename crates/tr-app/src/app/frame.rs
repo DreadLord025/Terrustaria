@@ -829,6 +829,12 @@ impl App {
         // `Main.DrawPVPIcons`'s state block, snapshotted before the disjoint
         // borrow below (it reads `self.player` / `self.net`).
         let pvp_icon_state = self.pvp_icon_state();
+        // The team-based-spawns seed gate (`TeamBasedSpawnMapLayer.cs:10`)
+        // and the vampire-seed — snapshotted before the disjoint borrows.
+        let team_based_spawns = self
+            .world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
         // The buff bar's inputs (`Main.DrawInterface_Resources_Buffs`,
         // `Main.cs:43203`): the right-release edge (`Main.mouseRightRelease`)
         // and the vampire-seed gate (`Main.vampireSeed`, the duration hides
@@ -1830,7 +1836,43 @@ impl App {
                                 let sky = [sky_tint[0], sky_tint[1], sky_tint[2], 1.0];
                                 map::draw_map_background(renderer, bg, screen, sky);
                             }
-                            map.draw_full(renderer, lookups, world, screen);
+                            // `Main.cs:55996`: the icon overlay layers ride the
+                            // fullscreen map's offset/scale — the layer walk in
+                            // registration order, the hover text collected.
+                            let (map_offset, map_draw_scale) =
+                                map.draw_full(renderer, lookups, world, screen);
+                            let digtoise: Vec<[f32; 2]> = Vec::new();
+                            let hover = crate::map_layers::map_layers_draw(
+                                renderer,
+                                lookups,
+                                &crate::map_layers::MapIconInputs {
+                                    world,
+                                    player: player.as_ref(),
+                                    item_drops: &self.items,
+                                    digtoise: &digtoise,
+                                    pings: crate::map_layers::map_pings(map),
+                                    pylons: 0,
+                                    team_based_spawns,
+                                    mouse: self.mouse_pos,
+                                },
+                                [0.0, 0.0],
+                                map_offset,
+                                None,
+                                map.scale,
+                                map_draw_scale,
+                                1.0,
+                            );
+                            if let Some(t) = hover {
+                                crate::ui::text::hud_text(
+                                    renderer,
+                                    lookups,
+                                    self.mouse_pos.x + 12.0,
+                                    self.mouse_pos.y + 12.0,
+                                    0.85,
+                                    [1.0; 4],
+                                    &t,
+                                );
+                            }
                             // `Main.cs:55931-55954`: the local player's head icon,
                             // drawn after the map tiles (`Main.cs:55609`).
                             if let Some(p) = player.as_ref() {

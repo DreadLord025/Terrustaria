@@ -645,6 +645,16 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Bubble",
         "NPC_Head_Boss_7",
         "UI/UI_BossBar",
+        // The map overlay layers (`Main.cs:66551`'s `Main.MapIcons`): the
+        // spawn/bed markers, the ping animation and the layer Extras
+        // (`TextureAssets.Extra[n] = Images/Extra_n`, AssetInitializer.cs:365).
+        "UI/SpawnPoint",
+        "UI/SpawnBed",
+        "UI/MapPing",
+        "Extra_182",
+        "Extra_282",
+        "Extra_299",
+        "Extra_305",
         "UI/Cursor_0",
         "UI/Cursor_1",
         "Mana",
@@ -1609,6 +1619,14 @@ pub struct Lookups {
     pub npc_heads: Vec<Option<tr_render::SheetRect>>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
+    /// The map overlay icons (`Main.MapIcons`' layers, `Main.cs:66551`).
+    pub map_spawn: Option<tr_render::SheetRect>,
+    pub map_spawn_bed: Option<tr_render::SheetRect>,
+    pub map_ping: Option<tr_render::SheetRect>,
+    pub extra_182: Option<tr_render::SheetRect>,
+    pub extra_282: Option<tr_render::SheetRect>,
+    pub extra_299: Option<tr_render::SheetRect>,
+    pub extra_305: Option<tr_render::SheetRect>,
     /// `TextureAssets.Buff[type]` (`Images/Buff_<id>`): the buff bar's icons
     /// (`Main.DrawBuffIcon`, `Main.cs:43310`).
     pub buff_icons: HashMap<u16, tr_render::SheetRect>,
@@ -1973,6 +1991,13 @@ impl Lookups {
                     Some((name.strip_prefix("Buff_")?.parse::<u16>().ok()?, *rect))
                 })
                 .collect(),
+            map_spawn: atlas.sheet("UI/SpawnPoint").copied(),
+            map_spawn_bed: atlas.sheet("UI/SpawnBed").copied(),
+            map_ping: atlas.sheet("UI/MapPing").copied(),
+            extra_182: atlas.sheet("Extra_182").copied(),
+            extra_282: atlas.sheet("Extra_282").copied(),
+            extra_299: atlas.sheet("Extra_299").copied(),
+            extra_305: atlas.sheet("Extra_305").copied(),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
