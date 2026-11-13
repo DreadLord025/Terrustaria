@@ -377,7 +377,7 @@ transport redesign (S2-4) starts.
 | id | Task | Size | Sev | Evidence | deps | Verify |
 | --- | --- | --- | --- | --- | --- | --- |
 | S1-J-1 | The `.wld` tile writer **drops the four wire bits** — and because the C#'s `isTheSameAs` compares them, the RLE run boundaries diverge too | M | D+B | research/42-save-load-audit.md | — | byte-identical tile section vs a C#-written world |
-| S1-J-2 | Header placeholders: GUID, world id, generator version and `LastPlayed` are written as placeholders | S | D | research/42 | — | header byte comparison |
+| ✅ S1-J-2 | Header placeholders: GUID, world id, generator version and `LastPlayed` are written as placeholders | S | D | research/42 | - | `World` now stores `generator_version`/`unique_id`/`world_id`/`last_played` and `.wld` header/flags/footer read+write them (`IO/WorldFile.cs:1225-1227,1251,1756,2048`); covered by `wld::tests::s1_j_2_world_header_identity_roundtrips_in_wld` (2026-11-13, `S1-J-2-world-header-identity`) |
 | S1-J-3 | **Golden fixture**: a C#-written `.wld`/`.plr` in `assets/test/` compared byte-for-byte — today every fixture is Rust-internal | M | D | research/42 | J1 | fixture test in CI |
 | S1-J-4 | `.bak` rolling backups + post-write validation (the port has neither) | M | B | research/42 | — | backup/restore test |
 | S1-J-5 | The `.plr` writer is a subset mirror of the C# `Player.Serialize` — it writes only the sanitised name + the starter items, so the port's `.plr` is **not byte-comparable with a vanilla one** | M | B | research/42; `Player.cs` `Serialize` | J3 | `.plr` byte comparison |
