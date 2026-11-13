@@ -76,6 +76,14 @@ pub struct RenderStats {
     pub uploaded_bytes: u64,
 }
 
+/// The renderer's instance-buffer set — one `pass.draw` per non-empty
+/// buffer per `draw_ranges` call (`sprite.rs::draw_ranges`): the background,
+/// world, world-fx, map-back, map and UI ranges. The honest draw-call bound
+/// the docs claim (`docs/ARCHITECTURE.md`'s renderer rows; S1-G-12 corrected
+/// the stale "2 draw calls" — the real structure is up to 6 per frame, 3 + 3
+/// under the split post path with 1..4 filter passes on top).
+pub const PASS_BUFFERS: usize = 6;
+
 pub struct SpriteRenderer {
     pipeline: wgpu::RenderPipeline,
     bgl: wgpu::BindGroupLayout,
@@ -1345,7 +1353,11 @@ mod tests {
         // wgpu's `COPY_BUFFER_ALIGNMENT`. 80 today: 2+2+2+2 floats (32), color
         // (16), rot/paint (8), dye/layer (8), clip (16).
         let stride = std::mem::size_of::<SpriteInstance>();
-        assert_eq!(stride % wgpu::COPY_BUFFER_ALIGNMENT as usize, 0, "stride {stride}");
+        assert_eq!(
+            stride % wgpu::COPY_BUFFER_ALIGNMENT as usize,
+            0,
+            "stride {stride}"
+        );
         // And the vertex layout's `array_stride` is that same stride, so the
         // shader's `Instance` struct and the CPU struct cannot drift apart
         // without this failing first.

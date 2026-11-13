@@ -51,6 +51,7 @@ mod player;
 mod player_file;
 mod prefix;
 pub(crate) mod prefix_id;
+pub(crate) mod projectile_id;
 mod projectile;
 mod rain;
 mod regen;

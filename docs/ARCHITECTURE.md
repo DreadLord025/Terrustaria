@@ -200,7 +200,7 @@ an agent needs before touching code.
 
   Two instance ranges share one ring buffer: `world` (camera transform) and `ui` (screen
   space), written as two `write_buffer` calls and drawn as 2 instanced calls of 6 vertices —
-  the entire scene is 2 draw calls. The ring has three buffers so a frame never rewrites
+  the scene renders through at most 6 draw calls (the background, world, world-fx, map-back, map and UI instance buffers — 3 + 3 under the split post path, with 1..4 filter passes on top; `sprite.rs::PASS_BUFFERS`). The ring has three buffers so a frame never rewrites
   memory the GPU may still be reading. An 8×8 bitmap font (`font8x8`) is baked into the
   atlas for the debug overlay; a 4×4 white block provides solid-colour quads.
 - `sprite.wgsl` — `world = pos + rot(corner*size)`, then `(world - cam) * zoom + screen/2`
@@ -305,7 +305,7 @@ The three interfaces the refactor introduced, each mirroring a C# abstraction:
 
 | Decision | Why |
 | --- | --- |
-| One atlas + instancing | 2 draw calls regardless of scene complexity; no per-tile state changes |
+| One atlas + instancing | up to 6 draw calls regardless of scene complexity (one per instance buffer — `sprite.rs::PASS_BUFFERS`); no per-tile state changes |
 | Nearest filtering, no mips | Pixel-art identity; avoids shimmer from mip selection at integer zoom |
 | Screen-pixel snapping for entities | Player/NPC sprites are drawn at interpolated sub-pixel world positions; nearest sampling then changes the source texel phase every frame (visible as a face row appearing/disappearing). Rounding the sprite's top-left to an integer screen pixel keeps the texel grid fixed while the camera still moves smoothly |
 | Vanilla HUD textures and layout | The hotbar, hearts, breath and boss bar use the original `Inventory_Back`, `Heart`, `Bubble` and `UI_BossBar` sheets with the constants from `GUIHotbarDrawInner`, `ClassicPlayerResourcesDisplaySet` and `BigProgressBarHelper`, instead of custom panels |

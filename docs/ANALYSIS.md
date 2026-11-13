@@ -11994,6 +11994,38 @@ World's downed flags, and the Discount Card's
 The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
 plumbing is R-03-6's row.
 
+## The world-format contract (S1-J-8)
+
+**Decision: the two-format split stays, as a documented contract.** The port
+keeps `.trwld` (native) and `.wld` (vanilla-shaped) as different routes with
+different jobs; converging them would either drop the vanilla-world
+interoperability or force the native format to be byte-vanilla, and both cost
+more than the doubled save surface they would save.
+
+- **`.trwld` is the canonical save route.** Every new piece of persisted state
+  lands here first as a versioned tail block (v13 signs/plates, v14 the rain
+  triple, v15 `downedQueenSlime`), the loader version-gates each block and a
+  pre-N file loads with that block's reset defaults. The production boot world
+  (`app::latest_own_world`) and the save routing (`is_native_trwld`) already
+  make it the live surface.
+- **`.wld` is the vanilla-interchange route.** Loading vanilla worlds
+  (field-by-field codecs, the C# version gates) and writing them back at the
+  byte SHAPE the vanilla expects. Its value coverage is a documented subset
+  (the flags writer zero-fills the rain/Queen-Slime bytes, the loader
+  skip-reads unimplemented sections) — the byte-parity tasks (S1-J-1's wire
+  bits, S1-J-3's golden fixture) grow that coverage only where parity is
+  actually demanded, against the C#'s own `SaveWorld` layout.
+- **Stage-2 cost, bounded.** The two readers stay, but only `.trwld` is the
+  live save surface — the `.wld` route is load-dominant interchange, so the
+  compressor/reader doubling applies to the interchange path only. The
+  app-side twins that neither format carries (the TownManager rooms, the
+  bestiary sights/chats, the CreativePowers table — the recorded M6-SAVE-1b
+  remainder) need a `WorldSide` twin on the app save path, not a format
+  convergence.
+- **The routing rule** (`is_native_trwld`, `app/mod.rs:3074`): the save picks
+  the format by the world path's extension; a `.trwld` world saves native, a
+  `.wld` world saves vanilla-shaped — the user's file never changes identity
+  mid-session.
 ## The map reveal + refresh (S1-L-3, 2026-11-13)
 
 The audit's D10 is closed: `WorldMap::update`'s reveal window now follows

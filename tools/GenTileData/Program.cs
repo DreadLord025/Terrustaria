@@ -58,11 +58,83 @@ foreach (Match m in Regex.Matches(tileIdSrc,
 // Assigned in static constructors as `<Class.>Name = Sets.Factory.CreateBoolSet(...)`;
 // the key is the last identifier segment of the left side.
 var sets = new Dictionary<string, SortedSet<int>>();
+// S1-F-8: the value sets (`CreateIntSet`/`CreateUshortSet` — the
+// `(id, value)` pair shape) and the plain id lists (`new List<int> {...}`),
+// emitted as per-tile value tables.
+var valueSets = new Dictionary<string, int[]>();
+foreach (Match m in Regex.Matches(tileIdSrc,
+             @"((?:\w+\.)*\w+)\s*=\s*(?:[\w.]+\.)?Factory\.Create(?:Int|Ushort)Set\((?<args>[^;]*?)\)\s*;",
+             RegexOptions.Singleline))
+{
+    var name = LastSegment(m.Groups[1].Value);
+    var tokens = SplitTopLevel(m.Groups["args"].Value).Select(x => x.Trim())
+        .Where(x => x.Length > 0).ToList();
+    var table = new int[TileCount];
+    // `CreateIntSet(defaultState, id, value, ...)`.
+    int def = int.TryParse(tokens[0], out var d) ? d : 0;
+    for (int i = 0; i < TileCount; i++) table[i] = def;
+    for (int i = 1; i + 1 < tokens.Count; i += 2)
+    {
+        if (int.TryParse(tokens[i], out var id) && id >= 0 && id < TileCount
+            && int.TryParse(tokens[i + 1], out var v))
+            table[id] = v;
+    }
+    valueSets[name] = table;
+}
+foreach (Match m in Regex.Matches(tileIdSrc,
+             @"Sets\.(\w+)\s*=\s*new List<int>\s*\{(?<body>[^}]*)\}\s*;",
+             RegexOptions.Singleline))
+{
+    var name = m.Groups[1].Value;
+    var table = new int[TileCount];
+    var list = new List<int>();
+    foreach (var tok in m.Groups["body"].Value.Split(','))
+        if (int.TryParse(tok.Trim(), out var v)) list.Add(v);
+    foreach (var v in list) if (v >= 0 && v < TileCount) table[v] = 1;
+    valueSets[name] = table;
+}
+// `Sets.DrawTileInSolidLayer`'s `CreateCustomSet<bool?>` (`TileID.cs:516`):
+// `(ushort)id, true/false` pairs over the `null` default — the port encodes
+// the nullable bool as -1/0/1.
+{
+    var name = "DrawTileInSolidLayer";
+    var table = new int[TileCount];
+    foreach (Match m2 in Regex.Matches(tileIdSrc,
+                 @"Factory\.CreateCustomSet<bool\?>\(\s*null,\s*new object\[\d*\]\s*\{(?<body>.*?)\}\);",
+                 RegexOptions.Singleline))
+    {
+        var toks = SplitTopLevel(m2.Groups["body"].Value).Select(x => x.Trim()).ToList();
+        for (int i = 0; i + 1 < toks.Count; i += 2)
+        {
+            if (!int.TryParse(toks[i].Replace("(ushort)", "").Trim(), out var id)) continue;
+            table[id] = toks[i + 1] == "true" ? 1 : 0;
+        }
+    }
+    valueSets[name] = table;
+}
 foreach (Match m in Regex.Matches(tileIdSrc,
              @"((?:\w+\.)*\w+)\s*=\s*(?:[\w.]+\.)?Factory\.CreateBoolSet\((?<args>[^;]*?)\)\s*;",
              RegexOptions.Singleline))
 {
-    var name = LastSegment(m.Groups[1].Value);
+    // The `Conversion.*` family keeps its dotted path (the SET_CONVERSION_*
+    // names the committed tables ride); the other left sides resolve to
+    // their last segment (`Sets.Dirt` → `Dirt`, `TileID.Sets.AllTiles` →
+    // `AllTiles`).
+    var left = m.Groups[1].Value;
+    // The committed tables' names: the `Conversion.Sand`/`Conversion.Stone`/
+    // `Conversion.Moss` family rides SET_CONVERSION_* (the wanted list's
+    // `dot-to-underscore`), while `Conversion.Grass` and
+    // `Conversion.MergesWithDirtInASpecialWay` emitted under their LAST
+    // segment back then (`SET_GRASS` gated the grass family path,
+    // `SET_MERGES_WITH_DIRT_IN_A_SPECIAL_WAY` the merge gate). Keep the
+    // committed spellings — the rename is the consumers' call, not the
+    // generator's.
+    var keepDotted = left.StartsWith("Conversion.Sand")
+        || left.StartsWith("Conversion.HardenedSand")
+        || left.StartsWith("Conversion.Sandstone")
+        || left.StartsWith("Conversion.Stone")
+        || left.StartsWith("Conversion.Moss");
+    var name = keepDotted ? left : LastSegment(left);
     var ids = new SortedSet<int>();
     var tokens = SplitTopLevel(m.Groups["args"].Value).Select(x => x.Trim())
         .Where(x => x.Length > 0).ToList();
@@ -418,7 +490,7 @@ for (int i = atl; i <= atlEnd; i++)
 // here; if the emitted item set changes, update its re-exports.
 // Optional second arg: output base directory override (used to diff a
 // regeneration against the committed files without touching them).
-var outDir = args.Length > 1 ? args[1] : Path.Combine(root, "crates", "tr-core", "src");
+var outDir = args.Length > 1 && args[1] != "--check" ? args[1] : Path.Combine(root, "crates", "tr-core", "src");
 var tiledataDir = Path.Combine(outDir, "tiledata");
 Directory.CreateDirectory(tiledataDir);
 
@@ -494,51 +566,34 @@ foreach (Match m in Regex.Matches(mainSrc,
 EmitSet(sbSets, "TILE_OBSIDIAN_KILL", Enumerable.Range(0, TileCount).Where(i => obsidianKill[i]));
 // `tileLavaDeath` itself rides the `boolArrays` loop above.
 
-// TileID.Sets arrays used by framing.
-string[] wantedSets =
-[
-    "Dirt", "Mud", "Ash", "Snow", "IcesSnow", "GrassSpecial", "JungleSpecial", "HellSpecial",
-    "MergesWithClouds", "ForcedDirtMerging", "NeedsGrassFraming",
-    "OreMergesWithMud", "tileMossBrick", "Platforms", "IsVine", "Falling", "Torches",
-    "MergesWithDirtInASpecialWay", "CrackedBricks", "AllowLightInWater",
-    // The liquid-reaction container gate (`Liquid.cs:1304`, `TileID.cs:617`).
-    "IsAContainer",
-    // The grappling hooks' latch predicate (`Projectile.cs:52868-52879`): the
-    // Squirrel Hook (865) also latches the tree trunks and the cactus (323).
-    "IsATreeTrunk",
-    // Grass framing (WorldGen.TileFrameCosmetic 82143/82185/83395):
-    // Conversion.Grass, Sets.Ore and ChecksForMerge gate the grass family path.
-    "Grass", "Ore", "ChecksForMerge",
-    // Restored 2026-11-07: landed in sets.rs by M2-PHYS-1 without the generator
-    // (Conversion.* TileID.cs:92ff, IceSkateSlippery :481, Clouds :505) — the
-    // committed symbol names are kept via the dot-to-underscore emission below.
-    "Conversion.Sand", "Conversion.HardenedSand", "Conversion.Sandstone",
-    // The gem/vanity tree ground tests (`WorldGen.cs:30304-30341`): the
-    // Stone ({1, 25, 117, 203}) and Moss (the 11 moss tiles) conversion
-    // sets `GemTreeGroundTest` reads (TileID.cs:90/:96).
-    "Conversion.Stone", "Conversion.Moss",
-    "IceSkateSlippery", "Clouds",
-    // `TileRunner`'s override check (`WorldGen.cs:76927`) — everything is clearable
-    // during generation except these 17 (`TileID.cs:573`, `CreateBoolSet(true, …)`),
-    // so the emitted set is the complement (default-true emission, Program.cs:92-96).
-    "CanBeClearedDuringGeneration",
-    // The `.wld` tile RLE batching gate (`SaveWorldTiles:1573`, `TileID.cs:484`):
-    // default-true minus 423/520/723/724, so the emitted set is near-complete.
-    "AllowsSaveCompressionBatching",
-];
-foreach (var name in wantedSets)
+// S1-F-8: the full TileID.Sets emission — every bool set the static
+// constructors assign (the old wanted-list filter is retired; the
+// regeneration must reproduce the committed tables), plus the value
+// sets (`CreateIntSet`/`CreateUshortSet`/`List<int>`) as per-tile
+// tables.
+foreach (var (name, ids) in sets.OrderBy(kv => kv.Key, StringComparer.Ordinal))
 {
-    var key = name.Contains('.') ? name[(name.IndexOf('.') + 1)..] : name;
-    if (!sets.TryGetValue(key, out var ids))
-    {
-        Console.Error.WriteLine($"warn: TileID.Sets.{key} not found");
-        continue;
-    }
-    // The Rust name follows the wanted entry with dots as underscores, so the
-    // parser's last-segment key (`Sand`) still emits as SET_CONVERSION_SAND;
-    // dot-less entries are unchanged.
+    // The dotted paths (`Conversion.Sand`) emit with underscores, exactly
+    // the wanted-list's `dot-to-underscore` naming the committed tables use;
+    // the `Sets.`-prefixed keys (`TileID.Sets.Ash`'s in-class left side)
+    // drop the prefix so `Sets.Ash` emits as SET_ASH, not SET_SETS_ASH.
     var rustName = "SET_" + ToRustName(name.Replace('.', '_')).ToUpperInvariant();
     EmitSet(sbSets, rustName, ids);
+}
+foreach (var (name, table) in valueSets.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+{
+    var rustName = "SET_" + ToRustName(name.Replace('.', '_')).ToUpperInvariant();
+    sbSets.AppendLine();
+    sbSets.AppendLine($"/// `TileID.Sets.{name}` — the per-tile value table.");
+    sbSets.AppendLine($"pub static {rustName}: [i32; super::TILE_COUNT] = [");
+    for (int i = 0; i < TileCount; i += 8)
+    {
+        sbSets.Append("    ");
+        for (int k = i; k < Math.Min(i + 8, TileCount); k++)
+            sbSets.Append($"{table[k]}, ");
+        sbSets.AppendLine();
+    }
+    sbSets.AppendLine("];");
 }
 
 sbLight.AppendLine();
@@ -632,6 +687,50 @@ sbMerge.AppendLine($"    if a >= TILE_COUNT || b >= TILE_COUNT {{ return false; 
 sbMerge.AppendLine($"    (MERGE[a * {wordsPerRow} + (b >> 6)] >> (b & 63)) & 1 != 0");
 sbMerge.AppendLine("}");
 
+// S1-F-8: `--check` mode — regenerate into memory and compare with the
+// committed tables, exiting 1 on drift (the AGENTS "regen must produce an
+// empty diff" pattern; a hand-edited or lossy-merged table fails here).
+if (args.Contains("--check"))
+{
+    var committed = new (string path, string fresh)[]
+    {
+        ("sets.rs", sbSets.ToString()),
+        ("emissive.rs", sbLight.ToString()),
+        ("merge.rs", sbMerge.ToString()),
+    };
+    var drifted = false;
+    foreach (var (path, fresh) in committed)
+    {
+        var full = Path.Combine(tiledataDir, path);
+        if (!File.Exists(full))
+        {
+            Console.Error.WriteLine($"drift: {path} is missing");
+            drifted = true;
+            continue;
+        }
+        var current = File.ReadAllText(full);
+        if (current != fresh)
+        {
+            var curLines = current.Split('\n');
+            var freshLines = fresh.Split('\n');
+            for (int i = 0; i < Math.Max(curLines.Length, freshLines.Length); i++)
+            {
+                var a = i < curLines.Length ? curLines[i] : "<eof>";
+                var b = i < freshLines.Length ? freshLines[i] : "<eof>";
+                if (a != b)
+                {
+                    Console.Error.WriteLine($"drift: {path}:{i + 1}");
+        Console.Error.WriteLine($"  committed: {a.Trim()}");
+        Console.Error.WriteLine($"  generated: {b.Trim()}");
+                    break;
+                }
+            }
+            drifted = true;
+        }
+    }
+    if (drifted) return 1;
+}
+
 File.WriteAllText(Path.Combine(tiledataDir, "sets.rs"), sbSets.ToString());
 File.WriteAllText(Path.Combine(tiledataDir, "emissive.rs"), sbLight.ToString());
 File.WriteAllText(Path.Combine(tiledataDir, "merge.rs"), sbMerge.ToString());
@@ -721,3 +820,5 @@ static string LastSegment(string qualified)
 
 static string ToRustName(string name) =>
     Regex.Replace(name, "(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_").ToUpperInvariant();
+
+return 0;

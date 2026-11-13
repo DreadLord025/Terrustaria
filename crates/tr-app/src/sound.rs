@@ -47,6 +47,14 @@ pub struct Listener {
     pub quiet_ambient_sounds: bool,
     /// `Main.gameMenu`.
     pub game_menu: bool,
+    /// `WorldGen.isGeneratingOrLoadingWorld` — the `LegacySoundPlayer`
+    /// position-walk's first guard (`LegacySoundPlayer.cs:382`): a sound at
+    /// world coordinates during generation/loading returns `null`. The port
+    /// is always `false` outside the worldgen worker, which never plays.
+    pub generating_or_loading: bool,
+    /// `Main.netMode == 2` — the server's second guard
+    /// (`LegacySoundPlayer.cs:386`).
+    pub server: bool,
 }
 
 /// `LegacySoundPlayer.PlaySound(int type, int x, int y, int Style, float volumeScale)`
@@ -69,6 +77,16 @@ pub fn play_sound(
 ) -> Option<Playback> {
     // `if (Main.soundVolume == 0f && (type < 30 || type > 35)) return null;`
     if listener.sound_volume == 0.0 && !(30..=35).contains(&sound_type) {
+        return None;
+    }
+    // `if (WorldGen.isGeneratingOrLoadingWorld) return null;` +
+    // `if (Main.netMode == 2) return null;` (`LegacySoundPlayer.cs:382-388`):
+    // the position-walk's worldgen/server guards — S1-E-24. The unpositioned
+    // `x == -1` path in the C# checks them AFTER the `flag = true` arm, so a
+    // generation-time unpositioned call would still pass; the port's rig
+    // never reaches a worldgen play, so the guards gate the positioned walk
+    // verbatim.
+    if (x != -1.0 || y != -1.0) && (listener.generating_or_loading || listener.server) {
         return None;
     }
 
@@ -126,6 +144,26 @@ pub fn play_sound(
     Some(Playback { volume, pan })
 }
 
+/// `LegacySoundStyle.WithVolumePerceived` (`LegacySoundStyle.cs:70-75`): the
+/// style's stored volume becomes `volume ^ 1.6608999967575073` — the
+/// "perceived loudness" power the C# bakes into the three quiet styles
+/// (`SoundID.cs:1497`'s `Item113_Quiet` = `2/3`, `:1584`'s `MysticBloom` =
+/// `0.65`, `:1587`'s `ArcSurge` = `0.4`; S1-E-24).
+pub fn perceived_volume(volume: f32) -> f32 {
+    volume.powf(1.660_899_996_757_507_3)
+}
+
+/// The three `WithVolumePerceived` styles' baked volumes
+/// (`SoundID.cs:1497`/`:1584`/`:1587`) — the display table the styles read.
+pub fn perceived_volume_styles() -> Vec<(&'static str, f32, f32)> {
+    vec![
+        // (const name, the perceived argument, the baked style volume)
+        ("Item113_Quiet", 2.0 / 3.0, perceived_volume(2.0 / 3.0)),
+        ("MysticBloom", 0.65, perceived_volume(0.65)),
+        ("ArcSurge", 0.4, perceived_volume(0.4)),
+    ]
+}
+
 /// Left/right amplitude for an XNA `Pan` in `-1..1`.
 ///
 /// XNA applies `Pan` inside XAudio2, which the decompilation does not contain, so
@@ -151,6 +189,8 @@ mod tests {
             ambient_volume: 1.0,
             quiet_ambient_sounds: false,
             game_menu: false,
+            generating_or_loading: false,
+            server: false,
         }
     }
 
@@ -249,4 +289,46 @@ mod tests {
         // Clamped beyond the legal range.
         assert_eq!(pan_gains(9.0), (0.0, 1.0));
     }
+#[test]
+fn s1_e_24_the_worldgen_and_server_guards_mute_the_positioned_walk() {
+    // `LegacySoundPlayer.cs:382-388`: the position-walk returns null during
+    // generation/loading and on the server (`netMode == 2`).
+    let mut l = listener();
+    l.generating_or_loading = true;
+    assert_eq!(
+        play_sound(12, 100.0, 100.0, l.clone(), 1.0),
+        None,
+        "the generation guard"
+    );
+    l.generating_or_loading = false;
+    l.server = true;
+    assert_eq!(
+        play_sound(12, 100.0, 100.0, l.clone(), 1.0),
+        None,
+        "the server guard"
+    );
+    // The unpositioned arm (`x == -1`) passes the guards in the C#'s order —
+    // it sets `flag` before reaching them.
+    l.generating_or_loading = true;
+    l.server = true;
+    assert!(
+        play_sound(12, -1.0, -1.0, l.clone(), 1.0).is_some(),
+        "the unpositioned arm precedes the guards"
+    );
+}
+
+#[test]
+fn s1_e_24_the_perceived_volume_is_the_16609_power() {
+    // `Math.Pow(volume, 1.6608999967575073)` (`LegacySoundStyle.cs:75`).
+    assert!((perceived_volume(2.0 / 3.0) - (2.0f32 / 3.0).powf(1.660_899_996_757_507_3)).abs() < 1e-7);
+    assert!((perceived_volume(0.65) - 0.65f32.powf(1.660_899_996_757_507_3)).abs() < 1e-7);
+    assert!((perceived_volume(0.4) - 0.4f32.powf(1.660_899_996_757_507_3)).abs() < 1e-7);
+    // The styles table carries the three quiet styles with their baked volumes.
+    for (name, arg, baked) in perceived_volume_styles() {
+        assert!((baked - perceived_volume(arg)).abs() < 1e-7, "{name}");
+    }
+    // The perceived power compresses: for every 0..1 argument the baked
+    // volume sits below it (`0.5^1.66 = 0.316` — the exponent is above 1).
+    assert!(perceived_volume(0.5) < 0.5);
+}
 }
