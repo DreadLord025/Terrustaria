@@ -22,6 +22,13 @@ use crate::item::HOTBAR;
 use crate::map;
 use crate::menu;
 use crate::npc::{Npc, NpcKind};
+use crate::ui::pointer::PointerEvent;
+
+/// The port's stand-in for the `UIElement` reference `UserInterface.Update`
+/// dispatches the wheel to (`UserInterface.cs:221`): the immediate-mode scroll
+/// surfaces are hit-tested by the callers, so the machine only needs to know
+/// **that** an element is under the pointer, not which one.
+const SCROLL_UI: u32 = 0;
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -299,7 +306,17 @@ impl ApplicationHandler for App {
                 // moves the overlay's rows while it is open, before the
                 // hotbar's `HotbarPlus`/`HotbarMinus` cycle claims it.
                 if self.achievements_open {
-                    self.scroll_achievements(d);
+                    // `UserInterface.Update`'s scroll arm (`:219-223`): the
+                    // machine owns `PlayerInput.ScrollWheelDeltaForUI`
+                    // (accumulated, then consumed once). The overlay's `UIList`
+                    // is the element under the pointer.
+                    self.pointer.queue_scroll(d.round() as i32);
+                    if matches!(
+                        self.pointer.scroll_wheel(Some(SCROLL_UI)),
+                        Some(PointerEvent::ScrollWheel { .. })
+                    ) {
+                        self.scroll_achievements(d);
+                    }
                     return;
                 }
                 if self.map.as_ref().is_some_and(|m| m.open) {
@@ -315,11 +332,24 @@ impl ApplicationHandler for App {
                     }
                 } else {
                     let step = d.round() as i32;
-                    // `UIList.ScrollWheel` (`UIList.cs:107-114`): the emotes
-                    // wheel scrolls while it is open, clamped at the roster's
-                    // end (`UIScrollbar.cs:37-47`). The chest arm below needs
-                    // the inventory, so the wheel takes precedence here.
-                    if step != 0
+                    // The UI-element scroll surfaces are the elements the
+                    // pointer is over: `UIList.ScrollWheel` (`UIList.cs:107-114`)
+                    // for the emotes wheel and `Main.DoScrollingInInventory`'s
+                    // chest arm (`Main.cs:17435-17452`) for the slot window. The
+                    // machine consumes the delta once (`:219-223`) and hands the
+                    // consumed value back here.
+                    let over_ui = step != 0
+                        && self.menu.is_none()
+                        && self.front.is_none()
+                        && (self.emotes.menu_open || self.inventory_open);
+                    self.pointer.queue_scroll(step);
+                    let ui_delta = match self.pointer.scroll_wheel(over_ui.then_some(SCROLL_UI)) {
+                        Some(PointerEvent::ScrollWheel { delta }) => delta,
+                        _ => 0,
+                    };
+                    // `UIList.ScrollWheel`: the emotes wheel scrolls while it is
+                    // open, clamped at the roster's end (`UIScrollbar.cs:37-47`).
+                    if ui_delta != 0
                         && self.menu.is_none()
                         && self.front.is_none()
                         && self.emotes.menu_open
@@ -327,18 +357,18 @@ impl ApplicationHandler for App {
                         let (sw, sh) = self.screen_size();
                         let grid = crate::ui::emotes::grid_rect(Vec2::new(sw, sh));
                         self.emotes
-                            .scroll_by(step, crate::ui::emotes::visible_rows(&grid));
+                            .scroll_by(ui_delta, crate::ui::emotes::visible_rows(&grid));
                     }
                     // `Main.DoScrollingInInventory`'s chest arm
                     // (`Main.cs:17435-17452`): the wheel scrolls the chest
                     // slot window while the inventory is open and the pointer
                     // is inside the grid (the plan-amendment insertion #10).
-                    if step != 0
+                    if ui_delta != 0
                         && self.menu.is_none()
                         && self.front.is_none()
                         && self.inventory_open
                     {
-                        crate::ui::chest::scroll(self, step, self.mouse_pos);
+                        crate::ui::chest::scroll(self, ui_delta, self.mouse_pos);
                     }
                     if step != 0
                         && self.menu.is_none()

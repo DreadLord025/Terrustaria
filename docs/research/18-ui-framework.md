@@ -95,7 +95,7 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 | Press/release/click/double-click, 500 ms, 200 ms | PORTED | `pointer.rs` :122-227 | 12 tests `dw_1_1..dw_1_3`; double-click needs same element, click needs release inside |
 | Hover swap `Update` :205-213 | PARTIAL | per-screen `update_hover` (`loop.rs:377`) + `pointer.rs` | no `_lastElementHover` on the machine; no `IsMouseHovering` on ancestors |
 | Event bubble child→parent `:414-547` | MISSING | `pointer.rs:154-224` | events raised on the hit element only; no parent walk |
-| Scroll wheel `Update` :219-223 | PARTIAL | per-screen counters (`chest.rs`, `emotes.rs`, `achievements.rs`) | not part of `pointer.rs`; no `UIScrollWheelEvent` type |
+| Scroll wheel `Update` :219-223 | PORTED | `pointer.rs::queue_scroll` / `scroll_wheel` :238-262 → the per-screen consumers (`chest.rs`, `emotes.rs`, `achievements.rs`) | the machine owns `PlayerInput.ScrollWheelDeltaForUI` (accumulate + consume once); `PointerEvent::ScrollWheel { delta }` is `UIScrollWheelEvent.ScrollWheelValue` (`UIScrollWheelEvent.cs:7`); tests `dw_1_4_*` |
 | `MouseCaptured` :113-124 | PORTED | `pointer.rs::mouse_captured` :226 | `left_held` read by `ingame_options` (`frame.rs:117`) |
 | `ResetState`/200 ms lockout :165-179 | PORTED | `pointer.rs::reset_on_state_change` :142 | test `dw_1_2_the_state_change_disable_swallows_the_next_press` |
 | `OverflowHidden` scissor :199-238 | MISSING | `char_select.rs:856`, `world_select.rs:818`, `char_creation.rs:1859` | admitted: "the port has no scissor, so they are skipped" — rows break-gated out of draw *and* hit |
@@ -184,13 +184,15 @@ fns across 31 files (framework-relevant subset):
 - `ui/framework.rs` (5): `dw_2_1_back_to_front_the_last_appended_element_wins`
   (`GetElementAt` :327-333), `dw_2_1_ignores_mouse_is_invisible_to_the_hit_but_still_addressable`
   (:330), `dw_2_1_a_zero_sized_rect_is_never_a_hit`, `dw_2_1_the_edges_follow_rectangle_contains`.
-- `ui/pointer.rs` (12): `dw_1_1_press_fires_mouse_down_and_a_release_inside_fires_click`,
+- `ui/pointer.rs` (15): `dw_1_1_press_fires_mouse_down_and_a_release_inside_fires_click`,
   `dw_1_1_a_second_press_within_500ms_is_a_double_click_and_clears_last_clicked`,
   `dw_1_1_the_same_pair_past_500ms_is_click_then_down`, `dw_1_1_double_click_requires_the_same_element`,
   `dw_1_2_release_outside_the_down_element_fires_mouse_up_and_no_click`,
   `dw_1_2_the_state_change_disable_swallows_the_next_press`,
   `dw_1_2_the_right_button_behaves_like_the_left`, `dw_1_3_reset_state_clears_a_stale_was_down`,
-  `dw_1_3_the_disable_countdown_decays_to_zero_and_clamps`.
+  `dw_1_3_the_disable_countdown_decays_to_zero_and_clamps`,
+  `dw_1_4_the_scroll_wheel_fires_once_on_the_element_under_the_pointer`,
+  `dw_1_4_a_scroll_with_no_element_still_consumes_the_delta`, `dw_1_4_a_zero_delta_fires_nothing`.
 - `ui/uistate.rs` (12): `resolve_lands_the_select_screen_children`,
   `resolve_clamps_min_width_before_aligning`, `resolve_padding_shrinks_the_inner_rect_only`,
   `spliced_rects_*` (4, incl. the :2593 quirk and the 44×44 sheet map),
@@ -237,10 +239,13 @@ fns across 31 files (framework-relevant subset):
    (`:332-336`) and `GameInterfaceLayer`'s three scale spaces are still not
    applied to the per-screen rects, and only the fullscreen-map head icon reads
    the applied scale. Behavioural; partially admitted (S1-H-3 follow-up).
-7. **Scroll wheel not in the pointer machine** — `UserInterface.cs:219-223` runs
-   scroll after the two buttons with the delta consumed once; the port has
-   per-screen counters and no shared `UIScrollWheelEvent`. Order across screens
-   differs. Behavioural, low.
+7. ~~**Scroll wheel not in the pointer machine**~~ — **FIXED 2026-11-13**
+   (`S1-H-4-scroll-wheel`): `UserInterface.cs:219-223`'s arm now lives in
+   `pointer.rs` (`queue_scroll` + `scroll_wheel`, `PointerEvent::ScrollWheel`
+   ≈ `UIScrollWheelEvent`); the delta is consumed once against the element under
+   the pointer. The per-screen consumers still own their own rect/clamp maths,
+   and `loop.rs`'s hotbar/`map` fallbacks stay raw (they are outside
+   `UserInterface`).
 8. **Frame ordering** — C# `Update` is hover → left click → right click → scroll →
    state update (`UserInterface.cs:190-228`); the front-end screens are
    event-driven from `loop.rs` (`:390-403`), so the press dispatch may run before
