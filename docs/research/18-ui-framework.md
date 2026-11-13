@@ -88,7 +88,7 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 | Margins `:293-297`, `:317-318` | MISSING | `uistate.rs:54-58,105` | dropped: every P6 caller leaves them 0, so they cancel; latent divergence |
 | Padding / inner rect `:298-303` | PORTED | `uistate.rs::inner` :111-118 | test `resolve_padding_shrinks_the_inner_rect_only` |
 | Parent = `UIList` ⇒ height ∞ `:288-291` | MISSING | `uistate.rs:73-75` | admitted in code; list rows derive arithmetically per screen |
-| Root dims `UserInterface.cs:332-336` | PARTIAL | per-screen root rects (`char_select::select_player` etc.) | no `Main.UIScale` field; UI scale is pinned 1.0 (`ingame_options.rs:733-734`, `entities.rs:1539`) |
+| Root dims `UserInterface.cs:332-336` | PARTIAL | per-screen root rects (`char_select::select_player` etc.) | `Main.UIScale` ported (`settings::ui_scale_max`, `Settings::ui_scale`, the `GameUI.UIScale` bar) but the `GetDimensions()` division is still not applied to the per-screen rects (S1-H-3; docs/ANALYSIS.md) |
 | `RecalculateChildren` | MISSING (n/a) | — | no retained tree; each screen re-derives its own rects per frame |
 | Hit test `GetElementAt` `:324-352` | PARTIAL | `framework.rs::get_element_at` :64-80 | flat only; recursion (:341) a no-op on flat lists; `PassThroughMouseInteraction` (:333) unmodelled (never set) |
 | `ContainsPoint` `:354-357` | PORTED | `framework.rs::contains_point` :51-55 → `mod.rs::in_rect` :54 | Rectangle.Contains edges inclusive-left/exclusive-right; tests `dw_2_1_the_edges_*` |
@@ -231,10 +231,12 @@ fns across 31 files (framework-relevant subset):
    clipped children, `char_creation.rs:1861-1863` notes this) is unhittable in the
    port because the same gate prunes the element list. Pixel + behavioural;
    admitted per-screen, not in ROADMAP.
-6. **UI scale pinned to 1.0** — `Main.UIScale`/`GameUI.UIScale` have no port field
-   (`ingame_options.rs:733-734` read-only bar, `entities.rs:1539` passes 1.0), so
-   `UserInterface.GetDimensions()` (`:332-336`) and `GameInterfaceLayer`'s three
-   scale spaces cannot be exercised. Behavioural; admitted.
+6. **UI scale applied only at two sites** — `Main.UIScale`/`GameUI.UIScale` are
+   now ported (`settings::ui_scale_max`, `Settings::ui_scale`, the ingame-options
+   bar, S1-H-3), but the `UserInterface.GetDimensions()` division
+   (`:332-336`) and `GameInterfaceLayer`'s three scale spaces are still not
+   applied to the per-screen rects, and only the fullscreen-map head icon reads
+   the applied scale. Behavioural; partially admitted (S1-H-3 follow-up).
 7. **Scroll wheel not in the pointer machine** — `UserInterface.cs:219-223` runs
    scroll after the two buttons with the delta consumed once; the port has
    per-screen counters and no shared `UIScrollWheelEvent`. Order across screens

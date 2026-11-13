@@ -94,6 +94,17 @@ pub struct Settings {
     pub craft_from_nearby_chests: bool,
     /// `Main.GameZoomTarget` (`Zoom`): 1.0..=2.0, only changed in the settings UI.
     pub zoom: f32,
+    /// `Main._uiScaleWanted` (`Main.cs:251`), the persisted **wanted** UI scale
+    /// — the value `Main.SaveSettings` writes under `"UIScale"`
+    /// (`Put` `Main.cs:4201`, read back by `LoadSettings` `:4487`). The setter
+    /// (`Main.UIScale`, `:2557-2573`) stores the raw `value` here and clamps only
+    /// the *used* value to `UIScaleMax` (`:2566-2571`, `:2576-2583`), so the
+    /// wanted and the applied scale can differ; [`Settings::applied_ui_scale`]
+    /// is the used value. A 100 %-scaling desktop's `GetScaling()` is 1.0, which
+    /// is the port's default (the vanilla's `newDefaultUIScale` pick at
+    /// `:4257-4265` is version-gated and needs a live display — see
+    /// docs/ANALYSIS.md).
+    pub ui_scale: f32,
     /// `Main.musicVolume`: default **1f** — `static Main()` (`Main.cs:66857`).
     /// Persisted under `"VolumeMusic"` (`Put` `Main.cs:4107`, `Get` `:4357`) —
     /// the port's old key was `"MusicVolume"`.
@@ -267,6 +278,9 @@ impl Default for Settings {
             tiles_sway: true,
             craft_from_nearby_chests: true,
             zoom: 1.0,
+            // `LoadSettings`' `Get("UIScale", GetScaling())` (`Main.cs:4487`) — a
+            // 100 %-scaling desktop returns 1.0.
+            ui_scale: 1.0,
             // `Main.musicVolume = 1f` (`Main.cs:66857`), `Main.ambientVolume =
             // 1f` (`:66858`), `Main.soundVolume = 1f` (`:66859`) — the
             // `static Main()` values, not the 0.75 the port used before.
@@ -310,6 +324,13 @@ impl Settings {
         tr_core::save::default_world_dir().and_then(|d| {
             d.parent().map(|root| root.join("config.json"))
         })
+    }
+
+    /// `Main.UIScale`'s *used* value: the setter clamps the wanted value down to
+    /// `UIScaleMax` and never below it (`Main.cs:2563-2572`). See
+    /// [`ui_scale_max`].
+    pub fn applied_ui_scale(&self, real_screen_w: f32, real_screen_h: f32) -> f32 {
+        self.ui_scale.min(ui_scale_max(real_screen_w, real_screen_h))
     }
 
     pub fn load() -> Self {
@@ -445,6 +466,12 @@ impl Settings {
                 "Zoom" => {
                     me.zoom = value.parse::<f32>().unwrap_or(me.zoom).clamp(1.0, 2.0)
                 }
+                // `configuration.Put("UIScale", Main._uiScaleWanted)`
+                // (`Main.cs:4201`), read back by `Main.UIScale =
+                // configuration.Get("UIScale", GetScaling())` (`:4487`). The
+                // stored value is the **wanted** scale (the setter clamps only
+                // the used value, `:2563-2572`), so it is not clamped here.
+                "UIScale" => me.ui_scale = value.parse().unwrap_or(me.ui_scale),
                 // The audio trio: `configuration.Put("VolumeSound", ...)`,
                 // `"VolumeAmbient"` / `"VolumeMusic"` (`Main.cs:4105-4107`), read
                 // back at `:4355-4357`; the port's old keys were
@@ -662,7 +689,7 @@ impl Settings {
              \"UseStormEffect\": {},\n  \"UseHeatDistortion\": {},\n  \
              \"ForegroundSunlightEffects\": {},\n  \"WaveQuality\": {},\n  \
              \"FlashyEffectsWorld\": {},\n  \"UseScreenShake\": {},\n  \
-             \"Zoom\": {:.3},\n  \"VolumeMusic\": {:.3},\n  \"VolumeSound\": {:.3},\n  \
+             \"Zoom\": {:.3},\n  \"UIScale\": {:.3},\n  \"VolumeMusic\": {:.3},\n  \"VolumeSound\": {:.3},\n  \
              \"VolumeAmbient\": {:.3},\n  \"MapScale\": {:.3},\n  \
              \"MouseColor\": {{\"R\": {}, \"G\": {}, \"B\": {}}},\n  \
              \"MouseBorderColor\": {{\"R\": {}, \"G\": {}, \"B\": {}, \"A\": {}}},\n  \
@@ -708,6 +735,7 @@ impl Settings {
             self.flashy_effects_world,
             self.use_screen_shake,
             self.zoom,
+            self.ui_scale,
             self.music_volume,
             self.sound_volume,
             self.ambient_volume,
@@ -806,6 +834,14 @@ impl Settings {
             }
         }
     }
+}
+
+/// `Main.UIScaleMax` (`Main.cs:2576-2583`): `Math.Max(1f, Math.Min(h / 600f,
+/// w / 800f))` over the *real* (pre-zoom) screen size
+/// (`PlayerInput.RealScreenWidth`/`RealScreenHeight`). The `UIScale` setter
+/// clamps a wanted scale down to this and never below the `1f` floor.
+pub fn ui_scale_max(real_screen_w: f32, real_screen_h: f32) -> f32 {
+    1.0f32.max((real_screen_h / 600.0).min(real_screen_w / 800.0))
 }
 
 /// The bare text of a JSON string value, as the `parse` pass sees it (the
@@ -958,6 +994,7 @@ mod tests {
         s.ambient_volume = 0.9;
         s.parallax_scroll = 37;
         s.map_scale = 0.5;
+        s.ui_scale = 0.8;
         s.minimap_frame = "Golden".to_string();
         s.mouse_color = [1, 2, 3, 255];
         s.mouse_border_color = [4, 5, 6, 7];
@@ -997,6 +1034,7 @@ mod tests {
         assert!((back.ambient_volume - s.ambient_volume).abs() < 1e-3);
         assert_eq!(back.parallax_scroll, 37);
         assert!((back.map_scale - s.map_scale).abs() < 1e-3);
+        assert!((back.ui_scale - s.ui_scale).abs() < 1e-3);
         assert_eq!(back.minimap_frame, s.minimap_frame);
         assert_eq!(back.mouse_color, [1, 2, 3, 255]);
         assert_eq!(back.mouse_border_color, [4, 5, 6, 7]);
@@ -1636,5 +1674,38 @@ mod tests {
         // Blank-ish whitespace around a real key still parses (the parser
         // trims each line).
         assert!(!Settings::parse("   \"GoreVisualsAllowed\" : false   ").blood);
+    }
+
+    /// S1-H-3: the vanilla UI-scale factor (`Main.UIScaleMax`, `Main.cs:2576-2583`
+    /// — `Math.Max(1f, Math.Min(h / 600f, w / 800f))`) and the setter's clamp
+    /// (`Main.cs:2563-2572`). The three probe values are the verify row's
+    /// 0.8 / 1.0 / 1.2.
+    #[test]
+    fn ui_scale_max_and_the_applied_clamp_match_the_c_sharp() {
+        // `Math.Max(1f, Math.Min(h / 600f, w / 800f))`, `Main.cs:2581`.
+        assert!((ui_scale_max(800.0, 600.0) - 1.0).abs() < 1e-6, "600/600 = 800/800 = 1");
+        assert!(
+            (ui_scale_max(1280.0, 720.0) - 1.2).abs() < 1e-6,
+            "min(1.2, 1.6) = 1.2"
+        );
+        assert!(
+            (ui_scale_max(1920.0, 1080.0) - 1.8).abs() < 1e-6,
+            "min(1.8, 2.4) = 1.8"
+        );
+        // The `1f` floor: a tiny screen cannot push the max below 1.
+        assert!((ui_scale_max(640.0, 480.0) - 1.0).abs() < 1e-6, "the 1f floor wins");
+
+        // `Main.UIScale = value` clamps `value > UIScaleMax` down, but never up
+        // (`:2566-2571`). On the 1280x720 max of 1.2 the three probe values pass
+        // through unchanged; on a 1.0-capped screen 1.2 drops to 1.0.
+        let mut s = Settings::default();
+        for v in [0.8f32, 1.0, 1.2] {
+            s.ui_scale = v;
+            assert!((s.applied_ui_scale(1280.0, 720.0) - v).abs() < 1e-6, "{v} <= 1.2");
+        }
+        s.ui_scale = 1.2;
+        assert!((s.applied_ui_scale(800.0, 600.0) - 1.0).abs() < 1e-6, "1.2 clamps to 1.0");
+        // The wanted value is what persists, unclamped (`Main.cs:4201`).
+        assert!((s.ui_scale - 1.2).abs() < 1e-6);
     }
 }
