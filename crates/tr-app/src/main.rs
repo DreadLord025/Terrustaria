@@ -34,6 +34,7 @@ mod lang;
 mod loot_db;
 mod loot_db_gen;
 mod map;
+mod map_layers;
 mod menu;
 mod minecart;
 mod mount;
@@ -78,6 +79,7 @@ mod town_arrival;
 mod touch_damage;
 mod ui;
 mod world_sim;
+mod world_stepper;
 
 use std::path::PathBuf;
 

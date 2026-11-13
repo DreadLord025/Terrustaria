@@ -139,6 +139,14 @@ impl ApplicationHandler for App {
                     gpu.resize(size);
                 }
             }
+            // `FocusHelper.IsSelectedApplication = Main.instance.IsActive`
+            // (`FocusHelper.cs:135-136`, the Windows form refinement aside):
+            // the window's focus is the pause source's input. `frame()`'s
+            // focus-pause arm (`app/frame.rs`) consumes it with
+            // `SettingPlayWhenUnfocused` (`FocusHelper.cs:137-138`).
+            WindowEvent::Focused(focused) => {
+                self.window_focused = focused;
+            }
             WindowEvent::RedrawRequested => {
                 self.frame();
             }
@@ -473,6 +481,14 @@ impl ApplicationHandler for App {
                             // buff bar's removal reads (`Main.cs:43342`).
                             self.ui_right_release = true;
                         }
+                    }
+                    // `PlayerInput.MouseInfo.XButton1 == ButtonState.Pressed`'s
+                    // held state (`WorldUpdateStepper.cs:48` — the step key's
+                    // mouse arm; `GetStepKeyState` ORs it with End/NumpadAdd).
+                    // Nothing reads it until the Phase-2 stepper lands; the
+                    // held flag tracks the physical button either way.
+                    MouseButton::Back => {
+                        self.mouse_back_held = pressed;
                     }
                     _ => {}
                 }

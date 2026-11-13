@@ -11968,6 +11968,50 @@ Two documented gaps, both unreachable today:
   payload; the throw's `timeLeft = 300` rides the resolution's explicit
   override (`world_sim/npcs.rs`).
 
+## Pause gates (S1-B-3, 2026-11-13)
+
+The pause machinery: `game_paused` is set by the two C# sources — the focus
+pause (`FocusHelper.cs:67-77`, `Main.cs:17130-17141`; an unfocused window
+freezes the world unless `play_when_unfocused`, with the pointer-release
+edges cleared) and the in-world gate `App::can_pause_game` (`CanPauseGame`,
+`Main.cs:17194-17201/17315-17327`) — and the world body gates on
+`step_allowed` (`Main.cs:17278`) whose stepper half is `world_stepper.rs`, a
+verbatim `WorldUpdateStepper.cs` port, with `game_update_count`
+(`Main.cs:6444`) pinning the step count. The deliberate deviations:
+
+- **`DoUpdate_WhilePaused` is a shell** (`Main.cs:17329-17407`,
+  `app/mod.rs::do_update_while_paused`). The C#'s portable arms resolve
+  elsewhere in the port: the inventory toggle, the wheel scrolling and the
+  held-item drops are event-driven and run while paused already; the armor
+  display rows are draw-driven; the tile-target arms (`Player.tileTargetX/Y`
+  + `LookForTileInteractions`/`ChestChangeEvents`/`UpdateNearbyCraftingTiles`,
+  `:17398-17406`) stay frozen — the port fuses them into the step-gated
+  `update_editing`, so no target updates while paused (the C# polls them in
+  the paused body).
+- **The absent arms**: the `ManageControlsMenu` controls-rebind half, the
+  creative menu and the `RefreshInfoAccs` info-accessories pass have no port
+  equivalent, and `LocalPlayer.sign >= 0` has no sign UI to gate (both in
+  `can_pause_game` and the shell).
+- **The audio focus gates** (`PauseSounds`/`AllowMusic`) are deferred to the
+  sound rows (S1-E-21/24) — the port has no sound engine yet.
+- **`DrawnThisUpdate`** (`WorldUpdateStepper.cs:9`) is tracked 1:1 (false at
+  the step head, `Main.cs:17747`; true on the draw side, `:62478`) but its
+  emit-effect consumers are unported (S1-E-1) — nothing reads it yet.
+- **The Update/Draw fusion**: the C# returns early from `Update` while
+  paused and `Draw` keeps running; the port's fused frame turns that return
+  into branch gating — `step_allowed` skips the world pass, draw never
+  skips. Same pixels: the frozen world still renders, the UI stays live.
+- **The one-frame-lag EmoteBubble quirk** (the C# pause body leaving the
+  bubble to draw from the last update's state) is not reproduced — the
+  port's emote bubbles keep their live draw while paused.
+- **`pauseworld`** (the stepper's `Paused`, `ToolkitDebugCommands.cs:742-749`)
+  rides the debug panel's World-tab row — the port has no chat-command
+  dispatcher; the step-key set is End/NumpadAdd/XButton1
+  (`GetStepKeyState`, `:39-43`) mapped onto winit's Back.
+- **The map reveal keeps the pause gate only** (no stepper gate): its C#
+  source is the draw-side `LightingEngine.ExportToMiniMap` export
+  (`LightingEngine.cs:246-270`) — draw runs on stepper-blocked frames, so
+  vanilla keeps revealing the map while the world steps are frozen.
 ## The dodge family (S1-C-1, 2026-11-13)
 
 `Player.Hurt`'s dodge roll block (`Player.cs:38214-38241`) lands in
@@ -12216,3 +12260,28 @@ Scope notes: the fullbright glow-paint slices (`:3551-3554`,
 the paint work (S1-G-2's row). The A/B shot (a placed dirt block at the
 dusk, `TR_CAM=100,78` + `TR_PLACE`) shows the 10 576-px delta the average
 introduces; two identical runs are SHA-equal.
+
+## The map overlay layers (S1-L-4, 2026-11-14)
+
+`Main.MapIcons`' overlay stack (`Main.cs:66551`'s registration: Digtoise →
+BossBag → Spawn → TeamBasedSpawn → TeleportPylons → Pings) is ported over a
+faithful `MapOverlayDrawContext` (`MapOverlayDrawContext.cs:8-70`): the
+tile-position → screen transform `(position - mapPosition) * mapScale +
+mapOffset`, the optional clip (the minimap's screen rect), the Alignment
+origin multiplier and the `DrawResult.IsMouseOver` rect. The layers that
+have port drivers draw: SpawnMapLayer (the world spawn + the bed marker —
+the C# reads `localPlayer.SpawnX/SpawnY`, the port keeps the bed spawn on
+`World.bed_spawn`), BossBagMapLayer (the `ItemID.cs:1383` 21-kind set over
+the drop pool) and PingMapLayer (the 100-cap pool, the 15 s expiry, the 1x5
+row cycling at 10 Hz). The three data-gated layers keep their C# bodies but
+draw nothing: Digtoise (the 1098/1123 projectiles are not spawned),
+TeamBasedSpawn (the seed is in M5-SEED-2's deferred list) and
+TeleportPylons (`TeleportPylonsSystem` is not ported — the tile-entity
+work).
+
+Scope notes: the fullscreen call rides `Main.cs:55996`'s position (the
+map's top-left minus the 10 px frame inset, `mapPosition = Vector2.Zero`
+is the tile-space identity); the minimap call (`Main.cs:55703`, with the
+clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
+their own passes; the hover text feeds the map's text line through
+`ui::text::hud_text` (the C# `ref text`).
