@@ -799,8 +799,9 @@ mod chest_save_tests {
 
     /// DW-2.2: the save → load round-trip through the App path — a stocked
     /// chest, an interior air and a prefixed item plus a renamed chest survive
-    /// `save_world`/`load_world`/`App::new`, and the save's anchor wins over the
-    /// load-time loot re-roll (`merge_store`'s collision rule).
+    /// `save_world`/`load_world`/`App::new`. S1-A-4: the store is the file's
+    /// own records (the gen-time loot the save carried) — the fixture plays
+    /// the generated world's records with empty slots.
     #[test]
     fn dw_2_2_a_saved_chest_round_trips_through_the_app() {
         let (ax, ay) = (55, 197); // the stocked chest
@@ -813,14 +814,20 @@ mod chest_save_tests {
 
         let mut app = app_for(
             world,
-            WorldSections::native(save::WorldSide::default()),
+            WorldSections::native(save::WorldSide {
+                chests: vec![
+                    save::ChestRecord { x: ax, y: ay, name: String::new(), slots: Vec::new() },
+                    save::ChestRecord { x: bx, y: by, name: String::new(), slots: Vec::new() },
+                ],
+                ..Default::default()
+            }),
             path.clone(),
         );
-        // The roll claims every chest tile, so the stocked chest is the rolled
-        // entry the open path would have opened anyway, written through
-        // `set_chest_slot` — including the interior air at slot 1 (the store
-        // keeps it explicit, `SaveChests`'s unwritten-pair arm covers it).
-        let stocked = chest::find_chest(&app.world_chests, ax, ay).expect("the anchor rolled");
+        // The gen-time record is the store entry (nothing rolls at load),
+        // written through `set_chest_slot` — including the interior air at
+        // slot 1 (the store keeps it explicit, `SaveChests`'s
+        // unwritten-pair arm covers it).
+        let stocked = chest::find_chest(&app.world_chests, ax, ay).expect("the anchor's record materialised");
         // The roll's own rows are wiped first (a chest the player emptied,
         // `ItemSlot.SetDefaults(0)`), so the saved stock is exactly what the
         // three writes below leave.
@@ -897,18 +904,9 @@ mod chest_save_tests {
         );
         assert_eq!(saved_b.slots[0].kind, 71);
 
-        // The control: the same world re-rolls the anchor with its band rows,
-        // so the equality below is the seeded store winning, not an empty roll.
-        let roll = crate::chest_gen::generate_world_chests(&world);
-        let rolled = roll
-            .iter()
-            .find(|c| c.tile == (ax, ay))
-            .expect("the anchor re-rolls on load");
-        assert!(
-            rolled.slots.len() >= 2 && rolled.slots.len() != 3,
-            "the roll stocks the anchor with its own band rows: {:?}",
-            rolled.slots
-        );
+        // S1-A-4: nothing re-rolls at load — the store IS the file's records
+        // (the seeded store wins by construction), so the old "the roll
+        // stocks the anchor" control is structural now.
 
         let back = app_for(world, sections, path);
         let stocked =

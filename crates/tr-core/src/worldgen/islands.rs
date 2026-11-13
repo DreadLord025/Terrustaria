@@ -112,8 +112,21 @@ fn build_island(world: &mut World, cx: i32, cy: i32, radius: i32, lake: bool, rn
 }
 
 /// The island house (`FloatingIslandHouses`, `:17862+`): the plank box on
-/// the island's surface with the cloud-wall interior and the chest.
-fn build_house(world: &mut World, cx: i32, top: i32, rng: &mut super::Rng) {
+/// the island's surface with the cloud-wall interior and the chest. The
+/// chest arm is `IslandHouse`'s (`WorldGen.cs:79344-79394`): the
+/// `skyIslandHouseCount` cycle picks the main item (the `> 3 → Next(4)`
+/// re-roll), the style is 13 — or 2 under `getGoodWorldGen` — and
+/// `skyIslandHouseCount++` runs after the place (`:79394`). S1-A-4: the
+/// stock rides inline.
+fn build_house(
+    world: &mut World,
+    cx: i32,
+    top: i32,
+    rng: &mut super::Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+    get_good: bool,
+    sky_count: &mut u32,
+) {
     let hw = rng.range(4, 7);
     let hh = rng.range(3, 5);
     for px in (cx - hw)..=(cx + hw) {
@@ -134,8 +147,37 @@ fn build_house(world: &mut World, cx: i32, top: i32, rng: &mut super::Rng) {
             }
         }
     }
-    // The chest inside on the floor (`skyIslandHouseCount`'s chest arm).
-    let _ = place_chest(world, cx + hw - 2, top - 1);
+    // The chest inside on the floor (`:79371/:79375`'s arms).
+    let mut num16 = *sky_count;
+    if num16 > 3 {
+        num16 = rng.range(0, 4) as u32;
+    }
+    let main = match num16 {
+        0 => 159,
+        1 => 65,
+        2 => 158,
+        _ => 2219,
+    };
+    let chest_style = if get_good { 2 } else { 13 };
+    let style =
+        super::structures::resolved_chest_style(chest_style, main, top - 1, world.world_surface);
+    let chest_x = cx + hw - 2;
+    if place_chest(world, chest_x, top - 1, style) {
+        super::chest_stock::stock_placed_chest(
+            world,
+            stock.as_deref_mut(),
+            rng,
+            chest_x,
+            top - 1,
+            style,
+            21,
+            main,
+            false,
+        );
+    }
+    // `GenVars.skyIslandHouseCount++` (`:79394`) — once per house, after
+    // the place.
+    *sky_count += 1;
 }
 
 /// `SecretSeed.Variations.extraFloatingIslandsNormalAmount`
@@ -246,6 +288,9 @@ pub(crate) fn pass_floating_islands(
     world: &mut World,
     surface: &[i32],
     rng: &mut super::Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+    get_good: bool,
+    sky_count: &mut u32,
 ) -> u32 {
     // The C# worlds are 4200+ wide; the tiny test worlds (the sky band
     // thinner than `Next(90, worldSurface − 100)` plus the disc) skip.
@@ -337,7 +382,7 @@ pub(crate) fn pass_floating_islands(
         // `:13117-13119`: the house cap — the island still places, the house
         // does not.
         if houses < house_cap {
-            build_house(world, cx, cy - radius / 2, rng);
+            build_house(world, cx, cy - radius / 2, rng, stock.as_deref_mut(), get_good, sky_count);
             houses += 1;
         }
         placed.push((cx, cy));
@@ -425,15 +470,16 @@ mod tests {
         let mut extra_cloud = 0usize;
         let mut classic_chests = 0usize;
         let mut extra_chests = 0usize;
+        let mut sky_count = 0u32;
         for seed in 1..=6u64 {
             let mut classic = sky_world(4200, 1200, 520);
-            pass_floating_islands(&mut classic, &surface, &mut Rng(seed));
+            pass_floating_islands(&mut classic, &surface, &mut Rng(seed), None, false, &mut sky_count);
             classic_cloud += count_kind(&classic, TILE_CLOUD);
             classic_chests += count_kind(&classic, 9);
 
             let mut extra = sky_world(4200, 1200, 520);
             extra.micro_seeds |= MicroSeedFlags::EXTRA_FLOATING_ISLANDS;
-            pass_floating_islands(&mut extra, &surface, &mut Rng(seed));
+            pass_floating_islands(&mut extra, &surface, &mut Rng(seed), None, false, &mut sky_count);
             extra_cloud += count_kind(&extra, TILE_CLOUD);
             extra_chests += count_kind(&extra, 9);
         }
