@@ -367,6 +367,18 @@ pub struct Player {
     /// class multiplier — the minion prefixes 69-72 add to it through
     /// `weapon_damage_multiplier`'s Summon arm.
     pub minion_damage: f32,
+    // The ranged effective-damage components (`Player.cs:2442-2450` +
+    // `arrowDamageAdditiveStack`, reset `:18338`/`:18396-18399`, read by
+    // `GetWeaponDamageMultiplier`'s ranged arms through the computed
+    // properties `:3982-3986`). S1-C-4: the arms land with the multiplier;
+    // the quiver stack + the Archery buff arm them now, the Shroomite
+    // helmets ride the armor walk, and the `rangedMultDamage` consumers
+    // (the C#'s separate multiplier class) keep the reset 1.0.
+    pub ranged_mult_damage: f32,
+    pub arrow_damage: f32,
+    pub arrow_damage_additive_stack: f32,
+    pub bullet_damage: f32,
+    pub rocket_damage: f32,
     /// The per-player summon budget (M4-PROJ-8): `Player.maxMinions = 1`
     /// (`Player.cs:1260`) — raised by the buffs 110/150 and the summon armor
     /// rows, reset to 1 by `ResetEffects` (`:18448`).
@@ -1344,6 +1356,11 @@ impl Player {
             ranged_damage: 1.0,
             magic_damage: 1.0,
             minion_damage: 1.0,
+            ranged_mult_damage: 1.0,
+            arrow_damage: 1.0,
+            arrow_damage_additive_stack: 0.0,
+            bullet_damage: 1.0,
+            rocket_damage: 1.0,
             max_minions: 1,
             num_minions: 0,
             slots_minions: 0.0,
@@ -2537,6 +2554,48 @@ impl Player {
         }
     }
 
+    /// `Player.GetWeaponDamageMultiplier` in full (`Player.cs:53386-53419`),
+    /// the item-aware form: the ranged dispatch keys on the ammo category —
+    /// arrows → `bowEffectiveDamage` (`:3982`), bullets →
+    /// `gunEffectiveDamage` (`:3984`), the specialist rockets/everything
+    /// else → `specialistEffectiveDamage` (`:3986`) — and falls to
+    /// `rangedDamage` for the plain guns. `use_ammo` is the weapon's
+    /// `useAmmo` (the `PickAmmo_PickAmmoItem` equivalence makes it the
+    /// resolved ammo's `ammo` field too — the proof `is_arrow_ammo`'s doc
+    /// carries); `item_type` feeds `ItemID.Sets.IsRangedSpecialistWeapon`
+    /// (`ItemID.cs:1472`). The fuse sites call this; the class-only callers
+    /// keep [`Player::weapon_damage_multiplier`].
+    pub fn weapon_damage_multiplier_with_ammo(
+        &self,
+        class: registry::DamageClass,
+        item_type: u16,
+        use_ammo: i32,
+    ) -> f32 {
+        match class {
+            registry::DamageClass::Melee => self.melee_damage,
+            registry::DamageClass::Ranged => {
+                if crate::ammo::is_arrow_ammo(use_ammo) {
+                    return (self.ranged_damage / self.ranged_mult_damage
+                        + self.arrow_damage_additive_stack)
+                        * self.ranged_mult_damage
+                        * self.arrow_damage;
+                }
+                if crate::ammo::is_bullet_ammo(use_ammo) {
+                    return self.ranged_damage * self.bullet_damage;
+                }
+                if crate::ammo::is_specialist_ammo(use_ammo)
+                    || crate::ammo::IS_RANGED_SPECIALIST_WEAPONS.contains(&item_type)
+                {
+                    return self.ranged_damage * self.rocket_damage;
+                }
+                self.ranged_damage
+            }
+            registry::DamageClass::Magic => self.magic_damage,
+            registry::DamageClass::Summon => self.minion_damage,
+            _ => 1.0,
+        }
+    }
+
     /// The class crit source (`Player.meleeCrit`/`rangedCrit`/`magicCrit`,
     /// `Player.cs:2430-2432`; base 4 per class).
     pub fn class_crit(&self, class: registry::DamageClass) -> i32 {
@@ -2778,6 +2837,12 @@ impl Player {
         self.ranged_damage = 1.0;
         self.magic_damage = 1.0;
         self.minion_damage = 1.0;
+        // `:18338`/`:18396-18399` — the ranged effective-damage components.
+        self.ranged_mult_damage = 1.0;
+        self.arrow_damage = 1.0;
+        self.arrow_damage_additive_stack = 0.0;
+        self.bullet_damage = 1.0;
+        self.rocket_damage = 1.0;
         // `ResetEffects`' summon budget bases (`Player.cs:18448-18449`): the
         // cap buffs 110/150/348 (`:10175-10183`, the summon arms pass) and
         // the armor/held rows (`:13258-13948`/`:15324-15329`,
@@ -6328,6 +6393,68 @@ mod tests {
         p.update_dye_cache();
         assert!(p.c_pet > 0);
         assert_eq!(p.c_light, 0);
+    }
+
+    /// S1-C-4 — `GetWeaponDamageMultiplier`'s ranged dispatch
+    /// (`Player.cs:53396-53398`) keys on the ammo category, and the
+    /// effective-damage components (`:3982-3986`) move it off the plain
+    /// `rangedDamage` once the C#'s arming sites fire: the Archery buff
+    /// (`:10019`), the quivers (`:14466`/`:14484`/`:14598`/`:15334`) and the
+    /// Shroomite helmets (`:13697-13712`).
+    #[test]
+    fn s1_c_4_the_ranged_multiplier_dispatches_by_ammo_category() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // A plain gun (bullet ammo 97): the plain rangedDamage — every
+        // component at its reset value.
+        assert_eq!(
+            p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 100, 97),
+            1.0
+        );
+        // An arrow weapon (ammo 40): bowEffectiveDamage
+        // `(ranged / mult + stack) * mult * arrowDamage` = 1.0 at the resets.
+        assert_eq!(
+            p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 100, 40),
+            1.0
+        );
+        // The arming: the Archery buff (×1.1) and a Magic Quiver (+0.1 stack)
+        // move the bow arm off 1.0 while the gun arm stays on rangedDamage.
+        p.arrow_damage *= 1.1; // the buff arm (`:10019`)
+        p.arrow_damage_additive_stack += 0.1; // the quiver arm (`:14466`)
+        let bow = p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 100, 40);
+        assert!((bow - (1.0 / 1.0 + 0.1) * 1.0 * 1.1).abs() < 1e-6, "{bow}");
+        assert_eq!(
+            p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 100, 97),
+            1.0,
+            "the gun arm does not read the arrow components"
+        );
+        // The Shroomite Bullet helmet (`:13704`): the gun arm reads
+        // bulletDamage; the bow arm does not.
+        p.bullet_damage *= 1.12;
+        assert_eq!(
+            p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 100, 97),
+            1.12
+        );
+        let bow2 = p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 100, 40);
+        assert!((bow2 - bow).abs() < 1e-6, "the helmet does not touch the bow");
+        // The specialist arm: rocket ammo 771 and the
+        // `IsRangedSpecialistWeapon` ids ride rocketDamage (`:3986`) — but
+        // only after the arrow/bullet checks (the C#'s `if` order), so a
+        // specialist weapon on arrow ammo stays on the bow arm.
+        p.rocket_damage *= 1.12;
+        assert_eq!(
+            p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 100, 771),
+            1.12
+        );
+        assert_eq!(
+            p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 1156, 931),
+            1.12,
+            "the specialist weapon on flare ammo rides rocketDamage"
+        );
+        let bow3 = p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 1156, 40);
+        assert!((bow3 - bow).abs() < 1e-6, "arrow ammo wins over the id");
+        // The non-ranged classes keep their table (`:53390`/`:53410-53419`).
+        assert_eq!(p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Melee, 100, 40), 1.0);
     }
 
     /// M3-EQUIP-5 — `Player.statDefense` is derived inside the tick, in the
