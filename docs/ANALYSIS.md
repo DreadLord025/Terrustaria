@@ -11691,3 +11691,42 @@ Three scope notes, none of which change the ported numbers:
   (`40000 @ 0.75` sells for 10666, not the 10667 the old port printed by
   dividing first). Golden vectors pin every arm in
   `shop.rs::tests`.
+
+## The wet statics rebase (R-03-1, 2026-11-13)
+
+`Player.cs:24380-24437` is ported 1:1 as `player.rs::wet_gravity_and_cap`
+(`WetStaticsFlags` carries the wet-family flags): the per-liquid arms assign
+the tick's `gravity`/`maxFallSpeed` and the jump statics (water 0.2/5 +
+30/6.01, honey 0.1/3, merman 0.3/7, trident 0.25/6 with the `controlUp`
+0.1/2 sub-arm, shimmerWet 0.15 + 23/5.51, the Dead Cells down-dash ×0.85,
+the absorbed-shimmer ×0.9), then `vortexDebuff` zeroes the gravity and every
+tick adds the `+0.01f` fall-cap creep. The tick consumes the rebase between
+the `:24364-24369` reset and `UpdateJumpHeight`'s max-lift (`:25656`) — the
+C# order, so a wet 30/6.01 survives the lift and the lift's max can only
+raise it. The plain integration arm (`Player.cs:27352-27359`) rides the
+rebased values at FULL strength: the `gravity / 3` / `maxFallSpeed / 3`
+sites the old port used (`:27008`/`:27339`) are the mount/wings flight
+integrators, not a wet rule — that misread was the "water jumps 2× too
+weak" audit finding. The wings glide cap (`:27339`'s `maxFallSpeed / 3`) now
+correctly rides the creeped 10.01 (`flight_section` divides the passed
+`maxFallSpeed` itself, as the C# reads the field).
+
+Scope notes, none of which change the ported numbers:
+
+- **The not-yet-ported writers ride as default-false flags** on
+  `WetStaticsFlags`: `shimmering` (the absorbed state — the
+  shimmer-emergence work), `merman` (the buff table, S1-E-7), `trident`
+  (`Player.cs:12896`), `control_up` (the port's `PlayerInput` has no up
+  channel), `down_dash` (`isPerformingJump_DownDash` — only the Dead Cells
+  down-dash sets it, `Player.cs:20697-20722`), `vortex_debuff` and
+  `portal_physics`. All are the C#'s default-false states, so a vanilla
+  pre-hardmode water/honey/shimmer tick matches the C# exactly.
+- **The wet flags stay one tick fresher than the C#'s** (research/03's
+  phase note): the C# consumes the previous tick's `WetCollision` flags in
+  this block (`:27728-27850` recomputes them later in the same tick),
+  while the port derives them earlier in its tick. The rebase formula is
+  exact; the dry→wet frame boundary is the swim-ascent seed's (research/03
+  S9) territory and is left unverified there.
+- The upward velocity clamp (`-(MAX_FALL/3)` in liquid) is pre-existing
+  port structure, untouched — the C# plain arm (gravDir 1) caps only the
+  descent; the swim-ascent verification belongs to the S9 seed.
