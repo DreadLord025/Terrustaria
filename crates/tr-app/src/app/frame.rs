@@ -874,13 +874,21 @@ impl App {
                 {
                     style.brightness = 1.0;
                 }
+                // `Main.ForcedMinimumZoom` (`Main.cs:61989-61994`, computed per
+                // draw) splits the two view matrices: the background chain
+                // zooms to the bare floor (`BackgroundViewMatrix.Zoom`,
+                // `:61998`) and the world chain multiplies it by the clamped
+                // `GameZoomTarget` (`GameViewMatrix.Zoom`, `:61999`) — the
+                // port's `zoom` is that clamp (S1-B-5, S1-G-7).
+                let bg_zoom = App::forced_minimum_zoom((screen.x, screen.y));
+                let world_zoom = bg_zoom * *zoom;
                 // Snap the render camera so integer world coordinates land on whole
                 // screen pixels at any zoom. With a fractional camera, nearest-neighbour
                 // sampling makes every tile texture crawl sub-pixel as the camera moves
                 // while the player (drawn with `snap_to_screen`) stayed crisp, so the
                 // world appeared to slide under the character. Rounding `cam * zoom`
                 // keeps the step at one screen pixel even at 1.5x / 2x.
-                let draw_cam = (*camera * *zoom).round() / *zoom;
+                let draw_cam = (*camera * world_zoom).round() / world_zoom;
                 let surface_px = world.world_surface as f32 * TILE_PX;
                 // `Main.DrawWaters` (`Main.cs:57473-57489`): the `liquidAlpha`
                 // cross-fade ramps per frame while the current water style is a
@@ -907,7 +915,7 @@ impl App {
                     (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
                 );
                 if !crate::env::no_waterfall() {
-                    let half_v = screen * 0.5 / *zoom;
+                    let half_v = screen * 0.5 / world_zoom;
                     let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
                         .clamp(0, world.width - 1);
                     let vx1 = (((camera.x + half_v.x) / TILE_PX).ceil() as i32 + 1)
@@ -1016,7 +1024,10 @@ impl App {
                         (camera.x / TILE_PX).floor() as i32,
                         (camera.y / TILE_PX).floor() as i32,
                     ],
-                    zoom: zoom.to_bits(),
+                    // The effective GameView zoom — the floor times the
+                    // clamped target (`Main.cs:61999`) — is what the cached
+                    // world range's pixels depend on.
+                    zoom: world_zoom.to_bits(),
                     screen: [screen.x.to_bits(), screen.y.to_bits()],
                     sky_light: [
                         params.sky[0].to_bits(),
@@ -1105,14 +1116,14 @@ impl App {
                 // `screen / zoom` world pixels, so the equivalent input is
                 // `cam.y - screen.y / (2 * zoom) + screen.y / 2`.
                 self.atmo = tr_core::sky::atmosphere_transparency(
-                    draw_cam.y - screen.y / (2.0 * *zoom) + screen.y / 2.0,
+                    draw_cam.y - screen.y / (2.0 * world_zoom) + screen.y / 2.0,
                     world.world_surface,
                     world.width,
                 );
                 draw_sky(
                     renderer,
                     draw_cam,
-                    *zoom,
+                    bg_zoom,
                     screen,
                     world,
                     clouds,
@@ -1143,7 +1154,7 @@ impl App {
                         lookups,
                         atlas.as_ref(),
                         draw_cam,
-                        *zoom,
+                        world_zoom,
                         screen,
                         &params,
                         light,
@@ -1232,24 +1243,24 @@ impl App {
                 }
                 crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
 
-                rain.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                rain.draw(renderer, lookups, light, draw_cam, world_zoom, screen);
                 // `Main.DrawDust`'s 268 entries: the flying sand, the same
                 // world-effect range as the rain (`Main.DrawRain`'s draw call
                 // site — world content, under the map batches and the UI).
-                sand.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                sand.draw(renderer, lookups, light, draw_cam, world_zoom, screen);
                 // The type-213 wheel sparks — `Main.DrawDust`'s generic
                 // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
                 // world-content range as the rain/sand dust.
-                minecart_sparks.draw(renderer, lookups, draw_cam, *zoom, screen);
+                minecart_sparks.draw(renderer, lookups, draw_cam, world_zoom, screen);
                 crate::render::foliage::draw_leaves(
-                    renderer, lookups, light, draw_cam, *zoom, screen, leaves,
+                    renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
                 );
                 // `Main.DrawWires` (`Main.cs:57028-57030`): the wire overlay
                 // rides the tile batch after the liquids, under the
                 // over-wire entities (the port draws it before the
                 // projectiles, matching `DrawCachedProjsOverWiresUI`).
                 crate::render::wires::draw_wires(
-                    renderer, world, light, &style, draw_cam, *zoom, screen, anim_time,
+                    renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
                 );
                 for p in projectiles.slots().iter().filter(|p| p.active) {
                     // The yoyo family's string anchors on the player's
@@ -1267,7 +1278,7 @@ impl App {
                         lookups,
                         light,
                         draw_cam,
-                        *zoom,
+                        world_zoom,
                         screen,
                         hand,
                         anim_time % 3600.0,
@@ -1728,7 +1739,7 @@ impl App {
                         gpu,
                         scene,
                         draw_cam.to_array(),
-                        *zoom,
+                        world_zoom,
                         now_secs,
                         wgpu::Color {
                             r: 0.045,
@@ -1752,7 +1763,7 @@ impl App {
                                 &gpu.queue,
                                 (gpu.config.width, gpu.config.height),
                                 draw_cam.to_array(),
-                                *zoom,
+                                world_zoom,
                                 &scratch.water_rects,
                             );
                         } else {
@@ -1786,7 +1797,7 @@ impl App {
                         gpu,
                         &view,
                         draw_cam.to_array(),
-                        *zoom,
+                        world_zoom,
                         now.elapsed().as_secs_f32(),
                         wgpu::Color {
                             r: 0.045,
