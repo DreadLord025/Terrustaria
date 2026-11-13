@@ -436,6 +436,9 @@ pub(crate) struct App {
     pub(crate) join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     pub(crate) map: Option<map::WorldMap>,
+    /// `Terraria.Map.MapUpdateQueue` (`MapUpdateQueue.cs`): the edit-side map
+    /// refresh queues, drained per frame (`Main.cs:61862`).
+    pub(crate) map_queue: map::MapUpdateQueue,
     /// `Main.grabMapX`/`grabMapY`: the cursor anchor of an in-progress
     /// fullscreen-map drag (`Main.cs:55346-55354`).
     pub(crate) map_grab: Option<[f32; 2]>,
@@ -1358,6 +1361,25 @@ impl App {
         player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
         true
+    }
+
+    /// The edit-to-map-queue hook: the edited tile's 3x3 ring queues for
+    /// the map refresh — `WorldGen.TileFrame`'s head queues its tile
+    /// (`WorldGen.cs:81334`) and `SquareTileFrame`'s walk (`:80185-80197`)
+    /// is the port's `reframe_area` ring. The `Main.mapEnabled` gate rides
+    /// (`MapUpdateQueue.cs:24`'s `!Main.mapEnabled` return).
+    pub(crate) fn queue_map_ring(&mut self, x: i32, y: i32) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                self.map_queue.add_tile(m, x + dx, y + dy);
+            }
+        }
     }
 
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
@@ -2881,6 +2903,7 @@ impl App {
             net_rtt_ms: 0,
             join_target,
             map: Some(world_map),
+            map_queue: map::MapUpdateQueue::default(),
             map_grab: None,
             minimap_hover: None,
             // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
