@@ -2504,6 +2504,10 @@ pub struct Npc {
     /// `ai[1]`: the caster's windup countdown (30 from a shot trigger,
     /// `num88` after a teleport; the shoot fires at the params' tick).
     pub cast_windup: i32,
+    /// `localAI[2]` of the aiStyle-38 hop machine (`NPC.cs:29095-29100`):
+    /// the previous tick's `position.X` — equality flips the direction and
+    /// arms the 60-tick no-retarget cooldown.
+    pub frost_stuck_x: f32,
     /// `ai[0]` for the swimmers (`AI_016`): the vertical bob phase — 0 the
     /// chase start, −1 rising, 1 sinking (`:23752`/`:23758`/`:23850`).
     pub swim_phase: f32,
@@ -3109,6 +3113,7 @@ impl Npc {
             homeless_despawn: false,
             caster_counter: 0,
             cast_windup: 0,
+            frost_stuck_x: 0.0,
             wants_sphere: Vec::new(),
             swim_phase: 0.0,
             worm_id: 0,
@@ -4156,11 +4161,11 @@ impl Npc {
             NpcKind::GoblinThief
             | NpcKind::GoblinWarrior
             | NpcKind::GoblinPeon => self.update_skeleton(world, player, dt),
-            // The frost trio: aiStyle 38's movement core rides the walker
-            // (the per-type speeds 3/3.5/4 fold into the walker params —
-            // the throw/kick/jump arms land with the projectile work).
+            // The frost trio: aiStyle 38's own machine (`NPC.cs:28995-29145`,
+            // R-25-1) — the hop cycle, the per-type 3/4/3.5 speeds, the
+            // Gangsta's bottle throw, the Balla's pause, the Mystery's aim.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
-                self.update_skeleton(world, player, dt)
+                self.update_frost_legion(world, player, dt)
             }
             // The martians: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Scrambler/RayGunner/zapper
@@ -6914,6 +6919,192 @@ impl Npc {
         if self.frame_counter >= 8.0 {
             self.frame_counter = 0.0;
             self.frame = (self.frame + 1) % 15;
+        }
+    }
+
+    /// `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) — the Frost
+    /// Legion trio. The constant hop cycle (`velocity.Y = -6f` per beat,
+    /// the every-third `ai[0] > 2f` beat → `-8.2f` + `ai[1]++`), the
+    /// per-type speed/accel pair (`num551`/`num552`: the Gangsta 3/0.7,
+    /// the Balla 4/1, the Mystery 3.5/0.8 — the defaults 4/1), the stuck
+    /// flip (`localAI[2]` = the previous `position.X`, the port's
+    /// `frost_stuck_x`) with the 60-tick no-retarget cooldown, the walk
+    /// acceleration `direction * num552 * 0.01` and the `num551` clamp.
+    /// The type arms: the Gangsta's 120-tick bottle throw (the hostile
+    /// `BulletSnowman` 110 at 12×spriteDirection, 25 dmg, `timeLeft = 300`
+    /// behind `AI_GlobalFiringDistanceCheck`), the Balla's post-3-hops
+    /// 200-tick pause (`ai[1] >= 3f` → the vx decay + the reset), the
+    /// Mystery's 16-tick windup into the aimed `SnowBallHostile` 109
+    /// (35 dmg, speed 10 at the player's top-centre). The `confused`
+    /// resets (`:29015-29017`/`:29131-29135`) ride the NPC confusion
+    /// debuff, which is not ported yet.
+    fn update_frost_legion(&mut self, world: &World, player: &mut Player, _dt: f32) {
+        let _ = world;
+        let (mut num551, mut num552) = (4.0f32, 1.0f32);
+        if self.kind == NpcKind::SnowmanGangsta {
+            num551 = 3.0;
+            num552 = 0.7;
+        }
+        if self.kind == NpcKind::MysterySnowman {
+            num551 = 3.5;
+            num552 = 0.8;
+        }
+        let (pcx, pcy) = player.center();
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        // `TargetClosest()` (`NPC.cs:29092`/`:29040`/`:29056`): the facing
+        // follows the player's side; the sprite rides it.
+        fn target_closest(n: &mut Npc, pcx: f32, cx: f32) {
+            n.facing = if pcx >= cx { 1 } else { -1 };
+            n.sprite_dir = n.facing;
+        }
+        // `NPC.AI_GlobalFiringDistanceCheck` (`NPC.cs:55835-55842`): the
+        // target centre's `Main.MaxWorldViewSize` rect (1920×1200) deflated
+        // by 50 — a plain axis box.
+        let firing_distance = |sx: f32, sy: f32| -> bool {
+            (sx - pcx).abs() <= 1920.0 / 2.0 - 50.0 && (sy - pcy).abs() <= 1200.0 / 2.0 - 50.0
+        };
+        let player_alive = player.hp > 0;
+
+        // The Gangsta's throw arm (`:29012-29037`) — independent of the
+        // hop core below.
+        if self.kind == NpcKind::SnowmanGangsta {
+            self.ai[2] += 1.0;
+            if self.ai[2] >= 120.0 {
+                self.ai[2] = 0.0;
+                let sx = self.x + w * 0.5 - (self.facing * 12) as f32;
+                let sy = self.y + h * 0.5;
+                if player_alive && firing_distance(sx, sy) {
+                    self.wants_hostile_shot.push((
+                        crate::projectile::BULLET_SNOWMAN,
+                        sx,
+                        sy,
+                        12.0 * self.facing as f32,
+                        0.0,
+                        25,
+                    ));
+                }
+            }
+        }
+
+        // The Balla/Mystery attack states; everything else — and the whole
+        // Gangsta — rides the hop core (`:29089-29136`).
+        let in_attack_state = match self.kind {
+            NpcKind::SnowBalla if self.ai[1] >= 3.0 => {
+                target_closest(self, pcx, cx);
+                if self.vy == 0.0 {
+                    self.vx *= 0.9;
+                    self.ai[2] += 1.0;
+                    if self.vx > -0.3 && self.vx < 0.3 {
+                        self.vx = 0.0;
+                    }
+                    if self.ai[2] >= 200.0 {
+                        self.ai[2] = 0.0;
+                        self.ai[1] = 0.0;
+                    }
+                }
+                true
+            }
+            NpcKind::MysterySnowman if self.ai[1] >= 3.0 => {
+                target_closest(self, pcx, cx);
+                let in_range = player_alive && firing_distance(cx, cy);
+                if self.vy == 0.0 && self.ai[2] == 0.0 && !in_range {
+                    self.ai[1] = 0.0;
+                } else if self.vy == 0.0 {
+                    self.ai[2] += 1.0;
+                    self.vx *= 0.9;
+                    if self.vx > -0.3 && self.vx < 0.3 {
+                        self.vx = 0.0;
+                    }
+                    if self.ai[2] >= 16.0 {
+                        self.ai[2] = 0.0;
+                        self.ai[1] = 0.0;
+                    }
+                }
+                // The windup throw (`:29078-29087`): at `ai[2] == 8` the
+                // aim is the player's top-centre from `(cx - facing*12,
+                // y + h*0.25)`, speed 10 normalised, 35 dmg, `timeLeft =
+                // 300`, `ai[0] = 2` (inert for type 109 — only type 31
+                // reads it, `Projectile.cs:57828`).
+                if self.ai[2] == 8.0 {
+                    let sx = self.x + w * 0.5 - (self.facing * 12) as f32;
+                    let sy = self.y + h * 0.25;
+                    let ax = player.x + crate::player::WIDTH as f32 / 2.0 - sx;
+                    let ay = player.y - sy;
+                    let len = (ax * ax + ay * ay).sqrt();
+                    let inv = if len > 0.0 { 10.0 / len } else { 0.0 };
+                    self.wants_hostile_shot.push((
+                        crate::projectile::SNOW_BALL_HOSTILE,
+                        sx,
+                        sy,
+                        ax * inv,
+                        ay * inv,
+                        35,
+                    ));
+                }
+                true
+            }
+            _ => false,
+        };
+
+        if !in_attack_state && self.vy == 0.0 {
+            if self.frost_stuck_x == self.x {
+                self.facing *= -1;
+                self.ai[3] = 60.0;
+            }
+            self.frost_stuck_x = self.x;
+            if self.ai[3] == 0.0 {
+                target_closest(self, pcx, cx);
+            }
+            self.ai[0] += 1.0;
+            if self.ai[0] > 2.0 {
+                self.ai[0] = 0.0;
+                self.ai[1] += 1.0;
+                self.vy = -8.2;
+                self.vx += self.facing as f32 * num552 * 1.1;
+            } else {
+                self.vy = -6.0;
+                self.vx += self.facing as f32 * num552 * 0.9;
+            }
+            self.sprite_dir = self.facing;
+        }
+        if !in_attack_state {
+            self.vx += self.facing as f32 * num552 * 0.01;
+        }
+        if self.ai[3] > 0.0 {
+            self.ai[3] -= 1.0;
+        }
+        // The `num551` clamp (`:29139-29144`) — per direction.
+        if self.vx > num551 && self.facing > 0 {
+            self.vx = num551;
+        }
+        if self.vx < -num551 && self.facing < 0 {
+            self.vx = -num551;
+        }
+        // The shared `NPC` movement after the AI (`NPC.cs:27485-27910`'s
+        // velocity → `Collision.TileCollision` integration): gravity, the
+        // fall cap, the axis-separated tile collision — a wall zeroes the
+        // vx (the stuck flip above reads the frozen position next tick).
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
         }
     }
 
@@ -19078,5 +19269,126 @@ mod s1_d_3b_tests {
         }
         assert!(n.hp > 0, "cultist must not be killed by the tower 180-tick dissolve");
         assert_eq!(n.ai[0], -1.0, "cultist should remain in AI_084 spawn-in intro");
+    }
+
+    #[test]
+    fn frost_legion_hops_with_the_big_third_beat_and_the_speed_clamp() {
+        // `NPC.cs:29089-29144`: the hop cycle — `ai[0]` beats 0..2, every
+        // third launches `-8.2f` and bumps `ai[1]`; the walk acceleration
+        // `direction * num552 * 0.01` clamps at `num551` (the Gangsta 3).
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 66.0 * 16.0;
+        let mut n = bare(NpcKind::SnowmanGangsta);
+        n.x = 90.0 * 16.0;
+        n.y = 60.0 * 16.0;
+        n.ai = [0.0; 4];
+        let mut big_hops = 0;
+        // The hop flight is ~30 ticks (`-6f` at the shared gravity) — ten
+        // seconds cover the fall plus ~15 beats.
+        for _ in 0..600 {
+            n.update(&w, &mut player, 1.0 / 60.0);
+            if n.ai[1] > big_hops as f32 {
+                big_hops = n.ai[1] as i32;
+            }
+        }
+        assert!(big_hops >= 3, "the every-third beat fired {big_hops} times");
+        assert!(n.vx != 0.0, "the walk acceleration moved it");
+        // The `num551` clamp binds along the facing only
+        // (`NPC.cs:29139-29144`): a right-facing Gangsta's +vx clamps at 3.
+        n.facing = 1;
+        n.vx = 5.0;
+        n.update(&w, &mut player, 1.0 / 60.0);
+        assert!(n.vx <= 3.0 + 1e-4, "the clamp: vx = {}", n.vx);
+    }
+
+    #[test]
+    fn frost_gangsta_throws_the_bottle_every_120_ticks() {
+        // `NPC.cs:29012-29037`: `ai[2]` counts to 120, then the hostile
+        // `BulletSnowman` 110 rides `wants_hostile_shot` at
+        // `12 * spriteDirection`, 25 dmg — behind the firing-distance box.
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 92.0 * 16.0;
+        player.y = 66.0 * 16.0;
+        let mut n = bare(NpcKind::SnowmanGangsta);
+        n.x = 90.0 * 16.0;
+        n.y = 60.0 * 16.0;
+        n.ai = [0.0; 4];
+        for _ in 0..125 {
+            n.update(&w, &mut player, 1.0 / 60.0);
+        }
+        let shot = n
+            .wants_hostile_shot
+            .iter()
+            .find(|s| s.0 == crate::projectile::BULLET_SNOWMAN)
+            .expect("the bottle throw fired");
+        assert_eq!(shot.5, 25);
+        assert!(
+            (shot.3.abs() - 12.0).abs() < 1e-6,
+            "the horizontal speed 12x spriteDirection: {}",
+            shot.3
+        );
+    }
+
+    #[test]
+    fn frost_balla_pauses_after_three_hops_and_resets() {
+        // `NPC.cs:29039-29056`: `ai[1] >= 3f` — the grounded pause (the vx
+        // decay) counts `ai[2]` to 200 and resets the hop count.
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        let mut n = bare(NpcKind::SnowBalla);
+        n.x = 90.0 * 16.0;
+        n.y = 66.0 * 16.0;
+        n.ai = [0.0, 3.0, 199.0, 0.0];
+        n.vy = 0.0;
+        n.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(n.ai[1], 0.0, "the 200-tick pause elapsed and reset");
+        assert_eq!(n.ai[2], 0.0);
+    }
+
+    #[test]
+    fn frost_mystery_throws_the_aimed_snowball_at_windup_8() {
+        // `NPC.cs:29078-29087`: the 16-tick windup — at `ai[2] == 8` the
+        // aimed `SnowBallHostile` 109 fires at speed 10, 35 dmg, from
+        // `(cx - facing*12, y + h*0.25)` toward the player's top-centre.
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 94.0 * 16.0;
+        player.y = 65.0 * 16.0;
+        let mut n = bare(NpcKind::MysterySnowman);
+        n.x = 90.0 * 16.0;
+        n.y = 66.0 * 16.0;
+        n.ai = [0.0, 3.0, 7.0, 0.0];
+        n.vy = 0.0;
+        n.update(&w, &mut player, 1.0 / 60.0);
+        let shot = n
+            .wants_hostile_shot
+            .iter()
+            .find(|s| s.0 == crate::projectile::SNOW_BALL_HOSTILE)
+            .expect("the windup throw fired");
+        assert_eq!(shot.5, 35);
+        let speed = (shot.3 * shot.3 + shot.4 * shot.4).sqrt();
+        assert!((speed - 10.0).abs() < 1e-4, "the aim speed 10: {speed}");
+    }
+
+    #[test]
+    fn frost_stuck_position_flips_the_direction() {
+        // `NPC.cs:29093-29098`: `localAI[2] == position.X` on a grounded
+        // tick flips the direction and arms the 60-tick cooldown.
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        let mut n = bare(NpcKind::SnowBalla);
+        n.x = 90.0 * 16.0;
+        n.y = 66.0 * 16.0;
+        n.ai = [0.0; 4];
+        n.vy = 0.0;
+        n.frost_stuck_x = n.x;
+        let before = n.facing;
+        n.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(n.facing, -before, "the stuck flip");
+        // `ai[3] = 60f` and the same-tick `ai[3]--` (`:29137`) land on 59.
+        assert_eq!(n.ai[3], 59.0, "the cooldown after the same-tick decrement");
     }
 }
