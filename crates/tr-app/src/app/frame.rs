@@ -607,6 +607,15 @@ impl App {
             if let Some(m) = self.map.as_mut() {
                 m.update(&self.world, self.player.as_ref(), &self.light, dt);
             }
+            // The world-branch tail's camera walks (`Main.cs:17814-17815`):
+            // `UpdateCameraPan` (the tracking/pan target's MoveTowards) and
+            // `UpdateCameraLerp` (the teleport transition's timer) — S1-B-4.
+            {
+                let mut camera_state = std::mem::take(&mut self.camera_state);
+                crate::world_sim::camera::update_camera_pan(self, &mut camera_state);
+                crate::world_sim::camera::update_camera_lerp(self, &mut camera_state);
+                self.camera_state = camera_state;
+            }
         }
         // `TR_NET_EDIT=tx,ty`: one client edit request, used to verify the round trip.
         if self.is_client() && self.frame_count == 90 {
@@ -639,6 +648,14 @@ impl App {
         let mut stats = tr_render::sprite::RenderStats::default();
         let mut tile_stats = self.tile_stats;
 
+        // `Main.DoDraw_UpdateCameraPosition` (`Main.cs:62590-62649`, S1-B-4):
+        // the camera snaps/lerps/clamps at DRAW time, ahead of every read
+        // this frame's render makes of it — the update half above kept the
+        // previous frame's position (the C#'s update reads it too).
+        let mut camera_state = std::mem::take(&mut self.camera_state);
+        crate::world_sim::camera::update_camera_at_draw(self, &mut camera_state);
+        self.camera_state = camera_state;
+
         // The chest-rename editor's per-frame reads — `Main.editChest`
         // (`Main.cs:1747`), `Main.npcChatText`'s editor copy
         // (`UIVirtualKeyboard.cs:1061-1067`) and the stored `Chest.name`
@@ -646,6 +663,12 @@ impl App {
         // M6-SAVE-1 phase-3 fold) — parked before the draw site's field
         // borrows (the keyboard session owns the editor state; the name
         // reads the entity directly so the borrow stays field-scoped).
+        // `Main.DoDraw_UpdateCameraPosition` (`Main.cs:62590-62649`, S1-B-4):
+        // the camera snaps/lerps/clamps at DRAW time, ahead of every read
+        // this frame's render makes of it.
+        let mut camera_state = std::mem::take(&mut self.camera_state);
+        crate::world_sim::camera::update_camera_at_draw(self, &mut camera_state);
+        self.camera_state = camera_state;
         let chest_editing = self.chest_editing();
         let chest_edit_text = self.chest_edit_text().to_string();
         let chest_open = self.open_container();

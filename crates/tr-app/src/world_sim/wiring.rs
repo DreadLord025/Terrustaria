@@ -164,6 +164,18 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     let px = p.x;
                     let py = p.y;
                     if !p.dead && hits(px, py, crate::player::WIDTH, crate::player::HEIGHT) {
+                        // `Player.Teleport`'s camera transition
+                        // (`Player.cs:37463`, `Main.cs:62572` — the wiring pad
+                        // rides the default style, so the lerp delay is 0).
+                        let old_center = glam::Vec2::from(p.center());
+                        let mut state = std::mem::take(&mut app.camera_state);
+                        crate::world_sim::camera::start_camera_transition_for_player_teleport(
+                            &mut state,
+                            old_center,
+                            0.1,
+                            0,
+                        );
+                        app.camera_state = state;
                         p.teleport(px + dx, py + dy);
                     }
                 }
