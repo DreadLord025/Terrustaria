@@ -116,5 +116,6 @@ crates/tr-app/src/lang.rs|fn init|S1-L-12c - deterministic sorted registration o
 crates/tr-core/src/wiring.rs|the_wire_rolls_come_from_the_unified_random_stream|S1-L-6c - the wiring RNG is UnifiedRandom (the C# Main.rand generator), seeded per world via seed_rand
 crates/tr-app/src/item.rs|fn s1_f_10_item_slot_clone_and_refresh_snapshot|S1-F-10 - ItemSlot clone/refresh snapshot and CommonMaxStack 9999 default
 crates/tr-app/src/registry.rs|pub fn max_stack|S1-F-10 - unregistered item max_stack defaults to Item.CommonMaxStack 9999 (Item.cs:49017,49966)
+docs/ANALYSIS.md|## The RNG-order contract (S1-A-10)|S1-A-10 - the RNG-order contract and its review checklist (the four C# RNG sources, stream identity + draw order)
 crates/tr-core/src/wld/mod.rs|fn s1_j_2_world_header_identity_roundtrips_in_wld|S1-J-2 - world header identity fields (generator version, GUID, world id, LastPlayed) persisted and roundtripped (WorldFile.cs:1225-1227,1251,1756)
 crates/tr-core/src/world.rs|pub generator_version|S1-J-2 - world identity fields stored on World for .wld header/footer/flags
