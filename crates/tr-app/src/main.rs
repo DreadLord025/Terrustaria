@@ -54,6 +54,7 @@ mod prefix;
 pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;
 pub(crate) mod id_tables;
+pub(crate) mod world_events;
 mod projectile;
 mod rain;
 mod regen;

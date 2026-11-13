@@ -109,12 +109,33 @@ pub(crate) fn advance_time_with_events(
         let rng = app.rngs.stream(crate::app::RngKey::UpdateTime);
         advance_time(&mut app.world, dt, rng, any_player_life_over_120)
     };
+    // The event schedulers' draws ride the same UpdateTime stream the
+    // boundary rolls consumed (S1-A-10: one stream, the C#'s
+    // `UpdateWorld_Time` order).
+    let rng = app.rngs.stream(crate::app::RngKey::UpdateTime);
     if was_day && !app.world.day_time {
         // StartNight: the eclipse row, then the clear.
         if eclipse_was_up {
             let _ = app.achievements.notify_progression(3);
         }
         app.world.eclipse = false;
+        // `UpdateTime_StartNight`'s event pair (`Main.cs:65225-65226`):
+        // `BirthdayParty.CheckNight()` then `LanternNight.CheckNight()` —
+        // S1-F-14.
+        let gates = crate::world_events::LanternGates::from_world(&app.world, &app.npcs);
+        let party_girl = app.npcs.iter().any(|n| {
+            n.hp > 0 && n.kind == crate::npc::NpcKind::PartyGirl
+        });
+        crate::world_events::check_night_party(
+            &mut app.world_events,
+            &mut app.chat,
+        );
+        crate::world_events::check_night_lanterns(
+            &mut app.world_events,
+            &gates,
+            app.world.downed_moon_lord,
+            &mut |lo, hi| rng.next_range(lo, hi),
+        );
     } else if !was_day && app.world.day_time {
         // StartDay: the blood-moon row, the clear, then the dawn row.
         if blood_moon_was_up {
@@ -122,6 +143,31 @@ pub(crate) fn advance_time_with_events(
         }
         app.world.blood_moon = false;
         let _ = app.achievements.notify_progression(1);
+        // `UpdateTime_StartDay`'s event pair (`Main.cs:65374-65375`):
+        // `BirthdayParty.CheckMorning()` then `LanternNight.CheckMorning()`.
+        let party_girl = app.npcs.iter().any(|n| {
+            n.hp > 0 && n.kind == crate::npc::NpcKind::PartyGirl
+        });
+        let partyable: Vec<bool> = app
+            .npcs
+            .iter()
+            .map(|n| {
+                n.hp > 0
+                    && n.kind.is_town_npc()
+                    // `CanNPCParty`'s exclusions (`:55-64`): the bound NPCs
+                    // — the old man (37) and the skeleton merchant (453)
+                    // have no ported kinds, so the tax collector (441) is
+                    // the only exclusion the port's roster carries.
+                    && n.kind != crate::npc::NpcKind::TaxCollector
+            })
+            .collect();
+        crate::world_events::check_morning_party(
+            &mut app.world_events,
+            party_girl,
+            &partyable,
+            &mut |lo, hi| rng.next_range(lo, hi),
+        );
+        crate::world_events::check_morning_lanterns(&mut app.world_events);
     }
     (blood_moon_started, eclipse_started)
 }
