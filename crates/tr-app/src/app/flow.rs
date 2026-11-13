@@ -2097,6 +2097,12 @@ pub(crate) mod front_flow_tests {
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
             mount_prev: false,
+            // S1-B-3 (the `App::new` comment carries the citations): an
+            // unpaused, focused boot with the counter at the C# reset value.
+            game_paused: false,
+            window_focused: true,
+            mouse_back_held: false,
+            game_update_count: 65536,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
             last_frame: Instant::now(),

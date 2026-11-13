@@ -307,7 +307,29 @@ impl App {
             }
         }
 
-        if self.menu.is_none() && self.front.is_none() {
+        // S1-B-3 — the focus pause (`FocusHelper.UpdateFocus`'s `wantsToPause`
+        // arm, `Main.cs:17128-17141`): `wantsToPause = (!IsActive &&
+        // netMode == 0) && !SettingPlayWhenUnfocused`. The C# clears the mouse
+        // release edges, runs `UpdateMenu` when `gameMenu` (the menu/front path
+        // keeps flowing) and returns from *Update* — Draw keeps running, so the
+        // port's fused `frame()` gates the world branch instead of returning.
+        let focus_paused = !self.window_focused && !self.settings.play_when_unfocused;
+        if focus_paused {
+            // `Main.cs:17129-17134`: the mouse release edges clear every
+            // focus-paused frame, so no edge accumulated while unfocused fires
+            // on refocus. The port's frame-consumed click edges are the
+            // press-edge pair the click cluster reads (`mouseLeftRelease` has
+            // no stored per-frame flag here — releases are window events); the
+            // held flags stay untouched exactly like the C# leaves `mouseLeft`
+            // alone.
+            self.ui_left_press = false;
+            self.ui_right_press = false;
+            // `Main.cs:17138`: `Main.gamePaused = true` (the `UpdateMenu` arm
+            // above it keeps the menu/front path alive — nothing to call here,
+            // its per-frame work is draw/event-driven).
+            self.game_paused = true;
+        }
+        if !focus_paused && self.menu.is_none() && self.front.is_none() {
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
             self.tick_stack_split();
@@ -333,284 +355,323 @@ impl App {
                     *scale = (*scale - 0.05).max(target);
                 }
             }
-            // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
-            // pass. The sleeping counts it exports (`:17844-17859`) gate the
-            // clock's rate, so they land right after it.
-            self.phase("players");
-            self.update_player(dt);
-            // `UpdateTimeRate` (`Main.cs:6199-6218`): the rate is ×5 while
-            // every active player is fully asleep
-            // (`PlayerSleepingHelper.FullyFallenAsleep`, 120 ticks).
-            self.world.all_players_asleep = self
-                .player
-                .as_ref()
-                .is_some_and(|p| p.sleeping && p.sleep_time >= 120);
-            let hp = self.player.as_ref().map_or(0, |p| p.hp);
-            if hp < self.last_hp {
-                self.audio.play("Player_Hit_0");
+            // S1-B-3 — the in-game pause gate (`Main.cs:17194-17201`):
+            // `if (CanPauseGame()) { DoUpdate_WhilePaused(); gamePaused = true;
+            // return; } gamePaused = false;`. The click cluster above it is the
+            // pre-gate interface pass (DW-1.3: the UI stays live while paused).
+            let paused = self.can_pause_game();
+            if paused {
+                self.do_update_while_paused();
             }
-            self.last_hp = hp;
-            // `Main.UpdateAudio_DecideOnNewMusic` reads the scene centre, not the
-            // player: underground once the view centre passes the world surface
-            // (`Main.cs:12815`).
-            // The boss scan (`Main.cs:12224-12430`): the screen rect expanded
-            // 5000 px around each active NPC's centre; the type→slot switch
-            // feeds the flag chain. The port's bosses: King Slime (50 → slot
-            // 19 → track 93, outranking the others) and the generic `boss`
-            // slot 1 → 5 (no other ported kind carries `NPC.boss`).
-            let (sw, sh) = self.screen_size();
-            let screen_rect = [self.camera.x - sw * 0.5, self.camera.y - sh * 0.5, sw, sh];
-            let mut king_near = false;
-            let mut eoc_near = false;
-            let mut generic_boss_near = false;
-            for n in &self.npcs {
-                if n.hp <= 0 {
-                    continue;
+            self.game_paused = paused;
+            // `DoUpdateInWorld`'s gate (`Main.cs:17278`,
+            // `ShouldUpdateEntities() && WorldUpdateStepper.ShouldUpdateWorld()`
+            // — the stepper half is Phase 2). The block below is the C#'s
+            // `DoUpdateInWorld_Inner` body: the 13 streams and the WorldGen
+            // tail, with `_gameUpdateCount++` at its head (`:17746`) — one
+            // increment per *executed* world step.
+            let step_allowed = !paused && self.should_update_entities();
+            if step_allowed {
+                self.game_update_count = self.game_update_count.wrapping_add(1);
+                // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
+                // pass. The sleeping counts it exports (`:17844-17859`) gate the
+                // clock's rate, so they land right after it.
+                self.phase("players");
+                self.update_player(dt);
+                // `UpdateTimeRate` (`Main.cs:6199-6218`): the rate is ×5 while
+                // every active player is fully asleep
+                // (`PlayerSleepingHelper.FullyFallenAsleep`, 120 ticks).
+                self.world.all_players_asleep = self
+                    .player
+                    .as_ref()
+                    .is_some_and(|p| p.sleeping && p.sleep_time >= 120);
+                let hp = self.player.as_ref().map_or(0, |p| p.hp);
+                if hp < self.last_hp {
+                    self.audio.play("Player_Hit_0");
                 }
-                let (cx, cy) = n.center();
-                let near = cx + 5000.0 >= screen_rect[0]
-                    && cx - 5000.0 <= screen_rect[0] + screen_rect[2]
-                    && cy + 5000.0 >= screen_rect[1]
-                    && cy - 5000.0 <= screen_rect[1] + screen_rect[3];
-                if !near {
-                    continue;
-                }
-                if n.kind == NpcKind::KingSlime {
-                    king_near = true;
-                }
-                if n.kind == NpcKind::EyeOfCthulhu {
-                    eoc_near = true;
-                }
-                // `if (num3 == 0 && Main.npc[j].boss) num3 = 1;` (`:12366`).
-            }
-            let boss_music = if king_near {
-                Some(93) // MusicID.KingSlime (flag19, `:12596`)
-            } else if eoc_near {
-                Some(5) // MusicID.Boss1 (the generic boss slot, `:12611`)
-            } else {
-                // No other ported kind sets `boss` — the generic slot stays
-                // out until a third boss lands.
-                None
-            };
-            let underworld_px = (self.world.height - 200) as f32 * TILE_PX;
-            self.music.update(audio::MusicEnv {
-                music_volume: self.settings.music_volume,
-                day: self.world.day_time,
-                underground: self.camera.y
-                    >= self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                rain: self.rain.is_raining(),
-                boss_music,
-                clock: self.world.time,
-                eclipse: self.world.eclipse
-                    && self.camera.y < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                shimmer: self.scene_metrics.zone_shimmer,
-                town_npcs: 0, // no town NPCs yet (M4-TOWN)
-                // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
-                cloud_alpha: self.rain.visual_alpha(),
-                zone_rain: self.scene_metrics.zone_rain,
-                zone_snow: self.scene_metrics.zone_snow,
-                surface_atmospherics: self.scene_metrics.surface_atmospherics,
-                wind_speed: self.wind.speed_current,
-                shimmer_alpha: self.scene_state.shimmer_alpha,
-                atmo: crate::render::sky::atmosphere_factor(
-                    self.camera.y,
-                    self.world.world_surface,
-                    self.world.width,
-                ),
-                ambient_volume: self.settings.ambient_volume,
-                shadow_candle: self.scene_metrics.shadow_candle_count > 0,
-                sandstorm: self.sandstorm.happening,
-                underworld: self.camera.y > underworld_px,
-                blood_moon: self.world.blood_moon,
-                windy_music: self.wind.happy_windy_day,
-                // The biome chain (`:12686-12920`): the space band with
-                // `num4 = maxTilesX / 4200`, the temple wall behind the scene
-                // centre, the metrics zones, the mushroom bg style and the
-                // storm flag.
-                space_band: {
-                    let num4 = self.world.width as f32 / 4200.0;
-                    let center_tile_y = self.camera.y / 16.0;
-                    (center_tile_y - (65.0 + 10.0 * num4 * num4))
-                        / (self.world.world_surface as f32 / 5.0)
-                        < 1.0
-                },
-                temple_wall: self
-                    .world
-                    .tile((self.camera.x / 16.0) as i32, (self.camera.y / 16.0) as i32)
-                    .is_some_and(|t| t.wall == 87),
-                dungeon: self.scene_metrics.zone_dungeon,
-                mushroom_bg: self.bg_style == 9
-                    && self.camera.y < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                corrupt: self.scene_metrics.zone_corrupt,
-                crimson: self.scene_metrics.zone_crimson,
-                blood_leads_evil: self.scene_metrics.blood_tile_count
-                    > self.scene_metrics.evil_tile_count,
-                meteor: self.scene_metrics.zone_meteor,
-                graveyard: self.scene_metrics.zone_graveyard,
-                desert: self.scene_metrics.zone_desert,
-                jungle: self.scene_metrics.zone_jungle,
-                snow: self.scene_metrics.zone_snow,
-                hallow: self.scene_metrics.zone_hallow,
-                storm: self.wind.storming,
-                ocean: self.scene_metrics.zone_beach,
-                center_y: self.camera.y,
-                surface_band_px: self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                rock_band_px: self.world.rock_layer as f32 * TILE_PX + screen.y * 0.5,
-                jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
-                    + screen.y * 0.5,
-                quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
-                menu: false,
-                menu_flags: Default::default(),
-                music_box: self.scene_metrics.active_music_box,
-                music_box_silence: self.scene_metrics.music_box_silence,
-            });
-            // `Main.UpdateWorld_SpawnNPCs` (`Main.cs:17878`) + `UpdateWorld_NPCs`
-            // (`:17898`) — the port runs spawn and update in one pass.
-            if !self.is_client() {
-                self.phase("npcs");
-                self.update_npcs(dt);
-            }
-            // `Main.UpdateWorld_Projectiles` (`Main.cs:17976`) runs **before**
-            // `UpdateWorld_Items` (`:18004`).
-            self.phase("projectiles");
-            self.update_projectiles(dt);
-            self.phase("items");
-            self.update_items(dt);
-            // `Main.UpdateWorld_Dust` (`Main.cs:18047`): the minecart sparks
-            // ride this per-frame slot (the same slot the rain/sand dust get in
-            // `world_sim::scene_scan::update_scene`).
-            self.phase("dust");
-            let (sw, sh) = self.screen_size();
-            self.minecart_sparks
-                .tick(self.camera, Vec2::new(sw, sh), self.zoom);
-            // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
-            // runs after the entity half, never before it.
-            self.phase("time");
-            if !crate::env::day_pinned() {
-                // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
-                // `:1441`): the powers' multiplier folds into the clock tick
-                // (the freeze stops the advance entirely).
-                let rate = self.creative_powers.time_rate();
-                if rate > 0.0 {
-                    // The dawn/dusk event rolls ride the clock's own named
-                    // stream (`Main.SwapRandom("UpdateTime")`, `Main.cs:17795`)
-                    // inside `advance_time_with_events`, which also fires the
-                    // phase-boundary achievements and flag clears
-                    // (`Main.cs:65242-65246`, `:65383-65387`, `:65415`).
-                    let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
-                    let (blood_moon, eclipse) =
-                        advance_time_with_events(self, dt * rate, any_over_120);
-                    if blood_moon {
-                        crate::chat::broadcast_death_text(
-                            &mut self.chat,
-                            &crate::lang::text("LegacyMisc.8"),
-                            crate::chat::COLOR_WORLD,
-                        );
+                self.last_hp = hp;
+                // `Main.UpdateAudio_DecideOnNewMusic` reads the scene centre, not the
+                // player: underground once the view centre passes the world surface
+                // (`Main.cs:12815`).
+                // The boss scan (`Main.cs:12224-12430`): the screen rect expanded
+                // 5000 px around each active NPC's centre; the type→slot switch
+                // feeds the flag chain. The port's bosses: King Slime (50 → slot
+                // 19 → track 93, outranking the others) and the generic `boss`
+                // slot 1 → 5 (no other ported kind carries `NPC.boss`).
+                let (sw, sh) = self.screen_size();
+                let screen_rect = [self.camera.x - sw * 0.5, self.camera.y - sh * 0.5, sw, sh];
+                let mut king_near = false;
+                let mut eoc_near = false;
+                let mut generic_boss_near = false;
+                for n in &self.npcs {
+                    if n.hp <= 0 {
+                        continue;
                     }
-                    if eclipse {
-                        crate::chat::broadcast_death_text(
-                            &mut self.chat,
-                            &crate::lang::text("LegacyMisc.20"),
-                            crate::chat::COLOR_WORLD,
-                        );
+                    let (cx, cy) = n.center();
+                    let near = cx + 5000.0 >= screen_rect[0]
+                        && cx - 5000.0 <= screen_rect[0] + screen_rect[2]
+                        && cy + 5000.0 >= screen_rect[1]
+                        && cy - 5000.0 <= screen_rect[1] + screen_rect[3];
+                    if !near {
+                        continue;
+                    }
+                    if n.kind == NpcKind::KingSlime {
+                        king_near = true;
+                    }
+                    if n.kind == NpcKind::EyeOfCthulhu {
+                        eoc_near = true;
+                    }
+                    // `if (num3 == 0 && Main.npc[j].boss) num3 = 1;` (`:12366`).
+                }
+                let boss_music = if king_near {
+                    Some(93) // MusicID.KingSlime (flag19, `:12596`)
+                } else if eoc_near {
+                    Some(5) // MusicID.Boss1 (the generic boss slot, `:12611`)
+                } else {
+                    // No other ported kind sets `boss` — the generic slot stays
+                    // out until a third boss lands.
+                    None
+                };
+                let underworld_px = (self.world.height - 200) as f32 * TILE_PX;
+                self.music.update(audio::MusicEnv {
+                    music_volume: self.settings.music_volume,
+                    day: self.world.day_time,
+                    underground: self.camera.y
+                        >= self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                    rain: self.rain.is_raining(),
+                    boss_music,
+                    clock: self.world.time,
+                    eclipse: self.world.eclipse
+                        && self.camera.y
+                            < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                    shimmer: self.scene_metrics.zone_shimmer,
+                    town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                    // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
+                    cloud_alpha: self.rain.visual_alpha(),
+                    zone_rain: self.scene_metrics.zone_rain,
+                    zone_snow: self.scene_metrics.zone_snow,
+                    surface_atmospherics: self.scene_metrics.surface_atmospherics,
+                    wind_speed: self.wind.speed_current,
+                    shimmer_alpha: self.scene_state.shimmer_alpha,
+                    atmo: crate::render::sky::atmosphere_factor(
+                        self.camera.y,
+                        self.world.world_surface,
+                        self.world.width,
+                    ),
+                    ambient_volume: self.settings.ambient_volume,
+                    shadow_candle: self.scene_metrics.shadow_candle_count > 0,
+                    sandstorm: self.sandstorm.happening,
+                    underworld: self.camera.y > underworld_px,
+                    blood_moon: self.world.blood_moon,
+                    windy_music: self.wind.happy_windy_day,
+                    // The biome chain (`:12686-12920`): the space band with
+                    // `num4 = maxTilesX / 4200`, the temple wall behind the scene
+                    // centre, the metrics zones, the mushroom bg style and the
+                    // storm flag.
+                    space_band: {
+                        let num4 = self.world.width as f32 / 4200.0;
+                        let center_tile_y = self.camera.y / 16.0;
+                        (center_tile_y - (65.0 + 10.0 * num4 * num4))
+                            / (self.world.world_surface as f32 / 5.0)
+                            < 1.0
+                    },
+                    temple_wall: self
+                        .world
+                        .tile((self.camera.x / 16.0) as i32, (self.camera.y / 16.0) as i32)
+                        .is_some_and(|t| t.wall == 87),
+                    dungeon: self.scene_metrics.zone_dungeon,
+                    mushroom_bg: self.bg_style == 9
+                        && self.camera.y
+                            < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                    corrupt: self.scene_metrics.zone_corrupt,
+                    crimson: self.scene_metrics.zone_crimson,
+                    blood_leads_evil: self.scene_metrics.blood_tile_count
+                        > self.scene_metrics.evil_tile_count,
+                    meteor: self.scene_metrics.zone_meteor,
+                    graveyard: self.scene_metrics.zone_graveyard,
+                    desert: self.scene_metrics.zone_desert,
+                    jungle: self.scene_metrics.zone_jungle,
+                    snow: self.scene_metrics.zone_snow,
+                    hallow: self.scene_metrics.zone_hallow,
+                    storm: self.wind.storming,
+                    ocean: self.scene_metrics.zone_beach,
+                    center_y: self.camera.y,
+                    surface_band_px: self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                    rock_band_px: self.world.rock_layer as f32 * TILE_PX + screen.y * 0.5,
+                    jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
+                        + screen.y * 0.5,
+                    quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
+                    menu: false,
+                    menu_flags: Default::default(),
+                    music_box: self.scene_metrics.active_music_box,
+                    music_box_silence: self.scene_metrics.music_box_silence,
+                });
+                // `Main.UpdateWorld_SpawnNPCs` (`Main.cs:17878`) + `UpdateWorld_NPCs`
+                // (`:17898`) — the port runs spawn and update in one pass.
+                if !self.is_client() {
+                    self.phase("npcs");
+                    self.update_npcs(dt);
+                }
+                // `Main.UpdateWorld_Projectiles` (`Main.cs:17976`) runs **before**
+                // `UpdateWorld_Items` (`:18004`).
+                self.phase("projectiles");
+                self.update_projectiles(dt);
+                self.phase("items");
+                self.update_items(dt);
+                // `Main.UpdateWorld_Dust` (`Main.cs:18047`): the minecart sparks
+                // ride this per-frame slot (the same slot the rain/sand dust get in
+                // `world_sim::scene_scan::update_scene`).
+                self.phase("dust");
+                let (sw, sh) = self.screen_size();
+                self.minecart_sparks
+                    .tick(self.camera, Vec2::new(sw, sh), self.zoom);
+                // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
+                // runs after the entity half, never before it.
+                self.phase("time");
+                if !crate::env::day_pinned() {
+                    // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
+                    // `:1441`): the powers' multiplier folds into the clock tick
+                    // (the freeze stops the advance entirely).
+                    let rate = self.creative_powers.time_rate();
+                    if rate > 0.0 {
+                        // The dawn/dusk event rolls ride the clock's own named
+                        // stream (`Main.SwapRandom("UpdateTime")`, `Main.cs:17795`)
+                        // inside `advance_time_with_events`, which also fires the
+                        // phase-boundary achievements and flag clears
+                        // (`Main.cs:65242-65246`, `:65383-65387`, `:65415`).
+                        let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
+                        let (blood_moon, eclipse) =
+                            advance_time_with_events(self, dt * rate, any_over_120);
+                        if blood_moon {
+                            crate::chat::broadcast_death_text(
+                                &mut self.chat,
+                                &crate::lang::text("LegacyMisc.8"),
+                                crate::chat::COLOR_WORLD,
+                            );
+                        }
+                        if eclipse {
+                            crate::chat::broadcast_death_text(
+                                &mut self.chat,
+                                &crate::lang::text("LegacyMisc.20"),
+                                crate::chat::COLOR_WORLD,
+                            );
+                        }
                     }
                 }
+                // `WorldGen.UpdateWorld` (`WorldGen.cs:71495-71630`): the
+                // `UpdateWorld_WorldGenAndInvasion` wrapper (`Main.cs:18099`) runs
+                // *after* the time pass and walks `Wiring.UpdateMech` →
+                // `TileEntity.PerformUpdates` → `Liquid.UpdateLiquid` → the growth
+                // loops, in that order.
+                self.phase("wiring");
+                self.update_wiring(dt);
+                self.phase("tile_entities");
+                self.update_tile_entities(dt);
+                self.phase("liquids");
+                self.update_liquids(dt);
+                self.phase("growth");
+                self.update_growth(dt);
             }
-            // `WorldGen.UpdateWorld` (`WorldGen.cs:71495-71630`): the
-            // `UpdateWorld_WorldGenAndInvasion` wrapper (`Main.cs:18099`) runs
-            // *after* the time pass and walks `Wiring.UpdateMech` →
-            // `TileEntity.PerformUpdates` → `Liquid.UpdateLiquid` → the growth
-            // loops, in that order.
-            self.phase("wiring");
-            self.update_wiring(dt);
-            self.phase("tile_entities");
-            self.update_tile_entities(dt);
-            self.phase("liquids");
-            self.update_liquids(dt);
-            self.phase("growth");
-            self.update_growth(dt);
             // `DoUpdate_AnimateWaterfalls` (`Main.cs:19545-19566`): the
-            // `WaterfallManager.UpdateFrame`/`FindWaterfalls` pass.
+            // `WaterfallManager.UpdateFrame`/`FindWaterfalls` pass — the
+            // pre-gate Animate cluster (`:17146`), so it ticks while paused.
             self.phase("waterfalls");
             self.update_waterfalls(dt, screen);
-            // M1.4-BG-22: the shared 60 Hz world tick — `Main.Update`'s
-            // dayRate cluster (`Main.cs:17228-17231`): the `UpdateWeather`
-            // thunder arm once, the wind walk ×`Main.dayRate`, then
-            // `Sandstorm.UpdateTime` (`Main.cs:64966`).
-            self.phase("weather");
-            crate::world_sim::weather::update_world_tick(self, dt);
-            self.phase("rain");
-            self.update_rain(dt, screen);
-            // M1.4-BG-18 phase 3: `Main.UpdateSceneMetrics` + `Main.SceneState.
-            // Update` (`Main.cs:62560,17816`) — the scan, the fades and the
-            // `ApplyVisuals` driver; the post branch consumes
-            // `filter_driver.output`.
-            self.phase("scene_state");
-            crate::world_sim::scene_scan::update_scene(self, dt, screen);
+            // S1-B-3: the post-gate weather cluster (`Main.cs:17222`'s
+            // `Rain.MakeRain`, `:17228-17231`'s dayRate walks) — frozen while
+            // the pause gate holds, live on stepper-blocked frames (the
+            // `Main.cs:17278` gate sits *after* it in the C#; Phase 2's stepper
+            // must not swallow it).
+            if !paused {
+                // M1.4-BG-22: the shared 60 Hz world tick — `Main.Update`'s
+                // dayRate cluster (`Main.cs:17228-17231`): the `UpdateWeather`
+                // thunder arm once, the wind walk ×`Main.dayRate`, then
+                // `Sandstorm.UpdateTime` (`Main.cs:64966`).
+                self.phase("weather");
+                crate::world_sim::weather::update_world_tick(self, dt);
+                self.phase("rain");
+                self.update_rain(dt, screen);
+                // M1.4-BG-18 phase 3: `Main.UpdateSceneMetrics` + `Main.SceneState.
+                // Update` (`Main.cs:62560,17816`) — the scan, the fades and the
+                // `ApplyVisuals` driver; the post branch consumes
+                // `filter_driver.output`.
+                self.phase("scene_state");
+                crate::world_sim::scene_scan::update_scene(self, dt, screen);
+            }
             // The SceneState blizzard loops' sound emitter rides inside
             // `update_scene` (`scene_scan.rs`'s `SceneState::update` call —
             // the C# keeps the block inside `ApplyVisuals`, `SceneState.cs:189`).
             // `Main.UpdateWindyDayState` (`Main.cs:12990-13027`, called from
             // the per-tick audio update): the sticky windy-day/storm flags the
             // ambience gates read; the hysteresis bands make the per-frame
-            // evaluation equivalent.
+            // evaluation equivalent. The pre-gate cluster (`:17182`) — it ticks
+            // while paused, reading the frozen clock.
             self.phase("windy_day");
             self.wind.update_windy_day_state(
                 self.rain.visual_alpha(),
                 self.world.time,
                 self.world.day_time,
             );
-            // `Main.AmbienceServer.Update` (`Main.cs:17214-17216`) +
-            // `SkyManager.Update` (`Main.cs:17139`): the ambient sky scheduler
-            // and its entities, stepped on the 60 Hz accumulator.
-            self.phase("ambience");
-            {
-                let ambience = &mut self.ambience;
-                let ambience_rng = &mut self.ambience_rng;
-                let ctx = crate::ambience::AmbienceCtx {
-                    world: &self.world,
-                    day_time: self.world.day_time,
-                    eclipse: self.world.eclipse,
-                    blood_moon: self.world.blood_moon,
-                    pumpkin_moon: self.world.pumpkin_moon,
-                    snow_moon: self.world.snow_moon,
-                    hard_mode: self.world.hard_mode,
-                    is_raining: self.rain.is_raining(),
-                    is_storming: self.wind.storming,
-                    happy_windy_day: self.wind.happy_windy_day,
-                    too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),
-                    butterfly_chance: self.world.butterfly_chance,
-                    wind: self.wind.speed_current,
-                    zone_desert: self.scene_metrics.zone_desert,
-                    zone_hallow: self.scene_metrics.zone_hallow,
-                    zone_beach: self.scene_metrics.zone_beach,
-                    zone_corrupt: self.scene_metrics.zone_corrupt,
-                    zone_crimson: self.scene_metrics.zone_crimson,
-                    zone_jungle: self.scene_metrics.zone_jungle,
-                    player_center: self.player.as_ref().map_or(self.camera, |p| {
-                        Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5)
-                    }),
-                    // `plr.position.Y` is the hitbox TOP (`AmbienceServer.cs:191`).
-                    player_y: self.player.as_ref().map_or(self.camera.y, |p| p.y),
-                    // `SkyManager.Update`'s `max(1, dayRate)` loop
-                    // (`SkyManager.cs:24-46`) rides `Main.dayRate`
-                    // (`Main.cs:6199-6206`): 60 while a dial fast-forwards.
-                    day_rate: self.world.day_rate(),
-                };
-                ambience.update(dt, &ctx, ambience_rng);
-            }
-            self.phase("editing");
-            self.update_editing(dt, screen);
-            self.phase("net");
-            self.net_tick(dt);
-            self.phase("map");
-            if let Some(m) = self.map.as_mut() {
-                m.update(&self.world, self.player.as_ref(), &self.light, dt);
+            // S1-B-3: the post-gate tail — `Main.AmbienceServer.Update`'s own
+            // `!gamePaused` arm (`Main.cs:17214`), then the in-world tile-edit,
+            // net and map passes (the C#'s `DoUpdateInWorld` neighbours).
+            if !paused {
+                // `Main.AmbienceServer.Update` (`Main.cs:17214-17216`) +
+                // `SkyManager.Update` (`Main.cs:17139`): the ambient sky scheduler
+                // and its entities, stepped on the 60 Hz accumulator.
+                self.phase("ambience");
+                {
+                    let ambience = &mut self.ambience;
+                    let ambience_rng = &mut self.ambience_rng;
+                    let ctx = crate::ambience::AmbienceCtx {
+                        world: &self.world,
+                        day_time: self.world.day_time,
+                        eclipse: self.world.eclipse,
+                        blood_moon: self.world.blood_moon,
+                        pumpkin_moon: self.world.pumpkin_moon,
+                        snow_moon: self.world.snow_moon,
+                        hard_mode: self.world.hard_mode,
+                        is_raining: self.rain.is_raining(),
+                        is_storming: self.wind.storming,
+                        happy_windy_day: self.wind.happy_windy_day,
+                        too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),
+                        butterfly_chance: self.world.butterfly_chance,
+                        wind: self.wind.speed_current,
+                        zone_desert: self.scene_metrics.zone_desert,
+                        zone_hallow: self.scene_metrics.zone_hallow,
+                        zone_beach: self.scene_metrics.zone_beach,
+                        zone_corrupt: self.scene_metrics.zone_corrupt,
+                        zone_crimson: self.scene_metrics.zone_crimson,
+                        zone_jungle: self.scene_metrics.zone_jungle,
+                        player_center: self.player.as_ref().map_or(self.camera, |p| {
+                            Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5)
+                        }),
+                        // `plr.position.Y` is the hitbox TOP (`AmbienceServer.cs:191`).
+                        player_y: self.player.as_ref().map_or(self.camera.y, |p| p.y),
+                        // `SkyManager.Update`'s `max(1, dayRate)` loop
+                        // (`SkyManager.cs:24-46`) rides `Main.dayRate`
+                        // (`Main.cs:6199-6206`): 60 while a dial fast-forwards.
+                        day_rate: self.world.day_rate(),
+                    };
+                    ambience.update(dt, &ctx, ambience_rng);
+                }
+                self.phase("editing");
+                self.update_editing(dt, screen);
+                self.phase("net");
+                self.net_tick(dt);
+                self.phase("map");
+                if let Some(m) = self.map.as_mut() {
+                    m.update(&self.world, self.player.as_ref(), &self.light, dt);
+                }
             }
             // The world-branch tail's camera walks (`Main.cs:17814-17815`):
             // `UpdateCameraPan` (the tracking/pan target's MoveTowards) and
             // `UpdateCameraLerp` (the teleport transition's timer) — S1-B-4.
-            {
+            // They sit inside `DoUpdateInWorld_Inner`'s tail block
+            // (`:17795-17822`), so they freeze with the world step; the
+            // draw-time camera (`update_camera_at_draw`, S1-B-4) keeps
+            // computing from the frozen walk state.
+            if step_allowed {
                 let mut camera_state = std::mem::take(&mut self.camera_state);
                 crate::world_sim::camera::update_camera_pan(self, &mut camera_state);
                 crate::world_sim::camera::update_camera_lerp(self, &mut camera_state);
@@ -1932,6 +1993,7 @@ mod tests {
     use super::phase_trace;
     use crate::app::App;
     use crate::app::flow::FrontScreen;
+    use winit::keyboard::KeyCode;
 
     /// The world-branch sequence, transcribed from the C#:
     ///
@@ -2018,6 +2080,354 @@ mod tests {
         assert!(
             phase_trace::take().is_empty(),
             "the world branch did not run on the front end"
+        );
+    }
+
+    // ---- S1-B-3: the pause gates (Main.cs:17128-17407, 17717-17746) ----
+
+    /// A world tick helper for the freeze tests: `frame()` derives `dt` from
+    /// the wall clock, and back-to-back test frames would give the fixed
+    /// steppers nothing to accumulate — parking `last_frame` 100 ms back makes
+    /// each frame run ~6 fixed steps (the clamp at the top of `frame()`).
+    fn step_frame(app: &mut App) {
+        app.last_frame = std::time::Instant::now() - std::time::Duration::from_millis(100);
+        app.frame();
+    }
+
+    /// DW-1.1 — `CanPauseGame`'s truth table (`Main.cs:17315-17327`), the
+    /// port-expressible arms: the options window and the achievements/bestiary
+    /// overlays pause unconditionally; the `autoPause` arm adds the inventory
+    /// (and re-adds the overlays); nothing open never pauses, even with
+    /// autoPause on (the boundary). netMode is always 0 in the port, so the
+    /// C#'s `netMode == 0` wrapper is the whole table.
+    #[test]
+    fn s1_b_3_can_pause_game_matches_the_csharp_table() {
+        let mut app = in_world_app();
+        // Nothing open → false, with and without autoPause.
+        assert!(!app.can_pause_game(), "nothing open never pauses");
+        app.settings.auto_pause = true;
+        assert!(
+            !app.can_pause_game(),
+            "autoPause with every window closed stays unpaused (the boundary)"
+        );
+        app.settings.auto_pause = false;
+        // The unconditional arms (`flag |= ingameOptionsWindow | (InGameUI…)`).
+        app.ingame_options.open = true;
+        assert!(app.can_pause_game(), "the in-game options window pauses");
+        app.ingame_options.open = false;
+        app.achievements_open = true;
+        assert!(app.can_pause_game(), "the achievements overlay pauses");
+        app.achievements_open = false;
+        app.bestiary_open = true;
+        assert!(app.can_pause_game(), "the bestiary overlay pauses");
+        app.bestiary_open = false;
+        // The autoPause arm (`flag |= playerInventory | … | InGameUI.IsVisible`).
+        app.settings.auto_pause = true;
+        app.inventory_open = true;
+        assert!(app.can_pause_game(), "autoPause + the inventory pauses");
+        app.inventory_open = false;
+        app.achievements_open = true;
+        assert!(
+            app.can_pause_game(),
+            "autoPause + the achievements overlay pauses"
+        );
+        app.achievements_open = false;
+        app.bestiary_open = true;
+        assert!(
+            app.can_pause_game(),
+            "autoPause + the bestiary overlay pauses"
+        );
+        // autoPause off with only the inventory open stays unpaused.
+        app.settings.auto_pause = false;
+        app.bestiary_open = false;
+        app.inventory_open = true;
+        assert!(
+            !app.can_pause_game(),
+            "the inventory alone never pauses without autoPause"
+        );
+    }
+
+    /// The plan's dirty check: pause with the achievements overlay open, close
+    /// it (the `UIAchievementsMenu` Escape arm, `app/loop.rs`), and the world
+    /// unpauses on the next frame — the C#'s `CanPauseGame` re-evaluation
+    /// (`Main.cs:17194-17201`) picks the flag change up with no extra state.
+    #[test]
+    fn s1_b_3_closing_the_pausing_overlay_unpauses_the_next_frame() {
+        let mut app = in_world_app();
+        app.achievements_open = true;
+        app.frame();
+        assert!(app.game_paused, "the achievements overlay pauses");
+        assert_eq!(phase_trace::take(), ["waterfalls", "windy_day"]);
+        // The overlay's close route (`loop.rs`'s Escape arm).
+        app.achievements_open = false;
+        app.frame();
+        assert!(!app.game_paused, "the next frame unpaused");
+        assert_eq!(phase_trace::take(), WORLD_PHASES);
+    }
+
+    /// DW-1.2 (trace half) — a paused frame runs only the pre-gate cluster:
+    /// `DoUpdate_AnimateWaterfalls` (`Main.cs:17146`) and
+    /// `UpdateWindyDayState` (`:17182`); every gated phase is skipped and
+    /// `gamePaused` reads back true. Closing the pause source resumes the
+    /// whole pinned branch on the next frame (the C# `:17197-17201` else arm).
+    #[test]
+    fn s1_b_3_a_paused_frame_runs_only_the_pregate_phases() {
+        let mut app = in_world_app();
+        assert!(
+            app.should_update_entities(),
+            "the sync load is always Ready (Main.cs:17717-17726)"
+        );
+        app.ingame_options.open = true;
+        app.frame();
+        assert!(app.game_paused, "the gate wrote gamePaused (Main.cs:17197)");
+        assert_eq!(
+            phase_trace::take(),
+            ["waterfalls", "windy_day"],
+            "a paused frame keeps only the pre-gate Animate cluster alive"
+        );
+        app.ingame_options.open = false;
+        app.frame();
+        assert!(!app.game_paused, "the gate's else arm clears gamePaused");
+        assert_eq!(
+            phase_trace::take(),
+            WORLD_PHASES,
+            "unpausing resumes the full world branch, order unchanged"
+        );
+    }
+
+    /// DW-1.2 (state half) — 20 paused frames (≈120 fixed world steps) freeze
+    /// the NPC, the clock, the rain countdown, the falling water and the step
+    /// counter; the same frames unpaused move all of them.
+    #[test]
+    fn s1_b_3_a_paused_world_freezes_entities_clock_liquids_and_weather() {
+        let mut app = in_world_app();
+        // A 220-tall ground world: `world_surface = height * 0.25` = 55 opens
+        // the rain machine's `worldSurface > 50` gate (`Main.cs:2788`'s
+        // `isThereAWorldSurface`).
+        let mut w = tr_core::World::new("t".into(), 220, 220);
+        for x in 0..220 {
+            for y in 120..220 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        // `spawn_slime` places on `surface_of` — the cached column scan.
+        w.compute_column_surface();
+        app.world = w;
+        app.npcs = vec![crate::npc::Npc::spawn_slime(&app.world, 20).expect("the slime spawns")];
+        // Free-falling water in open air (the dirt starts at y=120): the tile
+        // carries the volume, `add_water` wakes the cell into the active list
+        // (`Liquid.cs`'s `LiquidBuffer` shape) — the sim is rebuilt for the
+        // swapped world's dimensions first.
+        let cell = app.world.index(30, 100);
+        app.world.tiles[cell].liquid = 255;
+        app.liquids = tr_core::liquid::LiquidSystem::new(&app.world);
+        app.liquids.add_water(&app.world, 30, 100);
+        // The rain event state (`Rain::restore_saved` — `SetOngoingToTemps`'s
+        // triple): raining with a live countdown.
+        app.rain.restore_saved(true, 4000, 0.8);
+        let (npc_x, npc_y) = (app.npcs[0].x, app.npcs[0].y);
+        let time0 = app.world.time;
+        let rain_time0 = app.rain.rain_time();
+        let liquid0 = app.world.tile(30, 100).map(|t| t.liquid).unwrap_or(0);
+        let count0 = app.game_update_count;
+        // CanPauseGame through the options window.
+        app.ingame_options.open = true;
+        for _ in 0..20 {
+            step_frame(&mut app);
+        }
+        assert!(app.game_paused);
+        assert_eq!(app.npcs[0].x, npc_x, "the NPC never moved while paused");
+        assert_eq!(app.npcs[0].y, npc_y);
+        assert_eq!(app.world.time, time0, "the clock froze");
+        assert_eq!(
+            app.rain.rain_time(),
+            rain_time0,
+            "the rain countdown froze (UpdateWeather/UpdateTime are post-gate)"
+        );
+        assert_eq!(
+            app.world.tile(30, 100).map(|t| t.liquid).unwrap_or(0),
+            liquid0,
+            "the falling water did not settle while paused"
+        );
+        assert!(
+            app.liquids.active_len() > 0,
+            "the water cell stayed woken, untouched"
+        );
+        assert_eq!(
+            app.game_update_count, count0,
+            "GameUpdateCount advanced per executed step, so it froze (Main.cs:17746)"
+        );
+        // One more paused frame, drained alone, for the per-frame trace check.
+        phase_trace::take();
+        app.frame();
+        assert_eq!(phase_trace::take(), ["waterfalls", "windy_day"]);
+        // The positive control: the same frames unpaused move everything.
+        app.ingame_options.open = false;
+        for _ in 0..20 {
+            step_frame(&mut app);
+        }
+        assert!(app.world.time > time0, "the clock ran again");
+        assert!(
+            app.rain.rain_time() < rain_time0,
+            "the rain countdown drained again"
+        );
+        assert_ne!(
+            app.world.tile(30, 100).map(|t| t.liquid).unwrap_or(0),
+            liquid0,
+            "the falling water settled"
+        );
+        assert!(
+            app.game_update_count > count0,
+            "one increment per executed world step"
+        );
+        assert!(
+            app.npcs[0].x != npc_x || app.npcs[0].y != npc_y,
+            "the slime moved again"
+        );
+        phase_trace::take();
+        app.frame();
+        assert_eq!(phase_trace::take(), WORLD_PHASES);
+    }
+
+    /// DW-1.3 — the UI cluster stays live while paused. The C# toggle runs
+    /// inside `DoUpdate_WhilePaused` (the `controlInv` edge, `Main.cs:17335`-
+    /// `:17362`); the port's toggle fires on the key event (`world_key`,
+    /// `Main.cInv`'s route) and nothing gates it on the pause — the autoPause
+    /// UX (items movable while the world is frozen) holds.
+    #[test]
+    fn s1_b_3_the_inventory_toggles_while_paused() {
+        let mut app = in_world_app();
+        app.ingame_options.open = true;
+        assert!(app.can_pause_game(), "the fixture starts paused");
+        app.settings.keybinds[crate::input_map::Action::Inventory.index()] = "I".into();
+        // The live bind table mirrors `settings` only through `apply_settings`.
+        app.apply_settings();
+        assert!(!app.inventory_open);
+        app.world_key(KeyCode::KeyI);
+        assert!(app.inventory_open, "the inventory opens while paused");
+        app.world_key(KeyCode::KeyI);
+        assert!(!app.inventory_open, "and closes again while paused");
+    }
+
+    /// DW-1.3 — the click cluster (the pre-gate interface pass,
+    /// `Main.cs:17179`'s `DoUpdate_HandleInput` neighbour) runs on paused
+    /// frames: the stack-split decay (`Main.cs:62466-62473`) and the hotbar
+    /// scale animation both advance with the gate holding.
+    #[test]
+    fn s1_b_3_the_click_cluster_still_runs_while_paused() {
+        let mut app = in_world_app();
+        app.ingame_options.open = true;
+        app.stack_split = 5;
+        app.mine_down = false;
+        app.place_down = false;
+        app.frame();
+        assert!(app.game_paused, "the fixture paused");
+        assert_eq!(
+            app.stack_split, 0,
+            "the interface pass decayed the stack split while paused"
+        );
+        app.selected = 0;
+        app.hotbar_scales[1] = 0.0;
+        app.frame();
+        assert!(
+            (app.hotbar_scales[1] - 0.05).abs() < 1e-6,
+            "the hotbar scales animated while paused"
+        );
+    }
+
+    /// DW-1.4 — the focus pause (`Main.cs:17128-17141`): an unfocused window
+    /// freezes the world unless `SettingPlayWhenUnfocused`
+    /// (`FocusHelper.cs:137-138`) holds.
+    #[test]
+    fn s1_b_3_focus_loss_freezes_unless_play_when_unfocused() {
+        let mut app = in_world_app();
+        app.window_focused = false;
+        let time0 = app.world.time;
+        let count0 = app.game_update_count;
+        app.frame();
+        assert!(
+            app.game_paused,
+            "an unfocused window pauses the world (Main.cs:17138)"
+        );
+        assert!(
+            phase_trace::take().is_empty(),
+            "the world branch is skipped while focus-paused"
+        );
+        assert_eq!(app.world.time, time0, "the clock froze");
+        assert_eq!(app.game_update_count, count0, "no world step ran");
+        // The setting releases the pause and the branch resumes.
+        app.settings.play_when_unfocused = true;
+        app.frame();
+        assert!(
+            !app.game_paused,
+            "play_when_unfocused keeps the world running unfocused"
+        );
+        assert!(app.world.time > time0, "the clock ran again");
+        assert_eq!(phase_trace::take(), WORLD_PHASES);
+    }
+
+    /// DW-1.4 — the menu/front path keeps flowing while unfocused (the C#'s
+    /// `UpdateMenu` arm, `Main.cs:17135-17137`): the port's front screens are
+    /// event/draw-driven, so the focus arm must not early-return the frame.
+    #[test]
+    fn s1_b_3_the_front_path_keeps_flowing_while_unfocused() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![],
+            vec![],
+        );
+        app.window_focused = false;
+        let frames0 = app.frame_count;
+        let anim0 = app.anim_time;
+        app.frame();
+        assert_eq!(app.frame_count, frames0 + 1, "the front frame still ran");
+        assert!(app.anim_time > anim0, "the frame clock advanced");
+        assert!(app.front.is_some(), "the front screen stayed live");
+        assert!(
+            phase_trace::take().is_empty(),
+            "and the world branch still never ran on a front frame"
+        );
+    }
+
+    /// DW-1.4 — the focus arm clears the frame-consumed click edges every
+    /// unfocused frame (`Main.cs:17129-17134` clears `mouseLeftRelease`/
+    /// `mouseRightRelease`; the port's press-edge pair is what the click
+    /// cluster consumes — releases are window events here, no stored flag).
+    #[test]
+    fn s1_b_3_the_focus_pause_clears_the_pointer_edges() {
+        let mut app = in_world_app();
+        app.ui_left_press = true;
+        app.ui_right_press = true;
+        app.window_focused = false;
+        app.frame();
+        assert!(app.game_paused);
+        assert!(
+            !app.ui_left_press && !app.ui_right_press,
+            "no edge accumulated while unfocused fires on refocus"
+        );
+    }
+
+    /// DW-1.5 — a world never enters paused (`Main.cs:19856`'s
+    /// `Main.gamePaused = false` in `LoadWorld`'s tail): the shared
+    /// world-install tail resets the flag, and the constructor carries the
+    /// same reset for the `swap_world`/`client_install_world` path (the C#'s
+    /// `OnWorldLoad` → `ResetGameCounter` hook, `Main.cs:6605`).
+    #[test]
+    fn s1_b_3_entering_a_loaded_world_resets_the_pause() {
+        let mut app = in_world_app();
+        app.game_paused = true;
+        app.enter_loaded_world();
+        assert!(!app.game_paused, "enter_loaded_world cleared the pause");
+        let fresh = in_world_app();
+        assert!(!fresh.game_paused, "a fresh App boots unpaused");
+        assert_eq!(
+            fresh.game_update_count, 65536,
+            "ResetGameCounter's initial value (Main.cs:6444)"
         );
     }
 }
