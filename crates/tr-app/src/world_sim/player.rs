@@ -354,15 +354,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.respawn_skip_frames = 0;
                 app.npcs.clear();
                 app.npc_timer = 4.0;
-                if app.follow_player {
-                    let (cx, cy) = p.center();
-                    app.camera = Vec2::new(cx, cy);
-                }
             }
-            if app.follow_player {
-                let (cx, cy) = p.center();
-                app.camera = app.camera.lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
-            }
+            // S1-B-4: the camera moved to the draw path
+            // (`DoDraw_UpdateCameraPosition`, `Main.cs:62590-62649`) — the
+            // player pass no longer moves it (the C#'s update half reads the
+            // previous frame's position), so the old lerp-follow is gone and
+            // the draw-time snap owns every frame's camera.
             return;
         }
         // `AllowsRespawnTimerSkip` is a death-screen gate: alive again, the

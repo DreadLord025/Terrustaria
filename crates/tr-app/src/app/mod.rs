@@ -311,6 +311,9 @@ pub(crate) struct App {
     /// (`Recipe.cs:221`'s `Main.rand.Next(3)`; the exact C# `UnifiedRandom`
     /// generator seeded per world like the wiring RNG, S1-L-6c).
     pub(crate) craft_rng: tr_core::unified_random::UnifiedRandom,
+    /// The coin cells' display-state machine (`CoinSlot.cs`, S1-H-9): the
+    /// entry arrays the vanilla carries as statics, owned by the App.
+    pub(crate) coin_slot: crate::ui::coin_slot::CoinSlotState,
     /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
     /// .cs:315`): the cached coin carriers. Session-only — cleared on the
     /// world unload (the vanilla never saves them).
@@ -509,6 +512,11 @@ pub(crate) struct App {
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
     pub(crate) camera: Vec2,
+    /// The C#'s draw-time camera state (`Main.cs:463`/`:477`/`:1097-1099`):
+    /// the teleport lerp pair, the object-tracking pan and the vestigial
+    /// `DebugCameraPan` accumulator. S1-B-4 moved the camera update to the
+    /// draw path; the update tail runs the pan/lerp walks (`:17814-17815`).
+    pub(crate) camera_state: world_sim::camera::CameraState,
     pub(crate) zoom: f32,
     /// `TR_ZOOM` pins the zoom for screenshots, ignoring the settings value.
     pub(crate) zoom_pinned: bool,
@@ -2809,6 +2817,7 @@ impl App {
             // (`Main.cs:6461-6463`) — the same deterministic stand-in as the
             // wiring RNG (S1-L-6c).
             craft_rng: tr_core::unified_random::UnifiedRandom::new(world_seed as i32 | 1),
+            coin_slot: crate::ui::coin_slot::CoinSlotState::new(),
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             menu: menu_state,
@@ -2898,6 +2907,7 @@ impl App {
             dev_break,
             dev_place,
             camera: Vec2::ZERO,
+            camera_state: Default::default(),
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
