@@ -1464,7 +1464,7 @@ impl App {
                         // and the panel draw over the open inventory.
                         Some((settings, &self.ingame_options)),
                         self.shop_npc
-                            .map(|_| (self.shop_stock.as_slice(), self.shop_mood)),
+                            .map(|_| (self.shop_stock.as_slice(), self.shop_mood, self.discount_available)),
                         // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
                         // + the statics) — the plan-amendment insertion
                         // (#10): the disjoint `App` fields the panel reads

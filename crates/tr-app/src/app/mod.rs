@@ -162,11 +162,18 @@ pub(crate) struct App {
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
-    /// The stock captured at the open (`Chest.item[]`).
-    pub(crate) shop_stock: Vec<u16>,
+    /// The stock captured at the open (`Chest.item[]`) — the rows carry
+    /// their per-row price fields (`Item.shopCustomPrice`/`buyOnce`/
+    /// `isAShopItem`), priced by `Item.GetStoreValue`.
+    pub(crate) shop_stock: Vec<crate::shop::ShopEntry>,
     /// The happiness multiplier captured at the open
     /// (`currentShoppingSettings.PriceAdjustment`).
     pub(crate) shop_mood: f32,
+    /// `Player.discountAvailable` (`Player.cs:25638`): refreshed from
+    /// `discountEquipped` when no shop is open; the Discount Card writer
+    /// lands with the equipment pass (S1-C-12) — the price arms
+    /// (`Player.cs:35369-35378`) consume it today.
+    pub(crate) discount_available: bool,
     /// The closed shop — the state cleared (`Main.npcShop = -1`'s
     /// equivalent).
     pub(crate) shop_closed_flag: bool,
@@ -1076,10 +1083,16 @@ impl App {
     /// slot_for_pickup). Returns false when the purse is short or the slot
     /// is out of range.
     pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
-        let Some(item) = self.shop_stock.get(slot).copied() else {
+        // `ItemSlot.HandleShopSlot` (`UI/ItemSlot.cs:2059-2060`): the
+        // charge is `GetItemExpectedPrice`'s buying value for the stock
+        // ROW (the row's `shopCustomPrice`/`buyOnce` ride
+        // `Item.GetStoreValue`, `Item.cs:49901-49908`).
+        let Some(entry) = self.shop_stock.get(slot) else {
             return false;
         };
-        let price = crate::shop::buy_price(item, self.shop_mood) as u64;
+        let item = entry.item;
+        let price = crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood)
+            as u64;
         if self.coins < price {
             return false;
         }
@@ -2599,6 +2612,7 @@ impl App {
             reforge_slot: EMPTY_SLOT,
             reforge_cooldown: 0,
             shop_mood: 1.0,
+            discount_available: false,
             shop_closed_flag: false,
             creative_powers,
             debug_panel: crate::debug_panel::DebugPanel::new(),
