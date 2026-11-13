@@ -89,6 +89,7 @@ def parse_rarity_enum():
 PROJECTILE_CS = DEC / "Projectile.cs"
 RECIPE_CS = DEC / "Recipe.cs"
 ITEMVARIANTS_CS = DEC / "GameContent" / "Items" / "ItemVariants.cs"
+DYE_INIT_CS = DEC / "Initializers" / "DyeInitializer.cs"
 
 ITEM_COUNT = 6196  # ItemID.cs:14861 — re-verified in main()
 
@@ -237,13 +238,7 @@ THIS_SKIP_FIELDS = {
     "color": "Color not provisioned",
     "glowMask": "glow-mask id not provisioned",
     "stringColor": "fishing-line colour not provisioned",
-    "dye": "shader id not provisioned",
-    "hairDye": "shader id not provisioned",
-    "mountType": "mount id not provisioned",
     "tileWand": "tile-wand id not provisioned",
-    "fishingPole": "fishing-pole power not provisioned",
-    "makeNPC": "critter npc id not provisioned",
-    "questItem": "quest flag not provisioned",
     "expert": "expert flag not provisioned",
     "expertOnly": "expert flag not provisioned",
     "isAShopItem": "shop flag not provisioned",
@@ -251,13 +246,9 @@ THIS_SKIP_FIELDS = {
     "sentry": "sentry flag not provisioned",
     "cartTrack": "cart-track flag not provisioned",
     "DD2Summon": "DD2 flag not provisioned",
-    "mech": "mech flag not provisioned",
     "noWet": "no-wet flag not provisioned",
-    "vanity": "vanity flag not provisioned",
     "noMelee": "contact-damage flag not provisioned",
     "noUseGraphic": "use-graphic flag not provisioned",
-    "paint": "paint id not provisioned",
-    "paintCoating": "coating id not provisioned",
     "flame": "flame flag not provisioned",
     "voiceSlot": "voice slot not provisioned",
     "chlorophyteExtractinatorConsumable": "extractinator flag not provisioned",
@@ -736,6 +727,16 @@ class ExprParser:
             if any(not isinstance(a, int) for a in args):
                 fail(self.src, self.line, "non-int argument in price call")
             return price_value(kind, args, self.src, self.line)
+        if name in ("GameShaders.Armor.GetShaderIdFromItemId",
+                    "GameShaders.Hair.GetShaderIdFromItemId"):
+            self.expect("(")
+            args = self.call_args()
+            self.expect(")")
+            if len(args) != 1:
+                fail(self.src, self.line, "shader-id lookup takes one arg")
+            if name.endswith("Armor.GetShaderIdFromItemId"):
+                return env["tables"]["dye_ids"].get(args[0], 0)
+            return env["tables"]["hairdye_ids"].get(args[0], -1)
         if name == "type":
             return env["type"]
         if name.startswith("this."):
@@ -843,6 +844,7 @@ class Ctx:
     def env(self, type_value):
         return {"ids": self.ids, "prices": self.prices, "row": self.row,
                 "locals": self.locals, "loopvars": self.loopvars,
+                "tables": self.tables,
                 "type": type_value}
 
 
@@ -1058,10 +1060,6 @@ def _cond_infected(ctx, type_value, body, src, line):
     ctx.deviation_sites.append((ctx.row["type"], line, "Main.infectedSeed conditional"))
 
 
-def _cond_hairdye(ctx, type_value, body, src, line):
-    pass  # hairDye keeps the ResetStats value; shader ids not provisioned
-
-
 SPECIAL_CONDS = {
     "this.type >= 1803 && this.type <= 1807": _cond_redirect,
     "Main.projHook[this.shoot]": _cond_projhook,
@@ -1069,7 +1067,6 @@ SPECIAL_CONDS = {
     "ItemID.Sets.IsFood[this.type]": _cond_isfood,
     "this.type > 0 && this.type < ItemID.Count && ItemID.Sets.Deprecated[this.type]": _cond_deprecated,
     "Main.infectedSeed": _cond_infected,
-    "this.hairDye != 0": _cond_hairdye,
 }
 
 
@@ -1189,7 +1186,8 @@ def h_DefaultToMusicBox(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToQuestFish(ctx, type_value, args, named, src, line, env):
-    """Item.cs:27651-27657 (questItem not provisioned)."""
+    """Item.cs:27651-27657."""
+    ctx.row["questItem"] = True
     ctx.row["width"] = 26
     ctx.row["height"] = 26
     ctx.row["rare"] = -11
@@ -1220,12 +1218,13 @@ def h_DefaultToBanner(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToMonolith(ctx, type_value, args, named, src, line, env):
-    """Item.cs:47761-47768 (vanity not provisioned)."""
+    """Item.cs:47761-47768."""
     h_DefaultToPlaceableTile(ctx, type_value, [args[0]], {"tileStyleToPlace": args[1]}
                              if len(args) > 1 else {}, src, line, env)
     ctx.row["width"] = 22
     ctx.row["height"] = 32
     ctx.row["accessory"] = True
+    ctx.row["vanity"] = True
 
 
 def h_DefaultToBomb(ctx, type_value, args, named, src, line, env):
@@ -1241,7 +1240,7 @@ def h_DefaultToBomb(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToVoiceOverrideAccessory(ctx, type_value, args, named, src, line, env):
-    """Item.cs:47785-47797 (UseSound/voiceSlot/vanity not provisioned)."""
+    """Item.cs:47785-47797 (UseSound/voiceSlot not provisioned)."""
     ctx.row["useStyle"] = 4
     ctx.row["useTurn"] = False
     ctx.row["useAnimation"] = 17
@@ -1249,6 +1248,7 @@ def h_DefaultToVoiceOverrideAccessory(ctx, type_value, args, named, src, line, e
     ctx.row["width"] = 24
     ctx.row["height"] = 24
     ctx.row["accessory"] = True
+    ctx.row["vanity"] = True
 
 
 def h_DefaultToSolution(ctx, type_value, args, named, src, line, env):
@@ -1332,7 +1332,7 @@ def h_DefaultToSeaShell(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToCapturedCritter(ctx, type_value, args, named, src, line, env):
-    """Item.cs:48000-48013 (makeNPC/noUseGraphic not provisioned)."""
+    """Item.cs:48000-48013 (noUseGraphic not provisioned)."""
     ctx.row["useStyle"] = 1
     ctx.row["autoReuse"] = True
     ctx.row["useTurn"] = True
@@ -1341,6 +1341,7 @@ def h_DefaultToCapturedCritter(ctx, type_value, args, named, src, line, env):
     ctx.row["consumable"] = True
     ctx.row["width"] = 12
     ctx.row["height"] = 12
+    ctx.row["makeNPC"] = eval_expr(args[0], env, src, line)
     ctx.row["createTile"] = 724
 
 
@@ -1369,9 +1370,10 @@ def h_DefaultToSpear(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToMinecart(ctx, type_value, args, named, src, line, env):
-    """Item.cs:48395-48400 (mountType not provisioned)."""
+    """Item.cs:48395-48400."""
     ctx.row["width"] = 36
     ctx.row["height"] = 26
+    ctx.row["mountType"] = eval_expr(args[0], env, src, line)
 
 
 def h_DefaultToPlaceableWall(ctx, type_value, args, named, src, line, env):
@@ -1599,6 +1601,17 @@ def stock_row():
         "magic": False,
         "summon": False,
         "thrown": False,
+        # ResetStats stock (Item.cs:48958-48986) — the sort fields.
+        "questItem": False,
+        "fishingPole": 0,
+        "hairDye": -1,
+        "makeNPC": 0,
+        "dye": 0,
+        "paint": 0,
+        "paintCoating": 0,
+        "mech": False,
+        "mountType": -1,
+        "vanity": False,
         "width": 0,         # C# field defaults (not reset by ResetStats)
         "height": 0,
     }
@@ -1981,6 +1994,77 @@ def parse_projhook_set():
     return set(ids)
 
 
+def parse_dye_shader_ids():
+    """Replay `DyeInitializer.Load` (`DyeInitializer.cs:487-492`) to reproduce
+    the item-id → shader-id maps that `GameShaders.Armor/Hair.GetShaderIdFrom-
+    ItemId` consult (`ArmorShaderDataSet.cs:54-61`, `HairShaderDataSet.cs:57-64`).
+    A shader id is the `BindShader` registration counter (`ArmorShaderDataSet.cs:
+    14-19`), so control-flow order matters (legacy hair dyes register before 3259).
+    Returns (armor_map, hair_map) with 1-based shader ids."""
+    lines = read_lines(DYE_INIT_CS)
+    methods = {}
+    for i, line in enumerate(lines):
+        m = re.match(r"\s*(?:public|private) static void (\w+)\(", line)
+        if not m:
+            continue
+        depth = 0
+        started = False
+        j = i
+        while j < len(lines):
+            depth += lines[j].count("{") - lines[j].count("}")
+            if "{" in lines[j]:
+                started = True
+            if started and depth == 0:
+                break
+            j += 1
+        methods[m.group(1)] = (i, j + 1)
+    armor = []
+    hair = []
+
+    def run(fname, guard):
+        if fname in guard:
+            fail("DyeInitializer.cs", methods[fname][0] + 1, "recursive dye loader " + fname)
+        lo, hi = methods[fname]
+        for k in range(lo, hi):
+            s = lines[k].strip()
+            m = re.match(r"GameShaders\.Armor\.BindShader\((\d+),", s)
+            if m:
+                armor.append(int(m.group(1)))
+                continue
+            m = re.match(r"GameShaders\.Hair\.BindShader\((\d+),", s)
+            if m:
+                hair.append(int(m.group(1)))
+                continue
+            m = re.match(r"DyeInitializer\.(Load\w+)\((.*)\);\s*$", s)
+            if not m:
+                continue
+            call, argstr = m.group(1), m.group(2)
+            if call == "LoadBasicColorDye":
+                ints = []
+                for a in argstr.split(","):
+                    a = a.strip()
+                    if re.fullmatch(r"\d+", a):
+                        ints.append(int(a))
+                    else:
+                        break
+                if len(ints) == 4:
+                    armor.extend(ints)
+                elif len(ints) == 1:
+                    b = ints[0]
+                    armor.extend([b, b + 12, b + 31, b + 44])
+                else:
+                    fail("DyeInitializer.cs", k + 1, "LoadBasicColorDye args: " + argstr)
+            elif call in methods:
+                run(call, guard | {fname})
+            # LoadMisc / LoadMiscVertexShaders bind no armor/hair shaders.
+    run("Load", set())
+    armor_map = {item: idx + 1 for idx, item in enumerate(armor)}
+    hair_map = {item: idx + 1 for idx, item in enumerate(hair)}
+    if len(armor_map) != len(armor) or len(hair_map) != len(hair):
+        fail("DyeInitializer.cs", 487, "duplicate dye item id in a shader binding")
+    return armor_map, hair_map
+
+
 
 # ---------------------------------------------------------------------------
 # Emission
@@ -2035,6 +2119,22 @@ RUST_FIELDS = [
     ("axe", "axe", "u16"),
     ("hammer", "hammer", "u16"),
     ("accessory", "accessory", "bool"),
+    # Sort-relevant fields (ItemSorting.cs reads these directly).
+    ("melee", "melee", "bool"),
+    ("ranged", "ranged", "bool"),
+    ("magic", "magic", "bool"),
+    ("summon", "summon", "bool"),
+    ("thrown", "thrown", "bool"),
+    ("vanity", "vanity", "bool"),
+    ("mech", "mech", "bool"),
+    ("quest_item", "questItem", "bool"),
+    ("make_npc", "makeNPC", "i32"),
+    ("fishing_pole", "fishingPole", "i32"),
+    ("hair_dye", "hairDye", "i32"),
+    ("dye", "dye", "i32"),
+    ("mount_type", "mountType", "i32"),
+    ("paint", "paint", "i32"),
+    ("paint_coating", "paintCoating", "i32"),
 ]
 
 TYPE_RANGES = {
@@ -2211,6 +2311,37 @@ pub struct ItemDef {
     pub hammer: u16,
     /// `Item.accessory` (`Item.cs:48998`, stock false).
     pub accessory: bool,
+    /// `Item.melee` (`Item.cs:48975`, stock false): the melee damage class.
+    pub melee: bool,
+    /// `Item.ranged` (`Item.cs:48977`, stock false).
+    pub ranged: bool,
+    /// `Item.magic` (`Item.cs:48976`, stock false).
+    pub magic: bool,
+    /// `Item.summon` (`Item.cs:48978`, stock false).
+    pub summon: bool,
+    /// `Item.thrown` (C# field default false; no `ResetStats` write) — the
+    /// fifth damage class.
+    pub thrown: bool,
+    /// `Item.vanity` (`Item.cs:48986`, stock false) — the vanity-armour flag.
+    pub vanity: bool,
+    /// `Item.mech` (`Item.cs:48972`, stock false) — wiring-mechanism flag.
+    pub mech: bool,
+    /// `Item.questItem` (`Item.cs:48958`, stock false) — the Angler quest flag.
+    pub quest_item: bool,
+    /// `Item.makeNPC` (`Item.cs:48962`, stock 0) — the critter npc id.
+    pub make_npc: i32,
+    /// `Item.fishingPole` (`Item.cs:48959`, stock 0) — the fishing power.
+    pub fishing_pole: i32,
+    /// `Item.hairDye` (`Item.cs:48961`, stock −1): `>= 0` = hair-dye shader id.
+    pub hair_dye: i32,
+    /// `Item.dye` (`Item.cs:48963`, stock 0): `> 0` = dye shader id.
+    pub dye: i32,
+    /// `Item.mountType` (`Item.cs:48982`, stock −1).
+    pub mount_type: i32,
+    /// `Item.paint` (`Item.cs:48964`, stock 0) — the paint id.
+    pub paint: i32,
+    /// `Item.paintCoating` (`Item.cs:48965`, stock 0).
+    pub paint_coating: i32,
 }"""
 
 
@@ -2747,12 +2878,15 @@ def _main_inner():
     is_drill = parse_bool_set(itemid_text, "Sets.IsDrill", "ItemID.cs")
     is_chainsaw = parse_bool_set(itemid_text, "Sets.IsChainsaw", "ItemID.cs")
     deprecated = parse_bool_set(itemid_text, "Sets.Deprecated", "ItemID.cs")
+    dye_ids, hairdye_ids = parse_dye_shader_ids()
     tables = {
         "projhook": parse_projhook_set(),
         "is_food": is_food,
         "is_drill": is_drill,
         "is_chainsaw": is_chainsaw,
         "deprecated": deprecated,
+        "dye_ids": dye_ids,
+        "hairdye_ids": hairdye_ids,
     }
     parsed = {}
     for name, lo, hi in METHOD_SPANS:
