@@ -178,15 +178,107 @@ pub fn movement_speed_for(wet: bool, lava_wet: bool, honey_wet: bool, shimmer_we
     }
 }
 
-/// The in-liquid gravity (`Player.cs:27008`): `gravity / 3`.
-pub fn liquid_gravity() -> f32 {
-    GRAVITY / 3.0
+/// The wet-family flags the statics rebase reads (`Player.cs:24380-24437`).
+/// The not-yet-ported writers default `false` — the C#'s pre-condition
+/// state: `shimmering` (the absorbed state, the shimmer-emergence work),
+/// `merman` (the buff table, S1-E-7), `trident` (`Player.cs:12896`'s use
+/// arm), `control_up` (no input channel yet), `down_dash`
+/// (`isPerformingJump_DownDash` — only the Dead Cells down-dash sets it,
+/// `Player.cs:20697-20722`), `vortex_debuff` (the Moon Lord debuff) and
+/// `portal_physics` (no portals).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WetStaticsFlags {
+    pub wet: bool,
+    pub honey_wet: bool,
+    pub lava_wet: bool,
+    pub shimmer_wet: bool,
+    pub shimmering: bool,
+    pub merman: bool,
+    pub trident: bool,
+    pub control_up: bool,
+    pub down_dash: bool,
+    pub vortex_debuff: bool,
+    pub portal_physics: bool,
 }
 
-/// The in-liquid fall cap, both ways (`Player.cs:27011-27017`):
-/// `maxFallSpeed / 3`.
-pub fn liquid_fall_cap() -> f32 {
-    MAX_FALL / 3.0
+/// `Player.cs:24380-24437` — the per-tick statics rebase that runs right
+/// after the movement defaults (`:24364-24369` resets `maxFallSpeed = 10f`,
+/// `gravity = Player.defaultGravity`, `jumpHeight = 15`, `jumpSpeed =
+/// 5.01f`): the wet/shimmer arms assign the tick's `gravity`/`maxFallSpeed`
+/// and the jump statics (`Player.jumpHeight`/`jumpSpeed` are statics in the
+/// C#, instance fields here) BEFORE any integration, then `vortexDebuff`
+/// zeroes the gravity and every tick adds the `+0.01f` fall-cap creep. The
+/// plain integration arm (`Player.cs:27352-27359`) consumes the rebased
+/// values at FULL strength — the `gravity / 3` / `maxFallSpeed / 3` sites
+/// (`:27008`, `:27339`) are the mount/wings flight integrators, not a wet
+/// rule. Returns `(gravity, max_fall_speed, jump_height, jump_speed)`.
+pub fn wet_gravity_and_cap(
+    gravity: f32,
+    max_fall_speed: f32,
+    jump_height: i32,
+    jump_speed: f32,
+    flags: WetStaticsFlags,
+) -> (f32, f32, i32, f32) {
+    let WetStaticsFlags {
+        wet,
+        honey_wet,
+        lava_wet,
+        shimmer_wet,
+        shimmering,
+        merman,
+        trident,
+        control_up,
+        down_dash,
+        vortex_debuff,
+        portal_physics,
+    } = flags;
+    let mut gravity = gravity;
+    let mut max_fall_speed = max_fall_speed;
+    let mut jump_height = jump_height;
+    let mut jump_speed = jump_speed;
+    if portal_physics {
+        max_fall_speed = 35.0; // `:24380-24382`
+    }
+    if !shimmering && wet && down_dash {
+        gravity *= 0.85; // `:24384-24387`
+        max_fall_speed *= 0.85;
+    } else if shimmer_wet || shimmering {
+        if shimmering {
+            gravity *= 0.9; // `:24389-24394`
+            max_fall_speed *= 0.9;
+        } else {
+            gravity = 0.15;
+            jump_height = 23;
+            jump_speed = 5.51;
+        }
+    } else if wet {
+        if honey_wet {
+            gravity = 0.1; // `:24399-24402`
+            max_fall_speed = 3.0;
+        } else if merman {
+            gravity = 0.3; // `:24404-24407`
+            max_fall_speed = 7.0;
+        } else if trident && !lava_wet {
+            gravity = 0.25; // `:24409-24417`
+            max_fall_speed = 6.0;
+            jump_height = 25;
+            jump_speed = 5.51;
+            if control_up {
+                gravity = 0.1;
+                max_fall_speed = 2.0;
+            }
+        } else {
+            gravity = 0.2; // `:24418-24424`
+            max_fall_speed = 5.0;
+            jump_height = 30;
+            jump_speed = 6.01;
+        }
+    }
+    if vortex_debuff {
+        gravity = 0.0; // `:24433-24436`
+    }
+    max_fall_speed += 0.01; // `:24437`
+    (gravity, max_fall_speed, jump_height, jump_speed)
 }
 
 /// `Main.OffsetsPlayerHeadgear[i].Y` (`Main.cs:66638-66660`): the per-body-row
@@ -2619,10 +2711,31 @@ impl Player {
         self.run_acceleration = 0.08;
         self.run_slowdown = 0.2;
         self.acc_run_speed = self.max_run_speed;
-        // `Player.cs:24366-24367` + `UpdateJumpHeight` (`:19589-19593`): the
-        // jump statics reset per tick; the balloon floor lifts them.
+        // `Player.cs:24366-24367`: the jump statics reset per tick (the C#
+        // writes the statics `Player.jumpHeight = 15` / `jumpSpeed = 5.01f`).
         self.jump_height = 15;
         self.jump_speed = 5.01;
+        // `Player.cs:24380-24437`: the wet/shimmer statics rebase — the C#
+        // runs it right after the defaults and BEFORE `UpdateJumpHeight`'s
+        // max-lift (`:25656`), so a wet assignment (30/6.01 water) survives
+        // the lift and the later max can only raise it. The rebased pair
+        // feeds the plain integration arm below at full strength.
+        let (tick_gravity, tick_max_fall) = {
+            let flags = WetStaticsFlags {
+                wet: self.wet,
+                honey_wet: self.honey_wet,
+                lava_wet: self.lava_wet,
+                shimmer_wet: self.shimmer_wet,
+                ..WetStaticsFlags::default()
+            };
+            let (g, mf, jh, js) =
+                wet_gravity_and_cap(GRAVITY, MAX_FALL, self.jump_height, self.jump_speed, flags);
+            self.jump_height = jh;
+            self.jump_speed = js;
+            (g, mf)
+        };
+        // `UpdateJumpHeight` (`:19587-19593`): the balloon/jump-boost lift is
+        // a MAX over the rebased statics, not an assignment.
         if self.jump_boost {
             self.jump_height = self.jump_height.max(20);
             self.jump_speed = self.jump_speed.max(6.51);
@@ -3420,15 +3533,13 @@ impl Player {
         }
 
         let in_liquid = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
-        // `Player.cs:27008-27017`: in a liquid the gravity is `gravity / 3`
-        // and the fall cap is `maxFallSpeed / 3`, applied both ways (the
-        // upward cap keeps the swim under the surface).
-        let gravity = if in_liquid { liquid_gravity() } else { GRAVITY };
-        let fall_cap = if in_liquid {
-            liquid_fall_cap()
-        } else {
-            MAX_FALL
-        };
+        // `Player.cs:27352-27359`: the plain arm integrates the rebased
+        // gravity (the `:24380-24437` rebase above owns the liquid values)
+        // at FULL strength and caps the fall at the rebased `maxFallSpeed`
+        // — the `gravity / 3` / `maxFallSpeed / 3` sites (`:27008`/`:27339`)
+        // are the mount/wings flight integrators, not a wet rule.
+        let gravity = tick_gravity;
+        let fall_cap = tick_max_fall;
         // `WetCollision`'s `movementSpeed` (`Player.cs:28168-28171` + :23436):
         // the position delta scales by the liquid speed — water/lava 0.5,
         // honey 0.25, shimmer 0.375. The scaled step feeds the collision; the
@@ -6853,11 +6964,159 @@ mod tests {
     }
 
     #[test]
-    fn in_liquid_gravity_and_cap_are_thirds() {
-        // Player.cs:27008-27017: gravity / 3 (0.4 -> 0.1333) and the
-        // both-ways cap at maxFallSpeed / 3 (10 -> 3.333).
-        assert!((liquid_gravity() - 0.4 / 3.0).abs() < 1e-6);
-        assert!((liquid_fall_cap() - 10.0 / 3.0).abs() < 1e-6);
+    #[test]
+    fn the_wet_statics_rebase_feeds_the_tick() {
+        // The wiring: a water tick rebase-assigns the jump statics (the C#
+        // `Player.jumpHeight = 30` / `jumpSpeed = 6.01f`, `:24418-24424`) —
+        // the values the jump section consumes.
+        let mut w = ground_world();
+        for y in 58..60 {
+            for x in 0..64 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 200;
+            }
+        }
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.wet, "the tick must be wet: center row {}", (p.y / TILE_PX) as i32);
+        assert_eq!(p.jump_height, 30, "the water jump height");
+        assert!((p.jump_speed - 6.01).abs() < 1e-5, "the water jump speed");
+    }
+
+    #[test]
+    fn the_wet_statics_rebase_assigns_the_per_liquid_arms() {
+        // `Player.cs:24418-24424` (water): 0.2/5 + the jump statics 30/6.01.
+        let water = WetStaticsFlags {
+            wet: true,
+            ..Default::default()
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, water);
+        assert!((g - 0.2).abs() < 1e-5 && (mf - 5.01).abs() < 1e-5);
+        assert_eq!((jh, js), (30, 6.01));
+        // `:24399-24402` (honey): 0.1/3, the jump statics stay at the reset.
+        let honey = WetStaticsFlags {
+            wet: true,
+            honey_wet: true,
+            ..Default::default()
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, honey);
+        assert!((g - 0.1).abs() < 1e-5 && (mf - 3.01).abs() < 1e-5);
+        assert_eq!((jh, js), (15, 5.01));
+        // `:24404-24407` (merman): 0.3/7.
+        let merman = WetStaticsFlags {
+            wet: true,
+            merman: true,
+            ..Default::default()
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, merman);
+        assert!((g - 0.3).abs() < 1e-5 && (mf - 7.01).abs() < 1e-5);
+        assert_eq!((jh, js), (15, 5.01));
+        // `:24409-24417` (trident, not lava): 0.25/6 + 25/5.51; controlUp
+        // drops it to 0.1/2.
+        let trident = WetStaticsFlags {
+            wet: true,
+            trident: true,
+            ..Default::default()
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, trident);
+        assert!((g - 0.25).abs() < 1e-5 && (mf - 6.01).abs() < 1e-5);
+        assert_eq!((jh, js), (25, 5.51));
+        let trident_up = WetStaticsFlags {
+            control_up: true,
+            ..trident
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, trident_up);
+        assert!((g - 0.1).abs() < 1e-5 && (mf - 2.01).abs() < 1e-5);
+        assert_eq!((jh, js), (25, 5.51));
+        // Trident in lava falls through to the plain water arm.
+        let trident_lava = WetStaticsFlags {
+            lava_wet: true,
+            ..trident
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, trident_lava);
+        assert!((g - 0.2).abs() < 1e-5 && (mf - 5.01).abs() < 1e-5);
+        assert_eq!((jh, js), (30, 6.01));
+        // `:24389-24394` (shimmerWet, not absorbed): 0.15 + 23/5.51 — the
+        // arm never touches the cap, so it stays at the 10 default.
+        let shimmer = WetStaticsFlags {
+            shimmer_wet: true,
+            ..Default::default()
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, shimmer);
+        assert!((g - 0.15).abs() < 1e-5 && (mf - 10.01).abs() < 1e-5);
+        assert_eq!((jh, js), (23, 5.51));
+    }
+
+    #[test]
+    fn the_rebase_multipliers_gates_and_creep() {
+        // `:24384-24387`: the Dead Cells down-dash arm ×0.85 (wet, not
+        // shimmering) — 0.4×0.85 / 10×0.85 + 0.01.
+        let dash = WetStaticsFlags {
+            wet: true,
+            down_dash: true,
+            ..Default::default()
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, dash);
+        assert!((g - 0.4 * 0.85).abs() < 1e-5 && (mf - (10.0 * 0.85 + 0.01)).abs() < 1e-5);
+        assert_eq!((jh, js), (15, 5.01));
+        // `:24389-24393`: the absorbed shimmering arm ×0.9 — 0.36 / 9.01.
+        let shimmering = WetStaticsFlags {
+            shimmering: true,
+            ..Default::default()
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, shimmering);
+        assert!((g - 0.36).abs() < 1e-5 && (mf - 9.01).abs() < 1e-5);
+        assert_eq!((jh, js), (15, 5.01));
+        // The down-dash arm loses to the shimmer arm when shimmering.
+        let shimmer_dash = WetStaticsFlags {
+            wet: true,
+            shimmering: true,
+            down_dash: true,
+            ..Default::default()
+        };
+        let (g, mf, _, _) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, shimmer_dash);
+        assert!((g - 0.36).abs() < 1e-5 && (mf - 9.01).abs() < 1e-5);
+        // `:24433-24436`: the vortex debuff zeroes the gravity AFTER the
+        // wet arm assigned it.
+        let vortex = WetStaticsFlags {
+            wet: true,
+            vortex_debuff: true,
+            ..Default::default()
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, vortex);
+        assert!(g == 0.0 && (mf - 5.01).abs() < 1e-5);
+        assert_eq!((jh, js), (30, 6.01));
+        // `:24380-24382`: portal physics pins the cap at 35 before the wet
+        // arm re-assigns it (dry here, so 35 survives + the creep).
+        let portal = WetStaticsFlags {
+            portal_physics: true,
+            ..Default::default()
+        };
+        let (g, mf, _, _) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, portal);
+        assert!((g - 0.4).abs() < 1e-5 && (mf - 35.01).abs() < 1e-5);
+        // Dry: the plain arm rides the defaults + the creep — the C#'s
+        // every-tick `maxFallSpeed += 0.01f` (`:24437`).
+        let (g, mf, jh, js) =
+            wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, WetStaticsFlags::default());
+        assert!((g - 0.4).abs() < 1e-5 && (mf - 10.01).abs() < 1e-5);
+        assert_eq!((jh, js), (15, 5.01));
+    }
+
+    #[test]
+    fn the_wet_rebase_runs_before_the_jump_boost_lift() {
+        // The C# order: the reset (`:24366`) → the rebase (`:24380-24437`)
+        // → `UpdateJumpHeight`'s max-lift (`:25656`), so the wet 30/6.01
+        // survives the lift and a jump-boosted shimmer keeps the wet 23
+        // height while the lift raises the speed to 6.51.
+        let shimmer = WetStaticsFlags {
+            shimmer_wet: true,
+            ..Default::default()
+        };
+        let (g, mf, jh, js) = wet_gravity_and_cap(GRAVITY, MAX_FALL, 15, 5.01, shimmer);
+        assert!((g - 0.15).abs() < 1e-5 && (mf - 10.01).abs() < 1e-5);
+        assert_eq!((jh.max(20), js.max(6.51)), (23, 6.51));
     }
 
     #[test]
@@ -7578,7 +7837,14 @@ mod tests {
             ..Default::default()
         };
         p.update(&w, held);
-        assert!(p.vy <= MAX_FALL / 3.0 + 1e-4, "the glide cap: {}", p.vy);
+        // The glide cap is the wings arm's `maxFallSpeed / 3` (`:27339`) on
+        // the rebased `maxFallSpeed` — `:24437`'s every-tick `+0.01f` rides
+        // in (`R-03-1`).
+        assert!(
+            p.vy <= (MAX_FALL + 0.01) / 3.0 + 1e-4,
+            "the glide cap: {}",
+            p.vy
+        );
         assert_eq!(p.fall_start, (p.y / TILE_PX) as i32, "the origin refreshes");
     }
 
