@@ -302,7 +302,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         break_tile(app, x, y);
     }
     for (x, y, kind) in std::mem::take(&mut app.dev_place) {
-        if edit::place_tile(&mut app.world, x, y, kind) {
+        let placed = edit::place_tile(&mut app.world, x, y, kind);
+        if placed {
+            app.queue_map_ring(x, y);
             app.liquids.wake_around(&app.world, x, y, 3);
             app.world_key = None;
         }
@@ -1909,6 +1911,7 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_x: t.frame_x,
             frame_y: t.frame_y,
         });
+    app.queue_map_ring(tx, ty);
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };

@@ -53,6 +53,25 @@ fn enumerate_item_icon_ids(images_dir: &Path) -> Vec<u16> {
     ids
 }
 
+/// The `Images/Buff_<id>.xnb` icon ids (`enumerate_item_icon_ids`'s shape).
+fn enumerate_buff_icon_ids(images_dir: &Path) -> Vec<u16> {
+    let Ok(entries) = std::fs::read_dir(images_dir) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<u16> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            let id = name.strip_prefix("Buff_")?.strip_suffix(".xnb")?;
+            id.parse::<u16>().ok()
+        })
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
 /// The two halves of the atlas content: the world-derived sheets (the tile and
 /// wall sheets this world's usage scan asked for) and the world-independent
 /// ones (backgrounds, NPCs, items, UI, …).
@@ -998,6 +1017,20 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
             Err(_) => failed_items.push(id),
         }
     }
+
+    // The buff icons (`TextureAssets.Buff[type]`, `Images/Buff_<id>`): the
+    // `Main.DrawBuffIcon` source (`Main.cs:43310`). Enumerated like the
+    // items — a missing file just leaves that id's icon unpicked.
+    let buff_ids = enumerate_buff_icon_ids(dir);
+    let buff_images: Vec<(u16, Result<AtlasImage>)> = buff_ids
+        .par_iter()
+        .map(|&id| (id, load_png(dir, &format!("Buff_{id}"), SheetLayout::Raw)))
+        .collect();
+    for (id, result) in buff_images {
+        if let Ok(img) = result {
+            images.push(img);
+        }
+    }
     if !failed_items.is_empty() {
         log::warn!(
             "{} item icons failed to decode (first 10: {:?})",
@@ -1576,6 +1609,9 @@ pub struct Lookups {
     pub npc_heads: Vec<Option<tr_render::SheetRect>>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
+    /// `TextureAssets.Buff[type]` (`Images/Buff_<id>`): the buff bar's icons
+    /// (`Main.DrawBuffIcon`, `Main.cs:43310`).
+    pub buff_icons: HashMap<u16, tr_render::SheetRect>,
     /// `Fonts/Mouse_Text` for UI labels and item names.
     pub ui_font: Option<UiFont>,
     /// `Fonts/Item_Stack` for stack counts and slot numbers.
@@ -1928,6 +1964,13 @@ impl Lookups {
                 .iter()
                 .filter_map(|(name, rect)| {
                     Some((name.strip_prefix("Item_")?.parse::<u16>().ok()?, *rect))
+                })
+                .collect(),
+            buff_icons: atlas
+                .sheets
+                .iter()
+                .filter_map(|(name, rect)| {
+                    Some((name.strip_prefix("Buff_")?.parse::<u16>().ok()?, *rect))
                 })
                 .collect(),
             ui_heart: atlas.sheet("Heart").copied(),

@@ -783,6 +783,16 @@ pub struct Player {
     /// `Main.UpdateWorld_Players` refills the three pools
     /// (`Main.cs:17869-17873`).
     pub creative_god_mode: bool,
+    /// `Player.immune` (`Player.cs:2636`-ish): the spawn i-frames flag —
+    /// true while `immuneTime` counts down (`UpdateImmunity`,
+    /// `Player.cs:18856-18869`).
+    pub immune: bool,
+    /// `Player.immuneTime`: 180 on the death revive, 60 on the other spawn
+    /// contexts (`Player.cs:37661-37668`).
+    pub immune_time: i32,
+    /// `Player.immuneNoBlink` (`:37669-37671`): true while the i-frames run
+    /// and the player is not hostile (the PVP flag — always false here).
+    pub immune_no_blink: bool,
     /// `Player.tileRangeX/Y`'s journey half (`Player.cs:18815-18828`): the
     /// `FarPlacementRangePower` toggle that doubles the default 5/3 range.
     pub far_placement_range: bool,
@@ -1358,6 +1368,9 @@ impl Player {
             hide_visible_accessory: [false; 10],
             dead_time: 0,
             respawn_timer: 0,
+            immune: false,
+            immune_time: 0,
+            immune_no_blink: false,
             minion_attack_target_npc: -1,
             tag_effects: crate::tag_effects::TagEffectStack::default(),
             prev_jump_input: false,
@@ -2028,7 +2041,18 @@ impl Player {
         self.sliding = false;
         self.sand_storm = false;
         self.carpet_frame = -1;
-        self.hp = self.max_hp;
+        // `Player.Spawn`'s revive life (`Player.cs:37598-37608`): the pool
+        // is `max(statLifeMax, statLifeMax2)` — the port's single `max_hp`
+        // is the effective max — and the life is `max(pool / 2, 100)`. A
+        // fresh 100-life character revives FULL; the `spawnMax` Journey arm
+        // (`:37609-37611`) has no port counterpart.
+        self.hp = (self.max_hp / 2).max(100).min(self.max_hp.max(100));
+        // `:37614-37618`: the i-frames — `immune = true`, the context arm
+        // below lands 180 (the port's respawn is always the death revive;
+        // the 60 arm rides the other `PlayerSpawnContext`s).
+        self.immune = true;
+        self.immune_time = 180;
+        self.immune_no_blink = true;
         self.hurt_cd = 0.0;
         // `UpdateDead`'s brain-counter zero (`Player.cs:16932`): the death tail
         // clears the animation window with the rest of the per-life state.
@@ -2159,10 +2183,20 @@ impl Player {
     }
 
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
-    /// 90-tick lockout, with no boss hindering and no danger NPCs nearby.
-    /// `ghost`/`pvpDeath`/event branches are unreachable in the port.
-    pub fn allows_respawn_timer_skip(&self, boss_near: bool, danger_near: bool) -> bool {
-        !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near)
+    /// 90-tick lockout, with no boss hindering, no danger NPCs nearby and
+    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The
+    /// `ghost`/`pvpDeath` branches stay unreachable in the port.
+    pub fn allows_respawn_timer_skip(
+        &self,
+        boss_near: bool,
+        danger_near: bool,
+        moon_event_live: bool,
+    ) -> bool {
+        !(self.ghost_like()
+            || self.dead_time < 90
+            || boss_near
+            || danger_near
+            || moon_event_live)
     }
 
     /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
@@ -2174,7 +2208,13 @@ impl Player {
     /// respawn decrement clamped to `respawnTimerMax` (3600), and the
     /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
     /// player should respawn now.
-    pub fn update_dead(&mut self, jump: bool, boss_near: bool, danger_near: bool) -> bool {
+    pub fn update_dead(
+        &mut self,
+        jump: bool,
+        boss_near: bool,
+        danger_near: bool,
+        moon_event_live: bool,
+    ) -> bool {
         self.dead_time += 1;
         self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
         // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
@@ -2184,7 +2224,7 @@ impl Player {
         self.slots_minions = 0.0;
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
-        let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near);
+        let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
         if can_skip && jump_edge && self.respawn_timer > 0 {
             return true;
         }
@@ -2198,6 +2238,59 @@ impl Player {
         self.dead_time = 0;
         self.respawn_timer = 0;
         self.respawn();
+    }
+
+    /// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
+    /// right-click removal — non-debuffs only, and not Petrified 60 /
+    /// Webbed 151; the mount's own buff dismounts instead of removing the
+    /// buff (`Mount.CheckBuff`, `Mount.cs` — `data.buff == b`). The
+    /// `TryRemovingBuff_CheckBuffHideMisc` arms (`:43391-43402`) ride the
+    /// misc-equips pets (unported). Returns whether the arm entered (the
+    /// caller plays `SoundEngine.PlaySound(12)`'s MenuTick cue).
+    pub fn try_removing_buff(&mut self, i: usize, b: i32) -> bool {
+        if !crate::buffs::is_debuff(b) && b != 60 && b != 151 {
+            if self.mount.is_active() && self.mount.data().map(|d| d.buff) == Some(b) {
+                if let Some(buff) = self.mount.dismount() {
+                    self.clear_buff_type(buff);
+                }
+            } else {
+                self.buffs.del_buff(i);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// `GetNurseHealCost`'s slot count (`Main.cs:40058-40065`): a debuff
+    /// slot counts when `Main.debuff[b] && buffTime > 60 &&
+    /// !NurseCannotRemoveDebuff[b]`.
+    pub fn remountable_debuff_count(&self) -> i32 {
+        let mut count = 0;
+        for i in 0..crate::buffs::MAX_BUFFS {
+            let b = self.buffs.buff_type[i];
+            if crate::buffs::is_debuff(b)
+                && self.buffs.buff_time[i] > 60
+                && !crate::buffs::nurse_cannot_remove(b)
+            {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// `NPCChatText_DoNurseHeal`'s removal pass (`Main.cs:40147`): the
+    /// debuff slots with `buffTime > 0` and the Nurse's protected list
+    /// clear.
+    pub fn clear_nurse_removable_debuffs(&mut self) {
+        for i in 0..crate::buffs::MAX_BUFFS {
+            let b = self.buffs.buff_type[i];
+            if crate::buffs::is_debuff(b)
+                && self.buffs.buff_time[i] > 0
+                && !crate::buffs::nurse_cannot_remove(b)
+            {
+                self.buffs.clear_buff(b);
+            }
+        }
     }
 
     /// `Player.ResetProjectileCaches` (`Player.cs:12217-12226`): the recount
@@ -2427,6 +2520,7 @@ impl Player {
         }
     }
 
+<<<<<<< HEAD
     /// Contact damage / future combat. Returns true when the hit was accepted,
     /// false when it was dodged or swallowed. `rng` is the caller's active
     /// stream (the C# dodge rolls draw from `Main.rand`, the S1-A-10 contract)
@@ -2442,12 +2536,15 @@ impl Player {
         self.hurt_inner(amount, from_x, true, rng, dodgeable)
     }
 
-    /// `Player.SetImmuneTimeForAllTypes` (`Player.cs:38013-38021`): the port's
-    /// collapsed General cooldown carries the whole write — `immune`/`immuneTime`
-    /// have no port fields (the M4-HAZARD-1 admission) — and the per-cooldown
-    /// array is the one `hurt_cd`. The dodge handlers pass the 120/80 pair
+    /// `Player.SetImmuneTimeForAllTypes` (`Player.cs:38013-38021`): the whole
+    /// write rides the port's fields — `immune = true` + `immuneTime = time`
+    /// (the fields R-03-5 ported; `immuneNoBlink` stays untouched, like the
+    /// C#) and the per-cooldown array collapsed onto the one `hurt_cd` (the
+    /// M4-HAZARD-1 admission). The dodge handlers pass the 120/80 pair
     /// directly; `iframes_for` (the normal-hurt window) is not involved.
     fn set_immune_time_for_all_types(&mut self, time: i32) {
+        self.immune = true;
+        self.immune_time = time;
         self.hurt_cd = time as f32 / 60.0;
     }
 
@@ -2486,6 +2583,21 @@ impl Player {
     /// 100x dust + gore burst is deferred to S1-E-1.
     fn ninja_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
+    }
+
+    /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
+    /// countdown — `immune` clears at 0 and `immuneNoBlink` rides with it;
+    /// the `immuneAlpha` blinkVisual half is draw-side and stays out.
+    /// (R-03-5's port; the dodge handlers above write the same fields via
+    /// `SetImmuneTimeForAllTypes`, so both windows decay through here.)
+    pub fn update_immunity(&mut self) {
+        if self.immune {
+            self.immune_time -= 1;
+            if self.immune_time <= 0 {
+                self.immune = false;
+                self.immune_no_blink = false;
+            }
+        }
     }
 
     /// The shared hurt body. `knock_back` mirrors the original's
@@ -2530,6 +2642,12 @@ impl Player {
         // journey godmode power swallows the hit outright — before the
         // iframes, the defense reduction and the knockback.
         if self.creative_god_mode {
+            return false;
+        }
+        // `Player.Hurt`'s General-cooldown gate (`Player.cs:38210-38216`):
+        // the port's single damage lane rides `ImmunityCooldownID.General`,
+        // whose flag is `!immune` — the spawn i-frames swallow the hit.
+        if self.immune {
             return false;
         }
         if self.hurt_cd > 0.0 || self.hp <= 0 {
@@ -2830,6 +2948,9 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.Update` → `UpdateImmunity` (`Player.cs:25456`): the spawn
+        // i-frames count down before the AI.
+        self.update_immunity();
         // `Player.cs:25625-25628`: the Cute Fishron's special window decays
         // one per tick; `Mount.UpdateEffects` re-arms it later in the tick.
         if self.mount_fishron_special_counter > 0.0 {
@@ -7448,7 +7569,7 @@ mod tests {
         // the last tick reports the respawn.
         let mut revived_at = None;
         for tick in 0..700 {
-            if p.update_dead(false, false, false) {
+            if p.update_dead(false, false, false, false) {
                 revived_at = Some(tick);
                 break;
             }
@@ -7468,9 +7589,115 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, true, true);
         p.respawn_timer = 4000; // the save-load can exceed the cap
-        p.update_dead(false, false, false);
+        p.update_dead(false, false, false, false);
         // The clamp catches the decrement result (Player.cs:17049).
         assert_eq!(p.respawn_timer, 3600);
+    }
+
+    #[test]
+    fn respawn_life_is_half_the_pool_floored_at_100() {
+        // `Player.cs:37598-37608`: the pool is `max(statLifeMax,
+        // statLifeMax2)` — the port's single `max_hp` is the effective max —
+        // and the life is `max(pool / 2, 100)`: a fresh 100-life character
+        // revives FULL, 400 revives at 200.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.max_hp = 400;
+        p.hp = 0;
+        p.respawn();
+        assert_eq!(p.hp, 200);
+        assert_eq!(p.breath, BREATH_MAX);
+        // The i-frames (`:37614-37618` + `:37661-37668`): the death revive
+        // arms 180 with `immuneNoBlink` (the player is never hostile here).
+        assert!(p.immune);
+        assert_eq!(p.immune_time, 180);
+        assert!(p.immune_no_blink);
+    }
+
+    #[test]
+    fn spawn_iframes_swallow_hits_and_expire() {
+        // `Player.cs:38210-38216`: the General cooldown flag is `!immune` —
+        // the spawn i-frames swallow the hit; `UpdateImmunity`
+        // (`:18856-18869`) clears it at 0 and the damage lands again.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.respawn();
+        assert!(!p.hurt(50, 0.0), "the i-frames swallow the hit");
+        p.immune_time = 1;
+        p.update_immunity();
+        assert!(!p.immune, "the countdown cleared the flag");
+        assert!(!p.immune_no_blink);
+        assert!(p.hurt(50, 0.0), "the damage lands after the i-frames");
+    }
+
+    #[test]
+    fn the_nurse_skips_protected_debuffs_in_both_gates() {
+        // `BuffID.Sets.NurseCannotRemoveDebuff` (`BuffID.cs:52`): the
+        // protected Potion Sickness 21 neither counts in the price
+        // (`Main.cs:40061-40064`, the `> 60` time gate too) nor clears at
+        // the heal (`:40147`); the unprotected Poisoned 20 does both.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(21, 3600); // protected
+        p.buffs.add_buff(20, 3600); // removable
+        assert_eq!(p.remountable_debuff_count(), 1, "the protected one stays out of the price");
+        p.clear_nurse_removable_debuffs();
+        assert!(p.buffs.find_buff_index(21).is_some(), "the protected one survives");
+        assert_eq!(p.buffs.find_buff_index(20), None, "the removable clears");
+    }
+
+    #[test]
+    fn the_nurse_price_ignores_young_debuffs() {
+        // `Main.cs:40062`: the cost counts only `buffTime > 60` slots; the
+        // removal (`:40147`) takes any `buffTime > 0`.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(20, 50); // under the 60-tick price gate
+        assert_eq!(p.remountable_debuff_count(), 0);
+        p.buffs.buff_time[p.buffs.find_buff_index(20).unwrap()] = 1;
+        p.clear_nurse_removable_debuffs();
+        assert_eq!(p.buffs.find_buff_index(20), None, "the removal clears at time 1");
+    }
+
+    #[test]
+    fn buff_removal_refuses_debuffs_and_dels_the_rest() {
+        // `Main.cs:43370-43389`: the non-debuff arm dels the slot; a debuff
+        // (or 60/151) refuses.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(5, 3600); // Ironskin — a non-debuff
+        p.buffs.add_buff(20, 3600); // Poisoned — a debuff
+        let poison = p.buffs.find_buff_index(20).unwrap();
+        let iron = p.buffs.find_buff_index(5).unwrap();
+        assert!(!p.try_removing_buff(poison, 20), "a debuff refuses");
+        assert!(p.try_removing_buff(iron, 5), "the non-debuff removes");
+        assert_eq!(p.buffs.find_buff_index(5), None);
+    }
+
+    #[test]
+    fn buff_removal_dismounts_the_mount_buff_without_del() {
+        // `Main.cs:43376-43380`: the mount's own buff (`Mount.CheckBuff` =
+        // `data.buff == b`) dismounts and clears the buff — no `DelBuff`.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.mount_cart();
+        let mount_buff = p.mount.data().unwrap().buff;
+        p.buffs.add_buff(mount_buff, 3600);
+        let slot = p.buffs.find_buff_index(mount_buff).unwrap();
+        assert!(p.try_removing_buff(slot, mount_buff), "the arm entered");
+        assert!(!p.mount.is_active(), "the mount dismounted");
+    }
+
+    #[test]
+    fn the_moon_events_block_the_respawn_skip() {
+        // `Player.cs:38984-38986`: `Main.snowMoon || Main.pumpkinMoon ||
+        // DD2Event.Ongoing` refuses the timer skip.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.dead_time = 200;
+        p.respawn_timer = 600;
+        assert!(p.allows_respawn_timer_skip(false, false, false));
+        assert!(!p.allows_respawn_timer_skip(false, false, true));
     }
 
     /// BUG-06b: `Player.NearAnyNPCsThatBlockRespawn` (`Player.cs:38987-39018`)
@@ -7501,8 +7728,8 @@ mod tests {
         assert!(!p.near_any_npcs_that_block_respawn(&[far], true));
         // The gate itself: a nearby danger NPC vetoes the skip.
         p.dead_time = 200;
-        assert!(p.allows_respawn_timer_skip(false, false));
-        assert!(!p.allows_respawn_timer_skip(false, true));
+        assert!(p.allows_respawn_timer_skip(false, false, false));
+        assert!(!p.allows_respawn_timer_skip(false, true, false));
     }
 
     #[test]
@@ -7513,13 +7740,13 @@ mod tests {
         // Inside the 90-tick lockout: no skip even on the jump edge (the
         // held jump's edge is consumed while the lockout runs).
         for _ in 0..89 {
-            assert!(!p.update_dead(true, false, false));
+            assert!(!p.update_dead(true, false, false, false));
         }
         // The lockout expired but the held jump has no fresh edge; a release
         // and a new press do.
-        assert!(!p.update_dead(true, false, false));
-        assert!(!p.update_dead(false, false, false));
-        assert!(p.update_dead(true, false, false));
+        assert!(!p.update_dead(true, false, false, false));
+        assert!(!p.update_dead(false, false, false, false));
+        assert!(p.update_dead(true, false, false, false));
     }
 
     #[test]
@@ -7528,10 +7755,10 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(false, false, false);
+            p.update_dead(false, false, false, false);
         }
-        assert!(!p.allows_respawn_timer_skip(true, false));
-        assert!(p.allows_respawn_timer_skip(false, false));
+        assert!(!p.allows_respawn_timer_skip(true, false, false));
+        assert!(p.allows_respawn_timer_skip(false, false, false));
     }
 
     #[test]
@@ -7542,13 +7769,13 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(true, false, false);
+            p.update_dead(true, false, false, false);
         }
         // The held jump consumed its edge at the lockout expiry...
-        assert!(!p.update_dead(true, false, false));
+        assert!(!p.update_dead(true, false, false, false));
         // ...release and press again: the edge fires.
-        p.update_dead(false, false, false);
-        assert!(p.update_dead(true, false, false));
+        p.update_dead(false, false, false, false);
+        assert!(p.update_dead(true, false, false, false));
     }
 
     use super::*;

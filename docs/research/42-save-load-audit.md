@@ -242,7 +242,7 @@ boundary (`App::swap_world`), so a background *parse* is possible but adds littl
    Severity: **behavioural** (a vanilla client reads a different seed/GUID/world id)
    but harmless inside the port. The deviations are documented per line in the Rust
    source; the ROADMAP row does not mention them.
-3. **No rolling backups, no `.bak`, no post-write validation** вЂ” the C# keeps up
+3. **No rolling backups, no `.bak`, no post-write validation** — **CLOSED 2026-11-13** (`S1-J-4-bak-backups`: the post-write walk + the rolling rotation with the C#'s own slot numbering — the bare `.bak` is slot 1, the numbered slots start at `.bak2`) вЂ” the C# keeps up
    to 9 numbered backups (`DoRollingBackups:966-1004`) and re-reads the file to
    validate it, restoring the `.bak` on failure (`InternalSaveWorld:941-962`).
    The port writes tmp+rename only (`wld::save:319-321`).
@@ -263,7 +263,7 @@ boundary (`App::swap_world`), so a background *parse* is possible but adds littl
    the faithful single-player reduction, and `save_world` covers world + player
    + map.
 7. **The port has two world formats** (`.wld` vanilla-shaped and `.trwld` native),
-   chosen by file extension at save time (`saveglue.rs:27-28`) вЂ” the vanilla's
+   chosen by file extension at save time — **CLOSED as the documented contract 2026-11-13** (S1-J-8: "The world-format contract (S1-J-8)" in ANALYSIS — `.trwld` canonical, `.wld` interchange, the doubling bounded). Original text: вЂ” the vanilla's
    single `.wld` is split. Severity: **cosmetic/architectural**, but it doubles the
    save surface for Stage-2 (two compressors, two readers).
 8. The C#'s "temp" save snapshot (day/time/weather restored on load) — CLOSED

@@ -8,6 +8,7 @@
 //! methods, in the original call order.
 
 pub(crate) mod camera;
+pub(crate) mod gfx_quality;
 pub(crate) mod clock;
 pub(crate) mod editing;
 pub(crate) mod extract;

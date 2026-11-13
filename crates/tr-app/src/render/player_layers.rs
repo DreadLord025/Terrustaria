@@ -310,6 +310,29 @@ pub(crate) fn shoulder_over_front_arm(frame: u32) -> bool {
     !matches!(frame, 1 | 2 | 5)
 }
 
+/// `ArmorIDs.Body.Sets.showsShouldersWhileJumping` (`ID/ArmorIDs.cs:714`) — the
+/// body ids whose composite shoulders stay visible while jumping. The set is
+/// unordered; the list is sorted for readability.
+const SHOWS_SHOULDERS_WHILE_JUMPING: [i16; 34] = [
+    24, 46, 54, 55, 56, 65, 66, 67, 69, 70, 71, 73, 75, 92, 95, 105, 106, 175, 176, 177, 182, 183,
+    187, 190, 194, 197, 198, 201, 204, 226, 227, 229, 239, 259,
+];
+
+/// `PlayerDrawSet.cs:1933-1937` + `:1984-1987`: `flag` is
+/// `ArmorIDs.Body.Sets.showsShouldersWhileJumping[body]`, and on body row 5 an
+/// armor that does NOT show its shoulders while jumping raises
+/// `hideCompositeShoulders` (`:1932` clears the flag; `:1940`/`:1944` raise it
+/// for a coat / a front accessory — the port has neither). The vanilla then
+/// skips the shoulder pieces (`PlayerDrawLayers.cs:1307` the back shoulder,
+/// `:3624` the front shoulder). Row 5 is the falling pose, so a worn chest
+/// armor loses its shoulders on every fall.
+pub(crate) fn hide_composite_shoulders(body_frame: u32, body_armor: i16) -> bool {
+    if body_frame != 5 || body_armor < 0 {
+        return false;
+    }
+    !SHOWS_SHOULDERS_WHILE_JUMPING.contains(&body_armor)
+}
+
 /// The raw `OffsetsPlayerHeadgear` table row — Y is 0 exactly at rows 7-9 and
 /// 14-16, 2 elsewhere (`Main.cs:66638-66662`).
 pub(crate) fn headgear_offset(frame: u32) -> f32 {
@@ -643,23 +666,26 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         back_rotation,
         tint(s.light, SKIN),
     );
-    // `DrawPlayer_12_SkinComposite_BackArmShirt`'s `!flag3` block
-    // (`PlayerDrawLayers.cs:1353-1362`): the under-skin layer (5, body skin)
-    // then the under-shirt sleeve (8, `colorUnderShirt`). The pre-fix draw
-    // skipped `Players[8]`, so the sleeve area showed skin instead.
+    // The under-skin layer (`Players[skinVar, 5]`, body-skin tint) rides on
+    // BOTH armor paths, right behind the arm skin: with a chest armor the
+    // `flag2 && missingArm` block draws it (`PlayerDrawLayers.cs:1294-1302` -
+    // `missingArm` is true for every body id but 83, `PlayerDrawSet.cs:
+    // 377-384`), without one the `!flag6` block draws it (`:1346-1353`). The
+    // pre-fix draw skipped it under armor, so the armor's under-arm art showed
+    // through where the vanilla paints the skin.
     push_part(
         &mut out,
         PlayerPart::BackUnder,
-        if s.body_armor >= 0 {
-            None
-        } else {
-            a.undershirt
-        },
+        a.undershirt,
         |t| flip_uv(player_cell_uv(t, back_cell.0, back_cell.1), flip),
         back_pos,
         back_rotation,
         tint(s.light, SKIN),
     );
+    // The under-shirt sleeve (`Players[8]`, `colorUnderShirt`) and the shirt
+    // sleeve (`Players[13]`) live in the `!flag3` block
+    // (`PlayerDrawLayers.cs:1355-1360`), so a chest armor drops them: the
+    // armor pieces replace them.
     push_part(
         &mut out,
         PlayerPart::BackUnderArm,
@@ -669,9 +695,6 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         back_rotation,
         tint(s.light, UNDER_SHIRT),
     );
-    // With chest armor the sleeve is not drawn (`if (!flag3)`): the armor
-    // pieces replace it — back shoulder at the body anchor, back arm over the
-    // skin arm (`PlayerDrawLayers.cs:1298-1320`).
     push_part(
         &mut out,
         PlayerPart::BackSleeve,
@@ -681,21 +704,28 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         back_rotation,
         tint(s.light, SHIRT),
     );
+    // The armor pieces close the back-arm stack: the back shoulder at the
+    // body anchor and the back arm over the skin arm
+    // (`PlayerDrawLayers.cs:1304-1333`, the `DrawCompositeArmorPiece` calls
+    // at `:1309` and `:1322`). The shoulder is skipped when
+    // `hideCompositeShoulders` is raised (`:1307`).
     if s.body_armor >= 0 {
-        push_part(
-            &mut out,
-            PlayerPart::BackShoulderArmor,
-            a.armor_body.get(s.body_armor as usize).copied().flatten(),
-            |t| {
-                flip_uv(
-                    player_cell_uv(t, BACK_SHOULDER_CELL.0, BACK_SHOULDER_CELL.1),
-                    flip,
-                )
-            },
-            part_pos(s, shift, [0.0, 0.0], 0.0),
-            0.0,
-            tint(s.light, ARMOR_WHITE),
-        );
+        if !hide_composite_shoulders(s.body_frame, s.body_armor) {
+            push_part(
+                &mut out,
+                PlayerPart::BackShoulderArmor,
+                a.armor_body.get(s.body_armor as usize).copied().flatten(),
+                |t| {
+                    flip_uv(
+                        player_cell_uv(t, BACK_SHOULDER_CELL.0, BACK_SHOULDER_CELL.1),
+                        flip,
+                    )
+                },
+                part_pos(s, shift, [0.0, 0.0], 0.0),
+                0.0,
+                tint(s.light, ARMOR_WHITE),
+            );
+        }
         push_part(
             &mut out,
             PlayerPart::BackArmArmor,
@@ -938,14 +968,38 @@ fn arm_stack(
     };
     let mut out = Vec::with_capacity(5);
     for (part, tex, color) in [
-        (base, a.arm, tint(s.light, SKIN)),
+        (
+            base,
+            // `DrawPlayer_28_ArmOverItemComposite`'s armor branch
+            // (`PlayerDrawLayers.cs:3600-3661`) paints the skin arm
+            // (`Players[7]` at the ARM frame, `:3611` - drawn because
+            // `missingArm` is true for every body id but 83, `PlayerDrawSet.cs:
+            // 377-384`) and the hand (`Players[9]`, `:3618`), but never a skin
+            // piece at the SHOULDER frame: the shoulder skin
+            // (`Players[7]` at `compFrontShoulderFrame`) only exists in the
+            // no-armor branch (`:3670`). Under a chest armor the shoulder
+            // slot carries the armor piece alone - the pre-fix draw kept the
+            // skin, so a bare shoulder stripe showed through the armor.
+            if shoulder && s.body_armor >= 0 {
+                None
+            } else {
+                a.arm
+            },
+            tint(s.light, SKIN),
+        ),
         (
             if shoulder {
                 PlayerPart::FrontShoulderArmor
             } else {
                 PlayerPart::FrontArmArmor
             },
-            armor_tex,
+            // The shoulder piece is skipped when `hideCompositeShoulders` is
+            // raised (`PlayerDrawLayers.cs:3624`).
+            if shoulder && hide_composite_shoulders(s.body_frame, s.body_armor) {
+                None
+            } else {
+                armor_tex
+            },
             tint(s.light, ARMOR_WHITE),
         ),
         (
@@ -1807,6 +1861,76 @@ mod tests {
         assert!(parts(&plain).contains(&PlayerPart::Shirt));
         assert!(parts(&plain).contains(&PlayerPart::Hair));
         assert!(!parts(&plain).contains(&PlayerPart::Helmet));
+    }
+
+    #[test]
+    fn s1_g_15_the_back_arm_keeps_the_under_skin_layer_under_a_chest_armor() {
+        // `PlayerDrawLayers.cs:1294-1302`: the `Players[5]` under-skin layer
+        // is drawn on the ARMOR path too - the `flag2 && missingArm` block
+        // paints it behind the arm skin, and `missingArm` is true for every
+        // body id but 83 (`PlayerDrawSet.cs:377-384`). The pre-fix draw
+        // skipped it under armor, so the armor's under-arm art showed through
+        // where the vanilla paints the skin.
+        let (a, s) = armored();
+        let body = body_layers(&s, &a);
+        let idx = |p: PlayerPart| body.iter().position(|sp| sp.part == p);
+        assert!(parts(&body).contains(&PlayerPart::BackUnder));
+        assert!(idx(PlayerPart::BackArmSkin) < idx(PlayerPart::BackUnder));
+        assert!(idx(PlayerPart::BackUnder) < idx(PlayerPart::BackShoulderArmor));
+        assert!(idx(PlayerPart::BackShoulderArmor) < idx(PlayerPart::BackArmArmor));
+        // The under-shirt sleeve and the shirt sleeve stay armor-only skips
+        // (`PlayerDrawLayers.cs:1355-1360`, the `!flag3` block).
+        assert!(!parts(&body).contains(&PlayerPart::BackUnderArm));
+        assert!(!parts(&body).contains(&PlayerPart::BackSleeve));
+    }
+
+    #[test]
+    fn s1_g_15_the_front_shoulder_skin_drops_under_a_chest_armor() {
+        // `DrawPlayer_28_ArmOverItemComposite`'s armor branch
+        // (`PlayerDrawLayers.cs:3600-3661`) paints the skin arm at the ARM
+        // frame (`:3611`) and the armor pieces; the shoulder-frame skin
+        // (`Players[7]` at `compFrontShoulderFrame`) only exists in the
+        // no-armor branch (`:3670`). The pre-fix draw kept it, so a bare
+        // shoulder stripe showed through the armor.
+        let (a, s) = armored();
+        let arms = front_arm_layers(&s, &a);
+        assert!(!parts(&arms).contains(&PlayerPart::FrontShoulderSkin));
+        assert!(parts(&arms).contains(&PlayerPart::FrontArmSkin));
+        let idx = |p: PlayerPart| arms.iter().position(|sp| sp.part == p);
+        // Row 0 keeps `compShoulderOverFrontArm`: the C#'s `i` loop draws the
+        // arm skin and then the armor arm (`i == num3 == 0`), and the armor
+        // shoulder last (`i == num2 == 1`).
+        assert!(idx(PlayerPart::FrontArmSkin) < idx(PlayerPart::FrontArmArmor));
+        assert!(idx(PlayerPart::FrontArmArmor) < idx(PlayerPart::FrontShoulderArmor));
+        // Row 1 clears it: the armor shoulder (`i == num2 == 0`) comes first.
+        let s1 = PlayerCompositeState { body_frame: 1, ..s };
+        let arms1 = front_arm_layers(&s1, &a);
+        let idx1 = |p: PlayerPart| arms1.iter().position(|sp| sp.part == p);
+        assert!(!parts(&arms1).contains(&PlayerPart::FrontShoulderSkin));
+        assert!(idx1(PlayerPart::FrontShoulderArmor) < idx1(PlayerPart::FrontArmSkin));
+        assert!(idx1(PlayerPart::FrontArmSkin) < idx1(PlayerPart::FrontArmArmor));
+    }
+
+    #[test]
+    fn s1_g_15_the_shoulders_hide_on_the_falling_row_under_a_chest_armor() {
+        // `PlayerDrawSet.cs:1933-1937` + `:1984-1987`: on body row 5 an armor
+        // that does not show its shoulders while jumping raises
+        // `hideCompositeShoulders`, and the vanilla then skips the shoulder
+        // pieces (`PlayerDrawLayers.cs:1307` the back shoulder, `:3624` the
+        // front one). None of the port's armor ids (1-4) is in
+        // `showsShouldersWhileJumping` (`ID/ArmorIDs.cs:714`), so a worn
+        // chest armor loses its shoulders on the falling row.
+        assert!(hide_composite_shoulders(5, 1));
+        assert!(!hide_composite_shoulders(0, 1));
+        assert!(!hide_composite_shoulders(5, -1));
+        let (a, s) = armored();
+        let s5 = PlayerCompositeState { body_frame: 5, ..s };
+        let body = body_layers(&s5, &a);
+        assert!(!parts(&body).contains(&PlayerPart::BackShoulderArmor));
+        assert!(parts(&body).contains(&PlayerPart::BackArmArmor));
+        let arms = front_arm_layers(&s5, &a);
+        assert!(!parts(&arms).contains(&PlayerPart::FrontShoulderArmor));
+        assert!(parts(&arms).contains(&PlayerPart::FrontArmArmor));
     }
 
     #[test]

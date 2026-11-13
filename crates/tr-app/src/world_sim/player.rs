@@ -315,13 +315,31 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             let boss_near = p.boss_hinders(&app.npcs);
             let invasion_live = app.world.invasion_size > 0;
             let danger_near = p.near_any_npcs_that_block_respawn(&app.npcs, invasion_live);
-            app.respawn_skip_available = p.allows_respawn_timer_skip(boss_near, danger_near);
+            // `Main.snowMoon || Main.pumpkinMoon || DD2Event.Ongoing`
+            // (`Player.cs:38984-38986`).
+            let moon_event_live = app.world.snow_moon
+                || app.world.pumpkin_moon
+                || app.world.dd2_event_ongoing;
+            app.respawn_skip_available =
+                p.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
                 respawn_now =
-                    p.update_dead(input.jump, boss_near, danger_near) || respawn_now;
+                    p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
+                        || respawn_now;
                 p.reset_projectile_caches();
                 p.update_projectile_caches(&app.projectiles);            });
+            // The buff bar's removal requests (`Main.TryRemovingBuff`,
+            // `Main.cs:43348`'s draw-pass mutation — the draw pushed the
+            // slots, the tick applies them): non-debuffs only, the mount's
+            // own buff dismounts, and `SoundEngine.PlaySound(12)` is the
+            // MenuTick cue.
+            for slot in std::mem::take(&mut app.buff_removals) {
+                let bt = p.buffs.buff_type[slot];
+                if p.try_removing_buff(slot, bt) {
+                    app.audio.play("Menu_Tick");
+                }
+            }
             if respawn_now {
                 // `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
                 // a broken bed or an invalid room reverts the spawn to the

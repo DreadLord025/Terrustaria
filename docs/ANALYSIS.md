@@ -10569,6 +10569,74 @@ dry gates are always open. `gravDir == -1` arms are coded as the `== 1` value on
 port has no gravity flip. The armour-set dust/VFX side effects inside `PlayerFrame`
 (`:35819-36140`, ~400 lines of per-set particles) stay with the armour tasks.
 
+## The composite arm stacks (S1-G-15, 2026-11-13)
+
+The player's two composite arm stacks are built from the same `PlayerDrawSet`
+cells, but the C# draws them in two different places, and the two places
+disagree on what a chest armor replaces. The port had merged both into one
+"arm stack" helper, so two layers came out missing and a third was drawn that
+the vanilla never draws.
+
+**The back arm** — `DrawPlayer_12_SkinComposite_BackArmShirt`
+(`PlayerDrawLayers.cs:1260-1393`). The vanilla draws the `Players[skinVar, 5]`
+under-skin layer on BOTH armor paths: with a chest armor the
+`flag2 && missingArm` block paints it right behind the arm skin
+(`:1294-1302`), without one the `!flag6` block paints it (`:1346-1353`).
+`missingArm` is true for every body id except 83 (`PlayerDrawSet.cs:377-384`),
+so the armor path is the normal one. The port dropped the layer under armor
+(the `BackUnder` push was gated on `body_armor < 0`), so the armor's
+under-arm art showed through where the vanilla paints the skin. The
+under-shirt sleeve (`Players[8]`) and the shirt sleeve (`Players[13]`) do
+live in the `!flag3` block (`:1355-1360`), so those two stay armor-only skips.
+
+**The front arm** — `DrawPlayer_28_ArmOverItemComposite`
+(`PlayerDrawLayers.cs:3576-3737`). Its armor branch paints the skin arm
+(`Players[7]`) at the ARM frame (`:3611`) and the hand (`Players[9]`, `:3618`
+— the `missingHand` list of `PlayerDrawSet.cs:373`) — but never a skin piece
+at the SHOULDER frame: the shoulder skin only exists in the no-armor branch
+(`:3670`). The port's shared stack helper painted the shoulder skin in both
+cases, so a bare shoulder stripe showed through the armor.
+
+The C#'s `i`-loop order is reproduced verbatim: `num2`/`num3`/`num4` pick the
+shoulder slot, the arm slot and the skin slot out of the two passes, so row 0
+(`compShoulderOverFrontArm`) gives skin arm → armor arm → armor shoulder, and
+rows 1/2/5 give armor shoulder → skin arm → armor arm.
+
+The port's armor slots are the vanilla body ids 1-4 (copper/iron/silver/gold —
+the `body_slot` of the worn chest piece, `render/entities.rs:1378`); none of
+them is in the `missingHand` list, so the `Players[9]` hand layer is correctly
+absent for the port's armors.
+
+**The shoulders on the falling row** — `PlayerDrawSet.cs:1933-1937` reads
+`ArmorIDs.Body.Sets.showsShouldersWhileJumping[body]` into `flag`, and the
+body-row-5 arm of the frame switch raises `hideCompositeShoulders` when the
+armor does not show its shoulders while jumping (`:1984-1987`); the flag is
+cleared at `:1932` and raised for a coat (`:1940`) or a front accessory
+(`:1944`) — the port has neither. The vanilla then skips the shoulder pieces
+(`PlayerDrawLayers.cs:1307` the back shoulder, `:3624` the front one). None of
+the port's armor ids is in `showsShouldersWhileJumping` (`ID/ArmorIDs.cs:714`),
+so a worn chest armor loses its shoulders on body row 5 — the falling pose.
+The port drew them on every row.
+
+### The animation inputs that are still unreachable
+
+The `PlayerFrame` chain is fully ported, but six of its inputs have no writer
+in the port, so the poses they select can never be reached. Each row is the
+C# writer, so the follow-ups can be opened without re-reading the source:
+
+| state | C# writer | what the port is missing |
+| --- | --- | --- |
+| `sliding` (body row 3, `Player.cs:36552`) | `Player.WallClimbMovement` (`:21607-21706`, the set at `:21705`) and `Player.WallslideMovement` (`:21750-21840`, the sets at `:21812`/`:21825`) | the port has no `slideDir` and no `spikedBoots`; the wall slide needs the Spiked Boots accessory and the wall climb the grappling climb |
+| `pulley` / `pulleyDir` (the rope pose, `Player.cs:36444-36448`) | `Player.FindPulley` (`:19644-19749`) + the update block (`:26120-26300`) | the port has no rope tiles (`WorldGen.IsRope`), so the pulley can never be found |
+| `shield_raised` (body row 10, `Player.cs:36481`) | `Player.ItemCheck_ManageRightClickFeatures_ShieldRaise` (`:31706-31739`) + `TryTogglingShield` (`:31741-31764`) | the port has no `hasRaisableShield` and no shield accessory row |
+| `carpet_frame` (body row 6, `Player.cs:36556`) | `Player.CarpetMovement` (`:21842-21890`) | the port has no Magic Carpet mount |
+| `sand_storm` (body row 6, `Player.cs:36556`) | the Sandstorm jump chain (`:21919` sets it; `:26743`/`:26770`/`:26810` clear it) | the port has no Sandstorm in a Bottle accessory |
+| `can_float_in_water` (the float pose, `Player.cs:36527`) | `Player.ShouldFloatInWater` (`:3872-3886`); writers: accessory 4404 (Floating Tube, `:13265-13268`) and buff 265 (Flamingo, `:9895-9899`); reset in `ResetEffects` (`:18332`) | the port has no accessory-effect flag table, so `should_float_in_water()` returns false (`player.rs:4361`) |
+
+Note that `PlayerFrame` reads `accFlipper` nowhere: the flipper *pose* is
+selected by `ShouldFloatInWater`, while `accFlipper` drives the movement
+(`Player.cs:20637`/`:20681`) and the merman block (`:25577-25589`).
+
 ## The player-audit fixes 11-15 (2026-11-10)
 
 The five S1/S2/S3 rows of `BUG_REPORT.md` closed on one branch:
@@ -11861,7 +11929,9 @@ Two documented gaps, both unreachable today:
 `player.rs::hurt_inner` — sash → belt → brain → shadow, each roll drawn from
 the caller's stream (`&mut dyn DropRng`, the `damage_var` parameter pattern)
 only while its source is armed and no earlier source dodged; a dodge returns
-`false` (hp untouched) after `SetImmuneTimeForAllTypes`'s collapsed write
+`false` (hp untouched) after `SetImmuneTimeForAllTypes`'s write —
+`immune = true` + `immuneTime = time` on the fields R-03-5 ported
+(`immuneNoBlink` untouched, like the C#) plus the collapsed `hurtCooldowns` →
 `hurt_cd = (long_invince ? 120 : 80)/60` — the 120/80 pair is its own value
 set, `iframes_for` (the normal 40/20 window) is not involved. The brain's
 `Next(6)` precedes the `FindBuffIndex(321)` check in the C# `&&` chain, so the
@@ -11871,7 +11941,12 @@ The armed-flag equivalents fold in `ResetEffects`' stand-in: items
 963/984/6189/3223 re-arm per tick from `equipped[..10]`, buff 59 arms
 `shadow_dodge` in the buff scan; `shadow_dodge_timer` decays at the tick head
 (`:25461-25464`), the brain's animation counter in the fold (`:18794-18797`)
-and zeroes on respawn (`UpdateDead` `:16932`).
+and zeroes on respawn (`UpdateDead` `:16932`). Merge note (2026-11-13): the
+handlers' `immune`/`immuneTime` writes meet R-03-5's spawn i-frames — a dodge
+during the 180-tick revive window overwrites `immuneTime` down to 80/120,
+exactly the C# `SetImmuneTimeForAllTypes` semantics; the `!immune` General
+gate in `hurt_inner` is R-03-5's and sits before the roll block, per `Hurt`'s
+cooldown early-return.
 
 Documented gaps, all deliberate:
 
@@ -11910,3 +11985,168 @@ Documented gaps, all deliberate:
   `Player.cs:38197`) — a black belt eats spike, lava and fall damage
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
+
+## The respawn fidelity (R-03-5, 2026-11-13)
+
+`Player.Spawn`'s revive half (`Player.cs:37598-37668`) is ported into
+`player.rs::respawn`: the life is `max(max(statLifeMax, statLifeMax2)/2,
+100)` over the port's single `max_hp` (a fresh 100-life character revives
+FULL — the old unconditional full-hp stand-in diverged for every character
+past 100), and the death revive arms `immune = true` with
+`immuneTime = 180` + `immuneNoBlink` (the `!hostile` gate is always true
+single-player). `Player.UpdateImmunity` (`:18856-18869`) rides the tick at
+`Player.cs:25456`'s slot, and `Player.Hurt`'s General-cooldown flag
+(`:38210-38216`, `!immune`) gates `hurt_inner` — the port's single damage
+lane is the General slot. `AllowsRespawnTimerSkip` carries the
+`Main.snowMoon || Main.pumpkinMoon || DD2Event.Ongoing` refusal
+(`:38984-38986`) fed from the World's event flags.
+
+Scope notes: the `immuneTime = 60` arm belongs to the non-death
+`PlayerSpawnContext`s — the port's only `Spawn` callers are both death
+revives, so it lands with a spawn-context split; the `spawnMax` Journey arm
+(`:37609-37611`) and the `pvpDeath` 300 arm (`:37657-37660`) have no port
+counterparts (Journey powers / MP).
+
+## The buff HUD (S1-E-6, 2026-11-13)
+
+`Main.DrawBuffIcon` (`Main.cs:43307-43368`) and `TryRemovingBuff`
+(`:43370-43402`) are ported into `ui/resources.rs::draw_buffs` +
+`player.rs::try_removing_buff`, over `DrawInterface_Resources_Buffs`'s grid
+(`:43203-43250`: 11 icons per row from x=32/y=76, the 38/50 pitch, the
+occupied slots packing). The per-slot alpha (`Main.buffAlpha`) lives on the
+App (`buff_alpha`, initialised 0.4 — the C#'s first-draw clamp lands the
+same value), the hover raises it 0.1 and the rest decays 0.05 clamped to
+[0.4, 1]; the duration text gates through `TryGetBuffTime` (the
+vanity/light-pet sets — already ported — plus the generated 124-id
+`BUFF_NO_TIME_DISPLAY` table, the honey-48 wet gate, the expert wet-46
+gate and the vampire seed's sub-10 hides for 23/24/32) and formats through
+`Lang.LocalizedDuration`'s abbreviated ceilings (`Lang.cs:1158-1207`). The
+right-click release (`Main.mouseRightRelease`) removes via
+`Player::try_removing_buff` — the non-debuff gate, the 60/151 guards, the
+mount's own buff dismounting instead of `DelBuff` — and the
+`SoundEngine.PlaySound(12)` MenuTick cue rides the tick drain.
+
+Deliberate sequencing (not silent gaps):
+
+- **The removal is a request**, not an in-draw mutation: the C# deletes the
+  buff inside the draw pass; the port's HUD draw is immutable, so the
+  hovered slot lands on `App::buff_removals` and the player tick drains it
+  (the `wants_hostile_shot` pattern) — one frame later, same outcome.
+- **The hover name/tooltip block** (`:43250-43270`, `Lang.GetBuffName` +
+  `GetBuffTooltip`) stays out of this pass — it rides the localization
+  tooltip work. `TryRemovingBuff`'s `CheckBuffHideMisc` arms
+  (`:43391-43402`) ride the misc-equips pets (no `miscEquips` yet).
+- **The fullscreen-map call site** (`:41335`'s column layout) rides the
+  map tasks (S1-L-3/4).
+- The buff icons pack into the atlas by enumeration (`Buff_<id>.xnb`,
+  sorted ids like the items), so an id whose texture is absent simply
+  never draws an icon (the alpha keeps its state).
+
+## The Nurse rules (S1-E-8, 2026-11-13)
+
+`BuffID.Sets.NurseCannotRemoveDebuff` (`BuffID.cs:52`, the 20 protected
+ids) gates both halves of the service: `GetNurseHealCost`'s debuff count
+counts only `Main.debuff[b] && buffTime > 60 && !protected` slots
+(`Main.cs:40058-40065` — the `> 60` time gate the port used to skip), and
+`NPCChatText_DoNurseHeal`'s removal clears only `buffTime > 0` non-
+protected ones (`:40147`). The price ladder is ported whole
+(`Main.cs:40069-40096`): the Golem 200×/Plant 150×/mechs 100×/hardmode 60×/
+Skeletron-or-Queen-Bee 25×/boss2 10×/boss1 3× if/else-if chain reads the
+World's downed flags, and the Discount Card's
+`(int)((float)num * 0.8f)` truncation rides before the happiness multiply.
+The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
+plumbing is R-03-6's row.
+
+## The world-format contract (S1-J-8)
+
+**Decision: the two-format split stays, as a documented contract.** The port
+keeps `.trwld` (native) and `.wld` (vanilla-shaped) as different routes with
+different jobs; converging them would either drop the vanilla-world
+interoperability or force the native format to be byte-vanilla, and both cost
+more than the doubled save surface they would save.
+
+- **`.trwld` is the canonical save route.** Every new piece of persisted state
+  lands here first as a versioned tail block (v13 signs/plates, v14 the rain
+  triple, v15 `downedQueenSlime`), the loader version-gates each block and a
+  pre-N file loads with that block's reset defaults. The production boot world
+  (`app::latest_own_world`) and the save routing (`is_native_trwld`) already
+  make it the live surface.
+- **`.wld` is the vanilla-interchange route.** Loading vanilla worlds
+  (field-by-field codecs, the C# version gates) and writing them back at the
+  byte SHAPE the vanilla expects. Its value coverage is a documented subset
+  (the flags writer zero-fills the rain/Queen-Slime bytes, the loader
+  skip-reads unimplemented sections) — the byte-parity tasks (S1-J-1's wire
+  bits, S1-J-3's golden fixture) grow that coverage only where parity is
+  actually demanded, against the C#'s own `SaveWorld` layout.
+- **Stage-2 cost, bounded.** The two readers stay, but only `.trwld` is the
+  live save surface — the `.wld` route is load-dominant interchange, so the
+  compressor/reader doubling applies to the interchange path only. The
+  app-side twins that neither format carries (the TownManager rooms, the
+  bestiary sights/chats, the CreativePowers table — the recorded M6-SAVE-1b
+  remainder) need a `WorldSide` twin on the app save path, not a format
+  convergence.
+- **The routing rule** (`is_native_trwld`, `app/mod.rs:3074`): the save picks
+  the format by the world path's extension; a `.trwld` world saves native, a
+  `.wld` world saves vanilla-shaped — the user's file never changes identity
+  mid-session.
+## The map reveal + refresh (S1-L-3, 2026-11-13)
+
+The audit's D10 is closed: `WorldMap::update`'s reveal window now follows
+`LightingEngine.ExportToMiniMap` (`LightingEngine.cs:246-262`) — the
+engine's processed area shrunk 28 px per side, intersected with the world
+bounds inset 40 and `MapHelper.sceneArea` (the scene-metrics scan's
+player-centred `SceneMetrics.ZoneScanSize` box, `SceneMetrics.cs:917-919` =
+169×124 tiles). The old fixed player-centred 75×47 box (smaller than
+vanilla, trail-prone at speed) is gone; a stale/empty scene area intersects
+to nothing, exactly like the C#'s `Rectangle.Empty` static. The view
+centre rides the processed area (camera-centred), matching every other map
+consumer.
+
+The refresh machinery is ported whole: `WorldMap.UpdateType`/`QueueUpdate`
+(`WorldMap.cs:65-105` — the queued re-derive keeps the light; the C#'s
+`ref mapTile` flag-clear write-through is explicit in the port so the
+clear persists on the early returns), `MapUpdateQueue`'s two queues with
+the `WorldMap.QueueUpdate` dedupe (`MapUpdateQueue.cs:21-108`), the
+per-frame drain (`Main.cs:61862`) feeding the minimap upload (the
+`MapRenderer.QueueChange` analog), `UnlockMapSection`/`UnlockMapTilePretty`
+(`WorldMap.cs:109-174` — the Manhattan falloff with the solid/lava skips
+and the wall 0.8 / underground 0.7 tints) and `ClearEdges` at the map load
+(`:210`).
+
+Scope notes:
+
+- **The edit hooks cover the player-edit paths** (the pickaxe/hammer/
+  placement funnel in `world_sim/editing.rs`): the edited tile's
+  `SquareTileFrame` ring queues (`WorldGen.cs:81334`'s head over
+  `:80185-80197`'s walk). The projectile-side craters (the bombs, the
+  magical ice) run inside the AI with a world-only signature — their map
+  refresh rides the follow-up; the reveal pass still re-derives any tile
+  it covers, so in-window craters refresh naturally.
+- **`Main.sectionManager.TileLoaded(x, y)` passes** (`WorldMap.cs:80`): the
+  section manager is the MP section tracker; the port's single-player world
+  is fully loaded.
+- **The fullscreen-map call site** (`Main.cs:41335`'s column layout) rides
+  the map tasks (S1-L-4's layers).
+
+## The crafting focus + quantity (S1-H-7, 2026-11-13)
+
+`Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into
+`clicks.rs::handle_crafting_clicks`: the unfocused click selects the row
+(`focusRecipe` — the port keys the focus by the recipe id rather than the
+C#'s list position, which keeps it stable across the frame's re-sort),
+`stackSplit = 15`, the click-consumed lock and the MenuTick sound; the
+focused click crafts through the held-frame pacing (`stackSplit <= 1`,
+`frame.rs`'s per-tick decay), with `num = (superFastStack + 1)` ×10 behind
+`ItemSlot.ShiftInUse` and `flag4`'s reset arms (a different recipe being
+crafted, or a non-stacking product). `craft.rs::try_craft_qty` is
+`CraftingRequests.CraftItem(recipe, num)` (`Main.cs:42286`) — the C#'s
+request queue processes the quantity asynchronously; the port loops the
+single craft synchronously, each iteration re-checking the ingredients, so
+a partial set crafts as many as it can (the request loop's net effect).
+
+Scope notes: the filter/search bars stay draw-only (the station-filter
+semantics are S1-L-11c's row and the search box rides the keyboard work);
+`TryAllowingToCraftRecipe`'s mouse-blocking fetch (`:42278`) has no port
+counterpart (the mouse item never blocks the craft here); the
+`UsingOrReusingItem`/`IsStackingItems` gates of `flag3` (`Player.cs:23098`)
+are unmodelled item-use state.

@@ -436,6 +436,9 @@ pub(crate) struct App {
     pub(crate) join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     pub(crate) map: Option<map::WorldMap>,
+    /// `Terraria.Map.MapUpdateQueue` (`MapUpdateQueue.cs`): the edit-side map
+    /// refresh queues, drained per frame (`Main.cs:61862`).
+    pub(crate) map_queue: map::MapUpdateQueue,
     /// `Main.grabMapX`/`grabMapY`: the cursor anchor of an in-progress
     /// fullscreen-map drag (`Main.cs:55346-55354`).
     pub(crate) map_grab: Option<[f32; 2]>,
@@ -470,6 +473,25 @@ pub(crate) struct App {
     pub(crate) mouse_item: ItemSlot,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
+    /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
+    /// button's release edge, consumed per frame).
+    pub(crate) ui_right_release: bool,
+    /// `Main.buffAlpha[Player.maxBuffs]` (`Main.cs:668`-ish): the buff bar's
+    /// per-slot icon alpha (`Main.DrawBuffIcon`).
+    pub(crate) buff_alpha: [f32; crate::buffs::MAX_BUFFS],
+    /// The buff bar's right-click removal requests — the C# removes in the
+    /// draw pass (`Main.cs:43348`); the port drains them in the tick.
+    pub(crate) buff_removals: Vec<usize>,
+    /// `Main.focusRecipe` (`Main.cs:1729`): the selected recipe row's index
+    /// into the available list — the first click focuses, the next crafts.
+    pub(crate) focus_recipe: i32,
+    /// `Main._currentRecipeBeingCrafted` (`Main.cs:2352`): the held-repeat's
+    /// recipe lock — a different recipe or a maxStack-1 product resets it.
+    pub(crate) current_recipe_being_crafted: i32,
+    /// `Main._preventCraftingBecauseClickWasUsedToChangeFocusedRecipe`
+    /// (`Main.cs:2353`): the focus click's lock, cleared when the buttons
+    /// release (`:42301-42305`).
+    pub(crate) prevent_craft_click: bool,
     /// `UserInterface`'s pointer machine (`UserInterface.cs:53-91`, `:230-255`):
     /// the press/release → click/`DoubleClick` caches with the 500 ms window and
     /// the 200 ms state-change lockout. Fed by `app/loop.rs` (the front screens'
@@ -512,6 +534,10 @@ pub(crate) struct App {
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
     pub(crate) camera: Vec2,
+    /// The gfx-quality state (S1-B-6): `Main.gfxQuality`'s adaptive loop and
+    /// the per-update budgets it feeds (`Main.cs:953`/`:955`,
+    /// `:16960-17101`).
+    pub(crate) gfx_quality: world_sim::gfx_quality::GfxQuality,
     /// The C#'s draw-time camera state (`Main.cs:463`/`:477`/`:1097-1099`):
     /// the teleport lerp pair, the object-tracking pan and the vestigial
     /// `DebugCameraPan` accumulator. S1-B-4 moved the camera update to the
@@ -1295,24 +1321,36 @@ impl App {
     }
 
     /// `Main.GetNurseHealCost` (`Main.cs:40054-40100`): the missing life
-    /// plus the removable debuffs x100, multiplied by the happiness
-    /// adjustment. The boss-progression/expert/discount multipliers sit
-    /// constants-off (the downed tracking lands with the boss work).
+    /// plus the removable debuffs x100 — a slot counts when
+    /// `Main.debuff[b] && buffTime > 60 && !NurseCannotRemoveDebuff[b]` —
+    /// then the boss-progression ladder, the discount and the happiness
+    /// adjustment. The expert x2 stays constants-off (the difficulty
+    /// plumbing rides R-03-6).
     pub(crate) fn nurse_heal_cost(&self, nurse_idx: usize) -> i32 {
         let Some(player) = self.player.as_ref() else {
             return 0;
         };
         let missing = player.max_hp - player.hp;
-        let debuffs = player
-            .buffs
-            .active_types()
-            .iter()
-            .filter(|t| crate::buffs::is_debuff(**t))
-            .count() as i32;
+        let debuffs = player.remountable_debuff_count();
         let npc = &self.npcs[nurse_idx];
         let mood =
             crate::happiness::process_mood(&self.world, &self.npcs, npc, player.center(), false);
-        nurse_heal_cost_for(missing, debuffs, mood.multiplier)
+        let w = &self.world;
+        nurse_heal_cost_for(
+            missing,
+            debuffs,
+            mood.multiplier,
+            &NurseCostFlags {
+                downed_golem: w.downed_golem,
+                downed_plant_boss: w.downed_plant_boss,
+                downed_mech_any: w.downed_mech_boss1 || w.downed_mech_boss2 || w.downed_mech_boss3,
+                hard_mode: w.hard_mode,
+                downed_boss3_or_queen_bee: w.downed_skeletron || w.downed_queen_bee,
+                downed_boss2: w.downed_eow,
+                downed_boss1: w.downed_eoc,
+                discount_available: self.discount_available,
+            },
+        )
     }
 
     /// `Main.NPCChatText_DoNurseHeal` (`Main.cs:40103+`): `BuyItem(healCost)`
@@ -1327,19 +1365,31 @@ impl App {
             return false;
         };
         player.hp = player.max_hp;
-        // The removable debuffs clear (`DoNurseHeal`'s removal block).
-        let types: Vec<i32> = player
-            .buffs
-            .active_types()
-            .iter()
-            .copied()
-            .filter(|t| crate::buffs::is_debuff(*t))
-            .collect();
-        for t in types {
-            player.buffs.clear_buff(t);
-        }
+        // The removable debuffs clear (`DoNurseHeal`'s removal block,
+        // `Main.cs:40147`: `Main.debuff[b] && buffTime > 0 &&
+        // !NurseCannotRemoveDebuff[b]`).
+        player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
         true
+    }
+
+    /// The edit-to-map-queue hook: the edited tile's 3x3 ring queues for
+    /// the map refresh — `WorldGen.TileFrame`'s head queues its tile
+    /// (`WorldGen.cs:81334`) and `SquareTileFrame`'s walk (`:80185-80197`)
+    /// is the port's `reframe_area` ring. The `Main.mapEnabled` gate rides
+    /// (`MapUpdateQueue.cs:24`'s `!Main.mapEnabled` return).
+    pub(crate) fn queue_map_ring(&mut self, x: i32, y: i32) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                self.map_queue.add_tile(m, x + dx, y + dy);
+            }
+        }
     }
 
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
@@ -2863,6 +2913,7 @@ impl App {
             net_rtt_ms: 0,
             join_target,
             map: Some(world_map),
+            map_queue: map::MapUpdateQueue::default(),
             map_grab: None,
             minimap_hover: None,
             // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
@@ -2879,6 +2930,12 @@ impl App {
             mouse_item: EMPTY_SLOT,
             ui_left_press: false,
             ui_right_press: false,
+            ui_right_release: false,
+            buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
+            buff_removals: Vec::new(),
+            focus_recipe: 0,
+            current_recipe_being_crafted: -1,
+            prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),
             pointer_ms: 0.0,
             pointer_event: None,
@@ -2908,6 +2965,7 @@ impl App {
             dev_place,
             camera: Vec2::ZERO,
             camera_state: Default::default(),
+            gfx_quality: Default::default(),
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
@@ -4445,12 +4503,53 @@ mod tr_hooks {
     }
 }
 
-/// `GetNurseHealCost`'s core arithmetic (`Main.cs:40054-40100`): the
-/// missing life plus the removable debuffs x100, times the happiness
-/// adjustment. The boss-progression/expert/discount multipliers sit
-/// constants-off.
-pub(crate) fn nurse_heal_cost_for(missing: i32, debuff_count: i32, mood: f32) -> i32 {
-    ((missing + debuff_count * 100) as f32 * mood) as i32
+/// `GetNurseHealCost`'s boss-progression ladder inputs (`Main.cs:40069-40088`
+/// + the discount `:40094-40096`) — the World's downed flags and the
+/// Discount Card's `discountAvailable` (R-03-5's field). The expert x2
+/// (`:40091-40093`) sits out with the difficulty plumbing (R-03-6).
+pub(crate) struct NurseCostFlags {
+    pub downed_golem: bool,
+    pub downed_plant_boss: bool,
+    pub downed_mech_any: bool,
+    pub hard_mode: bool,
+    pub downed_boss3_or_queen_bee: bool,
+    pub downed_boss2: bool,
+    pub downed_boss1: bool,
+    pub discount_available: bool,
+}
+
+/// `GetNurseHealCost`'s core arithmetic (`Main.cs:40054-40100`): the missing
+/// life plus the removable debuffs x100, the if/else-if ladder (the
+/// Golem 200 ×, the Plant 150 ×, the mechs 100 ×, hardmode 60 ×, the
+/// Skeletron/Queen-Bee pair 25 ×, boss2 10 ×, boss1 3 ×), the Discount
+/// Card's `(int)((float)num * 0.8f)` truncation, then the happiness
+/// adjustment.
+pub(crate) fn nurse_heal_cost_for(
+    missing: i32,
+    debuff_count: i32,
+    mood: f32,
+    flags: &NurseCostFlags,
+) -> i32 {
+    let mut num = missing + debuff_count * 100;
+    if flags.downed_golem {
+        num *= 200;
+    } else if flags.downed_plant_boss {
+        num *= 150;
+    } else if flags.downed_mech_any {
+        num *= 100;
+    } else if flags.hard_mode {
+        num *= 60;
+    } else if flags.downed_boss3_or_queen_bee {
+        num *= 25;
+    } else if flags.downed_boss2 {
+        num *= 10;
+    } else if flags.downed_boss1 {
+        num *= 3;
+    }
+    if flags.discount_available {
+        num = (num as f32 * 0.8f32) as i32;
+    }
+    (num as f32 * mood) as i32
 }
 
 #[cfg(test)]

@@ -1576,8 +1576,11 @@ impl NpcKind {
             NpcKind::DD2Betsy => (190.0, 90.0),
             // The WitherBeast: 18x40 (`NPC.cs`'s case 568).
             NpcKind::DD2WitherBeast => (18.0, 40.0),
-            NpcKind::DD2WyvernT1 | NpcKind::DD2WyvernT2 | NpcKind::DD2WyvernT3
-            | NpcKind::DD2KoboldFlyerT2 | NpcKind::DD2KoboldFlyerT3 => (38.0, 38.0),
+            NpcKind::DD2WyvernT1
+            | NpcKind::DD2WyvernT2
+            | NpcKind::DD2WyvernT3
+            | NpcKind::DD2KoboldFlyerT2
+            | NpcKind::DD2KoboldFlyerT3 => (38.0, 38.0),
             // The Dark Mage T3 rides the T1's 34x62 box.
             NpcKind::DD2DarkMageT3 => (34.0, 62.0),
             // The Wither Beast T3 rides the T2's 18x40 box.
@@ -1736,7 +1739,10 @@ impl NpcKind {
             NpcKind::Slime => 1,
             NpcKind::DemonEye => 2,
             NpcKind::WanderingEye => 133,
-            NpcKind::Zombie => 21,
+            // The vanilla `NPCID.Zombie` is 3 — the hand table's 21 was the
+            // net-id sweep's finding (S1-F-3; the generated loot-db net id
+            // confirms).
+            NpcKind::Zombie => 3,
             NpcKind::KingSlime => 50,
             NpcKind::Guide => 22,
             // The teleporting statues' rosters (`Wiring.cs:2424`/`:2452`) are the
@@ -1765,20 +1771,32 @@ impl NpcKind {
             NpcKind::PartyGirl => 208,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
-            NpcKind::Skeleton => 77,
-            NpcKind::UndeadMiner => 23,
+            NpcKind::Skeleton => 21, // `NPCID.Skeleton` (the net id's correction, S1-F-3)
+            NpcKind::UndeadMiner => 44, // `NPCID.UndeadMiner` (the net id's correction, S1-F-3)
             NpcKind::CaveBat => 49,
             NpcKind::JungleBat => 51,
             NpcKind::Hellbat => 60,
             NpcKind::VoodooDemon => 66,
             NpcKind::EaterOfSouls => 6,
             NpcKind::Hornet => 42,
-            NpcKind::MeteorHead => 5,
+            NpcKind::MeteorHead => 23, // `NPCID.MeteorHead` (the net id's correction, S1-F-3)
             NpcKind::FireImp => 24,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
-            _ => u16::MAX,
+            // S1-F-3: the remaining kinds ride the generated loot-db net ids
+            // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
+            // hand table above keeps the roster-verified rows; the negative
+            // net ids (none in the port's kind set) and the air sentinel stay
+            // `u16::MAX` (the caps can never match them).
+            _ => {
+                // The kinds without a bestiary entry (the boss segments the
+                // roster skips) keep the sentinel — the caps never match them.
+                match crate::bestiary::try_entry_for_npc(self, SlimeVariant::Blue) {
+                    Some(e) if e.net_id > 0 => e.net_id as u16,
+                    _ => u16::MAX,
+                }
+            }
         }
     }
 
@@ -1841,13 +1859,15 @@ impl NpcKind {
             | NpcKind::DyeTrader
             | NpcKind::PartyGirl
             | NpcKind::Zoologist => 9,
-            NpcKind::Dryad | NpcKind::Clothier | NpcKind::Wizard | NpcKind::Stylist
+            NpcKind::Dryad
+            | NpcKind::Clothier
+            | NpcKind::Wizard
+            | NpcKind::Stylist
             | NpcKind::Princess => 7,
             NpcKind::Angler | NpcKind::Mechanic => 9,
             _ => 0,
         }
     }
-
 
     /// `NPC.behindTiles` (`NPC.cs:6517`, `:8520` default false): kinds drawn in
     /// the behind-tiles NPC pass (`Main.cs:22320,22336` - `DrawNPCs(true)`).
@@ -2353,9 +2373,7 @@ impl NpcKind {
             NpcKind::VortexHunter => 100,
             NpcKind::VortexAlien => 75,
             NpcKind::VortexHeadcrab => 50,
-            NpcKind::MoonLordHead
-            | NpcKind::MoonLordHand
-            | NpcKind::MoonLordCore => 0,
+            NpcKind::MoonLordHead | NpcKind::MoonLordHand | NpcKind::MoonLordCore => 0,
             NpcKind::MoonLordFreeEye => 60,
             NpcKind::MoonLordLeechBlob => 0,
             NpcKind::StardustCellBig => 120,
@@ -3168,7 +3186,7 @@ impl Npc {
             wants_blast: false,
             wants_dd2_spawn: false,
             wants_lane_right: false,
-        wants_stardust_mark: false,
+            wants_stardust_mark: false,
             wants_obstruct: false,
             wants_moon_leech: false,
             wants_dutchman_crew: false,
@@ -3285,7 +3303,7 @@ impl Npc {
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
-            | NpcKind::VortexTower => 0.0,
+            NpcKind::VortexTower => 0.0,
             // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
             NpcKind::MoonLordHead
@@ -4175,9 +4193,9 @@ impl Npc {
             // :15714 cases 26/27/111): the walker arm. (S1-D-3b: the
             // shadowing `update_goblin` arm that kept Thief/Warrior/Peon
             // off this path is removed so they reach the skeleton walker.)
-            NpcKind::GoblinThief
-            | NpcKind::GoblinWarrior
-            | NpcKind::GoblinPeon => self.update_skeleton(world, player, dt),
+            NpcKind::GoblinThief | NpcKind::GoblinWarrior | NpcKind::GoblinPeon => {
+                self.update_skeleton(world, player, dt)
+            }
             // The frost trio: aiStyle 38's own machine (`NPC.cs:28995-29145`,
             // R-25-1) — the hop cycle, the per-type 3/4/3.5 speeds, the
             // Gangsta's bottle throw, the Balla's pause, the Mystery's aim.
@@ -4255,9 +4273,7 @@ impl Npc {
             | NpcKind::DD2KoboldFlyerT3 => self.update_diving_flyer(world, player, rng),
             NpcKind::DD2DarkMageT3 => self.update_dark_mage(world, player, rng),
             NpcKind::DD2WitherBeastT3 => self.update_wither_beast_t3(world, player, rng),
-            NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 => {
-                self.update_drakin(world, player, rng)
-            }
+            NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 => self.update_drakin(world, player, rng),
             NpcKind::DD2KoboldWalkerT2 | NpcKind::DD2KoboldWalkerT3 => {
                 self.update_dd2_kobold_walker(world, player, dt)
             }
@@ -4419,16 +4435,15 @@ impl Npc {
 
     /// `NPC._deerclopsAttack1Frames` (`NPC.cs:95277-95279`): the 12-frame
     /// wind-up + slam sequence the ai[0]==1/4 states play.
-    const DEERCLOPS_ATTACK_1: [u32; 12] =
-        [12, 13, 14, 13, 14, 13, 14, 13, 14, 15, 16, 17];
+    const DEERCLOPS_ATTACK_1: [u32; 12] = [12, 13, 14, 13, 14, 13, 14, 13, 14, 15, 16, 17];
     /// `_deerclopsAttack2Frames` (`:95282-95284`): the 13-frame rubble
     /// sequence of the ai[0]==2 state.
-    const DEERCLOPS_ATTACK_2: [u32; 13] =
-        [12, 15, 16, 17, 17, 17, 17, 13, 18, 18, 18, 18, 12];
+    const DEERCLOPS_ATTACK_2: [u32; 13] = [12, 15, 16, 17, 17, 17, 17, 13, 18, 18, 18, 18, 12];
     /// `_deerclopsAttack3Frames` (`:95287-95290`): the 16-frame
     /// blizzard/shadow-hand sequence of the ai[0]==3/5/7/8 states.
-    const DEERCLOPS_ATTACK_3: [u32; 16] =
-        [19, 20, 21, 22, 21, 22, 21, 22, 23, 24, 23, 24, 23, 24, 20, 19];
+    const DEERCLOPS_ATTACK_3: [u32; 16] = [
+        19, 20, 21, 22, 21, 22, 21, 22, 23, 24, 23, 24, 23, 24, 20, 19,
+    ];
 
     /// `NPC.FindFrame_FromSequence` (`NPC.cs:77372-77380`): the sequence
     /// frame index clamps to the array's last entry past the end.
@@ -4902,10 +4917,7 @@ impl Npc {
                 } else {
                     7
                 };
-                if self.ai[3] >= 280.0
-                    && self.ai[3] < 420.0
-                    && (self.ai[3] as i32) % 6 <= 2
-                {
+                if self.ai[3] >= 280.0 && self.ai[3] < 420.0 && (self.ai[3] as i32) % 6 <= 2 {
                     row += 9;
                 }
                 self.frame = row as u32;
@@ -4969,7 +4981,9 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
+                        % crate::render::entities::npc_rows(
+                            crate::render::entities::texture_net_id(self.kind),
+                        );
                 }
             }
             // The tavernkeeper: `Main.npcFrameCount[550]` = 25 rows.
@@ -4978,7 +4992,9 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
+                        % crate::render::entities::npc_rows(
+                            crate::render::entities::texture_net_id(self.kind),
+                        );
                 }
             }
             // The Old One's Army's tier-2/3 families (M4-EVENT-19): the
@@ -5030,7 +5046,9 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
+                        % crate::render::entities::npc_rows(
+                            crate::render::entities::texture_net_id(self.kind),
+                        );
                 }
             }
             NpcKind::DD2WitherBeastT3 => {
@@ -5039,7 +5057,9 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
+                        % crate::render::entities::npc_rows(
+                            crate::render::entities::texture_net_id(self.kind),
+                        );
                 }
             }
             NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 => {
@@ -5590,9 +5610,7 @@ impl Npc {
                 // stand-in gives the same 1-in-10 jitter.
                 let jitter = (self.frame_counter as i32)
                     .wrapping_mul(0x9E37_79B1u32 as i32)
-                    .wrapping_add(
-                        (self.frame_counter as i32).wrapping_mul(0x85EB_CA6Bu32 as i32)
-                    );
+                    .wrapping_add((self.frame_counter as i32).wrapping_mul(0x85EB_CA6Bu32 as i32));
                 if (jitter >> 28) & 0xF == 0 {
                     self.frame_counter += 1.0;
                 }
@@ -5635,7 +5653,9 @@ impl Npc {
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(crate::render::entities::texture_net_id(self.kind));
+                        % crate::render::entities::npc_rows(
+                            crate::render::entities::texture_net_id(self.kind),
+                        );
                 }
             }
             // The Dutchman: the 1-frame ship strip; its cannons ride the
@@ -5853,7 +5873,7 @@ impl Npc {
                 // (`:74871-74873`'s `num292--`), the v1 cycled all 5 rows
                 // every 4 ticks.
                 self.facing = if self.vx > 0.0 {
-                self.sprite_dir = self.facing;
+                    self.sprite_dir = self.facing;
                     1
                 } else if self.vx < 0.0 {
                     -1
@@ -5994,7 +6014,9 @@ impl Npc {
                     1 | 4 => {
                         Self::seq_cell(&Self::DEERCLOPS_ATTACK_1, (self.ai[1] as i32 / 4) as usize)
                     }
-                    2 => Self::seq_cell(&Self::DEERCLOPS_ATTACK_2, (self.ai[1] as i32 / 4) as usize),
+                    2 => {
+                        Self::seq_cell(&Self::DEERCLOPS_ATTACK_2, (self.ai[1] as i32 / 4) as usize)
+                    }
                     3 | 5 | 7 | 8 => {
                         Self::seq_cell(&Self::DEERCLOPS_ATTACK_3, (self.ai[1] as i32 / 4) as usize)
                     }
@@ -6144,11 +6166,7 @@ impl Npc {
                         self.frame_counter = 0.0;
                         self.frame += 1;
                         self.frame = if mech_queen {
-                            if self.frame >= 5 {
-                                3
-                            } else {
-                                self.frame
-                            }
+                            if self.frame >= 5 { 3 } else { self.frame }
                         } else if self.frame >= 2 {
                             0
                         } else {
@@ -6421,7 +6439,11 @@ impl Npc {
         // uses (its own aim, not the body's), and the write is inside the
         // two one-sided `if`s, so a dead-centre aim keeps the previous
         // flip.
-        self.sprite_dir = if dx != 0.0 { self.facing } else { self.sprite_dir };
+        self.sprite_dir = if dx != 0.0 {
+            self.facing
+        } else {
+            self.sprite_dir
+        };
         if self.y > world.height as f32 * TILE_PX + 200.0 {
             self.hp = 0;
         }
@@ -7351,7 +7373,11 @@ impl Npc {
             self.ai[0] = -1.0;
         }
         if self.ai[0] == -1.0 {
-            if self.alpha > 5 { self.alpha = self.alpha.saturating_sub(5); } else { self.alpha = 0; }
+            if self.alpha > 5 {
+                self.alpha = self.alpha.saturating_sub(5);
+            } else {
+                self.alpha = 0;
+            }
             self.ai[1] += 1.0;
             if self.ai[1] >= 420.0 {
                 self.ai[0] = 0.0;
@@ -7368,7 +7394,6 @@ impl Npc {
             self.hp = 0;
         }
     }
-
 
     /// `AI_008` through the framework's `caster_cycle` (`NPC.cs`'s aiStyle
     /// 8 block, `:20817-21278`). The shoot tick spawns the sphere through
@@ -8006,9 +8031,8 @@ impl Npc {
             // player below).
             let angle = (vy * norm).atan2(vx * norm);
             // `:35319`: `flag76 = CanHit(base.Center, 1, 1, player.Center, 1, 1)`.
-            let mut can_hit = crate::projectile::can_hit(
-                world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0,
-            );
+            let mut can_hit =
+                crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0);
             // The ai[3] >= 120 argue-override: the drone stops dodging.
             if self.ai[3] >= 120.0 {
                 can_hit = true;
@@ -8466,7 +8490,11 @@ impl Npc {
                     let (ax, ay) = (pcx - cx, pcy - cy);
                     let vy = ay.max(0.0);
                     let len = (ax * ax + vy * vy).sqrt();
-                    let (nx, ny) = if len > 0.0 { (ax / len, vy / len) } else { (0.0, 1.0) };
+                    let (nx, ny) = if len > 0.0 {
+                        (ax / len, vy / len)
+                    } else {
+                        (0.0, 1.0)
+                    };
                     self.ai[2] = ny.atan2(nx);
                 }
                 if in_window {
@@ -9418,9 +9446,7 @@ impl Npc {
         if self.ai[3] >= 0.0 && self.ai[3] <= 30.0 {
             let armed = reach < 800.0
                 && (pcy - cy).abs() <= (pcx - cx).abs()
-                && crate::projectile::can_hit_line(
-                    world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0,
-                );
+                && crate::projectile::can_hit_line(world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0);
             self.ai[3] = (self.ai[3] + if armed { 1.0 } else { 0.0 }).clamp(0.0, 30.0);
         }
         if self.ai[3] >= 31.0 {
@@ -9566,15 +9592,16 @@ impl Npc {
                 self.vx += (0.0 - self.vx) * 0.98;
                 self.vy += (-0.5 - self.vy) * 0.98;
                 self.ai[1] += 1.0;
-                if self.ai[1] >= 90.0
-                    && self.ai[1] < 480.0
-                    && (self.ai[1] as i64) % 15 == 0
-                {
+                if self.ai[1] >= 90.0 && self.ai[1] < 480.0 && (self.ai[1] as i64) % 15 == 0 {
                     // `:41405-41428`'s smoke: one 622 (0 damage) at the
                     // ±(π/8 + π/4·rand) rotation about the down axis.
                     let rot = std::f32::consts::FRAC_PI_8
                         + std::f32::consts::FRAC_PI_4 * crate::app::rand01(rng);
-                    let sign = if crate::app::rand01(rng) < 0.5 { -1.0 } else { 1.0 };
+                    let sign = if crate::app::rand01(rng) < 0.5 {
+                        -1.0
+                    } else {
+                        1.0
+                    };
                     let vx = rot.sin() * sign * 6.0;
                     let vy = -rot.cos() * (crate::app::rand01(rng) * 0.5 + 0.5);
                     self.wants_hostile_shot.push((622u16, cx, cy, vx, vy, 0));
@@ -9768,8 +9795,7 @@ impl Npc {
                 // `:41819-41846`'s retargeting laser: the 462 (30) aimed
                 // at the player's led position at the −14/−7/0 ticks.
                 if num2 < dur - 19.0 {
-                    self.moon_local[0] +=
-                        0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
+                    self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
                     self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
                 }
                 if num2 == dur - 14.0 || num2 == dur - 7.0 || num2 == dur {
@@ -9804,8 +9830,16 @@ impl Npc {
         let max_x = self.carrier_x + (220.0 + 370.0) * num;
         let min_y = self.carrier_y - 60.0 - 150.0;
         let max_y = self.carrier_y - 60.0 + 150.0;
-        let (lo_x, hi_x) = if min_x <= max_x { (min_x, max_x) } else { (max_x, min_x) };
-        let (lo_y, hi_y) = if min_y <= max_y { (min_y, max_y) } else { (max_y, min_y) };
+        let (lo_x, hi_x) = if min_x <= max_x {
+            (min_x, max_x)
+        } else {
+            (max_x, min_x)
+        };
+        let (lo_y, hi_y) = if min_y <= max_y {
+            (min_y, max_y)
+        } else {
+            (max_y, min_y)
+        };
         self.x = self.x.clamp(lo_x, hi_x);
         self.y = self.y.clamp(lo_y, hi_y);
         let _ = rng;
@@ -9851,14 +9885,8 @@ impl Npc {
                 } else if num == 180.0 {
                     let (dx, dy) = (pcx - cx, pcy - cy);
                     let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                    self.wants_hostile_shot.push((
-                        455u16,
-                        cx,
-                        cy,
-                        dx / d * 6.0,
-                        dy / d * 6.0,
-                        75,
-                    ));
+                    self.wants_hostile_shot
+                        .push((455u16, cx, cy, dx / d * 6.0, dy / d * 6.0, 75));
                     self.moon_local[0] = dy.atan2(dx);
                     self.moon_local[1] = 1.0;
                 } else {
@@ -9877,8 +9905,7 @@ impl Npc {
                 // `:42319-42346`'s retargeting laser: the 462 (30) at the
                 // −14/−7/0 ticks over the attack's own duration.
                 if num < dur - 19.0 {
-                    self.moon_local[0] +=
-                        0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
+                    self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
                     self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
                 }
                 if num == dur - 14.0 || num == dur - 7.0 || num == dur {
@@ -9942,8 +9969,7 @@ impl Npc {
                 // −14/−7/0 ticks.
                 self.vx *= 0.95;
                 if num < 90.0 - 19.0 {
-                    self.moon_local[0] +=
-                        0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
+                    self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
                     self.moon_local[1] = (self.moon_local[1] + 0.05).min(1.0);
                 }
                 if num == 90.0 - 14.0 || num == 90.0 - 7.0 || num == 90.0 {
@@ -9967,13 +9993,20 @@ impl Npc {
                 // speed 4 every 10 ticks), the charge, the release over
                 // 105..120.
                 if num >= 15.0 && num < 75.0 && ((num as i64) - 15) % 10 == 0 {
-                    self.wants_hostile_shot.push((454u16, cx, cy, 0.0, -4.0, 40));
+                    self.wants_hostile_shot
+                        .push((454u16, cx, cy, 0.0, -4.0, 40));
                 }
                 if num >= 105.0 && num < 120.0 {
                     let (dx, dy) = (pcx - cx, pcy - cy);
                     let ang = dy.atan2(dx) + std::f32::consts::FRAC_PI_2;
-                    self.wants_hostile_shot
-                        .push((454u16, cx, cy, ang.cos() * 24.0, ang.sin() * 24.0, 40));
+                    self.wants_hostile_shot.push((
+                        454u16,
+                        cx,
+                        cy,
+                        ang.cos() * 24.0,
+                        ang.sin() * 24.0,
+                        40,
+                    ));
                 }
             }
             3 => {
@@ -9981,16 +10014,21 @@ impl Npc {
                 // ticks inside the 150-tick window at the 8-px speed.
                 if num >= 45.0 && num < 185.0 && ((num as i64) - 45) % 10 == 0 {
                     let ang = crate::app::rand01(rng) * std::f32::consts::PI * 2.0;
-                    self.wants_hostile_shot
-                        .push((452u16, cx, cy, ang.cos() * 8.0, ang.sin() * 8.0, 35));
+                    self.wants_hostile_shot.push((
+                        452u16,
+                        cx,
+                        cy,
+                        ang.cos() * 8.0,
+                        ang.sin() * 8.0,
+                        35,
+                    ));
                 }
             }
             _ => {
                 // `:42538-42578`'s drift: aim at the player's led centre,
                 // hover 200 px above at the 24-px cap.
                 if num <= 53.0 {
-                    self.moon_local[0] +=
-                        0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
+                    self.moon_local[0] += 0.5 * ((pcy - cy).atan2(pcx - cx) - self.moon_local[0]);
                     self.moon_local[1] = (self.moon_local[1] + 0.05).min(0.7);
                     let (dx, dy) = (pcx - cx, pcy - cy - 200.0);
                     let d = (dx * dx + dy * dy).sqrt().max(0.001);
@@ -10044,7 +10082,8 @@ impl Npc {
         if self.ai[1] * 2.0 >= 60.0 && self.ai[2] > 0.0 {
             // `:59585-59589`'s spawn: the 410 spider at the centre with the
             // carried velocity.
-            self.wants_sphere.push((NpcKind::StardustSpiderSmall, cx, cy));
+            self.wants_sphere
+                .push((NpcKind::StardustSpiderSmall, cx, cy));
             self.ai[2] = 0.0;
         }
         if self.ai[1] <= 0.0 {
@@ -10154,7 +10193,8 @@ impl Npc {
             let len = (ax * ax + ay * ay).sqrt().max(0.001);
             ax = ax / len * 1.0;
             ay = ay / len * 1.0;
-            self.wants_hostile_shot.push((537u16, cx + 2.0, cy - 12.0, ax, ay, 60));
+            self.wants_hostile_shot
+                .push((537u16, cx + 2.0, cy - 12.0, ax, ay, 60));
             self.ai[2] = 0.0;
         }
         if self.ai[1] <= 0.0 {
@@ -10510,9 +10550,9 @@ impl Npc {
                 if !(0..world.width).contains(&bx) || !(0..world.height).contains(&by) {
                     continue;
                 }
-                let solid = world.tile(bx, by).is_some_and(|t| {
-                    t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
-                });
+                let solid = world
+                    .tile(bx, by)
+                    .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
                 if !solid {
                     spot = Some((bx, by));
                     break;
@@ -10658,8 +10698,7 @@ impl Npc {
             let (mx, my) = (cx + self.sprite_dir as f32 * 4.0, cy - 6.0);
             for i in 0..4 {
                 let vx = (-3.0 + 2.0 * i as f32) * 0.15;
-                self.wants_hostile_shot
-                    .push((573u16, mx, my, vx, -0.1, 60));
+                self.wants_hostile_shot.push((573u16, mx, my, vx, -0.1, 60));
             }
             self.ai[2] = 0.0;
             self.ai[1] = 0.0;
@@ -10716,10 +10755,7 @@ impl Npc {
                 ax = ax / len * 7.0;
                 ay = ay / len * 7.0;
                 // `:59304-59308`'s muzzle: `spriteDirection * 2, -12`.
-                let (mx, my) = (
-                    cx + self.sprite_dir as f32 * 2.0,
-                    cy - 12.0,
-                );
+                let (mx, my) = (cx + self.sprite_dir as f32 * 2.0, cy - 12.0);
                 self.wants_hostile_shot.push((581u16, mx, my, ax, ay, 60));
                 let _ = octant;
                 self.ai[2] = 0.0;
@@ -10995,10 +11031,7 @@ impl Npc {
                 let speed = self.vx.hypot(self.vy);
                 self.vx = (self.vx * (homing - 1.0) + ux * (speed + drag)) / homing;
                 self.vy = (self.vy * (homing - 1.0) + uy * (speed + drag)) / homing;
-                let timer_exit = !glide
-                    && self.ai[1] >= 30.0
-                    && dx.hypot(dy) > 150.0
-                    && cy > pcy;
+                let timer_exit = !glide && self.ai[1] >= 30.0 && dx.hypot(dy) > 150.0 && cy > pcy;
                 let speed_exit = self.vx.hypot(self.vy) < min_speed;
                 let crash = glide
                     && (dx.hypot(dy) < 64.0
@@ -11104,8 +11137,14 @@ impl Npc {
                 );
                 let len = (dx * dx + dy * dy).sqrt().max(1.0);
                 let speed = 13.0;
-                self.wants_hostile_shot
-                    .push((671, sx, sy, dx / len * speed, dy / len * speed, dmg));
+                self.wants_hostile_shot.push((
+                    671,
+                    sx,
+                    sy,
+                    dx / len * speed,
+                    dy / len * speed,
+                    dmg,
+                ));
             }
         }
         // The walker arm: the port's shared physics keeps them grounded.
@@ -12066,9 +12105,7 @@ impl Npc {
         // -1.57 baseline, `:28891`/`:28969`). The v1 wrote no rotation, so
         // the whole family drew upright.
         self.rotation = match self.kind {
-            NpcKind::PrimeSaw => {
-                (dock_y - cy).atan2(dock_x - cx) + std::f32::consts::FRAC_PI_2
-            }
+            NpcKind::PrimeSaw => (dock_y - cy).atan2(dock_x - cx) + std::f32::consts::FRAC_PI_2,
             NpcKind::PrimeVice => {
                 // The rise state swings at the wider 280 dock (`:28435`).
                 let dx = if self.ai[2] == 1.0 {
@@ -12078,9 +12115,7 @@ impl Npc {
                 };
                 (world.prime_y + 230.0 - cy).atan2(dx - cx) + std::f32::consts::FRAC_PI_2
             }
-            NpcKind::PrimeCannon => {
-                (dock_y - cy).atan2(dock_x - cx) + std::f32::consts::FRAC_PI_2
-            }
+            NpcKind::PrimeCannon => (dock_y - cy).atan2(dock_x - cx) + std::f32::consts::FRAC_PI_2,
             _ => (pcy - cy).atan2(pcx - cx) - std::f32::consts::FRAC_PI_2,
         };
         self.x += self.vx;
@@ -12109,7 +12144,11 @@ impl Npc {
         // `num391 = player.Center.X - width/2 - eye.Center.X`, NOT the
         // wall's `direction` the `:26068` body mirror reads: `a.frame 29`
         // flips the iris toward the target even when the wall faces away.
-        self.sprite_dir = if pcx - w * 0.5 - (self.x + w * 0.5) > 0.0 { 1 } else { -1 };
+        self.sprite_dir = if pcx - w * 0.5 - (self.x + w * 0.5) > 0.0 {
+            1
+        } else {
+            -1
+        };
         let band_mid = (world.wof_draw_top + world.wof_draw_bottom) * 0.5;
         let top_half = self.ai[0] > 0.0;
         let target_y = if top_half {
@@ -12484,9 +12523,12 @@ impl Npc {
                 // (247 at -84/-9, 248 at +78/-9, 246 at -3/-57).
                 if self.caster_counter == 0 && self.cast_windup == 0 {
                     self.caster_counter = 1;
-                    self.wants_sphere.push((NpcKind::GolemFistRight, cx - 84.0, cy - 9.0));
-                    self.wants_sphere.push((NpcKind::GolemFistLeft, cx + 78.0, cy - 9.0));
-                    self.wants_sphere.push((NpcKind::GolemHead, cx - 3.0, cy - 57.0));
+                    self.wants_sphere
+                        .push((NpcKind::GolemFistRight, cx - 84.0, cy - 9.0));
+                    self.wants_sphere
+                        .push((NpcKind::GolemFistLeft, cx + 78.0, cy - 9.0));
+                    self.wants_sphere
+                        .push((NpcKind::GolemHead, cx - 3.0, cy - 57.0));
                 }
                 if self.ai[0] == 0.0 {
                     // The grounded charge (`:19638-19703`).
@@ -13172,7 +13214,7 @@ impl Npc {
                 self.vy = -(crate::app::frame::rand01(rng) * 2.9 + 2.1);
                 self.vx = (crate::app::frame::rand01(rng) * 39.0 - 20.0) * 0.1;
                 self.facing = if crate::app::frame::rand01(rng) < 0.5 {
-                self.sprite_dir = self.facing;
+                    self.sprite_dir = self.facing;
                     1
                 } else {
                     -1
@@ -13574,7 +13616,6 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
         h = h.wrapping_mul(31).wrapping_add(n.render_key());
     }
     h
-
 }
 
 // --- The world-file section 6 (pointer 5): `SaveNPCs:1703` / `LoadNPCs:2884`
@@ -13825,12 +13866,7 @@ mod tests {
                 top_y: npc.y,
             };
             for _ in 0..600 {
-                crate::npc_ai::hover_step(
-                    &mut npc,
-                    &w,
-                    target,
-                    crate::npc_ai::HoverParams::HORNET,
-                );
+                crate::npc_ai::hover_step(&mut npc, &w, target, crate::npc_ai::HoverParams::HORNET);
             }
             npc.vx
         };
@@ -13874,11 +13910,20 @@ mod tests {
     fn behind_tiles_field_matches_csharp_defaults_s1_c_6() {
         // S1-C-6 / NPC.cs:6517,8520 (default false), 10355 (WoF behindTiles = true).
         let wof = Npc::new(NpcKind::WallOfFlesh, 0.0, 0.0, 1, 0.0);
-        assert!(wof.behind_tiles, "WallOfFlesh (NPC.cs:10355) must draw behind tiles");
+        assert!(
+            wof.behind_tiles,
+            "WallOfFlesh (NPC.cs:10355) must draw behind tiles"
+        );
         let eye = Npc::new(NpcKind::WallOfFleshEye, 0.0, 0.0, 1, 0.0);
-        assert!(eye.behind_tiles, "WallOfFleshEye (NPC.cs:10373) must draw behind tiles");
+        assert!(
+            eye.behind_tiles,
+            "WallOfFleshEye (NPC.cs:10373) must draw behind tiles"
+        );
         let hungry = Npc::new(NpcKind::Hungry, 0.0, 0.0, 1, 0.0);
-        assert!(hungry.behind_tiles, "Hungry/TheHungry (NPC.cs:10389) must draw behind tiles");
+        assert!(
+            hungry.behind_tiles,
+            "Hungry/TheHungry (NPC.cs:10389) must draw behind tiles"
+        );
         for kind in [
             NpcKind::DevourerHead,
             NpcKind::DevourerBody,
@@ -13899,7 +13944,10 @@ mod tests {
             );
         }
         let slime = Npc::new(NpcKind::Slime, 0.0, 0.0, 1, 0.0);
-        assert!(!slime.behind_tiles, "ordinary NPCs default behindTiles=false (NPC.cs:8520)");
+        assert!(
+            !slime.behind_tiles,
+            "ordinary NPCs default behindTiles=false (NPC.cs:8520)"
+        );
     }
 
     #[test]
@@ -13940,7 +13988,10 @@ mod tests {
                 saw_varied = true;
             }
         }
-        assert!(saw_varied, "S1-C-5: contact damage variance never observed over samples");
+        assert!(
+            saw_varied,
+            "S1-C-5: contact damage variance never observed over samples"
+        );
 
         // Positive player luck -> negative luck passed to DamageVar (0f - luck),
         // which rerolls and keeps the lower damage (Player.cs:31387).
@@ -15314,13 +15365,68 @@ mod tests {
     fn the_nurse_heal_cost_math() {
         // `GetNurseHealCost`'s core: the missing life + the debuffs x100,
         // x the happiness multiplier; the rounding truncates (the C# cast).
-        assert_eq!(crate::app::nurse_heal_cost_for(40, 0, 1.0), 40);
-        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.0), 140);
-        assert_eq!(crate::app::nurse_heal_cost_for(0, 2, 1.0), 200);
+        let classic = crate::app::NurseCostFlags {
+            downed_golem: false,
+            downed_plant_boss: false,
+            downed_mech_any: false,
+            hard_mode: false,
+            downed_boss3_or_queen_bee: false,
+            downed_boss2: false,
+            downed_boss1: false,
+            discount_available: false,
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 0, 1.0, &classic), 40);
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.0, &classic), 140);
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 2, 1.0, &classic), 200);
         // The content forest Guide multiplier (0.89) rides the service too.
-        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 0.89), 124);
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 0.89, &classic), 124);
         // The ceiling 1.5.
-        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.5), 210);
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.5, &classic), 210);
+        // The boss ladder (`Main.cs:40069-40088`): the Golem 200x, the
+        // Plant 150x, the mechs 100x, hardmode 60x, the Skeletron/Queen-Bee
+        // pair 25x, boss2 10x, boss1 3x — first match wins.
+        let golem = crate::app::NurseCostFlags {
+            downed_golem: true,
+            ..classic
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &golem), 20_000);
+        let plant = crate::app::NurseCostFlags {
+            downed_plant_boss: true,
+            ..classic
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &plant), 15_000);
+        let mech = crate::app::NurseCostFlags {
+            downed_mech_any: true,
+            ..classic
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &mech), 10_000);
+        let hard = crate::app::NurseCostFlags {
+            hard_mode: true,
+            ..classic
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &hard), 6_000);
+        let b3 = crate::app::NurseCostFlags {
+            downed_boss3_or_queen_bee: true,
+            ..classic
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &b3), 2_500);
+        let b2 = crate::app::NurseCostFlags {
+            downed_boss2: true,
+            ..classic
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &b2), 1_000);
+        let b1 = crate::app::NurseCostFlags {
+            downed_boss1: true,
+            ..classic
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 1, 1.0, &b1), 300);
+        // The Discount Card's `(int)((float)num * 0.8f)` truncation rides
+        // before the mood (`:40094-40096`): 140 → 112.
+        let disc = crate::app::NurseCostFlags {
+            discount_available: true,
+            ..classic
+        };
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.0, &disc), 112);
     }
 
     #[test]
@@ -16410,14 +16516,9 @@ mod tests {
         );
     }
 
-
-
     /// `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the Sleeping Angler's
     /// two rows flip once past 30 ticks and wrap — the headless twin of the
     /// screenshot pair (the port's draw rides the same rows).
-
-
-
 
     #[test]
     fn the_dye_trader_and_party_girl_kinds_stats_roundtrip_and_shops() {
@@ -16425,10 +16526,7 @@ mod tests {
         // twin's numbers, the kind<->u16 round-trips, the shop indexes
         // (`NPCInteractions.cs:499-500`'s `Shop(207, 12)`/`Shop(208, 13)`) and
         // the bestiary rows.
-        for (kind, id) in [
-            (NpcKind::DyeTrader, 207u16),
-            (NpcKind::PartyGirl, 208),
-        ] {
+        for (kind, id) in [(NpcKind::DyeTrader, 207u16), (NpcKind::PartyGirl, 208)] {
             assert_eq!(kind.max_hp(), 250, "{kind:?}");
             assert_eq!(kind.contact_damage(), 10, "{kind:?}");
             assert_eq!(kind.cs_id(), id, "{kind:?}");
@@ -16464,37 +16562,188 @@ mod tests {
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
     const ALL_KINDS: [NpcKind; 182] = [
-        NpcKind::Slime, NpcKind::DemonEye, NpcKind::WanderingEye, NpcKind::Zombie, NpcKind::KingSlime, NpcKind::Guide,
-        NpcKind::Skeleton, NpcKind::UndeadMiner, NpcKind::CaveBat, NpcKind::JungleBat, NpcKind::Hellbat, NpcKind::VoodooDemon,
-        NpcKind::EaterOfSouls, NpcKind::Hornet, NpcKind::MeteorHead, NpcKind::GoblinThief, NpcKind::GoblinWarrior, NpcKind::GoblinArcher,
-        NpcKind::GoblinPeon, NpcKind::GoblinSummoner, NpcKind::SnowmanGangsta, NpcKind::SnowBalla, NpcKind::MysterySnowman, NpcKind::MartianOfficer,
-        NpcKind::GrayGrunt, NpcKind::MartianEngineer, NpcKind::GigaZapper, NpcKind::MartianWalker, NpcKind::MartianProbe, NpcKind::MartianDrone,
-        NpcKind::BrainScrambler, NpcKind::RayGunner, NpcKind::ScutlixRider, NpcKind::Scutlix, NpcKind::MartianSaucer, NpcKind::MartianSaucerTurret,
-        NpcKind::MartianSaucerCannon, NpcKind::FlyingDutchman, NpcKind::DD2GoblinT1, NpcKind::DD2GoblinT2, NpcKind::DD2GoblinT3, NpcKind::DD2GoblinBomberT1,
-        NpcKind::DD2GoblinBomberT2, NpcKind::DD2GoblinBomberT3, NpcKind::DD2JavelinT1, NpcKind::DD2JavelinT2, NpcKind::DD2JavelinT3, NpcKind::DD2SkeletonT1,
-        NpcKind::DD2SkeletonT3, NpcKind::StardustTower, NpcKind::NebulaTower, NpcKind::SolarTower, NpcKind::VortexTower, NpcKind::DD2LanePortal,
-        NpcKind::DD2WyvernT1, NpcKind::DD2WyvernT2, NpcKind::DD2WyvernT3, NpcKind::DD2DarkMageT3, NpcKind::DD2WitherBeastT3, NpcKind::DD2DrakinT2,
-        NpcKind::DD2DrakinT3, NpcKind::DD2KoboldWalkerT2, NpcKind::DD2KoboldWalkerT3, NpcKind::DD2KoboldFlyerT2, NpcKind::DD2KoboldFlyerT3, NpcKind::DD2OgreT2,
-        NpcKind::DD2OgreT3, NpcKind::StardustCellBig, NpcKind::StardustCellSmall, NpcKind::StardustJellyfishBig, NpcKind::NebulaBeast, NpcKind::VortexRifleman,
-        NpcKind::VortexSoldier, NpcKind::VortexHunter, NpcKind::VortexAlien, NpcKind::VortexHeadcrab, NpcKind::NebulaFloater, NpcKind::BrainSuckler,
-        NpcKind::Predictor, NpcKind::StardustSpiderBig, NpcKind::StardustSpiderSmall, NpcKind::StardustSoldier, NpcKind::SolarDrakomire, NpcKind::SolarDrakomireRider,
-        NpcKind::SolarSroller, NpcKind::SolarCorite, NpcKind::SolarSelenian, NpcKind::SolarCrawltipedeHead, NpcKind::SolarCrawltipedeBody, NpcKind::SolarCrawltipedeTail,
-        NpcKind::StardustWormHead, NpcKind::SolarSpearman, NpcKind::MoonLordHead, NpcKind::MoonLordHand, NpcKind::MoonLordCore, NpcKind::MoonLordFreeEye,
-        NpcKind::MoonLordLeechBlob, NpcKind::AncientCultist, NpcKind::DD2Bartender, NpcKind::DD2EterniaCrystal, NpcKind::DD2WitherBeast, NpcKind::DD2Betsy,
-        NpcKind::DD2DarkMage, NpcKind::FlyingDutchmanCannon, NpcKind::MartianSaucerCore, NpcKind::PirateDeckhand, NpcKind::PirateCaptainsMate, NpcKind::PirateArcher,
-        NpcKind::PirateCorsair, NpcKind::PirateCaptain, NpcKind::GoblinSorcerer, NpcKind::Tim, NpcKind::DarkCaster, NpcKind::FireImp,
-        NpcKind::ChaosBall, NpcKind::BurningSphere, NpcKind::WaterSphere, NpcKind::Goldfish, NpcKind::Piranha, NpcKind::Shark,
-        NpcKind::DevourerHead, NpcKind::DevourerBody, NpcKind::DevourerTail, NpcKind::GiantWormHead, NpcKind::GiantWormBody, NpcKind::GiantWormTail,
-        NpcKind::EaterOfWorldsHead, NpcKind::EaterOfWorldsBody, NpcKind::EaterOfWorldsTail, NpcKind::Merchant, NpcKind::Dryad, NpcKind::Nurse,
-        NpcKind::ArmsDealer, NpcKind::Demolitionist, NpcKind::Painter, NpcKind::WitchDoctor, NpcKind::Clothier, NpcKind::TravellingMerchant,
-        NpcKind::Angler, NpcKind::SleepingAngler, NpcKind::Stylist, NpcKind::WebbedStylist, NpcKind::TaxCollector, NpcKind::Golfer,
-        NpcKind::SleepingGolfer, NpcKind::Zoologist, NpcKind::Princess, NpcKind::DyeTrader, NpcKind::PartyGirl, NpcKind::Wizard,
-        NpcKind::BoundWizard, NpcKind::Mechanic, NpcKind::BoundMechanic, NpcKind::EyeOfCthulhu, NpcKind::QueenBee, NpcKind::SkeletronHead,
-        NpcKind::ServantOfCthulhu, NpcKind::WallOfFlesh, NpcKind::Hungry, NpcKind::LeechHead, NpcKind::LeechBody, NpcKind::TheDestroyer,
-        NpcKind::SkeletronPrime, NpcKind::Retinazer, NpcKind::Spazmatism, NpcKind::Plantera, NpcKind::BrainOfCthulhu, NpcKind::Creeper,
-        NpcKind::BoundGoblin, NpcKind::GoblinTinkerer, NpcKind::Golem, NpcKind::GolemHead, NpcKind::GolemFistLeft, NpcKind::GolemFistRight,
-        NpcKind::GolemHeadFree, NpcKind::Deerclops, NpcKind::SkeletronHand, NpcKind::WallOfFleshEye, NpcKind::PrimeCannon, NpcKind::PrimeSaw,
-        NpcKind::PrimeVice, NpcKind::PrimeLaser,
+        NpcKind::Slime,
+        NpcKind::DemonEye,
+        NpcKind::WanderingEye,
+        NpcKind::Zombie,
+        NpcKind::KingSlime,
+        NpcKind::Guide,
+        NpcKind::Skeleton,
+        NpcKind::UndeadMiner,
+        NpcKind::CaveBat,
+        NpcKind::JungleBat,
+        NpcKind::Hellbat,
+        NpcKind::VoodooDemon,
+        NpcKind::EaterOfSouls,
+        NpcKind::Hornet,
+        NpcKind::MeteorHead,
+        NpcKind::GoblinThief,
+        NpcKind::GoblinWarrior,
+        NpcKind::GoblinArcher,
+        NpcKind::GoblinPeon,
+        NpcKind::GoblinSummoner,
+        NpcKind::SnowmanGangsta,
+        NpcKind::SnowBalla,
+        NpcKind::MysterySnowman,
+        NpcKind::MartianOfficer,
+        NpcKind::GrayGrunt,
+        NpcKind::MartianEngineer,
+        NpcKind::GigaZapper,
+        NpcKind::MartianWalker,
+        NpcKind::MartianProbe,
+        NpcKind::MartianDrone,
+        NpcKind::BrainScrambler,
+        NpcKind::RayGunner,
+        NpcKind::ScutlixRider,
+        NpcKind::Scutlix,
+        NpcKind::MartianSaucer,
+        NpcKind::MartianSaucerTurret,
+        NpcKind::MartianSaucerCannon,
+        NpcKind::FlyingDutchman,
+        NpcKind::DD2GoblinT1,
+        NpcKind::DD2GoblinT2,
+        NpcKind::DD2GoblinT3,
+        NpcKind::DD2GoblinBomberT1,
+        NpcKind::DD2GoblinBomberT2,
+        NpcKind::DD2GoblinBomberT3,
+        NpcKind::DD2JavelinT1,
+        NpcKind::DD2JavelinT2,
+        NpcKind::DD2JavelinT3,
+        NpcKind::DD2SkeletonT1,
+        NpcKind::DD2SkeletonT3,
+        NpcKind::StardustTower,
+        NpcKind::NebulaTower,
+        NpcKind::SolarTower,
+        NpcKind::VortexTower,
+        NpcKind::DD2LanePortal,
+        NpcKind::DD2WyvernT1,
+        NpcKind::DD2WyvernT2,
+        NpcKind::DD2WyvernT3,
+        NpcKind::DD2DarkMageT3,
+        NpcKind::DD2WitherBeastT3,
+        NpcKind::DD2DrakinT2,
+        NpcKind::DD2DrakinT3,
+        NpcKind::DD2KoboldWalkerT2,
+        NpcKind::DD2KoboldWalkerT3,
+        NpcKind::DD2KoboldFlyerT2,
+        NpcKind::DD2KoboldFlyerT3,
+        NpcKind::DD2OgreT2,
+        NpcKind::DD2OgreT3,
+        NpcKind::StardustCellBig,
+        NpcKind::StardustCellSmall,
+        NpcKind::StardustJellyfishBig,
+        NpcKind::NebulaBeast,
+        NpcKind::VortexRifleman,
+        NpcKind::VortexSoldier,
+        NpcKind::VortexHunter,
+        NpcKind::VortexAlien,
+        NpcKind::VortexHeadcrab,
+        NpcKind::NebulaFloater,
+        NpcKind::BrainSuckler,
+        NpcKind::Predictor,
+        NpcKind::StardustSpiderBig,
+        NpcKind::StardustSpiderSmall,
+        NpcKind::StardustSoldier,
+        NpcKind::SolarDrakomire,
+        NpcKind::SolarDrakomireRider,
+        NpcKind::SolarSroller,
+        NpcKind::SolarCorite,
+        NpcKind::SolarSelenian,
+        NpcKind::SolarCrawltipedeHead,
+        NpcKind::SolarCrawltipedeBody,
+        NpcKind::SolarCrawltipedeTail,
+        NpcKind::StardustWormHead,
+        NpcKind::SolarSpearman,
+        NpcKind::MoonLordHead,
+        NpcKind::MoonLordHand,
+        NpcKind::MoonLordCore,
+        NpcKind::MoonLordFreeEye,
+        NpcKind::MoonLordLeechBlob,
+        NpcKind::AncientCultist,
+        NpcKind::DD2Bartender,
+        NpcKind::DD2EterniaCrystal,
+        NpcKind::DD2WitherBeast,
+        NpcKind::DD2Betsy,
+        NpcKind::DD2DarkMage,
+        NpcKind::FlyingDutchmanCannon,
+        NpcKind::MartianSaucerCore,
+        NpcKind::PirateDeckhand,
+        NpcKind::PirateCaptainsMate,
+        NpcKind::PirateArcher,
+        NpcKind::PirateCorsair,
+        NpcKind::PirateCaptain,
+        NpcKind::GoblinSorcerer,
+        NpcKind::Tim,
+        NpcKind::DarkCaster,
+        NpcKind::FireImp,
+        NpcKind::ChaosBall,
+        NpcKind::BurningSphere,
+        NpcKind::WaterSphere,
+        NpcKind::Goldfish,
+        NpcKind::Piranha,
+        NpcKind::Shark,
+        NpcKind::DevourerHead,
+        NpcKind::DevourerBody,
+        NpcKind::DevourerTail,
+        NpcKind::GiantWormHead,
+        NpcKind::GiantWormBody,
+        NpcKind::GiantWormTail,
+        NpcKind::EaterOfWorldsHead,
+        NpcKind::EaterOfWorldsBody,
+        NpcKind::EaterOfWorldsTail,
+        NpcKind::Merchant,
+        NpcKind::Dryad,
+        NpcKind::Nurse,
+        NpcKind::ArmsDealer,
+        NpcKind::Demolitionist,
+        NpcKind::Painter,
+        NpcKind::WitchDoctor,
+        NpcKind::Clothier,
+        NpcKind::TravellingMerchant,
+        NpcKind::Angler,
+        NpcKind::SleepingAngler,
+        NpcKind::Stylist,
+        NpcKind::WebbedStylist,
+        NpcKind::TaxCollector,
+        NpcKind::Golfer,
+        NpcKind::SleepingGolfer,
+        NpcKind::Zoologist,
+        NpcKind::Princess,
+        NpcKind::DyeTrader,
+        NpcKind::PartyGirl,
+        NpcKind::Wizard,
+        NpcKind::BoundWizard,
+        NpcKind::Mechanic,
+        NpcKind::BoundMechanic,
+        NpcKind::EyeOfCthulhu,
+        NpcKind::QueenBee,
+        NpcKind::SkeletronHead,
+        NpcKind::ServantOfCthulhu,
+        NpcKind::WallOfFlesh,
+        NpcKind::Hungry,
+        NpcKind::LeechHead,
+        NpcKind::LeechBody,
+        NpcKind::TheDestroyer,
+        NpcKind::SkeletronPrime,
+        NpcKind::Retinazer,
+        NpcKind::Spazmatism,
+        NpcKind::Plantera,
+        NpcKind::BrainOfCthulhu,
+        NpcKind::Creeper,
+        NpcKind::BoundGoblin,
+        NpcKind::GoblinTinkerer,
+        NpcKind::Golem,
+        NpcKind::GolemHead,
+        NpcKind::GolemFistLeft,
+        NpcKind::GolemFistRight,
+        NpcKind::GolemHeadFree,
+        NpcKind::Deerclops,
+        NpcKind::SkeletronHand,
+        NpcKind::WallOfFleshEye,
+        NpcKind::PrimeCannon,
+        NpcKind::PrimeSaw,
+        NpcKind::PrimeVice,
+        NpcKind::PrimeLaser,
     ];
 
     #[test]
@@ -16554,12 +16803,8 @@ mod tests {
         // `resolve_stock` reads moon-phase 0, where the C#'s pair sits.
         assert!(stock.contains(&2871), "the moon-phase row at phase 0");
         assert!(stock.contains(&2872), "its pair");
-        let phase2 = crate::shop::resolve_stock_moon(
-            12,
-            &crate::shop::ShopFlags::default(),
-            &[],
-            4,
-        );
+        let phase2 =
+            crate::shop::resolve_stock_moon(12, &crate::shop::ShopFlags::default(), &[], 4);
         assert!(!phase2.contains(&2871), "no moon-phase row at phase 4");
         // The blood-moon-night row.
         let night = crate::shop::ShopFlags {
@@ -16578,7 +16823,9 @@ mod tests {
     #[test]
     fn the_party_girl_shop_carries_the_party_rows() {
         let stock = crate::shop::resolve_stock(13, &crate::shop::ShopFlags::default(), &[]);
-        for id in [859, 1000, 1168, 1345, 1450, 3253, 4553, 2700, 2738, 4470, 4681, 4791, 3747, 3732, 3742] {
+        for id in [
+            859, 1000, 1168, 1345, 1450, 3253, 4553, 2700, 2738, 4470, 4681, 4791, 3747, 3732, 3742,
+        ] {
             assert!(stock.contains(&id), "the {id} party row");
         }
         // 1449 is the `Main.dayTime` row (the port carries no day gate), 4552
@@ -16606,10 +16853,7 @@ mod tests {
         // town twin's numbers, the kind<->u16 round-trips, the shop indexes
         // (`NPCInteractions.cs:510-511`'s `Shop(633, 23)`/`Shop(663, 24)`),
         // the town flag and the bestiary rows.
-        for (kind, id) in [
-            (NpcKind::Zoologist, 633u16),
-            (NpcKind::Princess, 663),
-        ] {
+        for (kind, id) in [(NpcKind::Zoologist, 633u16), (NpcKind::Princess, 663)] {
             assert_eq!(kind.max_hp(), 250, "{kind:?}");
             assert_eq!(kind.contact_damage(), 10, "{kind:?}");
             assert_eq!(kind.cs_id(), id, "{kind:?}");
@@ -16628,8 +16872,14 @@ mod tests {
             crate::world_sim::npcs::shop_index_for_kind(NpcKind::Princess),
             Some(24)
         );
-        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Zoologist, SlimeVariant::Blue).net_id, 633);
-        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Princess, SlimeVariant::Blue).net_id, 663);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Zoologist, SlimeVariant::Blue).net_id,
+            633
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Princess, SlimeVariant::Blue).net_id,
+            663
+        );
     }
 
     /// The Zoologist's shop (`Chest.cs:3263-3340`): the bestiary completion
@@ -16694,7 +16944,10 @@ mod tests {
     #[test]
     fn the_princess_gate_needs_the_full_roster() {
         let empty: [crate::npc::Npc; 0] = [];
-        assert!(!crate::bestiary::all_town_kinds_present(&empty), "no one home");
+        assert!(
+            !crate::bestiary::all_town_kinds_present(&empty),
+            "no one home"
+        );
         // The full roster: one of each ported town kind.
         let mut roster: Vec<crate::npc::Npc> = Vec::new();
         for kind in [
@@ -16740,16 +16993,17 @@ mod tests {
         // kind<->u16 round-trips, the Golfer's shop (`NPCInteractions.cs:509`'s
         // `Shop(588, 22)`), the town flag (589 is `Sets.BoundTownNPCs`,
         // `NPCID.cs:10441`) and the bestiary row.
-        for (kind, id) in [
-            (NpcKind::Golfer, 588u16),
-            (NpcKind::SleepingGolfer, 589),
-        ] {
+        for (kind, id) in [(NpcKind::Golfer, 588u16), (NpcKind::SleepingGolfer, 589)] {
             assert_eq!(kind.max_hp(), 250, "{kind:?}");
             assert_eq!(kind.contact_damage(), 10, "{kind:?}");
             assert_eq!(kind.cs_id(), id, "{kind:?}");
         }
         assert_eq!(NpcKind::Golfer.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::SleepingGolfer.size(), (18.0, 34.0), "the bound body");
+        assert_eq!(
+            NpcKind::SleepingGolfer.size(),
+            (18.0, 34.0),
+            "the bound body"
+        );
         assert_eq!(NpcKind::Golfer.to_u16(), 163);
         assert_eq!(NpcKind::from_u16(163), Some(NpcKind::Golfer));
         assert_eq!(NpcKind::SleepingGolfer.to_u16(), 164);
@@ -16760,7 +17014,10 @@ mod tests {
             crate::world_sim::npcs::shop_index_for_kind(NpcKind::Golfer),
             Some(22)
         );
-        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Golfer, SlimeVariant::Blue).net_id, 588);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Golfer, SlimeVariant::Blue).net_id,
+            588
+        );
     }
 
     /// `Chest.SetupShop`'s case 22 (`Chest.cs:3156-3262`): the Golfer's always
@@ -16770,8 +17027,8 @@ mod tests {
     fn the_golfer_shop_scores_its_clubs_and_trophies() {
         let base = crate::shop::resolve_stock(22, &crate::shop::ShopFlags::default(), &[]);
         for id in [
-            4587, 4590, 4589, 4588, 4083, 4084, 4085, 4086, 4087, 4088, 4089, 3989, 4095, 4040, 4319,
-            4320, 4135, 4138, 4136, 4137, 4049,
+            4587, 4590, 4589, 4588, 4083, 4084, 4085, 4086, 4087, 4088, 4089, 3989, 4095, 4040,
+            4319, 4320, 4135, 4138, 4136, 4137, 4049,
         ] {
             assert!(base.contains(&id), "the always row {id}");
         }
@@ -16824,7 +17081,11 @@ mod tests {
             assert_eq!(kind.cs_id(), id, "{kind:?}");
         }
         assert_eq!(NpcKind::Stylist.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::WebbedStylist.size(), (18.0, 34.0), "the bound body");
+        assert_eq!(
+            NpcKind::WebbedStylist.size(),
+            (18.0, 34.0),
+            "the bound body"
+        );
         assert_eq!(NpcKind::TaxCollector.size(), (18.0, 40.0));
         assert_eq!(NpcKind::Stylist.to_u16(), 160);
         assert_eq!(NpcKind::from_u16(160), Some(NpcKind::Stylist));
@@ -16844,7 +17105,10 @@ mod tests {
             None,
             "the Tax Collector sells nothing"
         );
-        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Stylist, SlimeVariant::Blue).net_id, 353);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Stylist, SlimeVariant::Blue).net_id,
+            353
+        );
         assert_eq!(
             crate::bestiary::entry_for_npc(NpcKind::TaxCollector, SlimeVariant::Blue).net_id,
             441
@@ -16869,7 +17133,9 @@ mod tests {
             ..Default::default()
         };
         let stock = crate::shop::resolve_stock(18, &flags, &[]);
-        for id in [1990, 1979, 1977, 1978, 1980, 1983, 1984, 1985, 1986, 2863, 3259, 5104] {
+        for id in [
+            1990, 1979, 1977, 1978, 1980, 1983, 1984, 1985, 1986, 2863, 3259, 5104,
+        ] {
             assert!(stock.contains(&id), "the {id} dye row");
         }
         // The moon-phase parity row: even phase + day, odd phase + night.
@@ -16926,7 +17192,11 @@ mod tests {
         assert_eq!(NpcKind::Wizard.size(), (18.0, 40.0));
         assert_eq!(NpcKind::BoundWizard.size(), (18.0, 40.0));
         assert_eq!(NpcKind::Mechanic.size(), (18.0, 40.0));
-        assert_eq!(NpcKind::BoundMechanic.size(), (18.0, 34.0), "the bound body");
+        assert_eq!(
+            NpcKind::BoundMechanic.size(),
+            (18.0, 34.0),
+            "the bound body"
+        );
         assert_eq!(NpcKind::Wizard.to_u16(), 156);
         assert_eq!(NpcKind::from_u16(156), Some(NpcKind::Wizard));
         assert_eq!(NpcKind::BoundWizard.to_u16(), 157);
@@ -16947,7 +17217,10 @@ mod tests {
             crate::world_sim::npcs::shop_index_for_kind(NpcKind::Mechanic),
             Some(8)
         );
-        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Wizard, SlimeVariant::Blue).net_id, 108);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Wizard, SlimeVariant::Blue).net_id,
+            108
+        );
         assert_eq!(
             crate::bestiary::entry_for_npc(NpcKind::Mechanic, SlimeVariant::Blue).net_id,
             124
@@ -16965,7 +17238,10 @@ mod tests {
             vec![487, 496, 500, 507, 508, 531, 149, 576, 3186],
             "the nine base rows"
         );
-        assert!(!stock.contains(&5461), "the hardmode blood-moon deck is off");
+        assert!(
+            !stock.contains(&5461),
+            "the hardmode blood-moon deck is off"
+        );
         assert!(!stock.contains(&1739), "the halloween hat is off");
         let empty = crate::shop::resolve_stock(
             7,
@@ -16992,18 +17268,8 @@ mod tests {
         // The Rod rides the even moon phase (1/3/5/7 in the C#), so phase 0
         // (the pair's mid) shows it and phase 2 hides it.
         assert!(!stock.contains(&2295), "no Rod at moonPhase 0");
-        let phase1 = crate::shop::resolve_stock_moon(
-            8,
-            &crate::shop::ShopFlags::default(),
-            &[],
-            1,
-        );
-        let phase4 = crate::shop::resolve_stock_moon(
-            8,
-            &crate::shop::ShopFlags::default(),
-            &[],
-            4,
-        );
+        let phase1 = crate::shop::resolve_stock_moon(8, &crate::shop::ShopFlags::default(), &[], 1);
+        let phase4 = crate::shop::resolve_stock_moon(8, &crate::shop::ShopFlags::default(), &[], 4);
         assert!(phase1.contains(&2295), "the Rod at moonPhase 1");
         assert!(!phase4.contains(&2295), "no Rod at moonPhase 5");
         // The graveyard goggles sit constants-off.
@@ -17103,14 +17369,20 @@ mod tests {
         assert_eq!(m.defense(), 15);
         assert_eq!(m.knock_back_resist(), 0.5);
         assert_eq!(NpcKind::TravellingMerchant.contact_damage(), 10);
-        assert_eq!(Npc::new(NpcKind::TravellingMerchant, 0.0, 0.0, 1, 0.0).value(), 0.0);
+        assert_eq!(
+            Npc::new(NpcKind::TravellingMerchant, 0.0, 0.0, 1, 0.0).value(),
+            0.0
+        );
         assert_eq!(NpcKind::TravellingMerchant.size(), (18.0, 40.0));
         assert_eq!(NpcKind::TravellingMerchant.to_u16(), 111);
         assert_eq!(NpcKind::from_u16(111), Some(NpcKind::TravellingMerchant));
         assert!(NpcKind::TravellingMerchant.is_town_resident());
         let e = crate::bestiary::entry_for_npc(NpcKind::TravellingMerchant, SlimeVariant::Blue);
         assert_eq!(e.net_id, 368);
-        assert_eq!(crate::world_sim::npcs::shop_index_for_kind(NpcKind::TravellingMerchant), Some(19));
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::TravellingMerchant),
+            Some(19)
+        );
     }
 
     // M4-NPC-3t: EVERY ported kind must keep `FindFrame` inside its own
@@ -17161,7 +17433,8 @@ mod tests {
                                 break;
                             }
                         }
-                        if !bad.is_empty() && bad.last().unwrap().starts_with(&format!("{kind:?} ")) {
+                        if !bad.is_empty() && bad.last().unwrap().starts_with(&format!("{kind:?} "))
+                        {
                             break;
                         }
                     }
@@ -17170,9 +17443,16 @@ mod tests {
         }
         bad.sort();
         bad.dedup();
-        assert!(bad.is_empty(), "{} kind(s) left their strip:
-{}", bad.len(), bad.join("
-"));
+        assert!(
+            bad.is_empty(),
+            "{} kind(s) left their strip:
+{}",
+            bad.len(),
+            bad.join(
+                "
+"
+            )
+        );
     }
 
     // M4-NPC-3t: the pillar/Moon-Lord families now draw from their OWN
@@ -17248,7 +17528,6 @@ mod tests {
     // family sheet. Sweep the motion/AI states each machine branches on and
     // assert every row stays inside the vanilla strip.
     #[test]
-
     // The lunar families' machines are per-kind `FindFrame` cases now, so a
     // state sweep must land on each case's own band (`NPC.cs:70119-70803`)
     // instead of the shared `|vx| + 0.6` accumulator the v1 ran.
@@ -17265,7 +17544,11 @@ mod tests {
             cell.find_frame();
             seen.push(cell.frame);
         }
-        assert_eq!(seen, vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 0], "the 4-tick wrap");
+        assert_eq!(
+            seen,
+            vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 0],
+            "the 4-tick wrap"
+        );
 
         // 407: the same wrap at 6 ticks.
         let mut jelly = Npc::new(NpcKind::StardustJellyfishBig, 0.0, 0.0, 1, 0.0);
@@ -17281,7 +17564,11 @@ mod tests {
         let mut spider = Npc::new(NpcKind::StardustSpiderBig, 0.0, 0.0, 1, 0.0);
         spider.ai[1] = 12.0;
         spider.find_frame();
-        assert_eq!(spider.frame, rows(NpcKind::StardustSpiderBig) - 1, "the attack row");
+        assert_eq!(
+            spider.frame,
+            rows(NpcKind::StardustSpiderBig) - 1,
+            "the attack row"
+        );
         spider.ai[1] = 0.0;
         spider.frame = 0;
         spider.frame_counter = 0.0;
@@ -17367,7 +17654,10 @@ mod tests {
             selen.find_frame();
             charge.push(selen.frame);
         }
-        assert!(charge.iter().all(|&r| (2..=8).contains(&r)), "the charge band 2..8: {charge:?}");
+        assert!(
+            charge.iter().all(|&r| (2..=8).contains(&r)),
+            "the charge band 2..8: {charge:?}"
+        );
         selen.ai[2] = 0.0;
         selen.frame = 0;
         selen.find_frame();
@@ -17450,7 +17740,10 @@ mod tests {
         larva.vx = 2.0;
         for _ in 0..(22 * rows(NpcKind::VortexHeadcrab)) {
             larva.find_frame();
-            assert!(larva.frame < rows(NpcKind::VortexHeadcrab) - 1, "the walk band");
+            assert!(
+                larva.frame < rows(NpcKind::VortexHeadcrab) - 1,
+                "the walk band"
+            );
         }
         larva.vy = 2.0;
         for _ in 0..12 {
@@ -18064,7 +18357,6 @@ mod tests {
     }
 
     #[test]
-
     #[test]
     fn the_deerclops_state_machine_cycles() {
         // `AI_123_Deerclops` (`NPC.cs:44017-44407`): the damage gate, the
@@ -18178,9 +18470,7 @@ mod tests {
     /// The section glue tests: the records, the kind resolution and the
     /// round-trip between live state and the plain wire structs.
     mod wld_tests {
-        use crate::npc::{
-            from_wld, kind_from_legacy_name, kind_from_net_id, to_wld, Npc, NpcKind,
-        };
+        use crate::npc::{Npc, NpcKind, from_wld, kind_from_legacy_name, kind_from_net_id, to_wld};
         use tr_core::wld::sections::npcs::SAVES_AND_LOADS;
         use tr_core::wld::sections::{SectionData, WldNpcs, WldTower, WldTownNpc};
 
@@ -18223,7 +18513,7 @@ mod tests {
             // all survive the round-trip.
             let section = WldNpcs {
                 town: vec![
-                    record(17, Some((65, 105))), // the Merchant, homed
+                    record(17, Some((65, 105))),  // the Merchant, homed
                     record(22, None),             // the Guide, homeless
                     record(228, Some((61, 101))), // the Witch Doctor
                 ],
@@ -18235,7 +18525,11 @@ mod tests {
             };
             let npcs = from_wld(&section);
             assert_eq!(npcs.len(), 4, "one live NPC per town record plus the tower");
-            assert_eq!(npcs[3].kind, NpcKind::NebulaTower, "the tower record instantiates");
+            assert_eq!(
+                npcs[3].kind,
+                NpcKind::NebulaTower,
+                "the tower record instantiates"
+            );
             assert_eq!(npcs[0].kind, NpcKind::Merchant);
             assert_eq!(npcs[0].home, Some((65, 105)));
             assert_eq!(npcs[1].home, None, "homeless");
@@ -18285,7 +18579,11 @@ mod tests {
             // And the writer never invents one from live state.
             let zombie = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
             assert!(to_wld(&[zombie]).towers.is_empty());
-            assert!(to_wld(&[Npc::new(NpcKind::Merchant, 0.0, 0.0, 1, 0.0)]).towers.is_empty());
+            assert!(
+                to_wld(&[Npc::new(NpcKind::Merchant, 0.0, 0.0, 1, 0.0)])
+                    .towers
+                    .is_empty()
+            );
         }
 
         #[test]
@@ -18390,7 +18688,10 @@ mod tests {
                 kind_from_net_id(crate::loot_db::GREEN_SLIME).map(|(_, v)| v),
                 Some(crate::npc::SlimeVariant::Green)
             );
-            assert!(kind_from_net_id(0).is_none(), "net id 0 is not a ported kind");
+            assert!(
+                kind_from_net_id(0).is_none(),
+                "net id 0 is not a ported kind"
+            );
         }
 
         #[test]
@@ -18511,10 +18812,19 @@ mod tests {
             }
             // The codec it glues, and the re-validation's owner.
             let codec = include_str!("../../tr-core/src/wld/sections/npcs.rs");
-            assert!(codec.contains("WorldFile.SaveNPCs:1703"), "codec write anchor");
-            assert!(codec.contains("WorldFile.LoadNPCs:2884"), "codec read anchor");
+            assert!(
+                codec.contains("WorldFile.SaveNPCs:1703"),
+                "codec write anchor"
+            );
+            assert!(
+                codec.contains("WorldFile.LoadNPCs:2884"),
+                "codec read anchor"
+            );
             let town = include_str!("town.rs");
-            assert!(town.contains("WorldFile.FixAgainstExploits:1864"), "re-validation anchor");
+            assert!(
+                town.contains("WorldFile.FixAgainstExploits:1864"),
+                "re-validation anchor"
+            );
         }
     }
     // ───────────────────────────────────────────────────────────────
@@ -18534,18 +18844,32 @@ mod tests {
         let mut o = bare(NpcKind::MartianOfficer);
         o.facing = 1;
         o.find_frame();
-        assert_eq!((o.frame, o.sprite_dir), (0, 1), "the spawn idle row (dir = 1)");
+        assert_eq!(
+            (o.frame, o.sprite_dir),
+            (0, 1),
+            "the spawn idle row (dir = 1)"
+        );
         o.vx = 2.0;
         o.find_frame();
         assert_eq!(o.frame, 2, "the first grounded moving tick clamps to 2");
-        assert_eq!(o.sprite_dir, 1, "spriteDirection = direction while grounded");
+        assert_eq!(
+            o.sprite_dir, 1,
+            "spriteDirection = direction while grounded"
+        );
         for _ in 0..2 {
             o.find_frame();
         }
-        assert_eq!(o.frame, 3, "|vx| * 2 = 4/tick: the advance fires every 2 ticks");
+        assert_eq!(
+            o.frame, 3,
+            "|vx| * 2 = 4/tick: the advance fires every 2 ticks"
+        );
         for _ in 0..24 {
             o.find_frame();
-            assert!(o.frame <= 8, "the walk wraps at npcFrameCount's 9: {}", o.frame);
+            assert!(
+                o.frame <= 8,
+                "the walk wraps at npcFrameCount's 9: {}",
+                o.frame
+            );
         }
         assert_eq!(o.frame, 8, "the band rides 2..8 and never shows row 9");
         o.vx = 0.0;
@@ -18606,7 +18930,11 @@ mod tests {
         for _ in 0..40 {
             w.find_frame();
         }
-        assert!((1..8).contains(&w.frame), "the walk rides 1..7: {}", w.frame);
+        assert!(
+            (1..8).contains(&w.frame),
+            "the walk rides 1..7: {}",
+            w.frame
+        );
         // The slow walk's snap rides an ADVANCE tick: at `|vx| * 1` the
         // counter needs 61 ticks to pass the 6.0 threshold, and that tick
         // parks the row on the idle 0 (`NPC.cs:71896-71900`).
@@ -18614,7 +18942,11 @@ mod tests {
         for _ in 0..60 {
             w.find_frame();
         }
-        assert!(w.frame >= 1, "the slow walk has not advanced yet: {}", w.frame);
+        assert!(
+            w.frame >= 1,
+            "the slow walk has not advanced yet: {}",
+            w.frame
+        );
         w.find_frame();
         assert_eq!(w.frame, 0, "the slow walk parks on the idle row");
         w.vy = 0.2;
@@ -18631,12 +18963,20 @@ mod tests {
         let mut c = bare(NpcKind::Scutlix);
         c.facing = 1;
         c.find_frame();
-        assert_eq!((c.frame, c.sprite_dir), (0, -1), "the inverted sprite direction");
+        assert_eq!(
+            (c.frame, c.sprite_dir),
+            (0, -1),
+            "the inverted sprite direction"
+        );
         c.vx = 2.0;
         for _ in 0..14 {
             c.find_frame();
         }
-        assert!((1..6).contains(&c.frame), "the 0.5 rate walks 1..5: {}", c.frame);
+        assert!(
+            (1..6).contains(&c.frame),
+            "the 0.5 rate walks 1..5: {}",
+            c.frame
+        );
         c.vy = 0.3;
         c.find_frame();
         assert_eq!(c.frame, 0, "the Scutlix' air row is 0");
@@ -18644,7 +18984,11 @@ mod tests {
         r.facing = -1;
         r.ai[2] = 0.0;
         r.find_frame();
-        assert_eq!((r.frame, r.sprite_dir), (2, 1), "no aim -> row 2, the inverted dir");
+        assert_eq!(
+            (r.frame, r.sprite_dir),
+            (2, 1),
+            "no aim -> row 2, the inverted dir"
+        );
         r.ai[2] = 3.0;
         r.find_frame();
         assert_eq!(r.frame, 2, "ai[2] = 3 -> row 2");
@@ -18685,7 +19029,11 @@ mod tests {
         for _ in 0..8 {
             p.find_frame();
         }
-        assert!((4..8).contains(&p.frame), "the alert bank rides rows 4..7: {}", p.frame);
+        assert!(
+            (4..8).contains(&p.frame),
+            "the alert bank rides rows 4..7: {}",
+            p.frame
+        );
     }
 
     #[test]
@@ -18820,7 +19168,11 @@ mod tests {
         for _ in 0..12 {
             h.find_frame();
         }
-        assert!(h.frame == 3 || h.frame == 4, "the queen alternates 3/4: {}", h.frame);
+        assert!(
+            h.frame == 3 || h.frame == 4,
+            "the queen alternates 3/4: {}",
+            h.frame
+        );
         h.ai[1] = 1.0;
         h.find_frame();
         assert_eq!(h.frame, 5, "the queen's phase pin is row 5");
@@ -18885,8 +19237,8 @@ mod tests {
         // — the saw's "up" aims along that vector off the +π/2 baseline
         // (`NPC.cs:28151`'s `atan2(dy, dx) + 1.57`).
         let (scx, scy) = saw.center();
-        let expected = (w.prime_y + 230.0 - scy).atan2(w.prime_x - 200.0 - scx)
-            + std::f32::consts::FRAC_PI_2;
+        let expected =
+            (w.prime_y + 230.0 - scy).atan2(w.prime_x - 200.0 - scx) + std::f32::consts::FRAC_PI_2;
         assert!(
             (saw.rotation - expected).abs() < 0.001,
             "the saw's dock aim: {} vs {}",
@@ -18904,7 +19256,10 @@ mod tests {
         laser.hp = laser.max_hp;
         laser.ai[0] = 1.0;
         laser.update_prime_limb(&w, &player);
-        let (dx, dy) = (player.center().0 - laser.center().0, player.center().1 - laser.center().1);
+        let (dx, dy) = (
+            player.center().0 - laser.center().0,
+            player.center().1 - laser.center().1,
+        );
         assert!(
             (laser.rotation - (dy.atan2(dx) - std::f32::consts::FRAC_PI_2)).abs() < 0.001,
             "the laser's player aim: {}",
@@ -19013,10 +19368,12 @@ mod tests {
             x_before
         );
         tw.find_frame();
-        assert_eq!(tw.frame, 3, "the anchor lands the live rows on the same tick");
+        assert_eq!(
+            tw.frame, 3,
+            "the anchor lands the live rows on the same tick"
+        );
     }
 
-    
     #[test]
     fn the_eye_of_cthulhu_shares_the_twins_twenty_tick_beat() {
         // `case 4/125/126` (`NPC.cs:76905-76926`): the Eye of Cthulhu rides
@@ -19083,7 +19440,11 @@ mod tests {
         for _ in 0..14 {
             p.find_frame();
         }
-        assert!((4..=7).contains(&p.frame), "the second phase rides 4..7: {}", p.frame);
+        assert!(
+            (4..=7).contains(&p.frame),
+            "the second phase rides 4..7: {}",
+            p.frame
+        );
         // The Brain rides the same machine through its shield-down gate
         // (the creeper-shield count is unmodelled — the documented
         // follow-up), so it always shows the first-phase rows.
@@ -19091,7 +19452,11 @@ mod tests {
         b.max_hp = b.hp;
         for _ in 0..40 {
             b.find_frame();
-            assert!(b.frame <= 3, "the Brain's first phase wraps at 3: {}", b.frame);
+            assert!(
+                b.frame <= 3,
+                "the Brain's first phase wraps at 3: {}",
+                b.frame
+            );
         }
         // The Creeper's single frame never moves.
         let mut c = bare(NpcKind::Creeper);
@@ -19122,7 +19487,11 @@ mod tests {
         let mut steps = 0;
         while q.frame != 11 {
             q.find_frame();
-            assert!((4..12).contains(&q.frame), "the flight band rides 4..11: {}", q.frame);
+            assert!(
+                (4..12).contains(&q.frame),
+                "the flight band rides 4..11: {}",
+                q.frame
+            );
             steps += 1;
             assert!(steps < 50, "the band must climb to 11");
         }
@@ -19183,7 +19552,11 @@ mod tests {
         w.ai[2] = 1.0;
         w.frame = 1;
         w.find_frame();
-        assert_eq!((w.frame, w.frame_counter), (0, -60.0), "the phase pins row 0");
+        assert_eq!(
+            (w.frame, w.frame_counter),
+            (0, -60.0),
+            "the phase pins row 0"
+        );
         // The mirror eye rides the same case.
         let mut e = bare(NpcKind::WallOfFleshEye);
         e.ai[2] = 0.0;
@@ -19203,20 +19576,16 @@ mod tests {
         // [12,15) -> row 1, and the 15th tick resets the counter.
         // The 15th tick resets the counter while the row still holds the
         // band's value — row 0 arrives on the next tick.
-        for (ticks, want) in [
-            (2usize, 0u32),
-            (3, 1),
-            (6, 2),
-            (3, 1),
-            (1, 1),
-            (1, 0),
-        ] {
+        for (ticks, want) in [(2usize, 0u32), (3, 1), (6, 2), (3, 1), (1, 1), (1, 0)] {
             for _ in 0..ticks {
                 h.find_frame();
             }
             assert_eq!(h.frame, want, "the band after {} ticks", ticks);
         }
-        assert_eq!(h.frame_counter, 1.0, "the reset lands and the counter re-runs");
+        assert_eq!(
+            h.frame_counter, 1.0,
+            "the reset lands and the counter re-runs"
+        );
     }
 
     /// BUG-07: the display flip rides  for every NPC
@@ -19239,28 +19608,15 @@ mod tests {
         let params = crate::npc_ai::WalkerParams::ZOMBIE;
         let (x0, y0) = (n.x, n.y);
         // The default spawn faces right — the lockstep's first write.
-        let _ = crate::npc_ai::walker_step(
-            &mut n,
-            &w,
-            x0 + 10.0,
-            y0,
-            params,
-            0.3,
-            10.0,
-        );
+        let _ = crate::npc_ai::walker_step(&mut n, &w, x0 + 10.0, y0, params, 0.3, 10.0);
         assert_eq!(n.facing, 1);
-        assert_eq!(n.sprite_dir, 1, "the walker writes spriteDirection with facing");
+        assert_eq!(
+            n.sprite_dir, 1,
+            "the walker writes spriteDirection with facing"
+        );
         // A target on the left flips both.
         let (x0, y0) = (n.x, n.y);
-        let _ = crate::npc_ai::walker_step(
-            &mut n,
-            &w,
-            x0 - 10.0,
-            y0,
-            params,
-            0.3,
-            10.0,
-        );
+        let _ = crate::npc_ai::walker_step(&mut n, &w, x0 - 10.0, y0, params, 0.3, 10.0);
         assert_eq!(n.facing, -1);
         assert_eq!(n.sprite_dir, -1, "the flip carries both fields");
     }
@@ -19332,18 +19688,7 @@ mod shard_stat_tests {
             assert_eq!(kind.contact_damage(), dmg);
         }
     }
-
-
-
-
-
-
-
-
-
-
 }
-
 
 #[cfg(test)]
 mod s1_d_3b_tests {
@@ -19377,7 +19722,11 @@ mod s1_d_3b_tests {
         // place target far to the right, both on the floor
         player.x = 140.0 * 16.0;
         player.y = 68.0 * 16.0;
-        for kind in [NpcKind::GoblinThief, NpcKind::GoblinWarrior, NpcKind::GoblinPeon] {
+        for kind in [
+            NpcKind::GoblinThief,
+            NpcKind::GoblinWarrior,
+            NpcKind::GoblinPeon,
+        ] {
             let mut n = bare(kind);
             n.x = 80.0 * 16.0;
             n.y = 68.0 * 16.0;
@@ -19423,7 +19772,11 @@ mod s1_d_3b_tests {
                 saw_nonzero_ai = true;
             }
         }
-        assert!(saw_nonzero_ai, "summoner must advance ai[2]/ai[3] state machine, got ai={:?}", n.ai);
+        assert!(
+            saw_nonzero_ai,
+            "summoner must advance ai[2]/ai[3] state machine, got ai={:?}",
+            n.ai
+        );
         // caster path would not produce this 471-specific ground-phase cycle
         assert_eq!(n.caster_counter, 0, "must not run aiStyle 8 caster cycle");
     }
@@ -19446,8 +19799,14 @@ mod s1_d_3b_tests {
         for _ in 0..200 {
             n.update(&w, &mut player, 1.0 / 60.0);
         }
-        assert!(n.hp > 0, "cultist must not be killed by the tower 180-tick dissolve");
-        assert_eq!(n.ai[0], -1.0, "cultist should remain in AI_084 spawn-in intro");
+        assert!(
+            n.hp > 0,
+            "cultist must not be killed by the tower 180-tick dissolve"
+        );
+        assert_eq!(
+            n.ai[0], -1.0,
+            "cultist should remain in AI_084 spawn-in intro"
+        );
     }
 
     #[test]
@@ -19569,5 +19928,60 @@ mod s1_d_3b_tests {
         assert_eq!(n.facing, -before, "the stuck flip");
         // `ai[3] = 60f` and the same-tick `ai[3]--` (`:29137`) land on 59.
         assert_eq!(n.ai[3], 59.0, "the cooldown after the same-tick decrement");
+    }
+}
+
+#[cfg(test)]
+mod s1_f_3_tests {
+    use super::*;
+
+    #[test]
+    fn s1_f_3_every_kind_resolves_a_vanilla_cs_id() {
+        // S1-F-3: `cs_id` covers all 182 kinds — the hand table's verified
+        // rows plus the generated loot-db net ids for the rest; a kind the
+        // mapping cannot express keeps the `u16::MAX` sentinel (the caps
+        // never match it), and the air sentinel is not a kind.
+        let mut covered = 0;
+        let mut sentinel = 0;
+        let mut bad: Vec<String> = Vec::new();
+        // The kind roster walks the wire-id space (the round-trip test pins
+        // exactly 182 decodable ids).
+        for wire in 0..=u16::MAX {
+            let Some(kind) = NpcKind::from_u16(wire) else {
+                continue;
+            };
+            let id = kind.cs_id();
+            if id == u16::MAX {
+                sentinel += 1;
+            } else {
+                covered += 1;
+                // The entry-less kinds (the segments the roster skips) are
+                // exempt — their cs_id rides the sentinel or the hand row.
+                if let Some(e) = crate::bestiary::try_entry_for_npc(kind, SlimeVariant::Blue) {
+                    if e.net_id > 0 && e.net_id != id as i32 {
+                        bad.push(format!("{kind:?}: cs_id {id} vs net {}", e.net_id));
+                    }
+                }
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "the hand rows disagree with the net ids: {bad:?}"
+        );
+        assert_eq!(
+            covered + sentinel,
+            182,
+            "every decodable kind resolves (the wire roster's size)"
+        );
+        assert!(
+            covered > 43,
+            "the fallback lifted the coverage past the hand table"
+        );
+        // The spot checks: the base slime (1), the zombie (NPCID.Zombie = 3 —
+        // the hand table's 21 was wrong), the guide (22) and the angler (369).
+        assert_eq!(NpcKind::Slime.cs_id(), 1);
+        assert_eq!(NpcKind::Zombie.cs_id(), 3);
+        assert_eq!(NpcKind::Guide.cs_id(), 22);
+        assert_eq!(NpcKind::Angler.cs_id(), 369);
     }
 }
