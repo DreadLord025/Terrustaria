@@ -4658,21 +4658,43 @@ animator states, the draw math); `TR_SHOT` twin runs SHA256-equal with
 
 `crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
 `NewProjectileSetup`'s first-free-slot spawn with the `FindOldestProjectile`
-recycle (`Projectile.cs:10811-10880`), the per-tick `timeLeft--`/`penetrate == 0`
-kill bookkeeping (`:17199-17208`), the `1 + extraUpdates` AI sub-step loop
-(`:16668`), `DecrementLocalImmuneTimeCounters` (`:16674`, `:17258-17277`) and
-the PVE walk (`Damage_PVE` `:12562-12600`, the per-owner gate `:12620-12624`)
-with the on-hit immunity application (`:14087-14119`). All three C# immunity
-systems are live: the per-owner `NPC.immune[owner] = 10` (stored on `Npc`,
-decremented per NPC update, `NPC.cs:90454-90459`), the per-projectile
-`localNPCImmunity` cooldowns (a flattened pool table) and the ID-static
-`perIDStaticNPCImmunity[immunityIdentity = type, npc]` stamps against
-`Main.GameUpdateCount` (`:604-607`, `:13972`). The shuriken moved into the pool
-as its first AI family; its placeholder lifetime (`age > 2 s || bounces > 6`)
-was replaced by the faithful `timeLeft = 3600` / `penetrate` rules.
+recycle (`Projectile.cs:10811-10880`), the lifetime block inside the `numUpdates`
+sub-step loop (`:17197-17209` — `timeLeft--` and the `timeLeft <= 0` /
+`penetrate == 0` kills run per AI sub-step since S1-A-9, so an
+`extraUpdates = n` projectile spends `1 + n` timeLeft per frame and dies
+`ceil(timeLeft / (1+n))` frames after spawn), the per-sub-step `Damage()`
+call (`:17078` — it includes `Damage_PVP` `:12509`, so the hit lands and the
+`penetrate == 0` death resolves within the same sub-step; the immunity gates
+keep the repeated calls idempotent), the `1 + extraUpdates` AI
+sub-step loop (`:16668`), the per-sub-step `if (active) AI()` guard
+(`:16770-16772`), `DecrementLocalImmuneTimeCounters` (`:16674`,
+`:17258-17277`) and the PVE walk (`Damage_PVE` `:12562-12600`, the per-owner
+gate `:12620-12624`) with the on-hit immunity application (`:14087-14119`).
+All three C# immunity systems are live: the per-owner `NPC.immune[owner] = 10`
+(stored on `Npc`, decremented per NPC update, `NPC.cs:90454-90459`), the
+per-projectile `localNPCImmunity` cooldowns (a flattened pool table) and the
+ID-static `perIDStaticNPCImmunity[immunityIdentity = type, npc]` stamps
+against `Main.GameUpdateCount` (`:604-607`, `:13972`). The shuriken moved into
+the pool as its first AI family; its placeholder lifetime
+(`age > 2 s || bounces > 6`) was replaced by the faithful `timeLeft = 3600` /
+`penetrate` rules.
 
 Deviations:
 
+- **The DD2 turret's `timeLeft++` sub-step arm is unported**
+  (`ProjectileID.Sets.IsADD2Turret` + `DD2Event.Ongoing`, `:17198-17199`): the
+  pool has no IsADD2Turret table and the DD2 event stub reports false
+  (S1-E-12 owns the event). Turrets' timeLeft decays like any projectile's.
+- **The trailing-history rings shift once per update call, after the
+  sub-steps** (`shift_trailing_history` at the old `:17091-17195` slot): the
+  C# shifts them per sub-step inside the while, so extraUpdates trails are
+  `1 / (1+n)` as dense. Visual only (TrailingMode feeds the draw), recorded
+  here for the trail/visual work; the lifetime block itself is per sub-step.
+- **Dead slots carry `time_left = 0`** (the port zeroes on every death path);
+  the C#'s `Kill()` zeroes only on the death transition and later sub-steps
+  decrement a dead slot further (it can end at negative values that
+  `FindOldestProjectile` would recycle first). Dead-slot recycling order is
+  tie-broken arbitrarily in the port; unobservable in single-player play.
 - **The projectile path bypasses the melee `hurt_cd` gate** —
   `Npc::hurt_from_projectile` shares `hurt`'s body without the shared-cooldown
   check, because a projectile's right to hit is decided by the three C#

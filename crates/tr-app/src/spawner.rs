@@ -8,7 +8,7 @@
 //! here; when a chosen C# type has no `NpcKind` equivalent the attempt simply
 //! returns `None` (the original would spawn that type).
 
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 
 use crate::npc::{Npc, NpcKind, SlimeVariant};
 
@@ -74,6 +74,11 @@ pub struct SpawnFlags {
     pub zone_hallow_deep: bool,
     pub zone_water_candle: bool,
     pub zone_peace_candle: bool,
+    /// `Player.ZoneGraveyard` — the town block's graveyard ladders read it
+    /// (`NPC.cs:860/:883/:905`). No scene source yet (the graveyard scan is
+    /// the M2-BUFF family's) — constants-off; the arms stay reachable from
+    /// tests.
+    pub zone_graveyard: bool,
     pub invis: bool,
     pub calmed: bool,
     pub sunflower: bool,
@@ -87,8 +92,9 @@ pub struct SpawnFlags {
 /// `Main.wallLight` (`Main.cs:10578-10595`) — the wall list
 /// `SetSpawnFlags`' `skyBehindPlayer` gate reads (plus wall 73's separate
 /// `||` arm, `NPC.cs:412`).
-pub(crate) const LIGHT_WALLS: [u16; 16] =
-    [0, 21, 318, 106, 317, 107, 138, 140, 141, 139, 145, 150, 152, 245, 315, 168];
+pub(crate) const LIGHT_WALLS: [u16; 16] = [
+    0, 21, 318, 106, 317, 107, 138, 140, 141, 139, 145, 150, 152, 245, 315, 168,
+];
 
 pub struct SpawnContext<'a> {
     pub world: &'a World,
@@ -141,11 +147,21 @@ pub struct SpawnContext<'a> {
     pub sky_behind_player: bool,
 }
 
-/// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap.
+/// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap,
+/// plus the town block's carry-outs — the C# writes `noWorms`/`spawnFriendly`
+/// onto the spawner instance and the same spawn attempt reads them downstream
+/// (the skyMob gates, the water arms, the worm rolls), so the port threads
+/// them through the return.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpawnRate {
     pub spawn_rate: i32,
     pub max_spawns: i32,
+    /// `NPC.noWorms` after the town block
+    /// (`NPC.cs:809/:826/:842/:857/:882/:904`).
+    pub no_worms: bool,
+    /// `NPC.spawnFriendly` after the town block
+    /// (`NPC.cs:813/:830/:846/:865/:871/:888/:894/:910/:918`).
+    pub spawn_friendly: bool,
 }
 
 /// `Spawner.GetSpawnArea` (NPC.cs:931-967): the tile rect candidates are drawn
@@ -190,21 +206,26 @@ impl SpawnArea {
     }
 }
 
-/// `Spawner.GetSpawnRate` (NPC.cs:473-929), restricted to the modifiers that
-/// apply to this app: hardmode/depth/night/blood-moon/town-NPC/nearby-NPC and
-/// the final clamps. Random town-NPC sub-branches (`Main.rand` inside) are
-/// kept with the spawner's own RNG.
-/// `Spawner.GetSpawnRate` (`NPC.cs:473-810`): the sequential multiplier
+/// `Spawner.GetSpawnRate` (`NPC.cs:473-929`): the sequential multiplier
 /// chain, in the vanilla order with the vanilla cast widths (`spawn_rate`
 /// steps are `(double)`-then-`(int)`, `max_spawns` steps `(float)`-then-
-/// `(int)`). The seed/FTW/remix/journey/skyblock branches are constants-off
-/// until those seed systems land (M5-SEED-1, M6-CREATIVE-1).
+/// `(int)`), through the town-NPC distribution block (`:799-923`) whose
+/// `Main.rand` draws ride the caller's stream — the C#'s `Main.rand` inside
+/// the SpawnNPC stage (the port's bridge stream until S1-A-11). The
+/// seed/FTW/remix/journey/skyblock branches are constants-off until those
+/// seed systems land (M5-SEED-1, M6-CREATIVE-1). The luck tail
+/// (`:924-928`, `RollOnlyBadLuckExtreme`) is out of scope (the spawner has
+/// no luck input yet).
 pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
-    let _ = rng;
     let f = &ctx.flags;
     let mut rate = SpawnRate {
         spawn_rate: DEFAULT_SPAWN_RATE,
         max_spawns: DEFAULT_MAX_SPAWNS,
+        // `SetSpawnFlags`' per-attempt reset (`NPC.cs:373` — `spawnFriendly
+        // = false`; `noWorms` takes the player-position wall-house write
+        // `:410`, unmodelled — the port has no `wallHouse` table).
+        no_worms: false,
+        spawn_friendly: false,
     };
     let underworld = UNDERWORLD_LAYER(ctx.world.height) as f64 * 16.0;
     let rock_px = ctx.world.rock_layer * 16.0 + S_HEIGHT as f64;
@@ -368,6 +389,122 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
     }
     if f.zone_dungeon && !f.downed_boss3 {
         rate.spawn_rate = 10;
+    }
+    // The town-NPC distribution block (`NPC.cs:799-923`): with no invasion,
+    // no event window (blood/pumpkin/snow — unless it is day), no eclipse
+    // (unless it is night), no evil/crimson zone, no meteor zone and no
+    // Old-One-army zone, the town count picks a ladder and draws `Main.rand`
+    // for the `noWorms` latch and the `spawnFriendly`/spawnRate rescale.
+    // `flag = ZoneCorrupt || ZoneCrimson` (`:794-798`) folded with the
+    // explicit `!ZoneCrimson` term is one `!corrupt && !crimson` check — the
+    // port's `zone_evil`. `ZoneOldOneArmy` has no scene source yet (S1-E-12)
+    // and `inRemixStartingArea` (`:801`, remix-only) is constants-off — both
+    // false. `WorldGen.Skyblock.lowTiles` (the underworld-1 guard `:805` /
+    // surface-1 guard `:858`), the shadow candle's `townNPCs = 0`
+    // (`:419-424`) and `Main.expertMode` (the World carries no game mode)
+    // are constants-off too. The draws ride the caller's stream in the C#'s
+    // order; `townNPCs == 0` matches no arm and draws nothing.
+    if !ctx.invaders
+        && ((!f.blood_moon && !f.moon_event) || ctx.day_time)
+        && (!f.eclipse || !ctx.day_time)
+        && !f.zone_evil
+        && !f.zone_meteor
+    {
+        // `player.Center.Y / 16f > (float)Main.UnderworldLayer` (`:801`).
+        if ctx.player_center.1 / 16.0 > UNDERWORLD_LAYER(ctx.world.height) as f32 {
+            if ctx.town_npcs == 1 {
+                // The skyblock guard (`:805`) is constants-off.
+                if rng.next(2) == 0 {
+                    rate.no_worms = true; // `:809`
+                }
+                if rng.next(10) == 0 {
+                    rate.spawn_friendly = true; // `:813`
+                    rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.5) as i32;
+                // `:814`
+                } else {
+                    rate.spawn_rate = (rate.spawn_rate as f32 as f64 * 1.25) as i32;
+                    // `:818`
+                }
+            } else if ctx.town_npcs == 2 {
+                if rng.next(4) != 0 {
+                    rate.no_worms = true; // `:826`
+                }
+                if rng.next(5) == 0 {
+                    rate.spawn_friendly = true; // `:830`
+                    rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.5) as i32;
+                // `:831`
+                } else {
+                    rate.spawn_rate = (rate.spawn_rate as f32 as f64 * 1.5) as i32;
+                    // `:835`
+                }
+            } else if ctx.town_npcs >= 3 {
+                if rng.next(10) != 0 {
+                    rate.no_worms = true; // `:842`
+                }
+                if rng.next(3) == 0 {
+                    rate.spawn_friendly = true; // `:846`
+                    rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.5) as i32;
+                // `:847`
+                } else {
+                    rate.spawn_rate = (rate.spawn_rate as f32 * 2.0) as i32; // `:851` — `(float)spawnRate * 2f`
+                }
+            }
+        } else if ctx.town_npcs == 1 {
+            rate.no_worms = true; // `:857` (unconditional)
+                                  // The skyblock guard (`:858`) is constants-off.
+            if f.zone_graveyard && (!f.zone_peace_candle || rng.next(3) == 0) {
+                // `:860`
+                rate.spawn_rate = (rate.spawn_rate as f32 as f64 * 1.66) as i32; // `:862`
+                if rng.next(9) == 1 {
+                    // `:863`
+                    rate.spawn_friendly = true; // `:865`
+                    rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32;
+                    // `:866`
+                }
+            } else if rng.next(3) == 1 {
+                // `:869`
+                rate.spawn_friendly = true; // `:871`
+                rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32; // `:872`
+            } else {
+                rate.spawn_rate = (rate.spawn_rate as f32 * 2.0) as i32; // `:876`
+            }
+        } else if ctx.town_npcs == 2 {
+            rate.no_worms = true; // `:882`
+            if f.zone_graveyard && (!f.zone_peace_candle || rng.next(3) == 0) {
+                // `:883`
+                rate.spawn_rate = (rate.spawn_rate as f32 as f64 * 2.33) as i32; // `:885`
+                if rng.next(6) == 1 {
+                    // `:886`
+                    rate.spawn_friendly = true; // `:888`
+                    rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32;
+                    // `:889`
+                }
+            } else if rng.next(3) != 0 {
+                // `:892`
+                rate.spawn_friendly = true; // `:894`
+                rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32; // `:895`
+            } else {
+                rate.spawn_rate = (rate.spawn_rate as f32 * 3.0) as i32; // `:899`
+            }
+        } else if ctx.town_npcs >= 3 {
+            rate.no_worms = true; // `:904`
+            if f.zone_graveyard && (!f.zone_peace_candle || rng.next(3) == 0) {
+                // `:905`
+                rate.spawn_rate = (rate.spawn_rate as f32 * 3.0) as i32; // `:907`
+                if rng.next(3) == 1 {
+                    // `:908`
+                    rate.spawn_friendly = true; // `:910`
+                    rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32;
+                    // `:911`
+                }
+            } else {
+                // `!Main.expertMode || Main.rand.Next(30) != 0` (`:916`) —
+                // `Main.expertMode` is constants-off, so the short-circuit
+                // sets `spawnFriendly` without a draw.
+                rate.spawn_friendly = true; // `:918`
+                rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32; // `:920`
+            }
+        }
     }
     rate
 }
@@ -595,6 +732,7 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
 
     // `GetSpawnRate` + the two hard gates in `TrySpawnAnNPC`.
     let rate = get_spawn_rate(ctx, rng);
+    let (no_worms, spawn_friendly) = (rate.no_worms, rate.spawn_friendly);
     if ctx.nearby_active_npcs >= rate.max_spawns as f32 {
         return None;
     }
@@ -624,11 +762,13 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
         // The skyMob detection (`:981-987`): the deep-sky band
         // (`j < worldSurface*0.35`, the 45%/55% middle cut or hardmode),
         // else the 0.45-band's hardmode Next(10) roll — both behind
-        // `!invaders`; the roll consumes only where the vanilla's
+        // `!invaders && !spawnFriendly` (`:980/:984`, the town block's
+        // carry-out); the roll consumes only where the vanilla's
         // short-circuit reaches it. The house-wall arm of the solid check
         // is unmodelled (the port has no `wallHouse` table).
         if !ctx.invaders
             && (j as f64) < ctx.world.world_surface * 0.3499999940395355
+            && !spawn_friendly
             && (num < ctx.world.width * 45 / 100
                 || num > ctx.world.width * 55 / 100
                 || ctx.flags.hard_mode)
@@ -636,6 +776,7 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
             sky_mob = true;
         } else if !ctx.invaders
             && (j as f64) < ctx.world.world_surface * 0.44999998807907104
+            && !spawn_friendly
             && ctx.flags.hard_mode
             && rng.next(10) == 0
         {
@@ -674,7 +815,7 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
         // converts to pixels at the boundary (`spawn_npc_at`'s `y` is
         // pixels — the `Main.worldSurface` comparisons run on the tile
         // coordinate through `y / 16`).
-        return spawn_npc_at(ctx, rng, num, j * 16, sky_mob);
+        return spawn_npc_at(ctx, rng, num, j * 16, sky_mob, no_worms, spawn_friendly);
     }
     None
 }
@@ -714,6 +855,11 @@ fn spawn_npc_at(
     x: i32,
     y: i32,
     sky_mob: bool,
+    // The town block's carry-outs (`NPC.noWorms`/`NPC.spawnFriendly`,
+    // `NPC.cs:799-923`): the worm rolls (`:3701`/`:4816`) and the water
+    // arms (`:1929`) read them.
+    no_worms: bool,
+    spawn_friendly: bool,
 ) -> Option<Npc> {
     // `GetZombieSettings` (`NPC.cs:5583-5612`) is `SpawnAnNPC`'s FIRST
     // statement (`NPC.cs:1284`) — the style roll happens for every spawn,
@@ -750,15 +896,18 @@ fn spawn_npc_at(
         }
         // The probe arm (`:1399-1402`): `flag5` — the 33% edge band +
         // `skyBehindPlayer`, then `AnyDanger`'s refusal (`:1385-1389`).
-        let mut flag5 = (x as f32 - ctx.world.width as f32 / 2.0).abs()
-            / (ctx.world.width as f32 / 2.0)
-            > 0.33
-            && ctx.sky_behind_player;
+        let mut flag5 =
+            (x as f32 - ctx.world.width as f32 / 2.0).abs() / (ctx.world.width as f32 / 2.0) > 0.33
+                && ctx.sky_behind_player;
         if ctx.any_danger {
             flag5 = false;
         }
         // The water-candle table (`:1387-1392`).
-        let (mv2, mv3) = if ctx.flags.zone_water_candle { (3, 10) } else { (8, 30) };
+        let (mv2, mv3) = if ctx.flags.zone_water_candle {
+            (3, 10)
+        } else {
+            (8, 30)
+        };
         // The martians' short-circuit rolls — the `Next(mv2)` fires only
         // while `!downedMartians`, and a hit skips the `Next(mv3)`.
         let probe_roll = if !ctx.downed_martians && rng.next(mv2) == 0 {
@@ -766,12 +915,7 @@ fn spawn_npc_at(
         } else {
             rng.next(mv3) == 0
         };
-        if flag5
-            && ctx.flags.hard_mode
-            && ctx.downed_golem
-            && probe_roll
-            && !ctx.probe_exists
-        {
+        if flag5 && ctx.flags.hard_mode && ctx.downed_golem && probe_roll && !ctx.probe_exists {
             return spawn_martian_probe(x, y);
         }
         // The duplicated probe arm (`:1403-1406`, `&& this.ZoneWaterCandle`
@@ -811,8 +955,12 @@ fn spawn_npc_at(
             return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Shark);
         }
         // The Piranha arm (`:1929`): `!spawnFriendly && waterTile &&
-        // ((deeperThanRockLayer && Next(2) == 0) || mud floor 60)`.
-        if ((y as f64 / 16.0) > ctx.world.rock_layer && rng.next(2) == 0) || tile_kind == 60 {
+        // ((deeperThanRockLayer && Next(2) == 0) || mud floor 60)` — the
+        // `waterTile` gate is the enclosing water ladder; the town block's
+        // `spawnFriendly` carry-out short-circuits before the draw.
+        if !spawn_friendly
+            && (((y as f64 / 16.0) > ctx.world.rock_layer && rng.next(2) == 0) || tile_kind == 60)
+        {
             // The mud-critter scan (`:1932`'s `tileType == 60 &&
             // surfaceSpawn && day && Next(3) == 0` → 616/612/613/608) is
             // unmodelled — the roll consumes where the vanilla's gate hits.
@@ -854,8 +1002,7 @@ fn spawn_npc_at(
         // behind unmodelled flags and consume nothing; `flag17` is the
         // 33% edge band with the `AnyDanger` refusal (`:4168-4171`).
         let mut flag17 =
-            (x as f32 - ctx.world.width as f32 / 2.0).abs() / (ctx.world.width as f32 / 2.0)
-                > 0.33;
+            (x as f32 - ctx.world.width as f32 / 2.0).abs() / (ctx.world.width as f32 / 2.0) > 0.33;
         if ctx.any_danger {
             flag17 = false;
         }
@@ -865,12 +1012,7 @@ fn spawn_npc_at(
         } else {
             rng.next(400) == 0
         };
-        if flag17
-            && ctx.flags.hard_mode
-            && ctx.downed_golem
-            && probe_roll
-            && !ctx.probe_exists
-        {
+        if flag17 && ctx.flags.hard_mode && ctx.downed_golem && probe_roll && !ctx.probe_exists {
             return spawn_martian_probe(x, y);
         }
         if ctx.day_time {
@@ -1042,10 +1184,11 @@ fn spawn_npc_at(
         return Npc::spawn_cave_walker(ctx.world, x, NpcKind::BoundMechanic);
     }
     // The Devourer: the corruption-cavern roll (`NPC.cs:3701-3710`:
-    // `ZoneCorrupt && Next(maxValue) == 0` with the `maxValue = 65`
-    // (`:1286`); `CanSpawnDevourer` is the custom-seed gate — true in the
-    // port; the hardmode 98/99 split waits for the hardmode worm pass).
-    if ctx.flags.zone_evil && rng.next(65) == 0 {
+    // `!noWorms && ZoneCorrupt && Next(maxValue) == 0` with the
+    // `maxValue = 65` (`:1286`); `CanSpawnDevourer` is the custom-seed
+    // gate — true in the port; the hardmode 98/99 split waits for the
+    // hardmode worm pass).
+    if !no_worms && ctx.flags.zone_evil && rng.next(65) == 0 {
         return Some(Npc::spawn_worm_head(
             ctx.world,
             x,
@@ -1055,8 +1198,9 @@ fn spawn_npc_at(
     }
     // The Giant Worm: the cavern roll (`NPC.cs:4815-4832`:
     // `underGround && !noWorms && Next(50) == 0 && !ZoneSnow` — the port
-    // approximates the snow gate with the snow-floor tiles 147/161).
-    if !matches!(tile_kind, 147 | 161) && rng.next(50) == 0 {
+    // approximates the snow gate with the snow-floor tiles 147/161; the
+    // town block's `noWorms` carry-out short-circuits the roll).
+    if !no_worms && !matches!(tile_kind, 147 | 161) && rng.next(50) == 0 {
         return Some(Npc::spawn_worm_head(
             ctx.world,
             x,
@@ -1260,9 +1404,9 @@ mod tests {
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
-        bound_wizard_ok: false,
-        bound_mech_ok: false,
-        below_deep_dungeon: false,
+            bound_wizard_ok: false,
+            bound_mech_ok: false,
+            below_deep_dungeon: false,
             invaders: false,
             downed_golem: false,
             downed_martians: false,
@@ -1332,15 +1476,417 @@ mod tests {
     #[test]
     fn jungle_town_tiers() {
         // NPC.cs:604-621: town 0 x0.4/x1.5, town 1 x0.55/x1.4, town 2 x0.7/x1.3.
+        // The town block rides AFTER the jungle arm (NPC.cs:799-923 — the
+        // jungle zone is not one of its closures): town 1 draws `Next(3)`
+        // — `== 1` → friendly + ×0.6, else ×2 (`:869-877`); town 2 draws
+        // `Next(3)` — `!= 0` → friendly + ×0.6, else ×3 (`:892-900`).
         let w = ground();
-        for (town, rate, max) in [(0, 96, 13), (1, 132, 12), (2, 168, 11)] {
+        for (town, jrate, jmax) in [(0, 96, 13), (1, 132, 12), (2, 168, 11)] {
             let mut c = ctx(&w, 120.0 * 16.0, true);
             c.flags.zone_jungle = true;
             c.town_npcs = town;
+            let mut ref_rng = FastRandom::new(1);
+            let (want_rate, want_max) = match town {
+                0 => (96, 13),
+                1 => {
+                    let d = ref_rng.next(3); // `:869`
+                    if d == 1 {
+                        (jrate, (jmax as f32 as f64 * 0.6) as i32)
+                    } else {
+                        (jrate * 2, jmax) // `:876` — `(float)spawnRate * 2f`
+                    }
+                }
+                _ => {
+                    let d = ref_rng.next(3); // `:892`
+                    if d != 0 {
+                        (jrate, (jmax as f32 as f64 * 0.6) as i32)
+                    } else {
+                        (jrate * 3, jmax) // `:899`
+                    }
+                }
+            };
             let r = get_spawn_rate(&c, &mut FastRandom::new(1));
-            assert_eq!(r.spawn_rate, rate, "jungle town {town} rate");
-            assert_eq!(r.max_spawns, max, "jungle town {town} max");
+            assert_eq!(r.spawn_rate, want_rate, "jungle town {town} rate");
+            assert_eq!(r.max_spawns, want_max, "jungle town {town} max");
         }
+    }
+
+    // ---- S1-F-11: the town-NPC distribution block (`NPC.cs:799-923`) ----
+
+    /// The stream fingerprint after `run` — equal to a fresh stream's draws
+    /// iff `run` consumed nothing (the `Next(n)` widths differ, but any
+    /// consumption shifts the whole tail).
+    fn post_draws(seed: u64, run: impl FnOnce(&mut FastRandom)) -> Vec<i32> {
+        let mut rng = FastRandom::new(seed);
+        run(&mut rng);
+        (0..8).map(|_| rng.next(1000)).collect()
+    }
+
+    fn fresh_draws(seed: u64) -> Vec<i32> {
+        let mut rng = FastRandom::new(seed);
+        (0..8).map(|_| rng.next(1000)).collect()
+    }
+
+    #[test]
+    fn the_town_block_consumes_no_rng_without_town_npcs() {
+        // `NPC.cs:803-853`: `townNPCs == 0` matches no arm of the
+        // underworld/surface ladders — the block draws nothing even with
+        // every gate open (underworld included).
+        let w = ground();
+        for (y, day) in [(25.0 * 16.0, true), (620.0 * 16.0, true)] {
+            let mut c = ctx(&w, y, day);
+            c.town_npcs = 0;
+            let seed = 7;
+            let got = post_draws(seed, |rng| {
+                let r = get_spawn_rate(&c, rng);
+                assert!(!r.no_worms && !r.spawn_friendly, "no town NPCs, no flags");
+            });
+            assert_eq!(got, fresh_draws(seed), "the stream must be untouched");
+        }
+    }
+
+    #[test]
+    fn the_underworld_town_arms_draw_next2_then_next10_and_rescale() {
+        // `NPC.cs:801-853`: the underworld ladders draw `Next(2)`/`Next(10)`
+        // (town 1), `Next(4)`/`Next(5)` (town 2), `Next(10)`/`Next(3)`
+        // (town ≥3) — in that order — latch `noWorms` from the first roll
+        // (`:809/:826/:842`) and pick the friendly cap-halving
+        // (`:813-815/:829-832/:845-848`) over the rate rescale
+        // (×1.25/×1.5/×2, `:818/:835/:851`). The depth ladder doubles the
+        // cap first (5 → 10), so the friendly arm halves it to 5.
+        let w = ground();
+        let y = 620.0 * 16.0; // tile 620 > UnderworldLayer 600
+        for town in [1, 2, 3] {
+            let mut c = ctx(&w, y, true);
+            c.town_npcs = town;
+            let mut ref_rng = FastRandom::new(42);
+            let (d1, d2, want_nw, want_fr, want_rate, want_max) = match town {
+                1 => {
+                    let a = ref_rng.next(2); // `:807`
+                    let b = ref_rng.next(10); // `:811`
+                    (a, b, a == 0, b == 0, 750, 5)
+                }
+                2 => {
+                    let a = ref_rng.next(4); // `:824`
+                    let b = ref_rng.next(5); // `:828`
+                    (a, b, a != 0, b == 0, 900, 5)
+                }
+                _ => {
+                    let a = ref_rng.next(10); // `:840`
+                    let b = ref_rng.next(3); // `:844`
+                    (a, b, a != 0, b == 0, 1200, 5)
+                }
+            };
+            let r = get_spawn_rate(&c, &mut FastRandom::new(42));
+            assert_eq!(r.no_worms, want_nw, "town {town} noWorms (draws {d1},{d2})");
+            assert_eq!(
+                r.spawn_friendly, want_fr,
+                "town {town} spawnFriendly (draws {d1},{d2})"
+            );
+            if r.spawn_friendly {
+                assert_eq!(
+                    r.max_spawns, want_max,
+                    "town {town} the friendly cap halves"
+                );
+            } else {
+                assert_eq!(r.spawn_rate, want_rate, "town {town} the rescale arm");
+            }
+        }
+    }
+
+    #[test]
+    fn the_surface_town_arms_latch_no_worms_and_roll_the_ladders() {
+        // `NPC.cs:855-921`: the surface latches `noWorms` unconditionally
+        // (`:857/:882/:904`) and rolls the graveyard/peace-candle ladders —
+        // no graveyard: town 1 `Next(3) == 1` → friendly + ×0.6 else ×2
+        // (`:869-877`), town 2 `Next(3) != 0` → friendly + ×0.6 else ×3
+        // (`:892-900`), town ≥3 classic sets friendly without a draw and
+        // always ×0.6 (`:916-920`, `Main.expertMode` constants-off).
+        let w = ground();
+        let y = 25.0 * 16.0; // surface, day
+        for town in [1, 2, 3] {
+            let mut c = ctx(&w, y, true);
+            c.town_npcs = town;
+            let mut ref_rng = FastRandom::new(42);
+            let (want_fr, want_rate, want_max) = match town {
+                1 => {
+                    let d = ref_rng.next(3); // `:869`
+                    (
+                        d == 1,
+                        if d == 1 { 600 } else { 1200 },
+                        if d == 1 { 3 } else { 5 },
+                    )
+                }
+                2 => {
+                    let d = ref_rng.next(3); // `:892`
+                    (
+                        d != 0,
+                        if d != 0 { 600 } else { 1800 },
+                        if d != 0 { 3 } else { 5 },
+                    )
+                }
+                _ => (true, 600, 3),
+            };
+            let r = get_spawn_rate(&c, &mut FastRandom::new(42));
+            assert!(r.no_worms, "town {town} noWorms latches without a draw");
+            assert_eq!(r.spawn_friendly, want_fr, "town {town} spawnFriendly");
+            assert_eq!(r.spawn_rate, want_rate, "town {town} rate");
+            assert_eq!(r.max_spawns, want_max, "town {town} max");
+        }
+    }
+
+    #[test]
+    fn the_graveyard_arms_rescale_and_roll_the_friendly_chance() {
+        // `NPC.cs:860-868/:883-891/:905-912`: with `ZoneGraveyard` and no
+        // peace candle the gate short-circuits without a draw, rescales
+        // ×1.66/×2.33/×3 (`:862/:885/:907`), then rolls
+        // `Next(9)/Next(6)/Next(3) == 1` for the friendly ×0.6 halving.
+        let w = ground();
+        let y = 25.0 * 16.0;
+        for town in [1, 2, 3] {
+            let mut c = ctx(&w, y, true);
+            c.town_npcs = town;
+            c.flags.zone_graveyard = true;
+            let mut ref_rng = FastRandom::new(42);
+            let (want_fr, want_max) = match town {
+                1 => {
+                    let e = ref_rng.next(9); // `:863`
+                    (e == 1, if e == 1 { 3 } else { 5 })
+                }
+                2 => {
+                    let e = ref_rng.next(6); // `:886`
+                    (e == 1, if e == 1 { 3 } else { 5 })
+                }
+                _ => {
+                    let e = ref_rng.next(3); // `:908`
+                    (e == 1, if e == 1 { 3 } else { 5 })
+                }
+            };
+            let r = get_spawn_rate(&c, &mut FastRandom::new(42));
+            assert!(r.no_worms, "town {town} noWorms");
+            assert_eq!(
+                r.spawn_rate,
+                match town {
+                    1 => 996,  // (int)((double)600 * 1.66)   `:862`
+                    2 => 1398, // (int)((double)600 * 2.33)   `:885`
+                    _ => 1800, // (int)((float)600 * 3f)      `:907`
+                },
+                "town {town} graveyard rescale"
+            );
+            assert_eq!(r.spawn_friendly, want_fr, "town {town} friendly roll");
+            assert_eq!(r.max_spawns, want_max, "town {town} cap");
+        }
+    }
+
+    #[test]
+    fn the_graveyard_gate_draws_next3_against_a_peace_candle() {
+        // `NPC.cs:860`: `ZoneGraveyard && (!ZonePeaceCandle || Next(3) == 0)`
+        // — against a peace candle the gate draws `Next(3)`; a non-zero roll
+        // falls to the `else if (Next(3) == 1)` arm, which draws AGAIN —
+        // the double draw the C#'s short-circuit produces (`:869`).
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, true);
+        c.town_npcs = 1;
+        c.flags.zone_graveyard = true;
+        c.flags.zone_peace_candle = true;
+        let mut ref_rng = FastRandom::new(42);
+        let g = ref_rng.next(3); // the gate roll (`:860`)
+        let r = get_spawn_rate(&c, &mut FastRandom::new(42));
+        // The peace-candle modifier already rescaled the rate to 780 and the
+        // cap to 3 (`:738-739`, the candle block ahead of the town block).
+        if g == 0 {
+            let e = ref_rng.next(9); // `:863`
+            assert_eq!(r.spawn_rate, 1294, "the graveyard rescale (780 × 1.66)");
+            assert_eq!(r.spawn_friendly, e == 1, "the Next(9) friendly roll");
+        } else {
+            let d = ref_rng.next(3); // the else-if roll (`:869`) — a second draw
+            assert_eq!(r.spawn_friendly, d == 1, "the second Next(3) decides");
+            if r.spawn_friendly {
+                assert_eq!(r.max_spawns, 1, "the friendly halving of the 3 cap");
+            } else {
+                assert_eq!(r.spawn_rate, 1560, "the ×2 tail (780 × 2)");
+            }
+        }
+    }
+
+    #[test]
+    fn the_town_gate_closes_on_invasion_events_evil_and_meteor() {
+        // `NPC.cs:799`: `!invaders && ((!bloodMoon && !pumpkinMoon &&
+        // !snowMoon) || dayTime) && (!eclipse || !dayTime) && !flag &&
+        // !ZoneCrimson && !ZoneMeteor && !ZoneOldOneArmy` — each closure
+        // leaves the stream untouched and the flags false. The port's
+        // `zone_evil` folds `flag = ZoneCorrupt || ZoneCrimson` (`:794-798`)
+        // with the explicit `!ZoneCrimson` term into one `!corrupt &&
+        // !crimson` check.
+        let w = ground();
+        let mut cases: Vec<SpawnContext<'_>> = Vec::new();
+        let mut night_blood = ctx(&w, 25.0 * 16.0, false);
+        night_blood.flags.blood_moon = true;
+        cases.push(night_blood);
+        let mut night_moon = ctx(&w, 25.0 * 16.0, false);
+        night_moon.flags.moon_event = true;
+        cases.push(night_moon);
+        let mut day_eclipse = ctx(&w, 25.0 * 16.0, true);
+        day_eclipse.flags.eclipse = true;
+        cases.push(day_eclipse);
+        let mut evil = ctx(&w, 25.0 * 16.0, true);
+        evil.flags.zone_evil = true;
+        cases.push(evil);
+        let mut meteor = ctx(&w, 25.0 * 16.0, true);
+        meteor.flags.zone_meteor = true;
+        cases.push(meteor);
+        let mut raid = ctx(&w, 25.0 * 16.0, true);
+        raid.invaders = true;
+        cases.push(raid);
+        for (i, mut c) in cases.into_iter().enumerate() {
+            c.town_npcs = 2;
+            let seed = 11;
+            let got = post_draws(seed, |rng| {
+                let r = get_spawn_rate(&c, rng);
+                assert!(!r.no_worms && !r.spawn_friendly, "case {i} closed gate");
+            });
+            assert_eq!(
+                got,
+                fresh_draws(seed),
+                "case {i} the stream must be untouched"
+            );
+        }
+    }
+
+    #[test]
+    fn the_town_gate_follows_the_event_time_of_day_arms() {
+        // `NPC.cs:799`: an event closes the gate only in its own half —
+        // blood/pumpkin/snow at night (`|| Main.dayTime`), an eclipse at day
+        // (`|| !Main.dayTime`). In the other half the ladders still draw.
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, true);
+        c.flags.blood_moon = true; // blood moon at day — the `|| Main.dayTime` arm
+        c.town_npcs = 1;
+        let seed = 42;
+        let got = post_draws(seed, |rng| {
+            let r = get_spawn_rate(&c, rng);
+            assert!(r.no_worms, "the surface latch always sets noWorms");
+        });
+        assert_ne!(got, fresh_draws(seed), "the gate opened — the ladder drew");
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.flags.eclipse = true; // eclipse at night — the `|| !Main.dayTime` arm
+        c.town_npcs = 1;
+        let got = post_draws(seed, |rng| {
+            let _ = get_spawn_rate(&c, rng);
+        });
+        assert_ne!(got, fresh_draws(seed), "the gate opened — the ladder drew");
+    }
+
+    #[test]
+    fn no_worms_gates_the_worm_arms() {
+        // `NPC.cs:3701` (the Devourer) and `:4816` (the Giant Worm): both
+        // rolls sit behind `!this.noWorms` — with the latch set the roll
+        // short-circuits before its draw, so no worm kind can come out.
+        let mut w = ground_tall();
+        for x in 205..215 {
+            for y in 335..352 {
+                let i = w.index(x, y);
+                w.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut c = ctx(&w, 350.0 * 16.0, true);
+        c.flags.zone_evil = true;
+        let mut worm_seed = None;
+        let mut devourer_seed = None;
+        for seed in 1..8000u64 {
+            let mut rng = FastRandom::new(seed);
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 350 * 16, false, false, false) {
+                match n.kind {
+                    NpcKind::GiantWormHead if worm_seed.is_none() => worm_seed = Some(seed),
+                    NpcKind::DevourerHead if devourer_seed.is_none() => devourer_seed = Some(seed),
+                    _ => {}
+                }
+                if worm_seed.is_some() && devourer_seed.is_some() {
+                    break;
+                }
+            }
+        }
+        let ws = worm_seed.expect("a GiantWormHead seed in the sweep");
+        let ds = devourer_seed.expect("a DevourerHead seed in the sweep");
+        for (seed, kind) in [(ws, NpcKind::GiantWormHead), (ds, NpcKind::DevourerHead)] {
+            let n = spawn_npc_at(
+                &c,
+                &mut FastRandom::new(seed),
+                210,
+                350 * 16,
+                false,
+                true,
+                false,
+            )
+            .unwrap_or_else(|| panic!("the control spawn exists for seed {seed}"));
+            assert_ne!(n.kind, kind, "no_worms must gate the worm roll");
+        }
+    }
+
+    #[test]
+    fn spawn_friendly_gates_the_piranha_arm() {
+        // `NPC.cs:1929`: `!spawnFriendly && waterTile && (...)` — with the
+        // town latch set the mud-floor roll short-circuits before its draw
+        // and the arm cannot return the Piranha.
+        let w = piranha_pool();
+        let mut c = ctx(&w, 330.0 * 16.0, false);
+        let mut piranha_seed = None;
+        for seed in 1..500u64 {
+            let mut rng = FastRandom::new(seed);
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 340 * 16, false, false, false) {
+                if n.kind == NpcKind::Piranha {
+                    piranha_seed = Some(seed);
+                    break;
+                }
+            }
+        }
+        let s = piranha_seed.expect("a Piranha seed in the sweep");
+        let n = spawn_npc_at(
+            &c,
+            &mut FastRandom::new(s),
+            210,
+            340 * 16,
+            false,
+            false,
+            true,
+        )
+        .expect("the control spawn exists");
+        assert_ne!(
+            n.kind,
+            NpcKind::Piranha,
+            "spawn_friendly must gate the piranha arm"
+        );
+    }
+
+    /// The mud-floor pool world (`world_surface` 310, `rock_layer` 320, the
+    /// water rows 330..340 over the tile-60 floor) — the piranha arm's
+    /// `tileType == 60` site (the water ladder's `water_above` gate runs
+    /// first, `NPC.cs:1057`).
+    fn piranha_pool() -> World {
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 300..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.compute_column_surface();
+        for cx in 205..216 {
+            for y in 330..340 {
+                let i = w.index(cx, y);
+                w.tiles[i] = Tile::default();
+                w.tiles[i].liquid = 255;
+            }
+            let i = w.index(cx, 340);
+            w.tiles[i].kind = 60;
+        }
+        w
     }
 
     #[test]
@@ -1394,7 +1940,7 @@ mod tests {
     }
 
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn ground_tall() -> World {
         // Tall enough that `UnderworldLayer = height - 200` sits well below the
@@ -1442,7 +1988,7 @@ mod tests {
         // short-circuit skips its draw, shifted where it fires.
         let fingerprint = |c: &SpawnContext<'_>, seed: u64| -> (u64, Option<NpcKind>) {
             let mut rng = FastRandom::new(seed);
-            let n = spawn_npc_at(c, &mut rng, 210, 295 * 16, false).map(|n| n.kind);
+            let n = spawn_npc_at(c, &mut rng, 210, 295 * 16, false, false, false).map(|n| n.kind);
             (rng.0, n)
         };
         let mut shifted = 0usize;
@@ -1470,8 +2016,8 @@ mod tests {
         for seed in 1..500u64 {
             let mut a = FastRandom::new(seed);
             let mut b = FastRandom::new(seed);
-            let _ = spawn_npc_at(&plain, &mut a, 210, 295 * 16, false);
-            let _ = spawn_npc_at(&plain, &mut b, 210, 295 * 16, false);
+            let _ = spawn_npc_at(&plain, &mut a, 210, 295 * 16, false, false, false);
+            let _ = spawn_npc_at(&plain, &mut b, 210, 295 * 16, false, false, false);
             assert_eq!(a.0, b.0, "the classic ladder replays per seed");
         }
     }
@@ -1482,16 +2028,19 @@ mod tests {
     #[test]
     fn the_vampirism_pick_places_the_zoologist_at_the_spawn() {
         use tr_core::seeds::MicroSeedFlags;
-        assert_eq!(town_npc_at_spawn(MicroSeedFlags::default()), 22, "the Guide");
+        assert_eq!(
+            town_npc_at_spawn(MicroSeedFlags::default()),
+            22,
+            "the Guide"
+        );
         assert_eq!(
             town_npc_at_spawn(MicroSeedFlags::from_sum(MicroSeedFlags::VAMPIRISM)),
             633,
             "the Zoologist"
         );
         // `worldIsInfected` outranks `vampirism` in the C#'s else-if ladder.
-        let both = MicroSeedFlags::from_sum(
-            MicroSeedFlags::VAMPIRISM | MicroSeedFlags::WORLD_IS_INFECTED,
-        );
+        let both =
+            MicroSeedFlags::from_sum(MicroSeedFlags::VAMPIRISM | MicroSeedFlags::WORLD_IS_INFECTED);
         assert_eq!(town_npc_at_spawn(both), 20, "the Nurse");
     }
 
@@ -1500,7 +2049,6 @@ mod tests {
         c.player_center.1 = 295.0 * 16.0;
         c
     }
-
 
     fn night_ctx_flags<'a>(w: &'a World, hard: bool, blood: bool) -> SpawnContext<'a> {
         let mut c = night_ctx_at(w);
@@ -1518,7 +2066,7 @@ mod tests {
     /// their depth band.
     fn outcome_at(ctx: &SpawnContext<'_>, seed: u64, y_px: i32) -> Option<(NpcKind, SlimeVariant)> {
         let mut rng = FastRandom::new(seed);
-        spawn_npc_at(ctx, &mut rng, 210, y_px, false).map(|n| (n.kind, n.slime))
+        spawn_npc_at(ctx, &mut rng, 210, y_px, false, false, false).map(|n| (n.kind, n.slime))
     }
 
     #[test]
@@ -1658,7 +2206,7 @@ mod tests {
         let mut kinds: Vec<NpcKind> = Vec::new();
         for seed in 1..4000u64 {
             let mut rng = FastRandom::new(seed);
-            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 350 * 16, false) {
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 350 * 16, false, false, false) {
                 kinds.push(n.kind);
             }
         }
@@ -1677,7 +2225,7 @@ mod tests {
         let mut hellbats = 0;
         for seed in 1..6000u64 {
             let mut rng = FastRandom::new(seed);
-            if let Some(n) = spawn_npc_at(&cu, &mut rng, 210, 350 * 16, false) {
+            if let Some(n) = spawn_npc_at(&cu, &mut rng, 210, 350 * 16, false, false, false) {
                 if n.kind == NpcKind::Hellbat {
                     hellbats += 1;
                 }
@@ -1709,9 +2257,9 @@ mod tests {
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
-        bound_wizard_ok: false,
-        bound_mech_ok: false,
-        below_deep_dungeon: false,
+            bound_wizard_ok: false,
+            bound_mech_ok: false,
+            below_deep_dungeon: false,
             invaders: false,
             downed_golem: false,
             downed_martians: false,
@@ -1753,12 +2301,15 @@ mod tests {
         let r = get_spawn_rate(&c, &mut FastRandom::new(1));
         assert_eq!(r.max_spawns, 10);
 
-        // The 1.4.5 GetSpawnRate has no town-NPC multiplier of its own
-        // (the pressure rides the nearby ramp; NPC.cs:673-690).
+        // The surface town-≥3 arm latches `noWorms` (`:904`), sets
+        // `spawnFriendly` without a draw (classic `!Main.expertMode`,
+        // `:916-918`) and halves the cap ×0.6 (`:920`) — the rate itself is
+        // untouched (360, the nearby ramp; NPC.cs:673-690).
         let mut c = ctx_at(&w, true);
         c.town_npcs = 3;
         let r = get_spawn_rate(&c, &mut FastRandom::new(1));
         assert_eq!(r.spawn_rate, 360);
+        assert!(r.no_worms && r.spawn_friendly, "the town ≥3 latch arm");
 
         // The nearby scaling stops at ≥80% of the cap (4.0 ≥ 0.8·5): no
         // multiplier applies, the base 600 survives.
@@ -1897,9 +2448,9 @@ mod tests {
                         ..SpawnFlags::default()
                     },
                     bound_goblin_ok: false,
-        bound_wizard_ok: false,
-        bound_mech_ok: false,
-        below_deep_dungeon: false,
+                    bound_wizard_ok: false,
+                    bound_mech_ok: false,
+                    below_deep_dungeon: false,
                     invaders: false,
                     downed_golem: false,
                     downed_martians: false,
@@ -2073,7 +2624,7 @@ mod tests {
         for seed in 1..3000u64 {
             // The ocean column 10 — `outcome_at`'s x is the land 210.
             let mut rng = FastRandom::new(seed);
-            match spawn_npc_at(&c3, &mut rng, 10, 300 * 16, false).map(|n| n.kind) {
+            match spawn_npc_at(&c3, &mut rng, 10, 300 * 16, false, false, false).map(|n| n.kind) {
                 Some(NpcKind::Shark) => sharks += 1,
                 _ => others += 1,
             }
@@ -2151,9 +2702,9 @@ mod tests {
                 ..SpawnFlags::default()
             },
             bound_goblin_ok: false,
-        bound_wizard_ok: false,
-        bound_mech_ok: false,
-        below_deep_dungeon: false,
+            bound_wizard_ok: false,
+            bound_mech_ok: false,
+            below_deep_dungeon: false,
             invaders: false,
             downed_golem: true,
             downed_martians: false,
@@ -2172,7 +2723,15 @@ mod tests {
         // band, inside the edge band, air.
         let mut found = None;
         for seed in 0..400u64 {
-            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 5 * 16, true) {
+            if let Some(n) = spawn_npc_at(
+                &c,
+                &mut FastRandom::new(seed),
+                2,
+                5 * 16,
+                true,
+                false,
+                false,
+            ) {
                 found = Some(n);
                 break;
             }
@@ -2191,7 +2750,15 @@ mod tests {
         let mut c = probe_ctx(&w);
         c.probe_exists = true;
         for seed in 0..400u64 {
-            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 5 * 16, true) {
+            if let Some(n) = spawn_npc_at(
+                &c,
+                &mut FastRandom::new(seed),
+                2,
+                5 * 16,
+                true,
+                false,
+                false,
+            ) {
                 assert_ne!(n.kind, NpcKind::MartianProbe);
             }
         }
@@ -2205,7 +2772,15 @@ mod tests {
         // the 33% edge band (2 < 0.33 * 64 = 21.1); the 1% roll.
         let mut got = false;
         for seed in 0..4000u64 {
-            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 29 * 16, false) {
+            if let Some(n) = spawn_npc_at(
+                &c,
+                &mut FastRandom::new(seed),
+                2,
+                29 * 16,
+                false,
+                false,
+                false,
+            ) {
                 if n.kind == NpcKind::MartianProbe {
                     got = true;
                     break;
@@ -2223,14 +2798,30 @@ mod tests {
         let mut c = probe_ctx(&w);
         c.any_danger = true;
         for seed in 0..4000u64 {
-            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 29 * 16, false) {
+            if let Some(n) = spawn_npc_at(
+                &c,
+                &mut FastRandom::new(seed),
+                2,
+                29 * 16,
+                false,
+                false,
+                false,
+            ) {
                 assert_ne!(n.kind, NpcKind::MartianProbe);
             }
         }
         c.any_danger = false;
         c.downed_golem = false;
         for seed in 0..4000u64 {
-            if let Some(n) = spawn_npc_at(&c, &mut FastRandom::new(seed), 2, 29 * 16, false) {
+            if let Some(n) = spawn_npc_at(
+                &c,
+                &mut FastRandom::new(seed),
+                2,
+                29 * 16,
+                false,
+                false,
+                false,
+            ) {
                 assert_ne!(n.kind, NpcKind::MartianProbe);
             }
         }
