@@ -42,6 +42,9 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// `LoadWeightedPressurePlates`, `WorldFile.cs:1666-1685` / `:3373-3384`).
 /// Both are `World` fields the port already loaded from the C# `.wld`
 /// (M6-SAVE-1), so a `.trwld` round trip used to drop them.
+/// v15 appended `NPC.downedQueenSlime` (`WorldFile.cs:1396`'s flags byte —
+/// the Queen Slime's stock gate, `Chest.cs:3428`, reads it; S1-F-16); a
+/// pre-v15 file loads with the flag down.
 /// v14 appended the rain event's triple (`Main.raining`/`rainTime`/
 /// `maxRaining` — the C#'s flag block writes the save-time snapshot
 /// `_tempRaining`/`_tempRainTime`/`_tempMaxRain`, `WorldFile.cs:1312-1314`,
@@ -58,7 +61,7 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
-pub const VERSION: u32 = 14;
+pub const VERSION: u32 = 15;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -405,6 +408,8 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     w.write_all(&[u8::from(world.raining)])?;
     w.write_all(&world.rain_time.to_le_bytes())?;
     w.write_all(&world.max_raining.to_le_bytes())?;
+    // v15: `NPC.downedQueenSlime` (`WorldFile.cs:1396`'s flags byte).
+    w.write_all(&[u8::from(world.downed_queen_slime)])?;
     Ok(())
 }
 
@@ -762,6 +767,10 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.rain_time = r.i32()?;
         world.max_raining = r.f32()?;
     }
+    // v15: the Queen Slime's downed flag (see the writer's citation).
+    if version >= 15 {
+        world.downed_queen_slime = r.u8()? != 0;
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -1006,8 +1015,8 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[14, 0, 0, 0],
-            "the writer emits the current v14"
+            &[15, 0, 0, 0],
+            "the writer emits the current v15"
         );
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
@@ -1034,13 +1043,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v14 (the rain event triple)
-        // is now the current format, so the gate pins 14.
+        // current one (`save.rs` version gate). v15 (the Queen Slime flag)
+        // is now the current format, so the gate pins 15.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&15u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 15 is unsupported");
+        buf[8..12].copy_from_slice(&16u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 16 is unsupported");
     }
 
     #[test]
@@ -1168,7 +1177,7 @@ mod tests {
         assert_eq!(back.micro_seeds, w.micro_seeds);
         // A v11 file (the same stream minus the v12 block and the v13+v14
         // tails, the version byte restored) loads as the classic world it was.
-        buf.truncate(buf.len() - 10 - EMPTY_V14_TAIL);
+        buf.truncate(buf.len() - 10 - EMPTY_V15_TAIL);
         buf[8..12].copy_from_slice(&11u32.to_le_bytes());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
@@ -1229,8 +1238,8 @@ mod tests {
         let mut v12 = buf.clone();
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
         // v14 rain block (9 bytes).
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9;
-        v12.truncate(cur_len - tail);
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1;
+        v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
         assert!(back.signs.is_empty(), "a v12 file has no sign block");
@@ -1255,18 +1264,18 @@ mod tests {
     /// so the two blocks ahead of it sit this many bytes from the end.
     const EMPTY_V13_TAIL: usize = 8;
     /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
-    /// for an empty rain event).
-    const EMPTY_V14_TAIL: usize = EMPTY_V13_TAIL + 9;
+    /// for an empty rain event). The v15 tail adds the Queen Slime flag byte.
+    const EMPTY_V15_TAIL: usize = EMPTY_V13_TAIL + 9 + 1;
 
     fn back_flags(buf: &[u8]) -> u16 {
-        let end = buf.len() - EMPTY_V14_TAIL;
+        let end = buf.len() - EMPTY_V15_TAIL;
         u16::from_le_bytes([buf[end - 10], buf[end - 9]])
     }
 
     /// The v12 block's micro u64 bitmask (the eight bytes ahead of the v13
     /// tail).
     fn back_micro(buf: &[u8]) -> u64 {
-        let end = buf.len() - EMPTY_V14_TAIL;
+        let end = buf.len() - EMPTY_V15_TAIL;
         u64::from_le_bytes(buf[end - 8..end].try_into().unwrap())
     }
 
@@ -1430,6 +1439,26 @@ mod tests {
     }
 
     #[test]
+    fn s1_f_16_the_queen_slime_flag_round_trips() {
+        // `NPC.downedQueenSlime` rides the vanilla `.wld` flags block
+        // (`WorldFile.cs:1396`) and the Skeleton Merchant's rank gate reads
+        // it (`Chest.cs:3428`); the port's v15 tail carries the same bit.
+        let mut w = World::new("Test".into(), 64, 48);
+        w.downed_queen_slime = true;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.downed_queen_slime, "the flag survives the reload");
+        // A pre-v15 file (the tail truncated, the version patched) loads
+        // with the flag down — the vanilla's own reset arm (`:2376`).
+        let mut v14 = buf.clone();
+        v14.truncate(v14.len() - 1);
+        v14[8..12].copy_from_slice(&14u32.to_le_bytes());
+        let (back, _) = parse(&v14).unwrap();
+        assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
+    }
+
+    #[test]
     fn dw_2_1_a_v5_payload_loads_defaults() {
         // DW-2.1: the v6 payload truncated to the v5 length (the version
         // field patched) parses with the `World::new` defaults — the flags
@@ -1528,8 +1557,8 @@ mod tests {
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[14, 0, 0, 0],
-            "the writer emits the current v14"
+            &[15, 0, 0, 0],
+            "the writer emits the current v15"
         );
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
