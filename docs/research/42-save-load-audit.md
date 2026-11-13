@@ -242,7 +242,7 @@ boundary (`App::swap_world`), so a background *parse* is possible but adds littl
    Severity: **behavioural** (a vanilla client reads a different seed/GUID/world id)
    but harmless inside the port. The deviations are documented per line in the Rust
    source; the ROADMAP row does not mention them.
-3. **No rolling backups, no `.bak`, no post-write validation** вЂ” the C# keeps up
+3. **No rolling backups, no `.bak`, no post-write validation** — **CLOSED 2026-11-13** (`S1-J-4-bak-backups`: the post-write walk + the rolling rotation with the C#'s own slot numbering — the bare `.bak` is slot 1, the numbered slots start at `.bak2`) вЂ” the C# keeps up
    to 9 numbered backups (`DoRollingBackups:966-1004`) and re-reads the file to
    validate it, restoring the `.bak` on failure (`InternalSaveWorld:941-962`).
    The port writes tmp+rename only (`wld::save:319-321`).
