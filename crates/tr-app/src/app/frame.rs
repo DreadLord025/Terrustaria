@@ -1492,8 +1492,13 @@ impl App {
                         // (`Main.ingameOptionsWindow`) — the Settings button
                         // and the panel draw over the open inventory.
                         Some((settings, &self.ingame_options)),
-                        self.shop_npc
-                            .map(|_| (self.shop_stock.as_slice(), self.shop_mood, self.discount_available)),
+                        self.shop_npc.map(|_| {
+                            (
+                                self.shop_stock.as_slice(),
+                                self.shop_mood,
+                                self.discount_available,
+                            )
+                        }),
                         // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
                         // + the statics) — the plan-amendment insertion
                         // (#10): the disjoint `App` fields the panel reads
@@ -1561,6 +1566,10 @@ impl App {
                         // (`Main.cs:41425-41460`).
                         &hide_visible_accessory,
                     );
+                    // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
+                    // the coin cells' animation clocks step per frame after
+                    // the interface layers draw.
+                    self.coin_slot.update_slot_anims();
                     // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
                     // the death broadcast + the softcore "Dropped coins"
                     // line while the respawn timer runs.

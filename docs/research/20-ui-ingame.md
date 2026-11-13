@@ -186,9 +186,16 @@ Representative names (`clicks.rs`): `dw_4_1_take_place_swap_stack_on_chest_slots
    `HoverOverCraftingItemButton` tooltip chain (`Main.cs:42250-42306`). Filters
    are drawn (`ui/crafting.rs:690`) but inert. **Behavioural**; the recipe *logic*
    itself (module 21) is complete.
-7. **No `CoinSlot.ForceSlotState`** — the C# re-derives a merged coin slot's rank
-   (`ItemSlot.cs:1016`, `:1119`); the port merges only identical kinds, so a gold
-   into a copper slot stays a mixed/broken state. **Behavioural** (coins only).
+7. **No `CoinSlot.ForceSlotState`** — **CLOSED 2026-11-13** (`S1-H-9-coin-slot`):
+   the whole CoinSlot display-state machine is ported (`ui/coin_slot.rs`) and
+   `ForceSlotState` runs at the transfer tails, so a merged coin slot's rank
+   follows the moved coin. Source correction while porting: the coin row's CLICK
+   ladder is the C#'s case-0 generic move (the ctx-1 `PickItemMovementAction` arm
+   returns action 0, `ItemSlot.cs:1493-1498`), which the port already carried —
+   a gold into a copper cell swaps (`MouseItemSwap`'s swap-then-`CanStack` shape);
+   the behavioural gap was the missing `ForceSlotState` reset, not the merge.
+   The `CoinDrawState` draw application (the icon jump + the text pulse) is the
+   recorded follow-up.
 8. **Achievement hooks on slot moves absent** — `NotifyItemPickup`
    (`ItemSlot.cs:960`) and `HandleOnEquip` (`:972`) never fire from the click
    path; only `notify_craft` does (`clicks.rs:409`). **Behavioural/cosmetic**.
@@ -239,7 +246,9 @@ Representative names (`clicks.rs`): `dw_4_1_take_place_swap_stack_on_chest_slots
   carry `Item.favorited` on `ItemSlot` (a `.plr`/save change, BUG-03 neighbour)
   or keep slot-index favourites and document the divergence in ANALYSIS.
 - **S — Coin-slot merge.** `CoinSlot.ForceSlotState`'s rank arithmetic
-  (`ItemSlot.cs:1016`, `:1119`) so mixed coin stacks degrade correctly.
+  (`ItemSlot.cs:1016`, `:1119`) so mixed coin stacks degrade correctly. —
+  **DONE 2026-11-13** (`S1-H-9-coin-slot`); the draw-side offsets remain the
+  M7-UI pixel follow-up.
 - **S — Max-stack audit.** Replace `MAX_STACK` with `registry::max_stack` at
   `clicks.rs:934` and add a test with a sub-999 kind.
 - **L — Equipment/dye page parity (M7-UI-3 half).** The dye drag, capture mode
