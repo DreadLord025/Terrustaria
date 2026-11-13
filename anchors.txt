@@ -125,6 +125,7 @@ crates/tr-app/src/ui/char_creation.rs|pub fn randomize_player|S1-H-11 - characte
 docs/ANALYSIS.md|## The RNG-order contract (S1-A-10)|S1-A-10 - the RNG-order contract and its review checklist (the four C# RNG sources, stream identity + draw order)
 crates/tr-core/src/wld/mod.rs|fn s1_j_2_world_header_identity_roundtrips_in_wld|S1-J-2 - world header identity fields (generator version, GUID, world id, LastPlayed) persisted and roundtripped (WorldFile.cs:1225-1227,1251,1756)
 crates/tr-core/src/world.rs|pub generator_version|S1-J-2 - world identity fields stored on World for .wld header/footer/flags
+crates/tr-app/src/ui/framework.rs|pub fn bubble_chain|S1-H-1 - the UIElement child→parent event bubble (UIElement.cs:414-547) as a parent-chain walk over Element.parent
 crates/tr-app/tests/itemdata_freeze.rs|fn the_generated_item_table_is_frozen|S1-F-17 - the 6196-row Item.SetDefaults table is frozen (generator round-trip + FNV data pin)
 crates/tr-core/src/localization/mod.rs|the English localization resources are missing from|S1-L-12d - the English localization test fails (not skips) when the decompiled tree is absent
 crates/tr-app/src/player.rs|fn can_mount|S1-L-8 - Mount.CanMount's bat-wet rule (id 56: wet/buff-103 dripping/Collision.WetCollision) and the Cart/CanUseHooks grapple exemption (Mount.cs:6595-6601)

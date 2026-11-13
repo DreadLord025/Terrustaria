@@ -11,6 +11,16 @@
 //! `PassThroughMouseInteraction` (`:45`, read at `:333`) has no port: no screen
 //! relies on it in 1.4.5.8, so the first hit always wins.
 //!
+//! The **event bubble** (`UIElement.cs:414-547`) *is* modelled: every `On*`
+//! handler in the C# raises its own delegate and then recurses into `Parent`
+//! (`:420-423`, `:432-435`, …), and [`bubble_chain`] reproduces that walk over
+//! the flat table's `parent` links. The leaf control therefore reaches its
+//! container's handlers — the `UICharacterListItem`/`UIWorldListItem` button
+//! rows bubbling to the card panel (`UICharacterListItem.cs:71-121`). Ancestor
+//! `IsMouseHovering` is that same walk: `MouseOver` sets the flag and then
+//! recurses (`:510-521`), so a hovered leaf makes every member of the chain
+//! hovered.
+//!
 //! `IgnoresMouseInteraction` (`:43`) is modelled per element: the C#'s two
 //! behavioural users (`UIWorldGenDebug.cs:851` disabled buttons, `:1322` the global
 //! hide) are debug-screen territory, but the decorative users (labels inside
@@ -34,15 +44,33 @@ pub struct Element {
     pub id: u32,
     /// `IgnoresMouseInteraction` (`UIElement.cs:43`).
     pub ignores_mouse: bool,
+    /// `UIElement.Parent` (`UIElement.cs:52`) — the ancestor a raised event
+    /// bubbles to (`:420-423`). `None` is the C#'s `Parent == null` (a root or
+    /// a flat element), where the recursion stops.
+    pub parent: Option<u32>,
 }
 
 impl Element {
-    /// A plain clickable element (`IgnoresMouseInteraction == false`).
+    /// A plain clickable element (`IgnoresMouseInteraction == false`, no
+    /// parent — the flat rows the screens have always used).
     pub fn hit(rect: [f32; 4], id: u32) -> Self {
         Self {
             rect,
             id,
             ignores_mouse: false,
+            parent: None,
+        }
+    }
+
+    /// A child of the element `parent` (`UIElement.Parent`) — the four
+    /// `UICharacterListItem`/`UIWorldListItem` buttons under their card panel
+    /// (`UICharacterListItem.cs:71-121`), so a click on one bubbles to the card.
+    pub fn child(rect: [f32; 4], id: u32, parent: u32) -> Self {
+        Self {
+            rect,
+            id,
+            ignores_mouse: false,
+            parent: Some(parent),
         }
     }
 
@@ -71,6 +99,42 @@ pub fn get_element_at(elements: &[Element], point: glam::Vec2) -> Option<u32> {
         }
     }
     None
+}
+
+/// `UIElement`'s child→parent event bubble (`UIElement.cs:414-547`): each `On*`
+/// handler raises its own delegate and then, while `Parent != null`, recurses
+/// into the parent (`:420-423`'s `this.Parent.LeftMouseDown(evt)`, `:432-435`
+/// `LeftMouseUp`, `:444-447` `LeftClick`, `:456-459` `LeftDoubleClick`,
+/// `:468-471`/`:480-483`/`:492-495` the right button, `:517-520` `MouseOver`,
+/// `:530-533` `MouseOut`, `:542-545` `ScrollWheel`). This returns the ordered id
+/// chain the event is raised on — `hit` first, then each ancestor up to the
+/// root — so a caller can run the leaf handler and then the container handlers
+/// the C# would have reached.
+///
+/// The walk is bounded by `elements.len()` and stops on a parent id that is not
+/// in `elements` or on a repeat: the C# cannot loop (a `Parent` reference always
+/// points at a live element), but a malformed flat table must not hang.
+pub fn bubble_chain(elements: &[Element], hit: u32) -> Vec<u32> {
+    let mut chain = vec![hit];
+    let mut current = hit;
+    for _ in 0..elements.len() {
+        let Some(parent) = elements
+            .iter()
+            .find(|e| e.id == current)
+            .and_then(|e| e.parent)
+        else {
+            break;
+        };
+        // A `Parent` reference always points at a live element in the C#; a
+        // flat table can dangle or cycle, so require the parent to exist and be
+        // new before stepping.
+        if chain.contains(&parent) || !elements.iter().any(|e| e.id == parent) {
+            break;
+        }
+        chain.push(parent);
+        current = parent;
+    }
+    chain
 }
 
 #[cfg(test)]
@@ -107,6 +171,7 @@ mod tests {
                 rect: [0.0, 0.0, 100.0, 100.0],
                 id: NEW,
                 ignores_mouse: true,
+                parent: None,
             },
         ];
         assert_eq!(get_element_at(&elements, Vec2::new(50.0, 50.0)), Some(CARD_0));
@@ -118,6 +183,7 @@ mod tests {
                     rect: [0.0, 0.0, 100.0, 100.0],
                     id: NEW,
                     ignores_mouse: true,
+                    parent: None,
                 }],
                 Vec2::new(50.0, 50.0)
             ),
@@ -145,6 +211,39 @@ mod tests {
         assert!(e.contains_point(Vec2::new(49.9, 79.9)));
         assert!(!e.contains_point(Vec2::new(50.0, 40.0)));
         assert!(!e.contains_point(Vec2::new(30.0, 80.0)));
+    }
+
+    #[test]
+    fn the_event_bubble_is_the_hit_element_then_its_ancestors() {
+        // `UIElement.cs:420-423` etc.: each `On*` raises its own delegate and
+        // then recurses into `Parent` while `Parent != null`.
+        let table = [
+            Element::hit([0.0, 0.0, 400.0, 400.0], 1), // the card panel (a root)
+            Element::child([10.0, 10.0, 20.0, 20.0], 2, 1), // a button under the card
+            Element::child([40.0, 10.0, 20.0, 20.0], 3, 2), // a label under the button
+        ];
+        // A leaf button's event reaches its panel and beyond (`:420-423`).
+        assert_eq!(bubble_chain(&table, 3), vec![3, 2, 1]);
+        assert_eq!(bubble_chain(&table, 2), vec![2, 1]);
+        // A flat element (no parent) raises only on itself (`:420`'s false arm).
+        assert_eq!(bubble_chain(&table, 1), vec![1]);
+        // The same chain *is* the ancestor-`IsMouseHovering` set: `MouseOver`
+        // sets the flag then recurses (`:510-521`), so hovering 3 hovers 2 and 1.
+        assert!(bubble_chain(&table, 3).contains(&1));
+    }
+
+    #[test]
+    fn the_event_bubble_stops_at_a_missing_parent_and_cannot_cycle() {
+        // A parent id absent from the table: the C# cannot produce this (a
+        // `Parent` reference is never stale), but the walk must not dangle.
+        let dangling = [Element::child([0.0, 0.0, 10.0, 10.0], 7, 999)];
+        assert_eq!(bubble_chain(&dangling, 7), vec![7]);
+        // A malformed cycle must terminate.
+        let cyclic = [
+            Element::child([0.0, 0.0, 10.0, 10.0], 4, 5),
+            Element::child([0.0, 0.0, 10.0, 10.0], 5, 4),
+        ];
+        assert_eq!(bubble_chain(&cyclic, 4), vec![4, 5]);
     }
 
     #[test]

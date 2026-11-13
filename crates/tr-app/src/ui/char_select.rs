@@ -544,8 +544,8 @@ pub fn card_hit(
     mouse: Vec2,
     double_click: bool,
 ) -> (Option<usize>, Option<CardAction>) {
-    let id = hit_element(l, favorites, mouse);
-    let Some(id) = id else {
+    let table = elements(l, favorites);
+    let Some(id) = super::framework::get_element_at(&table, mouse) else {
         return (None, None);
     };
     if id == select_hit::NEW {
@@ -554,7 +554,12 @@ pub fn card_hit(
     if id == select_hit::BACK {
         return (None, Some(CardAction::Back)); // `GoBackClick` (`:116-120`)
     }
-    let card = ((id - select_hit::CARD_BASE) / select_hit::PARTS) as usize;
+    // The child→parent bubble (`UIElement.cs:444-447`): a click on one of the
+    // card's buttons is raised on the button and then on its `UICharacterListItem`
+    // panel, so the chain's last id is the card that owns the part.
+    let chain = super::framework::bubble_chain(&table, id);
+    let panel = *chain.last().expect("the chain starts at the hit id");
+    let card = ((panel - select_hit::CARD_BASE) / select_hit::PARTS) as usize;
     let part = (id - select_hit::CARD_BASE) % select_hit::PARTS;
     if part == select_hit::PART_BODY {
         if double_click {
@@ -588,26 +593,29 @@ fn elements(l: &Layout, favorites: &[bool]) -> Vec<super::framework::Element> {
         let c = card_layout(l.list, i);
         // The body first: the buttons are the card's appended children
         // (`UICharacterListItem.cs:71-121`), so the reverse walk tests them
-        // before the panel they sit on.
-        out.push(super::framework::Element::hit(
-            c.card,
-            select_hit::card_part(i, select_hit::PART_BODY),
-        ));
-        out.push(super::framework::Element::hit(
+        // before the panel they sit on. Each button carries the panel as its
+        // `Parent` so a click on one bubbles to the card (`UIElement.cs:444-447`).
+        let body = select_hit::card_part(i, select_hit::PART_BODY);
+        out.push(super::framework::Element::hit(c.card, body));
+        out.push(super::framework::Element::child(
             c.play,
             select_hit::card_part(i, select_hit::PART_PLAY),
+            body,
         ));
-        out.push(super::framework::Element::hit(
+        out.push(super::framework::Element::child(
             c.favorite,
             select_hit::card_part(i, select_hit::PART_FAVORITE),
+            body,
         ));
-        out.push(super::framework::Element::hit(
+        out.push(super::framework::Element::child(
             c.rename,
             select_hit::card_part(i, select_hit::PART_RENAME),
+            body,
         ));
-        out.push(super::framework::Element::hit(
+        out.push(super::framework::Element::child(
             c.delete,
             select_hit::card_part(i, select_hit::PART_DELETE),
+            body,
         ));
     }
     out.push(super::framework::Element::hit(l.back, select_hit::BACK));

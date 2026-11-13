@@ -942,7 +942,7 @@ M2-MOUNT-3 minecart system, M2-MOUNT-4 special-ability mounts.
 
 - UIElement: StyleDimension px/percent + H/VAlign; `Recalculate` outer→inner (margins →
   padding), parent `UIList` gives infinite height (`UIElement.cs:285-321`); hit tests
-  iterate children **back-to-front** (324-352); events **bubble child→parent**; double
+  iterate children **back-to-front** (324-352); events **bubble child→parent** (ported, S1-H-1: `framework.rs::bubble_chain`); double
   click 500 ms, state-change click lockout 200 ms (`UserInterface.cs:41-47`); draw uses
   `Main.UIScaleMatrix`, `OverflowHidden` = scissor rect.
 - Inventory UX: ItemSlot contexts 0-43 (`ItemSlot.cs:44-130`); actions 0-5
