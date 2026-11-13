@@ -189,8 +189,14 @@ an agent needs before touching code.
   back/background, cached world, UI), one bind group per range:
 
   ```
-  SpriteInstance { pos: vec2, size: vec2, uv0: vec2, uv1: vec2, color: vec4, flags: f32 }  // 52 B
+  SpriteInstance { pos: vec2, size: vec2, uv0: vec2, uv1: vec2, color: vec4,
+                   rot: f32, paint: f32, dye: u32, layer: u32, clip: vec4 }  // 80 B
   ```
+
+  `clip` is the per-instance scissor rect (`clip.rs::NO_CLIP` when unclipped;
+  `push_clip`/`pop_clip` intersect nested rects) — the UI batch is one draw call,
+  so `OverflowHidden` (`UIElement.cs:199-238`) is a fragment `discard` rather than
+  device scissor state (ANALYSIS "UI list clipping and the ∞-height parent").
 
   Two instance ranges share one ring buffer: `world` (camera transform) and `ui` (screen
   space), written as two `write_buffer` calls and drawn as 2 instanced calls of 6 vertices —
@@ -249,10 +255,12 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   `world_select.rs`, `char_creation.rs`, `world_creation.rs`, `keyboard.rs`,
   `save_list.rs`. Shared: `text.rs`, `panel.rs`, `color.rs`, `sliders.rs`, `resources.rs`.
   Framework halves of `UIElement`/`UserInterface` (2026-11-08, M7-UI-1):
-  `uistate.rs` (the layout pass + the element draw kit), `pointer.rs` (the
+  `uistate.rs` (the layout pass + the element draw kit, incl. `resolve_in_list`
+  for the `UIList` ∞-height parent), `pointer.rs` (the
   `UserInterface` pointer machine — press/release → click/`DoubleClick`, the 500 ms
   window, the 200 ms state-change disable), `framework.rs` (the `GetElementAt`
-  back-to-front hit order over a flat element list), `select_hit.rs` (the element
+  back-to-front hit order over a flat element list, with `Element.viewport` for
+  the clipped-ancestor rule), `select_hit.rs` (the element
   ids the two select screens' hit order needs).
 - Leaf modules kept at the crate root: `player.rs` (the physics body and draw state),
   `collision.rs` (`Collision.cs` port), `minecart.rs` (the track state machine +

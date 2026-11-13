@@ -70,9 +70,11 @@ fn xna_clamp(value: f32, min: f32, max: f32) -> f32 {
 /// are `StyleDimension.Empty` (0) and `MaxWidth` is `StyleDimension.Fill`
 /// (`= parent width`, `UIElement.cs:33-39`) by default, and every P6 setter
 /// overrides them with pixels-only dimensions (0%); pass `parent[2]` as `max_w`
-/// for the default `Fill`. The `UIList` parent special case
-/// (`parentDimensions.Height = float.MaxValue`, `UIElement.cs:289-291`) is not
-/// modelled — the card rows derive from the list rect arithmetically (Task 3).
+/// for the default `Fill`.
+///
+/// The `UIList` parent special case (`UIElement.cs:288-291`) lives in
+/// [`resolve_in_list`]: an element whose `Parent` is a `UIList` resolves its
+/// vertical styles against `float.MaxValue`, not the list's own height.
 ///
 /// `padding` is this element's `(left, top, right, bottom)`. It does **not**
 /// affect the outer rect — padding only shrinks what the element's own children
@@ -93,17 +95,72 @@ pub fn resolve(
     max_w: f32,
     padding: [f32; 4],
 ) -> [f32; 4] {
+    resolve_with_max_h(parent, left, top, width, height, h_align, v_align, min_w, min_h, max_w, f32::MAX, padding)
+}
+
+/// [`resolve`] with the height clamp's maximum made explicit. `max_h` is
+/// `MaxHeight.GetValue(parentH)`, which no P6 element overrides — the `UIList`
+/// ∞-height case is the only caller that must see it ([`resolve_in_list`]).
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_with_max_h(
+    parent: [f32; 4],
+    left: Style,
+    top: Style,
+    width: Style,
+    height: Style,
+    h_align: f32,
+    v_align: f32,
+    min_w: f32,
+    min_h: f32,
+    max_w: f32,
+    max_h: f32,
+    padding: [f32; 4],
+) -> [f32; 4] {
     // `UIElement.cs:308-309`.
     let mut x = left.px + left.pct * parent[2] + parent[0];
     let mut y = top.px + top.pct * parent[3] + parent[1];
     // `UIElement.cs:310-316`: the min/max clamp happens BEFORE the alignment.
     let w = xna_clamp(width.px + width.pct * parent[2], min_w, max_w);
-    let h = xna_clamp(height.px + height.pct * parent[3], min_h, f32::MAX);
+    let h = xna_clamp(height.px + height.pct * parent[3], min_h, max_h);
     // `UIElement.cs:319-320`.
     x += parent[2] * h_align - w * h_align;
     y += parent[3] * v_align - h * v_align;
     let _ = padding; // padding affects only `inner` (`UIElement.cs:298-303`), not the outer rect.
     [x, y, w, h]
+}
+
+/// An element whose `Parent` is a `UIList` — the ∞-height parent
+/// (`UIElement.cs:288-291`):
+///
+/// ```text
+/// CalculatedStyle parentDimensions = Parent.GetInnerDimensions();
+/// if (Parent is UIList) parentDimensions.Height = float.MaxValue;
+/// ```
+///
+/// Only the **height** is replaced, before the element's styles resolve, so a
+/// percent/`VAlign` vertical style sees `float.MaxValue` and the resolved
+/// height stays whatever the element's own `Height` style asks for (the list's
+/// rows are pixel-height cards). `parent` is the list's inner rect.
+#[allow(clippy::too_many_arguments)]
+pub fn resolve_in_list(
+    parent: [f32; 4],
+    left: Style,
+    top: Style,
+    width: Style,
+    height: Style,
+    h_align: f32,
+    v_align: f32,
+    min_w: f32,
+    min_h: f32,
+    max_w: f32,
+    padding: [f32; 4],
+) -> [f32; 4] {
+    // `parentDimensions.Height = float.MaxValue` (`:290`).
+    let infinite = [parent[0], parent[1], parent[2], f32::MAX];
+    // `MaxHeight` defaults to `StyleDimension.Fill` = the parent height
+    // (`UIElement.cs:33-39`) — with the ∞ parent that is `float.MaxValue`, which
+    // is what `resolve` already clamps against.
+    resolve(infinite, left, top, width, height, h_align, v_align, min_w, min_h, max_w, padding)
 }
 
 /// The element's inner rect = outer − padding (`UIElement.GetInnerDimensions`,
@@ -666,6 +723,96 @@ mod tests {
         // Asymmetric padding (the `right` column's PaddingTop 8 / Bottom 12,
         // `UIWorldCreation.cs:187-197`).
         assert_eq!(inner([550.0, 202.0, 500.0, 298.0], [0.0, 8.0, 0.0, 12.0]), [550.0, 210.0, 500.0, 278.0]);
+    }
+
+    #[test]
+    fn resolve_in_list_gives_the_child_an_infinite_parent_height() {
+        // `UIElement.cs:288-291`: a `UIList` child resolves its vertical styles
+        // against `float.MaxValue`, not the list's own height. The list here is
+        // 626x546 at (487, 232).
+        let list_inner = [487.0, 232.0, 626.0, 546.0];
+        // A pixel-height row at `Top 0` (the `UICharacterListItem`,
+        // `UICharacterListItem.cs:61`): the ∞ parent changes nothing.
+        let row = resolve_in_list(
+            list_inner,
+            Style::px(0.0),
+            Style::px(0.0),
+            Style::new(0.0, 1.0),
+            Style::px(96.0),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            list_inner[2],
+            [0.0; 4],
+        );
+        assert_eq!(row, [487.0, 232.0, 626.0, 96.0]);
+        // `Top` as a percent of the *list* would be 546 px; against the ∞
+        // parent it is `float::MAX`. The C# rows set pixel `Top`s (the
+        // `UIList.RecalculateChildren` stacking, `UIList.cs:120-126`), so the
+        // ∞ only shows up in exactly these percent/`VAlign` styles.
+        let pct_top = resolve_in_list(
+            list_inner,
+            Style::px(0.0),
+            Style::pct(0.5),
+            Style::px(10.0),
+            Style::px(10.0),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            list_inner[2],
+            [0.0; 4],
+        );
+        assert_eq!(pct_top[1], 232.0 + f32::MAX * 0.5);
+        // `VAlign 1` with a pixel height: `y += parentH − h` (`.320`).
+        let bottom_aligned = resolve_in_list(
+            list_inner,
+            Style::px(0.0),
+            Style::px(0.0),
+            Style::px(22.0),
+            Style::px(22.0),
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            list_inner[2],
+            [0.0; 4],
+        );
+        assert_eq!(bottom_aligned[1], 232.0 + f32::MAX - 22.0);
+        // A hundred-percent height is the ∞ itself (`Height.GetValue(∞)`),
+        // clamped by `MaxHeight = Fill = ∞` — the C#'s `Set(0f, 1f)` inside a
+        // list is therefore unbounded, which is why `UIGrid` sets a pixel height
+        // (`UICharacterCreation.cs:284-289`).
+        let full = resolve_in_list(
+            list_inner,
+            Style::px(0.0),
+            Style::px(0.0),
+            Style::px(100.0),
+            Style::pct(1.0),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            list_inner[2],
+            [0.0; 4],
+        );
+        assert_eq!(full[3], f32::MAX);
+        // `resolve` (the plain form) keeps the list's real height.
+        let not_in_list = resolve(
+            list_inner,
+            Style::px(0.0),
+            Style::px(0.0),
+            Style::px(100.0),
+            Style::pct(1.0),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            list_inner[2],
+            [0.0; 4],
+        );
+        assert_eq!(not_in_list[3], 546.0);
     }
 
     #[test]

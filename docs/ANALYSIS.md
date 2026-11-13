@@ -2456,6 +2456,52 @@ button and `OnLeftDoubleClick`'s `PlayGame` route through it.
   refused — the deviation is the *page*, not the gate. The `SoundEngine.PlaySound(10)`
   cue is kept (`Audio::play("Menu_Open")`).
 
+## UI list clipping and the ∞-height parent (S1-H-2, 2026-11-13)
+
+`UIElement.Draw`'s `OverflowHidden` branch (`UIElement.cs:199-238`) and
+`GetClippingRectangle` (`:252-269`) are now ported, together with the `UIList`
+parent special case in `Recalculate` (`:288-291`).
+
+* **The clip is per-instance, not device state.** The renderer batches the whole
+  UI into a single instanced draw (`SpriteRenderer::draw`, one range), so
+  `wgpu::RenderPass::set_scissor_rect` would need one pass per clipped list — and
+  nested lists would break the batch entirely. Instead `SpriteInstance` carries a
+  `clip: [f32; 4]` rect (vertex attribute `@location(9)`), `sprite.wgsl` passes it
+  to the fragment stage and `discard`s when
+  `p.x < clip.x || p.y < clip.y || p.x >= clip.x + clip.z || p.y >= clip.y + clip.w`
+  — XNA's rule (`left <= x < right`), so the edge pixels match a real scissor.
+  `SpriteRenderer::push_clip`/`pop_clip` maintain a `clip.rs::ClipStack`; a nested
+  push **intersects** the parent rect, which is what `GetClippingRectangle` does
+  with `_innerDimensions` (`:254`) all the way up.
+  The sentinel `NO_CLIP = [f32::MIN/2, f32::MIN/2, f32::MAX, f32::MAX]` makes the
+  discard test a no-op for the 99 % of instances that are not clipped, so there is
+  no second pipeline and no branch in the push paths. Cost: 16 extra bytes per
+  instance (80 total) and one comparison chain per fragment.
+
+* **`Element.viewport` is the hit-side half.** The C# `GetElementAt`
+  (`:324-352`) descends only through a child whose `Contains(point)` is true, so a
+  list row entirely below the list's inner bottom is *unreachable* even though its
+  own rect does not overlap the list at all — the ancestor rejects the point
+  first. The port models this as `Element.viewport: Option<[f32;4]>` (set by
+  `Element::row`/`row_child`) and requires `point ∈ own rect && point ∈ viewport`
+  in `hit_at`. This is stricter than an "overlap" test and is what the old
+  break-gate approximated; two select-screen tests that had encoded the looser
+  version were corrected (y 800 now resolves to `(None, None)`; y 777 still hits
+  the Back/New row, because those are not list children).
+
+* **`resolve_in_list` sets the ∞.** `UIElement.cs:288-291` resolves a child's
+  percent height against `float.PositiveInfinity` when the parent is a `UIList`.
+  `uistate::resolve_with_max_h` takes that parent height explicitly;
+  `resolve_in_list` passes `f32::INFINITY` and `resolve` passes the real parent
+  height. The hair grid (`48 * 22` rows) is the first consumer: it now spans the
+  list's *content* height, and the list's own viewport is what clips it — the
+  arithmetic the old `break` at `char_creation.rs:1859` was faking.
+
+* **Screenshot proof.** With the scissor the hair screen loses **140 949 px** in
+  the box `x 565-1022, y 484-899` (exactly the rows past the list inner bottom at
+  482); two identical runs are SHA256-equal. Reverting `push_clip` reproduces the
+  old overdraw.
+
 ## Architecture refactor (2026-11-01)
 
 The god-file split (`docs/superpowers/plans/2026-11-01-architecture-refactor.md`,
