@@ -178,6 +178,10 @@ Cargo tests that cover this module (static read, not executed):
 migrated *stage's draw sequence* against the C# call order — that differential harness
 is research task seed 7, and the stage wiring itself is S1-A-11.
 
+The *contract* every RNG-touching task must satisfy is frozen by **S1-A-10**:
+`docs/ANALYSIS.md` → "The RNG-order contract (S1-A-10)" lists the four C# sources
+(this report's Responsibility table) and the stream/draw-order checklist.
+
 ## The determinism proof the repo claims — what it actually pins
 
 `ROADMAP.md:334-335` asks for M5-GEN-1 to "keep `deterministic_for_seed` FNV proof".

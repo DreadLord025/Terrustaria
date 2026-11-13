@@ -605,6 +605,62 @@ impl FrontScreenBehaviours for FrontScreen {
                         ui::char_creation::Click::Name => Nav::Name(state.clone()),
                         ui::char_creation::Click::Create => Nav::Create(state.clone()),
                         ui::char_creation::Click::Back => Nav::Back(state.clone()),
+                        // `Click_CopyHex` (`:1331-1335`): the live
+                        // `_hslHexText` readout to the clipboard.
+                        ui::char_creation::Click::CopyHex => {
+                            let hex = ui::char_creation::hex_text(
+                                state.draft.color_of(state.category).unwrap_or([255; 4]),
+                            );
+                            ui::clipboard::set_text(&hex);
+                            Nav::None
+                        }
+                        // `Click_PasteHex` (`:1337-1347`): a clipboard hex
+                        // colour lands on the active category.
+                        ui::char_creation::Click::PasteHex => {
+                            let category = state.category;
+                            if let Some(text) = ui::clipboard::get_text() {
+                                ui::char_creation::paste_hex(&mut state.draft, category, &text);
+                            }
+                            Nav::None
+                        }
+                        // `Click_RandomizeSingleColor` (`:1779-1787`): the
+                        // random colour lands on the active category.
+                        ui::char_creation::Click::RandomizeColor => {
+                            let category = state.category;
+                            let color =
+                                ui::char_creation::randomize_single_color(&mut app.prefix_rng);
+                            state.draft.set_color_of(category, color);
+                            Nav::None
+                        }
+                        // `Click_CopyPlayerTemplate` (`:1408-1412`).
+                        ui::char_creation::Click::CopyTemplate => {
+                            ui::clipboard::set_text(&ui::char_creation::player_template(
+                                &state.draft,
+                            ));
+                            Nav::None
+                        }
+                        // `Click_PastePlayerTemplate` (`:1414-1510`): the
+                        // clipboard template lands on the draft (validated).
+                        ui::char_creation::Click::PasteTemplate => {
+                            if let Some(text) = ui::clipboard::get_text() {
+                                ui::char_creation::apply_player_template(
+                                    &mut state.draft,
+                                    &mut state.hair_picked,
+                                    &text,
+                                );
+                            }
+                            Nav::None
+                        }
+                        // `Click_RandomizePlayer` (`:1545-1657`): the whole
+                        // random draft, `Main.rand`-driven.
+                        ui::char_creation::Click::RandomizePlayer => {
+                            ui::char_creation::randomize_player(
+                                &mut app.prefix_rng,
+                                &mut state.draft,
+                                &mut state.hair_picked,
+                            );
+                            Nav::None
+                        }
                         ui::char_creation::Click::None => Nav::None,
                     }
                 };

@@ -2255,6 +2255,21 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` →
   (220/52 is the mode-0 override, `:48911-48913`).
 * **`GameTipsDisplay`** (`UICharacterCreation.cs:170`, the rotating hint
   line under the panel, `:1998-2005`) is not ported.
+* **The character creator's clipboard and voice** (S1-H-11, 2026-11-13). The
+  Copy/Paste buttons are live: `ui/clipboard.rs` is the `Platform.Get<IClipboard>()`
+  port backed by the `arboard` crate (the port's only OS-clipboard access), and
+  `char_creation.rs` ports `Click_CopyHex`/`Click_PasteHex`/`GetHexColor`/
+  `GetPlayerTemplateValues`/`Click_PastePlayerTemplate` plus `Click_RandomizePlayer`
+  and `Click_RandomizeSingleColor`. Two retained deviations: (1) the draft still
+  has **no voice fields** (`voiceVariant`/`voicePitchOffset`), so `player_template`
+  writes the gender default `voiceStyle = (Male ? 1 : 2)` (`Player.cs:55735`'s
+  legacy default) and `voicePitch = 0.0`, and a pasted template's `voiceStyle`/
+  `voicePitch` are validated but dropped — `Click_RandomizePlayer` still *consumes*
+  the C# voice draw (`Main.rand.Next(2)`) so the stream stays 1:1; (2)
+  `apply_player_template` is lenient where the C# `catch` would abort the whole
+  paste on a type cast (a colour value that is not a string is skipped, not
+  fatal), and it follows `Player.PrettyPrintProfiles`' no-op-for-a-flat-object
+  behaviour rather than the formatting transform.
 * **`assign_random_world_name` is a stand-in**: `AssignRandomWorldName`
   (`UIWorldCreation.cs:1002-1025`) composes a name from the
   `RandomWorldName_*` localization tables the port has not loaded; the
@@ -9023,6 +9038,66 @@ Remaining bridge streams (S1-A-11): the stage bodies for items/loot, NPCs/spawns
 ambience, growth and prefix still draw from world-seeded splitmix bridges. Their seeds
 follow the C# rule, but their *values* are not the C# `UnifiedRandom` sequence yet;
 `docs/research/35-rng-utils.md` tracks the matrix.
+
+## The RNG-order contract (S1-A-10)
+
+Determinism is a hard invariant of the port (AGENTS.md: "RNG streams, the G6
+`WorldFrameKey` contents and the fixed-step order must not change"). Every random
+draw in the C# comes from one of four kinds of source, and **the order in which a
+stream is consumed is itself observable behaviour**: the same seed with a different
+draw order is a different world, a different loot table and a different set of pixels
+(`docs/research/35-rng-utils.md` → Responsibility).
+
+| # | C# source | C# anchor | Port counterpart |
+| --- | --- | --- | --- |
+| 1 | the global `Main.rand` (`UnifiedRandom`) | `Main.cs:1291-1292` | an `App` splitmix/xorshift bridge (the runtime prefix rolls are a real `UnifiedRandom`, S1-A-5) |
+| 2 | a **named** `Main.SwapRandom(key)` stream (`Main._rngs[key] = new UnifiedRandom(worldSeed)`) | `Main.cs:1294-1295`, `:3204-3215`; stage wrappers `:17749-17809` | `app/rng.rs` `NamedRngs`/`RngKey` (S1-A-2); `clock_rng` → `_rngs["UpdateTime"]` |
+| 3 | a `FastRandom` (48-bit LCG) — `WithModifier(x, y)` per tile/position, or a fresh `CreateWithRandomSeed` | `FastRandom.cs:7-11, 27-51, 85-88` | `tile_light/palette.rs` `FastRandom` (exact); `App::growth_rng` |
+| 4 | a per-call **re-seed** of one of the above — `Main._drawRand.SetSeed(proj.localAI[0])`, `Main.TileFrameSeed` | `Main.cs:35795`, `:66567`, `:61721` | folded/synthetic seeds (documented deviations) |
+
+`WorldGen.genRand` is an **alias** of `Main.rand` (`WorldGen.cs:4445`; `Item.Prefix`
+reads it during generation, `Item.cs:506-508, :528`), so the worldgen and the gameplay
+draws interleave on **one** stream. The port does not model that single stream
+(`research/35` deviation 4); worldgen uses its own `Streams` contract rng.
+
+### The contract
+
+Any task that adds, moves or touches a random draw must state — in the task row and in
+the code,
+
+1. **which stream** it consumes (`Main.rand` / the named key / which `FastRandom` /
+   the worldgen `Streams` contract rng), and
+2. **in which order** the draws happen on that stream: the call sequence relative to
+   the other draws on the same stream (per AI sub-step, per tile, per frame), and the
+   guards that skip a draw.
+
+A draw whose **count** or **order** depends on a value that is not itself
+deterministic — the frame rate, the wall clock, a memory address, a `HashMap`'s
+iteration order — breaks the contract even when the stream identity is right.
+
+### Review checklist (apply to every RNG-touching task)
+
+- [ ] The task names its stream(s) and cites the C# draw site (`file.cs:line`), not
+      only the Rust file.
+- [ ] The **draw count per unit of simulation** matches the C#: a draw inside a
+      `while`/`for` AI sub-step is not the same as one per update, and a draw inside a
+      boundary branch is not the same as one per frame.
+- [ ] The **draw order** relative to the other draws on the same stream is preserved:
+      a `SwapRandom` stage's body draws in the C# sequence and a shared stream is not
+      reordered.
+- [ ] No `HashMap`/`HashSet` iteration, `f32`/pointer, or wall-clock value feeds an RNG
+      seed or a draw guard; seeds come from the world seed or a frozen, documented
+      constant.
+- [ ] A change of **stream identity** (splitmix → `UnifiedRandom`, a re-key, merging
+      two streams) is recorded as a deliberate deviation here and in
+      `research/35-rng-utils.md`, with a before/after determinism pair.
+- [ ] The reproducibility tests and `TR_STATS`/`TR_BENCH` still hold; any pinned
+      constant that must move is re-pinned in the same commit and explained.
+
+A stream is **not** "frozen" by pinning the port's own output as if it were the C#'s
+(`world_hash.rs`'s constants, `research/35` deviation 6): a self-consistency pin cannot
+detect a C#-divergent stream. Pin against a `dotnet` oracle (S1-A-1/S1-A-5) or an
+original `.wld` where one exists.
 
 ## Magic staves (M4-PROJ-6)
 

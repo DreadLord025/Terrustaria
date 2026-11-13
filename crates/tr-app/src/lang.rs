@@ -529,7 +529,9 @@ mod tests {
 
     /// The manager answers from the shipped resources when they are present
     /// (the repo's `decompiled/`), falling back to the English item names
-    /// otherwise.
+    /// otherwise. The language JSON lives in the gitignored `decompiled/`
+    /// junction, so this test **fails** (not skips) when it is absent — a silent
+    /// skip let it pass green with no coverage (S1-L-12d).
     #[test]
     fn russian_texts_and_item_names_resolve() {
         let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -540,9 +542,14 @@ mod tests {
                 break;
             }
         }
-        let Some(dir) = dir else {
-            eprintln!("skipping: no localization sources");
-            return;
+        let Some(_dir) = dir else {
+            panic!(
+                "no localization sources found (S1-L-12d): the language JSON lives in the \
+                 gitignored `decompiled/` tree — create the junction \
+                 (`cmd /c mklink /J decompiled ..\\Terraria-Rust\\decompiled`) before \
+                 running the suite. Probed: {:?}",
+                source_dirs()
+            );
         };
         init(GameCulture::English);
         set_language(GameCulture::Russian);
