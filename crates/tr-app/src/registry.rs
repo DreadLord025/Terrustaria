@@ -113,7 +113,7 @@ pub fn name(id: u16) -> &'static str {
 }
 
 pub fn max_stack(id: u16) -> u32 {
-    get(id).map_or(999, |d| d.max_stack)
+    get(id).map_or(9999, |d| d.max_stack)
 }
 
 /// Item dropped by breaking `tile` (`WorldGen.KillTile` drops dirt for grass).
@@ -405,7 +405,7 @@ mod tests {
         // byte-identical to the pre-M3-ITEM-1 behaviour. Id 0 is a REAL row
         // now (SetDefaults(0): name "None", stock, stack 0 — Item.cs:48685).
         assert_eq!(name(6196), "Item");
-        assert_eq!(max_stack(6196), 999);
+        assert_eq!(max_stack(6196), 9999);
         assert_eq!(crate::item::hold_style(6196), 0);
         assert!((crate::item::use_animation_secs(6196) - 0.25).abs() < 1e-6);
         assert_eq!(place_style(6196), 0);
