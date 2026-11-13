@@ -127,7 +127,7 @@ and render the list of craftable recipes in the panel.
 | The available-recipe filter | PARTIAL | `craft.rs::available` (513-527) | env + enough-ingredients is ported, but the C#'s **`RecipeFilterHack`** (`NewCraftingUI.cs:78-171`) and the **guide-item mode** (`CollectGuideRecipes`) are not; the filter strip in `ui/crafting.rs` is draw-only. |
 | The ingredient count (`_ownedItems`) | PORTED | `craft.rs::collect_owned` (451-470) | Inventory + in-range chests, summed per item id; the group fold is done per requirement (equivalent totals). |
 | The consume order | PARTIAL | `craft.rs::try_craft` (607-649) | Inventory pass first, then the chests in collection order, slot index order, partial-decrement-then-clear — matches `ConsumeItemsFrom` (244-291). But the inventory width is **50** slots vs the C#'s **58**, and the C#'s `CreateResult` (`OnCreated` + `Prefix(-1)`) is not applied. |
-| The alchemy discount | PORTED (RNG differs) | `craft.rs::ingredient_discount` (380-385) + `next_rand3` (370-376) | 1/3 roll per unit while brewing at an alchemy table, applied to the consumed stack while availability counts the full stack — same split as the C#. The RNG stream is the port's private `craft_rng`, not the shared `Main.rand`. |
+| The alchemy discount | PORTED | `craft.rs::ingredient_discount` (`:382-396`) | 1/3 roll per unit while brewing at an alchemy table, applied to the consumed stack while availability counts the full stack — same split as the C#. The RNG stream is the C#'s `UnifiedRandom` generator (`App.craft_rng`, seeded per world — S1-L-11e closed the splitmix stand-in; the shared-stream interleave is the S1-A-11 residual). |
 | The nearby-chest ingredients | PORTED | `craft.rs::chests_in_range` (401-444) | 600 px radius (`NearbyChests.cs:14`), tiles 21/341, raster order (the C# iterates `Main.chest[]`'s instance order — the port has no instance registry; documented in ANALYSIS). |
 | The craft grant (result + sound + achievement) | PARTIAL | `app/clicks.rs::handle_crafting_clicks` (400-410) | The item is granted and the `Grab` cue plays (`CraftingEffects.cs:51`); the created item gets no `OnCreated`/`Prefix`. |
 | Focus / refocused recipe / repositioning | MISSING | — | `Main.focusRecipe`, `TryRefocusingRecipe`, `craftingUI.VisuallyRepositionRecipes` have no counterpart. |
@@ -208,20 +208,23 @@ below passes the suite.
   mode as "out" but does not mention the `RecipeFilterHack`; ROADMAP S1-H-7 (299) calls
   the filter/search bars "draw-only today", and S1-L-11 (359) is the open task.
 - **D6 — the alchemy discount uses a private RNG stream (determinism, low).**
-  `GetIngredientCraftingDiscount` rolls `Main.rand.Next(3)` on the **shared** vanilla
-  stream; the port uses `App.craft_rng` (`craft.rs` 370-376, `clicks.rs:393`). The
-  discount value matches, but the vanilla stream's consumption is not reproduced — a
-  determinism deviation for any world that rolls `Main.rand` in the same tick. The port's
-  per-consumer RNG convention is the documented house style.
+  **CLOSED 2026-11-13** (`S1-L-11e-craft-rng-gen-path`): `App.craft_rng` is the exact C#
+  `UnifiedRandom` generator (the splitmix `next_rand3` is deleted) — `ingredient_discount`
+  rolls `next_max(3) == 0` verbatim (`Recipe.cs:221`), seeded per world `world_seed | 1`
+  like the wiring RNG (S1-L-6c). The shared-stream *interleave* with the vanilla global
+  `Main.rand` stays the port-wide S1-A-11 residual, unchanged by this fix.
+  `the_craft_rolls_come_from_the_unified_random_stream` pins the replay + the draw count
+  (mutation-checked).
 - **D7 — the reverse-recipe derivation is a proxy (behavioural, low, same root as D1).**
   The C# derives the reverse rows from `Main.recipe[i].createItem.createTile/createWall`
   and `requiredItem[0].createWall == -1` (`Recipe.cs:16653`, `:16677`); the generator
   approximates that from `itemdata.rs` (`gen_recipes.py` 515-545). Any item-registry
   change silently moves the derived rows — which is exactly what happened (D1).
 - **D8 — the generator hardcodes an absolute path outside the worktree (tooling, low).**
-  `gen_recipes.py:44` reads `C:/Users/DreadLord/Desktop/Terraria-Rust/decompiled`, ignoring
-  the worktree's `decompiled` junction, so the generator reads a different tree than the
-  one the audit is reading and breaks on any other checkout.
+  **CLOSED 2026-11-13** (`S1-L-11e-craft-rng-gen-path`): `gen_recipes.py` reads
+  `ROOT/decompiled/Terraria` — the checkout's own junction (a fresh worktree creates it per
+  AGENTS.md; a junction-less checkout fails loudly). Verified by `gen_recipes.py --check`
+  loading the tree; the committed `recipes_gen.rs` drift (D1) is S1-L-11's open row.
 - **D9 — documentation drift in the ATLAS row (cosmetic).** `M3-CRAFT-6` (ATLAS.md:1375)
   says "2479 authored"; the actual split is **2 480 authored** (2 481 executed sites −
   1 skipped `needTorchGodsFavor`). The generator's docstring also says "the 35

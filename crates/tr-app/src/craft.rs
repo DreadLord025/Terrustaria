@@ -22,13 +22,14 @@ use std::collections::HashMap;
 // The chest entity moved to `chest.rs` (M3-CHEST-UI phase 1); the re-export
 // keeps the existing `craft::WorldChest` paths valid — the `world_sim/
 // editing.rs` stocked-chest test constructs the type through this path.
-pub(crate) use crate::chest::WorldChest;
 #[cfg(test)]
 use crate::chest::DEFAULT_MAX_ITEMS;
-use crate::item::{ItemSlot, INV};
+pub(crate) use crate::chest::WorldChest;
+use crate::item::{INV, ItemSlot};
 use crate::player::{self, Player};
 use crate::registry;
 use tr_core::World;
+use tr_core::unified_random::UnifiedRandom;
 
 /// `Recipe.maxRequirements` (`Recipe.cs:16775`).
 pub(crate) const MAX_REQUIREMENTS: usize = 15;
@@ -149,34 +150,114 @@ pub(crate) struct RecipeGroupDef {
 /// All 34 registered groups, verbatim (`Recipe.cs:499-533`). The registration
 /// order is the id; member lists quote the C# call sites.
 pub(crate) static GROUPS: &[RecipeGroupDef] = &[
-    RecipeGroupDef { id: 0, name: "Birds", icon: 2015, members: &[2015, 2016, 2017] },
-    RecipeGroupDef { id: 1, name: "Scorpions", icon: 2157, members: &[2157, 2156] },
-    RecipeGroupDef { id: 2, name: "Squirrels", icon: 2018, members: &[2018, 3563] },
-    RecipeGroupDef { id: 3, name: "Bugs", icon: 3194, members: &[3194, 3192, 3193] },
-    RecipeGroupDef { id: 4, name: "Ducks", icon: 2123, members: &[2123, 2122] },
+    RecipeGroupDef {
+        id: 0,
+        name: "Birds",
+        icon: 2015,
+        members: &[2015, 2016, 2017],
+    },
+    RecipeGroupDef {
+        id: 1,
+        name: "Scorpions",
+        icon: 2157,
+        members: &[2157, 2156],
+    },
+    RecipeGroupDef {
+        id: 2,
+        name: "Squirrels",
+        icon: 2018,
+        members: &[2018, 3563],
+    },
+    RecipeGroupDef {
+        id: 3,
+        name: "Bugs",
+        icon: 3194,
+        members: &[3194, 3192, 3193],
+    },
+    RecipeGroupDef {
+        id: 4,
+        name: "Ducks",
+        icon: 2123,
+        members: &[2123, 2122],
+    },
     RecipeGroupDef {
         id: 5,
         name: "Butterflies",
         icon: 1998,
         members: &[1998, 2001, 1994, 1995, 1996, 1999, 1997, 2000],
     },
-    RecipeGroupDef { id: 6, name: "Fireflies", icon: 1992, members: &[1992, 2004] },
-    RecipeGroupDef { id: 7, name: "Snails", icon: 2006, members: &[2006, 2007] },
+    RecipeGroupDef {
+        id: 6,
+        name: "Fireflies",
+        icon: 1992,
+        members: &[1992, 2004],
+    },
+    RecipeGroupDef {
+        id: 7,
+        name: "Snails",
+        icon: 2006,
+        members: &[2006, 2007],
+    },
     RecipeGroupDef {
         id: 8,
         name: "Dragonflies",
         icon: 4334,
         members: &[4334, 4335, 4336, 4338, 4339, 4337],
     },
-    RecipeGroupDef { id: 9, name: "Turtles", icon: 4464, members: &[4464, 4465] },
-    RecipeGroupDef { id: 10, name: "Macaws", icon: 5212, members: &[5212, 5300] },
-    RecipeGroupDef { id: 11, name: "Cockatiels", icon: 5312, members: &[5312, 5313] },
-    RecipeGroupDef { id: 12, name: "CloudBalloons", icon: 399, members: &[399, 1250] },
-    RecipeGroupDef { id: 13, name: "BlizzardBalloons", icon: 1163, members: &[1163, 1251] },
-    RecipeGroupDef { id: 14, name: "SandstormBalloons", icon: 983, members: &[983, 1252] },
-    RecipeGroupDef { id: 15, name: "CritterGuides", icon: 4767, members: &[4767, 5453] },
-    RecipeGroupDef { id: 16, name: "NatureGuides", icon: 5309, members: &[5309, 5454] },
-    RecipeGroupDef { id: 17, name: "Seashells", icon: 2625, members: &[2625, 2626] },
+    RecipeGroupDef {
+        id: 9,
+        name: "Turtles",
+        icon: 4464,
+        members: &[4464, 4465],
+    },
+    RecipeGroupDef {
+        id: 10,
+        name: "Macaws",
+        icon: 5212,
+        members: &[5212, 5300],
+    },
+    RecipeGroupDef {
+        id: 11,
+        name: "Cockatiels",
+        icon: 5312,
+        members: &[5312, 5313],
+    },
+    RecipeGroupDef {
+        id: 12,
+        name: "CloudBalloons",
+        icon: 399,
+        members: &[399, 1250],
+    },
+    RecipeGroupDef {
+        id: 13,
+        name: "BlizzardBalloons",
+        icon: 1163,
+        members: &[1163, 1251],
+    },
+    RecipeGroupDef {
+        id: 14,
+        name: "SandstormBalloons",
+        icon: 983,
+        members: &[983, 1252],
+    },
+    RecipeGroupDef {
+        id: 15,
+        name: "CritterGuides",
+        icon: 4767,
+        members: &[4767, 5453],
+    },
+    RecipeGroupDef {
+        id: 16,
+        name: "NatureGuides",
+        icon: 5309,
+        members: &[5309, 5454],
+    },
+    RecipeGroupDef {
+        id: 17,
+        name: "Seashells",
+        icon: 2625,
+        members: &[2625, 2626],
+    },
     RecipeGroupDef {
         id: 18,
         name: "Fruit",
@@ -186,10 +267,30 @@ pub(crate) static GROUPS: &[RecipeGroupDef] = &[
             4295, 4296, 4297, 5277, 5278,
         ],
     },
-    RecipeGroupDef { id: 19, name: "Balloons", icon: 3738, members: &[3738, 3736, 3737] },
-    RecipeGroupDef { id: 20, name: "CobaltBar", icon: 381, members: &[381, 1184] },
-    RecipeGroupDef { id: 21, name: "MythrilBar", icon: 382, members: &[382, 1191] },
-    RecipeGroupDef { id: 22, name: "AdamantiteBar", icon: 391, members: &[391, 1198] },
+    RecipeGroupDef {
+        id: 19,
+        name: "Balloons",
+        icon: 3738,
+        members: &[3738, 3736, 3737],
+    },
+    RecipeGroupDef {
+        id: 20,
+        name: "CobaltBar",
+        icon: 381,
+        members: &[381, 1184],
+    },
+    RecipeGroupDef {
+        id: 21,
+        name: "MythrilBar",
+        icon: 382,
+        members: &[382, 1191],
+    },
+    RecipeGroupDef {
+        id: 22,
+        name: "AdamantiteBar",
+        icon: 391,
+        members: &[391, 1198],
+    },
     RecipeGroupDef {
         id: 23,
         name: "GemCritter",
@@ -198,7 +299,12 @@ pub(crate) static GROUPS: &[RecipeGroupDef] = &[
             4838, 4844, 4843, 4841, 4842, 4840, 4839, 4831, 4837, 4836, 4834, 4835, 4833, 4832,
         ],
     },
-    RecipeGroupDef { id: 24, name: "MagicMirror", icon: 50, members: &[50, 3199] },
+    RecipeGroupDef {
+        id: 24,
+        name: "MagicMirror",
+        icon: 50,
+        members: &[50, 3199],
+    },
     RecipeGroupDef {
         id: RecipeGroups::WOOD,
         name: "Wood",
@@ -217,22 +323,42 @@ pub(crate) static GROUPS: &[RecipeGroupDef] = &[
         icon: 169,
         members: &[169, 408, 1246, 370, 3272, 3338, 3274, 3275],
     },
-    RecipeGroupDef { id: RecipeGroups::IRON_BAR, name: "IronBar", icon: 22, members: &[22, 704] },
+    RecipeGroupDef {
+        id: RecipeGroups::IRON_BAR,
+        name: "IronBar",
+        icon: 22,
+        members: &[22, 704],
+    },
     RecipeGroupDef {
         id: RecipeGroups::SILVER_BAR,
         name: "SilverBar",
         icon: 21,
         members: &[21, 705],
     },
-    RecipeGroupDef { id: RecipeGroups::GOLD_BAR, name: "GoldBar", icon: 19, members: &[19, 706] },
-    RecipeGroupDef { id: 31, name: "Fragment", icon: 3458, members: &[3458, 3456, 3457, 3459] },
+    RecipeGroupDef {
+        id: RecipeGroups::GOLD_BAR,
+        name: "GoldBar",
+        icon: 19,
+        members: &[19, 706],
+    },
+    RecipeGroupDef {
+        id: 31,
+        name: "Fragment",
+        icon: 3458,
+        members: &[3458, 3456, 3457, 3459],
+    },
     RecipeGroupDef {
         id: 32,
         name: "PressurePlate",
         icon: 542,
         members: &[542, 852, 543, 541, 1151, 529, 853, 4261],
     },
-    RecipeGroupDef { id: 33, name: "Jellyfish", icon: 2436, members: &[2436, 2437, 2438] },
+    RecipeGroupDef {
+        id: 33,
+        name: "Jellyfish",
+        icon: 2436,
+        members: &[2436, 2437, 2438],
+    },
 ];
 
 /// `RecipeGroup.recipeGroups[id]` (`RecipeGroup.cs:69-73`).
@@ -243,7 +369,11 @@ pub(crate) fn group(id: u16) -> Option<&'static RecipeGroupDef> {
 impl Requirement {
     /// A plain item entry.
     pub(crate) const fn item(item: u16, stack: u32) -> Self {
-        Self { item, stack, group: NO_GROUP }
+        Self {
+            item,
+            stack,
+            group: NO_GROUP,
+        }
     }
 
     /// A group entry: the authored member item + the group it may draw from.
@@ -329,8 +459,13 @@ pub(crate) fn scan_adjacent(world: &World, player: &Player) -> Adjacent {
     let hx = ((player.x + player::WIDTH as f32) / 16.0).ceil() as i32 - 1 + REACH_X;
     let ly = (player.y / 16.0).floor() as i32 - REACH_Y;
     let hy = ((player.y + player::HEIGHT as f32) / 16.0).ceil() as i32 - 1 + REACH_Y;
-    let mut adj =
-        Adjacent { tiles: Vec::new(), water: false, honey: false, lava: false, alchemy_table: false };
+    let mut adj = Adjacent {
+        tiles: Vec::new(),
+        water: false,
+        honey: false,
+        lava: false,
+        alchemy_table: false,
+    };
     for i in lx.max(0)..=hx.min(world.width as i32 - 1) {
         for j in ly.max(0)..=hy.min(world.height as i32 - 1) {
             if let Some(t) = world.tile(i, j) {
@@ -369,23 +504,23 @@ pub(crate) struct Zones {
     pub(crate) graveyard: bool,
 }
 
-/// `Main.rand.Next(3) == 0` against the crafting stream — the port's
-/// per-consumer RNG convention (vanilla rolls the shared `Main.rand`).
-pub(crate) fn next_rand3(rng: &mut u64) -> bool {
-    *rng = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    let mut z = *rng;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    (z ^ (z >> 31)) % 3 == 0
-}
-
 /// `Recipe.GetIngredientCraftingDiscount` (`Recipe.cs:214-228`): one free unit
-/// per 1/3 roll while the recipe brews at an alchemy table.
-fn ingredient_discount(alchemy: bool, alchemy_table: bool, stack: u32, rng: &mut u64) -> u32 {
+/// per `Main.rand.Next(3) == 0` roll while the recipe brews at an alchemy
+/// table — every unit rolls, even past a full discount. The C# draws the
+/// shared `Main.rand`; the port's craft stream is the exact `UnifiedRandom`
+/// generator seeded per world (`App::craft_rng`) — the port-wide shared-stream
+/// interleave stays unmodelled (S1-A-11's residual; the same deterministic
+/// reduction as the wiring RNG, S1-L-6c).
+fn ingredient_discount(
+    alchemy: bool,
+    alchemy_table: bool,
+    stack: u32,
+    rng: &mut UnifiedRandom,
+) -> u32 {
     if !alchemy || !alchemy_table {
         return 0;
     }
-    (0..stack).filter(|_| next_rand3(rng)).count() as u32
+    (0..stack).filter(|_| rng.next_max(3) == 0).count() as u32
 }
 
 /// `NearbyChests.GetChestsInRangeOf`'s default range (`NearbyChests.cs:14`).
@@ -416,11 +551,11 @@ pub(crate) fn chests_in_range(
     let py = player.y;
     let reach = (CHEST_RANGE_PX / 16.0).floor() as i32 + 1;
     let lx = ((px / 16.0).floor() as i32 - reach).max(0);
-    let hx = (((px + player::WIDTH as f32) / 16.0).ceil() as i32 + reach)
-        .min(world.width as i32 - 1);
+    let hx =
+        (((px + player::WIDTH as f32) / 16.0).ceil() as i32 + reach).min(world.width as i32 - 1);
     let ly = ((py / 16.0).floor() as i32 - reach).max(0);
-    let hy = (((py + player::HEIGHT as f32) / 16.0).ceil() as i32 + reach)
-        .min(world.height as i32 - 1);
+    let hy =
+        (((py + player::HEIGHT as f32) / 16.0).ceil() as i32 + reach).min(world.height as i32 - 1);
     for i in lx..=hx {
         for j in ly..=hy {
             let Some(t) = world.tile(i, j) else { continue };
@@ -502,7 +637,12 @@ pub(crate) fn craftable(
         && recipe.required.iter().all(|req| {
             let have = if req.group != NO_GROUP {
                 group(req.group)
-                    .map(|g| g.members.iter().map(|m| owned.get(m).copied().unwrap_or(0)).sum())
+                    .map(|g| {
+                        g.members
+                            .iter()
+                            .map(|m| owned.get(m).copied().unwrap_or(0))
+                            .sum()
+                    })
                     .unwrap_or(0)
             } else {
                 owned.get(&req.item).copied().unwrap_or(0)
@@ -615,7 +755,7 @@ pub(crate) fn try_craft(
     recipe: &Recipe,
     adj: &Adjacent,
     zones: &Zones,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
 ) -> Option<(u16, u32)> {
     if !can_craft(inv, chests, in_range, recipe, adj, zones) {
         return None;
@@ -623,8 +763,7 @@ pub(crate) fn try_craft(
     for req in recipe.required {
         // `GetIngredientsForOneCraft` (`Recipe.cs:196-212`): the discount
         // comes off the consumed stack (availability counts full stacks).
-        let discount =
-            ingredient_discount(recipe.alchemy, adj.alchemy_table, req.stack, rng);
+        let discount = ingredient_discount(recipe.alchemy, adj.alchemy_table, req.stack, rng);
         let mut to_consume = req.stack - discount;
         // The inventory pass (`Main.LocalPlayer.inventory`, 58 slots). A
         // group entry drains whichever member the slots hold first.
@@ -664,6 +803,27 @@ mod tests {
     use super::*;
     use crate::item::slot_for_pickup;
 
+    #[test]
+    fn the_craft_rolls_come_from_the_unified_random_stream() {
+        // S1-L-11e / D6: `GetIngredientCraftingDiscount` rolls
+        // `Main.rand.Next(3)` (`Recipe.cs:221`) on the C#'s `UnifiedRandom`
+        // — the port's discount path consumes the same generator, so a
+        // same-seed `UnifiedRandom` replays the discount draws exactly and
+        // the stream advances by exactly `stack` draws (watched RED on the
+        // splitmix stand-in).
+        let mut ref_rng = UnifiedRandom::new(7);
+        let mut want = 0u32;
+        for _ in 0..9 {
+            if ref_rng.next_max(3) == 0 {
+                want += 1;
+            }
+        }
+        assert!(want > 0, "the seed rolls at least one free unit");
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(ingredient_discount(true, true, 9, &mut rng), want);
+        assert_eq!(rng.peek(), ref_rng.peek(), "exactly 9 draws consumed");
+    }
+
     fn inv_with(entries: &[(u16, u32)]) -> [ItemSlot; INV] {
         let mut inv = [crate::item::EMPTY_SLOT; INV];
         for (id, count) in entries {
@@ -692,11 +852,20 @@ mod tests {
     fn recipe_by_create(create: u16) -> &'static Recipe {
         // The first authored (non-reverse) row: the C# lookup order over the
         // base table (`Main.recipe[i]` before the derived inserts).
-        RECIPES.iter().find(|r| r.create.0 == create && !r.not_decraftable).unwrap()
+        RECIPES
+            .iter()
+            .find(|r| r.create.0 == create && !r.not_decraftable)
+            .unwrap()
     }
 
     fn dry_adj() -> Adjacent {
-        Adjacent { tiles: Vec::new(), water: false, honey: false, lava: false, alchemy_table: false }
+        Adjacent {
+            tiles: Vec::new(),
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        }
     }
 
     fn world_with_station(kind: u16, x: i32, y: i32) -> World {
@@ -761,7 +930,11 @@ mod tests {
         assert!(!RECIPES.is_empty());
         let mut seen = Vec::new();
         for r in RECIPES {
-            assert!(registry::get(r.create.0).is_some(), "create id {}", r.create.0);
+            assert!(
+                registry::get(r.create.0).is_some(),
+                "create id {}",
+                r.create.0
+            );
             assert!(r.create.1 > 0);
             assert!(
                 !r.required.is_empty() && r.required.len() <= MAX_REQUIREMENTS,
@@ -769,7 +942,11 @@ mod tests {
                 r.create
             );
             for req in r.required {
-                assert!(registry::get(req.item).is_some(), "required id {}", req.item);
+                assert!(
+                    registry::get(req.item).is_some(),
+                    "required id {}",
+                    req.item
+                );
                 assert!(req.stack > 0);
                 if req.group != NO_GROUP {
                     let g = group(req.group).expect("registered group");
@@ -797,13 +974,19 @@ mod tests {
         let wood = group(RecipeGroups::WOOD).unwrap();
         assert_eq!(wood.name, "Wood");
         assert_eq!(wood.icon, 9);
-        assert_eq!(wood.members, &[9, 619, 620, 621, 911, 1729, 2504, 2503, 5215]);
+        assert_eq!(
+            wood.members,
+            &[9, 619, 620, 621, 911, 1729, 2504, 2503, 5215]
+        );
         let iron = group(RecipeGroups::IRON_BAR).unwrap();
         assert_eq!(iron.members, &[22, 704]);
         let sand = group(RecipeGroups::SAND).unwrap();
         assert_eq!(sand.members, &[169, 408, 1246, 370, 3272, 3338, 3274, 3275]);
         // `Registration order = id` (`nextRecipeGroupIndex++`).
-        GROUPS.iter().enumerate().for_each(|(i, g)| assert_eq!(g.id, i as u16));
+        GROUPS
+            .iter()
+            .enumerate()
+            .for_each(|(i, g)| assert_eq!(g.id, i as u16));
     }
 
     #[test]
@@ -829,7 +1012,10 @@ mod tests {
         assert!(satisfies_station(215, 302));
         assert!(satisfies_station(215, 77));
         assert!(satisfies_station(215, 133));
-        assert!(!satisfies_station(17, 215), "the parent does not satisfy the child");
+        assert!(
+            !satisfies_station(17, 215),
+            "the parent does not satisfy the child"
+        );
         assert!(!satisfies_station(300, 17));
     }
 
@@ -896,20 +1082,47 @@ mod tests {
         assert!(can_craft(&inv, &[], &[], lava_bomb, &adj, &zones));
         // The snow cloud: the Sky Mill + the snow zone, both required.
         let snow = recipe_by_create(3756);
-        let mut snow_adj = Adjacent { tiles: vec![305], water: false, honey: false, lava: false, alchemy_table: false };
+        let mut snow_adj = Adjacent {
+            tiles: vec![305],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
         let inv = inv_with(&[(751, 1)]);
-        assert!(!can_craft(&inv, &[], &[], snow, &snow_adj, &zones), "no snow zone");
-        let zones = Zones { snow: true, graveyard: false };
+        assert!(
+            !can_craft(&inv, &[], &[], snow, &snow_adj, &zones),
+            "no snow zone"
+        );
+        let zones = Zones {
+            snow: true,
+            graveyard: false,
+        };
         assert!(can_craft(&inv, &[], &[], snow, &snow_adj, &zones));
         snow_adj.tiles = vec![18];
-        assert!(!can_craft(&inv, &[], &[], snow, &snow_adj, &zones), "no Sky Mill");
+        assert!(
+            !can_craft(&inv, &[], &[], snow, &snow_adj, &zones),
+            "no Sky Mill"
+        );
         // The graveyard shelf: the Bone Welder (300) + the graveyard zone.
         let shelf = recipe_by_create(1389);
-        let gy_adj = Adjacent { tiles: vec![300], water: false, honey: false, lava: false, alchemy_table: false };
+        let gy_adj = Adjacent {
+            tiles: vec![300],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
         let inv = inv_with(&[(9, 1)]);
-        let zones = Zones { snow: false, graveyard: false };
+        let zones = Zones {
+            snow: false,
+            graveyard: false,
+        };
         assert!(!can_craft(&inv, &[], &[], shelf, &gy_adj, &zones));
-        let zones = Zones { snow: false, graveyard: true };
+        let zones = Zones {
+            snow: false,
+            graveyard: true,
+        };
         assert!(can_craft(&inv, &[], &[], shelf, &gy_adj, &zones));
     }
 
@@ -959,8 +1172,18 @@ mod tests {
             w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         }
         let chests = vec![
-            WorldChest { tile: (45, 45), slots: vec![chest_slot(9, 20)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize },
-            WorldChest { tile: (42, 40), slots: Vec::new(), name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize },
+            WorldChest {
+                tile: (45, 45),
+                slots: vec![chest_slot(9, 20)],
+                name: String::new(),
+                max_items: DEFAULT_MAX_ITEMS as usize,
+            },
+            WorldChest {
+                tile: (42, 40),
+                slots: Vec::new(),
+                name: String::new(),
+                max_items: DEFAULT_MAX_ITEMS as usize,
+            },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
         assert_eq!(found.len(), 2, "the far chest (80,80) is out of 600 px");
@@ -971,7 +1194,7 @@ mod tests {
 
     #[test]
     fn the_chest_ingredients_count_and_drain() {
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         // `CollectItemsFromChests` + `Consume` (`CraftingRequests.cs:218-254`):
         // the chest stacks count toward the recipe and drain after the
         // inventory.
@@ -979,17 +1202,37 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 6), chest_slot(619, 4)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize }];
+        let mut chests = vec![WorldChest {
+            tile: (33, 33),
+            slots: vec![chest_slot(9, 6), chest_slot(619, 4)],
+            name: String::new(),
+            max_items: DEFAULT_MAX_ITEMS as usize,
+        }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 in the inventory + 10 in the chest.
         let mut inv = inv_with(&[(9, 4)]);
         let adj = dry_adj();
         let zones = Zones::default();
-        assert!(can_craft(&inv, &chests, &in_range, recipe_by_create(36), &adj, &zones));
+        assert!(can_craft(
+            &inv,
+            &chests,
+            &in_range,
+            recipe_by_create(36),
+            &adj,
+            &zones
+        ));
         // The drain takes the inventory first, then the chest.
-        
+
         assert_eq!(
-            try_craft(&mut inv, &mut chests, &in_range, recipe_by_create(36), &adj, &zones, &mut rng),
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &in_range,
+                recipe_by_create(36),
+                &adj,
+                &zones,
+                &mut rng
+            ),
             Some((36, 1))
         );
         assert_eq!(count_kind(&inv, 9), 0, "the inventory drained first");
@@ -1005,12 +1248,17 @@ mod tests {
     /// implied beyond the list length (see `chest.rs`).
     #[test]
     fn draining_the_last_stocked_chest_slot_trims_the_implicit_air_tail() {
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         let mut w = world_with_station(21, 33, 33);
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 6)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize }];
+        let mut chests = vec![WorldChest {
+            tile: (33, 33),
+            slots: vec![chest_slot(9, 6)],
+            name: String::new(),
+            max_items: DEFAULT_MAX_ITEMS as usize,
+        }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 from the inventory drain the chest
         // fully.
@@ -1018,7 +1266,15 @@ mod tests {
         let adj = dry_adj();
         let zones = Zones::default();
         assert_eq!(
-            try_craft(&mut inv, &mut chests, &in_range, recipe_by_create(36), &adj, &zones, &mut rng),
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &in_range,
+                recipe_by_create(36),
+                &adj,
+                &zones,
+                &mut rng
+            ),
             Some((36, 1))
         );
         assert_eq!(chests[0].slots, [], "the drained slot folded into the tail");
@@ -1044,8 +1300,18 @@ mod tests {
         w.tiles[i].kind = 21;
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         let chests = vec![
-            WorldChest { tile: (45, 45), slots: vec![chest_slot(9, 20)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize },
-            WorldChest { tile: (60, 60), slots: Vec::new(), name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize },
+            WorldChest {
+                tile: (45, 45),
+                slots: vec![chest_slot(9, 20)],
+                name: String::new(),
+                max_items: DEFAULT_MAX_ITEMS as usize,
+            },
+            WorldChest {
+                tile: (60, 60),
+                slots: Vec::new(),
+                name: String::new(),
+                max_items: DEFAULT_MAX_ITEMS as usize,
+            },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
         assert_eq!(found.len(), 1, "the stale entry is filtered");
@@ -1060,7 +1326,12 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 20)], name: String::new(), max_items: DEFAULT_MAX_ITEMS as usize }];
+        let chests = vec![WorldChest {
+            tile: (33, 33),
+            slots: vec![chest_slot(9, 20)],
+            name: String::new(),
+            max_items: DEFAULT_MAX_ITEMS as usize,
+        }];
         let inv = inv_with(&[(9, 4)]);
         let adj = dry_adj();
         let zones = Zones::default();
@@ -1130,17 +1401,16 @@ mod tests {
         let mut chests = Vec::new();
         // Generous stock: 9 mushroom, 18 gel, 18 bottles.
         let mut inv = inv_with(&[(5, 9), (23, 18), (31, 18)]);
-        let mut rng = 7u64;
+        let mut rng = UnifiedRandom::new(7);
         assert_eq!(
             try_craft(&mut inv, &mut chests, &[], lhp, &adj, &zones, &mut rng),
             Some((28, 2))
         );
         // The consumed amounts are the stacks minus the rolled-off units —
         // recompute the expectation from the same stream state.
-        let mut expect_rng = 7u64;
-        let discount = |stack: u32, rng: &mut u64| {
-            ingredient_discount(true, true, stack, rng)
-        };
+        let mut expect_rng = UnifiedRandom::new(7);
+        let discount =
+            |stack: u32, rng: &mut UnifiedRandom| ingredient_discount(true, true, stack, rng);
         let d1 = discount(1, &mut expect_rng);
         let d2 = discount(2, &mut expect_rng);
         let d3 = discount(2, &mut expect_rng);
@@ -1157,9 +1427,17 @@ mod tests {
             alchemy_table: false,
         };
         let mut inv = inv_with(&[(5, 1), (23, 2), (31, 2)]);
-        let mut rng = 7u64;
+        let mut rng = UnifiedRandom::new(7);
         assert_eq!(
-            try_craft(&mut inv, &mut chests, &[], lhp, &bottle_only, &zones, &mut rng),
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                lhp,
+                &bottle_only,
+                &zones,
+                &mut rng
+            ),
             Some((28, 2))
         );
         assert_eq!(count_kind(&inv, 5), 0);
@@ -1169,17 +1447,30 @@ mod tests {
 
     #[test]
     fn test_dw_2_2_try_craft_consumes_and_returns() {
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         // Wood spread across three slots (4 + 4 + 2): a 10x-wood recipe
         // consumes all three, exact amounts.
         let mut inv = inv_with(&[(9, 4)]);
-        inv[1] = ItemSlot { kind: 9, name: "Wood", count: 4, prefix: 0 };
-        inv[2] = ItemSlot { kind: 9, name: "Wood", count: 2, prefix: 0 };
+        inv[1] = ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 4,
+            prefix: 0,
+        };
+        inv[2] = ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 2,
+            prefix: 0,
+        };
         let wb = recipe_by_create(36);
         let adj = dry_adj();
         let zones = Zones::default();
         let mut chests = Vec::new();
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng), Some((36, 1)));
+        assert_eq!(
+            try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng),
+            Some((36, 1))
+        );
         assert_eq!(count_kind(&inv, 9), 0);
     }
 
@@ -1190,7 +1481,11 @@ mod tests {
         p.x = 20.0 * 16.0; // tile 20: region x 15..=26, y 17..=18+
         p.y = 20.0 * 16.0;
         let adj = scan_adjacent(&w, &p);
-        assert!(adj.tiles.contains(&18), "work bench adjacent: {:?}", adj.tiles);
+        assert!(
+            adj.tiles.contains(&18),
+            "work bench adjacent: {:?}",
+            adj.tiles
+        );
         // Far away: the station is out of the region.
         let w2 = world_with_station(18, 100, 100);
         let adj2 = scan_adjacent(&w2, &p);
@@ -1218,7 +1513,10 @@ mod tests {
         };
         assert!(seen(15, 20), "the left edge is in reach");
         assert!(!seen(14, 20), "one tile left of the reach is out");
-        assert!(seen(26, 20), "HX is inclusive (XNA Rectangle.Right == X + Width)");
+        assert!(
+            seen(26, 20),
+            "HX is inclusive (XNA Rectangle.Right == X + Width)"
+        );
         assert!(!seen(27, 20), "one tile past HX is out");
         assert!(seen(20, 17), "the top edge is in reach");
         assert!(!seen(20, 16), "one tile above the reach is out");
@@ -1235,11 +1533,24 @@ mod tests {
         let inv = inv_with(&[(11, 3)]);
         let bar = recipe_by_create(22);
         assert!(!can_craft(&inv, &[], &[], bar, &adj, &zones));
-        let furnace = Adjacent { tiles: vec![17], water: false, honey: false, lava: false, alchemy_table: false };
+        let furnace = Adjacent {
+            tiles: vec![17],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
         assert!(can_craft(&inv, &[], &[], bar, &furnace, &zones));
         // Empty inventory: cannot craft anything.
         let inv = [crate::item::EMPTY_SLOT; INV];
-        assert!(!can_craft(&inv, &[], &[], recipe_by_create(36), &adj, &zones));
+        assert!(!can_craft(
+            &inv,
+            &[],
+            &[],
+            recipe_by_create(36),
+            &adj,
+            &zones
+        ));
         // Two different ingredients at once (torch: gel + wood).
         let mut inv = inv_with(&[(23, 1)]);
         let torch = recipe_by_create(8);
@@ -1251,24 +1562,32 @@ mod tests {
 
     #[test]
     fn test_dw_2_5_full_inventory_still_crafts() {
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         // Fill every slot with stone, keep 10 wood in the first slot: the
         // work bench still crafts (the result-drop duty is the caller's, like
         // vanilla `Item.giveItem` dropping on the ground).
         let mut inv = inv_with(&[(9, 10)]);
         for slot in inv.iter_mut().skip(1) {
-            *slot = ItemSlot { kind: 3, name: "Stone Block", count: 999, prefix: 0 };
+            *slot = ItemSlot {
+                kind: 3,
+                name: "Stone Block",
+                count: 999,
+                prefix: 0,
+            };
         }
         let wb = recipe_by_create(36);
         let adj = dry_adj();
         let zones = Zones::default();
         let mut chests = Vec::new();
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng), Some((36, 1)));
+        assert_eq!(
+            try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng),
+            Some((36, 1))
+        );
     }
 
     #[test]
     fn furniture_recipe_crafts_and_consumes() {
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         // 16 wood -> work bench (by hand) leaves 6, exactly a door — which
         // then needs the bench standing next to the player. The chest needs
         // the iron bar too: wood alone is refused.
@@ -1276,19 +1595,52 @@ mod tests {
         let adj = dry_adj();
         let mut chests = Vec::new();
         let mut inv = inv_with(&[(9, 16)]);
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(36), &adj, &zones, &mut rng), Some((36, 1)));
+        assert_eq!(
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                recipe_by_create(36),
+                &adj,
+                &zones,
+                &mut rng
+            ),
+            Some((36, 1))
+        );
         assert_eq!(count_kind(&inv, 9), 6);
         let door = recipe_by_create(25);
-        let bench = Adjacent { tiles: vec![18], water: false, honey: false, lava: false, alchemy_table: false };
-        assert!(!can_craft(&inv, &[], &[], door, &adj, &zones), "no station adjacent yet");
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], door, &bench, &zones, &mut rng), Some((25, 1)));
+        let bench = Adjacent {
+            tiles: vec![18],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        assert!(
+            !can_craft(&inv, &[], &[], door, &adj, &zones),
+            "no station adjacent yet"
+        );
+        assert_eq!(
+            try_craft(&mut inv, &mut chests, &[], door, &bench, &zones, &mut rng),
+            Some((25, 1))
+        );
         assert_eq!(count_kind(&inv, 9), 0);
         // The chest's wood is the plain item 9 (no group on the C# row);
         // the iron-bar half still draws from the IronBar group.
         let mut inv = inv_with(&[(9, 8)]);
-        assert!(!can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones));
+        assert!(!can_craft(
+            &inv,
+            &[],
+            &[],
+            recipe_by_create(48),
+            &bench,
+            &zones
+        ));
         let mut inv = inv_with(&[(9, 8), (704, 2)]);
-        assert!(can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones), "Lead Bar is IronBar");
+        assert!(
+            can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones),
+            "Lead Bar is IronBar"
+        );
     }
 
     #[test]
@@ -1296,34 +1648,144 @@ mod tests {
         // The C# rows: Chain x15 (anvil), Sawmill (work bench + the chain),
         // Loom (sawmill), Sign (work bench), Cooking Pot (anvil), Bowl
         // (furnace, clay), Gold Candle (work bench, gold bar + torch).
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         let zones = Zones::default();
-        let anvil = Adjacent { tiles: vec![16], water: false, honey: false, lava: false, alchemy_table: false };
-        let bench = Adjacent { tiles: vec![18], water: false, honey: false, lava: false, alchemy_table: false };
-        let sawmill = Adjacent { tiles: vec![106], water: false, honey: false, lava: false, alchemy_table: false };
-        let furnace = Adjacent { tiles: vec![17], water: false, honey: false, lava: false, alchemy_table: false };
+        let anvil = Adjacent {
+            tiles: vec![16],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        let bench = Adjacent {
+            tiles: vec![18],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        let sawmill = Adjacent {
+            tiles: vec![106],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        let furnace = Adjacent {
+            tiles: vec![17],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
         let mut chests = Vec::new();
         // Chain: one Lead Bar (the IronBar group) makes 15 — the anvil gates it.
         let mut inv = inv_with(&[(704, 1)]);
-        assert!(!can_craft(&inv, &[], &[], recipe_by_create(85), &bench, &zones), "anvil required");
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(85), &anvil, &zones, &mut rng), Some((85, 15)));
+        assert!(
+            !can_craft(&inv, &[], &[], recipe_by_create(85), &bench, &zones),
+            "anvil required"
+        );
+        assert_eq!(
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                recipe_by_create(85),
+                &anvil,
+                &zones,
+                &mut rng
+            ),
+            Some((85, 15))
+        );
         // The sawmill: wood + iron bars + the fresh chain, at the work bench.
         let mut inv = inv_with(&[(9, 10), (704, 2), (85, 1)]);
-        assert!(!can_craft(&inv, &[], &[], recipe_by_create(363), &anvil, &zones), "work bench required");
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(363), &bench, &zones, &mut rng), Some((363, 1)));
+        assert!(
+            !can_craft(&inv, &[], &[], recipe_by_create(363), &anvil, &zones),
+            "work bench required"
+        );
+        assert_eq!(
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                recipe_by_create(363),
+                &bench,
+                &zones,
+                &mut rng
+            ),
+            Some((363, 1))
+        );
         // The loom rides the sawmill station; the sign is a plain work bench row.
         let mut inv = inv_with(&[(9, 12)]);
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(332), &sawmill, &zones, &mut rng), Some((332, 1)));
+        assert_eq!(
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                recipe_by_create(332),
+                &sawmill,
+                &zones,
+                &mut rng
+            ),
+            Some((332, 1))
+        );
         let mut inv = inv_with(&[(9, 6)]);
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(171), &bench, &zones, &mut rng), Some((171, 1)));
+        assert_eq!(
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                recipe_by_create(171),
+                &bench,
+                &zones,
+                &mut rng
+            ),
+            Some((171, 1))
+        );
         // The cooking pot: iron bars + wood at the anvil. The bowl: clay at
         // the furnace. The gold candle: a gold bar + a torch at the work bench.
         let mut inv = inv_with(&[(22, 10), (9, 2)]);
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(345), &anvil, &zones, &mut rng), Some((345, 1)));
+        assert_eq!(
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                recipe_by_create(345),
+                &anvil,
+                &zones,
+                &mut rng
+            ),
+            Some((345, 1))
+        );
         let mut inv = inv_with(&[(133, 2)]);
-        assert!(!can_craft(&inv, &[], &[], recipe_by_create(356), &bench, &zones), "furnace required");
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(356), &furnace, &zones, &mut rng), Some((356, 1)));
+        assert!(
+            !can_craft(&inv, &[], &[], recipe_by_create(356), &bench, &zones),
+            "furnace required"
+        );
+        assert_eq!(
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                recipe_by_create(356),
+                &furnace,
+                &zones,
+                &mut rng
+            ),
+            Some((356, 1))
+        );
         let mut inv = inv_with(&[(19, 1), (8, 1)]);
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(105), &bench, &zones, &mut rng), Some((105, 1)));
+        assert_eq!(
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                recipe_by_create(105),
+                &bench,
+                &zones,
+                &mut rng
+            ),
+            Some((105, 1))
+        );
     }
 }

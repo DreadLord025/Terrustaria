@@ -300,9 +300,10 @@ pub(crate) struct App {
     /// `Main.instance.textBlinkerCount/State` (`Main.cs:2287-2289`) — the
     /// chest-panel name editor's caret blinker (`ui::chest::TextBlinker`).
     pub(crate) text_blinker: ui::chest::TextBlinker,
-    /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
-    /// alchemy discount rolls.
-    pub(crate) craft_rng: u64,
+    /// The crafting RNG stream — the alchemy discount rolls
+    /// (`Recipe.cs:221`'s `Main.rand.Next(3)`; the exact C# `UnifiedRandom`
+    /// generator seeded per world like the wiring RNG, S1-L-6c).
+    pub(crate) craft_rng: tr_core::unified_random::UnifiedRandom,
     /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
     /// .cs:315`): the cached coin carriers. Session-only — cleared on the
     /// world unload (the vanilla never saves them).
@@ -897,20 +898,16 @@ impl App {
         }
         // `Main.cs:67191-67192`: `cMapZoomIn = "Add"`, `cMapZoomOut =
         // "Subtract"` — the menuMode 272727 rows, not a fixed key.
-        if self
-            .keys
-            .iter()
-            .any(|k| map_binds[crate::input_map::MapAction::ZoomIn.index()].as_str()
-                == crate::input_map::key_name(*k))
-        {
+        if self.keys.iter().any(|k| {
+            map_binds[crate::input_map::MapAction::ZoomIn.index()].as_str()
+                == crate::input_map::key_name(*k)
+        }) {
             m.scale = map::map_key_scale(m.scale, true);
         }
-        if self
-            .keys
-            .iter()
-            .any(|k| map_binds[crate::input_map::MapAction::ZoomOut.index()].as_str()
-                == crate::input_map::key_name(*k))
-        {
+        if self.keys.iter().any(|k| {
+            map_binds[crate::input_map::MapAction::ZoomOut.index()].as_str()
+                == crate::input_map::key_name(*k)
+        }) {
             m.scale = map::map_key_scale(m.scale, false);
         }
         // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
@@ -956,8 +953,6 @@ impl App {
             self.settings.zoom = self.zoom;
         }
     }
-
-
 
     /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
     pub(crate) fn advance_disco(&mut self) {
@@ -1361,7 +1356,8 @@ impl App {
             pvp_draw,
             // `Main.cs:2911-2919`: `ShouldTeamSelectDraw` — always inside the
             // PVP gate, else the team-based-spawns seed (not ported: false).
-            team_select_draw: pvp_draw,            hide: self.hide_pvp_and_team_icons,
+            team_select_draw: pvp_draw,
+            hide: self.hide_pvp_and_team_icons,
             hostile,
             team,
             team_cooldown: self.team_cooldown,
@@ -1717,8 +1713,10 @@ impl App {
         let settings = self.settings.clone();
         let shot_path = self.shot_path.clone();
         let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
-        let music =
-            std::mem::replace(&mut self.music, audio::MusicSystem::new(assets::content_dir()));
+        let music = std::mem::replace(
+            &mut self.music,
+            audio::MusicSystem::new(assets::content_dir()),
+        );
         let window = self.window.take();
         let gpu = self.gpu.take();
         let post = self.post.take();
@@ -2482,8 +2480,12 @@ impl App {
         // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
         // v8 section's recorded counts restore the tally; the vanilla rides
         // them inside the world-flags block.
-        let seeded_banners: Vec<(i32, i32)> =
-            sections.native.banners.iter().map(|b| (b.banner, b.kills)).collect();
+        let seeded_banners: Vec<(i32, i32)> = sections
+            .native
+            .banners
+            .iter()
+            .map(|b| (b.banner, b.kills))
+            .collect();
         // Hoisted shadowing of the roll: a `.wld` load takes the file's chests
         // instead — they are the player's own contents, and the roll only fills
         // the anchors the file does not carry (`chest_gen::displace_loaded_chests`,
@@ -2780,7 +2782,11 @@ impl App {
             cursor_override: -1,
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
-            craft_rng: world_seed,
+            // The craft RNG (`Main.rand` in the C#, `Recipe.cs:221`) seeds
+            // from the world; vanilla seeds `Main.rand` from the clock
+            // (`Main.cs:6461-6463`) — the same deterministic stand-in as the
+            // wiring RNG (S1-L-6c).
+            craft_rng: tr_core::unified_random::UnifiedRandom::new(world_seed as i32 | 1),
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             menu: menu_state,
@@ -3512,7 +3518,12 @@ pub(crate) fn build_atlas_reusing_static(
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
-) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(
+    Atlas,
+    Option<tr_render::FontAtlas>,
+    assets::Lookups,
+    (u32, u32, usize, usize),
+)> {
     build_atlas_inner(world, assets_dir, static_cache, fonts_cache)
 }
 
@@ -3521,7 +3532,12 @@ fn build_atlas_inner(
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
-) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(
+    Atlas,
+    Option<tr_render::FontAtlas>,
+    assets::Lookups,
+    (u32, u32, usize, usize),
+)> {
     let (mut tile_ids, wall_ids) = assets::usage(&world);
     // The hotbar can place these even when the loaded world does not use them yet.
     tile_ids.insert(4); // torch
@@ -3867,10 +3883,7 @@ pub(crate) fn latest_own_world() -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
-        let is_trwld = path
-            .extension()
-            .is_some_and(|e| e == "trwld")
-            && path.is_file();
+        let is_trwld = path.extension().is_some_and(|e| e == "trwld") && path.is_file();
         if !is_trwld {
             continue;
         }
@@ -3944,7 +3957,6 @@ mod tr_hooks {
         out
     }
 
-
     /// BUG-21 end to end: the select-world Play enters the world (the lobby does
     /// not come back) and the second swap reuses the cached atlas/font halves
     /// instead of re-decoding them.
@@ -4005,7 +4017,10 @@ mod tr_hooks {
         assert_eq!(app.world.name, "Beta", "the selected world is live");
         assert!(app.static_sheets.is_some(), "the static half is cached");
         assert!(app.fonts_cache.is_some(), "the font tables are cached");
-        assert!(app.font_atlas.is_some(), "the font page texture rides the swap");
+        assert!(
+            app.font_atlas.is_some(),
+            "the font page texture rides the swap"
+        );
 
         // The second Play reuses both caches (the decode half is pinned by
         // `assets::tests::test_the_second_atlas_build_reuses_the_static_half`,
@@ -4325,7 +4340,12 @@ mod tr_hooks {
         // A minimal `.trwld` through the real save path — `load_world` reads
         // a file (the scratch-file pattern of persist.rs's tests).
         let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
+        save::save(
+            &path,
+            &World::new("pins".into(), 32, 32),
+            &save::WorldSide::default(),
+        )
+        .unwrap();
 
         // Edition 2024: env mutation is `unsafe` (a parallel reader could
         // observe a half-update); the ENV_LOCK above is that serialization.
@@ -4369,7 +4389,12 @@ mod tr_hooks {
         unsafe { std::env::remove_var("TR_MOONDIAL") };
 
         let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
+        save::save(
+            &path,
+            &World::new("pins".into(), 32, 32),
+            &save::WorldSide::default(),
+        )
+        .unwrap();
         let (world, sections) = load_world(&path).expect("scratch world loads");
         let _ = std::fs::remove_file(&path);
 

@@ -6404,13 +6404,15 @@ near the table. The discount itself: `GetIngredientCraftingDiscount`
 consumed stacks — the availability check counts full stacks (the split is
 the vanilla's). Port: `try_craft` subtracts the rolled-off units from each
 requirement's drain (group entries discount on the folded stack), the rolls
-come from the App's `craft_rng` stream (the per-consumer RNG convention —
-vanilla rolls the shared `Main.rand`; the seed is fixed like the other
-streams, so crafting is seed-deterministic). The subset gains the two
-placed-bottle potions: Lesser Healing Potion ×2 (1 Mushroom + 2 Gel +
-2 Bottle, `Recipe.cs:1586-1597`) and Healing Potion (2 LHP +
-1 Glowing Mushroom, `:1606-1611`). The 1/3 rolls consume stream state, so
-the discount depends on every prior craft — the documented determinism
+come from the App's `craft_rng` stream — since S1-L-11e the exact C#
+`UnifiedRandom` generator (the splitmix stand-in is gone), seeded per world
+`world_seed | 1` like the wiring RNG (vanilla rolls the shared `Main.rand`
+seeded from the clock, `Main.cs:6461-6463`; the shared-stream interleave is
+the port-wide S1-A-11 residual, so crafting is seed-deterministic). The
+subset gains the two placed-bottle potions: Lesser Healing Potion ×2 (1
+Mushroom + 2 Gel + 2 Bottle, `Recipe.cs:1586-1597`) and Healing Potion (2
+LHP + 1 Glowing Mushroom, `:1606-1611`). The 1/3 rolls consume stream state,
+so the discount depends on every prior craft — the documented determinism
 caveat mirrors the vanilla (Main.rand's shared stream).
 ## Hardmode switch (M5-HARDFORCE)
 
