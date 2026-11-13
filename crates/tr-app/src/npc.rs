@@ -1588,13 +1588,13 @@ impl NpcKind {
             NpcKind::DD2KoboldWalkerT2 | NpcKind::DD2KoboldWalkerT3 => (18.0, 40.0),
             // The Ogre: the 96x124 box.
             NpcKind::DD2OgreT2 | NpcKind::DD2OgreT3 => (96.0, 124.0),
-            // The cultist + the three towers: 130x270 (`NPC.cs`'s
-            // case 422 + the 493/507/517 rows).
-            NpcKind::AncientCultist
-            | NpcKind::StardustTower
+            // The Lunar Pillars: 130x270 (`NPC.cs` cases 422/493/507/517).
+            NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => (130.0, 270.0),
+            // Lunatic Cultist (439): 24x50 (`NPC.cs:14214-14215`). S1-D-3b.
+            NpcKind::AncientCultist => (24.0, 50.0),
             // The lane gate: 78x130 (`NPC.cs`'s case 549).
             NpcKind::DD2LanePortal => (78.0, 130.0),
             NpcKind::VortexHunter => (50.0, 62.0),
@@ -2067,12 +2067,13 @@ impl NpcKind {
             NpcKind::DD2Betsy => 50000,
             // The WitherBeast: 500 HP.
             NpcKind::DD2WitherBeast => 500,
-            // The cultist + the towers: 20000 HP.
-            NpcKind::AncientCultist
-            | NpcKind::StardustTower
+            // The Lunar Pillars: 20000 HP.
+            NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => 20000,
+            // Lunatic Cultist (439): 32000 HP (`NPC.cs:14219`). S1-D-3b.
+            NpcKind::AncientCultist => 32000,
             // The lane gate: 5 HP (`NPC.cs`'s case 549).
             NpcKind::DD2LanePortal => 5,
             NpcKind::VortexHunter => 1000,
@@ -2302,12 +2303,13 @@ impl NpcKind {
             NpcKind::DD2KoboldFlyerT3 => 80,
             NpcKind::DD2OgreT2 => 70,
             NpcKind::DD2OgreT3 => 90,
-            // The cultist + the towers: dmg 0.
-            NpcKind::AncientCultist
-            | NpcKind::StardustTower
+            // The Lunar Pillars: dmg 0.
+            NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => 0,
+            // Lunatic Cultist (439): damage 50 (`NPC.cs:14217`). S1-D-3b.
+            NpcKind::AncientCultist => 50,
             // The lane gate: damage 0 (`NPC.cs`'s case 549).
             NpcKind::DD2LanePortal => 0,
             // The vortex trio's damage: the hunter's 100, the alien's 75,
@@ -3553,12 +3555,13 @@ impl Npc {
             NpcKind::DD2Betsy => 38,
             // The WitherBeast: def 30.
             NpcKind::DD2WitherBeast => 30,
-            // The cultist + the towers: def 20.
-            NpcKind::AncientCultist
-            | NpcKind::StardustTower
+            // The Lunar Pillars: def 20.
+            NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower => 20,
+            // Lunatic Cultist (439): defense 42 (`NPC.cs:14218`). S1-D-3b.
+            NpcKind::AncientCultist => 42,
             // The lane gate: def 20 (`NPC.cs`'s case 549).
             NpcKind::DD2LanePortal => 20,
             // The shards' defense: 50/0/38/46/40/34.
@@ -3870,11 +3873,12 @@ impl Npc {
             | NpcKind::DD2DarkMageT3
             | NpcKind::DD2EterniaCrystal
             | NpcKind::DD2Bartender
-            | NpcKind::AncientCultist
             | NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => 0.0,
+            // Lunatic Cultist (439): value 100000f (`NPC.cs:14226`). S1-D-3b.
+            NpcKind::AncientCultist => 100000.0,
             NpcKind::VortexTower => 0.0, // the C# value = 0 for the pillars
             NpcKind::DD2LanePortal => 0.0,
             // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
@@ -4136,9 +4140,6 @@ impl Npc {
             NpcKind::BoundMechanic => {}
             NpcKind::WebbedStylist => {}
             NpcKind::SleepingGolfer => {}
-            NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => {
-                self.update_goblin(world, player)
-            }
             NpcKind::GoblinArcher => self.update_archer(world, player, rng),
             NpcKind::Golem
             | NpcKind::GolemHead
@@ -4148,14 +4149,12 @@ impl Npc {
             NpcKind::Deerclops => self.update_deerclops(world, player, rng),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
-            // The goblin army's fighters (aiStyle 3): the walker speed
-            // rides the skeleton's, the peon/warrior/summoner carry the
-            // family's 0.85 hop (the vanilla's per-type velocity.X table
-            // folds into the walker params — the faithful per-type rows
-            // land with the AI_003's velocity table pass).
+            // The goblin army's fighters (aiStyle 3, NPC.cs:15644/15658/
+            // :15714 cases 26/27/111): the walker arm. (S1-D-3b: the
+            // shadowing `update_goblin` arm that kept Thief/Warrior/Peon
+            // off this path is removed so they reach the skeleton walker.)
             NpcKind::GoblinThief
             | NpcKind::GoblinWarrior
-            | NpcKind::GoblinArcher
             | NpcKind::GoblinPeon => self.update_skeleton(world, player, dt),
             // The frost trio: aiStyle 38's movement core rides the walker
             // (the per-type speeds 3/3.5/4 fold into the walker params —
@@ -4241,12 +4240,15 @@ impl Npc {
                 self.update_dd2_kobold_walker(world, player, dt)
             }
             NpcKind::DD2OgreT2 | NpcKind::DD2OgreT3 => self.update_ogre(world, player, rng),
-            // The cultist + the towers: aiStyle 94's shared machine.
-            NpcKind::AncientCultist
-            | NpcKind::StardustTower
+            // The Lunar Pillars: aiStyle 94 (NPC.cs:38968-39400).
+            NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => self.update_ancient_cultist(world, player, rng),
+            // S1-D-3b: AncientCultist (CultistBoss 439) is aiStyle 84
+            // (NPC.cs:14216, AI_084_LunaticCultist :64414), not the pillar
+            // aiStyle 94 row (422/507/517/493).
+            NpcKind::AncientCultist => self.update_lunatic_cultist(world, player, rng),
             // The Old One's Army's lane gate: aiStyle 106 — the sim's
             // gate pass owns its spawn timer (it needs the pool + the
             // dd2 state), the machine here is the idle body.
@@ -4350,7 +4352,9 @@ impl Npc {
             NpcKind::PirateArcher | NpcKind::PirateCorsair | NpcKind::PirateCaptain => {
                 self.update_martian_shooter(world, player, rng)
             }
-            NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
+            // S1-D-3b: GoblinSummoner (471, NPC.cs:56491-56718) is aiStyle 3
+            // with a type-specific shadowflame machine, not aiStyle 8 caster.
+            NpcKind::GoblinSummoner => self.update_goblin_summoner(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
             }
@@ -6975,6 +6979,188 @@ impl Npc {
             };
         }
     }
+
+    /// Goblin Summoner (471). C# `NPC.cs:15728` SetDefaults aiStyle 3 and the
+    /// type-specific AI block `NPC.cs:56491-56718`. (S1-D-3b: was mis-routed to
+    /// `update_caster` / aiStyle 8.)
+    fn update_goblin_summoner(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+        let (pcx, pcy) = player.center();
+        let (cx, cy) = self.center();
+
+        // NPC.cs:56491-56718
+        if self.ai[3] < 0.0 {
+            // shadowflame phase (noGravity/noTileCollide in C#)
+            if self.vx < 0.0 {
+                self.facing = -1;
+            } else if self.vx > 0.0 {
+                self.facing = 1;
+            }
+            self.sprite_dir = self.facing;
+            self.rotation = self.vx * 0.1;
+
+            // ai[3] == -1: chase target (NPC.cs:56534-56550)
+            if (self.ai[3] + 1.0).abs() < f32::EPSILON {
+                let dist = ((pcx - cx) * (pcx - cx) + (pcy - cy) * (pcy - cy)).sqrt();
+                let num31 = 8.0 + dist / 200.0;
+                let num32 = 40.0;
+                let mut dirx = pcx - cx;
+                let mut diry = pcy - cy;
+                let dlen = (dirx * dirx + diry * diry).sqrt().max(0.0001);
+                dirx = dirx / dlen * num31;
+                diry = diry / dlen * num31;
+                self.vx = (self.vx * (num32 - 1.0) + dirx) / num32;
+                self.vy = (self.vy * (num32 - 1.0) + diry) / num32;
+                let (w, h) = self.size();
+                if dist < 500.0 && !crate::player::collides_rect(world, self.x, self.y, w, h) {
+                    self.ai[3] = 0.0;
+                    self.ai[2] = 0.0;
+                }
+                return;
+            }
+            // ai[3] == -2: rise (NPC.cs:56552-56573)
+            if (self.ai[3] + 2.0).abs() < f32::EPSILON {
+                self.vy -= 0.2;
+                if self.vy < -10.0 {
+                    self.vy = -10.0;
+                }
+                if pcy - cy > 200.0 {
+                    self.ai[3] = -3.0;
+                    self.ai[2] = if pcx > cx { 1.0 } else { -1.0 };
+                }
+                self.vx *= 0.99;
+                return;
+            }
+            // ai[3] == -3: strafe (NPC.cs:56575-56606)
+            if (self.ai[3] + 3.0).abs() < f32::EPSILON {
+                if self.facing == 0 {
+                    self.facing = if pcx >= cx { 1 } else { -1 };
+                    self.sprite_dir = self.facing;
+                }
+                if self.ai[2] == 0.0 {
+                    self.ai[2] = self.facing as f32;
+                }
+                self.vy *= 0.9;
+                self.vx += self.ai[2] * 0.3;
+                self.vx = self.vx.clamp(-10.0, 10.0);
+                let num34 = pcx - cx;
+                if (self.ai[2] < 0.0 && num34 > 300.0) || (self.ai[2] > 0.0 && num34 < -300.0) {
+                    self.ai[3] = -4.0;
+                    self.ai[2] = 0.0;
+                } else if num34.abs() > 800.0 {
+                    self.ai[3] = -1.0;
+                    self.ai[2] = 0.0;
+                }
+                return;
+            }
+            // ai[3] == -4: descend until solid footing (NPC.cs:56608-56639)
+            if (self.ai[3] + 4.0).abs() < f32::EPSILON {
+                self.ai[2] += 1.0;
+                self.vy += 0.1;
+                let sp = (self.vx * self.vx + self.vy * self.vy).sqrt();
+                if sp > 4.0 {
+                    self.vx *= 0.9;
+                    self.vy *= 0.9;
+                }
+                let num35 = (cx / 16.0) as i32;
+                let num36 = ((self.y + self.size().1 + 12.0) / 16.0) as i32;
+                let mut flag4 = false;
+                for l in (num35 - 1)..=(num35 + 1) {
+                    if world.in_bounds(l, num36) {
+                        let t = &world.tiles[world.index(l, num36)];
+                        if t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind) {
+                            flag4 = true;
+                        }
+                    }
+                }
+                let (w, h) = self.size();
+                if flag4 && !crate::player::collides_rect(world, self.x, self.y, w, h) {
+                    self.ai[3] = 0.0;
+                    self.ai[2] = 0.0;
+                } else if self.ai[2] > 300.0 || cy > pcy + 200.0 {
+                    self.ai[3] = -1.0;
+                    self.ai[2] = 0.0;
+                }
+                return;
+            }
+            return;
+        }
+
+        // Normal / summoning (ai[3] >= 0). NPC.cs:56520-56717.
+        self.rotation *= 0.9;
+        // aiStyle 3 baseline chase (NPC.cs:15728).
+        let dx = pcx - cx;
+        if dx.abs() > 8.0 {
+            self.facing = if dx > 0.0 { 1 } else { -1 };
+            self.sprite_dir = self.facing;
+            let speed = 0.85f32;
+            if self.facing > 0 {
+                self.vx = (self.vx + 0.07).min(speed);
+            } else {
+                self.vx = (self.vx - 0.07).max(-speed);
+            }
+        }
+
+        if (self.ai[3] - 1.0).abs() < f32::EPSILON {
+            // summoning pose (56643-56680); ShadowFlameApparition (472) spawn
+            // at ai[2]==60 is not modeled (kind unavailable).
+            self.vx *= 0.8;
+            self.ai[2] += 1.0;
+            if self.ai[2] >= 90.0 {
+                self.ai[3] = -2.0;
+                self.ai[2] = 0.0;
+            }
+            return;
+        }
+
+        // ai[3] == 0: ground phase (56681-56717)
+        self.ai[2] += 1.0;
+        if self.vy == 0.0 {
+            if self.ai[2] >= 180.0 {
+                self.ai[2] = 0.0;
+                self.ai[3] = 1.0;
+            }
+        } else if self.ai[2] >= 360.0 {
+            self.ai[2] = 0.0;
+            self.ai[3] = -2.0;
+            self.vy -= 3.0;
+        }
+        if (pcx - cx).hypot(pcy - cy) > 800.0 {
+            self.ai[3] = -1.0;
+            self.ai[2] = 0.0;
+        }
+        // target/despawn checks (56710-56717) are handled by the outer sim.
+    }
+
+    /// Lunatic Cultist (439). C# `NPC.cs:14216` SetDefaults aiStyle 84,
+    /// `AI_084_LunaticCultist` (`NPC.cs:64414`). (S1-D-3b: was mis-routed to the
+    /// pillar aiStyle 94 machine / type-422 row.)
+    fn update_lunatic_cultist(&mut self, _world: &World, player: &Player, _rng: &mut u64) {
+        // AI_084 core: spawn-in fade/despawn gate (NPC.cs:64554-64585,
+        // 64587-64621). The full ritual/attack cycle is not yet ported.
+        let (pcx, pcy) = player.center();
+        let (cx, cy) = self.center();
+        if self.ai[0] == 0.0 && self.ai[1] == 0.0 && self.ai[2] == 0.0 {
+            self.ai[0] = -1.0;
+        }
+        if self.ai[0] == -1.0 {
+            if self.alpha > 5 { self.alpha = self.alpha.saturating_sub(5); } else { self.alpha = 0; }
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 420.0 {
+                self.ai[0] = 0.0;
+                self.ai[1] = 0.0;
+            } else if self.ai[1] > 360.0 {
+                self.vx *= 0.95;
+                self.vy *= 0.95;
+            }
+            return;
+        }
+        let num10 = 5600.0f32;
+        if player.hp <= 0 || (pcx - cx).hypot(pcy - cy) > num10 {
+            // NPC.cs:64562-64585
+            self.hp = 0;
+        }
+    }
+
 
     /// `AI_008` through the framework's `caster_cycle` (`NPC.cs`'s aiStyle
     /// 8 block, `:20817-21278`). The shoot tick spawns the sphere through
@@ -18786,4 +18972,111 @@ mod shard_stat_tests {
 
 
 
+}
+
+
+#[cfg(test)]
+mod s1_d_3b_tests {
+    use super::*;
+    use tr_core::world::World;
+
+    fn bare(kind: NpcKind) -> Npc {
+        Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    fn flat_world() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        // a floor so walkers have ground
+        for x in 0..200i32 {
+            let i = w.index(x, 70);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    #[test]
+    fn goblin_fighters_use_skeleton_walker_not_shadowed_goblin_arm() {
+        // R-05-3 / S1-D-3b: GoblinThief/Warrior/Peon must reach the skeleton
+        // walker arm (`update_skeleton`, WalkerParams speed 0.8) instead of the
+        // shadowing `update_goblin` arm (speed 1.0). NPC.cs:15644/15658/15714.
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        // place target far to the right, both on the floor
+        player.x = 140.0 * 16.0;
+        player.y = 68.0 * 16.0;
+        for kind in [NpcKind::GoblinThief, NpcKind::GoblinWarrior, NpcKind::GoblinPeon] {
+            let mut n = bare(kind);
+            n.x = 80.0 * 16.0;
+            n.y = 68.0 * 16.0;
+            n.vx = 0.0;
+            n.vy = 0.0;
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+            }
+            assert!(
+                n.vx.abs() <= 0.95,
+                "{kind:?} must use skeleton walker (speed <= ~0.8), got vx={}",
+                n.vx
+            );
+            assert!(
+                n.vx > 0.0,
+                "{kind:?} should walk toward the target, got vx={}",
+                n.vx
+            );
+        }
+    }
+
+    #[test]
+    fn goblin_summoner_is_not_routed_to_ai_style_8_caster() {
+        // S1-D-3b: GoblinSummoner (471, NPC.cs:15728 aiStyle 3, :56491-56718)
+        // must not run the caster cycle (aiStyle 8). Caster AI drives
+        // caster_counter/cast_windup; the summoner's type-specific machine
+        // advances ai[2]/ai[3].
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 80.0 * 16.0;
+        player.y = 68.0 * 16.0;
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.x = 80.0 * 16.0;
+        n.y = 60.0 * 16.0;
+        n.ai = [0.0; 4];
+        n.vy = 1.0;
+        n.caster_counter = 0;
+        n.cast_windup = 0;
+        let mut saw_nonzero_ai = false;
+        for _ in 0..360 {
+            n.update(&w, &mut player, 1.0 / 60.0);
+            if n.ai[2] != 0.0 || n.ai[3] != 0.0 {
+                saw_nonzero_ai = true;
+            }
+        }
+        assert!(saw_nonzero_ai, "summoner must advance ai[2]/ai[3] state machine, got ai={:?}", n.ai);
+        // caster path would not produce this 471-specific ground-phase cycle
+        assert_eq!(n.caster_counter, 0, "must not run aiStyle 8 caster cycle");
+    }
+
+    #[test]
+    fn ancient_cultist_uses_cultist_ai_not_pillar_ai_style_94() {
+        // S1-D-3b: AncientCultist (CultistBoss 439, aiStyle 84, NPC.cs:64414)
+        // must not share the Lunar Pillar aiStyle 94 machine
+        // (NPC.cs:38968-39400). The tower update dissolves at 180 ticks
+        // (ai[2] timer -> hp 0); cultist AI_084 begins with a spawn-in intro.
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 68.0 * 16.0;
+        let mut n = bare(NpcKind::AncientCultist);
+        n.x = 100.0 * 16.0;
+        n.y = 60.0 * 16.0;
+        n.ai = [0.0; 4];
+        n.hp = n.max_hp.max(1);
+        for _ in 0..200 {
+            n.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(n.hp > 0, "cultist must not be killed by the tower 180-tick dissolve");
+        assert_eq!(n.ai[0], -1.0, "cultist should remain in AI_084 spawn-in intro");
+    }
 }

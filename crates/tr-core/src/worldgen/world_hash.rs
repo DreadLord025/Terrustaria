@@ -11,6 +11,18 @@
 //! worth reproducing; what matters is that every stored `Tile` field is
 //! covered (kind, wall, frame_x, frame_y, liquid, flags, meta, wall_frame —
 //! the state the `.trwld` save serialises) and the result is stable.
+//!
+//! Two distinct pins live here:
+//! * **the algorithm** — `mix` (`*5 + 3864292196`), the per-tile `*31` field
+//!   mix and the `rotl13` fold order — is frozen by
+//!   `the_fnv_constants_are_frozen_by_a_fixed_input` over a fixed synthetic
+//!   grid (derived independently, not from this code). It only moves if the
+//!   hash *itself* changes.
+//! * **the generator output** — `SEED42_512` / `DEFAULT_WORLD` — is a
+//!   regression tripwire for the port's **own** pipeline: a faithful worldgen
+//!   change moves it by design and the constant is re-pinned. It is *not* a
+//!   proof of C# parity (the per-tile mix is the port's own, so the number is
+//!   not comparable to vanilla's `HashWorld`); that proof is S1-A-7.
 
 use crate::tile::Tile;
 use crate::world::World;
@@ -218,6 +230,44 @@ mod tests {
         let b = world_hash(&crate::worldgen::generate(&opts));
         assert_eq!(a, b);
         assert_eq!(a, DEFAULT_WORLD);
+    }
+
+    /// The **frozen** hash: `mix` (`*5 + 3864292196`), the per-tile `*31` field
+    /// mix and the column/whole-world `rotl13` order, pinned against a fixed
+    /// synthetic grid. Unlike `SEED42_512`/`DEFAULT_WORLD` (generator-output
+    /// tripwires that move on *every* worldgen fidelity change), these constants
+    /// change only if the hash algorithm itself changes. The value was derived
+    /// independently — a separate implementation of the
+    /// `WorldGenerator.HashWorld` fold (`WorldGenerator.cs:517-545`), not copied
+    /// from this port — so the pin is not self-referential.
+    ///
+    /// `grid[i]`, row-major `i = y * 4 + x` (`W = 4`, `H = 3`), is:
+    /// `kind = (i*3+1)%7`, `wall = (i*5+2)%4`, `frame_x = (i*7)%9`,
+    /// `frame_y = (i*11)%10`, `liquid = (i*13)%200`, `flags = (i*17)%256`,
+    /// `meta = (i*19)%256`, `wall_frame = (i*23)%256`.
+    fn frozen_grid() -> World {
+        let mut w = World::new("golden".into(), 4, 3);
+        for i in 0..(4 * 3) {
+            let t = &mut w.tiles[i];
+            t.kind = ((i * 3 + 1) % 7) as u16;
+            t.wall = ((i * 5 + 2) % 4) as u16;
+            t.frame_x = ((i * 7) % 9) as i16;
+            t.frame_y = ((i * 11) % 10) as i16;
+            t.liquid = ((i * 13) % 200) as u8;
+            t.flags = ((i * 17) % 256) as u8;
+            t.meta = ((i * 19) % 256) as u8;
+            t.wall_frame = ((i * 23) % 256) as u8;
+        }
+        w
+    }
+
+    #[test]
+    fn the_fnv_constants_are_frozen_by_a_fixed_input() {
+        let w = frozen_grid();
+        assert_eq!(world_hash(&w), 2634455973, "the world fold");
+        assert_eq!(tile_hash(&w.tiles[0]), 3517817697, "tile 0");
+        assert_eq!(tile_hash(&w.tiles[1]), 1245549601, "tile 1");
+        assert_eq!(tile_hash(&w.tiles[11]), 2902946927, "tile 11");
     }
 
     #[test]

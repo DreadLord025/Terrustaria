@@ -121,8 +121,8 @@ an agent needs before touching code.
   `any_liquid_kind`. It emits `WaterfallDraw` quads in world pixels; the app turns them
   into sprites.
 - `worldgen/` — the pass-pipeline generator over `WorldGen`'s shape: `mod.rs` (GenOptions +
-  the orchestrator; `deterministic_for_seed` pins four FNV-1a hashes over the post-pass
-  world state), `pipeline.rs` (the M5-GEN-1 scaffold — `VANILLA_CHAIN`'s vanilla
+  the orchestrator; `generation_is_reproducible_for_a_seed` pins the port's own
+  reproducibility — a same-binary replay-pair, not C# fidelity), `pipeline.rs` (the M5-GEN-1 scaffold — `VANILLA_CHAIN`'s vanilla
   declarations as the model, `EXECUTED_PIPELINE`'s 44 steps as the byte contract,
   `Streams`/`GenVars`/`boot_statics`; `Streams::pass_rng(name)` =
   `Rng(seed ^ fnv1a64(name))` is every faithful pass's own stream), `config.rs` (the
