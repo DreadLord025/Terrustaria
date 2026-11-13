@@ -147,6 +147,9 @@ pub struct Rain {
     snow: Vec<Snowflake>,
     /// The camera is in a snow biome: rain is replaced by snowfall.
     snow_mode: bool,
+    /// The gfx-quality value the snow cap scales with (S1-B-6) — the
+    /// weather pass copies `App.gfx_quality.quality` in.
+    pub gfx_quality: f32,
     rng: u64,
     spawn_acc: f32,
     forced: Option<f32>,
@@ -257,6 +260,7 @@ impl Rain {
             sparkles: Vec::with_capacity(64),
             snow: Vec::with_capacity(MAX_SNOW),
             snow_mode: false,
+            gfx_quality: 0.0,
             rng,
             spawn_acc: 0.0,
             forced,
@@ -953,17 +957,21 @@ impl Rain {
     }
 
     /// Ambient snowfall: vanilla spawns `500 * screenWidth/1920` dust flakes in a snow
-    /// biome, multiplied by `1 + 2*cloudAlpha` during a storm.
+    /// biome, multiplied by `1 + 2*cloudAlpha` during a storm. The spawn cap
+    /// carries the gfx-quality budget (`Main.cs:13057`'s
+    /// `num2 * (gfxQuality / 2f + 0.5f) + num2 * 0.1f` — S1-B-6), so the
+    /// low-quality mode flakes fewer.
     fn spawn_snow(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
         let px = tr_core::TILE_PX;
         let half = screen * 0.5 / zoom;
         let rate = screen.x / 1920.0 * 2.4 * (0.6 + 1.8 * self.intensity);
-        if self.snow.len() >= MAX_SNOW {
+        let cap = crate::world_sim::gfx_quality::snow_cap(MAX_SNOW, self.gfx_quality);
+        if self.snow.len() >= cap {
             return;
         }
         let count = rate.max(0.0).floor() as usize;
         for _ in 0..count {
-            if self.snow.len() >= MAX_SNOW {
+            if self.snow.len() >= cap {
                 break;
             }
             let x = camera.x + (self.rand01() * 2.0 - 1.0) * (half.x + 90.0);
