@@ -1090,14 +1090,16 @@ mod tests {
         assert!(count(480) > 300, "the pyramid brick ({})", count(480));
         assert!(count(28) > 50, "the pots ({})", count(28));
         // The chest tiles come in intact 2x2 quads — every chest anchor
-        // (frame 0,0) has its three siblings.
+        // (frame_y 0, the style's base column `frame_x = 18 * style`) has
+        // its three siblings (S1-A-4: the styles ride the resolved `num9`).
         let mut anchors = 0;
         for y in 1..w.height - 2 {
             for x in 1..w.width - 2 {
                 let t = w.tile(x, y).unwrap();
-                if t.active() && t.kind == 21 && t.frame_x == 0 && t.frame_y == 0 {
+                if t.active() && t.kind == 21 && t.frame_y == 0 && t.frame_x % 18 == 0 {
+                    let base = t.frame_x;
                     let ok =
-                        [(1i32, 0i32, 18i16), (0, 1, 0), (1, 1, 18)]
+                        [(1i32, 0i32, base + 18i16), (0, 1, base), (1, 1, base + 18)]
                             .iter()
                             .all(|(dx, dy, fx)| {
                                 w.tile(x + dx, y + dy).is_some_and(|n| {

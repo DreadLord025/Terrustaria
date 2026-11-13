@@ -204,8 +204,15 @@ mod tests {
     // `TileType` 30 (`WoodBlock`) frame and the `WallType` 27 (`Planked`)
     // interior walls — instead of the Sunflower tile 27 frame and the pink
     // dungeon wall 9 interior, so every world's tile/wall fields move.
-    const SEED42_512: u32 = 1445035279;
-    const DEFAULT_WORLD: u32 = 1520389681;
+    // Re-pinned by S1-A-4 (the gen-time chest stocking, slice B): the chest
+    // sites draw on their pass's stream now — the shrines' jungle item +
+    // `Next(2)` x-jitter (`WorldGen.cs:10170-10196`/`:17220`), the pyramid's
+    // main-item double roll (`:27853-27873`) and the hell house's
+    // `832`/`4281` roll (`:29292-29297`) — and every chest writes its
+    // resolved `num9` style into the frames (`:35978-35988`), so the srng
+    // tail and the chest tiles move.
+    const SEED42_512: u32 = 3207865736;
+    const DEFAULT_WORLD: u32 = 538901504;
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]
