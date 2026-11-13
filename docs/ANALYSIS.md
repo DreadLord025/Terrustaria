@@ -11890,6 +11890,23 @@ Documented gaps, all deliberate:
   `AddBuff(205, 300)`) ride S1-C-7.
 - **`brain_of_confusion_dodge_animation_counter`** has no render consumer
   (the S1-A-9 dead-slot convention) — carried for state parity.
-- **The contact/thorns restructure** (a dodged contact still reflects thorns,
-  `Update_NPCCollision`'s pre-hit gate `:31390-31420`) and the
-  `IsDamageDodgeable` per-caller gates ride **Phase 2** of this task.
+- **The contact/thorns restructure** (Phase 2, landed): the contact block runs
+  `Update_NPCCollision`'s order (`Player.cs:31387-31426`) — `DamageVar(-luck)`
+  → the thorns reflect gated on the PRE-hit `hurt_cd <= 0` (the `!immune`
+  stand-in) → `Hurt(dodgeable: npc.is_damage_dodgeable())` — so a dodged
+  contact still reflects (the C# arms run before `Hurt`).
+- **`IsDamageDodgeable`'s port-state arms** (Phase 2, landed): the 35/127 arm
+  (`NPC.cs:78744-78753`) keys on the ported `SkeletronHead`/`SkeletronPrime`
+  kinds reading `ai[1] != 2f` verbatim; the Dungeon Guardian (`case 68`) and
+  the Empress of Light (`case 636`, `!ShouldEmpressBeEnraged()`) have no port
+  kind, so their arms are out with them (the default-true tail covers a
+  future port). The Skeletron Head's port AI (`update_skeletron`) leaves
+  `ai[1]` at 0 (its `cast_windup` stand-in) — the gate reads the field and
+  evaluates true until the real machine lands; Prime's machine
+  (`update_prime`) maintains `ai[1]` live. The projectile gate
+  (`Projectile.cs:15064-15071` — kinds 871-874/919/923-924 at exactly-9999
+  damage) is fully keyed; the port's `Projectile.kind` is the vanilla id.
+- **The hazard/lava/fall callers keep `dodgeable = true`** (`Hurt`'s default,
+  `Player.cs:38197`) — a black belt eats spike, lava and fall damage
+  (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
+  unreachable in the port.
