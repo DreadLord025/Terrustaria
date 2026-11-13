@@ -28,6 +28,10 @@ struct Entry {
     y: i32,
     /// Consecutive passes without a change; [`KILL_DEAD`] retires immediately.
     kill: u16,
+    /// `Liquid.delay` (`Liquid.cs:63`): the per-entry flow throttle — lava
+    /// flows every 6th tick, honey every 11th (`Liquid.cs:484-490`/`:513-522`
+    /// gate the movement, never the reactions).
+    delay: u8,
 }
 
 pub struct LiquidSystem {
@@ -45,6 +49,18 @@ pub struct LiquidSystem {
     cur_max_liquid: usize,
     /// Set when any level changed during the current [`LiquidSystem::update`].
     dirty: bool,
+    /// `Liquid.quickFall` (`Liquid.cs:34`): the quick-settle mode sets it and
+    /// forces every entry's `delay = 10` in the pass loop (`:1086-1092`), so
+    /// lava/honey flow every tick. The runtime pass keeps it `false`; the
+    /// `QuickWater`/panic family (R-11-7) flips it.
+    quick_fall: bool,
+    /// `WorldGen.remixWorldGen` — the desert-strip arm's gate
+    /// (`Liquid.cs:1447`); the R-12-5 plumbing owns it, `false` at runtime.
+    remix_world_gen: bool,
+    /// `WorldGen.isGeneratingOrLoadingWorld` — the merge-tile branch selector
+    /// (`Liquid.cs:1333`/`:1447`). The port's settlement pass never runs
+    /// during generation yet (R-12-5 plumbs it), so it stays `false`.
+    generating: bool,
 }
 
 impl LiquidSystem {
@@ -59,6 +75,9 @@ impl LiquidSystem {
             wet_counter: 0,
             cur_max_liquid: MAX_ACTIVE,
             dirty: false,
+            quick_fall: false,
+            generating: false,
+            remix_world_gen: false,
         }
     }
 
@@ -107,7 +126,12 @@ impl LiquidSystem {
             return;
         }
         self.set_checking(x, y, true);
-        self.active.push(Entry { x, y, kill: 0 });
+        self.active.push(Entry {
+            x,
+            y,
+            kill: 0,
+            delay: 0,
+        });
     }
 
     /// Queues every liquid cell in a square around an edit, so breaking or placing a
@@ -144,8 +168,17 @@ impl LiquidSystem {
         self.dirty = false;
         for i in start..end {
             let (x, y) = (self.active[i].x, self.active[i].y);
-            let kill = self.update_tile(world, x, y, self.active[i].kill);
+            // `Liquid.UpdateLiquid`'s quickFall pass forces every entry's
+            // delay to 10 (`Liquid.cs:1086-1089`) so the throttle gates
+            // never fire.
+            let delay = if self.quick_fall {
+                10
+            } else {
+                self.active[i].delay
+            };
+            let (kill, delay) = self.update_tile(world, x, y, self.active[i].kill, delay);
             self.active[i].kill = kill;
+            self.active[i].delay = delay;
         }
         if self.wet_counter >= CYCLES {
             self.wet_counter = 0;
@@ -182,14 +215,76 @@ impl LiquidSystem {
         }
     }
 
-    /// `Liquid.Update` for one cell. Returns the new kill counter.
-    fn update_tile(&mut self, world: &mut World, x: i32, y: i32, kill: u16) -> u16 {
+    /// `Liquid.Update` for one cell. Returns `(kill, delay)`.
+    fn update_tile(
+        &mut self,
+        world: &mut World,
+        x: i32,
+        y: i32,
+        kill: u16,
+        delay: u8,
+    ) -> (u16, u8) {
         let i = world.index(x, y);
         let start = world.tiles[i];
         if is_solid(&start) || start.liquid == 0 {
-            return KILL_DEAD;
+            return (KILL_DEAD, delay);
         }
         let kind = kind_code(start.liquid_kind());
+
+        // --- `Liquid.Update`'s reaction block (`Liquid.cs:475-560`) -----------
+        // A lava cell checks itself first; every other cell wakes its lava
+        // neighbours and falls through to the honey arm, then the shimmer
+        // arm. The reactions run EVERY tick — the delay gate below
+        // throttles only the flow, and `quickFall` bypasses it
+        // (`Liquid.cs:484-490`/`:513-522`).
+        let mut flow_delay = delay;
+        if kind == 1 {
+            self.lava_check(world, x, y);
+            if !self.quick_fall {
+                if delay < 5 {
+                    return (kill, delay + 1);
+                }
+                flow_delay = 0;
+            }
+        } else {
+            for (nx, ny) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
+                if world
+                    .tile(nx, ny)
+                    .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == LiquidKind::Lava)
+                {
+                    self.add_water(world, nx, ny);
+                }
+            }
+            if kind == 2 {
+                self.honey_check(world, x, y);
+                if !self.quick_fall {
+                    if delay < 10 {
+                        return (kill, delay + 1);
+                    }
+                    flow_delay = 0;
+                }
+            } else {
+                for (nx, ny) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
+                    if world
+                        .tile(nx, ny)
+                        .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == LiquidKind::Honey)
+                    {
+                        self.add_water(world, nx, ny);
+                    }
+                }
+                if kind == 3 {
+                    self.shimmer_check(world, x, y);
+                } else {
+                    for (nx, ny) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
+                        if world.tile(nx, ny).is_some_and(|t| {
+                            t.liquid > 0 && t.liquid_kind() == LiquidKind::Shimmer
+                        }) {
+                            self.add_water(world, nx, ny);
+                        }
+                    }
+                }
+            }
+        }
 
         // --- fall through the cell below ---------------------------------------
         if let Some(below) = world.tile(x, y + 1).copied() {
@@ -319,14 +414,360 @@ impl LiquidSystem {
         let now = world.tiles[i].liquid;
         if now != start.liquid {
             if now == 254 && start.liquid == 255 {
-                kill.saturating_add(1)
+                (kill.saturating_add(1), flow_delay)
             } else {
                 self.add_water(world, x, y - 1);
-                0
+                (0, flow_delay)
             }
         } else {
-            kill.saturating_add(1)
+            (kill.saturating_add(1), flow_delay)
         }
+    }
+
+    /// `Liquid.LavaCheck` (`Liquid.cs:1445-1459`): the generation-only
+    /// underground-desert lava strip, then the merge check.
+    fn lava_check(&mut self, world: &mut World, x: i32, y: i32) {
+        if self.generating
+            && !self.remix_world_gen
+            && !world
+                .micro_seeds
+                .contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
+            && self.underground_desert_check(world, x, y)
+        {
+            // `Main.tile[i, j].lava(lava: true)` — the TYPE bits only; an
+            // empty cell is pre-typed lava for whatever pours in later.
+            for i in (x - 3)..=(x + 3) {
+                for j in (y - 3)..=(y + 3) {
+                    if i >= 0 && j >= 0 && i < self.width && j < self.height {
+                        let idx = world.index(i, j);
+                        set_kind(&mut world.tiles[idx], 1);
+                    }
+                }
+            }
+        }
+        self.liquid_check(world, x, y, 1, false);
+    }
+
+    /// `Liquid.HoneyCheck` (`Liquid.cs:1460-1463`).
+    fn honey_check(&mut self, world: &mut World, x: i32, y: i32) {
+        self.liquid_check(world, x, y, 2, false);
+    }
+
+    /// `Liquid.ShimmerCheck` (`Liquid.cs:1465-1468`).
+    fn shimmer_check(&mut self, world: &mut World, x: i32, y: i32) {
+        self.liquid_check(world, x, y, 3, false);
+    }
+
+    /// `Liquid.LiquidCheck` (`Liquid.cs:1225-1373`) — the whole merge
+    /// surface. The side/up arms pool the different-type neighbour liquid
+    /// (zeroing it even when the merge gate then refuses — the C#'s own
+    /// consumption) and merge at the checking cell; the down arm burns the
+    /// cut plant below, honours the container override and merges at the
+    /// cell below. `createMergeTilesDuringGen` rides the worldgen caller
+    /// (`WorldGen.cs:22480` passes `true`).
+    fn liquid_check(
+        &mut self,
+        world: &mut World,
+        x: i32,
+        y: i32,
+        this_liquid_type: u8,
+        create_merge_tiles_during_gen: bool,
+    ) {
+        // `WorldGen.InWorld(x, y, 1)` + `WorldGen.SolidTile(x, y)` (`:1227`).
+        if x < 1 || y < 1 || x >= self.width - 1 || y >= self.height - 1 {
+            return;
+        }
+        if self.check_solid(world, x, y) {
+            return;
+        }
+        let left = world.tile(x - 1, y).copied().unwrap_or_default();
+        let right = world.tile(x + 1, y).copied().unwrap_or_default();
+        let up = world.tile(x, y - 1).copied().unwrap_or_default();
+        let here = world.tile(x, y).copied().unwrap_or_default();
+
+        // `Liquid.cs:1233-1236`: a side/up neighbour holds a liquid of a
+        // DIFFERENT type.
+        if any_other(&left, this_liquid_type)
+            || any_other(&right, this_liquid_type)
+            || any_other(&up, this_liquid_type)
+        {
+            let water_nearby = any_is(&left, 0) || any_is(&right, 0) || any_is(&up, 0);
+            let lava_nearby = any_is(&left, 1) || any_is(&right, 1) || any_is(&up, 1);
+            let honey_nearby = any_is(&left, 2) || any_is(&right, 2) || any_is(&up, 2);
+            let shimmer_nearby = any_is(&left, 3) || any_is(&right, 3) || any_is(&up, 3);
+            let mut num = 0u32;
+            for t in [&left, &right, &up] {
+                if tile_liquid_type(t) != this_liquid_type {
+                    num += t.liquid as u32;
+                }
+            }
+            for (dx, dy) in [(-1i32, 0), (1, 0), (0, -1)] {
+                let idx = world.index(x + dx, y + dy);
+                if tile_liquid_type(&world.tiles[idx]) != this_liquid_type {
+                    world.tiles[idx].liquid = 0;
+                }
+            }
+            let (liquid_merge_tile_type, liquid_merge_type) = get_liquid_merge_types(
+                this_liquid_type,
+                water_nearby,
+                lava_nearby,
+                honey_nearby,
+                shimmer_nearby,
+            );
+            let i = world.index(x, y);
+            if num >= 24
+                && liquid_merge_type != this_liquid_type
+                && (!here.active() || td::TILE_OBSIDIAN_KILL.has(here.kind))
+            {
+                world.tiles[i].liquid = 0;
+                self.create_liquid_merge_tile(
+                    world,
+                    x,
+                    y,
+                    this_liquid_type,
+                    liquid_merge_type,
+                    liquid_merge_tile_type,
+                    create_merge_tiles_during_gen,
+                );
+            }
+        } else {
+            // The down arm (`:1300-1371`).
+            let down = world.tile(x, y + 1).copied().unwrap_or_default();
+            if down.liquid == 0 || tile_liquid_type(&down) == this_liquid_type {
+                return;
+            }
+            let flag = here.active()
+                && td::SET_IS_A_CONTAINER.has(here.kind)
+                && !td::SET_IS_A_CONTAINER.has(down.kind);
+            if this_liquid_type != 0 && crate::tileobject::tile_cut(down.kind) {
+                crate::edit::kill_tile(world, x, y + 1, false);
+                // `Main.netMode == 2` → `NetMessage.SendData(17, …)` (`:1309`)
+                // — no multiplayer in the port.
+            }
+            if !((!down.active() || td::TILE_OBSIDIAN_KILL.has(down.kind)) || flag) {
+                return;
+            }
+            let i = world.index(x, y);
+            if here.liquid < 24 {
+                world.tiles[i].liquid = 0;
+                set_kind(&mut world.tiles[i], 0);
+                // `NetMessage.SendTileSquare(-1, x - 1, y, 3)` (`:1322`) — no
+                // multiplayer in the port.
+            } else {
+                let (liquid_merge_tile_type, liquid_merge_type) = get_liquid_merge_types(
+                    this_liquid_type,
+                    tile_liquid_type(&down) == 0,
+                    tile_liquid_type(&down) == 1,
+                    tile_liquid_type(&down) == 2,
+                    tile_liquid_type(&down) == 3,
+                );
+                world.tiles[i].liquid = 0;
+                let j = world.index(x, y + 1);
+                world.tiles[j].liquid = 0;
+                self.create_liquid_merge_tile(
+                    world,
+                    x,
+                    y + 1,
+                    this_liquid_type,
+                    liquid_merge_type,
+                    liquid_merge_tile_type,
+                    create_merge_tiles_during_gen,
+                );
+            }
+        }
+    }
+
+    /// `Liquid.CreateLiquidMergeTile` (`Liquid.cs:1330-1373`). The
+    /// generation branch strips the row's liquid TYPE; the runtime branch
+    /// lands the merge tile. `WorldGen.ReplaceTile` (`:1362`) is unported
+    /// (the TileObjectData-anchor chain — see ANALYSIS), so the port takes
+    /// the C#'s own fallback: `KillTile` + `PlaceTile(mute: true, forced:
+    /// true)`. The `PlayLiquidChangeSound` (`:1346`, R-32-8's liquid-merge
+    /// cues) and the MP tile-square messages have no port consumer; the
+    /// `tileSolid[546]` swap (`:1360-1368`) guards the unported
+    /// `ReplaceTile` path — the forced placement consults no solidity.
+    fn create_liquid_merge_tile(
+        &mut self,
+        world: &mut World,
+        x: i32,
+        y: i32,
+        this_liquid_type: u8,
+        liquid_merge_type: u8,
+        liquid_merge_tile_type: u16,
+        create_merge_tiles_during_gen: bool,
+    ) {
+        // `WorldGen.GetLiquidChangeType` (`WorldGen.cs:4656-4684`) — the
+        // change kind for the sound and the MP message; unused until those
+        // land.
+        let _liquid_change_type =
+            get_liquid_change_type(this_liquid_type, liquid_merge_type);
+        if self.generating && !create_merge_tiles_during_gen {
+            let mut liquid_type: i32 = match liquid_merge_tile_type {
+                229 => 0,
+                230 => 1,
+                56 => 1,
+                659 => 3,
+                _ => -1,
+            };
+            // `Main.UnderworldLayer` (`Main.cs:2790`, `maxTilesY - 200`).
+            if y >= self.height - 200 {
+                liquid_type = 1;
+            }
+            liquid_overwrite_strip(world, x, y, liquid_type);
+        } else {
+            let here = world.tile(x, y).copied().unwrap_or_default();
+            if here.active() {
+                crate::edit::kill_tile(world, x, y, false);
+            }
+            crate::edit::place_tile(world, x, y, liquid_merge_tile_type);
+            // `WorldGen.SquareTileFrame(x, y)` (`:1366`) — the port's
+            // `place_tile` already reframes the ring through `after_edit`.
+        }
+    }
+
+    /// `WorldGen.UndergroundDesertCheck` (`Liquid.cs:1209-1223`): the
+    /// desert's sandstone/hardened-sand walls (187/216) within the 7×7 box.
+    fn underground_desert_check(&self, world: &World, x: i32, y: i32) -> bool {
+        for i in (x - 3)..=(x + 3) {
+            for j in (y - 3)..=(y + 3) {
+                if i < 0
+                    || j < 0
+                    || i >= self.width
+                    || j >= self.height
+                {
+                    continue;
+                }
+                let w = world.tiles[world.index(i, j)].wall;
+                if w == 187 || w == 216 {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// `WorldGen.SolidTile` (`WorldGen.cs:69957-69965`): nactive solid, not
+    /// a solid-top, not a half-brick, slope 0.
+    fn check_solid(&self, world: &World, x: i32, y: i32) -> bool {
+        world.tile(x, y).is_some_and(|t| {
+            t.active()
+                && t.flags & crate::tile::FLAG_INACTIVE == 0
+                && td::TILE_SOLID.has(t.kind)
+                && !td::TILE_SOLID_TOP.has(t.kind)
+                && !t.half_brick()
+                && t.slope() == 0
+        })
+    }
+}
+
+/// `Tile.liquidType()`-style type getter — the two header bits, regardless
+/// of the amount (`Tile.cs:344-434`).
+fn tile_liquid_type(t: &Tile) -> u8 {
+    kind_code(t.liquid_kind())
+}
+
+/// `Tile.anyWater()`/`anyLava()`/`anyHoney()`/`anyShimmer()` — the amount
+/// check rides in front (`Tile.cs:401-434`).
+fn any_is(t: &Tile, kind: u8) -> bool {
+    t.liquid > 0 && tile_liquid_type(t) == kind
+}
+
+/// The `Liquid.cs:1233-1236` condition — a neighbour holding a liquid of a
+/// different type.
+fn any_other(t: &Tile, this_liquid_type: u8) -> bool {
+    t.liquid > 0 && tile_liquid_type(t) != this_liquid_type
+}
+
+/// `Liquid.GetLiquidMergeTypes` (`Liquid.cs:1375-1439`): the merge target
+/// per (this liquid, the nearby kinds) — the checks run in water → lava →
+/// honey → shimmer order, so a later match wins. Returns
+/// `(liquidMergeTileType, liquidMergeType)`.
+fn get_liquid_merge_types(
+    this_liquid_type: u8,
+    water_nearby: bool,
+    lava_nearby: bool,
+    honey_nearby: bool,
+    shimmer_nearby: bool,
+) -> (u16, u8) {
+    let mut liquid_merge_tile_type: u16 = 56;
+    let mut liquid_merge_type: u8 = this_liquid_type;
+    if this_liquid_type != 0 && water_nearby {
+        liquid_merge_tile_type = match this_liquid_type {
+            1 => 56,
+            2 => 229,
+            3 => 659,
+            _ => liquid_merge_tile_type,
+        };
+        liquid_merge_type = 0;
+    }
+    if this_liquid_type != 1 && lava_nearby {
+        liquid_merge_tile_type = match this_liquid_type {
+            0 => 56,
+            2 => 230,
+            3 => 659,
+            _ => liquid_merge_tile_type,
+        };
+        liquid_merge_type = 1;
+    }
+    if this_liquid_type != 2 && honey_nearby {
+        liquid_merge_tile_type = match this_liquid_type {
+            0 => 229,
+            1 => 230,
+            3 => 659,
+            _ => liquid_merge_tile_type,
+        };
+        liquid_merge_type = 2;
+    }
+    if this_liquid_type != 3 && shimmer_nearby {
+        liquid_merge_tile_type = 659;
+        liquid_merge_type = 3;
+    }
+    (liquid_merge_tile_type, liquid_merge_type)
+}
+
+/// `WorldGen.GetLiquidChangeType` (`WorldGen.cs:4656-4684`) — the
+/// `TileChangeType` the merge reports (the sound + MP consumers).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TileChangeType {
+    None,
+    LavaWater,
+    HoneyWater,
+    HoneyLava,
+    ShimmerWater,
+    ShimmerLava,
+    ShimmerHoney,
+}
+
+fn get_liquid_change_type(liquid_type: u8, other_liquid_type: u8) -> TileChangeType {
+    match (liquid_type, other_liquid_type) {
+        (0, 1) | (1, 0) => TileChangeType::LavaWater,
+        (0, 2) | (2, 0) => TileChangeType::HoneyWater,
+        (1, 2) | (2, 1) => TileChangeType::HoneyLava,
+        (0, 3) | (3, 0) => TileChangeType::ShimmerWater,
+        (1, 3) | (3, 1) => TileChangeType::ShimmerLava,
+        (2, 3) | (3, 2) => TileChangeType::ShimmerHoney,
+        _ => TileChangeType::None,
+    }
+}
+
+/// `Liquid.LiquidOverwriteStrip` (`Liquid.cs:1352-1361`): the generation
+/// branch re-types the row's liquid cells left and right of the merge
+/// point (the `x` cell is written by both walks, as in the C#).
+fn liquid_overwrite_strip(world: &mut World, x: i32, y: i32, liquid_type: i32) {
+    // `liquidType(int)`'s bit math (`Tile.cs`) keeps exactly the two low
+    // bits — the C#'s `-1` default lands on the shimmer code.
+    let code = (liquid_type & 3) as u8;
+    let mut n = x;
+    while n >= 0 && world.tile(n, y).is_some_and(|t| t.liquid > 0) {
+        let idx = world.index(n, y);
+        set_kind(&mut world.tiles[idx], code);
+        n -= 1;
+    }
+    let mut i = x;
+    while i < world.width && world.tile(i, y).is_some_and(|t| t.liquid > 0) {
+        let idx = world.index(i, y);
+        set_kind(&mut world.tiles[idx], code);
+        i += 1;
     }
 }
 
@@ -429,6 +870,189 @@ mod tests {
         for _ in 0..n {
             sys.update(w);
         }
+    }
+
+    fn put_as(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    #[test]
+    fn water_and_lava_merge_into_obsidian_at_the_lava_cell() {
+        // `Liquid.cs:1249-1330`: the lava cell's check pools the
+        // different-type side/up neighbours (zeroing them) and at
+        // `num >= 24` lands tile 56 on the lava cell — both liquids
+        // consumed.
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 4, 30, 1);
+        put_as(&mut w, 5, 4, 30, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        sys.add_water(&w, 5, 4);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tile(4, 4).unwrap().kind, 56, "the lava cell became obsidian");
+        assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
+        assert_eq!(w.tile(5, 4).unwrap().liquid, 0, "the pooled water is consumed");
+    }
+
+    #[test]
+    fn water_and_honey_merge_into_a_honey_block() {
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 4, 30, 2);
+        put_as(&mut w, 5, 4, 30, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        sys.add_water(&w, 5, 4);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tile(4, 4).unwrap().kind, 229);
+        assert_eq!(w.tile(5, 4).unwrap().liquid, 0);
+    }
+
+    #[test]
+    fn honey_and_lava_merge_into_crisp_honey_once() {
+        // The honey cell checks first (`:1375-1439`'s lava arm → 230); the
+        // merge tile is not `tileObsidianKill`, so the lava cell's own check
+        // afterwards finds an active non-kill tile and refuses — one merge.
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 4, 30, 2);
+        put_as(&mut w, 5, 4, 30, 1);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        sys.add_water(&w, 5, 4);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tile(4, 4).unwrap().kind, 230);
+        assert_eq!(w.tile(5, 4).unwrap().liquid, 0);
+        assert_eq!(w.tile(5, 4).unwrap().kind, 0, "no second merge tile");
+    }
+
+    #[test]
+    fn shimmer_consumes_the_water_into_a_shimmer_block() {
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 4, 30, 3);
+        put_as(&mut w, 5, 4, 30, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        sys.add_water(&w, 5, 4);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tile(4, 4).unwrap().kind, 659);
+        assert_eq!(w.tile(5, 4).unwrap().liquid, 0);
+    }
+
+    #[test]
+    fn the_merge_gate_needs_24_units() {
+        // `Liquid.cs:1325`: `num >= 24` — below it the pooled neighbours
+        // stay zeroed (the C#'s own consumption) and the checking cell
+        // keeps its liquid; the lava flow then sits in the delay gate
+        // (`:484-490`).
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 4, 30, 1);
+        put_as(&mut w, 5, 4, 20, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        sys.add_water(&w, 5, 4);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tile(4, 4).unwrap().kind, 0, "no obsidian");
+        assert_eq!(w.tile(4, 4).unwrap().liquid, 30, "the lava stays");
+        assert_eq!(w.tile(5, 4).unwrap().liquid, 0, "the pool is consumed");
+    }
+
+    #[test]
+    fn the_down_arm_merges_below_the_lava_cell() {
+        // `Liquid.cs:1300-1371`: no different-type side/up neighbour, the
+        // cell below holds a different liquid >= 24 → the merge lands at
+        // `(x, y+1)`.
+        let mut w = basin(9, 8);
+        put_as(&mut w, 4, 4, 30, 1);
+        put_as(&mut w, 4, 5, 30, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        sys.add_water(&w, 4, 5);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tile(4, 5).unwrap().kind, 56);
+        assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
+        assert_eq!(w.tile(4, 5).unwrap().liquid, 0);
+    }
+
+    #[test]
+    fn lava_burns_the_submerged_cut_plant_below() {
+        // `Liquid.cs:1305-1312`: a non-water liquid burns the `tileCut`
+        // plant below before the merge gate reads it.
+        let mut w = basin(9, 8);
+        let i = w.index(4, 5);
+        w.tiles[i] = Tile {
+            kind: 3,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].liquid = 30;
+        put_as(&mut w, 4, 4, 30, 1);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tile(4, 5).unwrap().kind, 56, "the plant burned, the merge landed");
+        assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
+    }
+
+    #[test]
+    fn get_liquid_merge_types_follows_the_cs_priority() {
+        // `Liquid.cs:1375-1439`: water → lava → honey → shimmer, a later
+        // match wins; the own-type check never fires.
+        assert_eq!(get_liquid_merge_types(1, true, false, false, false), (56, 0));
+        assert_eq!(get_liquid_merge_types(2, true, false, false, false), (229, 0));
+        assert_eq!(get_liquid_merge_types(2, false, true, false, false), (230, 1));
+        assert_eq!(get_liquid_merge_types(1, false, false, true, false), (230, 2));
+        assert_eq!(get_liquid_merge_types(0, false, true, false, false), (56, 1));
+        assert_eq!(get_liquid_merge_types(0, false, false, true, false), (229, 2));
+        assert_eq!(get_liquid_merge_types(0, false, false, false, true), (659, 3));
+        assert_eq!(get_liquid_merge_types(1, false, false, false, true), (659, 3));
+        assert_eq!(get_liquid_merge_types(2, false, false, false, true), (659, 3));
+        // The honey match wins over the water one — and a shimmer cell
+        // always merges into the shimmer block (its own arm is skipped:
+        // `thisLiquidType != 3` fails).
+        assert_eq!(get_liquid_merge_types(3, true, false, true, false), (659, 2));
+        // The own type never merges.
+        assert_eq!(get_liquid_merge_types(0, true, false, false, false), (56, 0));
+    }
+
+    #[test]
+    fn get_liquid_change_type_maps_the_pairs() {
+        // `WorldGen.cs:4656-4684`.
+        assert_eq!(get_liquid_change_type(0, 1), TileChangeType::LavaWater);
+        assert_eq!(get_liquid_change_type(0, 2), TileChangeType::HoneyWater);
+        assert_eq!(get_liquid_change_type(1, 2), TileChangeType::HoneyLava);
+        assert_eq!(get_liquid_change_type(0, 3), TileChangeType::ShimmerWater);
+        assert_eq!(get_liquid_change_type(1, 3), TileChangeType::ShimmerLava);
+        assert_eq!(get_liquid_change_type(2, 3), TileChangeType::ShimmerHoney);
+        assert_eq!(get_liquid_change_type(0, 0), TileChangeType::None);
+    }
+
+    #[test]
+    fn the_container_flag_forces_the_down_merge() {
+        // `Liquid.cs:1304` + `:1314`: a container (chest 21 / shell pile 467
+        // / bed 88) above lets the merge proceed into an active
+        // non-`tileObsidianKill` cell — stone here.
+        let mut w = basin(9, 8);
+        let chest = w.index(4, 4);
+        w.tiles[chest] = Tile {
+            kind: 21,
+            ..Default::default()
+        };
+        w.tiles[chest].flags |= FLAG_ACTIVE;
+        w.tiles[chest].liquid = 30;
+        let stone = w.index(4, 5);
+        w.tiles[stone] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[stone].flags |= FLAG_ACTIVE;
+        w.tiles[stone].liquid = 30;
+        set_kind(&mut w.tiles[stone], 1);
+        let mut sys = LiquidSystem::new(&w);
+        sys.liquid_check(&mut w, 4, 4, 0, false);
+        assert_eq!(w.tile(4, 5).unwrap().kind, 56, "the stone cell was merged into");
+        assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
     }
 
     #[test]

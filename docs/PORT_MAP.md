@@ -23,7 +23,7 @@ re-implement something that already exists, or to port the wrong file.
 
 | C# source (under `Terraria/`) | Rust target | State |
 | --- | --- | --- |
-| `Liquid.cs`, `LiquidBuffer.cs` | `crates/tr-core/src/liquid.rs` (sim + buffer), `liquid_draw.rs` (framing/render data) | done (S1-A-8: the `curMaxLiquid/cycles` pass window, `Liquid.cs:1069-1106`) |
+| `Liquid.cs`, `LiquidBuffer.cs` | `crates/tr-core/src/liquid.rs` (sim + buffer), `liquid_draw.rs` (framing/render data) | done (S1-A-8: the `curMaxLiquid/cycles` pass window, `Liquid.cs:1069-1106`; R-11-5: the reaction family `LiquidCheck`/`GetLiquidMergeTypes`/`CreateLiquidMergeTile`/`LiquidOverwriteStrip` (`:1225-1468`) + the `Liquid.Update` reaction block with the per-entry flow throttle (`:475-560`) and the generated `TILE_OBSIDIAN_KILL`/`SET_IS_A_CONTAINER` tables; deviations in ANALYSIS "The liquid reactions") |
 | `Graphics/Light/ILightingEngine.cs` | `crates/tr-core/src/lighting/mod.rs` (the `LightEngine` trait seam) | done |
 | `Graphics/Light/Lighting.cs` (LightMap/9-slice) | `crates/tr-core/src/lighting/` (`mod`/`params`/`blur`) | done |
 | `Graphics/Light/TileLightScanner.cs` | `crates/tr-core/src/tile_light/` (`scanner.rs` the 147-case switch, `palette.rs` `FastRandom`/colours, `mod.rs` surface/hell/wall) | done |
