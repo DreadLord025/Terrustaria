@@ -693,7 +693,7 @@ mod tests {
         // by design (the same re-pin class as the world-hash constants);
         // the faithful `UndergroundHousesAndBuriedChests` port re-owns the
         // thresholds.
-        assert!(count(27) > 40, "the cabin wood frames ({})", count(27));
+        assert!(count(30) > 40, "the cabin wood frames ({})", count(30));
         assert!(count(19) > 5, "the cabin platforms ({})", count(19));
         assert!(
             count(196) + count(197) + count(198) + count(199) > 30,
@@ -982,16 +982,19 @@ mod tests {
                     .any(|(i, f)| i != bi && f.contains(&t.wall))
             })
             .count();
-        // The crawler leaks a handful of the pink wall (9) into a green
-        // dungeon (130 of ~7900 cells on seed 33) — a pre-existing defect,
-        // tracked as BUG-25 and *not* the wall-variant pass (it only ever
-        // writes the colour's own family). What must not happen is another
-        // colour taking the dungeon over.
-        assert!(
-            others < wall_count / 20,
-            "the other colours stay marginal ({others} of {wall_count})"
+        // The other two colours' walls must not appear at all. BUG-25: the
+        // cave-house pass wrote the pink dungeon wall (`WallID.PinkDungeonUnsafe`,
+        // 9) for its interiors — `WoodHouseBuilder.cs:13` places the planked
+        // wall 27 — so every world carried ~130 foreign dungeon-wall cells
+        // (seed 33: green dungeon, 130 of wall 9). The writer was the cabin
+        // pass, not the crawler, and the fix makes the leak structurally
+        // impossible again.
+        assert_eq!(
+            others, 0,
+            "the other colours' walls leak ({others} of {wall_count})"
         );
     }
+
 
     #[test]
     fn the_hives_and_forts_place_the_content() {

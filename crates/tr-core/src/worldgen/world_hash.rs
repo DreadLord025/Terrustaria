@@ -199,20 +199,20 @@ mod tests {
     // carries, plus the three lantern style rolls, so every dungeon's hash
     // moves again.
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
-    // Re-pinned by M5-DUNGEON's spike pass (`worldgen/dungeon_features.rs`:
-    // `DungeonGlobalSpikes` at `MakeDungeon`'s `:0.75` step): every world
-    // with a dungeon now carries its `42 * maxTilesX / 4200` spike runs (two
-    // halves, floors and ceilings), so every hash moves — `SEED42_512`
-    // included (a 512-wide world draws 5 runs per half and lands at least
-    // one).
-    const SEED42_512: u32 = 241764280;
-    const DEFAULT_WORLD: u32 = 3230671921;
-    // >>> S1-A-3 (framing variants): the full-world framing passes now roll a
-    // `genRand.Next(0, 3)` variant per framed tile and store it
-    // (`WorldGen.cs:81705-81709` / `Framing.cs:376-404`) instead of the
+    // Re-pinned by BUG-25 (`worldgen/mini_biomes.rs` `pass_cave_houses`): the
+    // cave houses carry the `WoodHouseBuilder.cs:12-13` constants now — the
+    // `TileType` 30 (`WoodBlock`) frame and the `WallType` 27 (`Planked`)
+    // interior walls — instead of the Sunflower tile 27 frame and the pink
+    // dungeon wall 9 interior, so every world's tile/wall fields move.
+    // Re-pinned again by S1-A-3 (framing variants): the full-world framing
+    // passes now roll a `genRand.Next(0, 3)` variant per framed tile and store
+    // it (`WorldGen.cs:81705-81709` / `Framing.cs:376-404`) instead of the
     // position hash, so every merge-variant/large-frame tile's frame_x/frame_y
     // changes — every hash moves. (The `variants` field itself is not hashed;
-    // the frame pixels are.)
+    // the frame pixels are.) Values measured on the merged tree (BUG-25 +
+    // S1-A-3 together).
+    const SEED42_512: u32 = 1445035279;
+    const DEFAULT_WORLD: u32 = 1520389681;
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]
