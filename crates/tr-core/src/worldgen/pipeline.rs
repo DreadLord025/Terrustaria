@@ -2847,7 +2847,7 @@ mod tests {
 
     /// The seam proof: the scaffolded runner must reproduce the straight-line
     /// `generate()` tile-for-tile (the FULL `Tile` — all 8 fields — not just
-    /// the `deterministic_for_seed` 5-tuple). While `generate()` still holds
+    /// the `generation_is_reproducible_for_a_seed` 5-tuple). While `generate()` still holds
     /// its own body this is a genuine A/B; after Phase 3 rewires it, the FNV
     /// pins in `world_hash.rs` take over as the permanent proof.
     #[test]

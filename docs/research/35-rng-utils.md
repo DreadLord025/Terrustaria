@@ -250,10 +250,21 @@ about.
 6. **`deterministic_for_seed` is a self-consistency test, not a fidelity proof** —
    severity: **determinism** (documentation). `ROADMAP.md:334-335` calls it an "FNV
    proof"; it is neither an FNV hash nor a comparison with vanilla. *Not admitted.*
+   — **FIXED 2026-11-13** (S1-K-5): the test is renamed
+   `generation_is_reproducible_for_a_seed` with a doc comment stating it is
+   self-consistency, not C# fidelity; the wording was corrected in `ANALYSIS.md`
+   ("Determinism, proven (reproducible), frozen (algorithm)"), `ARCHITECTURE.md`
+   and `ROADMAP.md` (S1-A-7 / M5-GEN-1 rows).
 7. **`world_hash.rs`'s pinned constants are the port's own hash, re-pinned on every
    worldgen change** — severity: **documentation / determinism**. The test block itself
    records ~20 re-pins; the pin cannot detect a C#-divergent stream. *Partly admitted*
    (the header says "the per-tile field mix is the port's own").
+   — **FIXED 2026-11-13** (S1-K-5): the *algorithm* (`mix` `*5 + 3864292196`, the
+   per-tile `*31` field mix, the `rotl13` fold order) is now frozen by
+   `the_fnv_constants_are_frozen_by_a_fixed_input` over a fixed 4×3 synthetic grid,
+   with the expected value derived from an independent implementation (not from the
+   port) and mutation-checked; the generator-output constants are documented as a
+   re-pinned tripwire for the port's own pipeline, explicitly **not** C# parity.
 8. **`Utils.NextFloat` numerics differ** — severity: **behavioural** (sub-pixel). C#:
    `(float)(int/2^31)`; Rust: `u32/2^32` (`rng.rs:89-96`). Same `[0,1)` range, different
    quantum → different rounded values at ~2^-31 resolution. *Admitted* at `rng.rs:89-93`.
@@ -284,7 +295,7 @@ about.
 | 3 | **`Main.SwapRandom` named-stream registry** in `App` (`HashMap<String, UnifiedRandom>` + a scope guard), mirroring `Main.cs:3204-3215` and the 13 stage names of `Main.cs:17749-17809`. Keep the port's `u64` fields as *aliases* until each stage is migrated, so nothing regresses mid-migration. — **DONE 2026-11-12** (`S1-A-2-named-rng-streams`): `crates/tr-app/src/app/rng.rs` (`NamedRngs`/`RngKey`, all 17 keys, lazy `UnifiedRandom::new(worldSeed)`, reset per world); `clock_rng` is already replaced by `_rngs["UpdateTime"]` and the remaining bridges are S1-A-11 | **L** | 1, 2 |
 | 4 | **Migrate the runtime consumers** (spawn, prefix, loot, chest, sandstorm, wind, item drops) off the splitmix stand-ins onto the `UnifiedRandom` streams, one call site group at a time, each with a before/after determinism pair. | **L** | 1, 3 |
 | 5 | **Re-key the per-consumer streams to the C#'s seed rule** (`new UnifiedRandom(worldSeed)` per named key) and delete the arbitrary XOR constants (`0x5DEECE66D1A49B5F`, `0x0A5CE17A1C1E5EED`, `0x1DA91750E5C10C0C`, `0x2545F4914F6CDD1D`) and the `craft_rng: 1` constant. — **DONE 2026-11-12** (`S1-A-2-named-rng-streams`): every App stream seed is now the world seed (`npc_rng`, `craft_rng`, `ambience_rng`, `item_rng`, `prefix_rng: UnifiedRandom::new(world_seed)`, `growth_rng: FastRandom::new(world_seed)`); the four XOR constants are gone from the App seeds. The same `0x2545F4914F6CDD1D` literal survives only in the wind/rain/sand/sky/chest/audio stand-ins, which are separate tasks | **M** | 3 |
-| 6 | **Fix the determinism proof**: rename `deterministic_for_seed` → `generation_is_reproducible_for_a_seed`, and split the worldgen contract into two tests — "reproducible" (the current one) and "byte-identical to the pinned pipeline hash" (`world_hash.rs`). Correct `ROADMAP.md:334-335` and the `ROADMAP`/ANALYSIS wording so "FNV proof" stops implying C# fidelity. | **S** | — |
+| 6 | **Fix the determinism proof**: rename `deterministic_for_seed` → `generation_is_reproducible_for_a_seed`, and split the worldgen contract into two tests — "reproducible" (the current one) and "byte-identical to the pinned pipeline hash" (`world_hash.rs`). Correct `ROADMAP.md:334-335` and the `ROADMAP`/ANALYSIS wording so "FNV proof" stops implying C# fidelity. — **DONE 2026-11-13** (S1-K-5): renamed, the header/wording corrected (ROADMAP S1-A-7 + M5-GEN-1 rows, ANALYSIS, ARCHITECTURE), and the algorithm frozen by a fixed-input golden test (`world_hash.rs::the_fnv_constants_are_frozen_by_a_fixed_input`). | **S** | — |
 | 7 | **Add a `UnifiedRandom`-vs-port differential harness**: a `tools/` binary that, for a given seed, replays the C#'s draw order (transcribed from the decompiled call sites) and the port's, and reports the first divergence. This is the only way to prove the call ORDER, not just the algorithm. | **L** | 1, 2 |
 | 8 | **Audit `Utils.Clamp` / `Math.Round` / `NextFloat` numerics** across the Rust tree: replace `Ord::clamp` with a C#-order `clamp_cs`, use `round_ties_even` where `Utils.Round` is ported, and align the float quantum. | **M** | — |
 | 9 | **Correct the premise in the audit docs**: `Item.seed`, `NPC.seed`, `NPC.netSeed` and `Utils.GetPointHash` do not exist in 1.4.5.8 — record the actual per-entity RNG state (`Main._drawRand`, `Main.TileFrameSeed`, `FastRandom.WithModifier`, `Main.SwapRandom` keys) so later modules do not chase phantom fields. | **S** | — |
