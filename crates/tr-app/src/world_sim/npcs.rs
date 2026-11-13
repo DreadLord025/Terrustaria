@@ -1792,7 +1792,7 @@ fn invasion_spawn_pick(
     // invasion's drained fraction `(sizeStart - size) / sizeStart`.
     progress_frac: f32,
 ) -> NpcKind {
-    let hard_type = if invasion_type == 1 { Some(1) } else { None };
+    let _hard_type = if invasion_type == 1 { Some(1) } else { None };
     // `invasionType == 2`'s table (`NPC.cs:1450-1459`): the SnowmanGangsta
     // 1/7, the SnowBalla 1/3, else the MysterySnowman.
     if invasion_type == 2 {
@@ -2257,27 +2257,52 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.golem_present = false;
         }
     }
-    let world = &app.world;
-    let player = &mut app.player;
-    let npcs = &mut app.npcs;
-    let mut invasion_pick: Option<(NpcKind, f32, f32)> = None;
-    app.npc_step.tick(dt.min(0.25), |step| {
-        if let Some(player) = player {
-            for n in npcs.iter_mut() {
-                n.update_rng(world, player, step, &mut app.item_rng);
-                black_slime_darkness_touch(n, player, &mut app.item_rng);
-            }
-        }
+    // Pre-compute player center and nearby NPCs for the invasion spawn
+    // path (needed before `app` is mutably borrowed below). Extract only
+    // the fields we need to avoid borrow conflicts with the closure.
+    let player_opt = app.player.as_ref().map(|p| {
+        let (pcx, pcy) = p.center();
+        let nearby = app
+            .npcs
+            .iter()
+            .filter(|n| {
+                let (cx, cy) = n.center();
+                (cx - pcx).abs() < spawner::S_WIDTH as f32 * 0.5
+                    && (cy - pcy).abs() < spawner::S_HEIGHT as f32 * 0.5
+            })
+            .count() as f32;
+        (pcx, pcy, nearby, p.x, p.y, p.max_hp)
     });
+    let (inv_pcx, inv_pcy, inv_nearby, inv_px, inv_py, inv_max_hp) = player_opt.unwrap_or((0.0, 0.0, 0.0, 0.0, 0.0, 100));
+    // Pre-extract scene_metrics and camera values needed for the invasion block
+    // to avoid long-lived borrows that conflict with later mutable borrows of app.
+    let water_candle_count = app.scene_metrics.water_candle_count;
+    let peace_candle_count = app.scene_metrics.peace_candle_count;
+    let camera_y = app.camera.y;
+    let item_rng = &mut app.item_rng;
+    let npc_rng = app.npc_rng;
+    let player = &mut app.player;
+    let mut invasion_pick: Option<(NpcKind, f32, f32)> = None;
+    // Limit the scope of borrows to just the tick closure
+    {
+        let world = &app.world;
+        let npcs = &mut app.npcs;
+        app.npc_step.tick(dt.min(0.25), |step| {
+            if let Some(player) = player {
+                for n in npcs.iter_mut() {
+                    n.update_rng(world, player, step, item_rng);
+                    black_slime_darkness_touch(n, player, item_rng);
+                }
+            }
+        });
+    }
     app.npc_step.cap_backlog();
     // The eye's climb-away despawn (`EncourageDespawn(10)` from the
     // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
     // far enough off-screen; the port culls it above the player's view).
     let player_y = player.as_ref().map(|p| p.y).unwrap_or(0.0);
     if app.world.day_time {
-        npcs.retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
-        app.npcs
-            .retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
+        app.npcs.retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
     }
     // The worm pass (`AI_006`): the chain movement after the per-NPC step
     // (the vanilla interleaves it in the slot order; the port's pass reads
@@ -3409,20 +3434,40 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 },
             })
         });
-        let mut rng = spawner::FastRandom::new(app.npc_rng);
+        let mut rng = spawner::FastRandom::new(npc_rng);
         // `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) — the
         // invasion table overrides the natural roll (`NPC.cs`'s
-        // `this.invaders` branch ahead of the normal picks). The pick rides
-        // the local (the closure's borrows don't reach the spawn resolve).
-        if let Some((ix, iy, summoner_alive)) = inv_input {
-            let progress_frac = if app.world.invasion_size_start > 0 {
-                (app.world.invasion_size_start - app.world.invasion_size) as f32
-                    / app.world.invasion_size_start as f32
+        // `this.invaders` branch ahead of the normal picks). The pick now
+        // rides the same gates as `TrySpawnAnNPC` (NPC.cs:310-319):
+        // `GetSpawnRate` -> nearby < maxSpawns -> Next(spawnRate) != 0.
+        // Pre-extract fields needed for the invasion block to avoid borrow conflicts.
+        let invasion_size_start = app.world.invasion_size_start;
+        let invasion_size = app.world.invasion_size;
+        let invasion_type = app.world.invasion_type;
+        let hard_mode = app.world.hard_mode;
+        let downed_goblins = app.world.downed_goblins;
+        let saved_goblin = app.world.saved_goblin;
+        let saved_wizard = app.world.saved_wizard;
+        let downed_skeletron = app.world.downed_skeletron;
+        let saved_mech = app.world.saved_mech;
+        let world_surface = app.world.world_surface;
+        let rock_layer = app.world.rock_layer;
+        let height = app.world.height;
+        let downed_golem = app.world.downed_golem;
+        let downed_martians = app.world.downed_martians;
+        let day_time = app.world.day_time;
+        let item_rng = &mut app.item_rng;
+        {
+            let world = &app.world;
+            let npcs = &app.npcs;
+            if let Some((ix, iy, summoner_alive)) = inv_input {
+            let progress_frac = if world.invasion_size_start > 0 {
+                (world.invasion_size_start - world.invasion_size) as f32
+                    / world.invasion_size_start as f32
             } else {
                 0.0
             };
-            let walker_alive = app
-                .npcs
+            let walker_alive = npcs
                 .iter()
                 .any(|n| n.hp > 0 && n.kind == NpcKind::MartianWalker);
             // `!NPC.AnyNPCs(395)`: the Saucer kind is unported (its AI
@@ -3430,22 +3475,103 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // lands.
             let saucer_alive = false;
             // The 30% window: `(sizeStart - size) / sizeStart >= 0.3`.
-            let progress_30 = app.world.invasion_size_start > 0
-                && (app.world.invasion_size_start - app.world.invasion_size) as f32
-                    / app.world.invasion_size_start as f32
+            let progress_30 = world.invasion_size_start > 0
+                && (world.invasion_size_start - world.invasion_size) as f32
+                    / world.invasion_size_start as f32
                     >= 0.3;
-            let kind = invasion_spawn_pick(
-                &mut app.item_rng,
-                app.world.hard_mode,
-                summoner_alive,
-                app.world.invasion_type,
-                walker_alive,
-                saucer_alive,
-                progress_30,
-                progress_frac,
-            );
-            invasion_pick = Some((kind, ix, iy));
+
+            // Build a spawn context with `invaders: true` so `get_spawn_rate`
+            // applies the invaders override (NPC.cs:781-785). Use pre-computed
+            // player center and nearby count to avoid borrow conflicts.
+            let inv_ctx = spawner::SpawnContext {
+                world,
+                player_center: (inv_pcx, inv_pcy),
+                player_pos: (inv_px, inv_py),
+                nearby_active_npcs: inv_nearby,
+                town_npcs: 0,
+                day_time: day_time,
+                player_life_max: inv_max_hp,
+                underworld_for_bats: (camera_y / 16.0) as i32 > height - 200,
+                flags: spawner::SpawnFlags {
+                    zone_water_candle: water_candle_count > 0,
+                    zone_peace_candle: peace_candle_count > 0,
+                    ..spawner::SpawnFlags::default()
+                },
+                bound_goblin_ok: downed_goblins
+                    && !saved_goblin
+                    && !npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
+                    }),
+                bound_wizard_ok: hard_mode
+                    && !saved_wizard
+                    && !npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundWizard | NpcKind::Wizard)
+                    }),
+                bound_mech_ok: downed_skeletron
+                    && !saved_mech
+                    && !npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundMechanic | NpcKind::Mechanic)
+                    }),
+                below_deep_dungeon: {
+                    let ty = (inv_py / TILE_PX) as i32;
+                    (ty as f64) > (world_surface * 4.0 + rock_layer) / 5.0
+                },
+                invaders: true,
+                downed_golem: downed_golem,
+                downed_martians: downed_martians,
+                invasion_type: invasion_type,
+                any_danger: invasion_type > 0
+                    || npcs.iter().any(|n| {
+                        n.hp > 0
+                            && matches!(
+                                n.kind,
+                                NpcKind::KingSlime
+                                    | NpcKind::EyeOfCthulhu
+                                    | NpcKind::QueenBee
+                                    | NpcKind::SkeletronHead
+                                    | NpcKind::WallOfFlesh
+                                    | NpcKind::TheDestroyer
+                                    | NpcKind::SkeletronPrime
+                                    | NpcKind::Retinazer
+                                    | NpcKind::Spazmatism
+                                    | NpcKind::Plantera
+                                    | NpcKind::BrainOfCthulhu
+                                    | NpcKind::Golem
+                                    | NpcKind::GolemHead
+                                    | NpcKind::GolemFistLeft
+                                    | NpcKind::GolemFistRight
+                                    | NpcKind::GolemHeadFree
+                            )
+                    }),
+                probe_exists: npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe),
+                sky_behind_player: {
+                    let px = (inv_pcx / TILE_PX) as i32;
+                    let py = (inv_pcy / TILE_PX) as i32;
+                    world
+                        .tile(px, py)
+                        .is_some_and(|t| spawner::LIGHT_WALLS.contains(&t.wall) || t.wall == 73)
+                },
+            };
+
+            let rate = spawner::get_spawn_rate(&inv_ctx, &mut rng);
+            // The two hard gates from `TrySpawnAnNPC` (NPC.cs:312-318).
+            if inv_nearby < rate.max_spawns as f32 && rng.next(rate.spawn_rate) == 0 {
+                let kind = invasion_spawn_pick(
+                    item_rng,
+                    hard_mode,
+                    summoner_alive,
+                    invasion_type,
+                    walker_alive,
+                    saucer_alive,
+                    progress_30,
+                    progress_frac,
+                );
+                invasion_pick = Some((kind, ix, iy));
+            }
         }
+    }
         if invasion_pick.is_none() {
             let (spawn, suppressed) = spawner::spawn_npc_call(ctx, &mut rng, app.spawn_no_cycle);
             app.spawn_no_cycle = false; // the latch is consumed by one call
