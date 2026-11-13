@@ -35,9 +35,9 @@
 //! have no seam yet.
 
 use glam::Vec2;
+use tr_core::World;
 use tr_core::lighting::LightMap;
 use tr_core::tiledata as td;
-use tr_core::World;
 use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
@@ -279,6 +279,21 @@ impl Rain {
     /// fountain (`tile.frameX == 90`) case.
     pub fn is_raining(&self) -> bool {
         self.raining
+    }
+
+    /// `Main.rainTime`: ticks left in the event (`Main.cs:64874` drains it).
+    pub(crate) fn rain_time(&self) -> i32 {
+        self.rain_time
+    }
+
+    /// `SetOngoingToTemps` (`WorldFile.cs:159-162`): the load applies the
+    /// save-time snapshot — the event state comes back and `Main.cloudAlpha`
+    /// := `maxRaining`. The triple rode the `.trwld` v14 block (S1-J-7).
+    pub(crate) fn restore_saved(&mut self, raining: bool, rain_time: i32, max_raining: f32) {
+        self.raining = raining;
+        self.rain_time = rain_time;
+        self.target = max_raining;
+        self.intensity = max_raining;
     }
 
     /// A test hook (not a behaviour): sets `Main.raining` for the scene-scan
@@ -646,8 +661,8 @@ impl Rain {
             // `Main.cs:64890-64923`: `!slimeRain && !LanternsUp &&
             // !NextNightIsLanternNight` — all port-absent.
             let num2 = 86400 / if day_rate == 0 { 1 } else { day_rate }; // `:64892`
-                                                                         // `:64893`: `!FreezeRainPower.Enabled && Main.dayRate != 0` — the
-                                                                         // freeze power is port-absent.
+            // `:64893`: `!FreezeRainPower.Enabled && Main.dayRate != 0` — the
+            // freeze power is port-absent.
             let mut flag = day_rate != 0;
             if flag && !any_player_120 {
                 // `:64894-64909`: the 255-player `statLifeMax >= 120` scan; the
@@ -772,9 +787,9 @@ impl Rain {
         // `Main.cs:64731-64734`: the `IsRainingForever` `max(val, 0.1f)` floor —
         // no save field, skipped (cited).
         self.target = val; // `:64735` `Main.maxRaining = val`
-                           // `:64736-64739`: the `instant` arm snaps `cloudAlpha` — the port's
-                           // callers never pass it (default false) and the visual ramps own
-                           // `cloudAlpha`.
+        // `:64736-64739`: the `instant` arm snaps `cloudAlpha` — the port's
+        // callers never pass it (default false) and the visual ramps own
+        // `cloudAlpha`.
     }
 
     /// `Main.StopRain` (`Main.cs:64644-64658`): the event clears and `cloudAlpha`
@@ -785,10 +800,10 @@ impl Rain {
         self.rain_time = 0; // `:64648`
         self.raining = false; // `:64649`
         self.target = 0.0; // `:64650` `Main.maxRaining = 0f`
-                           // `:64651` `Main.coinRain = 0` — never stored (see `start_rain`).
-                           // `:64652-64655`: the `instant` arm would snap `cloudAlpha` to 0 — the
-                           // port's callers use the default and the ramp decays the visible
-                           // intensity.
+        // `:64651` `Main.coinRain = 0` — never stored (see `start_rain`).
+        // `:64652-64655`: the `instant` arm would snap `cloudAlpha` to 0 — the
+        // port's callers use the default and the ramp decays the visible
+        // intensity.
     }
 
     /// Takes a batch of `WaterfallManager.TrySparkling` spawns (world pixels).
@@ -1106,7 +1121,7 @@ pub(crate) fn light_at(light: &LightMap, p: Vec2) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground() -> World {
         let mut w = World::new("rain".into(), 64, 64);
@@ -1194,12 +1209,36 @@ mod tests {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         let screen = Vec2::new(1600.0, 200.0);
         for _ in 0..60 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, true, 1, 0.0, 1.0, 0, true);
+            rain.update(
+                &w,
+                camera,
+                screen,
+                1.0,
+                1.0 / 60.0,
+                true,
+                1,
+                0.0,
+                1.0,
+                0,
+                true,
+            );
         }
         let snow = rain.snow_count();
         assert!(snow > 0);
         for _ in 0..600 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, 1, 0.0, 1.0, 0, true);
+            rain.update(
+                &w,
+                camera,
+                screen,
+                1.0,
+                1.0 / 60.0,
+                false,
+                1,
+                0.0,
+                1.0,
+                0,
+                true,
+            );
         }
         assert_eq!(rain.snow_count(), 0, "flakes should leave the view");
         assert!(rain.drop_count() > 0);
@@ -1212,13 +1251,25 @@ mod tests {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         let screen = Vec2::new(1600.0, 200.0);
         for _ in 0..600 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, 1, 0.0, 1.0, 0, true);
+            rain.update(
+                &w,
+                camera,
+                screen,
+                1.0,
+                1.0 / 60.0,
+                false,
+                1,
+                0.0,
+                1.0,
+                0,
+                true,
+            );
         }
         assert!(rain.cloud_bg() > 0.5, "cloud deck {}", rain.cloud_bg());
         rain.flash = 1.0;
         rain.lightning_decay = 0.05; // `NewLightning`'s upper decay rate.
-                                     // The flash rise/decay lives in the lightning chain — `thunder_step`,
-                                     // once per world tick since M1.4-BG-22 — not in the drop sim's tick.
+        // The flash rise/decay lives in the lightning chain — `thunder_step`,
+        // once per world tick since M1.4-BG-22 — not in the drop sim's tick.
         rain.thunder_step(ThunderInputs::default());
         assert!(rain.flash < 1.0 && rain.flash > 0.7);
         for _ in 0..30 {
@@ -1243,12 +1294,23 @@ mod tests {
         // Delay 1 → the strike fires with distance 4 → ±60 px off the centre,
         // the y untouched above the surface clamp.
         let strike = rain.thunder_step(weather).expect("a strike");
-        assert!((strike.x == 740.0) || (strike.x == 860.0), "x = {}", strike.x);
+        assert!(
+            (strike.x == 740.0) || (strike.x == 860.0),
+            "x = {}",
+            strike.x
+        );
         assert_eq!(strike.y, 600.0);
         assert!(strike.cue.starts_with("Thunder_"), "cue {}", strike.cue);
-        assert!((-0.10..=0.10).contains(&strike.pitch), "pitch {}", strike.pitch);
+        assert!(
+            (-0.10..=0.10).contains(&strike.pitch),
+            "pitch {}",
+            strike.pitch
+        );
         assert_eq!(rain.thunder_delay, 0);
-        assert_eq!(rain.thunder_distance, 0, "the vanilla drains it with the strike");
+        assert_eq!(
+            rain.thunder_distance, 0,
+            "the vanilla drains it with the strike"
+        );
         // No delay: no strike, and the stream is untouched.
         assert_eq!(rain.thunder_step(weather), None);
     }

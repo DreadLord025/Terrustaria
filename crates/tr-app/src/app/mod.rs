@@ -2396,7 +2396,11 @@ impl App {
         // is the source, so a remix world's rain starts like vanilla.
         wind.remix_world = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
         let liquids_sim = LiquidSystem::new(&world);
-        let rain = Rain::new(world_seed);
+        let mut rain = Rain::new(world_seed);
+        // `SetOngoingToTemps` (`WorldFile.cs:159-162`): the load applies the
+        // save-time snapshot — the rain event comes back, `cloudAlpha` :=
+        // `maxRaining`. The triple rode the `.trwld` v14 block (S1-J-7).
+        rain.restore_saved(world.raining, world.rain_time, world.max_raining);
         let ambient_waterfall = (0.0, 0.0, 0.0);
         let ambient_lavafall = (0.0, 0.0, 0.0);
         let ambient_counter = 0.0f32;
