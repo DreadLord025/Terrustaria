@@ -115,11 +115,25 @@ impl ShopFlags {
     }
 }
 
-/// One `SetupShop` row: the item id + its gate.
+/// One `SetupShop` row: the item id + its gate + the per-row price fields
+/// the C# stamps on the stock *instance* (`Item` carries them; the port's
+/// stock is a fresh `SetDefaults` row, so they live on the entry).
 #[derive(Clone, Copy, Debug)]
 pub struct ShopEntry {
     pub item: u16,
     pub when: StockWhen,
+    /// `Item.shopCustomPrice` — the per-row price override. The vanilla sets
+    /// it on the Tavernkeep's rows (`Chest.cs:2972-3149`); it wins over the
+    /// instance value in `Item.GetStoreValue` (`Item.cs:49901-49908`).
+    pub shop_custom_price: Option<i32>,
+    /// `Item.buyOnce` — the vanilla stamps it on rows the player sold into
+    /// the shop (`Chest.AddItemToShop`, `Chest.cs:701`); a buyOnce row buys
+    /// at the store value ÷ the adjustment ÷ 5 (`Player.cs:35381-35395`).
+    pub buy_once: bool,
+    /// `Item.isAShopItem` — the vanilla stamps it on whole shops
+    /// (`Chest.cs:3538-3541`); under the Discount Card the sell value
+    /// mirrors the discounted buy value (`Player.cs:35375-35378`).
+    pub is_a_shop_item: bool,
 }
 
 /// The gate kinds (`Chest.cs`'s `if` arms around the `SetDefaults` rows).
@@ -1168,23 +1182,56 @@ fn get_travel_painting(
     }
 }
 fn row(item: u16, when: StockWhen) -> ShopEntry {
-    ShopEntry { item, when }
+    ShopEntry {
+        item,
+        when,
+        shop_custom_price: None,
+        buy_once: false,
+        is_a_shop_item: false,
+    }
 }
 
 /// The resolved stock — the gated rows filtered by the world state. The
 /// `PlayerHasItem` rows read `inventory_ids` (the player inventory's item
 /// ids, `:1468-1475`'s 58-slot scan).
+/// The tests' id-view over `resolve_stock_entries` (the production stock
+/// prices the ROW, so the buy path consumes the entries).
+#[cfg(test)]
 pub fn resolve_stock(shop_index: u32, flags: &ShopFlags, inventory_ids: &[u16]) -> Vec<u16> {
     resolve_stock_moon(shop_index, flags, inventory_ids, 0)
 }
 
-/// The moon-phase-aware twin — `Main.moonPhase` rides the world clock.
+/// The stock with its per-row price fields (`Item.shopCustomPrice` /
+/// `buyOnce` / `isAShopItem`) — the buy path prices the ROW
+/// (`Item.GetStoreValue`, `Item.cs:49901-49908`), not the kind default.
+pub fn resolve_stock_entries(
+    shop_index: u32,
+    flags: &ShopFlags,
+    inventory_ids: &[u16],
+) -> Vec<ShopEntry> {
+    resolve_stock_entries_moon(shop_index, flags, inventory_ids, 0)
+}
+
+/// The moon-phase-aware twin (the tests' id-view — see `resolve_stock`).
+#[cfg(test)]
 pub fn resolve_stock_moon(
     shop_index: u32,
     flags: &ShopFlags,
     inventory_ids: &[u16],
     moon_phase: u32,
 ) -> Vec<u16> {
+    resolve_stock_entries_moon(shop_index, flags, inventory_ids, moon_phase)
+        .iter()
+        .map(|e| e.item)
+        .collect()
+}
+
+pub fn resolve_stock_entries_moon(
+    shop_index: u32,
+    flags: &ShopFlags,
+    inventory_ids: &[u16],
+    moon_phase: u32,
+) -> Vec<ShopEntry> {
     setup_shop(shop_index, inventory_ids, flags)
         .into_iter()
         .filter(|e| match e.when {
@@ -1245,18 +1292,101 @@ pub fn resolve_stock_moon(
                 }
             }
         })
-        .map(|e| e.item)
         .collect()
 }
 
-/// `Player.GetItemExpectedPrice`'s buying half (`Player.cs:35387`): the
-/// shop item's price = the store value × the happiness adjustment, rounded
-/// as the C# `Math.Round` does (the banker's rounding — the port matches
-/// the damage.rs convention). The discount's 0.8 (`:35369-35374`) rides the
-/// discount work.
-pub fn buy_price(item: u16, adjustment: f32) -> i32 {
-    let store = ITEMS[item as usize].value as f32;
-    round_half_to_even(store * adjustment)
+/// `Item.GetStoreValue` (`Item.cs:49901-49908`): the per-row
+/// `shopCustomPrice` override wins over the instance's current `value`
+/// (the kind default after the prefix's ×value², `Item.cs:614-615` — the
+/// port carries it as `prefix::prefixed_stats(kind, prefix).value`).
+pub fn get_store_value(instance_value: i32, shop_custom_price: Option<i32>) -> i32 {
+    shop_custom_price.unwrap_or(instance_value)
+}
+
+/// `Player.GetItemExpectedPrice` (`Player.cs:35359-35396`) — the
+/// `(calc_for_selling, calc_for_buying)` pair. The `shopSpecialCurrency
+/// != -1` early return (`:35361-35365`, the Tavernkeep's defender-medal
+/// rows) needs the `CustomCurrencyManager` — not ported (no custom
+/// currencies), so those rows must not reach this helper yet. The
+/// arithmetic rides the C#'s f32 casts: the discount multiply truncates
+/// (the `(int)` cast — no rounding), the adjustment multiply/divide round
+/// as `Math.Round` does (the banker's rounding).
+pub fn get_item_expected_price(
+    store_value: i32,
+    buy_once: bool,
+    is_a_shop_item: bool,
+    discount_available: bool,
+    price_adjustment: f32,
+) -> (i64, i64) {
+    let store_value = store_value as i64; // `int storeValue = item.GetStoreValue();`
+    let mut calc_for_selling = store_value;
+    let mut calc_for_buying = store_value;
+    if discount_available {
+        if !buy_once {
+            // `(int)((float)calcForBuying * 0.8f)` — truncate, no rounding.
+            calc_for_buying = (calc_for_buying as f32 * 0.8f32) as i32 as i64;
+        }
+        if is_a_shop_item {
+            calc_for_selling = calc_for_buying;
+        }
+    }
+    if buy_once {
+        calc_for_buying = round_half_to_even(calc_for_buying as f32 / price_adjustment) as i64;
+        calc_for_selling = round_half_to_even(calc_for_selling as f32 / price_adjustment) as i64;
+    } else {
+        calc_for_buying = round_half_to_even(calc_for_buying as f32 * price_adjustment) as i64;
+        calc_for_selling = round_half_to_even(calc_for_selling as f32 / price_adjustment) as i64;
+    }
+    if buy_once {
+        calc_for_buying /= 5;
+        if store_value != 0 && calc_for_buying < 1 {
+            calc_for_buying = 1;
+        }
+    }
+    (calc_for_selling, calc_for_buying)
+}
+
+/// The stock row's `(selling, buying)` pair: the row prices its store
+/// value — `GetStoreValue` over the `shopCustomPrice` override and the
+/// kind default (`SetupShop` rows are fresh `SetDefaults` instances,
+/// prefix 0).
+fn row_prices(entry: &ShopEntry, discount_available: bool, price_adjustment: f32) -> (i64, i64) {
+    let store = get_store_value(ITEMS[entry.item as usize].value, entry.shop_custom_price);
+    get_item_expected_price(
+        store,
+        entry.buy_once,
+        entry.is_a_shop_item,
+        discount_available,
+        price_adjustment,
+    )
+}
+
+/// The buy charge for one stock row (`ItemSlot.HandleShopSlot`,
+/// `UI/ItemSlot.cs:2059-2060`): `BuyItem(calcForBuying, …)` per unit —
+/// the happiness adjustment and the Discount Card included.
+pub(crate) fn buy_price_row(
+    entry: &ShopEntry,
+    discount_available: bool,
+    price_adjustment: f32,
+) -> i64 {
+    row_prices(entry, discount_available, price_adjustment).1
+}
+
+/// The price a stock row DISPLAYS (`Main.MouseText_DrawItemTooltip_AddShopLines`,
+/// `Main.cs:20457`): buyOnce/isAShopItem rows show the buying value, every
+/// other row shows the SELLING value — the two diverge whenever
+/// `PriceAdjustment != 1` (the display quirk is verbatim).
+pub(crate) fn display_price_row(
+    entry: &ShopEntry,
+    discount_available: bool,
+    price_adjustment: f32,
+) -> i64 {
+    let (calc_for_selling, calc_for_buying) = row_prices(entry, discount_available, price_adjustment);
+    if entry.buy_once || entry.is_a_shop_item {
+        calc_for_buying
+    } else {
+        calc_for_selling
+    }
 }
 
 /// The reforge cost (`Main.DrawInventory`'s inline block,
@@ -1276,12 +1406,21 @@ pub(crate) fn reforge_cost(value: i32, stack: u32, mood: f32) -> u64 {
     (product / 3).max(0) as u64
 }
 
-/// The selling half (`:35388`): the store value ÷ the adjustment — the
-/// player's own items price at `value / 5` first (the vanilla's 20% sale
-/// rate lives in the shop-sell path; the port keeps the rate here).
-pub fn sell_price(item: u16, adjustment: f32) -> i32 {
-    let store = ITEMS[item as usize].value as f32 / 5.0;
-    round_half_to_even(store / adjustment)
+/// The sell transaction's per-item price (`Player.SellItem`,
+/// `Player.cs:35168-35192`): `GetItemExpectedPrice`'s selling value ÷ 5,
+/// min 1 — the vanilla's 20 % sale rate lives HERE, after the adjustment
+/// divide (the port used to fold it into the helper in the wrong order).
+/// The `calcForSelling <= 0` refusal (`:35170-35172`) returns 0; the
+/// sellback correction (`Main.shopSellbackHelper`, `:35191-35193`) and the
+/// stack multiply ride the sell click's own pass. The caller prices the
+/// instance — `prefix::prefixed_stats(kind, prefix).value`'s ×value².
+pub fn sell_price(instance_value: i32, price_adjustment: f32) -> i64 {
+    let (calc_for_selling, _) =
+        get_item_expected_price(instance_value, false, false, false, price_adjustment);
+    if calc_for_selling <= 0 {
+        return 0;
+    }
+    (calc_for_selling / 5).max(1)
 }
 
 /// The C# `Math.Round`'s default = the banker's rounding (the damage.rs
@@ -1436,16 +1575,110 @@ mod tests {
 
     #[test]
     fn the_prices_ride_the_happiness_adjustment() {
-        // `Player.cs:35387`: the buy = the store value × the adjustment;
-        // the sell (`:35388` + the 20% rate) = value / 5 ÷ the adjustment.
-        // The Mining Helmet 88: value 40000.
-        assert_eq!(buy_price(88, 1.0), 40000);
-        assert_eq!(buy_price(88, 0.75), 30000);
-        assert_eq!(buy_price(88, 1.5), 60000);
-        assert_eq!(sell_price(88, 1.0), 8000);
-        assert_eq!(sell_price(88, 0.75), 10667);
+        // `Player.cs:35386-35388`: the buy = the store value × the
+        // adjustment, the sell = the store value ÷ the adjustment — the
+        // Mining Helmet 88's store value is 40000.
+        assert_eq!(
+            get_item_expected_price(40000, false, false, false, 1.0),
+            (40000, 40000)
+        );
+        assert_eq!(
+            get_item_expected_price(40000, false, false, false, 0.75),
+            (53333, 30000)
+        );
+        assert_eq!(
+            get_item_expected_price(40000, false, false, false, 1.5),
+            (26667, 60000)
+        );
         // The Guide-in-the-forest multiplier from the happiness tests.
-        assert_eq!(buy_price(88, 0.89), 35600);
+        assert_eq!(
+            get_item_expected_price(40000, false, false, false, 0.89),
+            (44944, 35600)
+        );
+    }
+
+    #[test]
+    fn the_rounding_is_the_bankers_midpoint() {
+        // `Math.Round`'s midpoint → even: 5×0.5f = 2.5f → 2, 15×0.5f =
+        // 7.5f → 8 (`Player.cs:35387-35388`).
+        assert_eq!(get_item_expected_price(5, false, false, false, 0.5), (10, 2));
+        assert_eq!(get_item_expected_price(15, false, false, false, 0.5), (30, 8));
+        // The buyOnce divide rounds first, then `/5`: 1/2f = 0.5f → 0
+        // (even) → the `storeValue != 0` clamp lifts it to 1.
+        assert_eq!(get_item_expected_price(1, true, false, false, 2.0), (0, 1));
+    }
+
+    #[test]
+    fn the_discount_card_marks_the_buy_price_down() {
+        // `Player.cs:35369-35378`: the 0.8 multiply TRUNCATES (the
+        // `(int)` cast — no rounding), and only `isAShopItem` rows mirror
+        // it into the sell value.
+        assert_eq!(get_item_expected_price(40000, false, false, true, 1.0), (40000, 32000));
+        // (int)((float)7 * 0.8f) = (int)5.599999904632568f = 5 — a
+        // rounding here would say 6.
+        assert_eq!(get_item_expected_price(7, false, false, true, 1.0), (7, 5));
+        assert_eq!(get_item_expected_price(40000, false, true, true, 1.0), (32000, 32000));
+    }
+
+    #[test]
+    fn the_buy_once_rows_price_at_a_fifth() {
+        // `Player.cs:35381-35395`: a buyOnce row (the vanilla stamps it on
+        // rows the player sold in, `Chest.cs:701`) buys at the store
+        // value ÷ the adjustment ÷ 5 — the sell value keeps the plain
+        // divide; the `< 1` clamp fires only for a non-zero store value
+        // (`storeValue != 0`, `:35392-35394`).
+        assert_eq!(get_item_expected_price(40000, true, false, false, 1.0), (40000, 8000));
+        // The round-then-divide order: 53333 / 5 = 10666 (the port used to
+        // divide first and round — 10667).
+        assert_eq!(get_item_expected_price(40000, true, false, false, 0.75), (53333, 10666));
+        assert_eq!(get_item_expected_price(3, true, false, false, 1.0), (3, 1));
+        // A zero-value buyOnce row stays 0 (no clamp on a zero store value).
+        assert_eq!(get_item_expected_price(0, true, false, false, 1.0), (0, 0));
+    }
+
+    #[test]
+    fn the_store_value_prefers_the_shop_custom_price() {
+        // `Item.cs:49901-49908`: `shopCustomPrice ?? value`.
+        assert_eq!(get_store_value(40000, None), 40000);
+        assert_eq!(get_store_value(40000, Some(50)), 50);
+    }
+
+    #[test]
+    fn the_stock_row_prices_the_row_not_the_kind() {
+        // The buy charge (`ItemSlot.cs:2060`) rides the row's
+        // `shopCustomPrice` override (`Item.cs:49901-49908`).
+        let custom = ShopEntry {
+            item: 88,
+            when: StockWhen::Always,
+            shop_custom_price: Some(50),
+            buy_once: false,
+            is_a_shop_item: false,
+        };
+        assert_eq!(buy_price_row(&custom, false, 1.0), 50);
+        assert_eq!(buy_price_row(&row(88, StockWhen::Always), false, 1.0), 40000);
+        // The display quirk (`Main.cs:20457`): a plain row DISPLAYS the
+        // selling value — 53333 at the 0.75 mood, not the 30000 charge —
+        // while buyOnce/isAShopItem rows display the charge.
+        let plain = row(88, StockWhen::Always);
+        assert_eq!(display_price_row(&plain, false, 0.75), 53333);
+        assert_eq!(buy_price_row(&plain, false, 0.75), 30000);
+        let once = ShopEntry {
+            buy_once: true,
+            ..plain
+        };
+        assert_eq!(display_price_row(&once, false, 0.75), 10666);
+    }
+
+    #[test]
+    fn the_entry_stock_matches_the_id_stock() {
+        // The ids wrapper stays the tests' surface; the entries carry the
+        // row's price fields (all unset on the ported shops).
+        let ids = resolve_stock(1, &ShopFlags::default(), &[]);
+        let entries = resolve_stock_entries(1, &ShopFlags::default(), &[]);
+        assert_eq!(ids, entries.iter().map(|e| e.item).collect::<Vec<_>>());
+        assert!(entries
+            .iter()
+            .all(|e| e.shop_custom_price.is_none() && !e.buy_once && !e.is_a_shop_item));
     }
 
     // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
@@ -1515,9 +1748,26 @@ mod town5_tests {
 
     #[test]
     fn the_buy_price_matches_the_happiness_multiplier() {
-        // The round trip: the Mining Helmet's 40000 base rides the mood.
-        assert_eq!(buy_price(88, 1.5), 60000);
-        assert_eq!(buy_price(88, 0.89), 35600);
+        // The round trip: the Mining Helmet's 40000 base rides the mood
+        // (`Player.cs:35387`).
+        let plain = row(88, StockWhen::Always);
+        assert_eq!(buy_price_row(&plain, false, 1.5), 60000);
+        assert_eq!(buy_price_row(&plain, false, 0.89), 35600);
+    }
+
+    #[test]
+    fn the_sell_price_prices_the_instance_and_divides_after_the_round() {
+        // The seed test (research/07): the sell chain prices the INSTANCE
+        // (`prefix::prefixed_stats`'s ×value², `Item.cs:614-615`) and
+        // divides by 5 AFTER the adjustment round (`Player.cs:35189`).
+        let large = crate::prefix::prefixed_stats(88, 1).unwrap().value;
+        assert_eq!(large, 50176); // (int)((float)40000 × 1.12f²)
+        assert_eq!(sell_price(large, 1.0), 10035); // 50176 / 5
+        assert_eq!(sell_price(40000, 1.0), 8000);
+        assert_eq!(sell_price(40000, 0.75), 10666);
+        // The min-1 clamp and the ≤ 0 refusal (`Player.cs:35170-35192`).
+        assert_eq!(sell_price(1, 1.0), 1);
+        assert_eq!(sell_price(0, 1.0), 0);
     }
 
     #[test]
