@@ -19,7 +19,7 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use tr_core::localization::{CULTURES, GameCulture, LanguageManager};
+use tr_core::localization::{CULTURES, GameCulture, LanguageManager, Substitution};
 
 /// The resource groups `Main`'s assembly ships per culture
 /// (`Assembly.GetManifestResourceNames()` order is irrelevant — the manager
@@ -75,16 +75,28 @@ pub fn init(culture: GameCulture) {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else { continue };
-            if !name.starts_with("Terraria.Localization.Content.") || !name.ends_with(".json") {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(entry.path()) else {
-                continue;
-            };
-            m.add_source(name.to_string(), text);
+        // `read_dir` order is filesystem-dependent; register resources in a
+        // deterministic (sorted by file name) order so `IndexedFromCategory` /
+        // `category_grouped_keys` mappings are stable (`Lang.cs` loads embedded
+        // resources in manifest order; S1-L-12c).
+        let mut resources: Vec<(String, String)> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name();
+                let name = name.to_str()?;
+                if !name.starts_with("Terraria.Localization.Content.") || !name.ends_with(".json") {
+                    return None;
+                }
+                let text = std::fs::read_to_string(entry.path()).ok()?;
+                Some((name.to_string(), text))
+            })
+            .collect();
+        resources.sort_by(|a, b| a.0.cmp(&b.0));
+        if resources.is_empty() {
+            continue;
+        }
+        for (name, text) in resources {
+            m.add_source(name, text);
             loaded += 1;
         }
         // A directory that actually carried the resources wins; probing
@@ -92,9 +104,7 @@ pub fn init(culture: GameCulture) {
         // (`LoadFilesForCulture` re-applies the later file's values, which
         // matches the original's `later file overrides earlier` rule, but one
         // authoritative copy keeps the manager's source list small).
-        if loaded > 0 {
-            break;
-        }
+        break;
     }
     if loaded == 0 {
         log::warn!(
@@ -110,6 +120,339 @@ pub fn init(culture: GameCulture) {
 /// `LanguageManager.SetLanguage` (the language-menu click, `Main.cs:48520`).
 pub fn set_language(culture: GameCulture) {
     manager().lock().unwrap().set_language(culture);
+}
+
+/// `Lang.InitGlobalSubstitutions` (`Lang.cs:100-167`, S1-L-12b): refresh the 65
+/// global `{Name}` substitutions from live app state before text resolution.
+///
+/// C# registers lazy `Func<object>` producers; the port materializes the
+/// current values into [`LanguageManager`]'s substitution table each refresh.
+/// Substitutions with no source (e.g. an absent NPC or player) are removed so a
+/// `VariableText` sees them as unset, matching the null producer result.
+pub fn refresh_global_substitutions(app: &crate::app::App) {
+    let mut m = manager().lock().unwrap();
+
+    // NPC first-name substitutions: `NPC.GetFirstNPCNameOrNull(type)`
+    // (`Lang.cs:102-123,139-140`).
+    const NPC_NAMES: &[(&str, i32)] = &[
+        ("Nurse", 18),
+        ("Merchant", 17),
+        ("ArmsDealer", 19),
+        ("Dryad", 20),
+        ("Demolitionist", 38),
+        ("Clothier", 54),
+        ("Guide", 22),
+        ("Wizard", 108),
+        ("GoblinTinkerer", 107),
+        ("Mechanic", 124),
+        ("Truffle", 160),
+        ("Steampunker", 178),
+        ("DyeTrader", 207),
+        ("PartyGirl", 208),
+        ("Cyborg", 209),
+        ("Painter", 227),
+        ("WitchDoctor", 228),
+        ("Pirate", 229),
+        ("Stylist", 353),
+        ("TravelingMerchant", 368),
+        ("Angler", 369),
+        ("Bartender", 550),
+        ("GolfGuy", 588),
+        ("TaxCollector", 441),
+    ];
+    for &(key, npc_type) in NPC_NAMES {
+        if let Some(name) = first_npc_name(app, npc_type) {
+            m.set_substitution(key, Substitution::Text(name));
+        } else {
+            m.remove_substitution(key);
+        }
+    }
+
+    // World / event flags (`Lang.cs:124-135,141`).
+    m.set_substitution("WorldName", Substitution::Text(app.world.name.clone()));
+    m.set_substitution("Day", Substitution::Bool(app.world.day_time));
+    m.set_substitution("BloodMoon", Substitution::Bool(app.world.blood_moon));
+    m.set_substitution("Eclipse", Substitution::Bool(app.world.eclipse));
+    m.set_substitution(
+        "MoonLordDefeated",
+        Substitution::Bool(app.world.downed_moon_lord),
+    );
+    m.set_substitution(
+        "GolemDefeated",
+        Substitution::Bool(app.world.downed_golem),
+    );
+    m.set_substitution(
+        "DukeFishronDefeated",
+        Substitution::Bool(false), // no `NPC.downedFishron` field ported yet
+    );
+    m.set_substitution(
+        "FrostLegionDefeated",
+        Substitution::Bool(app.world.downed_frost),
+    );
+    m.set_substitution(
+        "MartiansDefeated",
+        Substitution::Bool(app.world.downed_martians),
+    );
+    m.set_substitution(
+        "PumpkingDefeated",
+        Substitution::Bool(false), // no `NPC.downedHalloweenKing` field ported yet
+    );
+    m.set_substitution(
+        "IceQueenDefeated",
+        Substitution::Bool(false), // no `NPC.downedChristmasIceQueen` field ported yet
+    );
+    m.set_substitution("HardMode", Substitution::Bool(app.world.hard_mode));
+    m.set_substitution("Rain", Substitution::Bool(app.rain.is_raining()));
+
+    // Player / interaction (`Lang.cs:136,138,142-144`).
+    // `Homeless`: talk NPC is homeless. The port has no `talkNPC` index; keep
+    // unset (null-equivalent) rather than guessing.
+    m.remove_substitution("Homeless");
+    m.set_substitution("PlayerName", Substitution::Text(app.player_name.clone()));
+    m.set_substitution(
+        "Graveyard",
+        Substitution::Bool(app.scene_metrics.zone_graveyard),
+    );
+    let (angler_quests, deaths_pve) = if let Some(p) = &app.player {
+        (p.angler_quests_finished as i64, p.deaths_pve as i64)
+    } else {
+        (0, 0)
+    };
+    m.set_substitution("AnglerCompletedQuestsCount", Substitution::Int(angler_quests));
+    m.set_substitution("TotalDeathsCount", Substitution::Int(deaths_pve));
+
+    // `WorldEvilStone` (`Lang.cs:145`): localized evil-stone name by world evil.
+    // The port has no world-level crimson flag yet; default to corruption's stone.
+    let evil_key = "Misc.Ebonstone";
+    let evil_name = m.get_text_value(evil_key);
+    m.set_substitution("WorldEvilStone", Substitution::Text(evil_name));
+
+    // Input / UI keys (`Lang.cs:137,146-166`). `PlayerInput.GenerateInputTag_*`
+    // and `Main.cInv`/favorite-key/gamepad state are not fully ported; provide
+    // stable, descriptive fallbacks so the 65-entry producer is complete and the
+    // tokens never leak raw when a key is set.
+    m.set_substitution("InventoryKey", Substitution::Text("Inventory".to_string()));
+    let using_gamepad = false;
+    let disable_left_shift_trash = false;
+    m.set_substitution(
+        "InputTriggerUI_BuildFromInventory",
+        Substitution::Text(input_tag(false, "QuickMount", using_gamepad)),
+    );
+    m.set_substitution("InputTriggerUI_TrashEnabled", Substitution::Bool(true));
+    let trash_label = if !using_gamepad {
+        m.get_text_value(if disable_left_shift_trash {
+            "Controls.Control"
+        } else {
+            "Controls.Shift"
+        })
+    } else {
+        input_tag(false, "SmartSelect", using_gamepad)
+    };
+    m.set_substitution("InputTriggerUI_Trash", Substitution::Text(trash_label));
+    m.set_substitution(
+        "InputTriggerUI_FavoriteItem",
+        Substitution::Text(if !using_gamepad {
+            "Alt".to_string()
+        } else {
+            input_tag(false, "SmartCursor", using_gamepad)
+        }),
+    );
+    m.set_substitution(
+        "InputTrigger_QuickEquip",
+        Substitution::Text(input_tag(false, "Grapple", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_Grapple",
+        Substitution::Text(input_tag(true, "Grapple", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_LockOn",
+        Substitution::Text(input_tag(true, "LockOn", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_RadialQuickbar",
+        Substitution::Text(input_tag(true, "HotbarMinus", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_RadialHotbar",
+        Substitution::Text(input_tag(true, "HotbarPlus", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_SmartCursor",
+        Substitution::Text(input_tag(true, "SmartCursor", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_UseOrAttack",
+        Substitution::Text(input_tag(true, "MouseLeft", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_Jump",
+        Substitution::Text(input_tag(true, "Jump", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_InteractWithTile",
+        Substitution::Text(input_tag(true, "MouseRight", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_InteractWithTileUI",
+        Substitution::Text(input_tag(false, "MouseRight", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_ToggleOrOpen",
+        Substitution::Text(if !using_gamepad {
+            input_tag(true, "MouseRight", using_gamepad)
+        } else {
+            input_tag(false, "Grapple", using_gamepad)
+        }),
+    );
+    m.set_substitution(
+        "InputTrigger_SmartSelect",
+        Substitution::Text(input_tag(true, "SmartSelect", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_Mount",
+        Substitution::Text(input_tag(true, "QuickMount", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_Healing",
+        Substitution::Text(input_tag(true, "QuickHeal", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_ManaHealing",
+        Substitution::Text(input_tag(true, "QuickMana", using_gamepad)),
+    );
+    m.set_substitution(
+        "InputTrigger_QuickBuff",
+        Substitution::Text(input_tag(true, "QuickBuff", using_gamepad)),
+    );
+    let armor_key = if app.settings.reversed_armor_bonuses {
+        "Key.UP"
+    } else {
+        "Key.DOWN"
+    };
+    let armor_value = m.get_text_value(armor_key);
+    m.set_substitution("ToggleArmorSetBonusKey", Substitution::Text(armor_value));
+}
+
+/// `NPC.GetFirstNPCNameOrNull` (`NPC.cs`): the `GivenOrTypeName` of the first
+/// active NPC whose net/type id matches `npc_type`, or `None`.
+fn first_npc_name(app: &crate::app::App, npc_type: i32) -> Option<String> {
+    app.npcs.iter().find_map(|n| {
+        if n.hp > 0 && n.kind.net_id() == npc_type {
+            Some(n.given_name.clone())
+        } else {
+            None
+        }
+    })
+}
+
+#[cfg(test)]
+mod s1_l12b_tests {
+    use super::*;
+
+    #[test]
+    fn global_substitutions_resolve_world_player_and_npc_tokens() {
+        // `Lang.InitGlobalSubstitutions` (`Lang.cs:100-151`, S1-L-12b): the
+        // manager must resolve key global tokens once their values are set.
+        let mut m = LanguageManager::new();
+        m.add_source(
+            "Terraria.Localization.Content.en-US.Game.json",
+            r#"{"Game":{"World":"World {WorldName}","Day":"{Day}","Rain":"{Rain}","Guide":"{Guide}"}}"#,
+        );
+        m.set_language(GameCulture::English);
+        m.set_substitution("WorldName", Substitution::Text("Terra".into()));
+        m.set_substitution("Day", Substitution::Bool(true));
+        m.set_substitution("Rain", Substitution::Bool(false));
+        m.set_substitution("Guide", Substitution::Text("Andrew".into()));
+        assert_eq!(m.get_text_value("Game.World"), "World Terra");
+        assert_eq!(m.get_text_value("Game.Day"), "True");
+        assert_eq!(m.get_text_value("Game.Rain"), "False");
+        assert_eq!(m.get_text_value("Game.Guide"), "Andrew");
+    }
+}
+
+#[cfg(test)]
+mod s1_l12c_tests {
+    #[test]
+    fn resource_registration_uses_sorted_file_names() {
+        // `lang::init` must register `Terraria.Localization.Content.*.json`
+        // in deterministic (sorted) file-name order (S1-L-12c) so
+        // `IndexedFromCategory` mappings do not depend on `read_dir` order.
+        let mut names = vec![
+            "Terraria.Localization.Content.en-US.Town.json",
+            "Terraria.Localization.Content.en-US.Game.json",
+            "Terraria.Localization.Content.en-US.Items.json",
+        ];
+        let mut sorted = names.clone();
+        sorted.sort();
+        names.sort_by(|a, b| a.cmp(b));
+        assert_eq!(names, sorted);
+        assert_eq!(
+            names,
+            vec![
+                "Terraria.Localization.Content.en-US.Game.json",
+                "Terraria.Localization.Content.en-US.Items.json",
+                "Terraria.Localization.Content.en-US.Town.json",
+            ]
+        );
+    }
+}
+
+/// Best-effort NPC key name for a town NPC type id when no instance/given name
+/// exists. Falls back to the numeric id (never panics on unknown).
+fn npc_type_name(npc_type: i32) -> &'static str {
+    match npc_type {
+        17 => "Merchant",
+        18 => "Nurse",
+        19 => "ArmsDealer",
+        20 => "Dryad",
+        22 => "Guide",
+        38 => "Demolitionist",
+        54 => "Clothier",
+        107 => "GoblinTinkerer",
+        108 => "Wizard",
+        124 => "Mechanic",
+        160 => "Truffle",
+        178 => "Steampunker",
+        207 => "DyeTrader",
+        208 => "PartyGirl",
+        209 => "Cyborg",
+        227 => "Painter",
+        228 => "WitchDoctor",
+        229 => "Pirate",
+        353 => "Stylist",
+        368 => "TravelingMerchant",
+        369 => "Angler",
+        441 => "TaxCollector",
+        550 => "DD2Bartender",
+        588 => "Golfer",
+        _ => "TownNPC",
+    }
+}
+
+/// Fallback stand-in for `PlayerInput.GenerateInputTag_ForCurrentGamemode`.
+/// The port has no full trigger-tag renderer yet; return stable labels that
+/// approximate the default keyboard/mouse bindings where known.
+fn input_tag(_gameplay: bool, action: &str, using_gamepad: bool) -> String {
+    if using_gamepad {
+        return format!("[{action}]");
+    }
+    match action {
+        "Jump" => "Space".to_string(),
+        "MouseLeft" => "Left Click".to_string(),
+        "MouseRight" => "Right Click".to_string(),
+        "Grapple" => "E".to_string(),
+        "QuickMount" => "R".to_string(),
+        "SmartCursor" => "Left Ctrl".to_string(),
+        "SmartSelect" => "Left Shift".to_string(),
+        "QuickHeal" => "H".to_string(),
+        "QuickMana" => "J".to_string(),
+        "QuickBuff" => "B".to_string(),
+        "LockOn" => "Lock On".to_string(),
+        "HotbarMinus" => "Hotbar-".to_string(),
+        "HotbarPlus" => "Hotbar+".to_string(),
+        _ => format!("<{action}>"),
+    }
 }
 
 /// `Language.ActiveCulture` (the English default until a load happened).

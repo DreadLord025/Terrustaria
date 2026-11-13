@@ -74,8 +74,11 @@ pub(crate) struct ItemSlot {
     pub(crate) prefix: u16,
 }
 
-/// `Item.MAX_STACK` for the blocks and items we model.
-pub(crate) const MAX_STACK: u32 = 999;
+/// `Item.CommonMaxStack` (`Item.cs:49966`) �?" the default stack limit applied
+/// by `ResetStats`/`SetDefaults` before id-specific overrides.
+pub(crate) const COMMON_MAX_STACK: u32 = 9999;
+/// Compatibility alias; prefer [`COMMON_MAX_STACK`].
+pub(crate) const MAX_STACK: u32 = COMMON_MAX_STACK;
 
 pub(crate) const EMPTY_SLOT: ItemSlot = ItemSlot {
     kind: 0,
@@ -83,6 +86,30 @@ pub(crate) const EMPTY_SLOT: ItemSlot = ItemSlot {
     count: 0,
     prefix: 0,
 };
+
+impl ItemSlot {
+    /// `Item.Clone` (`Item.cs:49837-49840`, S1-F-10): a memberwise copy of the
+    /// item instance snapshot.
+    pub(crate) fn clone_item(self) -> Self {
+        self
+    }
+
+    /// `Item.Refresh` (`Item.cs:49945-49961`, S1-F-10, simplified): re-apply the
+    /// kind's default name and clamp the stack to the current `maxStack`. The
+    /// port has no variant system, so `onlyIfVariantChanged` is ignored and the
+    /// snapshot is refreshed unconditionally when the slot is not air.
+    pub(crate) fn refresh(&mut self, _only_if_variant_changed: bool) {
+        if self.kind == 0 || self.count == 0 {
+            *self = EMPTY_SLOT;
+            return;
+        }
+        self.name = registry::name(self.kind);
+        let max = registry::max_stack(self.kind);
+        if self.count > max {
+            self.count = max;
+        }
+    }
+}
 
 /// `Player.PickupItem`: stack into the hotbar first, then an empty hotbar slot,
 /// then the storage rows. The stacking rule is `Item.CanStack`
@@ -359,6 +386,34 @@ pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
 mod tests {
     use super::*;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    #[test]
+    fn s1_f_10_item_slot_clone_and_refresh_snapshot() {
+        // `Item.Clone`/`Item.Refresh` (`Item.cs:49837-49840`, `:49945-49961`,
+        // S1-F-10): clone copies the instance snapshot; refresh re-applies the
+        // kind's defaults and clamps to `maxStack` (CommonMaxStack 9999 for
+        // unregistered ids).
+        let slot = ItemSlot {
+            kind: 2, // Dirt Block, max stack 9999
+            name: "Dirt Block",
+            count: 10,
+            prefix: 0,
+        };
+        assert_eq!(slot.clone_item(), slot);
+        let mut over = ItemSlot {
+            kind: 6196, // unregistered -> CommonMaxStack 9999
+            name: "Wrong",
+            count: 12_000,
+            prefix: 0,
+        };
+        over.refresh(false);
+        assert_eq!(over.kind, 6196);
+        assert_eq!(over.name, "Item");
+        assert_eq!(over.count, 9999);
+        let mut air = EMPTY_SLOT;
+        air.refresh(false);
+        assert_eq!(air, EMPTY_SLOT);
+    }
 
     #[test]
     fn pickup_prefers_stacks_then_empty_slots() {

@@ -90,6 +90,10 @@ impl App {
     }
 
     pub(crate) fn frame(&mut self) {
+        // `Lang.InitGlobalSubstitutions` (S1-L-12b): refresh live `{Name}` values
+        // before any UI/text resolves them this frame (`Lang.cs:100-167`).
+        crate::lang::refresh_global_substitutions(self);
+
         let now = Instant::now();
         // `TR_SHOT` pins the animation clock: the sky's twinkle/drift phases read
         // `anim_time`, and wall-clock jitter between runs would make two shots of
@@ -1641,7 +1645,7 @@ impl App {
                                     player_assets,
                                     p,
                                     icon_pos,
-                                    1.0,
+                                    self.settings.applied_ui_scale(screen.x, screen.y),
                                     [1.0; 4],
                                 );
                             }

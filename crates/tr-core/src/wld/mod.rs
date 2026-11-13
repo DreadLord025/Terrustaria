@@ -212,6 +212,8 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
     r.seek(table.pointers[0])?;
     let name = r.string()?;
     let mut seed = 0u64;
+    let mut generator_version = 0u64;
+    let mut unique_id = [0u8; 16];
     if version >= 179 {
         // `Main.ActiveWorldFileData.SeedText` — the port's seed is the u64 its
         // decimal text parses to (0 when foreign, matching `World::seed`'s
@@ -223,12 +225,14 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
         } else {
             r.string()?.parse().unwrap_or(0)
         };
-        let _generator_version = r.u64()?;
+        generator_version = r.u64()?;
     }
     if version >= 181 {
-        r.skip(16)?; // GUID
+        for b in &mut unique_id {
+            *b = r.u8()?;
+        }
     }
-    let _world_id = r.i32()?;
+    let world_id = r.i32()?;
     let _left = r.i32()?;
     let _right = r.i32()?;
     let _top = r.i32()?;
@@ -241,6 +245,9 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
 
     let mut world = World::new(name, width, height);
     world.seed = seed;
+    world.generator_version = generator_version;
+    world.unique_id = unique_id;
+    world.world_id = world_id;
     load_header_flags(&mut r, &mut world, version)?;
     // `LoadWorld_Version2:1772-1775`: the header must end exactly at pointer 1.
     expect_section_end(&r, &table.pointers, 1)?;
@@ -367,7 +374,7 @@ pub fn to_bytes(world: &World, data: &SectionData, revision: u32) -> Result<Vec<
     let mut footer = Writer::new();
     footer.boolean(true);
     footer.cs_string(&world.name);
-    footer.i32(0); // world id: the port keeps none (see `parse`'s `_world_id`)
+    footer.i32(world.world_id); // `Main.ActiveWorldFileData.WorldId` (`WorldFile.cs:1756`)
 
     // --- assemble + backfill (`SaveHeaderPointers:1208-1218`) ---------------
     let mut pointers = [0usize; SECTION_COUNT];
@@ -2106,6 +2113,47 @@ mod tests {
     }
 
     // --- DW-2.5: citations + the full suite ---------------------------------
+
+    #[test]
+    fn s1_j_2_world_header_identity_roundtrips_in_wld() {
+        // `IO/WorldFile.cs`: `SaveWorldHeader` writes generator version/UniqueId/
+        // WorldId (`:1225-1227`), `SaveWorldFlags` writes LastPlayed
+        // (`DateTime.UtcNow.ToBinary`, `:1251`), footer writes WorldId (`:1756`),
+        // and `LoadWorld_Version2`/`LoadWorldFlags` read them back.
+        let mut world = World::new("HeaderId".into(), 8, 6);
+        world.generator_version = 1400159338497u64; // `CreateMetadata:603`
+        world.unique_id = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        world.world_id = 0x1234_5678;
+        world.last_played = 638000000000000000i64; // arbitrary DateTime.ToBinary-like ticks
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+
+        // Header bytes: generator version, GUID, world id at fixed offsets for
+        // this default-layout world (name "HeaderId" = 8 chars, seed text "0").
+        // Prologue 70 + bitmap tail 97 = 167; header starts at 167:
+        // [len+name(9)] [len+seed(2)] [gen(8)] [guid(16)] [world id(4)]
+        let gen_at = 167 + 9 + 2;
+        assert_eq!(
+            &buf[gen_at..gen_at + 8],
+            &1400159338497u64.to_le_bytes(),
+            "generator version"
+        );
+        assert_eq!(
+            &buf[gen_at + 8..gen_at + 24],
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            "unique id"
+        );
+        assert_eq!(
+            &buf[gen_at + 24..gen_at + 28],
+            &0x1234_5678i32.to_le_bytes(),
+            "world id"
+        );
+
+        let loaded = parse(&buf).expect("parses");
+        assert_eq!(loaded.generator_version, world.generator_version);
+        assert_eq!(loaded.unique_id, world.unique_id);
+        assert_eq!(loaded.world_id, world.world_id);
+        assert_eq!(loaded.last_played, world.last_played);
+    }
 
     #[test]
     fn test_DW_2_5_every_writer_block_carries_its_citation() {

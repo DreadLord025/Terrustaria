@@ -161,7 +161,8 @@ pub enum Bar {
     Ambient,
     /// `GameUI.GameZoom` + `Main.GameZoomTarget - 1f` (`:510-560`) → `zoom`.
     Zoom,
-    /// `GameUI.UIScale` + `Main.UIScale` (`:561-601`) — no port field (parked).
+    /// `GameUI.UIScale` + `Main.UIScale` (`:561-601`) → `ui_scale` (the wanted
+    /// scale; the bar's track spans the C# slider's 0.5..2.0 range).
     UiScale,
     /// `Lang.menu[52]` + `Main.bgScroll` (`:911-945`) → `parallax_scroll`.
     Parallax,
@@ -271,7 +272,7 @@ static GENERAL: &[Row] = &[
     Row { label: Label::Text("GameUI.ZoomCategory"), act: RowAct::Header },
     // 6 `GameUI.GameZoom` bar (`:519`).
     Row { label: Label::Text("GameUI.GameZoom"), act: RowAct::Bar(Bar::Zoom) },
-    // 7 `GameUI.UIScale` bar (`:561`) — no port field.
+    // 7 `GameUI.UIScale` bar (`:561`).
     Row { label: Label::Text("GameUI.UIScale"), act: RowAct::Bar(Bar::UiScale) },
     // 8 `""` spacer (`:602`).
     Row { label: Label::Blank, act: RowAct::Header },
@@ -732,8 +733,11 @@ pub fn bar_value(settings: &Settings, bar: Bar) -> f32 {
         Bar::Ambient => settings.ambient_volume,
         // `Main.GameZoomTarget - 1f` (`:530`): the track spans the 1.0..2.0 range.
         Bar::Zoom => (settings.zoom - 1.0).clamp(0.0, 1.0),
-        // `Main.UIScale` (`:571`) — the port has no UI-scale field.
-        Bar::UiScale => 1.0,
+        // `Main.temporaryGUIScaleSlider` tracks 0.5..2.0
+        // (`num14 * 1.5f + 0.5f`, `:577`) and the bar fraction is
+        // `(slider - 0.5f) / 1.5f` clamped 0..1 (`:571`); the port's stored
+        // `ui_scale` is that slider's value.
+        Bar::UiScale => ((settings.ui_scale - 0.5) / 1.5).clamp(0.0, 1.0),
         // `Main.bgScroll` 0..100 (`:911-945`).
         Bar::Parallax => f32::from(settings.parallax_scroll) / 100.0,
     }
@@ -747,8 +751,10 @@ pub fn set_bar_value(settings: &mut Settings, bar: Bar, v: f32) {
         Bar::Ambient => settings.ambient_volume = v,
         Bar::Zoom => settings.zoom = 1.0 + v,
         Bar::Parallax => settings.parallax_scroll = (v * 100.0).round().clamp(0.0, 100.0) as u8,
-        // Parked: no field to write.
-        Bar::UiScale => {}
+        // `Main.temporaryGUIScaleSlider = num14 * 1.5f + 0.5f` then truncated
+        // to two decimals (`(float)(int)(x * 100f) / 100f`, `:577-578`); the
+        // provisional slider becomes `Main.UIScale` on the drop (`:585`).
+        Bar::UiScale => settings.ui_scale = ((v * 1.5 + 0.5) * 100.0).trunc() / 100.0,
     }
 }
 
@@ -994,11 +1000,19 @@ pub fn row_label(row: &Row, settings: &Settings) -> String {
                         &[format!("{zoom_pct}"), format!("{zoom_pct}")],
                     )
                 }
-                // `GameUI.UIScale` takes the provisional and the applied scale.
-                Bar::UiScale => crate::lang::text_args(
-                    "GameUI.UIScale",
-                    &["100".to_string(), "100".to_string()],
-                ),
+                // `GameUI.UIScale` takes the provisional and the applied scale
+                // (`Math.Round(temporaryGUIScaleSlider * 100f)`,
+                // `Math.Round(Main.UIScale * 100f)`, `:556`). The port's
+                // immediate-mode bar has no separate provisional field, so both
+                // numbers are the stored (wanted) scale — the same simplification
+                // the zoom row makes above.
+                Bar::UiScale => {
+                    let pct = (settings.ui_scale * 100.0).round();
+                    crate::lang::text_args(
+                        "GameUI.UIScale",
+                        &[format!("{pct}"), format!("{pct}")],
+                    )
+                }
                 _ => format!("{} {pct}%", label_text(row.label)),
             }
         }
@@ -1507,16 +1521,14 @@ pub fn draw_options(
         // (`valuePosition.X = ...`, `:437`), the label centred as usual.
         centred_text(r, lookups, a, scale, colour, &label);
         if let RowAct::Bar(bar) = row.act {
-            if !matches!(bar, Bar::UiScale) {
-                sliders::draw_value_bar(
-                    r,
-                    lookups,
-                    bar_right_x(screen),
-                    a[1],
-                    bar_value(settings, bar),
-                    mouse,
-                );
-            }
+            sliders::draw_value_bar(
+                r,
+                lookups,
+                bar_right_x(screen),
+                a[1],
+                bar_value(settings, bar),
+                mouse,
+            );
         }
     }
 }
@@ -1881,10 +1893,16 @@ mod tests {
         set_bar_value(&mut s, Bar::Zoom, 0.5);
         assert!((s.zoom - 1.5).abs() < 1e-6, "the zoom bar is the 1.0..2.0 range");
         assert!((bar_value(&s, Bar::Zoom) - 0.5).abs() < 1e-6);
-        // The parked row is inert.
-        let before = s.zoom;
-        set_bar_value(&mut s, Bar::UiScale, 0.9);
-        assert_eq!(s.zoom, before);
+        // S1-H-3: the UI-scale row rides the C# slider's 0.5..2.0 range
+        // (`Main.temporaryGUIScaleSlider = num14 * 1.5f + 0.5f`, `:577`; the
+        // track is `(slider - 0.5f) / 1.5f`, `:571`). The verify row probes
+        // 0.8 / 1.0 / 1.2.
+        for want in [0.8f32, 1.0, 1.2] {
+            let frac = (want - 0.5) / 1.5;
+            set_bar_value(&mut s, Bar::UiScale, frac);
+            assert!((s.ui_scale - want).abs() < 1e-6, "the bar sets {want}");
+            assert!((bar_value(&s, Bar::UiScale) - frac).abs() < 1e-6, "and reads it back");
+        }
     }
 
     /// Every toggle flips and flips back — the C#'s `Main.x = !Main.x` arms

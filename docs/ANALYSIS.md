@@ -1681,8 +1681,10 @@ whites, eyes and hair (frame row 0, unlit — `MapHeadRenderer.cs:50` blits the
 target with `Color.White`) plus the outline rings (black at Manhattan radius 4,
 `Main.teamColor[0]` = white at radius 2) into the screen-space `ui` range, so it
 lands on top of the map like vanilla's frame -> tiles -> head order
-(`Main.cs:55485` -> `55609` -> `55954`). `Main.UIScale` is passed as `1.0`
-(no UI-scale system here). The HUD is hidden while the fullscreen map is open,
+(`Main.cs:55485` -> `55609` -> `55954`). `Main.UIScale` is now ported (S1-H-3):
+the icon takes the applied scale `Settings::applied_ui_scale` (wanted
+`Settings::ui_scale` clamped to `Main.UIScaleMax`, `Main.cs:2576-2583`), so a
+non-default UI scale resizes the head icon like vanilla. The HUD is hidden while the fullscreen map is open,
 matching vanilla's early return in `Main.Draw` (`Main.cs:62147-62181`, before
 `DrawInterface` at `62432`). While the map is open the world input is modal
 (`Player.cs:24798-24807`): movement and use/tile controls are cleared, so nothing
@@ -2216,8 +2218,9 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` →
   a scanned `.plr` is skipped like `Player.GetFileData`'s null return.
 * **World metadata stand-ins.** Favourites are a `<world>.trfav` marker file
   (`Main.LocalFavoriteData` has no port); creation time is the file's mtime;
-  there is no GameMode field (every entry reads Classic, so
-  `sort_worlds`' `CanWorldBeJoinedByActivePlayer` Journey gate is vacuous);
+  the world writer stores no `GameMode`, so every real entry reads Classic
+  (`WorldEntry::difficulty`), which is why the Journey rejection (S1-H-10) can
+  only fire for a Journey session player today;
   the world card icon is a fixed `IconCrimson` (no evil data to pick the
   sprite); the playtime panel is a fixed `00:00:00` (no play-time tracking).
   Invalid worlds bucket to Small (vanilla shows Unknown — no Unknown
@@ -2372,6 +2375,66 @@ name falls back to `menu::random_name()`, `app/mod.rs:1830`, so an unpinned pair
 differs in the card name's pixels). The absolute HUD hash is environment-dependent:
 two sessions produced `c4980496…` and `d4ba148e…` for the *same* code, so a
 cross-session comparison must re-take the baseline beside the run.
+
+## UI scale (S1-H-3, 2026-11-13)
+
+`Main.UIScale` is ported as a value: `settings::ui_scale_max` is the C#
+`Main.UIScaleMax` (`Math.Max(1f, Math.Min(h / 600f, w / 800f))`,
+`Main.cs:2576-2583`), `Settings::ui_scale` is the persisted **wanted** scale
+(`Main._uiScaleWanted`, key `"UIScale"`, `Put` `:4201` / `Get` `:4487`) and
+`Settings::applied_ui_scale` is the setter's down-only clamp to the max
+(`:2563-2572`). The ingame-options `GameUI.UIScale` bar is live (the C# slider's
+0.5..2.0 range, `IngameOptions.cs:571-578`) and the fullscreen-map head icon
+takes the applied scale.
+
+Two deliberate deviations remain, recorded here rather than silently:
+
+* **The default is plain `1.0`.** Vanilla's `Get("UIScale", GetScaling())` reads
+  the platform DPI scaling and, on a fresh install, `TryPickingDefaultUIScale`
+  sets `displayHeight / 1080f * 1.1f` (`:4257-4265`, applied at `:4489`). Neither
+  is available at settings-load time in this port (no `IWindowService`, no
+  display), so a headless boot starts at 1.0; the user can still set any scale
+  from the bar.
+* **The scale is applied at the render sites the port has, not to the UI root
+  dimensions.** Vanilla divides `UserInterface.GetDimensions()` by `Main.UIScale`
+  (`UserInterface.cs:335`) and gives `GameInterfaceLayer` three scale spaces; the
+  port's screens derive their rects straight from the swapchain, so scaling the
+  whole UI is still open (the M-sized follow-up noted against S1-H-3 in
+  `docs/research/18-ui-framework.md`).
+
+## Scroll wheel (S1-H-4, 2026-11-13)
+
+`UserInterface.Update`'s scroll arm (`UserInterface.cs:219-223`) now lives in the
+pointer machine: `PointerState::queue_scroll` accumulates
+`PlayerInput.ScrollWheelDeltaForUI` and `PointerState::scroll_wheel` dispatches it
+to the element under the pointer, zeroing the accumulator **whatever the hit**
+(the C# `= 0` runs even when `uIElement` is null, `:222`); `PointerEvent::ScrollWheel`
+carries the int delta (`UIScrollWheelEvent.cs:7`). `loop.rs` routes the
+achievements/emotes/chest surfaces through the machine and hands the consumed delta
+back; the hotbar and the fullscreen-`map` zoom fallbacks stay raw because neither
+is a `UserInterface` element in 1.4.5.8.
+
+* **Fidelity note.** The machine's delta is an `i32` (matching C#'s int
+  `ScrollWheelDeltaForUI`), so the achievements arm now fires only when the rounded
+  delta is non-zero. Previously it scrolled on sub-notch `PixelDelta` values
+  (`|d| < 0.5`), which C# cannot produce; the magnitude still passes through
+  unrounded (`scroll_achievements(d)`), so only that degenerate case changed.
+
+## World select (S1-H-10, 2026-11-13)
+
+`UIWorldListItem.PlayGame` (`UIWorldListItem.cs:360-385`) runs `base._data.IsValid`
+then `TryMovingToRejectionMenuIfNeeded` (`:387-413`). The port now reproduces both:
+`flow.rs::world_play_click` requires `WorldEntry::valid` and asks
+`world_select::rejection_key` whether the world must be refused — an invalid
+`GameModeID` (`GameModeID.cs:19-26`, modes 0..=3), a Journey player on a
+non-Journey world, or a non-Journey player on a Journey world. Both the Play
+button and `OnLeftDoubleClick`'s `PlayGame` route through it.
+
+* **Rejection surface.** C# sets `Main.statusText` and `menuMode = 1000000`
+  (the "cannot load" page). The port has no such page, so the wording is carried
+  by `App::front_hint` (already drawn under the front panel) and the launch is
+  refused — the deviation is the *page*, not the gate. The `SoundEngine.PlaySound(10)`
+  cue is kept (`Audio::play("Menu_Open")`).
 
 ## Architecture refactor (2026-11-01)
 
@@ -4638,10 +4701,16 @@ filler kind is inert, but the id belongs to the lamp. The mechanics:
   gate's whole wire line, toggling every logic lamp on it, which is how gates
   chain downstream.
 - The faulty lamp (the poked lamp at `frameX == 36` — `flag6`) rolls the
-  output: `Main.rand.Next(num2) < num3` (`:812`). The port consumes its own
-  xorshift stream seeded per world (`Wiring::seed_faulty_rng`) — the C#'s
-  `Main.rand` sequence is not reproduced (the port-wide RNG deviation), but
-  the roll is deterministic per seed.
+  output: `Main.rand.Next(num2) < num3` (`:812`). The port draws the whole
+  wiring RNG from `tr-core/src/unified_random.rs::UnifiedRandom` — the exact C#
+  `Main.rand` generator — seeded once per world (`Wiring::seed_rand`, S1-L-6c),
+  so every wiring roll (the faulty lamp, the statue `Utils.SelectRandom` fills,
+  the cannon/firework variants and the trap spreads) matches the C# algorithm
+  for the same seed. Vanilla seeds `Main.rand` from the clock
+  (`Main.cs:6461-6463`), so its specific sequence is still not reproduced, and
+  the port-wide shared-stream *order* (one global `Main.rand` all consumers
+  interleave) remains unmodelled; the roll is deterministic per seed
+  (`the_wire_rolls_come_from_the_unified_random_stream`).
 - A gate with a lamp on its own tile flip-flops within one pass: the output
   flip re-trips the gate's wire, the flood re-toggles the stack lamp and the
   gate re-evaluates to the opposite — the verbatim C# outcome, covered by
@@ -4725,8 +4794,10 @@ Deviations:
   dedupe read the app's pools, so the engine emits the request with its roll
   results and the app gates the spawn. Consequence: a blocked spawn still
   consumes the engine's rolls (the C# evaluates its cap before its rolls) —
-  invisible outside the port's stand-in RNG stream, which is not byte-equal
-  to `Main.rand` anyway (ANALYSIS "Wiring engine (M7-WIRE-1)"). The cannon's
+  invisible outside the port's RNG stream, which is the exact `UnifiedRandom`
+  generator but seeded deterministically per world rather than from the clock
+  and not interleaved with the other consumers' draws (ANALYSIS "Wiring engine
+  (M7-WIRE-1)", S1-L-6c). The cannon's
   static/per-tile cooldowns are assigned before the app-side gate, as in the
   C#, so a bunny-blocked shot still leaves them standing.
 - **The ceiling spiky ball's shared cap decision**: the C# evaluates the cap

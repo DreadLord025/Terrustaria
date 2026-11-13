@@ -1640,7 +1640,7 @@ pub(crate) fn draw_player_preview(
 /// with origin `(42, 42)` (`MapHeadRenderer.cs:50`), and the head frame sits at
 /// target-local `(26, 28)` (`PlayerDrawHeadSet.cs:150-155` + `147`), so its screen
 /// top-left is `pos + ([-16, -14]) * scale` and its size is `[40, 56] * scale`.
-/// `scale` is `Main.UIScale` — this engine has no UI scale, so it is passed `1.0`.
+/// `scale` is `Main.UIScale` (the applied value, `Settings::applied_ui_scale`).
 /// `border` is `Main.GetPlayerHeadBordersColor` (White in singleplayer).
 pub(crate) fn draw_player_map_icon(
     r: &mut SpriteRenderer,
