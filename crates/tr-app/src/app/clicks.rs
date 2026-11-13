@@ -417,6 +417,16 @@ impl App {
         } else {
             self.equip.ammo[k] = target;
         }
+        // `CoinSlot.ForceSlotState(slot, context, inv[slot])` — the transfer
+        // tails' rank reset (`ItemSlot.cs:1016`, S1-H-9); the row's vanilla
+        // index rides `coin_slot_index`/`ammo_slot_index`.
+        let vs = if context == 1 {
+            crate::inv::coin_slot_index(k)
+        } else {
+            crate::inv::ammo_slot_index(k)
+        } as i32;
+        self.coin_slot
+            .force_slot_state(vs, context, target.kind, target.count);
     }
 
     /// `MinimapFrameManager.DrawTo` -> `MinimapFrame.Update`
@@ -501,7 +511,9 @@ impl App {
             self.ui_left_press = false;
             return true;
         }
-        let Some(player) = self.player.as_ref() else { return false; };
+        let Some(player) = self.player.as_ref() else {
+            return false;
+        };
         let adj = craft::scan_adjacent(&self.world, player);
         let zones = craft::Zones {
             snow: self.scene_metrics.zone_snow,
@@ -513,35 +525,29 @@ impl App {
             &self.world_chests,
             self.settings.craft_from_nearby_chests,
         );
-        let available = craft::available(
-            &self.inventory,
-            &self.world_chests,
-            &in_range,
-            &adj,
-            &zones,
-        );
+        let available =
+            craft::available(&self.inventory, &self.world_chests, &in_range, &adj, &zones);
         let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
         else {
             return false;
         };
         let recipe = &craft::RECIPES[idx];
-        let Some((kind, count)) =
-            craft::try_craft(
-                &mut self.inventory,
-                &mut self.world_chests,
-                &in_range,
-                recipe,
-                &adj,
-                &zones,
-                &mut self.craft_rng,
-            )
-        else {
+        let Some((kind, count)) = craft::try_craft(
+            &mut self.inventory,
+            &mut self.world_chests,
+            &in_range,
+            recipe,
+            &adj,
+            &zones,
+            &mut self.craft_rng,
+        ) else {
             // The recipe row shows with a partial ingredient set; a click
             // without the full set does nothing (`Main.cs:42250` hover only).
             return false;
         };
         if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind, 0) {
-            self.inventory[i].count = (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
+            self.inventory[i].count =
+                (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
         }
         // `SoundEngine.PlaySound(7)` — the grant sound
         // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
@@ -605,9 +611,7 @@ impl App {
                 let _ = self.settings.save();
                 return;
             }
-        } else if self.inventory_open
-            && self.ingame_options.button_layout.hit(self.mouse_pos)
-        {
+        } else if self.inventory_open && self.ingame_options.button_layout.hit(self.mouse_pos) {
             self.ingame_options.open = true;
             self.ui_left_press = false;
             return;
@@ -693,8 +697,8 @@ impl App {
             .filter(|a| ui::achievements::filter_visible(&self.achievements_categories, a.category))
             .count();
         let max = ui::achievements::max_scroll(rows, &list);
-        self.achievements_scroll = (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0))
-            .clamp(0.0, max);
+        self.achievements_scroll =
+            (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0)).clamp(0.0, max);
     }
 
     pub(crate) fn handle_inventory_clicks(&mut self) {
@@ -739,13 +743,9 @@ impl App {
                     .unwrap_or((16.0, 16.0));
                 let base_y = ui::inventory::equip_page_base_y(screen.y, m_h);
                 let air = self.mouse_item.kind == 0 || self.mouse_item.count == 0;
-                if let Some(i) = ui::inventory::accessory_tick_click(
-                    screen,
-                    base_y,
-                    self.mouse_pos,
-                    tick,
-                    air,
-                ) {
+                if let Some(i) =
+                    ui::inventory::accessory_tick_click(screen, base_y, self.mouse_pos, tick, air)
+                {
                     if let Some(p) = self.player.as_mut() {
                         p.hide_visible_accessory[i] = !p.hide_visible_accessory[i];
                     }
@@ -862,8 +862,7 @@ impl App {
             let m_h = (sh as f32 - 600.0) / 2.0;
             let (mx, my) = (self.mouse_pos.x, self.mouse_pos.y);
             let in_slot = mx >= 50.0 && mx <= 106.0 && my >= 270.0 + m_h && my <= 326.0 + m_h;
-            let in_button =
-                mx >= 120.0 && mx <= 150.0 && my >= 310.0 + m_h && my <= 340.0 + m_h;
+            let in_button = mx >= 120.0 && mx <= 150.0 && my >= 310.0 + m_h && my <= 340.0 + m_h;
             if left && in_slot {
                 self.reforge_slot_click();
                 return;
@@ -957,12 +956,10 @@ impl App {
                 .as_ref()
                 .map(|p| p.chest)
                 .unwrap_or(crate::bank::CHEST_CLOSED);
-            if let Some(bank_idx) = (crate::bank::bank_for_chest(chest_open))
-                .and_then(|_| {
-                    let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
-                    ui::inventory::bank_slot_at(self.mouse_pos, m_h)
-                })
-            {
+            if let Some(bank_idx) = (crate::bank::bank_for_chest(chest_open)).and_then(|_| {
+                let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
+                ui::inventory::bank_slot_at(self.mouse_pos, m_h)
+            }) {
                 let bi = crate::bank::bank_for_chest(chest_open).unwrap();
                 // Read the cell and the cursor up front so the `&mut self`
                 // pickup helper never overlaps the player borrow; the cell is
@@ -1038,7 +1035,10 @@ impl App {
         // (`:1007`) has no port cue — the recorded gap. Right-click stays
         // unported (the Journey research arm `:940-943`).
         let chest_or_shop = self.open_container() >= 0 || self.shop_npc.is_some();
-        if left && self.inventory_open && ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop) {
+        if left
+            && self.inventory_open
+            && ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop)
+        {
             self.trash_swap();
             if self.mouse_item.count > 0 || self.equip.trash.count > 0 {
                 self.audio.play("Grab");
@@ -1102,11 +1102,25 @@ impl App {
             }
             self.mouse_item = held;
             self.inventory[slot] = target;
+            // `CoinSlot.ForceSlotState(slot, context, inv[slot])` — the
+            // case-0 tail (`ItemSlot.cs:1016`, S1-H-9).
+            self.coin_slot.force_slot_state(
+                slot as i32,
+                0,
+                self.inventory[slot].kind,
+                self.inventory[slot].count,
+            );
         } else if can_take {
             // `RightClick`'s pickup block (`ItemSlot.cs:1700-1713`): the paced
             // one-per-transfer `PickupItemIntoMouse` split (held-repeat
             // included).
             self.inventory[slot] = self.right_click_split(target);
+            self.coin_slot.force_slot_state(
+                slot as i32,
+                0,
+                self.inventory[slot].kind,
+                self.inventory[slot].count,
+            );
         } else if right_edge {
             // The port's press-edge place-one / merge-one carry (research/20
             // §5, the flat-`MAX_STACK` deviation) — not the C#'s pickup
@@ -1263,7 +1277,11 @@ impl App {
             // `:607-609` — air returns before the key block; `:616-619` — the
             // canFavoriteAt gate (contexts 0/1/2, `ItemSlot.cs:386-389`).
             if let Some((ctx, k)) = self.coin_ammo_at_mouse() {
-                let item = if ctx == 1 { self.equip.coins[k] } else { self.equip.ammo[k] };
+                let item = if ctx == 1 {
+                    self.equip.coins[k]
+                } else {
+                    self.equip.ammo[k]
+                };
                 if item.count > 0 && chest::can_favorite_at(ctx) {
                     self.cursor_override = CURSOR_FAVORITE;
                     return;
@@ -1404,7 +1422,12 @@ impl App {
             return;
         };
         let mult = match self.player.as_ref() {
-            Some(p) => [p.melee_damage, p.ranged_damage, p.magic_damage, p.minion_damage],
+            Some(p) => [
+                p.melee_damage,
+                p.ranged_damage,
+                p.magic_damage,
+                p.minion_damage,
+            ],
             None => [1.0; 4],
         };
         crate::item_sorting::sort_chest(&mut wc.slots, mult);
@@ -1439,6 +1462,10 @@ impl App {
             // write; the moved-in item keeps its prefix).
             chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, target);
             self.mouse_item = held;
+            // `CoinSlot.ForceSlotState(slot, context, inv[slot])` — the
+            // chest transfer's tail (`ItemSlot.cs:1119`, S1-H-9; ctx 3).
+            self.coin_slot
+                .force_slot_state(abs as i32, 3, target.kind, target.count);
         }
         if right_held {
             self.chest_slot_stack_split(abs);
@@ -1467,10 +1494,7 @@ impl App {
             return false;
         }
         if self.mouse_item.count == 0 {
-            self.mouse_item = ItemSlot {
-                count: 0,
-                ..*slot
-            };
+            self.mouse_item = ItemSlot { count: 0, ..*slot };
         }
         self.mouse_item.count += 1; // `:1738`
         slot.count -= 1; // `:1741`
@@ -1527,6 +1551,8 @@ impl App {
         }
         let s = self.right_click_split(s);
         chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, s);
+        self.coin_slot
+            .force_slot_state(abs as i32, 3, s.kind, s.count);
     }
 
     /// Applies a menu action (start singleplayer, host on a port, join a server).
@@ -1553,7 +1579,11 @@ impl App {
                     .menu
                     .as_ref()
                     .map_or((None, 0usize), |m| (Some(m.page), m.confirm_index));
-                let click = if yes { FlowClick::ConfirmYes } else { FlowClick::ConfirmNo };
+                let click = if yes {
+                    FlowClick::ConfirmYes
+                } else {
+                    FlowClick::ConfirmNo
+                };
                 // Clones: `FrontScreen` is no longer `Copy`, and the erase
                 // calls below need `self` whole.
                 let (front, backup, _) =
@@ -1591,21 +1621,19 @@ impl App {
                     }
                 }
             }
-            Action::Host { port, password } => {
-                match net::Server::start(port, password) {
-                    Ok(server) => {
-                        log::info!("hosting on {}", server.addr());
-                        self.net = NetRole::Host(server);
-                        self.close_menu();
-                    }
-                    Err(e) => {
-                        if let Some(m) = self.menu.as_mut() {
-                            m.connecting = false;
-                            m.error = Some(format!("host failed: {e}"));
-                        }
+            Action::Host { port, password } => match net::Server::start(port, password) {
+                Ok(server) => {
+                    log::info!("hosting on {}", server.addr());
+                    self.net = NetRole::Host(server);
+                    self.close_menu();
+                }
+                Err(e) => {
+                    if let Some(m) = self.menu.as_mut() {
+                        m.connecting = false;
+                        m.error = Some(format!("host failed: {e}"));
                     }
                 }
-            }
+            },
             // `Lang.menu[131]`'s row (`Main.cs:48928-48935`): `menuMode = 888`
             // + `Main.MenuUI.SetState(Main.AchievementsMenu)`. The port keeps
             // the legacy menu live behind the overlay (the vanilla state
@@ -1664,6 +1692,41 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn s1_h_9_the_coin_cell_transfer_resets_the_display_rank() {
+        // `ItemSlot.cs:1016`'s tail: after the coin row's transfer the
+        // `CoinSlot.ForceSlotState(slot, context, inv[slot])` reset makes the
+        // cell's display rank follow the moved coin — a gold into a copper
+        // cell swaps (the case-0 ladder's `IsNotTheSameAs` arm) and the rank
+        // re-derives to the gold; the row rides the vanilla indices
+        // (`coin_slot_index` = `Player.inventory[50..53]`).
+        let mut app = inv_app();
+        app.equip.coins[0] = crate::item::ItemSlot {
+            kind: 71,
+            name: "Copper Coin",
+            count: 99,
+            prefix: 0,
+        };
+        app.mouse_item = crate::item::ItemSlot {
+            kind: 73,
+            name: "Gold Coin",
+            count: 1,
+            prefix: 0,
+        };
+        app.coin_ammo_click(1, 0, true, false);
+        assert_eq!(
+            app.equip.coins[0].kind, 73,
+            "the case-0 swap moved the gold in"
+        );
+        assert_eq!(app.mouse_item.kind, 71, "the copper rides the cursor");
+        assert_eq!(
+            app.coin_slot
+                .entry_rank(crate::inv::coin_slot_index(0) as i32, 1),
+            (73, 1),
+            "the display rank follows the moved coin"
+        );
+    }
+
     #[test]
     fn bug20_shift_click_moves_the_stack_to_the_trash() {
         // Bug 20: `GetAlternateClickAction`'s tail + `OverrideLeftClick`'s
@@ -2340,7 +2403,10 @@ mod tests {
         // the click cancels the editor back into gameplay.
         app.mouse_pos = Vec2::new(510.0, 454.0);
         app.ui_left_press = true;
-        assert!(app.handle_chest_clicks(), "the cancel button took the click");
+        assert!(
+            app.handle_chest_clicks(),
+            "the cancel button took the click"
+        );
         assert!(!app.chest_editing(), "the editor closed");
         assert_eq!(app.front, None, "back into gameplay");
         assert!(
@@ -2742,11 +2808,7 @@ mod tests {
         app.ui_left_press = true;
         app.handle_inventory_clicks();
         let bank = &app.player.as_ref().unwrap().banks[0];
-        assert_eq!(
-            bank[0].kind,
-            71,
-            "the grid stacks parked as plain stacks"
-        );
+        assert_eq!(bank[0].kind, 71, "the grid stacks parked as plain stacks");
         assert_eq!(bank[0].count, 40, "5 parked first, then 35 merged in");
         assert_eq!(app.equip.coins[0].count, 60, "the coin rows untouched");
         assert_eq!(app.inventory[20].count, 0);
@@ -2830,7 +2892,11 @@ mod tests {
         // And back out: a click on the full cell lifts it.
         app.ui_left_press = true;
         app.handle_inventory_clicks();
-        assert_eq!(app.mouse_item, slot(71, 37), "the cell emptied onto the cursor");
+        assert_eq!(
+            app.mouse_item,
+            slot(71, 37),
+            "the cell emptied onto the cursor"
+        );
         assert_eq!(app.equip.coins[0].count, 0);
         app.equip.coins[0] = slot(71, 37);
         // `PickItemMovementAction`'s ctx-1 arm: only air and 71..=74 pass, so a
@@ -2953,7 +3019,10 @@ mod tests {
         app.ui_left_press = true;
         // The chest handler owns the cursor-9 arm (`OverrideLeftClick`
         // `ItemSlot.cs:813-850`) and consumes the press.
-        assert!(app.handle_chest_clicks(), "the cursor-9 arm takes the click");
+        assert!(
+            app.handle_chest_clicks(),
+            "the cursor-9 arm takes the click"
+        );
         assert_eq!(app.cursor_override, CURSOR_TO_CHEST, "the cursor lit");
         assert_eq!(
             crate::chest::chest_slot(&app.world_chests, 0, 0),
@@ -2970,7 +3039,10 @@ mod tests {
         app.keys.insert(KeyCode::ShiftLeft);
         app.mouse_pos = Vec2::new(540.0, 145.0); // ammo row 1
         app.ui_left_press = true;
-        assert!(app.handle_chest_clicks(), "the cursor-9 arm takes the click");
+        assert!(
+            app.handle_chest_clicks(),
+            "the cursor-9 arm takes the click"
+        );
         assert_eq!(app.cursor_override, CURSOR_TO_CHEST);
         assert_eq!(
             crate::chest::chest_slot(&app.world_chests, 0, 0),
@@ -2997,7 +3069,10 @@ mod tests {
             crate::chest::Source::Coin(0),
             false
         ));
-        assert_eq!(crate::chest::chest_slot(&app.world_chests, 0, 0), Some(slot(72, 4)));
+        assert_eq!(
+            crate::chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(72, 4))
+        );
         assert_eq!(app.equip.coins[0].count, 0, "the coin cell drained");
         assert_eq!(app.inventory[0], slot(9, 3), "the grid slot is untouched");
     }
@@ -3150,7 +3225,11 @@ mod tests {
         app.handle_chest_clicks();
         app.handle_inventory_clicks();
         assert!(app.favorite_slots.is_empty());
-        assert_eq!(app.inventory[5], slot(9, 4), "the C# movement places on air");
+        assert_eq!(
+            app.inventory[5],
+            slot(9, 4),
+            "the C# movement places on air"
+        );
         assert_eq!(app.mouse_item, EMPTY_SLOT);
     }
 
@@ -3164,10 +3243,19 @@ mod tests {
         assert!(chest::can_favorite_at(1));
         assert!(chest::can_favorite_at(2));
         assert!(chest::can_favorite_at(32));
-        assert!(!chest::can_favorite_at(3), "chest slots cannot be favorited");
+        assert!(
+            !chest::can_favorite_at(3),
+            "chest slots cannot be favorited"
+        );
         assert!(!chest::can_favorite_at(5));
-        assert!(!chest::can_favorite_at(6), "the trash slot cannot be favorited");
-        assert!(!chest::can_favorite_at(13), "the closed hotbar cannot either");
+        assert!(
+            !chest::can_favorite_at(6),
+            "the trash slot cannot be favorited"
+        );
+        assert!(
+            !chest::can_favorite_at(13),
+            "the closed hotbar cannot either"
+        );
 
         let mut app = inv_app();
         assert_eq!(app.toggle_favorite(7), 12);
@@ -3178,8 +3266,16 @@ mod tests {
         // row (50..54) and the ammo row (54..58) are favoritable, slot 58 and
         // beyond are not (`crate::inv::INV_SLOTS`).
         assert_eq!(app.toggle_favorite(crate::item::INV), 12, "coin row 0");
-        assert_eq!(app.toggle_favorite(crate::inv::INV_SLOTS - 1), 12, "ammo row 3");
-        assert_eq!(app.toggle_favorite(crate::inv::INV_SLOTS), 0, "past the rows");
+        assert_eq!(
+            app.toggle_favorite(crate::inv::INV_SLOTS - 1),
+            12,
+            "ammo row 3"
+        );
+        assert_eq!(
+            app.toggle_favorite(crate::inv::INV_SLOTS),
+            0,
+            "past the rows"
+        );
 
         // The hover gate refuses air — the cursor never lights (the click-path
         // half of the gate; the table asserts above are the static half).
@@ -3233,7 +3329,11 @@ mod tests {
         );
         app.handle_inventory_clicks();
         assert_eq!(app.mouse_item, slot(3, 10), "the fall-through pickup ran");
-        assert_eq!(app.favorite_slots, vec![5], "context 0 retains the favorite");
+        assert_eq!(
+            app.favorite_slots,
+            vec![5],
+            "context 0 retains the favorite"
+        );
     }
 
     /// DW-4.3 — direct moves on favorited slots work (the C# has no
@@ -3380,8 +3480,7 @@ mod tests {
             let (sw, sh) = app.screen_size();
             let screen = Vec2::new(sw, sh);
             let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
-            let (_, rect) =
-                ui::inventory::accessory_tick_rects(screen, base_y, (16.0, 16.0))[0];
+            let (_, rect) = ui::inventory::accessory_tick_rects(screen, base_y, (16.0, 16.0))[0];
             app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
             app.ui_left_press = true;
             app.handle_inventory_clicks();
@@ -3396,7 +3495,8 @@ mod tests {
     /// `EquipPageSelected`, the drawn page follows it on the next frame, and the
     /// next frame's `SelectEquipPage` joins in without an item held.
     #[test]
-    fn page_tab_click_switches_the_equipment_page() {        let mut app = inv_app();
+    fn page_tab_click_switches_the_equipment_page() {
+        let mut app = inv_app();
         let (sw, _sh) = app.screen_size();
         let screen = Vec2::new(sw, app.screen_size().1);
         let y = 174.0 + app.main_m_h() - 32.0;

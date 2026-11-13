@@ -311,6 +311,9 @@ pub(crate) struct App {
     /// (`Recipe.cs:221`'s `Main.rand.Next(3)`; the exact C# `UnifiedRandom`
     /// generator seeded per world like the wiring RNG, S1-L-6c).
     pub(crate) craft_rng: tr_core::unified_random::UnifiedRandom,
+    /// The coin cells' display-state machine (`CoinSlot.cs`, S1-H-9): the
+    /// entry arrays the vanilla carries as statics, owned by the App.
+    pub(crate) coin_slot: crate::ui::coin_slot::CoinSlotState,
     /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
     /// .cs:315`): the cached coin carriers. Session-only — cleared on the
     /// world unload (the vanilla never saves them).
@@ -2809,6 +2812,7 @@ impl App {
             // (`Main.cs:6461-6463`) — the same deterministic stand-in as the
             // wiring RNG (S1-L-6c).
             craft_rng: tr_core::unified_random::UnifiedRandom::new(world_seed as i32 | 1),
+            coin_slot: crate::ui::coin_slot::CoinSlotState::new(),
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             menu: menu_state,
