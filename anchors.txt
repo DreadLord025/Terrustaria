@@ -169,3 +169,4 @@ crates/tr-app/src/shop.rs|DownedBothSlimes|S1-F-16 - the Princess rank gates rea
 crates/tr-app/src/app/mod.rs|pub(crate) fn nurse_heal_cost_for|S1-E-8 - the Nurse prices only removable non-protected debuffs with the > 60 tick gate (Main.cs:40058-40065), rides the boss ladder (Main.cs:40069-40096) and clears only buffTime > 0 non-protected slots (:40147); NurseCannotRemoveDebuff in buffs.rs
 crates/tr-app/src/app/saveglue.rs|fn rolling_backups|S1-J-4 - the post-write validation + the .bak rolling rotation (WorldFile.cs:940-1004), the C# slot numbering (.bak, .bak2..bak9)
 crates/tr-render/src/sprite.rs|PASS_BUFFERS|S1-G-12 - the honest draw-call bound (up to 6 instance-buffer passes) pinned against the docs claims
+docs/ANALYSIS.md|The world-format contract|S1-J-8 - the two-format split stays: .trwld canonical (the versioned tails), .wld vanilla-interchange (the byte-shape parity)
