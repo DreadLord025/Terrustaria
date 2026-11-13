@@ -12171,3 +12171,28 @@ Scope notes: the fullbright glow-paint slices (`:3551-3554`,
 the paint work (S1-G-2's row). The A/B shot (a placed dirt block at the
 dusk, `TR_CAM=100,78` + `TR_PLACE`) shows the 10 576-px delta the average
 introduces; two identical runs are SHA-equal.
+
+## The map overlay layers (S1-L-4, 2026-11-14)
+
+`Main.MapIcons`' overlay stack (`Main.cs:66551`'s registration: Digtoise →
+BossBag → Spawn → TeamBasedSpawn → TeleportPylons → Pings) is ported over a
+faithful `MapOverlayDrawContext` (`MapOverlayDrawContext.cs:8-70`): the
+tile-position → screen transform `(position - mapPosition) * mapScale +
+mapOffset`, the optional clip (the minimap's screen rect), the Alignment
+origin multiplier and the `DrawResult.IsMouseOver` rect. The layers that
+have port drivers draw: SpawnMapLayer (the world spawn + the bed marker —
+the C# reads `localPlayer.SpawnX/SpawnY`, the port keeps the bed spawn on
+`World.bed_spawn`), BossBagMapLayer (the `ItemID.cs:1383` 21-kind set over
+the drop pool) and PingMapLayer (the 100-cap pool, the 15 s expiry, the 1x5
+row cycling at 10 Hz). The three data-gated layers keep their C# bodies but
+draw nothing: Digtoise (the 1098/1123 projectiles are not spawned),
+TeamBasedSpawn (the seed is in M5-SEED-2's deferred list) and
+TeleportPylons (`TeleportPylonsSystem` is not ported — the tile-entity
+work).
+
+Scope notes: the fullscreen call rides `Main.cs:55996`'s position (the
+map's top-left minus the 10 px frame inset, `mapPosition = Vector2.Zero`
+is the tile-space identity); the minimap call (`Main.cs:55703`, with the
+clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
+their own passes; the hover text feeds the map's text line through
+`ui::text::hud_text` (the C# `ref text`).
