@@ -228,7 +228,7 @@ Rust:
 | `DeleteButtonClick` → menuMode 5 (`UICharacterListItem.cs:242-254`) | `CharDelete(i)` `:183` | PASS — the confirm page parks the index/name |
 | Mode 5 Yes/No → reopen char select (`Main.cs:49434-49439`) | `ConfirmYes/No` on `ConfirmDeletePlayer` `:206-208` | PASS |
 | `GoBackClick` → menuMode 1/12 (`UIWorldSelect.cs:118-122`) | `WorldBack` `:184` | PASS (single-player arm only, as the port is single-player) |
-| `PlayGame` → `LoadWorld` (`UIWorldListItem.cs:360-374`) | `WorldPlay(i)` `:186` + `apply_front_flow` `:1047-1051` | PARTIAL — the `IsValid` + `TryMovingToRejectionMenuIfNeeded` gates (`:362`, `:387-410`) are not reproduced (see deviations) |
+| `PlayGame` → `LoadWorld` (`UIWorldListItem.cs:360-374`) | `WorldPlay(i)` `:186` + `apply_front_flow` `:1047-1051` + `world_play_click` (`IsValid` + `TryMovingToRejectionMenuIfNeeded`, `:362`/`:387-410`) | PORTED — the gates land in `world_select::rejection_key` + `flow.rs::world_play_click` (S1-H-10); the rejection surfaces `Main.statusText` via `App::front_hint` (no `menuMode == 1000000` page) |
 | `DeleteButtonClick` → menuMode 9 (`:346-358`) | `WorldDelete(_)` `:187` | PASS |
 | Mode 9 Yes/No → reopen world select (`Main.cs:49684-49692`) | `ConfirmYes/No` on `ConfirmDeleteWorld` `:209-211` | PASS |
 | `NewWorldClick` → 888 `UIWorldCreation` (`UIWorldSelect.cs:110-116`) | `WorldNew(worlds, active)` `:191-197` | PASS — the stand-in name and the Journey default (`SetDefaultOptions` `:313-326`) ride in |
@@ -313,16 +313,18 @@ P6 screenshots pair against.
 Legend: cosmetic / behavioural / determinism / pixel. "Admitted" = already
 written in ROADMAP/ANALYSIS/PORT_MAP.
 
-1. **`IsValid` and the creative/journey rejection menu are missing on Play.**
-   `UIWorldListItem.PlayGame` gates on `base._data.IsValid` and
-   `TryMovingToRejectionMenuIfNeeded` (`:362`, `:387-410`, which routes to
-   menuMode 1000000 with `Main.statusText`); `apply_front_flow` parks whatever
-   `worlds[i].path` holds (`flow.rs:1047-1051`) and `card_hit`/`elements`
-   (`world_select.rs:545`) offer the Play button for an invalid card too.
-   Severity: behavioural. **Not admitted** — and the ROADMAP
-   fix-world-select-clicks row claims "the `valid`/path gates on Play/Delete
-   are faithful to `UIWorldListItem.cs:362`/`:346-358`", which is only half
-   true (the path is parked, the validity gate is not).
+1. ~~**`IsValid` and the creative/journey rejection menu are missing on Play.**~~
+   **FIXED 2026-11-13** (`S1-H-10-world-select-gates`):
+   `world_select::rejection_key` ports `TryMovingToRejectionMenuIfNeeded`
+   (`UIWorldListItem.cs:387-413` — the invalid `GameModeID` arm, the
+   Journey-player/non-Journey-world arm and its mirror) and
+   `flow.rs::world_play_click` runs `IsValid` (already gated by
+   `worlds[i].valid`, so that half of the claim was right) then the rejection
+   before `WorldPlay`, playing `SoundEngine.PlaySound(10)` and surfacing
+   `Main.statusText` through `App::front_hint` (the port has no
+   `menuMode == 1000000` page). `card_hit`/`elements` still offer the Play
+   button for an invalid/mismatched card, as the C# does — the click is what
+   rejects.
 2. **`ANALYSIS.md:2120-2124` is stale** — it still says "No `.plr`
    reader/writer… Create records the session draft instead of writing a
    character file", while `list_players` reads real `.plr`s
@@ -439,11 +441,13 @@ S — small (single file / one table)
   reader/writer), PORT_MAP `:180` ("partial, no `.plr` reader"), and
   `flow.rs:73`'s + `mod.rs:1482`'s "no save-file writer" notices (the writer
   exists; the gap is the rename read-modify-write). Docs-only, no behaviour.
-- **S2. Gate Play on validity.** Reproduce `IsValid` +
-  `TryMovingToRejectionMenuIfNeeded` (`UIWorldListItem.cs:362`, `:387-410`) in
-  `world_select::hit`/`card_hit` (or `apply_front_flow`'s `WorldPlay` arm) and
-  surface the rejection text through the existing `front_hint` (the port has no
-  menuMode 1000000 page). One test with an invalid `WorldEntry`.
+- ~~**S2. Gate Play on validity.**~~ **DONE 2026-11-13** (`S1-H-10`):
+  `world_select::rejection_key` + `flow.rs::world_play_click` reproduce
+  `IsValid` + `TryMovingToRejectionMenuIfNeeded` (`UIWorldListItem.cs:362`,
+  `:387-410`) and surface the rejection through `front_hint` (no
+  `menuMode == 1000000` page). Tests `rejection_key_ports_try_moving_to_rejection_menu_if_needed`
+  + `world_select_play_gates_validity_and_the_journey_mismatch` (invalid entry,
+  both Journey mismatches, the agreeing pair).
 - **S3. Wire the active player's difficulty into the world list** — pass the
   session/selected player's difficulty into `enter_front`'s `sort_worlds`
   (`mod.rs:1368`), matching `UIWorldSelect.cs:177-180`. Blocked by S6 (needs

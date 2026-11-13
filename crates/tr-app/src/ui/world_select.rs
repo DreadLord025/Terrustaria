@@ -140,6 +140,36 @@ pub fn joinable(active_difficulty: u8, world_difficulty: u8) -> bool {
     (active_difficulty == 3) == (world_difficulty == 3)
 }
 
+/// `Terraria.ID.GameModeID.IsValid` (`GameModeID.cs:19-26`): `0 <= gameMode < 4`
+/// (Normal/Expert/Master/Creative). The port stores the mode as a `u8`, so only
+/// the upper bound can fail.
+pub fn game_mode_is_valid(game_mode: u8) -> bool {
+    game_mode < 4
+}
+
+/// `UIWorldListItem.TryMovingToRejectionMenuIfNeeded` (`UIWorldListItem.cs:
+/// 387-413`): the gate `PlayGame` runs *after* `IsValid`. Returns the `UI.*`
+/// rejection key when the world must not be entered (the caller surfaces it like
+/// `Main.statusText` — the port has no `menuMode == 1000000` page, ANALYSIS
+/// "World select (S1-H-10)"), else `None`. `active_is_creative` is
+/// `Main.ActivePlayerFileData.Player.difficulty == 3`; `world_game_mode` is the
+/// card's `GameMode`. The three arms are, in source order: an invalid mode
+/// (`:389-395`), a Journey player on a non-Journey world (`:396-404`) and a
+/// non-Journey player on a Journey world (`:405-411`).
+pub fn rejection_key(active_is_creative: bool, world_game_mode: u8) -> Option<&'static str> {
+    if !game_mode_is_valid(world_game_mode) {
+        return Some("UI.WorldCannotBeLoadedBecauseItHasAnInvalidGameMode"); // `:392`
+    }
+    let world_is_creative = world_game_mode == 3; // `flag2` (`:397`)
+    if active_is_creative && !world_is_creative {
+        return Some("UI.PlayerIsCreativeAndWorldIsNotCreative"); // `:401`
+    }
+    if !active_is_creative && world_is_creative {
+        return Some("UI.PlayerIsNotCreativeAndWorldIsCreative"); // `:408`
+    }
+    None
+}
+
 /// `AWorldListItem.GetDifficulty` (`AWorldListItem.cs:43-85`): the GameMode
 /// map with the `ForTheWorthy` bump ported for shape — the port stores no FTW
 /// flag, so the `num++` at `:63-66` is always `+0` and `num` 4
@@ -1134,6 +1164,47 @@ mod tests {
         assert!(joinable(0, 1));
         assert!(joinable(0, 2));
         assert!(joinable(1, 3) == false);
+    }
+
+    #[test]
+    fn rejection_key_ports_try_moving_to_rejection_menu_if_needed() {
+        use super::{game_mode_is_valid, rejection_key};
+        // `GameModeID.IsValid` (`GameModeID.cs:19-26`): 0..=3 valid, 4+ not.
+        for m in 0u8..4 {
+            assert!(game_mode_is_valid(m), "mode {m} is valid");
+        }
+        assert!(!game_mode_is_valid(4));
+        assert!(!game_mode_is_valid(255));
+        // `:389-395`: an invalid mode rejects before any Journey test.
+        assert_eq!(
+            rejection_key(false, 4),
+            Some("UI.WorldCannotBeLoadedBecauseItHasAnInvalidGameMode")
+        );
+        assert_eq!(
+            rejection_key(true, 255),
+            Some("UI.WorldCannotBeLoadedBecauseItHasAnInvalidGameMode")
+        );
+        // `:396-404`: a Journey player cannot enter a non-Journey world.
+        assert_eq!(
+            rejection_key(true, 0),
+            Some("UI.PlayerIsCreativeAndWorldIsNotCreative")
+        );
+        assert_eq!(
+            rejection_key(true, 2),
+            Some("UI.PlayerIsCreativeAndWorldIsNotCreative")
+        );
+        // `:405-411`: a non-Journey player cannot enter a Journey world.
+        assert_eq!(
+            rejection_key(false, 3),
+            Some("UI.PlayerIsNotCreativeAndWorldIsCreative")
+        );
+        // The agreeing pairs pass (`:412`): both Journey or both non-Journey.
+        assert_eq!(rejection_key(true, 3), None);
+        assert_eq!(rejection_key(false, 0), None);
+        // The surprising consequence (mirrors `joinable`): a Classic player
+        // enters Expert/Master, because only the Journey flag is compared.
+        assert_eq!(rejection_key(false, 1), None);
+        assert_eq!(rejection_key(false, 2), None);
     }
 
     #[test]
