@@ -36,6 +36,9 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     );
     let snow_tile_count = app.scene_metrics.snow_tile_count;
     let zone_rain = app.scene_metrics.zone_rain;
+    // The snow spawn cap scales with the gfx quality (S1-B-6,
+    // `Main.cs:13057`).
+    app.rain.gfx_quality = app.gfx_quality.quality;
     app.rain.update(
         &app.world,
         app.camera,

@@ -512,6 +512,10 @@ pub(crate) struct App {
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
     pub(crate) camera: Vec2,
+    /// The gfx-quality state (S1-B-6): `Main.gfxQuality`'s adaptive loop and
+    /// the per-update budgets it feeds (`Main.cs:953`/`:955`,
+    /// `:16960-17101`).
+    pub(crate) gfx_quality: world_sim::gfx_quality::GfxQuality,
     /// The C#'s draw-time camera state (`Main.cs:463`/`:477`/`:1097-1099`):
     /// the teleport lerp pair, the object-tracking pan and the vestigial
     /// `DebugCameraPan` accumulator. S1-B-4 moved the camera update to the
@@ -2908,6 +2912,7 @@ impl App {
             dev_place,
             camera: Vec2::ZERO,
             camera_state: Default::default(),
+            gfx_quality: Default::default(),
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
