@@ -12087,3 +12087,24 @@ semantics are S1-L-11c's row and the search box rides the keyboard work);
 counterpart (the mouse item never blocks the craft here); the
 `UsingOrReusingItem`/`IsStackingItems` gates of `flag3` (`Player.cs:23098`)
 are unmodelled item-use state.
+
+## The sliced block light chain (S1-G-9, 2026-11-13)
+
+`DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3516-3640`) is the port's
+`render/tiles.rs::push_sliced` — and the chain now matches the C# exactly:
+`Lighting.GetColor9Slice`'s 3×3 neighbourhood colours average with the
+tile's own light (`(slices[i] + vector) * 0.5`, `:3556-3559` — the port
+used to draw the raw neighbourhood slices, washing the big blocks out
+against vanilla), then `GetFinalLight`'s actuation arm
+(`TileDrawing.cs:4394-4396`, the ×0.4 ghost) applies per slice. The caller
+passes the tile's own light already ghosted (`drawData.tileLight` is
+`GetFinalLight`'s output at `:1019`) plus the actuation flag. The high/medium
+split (the 9-slice vs the 4-quad paths on `_highQualityLightingRequirement`/
+`_mediumQualityLightingRequirement`) rides the existing thresholds.
+
+Scope notes: the fullbright glow-paint slices (`:3551-3554`,
+`_glowPaintColorSlices`) and `GetFinalLight`'s shine arm
+(`ShouldTileShine` → `Main.shine`) have no port counterparts yet — both ride
+the paint work (S1-G-2's row). The A/B shot (a placed dirt block at the
+dusk, `TR_CAM=100,78` + `TR_PLACE`) shows the 10 576-px delta the average
+introduces; two identical runs are SHA-equal.
