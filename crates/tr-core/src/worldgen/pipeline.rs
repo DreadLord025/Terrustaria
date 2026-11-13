@@ -80,7 +80,7 @@ pub(crate) fn fnv1a64(name: &str) -> u64 {
 /// (`noise.rs`: "the output streams of both are part of the world contract");
 /// `Rng` construction draws nothing, so creating all three up front (vanilla
 /// creates its per-pass stream inside `RunPass`) shifts no draw.
-pub(crate) struct Streams {
+pub(crate) struct Streams<'a> {
     /// The world seed everything here derives from (`new`'s argument, kept so
     /// `pass_rng` stays seed-keyed).
     #[allow(dead_code)] // read only by `pass_rng` until Phase 3
@@ -94,15 +94,22 @@ pub(crate) struct Streams {
     /// The structures stream — shrines, chests, altars, pyramids, pots,
     /// hives, forts, temple, mini-biomes (`srng`).
     pub(crate) srng: Rng,
+    /// The chest-stocking hook (S1-A-4) — `None` on the plain `generate`
+    /// path (the tr-core tests), `Some` when the app stocks the world's
+    /// chests at generation time (`generate_with_chest_stock`). Each chest
+    /// placement site hands its event to it — the C#'s `AddBuriedChest`
+    /// inline roll.
+    pub(crate) chest_stock: Option<&'a mut super::chest_stock::ChestStockHook<'a>>,
 }
 
-impl Streams {
-    pub(crate) fn new(seed: u64) -> Streams {
+impl<'a> Streams<'a> {
+    pub(crate) fn new(seed: u64) -> Streams<'a> {
         Streams {
             seed,
             rng: Rng(seed ^ 0xA076_1D64_78BD_642F),
             drng: Rng(seed ^ 0x5DEE_CE66_D1A4_9B5F),
             srng: Rng(seed ^ 0x9E37_79B9_7F4A_7C15),
+            chest_stock: None,
         }
     }
 

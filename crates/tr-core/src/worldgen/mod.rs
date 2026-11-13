@@ -17,6 +17,7 @@
 
 mod biome_detail;
 mod biomes;
+pub mod chest_stock;
 pub mod dungeon;
 pub mod dungeon_features;
 mod caves;
@@ -123,6 +124,18 @@ pub(crate) const WALL_DIRT: u16 = 2;
 pub(crate) const WALL_SANDSTONE: u16 = 187;
 
 pub fn generate(opts: &GenOptions) -> World {
+    generate_with_chest_stock(opts, None)
+}
+
+/// The generation entry with the chest-stocking hook (S1-A-4): each chest
+/// placement site hands its [`chest_stock::ChestSiteEvent`] to the hook and
+/// writes the rolled rows into `World.chests`, so the world's loot is fixed
+/// at generation time — the C#'s `AddBuriedChest` shape. `generate` (no
+/// hook) leaves `World.chests` empty; `None` is the tr-core-tests path.
+pub fn generate_with_chest_stock<'a>(
+    opts: &GenOptions,
+    chest_stock: Option<&'a mut chest_stock::ChestStockHook<'a>>,
+) -> World {
     let width = opts.width.max(512);
     let height = opts.height.max(512);
     let mut world = World::new(opts.name.clone(), width, height);
@@ -142,6 +155,7 @@ pub fn generate(opts: &GenOptions) -> World {
     let noise = Noise { seed: opts.seed };
     let config = config::WorldGenConfig::parse();
     let mut streams = pipeline::Streams::new(opts.seed);
+    streams.chest_stock = chest_stock;
     pipeline::run(&mut world, &mut streams, opts, &noise, &config);
     world
 }
