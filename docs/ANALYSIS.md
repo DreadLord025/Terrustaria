@@ -4701,10 +4701,16 @@ filler kind is inert, but the id belongs to the lamp. The mechanics:
   gate's whole wire line, toggling every logic lamp on it, which is how gates
   chain downstream.
 - The faulty lamp (the poked lamp at `frameX == 36` — `flag6`) rolls the
-  output: `Main.rand.Next(num2) < num3` (`:812`). The port consumes its own
-  xorshift stream seeded per world (`Wiring::seed_faulty_rng`) — the C#'s
-  `Main.rand` sequence is not reproduced (the port-wide RNG deviation), but
-  the roll is deterministic per seed.
+  output: `Main.rand.Next(num2) < num3` (`:812`). The port draws the whole
+  wiring RNG from `tr-core/src/unified_random.rs::UnifiedRandom` — the exact C#
+  `Main.rand` generator — seeded once per world (`Wiring::seed_rand`, S1-L-6c),
+  so every wiring roll (the faulty lamp, the statue `Utils.SelectRandom` fills,
+  the cannon/firework variants and the trap spreads) matches the C# algorithm
+  for the same seed. Vanilla seeds `Main.rand` from the clock
+  (`Main.cs:6461-6463`), so its specific sequence is still not reproduced, and
+  the port-wide shared-stream *order* (one global `Main.rand` all consumers
+  interleave) remains unmodelled; the roll is deterministic per seed
+  (`the_wire_rolls_come_from_the_unified_random_stream`).
 - A gate with a lamp on its own tile flip-flops within one pass: the output
   flip re-trips the gate's wire, the flood re-toggles the stack lamp and the
   gate re-evaluates to the opposite — the verbatim C# outcome, covered by
@@ -4788,8 +4794,10 @@ Deviations:
   dedupe read the app's pools, so the engine emits the request with its roll
   results and the app gates the spawn. Consequence: a blocked spawn still
   consumes the engine's rolls (the C# evaluates its cap before its rolls) —
-  invisible outside the port's stand-in RNG stream, which is not byte-equal
-  to `Main.rand` anyway (ANALYSIS "Wiring engine (M7-WIRE-1)"). The cannon's
+  invisible outside the port's RNG stream, which is the exact `UnifiedRandom`
+  generator but seeded deterministically per world rather than from the clock
+  and not interleaved with the other consumers' draws (ANALYSIS "Wiring engine
+  (M7-WIRE-1)", S1-L-6c). The cannon's
   static/per-tile cooldowns are assigned before the app-side gate, as in the
   C#, so a bunny-blocked shot still leaves them standing.
 - **The ceiling spiky ball's shared cap decision**: the C# evaluates the cap
