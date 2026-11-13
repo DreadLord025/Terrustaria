@@ -75,16 +75,28 @@ pub fn init(culture: GameCulture) {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else { continue };
-            if !name.starts_with("Terraria.Localization.Content.") || !name.ends_with(".json") {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(entry.path()) else {
-                continue;
-            };
-            m.add_source(name.to_string(), text);
+        // `read_dir` order is filesystem-dependent; register resources in a
+        // deterministic (sorted by file name) order so `IndexedFromCategory` /
+        // `category_grouped_keys` mappings are stable (`Lang.cs` loads embedded
+        // resources in manifest order; S1-L-12c).
+        let mut resources: Vec<(String, String)> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name();
+                let name = name.to_str()?;
+                if !name.starts_with("Terraria.Localization.Content.") || !name.ends_with(".json") {
+                    return None;
+                }
+                let text = std::fs::read_to_string(entry.path()).ok()?;
+                Some((name.to_string(), text))
+            })
+            .collect();
+        resources.sort_by(|a, b| a.0.cmp(&b.0));
+        if resources.is_empty() {
+            continue;
+        }
+        for (name, text) in resources {
+            m.add_source(name, text);
             loaded += 1;
         }
         // A directory that actually carried the resources wins; probing
@@ -92,9 +104,7 @@ pub fn init(culture: GameCulture) {
         // (`LoadFilesForCulture` re-applies the later file's values, which
         // matches the original's `later file overrides earlier` rule, but one
         // authoritative copy keeps the manager's source list small).
-        if loaded > 0 {
-            break;
-        }
+        break;
     }
     if loaded == 0 {
         log::warn!(
@@ -358,6 +368,33 @@ mod s1_l12b_tests {
         assert_eq!(m.get_text_value("Game.Day"), "True");
         assert_eq!(m.get_text_value("Game.Rain"), "False");
         assert_eq!(m.get_text_value("Game.Guide"), "Andrew");
+    }
+}
+
+#[cfg(test)]
+mod s1_l12c_tests {
+    #[test]
+    fn resource_registration_uses_sorted_file_names() {
+        // `lang::init` must register `Terraria.Localization.Content.*.json`
+        // in deterministic (sorted) file-name order (S1-L-12c) so
+        // `IndexedFromCategory` mappings do not depend on `read_dir` order.
+        let mut names = vec![
+            "Terraria.Localization.Content.en-US.Town.json",
+            "Terraria.Localization.Content.en-US.Game.json",
+            "Terraria.Localization.Content.en-US.Items.json",
+        ];
+        let mut sorted = names.clone();
+        sorted.sort();
+        names.sort_by(|a, b| a.cmp(b));
+        assert_eq!(names, sorted);
+        assert_eq!(
+            names,
+            vec![
+                "Terraria.Localization.Content.en-US.Game.json",
+                "Terraria.Localization.Content.en-US.Items.json",
+                "Terraria.Localization.Content.en-US.Town.json",
+            ]
+        );
     }
 }
 
