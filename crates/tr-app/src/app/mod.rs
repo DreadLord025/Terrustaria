@@ -470,6 +470,15 @@ pub(crate) struct App {
     pub(crate) mouse_item: ItemSlot,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
+    /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
+    /// button's release edge, consumed per frame).
+    pub(crate) ui_right_release: bool,
+    /// `Main.buffAlpha[Player.maxBuffs]` (`Main.cs:668`-ish): the buff bar's
+    /// per-slot icon alpha (`Main.DrawBuffIcon`).
+    pub(crate) buff_alpha: [f32; crate::buffs::MAX_BUFFS],
+    /// The buff bar's right-click removal requests — the C# removes in the
+    /// draw pass (`Main.cs:43348`); the port drains them in the tick.
+    pub(crate) buff_removals: Vec<usize>,
     /// `UserInterface`'s pointer machine (`UserInterface.cs:53-91`, `:230-255`):
     /// the press/release → click/`DoubleClick` caches with the 500 ms window and
     /// the 200 ms state-change lockout. Fed by `app/loop.rs` (the front screens'
@@ -2879,6 +2888,9 @@ impl App {
             mouse_item: EMPTY_SLOT,
             ui_left_press: false,
             ui_right_press: false,
+            ui_right_release: false,
+            buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
+            buff_removals: Vec::new(),
             pointer: ui::pointer::PointerState::default(),
             pointer_ms: 0.0,
             pointer_event: None,
