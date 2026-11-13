@@ -123,11 +123,24 @@ pub struct World {
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
-    /// `Main.eclipse` — runtime event flag; no M1 event sets it (readers:
-    /// `AmbienceServer.cs:34`, `:66`). Runtime-only, not saved.
+    /// `Main.eclipse` — the hardmode event flag (readers: `AmbienceServer
+    /// .cs:34`, `:66`). Persisted in the flags block — the C# writes the
+    /// save-time snapshot `_tempEclipse` (`WorldFile.cs:1280`).
     pub eclipse: bool,
-    /// `Main.bloodMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
+    /// `Main.bloodMoon` (`AmbienceServer.cs:50`); persisted the same way
+    /// (`_tempBloodMoon`, `WorldFile.cs:1279`).
     pub blood_moon: bool,
+    /// `Main.raining` / `Main.rainTime` / `Main.maxRaining` — the rain
+    /// event's persisted state. The C#'s flag block writes the save-time
+    /// snapshot (`_tempRaining`/`_tempRainTime`/`_tempMaxRain`,
+    /// `WorldFile.cs:1312-1314`; `SetTempToOngoing` `:1058-1060` copies the
+    /// live values before the write) and `SetOngoingToTemps` (`:159-162`)
+    /// restores them on load — `Main.cloudAlpha` comes back as `maxRaining`.
+    /// The live state lives on the App's `Rain` (`tr-app/src/rain.rs`);
+    /// these are the file payload the save path syncs both ways (S1-J-7).
+    pub raining: bool,
+    pub rain_time: i32,
+    pub max_raining: f32,
     /// `CurrentFrameFlags.SleepingPlayersCount == ActivePlayersCount &&
     /// SleepingPlayersCount > 0` (`Main.cs:17856-17859` → `UpdateTimeRate`'s
     /// all-asleep flag, `Main.cs:6209`): every present player is fully asleep
@@ -256,7 +269,6 @@ pub struct World {
     /// `NPC.downedMoonlord` — the final boss beaten (halves the shield max).
     pub downed_moon_lord: bool,
     /// `NPC.downedAncientCultist` (`NPC.cs:79393`): the cultist beaten.
-
     pub downed_ancient_cultist: bool,
 
     /// `NPC.LunarApocalypseIsUp` (`NPC.cs:6419`) — the towers' apocalypse
@@ -267,7 +279,7 @@ pub struct World {
     /// (`StartImpendingDoom`'s writes, `Main.cs:64987`'s tick).
     pub moon_lord_countdown: i32,
     pub max_moon_lord_countdown: i32,
-        /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
+    /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
     pub tower_active_solar: bool,
     pub tower_active_vortex: bool,
     pub tower_active_nebula: bool,
@@ -465,6 +477,9 @@ impl World {
             extras: std::collections::HashMap::new(),
             eclipse: false,
             blood_moon: false,
+            raining: false,
+            rain_time: 0,
+            max_raining: 0.0,
             all_players_asleep: false,
             pumpkin_moon: false,
             snow_moon: false,

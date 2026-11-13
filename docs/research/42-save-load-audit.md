@@ -101,7 +101,7 @@ port's native `.trwld` (`save.rs`) вЂ” and the App picks one per file path.
 | `.map` (explored map) | PORTED (separate) | `saveglue.rs::App::save_map` (197) / `load_map` (210) | Outside the world/player formats; noted here because the C# writes it inside `Player.InternalSavePlayer`. |
 | Autosave cadence | PORTED | `saveglue.rs::save_world` (27-162), the `frame.rs` tick | The port's 600 s branch (`frame.rs`, `!gameMenu && autoSave`) is the single-player reduction of `Main.cs:19751-19765` (`(autoSave || netMode == 2)`, which nets to `autoSave` at `netMode == 0`), and `save_world` writes the world + player sidecar + map. The 300 s `saveToonWhilePlaying` branch (`Main.cs:19743-19749`) is gated `netMode == 1` (`:19739`) — **multiplayer client only**, unreachable in the single-player port (S1-J-6 refuted 2026-11-13); the menu arm (`:19767-19769`) only stops the timer. |
 | Cloud save path | MISSING | вЂ” | The C# writes `Main.CloudWorldPath` / `Main.CloudPlayerPath` through `FileUtilities.Write(..., useCloudSaving)` в†’ `SocialAPI.Cloud.Write` (`WorldFile.cs:940`, `Main.cs:4820-4870`). The port writes a local path only; cloud is Steam/Social = out of scope (module 38). |
-| Save-time "temp" snapshot | UNKNOWN | вЂ” | The C# snapshots day/time/weather into `_temp*` and restores it on load (`SetTempToOngoing` 1040-1066 / `SetOngoingToTemps` 152-179). The Rust flags writer emits the world's own values; the exact temp mechanism was not checked. |
+| Save-time "temp" snapshot | VERIFIED+PORTED (S1-J-7) | вЂ” | The C# snapshots day/time/weather into `_temp*` and restores it on load (`SetTempToOngoing` 1040-1066 / `SetOngoingToTemps` 152-179). The Rust flags writer emits the world's own values; the exact temp mechanism was not checked. |
 
 ### Section table (byte formats, C# vs Rust)
 
@@ -266,8 +266,9 @@ boundary (`App::swap_world`), so a background *parse* is possible but adds littl
    chosen by file extension at save time (`saveglue.rs:27-28`) вЂ” the vanilla's
    single `.wld` is split. Severity: **cosmetic/architectural**, but it doubles the
    save surface for Stage-2 (two compressors, two readers).
-8. The C#'s "temp" save snapshot (day/time/weather restored on load) is not
-   verified in the port вЂ” severity **UNKNOWN**.
+8. The C#'s "temp" save snapshot (day/time/weather restored on load) — CLOSED
+   by S1-J-7 (2026-11-13): the mechanism verified against the source and the rain
+   triple ported as the `.trwld` v14 block вЂ” severity **UNKNOWN**.
 
 ## Task seeds
 
