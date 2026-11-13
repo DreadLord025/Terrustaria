@@ -597,10 +597,10 @@ mod tests {
         // The roll from the same seeded stream, computed independently.
         let roll = {
             let mut probe = tr_core::wiring::Wiring::new();
-            probe.seed_faulty_rng(5);
+            probe.seed_rand(5);
             probe.rand_next(2)
         };
-        app.wiring.seed_faulty_rng(5);
+        app.wiring.seed_rand(5);
         trip_and_tick(&mut app);
         let picked = roll as usize;
         let other = 1 - picked;
