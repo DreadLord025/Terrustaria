@@ -315,11 +315,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             let boss_near = p.boss_hinders(&app.npcs);
             let invasion_live = app.world.invasion_size > 0;
             let danger_near = p.near_any_npcs_that_block_respawn(&app.npcs, invasion_live);
-            app.respawn_skip_available = p.allows_respawn_timer_skip(boss_near, danger_near);
+            // `Main.snowMoon || Main.pumpkinMoon || DD2Event.Ongoing`
+            // (`Player.cs:38984-38986`).
+            let moon_event_live = app.world.snow_moon
+                || app.world.pumpkin_moon
+                || app.world.dd2_event_ongoing;
+            app.respawn_skip_available =
+                p.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
                 respawn_now =
-                    p.update_dead(input.jump, boss_near, danger_near) || respawn_now;
+                    p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
+                        || respawn_now;
                 p.reset_projectile_caches();
                 p.update_projectile_caches(&app.projectiles);            });
             if respawn_now {
