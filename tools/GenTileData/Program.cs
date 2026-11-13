@@ -108,6 +108,10 @@ string[] boolArrays =
     "tileSolid", "tileSolidTop", "tileBrick", "tileStone", "tileRope",
     "tilePile", "tileMoss", "tileBlendAll", "tileMergeDirt",
     "tileBlockLight", "tileNoSunLight", "tileLighted",
+    // The liquid-reaction gate (`Liquid.LiquidCheck` :1249/:1314 reads
+    // `Main.tileObsidianKill`, which Main.cs:8265-8269 copies from
+    // `tileLavaDeath` before the explicit overrides).
+    "tileLavaDeath",
 ];
 var mainBools = boolArrays.ToDictionary(n => n, _ => new bool[TileCount]);
 var largeFrames = new byte[TileCount];
@@ -124,7 +128,7 @@ foreach (Match m in Regex.Matches(mainSrc,
 
 var wallLargeFrames = new byte[WallCount];
 foreach (Match m in Regex.Matches(mainSrc,
-             @"^\s*(?:Main\.)?(tileSolid|tileSolidTop|tileBrick|tileStone|tileRope|tilePile|tileMoss|tileBlendAll|tileMergeDirt|tileBlockLight|tileNoSunLight|tileLighted|tileLargeFrames|wallLargeFrames)\[(\d+)\]\s*=\s*(true|false|\d+)\s*;",
+             @"^\s*(?:Main\.)?(tileSolid|tileSolidTop|tileBrick|tileStone|tileRope|tilePile|tileMoss|tileBlendAll|tileMergeDirt|tileBlockLight|tileNoSunLight|tileLighted|tileLavaDeath|tileLargeFrames|wallLargeFrames)\[(\d+)\]\s*=\s*(true|false|\d+)\s*;",
              RegexOptions.Multiline))
 {
     var arr = m.Groups[1].Value;
@@ -468,6 +472,28 @@ foreach (var name in boolArrays)
     EmitSet(sbSets, ToRustName(name), Enumerable.Range(0, TileCount).Where(i => mainBools[name][i]));
 EmitSet(sbSets, "MERGES_WITH_ALL", Enumerable.Range(0, TileCount).Where(i => mergesWithAll[i]));
 
+// `Main.tileObsidianKill` (`Main.cs:8265-8295` + the echo-furniture helper
+// :8404-8408 + the :9708 write) — the liquid-merge gate's table. The C#
+// copies `tileLavaDeath` into it (:8265-8269), then applies the explicit
+// writes in file order (the bed's `tileObsidianKill[88] = false` overrides
+// its `tileLavaDeath[88] = true`), then `AddEchoFurnitureTile`'s call list
+// (:8412-8420) marks the echo set.
+var obsidianKill = (bool[])mainBools["tileLavaDeath"].Clone();
+foreach (Match m in Regex.Matches(mainSrc,
+             @"^\s*(?:Main\.)?tileObsidianKill\[(\d+)\]\s*=\s*(true|false)\s*;",
+             RegexOptions.Multiline))
+{
+    obsidianKill[int.Parse(m.Groups[1].Value)] = m.Groups[2].Value == "true";
+}
+foreach (Match m in Regex.Matches(mainSrc,
+             @"^\s*Main\.AddEchoFurnitureTile\((\d+)\)\s*;",
+             RegexOptions.Multiline))
+{
+    obsidianKill[int.Parse(m.Groups[1].Value)] = true;
+}
+EmitSet(sbSets, "TILE_OBSIDIAN_KILL", Enumerable.Range(0, TileCount).Where(i => obsidianKill[i]));
+// `tileLavaDeath` itself rides the `boolArrays` loop above.
+
 // TileID.Sets arrays used by framing.
 string[] wantedSets =
 [
@@ -475,6 +501,8 @@ string[] wantedSets =
     "MergesWithClouds", "ForcedDirtMerging", "NeedsGrassFraming",
     "OreMergesWithMud", "tileMossBrick", "Platforms", "IsVine", "Falling", "Torches",
     "MergesWithDirtInASpecialWay", "CrackedBricks", "AllowLightInWater",
+    // The liquid-reaction container gate (`Liquid.cs:1304`, `TileID.cs:617`).
+    "IsAContainer",
     // The grappling hooks' latch predicate (`Projectile.cs:52868-52879`): the
     // Squirrel Hook (865) also latches the tree trunks and the cactus (323).
     "IsATreeTrunk",

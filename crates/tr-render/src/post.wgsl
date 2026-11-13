@@ -137,6 +137,10 @@ fn pass_storm(scene: vec4<f32>, noise: f32) -> vec4<f32> {
 // translated — amplitudes and scroll rates are visual approximations (plan A2).
 const HEAT_AMPLITUDE_PX: f32 = 1.5;
 const WATER_AMPLITUDE_PX: f32 = 2.0;
+// S1-G-6: the Moon Lord ritual shake's displacement scale. The compiled
+// `FilterMoonLordShake` HLSL is not translated (the phase-4 rule) — the
+// amplitude is the port's, the intensity is the source's.
+const MOON_LORD_AMPLITUDE_PX: f32 = 6.0;
 
 // Pass 8: FilterHeatDistortion — the whole view shimmers. Two decorrelated
 // reads of the noise image (scrolling upward with uTime) give a 2-D offset
@@ -171,6 +175,26 @@ fn water_uv(uv: vec2<f32>) -> vec2<f32> {
     return uv + off_px / params.screen_resolution * ceil(m);
 }
 
+// Pass 10: FilterMoonLordShake — the Moon Lord ritual's screen shake
+// (S1-G-6). The compiled `FilterMoonLordShake` HLSL is not translated (the
+// phase-4 rule): the port's approximation is the phase-4 distortion shape —
+// two decorrelated noise lookups displace the whole view, scaled by
+// `uIntensity` (the `Main.cs:64977-64979` countdown formula the tick driver
+// feeds). The vanilla pass also reads `uTargetPosition` (the shake anchor);
+// the port passes Zero — the exact `UpdateMoonLordIndex` value while the
+// filter is active, because no Moon Lord exists before the countdown lands.
+fn moon_lord_uv(uv: vec2<f32>) -> vec2<f32> {
+    let p = world_px(uv) / params.image_size * 8.0;
+    let t = params.time * 10.0;
+    let nx = textureSampleLevel(noise_tex, noise_sampler, p + vec2<f32>(t, 0.0), 0.0).r;
+    let ny = textureSampleLevel(
+        noise_tex, noise_sampler, p.yx + vec2<f32>(0.5, t * 0.9), 0.0,
+    ).r;
+    let off_px = (vec2<f32>(nx, ny) - 0.5) * 2.0 * MOON_LORD_AMPLITUDE_PX
+        * params.intensity * clamp(params.opacity, 0.0, 1.0);
+    return uv + off_px / params.screen_resolution;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Passes 0-7 sample the scene at `in.uv` exactly (byte-identical to the
@@ -182,6 +206,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         }
         case 9u: {
             scene_uv = water_uv(in.uv);
+        }
+        case 10u: {
+            scene_uv = moon_lord_uv(in.uv);
         }
         default: {}
     }

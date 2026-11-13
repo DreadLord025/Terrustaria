@@ -11786,3 +11786,42 @@ Scope notes, none of which change the ported numbers:
 - The upward velocity clamp (`-(MAX_FALL/3)` in liquid) is pre-existing
   port structure, untouched — the C# plain arm (gravDir 1) caps only the
   descent; the swim-ascent verification belongs to the S9 seed.
+
+## The liquid reactions (R-11-5, 2026-11-13)
+
+`Liquid.LiquidCheck` + `GetLiquidMergeTypes` + `CreateLiquidMergeTile` +
+`LiquidOverwriteStrip` (`Liquid.cs:1225-1468`) are ported 1:1 into
+`crates/tr-core/src/liquid.rs`, and `Liquid.Update`'s reaction block
+(`:475-560`) rides every tile update: a lava cell checks itself first, every
+other cell wakes its lava neighbours and falls through the honey/shimmer
+arms. The reactions run EVERY tick — the per-entry `delay` field
+(`Liquid.cs:63`) gates only the flow (lava 1-in-6, honey 1-in-11,
+`:484-490`/`:513-522`), and `quickFall` bypasses it (`:1086-1089`). The
+merge tables are generated: `TILE_OBSIDIAN_KILL` = the `tileLavaDeath` copy
+(`Main.cs:8265-8269`) ∪ the explicit writes (the bed's `[88] = false`
+overrides its lava-death) ∪ the `AddEchoFurnitureTile` set, and
+`SET_IS_A_CONTAINER` = `{21, 467, 88}` (`TileID.cs:617`) — both via
+`tools/GenTileData`.
+
+Documented deviations, none reachable from the ported runtime surface:
+
+- **`WorldGen.ReplaceTile` is unported** (`:1362`): the TileObjectData-anchor
+  chain (`WouldTileReplacementWork`/`IsTileReplaceable`/`MoveReplaceTileAnchor`,
+  `WorldGen.cs:62328-62740`) is its own surface. The port always takes the
+  C#'s own fallback — `KillTile` + `PlaceTile(mute: true, forced: true)`
+  (`:1363-1364`) — which is byte-identical for the dominant inactive-cell
+  case and differs only in dust/sound amounts and the kill cascade's
+  neighbour effects when the target cell holds an active
+  `tileObsidianKill` tile (drops happen in both arms).
+- **The `tileSolid[546]` swap** (`:1360-1368`) guards the unported
+  `ReplaceTile` path; the forced placement consults no solidity, so the
+  swap has no port effect. The pass-scoped `tilesIgnoreWater`/Bubble-379
+  toggles are a separate recorded task (ROADMAP S1-L-14).
+- **`PlayLiquidChangeSound`** (`:1346`, the `TileChangeType` consumers) and
+  the MP tile-square messages have no port consumer; `TileChangeType` +
+  `GetLiquidChangeType` (`WorldGen.cs:4656-4684`) are ported and pinned so
+  the sound (R-32-8) and net tasks can consume them.
+- **The generation branches are dead** until R-12-5 runs the settlement
+  during worldgen: `LiquidSystem` carries `generating`/`remix_world_gen`
+  (both `false` — the exact runtime state) and
+  `createMergeTilesDuringGen` rides the `WorldGen.cs:22480` caller.
