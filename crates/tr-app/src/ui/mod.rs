@@ -687,11 +687,32 @@ pub fn draw_hud(
     // `Player.hideVisibleAccessory` — the accessory visible/hidden ticks beside
     // the accessory column (`Main.cs:41425-41460`).
     hide_visible_accessory: &[bool; 10],
+    // The buff bar (`Main.DrawInterface_Resources_Buffs`, `Main.cs:43203`):
+    // the per-slot alpha (`Main.buffAlpha`), the right-release edge
+    // (`Main.mouseRightRelease`) and the removal requests — the C# removes
+    // in the draw pass, the port drains them in the tick. `vampireSeed`
+    // gates the sub-10 duration hides (`Main.cs:43298`).
+    buff_alpha: &mut [f32; crate::buffs::MAX_BUFFS],
+    buff_removals: &mut Vec<usize>,
+    right_release: bool,
+    vampire_seed: bool,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
     // hotbar (30).
     resources::draw(r, lookups, screen, player, camera, zoom, pulse);
+    if let Some(p) = player {
+        resources::draw_buffs(
+            r,
+            lookups,
+            p,
+            buff_alpha,
+            mouse_pos,
+            right_release,
+            buff_removals,
+            vampire_seed,
+        );
+    }
 
     // `ItemSlot.Draw` / `Main.DrawInventory`: with the inventory open the hotbar is
     // row 0 of a 10x5 grid of 56 px cells at (20,20) at `inventoryScale = 0.85`

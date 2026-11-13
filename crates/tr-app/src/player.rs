@@ -2206,6 +2206,27 @@ impl Player {
         self.respawn();
     }
 
+    /// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
+    /// right-click removal — non-debuffs only, and not Petrified 60 /
+    /// Webbed 151; the mount's own buff dismounts instead of removing the
+    /// buff (`Mount.CheckBuff`, `Mount.cs` — `data.buff == b`). The
+    /// `TryRemovingBuff_CheckBuffHideMisc` arms (`:43391-43402`) ride the
+    /// misc-equips pets (unported). Returns whether the arm entered (the
+    /// caller plays `SoundEngine.PlaySound(12)`'s MenuTick cue).
+    pub fn try_removing_buff(&mut self, i: usize, b: i32) -> bool {
+        if !crate::buffs::is_debuff(b) && b != 60 && b != 151 {
+            if self.mount.is_active() && self.mount.data().map(|d| d.buff) == Some(b) {
+                if let Some(buff) = self.mount.dismount() {
+                    self.clear_buff_type(buff);
+                }
+            } else {
+                self.buffs.del_buff(i);
+            }
+            return true;
+        }
+        false
+    }
+
     /// `Player.ResetProjectileCaches` (`Player.cs:12217-12226`): the recount
     /// input zeroed — called from the `ResetEffects` seam (`:18810`) and the
     /// dead path (`:24752`).
@@ -7387,6 +7408,35 @@ mod tests {
         assert!(!p.immune, "the countdown cleared the flag");
         assert!(!p.immune_no_blink);
         assert!(p.hurt(50, 0.0), "the damage lands after the i-frames");
+    }
+
+    #[test]
+    fn buff_removal_refuses_debuffs_and_dels_the_rest() {
+        // `Main.cs:43370-43389`: the non-debuff arm dels the slot; a debuff
+        // (or 60/151) refuses.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(5, 3600); // Ironskin — a non-debuff
+        p.buffs.add_buff(20, 3600); // Poisoned — a debuff
+        let poison = p.buffs.find_buff_index(20).unwrap();
+        let iron = p.buffs.find_buff_index(5).unwrap();
+        assert!(!p.try_removing_buff(poison, 20), "a debuff refuses");
+        assert!(p.try_removing_buff(iron, 5), "the non-debuff removes");
+        assert_eq!(p.buffs.find_buff_index(5), None);
+    }
+
+    #[test]
+    fn buff_removal_dismounts_the_mount_buff_without_del() {
+        // `Main.cs:43376-43380`: the mount's own buff (`Mount.CheckBuff` =
+        // `data.buff == b`) dismounts and clears the buff — no `DelBuff`.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.mount_cart();
+        let mount_buff = p.mount.data().unwrap().buff;
+        p.buffs.add_buff(mount_buff, 3600);
+        let slot = p.buffs.find_buff_index(mount_buff).unwrap();
+        assert!(p.try_removing_buff(slot, mount_buff), "the arm entered");
+        assert!(!p.mount.is_active(), "the mount dismounted");
     }
 
     #[test]
