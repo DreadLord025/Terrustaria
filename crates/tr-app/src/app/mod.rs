@@ -556,6 +556,23 @@ pub(crate) struct App {
     /// a `swap_world` builds carries the same reset. The Phase-2 stepper's
     /// `StartUpdateCount` pin and the HUD overlay read it.
     pub(crate) game_update_count: u32,
+    /// `Terraria.Testing.WorldUpdateStepper` (`WorldUpdateStepper.cs:7-58`)
+    /// — the testing step-frame state; see [`crate::world_stepper`]. The
+    /// `pauseworld` toggle, the End/NumpadAdd/XButton1 pacing and the
+    /// `Updates Since Paused` overlay pin live here; the gate site is
+    /// `app/frame.rs`'s `step_allowed` (`Main.cs:17278`).
+    pub(crate) stepper: crate::world_stepper::WorldUpdateStepper,
+    /// The step keys' this-frame reading
+    /// (`WorldUpdateStepper.GetStepKeyState`'s `down`, `:39-43`): pinned at
+    /// the frame head where the events have landed, consumed by the
+    /// `Main.cs:17278` gate.
+    pub(crate) step_input_down: bool,
+    /// The step keys' previous-frame reading (the `wasDown` half, `:42`).
+    /// Shifted from [`App::step_input_down`] every frame — the
+    /// `Main.oldKeyState = Main.keyState` snapshot's analog
+    /// (`Main.cs:18381-18382`, the region the port already runs at the frame
+    /// head through [`App::update_view_zoom_keys`]).
+    pub(crate) step_input_was: bool,
     pub(crate) mouse_down: bool,
     pub(crate) last_mouse: Vec2,
     pub(crate) last_frame: Instant,
@@ -3018,6 +3035,9 @@ impl App {
             window_focused: true,
             mouse_back_held: false,
             game_update_count: 65536,
+            stepper: crate::world_stepper::WorldUpdateStepper::new(),
+            step_input_down: false,
+            step_input_was: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
             last_frame: Instant::now(),

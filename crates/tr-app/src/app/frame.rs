@@ -27,7 +27,7 @@ use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
 use crate::render::tiles::draw_tiles;
 use crate::sound;
 use crate::ui;
-use crate::ui::text::{hud_text, hud_text_width};
+use crate::ui::text::{border_string, hud_text, hud_text_width};
 use crate::world_sim::clock::advance_time_with_events;
 
 impl App {
@@ -110,6 +110,19 @@ impl App {
         self.frame_count += 1;
         // Main.cs:16801-16815,18376 — view zoom keys (S1-B-5).
         self.update_view_zoom_keys();
+        // S1-B-3 — the step keys' snapshot pair (`WorldUpdateStepper.cs:39-43`):
+        // `down` reads live (the frame's events have landed), then the
+        // previous-frame pin shifts — the `Main.oldKeyState = Main.keyState`
+        // analog (`Main.cs:18381-18382`, the same per-Update region the port
+        // already runs unconditionally at the frame head). Every frame shifts
+        // it — menus, pauses included — exactly like the C# snapshot.
+        self.step_input_was = std::mem::replace(
+            &mut self.step_input_down,
+            crate::world_stepper::WorldUpdateStepper::get_step_key_state(
+                &self.keys,
+                self.mouse_back_held,
+            ),
+        );
         self.anim_time += dt;
         // `UserInterface.Update`'s lockout countdown
         // (`UserInterface.cs:203-204`): the pointer machine's 200 ms
@@ -366,13 +379,20 @@ impl App {
             self.game_paused = paused;
             // `DoUpdateInWorld`'s gate (`Main.cs:17278`,
             // `ShouldUpdateEntities() && WorldUpdateStepper.ShouldUpdateWorld()`
-            // — the stepper half is Phase 2). The block below is the C#'s
-            // `DoUpdateInWorld_Inner` body: the 13 streams and the WorldGen
-            // tail, with `_gameUpdateCount++` at its head (`:17746`) — one
-            // increment per *executed* world step.
-            let step_allowed = !paused && self.should_update_entities();
+            // — the stepper half is Phase 2's `world_stepper.rs`, fed the
+            // frame-head snapshot pair). The short-circuit `!paused` mirrors
+            // the C#'s early `return` (`:17197-17199`): a paused frame never
+            // reaches the gate, so the pacing count freezes with it.
+            let step_allowed = !paused
+                && self.should_update_entities()
+                && self
+                    .stepper
+                    .should_update_world(self.step_input_down, self.step_input_was);
             if step_allowed {
                 self.game_update_count = self.game_update_count.wrapping_add(1);
+                // `WorldUpdateStepper.DrawnThisUpdate = false` at the step
+                // head (`Main.cs:17747`, right after `_gameUpdateCount++`).
+                self.stepper.drawn_this_update = false;
                 // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
                 // pass. The sleeping counts it exports (`:17844-17859`) gate the
                 // clock's rate, so they land right after it.
@@ -591,12 +611,11 @@ impl App {
                 crate::world_sim::weather::update_world_tick(self, dt);
                 self.phase("rain");
                 self.update_rain(dt, screen);
-                // M1.4-BG-18 phase 3: `Main.UpdateSceneMetrics` + `Main.SceneState.
-                // Update` (`Main.cs:62560,17816`) — the scan, the fades and the
-                // `ApplyVisuals` driver; the post branch consumes
-                // `filter_driver.output`.
-                self.phase("scene_state");
-                crate::world_sim::scene_scan::update_scene(self, dt, screen);
+                // S1-B-3 Phase 2 (decision #5): `scene_state` moved out of
+                // this pause-gated block — `Main.SceneState.Update` sits in
+                // `DoUpdateInWorld_Inner`'s step-gated tail (`Main.cs:17816`),
+                // so a stepper-blocked frame freezes it too. It now runs in
+                // the `step_allowed` tail below, after the camera walks.
             }
             // The SceneState blizzard loops' sound emitter rides inside
             // `update_scene` (`scene_scan.rs`'s `SceneState::update` call —
@@ -676,7 +695,28 @@ impl App {
                 crate::world_sim::camera::update_camera_pan(self, &mut camera_state);
                 crate::world_sim::camera::update_camera_lerp(self, &mut camera_state);
                 self.camera_state = camera_state;
+                // S1-B-3 Phase 2 (decision #5): `Main.SceneState.Update` rides
+                // the same gated tail — `DoUpdateInWorld_Inner`'s order is
+                // `UpdateCameraPan`, `UpdateCameraLerp`, `SceneState.Update`
+                // (`Main.cs:17814-17816`), so the fades freeze with the world
+                // step. M1.4-BG-18 phase 3: the fused
+                // `Main.UpdateSceneMetrics` + `Main.SceneState.Update` — the
+                // scan, the fades and the `ApplyVisuals` driver; the post
+                // branch consumes `filter_driver.output`.
+                self.phase("scene_state");
+                crate::world_sim::scene_scan::update_scene(self, dt, screen);
             }
+        }
+        // S1-B-3 — `WorldUpdateStepper.DrawnThisUpdate = true`
+        // (`Main.cs:62478`, Draw's stack-split block `:62470-62477`). The
+        // fused frame orders the two flag sites as the C#'s Update→Draw
+        // sequence does: a step head resets it (`:17747`), then the draw half
+        // marks the frame — so a stepping frame still ends `true`, the C#'s
+        // post-Draw state. Runs on every in-world frame (Draw-side: a
+        // focus-paused frame draws too); menu/front frames never reach it
+        // (the C# block sits in the in-game Draw branch).
+        if self.menu.is_none() && self.front.is_none() {
+            self.stepper.drawn_this_update = true;
         }
         // `TR_NET_EDIT=tx,ty`: one client edit request, used to verify the round trip.
         if self.is_client() && self.frame_count == 90 {
@@ -1793,6 +1833,26 @@ impl App {
                         &self.debug_panel,
                         npcs,
                         world,
+                        self.stepper.paused,
+                    );
+                }
+
+                // `WorldUpdateStepper.DrawHUD` (`Main.cs:62409`, the
+                // UIScale batch after DrawFPS; `WorldUpdateStepper.cs:51-57`):
+                // the `Updates Since Paused` border string, bottom-right at
+                // `ScreenSize - (5, 22)` with anchorx 1 — the right edge sits
+                // at `screen.x - 5`. The guard is the stepper's own `Paused`
+                // (`:53-54`), so it draws while stepper-paused regardless of
+                // `game_paused`; `Color.White` at scale 1.
+                if let Some(text) = self.stepper.hud_text(self.game_update_count) {
+                    let w = hud_text_width(renderer, lookups, &text, 1.0);
+                    border_string(
+                        renderer,
+                        lookups,
+                        screen.x - 5.0 - w,
+                        screen.y - 22.0,
+                        [1.0, 1.0, 1.0, 1.0],
+                        &text,
                     );
                 }
 
@@ -2021,12 +2081,15 @@ mod tests {
         "waterfalls",
         "weather",
         "rain",
-        "scene_state",
         "windy_day",
         "ambience",
         "editing",
         "net",
         "map",
+        // S1-B-3 Phase 2 (decision #5): `SceneState.Update` sits in
+        // `DoUpdateInWorld_Inner`'s step-gated tail (`Main.cs:17816`), after
+        // the camera walks — it stepped from the post-rain slot down here.
+        "scene_state",
     ];
 
     /// An in-world headless `App`: the flow fixture plus a spawned player, so
@@ -2428,6 +2491,205 @@ mod tests {
         assert_eq!(
             fresh.game_update_count, 65536,
             "ResetGameCounter's initial value (Main.cs:6444)"
+        );
+    }
+
+    /// The Phase-2 stepper tests' fixture: the in-world app with a slime on a
+    /// ground world — the DW-1.2 shape, minus the water/rain instruments the
+    /// pacing doesn't read. The liquid sim is rebuilt for the swapped world's
+    /// dimensions like DW-1.2 does.
+    fn stepper_app() -> App {
+        let mut app = in_world_app();
+        let mut w = tr_core::World::new("t".into(), 220, 220);
+        for x in 0..220 {
+            for y in 120..220 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app.npcs = vec![crate::npc::Npc::spawn_slime(&app.world, 20).expect("the slime spawns")];
+        app.liquids = tr_core::liquid::LiquidSystem::new(&app.world);
+        app
+    }
+
+    /// One frame at ~1/60 s (a single world step's dt), the pacing tests'
+    /// driver.
+    fn step_one_frame(app: &mut App) {
+        app.last_frame = std::time::Instant::now() - std::time::Duration::from_millis(17);
+        app.frame();
+    }
+
+    /// DW-2.3 — the stepper-paused world steps exactly once per allowed
+    /// frame: held frames 1-11 advance nothing (counter and clock static),
+    /// the 12th held frame advances the counter by exactly one and ticks the
+    /// clock, held 13 nothing, held 14 exactly one more — the `Main.cs:17278`
+    /// gate wraps the whole `DoUpdateInWorld` body, one counter increment per
+    /// executed step (`:17746`).
+    #[test]
+    fn s1_b_3_stepper_paused_world_steps_once_per_allowed_frame() {
+        let mut app = stepper_app();
+        // `pauseworld` — the stepper's own pause, not the in-game gate.
+        app.stepper.toggle_paused(app.game_update_count);
+        app.keys.insert(KeyCode::End);
+        let count0 = app.game_update_count;
+        let time0 = app.world.time;
+        for held in 1..=11 {
+            step_one_frame(&mut app);
+            assert_eq!(
+                app.game_update_count, count0,
+                "held frame {held} steps nothing"
+            );
+            assert_eq!(
+                app.world.time, time0,
+                "the frozen world clock ticks nothing on held frame {held}"
+            );
+        }
+        step_one_frame(&mut app);
+        assert_eq!(
+            app.game_update_count,
+            count0 + 1,
+            "the 12th held frame steps exactly once"
+        );
+        assert!(
+            app.world.time > time0,
+            "the stepped world ticked the clock"
+        );
+        step_one_frame(&mut app);
+        assert_eq!(
+            app.game_update_count, count0 + 1,
+            "held frame 13 (odd) steps nothing"
+        );
+        step_one_frame(&mut app);
+        assert_eq!(
+            app.game_update_count,
+            count0 + 2,
+            "held frame 14 (even) steps exactly one more"
+        );
+    }
+
+    /// DW-2.3 — `DrawnThisUpdate` (`WorldUpdateStepper.cs:9`): the draw half
+    /// marks every in-world frame (`Main.cs:62478`) — blocked, paused and
+    /// stepping frames alike end the frame marked, because the fused frame
+    /// keeps the C#'s Update→Draw order (a step head resets at `:17747`, the
+    /// draw half's set follows it). A stepping frame ending unmarked would
+    /// mean the set-site drifted ahead of the reset.
+    #[test]
+    fn s1_b_3_stepper_drawn_this_update_flips_per_step_and_draw() {
+        let mut app = stepper_app();
+        assert!(
+            !app.stepper.drawn_this_update,
+            "the constructor starts unmarked (the C# static's default)"
+        );
+        app.frame();
+        assert!(
+            app.stepper.drawn_this_update,
+            "an unpaused in-world frame ends marked"
+        );
+        // Stepper-paused blocked frames keep the mark (no reset runs, the
+        // draw half still marks).
+        app.stepper.toggle_paused(app.game_update_count);
+        app.keys.insert(KeyCode::End);
+        for held in 1..=11 {
+            step_one_frame(&mut app);
+            assert!(
+                app.stepper.drawn_this_update,
+                "blocked frame {held} keeps the draw mark"
+            );
+        }
+        // The stepping frame: the step head reset (`:17747`) runs, then the
+        // draw half marks — the end value is `true`, the C#'s post-Draw state.
+        step_one_frame(&mut app);
+        assert!(
+            app.stepper.drawn_this_update,
+            "a stepping frame ends marked (the reset precedes the draw set)"
+        );
+        // The in-game pause (a different pause source) also keeps drawing —
+        // the overlay guard is the stepper's own `Paused`.
+        app.keys.remove(&KeyCode::End);
+        app.ingame_options.open = true;
+        app.frame();
+        assert!(
+            app.stepper.drawn_this_update,
+            "an in-game-paused frame still draws, still marked"
+        );
+    }
+
+    /// The plan's Phase-2 dirty check — `pauseworld` toggled mid-hold
+    /// re-pins the counter mid-pacing (`TogglePaused`'s unconditional
+    /// `StartUpdateCount` write, `WorldUpdateStepper.cs:45-49`) and the next
+    /// allowed frame still steps exactly once (the pacing count itself
+    /// freezes across the toggles — only `should_update_world` moves it).
+    #[test]
+    fn s1_b_3_stepper_pauseworld_mid_hold_repins_and_next_step_is_single() {
+        let mut app = stepper_app();
+        app.stepper.toggle_paused(app.game_update_count);
+        app.keys.insert(KeyCode::End);
+        for _ in 0..12 {
+            step_one_frame(&mut app);
+        }
+        assert_eq!(app.game_update_count, 65537, "held 12 stepped once");
+        // Toggle OFF then ON mid-hold — each write re-pins to the current
+        // count.
+        app.stepper.toggle_paused(app.game_update_count);
+        app.stepper.toggle_paused(app.game_update_count);
+        assert!(app.stepper.paused, "back to paused");
+        assert_eq!(
+            app.stepper.start_update_count, 65537,
+            "the mid-hold toggle re-pinned"
+        );
+        // Held 13 (odd) steps nothing; held 14 steps exactly once — the
+        // pacing count survived the toggles untouched.
+        step_one_frame(&mut app);
+        assert_eq!(app.game_update_count, 65537, "held 13 no step");
+        step_one_frame(&mut app);
+        assert_eq!(
+            app.game_update_count, 65538,
+            "held 14 steps exactly once after the mid-hold re-pin"
+        );
+        // The overlay diffs against the re-pin: exactly one update since.
+        assert_eq!(
+            app.stepper.hud_text(app.game_update_count).as_deref(),
+            Some("Updates Since Paused: 1")
+        );
+    }
+
+    /// Decision #5 resolved — `SceneState.Update` rides the step gate:
+    /// `Main.cs:17816` sits inside `DoUpdateInWorld_Inner`'s tail (after the
+    /// camera walks `:17814-17815`), so a stepper-blocked frame freezes it
+    /// while the pre-gate weather cluster stays live (decision #6 — the
+    /// C# `:17278` gate sits after that cluster). A stepping frame runs the
+    /// full pinned branch with `scene_state` at its tail.
+    #[test]
+    fn s1_b_3_scene_state_is_step_gated() {
+        let mut app = in_world_app();
+        app.stepper.toggle_paused(app.game_update_count);
+        app.frame();
+        let trace = phase_trace::take();
+        assert!(
+            !trace.contains(&"scene_state"),
+            "a stepper-blocked frame freezes SceneState.Update (Main.cs:17816)"
+        );
+        assert!(
+            trace.contains(&"weather") && trace.contains(&"rain"),
+            "the weather cluster stays live on stepper-blocked frames (decision #6)"
+        );
+        // The 12th held frame steps — the full branch, `scene_state` last.
+        app.keys.insert(KeyCode::End);
+        for _ in 1..=11 {
+            app.frame();
+            phase_trace::take();
+        }
+        app.frame();
+        assert_eq!(
+            phase_trace::take(),
+            WORLD_PHASES,
+            "the stepping frame runs the full pinned branch, scene_state at the tail"
         );
     }
 }
