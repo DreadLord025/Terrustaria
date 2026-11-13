@@ -111,6 +111,9 @@ crates/tr-core/src/worldgen/world_hash.rs|the_fnv_constants_are_frozen_by_a_fixe
 crates/tr-app/src/world_sim/weather.rs|fn the_world_tick_writes_any_player_120_life_into_wind|S1-L-2 - update_world_tick writes Wind.any_player_120_life (Main.cs:58863-58871) for the 0.35 cap
 crates/tr-app/src/rain.rs|Rain.MakeRain` (`Rain.cs:30-89`, S1-L-2)|S1-L-2 - MakeRain/NewRain spawn gates (ZoneRain/shimmer/atmo/snow/cloudAlpha budget)
 crates/tr-core/src/bestiary.rs|pub fn kills_to_banner_item|S1-F-15 - bestiary kill thresholds via KillsToBanner overrides (CommonEnemyUICollectionInfoProvider.cs:21-34, ItemID.cs:1303-1304)
+crates/tr-app/src/achievements.rs|fn try_grant_bestiary_100|S1-E-18p29 - bestiary 100% completion fires BOOK_WORM (AchievementsHelper.cs:81-84, Main.cs:65524-65546)
+crates/tr-app/src/world_sim/npcs.rs|fn update_npcs|S1-E-18p29 - NPC death pass checks bestiary completion for BOOK_WORM
+crates/tr-app/src/bestiary.rs|pub fn completion_percent|S1-E-18p29 - completion_percent denominator is port's roster (CommonEnemyUICollectionInfoProvider.cs:39-46)
 crates/tr-app/src/lang.rs|fn refresh_global_substitutions|S1-L-12b - 65 global substitutions producer refreshed from live app state (Lang.cs:100-167)
 crates/tr-app/src/lang.rs|fn global_substitutions_resolve_world_player_and_npc_tokens|S1-L-12b - key global substitution tokens resolve via LanguageManager
 crates/tr-app/src/lang.rs|fn init|S1-L-12c - deterministic sorted registration order for localization resource files (Lang.cs manifest-order parity)
@@ -133,3 +136,5 @@ crates/tr-app/src/player.rs|fn can_mount|S1-L-8 - Mount.CanMount's bat-wet rule 
 crates/tr-app/src/player.rs|fn s1_l_8_can_mount_applies_the_bat_and_grapple_sets|S1-L-8 - per-id activation gates: the bat refuses water/dripping/wet probe; carts + CanUseHooks keep a live grapple
 crates/tr-app/src/player.rs|fn s1_l_8_fishron_halves_run_stats_outside_the_special|S1-L-8 - Cute Fishron MountFishronSpecialCounter (60 hurt / 420 wet-or-rain) and the Player.cs:26655 halving
 crates/tr-app/src/mount.rs|fn is_cart|S1-L-8 - MountID.Sets.Cart (27 ids) and CanUseHooks ({54,57-60}) for Mount.CanMount's grapple gate
+crates/tr-app/src/spawner.rs|invaders_override_forces_the_raid_pacing|S1-F-12 - invaders spawn-rate override (NPC.cs:781-785): maxSpawns=11, spawnRate=20
+crates/tr-app/src/world_sim/npcs.rs|invaders|S1-F-12 - invasion spawn picks ride GetSpawnRate + nearby<maxSpawns + rng.next(spawnRate) gates

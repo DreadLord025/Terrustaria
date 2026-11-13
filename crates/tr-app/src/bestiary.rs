@@ -164,7 +164,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 22,
         kind: NpcKind::Guide,
         variant: None,
-        quick_unlock: true,
+        quick_unlock: false,
         name: "Guide",
     },
     BestiaryEntryDef {
@@ -497,7 +497,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 222,
         kind: NpcKind::QueenBee,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Queen Bee",
     },
     BestiaryEntryDef {
@@ -505,7 +505,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 35,
         kind: NpcKind::SkeletronHead,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Skeletron",
     },
     BestiaryEntryDef {
@@ -513,7 +513,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 113,
         kind: NpcKind::WallOfFlesh,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Wall of Flesh",
     },
     BestiaryEntryDef {
@@ -521,7 +521,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 134,
         kind: NpcKind::TheDestroyer,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "The Destroyer",
     },
     BestiaryEntryDef {
@@ -529,7 +529,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 127,
         kind: NpcKind::SkeletronPrime,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Skeletron Prime",
     },
     BestiaryEntryDef {
@@ -537,7 +537,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 125,
         kind: NpcKind::Retinazer,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Retinazer",
     },
     BestiaryEntryDef {
@@ -545,7 +545,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 126,
         kind: NpcKind::Spazmatism,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Spazmatism",
     },
     BestiaryEntryDef {
@@ -553,7 +553,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 262,
         kind: NpcKind::Plantera,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Plantera",
     },
     BestiaryEntryDef {
@@ -561,7 +561,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 266,
         kind: NpcKind::BrainOfCthulhu,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Brain of Cthulhu",
     },
     BestiaryEntryDef {
@@ -753,7 +753,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 395,
         kind: NpcKind::MartianSaucerCore,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Martian Saucer Core",
     },
     BestiaryEntryDef {
@@ -1016,13 +1016,10 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     },
     BestiaryEntryDef {
         credit_id: "AncientCultist",
-        net_id: 439, // `NPCID.CultistBoss` (439) — 422 is the Vortex PILLAR's
-        // id (`NPCID.LunarTowerVortex`); the entry carried the pillar's id
-        // until M4-NPC-3l. The port ships no NPC_439 sheet, so the draw
-        // stands on NPC_422's art (the documented stand-in).
+        net_id: 439,
         kind: NpcKind::AncientCultist,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Ancient Cultist",
     },
     BestiaryEntryDef {
@@ -1030,7 +1027,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 493,
         kind: NpcKind::StardustTower,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Stardust Pillar",
     },
     BestiaryEntryDef {
@@ -1038,7 +1035,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 507,
         kind: NpcKind::NebulaTower,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Nebula Pillar",
     },
     BestiaryEntryDef {
@@ -1046,17 +1043,15 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 517,
         kind: NpcKind::SolarTower,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Solar Pillar",
     },
     BestiaryEntryDef {
         credit_id: "VortexTower",
-        net_id: 422, // `NPCID.LunarTowerVortex` (422) — the fourth pillar of
-        // `WorldGen.TriggerLunarApocalypse`'s `{517, 422, 507, 493}` shuffle
-        // (`WorldGen.cs:86628`), missing from the port until M4-NPC-3l.
+        net_id: 422,
         kind: NpcKind::VortexTower,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Vortex Pillar",
     },
     BestiaryEntryDef {
@@ -1264,7 +1259,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 396,
         kind: NpcKind::MoonLordHead,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Moon Lord",
     },
     BestiaryEntryDef {
@@ -1272,7 +1267,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 397,
         kind: NpcKind::MoonLordHand,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Moon Lord's Hand",
     },
     BestiaryEntryDef {
@@ -1280,7 +1275,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 398,
         kind: NpcKind::MoonLordCore,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Moon Lord's Core",
     },
     BestiaryEntryDef {
@@ -1416,7 +1411,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,
         variant: None,
-        quick_unlock: false,
+        quick_unlock: true,
         name: "Eater of Worlds",
     },
 ];
