@@ -222,7 +222,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   `Main.cs:61999`) has **no located equivalent** — the port therefore renders a wider
   world view than vanilla on wide screens. Module 01/02 own the camera; flagged here
   because it is a *graphics-layer* contract.
-- **D-9 — Scissor clipping absent (behavioural + pixel, medium).** Vanilla scissors
+- **D-9 — Scissor clipping absent (behavioural + pixel, medium).** Vanilla scissors** **VERIFIED-DONE 2026-11-14 (S1-G-5):** the scissor landed with S1-H-2 (the `ClipStack` + the per-instance clip rect + the WGSL discard; the clipped UI rows = the lists and the achievements). The original text follows.
   UI lists (`Main.ScissorState`, `Main.cs:2329`; `Main.cs:40406-40414`,
   `25403-25424`). The port has no scissor (`char_creation.rs:1859`); clipped UI
   regions (inventory/scroll lists, `UIList.OverflowHidden`) bleed or are skipped.

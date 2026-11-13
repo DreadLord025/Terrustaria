@@ -192,7 +192,11 @@ pub fn apply_touch_damage(
     let mut loot = crate::world_sim::npcs::LootRng(rng);
     let dmg = tr_core::damage::damage_var(&mut loot, raw, -player.luck());
     let cx = player.x + width as f32 * 0.5;
-    player.hurt(dmg, cx)
+    // The same `LootRng` stream feeds the hurt's dodge rolls; `dodgeable`
+    // keeps `Hurt`'s default `true` — the hazard tiles pass no `dodgeable`
+    // override in the C# (`Player.cs:28982-29019`'s call chain), so a black
+    // belt eats spike damage (research S1-C-1 §1.4).
+    player.hurt(dmg, cx, &mut loot, true)
 }
 
 #[cfg(test)]
