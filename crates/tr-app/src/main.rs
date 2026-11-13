@@ -79,6 +79,7 @@ mod town_arrival;
 mod touch_damage;
 mod ui;
 mod world_sim;
+mod world_stepper;
 
 use std::path::PathBuf;
 

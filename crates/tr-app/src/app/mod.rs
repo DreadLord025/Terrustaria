@@ -562,6 +562,46 @@ pub(crate) struct App {
     /// `releaseMount` latch). An `App` field rather than a `static` so two
     /// headless apps in one test process cannot share it.
     pub(crate) mount_prev: bool,
+    /// `Main.gamePaused` (`Main.cs:645`): the world-sim freeze written by the
+    /// two pause sources — the focus arm (`Main.cs:17138`) and the in-game
+    /// gate's arm pair (`Main.cs:17197-17201`). Cleared on world load
+    /// (`Main.cs:19856` → [`App::enter_loaded_world`] / the fresh [`App::new`]
+    /// a `swap_world` builds). Read by the Phase-2 HUD overlay.
+    pub(crate) game_paused: bool,
+    /// `FocusHelper.IsSelectedApplication`'s core (`FocusHelper.cs:135-136` —
+    /// `Main.instance.IsActive`): the window's focus, fed by winit's
+    /// `WindowEvent::Focused` (`app/loop.rs`). Defaults to `true` so a headless
+    /// frame (no window events) plays like a focused one.
+    pub(crate) window_focused: bool,
+    /// `PlayerInput.MouseInfo.XButton1`'s held state (`WorldUpdateStepper.cs:48`
+    /// — the step key's mouse arm). Fed by winit's `MouseButton::Back`
+    /// (`app/loop.rs`); consumed by the Phase-2 stepper.
+    pub(crate) mouse_back_held: bool,
+    /// `Main.GameUpdateCount` (`Main.cs:857`/`:2772`) — one increment per
+    /// *executed* world step (`DoUpdateInWorld_Inner`'s head, `Main.cs:17746`),
+    /// not per drawn frame (that is [`App::frame_count`]). Initialised 65536 by
+    /// `ResetGameCounter` (`Main.cs:6442-6445`), whose `OnWorldLoad` hook
+    /// (`Main.cs:6605`) makes a world load reset it — the fresh [`App::new`]
+    /// a `swap_world` builds carries the same reset. The Phase-2 stepper's
+    /// `StartUpdateCount` pin and the HUD overlay read it.
+    pub(crate) game_update_count: u32,
+    /// `Terraria.Testing.WorldUpdateStepper` (`WorldUpdateStepper.cs:7-58`)
+    /// — the testing step-frame state; see [`crate::world_stepper`]. The
+    /// `pauseworld` toggle, the End/NumpadAdd/XButton1 pacing and the
+    /// `Updates Since Paused` overlay pin live here; the gate site is
+    /// `app/frame.rs`'s `step_allowed` (`Main.cs:17278`).
+    pub(crate) stepper: crate::world_stepper::WorldUpdateStepper,
+    /// The step keys' this-frame reading
+    /// (`WorldUpdateStepper.GetStepKeyState`'s `down`, `:39-43`): pinned at
+    /// the frame head where the events have landed, consumed by the
+    /// `Main.cs:17278` gate.
+    pub(crate) step_input_down: bool,
+    /// The step keys' previous-frame reading (the `wasDown` half, `:42`).
+    /// Shifted from [`App::step_input_down`] every frame — the
+    /// `Main.oldKeyState = Main.keyState` snapshot's analog
+    /// (`Main.cs:18381-18382`, the region the port already runs at the frame
+    /// head through [`App::update_view_zoom_keys`]).
+    pub(crate) step_input_was: bool,
     pub(crate) mouse_down: bool,
     pub(crate) last_mouse: Vec2,
     pub(crate) last_frame: Instant,
@@ -1415,6 +1455,85 @@ impl App {
         self.pointer.tick(f64::from(dt) * 1000.0);
     }
 
+    /// `Main.CanPauseGame` (`Main.cs:17315-17327`) — the in-game pause gate's
+    /// condition. netMode is always 0 in the port (single-player), so the C#'s
+    /// `if (netMode == 0)` wrapper is dropped and the body runs as written:
+    ///
+    /// - unconditional arms: the in-game options window (`ingameOptionsWindow`)
+    ///   and the `InGameUI` overlay states — the achievements menu ports to
+    ///   [`App::achievements_open`] (the controls-rebind half of the C#'s
+    ///   `CurrentState == ManageControlsMenu` has no port UI — deviation). The
+    ///   bestiary overlay is an `InGameUI` state but **not** one of the two
+    ///   named ones — it never pauses unconditionally (the review-pass
+    ///   correction; see the code comment);
+    /// - the `autoPause` arm adds `playerInventory` ([`App::inventory_open`])
+    ///   and the other visible in-game UIState (`InGameUI.IsVisible` ≈ the
+    ///   achievements + bestiary overlays; `LocalPlayer.sign >= 0` has no sign
+    ///   UI to gate — deviation, Phase-3 ANALYSIS).
+    ///
+    /// Nothing here draws or rolls RNG: the pause removes phases, adds none.
+    pub(crate) fn can_pause_game(&self) -> bool {
+        // `flag |= ingameOptionsWindow | (InGameUI.IsVisible && (…ManageControlsMenu || …AchievementsMenu))`
+        // (`Main.cs:17320`). The bestiary is an `InGameUI` state too
+        // (`IngameFancyUI.OpenUIState(Main.BestiaryUI)` →
+        // `Main.InGameUI.SetState`, `Main.cs:42459`/`IngameFancyUI.cs:78`), but
+        // its `CurrentState` is neither of the two named ones — it is caught
+        // only by the autoPause arm's bare `InGameUI.IsVisible` below, so the
+        // bestiary open never pauses by itself.
+        let mut flag = self.ingame_options.open || self.achievements_open;
+        // `if (autoPause) flag |= playerInventory | (LocalPlayer.sign >= 0) | InGameUI.IsVisible`
+        // (`Main.cs:17322-17324`) — the bare `InGameUI.IsVisible` half is the
+        // achievements + bestiary overlays; the inventory rides its own arm.
+        if self.settings.auto_pause {
+            flag |= self.inventory_open || self.achievements_open || self.bestiary_open;
+        }
+        flag
+    }
+
+    /// `Main.ShouldUpdateEntities` (`Main.cs:17717-17726`): the world-preparation
+    /// half of the `DoUpdateInWorld` gate (`Main.cs:17278`; the stepper half is
+    /// Phase 2). The port installs worlds synchronously at frame boundaries —
+    /// [`App::new`], [`App::swap_world`] and `client_install_world` swap the
+    /// world in whole — so `_worldPreparationState == Ready` and
+    /// `!WorldGen.generatingWorld` hold on every frame the world branch runs
+    /// (the C#'s async load states are not ported). The named seam keeps the
+    /// `Main.cs:17278` call site 1:1 and gives Phase 2 its gate.
+    pub(crate) fn should_update_entities(&self) -> bool {
+        true
+    }
+
+    /// `Main.DoUpdate_WhilePaused` (`Main.cs:17329-17407`) — what keeps living
+    /// while the in-game gate holds. The C# body, arm by arm, and where each
+    /// lives in the port (every portable arm is already event- or draw-driven,
+    /// so this shell carries no executable state of its own yet):
+    ///
+    /// - `WorldGen.generatingWorld` early return (`:17332`): the port has no
+    ///   generating state (sync loads, see [`App::should_update_entities`]).
+    /// - the `controlInv`/`controlCreativeMenu` edge latches → `ToggleInv`/
+    ///   `ToggleCreativeMenu` (`:17335-17362`): the port's toggle fires on the
+    ///   key event itself (`loop.rs::world_key`, the `cInv`/Escape route) and
+    ///   nothing gates it on the pause — the C# UX (items movable while the
+    ///   world is frozen) is already the port's. No creative menu exists
+    ///   (deviation).
+    /// - `playerInventory` → `RefreshInfoAccs`/`DoScrollingInInventory`/
+    ///   `dropItemCheck` (`:17365-17369`): no info-accessory pass (deviation);
+    ///   the wheel scroll routes through the pointer machine's wheel event
+    ///   (S1-H-4, event-driven); the held-item drop rides the click cluster's
+    ///   trash/transfer path (event-driven).
+    /// - `head/body/legs` from `GetEffectiveArmor` (`:17370-17385`): draw-driven
+    ///   here — `Player::update_frames`/`render_key` recompute the display rows
+    ///   from the equip slots at draw time.
+    /// - `editSign`/`editChest` arms (`:17386-17397`): the port has no sign
+    ///   editor and the chest-rename editor is a keyboard session (event
+    ///   path) — no per-frame clear to port (deviation).
+    /// - `Player.tileTargetX/Y` + `LookForTileInteractions`/`ChestChangeEvents`/
+    ///   `UpdateNearbyCraftingTiles` (`:17398-17406`): the port fuses the tile
+    ///   target + interactions into `update_editing` (step-gated, so frozen
+    ///   while paused) and the crafting adjacency into the HUD draw's
+    ///   `craft::scan_adjacent` (`app/frame.rs`, draw time — live). The
+    ///   frozen-target half is a recorded deviation (Phase-3 ANALYSIS).
+    pub(crate) fn do_update_while_paused(&mut self) {}
+
     /// The "the world is live now" state that both world-install paths end on:
     /// the front end closes and the legacy menu hands its settings hint back.
     /// `Main.LoadWorld` and the net install both leave `Main.gameMenu` false
@@ -1428,6 +1547,10 @@ impl App {
         self.front_backup = None;
         self.front_hint = None;
         self.front_hover_hit = None;
+        // `Main.gamePaused = false` in `LoadWorld`'s tail (`Main.cs:19856`): a
+        // world never enters paused. (`GameUpdateCount` resets through the
+        // `OnWorldLoad` hook — the fresh [`App::new`] both install paths build.)
+        self.game_paused = false;
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -2977,6 +3100,17 @@ impl App {
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
             mount_prev: false,
+            // `Main.gamePaused` starts false and `ResetGameCounter` pins
+            // `GameUpdateCount` at 65536 (`Main.cs:6442-6445`, the `OnWorldLoad`
+            // hook at `:6605`) — both ride this constructor, so a `swap_world`
+            // reset is the same write the boot path makes.
+            game_paused: false,
+            window_focused: true,
+            mouse_back_held: false,
+            game_update_count: 65536,
+            stepper: crate::world_stepper::WorldUpdateStepper::new(),
+            step_input_down: false,
+            step_input_was: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
             last_frame: Instant::now(),
