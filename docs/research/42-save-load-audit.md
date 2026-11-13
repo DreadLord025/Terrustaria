@@ -263,7 +263,7 @@ boundary (`App::swap_world`), so a background *parse* is possible but adds littl
    the faithful single-player reduction, and `save_world` covers world + player
    + map.
 7. **The port has two world formats** (`.wld` vanilla-shaped and `.trwld` native),
-   chosen by file extension at save time (`saveglue.rs:27-28`) вЂ” the vanilla's
+   chosen by file extension at save time — **CLOSED as the documented contract 2026-11-13** (S1-J-8: "The world-format contract (S1-J-8)" in ANALYSIS — `.trwld` canonical, `.wld` interchange, the doubling bounded). Original text: вЂ” the vanilla's
    single `.wld` is split. Severity: **cosmetic/architectural**, but it doubles the
    save surface for Stage-2 (two compressors, two readers).
 8. The C#'s "temp" save snapshot (day/time/weather restored on load) — CLOSED
