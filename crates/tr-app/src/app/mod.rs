@@ -538,6 +538,9 @@ pub(crate) struct App {
     /// the per-update budgets it feeds (`Main.cs:953`/`:955`,
     /// `:16960-17101`).
     pub(crate) gfx_quality: world_sim::gfx_quality::GfxQuality,
+    /// The world-event schedulers' state (S1-F-14): `LanternNight`,
+    /// `BirthdayParty` and `CultistRitual`'s delay machine.
+    pub(crate) world_events: crate::world_events::WorldEvents,
     /// The C#'s draw-time camera state (`Main.cs:463`/`:477`/`:1097-1099`):
     /// the teleport lerp pair, the object-tracking pan and the vestigial
     /// `DebugCameraPan` accumulator. S1-B-4 moved the camera update to the
@@ -2966,6 +2969,7 @@ impl App {
             camera: Vec2::ZERO,
             camera_state: Default::default(),
             gfx_quality: Default::default(),
+            world_events: Default::default(),
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
