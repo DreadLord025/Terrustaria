@@ -42,14 +42,23 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// `LoadWeightedPressurePlates`, `WorldFile.cs:1666-1685` / `:3373-3384`).
 /// Both are `World` fields the port already loaded from the C# `.wld`
 /// (M6-SAVE-1), so a `.trwld` round trip used to drop them.
+/// v14 appended the rain event's triple (`Main.raining`/`rainTime`/
+/// `maxRaining` — the C#'s flag block writes the save-time snapshot
+/// `_tempRaining`/`_tempRainTime`/`_tempMaxRain`, `WorldFile.cs:1312-1314`,
+/// and `SetOngoingToTemps` `:159-162` restores it on load, `cloudAlpha` :=
+/// `maxRaining`); a pre-v14 file loads with the event off, which is also
+/// what the vanilla does for a world saved before the rain block existed.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
 /// (`Bestiary.Sights`/`Chats`) and the CreativePowers table live on the
 /// App side in this port (`tr-app/src/town.rs`, `bestiary.rs`, `creative.rs`),
 /// and `tr-core` cannot see them — they need a `WorldSide` twin on the app's
-/// save path, which is the recorded M6-SAVE-1b remainder.
-pub const VERSION: u32 = 13;
+/// save path, which is the recorded M6-SAVE-1b remainder. The vanilla's own
+/// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
+/// no writer or loader site in `WorldFile.cs`) reset on load by design, so
+/// the port saves none of them either (S1-J-7).
+pub const VERSION: u32 = 14;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -387,6 +396,15 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
         w.write_all(&plate.x.to_le_bytes())?;
         w.write_all(&plate.y.to_le_bytes())?;
     }
+    // v14: the rain event's triple — the C#'s flag block writes the
+    // save-time snapshot of `Main.raining`/`Main.rainTime`/`Main.maxRaining`
+    // (`WorldFile.cs:1312-1314`), and the loader reads them back into the
+    // temps (`:2127-2130`) for `SetOngoingToTemps` (`:159-162`) to apply.
+    // The save path syncs the App's live `Rain` into these fields first
+    // (the C#'s `SetTempToOngoing`, `:1058-1060`).
+    w.write_all(&[u8::from(world.raining)])?;
+    w.write_all(&world.rain_time.to_le_bytes())?;
+    w.write_all(&world.max_raining.to_le_bytes())?;
     Ok(())
 }
 
@@ -729,11 +747,20 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         let count = r.u32()? as usize;
         world.pressure_plates = Vec::with_capacity(count.min(65536));
         for _ in 0..count {
-            world.pressure_plates.push(crate::wld::sections::WldPressurePlate {
-                x: r.i32()?,
-                y: r.i32()?,
-            });
+            world
+                .pressure_plates
+                .push(crate::wld::sections::WldPressurePlate {
+                    x: r.i32()?,
+                    y: r.i32()?,
+                });
         }
+    }
+    // v14: the rain event's triple (see the writer's citation) — a pre-v14
+    // file loads with the event off, the vanilla's own reset behavior.
+    if version >= 14 {
+        world.raining = r.u8()? != 0;
+        world.rain_time = r.i32()?;
+        world.max_raining = r.f32()?;
     }
     world.revision = 0;
     Ok((world, side))
@@ -777,7 +804,15 @@ fn read_npcs_v10(r: &mut Reader<'_>) -> Result<Vec<NpcRecord>> {
         let homeless = r.u8()? != 0;
         let home_x = r.i32()?;
         let home_y = r.i32()?;
-        out.push(NpcRecord { kind, given_name, x, y, homeless, home_x, home_y });
+        out.push(NpcRecord {
+            kind,
+            given_name,
+            x,
+            y,
+            homeless,
+            home_x,
+            home_y,
+        });
     }
     Ok(out)
 }
@@ -796,7 +831,11 @@ fn read_chests_v7(r: &mut Reader<'_>) -> Result<Vec<ChestRecord>> {
         for _ in 0..slots {
             let stack = r.i32()?;
             if stack == 0 {
-                items.push(ChestItem { stack: 0, kind: 0, prefix: 0 });
+                items.push(ChestItem {
+                    stack: 0,
+                    kind: 0,
+                    prefix: 0,
+                });
                 continue;
             }
             items.push(ChestItem {
@@ -805,7 +844,12 @@ fn read_chests_v7(r: &mut Reader<'_>) -> Result<Vec<ChestRecord>> {
                 prefix: r.u8()?,
             });
         }
-        out.push(ChestRecord { x, y, name, slots: items });
+        out.push(ChestRecord {
+            x,
+            y,
+            name,
+            slots: items,
+        });
     }
     Ok(out)
 }
@@ -960,7 +1004,11 @@ mod tests {
         w.moondial_cooldown = 8;
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        assert_eq!(&buf[8..12], &[13, 0, 0, 0], "the writer emits the current v13");
+        assert_eq!(
+            &buf[8..12],
+            &[14, 0, 0, 0],
+            "the writer emits the current v14"
+        );
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
         assert_eq!(back.moondial_cooldown, 8);
@@ -986,13 +1034,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v13 (the signs + weighted
-        // pressure plates tail) is now the current format, so the gate pins 13.
+        // current one (`save.rs` version gate). v14 (the rain event triple)
+        // is now the current format, so the gate pins 14.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&14u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 14 is unsupported");
+        buf[8..12].copy_from_slice(&15u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 15 is unsupported");
     }
 
     #[test]
@@ -1118,9 +1166,9 @@ mod tests {
         assert_eq!(back_micro(&buf), w.micro_seeds.sum());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, w.micro_seeds);
-        // A v11 file (the same stream minus the v12 block and the v13 tail,
-        // the version byte restored) loads as the classic world it was.
-        buf.truncate(buf.len() - 10 - EMPTY_V13_TAIL);
+        // A v11 file (the same stream minus the v12 block and the v13+v14
+        // tails, the version byte restored) loads as the classic world it was.
+        buf.truncate(buf.len() - 10 - EMPTY_V14_TAIL);
         buf[8..12].copy_from_slice(&11u32.to_le_bytes());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
@@ -1140,10 +1188,18 @@ mod tests {
         assert!(back.pressure_plates.is_empty());
 
         w.signs = vec![
-            crate::wld::sections::WldSign { text: "second".into(), x: 9, y: 4 },
+            crate::wld::sections::WldSign {
+                text: "second".into(),
+                x: 9,
+                y: 4,
+            },
             // Out of order on purpose: the writer sorts by position so the
             // file is deterministic, and the reader keeps that order.
-            crate::wld::sections::WldSign { text: "first — ünïcode".into(), x: 3, y: 7 },
+            crate::wld::sections::WldSign {
+                text: "first — ünïcode".into(),
+                x: 3,
+                y: 7,
+            },
         ];
         w.pressure_plates = vec![
             crate::wld::sections::WldPressurePlate { x: 12, y: 5 },
@@ -1166,13 +1222,15 @@ mod tests {
             "the plates sort by position too"
         );
 
-        // A v12 file (the same stream minus the v13 block) loads as the
-        // sign-less world it was — the version gate, not a length guess.
-        let v13_len = buf.len();
+        // A v12 file (the same stream minus the v13 block and the v14 tail)
+        // loads as the sign-less world it was — the version gate, not a
+        // length guess.
+        let cur_len = buf.len();
         let mut v12 = buf.clone();
-        // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes.
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8;
-        v12.truncate(v13_len - tail);
+        // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
+        // v14 rain block (9 bytes).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9;
+        v12.truncate(cur_len - tail);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
         assert!(back.signs.is_empty(), "a v12 file has no sign block");
@@ -1181,7 +1239,13 @@ mod tests {
 
     /// A `WorldSide` carrying only the chest records (the v7 tests).
     fn chest_side(chests: &[ChestRecord]) -> WorldSide {
-        WorldSide { chests: chests.to_vec(), banners: Vec::new(), bestiary: Vec::new(), npcs: Vec::new(), ore_tiers: None}
+        WorldSide {
+            chests: chests.to_vec(),
+            banners: Vec::new(),
+            bestiary: Vec::new(),
+            npcs: Vec::new(),
+            ore_tiers: None,
+        }
     }
 
     /// The v6 block's u16 bitmask, read back out of the written buffer — the
@@ -1190,16 +1254,19 @@ mod tests {
     /// (0 + 0). The v12 fixtures below write a world with no signs or plates,
     /// so the two blocks ahead of it sit this many bytes from the end.
     const EMPTY_V13_TAIL: usize = 8;
+    /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
+    /// for an empty rain event).
+    const EMPTY_V14_TAIL: usize = EMPTY_V13_TAIL + 9;
 
     fn back_flags(buf: &[u8]) -> u16 {
-        let end = buf.len() - EMPTY_V13_TAIL;
+        let end = buf.len() - EMPTY_V14_TAIL;
         u16::from_le_bytes([buf[end - 10], buf[end - 9]])
     }
 
     /// The v12 block's micro u64 bitmask (the eight bytes ahead of the v13
     /// tail).
     fn back_micro(buf: &[u8]) -> u64 {
-        let end = buf.len() - EMPTY_V13_TAIL;
+        let end = buf.len() - EMPTY_V14_TAIL;
         u64::from_le_bytes(buf[end - 8..end].try_into().unwrap())
     }
 
@@ -1250,10 +1317,10 @@ mod tests {
         // `WorldFile.cs:3315+`) reads the anchor tiles, so the entities sit on
         // their real kinds/frames.
         for &(x, y, kind, frame_y) in &[
-            (5, 5, 378, 0i16),  // TrainingDummy
-            (6, 6, 395, 0),     // ItemFrame
-            (7, 7, 423, 36),    // LogicSensor (check 2 rides frameY/18)
-            (8, 8, 597, 0),     // TeleportationPylon
+            (5, 5, 378, 0i16), // TrainingDummy
+            (6, 6, 395, 0),    // ItemFrame
+            (7, 7, 423, 36),   // LogicSensor (check 2 rides frameY/18)
+            (8, 8, 597, 0),    // TeleportationPylon
         ] {
             let i = w.index(x, y);
             w.tiles[i].kind = kind;
@@ -1264,19 +1331,29 @@ mod tests {
         let dummy = w.tile_entities.place_unchecked(TeKind::TrainingDummy, 5, 5);
         w.tile_entities.by_id_mut(dummy).unwrap().data = TeData::Dummy(7);
         let frame = w.tile_entities.place_unchecked(TeKind::ItemFrame, 6, 6);
-        w.tile_entities.by_id_mut(frame).unwrap().data =
-            TeData::Item(Some(TeItem { kind: 75, prefix: 3, stack: 12 }));
+        w.tile_entities.by_id_mut(frame).unwrap().data = TeData::Item(Some(TeItem {
+            kind: 75,
+            prefix: 3,
+            stack: 12,
+        }));
         let sensor = w.tile_entities.place_unchecked(TeKind::LogicSensor, 7, 7);
-        w.tile_entities.by_id_mut(sensor).unwrap().data =
-            TeData::Logic { check: 2, on: true, counted: 15 };
-        let pylon = w.tile_entities.place_unchecked(TeKind::TeleportationPylon, 8, 8);
+        w.tile_entities.by_id_mut(sensor).unwrap().data = TeData::Logic {
+            check: 2,
+            on: true,
+            counted: 15,
+        };
+        let pylon = w
+            .tile_entities
+            .place_unchecked(TeKind::TeleportationPylon, 8, 8);
 
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         let (back, _chests) = parse(&buf).unwrap();
         // The set flags round-trip and the unset ones stay default.
         assert!(back.blood_moon && back.downed_eoc && back.downed_golem && back.saved_goblin);
-        assert!(back.downed_pirates && back.shadow_orb_smashed && back.spawn_meteor && back.hard_mode);
+        assert!(
+            back.downed_pirates && back.shadow_orb_smashed && back.spawn_meteor && back.hard_mode
+        );
         assert!(back.dd2_event_ongoing && back.downed_moon_lord && back.slime_rain);
         assert!(back.tower_active_nebula && back.downed_tower_stardust);
         assert!(!back.downed_eow && !back.downed_frost && !back.eclipse && !back.downed_goblins);
@@ -1299,20 +1376,57 @@ mod tests {
         assert!(back.wires.get(3, 4, WireColor::Red));
         assert!(back.wires.get(0, 0, WireColor::Blue));
         assert!(back.wires.get(-5, 7, WireColor::Green));
-        assert!(!back.wires.get(9, 9, WireColor::Yellow), "the clear round-trips");
-        assert!(!back.wires.get(3, 4, WireColor::Blue), "no cross-colour bleed");
+        assert!(
+            !back.wires.get(9, 9, WireColor::Yellow),
+            "the clear round-trips"
+        );
+        assert!(
+            !back.wires.get(3, 4, WireColor::Blue),
+            "no cross-colour bleed"
+        );
         // The tile entities — the stored ids and payloads.
-        assert_eq!(back.tile_entities.get_by_id(dummy).unwrap().data, TeData::Dummy(7));
+        assert_eq!(
+            back.tile_entities.get_by_id(dummy).unwrap().data,
+            TeData::Dummy(7)
+        );
         assert_eq!(
             back.tile_entities.get_by_id(frame).unwrap().data,
-            TeData::Item(Some(TeItem { kind: 75, prefix: 3, stack: 12 }))
+            TeData::Item(Some(TeItem {
+                kind: 75,
+                prefix: 3,
+                stack: 12
+            }))
         );
         assert_eq!(
             back.tile_entities.get_by_id(sensor).unwrap().data,
-            TeData::Logic { check: 2, on: true, counted: 15 }
+            TeData::Logic {
+                check: 2,
+                on: true,
+                counted: 15
+            }
         );
         assert_eq!(back.tile_entities.get_at(8, 8).map(|e| e.id), Some(pylon));
         assert_eq!(back.tile_entities.get_at(5, 5).map(|e| e.id), Some(dummy));
+    }
+
+    #[test]
+    fn s1_j_7_rain_round_trips_load_after_quit() {
+        // The C#'s save-time snapshot rides the flags block
+        // (`_tempRaining`/`_tempRainTime`/`_tempMaxRain`, `WorldFile.cs:1312-1314`;
+        // `SetTempToOngoing` `:1058-1060` refreshes the temps before the write) and
+        // `SetOngoingToTemps` (`:159-162`) restores it on load — load-after-quit
+        // keeps the rain event (`Main.cloudAlpha` comes back as `maxRaining`).
+        // Watched RED against the v13 writer: load returned the defaults.
+        let mut w = World::new("Test".into(), 64, 48);
+        w.raining = true;
+        w.rain_time = 12_345;
+        w.max_raining = 0.75;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.raining, "the rain event survives the reload");
+        assert_eq!(back.rain_time, 12_345);
+        assert!((back.max_raining - 0.75).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1364,7 +1478,8 @@ mod tests {
             w.wires.set(x, y, WireColor::Yellow, true);
         }
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
-        w.tile_entities.place_unchecked(TeKind::TeleportationPylon, 7, 3);
+        w.tile_entities
+            .place_unchecked(TeKind::TeleportationPylon, 7, 3);
         let mut a = Vec::new();
         let mut b = Vec::new();
         write_world(&mut a, &w, &WorldSide::default()).unwrap();
@@ -1385,16 +1500,37 @@ mod tests {
                 y: 7,
                 name: "Gold Chest".into(),
                 slots: vec![
-                    ChestItem { stack: 35, kind: 19, prefix: 0 },
-                    ChestItem { stack: 0, kind: 0, prefix: 0 }, // interior air
-                    ChestItem { stack: 1, kind: 1541, prefix: 81 },
+                    ChestItem {
+                        stack: 35,
+                        kind: 19,
+                        prefix: 0,
+                    },
+                    ChestItem {
+                        stack: 0,
+                        kind: 0,
+                        prefix: 0,
+                    }, // interior air
+                    ChestItem {
+                        stack: 1,
+                        kind: 1541,
+                        prefix: 81,
+                    },
                 ],
             },
-            ChestRecord { x: 40, y: 9, name: String::new(), slots: Vec::new() },
+            ChestRecord {
+                x: 40,
+                y: 9,
+                name: String::new(),
+                slots: Vec::new(),
+            },
         ];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
-        assert_eq!(&buf[8..12], &[13, 0, 0, 0], "the writer emits the current v13");
+        assert_eq!(
+            &buf[8..12],
+            &[14, 0, 0, 0],
+            "the writer emits the current v14"
+        );
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
         assert_eq!(back_chests, chests);
@@ -1406,7 +1542,16 @@ mod tests {
         // the v7 tail sits unread, the same back-compat contract as the earlier
         // tails.
         let mut w = World::new("Test".into(), 32, 32);
-        let chests = vec![ChestRecord { x: 3, y: 4, name: "Wooden Chest".into(), slots: vec![ChestItem { stack: 99, kind: 9, prefix: 0 }] }];
+        let chests = vec![ChestRecord {
+            x: 3,
+            y: 4,
+            name: "Wooden Chest".into(),
+            slots: vec![ChestItem {
+                stack: 99,
+                kind: 9,
+                prefix: 0,
+            }],
+        }];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
@@ -1425,7 +1570,11 @@ mod tests {
             x: 3,
             y: 4,
             name: "Wooden Chest".into(),
-            slots: vec![ChestItem { stack: 99, kind: 9, prefix: 0 }],
+            slots: vec![ChestItem {
+                stack: 99,
+                kind: 9,
+                prefix: 0,
+            }],
         }];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
@@ -1438,8 +1587,22 @@ mod tests {
         // DW-2.2: the same records written twice are byte-equal.
         let mut w = World::new("Test".into(), 32, 32);
         let chests = vec![
-            ChestRecord { x: 5, y: 6, name: "Ivy Chest".into(), slots: vec![ChestItem { stack: 20, kind: 166, prefix: 3 }] },
-            ChestRecord { x: 7, y: 8, name: "Water Chest".into(), slots: Vec::new() },
+            ChestRecord {
+                x: 5,
+                y: 6,
+                name: "Ivy Chest".into(),
+                slots: vec![ChestItem {
+                    stack: 20,
+                    kind: 166,
+                    prefix: 3,
+                }],
+            },
+            ChestRecord {
+                x: 7,
+                y: 8,
+                name: "Water Chest".into(),
+                slots: Vec::new(),
+            },
         ];
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -1461,13 +1624,22 @@ mod tests {
         let side = WorldSide {
             chests: Vec::new(),
             banners: vec![
-                BannerKill { banner: 3331, kills: 50 },
-                BannerKill { banner: 71, kills: 0 },
-                BannerKill { banner: 1569, kills: 999_999_999 },
+                BannerKill {
+                    banner: 3331,
+                    kills: 50,
+                },
+                BannerKill {
+                    banner: 71,
+                    kills: 0,
+                },
+                BannerKill {
+                    banner: 1569,
+                    kills: 999_999_999,
+                },
             ],
             bestiary: Vec::new(),
-        npcs: Vec::new(),
-        ore_tiers: None,
+            npcs: Vec::new(),
+            ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1487,12 +1659,19 @@ mod tests {
                 x: 4,
                 y: 5,
                 name: "Gold Chest".into(),
-                slots: vec![ChestItem { stack: 3, kind: 19, prefix: 0 }],
+                slots: vec![ChestItem {
+                    stack: 3,
+                    kind: 19,
+                    prefix: 0,
+                }],
             }],
-            banners: vec![BannerKill { banner: 3331, kills: 7 }],
+            banners: vec![BannerKill {
+                banner: 3331,
+                kills: 7,
+            }],
             bestiary: Vec::new(),
-        npcs: Vec::new(),
-        ore_tiers: None,
+            npcs: Vec::new(),
+            ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1509,10 +1688,13 @@ mod tests {
         let mut w = World::new("Test".into(), 32, 32);
         let side = WorldSide {
             chests: Vec::new(),
-            banners: vec![BannerKill { banner: 3331, kills: 7 }],
+            banners: vec![BannerKill {
+                banner: 3331,
+                kills: 7,
+            }],
             bestiary: Vec::new(),
-        npcs: Vec::new(),
-        ore_tiers: None,
+            npcs: Vec::new(),
+            ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1527,13 +1709,22 @@ mod tests {
         let side = WorldSide {
             chests: Vec::new(),
             banners: vec![
-                BannerKill { banner: 3331, kills: 7 },
-                BannerKill { banner: 71, kills: 0 },
-                BannerKill { banner: 1569, kills: 12 },
+                BannerKill {
+                    banner: 3331,
+                    kills: 7,
+                },
+                BannerKill {
+                    banner: 71,
+                    kills: 0,
+                },
+                BannerKill {
+                    banner: 1569,
+                    kills: 12,
+                },
             ],
             bestiary: Vec::new(),
-        npcs: Vec::new(),
-        ore_tiers: None,
+            npcs: Vec::new(),
+            ore_tiers: None,
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -1556,12 +1747,21 @@ mod tests {
             chests: Vec::new(),
             banners: Vec::new(),
             bestiary: vec![
-                BestiaryKill { credit_id: "BlueSlime".into(), kills: 137 },
-                BestiaryKill { credit_id: "KingSlime".into(), kills: 0 },
-                BestiaryKill { credit_id: " EyeofCthulhu".into(), kills: 1 },
+                BestiaryKill {
+                    credit_id: "BlueSlime".into(),
+                    kills: 137,
+                },
+                BestiaryKill {
+                    credit_id: "KingSlime".into(),
+                    kills: 0,
+                },
+                BestiaryKill {
+                    credit_id: " EyeofCthulhu".into(),
+                    kills: 1,
+                },
             ],
-        npcs: Vec::new(),
-        ore_tiers: None,
+            npcs: Vec::new(),
+            ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1577,10 +1777,16 @@ mod tests {
         let mut w = World::new("Test".into(), 32, 32);
         let side = WorldSide {
             chests: Vec::new(),
-            banners: vec![BannerKill { banner: 69, kills: 50 }],
-            bestiary: vec![BestiaryKill { credit_id: "BlueSlime".into(), kills: 3 }],
-        npcs: Vec::new(),
-        ore_tiers: None,
+            banners: vec![BannerKill {
+                banner: 69,
+                kills: 50,
+            }],
+            bestiary: vec![BestiaryKill {
+                credit_id: "BlueSlime".into(),
+                kills: 3,
+            }],
+            npcs: Vec::new(),
+            ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1598,9 +1804,12 @@ mod tests {
         let side = WorldSide {
             chests: Vec::new(),
             banners: Vec::new(),
-            bestiary: vec![BestiaryKill { credit_id: "BlueSlime".into(), kills: 3 }],
-        npcs: Vec::new(),
-        ore_tiers: None,
+            bestiary: vec![BestiaryKill {
+                credit_id: "BlueSlime".into(),
+                kills: 3,
+            }],
+            npcs: Vec::new(),
+            ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1616,11 +1825,17 @@ mod tests {
             chests: Vec::new(),
             banners: Vec::new(),
             bestiary: vec![
-                BestiaryKill { credit_id: "BlueSlime".into(), kills: 7 },
-                BestiaryKill { credit_id: "KingSlime".into(), kills: 0 },
+                BestiaryKill {
+                    credit_id: "BlueSlime".into(),
+                    kills: 7,
+                },
+                BestiaryKill {
+                    credit_id: "KingSlime".into(),
+                    kills: 0,
+                },
             ],
-        npcs: Vec::new(),
-        ore_tiers: None,
+            npcs: Vec::new(),
+            ore_tiers: None,
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -1660,7 +1875,7 @@ mod tests {
                     home_y: -1,
                 },
             ],
-        ore_tiers: None,
+            ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1677,7 +1892,10 @@ mod tests {
         let side = WorldSide {
             chests: Vec::new(),
             banners: Vec::new(),
-            bestiary: vec![BestiaryKill { credit_id: "BlueSlime".into(), kills: 2 }],
+            bestiary: vec![BestiaryKill {
+                credit_id: "BlueSlime".into(),
+                kills: 2,
+            }],
             npcs: vec![NpcRecord {
                 kind: 5,
                 given_name: "Andrew".into(),
@@ -1687,13 +1905,16 @@ mod tests {
                 home_x: 1,
                 home_y: 1,
             }],
-        ore_tiers: None,
+            ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
         buf[8..12].copy_from_slice(&9u32.to_le_bytes());
         let (back, back_side) = parse(&buf).unwrap();
-        assert_eq!(back_side.bestiary, side.bestiary, "the bestiary still loads");
+        assert_eq!(
+            back_side.bestiary, side.bestiary,
+            "the bestiary still loads"
+        );
         assert!(back_side.npcs.is_empty(), "no NPCs below v10");
     }
 
@@ -1715,7 +1936,7 @@ mod tests {
                 home_x: 1,
                 home_y: 1,
             }],
-        ore_tiers: None,
+            ore_tiers: None,
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
@@ -1732,10 +1953,26 @@ mod tests {
             banners: Vec::new(),
             bestiary: Vec::new(),
             npcs: vec![
-                NpcRecord { kind: 5, given_name: "A".into(), x: 1.0, y: 2.0, homeless: true, home_x: -1, home_y: -1 },
-                NpcRecord { kind: 17, given_name: "B".into(), x: 3.0, y: 4.0, homeless: false, home_x: 2, home_y: 3 },
+                NpcRecord {
+                    kind: 5,
+                    given_name: "A".into(),
+                    x: 1.0,
+                    y: 2.0,
+                    homeless: true,
+                    home_x: -1,
+                    home_y: -1,
+                },
+                NpcRecord {
+                    kind: 17,
+                    given_name: "B".into(),
+                    x: 3.0,
+                    y: 4.0,
+                    homeless: false,
+                    home_x: 2,
+                    home_y: 3,
+                },
             ],
-        ore_tiers: None,
+            ore_tiers: None,
         };
         let mut a = Vec::new();
         let mut b = Vec::new();
@@ -1826,4 +2063,3 @@ mod tests {
         assert_eq!(a, b);
     }
 }
-
