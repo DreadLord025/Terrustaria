@@ -99,7 +99,7 @@ port's native `.trwld` (`save.rs`) вЂ” and the App picks one per file path.
 | `.trwld` native format | PORTED | `save.rs::save` (187) / `write_world` (210) | v13 (`"TRWLD01\0"`), RLE per row, the full 14-byte tile struct, the v6-v10 tails (flags subset, wire side table, TEs, chests, banners, bestiary, town NPCs, ore tiers). The town-rooms / bestiary-sights+chats / creative-powers twins are still open (app-side state). |
 | `.plr` reader + writer | PARTIAL | `player_file.rs` (94-404) | Real AES-128-CBC reader/writer with the vanilla key, `FileMetadata`, the section walk and the stat caps. The writer mirrors only a **subset** of `Player.Serialize` (sanitized name + starter items per the ROADMAP row) в†’ byte-parity with the C# is unproven. |
 | `.map` (explored map) | PORTED (separate) | `saveglue.rs::App::save_map` (197) / `load_map` (210) | Outside the world/player formats; noted here because the C# writes it inside `Player.InternalSavePlayer`. |
-| Autosave cadence | PARTIAL | `saveglue.rs` doc (24-25), the `frame.rs` tick | The module doc claims the C#'s 600 s branch (`Main.cs:19751-19765`). The 300 s single-player `saveToonWhilePlaying` branch (`Main.cs:19743-19749`, the **player-only** save) was not verified in this pass. |
+| Autosave cadence | PORTED | `saveglue.rs::save_world` (27-162), the `frame.rs` tick | The port's 600 s branch (`frame.rs`, `!gameMenu && autoSave`) is the single-player reduction of `Main.cs:19751-19765` (`(autoSave || netMode == 2)`, which nets to `autoSave` at `netMode == 0`), and `save_world` writes the world + player sidecar + map. The 300 s `saveToonWhilePlaying` branch (`Main.cs:19743-19749`) is gated `netMode == 1` (`:19739`) — **multiplayer client only**, unreachable in the single-player port (S1-J-6 refuted 2026-11-13); the menu arm (`:19767-19769`) only stops the timer. |
 | Cloud save path | MISSING | вЂ” | The C# writes `Main.CloudWorldPath` / `Main.CloudPlayerPath` through `FileUtilities.Write(..., useCloudSaving)` в†’ `SocialAPI.Cloud.Write` (`WorldFile.cs:940`, `Main.cs:4820-4870`). The port writes a local path only; cloud is Steam/Social = out of scope (module 38). |
 | Save-time "temp" snapshot | UNKNOWN | вЂ” | The C# snapshots day/time/weather into `_temp*` and restores it on load (`SetTempToOngoing` 1040-1066 / `SetOngoingToTemps` 152-179). The Rust flags writer emits the world's own values; the exact temp mechanism was not checked. |
 
@@ -254,10 +254,14 @@ boundary (`App::swap_world`), so a background *parse* is possible but adds littl
 5. **Cloud save is missing** (`SocialAPI.Cloud`) вЂ” severity: **behavioural**, but
    out of scope by the module-38 non-goals; it should be an explicit ROADMAP
    non-goal rather than an open row.
-6. **Autosave cadence parity is unverified** for the 300 s single-player
-   player-only save (`Main.cs:19743-19749`); the module doc claims only the 600 s
-   branch. Severity: **behavioural** (the player may be saved less often than the
-   vanilla). UNKNOWN until `frame.rs` is read.
+6. **~~Autosave cadence parity is unverified~~ — REFUTED (S1-J-6,
+   2026-11-13).** The 300 s `saveToonWhilePlaying` branch
+   (`Main.cs:19743-19749`) is gated `!Main.gameMenu && Main.netMode == 1`
+   (`:19739`) — a **multiplayer client, in-world** player+map save, unreachable
+   at the port's `netMode == 0`. The menu arm (`:19767-19769`) only stops the
+   timer and saves nothing. The port's 600 s branch (`!gameMenu && autoSave`) is
+   the faithful single-player reduction, and `save_world` covers world + player
+   + map.
 7. **The port has two world formats** (`.wld` vanilla-shaped and `.trwld` native),
    chosen by file extension at save time (`saveglue.rs:27-28`) вЂ” the vanilla's
    single `.wld` is split. Severity: **cosmetic/architectural**, but it doubles the
@@ -285,9 +289,10 @@ boundary (`App::swap_world`), so a background *parse* is possible but adds littl
   ANALYSIS).
 - **S** вЂ” close the cloud-save row as an explicit non-goal (module 38) and drop
   it from the Saves status line.
-- **S** вЂ” verify the autosave tick against `Main.cs:19737-19765`: the 600 s world
-  save **and** the 300 s single-player player save; add the missing branch if it
-  is absent.
+- **~~S~~ — verify the autosave tick against `Main.cs:19737-19765`. DONE
+  (S1-J-6, 2026-11-13, refuted):** the 600 s branch (`!gameMenu && autoSave`) is
+  the single-player path and is ported; the 300 s branch is `netMode == 1` only
+  (multiplayer client), and the menu arm only stops the timer.
 - **M (Stage-2)** вЂ” the compressor seam: add a `Compression` switch to
   `wld::to_bytes` that deflates the tile-section body (and optionally the
   flags/header bodies) and bumps `FORMAT_VERSION` to 327, keeping the 326 path

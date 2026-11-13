@@ -153,6 +153,18 @@ sidecars (unchanged), `.wld` → `wld::save` with every section built from the l
 (the chests' dead-anchor pre-pass first, as the C# runs it). The autosave, F9, close and
 quit paths all funnel through `save_world`.
 
+The autosave cadence is `Main.DoUpdate_AutoSave` (`Main.cs:19737-19771`, called from `Main.Update`'s
+`!WorldGen.generatingWorld` guard, `Main.cs:16943-16946`). Its three arms: `!gameMenu &&
+netMode == 1` → 300 s, `saveToonWhilePlaying` (a player+map save); `!gameMenu && (autoSave ||
+netMode == 2)` → 600 s, `saveToonWhilePlaying` (skipped on the server, `Main.cs:19660-19663`) then
+`saveAndPlay` (world+player+map); and the menu arm (`Main.cs:19767-19769`), which only *stops* the
+timer. The port is single-player (`netMode == 0`), so the 300 s arm is unreachable and the menu arm
+has nothing to stop. The port therefore implements only the 600 s arm — `frame.rs`'s `!gameMenu &&
+auto_save` tick, whose nets-to-`auto_save` condition is the exact single-player reduction — and
+`save_world` already covers the arm's full output for a `.trwld`. This closes the "S1-J-6: the
+300 s single-player player-only save is unverified" premise as **refuted**: the 300 s branch is a
+multiplayer-client path, never a single-player or menu one (research/42, finding 42-6).
+
 ### Deviations (every deliberate departure from the C#, phases 2-7)
 
 - **Unowned flag fields** are written with the C# defaults derived from
