@@ -1360,4 +1360,107 @@ mod tests {
             );
         }
     }
+
+    /// The batch-review blocker's edge case, now executed:
+    /// `Main.StopSlimeRain`'s SP arm (`Main.cs:64787-64820`) sets the clock
+    /// to `-Next(3024, 6048) * 100` (`:64805`) — ONE integer draw, negated
+    /// and scaled. Twin equality pins the draw shape (the stream consumed
+    /// exactly one `Next(3024, 6048)`), the exact seed-42 value pins the
+    /// ×100 arithmetic, and the already-down no-op arm (`:64789-64792`)
+    /// consumes nothing.
+    #[test]
+    fn the_stop_slime_rain_cooldown_is_one_next3024_6048_draw() {
+        let mut world = tr_core::World::new("t".into(), 8, 8);
+        world.slime_rain = true;
+        world.slime_rain_time = 100.0; // a positive (raining) clock
+        let mut rng = UnifiedRandom::new(42);
+        crate::world_sim::weather::stop_slime_rain(&mut world, &mut rng);
+        // The twin: exactly one `Next(3024, 6048)` draw, ×100 negative.
+        let mut twin = UnifiedRandom::new(42);
+        let want = -(twin.next_range(3024, 6048) as f64) * 100.0;
+        assert_eq!(
+            rng, twin,
+            "the cooldown consumed exactly one Next(3024, 6048) draw"
+        );
+        assert!(!world.slime_rain, "the rain is down");
+        assert_eq!(
+            world.slime_rain_time, want,
+            "the -Next(3024,6048)*100 clock"
+        );
+        assert_eq!(want, -504_400.0, "the seed-42 draw is 5044");
+        // The already-down no-op arm (`Main.cs:64789-64792`) draws nothing
+        // and leaves the cooldown alone.
+        let pristine = rng.clone();
+        crate::world_sim::weather::stop_slime_rain(&mut world, &mut rng);
+        assert_eq!(rng, pristine, "the !slime_rain guard draws nothing");
+        assert_eq!(world.slime_rain_time, want, "the cooldown untouched");
+    }
+
+    /// The King-death caller (`NPC.cs:79405-79410`'s case 50 through the
+    /// port's kill path, npcs.rs) consumes its duration draw from the
+    /// `UpdateNPCs` stream — `checkDead` runs inside `NPC.UpdateNPC` under
+    /// the `UpdateNPCs` swap (`Main.cs:17767-17769`) — and the rain goes
+    /// down with the same negated-×100 cooldown. Exactly one `UpdateNPCs`
+    /// draw for the whole death tick (the death path's only other named
+    /// consumer is the orb-boss `boss_death_roll`, not this kill).
+    #[test]
+    fn the_king_death_stops_the_slime_rain_on_the_update_npcs_stream() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut big = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = big.index(x, y);
+                big.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        big.compute_column_surface();
+        big.slime_rain = true;
+        big.slime_rain_time = 30000.0;
+        app.world = big;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        let mut king = crate::npc::Npc::new(
+            crate::npc::NpcKind::KingSlime,
+            30.0 * 16.0,
+            118.0 * 16.0,
+            1,
+            0.0,
+        );
+        king.hp = 0; // dead on arrival — the kill path runs this tick
+        app.npcs.push(king);
+
+        // The twin: the one `Next(3024, 6048)` draw the stop consumes.
+        let mut twin = UnifiedRandom::new(app.world.seed as i32);
+        let want_cooldown = -(twin.next_range(3024, 6048) as f64) * 100.0;
+
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+
+        assert!(app.world.downed_slime_king, "the boss flag raised");
+        assert!(!app.world.slime_rain, "the King's death stopped the rain");
+        assert_eq!(
+            app.world.slime_rain_time, want_cooldown,
+            "the negated-×100 cooldown from the UpdateNPCs draw"
+        );
+        assert_eq!(
+            want_cooldown, -522_000.0,
+            "the seed-0 draw is 5220 (the twin replay already proved the shape)"
+        );
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            twin,
+            "the death tick consumed exactly the one stop draw from UpdateNPCs"
+        );
+        // The weather stream is untouched by the kill path (the two callers'
+        // streams differ exactly as the C#'s swaps make them).
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateTime),
+            UnifiedRandom::new(app.world.seed as i32),
+            "UpdateTime untouched by the King's death"
+        );
+    }
 }
