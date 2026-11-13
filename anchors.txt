@@ -143,3 +143,4 @@ crates/tr-app/src/sortdata.rs|pub const TILE_FRAME_IMPORTANT|S1-H-8 - the genera
 crates/tr-app/src/ui/chest.rs|pub(crate) const BUTTON_SORT|S1-H-8 - the chest Sort button (inter[122]) and its ItemSorting.SortChest dispatch (ChestUI.cs:227,304-306)
 crates/tr-app/src/app/frame.rs|self.autosave += dt|S1-J-6 - the autosave cadence is Main.DoUpdate_AutoSave's 600 s arm (Main.cs:19751-19765), the only arm reachable single-player; the 300 s arm is !gameMenu && netMode==1 (multiplayer client) and the menu arm only stops the timer
 crates/tr-app/src/spawner.rs|distribution block|S1-F-11 - the town-NPC distribution block (NPC.cs:799-923) draws Main.rand in the C# order and carries noWorms/spawnFriendly out of GetSpawnRate
+crates/tr-core/src/worldgen/mini_biomes.rs|WallType = 27|BUG-25 - the cave-house interiors carry the planked wall 27 (WallID.Planked, WoodHouseBuilder.cs:13) and the WoodBlock 30 frame (TileType 30), not the pink dungeon wall 9 / Sunflower tile 27

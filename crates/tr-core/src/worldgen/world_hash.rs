@@ -199,14 +199,13 @@ mod tests {
     // carries, plus the three lantern style rolls, so every dungeon's hash
     // moves again.
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
-    // Re-pinned by M5-DUNGEON's spike pass (`worldgen/dungeon_features.rs`:
-    // `DungeonGlobalSpikes` at `MakeDungeon`'s `:0.75` step): every world
-    // with a dungeon now carries its `42 * maxTilesX / 4200` spike runs (two
-    // halves, floors and ceilings), so every hash moves — `SEED42_512`
-    // included (a 512-wide world draws 5 runs per half and lands at least
-    // one).
-    const SEED42_512: u32 = 3615544309;
-    const DEFAULT_WORLD: u32 = 1207823499;
+    // Re-pinned by BUG-25 (`worldgen/mini_biomes.rs` `pass_cave_houses`): the
+    // cave houses carry the `WoodHouseBuilder.cs:12-13` constants now — the
+    // `TileType` 30 (`WoodBlock`) frame and the `WallType` 27 (`Planked`)
+    // interior walls — instead of the Sunflower tile 27 frame and the pink
+    // dungeon wall 9 interior, so every world's tile/wall fields move.
+    const SEED42_512: u32 = 1445035279;
+    const DEFAULT_WORLD: u32 = 1520389681;
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]
