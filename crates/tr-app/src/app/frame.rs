@@ -1641,7 +1641,7 @@ impl App {
                                     player_assets,
                                     p,
                                     icon_pos,
-                                    1.0,
+                                    self.settings.applied_ui_scale(screen.x, screen.y),
                                     [1.0; 4],
                                 );
                             }
