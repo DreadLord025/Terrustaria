@@ -2839,8 +2839,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             "[spawn-dbg] pool slots active: {}",
             app.projectiles.slots().iter().filter(|p| p.active).count()
         );
-        // The AI_037 arm's `timeLeft = 300` override rides the laser.
-        let time_left = if kind == crate::projectile::DESTROYER_LASER {
+        // The `timeLeft = 300` overrides: the AI_037 arm's laser
+        // (`NPC.cs:49891`) and the Frost Legion throws'
+        // (`NPC.cs:29022`/`:29084`).
+        let time_left = if kind == crate::projectile::DESTROYER_LASER
+            || kind == crate::projectile::BULLET_SNOWMAN
+            || kind == crate::projectile::SNOW_BALL_HOSTILE
+        {
             300
         } else {
             0

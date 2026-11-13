@@ -147,6 +147,12 @@ pub const WOODEN_ARROW: u16 = 1;
 pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
 pub const DESTROYER_LASER: u16 = 100;
+/// `ProjectileID.SnowBallHostile` (109) — the Mystery Snowman's aimed
+/// throw (`aiStyle 10`, `Projectile.cs` type 109's SetDefaults).
+pub const SNOW_BALL_HOSTILE: u16 = 109;
+/// `ProjectileID.BulletSnowman` (110) — the Snowman Gangsta's bottle
+/// throw (`aiStyle 1`, `Projectile.cs` type 110's SetDefaults).
+pub const BULLET_SNOWMAN: u16 = 110;
 /// `ProjectileID.Fireball` (`ProjectileID.cs`'s 258) — the Golem's head
 /// and free-head fireballs (`NPC.cs:31200`/`:31460`'s `num686`/`num720`).
 pub const GOLEM_FIREBALL: u16 = 258;

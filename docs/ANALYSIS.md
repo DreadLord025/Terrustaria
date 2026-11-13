@@ -11825,3 +11825,32 @@ Documented deviations, none reachable from the ported runtime surface:
   during worldgen: `LiquidSystem` carries `generating`/`remix_world_gen`
   (both `false` — the exact runtime state) and
   `createMergeTilesDuringGen` rides the `WorldGen.cs:22480` caller.
+
+## The Frost Legion machine (R-25-1, 2026-11-13)
+
+`NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as
+`npc.rs::update_frost_legion` — the constant hop cycle (the `-6f` beat, the
+every-third `-8.2f` + `ai[1]++`), the per-type `num551`/`num552` pair (the
+Gangsta 3/0.7, the Balla 4/1, the Mystery 3.5/0.8), the stuck flip
+(`localAI[2]`'s frozen-`position.X` compare → the port's `frost_stuck_x`) and
+the direction-scoped `num551` clamp, plus the three type arms: the Gangsta's
+120-tick bottle throw (the hostile `BulletSnowman` 110 at `12×spriteDirection`,
+25 dmg, `timeLeft = 300` behind `AI_GlobalFiringDistanceCheck`'s
+`MaxWorldViewSize`-deflated box — `NPC.cs:55835-55842`), the Balla's
+post-3-hops 200-tick pause and the Mystery's 16-tick windup into the aimed
+`SnowBallHostile` 109 (35 dmg, speed 10 at the player's top-centre). The
+shared NPC movement (the gravity + the axis-separated tile collision,
+`NPC.cs:27485-27910`'s integration) rides the machine's tail — the port's
+per-machine shape (the slime's pattern), and a wall's zeroed vx feeds the
+stuck flip exactly like the vanilla.
+
+Two documented gaps, both unreachable today:
+
+- **The `confused` resets** (`:29015-29017`, `:29131-29135`) ride the NPC
+  confusion debuff — not ported (the trio's `npc_buffs` row is empty), so
+  the arms land with the debuff table's task.
+- **The `proj.ai[0] = 2f` writes** (`:29021`, `:29082`) are inert for
+  projectiles 109/110: `AI_010` reads `ai[0]` only for type 31
+  (`Projectile.cs:57828`). The port's hostile-spawn seam carries no ai
+  payload; the throw's `timeLeft = 300` rides the resolution's explicit
+  override (`world_sim/npcs.rs`).
