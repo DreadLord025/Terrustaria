@@ -1487,6 +1487,36 @@ pub fn has_entry(kind: NpcKind, variant: SlimeVariant) -> bool {
     })
 }
 
+/// `entry_for_npc`'s non-panicking twin (S1-F-3): the kinds the bestiary
+/// does not list (the boss segments the credits fold, the critter twins the
+/// roster skips) return `None`.
+pub fn try_entry_for_npc(
+    kind: NpcKind,
+    variant: SlimeVariant,
+) -> Option<&'static BestiaryEntryDef> {
+    // The worm segments fold onto the head's entry (the vanilla credits the
+    // whole worm to the head's bestiary id — one entry per credit).
+    let kind = match kind {
+        NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
+        NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
+        NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
+        // The Golem's parts fold onto the body's entry (the Brain's
+        // Creeper precedent — one credit per boss).
+        NpcKind::GolemHead
+        | NpcKind::GolemFistLeft
+        | NpcKind::GolemFistRight
+        | NpcKind::GolemHeadFree => NpcKind::Golem,
+        other => other,
+    };
+    ENTRIES.iter().find(|e| {
+        e.kind == kind
+            && match (e.variant, kind) {
+                (Some(v), NpcKind::Slime) => v == variant,
+                _ => true,
+            }
+    })
+}
+
 pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryEntryDef {
     // The worm segments fold onto the head's entry (the vanilla credits the
     // whole worm to the head's bestiary id — one entry per credit).
