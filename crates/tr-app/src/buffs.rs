@@ -56,6 +56,23 @@ pub fn is_no_time_display(buff_type: i32) -> bool {
     in_set(&BUFF_NO_TIME_DISPLAY, buff_type)
 }
 
+/// `BuffID.Sets.NurseCannotRemoveDebuff` (`BuffID.cs:52`): the debuffs the
+/// Nurse refuses to remove — they neither clear at the heal nor count in
+/// `GetNurseHealCost`'s price (`Main.cs:40061-40064`/`:40147`).
+// Sorted for `in_set`'s binary search — the C# `CreateBoolSet` order is
+// preserved in the comment below.
+const NURSE_CANNOT_REMOVE_DEBUFF: [i32; 20] = [
+    // CreateBoolSet(28, 34, 87, 89, 21, 86, 199, 332, 333, 334, 165, 146,
+    //               48, 158, 157, 350, 215, 147, 321, 43)
+    21, 28, 34, 43, 48, 86, 87, 89, 146, 147, 157, 158, 165, 199, 215, 321,
+    332, 333, 334, 350,
+];
+
+/// `BuffID.Sets.NurseCannotRemoveDebuff[b]` — see [`NURSE_CANNOT_REMOVE_DEBUFF`].
+pub fn nurse_cannot_remove(buff_type: i32) -> bool {
+    in_set(&NURSE_CANNOT_REMOVE_DEBUFF, buff_type)
+}
+
 /// `Main.vanityPet` — 74 entries, verbatim from `Main.cs:9214+`.
 const VANITY_PET_IDS: [i32; 74] = [
     40, 41, 42, 45, 50, 51, 52, 53, 54, 55, 56, 61, 65, 66, 81, 82, 84, 85, 91, 92, 127, 136,

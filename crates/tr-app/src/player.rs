@@ -2227,6 +2227,38 @@ impl Player {
         false
     }
 
+    /// `GetNurseHealCost`'s slot count (`Main.cs:40058-40065`): a debuff
+    /// slot counts when `Main.debuff[b] && buffTime > 60 &&
+    /// !NurseCannotRemoveDebuff[b]`.
+    pub fn remountable_debuff_count(&self) -> i32 {
+        let mut count = 0;
+        for i in 0..crate::buffs::MAX_BUFFS {
+            let b = self.buffs.buff_type[i];
+            if crate::buffs::is_debuff(b)
+                && self.buffs.buff_time[i] > 60
+                && !crate::buffs::nurse_cannot_remove(b)
+            {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// `NPCChatText_DoNurseHeal`'s removal pass (`Main.cs:40147`): the
+    /// debuff slots with `buffTime > 0` and the Nurse's protected list
+    /// clear.
+    pub fn clear_nurse_removable_debuffs(&mut self) {
+        for i in 0..crate::buffs::MAX_BUFFS {
+            let b = self.buffs.buff_type[i];
+            if crate::buffs::is_debuff(b)
+                && self.buffs.buff_time[i] > 0
+                && !crate::buffs::nurse_cannot_remove(b)
+            {
+                self.buffs.clear_buff(b);
+            }
+        }
+    }
+
     /// `Player.ResetProjectileCaches` (`Player.cs:12217-12226`): the recount
     /// input zeroed — called from the `ResetEffects` seam (`:18810`) and the
     /// dead path (`:24752`).
@@ -7408,6 +7440,35 @@ mod tests {
         assert!(!p.immune, "the countdown cleared the flag");
         assert!(!p.immune_no_blink);
         assert!(p.hurt(50, 0.0), "the damage lands after the i-frames");
+    }
+
+    #[test]
+    fn the_nurse_skips_protected_debuffs_in_both_gates() {
+        // `BuffID.Sets.NurseCannotRemoveDebuff` (`BuffID.cs:52`): the
+        // protected Potion Sickness 21 neither counts in the price
+        // (`Main.cs:40061-40064`, the `> 60` time gate too) nor clears at
+        // the heal (`:40147`); the unprotected Poisoned 20 does both.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(21, 3600); // protected
+        p.buffs.add_buff(20, 3600); // removable
+        assert_eq!(p.remountable_debuff_count(), 1, "the protected one stays out of the price");
+        p.clear_nurse_removable_debuffs();
+        assert!(p.buffs.find_buff_index(21).is_some(), "the protected one survives");
+        assert_eq!(p.buffs.find_buff_index(20), None, "the removable clears");
+    }
+
+    #[test]
+    fn the_nurse_price_ignores_young_debuffs() {
+        // `Main.cs:40062`: the cost counts only `buffTime > 60` slots; the
+        // removal (`:40147`) takes any `buffTime > 0`.
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(20, 50); // under the 60-tick price gate
+        assert_eq!(p.remountable_debuff_count(), 0);
+        p.buffs.buff_time[p.buffs.find_buff_index(20).unwrap()] = 1;
+        p.clear_nurse_removable_debuffs();
+        assert_eq!(p.buffs.find_buff_index(20), None, "the removal clears at time 1");
     }
 
     #[test]
