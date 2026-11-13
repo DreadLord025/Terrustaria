@@ -569,7 +569,10 @@ mod tests {
     }
 
     /// Loads the strings the game ships in `Terraria.Localization.Content.en-US*.json`
-    /// and checks a few known keys. Skipped when the decompiled resources are absent.
+    /// and checks a few known keys. The language JSON lives in the gitignored
+    /// `decompiled/` tree (there is none under `assets/`), so this test **fails**
+    /// when that junction is absent: a silent skip let it pass green with 0 keys
+    /// and no coverage (S1-L-12d).
     #[test]
     fn shipped_english_resources_match_the_game() {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../decompiled");
@@ -583,18 +586,23 @@ mod tests {
             "Terraria.Localization.Content.en-US.Legacy.json",
         ];
         let mut manager = LanguageManager::new();
-        let mut loaded = 0;
+        let mut missing = Vec::new();
         for name in resources {
             let path = dir.join(name);
-            if let Ok(text) = std::fs::read_to_string(&path) {
-                manager.add_source(name, text);
-                loaded += 1;
+            match std::fs::read_to_string(&path) {
+                Ok(text) => manager.add_source(name, text),
+                Err(_) => missing.push(name),
             }
         }
-        if loaded == 0 {
-            eprintln!("skipping: {} has no localization resources", dir.display());
-            return;
-        }
+        assert!(
+            missing.is_empty(),
+            "the English localization resources are missing from {} (S1-L-12d): {:?}\n\
+             the language JSON lives in the gitignored `decompiled/` tree — create the \
+             junction (`cmd /c mklink /J decompiled ..\\Terraria-Rust\\decompiled`) before \
+             running the suite",
+            dir.display(),
+            missing
+        );
         manager.set_language(GameCulture::English);
         assert_eq!(manager.get_text_value("ItemName.DirtBlock"), "Dirt Block");
         assert_eq!(manager.get_text_value("ItemName.Shuriken"), "Shuriken");
