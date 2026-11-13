@@ -1683,28 +1683,33 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             |s| (s.damage, s.knock_back, s.crit),
         );
         if let Some(p) = app.player.as_mut() {
-            let weapon_damage = w_dmg as f32 * p.weapon_damage_multiplier(class);
-            let mut damage = weapon_damage;
+            // `Player.GetWeaponDamage` (`:53427`): the weapon's own part is
+            // `(int)(damage * multiplier + 5E-06f)` — the C# truncates it
+            // BEFORE the fuse (S1-C-4), and the multiplier is the ranged
+            // dispatch (`:53396-53398`, the ammo categories).
+            let mult = p.weapon_damage_multiplier_with_ammo(class, held.kind, held_use_ammo);
+            let weapon_damage = (w_dmg as f32 * mult + 5e-6) as i32;
+            let mut damage = weapon_damage as f32;
             let mut speed = resolved.speed;
             let mut knock_back = w_kb;
             if let Some(gun) = gun_proj {
                 // `Player.cs:47074-47078`: `KnockBack = sItem.knockBack;
                 // Damage = weaponDamage; speed = sItem.shootSpeed`, and the
                 // fixed projectile from `ItemCheck_Shoot`'s tail (`:48986-49018`).
-                // `weaponDamage` is the class-multiplied weapon damage
-                // (`Player.GetWeaponDamage`, the argument `ItemCheck_Shoot` was
-                // called with). The weapon's own raw values come from the
-                // id-keyed vanilla table — the scaled registry rows for these
-                // four are place holders.
-                damage = gun.damage as f32 * p.weapon_damage_multiplier(class);
+                // `weaponDamage` is the truncated, class-multiplied weapon
+                // damage (`Player.GetWeaponDamage`, the argument
+                // `ItemCheck_Shoot` was called with). The weapon's own raw
+                // values come from the id-keyed vanilla table — the scaled
+                // registry rows for these four are placeholders.
+                damage = weapon_damage as f32;
                 speed = gun.shoot_speed;
                 knock_back = gun.knock_back;
             } else {
                 if resolved.damage > 0 {
                     // `Damage += (int)(num * GetWeaponDamageMultiplier(item))`
                     // (`:53552-53555`) — the AMMO-side contribution the
-                    // resolver fused.
-                    damage += resolved.damage as f32 * p.weapon_damage_multiplier(class);
+                    // resolver fused, truncated on its own.
+                    damage += (resolved.damage as f32 * mult) as i32 as f32;
                 }
                 if resolved.projectile == 285 {
                     // `:53556-53559`: the Nanite-bullet arm scales the FUSED
@@ -4848,6 +4853,38 @@ mod tests {
         assert_eq!(log.iter().filter(|&&(t, _)| t > 22).count(), 4);
         assert_eq!(log.iter().filter(|&&(t, _)| t <= 22).count(), 11);
         assert_eq!(99 - app.equip.ammo[0].count, 11);
+    }
+
+    /// S1-C-4 — `Player.GetWeaponDamage` (`:53427`) truncates the weapon's own
+    /// part `(int)(damage * multiplier + 5E-06f)` BEFORE the ammo fuse adds its
+    /// separately-truncated `(int)(num * multiplier)` (`:53552-53555`), and the
+    /// multiplier is the ranged dispatch (`:53396-53398`): a bullet weapon with
+    /// a fractional `rangedDamage` shows both truncations in the fused shot.
+    #[test]
+    fn s1_c_4_the_weapon_part_truncates_before_the_ammo_fuse() {
+        let mut app = shooter_rig(434, "Clockwork Assault Rifle", &[(0, 97, 99)]);
+        // The fractional multiplier the accessories would build (the arming
+        // sites' stand-in — the dispatch test owns the arms).
+        app.player.as_mut().unwrap().ranged_damage = 1.4;
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 12, &mut log);
+        let fired: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert!(fired.len() >= 1, "the volley fired ({})", fired.len());
+        let wd = registry::get(434).unwrap().damage as f32;
+        let ad = registry::get(97).unwrap().damage as f32;
+        let weapon_part = (wd * 1.4 + 5e-6) as i32;
+        let ammo_part = (ad * 1.4) as i32;
+        assert_eq!(
+            fired[0].damage,
+            weapon_part + ammo_part,
+            "the two truncations land before the add ({wd}*1.4 = {weapon_part}, {ad}*1.4 = {ammo_part})"
+        );
     }
 
     #[test]

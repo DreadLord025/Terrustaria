@@ -397,10 +397,31 @@ fn specific_launcher_ammo_match(launcher: u16, ammo: u16) -> Option<u16> {
 /// `sItem.useAmmo` (`Player.cs:53699`), so for every pair this chain can see
 /// `IsArrow[item.ammo]` is exactly `IsArrow[sItem.useAmmo]` — which the frozen
 /// signature carries as `use_ammo`.
-#[allow(dead_code)] // Phase 4's shooter wire consumes the resolver
-fn is_arrow_ammo(use_ammo: i32) -> bool {
+pub fn is_arrow_ammo(use_ammo: i32) -> bool {
     use_ammo == AMMO_ARROW || use_ammo == AMMO_STAKE
 }
+
+/// `AmmoID.Sets.IsBullet` (`AmmoID.cs:116`): `CreateBoolSet(Bullet, CandyCorn)`.
+/// The same `PickAmmo_PickAmmoItem` equivalence as [`is_arrow_ammo`]'s proof
+/// carries it on `use_ammo` (S1-C-4).
+pub fn is_bullet_ammo(use_ammo: i32) -> bool {
+    use_ammo == 97 || use_ammo == 1783 // `AmmoID.Bullet`, `AmmoID.CandyCorn`
+}
+
+/// `AmmoID.Sets.IsSpecialist` (`AmmoID.cs:117`): `CreateBoolSet(Rocket,
+/// StyngerBolt, JackOLantern, NailFriendly, Coin, Flare, Dart, Snowball,
+/// FallenStar, Gel)`.
+pub fn is_specialist_ammo(use_ammo: i32) -> bool {
+    matches!(
+        use_ammo,
+        771 | 1261 | 1785 | 3108 | 71 | 931 | 283 | 949 | 75 | 23 // Rocket | StyngerBolt | JackOLantern | NailFriendly | Coin | Flare | Dart | Snowball | FallenStar | Gel
+    )
+}
+
+/// `ItemID.Sets.IsRangedSpecialistWeapon` (`ItemID.cs:1472`):
+/// `CreateBoolSet(1156, 3350, 3210, 160, 266, 5629, 3821, 5460)` — the
+/// weapon half of `GetWeaponDamageMultiplier`'s specialist arm (`Player.cs:53401`).
+pub const IS_RANGED_SPECIALIST_WEAPONS: [u16; 8] = [1156, 3350, 3210, 160, 266, 5629, 3821, 5460];
 
 /// The accessory/buff flags `Player.PickAmmo`'s fuse and roll arms read
 /// (`Player.cs:53537`, `:53543`, `:53548`, `:53560`). Their real owners are

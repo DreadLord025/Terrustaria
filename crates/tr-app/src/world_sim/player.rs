@@ -56,9 +56,13 @@ pub(crate) fn grant_ammo_mastery(
     // the three buff flags the C# grants inside the buff loop's `else if` chain.
     for bt in p.buffs.active_types() {
         match bt {
-            // `:10018` — the Archery Potion. Its `arrowDamage *= 1.1f` half has
-            // no port consumer yet (M3-EQUIP-3), so only the speed flag lands.
-            16 => p.archery = true,
+            // `:10018-10019` — the Archery Potion: the speed flag and its
+            // `arrowDamage *= 1.1f` half (S1-C-4: the multiplier's bow arm
+            // reads it now).
+            16 => {
+                p.archery = true;
+                p.arrow_damage *= 1.1;
+            }
             // `:10080` — the Ammo Box buff.
             93 => p.ammo_box = true,
             // `:10195` — the Ammo Reservation buff.
@@ -76,6 +80,21 @@ pub(crate) fn grant_ammo_mastery(
             3804 | 4983 => p.huntress_ammo_cost90 = true,
             // `:13649` — the Chlorophyte Helmet.
             1002 => p.chloro_ammo_cost80 = true,
+            // `:13697-13712` — the Shroomite helmets: the ranged crit and the
+            // ammo-family damage ×1.12 (S1-C-4: the multiplier's arms read
+            // them now).
+            1546 => {
+                p.ranged_crit += 5;
+                p.arrow_damage *= 1.12;
+            }
+            1547 => {
+                p.ranged_crit += 5;
+                p.bullet_damage *= 1.12;
+            }
+            1548 => {
+                p.ranged_crit += 5;
+                p.rocket_damage *= 1.12;
+            }
             // `:13715`, `:13222` — the Shroomite Breastplate / the Huntress set.
             1549 | 3878 => p.ammo_cost80 = true,
             // `:13908` — the Vortex Breastplate.
@@ -95,8 +114,12 @@ pub(crate) fn grant_ammo_mastery(
             4002 | 6181 => {
                 p.magic_quiver = true;
                 p.has_molten_quiver = true;
+                p.arrow_damage_additive_stack += 0.1;
             }
-            4006 | 1321 => p.magic_quiver = true,
+            4006 | 1321 => {
+                p.magic_quiver = true;
+                p.arrow_damage_additive_stack += 0.1;
+            }
             // `:14501` — the Sharp Barb.
             6160 => p.acc_sharp_barb = true,
             // `:14528-14544` — the cycler accessories grant the mode (a later
