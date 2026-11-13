@@ -50,6 +50,7 @@ mod happiness;
 mod player;
 mod player_file;
 mod prefix;
+pub(crate) mod prefix_id;
 mod projectile;
 mod rain;
 mod regen;
