@@ -207,7 +207,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   `cull_mode: None` everywhere (`sprite.rs:345`). Winding only matters if a quad is
   built clockwise, which the port's own winding never is — low risk, but the cull
   state is not 1:1.
-- **D-7 — `MoonLordShake` filter inert (behavioural, medium).** `Main.cs:64976-64984`
+- **D-7 — `MoonLordShake` filter inert (behavioural, medium).** **CLOSED 2026-11-13** (`S1-G-6-moon-lord-shake`): the tick driver (the pre-decrement intensity formula, `lunar.rs`) feeds `FilterId::MoonLordShake` (`EffectPriority.VeryHigh`, `ScreenEffectInitializer.cs:23`) → WGSL pass 10 (the phase-4 approximation — the compiled HLSL is content-side). The deathray/Core target tracking (`UpdateMoonLordIndex`) is unreachable in the filter's lifetime (no Moon Lord exists while the countdown runs) and the `LatestFilterStrength` consumer (`Main.cs:26325`, the death colour) is the death-colour system's follow-up. The original text follows. `Main.cs:64976-64984`
   activates the `MoonLordShake` scene filter during the Moonlord fight;
   `post.rs:147` maps it to pass index 0 (passthrough), so the screen shake never
   happens. The camera itself is unaffected in vanilla either (no camera-offset shake

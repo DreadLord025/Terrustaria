@@ -6,8 +6,8 @@
 
 use crate::app::App;
 use crate::npc::{Npc, NpcKind};
-use tr_core::TILE_PX;
 use crate::world_sim::npcs;
+use tr_core::TILE_PX;
 
 /// `WorldGen.TriggerLunarApocalypse`'s tower list (`WorldGen.cs:86628`) —
 /// the four ids drawn without replacement into the four world slots.
@@ -167,6 +167,25 @@ pub fn start_impending_doom(app: &mut App, countdown: i32) {
 /// to `(maxTilesX / 2, worldSurface / 2) * 16` — the port's single player
 /// stands in for `Player.FindClosest`.
 pub fn update_moon_lord_countdown(app: &mut App) {
+    // S1-G-6: the MoonLordShake filter driver (`Main.cs:64975-64984`) runs
+    // BEFORE the decrement, on the pre-decrement value, under `!Main.dedServ`
+    // (the port is never a dedicated server). `intensity = clamp(sin((float)
+    // countdown / 60f * 0.5f) * 2f, 0f, 1f) * (0.75f - 0.5f * ((float)
+    // countdown / (float)max))` — the `Math.Sin` argument is float math and
+    // the sine runs in double, cast back (`:64977-64979`). `UseIntensity`
+    // persists while the filter is inactive; the activation gate follows the
+    // countdown.
+    if app.world.moon_lord_countdown > 0 {
+        let cd = app.world.moon_lord_countdown as f32;
+        let max = app.world.max_moon_lord_countdown as f32;
+        let arg = cd / 60.0f32 * 0.5f32;
+        let intensity =
+            ((arg as f64).sin() as f32 * 2.0f32).clamp(0.0, 1.0) * (0.75f32 - 0.5f32 * (cd / max));
+        app.filter_driver.moon_lord_shake_intensity = Some(intensity);
+        app.filter_driver.moon_lord_shake_wanted = true;
+    } else {
+        app.filter_driver.moon_lord_shake_wanted = false;
+    }
     if app.world.moon_lord_countdown <= 0 {
         return;
     }

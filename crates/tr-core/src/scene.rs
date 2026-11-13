@@ -382,7 +382,8 @@ impl SceneMetrics {
             + self.count(352)
             + sunflower_term;
         // `SceneMetrics.cs:610`: the glowing-mushroom block set.
-        self.mushroom_tile_count = self.count(70) + self.count(71) + self.count(72) + self.count(528);
+        self.mushroom_tile_count =
+            self.count(70) + self.count(71) + self.count(72) + self.count(528);
         // `SceneMetrics.cs:611-612`:
         self.meteor_tile_count = self.count(37);
         self.dungeon_tile_count = self.count(41)
@@ -837,19 +838,49 @@ impl SceneState {
         let flag = metrics.zone_shimmer
             || (metrics.player_shimmering && metrics.underground_for_shimmering);
         if flag {
-            move_towards_impl(self.skip_transitions, &mut self.shimmer_alpha, 1.0, 0.025, 0.025);
+            move_towards_impl(
+                self.skip_transitions,
+                &mut self.shimmer_alpha,
+                1.0,
+                0.025,
+                0.025,
+            );
             if self.shimmer_alpha >= 0.5 {
-                move_towards_impl(self.skip_transitions, &mut self.shimmer_darken, 1.0, 0.025, 0.025);
+                move_towards_impl(
+                    self.skip_transitions,
+                    &mut self.shimmer_darken,
+                    1.0,
+                    0.025,
+                    0.025,
+                );
                 self.shimmer_brighten_delay = 4.0;
             }
             return;
         }
-        move_towards_impl(self.skip_transitions, &mut self.shimmer_darken, 0.0, 0.05, 0.05);
+        move_towards_impl(
+            self.skip_transitions,
+            &mut self.shimmer_darken,
+            0.0,
+            0.05,
+            0.05,
+        );
         if self.shimmer_darken == 0.0 {
-            move_towards_impl(self.skip_transitions, &mut self.shimmer_brighten_delay, 0.0, 1.0, 1.0);
+            move_towards_impl(
+                self.skip_transitions,
+                &mut self.shimmer_brighten_delay,
+                0.0,
+                1.0,
+                1.0,
+            );
         }
         if self.shimmer_brighten_delay == 0.0 {
-            move_towards_impl(self.skip_transitions, &mut self.shimmer_alpha, 0.0, 0.05, 0.05);
+            move_towards_impl(
+                self.skip_transitions,
+                &mut self.shimmer_alpha,
+                0.0,
+                0.05,
+                0.05,
+            );
         }
     }
 
@@ -1000,11 +1031,15 @@ pub enum FilterId {
     HeatDistortion,
     /// `Filters.Scene["WaterDistortion"]` (`:42`), `EffectPriority.VeryHigh`.
     WaterDistortion,
+    /// `Filters.Scene["MoonLordShake"]` (`ScreenEffectInitializer.cs:23`) —
+    /// the MoonLordScreenShaderData shake, `EffectPriority.VeryHigh`. The
+    /// activation rides the ritual countdown (`Main.cs:64976-64984`, S1-G-6).
+    MoonLordShake,
 }
 
 impl FilterId {
     /// The board set, in `ScreenEffectInitializer.Load` order.
-    pub const ALL: [FilterId; 9] = [
+    pub const ALL: [FilterId; 10] = [
         FilterId::Graveyard,
         FilterId::BloodMoon,
         FilterId::Noir,
@@ -1014,11 +1049,18 @@ impl FilterId {
         FilterId::BlizzardOverlay,
         FilterId::HeatDistortion,
         FilterId::WaterDistortion,
+        FilterId::MoonLordShake,
     ];
     /// The UV-distortion filters (phase 4): they run as extra chained passes
     /// around the tint winner, in `priority` order (Low heat first, VeryHigh
-    /// water last) — the vanilla stack order.
-    pub const DISTORTIONS: [FilterId; 2] = [FilterId::HeatDistortion, FilterId::WaterDistortion];
+    /// water then VeryHigh MoonLordShake last — the equal-priority
+    /// activations sit after their earlier siblings,
+    /// `FilterManager.OnActivate` `:70-76`) — the vanilla stack order.
+    pub const DISTORTIONS: [FilterId; 3] = [
+        FilterId::HeatDistortion,
+        FilterId::WaterDistortion,
+        FilterId::MoonLordShake,
+    ];
     /// The post-pass competitors — the `Filters.Scene` entries only. The
     /// overlays render inside the scene (vanilla `RenderLayers.Landscape`),
     /// never in `FilterManager.EndCapture`.
@@ -1042,6 +1084,7 @@ impl FilterId {
             FilterId::BlizzardOverlay => "BlizzardOverlay",
             FilterId::HeatDistortion => "HeatDistortion",
             FilterId::WaterDistortion => "WaterDistortion",
+            FilterId::MoonLordShake => "MoonLordShake",
         }
     }
 
@@ -1057,6 +1100,8 @@ impl FilterId {
             // `ScreenEffectInitializer.cs:41-42`.
             FilterId::HeatDistortion => EffectPriority::Low,
             FilterId::WaterDistortion => EffectPriority::VeryHigh,
+            // `:23` — the MoonLordScreenShaderData shake row.
+            FilterId::MoonLordShake => EffectPriority::VeryHigh,
         }
     }
 
@@ -1107,7 +1152,7 @@ impl Default for FilterSlot {
 /// filter per frame — vanilla's stacking collapses to the last entry).
 #[derive(Debug)]
 pub struct FilterBoard {
-    slots: [FilterSlot; 9],
+    slots: [FilterSlot; 10],
     seq: u32,
 }
 
@@ -2262,7 +2307,7 @@ mod tests {
         let mut fx = StormShader::new();
         fx.update_blizzard(1.0, 1.0);
         assert!((fx.wind_speed - (1.0 * 0.05 + 0.1 * 0.95)).abs() < 1e-6); // 0.145
-                                                                           // Direction: (-windSpeed, -1) × (10, 2) normalized × (0.8, 0.6).
+        // Direction: (-windSpeed, -1) × (10, 2) normalized × (0.8, 0.6).
         let d = fx.direction();
         assert!(d[0] < 0.0 && d[1] < 0.0);
         // The scroll wraps into ±10.
@@ -2291,7 +2336,7 @@ mod tests {
         assert_eq!(blood_moon_opacity(100.0, surface, rock), 0.75);
         assert_eq!(blood_moon_opacity(150.0, surface, rock), 0.75); // at +50
         assert_eq!(blood_moon_opacity(280.0, surface, rock), 0.0); // at rock+100
-                                                                   // Midpoint: SmoothStep is a plain inverse lerp (`Utils.cs:126-129`).
+        // Midpoint: SmoothStep is a plain inverse lerp (`Utils.cs:126-129`).
         let mid = blood_moon_opacity(215.0, surface, rock); // (215-150)/(280-150) = 0.5
         assert!((mid - 0.375).abs() < 1e-6);
     }
@@ -2658,8 +2703,16 @@ mod tests {
         for _ in 0..40 {
             st.update(&m);
         }
-        assert!(st.shimmer_alpha >= 0.99, "alpha ramps in: {}", st.shimmer_alpha);
-        assert!(st.shimmer_darken > 0.9, "darken follows: {}", st.shimmer_darken);
+        assert!(
+            st.shimmer_alpha >= 0.99,
+            "alpha ramps in: {}",
+            st.shimmer_alpha
+        );
+        assert!(
+            st.shimmer_darken > 0.9,
+            "darken follows: {}",
+            st.shimmer_darken
+        );
 
         // The zone off: the darken decays at 0.05/tick while the delay holds
         // the alpha; the alpha decays after the delay drains.
@@ -2667,12 +2720,24 @@ mod tests {
         for _ in 0..20 {
             st.update(&m);
         }
-        assert!(st.shimmer_darken < 0.05, "darken decays: {}", st.shimmer_darken);
-        assert!(st.shimmer_alpha > 0.9, "alpha held by the delay: {}", st.shimmer_alpha);
+        assert!(
+            st.shimmer_darken < 0.05,
+            "darken decays: {}",
+            st.shimmer_darken
+        );
+        assert!(
+            st.shimmer_alpha > 0.9,
+            "alpha held by the delay: {}",
+            st.shimmer_alpha
+        );
         for _ in 0..60 {
             st.update(&m);
         }
-        assert!(st.shimmer_alpha < 0.05, "alpha decays after the delay: {}", st.shimmer_alpha);
+        assert!(
+            st.shimmer_alpha < 0.05,
+            "alpha decays after the delay: {}",
+            st.shimmer_alpha
+        );
     }
 
     /// The zone needs the depth window (`SceneMetrics.cs:704`): the count
