@@ -4082,7 +4082,9 @@ player; the size 80+40 per qualified player; the march column on the
 world's far side).
 
 The spawn: `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) —
-the px-space surface band (`position.Y < worldSurface*16 + sHeight` = 200)
+the px-space surface band (`position.Y < worldSurface*16 + sHeight`; the C#
+`sHeight` is 1200, `NPC.cs:6769` — the port's fn uses 200, the S1-F-18
+follow-up)
 plus the ±3000 px window around `invasionX` — overrides the natural roll
 with the goblin table (`:1419-1450`): the hardmode Summoner 1/30 (while
 none alive), the Sorcerer 1/9, the Thief 1/5, the Peon 1/3, the Warrior
