@@ -20,7 +20,9 @@
 use std::path::PathBuf;
 
 /// FNV-1a (64-bit) over the concatenated non-comment lines, joined by `\n`.
-const DATA_FNV1A64: u64 = 0x7844_1ad6_1667_1464;
+/// Re-pinned for S1-H-8 (the sort fields `melee/ranged/magic/…`/`dye`/`mount_type`
+/// added to every generated row).
+const DATA_FNV1A64: u64 = 0xfca8_1564_5287_670a;
 /// `ItemID.Count` (`ItemID.cs:14861`) — the number of `ItemDef` rows.
 const ROWS: usize = 6196;
 

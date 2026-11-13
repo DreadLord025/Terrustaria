@@ -1189,9 +1189,10 @@ impl App {
             // `ChestUI.DrawButton`'s click dispatch (`ChestUI.cs:281-308`) —
             // the C# `DrawButtons` pass runs before `DrawSlots`, so the
             // buttons take the press before the slot grid sees it. IDs 0-3
-            // are the M3-STORE-2 transfers, 5/6 the rename pair (ID 5 →
-            // `RenameChest` :827-838, ID 6 → `RenameChestCancel` :863-869);
-            // Sort (4) stays label-less and takes no clicks. The port's
+            // are the M3-STORE-2 transfers, 4 Sort (`ItemSorting.SortChest`,
+            // `:304-306`, S1-H-8), 5/6 the rename pair (ID 5 →
+            // `RenameChest` :827-838, ID 6 → `RenameChestCancel` :863-869).
+            // The port's
             // modal rename keyboard parks the world routes, so the
             // editing-state arms (`Save`/`Cancel` clicks) are the overlay
             // shape's revive point.
@@ -1206,6 +1207,7 @@ impl App {
                 ) {
                     match id {
                         0..=3 => self.chest_transfer_click(id),
+                        ui::chest::BUTTON_SORT => self.chest_sort_click(),
                         ui::chest::BUTTON_RENAME => chest::rename_button_click(self),
                         ui::chest::BUTTON_RENAME_CANCEL => {
                             chest::rename_cancel(self);
@@ -1386,6 +1388,26 @@ impl App {
                     crate::bank::restock(&mut wc.slots, &mut self.inventory, &mut self.equip.ammo);
             }
         }
+    }
+
+    /// `ChestUI.cs:304-306` → `ItemSorting.SortChest` (`ItemSorting.cs:1629-1653`)
+    /// → `SortInventory(chest, withSync: true, withFeedback: true)` over the open
+    /// world chest's slots. The damage-ranked layer order
+    /// (`AddSortingPrioritiesBasedOnPlayerDamage`, `:1412-1425`) reads the local
+    /// player's `melee/ranged/magic/minionDamage` multipliers; the net-sync half
+    /// is a no-op outside multiplayer (`Main.netMode != 1`, `:1669`).
+    fn chest_sort_click(&mut self) {
+        let idx = self.open_container() as usize;
+        // The open-container gate in `handle_chest_clicks` guarantees a live
+        // store entry; the `get_mut` keeps the click path panic-free regardless.
+        let Some(wc) = self.world_chests.get_mut(idx) else {
+            return;
+        };
+        let mult = match self.player.as_ref() {
+            Some(p) => [p.melee_damage, p.ranged_damage, p.magic_damage, p.minion_damage],
+            None => [1.0; 4],
+        };
+        crate::item_sorting::sort_chest(&mut wc.slots, mult);
     }
 
     /// One ctx-3 cell's click pair (`ItemSlot.Handle`'s `LeftClick` +
@@ -2420,6 +2442,25 @@ mod tests {
             app.world_chests[0].slots[2].count, 500,
             "the stone overflow stayed in the chest"
         );
+    }
+
+    /// S1-H-8 — the Sort button (id 4) runs `ItemSorting.SortChest`
+    /// (`ChestUI.cs:304-306`) over the open world chest: the layer engine
+    /// reorders the slots so the `Weapons - Melee` sword sorts before the
+    /// `Last - Tiles (Common)` block, compacting into the low slots.
+    #[test]
+    fn s1_h_8_sort_button_reorders_the_world_chest() {
+        let mut app = stocked_chest_app(vec![slot(2, 10), slot(24, 1)]);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 404.0); // the Sort row (id 4)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the Sort button took the click");
+        assert!(!app.ui_left_press, "the press is consumed");
+        assert_eq!(
+            app.world_chests[0].slots[0].kind, 24,
+            "the melee weapon sorts before the dirt block"
+        );
+        assert_eq!(app.world_chests[0].slots[1].kind, 2);
     }
 
     /// DW-3.1 — with the void vault enabled (`IsVoidVaultEnabled`,

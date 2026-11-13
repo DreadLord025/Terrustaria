@@ -132,3 +132,6 @@ crates/tr-app/src/player.rs|fn can_mount|S1-L-8 - Mount.CanMount's bat-wet rule 
 crates/tr-app/src/player.rs|fn s1_l_8_can_mount_applies_the_bat_and_grapple_sets|S1-L-8 - per-id activation gates: the bat refuses water/dripping/wet probe; carts + CanUseHooks keep a live grapple
 crates/tr-app/src/player.rs|fn s1_l_8_fishron_halves_run_stats_outside_the_special|S1-L-8 - Cute Fishron MountFishronSpecialCounter (60 hurt / 420 wet-or-rain) and the Player.cs:26655 halving
 crates/tr-app/src/mount.rs|fn is_cart|S1-L-8 - MountID.Sets.Cart (27 ids) and CanUseHooks ({54,57-60}) for Mount.CanMount's grapple gate
+crates/tr-app/src/item_sorting.rs|pub fn sort_chest|S1-H-8 - the ItemSorting chest Sort engine (52 layers, SortIndicesStable + SetupSortingPriorities order, ItemSorting.cs:1492-1653)
+crates/tr-app/src/sortdata.rs|pub const TILE_FRAME_IMPORTANT|S1-H-8 - the generated ItemSorting lookup tables (SortingPriority* int sets, IsFood/fish/crate, projHook, tileFrameImportant)
+crates/tr-app/src/ui/chest.rs|pub(crate) const BUTTON_SORT|S1-H-8 - the chest Sort button (inter[122]) and its ItemSorting.SortChest dispatch (ChestUI.cs:227,304-306)

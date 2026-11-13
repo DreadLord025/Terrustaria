@@ -8,14 +8,14 @@
 //! them through [`PanelState`], built once per frame at the `draw_hud` call
 //! site (`app/frame.rs`). The click dispatch inside `ChestUI.DrawButton`
 //! (`:281-308`) is `app/clicks.rs`'s — the rename pair (5/6) landed with
-//! phase 5, the M3-STORE-2 transfers (0-3) with M3-CHEST-INT; the per-slot
+//! phase 5, the M3-STORE-2 transfers (0-3) with M3-CHEST-INT, and Sort (4)
+//! with S1-H-8. The per-slot
 //! `ItemSlot.Handle` hover dispatch (`:385`) is phase 4. The inline-edit
 //! caret arm of `DrawName` (`:165-184`) is phase 5's rename flow.
 //!
-//! Out of this phase: the bank contexts (4/32, M3-STORE-1), Sort/ItemSorting
-//! (anchor 4 stays label-less), the quick-stack glow
-//! (`ItemSlot.PrepareForChest`, `ItemSlot.cs:467-481` — a glow-array resize
-//! the port's glow system does not carry), tooltips (M7-UI-6).
+//! Out of this phase: the bank contexts (4/32, M3-STORE-1), the quick-stack
+//! glow (`ItemSlot.PrepareForChest`, `ItemSlot.cs:467-481` — a glow-array
+//! resize the port's glow system does not carry), tooltips (M7-UI-6).
 
 use glam::Vec2;
 use tr_render::SpriteRenderer;
@@ -29,6 +29,9 @@ use crate::item::{EMPTY_SLOT, ItemSlot};
 /// `ChestUI.ButtonID.Count` (`ChestUI.cs:36-41`): LootAll 0, DepositAll 1,
 /// QuickStack 2, Restock 3, Sort 4, RenameChest 5, RenameChestCancel 6.
 pub(crate) const BUTTON_COUNT: usize = 7;
+/// `ChestUI.ButtonID.Sort` (`ChestUI.cs:30`) — the button id the chest Sort
+/// row dispatches to `ItemSorting.SortChest` (`ChestUI.cs:304-306`).
+pub(crate) const BUTTON_SORT: usize = 4;
 /// `ChestUI.ButtonID.RenameChest` (`ChestUI.cs:32`).
 pub(crate) const BUTTON_RENAME: usize = 5;
 /// `ChestUI.ButtonID.RenameChestCancel` (`ChestUI.cs:34`).
@@ -462,10 +465,10 @@ pub(crate) fn slot_at(mouse: Vec2, scroll_row: i32) -> Option<usize> {
 
 /// `ChestUI.cs:236-240` + the click dispatch `:281-308`: the button row's
 /// hit-test for `handle_chest_clicks` — every visible, labelled button's rect
-/// (the transfers 0-3, the rename pair 5/6; Sort 4 stays label-less and takes
-/// no clicks). Generalised from the rename pair's test (the same rect +
-/// widen rules, `:236-240`): the C# answers the possibly widened re-hover
-/// rect (`flag`) per visible button, in the `DrawButtons` id order.
+/// (the transfers 0-3, Sort 4, the rename pair 5/6). Generalised from the
+/// rename pair's test (the same rect + widen rules, `:236-240`): the C#
+/// answers the possibly widened re-hover rect (`flag`) per visible button, in
+/// the `DrawButtons` id order.
 pub(crate) fn chest_button_hit(
     lookups: &assets::Lookups,
     mouse: Vec2,
@@ -479,7 +482,7 @@ pub(crate) fn chest_button_hit(
             continue; // `ChestUI.cs:198-202`
         }
         let Some(label) = button_label(id, editing) else {
-            continue; // the label-less anchors (Sort 4) take no clicks
+            continue; // the label-less anchors take no clicks
         };
         let w = button_text_width(lookups, label);
         let (_, y) = button_anchor(id);
@@ -517,9 +520,8 @@ fn button_visible(id: usize, chest: i32, editing: bool) -> bool {
 /// `ChestUI.cs:205-229`: the text buttons' labels. The transfers 0-3 are the
 /// `Lang.inter[29]/[30]/[31]/[82]` en-US strings the bank row already
 /// hardcodes (`ui/inventory.rs`'s M3-STORE-1 row — `:209`/:212/:215/:218);
-/// Sort (4, `inter[122]` :227) stays label-less — ItemSorting is out of
-/// scope (the plan's OUT). The rename strings are the vanilla en-US
-/// localization (`Lang.inter[Main.editChest ? 47 : 61]`/`Lang.inter[63]`,
+/// Sort (4) is `Lang.inter[122]` (`ChestUI.cs:227`). The rename strings are
+/// the vanilla en-US localization (`Lang.inter[Main.editChest ? 47 : 61]`/`Lang.inter[63]`,
 /// `:221`/:224 — inter[47] "Save", inter[61] "Rename", inter[63] "Cancel"),
 /// carried like the port's hardcoded "Inventory"/"Coins"/"Ammo" labels.
 fn button_label(id: usize, editing: bool) -> Option<&'static str> {
@@ -532,6 +534,8 @@ fn button_label(id: usize, editing: bool) -> Option<&'static str> {
         2 => Some("Quick Stack"),
         // `Lang.inter[82]` (:218).
         3 => Some("Restock"),
+        // `Lang.inter[122]` (:227).
+        BUTTON_SORT => Some("Sort"),
         // `Lang.inter[Main.editChest ? 47 : 61]` (:221).
         BUTTON_RENAME => Some(if editing { "Save" } else { "Rename" }),
         // `Lang.inter[63]` (:224).
@@ -722,11 +726,10 @@ mod tests {
         assert_eq!(hit(Vec2::new(497.0, 428.0), &idle, false), None);
     }
 
-    /// DW-3.5 — the transfer buttons 0-3 draw the `Lang.inter[29/30/31/82]`
-    /// labels (`ChestUI.cs:206-218`, the en-US strings the bank row already
-    /// carries) at the reserved anchors, their hit regions answer, and the
-    /// label-less Sort anchor (4, `inter[122]` — out of scope) draws nothing
-    /// and takes no clicks (`ChestUI.cs:226-228` stays unported).
+    /// DW-3.5 — the transfer buttons 0-3 and Sort (4) draw their labels
+    /// (`ChestUI.cs:206-227`, the en-US strings the bank row already carries
+    /// plus `inter[122]`), at the reserved anchors, and their hit regions
+    /// answer.
     #[test]
     fn test_DW_3_5_transfer_button_labels_and_hit_regions() {
         // The labels are the bank row's hardcoded English strings
@@ -735,7 +738,7 @@ mod tests {
         assert_eq!(button_label(1, false), Some("Deposit All"));
         assert_eq!(button_label(2, false), Some("Quick Stack"));
         assert_eq!(button_label(3, false), Some("Restock"));
-        assert_eq!(button_label(4, false), None, "Sort stays label-less");
+        assert_eq!(button_label(4, false), Some("Sort"));
         // The anchors are the reserved rows: (506, invBottom + 40 + ID*26)
         // (`ChestUI.cs:203`).
         assert_eq!(button_anchor(0), (506.0, 298.0));
@@ -750,8 +753,8 @@ mod tests {
         assert_eq!(hit(Vec2::new(510.0, 326.0)), Some(1));
         assert_eq!(hit(Vec2::new(510.0, 352.0)), Some(2));
         assert_eq!(hit(Vec2::new(510.0, 378.0)), Some(3));
-        // Anchor 4's row answers nothing — no label, no rect.
-        assert_eq!(hit(Vec2::new(510.0, 404.0)), None);
+        // Anchor 4's row now answers (the Sort button).
+        assert_eq!(hit(Vec2::new(510.0, 404.0)), Some(BUTTON_SORT));
         // Off the row entirely: None.
         assert_eq!(hit(Vec2::new(480.0, 300.0)), None);
     }

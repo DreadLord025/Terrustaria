@@ -11505,3 +11505,30 @@ The order the branch now runs, and its C# citation:
   stream, `WorldFrameKey` input or world-seed value changes; only the sequence in
   which the per-phase steppers run within a frame.
 
+## The chest Sort engine (S1-H-8, 2026-11-13)
+
+`Terraria/UI/ItemSorting.cs` is ported 1:1 to `crates/tr-app/src/item_sorting.rs`
+(the 52-layer sorter behind `ChestUI` button id 4), with the lookup tables in the
+generated `crates/tr-app/src/sortdata.rs` (`tools/GenSortData/gen.py`). Two
+deliberate deviations, both order-preserving:
+
+- **`withFeedback` is accepted and ignored.** In the C# it only drives
+  `ItemSlot.SetGlow` (`ItemSorting.cs:1584-1587`) — a per-slot glow pulse on the
+  moved stacks. The port has no glow system (`ItemSlot` carries no glow state), so
+  `sort_chest` passes `true` through to mirror the call shape but the flag has no
+  effect. The resulting *order* is identical, so this is a visual-only gap; it
+  closes when the glow/`SetGlow` machinery lands.
+- **`_layerWhiteLists`/`Validate` is a precomputed per-type layer index.** The C#
+  builds, for each layer, the item types it claimed in a synthetic full-inventory
+  sweep, then `Validate` (`:23-29`) keeps an item only if its type is in the
+  current layer's whitelist. Since each type is claimed by exactly one layer, the
+  same behaviour is a per-type "first claiming layer" index computed once
+  (`layer_of_table`). The C# build asserts the `LastNotTrash` whitelist is empty
+  (`:1409`); the port asserts the identical invariant in
+  `item_sorting::tests::setup_whitelists_covers_every_item`.
+
+The chest-sort path also rides the general "no net-sync outside multiplayer"
+deviation: `SortInventory`'s `withSync` half (`:1669-1679`) is a
+`NetMessage.SendData` loop gated on `Main.netMode == 1`, and the port is
+single-player, so only the sort runs.
+
