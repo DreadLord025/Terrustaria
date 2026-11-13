@@ -27,6 +27,11 @@ Every task in the catalog carries: a **size** (S/M/L), a **severity**, the
 *why* the task exists, with both-side line references, so the implementer never
 has to re-derive the claim.
 
+A task that touches a **random draw** additionally states the **stream and draw
+order** it consumes — which RNG stream, and in which order relative to the other
+draws on that stream (S1-A-10). The contract and its review checklist live in
+[`docs/ANALYSIS.md`](ANALYSIS.md) → "The RNG-order contract (S1-A-10)".
+
 ## Legend
 
 | Mark | Meaning |
@@ -188,7 +193,7 @@ frozen until A1–A3 land.
 | S1-A-7 | Worldgen parity proof: replace `generation_is_reproducible_for_a_seed` (self-consistency) with a **comparison against a C#-generated world**; the FNV-ish hash is the port's own construction with constants re-pinned ~20× | L | D | research/35; `worldgen/mod.rs:259` | A1, A2 | byte-identical tile/chest/NPC sections vs a C# world file |
 | ✅ S1-A-8 | Liquid: restore the C#'s 2 500-slot active-list pass window; the port slices `ceil(len/10)` → ~10× different update frequency for small pools | M | D | research/11-liquid.md | — | lake settling reaches the C#'s equilibrium in the same number of ticks — **DONE 2026-11-13** (`S1-A-8-liquid-pass-window`): `liquid.rs::LiquidSystem` carries `wet_counter`/`cur_max_liquid` and `update` walks the C# `curMaxLiquid / cycles` = 2 500 stride with the `numLiquid` clamp (`Liquid.cs:1069-1106`) — a short active list is re-walked in full (and its dead entries retired) every call instead of one `ceil(len/10)` slice per ten; `end_pass` keeps the retire/promote bookkeeping. Tests `a_short_active_list_is_walked_in_full_every_update` (a 12-cell static row retires on pass 8) and `a_long_active_list_walks_one_stride_per_update` (2 600 entries retire on pass 16, not the ~80 the old slice needs), both watched RED on the pre-fix algorithm. MP's `curMaxLiquid` player scaling (`:998`) stays out of scope. |
 | S1-A-9 | Projectile RNG/kill ordering: `timeLeft--` and `penetrate == 0` must run **per AI sub-step** (C# `:17201/:17206` inside the `while` at `:16676`), not once per update — today extra-update projectiles live ~2× too long | M | D+B | research/06-projectile-core.md; `projectile.rs:9079-9090` | — | golden projectile lifetimes per `extraUpdates` |
-| S1-A-10 | Freeze the RNG-order contract: any task touching a stream must state which stream it consumes and in which order (add to the task template) | S | D | research/35 → task seeds | — | review checklist in `docs/ANALYSIS.md` |
+| ✅ S1-A-10 | Freeze the RNG-order contract: any task touching a stream must state which stream it consumes and in which order (add to the task template) | S | D | research/35 → task seeds | — | review checklist in `docs/ANALYSIS.md` — **DONE 2026-11-13** (`S1-A-10-rng-order-contract`): `docs/ANALYSIS.md` → "The RNG-order contract (S1-A-10)" records the four C# RNG sources (the global `Main.rand`, the `Main.SwapRandom` named streams, `FastRandom`, the per-call re-seeds) plus the `WorldGen.genRand` alias, the contract (name the stream and the draw order) and a six-item review checklist; `docs/ROADMAP.md` → "How tasks work" now requires every RNG-touching task to carry its stream + draw order, and `anchors.txt` arms the section as a lossy-merge tripwire. Docs-only: no code or behaviour change |
 | S1-A-11 | Migrate the remaining runtime consumers off the splitmix/xorshift bridge streams onto the named `UnifiedRandom` streams (`Main.SwapRandom` keys; research/35 task seed 4): item/loot (`item_rng` → `UpdateItems`), NPC updates/spawns (`npc_rng` → `UpdateNPCs`/`SpawnNPCs`/`SpawnNPC`), ambience, growth (`WorldGen.genRand` alias) and the shared `Main.rand` prefix rolls — each call site group with a before/after determinism pair | L | D | research/35 → task seed 4; `app/rng.rs` | A2 | every migrated stage draws from its named stream in the C# order; no splitmix bridge left in the world pass |
 
 ## Stage 1B — Tick order & the main loop
@@ -377,7 +382,7 @@ transport redesign (S2-4) starts.
 | id | Task | Size | Sev | Evidence | deps | Verify |
 | --- | --- | --- | --- | --- | --- | --- |
 | S1-J-1 | The `.wld` tile writer **drops the four wire bits** — and because the C#'s `isTheSameAs` compares them, the RLE run boundaries diverge too | M | D+B | research/42-save-load-audit.md | — | byte-identical tile section vs a C#-written world |
-| S1-J-2 | Header placeholders: GUID, world id, generator version and `LastPlayed` are written as placeholders | S | D | research/42 | — | header byte comparison |
+| ✅ S1-J-2 | Header placeholders: GUID, world id, generator version and `LastPlayed` are written as placeholders | S | D | research/42 | - | `World` now stores `generator_version`/`unique_id`/`world_id`/`last_played` and `.wld` header/flags/footer read+write them (`IO/WorldFile.cs:1225-1227,1251,1756,2048`); covered by `wld::tests::s1_j_2_world_header_identity_roundtrips_in_wld` (2026-11-13, `S1-J-2-world-header-identity`) |
 | S1-J-3 | **Golden fixture**: a C#-written `.wld`/`.plr` in `assets/test/` compared byte-for-byte — today every fixture is Rust-internal | M | D | research/42 | J1 | fixture test in CI |
 | S1-J-4 | `.bak` rolling backups + post-write validation (the port has neither) | M | B | research/42 | — | backup/restore test |
 | S1-J-5 | The `.plr` writer is a subset mirror of the C# `Player.Serialize` — it writes only the sanitised name + the starter items, so the port's `.plr` is **not byte-comparable with a vanilla one** | M | B | research/42; `Player.cs` `Serialize` | J3 | `.plr` byte comparison |

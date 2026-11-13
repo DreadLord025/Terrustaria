@@ -32,7 +32,7 @@ pub fn implemented() -> bool {
 /// the port writes the live [`World`] fields directly.
 pub fn write(w: &mut Writer, world: &World) {
     write_world_flavour(w, world);
-    write_times(w);
+    write_times(w, world);
     // WorldFile.cs:1252-1269: the moon type, tree/cave backgrounds, the
     // ice/jungle/hell back styles. Only `hellBackStyle` is owned; the tree and
     // cave arrays are unowned (no port state — `net.rs`'s `WorldInfo` carries
@@ -266,12 +266,10 @@ fn write_world_flavour(w: &mut Writer, world: &World) {
 }
 
 /// `SaveWorldFlags:1250-1251`: the creation time and the last-played time as
-/// `DateTime.ToBinary` longs. The port keeps neither and must not depend on the
-/// wall clock (determinism), so both are `DateTime.MinValue`'s binary — 0 —
-/// rather than C#'s `DateTime.UtcNow`.
-fn write_times(w: &mut Writer) {
+/// `DateTime.ToBinary` longs.
+fn write_times(w: &mut Writer, world: &World) {
     w.u64(0); // CreationTime — unowned
-    w.u64(0); // LastPlayed — deviation: always the min date, never UtcNow
+    w.u64(world.last_played as u64); // LastPlayed (`DateTime.UtcNow.ToBinary`)
 }
 
 /// `SaveWorldFlags:1282-1298`: the boss flags. `downedBoss1/2/3` are the Eye,
@@ -348,7 +346,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         r.skip(8)?; // CreationTime
     }
     if version >= 284 {
-        r.skip(8)?; // LastPlayed
+        world.last_played = r.u64()? as i64; // LastPlayed (`DateTime.ToBinary`)
     }
     // WorldFile.cs:2021-2068 — moon type, the tree/cave arrays, the back styles. Only the
     // moon type and `hellBackStyle` are owned.
