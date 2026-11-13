@@ -20,6 +20,9 @@
 //! (`:1998-2005`); the ANALYSIS pass records it in Task 9.
 
 use glam::Vec2;
+use serde_json::json;
+use std::collections::HashMap;
+use tr_core::UnifiedRandom;
 use tr_render::SpriteRenderer;
 
 use super::cards::fat_button_style;
@@ -1193,6 +1196,254 @@ pub fn hsl_sliders_update(
     highlight
 }
 
+// --- The Randomize / Copy / Paste handlers -------------------------------------
+
+/// `PlayerVariantID.Sets.AltGenderReference` (`ID/PlayerVariantID.cs:21`) — the
+/// gender counterpart `Player.Male`'s setter remaps to (`Player.cs:3411-3424`).
+pub fn alt_gender_reference(skin_variant: i32) -> i32 {
+    match skin_variant {
+        0 => 4,
+        1 => 5,
+        2 => 6,
+        3 => 7,
+        4 => 0,
+        5 => 1,
+        6 => 2,
+        7 => 3,
+        8 => 9,
+        9 => 8,
+        10 => 11,
+        11 => 10,
+        // `CreateIntSet`'s default (`SetFactory.cs:113`); `Male`'s setter only
+        // ever remaps a value in 0..=11.
+        _ => 0,
+    }
+}
+
+/// `Player.Male`'s setter (`Player.cs:3411-3424`): setting the gender remaps
+/// `skinVariant` to [`alt_gender_reference`] whenever it differs from the
+/// current one (`Sex = value` only when `Male != value`).
+fn set_male(skin_variant: &mut i32, male: bool) {
+    if male != is_male(*skin_variant) {
+        *skin_variant = alt_gender_reference(*skin_variant);
+    }
+}
+
+/// `GetRandomColorVector` (`:1789-1792`): `(NextFloat, NextFloat, NextFloat)`.
+pub fn random_color_vector(rng: &mut UnifiedRandom) -> [f32; 3] {
+    [rng.next_float(), rng.next_float(), rng.next_float()]
+}
+
+/// `Click_RandomizeSingleColor` (`:1779-1787`): the random colour the HSL
+/// menu's Randomize button lands in the active category. (The C# also parks it
+/// in `_currentColorHSL` and rewrites the hex readout; both re-derive from the
+/// draft colour in the port's draw.)
+pub fn randomize_single_color(rng: &mut UnifiedRandom) -> [u8; 4] {
+    hsl_to_rgb_scaled(random_color_vector(rng))
+}
+
+/// The `switch (player.hair + 1)` females of `Click_RandomizePlayer`
+/// (`:1576-1652`) — every listed case forces `Male = false`.
+const FEMALE_HAIR_CASES: [i32; 69] = [
+    5, 6, 7, 10, 12, 19, 22, 23, 26, 27, 30, 33, 34, 35, 37, 38, 39, 40, 41, 44, 45, 46, 47, 48,
+    49, 51, 56, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 79, 80, 81, 82, 84, 85, 86, 87, 88, 90,
+    91, 92, 93, 95, 96, 98, 100, 102, 104, 107, 108, 113, 124, 126, 133, 134, 135, 144, 146, 147,
+    163, 165,
+];
+
+/// `Click_RandomizePlayer` (`:1545-1657`): the cloth menu's Randomize button,
+/// over the draft. The voice fields (`voiceVariant`/`voicePitchOffset`) and the
+/// preview armour assignments stay the screen's documented no-audio /
+/// no-item-icon deviations: the `Main.rand` draws are still consumed in the
+/// source's order so the stream stays 1:1.
+pub fn randomize_player(rng: &mut UnifiedRandom, draft: &mut NewPlayerDraft, hair_picked: &mut bool) {
+    // `int index = Main.rand.Next(AvailableHairstyles.Count);`
+    // `player.hair = AvailableHairstyles[index]; this._lastSelectedHairstyle = player.hair;`
+    draft.hair = HAIRSTYLES[rng.next_max(HAIRSTYLES.len() as i32) as usize];
+    *hair_picked = true;
+
+    // `player.eyeColor = ScaledHslToRgb(GetRandomColorVector());`
+    // `while (player.eyeColor.R + player.eyeColor.G + player.eyeColor.B > 300) { ... }`
+    let mut eye = hsl_to_rgb_scaled(random_color_vector(rng));
+    while eye[0] as i32 + eye[1] as i32 + eye[2] as i32 > 300 {
+        eye = hsl_to_rgb_scaled(random_color_vector(rng));
+    }
+    draft.eye_color = eye;
+
+    // `float num = (float)Main.rand.Next(60, 120) * 0.01f; if (num > 1f) num = 1f;`
+    let mut num = rng.next_range(60, 120) as f32 * 0.01;
+    if num > 1.0 {
+        num = 1.0;
+    }
+    // `player.skinColor.R/G/B = (byte)((float)Main.rand.Next(...) * num);`
+    draft.skin_color[0] = (rng.next_range(240, 255) as f32 * num) as u8;
+    draft.skin_color[1] = (rng.next_range(110, 140) as f32 * num) as u8;
+    draft.skin_color[2] = (rng.next_range(75, 110) as f32 * num) as u8;
+
+    // The five `ScaledHslToRgb(GetRandomColorVector())` colours (`:1565-1569`).
+    draft.hair_color = hsl_to_rgb_scaled(random_color_vector(rng));
+    draft.shirt_color = hsl_to_rgb_scaled(random_color_vector(rng));
+    draft.undershirt_color = hsl_to_rgb_scaled(random_color_vector(rng));
+    draft.pants_color = hsl_to_rgb_scaled(random_color_vector(rng));
+    draft.shoe_color = hsl_to_rgb_scaled(random_color_vector(rng));
+
+    // `player.skinVariant = this._validClothStyles[Main.rand.Next(_validClothStyles.Length)];`
+    draft.skin_variant =
+        VALID_CLOTH_STYLES[rng.next_max(VALID_CLOTH_STYLES.len() as i32) as usize];
+
+    // `player.voiceVariant = (player.Male ? 1 : 2); if (Main.rand.Next(2) == 0)
+    // voiceVariant = 3;` — the voice draw is consumed, the field dropped.
+    let _ = rng.next_max(2);
+
+    // `switch (player.hair + 1)`: the hair forces the gender (`:1576-1652`),
+    // and the `Male` setter remaps `skinVariant` to the other variant.
+    let male = !FEMALE_HAIR_CASES.contains(&(draft.hair + 1));
+    set_male(&mut draft.skin_variant, male);
+}
+
+/// `GetHexColor` (`:1764-1777`): a `#`-prefixed (or bare) `≤6`-digit hex string
+/// to the scaled-HSL triple — `RgbToScaledHsl(new Color(r, g, b))`. `None` when
+/// the string is empty, longer than six characters, or not all hex digits
+/// (`uint.TryParse(NumberStyles.HexNumber)`).
+pub fn parse_hex_color(hex: &str) -> Option<[f32; 3]> {
+    let hex = hex.strip_prefix('#').unwrap_or(hex);
+    if hex.is_empty() || hex.len() > 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let value = u32::from_str_radix(hex, 16).ok()?;
+    Some(rgb_to_hsl_scaled([
+        ((value >> 16) & 0xFF) as u8,
+        ((value >> 8) & 0xFF) as u8,
+        (value & 0xFF) as u8,
+        255,
+    ]))
+}
+
+/// `Click_PasteHex` (`:1337-1347`): a clipboard hex colour lands on the active
+/// category through `ApplyPendingColor`'s `_selectedPicker` switch. Returns
+/// whether the clipboard held a parseable colour.
+pub fn paste_hex(draft: &mut NewPlayerDraft, category: usize, clipboard: &str) -> bool {
+    match parse_hex_color(clipboard) {
+        Some(hsl) => {
+            draft.set_color_of(category, hsl_to_rgb_scaled(hsl));
+            true
+        }
+        None => false,
+    }
+}
+
+/// The template's colour keys, in `Click_PastePlayerTemplate`'s order
+/// (`:1476-1503`) and `GetPlayerTemplateValues`' spellings (`:1371-1397`),
+/// mapped to the [`NewPlayerDraft::set_color_of`] category. The C# lower-cases
+/// every pasted key (`:1436-1440`), so [`apply_player_template`] looks them up
+/// lower-cased.
+const TEMPLATE_COLOR_KEYS: [(&str, usize); 7] = [
+    ("hairColor", 3),
+    ("eyeColor", 4),
+    ("skinColor", 5),
+    ("shirtColor", 6),
+    ("underShirtColor", 7),
+    ("pantsColor", 8),
+    ("shoeColor", 9),
+];
+
+/// `GetPlayerTemplateValues` (`:1349-1406`): the JSON the Copy-template button
+/// copies. The source key order, `version`, `hairStyle`, `clothingStyle`,
+/// `voiceStyle`, `voicePitch` and the seven `GetHexText` colours are kept;
+/// `PlayerInput.PrettyPrintProfiles` (`PlayerInput.cs:2016-2035`) is a no-op for
+/// this flat object (it only rewrites nested-object/array indentation), and
+/// `Formatting.Indented` is [`serde_json::to_string_pretty`]. The voice fields
+/// are the screen's no-audio deviation: the draft carries no voice, so the
+/// gender default (`Player.cs:55735`'s `(Male ? 1 : 2)`) is written.
+pub fn player_template(draft: &NewPlayerDraft) -> String {
+    let mut map = serde_json::Map::new();
+    map.insert("version".into(), json!(1));
+    map.insert("hairStyle".into(), json!(draft.hair));
+    map.insert("clothingStyle".into(), json!(draft.skin_variant));
+    map.insert(
+        "voiceStyle".into(),
+        json!(if is_male(draft.skin_variant) { 1 } else { 2 }),
+    );
+    map.insert("voicePitch".into(), json!(0.0));
+    for (key, id) in TEMPLATE_COLOR_KEYS {
+        let hex = hex_text(draft.color_of(id).unwrap_or([255; 4]));
+        map.insert(key.into(), json!(hex));
+    }
+    serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap_or_default()
+}
+
+/// The `(int)(long)value2` reads of `Click_PastePlayerTemplate` (`:1443`,
+/// `:1447`, `:1456`, `:1464`): a JSON integer, or any number the C# unboxes to
+/// `long` first and then narrows.
+fn template_int(v: &serde_json::Value) -> Option<i32> {
+    v.as_i64()
+        .or_else(|| v.as_f64().map(|f| f as i64))
+        .map(|n| n as i32)
+}
+
+/// `Click_PastePlayerTemplate` (`:1414-1510`): parse a clipboard template and
+/// land its fields on the draft. The C# takes the substring from the first `{`
+/// to the last `}` (so surrounding prose is tolerated), lower-cases every key
+/// for case-insensitive lookup, and validates each value against the screen's
+/// tables before writing. Returns whether a JSON object was found. Fields the
+/// port lacks (voice style/pitch) are validated and dropped, like the C#'s
+/// no-op arms; a non-numeric `version` aborts the whole paste exactly as the
+/// `(long)` cast's `catch` does (`:1441-1444`).
+pub fn apply_player_template(
+    draft: &mut NewPlayerDraft,
+    hair_picked: &mut bool,
+    clipboard: &str,
+) -> bool {
+    // `int num = value.IndexOf("{"); if (num == -1) return;`
+    let Some(start) = clipboard.find('{') else {
+        return false;
+    };
+    let value = &clipboard[start..];
+    // `int num2 = value.LastIndexOf("}"); if (num2 == -1) return;`
+    let Some(end) = value.rfind('}') else {
+        return false;
+    };
+    // `JsonConvert.DeserializeObject<Dictionary<string, object>>(...)`; a parse
+    // failure is swallowed by the source's `catch` (`:1507-1509`).
+    let Ok(serde_json::Value::Object(root)) =
+        serde_json::from_str::<serde_json::Value>(&value[..=end])
+    else {
+        return false;
+    };
+    // `dictionary2[item.Key.ToLower()] = item.Value` (`:1436-1440`).
+    let mut fields: HashMap<String, &serde_json::Value> = HashMap::new();
+    for (k, v) in &root {
+        fields.insert(k.to_lowercase(), v);
+    }
+    // `if (dictionary2.TryGetValue("version", out value2)) _ = (long)value2;`
+    if fields.get("version").is_some_and(|v| template_int(v).is_none()) {
+        return false;
+    }
+    if let Some(h) = fields.get("hairstyle").and_then(|v| template_int(v)) {
+        if HAIRSTYLES.contains(&h) {
+            draft.hair = h;
+            *hair_picked = true; // `_lastSelectedHairstyle = num3`
+        }
+    }
+    if let Some(c) = fields.get("clothingstyle").and_then(|v| template_int(v)) {
+        if VALID_CLOTH_STYLES.contains(&c) {
+            draft.skin_variant = c;
+        }
+    }
+    // `voiceStyle`/`voicePitch` (`:1462-1475`) are validated but dropped — the
+    // draft has no voice (the screen's no-audio deviation).
+    for (key, id) in TEMPLATE_COLOR_KEYS {
+        if let Some(hsl) = fields
+            .get(&key.to_lowercase())
+            .and_then(|v| v.as_str())
+            .and_then(parse_hex_color)
+        {
+            draft.set_color_of(id, hsl_to_rgb_scaled(hsl));
+        }
+    }
+    true
+}
+
 // --- Clicks ---------------------------------------------------------------------
 
 /// `UICharacterCreation.MAX_NAME_LENGTH` (`:142`) — the naming keyboard's cap
@@ -1221,15 +1472,35 @@ pub enum Click {
     Create,
     /// The Back panel (`Click_GoBack` -> `GoBack`, `:1205-1222`).
     Back,
+    /// The HSL menu's Copy button (`Click_CopyHex`, `:1331-1335`).
+    CopyHex,
+    /// The HSL menu's Paste button (`Click_PasteHex`, `:1337-1347`).
+    PasteHex,
+    /// The HSL menu's Randomize button (`Click_RandomizeSingleColor`,
+    /// `:1779-1787`).
+    RandomizeColor,
+    /// The cloth menu's Copy-template button
+    /// (`Click_CopyPlayerTemplate`, `:1408-1412`).
+    CopyTemplate,
+    /// The cloth menu's Paste-template button
+    /// (`Click_PastePlayerTemplate`, `:1414-1510`).
+    PasteTemplate,
+    /// The cloth menu's Randomize button (`Click_RandomizePlayer`,
+    /// `:1545-1657`).
+    RandomizePlayer,
     None,
 }
 
 /// The click table over the live geometry: the categories bar (always), the
 /// Back/Create pair (always), and the active middle menu's own controls —
 /// the name plate + difficulty column (Info), the hair grid (Hairstyles), the
-/// cloth-style buttons (ClothStyles). The HSL rows drag through
-/// [`hsl_sliders_update`] (the draw pass), and the small Copy/Paste/Randomize
-/// buttons click nowhere in the port (no clipboard pipeline — documented).
+/// cloth-style buttons + the template Copy/Paste/Randomize row (ClothStyles),
+/// and the hex Copy/Paste + Randomize row (the HSL menu). The HSL rows drag
+/// through [`hsl_sliders_update`] (the draw pass). The six Copy/Paste/Randomize
+/// buttons map to their `Click_*` handlers (`:1331-1347`, `:1408-1510`,
+/// `:1545-1657`, `:1779-1787`); the clipboard itself lives in
+/// [`super::clipboard`] and the pure transforms in [`paste_hex`] /
+/// [`player_template`] / [`apply_player_template`] / [`randomize_player`].
 pub fn click_at(l: &Layout, category: usize, mouse: Vec2) -> Click {
     // The categories bar (`MakeCategoriesBar`, `:730-768`).
     for id in CATEGORY_IDS {
@@ -1268,11 +1539,38 @@ pub fn click_at(l: &Layout, category: usize, mouse: Vec2) -> Click {
                     return Click::ClothStyle(*style); // `:1284-1287`
                 }
             }
+            // The template row (`:396-430`): Copy/Paste/Randomize.
+            for (k, click) in [
+                Click::CopyTemplate,
+                Click::PasteTemplate,
+                Click::RandomizePlayer,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if in_rect(mouse, l.template_buttons[k]) {
+                    return click;
+                }
+            }
         }
-        // The HSL menu's rows drag in the draw pass; the hex buttons and the
+        // The HSL menu's rows drag in the draw pass; the hex panel and the
         // slider *element* rects click nothing (the C# slider's click is its
-        // drag latch; `Click_ColorPicker` is the category's own handler).
-        MiddleMenu::Hsl { .. } => {}
+        // drag latch; `Click_ColorPicker` is the category's own handler). The
+        // Copy/Paste/Randomize buttons (`:1006-1032`) do click.
+        MiddleMenu::Hsl { .. } => {
+            for (k, click) in [
+                Click::CopyHex,
+                Click::PasteHex,
+                Click::RandomizeColor,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if in_rect(mouse, l.hsl_buttons[k]) {
+                    return click;
+                }
+            }
+        }
     }
     Click::None
 }
@@ -1281,7 +1579,7 @@ pub fn click_at(l: &Layout, category: usize, mouse: Vec2) -> Click {
 
 /// The hovered element, as `UICharacterCreation.Draw`'s tooltip chain reads
 /// them (`:1876-1979`). The voice entries exist so the chain mirrors the
-/// source; the port draws their chrome without audio or clipboard.
+/// source; the port draws their chrome without audio.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum HoverTarget {
     Category(usize),
@@ -1837,7 +2135,8 @@ fn draw_hsl_menu(
     );
 
     // Copy/Paste/Randomize (`:1006-1032`): SmallPanel-backed buttons. Their
-    // clicks are dead in the port (no clipboard pipeline — documented).
+    // clicks route through [`click_at`] (`Click_CopyHex`/`Click_PasteHex`/
+    // `Click_RandomizeSingleColor`).
     for k in 0..3 {
         let sheet = lookups.cc_copy_paste_random[k];
         uistate::draw_colored_image_button(
@@ -2311,8 +2610,205 @@ mod tests {
         assert_eq!(click_at(&l, 1, centre(l.cloth_buttons[0])), Click::ClothStyle(0));
         assert_eq!(click_at(&l, 1, centre(l.cloth_buttons[5])), Click::ClothStyle(9));
         assert_eq!(click_at(&l, 1, centre(l.cloth_buttons[9])), Click::ClothStyle(4));
-        // The HSL menu's rows drag, they do not click.
+        // ClothStyles: the template Copy/Paste/Randomize row (`:396-430`).
+        assert_eq!(click_at(&l, 1, centre(l.template_buttons[0])), Click::CopyTemplate);
+        assert_eq!(click_at(&l, 1, centre(l.template_buttons[1])), Click::PasteTemplate);
+        assert_eq!(click_at(&l, 1, centre(l.template_buttons[2])), Click::RandomizePlayer);
+        // The HSL menu's rows drag, they do not click; the hex Copy/Paste/
+        // Randomize buttons do (`:1006-1032`).
         assert_eq!(click_at(&l, 3, centre([712.0, 352.0, 178.0, 16.0])), Click::None);
+        assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[0])), Click::CopyHex);
+        assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[1])), Click::PasteHex);
+        assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[2])), Click::RandomizeColor);
+    }
+
+    #[test]
+    fn alt_gender_reference_swaps_every_variant() {
+        // `PlayerVariantID.Sets.AltGenderReference` (`ID/PlayerVariantID.cs:21`).
+        for v in 0..=11 {
+            let other = alt_gender_reference(v);
+            assert_eq!(alt_gender_reference(other), v, "involution for {v}");
+            assert_ne!(is_male(v), is_male(other), "gender flips for {v}");
+        }
+    }
+
+    #[test]
+    fn parse_hex_color_matches_gethexcolor() {
+        // `GetHexColor` (`:1764-1777`): the hex bytes through `RgbToScaledHsl`.
+        assert_eq!(
+            parse_hex_color("#D75A37"),
+            Some(rgb_to_hsl_scaled([215, 90, 55, 255]))
+        );
+        // A bare string parses too (`uint.TryParse`).
+        assert_eq!(parse_hex_color("FFFFFF"), Some(rgb_to_hsl_scaled([255, 255, 255, 255])));
+        // Empty, over-long and non-hex strings all fail `TryParse`.
+        assert_eq!(parse_hex_color(""), None);
+        assert_eq!(parse_hex_color("#"), None);
+        assert_eq!(parse_hex_color("1234567"), None);
+        assert_eq!(parse_hex_color("ZZZZZZ"), None);
+        assert_eq!(parse_hex_color("0x1"), None);
+    }
+
+    #[test]
+    fn paste_hex_lands_on_the_selected_colour_category() {
+        // `Click_PasteHex` (`:1337-1347`) through `ApplyPendingColor`'s picker
+        // switch (`:1137-1163`).
+        let mut draft = NewPlayerDraft::new();
+        assert!(paste_hex(&mut draft, 3, "#D75A37"));
+        assert_eq!(draft.hair_color, hsl_to_rgb_scaled(parse_hex_color("#D75A37").unwrap()));
+        // A junk clipboard is a no-op (`GetHexColor` returned false).
+        assert!(!paste_hex(&mut draft, 4, "not a colour"));
+        assert_eq!(draft.eye_color, NewPlayerDraft::new().eye_color);
+        // A non-colour category cannot take a colour (`ApplyPendingColor`'s
+        // default): nothing changes.
+        assert!(paste_hex(&mut draft, 1, "#FFFFFF"));
+        assert_eq!(draft.skin_variant, 0);
+    }
+
+    #[test]
+    fn randomize_player_follows_the_c_sharp_draw_order() {
+        // Re-derive the expected draft from a second `UnifiedRandom` seeded
+        // identically, following `Click_RandomizePlayer` (`:1545-1657`) step
+        // for step — this pins the draw order and the consumed count.
+        let seed = 0x5EED_1234;
+        let mut reference = UnifiedRandom::new(seed);
+        let hair = HAIRSTYLES[reference.next_max(HAIRSTYLES.len() as i32) as usize];
+        let mut eye = hsl_to_rgb_scaled(random_color_vector(&mut reference));
+        while eye[0] as i32 + eye[1] as i32 + eye[2] as i32 > 300 {
+            eye = hsl_to_rgb_scaled(random_color_vector(&mut reference));
+        }
+        let mut num = reference.next_range(60, 120) as f32 * 0.01;
+        if num > 1.0 {
+            num = 1.0;
+        }
+        let mut skin = [255u8; 4];
+        skin[0] = (reference.next_range(240, 255) as f32 * num) as u8;
+        skin[1] = (reference.next_range(110, 140) as f32 * num) as u8;
+        skin[2] = (reference.next_range(75, 110) as f32 * num) as u8;
+        let hair_color = hsl_to_rgb_scaled(random_color_vector(&mut reference));
+        let shirt = hsl_to_rgb_scaled(random_color_vector(&mut reference));
+        let undershirt = hsl_to_rgb_scaled(random_color_vector(&mut reference));
+        let pants = hsl_to_rgb_scaled(random_color_vector(&mut reference));
+        let shoe = hsl_to_rgb_scaled(random_color_vector(&mut reference));
+        let mut skin_variant =
+            VALID_CLOTH_STYLES[reference.next_max(VALID_CLOTH_STYLES.len() as i32) as usize];
+        let _ = reference.next_max(2); // the voice draw
+        let male = !FEMALE_HAIR_CASES.contains(&(hair + 1));
+        if male != is_male(skin_variant) {
+            skin_variant = alt_gender_reference(skin_variant);
+        }
+
+        let mut rng = UnifiedRandom::new(seed);
+        let mut draft = NewPlayerDraft::new();
+        let mut hair_picked = false;
+        randomize_player(&mut rng, &mut draft, &mut hair_picked);
+
+        assert_eq!(draft.hair, hair);
+        assert_eq!(draft.eye_color, eye);
+        assert_eq!(draft.skin_color, skin);
+        assert_eq!(draft.hair_color, hair_color);
+        assert_eq!(draft.shirt_color, shirt);
+        assert_eq!(draft.undershirt_color, undershirt);
+        assert_eq!(draft.pants_color, pants);
+        assert_eq!(draft.shoe_color, shoe);
+        assert_eq!(draft.skin_variant, skin_variant);
+        // `_lastSelectedHairstyle = player.hair` (`:1551`).
+        assert!(hair_picked);
+        // The streams end on the same raw sample — same number/order of draws.
+        assert_eq!(rng.peek(), reference.peek());
+        // The landed values are always in the screen's tables.
+        assert!(HAIRSTYLES.contains(&draft.hair));
+        assert!(VALID_CLOTH_STYLES.contains(&draft.skin_variant));
+    }
+
+    #[test]
+    fn player_template_round_trips_through_the_paste_path() {
+        // `GetPlayerTemplateValues` (`:1349-1406`) -> `Click_PastePlayerTemplate`
+        // (`:1414-1510`). The colour re-write is the documented
+        // `RgbToScaledHsl` -> `ScaledHslToRgb` composition (not an exact
+        // identity for arbitrary bytes), so the expectation is that same
+        // composition.
+        let mut source = NewPlayerDraft::new();
+        source.hair = 30;
+        source.skin_variant = 5;
+        source.hair_color = [10, 200, 30, 255];
+        source.eye_color = [1, 2, 3, 255];
+        source.skin_color = [200, 100, 50, 255];
+        source.shirt_color = [12, 34, 56, 255];
+        source.undershirt_color = [200, 0, 200, 255];
+        source.pants_color = [5, 5, 250, 255];
+        source.shoe_color = [90, 90, 90, 255];
+
+        let json = player_template(&source);
+        // The source keys survive, indented (`Formatting.Indented`).
+        assert!(json.contains("\"version\": 1"));
+        assert!(json.contains("\"hairStyle\": 30"));
+        assert!(json.contains("\"clothingStyle\": 5"));
+        assert!(json.contains("\"hairColor\": \"#0AC81E\""));
+        // It parses as JSON (nothing else would survive a real paste).
+        assert!(serde_json::from_str::<serde_json::Value>(&json).is_ok());
+
+        let mut pasted = NewPlayerDraft::new();
+        let mut hair_picked = false;
+        assert!(apply_player_template(&mut pasted, &mut hair_picked, &json));
+        assert_eq!(pasted.hair, 30);
+        assert_eq!(pasted.skin_variant, 5);
+        assert!(hair_picked);
+        let compose = |c: [u8; 4]| hsl_to_rgb_scaled(rgb_to_hsl_scaled(c));
+        assert_eq!(pasted.hair_color, compose(source.hair_color));
+        assert_eq!(pasted.eye_color, compose(source.eye_color));
+        assert_eq!(pasted.skin_color, compose(source.skin_color));
+        assert_eq!(pasted.shirt_color, compose(source.shirt_color));
+        assert_eq!(pasted.undershirt_color, compose(source.undershirt_color));
+        assert_eq!(pasted.pants_color, compose(source.pants_color));
+        assert_eq!(pasted.shoe_color, compose(source.shoe_color));
+    }
+
+    #[test]
+    fn apply_player_template_tolerates_prose_and_rejects_bad_forms() {
+        // `value.Substring(value.IndexOf("{")) ... LastIndexOf("}")`
+        // (`:1420-1431`): surrounding prose is stripped.
+        let mut draft = NewPlayerDraft::new();
+        let mut picked = false;
+        assert!(apply_player_template(
+            &mut draft,
+            &mut picked,
+            "sure! {\"Version\": 1, \"HairStyle\": 51, \"ClothingStyle\": 5} there",
+        ));
+        assert_eq!(draft.hair, 51); // key lower-cased (`:1436-1440`)
+        assert_eq!(draft.skin_variant, 5);
+        assert!(picked);
+
+        // No `{` (or no `}`) -> nothing (`:1420-1431`).
+        let mut a = NewPlayerDraft::new();
+        assert!(!apply_player_template(&mut a, &mut false, "no object here"));
+        assert!(!apply_player_template(&mut a, &mut false, "{\"version\": 1"));
+        assert_eq!(a, NewPlayerDraft::new());
+
+        // A non-numeric `version` aborts the whole paste (`:1441-1444`).
+        let mut b = NewPlayerDraft::new();
+        assert!(!apply_player_template(
+            &mut b,
+            &mut false,
+            "{\"version\": \"one\", \"hairStyle\": 51}",
+        ));
+        assert_eq!(b.hair, 0);
+
+        // Values outside the tables are dropped, the rest still lands
+        // (`:1445-1469`).
+        let mut c = NewPlayerDraft::new();
+        assert!(apply_player_template(
+            &mut c,
+            &mut false,
+            "{\"version\": 1, \"hairStyle\": 99999, \"clothingStyle\": 6}",
+        ));
+        assert_eq!(c.hair, 0);
+        assert_eq!(c.skin_variant, 6);
+
+        // Malformed JSON is swallowed (`catch`, `:1507-1509`).
+        let mut d = NewPlayerDraft::new();
+        assert!(!apply_player_template(&mut d, &mut false, "{not json}"));
+        assert_eq!(d, NewPlayerDraft::new());
     }
 
     #[test]

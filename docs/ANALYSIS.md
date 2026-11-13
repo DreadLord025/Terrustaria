@@ -2255,6 +2255,21 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` →
   (220/52 is the mode-0 override, `:48911-48913`).
 * **`GameTipsDisplay`** (`UICharacterCreation.cs:170`, the rotating hint
   line under the panel, `:1998-2005`) is not ported.
+* **The character creator's clipboard and voice** (S1-H-11, 2026-11-13). The
+  Copy/Paste buttons are live: `ui/clipboard.rs` is the `Platform.Get<IClipboard>()`
+  port backed by the `arboard` crate (the port's only OS-clipboard access), and
+  `char_creation.rs` ports `Click_CopyHex`/`Click_PasteHex`/`GetHexColor`/
+  `GetPlayerTemplateValues`/`Click_PastePlayerTemplate` plus `Click_RandomizePlayer`
+  and `Click_RandomizeSingleColor`. Two retained deviations: (1) the draft still
+  has **no voice fields** (`voiceVariant`/`voicePitchOffset`), so `player_template`
+  writes the gender default `voiceStyle = (Male ? 1 : 2)` (`Player.cs:55735`'s
+  legacy default) and `voicePitch = 0.0`, and a pasted template's `voiceStyle`/
+  `voicePitch` are validated but dropped — `Click_RandomizePlayer` still *consumes*
+  the C# voice draw (`Main.rand.Next(2)`) so the stream stays 1:1; (2)
+  `apply_player_template` is lenient where the C# `catch` would abort the whole
+  paste on a type cast (a colour value that is not a string is skipped, not
+  fatal), and it follows `Player.PrettyPrintProfiles`' no-op-for-a-flat-object
+  behaviour rather than the formatting transform.
 * **`assign_random_world_name` is a stand-in**: `AssignRandomWorldName`
   (`UIWorldCreation.cs:1002-1025`) composes a name from the
   `RandomWorldName_*` localization tables the port has not loaded; the
