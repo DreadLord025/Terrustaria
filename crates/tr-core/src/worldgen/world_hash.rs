@@ -211,8 +211,8 @@ mod tests {
     // changes — every hash moves. (The `variants` field itself is not hashed;
     // the frame pixels are.) Values measured on the merged tree (BUG-25 +
     // S1-A-3 together).
-    const SEED42_512: u32 = 1445035279;
-    const DEFAULT_WORLD: u32 = 1520389681;
+    const SEED42_512: u32 = 3221031423;
+    const DEFAULT_WORLD: u32 = 235359465;
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]
