@@ -132,3 +132,5 @@ crates/tr-app/src/player.rs|fn can_mount|S1-L-8 - Mount.CanMount's bat-wet rule 
 crates/tr-app/src/player.rs|fn s1_l_8_can_mount_applies_the_bat_and_grapple_sets|S1-L-8 - per-id activation gates: the bat refuses water/dripping/wet probe; carts + CanUseHooks keep a live grapple
 crates/tr-app/src/player.rs|fn s1_l_8_fishron_halves_run_stats_outside_the_special|S1-L-8 - Cute Fishron MountFishronSpecialCounter (60 hurt / 420 wet-or-rain) and the Player.cs:26655 halving
 crates/tr-app/src/mount.rs|fn is_cart|S1-L-8 - MountID.Sets.Cart (27 ids) and CanUseHooks ({54,57-60}) for Mount.CanMount's grapple gate
+crates/tr-app/src/spawner.rs|invaders_override_forces_the_raid_pacing|S1-F-12 - invaders spawn-rate override (NPC.cs:781-785): maxSpawns=11, spawnRate=20
+crates/tr-app/src/world_sim/npcs.rs|invaders|S1-F-12 - invasion spawn picks ride GetSpawnRate + nearby<maxSpawns + rng.next(spawnRate) gates
