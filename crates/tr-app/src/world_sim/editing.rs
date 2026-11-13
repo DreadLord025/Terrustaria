@@ -1365,14 +1365,19 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                         // (`:49107-49108`).
                         break_tile(app, tx, ty);
                         let altars = app.world.altars_smashed;
-                        let mut rng = app.growth_rng;
-                        rng.next_seed_in_place();
-                        let ore = tr_core::ores::smash_altar(
-                            &mut app.world,
-                            &mut app.ore_tiers,
-                            altars,
-                            &mut rng,
-                        );
+                        // The smash's draws ride the `UpdatePlayers` stream
+                        // (the C# hammer hit runs in `Player.ItemCheck` under
+                        // the `UpdatePlayers` swap, `Main.cs:17754`; the old
+                        // `growth_rng` copy + reseed ritual is gone).
+                        let ore = {
+                            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                            tr_core::ores::smash_altar(
+                                &mut app.world,
+                                &mut app.ore_tiers,
+                                altars,
+                                rng,
+                            )
+                        };
                         app.world.altars_smashed = altars + 1;
                         let _ = app.achievements.notify_progression(6);
                         let _ = ore;
@@ -5299,7 +5304,10 @@ mod tests {
     /// refuses (`:45675-45679`).
     #[test]
     fn the_altar_hammer_smash_seeds_ore_and_fires_begone_evil() {
-        let mut w = World::new("t".into(), 64, 800);
+        // Width 420 (the production minimum): the ore bands draw
+        // `Next(100, maxTilesX - 100)` (`:48945`), which needs maxTilesX > 200
+        // — the C#'s own `Next` assertion rejects the old 64-wide fixture.
+        let mut w = World::new("t".into(), 420, 800);
         let i = w.index(30, 260);
         w.tiles[i] = Tile {
             kind: 26,
@@ -5351,6 +5359,41 @@ mod tests {
             .list
             .iter()
             .any(|a| a.name == "BEGONE_EVIL" && a.completed));
+    }
+
+    /// DW-1.1: the smash's ore draws ride the `UpdatePlayers` stream — the
+    /// hammer hit's stream — and never touch the growth pass's
+    /// `UpdateWorldGen` stream (the two were one `growth_rng` field before
+    /// the S1-A-11 split).
+    #[test]
+    fn test_dw_1_1_altar_smash_draws_the_update_players_stream() {
+        let mut w = World::new("t".into(), 420, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile {
+            kind: 26,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.world.hard_mode = true;
+        app.inventory[app.selected].kind = 367; // the Pwnhammer (hammer 80)
+        let pristine = tr_core::UnifiedRandom::new(app.world.seed as i32);
+        mine_frames(&mut app, 30);
+        // The smash landed (the same rig as the behavioural pin above) and
+        // the `UpdatePlayers` stream left its pristine seed state.
+        assert_eq!(app.world.altars_smashed, 1, "the smash ran");
+        assert_ne!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            pristine,
+            "the smash drew the UpdatePlayers stream"
+        );
+        // The growth pass's stream is untouched by the editing pass.
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+            pristine,
+            "the altar smash never draws UpdateWorldGen"
+        );
     }
 
     /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries

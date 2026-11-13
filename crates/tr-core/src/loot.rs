@@ -25,6 +25,20 @@ impl DropRng for crate::tile_light::FastRandom {
     }
 }
 
+/// `UnifiedRandom` IS the drop engine's rng in the C# (`DropAttemptInfo.rng`
+/// is a `UnifiedRandom`): the trait methods delegate to the identically shaped
+/// C# methods — `Next(min, max)` (`UnifiedRandom.cs:120-132`) and
+/// `Utils.NextFloat` (`Utils.cs:1198-1201`), both already golden-pinned on
+/// [`crate::UnifiedRandom`] itself.
+impl DropRng for crate::UnifiedRandom {
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        crate::UnifiedRandom::next_range(self, min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        crate::UnifiedRandom::next_float(self)
+    }
+}
+
 /// `DropAttemptInfo` (`DropAttemptInfo.cs`): the roll inputs. The NPC and the
 /// player references stay with the caller; the engine only reads the scalars
 /// the rules consume.
@@ -2170,5 +2184,36 @@ mod tests {
         try_dropping(&db, 1, &mut info(&mut rng), &mut out);
         assert_eq!(out.len(), 2);
         assert_eq!((out[0].item, out[1].item), (10, 20));
+    }
+
+    /// DW-1.2: `DropRng for UnifiedRandom` replays the dotnet golden vectors
+    /// through the trait object — the delegation adds no draws and reshapes
+    /// nothing. The two vectors are the `unified_random` module's own
+    /// `golden_next_range` / `golden_next_float_bits` prefixes (fresh seed-42
+    /// stream each, as there).
+    #[test]
+    fn golden_drop_rng_for_unified_random_replays_the_csharp_vectors() {
+        let range_expected: [i32; 8] = [16, 11, 11, 15, 11, 12, 17, 15];
+        let mut through_trait: &mut dyn DropRng = &mut crate::UnifiedRandom::new(42);
+        for (i, &want) in range_expected.iter().enumerate() {
+            assert_eq!(
+                DropRng::next_range(through_trait, 10, 20),
+                want,
+                "seed 42 Next(10,20) through the trait, draw {i}"
+            );
+        }
+
+        let float_expected: [u32; 8] = [
+            0x3f2b0906, 0x3e104a01, 0x3e0087de, 0x3f05d3e1, 0x3e2c7a05, 0x3e86728c, 0x3f3972d4,
+            0x3f034ee8,
+        ];
+        let mut through_trait: &mut dyn DropRng = &mut crate::UnifiedRandom::new(42);
+        for (i, &want) in float_expected.iter().enumerate() {
+            assert_eq!(
+                DropRng::next_float(through_trait).to_bits(),
+                want,
+                "seed 42 NextFloat through the trait, draw {i}"
+            );
+        }
     }
 }

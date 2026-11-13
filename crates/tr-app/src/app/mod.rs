@@ -566,8 +566,6 @@ pub(crate) struct App {
     pub(crate) te_step: FixedStepper,
     /// The world-growth pass (`WorldGen.UpdateWorld`'s rate loops, M7-GROWTH-1).
     pub(crate) growth_step: FixedStepper,
-    /// The growth stream (the `Main.rand` rolls inside `UpdateWorld`).
-    pub(crate) growth_rng: tr_core::tile_light::FastRandom,
     /// The saved hardmode ore tiers (`SavedOreTiers`, the altar smashes).
     pub(crate) ore_tiers: tr_core::ores::SavedOreTiers,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
@@ -2918,7 +2916,6 @@ impl App {
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
-            growth_rng: tr_core::tile_light::FastRandom::new(world_seed),
             // M6-SAVE-1f: the tiers ride the World (the worldgen setup roll
             // wrote them there; a loaded save's v11 section restored them),
             // so the runtime copy reads them back instead of the static

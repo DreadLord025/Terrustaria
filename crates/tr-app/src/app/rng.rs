@@ -3,15 +3,23 @@
 //! The C# keeps one dictionary on `Main` (`Main.cs:1294-1295`), fills it lazily
 //! with `new UnifiedRandom(Main.ActiveWorldFileData.Seed)` per key
 //! (`:3210-3212`) and swaps the entry into `Main.rand` for the duration of a
-//! `using (Main.SwapRandom("Key"))` block (`:17732-17809`). A world load throws
-//! the whole dictionary away (`Main.cs:6465`), so every stream restarts from the
-//! new world's seed.
+//! `using (Main.SwapRandom("Key"))` block (`:17732-17809`).
+//!
+//! **The dictionary's lifetime (corrected from the S1-A-2 note):** `Main._rngs`
+//! is created once per process in `Main.Initialize()` (`Main.cs:6465`, the
+//! same method that seeds the bare `Main.rand` at `:6463`) and no world-load
+//! hook clears it — the stage streams persist across worlds within a session.
+//! The port rebuilds `NamedRngs` per world load (`App::swap_world`) instead: a
+//! recorded deviation (ANALYSIS "RNG order contract"), deterministic and
+//! identical for the single-world sessions the port models.
 //!
 //! The port needs no swap: `Main.rand` is only ever read through the stream of
 //! the stage that is running, so the stage asks the registry for its key and
 //! passes the `&mut UnifiedRandom` down. Every key is seeded with the same
 //! integer the C# passes to `UnifiedRandom`'s constructor — the streams diverge
 //! only by how many draws each stage has consumed, exactly like vanilla.
+//! [`NamedRngs::global`] stands in for the bare `Main.rand` draws that run
+//! outside every swap.
 
 use std::collections::BTreeMap;
 
@@ -100,6 +108,9 @@ impl RngKey {
 pub(crate) struct NamedRngs {
     world_seed: i32,
     streams: BTreeMap<&'static str, UnifiedRandom>,
+    /// The bare-`Main.rand` stand-in — deliberately NOT a map entry, so the
+    /// `RngKey` pins and `created()` stay honest about the 17 swap keys.
+    global: Option<UnifiedRandom>,
 }
 
 impl NamedRngs {
@@ -109,19 +120,20 @@ impl NamedRngs {
         Self {
             world_seed,
             streams: BTreeMap::new(),
+            global: None,
         }
     }
 
-    /// `Main._rngs = new Dictionary<string, UnifiedRandom>()` (`Main.cs:6465`):
-    /// a new world starts every stream from scratch, seeded with its seed.
-    ///
-    /// The port rebuilds `App` on a world load (`App::swap_world`), so production
-    /// takes the fresh-`NamedRngs` path; this is the explicit form of the C#
-    /// operation and is unit-tested for a future in-place load.
+    /// The port's explicit form of a world-load stream restart, unit-tested
+    /// for a future in-place load (production rebuilds `NamedRngs` via
+    /// `App::swap_world`). Deviation note: the C# does NOT do this per world —
+    /// `Main._rngs` is created once per process (`Main.cs:6465`,
+    /// `Initialize()`) and persists across worlds; see the module comment.
     #[allow(dead_code)]
     pub(crate) fn reset(&mut self, world_seed: i32) {
         self.world_seed = world_seed;
         self.streams.clear();
+        self.global = None;
     }
 
     /// `Main.SwapRandom(key)` without the swap: returns the key's stream,
@@ -132,6 +144,20 @@ impl NamedRngs {
         self.streams
             .entry(key.name())
             .or_insert_with(|| UnifiedRandom::new(seed))
+    }
+
+    /// The bare-`Main.rand` stand-in: one shared stream for the draws that run
+    /// outside every `SwapRandom` block in the C# (ambience, chat commands,
+    /// reforge, char-creation randomize — all consumers share it, reproducing
+    /// the C# interleave).
+    ///
+    /// Deviation (research §4): the C# bare stream is seeded
+    /// `DateTime.Now.Ticks` (`Main.cs:6463`) and never re-seeded —
+    /// non-reproducible; the port seeds it with the world seed so sessions
+    /// stay deterministic. Lazily created on first use, like the swap keys.
+    pub(crate) fn global(&mut self) -> &mut UnifiedRandom {
+        let seed = self.world_seed;
+        self.global.get_or_insert_with(|| UnifiedRandom::new(seed))
     }
 
     /// Whether the key's stream has been instantiated yet.
@@ -254,5 +280,52 @@ mod tests {
         let first = UnifiedRandom::new(7).next();
         assert_eq!(rngs.stream(RngKey::UpdateItems).next(), first);
         assert_eq!(rngs.stream(RngKey::UpdateNpcs).next(), first);
+    }
+
+    /// DW-1.3: `global()` is created lazily, seeded with the world seed, and
+    /// shared — every caller continues the same stream (the C# bare
+    /// `Main.rand` interleave).
+    #[test]
+    fn global_is_lazily_created_world_seed_seeded_and_shared() {
+        let mut rngs = NamedRngs::new(42);
+        assert_eq!(
+            rngs.created().count(),
+            0,
+            "nothing exists before first use"
+        );
+        // First draw replays the seed-42 golden prefix — the world seed, not
+        // a clock seed (the C#'s `DateTime.Now.Ticks` is the recorded
+        // deviation).
+        assert_eq!(rngs.global().next(), GOLDEN_42[0]);
+        assert_eq!(rngs.global().next(), GOLDEN_42[1], "same stream continues");
+        // A fresh registry for the same world replays it — the seeding is a
+        // pure function of the world seed.
+        let mut again = NamedRngs::new(42);
+        assert_eq!(again.global().next(), GOLDEN_42[0]);
+        // A different world seeds differently.
+        let mut other = NamedRngs::new(7);
+        assert_ne!(other.global().next(), GOLDEN_42[0]);
+    }
+
+    /// DW-1.3: the global stream is NOT a `SwapRandom` key — it must not
+    /// appear in `created()` and must not touch the 17 named streams.
+    #[test]
+    fn global_is_not_a_swap_random_key() {
+        let mut rngs = NamedRngs::new(42);
+        rngs.global().next();
+        assert_eq!(
+            rngs.created().collect::<Vec<_>>(),
+            Vec::<&str>::new(),
+            "the global stream stays out of the key map"
+        );
+        // The named keys are untouched by global draws.
+        assert_eq!(rngs.stream(RngKey::UpdateWorldGen).next(), GOLDEN_42[0]);
+        // And the reset clears it too.
+        rngs.reset(1);
+        assert_eq!(
+            rngs.created().collect::<Vec<_>>(),
+            Vec::<&str>::new(),
+            "reset clears the global stream as well"
+        );
     }
 }

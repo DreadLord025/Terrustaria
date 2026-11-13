@@ -2120,7 +2120,6 @@ pub(crate) mod front_flow_tests {
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
-            growth_rng: tr_core::tile_light::FastRandom::new(0),
             ore_tiers: tr_core::ores::SavedOreTiers::new(),
             rain: Rain::new(1),
             sand: crate::sand::Sand::new(1),
