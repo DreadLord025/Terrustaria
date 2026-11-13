@@ -1681,8 +1681,10 @@ whites, eyes and hair (frame row 0, unlit — `MapHeadRenderer.cs:50` blits the
 target with `Color.White`) plus the outline rings (black at Manhattan radius 4,
 `Main.teamColor[0]` = white at radius 2) into the screen-space `ui` range, so it
 lands on top of the map like vanilla's frame -> tiles -> head order
-(`Main.cs:55485` -> `55609` -> `55954`). `Main.UIScale` is passed as `1.0`
-(no UI-scale system here). The HUD is hidden while the fullscreen map is open,
+(`Main.cs:55485` -> `55609` -> `55954`). `Main.UIScale` is now ported (S1-H-3):
+the icon takes the applied scale `Settings::applied_ui_scale` (wanted
+`Settings::ui_scale` clamped to `Main.UIScaleMax`, `Main.cs:2576-2583`), so a
+non-default UI scale resizes the head icon like vanilla. The HUD is hidden while the fullscreen map is open,
 matching vanilla's early return in `Main.Draw` (`Main.cs:62147-62181`, before
 `DrawInterface` at `62432`). While the map is open the world input is modal
 (`Player.cs:24798-24807`): movement and use/tile controls are cleared, so nothing
@@ -2372,6 +2374,32 @@ name falls back to `menu::random_name()`, `app/mod.rs:1830`, so an unpinned pair
 differs in the card name's pixels). The absolute HUD hash is environment-dependent:
 two sessions produced `c4980496…` and `d4ba148e…` for the *same* code, so a
 cross-session comparison must re-take the baseline beside the run.
+
+## UI scale (S1-H-3, 2026-11-13)
+
+`Main.UIScale` is ported as a value: `settings::ui_scale_max` is the C#
+`Main.UIScaleMax` (`Math.Max(1f, Math.Min(h / 600f, w / 800f))`,
+`Main.cs:2576-2583`), `Settings::ui_scale` is the persisted **wanted** scale
+(`Main._uiScaleWanted`, key `"UIScale"`, `Put` `:4201` / `Get` `:4487`) and
+`Settings::applied_ui_scale` is the setter's down-only clamp to the max
+(`:2563-2572`). The ingame-options `GameUI.UIScale` bar is live (the C# slider's
+0.5..2.0 range, `IngameOptions.cs:571-578`) and the fullscreen-map head icon
+takes the applied scale.
+
+Two deliberate deviations remain, recorded here rather than silently:
+
+* **The default is plain `1.0`.** Vanilla's `Get("UIScale", GetScaling())` reads
+  the platform DPI scaling and, on a fresh install, `TryPickingDefaultUIScale`
+  sets `displayHeight / 1080f * 1.1f` (`:4257-4265`, applied at `:4489`). Neither
+  is available at settings-load time in this port (no `IWindowService`, no
+  display), so a headless boot starts at 1.0; the user can still set any scale
+  from the bar.
+* **The scale is applied at the render sites the port has, not to the UI root
+  dimensions.** Vanilla divides `UserInterface.GetDimensions()` by `Main.UIScale`
+  (`UserInterface.cs:335`) and gives `GameInterfaceLayer` three scale spaces; the
+  port's screens derive their rects straight from the swapchain, so scaling the
+  whole UI is still open (the M-sized follow-up noted against S1-H-3 in
+  `docs/research/18-ui-framework.md`).
 
 ## Architecture refactor (2026-11-01)
 
