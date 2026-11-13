@@ -1,7 +1,7 @@
 //! Deterministic value noise for the generation passes.
 //!
 //! The value-noise output is part of the world contract — changing a constant
-//! here changes every generated world, which `deterministic_for_seed` pins. The
+//! here changes every generated world, which `generation_is_reproducible_for_a_seed` pins. The
 //! xorshift RNG the passes draw from moved to [`crate::rng`] (the unified
 //! xorshift64 core shared with the wind walk); it stays re-exported here as
 //! `Rng` so the passes' imports and seeding contract are unchanged.
