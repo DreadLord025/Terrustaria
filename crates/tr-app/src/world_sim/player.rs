@@ -584,7 +584,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             let run_eligible = !p.mount.is_active()
                 && !(0..crate::buffs::MAX_BUFFS)
                     .any(|i| p.buffs.buff_time[i] > 0 && p.buffs.buff_type[i] == 38);
-            p.update_with_grapple(&app.world, input, &grapple_for_tick, item_in_use, false);
+            p.update_with_grapple(
+                &app.world,
+                input,
+                &grapple_for_tick,
+                item_in_use,
+                false,
+                app.rain.is_raining(),
+                Some(&app.wind),
+            );
             if run_eligible && p.vy == 0.0 {
                 run_pixels += (p.x - run_x0).abs();
             }

@@ -2565,6 +2565,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // kill, and no ported kind fails `IsNPCValidForBestiaryKillCredit`.
         let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
         app.bestiary.kills.register_kill(entry.credit_id);
+        // `AchievementsHelper.TryGrantingBestiary100PercentAchievement` (`AchievementsHelper.cs:81-84`):
+        // when the bestiary completion reaches 100%, fire progression event 29 (BOOK_WORM).
+        let _ = app.achievements.try_grant_bestiary_100(&app.bestiary.kills);
         // `AchievementsHelper.NotifyNPCKilled` (`GameContent/Achievements/`):
         // the kill feeds the NPCKilledCondition rows (the M6-ACH-1 hook —
         // the original wire pass lost it to a mid-script assert).

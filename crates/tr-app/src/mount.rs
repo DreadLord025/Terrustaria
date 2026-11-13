@@ -1446,6 +1446,21 @@ pub(crate) fn is_roller_skates(id: i32) -> bool {
     does_not_override_leg_frames(id)
 }
 
+/// `MountID.Sets.Cart` (`MountID.cs:43`): the 27 minecart ids. `Mount.CanMount`
+/// exempts them from the grapple gate (`Mount.cs:6599`).
+pub(crate) fn is_cart(id: i32) -> bool {
+    matches!(
+        id,
+        6 | 11 | 13 | 15 | 16 | 18..=22 | 24..=36 | 38 | 39 | 51 | 53
+    )
+}
+
+/// `MountID.Sets.CanUseHooks` (`MountID.cs:30`): the mounts that keep a hook
+/// usable while ridden — the second half of the `CanMount` grapple exemption.
+pub(crate) fn can_use_hooks(id: i32) -> bool {
+    matches!(id, 54 | 57..=60)
+}
+
 pub(crate) fn mount_type_of_item(item: u16) -> Option<i32> {
     MOUNT_ITEMS
         .iter()

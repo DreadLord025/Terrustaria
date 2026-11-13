@@ -94,7 +94,7 @@ text panel + image buttons), `framework.rs` (177: the flat hit order),
 | `ContainsPoint` `:354-357` | PORTED | `framework.rs::contains_point` :51-55 → `mod.rs::in_rect` :54 | Rectangle.Contains edges inclusive-left/exclusive-right; tests `dw_2_1_the_edges_*` |
 | Press/release/click/double-click, 500 ms, 200 ms | PORTED | `pointer.rs` :122-227 | 12 tests `dw_1_1..dw_1_3`; double-click needs same element, click needs release inside |
 | Hover swap `Update` :205-213 | PARTIAL | per-screen `update_hover` (`loop.rs:377`) + `pointer.rs` | no `_lastElementHover` on the machine; no `IsMouseHovering` on ancestors |
-| Event bubble child→parent `:414-547` | MISSING | `pointer.rs:154-224` | events raised on the hit element only; no parent walk |
+| Event bubble child→parent `:414-547` | PORTED | `framework.rs::bubble_chain` :77-113 + `Element.parent`/`Element::child` :30-84 | the `:420-423` recursion as a parent-chain walk; wired to the select screens' card buttons (`char_select.rs`/`world_select.rs`) |
 | Scroll wheel `Update` :219-223 | PORTED | `pointer.rs::queue_scroll` / `scroll_wheel` :238-262 → the per-screen consumers (`chest.rs`, `emotes.rs`, `achievements.rs`) | the machine owns `PlayerInput.ScrollWheelDeltaForUI` (accumulate + consume once); `PointerEvent::ScrollWheel { delta }` is `UIScrollWheelEvent.ScrollWheelValue` (`UIScrollWheelEvent.cs:7`); tests `dw_1_4_*` |
 | `MouseCaptured` :113-124 | PORTED | `pointer.rs::mouse_captured` :226 | `left_held` read by `ingame_options` (`frame.rs:117`) |
 | `ResetState`/200 ms lockout :165-179 | PORTED | `pointer.rs::reset_on_state_change` :142 | test `dw_1_2_the_state_change_disable_swallows_the_next_press` |
@@ -120,7 +120,7 @@ Screens already covered by immediate ports are listed for completeness at the en
 | --- | --- | --- | --- | --- |
 | `UIElement` fields: margins, `MaxWidth`/`MaxHeight`/`Min*`, `OverrideSamplerState`, `UseImmediateMode`, `IgnoresMouseInteraction`(partial), `PassThroughMouseInteraction` | layout + draw modifiers | `uistate.rs` covers px/pct/H/VAlign/padding only | PARTIAL | behavioural if a future element sets them |
 | `UIElement.Recalculate/RecalculateChildren` as tree ops | whole-tree relayout | per-screen per-frame derivation | MISSING (by design) | the `UIList` ∞-height case diverges |
-| `UIElement` event bubble (`:414-547`) | ancestor handlers + ancestor `IsMouseHovering` | none | MISSING | behavioural (containers that react to descendant clicks/hover) |
+| `UIElement` event bubble (`:414-547`) | ancestor handlers + ancestor `IsMouseHovering` | `framework.rs::bubble_chain` + `Element` parent links | PORTED (S1-H-1) | the `MouseOver`-driven ancestor hovering is the same chain (`:510-521`) |
 | `UIElement.Draw` `OverflowHidden` path + `GetClippingRectangle` | clipping | none (break-gate) | MISSING | pixel: a straddling row is fully drawn or absent instead of half-clipped |
 | `UIElement.GetSnapPoints`, `SetSnapPoint` ; `SnapPoint.cs` | gamepad nav anchors | none | MISSING | gamepad only |
 | `UIElement.Activate/Deactivate/Initialize/ExecuteRecursively/CopyStyle` | lifecycle | none | MISSING | none today (immediate screens) |
@@ -202,8 +202,9 @@ fns across 31 files (framework-relevant subset):
   `dw_2_3_the_fat_buttons_do_not_double_click_into_play`), `world_select` 17 (same pair),
   `chest` 13 (`dw_3_2_*` scroll math + `dw_3_2_scroll_wheel_gate_matches_doscrollingininventory`),
   `emotes` 6, `ingame_options` 27, `char_creation` 23, `keyboard` 13.
-- No test covers: margins, the `UIList` ∞-height case, ancestor bubbling,
-  `OverflowHidden` clipping, snap points, or the layer stack.
+- No test covers: margins, the `UIList` ∞-height case, `OverflowHidden` clipping,
+  snap points, or the layer stack. (The child→parent bubble is covered by
+  `framework.rs`'s `the_event_bubble_*` tests, S1-H-1.)
 
 ## Deviations & risks
 
@@ -220,12 +221,18 @@ fns across 31 files (framework-relevant subset):
    arithmetically, so it is untested by the current callers. Behavioural; admitted
    in code, absent from ROADMAP §23 (which *does* list it at :937-938 — so ROADMAP
    is ahead of the port here).
-4. **No child→parent event bubble** (`UIElement.cs:414-547` vs `pointer.rs:154-224`).
-   Ancestor `On_*` handlers never fire; ancestor `IsMouseHovering` is never set.
-   Behavioural. ROADMAP:938-939 claims the bubble as a ported fact — the claim is
-   wrong for the Rust side; the framework-completion task (M7-UI-1, ROADMAP:964)
-   is still open. Also unmodelled: the C#'s Out-then-Over double-toggle when the
-   pointer moves child→parent inside one frame (`UserInterface.cs:205-213`).
+4. ~~**No child→parent event bubble** (`UIElement.cs:414-547` vs `pointer.rs:154-224`).~~
+   **FIXED 2026-11-13 (`S1-H-1-event-bubbling`)**: `framework.rs::bubble_chain`
+   ports the `:420-423` recursion as a parent-chain walk over `Element.parent`
+   (`Element::child`), so a leaf control's event reaches its container's
+   handlers and the same chain is the ancestor-`IsMouseHovering` set
+   (`MouseOver` sets the flag then recurses, `:510-521`). Wired to the
+   `UICharacterListItem`/`UIWorldListItem` button rows (they link to their card
+   panel; `card_hit` resolves the card by walking the chain). The earlier text
+   read: ancestor `On_*` handlers never fire and ancestor `IsMouseHovering` is
+   never set (ROADMAP:938-939's "ported" claim was wrong for the Rust side).
+   Also still unmodelled: the C#'s Out-then-Over double-toggle when the pointer
+   moves child→parent inside one frame (`UserInterface.cs:205-213`).
 5. **No scissor / `OverflowHidden`** — rows past a list bottom are *skipped*
    rather than clipped (`char_select.rs:856`, `world_select.rs:818`,
    `char_creation.rs:1859`). A row straddling the edge draws whole (C#: half);
@@ -274,10 +281,12 @@ fns across 31 files (framework-relevant subset):
 - **M — Model the `UIList` ∞-height parent.** A `list_parent: bool` flag on
   `resolve` that sets `parent[3] = f32::MAX` (`UIElement.cs:288-291`), plus a test
   on a percent-height child. Unblocks the scrolling screens of module 20.
-- **M — Ancestor bubble.** Give `pointer.rs` an optional parent chain (or a
-  screen-level "container handler" table) so a hit element's event also raises on
-  its ancestors, and add ancestor `IsMouseHovering`. Closes deviation 4 for
-  hover; confirm against a real C# handler before generalising.
+- ✅ **M — Ancestor bubble.** DONE 2026-11-13 (`S1-H-1-event-bubbling`): the
+  parent chain lives in `framework.rs` (`Element.parent`/`Element::child` +
+  `bubble_chain`, `UIElement.cs:414-547`), not `pointer.rs` — the C#'s recursion
+  is in `UIElement`, so `UIElement` (the framework module) is its faithful home.
+  The chain is the event's raise list *and* the ancestor-`IsMouseHovering` set;
+  it is wired to the select screens' card buttons. Deviation 4 closed for hover.
 - **L — Clipping.** Implement a scissor/rect-clip in `tr_render` and wire
   `OverflowHidden` into the list screens, replacing the break-gates in
   `char_select.rs:856` / `world_select.rs:818` / `char_creation.rs:1859`.
