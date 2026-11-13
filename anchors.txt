@@ -113,3 +113,5 @@ crates/tr-app/src/lang.rs|fn refresh_global_substitutions|S1-L-12b - 65 global s
 crates/tr-app/src/lang.rs|fn global_substitutions_resolve_world_player_and_npc_tokens|S1-L-12b - key global substitution tokens resolve via LanguageManager
 crates/tr-app/src/lang.rs|fn init|S1-L-12c - deterministic sorted registration order for localization resource files (Lang.cs manifest-order parity)
 crates/tr-core/src/wiring.rs|the_wire_rolls_come_from_the_unified_random_stream|S1-L-6c - the wiring RNG is UnifiedRandom (the C# Main.rand generator), seeded per world via seed_rand
+crates/tr-app/src/item.rs|fn s1_f_10_item_slot_clone_and_refresh_snapshot|S1-F-10 - ItemSlot clone/refresh snapshot and CommonMaxStack 9999 default
+crates/tr-app/src/registry.rs|pub fn max_stack|S1-F-10 - unregistered item max_stack defaults to Item.CommonMaxStack 9999 (Item.cs:49017,49966)
