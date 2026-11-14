@@ -149,6 +149,11 @@ pub(crate) struct App {
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
     /// takes the next id, the segments share it.
     pub(crate) next_worm_id: u32,
+    /// The NPC id counter (`NPC.whoAmI`, `NPC.cs:6145`) — the stable
+    /// identity the boss-part links ride (`ai[3]`, `localAI[0..2]`). The
+    /// C#'s id is the NPC slot; the port's list compacts every frame, so
+    /// the id is handed out once and never reused.
+    pub(crate) next_npc_uid: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
@@ -2842,6 +2847,7 @@ impl App {
             npc_assets,
             npc_timer: 6.0,
             next_worm_id: 1,
+            next_npc_uid: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
             in_reforge_menu: false,

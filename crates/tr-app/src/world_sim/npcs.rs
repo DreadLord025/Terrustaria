@@ -1507,17 +1507,45 @@ pub(crate) fn check_invasion_progress_display(app: &mut App) {
     }
 }
 
-/// The kill-credit block (`NPC.cs:78236-78279`): the group matches the
-/// active invasion → `invasionSize -= num9` (the Summoner 471's 10-point
-/// kill, the rest 1) + `ReportInvasionProgress(sizeStart - size, sizeStart,
-/// group + 3, 0)`.
+/// `NPC.FindFirstNPC(551)` (`NPC.cs:80287-80303`) — the Old One's Army's
+/// Betsy, the wave-7 anchor: its live life ratio (`life/lifeMax`), or
+/// `None` when no Betsy is on the field (the C#'s `-1` arm).
+fn dd2_betsy_hp_ratio(app: &App) -> Option<f32> {
+    let betsy = app
+        .npcs
+        .iter()
+        .find(|n| n.kind == NpcKind::DD2Betsy && n.hp > 0)?;
+    if betsy.max_hp <= 0 {
+        return None;
+    }
+    Some(betsy.hp as f32 / betsy.max_hp as f32)
+}
+
+/// The event's tier (`DD2Event.FindProperDifficulty`, `:358-370`): the
+/// hardmode mech/golem gates pick the wave budgets and the kill worth.
+fn dd2_tier(app: &App) -> i32 {
+    tr_core::dd2::find_tier(
+        app.world.hard_mode,
+        app.world.downed_mech_boss1 || app.world.downed_mech_boss2 || app.world.downed_mech_boss3,
+        app.world.downed_golem,
+    )
+}
+
 /// `DD2Event.CheckProgress` (`DD2Event.cs:366-392`) — the Old One's Army's
-/// kill advance: the kill's worth rides the tier (the ported families are
-/// the tier-1 rows worth 1.0), the wave's budget
-/// (`DD2Event::required_wave_kills`) opens the next wave with the 1800-tick
-/// break, and the wave-6 sentinel is the win (`WonThisRun`).
+/// kill advance: the kill's worth rides the tier (`GetMonsterPointsWorth`,
+/// `:546-554`), the wave's budget (`GetInvasionStatus` → the tier's
+/// `Difficulty_N_GetRequiredWaveKills`) opens the next wave with the
+/// 1800-tick break, and the wave-6 sentinel is the win (`WonThisRun`).
 fn dd2_report_kill(app: &mut App, kind: NpcKind) {
-    let roster = tr_core::dd2::enemies_for_wave(app.world.dd2_wave).0;
+    // The event's tier (`FindProperDifficulty`, `:358-370`): the wave
+    // rosters, the budgets and the kill worth all ride it.
+    let tier = dd2_tier(app);
+    let wave = app.world.dd2_wave;
+    let roster: &[u16] = match tier {
+        3 => tr_core::dd2::enemies_for_wave_t3(wave).0,
+        2 => tr_core::dd2::enemies_for_wave_t2(wave).0,
+        _ => tr_core::dd2::enemies_for_wave(wave).0,
+    };
     if !roster.iter().any(|k| nid_of(*k) == Some(kind)) {
         // The kill outside the wave's roster scores nothing.
         return;
@@ -1527,22 +1555,35 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
     if app.world.dd2_spawn_hold != 0 {
         return;
     }
-    let worth = tr_core::dd2::KILL_WORTH_T1;
+    // `GetMonsterPointsWorth` (`:546-554`): the tier's worth row.
+    let worth = match tier {
+        3 => tr_core::dd2::KILL_WORTH_T3,
+        2 => tr_core::dd2::KILL_WORTH_T2,
+        _ => tr_core::dd2::KILL_WORTH_T1,
+    };
+    // `GetInvasionStatus` (`:517-536`): the bucket is the wave's kills
+    // BEFORE this kill lands; the tier's table may replace it (the
+    // wave-7 Betsy bucket, `FindFirstNPC(551)`, `:1487-1494`).
+    let mut kills_i = app.world.dd2_wave_kills as i32;
+    let required = match tier {
+        2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills_i),
+        3 => tr_core::dd2::required_wave_kills_t3(wave, &mut kills_i, dd2_betsy_hp_ratio(app)),
+        _ => tr_core::dd2::required_wave_kills(wave, &mut kills_i),
+    };
     app.world.dd2_wave_kills += worth;
     // `DD2Event.CheckProgress` (`DD2Event.cs:376-392`): the wave report rides
     // `Main.ReportInvasionProgress(currentKillCount, requiredKillCount, 3,
     // currentWave)` — icon 3 is the `Extra[79]` Old One's Army sheet and the
     // `> 0` wave selects `DrawInvasionProgress`'s `Game.WaveMessage` arm.
-    let wave = app.world.dd2_wave;
-    let mut kills_i = app.world.dd2_wave_kills as i32;
-    let required = tr_core::dd2::required_wave_kills(wave, &mut kills_i);
-    app.invasion_progress = kills_i;
+    // `currentKillCount += (int)num` (`:373`) adds the kill's worth.
+    app.invasion_progress = kills_i + worth as i32;
     app.invasion_progress_max = required;
     app.invasion_progress_icon = 3;
     app.invasion_progress_wave = wave;
     app.invasion_progress_display_left = 160;
-    let passed =
-        tr_core::dd2::wave_budget_passed(app.world.dd2_wave, &mut app.world.dd2_wave_kills);
+    // `NPC.waveKills >= requiredKillCount && requiredKillCount != 0`
+    // (`:376`): the wave's budget opens the next one.
+    let passed = required != 0 && app.world.dd2_wave_kills >= required as f32;
     if passed {
         app.world.dd2_wave_kills = 0.0;
         app.world.dd2_wave += 1;
@@ -1630,17 +1671,17 @@ fn spawn_dd2_from_gate(app: &mut App, sx: f32, sy: f32, left_gate: bool) -> Vec<
     if !app.world.dd2_event_ongoing {
         return Vec::new();
     }
-    let tier = tr_core::dd2::find_tier(
-        app.world.hard_mode,
-        app.world.downed_mech_boss1 || app.world.downed_mech_boss2 || app.world.downed_mech_boss3,
-        app.world.downed_golem,
-    );
+    let tier = dd2_tier(app);
     let wave = app.world.dd2_wave;
     // `GetInvasionStatus`'s pair: the wave's budget and the score so far.
     let kills = app.world.dd2_wave_kills as i32;
     let required = match tier {
         2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills.clone()),
-        3 => tr_core::dd2::required_wave_kills_t3(wave, &mut kills.clone(), 0.0),
+        3 => tr_core::dd2::required_wave_kills_t3(
+            wave,
+            &mut kills.clone(),
+            dd2_betsy_hp_ratio(app),
+        ),
         _ => tr_core::dd2::required_wave_kills(wave, &mut kills.clone()),
     };
     // The pool's live counts (`NPC.CountNPCS`) — the roll reads them per id.
@@ -1828,13 +1869,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
     crate::world_sim::lunar::update_moon_lord_countdown(app);
+    // The stable identity (`NPC.whoAmI`, `NPC.cs:6145`): every NPC takes
+    // its id once. The C#'s boss-part links (`ai[3]`, `localAI[0..2]`)
+    // point at these ids; the port's list compacts every frame, so the
+    // ids — not the Vec indices — carry the link.
+    {
+        let mut next = app.next_npc_uid;
+        for n in app.npcs.iter_mut() {
+            if n.uid == 0 {
+                n.uid = next;
+                next += 1;
+            }
+        }
+        app.next_npc_uid = next;
+    }
     // The Moon Lord parts' carrier write-through (`AI_078`'s `:41642` /
     // `AI_079`'s `:42098` read `Main.npc[ai[3]].Center` live) — the
-    // PRE-pass: each 397/396/400/401 finds its core, mirrors the core's
-    // centre into `carrier_x/y`, and drops the link (so the machine
-    // self-kills) when the core died. The leech blob's anchor is the
-    // head (`AI_082`'s `:36630-36640`) — its `ai[0]` holds the head's
-    // index + 1 in the vanilla; the port links by kind instead.
+    // PRE-pass: each 397/396/400/401 finds ITS core (the `ai[3]` link,
+    // the stable id the spawn handed out), mirrors the core's centre into
+    // `carrier_x/y`, and drops the link (so the machine self-kills) when
+    // the core died. The leech blob's anchor is the head (`AI_082`'s
+    // `:36630-36640`) — its `ai[0]` holds the head's index + 1 in the
+    // vanilla; the port keeps the head's id.
     for i in 0..app.npcs.len() {
         let kind = app.npcs[i].kind;
         if kind != NpcKind::MoonLordHand
@@ -1844,12 +1900,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         {
             continue;
         }
-        let want = if kind == NpcKind::MoonLordLeechBlob {
-            NpcKind::MoonLordHead
-        } else {
-            NpcKind::MoonLordCore
-        };
-        let core = app.npcs.iter().position(|m| m.kind == want && m.hp > 0);
+        // The link: the carrier's stable id (`ai[3]`). A part whose link
+        // was never handed out (a hand spawned outside the Moon Lord's
+        // spawn arm) falls back to the core of its family.
+        let mut carrier_uid = app.npcs[i].carrier_uid;
+        if carrier_uid == 0 {
+            let want = if kind == NpcKind::MoonLordLeechBlob {
+                NpcKind::MoonLordHead
+            } else {
+                NpcKind::MoonLordCore
+            };
+            carrier_uid = app
+                .npcs
+                .iter()
+                .find(|m| m.kind == want && m.hp > 0)
+                .map(|m| m.uid)
+                .unwrap_or(0);
+            app.npcs[i].carrier_uid = carrier_uid;
+        }
+        let core = app
+            .npcs
+            .iter()
+            .position(|m| m.uid == carrier_uid && m.uid != 0 && m.hp > 0);
         match core {
             Some(ci) => {
                 let (ccx, ccy) = app.npcs[ci].center();
@@ -1866,36 +1938,30 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // The core's part bookkeeping (`AI_077`'s `:41229-41232` +
-    // `:41251-41291`): the three stored slots mirror the live parts (the
-    // hands split by their `ai[2]` slot), so the core's loss check — a
-    // missing part opens the death ride — reads them.
+    // `:41251-41291`): the three stored slots hold the parts' ids (the
+    // `localAI[0..2]` link the spawn handed out), so the core's loss
+    // check — a missing part opens the death ride — resolves them.
     for i in 0..app.npcs.len() {
         if app.npcs[i].kind != NpcKind::MoonLordCore {
             continue;
         }
-        let mut slots = [-1i32, -1, -1];
-        for (slot, want) in [
-            (0usize, NpcKind::MoonLordHand),
-            (1usize, NpcKind::MoonLordHand),
-            (2usize, NpcKind::MoonLordHead),
-        ] {
-            for j in 0..app.npcs.len() {
-                if app.npcs[j].kind != want || app.npcs[j].hp <= 0 {
-                    continue;
-                }
-                let hand_slot = app.npcs[j].ai[2] as i32;
-                let fits = if want == NpcKind::MoonLordHand {
-                    hand_slot == slot as i32
-                } else {
-                    // The head has no `ai[2]` slot of its own.
-                    hand_slot == 0
-                };
-                if fits && slots[slot] < 0 {
-                    slots[slot] = j as i32;
-                }
+        // The C#'s flag (`:41251-41269`): a slot that points at no living
+        // part takes the core down with it.
+        let mut lost = false;
+        for uid in app.npcs[i].moon_parts {
+            if uid <= 0 {
+                lost = true;
+                continue;
+            }
+            let alive = app
+                .npcs
+                .iter()
+                .any(|m| m.uid as i32 == uid && m.hp > 0);
+            if !alive {
+                lost = true;
             }
         }
-        app.npcs[i].moon_parts = slots;
+        app.npcs[i].moon_parts_lost = lost;
     }
     // `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
     // (`Main.cs:65373`): the clock arms it at the day boundary (the
@@ -3115,7 +3181,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     // The Moon Lord's spawn-in (`AI_077`'s `:41209-41232`): the two hands
     // (`ai[2]` 0/1) at the core's centre + seat*800 - 400 / -100 and the
-    // head 400 px above, all carrying the core's index in `ai[3]`.
+    // head 400 px above, all carrying the core's id in `ai[3]`.
     for i in 0..app.npcs.len() {
         if !app.npcs[i].wants_moon_parts {
             continue;
@@ -3124,8 +3190,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let (cw, ch) = app.npcs[i].size();
         let ccx = app.npcs[i].x + cw * 0.5;
         let ccy = app.npcs[i].y + ch * 0.5;
-        let core_i = i as i32;
+        // The core's own id (`NPC.whoAmI`) — the link the parts carry in
+        // `ai[3]` and the core keeps in its `localAI[0..2]`.
+        let core_uid = app.npcs[i].uid;
+        let mut next_uid = app.next_npc_uid;
         let mut parts: Vec<Npc> = Vec::new();
+        let mut part_uids = [0i32; 3];
         for seat in 0..2 {
             let mut hand = Npc::new(
                 NpcKind::MoonLordHand,
@@ -3136,24 +3206,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             );
             hand.hp = hand.max_hp;
             hand.ai[2] = seat as f32;
-            hand.ai[3] = core_i as f32;
+            hand.ai[3] = core_uid as f32;
+            hand.uid = next_uid;
+            next_uid += 1;
+            hand.carrier_uid = core_uid;
             hand.carrier_x = ccx;
             hand.carrier_y = ccy;
             hand.carrier_timer = 1.0;
             hand.moon_core_alive = true;
+            part_uids[seat] = hand.uid as i32;
             parts.push(hand);
         }
         let mut head = Npc::new(NpcKind::MoonLordHead, ccx, ccy - 400.0, 0, 0.0);
         head.hp = head.max_hp;
-        head.ai[3] = core_i as f32;
+        head.ai[3] = core_uid as f32;
+        head.uid = next_uid;
+        next_uid += 1;
+        head.carrier_uid = core_uid;
         head.carrier_x = ccx;
         head.carrier_y = ccy;
         head.carrier_timer = 1.0;
         head.moon_core_alive = true;
+        part_uids[2] = head.uid as i32;
         parts.push(head);
-        // `:41229-41232`'s stored slots (the vanilla's `localAI[0..2]`).
-        let base = app.npcs.len() as i32;
-        app.npcs[i].moon_parts = [base, base + 1, base + 2];
+        // `:41229-41232`'s stored slots (the vanilla's `localAI[0..2]`):
+        // the parts' ids.
+        app.npcs[i].moon_parts = part_uids;
+        app.next_npc_uid = next_uid;
         app.npcs.extend(parts);
         break;
     }
@@ -3172,9 +3251,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.npcs[i].wants_moon_leech = false;
         let head_i = i as i32;
+        let head_uid = app.npcs[i].uid;
         // The head's own leech projectiles ride the projectile pool; the
         // port spawns the clot for every leeched player the sim knows of.
         let mut clots: Vec<Npc> = Vec::new();
+        let mut next_uid = app.next_npc_uid;
         if let Some(player) = app.player.as_ref() {
             let buffed = player.buffs.find_buff_index(145).is_some();
             if buffed {
@@ -3187,6 +3268,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 );
                 clot.hp = clot.max_hp;
                 clot.ai[0] = head_i as f32 + 1.0;
+                clot.uid = next_uid;
+                next_uid += 1;
+                // `AI_082`'s anchor (`NPC.cs:36630-36640`): the head.
+                clot.carrier_uid = head_uid;
                 clot.carrier_x = ccx;
                 clot.carrier_y = ccy;
                 clot.carrier_timer = 1.0;
@@ -3194,6 +3279,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 clots.push(clot);
             }
         }
+        app.next_npc_uid = next_uid;
         app.npcs.extend(clots);
     }
     // The Dutchman's pirate-drop resolve (`AI_093`'s `Next(300)` arm):
@@ -7244,6 +7330,43 @@ mod dd2_wave_tests {
         report_invasion_kill(&mut app, NpcKind::Skeleton);
         assert_eq!(app.world.dd2_wave_kills, 0.0);
     }
+
+    #[test]
+    fn the_betsy_anchor_drives_the_seventh_wave() {
+        // `Difficulty_3_GetRequiredWaveKills`'s wave-7 arm
+        // (`DD2Event.cs:1487-1494`): the wave's progress is the Betsy's
+        // own life (`NPC.FindFirstNPC(551)`) — `100 - life/lifeMax*100`
+        // — and the budget is 100.
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        // The tier-3 gate: hardmode with the Golem down.
+        app.world.hard_mode = true;
+        app.world.downed_golem = true;
+        app.world.dd2_wave = 7;
+        app.world.dd2_wave_kills = 0.0;
+        app.world.dd2_spawn_hold = 0;
+        let mut betsy = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        betsy.hp = betsy.max_hp / 2;
+        app.npcs.push(betsy);
+        // A wave-7 kill (the roster holds Betsy 551).
+        report_invasion_kill(&mut app, NpcKind::DD2Betsy);
+        assert_eq!(app.invasion_progress_max, 100, "the wave's budget");
+        assert_eq!(
+            app.invasion_progress, 50 + 4,
+            "the Betsy's HP bucket plus the kill's worth"
+        );
+        // No Betsy on the field: the C#'s `-1` arm takes the budget of 1.
+        app.npcs.clear();
+        app.world.dd2_wave = 7;
+        app.world.dd2_wave_kills = 0.0;
+        app.world.dd2_spawn_hold = 0;
+        report_invasion_kill(&mut app, NpcKind::DD2Betsy);
+        assert_eq!(app.invasion_progress_max, 1, "the no-Betsy budget");
+    }
 }
 
 #[cfg(test)]
@@ -8736,6 +8859,85 @@ mod moon_lord_tests {
             .filter(|n| n.kind == NpcKind::MoonLordHand && n.hp > 0)
             .count();
         assert_eq!(alive_hands, 2, "the hands keep their link");
+    }
+
+    #[test]
+    fn the_moon_lord_parts_keep_their_own_core() {
+        // `AI_077`'s link (`NPC.cs:41229-41232`): the parts carry the
+        // core's id in `ai[3]` and the core keeps the parts' ids in its
+        // `localAI[0..2]`. The link is explicit — the stable id, not
+        // "the first core of the kind".
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        for _ in 0..61 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let core_uid = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MoonLordCore)
+            .map(|n| n.uid)
+            .expect("the core");
+        assert!(core_uid > 0, "the core took an id");
+        for part in app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHand || n.kind == NpcKind::MoonLordHead)
+        {
+            assert_eq!(
+                part.carrier_uid, core_uid,
+                "the part points at its own core"
+            );
+            assert_eq!(part.ai[3] as u32, core_uid, "the C#'s ai[3] link");
+        }
+        // The core's slots hold the parts' ids.
+        let slots: [i32; 3] = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MoonLordCore)
+            .map(|n| n.moon_parts)
+            .expect("the core");
+        for uid in slots {
+            assert!(uid > 0, "the slot holds a part id");
+            assert!(
+                app.npcs.iter().any(|n| n.uid as i32 == uid),
+                "the slot points at a live part"
+            );
+        }
+        // The core dies: its parts fall with it — the link points at the
+        // dead core, not at another Moon Lord.
+        let mut second = Npc::new(
+            NpcKind::MoonLordCore,
+            60.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        second.hp = second.max_hp;
+        app.npcs.push(second);
+        let core_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordCore && n.uid == core_uid)
+            .expect("the first core");
+        app.npcs[core_idx].hp = 0;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let alive_parts = app
+            .npcs
+            .iter()
+            .filter(|n| {
+                (n.kind == NpcKind::MoonLordHand || n.kind == NpcKind::MoonLordHead) && n.hp > 0
+            })
+            .count();
+        assert_eq!(alive_parts, 0, "the parts fall with their core");
     }
 
     #[test]

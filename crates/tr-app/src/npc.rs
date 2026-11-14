@@ -3110,7 +3110,15 @@ pub struct Npc {
     /// `AI_078`/`AI_079`/`AI_081`'s alive-core gate: the pre-pass sets
     /// it while `Main.npc[ai[3]]` is the living 398.
     pub moon_core_alive: bool,
+    /// `AI_077`'s `localAI[0..2]` (`NPC.cs:41229-41232`): the two hands
+    /// (397) and the head (396) the core spawned — the C#'s part links.
+    /// The port keeps the parts' stable ids (the `whoAmI` stand-in), not
+    /// the Vec indices: `App::npcs` compacts every frame. 0 = no part.
     pub moon_parts: [i32; 3],
+    /// The core's part check (`NPC.cs:41250-41269`): a slot that points at
+    /// no living part takes the core down with it. The sim resolves the
+    /// ids each tick (the core's own AI has no NPC list).
+    pub moon_parts_lost: bool,
     pub rifleman_rearmed: bool,
     /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
     /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
@@ -3149,6 +3157,16 @@ pub struct Npc {
     /// shape): the living 391's centre in pixels, (-1, -1) = none.
     pub carrier_x: f32,
     pub carrier_y: f32,
+    /// `NPC.whoAmI` (`NPC.cs:6145`) — the NPC's stable slot id. The C#'s
+    /// boss-part links (`ai[3]`, `localAI[0..2]`) point at these ids; the
+    /// port's `App::npcs` compacts every frame, so the ids — not the Vec
+    /// indices — carry the link. 0 = the id is not assigned yet.
+    pub uid: u32,
+    /// The carrier's stable id — the C#'s `ai[3]` link (`NPC.cs:6161`'s
+    /// `realLife` sibling): the Moon Lord's parts point at their core
+    /// (`NPC.cs:41229-41232`), the leech blob at the head
+    /// (`NPC.cs:36630-36640`). 0 = no carrier.
+    pub carrier_uid: u32,
     /// The saucer core's crew spawn request (`AI`'s aiStyle-76 init arm:
     /// the 4 guns + the shell, `NPC.cs:36071-36092`) — the sim resolves.
     pub wants_saucer_crew: bool,
@@ -4037,7 +4055,8 @@ impl Npc {
             brain_local: [0.0; 4],
             moon_local: [0.0; 3],
             moon_core_alive: false,
-            moon_parts: [-1, -1, -1],
+            moon_parts: [0, 0, 0],
+            moon_parts_lost: false,
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
@@ -4047,6 +4066,8 @@ impl Npc {
             wants_scutlix: false,
             carrier_x: -1.0,
             carrier_y: -1.0,
+            uid: 0,
+            carrier_uid: 0,
             wants_saucer_crew: false,
             alpha: 0,
             head_turn: 0,
@@ -11106,8 +11127,7 @@ impl Npc {
                 // `:41251-41291`'s part bookkeeping: a missing part opens
                 // the death ride, and all parts dead-and-ghosted hands the
                 // core its vulnerable phase.
-                let lost = self.moon_parts.iter().any(|p| *p < 0);
-                if lost {
+                if self.moon_parts_lost {
                     self.ai[0] = 2.0;
                     self.ai[1] = 0.0;
                 }

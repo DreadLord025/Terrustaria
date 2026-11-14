@@ -214,8 +214,10 @@ pub fn required_wave_kills_t2(wave: i32, current_kills: &mut i32) -> i32 {
 
 /// `DD2Event.Difficulty_3_GetRequiredWaveKills` (`:1468-1500`) — the
 /// tier-3 budgets: 60/80/100/120/140/180 then the wave-7 Betsy HP bucket
-/// (`100 - life/max*100`), the wave-8 win sentinel.
-pub fn required_wave_kills_t3(wave: i32, current_kills: &mut i32, betsy_hp_ratio: f32) -> i32 {
+/// (`100 - life/max*100`), the wave-8 win sentinel. `betsy` is the
+/// Betsy's live life ratio (`NPC.FindFirstNPC(551)`, `:1487-1494`):
+/// `None` — no Betsy on the field — takes the C#'s `return 1` arm.
+pub fn required_wave_kills_t3(wave: i32, current_kills: &mut i32, betsy: Option<f32>) -> i32 {
     match wave {
         0 => 0,
         1 => 60,
@@ -225,9 +227,11 @@ pub fn required_wave_kills_t3(wave: i32, current_kills: &mut i32, betsy_hp_ratio
         5 => 140,
         6 => 180,
         7 => {
-            let mut betsy_found = true;
-            let _ = betsy_found;
-            *current_kills = (100.0 - betsy_hp_ratio * 100.0).max(0.0) as i32;
+            let Some(ratio) = betsy else {
+                // `NPC.FindFirstNPC(551) == -1` → the wave's budget is 1.
+                return 1;
+            };
+            *current_kills = (100.0 - ratio * 100.0).max(0.0) as i32;
             100
         }
         8 => 1,
@@ -271,10 +275,14 @@ mod tier_tests {
         // (551) and the budget's the HP ratio.
         assert_eq!(enemies_for_wave_t3(7).0.last(), Some(&551));
         let mut kills = 0;
-        assert_eq!(required_wave_kills_t3(6, &mut kills, 0.4), 180);
+        assert_eq!(required_wave_kills_t3(6, &mut kills, Some(0.4)), 180);
         let mut kills = 0;
-        assert_eq!(required_wave_kills_t3(7, &mut kills, 0.4), 100);
+        assert_eq!(required_wave_kills_t3(7, &mut kills, Some(0.4)), 100);
         assert_eq!(kills, 60, "Betsy's HP bucket");
+        // `NPC.FindFirstNPC(551) == -1` → the wave's budget is 1
+        // (`:1489-1492`).
+        let mut kills = 0;
+        assert_eq!(required_wave_kills_t3(7, &mut kills, None), 1);
     }
 
     #[test]
