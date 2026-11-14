@@ -765,11 +765,31 @@ paint and the coatings.
   (`TilePaintSystemV2.cs:43-51`), collapsed into a per-instance shader branch.
   Deviation: the vanilla recolor runs as compiled HLSL passes whose source is
   not part of the decompile; this port washes the texel with the paint hue while
-  its sRGB luminance carries the texture detail. The basic/deep paint pairs
+  its sRGB luminance carries the texture detail (the `paint_rgb`/dye constants
+  decode with the piecewise sRGB EOTF into the samples' linear space — S1-G-4).
+  The basic/deep paint pairs
   (1-12/13-24) therefore shade identically (vanilla deepens saturation), and the
   grass "special group" hue bands are not modelled. Negative paint (30) inverts
-  the pixel; illuminant (31) draws unpainted (the vanilla pass 0) and glows
+  the pixel byte-exactly (`decode(1 - encode(tex))` = `255 - tex_byte`); illuminant
+  (31) draws unpainted (the vanilla pass 0) and glows
   through the light path.
+
+### The tint's colour space (S1-G-4, 2026-11-14)
+
+XNA's render formats are plain `Color` — no sRGB decode anywhere — so the vanilla
+SpriteBatch multiplies the texture's sRGB bytes with the tint bytes in gamma space
+and the backbuffer stores that product raw: `display = tex_byte * tint_byte / 255`
+(the float pipeline rounds; the CPU-side `Color * Color` operator truncates). The
+port's atlas view decodes (`Rgba8UnormSrgb`) and its swapchain re-encodes, so the
+fragment carries the product linearised once: `f = srgb_decode(encode(painted) *
+tint)` — `encode(f)` lands back on the product byte exactly. The earlier
+`pow(tint, 2.2)` (and even linearising the tint with the piecewise decode) solved
+the wrong equation — `decode(tex) * decode(tint)` ≠ `decode(tex * tint)` — and
+drifted up to 7 LSB per channel. `sprite.rs`'s
+`tint_parity_with_the_csharp_byte_multiply` pins the 256×256 pair table, and the
+A/B screenshots show the corrected output (max 9 LSB over a world frame,
+deterministic; the invariants in AGENTS.md "Rendering" describe this as the tint
+matching XNA's byte multiplies).
 - Coatings: Echo blocks/walls are hidden (`TileDrawing.IsVisible`,
   `TileDrawing.cs:1411-1432`; `WallDrawing.cs:91`) — the port has neither the
   Echo Monolith nor the Echo sight item, so `CanSeeInvisibleBlocks` is always
@@ -12522,6 +12542,153 @@ thirds + its item-rotation arm, the shoot style's back arm, the hold
 styles' arms and the aim mirror. All seven are mutation-checked (RED on
 the pre-fix code).
 
+
+## The saucer projectile arms (S1-D-4b-4, 2026-11-14)
+
+The ROADMAP's S1-D-4b-4 slice (the aiStyle-79 deathray and the aiStyle-80
+missile — the Martian Saucer's two shots, `Projectile.cs:30791-31000`) is
+the second half of the S1-D-4b-1 split (the row was split into S1-D-4b-1..8
+because the 19 styles span ~5 300 C# lines of arms plus the two
+mega-families).
+
+**aiStyle 79 — the Saucer deathray (447)**. The ray is a beam that hangs
+from the NPC that spawned it: the C#'s spawn passes `ai0 = base.whoAmI + 1`
+(`NPC.cs:35917` for the shell, `:36437` for the core) and the arm reads that
+slot. The arm's gates are the owner's state — the shell's `ai[0]` must name a
+live core (`:30805-30813`), the core's phase must be `ai[3] % 120 >= 60` with
+`ai[0] == 2` (`:30829-30832`), and the owner's own `ai[0]` must not be one of
+the three "no target" states (`:30833-30835`). Then the geometry: the beam's
+top is the owner's centre + 46, its column is the owner's centre, and its
+height is the scan down to the first solid row at or below the player's feet
+(the 150-row cap), trimmed by the last row's `num601 % 16 - 2`.
+
+**aiStyle 80 — the Saucer missile (448)**. The spawn passes `ai1 = 20f`
+(`NPC.cs:35845`) and the arm counts it down (the arming delay); on the
+arming tick the arm picks the target (`Player.FindClosest` — the port's
+local player is the only one) and speeds the flight up by 4 px. The flight
+turns toward the target for its first 30 ticks at 0.2 rad/tick, dies at the
+180-tick life end, and dies on a living player within 42 px.
+
+Deviations (each deliberate, each with its C# citation in the arm):
+
+* **The dust is SKIPPED** (the deathray's `:30863-30878`, the missile's
+  `:30920-30929`/`:30946-30956`/`:30963-30971`) — the port has no dust layer
+  (S1-E-1 is in flight). With it the arms' `Main.rand` draws go too (every
+  one of them belongs to a dust block), so the arms keep the gem-staff
+  arm's zero-RNG invariant (`Projectile.cs:37643-38001`).
+* **The owner is an NPC-slot index** in the C# (`Main.npc[(int)ai[0] - 1]`,
+  `:30794`). The port's NPC vec drops the dead every tick, so a stored index
+  can name a different NPC than the C#'s fixed slot did; the port keeps the
+  index shape (the Nebula Arcanum's `ai[1] = index + 1` precedent) and
+  re-checks the owner's kind (the C#'s own `type` gate), so a stale index
+  kills the ray instead of aiming it at a stranger.
+* **The shell's core link is by kind**: the C#'s shell holds the core's slot
+  in its `ai[0]` (`:35895-35907`), while the port's saucer family links
+  through the carrier write-through (the position link, the port's
+  link-by-kind convention for the boss families). The arm therefore looks
+  the core up by its kind.
+* **The target is the local player**: the C#'s beam reads the owner's
+  `NPC.target` (the core's, when the owner is the shell) and the missile
+  uses `Player.FindClosest`; the port's NPCs carry no target field and the
+  local player is the only one (the MP roster is its own row).
+* **The spawn-site `ai0`/`ai1` payload rides the sim's shot drain**: the
+  request tuple (`Npc::wants_hostile_shot`) carries no ai slots yet, so the
+  drain fills the two values the saucer pair needs (the deathray's owner
+  slot + 1 — the drain knows each requester's index — and the missile's
+  `ai1 = 20f`) and hands them to the pool's `spawn_hostile_ai`. The
+  per-shot ai payload the shadow-hand spawn needs
+  (`Projectile.RandomizeInsanityShadowFor`, `Projectile.cs:42408-42493`)
+  is the follow-up that widens the request tuple.
+## The held item's placement (S1-G-17, 2026-11-14)
+
+`ItemCheck_ApplyUseStyle` (`Player.cs:50686-51375`) and
+`ItemCheck_ApplyHoldStyle` (`:50275-50584`) set the held item's
+`itemLocation` + `itemRotation` per use/hold style — the C# computes them
+in the sim, the port computed them in the draw with a single generic arm.
+Three real defects came out of that:
+
+* The useStyle-1 swing's **middle third took the X sign from the swing
+  start** (`itemLocation.X = position.X + width*0.5 - (frame.W*0.5 - num) *
+  direction`, `Player.cs:50829`) — the C# only subtracts in the *start*
+  third; the end (`:50742`) and the middle (`:50773`) add. The item jumped
+  to the other side of the body in the middle of every swing.
+* The useStyle 5 item's rotation was the raw mouse angle, not the C#'s
+  `Player.itemRotation` (`atan2(aimY * direction, aimX * direction) -
+  fullRotation`, `:47371-47378`) — off by PI when facing left (the same
+  mirror the S1-G-16 composite arm needed).
+* The rest anchor was the holdStyle-1 one for *every* hold style, and the
+  use styles 2/6/7/9/11/12/14/15 rode the useStyle-1 arc.
+
+The port now places the item per style (`render/player_layers.rs`'s
+`use_item_placement` / `hold_item_placement`):
+
+* the use styles 1 (the thirds + `item_rotation`), 2 (the `num11` table
+  over the composite stretch), 3 (the thrust), 4 (the hold-up), 5 (the
+  aim), 6/7 (the drinks), 9 (the bow — through the ported
+  `GetFrontHandPosition`, `:50617-50647`), 11 (the `num13` table over the
+  composite stretch), 12 (the guitar), 14 and 15;
+* the hold styles 1, 2, 3, 4 (the umbrella), 5, 6 and 8.
+
+The port's frame: `pos_x`/`pos_y` are `base.position`, `center_x` is
+`base.Center.X`, `mounted_y` is `MountedCenter.Y` (`position.Y + height/2`
+= `position.Y + 21`) and `headgear` is `Main.OffsetsPlayerHeadgear`
+(`Main.cs:66638-66662`). The `gfxOffY` ease rides the anchor
+(`PlayerDrawSet.cs:368`).
+
+Deviations (deliberate, bounded):
+
+* The useStyle 8 (the throw) keeps the useStyle-1 arc: the C#'s three
+  phases compare the raw `itemAnimation` counter with the item's
+  `useAnimation` (`:51199/:51226`) and the port's draw only carries the
+  normalised fraction.
+* The useStyle 13 (the rapier) keeps the useStyle-1 arc: the C# leaves
+  `itemLocation` at the hold-style value (the branch sets no location,
+  `:51174-51196`).
+* The per-item nudges (the style-1 types 2330/2320/2341/671, the hold
+  styles' torch/fishing-pole/staff specials, the biome torches) are not
+  ported; the generic arms carry them.
+* `mountOffset` is 0 and `gravDir` is 1 (the port has no mount offset and
+  no gravity flip).
+
+Tests: `render::player_layers::tests`'s four `s1_g_17_*` cases (the swing
+thirds' X sign, the shoot style's item rotation, the hold styles' anchors
+and the eat style's stretch table) — all mutation-checked (RED on the
+pre-fix code).
+
+
+## The throw and rapier item placement (S1-G-18, 2026-11-14)
+
+Two more `ItemCheck_ApplyUseStyle` arms and one real bug from the
+S1-G-16 composite work:
+
+* The useStyle 8 (the throw) branch (`:51197-51273`) has three phases — the
+  wind-up (the first ticks, while `itemAnimation` is at the item's
+  `useAnimation`), the overshoot (`itemAnimation > useAnimation`, which the
+  port's swing counter never reaches) and the swing arc
+  (`num26 = 1 - itemAnimation/itemAnimationMax`). The item's anchor follows
+  the phase (`MountedCenter + (num22 + PI/2).ToRotationVector2() * -2` for
+  the wind-up, `... * (-5 * (1 - num26))` for the arc) and the draw rotates
+  it a quarter turn (`PlayerDrawLayers.cs:3181-3189`). The port now carries
+  the raw animation counters into the draw (`swing_anim_ticks`/
+  `swing_max_ticks` — the port's swing timer runs in seconds, the C#'s
+  `itemAnimation` in ticks) and places the item per phase.
+* The useStyle 13 (the rapier) branch (`:51174-51196`) sets no location: the
+  item keeps the hold-style anchor and is turned by the aim
+  (`Player.itemRotation`). The port now does the same instead of riding the
+  useStyle-1 arc.
+* **The bug:** the umbrella's (and the throw's) `itemRotation` is
+  `new Vector2(10 * direction, 10f).ToRotation() + PI/4` (`:50524`,
+  `:51201`) — the XNA `ToRotation` is `atan2(Y, X)`, but the S1-G-16 port
+  used `hypot`, i.e. the vector's *length* (14.14) instead of its angle. The
+  umbrella's and the throw's poses were therefore rotated by a nonsense
+  angle. Fixed to `atan2(10, 10 * direction)` in both the sim's composite
+  arms and the draw.
+
+Tests: `s1_g_18_the_throw_style_rides_its_wind_up_and_arc`,
+`s1_g_18_the_rapier_keeps_the_hold_anchor` and
+`s1_g_18_the_umbrella_rotation_is_the_vector_rotation` — all
+mutation-checked (RED on the pre-fix code; the left-facing cases pin the
+mirrored `atan2`, which is where the `hypot` slip showed).
 ## The scene-metrics zone chain (S1-L-1, 2026-11-14)
 
 `SceneMetrics.CalculateZones` (`SceneMetrics.cs:660-710`) computes more

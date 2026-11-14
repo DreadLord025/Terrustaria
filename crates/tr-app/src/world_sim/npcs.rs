@@ -2686,16 +2686,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the archer's Wooden Arrow Hostile 81): the update pass set
     // `wants_hostile_shot`, this pass resolves it into the pool (the
     // knockback 0 — the C# call's `KnockBack: 0f`).
+    //
+    // The requester travels with the shot: the C#'s saucer deathray is
+    // spawned with `ai0 = base.whoAmI + 1` (`NPC.cs:35917`/`:36437`) — the
+    // spawner's own slot index — and the deathray's arm reads that slot to
+    // find its owner (the port's NPC vec is compacted, so the index is the
+    // sim's current one).
     let mut shots = Vec::new();
-    for n in app.npcs.iter_mut() {
-        shots.append(&mut n.wants_hostile_shot);
+    for (i, n) in app.npcs.iter_mut().enumerate() {
+        for shot in n.wants_hostile_shot.drain(..) {
+            shots.push((i, shot));
+        }
     }
-    for (kind, sx, sy, svx, svy, dmg) in shots {
+    for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
         #[cfg(test)]
         eprintln!(
             "[spawn-dbg] pool slots active: {}",
             app.projectiles.slots().iter().filter(|p| p.active).count()
         );
+        // The C#'s spawn-site `ai0`/`ai1` payload (`NewProjectile`'s
+        // trailing arguments, `Projectile.cs:10862-10863`): the deathray's
+        // owner slot + 1 (`NPC.cs:35917`/`:36437`) and the missile's 20-tick
+        // arming delay (`NPC.cs:35845`).
+        let (ai0, ai1) = match kind {
+            crate::projectile::SAUCER_DEATHRAY => ((owner_slot + 1) as f32, 0.0),
+            crate::projectile::SAUCER_MISSILE => (0.0, 20.0),
+            _ => (0.0, 0.0),
+        };
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
         // (`NPC.cs:49891`) and the Frost Legion throws'
         // (`NPC.cs:29022`/`:29084`).
@@ -2715,6 +2732,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 dmg,
                 0.0,
                 time_left,
+            );
+        } else if ai0 != 0.0 || ai1 != 0.0 {
+            app.projectiles.spawn_hostile_ai(
+                kind,
+                Vec2::new(sx, sy),
+                Vec2::new(svx, svy),
+                dmg,
+                0.0,
+                ai0,
+                ai1,
             );
         } else {
             app.projectiles

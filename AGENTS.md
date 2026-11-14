@@ -371,7 +371,9 @@ merge if the change is code-shape relevant); avoid two agents racing on
 - Tiles are 16 px on an 18 px sheet grid (2 px padding); tree trunks are 20×20 on a 22 px
   grid; walls use 36 px cells with an 8 px inset. Keep source rects on those grids.
 - The renderer draws one atlas through one instanced sprite pipeline. Sprites carry an
-  optional rotation; tint is pre-linearised in WGSL to match XNA byte multiplies.
+  optional rotation; the tint rides XNA's byte multiplies exactly — the WGSL
+  multiplies the sRGB bytes in gamma space and linearises the product once
+  (the piecewise sRGB EOTF, S1-G-4).
 - Lighting uses the original `TileLightScanner` seeds and `LightMap` blur; the 9-slice
   block path (`GetColor9Slice`) is what makes Color/White mode smooth.
 - Optimisation policy (Milestone 1.5): the in-game zoom range stays 1.0–2.0; **no LOD,

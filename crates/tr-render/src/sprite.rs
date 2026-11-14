@@ -1345,6 +1345,108 @@ fn probe(pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
 mod tests {
     use super::*;
 
+    // ---- S1-G-4: the tint's colour-space parity (research/41 D-5) ----
+
+    /// The piecewise sRGB EOTF the GPU applies to an `Rgba8UnormSrgb` view —
+    /// the same curve the WGSL helpers implement (`sprite.wgsl`). Kept here so
+    /// the parity test and the shader cannot drift apart silently.
+    fn srgb_decode(c: f32) -> f32 {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    /// The EOTF's exact inverse (`IEC 61966-2-1`).
+    fn srgb_encode(c: f32) -> f32 {
+        if c <= 0.0031308 {
+            c * 12.92
+        } else {
+            1.055 * c.powf(1.0 / 2.4) - 0.055
+        }
+    }
+
+    /// `encode(decode(b))` returns every stored byte exactly — the contract
+    /// the shader's colour algebra relies on (the atlas decodes with this
+    /// curve and the swapchain encodes with its inverse).
+    #[test]
+    fn srgb_eotf_round_trips_every_byte() {
+        for b in 0u32..256 {
+            let v = b as f32 / 255.0;
+            let round = (srgb_encode(srgb_decode(v)) * 255.0).round();
+            assert_eq!(round, b as f32, "byte {b} did not round-trip");
+        }
+    }
+
+    /// The verify criterion: the port's displayed byte must equal the
+    /// vanilla's SpriteBatch tint exactly. XNA's formats are plain `Color`
+    /// (no sRGB decode), so the vanilla multiplies sRGB bytes in gamma space
+    /// and stores the product raw: `display = tex_byte * tint_byte / 255`.
+    /// The port's sRGB atlas + sRGB swapchain pair re-derive that product as
+    /// `encode(decode(encode(tex) * tint))` — since `encode ∘ decode` is the
+    /// identity, the displayed byte lands on the vanilla's without drift.
+    /// The pre-S1-G-4 forms (linearising the tint alone, either `pow(2.2)`
+    /// or the piecewise decode) solved the wrong equation and drifted.
+    #[test]
+    fn tint_parity_with_the_csharp_byte_multiply() {
+        let mut max_exact = 0u32;
+        let mut max_exact_int = 0u32;
+        let mut max_pow22 = 0u32;
+        let mut max_decode_both = 0u32;
+        for tex in 0u32..256 {
+            let tex_lin = srgb_decode(tex as f32 / 255.0);
+            let tex_srgb = tex as f32 / 255.0;
+            for tint in 0u32..256 {
+                let tint_srgb = tint as f32 / 255.0;
+                // The S1-G-4 fragment: the gamma-space product, linearised once.
+                let fragment = srgb_decode(tex_srgb * tint_srgb);
+                let exact = (srgb_encode(fragment) * 255.0).round() as i32;
+                // The vanilla reference: the SpriteBatch tint reaches the GPU
+                // as floats and the non-sRGB backbuffer rounds the store —
+                // `round(tex*tint/255)`. The CPU-side `Color * Color`
+                // operator instead truncates (`(tex*tint)/255`); the port
+                // pins both readings.
+                let vanilla_float = (tex_srgb * tint_srgb * 255.0).round() as i32;
+                let vanilla_int = (tex * tint) / 255;
+                max_exact = max_exact.max((exact - vanilla_float).unsigned_abs());
+                max_exact_int = max_exact_int.max((exact - vanilla_int as i32).unsigned_abs());
+                // The pre-S1-G-4 forms for contrast.
+                let pow22 = (srgb_encode(tex_lin * tint_srgb.powf(2.2)) * 255.0).round() as i32;
+                max_pow22 = max_pow22.max((pow22 - vanilla_float).unsigned_abs());
+                let both = (srgb_encode(tex_lin * srgb_decode(tint_srgb)) * 255.0).round() as i32;
+                max_decode_both = max_decode_both.max((both - vanilla_float).unsigned_abs());
+            }
+        }
+        assert_eq!(max_exact, 0, "the gamma-product form must be exact");
+        assert!(
+            max_exact_int <= 1,
+            "the integer-division reading drifted {max_exact_int} LSB"
+        );
+        assert!(
+            max_pow22 > max_exact,
+            "pow(2.2) was no worse than the exact form ({max_pow22})"
+        );
+        assert!(
+            max_decode_both > max_exact,
+            "the decode-both form was no worse either ({max_decode_both})"
+        );
+    }
+
+    /// `sprite.wgsl` stays naga-valid after the S1-G-4 colour-space edits —
+    /// `create_shader_module` panics on invalid WGSL, so a broken shader
+    /// fails here instead of at the first frame.
+    #[test]
+    fn sprite_wgsl_compiles_headless() {
+        let Some((device, _queue)) = crate::test_gpu::headless() else {
+            return;
+        };
+        let _ = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("sprite-wgsl-parity-test"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("sprite.wgsl").into()),
+        });
+    }
+
     #[test]
     fn the_instance_stride_is_a_multiple_of_four() {
         // `draw_ranges` copies each range straight into the instance ring at
