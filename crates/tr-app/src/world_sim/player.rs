@@ -523,6 +523,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.equipped[i] = app.equip.armor[i].kind;
             p.equipped_prefix[i] = app.equip.armor[i].prefix;
         }
+        // `:22676-22679` — the Track Hook hands the player to the equipped
+        // cart mount (the misc-equip 2) when it is a cart row; the wooden
+        // minecart (13) is the default. The C#'s `expertOnly` gate rides the
+        // journey/expert flags the port does not carry.
+        p.cart_mount = app
+            .equip
+            .misc_equips
+            .get(2)
+            .filter(|s| s.count > 0)
+            .and_then(|s| crate::mount::mount_type_of_item(s.kind))
+            .filter(|m| *m >= 0 && crate::mount::is_cart(*m))
+            .unwrap_or(13);
         // `IsVoidVaultEnabled`'s per-tick refresh (`Player.cs:24550-24553`
         // — `useVoidBag`'s scan :23171-23180; the port scans the grid plus
         // the coin/ammo rows the App holds).

@@ -11354,6 +11354,22 @@ impl ProjectilePool {
                                     // `:52772` — the latch rebuilds the
                                     // owner's refused-tile set.
                                     self.refresh_hook_blacklist(world, owner);
+                                    // `:52773-52774` — the Queen Slime's hook
+                                    // (935) drags its owner to the hook.
+                                    if self.slots[i].kind == 935 {
+                                        if let Some(p) = player.as_deref_mut() {
+                                            let center = self.slots[i].center();
+                                            let target = crate::grapple::queen_slime_hook_teleport(
+                                                world,
+                                                Vec2::new(p.x, p.y),
+                                                Vec2::new(crate::player::WIDTH as f32, p.height),
+                                                Vec2::new(center.0, center.1),
+                                            );
+                                            // `Player.Teleport(vector, 10)` — the
+                                            // style-10 instant move.
+                                            p.teleport(target.x, target.y);
+                                        }
+                                    }
                                     let cap =
                                         crate::grapple::hook_spec_id(self.slots[i].kind).max_attached;
                                     let mut count = 0usize;
