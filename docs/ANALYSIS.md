@@ -12542,6 +12542,63 @@ thirds + its item-rotation arm, the shoot style's back arm, the hold
 styles' arms and the aim mirror. All seven are mutation-checked (RED on
 the pre-fix code).
 
+
+## The saucer projectile arms (S1-D-4b-4, 2026-11-14)
+
+The ROADMAP's S1-D-4b-4 slice (the aiStyle-79 deathray and the aiStyle-80
+missile — the Martian Saucer's two shots, `Projectile.cs:30791-31000`) is
+the second half of the S1-D-4b-1 split (the row was split into S1-D-4b-1..8
+because the 19 styles span ~5 300 C# lines of arms plus the two
+mega-families).
+
+**aiStyle 79 — the Saucer deathray (447)**. The ray is a beam that hangs
+from the NPC that spawned it: the C#'s spawn passes `ai0 = base.whoAmI + 1`
+(`NPC.cs:35917` for the shell, `:36437` for the core) and the arm reads that
+slot. The arm's gates are the owner's state — the shell's `ai[0]` must name a
+live core (`:30805-30813`), the core's phase must be `ai[3] % 120 >= 60` with
+`ai[0] == 2` (`:30829-30832`), and the owner's own `ai[0]` must not be one of
+the three "no target" states (`:30833-30835`). Then the geometry: the beam's
+top is the owner's centre + 46, its column is the owner's centre, and its
+height is the scan down to the first solid row at or below the player's feet
+(the 150-row cap), trimmed by the last row's `num601 % 16 - 2`.
+
+**aiStyle 80 — the Saucer missile (448)**. The spawn passes `ai1 = 20f`
+(`NPC.cs:35845`) and the arm counts it down (the arming delay); on the
+arming tick the arm picks the target (`Player.FindClosest` — the port's
+local player is the only one) and speeds the flight up by 4 px. The flight
+turns toward the target for its first 30 ticks at 0.2 rad/tick, dies at the
+180-tick life end, and dies on a living player within 42 px.
+
+Deviations (each deliberate, each with its C# citation in the arm):
+
+* **The dust is SKIPPED** (the deathray's `:30863-30878`, the missile's
+  `:30920-30929`/`:30946-30956`/`:30963-30971`) — the port has no dust layer
+  (S1-E-1 is in flight). With it the arms' `Main.rand` draws go too (every
+  one of them belongs to a dust block), so the arms keep the gem-staff
+  arm's zero-RNG invariant (`Projectile.cs:37643-38001`).
+* **The owner is an NPC-slot index** in the C# (`Main.npc[(int)ai[0] - 1]`,
+  `:30794`). The port's NPC vec drops the dead every tick, so a stored index
+  can name a different NPC than the C#'s fixed slot did; the port keeps the
+  index shape (the Nebula Arcanum's `ai[1] = index + 1` precedent) and
+  re-checks the owner's kind (the C#'s own `type` gate), so a stale index
+  kills the ray instead of aiming it at a stranger.
+* **The shell's core link is by kind**: the C#'s shell holds the core's slot
+  in its `ai[0]` (`:35895-35907`), while the port's saucer family links
+  through the carrier write-through (the position link, the port's
+  link-by-kind convention for the boss families). The arm therefore looks
+  the core up by its kind.
+* **The target is the local player**: the C#'s beam reads the owner's
+  `NPC.target` (the core's, when the owner is the shell) and the missile
+  uses `Player.FindClosest`; the port's NPCs carry no target field and the
+  local player is the only one (the MP roster is its own row).
+* **The spawn-site `ai0`/`ai1` payload rides the sim's shot drain**: the
+  request tuple (`Npc::wants_hostile_shot`) carries no ai slots yet, so the
+  drain fills the two values the saucer pair needs (the deathray's owner
+  slot + 1 — the drain knows each requester's index — and the missile's
+  `ai1 = 20f`) and hands them to the pool's `spawn_hostile_ai`. The
+  per-shot ai payload the shadow-hand spawn needs
+  (`Projectile.RandomizeInsanityShadowFor`, `Projectile.cs:42408-42493`)
+  is the follow-up that widens the request tuple.
 ## The held item's placement (S1-G-17, 2026-11-14)
 
 `ItemCheck_ApplyUseStyle` (`Player.cs:50686-51375`) and
