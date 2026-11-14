@@ -385,6 +385,11 @@ merge if the change is code-shape relevant); avoid two agents racing on
   **`cargo` may exit 1 on success in this project; judge only by the `test result: ok`
   lines.** (`persist::tests::migrates_version_2_kinds_to_item_ids` is the one known
   broken test; the `--skip` is permanent until it is fixed.)
+- Generated data tables must not drift: when the change touches items/recipes (or
+  anything the generators read), run `python tools/gen_recipes.py --check`,
+  `python tools/test_gen_recipes.py` and `python tools/GenItemData/gen.py --check`.
+  A failing check means regenerate and commit the generated file in the same
+  task, never by hand.
 - For visual work, take deterministic screenshots (`TR_SHOT`, `TR_CAM`, `TR_DAY`,
   `TR_NOPLAYER`, `TR_NO_BG`, `TR_UI=<screen>`, `TR_DEBUG=0`) and compare with
   `tools/pixel_diff.py`; two identical runs must be SHA256-equal. Check zoom 1.0,

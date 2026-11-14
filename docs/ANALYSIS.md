@@ -114,6 +114,30 @@ Tile flags we map 1:1 into a packed 16-byte struct (`tr-core/src/tile.rs`): acti
 half-brick, actuator, inactive, fullbright, liquid kind, liquid amount, slope, paint, wall,
 plus the computed wall autotile cell (`wall_col`, `wall_row`).
 
+### The tile section's four wire bits (S1-J-1, 2026-11-14)
+
+The C# keeps the four wire colours inside the tile's own headers: `wire()`,
+`wire2()` and `wire3()` are `sTileHeader` bits 0x80/0x100/0x200
+(`Tile.cs:623-672`) and `wire4()` is a `bTileHeader` bit 0x80
+(`Tile.cs:437-452`). `SaveWorldTiles` writes them into the chained header
+bytes — `b2` 0x02/0x04/0x08 for the three `sTileHeader` wires and `b3` 0x20 for
+`wire4()` (`WorldFile.cs:1508-1532`) — and `LoadWorldTiles` restores them
+(`:2614-2632`, `:2651-2654`), with `CopyFrom` (`:2711`) copying them into every
+row of an RLE run.
+
+The port stores the colours in the sparse `World.wires` table (the packed
+12-byte `Tile` has no header space — see the wiring deviation below), so the
+writer reads them from there and the reader writes them back. The bytes are
+the C#'s: the tile section of a fixture world is byte-identical to the output
+of a `dotnet` run of the decompiled `SaveWorldTiles` (the golden fixture in
+`wld/mod.rs::s1_j_1_the_tile_section_matches_the_csharp_bytes`).
+
+The second half of the fix is the **batching equality**: `Tile.isTheSameAs`
+compares the packed `sTileHeader` (`Tile.cs:161`), and the wire bits live in
+it — so two tiles that differ only by a wire are **not** batched
+(`WorldFile.cs:1577`). The port's `encoded_same` now compares the four colours
+too, which makes the RLE run boundaries match the C#'s.
+
 ### The eleven sections (all eleven ported, both directions — M6-SAVE-1, 2026-11-09)
 
 `SaveWorld_Version2:1150-1165` / `LoadWorld_Version2:1760-1851`: a 70-byte prologue
@@ -4831,10 +4855,15 @@ lamp-pair frame flip.
 Deviations:
 
 - **Wire colours live in a sparse side table** (`World.wires: WireState`) —
-  the C# packs them as `sTileHeader` bits (`Tile.cs:623-657`) and the port's
-  12-byte `Tile` has no header space (E1). Persistence in `.trwld`/`.map` is
-  pending (M6-SAVE-1); synthetic test worlds set wires through
-  `World.wires.set`.
+  the C# packs them as `sTileHeader` bits (`Tile.cs:623-672`) and the port's
+  12-byte `Tile` has no header space (E1). The **persistence is 1:1**: the
+  `.wld` tile section writes them exactly where the C# does — `b2` 0x02/0x04/
+  0x08 for `wire()`/`wire2()`/`wire3()` and `b3` 0x20 for `wire4()`
+  (`WorldFile.cs:1508-1532`) — and the reader restores them
+  (`LoadWorldTiles:2614-2632`/`:2651-2654`, copied into every row of an RLE
+  run by `CopyFrom`), so the `.wld` tile section is byte-identical to the
+  C#'s (S1-J-1); the `.trwld` keeps its own v7 wire section. Only the
+  in-memory layout differs.
 - **Device entity effects are passthroughs** — the mine (210), geyser (443),
   statue spawns, pumps (`XferWater`), teleporters and the cannons' projectiles
   belong to M7-WIRE-2/5; their `HitSwitch`/`HitWireSingle` cases currently do
@@ -6977,23 +7006,30 @@ snap beside the spawn; the load-time NPC spawn is suppressed under the pin).
 `tools/gen_recipes.py` reads the decompiled `Terraria/Recipe.cs`
 `SetupRecipes` and emits `crates/tr-app/src/recipes_gen.rs` - the whole
 table as ONE `&[Recipe, ...]` expression spliced via
-`include!` into `RECIPES`. 2764 rows in the C# registration order
-(= the UI listing order):
+`include!` into `RECIPES`. 2 791 rows in the C# registration order
+(= the UI listing order; re-pinned 2026-11-14 by S1-L-11 - the reverse
+rows now derive from the C# item data, `Item.SetDefaults`
+createTile/createWall, not from `itemdata.rs`; `gen_recipes.py --check`
+and `tools/test_gen_recipes.py` gate the drift):
 
-- the main body (2475 `AddRecipe` calls) + the 35 `Add*Furniture`
+- the main body (2475 `AddRecipe` calls) + the 34 `Add*Furniture`
   helpers spliced at their call positions + the `AddCritterStatueRecipe`
   rows (50 Stone + 5 critter at tile 283, needGraveyardBiome);
 - the `for` loops (`<=` and `<` forms), the `int[,] array` colour table,
   the `ItemID.Sets.TextureCopyLoad[i]` lookups, the shared locals
   (`int type = 3234;`) and the `(int)((float)num * 2.5f)` casts are all
   expanded/evaluated;
-- 284 derived reverse rows: `CreateReversePlatformRecipes` +
-  `CreateReverseWallRecipes` (`Recipe.cs:16648-16694`) flip every
-  single-ingredient recipe whose result is a placed platform
-  (`TileID.Sets.Platforms` {19, 427, 435-439}) or a placed wall
-  (`createWall > 0`, the ingredient not a wall) and insert it right
-  after the source with `notDecraftable` - the port carries that exact
-  flag as `Recipe.not_decraftable` (the craft direction ignores it).
+- 311 derived reverse rows: `CreateReversePlatformRecipes` +
+  `CreateReverseWallRecipes` (`Recipe.cs:15148-15149`, bodies
+  `:16652-16702`) flip every single-ingredient recipe whose result is a
+  placed platform (`TileID.Sets.Platforms` {19, 427, 435-439}) or a
+  placed wall (`createWall > 0`, the ingredient not a wall) and insert
+  it right after the source with `notDecraftable` - the port carries
+  that exact flag as `Recipe.not_decraftable` (the craft direction
+  ignores it). The flips are derived from the C#'s own item registry
+  (`Item.SetDefaults`); the deliberate parse gap is the `default:` switch
+  sections (only the monolith series 2192-2198 is affected, and none of
+  them is a single-ingredient recipe result).
 
 Findings the hand table had wrong (the generator is the truth now):
 
@@ -12312,3 +12348,68 @@ is the tile-space identity); the minimap call (`Main.cs:55703`, with the
 clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
 their own passes; the hover text feeds the map's text line through
 `ui::text::hud_text` (the C# `ref text`).
+
+## The composite arm poses (S1-G-16, 2026-11-14)
+
+`Player.compositeFrontArm`/`compositeBackArm` (`Player.cs:1906/:4347-4365`)
+were never ported: the renderer used a `swing_stand_in` stand-in that
+enabled the front arm for three use styles (2/11/13), never the back arm,
+and read the stretch ladders off a normalised swing instead of the C#'s
+`itemAnimation` — so the arms posed wrong in most item animations (the
+style 11 ladder was inverted, the style 13 stretch was inverted, the style 2
+pose never reached its relaxed row). The sim now owns the state:
+
+* `AnimatePlayerAndGetItemFrame` (`Player.cs:43372-43386`) resets both arms
+  to DISABLED per frame and dispatches: `itemAnimation > 0` →
+  `ItemCheck_ApplyUseStyle`, otherwise → `ItemCheck_ApplyHoldStyle`.
+* `ItemCheck_ApplyUseStyle`'s composite assignments (`:50885-51375`) are
+  ported per use style — 2 (both arms `-PI/2 * dir`, the `num10` quarters),
+  8 (the wind-up/swing-arc phases), 9 (the `num7 → num8` arc), 11 (the
+  `num12` two-cycle + the back arm Full at `-PI/16`), 12 (the `num30`
+  two-cycle + `num31 = cos(num30 * PI) * 0.2`), 13 (the `num20` thirds +
+  `itemRotation * Directions.Y - PI/2 * dir`), 14 (the back arm Full at
+  `-3*PI/4 * dir`) and 15 (both arms at `-2*PI/5 * dir`).
+* `ItemCheck_ApplyHoldStyle`'s composite assignments (`:50520-50582`) are
+  ported per hold style — 4 (the umbrella: the front Full + the back
+  ThreeQuarters around `num9 ± num8`), 5 (the back Quarter at `-PI/4 * dir`
+  + the front Full at `-0.39269912 * dir`), 6 (the back ThreeQuarters at
+  `-3*PI/5 * dir`) and 8 (both arms at `-2*PI/5 * dir`).
+* The draw consumes the live state: `PlayerDrawSet.UpdateCompositeArm`
+  (`PlayerDrawSet.cs:2246-2275`) picks the front column 7 / the back
+  column 8 at the stretch row (Full 0 / ThreeQuarters 1 / Quarter 2 /
+  None 3) and the rotation pivots the arm around the composite pivot
+  (`render/player_layers.rs::update_composite_arm`).
+
+The shooting styles' `itemRotation` (`Player.cs:47371-47378`) is now the
+C#'s `atan2(aimY * direction, aimX * direction) - fullRotation`: the port
+keeps the aim as an angle, so the mirrored `atan2` is the aim + PI when
+the player faces left (`item_rotation_for_aim`). The old stand-in used
+`aim * direction` — the negated angle, not the mirrored vector — so the
+useStyle 5 body rows (`num21 = itemRotation * direction`, `:36423`) and the
+useStyle 13 composite arm were off by PI when facing left.
+
+Deviations (deliberate, bounded):
+
+* The useStyle 8 overshoot branch (`itemAnimation > useAnimation`,
+  `:51226-51244`) is unreachable — the port's swing counter never exceeds
+  `itemAnimationMax`.
+* The useStyle 13 stretch base is `itemAnimationMax`, where the C# uses
+  `itemTimeMax` when it is non-zero (`:51176-51184`) — the port has no
+  per-item use time.
+* The useStyle 9 branch also moves `itemLocation` through
+  `GetFrontHandPosition` (`:50901-50905`); the port draws the held item
+  from its own item-row chain (the held-item positions are the
+  M2-DRAW item-row work).
+* `AnimatePlayerAndGetItemFrame` reads `lastVisualizedSelectedItem` while
+  the animation runs (`:43374`); the port uses the currently selected item.
+* The petting composite arms (`ItemCheck_ApplyHoldStyle`'s `isPetting`
+  block, `:50242-50269`) and the football arm (`:36139-36143`) stay
+  unported (no petting/football systems).
+* `Player.Directions.Y` (the gravity direction, `:3849`) is 1 in the port
+  (no gravity flip).
+
+Tests: `s1_player_composite_tests` — the eat style's quarters, the mow
+style's two-cycle + the back arm's constant pose, the rapier's stretch
+thirds + its item-rotation arm, the shoot style's back arm, the hold
+styles' arms and the aim mirror. All seven are mutation-checked (RED on
+the pre-fix code).

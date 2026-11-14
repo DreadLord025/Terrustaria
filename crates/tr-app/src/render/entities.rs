@@ -3,12 +3,12 @@
 //! head icon and the UI-space character preview.
 use super::BgTex;
 use super::player_layers::{
-    CompositeArmState, LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell, hair_uv,
-    swing_stand_in,
+    LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell, hair_uv,
 };
 use super::sky::sky_tex;
 use crate::assets;
 use crate::npc::{Npc, NpcKind};
+use crate::player::CompositeArmState;
 use crate::player::Player;
 use crate::registry;
 use crate::ui;
@@ -1426,12 +1426,12 @@ pub(crate) fn draw_player(
         head_armor,
         body_armor,
         leg_armor,
-        front_arm: swing_stand_in(
-            held.map_or(1, |(kind, _)| crate::item::use_style(kind)),
-            swing,
-            player.facing as f32,
-        ),
-        back_arm: CompositeArmState::DISABLED,
+        // The live `Player.compositeFrontArm`/`compositeBackArm`
+        // (`Player.cs:1906`) — the sim assigns them per `useStyle`/`holdStyle`
+        // (the S1-G-16 swing parity); the renderer's composite machine
+        // consumes them.
+        front_arm: player.composite_front,
+        back_arm: player.composite_back,
         // `DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront`
         // (`PlayerDrawLayers.cs:211`, `:2912`) — the live mount's inputs.
         mount: if player.mount.is_active() {
