@@ -1745,8 +1745,9 @@ pub(crate) fn should_spawn_invasion_enemies(world: &World, player_y: f32, player
         return false;
     }
     // `position.Y < Main.worldSurface * 16.0 + NPC.sHeight` — the px-space
-    // compare (`NPC.sHeight` = 200).
-    if player_y < (world.world_surface * 16.0 + 200.0) as f32
+    // compare (`NPC.sHeight` = 1200, `NPC.cs:6769`; the port used 200, which
+    // made the band ~6x too narrow — S1-F-18).
+    if player_y < (world.world_surface * 16.0 + crate::spawner::S_HEIGHT as f64) as f32
         || (world.spawn_y as f32) > world.world_surface as f32
     {
         let num = 3000.0;
@@ -4746,10 +4747,16 @@ mod invasion_tests {
             !should_spawn_invasion_enemies(&w, 110.0 * TILE_PX, 250.0 * TILE_PX),
             "far from invasionX"
         );
-        // The underground band: no invasion spawns.
+        // The band is `NPC.sHeight` = 1200 px below the surface
+        // (`NPC.cs:6769`): the world's surface is row 120 = px 1920, so the
+        // band reaches px 3120 — 3000 px down still spawns, 3200 does not.
         assert!(
-            !should_spawn_invasion_enemies(&w, 400.0 * TILE_PX, 20.0 * TILE_PX),
-            "the cave band refuses"
+            should_spawn_invasion_enemies(&w, 3000.0, 20.0 * TILE_PX),
+            "the 1200 px band holds"
+        );
+        assert!(
+            !should_spawn_invasion_enemies(&w, 3200.0, 20.0 * TILE_PX),
+            "below the band refuses"
         );
     }
     #[test]

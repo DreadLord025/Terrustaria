@@ -4194,8 +4194,8 @@ world's far side).
 
 The spawn: `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) —
 the px-space surface band (`position.Y < worldSurface*16 + sHeight`; the C#
-`sHeight` is 1200, `NPC.cs:6769` — the port's fn uses 200, the S1-F-18
-follow-up)
+`sHeight` is 1200, `NPC.cs:6769` — the port's fn used 200 until S1-F-18
+fixed the band)
 plus the ±3000 px window around `invasionX` — overrides the natural roll
 with the goblin table (`:1419-1450`): the hardmode Summoner 1/30 (while
 none alive), the Sorcerer 1/9, the Thief 1/5, the Peon 1/3, the Warrior
@@ -12759,3 +12759,15 @@ vanilla scans the VISUAL screen rect") pointed at a stale line reference.
 The arm is `SceneMetrics.cs:468-480`, INSIDE `ScanTiles` — the C# scans the
 same 169×124 zone window the port scans, so the port's window is verbatim;
 the port's comment now says so.
+
+## The invasion surface band (S1-F-18, 2026-11-14)
+
+`Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) compares
+`position.Y < Main.worldSurface * 16.0 + NPC.sHeight` — and `NPC.sHeight` is
+**1200** (`NPC.cs:6769`), not the 200 the port used. The invasion's
+above-surface band was therefore ~6× too narrow; it now reads
+`crate::spawner::S_HEIGHT` (the port's constant already carried the
+vanilla's 1200) and the window test pins both edges (3000 px below the
+surface spawns, 3200 px does not — the test world's surface is row 120 =
+px 1920). The ±3000 px window around `invasionX` and the town-NPC fallback
+stay as they were (the latter rides the town roster).
