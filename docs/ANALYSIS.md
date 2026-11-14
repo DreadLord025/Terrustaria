@@ -7488,6 +7488,46 @@ positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
 stands in for `miscDyes[3]`; the UI dye column (context 12) already
 renders the slots.
 
+## Localization name tables (S1-L-12, 2026-11-14)
+
+The C# builds its name caches by reflecting over the id classes and reading the
+key `<Category>.<ConstName>` (`Lang.FillNameCacheArray`, `Lang.cs:450-464`), so
+the constant spelling IS the localization key. The port now reads the same
+keys through `lang.rs`:
+
+* `npc_name(id)` — `Lang.GetNPCName` (`Lang.cs:188-195`), including the
+  negative net ids (the `NPCID.FromNetId` map plus the twelve explicit slime
+  rows, `Lang.cs:524-533`).
+* `buff_name` / `buff_description` — `Lang.cs:241-249`.
+* `emoji_name` — `Lang.cs:211-218` (a missing entry stays blank, like the
+  C#'s `leaveMissingEntriesBlank`).
+* `prefix_name`, `projectile_name`, `item_tooltip` — the `Prefix`,
+  `ProjectileName` and `ItemTooltip` key families.
+* `map_object_name` — `Lang.GetMapObjectName` (`Lang.cs:77-84`): the
+  `Lang.BuildMapAtlas` legend (`Lang.cs:554-...`), with the tree-trunk loop
+  (`:565-572`) and the `itemNameCache[N]` rows.
+* The legacy index tables the port did not reach: `world_gen`
+  (`LegacyWorldGen.{i}`), `misc` (`LegacyMisc.{i}`), `mp`
+  (`LegacyMultiplayer.{i}`), `chest_type` (`LegacyChestType.{i}`),
+  `chest_type2` (`LegacyChestType2.{i}`) and `dresser_type`
+  (`LegacyDresserType.{i}`).
+
+The `NPCID` and `BuffID` const walks are generated (`tools/gen_lang_tables.py`
+→ `lang_tables.rs`; `--check` is part of the verification) so the key
+spelling cannot drift from the decompiled source.
+
+Deviations:
+* **`GetPrefixedItemName` is not ported** — the C# picks a gender variation
+  (`Language.TryGetVariation`) and formats it through `CombineFormat.Prefix`
+  (`Lang.cs:225-239`); the port exposes the plain prefix name.
+* **The item tooltip content is not ported** — `item_tooltip` resolves the
+  `ItemTooltip.{const name}` key, but the per-item tooltip *lines* are the
+  M3-ITEM / S1-E-20 work.
+* **The map legend is addressed by tile/option** — the C#'s
+  `Lang.GetMapObjectName` takes the colour-lookup id; the port offers
+  `map_object_name(lookup_id)` (the C#'s signature) and
+  `map_object_name_for_tile(tile, option)` over the same table.
+
 ## Localization runtime + retail fonts (M6-LOCALIZE-wire-fonts, 2026-11-07)
 
 **Resource source:** the C# embeds its 84 strings files as assembly manifest
@@ -8203,21 +8243,61 @@ already there) and `ui/tooltip.rs` replaced its four hardcoded zero rows with
 `MouseText_DrawItemTooltip_GetLinesInfo`'s real rows (`Main.cs:20631-20800`),
 computed from the port's own `ItemDef` values.
 
-Deliberate deviations and notes:
+Deliberate deviations and notes (S1-E-20 closed the player-side and
+per-item halves — see "The item tooltip rows (S1-E-20)" below):
 
-- **The player-side layers are out** (the accessory/M3 layer): the C#'s
-  `GetWeaponDamageMultiplier` (the port shows the raw item damage), the
-  player crit bonuses (the item's own `crit`), `minionKB`, the magic-quiver
-  ×1.1 knockback and the 3106 stealth arm — each defaults to its neutral value
-  with a comment.
-- **`notAmmo` and `ToolTipDamageMultiplier` are not ported** (no fields), so
-  the damage row's gate is the plain `damage > 0` (the coin-type exception and
-  the ammo gate ride along when the fields land).
+- ~~**The player-side layers are out**~~ — **CLOSED (S1-E-20)**: the damage
+  row carries the player's weapon-damage multiplier, the crit row the player's
+  crit, the knockback row `minionKB` / the magic-quiver ×1.1 / the knockback
+  gloves / the shroomite armour's ranged scale. The accessor fields
+  (`minionKB`, `kbGlove`, `kbBuff`, `shroomiteStealth`, `stealth`, `spaceGun`)
+  are constants-off until the accessory layer grants them.
+- ~~**`ToolTipDamageMultiplier` is not ported**~~ — **CLOSED (S1-E-20)**: the
+  nine doubled ids ride a small table (`ItemID.cs:492`).
+- `notAmmo` is still not ported (no field), so the damage row's gate is the
+  plain `damage > 0` (the coin-type exception and the ammo gate ride along
+  when the field lands).
 - The line geometry (`tooltip_box_rect`, the `(14, 9)` inset, the shadow
   copies) is unchanged — only the row list changed.
 - Without the shipped `Terraria.Localization.Content.*.json` (the gitignored
   resources the loader probes) the keys show through — vanilla's own
   unknown-key behaviour.
+
+## The item tooltip rows (S1-E-20, 2026-11-14)
+
+`Main.MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-21010`) is
+ported in full for the rows the port's own data reaches. The hover name is
+`Item.GetHoverName(item, stack)` (`Item.cs:438-446`): the affix name
+(`Item.AffixName`, `:1194-1201` → `Lang.GetPrefixedItemName`,
+`Lang.cs:225-239` — the prefix name + the item name through the
+`CombineFormat.Prefix` format) plus the stack suffix. The per-item text is
+`Lang.GetTooltip(item.type)` (`Lang.cs:193-196`): the
+`ItemTooltip.<ItemID const name>` language rows, one line each.
+
+The missing rows landed too: the life / mana restore rows and the buff row
+(`CommonItemTooltip.*`, `Main.cs:20876-20904`), the fishing rows
+(`GameUI.PrecentFishingPower` / `BaitRequired` / `BaitPower`, `:20805-20812`),
+the quest / vanity rows (`:20833-20841`), the material / ammo / consumable
+rows (`:20911-20933`) and the wider equipable gate (`:20816`): the hook
+projectiles (`Main.projHook[item.shoot]` — the aiStyle-7 set,
+`Main.cs:6618-6624`), the mounts (`item.mountType != -1`) and the light /
+vanity pets.
+
+Deviations:
+
+- **The result is not a cursor item.** The C# hands the crafted/hovered item
+  to `Main.mouseItem` (`Main.CraftItem_GrantItem`, `Main.cs:42607-42612`) and
+  the tooltip reads that; the port's tooltip reads the hovered slot directly.
+- **The favourite / social rows are out** (`Main.cs:20646-20658`): the
+  tooltip has no favourite or social state to read.
+- **The shop and upgrade rows are out** (`MouseText_DrawItemTooltip_AddShopLines`,
+  `Main.cs:20362`): the port's shop tooltip has no such rows.
+- **The bulk-buy / bulk-craft stack arms are out** (`ItemSlot.EstimateDisplayStack`,
+  `ItemSlot.cs:3150-3162`): the displayed stack is the item's own.
+- **The `InputTrigger_*` substitutions are the keyboard keybind names**
+  (`Lang.cs:150-161` → `PlayerInput.GenerateRawInputList`,
+  `PlayerInput.cs:1948`): the port has no gamepad glyph list, so the
+  keyboard's key names stand in.
 
 
 ## Tile sections (M6-NET-3)
@@ -11674,7 +11754,8 @@ showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
   name otherwise. The C# prints `Main.npc[n].FullName`, i.e. the *given* name
   plus the type ("Andrew the Guide"); the port stores no per-NPC given names, so
   it prints the type name from the `NPCName.<Kind>` localization key
-  (`housing::name_key`) — the same string the bestiary entry carries.
+  (`housing::npc_type_name` → `lang::npc_name`, the C#'s
+  `Lang.GetNPCName`) — the same string the bestiary entry carries.
 * **Not ported**: the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
   because the port has no `Main.mouseNPC` housing query at all; the
   `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
@@ -12997,3 +13078,81 @@ Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `StickyTiles` +
 `Player.StickyMovement`, `SwitchTiles`, `BuildTileContacts`,
 `noSlopeCollision`, `AdvancedTileCollision` and `DrownCollision`/
 `GetWaterLine`.
+## The goblin family's ids (S1-D-3d, 2026-11-14)
+
+The port's four goblin kinds carried **each other's** vanilla `NPCID`: the
+kind named `GoblinThief` sat on the type 26 (the vanilla's **peon**), the
+`GoblinWarrior` on the 27 (the **thief**), the `GoblinArcher` on the 28
+(the **warrior**) and the `GoblinPeon` on the 111 (the **archer**) — the
+peon/thief/warrior/archer cycle rotated by one.
+
+The C#'s rows (`ID/NPCID.cs:10729-10733`/`:10899`, the `SetDefaults` arms
+`NPC.cs:15644-15730`):
+
+| kind | type | HP | damage | defense | kb resist | value |
+| --- | --- | --- | --- | --- | --- | --- |
+| the peon | 26 | 60 | 12 | 4 | 0.8 | 100 |
+| the thief | 27 | 80 | 20 | 6 | 0.7 | 200 |
+| the warrior | 28 | 110 | 25 | 8 | 0.5 | 150 |
+| the archer | 111 | 80 | 20 | 6 | 0.7 | 200 |
+
+The port's stats rows followed the **ids** (the thief carried the peon's
+60 HP, the warrior and the peon the thief's 80, the archer the warrior's
+110), and the bestiary's `net_id` — the C#'s `NPC.type` — carried the
+same rotation. The loot tables key on that net id, so a "Goblin Thief"
+dropped the peon's loot and credited the peon's bestiary entry.
+
+The fix moves the ids and the stats back onto the names: the bestiary's
+four `net_id`s follow the C# (`cs_id` reads them through the S1-F-3
+fallback), and the stats rows carry the C#'s values per name. The port's
+`docs/NPC_AI_TAXONOMY.md` had the C#'s mapping all along ("26/27/28 |
+Goblin Peon/Thief/Warrior | 60/80/110 | 12/20/25 | 4/6/8") — the code
+had drifted from the doc.
+
+Two duplicate match arms died with the fix: the stats functions carried a
+second, by-name set of goblin rows *after* the by-id set, so the correct
+values were unreachable (`unreachable pattern` warnings). The dead rows
+are gone and the effective rows carry the C#'s values.
+
+The port's own wire ids (the `NpcKind` u16 roster: 57/58/59/60) and the
+sprite sheets (`NPC_27`/`NPC_28`/`NPC_111`/`NPC_26`) were already keyed by
+name and are untouched — the kinds, their art and their ids now agree.
+
+## The aiStyle-3 walk-speed table (S1-D-3c, 2026-11-14)
+
+`AI_003_Fighters` (`NPC.cs:55856-59800`) is the vanilla's ground-fighter
+machine: the per-type walk groups, the shooters' stop-and-fire cycle and
+the boss riders. The port ran every kind that rides its walker step at one
+speed — the skeleton's 0.8 for the cave walkers, the pirates and the
+martians, the zombie's own 0.6, the shooters' 5.0 — while the C#'s arm
+carries a per-type velocity cap per group:
+
+| group | cap | kinds (the C#'s rows) |
+| --- | --- | --- |
+| the `num107` default (`:58322-58374`) | 1f | the zombie (3), the undead miner (44), the goblin warrior (28) |
+| the `num83` group (`:57606-57691`) | 1.5f | the skeleton (21), the goblin peon (26); the gray grunt 1.8, the giga zapper 2.25, the vortex rifleman 6, the vortex soldier 4 |
+| the cap-2 group (`:57554-57578`) | 2f | the goblin thief (27), the pirate deckhand (212) |
+| the cap-3 group (`:57520-57552`) | 3f | the pirate captain's mate (213) |
+| the shooters' group (`:59717-59750`) | 1f | the pirate captain (216), the martian officer (383); the pirate archer 2, the corsair 1.5, the scrambler/ray gunner 2, the stardust spider/soldier 2, the vortex hunter 4, the martian walker 4 |
+| the Martian engineer's own arm (`:58032-58069`) | 1.5f | the martian engineer (386) |
+
+`NpcKind::ai3_walk_speed` is the port's table; the zombie, the cave
+walkers (the skeleton, the undead miner, the pirate deckhand, the pirate
+captain's mate), the goblins and the shooters read it instead of their
+hard-coded speed. The kinds whose arm is bespoke (the pillar mobs, the
+vortex family, the Goblin Archer) keep their own speed and are not in the
+table.
+
+Deviations:
+
+* **The C#'s acceleration model is not ported**: the vanilla ramps the
+  velocity toward the cap at 0.07/tick (0.09/0.08/0.5/1.0 for the shooter
+  rows) and decays it ×0.8 past the cap; the port's walker step sets the
+  velocity to the cap directly. The cap itself — the value the C#'s
+  acceleration converges to — is the port's table.
+* **The C#'s scale factor on the `num107` group** (`num107 *= 1f + (1f -
+  this.scale)`, `:58374-58376`) rides the kind's `scale` (the vanilla's
+  humanoid scales are 0.9-1.1); the port's scale is 1 for these kinds, so
+  the factor is 1 — except for the kinds whose scale the port does not
+  carry (the goblins' 0.9/0.95/1.1), which the group does not scale
+  anyway.
