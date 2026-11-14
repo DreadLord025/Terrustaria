@@ -18,12 +18,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gen_recipes  # noqa: E402
 
-# The executed Add* sites of `Recipe.SetupRecipes` (1.4.5.8) — 2 892 rows.
+# The executed Add* sites of `Recipe.SetupRecipes` (1.4.5.8) — 2 895 rows.
 # The count was 2 480 until S1-L-11d: the generator's tail branch dropped the
 # 414 rows that sit between the last expansion mark and
-# `Recipe.CreateReverseWallRecipes()` (`Recipe.cs:15148`); the three gated
-# rows (`needTorchGodsFavor` x2, `needMechdusa`) are still skipped here.
-GOLDEN_AUTHORED = 2892
+# `Recipe.CreateReverseWallRecipes()` (`Recipe.cs:15148`), and the
+# `needTorchGodsFavor` / `needMechdusa` rows were skipped on top of that.
+GOLDEN_AUTHORED = 2895
 GOLDEN_REVERSE = 311
 
 
@@ -74,6 +74,21 @@ def main():
 
     rows = gen_recipes.validate(gen_recipes.parse_all(ctx), ctx)
     check(len(rows) == GOLDEN_AUTHORED, f"authored rows {len(rows)} != {GOLDEN_AUTHORED}")
+
+    # The two gated rows the C# marks (`Recipe.cs:1706`/`:14895`/
+    # `:15046`) must be present with their flags.
+    gated = {
+        "need_torch_gods_favor": [r.create[0] for r in rows if r.flags.get("need_torch_gods_favor")],
+        "need_mechdusa": [r.create[0] for r in rows if r.flags.get("need_mechdusa")],
+    }
+    check(
+        gated["need_torch_gods_favor"] == [5573, 5638],
+        f"needTorchGodsFavor rows {gated['need_torch_gods_favor']} != [5573, 5638]",
+    )
+    check(
+        gated["need_mechdusa"] == [5334],
+        f"needMechdusa rows {gated['need_mechdusa']} != [5334]",
+    )
 
     out = gen_recipes.reverse_rows(rows, ctx)
     reverse_rows = [r for r in out if r.origin.endswith(" reverse")]

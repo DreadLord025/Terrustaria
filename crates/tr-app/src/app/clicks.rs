@@ -527,10 +527,33 @@ impl App {
         let Some(player) = self.player.as_ref() else {
             return false;
         };
-        let adj = craft::scan_adjacent(&self.world, player);
+        // `Player.tileRangeX/Y` + `TileReachCheckSettings.Simple` (the C#'s
+        // reach, `Player.cs:18815-18826`/`:13040-13044`/`:14955-14958`/
+        // `:35671`): the Extendo Grip / the Architect's Gizmo Pack, the held
+        // Toolbox, the Journey mode's Far Placement Range power and the
+        // artisan loaf.
+        let reach = craft::tile_reach(
+            player.equipped[..10].contains(&2215) || player.equipped[..10].contains(&3061),
+            self.mouse_item.kind == 1923,
+            self.creative_powers.far_placement_range(),
+            player.ate_artisan_bread,
+        );
+        let adj = craft::scan_adjacent(&self.world, player, reach);
         let zones = craft::Zones {
             snow: self.scene_metrics.zone_snow,
             graveyard: self.scene_metrics.zone_graveyard,
+        };
+        // `Recipe.CanCraft`'s two gates (`Recipe.cs:349-356`).
+        let gates = craft::Gates {
+            unlocked_biome_torches: player.unlocked_biome_torches,
+            // `SpecialSeedFeatures.Mechdusa` (`SpecialSeedFeatures.cs:119-127`)
+            // — `Main.remixWorld && Main.getGoodWorld`, i.e. the Remix option
+            // and the "for the worthy" option (`WorldGen.cs:11118-11121`).
+            mechdusa: self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                && self
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
         };
         let in_range = craft::chests_in_range(
             &self.world,
@@ -538,8 +561,14 @@ impl App {
             &self.world_chests,
             self.settings.craft_from_nearby_chests,
         );
-        let available =
-            craft::available(&self.inventory, &self.world_chests, &in_range, &adj, &zones);
+        let available = craft::available_with_gates(
+            &self.inventory,
+            &self.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            &gates,
+        );
         let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
         else {
             return false;
@@ -582,22 +611,35 @@ impl App {
             return true;
         }
         // `try_craft_qty` crafts as many of `num` as the ingredients allow
-        // (the request loop's net effect); count 0 = the partial-set row's
-        // no-op (`Main.cs:42250` hover only).
-        let (kind, count) = craft::try_craft_qty(
+        // (the request loop's net effect); an empty result = the partial-set
+        // row's no-op (`Main.cs:42250` hover only). Each craft grants its own
+        // `CreateResult` — its own kind (after `OnCreated`'s swap) and its own
+        // rolled prefix (`CraftingRequests.cs:139`).
+        let crafted = craft::try_craft_qty(
             &mut self.inventory,
             &mut self.world_chests,
             &in_range,
             recipe,
             &adj,
             &zones,
+            &gates,
             &mut self.craft_rng,
+            &mut self.prefix_rng,
             num,
         );
-        if count > 0 {
-            if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind, 0) {
-                self.inventory[i].count = (self.inventory[i].count + count)
-                    .min(crate::registry::max_stack(kind));
+        if !crafted.is_empty() {
+            // The C# hands the result to the cursor (`Main.CraftItem_GrantItem`,
+            // `Main.cs:42607-42612`); the port grants it into the inventory
+            // directly (the recorded deviation) — the prefix rides the slot,
+            // so two crafted items with different prefixes take two slots
+            // (`Item.CanStack`, `Item.cs:49865-49872`).
+            for made in &crafted {
+                if let Some(i) =
+                    crate::item::slot_for_pickup(&mut self.inventory, made.kind, made.prefix)
+                {
+                    self.inventory[i].count =
+                        (self.inventory[i].count + made.count).min(crate::registry::max_stack(made.kind));
+                }
             }
             // `SoundEngine.PlaySound(7)` — the grant sound
             // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
@@ -605,7 +647,7 @@ impl App {
             // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
             // crafted item's id rides the event, so `BENCHED`'s workbench set
             // matches the crafted item and not any craft.
-            let _ = self.achievements.notify_craft(kind);
+            let _ = self.achievements.notify_craft(crafted[0].kind);
             // `:42282-42285`: the first craft pins the held-repeat's recipe
             // and refreshes the split cooldown (`ItemSlot.cs:1774-1784`).
             if self.current_recipe_being_crafted == -1 {
@@ -3717,7 +3759,7 @@ mod s1_h_7_tests {
     fn torch_mouse(app: &App) -> Vec2 {
         let (sw, sh) = app.screen_size();
         let screen = Vec2::new(sw, sh);
-        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap());
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), (5, 3));
         let zones = craft::Zones::default();
         let in_range = craft::chests_in_range(
             &app.world,
@@ -3851,5 +3893,88 @@ mod s1_h_7_tests {
             .find(|s| s.kind == 8)
             .expect("the partial craft");
         assert_eq!(torches.count, 9, "only 3 wood -> 3 crafts of 3");
+    }
+
+    /// The mouse over a recipe's cell (the grid origin + the 44 px pitch —
+    /// `ui::crafting::hit_test`'s geometry) for the given created item.
+    fn recipe_mouse(app: &App, create: u16) -> Vec2 {
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), (5, 3));
+        let zones = craft::Zones::default();
+        let in_range = craft::chests_in_range(
+            &app.world,
+            app.player.as_ref().unwrap(),
+            &app.world_chests,
+            false,
+        );
+        let available = craft::available(&app.inventory, &app.world_chests, &in_range, &adj, &zones);
+        let pos = available
+            .iter()
+            .position(|&r| craft::RECIPES[r].create.0 == create)
+            .expect("the recipe is available");
+        let l = ui::crafting::layout(screen, 0.0, false);
+        let cols = ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
+        let col = pos as f32 % cols;
+        let row = (pos as f32) / cols;
+        Vec2::new(l.grid[0] + col * 44.0 + 20.0, l.grid[1] + row * 44.0 + 20.0)
+    }
+
+    #[test]
+    fn s1_l_11d_a_crafted_weapon_keeps_its_rolled_prefix() {
+        // `CraftingRequests.CreateResult` (`CraftingRequests.cs:122-131`): the
+        // crafted item takes the natural prefix roll (`Item.Prefix(-1)`), and
+        // the grant keeps it — two crafted items with different prefixes take
+        // two slots (`Item.CanStack`, `Item.cs:49865-49872`).
+        let mut app = craft_app();
+        let p = app.player.as_ref().unwrap();
+        let bx = (p.x / 16.0) as i32 + 2;
+        let by = (p.y / 16.0) as i32;
+        // The anvil (16) next to the player — the recipe's station.
+        let idx = app.world.index(bx, by);
+        app.world.tiles[idx].kind = 16;
+        app.world.tiles[idx].flags |= tr_core::tile::FLAG_ACTIVE;
+        // 10 copper bars (22) + 3 wood for the pickaxe (1).
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 22,
+            name: "Copper Bar",
+            count: 10,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 3,
+            prefix: 0,
+        };
+        // The engine's own roll, replayed from the same stream state: the
+        // grant must carry exactly what `Item.Prefix(-1)` rolled. The seed is
+        // pinned so the roll is a non-zero prefix.
+        app.prefix_rng = tr_core::unified_random::UnifiedRandom::new(11);
+        let mut expect_rng = app.prefix_rng.clone();
+        let expected = crate::prefix::roll_prefix(1, -1, &mut expect_rng);
+        let mouse = recipe_mouse(&app, 1);
+        app.mouse_pos = mouse;
+        app.focus_recipe = 1;
+        // The first press focuses, the second crafts.
+        app.ui_left_press = true;
+        app.mine_down = true;
+        app.handle_crafting_clicks();
+        app.mine_down = false;
+        app.handle_crafting_clicks();
+        app.stack_split = 0;
+        app.mine_down = true;
+        app.ui_left_press = true;
+        app.handle_crafting_clicks();
+        let pick = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 1)
+            .expect("the crafted pickaxe");
+        assert_ne!(expected, 0, "the pinned roll is a prefix");
+        assert_eq!(
+            pick.prefix, expected,
+            "the crafted item keeps the rolled prefix"
+        );
     }
 }

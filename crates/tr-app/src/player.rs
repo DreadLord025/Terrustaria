@@ -651,6 +651,16 @@ pub struct Player {
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
+    /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
+    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
+    /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
+    /// so the flag stays false in play — the reach formula reads it.
+    pub ate_artisan_bread: bool,
+    /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
+    /// biome torches — the gate on the `needTorchGodsFavor` recipes
+    /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
+    /// is unported, so the flag stays false in play.
+    pub unlocked_biome_torches: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -1570,6 +1580,8 @@ impl Player {
             chest_x: 0,
             chest_y: 0,
             void_vault_enabled: false,
+            ate_artisan_bread: false,
+            unlocked_biome_torches: false,
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,

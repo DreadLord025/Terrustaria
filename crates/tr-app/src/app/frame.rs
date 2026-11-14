@@ -1583,11 +1583,25 @@ impl App {
                         // owned counts fold the inventory and the in-range
                         // chests; the environment reads the adjacency scan
                         // and the zone flags.
+                        // The reach (`Player.tileRangeX/Y` +
+                        // `TileReachCheckSettings.Simple`): the Extendo Grip /
+                        // the Architect's Gizmo Pack, the held Toolbox, the
+                        // Journey mode's Far Placement Range power and the
+                        // artisan loaf.
+                        let reach = player.as_ref().map_or((5, 3), |p| {
+                            craft::tile_reach(
+                                p.equipped[..10].contains(&2215)
+                                    || p.equipped[..10].contains(&3061),
+                                self.mouse_item.kind == 1923,
+                                self.creative_powers.far_placement_range(),
+                                p.ate_artisan_bread,
+                            )
+                        });
                         let (adj, in_range) = player
                             .as_ref()
                             .map(|p| {
                                 (
-                                    craft::scan_adjacent(world, p),
+                                    craft::scan_adjacent(world, p, reach),
                                     craft::chests_in_range(
                                         world,
                                         p,
@@ -1612,7 +1626,26 @@ impl App {
                             snow: self.scene_metrics.zone_snow,
                             graveyard: self.scene_metrics.zone_graveyard,
                         };
-                        craft::available(inventory, &self.world_chests, &in_range, &adj, &zones)
+                        // `Recipe.CanCraft`'s two gates (`Recipe.cs:349-356`).
+                        let gates = craft::Gates {
+                            unlocked_biome_torches: player
+                                .as_ref()
+                                .map_or(false, |p| p.unlocked_biome_torches),
+                            // `SpecialSeedFeatures.Mechdusa`
+                            // (`SpecialSeedFeatures.cs:119-127`).
+                            mechdusa: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                                && world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                        };
+                        craft::available_with_gates(
+                            inventory,
+                            &self.world_chests,
+                            &in_range,
+                            &adj,
+                            &zones,
+                            &gates,
+                        )
                     } else {
                         Vec::new()
                     };

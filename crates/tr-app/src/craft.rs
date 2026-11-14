@@ -55,6 +55,12 @@ pub(crate) struct Recipe {
     pub(crate) need_snow: bool,
     /// `needGraveyardBiome` (`:92`): `player.ZoneGraveyard`.
     pub(crate) need_graveyard: bool,
+    /// `needTorchGodsFavor` (`:86`): `player.unlockedBiomeTorches` — the
+    /// Torch God's biome torches (`Recipe.cs:353-356`).
+    pub(crate) need_torch_gods_favor: bool,
+    /// `needMechdusa` (`:94`): `SpecialSeedFeatures.Mechdusa` — the
+    /// "for the worthy" seed's remix+good-world pair (`Recipe.cs:349-352`).
+    pub(crate) need_mechdusa: bool,
     /// `alchemy` (`:88`) — auto-set by `AddRecipe` iff `requiredTile == 13`
     /// (`:16722-16726`); gates the 1/3 ingredient discount at craft time
     /// (`GetIngredientCraftingDiscount`, `:214-228`).
@@ -74,6 +80,8 @@ const BASE: Recipe = Recipe {
     need_lava: false,
     need_snow: false,
     need_graveyard: false,
+    need_torch_gods_favor: false,
+    need_mechdusa: false,
     alchemy: false,
     not_decraftable: false,
 };
@@ -443,22 +451,69 @@ pub(crate) struct Adjacent {
     pub(crate) alchemy_table: bool,
 }
 
+/// `Player.tileRangeX` / `Player.tileRangeY` (`Player.cs:2496-2498`, the
+/// statics the crafting reach is built from) after the per-tick writes and
+/// the `TileReachCheckSettings.Simple` clamp — the reach the adjacent-tile
+/// scan uses.
+///
+/// The C#'s order per tick: `ResetEffects` resets the statics to the
+/// defaults (5 / 3, `Player.cs:18815-18816`/`:57113-57114`) and applies the
+/// Journey mode's Far Placement Range power (×2 and +8/+8, `:18818-18826`);
+/// `UpdateEquips` adds the Extendo Grip / the Architect's Gizmo Pack
+/// (+3/+2, `:13040-13044`); `ApplyEquipFunctional` adds the held Toolbox
+/// (+1/+1, `:14955-14958`); `TileReachCheckSettings.GetRanges` clamps both
+/// to `TileReachLimit = 20` (`TileReachCheckSettings.cs:20-34`, `:84`); and
+/// `Player.AdjTiles` adds the artisan bread's `TB = 4` on top of the clamp
+/// (`:35671`).
+pub(crate) fn tile_reach(
+    equipped_range_acc: bool,
+    holding_toolbox: bool,
+    far_placement_range: bool,
+    ate_artisan_bread: bool,
+) -> (i32, i32) {
+    let mut x = 5; // `Player.DefaultTileRangeX`
+    let mut y = 3; // `Player.DefaultTileRangeY`
+    if far_placement_range {
+        x *= 2;
+        y *= 2;
+        x += 8;
+        y += 8;
+    }
+    if equipped_range_acc {
+        x += 3;
+        y += 2;
+    }
+    if holding_toolbox {
+        x += 1;
+        y += 1;
+    }
+    // `GetRanges`' `TileReachLimit` clamp (20).
+    x = x.min(20);
+    y = y.min(20);
+    // The artisan bread's `TB` (`Player.cs:35671`) — added after the clamp.
+    if ate_artisan_bread {
+        x += 4;
+        y += 4;
+    }
+    (x, y)
+}
+
 /// `Player.AdjTiles` (`Player.cs:35661`) with `TileReachCheckSettings.Simple`
-/// (`TileReachCheckSettings.cs:81-86`: reach X 5 / Y 3, `GetRanges` clamped by
-/// `TileReachLimit = 20`; region math `:45-54`): the active tile kinds around
-/// the player hitbox and the liquid flags (the same region — the vanilla has
-/// no separate liquid radius; threshold `tile.liquid > 200`, `:35688-35693`).
+/// (`TileReachCheckSettings.cs:81-86`: the reach from [`tile_reach`],
+/// `GetRanges` clamped by `TileReachLimit = 20`; region math `:45-54`): the
+/// active tile kinds around the player hitbox and the liquid flags (the same
+/// region — the vanilla has no separate liquid radius; threshold
+/// `tile.liquid > 200`, `:35688-35693`).
 /// The region is inclusive of `HX`/`HY`: `GetTileRegion` returns
 /// `new Rectangle(LX, LY, HX-LX, HY-LY)` and the XNA `Rectangle.Right` is
 /// `X + Width` (exclusive), so `Player.cs:35672`'s `i <= Right` scans
 /// `LX..=HX` — the same inclusive loop below (S1-L-11b).
-pub(crate) fn scan_adjacent(world: &World, player: &Player) -> Adjacent {
-    const REACH_X: i32 = 5;
-    const REACH_Y: i32 = 3;
-    let lx = (player.x / 16.0).floor() as i32 - REACH_X;
-    let hx = ((player.x + player::WIDTH as f32) / 16.0).ceil() as i32 - 1 + REACH_X;
-    let ly = (player.y / 16.0).floor() as i32 - REACH_Y;
-    let hy = ((player.y + player::HEIGHT as f32) / 16.0).ceil() as i32 - 1 + REACH_Y;
+pub(crate) fn scan_adjacent(world: &World, player: &Player, reach: (i32, i32)) -> Adjacent {
+    let (reach_x, reach_y) = reach;
+    let lx = (player.x / 16.0).floor() as i32 - reach_x;
+    let hx = ((player.x + player::WIDTH as f32) / 16.0).ceil() as i32 - 1 + reach_x;
+    let ly = (player.y / 16.0).floor() as i32 - reach_y;
+    let hy = ((player.y + player::HEIGHT as f32) / 16.0).ceil() as i32 - 1 + reach_y;
     let mut adj = Adjacent {
         tiles: Vec::new(),
         water: false,
@@ -502,6 +557,29 @@ pub(crate) fn scan_adjacent(world: &World, player: &Player) -> Adjacent {
 pub(crate) struct Zones {
     pub(crate) snow: bool,
     pub(crate) graveyard: bool,
+}
+
+/// The gates `Recipe.CanCraft` reads outside the adjacency and the zone
+/// flags (`Recipe.cs:349-356`): `player.unlockedBiomeTorches` (the Torch
+/// God's biome torches — the unlock trigger itself is unported, so the flag
+/// stays false in play) and `SpecialSeedFeatures.Mechdusa` (the "for the
+/// worthy" seed's remix+good-world pair, `SpecialSeedFeatures.cs:119-127`).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Gates {
+    pub(crate) unlocked_biome_torches: bool,
+    pub(crate) mechdusa: bool,
+}
+
+/// `Recipe.CanCraft`'s two gates outside the adjacency/zone flags
+/// (`Recipe.cs:349-356`).
+fn gates_allow(recipe: &Recipe, gates: &Gates) -> bool {
+    if recipe.need_mechdusa && !gates.mechdusa {
+        return false;
+    }
+    if recipe.need_torch_gods_favor && !gates.unlocked_biome_torches {
+        return false;
+    }
+    true
 }
 
 /// `Recipe.GetIngredientCraftingDiscount` (`Recipe.cs:214-228`): one free unit
@@ -661,11 +739,25 @@ pub(crate) fn available(
     adj: &Adjacent,
     zones: &Zones,
 ) -> Vec<usize> {
+    available_with_gates(inv, chests, in_range, adj, zones, &Gates::default())
+}
+
+/// [`available`] plus the two world/player gates — the C#'s
+/// `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`) filters through
+/// `Recipe.CanCraft`, which reads them (`Recipe.cs:349-356`).
+pub(crate) fn available_with_gates(
+    inv: &[ItemSlot; INV],
+    chests: &[WorldChest],
+    in_range: &[usize],
+    adj: &Adjacent,
+    zones: &Zones,
+    gates: &Gates,
+) -> Vec<usize> {
     let owned = collect_owned(inv, chests, in_range);
     RECIPES
         .iter()
         .enumerate()
-        .filter(|(_, r)| craftable(r, &owned, adj, zones))
+        .filter(|(_, r)| craftable(r, &owned, adj, zones) && gates_allow(r, gates))
         .map(|(i, _)| i)
         .collect()
 }
@@ -740,8 +832,69 @@ pub(crate) fn can_craft(
     adj: &Adjacent,
     zones: &Zones,
 ) -> bool {
+    can_craft_with_gates(inv, chests, in_range, recipe, adj, zones, &Gates::default())
+}
+
+/// [`can_craft`] plus the two world/player gates (`Recipe.CanCraft`,
+/// `Recipe.cs:349-356`).
+pub(crate) fn can_craft_with_gates(
+    inv: &[ItemSlot; INV],
+    chests: &[WorldChest],
+    in_range: &[usize],
+    recipe: &Recipe,
+    adj: &Adjacent,
+    zones: &Zones,
+    gates: &Gates,
+) -> bool {
+    if !gates_allow(recipe, gates) {
+        return false;
+    }
     let owned = collect_owned(inv, chests, in_range);
     craftable(recipe, &owned, adj, zones)
+}
+
+/// The created item — `CraftingRequests.CreateResult`'s result
+/// (`CraftingRequests.cs:122-131`): the recipe's item after
+/// `Item.OnCreated`'s type swap and the random prefix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CreatedItem {
+    pub(crate) kind: u16,
+    pub(crate) count: u32,
+    /// `item.Prefix(-1)`'s rolled prefix (0 = none).
+    pub(crate) prefix: u16,
+}
+
+/// `CraftingRequests.CreateResult` (`CraftingRequests.cs:122-131`): the
+/// recipe's `createItem` cloned, `Item.OnCreated(RecipeItemCreationContext)`
+/// and — for a single-item stack — `Item.Prefix(-1)`, the natural spawn roll
+/// (`Item.cs:504-610`).
+///
+/// RNG (S1-A-10): the prefix roll draws from the port's shared `Main.rand`
+/// stand-in for the natural rolls (`App::prefix_rng`); the C# draws it from
+/// the same global `Main.rand` as the alchemy discount — the port's two
+/// stand-ins (`prefix_rng` / `craft_rng`) are the S1-A-11/S1-L-6c residual.
+pub(crate) fn create_result(
+    recipe: &Recipe,
+    rng: &mut impl crate::prefix::PrefixRandom,
+) -> CreatedItem {
+    // `Item.OnCreated(ItemCreationContext)` (`Item.cs:48936-48942`): the
+    // ShellphoneDummy (5437) becomes the Shellphone (5358).
+    let kind = if recipe.create.0 == 5437 {
+        5358
+    } else {
+        recipe.create.0
+    };
+    // `if (item.stack <= 1) { item.Prefix(-1); }` (`:126-129`).
+    let prefix = if recipe.create.1 <= 1 {
+        crate::prefix::roll_prefix(kind, -1, rng)
+    } else {
+        0
+    };
+    CreatedItem {
+        kind,
+        count: recipe.create.1,
+        prefix,
+    }
 }
 
 /// `CraftingRequests.CraftItem`'s drain (`CraftingRequests.cs:97-121`,
@@ -749,10 +902,13 @@ pub(crate) fn can_craft(
 /// order, one `ConsumeItemsFrom`-shaped pass per container matching
 /// `RequiredItemEntry.Matches` (any group member for a group entry).
 /// `CraftingRequests.CraftItem(recipe, num)` (`Main.cs:42286`) — the C#'s
-/// request queue processes the quantity; the port loops the single craft
-/// (each iteration re-checks the ingredient availability, so a partial set
-/// crafts as many as it can — the vanilla request loop's net effect). The
-/// per-craft draw rides the shared `rng` (the alchemy discount's stream).
+/// request loop runs `num` times, and each pass grants its **own**
+/// `CreateResult` (its own random prefix, `CraftingRequests.cs:139`); the
+/// port loops the single craft the same way (each iteration re-checks the
+/// ingredient availability, so a partial set crafts as many as it can — the
+/// vanilla request loop's net effect). The per-craft discount draw rides the
+/// shared `craft_rng` (the alchemy discount's stream); the created item's
+/// prefix rides `prefix_rng` (see [`create_result`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn try_craft_qty(
     inv: &mut [ItemSlot; INV],
@@ -761,24 +917,54 @@ pub(crate) fn try_craft_qty(
     recipe: &Recipe,
     adj: &Adjacent,
     zones: &Zones,
-    rng: &mut UnifiedRandom,
+    gates: &Gates,
+    craft_rng: &mut UnifiedRandom,
+    prefix_rng: &mut impl crate::prefix::PrefixRandom,
     qty: u32,
-) -> (u16, u32) {
-    let mut crafted = 0u32;
+) -> Vec<CreatedItem> {
+    let mut crafted: Vec<CreatedItem> = Vec::new();
     for _ in 0..qty {
-        match try_craft(inv, chests, in_range, recipe, adj, zones, rng) {
-            Some((kind, count)) => {
-                crafted += count;
-                if crafted == 0 {
+        // `Main.CursorHasSpaceToCraftRecipe` (`Main.cs:42309-42345`): the
+        // next craft needs room for its result. The C#'s cursor holds the
+        // previous result, and the gate refuses a prefixable item outright
+        // (`!item.CanHavePrefixes()`) or one that cannot stack with the
+        // recipe's item — so a shift-craft of a weapon yields a single item,
+        // while a stackable one (the torches) fills the cursor. The port
+        // grants into the inventory, so the "cursor" is the last result.
+        if let Some(prev) = crafted.last() {
+            if !result_fits_next(prev, recipe) {
+                break;
+            }
+        }
+        match try_craft(
+            inv, chests, in_range, recipe, adj, zones, gates, craft_rng, prefix_rng,
+        ) {
+            Some(made) => {
+                if made.count == 0 {
                     break;
                 }
+                crafted.push(made);
             }
             None => break,
         }
     }
-    (recipe.create.0, crafted)
+    crafted
 }
 
+/// `Main.CursorHasSpaceToCraftRecipe`'s condition (`Main.cs:42325-42327`):
+/// the previous result can take the next one — the kind cannot carry
+/// prefixes, it stacks with the recipe's item, and the stack still fits.
+fn result_fits_next(previous: &CreatedItem, recipe: &Recipe) -> bool {
+    if crate::prefix::can_have_prefixes(previous.kind) {
+        return false;
+    }
+    if previous.kind != recipe.create.0 {
+        return false;
+    }
+    previous.count + recipe.create.1 <= crate::registry::max_stack(previous.kind)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn try_craft(
     inv: &mut [ItemSlot; INV],
     chests: &mut [WorldChest],
@@ -786,15 +972,17 @@ pub(crate) fn try_craft(
     recipe: &Recipe,
     adj: &Adjacent,
     zones: &Zones,
-    rng: &mut UnifiedRandom,
-) -> Option<(u16, u32)> {
-    if !can_craft(inv, chests, in_range, recipe, adj, zones) {
+    gates: &Gates,
+    craft_rng: &mut UnifiedRandom,
+    prefix_rng: &mut impl crate::prefix::PrefixRandom,
+) -> Option<CreatedItem> {
+    if !can_craft_with_gates(inv, chests, in_range, recipe, adj, zones, gates) {
         return None;
     }
     for req in recipe.required {
         // `GetIngredientsForOneCraft` (`Recipe.cs:196-212`): the discount
         // comes off the consumed stack (availability counts full stacks).
-        let discount = ingredient_discount(recipe.alchemy, adj.alchemy_table, req.stack, rng);
+        let discount = ingredient_discount(recipe.alchemy, adj.alchemy_table, req.stack, craft_rng);
         let mut to_consume = req.stack - discount;
         // The inventory pass (`Main.LocalPlayer.inventory`, 58 slots). A
         // group entry drains whichever member the slots hold first.
@@ -819,7 +1007,10 @@ pub(crate) fn try_craft(
         }
         debug_assert_eq!(to_consume, 0, "craftable checked the totals");
     }
-    Some(recipe.create)
+    // `CraftLocally` (`CraftingRequests.cs:133-140`): the drain, then
+    // `CreateResult` — the created item's clone, its `OnCreated` swap and
+    // its random prefix (the C# draws that after the discount rolls).
+    Some(create_result(recipe, prefix_rng))
 }
 
 /// The full recipe table - GENERATED from the decompiled `Recipe.cs`
@@ -1204,27 +1395,27 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 20.0 * 16.0;
         p.y = 20.0 * 16.0;
-        let adj = scan_adjacent(&w, &p);
+        let adj = scan_adjacent(&w, &p, (5, 3));
         assert!(!adj.water && !adj.honey && !adj.lava);
         // Shallow water (liquid <= 200) does not count.
         let i = w.index(20, 20);
         w.tiles[i].liquid = 100;
-        let adj = scan_adjacent(&w, &p);
+        let adj = scan_adjacent(&w, &p, (5, 3));
         assert!(!adj.water, "liquid > 200 only");
         w.tiles[i].liquid = 220;
-        let adj = scan_adjacent(&w, &p);
+        let adj = scan_adjacent(&w, &p, (5, 3));
         assert!(adj.water);
         w.tiles[i].liquid = 0;
         w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
         w.tiles[i].liquid = 220;
-        let adj = scan_adjacent(&w, &p);
+        let adj = scan_adjacent(&w, &p, (5, 3));
         assert!(adj.lava && !adj.water);
         // The sink tile (172) counts as a water source while dry.
         w.tiles[i].liquid = 0;
         w.tiles[i].clear_liquid_kind();
         w.tiles[i].kind = 172;
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-        let adj = scan_adjacent(&w, &p);
+        let adj = scan_adjacent(&w, &p, (5, 3));
         assert!(adj.water, "CountsAsWaterForCrafting");
     }
 
@@ -1265,6 +1456,7 @@ mod tests {
     #[test]
     fn the_chest_ingredients_count_and_drain() {
         let mut rng = UnifiedRandom::new(1);
+        let mut prefix_rng = UnifiedRandom::new(2);
         // `CollectItemsFromChests` + `Consume` (`CraftingRequests.cs:218-254`):
         // the chest stacks count toward the recipe and drain after the
         // inventory.
@@ -1301,9 +1493,15 @@ mod tests {
                 recipe_by_create(36),
                 &adj,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((36, 1))
+            Some(CreatedItem {
+                kind: 36,
+                count: 1,
+                prefix: 0
+            })
         );
         assert_eq!(count_kind(&inv, 9), 0, "the inventory drained first");
         let chest = &chests[0];
@@ -1335,6 +1533,7 @@ mod tests {
         let mut inv = inv_with(&[(9, 4)]);
         let adj = dry_adj();
         let zones = Zones::default();
+        let mut prefix_rng = UnifiedRandom::new(2);
         assert_eq!(
             try_craft(
                 &mut inv,
@@ -1343,9 +1542,15 @@ mod tests {
                 recipe_by_create(36),
                 &adj,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((36, 1))
+            Some(CreatedItem {
+                kind: 36,
+                count: 1,
+                prefix: 0
+            })
         );
         assert_eq!(chests[0].slots, [], "the drained slot folded into the tail");
     }
@@ -1420,7 +1625,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let adj = scan_adjacent(&w, &p);
+        let adj = scan_adjacent(&w, &p, (5, 3));
         assert!(adj.tiles.contains(&18), "the work bench adjacent");
         let zones = Zones::default();
         // 16 wood: the work bench (10) is craftable, the door (6) too.
@@ -1461,7 +1666,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let adj = scan_adjacent(&w, &p);
+        let adj = scan_adjacent(&w, &p, (5, 3));
         assert!(adj.alchemy_table, "the alchemy table is adjacent");
         // Near the table the bottle requirement is satisfied too
         // (`TileCountsAs` 355->13).
@@ -1472,9 +1677,24 @@ mod tests {
         // Generous stock: 9 mushroom, 18 gel, 18 bottles.
         let mut inv = inv_with(&[(5, 9), (23, 18), (31, 18)]);
         let mut rng = UnifiedRandom::new(7);
+        let mut prefix_rng = UnifiedRandom::new(8);
         assert_eq!(
-            try_craft(&mut inv, &mut chests, &[], lhp, &adj, &zones, &mut rng),
-            Some((28, 2))
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                lhp,
+                &adj,
+                &zones,
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
+            ),
+            Some(CreatedItem {
+                kind: 28,
+                count: 2,
+                prefix: 0
+            })
         );
         // The consumed amounts are the stacks minus the rolled-off units —
         // recompute the expectation from the same stream state.
@@ -1498,6 +1718,7 @@ mod tests {
         };
         let mut inv = inv_with(&[(5, 1), (23, 2), (31, 2)]);
         let mut rng = UnifiedRandom::new(7);
+        let mut prefix_rng = UnifiedRandom::new(8);
         assert_eq!(
             try_craft(
                 &mut inv,
@@ -1506,9 +1727,15 @@ mod tests {
                 lhp,
                 &bottle_only,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((28, 2))
+            Some(CreatedItem {
+                kind: 28,
+                count: 2,
+                prefix: 0
+            })
         );
         assert_eq!(count_kind(&inv, 5), 0);
         assert_eq!(count_kind(&inv, 23), 0);
@@ -1537,9 +1764,24 @@ mod tests {
         let adj = dry_adj();
         let zones = Zones::default();
         let mut chests = Vec::new();
+        let mut prefix_rng = UnifiedRandom::new(2);
         assert_eq!(
-            try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng),
-            Some((36, 1))
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                wb,
+                &adj,
+                &zones,
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
+            ),
+            Some(CreatedItem {
+                kind: 36,
+                count: 1,
+                prefix: 0
+            })
         );
         assert_eq!(count_kind(&inv, 9), 0);
     }
@@ -1550,7 +1792,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 20.0 * 16.0; // tile 20: region x 15..=26, y 17..=18+
         p.y = 20.0 * 16.0;
-        let adj = scan_adjacent(&w, &p);
+        let adj = scan_adjacent(&w, &p, (5, 3));
         assert!(
             adj.tiles.contains(&18),
             "work bench adjacent: {:?}",
@@ -1558,7 +1800,7 @@ mod tests {
         );
         // Far away: the station is out of the region.
         let w2 = world_with_station(18, 100, 100);
-        let adj2 = scan_adjacent(&w2, &p);
+        let adj2 = scan_adjacent(&w2, &p, (5, 3));
         assert!(!adj2.tiles.contains(&18), "{:?}", adj2.tiles);
     }
 
@@ -1579,7 +1821,7 @@ mod tests {
             let mut p = Player::spawn(&w);
             p.x = 20.0 * 16.0; // LX = 20-5 = 15, HX = ceil(340/16)-1+5 = 26
             p.y = 20.0 * 16.0; // LY = 20-3 = 17, HY = ceil(362/16)-1+3 = 25
-            scan_adjacent(&w, &p).tiles.contains(&18)
+            scan_adjacent(&w, &p, (5, 3)).tiles.contains(&18)
         };
         assert!(seen(15, 20), "the left edge is in reach");
         assert!(!seen(14, 20), "one tile left of the reach is out");
@@ -1649,15 +1891,31 @@ mod tests {
         let adj = dry_adj();
         let zones = Zones::default();
         let mut chests = Vec::new();
+        let mut prefix_rng = UnifiedRandom::new(2);
         assert_eq!(
-            try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng),
-            Some((36, 1))
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                wb,
+                &adj,
+                &zones,
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
+            ),
+            Some(CreatedItem {
+                kind: 36,
+                count: 1,
+                prefix: 0
+            })
         );
     }
 
     #[test]
     fn furniture_recipe_crafts_and_consumes() {
         let mut rng = UnifiedRandom::new(1);
+        let mut prefix_rng = UnifiedRandom::new(2);
         // 16 wood -> work bench (by hand) leaves 6, exactly a door — which
         // then needs the bench standing next to the player. The chest needs
         // the iron bar too: wood alone is refused.
@@ -1673,9 +1931,15 @@ mod tests {
                 recipe_by_create(36),
                 &adj,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((36, 1))
+            Some(CreatedItem {
+                kind: 36,
+                count: 1,
+                prefix: 0
+            })
         );
         assert_eq!(count_kind(&inv, 9), 6);
         let door = recipe_by_create(25);
@@ -1691,8 +1955,22 @@ mod tests {
             "no station adjacent yet"
         );
         assert_eq!(
-            try_craft(&mut inv, &mut chests, &[], door, &bench, &zones, &mut rng),
-            Some((25, 1))
+            try_craft(
+                &mut inv,
+                &mut chests,
+                &[],
+                door,
+                &bench,
+                &zones,
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
+            ),
+            Some(CreatedItem {
+                kind: 25,
+                count: 1,
+                prefix: 0
+            })
         );
         assert_eq!(count_kind(&inv, 9), 0);
         // The chest's wood is the plain item 9 (no group on the C# row);
@@ -1719,6 +1997,7 @@ mod tests {
         // Loom (sawmill), Sign (work bench), Cooking Pot (anvil), Bowl
         // (furnace, clay), Gold Candle (work bench, gold bar + torch).
         let mut rng = UnifiedRandom::new(1);
+        let mut prefix_rng = UnifiedRandom::new(2);
         let zones = Zones::default();
         let anvil = Adjacent {
             tiles: vec![16],
@@ -1763,9 +2042,15 @@ mod tests {
                 recipe_by_create(85),
                 &anvil,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((85, 15))
+            Some(CreatedItem {
+                kind: 85,
+                count: 15,
+                prefix: 0
+            })
         );
         // The sawmill: wood + iron bars + the fresh chain, at the work bench.
         let mut inv = inv_with(&[(9, 10), (704, 2), (85, 1)]);
@@ -1781,9 +2066,15 @@ mod tests {
                 recipe_by_create(363),
                 &bench,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((363, 1))
+            Some(CreatedItem {
+                kind: 363,
+                count: 1,
+                prefix: 0
+            })
         );
         // The loom rides the sawmill station; the sign is a plain work bench row.
         let mut inv = inv_with(&[(9, 12)]);
@@ -1795,9 +2086,15 @@ mod tests {
                 recipe_by_create(332),
                 &sawmill,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((332, 1))
+            Some(CreatedItem {
+                kind: 332,
+                count: 1,
+                prefix: 0
+            })
         );
         let mut inv = inv_with(&[(9, 6)]);
         assert_eq!(
@@ -1808,9 +2105,15 @@ mod tests {
                 recipe_by_create(171),
                 &bench,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((171, 1))
+            Some(CreatedItem {
+                kind: 171,
+                count: 1,
+                prefix: 0
+            })
         );
         // The cooking pot: iron bars + wood at the anvil. The bowl: clay at
         // the furnace. The gold candle: a gold bar + a torch at the work bench.
@@ -1823,9 +2126,15 @@ mod tests {
                 recipe_by_create(345),
                 &anvil,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((345, 1))
+            Some(CreatedItem {
+                kind: 345,
+                count: 1,
+                prefix: 0
+            })
         );
         let mut inv = inv_with(&[(133, 2)]);
         assert!(
@@ -1840,9 +2149,15 @@ mod tests {
                 recipe_by_create(356),
                 &furnace,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((356, 1))
+            Some(CreatedItem {
+                kind: 356,
+                count: 1,
+                prefix: 0
+            })
         );
         let mut inv = inv_with(&[(19, 1), (8, 1)]);
         assert_eq!(
@@ -1853,9 +2168,250 @@ mod tests {
                 recipe_by_create(105),
                 &bench,
                 &zones,
-                &mut rng
+                &Gates::default(),
+                &mut rng,
+                &mut prefix_rng
             ),
-            Some((105, 1))
+            Some(CreatedItem {
+                kind: 105,
+                count: 1,
+                prefix: 0
+            })
         );
+    }
+
+    // --- S1-L-11d: the created-item pipeline, the reach, the gated rows ----
+
+    #[test]
+    fn s1_l_11d_the_created_item_takes_the_csharp_on_created_swap() {
+        // `CraftingRequests.CreateResult` (`CraftingRequests.cs:122-131`)
+        // clones the recipe's item and runs `Item.OnCreated(ItemCreationContext)`
+        // (`Item.cs:48936-48942`): a created ShellphoneDummy (5437) becomes the
+        // Shellphone (5358).
+        let recipe = Recipe {
+            create: (5437, 1),
+            ..BASE
+        };
+        let mut rng = UnifiedRandom::new(7);
+        let made = create_result(&recipe, &mut rng);
+        assert_eq!(made.kind, 5358, "the OnCreated swap");
+        assert_eq!(made.count, 1);
+        assert_eq!(made.prefix, 0, "the Shellphone takes no prefix");
+    }
+
+    #[test]
+    fn s1_l_11d_a_created_prefixable_item_takes_a_random_prefix() {
+        // `if (item.stack <= 1) { item.Prefix(-1); }` (`CraftingRequests.cs:126-129`)
+        // — the natural spawn roll (`Item.cs:504-610`).
+        let recipe = Recipe {
+            create: (1, 1),
+            ..BASE
+        };
+        let mut rng = UnifiedRandom::new(11);
+        let made = create_result(&recipe, &mut rng);
+        assert_ne!(made.prefix, 0, "a prefixable craft takes a prefix");
+        // A stack above one takes none (`item.stack <= 1`).
+        let stacked = Recipe {
+            create: (1, 5),
+            ..BASE
+        };
+        let made = create_result(&stacked, &mut rng);
+        assert_eq!(made.prefix, 0, "a stack of five takes no prefix");
+        // A kind that cannot carry prefixes takes none (and draws nothing).
+        let plain = Recipe {
+            create: (2, 1),
+            ..BASE
+        };
+        let made = create_result(&plain, &mut rng);
+        assert_eq!(made.prefix, 0);
+    }
+
+    #[test]
+    fn s1_l_11d_the_tile_reach_follows_the_csharp_formula() {
+        // `Player.tileRangeX`/`tileRangeY` (the statics `Player.cs:2496-2498`,
+        // the defaults `:57113-57114`) + `TileReachCheckSettings.Simple`
+        // (`TileReachCheckSettings.cs:20-54`, `:81-85`): the 20-tile clamp
+        // and the artisan loaf's +4 (`Player.cs:35671`).
+        assert_eq!(
+            tile_reach(false, false, false, false),
+            (5, 3),
+            "the defaults"
+        );
+        // The Extendo Grip (2215) / the Architect's Gizmo Pack (3061):
+        // +3/+2 (`Player.cs:13040-13044`).
+        assert_eq!(tile_reach(true, false, false, false), (8, 5));
+        // The Toolbox (1923) in hand: +1/+1 (`Player.cs:14955-14958`).
+        assert_eq!(tile_reach(false, true, false, false), (6, 4));
+        // The Journey mode's Far Placement Range power: x2 and +8/+8
+        // (`Player.cs:18818-18826`).
+        assert_eq!(tile_reach(false, false, true, false), (18, 14));
+        // The artisan loaf: +4/+4 (`Player.cs:35671`).
+        assert_eq!(tile_reach(false, false, false, true), (9, 7));
+        // The clamp (`TileReachLimit = 20`) comes before the loaf's +4.
+        assert_eq!(tile_reach(true, true, true, false), (20, 17));
+        assert_eq!(tile_reach(true, true, true, true), (24, 21));
+    }
+
+    #[test]
+    fn s1_l_11d_the_artisan_bread_reaches_a_far_station() {
+        // `Player.AdjTiles` (`Player.cs:35671-35674`): the artisan loaf's
+        // +4 tiles widen the reach region.
+        let w = world_with_station(18, 28, 20);
+        let mut p = Player::spawn(&w);
+        p.x = 20.0 * 16.0;
+        p.y = 20.0 * 16.0;
+        let default = scan_adjacent(&w, &p, tile_reach(false, false, false, false));
+        assert!(
+            !default.tiles.contains(&18),
+            "the far bench is out of reach"
+        );
+        let wide = scan_adjacent(&w, &p, tile_reach(false, false, false, true));
+        assert!(
+            wide.tiles.contains(&18),
+            "the artisan loaf reaches it: {:?}",
+            wide.tiles
+        );
+    }
+
+    #[test]
+    fn s1_l_11d_the_gated_recipes_need_their_world_flags() {
+        // `Recipe.CanCraft` (`Recipe.cs:349-356`): the Torch God's recipe
+        // needs `player.unlockedBiomeTorches` and the Mechdusa recipe the
+        // "for the worthy" seed (`SpecialSeedFeatures.Mechdusa`).
+        let torch_potion = RECIPES
+            .iter()
+            .find(|r| r.need_torch_gods_favor && r.create.0 == 5573)
+            .expect("the Torch God's potion row");
+        let torch_master = RECIPES
+            .iter()
+            .find(|r| r.need_torch_gods_favor && r.create.0 == 5638)
+            .expect("the Torch God's master row");
+        let mechdusa = RECIPES
+            .iter()
+            .find(|r| r.need_mechdusa)
+            .expect("the Mechdusa row");
+        assert_eq!(mechdusa.create.0, 5334);
+        // The Torch God's potion: 126/8/313/314/318 at the alchemy table
+        // (`Recipe.cs:1694-1708`).
+        let inv = inv_with(&[(126, 1), (8, 1), (313, 1), (314, 1), (318, 1)]);
+        let adj = Adjacent {
+            tiles: vec![13],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: true,
+        };
+        let zones = Zones::default();
+        assert!(
+            !can_craft_with_gates(
+                &inv,
+                &[],
+                &[],
+                torch_potion,
+                &adj,
+                &zones,
+                &Gates::default()
+            ),
+            "the biome torches are locked"
+        );
+        assert!(
+            can_craft_with_gates(
+                &inv,
+                &[],
+                &[],
+                torch_potion,
+                &adj,
+                &zones,
+                &Gates {
+                    unlocked_biome_torches: true,
+                    mechdusa: false
+                }
+            ),
+            "the biome torches are unlocked"
+        );
+        // The Mechdusa row rides the seed gate.
+        let inv = inv_with(&[(544, 1), (557, 1), (556, 1)]);
+        let adj = Adjacent {
+            tiles: vec![134],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        assert!(
+            !can_craft_with_gates(&inv, &[], &[], mechdusa, &adj, &zones, &Gates::default()),
+            "the Mechdusa seed is off"
+        );
+        assert!(
+            can_craft_with_gates(
+                &inv,
+                &[],
+                &[],
+                mechdusa,
+                &adj,
+                &zones,
+                &Gates {
+                    unlocked_biome_torches: false,
+                    mechdusa: true
+                }
+            ),
+            "the Mechdusa seed is on"
+        );
+        // The Torch God's master row carries the same gate.
+        assert!(torch_master.need_torch_gods_favor);
+    }
+
+    #[test]
+    fn s1_l_11d_a_prefixable_recipe_crafts_once_per_click() {
+        // `Main.CursorHasSpaceToCraftRecipe` (`Main.cs:42309-42345`): the
+        // C#'s cursor holds the crafted item and the gate refuses a prefixable
+        // one outright (`!item.CanHavePrefixes()`), so the shift-craft of a
+        // weapon yields a single item — while a stackable one (the torches)
+        // keeps crafting.
+        let adj = Adjacent {
+            tiles: vec![16],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        let zones = Zones::default();
+        let gates = Gates::default();
+        // The pickaxe (1): 10 copper bars (22) + 3 wood at the anvil.
+        let mut inv = inv_with(&[(22, 40), (9, 9)]);
+        let mut craft_rng = UnifiedRandom::new(3);
+        let mut prefix_rng = UnifiedRandom::new(4);
+        let mut chests: Vec<WorldChest> = Vec::new();
+        let made = try_craft_qty(
+            &mut inv,
+            &mut chests,
+            &[],
+            recipe_by_create(1),
+            &adj,
+            &zones,
+            &gates,
+            &mut craft_rng,
+            &mut prefix_rng,
+            10,
+        );
+        assert_eq!(made.len(), 1, "a prefixable result crafts once");
+        // The torch (8): three per craft, by hand.
+        let mut inv = inv_with(&[(9, 30), (23, 30)]);
+        let mut craft_rng = UnifiedRandom::new(3);
+        let mut prefix_rng = UnifiedRandom::new(4);
+        let made = try_craft_qty(
+            &mut inv,
+            &mut chests,
+            &[],
+            recipe_by_create(8),
+            &dry_adj(),
+            &zones,
+            &gates,
+            &mut craft_rng,
+            &mut prefix_rng,
+            10,
+        );
+        assert_eq!(made.len(), 10, "the stackable torch crafts ten times");
+        assert_eq!(made[0].count, 3, "three torches per craft");
     }
 }

@@ -57,6 +57,8 @@ FLAG_MAP = {
     "needLava": "need_lava",
     "needSnowBiome": "need_snow",
     "needGraveyardBiome": "need_graveyard",
+    "needTorchGodsFavor": "need_torch_gods_favor",
+    "needMechdusa": "need_mechdusa",
 }
 
 
@@ -480,16 +482,12 @@ def parse_block(text, env, ctx, origin):
             continue
         m = re.match(
             r"Recipe\.currentRecipe\.(needWater|needHoney|needLava|needSnowBiome"
-            r"|needGraveyardBiome) = true;$",
+            r"|needGraveyardBiome|needTorchGodsFavor|needMechdusa) = true;$",
             line,
         )
         if m:
             row.flags[FLAG_MAP[m.group(1)]] = True
             continue
-        m = re.match(r"Recipe\.currentRecipe\.(needTorchGodsFavor|needMechdusa) = true;$", line)
-        if m:
-            ctx.skipped.append((origin, m.group(1)))
-            return None
         if re.match(
             r"Recipe\.currentRecipe\.(notDecraftable|corruption|crimson|acceptedGroups)"
             r"|Recipe\.currentRecipe\.AddCustomShimmerResult|Recipe\.currentRecipe\.Shimmer",
@@ -777,6 +775,8 @@ def emit(rows, ctx):
             "need_lava",
             "need_snow",
             "need_graveyard",
+            "need_torch_gods_favor",
+            "need_mechdusa",
         ):
             if row.flags.get(f):
                 lines.append(f"    {f}: true,")
