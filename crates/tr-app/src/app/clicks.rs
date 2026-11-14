@@ -539,7 +539,15 @@ impl App {
             self.settings.craft_from_nearby_chests,
         );
         let available =
-            craft::available(&self.inventory, &self.world_chests, &in_range, &adj, &zones);
+            craft::available(
+                &self.inventory,
+                &self.world_chests,
+                &in_range,
+                &adj,
+                &zones,
+                self.craft_filter.as_ref(),
+                None,
+            );
         let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
         else {
             return false;
@@ -3725,7 +3733,15 @@ mod s1_h_7_tests {
             &app.world_chests,
             false,
         );
-        let available = craft::available(&app.inventory, &app.world_chests, &in_range, &adj, &zones);
+        let available = craft::available(
+            &app.inventory,
+            &app.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            None,
+            None,
+        );
         let pos = available
             .iter()
             .position(|&r| craft::RECIPES[r].create.0 == 8)
