@@ -12598,3 +12598,37 @@ thirds' X sign, the shoot style's item rotation, the hold styles' anchors
 and the eat style's stretch table) — all mutation-checked (RED on the
 pre-fix code).
 
+
+## The throw and rapier item placement (S1-G-18, 2026-11-14)
+
+Two more `ItemCheck_ApplyUseStyle` arms and one real bug from the
+S1-G-16 composite work:
+
+* The useStyle 8 (the throw) branch (`:51197-51273`) has three phases — the
+  wind-up (the first ticks, while `itemAnimation` is at the item's
+  `useAnimation`), the overshoot (`itemAnimation > useAnimation`, which the
+  port's swing counter never reaches) and the swing arc
+  (`num26 = 1 - itemAnimation/itemAnimationMax`). The item's anchor follows
+  the phase (`MountedCenter + (num22 + PI/2).ToRotationVector2() * -2` for
+  the wind-up, `... * (-5 * (1 - num26))` for the arc) and the draw rotates
+  it a quarter turn (`PlayerDrawLayers.cs:3181-3189`). The port now carries
+  the raw animation counters into the draw (`swing_anim_ticks`/
+  `swing_max_ticks` — the port's swing timer runs in seconds, the C#'s
+  `itemAnimation` in ticks) and places the item per phase.
+* The useStyle 13 (the rapier) branch (`:51174-51196`) sets no location: the
+  item keeps the hold-style anchor and is turned by the aim
+  (`Player.itemRotation`). The port now does the same instead of riding the
+  useStyle-1 arc.
+* **The bug:** the umbrella's (and the throw's) `itemRotation` is
+  `new Vector2(10 * direction, 10f).ToRotation() + PI/4` (`:50524`,
+  `:51201`) — the XNA `ToRotation` is `atan2(Y, X)`, but the S1-G-16 port
+  used `hypot`, i.e. the vector's *length* (14.14) instead of its angle. The
+  umbrella's and the throw's poses were therefore rotated by a nonsense
+  angle. Fixed to `atan2(10, 10 * direction)` in both the sim's composite
+  arms and the draw.
+
+Tests: `s1_g_18_the_throw_style_rides_its_wind_up_and_arc`,
+`s1_g_18_the_rapier_keeps_the_hold_anchor` and
+`s1_g_18_the_umbrella_rotation_is_the_vector_rotation` — all
+mutation-checked (RED on the pre-fix code; the left-facing cases pin the
+mirrored `atan2`, which is where the `hypot` slip showed).
