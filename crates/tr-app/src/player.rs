@@ -1034,6 +1034,10 @@ pub struct Player {
     slippy2: bool,
     powerrun: bool,
     running_on_sand: bool,
+    /// `Player.suffocateDelay` (`Player.cs:2318`): the tick counter the
+    /// suffocating tiles (the sands) advance — the sixth tick in the sand
+    /// suffocates (`Player.ApplyTouchDamage`, `Player.cs:28996-29010`).
+    pub suffocate_delay: u8,
     /// The liquid displacement fraction `Player.WetCollision` integrates free
     /// axes with (`Player.cs:23436-23451`): water/lava 0.5, honey 0.25
     /// (`Player.cs:28168-28195`), dry 1.0.
@@ -1701,6 +1705,7 @@ impl Player {
             slippy2: false,
             powerrun: false,
             running_on_sand: false,
+            suffocate_delay: 0,
             liquid_move_speed: 1.0,
             in_lava: false,
             gfx_off_y: 0.0,
