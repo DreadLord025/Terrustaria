@@ -389,9 +389,19 @@ impl App {
                     log::debug!("strike for unknown npc slot {slot} gen {}", st.generation);
                     return;
                 }
-                let npc = &mut self.npcs[slot];
-                npc.facing = if st.hit_direction > 0 { 1 } else { -1 };
-                npc.hurt(st.damage.max(0) as i32, npc.x, st.knock_back, st.crit);
+                self.npcs[slot].facing = if st.hit_direction > 0 { 1 } else { -1 };
+                let strike_x = self.npcs[slot].x;
+                // `NPC.StrikeNPC` (`NPC.cs:81189-81563`): the strike lands on
+                // the carrier's life pool when the hit NPC is a linked
+                // segment (`NPC.realLife`, `NPC.cs:81374-81378`).
+                crate::npc::Npc::strike_melee(
+                    &mut self.npcs,
+                    slot,
+                    st.damage.max(0) as i32,
+                    strike_x,
+                    st.knock_back,
+                    st.crit,
+                );
                 let dead = self.npcs[slot].hp <= 0;
                 // The relay carries the validated values to everyone else.
                 server.broadcast_except(&S2c::NpcStrike(st), id);

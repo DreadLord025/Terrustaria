@@ -26,6 +26,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_1", 2),
     ("Coin_0", 18),
     ("Player_Hit_0", 1),
+    // The legacy "Player Killed" id 5 (`Player.PlayDeathSound`,
+    // `Player.cs:38737`) — the `Sounds/Player_Killed.xnb` asset.
+    ("Player_Killed", 5),
     ("NPC_Hit_1", 3),
     // The NPC hit family (the C#'s sound id 3, `LegacySoundPlayer.cs:646`):
     // the per-kind hit cues (`NPC.HitSound`, `NPC.cs:6475`) — the Skeletron's
@@ -1928,6 +1931,10 @@ mod tests {
         for name in ["NPC_Hit_1", "NPC_Hit_2", "NPC_Killed_1", "NPC_Killed_2"] {
             assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
         }
+        // The player's death cue (the legacy id 5, `Player.PlayDeathSound`,
+        // `Player.cs:38737`).
+        assert_eq!(sound_type("Player_Killed"), 5);
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Player_Killed"));
         // The custom trackables (`SoundID.CreateTrackable`, `SoundID.cs:1627+`)
         // ride the legacy trackable path (the sound id 42).
         assert_eq!(sound_type("dd2_goblin_hurt_0"), 42);

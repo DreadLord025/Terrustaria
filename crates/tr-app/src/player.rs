@@ -1123,6 +1123,13 @@ pub struct Player {
     /// The `Player.cs:28237-28241` switch trip handed to the caller (the C#
     /// `HitTrackSwitch` needs `&mut World`; the tick takes `&World`).
     pending_switch_trip: Option<(i32, i32)>,
+    /// `Player.PlayHurtSound` (`Player.cs:38569-38712`): the hurt cue the
+    /// damage path queues (`Player.cs:38525`) — the caller owns the audio
+    /// device, so the Player hands the cue over.
+    pending_hurt_sound: Option<&'static str>,
+    /// `Player.PlayDeathSound` (`Player.cs:38715-38744`): the death cue
+    /// `Player.KillMe` queues (`Player.cs:38868`).
+    pending_death_sound: Option<&'static str>,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
@@ -1759,6 +1766,8 @@ impl Player {
             full_rotation_origin: (0.0, 0.0),
             fall_start2: (sy / TILE_PX) as i32,
             pending_switch_trip: None,
+            pending_hurt_sound: None,
+            pending_death_sound: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
@@ -2096,6 +2105,18 @@ impl Player {
         self.pending_switch_trip.take()
     }
 
+    /// Takes the queued hurt cue (`Player.PlayHurtSound`, `Player.cs:38525`)
+    /// — the caller owns the audio device.
+    pub(crate) fn take_hurt_sound(&mut self) -> Option<&'static str> {
+        self.pending_hurt_sound.take()
+    }
+
+    /// Takes the queued death cue (`Player.PlayDeathSound`,
+    /// `Player.cs:38868`).
+    pub(crate) fn take_death_sound(&mut self) -> Option<&'static str> {
+        self.pending_death_sound.take()
+    }
+
     /// Takes the tick's queued spark particles (the `Main.dust` handoff —
     /// the caller owns the pool).
     pub(crate) fn take_cart_sparks(&mut self) -> Vec<crate::minecart::SparkP> {
@@ -2275,6 +2296,9 @@ impl Player {
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
         // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
         let _ = self.dismount(world, true);
+        // `Player.KillMe`'s tail (`Player.cs:38868`): the death cue — the
+        // legacy "Player Killed" id 5 (`Player.cs:38737`, the default arm).
+        self.pending_death_sound = Some("Player_Killed");
     }
 
     /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
@@ -2856,6 +2880,12 @@ impl Player {
         self.hurt_cd = tr_core::damage::iframes_for(amount, false, false) as f32 / 60.0;
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
+        // `Player.Hurt`'s tail (`Player.cs:38525`): the hurt cue. The C#'s
+        // voice system picks the family (`voiceVariant` 1 = the legacy
+        // "Player Hit" id 1, 2 = the female id 20, 3 = the default trackable)
+        // — the port has no voice setting, so the default variant 1 stands
+        // (`Player.cs:56045`).
+        self.pending_hurt_sound = Some("Player_Hit_0");
         if knock_back && !self.no_knockback {
             let dir = if self.x + WIDTH * 0.5 >= from_x {
                 1.0
@@ -9204,6 +9234,24 @@ mod tests {
         // The vanilla leaves `maxRunSpeed` at 3.0 — the boots only widen the
         // acceleration window (the continuation to accRunSpeed).
         assert!((p.max_run_speed_value() - 3.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_hurt_and_the_death_queue_their_voice_cues() {
+        // S1-E-21b — `Player.Hurt`'s tail plays the hurt cue
+        // (`Player.cs:38525`) and `Player.KillMe` the death cue
+        // (`Player.cs:38868`).
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(p.take_hurt_sound().is_none(), "nothing queued yet");
+        p.hurt_cd = 0.0;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.take_hurt_sound(), Some("Player_Hit_0"));
+        // The cue is a one-shot: the caller drains it.
+        assert!(p.take_hurt_sound().is_none());
+        // The death queues its own cue (`Player.cs:38868`).
+        p.start_death(&w, false, false);
+        assert_eq!(p.take_death_sound(), Some("Player_Killed"));
     }
 
     #[test]

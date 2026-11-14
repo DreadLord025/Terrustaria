@@ -875,6 +875,33 @@ pub(crate) fn update_worms_in(
         npcs.push(child);
         i += 1;
     }
+    // The `realLife` pool pass (`NPC.cs:81374-81378`): the CARRIER owns the
+    // life of a linked segment. The strikes that run without the NPC list
+    // (the EoC shield-dash and the thorns reflect inside `Npc::contact`)
+    // park their damage on the segment; the carrier pays it here.
+    for i in 0..npcs.len() {
+        let dmg = npcs[i].pending_pool_damage;
+        if dmg == 0 {
+            continue;
+        }
+        npcs[i].pending_pool_damage = 0;
+        let Some(carrier) = Npc::carrier_index(npcs, i) else {
+            continue;
+        };
+        npcs[carrier].hp -= dmg;
+    }
+    // The mirror (`NPC.cs:81377-81378`): a segment shows the carrier's
+    // `life`/`lifeMax` — the pool is one number, the whole chain's.
+    for i in 0..npcs.len() {
+        if !npcs[i].has_carrier() {
+            continue;
+        }
+        let Some(carrier) = Npc::carrier_index(npcs, i) else {
+            continue;
+        };
+        npcs[i].hp = npcs[carrier].hp;
+        npcs[i].max_hp = npcs[carrier].max_hp;
+    }
     // The follower trail (`:51867-51922`) + the chain death
     // (`:51425-51433`).
     for i in 0..npcs.len() {
@@ -936,17 +963,14 @@ pub(crate) fn update_worms_in(
             .iter()
             .find(|n| n.worm_id == wid && n.seg_index == seg - 1 && n.hp > 0)
         else {
-            // `NPC.cs:51507-51511`'s split: the orphaned MIDDLE link
-            // becomes its own worm's head (`Transform(13, ai[0])`); the
-            // TAIL with a dead leader dies silently (`:51488-51502`'s
-            // `life = 0` arms); the mech worm's same-kind chain keeps the
-            // port's whole-tail death.
-            if npcs[i].kind.is_worm_mid() && npcs[i].kind.worm_next() != npcs[i].kind {
-                npcs[i].kind = match npcs[i].kind {
-                    NpcKind::DevourerBody => NpcKind::DevourerHead,
-                    NpcKind::GiantWormBody => NpcKind::GiantWormHead,
-                    _ => NpcKind::EaterOfWorldsHead,
-                };
+            // `NPC.cs:51498-51502`: the orphaned MIDDLE link becomes its
+            // own worm's head (`Transform(13, ai[0])`) — the Eater of
+            // Worlds' rule only. The classic families' links die with
+            // their leader (`NPC.cs:51425-51433`: `life = 0` +
+            // `checkDead`), and so does the Destroyer's (`AI_037`'s
+            // `NPC.cs:49820-49828`).
+            if npcs[i].kind == NpcKind::EaterOfWorldsBody {
+                npcs[i].kind = NpcKind::EaterOfWorldsHead;
             } else {
                 npcs[i].hp = 0;
             }
@@ -963,9 +987,10 @@ pub(crate) fn update_worms_in(
         npcs[i].y += dy * num62;
         npcs[i].rotation = dy.atan2(dx) + 1.57;
     }
-    // The followerless mid becomes the tail (`NPC.cs:51513-51519`'s
-    // `Transform(15, 0f, ai[1])`): the chain's front end closes when the
-    // link behind died. The classic families only — the mech worm's
+    // The followerless link: `NPC.cs:51513-51519`'s `Transform(15, 0f,
+    // ai[1])` — the Eater of Worlds' body becomes the tail. The classic
+    // families' links die with the chain instead (`NPC.cs:51396-51433`:
+    // the follower gone → `life = 0` + `checkDead`); the mech worm's
     // same-kind chain has no mid/tail kinds to swap to.
     for i in 0..npcs.len() {
         if !npcs[i].kind.is_worm_mid()
@@ -979,11 +1004,27 @@ pub(crate) fn update_worms_in(
             .iter()
             .any(|n| n.worm_id == wid && n.seg_index == seg + 1 && n.hp > 0);
         if !follower_alive {
-            npcs[i].kind = match npcs[i].kind {
-                NpcKind::DevourerBody => NpcKind::DevourerTail,
-                NpcKind::GiantWormBody => NpcKind::GiantWormTail,
-                _ => NpcKind::EaterOfWorldsTail,
-            };
+            if npcs[i].kind == NpcKind::EaterOfWorldsBody {
+                npcs[i].kind = NpcKind::EaterOfWorldsTail;
+            } else {
+                npcs[i].hp = 0;
+            }
+        }
+    }
+    // The Eater of Worlds' head: `NPC.cs:51502-51509` — the head dies when
+    // its follower is gone (the EoW's own life pools let a body fall on
+    // its own). The classic families' heads cannot lose a follower on
+    // their own — their links share the head's pool (`realLife`).
+    for i in 0..npcs.len() {
+        if npcs[i].hp <= 0 || npcs[i].kind != NpcKind::EaterOfWorldsHead {
+            continue;
+        }
+        let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
+        let follower_alive = npcs
+            .iter()
+            .any(|n| n.worm_id == wid && n.seg_index == seg + 1 && n.hp > 0);
+        if !follower_alive {
+            npcs[i].hp = 0;
         }
     }
     // The heads: the dig/air machine (`:51923-52051`).
@@ -2340,6 +2381,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // The invasion kill credit (`NPC.cs:78236-78279`): the group match
     // drains the army's points and reports the progress.
     for npc in &dead {
+        // `NPC.checkDead`'s carrier guard (`NPC.cs:78040-78042`): a
+        // linked segment never runs the death events — the carrier's
+        // death carries them.
+        if npc.has_carrier() {
+            continue;
+        }
         report_invasion_kill(app, npc.kind);
         // `NPC.checkDead` plays `this.DeathSound` at `base.Center`
         // (`NPC.cs:91852`) — the kind's own death cue (the C#'s `null`
@@ -2545,6 +2592,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
             _ => {}
+        }
+        // `NPC.checkDead`'s carrier guard (`NPC.cs:78040-78042`): a linked
+        // segment drops nothing — the loot, the coins, the bestiary credit
+        // and the banners ride the carrier's death (`NPC.cs:78839-78850`).
+        if npc.has_carrier() {
+            continue;
         }
         spawn_coins(app, &npc);
         spawn_loot(app, &npc);
@@ -7804,6 +7857,111 @@ mod worm_tests {
             .count();
         assert_eq!(bodies, 29, "the 29 bodies");
         assert_eq!(tails, 1, "the single tail closing the chain");
+    }
+
+    #[test]
+    fn the_crawltipede_tail_takes_ten_times_the_damage() {
+        // `NPC.takenDamageMultiplier` (`NPC.cs:81244-81246`): the solar
+        // crawltipede's tail (414) carries 10 (`NPC.cs:15316`) — the
+        // strike lands on the carrier's pool multiplied by ten.
+        let w = fixture();
+        let mut head = Npc::new(
+            NpcKind::SolarCrawltipedeHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        let pool = npcs[0].max_hp;
+        assert_eq!(pool, 10000, "the crawltipede's head carries the pool");
+        let tail = npcs.len() - 1;
+        assert_eq!(npcs[tail].kind, NpcKind::SolarCrawltipedeTail);
+        let tail_x = npcs[tail].x;
+        assert!(Npc::strike_melee(&mut npcs, tail, 7, tail_x, 0.0, false));
+        assert_eq!(npcs[0].hp, pool - 70, "the tail's hit is multiplied by ten");
+    }
+
+    #[test]
+    fn the_carrier_chain_leaves_no_orphans_and_no_segment_loot() {
+        // The ROADMAP's S1-D-6 criterion — the chain's integrity. The
+        // segments share the carrier's life (`NPC.realLife`,
+        // `NPC.cs:81374-81378`) and die with it; `NPC.checkDead`'s carrier
+        // guard (`NPC.cs:78040-78042`) keeps the loot, the coins and the
+        // bestiary credit on the carrier alone.
+        let (mut app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        app.npcs.push(Npc::new(
+            NpcKind::DevourerHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        ));
+        app.npcs[0].hp = app.npcs[0].max_hp;
+        // Assemble the chain through the worm pass.
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        for _ in 0..4 {
+            crate::world_sim::npcs::update_worms_in(
+                &world,
+                Some(player.center()),
+                &mut app.npcs,
+                &mut rng,
+                &mut next_id,
+            );
+        }
+        assert!(app.npcs.len() >= 10, "the chain assembled ({})", app.npcs.len());
+        let items_before = app.items.len();
+        // The carrier dies: the pool is empty, so the whole chain falls.
+        app.npcs[0].hp = 0;
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            Some(player.center()),
+            &mut app.npcs,
+            &mut rng,
+            &mut next_id,
+        );
+        assert!(
+            app.npcs.iter().all(|n| n.hp <= 0),
+            "no orphan survives the carrier"
+        );
+        // The death sweep: the carrier's loot only.
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().all(|n| n.kind != NpcKind::DevourerHead),
+            "the whole chain is gone"
+        );
+        let dropped = app.items.len() - items_before;
+        // The control: the same carrier on its own drops exactly the same
+        // — the links drop nothing.
+        let (mut control, _cplayer) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        control.npcs.push(Npc::new(
+            NpcKind::DevourerHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        ));
+        control.npcs[0].hp = 0;
+        update_npcs(&mut control, 1.0 / 60.0);
+        assert_eq!(
+            dropped,
+            control.items.len(),
+            "the segments drop nothing — only the carrier's loot"
+        );
     }
 
     #[test]
