@@ -8203,21 +8203,61 @@ already there) and `ui/tooltip.rs` replaced its four hardcoded zero rows with
 `MouseText_DrawItemTooltip_GetLinesInfo`'s real rows (`Main.cs:20631-20800`),
 computed from the port's own `ItemDef` values.
 
-Deliberate deviations and notes:
+Deliberate deviations and notes (S1-E-20 closed the player-side and
+per-item halves — see "The item tooltip rows (S1-E-20)" below):
 
-- **The player-side layers are out** (the accessory/M3 layer): the C#'s
-  `GetWeaponDamageMultiplier` (the port shows the raw item damage), the
-  player crit bonuses (the item's own `crit`), `minionKB`, the magic-quiver
-  ×1.1 knockback and the 3106 stealth arm — each defaults to its neutral value
-  with a comment.
-- **`notAmmo` and `ToolTipDamageMultiplier` are not ported** (no fields), so
-  the damage row's gate is the plain `damage > 0` (the coin-type exception and
-  the ammo gate ride along when the fields land).
+- ~~**The player-side layers are out**~~ — **CLOSED (S1-E-20)**: the damage
+  row carries the player's weapon-damage multiplier, the crit row the player's
+  crit, the knockback row `minionKB` / the magic-quiver ×1.1 / the knockback
+  gloves / the shroomite armour's ranged scale. The accessor fields
+  (`minionKB`, `kbGlove`, `kbBuff`, `shroomiteStealth`, `stealth`, `spaceGun`)
+  are constants-off until the accessory layer grants them.
+- ~~**`ToolTipDamageMultiplier` is not ported**~~ — **CLOSED (S1-E-20)**: the
+  nine doubled ids ride a small table (`ItemID.cs:492`).
+- `notAmmo` is still not ported (no field), so the damage row's gate is the
+  plain `damage > 0` (the coin-type exception and the ammo gate ride along
+  when the field lands).
 - The line geometry (`tooltip_box_rect`, the `(14, 9)` inset, the shadow
   copies) is unchanged — only the row list changed.
 - Without the shipped `Terraria.Localization.Content.*.json` (the gitignored
   resources the loader probes) the keys show through — vanilla's own
   unknown-key behaviour.
+
+## The item tooltip rows (S1-E-20, 2026-11-14)
+
+`Main.MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-21010`) is
+ported in full for the rows the port's own data reaches. The hover name is
+`Item.GetHoverName(item, stack)` (`Item.cs:438-446`): the affix name
+(`Item.AffixName`, `:1194-1201` → `Lang.GetPrefixedItemName`,
+`Lang.cs:225-239` — the prefix name + the item name through the
+`CombineFormat.Prefix` format) plus the stack suffix. The per-item text is
+`Lang.GetTooltip(item.type)` (`Lang.cs:193-196`): the
+`ItemTooltip.<ItemID const name>` language rows, one line each.
+
+The missing rows landed too: the life / mana restore rows and the buff row
+(`CommonItemTooltip.*`, `Main.cs:20876-20904`), the fishing rows
+(`GameUI.PrecentFishingPower` / `BaitRequired` / `BaitPower`, `:20805-20812`),
+the quest / vanity rows (`:20833-20841`), the material / ammo / consumable
+rows (`:20911-20933`) and the wider equipable gate (`:20816`): the hook
+projectiles (`Main.projHook[item.shoot]` — the aiStyle-7 set,
+`Main.cs:6618-6624`), the mounts (`item.mountType != -1`) and the light /
+vanity pets.
+
+Deviations:
+
+- **The result is not a cursor item.** The C# hands the crafted/hovered item
+  to `Main.mouseItem` (`Main.CraftItem_GrantItem`, `Main.cs:42607-42612`) and
+  the tooltip reads that; the port's tooltip reads the hovered slot directly.
+- **The favourite / social rows are out** (`Main.cs:20646-20658`): the
+  tooltip has no favourite or social state to read.
+- **The shop and upgrade rows are out** (`MouseText_DrawItemTooltip_AddShopLines`,
+  `Main.cs:20362`): the port's shop tooltip has no such rows.
+- **The bulk-buy / bulk-craft stack arms are out** (`ItemSlot.EstimateDisplayStack`,
+  `ItemSlot.cs:3150-3162`): the displayed stack is the item's own.
+- **The `InputTrigger_*` substitutions are the keyboard keybind names**
+  (`Lang.cs:150-161` → `PlayerInput.GenerateRawInputList`,
+  `PlayerInput.cs:1948`): the port has no gamepad glyph list, so the
+  keyboard's key names stand in.
 
 
 ## Tile sections (M6-NET-3)

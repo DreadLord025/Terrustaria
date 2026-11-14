@@ -157,23 +157,93 @@ fn line_height(lookups: &assets::Lookups) -> f32 {
 }
 
 /// `Main.MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-20875`) —
-/// the item's tooltip rows: line 0 is the name in its rare colour
+/// The hovered item's context for the tooltip rows: the prefix (the affix
+/// name), the displayed stack and the local player — the player-side layers
+/// the C# folds in (`Main.MouseText_DrawItemTooltip_GetLinesInfo`,
+/// `Main.cs:20631+`): the weapon-damage multiplier, the crit bonuses,
+/// `minionKB`, the quiver, the knockback gloves and the mana cost.
+#[derive(Clone, Copy)]
+pub struct TooltipContext<'a> {
+    /// The item's rolled prefix (`Item.prefix`) — the affix name
+    /// (`Item.AffixName`, `Item.cs:1194-1201`).
+    pub prefix: u16,
+    /// The displayed stack (`ItemSlot.EstimateDisplayStack`,
+    /// `ItemSlot.cs:3150-3162`; the bulk-buy / bulk-craft arms belong to the
+    /// shop's and the crafting panel's, so the plain stack is the port's).
+    pub stack: u32,
+    /// The local player.
+    pub player: Option<&'a crate::player::Player>,
+    /// `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
+    /// held item's own crit, which the crit row subtracts (`Main.cs:20701`).
+    pub held_crit: i32,
+}
+
+impl Default for TooltipContext<'_> {
+    fn default() -> Self {
+        Self {
+            prefix: 0,
+            stack: 1,
+            player: None,
+            held_crit: 0,
+        }
+    }
+}
+
+/// `Item.GetHoverName(item, stack)` (`Item.cs:438-446`): the affix name
+/// (`Item.AffixName`, `:1194-1201`) plus the stack suffix.
+fn hover_name(kind: u16, prefix: u16, stack: u32) -> String {
+    let mut name = crate::lang::prefixed_item_name(kind, prefix);
+    if stack > 1 {
+        name = format!("{name} ({stack})");
+    }
+    name
+}
+
+/// `ItemID.Sets.ToolTipDamageMultiplier` (`ItemID.cs:492`): 1 by default, 2
+/// for the nine ids the vanilla doubles.
+fn tooltip_damage_multiplier(kind: u16) -> f32 {
+    match kind {
+        162 | 163 | 220 | 389 | 1259 | 4272 | 5011 | 5012 | 5526 => 2.0,
+        _ => 1.0,
+    }
+}
+
+/// The player's crit for the hovered item's class (`Player.meleeCrit` /
+/// `rangedCrit` / `magicCrit`, `Main.cs:20701-20717`).
+fn player_crit(p: &crate::player::Player, class: registry::DamageClass) -> i32 {
+    match class {
+        registry::DamageClass::Melee => p.melee_crit,
+        registry::DamageClass::Ranged => p.ranged_crit,
+        registry::DamageClass::Magic => p.magic_crit,
+        _ => 0,
+    }
+}
+
+/// The item's tooltip rows — `Main.MouseText_DrawItemTooltip_GetLinesInfo`
+/// (`Main.cs:20631-21010`): line 0 is the hover name in its rare colour
 /// (`:20358-20360`), then the stat/tool rows each behind its own value gate,
-/// through `Lang.tip[i]` (`LegacyTooltip.{i}`, `Lang.cs:497`).
-/// The player-side layers the C# folds in (the weapon-damage multiplier, the
-/// crit bonuses, `minionKB`, the quiver x1.1) are the accessory layer and out
-/// of this pass; the values are the item def's own.
+/// through `Lang.tip[i]` (`LegacyTooltip.{i}`, `Lang.cs:497`) and the
+/// `CommonItemTooltip.*` language rows.
 pub fn item_tooltip_lines(
     kind: u16,
     d: &crate::itemdata::ItemDef,
+    ctx: TooltipContext<'_>,
 ) -> Vec<(String, [f32; 4])> {
     let mut lines: Vec<(String, [f32; 4])> = vec![(
-        crate::lang::item_name(kind),
+        hover_name(kind, ctx.prefix, ctx.stack),
         item_name_color(registry::rare(kind)),
     )];
     if d.damage > 0 {
-        // Damage (`:20677-20700`) — the class suffix (melee tip[2], ranged
-        // tip[3], magic tip[4], summon tip[53], else tip[55]).
+        // Damage (`:20672-20700`): the item's own damage × the per-item
+        // tooltip multiplier, then the player's weapon-damage multiplier
+        // (`Main.LocalPlayer.GetWeaponDamageMultiplier`).
+        let base = (d.damage as f32 * tooltip_damage_multiplier(kind)) as i32;
+        let multiplier = ctx.player.map_or(1.0, |p| {
+            p.weapon_damage_multiplier_with_ammo(d.class, kind, d.use_ammo)
+        });
+        let shown = (multiplier * base as f32 + 5e-6) as i32;
+        // The class suffix (melee tip[2], ranged tip[3], magic tip[4],
+        // summon tip[53], else tip[55]).
         let suffix = match d.class {
             registry::DamageClass::Melee => 2,
             registry::DamageClass::Ranged => 3,
@@ -182,16 +252,20 @@ pub fn item_tooltip_lines(
             _ => 55,
         };
         lines.push((
-            format!("{}{}", d.damage, crate::lang::tip(suffix)),
+            format!("{}{}", shown, crate::lang::tip(suffix)),
             [1.0, 1.0, 1.0, 1.0],
         ));
-        // Crit (`:20702-20715`) — the melee/ranged/magic classes only.
+        // Crit (`:20701-20717`) — the melee/ranged/magic classes only: the
+        // player's crit, minus the held item's own, plus the hovered item's.
         if matches!(
             d.class,
             registry::DamageClass::Melee | registry::DamageClass::Ranged | registry::DamageClass::Magic
         ) {
+            let crit = ctx
+                .player
+                .map_or(d.crit, |p| player_crit(p, d.class) - ctx.held_crit + d.crit);
             lines.push((
-                format!("{}{}", d.crit, crate::lang::tip(5)),
+                format!("{}{}", crit, crate::lang::tip(5)),
                 [1.0, 1.0, 1.0, 1.0],
             ));
         }
@@ -217,47 +291,101 @@ pub fn item_tooltip_lines(
             };
             lines.push((crate::lang::tip(tier), [1.0, 1.0, 1.0, 1.0]));
         }
-        // Knockback (`:20753-20798`) — the nine word tiers.
-        let kb = if d.knock_back == 0.0 {
+        // Knockback (`:20333-20345` + `:20749-20798`): the gloves and the
+        // buff scale the item's own knockback, the shroomite armour scales
+        // the ranged one, then the summon bonus and the quiver's ×1.1.
+        let mut kb = d.knock_back;
+        if let Some(p) = ctx.player {
+            let mut num = 1.0f32;
+            if d.class == registry::DamageClass::Melee && p.kb_glove {
+                num += 1.0;
+            }
+            if p.kb_buff {
+                num += 0.5;
+            }
+            if num != 1.0 {
+                kb *= num;
+            }
+            if d.class == registry::DamageClass::Ranged && p.shroomite_stealth {
+                kb *= 1.0 + (1.0 - p.stealth) * 0.5;
+            }
+        }
+        if d.class == registry::DamageClass::Summon {
+            kb += ctx.player.map_or(0.0, |p| p.minion_kb);
+        }
+        if ctx
+            .player
+            .map_or(false, |p| p.magic_quiver && d.use_ammo == crate::ammo::AMMO_ARROW)
+            || d.use_ammo == crate::ammo::AMMO_STAKE
+        {
+            kb *= 1.1;
+        }
+        // The nine word tiers (`:20766-20798`).
+        let kb = if kb == 0.0 {
             14
-        } else if d.knock_back <= 1.5 {
+        } else if kb <= 1.5 {
             15
-        } else if d.knock_back <= 3.0 {
+        } else if kb <= 3.0 {
             16
-        } else if d.knock_back <= 4.0 {
+        } else if kb <= 4.0 {
             17
-        } else if d.knock_back <= 6.0 {
+        } else if kb <= 6.0 {
             18
-        } else if d.knock_back <= 7.0 {
+        } else if kb <= 7.0 {
             19
-        } else if d.knock_back <= 9.0 {
+        } else if kb <= 9.0 {
             20
-        } else if d.knock_back <= 11.0 {
+        } else if kb <= 11.0 {
             21
         } else {
             22
         };
         lines.push((crate::lang::tip(kb), [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20805-20816` — the fishing rows (`GameUI.PrecentFishingPower` /
-    // `BaitRequired` / `BaitPower`). The pole's own `fishingPole` value is
-    // not in the port's registry yet, so only the bait half is reachable;
-    // the row shape is the C#'s `GameUI.BaitPower {0}`.
+    // `:20805-20812` — the fishing rows (`GameUI.PrecentFishingPower` /
+    // `BaitRequired` / `GameUI.BaitPower`).
+    if d.fishing_pole > 0 {
+        lines.push((
+            crate::lang::game_ui_fmt("RecentFishingPower", d.fishing_pole),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+        lines.push((
+            crate::lang::game_ui_fmt("BaitRequired", 0),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
     if d.bait > 0 {
         lines.push((
             crate::lang::game_ui_fmt("BaitPower", d.bait as i32),
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
-    // `:20817-20830` — the equipable / tile-wand rows. The C# gates on
-    // `!flag` (the vanity-cosmetic latch) and paints `tip[60]` instead of
-    // `tip[23]` for the two shop-only pets (854/3035) — the port's
-    // registry has the slot flags, so the shape carries over; the shop
-    // latch is unreachable outside a shop, so `tip[23]` is the row.
-    if d.head_slot > 0 || d.body_slot > 0 || d.leg_slot > 0 || d.accessory {
+    // `:20816-20830` — the equipable row. The C#'s gate also admits the
+    // hook projectiles (`Main.projHook[item.shoot]`), the mounts
+    // (`item.mountType != -1`) and the light / vanity pets.
+    let hook = d
+        .projectile
+        .map_or(false, |p| crate::projectile_id::is_hook_projectile(p as i32));
+    if d.head_slot > 0
+        || d.body_slot > 0
+        || d.leg_slot > 0
+        || d.accessory
+        || hook
+        || d.mount_type != -1
+        || (d.buff_type > 0
+            && (crate::buffs::is_light_pet(d.buff_type)
+                || crate::buffs::is_vanity_pet(d.buff_type)))
+    {
         lines.push((crate::lang::tip(23), [1.0, 1.0, 1.0, 1.0]));
     }
-    // The tool rows (`:20819-20864`) — each behind its own value gate.
+    // `:20828-20841` — the quest / vanity rows.
+    if d.quest_item {
+        lines.push((crate::lang::inter(65), [1.0, 1.0, 1.0, 1.0]));
+    }
+    if d.vanity {
+        lines.push((crate::lang::tip(24), [1.0, 1.0, 1.0, 1.0]));
+    }
+    // The tool rows (`:20842-20864`) — each behind its own value gate.
     if d.defense > 0 {
         lines.push((
             format!("{}{}", d.defense, crate::lang::tip(25)),
@@ -292,6 +420,78 @@ pub fn item_tooltip_lines(
         };
         lines.push((row, [1.0, 1.0, 1.0, 1.0]));
     }
+    // `:20876-20890` — the life / mana restore rows.
+    if d.heal_life > 0 {
+        lines.push((
+            crate::lang::common_item_tooltip_fmt("RestoresLife", d.heal_life),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    if d.heal_mana > 0 {
+        lines.push((
+            crate::lang::common_item_tooltip_fmt("RestoresMana", d.heal_mana),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    // `:20891-20904` — the buff / healing / mount row.
+    if d.buff_type > 0
+        && !d.summon
+        && !crate::buffs::is_light_pet(d.buff_type)
+        && !crate::buffs::is_vanity_pet(d.buff_type)
+    {
+        lines.push((
+            crate::lang::common_item_tooltip("Buffs"),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    } else if d.heal_life > 0 {
+        lines.push((
+            crate::lang::common_item_tooltip("Healing"),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    } else if d.heal_mana > 0 {
+        lines.push((
+            crate::lang::common_item_tooltip("ManaHealing"),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    } else if d.mount_type > 0 && !crate::mount::is_cart(d.mount_type) {
+        lines.push((
+            crate::lang::common_item_tooltip("Mount"),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    // `:20905-20910` — the mana cost row.
+    if d.mana > 0
+        && ((kind != 127 && kind != 4347 && kind != 4348 && kind != 514)
+            || !ctx.player.map_or(false, |p| p.space_gun))
+    {
+        let cost = (d.mana as f32 * ctx.player.map_or(1.0, |p| p.mana_cost)) as i32;
+        lines.push((
+            crate::lang::common_item_tooltip_fmt("UsesMana", cost),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    // `:20911-20930` — the place / ammo / consumable rows.
+    if d.tile.is_some() || d.wall.is_some() || kind == 849 {
+        if d.consumable {
+            lines.push((crate::lang::tip(33), [1.0, 1.0, 1.0, 1.0]));
+        }
+    } else if d.ammo > 0 {
+        lines.push((crate::lang::tip(34), [1.0, 1.0, 1.0, 1.0]));
+    } else if d.consumable {
+        lines.push((crate::lang::tip(35), [1.0, 1.0, 1.0, 1.0]));
+    }
+    // `:20931-20933` — the material row.
+    if d.material {
+        lines.push((crate::lang::tip(36), [1.0, 1.0, 1.0, 1.0]));
+    }
+    // `:20958-20972` — the per-item tooltip text (`Lang.GetTooltip`,
+    // `Lang.cs:193-196`): the `ItemTooltip.<ItemID name>` language rows,
+    // one line each.
+    if let Some(text) = crate::lang::item_tooltip_text(kind) {
+        for line in text.split('\n') {
+            lines.push((line.to_string(), [1.0, 1.0, 1.0, 1.0]));
+        }
+    }
     lines
 }
 
@@ -305,6 +505,7 @@ pub fn draw_item_tooltip(
     hover: Option<&ItemSlot>,
     screen: Vec2,
     pulse: UiPulse,
+    ctx: TooltipContext<'_>,
 ) {
     let Some(item) = hover else {
         return;
@@ -316,7 +517,14 @@ pub fn draw_item_tooltip(
     let Some(d) = registry::get(item.kind) else {
         return;
     };
-    let lines = item_tooltip_lines(item.kind, d);
+    // `ItemSlot.EstimateDisplayStack` (`ItemSlot.cs:3150-3162`): the plain
+    // stack — the bulk-buy / bulk-craft arms belong to the shop's and the
+    // crafting panel's hovers.
+    let ctx = TooltipContext {
+        stack: item.count,
+        ..ctx
+    };
+    let lines = item_tooltip_lines(item.kind, d, ctx);
 
     // `Main.cs:20367-20377`: the widest line and the summed line heights, `num3 = 0`.
     let lh = line_height(lookups);
@@ -454,7 +662,7 @@ mod tests {
     #[test]
     fn m7_ui_6_the_tooltip_rows_follow_their_gates() {
         let copper_pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
-        let rows = item_tooltip_lines(1, copper_pickaxe);
+        let rows = item_tooltip_lines(1, copper_pickaxe, TooltipContext::default());
         assert!(rows.len() > 1, "the name plus the tool rows");
         // The pickaxe is not equipable: no `tip[23]`.
         let equip = crate::lang::tip(23);
@@ -470,7 +678,7 @@ mod tests {
             accessory: true,
             ..*copper_pickaxe
         };
-        let rows = item_tooltip_lines(1, &row);
+        let rows = item_tooltip_lines(1, &row, TooltipContext::default());
         assert!(rows.iter().any(|(t, _)| *t == equip), "the equipable row");
         let boost = crate::lang::tip(54);
         assert!(
@@ -482,7 +690,7 @@ mod tests {
             tile_boost: -2,
             ..*copper_pickaxe
         };
-        let rows = item_tooltip_lines(1, &row);
+        let rows = item_tooltip_lines(1, &row, TooltipContext::default());
         assert!(rows.iter().any(|(t, _)| t == &format!("-2{boost}")));
     }
 
@@ -642,5 +850,161 @@ mod tests {
     #[test]
     fn a_plain_block_has_no_stat_rows() {
         assert!(stat_lines(2).is_empty());
+    }
+
+    // --- S1-E-20: the tooltip's missing rows ---------------------------------
+
+    /// The language rows the tooltip reads: the item names, the prefix names
+    /// and the per-item tooltip texts.
+    fn register_tooltip_language() {
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{
+                "ItemName": { "IronPickaxe": "Iron Pickaxe" },
+                "Prefix": { "Legendary": "Legendary" },
+                "CombineFormat": { "Prefix": "{PrefixName} {ItemName}" },
+                "ItemTooltip": { "IronPickaxe": "Can dig hard rock" }
+            }"#,
+        );
+    }
+
+    #[test]
+    fn s1_e_20_the_hover_name_carries_the_affix_and_the_stack() {
+        // `Item.GetHoverName(item, stack)` (`Item.cs:438-446`): the affix name
+        // (`Item.AffixName`, `:1194-1201`) plus the stack suffix.
+        register_tooltip_language();
+        let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
+        let rows = item_tooltip_lines(1, pickaxe, TooltipContext::default());
+        assert_eq!(rows[0].0, "Iron Pickaxe", "the plain name");
+        // The prefix: the language's prefix name + the item name through the
+        // `CombineFormat.Prefix` format (`Lang.cs:225-239`).
+        let rows = item_tooltip_lines(
+            1,
+            pickaxe,
+            TooltipContext {
+                prefix: 81,
+                ..Default::default()
+            },
+        );
+        assert_eq!(rows[0].0, "Legendary Iron Pickaxe", "the affix name");
+        // The stack suffix.
+        let rows = item_tooltip_lines(
+            1,
+            pickaxe,
+            TooltipContext {
+                stack: 7,
+                ..Default::default()
+            },
+        );
+        assert_eq!(rows[0].0, "Iron Pickaxe (7)", "the stack suffix");
+    }
+
+    #[test]
+    fn s1_e_20_the_per_item_tooltip_text_becomes_rows() {
+        // `Lang.GetTooltip(item.type)` (`Lang.cs:193-196`) + the row loop
+        // (`Main.cs:20958-20972`): the `ItemTooltip.<ItemID name>` language
+        // rows, one line each.
+        register_tooltip_language();
+        let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
+        let rows = item_tooltip_lines(1, pickaxe, TooltipContext::default());
+        assert!(
+            rows.iter().any(|(t, _)| t == "Can dig hard rock"),
+            "the per-item tooltip row: {:?}",
+            rows.iter().map(|(t, _)| t).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn s1_e_20_the_equipable_gate_admits_the_mounts_and_the_hooks() {
+        // `Main.cs:20816-20830`: the equipable row's gate also admits the
+        // hook projectiles (`Main.projHook[item.shoot]`), the mounts
+        // (`item.mountType != -1`) and the light / vanity pets.
+        let equip = crate::lang::tip(23);
+        let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
+        let rows = item_tooltip_lines(1, pickaxe, TooltipContext::default());
+        assert!(!rows.iter().any(|(t, _)| *t == equip), "the pickaxe is not equipable");
+        // A mount (the mount type 1 = the Copper Horse).
+        let mount = crate::itemdata::ItemDef {
+            mount_type: 1,
+            ..*pickaxe
+        };
+        let rows = item_tooltip_lines(1, &mount, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == equip), "the mount row");
+        // A grappling hook (the projectile 13 is an aiStyle-7 hook).
+        let hook = crate::itemdata::ItemDef {
+            projectile: Some(13),
+            ..*pickaxe
+        };
+        let rows = item_tooltip_lines(1, &hook, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == equip), "the hook row");
+        // A light pet (the buff 19 is a light pet).
+        let pet = crate::itemdata::ItemDef {
+            buff_type: 19,
+            ..*pickaxe
+        };
+        let rows = item_tooltip_lines(1, &pet, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == equip), "the light-pet row");
+    }
+
+    #[test]
+    fn s1_e_20_the_player_layers_scale_the_damage_and_the_crit() {
+        // `Main.cs:20672-20717`: the damage row carries the player's
+        // weapon-damage multiplier and the crit row the player's crit.
+        let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.melee_damage = 2.0;
+        player.melee_crit = 20;
+        let rows = item_tooltip_lines(
+            1,
+            pickaxe,
+            TooltipContext {
+                player: Some(&player),
+                held_crit: 4,
+                ..Default::default()
+            },
+        );
+        // The pickaxe's own damage is 5 — doubled by the player's multiplier.
+        let damage = crate::lang::tip(2);
+        assert!(
+            rows.iter().any(|(t, _)| t == &format!("10{damage}")),
+            "the scaled damage row: {:?}",
+            rows.iter().map(|(t, _)| t).collect::<Vec<_>>()
+        );
+        // The crit: the player's 20, minus the held item's 4, plus the
+        // pickaxe's own 0.
+        let crit = crate::lang::tip(5);
+        assert!(
+            rows.iter().any(|(t, _)| t == &format!("16{crit}")),
+            "the crit row: {:?}",
+            rows.iter().map(|(t, _)| t).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn s1_e_20_the_heal_and_mana_rows_appear() {
+        // `Main.cs:20876-20910`: the life / mana restore rows and the buff
+        // row.
+        let pickaxe = crate::registry::get(1).expect("the iron pickaxe row");
+        let potion = crate::itemdata::ItemDef {
+            heal_life: 50,
+            ..*pickaxe
+        };
+        let rows = item_tooltip_lines(1, &potion, TooltipContext::default());
+        assert!(
+            rows.iter().any(|(t, _)| t.contains("50")),
+            "the life restore row: {:?}",
+            rows.iter().map(|(t, _)| t).collect::<Vec<_>>()
+        );
+        let mana = crate::itemdata::ItemDef {
+            heal_mana: 20,
+            ..*pickaxe
+        };
+        let rows = item_tooltip_lines(1, &mana, TooltipContext::default());
+        assert!(
+            rows.iter().any(|(t, _)| t.contains("20")),
+            "the mana restore row: {:?}",
+            rows.iter().map(|(t, _)| t).collect::<Vec<_>>()
+        );
     }
 }
