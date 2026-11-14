@@ -750,16 +750,20 @@ pub(crate) fn update_brain_state(app: &mut App) {
                 b.swarm_done = true;
             }
         }
-        let creepers_alive = app
+        // The Creeper count: the C#'s `num818` (`NPC.cs:32534-32538`) — the
+        // Brain retreats when the swarm is gone, so the arm reads the count.
+        let creeper_count = app
             .npcs
             .iter()
-            .any(|n| n.kind == NpcKind::Creeper && n.hp > 0);
+            .filter(|n| n.kind == NpcKind::Creeper && n.hp > 0)
+            .count() as f32;
         if let Some(b) = app
             .npcs
             .iter_mut()
             .find(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
         {
-            b.dont_take_damage = creepers_alive;
+            b.brain_local[2] = creeper_count;
+            b.dont_take_damage = creeper_count > 0.0;
         }
     } else {
         app.world.brain_present = false;
