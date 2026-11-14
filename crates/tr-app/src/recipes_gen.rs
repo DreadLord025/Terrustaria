@@ -1269,7 +1269,16 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 190: IronskinPotion x1
+// 190: TorchGodPotion x1
+Recipe {
+    create: (5573, 1),
+    required: &[Requirement::item(126, 1), Requirement::item(8, 1), Requirement::item(313, 1), Requirement::item(314, 1), Requirement::item(318, 1)],
+    stations: &[13],
+    need_torch_gods_favor: true,
+    alchemy: true,
+    ..BASE
+},
+// 191: IronskinPotion x1
 Recipe {
     create: (292, 1),
     required: &[Requirement::item(126, 1), Requirement::item(313, 1), Requirement::item(11, 1)],
@@ -1277,7 +1286,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 191: IronskinPotion x1
+// 192: IronskinPotion x1
 Recipe {
     create: (292, 1),
     required: &[Requirement::item(126, 1), Requirement::item(313, 1), Requirement::item(700, 1)],
@@ -1285,7 +1294,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 192: ManaRegenerationPotion x1
+// 193: ManaRegenerationPotion x1
 Recipe {
     create: (293, 1),
     required: &[Requirement::item(126, 1), Requirement::item(314, 1), Requirement::item(313, 1), Requirement::item(75, 1)],
@@ -1293,7 +1302,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 193: MagicPowerPotion x1
+// 194: MagicPowerPotion x1
 Recipe {
     create: (294, 1),
     required: &[Requirement::item(126, 1), Requirement::item(314, 1), Requirement::item(316, 1), Requirement::item(75, 1)],
@@ -1301,7 +1310,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 194: FeatherfallPotion x1
+// 195: FeatherfallPotion x1
 Recipe {
     create: (295, 1),
     required: &[Requirement::item(126, 1), Requirement::item(313, 1), Requirement::item(315, 1), Requirement::item(320, 1)],
@@ -1309,7 +1318,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 195: SpelunkerPotion x1
+// 196: SpelunkerPotion x1
 Recipe {
     create: (296, 1),
     required: &[Requirement::item(126, 1), Requirement::item(315, 1), Requirement::item(314, 1), Requirement::item(13, 1)],
@@ -1317,7 +1326,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 196: SpelunkerPotion x1
+// 197: SpelunkerPotion x1
 Recipe {
     create: (296, 1),
     required: &[Requirement::item(126, 1), Requirement::item(315, 1), Requirement::item(314, 1), Requirement::item(702, 1)],
@@ -1325,7 +1334,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 197: InvisibilityPotion x1
+// 198: InvisibilityPotion x1
 Recipe {
     create: (297, 1),
     required: &[Requirement::item(126, 1), Requirement::item(315, 1), Requirement::item(314, 1)],
@@ -1333,7 +1342,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 198: ShinePotion x1
+// 199: ShinePotion x1
 Recipe {
     create: (298, 1),
     required: &[Requirement::item(126, 1), Requirement::item(313, 1), Requirement::item(183, 1)],
@@ -1341,7 +1350,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 199: NightOwlPotion x1
+// 200: NightOwlPotion x1
 Recipe {
     create: (299, 1),
     required: &[Requirement::item(126, 1), Requirement::item(313, 1), Requirement::item(315, 1)],
@@ -1349,7 +1358,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 200: BattlePotion x1
+// 201: BattlePotion x1
 Recipe {
     create: (300, 1),
     required: &[Requirement::item(126, 1), Requirement::item(316, 1), Requirement::item(68, 1)],
@@ -1357,7 +1366,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 201: BattlePotion x1
+// 202: BattlePotion x1
 Recipe {
     create: (300, 1),
     required: &[Requirement::item(126, 1), Requirement::item(316, 1), Requirement::item(1330, 1)],
@@ -1365,7 +1374,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 202: ThornsPotion x1
+// 203: ThornsPotion x1
 Recipe {
     create: (301, 1),
     required: &[Requirement::item(126, 1), Requirement::item(316, 1), Requirement::item(276, 1)],
@@ -1373,7 +1382,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 203: WaterWalkingPotion x1
+// 204: WaterWalkingPotion x1
 Recipe {
     create: (302, 1),
     required: &[Requirement::item(126, 1), Requirement::item(317, 1), Requirement::item(319, 1)],
@@ -1381,7 +1390,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 204: ArcheryPotion x1
+// 205: ArcheryPotion x1
 Recipe {
     create: (303, 1),
     required: &[Requirement::item(126, 1), Requirement::item(313, 1), Requirement::item(38, 1)],
@@ -1389,7 +1398,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 205: HunterPotion x1
+// 206: HunterPotion x1
 Recipe {
     create: (304, 1),
     required: &[Requirement::item(126, 1), Requirement::item(313, 1), Requirement::item(315, 1), Requirement::item(319, 1)],
@@ -1397,7 +1406,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 206: GravitationPotion x1
+// 207: GravitationPotion x1
 Recipe {
     create: (305, 1),
     required: &[Requirement::item(126, 1), Requirement::item(318, 1), Requirement::item(316, 1), Requirement::item(315, 1), Requirement::item(320, 1)],
@@ -1405,7 +1414,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 207: FishingPotion x1
+// 208: FishingPotion x1
 Recipe {
     create: (2354, 1),
     required: &[Requirement::item(126, 1), Requirement::item(1127, 1), Requirement::item(317, 1)],
@@ -1413,7 +1422,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 208: CratePotion x1
+// 209: CratePotion x1
 Recipe {
     create: (2356, 1),
     required: &[Requirement::item(126, 1), Requirement::item(999, 1), Requirement::item(314, 1), Requirement::item(2358, 1), Requirement::item(317, 1)],
@@ -1421,7 +1430,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 209: BuilderPotion x1
+// 210: BuilderPotion x1
 Recipe {
     create: (2325, 1),
     required: &[Requirement::item(126, 1), Requirement::item(315, 1), Requirement::item(2358, 1), Requirement::item(314, 1)],
@@ -1429,7 +1438,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 210: TitanPotion x1
+// 211: TitanPotion x1
 Recipe {
     create: (2326, 1),
     required: &[Requirement::item(126, 1), Requirement::item(154, 1), Requirement::item(316, 1), Requirement::item(2358, 1)],
@@ -1437,7 +1446,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 211: TrapsightPotion x1
+// 212: TrapsightPotion x1
 Recipe {
     create: (2329, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2358, 1), Requirement::item(150, 10)],
@@ -1445,7 +1454,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 212: SonarPotion x1
+// 213: SonarPotion x1
 Recipe {
     create: (2355, 1),
     required: &[Requirement::item(126, 1), Requirement::item(317, 1), Requirement::item(275, 1)],
@@ -1453,7 +1462,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 213: MiningPotion x1
+// 214: MiningPotion x1
 Recipe {
     create: (2322, 1),
     required: &[Requirement::item(126, 1), Requirement::item(323, 1), Requirement::item(315, 1)],
@@ -1461,7 +1470,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 214: FlipperPotion x1
+// 215: FlipperPotion x1
 Recipe {
     create: (2327, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2358, 1), Requirement::item(317, 1)],
@@ -1469,7 +1478,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 215: HeartreachPotion x1
+// 216: HeartreachPotion x1
 Recipe {
     create: (2323, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2305, 1), Requirement::item(313, 1)],
@@ -1477,7 +1486,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 216: CalmingPotion x1
+// 217: CalmingPotion x1
 Recipe {
     create: (2324, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2304, 1), Requirement::item(313, 1)],
@@ -1485,7 +1494,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 217: SummoningPotion x1
+// 218: SummoningPotion x1
 Recipe {
     create: (2328, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2311, 1), Requirement::item(314, 1)],
@@ -1493,7 +1502,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 218: AmmoReservationPotion x1
+// 219: AmmoReservationPotion x1
 Recipe {
     create: (2344, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2313, 1), Requirement::item(314, 1)],
@@ -1501,7 +1510,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 219: LifeforcePotion x1
+// 220: LifeforcePotion x1
 Recipe {
     create: (2345, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2310, 1), Requirement::item(314, 1), Requirement::item(2358, 1), Requirement::item(317, 1)],
@@ -1509,7 +1518,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 220: EndurancePotion x1
+// 221: EndurancePotion x1
 Recipe {
     create: (2346, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2303, 1), Requirement::item(315, 1)],
@@ -1517,7 +1526,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 221: InfernoPotion x1
+// 222: InfernoPotion x1
 Recipe {
     create: (2348, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2312, 1), Requirement::item(2315, 2), Requirement::item(318, 1)],
@@ -1525,7 +1534,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 222: RagePotion x1
+// 223: RagePotion x1
 Recipe {
     create: (2347, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2319, 1), Requirement::item(316, 1)],
@@ -1533,7 +1542,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 223: WrathPotion x1
+// 224: WrathPotion x1
 Recipe {
     create: (2349, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2318, 1), Requirement::item(316, 1)],
@@ -1541,7 +1550,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 224: RecallPotion x1
+// 225: RecallPotion x1
 Recipe {
     create: (2350, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2309, 1), Requirement::item(313, 1)],
@@ -1549,7 +1558,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 225: WormholePotion x3
+// 226: WormholePotion x3
 Recipe {
     create: (2997, 3),
     required: &[Requirement::item(126, 3), Requirement::item(2309, 1), Requirement::item(315, 1)],
@@ -1557,7 +1566,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 226: TeleportationPotion x1
+// 227: TeleportationPotion x1
 Recipe {
     create: (2351, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2317, 1), Requirement::item(318, 1)],
@@ -1565,7 +1574,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 227: LovePotion x1
+// 228: LovePotion x1
 Recipe {
     create: (2352, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2307, 1), Requirement::item(2358, 1)],
@@ -1573,7 +1582,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 228: StinkPotion x2
+// 229: StinkPotion x2
 Recipe {
     create: (2353, 2),
     required: &[Requirement::item(126, 2), Requirement::item(2321, 1), Requirement::item(316, 1)],
@@ -1581,7 +1590,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 229: WarmthPotion x1
+// 230: WarmthPotion x1
 Recipe {
     create: (2359, 1),
     required: &[Requirement::item(126, 1), Requirement::item(2306, 1), Requirement::item(2358, 1)],
@@ -1589,7 +1598,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 230: LuckPotionLesser x1
+// 231: LuckPotionLesser x1
 Recipe {
     create: (4477, 1),
     required: &[Requirement::item(126, 1), Requirement::item(317, 1), Requirement::item(4361, 1), Requirement::item(4412, 1)],
@@ -1597,7 +1606,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 231: LuckPotion x1
+// 232: LuckPotion x1
 Recipe {
     create: (4478, 1),
     required: &[Requirement::item(126, 1), Requirement::item(317, 1), Requirement::item(4361, 1), Requirement::item(4413, 1)],
@@ -1605,7 +1614,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 232: LuckPotionGreater x1
+// 233: LuckPotionGreater x1
 Recipe {
     create: (4479, 1),
     required: &[Requirement::item(126, 1), Requirement::item(317, 1), Requirement::item(4361, 1), Requirement::item(4414, 1)],
@@ -1613,7 +1622,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 233: PotionOfReturn x1
+// 234: PotionOfReturn x1
 Recipe {
     create: (4870, 1),
     required: &[Requirement::item(2350, 1), Requirement::item(2315, 1)],
@@ -1621,7 +1630,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 234: BiomeSightPotion x1
+// 235: BiomeSightPotion x1
 Recipe {
     create: (5211, 1),
     required: &[Requirement::item(126, 1), Requirement::item(318, 1), Requirement::item(315, 1), Requirement::item(314, 1), Requirement::item(62, 5)],
@@ -1629,389 +1638,389 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 235: FlaskofPoison x1
+// 236: FlaskofPoison x1
 Recipe {
     create: (1359, 1),
     required: &[Requirement::item(126, 1), Requirement::item(209, 1)],
     stations: &[243],
     ..BASE
 },
-// 236: FlaskofFire x1
+// 237: FlaskofFire x1
 Recipe {
     create: (1354, 1),
     required: &[Requirement::item(126, 1), Requirement::item(174, 3)],
     stations: &[243],
     ..BASE
 },
-// 237: FlaskofVenom x1
+// 238: FlaskofVenom x1
 Recipe {
     create: (1340, 1),
     required: &[Requirement::item(126, 1), Requirement::item(1339, 5)],
     stations: &[243],
     ..BASE
 },
-// 238: FlaskofGold x1
+// 239: FlaskofGold x1
 Recipe {
     create: (1355, 1),
     required: &[Requirement::item(126, 1), Requirement::item(1348, 5)],
     stations: &[243],
     ..BASE
 },
-// 239: FlaskofIchor x1
+// 240: FlaskofIchor x1
 Recipe {
     create: (1356, 1),
     required: &[Requirement::item(126, 1), Requirement::item(1332, 2)],
     stations: &[243],
     ..BASE
 },
-// 240: FlaskofCursedFlames x1
+// 241: FlaskofCursedFlames x1
 Recipe {
     create: (1353, 1),
     required: &[Requirement::item(126, 1), Requirement::item(522, 2)],
     stations: &[243],
     ..BASE
 },
-// 241: FlaskofNanites x1
+// 242: FlaskofNanites x1
 Recipe {
     create: (1357, 1),
     required: &[Requirement::item(126, 1), Requirement::item(1346, 5)],
     stations: &[243],
     ..BASE
 },
-// 242: FlaskofParty x1
+// 243: FlaskofParty x1
 Recipe {
     create: (1358, 1),
     required: &[Requirement::item(126, 1), Requirement::item(1345, 5)],
     stations: &[243],
     ..BASE
 },
-// 243: LightKey x1
+// 244: LightKey x1
 Recipe {
     create: (3092, 1),
     required: &[Requirement::item(520, 15)],
     stations: &[18],
     ..BASE
 },
-// 244: NightKey x1
+// 245: NightKey x1
 Recipe {
     create: (3091, 1),
     required: &[Requirement::item(521, 15)],
     stations: &[18],
     ..BASE
 },
-// 245: Snowball x15
+// 246: Snowball x15
 Recipe {
     create: (949, 15),
     required: &[Requirement::item(593, 1)],
     ..BASE
 },
-// 246: EndlessQuiver x1
+// 247: EndlessQuiver x1
 Recipe {
     create: (3103, 1),
     required: &[Requirement::item(40, 9999)],
     stations: &[125],
     ..BASE
 },
-// 247: EndlessMusketPouch x1
+// 248: EndlessMusketPouch x1
 Recipe {
     create: (3104, 1),
     required: &[Requirement::item(97, 9999)],
     stations: &[125],
     ..BASE
 },
-// 248: WoodenArrow x25
+// 249: WoodenArrow x25
 Recipe {
     create: (40, 25),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 1), Requirement::item(3, 1)],
     stations: &[18],
     ..BASE
 },
-// 249: FlamingArrow x10
+// 250: FlamingArrow x10
 Recipe {
     create: (41, 10),
     required: &[Requirement::item(40, 10), Requirement::item(8, 1)],
     ..BASE
 },
-// 250: FrostburnArrow x10
+// 251: FrostburnArrow x10
 Recipe {
     create: (988, 10),
     required: &[Requirement::item(40, 10), Requirement::item(974, 1)],
     ..BASE
 },
-// 251: JestersArrow x10
+// 252: JestersArrow x10
 Recipe {
     create: (51, 10),
     required: &[Requirement::item(40, 10), Requirement::item(75, 1)],
     ..BASE
 },
-// 252: UnholyArrow x20
+// 253: UnholyArrow x20
 Recipe {
     create: (47, 20),
     required: &[Requirement::item(40, 20), Requirement::item(69, 1)],
     stations: &[16],
     ..BASE
 },
-// 253: UnholyArrow x10
+// 254: UnholyArrow x10
 Recipe {
     create: (47, 10),
     required: &[Requirement::item(40, 10), Requirement::item(1330, 1)],
     stations: &[16],
     ..BASE
 },
-// 254: HellfireArrow x100
+// 255: HellfireArrow x100
 Recipe {
     create: (265, 100),
     required: &[Requirement::item(40, 100), Requirement::item(175, 1)],
     stations: &[16],
     ..BASE
 },
-// 255: CursedArrow x150
+// 256: CursedArrow x150
 Recipe {
     create: (545, 150),
     required: &[Requirement::item(40, 150), Requirement::item(522, 1)],
     stations: &[134],
     ..BASE
 },
-// 256: IchorArrow x150
+// 257: IchorArrow x150
 Recipe {
     create: (1334, 150),
     required: &[Requirement::item(40, 150), Requirement::item(1332, 1)],
     stations: &[134],
     ..BASE
 },
-// 257: HolyArrow x200
+// 258: HolyArrow x200
 Recipe {
     create: (516, 200),
     required: &[Requirement::item(40, 200), Requirement::item(501, 3), Requirement::item(526, 1)],
     stations: &[134],
     ..BASE
 },
-// 258: VenomArrow x35
+// 259: VenomArrow x35
 Recipe {
     create: (1341, 35),
     required: &[Requirement::item(40, 35), Requirement::item(1339, 1)],
     stations: &[134],
     ..BASE
 },
-// 259: ChlorophyteArrow x150
+// 260: ChlorophyteArrow x150
 Recipe {
     create: (1235, 150),
     required: &[Requirement::item(1006, 1)],
     stations: &[134],
     ..BASE
 },
-// 260: PoisonDart x100
+// 261: PoisonDart x100
 Recipe {
     create: (1310, 100),
     required: &[Requirement::item(209, 1)],
     stations: &[16],
     ..BASE
 },
-// 261: CrystalDart x100
+// 262: CrystalDart x100
 Recipe {
     create: (3009, 100),
     required: &[Requirement::item(502, 1)],
     stations: &[134],
     ..BASE
 },
-// 262: CursedDart x100
+// 263: CursedDart x100
 Recipe {
     create: (3010, 100),
     required: &[Requirement::item(522, 1)],
     stations: &[134],
     ..BASE
 },
-// 263: IchorDart x100
+// 264: IchorDart x100
 Recipe {
     create: (3011, 100),
     required: &[Requirement::item(1332, 1)],
     stations: &[134],
     ..BASE
 },
-// 264: MeteorShot x70
+// 265: MeteorShot x70
 Recipe {
     create: (234, 70),
     required: &[Requirement::item(97, 70), Requirement::item(117, 1)],
     stations: &[16],
     ..BASE
 },
-// 265: SilverBullet x70
+// 266: SilverBullet x70
 Recipe {
     create: (278, 70),
     required: &[Requirement::item(97, 70), Requirement::item(21, 1)],
     stations: &[16],
     ..BASE
 },
-// 266: TungstenBullet x70
+// 267: TungstenBullet x70
 Recipe {
     create: (4915, 70),
     required: &[Requirement::item(97, 70), Requirement::item(705, 1)],
     stations: &[16],
     ..BASE
 },
-// 267: CrystalBullet x100
+// 268: CrystalBullet x100
 Recipe {
     create: (515, 100),
     required: &[Requirement::item(97, 100), Requirement::item(502, 1)],
     stations: &[134],
     ..BASE
 },
-// 268: CursedBullet x150
+// 269: CursedBullet x150
 Recipe {
     create: (546, 150),
     required: &[Requirement::item(97, 150), Requirement::item(522, 1)],
     stations: &[134],
     ..BASE
 },
-// 269: IchorBullet x150
+// 270: IchorBullet x150
 Recipe {
     create: (1335, 150),
     required: &[Requirement::item(97, 150), Requirement::item(1332, 1)],
     stations: &[134],
     ..BASE
 },
-// 270: ChlorophyteBullet x60
+// 271: ChlorophyteBullet x60
 Recipe {
     create: (1179, 60),
     required: &[Requirement::item(97, 60), Requirement::item(1006, 1)],
     stations: &[134],
     ..BASE
 },
-// 271: HighVelocityBullet x50
+// 272: HighVelocityBullet x50
 Recipe {
     create: (1302, 50),
     required: &[Requirement::item(1432, 50), Requirement::item(1344, 1)],
     stations: &[18],
     ..BASE
 },
-// 272: PartyBullet x50
+// 273: PartyBullet x50
 Recipe {
     create: (1349, 50),
     required: &[Requirement::item(1432, 50), Requirement::item(1345, 1)],
     stations: &[18],
     ..BASE
 },
-// 273: NanoBullet x50
+// 274: NanoBullet x50
 Recipe {
     create: (1350, 50),
     required: &[Requirement::item(1432, 50), Requirement::item(1346, 1)],
     stations: &[18],
     ..BASE
 },
-// 274: ExplodingBullet x50
+// 275: ExplodingBullet x50
 Recipe {
     create: (1351, 50),
     required: &[Requirement::item(1432, 50), Requirement::item(1347, 1)],
     stations: &[18],
     ..BASE
 },
-// 275: GoldenBullet x50
+// 276: GoldenBullet x50
 Recipe {
     create: (1352, 50),
     required: &[Requirement::item(1432, 50), Requirement::item(1348, 1)],
     stations: &[18],
     ..BASE
 },
-// 276: VenomBullet x50
+// 277: VenomBullet x50
 Recipe {
     create: (1342, 50),
     required: &[Requirement::item(1432, 50), Requirement::item(1339, 1)],
     stations: &[18],
     ..BASE
 },
-// 277: WetRocket x1
+// 278: WetRocket x1
 Recipe {
     create: (4447, 1),
     required: &[Requirement::item(4459, 1)],
     need_water: true,
     ..BASE
 },
-// 278: LavaRocket x1
+// 279: LavaRocket x1
 Recipe {
     create: (4448, 1),
     required: &[Requirement::item(4459, 1)],
     need_lava: true,
     ..BASE
 },
-// 279: HoneyRocket x1
+// 280: HoneyRocket x1
 Recipe {
     create: (4449, 1),
     required: &[Requirement::item(4459, 1)],
     need_honey: true,
     ..BASE
 },
-// 280: DryRocket x1
+// 281: DryRocket x1
 Recipe {
     create: (4459, 1),
     required: &[Requirement::item(4447, 1)],
     ..BASE
 },
-// 281: DryRocket x1
+// 282: DryRocket x1
 Recipe {
     create: (4459, 1),
     required: &[Requirement::item(4448, 1)],
     ..BASE
 },
-// 282: DryRocket x1
+// 283: DryRocket x1
 Recipe {
     create: (4459, 1),
     required: &[Requirement::item(4449, 1)],
     ..BASE
 },
-// 283: WetBomb x1
+// 284: WetBomb x1
 Recipe {
     create: (4824, 1),
     required: &[Requirement::item(4827, 1)],
     need_water: true,
     ..BASE
 },
-// 284: LavaBomb x1
+// 285: LavaBomb x1
 Recipe {
     create: (4825, 1),
     required: &[Requirement::item(4827, 1)],
     need_lava: true,
     ..BASE
 },
-// 285: HoneyBomb x1
+// 286: HoneyBomb x1
 Recipe {
     create: (4826, 1),
     required: &[Requirement::item(4827, 1)],
     need_honey: true,
     ..BASE
 },
-// 286: DryBomb x1
+// 287: DryBomb x1
 Recipe {
     create: (4827, 1),
     required: &[Requirement::item(4824, 1)],
     ..BASE
 },
-// 287: DryBomb x1
+// 288: DryBomb x1
 Recipe {
     create: (4827, 1),
     required: &[Requirement::item(4825, 1)],
     ..BASE
 },
-// 288: DryBomb x1
+// 289: DryBomb x1
 Recipe {
     create: (4827, 1),
     required: &[Requirement::item(4826, 1)],
     ..BASE
 },
-// 289: MiniNukeI x100
+// 290: MiniNukeI x100
 Recipe {
     create: (4457, 100),
     required: &[Requirement::item(773, 100), Requirement::item(1552, 1)],
     stations: &[247],
     ..BASE
 },
-// 290: MiniNukeII x100
+// 291: MiniNukeII x100
 Recipe {
     create: (4458, 100),
     required: &[Requirement::item(774, 100), Requirement::item(1552, 1)],
     stations: &[247],
     ..BASE
 },
-// 291: VilePowder x5
+// 292: VilePowder x5
 Recipe {
     create: (67, 5),
     required: &[Requirement::item(60, 1)],
@@ -2019,7 +2028,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 292: ViciousPowder x5
+// 293: ViciousPowder x5
 Recipe {
     create: (2886, 5),
     required: &[Requirement::item(2887, 1)],
@@ -2027,7 +2036,7 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 293: Fertilizer x1
+// 294: Fertilizer x1
 Recipe {
     create: (5438, 1),
     required: &[Requirement::item(5395, 3), Requirement::item(154, 3), Requirement::item(172, 3)],
@@ -2035,259 +2044,259 @@ Recipe {
     alchemy: true,
     ..BASE
 },
-// 294: PoisonedKnife x50
+// 295: PoisonedKnife x50
 Recipe {
     create: (287, 50),
     required: &[Requirement::item(279, 50), Requirement::item(67, 1)],
     ..BASE
 },
-// 295: PoisonedKnife x50
+// 296: PoisonedKnife x50
 Recipe {
     create: (287, 50),
     required: &[Requirement::item(279, 50), Requirement::item(2886, 1)],
     ..BASE
 },
-// 296: ConveyorBeltRight x1
+// 297: ConveyorBeltRight x1
 Recipe {
     create: (3610, 1),
     required: &[Requirement::item(3609, 1)],
     ..BASE
 },
-// 297: ConveyorBeltLeft x1
+// 298: ConveyorBeltLeft x1
 Recipe {
     create: (3609, 1),
     required: &[Requirement::item(3610, 1)],
     ..BASE
 },
-// 298: WoodPlatform x2
+// 299: WoodPlatform x2
 Recipe {
     create: (94, 2),
     required: &[Requirement::item(9, 1)],
     ..BASE
 },
-// 299: Wood x1, SetupRecipes reverse
+// 300: Wood x1, SetupRecipes reverse
 Recipe {
     create: (9, 1),
     required: &[Requirement::item(94, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 300: StonePlatform x2
+// 301: StonePlatform x2
 Recipe {
     create: (4416, 2),
     required: &[Requirement::item(129, 1)],
     ..BASE
 },
-// 301: GrayBrick x1, SetupRecipes reverse
+// 302: GrayBrick x1, SetupRecipes reverse
 Recipe {
     create: (129, 1),
     required: &[Requirement::item(4416, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 302: PalmWoodPlatform x2
+// 303: PalmWoodPlatform x2
 Recipe {
     create: (2518, 2),
     required: &[Requirement::item(2504, 1)],
     ..BASE
 },
-// 303: PalmWood x1, SetupRecipes reverse
+// 304: PalmWood x1, SetupRecipes reverse
 Recipe {
     create: (2504, 1),
     required: &[Requirement::item(2518, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 304: BorealWoodPlatform x2
+// 305: BorealWoodPlatform x2
 Recipe {
     create: (2566, 2),
     required: &[Requirement::item(2503, 1)],
     ..BASE
 },
-// 305: BorealWood x1, SetupRecipes reverse
+// 306: BorealWood x1, SetupRecipes reverse
 Recipe {
     create: (2503, 1),
     required: &[Requirement::item(2566, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 306: RichMahoganyPlatform x2
+// 307: RichMahoganyPlatform x2
 Recipe {
     create: (632, 2),
     required: &[Requirement::item(620, 1)],
     ..BASE
 },
-// 307: RichMahogany x1, SetupRecipes reverse
+// 308: RichMahogany x1, SetupRecipes reverse
 Recipe {
     create: (620, 1),
     required: &[Requirement::item(632, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 308: EbonwoodPlatform x2
+// 309: EbonwoodPlatform x2
 Recipe {
     create: (631, 2),
     required: &[Requirement::item(619, 1)],
     ..BASE
 },
-// 309: Ebonwood x1, SetupRecipes reverse
+// 310: Ebonwood x1, SetupRecipes reverse
 Recipe {
     create: (619, 1),
     required: &[Requirement::item(631, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 310: ShadewoodPlatform x2
+// 311: ShadewoodPlatform x2
 Recipe {
     create: (913, 2),
     required: &[Requirement::item(911, 1)],
     ..BASE
 },
-// 311: Shadewood x1, SetupRecipes reverse
+// 312: Shadewood x1, SetupRecipes reverse
 Recipe {
     create: (911, 1),
     required: &[Requirement::item(913, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 312: PearlwoodPlatform x2
+// 313: PearlwoodPlatform x2
 Recipe {
     create: (633, 2),
     required: &[Requirement::item(621, 1)],
     ..BASE
 },
-// 313: Pearlwood x1, SetupRecipes reverse
+// 314: Pearlwood x1, SetupRecipes reverse
 Recipe {
     create: (621, 1),
     required: &[Requirement::item(633, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 314: CactusPlatform x2
+// 315: CactusPlatform x2
 Recipe {
     create: (2744, 2),
     required: &[Requirement::item(276, 1)],
     ..BASE
 },
-// 315: Cactus x1, SetupRecipes reverse
+// 316: Cactus x1, SetupRecipes reverse
 Recipe {
     create: (276, 1),
     required: &[Requirement::item(2744, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 316: GlassPlatform x2
+// 317: GlassPlatform x2
 Recipe {
     create: (1702, 2),
     required: &[Requirement::item(170, 1)],
     ..BASE
 },
-// 317: Glass x1, SetupRecipes reverse
+// 318: Glass x1, SetupRecipes reverse
 Recipe {
     create: (170, 1),
     required: &[Requirement::item(1702, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 318: PumpkinPlatform x2
+// 319: PumpkinPlatform x2
 Recipe {
     create: (1796, 2),
     required: &[Requirement::item(1725, 1)],
     ..BASE
 },
-// 319: Pumpkin x1, SetupRecipes reverse
+// 320: Pumpkin x1, SetupRecipes reverse
 Recipe {
     create: (1725, 1),
     required: &[Requirement::item(1796, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 320: SpookyPlatform x2
+// 321: SpookyPlatform x2
 Recipe {
     create: (1818, 2),
     required: &[Requirement::item(1729, 1)],
     ..BASE
 },
-// 321: SpookyWood x1, SetupRecipes reverse
+// 322: SpookyWood x1, SetupRecipes reverse
 Recipe {
     create: (1729, 1),
     required: &[Requirement::item(1818, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 322: BonePlatform x2
+// 323: BonePlatform x2
 Recipe {
     create: (634, 2),
     required: &[Requirement::item(154, 1)],
     ..BASE
 },
-// 323: Bone x1, SetupRecipes reverse
+// 324: Bone x1, SetupRecipes reverse
 Recipe {
     create: (154, 1),
     required: &[Requirement::item(634, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 324: MushroomPlatform x2
+// 325: MushroomPlatform x2
 Recipe {
     create: (2549, 2),
     required: &[Requirement::item(183, 1)],
     ..BASE
 },
-// 325: GlowingMushroom x1, SetupRecipes reverse
+// 326: GlowingMushroom x1, SetupRecipes reverse
 Recipe {
     create: (183, 1),
     required: &[Requirement::item(2549, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 326: SlimePlatform x2
+// 327: SlimePlatform x2
 Recipe {
     create: (2581, 2),
     required: &[Requirement::item(762, 1)],
     ..BASE
 },
-// 327: SlimeBlock x1, SetupRecipes reverse
+// 328: SlimeBlock x1, SetupRecipes reverse
 Recipe {
     create: (762, 1),
     required: &[Requirement::item(2581, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 328: SteampunkPlatform x2
+// 329: SteampunkPlatform x2
 Recipe {
     create: (2627, 2),
     required: &[Requirement::item(1344, 1)],
     ..BASE
 },
-// 329: Cog x1, SetupRecipes reverse
+// 330: Cog x1, SetupRecipes reverse
 Recipe {
     create: (1344, 1),
     required: &[Requirement::item(2627, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 330: SkywarePlatform x2
+// 331: SkywarePlatform x2
 Recipe {
     create: (2628, 2),
     required: &[Requirement::item(824, 1)],
     ..BASE
 },
-// 331: SunplateBlock x1, SetupRecipes reverse
+// 332: SunplateBlock x1, SetupRecipes reverse
 Recipe {
     create: (824, 1),
     required: &[Requirement::item(2628, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 332: LivingWoodPlatform x2
+// 333: LivingWoodPlatform x2
 Recipe {
     create: (2629, 2),
     required: &[Requirement::item(9, 1)],
     stations: &[304],
     ..BASE
 },
-// 333: Wood x1, SetupRecipes reverse
+// 334: Wood x1, SetupRecipes reverse
 Recipe {
     create: (9, 1),
     required: &[Requirement::item(2629, 2)],
@@ -2295,631 +2304,631 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 334: HoneyPlatform x2
+// 335: HoneyPlatform x2
 Recipe {
     create: (2630, 2),
     required: &[Requirement::item(1125, 1)],
     ..BASE
 },
-// 335: HoneyBlock x1, SetupRecipes reverse
+// 336: HoneyBlock x1, SetupRecipes reverse
 Recipe {
     create: (1125, 1),
     required: &[Requirement::item(2630, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 336: ObsidianPlatform x2
+// 337: ObsidianPlatform x2
 Recipe {
     create: (1457, 2),
     required: &[Requirement::item(192, 1)],
     ..BASE
 },
-// 337: ObsidianBrick x1, SetupRecipes reverse
+// 338: ObsidianBrick x1, SetupRecipes reverse
 Recipe {
     create: (192, 1),
     required: &[Requirement::item(1457, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 338: MeteoritePlatform x2
+// 339: MeteoritePlatform x2
 Recipe {
     create: (3144, 2),
     required: &[Requirement::item(3100, 1)],
     ..BASE
 },
-// 339: MeteoriteBrick x1, SetupRecipes reverse
+// 340: MeteoriteBrick x1, SetupRecipes reverse
 Recipe {
     create: (3100, 1),
     required: &[Requirement::item(3144, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 340: GranitePlatform x2
+// 341: GranitePlatform x2
 Recipe {
     create: (3146, 2),
     required: &[Requirement::item(3087, 1)],
     ..BASE
 },
-// 341: GraniteBlock x1, SetupRecipes reverse
+// 342: GraniteBlock x1, SetupRecipes reverse
 Recipe {
     create: (3087, 1),
     required: &[Requirement::item(3146, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 342: MarblePlatform x2
+// 343: MarblePlatform x2
 Recipe {
     create: (3145, 2),
     required: &[Requirement::item(3066, 1)],
     ..BASE
 },
-// 343: MarbleBlock x1, SetupRecipes reverse
+// 344: MarbleBlock x1, SetupRecipes reverse
 Recipe {
     create: (3066, 1),
     required: &[Requirement::item(3145, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 344: MartianPlatform x2
+// 345: MartianPlatform x2
 Recipe {
     create: (2822, 2),
     required: &[Requirement::item(2860, 1)],
     ..BASE
 },
-// 345: MartianConduitPlating x1, SetupRecipes reverse
+// 346: MartianConduitPlating x1, SetupRecipes reverse
 Recipe {
     create: (2860, 1),
     required: &[Requirement::item(2822, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 346: CrystalPlatform x2
+// 347: CrystalPlatform x2
 Recipe {
     create: (3903, 2),
     required: &[Requirement::item(3234, 1)],
     ..BASE
 },
-// 347: CrystalBlock x1, SetupRecipes reverse
+// 348: CrystalBlock x1, SetupRecipes reverse
 Recipe {
     create: (3234, 1),
     required: &[Requirement::item(3903, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 348: SpiderPlatform x2
+// 349: SpiderPlatform x2
 Recipe {
     create: (3945, 2),
     required: &[Requirement::item(4139, 1)],
     ..BASE
 },
-// 349: SpiderBlock x1, SetupRecipes reverse
+// 350: SpiderBlock x1, SetupRecipes reverse
 Recipe {
     create: (4139, 1),
     required: &[Requirement::item(3945, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 350: DynastyPlatform x2
+// 351: DynastyPlatform x2
 Recipe {
     create: (3905, 2),
     required: &[Requirement::item(2260, 1)],
     ..BASE
 },
-// 351: DynastyWood x1, SetupRecipes reverse
+// 352: DynastyWood x1, SetupRecipes reverse
 Recipe {
     create: (2260, 1),
     required: &[Requirement::item(3905, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 352: LihzahrdPlatform x2
+// 353: LihzahrdPlatform x2
 Recipe {
     create: (3906, 2),
     required: &[Requirement::item(1101, 1)],
     ..BASE
 },
-// 353: LihzahrdBrick x1, SetupRecipes reverse
+// 354: LihzahrdBrick x1, SetupRecipes reverse
 Recipe {
     create: (1101, 1),
     required: &[Requirement::item(3906, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 354: FleshPlatform x2
+// 355: FleshPlatform x2
 Recipe {
     create: (3907, 2),
     required: &[Requirement::item(763, 1)],
     ..BASE
 },
-// 355: FleshBlock x1, SetupRecipes reverse
+// 356: FleshBlock x1, SetupRecipes reverse
 Recipe {
     create: (763, 1),
     required: &[Requirement::item(3907, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 356: LesionPlatform x2
+// 357: LesionPlatform x2
 Recipe {
     create: (3957, 2),
     required: &[Requirement::item(3955, 1)],
     ..BASE
 },
-// 357: LesionBlock x1, SetupRecipes reverse
+// 358: LesionBlock x1, SetupRecipes reverse
 Recipe {
     create: (3955, 1),
     required: &[Requirement::item(3957, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 358: FrozenPlatform x2
+// 359: FrozenPlatform x2
 Recipe {
     create: (3908, 2),
     required: &[Requirement::item(664, 1)],
     ..BASE
 },
-// 359: IceBlock x1, SetupRecipes reverse
+// 360: IceBlock x1, SetupRecipes reverse
 Recipe {
     create: (664, 1),
     required: &[Requirement::item(3908, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 360: SolarPlatform x2
+// 361: SolarPlatform x2
 Recipe {
     create: (4159, 2),
     required: &[Requirement::item(4229, 1)],
     ..BASE
 },
-// 361: SolarBrick x1, SetupRecipes reverse
+// 362: SolarBrick x1, SetupRecipes reverse
 Recipe {
     create: (4229, 1),
     required: &[Requirement::item(4159, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 362: VortexPlatform x2
+// 363: VortexPlatform x2
 Recipe {
     create: (4180, 2),
     required: &[Requirement::item(4230, 1)],
     ..BASE
 },
-// 363: VortexBrick x1, SetupRecipes reverse
+// 364: VortexBrick x1, SetupRecipes reverse
 Recipe {
     create: (4230, 1),
     required: &[Requirement::item(4180, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 364: NebulaPlatform x2
+// 365: NebulaPlatform x2
 Recipe {
     create: (4201, 2),
     required: &[Requirement::item(4231, 1)],
     ..BASE
 },
-// 365: NebulaBrick x1, SetupRecipes reverse
+// 366: NebulaBrick x1, SetupRecipes reverse
 Recipe {
     create: (4231, 1),
     required: &[Requirement::item(4201, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 366: StardustPlatform x2
+// 367: StardustPlatform x2
 Recipe {
     create: (4222, 2),
     required: &[Requirement::item(4232, 1)],
     ..BASE
 },
-// 367: StardustBrick x1, SetupRecipes reverse
+// 368: StardustBrick x1, SetupRecipes reverse
 Recipe {
     create: (4232, 1),
     required: &[Requirement::item(4222, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 368: SandstonePlatform x2
+// 369: SandstonePlatform x2
 Recipe {
     create: (4311, 2),
     required: &[Requirement::item(4051, 1)],
     ..BASE
 },
-// 369: SmoothSandstone x1, SetupRecipes reverse
+// 370: SmoothSandstone x1, SetupRecipes reverse
 Recipe {
     create: (4051, 1),
     required: &[Requirement::item(4311, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 370: BambooPlatform x2
+// 371: BambooPlatform x2
 Recipe {
     create: (4580, 2),
     required: &[Requirement::item(4564, 1)],
     ..BASE
 },
-// 371: BambooBlock x1, SetupRecipes reverse
+// 372: BambooBlock x1, SetupRecipes reverse
 Recipe {
     create: (4564, 1),
     required: &[Requirement::item(4580, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 372: CoralPlatform x2
+// 373: CoralPlatform x2
 Recipe {
     create: (5162, 2),
     required: &[Requirement::item(5306, 1)],
     ..BASE
 },
-// 373: ReefBlock x1, SetupRecipes reverse
+// 374: ReefBlock x1, SetupRecipes reverse
 Recipe {
     create: (5306, 1),
     required: &[Requirement::item(5162, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 374: BalloonPlatform x2
+// 375: BalloonPlatform x2
 Recipe {
     create: (5183, 2),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 1)],
     ..BASE
 },
-// 375: SillyBalloonGreen x1, SetupRecipes reverse
+// 376: SillyBalloonGreen x1, SetupRecipes reverse
 Recipe {
     create: (3738, 1),
     required: &[Requirement::item(5183, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 376: AshWoodPlatform x2
+// 377: AshWoodPlatform x2
 Recipe {
     create: (5204, 2),
     required: &[Requirement::item(5215, 1)],
     ..BASE
 },
-// 377: AshWood x1, SetupRecipes reverse
+// 378: AshWood x1, SetupRecipes reverse
 Recipe {
     create: (5215, 1),
     required: &[Requirement::item(5204, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 378: EchoPlatform x2
+// 379: EchoPlatform x2
 Recipe {
     create: (5292, 2),
     required: &[Requirement::item(4392, 1)],
     ..BASE
 },
-// 379: EchoBlock x1, SetupRecipes reverse
+// 380: EchoBlock x1, SetupRecipes reverse
 Recipe {
     create: (4392, 1),
     required: &[Requirement::item(5292, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 380: CloudPlatform x2
+// 381: CloudPlatform x2
 Recipe {
     create: (5544, 2),
     required: &[Requirement::item(751, 1)],
     ..BASE
 },
-// 381: Cloud x1, SetupRecipes reverse
+// 382: Cloud x1, SetupRecipes reverse
 Recipe {
     create: (751, 1),
     required: &[Requirement::item(5544, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 382: BlueBrickPlatform x2
+// 383: BlueBrickPlatform x2
 Recipe {
     create: (1384, 2),
     required: &[Requirement::item(134, 1)],
     ..BASE
 },
-// 383: BlueBrick x1, SetupRecipes reverse
+// 384: BlueBrick x1, SetupRecipes reverse
 Recipe {
     create: (134, 1),
     required: &[Requirement::item(1384, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 384: GreenBrickPlatform x2
+// 385: GreenBrickPlatform x2
 Recipe {
     create: (1386, 2),
     required: &[Requirement::item(137, 1)],
     ..BASE
 },
-// 385: GreenBrick x1, SetupRecipes reverse
+// 386: GreenBrick x1, SetupRecipes reverse
 Recipe {
     create: (137, 1),
     required: &[Requirement::item(1386, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 386: PinkBrickPlatform x2
+// 387: PinkBrickPlatform x2
 Recipe {
     create: (1385, 2),
     required: &[Requirement::item(139, 1)],
     ..BASE
 },
-// 387: PinkBrick x1, SetupRecipes reverse
+// 388: PinkBrick x1, SetupRecipes reverse
 Recipe {
     create: (139, 1),
     required: &[Requirement::item(1385, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 388: AetheriumPlatform x2
+// 389: AetheriumPlatform x2
 Recipe {
     create: (5562, 2),
     required: &[Requirement::item(5398, 1)],
     ..BASE
 },
-// 389: ShimmerBrick x1, SetupRecipes reverse
+// 390: ShimmerBrick x1, SetupRecipes reverse
 Recipe {
     create: (5398, 1),
     required: &[Requirement::item(5562, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 390: FallenStarPlatform x2
+// 391: FallenStarPlatform x2
 Recipe {
     create: (5615, 2),
     required: &[Requirement::item(5622, 1)],
     ..BASE
 },
-// 391: FallenStarBlock x1, SetupRecipes reverse
+// 392: FallenStarBlock x1, SetupRecipes reverse
 Recipe {
     create: (5622, 1),
     required: &[Requirement::item(5615, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 392: FeywoodPlatform x2
+// 393: FeywoodPlatform x2
 Recipe {
     create: (5703, 2),
     required: &[Requirement::item(5710, 1)],
     ..BASE
 },
-// 393: Feywood x1, SetupRecipes reverse
+// 394: Feywood x1, SetupRecipes reverse
 Recipe {
     create: (5710, 1),
     required: &[Requirement::item(5703, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 394: HallowedPlatform x2
+// 395: HallowedPlatform x2
 Recipe {
     create: (5726, 2),
     required: &[Requirement::item(5733, 1)],
     ..BASE
 },
-// 395: HallowedBrick x1, SetupRecipes reverse
+// 396: HallowedBrick x1, SetupRecipes reverse
 Recipe {
     create: (5733, 1),
     required: &[Requirement::item(5726, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 396: GothicPlatform x2
+// 397: GothicPlatform x2
 Recipe {
     create: (5751, 2),
     required: &[Requirement::item(5922, 1)],
     ..BASE
 },
-// 397: GothicBrick x1, SetupRecipes reverse
+// 398: GothicBrick x1, SetupRecipes reverse
 Recipe {
     create: (5922, 1),
     required: &[Requirement::item(5751, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 398: DemonitePlatform x2
+// 399: DemonitePlatform x2
 Recipe {
     create: (5770, 2),
     required: &[Requirement::item(577, 1)],
     ..BASE
 },
-// 399: DemoniteBrick x1, SetupRecipes reverse
+// 400: DemoniteBrick x1, SetupRecipes reverse
 Recipe {
     create: (577, 1),
     required: &[Requirement::item(5770, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 400: CrimtanePlatform x2
+// 401: CrimtanePlatform x2
 Recipe {
     create: (5791, 2),
     required: &[Requirement::item(2793, 1)],
     ..BASE
 },
-// 401: CrimtaneBrick x1, SetupRecipes reverse
+// 402: CrimtaneBrick x1, SetupRecipes reverse
 Recipe {
     create: (2793, 1),
     required: &[Requirement::item(5791, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 402: SnowPlatform x2
+// 403: SnowPlatform x2
 Recipe {
     create: (5812, 2),
     required: &[Requirement::item(593, 1)],
     ..BASE
 },
-// 403: SnowBlock x1, SetupRecipes reverse
+// 404: SnowBlock x1, SetupRecipes reverse
 Recipe {
     create: (593, 1),
     required: &[Requirement::item(5812, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 404: FlinxFurPlatform x2
+// 405: FlinxFurPlatform x2
 Recipe {
     create: (5833, 2),
     required: &[Requirement::item(5924, 1)],
     ..BASE
 },
-// 405: FlinxFurBlock x1, SetupRecipes reverse
+// 406: FlinxFurBlock x1, SetupRecipes reverse
 Recipe {
     create: (5924, 1),
     required: &[Requirement::item(5833, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 406: PinePlatform x2
+// 407: PinePlatform x2
 Recipe {
     create: (5852, 2),
     required: &[Requirement::item(1872, 1)],
     ..BASE
 },
-// 407: PineTreeBlock x1, SetupRecipes reverse
+// 408: PineTreeBlock x1, SetupRecipes reverse
 Recipe {
     create: (1872, 1),
     required: &[Requirement::item(5852, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 408: PinePlatform x2
+// 409: PinePlatform x2
 Recipe {
     create: (5852, 2),
     required: &[Requirement::item(5930, 1)],
     ..BASE
 },
-// 409: PineWoodBlock x1, SetupRecipes reverse
+// 410: PineWoodBlock x1, SetupRecipes reverse
 Recipe {
     create: (5930, 1),
     required: &[Requirement::item(5852, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 410: EasterPlatform x2
+// 411: EasterPlatform x2
 Recipe {
     create: (5872, 2),
     required: &[Requirement::item(5920, 1)],
     ..BASE
 },
-// 411: EasterBlock x1, SetupRecipes reverse
+// 412: EasterBlock x1, SetupRecipes reverse
 Recipe {
     create: (5920, 1),
     required: &[Requirement::item(5872, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 412: JellyfishPlatform x2
+// 413: JellyfishPlatform x2
 Recipe {
     create: (5912, 2),
     required: &[Requirement::item(5926, 1)],
     ..BASE
 },
-// 413: JellyfishBlock x1, SetupRecipes reverse
+// 414: JellyfishBlock x1, SetupRecipes reverse
 Recipe {
     create: (5926, 1),
     required: &[Requirement::item(5912, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 414: HarpyPlatform x2
+// 415: HarpyPlatform x2
 Recipe {
     create: (5946, 2),
     required: &[Requirement::item(5953, 1)],
     ..BASE
 },
-// 415: HarpyBlock x1, SetupRecipes reverse
+// 416: HarpyBlock x1, SetupRecipes reverse
 Recipe {
     create: (5953, 1),
     required: &[Requirement::item(5946, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 416: MoonplatePlatform x2
+// 417: MoonplatePlatform x2
 Recipe {
     create: (5989, 2),
     required: &[Requirement::item(5996, 1)],
     ..BASE
 },
-// 417: MoonplateBlock x1, SetupRecipes reverse
+// 418: MoonplateBlock x1, SetupRecipes reverse
 Recipe {
     create: (5996, 1),
     required: &[Requirement::item(5989, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 418: LibrarianPlatform x2
+// 419: LibrarianPlatform x2
 Recipe {
     create: (6012, 2),
     required: &[Requirement::item(6019, 1)],
     ..BASE
 },
-// 419: LibrarianBlock x1, SetupRecipes reverse
+// 420: LibrarianBlock x1, SetupRecipes reverse
 Recipe {
     create: (6019, 1),
     required: &[Requirement::item(6012, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 420: SpikePlatform x2
+// 421: SpikePlatform x2
 Recipe {
     create: (6035, 2),
     required: &[Requirement::item(6042, 1)],
     ..BASE
 },
-// 421: SpikeBlock x1, SetupRecipes reverse
+// 422: SpikeBlock x1, SetupRecipes reverse
 Recipe {
     create: (6042, 1),
     required: &[Requirement::item(6035, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 422: OfficePlatform x2
+// 423: OfficePlatform x2
 Recipe {
     create: (6058, 2),
     required: &[Requirement::item(6065, 1)],
     ..BASE
 },
-// 423: OfficeBlock x1, SetupRecipes reverse
+// 424: OfficeBlock x1, SetupRecipes reverse
 Recipe {
     create: (6065, 1),
     required: &[Requirement::item(6058, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 424: ForbiddenPlatform x2
+// 425: ForbiddenPlatform x2
 Recipe {
     create: (6081, 2),
     required: &[Requirement::item(6088, 1)],
     ..BASE
 },
-// 425: ForbiddenBlock x1, SetupRecipes reverse
+// 426: ForbiddenBlock x1, SetupRecipes reverse
 Recipe {
     create: (6088, 1),
     required: &[Requirement::item(6081, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 426: WaterPlatform x2
+// 427: WaterPlatform x2
 Recipe {
     create: (6103, 2),
     required: &[Requirement::item(6109, 1)],
     ..BASE
 },
-// 427: WaterBlock x1, SetupRecipes reverse
+// 428: WaterBlock x1, SetupRecipes reverse
 Recipe {
     create: (6109, 1),
     required: &[Requirement::item(6103, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 428: BoulderPlatform x2
+// 429: BoulderPlatform x2
 Recipe {
     create: (6125, 2),
     required: &[Requirement::item(6132, 1)],
     ..BASE
 },
-// 429: BoulderBlock x1, SetupRecipes reverse
+// 430: BoulderBlock x1, SetupRecipes reverse
 Recipe {
     create: (6132, 1),
     required: &[Requirement::item(6125, 2)],
     not_decraftable: true,
     ..BASE
 },
-// 430: WoodShelf x2
+// 431: WoodShelf x2
 Recipe {
     create: (1389, 2),
     required: &[Requirement::item(9, 1)],
@@ -2927,7 +2936,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 431: Wood x1, SetupRecipes reverse
+// 432: Wood x1, SetupRecipes reverse
 Recipe {
     create: (9, 1),
     required: &[Requirement::item(1389, 2)],
@@ -2935,7 +2944,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 432: BrassShelf x2
+// 433: BrassShelf x2
 Recipe {
     create: (1388, 2),
     required: &[Requirement::item(145, 1)],
@@ -2943,7 +2952,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 433: CopperBrick x1, SetupRecipes reverse
+// 434: CopperBrick x1, SetupRecipes reverse
 Recipe {
     create: (145, 1),
     required: &[Requirement::item(1388, 2)],
@@ -2951,7 +2960,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 434: DungeonShelf x2
+// 435: DungeonShelf x2
 Recipe {
     create: (1418, 2),
     required: &[Requirement::item(9, 1)],
@@ -2959,7 +2968,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 435: Wood x1, SetupRecipes reverse
+// 436: Wood x1, SetupRecipes reverse
 Recipe {
     create: (9, 1),
     required: &[Requirement::item(1418, 2)],
@@ -2967,7 +2976,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 436: MetalShelf x2
+// 437: MetalShelf x2
 Recipe {
     create: (1387, 2),
     required: &[Requirement::item(717, 1)],
@@ -2975,7 +2984,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 437: TinBrick x1, SetupRecipes reverse
+// 438: TinBrick x1, SetupRecipes reverse
 Recipe {
     create: (717, 1),
     required: &[Requirement::item(1387, 2)],
@@ -2983,121 +2992,121 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 438: StarinaBottle x1
+// 439: StarinaBottle x1
 Recipe {
     create: (1431, 1),
     required: &[Requirement::item(31, 1), Requirement::item(75, 1)],
     ..BASE
 },
-// 439: FireflyinaBottle x1
+// 440: FireflyinaBottle x1
 Recipe {
     create: (1993, 1),
     required: &[Requirement::item(31, 1), Requirement::item(1992, 1)],
     ..BASE
 },
-// 440: LightningBuginaBottle x1
+// 441: LightningBuginaBottle x1
 Recipe {
     create: (2005, 1),
     required: &[Requirement::item(31, 1), Requirement::item(2004, 1)],
     ..BASE
 },
-// 441: LavaflyinaBottle x1
+// 442: LavaflyinaBottle x1
 Recipe {
     create: (4848, 1),
     required: &[Requirement::item(31, 1), Requirement::item(4847, 1)],
     ..BASE
 },
-// 442: ShimmerflyinaBottle x1
+// 443: ShimmerflyinaBottle x1
 Recipe {
     create: (5351, 1),
     required: &[Requirement::item(31, 1), Requirement::item(5350, 1)],
     ..BASE
 },
-// 443: SoulBottleLight x1
+// 444: SoulBottleLight x1
 Recipe {
     create: (4695, 1),
     required: &[Requirement::item(31, 1), Requirement::item(520, 1)],
     ..BASE
 },
-// 444: SoulBottleNight x1
+// 445: SoulBottleNight x1
 Recipe {
     create: (4696, 1),
     required: &[Requirement::item(31, 1), Requirement::item(521, 1)],
     ..BASE
 },
-// 445: SoulBottleFlight x1
+// 446: SoulBottleFlight x1
 Recipe {
     create: (4697, 1),
     required: &[Requirement::item(31, 1), Requirement::item(575, 1)],
     ..BASE
 },
-// 446: SoulBottleSight x1
+// 447: SoulBottleSight x1
 Recipe {
     create: (4698, 1),
     required: &[Requirement::item(31, 1), Requirement::item(549, 1)],
     ..BASE
 },
-// 447: SoulBottleMight x1
+// 448: SoulBottleMight x1
 Recipe {
     create: (4699, 1),
     required: &[Requirement::item(31, 1), Requirement::item(548, 1)],
     ..BASE
 },
-// 448: SoulBottleFright x1
+// 449: SoulBottleFright x1
 Recipe {
     create: (4700, 1),
     required: &[Requirement::item(31, 1), Requirement::item(547, 1)],
     ..BASE
 },
-// 449: HeartLantern x1
+// 450: HeartLantern x1
 Recipe {
     create: (1859, 1),
     required: &[Requirement::item(29, 1), Requirement::item(85, 4)],
     ..BASE
 },
-// 450: ChineseLantern x1
+// 451: ChineseLantern x1
 Recipe {
     create: (344, 1),
     required: &[Requirement::item(225, 5), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 451: TikiTorch x1
+// 452: TikiTorch x1
 Recipe {
     create: (342, 1),
     required: &[Requirement::item(8, 1), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[18],
     ..BASE
 },
-// 452: LampPost x1
+// 453: LampPost x1
 Recipe {
     create: (341, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 2), Requirement::item(8, 1)],
     stations: &[16],
     ..BASE
 },
-// 453: SkullLantern x1
+// 454: SkullLantern x1
 Recipe {
     create: (347, 1),
     required: &[Requirement::item(154, 10), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 454: DeadCellsDisplayJar x1
+// 455: DeadCellsDisplayJar x1
 Recipe {
     create: (5472, 1),
     required: &[Requirement::item(170, 6), Requirement::item(85, 1)],
     stations: &[17],
     ..BASE
 },
-// 455: MagicSandDropper x3
+// 456: MagicSandDropper x3
 Recipe {
     create: (3782, 3),
     required: &[Requirement::item(3186, 3), Requirement::group(169, RecipeGroups::SAND, 1)],
     stations: &[125],
     ..BASE
 },
-// 456: MagicWaterDropper x1
+// 457: MagicWaterDropper x1
 Recipe {
     create: (3182, 1),
     required: &[Requirement::item(3186, 1)],
@@ -3105,7 +3114,7 @@ Recipe {
     need_water: true,
     ..BASE
 },
-// 457: MagicLavaDropper x1
+// 458: MagicLavaDropper x1
 Recipe {
     create: (3184, 1),
     required: &[Requirement::item(3186, 1)],
@@ -3113,7 +3122,7 @@ Recipe {
     need_lava: true,
     ..BASE
 },
-// 458: MagicHoneyDropper x1
+// 459: MagicHoneyDropper x1
 Recipe {
     create: (3185, 1),
     required: &[Requirement::item(3186, 1)],
@@ -3121,7 +3130,7 @@ Recipe {
     need_honey: true,
     ..BASE
 },
-// 459: WaterfallBlock x1
+// 460: WaterfallBlock x1
 Recipe {
     create: (2693, 1),
     required: &[Requirement::item(170, 1)],
@@ -3129,14 +3138,14 @@ Recipe {
     need_water: true,
     ..BASE
 },
-// 460: WaterfallWall x4
+// 461: WaterfallWall x4
 Recipe {
     create: (2169, 4),
     required: &[Requirement::item(2693, 1)],
     stations: &[18],
     ..BASE
 },
-// 461: WaterfallBlock x1, SetupRecipes reverse
+// 462: WaterfallBlock x1, SetupRecipes reverse
 Recipe {
     create: (2693, 1),
     required: &[Requirement::item(2169, 4)],
@@ -3144,7 +3153,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 462: LavafallBlock x1
+// 463: LavafallBlock x1
 Recipe {
     create: (2694, 1),
     required: &[Requirement::item(170, 1)],
@@ -3152,14 +3161,14 @@ Recipe {
     need_lava: true,
     ..BASE
 },
-// 463: LavafallWall x4
+// 464: LavafallWall x4
 Recipe {
     create: (2170, 4),
     required: &[Requirement::item(2694, 1)],
     stations: &[18],
     ..BASE
 },
-// 464: LavafallBlock x1, SetupRecipes reverse
+// 465: LavafallBlock x1, SetupRecipes reverse
 Recipe {
     create: (2694, 1),
     required: &[Requirement::item(2170, 4)],
@@ -3167,7 +3176,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 465: HoneyfallBlock x1
+// 466: HoneyfallBlock x1
 Recipe {
     create: (2787, 1),
     required: &[Requirement::item(170, 1)],
@@ -3175,14 +3184,14 @@ Recipe {
     need_honey: true,
     ..BASE
 },
-// 466: HoneyfallWall x4
+// 467: HoneyfallWall x4
 Recipe {
     create: (2788, 4),
     required: &[Requirement::item(2787, 1)],
     stations: &[18],
     ..BASE
 },
-// 467: HoneyfallBlock x1, SetupRecipes reverse
+// 468: HoneyfallBlock x1, SetupRecipes reverse
 Recipe {
     create: (2787, 1),
     required: &[Requirement::item(2788, 4)],
@@ -3190,21 +3199,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 468: SandFallBlock x1
+// 469: SandFallBlock x1
 Recipe {
     create: (3754, 1),
     required: &[Requirement::item(170, 1), Requirement::item(169, 1)],
     stations: &[125],
     ..BASE
 },
-// 469: SandFallWall x4
+// 470: SandFallWall x4
 Recipe {
     create: (3752, 4),
     required: &[Requirement::item(3754, 1)],
     stations: &[18],
     ..BASE
 },
-// 470: SandFallBlock x1, SetupRecipes reverse
+// 471: SandFallBlock x1, SetupRecipes reverse
 Recipe {
     create: (3754, 1),
     required: &[Requirement::item(3752, 4)],
@@ -3212,21 +3221,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 471: SnowFallBlock x1
+// 472: SnowFallBlock x1
 Recipe {
     create: (3755, 1),
     required: &[Requirement::item(170, 1), Requirement::item(593, 1)],
     stations: &[125],
     ..BASE
 },
-// 472: SnowFallWall x4
+// 473: SnowFallWall x4
 Recipe {
     create: (3753, 4),
     required: &[Requirement::item(3755, 1)],
     stations: &[18],
     ..BASE
 },
-// 473: SnowFallBlock x1, SetupRecipes reverse
+// 474: SnowFallBlock x1, SetupRecipes reverse
 Recipe {
     create: (3755, 1),
     required: &[Requirement::item(3753, 4)],
@@ -3234,14 +3243,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 474: ShimmerFallWall x4
+// 475: ShimmerFallWall x4
 Recipe {
     create: (5494, 4),
     required: &[Requirement::item(5493, 1)],
     stations: &[18],
     ..BASE
 },
-// 475: ShimmerFallBlock x1, SetupRecipes reverse
+// 476: ShimmerFallBlock x1, SetupRecipes reverse
 Recipe {
     create: (5493, 1),
     required: &[Requirement::item(5494, 4)],
@@ -3249,21 +3258,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 476: GoldStarryGlassBlock x10
+// 477: GoldStarryGlassBlock x10
 Recipe {
     create: (4277, 10),
     required: &[Requirement::item(170, 10), Requirement::item(75, 1)],
     stations: &[125],
     ..BASE
 },
-// 477: GoldStarryGlassWall x4
+// 478: GoldStarryGlassWall x4
 Recipe {
     create: (4279, 4),
     required: &[Requirement::item(4277, 1)],
     stations: &[18],
     ..BASE
 },
-// 478: GoldStarryGlassBlock x1, SetupRecipes reverse
+// 479: GoldStarryGlassBlock x1, SetupRecipes reverse
 Recipe {
     create: (4277, 1),
     required: &[Requirement::item(4279, 4)],
@@ -3271,21 +3280,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 479: BlueStarryGlassBlock x10
+// 480: BlueStarryGlassBlock x10
 Recipe {
     create: (4278, 10),
     required: &[Requirement::item(170, 10), Requirement::item(75, 1)],
     stations: &[125],
     ..BASE
 },
-// 480: BlueStarryGlassWall x4
+// 481: BlueStarryGlassWall x4
 Recipe {
     create: (4280, 4),
     required: &[Requirement::item(4278, 1)],
     stations: &[18],
     ..BASE
 },
-// 481: BlueStarryGlassBlock x1, SetupRecipes reverse
+// 482: BlueStarryGlassBlock x1, SetupRecipes reverse
 Recipe {
     create: (4278, 1),
     required: &[Requirement::item(4280, 4)],
@@ -3293,14 +3302,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 482: EchoWall x4
+// 483: EchoWall x4
 Recipe {
     create: (5291, 4),
     required: &[Requirement::item(4392, 1)],
     stations: &[18],
     ..BASE
 },
-// 483: EchoBlock x1, SetupRecipes reverse
+// 484: EchoBlock x1, SetupRecipes reverse
 Recipe {
     create: (4392, 1),
     required: &[Requirement::item(5291, 4)],
@@ -3308,7 +3317,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 484: AmethystEcho x4
+// 485: AmethystEcho x4
 Recipe {
     create: (4490, 4),
     required: &[Requirement::item(4640, 1)],
@@ -3316,7 +3325,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 485: AmethystStoneBlock x1, SetupRecipes reverse
+// 486: AmethystStoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (4640, 1),
     required: &[Requirement::item(4490, 4)],
@@ -3324,7 +3333,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 486: TopazEcho x4
+// 487: TopazEcho x4
 Recipe {
     create: (4491, 4),
     required: &[Requirement::item(4641, 1)],
@@ -3332,7 +3341,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 487: TopazStoneBlock x1, SetupRecipes reverse
+// 488: TopazStoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (4641, 1),
     required: &[Requirement::item(4491, 4)],
@@ -3340,7 +3349,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 488: SapphireEcho x4
+// 489: SapphireEcho x4
 Recipe {
     create: (4492, 4),
     required: &[Requirement::item(4642, 1)],
@@ -3348,7 +3357,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 489: SapphireStoneBlock x1, SetupRecipes reverse
+// 490: SapphireStoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (4642, 1),
     required: &[Requirement::item(4492, 4)],
@@ -3356,7 +3365,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 490: EmeraldEcho x4
+// 491: EmeraldEcho x4
 Recipe {
     create: (4493, 4),
     required: &[Requirement::item(4643, 1)],
@@ -3364,7 +3373,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 491: EmeraldStoneBlock x1, SetupRecipes reverse
+// 492: EmeraldStoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (4643, 1),
     required: &[Requirement::item(4493, 4)],
@@ -3372,7 +3381,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 492: RubyEcho x4
+// 493: RubyEcho x4
 Recipe {
     create: (4494, 4),
     required: &[Requirement::item(4644, 1)],
@@ -3380,7 +3389,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 493: RubyStoneBlock x1, SetupRecipes reverse
+// 494: RubyStoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (4644, 1),
     required: &[Requirement::item(4494, 4)],
@@ -3388,7 +3397,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 494: DiamondEcho x4
+// 495: DiamondEcho x4
 Recipe {
     create: (4495, 4),
     required: &[Requirement::item(4645, 1)],
@@ -3396,7 +3405,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 495: DiamondStoneBlock x1, SetupRecipes reverse
+// 496: DiamondStoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (4645, 1),
     required: &[Requirement::item(4495, 4)],
@@ -3404,7 +3413,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 496: AmberStoneWallEcho x4
+// 497: AmberStoneWallEcho x4
 Recipe {
     create: (4647, 4),
     required: &[Requirement::item(4646, 1)],
@@ -3412,7 +3421,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 497: AmberStoneBlock x1, SetupRecipes reverse
+// 498: AmberStoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (4646, 1),
     required: &[Requirement::item(4647, 4)],
@@ -3420,7 +3429,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 498: Cave1Echo x4
+// 499: Cave1Echo x4
 Recipe {
     create: (4496, 4),
     required: &[Requirement::item(4349, 1)],
@@ -3428,7 +3437,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 499: GreenMoss x1, SetupRecipes reverse
+// 500: GreenMoss x1, SetupRecipes reverse
 Recipe {
     create: (4349, 1),
     required: &[Requirement::item(4496, 4)],
@@ -3436,7 +3445,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 500: Cave2Echo x4
+// 501: Cave2Echo x4
 Recipe {
     create: (4497, 4),
     required: &[Requirement::item(4350, 1)],
@@ -3444,7 +3453,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 501: BrownMoss x1, SetupRecipes reverse
+// 502: BrownMoss x1, SetupRecipes reverse
 Recipe {
     create: (4350, 1),
     required: &[Requirement::item(4497, 4)],
@@ -3452,7 +3461,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 502: Cave3Echo x4
+// 503: Cave3Echo x4
 Recipe {
     create: (4498, 4),
     required: &[Requirement::item(4351, 1)],
@@ -3460,7 +3469,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 503: RedMoss x1, SetupRecipes reverse
+// 504: RedMoss x1, SetupRecipes reverse
 Recipe {
     create: (4351, 1),
     required: &[Requirement::item(4498, 4)],
@@ -3468,7 +3477,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 504: Cave4Echo x4
+// 505: Cave4Echo x4
 Recipe {
     create: (4499, 4),
     required: &[Requirement::item(4352, 1)],
@@ -3476,7 +3485,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 505: BlueMoss x1, SetupRecipes reverse
+// 506: BlueMoss x1, SetupRecipes reverse
 Recipe {
     create: (4352, 1),
     required: &[Requirement::item(4499, 4)],
@@ -3484,7 +3493,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 506: Cave5Echo x4
+// 507: Cave5Echo x4
 Recipe {
     create: (4500, 4),
     required: &[Requirement::item(4353, 1)],
@@ -3492,7 +3501,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 507: PurpleMoss x1, SetupRecipes reverse
+// 508: PurpleMoss x1, SetupRecipes reverse
 Recipe {
     create: (4353, 1),
     required: &[Requirement::item(4500, 4)],
@@ -3500,7 +3509,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 508: SpiderEcho x4
+// 509: SpiderEcho x4
 Recipe {
     create: (4503, 4),
     required: &[Requirement::item(150, 1)],
@@ -3508,7 +3517,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 509: Cobweb x1, SetupRecipes reverse
+// 510: Cobweb x1, SetupRecipes reverse
 Recipe {
     create: (150, 1),
     required: &[Requirement::item(4503, 4)],
@@ -3516,7 +3525,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 510: Jungle1Echo x4
+// 511: Jungle1Echo x4
 Recipe {
     create: (4529, 4),
     required: &[Requirement::item(62, 1)],
@@ -3524,7 +3533,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 511: GrassSeeds x1, SetupRecipes reverse
+// 512: GrassSeeds x1, SetupRecipes reverse
 Recipe {
     create: (62, 1),
     required: &[Requirement::item(4529, 4)],
@@ -3532,7 +3541,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 512: Jungle3Echo x4
+// 513: Jungle3Echo x4
 Recipe {
     create: (4531, 4),
     required: &[Requirement::item(62, 1)],
@@ -3540,7 +3549,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 513: GrassSeeds x1, SetupRecipes reverse
+// 514: GrassSeeds x1, SetupRecipes reverse
 Recipe {
     create: (62, 1),
     required: &[Requirement::item(4531, 4)],
@@ -3548,7 +3557,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 514: Jungle2Echo x4
+// 515: Jungle2Echo x4
 Recipe {
     create: (4530, 4),
     required: &[Requirement::item(195, 1)],
@@ -3556,7 +3565,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 515: JungleGrassSeeds x1, SetupRecipes reverse
+// 516: JungleGrassSeeds x1, SetupRecipes reverse
 Recipe {
     create: (195, 1),
     required: &[Requirement::item(4530, 4)],
@@ -3564,7 +3573,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 516: Jungle4Echo x4
+// 517: Jungle4Echo x4
 Recipe {
     create: (4532, 4),
     required: &[Requirement::item(195, 1)],
@@ -3572,7 +3581,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 517: JungleGrassSeeds x1, SetupRecipes reverse
+// 518: JungleGrassSeeds x1, SetupRecipes reverse
 Recipe {
     create: (195, 1),
     required: &[Requirement::item(4532, 4)],
@@ -3580,7 +3589,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 518: HardenedSandWall x4
+// 519: HardenedSandWall x4
 Recipe {
     create: (3340, 4),
     required: &[Requirement::item(3272, 1)],
@@ -3588,7 +3597,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 519: HardenedSand x1, SetupRecipes reverse
+// 520: HardenedSand x1, SetupRecipes reverse
 Recipe {
     create: (3272, 1),
     required: &[Requirement::item(3340, 4)],
@@ -3596,7 +3605,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 520: CorruptHardenedSandWall x4
+// 521: CorruptHardenedSandWall x4
 Recipe {
     create: (3341, 4),
     required: &[Requirement::item(3274, 1)],
@@ -3604,7 +3613,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 521: CorruptHardenedSand x1, SetupRecipes reverse
+// 522: CorruptHardenedSand x1, SetupRecipes reverse
 Recipe {
     create: (3274, 1),
     required: &[Requirement::item(3341, 4)],
@@ -3612,7 +3621,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 522: CrimsonHardenedSandWall x4
+// 523: CrimsonHardenedSandWall x4
 Recipe {
     create: (3342, 4),
     required: &[Requirement::item(3275, 1)],
@@ -3620,7 +3629,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 523: CrimsonHardenedSand x1, SetupRecipes reverse
+// 524: CrimsonHardenedSand x1, SetupRecipes reverse
 Recipe {
     create: (3275, 1),
     required: &[Requirement::item(3342, 4)],
@@ -3628,7 +3637,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 524: HallowHardenedSandWall x4
+// 525: HallowHardenedSandWall x4
 Recipe {
     create: (3343, 4),
     required: &[Requirement::item(3338, 1)],
@@ -3636,7 +3645,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 525: HallowHardenedSand x1, SetupRecipes reverse
+// 526: HallowHardenedSand x1, SetupRecipes reverse
 Recipe {
     create: (3338, 1),
     required: &[Requirement::item(3343, 4)],
@@ -3644,7 +3653,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 526: CorruptSandstoneWall x4
+// 527: CorruptSandstoneWall x4
 Recipe {
     create: (3344, 4),
     required: &[Requirement::item(3276, 1)],
@@ -3652,7 +3661,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 527: CorruptSandstone x1, SetupRecipes reverse
+// 528: CorruptSandstone x1, SetupRecipes reverse
 Recipe {
     create: (3276, 1),
     required: &[Requirement::item(3344, 4)],
@@ -3660,7 +3669,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 528: CrimsonSandstoneWall x4
+// 529: CrimsonSandstoneWall x4
 Recipe {
     create: (3345, 4),
     required: &[Requirement::item(3277, 1)],
@@ -3668,7 +3677,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 529: CrimsonSandstone x1, SetupRecipes reverse
+// 530: CrimsonSandstone x1, SetupRecipes reverse
 Recipe {
     create: (3277, 1),
     required: &[Requirement::item(3345, 4)],
@@ -3676,7 +3685,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 530: HallowSandstoneWall x4
+// 531: HallowSandstoneWall x4
 Recipe {
     create: (3346, 4),
     required: &[Requirement::item(3339, 1)],
@@ -3684,7 +3693,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 531: HallowSandstone x1, SetupRecipes reverse
+// 532: HallowSandstone x1, SetupRecipes reverse
 Recipe {
     create: (3339, 1),
     required: &[Requirement::item(3346, 4)],
@@ -3692,7 +3701,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 532: DesertFossilWall x4
+// 533: DesertFossilWall x4
 Recipe {
     create: (3348, 4),
     required: &[Requirement::item(3347, 1)],
@@ -3700,7 +3709,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 533: DesertFossil x1, SetupRecipes reverse
+// 534: DesertFossil x1, SetupRecipes reverse
 Recipe {
     create: (3347, 1),
     required: &[Requirement::item(3348, 4)],
@@ -3708,14 +3717,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 534: RainbowBrickWall x4
+// 535: RainbowBrickWall x4
 Recipe {
     create: (663, 4),
     required: &[Requirement::item(662, 1)],
     stations: &[18],
     ..BASE
 },
-// 535: RainbowBrick x1, SetupRecipes reverse
+// 536: RainbowBrick x1, SetupRecipes reverse
 Recipe {
     create: (662, 1),
     required: &[Requirement::item(663, 4)],
@@ -3723,21 +3732,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 536: ConfettiBlock x1
+// 537: ConfettiBlock x1
 Recipe {
     create: (2695, 1),
     required: &[Requirement::item(1345, 1), Requirement::item(170, 1)],
     stations: &[125],
     ..BASE
 },
-// 537: ConfettiWall x4
+// 538: ConfettiWall x4
 Recipe {
     create: (2696, 4),
     required: &[Requirement::item(2695, 1)],
     stations: &[18],
     ..BASE
 },
-// 538: ConfettiBlock x1, SetupRecipes reverse
+// 539: ConfettiBlock x1, SetupRecipes reverse
 Recipe {
     create: (2695, 1),
     required: &[Requirement::item(2696, 4)],
@@ -3745,21 +3754,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 539: ConfettiBlockBlack x1
+// 540: ConfettiBlockBlack x1
 Recipe {
     create: (2697, 1),
     required: &[Requirement::item(1345, 1), Requirement::item(170, 1)],
     stations: &[125],
     ..BASE
 },
-// 540: ConfettiWallBlack x4
+// 541: ConfettiWallBlack x4
 Recipe {
     create: (2698, 4),
     required: &[Requirement::item(2697, 1)],
     stations: &[18],
     ..BASE
 },
-// 541: ConfettiBlockBlack x1, SetupRecipes reverse
+// 542: ConfettiBlockBlack x1, SetupRecipes reverse
 Recipe {
     create: (2697, 1),
     required: &[Requirement::item(2698, 4)],
@@ -3767,69 +3776,69 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 542: PartyBundleOfBalloonTile x1
+// 543: PartyBundleOfBalloonTile x1
 Recipe {
     create: (3748, 1),
     required: &[Requirement::item(3743, 1), Requirement::item(3744, 1), Requirement::item(3745, 1)],
     ..BASE
 },
-// 543: ShellPileBlock x4
+// 544: ShellPileBlock x4
 Recipe {
     create: (4090, 4),
     required: &[Requirement::item(2625, 1)],
     stations: &[283],
     ..BASE
 },
-// 544: ShellPileBlock x4
+// 545: ShellPileBlock x4
 Recipe {
     create: (4090, 4),
     required: &[Requirement::item(4071, 1)],
     stations: &[283],
     ..BASE
 },
-// 545: ShellPileBlock x4
+// 546: ShellPileBlock x4
 Recipe {
     create: (4090, 4),
     required: &[Requirement::item(4072, 1)],
     stations: &[283],
     ..BASE
 },
-// 546: ShellPileBlock x4
+// 547: ShellPileBlock x4
 Recipe {
     create: (4090, 4),
     required: &[Requirement::item(4073, 1)],
     stations: &[283],
     ..BASE
 },
-// 547: ShellPileBlock x4
+// 548: ShellPileBlock x4
 Recipe {
     create: (4090, 4),
     required: &[Requirement::item(2626, 1)],
     stations: &[283],
     ..BASE
 },
-// 548: ShellPileBlock x4
+// 549: ShellPileBlock x4
 Recipe {
     create: (4090, 4),
     required: &[Requirement::item(275, 1)],
     stations: &[283],
     ..BASE
 },
-// 549: DontHurtComboBook x1
+// 550: DontHurtComboBook x1
 Recipe {
     create: (5323, 1),
     required: &[Requirement::group(4767, RecipeGroups::CRITTER_GUIDES, 1), Requirement::group(5309, RecipeGroups::NATURE_GUIDES, 1)],
     stations: &[18],
     ..BASE
 },
-// 550: CloudWall x4
+// 551: CloudWall x4
 Recipe {
     create: (752, 4),
     required: &[Requirement::item(751, 1)],
     stations: &[18],
     ..BASE
 },
-// 551: Cloud x1, SetupRecipes reverse
+// 552: Cloud x1, SetupRecipes reverse
 Recipe {
     create: (751, 1),
     required: &[Requirement::item(752, 4)],
@@ -3837,49 +3846,49 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 552: ClayPot x1
+// 553: ClayPot x1
 Recipe {
     create: (222, 1),
     required: &[Requirement::item(133, 5)],
     stations: &[17],
     ..BASE
 },
-// 553: PinkVase x1
+// 554: PinkVase x1
 Recipe {
     create: (350, 1),
     required: &[Requirement::item(133, 4)],
     stations: &[17],
     ..BASE
 },
-// 554: Bowl x1
+// 555: Bowl x1
 Recipe {
     create: (356, 1),
     required: &[Requirement::item(133, 2)],
     stations: &[17],
     ..BASE
 },
-// 555: FoodPlatter x1
+// 556: FoodPlatter x1
 Recipe {
     create: (4326, 1),
     required: &[Requirement::item(133, 2)],
     stations: &[17],
     ..BASE
 },
-// 556: Glass x1
+// 557: Glass x1
 Recipe {
     create: (170, 1),
     required: &[Requirement::group(169, RecipeGroups::SAND, 2)],
     stations: &[17],
     ..BASE
 },
-// 557: GlassWall x4
+// 558: GlassWall x4
 Recipe {
     create: (392, 4),
     required: &[Requirement::item(170, 1)],
     stations: &[18],
     ..BASE
 },
-// 558: Glass x1, SetupRecipes reverse
+// 559: Glass x1, SetupRecipes reverse
 Recipe {
     create: (170, 1),
     required: &[Requirement::item(392, 4)],
@@ -3887,70 +3896,70 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 559: PurpleStainedGlass x20
+// 560: PurpleStainedGlass x20
 Recipe {
     create: (1267, 20),
     required: &[Requirement::item(392, 20), Requirement::item(181, 1)],
     stations: &[18],
     ..BASE
 },
-// 560: YellowStainedGlass x20
+// 561: YellowStainedGlass x20
 Recipe {
     create: (1268, 20),
     required: &[Requirement::item(392, 20), Requirement::item(180, 1)],
     stations: &[18],
     ..BASE
 },
-// 561: BlueStainedGlass x20
+// 562: BlueStainedGlass x20
 Recipe {
     create: (1269, 20),
     required: &[Requirement::item(392, 20), Requirement::item(177, 1)],
     stations: &[18],
     ..BASE
 },
-// 562: GreenStainedGlass x20
+// 563: GreenStainedGlass x20
 Recipe {
     create: (1270, 20),
     required: &[Requirement::item(392, 20), Requirement::item(179, 1)],
     stations: &[18],
     ..BASE
 },
-// 563: RedStainedGlass x20
+// 564: RedStainedGlass x20
 Recipe {
     create: (1271, 20),
     required: &[Requirement::item(392, 20), Requirement::item(178, 1)],
     stations: &[18],
     ..BASE
 },
-// 564: OrangeStainedGlass x20
+// 565: OrangeStainedGlass x20
 Recipe {
     create: (4260, 20),
     required: &[Requirement::item(392, 20), Requirement::item(999, 1)],
     stations: &[18],
     ..BASE
 },
-// 565: MulticoloredStainedGlass x50
+// 566: MulticoloredStainedGlass x50
 Recipe {
     create: (1272, 50),
     required: &[Requirement::item(392, 50), Requirement::item(181, 1), Requirement::item(180, 1), Requirement::item(177, 1), Requirement::item(179, 1), Requirement::item(178, 1)],
     stations: &[18],
     ..BASE
 },
-// 566: AmethystGemsparkBlock x20
+// 567: AmethystGemsparkBlock x20
 Recipe {
     create: (1970, 20),
     required: &[Requirement::item(170, 20), Requirement::item(181, 1)],
     stations: &[18],
     ..BASE
 },
-// 567: AmethystGemsparkWall x4
+// 568: AmethystGemsparkWall x4
 Recipe {
     create: (2679, 4),
     required: &[Requirement::item(1970, 1)],
     stations: &[18],
     ..BASE
 },
-// 568: AmethystGemsparkBlock x1, SetupRecipes reverse
+// 569: AmethystGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1970, 1),
     required: &[Requirement::item(2679, 4)],
@@ -3958,14 +3967,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 569: AmethystGemsparkWallOff x4
+// 570: AmethystGemsparkWallOff x4
 Recipe {
     create: (2680, 4),
     required: &[Requirement::item(1970, 1)],
     stations: &[18],
     ..BASE
 },
-// 570: AmethystGemsparkBlock x1, SetupRecipes reverse
+// 571: AmethystGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1970, 1),
     required: &[Requirement::item(2680, 4)],
@@ -3973,21 +3982,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 571: TopazGemsparkBlock x20
+// 572: TopazGemsparkBlock x20
 Recipe {
     create: (1971, 20),
     required: &[Requirement::item(170, 20), Requirement::item(180, 1)],
     stations: &[18],
     ..BASE
 },
-// 572: TopazGemsparkWall x4
+// 573: TopazGemsparkWall x4
 Recipe {
     create: (2689, 4),
     required: &[Requirement::item(1971, 1)],
     stations: &[18],
     ..BASE
 },
-// 573: TopazGemsparkBlock x1, SetupRecipes reverse
+// 574: TopazGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1971, 1),
     required: &[Requirement::item(2689, 4)],
@@ -3995,14 +4004,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 574: TopazGemsparkWallOff x4
+// 575: TopazGemsparkWallOff x4
 Recipe {
     create: (2690, 4),
     required: &[Requirement::item(1971, 1)],
     stations: &[18],
     ..BASE
 },
-// 575: TopazGemsparkBlock x1, SetupRecipes reverse
+// 576: TopazGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1971, 1),
     required: &[Requirement::item(2690, 4)],
@@ -4010,21 +4019,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 576: SapphireGemsparkBlock x20
+// 577: SapphireGemsparkBlock x20
 Recipe {
     create: (1972, 20),
     required: &[Requirement::item(170, 20), Requirement::item(177, 1)],
     stations: &[18],
     ..BASE
 },
-// 577: SapphireGemsparkWall x4
+// 578: SapphireGemsparkWall x4
 Recipe {
     create: (2687, 4),
     required: &[Requirement::item(1972, 1)],
     stations: &[18],
     ..BASE
 },
-// 578: SapphireGemsparkBlock x1, SetupRecipes reverse
+// 579: SapphireGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1972, 1),
     required: &[Requirement::item(2687, 4)],
@@ -4032,14 +4041,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 579: SapphireGemsparkWallOff x4
+// 580: SapphireGemsparkWallOff x4
 Recipe {
     create: (2688, 4),
     required: &[Requirement::item(1972, 1)],
     stations: &[18],
     ..BASE
 },
-// 580: SapphireGemsparkBlock x1, SetupRecipes reverse
+// 581: SapphireGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1972, 1),
     required: &[Requirement::item(2688, 4)],
@@ -4047,21 +4056,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 581: EmeraldGemsparkBlock x20
+// 582: EmeraldGemsparkBlock x20
 Recipe {
     create: (1973, 20),
     required: &[Requirement::item(170, 20), Requirement::item(179, 1)],
     stations: &[18],
     ..BASE
 },
-// 582: EmeraldGemsparkWall x4
+// 583: EmeraldGemsparkWall x4
 Recipe {
     create: (2683, 4),
     required: &[Requirement::item(1973, 1)],
     stations: &[18],
     ..BASE
 },
-// 583: EmeraldGemsparkBlock x1, SetupRecipes reverse
+// 584: EmeraldGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1973, 1),
     required: &[Requirement::item(2683, 4)],
@@ -4069,14 +4078,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 584: EmeraldGemsparkWallOff x4
+// 585: EmeraldGemsparkWallOff x4
 Recipe {
     create: (2684, 4),
     required: &[Requirement::item(1973, 1)],
     stations: &[18],
     ..BASE
 },
-// 585: EmeraldGemsparkBlock x1, SetupRecipes reverse
+// 586: EmeraldGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1973, 1),
     required: &[Requirement::item(2684, 4)],
@@ -4084,21 +4093,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 586: RubyGemsparkBlock x20
+// 587: RubyGemsparkBlock x20
 Recipe {
     create: (1974, 20),
     required: &[Requirement::item(170, 20), Requirement::item(178, 1)],
     stations: &[18],
     ..BASE
 },
-// 587: RubyGemsparkWall x4
+// 588: RubyGemsparkWall x4
 Recipe {
     create: (2685, 4),
     required: &[Requirement::item(1974, 1)],
     stations: &[18],
     ..BASE
 },
-// 588: RubyGemsparkBlock x1, SetupRecipes reverse
+// 589: RubyGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1974, 1),
     required: &[Requirement::item(2685, 4)],
@@ -4106,14 +4115,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 589: RubyGemsparkWallOff x4
+// 590: RubyGemsparkWallOff x4
 Recipe {
     create: (2686, 4),
     required: &[Requirement::item(1974, 1)],
     stations: &[18],
     ..BASE
 },
-// 590: RubyGemsparkBlock x1, SetupRecipes reverse
+// 591: RubyGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1974, 1),
     required: &[Requirement::item(2686, 4)],
@@ -4121,21 +4130,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 591: DiamondGemsparkBlock x20
+// 592: DiamondGemsparkBlock x20
 Recipe {
     create: (1975, 20),
     required: &[Requirement::item(170, 20), Requirement::item(182, 1)],
     stations: &[18],
     ..BASE
 },
-// 592: DiamondGemsparkWall x4
+// 593: DiamondGemsparkWall x4
 Recipe {
     create: (2681, 4),
     required: &[Requirement::item(1975, 1)],
     stations: &[18],
     ..BASE
 },
-// 593: DiamondGemsparkBlock x1, SetupRecipes reverse
+// 594: DiamondGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1975, 1),
     required: &[Requirement::item(2681, 4)],
@@ -4143,14 +4152,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 594: DiamondGemsparkWallOff x4
+// 595: DiamondGemsparkWallOff x4
 Recipe {
     create: (2682, 4),
     required: &[Requirement::item(1975, 1)],
     stations: &[18],
     ..BASE
 },
-// 595: DiamondGemsparkBlock x1, SetupRecipes reverse
+// 596: DiamondGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1975, 1),
     required: &[Requirement::item(2682, 4)],
@@ -4158,21 +4167,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 596: AmberGemsparkBlock x20
+// 597: AmberGemsparkBlock x20
 Recipe {
     create: (1976, 20),
     required: &[Requirement::item(170, 20), Requirement::item(999, 1)],
     stations: &[18],
     ..BASE
 },
-// 597: AmberGemsparkWall x4
+// 598: AmberGemsparkWall x4
 Recipe {
     create: (2677, 4),
     required: &[Requirement::item(1976, 1)],
     stations: &[18],
     ..BASE
 },
-// 598: AmberGemsparkBlock x1, SetupRecipes reverse
+// 599: AmberGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1976, 1),
     required: &[Requirement::item(2677, 4)],
@@ -4180,14 +4189,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 599: AmberGemsparkWallOff x4
+// 600: AmberGemsparkWallOff x4
 Recipe {
     create: (2678, 4),
     required: &[Requirement::item(1976, 1)],
     stations: &[18],
     ..BASE
 },
-// 600: AmberGemsparkBlock x1, SetupRecipes reverse
+// 601: AmberGemsparkBlock x1, SetupRecipes reverse
 Recipe {
     create: (1976, 1),
     required: &[Requirement::item(2678, 4)],
@@ -4195,35 +4204,35 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 601: CrackedBlueBrick x2
+// 602: CrackedBlueBrick x2
 Recipe {
     create: (4238, 2),
     required: &[Requirement::item(134, 1)],
     stations: &[283],
     ..BASE
 },
-// 602: CrackedGreenBrick x2
+// 603: CrackedGreenBrick x2
 Recipe {
     create: (4239, 2),
     required: &[Requirement::item(137, 1)],
     stations: &[283],
     ..BASE
 },
-// 603: CrackedPinkBrick x2
+// 604: CrackedPinkBrick x2
 Recipe {
     create: (4240, 2),
     required: &[Requirement::item(139, 1)],
     stations: &[283],
     ..BASE
 },
-// 604: BlueBrickWall x4
+// 605: BlueBrickWall x4
 Recipe {
     create: (135, 4),
     required: &[Requirement::item(134, 1)],
     stations: &[283],
     ..BASE
 },
-// 605: BlueBrick x1, SetupRecipes reverse
+// 606: BlueBrick x1, SetupRecipes reverse
 Recipe {
     create: (134, 1),
     required: &[Requirement::item(135, 4)],
@@ -4231,14 +4240,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 606: BlueTiledWall x4
+// 607: BlueTiledWall x4
 Recipe {
     create: (1379, 4),
     required: &[Requirement::item(134, 1)],
     stations: &[283],
     ..BASE
 },
-// 607: BlueBrick x1, SetupRecipes reverse
+// 608: BlueBrick x1, SetupRecipes reverse
 Recipe {
     create: (134, 1),
     required: &[Requirement::item(1379, 4)],
@@ -4246,14 +4255,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 608: BlueSlabWall x4
+// 609: BlueSlabWall x4
 Recipe {
     create: (1378, 4),
     required: &[Requirement::item(134, 1)],
     stations: &[283],
     ..BASE
 },
-// 609: BlueBrick x1, SetupRecipes reverse
+// 610: BlueBrick x1, SetupRecipes reverse
 Recipe {
     create: (134, 1),
     required: &[Requirement::item(1378, 4)],
@@ -4261,14 +4270,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 610: GreenBrickWall x4
+// 611: GreenBrickWall x4
 Recipe {
     create: (138, 4),
     required: &[Requirement::item(137, 1)],
     stations: &[283],
     ..BASE
 },
-// 611: GreenBrick x1, SetupRecipes reverse
+// 612: GreenBrick x1, SetupRecipes reverse
 Recipe {
     create: (137, 1),
     required: &[Requirement::item(138, 4)],
@@ -4276,14 +4285,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 612: GreenTiledWall x4
+// 613: GreenTiledWall x4
 Recipe {
     create: (1383, 4),
     required: &[Requirement::item(137, 1)],
     stations: &[283],
     ..BASE
 },
-// 613: GreenBrick x1, SetupRecipes reverse
+// 614: GreenBrick x1, SetupRecipes reverse
 Recipe {
     create: (137, 1),
     required: &[Requirement::item(1383, 4)],
@@ -4291,14 +4300,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 614: GreenSlabWall x4
+// 615: GreenSlabWall x4
 Recipe {
     create: (1382, 4),
     required: &[Requirement::item(137, 1)],
     stations: &[283],
     ..BASE
 },
-// 615: GreenBrick x1, SetupRecipes reverse
+// 616: GreenBrick x1, SetupRecipes reverse
 Recipe {
     create: (137, 1),
     required: &[Requirement::item(1382, 4)],
@@ -4306,14 +4315,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 616: PinkBrickWall x4
+// 617: PinkBrickWall x4
 Recipe {
     create: (140, 4),
     required: &[Requirement::item(139, 1)],
     stations: &[283],
     ..BASE
 },
-// 617: PinkBrick x1, SetupRecipes reverse
+// 618: PinkBrick x1, SetupRecipes reverse
 Recipe {
     create: (139, 1),
     required: &[Requirement::item(140, 4)],
@@ -4321,14 +4330,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 618: PinkTiledWall x4
+// 619: PinkTiledWall x4
 Recipe {
     create: (1381, 4),
     required: &[Requirement::item(139, 1)],
     stations: &[283],
     ..BASE
 },
-// 619: PinkBrick x1, SetupRecipes reverse
+// 620: PinkBrick x1, SetupRecipes reverse
 Recipe {
     create: (139, 1),
     required: &[Requirement::item(1381, 4)],
@@ -4336,14 +4345,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 620: PinkSlabWall x4
+// 621: PinkSlabWall x4
 Recipe {
     create: (1380, 4),
     required: &[Requirement::item(139, 1)],
     stations: &[283],
     ..BASE
 },
-// 621: PinkBrick x1, SetupRecipes reverse
+// 622: PinkBrick x1, SetupRecipes reverse
 Recipe {
     create: (139, 1),
     required: &[Requirement::item(1380, 4)],
@@ -4351,21 +4360,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 622: StoneSlab x1
+// 623: StoneSlab x1
 Recipe {
     create: (2119, 1),
     required: &[Requirement::item(3, 1)],
     stations: &[283],
     ..BASE
 },
-// 623: StoneSlabWall x4
+// 624: StoneSlabWall x4
 Recipe {
     create: (2433, 4),
     required: &[Requirement::item(2119, 1)],
     stations: &[18],
     ..BASE
 },
-// 624: StoneSlab x1, SetupRecipes reverse
+// 625: StoneSlab x1, SetupRecipes reverse
 Recipe {
     create: (2119, 1),
     required: &[Requirement::item(2433, 4)],
@@ -4373,7 +4382,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 625: AccentSlab x1
+// 626: AccentSlab x1
 Recipe {
     create: (4962, 1),
     required: &[Requirement::item(3, 1)],
@@ -4381,42 +4390,42 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 626: SandstoneSlab x1
+// 627: SandstoneSlab x1
 Recipe {
     create: (2120, 1),
     required: &[Requirement::item(169, 1)],
     stations: &[283],
     ..BASE
 },
-// 627: HardenedSand x1
+// 628: HardenedSand x1
 Recipe {
     create: (3272, 1),
     required: &[Requirement::item(169, 1), Requirement::item(2, 1)],
     stations: &[220],
     ..BASE
 },
-// 628: Sandstone x1
+// 629: Sandstone x1
 Recipe {
     create: (3271, 1),
     required: &[Requirement::item(169, 1), Requirement::item(3, 1)],
     stations: &[220],
     ..BASE
 },
-// 629: CopperPlating x5
+// 630: CopperPlating x5
 Recipe {
     create: (2173, 5),
     required: &[Requirement::item(3, 5), Requirement::item(12, 1)],
     stations: &[283],
     ..BASE
 },
-// 630: CopperPlatingWall x4
+// 631: CopperPlatingWall x4
 Recipe {
     create: (2432, 4),
     required: &[Requirement::item(2173, 1)],
     stations: &[18],
     ..BASE
 },
-// 631: CopperPlating x1, SetupRecipes reverse
+// 632: CopperPlating x1, SetupRecipes reverse
 Recipe {
     create: (2173, 1),
     required: &[Requirement::item(2432, 4)],
@@ -4424,21 +4433,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 632: TinPlating x5
+// 633: TinPlating x5
 Recipe {
     create: (2692, 5),
     required: &[Requirement::item(3, 5), Requirement::item(699, 1)],
     stations: &[283],
     ..BASE
 },
-// 633: TinPlatingWall x4
+// 634: TinPlatingWall x4
 Recipe {
     create: (2691, 4),
     required: &[Requirement::item(2692, 1)],
     stations: &[18],
     ..BASE
 },
-// 634: TinPlating x1, SetupRecipes reverse
+// 635: TinPlating x1, SetupRecipes reverse
 Recipe {
     create: (2692, 1),
     required: &[Requirement::item(2691, 4)],
@@ -4446,21 +4455,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 635: AsphaltBlock x1
+// 636: AsphaltBlock x1
 Recipe {
     create: (775, 1),
     required: &[Requirement::item(3, 2), Requirement::item(23, 1)],
     stations: &[217],
     ..BASE
 },
-// 636: LihzahrdBrickWall x4
+// 637: LihzahrdBrickWall x4
 Recipe {
     create: (1102, 4),
     required: &[Requirement::item(1101, 1)],
     stations: &[18],
     ..BASE
 },
-// 637: LihzahrdBrick x1, SetupRecipes reverse
+// 638: LihzahrdBrick x1, SetupRecipes reverse
 Recipe {
     create: (1101, 1),
     required: &[Requirement::item(1102, 4)],
@@ -4468,28 +4477,28 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 638: AshBlock x1
+// 639: AshBlock x1
 Recipe {
     create: (172, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 5)],
     stations: &[77],
     ..BASE
 },
-// 639: GrayBrick x1
+// 640: GrayBrick x1
 Recipe {
     create: (129, 1),
     required: &[Requirement::item(3, 2)],
     stations: &[17],
     ..BASE
 },
-// 640: GrayBrickWall x4
+// 641: GrayBrickWall x4
 Recipe {
     create: (130, 4),
     required: &[Requirement::item(129, 1)],
     stations: &[18],
     ..BASE
 },
-// 641: GrayBrick x1, SetupRecipes reverse
+// 642: GrayBrick x1, SetupRecipes reverse
 Recipe {
     create: (129, 1),
     required: &[Requirement::item(130, 4)],
@@ -4497,21 +4506,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 642: RedBrick x1
+// 643: RedBrick x1
 Recipe {
     create: (131, 1),
     required: &[Requirement::item(133, 2)],
     stations: &[17],
     ..BASE
 },
-// 643: RedBrickWall x4
+// 644: RedBrickWall x4
 Recipe {
     create: (132, 4),
     required: &[Requirement::item(131, 1)],
     stations: &[18],
     ..BASE
 },
-// 644: RedBrick x1, SetupRecipes reverse
+// 645: RedBrick x1, SetupRecipes reverse
 Recipe {
     create: (131, 1),
     required: &[Requirement::item(132, 4)],
@@ -4519,21 +4528,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 645: CopperBrick x5
+// 646: CopperBrick x5
 Recipe {
     create: (145, 5),
     required: &[Requirement::item(3, 5), Requirement::item(12, 1)],
     stations: &[17],
     ..BASE
 },
-// 646: CopperBrickWall x4
+// 647: CopperBrickWall x4
 Recipe {
     create: (146, 4),
     required: &[Requirement::item(145, 1)],
     stations: &[18],
     ..BASE
 },
-// 647: CopperBrick x1, SetupRecipes reverse
+// 648: CopperBrick x1, SetupRecipes reverse
 Recipe {
     create: (145, 1),
     required: &[Requirement::item(146, 4)],
@@ -4541,21 +4550,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 648: IronBrick x5
+// 649: IronBrick x5
 Recipe {
     create: (3951, 5),
     required: &[Requirement::item(3, 5), Requirement::item(11, 1)],
     stations: &[17],
     ..BASE
 },
-// 649: IronBrickWall x4
+// 650: IronBrickWall x4
 Recipe {
     create: (3952, 4),
     required: &[Requirement::item(3951, 1)],
     stations: &[18],
     ..BASE
 },
-// 650: IronBrick x1, SetupRecipes reverse
+// 651: IronBrick x1, SetupRecipes reverse
 Recipe {
     create: (3951, 1),
     required: &[Requirement::item(3952, 4)],
@@ -4563,21 +4572,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 651: LeadBrick x5
+// 652: LeadBrick x5
 Recipe {
     create: (3953, 5),
     required: &[Requirement::item(3, 5), Requirement::item(700, 1)],
     stations: &[17],
     ..BASE
 },
-// 652: LeadBrickWall x4
+// 653: LeadBrickWall x4
 Recipe {
     create: (3954, 4),
     required: &[Requirement::item(3953, 1)],
     stations: &[18],
     ..BASE
 },
-// 653: LeadBrick x1, SetupRecipes reverse
+// 654: LeadBrick x1, SetupRecipes reverse
 Recipe {
     create: (3953, 1),
     required: &[Requirement::item(3954, 4)],
@@ -4585,14 +4594,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 654: SilverBrickWall x4
+// 655: SilverBrickWall x4
 Recipe {
     create: (144, 4),
     required: &[Requirement::item(143, 1)],
     stations: &[18],
     ..BASE
 },
-// 655: SilverBrick x1, SetupRecipes reverse
+// 656: SilverBrick x1, SetupRecipes reverse
 Recipe {
     create: (143, 1),
     required: &[Requirement::item(144, 4)],
@@ -4600,21 +4609,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 656: SilverBrick x5
+// 657: SilverBrick x5
 Recipe {
     create: (143, 5),
     required: &[Requirement::item(3, 5), Requirement::item(14, 1)],
     stations: &[17],
     ..BASE
 },
-// 657: GoldBrickWall x4
+// 658: GoldBrickWall x4
 Recipe {
     create: (142, 4),
     required: &[Requirement::item(141, 1)],
     stations: &[18],
     ..BASE
 },
-// 658: GoldBrick x1, SetupRecipes reverse
+// 659: GoldBrick x1, SetupRecipes reverse
 Recipe {
     create: (141, 1),
     required: &[Requirement::item(142, 4)],
@@ -4622,28 +4631,28 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 659: GoldBrick x5
+// 660: GoldBrick x5
 Recipe {
     create: (141, 5),
     required: &[Requirement::item(3, 5), Requirement::item(13, 1)],
     stations: &[17],
     ..BASE
 },
-// 660: TinBrick x5
+// 661: TinBrick x5
 Recipe {
     create: (717, 5),
     required: &[Requirement::item(3, 5), Requirement::item(699, 1)],
     stations: &[17],
     ..BASE
 },
-// 661: TinBrickWall x4
+// 662: TinBrickWall x4
 Recipe {
     create: (720, 4),
     required: &[Requirement::item(717, 1)],
     stations: &[18],
     ..BASE
 },
-// 662: TinBrick x1, SetupRecipes reverse
+// 663: TinBrick x1, SetupRecipes reverse
 Recipe {
     create: (717, 1),
     required: &[Requirement::item(720, 4)],
@@ -4651,14 +4660,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 663: TungstenBrickWall x4
+// 664: TungstenBrickWall x4
 Recipe {
     create: (721, 4),
     required: &[Requirement::item(718, 1)],
     stations: &[18],
     ..BASE
 },
-// 664: TungstenBrick x1, SetupRecipes reverse
+// 665: TungstenBrick x1, SetupRecipes reverse
 Recipe {
     create: (718, 1),
     required: &[Requirement::item(721, 4)],
@@ -4666,21 +4675,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 665: TungstenBrick x5
+// 666: TungstenBrick x5
 Recipe {
     create: (718, 5),
     required: &[Requirement::item(3, 5), Requirement::item(701, 1)],
     stations: &[17],
     ..BASE
 },
-// 666: PlatinumBrickWall x4
+// 667: PlatinumBrickWall x4
 Recipe {
     create: (722, 4),
     required: &[Requirement::item(719, 1)],
     stations: &[18],
     ..BASE
 },
-// 667: PlatinumBrick x1, SetupRecipes reverse
+// 668: PlatinumBrick x1, SetupRecipes reverse
 Recipe {
     create: (719, 1),
     required: &[Requirement::item(722, 4)],
@@ -4688,28 +4697,28 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 668: PlatinumBrick x5
+// 669: PlatinumBrick x5
 Recipe {
     create: (719, 5),
     required: &[Requirement::item(3, 5), Requirement::item(702, 1)],
     stations: &[17],
     ..BASE
 },
-// 669: HellstoneBrick x5
+// 670: HellstoneBrick x5
 Recipe {
     create: (214, 5),
     required: &[Requirement::item(3, 5), Requirement::item(174, 1)],
     stations: &[17],
     ..BASE
 },
-// 670: HellstoneBrickWall x4
+// 671: HellstoneBrickWall x4
 Recipe {
     create: (3067, 4),
     required: &[Requirement::item(214, 1)],
     stations: &[18],
     ..BASE
 },
-// 671: HellstoneBrick x1, SetupRecipes reverse
+// 672: HellstoneBrick x1, SetupRecipes reverse
 Recipe {
     create: (214, 1),
     required: &[Requirement::item(3067, 4)],
@@ -4717,7 +4726,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 672: Lava1Echo x4
+// 673: Lava1Echo x4
 Recipe {
     create: (4533, 4),
     required: &[Requirement::item(174, 1)],
@@ -4725,7 +4734,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 673: Hellstone x1, SetupRecipes reverse
+// 674: Hellstone x1, SetupRecipes reverse
 Recipe {
     create: (174, 1),
     required: &[Requirement::item(4533, 4)],
@@ -4733,7 +4742,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 674: Lava2Echo x4
+// 675: Lava2Echo x4
 Recipe {
     create: (4534, 4),
     required: &[Requirement::item(174, 1)],
@@ -4741,7 +4750,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 675: Hellstone x1, SetupRecipes reverse
+// 676: Hellstone x1, SetupRecipes reverse
 Recipe {
     create: (174, 1),
     required: &[Requirement::item(4534, 4)],
@@ -4749,7 +4758,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 676: Lava3Echo x4
+// 677: Lava3Echo x4
 Recipe {
     create: (4535, 4),
     required: &[Requirement::item(174, 1)],
@@ -4757,7 +4766,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 677: Hellstone x1, SetupRecipes reverse
+// 678: Hellstone x1, SetupRecipes reverse
 Recipe {
     create: (174, 1),
     required: &[Requirement::item(4535, 4)],
@@ -4765,7 +4774,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 678: Lava4Echo x4
+// 679: Lava4Echo x4
 Recipe {
     create: (4536, 4),
     required: &[Requirement::item(174, 1)],
@@ -4773,7 +4782,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 679: Hellstone x1, SetupRecipes reverse
+// 680: Hellstone x1, SetupRecipes reverse
 Recipe {
     create: (174, 1),
     required: &[Requirement::item(4536, 4)],
@@ -4781,21 +4790,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 680: ObsidianBrick x5
+// 681: ObsidianBrick x5
 Recipe {
     create: (192, 5),
     required: &[Requirement::item(3, 5), Requirement::item(173, 1)],
     stations: &[17],
     ..BASE
 },
-// 681: ObsidianBrickWall x4
+// 682: ObsidianBrickWall x4
 Recipe {
     create: (330, 4),
     required: &[Requirement::item(192, 1)],
     stations: &[18],
     ..BASE
 },
-// 682: ObsidianBrick x1, SetupRecipes reverse
+// 683: ObsidianBrick x1, SetupRecipes reverse
 Recipe {
     create: (192, 1),
     required: &[Requirement::item(330, 4)],
@@ -4803,7 +4812,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 683: ObsidianBackEcho x4
+// 684: ObsidianBackEcho x4
 Recipe {
     create: (4507, 4),
     required: &[Requirement::item(173, 1)],
@@ -4811,7 +4820,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 684: Obsidian x1, SetupRecipes reverse
+// 685: Obsidian x1, SetupRecipes reverse
 Recipe {
     create: (173, 1),
     required: &[Requirement::item(4507, 4)],
@@ -4819,14 +4828,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 685: DemoniteBrickWall x4
+// 686: DemoniteBrickWall x4
 Recipe {
     create: (606, 4),
     required: &[Requirement::item(577, 1)],
     stations: &[18],
     ..BASE
 },
-// 686: DemoniteBrick x1, SetupRecipes reverse
+// 687: DemoniteBrick x1, SetupRecipes reverse
 Recipe {
     create: (577, 1),
     required: &[Requirement::item(606, 4)],
@@ -4834,21 +4843,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 687: SnowBrick x1
+// 688: SnowBrick x1
 Recipe {
     create: (594, 1),
     required: &[Requirement::item(593, 2)],
     stations: &[18],
     ..BASE
 },
-// 688: SnowBrickWall x4
+// 689: SnowBrickWall x4
 Recipe {
     create: (595, 4),
     required: &[Requirement::item(594, 1)],
     stations: &[18],
     ..BASE
 },
-// 689: SnowBrick x1, SetupRecipes reverse
+// 690: SnowBrick x1, SetupRecipes reverse
 Recipe {
     create: (594, 1),
     required: &[Requirement::item(595, 4)],
@@ -4856,7 +4865,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 690: SnowWallEcho x4
+// 691: SnowWallEcho x4
 Recipe {
     create: (4489, 4),
     required: &[Requirement::item(593, 1)],
@@ -4864,7 +4873,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 691: SnowBlock x1, SetupRecipes reverse
+// 692: SnowBlock x1, SetupRecipes reverse
 Recipe {
     create: (593, 1),
     required: &[Requirement::item(4489, 4)],
@@ -4872,14 +4881,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 692: IceBrick x1
+// 693: IceBrick x1
 Recipe {
     create: (883, 1),
     required: &[Requirement::item(664, 2)],
     stations: &[18],
     ..BASE
 },
-// 693: IceEcho x4
+// 694: IceEcho x4
 Recipe {
     create: (4506, 4),
     required: &[Requirement::item(664, 1)],
@@ -4887,7 +4896,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 694: IceBlock x1, SetupRecipes reverse
+// 695: IceBlock x1, SetupRecipes reverse
 Recipe {
     create: (664, 1),
     required: &[Requirement::item(4506, 4)],
@@ -4895,14 +4904,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 695: IceBrickWall x4
+// 696: IceBrickWall x4
 Recipe {
     create: (884, 4),
     required: &[Requirement::item(883, 1)],
     stations: &[18],
     ..BASE
 },
-// 696: IceBrick x1, SetupRecipes reverse
+// 697: IceBrick x1, SetupRecipes reverse
 Recipe {
     create: (883, 1),
     required: &[Requirement::item(884, 4)],
@@ -4910,14 +4919,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 697: CandyCaneWall x4
+// 698: CandyCaneWall x4
 Recipe {
     create: (587, 4),
     required: &[Requirement::item(586, 1)],
     stations: &[18],
     ..BASE
 },
-// 698: CandyCaneBlock x1, SetupRecipes reverse
+// 699: CandyCaneBlock x1, SetupRecipes reverse
 Recipe {
     create: (586, 1),
     required: &[Requirement::item(587, 4)],
@@ -4925,14 +4934,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 699: GreenCandyCaneWall x4
+// 700: GreenCandyCaneWall x4
 Recipe {
     create: (592, 4),
     required: &[Requirement::item(591, 1)],
     stations: &[18],
     ..BASE
 },
-// 700: GreenCandyCaneBlock x1, SetupRecipes reverse
+// 701: GreenCandyCaneBlock x1, SetupRecipes reverse
 Recipe {
     create: (591, 1),
     required: &[Requirement::item(592, 4)],
@@ -4940,21 +4949,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 701: SandstoneBrick x1
+// 702: SandstoneBrick x1
 Recipe {
     create: (607, 1),
     required: &[Requirement::item(169, 1)],
     stations: &[17],
     ..BASE
 },
-// 702: SandstoneBrickWall x4
+// 703: SandstoneBrickWall x4
 Recipe {
     create: (608, 4),
     required: &[Requirement::item(607, 1)],
     stations: &[18],
     ..BASE
 },
-// 703: SandstoneBrick x1, SetupRecipes reverse
+// 704: SandstoneBrick x1, SetupRecipes reverse
 Recipe {
     create: (607, 1),
     required: &[Requirement::item(608, 4)],
@@ -4962,21 +4971,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 704: SmoothSandstone x1
+// 705: SmoothSandstone x1
 Recipe {
     create: (4051, 1),
     required: &[Requirement::item(3271, 1)],
     stations: &[17],
     ..BASE
 },
-// 705: SmoothSandstoneWall x4
+// 706: SmoothSandstoneWall x4
 Recipe {
     create: (4053, 4),
     required: &[Requirement::item(4051, 1)],
     stations: &[18],
     ..BASE
 },
-// 706: SmoothSandstone x1, SetupRecipes reverse
+// 707: SmoothSandstone x1, SetupRecipes reverse
 Recipe {
     create: (4051, 1),
     required: &[Requirement::item(4053, 4)],
@@ -4984,7 +4993,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 707: SandstoneWall x4
+// 708: SandstoneWall x4
 Recipe {
     create: (3273, 4),
     required: &[Requirement::item(3271, 1)],
@@ -4992,7 +5001,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 708: Sandstone x1, SetupRecipes reverse
+// 709: Sandstone x1, SetupRecipes reverse
 Recipe {
     create: (3271, 1),
     required: &[Requirement::item(3273, 4)],
@@ -5000,14 +5009,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 709: BambooBlockWall x4
+// 710: BambooBlockWall x4
 Recipe {
     create: (4565, 4),
     required: &[Requirement::item(4564, 1)],
     stations: &[18],
     ..BASE
 },
-// 710: BambooBlock x1, SetupRecipes reverse
+// 711: BambooBlock x1, SetupRecipes reverse
 Recipe {
     create: (4564, 1),
     required: &[Requirement::item(4565, 4)],
@@ -5015,28 +5024,28 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 711: LargeBambooBlock x1
+// 712: LargeBambooBlock x1
 Recipe {
     create: (4547, 1),
     required: &[Requirement::item(4564, 1)],
     stations: &[106],
     ..BASE
 },
-// 712: BambooBlock x1
+// 713: BambooBlock x1
 Recipe {
     create: (4564, 1),
     required: &[Requirement::item(4547, 1)],
     stations: &[106],
     ..BASE
 },
-// 713: LargeBambooBlockWall x4
+// 714: LargeBambooBlockWall x4
 Recipe {
     create: (4548, 4),
     required: &[Requirement::item(4547, 1)],
     stations: &[18],
     ..BASE
 },
-// 714: LargeBambooBlock x1, SetupRecipes reverse
+// 715: LargeBambooBlock x1, SetupRecipes reverse
 Recipe {
     create: (4547, 1),
     required: &[Requirement::item(4548, 4)],
@@ -5044,21 +5053,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 715: PearlstoneBrick x1
+// 716: PearlstoneBrick x1
 Recipe {
     create: (412, 1),
     required: &[Requirement::item(409, 2)],
     stations: &[17],
     ..BASE
 },
-// 716: PearlstoneBrickWall x4
+// 717: PearlstoneBrickWall x4
 Recipe {
     create: (417, 4),
     required: &[Requirement::item(412, 1)],
     stations: &[18],
     ..BASE
 },
-// 717: PearlstoneBrick x1, SetupRecipes reverse
+// 718: PearlstoneBrick x1, SetupRecipes reverse
 Recipe {
     create: (412, 1),
     required: &[Requirement::item(417, 4)],
@@ -5066,7 +5075,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 718: PearlstoneEcho x4
+// 719: PearlstoneEcho x4
 Recipe {
     create: (4488, 4),
     required: &[Requirement::item(409, 1)],
@@ -5074,7 +5083,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 719: PearlstoneBlock x1, SetupRecipes reverse
+// 720: PearlstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (409, 1),
     required: &[Requirement::item(4488, 4)],
@@ -5082,7 +5091,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 720: Hallow1Echo x4
+// 721: Hallow1Echo x4
 Recipe {
     create: (4525, 4),
     required: &[Requirement::item(409, 1)],
@@ -5090,7 +5099,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 721: PearlstoneBlock x1, SetupRecipes reverse
+// 722: PearlstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (409, 1),
     required: &[Requirement::item(4525, 4)],
@@ -5098,7 +5107,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 722: Hallow2Echo x4
+// 723: Hallow2Echo x4
 Recipe {
     create: (4526, 4),
     required: &[Requirement::item(409, 1)],
@@ -5106,7 +5115,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 723: PearlstoneBlock x1, SetupRecipes reverse
+// 724: PearlstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (409, 1),
     required: &[Requirement::item(4526, 4)],
@@ -5114,7 +5123,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 724: Hallow3Echo x4
+// 725: Hallow3Echo x4
 Recipe {
     create: (4527, 4),
     required: &[Requirement::item(409, 1)],
@@ -5122,7 +5131,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 725: PearlstoneBlock x1, SetupRecipes reverse
+// 726: PearlstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (409, 1),
     required: &[Requirement::item(4527, 4)],
@@ -5130,7 +5139,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 726: Hallow4Echo x4
+// 727: Hallow4Echo x4
 Recipe {
     create: (4528, 4),
     required: &[Requirement::item(409, 1)],
@@ -5138,7 +5147,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 727: PearlstoneBlock x1, SetupRecipes reverse
+// 728: PearlstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (409, 1),
     required: &[Requirement::item(4528, 4)],
@@ -5146,21 +5155,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 728: EbonstoneBrick x1
+// 729: EbonstoneBrick x1
 Recipe {
     create: (609, 1),
     required: &[Requirement::item(61, 2)],
     stations: &[17],
     ..BASE
 },
-// 729: EbonstoneBrickWall x4
+// 730: EbonstoneBrickWall x4
 Recipe {
     create: (610, 4),
     required: &[Requirement::item(609, 1)],
     stations: &[18],
     ..BASE
 },
-// 730: EbonstoneBrick x1, SetupRecipes reverse
+// 731: EbonstoneBrick x1, SetupRecipes reverse
 Recipe {
     create: (609, 1),
     required: &[Requirement::item(610, 4)],
@@ -5168,7 +5177,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 731: EbonstoneEcho x4
+// 732: EbonstoneEcho x4
 Recipe {
     create: (4486, 4),
     required: &[Requirement::item(61, 1)],
@@ -5176,7 +5185,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 732: EbonstoneBlock x1, SetupRecipes reverse
+// 733: EbonstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (61, 1),
     required: &[Requirement::item(4486, 4)],
@@ -5184,7 +5193,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 733: Corruption1Echo x4
+// 734: Corruption1Echo x4
 Recipe {
     create: (4513, 4),
     required: &[Requirement::item(61, 1)],
@@ -5192,7 +5201,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 734: EbonstoneBlock x1, SetupRecipes reverse
+// 735: EbonstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (61, 1),
     required: &[Requirement::item(4513, 4)],
@@ -5200,7 +5209,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 735: Corruption2Echo x4
+// 736: Corruption2Echo x4
 Recipe {
     create: (4514, 4),
     required: &[Requirement::item(61, 1)],
@@ -5208,7 +5217,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 736: EbonstoneBlock x1, SetupRecipes reverse
+// 737: EbonstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (61, 1),
     required: &[Requirement::item(4514, 4)],
@@ -5216,7 +5225,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 737: Corruption3Echo x4
+// 738: Corruption3Echo x4
 Recipe {
     create: (4515, 4),
     required: &[Requirement::item(61, 1)],
@@ -5224,7 +5233,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 738: EbonstoneBlock x1, SetupRecipes reverse
+// 739: EbonstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (61, 1),
     required: &[Requirement::item(4515, 4)],
@@ -5232,7 +5241,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 739: Corruption4Echo x4
+// 740: Corruption4Echo x4
 Recipe {
     create: (4516, 4),
     required: &[Requirement::item(61, 1)],
@@ -5240,7 +5249,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 740: EbonstoneBlock x1, SetupRecipes reverse
+// 741: EbonstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (61, 1),
     required: &[Requirement::item(4516, 4)],
@@ -5248,21 +5257,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 741: CrimstoneBrick x1
+// 742: CrimstoneBrick x1
 Recipe {
     create: (4050, 1),
     required: &[Requirement::item(836, 2)],
     stations: &[17],
     ..BASE
 },
-// 742: CrimstoneBrickWall x4
+// 743: CrimstoneBrickWall x4
 Recipe {
     create: (4052, 4),
     required: &[Requirement::item(4050, 1)],
     stations: &[18],
     ..BASE
 },
-// 743: CrimstoneBrick x1, SetupRecipes reverse
+// 744: CrimstoneBrick x1, SetupRecipes reverse
 Recipe {
     create: (4050, 1),
     required: &[Requirement::item(4052, 4)],
@@ -5270,7 +5279,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 744: CrimstoneEcho x4
+// 745: CrimstoneEcho x4
 Recipe {
     create: (4509, 4),
     required: &[Requirement::item(836, 1)],
@@ -5278,7 +5287,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 745: CrimstoneBlock x1, SetupRecipes reverse
+// 746: CrimstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (836, 1),
     required: &[Requirement::item(4509, 4)],
@@ -5286,7 +5295,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 746: Crimson1Echo x4
+// 747: Crimson1Echo x4
 Recipe {
     create: (4517, 4),
     required: &[Requirement::item(836, 1)],
@@ -5294,7 +5303,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 747: CrimstoneBlock x1, SetupRecipes reverse
+// 748: CrimstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (836, 1),
     required: &[Requirement::item(4517, 4)],
@@ -5302,7 +5311,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 748: Crimson2Echo x4
+// 749: Crimson2Echo x4
 Recipe {
     create: (4518, 4),
     required: &[Requirement::item(836, 1)],
@@ -5310,7 +5319,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 749: CrimstoneBlock x1, SetupRecipes reverse
+// 750: CrimstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (836, 1),
     required: &[Requirement::item(4518, 4)],
@@ -5318,7 +5327,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 750: Crimson3Echo x4
+// 751: Crimson3Echo x4
 Recipe {
     create: (4519, 4),
     required: &[Requirement::item(836, 1)],
@@ -5326,7 +5335,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 751: CrimstoneBlock x1, SetupRecipes reverse
+// 752: CrimstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (836, 1),
     required: &[Requirement::item(4519, 4)],
@@ -5334,7 +5343,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 752: Crimson4Echo x4
+// 753: Crimson4Echo x4
 Recipe {
     create: (4520, 4),
     required: &[Requirement::item(836, 1)],
@@ -5342,7 +5351,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 753: CrimstoneBlock x1, SetupRecipes reverse
+// 754: CrimstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (836, 1),
     required: &[Requirement::item(4520, 4)],
@@ -5350,21 +5359,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 754: IridescentBrick x1
+// 755: IridescentBrick x1
 Recipe {
     create: (413, 1),
     required: &[Requirement::item(3, 1), Requirement::item(172, 1)],
     stations: &[17],
     ..BASE
 },
-// 755: IridescentBrickWall x4
+// 756: IridescentBrickWall x4
 Recipe {
     create: (418, 4),
     required: &[Requirement::item(413, 1)],
     stations: &[18],
     ..BASE
 },
-// 756: IridescentBrick x1, SetupRecipes reverse
+// 757: IridescentBrick x1, SetupRecipes reverse
 Recipe {
     create: (413, 1),
     required: &[Requirement::item(418, 4)],
@@ -5372,21 +5381,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 757: MudstoneBlock x1
+// 758: MudstoneBlock x1
 Recipe {
     create: (414, 1),
     required: &[Requirement::item(3, 1), Requirement::item(176, 1)],
     stations: &[17],
     ..BASE
 },
-// 758: MudstoneBrickWall x4
+// 759: MudstoneBrickWall x4
 Recipe {
     create: (419, 4),
     required: &[Requirement::item(414, 1)],
     stations: &[18],
     ..BASE
 },
-// 759: MudstoneBlock x1, SetupRecipes reverse
+// 760: MudstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (414, 1),
     required: &[Requirement::item(419, 4)],
@@ -5394,21 +5403,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 760: RedStucco x10
+// 761: RedStucco x10
 Recipe {
     create: (611, 10),
     required: &[Requirement::item(424, 1), Requirement::item(133, 10)],
     stations: &[17],
     ..BASE
 },
-// 761: RedStuccoWall x4
+// 762: RedStuccoWall x4
 Recipe {
     create: (615, 4),
     required: &[Requirement::item(611, 1)],
     stations: &[18],
     ..BASE
 },
-// 762: RedStucco x1, SetupRecipes reverse
+// 763: RedStucco x1, SetupRecipes reverse
 Recipe {
     create: (611, 1),
     required: &[Requirement::item(615, 4)],
@@ -5416,21 +5425,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 763: YellowStucco x10
+// 764: YellowStucco x10
 Recipe {
     create: (612, 10),
     required: &[Requirement::item(424, 1), Requirement::item(169, 10)],
     stations: &[17],
     ..BASE
 },
-// 764: YellowStuccoWall x4
+// 765: YellowStuccoWall x4
 Recipe {
     create: (616, 4),
     required: &[Requirement::item(612, 1)],
     stations: &[18],
     ..BASE
 },
-// 765: YellowStucco x1, SetupRecipes reverse
+// 766: YellowStucco x1, SetupRecipes reverse
 Recipe {
     create: (612, 1),
     required: &[Requirement::item(616, 4)],
@@ -5438,21 +5447,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 766: GreenStucco x10
+// 767: GreenStucco x10
 Recipe {
     create: (613, 10),
     required: &[Requirement::item(424, 1), Requirement::item(3, 10), Requirement::item(255, 1)],
     stations: &[17],
     ..BASE
 },
-// 767: GreenStuccoWall x4
+// 768: GreenStuccoWall x4
 Recipe {
     create: (617, 4),
     required: &[Requirement::item(613, 1)],
     stations: &[18],
     ..BASE
 },
-// 768: GreenStucco x1, SetupRecipes reverse
+// 769: GreenStucco x1, SetupRecipes reverse
 Recipe {
     create: (613, 1),
     required: &[Requirement::item(617, 4)],
@@ -5460,21 +5469,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 769: GrayStucco x10
+// 770: GrayStucco x10
 Recipe {
     create: (614, 10),
     required: &[Requirement::item(424, 1), Requirement::item(3, 10)],
     stations: &[17],
     ..BASE
 },
-// 770: GrayStuccoWall x4
+// 771: GrayStuccoWall x4
 Recipe {
     create: (618, 4),
     required: &[Requirement::item(614, 1)],
     stations: &[18],
     ..BASE
 },
-// 771: GrayStucco x1, SetupRecipes reverse
+// 772: GrayStucco x1, SetupRecipes reverse
 Recipe {
     create: (614, 1),
     required: &[Requirement::item(618, 4)],
@@ -5482,21 +5491,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 772: MeteoriteBrick x5
+// 773: MeteoriteBrick x5
 Recipe {
     create: (3100, 5),
     required: &[Requirement::item(3, 5), Requirement::item(116, 1)],
     stations: &[17],
     ..BASE
 },
-// 773: MeteoriteBrickWall x4
+// 774: MeteoriteBrickWall x4
 Recipe {
     create: (3101, 4),
     required: &[Requirement::item(3100, 1)],
     stations: &[18],
     ..BASE
 },
-// 774: MeteoriteBrick x1, SetupRecipes reverse
+// 775: MeteoriteBrick x1, SetupRecipes reverse
 Recipe {
     create: (3100, 1),
     required: &[Requirement::item(3101, 4)],
@@ -5504,21 +5513,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 775: CrimtaneBrick x5
+// 776: CrimtaneBrick x5
 Recipe {
     create: (2793, 5),
     required: &[Requirement::item(880, 1), Requirement::item(836, 5)],
     stations: &[17],
     ..BASE
 },
-// 776: CrimtaneBrickWall x4
+// 777: CrimtaneBrickWall x4
 Recipe {
     create: (2790, 4),
     required: &[Requirement::item(2793, 1)],
     stations: &[18],
     ..BASE
 },
-// 777: CrimtaneBrick x1, SetupRecipes reverse
+// 778: CrimtaneBrick x1, SetupRecipes reverse
 Recipe {
     create: (2793, 1),
     required: &[Requirement::item(2790, 4)],
@@ -5526,7 +5535,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 778: BlueBrick x5
+// 779: BlueBrick x5
 Recipe {
     create: (134, 5),
     required: &[Requirement::item(3, 5), Requirement::item(364, 1)],
@@ -5534,7 +5543,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 779: GreenBrick x5
+// 780: GreenBrick x5
 Recipe {
     create: (137, 5),
     required: &[Requirement::item(3, 5), Requirement::item(365, 1)],
@@ -5542,18 +5551,10 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 780: GreenBrick x5
+// 781: GreenBrick x5
 Recipe {
     create: (137, 5),
     required: &[Requirement::item(3, 5), Requirement::item(1106, 1)],
-    stations: &[283],
-    need_graveyard: true,
-    ..BASE
-},
-// 781: PinkBrick x5
-Recipe {
-    create: (139, 5),
-    required: &[Requirement::item(3, 5), Requirement::item(1104, 1)],
     stations: &[283],
     need_graveyard: true,
     ..BASE
@@ -5561,7 +5562,7 @@ Recipe {
 // 782: PinkBrick x5
 Recipe {
     create: (139, 5),
-    required: &[Requirement::item(3, 5), Requirement::item(1105, 1)],
+    required: &[Requirement::item(3, 5), Requirement::item(1104, 1)],
     stations: &[283],
     need_graveyard: true,
     ..BASE
@@ -5569,26 +5570,34 @@ Recipe {
 // 783: PinkBrick x5
 Recipe {
     create: (139, 5),
+    required: &[Requirement::item(3, 5), Requirement::item(1105, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 784: PinkBrick x5
+Recipe {
+    create: (139, 5),
     required: &[Requirement::item(3, 5), Requirement::item(366, 1)],
     stations: &[283],
     need_graveyard: true,
     ..BASE
 },
-// 784: CobaltBrick x5
+// 785: CobaltBrick x5
 Recipe {
     create: (415, 5),
     required: &[Requirement::item(3, 5), Requirement::item(364, 1)],
     stations: &[17],
     ..BASE
 },
-// 785: CobaltBrickWall x4
+// 786: CobaltBrickWall x4
 Recipe {
     create: (420, 4),
     required: &[Requirement::item(415, 1)],
     stations: &[18],
     ..BASE
 },
-// 786: CobaltBrick x1, SetupRecipes reverse
+// 787: CobaltBrick x1, SetupRecipes reverse
 Recipe {
     create: (415, 1),
     required: &[Requirement::item(420, 4)],
@@ -5596,21 +5605,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 787: MythrilBrick x5
+// 788: MythrilBrick x5
 Recipe {
     create: (416, 5),
     required: &[Requirement::item(3, 5), Requirement::item(365, 1)],
     stations: &[17],
     ..BASE
 },
-// 788: MythrilBrickWall x4
+// 789: MythrilBrickWall x4
 Recipe {
     create: (421, 4),
     required: &[Requirement::item(416, 1)],
     stations: &[18],
     ..BASE
 },
-// 789: MythrilBrick x1, SetupRecipes reverse
+// 790: MythrilBrick x1, SetupRecipes reverse
 Recipe {
     create: (416, 1),
     required: &[Requirement::item(421, 4)],
@@ -5618,21 +5627,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 790: AdamantiteBeam x5
+// 791: AdamantiteBeam x5
 Recipe {
     create: (604, 5),
     required: &[Requirement::item(3, 5), Requirement::item(366, 1)],
     stations: &[17],
     ..BASE
 },
-// 791: AdamantiteBeamWall x4
+// 792: AdamantiteBeamWall x4
 Recipe {
     create: (605, 4),
     required: &[Requirement::item(604, 1)],
     stations: &[18],
     ..BASE
 },
-// 792: AdamantiteBeam x1, SetupRecipes reverse
+// 793: AdamantiteBeam x1, SetupRecipes reverse
 Recipe {
     create: (604, 1),
     required: &[Requirement::item(605, 4)],
@@ -5640,21 +5649,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 793: PalladiumColumn x5
+// 794: PalladiumColumn x5
 Recipe {
     create: (1589, 5),
     required: &[Requirement::item(3, 5), Requirement::item(1104, 1)],
     stations: &[17],
     ..BASE
 },
-// 794: PalladiumColumnWall x4
+// 795: PalladiumColumnWall x4
 Recipe {
     create: (1590, 4),
     required: &[Requirement::item(1589, 1)],
     stations: &[18],
     ..BASE
 },
-// 795: PalladiumColumn x1, SetupRecipes reverse
+// 796: PalladiumColumn x1, SetupRecipes reverse
 Recipe {
     create: (1589, 1),
     required: &[Requirement::item(1590, 4)],
@@ -5662,21 +5671,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 796: BubblegumBlock x5
+// 797: BubblegumBlock x5
 Recipe {
     create: (1591, 5),
     required: &[Requirement::item(3, 5), Requirement::item(1105, 1)],
     stations: &[17],
     ..BASE
 },
-// 797: BubblegumBlockWall x4
+// 798: BubblegumBlockWall x4
 Recipe {
     create: (1592, 4),
     required: &[Requirement::item(1591, 1)],
     stations: &[18],
     ..BASE
 },
-// 798: BubblegumBlock x1, SetupRecipes reverse
+// 799: BubblegumBlock x1, SetupRecipes reverse
 Recipe {
     create: (1591, 1),
     required: &[Requirement::item(1592, 4)],
@@ -5684,21 +5693,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 799: TitanstoneBlock x5
+// 800: TitanstoneBlock x5
 Recipe {
     create: (1593, 5),
     required: &[Requirement::item(3, 5), Requirement::item(1106, 1)],
     stations: &[17],
     ..BASE
 },
-// 800: TitanstoneBlockWall x4
+// 801: TitanstoneBlockWall x4
 Recipe {
     create: (1594, 4),
     required: &[Requirement::item(1593, 1)],
     stations: &[18],
     ..BASE
 },
-// 801: TitanstoneBlock x1, SetupRecipes reverse
+// 802: TitanstoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (1593, 1),
     required: &[Requirement::item(1594, 4)],
@@ -5706,21 +5715,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 802: ChlorophyteBrick x5
+// 803: ChlorophyteBrick x5
 Recipe {
     create: (2792, 5),
     required: &[Requirement::item(3, 5), Requirement::item(947, 1)],
     stations: &[17],
     ..BASE
 },
-// 803: ChlorophyteBrickWall x4
+// 804: ChlorophyteBrickWall x4
 Recipe {
     create: (2789, 4),
     required: &[Requirement::item(2792, 1)],
     stations: &[18],
     ..BASE
 },
-// 804: ChlorophyteBrick x1, SetupRecipes reverse
+// 805: ChlorophyteBrick x1, SetupRecipes reverse
 Recipe {
     create: (2792, 1),
     required: &[Requirement::item(2789, 4)],
@@ -5728,21 +5737,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 805: ShroomitePlating x25
+// 806: ShroomitePlating x25
 Recipe {
     create: (2794, 25),
     required: &[Requirement::item(3, 25), Requirement::item(1552, 1)],
     stations: &[17],
     ..BASE
 },
-// 806: ShroomitePlatingWall x4
+// 807: ShroomitePlatingWall x4
 Recipe {
     create: (2791, 4),
     required: &[Requirement::item(2794, 1)],
     stations: &[18],
     ..BASE
 },
-// 807: ShroomitePlating x1, SetupRecipes reverse
+// 808: ShroomitePlating x1, SetupRecipes reverse
 Recipe {
     create: (2794, 1),
     required: &[Requirement::item(2791, 4)],
@@ -5750,21 +5759,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 808: LunarBrick x5
+// 809: LunarBrick x5
 Recipe {
     create: (3461, 5),
     required: &[Requirement::item(3, 5), Requirement::item(3460, 1)],
     stations: &[17],
     ..BASE
 },
-// 809: LunarBrickWall x4
+// 810: LunarBrickWall x4
 Recipe {
     create: (3472, 4),
     required: &[Requirement::item(3461, 1)],
     stations: &[18],
     ..BASE
 },
-// 810: LunarBrick x1, SetupRecipes reverse
+// 811: LunarBrick x1, SetupRecipes reverse
 Recipe {
     create: (3461, 1),
     required: &[Requirement::item(3472, 4)],
@@ -5772,14 +5781,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 811: LunarRustBrickWall x4
+// 812: LunarRustBrickWall x4
 Recipe {
     create: (5409, 4),
     required: &[Requirement::item(5401, 1)],
     stations: &[18],
     ..BASE
 },
-// 812: LunarRustBrick x1, SetupRecipes reverse
+// 813: LunarRustBrick x1, SetupRecipes reverse
 Recipe {
     create: (5401, 1),
     required: &[Requirement::item(5409, 4)],
@@ -5787,14 +5796,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 813: DarkCelestialBrickWall x4
+// 814: DarkCelestialBrickWall x4
 Recipe {
     create: (5410, 4),
     required: &[Requirement::item(5402, 1)],
     stations: &[18],
     ..BASE
 },
-// 814: DarkCelestialBrick x1, SetupRecipes reverse
+// 815: DarkCelestialBrick x1, SetupRecipes reverse
 Recipe {
     create: (5402, 1),
     required: &[Requirement::item(5410, 4)],
@@ -5802,14 +5811,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 815: AstraBrickWall x4
+// 816: AstraBrickWall x4
 Recipe {
     create: (5411, 4),
     required: &[Requirement::item(5403, 1)],
     stations: &[18],
     ..BASE
 },
-// 816: AstraBrick x1, SetupRecipes reverse
+// 817: AstraBrick x1, SetupRecipes reverse
 Recipe {
     create: (5403, 1),
     required: &[Requirement::item(5411, 4)],
@@ -5817,14 +5826,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 817: CosmicEmberBrickWall x4
+// 818: CosmicEmberBrickWall x4
 Recipe {
     create: (5412, 4),
     required: &[Requirement::item(5404, 1)],
     stations: &[18],
     ..BASE
 },
-// 818: CosmicEmberBrick x1, SetupRecipes reverse
+// 819: CosmicEmberBrick x1, SetupRecipes reverse
 Recipe {
     create: (5404, 1),
     required: &[Requirement::item(5412, 4)],
@@ -5832,14 +5841,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 819: CryocoreBrickWall x4
+// 820: CryocoreBrickWall x4
 Recipe {
     create: (5413, 4),
     required: &[Requirement::item(5405, 1)],
     stations: &[18],
     ..BASE
 },
-// 820: CryocoreBrick x1, SetupRecipes reverse
+// 821: CryocoreBrick x1, SetupRecipes reverse
 Recipe {
     create: (5405, 1),
     required: &[Requirement::item(5413, 4)],
@@ -5847,14 +5856,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 821: MercuryBrickWall x4
+// 822: MercuryBrickWall x4
 Recipe {
     create: (5414, 4),
     required: &[Requirement::item(5406, 1)],
     stations: &[18],
     ..BASE
 },
-// 822: MercuryBrick x1, SetupRecipes reverse
+// 823: MercuryBrick x1, SetupRecipes reverse
 Recipe {
     create: (5406, 1),
     required: &[Requirement::item(5414, 4)],
@@ -5862,14 +5871,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 823: StarRoyaleBrickWall x4
+// 824: StarRoyaleBrickWall x4
 Recipe {
     create: (5415, 4),
     required: &[Requirement::item(5407, 1)],
     stations: &[18],
     ..BASE
 },
-// 824: StarRoyaleBrick x1, SetupRecipes reverse
+// 825: StarRoyaleBrick x1, SetupRecipes reverse
 Recipe {
     create: (5407, 1),
     required: &[Requirement::item(5415, 4)],
@@ -5877,14 +5886,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 825: HeavenforgeBrickWall x4
+// 826: HeavenforgeBrickWall x4
 Recipe {
     create: (5416, 4),
     required: &[Requirement::item(5408, 1)],
     stations: &[18],
     ..BASE
 },
-// 826: HeavenforgeBrick x1, SetupRecipes reverse
+// 827: HeavenforgeBrick x1, SetupRecipes reverse
 Recipe {
     create: (5408, 1),
     required: &[Requirement::item(5416, 4)],
@@ -5892,14 +5901,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 827: AncientBlueDungeonBrickWall x4
+// 828: AncientBlueDungeonBrickWall x4
 Recipe {
     create: (5418, 4),
     required: &[Requirement::item(5417, 1)],
     stations: &[18],
     ..BASE
 },
-// 828: AncientBlueDungeonBrick x1, SetupRecipes reverse
+// 829: AncientBlueDungeonBrick x1, SetupRecipes reverse
 Recipe {
     create: (5417, 1),
     required: &[Requirement::item(5418, 4)],
@@ -5907,14 +5916,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 829: AncientGreenDungeonBrickWall x4
+// 830: AncientGreenDungeonBrickWall x4
 Recipe {
     create: (5420, 4),
     required: &[Requirement::item(5419, 1)],
     stations: &[18],
     ..BASE
 },
-// 830: AncientGreenDungeonBrick x1, SetupRecipes reverse
+// 831: AncientGreenDungeonBrick x1, SetupRecipes reverse
 Recipe {
     create: (5419, 1),
     required: &[Requirement::item(5420, 4)],
@@ -5922,14 +5931,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 831: AncientPinkDungeonBrickWall x4
+// 832: AncientPinkDungeonBrickWall x4
 Recipe {
     create: (5422, 4),
     required: &[Requirement::item(5421, 1)],
     stations: &[18],
     ..BASE
 },
-// 832: AncientPinkDungeonBrick x1, SetupRecipes reverse
+// 833: AncientPinkDungeonBrick x1, SetupRecipes reverse
 Recipe {
     create: (5421, 1),
     required: &[Requirement::item(5422, 4)],
@@ -5937,14 +5946,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 833: AncientGoldBrickWall x4
+// 834: AncientGoldBrickWall x4
 Recipe {
     create: (5424, 4),
     required: &[Requirement::item(5423, 1)],
     stations: &[18],
     ..BASE
 },
-// 834: AncientGoldBrick x1, SetupRecipes reverse
+// 835: AncientGoldBrick x1, SetupRecipes reverse
 Recipe {
     create: (5423, 1),
     required: &[Requirement::item(5424, 4)],
@@ -5952,14 +5961,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 835: AncientSilverBrickWall x4
+// 836: AncientSilverBrickWall x4
 Recipe {
     create: (5426, 4),
     required: &[Requirement::item(5425, 1)],
     stations: &[18],
     ..BASE
 },
-// 836: AncientSilverBrick x1, SetupRecipes reverse
+// 837: AncientSilverBrick x1, SetupRecipes reverse
 Recipe {
     create: (5425, 1),
     required: &[Requirement::item(5426, 4)],
@@ -5967,14 +5976,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 837: AncientCopperBrickWall x4
+// 838: AncientCopperBrickWall x4
 Recipe {
     create: (5428, 4),
     required: &[Requirement::item(5427, 1)],
     stations: &[18],
     ..BASE
 },
-// 838: AncientCopperBrick x1, SetupRecipes reverse
+// 839: AncientCopperBrick x1, SetupRecipes reverse
 Recipe {
     create: (5427, 1),
     required: &[Requirement::item(5428, 4)],
@@ -5982,14 +5991,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 839: AncientHellstoneBrickWall x4
+// 840: AncientHellstoneBrickWall x4
 Recipe {
     create: (5436, 4),
     required: &[Requirement::item(5435, 1)],
     stations: &[18],
     ..BASE
 },
-// 840: AncientHellstoneBrick x1, SetupRecipes reverse
+// 841: AncientHellstoneBrick x1, SetupRecipes reverse
 Recipe {
     create: (5435, 1),
     required: &[Requirement::item(5436, 4)],
@@ -5997,14 +6006,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 841: AncientObsidianBrickWall x4
+// 842: AncientObsidianBrickWall x4
 Recipe {
     create: (5434, 4),
     required: &[Requirement::item(5433, 1)],
     stations: &[18],
     ..BASE
 },
-// 842: AncientObsidianBrick x1, SetupRecipes reverse
+// 843: AncientObsidianBrick x1, SetupRecipes reverse
 Recipe {
     create: (5433, 1),
     required: &[Requirement::item(5434, 4)],
@@ -6012,14 +6021,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 843: AncientMythrilBrickWall x4
+// 844: AncientMythrilBrickWall x4
 Recipe {
     create: (5432, 4),
     required: &[Requirement::item(5431, 1)],
     stations: &[18],
     ..BASE
 },
-// 844: AncientMythrilBrick x1, SetupRecipes reverse
+// 845: AncientMythrilBrick x1, SetupRecipes reverse
 Recipe {
     create: (5431, 1),
     required: &[Requirement::item(5432, 4)],
@@ -6027,14 +6036,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 845: AncientCobaltBrickWall x4
+// 846: AncientCobaltBrickWall x4
 Recipe {
     create: (5430, 4),
     required: &[Requirement::item(5429, 1)],
     stations: &[18],
     ..BASE
 },
-// 846: AncientCobaltBrick x1, SetupRecipes reverse
+// 847: AncientCobaltBrick x1, SetupRecipes reverse
 Recipe {
     create: (5429, 1),
     required: &[Requirement::item(5430, 4)],
@@ -6042,56 +6051,56 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 847: LavaMossBlock x10
+// 848: LavaMossBlock x10
 Recipe {
     create: (5439, 10),
     required: &[Requirement::item(4354, 1), Requirement::item(133, 10)],
     stations: &[17],
     ..BASE
 },
-// 848: ArgonMossBlock x10
+// 849: ArgonMossBlock x10
 Recipe {
     create: (5440, 10),
     required: &[Requirement::item(4389, 1), Requirement::item(133, 10)],
     stations: &[17],
     ..BASE
 },
-// 849: KryptonMossBlock x10
+// 850: KryptonMossBlock x10
 Recipe {
     create: (5441, 10),
     required: &[Requirement::item(4377, 1), Requirement::item(133, 10)],
     stations: &[17],
     ..BASE
 },
-// 850: XenonMossBlock x10
+// 851: XenonMossBlock x10
 Recipe {
     create: (5442, 10),
     required: &[Requirement::item(4378, 1), Requirement::item(133, 10)],
     stations: &[17],
     ..BASE
 },
-// 851: VioletMossBlock x10
+// 852: VioletMossBlock x10
 Recipe {
     create: (5443, 10),
     required: &[Requirement::item(5127, 1), Requirement::item(133, 10)],
     stations: &[17],
     ..BASE
 },
-// 852: RainbowMossBlock x10
+// 853: RainbowMossBlock x10
 Recipe {
     create: (5444, 10),
     required: &[Requirement::item(5128, 1), Requirement::item(133, 10)],
     stations: &[17],
     ..BASE
 },
-// 853: LavaMossBlockWall x4
+// 854: LavaMossBlockWall x4
 Recipe {
     create: (5445, 4),
     required: &[Requirement::item(5439, 1)],
     stations: &[18],
     ..BASE
 },
-// 854: LavaMossBlock x1, SetupRecipes reverse
+// 855: LavaMossBlock x1, SetupRecipes reverse
 Recipe {
     create: (5439, 1),
     required: &[Requirement::item(5445, 4)],
@@ -6099,14 +6108,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 855: ArgonMossBlockWall x4
+// 856: ArgonMossBlockWall x4
 Recipe {
     create: (5446, 4),
     required: &[Requirement::item(5440, 1)],
     stations: &[18],
     ..BASE
 },
-// 856: ArgonMossBlock x1, SetupRecipes reverse
+// 857: ArgonMossBlock x1, SetupRecipes reverse
 Recipe {
     create: (5440, 1),
     required: &[Requirement::item(5446, 4)],
@@ -6114,14 +6123,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 857: KryptonMossBlockWall x4
+// 858: KryptonMossBlockWall x4
 Recipe {
     create: (5447, 4),
     required: &[Requirement::item(5441, 1)],
     stations: &[18],
     ..BASE
 },
-// 858: KryptonMossBlock x1, SetupRecipes reverse
+// 859: KryptonMossBlock x1, SetupRecipes reverse
 Recipe {
     create: (5441, 1),
     required: &[Requirement::item(5447, 4)],
@@ -6129,14 +6138,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 859: XenonMossBlockWall x4
+// 860: XenonMossBlockWall x4
 Recipe {
     create: (5448, 4),
     required: &[Requirement::item(5442, 1)],
     stations: &[18],
     ..BASE
 },
-// 860: XenonMossBlock x1, SetupRecipes reverse
+// 861: XenonMossBlock x1, SetupRecipes reverse
 Recipe {
     create: (5442, 1),
     required: &[Requirement::item(5448, 4)],
@@ -6144,14 +6153,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 861: VioletMossBlockWall x4
+// 862: VioletMossBlockWall x4
 Recipe {
     create: (5449, 4),
     required: &[Requirement::item(5443, 1)],
     stations: &[18],
     ..BASE
 },
-// 862: VioletMossBlock x1, SetupRecipes reverse
+// 863: VioletMossBlock x1, SetupRecipes reverse
 Recipe {
     create: (5443, 1),
     required: &[Requirement::item(5449, 4)],
@@ -6159,14 +6168,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 863: RainbowMossBlockWall x4
+// 864: RainbowMossBlockWall x4
 Recipe {
     create: (5450, 4),
     required: &[Requirement::item(5444, 1)],
     stations: &[18],
     ..BASE
 },
-// 864: RainbowMossBlock x1, SetupRecipes reverse
+// 865: RainbowMossBlock x1, SetupRecipes reverse
 Recipe {
     create: (5444, 1),
     required: &[Requirement::item(5450, 4)],
@@ -6174,14 +6183,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 865: ShimmerWall x4
+// 866: ShimmerWall x4
 Recipe {
     create: (5397, 4),
     required: &[Requirement::item(5349, 1)],
     stations: &[18],
     ..BASE
 },
-// 866: ShimmerBlock x1, SetupRecipes reverse
+// 867: ShimmerBlock x1, SetupRecipes reverse
 Recipe {
     create: (5349, 1),
     required: &[Requirement::item(5397, 4)],
@@ -6189,21 +6198,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 867: ShimmerBrick x1
+// 868: ShimmerBrick x1
 Recipe {
     create: (5398, 1),
     required: &[Requirement::item(5349, 1), Requirement::item(3, 1)],
     stations: &[17],
     ..BASE
 },
-// 868: ShimmerBrickWall x4
+// 869: ShimmerBrickWall x4
 Recipe {
     create: (5399, 4),
     required: &[Requirement::item(5398, 1)],
     stations: &[18],
     ..BASE
 },
-// 869: ShimmerBrick x1, SetupRecipes reverse
+// 870: ShimmerBrick x1, SetupRecipes reverse
 Recipe {
     create: (5398, 1),
     required: &[Requirement::item(5399, 4)],
@@ -6211,21 +6220,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 870: FallenStarBlock x25
+// 871: FallenStarBlock x25
 Recipe {
     create: (5622, 25),
     required: &[Requirement::item(3, 25), Requirement::item(75, 1)],
     stations: &[17],
     ..BASE
 },
-// 871: FallenStarWall x4
+// 872: FallenStarWall x4
 Recipe {
     create: (5623, 4),
     required: &[Requirement::item(5622, 1)],
     stations: &[18],
     ..BASE
 },
-// 872: FallenStarBlock x1, SetupRecipes reverse
+// 873: FallenStarBlock x1, SetupRecipes reverse
 Recipe {
     create: (5622, 1),
     required: &[Requirement::item(5623, 4)],
@@ -6233,21 +6242,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 873: Feywood x20
+// 874: Feywood x20
 Recipe {
     create: (5710, 20),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 20), Requirement::item(5, 1)],
     stations: &[304],
     ..BASE
 },
-// 874: FeywoodWall x4
+// 875: FeywoodWall x4
 Recipe {
     create: (5711, 4),
     required: &[Requirement::item(5710, 1)],
     stations: &[18],
     ..BASE
 },
-// 875: Feywood x1, SetupRecipes reverse
+// 876: Feywood x1, SetupRecipes reverse
 Recipe {
     create: (5710, 1),
     required: &[Requirement::item(5711, 4)],
@@ -6255,21 +6264,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 876: HallowedBrick x25
+// 877: HallowedBrick x25
 Recipe {
     create: (5733, 25),
     required: &[Requirement::item(409, 25), Requirement::item(1225, 1)],
     stations: &[17],
     ..BASE
 },
-// 877: HallowedBrickWall x4
+// 878: HallowedBrickWall x4
 Recipe {
     create: (5734, 4),
     required: &[Requirement::item(5733, 1)],
     stations: &[18],
     ..BASE
 },
-// 878: HallowedBrick x1, SetupRecipes reverse
+// 879: HallowedBrick x1, SetupRecipes reverse
 Recipe {
     create: (5733, 1),
     required: &[Requirement::item(5734, 4)],
@@ -6277,14 +6286,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 879: PineTreeBlockWall x4
+// 880: PineTreeBlockWall x4
 Recipe {
     create: (5919, 4),
     required: &[Requirement::item(1872, 1)],
     stations: &[18],
     ..BASE
 },
-// 880: PineTreeBlock x1, SetupRecipes reverse
+// 881: PineTreeBlock x1, SetupRecipes reverse
 Recipe {
     create: (1872, 1),
     required: &[Requirement::item(5919, 4)],
@@ -6292,14 +6301,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 881: EasterBlockWall x4
+// 882: EasterBlockWall x4
 Recipe {
     create: (5921, 4),
     required: &[Requirement::item(5920, 1)],
     stations: &[18],
     ..BASE
 },
-// 882: EasterBlock x1, SetupRecipes reverse
+// 883: EasterBlock x1, SetupRecipes reverse
 Recipe {
     create: (5920, 1),
     required: &[Requirement::item(5921, 4)],
@@ -6307,21 +6316,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 883: GothicBrick x20
+// 884: GothicBrick x20
 Recipe {
     create: (5922, 20),
     required: &[Requirement::item(3, 20), Requirement::item(150, 5), Requirement::item(154, 5)],
     stations: &[300],
     ..BASE
 },
-// 884: GothicBrickWall x4
+// 885: GothicBrickWall x4
 Recipe {
     create: (5923, 4),
     required: &[Requirement::item(5922, 1)],
     stations: &[18],
     ..BASE
 },
-// 885: GothicBrick x1, SetupRecipes reverse
+// 886: GothicBrick x1, SetupRecipes reverse
 Recipe {
     create: (5922, 1),
     required: &[Requirement::item(5923, 4)],
@@ -6329,21 +6338,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 886: FlinxFurBlock x20
+// 887: FlinxFurBlock x20
 Recipe {
     create: (5924, 20),
     required: &[Requirement::item(5070, 1)],
     stations: &[18],
     ..BASE
 },
-// 887: FlinxFurBlockWall x4
+// 888: FlinxFurBlockWall x4
 Recipe {
     create: (5925, 4),
     required: &[Requirement::item(5924, 1)],
     stations: &[18],
     ..BASE
 },
-// 888: FlinxFurBlock x1, SetupRecipes reverse
+// 889: FlinxFurBlock x1, SetupRecipes reverse
 Recipe {
     create: (5924, 1),
     required: &[Requirement::item(5925, 4)],
@@ -6351,14 +6360,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 889: JellyfishBlockWall x4
+// 890: JellyfishBlockWall x4
 Recipe {
     create: (5927, 4),
     required: &[Requirement::item(5926, 1)],
     stations: &[18],
     ..BASE
 },
-// 890: JellyfishBlock x1, SetupRecipes reverse
+// 891: JellyfishBlock x1, SetupRecipes reverse
 Recipe {
     create: (5926, 1),
     required: &[Requirement::item(5927, 4)],
@@ -6366,21 +6375,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 891: HarpyBlock x10
+// 892: HarpyBlock x10
 Recipe {
     create: (5953, 10),
     required: &[Requirement::item(320, 1)],
     stations: &[305],
     ..BASE
 },
-// 892: HarpyBlockWall x4
+// 893: HarpyBlockWall x4
 Recipe {
     create: (5954, 4),
     required: &[Requirement::item(5953, 1)],
     stations: &[18],
     ..BASE
 },
-// 893: HarpyBlock x1, SetupRecipes reverse
+// 894: HarpyBlock x1, SetupRecipes reverse
 Recipe {
     create: (5953, 1),
     required: &[Requirement::item(5954, 4)],
@@ -6388,14 +6397,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 894: MoonplateBlockWall x4
+// 895: MoonplateBlockWall x4
 Recipe {
     create: (5997, 4),
     required: &[Requirement::item(5996, 1)],
     stations: &[18],
     ..BASE
 },
-// 895: MoonplateBlock x1, SetupRecipes reverse
+// 896: MoonplateBlock x1, SetupRecipes reverse
 Recipe {
     create: (5996, 1),
     required: &[Requirement::item(5997, 4)],
@@ -6403,21 +6412,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 896: LibrarianBlock x20
+// 897: LibrarianBlock x20
 Recipe {
     create: (6019, 20),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 20), Requirement::item(149, 1)],
     stations: &[101],
     ..BASE
 },
-// 897: LibrarianBlockWall x4
+// 898: LibrarianBlockWall x4
 Recipe {
     create: (6020, 4),
     required: &[Requirement::item(6019, 1)],
     stations: &[18],
     ..BASE
 },
-// 898: LibrarianBlock x1, SetupRecipes reverse
+// 899: LibrarianBlock x1, SetupRecipes reverse
 Recipe {
     create: (6019, 1),
     required: &[Requirement::item(6020, 4)],
@@ -6425,21 +6434,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 899: SpikeBlock x5
+// 900: SpikeBlock x5
 Recipe {
     create: (6042, 5),
     required: &[Requirement::item(3, 5), Requirement::item(147, 1)],
     stations: &[18],
     ..BASE
 },
-// 900: SpikeBlockWall x4
+// 901: SpikeBlockWall x4
 Recipe {
     create: (6043, 4),
     required: &[Requirement::item(6042, 1)],
     stations: &[18],
     ..BASE
 },
-// 901: SpikeBlock x1, SetupRecipes reverse
+// 902: SpikeBlock x1, SetupRecipes reverse
 Recipe {
     create: (6042, 1),
     required: &[Requirement::item(6043, 4)],
@@ -6447,35 +6456,35 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 902: DamagingSpikeBlock x1
+// 903: DamagingSpikeBlock x1
 Recipe {
     create: (6134, 1),
     required: &[Requirement::item(6042, 1)],
     stations: &[18],
     ..BASE
 },
-// 903: SpikeBlock x1
+// 904: SpikeBlock x1
 Recipe {
     create: (6042, 1),
     required: &[Requirement::item(6134, 1)],
     stations: &[18],
     ..BASE
 },
-// 904: OfficeBlock x10
+// 905: OfficeBlock x10
 Recipe {
     create: (6065, 10),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 10), Requirement::item(23, 5)],
     stations: &[18],
     ..BASE
 },
-// 905: OfficeBlockWall x4
+// 906: OfficeBlockWall x4
 Recipe {
     create: (6066, 4),
     required: &[Requirement::item(6065, 1)],
     stations: &[18],
     ..BASE
 },
-// 906: OfficeBlock x1, SetupRecipes reverse
+// 907: OfficeBlock x1, SetupRecipes reverse
 Recipe {
     create: (6065, 1),
     required: &[Requirement::item(6066, 4)],
@@ -6483,21 +6492,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 907: ForbiddenBlock x150
+// 908: ForbiddenBlock x150
 Recipe {
     create: (6088, 150),
     required: &[Requirement::item(3, 150), Requirement::item(3783, 1)],
     stations: &[18],
     ..BASE
 },
-// 908: ForbiddenBlockWall x4
+// 909: ForbiddenBlockWall x4
 Recipe {
     create: (6089, 4),
     required: &[Requirement::item(6088, 1)],
     stations: &[18],
     ..BASE
 },
-// 909: ForbiddenBlock x1, SetupRecipes reverse
+// 910: ForbiddenBlock x1, SetupRecipes reverse
 Recipe {
     create: (6088, 1),
     required: &[Requirement::item(6089, 4)],
@@ -6505,7 +6514,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 910: WaterBlock x1
+// 911: WaterBlock x1
 Recipe {
     create: (6109, 1),
     required: &[Requirement::item(170, 1)],
@@ -6513,14 +6522,14 @@ Recipe {
     need_water: true,
     ..BASE
 },
-// 911: WaterBlockWall x4
+// 912: WaterBlockWall x4
 Recipe {
     create: (6110, 4),
     required: &[Requirement::item(6109, 1)],
     stations: &[18],
     ..BASE
 },
-// 912: WaterBlock x1, SetupRecipes reverse
+// 913: WaterBlock x1, SetupRecipes reverse
 Recipe {
     create: (6109, 1),
     required: &[Requirement::item(6110, 4)],
@@ -6528,21 +6537,21 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 913: BoulderBlock x5
+// 914: BoulderBlock x5
 Recipe {
     create: (6132, 5),
     required: &[Requirement::item(540, 1)],
     stations: &[283],
     ..BASE
 },
-// 914: BoulderBlockWall x4
+// 915: BoulderBlockWall x4
 Recipe {
     create: (6133, 4),
     required: &[Requirement::item(6132, 1)],
     stations: &[18],
     ..BASE
 },
-// 915: BoulderBlock x1, SetupRecipes reverse
+// 916: BoulderBlock x1, SetupRecipes reverse
 Recipe {
     create: (6132, 1),
     required: &[Requirement::item(6133, 4)],
@@ -6550,28 +6559,28 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 916: PineTreeBlock x1
+// 917: PineTreeBlock x1
 Recipe {
     create: (1872, 1),
     required: &[Requirement::item(5930, 1)],
     stations: &[18],
     ..BASE
 },
-// 917: PineWoodBlock x1
+// 918: PineWoodBlock x1
 Recipe {
     create: (5930, 1),
     required: &[Requirement::item(1872, 1)],
     stations: &[18],
     ..BASE
 },
-// 918: PineWoodBlockWall x4
+// 919: PineWoodBlockWall x4
 Recipe {
     create: (5931, 4),
     required: &[Requirement::item(5930, 1)],
     stations: &[18],
     ..BASE
 },
-// 919: PineWoodBlock x1, SetupRecipes reverse
+// 920: PineWoodBlock x1, SetupRecipes reverse
 Recipe {
     create: (5930, 1),
     required: &[Requirement::item(5931, 4)],
@@ -6579,49 +6588,49 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 920: LunarBlockSolar x5
+// 921: LunarBlockSolar x5
 Recipe {
     create: (3573, 5),
     required: &[Requirement::item(3458, 1), Requirement::item(3, 5)],
     stations: &[412],
     ..BASE
 },
-// 921: LunarBlockVortex x5
+// 922: LunarBlockVortex x5
 Recipe {
     create: (3574, 5),
     required: &[Requirement::item(3456, 1), Requirement::item(3, 5)],
     stations: &[412],
     ..BASE
 },
-// 922: LunarBlockNebula x5
+// 923: LunarBlockNebula x5
 Recipe {
     create: (3575, 5),
     required: &[Requirement::item(3457, 1), Requirement::item(3, 5)],
     stations: &[412],
     ..BASE
 },
-// 923: LunarBlockStardust x5
+// 924: LunarBlockStardust x5
 Recipe {
     create: (3576, 5),
     required: &[Requirement::item(3459, 1), Requirement::item(3, 5)],
     stations: &[412],
     ..BASE
 },
-// 924: CrystalBlock x5
+// 925: CrystalBlock x5
 Recipe {
     create: (3234, 5),
     required: &[Requirement::item(3, 5), Requirement::item(502, 1)],
     stations: &[133],
     ..BASE
 },
-// 925: CrystalBlockWall x4
+// 926: CrystalBlockWall x4
 Recipe {
     create: (3238, 4),
     required: &[Requirement::item(3234, 1)],
     stations: &[18],
     ..BASE
 },
-// 926: CrystalBlock x1, SetupRecipes reverse
+// 927: CrystalBlock x1, SetupRecipes reverse
 Recipe {
     create: (3234, 1),
     required: &[Requirement::item(3238, 4)],
@@ -6629,28 +6638,28 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 927: CoralstoneBlock x5
+// 928: CoralstoneBlock x5
 Recipe {
     create: (2435, 5),
     required: &[Requirement::item(3, 5), Requirement::item(275, 1)],
     need_water: true,
     ..BASE
 },
-// 928: ReefBlock x15
+// 929: ReefBlock x15
 Recipe {
     create: (5306, 15),
     required: &[Requirement::item(3, 15), Requirement::item(275, 1), Requirement::group(2625, RecipeGroups::SEASHELLS, 1)],
     need_water: true,
     ..BASE
 },
-// 929: ReefWall x4
+// 930: ReefWall x4
 Recipe {
     create: (5307, 4),
     required: &[Requirement::item(5306, 1)],
     stations: &[18],
     ..BASE
 },
-// 930: ReefBlock x1, SetupRecipes reverse
+// 931: ReefBlock x1, SetupRecipes reverse
 Recipe {
     create: (5306, 1),
     required: &[Requirement::item(5307, 4)],
@@ -6658,14 +6667,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 931: PoopWall x4
+// 932: PoopWall x4
 Recipe {
     create: (5396, 4),
     required: &[Requirement::item(5395, 1)],
     stations: &[18],
     ..BASE
 },
-// 932: PoopBlock x1, SetupRecipes reverse
+// 933: PoopBlock x1, SetupRecipes reverse
 Recipe {
     create: (5395, 1),
     required: &[Requirement::item(5396, 4)],
@@ -6673,27 +6682,27 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 933: DemoniteBrick x5
+// 934: DemoniteBrick x5
 Recipe {
     create: (577, 5),
     required: &[Requirement::item(56, 1), Requirement::item(61, 5)],
     stations: &[17],
     ..BASE
 },
-// 934: MudBlock x1
+// 935: MudBlock x1
 Recipe {
     create: (176, 1),
     required: &[Requirement::item(2, 1)],
     need_water: true,
     ..BASE
 },
-// 935: MudBallPlayer x1
+// 936: MudBallPlayer x1
 Recipe {
     create: (5572, 1),
     required: &[Requirement::item(176, 1)],
     ..BASE
 },
-// 936: MudWallEcho x4
+// 937: MudWallEcho x4
 Recipe {
     create: (4487, 4),
     required: &[Requirement::item(176, 1)],
@@ -6701,7 +6710,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 937: MudBlock x1, SetupRecipes reverse
+// 938: MudBlock x1, SetupRecipes reverse
 Recipe {
     create: (176, 1),
     required: &[Requirement::item(4487, 4)],
@@ -6709,14 +6718,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 938: DirtWall x4
+// 939: DirtWall x4
 Recipe {
     create: (30, 4),
     required: &[Requirement::item(2, 1)],
     stations: &[18],
     ..BASE
 },
-// 939: DirtBlock x1, SetupRecipes reverse
+// 940: DirtBlock x1, SetupRecipes reverse
 Recipe {
     create: (2, 1),
     required: &[Requirement::item(30, 4)],
@@ -6724,7 +6733,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 940: Cave6Echo x4
+// 941: Cave6Echo x4
 Recipe {
     create: (4501, 4),
     required: &[Requirement::item(2, 1)],
@@ -6732,7 +6741,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 941: DirtBlock x1, SetupRecipes reverse
+// 942: DirtBlock x1, SetupRecipes reverse
 Recipe {
     create: (2, 1),
     required: &[Requirement::item(4501, 4)],
@@ -6740,7 +6749,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 942: CaveWall1Echo x4
+// 943: CaveWall1Echo x4
 Recipe {
     create: (4510, 4),
     required: &[Requirement::item(2, 1)],
@@ -6748,7 +6757,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 943: DirtBlock x1, SetupRecipes reverse
+// 944: DirtBlock x1, SetupRecipes reverse
 Recipe {
     create: (2, 1),
     required: &[Requirement::item(4510, 4)],
@@ -6756,7 +6765,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 944: CaveWall2Echo x4
+// 945: CaveWall2Echo x4
 Recipe {
     create: (4511, 4),
     required: &[Requirement::item(2, 1)],
@@ -6764,7 +6773,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 945: DirtBlock x1, SetupRecipes reverse
+// 946: DirtBlock x1, SetupRecipes reverse
 Recipe {
     create: (2, 1),
     required: &[Requirement::item(4511, 4)],
@@ -6772,7 +6781,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 946: Dirt1Echo x4
+// 947: Dirt1Echo x4
 Recipe {
     create: (4521, 4),
     required: &[Requirement::item(2, 1)],
@@ -6780,7 +6789,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 947: DirtBlock x1, SetupRecipes reverse
+// 948: DirtBlock x1, SetupRecipes reverse
 Recipe {
     create: (2, 1),
     required: &[Requirement::item(4521, 4)],
@@ -6788,7 +6797,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 948: Dirt2Echo x4
+// 949: Dirt2Echo x4
 Recipe {
     create: (4522, 4),
     required: &[Requirement::item(2, 1)],
@@ -6796,7 +6805,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 949: DirtBlock x1, SetupRecipes reverse
+// 950: DirtBlock x1, SetupRecipes reverse
 Recipe {
     create: (2, 1),
     required: &[Requirement::item(4522, 4)],
@@ -6804,7 +6813,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 950: Dirt3Echo x4
+// 951: Dirt3Echo x4
 Recipe {
     create: (4523, 4),
     required: &[Requirement::item(2, 1)],
@@ -6812,7 +6821,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 951: DirtBlock x1, SetupRecipes reverse
+// 952: DirtBlock x1, SetupRecipes reverse
 Recipe {
     create: (2, 1),
     required: &[Requirement::item(4523, 4)],
@@ -6820,7 +6829,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 952: Dirt4Echo x4
+// 953: Dirt4Echo x4
 Recipe {
     create: (4524, 4),
     required: &[Requirement::item(2, 1)],
@@ -6828,7 +6837,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 953: DirtBlock x1, SetupRecipes reverse
+// 954: DirtBlock x1, SetupRecipes reverse
 Recipe {
     create: (2, 1),
     required: &[Requirement::item(4524, 4)],
@@ -6836,14 +6845,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 954: StoneWall x4
+// 955: StoneWall x4
 Recipe {
     create: (26, 4),
     required: &[Requirement::item(3, 1)],
     stations: &[18],
     ..BASE
 },
-// 955: StoneBlock x1, SetupRecipes reverse
+// 956: StoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (3, 1),
     required: &[Requirement::item(26, 4)],
@@ -6851,7 +6860,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 956: Cave7Echo x4
+// 957: Cave7Echo x4
 Recipe {
     create: (4502, 4),
     required: &[Requirement::item(3, 1)],
@@ -6859,7 +6868,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 957: StoneBlock x1, SetupRecipes reverse
+// 958: StoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (3, 1),
     required: &[Requirement::item(4502, 4)],
@@ -6867,7 +6876,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 958: Cave8Echo x4
+// 959: Cave8Echo x4
 Recipe {
     create: (4512, 4),
     required: &[Requirement::item(3, 1)],
@@ -6875,7 +6884,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 959: StoneBlock x1, SetupRecipes reverse
+// 960: StoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (3, 1),
     required: &[Requirement::item(4512, 4)],
@@ -6883,7 +6892,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 960: Rocks1Echo x4
+// 961: Rocks1Echo x4
 Recipe {
     create: (4537, 4),
     required: &[Requirement::item(3, 1)],
@@ -6891,7 +6900,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 961: StoneBlock x1, SetupRecipes reverse
+// 962: StoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (3, 1),
     required: &[Requirement::item(4537, 4)],
@@ -6899,7 +6908,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 962: Rocks2Echo x4
+// 963: Rocks2Echo x4
 Recipe {
     create: (4538, 4),
     required: &[Requirement::item(3, 1)],
@@ -6907,7 +6916,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 963: StoneBlock x1, SetupRecipes reverse
+// 964: StoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (3, 1),
     required: &[Requirement::item(4538, 4)],
@@ -6915,7 +6924,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 964: Rocks3Echo x4
+// 965: Rocks3Echo x4
 Recipe {
     create: (4539, 4),
     required: &[Requirement::item(3, 1)],
@@ -6923,7 +6932,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 965: StoneBlock x1, SetupRecipes reverse
+// 966: StoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (3, 1),
     required: &[Requirement::item(4539, 4)],
@@ -6931,7 +6940,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 966: Rocks4Echo x4
+// 967: Rocks4Echo x4
 Recipe {
     create: (4540, 4),
     required: &[Requirement::item(3, 1)],
@@ -6939,7 +6948,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 967: StoneBlock x1, SetupRecipes reverse
+// 968: StoneBlock x1, SetupRecipes reverse
 Recipe {
     create: (3, 1),
     required: &[Requirement::item(4540, 4)],
@@ -6947,14 +6956,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 968: LivingWoodWall x4
+// 969: LivingWoodWall x4
 Recipe {
     create: (1723, 4),
     required: &[Requirement::item(9, 1)],
     stations: &[304],
     ..BASE
 },
-// 969: Wood x1, SetupRecipes reverse
+// 970: Wood x1, SetupRecipes reverse
 Recipe {
     create: (9, 1),
     required: &[Requirement::item(1723, 4)],
@@ -6962,14 +6971,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 970: LivingLeafWall x4
+// 971: LivingLeafWall x4
 Recipe {
     create: (3584, 4),
     required: &[Requirement::item(9, 1)],
     stations: &[304],
     ..BASE
 },
-// 971: Wood x1, SetupRecipes reverse
+// 972: Wood x1, SetupRecipes reverse
 Recipe {
     create: (9, 1),
     required: &[Requirement::item(3584, 4)],
@@ -6977,14 +6986,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 972: WoodWall x4
+// 973: WoodWall x4
 Recipe {
     create: (93, 4),
     required: &[Requirement::item(9, 1)],
     stations: &[18],
     ..BASE
 },
-// 973: Wood x1, SetupRecipes reverse
+// 974: Wood x1, SetupRecipes reverse
 Recipe {
     create: (9, 1),
     required: &[Requirement::item(93, 4)],
@@ -6992,14 +7001,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 974: RichMahoganyWall x4
+// 975: RichMahoganyWall x4
 Recipe {
     create: (623, 4),
     required: &[Requirement::item(620, 1)],
     stations: &[18],
     ..BASE
 },
-// 975: RichMahogany x1, SetupRecipes reverse
+// 976: RichMahogany x1, SetupRecipes reverse
 Recipe {
     create: (620, 1),
     required: &[Requirement::item(623, 4)],
@@ -7007,14 +7016,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 976: EbonwoodWall x4
+// 977: EbonwoodWall x4
 Recipe {
     create: (622, 4),
     required: &[Requirement::item(619, 1)],
     stations: &[18],
     ..BASE
 },
-// 977: Ebonwood x1, SetupRecipes reverse
+// 978: Ebonwood x1, SetupRecipes reverse
 Recipe {
     create: (619, 1),
     required: &[Requirement::item(622, 4)],
@@ -7022,14 +7031,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 978: ShadewoodWall x4
+// 979: ShadewoodWall x4
 Recipe {
     create: (927, 4),
     required: &[Requirement::item(911, 1)],
     stations: &[18],
     ..BASE
 },
-// 979: Shadewood x1, SetupRecipes reverse
+// 980: Shadewood x1, SetupRecipes reverse
 Recipe {
     create: (911, 1),
     required: &[Requirement::item(927, 4)],
@@ -7037,14 +7046,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 980: PearlwoodWall x4
+// 981: PearlwoodWall x4
 Recipe {
     create: (624, 4),
     required: &[Requirement::item(621, 1)],
     stations: &[18],
     ..BASE
 },
-// 981: Pearlwood x1, SetupRecipes reverse
+// 982: Pearlwood x1, SetupRecipes reverse
 Recipe {
     create: (621, 1),
     required: &[Requirement::item(624, 4)],
@@ -7052,14 +7061,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 982: BorealWoodWall x4
+// 983: BorealWoodWall x4
 Recipe {
     create: (2505, 4),
     required: &[Requirement::item(2503, 1)],
     stations: &[18],
     ..BASE
 },
-// 983: BorealWood x1, SetupRecipes reverse
+// 984: BorealWood x1, SetupRecipes reverse
 Recipe {
     create: (2503, 1),
     required: &[Requirement::item(2505, 4)],
@@ -7067,14 +7076,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 984: PalmWoodWall x4
+// 985: PalmWoodWall x4
 Recipe {
     create: (2506, 4),
     required: &[Requirement::item(2504, 1)],
     stations: &[18],
     ..BASE
 },
-// 985: PalmWood x1, SetupRecipes reverse
+// 986: PalmWood x1, SetupRecipes reverse
 Recipe {
     create: (2504, 1),
     required: &[Requirement::item(2506, 4)],
@@ -7082,14 +7091,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 986: AshWoodWall x4
+// 987: AshWoodWall x4
 Recipe {
     create: (5216, 4),
     required: &[Requirement::item(5215, 1)],
     stations: &[18],
     ..BASE
 },
-// 987: AshWood x1, SetupRecipes reverse
+// 988: AshWood x1, SetupRecipes reverse
 Recipe {
     create: (5215, 1),
     required: &[Requirement::item(5216, 4)],
@@ -7097,14 +7106,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 988: MushroomWall x4
+// 989: MushroomWall x4
 Recipe {
     create: (764, 4),
     required: &[Requirement::item(183, 1)],
     stations: &[18],
     ..BASE
 },
-// 989: GlowingMushroom x1, SetupRecipes reverse
+// 990: GlowingMushroom x1, SetupRecipes reverse
 Recipe {
     create: (183, 1),
     required: &[Requirement::item(764, 4)],
@@ -7112,14 +7121,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 990: PumpkinWall x4
+// 991: PumpkinWall x4
 Recipe {
     create: (1726, 4),
     required: &[Requirement::item(1725, 1)],
     stations: &[18],
     ..BASE
 },
-// 991: Pumpkin x1, SetupRecipes reverse
+// 992: Pumpkin x1, SetupRecipes reverse
 Recipe {
     create: (1725, 1),
     required: &[Requirement::item(1726, 4)],
@@ -7127,14 +7136,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 992: HayWall x4
+// 993: HayWall x4
 Recipe {
     create: (1728, 4),
     required: &[Requirement::item(1727, 1)],
     stations: &[18],
     ..BASE
 },
-// 993: Hay x1, SetupRecipes reverse
+// 994: Hay x1, SetupRecipes reverse
 Recipe {
     create: (1727, 1),
     required: &[Requirement::item(1728, 4)],
@@ -7142,14 +7151,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 994: SpookyWoodWall x4
+// 995: SpookyWoodWall x4
 Recipe {
     create: (1730, 4),
     required: &[Requirement::item(1729, 1)],
     stations: &[18],
     ..BASE
 },
-// 995: SpookyWood x1, SetupRecipes reverse
+// 996: SpookyWood x1, SetupRecipes reverse
 Recipe {
     create: (1729, 1),
     required: &[Requirement::item(1730, 4)],
@@ -7157,14 +7166,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 996: CogWall x4
+// 997: CogWall x4
 Recipe {
     create: (3751, 4),
     required: &[Requirement::item(1344, 1)],
     stations: &[18],
     ..BASE
 },
-// 997: Cog x1, SetupRecipes reverse
+// 998: Cog x1, SetupRecipes reverse
 Recipe {
     create: (1344, 1),
     required: &[Requirement::item(3751, 4)],
@@ -7172,14 +7181,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 998: MartianConduitWall x4
+// 999: MartianConduitWall x4
 Recipe {
     create: (2861, 4),
     required: &[Requirement::item(2860, 1)],
     stations: &[18],
     ..BASE
 },
-// 999: MartianConduitPlating x1, SetupRecipes reverse
+// 1000: MartianConduitPlating x1, SetupRecipes reverse
 Recipe {
     create: (2860, 1),
     required: &[Requirement::item(2861, 4)],
@@ -7187,14 +7196,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1000: SillyBalloonPinkWall x4
+// 1001: SillyBalloonPinkWall x4
 Recipe {
     create: (3760, 4),
     required: &[Requirement::item(3736, 1)],
     stations: &[18],
     ..BASE
 },
-// 1001: SillyBalloonPink x1, SetupRecipes reverse
+// 1002: SillyBalloonPink x1, SetupRecipes reverse
 Recipe {
     create: (3736, 1),
     required: &[Requirement::item(3760, 4)],
@@ -7202,14 +7211,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1002: SillyBalloonPurpleWall x4
+// 1003: SillyBalloonPurpleWall x4
 Recipe {
     create: (3761, 4),
     required: &[Requirement::item(3737, 1)],
     stations: &[18],
     ..BASE
 },
-// 1003: SillyBalloonPurple x1, SetupRecipes reverse
+// 1004: SillyBalloonPurple x1, SetupRecipes reverse
 Recipe {
     create: (3737, 1),
     required: &[Requirement::item(3761, 4)],
@@ -7217,14 +7226,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1004: SillyBalloonGreenWall x4
+// 1005: SillyBalloonGreenWall x4
 Recipe {
     create: (3762, 4),
     required: &[Requirement::item(3738, 1)],
     stations: &[18],
     ..BASE
 },
-// 1005: SillyBalloonGreen x1, SetupRecipes reverse
+// 1006: SillyBalloonGreen x1, SetupRecipes reverse
 Recipe {
     create: (3738, 1),
     required: &[Requirement::item(3762, 4)],
@@ -7232,1502 +7241,1502 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1006: Trapdoor x1
+// 1007: Trapdoor x1
 Recipe {
     create: (3239, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 4)],
     stations: &[18],
     ..BASE
 },
-// 1007: TallGate x1
+// 1008: TallGate x1
 Recipe {
     create: (3240, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12), Requirement::group(22, RecipeGroups::IRON_BAR, 4)],
     stations: &[283],
     ..BASE
 },
-// 1008: WoodenDoor x1
+// 1009: WoodenDoor x1
 Recipe {
     create: (25, 1),
     required: &[Requirement::item(9, 6)],
     stations: &[18],
     ..BASE
 },
-// 1009: WoodenChair x1
+// 1010: WoodenChair x1
 Recipe {
     create: (34, 1),
     required: &[Requirement::item(9, 4)],
     stations: &[18],
     ..BASE
 },
-// 1010: Chest x1
+// 1011: Chest x1
 Recipe {
     create: (48, 1),
     required: &[Requirement::item(9, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1011: WoodenSink x1
+// 1012: WoodenSink x1
 Recipe {
     create: (2827, 1),
     required: &[Requirement::item(9, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1012: WoodenTable x1
+// 1013: WoodenTable x1
 Recipe {
     create: (32, 1),
     required: &[Requirement::item(9, 8)],
     stations: &[18],
     ..BASE
 },
-// 1013: WorkBench x1
+// 1014: WorkBench x1
 Recipe {
     create: (36, 1),
     required: &[Requirement::item(9, 10)],
     ..BASE
 },
-// 1014: Piano x1
+// 1015: Piano x1
 Recipe {
     create: (333, 1),
     required: &[Requirement::item(154, 4), Requirement::item(9, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1015: Bed x1
+// 1016: Bed x1
 Recipe {
     create: (224, 1),
     required: &[Requirement::item(9, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1016: Dresser x1
+// 1017: Dresser x1
 Recipe {
     create: (334, 1),
     required: &[Requirement::item(9, 16)],
     stations: &[106],
     ..BASE
 },
-// 1017: Bookcase x1
+// 1018: Bookcase x1
 Recipe {
     create: (354, 1),
     required: &[Requirement::item(9, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1018: PalmWoodBathtub x1
+// 1019: PalmWoodBathtub x1
 Recipe {
     create: (2519, 1),
     required: &[Requirement::item(2504, 14)],
     stations: &[106],
     ..BASE
 },
-// 1019: PalmWoodBed x1
+// 1020: PalmWoodBed x1
 Recipe {
     create: (2520, 1),
     required: &[Requirement::item(2504, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1020: PalmWoodBench x1
+// 1021: PalmWoodBench x1
 Recipe {
     create: (2521, 1),
     required: &[Requirement::item(2504, 8)],
     stations: &[106],
     ..BASE
 },
-// 1021: PalmWoodBookcase x1
+// 1022: PalmWoodBookcase x1
 Recipe {
     create: (2536, 1),
     required: &[Requirement::item(2504, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1022: PalmWoodCandelabra x1
+// 1023: PalmWoodCandelabra x1
 Recipe {
     create: (2522, 1),
     required: &[Requirement::item(2504, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1023: PalmWoodCandle x1
+// 1024: PalmWoodCandle x1
 Recipe {
     create: (2523, 1),
     required: &[Requirement::item(2504, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1024: PalmWoodChair x1
+// 1025: PalmWoodChair x1
 Recipe {
     create: (2524, 1),
     required: &[Requirement::item(2504, 4)],
     stations: &[18],
     ..BASE
 },
-// 1025: PalmWoodChandelier x1
+// 1026: PalmWoodChandelier x1
 Recipe {
     create: (2525, 1),
     required: &[Requirement::item(2504, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1026: PalmWoodChest x1
+// 1027: PalmWoodChest x1
 Recipe {
     create: (2526, 1),
     required: &[Requirement::item(2504, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1027: PalmWoodClock x1
+// 1028: PalmWoodClock x1
 Recipe {
     create: (2601, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(2504, 10)],
     stations: &[106],
     ..BASE
 },
-// 1028: PalmWoodDoor x1
+// 1029: PalmWoodDoor x1
 Recipe {
     create: (2528, 1),
     required: &[Requirement::item(2504, 6)],
     stations: &[18],
     ..BASE
 },
-// 1029: PalmWoodDresser x1
+// 1030: PalmWoodDresser x1
 Recipe {
     create: (2529, 1),
     required: &[Requirement::item(2504, 16)],
     stations: &[106],
     ..BASE
 },
-// 1030: PalmWoodLamp x1
+// 1031: PalmWoodLamp x1
 Recipe {
     create: (2533, 1),
     required: &[Requirement::item(8, 1), Requirement::item(2504, 3)],
     stations: &[18],
     ..BASE
 },
-// 1031: PalmWoodLantern x1
+// 1032: PalmWoodLantern x1
 Recipe {
     create: (2530, 1),
     required: &[Requirement::item(2504, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1032: PalmWoodPiano x1
+// 1033: PalmWoodPiano x1
 Recipe {
     create: (2531, 1),
     required: &[Requirement::item(154, 4), Requirement::item(2504, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1033: PalmWoodSofa x1
+// 1034: PalmWoodSofa x1
 Recipe {
     create: (2527, 1),
     required: &[Requirement::item(2504, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1034: PalmWoodSink x1
+// 1035: PalmWoodSink x1
 Recipe {
     create: (2850, 1),
     required: &[Requirement::item(2504, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1035: ToiletPalm x1
+// 1036: ToiletPalm x1
 Recipe {
     create: (4118, 1),
     required: &[Requirement::item(2504, 6)],
     stations: &[106],
     ..BASE
 },
-// 1036: PalmWoodTable x1
+// 1037: PalmWoodTable x1
 Recipe {
     create: (2532, 1),
     required: &[Requirement::item(2504, 8)],
     stations: &[18],
     ..BASE
 },
-// 1037: PalmWoodWorkBench x1
+// 1038: PalmWoodWorkBench x1
 Recipe {
     create: (2534, 1),
     required: &[Requirement::item(2504, 10)],
     ..BASE
 },
-// 1038: BorealBeam x2
+// 1039: BorealBeam x2
 Recipe {
     create: (4717, 2),
     required: &[Requirement::item(2503, 1)],
     stations: &[106],
     ..BASE
 },
-// 1039: BorealWoodBathtub x1
+// 1040: BorealWoodBathtub x1
 Recipe {
     create: (2552, 1),
     required: &[Requirement::item(2503, 14)],
     stations: &[106],
     ..BASE
 },
-// 1040: BorealWoodBed x1
+// 1041: BorealWoodBed x1
 Recipe {
     create: (2553, 1),
     required: &[Requirement::item(2503, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1041: BorealWoodBookcase x1
+// 1042: BorealWoodBookcase x1
 Recipe {
     create: (2554, 1),
     required: &[Requirement::item(2503, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1042: BorealWoodCandelabra x1
+// 1043: BorealWoodCandelabra x1
 Recipe {
     create: (2555, 1),
     required: &[Requirement::item(2503, 5), Requirement::item(974, 3)],
     stations: &[18],
     ..BASE
 },
-// 1043: BorealWoodCandle x1
+// 1044: BorealWoodCandle x1
 Recipe {
     create: (2556, 1),
     required: &[Requirement::item(2503, 4), Requirement::item(974, 1)],
     stations: &[18],
     ..BASE
 },
-// 1044: BorealWoodChair x1
+// 1045: BorealWoodChair x1
 Recipe {
     create: (2557, 1),
     required: &[Requirement::item(2503, 4)],
     stations: &[18],
     ..BASE
 },
-// 1045: BorealWoodChandelier x1
+// 1046: BorealWoodChandelier x1
 Recipe {
     create: (2558, 1),
     required: &[Requirement::item(2503, 4), Requirement::item(974, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1046: BorealWoodChest x1
+// 1047: BorealWoodChest x1
 Recipe {
     create: (2559, 1),
     required: &[Requirement::item(2503, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1047: BorealWoodClock x1
+// 1048: BorealWoodClock x1
 Recipe {
     create: (2560, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(2503, 10)],
     stations: &[106],
     ..BASE
 },
-// 1048: BorealWoodDoor x1
+// 1049: BorealWoodDoor x1
 Recipe {
     create: (2561, 1),
     required: &[Requirement::item(2503, 6)],
     stations: &[18],
     ..BASE
 },
-// 1049: BorealWoodDresser x1
+// 1050: BorealWoodDresser x1
 Recipe {
     create: (2562, 1),
     required: &[Requirement::item(2503, 16)],
     stations: &[106],
     ..BASE
 },
-// 1050: BorealWoodLamp x1
+// 1051: BorealWoodLamp x1
 Recipe {
     create: (2563, 1),
     required: &[Requirement::item(974, 1), Requirement::item(2503, 3)],
     stations: &[18],
     ..BASE
 },
-// 1051: BorealWoodLantern x1
+// 1052: BorealWoodLantern x1
 Recipe {
     create: (2564, 1),
     required: &[Requirement::item(2503, 6), Requirement::item(974, 1)],
     stations: &[18],
     ..BASE
 },
-// 1052: BorealWoodPiano x1
+// 1053: BorealWoodPiano x1
 Recipe {
     create: (2565, 1),
     required: &[Requirement::item(154, 4), Requirement::item(2503, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1053: BorealWoodSofa x1
+// 1054: BorealWoodSofa x1
 Recipe {
     create: (858, 1),
     required: &[Requirement::item(2503, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1054: BorealWoodSink x1
+// 1055: BorealWoodSink x1
 Recipe {
     create: (2852, 1),
     required: &[Requirement::item(2503, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1055: ToiletBoreal x1
+// 1056: ToiletBoreal x1
 Recipe {
     create: (4119, 1),
     required: &[Requirement::item(2503, 6)],
     stations: &[106],
     ..BASE
 },
-// 1056: BorealWoodTable x1
+// 1057: BorealWoodTable x1
 Recipe {
     create: (677, 1),
     required: &[Requirement::item(2503, 8)],
     stations: &[18],
     ..BASE
 },
-// 1057: BorealWoodWorkBench x1
+// 1058: BorealWoodWorkBench x1
 Recipe {
     create: (673, 1),
     required: &[Requirement::item(2503, 10)],
     ..BASE
 },
-// 1058: RichMahoganyBeam x2
+// 1059: RichMahoganyBeam x2
 Recipe {
     create: (4718, 2),
     required: &[Requirement::item(620, 1)],
     stations: &[106],
     ..BASE
 },
-// 1059: RichMahoganyClock x1
+// 1060: RichMahoganyClock x1
 Recipe {
     create: (2597, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(620, 10)],
     stations: &[106],
     ..BASE
 },
-// 1060: RichMahoganyDoor x1
+// 1061: RichMahoganyDoor x1
 Recipe {
     create: (651, 1),
     required: &[Requirement::item(620, 6)],
     stations: &[18],
     ..BASE
 },
-// 1061: RichMahoganyChair x1
+// 1062: RichMahoganyChair x1
 Recipe {
     create: (629, 1),
     required: &[Requirement::item(620, 4)],
     stations: &[18],
     ..BASE
 },
-// 1062: RichMahoganyChest x1
+// 1063: RichMahoganyChest x1
 Recipe {
     create: (626, 1),
     required: &[Requirement::item(620, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1063: RichMahoganySink x1
+// 1064: RichMahoganySink x1
 Recipe {
     create: (2829, 1),
     required: &[Requirement::item(620, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1064: RichMahoganyTable x1
+// 1065: RichMahoganyTable x1
 Recipe {
     create: (639, 1),
     required: &[Requirement::item(620, 8)],
     stations: &[18],
     ..BASE
 },
-// 1065: RichMahoganyWorkBench x1
+// 1066: RichMahoganyWorkBench x1
 Recipe {
     create: (636, 1),
     required: &[Requirement::item(620, 10)],
     ..BASE
 },
-// 1066: RichMahoganyPiano x1
+// 1067: RichMahoganyPiano x1
 Recipe {
     create: (642, 1),
     required: &[Requirement::item(154, 4), Requirement::item(620, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1067: RichMahoganyBed x1
+// 1068: RichMahoganyBed x1
 Recipe {
     create: (645, 1),
     required: &[Requirement::item(620, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1068: RichMahoganyDresser x1
+// 1069: RichMahoganyDresser x1
 Recipe {
     create: (648, 1),
     required: &[Requirement::item(620, 16)],
     stations: &[106],
     ..BASE
 },
-// 1069: RichMahoganyBookcase x1
+// 1070: RichMahoganyBookcase x1
 Recipe {
     create: (2026, 1),
     required: &[Requirement::item(620, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1070: RichMahoganyBathtub x1
+// 1071: RichMahoganyBathtub x1
 Recipe {
     create: (2077, 1),
     required: &[Requirement::item(620, 14)],
     stations: &[106],
     ..BASE
 },
-// 1071: RichMahoganyCandle x1
+// 1072: RichMahoganyCandle x1
 Recipe {
     create: (2050, 1),
     required: &[Requirement::item(620, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1072: RichMahoganyLantern x1
+// 1073: RichMahoganyLantern x1
 Recipe {
     create: (2038, 1),
     required: &[Requirement::item(620, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1073: RichMahoganyChandelier x1
+// 1074: RichMahoganyChandelier x1
 Recipe {
     create: (2060, 1),
     required: &[Requirement::item(620, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1074: RichMahoganyLamp x1
+// 1075: RichMahoganyLamp x1
 Recipe {
     create: (2087, 1),
     required: &[Requirement::item(8, 1), Requirement::item(620, 3)],
     stations: &[18],
     ..BASE
 },
-// 1075: RichMahoganyCandelabra x1
+// 1076: RichMahoganyCandelabra x1
 Recipe {
     create: (2098, 1),
     required: &[Requirement::item(620, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1076: RichMahoganySofa x1
+// 1077: RichMahoganySofa x1
 Recipe {
     create: (2399, 1),
     required: &[Requirement::item(620, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1077: ToiletRichMahogany x1
+// 1078: ToiletRichMahogany x1
 Recipe {
     create: (4097, 1),
     required: &[Requirement::item(620, 6)],
     stations: &[106],
     ..BASE
 },
-// 1078: EbonwoodDoor x1
+// 1079: EbonwoodDoor x1
 Recipe {
     create: (650, 1),
     required: &[Requirement::item(619, 6)],
     stations: &[18],
     ..BASE
 },
-// 1079: EbonwoodChair x1
+// 1080: EbonwoodChair x1
 Recipe {
     create: (628, 1),
     required: &[Requirement::item(619, 4)],
     stations: &[18],
     ..BASE
 },
-// 1080: EbonwoodClock x1
+// 1081: EbonwoodClock x1
 Recipe {
     create: (2593, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(619, 10)],
     stations: &[106],
     ..BASE
 },
-// 1081: EbonwoodChest x1
+// 1082: EbonwoodChest x1
 Recipe {
     create: (625, 1),
     required: &[Requirement::item(619, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1082: EbonwoodSink x1
+// 1083: EbonwoodSink x1
 Recipe {
     create: (2828, 1),
     required: &[Requirement::item(619, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1083: EbonwoodTable x1
+// 1084: EbonwoodTable x1
 Recipe {
     create: (638, 1),
     required: &[Requirement::item(619, 8)],
     stations: &[18],
     ..BASE
 },
-// 1084: EbonwoodWorkBench x1
+// 1085: EbonwoodWorkBench x1
 Recipe {
     create: (635, 1),
     required: &[Requirement::item(619, 10)],
     ..BASE
 },
-// 1085: EbonwoodPiano x1
+// 1086: EbonwoodPiano x1
 Recipe {
     create: (641, 1),
     required: &[Requirement::item(154, 4), Requirement::item(619, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1086: EbonwoodBed x1
+// 1087: EbonwoodBed x1
 Recipe {
     create: (644, 1),
     required: &[Requirement::item(619, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1087: EbonwoodDresser x1
+// 1088: EbonwoodDresser x1
 Recipe {
     create: (647, 1),
     required: &[Requirement::item(619, 16)],
     stations: &[106],
     ..BASE
 },
-// 1088: EbonwoodBookcase x1
+// 1089: EbonwoodBookcase x1
 Recipe {
     create: (2021, 1),
     required: &[Requirement::item(619, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1089: EbonwoodBathtub x1
+// 1090: EbonwoodBathtub x1
 Recipe {
     create: (2073, 1),
     required: &[Requirement::item(619, 14)],
     stations: &[106],
     ..BASE
 },
-// 1090: EbonwoodLantern x1
+// 1091: EbonwoodLantern x1
 Recipe {
     create: (2033, 1),
     required: &[Requirement::item(619, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1091: EbonwoodCandle x1
+// 1092: EbonwoodCandle x1
 Recipe {
     create: (2046, 1),
     required: &[Requirement::item(619, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1092: EbonwoodChandelier x1
+// 1093: EbonwoodChandelier x1
 Recipe {
     create: (2056, 1),
     required: &[Requirement::item(619, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1093: EbonwoodLamp x1
+// 1094: EbonwoodLamp x1
 Recipe {
     create: (2083, 1),
     required: &[Requirement::item(8, 1), Requirement::item(619, 3)],
     stations: &[18],
     ..BASE
 },
-// 1094: EbonwoodCandelabra x1
+// 1095: EbonwoodCandelabra x1
 Recipe {
     create: (2093, 1),
     required: &[Requirement::item(619, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1095: EbonwoodSofa x1
+// 1096: EbonwoodSofa x1
 Recipe {
     create: (2398, 1),
     required: &[Requirement::item(619, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1096: ToiletEbonyWood x1
+// 1097: ToiletEbonyWood x1
 Recipe {
     create: (4096, 1),
     required: &[Requirement::item(619, 6)],
     stations: &[106],
     ..BASE
 },
-// 1097: ShadewoodClock x1
+// 1098: ShadewoodClock x1
 Recipe {
     create: (2604, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(911, 10)],
     stations: &[106],
     ..BASE
 },
-// 1098: ShadewoodDoor x1
+// 1099: ShadewoodDoor x1
 Recipe {
     create: (912, 1),
     required: &[Requirement::item(911, 6)],
     stations: &[18],
     ..BASE
 },
-// 1099: ShadewoodChair x1
+// 1100: ShadewoodChair x1
 Recipe {
     create: (915, 1),
     required: &[Requirement::item(911, 4)],
     stations: &[18],
     ..BASE
 },
-// 1100: ShadewoodChest x1
+// 1101: ShadewoodChest x1
 Recipe {
     create: (914, 1),
     required: &[Requirement::item(911, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1101: ShadewoodSink x1
+// 1102: ShadewoodSink x1
 Recipe {
     create: (2835, 1),
     required: &[Requirement::item(911, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1102: ShadewoodTable x1
+// 1103: ShadewoodTable x1
 Recipe {
     create: (917, 1),
     required: &[Requirement::item(911, 8)],
     stations: &[18],
     ..BASE
 },
-// 1103: ShadewoodWorkBench x1
+// 1104: ShadewoodWorkBench x1
 Recipe {
     create: (916, 1),
     required: &[Requirement::item(911, 10)],
     ..BASE
 },
-// 1104: ShadewoodPiano x1
+// 1105: ShadewoodPiano x1
 Recipe {
     create: (919, 1),
     required: &[Requirement::item(154, 4), Requirement::item(911, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1105: ShadewoodBed x1
+// 1106: ShadewoodBed x1
 Recipe {
     create: (920, 1),
     required: &[Requirement::item(911, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1106: ShadewoodBathtub x1
+// 1107: ShadewoodBathtub x1
 Recipe {
     create: (2127, 1),
     required: &[Requirement::item(911, 14)],
     stations: &[106],
     ..BASE
 },
-// 1107: ShadewoodBookcase x1
+// 1108: ShadewoodBookcase x1
 Recipe {
     create: (2136, 1),
     required: &[Requirement::item(911, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1108: ShadewoodDresser x1
+// 1109: ShadewoodDresser x1
 Recipe {
     create: (918, 1),
     required: &[Requirement::item(911, 16)],
     stations: &[106],
     ..BASE
 },
-// 1109: ShadewoodChandelier x1
+// 1110: ShadewoodChandelier x1
 Recipe {
     create: (2142, 1),
     required: &[Requirement::item(911, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1110: ShadewoodCandelabra x1
+// 1111: ShadewoodCandelabra x1
 Recipe {
     create: (2150, 1),
     required: &[Requirement::item(911, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1111: ShadewoodLantern x1
+// 1112: ShadewoodLantern x1
 Recipe {
     create: (2146, 1),
     required: &[Requirement::item(911, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1112: ShadewoodLamp x1
+// 1113: ShadewoodLamp x1
 Recipe {
     create: (2132, 1),
     required: &[Requirement::item(8, 1), Requirement::item(911, 3)],
     stations: &[18],
     ..BASE
 },
-// 1113: ShadewoodCandle x1
+// 1114: ShadewoodCandle x1
 Recipe {
     create: (2154, 1),
     required: &[Requirement::item(911, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1114: ShadewoodSofa x1
+// 1115: ShadewoodSofa x1
 Recipe {
     create: (2401, 1),
     required: &[Requirement::item(911, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1115: ToiletShadewood x1
+// 1116: ToiletShadewood x1
 Recipe {
     create: (4105, 1),
     required: &[Requirement::item(911, 6)],
     stations: &[106],
     ..BASE
 },
-// 1116: PearlwoodClock x1
+// 1117: PearlwoodClock x1
 Recipe {
     create: (2602, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(621, 10)],
     stations: &[106],
     ..BASE
 },
-// 1117: PearlwoodDoor x1
+// 1118: PearlwoodDoor x1
 Recipe {
     create: (652, 1),
     required: &[Requirement::item(621, 6)],
     stations: &[18],
     ..BASE
 },
-// 1118: PearlwoodChair x1
+// 1119: PearlwoodChair x1
 Recipe {
     create: (630, 1),
     required: &[Requirement::item(621, 4)],
     stations: &[18],
     ..BASE
 },
-// 1119: PearlwoodChest x1
+// 1120: PearlwoodChest x1
 Recipe {
     create: (627, 1),
     required: &[Requirement::item(621, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1120: PearlwoodSink x1
+// 1121: PearlwoodSink x1
 Recipe {
     create: (2830, 1),
     required: &[Requirement::item(621, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1121: PearlwoodTable x1
+// 1122: PearlwoodTable x1
 Recipe {
     create: (640, 1),
     required: &[Requirement::item(621, 8)],
     stations: &[18],
     ..BASE
 },
-// 1122: PearlwoodWorkBench x1
+// 1123: PearlwoodWorkBench x1
 Recipe {
     create: (637, 1),
     required: &[Requirement::item(621, 10)],
     ..BASE
 },
-// 1123: PearlwoodPiano x1
+// 1124: PearlwoodPiano x1
 Recipe {
     create: (643, 1),
     required: &[Requirement::item(154, 4), Requirement::item(621, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1124: PearlwoodBed x1
+// 1125: PearlwoodBed x1
 Recipe {
     create: (646, 1),
     required: &[Requirement::item(621, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1125: PearlwoodDresser x1
+// 1126: PearlwoodDresser x1
 Recipe {
     create: (649, 1),
     required: &[Requirement::item(621, 16)],
     stations: &[106],
     ..BASE
 },
-// 1126: PearlwoodBookcase x1
+// 1127: PearlwoodBookcase x1
 Recipe {
     create: (2027, 1),
     required: &[Requirement::item(621, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1127: PearlwoodBathtub x1
+// 1128: PearlwoodBathtub x1
 Recipe {
     create: (2078, 1),
     required: &[Requirement::item(621, 14)],
     stations: &[106],
     ..BASE
 },
-// 1128: PearlwoodLantern x1
+// 1129: PearlwoodLantern x1
 Recipe {
     create: (2039, 1),
     required: &[Requirement::item(621, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1129: PearlwoodCandle x1
+// 1130: PearlwoodCandle x1
 Recipe {
     create: (2051, 1),
     required: &[Requirement::item(621, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1130: PearlwoodChandelier x1
+// 1131: PearlwoodChandelier x1
 Recipe {
     create: (2061, 1),
     required: &[Requirement::item(621, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1131: PearlwoodLamp x1
+// 1132: PearlwoodLamp x1
 Recipe {
     create: (2088, 1),
     required: &[Requirement::item(8, 1), Requirement::item(621, 3)],
     stations: &[18],
     ..BASE
 },
-// 1132: PearlwoodCandelabra x1
+// 1133: PearlwoodCandelabra x1
 Recipe {
     create: (2099, 1),
     required: &[Requirement::item(621, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1133: PearlwoodSofa x1
+// 1134: PearlwoodSofa x1
 Recipe {
     create: (2400, 1),
     required: &[Requirement::item(621, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1134: ToiletPearlwood x1
+// 1135: ToiletPearlwood x1
 Recipe {
     create: (4098, 1),
     required: &[Requirement::item(621, 6)],
     stations: &[106],
     ..BASE
 },
-// 1135: AshWoodHelmet x1
+// 1136: AshWoodHelmet x1
 Recipe {
     create: (5279, 1),
     required: &[Requirement::item(5215, 20)],
     stations: &[18],
     ..BASE
 },
-// 1136: AshWoodBreastplate x1
+// 1137: AshWoodBreastplate x1
 Recipe {
     create: (5280, 1),
     required: &[Requirement::item(5215, 30)],
     stations: &[18],
     ..BASE
 },
-// 1137: AshWoodGreaves x1
+// 1138: AshWoodGreaves x1
 Recipe {
     create: (5281, 1),
     required: &[Requirement::item(5215, 25)],
     stations: &[18],
     ..BASE
 },
-// 1138: AshWoodSword x1
+// 1139: AshWoodSword x1
 Recipe {
     create: (5284, 1),
     required: &[Requirement::item(5215, 7)],
     stations: &[18],
     ..BASE
 },
-// 1139: AshWoodHammer x1
+// 1140: AshWoodHammer x1
 Recipe {
     create: (5283, 1),
     required: &[Requirement::item(5215, 8)],
     stations: &[18],
     ..BASE
 },
-// 1140: AshWoodBow x1
+// 1141: AshWoodBow x1
 Recipe {
     create: (5282, 1),
     required: &[Requirement::item(5215, 10)],
     stations: &[18],
     ..BASE
 },
-// 1141: AshWoodBathtub x1
+// 1142: AshWoodBathtub x1
 Recipe {
     create: (5190, 1),
     required: &[Requirement::item(5215, 14)],
     stations: &[106],
     ..BASE
 },
-// 1142: AshWoodBed x1
+// 1143: AshWoodBed x1
 Recipe {
     create: (5191, 1),
     required: &[Requirement::item(5215, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1143: AshWoodBookcase x1
+// 1144: AshWoodBookcase x1
 Recipe {
     create: (5192, 1),
     required: &[Requirement::item(5215, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1144: AshWoodDresser x1
+// 1145: AshWoodDresser x1
 Recipe {
     create: (5193, 1),
     required: &[Requirement::item(5215, 16)],
     stations: &[106],
     ..BASE
 },
-// 1145: AshWoodCandelabra x1
+// 1146: AshWoodCandelabra x1
 Recipe {
     create: (5194, 1),
     required: &[Requirement::item(5215, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1146: AshWoodCandle x1
+// 1147: AshWoodCandle x1
 Recipe {
     create: (5195, 1),
     required: &[Requirement::item(5215, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1147: AshWoodChair x1
+// 1148: AshWoodChair x1
 Recipe {
     create: (5196, 1),
     required: &[Requirement::item(5215, 4)],
     stations: &[18],
     ..BASE
 },
-// 1148: AshWoodChandelier x1
+// 1149: AshWoodChandelier x1
 Recipe {
     create: (5197, 1),
     required: &[Requirement::item(5215, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1149: AshWoodChest x1
+// 1150: AshWoodChest x1
 Recipe {
     create: (5198, 1),
     required: &[Requirement::item(5215, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1150: AshWoodClock x1
+// 1151: AshWoodClock x1
 Recipe {
     create: (5199, 1),
     required: &[Requirement::item(5215, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[106],
     ..BASE
 },
-// 1151: AshWoodDoor x1
+// 1152: AshWoodDoor x1
 Recipe {
     create: (5200, 1),
     required: &[Requirement::item(5215, 6)],
     stations: &[18],
     ..BASE
 },
-// 1152: AshWoodLamp x1
+// 1153: AshWoodLamp x1
 Recipe {
     create: (5201, 1),
     required: &[Requirement::item(8, 1), Requirement::item(5215, 3)],
     stations: &[18],
     ..BASE
 },
-// 1153: AshWoodLantern x1
+// 1154: AshWoodLantern x1
 Recipe {
     create: (5202, 1),
     required: &[Requirement::item(5215, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1154: AshWoodPiano x1
+// 1155: AshWoodPiano x1
 Recipe {
     create: (5203, 1),
     required: &[Requirement::item(5215, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1155: AshWoodSink x1
+// 1156: AshWoodSink x1
 Recipe {
     create: (5205, 1),
     required: &[Requirement::item(5215, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1156: AshWoodSofa x1
+// 1157: AshWoodSofa x1
 Recipe {
     create: (5206, 1),
     required: &[Requirement::item(5215, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1157: AshWoodTable x1
+// 1158: AshWoodTable x1
 Recipe {
     create: (5207, 1),
     required: &[Requirement::item(5215, 8)],
     stations: &[18],
     ..BASE
 },
-// 1158: AshWoodWorkbench x1
+// 1159: AshWoodWorkbench x1
 Recipe {
     create: (5208, 1),
     required: &[Requirement::item(5215, 10)],
     ..BASE
 },
-// 1159: AshWoodToilet x1
+// 1160: AshWoodToilet x1
 Recipe {
     create: (5210, 1),
     required: &[Requirement::item(5215, 6)],
     stations: &[106],
     ..BASE
 },
-// 1160: MushroomBeam x2
+// 1161: MushroomBeam x2
 Recipe {
     create: (4721, 2),
     required: &[Requirement::item(183, 1)],
     stations: &[106],
     ..BASE
 },
-// 1161: MushroomBathtub x1
+// 1162: MushroomBathtub x1
 Recipe {
     create: (2537, 1),
     required: &[Requirement::item(183, 14)],
     stations: &[106],
     ..BASE
 },
-// 1162: MushroomBed x1
+// 1163: MushroomBed x1
 Recipe {
     create: (2538, 1),
     required: &[Requirement::item(183, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1163: MushroomBench x1
+// 1164: MushroomBench x1
 Recipe {
     create: (2539, 1),
     required: &[Requirement::item(183, 8)],
     stations: &[106],
     ..BASE
 },
-// 1164: MushroomBookcase x1
+// 1165: MushroomBookcase x1
 Recipe {
     create: (2540, 1),
     required: &[Requirement::item(183, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1165: MushroomCandelabra x1
+// 1166: MushroomCandelabra x1
 Recipe {
     create: (2541, 1),
     required: &[Requirement::item(183, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1166: MushroomCandle x1
+// 1167: MushroomCandle x1
 Recipe {
     create: (2542, 1),
     required: &[Requirement::item(183, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1167: MushroomChair x1
+// 1168: MushroomChair x1
 Recipe {
     create: (810, 1),
     required: &[Requirement::item(183, 4)],
     stations: &[18],
     ..BASE
 },
-// 1168: MushroomChandelier x1
+// 1169: MushroomChandelier x1
 Recipe {
     create: (2543, 1),
     required: &[Requirement::item(183, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1169: MushroomChest x1
+// 1170: MushroomChest x1
 Recipe {
     create: (2544, 1),
     required: &[Requirement::item(183, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1170: MushroomClock x1
+// 1171: MushroomClock x1
 Recipe {
     create: (2599, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(183, 10)],
     stations: &[106],
     ..BASE
 },
-// 1171: MushroomDoor x1
+// 1172: MushroomDoor x1
 Recipe {
     create: (818, 1),
     required: &[Requirement::item(183, 6)],
     stations: &[18],
     ..BASE
 },
-// 1172: MushroomDresser x1
+// 1173: MushroomDresser x1
 Recipe {
     create: (2545, 1),
     required: &[Requirement::item(183, 16)],
     stations: &[106],
     ..BASE
 },
-// 1173: MushroomLamp x1
+// 1174: MushroomLamp x1
 Recipe {
     create: (2547, 1),
     required: &[Requirement::item(8, 1), Requirement::item(183, 3)],
     stations: &[18],
     ..BASE
 },
-// 1174: MushroomLantern x1
+// 1175: MushroomLantern x1
 Recipe {
     create: (2546, 1),
     required: &[Requirement::item(183, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1175: MushroomPiano x1
+// 1176: MushroomPiano x1
 Recipe {
     create: (2548, 1),
     required: &[Requirement::item(154, 4), Requirement::item(183, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1176: MushroomSofa x1
+// 1177: MushroomSofa x1
 Recipe {
     create: (2413, 1),
     required: &[Requirement::item(183, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1177: MushroomSink x1
+// 1178: MushroomSink x1
 Recipe {
     create: (2851, 1),
     required: &[Requirement::item(183, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1178: ToiletMushroom x1
+// 1179: ToiletMushroom x1
 Recipe {
     create: (4103, 1),
     required: &[Requirement::item(183, 6)],
     stations: &[106],
     ..BASE
 },
-// 1179: MushroomTable x1
+// 1180: MushroomTable x1
 Recipe {
     create: (2550, 1),
     required: &[Requirement::item(183, 8)],
     stations: &[18],
     ..BASE
 },
-// 1180: MushroomWorkBench x1
+// 1181: MushroomWorkBench x1
 Recipe {
     create: (814, 1),
     required: &[Requirement::item(183, 10)],
     ..BASE
 },
-// 1181: SlimeBathtub x1
+// 1182: SlimeBathtub x1
 Recipe {
     create: (2567, 1),
     required: &[Requirement::item(762, 14)],
     stations: &[220],
     ..BASE
 },
-// 1182: SlimeBed x1
+// 1183: SlimeBed x1
 Recipe {
     create: (2568, 1),
     required: &[Requirement::item(762, 15), Requirement::item(225, 5)],
     stations: &[220],
     ..BASE
 },
-// 1183: SlimeBookcase x1
+// 1184: SlimeBookcase x1
 Recipe {
     create: (2569, 1),
     required: &[Requirement::item(762, 20), Requirement::item(149, 10)],
     stations: &[220],
     ..BASE
 },
-// 1184: SlimeCandelabra x1
+// 1185: SlimeCandelabra x1
 Recipe {
     create: (2570, 1),
     required: &[Requirement::item(762, 5), Requirement::item(8, 3)],
     stations: &[220],
     ..BASE
 },
-// 1185: SlimeCandle x1
+// 1186: SlimeCandle x1
 Recipe {
     create: (2571, 1),
     required: &[Requirement::item(762, 4), Requirement::item(8, 1)],
     stations: &[220],
     ..BASE
 },
-// 1186: SlimeChair x1
+// 1187: SlimeChair x1
 Recipe {
     create: (2572, 1),
     required: &[Requirement::item(762, 4)],
     stations: &[220],
     ..BASE
 },
-// 1187: SlimeChandelier x1
+// 1188: SlimeChandelier x1
 Recipe {
     create: (2573, 1),
     required: &[Requirement::item(762, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[220],
     ..BASE
 },
-// 1188: SlimeChest x1
+// 1189: SlimeChest x1
 Recipe {
     create: (2574, 1),
     required: &[Requirement::item(762, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[220],
     ..BASE
 },
-// 1189: SlimeClock x1
+// 1190: SlimeClock x1
 Recipe {
     create: (2575, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(762, 10)],
     stations: &[220],
     ..BASE
 },
-// 1190: SlimeDoor x1
+// 1191: SlimeDoor x1
 Recipe {
     create: (2576, 1),
     required: &[Requirement::item(762, 6)],
     stations: &[220],
     ..BASE
 },
-// 1191: SlimeDresser x1
+// 1192: SlimeDresser x1
 Recipe {
     create: (2577, 1),
     required: &[Requirement::item(762, 16)],
     stations: &[220],
     ..BASE
 },
-// 1192: SlimeLamp x1
+// 1193: SlimeLamp x1
 Recipe {
     create: (2578, 1),
     required: &[Requirement::item(8, 1), Requirement::item(762, 3)],
     stations: &[220],
     ..BASE
 },
-// 1193: SlimeLantern x1
+// 1194: SlimeLantern x1
 Recipe {
     create: (2579, 1),
     required: &[Requirement::item(762, 6), Requirement::item(8, 1)],
     stations: &[220],
     ..BASE
 },
-// 1194: SlimePiano x1
+// 1195: SlimePiano x1
 Recipe {
     create: (2580, 1),
     required: &[Requirement::item(154, 4), Requirement::item(762, 15), Requirement::item(149, 1)],
     stations: &[220],
     ..BASE
 },
-// 1195: SlimeSofa x1
+// 1196: SlimeSofa x1
 Recipe {
     create: (2582, 1),
     required: &[Requirement::item(762, 5), Requirement::item(225, 2)],
     stations: &[220],
     ..BASE
 },
-// 1196: SlimeSink x1
+// 1197: SlimeSink x1
 Recipe {
     create: (2853, 1),
     required: &[Requirement::item(762, 6), Requirement::item(206, 1)],
     stations: &[220],
     ..BASE
 },
-// 1197: ToiletSlime x1
+// 1198: ToiletSlime x1
 Recipe {
     create: (4120, 1),
     required: &[Requirement::item(762, 6)],
     stations: &[220],
     ..BASE
 },
-// 1198: SlimeTable x1
+// 1199: SlimeTable x1
 Recipe {
     create: (2583, 1),
     required: &[Requirement::item(762, 8)],
     stations: &[220],
     ..BASE
 },
-// 1199: SlimeWorkBench x1
+// 1200: SlimeWorkBench x1
 Recipe {
     create: (815, 1),
     required: &[Requirement::item(762, 10)],
     stations: &[220],
     ..BASE
 },
-// 1200: MeteoriteBathtub x1
+// 1201: MeteoriteBathtub x1
 Recipe {
     create: (3159, 1),
     required: &[Requirement::item(3100, 14)],
     stations: &[106],
     ..BASE
 },
-// 1201: MeteoriteBed x1
+// 1202: MeteoriteBed x1
 Recipe {
     create: (3162, 1),
     required: &[Requirement::item(3100, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1202: MeteoriteBookcase x1
+// 1203: MeteoriteBookcase x1
 Recipe {
     create: (3165, 1),
     required: &[Requirement::item(3100, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1203: MeteoriteCandelabra x1
+// 1204: MeteoriteCandelabra x1
 Recipe {
     create: (3168, 1),
     required: &[Requirement::item(3100, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1204: MeteoriteCandle x1
+// 1205: MeteoriteCandle x1
 Recipe {
     create: (3171, 1),
     required: &[Requirement::item(3100, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1205: MeteoriteChair x1
+// 1206: MeteoriteChair x1
 Recipe {
     create: (3174, 1),
     required: &[Requirement::item(3100, 4)],
     stations: &[18],
     ..BASE
 },
-// 1206: MeteoriteChandelier x1
+// 1207: MeteoriteChandelier x1
 Recipe {
     create: (3177, 1),
     required: &[Requirement::item(3100, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1207: MeteoriteChest x1
+// 1208: MeteoriteChest x1
 Recipe {
     create: (3180, 1),
     required: &[Requirement::item(3100, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1208: MeteoriteClock x1
+// 1209: MeteoriteClock x1
 Recipe {
     create: (3126, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(3100, 10)],
     stations: &[106],
     ..BASE
 },
-// 1209: MeteoriteDoor x1
+// 1210: MeteoriteDoor x1
 Recipe {
     create: (3129, 1),
     required: &[Requirement::item(3100, 6)],
     stations: &[18],
     ..BASE
 },
-// 1210: MeteoriteDresser x1
+// 1211: MeteoriteDresser x1
 Recipe {
     create: (3132, 1),
     required: &[Requirement::item(3100, 16)],
     stations: &[106],
     ..BASE
 },
-// 1211: MeteoriteLamp x1
+// 1212: MeteoriteLamp x1
 Recipe {
     create: (3135, 1),
     required: &[Requirement::item(8, 1), Requirement::item(3100, 3)],
     stations: &[18],
     ..BASE
 },
-// 1212: MeteoriteLantern x1
+// 1213: MeteoriteLantern x1
 Recipe {
     create: (3138, 1),
     required: &[Requirement::item(3100, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1213: MeteoritePiano x1
+// 1214: MeteoritePiano x1
 Recipe {
     create: (3141, 1),
     required: &[Requirement::item(154, 4), Requirement::item(3100, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1214: MeteoriteSofa x1
+// 1215: MeteoriteSofa x1
 Recipe {
     create: (3150, 1),
     required: &[Requirement::item(3100, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1215: MeteoriteSink x1
+// 1216: MeteoriteSink x1
 Recipe {
     create: (3147, 1),
     required: &[Requirement::item(3100, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1216: ToiletMeteor x1
+// 1217: ToiletMeteor x1
 Recipe {
     create: (4141, 1),
     required: &[Requirement::item(3100, 6)],
     stations: &[106],
     ..BASE
 },
-// 1217: MeteoriteTable x1
+// 1218: MeteoriteTable x1
 Recipe {
     create: (3153, 1),
     required: &[Requirement::item(3100, 8)],
     stations: &[18],
     ..BASE
 },
-// 1218: MeteoriteWorkBench x1
+// 1219: MeteoriteWorkBench x1
 Recipe {
     create: (3156, 1),
     required: &[Requirement::item(3100, 10)],
     ..BASE
 },
-// 1219: MarbleBlock x1
+// 1220: MarbleBlock x1
 Recipe {
     create: (3066, 1),
     required: &[Requirement::item(3081, 1)],
     stations: &[18],
     ..BASE
 },
-// 1220: MarbleBlockWall x4
+// 1221: MarbleBlockWall x4
 Recipe {
     create: (3083, 4),
     required: &[Requirement::item(3066, 1)],
     stations: &[18],
     ..BASE
 },
-// 1221: MarbleBlock x1, SetupRecipes reverse
+// 1222: MarbleBlock x1, SetupRecipes reverse
 Recipe {
     create: (3066, 1),
     required: &[Requirement::item(3083, 4)],
@@ -8735,14 +8744,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1222: MarbleWall x4
+// 1223: MarbleWall x4
 Recipe {
     create: (3082, 4),
     required: &[Requirement::item(3081, 1)],
     stations: &[18],
     ..BASE
 },
-// 1223: Marble x1, SetupRecipes reverse
+// 1224: Marble x1, SetupRecipes reverse
 Recipe {
     create: (3081, 1),
     required: &[Requirement::item(3082, 4)],
@@ -8750,160 +8759,160 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1224: MarbleColumn x2
+// 1225: MarbleColumn x2
 Recipe {
     create: (4554, 2),
     required: &[Requirement::item(3066, 1)],
     stations: &[106],
     ..BASE
 },
-// 1225: MarbleBathtub x1
+// 1226: MarbleBathtub x1
 Recipe {
     create: (3160, 1),
     required: &[Requirement::item(3066, 14)],
     stations: &[106],
     ..BASE
 },
-// 1226: MarbleBed x1
+// 1227: MarbleBed x1
 Recipe {
     create: (3163, 1),
     required: &[Requirement::item(3066, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1227: MarbleBookcase x1
+// 1228: MarbleBookcase x1
 Recipe {
     create: (3166, 1),
     required: &[Requirement::item(3066, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1228: MarbleCandelabra x1
+// 1229: MarbleCandelabra x1
 Recipe {
     create: (3169, 1),
     required: &[Requirement::item(3066, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1229: MarbleCandle x1
+// 1230: MarbleCandle x1
 Recipe {
     create: (3172, 1),
     required: &[Requirement::item(3066, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1230: MarbleChair x1
+// 1231: MarbleChair x1
 Recipe {
     create: (3175, 1),
     required: &[Requirement::item(3066, 4)],
     stations: &[18],
     ..BASE
 },
-// 1231: MarbleChandelier x1
+// 1232: MarbleChandelier x1
 Recipe {
     create: (3178, 1),
     required: &[Requirement::item(3066, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1232: MarbleChest x1
+// 1233: MarbleChest x1
 Recipe {
     create: (3181, 1),
     required: &[Requirement::item(3066, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1233: MarbleClock x1
+// 1234: MarbleClock x1
 Recipe {
     create: (3127, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(3066, 10)],
     stations: &[106],
     ..BASE
 },
-// 1234: MarbleDoor x1
+// 1235: MarbleDoor x1
 Recipe {
     create: (3130, 1),
     required: &[Requirement::item(3066, 6)],
     stations: &[18],
     ..BASE
 },
-// 1235: MarbleDresser x1
+// 1236: MarbleDresser x1
 Recipe {
     create: (3133, 1),
     required: &[Requirement::item(3066, 16)],
     stations: &[106],
     ..BASE
 },
-// 1236: MarbleLamp x1
+// 1237: MarbleLamp x1
 Recipe {
     create: (3136, 1),
     required: &[Requirement::item(8, 1), Requirement::item(3066, 3)],
     stations: &[18],
     ..BASE
 },
-// 1237: MarbleLantern x1
+// 1238: MarbleLantern x1
 Recipe {
     create: (3139, 1),
     required: &[Requirement::item(3066, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1238: MarblePiano x1
+// 1239: MarblePiano x1
 Recipe {
     create: (3142, 1),
     required: &[Requirement::item(154, 4), Requirement::item(3066, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1239: MarbleSofa x1
+// 1240: MarbleSofa x1
 Recipe {
     create: (3151, 1),
     required: &[Requirement::item(3066, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1240: MarbleSink x1
+// 1241: MarbleSink x1
 Recipe {
     create: (3148, 1),
     required: &[Requirement::item(3066, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1241: ToiletMarble x1
+// 1242: ToiletMarble x1
 Recipe {
     create: (4123, 1),
     required: &[Requirement::item(3066, 6)],
     stations: &[106],
     ..BASE
 },
-// 1242: MarbleTable x1
+// 1243: MarbleTable x1
 Recipe {
     create: (3154, 1),
     required: &[Requirement::item(3066, 8)],
     stations: &[18],
     ..BASE
 },
-// 1243: MarbleWorkBench x1
+// 1244: MarbleWorkBench x1
 Recipe {
     create: (3157, 1),
     required: &[Requirement::item(3066, 10)],
     ..BASE
 },
-// 1244: GraniteBlock x1
+// 1245: GraniteBlock x1
 Recipe {
     create: (3087, 1),
     required: &[Requirement::item(3086, 1)],
     stations: &[18],
     ..BASE
 },
-// 1245: GraniteBlockWall x4
+// 1246: GraniteBlockWall x4
 Recipe {
     create: (3089, 4),
     required: &[Requirement::item(3087, 1)],
     stations: &[18],
     ..BASE
 },
-// 1246: GraniteBlock x1, SetupRecipes reverse
+// 1247: GraniteBlock x1, SetupRecipes reverse
 Recipe {
     create: (3087, 1),
     required: &[Requirement::item(3089, 4)],
@@ -8911,14 +8920,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1247: GraniteWall x4
+// 1248: GraniteWall x4
 Recipe {
     create: (3088, 4),
     required: &[Requirement::item(3086, 1)],
     stations: &[18],
     ..BASE
 },
-// 1248: Granite x1, SetupRecipes reverse
+// 1249: Granite x1, SetupRecipes reverse
 Recipe {
     create: (3086, 1),
     required: &[Requirement::item(3088, 4)],
@@ -8926,424 +8935,424 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1249: GraniteColumn x2
+// 1250: GraniteColumn x2
 Recipe {
     create: (4719, 2),
     required: &[Requirement::item(3087, 1)],
     stations: &[106],
     ..BASE
 },
-// 1250: GraniteBathtub x1
+// 1251: GraniteBathtub x1
 Recipe {
     create: (3161, 1),
     required: &[Requirement::item(3087, 14)],
     stations: &[106],
     ..BASE
 },
-// 1251: GraniteBed x1
+// 1252: GraniteBed x1
 Recipe {
     create: (3164, 1),
     required: &[Requirement::item(3087, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1252: GraniteBookcase x1
+// 1253: GraniteBookcase x1
 Recipe {
     create: (3167, 1),
     required: &[Requirement::item(3087, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1253: GraniteCandelabra x1
+// 1254: GraniteCandelabra x1
 Recipe {
     create: (3170, 1),
     required: &[Requirement::item(3087, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1254: GraniteCandle x1
+// 1255: GraniteCandle x1
 Recipe {
     create: (3173, 1),
     required: &[Requirement::item(3087, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1255: GraniteChair x1
+// 1256: GraniteChair x1
 Recipe {
     create: (3176, 1),
     required: &[Requirement::item(3087, 4)],
     stations: &[18],
     ..BASE
 },
-// 1256: GraniteChandelier x1
+// 1257: GraniteChandelier x1
 Recipe {
     create: (3179, 1),
     required: &[Requirement::item(3087, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1257: GraniteChest x1
+// 1258: GraniteChest x1
 Recipe {
     create: (3125, 1),
     required: &[Requirement::item(3087, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1258: GraniteClock x1
+// 1259: GraniteClock x1
 Recipe {
     create: (3128, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(3087, 10)],
     stations: &[106],
     ..BASE
 },
-// 1259: GraniteDoor x1
+// 1260: GraniteDoor x1
 Recipe {
     create: (3131, 1),
     required: &[Requirement::item(3087, 6)],
     stations: &[18],
     ..BASE
 },
-// 1260: GraniteDresser x1
+// 1261: GraniteDresser x1
 Recipe {
     create: (3134, 1),
     required: &[Requirement::item(3087, 16)],
     stations: &[106],
     ..BASE
 },
-// 1261: GraniteLamp x1
+// 1262: GraniteLamp x1
 Recipe {
     create: (3137, 1),
     required: &[Requirement::item(8, 1), Requirement::item(3087, 3)],
     stations: &[18],
     ..BASE
 },
-// 1262: GraniteLantern x1
+// 1263: GraniteLantern x1
 Recipe {
     create: (3140, 1),
     required: &[Requirement::item(3087, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1263: GranitePiano x1
+// 1264: GranitePiano x1
 Recipe {
     create: (3143, 1),
     required: &[Requirement::item(154, 4), Requirement::item(3087, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1264: GraniteSofa x1
+// 1265: GraniteSofa x1
 Recipe {
     create: (3152, 1),
     required: &[Requirement::item(3087, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1265: GraniteSink x1
+// 1266: GraniteSink x1
 Recipe {
     create: (3149, 1),
     required: &[Requirement::item(3087, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1266: ToiletGranite x1
+// 1267: ToiletGranite x1
 Recipe {
     create: (4122, 1),
     required: &[Requirement::item(3087, 6)],
     stations: &[106],
     ..BASE
 },
-// 1267: GraniteTable x1
+// 1268: GraniteTable x1
 Recipe {
     create: (3155, 1),
     required: &[Requirement::item(3087, 8)],
     stations: &[18],
     ..BASE
 },
-// 1268: GraniteWorkBench x1
+// 1269: GraniteWorkBench x1
 Recipe {
     create: (3158, 1),
     required: &[Requirement::item(3087, 10)],
     ..BASE
 },
-// 1269: MartianBathtub x1
+// 1270: MartianBathtub x1
 Recipe {
     create: (2810, 1),
     required: &[Requirement::item(2860, 14)],
     stations: &[106],
     ..BASE
 },
-// 1270: MartianBed x1
+// 1271: MartianBed x1
 Recipe {
     create: (2811, 1),
     required: &[Requirement::item(2860, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1271: MartianHolobookcase x1
+// 1272: MartianHolobookcase x1
 Recipe {
     create: (2817, 1),
     required: &[Requirement::item(2860, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1272: MartianTableLamp x1
+// 1273: MartianTableLamp x1
 Recipe {
     create: (2825, 1),
     required: &[Requirement::item(2860, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1273: MartianHoverCandle x1
+// 1274: MartianHoverCandle x1
 Recipe {
     create: (2818, 1),
     required: &[Requirement::item(2860, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1274: MartianHoverChair x1
+// 1275: MartianHoverChair x1
 Recipe {
     create: (2812, 1),
     required: &[Requirement::item(2860, 4)],
     stations: &[18],
     ..BASE
 },
-// 1275: MartianChandelier x1
+// 1276: MartianChandelier x1
 Recipe {
     create: (2813, 1),
     required: &[Requirement::item(2860, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1276: MartianChest x1
+// 1277: MartianChest x1
 Recipe {
     create: (2814, 1),
     required: &[Requirement::item(2860, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1277: MartianAstroClock x1
+// 1278: MartianAstroClock x1
 Recipe {
     create: (2809, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(2860, 10)],
     stations: &[106],
     ..BASE
 },
-// 1278: MartianDoor x1
+// 1279: MartianDoor x1
 Recipe {
     create: (2815, 1),
     required: &[Requirement::item(2860, 6)],
     stations: &[18],
     ..BASE
 },
-// 1279: MartianDresser x1
+// 1280: MartianDresser x1
 Recipe {
     create: (2816, 1),
     required: &[Requirement::item(2860, 16)],
     stations: &[106],
     ..BASE
 },
-// 1280: MartianLamppost x1
+// 1281: MartianLamppost x1
 Recipe {
     create: (2819, 1),
     required: &[Requirement::item(8, 1), Requirement::item(2860, 3)],
     stations: &[18],
     ..BASE
 },
-// 1281: MartianLantern x1
+// 1282: MartianLantern x1
 Recipe {
     create: (2820, 1),
     required: &[Requirement::item(2860, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1282: MartianPiano x1
+// 1283: MartianPiano x1
 Recipe {
     create: (2821, 1),
     required: &[Requirement::item(154, 4), Requirement::item(2860, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1283: MartianSofa x1
+// 1284: MartianSofa x1
 Recipe {
     create: (2823, 1),
     required: &[Requirement::item(2860, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1284: MartianSink x1
+// 1285: MartianSink x1
 Recipe {
     create: (2855, 1),
     required: &[Requirement::item(2860, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1285: ToiletMartian x1
+// 1286: ToiletMartian x1
 Recipe {
     create: (4121, 1),
     required: &[Requirement::item(2860, 6)],
     stations: &[106],
     ..BASE
 },
-// 1286: MartianTable x1
+// 1287: MartianTable x1
 Recipe {
     create: (2824, 1),
     required: &[Requirement::item(2860, 8)],
     stations: &[18],
     ..BASE
 },
-// 1287: MartianWorkBench x1
+// 1288: MartianWorkBench x1
 Recipe {
     create: (2826, 1),
     required: &[Requirement::item(2860, 10)],
     ..BASE
 },
-// 1288: CrystalBathtub x1
+// 1289: CrystalBathtub x1
 Recipe {
     create: (3895, 1),
     required: &[Requirement::item(3234, 35)],
     stations: &[106],
     ..BASE
 },
-// 1289: CrystalBed x1
+// 1290: CrystalBed x1
 Recipe {
     create: (3897, 1),
     required: &[Requirement::item(3234, 40), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1290: CrystalBookCase x1
+// 1291: CrystalBookCase x1
 Recipe {
     create: (3917, 1),
     required: &[Requirement::item(3234, 50), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1291: CrystalCandelabra x1
+// 1292: CrystalCandelabra x1
 Recipe {
     create: (3893, 1),
     required: &[Requirement::item(3234, 10), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1292: CrystalCandle x1
+// 1293: CrystalCandle x1
 Recipe {
     create: (3890, 1),
     required: &[Requirement::item(3234, 8), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1293: CrystalChair x1
+// 1294: CrystalChair x1
 Recipe {
     create: (3889, 1),
     required: &[Requirement::item(3234, 10)],
     stations: &[18],
     ..BASE
 },
-// 1294: CrystalChandelier x1
+// 1295: CrystalChandelier x1
 Recipe {
     create: (3894, 1),
     required: &[Requirement::item(3234, 10), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1295: CrystalChest x1
+// 1296: CrystalChest x1
 Recipe {
     create: (3884, 1),
     required: &[Requirement::item(3234, 20), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1296: CrystalClock x1
+// 1297: CrystalClock x1
 Recipe {
     create: (3898, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(3234, 25)],
     stations: &[106],
     ..BASE
 },
-// 1297: CrystalDoor x1
+// 1298: CrystalDoor x1
 Recipe {
     create: (3888, 1),
     required: &[Requirement::item(3234, 15)],
     stations: &[18],
     ..BASE
 },
-// 1298: CrystalDresser x1
+// 1299: CrystalDresser x1
 Recipe {
     create: (3911, 1),
     required: &[Requirement::item(3234, 40)],
     stations: &[106],
     ..BASE
 },
-// 1299: CrystalLamp x1
+// 1300: CrystalLamp x1
 Recipe {
     create: (3892, 1),
     required: &[Requirement::item(8, 1), Requirement::item(3234, 6)],
     stations: &[18],
     ..BASE
 },
-// 1300: CrystalLantern x1
+// 1301: CrystalLantern x1
 Recipe {
     create: (3891, 1),
     required: &[Requirement::item(3234, 15), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1301: CrystalPiano x1
+// 1302: CrystalPiano x1
 Recipe {
     create: (3915, 1),
     required: &[Requirement::item(154, 4), Requirement::item(3234, 40), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1302: CrystalSofaHowDoesThatEvenWork x1
+// 1303: CrystalSofaHowDoesThatEvenWork x1
 Recipe {
     create: (3918, 1),
     required: &[Requirement::item(3234, 12), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1303: ToiletCrystal x1
+// 1304: ToiletCrystal x1
 Recipe {
     create: (4124, 1),
     required: &[Requirement::item(3234, 15)],
     stations: &[106],
     ..BASE
 },
-// 1304: CrystalSink x1
+// 1305: CrystalSink x1
 Recipe {
     create: (3896, 1),
     required: &[Requirement::item(3234, 15), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1305: CrystalTable x1
+// 1306: CrystalTable x1
 Recipe {
     create: (3920, 1),
     required: &[Requirement::item(3234, 20)],
     stations: &[18],
     ..BASE
 },
-// 1306: CrystalWorkbench x1
+// 1307: CrystalWorkbench x1
 Recipe {
     create: (3909, 1),
     required: &[Requirement::item(3234, 25)],
     ..BASE
 },
-// 1307: SpiderBlock x10
+// 1308: SpiderBlock x10
 Recipe {
     create: (4139, 10),
     required: &[Requirement::item(150, 10), Requirement::item(2607, 1)],
     stations: &[18],
     ..BASE
 },
-// 1308: SpiderWall x4
+// 1309: SpiderWall x4
 Recipe {
     create: (4140, 4),
     required: &[Requirement::item(4139, 1)],
     stations: &[18],
     ..BASE
 },
-// 1309: SpiderBlock x1, SetupRecipes reverse
+// 1310: SpiderBlock x1, SetupRecipes reverse
 Recipe {
     create: (4139, 1),
     required: &[Requirement::item(4140, 4)],
@@ -9351,160 +9360,160 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1310: SpiderBathtub x1
+// 1311: SpiderBathtub x1
 Recipe {
     create: (3931, 1),
     required: &[Requirement::item(4139, 14)],
     stations: &[106],
     ..BASE
 },
-// 1311: SpiderBed x1
+// 1312: SpiderBed x1
 Recipe {
     create: (3932, 1),
     required: &[Requirement::item(4139, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1312: SpiderBookcase x1
+// 1313: SpiderBookcase x1
 Recipe {
     create: (3933, 1),
     required: &[Requirement::item(4139, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1313: SpiderDresser x1
+// 1314: SpiderDresser x1
 Recipe {
     create: (3934, 1),
     required: &[Requirement::item(4139, 16)],
     stations: &[106],
     ..BASE
 },
-// 1314: SpiderCandelabra x1
+// 1315: SpiderCandelabra x1
 Recipe {
     create: (3935, 1),
     required: &[Requirement::item(4139, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1315: SpiderCandle x1
+// 1316: SpiderCandle x1
 Recipe {
     create: (3936, 1),
     required: &[Requirement::item(4139, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1316: SpiderChair x1
+// 1317: SpiderChair x1
 Recipe {
     create: (3937, 1),
     required: &[Requirement::item(4139, 4)],
     stations: &[18],
     ..BASE
 },
-// 1317: SpiderChandelier x1
+// 1318: SpiderChandelier x1
 Recipe {
     create: (3938, 1),
     required: &[Requirement::item(4139, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1318: SpiderChest x1
+// 1319: SpiderChest x1
 Recipe {
     create: (3939, 1),
     required: &[Requirement::item(4139, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1319: SpiderClock x1
+// 1320: SpiderClock x1
 Recipe {
     create: (3940, 1),
     required: &[Requirement::item(4139, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[106],
     ..BASE
 },
-// 1320: SpiderDoor x1
+// 1321: SpiderDoor x1
 Recipe {
     create: (3941, 1),
     required: &[Requirement::item(4139, 6)],
     stations: &[18],
     ..BASE
 },
-// 1321: SpiderLamp x1
+// 1322: SpiderLamp x1
 Recipe {
     create: (3942, 1),
     required: &[Requirement::item(8, 1), Requirement::item(4139, 3)],
     stations: &[18],
     ..BASE
 },
-// 1322: SpiderLantern x1
+// 1323: SpiderLantern x1
 Recipe {
     create: (3943, 1),
     required: &[Requirement::item(4139, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1323: SpiderPiano x1
+// 1324: SpiderPiano x1
 Recipe {
     create: (3944, 1),
     required: &[Requirement::item(4139, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1324: SpiderSinkSpiderSinkDoesWhateverASpiderSinkDoes x1
+// 1325: SpiderSinkSpiderSinkDoesWhateverASpiderSinkDoes x1
 Recipe {
     create: (3946, 1),
     required: &[Requirement::item(4139, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1325: SpiderSofa x1
+// 1326: SpiderSofa x1
 Recipe {
     create: (3947, 1),
     required: &[Requirement::item(4139, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1326: SpiderTable x1
+// 1327: SpiderTable x1
 Recipe {
     create: (3948, 1),
     required: &[Requirement::item(4139, 8)],
     stations: &[18],
     ..BASE
 },
-// 1327: SpiderWorkbench x1
+// 1328: SpiderWorkbench x1
 Recipe {
     create: (3949, 1),
     required: &[Requirement::item(4139, 10)],
     ..BASE
 },
-// 1328: ToiletSpider x1
+// 1329: ToiletSpider x1
 Recipe {
     create: (4125, 1),
     required: &[Requirement::item(4139, 6)],
     stations: &[106],
     ..BASE
 },
-// 1329: LesionBlock x1
+// 1330: LesionBlock x1
 Recipe {
     create: (3955, 1),
     required: &[Requirement::item(61, 2)],
     stations: &[218],
     ..BASE
 },
-// 1330: LesionWorkbench x1
+// 1331: LesionWorkbench x1
 Recipe {
     create: (3975, 1),
     required: &[Requirement::item(3955, 10)],
     stations: &[499],
     ..BASE
 },
-// 1331: LesionBlockWall x4
+// 1332: LesionBlockWall x4
 Recipe {
     create: (3956, 4),
     required: &[Requirement::item(3955, 1)],
     stations: &[18],
     ..BASE
 },
-// 1332: LesionBlock x1, SetupRecipes reverse
+// 1333: LesionBlock x1, SetupRecipes reverse
 Recipe {
     create: (3955, 1),
     required: &[Requirement::item(3956, 4)],
@@ -9512,147 +9521,147 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1333: LesionDoor x1
+// 1334: LesionDoor x1
 Recipe {
     create: (3967, 1),
     required: &[Requirement::item(3955, 6)],
     stations: &[499],
     ..BASE
 },
-// 1334: LesionChair x1
+// 1335: LesionChair x1
 Recipe {
     create: (3963, 1),
     required: &[Requirement::item(3955, 4)],
     stations: &[499],
     ..BASE
 },
-// 1335: LesionChest x1
+// 1336: LesionChest x1
 Recipe {
     create: (3965, 1),
     required: &[Requirement::item(3955, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[499],
     ..BASE
 },
-// 1336: LesionTable x1
+// 1337: LesionTable x1
 Recipe {
     create: (3974, 1),
     required: &[Requirement::item(3955, 8)],
     stations: &[499],
     ..BASE
 },
-// 1337: LesionSink x1
+// 1338: LesionSink x1
 Recipe {
     create: (3972, 1),
     required: &[Requirement::item(3955, 6), Requirement::item(206, 1)],
     stations: &[499],
     ..BASE
 },
-// 1338: LesionLantern x1
+// 1339: LesionLantern x1
 Recipe {
     create: (3970, 1),
     required: &[Requirement::item(3955, 6), Requirement::item(8, 1)],
     stations: &[499],
     ..BASE
 },
-// 1339: LesionCandle x1
+// 1340: LesionCandle x1
 Recipe {
     create: (3962, 1),
     required: &[Requirement::item(3955, 4), Requirement::item(8, 1)],
     stations: &[499],
     ..BASE
 },
-// 1340: LesionLamp x1
+// 1341: LesionLamp x1
 Recipe {
     create: (3969, 1),
     required: &[Requirement::item(3955, 3), Requirement::item(8, 1)],
     stations: &[499],
     ..BASE
 },
-// 1341: LesionCandelabra x1
+// 1342: LesionCandelabra x1
 Recipe {
     create: (3961, 1),
     required: &[Requirement::item(3955, 5), Requirement::item(8, 3)],
     stations: &[499],
     ..BASE
 },
-// 1342: LesionBed x1
+// 1343: LesionBed x1
 Recipe {
     create: (3959, 1),
     required: &[Requirement::item(3955, 15), Requirement::item(225, 5)],
     stations: &[499],
     ..BASE
 },
-// 1343: LesionDresser x1
+// 1344: LesionDresser x1
 Recipe {
     create: (3968, 1),
     required: &[Requirement::item(3955, 16)],
     stations: &[499],
     ..BASE
 },
-// 1344: LesionBookcase x1
+// 1345: LesionBookcase x1
 Recipe {
     create: (3960, 1),
     required: &[Requirement::item(3955, 20), Requirement::item(149, 10)],
     stations: &[499],
     ..BASE
 },
-// 1345: LesionClock x1
+// 1346: LesionClock x1
 Recipe {
     create: (3966, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(3955, 10)],
     stations: &[499],
     ..BASE
 },
-// 1346: LesionSofa x1
+// 1347: LesionSofa x1
 Recipe {
     create: (3973, 1),
     required: &[Requirement::item(3955, 5), Requirement::item(225, 2)],
     stations: &[499],
     ..BASE
 },
-// 1347: LesionPiano x1
+// 1348: LesionPiano x1
 Recipe {
     create: (3971, 1),
     required: &[Requirement::item(154, 4), Requirement::item(3955, 15), Requirement::item(149, 1)],
     stations: &[499],
     ..BASE
 },
-// 1348: LesionBathtub x1
+// 1349: LesionBathtub x1
 Recipe {
     create: (3958, 1),
     required: &[Requirement::item(3955, 14)],
     stations: &[499],
     ..BASE
 },
-// 1349: LesionChandelier x1
+// 1350: LesionChandelier x1
 Recipe {
     create: (3964, 1),
     required: &[Requirement::item(3955, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[499],
     ..BASE
 },
-// 1350: ToiletLesion x1
+// 1351: ToiletLesion x1
 Recipe {
     create: (4126, 1),
     required: &[Requirement::item(3955, 6)],
     stations: &[499],
     ..BASE
 },
-// 1351: SolarBrick x10
+// 1352: SolarBrick x10
 Recipe {
     create: (4229, 10),
     required: &[Requirement::item(3, 10), Requirement::item(3458, 1)],
     stations: &[412],
     ..BASE
 },
-// 1352: SolarBrickWall x4
+// 1353: SolarBrickWall x4
 Recipe {
     create: (4233, 4),
     required: &[Requirement::item(4229, 1)],
     stations: &[18],
     ..BASE
 },
-// 1353: SolarBrick x1, SetupRecipes reverse
+// 1354: SolarBrick x1, SetupRecipes reverse
 Recipe {
     create: (4229, 1),
     required: &[Requirement::item(4233, 4)],
@@ -9660,154 +9669,154 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1354: SolarBathtub x1
+// 1355: SolarBathtub x1
 Recipe {
     create: (4145, 1),
     required: &[Requirement::item(4229, 14)],
     stations: &[412],
     ..BASE
 },
-// 1355: SolarBed x1
+// 1356: SolarBed x1
 Recipe {
     create: (4146, 1),
     required: &[Requirement::item(4229, 15), Requirement::item(225, 5)],
     stations: &[412],
     ..BASE
 },
-// 1356: SolarBookcase x1
+// 1357: SolarBookcase x1
 Recipe {
     create: (4147, 1),
     required: &[Requirement::item(4229, 20), Requirement::item(149, 10)],
     stations: &[412],
     ..BASE
 },
-// 1357: SolarDresser x1
+// 1358: SolarDresser x1
 Recipe {
     create: (4148, 1),
     required: &[Requirement::item(4229, 16)],
     stations: &[412],
     ..BASE
 },
-// 1358: SolarCandelabra x1
+// 1359: SolarCandelabra x1
 Recipe {
     create: (4149, 1),
     required: &[Requirement::item(4229, 5), Requirement::item(8, 3)],
     stations: &[412],
     ..BASE
 },
-// 1359: SolarCandle x1
+// 1360: SolarCandle x1
 Recipe {
     create: (4150, 1),
     required: &[Requirement::item(4229, 4), Requirement::item(8, 1)],
     stations: &[412],
     ..BASE
 },
-// 1360: SolarChair x1
+// 1361: SolarChair x1
 Recipe {
     create: (4151, 1),
     required: &[Requirement::item(4229, 4)],
     stations: &[412],
     ..BASE
 },
-// 1361: SolarChandelier x1
+// 1362: SolarChandelier x1
 Recipe {
     create: (4152, 1),
     required: &[Requirement::item(4229, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[412],
     ..BASE
 },
-// 1362: SolarChest x1
+// 1363: SolarChest x1
 Recipe {
     create: (4153, 1),
     required: &[Requirement::item(4229, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[412],
     ..BASE
 },
-// 1363: SolarClock x1
+// 1364: SolarClock x1
 Recipe {
     create: (4154, 1),
     required: &[Requirement::item(4229, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[412],
     ..BASE
 },
-// 1364: SolarDoor x1
+// 1365: SolarDoor x1
 Recipe {
     create: (4155, 1),
     required: &[Requirement::item(4229, 6)],
     stations: &[412],
     ..BASE
 },
-// 1365: SolarLamp x1
+// 1366: SolarLamp x1
 Recipe {
     create: (4156, 1),
     required: &[Requirement::item(8, 1), Requirement::item(4229, 3)],
     stations: &[412],
     ..BASE
 },
-// 1366: SolarLantern x1
+// 1367: SolarLantern x1
 Recipe {
     create: (4157, 1),
     required: &[Requirement::item(4229, 6), Requirement::item(8, 1)],
     stations: &[412],
     ..BASE
 },
-// 1367: SolarPiano x1
+// 1368: SolarPiano x1
 Recipe {
     create: (4158, 1),
     required: &[Requirement::item(4229, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[412],
     ..BASE
 },
-// 1368: SolarSink x1
+// 1369: SolarSink x1
 Recipe {
     create: (4160, 1),
     required: &[Requirement::item(4229, 6), Requirement::item(206, 1)],
     stations: &[412],
     ..BASE
 },
-// 1369: SolarSofa x1
+// 1370: SolarSofa x1
 Recipe {
     create: (4161, 1),
     required: &[Requirement::item(4229, 5), Requirement::item(225, 2)],
     stations: &[412],
     ..BASE
 },
-// 1370: SolarTable x1
+// 1371: SolarTable x1
 Recipe {
     create: (4162, 1),
     required: &[Requirement::item(4229, 8)],
     stations: &[412],
     ..BASE
 },
-// 1371: SolarWorkbench x1
+// 1372: SolarWorkbench x1
 Recipe {
     create: (4163, 1),
     required: &[Requirement::item(4229, 10)],
     stations: &[412],
     ..BASE
 },
-// 1372: SolarToilet x1
+// 1373: SolarToilet x1
 Recipe {
     create: (4165, 1),
     required: &[Requirement::item(4229, 6)],
     stations: &[412],
     ..BASE
 },
-// 1373: VortexBrick x10
+// 1374: VortexBrick x10
 Recipe {
     create: (4230, 10),
     required: &[Requirement::item(3, 10), Requirement::item(3456, 1)],
     stations: &[412],
     ..BASE
 },
-// 1374: VortexBrickWall x4
+// 1375: VortexBrickWall x4
 Recipe {
     create: (4234, 4),
     required: &[Requirement::item(4230, 1)],
     stations: &[18],
     ..BASE
 },
-// 1375: VortexBrick x1, SetupRecipes reverse
+// 1376: VortexBrick x1, SetupRecipes reverse
 Recipe {
     create: (4230, 1),
     required: &[Requirement::item(4234, 4)],
@@ -9815,154 +9824,154 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1376: VortexBathtub x1
+// 1377: VortexBathtub x1
 Recipe {
     create: (4166, 1),
     required: &[Requirement::item(4230, 14)],
     stations: &[412],
     ..BASE
 },
-// 1377: VortexBed x1
+// 1378: VortexBed x1
 Recipe {
     create: (4167, 1),
     required: &[Requirement::item(4230, 15), Requirement::item(225, 5)],
     stations: &[412],
     ..BASE
 },
-// 1378: VortexBookcase x1
+// 1379: VortexBookcase x1
 Recipe {
     create: (4168, 1),
     required: &[Requirement::item(4230, 20), Requirement::item(149, 10)],
     stations: &[412],
     ..BASE
 },
-// 1379: VortexDresser x1
+// 1380: VortexDresser x1
 Recipe {
     create: (4169, 1),
     required: &[Requirement::item(4230, 16)],
     stations: &[412],
     ..BASE
 },
-// 1380: VortexCandelabra x1
+// 1381: VortexCandelabra x1
 Recipe {
     create: (4170, 1),
     required: &[Requirement::item(4230, 5), Requirement::item(8, 3)],
     stations: &[412],
     ..BASE
 },
-// 1381: VortexCandle x1
+// 1382: VortexCandle x1
 Recipe {
     create: (4171, 1),
     required: &[Requirement::item(4230, 4), Requirement::item(8, 1)],
     stations: &[412],
     ..BASE
 },
-// 1382: VortexChair x1
+// 1383: VortexChair x1
 Recipe {
     create: (4172, 1),
     required: &[Requirement::item(4230, 4)],
     stations: &[412],
     ..BASE
 },
-// 1383: VortexChandelier x1
+// 1384: VortexChandelier x1
 Recipe {
     create: (4173, 1),
     required: &[Requirement::item(4230, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[412],
     ..BASE
 },
-// 1384: VortexChest x1
+// 1385: VortexChest x1
 Recipe {
     create: (4174, 1),
     required: &[Requirement::item(4230, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[412],
     ..BASE
 },
-// 1385: VortexClock x1
+// 1386: VortexClock x1
 Recipe {
     create: (4175, 1),
     required: &[Requirement::item(4230, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[412],
     ..BASE
 },
-// 1386: VortexDoor x1
+// 1387: VortexDoor x1
 Recipe {
     create: (4176, 1),
     required: &[Requirement::item(4230, 6)],
     stations: &[412],
     ..BASE
 },
-// 1387: VortexLamp x1
+// 1388: VortexLamp x1
 Recipe {
     create: (4177, 1),
     required: &[Requirement::item(8, 1), Requirement::item(4230, 3)],
     stations: &[412],
     ..BASE
 },
-// 1388: VortexLantern x1
+// 1389: VortexLantern x1
 Recipe {
     create: (4178, 1),
     required: &[Requirement::item(4230, 6), Requirement::item(8, 1)],
     stations: &[412],
     ..BASE
 },
-// 1389: VortexPiano x1
+// 1390: VortexPiano x1
 Recipe {
     create: (4179, 1),
     required: &[Requirement::item(4230, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[412],
     ..BASE
 },
-// 1390: VortexSink x1
+// 1391: VortexSink x1
 Recipe {
     create: (4181, 1),
     required: &[Requirement::item(4230, 6), Requirement::item(206, 1)],
     stations: &[412],
     ..BASE
 },
-// 1391: VortexSofa x1
+// 1392: VortexSofa x1
 Recipe {
     create: (4182, 1),
     required: &[Requirement::item(4230, 5), Requirement::item(225, 2)],
     stations: &[412],
     ..BASE
 },
-// 1392: VortexTable x1
+// 1393: VortexTable x1
 Recipe {
     create: (4183, 1),
     required: &[Requirement::item(4230, 8)],
     stations: &[412],
     ..BASE
 },
-// 1393: VortexWorkbench x1
+// 1394: VortexWorkbench x1
 Recipe {
     create: (4184, 1),
     required: &[Requirement::item(4230, 10)],
     stations: &[412],
     ..BASE
 },
-// 1394: VortexToilet x1
+// 1395: VortexToilet x1
 Recipe {
     create: (4186, 1),
     required: &[Requirement::item(4230, 6)],
     stations: &[412],
     ..BASE
 },
-// 1395: NebulaBrick x10
+// 1396: NebulaBrick x10
 Recipe {
     create: (4231, 10),
     required: &[Requirement::item(3, 10), Requirement::item(3457, 1)],
     stations: &[412],
     ..BASE
 },
-// 1396: NebulaBrickWall x4
+// 1397: NebulaBrickWall x4
 Recipe {
     create: (4235, 4),
     required: &[Requirement::item(4231, 1)],
     stations: &[18],
     ..BASE
 },
-// 1397: NebulaBrick x1, SetupRecipes reverse
+// 1398: NebulaBrick x1, SetupRecipes reverse
 Recipe {
     create: (4231, 1),
     required: &[Requirement::item(4235, 4)],
@@ -9970,154 +9979,154 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1398: NebulaBathtub x1
+// 1399: NebulaBathtub x1
 Recipe {
     create: (4187, 1),
     required: &[Requirement::item(4231, 14)],
     stations: &[412],
     ..BASE
 },
-// 1399: NebulaBed x1
+// 1400: NebulaBed x1
 Recipe {
     create: (4188, 1),
     required: &[Requirement::item(4231, 15), Requirement::item(225, 5)],
     stations: &[412],
     ..BASE
 },
-// 1400: NebulaBookcase x1
+// 1401: NebulaBookcase x1
 Recipe {
     create: (4189, 1),
     required: &[Requirement::item(4231, 20), Requirement::item(149, 10)],
     stations: &[412],
     ..BASE
 },
-// 1401: NebulaDresser x1
+// 1402: NebulaDresser x1
 Recipe {
     create: (4190, 1),
     required: &[Requirement::item(4231, 16)],
     stations: &[412],
     ..BASE
 },
-// 1402: NebulaCandelabra x1
+// 1403: NebulaCandelabra x1
 Recipe {
     create: (4191, 1),
     required: &[Requirement::item(4231, 5), Requirement::item(8, 3)],
     stations: &[412],
     ..BASE
 },
-// 1403: NebulaCandle x1
+// 1404: NebulaCandle x1
 Recipe {
     create: (4192, 1),
     required: &[Requirement::item(4231, 4), Requirement::item(8, 1)],
     stations: &[412],
     ..BASE
 },
-// 1404: NebulaChair x1
+// 1405: NebulaChair x1
 Recipe {
     create: (4193, 1),
     required: &[Requirement::item(4231, 4)],
     stations: &[412],
     ..BASE
 },
-// 1405: NebulaChandelier x1
+// 1406: NebulaChandelier x1
 Recipe {
     create: (4194, 1),
     required: &[Requirement::item(4231, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[412],
     ..BASE
 },
-// 1406: NebulaChest x1
+// 1407: NebulaChest x1
 Recipe {
     create: (4195, 1),
     required: &[Requirement::item(4231, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[412],
     ..BASE
 },
-// 1407: NebulaClock x1
+// 1408: NebulaClock x1
 Recipe {
     create: (4196, 1),
     required: &[Requirement::item(4231, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[412],
     ..BASE
 },
-// 1408: NebulaDoor x1
+// 1409: NebulaDoor x1
 Recipe {
     create: (4197, 1),
     required: &[Requirement::item(4231, 6)],
     stations: &[412],
     ..BASE
 },
-// 1409: NebulaLamp x1
+// 1410: NebulaLamp x1
 Recipe {
     create: (4198, 1),
     required: &[Requirement::item(8, 1), Requirement::item(4231, 3)],
     stations: &[412],
     ..BASE
 },
-// 1410: NebulaLantern x1
+// 1411: NebulaLantern x1
 Recipe {
     create: (4199, 1),
     required: &[Requirement::item(4231, 6), Requirement::item(8, 1)],
     stations: &[412],
     ..BASE
 },
-// 1411: NebulaPiano x1
+// 1412: NebulaPiano x1
 Recipe {
     create: (4200, 1),
     required: &[Requirement::item(4231, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[412],
     ..BASE
 },
-// 1412: NebulaSink x1
+// 1413: NebulaSink x1
 Recipe {
     create: (4202, 1),
     required: &[Requirement::item(4231, 6), Requirement::item(206, 1)],
     stations: &[412],
     ..BASE
 },
-// 1413: NebulaSofa x1
+// 1414: NebulaSofa x1
 Recipe {
     create: (4203, 1),
     required: &[Requirement::item(4231, 5), Requirement::item(225, 2)],
     stations: &[412],
     ..BASE
 },
-// 1414: NebulaTable x1
+// 1415: NebulaTable x1
 Recipe {
     create: (4204, 1),
     required: &[Requirement::item(4231, 8)],
     stations: &[412],
     ..BASE
 },
-// 1415: NebulaWorkbench x1
+// 1416: NebulaWorkbench x1
 Recipe {
     create: (4205, 1),
     required: &[Requirement::item(4231, 10)],
     stations: &[412],
     ..BASE
 },
-// 1416: NebulaToilet x1
+// 1417: NebulaToilet x1
 Recipe {
     create: (4207, 1),
     required: &[Requirement::item(4231, 6)],
     stations: &[412],
     ..BASE
 },
-// 1417: StardustBrick x10
+// 1418: StardustBrick x10
 Recipe {
     create: (4232, 10),
     required: &[Requirement::item(3, 10), Requirement::item(3459, 1)],
     stations: &[412],
     ..BASE
 },
-// 1418: StardustBrickWall x4
+// 1419: StardustBrickWall x4
 Recipe {
     create: (4236, 4),
     required: &[Requirement::item(4232, 1)],
     stations: &[18],
     ..BASE
 },
-// 1419: StardustBrick x1, SetupRecipes reverse
+// 1420: StardustBrick x1, SetupRecipes reverse
 Recipe {
     create: (4232, 1),
     required: &[Requirement::item(4236, 4)],
@@ -10125,960 +10134,960 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1420: StardustBathtub x1
+// 1421: StardustBathtub x1
 Recipe {
     create: (4208, 1),
     required: &[Requirement::item(4232, 14)],
     stations: &[412],
     ..BASE
 },
-// 1421: StardustBed x1
+// 1422: StardustBed x1
 Recipe {
     create: (4209, 1),
     required: &[Requirement::item(4232, 15), Requirement::item(225, 5)],
     stations: &[412],
     ..BASE
 },
-// 1422: StardustBookcase x1
+// 1423: StardustBookcase x1
 Recipe {
     create: (4210, 1),
     required: &[Requirement::item(4232, 20), Requirement::item(149, 10)],
     stations: &[412],
     ..BASE
 },
-// 1423: StardustDresser x1
+// 1424: StardustDresser x1
 Recipe {
     create: (4211, 1),
     required: &[Requirement::item(4232, 16)],
     stations: &[412],
     ..BASE
 },
-// 1424: StardustCandelabra x1
+// 1425: StardustCandelabra x1
 Recipe {
     create: (4212, 1),
     required: &[Requirement::item(4232, 5), Requirement::item(8, 3)],
     stations: &[412],
     ..BASE
 },
-// 1425: StardustCandle x1
+// 1426: StardustCandle x1
 Recipe {
     create: (4213, 1),
     required: &[Requirement::item(4232, 4), Requirement::item(8, 1)],
     stations: &[412],
     ..BASE
 },
-// 1426: StardustChair x1
+// 1427: StardustChair x1
 Recipe {
     create: (4214, 1),
     required: &[Requirement::item(4232, 4)],
     stations: &[412],
     ..BASE
 },
-// 1427: StardustChandelier x1
+// 1428: StardustChandelier x1
 Recipe {
     create: (4215, 1),
     required: &[Requirement::item(4232, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[412],
     ..BASE
 },
-// 1428: StardustChest x1
+// 1429: StardustChest x1
 Recipe {
     create: (4216, 1),
     required: &[Requirement::item(4232, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[412],
     ..BASE
 },
-// 1429: StardustClock x1
+// 1430: StardustClock x1
 Recipe {
     create: (4217, 1),
     required: &[Requirement::item(4232, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[412],
     ..BASE
 },
-// 1430: StardustDoor x1
+// 1431: StardustDoor x1
 Recipe {
     create: (4218, 1),
     required: &[Requirement::item(4232, 6)],
     stations: &[412],
     ..BASE
 },
-// 1431: StardustLamp x1
+// 1432: StardustLamp x1
 Recipe {
     create: (4219, 1),
     required: &[Requirement::item(8, 1), Requirement::item(4232, 3)],
     stations: &[412],
     ..BASE
 },
-// 1432: StardustLantern x1
+// 1433: StardustLantern x1
 Recipe {
     create: (4220, 1),
     required: &[Requirement::item(4232, 6), Requirement::item(8, 1)],
     stations: &[412],
     ..BASE
 },
-// 1433: StardustPiano x1
+// 1434: StardustPiano x1
 Recipe {
     create: (4221, 1),
     required: &[Requirement::item(4232, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[412],
     ..BASE
 },
-// 1434: StardustSink x1
+// 1435: StardustSink x1
 Recipe {
     create: (4223, 1),
     required: &[Requirement::item(4232, 6), Requirement::item(206, 1)],
     stations: &[412],
     ..BASE
 },
-// 1435: StardustSofa x1
+// 1436: StardustSofa x1
 Recipe {
     create: (4224, 1),
     required: &[Requirement::item(4232, 5), Requirement::item(225, 2)],
     stations: &[412],
     ..BASE
 },
-// 1436: StardustTable x1
+// 1437: StardustTable x1
 Recipe {
     create: (4225, 1),
     required: &[Requirement::item(4232, 8)],
     stations: &[412],
     ..BASE
 },
-// 1437: StardustWorkbench x1
+// 1438: StardustWorkbench x1
 Recipe {
     create: (4226, 1),
     required: &[Requirement::item(4232, 10)],
     stations: &[412],
     ..BASE
 },
-// 1438: StardustToilet x1
+// 1439: StardustToilet x1
 Recipe {
     create: (4228, 1),
     required: &[Requirement::item(4232, 6)],
     stations: &[412],
     ..BASE
 },
-// 1439: SandstoneColumn x2
+// 1440: SandstoneColumn x2
 Recipe {
     create: (4720, 2),
     required: &[Requirement::item(4051, 1)],
     stations: &[106],
     ..BASE
 },
-// 1440: SandstoneBathtub x1
+// 1441: SandstoneBathtub x1
 Recipe {
     create: (4298, 1),
     required: &[Requirement::item(4051, 14)],
     stations: &[106],
     ..BASE
 },
-// 1441: SandstoneBed x1
+// 1442: SandstoneBed x1
 Recipe {
     create: (4299, 1),
     required: &[Requirement::item(4051, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1442: SandstoneBookcase x1
+// 1443: SandstoneBookcase x1
 Recipe {
     create: (4300, 1),
     required: &[Requirement::item(4051, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1443: SandstoneDresser x1
+// 1444: SandstoneDresser x1
 Recipe {
     create: (4301, 1),
     required: &[Requirement::item(4051, 16)],
     stations: &[106],
     ..BASE
 },
-// 1444: SandstoneCandelabra x1
+// 1445: SandstoneCandelabra x1
 Recipe {
     create: (4302, 1),
     required: &[Requirement::item(4051, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1445: SandstoneCandle x1
+// 1446: SandstoneCandle x1
 Recipe {
     create: (4303, 1),
     required: &[Requirement::item(4051, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1446: SandstoneChair x1
+// 1447: SandstoneChair x1
 Recipe {
     create: (4304, 1),
     required: &[Requirement::item(4051, 4)],
     stations: &[18],
     ..BASE
 },
-// 1447: SandstoneChandelier x1
+// 1448: SandstoneChandelier x1
 Recipe {
     create: (4305, 1),
     required: &[Requirement::item(4051, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1448: DesertChest x1
+// 1449: DesertChest x1
 Recipe {
     create: (4267, 1),
     required: &[Requirement::item(4051, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1449: SandstoneClock x1
+// 1450: SandstoneClock x1
 Recipe {
     create: (4306, 1),
     required: &[Requirement::item(4051, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[106],
     ..BASE
 },
-// 1450: SandstoneDoor x1
+// 1451: SandstoneDoor x1
 Recipe {
     create: (4307, 1),
     required: &[Requirement::item(4051, 6)],
     stations: &[18],
     ..BASE
 },
-// 1451: SandstoneLamp x1
+// 1452: SandstoneLamp x1
 Recipe {
     create: (4308, 1),
     required: &[Requirement::item(8, 1), Requirement::item(4051, 3)],
     stations: &[18],
     ..BASE
 },
-// 1452: SandstoneLantern x1
+// 1453: SandstoneLantern x1
 Recipe {
     create: (4309, 1),
     required: &[Requirement::item(4051, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1453: SandstonePiano x1
+// 1454: SandstonePiano x1
 Recipe {
     create: (4310, 1),
     required: &[Requirement::item(4051, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1454: SandstoneSink x1
+// 1455: SandstoneSink x1
 Recipe {
     create: (4312, 1),
     required: &[Requirement::item(4051, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1455: SandstoneSofa x1
+// 1456: SandstoneSofa x1
 Recipe {
     create: (4313, 1),
     required: &[Requirement::item(4051, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1456: SandstoneTable x1
+// 1457: SandstoneTable x1
 Recipe {
     create: (4314, 1),
     required: &[Requirement::item(4051, 8)],
     stations: &[18],
     ..BASE
 },
-// 1457: SandstoneWorkbench x1
+// 1458: SandstoneWorkbench x1
 Recipe {
     create: (4315, 1),
     required: &[Requirement::item(4051, 10)],
     ..BASE
 },
-// 1458: SandstoneToilet x1
+// 1459: SandstoneToilet x1
 Recipe {
     create: (4316, 1),
     required: &[Requirement::item(4051, 6)],
     stations: &[106],
     ..BASE
 },
-// 1459: BambooBathtub x1
+// 1460: BambooBathtub x1
 Recipe {
     create: (4566, 1),
     required: &[Requirement::item(4564, 14)],
     stations: &[106],
     ..BASE
 },
-// 1460: BambooBed x1
+// 1461: BambooBed x1
 Recipe {
     create: (4567, 1),
     required: &[Requirement::item(4564, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1461: BambooBookcase x1
+// 1462: BambooBookcase x1
 Recipe {
     create: (4568, 1),
     required: &[Requirement::item(4564, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1462: BambooDresser x1
+// 1463: BambooDresser x1
 Recipe {
     create: (4569, 1),
     required: &[Requirement::item(4564, 16)],
     stations: &[106],
     ..BASE
 },
-// 1463: BambooCandelabra x1
+// 1464: BambooCandelabra x1
 Recipe {
     create: (4570, 1),
     required: &[Requirement::item(4564, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1464: BambooCandle x1
+// 1465: BambooCandle x1
 Recipe {
     create: (4571, 1),
     required: &[Requirement::item(4564, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1465: BambooChair x1
+// 1466: BambooChair x1
 Recipe {
     create: (4572, 1),
     required: &[Requirement::item(4564, 4)],
     stations: &[18],
     ..BASE
 },
-// 1466: BambooChandelier x1
+// 1467: BambooChandelier x1
 Recipe {
     create: (4573, 1),
     required: &[Requirement::item(4564, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1467: BambooChest x1
+// 1468: BambooChest x1
 Recipe {
     create: (4574, 1),
     required: &[Requirement::item(4564, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1468: BambooClock x1
+// 1469: BambooClock x1
 Recipe {
     create: (4575, 1),
     required: &[Requirement::item(4564, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[106],
     ..BASE
 },
-// 1469: BambooDoor x1
+// 1470: BambooDoor x1
 Recipe {
     create: (4576, 1),
     required: &[Requirement::item(4564, 6)],
     stations: &[18],
     ..BASE
 },
-// 1470: BambooLamp x1
+// 1471: BambooLamp x1
 Recipe {
     create: (4577, 1),
     required: &[Requirement::item(8, 1), Requirement::item(4564, 3)],
     stations: &[18],
     ..BASE
 },
-// 1471: BambooLantern x1
+// 1472: BambooLantern x1
 Recipe {
     create: (4578, 1),
     required: &[Requirement::item(4564, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1472: BambooPiano x1
+// 1473: BambooPiano x1
 Recipe {
     create: (4579, 1),
     required: &[Requirement::item(4564, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1473: BambooSink x1
+// 1474: BambooSink x1
 Recipe {
     create: (4581, 1),
     required: &[Requirement::item(4564, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1474: BambooSofa x1
+// 1475: BambooSofa x1
 Recipe {
     create: (4582, 1),
     required: &[Requirement::item(4564, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1475: BambooTable x1
+// 1476: BambooTable x1
 Recipe {
     create: (4583, 1),
     required: &[Requirement::item(4564, 8)],
     stations: &[18],
     ..BASE
 },
-// 1476: BambooWorkbench x1
+// 1477: BambooWorkbench x1
 Recipe {
     create: (4584, 1),
     required: &[Requirement::item(4564, 10)],
     ..BASE
 },
-// 1477: BambooToilet x1
+// 1478: BambooToilet x1
 Recipe {
     create: (4586, 1),
     required: &[Requirement::item(4564, 6)],
     stations: &[106],
     ..BASE
 },
-// 1478: CoralBathtub x1
+// 1479: CoralBathtub x1
 Recipe {
     create: (5148, 1),
     required: &[Requirement::item(5306, 14)],
     stations: &[106],
     ..BASE
 },
-// 1479: CoralBed x1
+// 1480: CoralBed x1
 Recipe {
     create: (5149, 1),
     required: &[Requirement::item(5306, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1480: CoralBookcase x1
+// 1481: CoralBookcase x1
 Recipe {
     create: (5150, 1),
     required: &[Requirement::item(5306, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1481: CoralDresser x1
+// 1482: CoralDresser x1
 Recipe {
     create: (5151, 1),
     required: &[Requirement::item(5306, 16)],
     stations: &[106],
     ..BASE
 },
-// 1482: CoralCandelabra x1
+// 1483: CoralCandelabra x1
 Recipe {
     create: (5152, 1),
     required: &[Requirement::item(5306, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1483: CoralCandle x1
+// 1484: CoralCandle x1
 Recipe {
     create: (5153, 1),
     required: &[Requirement::item(5306, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1484: CoralChair x1
+// 1485: CoralChair x1
 Recipe {
     create: (5154, 1),
     required: &[Requirement::item(5306, 4)],
     stations: &[18],
     ..BASE
 },
-// 1485: CoralChandelier x1
+// 1486: CoralChandelier x1
 Recipe {
     create: (5155, 1),
     required: &[Requirement::item(5306, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1486: CoralChest x1
+// 1487: CoralChest x1
 Recipe {
     create: (5156, 1),
     required: &[Requirement::item(5306, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1487: CoralClock x1
+// 1488: CoralClock x1
 Recipe {
     create: (5157, 1),
     required: &[Requirement::item(5306, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[106],
     ..BASE
 },
-// 1488: CoralDoor x1
+// 1489: CoralDoor x1
 Recipe {
     create: (5158, 1),
     required: &[Requirement::item(5306, 6)],
     stations: &[18],
     ..BASE
 },
-// 1489: CoralLamp x1
+// 1490: CoralLamp x1
 Recipe {
     create: (5159, 1),
     required: &[Requirement::item(8, 1), Requirement::item(5306, 3)],
     stations: &[18],
     ..BASE
 },
-// 1490: CoralLantern x1
+// 1491: CoralLantern x1
 Recipe {
     create: (5160, 1),
     required: &[Requirement::item(5306, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1491: CoralPiano x1
+// 1492: CoralPiano x1
 Recipe {
     create: (5161, 1),
     required: &[Requirement::item(5306, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1492: CoralSink x1
+// 1493: CoralSink x1
 Recipe {
     create: (5163, 1),
     required: &[Requirement::item(5306, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1493: CoralSofa x1
+// 1494: CoralSofa x1
 Recipe {
     create: (5164, 1),
     required: &[Requirement::item(5306, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1494: CoralTable x1
+// 1495: CoralTable x1
 Recipe {
     create: (5165, 1),
     required: &[Requirement::item(5306, 8)],
     stations: &[18],
     ..BASE
 },
-// 1495: CoralWorkbench x1
+// 1496: CoralWorkbench x1
 Recipe {
     create: (5166, 1),
     required: &[Requirement::item(5306, 10)],
     ..BASE
 },
-// 1496: CoralToilet x1
+// 1497: CoralToilet x1
 Recipe {
     create: (5168, 1),
     required: &[Requirement::item(5306, 6)],
     stations: &[106],
     ..BASE
 },
-// 1497: BalloonBathtub x1
+// 1498: BalloonBathtub x1
 Recipe {
     create: (5169, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 14)],
     stations: &[106],
     ..BASE
 },
-// 1498: BalloonBed x1
+// 1499: BalloonBed x1
 Recipe {
     create: (5170, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1499: BalloonBookcase x1
+// 1500: BalloonBookcase x1
 Recipe {
     create: (5171, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1500: BalloonDresser x1
+// 1501: BalloonDresser x1
 Recipe {
     create: (5172, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 16)],
     stations: &[106],
     ..BASE
 },
-// 1501: BalloonCandelabra x1
+// 1502: BalloonCandelabra x1
 Recipe {
     create: (5173, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1502: BalloonCandle x1
+// 1503: BalloonCandle x1
 Recipe {
     create: (5174, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1503: BalloonChair x1
+// 1504: BalloonChair x1
 Recipe {
     create: (5175, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 4)],
     stations: &[18],
     ..BASE
 },
-// 1504: BalloonChandelier x1
+// 1505: BalloonChandelier x1
 Recipe {
     create: (5176, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1505: BalloonChest x1
+// 1506: BalloonChest x1
 Recipe {
     create: (5177, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1506: BalloonClock x1
+// 1507: BalloonClock x1
 Recipe {
     create: (5178, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[106],
     ..BASE
 },
-// 1507: BalloonDoor x1
+// 1508: BalloonDoor x1
 Recipe {
     create: (5179, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 6)],
     stations: &[18],
     ..BASE
 },
-// 1508: BalloonLamp x1
+// 1509: BalloonLamp x1
 Recipe {
     create: (5180, 1),
     required: &[Requirement::item(8, 1), Requirement::group(3738, RecipeGroups::BALLOONS, 3)],
     stations: &[18],
     ..BASE
 },
-// 1509: BalloonLantern x1
+// 1510: BalloonLantern x1
 Recipe {
     create: (5181, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1510: BalloonPiano x1
+// 1511: BalloonPiano x1
 Recipe {
     create: (5182, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1511: BalloonSink x1
+// 1512: BalloonSink x1
 Recipe {
     create: (5184, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1512: BalloonSofa x1
+// 1513: BalloonSofa x1
 Recipe {
     create: (5185, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1513: BalloonTable x1
+// 1514: BalloonTable x1
 Recipe {
     create: (5186, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 8)],
     stations: &[18],
     ..BASE
 },
-// 1514: BalloonWorkbench x1
+// 1515: BalloonWorkbench x1
 Recipe {
     create: (5187, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 10)],
     ..BASE
 },
-// 1515: BalloonToilet x1
+// 1516: BalloonToilet x1
 Recipe {
     create: (5189, 1),
     required: &[Requirement::group(3738, RecipeGroups::BALLOONS, 6)],
     stations: &[106],
     ..BASE
 },
-// 1516: AetheriumBathtub x1
+// 1517: AetheriumBathtub x1
 Recipe {
     create: (5548, 1),
     required: &[Requirement::item(5398, 14)],
     stations: &[106],
     ..BASE
 },
-// 1517: AetheriumBed x1
+// 1518: AetheriumBed x1
 Recipe {
     create: (5549, 1),
     required: &[Requirement::item(5398, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1518: AetheriumBookcase x1
+// 1519: AetheriumBookcase x1
 Recipe {
     create: (5550, 1),
     required: &[Requirement::item(5398, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1519: AetheriumDresser x1
+// 1520: AetheriumDresser x1
 Recipe {
     create: (5551, 1),
     required: &[Requirement::item(5398, 16)],
     stations: &[106],
     ..BASE
 },
-// 1520: AetheriumCandelabra x1
+// 1521: AetheriumCandelabra x1
 Recipe {
     create: (5552, 1),
     required: &[Requirement::item(5398, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1521: AetheriumCandle x1
+// 1522: AetheriumCandle x1
 Recipe {
     create: (5553, 1),
     required: &[Requirement::item(5398, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1522: AetheriumChair x1
+// 1523: AetheriumChair x1
 Recipe {
     create: (5554, 1),
     required: &[Requirement::item(5398, 4)],
     stations: &[18],
     ..BASE
 },
-// 1523: AetheriumChandelier x1
+// 1524: AetheriumChandelier x1
 Recipe {
     create: (5555, 1),
     required: &[Requirement::item(5398, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1524: AetheriumChest x1
+// 1525: AetheriumChest x1
 Recipe {
     create: (5556, 1),
     required: &[Requirement::item(5398, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1525: AetheriumClock x1
+// 1526: AetheriumClock x1
 Recipe {
     create: (5557, 1),
     required: &[Requirement::item(5398, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[106],
     ..BASE
 },
-// 1526: AetheriumDoor x1
+// 1527: AetheriumDoor x1
 Recipe {
     create: (5558, 1),
     required: &[Requirement::item(5398, 6)],
     stations: &[18],
     ..BASE
 },
-// 1527: AetheriumLamp x1
+// 1528: AetheriumLamp x1
 Recipe {
     create: (5559, 1),
     required: &[Requirement::item(8, 1), Requirement::item(5398, 3)],
     stations: &[18],
     ..BASE
 },
-// 1528: AetheriumLantern x1
+// 1529: AetheriumLantern x1
 Recipe {
     create: (5560, 1),
     required: &[Requirement::item(5398, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1529: AetheriumPiano x1
+// 1530: AetheriumPiano x1
 Recipe {
     create: (5561, 1),
     required: &[Requirement::item(5398, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1530: AetheriumSink x1
+// 1531: AetheriumSink x1
 Recipe {
     create: (5563, 1),
     required: &[Requirement::item(5398, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1531: AetheriumSofa x1
+// 1532: AetheriumSofa x1
 Recipe {
     create: (5564, 1),
     required: &[Requirement::item(5398, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1532: AetheriumTable x1
+// 1533: AetheriumTable x1
 Recipe {
     create: (5565, 1),
     required: &[Requirement::item(5398, 8)],
     stations: &[18],
     ..BASE
 },
-// 1533: AetheriumWorkbench x1
+// 1534: AetheriumWorkbench x1
 Recipe {
     create: (5566, 1),
     required: &[Requirement::item(5398, 10)],
     ..BASE
 },
-// 1534: AetheriumToilet x1
+// 1535: AetheriumToilet x1
 Recipe {
     create: (5568, 1),
     required: &[Requirement::item(5398, 6)],
     stations: &[106],
     ..BASE
 },
-// 1535: FallenStarBathtub x1
+// 1536: FallenStarBathtub x1
 Recipe {
     create: (5601, 1),
     required: &[Requirement::item(5622, 14)],
     stations: &[106],
     ..BASE
 },
-// 1536: FallenStarBed x1
+// 1537: FallenStarBed x1
 Recipe {
     create: (5602, 1),
     required: &[Requirement::item(5622, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1537: FallenStarBookcase x1
+// 1538: FallenStarBookcase x1
 Recipe {
     create: (5603, 1),
     required: &[Requirement::item(5622, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1538: FallenStarDresser x1
+// 1539: FallenStarDresser x1
 Recipe {
     create: (5604, 1),
     required: &[Requirement::item(5622, 16)],
     stations: &[106],
     ..BASE
 },
-// 1539: FallenStarCandelabra x1
+// 1540: FallenStarCandelabra x1
 Recipe {
     create: (5605, 1),
     required: &[Requirement::item(5622, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1540: FallenStarCandle x1
+// 1541: FallenStarCandle x1
 Recipe {
     create: (5606, 1),
     required: &[Requirement::item(5622, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1541: FallenStarChair x1
+// 1542: FallenStarChair x1
 Recipe {
     create: (5607, 1),
     required: &[Requirement::item(5622, 4)],
     stations: &[18],
     ..BASE
 },
-// 1542: FallenStarChandelier x1
+// 1543: FallenStarChandelier x1
 Recipe {
     create: (5608, 1),
     required: &[Requirement::item(5622, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1543: FallenStarChest x1
+// 1544: FallenStarChest x1
 Recipe {
     create: (5609, 1),
     required: &[Requirement::item(5622, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1544: FallenStarClock x1
+// 1545: FallenStarClock x1
 Recipe {
     create: (5610, 1),
     required: &[Requirement::item(5622, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6)],
     stations: &[106],
     ..BASE
 },
-// 1545: FallenStarDoor x1
+// 1546: FallenStarDoor x1
 Recipe {
     create: (5611, 1),
     required: &[Requirement::item(5622, 6)],
     stations: &[18],
     ..BASE
 },
-// 1546: FallenStarLamp x1
+// 1547: FallenStarLamp x1
 Recipe {
     create: (5612, 1),
     required: &[Requirement::item(8, 1), Requirement::item(5622, 3)],
     stations: &[18],
     ..BASE
 },
-// 1547: FallenStarLantern x1
+// 1548: FallenStarLantern x1
 Recipe {
     create: (5613, 1),
     required: &[Requirement::item(5622, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1548: FallenStarPiano x1
+// 1549: FallenStarPiano x1
 Recipe {
     create: (5614, 1),
     required: &[Requirement::item(5622, 15), Requirement::item(154, 4), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1549: FallenStarSink x1
+// 1550: FallenStarSink x1
 Recipe {
     create: (5616, 1),
     required: &[Requirement::item(5622, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1550: FallenStarSofa x1
+// 1551: FallenStarSofa x1
 Recipe {
     create: (5617, 1),
     required: &[Requirement::item(5622, 5), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1551: FallenStarTable x1
+// 1552: FallenStarTable x1
 Recipe {
     create: (5618, 1),
     required: &[Requirement::item(5622, 8)],
     stations: &[18],
     ..BASE
 },
-// 1552: FallenStarWorkbench x1
+// 1553: FallenStarWorkbench x1
 Recipe {
     create: (5619, 1),
     required: &[Requirement::item(5622, 10)],
     ..BASE
 },
-// 1553: FallenStarToilet x1
+// 1554: FallenStarToilet x1
 Recipe {
     create: (5621, 1),
     required: &[Requirement::item(5622, 6)],
     stations: &[106],
     ..BASE
 },
-// 1554: SlimeSpear x1
+// 1555: SlimeSpear x1
 Recipe {
     create: (5687, 1),
     required: &[Requirement::item(23, 50)],
     stations: &[220],
     ..BASE
 },
-// 1555: SlimeWhip x1
+// 1556: SlimeWhip x1
 Recipe {
     create: (5688, 1),
     required: &[Requirement::item(23, 50)],
     stations: &[220],
     ..BASE
 },
-// 1556: Sign x1
+// 1557: Sign x1
 Recipe {
     create: (171, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 6)],
     stations: &[18],
     ..BASE
 },
-// 1557: TatteredWoodSign x1
+// 1558: TatteredWoodSign x1
 Recipe {
     create: (4710, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 6)],
@@ -11086,14 +11095,14 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 1558: WoodenFence x4
+// 1559: WoodenFence x4
 Recipe {
     create: (1447, 4),
     required: &[Requirement::item(9, 1)],
     stations: &[18],
     ..BASE
 },
-// 1559: Wood x1, SetupRecipes reverse
+// 1560: Wood x1, SetupRecipes reverse
 Recipe {
     create: (9, 1),
     required: &[Requirement::item(1447, 4)],
@@ -11101,14 +11110,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1560: EbonwoodFence x4
+// 1561: EbonwoodFence x4
 Recipe {
     create: (2210, 4),
     required: &[Requirement::item(619, 1)],
     stations: &[18],
     ..BASE
 },
-// 1561: Ebonwood x1, SetupRecipes reverse
+// 1562: Ebonwood x1, SetupRecipes reverse
 Recipe {
     create: (619, 1),
     required: &[Requirement::item(2210, 4)],
@@ -11116,14 +11125,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1562: RichMahoganyFence x4
+// 1563: RichMahoganyFence x4
 Recipe {
     create: (2211, 4),
     required: &[Requirement::item(620, 1)],
     stations: &[18],
     ..BASE
 },
-// 1563: RichMahogany x1, SetupRecipes reverse
+// 1564: RichMahogany x1, SetupRecipes reverse
 Recipe {
     create: (620, 1),
     required: &[Requirement::item(2211, 4)],
@@ -11131,14 +11140,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1564: PearlwoodFence x4
+// 1565: PearlwoodFence x4
 Recipe {
     create: (2212, 4),
     required: &[Requirement::item(621, 1)],
     stations: &[18],
     ..BASE
 },
-// 1565: Pearlwood x1, SetupRecipes reverse
+// 1566: Pearlwood x1, SetupRecipes reverse
 Recipe {
     create: (621, 1),
     required: &[Requirement::item(2212, 4)],
@@ -11146,14 +11155,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1566: ShadewoodFence x4
+// 1567: ShadewoodFence x4
 Recipe {
     create: (2213, 4),
     required: &[Requirement::item(911, 1)],
     stations: &[18],
     ..BASE
 },
-// 1567: Shadewood x1, SetupRecipes reverse
+// 1568: Shadewood x1, SetupRecipes reverse
 Recipe {
     create: (911, 1),
     required: &[Requirement::item(2213, 4)],
@@ -11161,14 +11170,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1568: BorealWoodFence x4
+// 1569: BorealWoodFence x4
 Recipe {
     create: (2507, 4),
     required: &[Requirement::item(2503, 1)],
     stations: &[18],
     ..BASE
 },
-// 1569: BorealWood x1, SetupRecipes reverse
+// 1570: BorealWood x1, SetupRecipes reverse
 Recipe {
     create: (2503, 1),
     required: &[Requirement::item(2507, 4)],
@@ -11176,14 +11185,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1570: PalmWoodFence x4
+// 1571: PalmWoodFence x4
 Recipe {
     create: (2508, 4),
     required: &[Requirement::item(2504, 1)],
     stations: &[18],
     ..BASE
 },
-// 1571: PalmWood x1, SetupRecipes reverse
+// 1572: PalmWood x1, SetupRecipes reverse
 Recipe {
     create: (2504, 1),
     required: &[Requirement::item(2508, 4)],
@@ -11191,14 +11200,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1572: AshWoodFence x4
+// 1573: AshWoodFence x4
 Recipe {
     create: (5217, 4),
     required: &[Requirement::item(5215, 1)],
     stations: &[18],
     ..BASE
 },
-// 1573: AshWood x1, SetupRecipes reverse
+// 1574: AshWood x1, SetupRecipes reverse
 Recipe {
     create: (5215, 1),
     required: &[Requirement::item(5217, 4)],
@@ -11206,14 +11215,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1574: LeadFence x4
+// 1575: LeadFence x4
 Recipe {
     create: (1448, 4),
     required: &[Requirement::item(704, 1)],
     stations: &[16],
     ..BASE
 },
-// 1575: LeadBar x1, SetupRecipes reverse
+// 1576: LeadBar x1, SetupRecipes reverse
 Recipe {
     create: (704, 1),
     required: &[Requirement::item(1448, 4)],
@@ -11221,14 +11230,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1576: IronFence x4
+// 1577: IronFence x4
 Recipe {
     create: (2333, 4),
     required: &[Requirement::item(22, 1)],
     stations: &[16],
     ..BASE
 },
-// 1577: IronBar x1, SetupRecipes reverse
+// 1578: IronBar x1, SetupRecipes reverse
 Recipe {
     create: (22, 1),
     required: &[Requirement::item(2333, 4)],
@@ -11236,7 +11245,7 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1578: WroughtIronFence x4
+// 1579: WroughtIronFence x4
 Recipe {
     create: (4424, 4),
     required: &[Requirement::item(22, 1)],
@@ -11244,7 +11253,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 1579: IronBar x1, SetupRecipes reverse
+// 1580: IronBar x1, SetupRecipes reverse
 Recipe {
     create: (22, 1),
     required: &[Requirement::item(4424, 4)],
@@ -11252,14 +11261,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1580: BambooFence x4
+// 1581: BambooFence x4
 Recipe {
     create: (4667, 4),
     required: &[Requirement::item(4564, 1)],
     stations: &[18],
     ..BASE
 },
-// 1581: BambooBlock x1, SetupRecipes reverse
+// 1582: BambooBlock x1, SetupRecipes reverse
 Recipe {
     create: (4564, 1),
     required: &[Requirement::item(4667, 4)],
@@ -11267,616 +11276,616 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1582: Fake_Chest x1
+// 1583: Fake_Chest x1
 Recipe {
     create: (3665, 1),
     required: &[Requirement::item(48, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1583: Fake_GoldChest x1
+// 1584: Fake_GoldChest x1
 Recipe {
     create: (3666, 1),
     required: &[Requirement::item(306, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1584: Fake_ShadowChest x1
+// 1585: Fake_ShadowChest x1
 Recipe {
     create: (3667, 1),
     required: &[Requirement::item(328, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1585: Fake_EbonwoodChest x1
+// 1586: Fake_EbonwoodChest x1
 Recipe {
     create: (3668, 1),
     required: &[Requirement::item(625, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1586: Fake_RichMahoganyChest x1
+// 1587: Fake_RichMahoganyChest x1
 Recipe {
     create: (3669, 1),
     required: &[Requirement::item(626, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1587: Fake_PearlwoodChest x1
+// 1588: Fake_PearlwoodChest x1
 Recipe {
     create: (3670, 1),
     required: &[Requirement::item(627, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1588: Fake_IvyChest x1
+// 1589: Fake_IvyChest x1
 Recipe {
     create: (3671, 1),
     required: &[Requirement::item(680, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1589: Fake_IceChest x1
+// 1590: Fake_IceChest x1
 Recipe {
     create: (3672, 1),
     required: &[Requirement::item(681, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1590: Fake_LivingWoodChest x1
+// 1591: Fake_LivingWoodChest x1
 Recipe {
     create: (3673, 1),
     required: &[Requirement::item(831, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1591: Fake_SkywareChest x1
+// 1592: Fake_SkywareChest x1
 Recipe {
     create: (3674, 1),
     required: &[Requirement::item(838, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1592: Fake_ShadewoodChest x1
+// 1593: Fake_ShadewoodChest x1
 Recipe {
     create: (3675, 1),
     required: &[Requirement::item(914, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1593: Fake_WebCoveredChest x1
+// 1594: Fake_WebCoveredChest x1
 Recipe {
     create: (3676, 1),
     required: &[Requirement::item(952, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1594: Fake_LihzahrdChest x1
+// 1595: Fake_LihzahrdChest x1
 Recipe {
     create: (3677, 1),
     required: &[Requirement::item(1142, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1595: Fake_WaterChest x1
+// 1596: Fake_WaterChest x1
 Recipe {
     create: (3678, 1),
     required: &[Requirement::item(1298, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1596: Fake_JungleChest x1
+// 1597: Fake_JungleChest x1
 Recipe {
     create: (3679, 1),
     required: &[Requirement::item(1528, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1597: Fake_CorruptionChest x1
+// 1598: Fake_CorruptionChest x1
 Recipe {
     create: (3680, 1),
     required: &[Requirement::item(1529, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1598: Fake_CrimsonChest x1
+// 1599: Fake_CrimsonChest x1
 Recipe {
     create: (3681, 1),
     required: &[Requirement::item(1530, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1599: Fake_HallowedChest x1
+// 1600: Fake_HallowedChest x1
 Recipe {
     create: (3682, 1),
     required: &[Requirement::item(1531, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1600: Fake_FrozenChest x1
+// 1601: Fake_FrozenChest x1
 Recipe {
     create: (3683, 1),
     required: &[Requirement::item(1532, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1601: Fake_DynastyChest x1
+// 1602: Fake_DynastyChest x1
 Recipe {
     create: (3684, 1),
     required: &[Requirement::item(2230, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1602: Fake_HoneyChest x1
+// 1603: Fake_HoneyChest x1
 Recipe {
     create: (3685, 1),
     required: &[Requirement::item(2249, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1603: Fake_SteampunkChest x1
+// 1604: Fake_SteampunkChest x1
 Recipe {
     create: (3686, 1),
     required: &[Requirement::item(2250, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1604: Fake_PalmWoodChest x1
+// 1605: Fake_PalmWoodChest x1
 Recipe {
     create: (3687, 1),
     required: &[Requirement::item(2526, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1605: Fake_MushroomChest x1
+// 1606: Fake_MushroomChest x1
 Recipe {
     create: (3688, 1),
     required: &[Requirement::item(2544, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1606: Fake_BorealWoodChest x1
+// 1607: Fake_BorealWoodChest x1
 Recipe {
     create: (3689, 1),
     required: &[Requirement::item(2559, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1607: Fake_SlimeChest x1
+// 1608: Fake_SlimeChest x1
 Recipe {
     create: (3690, 1),
     required: &[Requirement::item(2574, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1608: Fake_GreenDungeonChest x1
+// 1609: Fake_GreenDungeonChest x1
 Recipe {
     create: (3691, 1),
     required: &[Requirement::item(2612, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1609: Fake_PinkDungeonChest x1
+// 1610: Fake_PinkDungeonChest x1
 Recipe {
     create: (3692, 1),
     required: &[Requirement::item(2613, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1610: Fake_BlueDungeonChest x1
+// 1611: Fake_BlueDungeonChest x1
 Recipe {
     create: (3693, 1),
     required: &[Requirement::item(2614, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1611: Fake_BoneChest x1
+// 1612: Fake_BoneChest x1
 Recipe {
     create: (3694, 1),
     required: &[Requirement::item(2615, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1612: Fake_CactusChest x1
+// 1613: Fake_CactusChest x1
 Recipe {
     create: (3695, 1),
     required: &[Requirement::item(2616, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1613: Fake_FleshChest x1
+// 1614: Fake_FleshChest x1
 Recipe {
     create: (3696, 1),
     required: &[Requirement::item(2617, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1614: Fake_ObsidianChest x1
+// 1615: Fake_ObsidianChest x1
 Recipe {
     create: (3697, 1),
     required: &[Requirement::item(2618, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1615: Fake_PumpkinChest x1
+// 1616: Fake_PumpkinChest x1
 Recipe {
     create: (3698, 1),
     required: &[Requirement::item(2619, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1616: Fake_SpookyChest x1
+// 1617: Fake_SpookyChest x1
 Recipe {
     create: (3699, 1),
     required: &[Requirement::item(2620, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1617: Fake_GlassChest x1
+// 1618: Fake_GlassChest x1
 Recipe {
     create: (3700, 1),
     required: &[Requirement::item(2748, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1618: Fake_MartianChest x1
+// 1619: Fake_MartianChest x1
 Recipe {
     create: (3701, 1),
     required: &[Requirement::item(2814, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1619: Fake_MeteoriteChest x1
+// 1620: Fake_MeteoriteChest x1
 Recipe {
     create: (3702, 1),
     required: &[Requirement::item(3180, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1620: Fake_GraniteChest x1
+// 1621: Fake_GraniteChest x1
 Recipe {
     create: (3703, 1),
     required: &[Requirement::item(3125, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1621: Fake_MarbleChest x1
+// 1622: Fake_MarbleChest x1
 Recipe {
     create: (3704, 1),
     required: &[Requirement::item(3181, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1622: Fake_CrystalChest x1
+// 1623: Fake_CrystalChest x1
 Recipe {
     create: (3886, 1),
     required: &[Requirement::item(3884, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1623: Fake_GoldenChest x1
+// 1624: Fake_GoldenChest x1
 Recipe {
     create: (3887, 1),
     required: &[Requirement::item(3885, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1624: Fake_SpiderChest x1
+// 1625: Fake_SpiderChest x1
 Recipe {
     create: (3950, 1),
     required: &[Requirement::item(3939, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1625: Fake_LesionChest x1
+// 1626: Fake_LesionChest x1
 Recipe {
     create: (3976, 1),
     required: &[Requirement::item(3965, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1626: Fake_SolarChest x1
+// 1627: Fake_SolarChest x1
 Recipe {
     create: (4164, 1),
     required: &[Requirement::item(4153, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1627: Fake_VortexChest x1
+// 1628: Fake_VortexChest x1
 Recipe {
     create: (4185, 1),
     required: &[Requirement::item(4174, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1628: Fake_NebulaChest x1
+// 1629: Fake_NebulaChest x1
 Recipe {
     create: (4206, 1),
     required: &[Requirement::item(4195, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1629: Fake_StardustChest x1
+// 1630: Fake_StardustChest x1
 Recipe {
     create: (4227, 1),
     required: &[Requirement::item(4216, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1630: Fake_GolfChest x1
+// 1631: Fake_GolfChest x1
 Recipe {
     create: (4266, 1),
     required: &[Requirement::item(4265, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1631: Fake_DesertChest x1
+// 1632: Fake_DesertChest x1
 Recipe {
     create: (4268, 1),
     required: &[Requirement::item(4267, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1632: Fake_BambooChest x1
+// 1633: Fake_BambooChest x1
 Recipe {
     create: (4585, 1),
     required: &[Requirement::item(4574, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1633: Fake_DungeonDesertChest x1
+// 1634: Fake_DungeonDesertChest x1
 Recipe {
     create: (4713, 1),
     required: &[Requirement::item(4712, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1634: Fake_CoralChest x1
+// 1635: Fake_CoralChest x1
 Recipe {
     create: (5167, 1),
     required: &[Requirement::item(5156, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1635: Fake_BalloonChest x1
+// 1636: Fake_BalloonChest x1
 Recipe {
     create: (5188, 1),
     required: &[Requirement::item(5177, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1636: Fake_AshWoodChest x1
+// 1637: Fake_AshWoodChest x1
 Recipe {
     create: (5209, 1),
     required: &[Requirement::item(5198, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1637: Fake_AetheriumChest x1
+// 1638: Fake_AetheriumChest x1
 Recipe {
     create: (5567, 1),
     required: &[Requirement::item(5556, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1638: Fake_FallenStarChest x1
+// 1639: Fake_FallenStarChest x1
 Recipe {
     create: (5620, 1),
     required: &[Requirement::item(5609, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1639: Fake_FeywoodChest x1
+// 1640: Fake_FeywoodChest x1
 Recipe {
     create: (5708, 1),
     required: &[Requirement::item(5697, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1640: Fake_HallowedFurnitureChest x1
+// 1641: Fake_HallowedFurnitureChest x1
 Recipe {
     create: (5731, 1),
     required: &[Requirement::item(5720, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1641: Fake_GothicChest x1
+// 1642: Fake_GothicChest x1
 Recipe {
     create: (5754, 1),
     required: &[Requirement::item(5745, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1642: Fake_DemoniteChest x1
+// 1643: Fake_DemoniteChest x1
 Recipe {
     create: (5776, 1),
     required: &[Requirement::item(5763, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1643: Fake_CrimtaneChest x1
+// 1644: Fake_CrimtaneChest x1
 Recipe {
     create: (5797, 1),
     required: &[Requirement::item(5784, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1644: Fake_SnowChest x1
+// 1645: Fake_SnowChest x1
 Recipe {
     create: (5818, 1),
     required: &[Requirement::item(5805, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1645: Fake_FlinxFurChest x1
+// 1646: Fake_FlinxFurChest x1
 Recipe {
     create: (5839, 1),
     required: &[Requirement::item(5826, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1646: Fake_PineChest x1
+// 1647: Fake_PineChest x1
 Recipe {
     create: (5857, 1),
     required: &[Requirement::item(5846, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1647: Fake_EasterChest x1
+// 1648: Fake_EasterChest x1
 Recipe {
     create: (5878, 1),
     required: &[Requirement::item(5865, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1648: Fake_StoneChest x1
+// 1649: Fake_StoneChest x1
 Recipe {
     create: (5897, 1),
     required: &[Requirement::item(5886, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1649: Fake_JellyfishChest x1
+// 1650: Fake_JellyfishChest x1
 Recipe {
     create: (5918, 1),
     required: &[Requirement::item(5905, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1650: Fake_HarpyChest x1
+// 1651: Fake_HarpyChest x1
 Recipe {
     create: (5952, 1),
     required: &[Requirement::item(5939, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1651: Fake_CloudChest x1
+// 1652: Fake_CloudChest x1
 Recipe {
     create: (5974, 1),
     required: &[Requirement::item(5962, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1652: Fake_MoonplateChest x1
+// 1653: Fake_MoonplateChest x1
 Recipe {
     create: (5995, 1),
     required: &[Requirement::item(5982, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1653: Fake_LibrarianChest x1
+// 1654: Fake_LibrarianChest x1
 Recipe {
     create: (6018, 1),
     required: &[Requirement::item(6005, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1654: Fake_SpikeChest x1
+// 1655: Fake_SpikeChest x1
 Recipe {
     create: (6041, 1),
     required: &[Requirement::item(6028, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1655: Fake_OfficeChest x1
+// 1656: Fake_OfficeChest x1
 Recipe {
     create: (6064, 1),
     required: &[Requirement::item(6051, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1656: Fake_ForbiddenChest x1
+// 1657: Fake_ForbiddenChest x1
 Recipe {
     create: (6087, 1),
     required: &[Requirement::item(6074, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1657: Fake_BoulderChest x1
+// 1658: Fake_BoulderChest x1
 Recipe {
     create: (6131, 1),
     required: &[Requirement::item(6118, 1), Requirement::item(530, 10)],
     stations: &[283],
     ..BASE
 },
-// 1658: MinecartTrack x50
+// 1659: MinecartTrack x50
 Recipe {
     create: (2340, 50),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 1), Requirement::group(9, RecipeGroups::WOOD, 1)],
     stations: &[16],
     ..BASE
 },
-// 1659: PressureTrack x1
+// 1660: PressureTrack x1
 Recipe {
     create: (2492, 1),
     required: &[Requirement::item(2340, 1), Requirement::group(542, RecipeGroups::PRESSURE_PLATE, 1)],
     stations: &[16],
     ..BASE
 },
-// 1660: PlankedWall x4
+// 1661: PlankedWall x4
 Recipe {
     create: (479, 4),
     required: &[Requirement::item(3, 1), Requirement::group(9, RecipeGroups::WOOD, 1)],
     stations: &[106],
     ..BASE
 },
-// 1661: WoodenBeam x2
+// 1662: WoodenBeam x2
 Recipe {
     create: (480, 2),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 1)],
     stations: &[106],
     ..BASE
 },
-// 1662: TargetDummy x1
+// 1663: TargetDummy x1
 Recipe {
     create: (3202, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 20), Requirement::item(1727, 50)],
     stations: &[106],
     ..BASE
 },
-// 1663: Mannequin x1
+// 1664: Mannequin x1
 Recipe {
     create: (498, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 20)],
     stations: &[106],
     ..BASE
 },
-// 1664: Womannquin x1
+// 1665: Womannquin x1
 Recipe {
     create: (1989, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 20)],
     stations: &[106],
     ..BASE
 },
-// 1665: HatRack x1
+// 1666: HatRack x1
 Recipe {
     create: (3977, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 16)],
     stations: &[106],
     ..BASE
 },
-// 1666: WeaponRack x1
+// 1667: WeaponRack x1
 Recipe {
     create: (2699, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 10)],
     stations: &[106],
     ..BASE
 },
-// 1667: ItemFrame x1
+// 1668: ItemFrame x1
 Recipe {
     create: (3270, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 6)],
     stations: &[106],
     ..BASE
 },
-// 1668: StinkbugHousingBlocker x1
+// 1669: StinkbugHousingBlocker x1
 Recipe {
     create: (5137, 1),
     required: &[Requirement::item(5132, 1)],
     stations: &[18],
     ..BASE
 },
-// 1669: StinkbugHousingBlockerEcho x1
+// 1670: StinkbugHousingBlockerEcho x1
 Recipe {
     create: (5138, 1),
     required: &[Requirement::item(5132, 1)],
@@ -11884,507 +11893,507 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 1670: Barrel x1
+// 1671: Barrel x1
 Recipe {
     create: (343, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 9), Requirement::group(22, RecipeGroups::IRON_BAR, 1)],
     stations: &[106],
     ..BASE
 },
-// 1671: GrandfatherClock x1
+// 1672: GrandfatherClock x1
 Recipe {
     create: (359, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(9, 10)],
     stations: &[106],
     ..BASE
 },
-// 1672: Keg x1
+// 1673: Keg x1
 Recipe {
     create: (352, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 14)],
     stations: &[106],
     ..BASE
 },
-// 1673: TeaKettle x1
+// 1674: TeaKettle x1
 Recipe {
     create: (5008, 1),
     required: &[Requirement::item(133, 12), Requirement::item(154, 12)],
     stations: &[17],
     ..BASE
 },
-// 1674: Loom x1
+// 1675: Loom x1
 Recipe {
     create: (332, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12)],
     stations: &[106],
     ..BASE
 },
-// 1675: BlacksmithRack x1
+// 1676: BlacksmithRack x1
 Recipe {
     create: (2114, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12), Requirement::group(22, RecipeGroups::IRON_BAR, 3)],
     stations: &[106],
     ..BASE
 },
-// 1676: CarpentryRack x1
+// 1677: CarpentryRack x1
 Recipe {
     create: (2115, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12), Requirement::group(22, RecipeGroups::IRON_BAR, 3)],
     stations: &[106],
     ..BASE
 },
-// 1677: HelmetRack x1
+// 1678: HelmetRack x1
 Recipe {
     create: (2116, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12), Requirement::group(22, RecipeGroups::IRON_BAR, 3)],
     stations: &[106],
     ..BASE
 },
-// 1678: SpearRack x1
+// 1679: SpearRack x1
 Recipe {
     create: (2117, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12), Requirement::group(22, RecipeGroups::IRON_BAR, 3)],
     stations: &[106],
     ..BASE
 },
-// 1679: SwordRack x1
+// 1680: SwordRack x1
 Recipe {
     create: (2118, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12), Requirement::group(22, RecipeGroups::IRON_BAR, 3)],
     stations: &[106],
     ..BASE
 },
-// 1680: BarStool x1
+// 1681: BarStool x1
 Recipe {
     create: (1706, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 4)],
     stations: &[106],
     ..BASE
 },
-// 1681: BanquetTable x1
+// 1682: BanquetTable x1
 Recipe {
     create: (1714, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 8)],
     stations: &[106],
     ..BASE
 },
-// 1682: Bar x1
+// 1683: Bar x1
 Recipe {
     create: (1715, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 8)],
     stations: &[106],
     ..BASE
 },
-// 1683: Bench x1
+// 1684: Bench x1
 Recipe {
     create: (335, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 8)],
     stations: &[106],
     ..BASE
 },
-// 1684: Sofa x1
+// 1685: Sofa x1
 Recipe {
     create: (2397, 1),
     required: &[Requirement::item(9, 3955), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1685: Sawmill x1
+// 1686: Sawmill x1
 Recipe {
     create: (363, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 10), Requirement::group(22, RecipeGroups::IRON_BAR, 2), Requirement::item(85, 1)],
     stations: &[18],
     ..BASE
 },
-// 1686: FlamingMace x1
+// 1687: FlamingMace x1
 Recipe {
     create: (5012, 1),
     required: &[Requirement::item(5011, 1), Requirement::item(8, 99)],
     ..BASE
 },
-// 1687: DaybloomStaff x1
+// 1688: DaybloomStaff x1
 Recipe {
     create: (6152, 1),
     required: &[Requirement::item(313, 3), Requirement::item(23, 5), Requirement::item(9, 12)],
     ..BASE
 },
-// 1688: Petalstorm x1
+// 1689: Petalstorm x1
 Recipe {
     create: (6154, 1),
     required: &[Requirement::item(223, 1), Requirement::item(314, 2), Requirement::item(210, 3), Requirement::item(620, 7)],
     stations: &[16],
     ..BASE
 },
-// 1689: WandofFrosting x1
+// 1690: WandofFrosting x1
 Recipe {
     create: (5147, 1),
     required: &[Requirement::item(3069, 1), Requirement::item(974, 99)],
     ..BASE
 },
-// 1690: EnchantedBoomerang x1
+// 1691: EnchantedBoomerang x1
 Recipe {
     create: (55, 1),
     required: &[Requirement::item(284, 1), Requirement::item(75, 1)],
     ..BASE
 },
-// 1691: Trimarang x1
+// 1692: Trimarang x1
 Recipe {
     create: (5298, 1),
     required: &[Requirement::item(55, 1), Requirement::item(4764, 1), Requirement::item(670, 1)],
     stations: &[18],
     ..BASE
 },
-// 1692: WoodFishingPole x1
+// 1693: WoodFishingPole x1
 Recipe {
     create: (2289, 1),
     required: &[Requirement::item(9, 8)],
     stations: &[18],
     ..BASE
 },
-// 1693: WoodHelmet x1
+// 1694: WoodHelmet x1
 Recipe {
     create: (727, 1),
     required: &[Requirement::item(9, 20)],
     stations: &[18],
     ..BASE
 },
-// 1694: WoodBreastplate x1
+// 1695: WoodBreastplate x1
 Recipe {
     create: (728, 1),
     required: &[Requirement::item(9, 30)],
     stations: &[18],
     ..BASE
 },
-// 1695: WoodGreaves x1
+// 1696: WoodGreaves x1
 Recipe {
     create: (729, 1),
     required: &[Requirement::item(9, 25)],
     stations: &[18],
     ..BASE
 },
-// 1696: WoodenSword x1
+// 1697: WoodenSword x1
 Recipe {
     create: (24, 1),
     required: &[Requirement::item(9, 7)],
     stations: &[18],
     ..BASE
 },
-// 1697: WoodenHammer x1
+// 1698: WoodenHammer x1
 Recipe {
     create: (196, 1),
     required: &[Requirement::item(9, 8)],
     stations: &[18],
     ..BASE
 },
-// 1698: WoodenBow x1
+// 1699: WoodenBow x1
 Recipe {
     create: (39, 1),
     required: &[Requirement::item(9, 10)],
     stations: &[18],
     ..BASE
 },
-// 1699: WoodYoyo x1
+// 1700: WoodYoyo x1
 Recipe {
     create: (3278, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 10), Requirement::item(150, 20)],
     stations: &[18],
     ..BASE
 },
-// 1700: Chik x1
+// 1701: Chik x1
 Recipe {
     create: (3283, 1),
     required: &[Requirement::item(3278, 1), Requirement::item(502, 15), Requirement::item(520, 10)],
     stations: &[134],
     ..BASE
 },
-// 1701: FormatC x1
+// 1702: FormatC x1
 Recipe {
     create: (3315, 1),
     required: &[Requirement::group(391, RecipeGroups::ADAMANTITE_BAR, 6), Requirement::group(19, RecipeGroups::GOLD_BAR, 12), Requirement::item(521, 8), Requirement::item(547, 15)],
     stations: &[134],
     ..BASE
 },
-// 1702: RichMahoganyHelmet x1
+// 1703: RichMahoganyHelmet x1
 Recipe {
     create: (733, 1),
     required: &[Requirement::item(620, 20)],
     stations: &[18],
     ..BASE
 },
-// 1703: RichMahoganyBreastplate x1
+// 1704: RichMahoganyBreastplate x1
 Recipe {
     create: (734, 1),
     required: &[Requirement::item(620, 30)],
     stations: &[18],
     ..BASE
 },
-// 1704: RichMahoganyGreaves x1
+// 1705: RichMahoganyGreaves x1
 Recipe {
     create: (735, 1),
     required: &[Requirement::item(620, 25)],
     stations: &[18],
     ..BASE
 },
-// 1705: BorealWoodHelmet x1
+// 1706: BorealWoodHelmet x1
 Recipe {
     create: (2509, 1),
     required: &[Requirement::item(2503, 20)],
     stations: &[18],
     ..BASE
 },
-// 1706: BorealWoodBreastplate x1
+// 1707: BorealWoodBreastplate x1
 Recipe {
     create: (2510, 1),
     required: &[Requirement::item(2503, 30)],
     stations: &[18],
     ..BASE
 },
-// 1707: BorealWoodGreaves x1
+// 1708: BorealWoodGreaves x1
 Recipe {
     create: (2511, 1),
     required: &[Requirement::item(2503, 25)],
     stations: &[18],
     ..BASE
 },
-// 1708: BorealWoodSword x1
+// 1709: BorealWoodSword x1
 Recipe {
     create: (2745, 1),
     required: &[Requirement::item(2503, 7)],
     stations: &[18],
     ..BASE
 },
-// 1709: BorealWoodHammer x1
+// 1710: BorealWoodHammer x1
 Recipe {
     create: (2746, 1),
     required: &[Requirement::item(2503, 8)],
     stations: &[18],
     ..BASE
 },
-// 1710: BorealWoodBow x1
+// 1711: BorealWoodBow x1
 Recipe {
     create: (2747, 1),
     required: &[Requirement::item(2503, 10)],
     stations: &[18],
     ..BASE
 },
-// 1711: PalmWoodHelmet x1
+// 1712: PalmWoodHelmet x1
 Recipe {
     create: (2512, 1),
     required: &[Requirement::item(2504, 20)],
     stations: &[18],
     ..BASE
 },
-// 1712: PalmWoodBreastplate x1
+// 1713: PalmWoodBreastplate x1
 Recipe {
     create: (2513, 1),
     required: &[Requirement::item(2504, 30)],
     stations: &[18],
     ..BASE
 },
-// 1713: PalmWoodGreaves x1
+// 1714: PalmWoodGreaves x1
 Recipe {
     create: (2514, 1),
     required: &[Requirement::item(2504, 25)],
     stations: &[18],
     ..BASE
 },
-// 1714: PalmWoodSword x1
+// 1715: PalmWoodSword x1
 Recipe {
     create: (2517, 1),
     required: &[Requirement::item(2504, 7)],
     stations: &[18],
     ..BASE
 },
-// 1715: PalmWoodHammer x1
+// 1716: PalmWoodHammer x1
 Recipe {
     create: (2516, 1),
     required: &[Requirement::item(2504, 8)],
     stations: &[18],
     ..BASE
 },
-// 1716: PalmWoodBow x1
+// 1717: PalmWoodBow x1
 Recipe {
     create: (2515, 1),
     required: &[Requirement::item(2504, 10)],
     stations: &[18],
     ..BASE
 },
-// 1717: RichMahoganySword x1
+// 1718: RichMahoganySword x1
 Recipe {
     create: (656, 1),
     required: &[Requirement::item(620, 7)],
     stations: &[18],
     ..BASE
 },
-// 1718: RichMahoganyHammer x1
+// 1719: RichMahoganyHammer x1
 Recipe {
     create: (657, 1),
     required: &[Requirement::item(620, 8)],
     stations: &[18],
     ..BASE
 },
-// 1719: RichMahoganyBow x1
+// 1720: RichMahoganyBow x1
 Recipe {
     create: (658, 1),
     required: &[Requirement::item(620, 10)],
     stations: &[18],
     ..BASE
 },
-// 1720: EbonwoodHelmet x1
+// 1721: EbonwoodHelmet x1
 Recipe {
     create: (730, 1),
     required: &[Requirement::item(619, 20)],
     stations: &[18],
     ..BASE
 },
-// 1721: EbonwoodBreastplate x1
+// 1722: EbonwoodBreastplate x1
 Recipe {
     create: (731, 1),
     required: &[Requirement::item(619, 30)],
     stations: &[18],
     ..BASE
 },
-// 1722: EbonwoodGreaves x1
+// 1723: EbonwoodGreaves x1
 Recipe {
     create: (732, 1),
     required: &[Requirement::item(619, 25)],
     stations: &[18],
     ..BASE
 },
-// 1723: EbonwoodSword x1
+// 1724: EbonwoodSword x1
 Recipe {
     create: (653, 1),
     required: &[Requirement::item(619, 7)],
     stations: &[18],
     ..BASE
 },
-// 1724: EbonwoodHammer x1
+// 1725: EbonwoodHammer x1
 Recipe {
     create: (654, 1),
     required: &[Requirement::item(619, 8)],
     stations: &[18],
     ..BASE
 },
-// 1725: EbonwoodBow x1
+// 1726: EbonwoodBow x1
 Recipe {
     create: (655, 1),
     required: &[Requirement::item(619, 10)],
     stations: &[18],
     ..BASE
 },
-// 1726: ShadewoodHelmet x1
+// 1727: ShadewoodHelmet x1
 Recipe {
     create: (924, 1),
     required: &[Requirement::item(911, 20)],
     stations: &[18],
     ..BASE
 },
-// 1727: ShadewoodBreastplate x1
+// 1728: ShadewoodBreastplate x1
 Recipe {
     create: (925, 1),
     required: &[Requirement::item(911, 30)],
     stations: &[18],
     ..BASE
 },
-// 1728: ShadewoodGreaves x1
+// 1729: ShadewoodGreaves x1
 Recipe {
     create: (926, 1),
     required: &[Requirement::item(911, 25)],
     stations: &[18],
     ..BASE
 },
-// 1729: ShadewoodSword x1
+// 1730: ShadewoodSword x1
 Recipe {
     create: (921, 1),
     required: &[Requirement::item(911, 7)],
     stations: &[18],
     ..BASE
 },
-// 1730: ShadewoodHammer x1
+// 1731: ShadewoodHammer x1
 Recipe {
     create: (922, 1),
     required: &[Requirement::item(911, 8)],
     stations: &[18],
     ..BASE
 },
-// 1731: ShadewoodBow x1
+// 1732: ShadewoodBow x1
 Recipe {
     create: (923, 1),
     required: &[Requirement::item(911, 10)],
     stations: &[18],
     ..BASE
 },
-// 1732: PearlwoodHelmet x1
+// 1733: PearlwoodHelmet x1
 Recipe {
     create: (736, 1),
     required: &[Requirement::item(621, 20)],
     stations: &[18],
     ..BASE
 },
-// 1733: PearlwoodBreastplate x1
+// 1734: PearlwoodBreastplate x1
 Recipe {
     create: (737, 1),
     required: &[Requirement::item(621, 30)],
     stations: &[18],
     ..BASE
 },
-// 1734: PearlwoodGreaves x1
+// 1735: PearlwoodGreaves x1
 Recipe {
     create: (738, 1),
     required: &[Requirement::item(621, 25)],
     stations: &[18],
     ..BASE
 },
-// 1735: PearlwoodSword x1
+// 1736: PearlwoodSword x1
 Recipe {
     create: (659, 1),
     required: &[Requirement::item(621, 7)],
     stations: &[18],
     ..BASE
 },
-// 1736: PearlwoodHammer x1
+// 1737: PearlwoodHammer x1
 Recipe {
     create: (660, 1),
     required: &[Requirement::item(621, 8)],
     stations: &[18],
     ..BASE
 },
-// 1737: PearlwoodBow x1
+// 1738: PearlwoodBow x1
 Recipe {
     create: (661, 1),
     required: &[Requirement::item(621, 10)],
     stations: &[18],
     ..BASE
 },
-// 1738: SpookyHelmet x1
+// 1739: SpookyHelmet x1
 Recipe {
     create: (1832, 1),
     required: &[Requirement::item(1729, 200)],
     stations: &[18],
     ..BASE
 },
-// 1739: SpookyBreastplate x1
+// 1740: SpookyBreastplate x1
 Recipe {
     create: (1833, 1),
     required: &[Requirement::item(1729, 300)],
     stations: &[18],
     ..BASE
 },
-// 1740: SpookyLeggings x1
+// 1741: SpookyLeggings x1
 Recipe {
     create: (1834, 1),
     required: &[Requirement::item(1729, 250)],
     stations: &[18],
     ..BASE
 },
-// 1741: WhiteDynastyWall x4
+// 1742: WhiteDynastyWall x4
 Recipe {
     create: (2263, 4),
     required: &[Requirement::item(2260, 1)],
     stations: &[18],
     ..BASE
 },
-// 1742: DynastyWood x1, SetupRecipes reverse
+// 1743: DynastyWood x1, SetupRecipes reverse
 Recipe {
     create: (2260, 1),
     required: &[Requirement::item(2263, 4)],
@@ -12392,14 +12401,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1743: BlueDynastyWall x4
+// 1744: BlueDynastyWall x4
 Recipe {
     create: (2264, 4),
     required: &[Requirement::item(2260, 1)],
     stations: &[18],
     ..BASE
 },
-// 1744: DynastyWood x1, SetupRecipes reverse
+// 1745: DynastyWood x1, SetupRecipes reverse
 Recipe {
     create: (2260, 1),
     required: &[Requirement::item(2264, 4)],
@@ -12407,580 +12416,580 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1745: DynastyDoor x1
+// 1746: DynastyDoor x1
 Recipe {
     create: (2265, 1),
     required: &[Requirement::item(2260, 6)],
     stations: &[18],
     ..BASE
 },
-// 1746: DynastyChair x1
+// 1747: DynastyChair x1
 Recipe {
     create: (2228, 1),
     required: &[Requirement::item(2260, 4)],
     stations: &[18],
     ..BASE
 },
-// 1747: DynastyChest x1
+// 1748: DynastyChest x1
 Recipe {
     create: (2230, 1),
     required: &[Requirement::item(2260, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1748: DynastyPiano x1
+// 1749: DynastyPiano x1
 Recipe {
     create: (3916, 1),
     required: &[Requirement::item(154, 4), Requirement::item(2260, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1749: DynastyDresser x1
+// 1750: DynastyDresser x1
 Recipe {
     create: (3912, 1),
     required: &[Requirement::item(2260, 16)],
     stations: &[106],
     ..BASE
 },
-// 1750: DynastySofa x1
+// 1751: DynastySofa x1
 Recipe {
     create: (3919, 1),
     required: &[Requirement::item(2260, 3955), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1751: DynastySink x1
+// 1752: DynastySink x1
 Recipe {
     create: (2849, 1),
     required: &[Requirement::item(2260, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1752: ToiletDynasty x1
+// 1753: ToiletDynasty x1
 Recipe {
     create: (4117, 1),
     required: &[Requirement::item(2260, 6)],
     stations: &[106],
     ..BASE
 },
-// 1753: DynastyTable x1
+// 1754: DynastyTable x1
 Recipe {
     create: (2259, 1),
     required: &[Requirement::item(2260, 8)],
     stations: &[18],
     ..BASE
 },
-// 1754: DynastyWorkBench x1
+// 1755: DynastyWorkBench x1
 Recipe {
     create: (2229, 1),
     required: &[Requirement::item(2260, 10)],
     ..BASE
 },
-// 1755: DynastyBed x1
+// 1756: DynastyBed x1
 Recipe {
     create: (2231, 1),
     required: &[Requirement::item(2260, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1756: DynastyClock x1
+// 1757: DynastyClock x1
 Recipe {
     create: (2237, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(2260, 10)],
     stations: &[106],
     ..BASE
 },
-// 1757: DynastyBookcase x1
+// 1758: DynastyBookcase x1
 Recipe {
     create: (2233, 1),
     required: &[Requirement::item(2260, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1758: DynastyBathtub x1
+// 1759: DynastyBathtub x1
 Recipe {
     create: (2232, 1),
     required: &[Requirement::item(2260, 14), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[106],
     ..BASE
 },
-// 1759: DynastyLantern x1
+// 1760: DynastyLantern x1
 Recipe {
     create: (2226, 1),
     required: &[Requirement::item(2260, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1760: DynastyCandle x1
+// 1761: DynastyCandle x1
 Recipe {
     create: (2236, 1),
     required: &[Requirement::item(2260, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1761: DynastyChandelier x1
+// 1762: DynastyChandelier x1
 Recipe {
     create: (2224, 1),
     required: &[Requirement::item(2260, 4), Requirement::item(8, 4)],
     stations: &[18],
     ..BASE
 },
-// 1762: DynastyLamp x1
+// 1763: DynastyLamp x1
 Recipe {
     create: (2225, 1),
     required: &[Requirement::item(8, 1), Requirement::item(2260, 3)],
     stations: &[18],
     ..BASE
 },
-// 1763: DynastyCandelabra x1
+// 1764: DynastyCandelabra x1
 Recipe {
     create: (2227, 1),
     required: &[Requirement::item(2260, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1764: DynastyBowl x1
+// 1765: DynastyBowl x1
 Recipe {
     create: (2235, 1),
     required: &[Requirement::item(2260, 2)],
     stations: &[18],
     ..BASE
 },
-// 1765: DynastyCup x1
+// 1766: DynastyCup x1
 Recipe {
     create: (2234, 1),
     required: &[Requirement::item(2260, 2)],
     stations: &[18],
     ..BASE
 },
-// 1766: LivingWoodClock x1
+// 1767: LivingWoodClock x1
 Recipe {
     create: (2596, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(9, 10)],
     stations: &[304],
     ..BASE
 },
-// 1767: LivingWoodChair x1
+// 1768: LivingWoodChair x1
 Recipe {
     create: (806, 1),
     required: &[Requirement::item(9, 4)],
     stations: &[304],
     ..BASE
 },
-// 1768: LivingWoodChest x1
+// 1769: LivingWoodChest x1
 Recipe {
     create: (831, 1),
     required: &[Requirement::item(9, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[304],
     ..BASE
 },
-// 1769: LivingWoodDoor x1
+// 1770: LivingWoodDoor x1
 Recipe {
     create: (819, 1),
     required: &[Requirement::item(9, 6)],
     stations: &[304],
     ..BASE
 },
-// 1770: LivingWoodDresser x1
+// 1771: LivingWoodDresser x1
 Recipe {
     create: (3914, 1),
     required: &[Requirement::item(9, 16)],
     stations: &[304],
     ..BASE
 },
-// 1771: LivingWoodSink x1
+// 1772: LivingWoodSink x1
 Recipe {
     create: (2833, 1),
     required: &[Requirement::item(9, 6), Requirement::item(206, 1)],
     stations: &[304],
     ..BASE
 },
-// 1772: LivingWoodTable x1
+// 1773: LivingWoodTable x1
 Recipe {
     create: (829, 1),
     required: &[Requirement::item(9, 8)],
     stations: &[304],
     ..BASE
 },
-// 1773: LivingWoodBed x1
+// 1774: LivingWoodBed x1
 Recipe {
     create: (2139, 1),
     required: &[Requirement::item(9, 15), Requirement::item(225, 5)],
     stations: &[304],
     ..BASE
 },
-// 1774: LivingWoodPiano x1
+// 1775: LivingWoodPiano x1
 Recipe {
     create: (2245, 1),
     required: &[Requirement::item(154, 4), Requirement::item(9, 15), Requirement::item(149, 1)],
     stations: &[304],
     ..BASE
 },
-// 1775: LivingWoodBookcase x1
+// 1776: LivingWoodBookcase x1
 Recipe {
     create: (2135, 1),
     required: &[Requirement::item(9, 20), Requirement::item(149, 10)],
     stations: &[304],
     ..BASE
 },
-// 1776: LivingWoodBathtub x1
+// 1777: LivingWoodBathtub x1
 Recipe {
     create: (2126, 1),
     required: &[Requirement::item(9, 14)],
     stations: &[304],
     ..BASE
 },
-// 1777: LivingWoodLantern x1
+// 1778: LivingWoodLantern x1
 Recipe {
     create: (2145, 1),
     required: &[Requirement::item(9, 6), Requirement::item(8, 1)],
     stations: &[304],
     ..BASE
 },
-// 1778: LivingWoodCandle x1
+// 1779: LivingWoodCandle x1
 Recipe {
     create: (2153, 1),
     required: &[Requirement::item(9, 4), Requirement::item(8, 1)],
     stations: &[304],
     ..BASE
 },
-// 1779: LivingWoodChandelier x1
+// 1780: LivingWoodChandelier x1
 Recipe {
     create: (2141, 1),
     required: &[Requirement::item(9, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[304],
     ..BASE
 },
-// 1780: LivingWoodLamp x1
+// 1781: LivingWoodLamp x1
 Recipe {
     create: (2131, 1),
     required: &[Requirement::item(8, 1), Requirement::item(9, 3)],
     stations: &[304],
     ..BASE
 },
-// 1781: LivingWoodCandelabra x1
+// 1782: LivingWoodCandelabra x1
 Recipe {
     create: (2149, 1),
     required: &[Requirement::item(9, 5), Requirement::item(8, 3)],
     stations: &[304],
     ..BASE
 },
-// 1782: LivingWoodSofa x1
+// 1783: LivingWoodSofa x1
 Recipe {
     create: (2636, 1),
     required: &[Requirement::item(9, 3955), Requirement::item(225, 2)],
     stations: &[304],
     ..BASE
 },
-// 1783: LivingWoodWorkBench x1
+// 1784: LivingWoodWorkBench x1
 Recipe {
     create: (2633, 1),
     required: &[Requirement::item(9, 10)],
     stations: &[304],
     ..BASE
 },
-// 1784: ToiletLivingWood x1
+// 1785: ToiletLivingWood x1
 Recipe {
     create: (4099, 1),
     required: &[Requirement::item(9, 6)],
     stations: &[304],
     ..BASE
 },
-// 1785: GlassClock x1
+// 1786: GlassClock x1
 Recipe {
     create: (2239, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 16)],
     stations: &[302],
     ..BASE
 },
-// 1786: GlassChair x1
+// 1787: GlassChair x1
 Recipe {
     create: (1703, 1),
     required: &[Requirement::item(170, 4)],
     stations: &[302],
     ..BASE
 },
-// 1787: GlassChest x1
+// 1788: GlassChest x1
 Recipe {
     create: (2748, 1),
     required: &[Requirement::item(170, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[302],
     ..BASE
 },
-// 1788: GlassDoor x1
+// 1789: GlassDoor x1
 Recipe {
     create: (1709, 1),
     required: &[Requirement::item(170, 6)],
     stations: &[302],
     ..BASE
 },
-// 1789: GlassDresser x1
+// 1790: GlassDresser x1
 Recipe {
     create: (2639, 1),
     required: &[Requirement::item(170, 16)],
     stations: &[302],
     ..BASE
 },
-// 1790: GlassSink x1
+// 1791: GlassSink x1
 Recipe {
     create: (2842, 1),
     required: &[Requirement::item(170, 6), Requirement::item(206, 1)],
     stations: &[302],
     ..BASE
 },
-// 1791: GlassTable x1
+// 1792: GlassTable x1
 Recipe {
     create: (1713, 1),
     required: &[Requirement::item(170, 8)],
     stations: &[302],
     ..BASE
 },
-// 1792: GlassBed x1
+// 1793: GlassBed x1
 Recipe {
     create: (1719, 1),
     required: &[Requirement::item(170, 15), Requirement::item(225, 5)],
     stations: &[302],
     ..BASE
 },
-// 1793: GlassPiano x1
+// 1794: GlassPiano x1
 Recipe {
     create: (2254, 1),
     required: &[Requirement::item(154, 4), Requirement::item(170, 15), Requirement::item(149, 1)],
     stations: &[302],
     ..BASE
 },
-// 1794: GlassBookcase x1
+// 1795: GlassBookcase x1
 Recipe {
     create: (2025, 1),
     required: &[Requirement::item(170, 20), Requirement::item(149, 10)],
     stations: &[302],
     ..BASE
 },
-// 1795: GlassBathtub x1
+// 1796: GlassBathtub x1
 Recipe {
     create: (2075, 1),
     required: &[Requirement::item(170, 14)],
     stations: &[302],
     ..BASE
 },
-// 1796: GlassLantern x1
+// 1797: GlassLantern x1
 Recipe {
     create: (2037, 1),
     required: &[Requirement::item(170, 6), Requirement::item(8, 1)],
     stations: &[302],
     ..BASE
 },
-// 1797: GlassCandle x1
+// 1798: GlassCandle x1
 Recipe {
     create: (2048, 1),
     required: &[Requirement::item(170, 4), Requirement::item(8, 1)],
     stations: &[302],
     ..BASE
 },
-// 1798: GlassChandelier x1
+// 1799: GlassChandelier x1
 Recipe {
     create: (2065, 1),
     required: &[Requirement::item(170, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[302],
     ..BASE
 },
-// 1799: GlassLamp x1
+// 1800: GlassLamp x1
 Recipe {
     create: (2085, 1),
     required: &[Requirement::item(8, 1), Requirement::item(170, 3)],
     stations: &[302],
     ..BASE
 },
-// 1800: GlassCandelabra x1
+// 1801: GlassCandelabra x1
 Recipe {
     create: (2097, 1),
     required: &[Requirement::item(170, 5), Requirement::item(8, 3)],
     stations: &[302],
     ..BASE
 },
-// 1801: GlassSofa x1
+// 1802: GlassSofa x1
 Recipe {
     create: (2414, 1),
     required: &[Requirement::item(170, 3955), Requirement::item(225, 2)],
     stations: &[302],
     ..BASE
 },
-// 1802: ToiletGlass x1
+// 1803: ToiletGlass x1
 Recipe {
     create: (4112, 1),
     required: &[Requirement::item(170, 6)],
     stations: &[302],
     ..BASE
 },
-// 1803: GlassWorkBench x1
+// 1804: GlassWorkBench x1
 Recipe {
     create: (2632, 1),
     required: &[Requirement::item(170, 10)],
     stations: &[302],
     ..BASE
 },
-// 1804: CrispyHoneyBlock x1
+// 1805: CrispyHoneyBlock x1
 Recipe {
     create: (1127, 1),
     required: &[Requirement::item(1125, 1)],
     stations: &[17],
     ..BASE
 },
-// 1805: HoneyChair x1
+// 1806: HoneyChair x1
 Recipe {
     create: (1707, 1),
     required: &[Requirement::item(1125, 4)],
     stations: &[308],
     ..BASE
 },
-// 1806: HoneyDoor x1
+// 1807: HoneyDoor x1
 Recipe {
     create: (1711, 1),
     required: &[Requirement::item(1125, 6)],
     stations: &[308],
     ..BASE
 },
-// 1807: HoneySink x1
+// 1808: HoneySink x1
 Recipe {
     create: (2844, 1),
     required: &[Requirement::item(1125, 6), Requirement::item(206, 1)],
     stations: &[308],
     ..BASE
 },
-// 1808: HoneyTable x1
+// 1809: HoneyTable x1
 Recipe {
     create: (1717, 1),
     required: &[Requirement::item(1125, 8)],
     stations: &[308],
     ..BASE
 },
-// 1809: HoneyWorkBench x1
+// 1810: HoneyWorkBench x1
 Recipe {
     create: (2251, 1),
     required: &[Requirement::item(1125, 10)],
     stations: &[308],
     ..BASE
 },
-// 1810: HoneyBed x1
+// 1811: HoneyBed x1
 Recipe {
     create: (1721, 1),
     required: &[Requirement::item(1125, 15), Requirement::item(225, 5)],
     stations: &[308],
     ..BASE
 },
-// 1811: HoneyPiano x1
+// 1812: HoneyPiano x1
 Recipe {
     create: (2255, 1),
     required: &[Requirement::item(154, 4), Requirement::item(1125, 15), Requirement::item(149, 1)],
     stations: &[308],
     ..BASE
 },
-// 1812: HoneyBathtub x1
+// 1813: HoneyBathtub x1
 Recipe {
     create: (2124, 1),
     required: &[Requirement::item(1125, 14)],
     stations: &[308],
     ..BASE
 },
-// 1813: HoneyChest x1
+// 1814: HoneyChest x1
 Recipe {
     create: (2249, 1),
     required: &[Requirement::item(1125, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[308],
     ..BASE
 },
-// 1814: HoneyClock x1
+// 1815: HoneyClock x1
 Recipe {
     create: (2240, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(1125, 10)],
     stations: &[308],
     ..BASE
 },
-// 1815: HoneyBookcase x1
+// 1816: HoneyBookcase x1
 Recipe {
     create: (2023, 1),
     required: &[Requirement::item(1125, 20), Requirement::item(149, 10)],
     stations: &[308],
     ..BASE
 },
-// 1816: HoneyLantern x1
+// 1817: HoneyLantern x1
 Recipe {
     create: (2035, 1),
     required: &[Requirement::item(1125, 6), Requirement::item(8, 1)],
     stations: &[308],
     ..BASE
 },
-// 1817: HoneyCandle x1
+// 1818: HoneyCandle x1
 Recipe {
     create: (2648, 1),
     required: &[Requirement::item(1125, 4), Requirement::item(8, 1)],
     stations: &[308],
     ..BASE
 },
-// 1818: HoneyChandelier x1
+// 1819: HoneyChandelier x1
 Recipe {
     create: (2058, 1),
     required: &[Requirement::item(1125, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[308],
     ..BASE
 },
-// 1819: HoneyCandelabra x1
+// 1820: HoneyCandelabra x1
 Recipe {
     create: (2095, 1),
     required: &[Requirement::item(1125, 5), Requirement::item(8, 3)],
     stations: &[308],
     ..BASE
 },
-// 1820: HoneyLamp x1
+// 1821: HoneyLamp x1
 Recipe {
     create: (2129, 1),
     required: &[Requirement::item(8, 1), Requirement::item(1125, 3)],
     stations: &[308],
     ..BASE
 },
-// 1821: HoneyCup x1
+// 1822: HoneyCup x1
 Recipe {
     create: (2257, 1),
     required: &[Requirement::item(1125, 1)],
     stations: &[308],
     ..BASE
 },
-// 1822: HoneyDresser x1
+// 1823: HoneyDresser x1
 Recipe {
     create: (2395, 1),
     required: &[Requirement::item(1125, 16)],
     stations: &[308],
     ..BASE
 },
-// 1823: HoneySofa x1
+// 1824: HoneySofa x1
 Recipe {
     create: (2411, 1),
     required: &[Requirement::item(1125, 3955), Requirement::item(225, 2)],
     stations: &[308],
     ..BASE
 },
-// 1824: ToiletHoney x1
+// 1825: ToiletHoney x1
 Recipe {
     create: (4113, 1),
     required: &[Requirement::item(1125, 6)],
     stations: &[308],
     ..BASE
 },
-// 1825: SunplateBlock x25
+// 1826: SunplateBlock x25
 Recipe {
     create: (824, 25),
     required: &[Requirement::item(3, 25), Requirement::item(75, 1)],
     stations: &[305],
     ..BASE
 },
-// 1826: DiscWall x4
+// 1827: DiscWall x4
 Recipe {
     create: (825, 4),
     required: &[Requirement::item(824, 1)],
     stations: &[18],
     ..BASE
 },
-// 1827: SunplateBlock x1, SetupRecipes reverse
+// 1828: SunplateBlock x1, SetupRecipes reverse
 Recipe {
     create: (824, 1),
     required: &[Requirement::item(825, 4)],
@@ -12988,147 +12997,147 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1828: SkywareChair x1
+// 1829: SkywareChair x1
 Recipe {
     create: (826, 1),
     required: &[Requirement::item(824, 4)],
     stations: &[305],
     ..BASE
 },
-// 1829: SkywareClock x1
+// 1830: SkywareClock x1
 Recipe {
     create: (2606, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(824, 10)],
     stations: &[305],
     ..BASE
 },
-// 1830: SkywareChest x1
+// 1831: SkywareChest x1
 Recipe {
     create: (838, 1),
     required: &[Requirement::item(824, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[305],
     ..BASE
 },
-// 1831: SkywareClock2 x1
+// 1832: SkywareClock2 x1
 Recipe {
     create: (3899, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(824, 15)],
     stations: &[305],
     ..BASE
 },
-// 1832: SkywareDoor x1
+// 1833: SkywareDoor x1
 Recipe {
     create: (837, 1),
     required: &[Requirement::item(824, 6)],
     stations: &[305],
     ..BASE
 },
-// 1833: SkywareSink x1
+// 1834: SkywareSink x1
 Recipe {
     create: (2834, 1),
     required: &[Requirement::item(824, 6), Requirement::item(206, 1)],
     stations: &[305],
     ..BASE
 },
-// 1834: SkywareTable x1
+// 1835: SkywareTable x1
 Recipe {
     create: (830, 1),
     required: &[Requirement::item(824, 8)],
     stations: &[305],
     ..BASE
 },
-// 1835: SkywareBookcase x1
+// 1836: SkywareBookcase x1
 Recipe {
     create: (2029, 1),
     required: &[Requirement::item(824, 20), Requirement::item(149, 10)],
     stations: &[305],
     ..BASE
 },
-// 1836: SkywareBed x1
+// 1837: SkywareBed x1
 Recipe {
     create: (2070, 1),
     required: &[Requirement::item(824, 15), Requirement::item(225, 5)],
     stations: &[305],
     ..BASE
 },
-// 1837: SkywareBathtub x1
+// 1838: SkywareBathtub x1
 Recipe {
     create: (2080, 1),
     required: &[Requirement::item(824, 14)],
     stations: &[305],
     ..BASE
 },
-// 1838: SkywareLantern x1
+// 1839: SkywareLantern x1
 Recipe {
     create: (2042, 1),
     required: &[Requirement::item(824, 6), Requirement::item(8, 1)],
     stations: &[305],
     ..BASE
 },
-// 1839: SkywareCandle x1
+// 1840: SkywareCandle x1
 Recipe {
     create: (2053, 1),
     required: &[Requirement::item(824, 4), Requirement::item(8, 1)],
     stations: &[305],
     ..BASE
 },
-// 1840: SkywareChandelier x1
+// 1841: SkywareChandelier x1
 Recipe {
     create: (2063, 1),
     required: &[Requirement::item(824, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[305],
     ..BASE
 },
-// 1841: SkywareLamp x1
+// 1842: SkywareLamp x1
 Recipe {
     create: (2090, 1),
     required: &[Requirement::item(8, 1), Requirement::item(824, 3)],
     stations: &[305],
     ..BASE
 },
-// 1842: SkywareCandelabra x1
+// 1843: SkywareCandelabra x1
 Recipe {
     create: (2102, 1),
     required: &[Requirement::item(824, 5), Requirement::item(8, 3)],
     stations: &[305],
     ..BASE
 },
-// 1843: SkywarePiano x1
+// 1844: SkywarePiano x1
 Recipe {
     create: (2384, 1),
     required: &[Requirement::item(154, 4), Requirement::item(824, 15), Requirement::item(149, 1)],
     stations: &[305],
     ..BASE
 },
-// 1844: SkywareDresser x1
+// 1845: SkywareDresser x1
 Recipe {
     create: (2394, 1),
     required: &[Requirement::item(824, 16)],
     stations: &[305],
     ..BASE
 },
-// 1845: SkywareSofa x1
+// 1846: SkywareSofa x1
 Recipe {
     create: (2410, 1),
     required: &[Requirement::item(824, 3955), Requirement::item(225, 2)],
     stations: &[305],
     ..BASE
 },
-// 1846: SkywareWorkbench x1
+// 1847: SkywareWorkbench x1
 Recipe {
     create: (2631, 1),
     required: &[Requirement::item(824, 10)],
     stations: &[305],
     ..BASE
 },
-// 1847: ToiletSunplate x1
+// 1848: ToiletSunplate x1
 Recipe {
     create: (4104, 1),
     required: &[Requirement::item(824, 6)],
     stations: &[305],
     ..BASE
 },
-// 1848: RainCloud x1
+// 1849: RainCloud x1
 Recipe {
     create: (765, 1),
     required: &[Requirement::item(751, 1)],
@@ -13136,7 +13145,7 @@ Recipe {
     need_water: true,
     ..BASE
 },
-// 1849: SnowCloudBlock x1
+// 1850: SnowCloudBlock x1
 Recipe {
     create: (3756, 1),
     required: &[Requirement::item(751, 1)],
@@ -13144,7 +13153,7 @@ Recipe {
     need_snow: true,
     ..BASE
 },
-// 1850: LavaCloud x1
+// 1851: LavaCloud x1
 Recipe {
     create: (5569, 1),
     required: &[Requirement::item(751, 1)],
@@ -13152,462 +13161,462 @@ Recipe {
     need_lava: true,
     ..BASE
 },
-// 1851: StarCloud x10
+// 1852: StarCloud x10
 Recipe {
     create: (5570, 10),
     required: &[Requirement::item(751, 10), Requirement::item(75, 1)],
     stations: &[305],
     ..BASE
 },
-// 1852: RainbowCloud x10
+// 1853: RainbowCloud x10
 Recipe {
     create: (5571, 10),
     required: &[Requirement::item(751, 10), Requirement::item(662, 1)],
     stations: &[305],
     ..BASE
 },
-// 1853: LihzahrdClock x1
+// 1854: LihzahrdClock x1
 Recipe {
     create: (2595, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(1101, 10)],
     stations: &[303],
     ..BASE
 },
-// 1854: LihzahrdChair x1
+// 1855: LihzahrdChair x1
 Recipe {
     create: (1143, 1),
     required: &[Requirement::item(1101, 4)],
     stations: &[303],
     ..BASE
 },
-// 1855: LihzahrdDoor x1
+// 1856: LihzahrdDoor x1
 Recipe {
     create: (1137, 1),
     required: &[Requirement::item(1101, 6)],
     stations: &[303],
     ..BASE
 },
-// 1856: LihzahrdSink x1
+// 1857: LihzahrdSink x1
 Recipe {
     create: (2836, 1),
     required: &[Requirement::item(1101, 6), Requirement::item(206, 1)],
     stations: &[303],
     ..BASE
 },
-// 1857: LihzahrdTable x1
+// 1858: LihzahrdTable x1
 Recipe {
     create: (1144, 1),
     required: &[Requirement::item(1101, 8)],
     stations: &[303],
     ..BASE
 },
-// 1858: LihzahrdChest x1
+// 1859: LihzahrdChest x1
 Recipe {
     create: (1142, 1),
     required: &[Requirement::item(1101, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[303],
     ..BASE
 },
-// 1859: LihzahrdWorkBench x1
+// 1860: LihzahrdWorkBench x1
 Recipe {
     create: (1145, 1),
     required: &[Requirement::item(1101, 10)],
     stations: &[303],
     ..BASE
 },
-// 1860: LihzahrdBookcase x1
+// 1861: LihzahrdBookcase x1
 Recipe {
     create: (2030, 1),
     required: &[Requirement::item(1101, 20), Requirement::item(149, 10)],
     stations: &[303],
     ..BASE
 },
-// 1861: LihzahrdBed x1
+// 1862: LihzahrdBed x1
 Recipe {
     create: (2069, 1),
     required: &[Requirement::item(1101, 15), Requirement::item(225, 5)],
     stations: &[303],
     ..BASE
 },
-// 1862: LihzahrdBathtub x1
+// 1863: LihzahrdBathtub x1
 Recipe {
     create: (2079, 1),
     required: &[Requirement::item(1101, 14)],
     stations: &[303],
     ..BASE
 },
-// 1863: LihzahrdLantern x1
+// 1864: LihzahrdLantern x1
 Recipe {
     create: (2041, 1),
     required: &[Requirement::item(1101, 6), Requirement::item(8, 1)],
     stations: &[303],
     ..BASE
 },
-// 1864: LihzahrdCandle x1
+// 1865: LihzahrdCandle x1
 Recipe {
     create: (2052, 1),
     required: &[Requirement::item(1101, 4), Requirement::item(8, 1)],
     stations: &[303],
     ..BASE
 },
-// 1865: LihzahrdChandelier x1
+// 1866: LihzahrdChandelier x1
 Recipe {
     create: (2062, 1),
     required: &[Requirement::item(1101, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[303],
     ..BASE
 },
-// 1866: LihzahrdLamp x1
+// 1867: LihzahrdLamp x1
 Recipe {
     create: (2089, 1),
     required: &[Requirement::item(8, 1), Requirement::item(1101, 3)],
     stations: &[303],
     ..BASE
 },
-// 1867: LihzahrdCandelabra x1
+// 1868: LihzahrdCandelabra x1
 Recipe {
     create: (2101, 1),
     required: &[Requirement::item(1101, 5), Requirement::item(8, 3)],
     stations: &[303],
     ..BASE
 },
-// 1868: LihzahrdPiano x1
+// 1869: LihzahrdPiano x1
 Recipe {
     create: (2385, 1),
     required: &[Requirement::item(154, 4), Requirement::item(1101, 15), Requirement::item(149, 1)],
     stations: &[303],
     ..BASE
 },
-// 1869: LihzahrdDresser x1
+// 1870: LihzahrdDresser x1
 Recipe {
     create: (2396, 1),
     required: &[Requirement::item(1101, 16)],
     stations: &[303],
     ..BASE
 },
-// 1870: LihzahrdSofa x1
+// 1871: LihzahrdSofa x1
 Recipe {
     create: (2416, 1),
     required: &[Requirement::item(1101, 3955), Requirement::item(225, 2)],
     stations: &[303],
     ..BASE
 },
-// 1871: ToiletLihzhard x1
+// 1872: ToiletLihzhard x1
 Recipe {
     create: (4106, 1),
     required: &[Requirement::item(1101, 6)],
     stations: &[303],
     ..BASE
 },
-// 1872: FrozenSink x1
+// 1873: FrozenSink x1
 Recipe {
     create: (2848, 1),
     required: &[Requirement::item(664, 6), Requirement::item(206, 1)],
     stations: &[306],
     ..BASE
 },
-// 1873: FrozenTable x1
+// 1874: FrozenTable x1
 Recipe {
     create: (2248, 1),
     required: &[Requirement::item(664, 8)],
     stations: &[306],
     ..BASE
 },
-// 1874: FrozenSofa x1
+// 1875: FrozenSofa x1
 Recipe {
     create: (2635, 1),
     required: &[Requirement::item(664, 3955), Requirement::item(225, 2)],
     stations: &[306],
     ..BASE
 },
-// 1875: FrozenWorkBench x1
+// 1876: FrozenWorkBench x1
 Recipe {
     create: (2252, 1),
     required: &[Requirement::item(664, 10)],
     stations: &[306],
     ..BASE
 },
-// 1876: FrozenBookcase x1
+// 1877: FrozenBookcase x1
 Recipe {
     create: (2031, 1),
     required: &[Requirement::item(664, 20), Requirement::item(149, 10)],
     stations: &[306],
     ..BASE
 },
-// 1877: FrozenPiano x1
+// 1878: FrozenPiano x1
 Recipe {
     create: (2247, 1),
     required: &[Requirement::item(154, 4), Requirement::item(664, 15), Requirement::item(149, 1)],
     stations: &[306],
     ..BASE
 },
-// 1878: FrozenBed x1
+// 1879: FrozenBed x1
 Recipe {
     create: (2068, 1),
     required: &[Requirement::item(664, 15), Requirement::item(225, 5)],
     stations: &[306],
     ..BASE
 },
-// 1879: FrozenBathtub x1
+// 1880: FrozenBathtub x1
 Recipe {
     create: (2076, 1),
     required: &[Requirement::item(664, 14)],
     stations: &[306],
     ..BASE
 },
-// 1880: IceChest x1
+// 1881: IceChest x1
 Recipe {
     create: (681, 1),
     required: &[Requirement::item(664, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[306],
     ..BASE
 },
-// 1881: FrozenClock x1
+// 1882: FrozenClock x1
 Recipe {
     create: (2594, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(664, 10)],
     stations: &[306],
     ..BASE
 },
-// 1882: FrozenDoor x1
+// 1883: FrozenDoor x1
 Recipe {
     create: (2044, 1),
     required: &[Requirement::item(664, 6)],
     stations: &[306],
     ..BASE
 },
-// 1883: FrozenDresser x1
+// 1884: FrozenDresser x1
 Recipe {
     create: (3913, 1),
     required: &[Requirement::item(664, 16)],
     stations: &[306],
     ..BASE
 },
-// 1884: FrozenLantern x1
+// 1885: FrozenLantern x1
 Recipe {
     create: (2040, 1),
     required: &[Requirement::item(664, 6), Requirement::item(974, 1)],
     stations: &[306],
     ..BASE
 },
-// 1885: FrozenCandle x1
+// 1886: FrozenCandle x1
 Recipe {
     create: (2049, 1),
     required: &[Requirement::item(664, 4), Requirement::item(974, 1)],
     stations: &[306],
     ..BASE
 },
-// 1886: FrozenChandelier x1
+// 1887: FrozenChandelier x1
 Recipe {
     create: (2059, 1),
     required: &[Requirement::item(664, 4), Requirement::item(974, 4), Requirement::item(85, 1)],
     stations: &[306],
     ..BASE
 },
-// 1887: FrozenLamp x1
+// 1888: FrozenLamp x1
 Recipe {
     create: (2086, 1),
     required: &[Requirement::item(974, 1), Requirement::item(664, 3)],
     stations: &[306],
     ..BASE
 },
-// 1888: FrozenCandelabra x1
+// 1889: FrozenCandelabra x1
 Recipe {
     create: (2100, 1),
     required: &[Requirement::item(664, 5), Requirement::item(974, 3)],
     stations: &[306],
     ..BASE
 },
-// 1889: FrozenChair x1
+// 1890: FrozenChair x1
 Recipe {
     create: (2288, 1),
     required: &[Requirement::item(664, 4)],
     stations: &[306],
     ..BASE
 },
-// 1890: ToiletFrozen x1
+// 1891: ToiletFrozen x1
 Recipe {
     create: (4111, 1),
     required: &[Requirement::item(664, 6)],
     stations: &[306],
     ..BASE
 },
-// 1891: SteampunkChair x1
+// 1892: SteampunkChair x1
 Recipe {
     create: (1708, 1),
     required: &[Requirement::item(1344, 4)],
     stations: &[307],
     ..BASE
 },
-// 1892: SteampunkCandle x1
+// 1893: SteampunkCandle x1
 Recipe {
     create: (2649, 1),
     required: &[Requirement::item(1344, 4), Requirement::item(8, 1)],
     stations: &[307],
     ..BASE
 },
-// 1893: SteampunkChandelier x1
+// 1894: SteampunkChandelier x1
 Recipe {
     create: (2655, 1),
     required: &[Requirement::item(1344, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[307],
     ..BASE
 },
-// 1894: SteampunkDoor x1
+// 1895: SteampunkDoor x1
 Recipe {
     create: (1712, 1),
     required: &[Requirement::item(1344, 6)],
     stations: &[307],
     ..BASE
 },
-// 1895: SteampunkDresser x1
+// 1896: SteampunkDresser x1
 Recipe {
     create: (2638, 1),
     required: &[Requirement::item(1344, 16)],
     stations: &[307],
     ..BASE
 },
-// 1896: SteampunkSink x1
+// 1897: SteampunkSink x1
 Recipe {
     create: (2845, 1),
     required: &[Requirement::item(1344, 6), Requirement::item(206, 1)],
     stations: &[307],
     ..BASE
 },
-// 1897: SteampunkTable x1
+// 1898: SteampunkTable x1
 Recipe {
     create: (1718, 1),
     required: &[Requirement::item(1344, 8)],
     stations: &[307],
     ..BASE
 },
-// 1898: SteampunkWorkBench x1
+// 1899: SteampunkWorkBench x1
 Recipe {
     create: (2253, 1),
     required: &[Requirement::item(1344, 10)],
     stations: &[307],
     ..BASE
 },
-// 1899: SteampunkBed x1
+// 1900: SteampunkBed x1
 Recipe {
     create: (1722, 1),
     required: &[Requirement::item(1344, 15), Requirement::item(225, 5)],
     stations: &[307],
     ..BASE
 },
-// 1900: SteampunkPiano x1
+// 1901: SteampunkPiano x1
 Recipe {
     create: (2256, 1),
     required: &[Requirement::item(154, 4), Requirement::item(1344, 15), Requirement::item(149, 1)],
     stations: &[307],
     ..BASE
 },
-// 1901: SteampunkBathtub x1
+// 1902: SteampunkBathtub x1
 Recipe {
     create: (2125, 1),
     required: &[Requirement::item(1344, 14)],
     stations: &[307],
     ..BASE
 },
-// 1902: SteampunkChest x1
+// 1903: SteampunkChest x1
 Recipe {
     create: (2250, 1),
     required: &[Requirement::item(1344, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[307],
     ..BASE
 },
-// 1903: SteampunkClock x1
+// 1904: SteampunkClock x1
 Recipe {
     create: (2241, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(1344, 10)],
     stations: &[307],
     ..BASE
 },
-// 1904: SteampunkBookcase x1
+// 1905: SteampunkBookcase x1
 Recipe {
     create: (2024, 1),
     required: &[Requirement::item(1344, 20), Requirement::item(149, 10)],
     stations: &[307],
     ..BASE
 },
-// 1905: SteampunkLantern x1
+// 1906: SteampunkLantern x1
 Recipe {
     create: (2036, 1),
     required: &[Requirement::item(1344, 6), Requirement::item(8, 1)],
     stations: &[307],
     ..BASE
 },
-// 1906: SteampunkCandelabra x1
+// 1907: SteampunkCandelabra x1
 Recipe {
     create: (2096, 1),
     required: &[Requirement::item(1344, 5), Requirement::item(8, 3)],
     stations: &[307],
     ..BASE
 },
-// 1907: SteampunkLamp x1
+// 1908: SteampunkLamp x1
 Recipe {
     create: (2130, 1),
     required: &[Requirement::item(8, 1), Requirement::item(1344, 3)],
     stations: &[307],
     ..BASE
 },
-// 1908: SteampunkSofa x1
+// 1909: SteampunkSofa x1
 Recipe {
     create: (2412, 1),
     required: &[Requirement::item(1344, 3955), Requirement::item(225, 2)],
     stations: &[307],
     ..BASE
 },
-// 1909: ToiletSteampunk x1
+// 1910: ToiletSteampunk x1
 Recipe {
     create: (4114, 1),
     required: &[Requirement::item(1344, 6)],
     stations: &[307],
     ..BASE
 },
-// 1910: CactusHelmet x1
+// 1911: CactusHelmet x1
 Recipe {
     create: (894, 1),
     required: &[Requirement::item(276, 20)],
     stations: &[18],
     ..BASE
 },
-// 1911: CactusBreastplate x1
+// 1912: CactusBreastplate x1
 Recipe {
     create: (895, 1),
     required: &[Requirement::item(276, 30)],
     stations: &[18],
     ..BASE
 },
-// 1912: CactusLeggings x1
+// 1913: CactusLeggings x1
 Recipe {
     create: (896, 1),
     required: &[Requirement::item(276, 25)],
     stations: &[18],
     ..BASE
 },
-// 1913: CactusSword x1
+// 1914: CactusSword x1
 Recipe {
     create: (881, 1),
     required: &[Requirement::item(276, 10)],
     stations: &[18],
     ..BASE
 },
-// 1914: CactusPickaxe x1
+// 1915: CactusPickaxe x1
 Recipe {
     create: (882, 1),
     required: &[Requirement::item(276, 15)],
     stations: &[18],
     ..BASE
 },
-// 1915: CactusWall x4
+// 1916: CactusWall x4
 Recipe {
     create: (750, 4),
     required: &[Requirement::item(276, 1)],
     stations: &[18],
     ..BASE
 },
-// 1916: Cactus x1, SetupRecipes reverse
+// 1917: Cactus x1, SetupRecipes reverse
 Recipe {
     create: (276, 1),
     required: &[Requirement::item(750, 4)],
@@ -13615,459 +13624,459 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1917: CactusDoor x1
+// 1918: CactusDoor x1
 Recipe {
     create: (816, 1),
     required: &[Requirement::item(276, 6)],
     stations: &[18],
     ..BASE
 },
-// 1918: CactusChair x1
+// 1919: CactusChair x1
 Recipe {
     create: (807, 1),
     required: &[Requirement::item(276, 4)],
     stations: &[18],
     ..BASE
 },
-// 1919: CactusChest x1
+// 1920: CactusChest x1
 Recipe {
     create: (2616, 1),
     required: &[Requirement::item(276, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1920: CactusClock x1
+// 1921: CactusClock x1
 Recipe {
     create: (2592, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(276, 10)],
     stations: &[106],
     ..BASE
 },
-// 1921: CactusWorkBench x1
+// 1922: CactusWorkBench x1
 Recipe {
     create: (812, 1),
     required: &[Requirement::item(276, 10)],
     ..BASE
 },
-// 1922: CactusBookcase x1
+// 1923: CactusBookcase x1
 Recipe {
     create: (2020, 1),
     required: &[Requirement::item(276, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1923: CactusBed x1
+// 1924: CactusBed x1
 Recipe {
     create: (2066, 1),
     required: &[Requirement::item(276, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1924: CactusBathtub x1
+// 1925: CactusBathtub x1
 Recipe {
     create: (2072, 1),
     required: &[Requirement::item(276, 14)],
     stations: &[106],
     ..BASE
 },
-// 1925: CactusLantern x1
+// 1926: CactusLantern x1
 Recipe {
     create: (2032, 1),
     required: &[Requirement::item(276, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1926: CactusCandle x1
+// 1927: CactusCandle x1
 Recipe {
     create: (2045, 1),
     required: &[Requirement::item(276, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1927: CactusChandelier x1
+// 1928: CactusChandelier x1
 Recipe {
     create: (2055, 1),
     required: &[Requirement::item(276, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1928: CactusLamp x1
+// 1929: CactusLamp x1
 Recipe {
     create: (2082, 1),
     required: &[Requirement::item(8, 1), Requirement::item(276, 3)],
     stations: &[18],
     ..BASE
 },
-// 1929: CactusCandelabra x1
+// 1930: CactusCandelabra x1
 Recipe {
     create: (2092, 1),
     required: &[Requirement::item(276, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1930: CactusPiano x1
+// 1931: CactusPiano x1
 Recipe {
     create: (2382, 1),
     required: &[Requirement::item(154, 4), Requirement::item(276, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1931: CactusDresser x1
+// 1932: CactusDresser x1
 Recipe {
     create: (2392, 1),
     required: &[Requirement::item(276, 16)],
     stations: &[106],
     ..BASE
 },
-// 1932: CactusSofa x1
+// 1933: CactusSofa x1
 Recipe {
     create: (2408, 1),
     required: &[Requirement::item(276, 3955), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1933: CactusSink x1
+// 1934: CactusSink x1
 Recipe {
     create: (2854, 1),
     required: &[Requirement::item(276, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1934: CactusTable x1
+// 1935: CactusTable x1
 Recipe {
     create: (2743, 1),
     required: &[Requirement::item(276, 8)],
     stations: &[18],
     ..BASE
 },
-// 1935: ToiletCactus x1
+// 1936: ToiletCactus x1
 Recipe {
     create: (4100, 1),
     required: &[Requirement::item(276, 6)],
     stations: &[106],
     ..BASE
 },
-// 1936: PumpkinBathtub x1
+// 1937: PumpkinBathtub x1
 Recipe {
     create: (2661, 1),
     required: &[Requirement::item(1725, 14)],
     stations: &[106],
     ..BASE
 },
-// 1937: PumpkinBed x1
+// 1938: PumpkinBed x1
 Recipe {
     create: (2669, 1),
     required: &[Requirement::item(1725, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1938: PumpkinBookcase x1
+// 1939: PumpkinBookcase x1
 Recipe {
     create: (2670, 1),
     required: &[Requirement::item(1725, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1939: PumpkinCandelabra x1
+// 1940: PumpkinCandelabra x1
 Recipe {
     create: (2668, 1),
     required: &[Requirement::item(1725, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1940: PumpkinClock x1
+// 1941: PumpkinClock x1
 Recipe {
     create: (2603, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(1725, 10)],
     stations: &[106],
     ..BASE
 },
-// 1941: PumpkinDoor x1
+// 1942: PumpkinDoor x1
 Recipe {
     create: (1793, 1),
     required: &[Requirement::item(1725, 6)],
     stations: &[18],
     ..BASE
 },
-// 1942: PumpkinDresser x1
+// 1943: PumpkinDresser x1
 Recipe {
     create: (2637, 1),
     required: &[Requirement::item(1725, 16)],
     stations: &[106],
     ..BASE
 },
-// 1943: PumpkinChair x1
+// 1944: PumpkinChair x1
 Recipe {
     create: (1792, 1),
     required: &[Requirement::item(1725, 4)],
     stations: &[18],
     ..BASE
 },
-// 1944: PumpkinChandelier x1
+// 1945: PumpkinChandelier x1
 Recipe {
     create: (2656, 1),
     required: &[Requirement::item(1725, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1945: PumpkinChest x1
+// 1946: PumpkinChest x1
 Recipe {
     create: (2619, 1),
     required: &[Requirement::item(1725, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1946: PumpkinPiano x1
+// 1947: PumpkinPiano x1
 Recipe {
     create: (2671, 1),
     required: &[Requirement::item(154, 4), Requirement::item(1725, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1947: PumpkinSink x1
+// 1948: PumpkinSink x1
 Recipe {
     create: (2846, 1),
     required: &[Requirement::item(1725, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1948: PumpkinTable x1
+// 1949: PumpkinTable x1
 Recipe {
     create: (1794, 1),
     required: &[Requirement::item(1725, 8)],
     stations: &[18],
     ..BASE
 },
-// 1949: PumpkinWorkBench x1
+// 1950: PumpkinWorkBench x1
 Recipe {
     create: (1795, 1),
     required: &[Requirement::item(1725, 10)],
     ..BASE
 },
-// 1950: JackOLantern x1
+// 1951: JackOLantern x1
 Recipe {
     create: (1813, 1),
     required: &[Requirement::item(1725, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1951: PumpkinLamp x1
+// 1952: PumpkinLamp x1
 Recipe {
     create: (2643, 1),
     required: &[Requirement::item(8, 1), Requirement::item(1725, 3)],
     stations: &[18],
     ..BASE
 },
-// 1952: PumpkinLantern x1
+// 1953: PumpkinLantern x1
 Recipe {
     create: (2641, 1),
     required: &[Requirement::item(1725, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1953: HangingJackOLantern x1
+// 1954: HangingJackOLantern x1
 Recipe {
     create: (1808, 1),
     required: &[Requirement::item(1725, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1954: PumpkinCandle x1
+// 1955: PumpkinCandle x1
 Recipe {
     create: (2054, 1),
     required: &[Requirement::item(1725, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1955: ToiletPumpkin x1
+// 1956: ToiletPumpkin x1
 Recipe {
     create: (4115, 1),
     required: &[Requirement::item(1725, 6)],
     stations: &[106],
     ..BASE
 },
-// 1956: Jackelier x1
+// 1957: Jackelier x1
 Recipe {
     create: (1812, 1),
     required: &[Requirement::item(1725, 12), Requirement::item(8, 4)],
     stations: &[18],
     ..BASE
 },
-// 1957: PumpkinSofa x1
+// 1958: PumpkinSofa x1
 Recipe {
     create: (2415, 1),
     required: &[Requirement::item(1725, 3955), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1958: PumpkinHelmet x1
+// 1959: PumpkinHelmet x1
 Recipe {
     create: (1731, 1),
     required: &[Requirement::item(1725, 20)],
     stations: &[18],
     ..BASE
 },
-// 1959: PumpkinBreastplate x1
+// 1960: PumpkinBreastplate x1
 Recipe {
     create: (1732, 1),
     required: &[Requirement::item(1725, 30)],
     stations: &[18],
     ..BASE
 },
-// 1960: PumpkinLeggings x1
+// 1961: PumpkinLeggings x1
 Recipe {
     create: (1733, 1),
     required: &[Requirement::item(1725, 25)],
     stations: &[18],
     ..BASE
 },
-// 1961: SpookyClock x1
+// 1962: SpookyClock x1
 Recipe {
     create: (2605, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(1729, 10)],
     stations: &[106],
     ..BASE
 },
-// 1962: SpookyDoor x1
+// 1963: SpookyDoor x1
 Recipe {
     create: (1815, 1),
     required: &[Requirement::item(1729, 6)],
     stations: &[18],
     ..BASE
 },
-// 1963: SpookyChair x1
+// 1964: SpookyChair x1
 Recipe {
     create: (1814, 1),
     required: &[Requirement::item(1729, 4)],
     stations: &[18],
     ..BASE
 },
-// 1964: SpookyChest x1
+// 1965: SpookyChest x1
 Recipe {
     create: (2620, 1),
     required: &[Requirement::item(1729, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 1965: SpookySink x1
+// 1966: SpookySink x1
 Recipe {
     create: (2847, 1),
     required: &[Requirement::item(1729, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 1966: SpookyTable x1
+// 1967: SpookyTable x1
 Recipe {
     create: (1816, 1),
     required: &[Requirement::item(1729, 8)],
     stations: &[18],
     ..BASE
 },
-// 1967: SpookyWorkBench x1
+// 1968: SpookyWorkBench x1
 Recipe {
     create: (1817, 1),
     required: &[Requirement::item(1729, 10)],
     ..BASE
 },
-// 1968: SpookyBookcase x1
+// 1969: SpookyBookcase x1
 Recipe {
     create: (2028, 1),
     required: &[Requirement::item(1729, 20), Requirement::item(149, 10)],
     stations: &[106],
     ..BASE
 },
-// 1969: SpookyBed x1
+// 1970: SpookyBed x1
 Recipe {
     create: (2071, 1),
     required: &[Requirement::item(1729, 15), Requirement::item(225, 5)],
     stations: &[106],
     ..BASE
 },
-// 1970: SpookyBathtub x1
+// 1971: SpookyBathtub x1
 Recipe {
     create: (2081, 1),
     required: &[Requirement::item(1729, 14)],
     stations: &[106],
     ..BASE
 },
-// 1971: SpookyLantern x1
+// 1972: SpookyLantern x1
 Recipe {
     create: (2043, 1),
     required: &[Requirement::item(1729, 6), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1972: SpookyCandle x1
+// 1973: SpookyCandle x1
 Recipe {
     create: (2650, 1),
     required: &[Requirement::item(1729, 4), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 1973: SpookyChandelier x1
+// 1974: SpookyChandelier x1
 Recipe {
     create: (2064, 1),
     required: &[Requirement::item(1729, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 1974: SpookyLamp x1
+// 1975: SpookyLamp x1
 Recipe {
     create: (2091, 1),
     required: &[Requirement::item(8, 1), Requirement::item(1729, 3)],
     stations: &[18],
     ..BASE
 },
-// 1975: SpookyCandelabra x1
+// 1976: SpookyCandelabra x1
 Recipe {
     create: (2103, 1),
     required: &[Requirement::item(1729, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 1976: SpookyPiano x1
+// 1977: SpookyPiano x1
 Recipe {
     create: (2383, 1),
     required: &[Requirement::item(154, 4), Requirement::item(1729, 15), Requirement::item(149, 1)],
     stations: &[106],
     ..BASE
 },
-// 1977: SpookyDresser x1
+// 1978: SpookyDresser x1
 Recipe {
     create: (2393, 1),
     required: &[Requirement::item(1729, 16)],
     stations: &[106],
     ..BASE
 },
-// 1978: SpookySofa x1
+// 1979: SpookySofa x1
 Recipe {
     create: (2409, 1),
     required: &[Requirement::item(1729, 3955), Requirement::item(225, 2)],
     stations: &[106],
     ..BASE
 },
-// 1979: ToiletSpooky x1
+// 1980: ToiletSpooky x1
 Recipe {
     create: (4116, 1),
     required: &[Requirement::item(1729, 6)],
     stations: &[106],
     ..BASE
 },
-// 1980: FleshBlock x1
+// 1981: FleshBlock x1
 Recipe {
     create: (763, 1),
     required: &[Requirement::item(836, 2)],
     stations: &[218],
     ..BASE
 },
-// 1981: FleshBlockWall x4
+// 1982: FleshBlockWall x4
 Recipe {
     create: (770, 4),
     required: &[Requirement::item(763, 1)],
     stations: &[18],
     ..BASE
 },
-// 1982: FleshBlock x1, SetupRecipes reverse
+// 1983: FleshBlock x1, SetupRecipes reverse
 Recipe {
     create: (763, 1),
     required: &[Requirement::item(770, 4)],
@@ -14075,154 +14084,154 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 1983: FleshClock x1
+// 1984: FleshClock x1
 Recipe {
     create: (2598, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(763, 10)],
     stations: &[301],
     ..BASE
 },
-// 1984: FleshDoor x1
+// 1985: FleshDoor x1
 Recipe {
     create: (817, 1),
     required: &[Requirement::item(763, 6)],
     stations: &[301],
     ..BASE
 },
-// 1985: FleshDresser x1
+// 1986: FleshDresser x1
 Recipe {
     create: (2640, 1),
     required: &[Requirement::item(763, 16)],
     stations: &[301],
     ..BASE
 },
-// 1986: FleshChair x1
+// 1987: FleshChair x1
 Recipe {
     create: (809, 1),
     required: &[Requirement::item(763, 4)],
     stations: &[301],
     ..BASE
 },
-// 1987: FleshChest x1
+// 1988: FleshChest x1
 Recipe {
     create: (2617, 1),
     required: &[Requirement::item(763, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[301],
     ..BASE
 },
-// 1988: FleshWorkBench x1
+// 1989: FleshWorkBench x1
 Recipe {
     create: (813, 1),
     required: &[Requirement::item(763, 10)],
     stations: &[301],
     ..BASE
 },
-// 1989: FleshSink x1
+// 1990: FleshSink x1
 Recipe {
     create: (2832, 1),
     required: &[Requirement::item(763, 6), Requirement::item(206, 1)],
     stations: &[301],
     ..BASE
 },
-// 1990: FleshTable x1
+// 1991: FleshTable x1
 Recipe {
     create: (828, 1),
     required: &[Requirement::item(763, 8)],
     stations: &[301],
     ..BASE
 },
-// 1991: FleshPiano x1
+// 1992: FleshPiano x1
 Recipe {
     create: (2246, 1),
     required: &[Requirement::item(154, 4), Requirement::item(763, 15), Requirement::item(149, 1)],
     stations: &[301],
     ..BASE
 },
-// 1992: FleshBookcase x1
+// 1993: FleshBookcase x1
 Recipe {
     create: (2022, 1),
     required: &[Requirement::item(763, 20), Requirement::item(149, 10)],
     stations: &[301],
     ..BASE
 },
-// 1993: FleshBed x1
+// 1994: FleshBed x1
 Recipe {
     create: (2067, 1),
     required: &[Requirement::item(763, 15), Requirement::item(225, 5)],
     stations: &[301],
     ..BASE
 },
-// 1994: FleshBathtub x1
+// 1995: FleshBathtub x1
 Recipe {
     create: (2074, 1),
     required: &[Requirement::item(763, 14)],
     stations: &[301],
     ..BASE
 },
-// 1995: FleshLantern x1
+// 1996: FleshLantern x1
 Recipe {
     create: (2034, 1),
     required: &[Requirement::item(763, 6), Requirement::item(8, 1)],
     stations: &[301],
     ..BASE
 },
-// 1996: FleshCandle x1
+// 1997: FleshCandle x1
 Recipe {
     create: (2047, 1),
     required: &[Requirement::item(763, 4), Requirement::item(8, 1)],
     stations: &[301],
     ..BASE
 },
-// 1997: FleshChandelier x1
+// 1998: FleshChandelier x1
 Recipe {
     create: (2057, 1),
     required: &[Requirement::item(763, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[301],
     ..BASE
 },
-// 1998: FleshLamp x1
+// 1999: FleshLamp x1
 Recipe {
     create: (2084, 1),
     required: &[Requirement::item(8, 1), Requirement::item(763, 3)],
     stations: &[301],
     ..BASE
 },
-// 1999: FleshCandelabra x1
+// 2000: FleshCandelabra x1
 Recipe {
     create: (2094, 1),
     required: &[Requirement::item(763, 5), Requirement::item(8, 3)],
     stations: &[301],
     ..BASE
 },
-// 2000: FleshSofa x1
+// 2001: FleshSofa x1
 Recipe {
     create: (2634, 1),
     required: &[Requirement::item(763, 3955), Requirement::item(225, 2)],
     stations: &[301],
     ..BASE
 },
-// 2001: ToiletFlesh x1
+// 2002: ToiletFlesh x1
 Recipe {
     create: (4102, 1),
     required: &[Requirement::item(763, 6)],
     stations: &[301],
     ..BASE
 },
-// 2002: SlimeBlock x1
+// 2003: SlimeBlock x1
 Recipe {
     create: (762, 1),
     required: &[Requirement::item(23, 1)],
     stations: &[220],
     ..BASE
 },
-// 2003: SlimeBlockWall x4
+// 2004: SlimeBlockWall x4
 Recipe {
     create: (769, 4),
     required: &[Requirement::item(762, 1)],
     stations: &[18],
     ..BASE
 },
-// 2004: SlimeBlock x1, SetupRecipes reverse
+// 2005: SlimeBlock x1, SetupRecipes reverse
 Recipe {
     create: (762, 1),
     required: &[Requirement::item(769, 4)],
@@ -14230,28 +14239,28 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 2005: FrozenSlimeBlock x1
+// 2006: FrozenSlimeBlock x1
 Recipe {
     create: (767, 1),
     required: &[Requirement::item(762, 1), Requirement::item(664, 1)],
     stations: &[220],
     ..BASE
 },
-// 2006: PinkSlimeBlock x1
+// 2007: PinkSlimeBlock x1
 Recipe {
     create: (3113, 1),
     required: &[Requirement::item(3111, 1)],
     stations: &[220],
     ..BASE
 },
-// 2007: HiveWall x4
+// 2008: HiveWall x4
 Recipe {
     create: (1126, 4),
     required: &[Requirement::item(1124, 1)],
     stations: &[18],
     ..BASE
 },
-// 2008: Hive x1, SetupRecipes reverse
+// 2009: Hive x1, SetupRecipes reverse
 Recipe {
     create: (1124, 1),
     required: &[Requirement::item(1126, 4)],
@@ -14259,14 +14268,14 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 2009: BoneBlockWall x4
+// 2010: BoneBlockWall x4
 Recipe {
     create: (768, 4),
     required: &[Requirement::item(154, 1)],
     stations: &[300],
     ..BASE
 },
-// 2010: Bone x1, SetupRecipes reverse
+// 2011: Bone x1, SetupRecipes reverse
 Recipe {
     create: (154, 1),
     required: &[Requirement::item(768, 4)],
@@ -14274,1432 +14283,1432 @@ Recipe {
     not_decraftable: true,
     ..BASE
 },
-// 2011: BoneDoor x1
+// 2012: BoneDoor x1
 Recipe {
     create: (820, 1),
     required: &[Requirement::item(154, 6)],
     stations: &[300],
     ..BASE
 },
-// 2012: BoneChest x1
+// 2013: BoneChest x1
 Recipe {
     create: (2615, 1),
     required: &[Requirement::item(154, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[300],
     ..BASE
 },
-// 2013: BoneClock x1
+// 2014: BoneClock x1
 Recipe {
     create: (2591, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(170, 6), Requirement::item(154, 10)],
     stations: &[300],
     ..BASE
 },
-// 2014: BoneChair x1
+// 2015: BoneChair x1
 Recipe {
     create: (808, 1),
     required: &[Requirement::item(154, 4)],
     stations: &[300],
     ..BASE
 },
-// 2015: BoneWorkBench x1
+// 2016: BoneWorkBench x1
 Recipe {
     create: (811, 1),
     required: &[Requirement::item(154, 10)],
     stations: &[300],
     ..BASE
 },
-// 2016: BoneSink x1
+// 2017: BoneSink x1
 Recipe {
     create: (2831, 1),
     required: &[Requirement::item(154, 6), Requirement::item(206, 1)],
     stations: &[300],
     ..BASE
 },
-// 2017: BoneTable x1
+// 2018: BoneTable x1
 Recipe {
     create: (827, 1),
     required: &[Requirement::item(154, 8)],
     stations: &[300],
     ..BASE
 },
-// 2018: BoneBookcase x1
+// 2019: BoneBookcase x1
 Recipe {
     create: (2138, 1),
     required: &[Requirement::item(154, 20), Requirement::item(149, 10)],
     stations: &[300],
     ..BASE
 },
-// 2019: BoneBed x1
+// 2020: BoneBed x1
 Recipe {
     create: (2140, 1),
     required: &[Requirement::item(154, 15), Requirement::item(225, 5)],
     stations: &[300],
     ..BASE
 },
-// 2020: BoneBathtub x1
+// 2021: BoneBathtub x1
 Recipe {
     create: (2128, 1),
     required: &[Requirement::item(154, 14)],
     stations: &[300],
     ..BASE
 },
-// 2021: BoneChandelier x1
+// 2022: BoneChandelier x1
 Recipe {
     create: (2144, 1),
     required: &[Requirement::item(154, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[300],
     ..BASE
 },
-// 2022: BoneCandelabra x1
+// 2023: BoneCandelabra x1
 Recipe {
     create: (2152, 1),
     required: &[Requirement::item(154, 5), Requirement::item(8, 3)],
     stations: &[300],
     ..BASE
 },
-// 2023: BoneLamp x1
+// 2024: BoneLamp x1
 Recipe {
     create: (2134, 1),
     required: &[Requirement::item(8, 1), Requirement::item(154, 3)],
     stations: &[300],
     ..BASE
 },
-// 2024: BoneLantern x1
+// 2025: BoneLantern x1
 Recipe {
     create: (2148, 1),
     required: &[Requirement::item(154, 6), Requirement::item(8, 1)],
     stations: &[300],
     ..BASE
 },
-// 2025: BonePiano x1
+// 2026: BonePiano x1
 Recipe {
     create: (2381, 1),
     required: &[Requirement::item(154, 19), Requirement::item(149, 1)],
     stations: &[300],
     ..BASE
 },
-// 2026: BoneDresser x1
+// 2027: BoneDresser x1
 Recipe {
     create: (2391, 1),
     required: &[Requirement::item(154, 16)],
     stations: &[300],
     ..BASE
 },
-// 2027: ToiletBone x1
+// 2028: ToiletBone x1
 Recipe {
     create: (4101, 1),
     required: &[Requirement::item(154, 6)],
     stations: &[300],
     ..BASE
 },
-// 2028: BoneSofa x1
+// 2029: BoneSofa x1
 Recipe {
     create: (2407, 1),
     required: &[Requirement::item(154, 3955), Requirement::item(225, 2)],
     stations: &[300],
     ..BASE
 },
-// 2029: ObsidianChest x1
+// 2030: ObsidianChest x1
 Recipe {
     create: (2618, 1),
     required: &[Requirement::item(173, 6), Requirement::item(174, 2), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 2030: ObsidianSink x1
+// 2031: ObsidianSink x1
 Recipe {
     create: (2840, 1),
     required: &[Requirement::item(173, 4), Requirement::item(174, 2), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 2031: ToiletObsidian x1
+// 2032: ToiletObsidian x1
 Recipe {
     create: (4110, 1),
     required: &[Requirement::item(173, 4), Requirement::item(174, 2)],
     stations: &[106],
     ..BASE
 },
-// 2032: PinkDungeonChest x1
+// 2033: PinkDungeonChest x1
 Recipe {
     create: (2613, 1),
     required: &[Requirement::item(139, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 2033: PinkDungeonSink x1
+// 2034: PinkDungeonSink x1
 Recipe {
     create: (2839, 1),
     required: &[Requirement::item(139, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 2034: ToiletDungeonPink x1
+// 2035: ToiletDungeonPink x1
 Recipe {
     create: (4109, 1),
     required: &[Requirement::item(139, 6)],
     stations: &[106],
     ..BASE
 },
-// 2035: BlueDungeonChest x1
+// 2036: BlueDungeonChest x1
 Recipe {
     create: (2614, 1),
     required: &[Requirement::item(134, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 2036: BlueDungeonSink x1
+// 2037: BlueDungeonSink x1
 Recipe {
     create: (2837, 1),
     required: &[Requirement::item(134, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 2037: ToiletDungeonBlue x1
+// 2038: ToiletDungeonBlue x1
 Recipe {
     create: (4107, 1),
     required: &[Requirement::item(134, 6)],
     stations: &[106],
     ..BASE
 },
-// 2038: GreenDungeonChest x1
+// 2039: GreenDungeonChest x1
 Recipe {
     create: (2612, 1),
     required: &[Requirement::item(137, 8), Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[18],
     ..BASE
 },
-// 2039: GreenDungeonSink x1
+// 2040: GreenDungeonSink x1
 Recipe {
     create: (2838, 1),
     required: &[Requirement::item(137, 6), Requirement::item(206, 1)],
     stations: &[18],
     ..BASE
 },
-// 2040: ToiletDungeonGreen x1
+// 2041: ToiletDungeonGreen x1
 Recipe {
     create: (4108, 1),
     required: &[Requirement::item(137, 6)],
     stations: &[106],
     ..BASE
 },
-// 2041: GoblinBattleStandard x1
+// 2042: GoblinBattleStandard x1
 Recipe {
     create: (361, 1),
     required: &[Requirement::item(362, 10), Requirement::group(9, RecipeGroups::WOOD, 5)],
     stations: &[86],
     ..BASE
 },
-// 2042: Silk x1
+// 2043: Silk x1
 Recipe {
     create: (225, 1),
     required: &[Requirement::item(150, 7)],
     stations: &[86],
     ..BASE
 },
-// 2043: RedBanner x1
+// 2044: RedBanner x1
 Recipe {
     create: (337, 1),
     required: &[Requirement::item(225, 3)],
     stations: &[86],
     ..BASE
 },
-// 2044: GreenBanner x1
+// 2045: GreenBanner x1
 Recipe {
     create: (338, 1),
     required: &[Requirement::item(225, 3)],
     stations: &[86],
     ..BASE
 },
-// 2045: BlueBanner x1
+// 2046: BlueBanner x1
 Recipe {
     create: (339, 1),
     required: &[Requirement::item(225, 3)],
     stations: &[86],
     ..BASE
 },
-// 2046: YellowBanner x1
+// 2047: YellowBanner x1
 Recipe {
     create: (340, 1),
     required: &[Requirement::item(225, 3)],
     stations: &[86],
     ..BASE
 },
-// 2047: PinkBanner x1
+// 2048: PinkBanner x1
 Recipe {
     create: (5497, 1),
     required: &[Requirement::item(225, 3)],
     stations: &[86],
     ..BASE
 },
-// 2048: WhiteBanner x1
+// 2049: WhiteBanner x1
 Recipe {
     create: (5498, 1),
     required: &[Requirement::item(225, 3)],
     stations: &[86],
     ..BASE
 },
-// 2049: GreenThread x1
+// 2050: GreenThread x1
 Recipe {
     create: (255, 1),
     required: &[Requirement::item(195, 3)],
     stations: &[86],
     ..BASE
 },
-// 2050: HerosHat x1
+// 2051: HerosHat x1
 Recipe {
     create: (247, 1),
     required: &[Requirement::item(225, 20), Requirement::item(255, 3)],
     stations: &[86],
     ..BASE
 },
-// 2051: HerosShirt x1
+// 2052: HerosShirt x1
 Recipe {
     create: (248, 1),
     required: &[Requirement::item(225, 20), Requirement::item(255, 3)],
     stations: &[86],
     ..BASE
 },
-// 2052: HerosPants x1
+// 2053: HerosPants x1
 Recipe {
     create: (249, 1),
     required: &[Requirement::item(225, 20), Requirement::item(255, 3)],
     stations: &[86],
     ..BASE
 },
-// 2053: AncientArmorHat x1
+// 2054: AncientArmorHat x1
 Recipe {
     create: (3773, 1),
     required: &[Requirement::item(225, 15), Requirement::item(3794, 5)],
     stations: &[86],
     ..BASE
 },
-// 2054: AncientArmorShirt x1
+// 2055: AncientArmorShirt x1
 Recipe {
     create: (3774, 1),
     required: &[Requirement::item(225, 15), Requirement::item(3794, 5)],
     stations: &[86],
     ..BASE
 },
-// 2055: AncientArmorPants x1
+// 2056: AncientArmorPants x1
 Recipe {
     create: (3775, 1),
     required: &[Requirement::item(225, 15), Requirement::item(3794, 5)],
     stations: &[86],
     ..BASE
 },
-// 2056: TuxedoShirt x1
+// 2057: TuxedoShirt x1
 Recipe {
     create: (240, 1),
     required: &[Requirement::item(225, 20), Requirement::item(254, 3)],
     stations: &[86],
     ..BASE
 },
-// 2057: TuxedoPants x1
+// 2058: TuxedoPants x1
 Recipe {
     create: (241, 1),
     required: &[Requirement::item(225, 20), Requirement::item(254, 3)],
     stations: &[86],
     ..BASE
 },
-// 2058: MaidHead2 x1
+// 2059: MaidHead2 x1
 Recipe {
     create: (4132, 1),
     required: &[Requirement::item(225, 20), Requirement::item(981, 3)],
     stations: &[86],
     ..BASE
 },
-// 2059: MaidShirt2 x1
+// 2060: MaidShirt2 x1
 Recipe {
     create: (4133, 1),
     required: &[Requirement::item(225, 20), Requirement::item(981, 3)],
     stations: &[86],
     ..BASE
 },
-// 2060: MaidPants2 x1
+// 2061: MaidPants2 x1
 Recipe {
     create: (4134, 1),
     required: &[Requirement::item(225, 20), Requirement::item(981, 3)],
     stations: &[86],
     ..BASE
 },
-// 2061: MaidHead x1
+// 2062: MaidHead x1
 Recipe {
     create: (4128, 1),
     required: &[Requirement::item(225, 20), Requirement::item(254, 3)],
     stations: &[86],
     ..BASE
 },
-// 2062: MaidShirt x1
+// 2063: MaidShirt x1
 Recipe {
     create: (4129, 1),
     required: &[Requirement::item(225, 20), Requirement::item(254, 3)],
     stations: &[86],
     ..BASE
 },
-// 2063: MaidPants x1
+// 2064: MaidPants x1
 Recipe {
     create: (4130, 1),
     required: &[Requirement::item(225, 20), Requirement::item(254, 3)],
     stations: &[86],
     ..BASE
 },
-// 2064: SuperHeroMask x1
+// 2065: SuperHeroMask x1
 Recipe {
     create: (4652, 1),
     required: &[Requirement::item(225, 20), Requirement::item(255, 3)],
     stations: &[86],
     ..BASE
 },
-// 2065: SuperHeroCostume x1
+// 2066: SuperHeroCostume x1
 Recipe {
     create: (4653, 1),
     required: &[Requirement::item(225, 20), Requirement::item(255, 3)],
     stations: &[86],
     ..BASE
 },
-// 2066: SuperHeroTights x1
+// 2067: SuperHeroTights x1
 Recipe {
     create: (4654, 1),
     required: &[Requirement::item(225, 20), Requirement::item(255, 3)],
     stations: &[86],
     ..BASE
 },
-// 2067: PlaguebringerHelmet x1
+// 2068: PlaguebringerHelmet x1
 Recipe {
     create: (5045, 1),
     required: &[Requirement::item(1330, 10), Requirement::item(154, 10)],
     stations: &[86],
     ..BASE
 },
-// 2068: PlaguebringerChestplate x1
+// 2069: PlaguebringerChestplate x1
 Recipe {
     create: (5046, 1),
     required: &[Requirement::item(225, 20), Requirement::item(1330, 10), Requirement::item(1050, 1)],
     stations: &[86],
     ..BASE
 },
-// 2069: PlaguebringerGreaves x1
+// 2070: PlaguebringerGreaves x1
 Recipe {
     create: (5047, 1),
     required: &[Requirement::item(225, 20), Requirement::item(1330, 10), Requirement::item(1050, 1)],
     stations: &[86],
     ..BASE
 },
-// 2070: RoninHat x1
+// 2071: RoninHat x1
 Recipe {
     create: (5048, 1),
     required: &[Requirement::item(133, 10), Requirement::item(1992, 3)],
     stations: &[86],
     ..BASE
 },
-// 2071: RoninShirt x1
+// 2072: RoninShirt x1
 Recipe {
     create: (5049, 1),
     required: &[Requirement::item(225, 20), Requirement::item(1992, 3)],
     stations: &[86],
     ..BASE
 },
-// 2072: RoninPants x1
+// 2073: RoninPants x1
 Recipe {
     create: (5050, 1),
     required: &[Requirement::item(225, 20), Requirement::item(1992, 3)],
     stations: &[86],
     ..BASE
 },
-// 2073: TimelessTravelerHood x1
+// 2074: TimelessTravelerHood x1
 Recipe {
     create: (5051, 1),
     required: &[Requirement::item(225, 10), Requirement::item(154, 10)],
     stations: &[86],
     ..BASE
 },
-// 2074: TimelessTravelerRobe x1
+// 2075: TimelessTravelerRobe x1
 Recipe {
     create: (5052, 1),
     required: &[Requirement::item(225, 20), Requirement::item(68, 10), Requirement::item(1050, 1)],
     stations: &[86],
     ..BASE
 },
-// 2075: TimelessTravelerBottom x1
+// 2076: TimelessTravelerBottom x1
 Recipe {
     create: (5053, 1),
     required: &[Requirement::item(225, 20), Requirement::item(68, 10), Requirement::item(1050, 1)],
     stations: &[86],
     ..BASE
 },
-// 2076: FloretProtectorHelmet x1
+// 2077: FloretProtectorHelmet x1
 Recipe {
     create: (5054, 1),
     required: &[Requirement::item(170, 20), Requirement::item(2, 10), Requirement::item(313, 1)],
     stations: &[86],
     ..BASE
 },
-// 2077: FloretProtectorChestplate x1
+// 2078: FloretProtectorChestplate x1
 Recipe {
     create: (5055, 1),
     required: &[Requirement::item(225, 20), Requirement::item(2, 15)],
     stations: &[86],
     ..BASE
 },
-// 2078: FloretProtectorLegs x1
+// 2079: FloretProtectorLegs x1
 Recipe {
     create: (5056, 1),
     required: &[Requirement::item(225, 20), Requirement::item(2, 15)],
     stations: &[86],
     ..BASE
 },
-// 2079: CapricornMask x1
+// 2080: CapricornMask x1
 Recipe {
     create: (5057, 1),
     required: &[Requirement::item(275, 15), Requirement::item(75, 5)],
     stations: &[86],
     ..BASE
 },
-// 2080: CapricornChestplate x1
+// 2081: CapricornChestplate x1
 Recipe {
     create: (5058, 1),
     required: &[Requirement::item(225, 20), Requirement::item(75, 5), Requirement::item(1037, 1)],
     stations: &[86],
     ..BASE
 },
-// 2081: CapricornTail x1
+// 2082: CapricornTail x1
 Recipe {
     create: (5060, 1),
     required: &[Requirement::item(225, 20), Requirement::item(75, 5), Requirement::item(1037, 1)],
     stations: &[86],
     ..BASE
 },
-// 2082: TVHeadMask x1
+// 2083: TVHeadMask x1
 Recipe {
     create: (5061, 1),
     required: &[Requirement::item(170, 10), Requirement::item(530, 10)],
     stations: &[86],
     ..BASE
 },
-// 2083: TVHeadSuit x1
+// 2084: TVHeadSuit x1
 Recipe {
     create: (5062, 1),
     required: &[Requirement::item(225, 20), Requirement::item(1016, 1)],
     stations: &[86],
     ..BASE
 },
-// 2084: TVHeadPants x1
+// 2085: TVHeadPants x1
 Recipe {
     create: (5063, 1),
     required: &[Requirement::item(225, 20), Requirement::item(1016, 1)],
     stations: &[86],
     ..BASE
 },
-// 2085: WilsonShirt x1
+// 2086: WilsonShirt x1
 Recipe {
     create: (5102, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2086: WilsonPants x1
+// 2087: WilsonPants x1
 Recipe {
     create: (5103, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2087: WillowShirt x1
+// 2088: WillowShirt x1
 Recipe {
     create: (5115, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2088: WillowSkirt x1
+// 2089: WillowSkirt x1
 Recipe {
     create: (5116, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2089: DeadCellsBeheadedHead x1
+// 2090: DeadCellsBeheadedHead x1
 Recipe {
     create: (5457, 1),
     required: &[Requirement::item(521, 10), Requirement::item(5322, 1), Requirement::item(68, 10)],
     stations: &[26],
     ..BASE
 },
-// 2090: DeadCellsBeheadedHead x1
+// 2091: DeadCellsBeheadedHead x1
 Recipe {
     create: (5457, 1),
     required: &[Requirement::item(521, 10), Requirement::item(5322, 1), Requirement::item(1330, 10)],
     stations: &[26],
     ..BASE
 },
-// 2091: DeadCellsBeheadedBody x1
+// 2092: DeadCellsBeheadedBody x1
 Recipe {
     create: (5458, 1),
     required: &[Requirement::item(3794, 5), Requirement::item(216, 1)],
     stations: &[86],
     ..BASE
 },
-// 2092: DeadCellsBeheadedLegs x1
+// 2093: DeadCellsBeheadedLegs x1
 Recipe {
     create: (5459, 1),
     required: &[Requirement::item(3794, 5), Requirement::item(362, 5)],
     stations: &[86],
     ..BASE
 },
-// 2093: BlueBikiniBody x1
+// 2094: BlueBikiniBody x1
 Recipe {
     create: (5646, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2094: BlueBikiniLegs x1
+// 2095: BlueBikiniLegs x1
 Recipe {
     create: (5647, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2095: RedSwimsuit x1
+// 2096: RedSwimsuit x1
 Recipe {
     create: (5648, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2096: GreenSwimshorts x1
+// 2097: GreenSwimshorts x1
 Recipe {
     create: (5649, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2097: GraySwimshorts x1
+// 2098: GraySwimshorts x1
 Recipe {
     create: (5650, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2098: Robe x1
+// 2099: Robe x1
 Recipe {
     create: (262, 1),
     required: &[Requirement::item(225, 20)],
     stations: &[86],
     ..BASE
 },
-// 2099: ObsidianHelm x1
+// 2100: ObsidianHelm x1
 Recipe {
     create: (3266, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(86, 5)],
     stations: &[77],
     ..BASE
 },
-// 2100: ObsidianShirt x1
+// 2101: ObsidianShirt x1
 Recipe {
     create: (3267, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(86, 10)],
     stations: &[77],
     ..BASE
 },
-// 2101: ObsidianPants x1
+// 2102: ObsidianPants x1
 Recipe {
     create: (3268, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(86, 5)],
     stations: &[77],
     ..BASE
 },
-// 2102: ObsidianHelm x1
+// 2103: ObsidianHelm x1
 Recipe {
     create: (3266, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(1329, 5)],
     stations: &[77],
     ..BASE
 },
-// 2103: ObsidianShirt x1
+// 2104: ObsidianShirt x1
 Recipe {
     create: (3267, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(1329, 10)],
     stations: &[77],
     ..BASE
 },
-// 2104: ObsidianPants x1
+// 2105: ObsidianPants x1
 Recipe {
     create: (3268, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(1329, 5)],
     stations: &[77],
     ..BASE
 },
-// 2105: AmethystRobe x1
+// 2106: AmethystRobe x1
 Recipe {
     create: (1282, 1),
     required: &[Requirement::item(262, 1), Requirement::item(181, 10)],
     stations: &[86],
     ..BASE
 },
-// 2106: TopazRobe x1
+// 2107: TopazRobe x1
 Recipe {
     create: (1283, 1),
     required: &[Requirement::item(262, 1), Requirement::item(180, 10)],
     stations: &[86],
     ..BASE
 },
-// 2107: SapphireRobe x1
+// 2108: SapphireRobe x1
 Recipe {
     create: (1284, 1),
     required: &[Requirement::item(262, 1), Requirement::item(177, 10)],
     stations: &[86],
     ..BASE
 },
-// 2108: EmeraldRobe x1
+// 2109: EmeraldRobe x1
 Recipe {
     create: (1285, 1),
     required: &[Requirement::item(262, 1), Requirement::item(179, 10)],
     stations: &[86],
     ..BASE
 },
-// 2109: RubyRobe x1
+// 2110: RubyRobe x1
 Recipe {
     create: (1286, 1),
     required: &[Requirement::item(262, 1), Requirement::item(178, 10)],
     stations: &[86],
     ..BASE
 },
-// 2110: DiamondRobe x1
+// 2111: DiamondRobe x1
 Recipe {
     create: (1287, 1),
     required: &[Requirement::item(262, 1), Requirement::item(182, 10)],
     stations: &[86],
     ..BASE
 },
-// 2111: AmberRobe x1
+// 2112: AmberRobe x1
 Recipe {
     create: (4256, 1),
     required: &[Requirement::item(262, 1), Requirement::item(999, 10)],
     stations: &[86],
     ..BASE
 },
-// 2112: GolfBallDyedBlack x1
+// 2113: GolfBallDyedBlack x1
 Recipe {
     create: (4242, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1050, 1)],
     stations: &[228],
     ..BASE
 },
-// 2113: GolfBallDyedBlue x1
+// 2114: GolfBallDyedBlue x1
 Recipe {
     create: (4243, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1015, 1)],
     stations: &[228],
     ..BASE
 },
-// 2114: GolfBallDyedBrown x1
+// 2115: GolfBallDyedBrown x1
 Recipe {
     create: (4244, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(2874, 1)],
     stations: &[228],
     ..BASE
 },
-// 2115: GolfBallDyedCyan x1
+// 2116: GolfBallDyedCyan x1
 Recipe {
     create: (4245, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1013, 1)],
     stations: &[228],
     ..BASE
 },
-// 2116: GolfBallDyedGreen x1
+// 2117: GolfBallDyedGreen x1
 Recipe {
     create: (4246, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1011, 1)],
     stations: &[228],
     ..BASE
 },
-// 2117: GolfBallDyedLimeGreen x1
+// 2118: GolfBallDyedLimeGreen x1
 Recipe {
     create: (4247, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1010, 1)],
     stations: &[228],
     ..BASE
 },
-// 2118: GolfBallDyedOrange x1
+// 2119: GolfBallDyedOrange x1
 Recipe {
     create: (4248, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1008, 1)],
     stations: &[228],
     ..BASE
 },
-// 2119: GolfBallDyedPink x1
+// 2120: GolfBallDyedPink x1
 Recipe {
     create: (4249, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1018, 1)],
     stations: &[228],
     ..BASE
 },
-// 2120: GolfBallDyedPurple x1
+// 2121: GolfBallDyedPurple x1
 Recipe {
     create: (4250, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1016, 1)],
     stations: &[228],
     ..BASE
 },
-// 2121: GolfBallDyedRed x1
+// 2122: GolfBallDyedRed x1
 Recipe {
     create: (4251, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1007, 1)],
     stations: &[228],
     ..BASE
 },
-// 2122: GolfBallDyedSkyBlue x1
+// 2123: GolfBallDyedSkyBlue x1
 Recipe {
     create: (4252, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1014, 1)],
     stations: &[228],
     ..BASE
 },
-// 2123: GolfBallDyedTeal x1
+// 2124: GolfBallDyedTeal x1
 Recipe {
     create: (4253, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1012, 1)],
     stations: &[228],
     ..BASE
 },
-// 2124: GolfBallDyedViolet x1
+// 2125: GolfBallDyedViolet x1
 Recipe {
     create: (4254, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1017, 1)],
     stations: &[228],
     ..BASE
 },
-// 2125: GolfBallDyedYellow x1
+// 2126: GolfBallDyedYellow x1
 Recipe {
     create: (4255, 1),
     required: &[Requirement::item(3989, 1), Requirement::item(1009, 1)],
     stations: &[228],
     ..BASE
 },
-// 2126: WhiteString x1
+// 2127: WhiteString x1
 Recipe {
     create: (3306, 1),
     required: &[Requirement::item(150, 30)],
     stations: &[86],
     ..BASE
 },
-// 2127: RedString x1
+// 2128: RedString x1
 Recipe {
     create: (3293, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1007, 1)],
     stations: &[228],
     ..BASE
 },
-// 2128: OrangeString x1
+// 2129: OrangeString x1
 Recipe {
     create: (3294, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1008, 1)],
     stations: &[228],
     ..BASE
 },
-// 2129: YellowString x1
+// 2130: YellowString x1
 Recipe {
     create: (3295, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1009, 1)],
     stations: &[228],
     ..BASE
 },
-// 2130: LimeString x1
+// 2131: LimeString x1
 Recipe {
     create: (3296, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1010, 1)],
     stations: &[228],
     ..BASE
 },
-// 2131: GreenString x1
+// 2132: GreenString x1
 Recipe {
     create: (3297, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1011, 1)],
     stations: &[228],
     ..BASE
 },
-// 2132: TealString x1
+// 2133: TealString x1
 Recipe {
     create: (3298, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1012, 1)],
     stations: &[228],
     ..BASE
 },
-// 2133: CyanString x1
+// 2134: CyanString x1
 Recipe {
     create: (3299, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1013, 1)],
     stations: &[228],
     ..BASE
 },
-// 2134: SkyBlueString x1
+// 2135: SkyBlueString x1
 Recipe {
     create: (3300, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1014, 1)],
     stations: &[228],
     ..BASE
 },
-// 2135: BlueString x1
+// 2136: BlueString x1
 Recipe {
     create: (3301, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1015, 1)],
     stations: &[228],
     ..BASE
 },
-// 2136: PurpleString x1
+// 2137: PurpleString x1
 Recipe {
     create: (3302, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1016, 1)],
     stations: &[228],
     ..BASE
 },
-// 2137: VioletString x1
+// 2138: VioletString x1
 Recipe {
     create: (3303, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1017, 1)],
     stations: &[228],
     ..BASE
 },
-// 2138: PinkString x1
+// 2139: PinkString x1
 Recipe {
     create: (3304, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1018, 1)],
     stations: &[228],
     ..BASE
 },
-// 2139: BlackString x1
+// 2140: BlackString x1
 Recipe {
     create: (3308, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1050, 1)],
     stations: &[228],
     ..BASE
 },
-// 2140: BrownString x1
+// 2141: BrownString x1
 Recipe {
     create: (3305, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(2874, 1)],
     stations: &[228],
     ..BASE
 },
-// 2141: RainbowString x1
+// 2142: RainbowString x1
 Recipe {
     create: (3307, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(1066, 1)],
     stations: &[228],
     ..BASE
 },
-// 2142: StrungCounterweight x1
+// 2143: StrungCounterweight x1
 Recipe {
     create: (5547, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(3309, 1)],
     stations: &[114],
     ..BASE
 },
-// 2143: StrungCounterweight x1
+// 2144: StrungCounterweight x1
 Recipe {
     create: (5547, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(3310, 1)],
     stations: &[114],
     ..BASE
 },
-// 2144: StrungCounterweight x1
+// 2145: StrungCounterweight x1
 Recipe {
     create: (5547, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(3311, 1)],
     stations: &[114],
     ..BASE
 },
-// 2145: StrungCounterweight x1
+// 2146: StrungCounterweight x1
 Recipe {
     create: (5547, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(3312, 1)],
     stations: &[114],
     ..BASE
 },
-// 2146: StrungCounterweight x1
+// 2147: StrungCounterweight x1
 Recipe {
     create: (5547, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(3313, 1)],
     stations: &[114],
     ..BASE
 },
-// 2147: StrungCounterweight x1
+// 2148: StrungCounterweight x1
 Recipe {
     create: (5547, 1),
     required: &[Requirement::item(3306, 1), Requirement::item(3314, 1)],
     stations: &[114],
     ..BASE
 },
-// 2148: YoyoBag x1
+// 2149: YoyoBag x1
 Recipe {
     create: (3366, 1),
     required: &[Requirement::item(3334, 1), Requirement::item(5547, 1)],
     stations: &[114],
     ..BASE
 },
-// 2149: MagicYoyoBag x1
+// 2150: MagicYoyoBag x1
 Recipe {
     create: (5541, 1),
     required: &[Requirement::item(5540, 1), Requirement::item(3366, 1)],
     stations: &[114],
     ..BASE
 },
-// 2150: Leather x1
+// 2151: Leather x1
 Recipe {
     create: (259, 1),
     required: &[Requirement::item(68, 5)],
     stations: &[18],
     ..BASE
 },
-// 2151: ArchaeologistsJacket x1
+// 2152: ArchaeologistsJacket x1
 Recipe {
     create: (252, 1),
     required: &[Requirement::item(259, 15)],
     stations: &[18],
     ..BASE
 },
-// 2152: ArchaeologistsPants x1
+// 2153: ArchaeologistsPants x1
 Recipe {
     create: (253, 1),
     required: &[Requirement::item(259, 15)],
     stations: &[18],
     ..BASE
 },
-// 2153: PinkEskimoHood x1
+// 2154: PinkEskimoHood x1
 Recipe {
     create: (978, 1),
     required: &[Requirement::item(803, 1), Requirement::item(981, 3)],
     stations: &[18],
     ..BASE
 },
-// 2154: PinkEskimoCoat x1
+// 2155: PinkEskimoCoat x1
 Recipe {
     create: (979, 1),
     required: &[Requirement::item(804, 1), Requirement::item(981, 3)],
     stations: &[18],
     ..BASE
 },
-// 2155: PinkEskimoPants x1
+// 2156: PinkEskimoPants x1
 Recipe {
     create: (980, 1),
     required: &[Requirement::item(805, 1), Requirement::item(981, 3)],
     stations: &[18],
     ..BASE
 },
-// 2156: Chimney x1
+// 2157: Chimney x1
 Recipe {
     create: (3365, 1),
     required: &[Requirement::item(129, 10)],
     stations: &[18],
     ..BASE
 },
-// 2157: WeatherVane x1
+// 2158: WeatherVane x1
 Recipe {
     create: (4075, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 4)],
     stations: &[16],
     ..BASE
 },
-// 2158: PicnicTable x1
+// 2159: PicnicTable x1
 Recipe {
     create: (4064, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12)],
     stations: &[106],
     ..BASE
 },
-// 2159: PicnicTableWithCloth x1
+// 2160: PicnicTableWithCloth x1
 Recipe {
     create: (4065, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12), Requirement::item(225, 3)],
     stations: &[106],
     ..BASE
 },
-// 2160: PotSuspendedDaybloom x1
+// 2161: PotSuspendedDaybloom x1
 Recipe {
     create: (4859, 1),
     required: &[Requirement::item(4858, 1), Requirement::item(313, 1)],
     ..BASE
 },
-// 2161: PotSuspendedMoonglow x1
+// 2162: PotSuspendedMoonglow x1
 Recipe {
     create: (4860, 1),
     required: &[Requirement::item(4858, 1), Requirement::item(314, 1)],
     ..BASE
 },
-// 2162: PotSuspendedWaterleaf x1
+// 2163: PotSuspendedWaterleaf x1
 Recipe {
     create: (4861, 1),
     required: &[Requirement::item(4858, 1), Requirement::item(317, 1)],
     ..BASE
 },
-// 2163: PotSuspendedShiverthorn x1
+// 2164: PotSuspendedShiverthorn x1
 Recipe {
     create: (4862, 1),
     required: &[Requirement::item(4858, 1), Requirement::item(2358, 1)],
     ..BASE
 },
-// 2164: PotSuspendedBlinkroot x1
+// 2165: PotSuspendedBlinkroot x1
 Recipe {
     create: (4863, 1),
     required: &[Requirement::item(4858, 1), Requirement::item(315, 1)],
     ..BASE
 },
-// 2165: PotSuspendedDeathweedCorrupt x1
+// 2166: PotSuspendedDeathweedCorrupt x1
 Recipe {
     create: (4864, 1),
     required: &[Requirement::item(4858, 1), Requirement::item(316, 1)],
     ..BASE
 },
-// 2166: PotSuspendedDeathweedCrimson x1
+// 2167: PotSuspendedDeathweedCrimson x1
 Recipe {
     create: (4865, 1),
     required: &[Requirement::item(4858, 1), Requirement::item(316, 1)],
     ..BASE
 },
-// 2167: PotSuspendedFireblossom x1
+// 2168: PotSuspendedFireblossom x1
 Recipe {
     create: (4866, 1),
     required: &[Requirement::item(4858, 1), Requirement::item(318, 1)],
     ..BASE
 },
-// 2168: BrazierSuspended x1
+// 2169: BrazierSuspended x1
 Recipe {
     create: (4867, 1),
     required: &[Requirement::item(4858, 1), Requirement::item(8, 3)],
     ..BASE
 },
-// 2169: GemTreeAmethystSeed x1
+// 2170: GemTreeAmethystSeed x1
 Recipe {
     create: (4852, 1),
     required: &[Requirement::item(27, 1), Requirement::item(181, 1)],
     ..BASE
 },
-// 2170: GemTreeTopazSeed x1
+// 2171: GemTreeTopazSeed x1
 Recipe {
     create: (4851, 1),
     required: &[Requirement::item(27, 1), Requirement::item(180, 1)],
     ..BASE
 },
-// 2171: GemTreeSapphireSeed x1
+// 2172: GemTreeSapphireSeed x1
 Recipe {
     create: (4853, 1),
     required: &[Requirement::item(27, 1), Requirement::item(177, 1)],
     ..BASE
 },
-// 2172: GemTreeEmeraldSeed x1
+// 2173: GemTreeEmeraldSeed x1
 Recipe {
     create: (4854, 1),
     required: &[Requirement::item(27, 1), Requirement::item(179, 1)],
     ..BASE
 },
-// 2173: GemTreeRubySeed x1
+// 2174: GemTreeRubySeed x1
 Recipe {
     create: (4855, 1),
     required: &[Requirement::item(27, 1), Requirement::item(178, 1)],
     ..BASE
 },
-// 2174: GemTreeDiamondSeed x1
+// 2175: GemTreeDiamondSeed x1
 Recipe {
     create: (4856, 1),
     required: &[Requirement::item(27, 1), Requirement::item(182, 1)],
     ..BASE
 },
-// 2175: GemTreeAmberSeed x1
+// 2176: GemTreeAmberSeed x1
 Recipe {
     create: (4857, 1),
     required: &[Requirement::item(27, 1), Requirement::item(999, 1)],
     ..BASE
 },
-// 2176: VolcanoLarge x1
+// 2177: VolcanoLarge x1
 Recipe {
     create: (4869, 1),
     required: &[Requirement::item(4868, 3)],
     ..BASE
 },
-// 2177: Fireplace x1
+// 2178: Fireplace x1
 Recipe {
     create: (3364, 1),
     required: &[Requirement::item(129, 10), Requirement::group(9, RecipeGroups::WOOD, 4), Requirement::item(8, 2)],
     stations: &[18],
     ..BASE
 },
-// 2178: Furnace x1
+// 2179: Furnace x1
 Recipe {
     create: (33, 1),
     required: &[Requirement::group(3, RecipeGroups::STONE, 20), Requirement::group(9, RecipeGroups::WOOD, 4), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 2179: ArmorStatue x1
+// 2180: ArmorStatue x1
 Recipe {
     create: (360, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[18],
     ..BASE
 },
-// 2180: AlphabetStatue0 x1
+// 2181: AlphabetStatue0 x1
 Recipe {
     create: (2702, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2181: AlphabetStatue1 x1
+// 2182: AlphabetStatue1 x1
 Recipe {
     create: (2703, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2182: AlphabetStatue2 x1
+// 2183: AlphabetStatue2 x1
 Recipe {
     create: (2704, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2183: AlphabetStatue3 x1
+// 2184: AlphabetStatue3 x1
 Recipe {
     create: (2705, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2184: AlphabetStatue4 x1
+// 2185: AlphabetStatue4 x1
 Recipe {
     create: (2706, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2185: AlphabetStatue5 x1
+// 2186: AlphabetStatue5 x1
 Recipe {
     create: (2707, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2186: AlphabetStatue6 x1
+// 2187: AlphabetStatue6 x1
 Recipe {
     create: (2708, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2187: AlphabetStatue7 x1
+// 2188: AlphabetStatue7 x1
 Recipe {
     create: (2709, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2188: AlphabetStatue8 x1
+// 2189: AlphabetStatue8 x1
 Recipe {
     create: (2710, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2189: AlphabetStatue9 x1
+// 2190: AlphabetStatue9 x1
 Recipe {
     create: (2711, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2190: AlphabetStatueA x1
+// 2191: AlphabetStatueA x1
 Recipe {
     create: (2712, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2191: AlphabetStatueB x1
+// 2192: AlphabetStatueB x1
 Recipe {
     create: (2713, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2192: AlphabetStatueC x1
+// 2193: AlphabetStatueC x1
 Recipe {
     create: (2714, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2193: AlphabetStatueD x1
+// 2194: AlphabetStatueD x1
 Recipe {
     create: (2715, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2194: AlphabetStatueE x1
+// 2195: AlphabetStatueE x1
 Recipe {
     create: (2716, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2195: AlphabetStatueF x1
+// 2196: AlphabetStatueF x1
 Recipe {
     create: (2717, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2196: AlphabetStatueG x1
+// 2197: AlphabetStatueG x1
 Recipe {
     create: (2718, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2197: AlphabetStatueH x1
+// 2198: AlphabetStatueH x1
 Recipe {
     create: (2719, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2198: AlphabetStatueI x1
+// 2199: AlphabetStatueI x1
 Recipe {
     create: (2720, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2199: AlphabetStatueJ x1
+// 2200: AlphabetStatueJ x1
 Recipe {
     create: (2721, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2200: AlphabetStatueK x1
+// 2201: AlphabetStatueK x1
 Recipe {
     create: (2722, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2201: AlphabetStatueL x1
+// 2202: AlphabetStatueL x1
 Recipe {
     create: (2723, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2202: AlphabetStatueM x1
+// 2203: AlphabetStatueM x1
 Recipe {
     create: (2724, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2203: AlphabetStatueN x1
+// 2204: AlphabetStatueN x1
 Recipe {
     create: (2725, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2204: AlphabetStatueO x1
+// 2205: AlphabetStatueO x1
 Recipe {
     create: (2726, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2205: AlphabetStatueP x1
+// 2206: AlphabetStatueP x1
 Recipe {
     create: (2727, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2206: AlphabetStatueQ x1
+// 2207: AlphabetStatueQ x1
 Recipe {
     create: (2728, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2207: AlphabetStatueR x1
+// 2208: AlphabetStatueR x1
 Recipe {
     create: (2729, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2208: AlphabetStatueS x1
+// 2209: AlphabetStatueS x1
 Recipe {
     create: (2730, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2209: AlphabetStatueT x1
+// 2210: AlphabetStatueT x1
 Recipe {
     create: (2731, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2210: AlphabetStatueU x1
+// 2211: AlphabetStatueU x1
 Recipe {
     create: (2732, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2211: AlphabetStatueV x1
+// 2212: AlphabetStatueV x1
 Recipe {
     create: (2733, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2212: AlphabetStatueW x1
+// 2213: AlphabetStatueW x1
 Recipe {
     create: (2734, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2213: AlphabetStatueX x1
+// 2214: AlphabetStatueX x1
 Recipe {
     create: (2735, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2214: AlphabetStatueY x1
+// 2215: AlphabetStatueY x1
 Recipe {
     create: (2736, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2215: AlphabetStatueZ x1
+// 2216: AlphabetStatueZ x1
 Recipe {
     create: (2737, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2216: FireworkFountain x1
+// 2217: FireworkFountain x1
 Recipe {
     create: (2738, 1),
     required: &[Requirement::item(3, 50)],
     stations: &[283],
     ..BASE
 },
-// 2217: FishStatue x1
+// 2218: FishStatue x1
 Recipe {
     create: (444, 1),
     required: &[Requirement::item(3, 50), Requirement::item(261, 5)],
@@ -15707,7 +15716,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2218: WormStatue x1
+// 2219: WormStatue x1
 Recipe {
     create: (3653, 1),
     required: &[Requirement::item(3, 50), Requirement::item(2002, 5)],
@@ -15715,7 +15724,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2219: SquirrelStatue x1
+// 2220: SquirrelStatue x1
 Recipe {
     create: (3651, 1),
     required: &[Requirement::item(3, 50), Requirement::group(2018, RecipeGroups::SQUIRRELS, 5)],
@@ -15723,7 +15732,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2220: ButterflyStatue x1
+// 2221: ButterflyStatue x1
 Recipe {
     create: (3652, 1),
     required: &[Requirement::item(3, 50), Requirement::group(1998, RecipeGroups::BUTTERFLIES, 5)],
@@ -15731,7 +15740,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2221: FireflyStatue x1
+// 2222: FireflyStatue x1
 Recipe {
     create: (3654, 1),
     required: &[Requirement::item(3, 50), Requirement::group(1992, RecipeGroups::FIREFLIES, 5)],
@@ -15739,7 +15748,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2222: ScorpionStatue x1
+// 2223: ScorpionStatue x1
 Recipe {
     create: (3655, 1),
     required: &[Requirement::item(3, 50), Requirement::group(2157, RecipeGroups::SCORPIONS, 5)],
@@ -15747,7 +15756,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2223: SnailStatue x1
+// 2224: SnailStatue x1
 Recipe {
     create: (3656, 1),
     required: &[Requirement::item(3, 50), Requirement::group(2006, RecipeGroups::SNAILS, 5)],
@@ -15755,7 +15764,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2224: MouseStatue x1
+// 2225: MouseStatue x1
 Recipe {
     create: (3658, 1),
     required: &[Requirement::item(3, 50), Requirement::item(2003, 5)],
@@ -15763,7 +15772,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2225: DuckStatue x1
+// 2226: DuckStatue x1
 Recipe {
     create: (3659, 1),
     required: &[Requirement::item(3, 50), Requirement::group(2123, RecipeGroups::DUCKS, 5)],
@@ -15771,7 +15780,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2226: PenguinStatue x1
+// 2227: PenguinStatue x1
 Recipe {
     create: (3660, 1),
     required: &[Requirement::item(3, 50), Requirement::item(2205, 5)],
@@ -15779,7 +15788,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2227: FrogStatue x1
+// 2228: FrogStatue x1
 Recipe {
     create: (3661, 1),
     required: &[Requirement::item(3, 50), Requirement::item(2121, 5)],
@@ -15787,7 +15796,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2228: BuggyStatue x1
+// 2229: BuggyStatue x1
 Recipe {
     create: (3662, 1),
     required: &[Requirement::item(3, 50), Requirement::group(3194, RecipeGroups::BUGS, 5)],
@@ -15795,7 +15804,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2229: BunnyStatue x1
+// 2230: BunnyStatue x1
 Recipe {
     create: (445, 1),
     required: &[Requirement::item(3, 50), Requirement::item(2019, 5)],
@@ -15803,7 +15812,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2230: BirdStatue x1
+// 2231: BirdStatue x1
 Recipe {
     create: (464, 1),
     required: &[Requirement::item(3, 50), Requirement::group(2015, RecipeGroups::BIRDS, 5)],
@@ -15811,7 +15820,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2231: GrasshopperStatue x1
+// 2232: GrasshopperStatue x1
 Recipe {
     create: (3657, 1),
     required: &[Requirement::item(3, 50), Requirement::item(2740, 5)],
@@ -15819,7 +15828,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2232: DragonflyStatue x1
+// 2233: DragonflyStatue x1
 Recipe {
     create: (4342, 1),
     required: &[Requirement::item(3, 50), Requirement::group(4334, RecipeGroups::DRAGONFLIES, 5)],
@@ -15827,7 +15836,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2233: SeagullStatue x1
+// 2234: SeagullStatue x1
 Recipe {
     create: (4360, 1),
     required: &[Requirement::item(3, 50), Requirement::item(4359, 5)],
@@ -15835,7 +15844,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2234: OwlStatue x1
+// 2235: OwlStatue x1
 Recipe {
     create: (4397, 1),
     required: &[Requirement::item(3, 50), Requirement::item(4395, 5)],
@@ -15843,7 +15852,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2235: TurtleStatue x1
+// 2236: TurtleStatue x1
 Recipe {
     create: (4466, 1),
     required: &[Requirement::item(3, 50), Requirement::group(4464, RecipeGroups::TURTLES, 5)],
@@ -15851,7 +15860,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2236: MacawStatue x1
+// 2237: MacawStatue x1
 Recipe {
     create: (5317, 1),
     required: &[Requirement::item(3, 50), Requirement::group(5212, RecipeGroups::MACAWS, 5)],
@@ -15859,7 +15868,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2237: ToucanStatue x1
+// 2238: ToucanStatue x1
 Recipe {
     create: (5318, 1),
     required: &[Requirement::item(3, 50), Requirement::item(5311, 5)],
@@ -15867,7 +15876,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2238: CockatielStatue x1
+// 2239: CockatielStatue x1
 Recipe {
     create: (5319, 1),
     required: &[Requirement::item(3, 50), Requirement::group(5312, RecipeGroups::COCKATIELS, 5)],
@@ -15875,231 +15884,231 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2239: CopperBar x1
+// 2240: CopperBar x1
 Recipe {
     create: (20, 1),
     required: &[Requirement::item(12, 3)],
     stations: &[17],
     ..BASE
 },
-// 2240: CopperPickaxe x1
+// 2241: CopperPickaxe x1
 Recipe {
     create: (3509, 1),
     required: &[Requirement::item(20, 8), Requirement::group(9, RecipeGroups::WOOD, 4)],
     stations: &[16],
     ..BASE
 },
-// 2241: CopperAxe x1
+// 2242: CopperAxe x1
 Recipe {
     create: (3506, 1),
     required: &[Requirement::item(20, 6), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2242: CopperHammer x1
+// 2243: CopperHammer x1
 Recipe {
     create: (3505, 1),
     required: &[Requirement::item(20, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2243: CopperBroadsword x1
+// 2244: CopperBroadsword x1
 Recipe {
     create: (3508, 1),
     required: &[Requirement::item(20, 6)],
     stations: &[16],
     ..BASE
 },
-// 2244: CopperShortsword x1
+// 2245: CopperShortsword x1
 Recipe {
     create: (3507, 1),
     required: &[Requirement::item(20, 5)],
     stations: &[16],
     ..BASE
 },
-// 2245: CopperBow x1
+// 2246: CopperBow x1
 Recipe {
     create: (3504, 1),
     required: &[Requirement::item(20, 7)],
     stations: &[16],
     ..BASE
 },
-// 2246: AmethystStaff x1
+// 2247: AmethystStaff x1
 Recipe {
     create: (739, 1),
     required: &[Requirement::item(20, 7), Requirement::item(181, 8)],
     stations: &[16],
     ..BASE
 },
-// 2247: CopperHelmet x1
+// 2248: CopperHelmet x1
 Recipe {
     create: (89, 1),
     required: &[Requirement::item(20, 12)],
     stations: &[16],
     ..BASE
 },
-// 2248: CopperChainmail x1
+// 2249: CopperChainmail x1
 Recipe {
     create: (80, 1),
     required: &[Requirement::item(20, 20)],
     stations: &[16],
     ..BASE
 },
-// 2249: CopperGreaves x1
+// 2250: CopperGreaves x1
 Recipe {
     create: (76, 1),
     required: &[Requirement::item(20, 16)],
     stations: &[16],
     ..BASE
 },
-// 2250: CopperWatch x1
+// 2251: CopperWatch x1
 Recipe {
     create: (15, 1),
     required: &[Requirement::item(20, 10), Requirement::item(85, 1)],
     stations: &[18],
     ..BASE
 },
-// 2251: CopperChandelier x1
+// 2252: CopperChandelier x1
 Recipe {
     create: (106, 1),
     required: &[Requirement::item(20, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 2252: TinBar x1
+// 2253: TinBar x1
 Recipe {
     create: (703, 1),
     required: &[Requirement::item(699, 3)],
     stations: &[17],
     ..BASE
 },
-// 2253: TinPickaxe x1
+// 2254: TinPickaxe x1
 Recipe {
     create: (3503, 1),
     required: &[Requirement::item(703, 8), Requirement::group(9, RecipeGroups::WOOD, 4)],
     stations: &[16],
     ..BASE
 },
-// 2254: TinAxe x1
+// 2255: TinAxe x1
 Recipe {
     create: (3500, 1),
     required: &[Requirement::item(703, 6), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2255: TinHammer x1
+// 2256: TinHammer x1
 Recipe {
     create: (3499, 1),
     required: &[Requirement::item(703, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2256: TinBroadsword x1
+// 2257: TinBroadsword x1
 Recipe {
     create: (3502, 1),
     required: &[Requirement::item(703, 6)],
     stations: &[16],
     ..BASE
 },
-// 2257: TinShortsword x1
+// 2258: TinShortsword x1
 Recipe {
     create: (3501, 1),
     required: &[Requirement::item(703, 5)],
     stations: &[16],
     ..BASE
 },
-// 2258: TinBow x1
+// 2259: TinBow x1
 Recipe {
     create: (3498, 1),
     required: &[Requirement::item(703, 7)],
     stations: &[16],
     ..BASE
 },
-// 2259: TopazStaff x1
+// 2260: TopazStaff x1
 Recipe {
     create: (740, 1),
     required: &[Requirement::item(703, 7), Requirement::item(180, 8)],
     stations: &[16],
     ..BASE
 },
-// 2260: TinHelmet x1
+// 2261: TinHelmet x1
 Recipe {
     create: (687, 1),
     required: &[Requirement::item(703, 12)],
     stations: &[16],
     ..BASE
 },
-// 2261: TinChainmail x1
+// 2262: TinChainmail x1
 Recipe {
     create: (688, 1),
     required: &[Requirement::item(703, 20)],
     stations: &[16],
     ..BASE
 },
-// 2262: TinGreaves x1
+// 2263: TinGreaves x1
 Recipe {
     create: (689, 1),
     required: &[Requirement::item(703, 16)],
     stations: &[16],
     ..BASE
 },
-// 2263: TinWatch x1
+// 2264: TinWatch x1
 Recipe {
     create: (707, 1),
     required: &[Requirement::item(703, 10), Requirement::item(85, 1)],
     stations: &[18],
     ..BASE
 },
-// 2264: TinChandelier x1
+// 2265: TinChandelier x1
 Recipe {
     create: (710, 1),
     required: &[Requirement::item(703, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 2265: IronBar x1
+// 2266: IronBar x1
 Recipe {
     create: (22, 1),
     required: &[Requirement::item(11, 3)],
     stations: &[17],
     ..BASE
 },
-// 2266: IronAnvil x1
+// 2267: IronAnvil x1
 Recipe {
     create: (35, 1),
     required: &[Requirement::item(22, 5)],
     stations: &[18],
     ..BASE
 },
-// 2267: ReinforcedFishingPole x1
+// 2268: ReinforcedFishingPole x1
 Recipe {
     create: (2291, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 8)],
     stations: &[16],
     ..BASE
 },
-// 2268: IronPickaxe x1
+// 2269: IronPickaxe x1
 Recipe {
     create: (1, 1),
     required: &[Requirement::item(22, 10), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2269: IronAxe x1
+// 2270: IronAxe x1
 Recipe {
     create: (10, 1),
     required: &[Requirement::item(22, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2270: IronHammer x1
+// 2271: IronHammer x1
 Recipe {
     create: (7, 1),
     required: &[Requirement::item(22, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2271: GravediggerShovel x1
+// 2272: GravediggerShovel x1
 Recipe {
     create: (4711, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 12), Requirement::group(9, RecipeGroups::WOOD, 3)],
@@ -16107,539 +16116,539 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2272: IronBroadsword x1
+// 2273: IronBroadsword x1
 Recipe {
     create: (4, 1),
     required: &[Requirement::item(22, 8)],
     stations: &[16],
     ..BASE
 },
-// 2273: IronShortsword x1
+// 2274: IronShortsword x1
 Recipe {
     create: (6, 1),
     required: &[Requirement::item(22, 6)],
     stations: &[16],
     ..BASE
 },
-// 2274: IronBow x1
+// 2275: IronBow x1
 Recipe {
     create: (99, 1),
     required: &[Requirement::item(22, 7)],
     stations: &[16],
     ..BASE
 },
-// 2275: IronHelmet x1
+// 2276: IronHelmet x1
 Recipe {
     create: (90, 1),
     required: &[Requirement::item(22, 15)],
     stations: &[16],
     ..BASE
 },
-// 2276: IronChainmail x1
+// 2277: IronChainmail x1
 Recipe {
     create: (81, 1),
     required: &[Requirement::item(22, 25)],
     stations: &[16],
     ..BASE
 },
-// 2277: IronGreaves x1
+// 2278: IronGreaves x1
 Recipe {
     create: (77, 1),
     required: &[Requirement::item(22, 20)],
     stations: &[16],
     ..BASE
 },
-// 2278: LeadBar x1
+// 2279: LeadBar x1
 Recipe {
     create: (704, 1),
     required: &[Requirement::item(700, 3)],
     stations: &[17],
     ..BASE
 },
-// 2279: LeadAnvil x1
+// 2280: LeadAnvil x1
 Recipe {
     create: (716, 1),
     required: &[Requirement::item(704, 5)],
     stations: &[18],
     ..BASE
 },
-// 2280: LeadPickaxe x1
+// 2281: LeadPickaxe x1
 Recipe {
     create: (3497, 1),
     required: &[Requirement::item(704, 10), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2281: LeadAxe x1
+// 2282: LeadAxe x1
 Recipe {
     create: (3494, 1),
     required: &[Requirement::item(704, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2282: LeadHammer x1
+// 2283: LeadHammer x1
 Recipe {
     create: (3493, 1),
     required: &[Requirement::item(704, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2283: LeadBroadsword x1
+// 2284: LeadBroadsword x1
 Recipe {
     create: (3496, 1),
     required: &[Requirement::item(704, 8)],
     stations: &[16],
     ..BASE
 },
-// 2284: LeadShortsword x1
+// 2285: LeadShortsword x1
 Recipe {
     create: (3495, 1),
     required: &[Requirement::item(704, 6)],
     stations: &[16],
     ..BASE
 },
-// 2285: LeadBow x1
+// 2286: LeadBow x1
 Recipe {
     create: (3492, 1),
     required: &[Requirement::item(704, 7)],
     stations: &[16],
     ..BASE
 },
-// 2286: LeadHelmet x1
+// 2287: LeadHelmet x1
 Recipe {
     create: (690, 1),
     required: &[Requirement::item(704, 15)],
     stations: &[16],
     ..BASE
 },
-// 2287: LeadChainmail x1
+// 2288: LeadChainmail x1
 Recipe {
     create: (691, 1),
     required: &[Requirement::item(704, 25)],
     stations: &[16],
     ..BASE
 },
-// 2288: LeadGreaves x1
+// 2289: LeadGreaves x1
 Recipe {
     create: (692, 1),
     required: &[Requirement::item(704, 20)],
     stations: &[16],
     ..BASE
 },
-// 2289: EmptyBucket x1
+// 2290: EmptyBucket x1
 Recipe {
     create: (205, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 2)],
     stations: &[16],
     ..BASE
 },
-// 2290: HoneyBucket x1
+// 2291: HoneyBucket x1
 Recipe {
     create: (1128, 1),
     required: &[Requirement::item(1125, 1), Requirement::item(205, 1)],
     stations: &[215],
     ..BASE
 },
-// 2291: BottomlessShimmerBucket x1
+// 2292: BottomlessShimmerBucket x1
 Recipe {
     create: (5364, 1),
     required: &[Requirement::item(3467, 10), Requirement::item(3031, 1)],
     stations: &[412],
     ..BASE
 },
-// 2292: UltraAbsorbantSponge x1
+// 2293: UltraAbsorbantSponge x1
 Recipe {
     create: (5304, 1),
     required: &[Requirement::item(3032, 1), Requirement::item(4872, 1), Requirement::item(5303, 1)],
     stations: &[114],
     ..BASE
 },
-// 2293: IronDoor x1
+// 2294: IronDoor x1
 Recipe {
     create: (1140, 1),
     required: &[Requirement::item(22, 4)],
     stations: &[16],
     ..BASE
 },
-// 2294: LeadDoor x1
+// 2295: LeadDoor x1
 Recipe {
     create: (1139, 1),
     required: &[Requirement::item(704, 4)],
     stations: &[16],
     ..BASE
 },
-// 2295: HeavyWorkBench x1
+// 2296: HeavyWorkBench x1
 Recipe {
     create: (2172, 1),
     required: &[Requirement::group(9, RecipeGroups::WOOD, 12), Requirement::group(22, RecipeGroups::IRON_BAR, 8)],
     stations: &[16],
     ..BASE
 },
-// 2296: GlassKiln x1
+// 2297: GlassKiln x1
 Recipe {
     create: (2194, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 18), Requirement::item(8, 8)],
     stations: &[16],
     ..BASE
 },
-// 2297: TrashCan x1
+// 2298: TrashCan x1
 Recipe {
     create: (348, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 8)],
     stations: &[16],
     ..BASE
 },
-// 2298: Bathtub x1
+// 2299: Bathtub x1
 Recipe {
     create: (336, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 14)],
     stations: &[16],
     ..BASE
 },
-// 2299: Toilet x1
+// 2300: Toilet x1
 Recipe {
     create: (358, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 6)],
     stations: &[16],
     ..BASE
 },
-// 2300: ToiletDiamond x1
+// 2301: ToiletDiamond x1
 Recipe {
     create: (4127, 1),
     required: &[Requirement::item(182, 6)],
     stations: &[106],
     ..BASE
 },
-// 2301: TerraToilet x1
+// 2302: TerraToilet x1
 Recipe {
     create: (4731, 1),
     required: &[Requirement::item(358, 1), Requirement::item(1570, 1)],
     stations: &[16],
     ..BASE
 },
-// 2302: MetalSink x1
+// 2303: MetalSink x1
 Recipe {
     create: (2841, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 3), Requirement::item(206, 1)],
     stations: &[16],
     ..BASE
 },
-// 2303: CookingPot x1
+// 2304: CookingPot x1
 Recipe {
     create: (345, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 10), Requirement::group(9, RecipeGroups::WOOD, 2)],
     stations: &[16],
     ..BASE
 },
-// 2304: Chain x15
+// 2305: Chain x15
 Recipe {
     create: (85, 15),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 1)],
     stations: &[16],
     ..BASE
 },
-// 2305: ChestLock x1
+// 2306: ChestLock x1
 Recipe {
     create: (5328, 1),
     required: &[Requirement::item(85, 2), Requirement::item(154, 5)],
     stations: &[16],
     ..BASE
 },
-// 2306: Grate x1
+// 2307: Grate x1
 Recipe {
     create: (4422, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 1)],
     stations: &[16],
     ..BASE
 },
-// 2307: SilverBar x1
+// 2308: SilverBar x1
 Recipe {
     create: (21, 1),
     required: &[Requirement::item(14, 4)],
     stations: &[17],
     ..BASE
 },
-// 2308: SilverPickaxe x1
+// 2309: SilverPickaxe x1
 Recipe {
     create: (3515, 1),
     required: &[Requirement::item(21, 10), Requirement::group(9, RecipeGroups::WOOD, 4)],
     stations: &[16],
     ..BASE
 },
-// 2309: SilverAxe x1
+// 2310: SilverAxe x1
 Recipe {
     create: (3512, 1),
     required: &[Requirement::item(21, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2310: SilverHammer x1
+// 2311: SilverHammer x1
 Recipe {
     create: (3511, 1),
     required: &[Requirement::item(21, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2311: SilverBroadsword x1
+// 2312: SilverBroadsword x1
 Recipe {
     create: (3514, 1),
     required: &[Requirement::item(21, 8)],
     stations: &[16],
     ..BASE
 },
-// 2312: SilverShortsword x1
+// 2313: SilverShortsword x1
 Recipe {
     create: (3513, 1),
     required: &[Requirement::item(21, 6)],
     stations: &[16],
     ..BASE
 },
-// 2313: SilverBow x1
+// 2314: SilverBow x1
 Recipe {
     create: (3510, 1),
     required: &[Requirement::item(21, 7)],
     stations: &[16],
     ..BASE
 },
-// 2314: SapphireStaff x1
+// 2315: SapphireStaff x1
 Recipe {
     create: (741, 1),
     required: &[Requirement::item(21, 7), Requirement::item(177, 8)],
     stations: &[16],
     ..BASE
 },
-// 2315: SilverHelmet x1
+// 2316: SilverHelmet x1
 Recipe {
     create: (91, 1),
     required: &[Requirement::item(21, 15)],
     stations: &[16],
     ..BASE
 },
-// 2316: SilverChainmail x1
+// 2317: SilverChainmail x1
 Recipe {
     create: (82, 1),
     required: &[Requirement::item(21, 25)],
     stations: &[16],
     ..BASE
 },
-// 2317: SilverGreaves x1
+// 2318: SilverGreaves x1
 Recipe {
     create: (78, 1),
     required: &[Requirement::item(21, 20)],
     stations: &[16],
     ..BASE
 },
-// 2318: SilverWatch x1
+// 2319: SilverWatch x1
 Recipe {
     create: (16, 1),
     required: &[Requirement::item(21, 10), Requirement::item(85, 1)],
     stations: &[18],
     ..BASE
 },
-// 2319: SilverChandelier x1
+// 2320: SilverChandelier x1
 Recipe {
     create: (107, 1),
     required: &[Requirement::item(21, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 2320: TungstenBar x1
+// 2321: TungstenBar x1
 Recipe {
     create: (705, 1),
     required: &[Requirement::item(701, 4)],
     stations: &[17],
     ..BASE
 },
-// 2321: TungstenPickaxe x1
+// 2322: TungstenPickaxe x1
 Recipe {
     create: (3491, 1),
     required: &[Requirement::item(705, 10), Requirement::group(9, RecipeGroups::WOOD, 4)],
     stations: &[16],
     ..BASE
 },
-// 2322: TungstenAxe x1
+// 2323: TungstenAxe x1
 Recipe {
     create: (3488, 1),
     required: &[Requirement::item(705, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2323: TungstenHammer x1
+// 2324: TungstenHammer x1
 Recipe {
     create: (3487, 1),
     required: &[Requirement::item(705, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2324: TungstenBroadsword x1
+// 2325: TungstenBroadsword x1
 Recipe {
     create: (3490, 1),
     required: &[Requirement::item(705, 8)],
     stations: &[16],
     ..BASE
 },
-// 2325: TungstenShortsword x1
+// 2326: TungstenShortsword x1
 Recipe {
     create: (3489, 1),
     required: &[Requirement::item(705, 6)],
     stations: &[16],
     ..BASE
 },
-// 2326: TungstenBow x1
+// 2327: TungstenBow x1
 Recipe {
     create: (3486, 1),
     required: &[Requirement::item(705, 7)],
     stations: &[16],
     ..BASE
 },
-// 2327: EmeraldStaff x1
+// 2328: EmeraldStaff x1
 Recipe {
     create: (742, 1),
     required: &[Requirement::item(705, 7), Requirement::item(179, 8)],
     stations: &[16],
     ..BASE
 },
-// 2328: TungstenHelmet x1
+// 2329: TungstenHelmet x1
 Recipe {
     create: (693, 1),
     required: &[Requirement::item(705, 15)],
     stations: &[16],
     ..BASE
 },
-// 2329: TungstenChainmail x1
+// 2330: TungstenChainmail x1
 Recipe {
     create: (694, 1),
     required: &[Requirement::item(705, 25)],
     stations: &[16],
     ..BASE
 },
-// 2330: TungstenGreaves x1
+// 2331: TungstenGreaves x1
 Recipe {
     create: (695, 1),
     required: &[Requirement::item(705, 20)],
     stations: &[16],
     ..BASE
 },
-// 2331: TungstenWatch x1
+// 2332: TungstenWatch x1
 Recipe {
     create: (708, 1),
     required: &[Requirement::item(705, 10), Requirement::item(85, 1)],
     stations: &[18],
     ..BASE
 },
-// 2332: TungstenChandelier x1
+// 2333: TungstenChandelier x1
 Recipe {
     create: (711, 1),
     required: &[Requirement::item(705, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 2333: GoldBar x1
+// 2334: GoldBar x1
 Recipe {
     create: (19, 1),
     required: &[Requirement::item(13, 4)],
     stations: &[17],
     ..BASE
 },
-// 2334: GoldPickaxe x1
+// 2335: GoldPickaxe x1
 Recipe {
     create: (3521, 1),
     required: &[Requirement::item(19, 10), Requirement::group(9, RecipeGroups::WOOD, 4)],
     stations: &[16],
     ..BASE
 },
-// 2335: GoldAxe x1
+// 2336: GoldAxe x1
 Recipe {
     create: (3518, 1),
     required: &[Requirement::item(19, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2336: GoldHammer x1
+// 2337: GoldHammer x1
 Recipe {
     create: (3517, 1),
     required: &[Requirement::item(19, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2337: GoldBroadsword x1
+// 2338: GoldBroadsword x1
 Recipe {
     create: (3520, 1),
     required: &[Requirement::item(19, 8)],
     stations: &[16],
     ..BASE
 },
-// 2338: GoldShortsword x1
+// 2339: GoldShortsword x1
 Recipe {
     create: (3519, 1),
     required: &[Requirement::item(19, 6)],
     stations: &[16],
     ..BASE
 },
-// 2339: GoldBow x1
+// 2340: GoldBow x1
 Recipe {
     create: (3516, 1),
     required: &[Requirement::item(19, 7)],
     stations: &[16],
     ..BASE
 },
-// 2340: RubyStaff x1
+// 2341: RubyStaff x1
 Recipe {
     create: (743, 1),
     required: &[Requirement::item(19, 7), Requirement::item(178, 8)],
     stations: &[16],
     ..BASE
 },
-// 2341: GoldHelmet x1
+// 2342: GoldHelmet x1
 Recipe {
     create: (92, 1),
     required: &[Requirement::item(19, 20)],
     stations: &[16],
     ..BASE
 },
-// 2342: GoldChainmail x1
+// 2343: GoldChainmail x1
 Recipe {
     create: (83, 1),
     required: &[Requirement::item(19, 30)],
     stations: &[16],
     ..BASE
 },
-// 2343: GoldGreaves x1
+// 2344: GoldGreaves x1
 Recipe {
     create: (79, 1),
     required: &[Requirement::item(19, 25)],
     stations: &[16],
     ..BASE
 },
-// 2344: GoldWatch x1
+// 2345: GoldWatch x1
 Recipe {
     create: (17, 1),
     required: &[Requirement::item(19, 10), Requirement::item(85, 1)],
     stations: &[18],
     ..BASE
 },
-// 2345: GoldCrown x1
+// 2346: GoldCrown x1
 Recipe {
     create: (264, 1),
     required: &[Requirement::item(19, 5), Requirement::item(178, 1)],
     stations: &[16],
     ..BASE
 },
-// 2346: GoldChandelier x1
+// 2347: GoldChandelier x1
 Recipe {
     create: (108, 1),
     required: &[Requirement::item(19, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 2347: Candle x1
+// 2348: Candle x1
 Recipe {
     create: (105, 1),
     required: &[Requirement::item(19, 1), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 2348: WaterCandle x1
+// 2349: WaterCandle x1
 Recipe {
     create: (148, 1),
     required: &[Requirement::item(105, 1)],
@@ -16647,14 +16656,14 @@ Recipe {
     need_water: true,
     ..BASE
 },
-// 2349: PeaceCandle x1
+// 2350: PeaceCandle x1
 Recipe {
     create: (3117, 1),
     required: &[Requirement::item(19, 2), Requirement::item(3114, 1)],
     stations: &[18],
     ..BASE
 },
-// 2350: ShadowCandle x1
+// 2351: ShadowCandle x1
 Recipe {
     create: (5322, 1),
     required: &[Requirement::item(57, 3), Requirement::item(8, 1)],
@@ -16662,7 +16671,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2351: ShadowCandle x1
+// 2352: ShadowCandle x1
 Recipe {
     create: (5322, 1),
     required: &[Requirement::item(1257, 3), Requirement::item(8, 1)],
@@ -16670,119 +16679,119 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2352: Candelabra x1
+// 2353: Candelabra x1
 Recipe {
     create: (349, 1),
     required: &[Requirement::item(19, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 2353: PlatinumBar x1
+// 2354: PlatinumBar x1
 Recipe {
     create: (706, 1),
     required: &[Requirement::item(702, 4)],
     stations: &[17],
     ..BASE
 },
-// 2354: PlatinumPickaxe x1
+// 2355: PlatinumPickaxe x1
 Recipe {
     create: (3485, 1),
     required: &[Requirement::item(706, 10), Requirement::group(9, RecipeGroups::WOOD, 4)],
     stations: &[16],
     ..BASE
 },
-// 2355: PlatinumAxe x1
+// 2356: PlatinumAxe x1
 Recipe {
     create: (3482, 1),
     required: &[Requirement::item(706, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2356: PlatinumHammer x1
+// 2357: PlatinumHammer x1
 Recipe {
     create: (3481, 1),
     required: &[Requirement::item(706, 8), Requirement::group(9, RecipeGroups::WOOD, 3)],
     stations: &[16],
     ..BASE
 },
-// 2357: PlatinumBroadsword x1
+// 2358: PlatinumBroadsword x1
 Recipe {
     create: (3484, 1),
     required: &[Requirement::item(706, 8)],
     stations: &[16],
     ..BASE
 },
-// 2358: PlatinumShortsword x1
+// 2359: PlatinumShortsword x1
 Recipe {
     create: (3483, 1),
     required: &[Requirement::item(706, 6)],
     stations: &[16],
     ..BASE
 },
-// 2359: PlatinumBow x1
+// 2360: PlatinumBow x1
 Recipe {
     create: (3480, 1),
     required: &[Requirement::item(706, 7)],
     stations: &[16],
     ..BASE
 },
-// 2360: DiamondStaff x1
+// 2361: DiamondStaff x1
 Recipe {
     create: (744, 1),
     required: &[Requirement::item(706, 7), Requirement::item(182, 8)],
     stations: &[16],
     ..BASE
 },
-// 2361: PlatinumHelmet x1
+// 2362: PlatinumHelmet x1
 Recipe {
     create: (696, 1),
     required: &[Requirement::item(706, 20)],
     stations: &[16],
     ..BASE
 },
-// 2362: PlatinumChainmail x1
+// 2363: PlatinumChainmail x1
 Recipe {
     create: (697, 1),
     required: &[Requirement::item(706, 30)],
     stations: &[16],
     ..BASE
 },
-// 2363: PlatinumGreaves x1
+// 2364: PlatinumGreaves x1
 Recipe {
     create: (698, 1),
     required: &[Requirement::item(706, 25)],
     stations: &[16],
     ..BASE
 },
-// 2364: PlatinumWatch x1
+// 2365: PlatinumWatch x1
 Recipe {
     create: (709, 1),
     required: &[Requirement::item(706, 10), Requirement::item(85, 1)],
     stations: &[18],
     ..BASE
 },
-// 2365: PlatinumCrown x1
+// 2366: PlatinumCrown x1
 Recipe {
     create: (715, 1),
     required: &[Requirement::item(706, 5), Requirement::item(178, 1)],
     stations: &[16],
     ..BASE
 },
-// 2366: PlatinumChandelier x1
+// 2367: PlatinumChandelier x1
 Recipe {
     create: (712, 1),
     required: &[Requirement::item(706, 4), Requirement::item(8, 4), Requirement::item(85, 1)],
     stations: &[16],
     ..BASE
 },
-// 2367: PlatinumCandle x1
+// 2368: PlatinumCandle x1
 Recipe {
     create: (713, 1),
     required: &[Requirement::item(706, 1), Requirement::item(8, 1)],
     stations: &[18],
     ..BASE
 },
-// 2368: WaterCandle x1
+// 2369: WaterCandle x1
 Recipe {
     create: (148, 1),
     required: &[Requirement::item(713, 1)],
@@ -16790,2627 +16799,2627 @@ Recipe {
     need_water: true,
     ..BASE
 },
-// 2369: PeaceCandle x1
+// 2370: PeaceCandle x1
 Recipe {
     create: (3117, 1),
     required: &[Requirement::item(706, 2), Requirement::item(3114, 1)],
     stations: &[18],
     ..BASE
 },
-// 2370: PlatinumCandelabra x1
+// 2371: PlatinumCandelabra x1
 Recipe {
     create: (714, 1),
     required: &[Requirement::item(706, 5), Requirement::item(8, 3)],
     stations: &[18],
     ..BASE
 },
-// 2371: Throne x1
+// 2372: Throne x1
 Recipe {
     create: (355, 1),
     required: &[Requirement::item(225, 20), Requirement::item(19, 30)],
     stations: &[16],
     ..BASE
 },
-// 2372: Throne x1
+// 2373: Throne x1
 Recipe {
     create: (355, 1),
     required: &[Requirement::item(225, 20), Requirement::item(706, 30)],
     stations: &[16],
     ..BASE
 },
-// 2373: CobWhip x1
+// 2374: CobWhip x1
 Recipe {
     create: (5473, 1),
     required: &[Requirement::item(150, 30), Requirement::group(9, RecipeGroups::WOOD, 10)],
     stations: &[86],
     ..BASE
 },
-// 2374: DeadCellsMushroomBoiSummonItem x1
+// 2375: DeadCellsMushroomBoiSummonItem x1
 Recipe {
     create: (5456, 1),
     required: &[Requirement::item(183, 300), Requirement::item(194, 5), Requirement::item(86, 5)],
     stations: &[16],
     ..BASE
 },
-// 2375: DeadCellsMushroomBoiSummonItem x1
+// 2376: DeadCellsMushroomBoiSummonItem x1
 Recipe {
     create: (5456, 1),
     required: &[Requirement::item(183, 300), Requirement::item(194, 5), Requirement::item(1329, 5)],
     stations: &[16],
     ..BASE
 },
-// 2376: PalworldLittleKinshipPeach x1
+// 2377: PalworldLittleKinshipPeach x1
 Recipe {
     create: (6191, 1),
     required: &[Requirement::group(4293, RecipeGroups::FRUIT, 1), Requirement::item(520, 12), Requirement::item(521, 12)],
     stations: &[125],
     ..BASE
 },
-// 2377: PalworldKinshipPeach x1
+// 2378: PalworldKinshipPeach x1
 Recipe {
     create: (6192, 1),
     required: &[Requirement::item(1291, 1), Requirement::item(520, 12), Requirement::item(521, 12)],
     stations: &[125],
     ..BASE
 },
-// 2378: PalworldTrustyDigtoise x1
+// 2379: PalworldTrustyDigtoise x1
 Recipe {
     create: (6174, 1),
     required: &[Requirement::item(5667, 1), Requirement::item(6191, 1)],
     ..BASE
 },
-// 2379: PalworldMountTrustyChillet x1
+// 2380: PalworldMountTrustyChillet x1
 Recipe {
     create: (6150, 1),
     required: &[Requirement::item(5665, 1), Requirement::item(6191, 1)],
     ..BASE
 },
-// 2380: PalworldMountTrustyChilletIgnis x1
+// 2381: PalworldMountTrustyChilletIgnis x1
 Recipe {
     create: (6151, 1),
     required: &[Requirement::item(5666, 1), Requirement::item(6191, 1)],
     ..BASE
 },
-// 2381: PalworldMinionTrustyFoxsparks x1
+// 2382: PalworldMinionTrustyFoxsparks x1
 Recipe {
     create: (6149, 1),
     required: &[Requirement::item(5664, 1), Requirement::item(6192, 1)],
     ..BASE
 },
-// 2382: PalworldMinionTrustyCattiva x1
+// 2383: PalworldMinionTrustyCattiva x1
 Recipe {
     create: (6148, 1),
     required: &[Requirement::item(5663, 1), Requirement::item(6192, 1)],
     ..BASE
 },
-// 2383: OldStyleParkourBook x1
+// 2384: OldStyleParkourBook x1
 Recipe {
     create: (6190, 1),
     required: &[Requirement::item(149, 1), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2384: FlinxFurCoat x1
+// 2385: FlinxFurCoat x1
 Recipe {
     create: (5068, 1),
     required: &[Requirement::item(225, 10), Requirement::item(5070, 8), Requirement::item(19, 8)],
     stations: &[86],
     ..BASE
 },
-// 2385: FlinxFurCoat x1
+// 2386: FlinxFurCoat x1
 Recipe {
     create: (5068, 1),
     required: &[Requirement::item(225, 10), Requirement::item(5070, 8), Requirement::item(706, 8)],
     stations: &[86],
     ..BASE
 },
-// 2386: FlinxStaff x1
+// 2387: FlinxStaff x1
 Recipe {
     create: (5069, 1),
     required: &[Requirement::item(5070, 6), Requirement::item(19, 10)],
     stations: &[18],
     ..BASE
 },
-// 2387: FlinxStaff x1
+// 2388: FlinxStaff x1
 Recipe {
     create: (5069, 1),
     required: &[Requirement::item(5070, 6), Requirement::item(706, 10)],
     stations: &[18],
     ..BASE
 },
-// 2388: DemoniteBar x1
+// 2389: DemoniteBar x1
 Recipe {
     create: (57, 1),
     required: &[Requirement::item(56, 3)],
     stations: &[17],
     ..BASE
 },
-// 2389: FisherofSouls x1
+// 2390: FisherofSouls x1
 Recipe {
     create: (2293, 1),
     required: &[Requirement::item(57, 8)],
     stations: &[16],
     ..BASE
 },
-// 2390: DemonBow x1
+// 2391: DemonBow x1
 Recipe {
     create: (44, 1),
     required: &[Requirement::item(57, 8)],
     stations: &[16],
     ..BASE
 },
-// 2391: WarAxeoftheNight x1
+// 2392: WarAxeoftheNight x1
 Recipe {
     create: (45, 1),
     required: &[Requirement::item(57, 10)],
     stations: &[16],
     ..BASE
 },
-// 2392: LightsBane x1
+// 2393: LightsBane x1
 Recipe {
     create: (46, 1),
     required: &[Requirement::item(57, 10)],
     stations: &[16],
     ..BASE
 },
-// 2393: ShadowHelmet x1
+// 2394: ShadowHelmet x1
 Recipe {
     create: (102, 1),
     required: &[Requirement::item(57, 15), Requirement::item(86, 10)],
     stations: &[16],
     ..BASE
 },
-// 2394: ShadowScalemail x1
+// 2395: ShadowScalemail x1
 Recipe {
     create: (101, 1),
     required: &[Requirement::item(57, 25), Requirement::item(86, 20)],
     stations: &[16],
     ..BASE
 },
-// 2395: ShadowGreaves x1
+// 2396: ShadowGreaves x1
 Recipe {
     create: (100, 1),
     required: &[Requirement::item(57, 20), Requirement::item(86, 15)],
     stations: &[16],
     ..BASE
 },
-// 2396: NightmarePickaxe x1
+// 2397: NightmarePickaxe x1
 Recipe {
     create: (103, 1),
     required: &[Requirement::item(57, 12), Requirement::item(86, 6)],
     stations: &[16],
     ..BASE
 },
-// 2397: TheBreaker x1
+// 2398: TheBreaker x1
 Recipe {
     create: (104, 1),
     required: &[Requirement::item(57, 10), Requirement::item(86, 5)],
     stations: &[16],
     ..BASE
 },
-// 2398: CorruptYoyo x1
+// 2399: CorruptYoyo x1
 Recipe {
     create: (3279, 1),
     required: &[Requirement::item(57, 10)],
     stations: &[16],
     ..BASE
 },
-// 2399: CorruptWhip x1
+// 2400: CorruptWhip x1
 Recipe {
     create: (5474, 1),
     required: &[Requirement::item(57, 12)],
     stations: &[16],
     ..BASE
 },
-// 2400: Magiluminescence x1
+// 2401: Magiluminescence x1
 Recipe {
     create: (5107, 1),
     required: &[Requirement::item(57, 12), Requirement::item(180, 5)],
     stations: &[16],
     ..BASE
 },
-// 2401: CrimtaneBar x1
+// 2402: CrimtaneBar x1
 Recipe {
     create: (1257, 1),
     required: &[Requirement::item(880, 3)],
     stations: &[17],
     ..BASE
 },
-// 2402: Fleshcatcher x1
+// 2403: Fleshcatcher x1
 Recipe {
     create: (2421, 1),
     required: &[Requirement::item(1257, 8)],
     stations: &[16],
     ..BASE
 },
-// 2403: TendonBow x1
+// 2404: TendonBow x1
 Recipe {
     create: (796, 1),
     required: &[Requirement::item(1257, 8)],
     stations: &[16],
     ..BASE
 },
-// 2404: BloodLustCluster x1
+// 2405: BloodLustCluster x1
 Recipe {
     create: (799, 1),
     required: &[Requirement::item(1257, 10)],
     stations: &[16],
     ..BASE
 },
-// 2405: BloodButcherer x1
+// 2406: BloodButcherer x1
 Recipe {
     create: (795, 1),
     required: &[Requirement::item(1257, 10)],
     stations: &[16],
     ..BASE
 },
-// 2406: CrimsonHelmet x1
+// 2407: CrimsonHelmet x1
 Recipe {
     create: (792, 1),
     required: &[Requirement::item(1257, 15), Requirement::item(1329, 10)],
     stations: &[16],
     ..BASE
 },
-// 2407: CrimsonScalemail x1
+// 2408: CrimsonScalemail x1
 Recipe {
     create: (793, 1),
     required: &[Requirement::item(1257, 25), Requirement::item(1329, 20)],
     stations: &[16],
     ..BASE
 },
-// 2408: CrimsonGreaves x1
+// 2409: CrimsonGreaves x1
 Recipe {
     create: (794, 1),
     required: &[Requirement::item(1257, 20), Requirement::item(1329, 15)],
     stations: &[16],
     ..BASE
 },
-// 2409: DeathbringerPickaxe x1
+// 2410: DeathbringerPickaxe x1
 Recipe {
     create: (798, 1),
     required: &[Requirement::item(1257, 12), Requirement::item(1329, 6)],
     stations: &[16],
     ..BASE
 },
-// 2410: FleshGrinder x1
+// 2411: FleshGrinder x1
 Recipe {
     create: (797, 1),
     required: &[Requirement::item(1257, 10), Requirement::item(1329, 5)],
     stations: &[16],
     ..BASE
 },
-// 2411: TheMeatball x1
+// 2412: TheMeatball x1
 Recipe {
     create: (801, 1),
     required: &[Requirement::item(1257, 10), Requirement::item(1329, 5)],
     stations: &[16],
     ..BASE
 },
-// 2412: CrimsonYoyo x1
+// 2413: CrimsonYoyo x1
 Recipe {
     create: (3280, 1),
     required: &[Requirement::item(1257, 10)],
     stations: &[16],
     ..BASE
 },
-// 2413: CrimsonWhip x1
+// 2414: CrimsonWhip x1
 Recipe {
     create: (5475, 1),
     required: &[Requirement::item(1257, 12)],
     stations: &[16],
     ..BASE
 },
-// 2414: Magiluminescence x1
+// 2415: Magiluminescence x1
 Recipe {
     create: (5107, 1),
     required: &[Requirement::item(1257, 12), Requirement::item(180, 5)],
     stations: &[16],
     ..BASE
 },
-// 2415: GrapplingHook x1
+// 2416: GrapplingHook x1
 Recipe {
     create: (84, 1),
     required: &[Requirement::item(85, 3), Requirement::item(118, 1)],
     stations: &[16],
     ..BASE
 },
-// 2416: AmethystHook x1
+// 2417: AmethystHook x1
 Recipe {
     create: (1236, 1),
     required: &[Requirement::item(181, 15)],
     stations: &[16],
     ..BASE
 },
-// 2417: TopazHook x1
+// 2418: TopazHook x1
 Recipe {
     create: (1237, 1),
     required: &[Requirement::item(180, 15)],
     stations: &[16],
     ..BASE
 },
-// 2418: SapphireHook x1
+// 2419: SapphireHook x1
 Recipe {
     create: (1238, 1),
     required: &[Requirement::item(177, 15)],
     stations: &[16],
     ..BASE
 },
-// 2419: EmeraldHook x1
+// 2420: EmeraldHook x1
 Recipe {
     create: (1239, 1),
     required: &[Requirement::item(179, 15)],
     stations: &[16],
     ..BASE
 },
-// 2420: RubyHook x1
+// 2421: RubyHook x1
 Recipe {
     create: (1240, 1),
     required: &[Requirement::item(178, 15)],
     stations: &[16],
     ..BASE
 },
-// 2421: DiamondHook x1
+// 2422: DiamondHook x1
 Recipe {
     create: (1241, 1),
     required: &[Requirement::item(182, 15)],
     stations: &[16],
     ..BASE
 },
-// 2422: AmberHook x1
+// 2423: AmberHook x1
 Recipe {
     create: (4257, 1),
     required: &[Requirement::item(999, 15)],
     stations: &[16],
     ..BASE
 },
-// 2423: LargeAmethyst x1
+// 2424: LargeAmethyst x1
 Recipe {
     create: (1522, 1),
     required: &[Requirement::item(181, 15)],
     stations: &[16],
     ..BASE
 },
-// 2424: LargeTopaz x1
+// 2425: LargeTopaz x1
 Recipe {
     create: (1523, 1),
     required: &[Requirement::item(180, 15)],
     stations: &[16],
     ..BASE
 },
-// 2425: LargeSapphire x1
+// 2426: LargeSapphire x1
 Recipe {
     create: (1524, 1),
     required: &[Requirement::item(177, 15)],
     stations: &[16],
     ..BASE
 },
-// 2426: LargeEmerald x1
+// 2427: LargeEmerald x1
 Recipe {
     create: (1525, 1),
     required: &[Requirement::item(179, 15)],
     stations: &[16],
     ..BASE
 },
-// 2427: LargeRuby x1
+// 2428: LargeRuby x1
 Recipe {
     create: (1526, 1),
     required: &[Requirement::item(178, 15)],
     stations: &[16],
     ..BASE
 },
-// 2428: LargeDiamond x1
+// 2429: LargeDiamond x1
 Recipe {
     create: (1527, 1),
     required: &[Requirement::item(182, 15)],
     stations: &[16],
     ..BASE
 },
-// 2429: LargeAmber x1
+// 2430: LargeAmber x1
 Recipe {
     create: (3643, 1),
     required: &[Requirement::item(999, 15)],
     stations: &[16],
     ..BASE
 },
-// 2430: GemLockAmethyst x1
+// 2431: GemLockAmethyst x1
 Recipe {
     create: (3648, 1),
     required: &[Requirement::item(181, 5), Requirement::item(3, 10)],
     stations: &[283],
     ..BASE
 },
-// 2431: GemLockTopaz x1
+// 2432: GemLockTopaz x1
 Recipe {
     create: (3647, 1),
     required: &[Requirement::item(180, 5), Requirement::item(3, 10)],
     stations: &[283],
     ..BASE
 },
-// 2432: GemLockEmerald x1
+// 2433: GemLockEmerald x1
 Recipe {
     create: (3646, 1),
     required: &[Requirement::item(179, 5), Requirement::item(3, 10)],
     stations: &[283],
     ..BASE
 },
-// 2433: GemLockSapphire x1
+// 2434: GemLockSapphire x1
 Recipe {
     create: (3645, 1),
     required: &[Requirement::item(177, 5), Requirement::item(3, 10)],
     stations: &[283],
     ..BASE
 },
-// 2434: GemLockRuby x1
+// 2435: GemLockRuby x1
 Recipe {
     create: (3644, 1),
     required: &[Requirement::item(178, 5), Requirement::item(3, 10)],
     stations: &[283],
     ..BASE
 },
-// 2435: GemLockDiamond x1
+// 2436: GemLockDiamond x1
 Recipe {
     create: (3649, 1),
     required: &[Requirement::item(182, 5), Requirement::item(3, 10)],
     stations: &[283],
     ..BASE
 },
-// 2436: GemLockAmber x1
+// 2437: GemLockAmber x1
 Recipe {
     create: (3650, 1),
     required: &[Requirement::item(999, 5), Requirement::item(3, 10)],
     stations: &[283],
     ..BASE
 },
-// 2437: MeteoriteBar x1
+// 2438: MeteoriteBar x1
 Recipe {
     create: (117, 1),
     required: &[Requirement::item(116, 3)],
     stations: &[17],
     ..BASE
 },
-// 2438: BluePhaseblade x1
+// 2439: BluePhaseblade x1
 Recipe {
     create: (198, 1),
     required: &[Requirement::item(117, 15), Requirement::item(177, 15)],
     stations: &[16],
     ..BASE
 },
-// 2439: RedPhaseblade x1
+// 2440: RedPhaseblade x1
 Recipe {
     create: (199, 1),
     required: &[Requirement::item(117, 15), Requirement::item(178, 15)],
     stations: &[16],
     ..BASE
 },
-// 2440: GreenPhaseblade x1
+// 2441: GreenPhaseblade x1
 Recipe {
     create: (200, 1),
     required: &[Requirement::item(117, 15), Requirement::item(179, 15)],
     stations: &[16],
     ..BASE
 },
-// 2441: PurplePhaseblade x1
+// 2442: PurplePhaseblade x1
 Recipe {
     create: (201, 1),
     required: &[Requirement::item(117, 15), Requirement::item(181, 15)],
     stations: &[16],
     ..BASE
 },
-// 2442: WhitePhaseblade x1
+// 2443: WhitePhaseblade x1
 Recipe {
     create: (202, 1),
     required: &[Requirement::item(117, 15), Requirement::item(182, 15)],
     stations: &[16],
     ..BASE
 },
-// 2443: YellowPhaseblade x1
+// 2444: YellowPhaseblade x1
 Recipe {
     create: (203, 1),
     required: &[Requirement::item(117, 15), Requirement::item(180, 15)],
     stations: &[16],
     ..BASE
 },
-// 2444: OrangePhaseblade x1
+// 2445: OrangePhaseblade x1
 Recipe {
     create: (4258, 1),
     required: &[Requirement::item(117, 15), Requirement::item(999, 15)],
     stations: &[16],
     ..BASE
 },
-// 2445: PinkPhaseblade x1
+// 2446: PinkPhaseblade x1
 Recipe {
     create: (5535, 1),
     required: &[Requirement::item(117, 15), Requirement::item(4414, 1)],
     stations: &[16],
     ..BASE
 },
-// 2446: RainbowPhaseblade x1
+// 2447: RainbowPhaseblade x1
 Recipe {
     create: (5670, 1),
     required: &[Requirement::item(117, 15), Requirement::item(181, 3), Requirement::item(180, 3), Requirement::item(177, 3), Requirement::item(179, 3), Requirement::item(178, 3), Requirement::item(182, 3), Requirement::item(999, 3)],
     stations: &[16],
     ..BASE
 },
-// 2447: BluePhasesaber x1
+// 2448: BluePhasesaber x1
 Recipe {
     create: (3764, 1),
     required: &[Requirement::item(198, 1), Requirement::item(502, 25)],
     stations: &[134],
     ..BASE
 },
-// 2448: RedPhasesaber x1
+// 2449: RedPhasesaber x1
 Recipe {
     create: (3765, 1),
     required: &[Requirement::item(199, 1), Requirement::item(502, 25)],
     stations: &[134],
     ..BASE
 },
-// 2449: GreenPhasesaber x1
+// 2450: GreenPhasesaber x1
 Recipe {
     create: (3766, 1),
     required: &[Requirement::item(200, 1), Requirement::item(502, 25)],
     stations: &[134],
     ..BASE
 },
-// 2450: PurplePhasesaber x1
+// 2451: PurplePhasesaber x1
 Recipe {
     create: (3767, 1),
     required: &[Requirement::item(201, 1), Requirement::item(502, 25)],
     stations: &[134],
     ..BASE
 },
-// 2451: WhitePhasesaber x1
+// 2452: WhitePhasesaber x1
 Recipe {
     create: (3768, 1),
     required: &[Requirement::item(202, 1), Requirement::item(502, 25)],
     stations: &[134],
     ..BASE
 },
-// 2452: YellowPhasesaber x1
+// 2453: YellowPhasesaber x1
 Recipe {
     create: (3769, 1),
     required: &[Requirement::item(203, 1), Requirement::item(502, 25)],
     stations: &[134],
     ..BASE
 },
-// 2453: OrangePhasesaber x1
+// 2454: OrangePhasesaber x1
 Recipe {
     create: (4259, 1),
     required: &[Requirement::item(4258, 1), Requirement::item(502, 25)],
     stations: &[134],
     ..BASE
 },
-// 2454: PinkPhasesaber x1
+// 2455: PinkPhasesaber x1
 Recipe {
     create: (5536, 1),
     required: &[Requirement::item(5535, 1), Requirement::item(502, 25)],
     stations: &[134],
     ..BASE
 },
-// 2455: RainbowPhasesaber x1
+// 2456: RainbowPhasesaber x1
 Recipe {
     create: (5671, 1),
     required: &[Requirement::item(5670, 1), Requirement::item(502, 25)],
     stations: &[134],
     ..BASE
 },
-// 2456: MeteorHamaxe x1
+// 2457: MeteorHamaxe x1
 Recipe {
     create: (204, 1),
     required: &[Requirement::item(117, 20)],
     stations: &[16],
     ..BASE
 },
-// 2457: SpaceGun x1
+// 2458: SpaceGun x1
 Recipe {
     create: (127, 1),
     required: &[Requirement::item(117, 20)],
     stations: &[16],
     ..BASE
 },
-// 2458: StarCannon x1
+// 2459: StarCannon x1
 Recipe {
     create: (197, 1),
     required: &[Requirement::item(98, 1), Requirement::item(117, 20), Requirement::item(75, 5)],
     stations: &[16],
     ..BASE
 },
-// 2459: MeteorWhip x1
+// 2460: MeteorWhip x1
 Recipe {
     create: (5476, 1),
     required: &[Requirement::item(117, 20), Requirement::item(85, 10), Requirement::item(75, 10)],
     stations: &[16],
     ..BASE
 },
-// 2460: MeteorHelmet x1
+// 2461: MeteorHelmet x1
 Recipe {
     create: (123, 1),
     required: &[Requirement::item(117, 10)],
     stations: &[16],
     ..BASE
 },
-// 2461: MeteorSuit x1
+// 2462: MeteorSuit x1
 Recipe {
     create: (124, 1),
     required: &[Requirement::item(117, 20)],
     stations: &[16],
     ..BASE
 },
-// 2462: MeteorLeggings x1
+// 2463: MeteorLeggings x1
 Recipe {
     create: (125, 1),
     required: &[Requirement::item(117, 15)],
     stations: &[16],
     ..BASE
 },
-// 2463: VelociraptorMountItem x1
+// 2464: VelociraptorMountItem x1
 Recipe {
     create: (5510, 1),
     required: &[Requirement::item(3380, 20), Requirement::item(999, 5), Requirement::item(75, 5)],
     stations: &[16],
     ..BASE
 },
-// 2464: FossilPickaxe x1
+// 2465: FossilPickaxe x1
 Recipe {
     create: (4059, 1),
     required: &[Requirement::item(3380, 12), Requirement::group(9, RecipeGroups::WOOD, 4)],
     stations: &[16],
     ..BASE
 },
-// 2465: BoneJavelin x20
+// 2466: BoneJavelin x20
 Recipe {
     create: (3378, 20),
     required: &[Requirement::item(3380, 1)],
     stations: &[16],
     ..BASE
 },
-// 2466: BoneDagger x30
+// 2467: BoneDagger x30
 Recipe {
     create: (3379, 30),
     required: &[Requirement::item(3380, 1)],
     stations: &[16],
     ..BASE
 },
-// 2467: AmberStaff x1
+// 2468: AmberStaff x1
 Recipe {
     create: (3377, 1),
     required: &[Requirement::item(3380, 10), Requirement::item(999, 8)],
     stations: &[16],
     ..BASE
 },
-// 2468: FossilHelm x1
+// 2469: FossilHelm x1
 Recipe {
     create: (3374, 1),
     required: &[Requirement::item(3380, 15)],
     stations: &[16],
     ..BASE
 },
-// 2469: FossilShirt x1
+// 2470: FossilShirt x1
 Recipe {
     create: (3375, 1),
     required: &[Requirement::item(3380, 25)],
     stations: &[16],
     ..BASE
 },
-// 2470: FossilPants x1
+// 2471: FossilPants x1
 Recipe {
     create: (3376, 1),
     required: &[Requirement::item(3380, 20)],
     stations: &[16],
     ..BASE
 },
-// 2471: BoneWhip x1
+// 2472: BoneWhip x1
 Recipe {
     create: (5074, 1),
     required: &[Requirement::item(154, 90), Requirement::item(150, 55)],
     stations: &[18],
     ..BASE
 },
-// 2472: NecroHelmet x1
+// 2473: NecroHelmet x1
 Recipe {
     create: (151, 1),
     required: &[Requirement::item(154, 40), Requirement::item(150, 40)],
     stations: &[18],
     ..BASE
 },
-// 2473: NecroBreastplate x1
+// 2474: NecroBreastplate x1
 Recipe {
     create: (152, 1),
     required: &[Requirement::item(154, 60), Requirement::item(150, 50)],
     stations: &[18],
     ..BASE
 },
-// 2474: NecroGreaves x1
+// 2475: NecroGreaves x1
 Recipe {
     create: (153, 1),
     required: &[Requirement::item(154, 50), Requirement::item(150, 45)],
     stations: &[18],
     ..BASE
 },
-// 2475: BladeofGrass x1
+// 2476: BladeofGrass x1
 Recipe {
     create: (190, 1),
     required: &[Requirement::item(209, 12), Requirement::item(331, 15), Requirement::item(210, 3)],
     stations: &[16],
     ..BASE
 },
-// 2476: ThornChakram x1
+// 2477: ThornChakram x1
 Recipe {
     create: (191, 1),
     required: &[Requirement::item(331, 6), Requirement::item(209, 9)],
     stations: &[16],
     ..BASE
 },
-// 2477: IvyWhip x1
+// 2478: IvyWhip x1
 Recipe {
     create: (185, 1),
     required: &[Requirement::item(331, 12), Requirement::item(210, 3)],
     stations: &[16],
     ..BASE
 },
-// 2478: AcornAxe x1
+// 2479: AcornAxe x1
 Recipe {
     create: (5295, 1),
     required: &[Requirement::item(213, 1), Requirement::item(3506, 1), Requirement::item(331, 12), Requirement::item(210, 3)],
     stations: &[18],
     ..BASE
 },
-// 2479: AcornAxe x1
+// 2480: AcornAxe x1
 Recipe {
     create: (5295, 1),
     required: &[Requirement::item(213, 1), Requirement::item(3500, 1), Requirement::item(331, 12), Requirement::item(210, 3)],
     stations: &[18],
     ..BASE
 },
-// 2480: JungleYoyo x1
+// 2481: JungleYoyo x1
 Recipe {
     create: (3281, 1),
     required: &[Requirement::item(620, 8), Requirement::item(209, 12), Requirement::item(210, 1), Requirement::item(331, 9)],
     stations: &[16],
     ..BASE
 },
-// 2481: ThornWhip x1
+// 2482: ThornWhip x1
 Recipe {
     create: (4913, 1),
     required: &[Requirement::item(209, 15), Requirement::item(210, 3), Requirement::item(331, 12)],
     stations: &[16],
     ..BASE
 },
-// 2482: JungleHat x1
+// 2483: JungleHat x1
 Recipe {
     create: (228, 1),
     required: &[Requirement::item(331, 8)],
     stations: &[16],
     ..BASE
 },
-// 2483: JungleShirt x1
+// 2484: JungleShirt x1
 Recipe {
     create: (229, 1),
     required: &[Requirement::item(331, 16), Requirement::item(209, 10)],
     stations: &[16],
     ..BASE
 },
-// 2484: JunglePants x1
+// 2485: JunglePants x1
 Recipe {
     create: (230, 1),
     required: &[Requirement::item(331, 8), Requirement::item(210, 2)],
     stations: &[16],
     ..BASE
 },
-// 2485: HornetStaff x1
+// 2486: HornetStaff x1
 Recipe {
     create: (2364, 1),
     required: &[Requirement::item(2431, 14)],
     stations: &[16],
     ..BASE
 },
-// 2486: BeeHeadgear x1
+// 2487: BeeHeadgear x1
 Recipe {
     create: (2361, 1),
     required: &[Requirement::item(2431, 8)],
     stations: &[16],
     ..BASE
 },
-// 2487: BeeBreastplate x1
+// 2488: BeeBreastplate x1
 Recipe {
     create: (2362, 1),
     required: &[Requirement::item(2431, 12)],
     stations: &[16],
     ..BASE
 },
-// 2488: BeeGreaves x1
+// 2489: BeeGreaves x1
 Recipe {
     create: (2363, 1),
     required: &[Requirement::item(2431, 10)],
     stations: &[16],
     ..BASE
 },
-// 2489: HiveFive x1
+// 2490: HiveFive x1
 Recipe {
     create: (5294, 1),
     required: &[Requirement::item(2431, 14)],
     stations: &[16],
     ..BASE
 },
-// 2490: HellstoneBar x1
+// 2491: HellstoneBar x1
 Recipe {
     create: (175, 1),
     required: &[Requirement::item(174, 3), Requirement::item(173, 1)],
     stations: &[77],
     ..BASE
 },
-// 2491: Flamarang x1
+// 2492: Flamarang x1
 Recipe {
     create: (119, 1),
     required: &[Requirement::item(175, 10), Requirement::item(55, 1)],
     stations: &[16],
     ..BASE
 },
-// 2492: MoltenFury x1
+// 2493: MoltenFury x1
 Recipe {
     create: (120, 1),
     required: &[Requirement::item(175, 15)],
     stations: &[16],
     ..BASE
 },
-// 2493: FieryGreatsword x1
+// 2494: FieryGreatsword x1
 Recipe {
     create: (121, 1),
     required: &[Requirement::item(175, 20)],
     stations: &[16],
     ..BASE
 },
-// 2494: MoltenPickaxe x1
+// 2495: MoltenPickaxe x1
 Recipe {
     create: (122, 1),
     required: &[Requirement::item(175, 20)],
     stations: &[16],
     ..BASE
 },
-// 2495: MoltenHamaxe x1
+// 2496: MoltenHamaxe x1
 Recipe {
     create: (217, 1),
     required: &[Requirement::item(175, 15)],
     stations: &[16],
     ..BASE
 },
-// 2496: PhoenixBlaster x1
+// 2497: PhoenixBlaster x1
 Recipe {
     create: (219, 1),
     required: &[Requirement::item(175, 10), Requirement::item(164, 1)],
     stations: &[16],
     ..BASE
 },
-// 2497: ImpStaff x1
+// 2498: ImpStaff x1
 Recipe {
     create: (2365, 1),
     required: &[Requirement::item(175, 17)],
     stations: &[16],
     ..BASE
 },
-// 2498: MoltenHelmet x1
+// 2499: MoltenHelmet x1
 Recipe {
     create: (231, 1),
     required: &[Requirement::item(175, 10)],
     stations: &[16],
     ..BASE
 },
-// 2499: MoltenBreastplate x1
+// 2500: MoltenBreastplate x1
 Recipe {
     create: (232, 1),
     required: &[Requirement::item(175, 20)],
     stations: &[16],
     ..BASE
 },
-// 2500: MoltenGreaves x1
+// 2501: MoltenGreaves x1
 Recipe {
     create: (233, 1),
     required: &[Requirement::item(175, 15)],
     stations: &[16],
     ..BASE
 },
-// 2501: FireproofBugNet x1
+// 2502: FireproofBugNet x1
 Recipe {
     create: (4821, 1),
     required: &[Requirement::item(175, 15), Requirement::item(1991, 1)],
     stations: &[77],
     ..BASE
 },
-// 2502: Flymeal x1
+// 2503: Flymeal x1
 Recipe {
     create: (5129, 1),
     required: &[Requirement::item(3484, 1), Requirement::item(5132, 5)],
     need_honey: true,
     ..BASE
 },
-// 2503: Flymeal x1
+// 2504: Flymeal x1
 Recipe {
     create: (5129, 1),
     required: &[Requirement::item(3520, 1), Requirement::item(5132, 5)],
     need_honey: true,
     ..BASE
 },
-// 2504: NightsEdge x1
+// 2505: NightsEdge x1
 Recipe {
     create: (273, 1),
     required: &[Requirement::item(46, 1), Requirement::item(155, 1), Requirement::item(190, 1), Requirement::item(121, 1)],
     stations: &[26],
     ..BASE
 },
-// 2505: NightsEdge x1
+// 2506: NightsEdge x1
 Recipe {
     create: (273, 1),
     required: &[Requirement::item(795, 1), Requirement::item(155, 1), Requirement::item(190, 1), Requirement::item(121, 1)],
     stations: &[26],
     ..BASE
 },
-// 2506: TrueNightsEdge x1
+// 2507: TrueNightsEdge x1
 Recipe {
     create: (675, 1),
     required: &[Requirement::item(273, 1), Requirement::item(547, 20), Requirement::item(548, 20), Requirement::item(549, 20)],
     stations: &[134],
     ..BASE
 },
-// 2507: TrueExcalibur x1
+// 2508: TrueExcalibur x1
 Recipe {
     create: (674, 1),
     required: &[Requirement::item(368, 1), Requirement::item(1006, 24)],
     stations: &[134],
     ..BASE
 },
-// 2508: TerraBlade x1
+// 2509: TerraBlade x1
 Recipe {
     create: (757, 1),
     required: &[Requirement::item(675, 1), Requirement::item(674, 1), Requirement::item(1570, 1)],
     stations: &[134],
     ..BASE
 },
-// 2509: Zenith x1
+// 2510: Zenith x1
 Recipe {
     create: (4956, 1),
     required: &[Requirement::item(757, 1), Requirement::item(3063, 1), Requirement::item(3065, 1), Requirement::item(2880, 1), Requirement::item(1826, 1), Requirement::item(3018, 1), Requirement::item(65, 1), Requirement::item(1123, 1), Requirement::item(989, 1), Requirement::item(3507, 1)],
     stations: &[134],
     ..BASE
 },
-// 2510: DaoofPow x1
+// 2511: DaoofPow x1
 Recipe {
     create: (389, 1),
     required: &[Requirement::item(527, 1), Requirement::item(528, 1), Requirement::item(521, 7), Requirement::item(520, 7)],
     stations: &[134],
     ..BASE
 },
-// 2511: LightningStrike x1
+// 2512: LightningStrike x1
 Recipe {
     create: (6155, 1),
     required: &[Requirement::item(4062, 1), Requirement::group(391, RecipeGroups::ADAMANTITE_BAR, 24), Requirement::item(521, 20)],
     stations: &[134],
     ..BASE
 },
-// 2512: DeadCellsFlint x1
+// 2513: DeadCellsFlint x1
 Recipe {
     create: (5462, 1),
     required: &[Requirement::group(391, RecipeGroups::ADAMANTITE_BAR, 24), Requirement::item(175, 20)],
     stations: &[133],
     ..BASE
 },
-// 2513: CobaltBar x1
+// 2514: CobaltBar x1
 Recipe {
     create: (381, 1),
     required: &[Requirement::item(364, 3)],
     stations: &[17],
     ..BASE
 },
-// 2514: CobaltHelmet x1
+// 2515: CobaltHelmet x1
 Recipe {
     create: (372, 1),
     required: &[Requirement::item(381, 10)],
     stations: &[16],
     ..BASE
 },
-// 2515: CobaltMask x1
+// 2516: CobaltMask x1
 Recipe {
     create: (373, 1),
     required: &[Requirement::item(381, 10)],
     stations: &[16],
     ..BASE
 },
-// 2516: CobaltHat x1
+// 2517: CobaltHat x1
 Recipe {
     create: (371, 1),
     required: &[Requirement::item(381, 10)],
     stations: &[16],
     ..BASE
 },
-// 2517: CobaltBreastplate x1
+// 2518: CobaltBreastplate x1
 Recipe {
     create: (374, 1),
     required: &[Requirement::item(381, 20)],
     stations: &[16],
     ..BASE
 },
-// 2518: CobaltLeggings x1
+// 2519: CobaltLeggings x1
 Recipe {
     create: (375, 1),
     required: &[Requirement::item(381, 15)],
     stations: &[16],
     ..BASE
 },
-// 2519: CobaltDrill x1
+// 2520: CobaltDrill x1
 Recipe {
     create: (385, 1),
     required: &[Requirement::item(381, 15)],
     stations: &[16],
     ..BASE
 },
-// 2520: CobaltPickaxe x1
+// 2521: CobaltPickaxe x1
 Recipe {
     create: (776, 1),
     required: &[Requirement::item(381, 15)],
     stations: &[16],
     ..BASE
 },
-// 2521: CobaltChainsaw x1
+// 2522: CobaltChainsaw x1
 Recipe {
     create: (383, 1),
     required: &[Requirement::item(381, 10)],
     stations: &[16],
     ..BASE
 },
-// 2522: CobaltWaraxe x1
+// 2523: CobaltWaraxe x1
 Recipe {
     create: (991, 1),
     required: &[Requirement::item(381, 10)],
     stations: &[16],
     ..BASE
 },
-// 2523: CobaltRepeater x1
+// 2524: CobaltRepeater x1
 Recipe {
     create: (435, 1),
     required: &[Requirement::item(381, 10)],
     stations: &[16],
     ..BASE
 },
-// 2524: CobaltSword x1
+// 2525: CobaltSword x1
 Recipe {
     create: (483, 1),
     required: &[Requirement::item(381, 8)],
     stations: &[16],
     ..BASE
 },
-// 2525: CobaltNaginata x1
+// 2526: CobaltNaginata x1
 Recipe {
     create: (537, 1),
     required: &[Requirement::item(381, 10)],
     stations: &[16],
     ..BASE
 },
-// 2526: PalladiumBar x1
+// 2527: PalladiumBar x1
 Recipe {
     create: (1184, 1),
     required: &[Requirement::item(1104, 3)],
     stations: &[17],
     ..BASE
 },
-// 2527: PalladiumMask x1
+// 2528: PalladiumMask x1
 Recipe {
     create: (1205, 1),
     required: &[Requirement::item(1184, 12)],
     stations: &[16],
     ..BASE
 },
-// 2528: PalladiumHelmet x1
+// 2529: PalladiumHelmet x1
 Recipe {
     create: (1206, 1),
     required: &[Requirement::item(1184, 12)],
     stations: &[16],
     ..BASE
 },
-// 2529: PalladiumHeadgear x1
+// 2530: PalladiumHeadgear x1
 Recipe {
     create: (1207, 1),
     required: &[Requirement::item(1184, 12)],
     stations: &[16],
     ..BASE
 },
-// 2530: PalladiumBreastplate x1
+// 2531: PalladiumBreastplate x1
 Recipe {
     create: (1208, 1),
     required: &[Requirement::item(1184, 24)],
     stations: &[16],
     ..BASE
 },
-// 2531: PalladiumLeggings x1
+// 2532: PalladiumLeggings x1
 Recipe {
     create: (1209, 1),
     required: &[Requirement::item(1184, 18)],
     stations: &[16],
     ..BASE
 },
-// 2532: PalladiumDrill x1
+// 2533: PalladiumDrill x1
 Recipe {
     create: (1189, 1),
     required: &[Requirement::item(1184, 18)],
     stations: &[16],
     ..BASE
 },
-// 2533: PalladiumPickaxe x1
+// 2534: PalladiumPickaxe x1
 Recipe {
     create: (1188, 1),
     required: &[Requirement::item(1184, 18)],
     stations: &[16],
     ..BASE
 },
-// 2534: PalladiumChainsaw x1
+// 2535: PalladiumChainsaw x1
 Recipe {
     create: (1190, 1),
     required: &[Requirement::item(1184, 12)],
     stations: &[16],
     ..BASE
 },
-// 2535: PalladiumWaraxe x1
+// 2536: PalladiumWaraxe x1
 Recipe {
     create: (1222, 1),
     required: &[Requirement::item(1184, 12)],
     stations: &[16],
     ..BASE
 },
-// 2536: PalladiumRepeater x1
+// 2537: PalladiumRepeater x1
 Recipe {
     create: (1187, 1),
     required: &[Requirement::item(1184, 12)],
     stations: &[16],
     ..BASE
 },
-// 2537: PalladiumSword x1
+// 2538: PalladiumSword x1
 Recipe {
     create: (1185, 1),
     required: &[Requirement::item(1184, 10)],
     stations: &[16],
     ..BASE
 },
-// 2538: PalladiumPike x1
+// 2539: PalladiumPike x1
 Recipe {
     create: (1186, 1),
     required: &[Requirement::item(1184, 12)],
     stations: &[16],
     ..BASE
 },
-// 2539: MythrilBar x1
+// 2540: MythrilBar x1
 Recipe {
     create: (382, 1),
     required: &[Requirement::item(365, 4)],
     stations: &[17],
     ..BASE
 },
-// 2540: MythrilHelmet x1
+// 2541: MythrilHelmet x1
 Recipe {
     create: (377, 1),
     required: &[Requirement::item(382, 10)],
     stations: &[134],
     ..BASE
 },
-// 2541: MythrilHat x1
+// 2542: MythrilHat x1
 Recipe {
     create: (378, 1),
     required: &[Requirement::item(382, 10)],
     stations: &[134],
     ..BASE
 },
-// 2542: MythrilHood x1
+// 2543: MythrilHood x1
 Recipe {
     create: (376, 1),
     required: &[Requirement::item(382, 10)],
     stations: &[134],
     ..BASE
 },
-// 2543: MythrilChainmail x1
+// 2544: MythrilChainmail x1
 Recipe {
     create: (379, 1),
     required: &[Requirement::item(382, 20)],
     stations: &[134],
     ..BASE
 },
-// 2544: MythrilGreaves x1
+// 2545: MythrilGreaves x1
 Recipe {
     create: (380, 1),
     required: &[Requirement::item(382, 15)],
     stations: &[134],
     ..BASE
 },
-// 2545: MythrilDrill x1
+// 2546: MythrilDrill x1
 Recipe {
     create: (386, 1),
     required: &[Requirement::item(382, 15)],
     stations: &[134],
     ..BASE
 },
-// 2546: MythrilPickaxe x1
+// 2547: MythrilPickaxe x1
 Recipe {
     create: (777, 1),
     required: &[Requirement::item(382, 15)],
     stations: &[134],
     ..BASE
 },
-// 2547: MythrilChainsaw x1
+// 2548: MythrilChainsaw x1
 Recipe {
     create: (384, 1),
     required: &[Requirement::item(382, 10)],
     stations: &[134],
     ..BASE
 },
-// 2548: MythrilWaraxe x1
+// 2549: MythrilWaraxe x1
 Recipe {
     create: (992, 1),
     required: &[Requirement::item(382, 10)],
     stations: &[134],
     ..BASE
 },
-// 2549: MythrilRepeater x1
+// 2550: MythrilRepeater x1
 Recipe {
     create: (436, 1),
     required: &[Requirement::item(382, 10)],
     stations: &[134],
     ..BASE
 },
-// 2550: MythrilSword x1
+// 2551: MythrilSword x1
 Recipe {
     create: (484, 1),
     required: &[Requirement::item(382, 8)],
     stations: &[134],
     ..BASE
 },
-// 2551: MythrilHalberd x1
+// 2552: MythrilHalberd x1
 Recipe {
     create: (390, 1),
     required: &[Requirement::item(382, 10)],
     stations: &[134],
     ..BASE
 },
-// 2552: MythrilAnvil x1
+// 2553: MythrilAnvil x1
 Recipe {
     create: (525, 1),
     required: &[Requirement::item(382, 10)],
     stations: &[16],
     ..BASE
 },
-// 2553: OrichalcumBar x1
+// 2554: OrichalcumBar x1
 Recipe {
     create: (1191, 1),
     required: &[Requirement::item(1105, 4)],
     stations: &[17],
     ..BASE
 },
-// 2554: OrichalcumMask x1
+// 2555: OrichalcumMask x1
 Recipe {
     create: (1210, 1),
     required: &[Requirement::item(1191, 12)],
     stations: &[134],
     ..BASE
 },
-// 2555: OrichalcumHelmet x1
+// 2556: OrichalcumHelmet x1
 Recipe {
     create: (1211, 1),
     required: &[Requirement::item(1191, 12)],
     stations: &[134],
     ..BASE
 },
-// 2556: OrichalcumHeadgear x1
+// 2557: OrichalcumHeadgear x1
 Recipe {
     create: (1212, 1),
     required: &[Requirement::item(1191, 12)],
     stations: &[134],
     ..BASE
 },
-// 2557: OrichalcumBreastplate x1
+// 2558: OrichalcumBreastplate x1
 Recipe {
     create: (1213, 1),
     required: &[Requirement::item(1191, 24)],
     stations: &[134],
     ..BASE
 },
-// 2558: OrichalcumLeggings x1
+// 2559: OrichalcumLeggings x1
 Recipe {
     create: (1214, 1),
     required: &[Requirement::item(1191, 18)],
     stations: &[134],
     ..BASE
 },
-// 2559: OrichalcumDrill x1
+// 2560: OrichalcumDrill x1
 Recipe {
     create: (1196, 1),
     required: &[Requirement::item(1191, 18)],
     stations: &[134],
     ..BASE
 },
-// 2560: OrichalcumPickaxe x1
+// 2561: OrichalcumPickaxe x1
 Recipe {
     create: (1195, 1),
     required: &[Requirement::item(1191, 18)],
     stations: &[134],
     ..BASE
 },
-// 2561: OrichalcumChainsaw x1
+// 2562: OrichalcumChainsaw x1
 Recipe {
     create: (1197, 1),
     required: &[Requirement::item(1191, 12)],
     stations: &[134],
     ..BASE
 },
-// 2562: OrichalcumWaraxe x1
+// 2563: OrichalcumWaraxe x1
 Recipe {
     create: (1223, 1),
     required: &[Requirement::item(1191, 12)],
     stations: &[134],
     ..BASE
 },
-// 2563: OrichalcumRepeater x1
+// 2564: OrichalcumRepeater x1
 Recipe {
     create: (1194, 1),
     required: &[Requirement::item(1191, 12)],
     stations: &[134],
     ..BASE
 },
-// 2564: OrichalcumSword x1
+// 2565: OrichalcumSword x1
 Recipe {
     create: (1192, 1),
     required: &[Requirement::item(1191, 10)],
     stations: &[134],
     ..BASE
 },
-// 2565: OrichalcumHalberd x1
+// 2566: OrichalcumHalberd x1
 Recipe {
     create: (1193, 1),
     required: &[Requirement::item(1191, 12)],
     stations: &[134],
     ..BASE
 },
-// 2566: OrichalcumAnvil x1
+// 2567: OrichalcumAnvil x1
 Recipe {
     create: (1220, 1),
     required: &[Requirement::item(1191, 12)],
     stations: &[16],
     ..BASE
 },
-// 2567: AdamantiteBar x1
+// 2568: AdamantiteBar x1
 Recipe {
     create: (391, 1),
     required: &[Requirement::item(366, 4)],
     stations: &[133],
     ..BASE
 },
-// 2568: AdamantiteHelmet x1
+// 2569: AdamantiteHelmet x1
 Recipe {
     create: (401, 1),
     required: &[Requirement::item(391, 12)],
     stations: &[134],
     ..BASE
 },
-// 2569: AdamantiteMask x1
+// 2570: AdamantiteMask x1
 Recipe {
     create: (402, 1),
     required: &[Requirement::item(391, 12)],
     stations: &[134],
     ..BASE
 },
-// 2570: AdamantiteHeadgear x1
+// 2571: AdamantiteHeadgear x1
 Recipe {
     create: (400, 1),
     required: &[Requirement::item(391, 12)],
     stations: &[134],
     ..BASE
 },
-// 2571: AdamantiteBreastplate x1
+// 2572: AdamantiteBreastplate x1
 Recipe {
     create: (403, 1),
     required: &[Requirement::item(391, 24)],
     stations: &[134],
     ..BASE
 },
-// 2572: AdamantiteLeggings x1
+// 2573: AdamantiteLeggings x1
 Recipe {
     create: (404, 1),
     required: &[Requirement::item(391, 18)],
     stations: &[134],
     ..BASE
 },
-// 2573: AdamantiteDrill x1
+// 2574: AdamantiteDrill x1
 Recipe {
     create: (388, 1),
     required: &[Requirement::item(391, 18)],
     stations: &[134],
     ..BASE
 },
-// 2574: AdamantitePickaxe x1
+// 2575: AdamantitePickaxe x1
 Recipe {
     create: (778, 1),
     required: &[Requirement::item(391, 18)],
     stations: &[134],
     ..BASE
 },
-// 2575: AdamantiteChainsaw x1
+// 2576: AdamantiteChainsaw x1
 Recipe {
     create: (387, 1),
     required: &[Requirement::item(391, 12)],
     stations: &[134],
     ..BASE
 },
-// 2576: AdamantiteWaraxe x1
+// 2577: AdamantiteWaraxe x1
 Recipe {
     create: (993, 1),
     required: &[Requirement::item(391, 12)],
     stations: &[134],
     ..BASE
 },
-// 2577: AdamantiteRepeater x1
+// 2578: AdamantiteRepeater x1
 Recipe {
     create: (481, 1),
     required: &[Requirement::item(391, 12)],
     stations: &[134],
     ..BASE
 },
-// 2578: AdamantiteSword x1
+// 2579: AdamantiteSword x1
 Recipe {
     create: (482, 1),
     required: &[Requirement::item(391, 12)],
     stations: &[134],
     ..BASE
 },
-// 2579: AdamantiteGlaive x1
+// 2580: AdamantiteGlaive x1
 Recipe {
     create: (406, 1),
     required: &[Requirement::item(391, 12)],
     stations: &[134],
     ..BASE
 },
-// 2580: AdamantiteForge x1
+// 2581: AdamantiteForge x1
 Recipe {
     create: (524, 1),
     required: &[Requirement::item(366, 30), Requirement::item(221, 1)],
     stations: &[134],
     ..BASE
 },
-// 2581: TitaniumBar x1
+// 2582: TitaniumBar x1
 Recipe {
     create: (1198, 1),
     required: &[Requirement::item(1106, 4)],
     stations: &[133],
     ..BASE
 },
-// 2582: TitaniumMask x1
+// 2583: TitaniumMask x1
 Recipe {
     create: (1215, 1),
     required: &[Requirement::item(1198, 13)],
     stations: &[134],
     ..BASE
 },
-// 2583: TitaniumHelmet x1
+// 2584: TitaniumHelmet x1
 Recipe {
     create: (1216, 1),
     required: &[Requirement::item(1198, 13)],
     stations: &[134],
     ..BASE
 },
-// 2584: TitaniumHeadgear x1
+// 2585: TitaniumHeadgear x1
 Recipe {
     create: (1217, 1),
     required: &[Requirement::item(1198, 13)],
     stations: &[134],
     ..BASE
 },
-// 2585: TitaniumBreastplate x1
+// 2586: TitaniumBreastplate x1
 Recipe {
     create: (1218, 1),
     required: &[Requirement::item(1198, 26)],
     stations: &[134],
     ..BASE
 },
-// 2586: TitaniumLeggings x1
+// 2587: TitaniumLeggings x1
 Recipe {
     create: (1219, 1),
     required: &[Requirement::item(1198, 20)],
     stations: &[134],
     ..BASE
 },
-// 2587: TitaniumDrill x1
+// 2588: TitaniumDrill x1
 Recipe {
     create: (1203, 1),
     required: &[Requirement::item(1198, 20)],
     stations: &[134],
     ..BASE
 },
-// 2588: TitaniumPickaxe x1
+// 2589: TitaniumPickaxe x1
 Recipe {
     create: (1202, 1),
     required: &[Requirement::item(1198, 20)],
     stations: &[134],
     ..BASE
 },
-// 2589: TitaniumChainsaw x1
+// 2590: TitaniumChainsaw x1
 Recipe {
     create: (1204, 1),
     required: &[Requirement::item(1198, 13)],
     stations: &[134],
     ..BASE
 },
-// 2590: TitaniumWaraxe x1
+// 2591: TitaniumWaraxe x1
 Recipe {
     create: (1224, 1),
     required: &[Requirement::item(1198, 13)],
     stations: &[134],
     ..BASE
 },
-// 2591: TitaniumRepeater x1
+// 2592: TitaniumRepeater x1
 Recipe {
     create: (1201, 1),
     required: &[Requirement::item(1198, 13)],
     stations: &[134],
     ..BASE
 },
-// 2592: TitaniumSword x1
+// 2593: TitaniumSword x1
 Recipe {
     create: (1199, 1),
     required: &[Requirement::item(1198, 13)],
     stations: &[134],
     ..BASE
 },
-// 2593: TitaniumTrident x1
+// 2594: TitaniumTrident x1
 Recipe {
     create: (1200, 1),
     required: &[Requirement::item(1198, 13)],
     stations: &[134],
     ..BASE
 },
-// 2594: TitaniumForge x1
+// 2595: TitaniumForge x1
 Recipe {
     create: (1221, 1),
     required: &[Requirement::item(1106, 30), Requirement::item(221, 1)],
     stations: &[134],
     ..BASE
 },
-// 2595: UpgradedMiningHead x1
+// 2596: UpgradedMiningHead x1
 Recipe {
     create: (5588, 1),
     required: &[Requirement::item(88, 1), Requirement::group(382, RecipeGroups::MYTHRIL_BAR, 10)],
     stations: &[134],
     ..BASE
 },
-// 2596: UpgradedMiningBody x1
+// 2597: UpgradedMiningBody x1
 Recipe {
     create: (5589, 1),
     required: &[Requirement::item(410, 1), Requirement::group(382, RecipeGroups::MYTHRIL_BAR, 10)],
     stations: &[134],
     ..BASE
 },
-// 2597: UpgradedMiningLegs x1
+// 2598: UpgradedMiningLegs x1
 Recipe {
     create: (5590, 1),
     required: &[Requirement::item(411, 1), Requirement::group(382, RecipeGroups::MYTHRIL_BAR, 10)],
     stations: &[134],
     ..BASE
 },
-// 2598: WeldingMask x1
+// 2599: WeldingMask x1
 Recipe {
     create: (5596, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 10), Requirement::group(382, RecipeGroups::MYTHRIL_BAR, 5)],
     stations: &[134],
     ..BASE
 },
-// 2599: UpgradedFishingHead x1
+// 2600: UpgradedFishingHead x1
 Recipe {
     create: (5591, 1),
     required: &[Requirement::item(2367, 1), Requirement::group(382, RecipeGroups::MYTHRIL_BAR, 10)],
     stations: &[134],
     ..BASE
 },
-// 2600: UpgradedFishingBody x1
+// 2601: UpgradedFishingBody x1
 Recipe {
     create: (5592, 1),
     required: &[Requirement::item(2368, 1), Requirement::group(382, RecipeGroups::MYTHRIL_BAR, 10)],
     stations: &[134],
     ..BASE
 },
-// 2601: UpgradedFishingLegs x1
+// 2602: UpgradedFishingLegs x1
 Recipe {
     create: (5593, 1),
     required: &[Requirement::item(2369, 1), Requirement::group(382, RecipeGroups::MYTHRIL_BAR, 10)],
     stations: &[134],
     ..BASE
 },
-// 2602: SpiderStaff x1
+// 2603: SpiderStaff x1
 Recipe {
     create: (2551, 1),
     required: &[Requirement::item(2607, 16)],
     stations: &[134],
     ..BASE
 },
-// 2603: QueenSpiderStaff x1
+// 2604: QueenSpiderStaff x1
 Recipe {
     create: (2366, 1),
     required: &[Requirement::item(2607, 24)],
     stations: &[134],
     ..BASE
 },
-// 2604: SpiderMask x1
+// 2605: SpiderMask x1
 Recipe {
     create: (2370, 1),
     required: &[Requirement::item(2607, 8)],
     stations: &[134],
     ..BASE
 },
-// 2605: SpiderBreastplate x1
+// 2606: SpiderBreastplate x1
 Recipe {
     create: (2371, 1),
     required: &[Requirement::item(2607, 16)],
     stations: &[134],
     ..BASE
 },
-// 2606: SpiderGreaves x1
+// 2607: SpiderGreaves x1
 Recipe {
     create: (2372, 1),
     required: &[Requirement::item(2607, 12)],
     stations: &[134],
     ..BASE
 },
-// 2607: FrostHelmet x1
+// 2608: FrostHelmet x1
 Recipe {
     create: (684, 1),
     required: &[Requirement::group(391, RecipeGroups::ADAMANTITE_BAR, 10), Requirement::item(2161, 1)],
     stations: &[134],
     ..BASE
 },
-// 2608: FrostBreastplate x1
+// 2609: FrostBreastplate x1
 Recipe {
     create: (685, 1),
     required: &[Requirement::group(391, RecipeGroups::ADAMANTITE_BAR, 20), Requirement::item(2161, 1)],
     stations: &[134],
     ..BASE
 },
-// 2609: FrostLeggings x1
+// 2610: FrostLeggings x1
 Recipe {
     create: (686, 1),
     required: &[Requirement::group(391, RecipeGroups::ADAMANTITE_BAR, 16), Requirement::item(2161, 1)],
     stations: &[134],
     ..BASE
 },
-// 2610: CoolWhip x1
+// 2611: CoolWhip x1
 Recipe {
     create: (4911, 1),
     required: &[Requirement::item(520, 8), Requirement::item(521, 8), Requirement::item(2161, 1)],
     stations: &[134],
     ..BASE
 },
-// 2611: OnyxBlaster x1
+// 2612: OnyxBlaster x1
 Recipe {
     create: (3788, 1),
     required: &[Requirement::item(534, 1), Requirement::item(527, 2), Requirement::item(521, 10)],
     stations: &[134],
     ..BASE
 },
-// 2612: SkyFracture x1
+// 2613: SkyFracture x1
 Recipe {
     create: (3787, 1),
     required: &[Requirement::item(113, 1), Requirement::item(528, 2), Requirement::item(520, 16)],
     stations: &[134],
     ..BASE
 },
-// 2613: SpiritFlame x1
+// 2614: SpiritFlame x1
 Recipe {
     create: (3779, 1),
     required: &[Requirement::item(3795, 1), Requirement::item(3783, 2), Requirement::item(521, 12)],
     stations: &[134],
     ..BASE
 },
-// 2614: AncientBattleArmorHat x1
+// 2615: AncientBattleArmorHat x1
 Recipe {
     create: (3776, 1),
     required: &[Requirement::group(391, RecipeGroups::ADAMANTITE_BAR, 10), Requirement::item(3783, 1)],
     stations: &[134],
     ..BASE
 },
-// 2615: AncientBattleArmorShirt x1
+// 2616: AncientBattleArmorShirt x1
 Recipe {
     create: (3777, 1),
     required: &[Requirement::group(391, RecipeGroups::ADAMANTITE_BAR, 20), Requirement::item(3783, 1)],
     stations: &[134],
     ..BASE
 },
-// 2616: AncientBattleArmorPants x1
+// 2617: AncientBattleArmorPants x1
 Recipe {
     create: (3778, 1),
     required: &[Requirement::group(391, RecipeGroups::ADAMANTITE_BAR, 16), Requirement::item(3783, 1)],
     stations: &[134],
     ..BASE
 },
-// 2617: HallowedMask x1
+// 2618: HallowedMask x1
 Recipe {
     create: (559, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2618: HallowedHelmet x1
+// 2619: HallowedHelmet x1
 Recipe {
     create: (553, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2619: HallowedHeadgear x1
+// 2620: HallowedHeadgear x1
 Recipe {
     create: (558, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2620: HallowedHood x1
+// 2621: HallowedHood x1
 Recipe {
     create: (4873, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2621: HallowedCrown x1
+// 2622: HallowedCrown x1
 Recipe {
     create: (5660, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2622: HallowedPlateMail x1
+// 2623: HallowedPlateMail x1
 Recipe {
     create: (551, 1),
     required: &[Requirement::item(1225, 24)],
     stations: &[134],
     ..BASE
 },
-// 2623: HallowedGreaves x1
+// 2624: HallowedGreaves x1
 Recipe {
     create: (552, 1),
     required: &[Requirement::item(1225, 18)],
     stations: &[134],
     ..BASE
 },
-// 2624: AncientHallowedMask x1
+// 2625: AncientHallowedMask x1
 Recipe {
     create: (4896, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[26],
     ..BASE
 },
-// 2625: AncientHallowedHelmet x1
+// 2626: AncientHallowedHelmet x1
 Recipe {
     create: (4897, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[26],
     ..BASE
 },
-// 2626: AncientHallowedHeadgear x1
+// 2627: AncientHallowedHeadgear x1
 Recipe {
     create: (4898, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[26],
     ..BASE
 },
-// 2627: AncientHallowedHood x1
+// 2628: AncientHallowedHood x1
 Recipe {
     create: (4899, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[26],
     ..BASE
 },
-// 2628: AncientHallowedPlateMail x1
+// 2629: AncientHallowedPlateMail x1
 Recipe {
     create: (4900, 1),
     required: &[Requirement::item(1225, 24)],
     stations: &[26],
     ..BASE
 },
-// 2629: AncientHallowedGreaves x1
+// 2630: AncientHallowedGreaves x1
 Recipe {
     create: (4901, 1),
     required: &[Requirement::item(1225, 18)],
     stations: &[26],
     ..BASE
 },
-// 2630: Drax x1
+// 2631: Drax x1
 Recipe {
     create: (579, 1),
     required: &[Requirement::item(1225, 18), Requirement::item(547, 1), Requirement::item(548, 1), Requirement::item(549, 1)],
     stations: &[134],
     ..BASE
 },
-// 2631: PickaxeAxe x1
+// 2632: PickaxeAxe x1
 Recipe {
     create: (990, 1),
     required: &[Requirement::item(1225, 18), Requirement::item(547, 1), Requirement::item(548, 1), Requirement::item(549, 1)],
     stations: &[134],
     ..BASE
 },
-// 2632: HallowedRepeater x1
+// 2633: HallowedRepeater x1
 Recipe {
     create: (578, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2633: Excalibur x1
+// 2634: Excalibur x1
 Recipe {
     create: (368, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2634: Gungnir x1
+// 2635: Gungnir x1
 Recipe {
     create: (550, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2635: HallowJoustingLance x1
+// 2636: HallowJoustingLance x1
 Recipe {
     create: (4790, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2636: SwordWhip x1
+// 2637: SwordWhip x1
 Recipe {
     create: (4678, 1),
     required: &[Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2637: SuperStarCannon x1
+// 2638: SuperStarCannon x1
 Recipe {
     create: (4060, 1),
     required: &[Requirement::item(1225, 12), Requirement::item(197, 1)],
     stations: &[134],
     ..BASE
 },
-// 2638: ChlorophyteBar x1
+// 2639: ChlorophyteBar x1
 Recipe {
     create: (1006, 1),
     required: &[Requirement::item(947, 5)],
     stations: &[133],
     ..BASE
 },
-// 2639: ChlorophyteHelmet x1
+// 2640: ChlorophyteHelmet x1
 Recipe {
     create: (1002, 1),
     required: &[Requirement::item(1006, 12)],
     stations: &[134],
     ..BASE
 },
-// 2640: ChlorophyteMask x1
+// 2641: ChlorophyteMask x1
 Recipe {
     create: (1001, 1),
     required: &[Requirement::item(1006, 12)],
     stations: &[134],
     ..BASE
 },
-// 2641: ChlorophyteHeadgear x1
+// 2642: ChlorophyteHeadgear x1
 Recipe {
     create: (1003, 1),
     required: &[Requirement::item(1006, 12)],
     stations: &[134],
     ..BASE
 },
-// 2642: ChlorophyteVisor x1
+// 2643: ChlorophyteVisor x1
 Recipe {
     create: (5524, 1),
     required: &[Requirement::item(1006, 12)],
     stations: &[134],
     ..BASE
 },
-// 2643: ChlorophytePlateMail x1
+// 2644: ChlorophytePlateMail x1
 Recipe {
     create: (1004, 1),
     required: &[Requirement::item(1006, 24)],
     stations: &[134],
     ..BASE
 },
-// 2644: ChlorophyteGreaves x1
+// 2645: ChlorophyteGreaves x1
 Recipe {
     create: (1005, 1),
     required: &[Requirement::item(1006, 18)],
     stations: &[134],
     ..BASE
 },
-// 2645: ChlorophyteDrill x1
+// 2646: ChlorophyteDrill x1
 Recipe {
     create: (1231, 1),
     required: &[Requirement::item(1006, 18)],
     stations: &[134],
     ..BASE
 },
-// 2646: ChlorophytePickaxe x1
+// 2647: ChlorophytePickaxe x1
 Recipe {
     create: (1230, 1),
     required: &[Requirement::item(1006, 18)],
     stations: &[134],
     ..BASE
 },
-// 2647: ChlorophyteChainsaw x1
+// 2648: ChlorophyteChainsaw x1
 Recipe {
     create: (1232, 1),
     required: &[Requirement::item(1006, 18)],
     stations: &[134],
     ..BASE
 },
-// 2648: ChlorophyteGreataxe x1
+// 2649: ChlorophyteGreataxe x1
 Recipe {
     create: (1233, 1),
     required: &[Requirement::item(1006, 18)],
     stations: &[134],
     ..BASE
 },
-// 2649: ChlorophyteJackhammer x1
+// 2650: ChlorophyteJackhammer x1
 Recipe {
     create: (1262, 1),
     required: &[Requirement::item(1006, 18)],
     stations: &[134],
     ..BASE
 },
-// 2650: ChlorophyteWarhammer x1
+// 2651: ChlorophyteWarhammer x1
 Recipe {
     create: (1234, 1),
     required: &[Requirement::item(1006, 18)],
     stations: &[134],
     ..BASE
 },
-// 2651: ChlorophyteShotbow x1
+// 2652: ChlorophyteShotbow x1
 Recipe {
     create: (1229, 1),
     required: &[Requirement::item(1006, 12)],
     stations: &[134],
     ..BASE
 },
-// 2652: ChlorophyteSaber x1
+// 2653: ChlorophyteSaber x1
 Recipe {
     create: (1227, 1),
     required: &[Requirement::item(1006, 12)],
     stations: &[134],
     ..BASE
 },
-// 2653: ChlorophyteClaymore x1
+// 2654: ChlorophyteClaymore x1
 Recipe {
     create: (1226, 1),
     required: &[Requirement::item(1006, 12)],
     stations: &[134],
     ..BASE
 },
-// 2654: ChlorophytePartisan x1
+// 2655: ChlorophytePartisan x1
 Recipe {
     create: (1228, 1),
     required: &[Requirement::item(1006, 12)],
     stations: &[134],
     ..BASE
 },
-// 2655: VenomStaff x1
+// 2656: VenomStaff x1
 Recipe {
     create: (2188, 1),
     required: &[Requirement::item(1308, 1), Requirement::item(1006, 14)],
     stations: &[134],
     ..BASE
 },
-// 2656: ChlorophyteExtractinator x1
+// 2657: ChlorophyteExtractinator x1
 Recipe {
     create: (5296, 1),
     required: &[Requirement::item(1006, 18), Requirement::item(997, 1)],
     stations: &[134],
     ..BASE
 },
-// 2657: TurtleHelmet x1
+// 2658: TurtleHelmet x1
 Recipe {
     create: (1316, 1),
     required: &[Requirement::item(1006, 12), Requirement::item(1328, 1)],
     stations: &[134],
     ..BASE
 },
-// 2658: TurtleScaleMail x1
+// 2659: TurtleScaleMail x1
 Recipe {
     create: (1317, 1),
     required: &[Requirement::item(1006, 24), Requirement::item(1328, 1)],
     stations: &[134],
     ..BASE
 },
-// 2659: TurtleLeggings x1
+// 2660: TurtleLeggings x1
 Recipe {
     create: (1318, 1),
     required: &[Requirement::item(1006, 18), Requirement::item(1328, 1)],
     stations: &[134],
     ..BASE
 },
-// 2660: BeetleHelmet x1
+// 2661: BeetleHelmet x1
 Recipe {
     create: (2199, 1),
     required: &[Requirement::item(2218, 4), Requirement::item(1316, 1)],
     stations: &[134],
     ..BASE
 },
-// 2661: BeetleScaleMail x1
+// 2662: BeetleScaleMail x1
 Recipe {
     create: (2200, 1),
     required: &[Requirement::item(2218, 8), Requirement::item(1317, 1)],
     stations: &[134],
     ..BASE
 },
-// 2662: BeetleShell x1
+// 2663: BeetleShell x1
 Recipe {
     create: (2201, 1),
     required: &[Requirement::item(2218, 8), Requirement::item(1317, 1)],
     stations: &[134],
     ..BASE
 },
-// 2663: BeetleLeggings x1
+// 2664: BeetleLeggings x1
 Recipe {
     create: (2202, 1),
     required: &[Requirement::item(2218, 6), Requirement::item(1318, 1)],
     stations: &[134],
     ..BASE
 },
-// 2664: ShroomiteBar x1
+// 2665: ShroomiteBar x1
 Recipe {
     create: (1552, 1),
     required: &[Requirement::item(1006, 1), Requirement::item(183, 15)],
     stations: &[247],
     ..BASE
 },
-// 2665: ShroomiteHeadgear x1
+// 2666: ShroomiteHeadgear x1
 Recipe {
     create: (1546, 1),
     required: &[Requirement::item(1552, 12)],
     stations: &[134],
     ..BASE
 },
-// 2666: ShroomiteMask x1
+// 2667: ShroomiteMask x1
 Recipe {
     create: (1547, 1),
     required: &[Requirement::item(1552, 12)],
     stations: &[134],
     ..BASE
 },
-// 2667: ShroomiteHelmet x1
+// 2668: ShroomiteHelmet x1
 Recipe {
     create: (1548, 1),
     required: &[Requirement::item(1552, 12)],
     stations: &[134],
     ..BASE
 },
-// 2668: ShroomiteBreastplate x1
+// 2669: ShroomiteBreastplate x1
 Recipe {
     create: (1549, 1),
     required: &[Requirement::item(1552, 24)],
     stations: &[134],
     ..BASE
 },
-// 2669: ShroomiteLeggings x1
+// 2670: ShroomiteLeggings x1
 Recipe {
     create: (1550, 1),
     required: &[Requirement::item(1552, 18)],
     stations: &[134],
     ..BASE
 },
-// 2670: ShroomiteDiggingClaw x1
+// 2671: ShroomiteDiggingClaw x1
 Recipe {
     create: (2176, 1),
     required: &[Requirement::item(1552, 18)],
     stations: &[134],
     ..BASE
 },
-// 2671: SpectreBar x2
+// 2672: SpectreBar x2
 Recipe {
     create: (3261, 2),
     required: &[Requirement::item(1006, 2), Requirement::item(1508, 1)],
     stations: &[133],
     ..BASE
 },
-// 2672: SpectreMask x1
+// 2673: SpectreMask x1
 Recipe {
     create: (2189, 1),
     required: &[Requirement::item(3261, 12)],
     stations: &[134],
     ..BASE
 },
-// 2673: SpectreHood x1
+// 2674: SpectreHood x1
 Recipe {
     create: (1503, 1),
     required: &[Requirement::item(3261, 12)],
     stations: &[134],
     ..BASE
 },
-// 2674: SpectreRobe x1
+// 2675: SpectreRobe x1
 Recipe {
     create: (1504, 1),
     required: &[Requirement::item(3261, 24)],
     stations: &[134],
     ..BASE
 },
-// 2675: SpectrePants x1
+// 2676: SpectrePants x1
 Recipe {
     create: (1505, 1),
     required: &[Requirement::item(3261, 18)],
     stations: &[134],
     ..BASE
 },
-// 2676: SpectrePickaxe x1
+// 2677: SpectrePickaxe x1
 Recipe {
     create: (1506, 1),
     required: &[Requirement::item(3261, 18)],
     stations: &[134],
     ..BASE
 },
-// 2677: SpectreHamaxe x1
+// 2678: SpectreHamaxe x1
 Recipe {
     create: (1507, 1),
     required: &[Requirement::item(3261, 18)],
     stations: &[134],
     ..BASE
 },
-// 2678: SpectrePaintbrush x1
+// 2679: SpectrePaintbrush x1
 Recipe {
     create: (1543, 1),
     required: &[Requirement::item(3261, 8)],
     stations: &[134],
     ..BASE
 },
-// 2679: SpectrePaintRoller x1
+// 2680: SpectrePaintRoller x1
 Recipe {
     create: (1544, 1),
     required: &[Requirement::item(3261, 8)],
     stations: &[134],
     ..BASE
 },
-// 2680: SpectrePaintScraper x1
+// 2681: SpectrePaintScraper x1
 Recipe {
     create: (1545, 1),
     required: &[Requirement::item(3261, 8)],
     stations: &[134],
     ..BASE
 },
-// 2681: LunarBar x1
+// 2682: LunarBar x1
 Recipe {
     create: (3467, 1),
     required: &[Requirement::item(3460, 4)],
     stations: &[412],
     ..BASE
 },
-// 2682: MoonlordBullet x333
+// 2683: MoonlordBullet x333
 Recipe {
     create: (3567, 333),
     required: &[Requirement::item(3467, 1)],
     stations: &[412],
     ..BASE
 },
-// 2683: MoonlordArrow x333
+// 2684: MoonlordArrow x333
 Recipe {
     create: (3568, 333),
     required: &[Requirement::item(3467, 1)],
     stations: &[412],
     ..BASE
 },
-// 2684: VoidMonolith x1
+// 2685: VoidMonolith x1
 Recipe {
     create: (4318, 1),
     required: &[Requirement::item(3460, 25)],
     stations: &[412],
     ..BASE
 },
-// 2685: LunarHook x1
+// 2686: LunarHook x1
 Recipe {
     create: (3572, 1),
     required: &[Requirement::item(3457, 6), Requirement::item(3458, 6), Requirement::item(3459, 6), Requirement::item(3456, 6)],
     stations: &[412],
     ..BASE
 },
-// 2686: FragmentSolar x1
+// 2687: FragmentSolar x1
 Recipe {
     create: (3458, 1),
     required: &[Requirement::item(3456, 1), Requirement::item(3457, 1), Requirement::item(3459, 1)],
     stations: &[412],
     ..BASE
 },
-// 2687: SolarMonolith x1
+// 2688: SolarMonolith x1
 Recipe {
     create: (3539, 1),
     required: &[Requirement::item(3458, 15)],
     stations: &[412],
     ..BASE
 },
-// 2688: SolarFlareHelmet x1
+// 2689: SolarFlareHelmet x1
 Recipe {
     create: (2763, 1),
     required: &[Requirement::item(3458, 10), Requirement::item(3467, 8)],
     stations: &[412],
     ..BASE
 },
-// 2689: SolarFlareBreastplate x1
+// 2690: SolarFlareBreastplate x1
 Recipe {
     create: (2764, 1),
     required: &[Requirement::item(3458, 20), Requirement::item(3467, 16)],
     stations: &[412],
     ..BASE
 },
-// 2690: SolarFlareLeggings x1
+// 2691: SolarFlareLeggings x1
 Recipe {
     create: (2765, 1),
     required: &[Requirement::item(3458, 15), Requirement::item(3467, 12)],
     stations: &[412],
     ..BASE
 },
-// 2691: SolarFlarePickaxe x1
+// 2692: SolarFlarePickaxe x1
 Recipe {
     create: (2786, 1),
     required: &[Requirement::item(3458, 12), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2692: SolarFlareDrill x1
+// 2693: SolarFlareDrill x1
 Recipe {
     create: (2784, 1),
     required: &[Requirement::item(3458, 12), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2693: LunarHamaxeSolar x1
+// 2694: LunarHamaxeSolar x1
 Recipe {
     create: (3522, 1),
     required: &[Requirement::item(3458, 14), Requirement::item(3467, 12)],
     stations: &[412],
     ..BASE
 },
-// 2694: SolarEruption x1
+// 2695: SolarEruption x1
 Recipe {
     create: (3473, 1),
     required: &[Requirement::item(3458, 18)],
     stations: &[412],
     ..BASE
 },
-// 2695: DayBreak x1
+// 2696: DayBreak x1
 Recipe {
     create: (3543, 1),
     required: &[Requirement::item(3458, 18)],
     stations: &[412],
     ..BASE
 },
-// 2696: FragmentVortex x1
+// 2697: FragmentVortex x1
 Recipe {
     create: (3456, 1),
     required: &[Requirement::item(3458, 1), Requirement::item(3457, 1), Requirement::item(3459, 1)],
     stations: &[412],
     ..BASE
 },
-// 2697: VortexMonolith x1
+// 2698: VortexMonolith x1
 Recipe {
     create: (3536, 1),
     required: &[Requirement::item(3456, 15)],
     stations: &[412],
     ..BASE
 },
-// 2698: VortexHelmet x1
+// 2699: VortexHelmet x1
 Recipe {
     create: (2757, 1),
     required: &[Requirement::item(3456, 10), Requirement::item(3467, 8)],
     stations: &[412],
     ..BASE
 },
-// 2699: VortexBreastplate x1
+// 2700: VortexBreastplate x1
 Recipe {
     create: (2758, 1),
     required: &[Requirement::item(3456, 20), Requirement::item(3467, 16)],
     stations: &[412],
     ..BASE
 },
-// 2700: VortexLeggings x1
+// 2701: VortexLeggings x1
 Recipe {
     create: (2759, 1),
     required: &[Requirement::item(3456, 15), Requirement::item(3467, 12)],
     stations: &[412],
     ..BASE
 },
-// 2701: VortexPickaxe x1
+// 2702: VortexPickaxe x1
 Recipe {
     create: (2776, 1),
     required: &[Requirement::item(3456, 12), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2702: VortexDrill x1
+// 2703: VortexDrill x1
 Recipe {
     create: (2774, 1),
     required: &[Requirement::item(3456, 12), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2703: LunarHamaxeVortex x1
+// 2704: LunarHamaxeVortex x1
 Recipe {
     create: (3523, 1),
     required: &[Requirement::item(3456, 14), Requirement::item(3467, 12)],
     stations: &[412],
     ..BASE
 },
-// 2704: VortexBeater x1
+// 2705: VortexBeater x1
 Recipe {
     create: (3475, 1),
     required: &[Requirement::item(3456, 18)],
     stations: &[412],
     ..BASE
 },
-// 2705: Phantasm x1
+// 2706: Phantasm x1
 Recipe {
     create: (3540, 1),
     required: &[Requirement::item(3456, 18)],
     stations: &[412],
     ..BASE
 },
-// 2706: FragmentNebula x1
+// 2707: FragmentNebula x1
 Recipe {
     create: (3457, 1),
     required: &[Requirement::item(3458, 1), Requirement::item(3456, 1), Requirement::item(3459, 1)],
     stations: &[412],
     ..BASE
 },
-// 2707: NebulaMonolith x1
+// 2708: NebulaMonolith x1
 Recipe {
     create: (3537, 1),
     required: &[Requirement::item(3457, 15)],
     stations: &[412],
     ..BASE
 },
-// 2708: NebulaHelmet x1
+// 2709: NebulaHelmet x1
 Recipe {
     create: (2760, 1),
     required: &[Requirement::item(3457, 10), Requirement::item(3467, 8)],
     stations: &[412],
     ..BASE
 },
-// 2709: NebulaBreastplate x1
+// 2710: NebulaBreastplate x1
 Recipe {
     create: (2761, 1),
     required: &[Requirement::item(3457, 20), Requirement::item(3467, 16)],
     stations: &[412],
     ..BASE
 },
-// 2710: NebulaLeggings x1
+// 2711: NebulaLeggings x1
 Recipe {
     create: (2762, 1),
     required: &[Requirement::item(3457, 15), Requirement::item(3467, 12)],
     stations: &[412],
     ..BASE
 },
-// 2711: NebulaPickaxe x1
+// 2712: NebulaPickaxe x1
 Recipe {
     create: (2781, 1),
     required: &[Requirement::item(3457, 12), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2712: NebulaDrill x1
+// 2713: NebulaDrill x1
 Recipe {
     create: (2779, 1),
     required: &[Requirement::item(3457, 12), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2713: LunarHamaxeNebula x1
+// 2714: LunarHamaxeNebula x1
 Recipe {
     create: (3524, 1),
     required: &[Requirement::item(3457, 14), Requirement::item(3467, 12)],
     stations: &[412],
     ..BASE
 },
-// 2714: NebulaArcanum x1
+// 2715: NebulaArcanum x1
 Recipe {
     create: (3476, 1),
     required: &[Requirement::item(3457, 18)],
     stations: &[412],
     ..BASE
 },
-// 2715: NebulaBlaze x1
+// 2716: NebulaBlaze x1
 Recipe {
     create: (3542, 1),
     required: &[Requirement::item(3457, 18)],
     stations: &[412],
     ..BASE
 },
-// 2716: FragmentStardust x1
+// 2717: FragmentStardust x1
 Recipe {
     create: (3459, 1),
     required: &[Requirement::item(3458, 1), Requirement::item(3456, 1), Requirement::item(3457, 1)],
     stations: &[412],
     ..BASE
 },
-// 2717: StardustMonolith x1
+// 2718: StardustMonolith x1
 Recipe {
     create: (3538, 1),
     required: &[Requirement::item(3459, 15)],
     stations: &[412],
     ..BASE
 },
-// 2718: StardustHelmet x1
+// 2719: StardustHelmet x1
 Recipe {
     create: (3381, 1),
     required: &[Requirement::item(3459, 10), Requirement::item(3467, 8)],
     stations: &[412],
     ..BASE
 },
-// 2719: StardustBreastplate x1
+// 2720: StardustBreastplate x1
 Recipe {
     create: (3382, 1),
     required: &[Requirement::item(3459, 20), Requirement::item(3467, 16)],
     stations: &[412],
     ..BASE
 },
-// 2720: StardustLeggings x1
+// 2721: StardustLeggings x1
 Recipe {
     create: (3383, 1),
     required: &[Requirement::item(3459, 15), Requirement::item(3467, 12)],
     stations: &[412],
     ..BASE
 },
-// 2721: StardustPickaxe x1
+// 2722: StardustPickaxe x1
 Recipe {
     create: (3466, 1),
     required: &[Requirement::item(3459, 12), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2722: StardustDrill x1
+// 2723: StardustDrill x1
 Recipe {
     create: (3464, 1),
     required: &[Requirement::item(3459, 12), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2723: LunarHamaxeStardust x1
+// 2724: LunarHamaxeStardust x1
 Recipe {
     create: (3525, 1),
     required: &[Requirement::item(3459, 14), Requirement::item(3467, 12)],
     stations: &[412],
     ..BASE
 },
-// 2724: StardustCellStaff x1
+// 2725: StardustCellStaff x1
 Recipe {
     create: (3474, 1),
     required: &[Requirement::item(3459, 18)],
     stations: &[412],
     ..BASE
 },
-// 2725: StardustDragonStaff x1
+// 2726: StardustDragonStaff x1
 Recipe {
     create: (3531, 1),
     required: &[Requirement::item(3459, 18)],
     stations: &[412],
     ..BASE
 },
-// 2726: ConstellationWhip x1
+// 2727: ConstellationWhip x1
 Recipe {
     create: (5479, 1),
     required: &[Requirement::item(3459, 18)],
     stations: &[412],
     ..BASE
 },
-// 2727: Megashark x1
+// 2728: Megashark x1
 Recipe {
     create: (533, 1),
     required: &[Requirement::item(98, 1), Requirement::item(324, 1), Requirement::item(319, 5), Requirement::item(548, 20)],
     stations: &[134],
     ..BASE
 },
-// 2728: LightDisc x1
+// 2729: LightDisc x1
 Recipe {
     create: (561, 1),
     required: &[Requirement::item(1225, 12), Requirement::item(520, 15), Requirement::item(548, 15)],
     stations: &[134],
     ..BASE
 },
-// 2729: Flamethrower x1
+// 2730: Flamethrower x1
 Recipe {
     create: (506, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 20), Requirement::item(324, 1), Requirement::item(547, 20)],
     stations: &[134],
     ..BASE
 },
-// 2730: OpticStaff x1
+// 2731: OpticStaff x1
 Recipe {
     create: (2535, 1),
     required: &[Requirement::item(236, 1), Requirement::item(38, 2), Requirement::item(1225, 12), Requirement::item(549, 20)],
     stations: &[134],
     ..BASE
 },
-// 2731: MagicalHarp x1
+// 2732: MagicalHarp x1
 Recipe {
     create: (494, 1),
     required: &[Requirement::item(508, 1), Requirement::item(502, 20), Requirement::item(521, 8), Requirement::item(549, 15)],
     stations: &[134],
     ..BASE
 },
-// 2732: FairyBell x1
+// 2733: FairyBell x1
 Recipe {
     create: (425, 1),
     required: &[Requirement::item(507, 1), Requirement::item(501, 25), Requirement::item(520, 8), Requirement::item(549, 10)],
     stations: &[134],
     ..BASE
 },
-// 2733: Minecart x1
+// 2734: Minecart x1
 Recipe {
     create: (2343, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 15), Requirement::group(9, RecipeGroups::WOOD, 10)],
     stations: &[16],
     ..BASE
 },
-// 2734: FartMinecart x1
+// 2735: FartMinecart x1
 Recipe {
     create: (5125, 1),
     required: &[Requirement::item(2343, 1), Requirement::item(215, 1)],
     stations: &[16],
     ..BASE
 },
-// 2735: TerraFartMinecart x1
+// 2736: TerraFartMinecart x1
 Recipe {
     create: (5288, 1),
     required: &[Requirement::item(5125, 1), Requirement::item(4731, 1)],
     stations: &[16],
     ..BASE
 },
-// 2736: BeetleMinecart x1
+// 2737: BeetleMinecart x1
 Recipe {
     create: (4468, 1),
     required: &[Requirement::item(2343, 1), Requirement::item(2218, 8)],
     stations: &[16],
     ..BASE
 },
-// 2737: AmethystMinecart x1
+// 2738: AmethystMinecart x1
 Recipe {
     create: (4451, 1),
     required: &[Requirement::item(2343, 1), Requirement::item(1522, 1)],
     stations: &[16],
     ..BASE
 },
-// 2738: TopazMinecart x1
+// 2739: TopazMinecart x1
 Recipe {
     create: (4452, 1),
     required: &[Requirement::item(2343, 1), Requirement::item(1523, 1)],
     stations: &[16],
     ..BASE
 },
-// 2739: SapphireMinecart x1
+// 2740: SapphireMinecart x1
 Recipe {
     create: (4453, 1),
     required: &[Requirement::item(2343, 1), Requirement::item(1524, 1)],
     stations: &[16],
     ..BASE
 },
-// 2740: EmeraldMinecart x1
+// 2741: EmeraldMinecart x1
 Recipe {
     create: (4454, 1),
     required: &[Requirement::item(2343, 1), Requirement::item(1525, 1)],
     stations: &[16],
     ..BASE
 },
-// 2741: RubyMinecart x1
+// 2742: RubyMinecart x1
 Recipe {
     create: (4455, 1),
     required: &[Requirement::item(2343, 1), Requirement::item(1526, 1)],
     stations: &[16],
     ..BASE
 },
-// 2742: DiamondMinecart x1
+// 2743: DiamondMinecart x1
 Recipe {
     create: (4456, 1),
     required: &[Requirement::item(2343, 1), Requirement::item(1527, 1)],
     stations: &[16],
     ..BASE
 },
-// 2743: AmberMinecart x1
+// 2744: AmberMinecart x1
 Recipe {
     create: (4467, 1),
     required: &[Requirement::item(2343, 1), Requirement::item(3643, 1)],
     stations: &[16],
     ..BASE
 },
-// 2744: CoffinMinecart x1
+// 2745: CoffinMinecart x1
 Recipe {
     create: (4745, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::group(9, RecipeGroups::WOOD, 10), Requirement::item(68, 10)],
@@ -19418,7 +19427,7 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2745: CoffinMinecart x1
+// 2746: CoffinMinecart x1
 Recipe {
     create: (4745, 1),
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::group(9, RecipeGroups::WOOD, 10), Requirement::item(1330, 10)],
@@ -19426,297 +19435,3138 @@ Recipe {
     need_graveyard: true,
     ..BASE
 },
-// 2746: MinecartPowerup x1
+// 2747: MinecartPowerup x1
 Recipe {
     create: (5289, 1),
     required: &[Requirement::item(3354, 1), Requirement::item(3355, 1), Requirement::item(3356, 1)],
     stations: &[134],
     ..BASE
 },
-// 2747: DrillContainmentUnit x1
+// 2748: DrillContainmentUnit x1
 Recipe {
     create: (2768, 1),
     required: &[Requirement::item(3467, 40), Requirement::item(1006, 40), Requirement::item(1552, 40), Requirement::item(3261, 40), Requirement::item(175, 40), Requirement::item(117, 40)],
     stations: &[134],
     ..BASE
 },
-// 2748: ResplendentDessert x1
+// 2749: ResplendentDessert x1
 Recipe {
     create: (5131, 1),
     required: &[Requirement::item(4797, 1), Requirement::item(4960, 1)],
     ..BASE
 },
-// 2749: PufferfishPet x1
+// 2750: PufferfishPet x1
 Recipe {
     create: (5513, 1),
     required: &[Requirement::item(5511, 5), Requirement::item(2316, 10)],
     ..BASE
 },
-// 2750: RainbowRod x1
+// 2751: RainbowRod x1
 Recipe {
     create: (495, 1),
     required: &[Requirement::item(502, 10), Requirement::item(526, 2), Requirement::item(501, 10), Requirement::item(520, 8), Requirement::item(549, 15)],
     stations: &[134],
     ..BASE
 },
-// 2751: AngelWings x1
+// 2752: AngelWings x1
 Recipe {
     create: (493, 1),
     required: &[Requirement::item(320, 10), Requirement::item(575, 20), Requirement::item(520, 15)],
     stations: &[134],
     ..BASE
 },
-// 2752: DemonWings x1
+// 2753: DemonWings x1
 Recipe {
     create: (492, 1),
     required: &[Requirement::item(320, 10), Requirement::item(575, 20), Requirement::item(521, 15)],
     stations: &[134],
     ..BASE
 },
-// 2753: FairyWings x1
+// 2754: FairyWings x1
 Recipe {
     create: (761, 1),
     required: &[Requirement::item(575, 20), Requirement::item(501, 99)],
     stations: &[134],
     ..BASE
 },
-// 2754: HarpyWings x1
+// 2755: HarpyWings x1
 Recipe {
     create: (785, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1516, 1)],
     stations: &[134],
     ..BASE
 },
-// 2755: ButterflyWings x1
+// 2756: ButterflyWings x1
 Recipe {
     create: (749, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1611, 1)],
     stations: &[134],
     ..BASE
 },
-// 2756: BoneWings x1
+// 2757: BoneWings x1
 Recipe {
     create: (786, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1517, 1)],
     stations: &[134],
     ..BASE
 },
-// 2757: FlameWings x1
+// 2758: FlameWings x1
 Recipe {
     create: (821, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1518, 1)],
     stations: &[134],
     ..BASE
 },
-// 2758: FrozenWings x1
+// 2759: FrozenWings x1
 Recipe {
     create: (822, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1519, 1)],
     stations: &[134],
     ..BASE
 },
-// 2759: BatWings x1
+// 2760: BatWings x1
 Recipe {
     create: (1165, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1520, 1)],
     stations: &[134],
     ..BASE
 },
-// 2760: BeeWings x1
+// 2761: BeeWings x1
 Recipe {
     create: (1515, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1521, 1)],
     stations: &[134],
     ..BASE
 },
-// 2761: TatteredFairyWings x1
+// 2762: TatteredFairyWings x1
 Recipe {
     create: (1797, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1811, 1)],
     stations: &[134],
     ..BASE
 },
-// 2762: SpookyWings x1
+// 2763: SpookyWings x1
 Recipe {
     create: (1830, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1831, 1)],
     stations: &[134],
     ..BASE
 },
-// 2763: GhostWings x1
+// 2764: GhostWings x1
 Recipe {
     create: (823, 1),
     required: &[Requirement::item(575, 20), Requirement::item(3261, 10)],
     stations: &[134],
     ..BASE
 },
-// 2764: BeetleWings x1
+// 2765: BeetleWings x1
 Recipe {
     create: (2280, 1),
     required: &[Requirement::item(575, 20), Requirement::item(2218, 8)],
     stations: &[134],
     ..BASE
 },
-// 2765: Hoverboard x1
+// 2766: Hoverboard x1
 Recipe {
     create: (1866, 1),
     required: &[Requirement::item(575, 20), Requirement::item(1552, 18)],
     stations: &[134],
     ..BASE
 },
-// 2766: WingsSolar x1
+// 2767: WingsSolar x1
 Recipe {
     create: (3468, 1),
     required: &[Requirement::item(3458, 14), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2767: WingsVortex x1
+// 2768: WingsVortex x1
 Recipe {
     create: (3469, 1),
     required: &[Requirement::item(3456, 14), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2768: WingsNebula x1
+// 2769: WingsNebula x1
 Recipe {
     create: (3470, 1),
     required: &[Requirement::item(3457, 14), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2769: WingsStardust x1
+// 2770: WingsStardust x1
 Recipe {
     create: (3471, 1),
     required: &[Requirement::item(3459, 14), Requirement::item(3467, 10)],
     stations: &[412],
     ..BASE
 },
-// 2770: ChippysWings x1
+// 2771: ChippysWings x1
 Recipe {
     create: (5627, 1),
     required: &[Requirement::item(5737, 1), Requirement::item(575, 20), Requirement::item(1225, 12)],
     stations: &[134],
     ..BASE
 },
-// 2771: FishBowl x1
+// 2772: FishBowl x1
 Recipe {
     create: (250, 1),
     required: &[Requirement::item(261, 1), Requirement::item(126, 1)],
     ..BASE
 },
-// 2772: PupfishBowl x1
+// 2773: PupfishBowl x1
 Recipe {
     create: (4398, 1),
     required: &[Requirement::item(4373, 1), Requirement::item(126, 1)],
     ..BASE
 },
-// 2773: BlueJellyfishJar x1
+// 2774: BlueJellyfishJar x1
 Recipe {
     create: (2439, 1),
     required: &[Requirement::item(2436, 1), Requirement::item(126, 1)],
     ..BASE
 },
-// 2774: GreenJellyfishJar x1
+// 2775: GreenJellyfishJar x1
 Recipe {
     create: (2440, 1),
     required: &[Requirement::item(2437, 1), Requirement::item(126, 1)],
     ..BASE
 },
-// 2775: PinkJellyfishJar x1
+// 2776: PinkJellyfishJar x1
 Recipe {
     create: (2441, 1),
     required: &[Requirement::item(2438, 1), Requirement::item(126, 1)],
     ..BASE
 },
-// 2776: MonarchButterflyJar x1
+// 2777: MonarchButterflyJar x1
 Recipe {
     create: (2178, 1),
     required: &[Requirement::item(1994, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2777: PurpleEmperorButterflyJar x1
+// 2778: PurpleEmperorButterflyJar x1
 Recipe {
     create: (2179, 1),
     required: &[Requirement::item(1995, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2778: RedAdmiralButterflyJar x1
+// 2779: RedAdmiralButterflyJar x1
 Recipe {
     create: (2180, 1),
     required: &[Requirement::item(1996, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2779: UlyssesButterflyJar x1
+// 2780: UlyssesButterflyJar x1
 Recipe {
     create: (2181, 1),
     required: &[Requirement::item(1997, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2780: SulphurButterflyJar x1
+// 2781: SulphurButterflyJar x1
 Recipe {
     create: (2182, 1),
     required: &[Requirement::item(1998, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2781: TreeNymphButterflyJar x1
+// 2782: TreeNymphButterflyJar x1
 Recipe {
     create: (2183, 1),
     required: &[Requirement::item(1999, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2782: ZebraSwallowtailButterflyJar x1
+// 2783: ZebraSwallowtailButterflyJar x1
 Recipe {
     create: (2184, 1),
     required: &[Requirement::item(2000, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2783: JuliaButterflyJar x1
+// 2784: JuliaButterflyJar x1
 Recipe {
     create: (2185, 1),
     required: &[Requirement::item(2001, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2784: ScorpionCage x1
+// 2785: ScorpionCage x1
 Recipe {
     create: (2186, 1),
     required: &[Requirement::item(2002, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2785: BlackDragonflyJar x1
+// 2786: BlackDragonflyJar x1
 Recipe {
     create: (4327, 1),
     required: &[Requirement::item(4334, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2786: BlueDragonflyJar x1
+// 2787: BlueDragonflyJar x1
 Recipe {
     create: (4328, 1),
     required: &[Requirement::item(4335, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2787: GreenDragonflyJar x1
+// 2788: GreenDragonflyJar x1
 Recipe {
     create: (4329, 1),
     required: &[Requirement::item(4336, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2788: OrangeDragonflyJar x1
+// 2789: OrangeDragonflyJar x1
 Recipe {
     create: (4330, 1),
     required: &[Requirement::item(4337, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2789: RedDragonflyJar x1
+// 2790: RedDragonflyJar x1
 Recipe {
     create: (4331, 1),
     required: &[Requirement::item(4338, 1), Requirement::item(31, 1)],
     ..BASE
 },
-// 2790: YellowDragonflyJar x1
+// 2791: YellowDragonflyJar x1
 Recipe {
     create: (4332, 1),
     required: &[Requirement::item(4339, 1), Requirement::item(31, 1)],
+    ..BASE
+},
+// 2792: StinkbugCage x1
+Recipe {
+    create: (5133, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(5132, 1)],
+    ..BASE
+},
+// 2793: HellButterflyJar x1
+Recipe {
+    create: (4846, 1),
+    required: &[Requirement::item(31, 1), Requirement::item(4845, 1)],
+    ..BASE
+},
+// 2794: EmpressButterflyJar x1
+Recipe {
+    create: (4964, 1),
+    required: &[Requirement::item(31, 1), Requirement::item(4961, 1)],
+    ..BASE
+},
+// 2795: PinkFairyJar x1
+Recipe {
+    create: (4655, 1),
+    required: &[Requirement::item(31, 1), Requirement::item(4068, 1)],
+    ..BASE
+},
+// 2796: GreenFairyJar x1
+Recipe {
+    create: (4656, 1),
+    required: &[Requirement::item(31, 1), Requirement::item(4069, 1)],
+    ..BASE
+},
+// 2797: BlueFairyJar x1
+Recipe {
+    create: (4657, 1),
+    required: &[Requirement::item(31, 1), Requirement::item(4070, 1)],
+    ..BASE
+},
+// 2798: Terrarium x1
+Recipe {
+    create: (2208, 1),
+    required: &[Requirement::item(170, 16)],
+    stations: &[17],
+    ..BASE
+},
+// 2799: BunnyCage x1
+Recipe {
+    create: (2162, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2019, 1)],
+    ..BASE
+},
+// 2800: SquirrelCage x1
+Recipe {
+    create: (2163, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2018, 1)],
+    ..BASE
+},
+// 2801: SquirrelOrangeCage x1
+Recipe {
+    create: (3565, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(3563, 1)],
+    ..BASE
+},
+// 2802: PenguinCage x1
+Recipe {
+    create: (2206, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2205, 1)],
+    ..BASE
+},
+// 2803: DuckCage x1
+Recipe {
+    create: (2165, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2123, 1)],
+    ..BASE
+},
+// 2804: MallardDuckCage x1
+Recipe {
+    create: (2164, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2122, 1)],
+    ..BASE
+},
+// 2805: BirdCage x1
+Recipe {
+    create: (2166, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2015, 1)],
+    ..BASE
+},
+// 2806: BlueJayCage x1
+Recipe {
+    create: (2167, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2016, 1)],
+    ..BASE
+},
+// 2807: CardinalCage x1
+Recipe {
+    create: (2168, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2017, 1)],
+    ..BASE
+},
+// 2808: ScarletMacawCage x1
+Recipe {
+    create: (5213, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(5212, 1)],
+    ..BASE
+},
+// 2809: BlueMacawCage x1
+Recipe {
+    create: (5301, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(5300, 1)],
+    ..BASE
+},
+// 2810: ToucanCage x1
+Recipe {
+    create: (5314, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(5311, 1)],
+    ..BASE
+},
+// 2811: YellowCockatielCage x1
+Recipe {
+    create: (5315, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(5312, 1)],
+    ..BASE
+},
+// 2812: GrayCockatielCage x1
+Recipe {
+    create: (5316, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(5313, 1)],
+    ..BASE
+},
+// 2813: FrogCage x1
+Recipe {
+    create: (2190, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2121, 1)],
+    ..BASE
+},
+// 2814: SnailCage x1
+Recipe {
+    create: (2174, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2006, 1)],
+    ..BASE
+},
+// 2815: GlowingSnailCage x1
+Recipe {
+    create: (2175, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2007, 1)],
+    ..BASE
+},
+// 2816: ScorpionCage x1
+Recipe {
+    create: (2186, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2157, 1)],
+    ..BASE
+},
+// 2817: BlackScorpionCage x1
+Recipe {
+    create: (2187, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2156, 1)],
+    ..BASE
+},
+// 2818: MouseCage x1
+Recipe {
+    create: (2191, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2003, 1)],
+    ..BASE
+},
+// 2819: RatCage x1
+Recipe {
+    create: (4376, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4375, 1)],
+    ..BASE
+},
+// 2820: WormCage x1
+Recipe {
+    create: (2207, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2002, 1)],
+    ..BASE
+},
+// 2821: MaggotCage x1
+Recipe {
+    create: (4364, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4363, 1)],
+    ..BASE
+},
+// 2822: GrasshopperCage x1
+Recipe {
+    create: (2741, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2740, 1)],
+    ..BASE
+},
+// 2823: LadybugCage x1
+Recipe {
+    create: (4380, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4361, 1)],
+    ..BASE
+},
+// 2824: TurtleCage x1
+Recipe {
+    create: (4461, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4464, 1)],
+    ..BASE
+},
+// 2825: TurtleJungleCage x1
+Recipe {
+    create: (4462, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4465, 1)],
+    ..BASE
+},
+// 2826: GrebeCage x1
+Recipe {
+    create: (4473, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4374, 1)],
+    ..BASE
+},
+// 2827: SeagullCage x1
+Recipe {
+    create: (4474, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4359, 1)],
+    ..BASE
+},
+// 2828: WaterStriderCage x1
+Recipe {
+    create: (4475, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4418, 1)],
+    ..BASE
+},
+// 2829: SeahorseCage x1
+Recipe {
+    create: (4481, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4480, 1)],
+    ..BASE
+},
+// 2830: PufferfishCage x1
+Recipe {
+    create: (5512, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(5511, 1)],
+    ..BASE
+},
+// 2831: OwlCage x1
+Recipe {
+    create: (4396, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4395, 1)],
+    ..BASE
+},
+// 2832: MagmaSnailCage x1
+Recipe {
+    create: (4850, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4849, 1)],
+    ..BASE
+},
+// 2833: TruffleWormCage x1
+Recipe {
+    create: (4963, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2673, 1)],
+    ..BASE
+},
+// 2834: AmethystBunnyCage x1
+Recipe {
+    create: (4882, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4838, 1)],
+    ..BASE
+},
+// 2835: TopazBunnyCage x1
+Recipe {
+    create: (4883, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4839, 1)],
+    ..BASE
+},
+// 2836: SapphireBunnyCage x1
+Recipe {
+    create: (4884, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4840, 1)],
+    ..BASE
+},
+// 2837: EmeraldBunnyCage x1
+Recipe {
+    create: (4885, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4841, 1)],
+    ..BASE
+},
+// 2838: RubyBunnyCage x1
+Recipe {
+    create: (4886, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4842, 1)],
+    ..BASE
+},
+// 2839: DiamondBunnyCage x1
+Recipe {
+    create: (4887, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4843, 1)],
+    ..BASE
+},
+// 2840: AmberBunnyCage x1
+Recipe {
+    create: (4888, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4844, 1)],
+    ..BASE
+},
+// 2841: AmethystSquirrelCage x1
+Recipe {
+    create: (4889, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4831, 1)],
+    ..BASE
+},
+// 2842: TopazSquirrelCage x1
+Recipe {
+    create: (4890, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4832, 1)],
+    ..BASE
+},
+// 2843: SapphireSquirrelCage x1
+Recipe {
+    create: (4891, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4833, 1)],
+    ..BASE
+},
+// 2844: EmeraldSquirrelCage x1
+Recipe {
+    create: (4892, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4834, 1)],
+    ..BASE
+},
+// 2845: RubySquirrelCage x1
+Recipe {
+    create: (4893, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4835, 1)],
+    ..BASE
+},
+// 2846: DiamondSquirrelCage x1
+Recipe {
+    create: (4894, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4836, 1)],
+    ..BASE
+},
+// 2847: AmberSquirrelCage x1
+Recipe {
+    create: (4895, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4837, 1)],
+    ..BASE
+},
+// 2848: GoldSeahorseCage x1
+Recipe {
+    create: (4483, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4482, 1)],
+    ..BASE
+},
+// 2849: GoldWaterStriderCage x1
+Recipe {
+    create: (4476, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4419, 1)],
+    ..BASE
+},
+// 2850: GoldGoldfishBowl x1
+Recipe {
+    create: (4275, 1),
+    required: &[Requirement::item(4274, 1), Requirement::item(126, 1)],
+    ..BASE
+},
+// 2851: GoldButterflyCage x1
+Recipe {
+    create: (3072, 1),
+    required: &[Requirement::item(2891, 1), Requirement::item(31, 1)],
+    ..BASE
+},
+// 2852: GoldDragonflyJar x1
+Recipe {
+    create: (4333, 1),
+    required: &[Requirement::item(4340, 1), Requirement::item(31, 1)],
+    ..BASE
+},
+// 2853: GoldBirdCage x1
+Recipe {
+    create: (3070, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2889, 1)],
+    ..BASE
+},
+// 2854: GoldBunnyCage x1
+Recipe {
+    create: (3071, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2890, 1)],
+    ..BASE
+},
+// 2855: SquirrelGoldCage x1
+Recipe {
+    create: (3566, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(3564, 1)],
+    ..BASE
+},
+// 2856: GoldFrogCage x1
+Recipe {
+    create: (3073, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2892, 1)],
+    ..BASE
+},
+// 2857: GoldGrasshopperCage x1
+Recipe {
+    create: (3074, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2893, 1)],
+    ..BASE
+},
+// 2858: GoldMouseCage x1
+Recipe {
+    create: (3075, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2894, 1)],
+    ..BASE
+},
+// 2859: GoldWormCage x1
+Recipe {
+    create: (3076, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(2895, 1)],
+    ..BASE
+},
+// 2860: GoldLadybugCage x1
+Recipe {
+    create: (4399, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(4362, 1)],
+    ..BASE
+},
+// 2861: CageEnchantedNightcrawler x1
+Recipe {
+    create: (3254, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(3191, 1)],
+    ..BASE
+},
+// 2862: CageBuggy x1
+Recipe {
+    create: (3255, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(3194, 1)],
+    ..BASE
+},
+// 2863: CageGrubby x1
+Recipe {
+    create: (3256, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(3192, 1)],
+    ..BASE
+},
+// 2864: CageSluggy x1
+Recipe {
+    create: (3257, 1),
+    required: &[Requirement::item(2208, 1), Requirement::item(3193, 1)],
+    ..BASE
+},
+// 2865: DeepRedPaint x1
+Recipe {
+    create: (1085, 1),
+    required: &[Requirement::item(1073, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2866: DeepOrangePaint x1
+Recipe {
+    create: (1086, 1),
+    required: &[Requirement::item(1074, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2867: DeepYellowPaint x1
+Recipe {
+    create: (1087, 1),
+    required: &[Requirement::item(1075, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2868: DeepLimePaint x1
+Recipe {
+    create: (1088, 1),
+    required: &[Requirement::item(1076, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2869: DeepGreenPaint x1
+Recipe {
+    create: (1089, 1),
+    required: &[Requirement::item(1077, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2870: DeepTealPaint x1
+Recipe {
+    create: (1090, 1),
+    required: &[Requirement::item(1078, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2871: DeepCyanPaint x1
+Recipe {
+    create: (1091, 1),
+    required: &[Requirement::item(1079, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2872: DeepSkyBluePaint x1
+Recipe {
+    create: (1092, 1),
+    required: &[Requirement::item(1080, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2873: DeepBluePaint x1
+Recipe {
+    create: (1093, 1),
+    required: &[Requirement::item(1081, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2874: DeepPurplePaint x1
+Recipe {
+    create: (1094, 1),
+    required: &[Requirement::item(1082, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2875: DeepVioletPaint x1
+Recipe {
+    create: (1095, 1),
+    required: &[Requirement::item(1083, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2876: DeepPinkPaint x1
+Recipe {
+    create: (1096, 1),
+    required: &[Requirement::item(1084, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2877: RedDye x2
+Recipe {
+    create: (1007, 2),
+    required: &[Requirement::item(1115, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2878: OrangeDye x2
+Recipe {
+    create: (1008, 2),
+    required: &[Requirement::item(1114, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2879: YellowDye x2
+Recipe {
+    create: (1009, 2),
+    required: &[Requirement::item(1110, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2880: LimeDye x2
+Recipe {
+    create: (1010, 2),
+    required: &[Requirement::item(1112, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2881: GreenDye x2
+Recipe {
+    create: (1011, 2),
+    required: &[Requirement::item(1108, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2882: TealDye x2
+Recipe {
+    create: (1012, 2),
+    required: &[Requirement::item(1107, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2883: CyanDye x2
+Recipe {
+    create: (1013, 2),
+    required: &[Requirement::item(1116, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2884: SkyBlueDye x2
+Recipe {
+    create: (1014, 2),
+    required: &[Requirement::item(1109, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2885: BlueDye x2
+Recipe {
+    create: (1015, 2),
+    required: &[Requirement::item(1111, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2886: PurpleDye x2
+Recipe {
+    create: (1016, 2),
+    required: &[Requirement::item(1118, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2887: VioletDye x2
+Recipe {
+    create: (1017, 2),
+    required: &[Requirement::item(1117, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2888: PinkDye x2
+Recipe {
+    create: (1018, 2),
+    required: &[Requirement::item(1113, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2889: BlackDye x2
+Recipe {
+    create: (1050, 2),
+    required: &[Requirement::item(1119, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2890: FlameDye x1
+Recipe {
+    create: (1031, 1),
+    required: &[Requirement::item(1007, 1), Requirement::item(1008, 1), Requirement::item(1009, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2891: GreenFlameDye x1
+Recipe {
+    create: (1033, 1),
+    required: &[Requirement::item(1009, 1), Requirement::item(1010, 1), Requirement::item(1011, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2892: BlueFlameDye x1
+Recipe {
+    create: (1035, 1),
+    required: &[Requirement::item(1013, 1), Requirement::item(1014, 1), Requirement::item(1015, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2893: IntenseFlameDye x1
+Recipe {
+    create: (1063, 1),
+    required: &[Requirement::item(1031, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2894: IntenseGreenFlameDye x1
+Recipe {
+    create: (1064, 1),
+    required: &[Requirement::item(1033, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2895: IntenseBlueFlameDye x1
+Recipe {
+    create: (1065, 1),
+    required: &[Requirement::item(1035, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2896: FlameAndBlackDye x1
+Recipe {
+    create: (1032, 1),
+    required: &[Requirement::item(1031, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2897: GreenFlameAndBlackDye x1
+Recipe {
+    create: (1034, 1),
+    required: &[Requirement::item(1033, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2898: BlueFlameAndBlackDye x1
+Recipe {
+    create: (1036, 1),
+    required: &[Requirement::item(1035, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2899: FlameAndSilverDye x1
+Recipe {
+    create: (3550, 1),
+    required: &[Requirement::item(1031, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2900: GreenFlameAndSilverDye x1
+Recipe {
+    create: (3551, 1),
+    required: &[Requirement::item(1033, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2901: BlueFlameAndSilverDye x1
+Recipe {
+    create: (3552, 1),
+    required: &[Requirement::item(1035, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2902: YellowGradientDye x1
+Recipe {
+    create: (1068, 1),
+    required: &[Requirement::item(1008, 1), Requirement::item(1009, 1), Requirement::item(1010, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2903: CyanGradientDye x1
+Recipe {
+    create: (1069, 1),
+    required: &[Requirement::item(1012, 1), Requirement::item(1013, 1), Requirement::item(1014, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2904: VioletGradientDye x1
+Recipe {
+    create: (1070, 1),
+    required: &[Requirement::item(1016, 1), Requirement::item(1017, 1), Requirement::item(1018, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2905: RainbowDye x1
+Recipe {
+    create: (1066, 1),
+    required: &[Requirement::item(1068, 1), Requirement::item(1069, 1), Requirement::item(1070, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2906: IntenseRainbowDye x1
+Recipe {
+    create: (1067, 1),
+    required: &[Requirement::item(1066, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2907: RedandBlackDye x1
+Recipe {
+    create: (1019, 1),
+    required: &[Requirement::item(1007, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2908: OrangeandBlackDye x1
+Recipe {
+    create: (1020, 1),
+    required: &[Requirement::item(1008, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2909: YellowandBlackDye x1
+Recipe {
+    create: (1021, 1),
+    required: &[Requirement::item(1009, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2910: LimeandBlackDye x1
+Recipe {
+    create: (1022, 1),
+    required: &[Requirement::item(1010, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2911: GreenandBlackDye x1
+Recipe {
+    create: (1023, 1),
+    required: &[Requirement::item(1011, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2912: TealandBlackDye x1
+Recipe {
+    create: (1024, 1),
+    required: &[Requirement::item(1012, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2913: CyanandBlackDye x1
+Recipe {
+    create: (1025, 1),
+    required: &[Requirement::item(1013, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2914: SkyBlueandBlackDye x1
+Recipe {
+    create: (1026, 1),
+    required: &[Requirement::item(1014, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2915: BlueandBlackDye x1
+Recipe {
+    create: (1027, 1),
+    required: &[Requirement::item(1015, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2916: PurpleandBlackDye x1
+Recipe {
+    create: (1028, 1),
+    required: &[Requirement::item(1016, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2917: VioletandBlackDye x1
+Recipe {
+    create: (1029, 1),
+    required: &[Requirement::item(1017, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2918: PinkandBlackDye x1
+Recipe {
+    create: (1030, 1),
+    required: &[Requirement::item(1018, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2919: BrownAndBlackDye x1
+Recipe {
+    create: (2875, 1),
+    required: &[Requirement::item(2874, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2920: BrightRedDye x1
+Recipe {
+    create: (1038, 1),
+    required: &[Requirement::item(1007, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2921: BrightOrangeDye x1
+Recipe {
+    create: (1039, 1),
+    required: &[Requirement::item(1008, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2922: BrightYellowDye x1
+Recipe {
+    create: (1040, 1),
+    required: &[Requirement::item(1009, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2923: BrightLimeDye x1
+Recipe {
+    create: (1041, 1),
+    required: &[Requirement::item(1010, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2924: BrightGreenDye x1
+Recipe {
+    create: (1042, 1),
+    required: &[Requirement::item(1011, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2925: BrightTealDye x1
+Recipe {
+    create: (1043, 1),
+    required: &[Requirement::item(1012, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2926: BrightCyanDye x1
+Recipe {
+    create: (1044, 1),
+    required: &[Requirement::item(1013, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2927: BrightSkyBlueDye x1
+Recipe {
+    create: (1045, 1),
+    required: &[Requirement::item(1014, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2928: BrightBlueDye x1
+Recipe {
+    create: (1046, 1),
+    required: &[Requirement::item(1015, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2929: BrightPurpleDye x1
+Recipe {
+    create: (1047, 1),
+    required: &[Requirement::item(1016, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2930: BrightVioletDye x1
+Recipe {
+    create: (1048, 1),
+    required: &[Requirement::item(1017, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2931: BrightPinkDye x1
+Recipe {
+    create: (1049, 1),
+    required: &[Requirement::item(1018, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2932: BrightBrownDye x1
+Recipe {
+    create: (2876, 1),
+    required: &[Requirement::item(2874, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2933: RedandSilverDye x1
+Recipe {
+    create: (1051, 1),
+    required: &[Requirement::item(1007, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2934: OrangeandSilverDye x1
+Recipe {
+    create: (1052, 1),
+    required: &[Requirement::item(1008, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2935: YellowandSilverDye x1
+Recipe {
+    create: (1053, 1),
+    required: &[Requirement::item(1009, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2936: LimeandSilverDye x1
+Recipe {
+    create: (1054, 1),
+    required: &[Requirement::item(1010, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2937: GreenandSilverDye x1
+Recipe {
+    create: (1055, 1),
+    required: &[Requirement::item(1011, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2938: TealandSilverDye x1
+Recipe {
+    create: (1056, 1),
+    required: &[Requirement::item(1012, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2939: CyanandSilverDye x1
+Recipe {
+    create: (1057, 1),
+    required: &[Requirement::item(1013, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2940: SkyBlueandSilverDye x1
+Recipe {
+    create: (1058, 1),
+    required: &[Requirement::item(1014, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2941: BlueandSilverDye x1
+Recipe {
+    create: (1059, 1),
+    required: &[Requirement::item(1015, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2942: PurpleandSilverDye x1
+Recipe {
+    create: (1060, 1),
+    required: &[Requirement::item(1016, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2943: VioletandSilverDye x1
+Recipe {
+    create: (1061, 1),
+    required: &[Requirement::item(1017, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2944: PinkandSilverDye x1
+Recipe {
+    create: (1062, 1),
+    required: &[Requirement::item(1018, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2945: BrownAndSilverDye x1
+Recipe {
+    create: (2877, 1),
+    required: &[Requirement::item(2874, 1), Requirement::item(1037, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2946: SilverAndBlackDye x1
+Recipe {
+    create: (3559, 1),
+    required: &[Requirement::item(1037, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2947: BlackAndWhiteDye x1
+Recipe {
+    create: (3557, 1),
+    required: &[Requirement::item(1037, 1), Requirement::item(1050, 1)],
+    stations: &[228],
+    ..BASE
+},
+// 2948: BrightSilverDye x1
+Recipe {
+    create: (3558, 1),
+    required: &[Requirement::item(1037, 2)],
+    stations: &[228],
+    ..BASE
+},
+// 2949: PinkGelDye x1
+Recipe {
+    create: (3562, 1),
+    required: &[Requirement::item(3561, 1), Requirement::item(3111, 10)],
+    stations: &[228],
+    ..BASE
+},
+// 2950: ShiftingPearlSandsDye x1
+Recipe {
+    create: (3535, 1),
+    required: &[Requirement::item(3533, 1), Requirement::item(502, 20)],
+    stations: &[228],
+    ..BASE
+},
+// 2951: SolarDye x1
+Recipe {
+    create: (3526, 1),
+    required: &[Requirement::item(126, 1), Requirement::item(3458, 10)],
+    stations: &[228],
+    ..BASE
+},
+// 2952: VortexDye x1
+Recipe {
+    create: (3528, 1),
+    required: &[Requirement::item(126, 1), Requirement::item(3456, 10)],
+    stations: &[228],
+    ..BASE
+},
+// 2953: NebulaDye x1
+Recipe {
+    create: (3527, 1),
+    required: &[Requirement::item(126, 1), Requirement::item(3457, 10)],
+    stations: &[228],
+    ..BASE
+},
+// 2954: StardustDye x1
+Recipe {
+    create: (3529, 1),
+    required: &[Requirement::item(126, 1), Requirement::item(3459, 10)],
+    stations: &[228],
+    ..BASE
+},
+// 2955: VoidDye x1
+Recipe {
+    create: (3530, 1),
+    required: &[Requirement::item(126, 1), Requirement::item(3467, 5)],
+    stations: &[228],
+    ..BASE
+},
+// 2956: MeteorStaff x1
+Recipe {
+    create: (2750, 1),
+    required: &[Requirement::item(117, 20), Requirement::item(501, 10), Requirement::item(520, 10)],
+    stations: &[134],
+    ..BASE
+},
+// 2957: DivingGear x1
+Recipe {
+    create: (394, 1),
+    required: &[Requirement::item(187, 1), Requirement::item(268, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2958: JellyfishDivingGear x1
+Recipe {
+    create: (1860, 1),
+    required: &[Requirement::item(394, 1), Requirement::item(1303, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2959: ArcticDivingGear x1
+Recipe {
+    create: (1861, 1),
+    required: &[Requirement::item(1860, 1), Requirement::item(950, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2960: GPS x1
+Recipe {
+    create: (395, 1),
+    required: &[Requirement::item(17, 1), Requirement::item(18, 1), Requirement::item(393, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2961: GPS x1
+Recipe {
+    create: (395, 1),
+    required: &[Requirement::item(709, 1), Requirement::item(18, 1), Requirement::item(393, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2962: FishFinder x1
+Recipe {
+    create: (3036, 1),
+    required: &[Requirement::item(3120, 1), Requirement::item(3037, 1), Requirement::item(3096, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2963: GoblinTech x1
+Recipe {
+    create: (3121, 1),
+    required: &[Requirement::item(3102, 1), Requirement::item(3099, 1), Requirement::item(3119, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2964: REK x1
+Recipe {
+    create: (3122, 1),
+    required: &[Requirement::item(3095, 1), Requirement::item(3118, 1), Requirement::item(3084, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2965: PDA x1
+Recipe {
+    create: (3123, 1),
+    required: &[Requirement::item(395, 1), Requirement::item(3036, 1), Requirement::item(3121, 1), Requirement::item(3122, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2966: MagicMirror x1
+Recipe {
+    create: (50, 1),
+    required: &[Requirement::item(170, 10), Requirement::item(19, 8), Requirement::item(182, 3)],
+    stations: &[17],
+    ..BASE
+},
+// 2967: MagicMirror x1
+Recipe {
+    create: (50, 1),
+    required: &[Requirement::item(170, 10), Requirement::item(706, 8), Requirement::item(182, 3)],
+    stations: &[17],
+    ..BASE
+},
+// 2968: CellPhone x1
+Recipe {
+    create: (3124, 1),
+    required: &[Requirement::item(3123, 1), Requirement::item(50, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2969: CellPhone x1
+Recipe {
+    create: (3124, 1),
+    required: &[Requirement::item(3123, 1), Requirement::item(3199, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2970: ShellphoneDummy x1
+Recipe {
+    create: (5437, 1),
+    required: &[Requirement::item(3124, 1), Requirement::item(4263, 1), Requirement::item(4819, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2971: MagnetFlower x1
+Recipe {
+    create: (4000, 1),
+    required: &[Requirement::item(555, 1), Requirement::item(2219, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2972: ManaCloak x1
+Recipe {
+    create: (4001, 1),
+    required: &[Requirement::item(555, 1), Requirement::item(532, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2973: FrogWebbing x1
+Recipe {
+    create: (3996, 1),
+    required: &[Requirement::item(2423, 1), Requirement::item(976, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2974: FrogFlipper x1
+Recipe {
+    create: (3994, 1),
+    required: &[Requirement::item(2423, 1), Requirement::item(187, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2975: FrogGear x1
+Recipe {
+    create: (3995, 1),
+    required: &[Requirement::item(3994, 1), Requirement::item(976, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2976: FrogGear x1
+Recipe {
+    create: (3995, 1),
+    required: &[Requirement::item(3996, 1), Requirement::item(187, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2977: FrozenShield x1
+Recipe {
+    create: (3997, 1),
+    required: &[Requirement::item(938, 1), Requirement::item(1253, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2978: HeroShield x1
+Recipe {
+    create: (3998, 1),
+    required: &[Requirement::item(938, 1), Requirement::item(3016, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2979: UltrabrightHelmet x1
+Recipe {
+    create: (4008, 1),
+    required: &[Requirement::item(88, 1), Requirement::item(3109, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2980: BerserkerGlove x1
+Recipe {
+    create: (3992, 1),
+    required: &[Requirement::item(897, 1), Requirement::item(3016, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2981: StalkersQuiver x1
+Recipe {
+    create: (4006, 1),
+    required: &[Requirement::item(1321, 1), Requirement::item(3015, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2982: ReconScope x1
+Recipe {
+    create: (4005, 1),
+    required: &[Requirement::item(1858, 1), Requirement::item(3015, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2983: ArcaneFlower x1
+Recipe {
+    create: (3991, 1),
+    required: &[Requirement::item(555, 1), Requirement::item(3015, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2984: ScoutSling x1
+Recipe {
+    create: (6175, 1),
+    required: &[Requirement::item(6172, 1), Requirement::item(3015, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2985: TemplarSling x1
+Recipe {
+    create: (6176, 1),
+    required: &[Requirement::item(6172, 1), Requirement::item(1248, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2986: RoyalGuardHarness x1
+Recipe {
+    create: (6177, 1),
+    required: &[Requirement::item(6172, 1), Requirement::item(156, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2987: Pyroclast x1
+Recipe {
+    create: (6178, 1),
+    required: &[Requirement::item(6167, 1), Requirement::item(1322, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2988: ArmletOfRuin x1
+Recipe {
+    create: (6179, 1),
+    required: &[Requirement::item(6167, 1), Requirement::item(6159, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2989: SeraphNecklace x1
+Recipe {
+    create: (6180, 1),
+    required: &[Requirement::item(6166, 1), Requirement::item(554, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2990: PhoenixQuiver x1
+Recipe {
+    create: (6181, 1),
+    required: &[Requirement::item(6166, 1), Requirement::item(4002, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2991: WickedClaws x1
+Recipe {
+    create: (6182, 1),
+    required: &[Requirement::item(6159, 1), Requirement::item(211, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2992: SilverShield x1
+Recipe {
+    create: (6183, 1),
+    required: &[Requirement::item(6156, 1), Requirement::item(397, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2993: SweetBarb x1
+Recipe {
+    create: (6184, 1),
+    required: &[Requirement::item(6165, 1), Requirement::item(1132, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2994: CatalystBand x1
+Recipe {
+    create: (6185, 1),
+    required: &[Requirement::item(6165, 1), Requirement::item(535, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2995: DruidicSerpentCloak x1
+Recipe {
+    create: (6186, 1),
+    required: &[Requirement::item(6157, 1), Requirement::item(532, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2996: CrossedHeartNecklace x1
+Recipe {
+    create: (6187, 1),
+    required: &[Requirement::item(1290, 1), Requirement::item(554, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2997: RestorationShield x1
+Recipe {
+    create: (6188, 1),
+    required: &[Requirement::item(982, 1), Requirement::item(156, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2998: MysticArtsSash x1
+Recipe {
+    create: (6189, 1),
+    required: &[Requirement::item(982, 1), Requirement::item(963, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 2999: StingerNecklace x1
+Recipe {
+    create: (4007, 1),
+    required: &[Requirement::item(3212, 1), Requirement::item(1132, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3000: AmphibianBoots x1
+Recipe {
+    create: (3990, 1),
+    required: &[Requirement::item(3200, 1), Requirement::item(2423, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3001: MoltenQuiver x1
+Recipe {
+    create: (4002, 1),
+    required: &[Requirement::item(1321, 1), Requirement::item(1322, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3002: FairyBoots x1
+Recipe {
+    create: (3993, 1),
+    required: &[Requirement::item(405, 1), Requirement::item(3017, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3003: ObsidianHorseshoe x1
+Recipe {
+    create: (396, 1),
+    required: &[Requirement::item(158, 1), Requirement::item(193, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3004: ObsidianShield x1
+Recipe {
+    create: (397, 1),
+    required: &[Requirement::item(156, 1), Requirement::item(193, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3005: AnkhShield x1
+Recipe {
+    create: (1613, 1),
+    required: &[Requirement::item(397, 1), Requirement::item(1612, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3006: FartinaJar x1
+Recipe {
+    create: (1724, 1),
+    required: &[Requirement::item(53, 1), Requirement::item(215, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3007: CloudinaBalloon x1
+Recipe {
+    create: (399, 1),
+    required: &[Requirement::item(53, 1), Requirement::item(159, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3008: BlizzardinaBalloon x1
+Recipe {
+    create: (1163, 1),
+    required: &[Requirement::item(987, 1), Requirement::item(159, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3009: SandstorminaBalloon x1
+Recipe {
+    create: (983, 1),
+    required: &[Requirement::item(857, 1), Requirement::item(159, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3010: FartInABalloon x1
+Recipe {
+    create: (1863, 1),
+    required: &[Requirement::item(1724, 1), Requirement::item(159, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3011: SharkronBalloon x1
+Recipe {
+    create: (3241, 1),
+    required: &[Requirement::item(3201, 1), Requirement::item(3225, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3012: BlueHorseshoeBalloon x1
+Recipe {
+    create: (1250, 1),
+    required: &[Requirement::item(399, 1), Requirement::item(158, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3013: WhiteHorseshoeBalloon x1
+Recipe {
+    create: (1251, 1),
+    required: &[Requirement::item(1163, 1), Requirement::item(158, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3014: YellowHorseshoeBalloon x1
+Recipe {
+    create: (1252, 1),
+    required: &[Requirement::item(983, 1), Requirement::item(158, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3015: BalloonHorseshoeFart x1
+Recipe {
+    create: (3250, 1),
+    required: &[Requirement::item(1863, 1), Requirement::item(158, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3016: BalloonHorseshoeHoney x1
+Recipe {
+    create: (3251, 1),
+    required: &[Requirement::item(1249, 1), Requirement::item(158, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3017: BalloonHorseshoeSharkron x1
+Recipe {
+    create: (3252, 1),
+    required: &[Requirement::item(3241, 1), Requirement::item(158, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3018: BundleofBalloons x1
+Recipe {
+    create: (1164, 1),
+    required: &[Requirement::item(399, 1), Requirement::item(1163, 1), Requirement::item(983, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3019: HorseshoeBundle x1
+Recipe {
+    create: (5331, 1),
+    required: &[Requirement::item(1164, 1), Requirement::item(158, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3020: HorseshoeBundle x1
+Recipe {
+    create: (5331, 1),
+    required: &[Requirement::item(399, 1), Requirement::item(1163, 1), Requirement::item(983, 1), Requirement::item(158, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3021: HorseshoeBundle x1
+Recipe {
+    create: (5331, 1),
+    required: &[Requirement::item(1250, 1), Requirement::group(1163, RecipeGroups::BLIZZARD_BALLOONS, 1), Requirement::group(983, RecipeGroups::SANDSTORM_BALLOONS, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3022: HorseshoeBundle x1
+Recipe {
+    create: (5331, 1),
+    required: &[Requirement::item(1251, 1), Requirement::group(399, RecipeGroups::CLOUD_BALLOONS, 1), Requirement::group(983, RecipeGroups::SANDSTORM_BALLOONS, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3023: HorseshoeBundle x1
+Recipe {
+    create: (5331, 1),
+    required: &[Requirement::item(1252, 1), Requirement::group(399, RecipeGroups::CLOUD_BALLOONS, 1), Requirement::group(1163, RecipeGroups::BLIZZARD_BALLOONS, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3024: HoneyBalloon x1
+Recipe {
+    create: (1249, 1),
+    required: &[Requirement::item(159, 1), Requirement::item(1132, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3025: SandstorminaBottle x1
+Recipe {
+    create: (857, 1),
+    required: &[Requirement::item(53, 1), Requirement::item(3783, 1)],
+    stations: &[125],
+    ..BASE
+},
+// 3026: BlizzardinaBottle x1
+Recipe {
+    create: (987, 1),
+    required: &[Requirement::item(53, 1), Requirement::item(2161, 1)],
+    stations: &[125],
+    ..BASE
+},
+// 3027: SpectreBoots x1
+Recipe {
+    create: (405, 1),
+    required: &[Requirement::item(54, 1), Requirement::item(128, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3028: SpectreBoots x1
+Recipe {
+    create: (405, 1),
+    required: &[Requirement::item(1579, 1), Requirement::item(128, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3029: SpectreBoots x1
+Recipe {
+    create: (405, 1),
+    required: &[Requirement::item(3200, 1), Requirement::item(128, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3030: SpectreBoots x1
+Recipe {
+    create: (405, 1),
+    required: &[Requirement::item(4055, 1), Requirement::item(128, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3031: LightningBoots x1
+Recipe {
+    create: (898, 1),
+    required: &[Requirement::item(405, 1), Requirement::item(212, 1), Requirement::item(285, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3032: FrostsparkBoots x1
+Recipe {
+    create: (1862, 1),
+    required: &[Requirement::item(898, 1), Requirement::item(950, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3033: TerrasparkBoots x1
+Recipe {
+    create: (5000, 1),
+    required: &[Requirement::item(1862, 1), Requirement::item(908, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3034: ObsidianSkull x1
+Recipe {
+    create: (193, 1),
+    required: &[Requirement::item(173, 20)],
+    stations: &[17],
+    ..BASE
+},
+// 3035: LavaSkull x1
+Recipe {
+    create: (3999, 1),
+    required: &[Requirement::item(193, 1), Requirement::item(906, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3036: ObsidianSkullRose x1
+Recipe {
+    create: (4004, 1),
+    required: &[Requirement::item(193, 1), Requirement::item(1323, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3037: MoltenSkullRose x1
+Recipe {
+    create: (4003, 1),
+    required: &[Requirement::item(4004, 1), Requirement::item(906, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3038: MoltenSkullRose x1
+Recipe {
+    create: (4003, 1),
+    required: &[Requirement::item(3999, 1), Requirement::item(1323, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3039: MoltenSkullRose x1
+Recipe {
+    create: (4003, 1),
+    required: &[Requirement::item(3999, 1), Requirement::item(4004, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3040: MoltenCharm x1
+Recipe {
+    create: (4038, 1),
+    required: &[Requirement::item(906, 1), Requirement::item(193, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3041: ObsidianWaterWalkingBoots x1
+Recipe {
+    create: (907, 1),
+    required: &[Requirement::item(863, 1), Requirement::item(193, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3042: LavaWaders x1
+Recipe {
+    create: (908, 1),
+    required: &[Requirement::item(907, 1), Requirement::item(906, 1), Requirement::item(1323, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3043: LavaWaders x1
+Recipe {
+    create: (908, 1),
+    required: &[Requirement::item(4038, 1), Requirement::item(863, 1), Requirement::item(1323, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3044: LavaWaders x1
+Recipe {
+    create: (908, 1),
+    required: &[Requirement::item(4038, 1), Requirement::item(907, 1), Requirement::item(1323, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3045: LavaWaders x1
+Recipe {
+    create: (908, 1),
+    required: &[Requirement::item(4003, 1), Requirement::item(907, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3046: LavaWaders x1
+Recipe {
+    create: (908, 1),
+    required: &[Requirement::item(4003, 1), Requirement::item(863, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3047: HellfireTreads x1
+Recipe {
+    create: (4874, 1),
+    required: &[Requirement::item(4822, 1), Requirement::item(405, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3048: ManaFlower x1
+Recipe {
+    create: (555, 1),
+    required: &[Requirement::item(223, 1), Requirement::item(189, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3049: CoinRing x1
+Recipe {
+    create: (3034, 1),
+    required: &[Requirement::item(3033, 1), Requirement::item(855, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3050: GreedyRing x1
+Recipe {
+    create: (3035, 1),
+    required: &[Requirement::item(3034, 1), Requirement::item(854, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3051: PowerGlove x1
+Recipe {
+    create: (897, 1),
+    required: &[Requirement::item(536, 1), Requirement::item(211, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3052: MechanicalGlove x1
+Recipe {
+    create: (936, 1),
+    required: &[Requirement::item(897, 1), Requirement::item(935, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3053: FireGauntlet x1
+Recipe {
+    create: (1343, 1),
+    required: &[Requirement::item(1322, 1), Requirement::item(936, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3054: PapyrusScarab x1
+Recipe {
+    create: (1864, 1),
+    required: &[Requirement::item(1845, 1), Requirement::item(1167, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3055: ManaRegenerationBand x1
+Recipe {
+    create: (982, 1),
+    required: &[Requirement::item(111, 1), Requirement::item(49, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3056: MagicCuffs x1
+Recipe {
+    create: (1595, 1),
+    required: &[Requirement::item(111, 1), Requirement::item(216, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3057: CelestialCuffs x1
+Recipe {
+    create: (2221, 1),
+    required: &[Requirement::item(2219, 1), Requirement::item(1595, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3058: CelestialEmblem x1
+Recipe {
+    create: (2220, 1),
+    required: &[Requirement::item(2219, 1), Requirement::item(935, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3059: CharmofMyths x1
+Recipe {
+    create: (860, 1),
+    required: &[Requirement::item(49, 1), Requirement::item(535, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3060: CelestialStone x1
+Recipe {
+    create: (1865, 1),
+    required: &[Requirement::item(899, 1), Requirement::item(900, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3061: MoonShell x1
+Recipe {
+    create: (861, 1),
+    required: &[Requirement::item(485, 1), Requirement::item(497, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3062: CelestialShell x1
+Recipe {
+    create: (3110, 1),
+    required: &[Requirement::item(1865, 1), Requirement::item(861, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3063: StarVeil x1
+Recipe {
+    create: (862, 1),
+    required: &[Requirement::item(532, 1), Requirement::item(554, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3064: BeeCloak x1
+Recipe {
+    create: (1247, 1),
+    required: &[Requirement::item(1132, 1), Requirement::item(532, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3065: SweetheartNecklace x1
+Recipe {
+    create: (1578, 1),
+    required: &[Requirement::item(1132, 1), Requirement::item(1290, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3066: TigerClimbingGear x1
+Recipe {
+    create: (976, 1),
+    required: &[Requirement::item(953, 1), Requirement::item(975, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3067: MasterNinjaGear x1
+Recipe {
+    create: (984, 1),
+    required: &[Requirement::item(976, 1), Requirement::item(977, 1), Requirement::item(963, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3068: ArchitectGizmoPack x1
+Recipe {
+    create: (3061, 1),
+    required: &[Requirement::item(2214, 1), Requirement::item(2215, 1), Requirement::item(2216, 1), Requirement::item(2217, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3069: HandOfCreation x1
+Recipe {
+    create: (5126, 1),
+    required: &[Requirement::item(3061, 1), Requirement::item(4056, 1), Requirement::item(5010, 1), Requirement::item(4341, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3070: AnglerTackleBag x1
+Recipe {
+    create: (3721, 1),
+    required: &[Requirement::item(2373, 1), Requirement::item(2375, 1), Requirement::item(2374, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3071: LavaproofTackleBag x1
+Recipe {
+    create: (5064, 1),
+    required: &[Requirement::item(3721, 1), Requirement::item(4881, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3072: FishingBobberGlowingStar x1
+Recipe {
+    create: (5140, 1),
+    required: &[Requirement::item(5139, 1), Requirement::item(75, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3073: FishingBobberGlowingArgon x1
+Recipe {
+    create: (5144, 1),
+    required: &[Requirement::item(5140, 1), Requirement::item(4389, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3074: FishingBobberGlowingKrypton x1
+Recipe {
+    create: (5142, 1),
+    required: &[Requirement::item(5140, 1), Requirement::item(4377, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3075: FishingBobberGlowingLava x1
+Recipe {
+    create: (5141, 1),
+    required: &[Requirement::item(5140, 1), Requirement::item(4354, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3076: FishingBobberGlowingRainbow x1
+Recipe {
+    create: (5146, 1),
+    required: &[Requirement::item(5140, 1), Requirement::item(5128, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3077: FishingBobberGlowingViolet x1
+Recipe {
+    create: (5145, 1),
+    required: &[Requirement::item(5140, 1), Requirement::item(5127, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3078: FishingBobberGlowingXenon x1
+Recipe {
+    create: (5143, 1),
+    required: &[Requirement::item(5140, 1), Requirement::item(4378, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3079: ArmorBracing x1
+Recipe {
+    create: (901, 1),
+    required: &[Requirement::item(886, 1), Requirement::item(892, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3080: MedicatedBandage x1
+Recipe {
+    create: (902, 1),
+    required: &[Requirement::item(887, 1), Requirement::item(885, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3081: ThePlan x1
+Recipe {
+    create: (903, 1),
+    required: &[Requirement::item(889, 1), Requirement::item(893, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3082: CountercurseMantra x1
+Recipe {
+    create: (904, 1),
+    required: &[Requirement::item(890, 1), Requirement::item(891, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3083: ReflectiveShades x1
+Recipe {
+    create: (5354, 1),
+    required: &[Requirement::item(888, 1), Requirement::item(3781, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3084: AnkhCharm x1
+Recipe {
+    create: (1612, 1),
+    required: &[Requirement::item(901, 1), Requirement::item(902, 1), Requirement::item(903, 1), Requirement::item(904, 1), Requirement::item(5354, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3085: AvengerEmblem x1
+Recipe {
+    create: (935, 1),
+    required: &[Requirement::item(490, 1), Requirement::item(548, 5), Requirement::item(549, 5), Requirement::item(547, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3086: AvengerEmblem x1
+Recipe {
+    create: (935, 1),
+    required: &[Requirement::item(491, 1), Requirement::item(548, 5), Requirement::item(549, 5), Requirement::item(547, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3087: AvengerEmblem x1
+Recipe {
+    create: (935, 1),
+    required: &[Requirement::item(489, 1), Requirement::item(548, 5), Requirement::item(549, 5), Requirement::item(547, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3088: AvengerEmblem x1
+Recipe {
+    create: (935, 1),
+    required: &[Requirement::item(2998, 1), Requirement::item(548, 5), Requirement::item(549, 5), Requirement::item(547, 5)],
+    stations: &[114],
+    ..BASE
+},
+// 3089: DestroyerEmblem x1
+Recipe {
+    create: (1301, 1),
+    required: &[Requirement::item(935, 1), Requirement::item(1248, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3090: SniperScope x1
+Recipe {
+    create: (1858, 1),
+    required: &[Requirement::item(1300, 1), Requirement::item(1301, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3091: CrystalStorm x1
+Recipe {
+    create: (518, 1),
+    required: &[Requirement::item(531, 1), Requirement::item(502, 20), Requirement::item(520, 15)],
+    stations: &[101],
+    ..BASE
+},
+// 3092: CursedFlames x1
+Recipe {
+    create: (519, 1),
+    required: &[Requirement::item(531, 1), Requirement::item(522, 20), Requirement::item(521, 15)],
+    stations: &[101],
+    ..BASE
+},
+// 3093: GoldenShower x1
+Recipe {
+    create: (1336, 1),
+    required: &[Requirement::item(531, 1), Requirement::item(1332, 20), Requirement::item(521, 15)],
+    stations: &[101],
+    ..BASE
+},
+// 3094: Goggles x1
+Recipe {
+    create: (37, 1),
+    required: &[Requirement::item(38, 2)],
+    stations: &[18],
+    ..BASE
+},
+// 3095: Sandgun x1
+Recipe {
+    create: (266, 1),
+    required: &[Requirement::item(324, 1), Requirement::item(323, 10), Requirement::item(180, 5)],
+    stations: &[17],
+    ..BASE
+},
+// 3096: Sunglasses x1
+Recipe {
+    create: (237, 1),
+    required: &[Requirement::item(236, 2)],
+    stations: &[18],
+    ..BASE
+},
+// 3097: ManaCrystal x1
+Recipe {
+    create: (109, 1),
+    required: &[Requirement::item(75, 5)],
+    ..BASE
+},
+// 3098: MulticolorWrench x1
+Recipe {
+    create: (3625, 1),
+    required: &[Requirement::item(509, 1), Requirement::item(851, 1), Requirement::item(850, 1), Requirement::item(3612, 1), Requirement::item(510, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3099: WireKite x1
+Recipe {
+    create: (3611, 1),
+    required: &[Requirement::item(3625, 1), Requirement::item(3619, 1), Requirement::item(2799, 1), Requirement::item(530, 60)],
+    stations: &[114],
+    ..BASE
+},
+// 3100: ActuationRod x1
+Recipe {
+    create: (3620, 1),
+    required: &[Requirement::item(849, 50), Requirement::group(22, RecipeGroups::IRON_BAR, 10), Requirement::item(530, 10)],
+    stations: &[16],
+    ..BASE
+},
+// 3101: ActiveStoneBlock x1
+Recipe {
+    create: (511, 1),
+    required: &[Requirement::item(3, 1), Requirement::item(530, 1)],
+    ..BASE
+},
+// 3102: InactiveStoneBlock x1
+Recipe {
+    create: (512, 1),
+    required: &[Requirement::item(26, 4), Requirement::item(530, 1)],
+    ..BASE
+},
+// 3103: AnnouncementBox x1
+Recipe {
+    create: (3617, 1),
+    required: &[Requirement::item(171, 1), Requirement::group(22, RecipeGroups::IRON_BAR, 4), Requirement::item(530, 4)],
+    stations: &[16],
+    ..BASE
+},
+// 3104: InletPump x1
+Recipe {
+    create: (581, 1),
+    required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 10), Requirement::item(530, 2)],
+    stations: &[16],
+    ..BASE
+},
+// 3105: OutletPump x1
+Recipe {
+    create: (582, 1),
+    required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 10), Requirement::item(530, 2)],
+    stations: &[16],
+    ..BASE
+},
+// 3106: Timer1Second x1
+Recipe {
+    create: (583, 1),
+    required: &[Requirement::item(17, 1), Requirement::item(530, 1)],
+    stations: &[16],
+    ..BASE
+},
+// 3107: Timer1Second x1
+Recipe {
+    create: (583, 1),
+    required: &[Requirement::item(709, 1), Requirement::item(530, 1)],
+    stations: &[16],
+    ..BASE
+},
+// 3108: Timer3Second x1
+Recipe {
+    create: (584, 1),
+    required: &[Requirement::item(16, 1), Requirement::item(530, 1)],
+    stations: &[16],
+    ..BASE
+},
+// 3109: Timer3Second x1
+Recipe {
+    create: (584, 1),
+    required: &[Requirement::item(708, 1), Requirement::item(530, 1)],
+    stations: &[16],
+    ..BASE
+},
+// 3110: Timer5Second x1
+Recipe {
+    create: (585, 1),
+    required: &[Requirement::item(15, 1), Requirement::item(530, 1)],
+    stations: &[16],
+    ..BASE
+},
+// 3111: Timer5Second x1
+Recipe {
+    create: (585, 1),
+    required: &[Requirement::item(707, 1), Requirement::item(530, 1)],
+    stations: &[16],
+    ..BASE
+},
+// 3112: WeightedPressurePlateCyan x1
+Recipe {
+    create: (3632, 1),
+    required: &[Requirement::group(542, RecipeGroups::PRESSURE_PLATE, 1), Requirement::group(22, RecipeGroups::IRON_BAR, 2), Requirement::item(530, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3113: WeightedPressurePlateOrange x1
+Recipe {
+    create: (3630, 1),
+    required: &[Requirement::group(542, RecipeGroups::PRESSURE_PLATE, 1), Requirement::group(22, RecipeGroups::IRON_BAR, 2), Requirement::item(530, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3114: WeightedPressurePlatePink x1
+Recipe {
+    create: (3626, 1),
+    required: &[Requirement::group(542, RecipeGroups::PRESSURE_PLATE, 1), Requirement::group(22, RecipeGroups::IRON_BAR, 2), Requirement::item(530, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3115: WeightedPressurePlatePurple x1
+Recipe {
+    create: (3631, 1),
+    required: &[Requirement::group(542, RecipeGroups::PRESSURE_PLATE, 1), Requirement::group(22, RecipeGroups::IRON_BAR, 2), Requirement::item(530, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3116: LogicSensor_Sun x1
+Recipe {
+    create: (3613, 1),
+    required: &[Requirement::item(520, 5), Requirement::group(22, RecipeGroups::IRON_BAR, 1), Requirement::item(530, 1)],
+    stations: &[134],
+    ..BASE
+},
+// 3117: LogicSensor_Moon x1
+Recipe {
+    create: (3614, 1),
+    required: &[Requirement::item(521, 5), Requirement::group(22, RecipeGroups::IRON_BAR, 1), Requirement::item(530, 1)],
+    stations: &[134],
+    ..BASE
+},
+// 3118: LogicSensor_Above x1
+Recipe {
+    create: (3615, 1),
+    required: &[Requirement::item(549, 1), Requirement::group(22, RecipeGroups::IRON_BAR, 1), Requirement::item(530, 1)],
+    stations: &[134],
+    ..BASE
+},
+// 3119: LogicSensor_Water x1
+Recipe {
+    create: (3726, 1),
+    required: &[Requirement::item(1344, 5), Requirement::item(3182, 1), Requirement::item(530, 1)],
+    stations: &[134],
+    ..BASE
+},
+// 3120: LogicSensor_Lava x1
+Recipe {
+    create: (3727, 1),
+    required: &[Requirement::item(1344, 5), Requirement::item(3184, 1), Requirement::item(530, 1)],
+    stations: &[134],
+    ..BASE
+},
+// 3121: LogicSensor_Honey x1
+Recipe {
+    create: (3728, 1),
+    required: &[Requirement::item(1344, 5), Requirement::item(3185, 1), Requirement::item(530, 1)],
+    stations: &[134],
+    ..BASE
+},
+// 3122: LogicSensor_Liquid x1
+Recipe {
+    create: (3729, 1),
+    required: &[Requirement::item(1344, 5), Requirement::item(3182, 1), Requirement::item(3184, 1), Requirement::item(3185, 1), Requirement::item(530, 1)],
+    stations: &[134],
+    ..BASE
+},
+// 3123: VenomDartTrap x1
+Recipe {
+    create: (5135, 1),
+    required: &[Requirement::item(539, 1), Requirement::item(2607, 2)],
+    stations: &[134],
+    ..BASE
+},
+// 3124: Explosives x1
+Recipe {
+    create: (580, 1),
+    required: &[Requirement::item(167, 3), Requirement::item(530, 1)],
+    ..BASE
+},
+// 3125: TNTBarrel x1
+Recipe {
+    create: (5327, 1),
+    required: &[Requirement::item(167, 3), Requirement::item(343, 1)],
+    ..BASE
+},
+// 3126: Boulder x1
+Recipe {
+    create: (540, 1),
+    required: &[Requirement::item(3, 6)],
+    stations: &[283],
+    ..BASE
+},
+// 3127: BouncyBoulder x1
+Recipe {
+    create: (5383, 1),
+    required: &[Requirement::item(540, 1), Requirement::item(3111, 5)],
+    stations: &[283],
+    ..BASE
+},
+// 3128: Poulder x1
+Recipe {
+    create: (5516, 1),
+    required: &[Requirement::item(5395, 20)],
+    stations: &[283],
+    ..BASE
+},
+// 3129: LavaBoulder x1
+Recipe {
+    create: (5520, 1),
+    required: &[Requirement::item(540, 1), Requirement::item(4825, 1)],
+    stations: &[283],
+    ..BASE
+},
+// 3130: SpiderBoulder x1
+Recipe {
+    create: (5521, 1),
+    required: &[Requirement::item(540, 1), Requirement::item(150, 200)],
+    stations: &[283],
+    ..BASE
+},
+// 3131: Ghoulder x1
+Recipe {
+    create: (5522, 1),
+    required: &[Requirement::item(540, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3132: RainbowBoulder x1
+Recipe {
+    create: (5514, 1),
+    required: &[Requirement::item(540, 1), Requirement::item(75, 50)],
+    stations: &[125],
+    ..BASE
+},
+// 3133: LifeCrystalBoulder x1
+Recipe {
+    create: (5384, 1),
+    required: &[Requirement::item(540, 1), Requirement::item(29, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3134: RollingCactus x1
+Recipe {
+    create: (4390, 1),
+    required: &[Requirement::item(276, 6)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3135: BeeHive x1
+Recipe {
+    create: (5066, 1),
+    required: &[Requirement::item(1124, 5)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3136: AntlionEggs x1
+Recipe {
+    create: (5067, 1),
+    required: &[Requirement::item(3271, 5), Requirement::item(323, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3137: CobwebReplica x1
+Recipe {
+    create: (5471, 1),
+    required: &[Requirement::item(150, 1)],
+    stations: &[86],
+    need_graveyard: true,
+    ..BASE
+},
+// 3138: Cobweb x1
+Recipe {
+    create: (150, 1),
+    required: &[Requirement::item(5471, 1)],
+    stations: &[86],
+    need_graveyard: true,
+    ..BASE
+},
+// 3139: DemonAltarReplica x1
+Recipe {
+    create: (5467, 1),
+    required: &[Requirement::item(61, 15), Requirement::item(57, 3), Requirement::item(86, 3)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3140: CrimsonAltarReplica x1
+Recipe {
+    create: (5468, 1),
+    required: &[Requirement::item(836, 15), Requirement::item(1257, 3), Requirement::item(1329, 3)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3141: ShadowOrbReplica x1
+Recipe {
+    create: (5469, 1),
+    required: &[Requirement::item(57, 5), Requirement::item(86, 5)],
+    stations: &[26],
+    ..BASE
+},
+// 3142: CrimsonHeartReplica x1
+Recipe {
+    create: (5470, 1),
+    required: &[Requirement::item(1257, 5), Requirement::item(1329, 5)],
+    stations: &[26],
+    ..BASE
+},
+// 3143: RepairedLifeCrystal x1
+Recipe {
+    create: (5286, 1),
+    required: &[Requirement::item(29, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3144: RepairedManaCrystal x1
+Recipe {
+    create: (5287, 1),
+    required: &[Requirement::item(109, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3145: PlaceableHealingPotion x1
+Recipe {
+    create: (5320, 1),
+    required: &[Requirement::item(28, 1)],
+    stations: &[283],
+    ..BASE
+},
+// 3146: PlaceableManaPotion x1
+Recipe {
+    create: (5321, 1),
+    required: &[Requirement::item(110, 1)],
+    stations: &[283],
+    ..BASE
+},
+// 3147: EchoMonolith x1
+Recipe {
+    create: (5345, 1),
+    required: &[Requirement::item(4392, 20), Requirement::item(530, 6), Requirement::item(129, 10)],
+    stations: &[283],
+    ..BASE
+},
+// 3148: CrawdadBanner x1
+Recipe {
+    create: (3393, 1),
+    required: &[Requirement::item(3391, 1), Requirement::item(3392, 1)],
+    stations: &[86],
+    need_graveyard: true,
+    ..BASE
+},
+// 3149: SalamanderBanner x1
+Recipe {
+    create: (3391, 1),
+    required: &[Requirement::item(3392, 1), Requirement::item(3393, 1)],
+    stations: &[86],
+    need_graveyard: true,
+    ..BASE
+},
+// 3150: GiantShellyBanner x1
+Recipe {
+    create: (3392, 1),
+    required: &[Requirement::item(3391, 1), Requirement::item(3393, 1)],
+    stations: &[86],
+    need_graveyard: true,
+    ..BASE
+},
+// 3151: ThinIce x1
+Recipe {
+    create: (4391, 1),
+    required: &[Requirement::item(664, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3152: PanicNecklace x1
+Recipe {
+    create: (1290, 1),
+    required: &[Requirement::item(111, 1), Requirement::item(29, 1)],
+    stations: &[114],
+    need_graveyard: true,
+    ..BASE
+},
+// 3153: BandofStarpower x1
+Recipe {
+    create: (111, 1),
+    required: &[Requirement::item(1290, 1), Requirement::item(109, 1)],
+    stations: &[114],
+    need_graveyard: true,
+    ..BASE
+},
+// 3154: FleshCloningVaat x1
+Recipe {
+    create: (2193, 1),
+    required: &[Requirement::item(4142, 1), Requirement::item(521, 10)],
+    stations: &[18],
+    need_graveyard: true,
+    ..BASE
+},
+// 3155: LesionStation x1
+Recipe {
+    create: (4142, 1),
+    required: &[Requirement::item(2193, 1), Requirement::item(521, 10)],
+    stations: &[18],
+    need_graveyard: true,
+    ..BASE
+},
+// 3156: BoulderStatue x1
+Recipe {
+    create: (4355, 1),
+    required: &[Requirement::item(3, 50), Requirement::item(540, 5)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3157: AmethystStoneBlock x1
+Recipe {
+    create: (4640, 1),
+    required: &[Requirement::item(181, 1), Requirement::item(3, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3158: TopazStoneBlock x1
+Recipe {
+    create: (4641, 1),
+    required: &[Requirement::item(180, 1), Requirement::item(3, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3159: SapphireStoneBlock x1
+Recipe {
+    create: (4642, 1),
+    required: &[Requirement::item(177, 1), Requirement::item(3, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3160: EmeraldStoneBlock x1
+Recipe {
+    create: (4643, 1),
+    required: &[Requirement::item(179, 1), Requirement::item(3, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3161: RubyStoneBlock x1
+Recipe {
+    create: (4644, 1),
+    required: &[Requirement::item(178, 1), Requirement::item(3, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3162: DiamondStoneBlock x1
+Recipe {
+    create: (4645, 1),
+    required: &[Requirement::item(182, 1), Requirement::item(3, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3163: AmberStoneBlock x1
+Recipe {
+    create: (4646, 1),
+    required: &[Requirement::item(999, 1), Requirement::item(3, 1)],
+    stations: &[283],
+    need_graveyard: true,
+    ..BASE
+},
+// 3164: MusicBoxTitle x1
+Recipe {
+    create: (565, 1),
+    required: &[Requirement::item(562, 1), Requirement::item(563, 1), Requirement::item(564, 1), Requirement::item(566, 1), Requirement::item(567, 1), Requirement::item(568, 1), Requirement::item(569, 1), Requirement::item(570, 1), Requirement::item(571, 1), Requirement::item(572, 1), Requirement::item(573, 1), Requirement::item(574, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3165: MusicBoxTitleAlt x1
+Recipe {
+    create: (4356, 1),
+    required: &[Requirement::item(4078, 1), Requirement::item(4080, 1), Requirement::item(4081, 1), Requirement::item(4082, 1), Requirement::item(4357, 1), Requirement::item(4358, 1), Requirement::item(4421, 1), Requirement::item(4606, 1), Requirement::item(5006, 1), Requirement::item(4979, 1), Requirement::item(4985, 1), Requirement::item(4990, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3166: MusicBoxConsoleTitle x1
+Recipe {
+    create: (4992, 1),
+    required: &[Requirement::item(1603, 1), Requirement::item(1602, 1), Requirement::item(4079, 1), Requirement::item(4077, 1), Requirement::item(1607, 1), Requirement::item(4991, 1)],
+    stations: &[114],
+    need_graveyard: true,
+    ..BASE
+},
+// 3167: MusicBoxDayRemix x1
+Recipe {
+    create: (4237, 1),
+    required: &[Requirement::item(562, 1), Requirement::item(2860, 25)],
+    stations: &[18],
+    ..BASE
+},
+// 3168: MusicBoxTorchGod x1
+Recipe {
+    create: (5638, 1),
+    required: &[Requirement::item(576, 1), Requirement::item(5573, 2), Requirement::item(8, 101)],
+    stations: &[18],
+    need_torch_gods_favor: true,
+    ..BASE
+},
+// 3169: SuspiciousLookingEye x1
+Recipe {
+    create: (43, 1),
+    required: &[Requirement::item(38, 6)],
+    stations: &[26],
+    ..BASE
+},
+// 3170: DeerThing x1
+Recipe {
+    create: (5120, 1),
+    required: &[Requirement::item(5070, 3), Requirement::item(56, 5), Requirement::item(38, 1)],
+    stations: &[26],
+    ..BASE
+},
+// 3171: DeerThing x1
+Recipe {
+    create: (5120, 1),
+    required: &[Requirement::item(5070, 3), Requirement::item(880, 5), Requirement::item(38, 1)],
+    stations: &[26],
+    ..BASE
+},
+// 3172: VoidLens x1
+Recipe {
+    create: (4131, 1),
+    required: &[Requirement::item(154, 30), Requirement::item(331, 15), Requirement::item(86, 30)],
+    stations: &[26],
+    ..BASE
+},
+// 3173: VoidLens x1
+Recipe {
+    create: (4131, 1),
+    required: &[Requirement::item(154, 30), Requirement::item(331, 15), Requirement::item(1329, 30)],
+    stations: &[26],
+    ..BASE
+},
+// 3174: VoidVault x1
+Recipe {
+    create: (4076, 1),
+    required: &[Requirement::item(154, 15), Requirement::item(331, 8), Requirement::item(1329, 15)],
+    stations: &[26],
+    ..BASE
+},
+// 3175: VoidVault x1
+Recipe {
+    create: (4076, 1),
+    required: &[Requirement::item(154, 15), Requirement::item(331, 8), Requirement::item(86, 15)],
+    stations: &[26],
+    ..BASE
+},
+// 3176: WormFood x1
+Recipe {
+    create: (70, 1),
+    required: &[Requirement::item(67, 30), Requirement::item(68, 15)],
+    stations: &[26],
+    ..BASE
+},
+// 3177: BloodySpine x1
+Recipe {
+    create: (1331, 1),
+    required: &[Requirement::item(2886, 30), Requirement::item(1330, 15)],
+    stations: &[26],
+    ..BASE
+},
+// 3178: Abeemination x1
+Recipe {
+    create: (1133, 1),
+    required: &[Requirement::item(1125, 5), Requirement::item(209, 1), Requirement::item(1124, 5), Requirement::item(1134, 1)],
+    ..BASE
+},
+// 3179: SlimeCrown x1
+Recipe {
+    create: (560, 1),
+    required: &[Requirement::item(23, 20), Requirement::item(264, 1)],
+    stations: &[26],
+    ..BASE
+},
+// 3180: SlimeCrown x1
+Recipe {
+    create: (560, 1),
+    required: &[Requirement::item(23, 20), Requirement::item(715, 1)],
+    stations: &[26],
+    ..BASE
+},
+// 3181: MechanicalEye x1
+Recipe {
+    create: (544, 1),
+    required: &[Requirement::item(38, 3), Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::item(520, 6)],
+    stations: &[134],
+    ..BASE
+},
+// 3182: MechanicalWorm x1
+Recipe {
+    create: (556, 1),
+    required: &[Requirement::item(68, 6), Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::item(521, 6)],
+    stations: &[134],
+    ..BASE
+},
+// 3183: MechanicalWorm x1
+Recipe {
+    create: (556, 1),
+    required: &[Requirement::item(1330, 6), Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::item(521, 6)],
+    stations: &[134],
+    ..BASE
+},
+// 3184: MechanicalSkull x1
+Recipe {
+    create: (557, 1),
+    required: &[Requirement::item(154, 30), Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::item(520, 3), Requirement::item(521, 3)],
+    stations: &[134],
+    ..BASE
+},
+// 3185: MechdusaSummon x1
+Recipe {
+    create: (5334, 1),
+    required: &[Requirement::item(544, 1), Requirement::item(557, 1), Requirement::item(556, 1)],
+    stations: &[134],
+    need_mechdusa: true,
+    ..BASE
+},
+// 3186: PumpkinMoonMedallion x1
+Recipe {
+    create: (1844, 1),
+    required: &[Requirement::item(1725, 30), Requirement::item(1508, 5), Requirement::item(1225, 10)],
+    stations: &[134],
+    ..BASE
+},
+// 3187: NaughtyPresent x1
+Recipe {
+    create: (1958, 1),
+    required: &[Requirement::item(225, 20), Requirement::item(1508, 5), Requirement::item(547, 5)],
+    stations: &[134],
+    ..BASE
+},
+// 3188: SolarTablet x1
+Recipe {
+    create: (2767, 1),
+    required: &[Requirement::item(2766, 8)],
+    stations: &[134],
+    ..BASE
+},
+// 3189: CelestialSigil x1
+Recipe {
+    create: (3601, 1),
+    required: &[Requirement::item(3458, 12), Requirement::item(3456, 12), Requirement::item(3457, 12), Requirement::item(3459, 12)],
+    stations: &[412],
+    ..BASE
+},
+// 3190: WilsonBeardShort x1
+Recipe {
+    create: (5104, 1),
+    required: &[Requirement::item(5105, 1)],
+    ..BASE
+},
+// 3191: WilsonBeardShort x1
+Recipe {
+    create: (5104, 1),
+    required: &[Requirement::item(5106, 1)],
+    ..BASE
+},
+// 3192: WilsonBeardLong x1
+Recipe {
+    create: (5105, 1),
+    required: &[Requirement::item(5106, 1)],
+    ..BASE
+},
+// 3193: ScryingOrb x1
+Recipe {
+    create: (5644, 1),
+    required: &[Requirement::group(50, RecipeGroups::MAGIC_MIRROR, 1), Requirement::item(38, 2), Requirement::item(2997, 4)],
+    stations: &[18],
+    ..BASE
+},
+// 3194: HeroicisWings x1
+Recipe {
+    create: (5659, 1),
+    required: &[Requirement::item(5661, 1), Requirement::item(575, 20), Requirement::item(1225, 12)],
+    stations: &[134],
+    ..BASE
+},
+// 3195: HarpyCharm x1
+Recipe {
+    create: (6166, 1),
+    required: &[Requirement::item(999, 3), Requirement::item(320, 7), Requirement::group(21, RecipeGroups::SILVER_BAR, 5)],
+    stations: &[16],
+    ..BASE
+},
+// 3196: ClayPotMinion x1
+Recipe {
+    create: (6161, 1),
+    required: &[Requirement::item(133, 30), Requirement::item(28, 1), Requirement::item(313, 1), Requirement::item(315, 1)],
+    stations: &[17],
+    ..BASE
+},
+// 3197: ForbiddenMinion x1
+Recipe {
+    create: (6164, 1),
+    required: &[Requirement::item(527, 1), Requirement::item(528, 1), Requirement::item(3783, 2), Requirement::item(521, 5), Requirement::item(520, 5)],
+    stations: &[134],
+    ..BASE
+},
+// 3198: TwilightGrasp x1
+Recipe {
+    create: (6163, 1),
+    required: &[Requirement::item(6156, 1), Requirement::item(6159, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3199: OuroborosRing x1
+Recipe {
+    create: (6162, 1),
+    required: &[Requirement::item(6157, 1), Requirement::item(6158, 1)],
+    stations: &[114],
+    ..BASE
+},
+// 3200: CopperCoin x100
+Recipe {
+    create: (71, 100),
+    required: &[Requirement::item(72, 1)],
+    ..BASE
+},
+// 3201: SilverCoin x1
+Recipe {
+    create: (72, 1),
+    required: &[Requirement::item(71, 100)],
+    ..BASE
+},
+// 3202: SilverCoin x100
+Recipe {
+    create: (72, 100),
+    required: &[Requirement::item(73, 1)],
+    ..BASE
+},
+// 3203: GoldCoin x1
+Recipe {
+    create: (73, 1),
+    required: &[Requirement::item(72, 100)],
+    ..BASE
+},
+// 3204: GoldCoin x100
+Recipe {
+    create: (73, 100),
+    required: &[Requirement::item(74, 1)],
+    ..BASE
+},
+// 3205: PlatinumCoin x1
+Recipe {
+    create: (74, 1),
+    required: &[Requirement::item(73, 100)],
     ..BASE
 },
 ]

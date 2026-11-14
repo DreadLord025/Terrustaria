@@ -130,6 +130,13 @@ pub(crate) fn in_set(set: &[u16], kind: u16) -> bool {
     set.binary_search(&kind).is_ok()
 }
 
+/// `Item.CanHavePrefixes` (`Item.cs:1136-1140`): the kind has a rollable
+/// prefix table at all. The crafting cursor gate reads it
+/// (`Main.CursorHasSpaceToCraftRecipe`, `Main.cs:42325`).
+pub(crate) fn can_have_prefixes(kind: u16) -> bool {
+    rollable_prefixes(kind).is_some()
+}
+
 /// `Item.GetRollablePrefixes` (`Item.cs:1101-1140`): the check order decides
 /// the table for kinds that sit in several sets.
 pub(crate) fn rollable_prefixes(kind: u16) -> Option<&'static [u16]> {

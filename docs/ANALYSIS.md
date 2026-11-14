@@ -4194,8 +4194,8 @@ world's far side).
 
 The spawn: `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) —
 the px-space surface band (`position.Y < worldSurface*16 + sHeight`; the C#
-`sHeight` is 1200, `NPC.cs:6769` — the port's fn uses 200, the S1-F-18
-follow-up)
+`sHeight` is 1200, `NPC.cs:6769` — the port's fn used 200 until S1-F-18
+fixed the band)
 plus the ±3000 px window around `invasionX` — overrides the natural roll
 with the goblin table (`:1419-1450`): the hardmode Summoner 1/30 (while
 none alive), the Sorcerer 1/9, the Thief 1/5, the Peon 1/3, the Warrior
@@ -4742,9 +4742,11 @@ Deviations, all deliberate:
 
 ## Mounts framework (M2-MOUNT-1)
 
-`crates/tr-app/src/mount.rs` holds the `MountData` port (a 12-row ground table with the
-exact `Mount.cs:696-2567` constants — Rudolph, Bunny, Slime, Scutlix, Unicorn, Basilisk,
-the three horses, PogoStick, Wall-of-Flesh Goat, Queen Slime), the `MountState` instance
+`crates/tr-app/src/mount.rs` holds the `MountData` port (a 66-row table with the
+exact `Mount.cs:696-2567` constants — every `MountID` id, the 16 rows that were
+missing until S1-L-9 included: Turtle, GolfCart, Flamingo, SpookyWood, Santank,
+Wolf, Velociraptor, Rat, the four roller skates and the four Chillemts), the
+`MountState` instance
 core (`SetMount`/`Dismount`/`CheckMountBuff`/`Reset` — `Mount.cs:6196-6305`/`:6142-6194`/
 `:5275-5281`/`:675-694`, keeping the vanilla quirk that `fatigue`/`abilityCooldown`/
 `abilityDuration` survive `Reset`), the saddle-item and mount-buff lookups (the
@@ -4773,9 +4775,25 @@ bottom-anchored (`:6264-6277`) and restores through the shrink path of
 `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2513`).
 
 Deviations:
-- **Partial table (50 of `MountID.Count` 66)** — `set_mount` rejects ids outside the
-  table where vanilla fills every row; the remaining categories land with
-  M2-MOUNT-2/3/4.
+- **Full table (66 of `MountID.Count` 66), but the rows are data only** — S1-L-9
+  landed every `Mount.Initialize` row (`Mount.cs:696-2567`), the `Item.mountType`
+  rows and the `SetMount`/`Dismount` extras; the per-type *behaviour* still waits
+  for M2-MOUNT-2/3/4:
+  - the Spooky Wood's light (`emitsLight`/`lightColor`, `Mount.cs:1951-1952`,
+    applied at `:3632-3636`) needs the entity-light API (S1-E-5) — the row carries
+    the colour, nothing consumes it yet;
+  - the `Dismount`'s `noItems` restore for the transformation mounts 55/56
+    (`Mount.cs:6152-6155`) needs the `noItems`/`cursed` pair the port does not
+    carry — constants-off;
+  - the SuperCart writer (`_shouldSuperCart`, `Mount.cs:4798`) reads
+    `Player.UsingSuperCart` (`Player.cs:3966-3980`); the port carries the
+    `unlockedSuperCart`/`enabledSuperCart` pair, but the unlock writer (item 3353,
+    `Player.cs:45207-45211`, `:55718`) and the UI toggle are not ported — the flag
+    stays false in play, while the stat overrides themselves are the vanilla
+    20/20/0.1/15/5.15 (`:6660-6664`);
+  - the per-type animator arms of `UpdateFrame` (the drill rotation, the bee
+    wings, the Chillemt dust, `:3637-4142`) stay unported — the rows' frame
+    bands, the idle ranges and the rat's own idle table are ported.
 - **No net sync** — `SetMount`/`Dismount`'s msg 13 (`Mount.cs:6222-6225`, `:6172-6175`)
   has no multiplayer surface.
 - **No gravDir branch** — the flip block gated `!mount.Active` (`Player.cs:26690-26733`)
@@ -4790,9 +4808,11 @@ Deviations:
   + `PlayerNoSpaceTeleport` (`:6052-6070`) cannot fire; the grow-probe half of
   `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2490-2508`) returns `None`
   until a consumer appears.
-- **Cart/ability branches reserved** — the OnTrack/roller-skate/drill arms of
+- **Cart/ability branches reserved** — the OnTrack/drill arms of
   the per-tick block are comment-marked (M2-MOUNT-3/4); the SuperCart stat overrides
-  read 0; `Mount.Hover` (hover mounts) cannot fire while no row sets `usesHover`.
+  read the vanilla values (20/20/0.1/15/5.15, `Mount.cs:6660-6664`) but the flag
+  that selects them is constants-off (see above); `Mount.Hover` (hover mounts)
+  cannot fire while no row sets `usesHover`.
   The Fishron arm (id 12) is ported: the 60/420-tick `MountFishronSpecialCounter`
   and the halving gate the Cute Fishron's run stats (`Player.cs:26655-26659`).
 - **Charge/stomp damage deferred** — the dash-contact damage (`Player.cs:20108-20170`)
@@ -4806,8 +4826,10 @@ Deviations:
 
 Verification: the unit tests across `mount.rs`/`player.rs`/`render/player_layers.rs`
 (the table constants, the set/dismount guards, the merge modes, the jump/fall
-interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle, the
-animator states, the draw math); `TR_SHOT` twin runs SHA256-equal with
+interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle,
+the animator states, the draw math; S1-L-9 adds the 66-row per-id table, the
+item rows, the SuperCart statics, the `SetMount`/`Dismount` extras, the Chillemt
+damage bonus and the rat's idle band); `TR_SHOT` twin runs SHA256-equal with
 `TR_MOUNT=unicorn` over `assets/test/master.trwld` at frame 120.
 
 ## Projectile pool (M4-PROJ-1)
@@ -12363,6 +12385,65 @@ counterpart (the mouse item never blocks the craft here); the
 `UsingOrReusingItem`/`IsStackingItems` gates of `flag3` (`Player.cs:23098`)
 are unmodelled item-use state.
 
+## The crafting pipeline (S1-L-11d, 2026-11-14)
+
+`CraftingRequests.CreateResult` (`CraftingRequests.cs:122-131`) is ported as
+`craft.rs::create_result`: the recipe's `createItem` cloned, `Item.OnCreated`'s
+type swap (`Item.cs:48936-48942` — the ShellphoneDummy 5437 becomes the
+Shellphone 5358) and `Item.Prefix(-1)`'s natural roll for a stack ≤ 1
+(`Item.cs:504-610`). The grant carries the rolled prefix (`Item.CanStack`,
+`Item.cs:49865-49872`), and the C#'s cursor gate
+(`Main.CursorHasSpaceToCraftRecipe`, `Main.cs:42309-42345`) makes a prefixable
+recipe craft **once** per click while the stackable ones (the torches) keep
+crafting — the gate refuses a prefixable result outright
+(`!item.CanHavePrefixes()`).
+
+The crafting reach is the C#'s formula, `craft.rs::tile_reach`: the statics
+`Player.tileRangeX/Y` (the defaults 5/3, `Player.cs:2496-2498`/`:57113-57114`)
+with the per-tick writes — the Journey mode's Far Placement Range power
+(×2 and +8/+8, `Player.cs:18818-18826`), the Extendo Grip / the Architect's
+Gizmo Pack (+3/+2, `:13040-13044`), the held Toolbox (+1/+1, `:14955-14958`) —
+then `TileReachCheckSettings.Simple`'s 20-tile clamp
+(`TileReachCheckSettings.cs:20-34`, `:84`) and the artisan loaf's +4
+(`Player.cs:35671`). The two gated recipes are ported too
+(`needTorchGodsFavor` — the Torch God's potion 5573 and the master 5638 — and
+`needMechdusa` — the 5334 row), with the gates `player.unlockedBiomeTorches`
+and `SpecialSeedFeatures.Mechdusa` (`Recipe.cs:349-356`).
+
+Deviations:
+
+- **The crafted item goes into the inventory, not the cursor.** The C# hands
+  the result to `Main.mouseItem` (`Main.CraftItem_GrantItem`,
+  `Main.cs:42607-42612`) and the player places it with a click; the port grants
+  it straight into the inventory (`clicks.rs::handle_crafting_clicks`). The
+  cursor gate is therefore evaluated against the **previous result** instead of
+  the cursor's content (`craft.rs::result_fits_next`) — the observable
+  quantity matches the C#'s (a prefixable recipe crafts once), but the player
+  never holds the crafted item on the cursor.
+- **The artisan loaf's effect is not ported.** The flag
+  `Player.ateArtisanBread` rides the player and the reach reads it, but the
+  item that sets it (5326, `Player.cs:45218-45221`) has no ported use effect,
+  so the +4 is unreachable in play.
+- **The Torch God's unlock is not ported.** `player.unlockedBiomeTorches`
+  (`Player.cs:2046`) rides the player and the gate reads it, but the unlock
+  itself (the Torch God's dialogue) is unported, so the two gated recipes stay
+  closed.
+- **The prefix roll's stream.** The C# draws `Item.Prefix` from the same
+  global `Main.rand` as the alchemy discount; the port's natural rolls ride
+  `App::prefix_rng` and the crafting discount rides `App::craft_rng` — two
+  stand-ins for one C# stream (the S1-A-11/S1-L-6c residual).
+- **The quickCraft / remote-craft half is out** — the C#'s request queue
+  (`CraftingRequests.CraftViaRequest`, `:142-174`) is the multiplayer path and
+  the port's MP has no crafting requests.
+
+The recipe table grew with it: the generator's tail branch broke out of the
+expansion loop **before** copying the text that precedes
+`Recipe.CreateReverseWallRecipes()` (`Recipe.cs:15148`), so the 414 authored
+rows between the last expansion mark and that call were dropped (the audit's
+"2 481 executed sites" was the generator's own truncated output). The branch
+now copies that text: the table is **3 206 rows = 2 895 authored + 311
+reverse**, and the pin in `tools/test_gen_recipes.py` re-taken.
+
 ## The sliced block light chain (S1-G-9, 2026-11-13)
 
 `DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3516-3640`) is the port's
@@ -12689,6 +12770,46 @@ Tests: `s1_g_18_the_throw_style_rides_its_wind_up_and_arc`,
 `s1_g_18_the_umbrella_rotation_is_the_vector_rotation` — all
 mutation-checked (RED on the pre-fix code; the left-facing cases pin the
 mirrored `atan2`, which is where the `hypot` slip showed).
+
+## The draw phase order (S1-B-7, 2026-11-14)
+
+`Main.DoDraw` (`Main.cs:61707-62507`) draws the world in a fixed
+sequence; the port had one draw branch with no order assertion, and the
+dropped items were drawn **before** the NPCs and the player — the C# draws
+them last of the entity group (`Main.cs:62278`):
+
+```
+projectiles → the players (`:62256`) → the NPCs over the players (`:62263`)
+→ the items (`:62278`) → the rain (`:62279`) → the gore/dust (`:62282`/`:62293`)
+→ the waters (`:62300`) → the wires (`:62303`) → the projectiles over the
+wires UI (`:62315`)
+```
+
+The port now draws the dropped items after the players and the NPCs
+(`render/tiles.rs`: the items' pass moved behind the player passes), and
+the draw passes carry a phase marker (`frame.rs`'s `draw_phase`,
+`render/tiles.rs`'s `draw_phase`) so the order is assertable:
+`the_draw_passes_run_in_the_csharp_order` pins the marker order — the
+world pass's `npcs_behind_tiles → npcs → player → items` and the frame's
+`sky → world → rain → wires → projectiles`. The markers move with the
+passes, so a future reorder fails the test (mutation-checked: RED on the
+pre-fix code).
+
+Scope notes (the remaining divergences, all deliberate):
+
+* The C# splits the NPCs into two buckets — `DoDraw_DrawNPCsOverTiles`
+  (`:63301`, before the players) and `DrawCachedNPCs(DrawCacheNPCsOver-
+  Players)` (`:62263`, after them). The port has one NPC bucket, at the
+  "over the tiles" slot, so the NPCs that vanilla draws over the player
+  are drawn under it.
+* The C# splits the projectiles into four buckets (`CacheProjDraws`:
+  behind the projectiles, over the players, over the NPCs, over the wires
+  UI). The port has one bucket, at the "over the wires UI" slot, so the
+  projectiles are drawn over the player.
+* The C#'s leaves ride the particle system (`ParticleSystem_World_Over-
+  Players`, `:62259`); the port draws them with the dust cluster
+  (`frame.rs`'s leaf pass) — the same neighbourhood as the rain/sand.
+* The gore pass (`Main.cs:62282`) is unported (the gore pool is empty).
 ## The scene-metrics zone chain (S1-L-1, 2026-11-14)
 
 `SceneMetrics.CalculateZones` (`SceneMetrics.cs:660-710`) computes more
@@ -12789,3 +12910,16 @@ Deviations:
   Deerclops' feet (the `ai1` scale factor is the C#'s). The rubble's
   `ShootRubbleUp` tile scan and up-bias (`:44448-44465`) are the same
   stand-in. The follow-up row is the cadence row.
+
+## The invasion surface band (S1-F-18, 2026-11-14)
+
+`Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) compares
+`position.Y < Main.worldSurface * 16.0 + NPC.sHeight` — and `NPC.sHeight` is
+**1200** (`NPC.cs:6769`), not the 200 the port used. The invasion's
+above-surface band was therefore ~6× too narrow; it now reads
+`crate::spawner::S_HEIGHT` (the port's constant already carried the
+vanilla's 1200) and the window test pins both edges (3000 px below the
+surface spawns, 3200 px does not — the test world's surface is row 120 =
+px 1920). The ±3000 px window around `invasionX` and the town-NPC fallback
+stay as they were (the latter rides the town roster).
+

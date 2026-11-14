@@ -253,6 +253,14 @@ fn sunflower_sway(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Records one draw phase for the order-pinning test (`S1-B-7`) — the
+/// `Main.DoDraw` sequence (`Main.cs:62249-62326`) made assertable.
+#[inline]
+fn draw_phase(name: &'static str) {
+    #[cfg(test)]
+    crate::app::frame::draw_phase_trace::record(name);
+}
+
 pub(crate) fn draw_tiles(
     r: &mut SpriteRenderer,
     world: &World,
@@ -504,6 +512,7 @@ pub(crate) fn draw_tiles(
 
     // Main.cs:22320,56951,63390 — behind-tiles NPCs draw before the tile layer
     // so they appear inside/behind solid tiles (worms, WoF segments).
+    draw_phase("npcs_behind_tiles");
     stats.quads += draw_npcs(
         r,
         npc_assets,
@@ -982,10 +991,8 @@ pub(crate) fn draw_tiles(
             y1,
         );
     }
-    for it in items {
-        stats.items += it.draw(r, lookups, light, style, anim_time);
-    }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
+    draw_phase("npcs");
     stats.quads += draw_npcs(
         r,
         npc_assets,
@@ -998,6 +1005,7 @@ pub(crate) fn draw_tiles(
         screen,
         false,
     );
+    draw_phase("player");
     if let Some(p) = player {
         stats.quads += draw_player(
             r,
@@ -1068,6 +1076,13 @@ pub(crate) fn draw_tiles(
             [1.0, 1.0, 1.0, 1.0],
             &rp.name,
         );
+    }
+    // `Main.DrawItems` (`Main.cs:62278`) — the dropped items are drawn
+    // AFTER the players and the NPCs (the C#'s entity section: the
+    // projectiles → the players → the NPCs over the players → the items).
+    draw_phase("items");
+    for it in items {
+        stats.items += it.draw(r, lookups, light, style, anim_time);
     }
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
     // layer tints everything that stands in it.

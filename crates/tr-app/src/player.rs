@@ -651,6 +651,16 @@ pub struct Player {
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
+    /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
+    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
+    /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
+    /// so the flag stays false in play — the reach formula reads it.
+    pub ate_artisan_bread: bool,
+    /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
+    /// biome torches — the gate on the `needTorchGodsFavor` recipes
+    /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
+    /// is unported, so the flag stays false in play.
+    pub unlocked_biome_torches: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -1046,6 +1056,13 @@ pub struct Player {
     /// toggled on each bounce while a direction key is held
     /// (`Player.cs:28123-28130`).
     pub cart_flip: bool,
+    /// `Player.unlockedSuperCart` (`Player.cs:2052`): the Super Cart is
+    /// unlocked by the item 3353 (`Player.cs:45207-45211`, `:55718`) — that
+    /// writer is not ported yet, so the flag stays false in play.
+    pub unlocked_super_cart: bool,
+    /// `Player.enabledSuperCart` (`Player.cs:2054`, default true): the
+    /// player's Super Cart toggle. The UI that flips it is not ported yet.
+    pub enabled_super_cart: bool,
     /// `Player.onTrack` (`Player.cs:2811`): this tick's `Minecart.TrackCollision`
     /// result bit 0 — the body rides a rail. Couples the collision heights
     /// (pitfall §10.9).
@@ -1570,6 +1587,8 @@ impl Player {
             chest_x: 0,
             chest_y: 0,
             void_vault_enabled: false,
+            ate_artisan_bread: false,
+            unlocked_biome_torches: false,
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
@@ -1675,6 +1694,8 @@ impl Player {
             stair_fall: false,
             cart_mounted: false,
             cart_flip: false,
+            unlocked_super_cart: false,
+            enabled_super_cart: true,
             on_track: false,
             on_wrong_ground: false,
             track_boost: 0.0,
@@ -4409,7 +4430,16 @@ impl Player {
                 crate::mount::FRAME_RUNNING
             };
             self.mount
-                .update_frame(state, self.vx, self.vy, self.just_jumped, self.control_down);
+                .update_frame(
+                    state,
+                    self.vx,
+                    self.vy,
+                    self.just_jumped,
+                    self.control_down,
+                    self.sliding,
+                    self.dash,
+                    self.dash_delay,
+                );
         }
     }
 
@@ -4468,6 +4498,9 @@ impl Player {
                         self.vy,
                         self.just_jumped,
                         self.control_down,
+                        self.sliding,
+                        self.dash,
+                        self.dash_delay,
                     );
                     self.try_landing(world);
                 } else if self.wet {
@@ -4479,6 +4512,9 @@ impl Player {
                         self.vy,
                         self.just_jumped,
                         self.control_down,
+                        self.sliding,
+                        self.dash,
+                        self.dash_delay,
                     );
                 } else {
                     // `:36207-36212`: plain air.
@@ -4488,6 +4524,9 @@ impl Player {
                         self.vy,
                         self.just_jumped,
                         self.control_down,
+                        self.sliding,
+                        self.dash,
+                        self.dash_delay,
                     );
                     self.try_landing(world);
                 }
@@ -4508,6 +4547,9 @@ impl Player {
                     self.vy,
                     self.just_jumped,
                     self.control_down,
+                    self.sliding,
+                    self.dash,
+                    self.dash_delay,
                 );
             }
         }
@@ -5684,9 +5726,10 @@ impl Player {
     }
 
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
-    /// swap, the buff clear/add (`:6203`/`:6226`) and the bottom-anchored
-    /// hitbox growth (`:6264-6277` — no PlayerSize delegate exists in this
-    /// set; the type-44 dash reset `:6228-6235` cannot fire without that row).
+    /// swap, the buff clear/add (`:6203`/`:6226`), the swap resets
+    /// (`:6205-6213`), the pirate-ship dash reset (`:6228-6235`) and the
+    /// bottom-anchored hitbox growth (`:6264-6277` — no PlayerSize delegate
+    /// exists in this set; the type-44 row does exist, so its reset fires).
     pub fn set_mount(&mut self, m: i32, wet: bool) -> bool {
         let Some(equip) = self.mount.set_mount(m, wet) else {
             return false;
@@ -5694,8 +5737,33 @@ impl Player {
         if let Some(old) = equip.clear_buff {
             self.clear_buff_type(old);
         }
+        // `:6205-6213` — the swap branch: a track rider clears the cart flip
+        // and the last boost, every mount clears the full rotation.
+        if equip.was_active {
+            if equip.track_rider {
+                self.cart_flip = false;
+                self.last_boost = (0, 0);
+            }
+            self.full_rotation = 0.0;
+            self.full_rotation_origin = (0.0, 0.0);
+        }
         self.buffs.add_buff(equip.add_buff, 3600);
+        // `:6228-6235` — the pirate ship (44) drops the dash and damps the
+        // velocity on mount.
+        if m == 44 {
+            self.vx *= 0.2;
+            self.vy *= 0.2;
+            self.dash = 0;
+            self.dash_type = 0;
+            self.dash_delay = 0;
+            self.dash_time = 0;
+        }
         self.grow_hitbox(HEIGHT + equip.height_boost as f32);
+        // `:6279-6282` — the UFO (7) and the drill (8) centre the full
+        // rotation on the grown box.
+        if m == 7 || m == 8 {
+            self.full_rotation_origin = (WIDTH as f32 / 2.0, self.height as f32 / 2.0);
+        }
         true
     }
 
@@ -5707,15 +5775,20 @@ impl Player {
         self.y -= self.height;
     }
 
-    /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
-    /// and the hitbox restore. `ignore_effect` stands in for the spawn dust
-    /// (`:6167-6170` — no dust system yet).
+    /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear,
+    /// the full-rotation reset (`:6161-6162`) and the hitbox restore.
+    /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
+    /// system yet); the `noItems` restore (`:6152-6155`) needs the `noItems` /
+    /// `cursed` pair the port does not carry — constants-off.
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
         let Some(buff) = self.mount.dismount() else {
             return false;
         };
         let _ = ignore_effect;
         self.clear_buff_type(buff);
+        // `:6161-6162` — the dismount clears the full rotation.
+        self.full_rotation = 0.0;
+        self.full_rotation_origin = (0.0, 0.0);
         // `:6176-6193`: the restore — the 20x42 box from the bottom center;
         // on failure the Y patch accepts the overlap (the collision step
         // resolves it next tick, as in the original). The resize goes through
@@ -5869,6 +5942,12 @@ impl Player {
     /// runs those at :25656/:26011, both before the run-speed merge — the
     /// combined method keeps their relative order. Only reachable while not
     /// grappling (the caller's `:26622` branch).
+    /// `Player.UsingSuperCart` (`Player.cs:3966-3980`): the Super Cart counts
+    /// only when it is both unlocked and enabled.
+    pub fn using_super_cart(&self) -> bool {
+        self.unlocked_super_cart && self.enabled_super_cart
+    }
+
     fn update_mount(
         &mut self,
         world: &World,
@@ -5880,6 +5959,22 @@ impl Player {
         }
         // `Mount.cs:4797`: the mount head-sets the auto-jump flag per tick.
         self.auto_jump = self.mount.auto_jump();
+        // `Mount.UpdateEffects` (`Mount.cs:4798`): the Super Cart flag rides
+        // the cart set (`MountID.Sets.Cart`) and the player's unlock/enable
+        // pair (`Player.UsingSuperCart`, `Player.cs:3966-3980`).
+        self.mount.set_should_super_cart(
+            crate::mount::is_cart(self.mount.kind()) && self.using_super_cart(),
+        );
+        // `Mount.UpdateEffects` (`Mount.cs:4806-4814`): the Chillemt mounts
+        // add 0.1 to every damage class. The vanilla applies this after the
+        // stat recompute (`Player.ResetEffects`), which is the port's order
+        // too — `update_mount` runs after the equip pass.
+        if matches!(self.mount.kind(), 62..=65) {
+            self.melee_damage += 0.1;
+            self.ranged_damage += 0.1;
+            self.magic_damage += 0.1;
+            self.minion_damage += 0.1;
+        }
         // `Mount.cs:4982-5008` (`UpdateEffects` case 12): the Cute Fishron
         // re-arms its special window when hurt or standing in water/rain.
         if self.mount.kind() == 12 {
@@ -11380,6 +11475,55 @@ mod tests {
         assert!(!p.cart_flip);
     }
     // -- M2-MOUNT-1 phase 2: the per-tick mount block ------------------------
+
+    #[test]
+    fn the_mount_set_and_dismount_extras_follow_the_c() {
+        // S1-L-9 — `Mount.SetMount` (`Mount.cs:6196-6305`) / `Dismount`
+        // (`:6142-6194`): the pirate-ship dash reset (`:6228-6235`), the
+        // UFO/drill rotation origin (`:6279-6282`), the swap resets
+        // (`:6205-6213`) and the dismount's rotation clear (`:6161-6162`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.vx = 10.0;
+        p.vy = -4.0;
+        p.dash = 2;
+        p.dash_type = 3;
+        p.dash_delay = 5;
+        assert!(p.set_mount(44, false));
+        assert!((p.vx - 2.0).abs() < 0.001, "velocity *= 0.2 (:6230)");
+        assert!((p.vy + 0.8).abs() < 0.001, "velocity *= 0.2 (:6230)");
+        assert_eq!(p.dash, 0, ":6231");
+        assert_eq!(p.dash_type, 0, ":6232");
+        assert_eq!(p.dash_delay, 0, ":6233");
+        // The UFO (7) centres the full rotation on the (grown) box.
+        p.full_rotation = 0.5;
+        assert!(p.set_mount(7, false));
+        assert_eq!(p.full_rotation_origin, (10.0, p.height / 2.0), ":6281");
+        // A swap clears the rotation (`:6210-6211`).
+        p.full_rotation = 0.5;
+        p.full_rotation_origin = (3.0, 4.0);
+        assert!(p.set_mount(10, false));
+        assert_eq!(p.full_rotation, 0.0);
+        assert_eq!(p.full_rotation_origin, (0.0, 0.0));
+        // The dismount clears it too (`:6161-6162`).
+        p.full_rotation = 0.25;
+        assert!(p.dismount(&w, true));
+        assert_eq!(p.full_rotation, 0.0);
+        assert_eq!(p.full_rotation_origin, (0.0, 0.0));
+    }
+
+    #[test]
+    fn the_chillemt_mounts_add_a_tenth_to_every_damage_class() {
+        // `Mount.UpdateEffects` (`Mount.cs:4806-4814`) — the Chillemt mounts.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(62, false);
+        p.update_mount(&w, false, None);
+        assert!((p.melee_damage - 1.1).abs() < 0.0001, "{}", p.melee_damage);
+        assert!((p.ranged_damage - 1.1).abs() < 0.0001);
+        assert!((p.magic_damage - 1.1).abs() < 0.0001);
+        assert!((p.minion_damage - 1.1).abs() < 0.0001);
+    }
 
     #[test]
     fn the_mount_replaces_the_run_stats_and_suppresses_the_wings() {
