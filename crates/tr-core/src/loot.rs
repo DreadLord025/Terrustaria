@@ -239,6 +239,59 @@ pub trait AsChains {
     fn chains_mut(&mut self) -> &mut Vec<ChainRule>;
 }
 
+/// `DropRateInfo` (`DropRateInfo.cs`): one reported drop row — the
+/// bestiary's "Drops:" entries (the item, the stack range and the rate).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DropRateInfo {
+    pub item_id: i32,
+    pub stack_min: i32,
+    pub stack_max: i32,
+    /// The drop chance as a fraction (1 = always).
+    pub drop_rate: f32,
+}
+
+/// `DropRateInfoChainFeed` (`DropRateInfoChainFeed.cs`): the parent's rate
+/// carried into a rule's report — `With` multiplies it. The C# also carries
+/// the condition list; the port's rows don't model the condition objects
+/// (the bestiary prints the item and the rate).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DropRateInfoChainFeed {
+    pub parent_droprate_chance: f32,
+}
+
+impl DropRateInfoChainFeed {
+    pub fn new(chance: f32) -> Self {
+        Self {
+            parent_droprate_chance: chance,
+        }
+    }
+
+    /// `DropRateInfoChainFeed.With` (`:38-45`).
+    pub fn with(&self, multiplier: f32) -> Self {
+        Self {
+            parent_droprate_chance: self.parent_droprate_chance * multiplier,
+        }
+    }
+}
+
+/// `Chains.ReportDroprates` (`Chains.cs:24-30`): every chain attempt
+/// reports its rule with the parent's rate scaled by `1 - the parent's own
+/// rate`. The C#'s `hideLootReport` flag (the chains that stay out of the
+/// report) is not modelled by the port's `ChainRule` — the chained rows are
+/// always reported.
+fn report_chained_rules(
+    chains: &[ChainRule],
+    personal_drop_rate: f32,
+    drops: &mut Vec<DropRateInfo>,
+    feed: &DropRateInfoChainFeed,
+) {
+    for chain in chains {
+        chain
+            .rule
+            .report_droprates(drops, &feed.with(1.0 - personal_drop_rate));
+    }
+}
+
 /// `IItemDropRule` (`IItemDropRule.cs`). `INestedItemDropRule` rules
 /// (`DropBasedOnExpertMode`, `DropBasedOnMasterMode`, `DropBasedOnExtraGel`)
 /// override [`ItemDropRule::try_nested`] to route a sub-rule through the
@@ -246,6 +299,11 @@ pub trait AsChains {
 /// outcome instead of `try_dropping_item`.
 pub trait ItemDropRule: AsChains + Send + Sync {
     fn chained_rules(&self) -> &[ChainRule];
+    /// `IItemDropRule.ReportDroprates` (`IItemDropRule.cs`): the drop rows
+    /// the bestiary prints. The default reports nothing (a rule with no
+    /// display data — the C#'s `DropNothing` and the not-yet-ported rule
+    /// classes).
+    fn report_droprates(&self, _drops: &mut Vec<DropRateInfo>, _feed: &DropRateInfoChainFeed) {}
     fn can_drop(&self, _info: &mut DropAttemptInfo) -> bool {
         true
     }
@@ -346,6 +404,18 @@ impl ItemDropDatabase {
     /// `ItemDropDatabase.RegisterToGlobal` (`ItemDropDatabase.cs:55-59`).
     pub fn register_global(&mut self, rule: Box<dyn ItemDropRule>) {
         self.globals.push(rule);
+    }
+
+    /// `BestiaryDatabase.ExtractDropsForNPC` (`BestiaryDatabase.cs:70-88`):
+    /// the NPC's rules report their drop rows with a fresh feed (the rate
+    /// 1.0).
+    pub fn report_droprates(&self, net_id: i32) -> Vec<DropRateInfo> {
+        let mut drops = Vec::new();
+        let feed = DropRateInfoChainFeed::new(1.0);
+        for rule in self.rules_for_npc(net_id) {
+            rule.report_droprates(&mut drops, &feed);
+        }
+        drops
     }
 
     pub fn rules_for_npc(&self, net_id: i32) -> &[Box<dyn ItemDropRule>] {
@@ -673,6 +743,20 @@ impl ItemDropRule for CommonDrop {
             }
         }
     }
+
+    /// `CommonDrop.ReportDroprates` (`CommonDrop.cs:50-56`): the rate
+    /// `(numerator / denominator) * the parent's rate`, the row's item and
+    /// stack range, then the chained rules with the rule's own rate.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        let num = self.chance_numerator as f32 / self.chance_denominator as f32;
+        drops.push(DropRateInfo {
+            item_id: self.item,
+            stack_min: self.amount_min,
+            stack_max: self.amount_max,
+            drop_rate: num * feed.parent_droprate_chance,
+        });
+        report_chained_rules(self.chained_rules(), num, drops, feed);
+    }
 }
 impl_chains!(CommonDrop);
 
@@ -727,6 +811,27 @@ impl ItemDropRule for CommonDropWithRerolls {
             }
         }
     }
+
+    /// `CommonDropWithRerolls.ReportDroprates` (`CommonDropWithRerolls.cs:…`):
+    /// the chance of at least one success across the rerolls —
+    /// `1 - (1 - numerator/denominator)^rerolls`.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        // The port's `CommonDropWithRerolls` carries no numerator (the C#'s
+        // derived rule has `chanceNumerator = 1`).
+        let num = 1.0 - 1.0 / self.chance_denominator as f32;
+        let mut num2 = 1.0f32;
+        for _ in 0..self.rerolls {
+            num2 *= num;
+        }
+        let num3 = 1.0 - num2;
+        drops.push(DropRateInfo {
+            item_id: self.item,
+            stack_min: self.amount_min,
+            stack_max: self.amount_max,
+            drop_rate: num3 * feed.parent_droprate_chance,
+        });
+        report_chained_rules(self.chained_rules(), num3, drops, feed);
+    }
 }
 impl_chains!(CommonDropWithRerolls);
 
@@ -777,6 +882,24 @@ impl ItemDropRule for OneFromOptionsDrop {
                 state: DropResultState::FailedRandomRoll,
             }
         }
+    }
+
+    /// `OneFromOptionsDropRule.ReportDroprates` (`OneFromOptionsDropRule.cs:44-54`):
+    /// every option gets a row with the shared rate
+    /// `(1 / the option count) * the rule's own rate * the parent's rate`.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        let num = self.chance_numerator as f32 / self.chance_denominator as f32;
+        let num2 = num * feed.parent_droprate_chance;
+        let drop_rate = num2 / self.options.len() as f32;
+        for &item in &self.options {
+            drops.push(DropRateInfo {
+                item_id: item,
+                stack_min: 1,
+                stack_max: 1,
+                drop_rate,
+            });
+        }
+        report_chained_rules(self.chained_rules(), num, drops, feed);
     }
 }
 impl_chains!(OneFromOptionsDrop);
@@ -847,6 +970,21 @@ impl ItemDropRule for ItemDropWithCondition {
             }
         }
     }
+
+    /// `ItemDropWithConditionRule.ReportDroprates`
+    /// (`ItemDropWithConditionRule.cs:20-27`): the row's rate carries the
+    /// condition's rate context — the port's rows don't model the
+    /// condition list.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        let num = self.chance_numerator as f32 / self.chance_denominator as f32;
+        drops.push(DropRateInfo {
+            item_id: self.item,
+            stack_min: self.amount_min,
+            stack_max: self.amount_max,
+            drop_rate: num * feed.parent_droprate_chance,
+        });
+        report_chained_rules(self.chained_rules(), num, drops, feed);
+    }
 }
 impl_chains!(ItemDropWithCondition);
 
@@ -901,6 +1039,15 @@ impl ItemDropRule for DropBasedOnExpertMode {
             resolve_rule(self.normal.as_ref(), info, out)
         })
     }
+
+    /// `DropBasedOnExpertMode.ReportDroprates`
+    /// (`DropBasedOnExpertMode.cs:46-55`): the expert and the normal rule
+    /// both report with the parent's rate.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        self.expert.report_droprates(drops, &feed.with(1.0));
+        self.normal.report_droprates(drops, &feed.with(1.0));
+        report_chained_rules(self.chained_rules(), 1.0, drops, feed);
+    }
 }
 impl_chains!(DropBasedOnExpertMode);
 
@@ -954,6 +1101,15 @@ impl ItemDropRule for DropBasedOnMasterMode {
         } else {
             resolve_rule(self.normal.as_ref(), info, out)
         })
+    }
+
+    /// `DropBasedOnMasterMode.ReportDroprates`
+    /// (`DropBasedOnMasterMode.cs:46-55`): the master and the default
+    /// rule both report with the parent's rate.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        self.master.report_droprates(drops, &feed.with(1.0));
+        self.normal.report_droprates(drops, &feed.with(1.0));
+        report_chained_rules(self.chained_rules(), 1.0, drops, feed);
     }
 }
 impl_chains!(DropBasedOnMasterMode);
@@ -1095,6 +1251,24 @@ impl ItemDropRule for DropOneByOne {
             }
         }
     }
+
+    /// `DropOneByOne.ReportDroprates` (`DropOneByOne.cs:67-72`): the
+    /// personal rate and the chunk-scaled stack range.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        let personal_drop_rate = self.params.chance_numerator as f32
+            / self.params.chance_denominator as f32;
+        let min = self.params.min_drops_count
+            * (self.params.min_stack_per_chunk_base + self.params.bonus_min_per_player);
+        let max = self.params.max_drops_count
+            * (self.params.max_stack_per_chunk_base + self.params.bonus_max_per_player);
+        drops.push(DropRateInfo {
+            item_id: self.item,
+            stack_min: min,
+            stack_max: max,
+            drop_rate: personal_drop_rate * feed.parent_droprate_chance,
+        });
+        report_chained_rules(self.chained_rules(), personal_drop_rate, drops, feed);
+    }
 }
 impl_chains!(DropOneByOne);
 
@@ -1148,6 +1322,15 @@ impl ItemDropRule for DropBasedOnExtraGel {
         } else {
             resolve_rule(self.normal.as_ref(), info, out)
         })
+    }
+
+    /// `DropBasedOnExtraGel.ReportDroprates`
+    /// (`DropBasedOnExtraGel.cs:46-55`): the extra-gel rule and the normal
+    /// rule both report with the parent's rate.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        self.extra.report_droprates(drops, &feed.with(1.0));
+        self.normal.report_droprates(drops, &feed.with(1.0));
+        report_chained_rules(self.chained_rules(), 1.0, drops, feed);
     }
 }
 impl_chains!(DropBasedOnExtraGel);
@@ -1874,6 +2057,71 @@ pub fn normalvs_expert_one_from_options_not_scaling_with_luck(
         one_from_options_not_scaling_with_luck(denom_normal, options),
         one_from_options_not_scaling_with_luck(denom_expert, options),
     )
+}
+
+#[cfg(test)]
+mod report_tests {
+    use super::*;
+
+    #[test]
+    fn the_common_drop_reports_its_rate_and_stacks() {
+        // `CommonDrop.ReportDroprates` (`CommonDrop.cs:50-56`): the rate
+        // `(numerator / denominator) * the parent's rate`.
+        let mut drops = Vec::new();
+        let rule = CommonDrop::new(23, 1, 1, 2);
+        rule.report_droprates(&mut drops, &DropRateInfoChainFeed::new(1.0));
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].item_id, 23);
+        assert_eq!((drops[0].stack_min, drops[0].stack_max), (1, 2));
+        assert!((drops[0].drop_rate - 1.0).abs() < 1e-6);
+
+        // A half-chance rule under the parent's rate 0.5 → 0.25.
+        let mut drops = Vec::new();
+        let rule = CommonDrop::new(23, 2, 1, 1);
+        rule.report_droprates(&mut drops, &DropRateInfoChainFeed::new(0.5));
+        assert!((drops[0].drop_rate - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_rerolls_report_the_at_least_one_chance() {
+        // `CommonDropWithRerolls.ReportDroprates`: `1 - (1 - 1/denominator)^rerolls`.
+        let mut drops = Vec::new();
+        let rule = CommonDropWithRerolls::new(23, 2, 2, 1, 1);
+        rule.report_droprates(&mut drops, &DropRateInfoChainFeed::new(1.0));
+        // 1 - (1 - 1/2)^2 = 0.75
+        assert!((drops[0].drop_rate - 0.75).abs() < 1e-6, "{:?}", drops);
+    }
+
+    #[test]
+    fn the_options_rule_splits_the_rate_over_the_options() {
+        // `OneFromOptionsDropRule.ReportDroprates`: each option gets the
+        // shared rate `(1 / the option count) * the rule's own rate`.
+        let mut drops = Vec::new();
+        let rule = OneFromOptionsDrop::new(1, &[23, 24]);
+        rule.report_droprates(&mut drops, &DropRateInfoChainFeed::new(1.0));
+        assert_eq!(drops.len(), 2);
+        assert_eq!(drops[0].item_id, 23);
+        assert_eq!(drops[1].item_id, 24);
+        assert!((drops[0].drop_rate - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_database_reports_the_rows_of_one_npc() {
+        // `BestiaryDatabase.ExtractDropsForNPC` (`BestiaryDatabase.cs:70-88`).
+        let mut db = ItemDropDatabase::new();
+        db.register_to_npc(1, CommonDrop::new(23, 1, 1, 2));
+        db.register_to_npc(2, CommonDrop::new(24, 4, 1, 1));
+        // A global drop — `GetRulesForNPCID(npcId, includeGlobalDrops: false)`
+        // (`BestiaryDatabase.cs:78`) leaves the globals out of the report.
+        db.register_global(CommonDrop::new(999, 1, 1, 1));
+        let rows = db.report_droprates(1);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].item_id, 23);
+        let other = db.report_droprates(2);
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].item_id, 24);
+        assert!((other[0].drop_rate - 0.25).abs() < 1e-6);
+    }
 }
 
 #[cfg(test)]

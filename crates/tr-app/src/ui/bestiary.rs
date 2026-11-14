@@ -1219,21 +1219,29 @@ fn draw_info_page(
     if state >= UnlockState::CanShowDropsWithoutDropRates {
         text::hud_text(r, lookups, tx, ty, 0.8, [1.0; 4], "Drops:");
         ty += 22.0;
-        for (item, min, max, denom) in crate::loot_db::drop_lines(entry.net_id) {
-            let name = crate::registry::name(*item as u16);
+        let rows = crate::loot_db::drop_rows(entry.net_id);
+        for row in &rows {
+            let name = crate::registry::name(row.item_id as u16);
+            // `UIBestiaryInfoItemLine.GetDropInfo` (`UIBestiaryInfoItemLine.cs:78-104`):
+            // the stack range ("(1-2)", "(3)" or empty) + the rate
+            // (`Utils.PrettifyPercentDisplay` — "100%" or the prettified
+            // percentage).
             let line = if state >= UnlockState::CanShowDropsWithDropRates {
-                if *denom <= 1 {
-                    format!("  {name}: {min}-{max} (100%)")
+                let stack_range = if row.stack_min != row.stack_max {
+                    format!(" ({}-{})", row.stack_min, row.stack_max)
+                } else if row.stack_min == 1 {
+                    String::new()
                 } else {
-                    format!("  {name} (1/{denom})")
-                }
+                    format!(" ({})", row.stack_min)
+                };
+                format!("  {name}{stack_range} {}", prettify_percent_display(row.drop_rate))
             } else {
                 format!("  {name}")
             };
             text::hud_text(r, lookups, tx, ty, 0.8, [1.0; 4], &line);
             ty += 22.0;
         }
-        if crate::loot_db::drop_lines(entry.net_id).is_empty() {
+        if rows.is_empty() {
             text::hud_text(
                 r,
                 lookups,
@@ -1536,4 +1544,27 @@ mod tests {
         let dst = two_frame_dst(&sheet, BUTTON_RECT);
         assert_eq!(dst, [499.0, 279.0, 28.0, 28.0]);
     }
+}
+
+/// `Utils.PrettifyPercentDisplay` (`Utils.cs:1105-1109`): the percent string
+/// with the trailing zeros trimmed — "14.29 %" → "14.29%", "100%" for the
+/// full rate, and the four-digit format under 0.1 %.
+fn prettify_percent_display(rate: f32) -> String {
+    if rate >= 1.0 {
+        return "100%".to_string();
+    }
+    if rate < 0.001 {
+        // The C#'s "P4" format (`:93-96`).
+        let s = format!("{:.4}%", rate * 100.0);
+        return trim_percent(&s);
+    }
+    let s = format!("{:.2}%", rate * 100.0);
+    trim_percent(&s)
+}
+
+/// The trailing-zero trim of `PrettifyPercentDisplay`: `TrimEnd('0', '%', ' ')`
+/// then `TrimEnd('.', ' ')` then `TrimStart('0', ' ')`.
+fn trim_percent(s: &str) -> String {
+    let trimmed = s.trim_end_matches(['0', '%', ' ']).trim_end_matches(['.', ' ']);
+    format!("{}%", trimmed.trim_start_matches(['0', ' ']))
 }
