@@ -1311,6 +1311,43 @@ impl NpcKind {
         )
     }
 
+    /// `NPC.realLife` (`NPC.cs:6161`) — the worm families whose segments
+    /// share the HEAD's life pool. The vanilla's `AI_006_Worms` gives the
+    /// head `ai[3] = whoAmI` + `realLife = whoAmI` and hands the link to
+    /// every child (`NPC.cs:51305-51363`); `AI_037_Destroyer` does the same
+    /// for the Destroyer (`NPC.cs:49836-49853`) and the crawltipede's own
+    /// arm for its chain (`NPC.cs:51369-51392`). The Eater of Worlds is the
+    /// exception: C# forces `realLife = -1` for types 13-15
+    /// (`NPC.cs:51129-51132`), so every EoW segment owns its own life.
+    pub fn shares_carrier_life(self) -> bool {
+        matches!(
+            self,
+            NpcKind::DevourerHead
+                | NpcKind::DevourerBody
+                | NpcKind::DevourerTail
+                | NpcKind::GiantWormHead
+                | NpcKind::GiantWormBody
+                | NpcKind::GiantWormTail
+                | NpcKind::LeechHead
+                | NpcKind::LeechBody
+                | NpcKind::TheDestroyer
+                | NpcKind::SolarCrawltipedeHead
+                | NpcKind::SolarCrawltipedeBody
+                | NpcKind::SolarCrawltipedeTail
+        )
+    }
+
+    /// `NPC.takenDamageMultiplier` (`NPC.cs:6521`) — the damage multiplier
+    /// the vanilla applies to the strike before it lands
+    /// (`NPC.cs:81244-81246`). The solar crawltipede's tail (414) carries
+    /// 10 (`NPC.cs:15316`); every other type keeps 1.
+    pub fn taken_damage_multiplier(self) -> f32 {
+        match self {
+            NpcKind::SolarCrawltipedeTail => 10.0,
+            _ => 1.0,
+        }
+    }
+
     /// The Destroyer: the head of its own same-kind chain (`AI_037`).
     pub fn is_worm_head(self) -> bool {
         matches!(
@@ -2394,9 +2431,11 @@ impl NpcKind {
             // `NPC.cs`'s 115 (240) / 117-118 (60).
             NpcKind::Hungry => 240,
             NpcKind::LeechHead | NpcKind::LeechBody => 60,
-            // `SetDefaults` case 134 (`NPC.cs:10666`): 8000 HP (the
-            // vanilla's realLife pool — the v1 carries the per-segment HP).
-            NpcKind::TheDestroyer => 8000,
+            // `SetDefaults` case 134 (`NPC.cs:10667`): 80000 HP — the
+            // vanilla's `realLife` pool: every segment of the Destroyer
+            // shares the head's life (`NPC.cs:49836-49853`), so the worm
+            // has 80000 HP in total, not 80000 per link.
+            NpcKind::TheDestroyer => 80000,
             // `SetDefaults` case 127 (`NPC.cs:10562`): 28000 HP.
             NpcKind::SkeletronPrime => 28000,
             // `SetDefaults` cases 125/126.
@@ -2977,6 +3016,14 @@ pub struct Npc {
     /// The init latch — `ai[0] == 0`'s "no child spawned yet" analog: the
     /// link spawns its child on the first worm pass.
     pub worm_inited: bool,
+    /// The strike damage a carrier-linked segment defers to its carrier.
+    /// `NPC.StrikeNPC_Inner`'s `realLife` arm (`NPC.cs:81374-81378`) puts
+    /// the damage on the CARRIER's life — a segment owns none of its own.
+    /// The strikes that run without the NPC list (the EoC shield-dash and
+    /// the thorns reflect, both inside `Npc::contact`) park the damage
+    /// here; the worm pass pays it to the carrier before the frame's
+    /// death sweep.
+    pub pending_pool_damage: i32,
     /// The WoF's Leech-head spawn request (the tongue-phase
     /// `NPC.CountNPCS(117) < 10` spawn; the sim counts and spawns).
     pub wants_leech: bool,
@@ -3962,6 +4009,7 @@ impl Npc {
             seg_index: 0,
             worm_left: 0,
             worm_inited: false,
+            pending_pool_damage: 0,
             wants_leech: false,
             wants_limbs: false,
             wants_hungry: false,
@@ -4863,6 +4911,30 @@ impl Npc {
         }
     }
 
+    /// The carrier that owns this NPC's life pool — `NPC.realLife`
+    /// (`NPC.cs:6161`). The vanilla stores the carrier's NPC INDEX; the
+    /// port's `App::npcs` compacts every frame (the death retain in
+    /// `world_sim/npcs.rs`), so an index would not survive the frame. The
+    /// chain's stable identity (`worm_id` + `seg_index`) stands in: the
+    /// carrier is the link with `seg_index == 0` — the head that C#'s
+    /// `ai[3]` points at (`NPC.cs:51305-51363`).
+    pub fn carrier_index(npcs: &[Npc], idx: usize) -> Option<usize> {
+        let n = &npcs[idx];
+        if !n.kind.shares_carrier_life() || n.worm_id == 0 || n.seg_index == 0 {
+            return None;
+        }
+        npcs.iter()
+            .position(|m| m.worm_id == n.worm_id && m.seg_index == 0)
+    }
+
+    /// Whether this NPC's life belongs to a carrier — the `realLife` arm
+    /// of `NPC.StrikeNPC_Inner` (`NPC.cs:81374-81378`). The head itself
+    /// is its own carrier in the vanilla (`realLife = whoAmI`,
+    /// `NPC.cs:51307`), so it keeps its own life.
+    pub fn has_carrier(&self) -> bool {
+        self.kind.shares_carrier_life() && self.worm_id != 0 && self.seg_index > 0
+    }
+
     /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81389-81458`): the
     /// soft-capped impulse applied by `tr_core::damage::knock_back_npc`.
     /// `hit_direction` is the knockback side (+1 = pushed right) and
@@ -4876,7 +4948,16 @@ impl Npc {
         if self.dont_take_damage {
             return false;
         }
-        self.hp -= amount;
+        // The `realLife` arm (`NPC.cs:81374-81378`): a linked segment owns
+        // no life of its own — the strike belongs to the carrier's pool.
+        // This path runs without the NPC list (the EoC shield-dash and the
+        // thorns reflect inside `Npc::contact`), so the damage waits for
+        // the worm pass to pay it to the carrier.
+        if self.has_carrier() {
+            self.pending_pool_damage += amount;
+        } else {
+            self.hp -= amount;
+        }
         self.hurt_cd = 0.18;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
@@ -4912,7 +4993,11 @@ impl Npc {
         if self.hp <= 0 {
             return false;
         }
-        self.hp -= amount;
+        if self.has_carrier() {
+            self.pending_pool_damage += amount;
+        } else {
+            self.hp -= amount;
+        }
         self.hurt_cd = 0.18;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
@@ -4930,6 +5015,93 @@ impl Npc {
         self.vx = vx;
         self.vy = vy;
         self.on_ground = false;
+        true
+    }
+
+    /// `NPC.StrikeNPC` (`NPC.cs:81189-81563`) — the melee strike, able to
+    /// reach the NPC list, so the `realLife` pool arm lands on the carrier
+    /// (`NPC.cs:81374-81378`). The gates are the port's melee ones: the
+    /// shared `hurt_cd` window and `NPC.dontTakeDamage`.
+    pub fn strike_melee(
+        npcs: &mut [Npc],
+        idx: usize,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+    ) -> bool {
+        {
+            let n = &npcs[idx];
+            if n.hurt_cd > 0.0 || n.hp <= 0 || n.dont_take_damage {
+                return false;
+            }
+        }
+        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit)
+    }
+
+    /// `NPC.StrikeNPC` from a projectile: the same pool arm, without the
+    /// melee `hurt_cd` gate (the projectile's right to hit rides the three
+    /// C# immunity systems, `Projectile.cs:12577-12624`).
+    pub fn strike_projectile(
+        npcs: &mut [Npc],
+        idx: usize,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+    ) -> bool {
+        if npcs[idx].hp <= 0 {
+            return false;
+        }
+        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit)
+    }
+
+    /// `NPC.StrikeNPC_Inner` (`NPC.cs:81235-81458`) with the `realLife`
+    /// pool arm (`NPC.cs:81374-81378`): a segment's strike lands on the
+    /// CARRIER's life and the segment mirrors the carrier's
+    /// `life`/`lifeMax`. The knockback stays on the struck NPC — the
+    /// vanilla's order (`NPC.cs:81389-81458` reads the mirrored
+    /// `lifeMax`).
+    fn strike_pooled(
+        npcs: &mut [Npc],
+        idx: usize,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+    ) -> bool {
+        // `NPC.takenDamageMultiplier` (`NPC.cs:81244-81246`): the solar
+        // crawltipede's tail (414) takes ten times the damage
+        // (`NPC.cs:15316`).
+        let amount = (amount as f32 * npcs[idx].kind.taken_damage_multiplier()) as i32;
+        // The pool arm.
+        match Npc::carrier_index(npcs, idx) {
+            Some(carrier) => {
+                npcs[carrier].hp -= amount;
+                npcs[idx].hp = npcs[carrier].hp;
+                npcs[idx].max_hp = npcs[carrier].max_hp;
+            }
+            None => npcs[idx].hp -= amount,
+        }
+        // The knockback half (`NPC.cs:81389-81458`).
+        let n = &mut npcs[idx];
+        n.hurt_cd = 0.18;
+        let (w, _) = n.size();
+        let dir = if n.x + w * 0.5 >= from_x { 1 } else { -1 };
+        let (vx, vy) = tr_core::damage::knock_back_npc(
+            knock_back,
+            n.knock_back_resist(),
+            crit,
+            amount,
+            n.max_hp,
+            (n.vx, n.vy),
+            dir,
+            false,
+            false,
+        );
+        n.vx = vx;
+        n.vy = vy;
+        n.on_ground = false;
         true
     }
 
@@ -16905,7 +17077,8 @@ mod tests {
     #[test]
     fn the_worm_chain_dies_with_the_head() {
         // `:51425-51433`: the leader gone — the link dies; the whole tail
-        // falls in one pass.
+        // falls in one pass. The split (`Transform(13)`) is the Eater of
+        // Worlds' rule only (`NPC.cs:51498-51502`).
         let w = ground_air();
         let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::DevourerHead);
         head.hp = head.max_hp;
@@ -16914,12 +17087,76 @@ mod tests {
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the devourer assembled ({})", npcs.len());
-        // The head dies: `NPC.cs:51507-51511`'s split — the first orphan
-        // becomes its own head (`Transform(13)`), the back part lives.
+        // The head dies: every link falls with it — the pool is the head's
+        // life, so the segments read 0 and go with the carrier.
         npcs[0].hp = 0;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
-        assert_eq!(npcs[1].kind, NpcKind::DevourerHead, "the orphan head");
-        assert!(npcs[1].hp > 0, "the split worm lives");
+        assert!(
+            npcs.iter().all(|n| n.hp <= 0),
+            "no orphan survives the carrier"
+        );
+        assert!(
+            npcs.iter().all(|n| n.kind != NpcKind::DevourerHead || n.seg_index == 0),
+            "the classic families never split into a new head"
+        );
+    }
+
+    #[test]
+    fn the_worm_segments_share_the_carriers_pool() {
+        // `NPC.StrikeNPC_Inner`'s `realLife` arm (`NPC.cs:81374-81378`):
+        // the damage lands on the CARRIER's life and the segment mirrors
+        // the carrier's `life`/`lifeMax`.
+        let w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::DevourerHead);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        let pool = npcs[0].max_hp;
+        assert_eq!(pool, 100, "the Devourer's head carries the pool");
+        // A strike on a body link: the head's life takes the damage, the
+        // body mirrors it.
+        let body_x = npcs[1].x;
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false));
+        assert_eq!(npcs[0].hp, pool - 25, "the carrier's life took the hit");
+        assert_eq!(npcs[1].hp, pool - 25, "the segment mirrors the carrier");
+        assert_eq!(npcs[1].max_hp, pool, "the segment's lifeMax is the carrier's");
+        // The tail is a segment too: its hit lands on the same pool.
+        let last = npcs.len() - 1;
+        let tail_x = npcs[last].x;
+        assert!(Npc::strike_melee(&mut npcs, last, 10, tail_x, 5.0, false));
+        assert_eq!(npcs[0].hp, pool - 35, "the tail hits the same pool");
+        // The head's own hit: its life IS the pool (`realLife = whoAmI`).
+        let head_x = npcs[0].x;
+        assert!(Npc::strike_melee(&mut npcs, 0, 5, head_x, 5.0, false));
+        assert_eq!(npcs[0].hp, pool - 40, "the head's own life is the pool");
+        // The worm pass keeps the mirror: the segments read the carrier's
+        // life (`NPC.cs:81377-81378`).
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        assert!(
+            npcs.iter().skip(1).all(|n| n.hp == npcs[0].hp),
+            "every segment reads the carrier's life"
+        );
+    }
+
+    #[test]
+    fn the_eater_of_worlds_segments_keep_their_own_life() {
+        // `NPC.cs:51129-51132`: the Eater of Worlds is the one worm family
+        // whose segments own their life — C# forces `realLife = -1` for
+        // types 13-15, so each segment falls on its own.
+        let w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::EaterOfWorldsHead);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        assert!(npcs.len() >= 10, "the EoW assembled ({})", npcs.len());
+        let body_x = npcs[1].x;
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false));
+        assert_eq!(npcs[1].hp, npcs[1].max_hp - 25, "the segment owns its life");
+        assert_eq!(npcs[0].hp, npcs[0].max_hp, "the head's pool is untouched");
     }
 
     #[test]
@@ -17880,7 +18117,7 @@ mod tests {
         assert_eq!(e.credit_id, "TheDestroyer");
         let mut d = Npc::new(NpcKind::TheDestroyer, 0.0, 0.0, 1, 0.0);
         assert_eq!(d.size(), (48.0, 48.0));
-        assert_eq!(d.max_hp, 8000);
+        assert_eq!(d.max_hp, 80000);
         assert_eq!(d.knock_back_resist(), 0.0);
         assert_eq!(NpcKind::TheDestroyer.contact_damage(), 70);
         let _ = (&w, &mut d);
