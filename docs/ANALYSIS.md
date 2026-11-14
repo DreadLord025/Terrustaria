@@ -12771,3 +12771,32 @@ vanilla's 1200) and the window test pins both edges (3000 px below the
 surface spawns, 3200 px does not — the test world's surface is row 120 =
 px 1920). The ±3000 px window around `invasionX` and the town-NPC fallback
 stay as they were (the latter rides the town roster).
+
+## The drop-rate report (S1-E-15, 2026-11-14)
+
+`IItemDropRule.ReportDroprates` and its data (`DropRateInfo`,
+`DropRateInfoChainFeed`) are ported into `tr_core::loot`: the trait gains
+`report_droprates` (the default reports nothing, so the rule classes that
+S1-E-14 still has to port compile unchanged), and the port's rule classes
+report with the C#'s formulas — `CommonDrop`'s
+`(numerator / denominator) * the parent's rate`, `CommonDropWithRerolls`'s
+`1 - (1 - numerator/denominator)^rerolls`, `OneFromOptionsDrop`'s shared
+per-option rate, the nested rules' (expert/master/extra-gel) pairs, and
+`DropOneByOne`'s chunk-scaled stack range. `Chains.ReportDroprates`
+(`Chains.cs:24-30`) scales the chained rule's feed by `1 - the parent's own
+rate`. `ItemDropDatabase::report_droprates` is
+`BestiaryDatabase.ExtractDropsForNPC` (`BestiaryDatabase.cs:70-88`): the
+NPC's rules report their rows with a fresh feed (the rate 1.0) and the
+globals stay out.
+
+The bestiary's "Drops:" list now prints those rows instead of the 4-row
+hand-written table (`ui/bestiary.rs`) — the stack range + the rate, in
+`UIBestiaryInfoItemLine.GetDropInfo`'s format (`UIBestiaryInfoItemLine.cs:78-104`)
+with `Utils.PrettifyPercentDisplay`'s trimmed percentage
+(`Utils.cs:1105-1109`).
+
+Scope notes: the C#'s condition lists (`DropRateInfo.conditions`) and the
+chains' `hideLootReport` flag are not modelled by the port, so the rows
+carry no condition text and the chained rows always print; the town-NPC and
+critter providers, the search filters, the sorting, the flavour and the MP
+kill-sync ride the town/MP subsystems.
