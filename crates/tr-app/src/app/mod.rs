@@ -2955,14 +2955,7 @@ impl App {
             mine_released: false,
             item_time: 0.0,
             coins,
-            // The hooks' own `Main.rand` stand-in (`AI_007`'s 1/16
-            // cracked-brick break, `Projectile.cs:52586-52595`) — seeded from
-            // the world seed beside the other per-consumer streams.
-            projectiles: {
-                let mut p = ProjectilePool::new();
-                p.seed_hooks(world_seed);
-                p
-            },
+            projectiles: ProjectilePool::new(),
             tomb_falls: Vec::new(),
             lost_coins: 0,
             lost_coin_string: String::new(),
