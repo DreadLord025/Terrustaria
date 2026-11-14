@@ -33,10 +33,32 @@
 //! the thunder slot/pitch) come from the owning system's own stream.
 
 /// `SoundID.BlizzardStrongLoop` (`SoundID.cs:1599`): the outside blizzard
-/// loop, `WithVolume(0.5f)`.
-pub const BLIZZARD_STRONG_LOOP: &str = "blizzard_strong_loop";
-/// `SoundID.BlizzardInsideBuildingLoop` (`SoundID.cs:1598`).
-pub const BLIZZARD_INSIDE_LOOP: &str = "blizzard_inside_building_loop";
+/// loop's tracked style — `CreateTrackable("blizzard_strong_loop",
+/// SoundType.Ambient).WithVolume(0.5f)`, one variation, uncapped (S1-E-23).
+pub fn blizzard_strong_loop_style() -> crate::tracked_sound::TrackedStyle {
+    crate::tracked_sound::TrackedStyle {
+        cue: "blizzard_strong_loop",
+        variations: 1,
+        volume: 0.5,
+        pitch_variance: 0.0,
+        sound_type: crate::tracked_sound::SoundType::Ambient,
+        max_tracked_instances: 0,
+    }
+}
+
+/// `SoundID.BlizzardInsideBuildingLoop` (`SoundID.cs:1598`): the
+/// inside-building loop's tracked style (`CreateTrackable("blizzard_
+/// inside_building_loop", SoundType.Ambient)` — style volume 1).
+pub fn blizzard_inside_loop_style() -> crate::tracked_sound::TrackedStyle {
+    crate::tracked_sound::TrackedStyle {
+        cue: "blizzard_inside_building_loop",
+        variations: 1,
+        volume: 1.0,
+        pitch_variance: 0.0,
+        sound_type: crate::tracked_sound::SoundType::Ambient,
+        max_tracked_instances: 0,
+    }
+}
 
 /// `Utils.MoveTowards(float original, float target, float amount)`
 /// (`Utils.cs:1782-1793`) — the signed step with overshoot snap.

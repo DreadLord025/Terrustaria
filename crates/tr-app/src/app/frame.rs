@@ -242,6 +242,17 @@ impl App {
             server: matches!(self.net, crate::app::NetRole::Host(_)),
         });
 
+        // `SoundEngine.Update` (`SoundEngine.cs:48-68`, S1-E-23): the pause
+        // edge (`FocusHelper.PauseSounds` = `!GameplayActive && netMode == 0`,
+        // where `GameplayActive = IsSelectedApplication && !gamePaused` —
+        // `FocusHelper.cs:11-20`/`:97-105`) rides the window-focus and the
+        // S1-B-3 pause gate, then the pool's per-frame update re-volumes
+        // every tracked `ActiveSound` against the fresh listener and reaps
+        // the dead.
+        let pause_sounds = (!self.window_focused || self.game_paused)
+            && matches!(self.net, crate::app::NetRole::Off);
+        self.audio.update_tracked(pause_sounds);
+
         // `Main.Ambience` (`Main.cs:13466-13515`): every 15 ticks (¼ s) the
         // waterfall/lavafall loops re-volume from the strength scans; the
         // volume math is the LegacySoundPlayer case 34/35 (the distance
