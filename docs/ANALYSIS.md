@@ -4422,6 +4422,36 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Town chatter (S1-E-10a, 2026-11-14)
+
+`crates/tr-app/src/npc_chat.rs` ports `NPC.GetChat` (`NPC.cs:93766-94800`):
+the per-kind dialog ladder over the `LegacyDialog` rows, the seventeen
+"a town NPC of this type exists" flags the function scans out of the NPC
+list (`:93788-93864`), the event texts (`NPC.HasSpecialEventText`
+`:94860-94887` — the graveyard, the party, the rain, the windy day and
+the storm), the wizard's luck text (`HasLuckTextForWizard` `:94843-94858`)
+and the per-kind chatter categories (`Language.SelectRandom` over
+`Lang.CreateDialogFilter(prefix)`).
+
+The draws come from the caller's `Main.rand` stream and the world/player
+state is passed in (`ChatContext`), so the ladder is a pure function of
+the state; the C#'s `Lang.dialog(n)` is `LegacyDialog.n` (`Lang.cs:170-173`).
+
+Ported kinds: the Merchant (17), the Nurse (18), the Arms Dealer (19), the
+Dryad (20), the Demolitionist (38), the Clothier (54), the Goblin
+Tinkerer (107), the Bound Wizard (106), the Wizard (108), the Mechanic
+(124), the Guide (22), the Party Girl (208), the Dye Trader (207), the
+Painter (227), the Witch Doctor (228), the Travelling Merchant (368), the
+Angler (369), the Sleeping Angler (376), the Tax Collector (441), the
+Golfer (588), the Zoologist (633) and the Princess (663).
+
+Deviations: the chat **UI** is not wired yet — the C#'s right-click
+(`Main.cs:43069-43083` → `Main.npcChatText`) and the bubble
+(`Main.DrawNPCChatBubble` `:43135-43159`) and the dialogue panel
+(`NPCChatPanel.cs`) still wait for the panel task; the port's
+`ConditionalDialogue` (the pending-dialogue half, `NPC.cs:6539`) is not
+ported; the C#'s `nextDialogue` branch (`:93768-93771`) comes with it.
+
 ## Town housing (S1-E-11a, 2026-11-14)
 
 `WorldGen.ScoreRoom` (`WorldGen.cs:5858-5992`) landed in `tr-core::housing`:
