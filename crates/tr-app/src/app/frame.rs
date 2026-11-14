@@ -408,6 +408,12 @@ impl App {
                 // is not solid for the entity half of the tick — the liquid
                 // pass re-arms it (`Liquid.cs:451`, S1-L-14).
                 self.liquids.clear_bubble_for_entities();
+                // `CraftingUI.RecipeFilterHack`'s gate (`CraftingUI.cs:112-121`)
+                // plus `NewCraftingUI.OnDeactivate`'s clear (`:912-914`): the
+                // station filter only lives while the crafting page is up.
+                if !self.crafting_open {
+                    self.craft_filter = None;
+                }
                 // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
                 // pass. The sleeping counts it exports (`:17844-17859`) gate the
                 // clock's rate, so they land right after it.
@@ -1612,7 +1618,15 @@ impl App {
                             snow: self.scene_metrics.zone_snow,
                             graveyard: self.scene_metrics.zone_graveyard,
                         };
-                        craft::available(inventory, &self.world_chests, &in_range, &adj, &zones)
+                        craft::available(
+                            inventory,
+                            &self.world_chests,
+                            &in_range,
+                            &adj,
+                            &zones,
+                            self.craft_filter.as_ref(),
+                            None,
+                        )
                     } else {
                         Vec::new()
                     };

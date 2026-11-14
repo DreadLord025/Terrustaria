@@ -2752,6 +2752,14 @@ fn place_planter_box(world: &mut World, x: i32, y: i32, style: i32) -> bool {
 #[derive(Debug)]
 pub enum TileInteraction {
     None,
+    /// `Player.cs:33279-33284` — the unconditional tail of
+    /// `TileInteractionsUse`: every tile that reaches it hands the click to
+    /// `GetCraftingFilterForTile` (`:33312-33335`); the app layer decides
+    /// whether the kind is a crafting station (`TileUsedInRecipes`, the
+    /// `TileCountsAs` inheritance included) or a water source, and only a
+    /// resolved filter consumes the click (the C#'s `flag2 = true` under
+    /// the non-null check).
+    StationInteract { kind: u16 },
     /// `WorldGen.OpenDoor` succeeded (`SoundEngine.PlaySound(8)`, `:37732`).
     DoorOpened {
         object_drops: Vec<ObjectDrop>,
@@ -2900,7 +2908,10 @@ pub fn interact_at(
     // where the C# chain tests `Main.tile[myX, myY].type` literals
     // (`Player.cs:32835`/:32857 for 10/11).
     let Some(def) = crate::tileobject::def_for_tile(t.kind) else {
-        return TileInteraction::None;
+        // No registry def: the C# chain falls through to the crafting
+        // station tail (`Player.cs:33279`), which the legacy single-tile
+        // kinds (the dials aside — they returned above) reach as well.
+        return TileInteraction::StationInteract { kind: t.kind };
     };
     match def.interaction {
         crate::tileobject::Interaction::Bank(bank) => {
@@ -3020,7 +3031,9 @@ pub fn interact_at(
             // `DropItemFromExtractinator` `:42081-42089`).
             TileInteraction::Extractinator
         }
-        crate::tileobject::Interaction::None => TileInteraction::None,
+        crate::tileobject::Interaction::None => {
+            TileInteraction::StationInteract { kind: t.kind }
+        }
         crate::tileobject::Interaction::Door => {
             let mut drops = Vec::new();
             if t.kind == 10 {

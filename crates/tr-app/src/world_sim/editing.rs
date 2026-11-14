@@ -3559,6 +3559,21 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.world_key = None;
             return true;
         }
+        edit::TileInteraction::StationInteract { kind } => {
+            // `Player.cs:33279-33284` (the `TileInteractionsUse` tail): the
+            // clicked tile's filter lands in `CraftingUI._lastFilter` via
+            // `OpenCloseFilter` (`:33301`/`:33297`); `this.AdjTiles()`
+            // (`:33282`) — the port recomputes the adjacency per query. A
+            // resolved filter consumes the click (`flag2 = true`); a tile
+            // that is neither a station nor a water source leaves it false,
+            // so the place path takes over.
+            app.craft_filter = crate::craft::get_crafting_filter_for_tile(*kind);
+            if app.craft_filter.is_some() {
+                app.world_key = None;
+                return true;
+            }
+            return false;
+        }
         _ => {}
     }
     let Some((cue, drops)) = interaction_events(result) else {
@@ -3616,6 +3631,10 @@ fn interaction_events(
         // The bank open is consumed in `interact_tile` ahead of this
         // mapping (the SoundID 10/11/12 keys are absent from the cue set).
         edit::TileInteraction::BankOpen { .. } => (None, Vec::new()),
+        // The station probe is consumed in `interact_tile` ahead of this
+        // mapping — no cue, no drops (the C# plays the craft-open sound 10
+        // inside `OpenCloseFilter`'s non-quiet path, `NewCraftingUI.cs:894`).
+        edit::TileInteraction::StationInteract { .. } => (None, Vec::new()),
         // M7-EXTRACT-1: the extractinator is NOT a click-edge interaction in
         // vanilla — `PlaceThing_ItemInExtractinator` runs inside the held-item
         // swing (`Player.cs:39591`, `:41665`), so the press edge falls through
