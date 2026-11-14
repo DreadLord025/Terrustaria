@@ -13111,3 +13111,45 @@ Deviations:
   the factor is 1 — except for the kinds whose scale the port does not
   carry (the goblins' 0.9/0.95/1.1), which the group does not scale
   anyway.
+
+## The Brain of Cthulhu's machine (S1-D-3e, 2026-11-14)
+
+`AI_054` (`NPC.cs:32370-32656`) is the Brain of Cthulhu's family machine:
+the creeper swarm's shield, the blink machine (the Brain teleports around
+the player, fading out and in), the retreat when its swarm dies and the
+despawn ramp when the player leaves the Crimson zone. The port ran a
+stand-in — a 60-tick drift toward the player plus a 9-px dash.
+
+The arm now carries the C#'s machine:
+
+* **the normal phase** (`:32522-32527`): the velocity points at the player
+  at 1 px/tick (the getGood world's 3);
+* **the blink** (`:32532-32599`): the `localAI[1]` timer (120 + `Next(300)`
+  ticks, re-rolled every tick) picks a tile 12-40 tiles from the player
+  (the signs are random, the player's velocity leads the pick, the tile
+  must be free of solid blocks and — after the 75th try — in line of sight
+  of the player), the fade-in (alpha + 5/tick to 255) teleports the Brain
+  onto it and the fade-out (alpha − 5/tick) returns to the normal phase;
+* **the retreat** (`:32401-32518`): with no Creeper left the Brain switches
+  to `ai[0] = -1` and drifts at 8 px through the 50/51 blend; its timer
+  (60 + `Next(120)` ticks) picks a tile 10-12 tiles out (no sight gate) and
+  the `-2`/`-3` states fade the Brain in on it and back out;
+* **the despawn ramp** (`:32619-32636`): a dead player or a player out of
+  the Crimson zone sinks the Brain (`velocity.Y += (localAI[3] - 60) * 0.25`)
+  and fades it out.
+
+The creeper swarm's spawn and the shield stay in the sim's pass
+(`world_sim/npcs.rs`: the 20 Creepers + `dont_take_damage` while one
+lives); the arm's "no Creeper left" test needs the live count, so the sim
+writes it into `Npc::brain_local[2]` (the C#'s `num818`).
+
+Deviations:
+
+* **The gore/dust burst is SKIPPED** (`:32401-32419`) — no dust/gore layer.
+* **The MP-only branches use the single-player values** (`Main.netMode !=
+  0`): the port has no multiplayer arm, so the blink's period, the fade
+  rates and the "crimson boss" bookkeeping are the single-player ones.
+* **`justHit` rides the port's `hurt_cd`** (the hit cooldown) — the C#'s
+  flag is a single tick, the port's window is the timer the other arms
+  use for the same purpose (the port's convention, documented in the
+  Goblin Archer's arm).
