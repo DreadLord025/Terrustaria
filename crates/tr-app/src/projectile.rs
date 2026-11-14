@@ -8670,6 +8670,18 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI()`'s aiStyle-2 block (`Projectile.cs:23205-23690`) — the Flying
+    /// Dutchman's cannon shell (240): the shell is invisible (the alpha 0)
+    /// and bursts into dust and gore when its `ai[0]` reaches 3.
+    ///
+    /// The dust and the gore are SKIPPED — no dust/gore layer.
+    fn ai_dutchman_shell(&mut self) {
+        // `:23367` — the shell is invisible.
+        self.alpha = 0;
+        // `:23368-23416` — the burst at `ai[0] == 3` (the dust and the gore
+        // are skipped).
+    }
+
     /// `AI()`'s aiStyle-79 block (`Projectile.cs:30791-30910`) — the Martian
     /// Saucer's deathray (447): the owner check, the beam that hangs from the
     /// owner down to the ground (or the player's feet) and the 4-frame loop.
@@ -11432,6 +11444,9 @@ impl ProjectilePool {
                         // (`:51358-51477`): the opacity ramp, the scale and
                         // the 20-tick life.
                         157 => self.slots[i].ai_sharp_tears(world, rng),
+                        // The aiStyle-2 Flying Dutchman shell
+                        // (`:23366-23417`): the shell is invisible.
+                        2 => self.slots[i].ai_dutchman_shell(),
                         // The aiStyle-79 Saucer deathray (`:30791-30910`):
                         // the owner check and the beam that hangs from the
                         // owner to the ground.
@@ -23916,5 +23931,23 @@ mod s1_d_4b_5_tests {
             }
         }
         assert_eq!(ages.len(), 4, "the four variations show up ({ages:?})");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_5e_tests {
+    use super::*;
+    /// S1-D-4b-5e — the aiStyle-2 shell (`Projectile.cs:23366-23417`): the
+    /// shell is invisible.
+    #[test]
+    fn s1_d_4b_5e_the_dutchman_shell_is_invisible() {
+        let mut shell = Projectile {
+            active: true,
+            kind: DUTCHMAN_SHELL,
+            alpha: 255,
+            ..Default::default()
+        };
+        shell.ai_dutchman_shell();
+        assert_eq!(shell.alpha, 0, "the shell is invisible");
     }
 }

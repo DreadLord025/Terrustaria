@@ -13592,3 +13592,34 @@ Deliberate deviations:
    (`Utils.cs:223-234` — the max is tested first), so a world shorter than
    the 40-row underworld margin folds onto the max instead of panicking.
 
+
+## The Flying Dutchman's cannon (S1-D-4b-5e, 2026-11-14)
+
+The Flying Dutchman's cannons (`NPCID.FlyingDutchmanCannon`, 492) ride the
+aiStyle-75 mount machine ✓, but the port never gave them the C#'s
+`type == 492` block (`NPC.cs:35753-35823`): the 240-tick reload, the
+line-of-sight gate, the shell's shot and the eight-ray aim. The port's
+`DUTCHMAN_SHELL` row (240, the aiStyle-2 projectile) had no arm either, so
+the shell had neither a shooter nor a behaviour.
+
+The arm now carries both halves:
+
+* **the cannon** (`:35753-35823`): the `ai[3]` reload counts to 240, the
+  line-of-sight gate (the `Collision.CanHit` box test) opens the shot, and
+  the shell flies at the player (the normalized direction × 14, minus 5 on
+  the Y). Between the shots the cannon aims with the eight-ray scan — the
+  closest of the eight rays around the cannon sets its `ai[2]` (the octant
+  the sprite reads back), and the aim clears when the sight line is lost.
+  The cannon owns its `ai[3]` (the C#'s block counts its own reload), so
+  the core's timer no longer mirrors into it.
+* **the shell** (the aiStyle-2 block, `Projectile.cs:23366-23417`): the
+  shell is invisible (the alpha 0) and bursts into dust and gore when its
+  `ai[0]` reaches 3.
+
+Deviations:
+
+* **The dust and the gore are SKIPPED** (the shell's burst) — no dust/gore
+  layer.
+* **The cannon inherits the Dutchman's velocity and `timeLeft`** in the C#;
+  the port's carrier link carries the position and the timers only, so the
+  cannon keeps its own movement.
