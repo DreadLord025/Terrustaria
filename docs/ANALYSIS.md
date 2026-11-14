@@ -1549,6 +1549,12 @@ because the gate is the C#'s top-to-top `Main.player[target].position.Y - base.p
   applies it unconditionally. So the port over-adds for the Eater of Souls (6) and the
   Hornet (42) — the two kinds whose `flag5` is false — and is correct for the Meteor Head
   (23) and the Servant of Cthulhu (5), whose `flag5` is true.
+
+Both residuals are now closed **for the Servant of Cthulhu**: S1-D-3k gives
+type 5 its own `AI_005` branch (`update_servant_of_cthulhu`) with the 8-px
+aim floor, the `flag5` double-add and the dead-target flee vector, so it no
+longer rides the shared archetype. The Eater of Souls (6), the Hornet (42) and
+the Meteor Head (23) still do — the S1-D-3l follow-up.
 * the per-difficulty / secret-seed overrides (`:50308-50316` expert-mode and remix for
   type 6; `:50345-50348` type 231's 3/0.017) are constants-off: the presets are the
   normal-mode values, like the other archetype tables.
@@ -12716,6 +12722,67 @@ clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
 their own passes; the hover text feeds the map's text line through
 `ui::text::hud_text` (the C# `ref text`).
 
+## The carrier's life pool (S1-D-6, 2026-11-14)
+
+`NPC.realLife` (`NPC.cs:6161`) is the C#'s carrier link: an NPC index that
+points at the NPC whose life the linked NPC shares. `AI_006_Worms` gives the
+head `ai[3] = whoAmI` + `realLife = whoAmI` and hands the link to every
+child (`NPC.cs:51305-51363`); `AI_037_Destroyer` does the same for the
+Destroyer (`:49836-49853`) and the crawltipede's own arm for its chain
+(`:51369-51392`). The Eater of Worlds is the one exception — C# forces
+`realLife = -1` for types 13-15 (`:51129-51132`), so every EoW segment owns
+its own life.
+
+The three consequences the port now carries:
+
+* **One pool.** `StrikeNPC_Inner`'s `realLife` arm (`:81374-81378`) puts the
+  damage on the carrier's `life` and copies the carrier's `life`/`lifeMax`
+  back onto the struck segment. The pool's size is the carrier's `lifeMax`:
+  the Devourer 100 (`:8771`), the Giant Worm 30 (`:8858`), the Leech 60
+  (`:10413`), the solar crawltipede 10000 (`:15273`), the Destroyer **80000**
+  (`:10667` — the port carried the per-segment 8000, so the whole worm was
+  eight times too tanky).
+* **A carrier-bound death.** `checkDead` returns early for a link whose
+  carrier is not itself (`:78040-78042`), so a segment never runs the death
+  events: no loot, no coins, no bestiary credit, no banner, no invasion
+  kill credit. Only the carrier's death carries them.
+* **A chain without orphans.** A classic family's link dies with its leader
+  (`:51425-51433`); the `Transform(13)`/`Transform(15)` split is the Eater
+  of Worlds' rule only (`:51498-51519`). The port used to split the
+  Devourer's and the Giant Worm's bodies into new heads — a segment that
+  outlived its chain.
+
+Port notes:
+
+* **The carrier link is a stable identity, not an index.** The vanilla's
+  `realLife` is an NPC index, but `App::npcs` compacts every frame (the
+  death retain in `world_sim/npcs.rs`), so an index would not survive the
+  frame. The port's chain identity (`worm_id` + `seg_index`) stands in: the
+  carrier is the link with `seg_index == 0` (`Npc::carrier_index`).
+* **The mirror is continuous.** C# copies the carrier's `life` onto the
+  segment when the segment is struck; the port's worm pass mirrors it every
+  frame, so a segment never shows a stale life. The observable result is the
+  same: the pool empties the whole chain at once, and the DoT on a segment
+  (which C# also loses — it writes the segment's stale `life`) cannot kill a
+  link.
+* **The two strikes without the NPC list defer.** The EoC shield-dash and
+  the thorns reflect (`Npc::contact`) have no access to the NPC list, so
+  their damage is parked in `pending_pool_damage` and the worm pass pays it
+  to the carrier in the same frame. The melee, the projectile and the net
+  paths resolve the carrier directly (`Npc::strike_melee` /
+  `Npc::strike_projectile`).
+* **The net mode carries no chains.** The net snapshot rebuilds `App::npcs`
+  from the wire (kind/position/life), so the links have no `worm_id` there
+  and a remote strike lands on the segment itself. The host owns the
+  simulation, as in the vanilla.
+* **The tail's damage multiplier.** `NPC.takenDamageMultiplier`
+  (`:81244-81246`) multiplies the strike before it lands; the solar
+  crawltipede's tail (414) carries 10 (`:15316`) — the tail is the softest
+  point of the chain by a factor of ten.
+* **Still open.** The worm families' boss health bar (`Main.cs:45979`'s
+  `DrawInterface_Healthbar_Worm`, the carrier's life on the bar) and the
+  Moon Lord carrier + the DD2 anchors (the port's kind-search pre-passes
+  instead of the C#'s explicit index links) are the S1-D-6b row.
 ## The missing projectile AI arms (S1-D-4b-1, 2026-11-14)
 
 The ROADMAP's S1-D-4b row ("19 styles have a `proj_data` row but no
@@ -13743,3 +13810,205 @@ Deviations:
   Queen.
 * **The day-time `EncourageDespawn(10)`** rides the world's own day arm (the
   port's NPCs carry no despawn timer).
+
+## The Eye of Cthulhu's machine (S1-D-3k, 2026-11-14)
+
+`AI_004` (`NPC.cs:19960-20801`) is the Eye's whole family machine — the
+hover phase (0), the two spin phases (1, 2) and the final dash phase (3) —
+plus the servant bursts. The port's `update_eye_of_cthulhu` already carried
+the phase-1 hover, the dash chain and the final phase's shape; three deltas
+remained, and the servant (the Eye's minion, type 5) ran on the *shared*
+hover archetype instead of the C#'s own `AI_005` branch.
+
+**The spin hand-off (the inverted reset).** The C#'s spin block
+(`:20287-20301`) ramps `ai[2]` (the spin speed) to 0.5 in phase 1 and decays
+it in phase 2; the phase hand-off (`:20356-20361`) resets `ai[2]` **only**
+when the phase reaches 3 (`if (this.ai[0] == 3f) this.ai[2] = 0f;`). The
+port had the test inverted (`if self.ai[0] != 3.0`), so the phase-1 → 2
+hand-off zeroed the spin speed: the Eye's third phase stood still instead
+of decaying from 0.5, and the phase-2 → 3 hand-off kept a stale speed. The
+fix restores the C#'s hand-off: the phase-2 spin now decays from 0.5 to 0
+over its 100 ticks, and the final phase starts with the spin stopped.
+
+**The final phase's damage.** The C#'s final phase writes
+`this.damage = GetAttackDamage_LerpBetweenFinalValues(23, 18)`
+(`:20392-20408`) — the classic difficulty remaps onto the first value, so
+the contact damage rises from the `SetDefaults` 15 to **23** in the final
+phase. The port kept the 15 for the whole fight; the arm now carries the
+override (`damage_override = Some(23)`). The defense drop (`this.defense = 0`,
+the same block) was already there.
+
+**The servant's spawn point.** `NPC.NewNPC` takes the spawn point as the
+NPC's **bottom centre** (`NPC.cs:80770` — `nPC.Bottom = new Vector2(X, Y)`,
+whose setter writes `position = (X - width/2, Y - height)`, `Entity.cs:122-132`)
+and the call site truncates it to whole pixels (`NPC.cs:20180`:
+`(int)vector2.X, (int)vector2.Y`). The port placed the servant at
+`(X - 10, Y - 10)` — 10 px too low and un-truncated. The spawn helper now
+writes the bottom-centre convention and the truncation.
+
+**The servant's own machine.** The Servant of Cthulhu (type 5) runs
+`AI_005_EaterOfSouls` — the C#'s type-5 branch (`:50379-50383`: the speed 5,
+the accel 0.03) plus the shared fly core (`:50418-50579`) and the type-5
+rotation (`:50652-50655`). The port ran it through the shared hover
+archetype, which misses two things the C# does:
+
+* the aim is quantised to the **8-px grid** — the target's centre and the
+  servant's own centre both floor to 8 px (`:50421-50424`) and the aim is
+  the difference of the snapped values;
+* the approach's **double-add on a sign reversal** is gated by `flag5`
+  (`:50447`), which is *true* for type 5.
+
+The servant's own arm (`update_servant_of_cthulhu`) now carries the C#'s
+branch: the snapped aim, the 5-speed / 0.03-accel approach with the
+double-add, the dead-target flee vector (`num4 = direction * num/2`,
+`num5 = -num/2`, `:50480-50484`) and the velocity tilt
+(`rotation = atan2(velocity.Y, velocity.X) - 1.57`). Its `noGravity` +
+`noTileCollide` (`SetDefaults` case 5) make the step a raw integration —
+no tile collision (the shared archetype bounced the servant off tiles).
+
+The residuals of the S1-D-1 hover section (the 8-px floor and the `flag5`
+gate) therefore remain only for the kinds that still ride the archetype —
+the Eater of Souls (6), the Hornet (42) and the Meteor Head (23) — where
+`flag5` is false for the first two: the shared `hover_step` still
+over-adds for them. That is the S1-D-3l follow-up.
+
+Deviations:
+
+* **The dust and the gore** (the 1-in-5 dust at `:20062-20067`, the
+  spin-phase gore at `:20365-20375`) are skipped — the port has no dust or
+  gore layer.
+* **The expert / `getGoodWorld` branches** (the rage sub-states `ai[1] =
+  3/4/5`, the expert servant bursts, the phase-3 dash speed bonuses) are
+  constants-off: the port has no difficulty flag, so the classic path runs
+  verbatim and the skipped arms carry their C# cites.
+* **The day-time `EncourageDespawn(10)`** (`:20071-20073`) rides the sim's
+  day cull (the Eye rises out of the player's view and is removed).
+
+## The NPC hit and death sounds (S1-E-21a, 2026-11-14)
+
+The first wave of the sound bank (S1-E-21) landed with S1-E-21a: the NPCs
+now play their **own** hit and death cues.
+
+`NpcKind::hit_sound` / `NpcKind::death_sound` (`crates/tr-app/src/npc.rs`)
+carry the C#'s per-kind table — `NPC.HitSound` / `NPC.DeathSound`
+(`NPC.cs:6475-6477`, the `SetDefaults` assignments). The C#'s `null` guard
+(`NPC.cs:8537`) is kept: the kinds with no row in `SetDefaults` (the Brain
+Scrambler 381 and the Ray Gunner 382) play nothing. The cue names are the
+legacy asset names — the sound id 3 family is `NPC_Hit_N` and the sound id 4
+family is `NPC_Killed_N` (`LegacySoundPlayer.cs:646`/`:676`).
+
+The two call sites are the C#'s: the melee strike plays the kind's hit cue
+at the NPC's position (`NPC.StrikeNPC`, `:81544-81553`) and the death plays
+the kind's death cue at its centre (`NPC.checkDead`, `:91852`).
+
+Deliberate deviations:
+
+1. The C#'s trackable styles pick a random variation
+   (`LegacySoundStyle.Style`, `LegacySoundStyle.cs:33-38`); the port plays
+   the first file of the family (the `_0` asset) — the same asset family, a
+   fixed member. The C#'s own pick comes from a clock-seeded static random,
+   so it is not reproducible there either.
+2. The legacy per-sound pitch and the per-family instance reuse (the C#'s
+   `SoundNpcHit[n]` pool) stay unported — the research's open sound gaps.
+3. The C#'s special hit cues for the newest NPCs (the Turkey/Undead/Vampire
+   hurts, `NPC.cs:81535-81545`) have no ported kinds.
+
+
+## The hover family's residuals (S1-D-3l, 2026-11-14)
+
+`AI_005_EaterOfSouls` (`NPC.cs:50244-50760`) is the shared fly core of the
+hover family. The port's `npc_ai::hover_step` had the shape — the target
+vector scaled to the kind's `num`, the `num2` approach, the type-42 scale
+factor and its surface-gated damping — but five things of the source were
+missing, and the frame clock ran twice.
+
+**The 8-px aim floor** (`:50421-50424`). The C# floors the target's centre
+and the NPC's own centre to the 8-px grid and takes the aim as the
+difference of the snapped values:
+`num4 = (int)(num4 / 8f) * 8; vector.X = (int)(vector.X / 8f) * 8;`. The
+port aimed at the exact centre. The floor is now in `hover_step` (and in
+the Servant of Cthulhu's own arm, S1-D-3k).
+
+**The `flag5` gate** (`:50447`). The approach's extra add on a sign
+reversal is gated:
+`flag5 = type ∉ {6, 42, 94, 139, 173, 619} ∧ type ∉ [231, 235]`. The port
+applied it to every hover kind, so the Eater of Souls (6) and the Hornet
+(42) over-added on every reversal. `HoverParams` now carries `double_add`
+and the table sets it per kind.
+
+**The dead-target flee vector** (`:50299`/`:50480-50484`). A dead player
+replaces the aim with `num4 = direction * num/2; num5 = -num/2` — the NPC
+flies off along its facing. `HoverTarget` now carries the dead flag.
+
+**The per-kind rotation arms** (`:50580-50655`). The C# ends the core with
+one of four shapes, and the port had none of them:
+
+| kind | arm | the port |
+| --- | --- | --- |
+| 6/94/173/619 | `rotation = atan2(num5, num4) - 1.57` (the aim tilt) | — |
+| 23 | the sprite-aim arm: the sprite direction follows the aim's x sign, `rotation = atan2(num5, num4)` (+π to the left) | — |
+| 42/176/205/231-235 | the sprite direction follows the velocity's x sign, `rotation = velocity.X * 0.1` | — |
+| the rest | `rotation = atan2(velocity.Y, velocity.X) - 1.57` | — |
+
+`HoverParams::rotation` now selects the arm (`HoverRotation`).
+
+**The tile collision** (`:50656-50688`). The C#'s bounce arm covers the
+kinds that collide with the tiles: `velocity.X = oldVelocity.X * -num14`
+(`num14` = 0.7, 0.4 for the types 6/173) plus the small-velocity clamps
+(`|v| < 2` → ±2 on the x, `|v| < 1.5` → ±2 on the y). The port bounced
+every hover kind with a flat ×0.5 — and it bounced the kinds that
+`SetDefaults` gives `noTileCollide` (the Eater of Souls and the Meteor
+Head), which in the source fly straight through the tiles. `HoverParams` now
+carries `no_tile_collide` and `bounce`.
+
+**The frame clock ran twice.** `update_hover` advanced the frame counter
+*and* `find_frame` advanced it again (the C#'s `NPC.FindFrame` is the only
+owner), so the hovers' flap advanced at half the stride. The frame handling
+now lives in `find_frame` alone — and the Hornet gets the C#'s four-phase
+flap (`:74907-74934`: two ticks a phase over the rows 0/1/2/1) instead of
+the port's 8-tick stride over three rows.
+
+Deviations:
+
+* **The tile collision** is the port's rectangle probe
+  (`crate::player::collides_rect`) instead of the C#'s tile sweep with
+  `oldVelocity`; the bounce's factor and the clamps are the source's.
+* **The dust and the wet arms** (`:50695-50730`) are skipped — the port has
+  no dust layer and no wet flag on the hovers.
+* **The per-difficulty / secret-seed overrides** (`:50308-50316` the remix
+  values for type 6, `:50345-50348` type 231's 3/0.017) are constants-off.
+* **The `facing` write** at the end of the step is the port's convention
+  (the C#'s `base.direction` is not written by `AI_005`); the render uses
+  `spriteDirection`, which the rotation arms now own.
+## The player voice cues (S1-E-21b, 2026-11-14)
+
+The second wave of the sound bank: the player's own hurt and death cues.
+
+`Player.Hurt`'s tail plays the hurt cue (`Player.cs:38525` →
+`PlayHurtSound`, `:38569-38712`) and `Player.KillMe` plays the death cue
+(`:38868` → `PlayDeathSound`, `:38715-38744`). The port queues the cue on
+the Player (the `take_hurt_sound`/`take_death_sound` handoff — the Player
+has no audio device) and the fixed step drains it.
+
+Two behaviour changes ride the wave:
+
+1. The hurt sound now rides the **damage path** instead of the frame's
+   hp-drop heuristic (`app/frame.rs`'s `last_hp` compare) — the C#'s
+   `PlayHurtSound` is called from `Hurt`, so the damage-over-time ticks
+   (the poison, the burning) no longer play a hurt sound.
+2. The death sound is new: the legacy "Player Killed" id 5
+   (`Player.cs:38737`, the default arm of `PlayDeathSound`).
+
+Deliberate deviations:
+
+1. The C#'s voice system (`Player.voiceOverride`/`voiceVariant`/`Male`,
+   `Player.cs:1346`/`38581-38710`) is not ported — the default voice
+   variant 1 (`Player.cs:56045`, the legacy "Player Hit" id 1) stands in.
+2. The C#'s hurt cue picks a random variation (`Main.rand.Next(3)`,
+   `LegacySoundPlayer.cs:505`); the port plays "Player_Hit_0".
+3. The C#'s death cue switches to the remastered hurt cues in the Don't
+   Starve and 10th-anniversary worlds (`Player.cs:38737-38740`); the port
+   plays the legacy cue everywhere.
+4. The C#'s local-player hurt sound plays non-positionally
+   (`Player.cs:38572`); the port's drain plays it without a position ✓.
+

@@ -12555,7 +12555,11 @@ impl ProjectilePool {
         // is owned; non-owned shots roll without luck.
         let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
         // `keepIterating`: the walk stops once a hit consumed the projectile.
-        for (idx, n) in npcs.iter_mut().enumerate() {
+        // The index walk: the strike reaches the carrier's life pool
+        // (`NPC.realLife`, `NPC.cs:81374-81378`), so the NPC list is
+        // borrowed as a whole instead of link by link.
+        for idx in 0..npcs.len() {
+            let n = &npcs[idx];
             if n.hp <= 0 {
                 continue;
             }
@@ -12644,32 +12648,32 @@ impl ProjectilePool {
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
             // as StrikeNPC does before the knockback/HP application.
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
-            let landed = n.hurt_from_projectile(strike_dmg, from_x, kb, hit_crit);
+            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, from_x, kb, hit_crit);
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
-                n.immune[owner_idx] = 0;
+                npcs[idx].immune[owner_idx] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
             } else if uses_id_static && self.slots[slot].id_static_hit_cooldown > 0 {
-                n.immune[owner_idx] = 0;
+                npcs[idx].immune[owner_idx] = 0;
                 self.id_static.insert(
                     (self.slots[slot].kind, idx as u16),
                     self.update_count + self.slots[slot].id_static_hit_cooldown as u64,
                 );
             } else if max_penetrate != 1 {
-                n.immune[owner_idx] = OWNER_IMMUNE_TICKS;
+                npcs[idx].immune[owner_idx] = OWNER_IMMUNE_TICKS;
             }
             if landed {
                 // `:13579-13581`: the whip debuffs (`StatusNPC`'s
                 // `ApplyWhipDebuffs`).
                 if is_whip {
-                    self.whip_debuffs(slot, n, rng);
+                    self.whip_debuffs(slot, &mut npcs[idx], rng);
                 }
                 // `:13581-13584`: any tag-carrying item's projectile applies
                 // its tag to the hit NPC (the whip's, in the port today).
                 let tag_type = self.slots[slot].tag_effect_type;
                 if tag_type > 0 {
                     if let Some(p) = player.as_deref_mut() {
-                        p.tag_effects.try_apply_tag_to_npc(tag_type, idx, n.kind);
+                        p.tag_effects.try_apply_tag_to_npc(tag_type, idx, npcs[idx].kind);
                     }
                 }
                 // `:14258`-onwards + `:13882-13956`: the aiStyle-165 on-hit
@@ -12730,7 +12734,10 @@ impl ProjectilePool {
             let p = &self.slots[slot];
             (p.pos.x, p.pos.y, p.w, p.h)
         };
-        for (idx, n) in npcs.iter_mut().enumerate() {
+        // The index walk: the strike reaches the carrier's life pool
+        // (`NPC.realLife`, `NPC.cs:81374-81378`).
+        for idx in 0..npcs.len() {
+            let n = &npcs[idx];
             if n.hp <= 0 {
                 continue;
             }
@@ -12759,18 +12766,18 @@ impl ProjectilePool {
             // applies DamageVar and defense/crit like the plain PVE pass.
             let dmg = tr_core::damage::damage_var(rng, damage as f32, luck);
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
-            let landed = n.hurt_from_projectile(strike_dmg, cx, kb, crit);
+            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit);
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
-                n.immune[owner] = 0;
+                npcs[idx].immune[owner] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;
             } else if uses_id_static && self.slots[slot].id_static_hit_cooldown > 0 {
-                n.immune[owner] = 0;
+                npcs[idx].immune[owner] = 0;
                 self.id_static.insert(
                     (self.slots[slot].kind, idx as u16),
                     self.update_count + self.slots[slot].id_static_hit_cooldown as u64,
                 );
             } else if max_penetrate != 1 {
-                n.immune[owner] = OWNER_IMMUNE_TICKS;
+                npcs[idx].immune[owner] = OWNER_IMMUNE_TICKS;
             }
             if landed {
                 let p = &mut self.slots[slot];

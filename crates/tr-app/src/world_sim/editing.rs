@@ -1118,7 +1118,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                         || (n.kind.is_town_npc_like() && hits_town_npc))
             });
             if let Some(idx) = hit_idx {
-                let n = &mut app.npcs[idx];
+                let n = &app.npcs[idx];
                 // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
                 // crit roll (`meleeCrit` + the item's crit), `DamageVar`, then
                 // `CalculateDamageNPCsTake` with the NPC's defense
@@ -1195,15 +1195,26 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
                 let (nx, ny) = (n.x, n.y);
+                // The kind's hit cue (`NPC.HitSound`) — read before the app
+                // borrows below.
+                let hit_cue = n.kind.hit_sound();
                 // `ItemCheck_MeleeHitNPCs`' knockback (`Player.cs:43664-43679`):
                 // the item's `knockBack` times the glove/buff multipliers (the
                 // port's 1f — no ported accessory grants them).
                 let kb = held_fx.map_or(registry::get(held.kind).map_or(0.0, |d| d.knock_back), |s| s.knock_back);
-                n.hurt(dmg, pcx, kb, crit);
+                // `NPC.StrikeNPC` (`NPC.cs:81189-81563`): the strike lands on
+                // the carrier's life pool when the hit NPC is a linked
+                // segment (`NPC.realLife`, `NPC.cs:81374-81378`).
+                crate::npc::Npc::strike_melee(&mut app.npcs, idx, dmg, pcx, kb, crit);
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
                 app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
-                app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
+                // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
+                // (`NPC.cs:81544-81553`) — the kind's own hit cue (the C#'s
+                // `null` guard: the kinds with no row play nothing).
+                if let Some(cue) = hit_cue {
+                    app.audio.play_at(cue, nx, ny, 1.0);
+                }
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;

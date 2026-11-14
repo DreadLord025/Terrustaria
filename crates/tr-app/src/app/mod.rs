@@ -466,7 +466,6 @@ pub(crate) struct App {
     pub(crate) pvp_icons_forced: bool,
     pub(crate) audio: audio::Audio,
     pub(crate) music: audio::MusicSystem,
-    pub(crate) last_hp: i32,
     /// `Main.saveTime`: seconds since the last autosave (`Main.cs:19751-19765`).
     pub(crate) autosave: f32,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
@@ -3101,7 +3100,6 @@ impl App {
             pvp_icons_forced: crate::env::pvp_icons(),
             audio: audio::Audio::new(assets::content_dir()),
             music: audio::MusicSystem::new(assets::content_dir()),
-            last_hp: 100,
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
             ui_left_press: false,

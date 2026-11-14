@@ -811,6 +811,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             for cue in p.take_cart_sounds() {
                 app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
             }
+            // `Player.PlayHurtSound` (`Player.cs:38525`) and
+            // `Player.PlayDeathSound` (`Player.cs:38868`): the player's own
+            // hurt/death cues. The C# plays the local player's hurt sound
+            // non-positionally (`Player.cs:38572`).
+            if let Some(cue) = p.take_hurt_sound() {
+                app.audio.play(cue);
+            }
+            if let Some(cue) = p.take_death_sound() {
+                let (px, py) = p.center();
+                app.audio.play_at(cue, px, py, 1.0);
+            }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
             // maxima — `statLifeMax2`/`statManaMax2`/`breathMax` are the

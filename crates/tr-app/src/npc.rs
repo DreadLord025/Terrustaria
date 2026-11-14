@@ -1311,6 +1311,43 @@ impl NpcKind {
         )
     }
 
+    /// `NPC.realLife` (`NPC.cs:6161`) — the worm families whose segments
+    /// share the HEAD's life pool. The vanilla's `AI_006_Worms` gives the
+    /// head `ai[3] = whoAmI` + `realLife = whoAmI` and hands the link to
+    /// every child (`NPC.cs:51305-51363`); `AI_037_Destroyer` does the same
+    /// for the Destroyer (`NPC.cs:49836-49853`) and the crawltipede's own
+    /// arm for its chain (`NPC.cs:51369-51392`). The Eater of Worlds is the
+    /// exception: C# forces `realLife = -1` for types 13-15
+    /// (`NPC.cs:51129-51132`), so every EoW segment owns its own life.
+    pub fn shares_carrier_life(self) -> bool {
+        matches!(
+            self,
+            NpcKind::DevourerHead
+                | NpcKind::DevourerBody
+                | NpcKind::DevourerTail
+                | NpcKind::GiantWormHead
+                | NpcKind::GiantWormBody
+                | NpcKind::GiantWormTail
+                | NpcKind::LeechHead
+                | NpcKind::LeechBody
+                | NpcKind::TheDestroyer
+                | NpcKind::SolarCrawltipedeHead
+                | NpcKind::SolarCrawltipedeBody
+                | NpcKind::SolarCrawltipedeTail
+        )
+    }
+
+    /// `NPC.takenDamageMultiplier` (`NPC.cs:6521`) — the damage multiplier
+    /// the vanilla applies to the strike before it lands
+    /// (`NPC.cs:81244-81246`). The solar crawltipede's tail (414) carries
+    /// 10 (`NPC.cs:15316`); every other type keeps 1.
+    pub fn taken_damage_multiplier(self) -> f32 {
+        match self {
+            NpcKind::SolarCrawltipedeTail => 10.0,
+            _ => 1.0,
+        }
+    }
+
     /// The Destroyer: the head of its own same-kind chain (`AI_037`).
     pub fn is_worm_head(self) -> bool {
         matches!(
@@ -1472,6 +1509,381 @@ impl NpcKind {
     /// The kinds whose arm is bespoke (the pillar mobs, the vortex family,
     /// the Goblin Archer) carry their own speed and are not listed — the
     /// table is the walkers' shared source.
+    /// `NPC.HitSound` (`NPC.cs:6475`, the per-kind `SetDefaults` assignment)
+    /// — the cue the strike plays (`NPC.StrikeNPC`, `:81544-81553`).
+    ///
+    /// `None` is the C#'s `null` (`NPC.cs:8537`): the kinds with no row in
+    /// `SetDefaults` play no hit sound. The cue names are the legacy asset
+    /// names — the sound id 3 family is `NPC_Hit_N` (`SoundID.NPCHitN`).
+    pub fn hit_sound(self) -> Option<&'static str> {
+        Some(match self {
+            NpcKind::Slime => "NPC_Hit_1",
+            NpcKind::DemonEye => "NPC_Hit_1",
+            NpcKind::Zombie => "NPC_Hit_1",
+            NpcKind::KingSlime => "NPC_Hit_1",
+            NpcKind::EyeOfCthulhu => "NPC_Hit_1",
+            NpcKind::Hungry => "NPC_Hit_9",
+            NpcKind::LeechHead => "NPC_Hit_9",
+            NpcKind::ServantOfCthulhu => "NPC_Hit_1",
+            NpcKind::WanderingEye => "NPC_Hit_1",
+            NpcKind::Guide => "NPC_Hit_1",
+            NpcKind::Skeleton => "NPC_Hit_2",
+            NpcKind::UndeadMiner => "NPC_Hit_2",
+            NpcKind::CaveBat => "NPC_Hit_1",
+            NpcKind::JungleBat => "NPC_Hit_1",
+            NpcKind::Hellbat => "NPC_Hit_1",
+            NpcKind::VoodooDemon => "NPC_Hit_21",
+            NpcKind::EaterOfSouls => "NPC_Hit_1",
+            NpcKind::Hornet => "NPC_Hit_1",
+            NpcKind::MeteorHead => "NPC_Hit_3",
+            NpcKind::GoblinSorcerer => "NPC_Hit_1",
+            NpcKind::Tim => "NPC_Hit_2",
+            NpcKind::DarkCaster => "NPC_Hit_2",
+            NpcKind::FireImp => "NPC_Hit_1",
+            NpcKind::ChaosBall => "NPC_Hit_3",
+            NpcKind::BurningSphere => "NPC_Hit_3",
+            NpcKind::WaterSphere => "NPC_Hit_3",
+            NpcKind::Goldfish => "NPC_Hit_1",
+            NpcKind::Piranha => "NPC_Hit_1",
+            NpcKind::Shark => "NPC_Hit_1",
+            NpcKind::DevourerHead => "NPC_Hit_1",
+            NpcKind::GiantWormHead => "NPC_Hit_1",
+            NpcKind::Merchant => "NPC_Hit_1",
+            NpcKind::Dryad => "NPC_Hit_1",
+            NpcKind::Nurse => "NPC_Hit_1",
+            NpcKind::ArmsDealer => "NPC_Hit_1",
+            NpcKind::Demolitionist => "NPC_Hit_1",
+            NpcKind::Painter => "NPC_Hit_1",
+            NpcKind::WitchDoctor => "NPC_Hit_1",
+            NpcKind::Clothier => "NPC_Hit_1",
+            NpcKind::TravellingMerchant => "NPC_Hit_1",
+            NpcKind::Angler => "NPC_Hit_1",
+            NpcKind::Wizard => "NPC_Hit_1",
+            NpcKind::Mechanic => "NPC_Hit_1",
+            NpcKind::Stylist => "NPC_Hit_1",
+            NpcKind::TaxCollector => "NPC_Hit_1",
+            NpcKind::Golfer => "NPC_Hit_1",
+            NpcKind::Zoologist => "NPC_Hit_1",
+            NpcKind::Princess => "NPC_Hit_1",
+            NpcKind::DyeTrader => "NPC_Hit_1",
+            NpcKind::PartyGirl => "NPC_Hit_1",
+            NpcKind::QueenBee => "NPC_Hit_1",
+            NpcKind::SkeletronHead => "NPC_Hit_2",
+            NpcKind::WallOfFlesh => "NPC_Hit_8",
+            NpcKind::TheDestroyer => "NPC_Hit_4",
+            NpcKind::SkeletronPrime => "NPC_Hit_4",
+            NpcKind::Retinazer => "NPC_Hit_1",
+            NpcKind::Spazmatism => "NPC_Hit_1",
+            NpcKind::Plantera => "NPC_Hit_1",
+            NpcKind::BrainOfCthulhu => "NPC_Hit_9",
+            NpcKind::Creeper => "NPC_Hit_9",
+            NpcKind::GoblinThief => "NPC_Hit_1",
+            NpcKind::GoblinWarrior => "NPC_Hit_1",
+            NpcKind::GoblinArcher => "NPC_Hit_1",
+            NpcKind::GoblinPeon => "NPC_Hit_1",
+            NpcKind::GoblinSummoner => "NPC_Hit_40",
+            NpcKind::SnowmanGangsta => "NPC_Hit_11",
+            NpcKind::SnowBalla => "NPC_Hit_11",
+            NpcKind::MysterySnowman => "NPC_Hit_11",
+            NpcKind::MartianOfficer => "NPC_Hit_39",
+            NpcKind::GrayGrunt => "NPC_Hit_39",
+            NpcKind::MartianEngineer => "NPC_Hit_39",
+            NpcKind::GigaZapper => "NPC_Hit_39",
+            NpcKind::MartianWalker => "NPC_Hit_4",
+            NpcKind::MartianProbe => "NPC_Hit_4",
+            NpcKind::MartianDrone => "NPC_Hit_42",
+            NpcKind::ScutlixRider => "NPC_Hit_39",
+            NpcKind::Scutlix => "NPC_Hit_51",
+            NpcKind::MartianSaucer => "NPC_Hit_4",
+            NpcKind::MartianSaucerTurret => "NPC_Hit_4",
+            NpcKind::MartianSaucerCannon => "NPC_Hit_4",
+            NpcKind::MartianSaucerCore => "NPC_Hit_4",
+            NpcKind::FlyingDutchman => "NPC_Hit_19",
+            NpcKind::FlyingDutchmanCannon => "NPC_Hit_4",
+            NpcKind::DD2GoblinT1 => "dd2_goblin_hurt_0",
+            NpcKind::DD2GoblinT2 => "dd2_goblin_hurt_0",
+            NpcKind::DD2GoblinT3 => "dd2_goblin_hurt_0",
+            NpcKind::DD2GoblinBomberT1 => "dd2_goblin_bomber_hurt_0",
+            NpcKind::DD2GoblinBomberT2 => "dd2_goblin_bomber_hurt_0",
+            NpcKind::DD2GoblinBomberT3 => "dd2_goblin_bomber_hurt_0",
+            NpcKind::DD2JavelinT1 => "dd2_javelin_throwers_hurt_0",
+            NpcKind::DD2JavelinT2 => "dd2_javelin_throwers_hurt_0",
+            NpcKind::DD2JavelinT3 => "dd2_javelin_throwers_hurt_0",
+            NpcKind::DD2SkeletonT1 => "dd2_skeleton_hurt_0",
+            NpcKind::DD2SkeletonT3 => "dd2_skeleton_hurt_0",
+            NpcKind::DD2DarkMage => "dd2_dark_mage_hurt_0",
+            NpcKind::DD2Betsy => "dd2_betsy_hurt_0",
+            NpcKind::DD2WitherBeast => "dd2_wither_beast_hurt_0",
+            NpcKind::DD2Bartender => "NPC_Hit_1",
+            NpcKind::DD2EterniaCrystal => "dd2_crystal_cart_impact_0",
+            NpcKind::DD2LanePortal => "NPC_Hit_1",
+            NpcKind::DD2WyvernT1 => "dd2_wyvern_hurt_0",
+            NpcKind::DD2WyvernT2 => "dd2_wyvern_hurt_0",
+            NpcKind::DD2WyvernT3 => "dd2_wyvern_hurt_0",
+            NpcKind::DD2DarkMageT3 => "dd2_dark_mage_hurt_0",
+            NpcKind::DD2WitherBeastT3 => "dd2_wither_beast_hurt_0",
+            NpcKind::DD2DrakinT2 => "dd2_drakin_hurt_0",
+            NpcKind::DD2DrakinT3 => "dd2_drakin_hurt_0",
+            NpcKind::DD2KoboldWalkerT2 => "dd2_kobold_hurt_0",
+            NpcKind::DD2KoboldWalkerT3 => "dd2_kobold_hurt_0",
+            NpcKind::DD2KoboldFlyerT2 => "dd2_kobold_flyer_hurt_0",
+            NpcKind::DD2KoboldFlyerT3 => "dd2_kobold_flyer_hurt_0",
+            NpcKind::DD2OgreT2 => "dd2_ogre_hurt_0",
+            NpcKind::DD2OgreT3 => "dd2_ogre_hurt_0",
+            NpcKind::AncientCultist => "NPC_Hit_55",
+            NpcKind::StardustTower => "NPC_Hit_1",
+            NpcKind::NebulaTower => "NPC_Hit_1",
+            NpcKind::SolarTower => "NPC_Hit_1",
+            NpcKind::VortexTower => "NPC_Hit_1",
+            NpcKind::StardustCellBig => "NPC_Hit_1",
+            NpcKind::StardustCellSmall => "NPC_Hit_1",
+            NpcKind::StardustJellyfishBig => "NPC_Hit_1",
+            NpcKind::NebulaBeast => "NPC_Hit_6",
+            NpcKind::VortexRifleman => "NPC_Hit_1",
+            NpcKind::VortexSoldier => "NPC_Hit_1",
+            NpcKind::VortexHunter => "NPC_Hit_1",
+            NpcKind::VortexAlien => "NPC_Hit_1",
+            NpcKind::NebulaFloater => "NPC_Hit_1",
+            NpcKind::BrainSuckler => "NPC_Hit_1",
+            NpcKind::StardustSpiderBig => "NPC_Hit_6",
+            NpcKind::StardustSpiderSmall => "NPC_Hit_1",
+            NpcKind::StardustSoldier => "NPC_Hit_6",
+            NpcKind::SolarDrakomire => "NPC_Hit_1",
+            NpcKind::SolarDrakomireRider => "NPC_Hit_1",
+            NpcKind::SolarSroller => "NPC_Hit_7",
+            NpcKind::SolarCorite => "NPC_Hit_3",
+            NpcKind::SolarCrawltipedeHead => "NPC_Hit_11",
+            NpcKind::SolarCrawltipedeBody => "NPC_Hit_11",
+            NpcKind::SolarCrawltipedeTail => "NPC_Hit_8",
+            NpcKind::StardustWormHead => "NPC_Hit_1",
+            NpcKind::SolarSpearman => "NPC_Hit_1",
+            NpcKind::SolarSelenian => "NPC_Hit_1",
+            NpcKind::Predictor => "NPC_Hit_1",
+            NpcKind::VortexHeadcrab => "NPC_Hit_1",
+            NpcKind::MoonLordHead => "NPC_Hit_57",
+            NpcKind::MoonLordHand => "NPC_Hit_57",
+            NpcKind::MoonLordCore => "NPC_Hit_57",
+            NpcKind::MoonLordFreeEye => "NPC_Hit_1",
+            NpcKind::MoonLordLeechBlob => "NPC_Hit_57",
+            NpcKind::PirateDeckhand => "NPC_Hit_1",
+            NpcKind::PirateCaptainsMate => "NPC_Hit_1",
+            NpcKind::PirateArcher => "NPC_Hit_1",
+            NpcKind::PirateCorsair => "NPC_Hit_1",
+            NpcKind::PirateCaptain => "NPC_Hit_1",
+            NpcKind::Golem => "NPC_Hit_4",
+            NpcKind::PrimeCannon => "NPC_Hit_4",
+            NpcKind::PrimeSaw => "NPC_Hit_4",
+            NpcKind::PrimeVice => "NPC_Hit_4",
+            NpcKind::PrimeLaser => "NPC_Hit_4",
+            NpcKind::WallOfFleshEye => "NPC_Hit_8",
+            NpcKind::SkeletronHand => "NPC_Hit_2",
+            NpcKind::Deerclops => "deerclops_hit_0",
+            NpcKind::GoblinTinkerer => "NPC_Hit_1",
+            NpcKind::EaterOfWorldsHead => "NPC_Hit_1",
+            NpcKind::DevourerBody => "NPC_Hit_1",
+            NpcKind::DevourerTail => "NPC_Hit_1",
+            NpcKind::GiantWormBody => "NPC_Hit_1",
+            NpcKind::GiantWormTail => "NPC_Hit_1",
+            NpcKind::EaterOfWorldsBody => "NPC_Hit_1",
+            NpcKind::EaterOfWorldsTail => "NPC_Hit_1",
+            NpcKind::GolemHead => "NPC_Hit_4",
+            NpcKind::GolemFistLeft => "NPC_Hit_4",
+            NpcKind::GolemHeadFree => "NPC_Hit_4",
+            NpcKind::BoundGoblin => "NPC_Hit_1",
+            NpcKind::BoundWizard => "NPC_Hit_1",
+            NpcKind::BoundMechanic => "NPC_Hit_1",
+            NpcKind::SleepingAngler => "NPC_Hit_1",
+            NpcKind::WebbedStylist => "NPC_Hit_1",
+            NpcKind::SleepingGolfer => "NPC_Hit_1",
+            _ => return None,
+        })
+    }
+
+    /// `NPC.DeathSound` (`NPC.cs:6477`) — the cue the death plays
+    /// (`NPC.checkDead`, `:91852`). The sound id 4 family is the
+    /// `NPC_Killed_N` assets (`SoundID.NPCDeathN`).
+    pub fn death_sound(self) -> Option<&'static str> {
+        Some(match self {
+            NpcKind::Slime => "NPC_Killed_1",
+            NpcKind::DemonEye => "NPC_Killed_1",
+            NpcKind::Zombie => "NPC_Killed_2",
+            NpcKind::KingSlime => "NPC_Killed_1",
+            NpcKind::EyeOfCthulhu => "NPC_Killed_1",
+            NpcKind::Hungry => "NPC_Killed_11",
+            NpcKind::LeechHead => "NPC_Killed_12",
+            NpcKind::ServantOfCthulhu => "NPC_Killed_1",
+            NpcKind::WanderingEye => "NPC_Killed_1",
+            NpcKind::Guide => "NPC_Killed_1",
+            NpcKind::Skeleton => "NPC_Killed_2",
+            NpcKind::UndeadMiner => "NPC_Killed_2",
+            NpcKind::CaveBat => "NPC_Killed_4",
+            NpcKind::JungleBat => "NPC_Killed_4",
+            NpcKind::Hellbat => "NPC_Killed_4",
+            NpcKind::VoodooDemon => "NPC_Killed_24",
+            NpcKind::EaterOfSouls => "NPC_Killed_1",
+            NpcKind::Hornet => "NPC_Killed_1",
+            NpcKind::MeteorHead => "NPC_Killed_3",
+            NpcKind::GoblinSorcerer => "NPC_Killed_1",
+            NpcKind::Tim => "NPC_Killed_2",
+            NpcKind::DarkCaster => "NPC_Killed_2",
+            NpcKind::FireImp => "NPC_Killed_1",
+            NpcKind::ChaosBall => "NPC_Killed_3",
+            NpcKind::BurningSphere => "NPC_Killed_3",
+            NpcKind::WaterSphere => "NPC_Killed_3",
+            NpcKind::Goldfish => "NPC_Killed_1",
+            NpcKind::Piranha => "NPC_Killed_1",
+            NpcKind::Shark => "NPC_Killed_1",
+            NpcKind::DevourerHead => "NPC_Killed_1",
+            NpcKind::GiantWormHead => "NPC_Killed_1",
+            NpcKind::Merchant => "NPC_Killed_1",
+            NpcKind::Dryad => "NPC_Killed_1",
+            NpcKind::Nurse => "NPC_Killed_1",
+            NpcKind::ArmsDealer => "NPC_Killed_1",
+            NpcKind::Demolitionist => "NPC_Killed_1",
+            NpcKind::Painter => "NPC_Killed_1",
+            NpcKind::WitchDoctor => "NPC_Killed_1",
+            NpcKind::Clothier => "NPC_Killed_1",
+            NpcKind::TravellingMerchant => "NPC_Killed_1",
+            NpcKind::Angler => "NPC_Killed_6",
+            NpcKind::Wizard => "NPC_Killed_1",
+            NpcKind::Mechanic => "NPC_Killed_1",
+            NpcKind::Stylist => "NPC_Killed_1",
+            NpcKind::TaxCollector => "NPC_Killed_1",
+            NpcKind::Golfer => "NPC_Killed_1",
+            NpcKind::Zoologist => "NPC_Killed_1",
+            NpcKind::Princess => "NPC_Killed_6",
+            NpcKind::DyeTrader => "NPC_Killed_1",
+            NpcKind::PartyGirl => "NPC_Killed_1",
+            NpcKind::QueenBee => "NPC_Killed_66",
+            NpcKind::SkeletronHead => "NPC_Killed_2",
+            NpcKind::WallOfFlesh => "NPC_Killed_10",
+            NpcKind::TheDestroyer => "NPC_Killed_14",
+            NpcKind::SkeletronPrime => "NPC_Killed_14",
+            NpcKind::Retinazer => "NPC_Killed_14",
+            NpcKind::Spazmatism => "NPC_Killed_14",
+            NpcKind::Plantera => "NPC_Killed_1",
+            NpcKind::BrainOfCthulhu => "NPC_Killed_11",
+            NpcKind::Creeper => "NPC_Killed_11",
+            NpcKind::GoblinThief => "NPC_Killed_1",
+            NpcKind::GoblinWarrior => "NPC_Killed_1",
+            NpcKind::GoblinArcher => "NPC_Killed_1",
+            NpcKind::GoblinPeon => "NPC_Killed_1",
+            NpcKind::GoblinSummoner => "NPC_Killed_42",
+            NpcKind::SnowmanGangsta => "NPC_Killed_15",
+            NpcKind::SnowBalla => "NPC_Killed_15",
+            NpcKind::MysterySnowman => "NPC_Killed_15",
+            NpcKind::MartianOfficer => "NPC_Killed_57",
+            NpcKind::GrayGrunt => "NPC_Killed_57",
+            NpcKind::MartianEngineer => "NPC_Killed_57",
+            NpcKind::GigaZapper => "NPC_Killed_57",
+            NpcKind::MartianWalker => "NPC_Killed_14",
+            NpcKind::MartianProbe => "NPC_Killed_14",
+            NpcKind::MartianDrone => "NPC_Killed_44",
+            NpcKind::ScutlixRider => "NPC_Killed_57",
+            NpcKind::Scutlix => "NPC_Killed_54",
+            NpcKind::MartianSaucer => "NPC_Killed_14",
+            NpcKind::MartianSaucerTurret => "NPC_Killed_14",
+            NpcKind::MartianSaucerCannon => "NPC_Killed_14",
+            NpcKind::MartianSaucerCore => "NPC_Killed_14",
+            NpcKind::FlyingDutchman => "NPC_Killed_22",
+            NpcKind::FlyingDutchmanCannon => "NPC_Killed_14",
+            NpcKind::DD2GoblinT1 => "dd2_goblin_death_0",
+            NpcKind::DD2GoblinT2 => "dd2_goblin_death_0",
+            NpcKind::DD2GoblinT3 => "dd2_goblin_death_0",
+            NpcKind::DD2GoblinBomberT1 => "dd2_goblin_bomber_death_0",
+            NpcKind::DD2GoblinBomberT2 => "dd2_goblin_bomber_death_0",
+            NpcKind::DD2GoblinBomberT3 => "dd2_goblin_bomber_death_0",
+            NpcKind::DD2JavelinT1 => "dd2_javelin_throwers_death_0",
+            NpcKind::DD2JavelinT2 => "dd2_javelin_throwers_death_0",
+            NpcKind::DD2JavelinT3 => "dd2_javelin_throwers_death_0",
+            NpcKind::DD2SkeletonT1 => "dd2_skeleton_death_0",
+            NpcKind::DD2SkeletonT3 => "dd2_skeleton_death_0",
+            NpcKind::DD2DarkMage => "dd2_dark_mage_death_0",
+            NpcKind::DD2Betsy => "dd2_betsy_death_0",
+            NpcKind::DD2WitherBeast => "dd2_wither_beast_death_0",
+            NpcKind::DD2Bartender => "NPC_Killed_1",
+            NpcKind::DD2EterniaCrystal => "NPC_Killed_15",
+            NpcKind::DD2LanePortal => "NPC_Killed_1",
+            NpcKind::DD2WyvernT1 => "dd2_wyvern_death_0",
+            NpcKind::DD2WyvernT2 => "dd2_wyvern_death_0",
+            NpcKind::DD2WyvernT3 => "dd2_wyvern_death_0",
+            NpcKind::DD2DarkMageT3 => "dd2_dark_mage_death_0",
+            NpcKind::DD2WitherBeastT3 => "dd2_wither_beast_death_0",
+            NpcKind::DD2DrakinT2 => "dd2_drakin_death_0",
+            NpcKind::DD2DrakinT3 => "dd2_drakin_death_0",
+            NpcKind::DD2KoboldWalkerT2 => "dd2_kobold_death_0",
+            NpcKind::DD2KoboldWalkerT3 => "dd2_kobold_death_0",
+            NpcKind::DD2KoboldFlyerT2 => "dd2_kobold_flyer_death_0",
+            NpcKind::DD2KoboldFlyerT3 => "dd2_kobold_flyer_death_0",
+            NpcKind::DD2OgreT2 => "dd2_ogre_death_0",
+            NpcKind::DD2OgreT3 => "dd2_ogre_death_0",
+            NpcKind::AncientCultist => "NPC_Killed_59",
+            NpcKind::StardustTower => "NPC_Killed_1",
+            NpcKind::NebulaTower => "NPC_Killed_1",
+            NpcKind::SolarTower => "NPC_Killed_1",
+            NpcKind::VortexTower => "NPC_Killed_1",
+            NpcKind::StardustCellBig => "NPC_Killed_1",
+            NpcKind::StardustCellSmall => "NPC_Killed_1",
+            NpcKind::StardustJellyfishBig => "NPC_Killed_1",
+            NpcKind::NebulaBeast => "NPC_Killed_1",
+            NpcKind::VortexRifleman => "NPC_Killed_6",
+            NpcKind::VortexSoldier => "NPC_Killed_5",
+            NpcKind::VortexHunter => "NPC_Killed_6",
+            NpcKind::VortexAlien => "NPC_Killed_6",
+            NpcKind::NebulaFloater => "NPC_Killed_1",
+            NpcKind::BrainSuckler => "NPC_Killed_1",
+            NpcKind::StardustSpiderBig => "NPC_Killed_1",
+            NpcKind::StardustSpiderSmall => "NPC_Killed_5",
+            NpcKind::StardustSoldier => "NPC_Killed_1",
+            NpcKind::SolarDrakomire => "NPC_Killed_1",
+            NpcKind::SolarDrakomireRider => "NPC_Killed_1",
+            NpcKind::SolarSroller => "NPC_Killed_5",
+            NpcKind::SolarCorite => "NPC_Killed_3",
+            NpcKind::SolarCrawltipedeHead => "NPC_Killed_22",
+            NpcKind::SolarCrawltipedeBody => "NPC_Killed_22",
+            NpcKind::SolarCrawltipedeTail => "NPC_Killed_22",
+            NpcKind::StardustWormHead => "NPC_Killed_1",
+            NpcKind::SolarSpearman => "NPC_Killed_1",
+            NpcKind::SolarSelenian => "NPC_Killed_1",
+            NpcKind::Predictor => "NPC_Killed_5",
+            NpcKind::VortexHeadcrab => "NPC_Killed_1",
+            NpcKind::MoonLordHead => "NPC_Killed_62",
+            NpcKind::MoonLordHand => "NPC_Killed_62",
+            NpcKind::MoonLordFreeEye => "NPC_Killed_1",
+            NpcKind::MoonLordLeechBlob => "NPC_Killed_62",
+            NpcKind::PirateDeckhand => "NPC_Killed_1",
+            NpcKind::PirateCaptainsMate => "NPC_Killed_1",
+            NpcKind::PirateArcher => "NPC_Killed_1",
+            NpcKind::PirateCorsair => "NPC_Killed_1",
+            NpcKind::PirateCaptain => "NPC_Killed_1",
+            NpcKind::Golem => "NPC_Killed_14",
+            NpcKind::PrimeCannon => "NPC_Killed_14",
+            NpcKind::PrimeSaw => "NPC_Killed_14",
+            NpcKind::PrimeVice => "NPC_Killed_14",
+            NpcKind::PrimeLaser => "NPC_Killed_14",
+            NpcKind::WallOfFleshEye => "NPC_Killed_10",
+            NpcKind::SkeletronHand => "NPC_Killed_2",
+            NpcKind::Deerclops => "deerclops_death",
+            NpcKind::GoblinTinkerer => "NPC_Killed_1",
+            NpcKind::EaterOfWorldsHead => "NPC_Killed_1",
+            NpcKind::DevourerBody => "NPC_Killed_1",
+            NpcKind::DevourerTail => "NPC_Killed_1",
+            NpcKind::GiantWormBody => "NPC_Killed_1",
+            NpcKind::GiantWormTail => "NPC_Killed_1",
+            NpcKind::EaterOfWorldsBody => "NPC_Killed_1",
+            NpcKind::EaterOfWorldsTail => "NPC_Killed_1",
+            NpcKind::GolemFistLeft => "NPC_Killed_14",
+            NpcKind::GolemHeadFree => "NPC_Killed_14",
+            NpcKind::BoundGoblin => "NPC_Killed_1",
+            NpcKind::BoundWizard => "NPC_Killed_1",
+            NpcKind::BoundMechanic => "NPC_Killed_1",
+            NpcKind::SleepingAngler => "NPC_Killed_6",
+            NpcKind::WebbedStylist => "NPC_Killed_1",
+            NpcKind::SleepingGolfer => "NPC_Killed_1",
+            _ => return None,
+        })
+    }
+
     pub fn ai3_walk_speed(self) -> Option<f32> {
         Some(match self {
             NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
@@ -2019,9 +2431,11 @@ impl NpcKind {
             // `NPC.cs`'s 115 (240) / 117-118 (60).
             NpcKind::Hungry => 240,
             NpcKind::LeechHead | NpcKind::LeechBody => 60,
-            // `SetDefaults` case 134 (`NPC.cs:10666`): 8000 HP (the
-            // vanilla's realLife pool — the v1 carries the per-segment HP).
-            NpcKind::TheDestroyer => 8000,
+            // `SetDefaults` case 134 (`NPC.cs:10667`): 80000 HP — the
+            // vanilla's `realLife` pool: every segment of the Destroyer
+            // shares the head's life (`NPC.cs:49836-49853`), so the worm
+            // has 80000 HP in total, not 80000 per link.
+            NpcKind::TheDestroyer => 80000,
             // `SetDefaults` case 127 (`NPC.cs:10562`): 28000 HP.
             NpcKind::SkeletronPrime => 28000,
             // `SetDefaults` cases 125/126.
@@ -2602,6 +3016,14 @@ pub struct Npc {
     /// The init latch — `ai[0] == 0`'s "no child spawned yet" analog: the
     /// link spawns its child on the first worm pass.
     pub worm_inited: bool,
+    /// The strike damage a carrier-linked segment defers to its carrier.
+    /// `NPC.StrikeNPC_Inner`'s `realLife` arm (`NPC.cs:81374-81378`) puts
+    /// the damage on the CARRIER's life — a segment owns none of its own.
+    /// The strikes that run without the NPC list (the EoC shield-dash and
+    /// the thorns reflect, both inside `Npc::contact`) park the damage
+    /// here; the worm pass pays it to the carrier before the frame's
+    /// death sweep.
+    pub pending_pool_damage: i32,
     /// The WoF's Leech-head spawn request (the tongue-phase
     /// `NPC.CountNPCS(117) < 10` spawn; the sim counts and spawns).
     pub wants_leech: bool,
@@ -3343,10 +3765,19 @@ impl Npc {
     }
 
     /// The aiStyle-4 block's `NPC.NewNPC(..., 5)` minion spawn
-    /// (`NPC.cs:4598` of the AI()): the servant appears 10 px out along the
+    /// (`NPC.cs:20180` of the AI()): the servant appears 10 px out along the
     /// aim and inherits the launch velocity (`vector3.X/Y`).
+    ///
+    /// `NPC.NewNPC` takes the spawn point as the NPC's BOTTOM centre
+    /// (`NPC.cs:80770` — `nPC.Bottom = new Vector2(X, Y)`, whose setter
+    /// (`Entity.cs:122-132`) writes `position = (X - width/2, Y - height)`),
+    /// and the call site truncates it to whole pixels
+    /// (`NPC.cs:20180`: `(int)vector2.X, (int)vector2.Y`).
     pub fn spawn_servant_of_cthulhu(x: f32, y: f32, vx: f32, vy: f32) -> Self {
-        let mut npc = Self::new(NpcKind::ServantOfCthulhu, x - 10.0, y - 10.0, 1, 0.0);
+        let (w, h) = NpcKind::ServantOfCthulhu.size();
+        let x = (x as i32) as f32;
+        let y = (y as i32) as f32;
+        let mut npc = Self::new(NpcKind::ServantOfCthulhu, x - w * 0.5, y - h, 1, 0.0);
         npc.vx = vx;
         npc.vy = vy;
         npc
@@ -3578,6 +4009,7 @@ impl Npc {
             seg_index: 0,
             worm_left: 0,
             worm_inited: false,
+            pending_pool_damage: 0,
             wants_leech: false,
             wants_limbs: false,
             wants_hungry: false,
@@ -4479,6 +4911,30 @@ impl Npc {
         }
     }
 
+    /// The carrier that owns this NPC's life pool — `NPC.realLife`
+    /// (`NPC.cs:6161`). The vanilla stores the carrier's NPC INDEX; the
+    /// port's `App::npcs` compacts every frame (the death retain in
+    /// `world_sim/npcs.rs`), so an index would not survive the frame. The
+    /// chain's stable identity (`worm_id` + `seg_index`) stands in: the
+    /// carrier is the link with `seg_index == 0` — the head that C#'s
+    /// `ai[3]` points at (`NPC.cs:51305-51363`).
+    pub fn carrier_index(npcs: &[Npc], idx: usize) -> Option<usize> {
+        let n = &npcs[idx];
+        if !n.kind.shares_carrier_life() || n.worm_id == 0 || n.seg_index == 0 {
+            return None;
+        }
+        npcs.iter()
+            .position(|m| m.worm_id == n.worm_id && m.seg_index == 0)
+    }
+
+    /// Whether this NPC's life belongs to a carrier — the `realLife` arm
+    /// of `NPC.StrikeNPC_Inner` (`NPC.cs:81374-81378`). The head itself
+    /// is its own carrier in the vanilla (`realLife = whoAmI`,
+    /// `NPC.cs:51307`), so it keeps its own life.
+    pub fn has_carrier(&self) -> bool {
+        self.kind.shares_carrier_life() && self.worm_id != 0 && self.seg_index > 0
+    }
+
     /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81389-81458`): the
     /// soft-capped impulse applied by `tr_core::damage::knock_back_npc`.
     /// `hit_direction` is the knockback side (+1 = pushed right) and
@@ -4492,7 +4948,16 @@ impl Npc {
         if self.dont_take_damage {
             return false;
         }
-        self.hp -= amount;
+        // The `realLife` arm (`NPC.cs:81374-81378`): a linked segment owns
+        // no life of its own — the strike belongs to the carrier's pool.
+        // This path runs without the NPC list (the EoC shield-dash and the
+        // thorns reflect inside `Npc::contact`), so the damage waits for
+        // the worm pass to pay it to the carrier.
+        if self.has_carrier() {
+            self.pending_pool_damage += amount;
+        } else {
+            self.hp -= amount;
+        }
         self.hurt_cd = 0.18;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
@@ -4528,7 +4993,11 @@ impl Npc {
         if self.hp <= 0 {
             return false;
         }
-        self.hp -= amount;
+        if self.has_carrier() {
+            self.pending_pool_damage += amount;
+        } else {
+            self.hp -= amount;
+        }
         self.hurt_cd = 0.18;
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
@@ -4546,6 +5015,93 @@ impl Npc {
         self.vx = vx;
         self.vy = vy;
         self.on_ground = false;
+        true
+    }
+
+    /// `NPC.StrikeNPC` (`NPC.cs:81189-81563`) — the melee strike, able to
+    /// reach the NPC list, so the `realLife` pool arm lands on the carrier
+    /// (`NPC.cs:81374-81378`). The gates are the port's melee ones: the
+    /// shared `hurt_cd` window and `NPC.dontTakeDamage`.
+    pub fn strike_melee(
+        npcs: &mut [Npc],
+        idx: usize,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+    ) -> bool {
+        {
+            let n = &npcs[idx];
+            if n.hurt_cd > 0.0 || n.hp <= 0 || n.dont_take_damage {
+                return false;
+            }
+        }
+        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit)
+    }
+
+    /// `NPC.StrikeNPC` from a projectile: the same pool arm, without the
+    /// melee `hurt_cd` gate (the projectile's right to hit rides the three
+    /// C# immunity systems, `Projectile.cs:12577-12624`).
+    pub fn strike_projectile(
+        npcs: &mut [Npc],
+        idx: usize,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+    ) -> bool {
+        if npcs[idx].hp <= 0 {
+            return false;
+        }
+        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit)
+    }
+
+    /// `NPC.StrikeNPC_Inner` (`NPC.cs:81235-81458`) with the `realLife`
+    /// pool arm (`NPC.cs:81374-81378`): a segment's strike lands on the
+    /// CARRIER's life and the segment mirrors the carrier's
+    /// `life`/`lifeMax`. The knockback stays on the struck NPC — the
+    /// vanilla's order (`NPC.cs:81389-81458` reads the mirrored
+    /// `lifeMax`).
+    fn strike_pooled(
+        npcs: &mut [Npc],
+        idx: usize,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+    ) -> bool {
+        // `NPC.takenDamageMultiplier` (`NPC.cs:81244-81246`): the solar
+        // crawltipede's tail (414) takes ten times the damage
+        // (`NPC.cs:15316`).
+        let amount = (amount as f32 * npcs[idx].kind.taken_damage_multiplier()) as i32;
+        // The pool arm.
+        match Npc::carrier_index(npcs, idx) {
+            Some(carrier) => {
+                npcs[carrier].hp -= amount;
+                npcs[idx].hp = npcs[carrier].hp;
+                npcs[idx].max_hp = npcs[carrier].max_hp;
+            }
+            None => npcs[idx].hp -= amount,
+        }
+        // The knockback half (`NPC.cs:81389-81458`).
+        let n = &mut npcs[idx];
+        n.hurt_cd = 0.18;
+        let (w, _) = n.size();
+        let dir = if n.x + w * 0.5 >= from_x { 1 } else { -1 };
+        let (vx, vy) = tr_core::damage::knock_back_npc(
+            knock_back,
+            n.knock_back_resist(),
+            crit,
+            amount,
+            n.max_hp,
+            (n.vx, n.vy),
+            dir,
+            false,
+            false,
+        );
+        n.vx = vx;
+        n.vy = vy;
+        n.on_ground = false;
         true
     }
 
@@ -4847,9 +5403,7 @@ impl Npc {
             NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
             NpcKind::KingSlime => self.update_king_slime(world, player, rng),
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
-            NpcKind::ServantOfCthulhu => {
-                self.update_hover(world, player, HoverParams::SERVANT_OF_CTHULHU)
-            }
+            NpcKind::ServantOfCthulhu => self.update_servant_of_cthulhu(player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => {
                 self.update_caster(world, player, rng)
@@ -6294,21 +6848,34 @@ impl Npc {
             // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
             // 5-frame strip (`Main.npcFrameCount[49] = 5`, `Main.cs:67082`).
             // The hovers: the plain flap cycles (`Main.npcFrameCount[6] = 2`,
-            // `[42] = 3`, `[23] = 2`, `Main.cs:67082`).
-            NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
-                let count = match self.kind {
-                    NpcKind::Hornet => 3,
-                    _ => 2,
-                };
+            // `[23] = 2`, `Main.cs:67082`).
+            NpcKind::EaterOfSouls | NpcKind::MeteorHead => {
                 self.frame_counter += 1.0;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= count {
+                    self.frame = if self.frame + 1 >= 2 {
                         0
                     } else {
                         self.frame + 1
                     };
                 }
+            }
+            // The Hornet's case 42 (`NPC.cs:74907-74934`): the four-phase
+            // flap — the counter counts 1..8 (two ticks a phase) and the
+            // rows run 0/1/2/1 (the downstroke repeats) over the strip's
+            // three rows (`Main.npcFrameCount[42] = 3`).
+            NpcKind::Hornet => {
+                let phase = self.frame_counter as u32;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = match phase / 2 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    _ => 1,
+                };
             }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 // `FindFrame`'s case 49 group (`NPC.cs:74824-74881`): the
@@ -7155,7 +7722,12 @@ impl Npc {
                 } else {
                     self.ai[0] += 1.0;
                     self.ai[1] = 0.0;
-                    if self.ai[0] != 3.0 {
+                    // `:20356-20361` — the spin speed resets ONLY when the
+                    // phase reaches 3 (the final machine); the phase 1 → 2
+                    // hand-off keeps the 0.5 spin, so the phase-2 spin
+                    // decays from 0.5 (the `else` ramp at `:20295-20301`)
+                    // instead of standing still.
+                    if self.ai[0] == 3.0 {
                         self.ai[2] = 0.0;
                     }
                 }
@@ -7175,6 +7747,12 @@ impl Npc {
         // speed, 130-tick chains; the expert rage sub-states
         // `ai[1] = 3/4/5` are out with the flag2/flag3 gates).
         self.defense_override = Some(0);
+        // `:20392-20408` — the final phase's contact damage:
+        // `GetAttackDamage_LerpBetweenFinalValues(23, 18)` remaps the
+        // classic difficulty onto the first value → 23 (the phase 1/2
+        // damage is the `SetDefaults` 15). The master cap is a no-op in
+        // classic.
+        self.damage_override = Some(23);
         if self.ai[1] == 0.0 {
             // The hover at 120 px above (6 speed, 0.07 accel).
             let cx = self.x + w * 0.5;
@@ -7256,6 +7834,91 @@ impl Npc {
     fn integrate_no_tile_collide(&mut self) {
         self.x += self.vx;
         self.y += self.vy;
+    }
+
+    /// `AI_005_EaterOfSouls`'s type-5 branch (`NPC.cs:50379-50383` — the
+    /// `num`/`num2` pair) + the shared fly core (`:50418-50579`) + the
+    /// type-5 rotation (`:50652-50655`) — the Servant of Cthulhu, the
+    /// Eye's minion.
+    ///
+    /// The servant flies on the 8-px snapped aim (`(int)(x / 8f) * 8` on
+    /// both the target's centre and its own), approaches it at the 5-speed
+    /// with the 0.03 accel (the `flag5` double-add on the sign flips —
+    /// type 5 keeps `flag5` true) and tilts with its velocity. A dead
+    /// target flips the aim to the flee vector (`:50480-50484`).
+    ///
+    /// `SetDefaults` case 5 gives it `noGravity` + `noTileCollide`, so the
+    /// step is a raw integration (no tile collision, no gravity).
+    fn update_servant_of_cthulhu(&mut self, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        // The `num`/`num2` pair (`NPC.cs:50379-50383` — type 5): the speed
+        // 5 and the accel 0.03, the shared table's servant row.
+        let params = HoverParams::SERVANT_OF_CTHULHU;
+        // `:50418-50426` — the 8-px grid snap: the target's centre and the
+        // NPC's own centre both floor to the 8-px grid, and the aim is the
+        // difference of the snapped values.
+        let mut num4 = ((pcx / 8.0) as i32 * 8) as f32;
+        let mut num5 = ((pcy / 8.0) as i32 * 8) as f32;
+        let own_x = ((self.x + w * 0.5) / 8.0) as i32 * 8;
+        let own_y = ((self.y + h * 0.5) / 8.0) as i32 * 8;
+        num4 -= own_x as f32;
+        num5 -= own_y as f32;
+        // `:50427-50444` — the normalized aim at the `num` speed; a zero
+        // distance keeps the current velocity (`num4 = velocity.X`).
+        let num6 = (num4 * num4 + num5 * num5).sqrt();
+        if num6 == 0.0 {
+            num4 = self.vx;
+            num5 = self.vy;
+        } else {
+            let scale = params.max_speed / num6;
+            num4 *= scale;
+            num5 *= scale;
+        }
+        // `:50480-50484` — a dead target: the servant flies off along the
+        // facing direction (`num`/`2` sideways, `-num`/`2` down).
+        if player.hp <= 0 {
+            num4 = self.facing as f32 * params.max_speed / 2.0;
+            num5 = -params.max_speed / 2.0;
+        }
+        // `:50547-50578` — the approach (`num2`) with the `flag5` double-add
+        // on the sign flips (type 5 keeps `flag5` true).
+        if self.vx < num4 {
+            self.vx += params.accel;
+            if self.vx < 0.0 && num4 > 0.0 {
+                self.vx += params.accel;
+            }
+        } else if self.vx > num4 {
+            self.vx -= params.accel;
+            if self.vx > 0.0 && num4 < 0.0 {
+                self.vx -= params.accel;
+            }
+        }
+        if self.vy < num5 {
+            self.vy += params.accel;
+            if self.vy < 0.0 && num5 > 0.0 {
+                self.vy += params.accel;
+            }
+        } else if self.vy > num5 {
+            self.vy -= params.accel;
+            if self.vy > 0.0 && num5 < 0.0 {
+                self.vy -= params.accel;
+            }
+        }
+        // `:50652-50655` — the rotation: the velocity tilt (the servant is
+        // in the `else` arm — the aim-tilt types are 6/94/173/619).
+        self.rotation = self.vy.atan2(self.vx) - 1.57;
+        self.integrate_no_tile_collide();
+        // The 2-frame flap (`Main.npcFrameCount[5] = 2`).
+        self.frame_counter += 1.0;
+        if self.frame_counter >= 8.0 {
+            self.frame_counter = 0.0;
+            self.frame = if self.frame + 1 >= 2 {
+                0
+            } else {
+                self.frame + 1
+            };
+        }
     }
 
     /// `AI_015_KingSlime` (`NPC.cs:43121-43414`) — the King Slime's machine:
@@ -7746,30 +8409,20 @@ impl Npc {
 
     /// `AI_005_EaterOfSouls`'s hover core through the framework's
     /// `hover_step` — the no-gravity fly toward the player with the vanilla
-    /// tunables; the 2-frame/3-frame flaps ride the anim clock.
+    /// tunables. The frame cycles live in `find_frame` (the C#'s
+    /// `NPC.FindFrame`), not here.
     fn update_hover(&mut self, world: &World, player: &Player, params: HoverParams) {
         let (pcx, pcy) = player.center();
         // `NPC.GetTargetData`: the centre drives the velocity aim, the top
-        // edge (`Player.position.Y`) the surface-damping gate (`NPC.cs:50354`).
+        // edge (`Player.position.Y`) the surface-damping gate (`NPC.cs:50354`),
+        // and the dead flag the flee vector (`:50299`/`:50480-50484`).
         let target = crate::npc_ai::HoverTarget {
             center_x: pcx,
             center_y: pcy,
             top_y: player.y,
+            dead: player.hp <= 0,
         };
         crate::npc_ai::hover_step(self, world, target, params);
-        self.frame_counter += 1.0;
-        if self.frame_counter >= 8.0 {
-            self.frame_counter = 0.0;
-            let count = match self.kind {
-                NpcKind::Hornet => 3,
-                _ => 2,
-            };
-            self.frame = if self.frame + 1 >= count {
-                0
-            } else {
-                self.frame + 1
-            };
-        }
     }
 
     /// Goblin Summoner (471). C# `NPC.cs:15728` SetDefaults aiStyle 3 and the
@@ -14964,6 +15617,36 @@ pub fn to_wld(npcs: &[Npc]) -> tr_core::wld::sections::WldNpcs {
 
 #[cfg(test)]
 mod tests {
+    /// S1-E-21a — the per-kind hit/death cues (`NPC.HitSound`/`NPC.DeathSound`,
+    /// `NPC.cs:6475-6477`, the `SetDefaults` assignments).
+    #[test]
+    fn the_npc_hit_and_death_cues_follow_the_vanilla_table() {
+        // The zombie's rows (`NPC.cs:8607-8608`: NPCHit1 / NPCDeath2).
+        assert_eq!(NpcKind::Zombie.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Zombie.death_sound(), Some("NPC_Killed_2"));
+        // The skeleton's rows (`NPC.cs:9044-9045`: NPCHit2 / NPCDeath2).
+        assert_eq!(NpcKind::Skeleton.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::Skeleton.death_sound(), Some("NPC_Killed_2"));
+        // The bosses' own rows (the Wall of Flesh 113, the Skeletron Prime
+        // 127, the Deerclops 668).
+        assert_eq!(NpcKind::WallOfFlesh.hit_sound(), Some("NPC_Hit_8"));
+        assert_eq!(NpcKind::WallOfFlesh.death_sound(), Some("NPC_Killed_10"));
+        assert_eq!(NpcKind::SkeletronPrime.hit_sound(), Some("NPC_Hit_4"));
+        assert_eq!(NpcKind::Deerclops.hit_sound(), Some("deerclops_hit_0"));
+        assert_eq!(NpcKind::Deerclops.death_sound(), Some("deerclops_death"));
+        // The DD2 family's trackable cues (`SoundID.CreateTrackable`,
+        // `SoundID.cs:1627+`).
+        assert_eq!(NpcKind::DD2GoblinT1.hit_sound(), Some("dd2_goblin_hurt_0"));
+        assert_eq!(
+            NpcKind::DD2GoblinT1.death_sound(),
+            Some("dd2_goblin_death_0")
+        );
+        // The C#'s `null` guard (`NPC.cs:8537`): the Brain Scrambler (381) and
+        // the Ray Gunner (382) carry no row — no hit sound at all.
+        assert_eq!(NpcKind::BrainScrambler.hit_sound(), None);
+        assert_eq!(NpcKind::RayGunner.death_sound(), None);
+    }
+
     #[test]
     fn the_hover_kinds_spawn_fly_and_map() {
         // The Eater of Souls (6)/Hornet (42)/Meteor Head (23): the hovers
@@ -15021,6 +15704,7 @@ mod tests {
             center_y: 100.0 * 16.0,
             // A player's top edge, ~21 px (half the 42-px hitbox) above centre.
             top_y: 100.0 * 16.0 - 21.0,
+            dead: false,
         };
         for _ in 0..200 {
             crate::npc_ai::hover_step(
@@ -15051,6 +15735,7 @@ mod tests {
                 center_x: npc.x + npc.size().0 * 0.5,
                 center_y: npc.y + npc.size().1 * 0.5,
                 top_y: npc.y + 400.0,
+                dead: false,
             };
             crate::npc_ai::hover_step(&mut npc, &w, target, params);
             npc.vy
@@ -15067,6 +15752,181 @@ mod tests {
     }
 
     #[test]
+    fn the_hover_aim_is_floored_to_the_eight_pixel_grid() {
+        // `NPC.cs:50421-50424`: the target's centre and the NPC's own
+        // centre both floor to the 8-px grid and the aim is the difference
+        // of the snapped values — a 4-px offset inside one cell aims
+        // straight down.
+        let w = World::new("t".into(), 200, 200);
+        let mut npc = Npc::new(NpcKind::EaterOfSouls, 985.0, 985.0, 1, 0.0);
+        let target = crate::npc_ai::HoverTarget {
+            center_x: 1004.0,
+            center_y: 1400.0,
+            top_y: 1400.0,
+            dead: false,
+        };
+        crate::npc_ai::hover_step(
+            &mut npc,
+            &w,
+            target,
+            crate::npc_ai::HoverParams::EATER_OF_SOULS,
+        );
+        assert!(
+            npc.vx.abs() < 0.001,
+            "the snapped aim keeps the x still ({})",
+            npc.vx
+        );
+        assert!(npc.vy > 0.0, "the aim is straight down");
+    }
+
+    #[test]
+    fn the_hover_double_add_is_gated_by_the_flag5_kinds() {
+        // `NPC.cs:50447`: the approach's extra add on a sign reversal rides
+        // `flag5` — true for the Meteor Head (23) and the Servant of Cthulhu
+        // (5), false for the Eater of Souls (6) and the Hornet (42).
+        let w = World::new("t".into(), 200, 200);
+        let step = |kind: NpcKind, params: crate::npc_ai::HoverParams| {
+            let mut npc = Npc::new(kind, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+            npc.vx = -1.0;
+            let target = crate::npc_ai::HoverTarget {
+                center_x: 160.0 * 16.0,
+                center_y: npc.y + npc.size().1 * 0.5,
+                top_y: npc.y,
+                dead: false,
+            };
+            crate::npc_ai::hover_step(&mut npc, &w, target, params);
+            npc.vx
+        };
+        // The Meteor Head (flag5): the add happens twice (-1 + 0.03 + 0.03).
+        let meteor = step(NpcKind::MeteorHead, crate::npc_ai::HoverParams::METEOR_HEAD);
+        assert!(
+            (meteor + 0.94).abs() < 1e-4,
+            "the flag5 double add ({meteor})"
+        );
+        // The Eater of Souls (no flag5): a single add (-1 + 0.02).
+        let eater = step(
+            NpcKind::EaterOfSouls,
+            crate::npc_ai::HoverParams::EATER_OF_SOULS,
+        );
+        assert!((eater + 0.98).abs() < 1e-4, "the single add ({eater})");
+    }
+
+    #[test]
+    fn the_hover_rotations_follow_the_per_kind_arms() {
+        // `NPC.cs:50580-50655`: the Eater of Souls takes the aim tilt
+        // (`:50643-50646`), the Hornet the `velocity.X * 0.1` arm with the
+        // sprite direction (`:50647-50651`), the Meteor Head the sprite-aim
+        // arm (`:50580-50592`).
+        let w = World::new("t".into(), 200, 200);
+        // The Eater of Souls: the aim tilt. The snapped aim is (0, 400) —
+        // straight down (the target's centre is 4 px right of the NPC's,
+        // inside the same 8-px cell).
+        let mut eater = Npc::new(NpcKind::EaterOfSouls, 985.0, 985.0, 1, 0.0);
+        let target = crate::npc_ai::HoverTarget {
+            center_x: 1004.0,
+            center_y: 1400.0,
+            top_y: 1400.0,
+            dead: false,
+        };
+        crate::npc_ai::hover_step(
+            &mut eater,
+            &w,
+            target,
+            crate::npc_ai::HoverParams::EATER_OF_SOULS,
+        );
+        let tilt = std::f32::consts::FRAC_PI_2 - 1.57;
+        assert!(
+            (eater.rotation - tilt).abs() < 0.001,
+            "the aim tilt ({})",
+            eater.rotation
+        );
+        // The Hornet: the velocity arm — the sprite direction follows the
+        // velocity's sign and the rotation is `velocity.X * 0.1`.
+        let mut hornet = Npc::new(NpcKind::Hornet, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        hornet.vx = -2.0;
+        let target = crate::npc_ai::HoverTarget {
+            center_x: hornet.x + hornet.size().0 * 0.5,
+            center_y: hornet.y + hornet.size().1 * 0.5,
+            top_y: hornet.y,
+            dead: false,
+        };
+        crate::npc_ai::hover_step(&mut hornet, &w, target, crate::npc_ai::HoverParams::HORNET);
+        assert_eq!(hornet.sprite_dir, -1, "the sprite direction follows vx");
+        assert!(
+            (hornet.rotation - hornet.vx * 0.1).abs() < 0.0001,
+            "the velocity-X rotation ({})",
+            hornet.rotation
+        );
+        // The Meteor Head: the sprite-aim arm.
+        let mut meteor = Npc::new(NpcKind::MeteorHead, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        let target = crate::npc_ai::HoverTarget {
+            center_x: meteor.x + 400.0,
+            center_y: meteor.y + meteor.size().1 * 0.5,
+            top_y: meteor.y,
+            dead: false,
+        };
+        crate::npc_ai::hover_step(
+            &mut meteor,
+            &w,
+            target,
+            crate::npc_ai::HoverParams::METEOR_HEAD,
+        );
+        assert_eq!(meteor.sprite_dir, 1, "the sprite direction follows the aim");
+    }
+
+    #[test]
+    fn the_hover_tile_bounce_is_gated_by_no_tile_collide() {
+        // `NPC.cs:50656-50688`: the bounce arm covers the kinds that
+        // collide with the tiles (the Hornet, `num14` = 0.7); the
+        // `noTileCollide` kinds (the Eater of Souls, the Meteor Head) fly
+        // straight through.
+        let mut w = World::new("t".into(), 64, 64);
+        for y in 0..64 {
+            let i = w.index(19, y);
+            w.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        // The target sits in the NPC's own 8-px cell, so the snapped aim is
+        // zero and the desired velocity keeps the current one.
+        let target_for = |npc: &Npc| crate::npc_ai::HoverTarget {
+            center_x: npc.x + npc.size().0 * 0.5 + 4.0,
+            center_y: npc.y + npc.size().1 * 0.5,
+            top_y: npc.y,
+            dead: false,
+        };
+        // The Hornet: the wall blocks the move and the velocity bounces.
+        let mut hornet = Npc::new(NpcKind::Hornet, 260.0, 32.0 * 16.0, 1, 0.0);
+        hornet.vx = 12.0;
+        let target = target_for(&hornet);
+        crate::npc_ai::hover_step(&mut hornet, &w, target, crate::npc_ai::HoverParams::HORNET);
+        assert!(hornet.vx < 0.0, "the hornet bounced ({})", hornet.vx);
+        // The approach first trims the 12 px velocity to the snapped aim
+        // (8 px at the Hornet's 3.5 speed → 3.5, the 0.021 step), then the
+        // bounce flips it with `num14` = 0.7.
+        let expected = -(12.0 - 0.021) * 0.7;
+        assert!(
+            (hornet.vx - expected).abs() < 0.01,
+            "the ×0.7 bounce ({})",
+            hornet.vx
+        );
+        assert_eq!(hornet.x, 260.0, "the wall blocks the move");
+        // The Eater of Souls flies through the same wall.
+        let mut eater = Npc::new(NpcKind::EaterOfSouls, 260.0, 32.0 * 16.0, 1, 0.0);
+        eater.vx = 12.0;
+        let target = target_for(&eater);
+        crate::npc_ai::hover_step(
+            &mut eater,
+            &w,
+            target,
+            crate::npc_ai::HoverParams::EATER_OF_SOULS,
+        );
+        assert!(eater.x > 260.0, "the eater passed through ({})", eater.x);
+    }
+
+    #[test]
     fn the_hornet_speed_takes_the_two_minus_scale_factor() {
         // `NPC.cs:50350`: `num *= 2 - scale` (the type-42/231-235 arm only).
         let mut w = World::new("t".into(), 400, 400);
@@ -15080,6 +15940,7 @@ mod tests {
                 center_x: npc.x - 8000.0,
                 center_y: npc.y + npc.size().1 * 0.5,
                 top_y: npc.y,
+                dead: false,
             };
             for _ in 0..600 {
                 crate::npc_ai::hover_step(&mut npc, &w, target, crate::npc_ai::HoverParams::HORNET);
@@ -16397,7 +17258,8 @@ mod tests {
     #[test]
     fn the_worm_chain_dies_with_the_head() {
         // `:51425-51433`: the leader gone — the link dies; the whole tail
-        // falls in one pass.
+        // falls in one pass. The split (`Transform(13)`) is the Eater of
+        // Worlds' rule only (`NPC.cs:51498-51502`).
         let w = ground_air();
         let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::DevourerHead);
         head.hp = head.max_hp;
@@ -16406,12 +17268,76 @@ mod tests {
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the devourer assembled ({})", npcs.len());
-        // The head dies: `NPC.cs:51507-51511`'s split — the first orphan
-        // becomes its own head (`Transform(13)`), the back part lives.
+        // The head dies: every link falls with it — the pool is the head's
+        // life, so the segments read 0 and go with the carrier.
         npcs[0].hp = 0;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
-        assert_eq!(npcs[1].kind, NpcKind::DevourerHead, "the orphan head");
-        assert!(npcs[1].hp > 0, "the split worm lives");
+        assert!(
+            npcs.iter().all(|n| n.hp <= 0),
+            "no orphan survives the carrier"
+        );
+        assert!(
+            npcs.iter().all(|n| n.kind != NpcKind::DevourerHead || n.seg_index == 0),
+            "the classic families never split into a new head"
+        );
+    }
+
+    #[test]
+    fn the_worm_segments_share_the_carriers_pool() {
+        // `NPC.StrikeNPC_Inner`'s `realLife` arm (`NPC.cs:81374-81378`):
+        // the damage lands on the CARRIER's life and the segment mirrors
+        // the carrier's `life`/`lifeMax`.
+        let w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::DevourerHead);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        let pool = npcs[0].max_hp;
+        assert_eq!(pool, 100, "the Devourer's head carries the pool");
+        // A strike on a body link: the head's life takes the damage, the
+        // body mirrors it.
+        let body_x = npcs[1].x;
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false));
+        assert_eq!(npcs[0].hp, pool - 25, "the carrier's life took the hit");
+        assert_eq!(npcs[1].hp, pool - 25, "the segment mirrors the carrier");
+        assert_eq!(npcs[1].max_hp, pool, "the segment's lifeMax is the carrier's");
+        // The tail is a segment too: its hit lands on the same pool.
+        let last = npcs.len() - 1;
+        let tail_x = npcs[last].x;
+        assert!(Npc::strike_melee(&mut npcs, last, 10, tail_x, 5.0, false));
+        assert_eq!(npcs[0].hp, pool - 35, "the tail hits the same pool");
+        // The head's own hit: its life IS the pool (`realLife = whoAmI`).
+        let head_x = npcs[0].x;
+        assert!(Npc::strike_melee(&mut npcs, 0, 5, head_x, 5.0, false));
+        assert_eq!(npcs[0].hp, pool - 40, "the head's own life is the pool");
+        // The worm pass keeps the mirror: the segments read the carrier's
+        // life (`NPC.cs:81377-81378`).
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        assert!(
+            npcs.iter().skip(1).all(|n| n.hp == npcs[0].hp),
+            "every segment reads the carrier's life"
+        );
+    }
+
+    #[test]
+    fn the_eater_of_worlds_segments_keep_their_own_life() {
+        // `NPC.cs:51129-51132`: the Eater of Worlds is the one worm family
+        // whose segments own their life — C# forces `realLife = -1` for
+        // types 13-15, so each segment falls on its own.
+        let w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::EaterOfWorldsHead);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        assert!(npcs.len() >= 10, "the EoW assembled ({})", npcs.len());
+        let body_x = npcs[1].x;
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false));
+        assert_eq!(npcs[1].hp, npcs[1].max_hp - 25, "the segment owns its life");
+        assert_eq!(npcs[0].hp, npcs[0].max_hp, "the head's pool is untouched");
     }
 
     #[test]
@@ -16936,6 +17862,101 @@ mod tests {
     }
 
     #[test]
+    fn the_eoc_phases_through_the_spin_to_the_final_dash() {
+        // `AI_004`'s phase machine (`NPC.cs:19960-20801`): the 50%-hp gate
+        // (`:20315-20322`) → the first spin (`ai[0]` 1) → the spin's
+        // hand-off (`ai[0]` 2) → the final dash (`ai[0]` 3).
+        //
+        // The spin speed (`ai[2]`) is the phase's tell: the phase-1 spin
+        // ramps it to 0.5 (`:20287-20293`), the hand-off KEEPS it (the
+        // reset rides the `ai[0] == 3` branch only, `:20356-20361`) and
+        // the phase-2 spin decays it (`:20295-20301`).
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        eoc.hp = eoc.max_hp / 2 - 1;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        // The hp gate: the phase-0 arm hands over to the first spin.
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(eoc.ai[0], 1.0, "the 50% gate starts the spin");
+        // The spin: 100 ticks → the second spin phase, the 0.5 spin speed
+        // carried over (the C# resets it only at `ai[0] == 3`).
+        for _ in 0..100 {
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(eoc.ai[0], 2.0, "the first spin hands over to the second");
+        assert!(
+            (eoc.ai[2] - 0.5).abs() < 0.001,
+            "the spin speed carries over ({})",
+            eoc.ai[2]
+        );
+        // The second spin decays the speed and hands over to the final
+        // phase: the defense drops to 0 and the contact damage rises to
+        // the 23 of `GetAttackDamage_LerpBetweenFinalValues(23, 18)`.
+        for _ in 0..100 {
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(eoc.ai[0], 3.0, "the second spin hands over to the final");
+        assert_eq!(eoc.ai[2], 0.0, "the final phase stops the spin");
+        // The final phase's stats ride its arm (the hand-off tick still ran
+        // the spin block).
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(eoc.defense_override, Some(0), "the defense drops to 0");
+        assert_eq!(eoc.damage_override, Some(23), "the final phase's damage");
+    }
+
+    #[test]
+    fn the_servant_flies_on_the_snapped_aim() {
+        // `AI_005`'s type-5 branch (`NPC.cs:50379-50383` + `:50418-50579`):
+        // the aim snaps to the 8-px grid on both the target's centre and
+        // the servant's own (`:50421-50424`), the speed is 5 and the accel
+        // 0.03, and the rotation rides the velocity (`:50652-50655`).
+        //
+        // The setup puts the player's centre 4 px right of the servant's
+        // — the unsnapped aim would drift right, the snapped aim (both
+        // centres floor to the same 8-px cell) stays vertical.
+        let w = ground_air();
+        let mut servant = Npc::new(NpcKind::ServantOfCthulhu, 990.0, 990.0, 1, 0.0);
+        let mut player = surface_player(&w);
+        player.x = 994.0; // the centre x = 1004 (the servant's = 1000)
+        player.y = 1579.0; // the centre y = 1600
+        for _ in 0..200 {
+            servant.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(
+            servant.vx.abs() < 0.01,
+            "the snapped aim keeps the servant vertical ({})",
+            servant.vx
+        );
+        assert!(
+            (servant.vy - 5.0).abs() < 0.05,
+            "the servant flies at the C#'s 5 speed ({})",
+            servant.vy
+        );
+        let tilt = servant.vy.atan2(servant.vx) - 1.57;
+        assert!(
+            (servant.rotation - tilt).abs() < 0.0001,
+            "the rotation rides the velocity ({})",
+            servant.rotation
+        );
+    }
+
+    #[test]
+    fn the_servant_spawn_lands_on_the_new_npc_bottom() {
+        // `NPC.NewNPC` takes the spawn point as the NPC's BOTTOM centre
+        // (`NPC.cs:80770` → `Entity.cs:122-132`: `position = (X - w/2,
+        // Y - h)`) and the call site truncates it to whole pixels
+        // (`NPC.cs:20180`).
+        let servant = Npc::spawn_servant_of_cthulhu(100.7, 200.7, 1.0, 2.0);
+        assert_eq!(servant.x, 100.0 - 10.0, "the x is the bottom-centre");
+        assert_eq!(servant.y, 200.0 - 20.0, "the y is the bottom");
+        assert_eq!(servant.vx, 1.0);
+        assert_eq!(servant.vy, 2.0);
+    }
+
+    #[test]
     fn the_eoc_spawns_and_maps() {
         // The stats ride `SetDefaults` case 4; the bestiary entry
         // round-trips.
@@ -17277,7 +18298,7 @@ mod tests {
         assert_eq!(e.credit_id, "TheDestroyer");
         let mut d = Npc::new(NpcKind::TheDestroyer, 0.0, 0.0, 1, 0.0);
         assert_eq!(d.size(), (48.0, 48.0));
-        assert_eq!(d.max_hp, 8000);
+        assert_eq!(d.max_hp, 80000);
         assert_eq!(d.knock_back_resist(), 0.0);
         assert_eq!(NpcKind::TheDestroyer.contact_damage(), 70);
         let _ = (&w, &mut d);
@@ -19486,9 +20507,10 @@ mod tests {
 
     #[test]
     fn the_hovers_cycle_the_strip_at_the_eight_tick_stride() {
-        // `FindFrame`'s case 6/173 (`NPC.cs`): the counter advances the
-        // row every 8 ticks and wraps over `Main.npcFrameCount` — the
-        // Eater of Souls' and Meteor Head's 2 rows, the Hornet's 3.
+        // `FindFrame`'s case 6/173 (`NPC.cs:76966-76978`) and the shared
+        // case 2/23 (`:74044-74058`): the counter advances the row every 8
+        // ticks and wraps over `Main.npcFrameCount` — the Eater of Souls'
+        // and the Meteor Head's 2 rows.
         let mut e = bare(NpcKind::EaterOfSouls);
         e.frame = 0;
         e.frame_counter = 0.0;
@@ -19503,16 +20525,29 @@ mod tests {
         e.frame_counter = 7.5;
         e.find_frame();
         assert_eq!(e.frame, 0, "the wrap over 2 rows");
-        // The Hornet's third row.
+        // The Meteor Head rides the same stride (`NPC.cs:74044-74058`).
+        let mut m = bare(NpcKind::MeteorHead);
+        m.frame = 0;
+        m.frame_counter = 0.0;
+        for _ in 0..7 {
+            m.find_frame();
+        }
+        assert_eq!(m.frame, 0, "the meteor head holds for 7 ticks");
+        m.find_frame();
+        assert_eq!(m.frame, 1, "the meteor head advances on the eighth");
+        // The Hornet's case 42 (`NPC.cs:74907-74934`): the four-phase flap —
+        // two ticks a phase over the rows 0/1/2/1 (the downstroke repeats),
+        // not the 8-tick stride.
         let mut h = bare(NpcKind::Hornet);
-        h.frame = 2;
-        h.frame_counter = 7.5;
-        h.find_frame();
-        assert_eq!(h.frame, 0, "the hornet wraps over 3 rows");
-        h.frame = 1;
+        h.frame = 0;
         h.frame_counter = 0.0;
-        h.find_frame();
-        assert_eq!(h.frame, 1, "the second row holds");
+        let mut rows = Vec::new();
+        for _ in 0..8 {
+            h.find_frame();
+            rows.push(h.frame);
+        }
+        assert_eq!(rows, vec![0, 0, 1, 1, 2, 2, 1, 1], "the four-phase flap");
+        assert_eq!(h.frame_counter, 0.0, "the cycle restarts");
     }
 
     #[test]
