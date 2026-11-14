@@ -169,6 +169,14 @@ pub(crate) struct PlayerCompositeState {
     /// (`Player.cs:47371-47378`: `atan2(aimY * direction, aimX * direction) -
     /// fullRotation`). The useStyle 5 item rides it.
     pub(crate) item_rotation: f32,
+    /// The raw animation counters — `Player.itemAnimation` in ticks
+    /// (`Player.cs:43378`). The port's swing timer runs in seconds, so the
+    /// draw scales it back to the C#'s ticks.
+    pub(crate) swing_anim_ticks: f32,
+    /// `Player.itemAnimationMax` in ticks.
+    pub(crate) swing_max_ticks: f32,
+    /// `Item.useAnimation` in ticks — the useStyle 8's wind-up gate.
+    pub(crate) use_animation: i32,
     /// The held item's atlas quad and frame size, `None` = empty hand.
     pub(crate) item_uv: Option<[f32; 4]>,
     pub(crate) item_size: [f32; 2],
@@ -1149,7 +1157,7 @@ fn hold_item_placement(s: &PlayerCompositeState, dir: f32, w: f32, h: f32) -> ([
         // `:50520-50549` (holdStyle 4, the umbrella): the item rides the
         // `num9` rotation around the body centre.
         4 => {
-            let mut rot = (10.0 * dir).atan2(10.0) + std::f32::consts::FRAC_PI_4;
+            let mut rot = 10.0f32.atan2(10.0 * dir) + std::f32::consts::FRAC_PI_4;
             if dir < 0.0 {
                 rot += std::f32::consts::FRAC_PI_2;
             }
@@ -1296,6 +1304,63 @@ fn use_item_placement(s: &PlayerCompositeState, dir: f32, w: f32, h: f32) -> ([f
         14 => ([center_x + 6.0 * dir, pos_y + 40.0 - 8.0 + headgear], 0.0),
         // `:51361-51375` (useStyle 15): the item sits at the body's centre.
         15 => ([center_x + 6.0 * dir, pos_y + 30.0 - 2.0 + headgear], 0.0),
+        // `:51197-51273` (useStyle 8, the throw): three phases. The wind-up
+        // (the first tick, `itemAnimation` at the item's `useAnimation`) pulls
+        // the item back over the shoulder; the swing arc carries it forward.
+        8 => {
+            let anim = s.swing_anim_ticks;
+            let use_anim = s.use_animation as f32;
+            if anim >= use_anim - 1.0 && anim <= use_anim {
+                // `:51201-51224`: the wind-up.
+                let mut item_rot = 10.0f32.atan2(10.0 * dir) + std::f32::consts::FRAC_PI_4;
+                if dir < 0.0 {
+                    item_rot += std::f32::consts::FRAC_PI_2;
+                }
+                let mut num22 = item_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+                if dir > 0.0 {
+                    num22 += std::f32::consts::FRAC_PI_2;
+                }
+                let (sin, cos) = (num22 + std::f32::consts::FRAC_PI_2).sin_cos();
+                (
+                    [mounted_center[0] - cos * 2.0, mounted_center[1].floor() - sin * 2.0],
+                    item_rot,
+                )
+            } else {
+                // `:51246-51271`: the swing arc.
+                let num26 = 1.0 - anim / s.swing_max_ticks.max(1.0);
+                let num27 = -(std::f32::consts::PI / 10.0)
+                    * if dir < 0.0 { -1.0 } else { 1.0 }
+                    * (1.0 - num26 * 2.2);
+                let item_rot =
+                    (num26 * std::f32::consts::PI * 1.6 - std::f32::consts::FRAC_PI_2) * -dir
+                        + std::f32::consts::PI;
+                let mut num28 = (num26 * std::f32::consts::PI * 0.6
+                    + std::f32::consts::PI * 2.0 / 5.0)
+                    * -dir
+                    + std::f32::consts::PI
+                    - std::f32::consts::FRAC_PI_4
+                    + std::f32::consts::PI;
+                if dir > 0.0 {
+                    num28 += std::f32::consts::FRAC_PI_2;
+                }
+                let (sin, cos) = (num28 + std::f32::consts::FRAC_PI_2).sin_cos();
+                let reach = -5.0 * (1.0 - num26);
+                (
+                    [
+                        mounted_center[0] + cos * reach,
+                        mounted_center[1].floor() + sin * reach,
+                    ],
+                    item_rot,
+                )
+            }
+        }
+        // `:51174-51196` (useStyle 13, the rapier): the branch sets no
+        // location — the item keeps the hold-style anchor and is turned by
+        // the aim (`itemRotation`, `:47378`).
+        13 => {
+            let (loc, _) = hold_item_placement(s, dir, w, h);
+            (loc, s.item_rotation)
+        }
         // The default arc — useStyle 1 (`:50686-50935`): the third-walk +
         // the `(anim/max - 0.5) * -dir * 3.5 - dir * 0.3` rotation.
         _ => (
@@ -1625,6 +1690,110 @@ mod tests {
     }
 
     #[test]
+    fn s1_g_18_the_throw_style_rides_its_wind_up_and_arc() {
+        // `Player.cs:51199-51224` (the wind-up) and `:51246-51271` (the
+        // swing arc): the wind-up fires while `itemAnimation` is at the
+        // item's `useAnimation`; the arc follows `num26 = 1 -
+        // itemAnimation/itemAnimationMax`.
+        let mut s = state();
+        s.use_style = 8;
+        s.swing = 1.0;
+        s.swing_anim_ticks = 15.0;
+        s.swing_max_ticks = 15.0;
+        s.use_animation = 15;
+        let (loc, rot) = use_item_placement(&s, 1.0, 16.0, 16.0);
+        // The wind-up's rotation: `atan2(10, 10) + PI/4`.
+        let expect_rot = (10.0f32).atan2(10.0) + std::f32::consts::FRAC_PI_4;
+        assert!((rot - expect_rot).abs() < 1e-5, "{}", rot);
+        // `num22 = itemRotation - PI/4 + PI (+ PI/2 when facing right)`, the
+        // item at `MountedCenter + (num22 + PI/2).ToRotationVector2() * -2`.
+        let num22 = expect_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI
+            + std::f32::consts::FRAC_PI_2;
+        let (sin, cos) = (num22 + std::f32::consts::FRAC_PI_2).sin_cos();
+        assert!(
+            (loc[0] - (120.0 - cos * 2.0)).abs() < 1e-4,
+            "{:?}",
+            loc
+        );
+        assert!(
+            (loc[1] - (231.0 - sin * 2.0)).abs() < 1e-4,
+            "{:?}",
+            loc
+        );
+        // The arc: the counter below the wind-up window (`itemAnimation` at
+        // `useAnimation - 1` still holds the wind-up, `:51199`).
+        s.swing_anim_ticks = 13.0;
+        s.swing = 13.0 / 15.0;
+        let (loc, rot) = use_item_placement(&s, 1.0, 16.0, 16.0);
+        let num26 = 1.0 - 13.0 / 15.0;
+        let expect_rot = (num26 * std::f32::consts::PI * 1.6 - std::f32::consts::FRAC_PI_2)
+            * -1.0
+            + std::f32::consts::PI;
+        assert!((rot - expect_rot).abs() < 1e-5, "{}", rot);
+        // The arc's reach: `-5 * (1 - num26)` along `num28 + PI/2`.
+        let mut num28 = (num26 * std::f32::consts::PI * 0.6 + std::f32::consts::PI * 2.0 / 5.0)
+            * -1.0
+            + std::f32::consts::PI
+            - std::f32::consts::FRAC_PI_4
+            + std::f32::consts::PI
+            + std::f32::consts::FRAC_PI_2;
+        let (sin, cos) = (num28 + std::f32::consts::FRAC_PI_2).sin_cos();
+        let reach = -5.0 * (1.0 - num26);
+        assert!((loc[0] - (120.0 + cos * reach)).abs() < 1e-4, "{:?}", loc);
+        assert!(
+            (loc[1] - (231.0 + sin * reach)).abs() < 1e-4,
+            "{:?}",
+            loc
+        );
+        // Facing left the wind-up's rotation is the mirrored vector:
+        // `atan2(10, -10) + PI/4 + PI/2` (`Player.cs:51202-51203`).
+        let mut sl = s;
+        sl.facing = -1.0;
+        sl.swing_anim_ticks = 15.0;
+        sl.swing = 1.0;
+        let (loc_left, rot_left) = use_item_placement(&sl, -1.0, 16.0, 16.0);
+        let expect_left = 10.0f32.atan2(-10.0) + std::f32::consts::FRAC_PI_4
+            + std::f32::consts::FRAC_PI_2;
+        assert!(
+            (rot_left - expect_left).abs() < 1e-5,
+            "{} vs {}",
+            rot_left,
+            expect_left
+        );
+        // The item's anchor: `MountedCenter + (num22 + PI/2) * -2` with
+        // `num22 = itemRotation - PI/4 + PI` (the direction term is only
+        // added when facing right, `:51215-51218`).
+        let num22 = expect_left - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+        let (sin_l, cos_l) = (num22 + std::f32::consts::FRAC_PI_2).sin_cos();
+        assert!(
+            (loc_left[0] - (120.0 - cos_l * 2.0)).abs() < 1e-4,
+            "{:?}",
+            loc_left
+        );
+        assert!(
+            (loc_left[1] - (231.0 - sin_l * 2.0)).abs() < 1e-4,
+            "{:?}",
+            loc_left
+        );
+    }
+
+    #[test]
+    fn s1_g_18_the_rapier_keeps_the_hold_anchor() {
+        // `Player.cs:51174-51196`: the useStyle 13 branch sets no location —
+        // the item keeps the hold-style anchor and is turned by the aim.
+        let mut s = state();
+        s.use_style = 13;
+        s.hold_style = 1;
+        s.swing = 0.5;
+        s.item_rotation = 0.4;
+        let (loc, rot) = use_item_placement(&s, 1.0, 16.0, 16.0);
+        assert!((rot - 0.4).abs() < 1e-6, "the rapier turns with the aim");
+        // The holdStyle-1 anchor: `position.X + width/2 + (frame.W/2 + 2)*dir`.
+        assert!((loc[0] - 130.0).abs() < 1e-6, "{:?}", loc);
+        assert!((loc[1] - (200.0 + 10.0 + 24.0)).abs() < 1e-6, "{:?}", loc);
+    }
+
+    #[test]
     fn the_composite_pivots_and_offsets_are_the_c_sharp_pairs() {
         // `GetCompositeOffset_BackArm` (`PlayerDrawLayers.cs:4082-4085`) and
         // `_FrontArm` (`:4087-4090`) applied to both the position and the
@@ -1922,6 +2091,9 @@ mod tests {
             swing: 0.0,
             use_style: 1,
             item_rotation: 0.0,
+            swing_anim_ticks: 0.0,
+            swing_max_ticks: 1.0,
+            use_animation: 0,
             item_uv: None,
             item_size: [16.0, 16.0],
             light: [1.0, 1.0, 1.0],
@@ -2164,15 +2336,22 @@ mod tests {
         let itemg = &held_item_layers(&sg)[0];
         assert!((itemg.pos[1] - (expected[1] + 5.0)).abs() < 1e-4);
 
-        // useStyle 8: quarter turn, `origin.Y = 2`, `origin.X += 2*dir`
-        // (`PlayerDrawLayers.cs:3181-3188`).
+        // useStyle 8: the throw's wind-up phase — the item's rotation is
+        // `atan2(10, 10) + PI/4` (`Player.cs:51201`) and the draw takes the
+        // quarter turn, `origin.Y = 2`, `origin.X += 2*dir`
+        // (`PlayerDrawLayers.cs:3181-3188`); the anchor is the wind-up's
+        // `MountedCenter + (num22 + PI/2).ToRotationVector2() * -2`.
         let mut s8 = s;
         s8.use_style = 8;
-        let rotation8 = -2.05 - FRAC_PI_2;
-        let (sin8, cos8) = rotation8.sin_cos();
+        let item_rot8 = 10.0f32.atan2(10.0) + std::f32::consts::FRAC_PI_4;
+        let num22 = item_rot8 - std::f32::consts::FRAC_PI_4
+            + std::f32::consts::PI
+            + FRAC_PI_2;
+        let (sin8, cos8) = (num22 + FRAC_PI_2).sin_cos();
+        let rotation8 = item_rot8 - FRAC_PI_2;
         let expected8 = [
-            118.0 - (2.0 * cos8 - 2.0 * sin8),
-            220.0 - (2.0 * sin8 + 2.0 * cos8),
+            120.0 - cos8 * 2.0 - 2.0,
+            231.0 - sin8 * 2.0 - 2.0,
         ];
         let item8 = &held_item_layers(&s8)[0];
         assert!((item8.rotation - rotation8).abs() < 1e-5);
