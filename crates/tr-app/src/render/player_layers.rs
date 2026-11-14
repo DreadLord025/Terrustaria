@@ -165,8 +165,18 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) hold_style: u8,
     /// Vanilla `useStyle` stand-in: 1 = swing (default), 8 = thrust, 9 = bow.
     pub(crate) use_style: u8,
-    /// `Player.itemRotation`'s source for useStyle 5 — the aim angle.
-    pub(crate) aim: f32,
+    /// `Player.itemRotation` — the shooting styles' aim rotation
+    /// (`Player.cs:47371-47378`: `atan2(aimY * direction, aimX * direction) -
+    /// fullRotation`). The useStyle 5 item rides it.
+    pub(crate) item_rotation: f32,
+    /// The raw animation counters — `Player.itemAnimation` in ticks
+    /// (`Player.cs:43378`). The port's swing timer runs in seconds, so the
+    /// draw scales it back to the C#'s ticks.
+    pub(crate) swing_anim_ticks: f32,
+    /// `Player.itemAnimationMax` in ticks.
+    pub(crate) swing_max_ticks: f32,
+    /// `Item.useAnimation` in ticks — the useStyle 8's wind-up gate.
+    pub(crate) use_animation: i32,
     /// The held item's atlas quad and frame size, `None` = empty hand.
     pub(crate) item_uv: Option<[f32; 4]>,
     pub(crate) item_size: [f32; 2],
@@ -1067,7 +1077,10 @@ fn item_location(
         };
         (num, num_y)
     };
-    let x = if remaining < 0.333 {
+    // The C#'s X sign per third: the swing end (`:50742`) and the middle
+    // third (`:50773`) ADD `(frame.W*0.5 - num) * direction` to
+    // `position.X + width*0.5`; only the swing start (`:50829`) SUBTRACTS it.
+    let x = if remaining < 0.666 {
         pos_x + (half - num_x) * direction
     } else {
         pos_x - (half - num_x) * direction
@@ -1075,12 +1088,293 @@ fn item_location(
     [x, pos_y + loc_y]
 }
 
+/// `Player.GetFrontHandPosition` (`Player.cs:50617-50647`): the composite
+/// front hand's world position for a stretch + rotation. The stretch picks
+/// the arm's reach (Full 10 / ThreeQuarters 8 / Quarter 6 / None 4) and the
+/// direction shifts the hand off the shoulder.
+fn front_hand_position(
+    stretch: CompositeStretch,
+    rotation: f32,
+    dir: f32,
+    mounted_center: [f32; 2],
+) -> [f32; 2] {
+    let num = rotation + std::f32::consts::FRAC_PI_2;
+    let (sin, cos) = num.sin_cos();
+    let reach = match stretch {
+        CompositeStretch::Full => 10.0,
+        CompositeStretch::ThreeQuarters => 8.0,
+        CompositeStretch::Quarter => 6.0,
+        CompositeStretch::None => 4.0,
+    };
+    let mut v = [cos * reach, sin * reach];
+    // `(0, ±3).RotatedBy(rotation + PI/2)` — the XNA rotation matrix.
+    let (rsin, rcos) = num.sin_cos();
+    let tilt = if dir < 0.0 { -3.0 } else { 3.0 };
+    v[0] += -tilt * rsin;
+    v[1] += tilt * rcos;
+    if dir < 0.0 {
+        v[0] += 4.0;
+        v[1] -= 2.0;
+    } else {
+        v[0] -= 4.0;
+        v[1] -= 2.0;
+    }
+    [mounted_center[0] + v[0], mounted_center[1] + v[1]]
+}
+
+/// The composite stretch's item offset table (`Player.cs:50955-50970` for the
+/// eat style, `:51008-51023` for the mow style): the `num11`/`num13` anchor
+/// distance per stretch (Full 8 / ThreeQuarters 6 / Quarter 4 / None 2).
+fn stretch_item_offset(stretch: CompositeStretch) -> f32 {
+    match stretch {
+        CompositeStretch::Full => 8.0,
+        CompositeStretch::ThreeQuarters => 6.0,
+        CompositeStretch::Quarter => 4.0,
+        CompositeStretch::None => 2.0,
+    }
+}
+
+/// `ItemCheck_ApplyHoldStyle`'s rest anchors (`Player.cs:50275-50584`): the
+/// held item's `itemLocation` + `itemRotation` per hold style. The port's
+/// frame: `pos_x`/`pos_y` are `base.position`, `center_x` is
+/// `base.Center.X` and `mounted_y` is `MountedCenter.Y` (`position.Y +
+/// height/2`, the player's height 42).
+fn hold_item_placement(s: &PlayerCompositeState, dir: f32, w: f32, h: f32) -> ([f32; 2], f32) {
+    let pos_x = s.origin[0] + 10.0;
+    let pos_y = s.origin[1] + 10.0;
+    let center_x = s.origin[0] + 20.0;
+    let mounted_y = s.origin[1] + 31.0;
+    let headgear = headgear_offset(s.body_frame);
+    match s.hold_style {
+        // `:50400-50414` (holdStyle 1, the generic arm): the item lies in the
+        // hand at `position + (width/2 + frame.W/2 + 2)·dir`, `position.Y + 24`.
+        1 => ([pos_x + 10.0 + (w * 0.5 + 2.0) * dir, pos_y + 24.0], 0.0),
+        // `:50499-50509` (holdStyle 2): the item is held up beside the head,
+        // turned a quarter.
+        2 => ([pos_x + 10.0 + 6.0 * dir, pos_y + 16.0], -0.79 * dir),
+        // `:50511-50519` (holdStyle 3): the item is centred on the body.
+        3 => ([pos_x + 10.0 - dir * 2.0, mounted_y - h * 0.5], 0.0),
+        // `:50520-50549` (holdStyle 4, the umbrella): the item rides the
+        // `num9` rotation around the body centre.
+        4 => {
+            let mut rot = 10.0f32.atan2(10.0 * dir) + std::f32::consts::FRAC_PI_4;
+            if dir < 0.0 {
+                rot += std::f32::consts::FRAC_PI_2;
+            }
+            let mut num9 = rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+            if dir > 0.0 {
+                num9 += std::f32::consts::FRAC_PI_2;
+            }
+            let (sin, cos) = (num9 + std::f32::consts::FRAC_PI_2).sin_cos();
+            (
+                [center_x + cos * 2.0, mounted_y.floor() + sin * 2.0],
+                rot,
+            )
+        }
+        // `:50550-50562` (holdStyle 5): the item hangs at the hip.
+        5 => ([center_x - 8.0 * dir, pos_y + 40.0 + headgear], 0.0),
+        // `:50563-50570` (holdStyle 6): the item is centred on the body.
+        6 => ([center_x + 8.0 * dir, pos_y + 40.0 - 2.0 + headgear], 0.0),
+        // `:50575-50584` (holdStyle 8): the item hangs at the hip.
+        8 => ([center_x + 6.0 * dir, pos_y + 30.0 - 2.0 + headgear], 0.0),
+        // The generic arm (the holdStyles the port does not place).
+        _ => ([pos_x + 10.0 + (w * 0.5 + 2.0) * dir, pos_y + 24.0], 0.0),
+    }
+}
+
+/// `ItemCheck_ApplyUseStyle`'s swing anchors (`Player.cs:50686-51375`): the
+/// held item's `itemLocation` + `itemRotation` per use style. `remaining` is
+/// `itemAnimation / itemAnimationMax` (1 at the swing start, 0 at the end).
+fn use_item_placement(s: &PlayerCompositeState, dir: f32, w: f32, h: f32) -> ([f32; 2], f32) {
+    let pos_x = s.origin[0] + 10.0;
+    let pos_y = s.origin[1] + 10.0;
+    let center_x = s.origin[0] + 20.0;
+    let mounted_center = [center_x, s.origin[1] + 31.0];
+    let mounted_y = mounted_center[1];
+    let headgear = headgear_offset(s.body_frame);
+    let remaining = s.swing;
+    match s.use_style {
+        // `:50936-50976` (EatFood): the item rides the front hand — the
+        // `num11` table follows the composite arm's stretch.
+        2 => (
+            [
+                center_x + (stretch_item_offset(s.front_arm.stretch) + 10.0 - w * 0.5) * dir,
+                mounted_y + h * 0.5 - 4.0,
+            ],
+            0.0,
+        ),
+        // `:51031-51061` (Thrust): the item is pushed forward, then pulled
+        // back to the hand.
+        3 => {
+            if remaining > 2.0 / 3.0 {
+                ([-1000.0, -1000.0], -1.3 * dir)
+            } else {
+                let num14 = (remaining * w * dir * 1.2 - 10.0 * dir).clamp(
+                    if dir < 0.0 { -8.0 } else { f32::MIN },
+                    if dir > 0.0 { 8.0 } else { f32::MAX },
+                );
+                (
+                    [
+                        pos_x + 10.0 + (w * 0.5 - 4.0) * dir - num14,
+                        pos_y + 24.0,
+                    ],
+                    0.8 * dir,
+                )
+            }
+        }
+        // `:51065-51090` (HoldUp): the item is held up beside the shoulder
+        // (`width*0.5 - 9 - itemRotation*14*dir - 4`).
+        4 => (
+            [pos_x + 10.0 + (w * 0.5 - 9.0 - 4.0) * dir, pos_y + h * 0.5 + 4.0],
+            0.0,
+        ),
+        // `:51091-51141` (Shoot): the generic arm — the item hangs off the
+        // body's centre, turned by the aim (`Player.itemRotation`).
+        5 => (
+            [pos_x + 10.0 - dir * 2.0, mounted_y - h * 0.5],
+            s.item_rotation,
+        ),
+        // `:50912-50934` (DrinkLong): the bottle rises with the drink.
+        6 => {
+            let num9 = ((1.0 - remaining) * 6.0).min(1.0);
+            let rot = (1.0 - num9) * dir * 2.0 - 1.4 * dir;
+            let mul = if num9 >= 0.5 { 12.0 } else { 16.0 };
+            (
+                [
+                    pos_x + 10.0 + ((w * 0.5 - 9.0 - rot * mul * dir) * dir),
+                    pos_y + 38.0 + rot * dir * 4.0,
+                ],
+                rot,
+            )
+        }
+        // `:50866-50883` (DrinkOld): the bottle tips over the head.
+        7 => {
+            let rot = remaining * dir * 2.0 - 1.4 * dir;
+            if remaining < 0.5 {
+                (
+                    [
+                        pos_x + 10.0 + ((w * 0.5 - 9.0 - rot * 12.0 * dir) * dir),
+                        pos_y + 38.0 + rot * dir * 4.0,
+                    ],
+                    rot,
+                )
+            } else {
+                (
+                    [
+                        pos_x + 10.0 + ((w * 0.5 - 9.0 - rot * 16.0 * dir) * dir),
+                        pos_y + 38.0 + rot * dir,
+                    ],
+                    rot,
+                )
+            }
+        }
+        // `:50885-50911` (DrinkLiquid/bow): the bow rides the front hand —
+        // `GetFrontHandPosition`, pulled back by the draw's lerp.
+        9 => {
+            let progress = 1.0 - remaining;
+            let lerp = (progress / 0.7).clamp(0.0, 1.0);
+            let rot = lerp * -dir * 2.0 + 0.7 * dir;
+            let num6 = std::f32::consts::PI * 2.0 / 5.0;
+            let num7 = (0.0 - num6) * 0.5 + (1.0 - lerp) * num6 + std::f32::consts::PI / 10.0;
+            let mut num8 = num7 - std::f32::consts::FRAC_PI_2;
+            if dir < 0.0 {
+                num8 = -num8;
+            }
+            let hand = front_hand_position(CompositeStretch::Full, num8, dir, mounted_center);
+            let scale = 1.5 + (1.2 - 1.5) * lerp;
+            let mut loc = [
+                mounted_center[0] + (hand[0] - mounted_center[0]) * scale,
+                mounted_center[1] + (hand[1] - mounted_center[1]) * scale,
+            ];
+            loc[0] += dir * (8.0 + (2.0 - 8.0) * lerp);
+            (loc, rot)
+        }
+        // `:50978-51030` (MowTheLawn): the mower rides the front hand — the
+        // `num13` table follows the composite arm's stretch.
+        11 => (
+            [
+                center_x + (stretch_item_offset(s.front_arm.stretch) + 22.0 - w * 0.5) * dir,
+                mounted_y + h * 0.5 - 8.0,
+            ],
+            0.0,
+        ),
+        // `:51275-51320` (Guitar): the instrument hangs at the hip.
+        12 => ([center_x - 8.0 * dir, pos_y + 40.0 + headgear], 0.0),
+        // `:51349-51360` (useStyle 14): the item sits at the body's centre.
+        14 => ([center_x + 6.0 * dir, pos_y + 40.0 - 8.0 + headgear], 0.0),
+        // `:51361-51375` (useStyle 15): the item sits at the body's centre.
+        15 => ([center_x + 6.0 * dir, pos_y + 30.0 - 2.0 + headgear], 0.0),
+        // `:51197-51273` (useStyle 8, the throw): three phases. The wind-up
+        // (the first tick, `itemAnimation` at the item's `useAnimation`) pulls
+        // the item back over the shoulder; the swing arc carries it forward.
+        8 => {
+            let anim = s.swing_anim_ticks;
+            let use_anim = s.use_animation as f32;
+            if anim >= use_anim - 1.0 && anim <= use_anim {
+                // `:51201-51224`: the wind-up.
+                let mut item_rot = 10.0f32.atan2(10.0 * dir) + std::f32::consts::FRAC_PI_4;
+                if dir < 0.0 {
+                    item_rot += std::f32::consts::FRAC_PI_2;
+                }
+                let mut num22 = item_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+                if dir > 0.0 {
+                    num22 += std::f32::consts::FRAC_PI_2;
+                }
+                let (sin, cos) = (num22 + std::f32::consts::FRAC_PI_2).sin_cos();
+                (
+                    [mounted_center[0] - cos * 2.0, mounted_center[1].floor() - sin * 2.0],
+                    item_rot,
+                )
+            } else {
+                // `:51246-51271`: the swing arc.
+                let num26 = 1.0 - anim / s.swing_max_ticks.max(1.0);
+                let num27 = -(std::f32::consts::PI / 10.0)
+                    * if dir < 0.0 { -1.0 } else { 1.0 }
+                    * (1.0 - num26 * 2.2);
+                let item_rot =
+                    (num26 * std::f32::consts::PI * 1.6 - std::f32::consts::FRAC_PI_2) * -dir
+                        + std::f32::consts::PI;
+                let mut num28 = (num26 * std::f32::consts::PI * 0.6
+                    + std::f32::consts::PI * 2.0 / 5.0)
+                    * -dir
+                    + std::f32::consts::PI
+                    - std::f32::consts::FRAC_PI_4
+                    + std::f32::consts::PI;
+                if dir > 0.0 {
+                    num28 += std::f32::consts::FRAC_PI_2;
+                }
+                let (sin, cos) = (num28 + std::f32::consts::FRAC_PI_2).sin_cos();
+                let reach = -5.0 * (1.0 - num26);
+                (
+                    [
+                        mounted_center[0] + cos * reach,
+                        mounted_center[1].floor() + sin * reach,
+                    ],
+                    item_rot,
+                )
+            }
+        }
+        // `:51174-51196` (useStyle 13, the rapier): the branch sets no
+        // location — the item keeps the hold-style anchor and is turned by
+        // the aim (`itemRotation`, `:47378`).
+        13 => {
+            let (loc, _) = hold_item_placement(s, dir, w, h);
+            (loc, s.item_rotation)
+        }
+        // The default arc — useStyle 1 (`:50686-50935`): the third-walk +
+        // the `(anim/max - 0.5) * -dir * 3.5 - dir * 0.3` rotation.
+        _ => (
+            item_location(remaining, dir, pos_x + 10.0, pos_y, w, h),
+            item_rotation(remaining, dir),
+        ),
+    }
+}
+
 /// `DrawPlayer_27_HeldItem` (`PlayerDrawLayers.cs:3043-3195`): the held item
-/// pivots on `itemLocation` — the useStyle-1 thirds from `Player.ItemCheck`
-/// (`Player.cs:50709-50846`) while swinging, the holdStyle-1 anchor at rest
-/// (`Player.cs:50275-50460`: `position + (width/2 + frame.W/2 + 2)·dir, +24`,
-/// `itemRotation = 0`) — with rotation `itemRotation` (`Player.cs:50848`),
-/// plus `gfxOffY` (`PlayerDrawSet.cs:368`). The C# draw origin
+/// pivots on `itemLocation` — the useStyle/holdStyle anchors from
+/// `Player.ItemCheck` (`Player.cs:50275-50584` at rest, `:50686-51375` while
+/// swinging) — with rotation `itemRotation`, plus `gfxOffY`
+/// (`PlayerDrawSet.cs:368`). The C# draw origin
 /// `(width*0.5 - width*0.5*direction, height)` (`:3161`) places the pivot on
 /// the quad's bottom-left/bottom-right corner; the `direction < 0` flip swaps
 /// only the UVs inside that quad (XNA flips the image, not the geometry).
@@ -1102,71 +1396,19 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
     let mut rotation;
     let anchor;
     if resting {
-        // `holdStyle == 1` rest anchor (`Player.cs:50275-50460`); the generic
-        // branch is the one our item set uses (no fishing poles or specials).
-        // `position.X + width/2` is `origin.x + 20`, `position.Y + 24` rides
-        // `gfxOffY`.
-        anchor = [
-            s.origin[0] + 20.0 + (w * 0.5 + 2.0) * dir,
-            s.origin[1] + 10.0 + s.gfx_off_y + 24.0,
-        ];
-        rotation = 0.0;
+        let (loc, rot) = hold_item_placement(s, dir, w, h);
+        anchor = [loc[0], loc[1] + s.gfx_off_y];
+        rotation = rot;
     } else {
         // The per-style held-item placement — `Player.ItemDraw`'s
         // useStyle branches (`Player.cs:50686-51243`): 1's arc, 3's thrust,
         // 4's hold-up, 5's aim. Styles 2/7/9/11/13 pin the item near the
         // hand and let the composite arms carry the pose.
-        match s.use_style {
-            // `:51065-51088` — HoldUp: rotation 0, the item beside the
-            // shoulder (`width*0.5 - 9` right of centre, mid-height + 4).
-            4 => {
-                rotation = 0.0;
-                anchor = [
-                    s.origin[0] + 20.0 + (w * 0.5 - 9.0) * dir,
-                    s.origin[1] + 10.0 + s.gfx_off_y + h * 0.5 + 4.0,
-                ];
-            }
-            // `:51091-51136` — Shoot: the rotation is the aim
-            // (`Player.itemRotation`); the generic anchor centres the item
-            // `direction * -2` off the body and half-height above the
-            // centre. The staffs (Item.staff) anchor at the MountedCenter +
-            // `rotation.ToRotationVector2() * 6` — the port's staff set is
-            // empty, so the generic arm only.
-            5 => {
-                rotation = s.aim;
-                anchor = [
-                    s.origin[0] + 20.0 - dir * 2.0,
-                    s.origin[1] + 10.0 + s.gfx_off_y - h * 0.5 + 16.0,
-                ];
-            }
-            // `:51031-51064` — Thrust: the first third tucks the item
-            // offscreen (`itemLocation = -1000`), then rotation `0.8 * dir`
-            // with the X-thrust by the swing progress.
-            3 => {
-                if s.swing > 2.0 / 3.0 {
-                    anchor = [-1000.0, -1000.0];
-                    rotation = -1.3 * dir;
-                } else {
-                    rotation = 0.8 * dir;
-                    let num14 = (s.swing * w * dir * 1.2 - 10.0 * dir).clamp(
-                        if dir < 0.0 { -8.0 } else { f32::MIN },
-                        if dir > 0.0 { 8.0 } else { f32::MAX },
-                    );
-                    anchor = [
-                        s.origin[0] + 20.0 + (w * 0.5 - 4.0) * dir - num14,
-                        s.origin[1] + 10.0 + s.gfx_off_y + 24.0,
-                    ];
-                }
-            }
-            // The default arc — useStyle 1 (`:50686-50935`): the port's
-            // `item_rotation`/`item_location` pair is the third-walk + the
-            // `(anim/max - 0.5) * -dir * 3.5 - dir * 0.3` rotation.
-            _ => {
-                rotation = item_rotation(s.swing, dir);
-                let loc = item_location(s.swing, dir, s.origin[0] + 20.0, s.origin[1] + 10.0, w, h);
-                anchor = [loc[0], loc[1] + s.gfx_off_y];
-            }
-        }
+        // The per-style anchors (`ItemCheck_ApplyUseStyle`,
+        // `Player.cs:50686-51375`).
+        let (loc, rot) = use_item_placement(s, dir, w, h);
+        rotation = rot;
+        anchor = [loc[0], loc[1] + s.gfx_off_y];
     }
     // `:3161`: `(width*0.5 - width*0.5*direction, height)`; useStyle tweaks.
     let mut origin = [w * 0.5 - w * 0.5 * dir, h];
@@ -1354,6 +1596,201 @@ mod tests {
                 "row {row} composite shift"
             );
         }
+    }
+
+    #[test]
+    fn s1_g_17_the_swing_thirds_keep_the_csharp_x_sign() {
+        // `Player.cs:50742` (the swing end) and `:50773` (the middle third)
+        // ADD `(frame.W*0.5 - num) * direction` to `position.X + width*0.5`;
+        // only the swing start (`:50829`) SUBTRACTS it. The port used to
+        // subtract in the middle third too — the item jumped to the other
+        // side of the body mid-swing.
+        let w = 40.0;
+        let end = item_location(0.2, 1.0, 100.0, 200.0, w, 16.0);
+        let middle = item_location(0.5, 1.0, 100.0, 200.0, w, 16.0);
+        let start = item_location(0.8, 1.0, 100.0, 200.0, w, 16.0);
+        // The end third: `num = 14` (W > 32) -> `100 + (20 - 14)`.
+        assert!((end[0] - 106.0).abs() < 1e-6, "{:?}", end);
+        // The middle third: `num = 18` -> `100 + (20 - 18)`.
+        assert!((middle[0] - 102.0).abs() < 1e-6, "{:?}", middle);
+        // The start third: `num = 14` -> `100 - (20 - 14)`.
+        assert!((start[0] - 94.0).abs() < 1e-6, "{:?}", start);
+        // The Y rows: the end `+24`, the middle `+10` (H <= 32), the start
+        // `+10`.
+        assert!((end[1] - 224.0).abs() < 1e-6, "{:?}", end);
+        assert!((middle[1] - 210.0).abs() < 1e-6, "{:?}", middle);
+        assert!((start[1] - 210.0).abs() < 1e-6, "{:?}", start);
+    }
+
+    #[test]
+    fn s1_g_17_the_shoot_style_rides_the_item_rotation() {
+        // `Player.cs:51139-51140` (the generic arm): the item hangs at
+        // `position.X + width*0.5 - direction*2`, `MountedCenter.Y -
+        // frame.H*0.5`; the rotation is `Player.itemRotation` (the aim,
+        // `:47371-47378`).
+        let mut s = state();
+        s.use_style = 5;
+        s.swing = 0.5;
+        s.item_rotation = 0.75;
+        let (loc, rot) = use_item_placement(&s, 1.0, 16.0, 16.0);
+        assert!((rot - 0.75).abs() < 1e-6, "the item follows the aim");
+        assert!((loc[0] - 118.0).abs() < 1e-6, "{:?}", loc);
+        assert!((loc[1] - (200.0 + 10.0 + 21.0 - 8.0)).abs() < 1e-6, "{:?}", loc);
+    }
+
+    #[test]
+    fn s1_g_17_the_hold_styles_place_the_item_per_style() {
+        // `Player.cs:50550-50584`: the holdStyle 5 hangs the item at
+        // `Center.X - 8*dir`, `position.Y + 40 + headgear`; the holdStyle 6
+        // centres it at `Center.X + 8*dir`, `position.Y + 40 - 2 + headgear`;
+        // the holdStyle 8 at `Center.X + 6*dir`, `position.Y + 30 - 2`.
+        let mut s = state();
+        s.body_frame = 0; // the headgear offset is 2 outside the zero rows
+        s.hold_style = 5;
+        let (loc, rot) = hold_item_placement(&s, 1.0, 16.0, 16.0);
+        assert!((rot - 0.0).abs() < 1e-6);
+        assert!((loc[0] - 112.0).abs() < 1e-6, "{:?}", loc);
+        assert!((loc[1] - (200.0 + 10.0 + 40.0 + 2.0)).abs() < 1e-6, "{:?}", loc);
+        s.hold_style = 6;
+        let (loc, _) = hold_item_placement(&s, 1.0, 16.0, 16.0);
+        assert!((loc[0] - 128.0).abs() < 1e-6, "{:?}", loc);
+        assert!((loc[1] - (200.0 + 10.0 + 40.0 - 2.0 + 2.0)).abs() < 1e-6, "{:?}", loc);
+        s.hold_style = 8;
+        let (loc, _) = hold_item_placement(&s, 1.0, 16.0, 16.0);
+        assert!((loc[0] - 126.0).abs() < 1e-6, "{:?}", loc);
+        assert!((loc[1] - (200.0 + 10.0 + 30.0 - 2.0 + 2.0)).abs() < 1e-6, "{:?}", loc);
+    }
+
+    #[test]
+    fn s1_g_17_the_eat_style_rides_the_composite_stretch() {
+        // `Player.cs:50955-50971`: the item rides the front hand — the
+        // `num11` table (Full 8 / ThreeQuarters 6 / Quarter 4 / None 2) and
+        // `MountedCenter + ((num11 + 10 - frame.W/2) * dir, frame.H/2 - 4)`.
+        let mut s = state();
+        s.use_style = 2;
+        s.swing = 0.5;
+        s.front_arm = CompositeArmState {
+            enabled: true,
+            stretch: CompositeStretch::Full,
+            rotation: 0.0,
+        };
+        let (loc, rot) = use_item_placement(&s, 1.0, 16.0, 16.0);
+        assert!((rot - 0.0).abs() < 1e-6);
+        // `Center.X + (8 + 10 - 8) = 130`.
+        assert!((loc[0] - 130.0).abs() < 1e-6, "{:?}", loc);
+        assert!((loc[1] - (200.0 + 10.0 + 21.0 + 8.0 - 4.0)).abs() < 1e-6, "{:?}", loc);
+        // The relaxed row: `num11 = 2` -> `Center.X + 4`.
+        s.front_arm = CompositeArmState {
+            enabled: true,
+            stretch: CompositeStretch::None,
+            rotation: 0.0,
+        };
+        let (loc, _) = use_item_placement(&s, 1.0, 16.0, 16.0);
+        assert!((loc[0] - 124.0).abs() < 1e-6, "{:?}", loc);
+    }
+
+    #[test]
+    fn s1_g_18_the_throw_style_rides_its_wind_up_and_arc() {
+        // `Player.cs:51199-51224` (the wind-up) and `:51246-51271` (the
+        // swing arc): the wind-up fires while `itemAnimation` is at the
+        // item's `useAnimation`; the arc follows `num26 = 1 -
+        // itemAnimation/itemAnimationMax`.
+        let mut s = state();
+        s.use_style = 8;
+        s.swing = 1.0;
+        s.swing_anim_ticks = 15.0;
+        s.swing_max_ticks = 15.0;
+        s.use_animation = 15;
+        let (loc, rot) = use_item_placement(&s, 1.0, 16.0, 16.0);
+        // The wind-up's rotation: `atan2(10, 10) + PI/4`.
+        let expect_rot = (10.0f32).atan2(10.0) + std::f32::consts::FRAC_PI_4;
+        assert!((rot - expect_rot).abs() < 1e-5, "{}", rot);
+        // `num22 = itemRotation - PI/4 + PI (+ PI/2 when facing right)`, the
+        // item at `MountedCenter + (num22 + PI/2).ToRotationVector2() * -2`.
+        let num22 = expect_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI
+            + std::f32::consts::FRAC_PI_2;
+        let (sin, cos) = (num22 + std::f32::consts::FRAC_PI_2).sin_cos();
+        assert!(
+            (loc[0] - (120.0 - cos * 2.0)).abs() < 1e-4,
+            "{:?}",
+            loc
+        );
+        assert!(
+            (loc[1] - (231.0 - sin * 2.0)).abs() < 1e-4,
+            "{:?}",
+            loc
+        );
+        // The arc: the counter below the wind-up window (`itemAnimation` at
+        // `useAnimation - 1` still holds the wind-up, `:51199`).
+        s.swing_anim_ticks = 13.0;
+        s.swing = 13.0 / 15.0;
+        let (loc, rot) = use_item_placement(&s, 1.0, 16.0, 16.0);
+        let num26 = 1.0 - 13.0 / 15.0;
+        let expect_rot = (num26 * std::f32::consts::PI * 1.6 - std::f32::consts::FRAC_PI_2)
+            * -1.0
+            + std::f32::consts::PI;
+        assert!((rot - expect_rot).abs() < 1e-5, "{}", rot);
+        // The arc's reach: `-5 * (1 - num26)` along `num28 + PI/2`.
+        let mut num28 = (num26 * std::f32::consts::PI * 0.6 + std::f32::consts::PI * 2.0 / 5.0)
+            * -1.0
+            + std::f32::consts::PI
+            - std::f32::consts::FRAC_PI_4
+            + std::f32::consts::PI
+            + std::f32::consts::FRAC_PI_2;
+        let (sin, cos) = (num28 + std::f32::consts::FRAC_PI_2).sin_cos();
+        let reach = -5.0 * (1.0 - num26);
+        assert!((loc[0] - (120.0 + cos * reach)).abs() < 1e-4, "{:?}", loc);
+        assert!(
+            (loc[1] - (231.0 + sin * reach)).abs() < 1e-4,
+            "{:?}",
+            loc
+        );
+        // Facing left the wind-up's rotation is the mirrored vector:
+        // `atan2(10, -10) + PI/4 + PI/2` (`Player.cs:51202-51203`).
+        let mut sl = s;
+        sl.facing = -1.0;
+        sl.swing_anim_ticks = 15.0;
+        sl.swing = 1.0;
+        let (loc_left, rot_left) = use_item_placement(&sl, -1.0, 16.0, 16.0);
+        let expect_left = 10.0f32.atan2(-10.0) + std::f32::consts::FRAC_PI_4
+            + std::f32::consts::FRAC_PI_2;
+        assert!(
+            (rot_left - expect_left).abs() < 1e-5,
+            "{} vs {}",
+            rot_left,
+            expect_left
+        );
+        // The item's anchor: `MountedCenter + (num22 + PI/2) * -2` with
+        // `num22 = itemRotation - PI/4 + PI` (the direction term is only
+        // added when facing right, `:51215-51218`).
+        let num22 = expect_left - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+        let (sin_l, cos_l) = (num22 + std::f32::consts::FRAC_PI_2).sin_cos();
+        assert!(
+            (loc_left[0] - (120.0 - cos_l * 2.0)).abs() < 1e-4,
+            "{:?}",
+            loc_left
+        );
+        assert!(
+            (loc_left[1] - (231.0 - sin_l * 2.0)).abs() < 1e-4,
+            "{:?}",
+            loc_left
+        );
+    }
+
+    #[test]
+    fn s1_g_18_the_rapier_keeps_the_hold_anchor() {
+        // `Player.cs:51174-51196`: the useStyle 13 branch sets no location —
+        // the item keeps the hold-style anchor and is turned by the aim.
+        let mut s = state();
+        s.use_style = 13;
+        s.hold_style = 1;
+        s.swing = 0.5;
+        s.item_rotation = 0.4;
+        let (loc, rot) = use_item_placement(&s, 1.0, 16.0, 16.0);
+        assert!((rot - 0.4).abs() < 1e-6, "the rapier turns with the aim");
+        // The holdStyle-1 anchor: `position.X + width/2 + (frame.W/2 + 2)*dir`.
+        assert!((loc[0] - 130.0).abs() < 1e-6, "{:?}", loc);
+        assert!((loc[1] - (200.0 + 10.0 + 24.0)).abs() < 1e-6, "{:?}", loc);
     }
 
     #[test]
@@ -1653,7 +2090,10 @@ mod tests {
             facing: 1.0,
             swing: 0.0,
             use_style: 1,
-            aim: 0.0,
+            item_rotation: 0.0,
+            swing_anim_ticks: 0.0,
+            swing_max_ticks: 1.0,
+            use_animation: 0,
             item_uv: None,
             item_size: [16.0, 16.0],
             light: [1.0, 1.0, 1.0],
@@ -1896,15 +2336,22 @@ mod tests {
         let itemg = &held_item_layers(&sg)[0];
         assert!((itemg.pos[1] - (expected[1] + 5.0)).abs() < 1e-4);
 
-        // useStyle 8: quarter turn, `origin.Y = 2`, `origin.X += 2*dir`
-        // (`PlayerDrawLayers.cs:3181-3188`).
+        // useStyle 8: the throw's wind-up phase — the item's rotation is
+        // `atan2(10, 10) + PI/4` (`Player.cs:51201`) and the draw takes the
+        // quarter turn, `origin.Y = 2`, `origin.X += 2*dir`
+        // (`PlayerDrawLayers.cs:3181-3188`); the anchor is the wind-up's
+        // `MountedCenter + (num22 + PI/2).ToRotationVector2() * -2`.
         let mut s8 = s;
         s8.use_style = 8;
-        let rotation8 = -2.05 - FRAC_PI_2;
-        let (sin8, cos8) = rotation8.sin_cos();
+        let item_rot8 = 10.0f32.atan2(10.0) + std::f32::consts::FRAC_PI_4;
+        let num22 = item_rot8 - std::f32::consts::FRAC_PI_4
+            + std::f32::consts::PI
+            + FRAC_PI_2;
+        let (sin8, cos8) = (num22 + FRAC_PI_2).sin_cos();
+        let rotation8 = item_rot8 - FRAC_PI_2;
         let expected8 = [
-            118.0 - (2.0 * cos8 - 2.0 * sin8),
-            220.0 - (2.0 * sin8 + 2.0 * cos8),
+            120.0 - cos8 * 2.0 - 2.0,
+            231.0 - sin8 * 2.0 - 2.0,
         ];
         let item8 = &held_item_layers(&s8)[0];
         assert!((item8.rotation - rotation8).abs() < 1e-5);
@@ -1912,11 +2359,13 @@ mod tests {
         assert!((item8.pos[1] - expected8[1]).abs() < 1e-4);
 
         // useStyle 9: the bow hold `(0.5, 0.4)` of the frame
-        // (`:3162-3174`); the rotation stays the swing sweep.
+        // (`:3162-3174`); the rotation is the style's own — at the swing
+        // start `lerpValue = 0`, so `itemRotation = 0.7 * direction`
+        // (`Player.cs:50888`), not the useStyle-1 sweep.
         let mut s9 = s;
         s9.use_style = 9;
         let item9 = &held_item_layers(&s9)[0];
-        assert!((item9.rotation - -2.05).abs() < 1e-5);
+        assert!((item9.rotation - 0.7).abs() < 1e-5);
 
         // Facing left mirrors the item UVs and puts the pivot on the drawn
         // sprite's bottom-left (`origin.x -> width - origin.x`).

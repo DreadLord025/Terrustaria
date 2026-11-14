@@ -4864,7 +4864,7 @@ impl Player {
                 let use_anim = held.use_animation as f32;
                 if anim >= use_anim - 1.0 && anim <= use_anim {
                     // `:51205-51229`: the wind-up.
-                    let mut item_rot = f32::hypot(10.0 * dir, 10.0) + std::f32::consts::FRAC_PI_4;
+                    let mut item_rot = 10.0f32.atan2(10.0 * dir) + std::f32::consts::FRAC_PI_4;
                     if dir < 0.0 {
                         item_rot += std::f32::consts::FRAC_PI_2;
                     }
@@ -4968,7 +4968,7 @@ impl Player {
             // `:50520-50549` (holdStyle 4, the umbrella): the front arm Full
             // and the back ThreeQuarters around `num9 +/- num8`.
             4 => {
-                let mut item_rot = f32::hypot(10.0 * dir, 10.0) + std::f32::consts::FRAC_PI_4;
+                let mut item_rot = 10.0f32.atan2(10.0 * dir) + std::f32::consts::FRAC_PI_4;
                 if dir < 0.0 {
                     item_rot += std::f32::consts::FRAC_PI_2;
                 }
@@ -12915,5 +12915,45 @@ mod s1_player_composite_tests {
         held.hold_style = 8;
         p.apply_hold_composite_arms(&held);
         assert!((p.composite_front.rotation - std::f32::consts::PI * -2.0 / 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn s1_g_18_the_umbrella_rotation_is_the_vector_rotation() {
+        // `Player.cs:50524`: the umbrella's `itemRotation =
+        // new Vector2(10 * direction, 10f).ToRotation() + PI/4` — the XNA
+        // `ToRotation` is `atan2(Y, X)`, NOT the vector's length (the port
+        // used `hypot`, which produced a nonsense angle).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let mut held = inputs(0, 0.0, 0.0, 0.0);
+        held.swing_active = false;
+        held.hold_style = 4;
+        p.apply_hold_composite_arms(&held);
+        // Facing right: `itemRotation = atan2(10, 10) + PI/4 = PI/2`,
+        // `num9 = itemRotation - PI/4 + PI (+ PI/2 when facing right)`,
+        // `num8 = -PI/10`; the front arm is at `num9 + num8`.
+        let item_rot = 10.0f32.atan2(10.0) + std::f32::consts::FRAC_PI_4;
+        let num9 = item_rot - std::f32::consts::FRAC_PI_4
+            + std::f32::consts::PI
+            + std::f32::consts::FRAC_PI_2;
+        let expect = num9 - std::f32::consts::PI / 10.0;
+        assert!(
+            (p.composite_front.rotation - expect).abs() < 1e-6,
+            "{} vs {}",
+            p.composite_front.rotation,
+            expect
+        );
+        // Facing left: `atan2(10, -10) + PI/4 + PI/2`, and `num8` flips.
+        p.facing = -1;
+        p.apply_hold_composite_arms(&held);
+        let item_rot = 10.0f32.atan2(-10.0) + std::f32::consts::FRAC_PI_4
+            + std::f32::consts::FRAC_PI_2;
+        let num9 = item_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+        let expect = num9 + std::f32::consts::PI / 10.0;
+        assert!(
+            (p.composite_front.rotation - expect).abs() < 1e-6,
+            "{} vs {}",
+            p.composite_front.rotation,
+            expect
+        );
     }
 }

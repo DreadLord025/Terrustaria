@@ -2752,6 +2752,14 @@ fn place_planter_box(world: &mut World, x: i32, y: i32, style: i32) -> bool {
 #[derive(Debug)]
 pub enum TileInteraction {
     None,
+    /// `Player.cs:33279-33284` — the unconditional tail of
+    /// `TileInteractionsUse`: every tile that reaches it hands the click to
+    /// `GetCraftingFilterForTile` (`:33312-33335`); the app layer decides
+    /// whether the kind is a crafting station (`TileUsedInRecipes`, the
+    /// `TileCountsAs` inheritance included) or a water source, and only a
+    /// resolved filter consumes the click (the C#'s `flag2 = true` under
+    /// the non-null check).
+    StationInteract { kind: u16 },
     /// `WorldGen.OpenDoor` succeeded (`SoundEngine.PlaySound(8)`, `:37732`).
     DoorOpened {
         object_drops: Vec<ObjectDrop>,
@@ -2900,7 +2908,10 @@ pub fn interact_at(
     // where the C# chain tests `Main.tile[myX, myY].type` literals
     // (`Player.cs:32835`/:32857 for 10/11).
     let Some(def) = crate::tileobject::def_for_tile(t.kind) else {
-        return TileInteraction::None;
+        // No registry def: the C# chain falls through to the crafting
+        // station tail (`Player.cs:33279`), which the legacy single-tile
+        // kinds (the dials aside — they returned above) reach as well.
+        return TileInteraction::StationInteract { kind: t.kind };
     };
     match def.interaction {
         crate::tileobject::Interaction::Bank(bank) => {
@@ -3020,7 +3031,9 @@ pub fn interact_at(
             // `DropItemFromExtractinator` `:42081-42089`).
             TileInteraction::Extractinator
         }
-        crate::tileobject::Interaction::None => TileInteraction::None,
+        crate::tileobject::Interaction::None => {
+            TileInteraction::StationInteract { kind: t.kind }
+        }
         crate::tileobject::Interaction::Door => {
             let mut drops = Vec::new();
             if t.kind == 10 {
@@ -5202,16 +5215,26 @@ mod tests {
     #[test]
     fn test_DW_4_1_interact_at_ignores_non_interaction_tiles() {
         // The fall-through contract: a stone tile, an air cell and a chest
-        // (registry kind with `Interaction::None`) all return `None`.
+        // (registry kind with `Interaction::None`). The C# tail
+        // (`Player.cs:33279-33284`) hands every reached tile to the crafting
+        // station probe — the active tiles answer `StationInteract`, the air
+        // cell never reaches the dispatcher (`None`); the app layer resolves
+        // whether the probed kind is a station.
         let mut w = closed_door_world();
         assert!(place_item_tile(&mut w, 14, 19, 21, 0, 1));
         let blocked = no_blocker as fn(i32, i32) -> bool;
-        for (x, y) in [(10i32, 20i32), (12, 18), (14, 19)] {
-            assert!(matches!(
-                interact_at(&mut w, x, y, 1, &blocked),
-                TileInteraction::None
-            ));
-        }
+        assert!(matches!(
+            interact_at(&mut w, 10, 20, 1, &blocked),
+            TileInteraction::StationInteract { kind: 1 }
+        ));
+        assert!(matches!(
+            interact_at(&mut w, 12, 18, 1, &blocked),
+            TileInteraction::None
+        ));
+        assert!(matches!(
+            interact_at(&mut w, 14, 19, 1, &blocked),
+            TileInteraction::StationInteract { kind: 21 }
+        ));
     }
 
     /// A 40x40 world with a placed 3x3 extractinator at origin (9, 17)
@@ -5261,9 +5284,11 @@ mod tests {
             interact_at(&mut w, 9, 17, 1, &blocked),
             TileInteraction::Extractinator
         ));
+        // The non-extractinator cell reaches the C#'s station tail
+        // (`Player.cs:33279`).
         assert!(matches!(
             interact_at(&mut w, 5, 20, 1, &blocked),
-            TileInteraction::None
+            TileInteraction::StationInteract { .. }
         ));
     }
 
@@ -5714,10 +5739,10 @@ mod tests {
                 "tile {kind} opens chest {chest}"
             );
         }
-        // An ordinary tile: no interaction.
+        // An ordinary tile: the C# station tail answers (`Player.cs:33279`).
         let mut w = soil_world(2);
         let hit = interact_at(&mut w, 10, 20, 1, &|_, _| false);
-        assert!(matches!(hit, TileInteraction::None));
+        assert!(matches!(hit, TileInteraction::StationInteract { .. }));
     }
 
     #[test]
@@ -6951,14 +6976,19 @@ mod tests {
         set_active(&mut w, 10, 19, 356);
         set_active(&mut w, 11, 19, 1); // stone next to the sundial
         let blocked = no_blocker as fn(i32, i32) -> bool;
-        for (x, y) in [(11i32, 19i32), (10, 20), (12, 19)] {
-            assert!(
-                matches!(
-                    interact_at(&mut w, x, y, 1, &blocked),
-                    TileInteraction::None
-                ),
-                "({x}, {y}) has no interaction"
-            );
+        // The dial's own cell (10, 19) answered above; the active tiles
+        // (the stone (11, 19), the floor (10, 20)) reach the C#'s station
+        // tail (`Player.cs:33279`), the air cell (12, 19) stays `None`.
+        for (x, y, air) in [(11i32, 19i32, false), (10, 20, false), (12, 19, true)] {
+            let hit = interact_at(&mut w, x, y, 1, &blocked);
+            if air {
+                assert!(matches!(hit, TileInteraction::None), "({x}, {y}) is air");
+            } else {
+                assert!(
+                    matches!(hit, TileInteraction::StationInteract { .. }),
+                    "({x}, {y}) probes the station tail"
+                );
+            }
         }
         assert!(!w.fast_forward_to_dawn && !w.fast_forward_to_dusk);
         assert_eq!(w.sundial_cooldown, 0);

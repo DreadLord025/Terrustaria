@@ -765,11 +765,31 @@ paint and the coatings.
   (`TilePaintSystemV2.cs:43-51`), collapsed into a per-instance shader branch.
   Deviation: the vanilla recolor runs as compiled HLSL passes whose source is
   not part of the decompile; this port washes the texel with the paint hue while
-  its sRGB luminance carries the texture detail. The basic/deep paint pairs
+  its sRGB luminance carries the texture detail (the `paint_rgb`/dye constants
+  decode with the piecewise sRGB EOTF into the samples' linear space — S1-G-4).
+  The basic/deep paint pairs
   (1-12/13-24) therefore shade identically (vanilla deepens saturation), and the
   grass "special group" hue bands are not modelled. Negative paint (30) inverts
-  the pixel; illuminant (31) draws unpainted (the vanilla pass 0) and glows
+  the pixel byte-exactly (`decode(1 - encode(tex))` = `255 - tex_byte`); illuminant
+  (31) draws unpainted (the vanilla pass 0) and glows
   through the light path.
+
+### The tint's colour space (S1-G-4, 2026-11-14)
+
+XNA's render formats are plain `Color` — no sRGB decode anywhere — so the vanilla
+SpriteBatch multiplies the texture's sRGB bytes with the tint bytes in gamma space
+and the backbuffer stores that product raw: `display = tex_byte * tint_byte / 255`
+(the float pipeline rounds; the CPU-side `Color * Color` operator truncates). The
+port's atlas view decodes (`Rgba8UnormSrgb`) and its swapchain re-encodes, so the
+fragment carries the product linearised once: `f = srgb_decode(encode(painted) *
+tint)` — `encode(f)` lands back on the product byte exactly. The earlier
+`pow(tint, 2.2)` (and even linearising the tint with the piecewise decode) solved
+the wrong equation — `decode(tex) * decode(tint)` ≠ `decode(tex * tint)` — and
+drifted up to 7 LSB per channel. `sprite.rs`'s
+`tint_parity_with_the_csharp_byte_multiply` pins the 256×256 pair table, and the
+A/B screenshots show the corrected output (max 9 LSB over a world frame,
+deterministic; the invariants in AGENTS.md "Rendering" describe this as the tint
+matching XNA's byte multiplies).
 - Coatings: Echo blocks/walls are hidden (`TileDrawing.IsVisible`,
   `TileDrawing.cs:1411-1432`; `WallDrawing.cs:91`) — the port has neither the
   Echo Monolith nor the Echo sight item, so `CanSeeInvisibleBlocks` is always
@@ -12579,3 +12599,93 @@ Deviations (each deliberate, each with its C# citation in the arm):
   per-shot ai payload the shadow-hand spawn needs
   (`Projectile.RandomizeInsanityShadowFor`, `Projectile.cs:42408-42493`)
   is the follow-up that widens the request tuple.
+## The held item's placement (S1-G-17, 2026-11-14)
+
+`ItemCheck_ApplyUseStyle` (`Player.cs:50686-51375`) and
+`ItemCheck_ApplyHoldStyle` (`:50275-50584`) set the held item's
+`itemLocation` + `itemRotation` per use/hold style — the C# computes them
+in the sim, the port computed them in the draw with a single generic arm.
+Three real defects came out of that:
+
+* The useStyle-1 swing's **middle third took the X sign from the swing
+  start** (`itemLocation.X = position.X + width*0.5 - (frame.W*0.5 - num) *
+  direction`, `Player.cs:50829`) — the C# only subtracts in the *start*
+  third; the end (`:50742`) and the middle (`:50773`) add. The item jumped
+  to the other side of the body in the middle of every swing.
+* The useStyle 5 item's rotation was the raw mouse angle, not the C#'s
+  `Player.itemRotation` (`atan2(aimY * direction, aimX * direction) -
+  fullRotation`, `:47371-47378`) — off by PI when facing left (the same
+  mirror the S1-G-16 composite arm needed).
+* The rest anchor was the holdStyle-1 one for *every* hold style, and the
+  use styles 2/6/7/9/11/12/14/15 rode the useStyle-1 arc.
+
+The port now places the item per style (`render/player_layers.rs`'s
+`use_item_placement` / `hold_item_placement`):
+
+* the use styles 1 (the thirds + `item_rotation`), 2 (the `num11` table
+  over the composite stretch), 3 (the thrust), 4 (the hold-up), 5 (the
+  aim), 6/7 (the drinks), 9 (the bow — through the ported
+  `GetFrontHandPosition`, `:50617-50647`), 11 (the `num13` table over the
+  composite stretch), 12 (the guitar), 14 and 15;
+* the hold styles 1, 2, 3, 4 (the umbrella), 5, 6 and 8.
+
+The port's frame: `pos_x`/`pos_y` are `base.position`, `center_x` is
+`base.Center.X`, `mounted_y` is `MountedCenter.Y` (`position.Y + height/2`
+= `position.Y + 21`) and `headgear` is `Main.OffsetsPlayerHeadgear`
+(`Main.cs:66638-66662`). The `gfxOffY` ease rides the anchor
+(`PlayerDrawSet.cs:368`).
+
+Deviations (deliberate, bounded):
+
+* The useStyle 8 (the throw) keeps the useStyle-1 arc: the C#'s three
+  phases compare the raw `itemAnimation` counter with the item's
+  `useAnimation` (`:51199/:51226`) and the port's draw only carries the
+  normalised fraction.
+* The useStyle 13 (the rapier) keeps the useStyle-1 arc: the C# leaves
+  `itemLocation` at the hold-style value (the branch sets no location,
+  `:51174-51196`).
+* The per-item nudges (the style-1 types 2330/2320/2341/671, the hold
+  styles' torch/fishing-pole/staff specials, the biome torches) are not
+  ported; the generic arms carry them.
+* `mountOffset` is 0 and `gravDir` is 1 (the port has no mount offset and
+  no gravity flip).
+
+Tests: `render::player_layers::tests`'s four `s1_g_17_*` cases (the swing
+thirds' X sign, the shoot style's item rotation, the hold styles' anchors
+and the eat style's stretch table) — all mutation-checked (RED on the
+pre-fix code).
+
+
+## The throw and rapier item placement (S1-G-18, 2026-11-14)
+
+Two more `ItemCheck_ApplyUseStyle` arms and one real bug from the
+S1-G-16 composite work:
+
+* The useStyle 8 (the throw) branch (`:51197-51273`) has three phases — the
+  wind-up (the first ticks, while `itemAnimation` is at the item's
+  `useAnimation`), the overshoot (`itemAnimation > useAnimation`, which the
+  port's swing counter never reaches) and the swing arc
+  (`num26 = 1 - itemAnimation/itemAnimationMax`). The item's anchor follows
+  the phase (`MountedCenter + (num22 + PI/2).ToRotationVector2() * -2` for
+  the wind-up, `... * (-5 * (1 - num26))` for the arc) and the draw rotates
+  it a quarter turn (`PlayerDrawLayers.cs:3181-3189`). The port now carries
+  the raw animation counters into the draw (`swing_anim_ticks`/
+  `swing_max_ticks` — the port's swing timer runs in seconds, the C#'s
+  `itemAnimation` in ticks) and places the item per phase.
+* The useStyle 13 (the rapier) branch (`:51174-51196`) sets no location: the
+  item keeps the hold-style anchor and is turned by the aim
+  (`Player.itemRotation`). The port now does the same instead of riding the
+  useStyle-1 arc.
+* **The bug:** the umbrella's (and the throw's) `itemRotation` is
+  `new Vector2(10 * direction, 10f).ToRotation() + PI/4` (`:50524`,
+  `:51201`) — the XNA `ToRotation` is `atan2(Y, X)`, but the S1-G-16 port
+  used `hypot`, i.e. the vector's *length* (14.14) instead of its angle. The
+  umbrella's and the throw's poses were therefore rotated by a nonsense
+  angle. Fixed to `atan2(10, 10 * direction)` in both the sim's composite
+  arms and the draw.
+
+Tests: `s1_g_18_the_throw_style_rides_its_wind_up_and_arc`,
+`s1_g_18_the_rapier_keeps_the_hold_anchor` and
+`s1_g_18_the_umbrella_rotation_is_the_vector_rotation` — all
+mutation-checked (RED on the pre-fix code; the left-facing cases pin the
+mirrored `atan2`, which is where the `hypot` slip showed).
