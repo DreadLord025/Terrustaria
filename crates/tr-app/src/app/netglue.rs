@@ -1629,7 +1629,34 @@ impl App {
             if len <= 0.0 {
                 continue;
             }
-            let step = (len * 0.1).max(2.0) * scale;
+            // `Player.UpdateNetOffset` (`Player.cs:28721-28750`): an offset
+            // shorter than 2 px is cleared outright (`:28730-28734`).
+            if len < 2.0 {
+                p.off_x = 0.0;
+                p.off_y = 0.0;
+                continue;
+            }
+            // `:28737-28747` — the collision boost: the tile collision at
+            // `position + netOffset` that eats the velocity raises the step,
+            // so a peer pushed into a wall snaps back faster.
+            let mut min_step = 2.0f32;
+            let resolved = crate::collision::tile_collision(
+                &self.world,
+                [p.x + p.off_x, p.y + p.off_y],
+                [p.vx, p.vy],
+                crate::player::WIDTH as f32,
+                crate::player::HEIGHT as f32,
+                false,
+                false,
+            );
+            let value = Vec2::new(p.vx - resolved.vel[0], p.vy - resolved.vel[1]);
+            if value != Vec2::new(p.vx, p.vy) {
+                let num4 = value.dot(Vec2::new(p.off_x, p.off_y));
+                if num4 >= 1.0 {
+                    min_step = min_step.max(value.length_squared() * len / num4 * 1.0001);
+                }
+            }
+            let step = min_step.max(len * 0.1) * scale;
             let k = ((len - step) / len).max(0.0);
             p.off_x *= k;
             p.off_y *= k;
@@ -1644,11 +1671,26 @@ impl App {
             if len <= 0.0 {
                 continue;
             }
+            // `NPC.UpdateNetOffset` (`NPC.cs:90280-90310`): the step is
+            // `2 + 2*(len/range)` and the offset moves toward zero along its
+            // own direction (`:90300-90302`).
             let step = (2.0 + 2.0 * len / SMOOTHING_RANGE) * scale;
             let k = ((len - step) / len).max(0.0);
             npc.net_offset *= k;
             if npc.net_offset.length() < 0.5 {
                 npc.net_offset = Vec2::ZERO;
+            }
+            // `:90306-90310` — a town NPC that reached its home drops the
+            // offset: the smoothed position is the home itself.
+            if let Some((hx, hy)) = npc.home {
+                let (nw, nh) = npc.size();
+                let home = Vec2::new(
+                    hx as f32 * 16.0 + 8.0 - nw * 0.5,
+                    hy as f32 * 16.0 - nh - 0.1,
+                );
+                if Vec2::new(npc.x, npc.y).distance(home) < 1.0 {
+                    npc.net_offset = Vec2::ZERO;
+                }
             }
             dirty = true;
         }
@@ -2329,6 +2371,21 @@ mod handshake_tests {
             "the offset is the visual lag: {:.2}",
             peer.off_x
         );
+    }
+
+    #[test]
+    fn the_net_offset_is_cleared_below_two_pixels() {
+        // The C#'s shortcut: under 2 px the offset is zeroed in one tick.
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.player.as_mut().unwrap().x = 100.0;
+        pump(&mut host_app, &mut client_app, 12);
+        host_app.player.as_mut().unwrap().x = 161.0;
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = client_app.remote_players.get_mut(&0).expect("host peer stored");
+        peer.off_x = 1.5;
+        peer.off_y = 0.0;
+        client_app.net_interp_tick(1.0 / 60.0);
+        assert_eq!(client_app.remote_players[&0].off_x, 0.0);
     }
 
     #[test]
