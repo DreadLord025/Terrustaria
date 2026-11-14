@@ -168,6 +168,32 @@ pub fn refresh_global_substitutions(app: &crate::app::App) {
         }
     }
 
+    // The input trigger tags (`Lang.cs:150-161`): the tooltip's "Press X to
+    // use" rows read them — the keyboard tags are the keybind names
+    // (`PlayerInput.GenerateRawInputList`, `PlayerInput.cs:1948`).
+    for (name, action) in [
+        ("InputTrigger_Healing", crate::input_map::Action::QuickHeal),
+        ("InputTrigger_ManaHealing", crate::input_map::Action::QuickMana),
+        ("InputTrigger_QuickBuff", crate::input_map::Action::QuickBuff),
+        ("InputTrigger_Mount", crate::input_map::Action::Mount),
+    ] {
+        m.set_substitution(
+            name,
+            Substitution::Text(app.settings.keybinds[action.index()].clone()),
+        );
+    }
+    // `PlayerInput.LocalizeKey` (`PlayerInput.cs:1951-1961`): the mouse
+    // buttons read their localized names.
+    for (name, key) in [
+        ("InputTrigger_InteractWithTile", "Controls.RightClick"),
+        ("InputTrigger_UseOrAttack", "Controls.LeftClick"),
+    ] {
+        // The locked manager reads its own text — the free `text()` would
+        // re-lock the same mutex.
+        let value = m.get_text_value(key);
+        m.set_substitution(name, Substitution::Text(value));
+    }
+
     // World / event flags (`Lang.cs:124-135,141`).
     m.set_substitution("WorldName", Substitution::Text(app.world.name.clone()));
     m.set_substitution("Day", Substitution::Bool(app.world.day_time));
@@ -478,6 +504,75 @@ pub fn game_ui_fmt(key: &str, value: i32) -> String {
         &format!("GameUI.{key}"),
         &[value.to_string()],
     )
+}
+
+/// `Language.GetTextValue("GameUI.<name>")` — the `GameUI` rows without an
+/// argument (the tooltip's `BaitRequired`, `Main.cs:20809`).
+pub fn game_ui(key: &str) -> String {
+    text(&format!("GameUI.{key}"))
+}
+
+/// `Language.GetTextValue("CommonItemTooltip.<name>")` — the tooltip's item
+/// rows (`Main.cs:20876-20904`).
+pub fn common_item_tooltip(key: &str) -> String {
+    text(&format!("CommonItemTooltip.{key}"))
+}
+
+/// `Language.GetTextValue("CommonItemTooltip.<name>", value)` — the same rows
+/// with their numeric argument (the life / mana / mana-cost rows).
+pub fn common_item_tooltip_fmt(key: &str, value: i32) -> String {
+    text_args(
+        &format!("CommonItemTooltip.{key}"),
+        &[value.to_string()],
+    )
+}
+
+/// `Lang.GetPrefixedItemName(id, prefixType)` (`Lang.cs:225-239`): the
+/// prefix's name + the item's name through the `CombineFormat.Prefix` format
+/// ("{PrefixName} {ItemName}", `Lang.cs:1228`). `Item.AffixName`
+/// (`Item.cs:1194-1201`) falls back to the plain name when the prefix is 0.
+pub fn prefixed_item_name(id: u16, prefix: u16) -> String {
+    if prefix == 0 {
+        return item_name(id);
+    }
+    let prefix_name = prefix_name(prefix as i32);
+    if prefix_name.is_empty() {
+        return item_name(id);
+    }
+    let format = text("CombineFormat.Prefix");
+    if format == "CombineFormat.Prefix" {
+        return format!("{prefix_name} {}", item_name(id));
+    }
+    format
+        .replace("{PrefixName}", &prefix_name)
+        .replace("{ItemName}", &item_name(id))
+}
+
+/// `Lang.GetTooltip(itemId)` (`Lang.cs:193-196`): the per-item tooltip text
+/// from the `ItemTooltip.<ItemID const name>` language key (the cache the
+/// C# builds from `ItemID`'s field names, `Lang.cs:537-549`). `None` when the
+/// item carries no tooltip text.
+pub fn item_tooltip_text(id: u16) -> Option<String> {
+    let Some(name) = crate::itemdata::NAMES.get(id as usize) else {
+        return None;
+    };
+    let value = item_tooltip(id);
+    if value == format!("ItemTooltip.{name}") {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+/// Test-only: register a language source in the process-global manager (the
+/// tooltip's rows read it).
+#[cfg(test)]
+pub(crate) fn test_register_source(name: &str, text: &str) {
+    let mut m = manager().lock().unwrap();
+    m.add_source(name, text);
+    // `set_language` skips the reload when the culture is unchanged — the
+    // test needs the fresh source.
+    m.reload_language(GameCulture::English);
 }
 
 /// `Lang.menu[i].Value` — the key is `LegacyMenu.{i}` (`Lang.cs:481`).

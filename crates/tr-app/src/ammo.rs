@@ -295,13 +295,13 @@ pub fn drain(source: AmmoSource, inventory: &mut [ItemSlot; INV], equip: &mut Eq
 /// `AmmoID.Stake` (1836) (`ID/AmmoID.cs:161`, `:167`, `:168`, `:174`) — the ammo
 /// categories the resolution chain keys on.
 #[allow(dead_code)] // Phase 4's shooter wire consumes the resolver
-const AMMO_ARROW: i32 = 40;
+pub const AMMO_ARROW: i32 = 40;
 #[allow(dead_code)] // Phase 4's shooter wire consumes the resolver
 const AMMO_ROCKET: i32 = 771;
 #[allow(dead_code)] // Phase 4's shooter wire consumes the resolver
 const AMMO_SOLUTION: i32 = 780;
 #[allow(dead_code)] // Phase 4's shooter wire consumes the resolver
-const AMMO_STAKE: i32 = 1836;
+pub const AMMO_STAKE: i32 = 1836;
 
 /// `AmmoID.Sets.SpecificLauncherAmmoProjectileMatches` (`ID/AmmoID.cs:22-128`):
 /// `(launcher, ammo kind) → projectile`, the five launchers × the twelve rocket
