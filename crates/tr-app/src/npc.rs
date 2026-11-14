@@ -6869,21 +6869,34 @@ impl Npc {
             // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
             // 5-frame strip (`Main.npcFrameCount[49] = 5`, `Main.cs:67082`).
             // The hovers: the plain flap cycles (`Main.npcFrameCount[6] = 2`,
-            // `[42] = 3`, `[23] = 2`, `Main.cs:67082`).
-            NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
-                let count = match self.kind {
-                    NpcKind::Hornet => 3,
-                    _ => 2,
-                };
+            // `[23] = 2`, `Main.cs:67082`).
+            NpcKind::EaterOfSouls | NpcKind::MeteorHead => {
                 self.frame_counter += 1.0;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= count {
+                    self.frame = if self.frame + 1 >= 2 {
                         0
                     } else {
                         self.frame + 1
                     };
                 }
+            }
+            // The Hornet's case 42 (`NPC.cs:74907-74934`): the four-phase
+            // flap — the counter counts 1..8 (two ticks a phase) and the
+            // rows run 0/1/2/1 (the downstroke repeats) over the strip's
+            // three rows (`Main.npcFrameCount[42] = 3`).
+            NpcKind::Hornet => {
+                let phase = self.frame_counter as u32;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = match phase / 2 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    _ => 1,
+                };
             }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 // `FindFrame`'s case 49 group (`NPC.cs:74824-74881`): the
@@ -8417,30 +8430,20 @@ impl Npc {
 
     /// `AI_005_EaterOfSouls`'s hover core through the framework's
     /// `hover_step` — the no-gravity fly toward the player with the vanilla
-    /// tunables; the 2-frame/3-frame flaps ride the anim clock.
+    /// tunables. The frame cycles live in `find_frame` (the C#'s
+    /// `NPC.FindFrame`), not here.
     fn update_hover(&mut self, world: &World, player: &Player, params: HoverParams) {
         let (pcx, pcy) = player.center();
         // `NPC.GetTargetData`: the centre drives the velocity aim, the top
-        // edge (`Player.position.Y`) the surface-damping gate (`NPC.cs:50354`).
+        // edge (`Player.position.Y`) the surface-damping gate (`NPC.cs:50354`),
+        // and the dead flag the flee vector (`:50299`/`:50480-50484`).
         let target = crate::npc_ai::HoverTarget {
             center_x: pcx,
             center_y: pcy,
             top_y: player.y,
+            dead: player.hp <= 0,
         };
         crate::npc_ai::hover_step(self, world, target, params);
-        self.frame_counter += 1.0;
-        if self.frame_counter >= 8.0 {
-            self.frame_counter = 0.0;
-            let count = match self.kind {
-                NpcKind::Hornet => 3,
-                _ => 2,
-            };
-            self.frame = if self.frame + 1 >= count {
-                0
-            } else {
-                self.frame + 1
-            };
-        }
     }
 
     /// Goblin Summoner (471). C# `NPC.cs:15728` SetDefaults aiStyle 3 and the
@@ -15721,6 +15724,7 @@ mod tests {
             center_y: 100.0 * 16.0,
             // A player's top edge, ~21 px (half the 42-px hitbox) above centre.
             top_y: 100.0 * 16.0 - 21.0,
+            dead: false,
         };
         for _ in 0..200 {
             crate::npc_ai::hover_step(
@@ -15751,6 +15755,7 @@ mod tests {
                 center_x: npc.x + npc.size().0 * 0.5,
                 center_y: npc.y + npc.size().1 * 0.5,
                 top_y: npc.y + 400.0,
+                dead: false,
             };
             crate::npc_ai::hover_step(&mut npc, &w, target, params);
             npc.vy
@@ -15767,6 +15772,181 @@ mod tests {
     }
 
     #[test]
+    fn the_hover_aim_is_floored_to_the_eight_pixel_grid() {
+        // `NPC.cs:50421-50424`: the target's centre and the NPC's own
+        // centre both floor to the 8-px grid and the aim is the difference
+        // of the snapped values — a 4-px offset inside one cell aims
+        // straight down.
+        let w = World::new("t".into(), 200, 200);
+        let mut npc = Npc::new(NpcKind::EaterOfSouls, 985.0, 985.0, 1, 0.0);
+        let target = crate::npc_ai::HoverTarget {
+            center_x: 1004.0,
+            center_y: 1400.0,
+            top_y: 1400.0,
+            dead: false,
+        };
+        crate::npc_ai::hover_step(
+            &mut npc,
+            &w,
+            target,
+            crate::npc_ai::HoverParams::EATER_OF_SOULS,
+        );
+        assert!(
+            npc.vx.abs() < 0.001,
+            "the snapped aim keeps the x still ({})",
+            npc.vx
+        );
+        assert!(npc.vy > 0.0, "the aim is straight down");
+    }
+
+    #[test]
+    fn the_hover_double_add_is_gated_by_the_flag5_kinds() {
+        // `NPC.cs:50447`: the approach's extra add on a sign reversal rides
+        // `flag5` — true for the Meteor Head (23) and the Servant of Cthulhu
+        // (5), false for the Eater of Souls (6) and the Hornet (42).
+        let w = World::new("t".into(), 200, 200);
+        let step = |kind: NpcKind, params: crate::npc_ai::HoverParams| {
+            let mut npc = Npc::new(kind, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+            npc.vx = -1.0;
+            let target = crate::npc_ai::HoverTarget {
+                center_x: 160.0 * 16.0,
+                center_y: npc.y + npc.size().1 * 0.5,
+                top_y: npc.y,
+                dead: false,
+            };
+            crate::npc_ai::hover_step(&mut npc, &w, target, params);
+            npc.vx
+        };
+        // The Meteor Head (flag5): the add happens twice (-1 + 0.03 + 0.03).
+        let meteor = step(NpcKind::MeteorHead, crate::npc_ai::HoverParams::METEOR_HEAD);
+        assert!(
+            (meteor + 0.94).abs() < 1e-4,
+            "the flag5 double add ({meteor})"
+        );
+        // The Eater of Souls (no flag5): a single add (-1 + 0.02).
+        let eater = step(
+            NpcKind::EaterOfSouls,
+            crate::npc_ai::HoverParams::EATER_OF_SOULS,
+        );
+        assert!((eater + 0.98).abs() < 1e-4, "the single add ({eater})");
+    }
+
+    #[test]
+    fn the_hover_rotations_follow_the_per_kind_arms() {
+        // `NPC.cs:50580-50655`: the Eater of Souls takes the aim tilt
+        // (`:50643-50646`), the Hornet the `velocity.X * 0.1` arm with the
+        // sprite direction (`:50647-50651`), the Meteor Head the sprite-aim
+        // arm (`:50580-50592`).
+        let w = World::new("t".into(), 200, 200);
+        // The Eater of Souls: the aim tilt. The snapped aim is (0, 400) —
+        // straight down (the target's centre is 4 px right of the NPC's,
+        // inside the same 8-px cell).
+        let mut eater = Npc::new(NpcKind::EaterOfSouls, 985.0, 985.0, 1, 0.0);
+        let target = crate::npc_ai::HoverTarget {
+            center_x: 1004.0,
+            center_y: 1400.0,
+            top_y: 1400.0,
+            dead: false,
+        };
+        crate::npc_ai::hover_step(
+            &mut eater,
+            &w,
+            target,
+            crate::npc_ai::HoverParams::EATER_OF_SOULS,
+        );
+        let tilt = std::f32::consts::FRAC_PI_2 - 1.57;
+        assert!(
+            (eater.rotation - tilt).abs() < 0.001,
+            "the aim tilt ({})",
+            eater.rotation
+        );
+        // The Hornet: the velocity arm — the sprite direction follows the
+        // velocity's sign and the rotation is `velocity.X * 0.1`.
+        let mut hornet = Npc::new(NpcKind::Hornet, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        hornet.vx = -2.0;
+        let target = crate::npc_ai::HoverTarget {
+            center_x: hornet.x + hornet.size().0 * 0.5,
+            center_y: hornet.y + hornet.size().1 * 0.5,
+            top_y: hornet.y,
+            dead: false,
+        };
+        crate::npc_ai::hover_step(&mut hornet, &w, target, crate::npc_ai::HoverParams::HORNET);
+        assert_eq!(hornet.sprite_dir, -1, "the sprite direction follows vx");
+        assert!(
+            (hornet.rotation - hornet.vx * 0.1).abs() < 0.0001,
+            "the velocity-X rotation ({})",
+            hornet.rotation
+        );
+        // The Meteor Head: the sprite-aim arm.
+        let mut meteor = Npc::new(NpcKind::MeteorHead, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        let target = crate::npc_ai::HoverTarget {
+            center_x: meteor.x + 400.0,
+            center_y: meteor.y + meteor.size().1 * 0.5,
+            top_y: meteor.y,
+            dead: false,
+        };
+        crate::npc_ai::hover_step(
+            &mut meteor,
+            &w,
+            target,
+            crate::npc_ai::HoverParams::METEOR_HEAD,
+        );
+        assert_eq!(meteor.sprite_dir, 1, "the sprite direction follows the aim");
+    }
+
+    #[test]
+    fn the_hover_tile_bounce_is_gated_by_no_tile_collide() {
+        // `NPC.cs:50656-50688`: the bounce arm covers the kinds that
+        // collide with the tiles (the Hornet, `num14` = 0.7); the
+        // `noTileCollide` kinds (the Eater of Souls, the Meteor Head) fly
+        // straight through.
+        let mut w = World::new("t".into(), 64, 64);
+        for y in 0..64 {
+            let i = w.index(19, y);
+            w.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        // The target sits in the NPC's own 8-px cell, so the snapped aim is
+        // zero and the desired velocity keeps the current one.
+        let target_for = |npc: &Npc| crate::npc_ai::HoverTarget {
+            center_x: npc.x + npc.size().0 * 0.5 + 4.0,
+            center_y: npc.y + npc.size().1 * 0.5,
+            top_y: npc.y,
+            dead: false,
+        };
+        // The Hornet: the wall blocks the move and the velocity bounces.
+        let mut hornet = Npc::new(NpcKind::Hornet, 260.0, 32.0 * 16.0, 1, 0.0);
+        hornet.vx = 12.0;
+        let target = target_for(&hornet);
+        crate::npc_ai::hover_step(&mut hornet, &w, target, crate::npc_ai::HoverParams::HORNET);
+        assert!(hornet.vx < 0.0, "the hornet bounced ({})", hornet.vx);
+        // The approach first trims the 12 px velocity to the snapped aim
+        // (8 px at the Hornet's 3.5 speed → 3.5, the 0.021 step), then the
+        // bounce flips it with `num14` = 0.7.
+        let expected = -(12.0 - 0.021) * 0.7;
+        assert!(
+            (hornet.vx - expected).abs() < 0.01,
+            "the ×0.7 bounce ({})",
+            hornet.vx
+        );
+        assert_eq!(hornet.x, 260.0, "the wall blocks the move");
+        // The Eater of Souls flies through the same wall.
+        let mut eater = Npc::new(NpcKind::EaterOfSouls, 260.0, 32.0 * 16.0, 1, 0.0);
+        eater.vx = 12.0;
+        let target = target_for(&eater);
+        crate::npc_ai::hover_step(
+            &mut eater,
+            &w,
+            target,
+            crate::npc_ai::HoverParams::EATER_OF_SOULS,
+        );
+        assert!(eater.x > 260.0, "the eater passed through ({})", eater.x);
+    }
+
+    #[test]
     fn the_hornet_speed_takes_the_two_minus_scale_factor() {
         // `NPC.cs:50350`: `num *= 2 - scale` (the type-42/231-235 arm only).
         let mut w = World::new("t".into(), 400, 400);
@@ -15780,6 +15960,7 @@ mod tests {
                 center_x: npc.x - 8000.0,
                 center_y: npc.y + npc.size().1 * 0.5,
                 top_y: npc.y,
+                dead: false,
             };
             for _ in 0..600 {
                 crate::npc_ai::hover_step(&mut npc, &w, target, crate::npc_ai::HoverParams::HORNET);
@@ -20346,9 +20527,10 @@ mod tests {
 
     #[test]
     fn the_hovers_cycle_the_strip_at_the_eight_tick_stride() {
-        // `FindFrame`'s case 6/173 (`NPC.cs`): the counter advances the
-        // row every 8 ticks and wraps over `Main.npcFrameCount` — the
-        // Eater of Souls' and Meteor Head's 2 rows, the Hornet's 3.
+        // `FindFrame`'s case 6/173 (`NPC.cs:76966-76978`) and the shared
+        // case 2/23 (`:74044-74058`): the counter advances the row every 8
+        // ticks and wraps over `Main.npcFrameCount` — the Eater of Souls'
+        // and the Meteor Head's 2 rows.
         let mut e = bare(NpcKind::EaterOfSouls);
         e.frame = 0;
         e.frame_counter = 0.0;
@@ -20363,16 +20545,29 @@ mod tests {
         e.frame_counter = 7.5;
         e.find_frame();
         assert_eq!(e.frame, 0, "the wrap over 2 rows");
-        // The Hornet's third row.
+        // The Meteor Head rides the same stride (`NPC.cs:74044-74058`).
+        let mut m = bare(NpcKind::MeteorHead);
+        m.frame = 0;
+        m.frame_counter = 0.0;
+        for _ in 0..7 {
+            m.find_frame();
+        }
+        assert_eq!(m.frame, 0, "the meteor head holds for 7 ticks");
+        m.find_frame();
+        assert_eq!(m.frame, 1, "the meteor head advances on the eighth");
+        // The Hornet's case 42 (`NPC.cs:74907-74934`): the four-phase flap —
+        // two ticks a phase over the rows 0/1/2/1 (the downstroke repeats),
+        // not the 8-tick stride.
         let mut h = bare(NpcKind::Hornet);
-        h.frame = 2;
-        h.frame_counter = 7.5;
-        h.find_frame();
-        assert_eq!(h.frame, 0, "the hornet wraps over 3 rows");
-        h.frame = 1;
+        h.frame = 0;
         h.frame_counter = 0.0;
-        h.find_frame();
-        assert_eq!(h.frame, 1, "the second row holds");
+        let mut rows = Vec::new();
+        for _ in 0..8 {
+            h.find_frame();
+            rows.push(h.frame);
+        }
+        assert_eq!(rows, vec![0, 0, 1, 1, 2, 2, 1, 1], "the four-phase flap");
+        assert_eq!(h.frame_counter, 0.0, "the cycle restarts");
     }
 
     #[test]
