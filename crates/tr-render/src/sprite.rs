@@ -800,6 +800,43 @@ impl SpriteRenderer {
         self.push_sprite_rot(tl, size, uv, color, rot);
     }
 
+    /// A rotated font glyph in the always-rebuilt world-effect range — the
+    /// `SpriteBatch.DrawString` shape (`CombatText`'s crit spin,
+    /// `CombatText.cs:131-206`). The instance pipeline rotates about the
+    /// top-left, so the glyph's top-left is shifted by
+    /// `origin − R(rot)·origin` like [`SpriteRenderer::push_sprite_origin_rot`].
+    ///
+    /// The range is the `fx` one (not the cached `world` range): the combat
+    /// text changes every tick, so it must not ride the G6 cache.
+    pub fn push_fx_font_glyph_rot(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        layer: u32,
+        rot: f32,
+        origin: [f32; 2],
+    ) {
+        let (s, c) = rot.sin_cos();
+        let tl = [
+            pos[0] + origin[0] - (origin[0] * c - origin[1] * s),
+            pos[1] + origin[1] - (origin[0] * s + origin[1] * c),
+        ];
+        self.fx.push(SpriteInstance {
+            pos: tl,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot,
+            paint: 0.0,
+            dye: 0,
+            layer,
+            clip: self.clip.current(),
+        });
+    }
+
     /// always-rebuilt UI range so the cached world range (G6) stays reusable.
     pub fn push_ui_sprite_rot(
         &mut self,

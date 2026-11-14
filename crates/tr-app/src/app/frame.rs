@@ -588,6 +588,13 @@ impl App {
                 let (sw, sh) = self.screen_size();
                 self.minecart_sparks
                     .tick(self.camera, Vec2::new(sw, sh), self.zoom);
+                // `Main.UpdateWorld_FloatingText` (`Main.cs:18071-18081`):
+                // the combat text (the floating damage numbers) ticks between
+                // the dust and the clock.
+                self.phase("floating_text");
+                for t in self.combat_text.iter_mut() {
+                    crate::combat_text::update(t);
+                }
                 // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
                 // runs after the entity half, never before it.
                 self.phase("time");
@@ -1508,6 +1515,19 @@ impl App {
                 crate::render::foliage::draw_leaves(
                     renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
                 );
+                // `Main.cs:62341-62396`: the combat text (the floating damage
+                // numbers) draws in the UI batch with the world zoom — the same
+                // always-rebuilt world-effect range the rain and the dust use
+                // (the numbers change every tick, so they must not ride the
+                // G6-cached world range).
+                crate::combat_text::draw(
+                    renderer,
+                    lookups,
+                    &self.combat_text,
+                    draw_cam,
+                    world_zoom,
+                    screen,
+                );
                 // `Main.DrawWires` (`Main.cs:57028-57030`): the wire overlay
                 // rides the tile batch after the liquids, under the
                 // over-wire entities (the port draws it before the
@@ -2293,7 +2313,7 @@ mod tests {
     ///
     /// - players → spawn NPCs → NPCs (`Main.cs:17757`, `:17878`, `:17898`)
     /// - gores (unported) → **projectiles** → **items** → dust → leashed
-    ///   (unported) → floating text (unported) → **time**
+    ///   → **floating text** (the combat text, `Main.cs:18071-18081`) → **time**
     ///   (`:17971`, `:17976`, `:18004`, `:18047`, `:18083`)
     /// - `WorldGen.UpdateWorld` (`WorldGen.cs:71495-71630`): wiring → tile
     ///   entities → liquid → growth (`:18105`)
@@ -2301,12 +2321,15 @@ mod tests {
     ///   windy day / ambience), the tile-edit pass, the net pass and the map.
     ///
     /// Every phase name is emitted once per in-world frame.
-    const WORLD_PHASES: [&str; 19] = [
+    const WORLD_PHASES: [&str; 20] = [
         "players",
         "npcs",
         "projectiles",
         "items",
         "dust",
+        // `Main.UpdateWorld_FloatingText` (`Main.cs:18071-18081`) — the
+        // combat text ticks between the dust and the clock.
+        "floating_text",
         "time",
         "wiring",
         "tile_entities",

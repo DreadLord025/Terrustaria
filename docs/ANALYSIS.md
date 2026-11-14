@@ -12852,3 +12852,29 @@ vanilla's 1200) and the window test pins both edges (3000 px below the
 surface spawns, 3200 px does not — the test world's surface is row 120 =
 px 1920). The ±3000 px window around `invasionX` and the town-NPC fallback
 stay as they were (the latter rides the town roster).
+
+## The combat text pool and floating damage numbers (S1-C-7a, 2026-11-14)
+
+`CombatText` (`CombatText.cs`) ports the 100-slot floating damage and heal
+numbers:
+
+* `CombatText.NewText` (`:54-121`): finds the first inactive slot in the
+  100-slot pool, positions the text centred on the target hitbox plus random
+  jitter spanning the half-dimensions (`Main.rand.Next(-w/2, w/2 + 1)`), sets
+  initial velocity `(0, -7)` (or doubled with horizontal kick and rotation for
+  crits/dramatic hits), and 60-frame lifetime (120 for crits, 40 for DoT).
+* `CombatText.Update` (`:131-206`): alpha ping-pong (0.6..1.0), friction
+  decay `vel.y *= 0.92`, `vel.x *= 0.93`, gravity `+0.15` for DoTs, scale-in
+  up to 1.0 (or 0.8 for DoT), and shrink-out on expiry.
+* `Main.DrawCombatText` (`Main.cs:62341-62396`): drawn in the always-rebuilt
+  `fx` buffer with world zoom — five passes per number (4 offset shadows at
+  30% color brightness plus bright text).
+* Hit integration: projectile PVE hits (`NPC.cs:81254-81263`), hostile projectile
+  hits on player (`Player.cs:38382`), melee hits on NPCs, and potion healing
+  (`Player.HealEffect`, `:4524`) all emit combat text numbers.
+
+Scope notes / deliberate simplifications:
+* Net messages 35 (HealEffect), 43 (ManaEffect) and 119 (CombatText) stay
+  unported (MP).
+* `FontAssets.CombatText` font scaling: uses retail `Combat_Text` / `Combat_Crit`
+  when available with fallback to measured metrics.

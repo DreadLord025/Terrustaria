@@ -514,6 +514,32 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // rides `Item.potionDelay` = 3600 (60 s).
                 p.buffs.add_buff(21, 3600);
             }
+            // `Player.HealEffect` (`Player.cs:4522-4524`): the healed amount
+            // floats up in green.
+            {
+                let (px, py, pw, ph) = app
+                    .player
+                    .as_ref()
+                    .map(|p| (p.x, p.y, crate::player::WIDTH, crate::player::HEIGHT))
+                    .unwrap_or((0.0, 0.0, 0.0, 0.0));
+                let font = app.lookups.combat_text_font.as_ref();
+                let mut rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                crate::combat_text::new_amount(
+                    &mut app.combat_text,
+                    crate::combat_text::CombatTextBox {
+                        x: px,
+                        y: py,
+                        w: pw,
+                        h: ph,
+                    },
+                    crate::combat_text::CombatColor::HealLife,
+                    heal,
+                    false,
+                    false,
+                    font,
+                    rng,
+                );
+            }
             app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
             if app.inventory[app.selected].count == 0 {
                 app.inventory[app.selected].kind = 0;
@@ -1200,6 +1226,43 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 // port's 1f — no ported accessory grants them).
                 let kb = held_fx.map_or(registry::get(held.kind).map_or(0.0, |d| d.knock_back), |s| s.knock_back);
                 n.hurt(dmg, pcx, kb, crit);
+                // `NPC.cs:81250-81265`: the strike raises the floating damage
+                // number (the friendly NPCs take the friendly colour).
+                {
+                    let (nw, nh) = n.size();
+                    let color = if n.friendly {
+                        if crit {
+                            crate::combat_text::CombatColor::DamagedFriendlyCrit
+                        } else {
+                            crate::combat_text::CombatColor::DamagedFriendly
+                        }
+                    } else if crit {
+                        crate::combat_text::CombatColor::DamagedHostileCrit
+                    } else {
+                        crate::combat_text::CombatColor::DamagedHostile
+                    };
+                    let font = if crit {
+                        app.lookups.combat_crit_font.as_ref()
+                    } else {
+                        app.lookups.combat_text_font.as_ref()
+                    };
+                    let mut rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    crate::combat_text::new_amount(
+                        &mut app.combat_text,
+                        crate::combat_text::CombatTextBox {
+                            x: n.x,
+                            y: n.y,
+                            w: nw,
+                            h: nh,
+                        },
+                        color,
+                        dmg,
+                        crit,
+                        false,
+                        font,
+                        rng,
+                    );
+                }
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
                 app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);

@@ -9679,6 +9679,30 @@ pub struct ProjectilePool {
     /// the app's wind is wired in through [`ProjectilePool::set_wind`] — no
     /// ported arm's behaviour changes meanwhile.
     wind_speed: f32,
+    /// The damage events of this tick, drained by the world pass into the
+    /// combat text (`CombatText.cs`): the C# raises the floating number inside
+    /// `NPC.StrikeNPC` (`NPC.cs:81254-81263`) and `Player.Hurt`
+    /// (`Player.cs:38382`), which the port's damage paths reach without the
+    /// app's text pool.
+    pub(crate) damage_events: Vec<CombatEvent>,
+}
+
+/// A damage event the projectile pool reports to the combat text
+/// (`CombatText.NewText`'s `location` + the amount, `CombatText.cs:54-58`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CombatEvent {
+    /// The hitbox rectangle the number is centred on.
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) w: f32,
+    pub(crate) h: f32,
+    pub(crate) amount: i32,
+    pub(crate) crit: bool,
+    /// The target is a friendly NPC (`NPC.friendly` — the C#'s
+    /// `DamagedFriendly` colour, `NPC.cs:81252-81255`).
+    pub(crate) friendly_target: bool,
+    /// The number belongs to the player (`Player.Hurt`, `Player.cs:38382`).
+    pub(crate) player_target: bool,
 }
 
 impl Default for ProjectilePool {
@@ -9955,6 +9979,7 @@ impl ProjectilePool {
             hook_grap_count: 0,
             hook_rng: 0,
             wind_speed: 0.0,
+            damage_events: Vec::new(),
         }
     }
 
@@ -10941,6 +10966,9 @@ impl ProjectilePool {
         hostile_local: bool,
     ) {
         self.update_count += 1;
+        // The combat events of the previous tick were drained by the world
+        // pass; the list starts empty every update.
+        self.damage_events.clear();
         // `Player.Update`'s clear (`Player.cs:28300-28301`): the C#
         // runs it at the end of the player pass, so starting here preserves
         // the vanilla's one-tick latency exactly.
@@ -12297,6 +12325,23 @@ impl ProjectilePool {
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
             // as StrikeNPC does before the knockback/HP application.
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
+            // `NPC.cs:81250-81265`: the strike raises the floating damage
+            // number (the friendly/hostile colour, the crit's dramatic
+            // variant) — the port reports the event and the world pass turns
+            // it into a combat text.
+            {
+                let (nw, nh) = n.size();
+                self.damage_events.push(CombatEvent {
+                    x: n.x,
+                    y: n.y,
+                    w: nw,
+                    h: nh,
+                    amount: strike_dmg,
+                    crit: hit_crit,
+                    friendly_target: n.friendly,
+                    player_target: false,
+                });
+            }
             let landed = n.hurt_from_projectile(strike_dmg, from_x, kb, hit_crit);
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
@@ -12466,6 +12511,18 @@ impl ProjectilePool {
         // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`.
         // The single-hit kill below runs after `Hurt` regardless of the
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
+        // `Player.cs:38382`: the hit raises the floating number (the
+        // friendly colour — the player is the friendly side).
+        self.damage_events.push(CombatEvent {
+            x: player.x,
+            y: player.y,
+            w: crate::player::WIDTH,
+            h: crate::player::HEIGHT,
+            amount: p.damage,
+            crit: false,
+            friendly_target: false,
+            player_target: true,
+        });
         player.hurt(p.damage, cx, rng, p.is_damage_dodgeable());
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;

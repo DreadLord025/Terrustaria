@@ -190,6 +190,69 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // `CombatText.NewText` (`CombatText.cs:59-121`): the damage events of
+    // this tick become the floating numbers. The C# raises them inside
+    // `NPC.StrikeNPC` (`NPC.cs:81254-81263`) and `Player.Hurt`
+    // (`Player.cs:38382`); the port's pool reports them and the world pass
+    // writes the texts (the pool has no access to the app's text list).
+    {
+        let events: Vec<crate::projectile::CombatEvent> =
+            app.projectiles.damage_events.drain(..).collect();
+        if !events.is_empty() {
+            let font = app
+                .lookups
+                .combat_text_font
+                .as_ref()
+                .or(app.lookups.combat_crit_font.as_ref());
+            let crit_font = app.lookups.combat_crit_font.as_ref();
+            // The C# draws the jitter from `Main.rand` — the running stage's
+            // stream (`Main.SwapRandom`, `Main.cs:3204-3215`); the projectile
+            // pass runs in the `UpdateProjectiles` stream.
+            let mut rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+            for ev in events {
+                let (color, crit) = if ev.player_target {
+                    (
+                        crate::combat_text::CombatColor::DamagedFriendly,
+                        ev.crit,
+                    )
+                } else if ev.friendly_target {
+                    (
+                        if ev.crit {
+                            crate::combat_text::CombatColor::DamagedFriendlyCrit
+                        } else {
+                            crate::combat_text::CombatColor::DamagedFriendly
+                        },
+                        ev.crit,
+                    )
+                } else {
+                    (
+                        if ev.crit {
+                            crate::combat_text::CombatColor::DamagedHostileCrit
+                        } else {
+                            crate::combat_text::CombatColor::DamagedHostile
+                        },
+                        ev.crit,
+                    )
+                };
+                let f = if crit { crit_font } else { font };
+                crate::combat_text::new_amount(
+                    &mut app.combat_text,
+                    crate::combat_text::CombatTextBox {
+                        x: ev.x,
+                        y: ev.y,
+                        w: ev.w,
+                        h: ev.h,
+                    },
+                    color,
+                    ev.amount,
+                    crit,
+                    false,
+                    f,
+                    rng,
+                );
+            }
+        }
+    }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).
     for (kind, x, y, vx, vy) in app.projectiles.drain_mark_spawns() {

@@ -732,6 +732,9 @@ pub(crate) struct App {
     /// (`:3210-3212`). Stages take their stream from here instead of reading a
     /// shared `Main.rand` (`app/rng.rs`).
     pub(crate) rngs: NamedRngs,
+    /// `Main.combatText` (`Main.cs:1631`, `:66993`): the 100 floating damage
+    /// numbers (`CombatText.cs`).
+    pub(crate) combat_text: Vec<crate::combat_text::CombatText>,
     pub(crate) item_step: FixedStepper,
     /// Remaining seconds of the current held-item swing.
     pub(crate) swing: f32,
@@ -3240,6 +3243,7 @@ impl App {
             // The C# seeds every `SwapRandom` key with the world seed
             // (`Main.cs:3212`); the registry creates them lazily.
             rngs: NamedRngs::new(world_seed as i32),
+            combat_text: vec![crate::combat_text::CombatText::default(); crate::combat_text::MAX_COMBAT_TEXT],
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
             swing_style: 0,

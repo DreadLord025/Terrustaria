@@ -76,6 +76,68 @@ pub(crate) fn push_font_text(
     }
 }
 
+/// `DynamicSpriteFont.MeasureString` — the width and the height of one line.
+pub(crate) fn font_size(font: &assets::UiFont, text: &str, scale: f32) -> [f32; 2] {
+    [font_width(font, text, scale), font.line_spacing * scale]
+}
+
+/// `DynamicSpriteFont.DrawString` with a rotation: the glyphs turn around the
+/// text's origin, like the C#'s `SpriteBatch.DrawString(text, position,
+/// color, rotation, origin, scale)` (`CombatText`'s crit spin,
+/// `Main.cs:62389`). `anchor` is the screen point the origin lands on.
+pub(crate) fn push_font_text_rot(
+    r: &mut SpriteRenderer,
+    font: &assets::UiFont,
+    anchor: [f32; 2],
+    origin: [f32; 2],
+    scale: f32,
+    rotation: f32,
+    color: [f32; 4],
+    text: &str,
+) {
+    // The unrotated box: the anchor minus the origin (the C#'s
+    // `position - origin`).
+    let base = [anchor[0] - origin[0], anchor[1] - origin[1]];
+    let mut pen = Vec2::new(base[0], base[1]);
+    let mut first = true;
+    for c in text.chars() {
+        match c {
+            '\n' => {
+                pen.x = base[0];
+                pen.y += font.line_spacing * scale;
+                first = true;
+                continue;
+            }
+            '\r' => continue,
+            _ => {}
+        }
+        let Some(g) = font.glyph(c) else { continue };
+        let mut bearing = g.kerning[0];
+        if first {
+            bearing = bearing.max(0.0);
+        } else {
+            pen.x += font.spacing * scale;
+        }
+        pen.x += bearing * scale;
+        let gpos = [pen.x + g.pad[0] * scale, pen.y + g.pad[1] * scale];
+        // The rotation pivot is the anchor: the instance pipeline rotates
+        // about the top-left, so the pivot rides along as the origin
+        // (`SpriteRenderer::push_font_glyph_rot`).
+        let pivot = [anchor[0] - gpos[0], anchor[1] - gpos[1]];
+        r.push_fx_font_glyph_rot(
+            gpos,
+            [g.w * scale, g.h * scale],
+            g.uv,
+            color,
+            g.layer,
+            rotation,
+            pivot,
+        );
+        pen.x += (g.kerning[1] + g.kerning[2]) * scale;
+        first = false;
+    }
+}
+
 /// UI label with the original `Mouse_Text` font, or the built-in bitmap font when
 /// the retail fonts are unavailable (PNG-only fallback).
 pub(crate) fn hud_text(

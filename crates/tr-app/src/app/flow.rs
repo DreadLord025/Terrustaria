@@ -2173,6 +2173,10 @@ pub(crate) mod front_flow_tests {
             item_rng: 0,
             prefix_rng: tr_core::UnifiedRandom::new(0),
             rngs: NamedRngs::new(0),
+            combat_text: vec![
+                crate::combat_text::CombatText::default();
+                crate::combat_text::MAX_COMBAT_TEXT
+            ],
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
             swing_style: 0,
