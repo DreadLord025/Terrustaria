@@ -214,10 +214,10 @@ multiplayer-client path, never a single-player or menu one (research/42, finding
   homeless record's stale home coordinates are not carried into live state.
 - **Tile entities**: the dummy's and the logic sensor's payloads are carried from the
   file even though nothing reads their runtime halves; the display doll's payload is
-  read and **dropped** (`is_storable`) because its `WriteExtraData` shape (three
-  bitsBytes, a pose byte, up to nineteen triples) has no home in `TeData` and a hollow
-  record would desynchronise a vanilla reader — so a `.wld` round-trip is not byte-exact
-  for a world with dolls; the kite/critter anchors' `IsTileValidForEntity` is the anchor
+  carried too since S1-L-7a (`TEDisplayDoll.WriteExtraData` `TEDisplayDoll.cs:157-213`
+  writes the nine equip slots, the nine dye slots, the misc slot and the pose byte, so
+  the doll is storable and a `.wld` round-trip is byte-exact again); the kite/critter
+  anchors' `IsTileValidForEntity` is the anchor
   kind alone (`TEKiteAnchor.cs`/`TECritterAnchor.cs`), which the shared head check
   settles.
 - **Signs and plates**: the store is the positional `Vec<WldSign>` (exactly the non-null
@@ -5447,8 +5447,10 @@ and the training dummy lands as the engine state machine.
   && frameX % 18 == 0`), the jar 698, the kite anchor 723, the doll 470,
   the pylon 597.
 
-Deviations: the display doll (970 lines — the armor poses, the dye slots,
-the mannequin interactions) is its own follow-up; the pylon network is
+Deviations: the display doll's **payload** landed with S1-L-7a (the nine equip
+slots, the nine dye slots, the misc slot and the pose byte ride the `.wld`
+byte-exactly), while its runtime half (the armor poses, the dye slots, the
+mannequin interactions) stays its own follow-up; the pylon network is
 M7-PYLON-1; the leashed critter/kite anchors need the critter entities;
 the dummy's DPS-meter hook rides the NPC 488 landing.
 
@@ -10587,6 +10589,14 @@ S1-L-10b landed the two hand-overs:
   the 25-spark wheel burst. The equipped cart (the misc-equip 2) wins over
   the wooden minecart (`:22676-22679`); the port reads it per tick.
 
+S1-L-10c fixed the mount dismount's gate: `Player.GrappleMovement`
+(`Player.cs:22620-22623`) and the fire edge (`:6334-6337`) dismount only a
+mount **outside** `MountID.Sets.CanUseHooks` ({54, 57-60}) — the port
+dismounted every mount, so a cart or a grappling mount was dropped the moment
+a hook went out. The fire edge is now the C#'s own per-player latch
+(`Player.releaseHook`, `:27481-27489`) instead of a process-global flag that
+fired the hook for the wrong player.
+
 Deferred to their own rows: the chain/sprite rendering and the `light` /
 `projFrames[652]` animation (nothing in `render/` reads `proj_data`),
 `Minecart.FrameTrack` (the track switch table needs `Tile.FrontTrack` /
@@ -13438,3 +13448,41 @@ active, solid and not framed off) and `WorldGen.SolidTile`
 
 The rubble's own tile scan (`AI_123_Deerclops_ShootRubbleUp`,
 `:44448-44465`) is still the port's stand-in — the follow-up row.
+
+## The switch bridge (S1-L-6b2, 2026-11-14)
+
+`crates/tr-app/src/collision.rs::switch_tiles` ports `Collision.SwitchTiles`
+(`Collision.cs:3227-3360`): the entity→switch scan over the pressure plates
+(135), the land mine (210), the geyser trap (443) and the projectile
+pressure pad (442). The C#'s shape is kept — the ±1-margin box around the
+entity, the type-442 projectile-pad branch (the four frame rects and the
+`Utils.FloatIntersect` test, `Utils.cs:982-989`), the "the entity moved onto
+it" rule (the entity's box must reach the tile's `y + 12` line and its old
+box must not have been over it) and the frame-row table that picks who may
+trigger which plate (the rows 2/3/4/6/7 answer only the player, row 5 answers
+nobody).
+
+The player's call site runs in the fixed step (`Player.cs:28274-28275`, the
+`objType` 5 call) and reads the new `Player.old_x`/`old_y` — the C#'s
+`Entity.oldPosition` (`Player.cs:28071`), captured before the tick's
+movement. The tile-use arm is the new `edit::TileInteraction::HitSwitch`:
+using a lever (132), a switch (136) or a timer (144) trips the wiring
+(`Player.cs:32171-32179`), which the app answers with `Wiring::hit_switch`.
+
+Deliberate deviations:
+
+1. The scan's answer is the C#'s return value: only the pressure plates
+   consume the entity — the mine and the geyser arms `continue` the scan
+   (`Collision.cs:3319`/`:3326`), so they fire their effect without
+   consuming it. The port keeps that shape.
+2. The row-7 pressure plate's break (`WorldGen.KillTile`, `:3348-3352`)
+   drops the plate's item; the port's core has no item pool, so the drop
+   travels back to the app as `SwitchOutcome::dropped` and is spawned there.
+3. The C#'s net messages (59/13/17) are out — the local wiring state is the
+   truth.
+
+Out (the rest of S1-L-6b): the NPC call site (`NPC.cs:90504`, whose fuse arm
+covers only NPC kinds the port does not ship), `PressurePlateHelper`'s
+plate 428 (`PressurePlateHelper.cs`, the "stays pressed while a player
+stands on it" plate), the Actuation Rod (3620) and the multi-wrench (3625).
+

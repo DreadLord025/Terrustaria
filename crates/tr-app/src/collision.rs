@@ -754,6 +754,167 @@ pub fn drown_collision(
     false
 }
 
+/// `Utils.FloatIntersect` (`Utils.cs:982-989`): the two boxes overlap. The
+/// C#'s comparisons are strict, so a touching edge still counts as an
+/// overlap.
+fn float_intersect(
+    r1x: f32,
+    r1y: f32,
+    r1w: f32,
+    r1h: f32,
+    r2x: f32,
+    r2y: f32,
+    r2w: f32,
+    r2h: f32,
+) -> bool {
+    if r1x > r2x + r2w || r1y > r2y + r2h || r1x + r1w < r2x || r1y + r1h < r2y {
+        return false;
+    }
+    true
+}
+
+/// The outcome of [`switch_tiles`]: the C#'s return value (whether a
+/// pressure plate consumed the entity — the mine and the geyser arms
+/// `continue` the scan, so they never set it) and the item the broken plate
+/// dropped (the C#'s `WorldGen.KillTile` drop, which the app spawns).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SwitchOutcome {
+    pub hit: bool,
+    /// `(item, x, y)` — the plate's drop.
+    pub dropped: Option<(u16, i32, i32)>,
+}
+
+/// `Collision.SwitchTiles` (`Collision.cs:3227-3360`): the entity→switch
+/// bridge — the pressure plates (135), the land mine (210), the geyser trap
+/// (443) and the projectile pressure pad (442).
+///
+/// The scan is the C#'s: the ±1-margin box around the entity, the four
+/// switch kinds, the type-442 projectile-pad branch (the four frame rects,
+/// `objType == 4` only, `:3266-3307`) and the "the entity moved onto it"
+/// test (`:3310`): the entity's box must reach the tile's `y + 12` line and
+/// its old box must not have been over it.
+///
+/// `obj_type` is the C#'s: 1 = the NPC, 2 = the NPC's other call, 3 = the
+/// projectile, 4 = the projectile's pad call, 5 = the player.
+pub fn switch_tiles(
+    wiring: &mut tr_core::wiring::Wiring,
+    world: &mut World,
+    pos_x: f32,
+    pos_y: f32,
+    old_pos_x: f32,
+    old_pos_y: f32,
+    width: i32,
+    height: i32,
+    obj_type: i32,
+) -> SwitchOutcome {
+    let mut num = (pos_x / 16.0) as i32 - 1;
+    let mut num2 = ((pos_x + width as f32) / 16.0) as i32 + 2;
+    let mut num3 = (pos_y / 16.0) as i32 - 1;
+    let mut num4 = ((pos_y + height as f32) / 16.0) as i32 + 2;
+    num = num.max(0);
+    num2 = num2.min(world.width);
+    num3 = num3.max(0);
+    num4 = num4.min(world.height - 40);
+    for i in num..num2 {
+        for j in num3..num4 {
+            let Some(t) = world.tile(i, j) else {
+                continue;
+            };
+            let kind = t.kind;
+            if !t.active() || !matches!(kind, 135 | 210 | 443 | 442) {
+                continue;
+            }
+            let vector_x = i as f32 * 16.0;
+            let vector_y = j as f32 * 16.0 + 12.0;
+            let mut flag = false;
+            if kind == 442 {
+                if obj_type == 4 {
+                    // `:3270-3300`: the four projectile-pad frames' rects.
+                    let (r1x, r1y, r1w, r1h) = match t.frame_x / 22 {
+                        0 => (i as f32 * 16.0, j as f32 * 16.0 + 6.0, 16.0, 10.0),
+                        1 => (i as f32 * 16.0, j as f32 * 16.0, 16.0, 10.0),
+                        2 => (i as f32 * 16.0, j as f32 * 16.0, 10.0, 16.0),
+                        3 => (i as f32 * 16.0 + 6.0, j as f32 * 16.0, 10.0, 16.0),
+                        // The C#'s switch has no default arm: the rect stays
+                        // empty and the intersect test fails.
+                        _ => (0.0, 0.0, 0.0, 0.0),
+                    };
+                    if float_intersect(
+                        r1x, r1y, r1w, r1h, pos_x, pos_y, width as f32, height as f32,
+                    ) && !float_intersect(
+                        r1x, r1y, r1w, r1h, old_pos_x, old_pos_y, width as f32, height as f32,
+                    ) {
+                        wiring.hit_switch(world, i, j);
+                        return SwitchOutcome {
+                            hit: true,
+                            ..Default::default()
+                        };
+                    }
+                }
+                // The pad never takes the general path below (`:3308-3310`).
+                flag = true;
+            }
+            if flag
+                || !(pos_x + width as f32 > vector_x)
+                || !(pos_x < vector_x + 16.0)
+                || !(pos_y + height as f32 > vector_y)
+                || !((pos_y as f64) < (vector_y as f64) + 4.01)
+                || (old_pos_x + width as f32 > vector_x
+                    && old_pos_x < vector_x + 16.0
+                    && old_pos_y + height as f32 > vector_y
+                    && (old_pos_y as f64) < (vector_y as f64) + 16.01)
+            {
+                continue;
+            }
+            match kind {
+                // The land mine explodes through the switch (`:3314-3319`).
+                210 => {
+                    wiring.hit_switch(world, i, j);
+                    continue;
+                }
+                // The geyser trap only answers the player and the NPCs
+                // (`:3320-3326`).
+                443 => {
+                    if obj_type == 1 || obj_type == 5 {
+                        wiring.hit_switch(world, i, j);
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            // `:3328-3337`: the pressure plate's frame row picks who may
+            // trigger it — the rows 2/3/4/6/7 answer only the player, and row
+            // 5 answers nobody.
+            let num5 = t.frame_y / 18;
+            let mut flag2 = true;
+            if matches!(num5, 4 | 2 | 3 | 6 | 7) && obj_type != 5 {
+                flag2 = false;
+            }
+            if num5 == 5 && (obj_type == 1 || obj_type == 4 || obj_type == 5) {
+                flag2 = false;
+            }
+            if !flag2 {
+                continue;
+            }
+            wiring.hit_switch(world, i, j);
+            let mut outcome = SwitchOutcome {
+                hit: true,
+                ..Default::default()
+            };
+            if num5 == 7 {
+                // `:3348-3352`: the row-7 plate breaks under the touch. The
+                // C#'s `WorldGen.KillTile` drops the plate's item — the port's
+                // core has no item pool, so the drop travels back to the app.
+                let frame_y = world.tile(i, j).map_or(0, |t| t.frame_y);
+                outcome.dropped = crate::registry::tile_drop(kind, frame_y).map(|item| (item, i, j));
+                tr_core::edit::kill_tile(world, i, j, false);
+            }
+            return outcome;
+        }
+    }
+    SwitchOutcome::default()
+}
+
 /// `Collision.GetWaterLine` (`Collision.cs:1498-1544`): the water surface's
 /// height in the column `x`, or `None` when the column holds no water. The
 /// scan looks at the four rows around `y` (`:1521-1543`) and the height is
@@ -945,6 +1106,109 @@ mod tests {
         assert!(
             drown_collision(&w, 150.0, 16.0, 20, 42, 1.0, true),
             "the sloped blocks are not a floor"
+        );
+    }
+
+    /// The switch-tile bridge (`Collision.cs:3227-3360`): a world with one
+    /// switch tile of the given kind and frame row.
+    fn switch_world(kind: u16, frame_y: i16) -> World {
+        let mut w = world();
+        let i = w.index(10, 20);
+        w.tiles[i].kind = kind;
+        w.tiles[i].frame_y = frame_y;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w
+    }
+
+    /// The player walks onto the pressure plate: the switch trips
+    /// (`Collision.cs:3310`'s "moved onto it" test).
+    #[test]
+    fn the_player_walking_onto_a_pressure_plate_trips_it() {
+        let mut w = switch_world(135, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        // The player's box [168, 188] x [300, 342]; the plate's hit line is
+        // at 20 * 16 + 12 = 332 and its old box was above it.
+        let outcome = switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5);
+        assert!(outcome.hit, "the plate trips");
+    }
+
+    /// The player who already stands on the plate does not re-trip it
+    /// (`Collision.cs:3310`'s old-position arm).
+    #[test]
+    fn standing_on_the_plate_does_not_trip_it_again() {
+        let mut w = switch_world(135, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        let outcome = switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 300.0, 20, 42, 5);
+        assert!(!outcome.hit, "the old position was over the plate");
+    }
+
+    /// The pressure plate's frame row picks who may trigger it
+    /// (`Collision.cs:3328-3337`): the rows 2/3/4/6/7 answer only the
+    /// player, and row 5 answers nobody.
+    #[test]
+    fn the_plate_rows_pick_who_may_trigger_them() {
+        // Row 2: the player trips it, the NPC does not.
+        let mut w = switch_world(135, 2 * 18);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5).hit,
+            "the player trips the row-2 plate"
+        );
+        let mut w = switch_world(135, 2 * 18);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            !switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 1).hit,
+            "the NPC does not trip the row-2 plate"
+        );
+        // Row 5: nobody answers it.
+        let mut w = switch_world(135, 5 * 18);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            !switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5).hit,
+            "the row-5 plate answers nobody"
+        );
+    }
+
+    /// The land mine (210) answers every entity and explodes through the
+    /// switch (`Collision.cs:3314-3319` → `Wiring.HitSwitch` → the mine's
+    /// shot).
+    #[test]
+    fn the_land_mine_explodes_when_an_entity_reaches_it() {
+        let mut w = switch_world(210, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        let outcome = switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5);
+        // The C#'s mine arm `continue`s the scan (`Collision.cs:3319`), so the
+        // scan's answer stays false — only the pressure plates consume it.
+        assert!(!outcome.hit, "the mine does not consume the scan");
+        let shots = wiring.take_device_shots();
+        assert_eq!(shots.len(), 1, "the mine fires once");
+        assert_eq!(shots[0].kind, 164, "the mine's explosion projectile");
+    }
+
+    /// The geyser trap (443) answers the player and the NPCs only
+    /// (`Collision.cs:3320-3326`).
+    #[test]
+    fn the_geyser_trap_answers_the_player_only() {
+        let mut w = switch_world(443, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            !switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5).hit,
+            "the geyser does not consume the scan"
+        );
+        let mut w = switch_world(443, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            !switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 3).hit,
+            "the projectile does not trip the geyser"
+        );
+        // The projectile's call would also answer the geyser's shot; the
+        // player's call fires it.
+        let mut w = switch_world(443, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5);
+        assert!(
+            !wiring.take_device_shots().is_empty(),
+            "the geyser fires for the player"
         );
     }
 
