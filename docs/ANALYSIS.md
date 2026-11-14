@@ -13822,3 +13822,35 @@ Deliberate deviations:
 3. The C#'s special hit cues for the newest NPCs (the Turkey/Undead/Vampire
    hurts, `NPC.cs:81535-81545`) have no ported kinds.
 
+
+## The player voice cues (S1-E-21b, 2026-11-14)
+
+The second wave of the sound bank: the player's own hurt and death cues.
+
+`Player.Hurt`'s tail plays the hurt cue (`Player.cs:38525` →
+`PlayHurtSound`, `:38569-38712`) and `Player.KillMe` plays the death cue
+(`:38868` → `PlayDeathSound`, `:38715-38744`). The port queues the cue on
+the Player (the `take_hurt_sound`/`take_death_sound` handoff — the Player
+has no audio device) and the fixed step drains it.
+
+Two behaviour changes ride the wave:
+
+1. The hurt sound now rides the **damage path** instead of the frame's
+   hp-drop heuristic (`app/frame.rs`'s `last_hp` compare) — the C#'s
+   `PlayHurtSound` is called from `Hurt`, so the damage-over-time ticks
+   (the poison, the burning) no longer play a hurt sound.
+2. The death sound is new: the legacy "Player Killed" id 5
+   (`Player.cs:38737`, the default arm of `PlayDeathSound`).
+
+Deliberate deviations:
+
+1. The C#'s voice system (`Player.voiceOverride`/`voiceVariant`/`Male`,
+   `Player.cs:1346`/`38581-38710`) is not ported — the default voice
+   variant 1 (`Player.cs:56045`, the legacy "Player Hit" id 1) stands in.
+2. The C#'s hurt cue picks a random variation (`Main.rand.Next(3)`,
+   `LegacySoundPlayer.cs:505`); the port plays "Player_Hit_0".
+3. The C#'s death cue switches to the remastered hurt cues in the Don't
+   Starve and 10th-anniversary worlds (`Player.cs:38737-38740`); the port
+   plays the legacy cue everywhere.
+4. The C#'s local-player hurt sound plays non-positionally
+   (`Player.cs:38572`); the port's drain plays it without a position ✓.

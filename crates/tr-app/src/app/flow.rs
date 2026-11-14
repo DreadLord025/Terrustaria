@@ -2063,7 +2063,6 @@ pub(crate) mod front_flow_tests {
             pvp_icons_forced: false,
             audio: audio::Audio::new(None),
             music: audio::MusicSystem::new(None),
-            last_hp: 100,
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
             ui_left_press: false,
