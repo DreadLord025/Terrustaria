@@ -687,14 +687,36 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.invalidate_minion_target(&app.npcs);
             // `Player.cs:27608-27614`: right after the NPC collision pass,
             // the tile-contact damage check (`GetHurtTile` +
-            // `ApplyTouchDamage`) — the spike hazard the dungeon pass paints.
-            crate::touch_damage::apply_touch_damage(
-                &app.world,
+            // `ApplyTouchDamage`) — the spike hazard the dungeon pass paints,
+            // the hellstone's burn, the sands' suffocation and the thorns
+            // that break under a touch.
+            let touch = crate::touch_damage::apply_touch_damage(
+                &mut app.world,
                 p,
                 &mut app.item_rng,
                 crate::player::WIDTH as i32,
-                crate::player::HEIGHT as i32,
+                // `Player.GetHurtTile` (`Player.cs:28956`): the cart's body
+                // sits 16 px higher, so the scan's box is that much shorter.
+                if p.cart_mounted {
+                    p.body_height() as i32 - 16
+                } else {
+                    p.body_height() as i32
+                },
             );
+            // `WorldGen.KillTile`'s item drop (`Player.cs:29013`) — the
+            // thorns drop nothing in the vanilla, but the drop path is the
+            // source's own (`registry::tile_drop`).
+            if let Some((x, y, Some(item))) = touch.destroyed {
+                crate::world_sim::items::spawn_item_drop_fields(
+                    &mut app.items,
+                    &mut app.item_rng,
+                    &mut app.prefix_rng,
+                    item,
+                    1,
+                    x,
+                    y,
+                );
+            }
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires
             // `Wiring.HitSwitch` at the magnet tile (net message 59 is out of
