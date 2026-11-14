@@ -4194,8 +4194,8 @@ world's far side).
 
 The spawn: `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) —
 the px-space surface band (`position.Y < worldSurface*16 + sHeight`; the C#
-`sHeight` is 1200, `NPC.cs:6769` — the port's fn uses 200, the S1-F-18
-follow-up)
+`sHeight` is 1200, `NPC.cs:6769` — the port's fn used 200 until S1-F-18
+fixed the band)
 plus the ±3000 px window around `invasionX` — overrides the natural roll
 with the goblin table (`:1419-1450`): the hardmode Summoner 1/30 (while
 none alive), the Sorcerer 1/9, the Thief 1/5, the Peon 1/3, the Warrior
@@ -12564,6 +12564,63 @@ thirds + its item-rotation arm, the shoot style's back arm, the hold
 styles' arms and the aim mirror. All seven are mutation-checked (RED on
 the pre-fix code).
 
+
+## The saucer projectile arms (S1-D-4b-4, 2026-11-14)
+
+The ROADMAP's S1-D-4b-4 slice (the aiStyle-79 deathray and the aiStyle-80
+missile — the Martian Saucer's two shots, `Projectile.cs:30791-31000`) is
+the second half of the S1-D-4b-1 split (the row was split into S1-D-4b-1..8
+because the 19 styles span ~5 300 C# lines of arms plus the two
+mega-families).
+
+**aiStyle 79 — the Saucer deathray (447)**. The ray is a beam that hangs
+from the NPC that spawned it: the C#'s spawn passes `ai0 = base.whoAmI + 1`
+(`NPC.cs:35917` for the shell, `:36437` for the core) and the arm reads that
+slot. The arm's gates are the owner's state — the shell's `ai[0]` must name a
+live core (`:30805-30813`), the core's phase must be `ai[3] % 120 >= 60` with
+`ai[0] == 2` (`:30829-30832`), and the owner's own `ai[0]` must not be one of
+the three "no target" states (`:30833-30835`). Then the geometry: the beam's
+top is the owner's centre + 46, its column is the owner's centre, and its
+height is the scan down to the first solid row at or below the player's feet
+(the 150-row cap), trimmed by the last row's `num601 % 16 - 2`.
+
+**aiStyle 80 — the Saucer missile (448)**. The spawn passes `ai1 = 20f`
+(`NPC.cs:35845`) and the arm counts it down (the arming delay); on the
+arming tick the arm picks the target (`Player.FindClosest` — the port's
+local player is the only one) and speeds the flight up by 4 px. The flight
+turns toward the target for its first 30 ticks at 0.2 rad/tick, dies at the
+180-tick life end, and dies on a living player within 42 px.
+
+Deviations (each deliberate, each with its C# citation in the arm):
+
+* **The dust is SKIPPED** (the deathray's `:30863-30878`, the missile's
+  `:30920-30929`/`:30946-30956`/`:30963-30971`) — the port has no dust layer
+  (S1-E-1 is in flight). With it the arms' `Main.rand` draws go too (every
+  one of them belongs to a dust block), so the arms keep the gem-staff
+  arm's zero-RNG invariant (`Projectile.cs:37643-38001`).
+* **The owner is an NPC-slot index** in the C# (`Main.npc[(int)ai[0] - 1]`,
+  `:30794`). The port's NPC vec drops the dead every tick, so a stored index
+  can name a different NPC than the C#'s fixed slot did; the port keeps the
+  index shape (the Nebula Arcanum's `ai[1] = index + 1` precedent) and
+  re-checks the owner's kind (the C#'s own `type` gate), so a stale index
+  kills the ray instead of aiming it at a stranger.
+* **The shell's core link is by kind**: the C#'s shell holds the core's slot
+  in its `ai[0]` (`:35895-35907`), while the port's saucer family links
+  through the carrier write-through (the position link, the port's
+  link-by-kind convention for the boss families). The arm therefore looks
+  the core up by its kind.
+* **The target is the local player**: the C#'s beam reads the owner's
+  `NPC.target` (the core's, when the owner is the shell) and the missile
+  uses `Player.FindClosest`; the port's NPCs carry no target field and the
+  local player is the only one (the MP roster is its own row).
+* **The spawn-site `ai0`/`ai1` payload rides the sim's shot drain**: the
+  request tuple (`Npc::wants_hostile_shot`) carries no ai slots yet, so the
+  drain fills the two values the saucer pair needs (the deathray's owner
+  slot + 1 — the drain knows each requester's index — and the missile's
+  `ai1 = 20f`) and hands them to the pool's `spawn_hostile_ai`. The
+  per-shot ai payload the shadow-hand spawn needs
+  (`Projectile.RandomizeInsanityShadowFor`, `Projectile.cs:42408-42493`)
+  is the follow-up that widens the request tuple.
 ## The held item's placement (S1-G-17, 2026-11-14)
 
 `ItemCheck_ApplyUseStyle` (`Player.cs:50686-51375`) and
@@ -12620,3 +12677,119 @@ thirds' X sign, the shoot style's item rotation, the hold styles' anchors
 and the eat style's stretch table) — all mutation-checked (RED on the
 pre-fix code).
 
+
+## The throw and rapier item placement (S1-G-18, 2026-11-14)
+
+Two more `ItemCheck_ApplyUseStyle` arms and one real bug from the
+S1-G-16 composite work:
+
+* The useStyle 8 (the throw) branch (`:51197-51273`) has three phases — the
+  wind-up (the first ticks, while `itemAnimation` is at the item's
+  `useAnimation`), the overshoot (`itemAnimation > useAnimation`, which the
+  port's swing counter never reaches) and the swing arc
+  (`num26 = 1 - itemAnimation/itemAnimationMax`). The item's anchor follows
+  the phase (`MountedCenter + (num22 + PI/2).ToRotationVector2() * -2` for
+  the wind-up, `... * (-5 * (1 - num26))` for the arc) and the draw rotates
+  it a quarter turn (`PlayerDrawLayers.cs:3181-3189`). The port now carries
+  the raw animation counters into the draw (`swing_anim_ticks`/
+  `swing_max_ticks` — the port's swing timer runs in seconds, the C#'s
+  `itemAnimation` in ticks) and places the item per phase.
+* The useStyle 13 (the rapier) branch (`:51174-51196`) sets no location: the
+  item keeps the hold-style anchor and is turned by the aim
+  (`Player.itemRotation`). The port now does the same instead of riding the
+  useStyle-1 arc.
+* **The bug:** the umbrella's (and the throw's) `itemRotation` is
+  `new Vector2(10 * direction, 10f).ToRotation() + PI/4` (`:50524`,
+  `:51201`) — the XNA `ToRotation` is `atan2(Y, X)`, but the S1-G-16 port
+  used `hypot`, i.e. the vector's *length* (14.14) instead of its angle. The
+  umbrella's and the throw's poses were therefore rotated by a nonsense
+  angle. Fixed to `atan2(10, 10 * direction)` in both the sim's composite
+  arms and the draw.
+
+Tests: `s1_g_18_the_throw_style_rides_its_wind_up_and_arc`,
+`s1_g_18_the_rapier_keeps_the_hold_anchor` and
+`s1_g_18_the_umbrella_rotation_is_the_vector_rotation` — all
+mutation-checked (RED on the pre-fix code; the left-facing cases pin the
+mirrored `atan2`, which is where the `hypot` slip showed).
+
+## The draw phase order (S1-B-7, 2026-11-14)
+
+`Main.DoDraw` (`Main.cs:61707-62507`) draws the world in a fixed
+sequence; the port had one draw branch with no order assertion, and the
+dropped items were drawn **before** the NPCs and the player — the C# draws
+them last of the entity group (`Main.cs:62278`):
+
+```
+projectiles → the players (`:62256`) → the NPCs over the players (`:62263`)
+→ the items (`:62278`) → the rain (`:62279`) → the gore/dust (`:62282`/`:62293`)
+→ the waters (`:62300`) → the wires (`:62303`) → the projectiles over the
+wires UI (`:62315`)
+```
+
+The port now draws the dropped items after the players and the NPCs
+(`render/tiles.rs`: the items' pass moved behind the player passes), and
+the draw passes carry a phase marker (`frame.rs`'s `draw_phase`,
+`render/tiles.rs`'s `draw_phase`) so the order is assertable:
+`the_draw_passes_run_in_the_csharp_order` pins the marker order — the
+world pass's `npcs_behind_tiles → npcs → player → items` and the frame's
+`sky → world → rain → wires → projectiles`. The markers move with the
+passes, so a future reorder fails the test (mutation-checked: RED on the
+pre-fix code).
+
+Scope notes (the remaining divergences, all deliberate):
+
+* The C# splits the NPCs into two buckets — `DoDraw_DrawNPCsOverTiles`
+  (`:63301`, before the players) and `DrawCachedNPCs(DrawCacheNPCsOver-
+  Players)` (`:62263`, after them). The port has one NPC bucket, at the
+  "over the tiles" slot, so the NPCs that vanilla draws over the player
+  are drawn under it.
+* The C# splits the projectiles into four buckets (`CacheProjDraws`:
+  behind the projectiles, over the players, over the NPCs, over the wires
+  UI). The port has one bucket, at the "over the wires UI" slot, so the
+  projectiles are drawn over the player.
+* The C#'s leaves ride the particle system (`ParticleSystem_World_Over-
+  Players`, `:62259`); the port draws them with the dust cluster
+  (`frame.rs`'s leaf pass) — the same neighbourhood as the rain/sand.
+* The gore pass (`Main.cs:62282`) is unported (the gore pool is empty).
+## The scene-metrics zone chain (S1-L-1, 2026-11-14)
+
+`SceneMetrics.CalculateZones` (`SceneMetrics.cs:660-710`) computes more
+than the port carried: the depth bands (`ZoneSkyHeight`,
+`ZoneOverworldHeight`, `BelowSurface`, `ZoneDirtLayerHeight`,
+`ZoneRockLayerHeight`, `ZoneUnderworldHeight`, `:672-677`), the centre
+tile's wall zones (`ZoneLihzhardTemple` 87, `ZoneGranite` 184/180,
+`ZoneMarble` 183/178, `ZoneHive` 108/86, `ZoneGemCave` 48..53 and
+`ZoneUndergroundDesert` — the desert + under the surface + a
+sandstone/hardened-sand/223 wall + no `Main.wallHouse` wall, `:694-699`)
+and the candle zones (`:706-708`). The port's `SceneMetrics` now carries
+them, `SceneMetrics::calculate_wall_zones` reads the centre tile, and
+`Player.UpdateBiomes`' chain (`Player.cs:16692-16730`) feeds the spawner's
+`SpawnFlags`: before this, the dungeon/jungle/evil/temple/
+underground-desert/meteor/graveyard/sandstorm arms in `GetSpawnRate`
+(`NPC.cs:473-810`) were constants-off, so every zone-gated spawn rate
+multiplier was dead.
+
+Scope notes: the per-tile `SetSpawnFlagsForChosenTile`
+(`NPC.cs:1050-1278` — the marble/granite proximity and the dual-dungeons
+rescan) rides the per-candidate work; the moon-tower proximity zones
+(`CloseEnoughTo*Tower`) ride the pillar/tower systems; `ZoneEvil` is the
+port's merged corrupt-or-crimson flag (the C# keeps the two apart in some
+arms).
+
+Doc-truth fix: the research's music-box deviation (research/14's D9 — "the
+vanilla scans the VISUAL screen rect") pointed at a stale line reference.
+The arm is `SceneMetrics.cs:468-480`, INSIDE `ScanTiles` — the C# scans the
+same 169×124 zone window the port scans, so the port's window is verbatim;
+the port's comment now says so.
+
+## The invasion surface band (S1-F-18, 2026-11-14)
+
+`Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) compares
+`position.Y < Main.worldSurface * 16.0 + NPC.sHeight` — and `NPC.sHeight` is
+**1200** (`NPC.cs:6769`), not the 200 the port used. The invasion's
+above-surface band was therefore ~6× too narrow; it now reads
+`crate::spawner::S_HEIGHT` (the port's constant already carried the
+vanilla's 1200) and the window test pins both edges (3000 px below the
+surface spawns, 3200 px does not — the test world's surface is row 120 =
+px 1920). The ±3000 px window around `invasionX` and the town-NPC fallback
+stay as they were (the latter rides the town roster).

@@ -1420,6 +1420,11 @@ pub(crate) fn draw_player(
         // `Player.itemRotation` — the shooting styles' aim rotation
         // (`Player.cs:47371-47378`), computed by the sim.
         item_rotation: player.frame_inputs.item_rotation,
+        // The raw animation counters in ticks (`Player.itemAnimation`,
+        // `Player.cs:43378`): the port's swing timer runs in seconds.
+        swing_anim_ticks: player.frame_inputs.swing_anim * 60.0,
+        swing_max_ticks: player.frame_inputs.swing_anim_max * 60.0,
+        use_animation: player.frame_inputs.use_animation,
         item_size: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)

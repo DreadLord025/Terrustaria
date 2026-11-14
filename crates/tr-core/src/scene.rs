@@ -11,6 +11,7 @@
 //! the scan is centered on the player, which is a `tr-app` type.
 
 use crate::tile_light::FastRandom;
+use crate::world::World;
 
 /// How many tile kinds the window counts cover (`_tileCounts`, `TileID.Count`).
 const TILE_COUNT: usize = crate::tiledata::TILE_COUNT;
@@ -120,6 +121,39 @@ pub struct SceneMetrics {
     /// `ZoneDungeon` (`:682-684`) — the depth + wall gates fill in the
     /// scan driver (they read the centre tile's wall).
     pub zone_dungeon: bool,
+    /// `metrics.ZoneSkyHeight` (`SceneMetrics.cs:672`): the centre is
+    /// above `worldSurface * 0.35`.
+    pub zone_sky_height: bool,
+    /// `metrics.ZoneOverworldHeight` (`:673`): between the sky band and
+    /// the surface.
+    pub zone_overworld_height: bool,
+    /// `metrics.BelowSurface` (`:674`): the centre is under the surface.
+    pub below_surface: bool,
+    /// `metrics.ZoneDirtLayerHeight` (`:675`).
+    pub zone_dirt_layer_height: bool,
+    /// `metrics.ZoneRockLayerHeight` (`:676`).
+    pub zone_rock_layer_height: bool,
+    /// `metrics.ZoneUnderworldHeight` (`:677`).
+    pub zone_underworld_height: bool,
+    /// `metrics.ZoneLihzhardTemple` (`:694`): the temple wall 87.
+    pub zone_lihzhard_temple: bool,
+    /// `metrics.ZoneGranite` (`:695`): the granite walls 184/180.
+    pub zone_granite: bool,
+    /// `metrics.ZoneMarble` (`:696`): the marble walls 183/178.
+    pub zone_marble: bool,
+    /// `metrics.ZoneHive` (`:697`): the hive walls 108/86.
+    pub zone_hive: bool,
+    /// `metrics.ZoneGemCave` (`:698`): the gem-cave walls 48..53.
+    pub zone_gem_cave: bool,
+    /// `metrics.ZoneUndergroundDesert` (`:699`): the desert + the
+    /// sandstone walls + no house wall.
+    pub zone_underground_desert: bool,
+    /// `metrics.ZoneWaterCandle` (`:706`).
+    pub zone_water_candle: bool,
+    /// `metrics.ZonePeaceCandle` (`:707`).
+    pub zone_peace_candle: bool,
+    /// `metrics.ZoneShadowCandle` (`:708`).
+    pub zone_shadow_candle: bool,
     // — the M6-AUDIO-2 music-box fields (`SceneMetrics.cs:4489-4501`) —
     /// `ActiveMusicBox`: the box id playing in the window (`frameY / 36`),
     /// -1 = none.
@@ -247,6 +281,21 @@ impl SceneMetrics {
             zone_meteor: false,
             zone_graveyard: false,
             zone_dungeon: false,
+            zone_sky_height: false,
+            zone_overworld_height: false,
+            below_surface: false,
+            zone_dirt_layer_height: false,
+            zone_rock_layer_height: false,
+            zone_underworld_height: false,
+            zone_lihzhard_temple: false,
+            zone_granite: false,
+            zone_marble: false,
+            zone_hive: false,
+            zone_gem_cave: false,
+            zone_underground_desert: false,
+            zone_water_candle: false,
+            zone_peace_candle: false,
+            zone_shadow_candle: false,
             active_music_box: -1,
             music_box_silence: false,
         }
@@ -467,6 +516,19 @@ impl SceneMetrics {
         let zone_underworld_height = self.tile_center.1 > underworld_layer;
         self.zone_jungle =
             self.jungle_tile_count >= thresholds::JUNGLE_TILE && !zone_underworld_height;
+        // `SceneMetrics.cs:672-677`: the depth bands —
+        // `ZoneSkyHeight` (the centre above `worldSurface * 0.35`),
+        // `ZoneOverworldHeight` (the surface's upper part),
+        // `BelowSurface`, `ZoneDirtLayerHeight`, `ZoneRockLayerHeight`,
+        // `ZoneUnderworldHeight`.
+        let ty = self.tile_center.1 as f64;
+        self.zone_sky_height = ty <= world_surface * 0.349_999_994_039_535_5;
+        self.zone_overworld_height =
+            ty <= world_surface && ty > world_surface * 0.349_999_994_039_535_5;
+        self.below_surface = ty > world_surface;
+        self.zone_dirt_layer_height = ty <= rock_layer && ty > world_surface;
+        self.zone_rock_layer_height = ty <= underworld_layer as f64 && ty > rock_layer;
+        self.zone_underworld_height = zone_underworld_height;
         // `SceneMetrics.cs:675-676`:
         self.zone_snow = self.enough_tiles_for_snow();
         self.zone_desert = self.enough_tiles_for_desert();
@@ -499,8 +561,174 @@ impl SceneMetrics {
         // dungeon zone (M4-NPC families).
         self.underground_for_shimmering = (self.tile_center.1 as f64) > world_surface + 84.0
             && (self.tile_center.1 as i64) < max_tiles_y as i64 - 396;
-        self.zone_shimmer =
-            self.shimmer_tile_count >= thresholds::SHIMMER_TILE && self.underground_for_shimmering;
+        // `SceneMetrics.cs:705`: the shimmer zone also needs `!ZoneDungeon`.
+        self.zone_shimmer = self.shimmer_tile_count >= thresholds::SHIMMER_TILE
+            && self.underground_for_shimmering
+            && !self.zone_dungeon;
+        // `SceneMetrics.cs:706-708`: the candle zones ride their counters.
+        self.zone_water_candle = self.water_candle_count > 0;
+        self.zone_peace_candle = self.peace_candle_count > 0;
+        self.zone_shadow_candle = self.shadow_candle_count > 0;
+    }
+
+    /// `CalculateZones`' wall terms (`SceneMetrics.cs:694-699`): the
+    /// centre tile's wall picks the temple/granite/marble/hive/gem-cave
+    /// zones, and the underground-desert zone needs the desert + the
+    /// sandstone walls + no house wall.
+    pub fn calculate_wall_zones(&mut self, world: &World) {
+        let wall = world
+            .tile(self.tile_center.0, self.tile_center.1)
+            .map(|t| t.wall)
+            .unwrap_or(0);
+        self.zone_lihzhard_temple = wall == 87; // `:694`
+        self.zone_granite = wall == 184 || wall == 180; // `:695`
+        self.zone_marble = wall == 183 || wall == 178; // `:696`
+        self.zone_hive = wall == 108 || wall == 86; // `:697`
+        self.zone_gem_cave = (48..=53).contains(&wall); // `:698`
+        // `:699`: the desert zone + under the surface + a sandstone wall
+        // (the conversion sets + 223) + no house wall.
+        self.zone_underground_desert = self.zone_desert
+            && self.below_surface
+            && (SANDSTONE_WALLS.contains(&wall)
+                || HARDENED_SAND_WALLS.contains(&wall)
+                || wall == 223)
+            && !HOUSE_WALLS.contains(&wall);
+    }
+}
+
+/// `Main.wallHouse` (`Main.cs:9741-9782`): the house walls — the
+/// underground-desert zone refuses them.
+const HOUSE_WALLS: [u16; 30] = [
+    60, 224, 225, 226, 227, 231, 323, 324, 325, 326, 327, 328, 329, 330, 331,
+    332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346,
+];
+
+/// `WallID.Sets.Conversion.Sandstone` (`WallID.cs:42`).
+const SANDSTONE_WALLS: [u16; 8] = [187, 220, 222, 221, 275, 308, 310, 309];
+/// `WallID.Sets.Conversion.HardenedSand` (`WallID.cs:43`).
+const HARDENED_SAND_WALLS: [u16; 8] = [216, 217, 219, 218, 304, 305, 307, 306];
+
+#[cfg(test)]
+mod s1_l_1_zone_tests {
+    use super::*;
+
+    fn metrics_at(y: i32) -> SceneMetrics {
+        let mut m = SceneMetrics::new();
+        m.tile_center = (100, y);
+        m
+    }
+
+    #[test]
+    fn the_depth_bands_follow_scene_metrics_672_677() {
+        // `SceneMetrics.cs:672-677`: the sky band (above the surface's
+        // 0.35), the overworld band, below the surface, the dirt layer, the
+        // rock layer and the underworld.
+        let surface = 100.0;
+        let rock = 200.0;
+        let underworld = 400;
+        let mut m = metrics_at(20);
+        m.calculate_zones(surface, underworld, rock, 1000, 500, false, false);
+        assert!(m.zone_sky_height);
+        assert!(!m.zone_overworld_height);
+        assert!(!m.below_surface);
+
+        let mut m = metrics_at(60);
+        m.calculate_zones(surface, underworld, rock, 1000, 500, false, false);
+        assert!(!m.zone_sky_height);
+        assert!(m.zone_overworld_height);
+        assert!(!m.below_surface);
+
+        let mut m = metrics_at(150);
+        m.calculate_zones(surface, underworld, rock, 1000, 500, false, false);
+        assert!(m.below_surface);
+        assert!(m.zone_dirt_layer_height);
+        assert!(!m.zone_rock_layer_height);
+
+        let mut m = metrics_at(300);
+        m.calculate_zones(surface, underworld, rock, 1000, 500, false, false);
+        assert!(m.zone_rock_layer_height);
+        assert!(!m.zone_underworld_height);
+
+        let mut m = metrics_at(450);
+        m.calculate_zones(surface, underworld, rock, 1000, 500, false, false);
+        assert!(m.zone_underworld_height);
+    }
+
+    #[test]
+    fn the_wall_zones_follow_scene_metrics_694_699() {
+        // `SceneMetrics.cs:694-699`: the centre tile's wall picks the
+        // temple/granite/marble/hive/gem-cave zones.
+        let mut w = World::new("t".into(), 200, 200);
+        let (tx, ty) = (100i32, 100i32);
+
+        let mut m = metrics_at(ty);
+        let idx = w.index(tx, ty);
+        w.tiles[idx].wall = 87; // the lihzhard brick
+        m.calculate_wall_zones(&w);
+        assert!(m.zone_lihzhard_temple);
+
+        let mut m = metrics_at(ty);
+        let idx = w.index(tx, ty);
+        w.tiles[idx].wall = 184; // the granite wall
+        m.calculate_wall_zones(&w);
+        assert!(m.zone_granite);
+
+        let mut m = metrics_at(ty);
+        let idx = w.index(tx, ty);
+        w.tiles[idx].wall = 183; // the marble wall
+        m.calculate_wall_zones(&w);
+        assert!(m.zone_marble);
+
+        let mut m = metrics_at(ty);
+        let idx = w.index(tx, ty);
+        w.tiles[idx].wall = 108; // the hive wall
+        m.calculate_wall_zones(&w);
+        assert!(m.zone_hive);
+
+        let mut m = metrics_at(ty);
+        let idx = w.index(tx, ty);
+        w.tiles[idx].wall = 50; // the gem-cave wall
+        m.calculate_wall_zones(&w);
+        assert!(m.zone_gem_cave);
+    }
+
+    #[test]
+    fn the_underground_desert_needs_the_desert_and_a_sandstone_wall() {
+        // `SceneMetrics.cs:699`: the desert zone + under the surface + a
+        // sandstone/hardened-sand/223 wall + no house wall.
+        let mut w = World::new("t".into(), 200, 200);
+        let (tx, ty) = (100i32, 100i32);
+        let mut m = metrics_at(ty);
+        m.zone_desert = true;
+        m.below_surface = true;
+        let idx = w.index(tx, ty);
+        w.tiles[idx].wall = 187; // the sandstone wall
+        m.calculate_wall_zones(&w);
+        assert!(m.zone_underground_desert);
+
+        // The house walls (60) refuse it.
+        let mut m = metrics_at(ty);
+        m.zone_desert = true;
+        m.below_surface = true;
+        let idx = w.index(tx, ty);
+        w.tiles[idx].wall = 60;
+        m.calculate_wall_zones(&w);
+        assert!(!m.zone_underground_desert);
+    }
+
+    #[test]
+    fn the_candle_zones_follow_the_counters() {
+        // `SceneMetrics.cs:706-708`.
+        let mut m = metrics_at(50);
+        m.calculate_zones(100.0, 400, 200.0, 1000, 500, false, false);
+        assert!(!m.zone_water_candle);
+        m.water_candle_count = 1;
+        m.peace_candle_count = 2;
+        m.shadow_candle_count = 3;
+        m.calculate_zones(100.0, 400, 200.0, 1000, 500, false, false);
+        assert!(m.zone_water_candle);
+        assert!(m.zone_peace_candle);
+        assert!(m.zone_shadow_candle);
     }
 }
 
