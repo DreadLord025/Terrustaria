@@ -517,6 +517,231 @@ pub fn culture_from_legacy_id(id: i32) -> GameCulture {
     GameCulture::from_legacy_id(id)
 }
 
+// -- The name caches (`Lang.InitializeLegacyLocalization`, `Lang.cs:474-553`) --
+//
+// The C# fills every name cache by reflecting over the id class and reading
+// the key `<Category>.<ConstName>` (`Lang.FillNameCacheArray`,
+// `Lang.cs:450-464`), so the constant spelling IS the localization key. The
+// const walks live in `lang_tables.rs` (generated) and in the id tables the
+// port already carried (`projectile_id.rs`, `prefix_id.rs`, `emotes.rs`,
+// `itemdata.rs`).
+
+/// The const name of an id row — the localization key's suffix.
+fn const_name(table: &'static [(i32, &'static str)], id: i32) -> Option<&'static str> {
+    table
+        .iter()
+        .find(|(n, _)| *n == id)
+        .map(|(_, name)| *name)
+        .or_else(|| {
+            table
+                .iter()
+                .find(|(n, _)| *n == id as u16 as i32)
+                .map(|(_, name)| *name)
+        })
+}
+
+/// `Lang.GetNPCName(netID)` (`Lang.cs:188-195`): `NPCName.{const name}`.
+///
+/// A negative net id walks the negative cache (`Lang.cs:524-526`): the
+/// `NPCID.FromNetId` map first, then the twelve explicit slime rows.
+pub fn npc_name(id: i32) -> String {
+    let key = if id < 0 {
+        let index = (-id - 1) as usize;
+        match NEGATIVE_NPC_NAMES.iter().find(|(i, _)| *i == index) {
+            Some((_, name)) => format!("NPCName.{name}"),
+            None => {
+                let positive = crate::lang_tables::NPC_NET_ID_MAP
+                    .get(index)
+                    .copied()
+                    .unwrap_or(0);
+                match const_name(crate::lang_tables::NPC_ID, positive) {
+                    Some(name) => format!("NPCName.{name}"),
+                    None => return String::new(),
+                }
+            }
+        }
+    } else {
+        match const_name(crate::lang_tables::NPC_ID, id) {
+            Some(name) => format!("NPCName.{name}"),
+            None => return String::new(),
+        }
+    };
+    text(&key)
+}
+
+/// The twelve explicit negative-name rows (`Lang.cs:528-533`): the slime
+/// family and the two rain zombies. `(index, const name)` — the index is
+/// `-netId - 1`.
+const NEGATIVE_NPC_NAMES: &[(usize, &str)] = &[
+    (0, "Slimeling"),
+    (1, "Slimer2"),
+    (2, "GreenSlime"),
+    (3, "Pinky"),
+    (4, "BabySlime"),
+    (5, "BlackSlime"),
+    (6, "PurpleSlime"),
+    (7, "RedSlime"),
+    (8, "YellowSlime"),
+    (9, "JungleSlime"),
+    (53, "SmallRainZombie"),
+    (54, "BigRainZombie"),
+];
+
+/// `Lang.GetBuffName(id)` (`Lang.cs:241-244`): `BuffName.{const name}`.
+pub fn buff_name(id: i32) -> String {
+    match const_name(crate::lang_tables::BUFF_ID, id) {
+        Some(name) => text(&format!("BuffName.{name}")),
+        None => String::new(),
+    }
+}
+
+/// `Lang.GetBuffDescription(id)` (`Lang.cs:246-249`):
+/// `BuffDescription.{const name}`.
+pub fn buff_description(id: i32) -> String {
+    match const_name(crate::lang_tables::BUFF_ID, id) {
+        Some(name) => text(&format!("BuffDescription.{name}")),
+        None => String::new(),
+    }
+}
+
+/// `Lang.GetEmojiName(id)` (`Lang.cs:211-218`): `EmojiName.{const name}`.
+/// The C# leaves a missing entry blank (`leaveMissingEntriesBlank`), so an
+/// unknown id answers empty.
+pub fn emoji_name(id: i32) -> String {
+    match crate::emotes::EMOTE_NAMES
+        .iter()
+        .find(|(n, _)| *n == id)
+        .map(|(_, name)| *name)
+    {
+        Some(name) => text(&format!("EmojiName.{name}")),
+        None => String::new(),
+    }
+}
+
+/// `Lang.prefix[id]` (`Lang.cs:474`): `Prefix.{const name}`.
+pub fn prefix_name(id: i32) -> String {
+    match crate::prefix_id::PREFIX_ID
+        .iter()
+        .find(|(n, _)| *n as i32 == id)
+        .map(|(_, name)| *name)
+    {
+        Some(name) => text(&format!("Prefix.{name}")),
+        None => String::new(),
+    }
+}
+
+/// `Lang.GetProjectileName(type)` (`Lang.cs:441-448`):
+/// `ProjectileName.{const name}`.
+pub fn projectile_name(id: i32) -> String {
+    match crate::projectile_id::PROJECTILE_ID
+        .iter()
+        .find(|(n, _)| *n as i32 == id)
+        .map(|(_, name)| *name)
+    {
+        Some(name) => text(&format!("ProjectileName.{name}")),
+        None => String::new(),
+    }
+}
+
+/// `Lang._itemTooltipCache[id]` (`Lang.cs:538-550`):
+/// `ItemTooltip.{const name}` — the item's own tooltip row.
+pub fn item_tooltip(id: u16) -> String {
+    text(&format!("ItemTooltip.{}", crate::itemdata::NAMES[id as usize]))
+}
+
+/// `Lang.GetMapObjectName(id)` (`Lang.cs:77-84`): the map legend row of a
+/// color-lookup id.
+pub fn map_object_name(lookup_id: usize) -> String {
+    let Some(row) = map_legend_rows().get(lookup_id).and_then(|r| *r) else {
+        return String::new();
+    };
+    match row {
+        MapLegendRow::Key(key) => text(key),
+        MapLegendRow::Item(item) => item_name(item),
+    }
+}
+
+/// `Lang.GetMapObjectName` for a tile/option pair — the port's convenience
+/// over the C#'s lookup-id index (the map legend is written per
+/// `MapHelper.TileToLookup(tile, option)`).
+pub fn map_object_name_for_tile(tile: u16, option: u8) -> String {
+    let lookup = tr_core::map::color_table().tile_lookup[tile as usize] as usize + option as usize;
+    map_object_name(lookup)
+}
+
+/// One map legend row: a `MapObject.*` key or an item-name row.
+#[derive(Clone, Copy)]
+enum MapLegendRow {
+    Key(&'static str),
+    Item(u16),
+}
+
+/// The map legend cache — `Lang.BuildMapAtlas` (`Lang.cs:554-...`): the
+/// lookup-id indexed table the C# fills with the `MapObject.*` keys and the
+/// `itemNameCache[N]` rows, plus the tree-trunk loop (`:565-572`).
+fn map_legend_rows() -> &'static [Option<MapLegendRow>] {
+    use std::sync::OnceLock;
+    static ROWS: OnceLock<Vec<Option<MapLegendRow>>> = OnceLock::new();
+    ROWS.get_or_init(|| {
+        let table = tr_core::map::color_table();
+        let mut rows = vec![None; table.lookup.len()];
+        let mut put = |tile: u16, option: u8, row: MapLegendRow| {
+            let lookup = table.tile_lookup[tile as usize] as usize + option as usize;
+            if lookup < rows.len() {
+                rows[lookup] = Some(row);
+            }
+        };
+        for (tile, option, kind, value) in crate::lang_tables::MAP_LEGEND {
+            if *kind == "key" {
+                put(*tile, *option, MapLegendRow::Key(value));
+            } else {
+                put(*tile, *option, MapLegendRow::Item(value.parse().unwrap_or(0)));
+            }
+        }
+        // `:565-572`: every tree trunk reads "MapObject.Tree".
+        for tile in 0..table.tile_lookup.len() {
+            if tr_core::tileobject::is_a_tree_trunk(tile as u16) {
+                put(tile as u16, 0, MapLegendRow::Key("MapObject.Tree"));
+            }
+        }
+        rows
+    })
+}
+
+// -- The legacy index tables (`Lang.InitializeLegacyLocalization`) ------------
+
+/// `Lang.gen[i]` (`Lang.cs:476`): `LegacyWorldGen.{i}` — the world-generation
+/// messages (the C#'s `gen` is a Rust keyword, so the accessor is named
+/// `world_gen`).
+pub fn world_gen(i: usize) -> String {
+    text(&format!("LegacyWorldGen.{i}"))
+}
+
+/// `Lang.misc[i]` (`Lang.cs:484`): `LegacyMisc.{i}`.
+pub fn misc(i: usize) -> String {
+    text(&format!("LegacyMisc.{i}"))
+}
+
+/// `Lang.mp[i]` (`Lang.cs:490`): `LegacyMultiplayer.{i}`.
+pub fn mp(i: usize) -> String {
+    text(&format!("LegacyMultiplayer.{i}"))
+}
+
+/// `Lang.chestType[i]` (`Lang.cs:493`): `LegacyChestType.{i}`.
+pub fn chest_type(i: usize) -> String {
+    text(&format!("LegacyChestType.{i}"))
+}
+
+/// `Lang.chestType2[i]` (`Lang.cs:498`): `LegacyChestType2.{i}`.
+pub fn chest_type2(i: usize) -> String {
+    text(&format!("LegacyChestType2.{i}"))
+}
+
+/// `Lang.dresserType[i]` (`Lang.cs:501`): `LegacyDresserType.{i}`.
+pub fn dresser_type(i: usize) -> String {
+    text(&format!("LegacyDresserType.{i}"))
+}
+
 /// All twelve shipped cultures in `GameCulture.CultureName` order — the
 /// language screens' row list.
 pub fn cultures() -> [GameCulture; 12] {
@@ -526,6 +751,83 @@ pub fn cultures() -> [GameCulture; 12] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// S1-L-12 — the generated id walks cover the C#'s own constant tables
+    /// (`tools/gen_lang_tables.py`; the C#'s `NPCID.Count` = 697 and
+    /// `BuffID.Count` = 401).
+    #[test]
+    fn the_generated_id_tables_cover_the_c_sharp_constants() {
+        // The NPC walk: the positive ids up to `NPCID.Count` plus the 66
+        // negative aliases (`NPCID.FromNetId`).
+        let npc = crate::lang_tables::NPC_ID;
+        assert_eq!(npc.len(), 763);
+        assert!(npc.iter().any(|(id, name)| *id == 245 && *name == "Golem"));
+        assert_eq!(crate::lang_tables::NPC_NET_ID_MAP.len(), 65);
+        // The buff walk: `BuffID.Count` = 401 ids.
+        assert_eq!(crate::lang_tables::BUFF_ID.len(), 400);
+        assert!(crate::lang_tables::BUFF_ID
+            .iter()
+            .any(|(id, name)| *id == 24 && *name == "OnFire"));
+        // The map legend carries both row kinds.
+        let legend = crate::lang_tables::MAP_LEGEND;
+        assert!(legend.iter().any(|(_, _, kind, _)| *kind == "key"));
+        assert!(legend.iter().any(|(_, _, kind, _)| *kind == "item"));
+    }
+
+    /// S1-L-12 — the name caches: every table's accessor reads the C#'s
+    /// `<Category>.<ConstName>` key (`Lang.FillNameCacheArray`,
+    /// `Lang.cs:450-464`), so the localized value comes from the shipped
+    /// resources.
+    #[test]
+    fn the_name_tables_resolve_their_localized_rows() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        // The NPC names — `NPCID.Guide` is id 22, `NPCID.BlueSlime` is 1.
+        assert_eq!(npc_name(22), "Guide");
+        assert_eq!(npc_name(1), "Blue Slime");
+        assert_eq!(npc_name(17), "Merchant");
+        // The negative net ids walk the `NPCID.FromNetId` map and the twelve
+        // explicit slime rows (`Lang.cs:524-533`).
+        assert_eq!(npc_name(-1), "Slimeling");
+        assert_eq!(npc_name(-3), "Green Slime");
+        // The buff names and descriptions — `BuffID.OnFire` is id 24.
+        assert_eq!(buff_name(24), "On Fire!");
+        assert_eq!(buff_description(24), "Slowly losing life");
+        // The emoji names — `EmoteID.EmotionLove` is id 0.
+        assert_eq!(emoji_name(0), "heart");
+        // The prefix names — `PrefixID.Large` is id 1.
+        assert_eq!(prefix_name(1), "Large");
+        // The projectile names — `ProjectileID.BoneJavelin` is id 598.
+        assert_eq!(projectile_name(598), "Bone Javelin");
+        // The map legend — the `MapObject.Iron` row (tile 6), the tree
+        // trunks (`Lang.BuildMapAtlas` `:565-572` — the C#'s
+        // `TileID.Sets.IsATreeTrunk` starts at tile 5) and the item-name
+        // rows (`:574-575`).
+        assert_eq!(map_object_name_for_tile(6, 0), "Iron");
+        assert_eq!(map_object_name_for_tile(5, 0), "Tree");
+        assert_eq!(map_object_name_for_tile(4, 0), item_name(8));
+        // The legacy index tables (`Lang.InitializeLegacyLocalization`).
+        assert_eq!(misc(0), "A goblin army has been defeated!");
+        assert_eq!(world_gen(0), "Generating world terrain");
+        assert_eq!(mp(0), "Receive:");
+        assert_eq!(chest_type(0), "Chest");
+        assert_eq!(dresser_type(0), "Dresser");
+    }
+
+    /// S1-L-12 — the same keys answer in the selected culture: the names
+    /// render localized (`Lang.SetLanguage` re-resolves every key).
+    #[test]
+    fn the_name_tables_render_localized() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        set_language(GameCulture::Russian);
+        assert_eq!(npc_name(22), "Гид");
+        assert_eq!(npc_name(-1), "Слизлинг");
+        assert_eq!(buff_name(24), "В огне!");
+        assert_eq!(emoji_name(0), "сердце");
+        assert_eq!(map_object_name_for_tile(6, 0), "Железо");
+        set_language(GameCulture::English);
+    }
 
     /// The manager answers from the shipped resources when they are present
     /// (the repo's `decompiled/`), falling back to the English item names

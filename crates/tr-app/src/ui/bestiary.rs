@@ -1132,8 +1132,27 @@ fn draw_info_page(
     let mut ty = panel[1] + 60.0;
     // The name — tier 1+ (`GetHoverText`'s `???` gate,
     // `UnlockableNPCEntryIcon.cs:213-226`).
-    let shown_name = if state.known() { entry.name } else { "???" };
-    text::hud_text(r, lookups, tx, ty, 1.2, [1.0, 0.9, 0.4, 1.0], shown_name);
+    // `Lang.GetNPCNameValue(netId)` (`Lang.cs:220-223`) — the localized NPC
+    // name (the English column stays the fallback for a missing key).
+    let shown_name = if state.known() {
+        let localized = crate::lang::npc_name(entry.net_id);
+        if localized.is_empty() {
+            entry.name.to_string()
+        } else {
+            localized
+        }
+    } else {
+        "???".to_string()
+    };
+    text::hud_text(
+        r,
+        lookups,
+        tx,
+        ty,
+        1.2,
+        [1.0, 0.9, 0.4, 1.0],
+        &shown_name,
+    );
     ty += 34.0;
 
     // The stat rows — tier 2+ (`CanShowStats`).
