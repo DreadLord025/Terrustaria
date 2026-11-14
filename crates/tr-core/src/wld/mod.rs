@@ -467,8 +467,11 @@ fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i
             // The record's sparse `World.extras` byte, composed from the wall
             // paint and the coating bits. C#'s `Tile.CopyFrom` carries them
             // (`Tile.cs:142-153`), so the RLE-filled rows below get the same
-            // byte the record's origin does (`LoadWorldTiles:2677-2682`).
+            // byte the record's origin does (`LoadWorldTiles:2708-2713`).
             let mut extras = 0u8;
+            // The four wire colours the record carries — `CopyFrom`
+            // (`LoadWorldTiles:2711`) copies them into every row of the run.
+            let mut wires = sections::tiles::WireBits::default();
 
             let b4 = r.u8()?;
             let mut b1 = 0u8;
@@ -533,6 +536,17 @@ fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i
             }
 
             if b1 > 1 {
+                // `WorldFile.cs:2614-2639`: the three `sTileHeader` wire
+                // colours (`wire()`/`wire2()`/`wire3()`) and the slope.
+                if b1 & 2 != 0 {
+                    wires.red = true;
+                }
+                if b1 & 4 != 0 {
+                    wires.blue = true;
+                }
+                if b1 & 8 != 0 {
+                    wires.green = true;
+                }
                 let slope = (b1 & 0x70) >> 4;
                 if slope == 1 {
                     tile.flags |= FLAG_HALF_BRICK;
@@ -547,6 +561,11 @@ fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i
                 }
                 if b2 & 4 != 0 {
                     tile.flags |= FLAG_INACTIVE;
+                }
+                // `WorldFile.cs:2651-2654`: `wire4()` — the yellow wire, a
+                // `bTileHeader` bit.
+                if b2 & 0x20 != 0 {
+                    wires.yellow = true;
                 }
                 if b2 & 0x40 != 0 {
                     let hi = r.u8()? as u16;
@@ -591,6 +610,10 @@ fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i
                 if extras != 0 {
                     world.set_extras_at(i, extras);
                 }
+                // `WorldFile.cs:2711`: `Main.tile[i, j].CopyFrom(tile)` — the
+                // wire colours travel with the copied header into every row
+                // of the RLE run.
+                wires.apply_to(world, x, y);
                 y += 1;
             }
         }
@@ -2172,5 +2195,164 @@ mod tests {
         assert!(tiles.contains("WorldFile.cs:2519"), "the reader's anchor");
         assert!(tiles.contains("Tile.cs:155"), "the isTheSameAs anchor");
         assert!(tiles.contains("TileID.cs:484"), "the batching set anchor");
+    }
+
+    // --- S1-J-1: the four wire bits in the `.wld` tile section ---------------
+
+    use crate::wiring::WireColor;
+
+    /// The tile section of [`wire_fixture_world`], byte for byte, as produced
+    /// by a `dotnet` run of the decompiled `WorldFile.SaveWorldTiles`
+    /// (`WorldFile.cs:1432-1604`) driving the decompiled `Tile` accessors
+    /// (`Tile.cs:437-452/528-733`). The oracle's source is the decompile
+    /// itself — only the three global lookups (`Main.tile`,
+    /// `Main.tileFrameImportant`, `TileID.Sets.AllowsSaveCompressionBatching`)
+    /// became parameters.
+    const CSHARP_WIRE_TILE_SECTION: [u8; 75] = [
+        0x00, 0x43, 0x02, 0x02, 0x5a, 0x00, 0x12, 0x00, 0x01, 0x03, 0x04, 0x02, 0x5a, 0x00, 0x12,
+        0x00, 0x03, 0x08, 0x02, 0x5a, 0x00, 0x12, 0x00, 0x03, 0x01, 0x20, 0x02, 0x5a, 0x00, 0x12,
+        0x00, 0x03, 0x0f, 0x20, 0x02, 0x5a, 0x00, 0x12, 0x00, 0x03, 0x22, 0x02, 0x5a, 0x00, 0x12,
+        0x00, 0x07, 0x01, 0x19, 0x02, 0x02, 0x5a, 0x00, 0x12, 0x00, 0x03, 0x05, 0x09, 0x1a, 0x02,
+        0x5a, 0x00, 0x12, 0x00, 0x80, 0x13, 0x01, 0x20, 0x02, 0x5a, 0x00, 0x12, 0x00, 0x64, 0x00,
+    ];
+
+    /// The oracle's fixture: one column of twelve rows that covers the four
+    /// wire colours (`Tile.wire()`/`wire2()`/`wire3()`/`wire4()`), the RLE
+    /// batch boundary, the slope, the tile and wall paint, the coatings and
+    /// the liquid kinds. Rows 1 and 2 are identical (the red wire) — the C#'s
+    /// `isTheSameAs` batches them into one record.
+    fn wire_fixture_world() -> World {
+        let mut world = World::new("WireFixture".into(), 1, 12);
+        world.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        world.frame_important[2] = true;
+        let solid = || {
+            let mut t = Tile {
+                kind: 2,
+                frame_x: 90,
+                frame_y: 18,
+                ..Default::default()
+            };
+            t.flags |= FLAG_ACTIVE;
+            t
+        };
+        for y in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] {
+            let idx = world.index(0, y);
+            world.tiles[idx] = solid();
+        }
+        // The four colours: red (`sTileHeader` 0x80), blue (0x100), green
+        // (0x200) and yellow (`bTileHeader` 0x80).
+        world.wires.set(0, 1, WireColor::Red, true);
+        world.wires.set(0, 2, WireColor::Red, true);
+        world.wires.set(0, 3, WireColor::Blue, true);
+        world.wires.set(0, 4, WireColor::Green, true);
+        world.wires.set(0, 5, WireColor::Yellow, true);
+        for color in [
+            WireColor::Red,
+            WireColor::Blue,
+            WireColor::Green,
+            WireColor::Yellow,
+        ] {
+            world.wires.set(0, 6, color, true);
+        }
+        // A slope plus the red wire.
+        let idx = world.index(0, 7);
+        world.tiles[idx].set_slope(1);
+        world.wires.set(0, 7, WireColor::Red, true);
+        // The wall, the wall paint, the tile paint and the invisible block.
+        let idx = world.index(0, 8);
+        world.tiles[idx].set_paint(3);
+        world.tiles[idx].wall = 5;
+        world.set_wall_paint(0, 8, 9);
+        world.set_invisible_block(0, 8, true);
+        // Honey, then lava with the yellow wire.
+        let idx = world.index(0, 9);
+        world.tiles[idx].liquid = 128;
+        world.tiles[idx].flags |= FLAG_LIQUID_HONEY;
+        let idx = world.index(0, 10);
+        world.tiles[idx].liquid = 100;
+        world.tiles[idx].flags |= FLAG_LIQUID_LAVA;
+        world.wires.set(0, 10, WireColor::Yellow, true);
+        world
+    }
+
+    #[test]
+    fn s1_j_1_the_tile_section_matches_the_csharp_bytes() {
+        // The C#'s own encoder (`SaveWorldTiles:1432-1604`) writes the four
+        // wire bits: `b2` 0x02/0x04/0x08 for `wire()`/`wire2()`/`wire3()` and
+        // `b3` 0x20 for `wire4()`. The port dropped them, so its tile section
+        // was never byte-identical.
+        let world = wire_fixture_world();
+        let mut w = Writer::new();
+        sections::tiles::write(&mut w, &world);
+        assert_eq!(w.into_inner(), CSHARP_WIRE_TILE_SECTION.to_vec());
+    }
+
+    #[test]
+    fn s1_j_1_the_rle_run_breaks_when_the_wire_state_differs() {
+        // `Tile.isTheSameAs:161` compares the whole `sTileHeader`, and the
+        // wire bits live in it — so two tiles that differ only by a wire are
+        // **not** batched (`WorldFile.cs:1577`).
+        let mut world = World::new("a".into(), 1, 3);
+        world.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        world.frame_important[2] = true;
+        for y in 0..3 {
+            let idx = world.index(0, y);
+            world.tiles[idx] = tile(2, 90, 18);
+        }
+        world.wires.set(0, 1, WireColor::Red, true);
+        let mut w = Writer::new();
+        sections::tiles::write(&mut w, &world);
+        // Three standalone records: the middle one carries the chained header
+        // (b = 0x03 active + "b2 follows", b2 = 0x02 the red wire).
+        let want = vec![
+            0x02, 0x02, 0x5a, 0x00, 0x12, 0x00, 0x03, 0x02, 0x02, 0x5a, 0x00, 0x12, 0x00, 0x02,
+            0x02, 0x5a, 0x00, 0x12, 0x00,
+        ];
+        assert_eq!(w.into_inner(), want);
+    }
+
+    #[test]
+    fn s1_j_1_the_wire_state_round_trips_through_a_wld() {
+        // `LoadWorldTiles:2614-2632` restores the three `sTileHeader` wires
+        // and `:2651-2654` the `bTileHeader` one; `CopyFrom` (`:2711`) copies
+        // them into every row of the RLE run.
+        let world = wire_fixture_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the saved world parses");
+        for (y, red, blue, green, yellow) in [
+            (0, false, false, false, false),
+            (1, true, false, false, false),
+            (2, true, false, false, false),
+            (3, false, true, false, false),
+            (4, false, false, true, false),
+            (5, false, false, false, true),
+            (6, true, true, true, true),
+            (7, true, false, false, false),
+            (8, false, false, false, false),
+            (9, false, false, false, false),
+            (10, false, false, false, true),
+            (11, false, false, false, false),
+        ] {
+            assert_eq!(
+                back.wires.get(0, y, WireColor::Red),
+                red,
+                "the red wire at row {y}"
+            );
+            assert_eq!(
+                back.wires.get(0, y, WireColor::Blue),
+                blue,
+                "the blue wire at row {y}"
+            );
+            assert_eq!(
+                back.wires.get(0, y, WireColor::Green),
+                green,
+                "the green wire at row {y}"
+            );
+            assert_eq!(
+                back.wires.get(0, y, WireColor::Yellow),
+                yellow,
+                "the yellow wire at row {y}"
+            );
+        }
     }
 }

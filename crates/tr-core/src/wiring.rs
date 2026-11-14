@@ -17,16 +17,18 @@
 //!
 //! Deviations (ANALYSIS "Wiring engine (M7-WIRE-1)"): the wire colours live in
 //! a side table ([`WireState`]) instead of the C#'s `sTileHeader` bits — the
-//! port's packed `Tile` has no header space, and the world save therefore
-//! carries them in a dedicated `.trwld` v6 section ([`WireState::write`] /
-//! [`WireState::read`]) whose layout is this port's own: the C# spreads the
-//! four colours as per-tile header bits inside the tile stream
-//! (`Tile.cs:623-657`) and has no section of its own to round-trip — the
-//! deviation is recorded in docs/ANALYSIS.md; device effects that spawn
-//! entities (the traps, cannons, fireworks and the mine/geyser family) are
-//! passthroughs for later M7-WIRE-2 phases — the statue family (cases
-//! 105/349/531) has landed; the wire pulse animation (case 419's frameX
-//! shift) is render-side.
+//! port's packed `Tile` has no header space, and the native `.trwld` save
+//! therefore carries them in a dedicated v6 section ([`WireState::write`] /
+//! [`WireState::read`]) whose layout is this port's own. The `.wld` tile
+//! section, however, is 1:1: it writes the four colours into the chained
+//! header bytes exactly where the C# does (`b2` 0x02/0x04/0x08, `b3` 0x20 —
+//! `WorldFile.cs:1508-1532`) and the reader restores them
+//! (`LoadWorldTiles:2614-2632`/`:2651-2654`), so only the **in-memory**
+//! layout differs (S1-J-1, ANALYSIS "The tile section's four wire bits");
+//! device effects that spawn entities (the traps, cannons, fireworks and the
+//! mine/geyser family) are passthroughs for later M7-WIRE-2 phases — the
+//! statue family (cases 105/349/531) has landed; the wire pulse animation
+//! (case 419's frameX shift) is render-side.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
