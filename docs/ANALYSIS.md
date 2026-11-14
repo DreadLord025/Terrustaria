@@ -13679,3 +13679,37 @@ Deviations:
 * **The light and the dust are SKIPPED** — no dust/light layer.
 * **The day-time `EncourageDespawn(10)`** rides the world's own day arm (the
   port's NPCs carry no despawn timer).
+
+## The Skeletron Prime's machine (S1-D-3j, 2026-11-14)
+
+`AI_032` (`NPC.cs:27626-27942`) is the Skeletron Prime's family machine
+— the hover (0), the charge (1), the day-time rage (2) and the despawn
+(3). The port's `update_prime` had the shape but not the numbers: the
+hover's bands were a sign-based steer instead of the C#'s velocity
+bands, the charge never doubled the damage and the defense, and the rage
+was not invulnerable.
+
+The arm now carries the C#'s machine:
+
+* **the hover** (`:27679-27764`): the 600-tick cycle into the charge, the
+  rotation (the drift / 15) and the acceleration bands — the vertical one
+  above the player (200 px) and below it (500 px) with the 0.1 acceleration
+  and the 2 cap, the horizontal one 100 px either side with the same
+  acceleration and the 8 cap (the expert's 0.03/4/0.07/9.5);
+* **the charge** (`:27765-27859`): the damage and the defense double, the
+  400-tick cycle back to the hover, the roll (`direction * 0.3`) and the
+  rush (2 px, the expert's 6 with its distance ramp);
+* **the rage** (`:27860-27892`): the damage and the defense 9999 and the
+  8-32 chase;
+* **the despawn** (`:27893-27941`): the sink and the damp.
+
+The four limbs' spawn stays in the sim's pass (`wants_limbs` ✓ — the C#'s
+`ai[0] == 0` init, `:27632-27660`).
+
+Deviations:
+
+* **The Mech Queen's rows** (`NPC.IsMechQueenUp` — the half-drift rotation,
+  the 450 px offset, the limb scaling) are skipped: the port has no Mech
+  Queen.
+* **The day-time `EncourageDespawn(10)`** rides the world's own day arm (the
+  port's NPCs carry no despawn timer).
