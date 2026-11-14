@@ -12689,6 +12689,46 @@ Tests: `s1_g_18_the_throw_style_rides_its_wind_up_and_arc`,
 `s1_g_18_the_umbrella_rotation_is_the_vector_rotation` — all
 mutation-checked (RED on the pre-fix code; the left-facing cases pin the
 mirrored `atan2`, which is where the `hypot` slip showed).
+
+## The draw phase order (S1-B-7, 2026-11-14)
+
+`Main.DoDraw` (`Main.cs:61707-62507`) draws the world in a fixed
+sequence; the port had one draw branch with no order assertion, and the
+dropped items were drawn **before** the NPCs and the player — the C# draws
+them last of the entity group (`Main.cs:62278`):
+
+```
+projectiles → the players (`:62256`) → the NPCs over the players (`:62263`)
+→ the items (`:62278`) → the rain (`:62279`) → the gore/dust (`:62282`/`:62293`)
+→ the waters (`:62300`) → the wires (`:62303`) → the projectiles over the
+wires UI (`:62315`)
+```
+
+The port now draws the dropped items after the players and the NPCs
+(`render/tiles.rs`: the items' pass moved behind the player passes), and
+the draw passes carry a phase marker (`frame.rs`'s `draw_phase`,
+`render/tiles.rs`'s `draw_phase`) so the order is assertable:
+`the_draw_passes_run_in_the_csharp_order` pins the marker order — the
+world pass's `npcs_behind_tiles → npcs → player → items` and the frame's
+`sky → world → rain → wires → projectiles`. The markers move with the
+passes, so a future reorder fails the test (mutation-checked: RED on the
+pre-fix code).
+
+Scope notes (the remaining divergences, all deliberate):
+
+* The C# splits the NPCs into two buckets — `DoDraw_DrawNPCsOverTiles`
+  (`:63301`, before the players) and `DrawCachedNPCs(DrawCacheNPCsOver-
+  Players)` (`:62263`, after them). The port has one NPC bucket, at the
+  "over the tiles" slot, so the NPCs that vanilla draws over the player
+  are drawn under it.
+* The C# splits the projectiles into four buckets (`CacheProjDraws`:
+  behind the projectiles, over the players, over the NPCs, over the wires
+  UI). The port has one bucket, at the "over the wires UI" slot, so the
+  projectiles are drawn over the player.
+* The C#'s leaves ride the particle system (`ParticleSystem_World_Over-
+  Players`, `:62259`); the port draws them with the dust cluster
+  (`frame.rs`'s leaf pass) — the same neighbourhood as the rain/sand.
+* The gore pass (`Main.cs:62282`) is unported (the gore pool is empty).
 ## The scene-metrics zone chain (S1-L-1, 2026-11-14)
 
 `SceneMetrics.CalculateZones` (`SceneMetrics.cs:660-710`) computes more
