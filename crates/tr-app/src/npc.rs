@@ -12503,99 +12503,144 @@ impl Npc {
     /// repeat; the day-rage (`damage/defense 9999`, the 8-32 chase) and
     /// the dead-player despawn (`EncourageDespawn(500)`). The four limbs
     /// spawn once on the first tick (the port's `wants_limbs` flag).
+    /// `AI()`'s aiStyle-32 block (`NPC.cs:27626-27942`) — the Skeletron
+    /// Prime's machine: the hover (0), the charge (1), the day-time rage (2)
+    /// and the despawn (3).
+    ///
+    /// The four limbs' spawn rides the sim's pass (`wants_limbs` ✓ — the
+    /// C#'s `ai[0] == 0` init, `:27632-27660`). The Mech Queen's rows
+    /// (`NPC.IsMechQueenUp`) are skipped — the port has no Mech Queen.
     fn update_prime(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        let dist = (pcx - cx).hypot(pcy - cy);
-        // The state selection (`:27662-27676`).
-        if player.hp <= 0 || dist > 6000.0 {
+        // `:27628-27630` — the damage and the defense reset to the kind's.
+        self.damage_override = None;
+        self.defense_override = None;
+        // `:27641-27656` — the despawn: a dead player or one 6000 px away.
+        let far = (self.x - player.x).abs() > 6000.0 || (self.y - player.y).abs() > 6000.0;
+        if player.dead || far {
             self.ai[1] = 3.0;
-        } else if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
+        }
+        // `:27657-27661` — the day-time → the rage.
+        if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
             self.ai[1] = 2.0;
         }
-        // The limb spawn (the one-shot).
+        // The limb spawn (the C#'s `ai[0] == 0` init, `:27632-27660`): the
+        // sim resolves the four limbs (`wants_limbs`).
         if self.caster_counter == 0 && self.cast_windup == 0 {
             self.caster_counter = 1;
             self.wants_limbs = true;
         }
-        if self.ai[1] == 0.0 {
-            // The hover (`:27677-27764`): the Y steer to `player.Y` in
-            // the ±200/±500 bands, the X steer to ±100, the 0.1/2 caps,
-            // the 0.98 friction; the 600-tick cycle flips to the rage.
-            self.ai[2] += 1.0;
-            // The roll (`:27694-27698`): the hover's rotation rides the
-            // drift `velocity.X / 15` (the Mech Queen eases into half of
-            // it through `AngleLerp`) — the v1 never wrote a rotation, so
-            // the head drew bolt upright while it strafed.
-            self.rotation = if self.ai[3] != 0.0 {
-                angle_lerp(self.rotation, self.vx / 15.0 * 0.5, 0.75)
-            } else {
-                self.vx / 15.0
-            };
-            let target_y = if pcy > cy + 200.0 {
-                pcy - 500.0
-            } else if pcy < cy - 200.0 {
-                pcy - 200.0
-            } else {
-                pcy
-            };
-            self.vy += (target_y - cy).signum() * 0.1;
-            self.vy = self.vy.clamp(-2.0, 2.0);
-            let target_x = if pcx > cx + 100.0 {
-                cx + 100.0
-            } else if pcx < cx - 100.0 {
-                cx - 100.0
-            } else {
-                cx
-            };
-            self.vx += (target_x - cx).signum() * 0.1;
-            self.vx = self.vx.clamp(-8.0, 8.0);
-            self.vx *= 0.98;
-            if self.ai[2] >= 600.0 {
-                self.ai[1] = 1.0;
-                self.ai[2] = 0.0;
+        match self.ai[1] as i32 {
+            0 => {
+                // `:27679-27764` — the hover: the 600-tick cycle, the
+                // rotation (the drift / 15) and the acceleration bands.
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 600.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 1.0;
+                }
+                self.rotation = self.vx / 15.0;
+                let (accel_y, cap_y, accel_x, cap_x) = if world.hard_mode {
+                    (0.03f32, 4.0f32, 0.07f32, 9.5f32)
+                } else {
+                    (0.1, 2.0, 0.1, 8.0)
+                };
+                // `:27730-27751` — the vertical band: the 200 band above
+                // the player and the 500 band below it.
+                if self.y > pcy - 200.0 {
+                    if self.vy > 0.0 {
+                        self.vy *= 0.98;
+                    }
+                    self.vy -= accel_y;
+                    if self.vy > cap_y {
+                        self.vy = cap_y;
+                    }
+                } else if self.y < pcy - 500.0 {
+                    if self.vy < 0.0 {
+                        self.vy *= 0.98;
+                    }
+                    self.vy += accel_y;
+                    if self.vy < -cap_y {
+                        self.vy = -cap_y;
+                    }
+                }
+                // `:27752-27764` — the horizontal band: 100 px either side.
+                if cx > pcx + 100.0 {
+                    if self.vx > 0.0 {
+                        self.vx *= 0.98;
+                    }
+                    self.vx -= accel_x;
+                    if self.vx > cap_x {
+                        self.vx = cap_x;
+                    }
+                }
+                if cx < pcx - 100.0 {
+                    if self.vx < 0.0 {
+                        self.vx *= 0.98;
+                    }
+                    self.vx += accel_x;
+                    if self.vx < -cap_x {
+                        self.vx = -cap_x;
+                    }
+                }
             }
-        } else if self.ai[1] == 1.0 {
-            // The enraged charge (`:27765-27859`): the straight line at
-            // the classic 2, the 400-tick duration.
-            self.ai[2] += 1.0;
-            // The spin (`:27781-27786`): the head rolls `direction * 0.3`
-            // per tick (the Mech Queen eases into the half-drift instead) —
-            // the port's find_frame case 127 pins row 2 for this phase, so
-            // the roll is the only motion the wide row shows.
-            self.rotation = if self.ai[3] != 0.0 {
-                angle_lerp(self.rotation, self.vx / 15.0 * 0.5, 0.75)
-            } else {
-                self.rotation + self.facing as f32 * 0.3
-            };
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(0.001);
-            self.vx = dx / d * 2.0;
-            self.vy = dy / d * 2.0;
-            if self.ai[2] >= 400.0 {
-                self.ai[1] = 0.0;
-                self.ai[2] = 0.0;
+            1 => {
+                // `:27765-27859` — the charge: the damage and the defense
+                // double, the 400-tick cycle, the roll and the rush.
+                self.defense_override = Some(self.defense() * 2);
+                self.damage_override = Some(self.kind.contact_damage() * 2);
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 400.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+                self.rotation += self.facing as f32 * 0.3;
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let mut speed = if world.hard_mode { 6.0 } else { 2.0 };
+                if world.hard_mode {
+                    // `:27800-27833` — the expert's distance ramp.
+                    if d > 150.0 {
+                        speed *= 1.05;
+                    }
+                    for threshold in [
+                        200.0, 250.0, 300.0, 350.0, 400.0, 450.0, 500.0, 550.0, 600.0,
+                    ] {
+                        if d > threshold {
+                            speed *= 1.1;
+                        }
+                    }
+                }
+                let k = speed / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
             }
-        } else if self.ai[1] == 2.0 {
-            // The day-rage (`:27860-27892`): the 8-32 chase.
-            self.rotation = if self.ai[3] != 0.0 {
-                angle_lerp(self.rotation, self.vx / 15.0 * 0.5, 0.75)
-            } else {
-                self.rotation + self.facing as f32 * 0.3
-            };
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(0.001);
-            let speed = (10.0 + d / 100.0).clamp(8.0, 32.0);
-            self.vx = dx / d * speed;
-            self.vy = dy / d * speed;
-        } else {
-            // The despawn drift (`:27893-27941`).
-            self.vy += 0.1;
-            self.vx *= 0.95;
+            2 => {
+                // `:27860-27892` — the day-time rage: the invulnerable
+                // 8-32 chase.
+                self.damage_override = Some(9999);
+                self.defense_override = Some(9999);
+                self.rotation += self.facing as f32 * 0.3;
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let speed = (10.0 + d / 100.0).clamp(8.0, 32.0);
+                let k = speed / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
+            }
+            _ => {
+                // `:27893-27941` — the despawn drift.
+                self.vy += 0.1;
+                if self.vy < 0.0 {
+                    self.vy *= 0.95;
+                }
+                self.vx *= 0.95;
+            }
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
         self.sprite_dir = self.facing;
@@ -17251,6 +17296,9 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
+        // The hover resets the damage and the defense to the kind's rows
+        // (`:27628-27630`), so the base is readable before the charge.
+        let base_defense = pr.defense();
         for _ in 0..600 {
             pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         }
@@ -17261,11 +17309,28 @@ mod tests {
             (speed - 2.0).abs() < 0.2,
             "the classic charge speed ({speed})"
         );
+        // `:27767-27768` — the charge doubles the damage and the defense.
+        assert_eq!(
+            pr.damage_override,
+            Some(NpcKind::SkeletronPrime.contact_damage() * 2),
+            "the charge doubles the damage"
+        );
+        assert_eq!(
+            pr.defense_override,
+            Some(base_defense * 2),
+            "the charge doubles the defense"
+        );
         // The 400-tick charge falls back to the hover.
         for _ in 0..400 {
             pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         }
         assert_eq!(pr.ai[1], 0.0, "the hover resumes");
+        // `:27862-27863` — the day-time rage is invulnerable.
+        w.day_time = true;
+        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(pr.ai[1], 2.0, "the day-time rage armed");
+        assert_eq!(pr.damage_override, Some(9999), "the rage's damage");
+        assert_eq!(pr.defense_override, Some(9999), "the rage's defense");
     }
 
     #[test]
