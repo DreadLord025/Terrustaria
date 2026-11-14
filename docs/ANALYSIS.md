@@ -765,11 +765,31 @@ paint and the coatings.
   (`TilePaintSystemV2.cs:43-51`), collapsed into a per-instance shader branch.
   Deviation: the vanilla recolor runs as compiled HLSL passes whose source is
   not part of the decompile; this port washes the texel with the paint hue while
-  its sRGB luminance carries the texture detail. The basic/deep paint pairs
+  its sRGB luminance carries the texture detail (the `paint_rgb`/dye constants
+  decode with the piecewise sRGB EOTF into the samples' linear space — S1-G-4).
+  The basic/deep paint pairs
   (1-12/13-24) therefore shade identically (vanilla deepens saturation), and the
   grass "special group" hue bands are not modelled. Negative paint (30) inverts
-  the pixel; illuminant (31) draws unpainted (the vanilla pass 0) and glows
+  the pixel byte-exactly (`decode(1 - encode(tex))` = `255 - tex_byte`); illuminant
+  (31) draws unpainted (the vanilla pass 0) and glows
   through the light path.
+
+### The tint's colour space (S1-G-4, 2026-11-14)
+
+XNA's render formats are plain `Color` — no sRGB decode anywhere — so the vanilla
+SpriteBatch multiplies the texture's sRGB bytes with the tint bytes in gamma space
+and the backbuffer stores that product raw: `display = tex_byte * tint_byte / 255`
+(the float pipeline rounds; the CPU-side `Color * Color` operator truncates). The
+port's atlas view decodes (`Rgba8UnormSrgb`) and its swapchain re-encodes, so the
+fragment carries the product linearised once: `f = srgb_decode(encode(painted) *
+tint)` — `encode(f)` lands back on the product byte exactly. The earlier
+`pow(tint, 2.2)` (and even linearising the tint with the piecewise decode) solved
+the wrong equation — `decode(tex) * decode(tint)` ≠ `decode(tex * tint)` — and
+drifted up to 7 LSB per channel. `sprite.rs`'s
+`tint_parity_with_the_csharp_byte_multiply` pins the 256×256 pair table, and the
+A/B screenshots show the corrected output (max 9 LSB over a world frame,
+deterministic; the invariants in AGENTS.md "Rendering" describe this as the tint
+matching XNA's byte multiplies).
 - Coatings: Echo blocks/walls are hidden (`TileDrawing.IsVisible`,
   `TileDrawing.cs:1411-1432`; `WallDrawing.cs:91`) — the port has neither the
   Echo Monolith nor the Echo sight item, so `CanSeeInvisibleBlocks` is always
