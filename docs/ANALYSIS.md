@@ -12240,3 +12240,68 @@ is the tile-space identity); the minimap call (`Main.cs:55703`, with the
 clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
 their own passes; the hover text feeds the map's text line through
 `ui::text::hud_text` (the C# `ref text`).
+
+## The composite arm poses (S1-G-16, 2026-11-14)
+
+`Player.compositeFrontArm`/`compositeBackArm` (`Player.cs:1906/:4347-4365`)
+were never ported: the renderer used a `swing_stand_in` stand-in that
+enabled the front arm for three use styles (2/11/13), never the back arm,
+and read the stretch ladders off a normalised swing instead of the C#'s
+`itemAnimation` — so the arms posed wrong in most item animations (the
+style 11 ladder was inverted, the style 13 stretch was inverted, the style 2
+pose never reached its relaxed row). The sim now owns the state:
+
+* `AnimatePlayerAndGetItemFrame` (`Player.cs:43372-43386`) resets both arms
+  to DISABLED per frame and dispatches: `itemAnimation > 0` →
+  `ItemCheck_ApplyUseStyle`, otherwise → `ItemCheck_ApplyHoldStyle`.
+* `ItemCheck_ApplyUseStyle`'s composite assignments (`:50885-51375`) are
+  ported per use style — 2 (both arms `-PI/2 * dir`, the `num10` quarters),
+  8 (the wind-up/swing-arc phases), 9 (the `num7 → num8` arc), 11 (the
+  `num12` two-cycle + the back arm Full at `-PI/16`), 12 (the `num30`
+  two-cycle + `num31 = cos(num30 * PI) * 0.2`), 13 (the `num20` thirds +
+  `itemRotation * Directions.Y - PI/2 * dir`), 14 (the back arm Full at
+  `-3*PI/4 * dir`) and 15 (both arms at `-2*PI/5 * dir`).
+* `ItemCheck_ApplyHoldStyle`'s composite assignments (`:50520-50582`) are
+  ported per hold style — 4 (the umbrella: the front Full + the back
+  ThreeQuarters around `num9 ± num8`), 5 (the back Quarter at `-PI/4 * dir`
+  + the front Full at `-0.39269912 * dir`), 6 (the back ThreeQuarters at
+  `-3*PI/5 * dir`) and 8 (both arms at `-2*PI/5 * dir`).
+* The draw consumes the live state: `PlayerDrawSet.UpdateCompositeArm`
+  (`PlayerDrawSet.cs:2246-2275`) picks the front column 7 / the back
+  column 8 at the stretch row (Full 0 / ThreeQuarters 1 / Quarter 2 /
+  None 3) and the rotation pivots the arm around the composite pivot
+  (`render/player_layers.rs::update_composite_arm`).
+
+The shooting styles' `itemRotation` (`Player.cs:47371-47378`) is now the
+C#'s `atan2(aimY * direction, aimX * direction) - fullRotation`: the port
+keeps the aim as an angle, so the mirrored `atan2` is the aim + PI when
+the player faces left (`item_rotation_for_aim`). The old stand-in used
+`aim * direction` — the negated angle, not the mirrored vector — so the
+useStyle 5 body rows (`num21 = itemRotation * direction`, `:36423`) and the
+useStyle 13 composite arm were off by PI when facing left.
+
+Deviations (deliberate, bounded):
+
+* The useStyle 8 overshoot branch (`itemAnimation > useAnimation`,
+  `:51226-51244`) is unreachable — the port's swing counter never exceeds
+  `itemAnimationMax`.
+* The useStyle 13 stretch base is `itemAnimationMax`, where the C# uses
+  `itemTimeMax` when it is non-zero (`:51176-51184`) — the port has no
+  per-item use time.
+* The useStyle 9 branch also moves `itemLocation` through
+  `GetFrontHandPosition` (`:50901-50905`); the port draws the held item
+  from its own item-row chain (the held-item positions are the
+  M2-DRAW item-row work).
+* `AnimatePlayerAndGetItemFrame` reads `lastVisualizedSelectedItem` while
+  the animation runs (`:43374`); the port uses the currently selected item.
+* The petting composite arms (`ItemCheck_ApplyHoldStyle`'s `isPetting`
+  block, `:50242-50269`) and the football arm (`:36139-36143`) stay
+  unported (no petting/football systems).
+* `Player.Directions.Y` (the gravity direction, `:3849`) is 1 in the port
+  (no gravity flip).
+
+Tests: `s1_player_composite_tests` — the eat style's quarters, the mow
+style's two-cycle + the back arm's constant pose, the rapier's stretch
+thirds + its item-rotation arm, the shoot style's back arm, the hold
+styles' arms and the aim mirror. All seven are mutation-checked (RED on
+the pre-fix code).
