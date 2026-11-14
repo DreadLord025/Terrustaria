@@ -13915,3 +13915,55 @@ Deliberate deviations:
    plays the legacy cue everywhere.
 4. The C#'s local-player hurt sound plays non-positionally
    (`Player.cs:38572`); the port's drain plays it without a position ✓.
+
+## The explicit carrier links (S1-D-6b, 2026-11-14)
+
+The C#'s boss-part links are index links into `Main.npc` — `NPC.ai[3]`
+points at the carrier (`NPC.cs:6161`), `AI_077`'s `localAI[0..2]` point at
+the Moon Lord's three parts (`NPC.cs:41229-41232`), and `AI_082`'s leech
+blob holds its head's index + 1 (`NPC.cs:36630-36640`). The port's
+`App::npcs` compacts every frame (the death retain), so a Vec index does
+not survive the frame; the port used to re-derive the links by KIND search
+every tick ("the first alive Moon Lord core").
+
+**The stable identity.** `Npc.uid` (`NPC.whoAmI`, `NPC.cs:6145`) is the
+port's stand-in: the sim hands every NPC its id once (`App::next_npc_uid`)
+and never reuses it. The links now ride the ids:
+
+* the Moon Lord's hands and head carry the core's id in `carrier_uid` (the
+  C#'s `ai[3]`) and the core keeps the parts' ids in `moon_parts` (the
+  C#'s `localAI[0..2]`) — set at the spawn, exactly like the vanilla;
+* the leech blob's anchor is the head's id;
+* the core's part check (`NPC.cs:41250-41269`) resolves the ids each tick
+  (`moon_parts_lost`), because the core's own AI has no NPC list.
+
+A part whose carrier died falls with it (`Main.npc[ai[3]]` inactive), and a
+second Moon Lord never steals the first one's parts — with the kind search
+it did.
+
+**The Old One's Army's wave-7 anchor.** `DD2Event`'s tier-3 budget reads
+the Betsy's own life (`NPC.FindFirstNPC(551)`, `DD2Event.cs:1487-1494`):
+`currentKillCount = 100 - life/lifeMax*100` and the budget is 100; with no
+Betsy on the field the C#'s `-1` arm takes the budget of 1. The port had
+the anchor stubbed (`betsy_hp_ratio` was a hard 0.0, so the wave always
+showed 100). The app now resolves the Betsy (`dd2_betsy_hp_ratio`) and the
+tier's table reads it.
+
+**The tiered wave budget.** `CheckProgress` (`DD2Event.cs:367-392`) takes
+the budget and the kill worth from the ongoing difficulty
+(`GetInvasionStatus` → `Difficulty_N_GetRequiredWaveKills`,
+`GetMonsterPointsWorth` at `:546-554`), and the wave's roster from the
+same tier (`GetEnemiesForWave`). The port's kill report used the tier-1
+table for every tier; it now picks the tier's roster, budget and worth.
+The per-monster exceptions inside the C#'s worth rows (the Dark Mage /
+Ogre / Wither Beast zero-point kills at the wave cap, `DD2Event.cs:1106`/
+`:1199`/`:1509`) are still the port's flat per-tier worth — a follow-up.
+
+**Still open (S1-D-6c).** The Moon Lord core's vulnerable phase: the C#'s
+`flag2` check (`NPC.cs:41270-41285`) hands the core its vulnerable state
+(`ai[0] = 1`, `dontTakeDamage = false`) once all three parts are in their
+death state. The port's core stays in its `ai[0] == 0` phase with
+`dont_take_damage = true`, so the melee cannot touch it and only the
+projectile path (which lacks the C#'s `dontTakeDamage` gate,
+`Projectile.cs:12662-12666`) can land a hit. Both halves belong together:
+the gate alone would make the Moon Lord unkillable.

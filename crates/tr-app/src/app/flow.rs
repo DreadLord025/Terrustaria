@@ -1963,6 +1963,7 @@ pub(crate) mod front_flow_tests {
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             next_worm_id: 1,
+            next_npc_uid: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
             in_reforge_menu: false,
