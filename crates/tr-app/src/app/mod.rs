@@ -804,7 +804,7 @@ pub(crate) struct App {
 /// G6: everything the world instance range (sky strips, tiles, walls, dark rects)
 /// depends on, compared bit-exactly. A hit keeps the previous frame's instances and
 /// only redraws the UI; the light map has its own cache (D2) inside `LightMap`.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct WorldFrameKey {
     /// Camera floored to its tile: sub-tile pans keep the world range (the GPU
     /// transform moves it) while the background range is rebuilt every frame.
@@ -829,6 +829,11 @@ pub(crate) struct WorldFrameKey {
     pub(crate) hand_key: u32,
     /// Light-map generation; a recompute (D3) changes tile tints.
     pub(crate) light_generation: u64,
+    /// `LightStyle::brightness` (`Lighting.cs:108-116`): the Darkness debuff's
+    /// `blind` flag drops `GlobalBrightness` 1.2 → 1.0, and `shade` multiplies
+    /// every tile tint by it — an HUD-buff input inside the cached world range,
+    /// so it must ride the key (S1-H-15).
+    pub(crate) brightness: u32,
     /// Waterfall animation frames + visible-list revision (0 when none visible).
     pub(crate) waterfall: u64,
     /// Remote peers' smoothed positions/animations and the NPC smoothing
@@ -836,6 +841,43 @@ pub(crate) struct WorldFrameKey {
     /// range. Zero in single-player (the offsets are zero and no peers).
     pub(crate) net_key: u32,
     pub(crate) world_revision: u64,
+}
+
+#[cfg(test)]
+mod frame_key {
+    use super::*;
+
+    /// S1-H-15: the Darkness debuff's `blind` flag drops `LightStyle::brightness`
+    /// 1.2 → 1.0 (`Lighting.cs:108-116`) and `LightStyle::shade` multiplies every
+    /// tile tint by it, so the brightness rides the G6 `WorldFrameKey` — two
+    /// frames that differ only in the blind state must not share a cached world
+    /// range. (The buff bar itself redraws in the uncached UI pass; chat and the
+    /// emote wheel have no draw path yet — S1-E-26 — so the buff bar's world-input
+    /// is the only HUD key this frame needs.)
+    #[test]
+    fn blind_brightness_changes_the_frame_key() {
+        let key = |brightness: f32| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: brightness.to_bits(),
+            waterfall: 0,
+            net_key: 0,
+            world_revision: 0,
+        };
+        assert_ne!(key(1.2), key(1.0), "blind's GlobalBrightness drop must change the key");
+        assert_eq!(key(1.2), key(1.2), "an unchanged brightness must not");
+    }
 }
 
 /// `TR_POSE=sit|sleep` — writes the furniture beside the world spawn and

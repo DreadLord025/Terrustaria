@@ -998,6 +998,45 @@ mod tests {
     }
 
     #[test]
+    fn the_reverse_rows_match_the_csharp_derivation() {
+        // `CreateReverseWallRecipes` then `CreateReversePlatformRecipes`
+        // (`Recipe.cs:15148-15149`, the bodies at `:16652-16702`) flip every
+        // single-ingredient recipe whose result places a `TileID.Sets.
+        // Platforms` tile or a wall (`requiredItem[0].createWall == -1`);
+        // each flip lands right after its source row and carries
+        // `notDecraftable` (`:16665`). The generator derives the flips from
+        // the C# item data (`Item.SetDefaults` createTile/createWall,
+        // S1-L-11); the count pins the derivation so a registry change
+        // cannot silently move the table.
+        let flips = RECIPES.iter().filter(|r| r.not_decraftable).count();
+        assert_eq!(flips, 311, "reverse rows");
+        // Ice Block from 2 FrozenPlatform (createTile 19, a platform).
+        let ice = RECIPES
+            .iter()
+            .find(|r| {
+                r.not_decraftable
+                    && r.create.0 == 664
+                    && r.required.len() == 1
+                    && r.required[0].item == 3908
+                    && r.required[0].stack == 2
+            })
+            .expect("Ice Block <- 2 FrozenPlatform");
+        assert_eq!(ice.create.1, 1);
+        // Wood from 4 LivingLeafWall (createWall 60; Wood has none).
+        let wood = RECIPES
+            .iter()
+            .find(|r| {
+                r.not_decraftable
+                    && r.create.0 == 9
+                    && r.required.len() == 1
+                    && r.required[0].item == 3584
+                    && r.required[0].stack == 4
+            })
+            .expect("Wood <- 4 LivingLeafWall");
+        assert_eq!(wood.create.1, 1);
+    }
+
+    #[test]
     fn the_group_table_is_the_setuprecipegroups_order() {
         // `Recipe.cs:499-533`: 34 groups, ids 0..33 in registration order;
         // the spot checks quote the call sites.

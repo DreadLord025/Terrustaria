@@ -117,7 +117,7 @@ and render the list of craftable recipes in the panel.
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
 | The authored recipe block (`SetupRecipes`) | PARTIAL | `recipes_gen.rs` (GENERATED) + `tools/gen_recipes.py` | 2 481 executed C# sites → **2 480 ported rows** (1 skipped: `needTorchGodsFavor`, `Recipe.cs` `needTorchGodsFavor = true` row). The rows are in the C# registration order, so the panel's listing order matches. |
-| The derived reverse rows (`CreateReversePlatformRecipes`/`CreateReverseWallRecipes`) | PARTIAL (drift) | `recipes_gen.rs` (284 `reverse` rows) | The generator reproduces the insertion rule, but the committed file is **stale**: a fresh run emits **2 791** rows (2 480 + **311** reverse) — `python tools/gen_recipes.py --check` fails. See deviation D1. |
+| The derived reverse rows (`CreateReversePlatformRecipes`/`CreateReverseWallRecipes`) | PORTED | `recipes_gen.rs` (311 `reverse` rows) | **Re-pinned 2026-11-14 (S1-L-11)**: the rows now derive from the C# item data (`Item.SetDefaults` createTile/createWall — `SetDefaults1..5`, the `if (type >= A && type <= B)` range blocks, the `DefaultTo*` delegation), not from `itemdata.rs`; the table is **2 791** rows (2 480 + 311), the 27 restored flips are strictly additive. Gated by `gen_recipes.py --check`, `tools/test_gen_recipes.py` and `craft.rs::the_reverse_rows_match_the_csharp_derivation`. See D1/D7 (closed). |
 | `Recipe` record fields | PARTIAL | `craft.rs::Recipe` (39-64) | Ported: `createItem`, `requiredItem`, `requiredTile`, `needWater/needHoney/needLava/needSnowBiome/needGraveyardBiome`, `alchemy`, `notDecraftable`. Missing: `needTorchGodsFavor`, `needMechdusa` (no port systems), `customShimmerResults`, `crimson`, `corruption` (decraft/shimmer bookkeeping only). |
 | The group registry (`SetupRecipeGroups`) | PORTED | `craft.rs::GROUPS` (151-238) | **34/34** groups, id = registration order, `icon` = C# `Items[0]`, `members` = C# `ValidItems` (e.g. Birds 2015/2016/2017 ↔ `Recipe.cs:499`). Verified by `the_group_table_is_the_setuprecipegroups_order`. |
 | The group-expansion rule | PORTED | `craft.rs::Requirement::matches` (256-263) + `gen_recipes.py` (317-343) | C# `CreateRequiredItemQuickLookups` (15162-15191) substitutes the fake id only when the authored item is a member; the generator binds a group to a member slot and leaves an unbound group as the exact item (the Lesion rows) — the same outcome. The C#'s fake-id bucket (`FakeItemIdOffset = 1000000`) is folded per-requirement in Rust; the totals agree (the port's own note, `craft.rs` 446-450). |
@@ -154,26 +154,32 @@ walk: ids/groups/stacks, count ≥ 2 700), `the_group_table_is_the_setuprecipegr
 `crates/tr-app/src/ui/crafting.rs` — **10** `#[test]` (layout/geometry/filter-strip only;
 no rule test).
 
-**Gap:** no test asserts the *count* against the C# (the integrity test only checks
-`count >= 2700`), and no CI step runs `tools/gen_recipes.py --check`, so the table drift
-below passes the suite.
+**Gap:** ~~no test asserts the *count* against the C# (the integrity test only checks
+`count >= 2700`), and no CI step runs `tools/gen_recipes.py --check`~~ — **closed
+2026-11-14 (S1-L-11)**: `craft.rs::the_reverse_rows_match_the_csharp_derivation` pins
+the 311 reverse flips, `tools/test_gen_recipes.py` re-derives the plan, and
+`gen_recipes.py --check` is part of the AGENTS.md verification loop, so the table drift
+below can no longer pass the suite.
 
 ## Deviations & risks
 
-- **D1 — the recipe table is out of date (behavioural, high).** `python tools/gen_recipes.py
-  --check` reports *"recipes_gen.rs is out of date"*. A fresh run emits **2 791** rows
-  (2 480 authored + **311** reverse) against the committed **2 764** (2 480 + **284**).
-  The 27 extra rows are reverse-wall recipes (`Wood x1`, `Sandstone x1`, `IronBrick x1`,
-  `LunarBrick x1`, `LesionBlock x1` ×2, `Cog x1`, `CrystalBlock x1`, `SpiderBlock x1`,
-  `HardenedSand x1`, the three `Sandstone` variants, the three `SillyBalloon*`, …) — the
-  authored rows are byte-identical, only the derived set moved. Cause: the generator's
-  reverse derivation is driven by the **port's** `crates/tr-app/src/itemdata.rs`
-  (`tile:`/`wall:` fields), not by the C#'s `createItem.createTile/createWall`; the item
-  registry gained wall data since the table was last generated. **ROADMAP/ATLAS does not
-  admit this** — the ATLAS row `M3-CRAFT-6` (ATLAS.md:1375) claims "2764 rows in the C#
-  registration order: 2479 authored + 284 derived" as DONE, and no drift check exists.
-  The port currently offers 27 craftable recipes the vanilla table does not have (or is
-  missing 27 it should — the direction depends on which registry is right).
+- **D1 — the recipe table is out of date (behavioural, high).**
+  **CLOSED 2026-11-14** (`S1-L-11-recipes-reverse-from-csharp`): the generator derives
+  the reverse rows from the **C# item data** — a fresh parse of `Item.SetDefaults`
+  (`Item.cs:48663` → `ResetStats` stock + `SetDefaults1..5` case bodies, incl. the
+  `if (type >= A && type <= B)` range blocks and the `DefaultTo*` delegation chain) —
+  and the regenerated table (**2 791** = 2 480 + **311**) is committed; the 27 restored
+  flips are strictly additive (0 removed). The old driver — the port's `itemdata.rs`
+  `tile:`/`wall:` fields — was also read with a suffix bug (`projectile: Some(n)`
+  contains `tile: Some(n)` as a substring), which is what had actually moved the
+  derived set. `python tools/gen_recipes.py --check` + `tools/test_gen_recipes.py` +
+  the Rust pin `craft.rs::the_reverse_rows_match_the_csharp_derivation` (311
+  `notDecraftable` flips) now gate the drift (AGENTS.md "Verification before merging").
+  Historical report: the fresh run emitted **2 791** rows (2 480 authored + **311**
+  reverse) against the then-committed **2 764** (2 480 + **284**); the 27 extra rows
+  were reverse-wall recipes (`Wood x1`, `Sandstone x1`, `IronBrick x1`, `LunarBrick x1`,
+  `LesionBlock x1` ×2, `Cog x1`, `CrystalBlock x1`, `SpiderBlock x1`, `HardenedSand x1`,
+  the three `Sandstone` variants, the three `SillyBalloon*`, …).
 - **D2 — REFUTED (was "the station reach region is one tile too large").**
   `Player.AdjTiles` (`Player.cs:35671-35674`) scans
   `WorldUtils.ClampToWorld(TileReachCheckSettings.Simple.GetTileRegion(this))`.
@@ -216,10 +222,17 @@ below passes the suite.
   `the_craft_rolls_come_from_the_unified_random_stream` pins the replay + the draw count
   (mutation-checked).
 - **D7 — the reverse-recipe derivation is a proxy (behavioural, low, same root as D1).**
-  The C# derives the reverse rows from `Main.recipe[i].createItem.createTile/createWall`
-  and `requiredItem[0].createWall == -1` (`Recipe.cs:16653`, `:16677`); the generator
-  approximates that from `itemdata.rs` (`gen_recipes.py` 515-545). Any item-registry
-  change silently moves the derived rows — which is exactly what happened (D1).
+  **CLOSED 2026-11-14** (with D1): the generator reads the C#'s own item registry —
+  per-type `createTile`/`createWall` parsed from `Item.cs` (`SetDefaults1..5`; the
+  series forms `createWall = 116 + type - 1948` are evaluated per stacked case id, the
+  `(ushort)`-casted `DefaultTo*` arguments are resolved through the delegation chain).
+  `tools/test_gen_recipes.py` re-derives the whole reverse plan independently of
+  `reverse_pass` and diffs it against the emitted rows.
+- **D9 — documentation drift in the ATLAS row (cosmetic).**
+  **CLOSED 2026-11-14** (with D1): `M3-CRAFT-6` (ATLAS.md:1375) now says **2 480
+  authored / 2 791 total** and the helper count is corrected to 34 (`AddRecipe` is not
+  a furniture helper). The claimed "the 35 `Add*Furniture` helpers" docstring was not
+  found in the generator itself (grep) — the count lives in the ATLAS row only.
 - **D8 — the generator hardcodes an absolute path outside the worktree (tooling, low).**
   **CLOSED 2026-11-13** (`S1-L-11e-craft-rng-gen-path`): `gen_recipes.py` reads
   `ROOT/decompiled/Terraria` — the checkout's own junction (a fresh worktree creates it per
@@ -243,12 +256,16 @@ below passes the suite.
 
 ## Task seeds
 
-- **S** — Regenerate `recipes_gen.rs` from the current decompiled tree and commit it; add
-  `python tools/gen_recipes.py --check` to the CI/verification loop so D1 cannot recur.
-  Depends on: nothing. Closes: D1 (partly), D9.
-- **M** — Derive the reverse rows from the C#'s own item data (`createTile/createWall`)
+- **S** — ~~Regenerate `recipes_gen.rs` from the current decompiled tree and commit it; add
+  `python tools/gen_recipes.py --check` to the CI/verification loop so D1 cannot recur.~~
+  **DONE 2026-11-14** (S1-L-11): regenerated (2 791 rows) and the check is part of the
+  verification (AGENTS.md) with `tools/test_gen_recipes.py` alongside. Closes: D1, D9.
+- **M** — ~~Derive the reverse rows from the C#'s own item data (`createTile/createWall`)
   instead of `itemdata.rs`, or pin the item registry and regenerate; add a test that the
-  reverse-row count matches the C#'s rule. Closes: D1, D7.
+  reverse-row count matches the C#'s rule.~~ **DONE 2026-11-14** (S1-L-11): the
+  generator parses `Item.SetDefaults`; the count test is
+  `craft.rs::the_reverse_rows_match_the_csharp_derivation` (311 flips) +
+  `tools/test_gen_recipes.py` (independent transcription). Closes: D1, D7.
 - **M** — Fix the reach region to the C#'s exclusive right/bottom edge
   (`HX-1`/`HY-1`) and add a boundary test (a station exactly at the vanilla edge must not
   be adjacent; one tile further must not be either). Closes: D2.

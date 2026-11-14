@@ -334,6 +334,11 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // `ambient_sound::blizzard_loop_volumes`. The whole call chain runs only
     // in game (the C# `SceneState.Update` is under `!gameMenu`, `:17802`), so
     // the loops freeze at their last volume in menus.
+    //
+    // S1-E-23: the loops ride the tracked-sound layer verbatim
+    // (`SceneState.cs:197-247`) — the ensure-plays behind the dead
+    // `SlotId`s, the split landing on the `ActiveSound.Volume` override,
+    // and the `SlotId.Invalid` drops when the sound died at volume 0.
     let blizzard_on = metrics.zone_rain && metrics.zone_snow;
     let (strong_volume, inside_volume, blizzard_volume) =
         crate::ambient_sound::blizzard_loop_volumes(
@@ -343,10 +348,77 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
             scene_state.blizzard_sound_volume,
         );
     scene_state.blizzard_sound_volume = blizzard_volume;
-    app.audio
-        .set_ambient_loop(crate::ambient_sound::BLIZZARD_STRONG_LOOP, strong_volume);
-    app.audio
-        .set_ambient_loop(crate::ambient_sound::BLIZZARD_INSIDE_LOOP, inside_volume);
+    // `:197-206`: while blizzard, both sounds exist (a dead slot re-plays).
+    if blizzard_on {
+        if app
+            .audio
+            .get_active_sound(scene_state.strong_blizzard_sound)
+            .is_none()
+        {
+            scene_state.strong_blizzard_sound = app
+                .audio
+                .play_tracked_global(crate::ambient_sound::blizzard_strong_loop_style());
+        }
+        if app
+            .audio
+            .get_active_sound(scene_state.inside_blizzard_sound)
+            .is_none()
+        {
+            scene_state.inside_blizzard_sound = app
+                .audio
+                .play_tracked_global(crate::ambient_sound::blizzard_inside_loop_style());
+        }
+    }
+    // `:222-247`: the split as the volume override; a dead sound and a zero
+    // volume drop the slot.
+    if blizzard_volume > 0.0 {
+        if app
+            .audio
+            .get_active_sound(scene_state.strong_blizzard_sound)
+            .is_none()
+        {
+            scene_state.strong_blizzard_sound = app
+                .audio
+                .play_tracked_global(crate::ambient_sound::blizzard_strong_loop_style());
+        }
+        if let Some(strong) = app
+            .audio
+            .get_active_sound_mut(scene_state.strong_blizzard_sound)
+        {
+            strong.volume = strong_volume;
+        }
+        if app
+            .audio
+            .get_active_sound(scene_state.inside_blizzard_sound)
+            .is_none()
+        {
+            scene_state.inside_blizzard_sound = app
+                .audio
+                .play_tracked_global(crate::ambient_sound::blizzard_inside_loop_style());
+        }
+        if let Some(inside) = app
+            .audio
+            .get_active_sound_mut(scene_state.inside_blizzard_sound)
+        {
+            inside.volume = inside_volume;
+        }
+    } else {
+        // `:236-245`: mute the live instances, drop the dead slots.
+        match app
+            .audio
+            .get_active_sound_mut(scene_state.strong_blizzard_sound)
+        {
+            Some(strong) => strong.volume = 0.0,
+            None => scene_state.strong_blizzard_sound = tr_core::slot::SlotId::INVALID,
+        }
+        match app
+            .audio
+            .get_active_sound_mut(scene_state.inside_blizzard_sound)
+        {
+            Some(inside) => inside.volume = 0.0,
+            None => scene_state.inside_blizzard_sound = tr_core::slot::SlotId::INVALID,
+        }
+    }
     // `Main.tileColor` = the sky tint applied to tiles
     // (`Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`), with the rain dim
     // the frame applies (`frame.rs`'s `rain_dim`). Only the Noir formula

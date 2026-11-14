@@ -952,6 +952,13 @@ pub struct SceneState {
     /// `MoveTowards` at 0.01 per update — M6-AUDIO-1's emitter, driven from
     /// the `tr-app` side (`ambient_sound::blizzard_loop_volumes`).
     pub blizzard_sound_volume: f32,
+    /// `SceneState._strongBlizzardSound` (`SceneState.cs:32`) — the tracked
+    /// layer's slot for the outside blizzard loop (S1-E-23; the C# starts it
+    /// at `SlotId.Invalid`).
+    pub strong_blizzard_sound: crate::slot::SlotId,
+    /// `SceneState._insideBlizzardSound` (`SceneState.cs:34`) — the
+    /// inside-building loop's slot.
+    pub inside_blizzard_sound: crate::slot::SlotId,
     /// `SceneState.skipTransitions` (`:35`).
     pub skip_transitions: bool,
     /// `Main.bloodMoon` — the only M1 reader is the phase-3 BloodMoon filter;
@@ -978,6 +985,8 @@ impl SceneState {
             shimmer_darken: 0.0,
             shimmer_brighten_delay: 0.0,
             blizzard_sound_volume: 0.0,
+            strong_blizzard_sound: crate::slot::SlotId::INVALID,
+            inside_blizzard_sound: crate::slot::SlotId::INVALID,
             skip_transitions: true,
             blood_moon: false,
             forced_severity: None,

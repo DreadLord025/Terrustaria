@@ -114,6 +114,30 @@ Tile flags we map 1:1 into a packed 16-byte struct (`tr-core/src/tile.rs`): acti
 half-brick, actuator, inactive, fullbright, liquid kind, liquid amount, slope, paint, wall,
 plus the computed wall autotile cell (`wall_col`, `wall_row`).
 
+### The tile section's four wire bits (S1-J-1, 2026-11-14)
+
+The C# keeps the four wire colours inside the tile's own headers: `wire()`,
+`wire2()` and `wire3()` are `sTileHeader` bits 0x80/0x100/0x200
+(`Tile.cs:623-672`) and `wire4()` is a `bTileHeader` bit 0x80
+(`Tile.cs:437-452`). `SaveWorldTiles` writes them into the chained header
+bytes — `b2` 0x02/0x04/0x08 for the three `sTileHeader` wires and `b3` 0x20 for
+`wire4()` (`WorldFile.cs:1508-1532`) — and `LoadWorldTiles` restores them
+(`:2614-2632`, `:2651-2654`), with `CopyFrom` (`:2711`) copying them into every
+row of an RLE run.
+
+The port stores the colours in the sparse `World.wires` table (the packed
+12-byte `Tile` has no header space — see the wiring deviation below), so the
+writer reads them from there and the reader writes them back. The bytes are
+the C#'s: the tile section of a fixture world is byte-identical to the output
+of a `dotnet` run of the decompiled `SaveWorldTiles` (the golden fixture in
+`wld/mod.rs::s1_j_1_the_tile_section_matches_the_csharp_bytes`).
+
+The second half of the fix is the **batching equality**: `Tile.isTheSameAs`
+compares the packed `sTileHeader` (`Tile.cs:161`), and the wire bits live in
+it — so two tiles that differ only by a wire are **not** batched
+(`WorldFile.cs:1577`). The port's `encoded_same` now compares the four colours
+too, which makes the RLE run boundaries match the C#'s.
+
 ### The eleven sections (all eleven ported, both directions — M6-SAVE-1, 2026-11-09)
 
 `SaveWorld_Version2:1150-1165` / `LoadWorld_Version2:1760-1851`: a 70-byte prologue
@@ -420,6 +444,14 @@ Ported in `tr-core/src/lighting/`:
    shader aberration hook. `GlobalBrightness = 1.2` is applied when shading (`Lighting`'s
    default). Adding a mode (Sepia, Monochrome, ...) is a variant plus a style; the draw pass
    needs no new path.
+
+   The brightness is also a G6 key input (S1-H-15): `Lighting.UpdateGlobalBrightness`
+   (`Lighting.cs:108-116`) drops it 1.2 → 1.0 while the Darkness debuff's `blind` flag
+   holds, and `LightStyle::shade` multiplies every tile tint by it, so the bit-exact
+   brightness rides `WorldFrameKey::brightness` — a blind gain/loss invalidates the
+   cached world range instead of serving the old tints. The buff bar itself redraws in
+   the uncached UI pass (chat and the emote wheel have no draw path yet, S1-E-26), so
+   this is the only HUD-state input the world range carries today.
 
 Verified numerically with `TR_LIGHT_AT`: at midday the stored world reports
 `light at 3200,402 = 0.560,0.560,0.560` for the first dirt row under the grass — exactly
@@ -1756,6 +1788,33 @@ that reaches a row's end with a full run (`num6 = 0`, `MapHelper.cs:3214-3225`,
 is written as the run's length), so the port's own decoder round-trips it; a
 byte-level vanilla `LoadMapVersion2` would misread that one case.
 
+### The `.map` deflate stream (S1-L-5)
+
+The uncompressed prefix (header + option tables, `MapHelper.cs:3050-3123`) and
+the pre-deflate row body (`:3125-3318`, `file.rs::encode_tiles`) are 1:1 and
+pinned byte-for-byte by the `s1_l_5_body_matches_vanilla_and_the_wrapper_is_faithful`
+test: the encoder output equals the frozen `tools/MapDeflateHarness/map-body.bin`
+fixture, and the vanilla reference stream
+(`tools/MapDeflateHarness/fw48-reference.deflate`, produced by a real
+`DeflateStream` on this machine's .NET FW 4.8.1 via `tools/MapDeflateHarness/fw48`,
+compiled with the in-box `csc.exe`) inflates back onto that same body.
+
+The compressed bytes themselves are **deliberately not byte-identical** to
+vanilla's and cannot be: vanilla runs on .NET Framework 4.8(.1), whose
+`clrcompression.dll` embeds a Microsoft-patched zlib (version string 1.3.1) whose
+output no stock zlib reproduces. Measured on the frozen body (55 585 bytes):
+vanilla 35 414; zlib 1.3.1 via `zlib-rs` 36 300 at *every* (level, memLevel,
+strategy) combination probed; .NET 10's own stock-zlib `DeflateStream` 36 295
+(unequal to vanilla's bytes, and its `Write` chunking is not chunk-invariant,
+while the vanilla runtime's is — "chunked == single: yes"). The port therefore
+wraps the body with `flate2`'s `zlib-rs` backend at the C# ctor default
+(`CompressionLevel.Optimal` = zlib level 6, `MapHelper.cs:3047` — the pre-S1-L-5
+code used `Compression::fast()`), which is the closest faithful stand-in and
+still inflates identically on both sides: vanilla's reader accepts our stream and
+our reader accepts vanilla's (the `loads_a_real_vanilla_map` reader test). The
+MP tile-block compressor (`net.rs`) shares the backend switch; its C#-side
+parity is S1-I scope.
+
 ## Localization (M6)
 
 `tr-core/src/localization/` ports `Terraria.Localization`'s core:
@@ -1855,25 +1914,57 @@ ported the remaining three and verified the fourth:
   volumes. The sink is created on the first non-zero volume and then kept (muted at 0) —
   the C# `SlotId` policy.
 * **Thunder strike** (`Main.cs:58747-58766`). The cue plays from the weather tick with the
-  C# position math and the `case 43` family (`Thunder_0..5`) from Rain's own stream. Two
-  documented gaps: the `case 43` re-roll-on-playing loop has no port model (no per-slot
-  instance bookkeeping), and the pitch jitter is consumed but not applied (the rodio
-  sources have no pitch control — the same gap as the BG-20 liquid loops).
-* **Critter sounds** (`NPC.cs:92244-92340`) and **liquid-change sounds**
-  (`WorldGen.cs:4632-4650`) land as pure, tested tables. Their call sites need the critter
-  NPC kinds (M4-NPC — the roster has none today) and the liquid merge pass
-  (`Liquid.CreateLiquidMergeTile`, `Liquid.cs:1324` — `tr-core/liquid.rs` ports the settle
-  but not the merge tiles), so they run constants-off with citations, the M6-MUSIC-1
-  pattern.
+  C# position math and the `case 43` family (`Thunder_0..5`) from Rain's own stream.
+  S1-E-25 closes both documented gaps: the `case 43` re-roll-on-playing loop is modelled —
+  the port tracks a live sink per `SoundInstanceThunder` slot (`LegacySoundPlayer.cs:113`,
+  `audio.rs::thunder_slots`), `Rain::thunder_step` reads it live through its
+  `is_playing` callback and re-rolls like `:456-464`, and the play replaces the picked
+  slot's instance (`:466-476`'s Stop + CreateInstance) — and the pitch jitter is applied:
+  `SoundEffectInstance.Pitch` is XNA octaves, so the engine resamples the PCM at a
+  `2^pitch` rate (`audio.rs::resample_i16`, frame-aligned, nearest frame — the legacy
+  engine skips/repeats frames).
+* **Liquid-change sounds** (`WorldGen.cs:4632-4650`, S1-E-25): the liquid merge pass is
+  ported (`tr-core/liquid.rs`'s `LiquidCheck`/`CreateLiquidMergeTile`), so the merge
+  queues its `PlayLiquidChangeSound` event (`LiquidSystem::drain_merge_events`,
+  `Liquid.cs:1345-1347`'s `!gameMenu && !isGeneratingOrLoadingWorld` gate = the engine's
+  `!generating`) and the liquid tick plays it: the `Liquids*` rows ride the trackable
+  style path — the `Style` getter picks the variation per play
+  (`LegacySoundStyle.cs:21-28`) — and the shimmer arm rides case 19
+  (`SoundSplash[4]`, the playing guard, the ×0.75 cut and the `Next(-20, 1)` pitch;
+  `WorldGen.cs:4644`'s trailing `4` is the Style argument, not a volume scale).
+* **Critter sounds** (`NPC.cs:92244-92340`, S1-E-25): the caller rides the NPC update
+  loop at the `NPC.cs:90323` position (after the AI's draws, the same per-NPC stream),
+  and the legacy zombie-family cases behind the table's ids are modelled per C#
+  (`LegacySoundPlayer.cs:1051-1076`/`:1099-1213`: the slot picks, the 110/111-style
+  playing guards, the ×0.2..×0.9 volume cuts and the pitch ranges, in the C#'s draw
+  order). The port's roster still has no critter NPC kinds (M4-NPC), so the emitter
+  stays silent until they land — the seam, the asset bank (`Sounds/Zombie_*`) and the
+  resolution are in place.
 
 Deviations (deliberate):
 
-* The tracked-sound layer (`ActiveSound`/`SlotId`/`SoundPlayer.PlayTrackedSound`) is not
-  modelled; each emitter owns its sink or cue directly. The observable behaviour (start
-  conditions, volume ramp, split, stop) matches; the C# GC of a dead slot has nothing to
-  map to (a sink never dies in the port).
-* The thunder/pitch and critter rolls come from the owning system's stream (the
-  WEATHER-1/WEATHER-2 per-consumer convention), not the shared `Main.rand` the C# draws.
+* The tracked-sound layer is ported (S1-E-23: `tracked_sound.rs`'s
+  `SoundPlayer`/`ActiveSound` over `tr_core::slot`'s `SlotVector(4096)`; the
+  SceneState blizzard loops ride it verbatim). Two engine seams remain: the
+  per-frame **re-pan** is baked at creation (XNA re-pans the live instance
+  every `ActiveSound.Update`, `ActiveSound.cs:148` — a rodio sink cannot; the
+  volume leg is live), and `SoundInstanceGarbageCollector` maps to nothing
+  (rodio drops its finished sources). The C#'s try/catch around the blizzard
+  block permanently disables the emitter when a play fails (`:191-193`'s
+  `_disabledBlizzardSound`); the port retries next frame instead.
+* The pitch mechanism is a rate resample (`2^pitch`, nearest frame), not XNA's DSP —
+  the audible effect of the small jitter rolls (±0.07 octaves) is the intended one.
+* The engine's two static style streams are `UnifiedRandom` stand-ins seeded 1:
+  `audio.rs::style_random` (`LegacySoundStyle.Random`, the variation picks) and
+  `audio.rs::sound_style_random` (`SoundStyle._random`, the tracked `GetRandomPitch`
+  rolls). The C# seeds both with `Environment.TickCount` (`LegacySoundStyle.cs:9`,
+  `SoundStyle.cs:8`) — unobservable streams. The liquid-change splash pitch rides
+  `style_random` too: the C# draws it from `Main.rand` mid liquid-pass
+  (`LegacySoundPlayer.cs:883`), and the port's liquid engine is pure, so no world
+  stream is touched.
+* The thunder slot/pitch rolls and the critter rolls come from the owning system's
+  stream (the WEATHER-1/WEATHER-2 per-consumer convention), not the shared `Main.rand`
+  the C# draws.
 * `FocusHelper.UpdateBackgroundThunder`'s unfocused half and `StopAmbientSounds`
   (`Main.cs:11040-11045`) stay as BG-20 pinned them (the port always claims focus).
 * The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
@@ -3328,15 +3419,58 @@ explosion drops nothing.
 
 The spawn: the skyMob dispatch's drone arm (`:1395-1398` — `invaders &&
 invasionType == 4` → the Drone at the candidate tile) runs through the
-spawner verbatim, and the ground table's roll chain is complete now:
-`num6` `Next(7)` → the Saucer gate (`Next(45)` + the 30% progress +
-`!AnyNPCs(395)`) → the num6 >= 6 rider arm (`Next(20)` + the gate → the
-unported Scutlix Rider; the `Next(2)` split → the Engineer 386) → the
-num8 `Next(5)` ray arm (the RayGunner 382 / Scrambler 381 unported,
-`>= 4` → the Drone 388) → the else arm's ground chain (the `Next(4)`
-with the 520 walk-in gate's `Next(3)` fallback). Every roll consumes
-the stream where the C#'s short-circuit reaches it; the four unported
-kinds' hits map to the ground fallback until their AI families land.
+spawner verbatim, and the ground table's roll chain is complete now
+(the S1-F-12 rewrite of the pick — one `Next(n)` per arm, exactly where
+the C# draws): `num6` `Next(7)` → the Saucer gate (`(Next(45) == 0) &
+flag6` — bitwise `&`: the draw fires even when the 30%-progress +
+`!AnyNPCs(395)` gate is closed) → the num6 >= 6 rider arm (`(Next(20)
+== 0) & flag6` → the Saucer core 395; else the `Next(2)` split → the
+Scutlix Rider's net 390 or the Engineer 386) → the num8 `Next(5)` ray
+arm (<2 → the RayGunner 382, 2|3 → the BrainScrambler 381, `>= 4` →
+the Drone 388) → the else arm's ground chain (the `Next(4)` with the
+520 walk-in gate's `Next(3)` fallback). Every roll consumes the stream
+where the C#'s short-circuit reaches it; the pick's only unported kind
+is the Parrot 252's pirate arm (see the S1-F-12 section).
+
+## The invasion spawn placement (S1-F-12, 2026-11-14)
+
+The row's placement half: an invasion spawn is produced by the same
+`try_spawn_an_npc` pipeline as every natural spawn — `FindSpawnTile`'s
+50-candidate scan, the safe-area/screen/ground checks, then
+`SpawnAnNPC`'s `else if (this.invaders)` ladder (`NPC.cs:1424-1541`)
+dispatching on the ctx's `invaders` flag at its zone-chain position
+(after the skyMob dispatch, before the water ladder). The retired
+pre-path rebuilt the gates in a cloned ctx, drew the kind pick from
+`item_rng` and placed the NPC at the fixed `(px − 600, py − 400)` offset
+with a tile-Y clamp and a ±1-by-`invasionX` facing — all gone; the
+machinery's placement is `SpawnNPC`/`NewNPC`'s `Bottom =
+(spawnTileX*16+8, spawnTileY*16)` (`NPC.cs:5238/:80772`) and the facing
+is the machinery's `TargetClosest` rule (toward the player).
+
+The stream (S1-A-10): the whole path rides the one spawner stream in
+the C# draw order — `get_spawn_rate`'s (ctx-gated) draws →
+`Next(spawnRate)` → the scan → `GetZombieSettings`'s `Next(7)` → the
+ladder arms' `Next(n)` rolls. `item_rng` loses the pick's draws (an
+interleave the C# never had). The pick inputs ride `SpawnContext`
+(`invasion_type` + summoner/captain/walker/saucer alive +
+`progress_30`/`progress_frac`, read once per attempt at the ctx build —
+the C#'s `AnyNPCs`/`invasionSize*` reads are per-ladder).
+
+Deviations (documented):
+- The kind per arm resolves through the port's bestiary net id, so the
+  spawned net id is the C#'s; the port's kind *names* for net
+  26/27/28/111 (the goblin quartet) and net 144/145 (SnowBalla/
+  MysterySnowman) are shifted vs 1.4.5's `NPCID.cs` — the pre-existing
+  roster mapping, the rename is the bestiary pass's concern.
+- The pirate table's Parrot 252 has no `NpcKind`: the roll consumes
+  where the C#'s does, the outcome maps to the Corsair.
+- The Dutchman arm's `Collision.SolidTiles` scan and the boss-minion
+  follow-up are out of scope: the half-points window (read through the
+  drained fraction) draws its `Next(20)` and the ship spawns on the hit.
+- `invasion_saucer_alive` reads the live `MartianSaucerCore` roster
+  (`AnyNPCs(395)` verbatim) where the retired pre-path hardcoded
+  `false`; `invasion_captain_alive` (the pirate table's `!AnyNPCs(216)`)
+  joins the ctx the same way.
 
 ## The martian riders (M4-EVENT-4d)
 
@@ -4039,7 +4173,9 @@ player; the size 80+40 per qualified player; the march column on the
 world's far side).
 
 The spawn: `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) —
-the px-space surface band (`position.Y < worldSurface*16 + sHeight` = 200)
+the px-space surface band (`position.Y < worldSurface*16 + sHeight`; the C#
+`sHeight` is 1200, `NPC.cs:6769` — the port's fn uses 200, the S1-F-18
+follow-up)
 plus the ±3000 px window around `invasionX` — overrides the natural roll
 with the goblin table (`:1419-1450`): the hardmode Summoner 1/30 (while
 none alive), the Sorcerer 1/9, the Thief 1/5, the Peon 1/3, the Warrior
@@ -4759,10 +4895,15 @@ lamp-pair frame flip.
 Deviations:
 
 - **Wire colours live in a sparse side table** (`World.wires: WireState`) —
-  the C# packs them as `sTileHeader` bits (`Tile.cs:623-657`) and the port's
-  12-byte `Tile` has no header space (E1). Persistence in `.trwld`/`.map` is
-  pending (M6-SAVE-1); synthetic test worlds set wires through
-  `World.wires.set`.
+  the C# packs them as `sTileHeader` bits (`Tile.cs:623-672`) and the port's
+  12-byte `Tile` has no header space (E1). The **persistence is 1:1**: the
+  `.wld` tile section writes them exactly where the C# does — `b2` 0x02/0x04/
+  0x08 for `wire()`/`wire2()`/`wire3()` and `b3` 0x20 for `wire4()`
+  (`WorldFile.cs:1508-1532`) — and the reader restores them
+  (`LoadWorldTiles:2614-2632`/`:2651-2654`, copied into every row of an RLE
+  run by `CopyFrom`), so the `.wld` tile section is byte-identical to the
+  C#'s (S1-J-1); the `.trwld` keeps its own v7 wire section. Only the
+  in-memory layout differs.
 - **Device entity effects are passthroughs** — the mine (210), geyser (443),
   statue spawns, pumps (`XferWater`), teleporters and the cannons' projectiles
   belong to M7-WIRE-2/5; their `HitSwitch`/`HitWireSingle` cases currently do
@@ -6905,23 +7046,30 @@ snap beside the spawn; the load-time NPC spawn is suppressed under the pin).
 `tools/gen_recipes.py` reads the decompiled `Terraria/Recipe.cs`
 `SetupRecipes` and emits `crates/tr-app/src/recipes_gen.rs` - the whole
 table as ONE `&[Recipe, ...]` expression spliced via
-`include!` into `RECIPES`. 2764 rows in the C# registration order
-(= the UI listing order):
+`include!` into `RECIPES`. 2 791 rows in the C# registration order
+(= the UI listing order; re-pinned 2026-11-14 by S1-L-11 - the reverse
+rows now derive from the C# item data, `Item.SetDefaults`
+createTile/createWall, not from `itemdata.rs`; `gen_recipes.py --check`
+and `tools/test_gen_recipes.py` gate the drift):
 
-- the main body (2475 `AddRecipe` calls) + the 35 `Add*Furniture`
+- the main body (2475 `AddRecipe` calls) + the 34 `Add*Furniture`
   helpers spliced at their call positions + the `AddCritterStatueRecipe`
   rows (50 Stone + 5 critter at tile 283, needGraveyardBiome);
 - the `for` loops (`<=` and `<` forms), the `int[,] array` colour table,
   the `ItemID.Sets.TextureCopyLoad[i]` lookups, the shared locals
   (`int type = 3234;`) and the `(int)((float)num * 2.5f)` casts are all
   expanded/evaluated;
-- 284 derived reverse rows: `CreateReversePlatformRecipes` +
-  `CreateReverseWallRecipes` (`Recipe.cs:16648-16694`) flip every
-  single-ingredient recipe whose result is a placed platform
-  (`TileID.Sets.Platforms` {19, 427, 435-439}) or a placed wall
-  (`createWall > 0`, the ingredient not a wall) and insert it right
-  after the source with `notDecraftable` - the port carries that exact
-  flag as `Recipe.not_decraftable` (the craft direction ignores it).
+- 311 derived reverse rows: `CreateReversePlatformRecipes` +
+  `CreateReverseWallRecipes` (`Recipe.cs:15148-15149`, bodies
+  `:16652-16702`) flip every single-ingredient recipe whose result is a
+  placed platform (`TileID.Sets.Platforms` {19, 427, 435-439}) or a
+  placed wall (`createWall > 0`, the ingredient not a wall) and insert
+  it right after the source with `notDecraftable` - the port carries
+  that exact flag as `Recipe.not_decraftable` (the craft direction
+  ignores it). The flips are derived from the C#'s own item registry
+  (`Item.SetDefaults`); the deliberate parse gap is the `default:` switch
+  sections (only the monolith series 2192-2198 is affected, and none of
+  them is a single-ingredient recipe result).
 
 Findings the hand table had wrong (the generator is the truth now):
 
@@ -12240,6 +12388,139 @@ is the tile-space identity); the minimap call (`Main.cs:55703`, with the
 clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
 their own passes; the hover text feeds the map's text line through
 `ui::text::hud_text` (the C# `ref text`).
+
+## The missing projectile AI arms (S1-D-4b-1, 2026-11-14)
+
+The ROADMAP's S1-D-4b row ("19 styles have a `proj_data` row but no
+dispatch arm — those projectiles hold position forever") is not one
+landable task: the 19 styles span ~5 300 C# lines of arms plus the two
+mega-families (`AI_026`'s 6 922 lines over 68 types, `AI_067`'s 2 081
+over 16). The row is therefore split into S1-D-4b-1..8 by family — the
+same precedent S1-D-4c set for the vortex styles — and the contract
+stays "arm them, never remove the rows": every style keeps its
+`proj_data` row and gains its dispatch arm.
+
+S1-D-4b-1 ports the four self-contained styles:
+
+* **aiStyle 70 — the Flairon Bubble** (`Projectile.cs:30304-30354`):
+  the one-shot acquire scan (the closest chaseable NPC inside 650 px
+  with a clear `Collision.CanHit` line — the running-minimum distance,
+  so the tightest target wins), the first steering step
+  (`(v * 20 + d * weight) / 21` with `weight = Next(35, 75) / 30f` and
+  the ±100 px jitter), the steady homing (`(v * 40 + d * 12) / 41`), the
+  no-target path (the counter starts at −15 and climbs back to 0, the
+  alpha falls 25/tick to its 50 floor, the velocity decays 5%) and the
+  scale roll (`Next(80, 121) / 100f`).
+* **aiStyle 133 — the Dark Mage raise marker**
+  (`Projectile.cs:36435-36453`): the counter, the `GetLerpValue`
+  opacity ramp (0 → 1 over 20 ticks, 1 until the 60th, back to 0 by the
+  80th) and the kill. The 674's heal arm has no ported row.
+* **aiStyle 187 — the Insanity shadow** (`Projectile.cs:42502-42634`):
+  the four variation windows (180/120/90/90 ticks) with the alpha ramp
+  (+25/tick over the last 15 ticks of a window, −25/tick before it,
+  floored at 50) and the kill on the window's last tick, then the four
+  choreographies (the drift, the tethered swing, the burst, the spin).
+* **aiStyle 189 — the Volcano / Cascade Explosion**
+  (`Projectile.cs:42264-42303`): the two-remap alpha flash, the scale
+  ramp and the five-frame life (the frame advances every second tick,
+  the fifth frame kills).
+
+Deviations (each deliberate, each with its C# citation in the arm):
+
+* **The dust and gore of the explosion are SKIPPED**
+  (`:42305-42369`) — the port has no dust or gore layer (S1-E-1 /
+  S1-E-4 are in flight). With them the arm's `Main.rand` draws go too
+  (every one of them belongs to a dust/gore block), so the arm keeps the
+  gem-staff arm's zero-RNG invariant (`Projectile.cs:37643-38001`).
+* **The tracked sounds are SKIPPED** — the summon cue
+  (`:36438-36440`), the shadow's per-tick sound-position update
+  (`:42507-42515`) and the explosion cue (`:42266-42269`): the pool has
+  no tracked-sound layer (S1-E-23). The shadow's `localAI[1]` slot stays
+  untouched, as in the C#'s other arms with no sound layer.
+* **`Projectile.Opacity` (`:540`) is a state-only field**: the port has
+  no projectile draw pass yet, so the aiStyle-133 ramp writes the slot
+  and nothing reads it yet. The field defaults to the C#'s `1f`.
+* **The Flairon Bubble's target is an NPC-slot index** in the C#
+  (`Main.npc[(int)ai[0] - 1]`, `:30324`/`:30329`). The port's NPC vec
+  drops the dead, so a stored index can name a different NPC (or none)
+  than the C#'s slot did; the port keeps the index shape (the Nebula
+  Arcanum's `ai[1] = index + 1` precedent) and reads it with
+  `npcs.get`, so a vanished target steers nowhere instead of at the
+  C#'s stale slot.
+* **Four `proj_data` rows were wrong and are now faithful**: the
+  Flairon Bubble (405, `:4864`), the Dark Mage marker (673, `:7213`),
+  the Insanity shadow (965, `:9121`) and the Cascade Explosion (1125,
+  `:10536`) all write `alpha = 255` in their `SetDefaults` arms, and the
+  1125 also writes `usesLocalNPCImmunity = true` with
+  `localNPCHitCooldown = -1` (`:10538-10539`). The port's rows dropped
+  all of it (the `RESET_STATE` alpha 0), so the arms would have started
+  from the wrong alpha — the aiStyle-70 fade arm floors the alpha at 50,
+  which would have *raised* a 0 to 50 on the first fade tick.
+
+## The composite arm poses (S1-G-16, 2026-11-14)
+
+`Player.compositeFrontArm`/`compositeBackArm` (`Player.cs:1906/:4347-4365`)
+were never ported: the renderer used a `swing_stand_in` stand-in that
+enabled the front arm for three use styles (2/11/13), never the back arm,
+and read the stretch ladders off a normalised swing instead of the C#'s
+`itemAnimation` — so the arms posed wrong in most item animations (the
+style 11 ladder was inverted, the style 13 stretch was inverted, the style 2
+pose never reached its relaxed row). The sim now owns the state:
+
+* `AnimatePlayerAndGetItemFrame` (`Player.cs:43372-43386`) resets both arms
+  to DISABLED per frame and dispatches: `itemAnimation > 0` →
+  `ItemCheck_ApplyUseStyle`, otherwise → `ItemCheck_ApplyHoldStyle`.
+* `ItemCheck_ApplyUseStyle`'s composite assignments (`:50885-51375`) are
+  ported per use style — 2 (both arms `-PI/2 * dir`, the `num10` quarters),
+  8 (the wind-up/swing-arc phases), 9 (the `num7 → num8` arc), 11 (the
+  `num12` two-cycle + the back arm Full at `-PI/16`), 12 (the `num30`
+  two-cycle + `num31 = cos(num30 * PI) * 0.2`), 13 (the `num20` thirds +
+  `itemRotation * Directions.Y - PI/2 * dir`), 14 (the back arm Full at
+  `-3*PI/4 * dir`) and 15 (both arms at `-2*PI/5 * dir`).
+* `ItemCheck_ApplyHoldStyle`'s composite assignments (`:50520-50582`) are
+  ported per hold style — 4 (the umbrella: the front Full + the back
+  ThreeQuarters around `num9 ± num8`), 5 (the back Quarter at `-PI/4 * dir`
+  + the front Full at `-0.39269912 * dir`), 6 (the back ThreeQuarters at
+  `-3*PI/5 * dir`) and 8 (both arms at `-2*PI/5 * dir`).
+* The draw consumes the live state: `PlayerDrawSet.UpdateCompositeArm`
+  (`PlayerDrawSet.cs:2246-2275`) picks the front column 7 / the back
+  column 8 at the stretch row (Full 0 / ThreeQuarters 1 / Quarter 2 /
+  None 3) and the rotation pivots the arm around the composite pivot
+  (`render/player_layers.rs::update_composite_arm`).
+
+The shooting styles' `itemRotation` (`Player.cs:47371-47378`) is now the
+C#'s `atan2(aimY * direction, aimX * direction) - fullRotation`: the port
+keeps the aim as an angle, so the mirrored `atan2` is the aim + PI when
+the player faces left (`item_rotation_for_aim`). The old stand-in used
+`aim * direction` — the negated angle, not the mirrored vector — so the
+useStyle 5 body rows (`num21 = itemRotation * direction`, `:36423`) and the
+useStyle 13 composite arm were off by PI when facing left.
+
+Deviations (deliberate, bounded):
+
+* The useStyle 8 overshoot branch (`itemAnimation > useAnimation`,
+  `:51226-51244`) is unreachable — the port's swing counter never exceeds
+  `itemAnimationMax`.
+* The useStyle 13 stretch base is `itemAnimationMax`, where the C# uses
+  `itemTimeMax` when it is non-zero (`:51176-51184`) — the port has no
+  per-item use time.
+* The useStyle 9 branch also moves `itemLocation` through
+  `GetFrontHandPosition` (`:50901-50905`); the port draws the held item
+  from its own item-row chain (the held-item positions are the
+  M2-DRAW item-row work).
+* `AnimatePlayerAndGetItemFrame` reads `lastVisualizedSelectedItem` while
+  the animation runs (`:43374`); the port uses the currently selected item.
+* The petting composite arms (`ItemCheck_ApplyHoldStyle`'s `isPetting`
+  block, `:50242-50269`) and the football arm (`:36139-36143`) stay
+  unported (no petting/football systems).
+* `Player.Directions.Y` (the gravity direction, `:3849`) is 1 in the port
+  (no gravity flip).
+
+Tests: `s1_player_composite_tests` — the eat style's quarters, the mow
+style's two-cycle + the back arm's constant pose, the rapier's stretch
+thirds + its item-rotation arm, the shoot style's back arm, the hold
+styles' arms and the aim mirror. All seven are mutation-checked (RED on
+the pre-fix code).
 
 ## The scene-metrics zone chain (S1-L-1, 2026-11-14)
 

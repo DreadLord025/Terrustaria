@@ -242,6 +242,17 @@ impl App {
             server: matches!(self.net, crate::app::NetRole::Host(_)),
         });
 
+        // `SoundEngine.Update` (`SoundEngine.cs:48-68`, S1-E-23): the pause
+        // edge (`FocusHelper.PauseSounds` = `!GameplayActive && netMode == 0`,
+        // where `GameplayActive = IsSelectedApplication && !gamePaused` —
+        // `FocusHelper.cs:11-20`/`:97-105`) rides the window-focus and the
+        // S1-B-3 pause gate, then the pool's per-frame update re-volumes
+        // every tracked `ActiveSound` against the fresh listener and reaps
+        // the dead.
+        let pause_sounds = (!self.window_focused || self.game_paused)
+            && matches!(self.net, crate::app::NetRole::Off);
+        self.audio.update_tracked(pause_sounds);
+
         // `Main.Ambience` (`Main.cs:13466-13515`): every 15 ticks (¼ s) the
         // waterfall/lavafall loops re-volume from the strength scans; the
         // volume math is the LegacySoundPlayer case 34/35 (the distance
@@ -404,6 +415,10 @@ impl App {
                 // `WorldUpdateStepper.DrawnThisUpdate = false` at the step
                 // head (`Main.cs:17747`, right after `_gameUpdateCount++`).
                 self.stepper.drawn_this_update = false;
+                // `Main.tileSolid[379] = false` (`Main.cs:17753`): the bubble
+                // is not solid for the entity half of the tick — the liquid
+                // pass re-arms it (`Liquid.cs:451`, S1-L-14).
+                self.liquids.clear_bubble_for_entities();
                 // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
                 // pass. The sleeping counts it exports (`:17844-17859`) gate the
                 // clock's rate, so they land right after it.
@@ -1255,6 +1270,11 @@ impl App {
                         held | (phase << 16)
                     },
                     light_generation: light.generation(),
+                    // S1-H-15: `shade` multiplies every tile tint by the style's
+                    // brightness, and the Darkness debuff's `blind` flag drops it
+                    // 1.2 → 1.0 (`Lighting.cs:108-116`) — the input must ride the
+                    // key or a blind gain/loss keeps the previous frame's tints.
+                    brightness: style.brightness.to_bits(),
                     waterfall: waterfall.anim_key(),
                     net_key: {
                         // FNV-1a over the peers' smoothed state and the NPC
@@ -2992,4 +3012,17 @@ pub(crate) fn next_rand(state: &mut u64) -> u64 {
 
 pub(crate) fn rand01(state: &mut u64) -> f32 {
     (next_rand(state) >> 40) as f32 / (1u32 << 24) as f32
+}
+
+/// The u64 streams' `Main.rand.Next(max)`-shaped roll — `next_rand` modulo,
+/// the same shape `Rain::range` uses (uniform over 0..hi).
+pub(crate) fn rand_range(state: &mut u64, hi: u32) -> u32 {
+    (next_rand(state) % hi.max(1) as u64) as u32
+}
+
+/// The u64 streams' signed `Main.rand.Next(min, max)` — the critter
+/// family's pitch draws (`Next(-70, 1)` and friends,
+/// `LegacySoundPlayer.cs:450`-family) ride it.
+pub(crate) fn rand_range_signed(state: &mut u64, lo: i32, hi: i32) -> i32 {
+    lo + (next_rand(state) % (hi.saturating_sub(lo).max(1)) as u64) as i32
 }

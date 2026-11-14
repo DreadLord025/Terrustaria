@@ -1758,141 +1758,6 @@ pub(crate) fn should_spawn_invasion_enemies(world: &World, player_y: f32, player
     false
 }
 
-/// The invasion spawn table (`NPC.cs:1419-1450`, `invasionType == 1`):
-/// hardmode's Summoner 1/30 (no living ones), the Sorcerer 1/9, the Thief
-/// 1/5, the Peon 1/3, the Warrior 1/3, else the Archer.
-fn invasion_spawn_pick(
-    rng: &mut u64,
-    hard_mode: bool,
-    summoner_alive: bool,
-    invasion_type: i32,
-    // The type-4 table's roster gates (`NPC.cs:1517`'s `!AnyNPCs(520)`,
-    // `:1509`'s `!AnyNPCs(395)` + the 30% progress window).
-    walker_alive: bool,
-    saucer_alive: bool,
-    progress_30: bool,
-    // The type-3 table's Dutchman window (`NPC.cs:1460-1468`): the
-    // invasion's drained fraction `(sizeStart - size) / sizeStart`.
-    progress_frac: f32,
-) -> NpcKind {
-    let _hard_type = if invasion_type == 1 { Some(1) } else { None };
-    // `invasionType == 2`'s table (`NPC.cs:1450-1459`): the SnowmanGangsta
-    // 1/7, the SnowBalla 1/3, else the MysterySnowman.
-    if invasion_type == 2 {
-        let r = crate::app::frame::rand01(rng);
-        return if r < 1.0 / 7.0 {
-            NpcKind::SnowmanGangsta
-        } else if r < 1.0 / 7.0 + 1.0 / 3.0 {
-            NpcKind::SnowBalla
-        } else {
-            NpcKind::MysterySnowman
-        };
-    }
-    if hard_mode && !summoner_alive && crate::app::frame::rand01(rng) < 1.0 / 30.0 {
-        return NpcKind::GoblinSummoner;
-    }
-    // `invasionType == 4`'s table (`NPC.cs:1487-1540`): the roll ORDER is
-    // vanilla — num6 (`Next(7)`), the Saucer gate (`Next(45)` + the 30%
-    // progress + `!AnyNPCs(395)`), the num6 >= 6 rider arm (`Next(20)` +
-    // the gate → 390 unported; else `Next(2)` → the Engineer 386), the
-    // num6 >= 4 ray arm (`num8` `Next(5)`: <2 → the RayGunner 382 and
-    // ==2 → the Scrambler 381 both unported, >=4 → the Drone 388), and
-    // the else arm's ground chain (`num9` `Next(4)`, the 3 → the Walker
-    // 520's walk-in gate, the `Next(3)` fallback). The Saucer 395 (the
-    // boss), the Scutlix Rider 390, the RayGunner 382 and the Scrambler
-    // 381 land with their AI families — their rolls consume the stream
-    // exactly here.
-    if invasion_type == 4 {
-        let num6 = (crate::app::frame::rand01(rng) * 7.0) as u32;
-        let flag6 = progress_30 && !saucer_alive;
-        if crate::app::frame::rand01(rng) * 45.0 < 1.0 && flag6 {
-            // The Saucer 395: the core spawns its crew (the machine's
-            // init arm).
-            return NpcKind::MartianSaucerCore;
-        }
-        if num6 >= 6 {
-            if crate::app::frame::rand01(rng) * 20.0 < 1.0 && flag6 {
-                // The Scutlix Rider 390: the mount spawns its 391 carrier
-                // (the machine's init arm).
-                return NpcKind::ScutlixRider;
-            }
-            // The Saucer 395's num6 >= 6 arm (`Next(45)` + the gate) lands
-            // the core as well — the roll consumes where the vanilla's
-            // short-circuit reaches it.
-            // `Next(2)`: 0 → the Rider 390, 1 → the Engineer 386.
-            return if crate::app::frame::rand01(rng) * 2.0 < 1.0 {
-                NpcKind::ScutlixRider
-            } else {
-                NpcKind::MartianEngineer
-            };
-        }
-        if num6 >= 4 {
-            let num8 = (crate::app::frame::rand01(rng) * 5.0) as u32;
-            // num8 < 2 → the RayGunner 382, == 2 → the BrainScrambler 381,
-            // >= 4 → the Drone 388.
-            return match num8 {
-                0 | 1 => NpcKind::RayGunner,
-                2 => NpcKind::BrainScrambler,
-                _ => NpcKind::MartianDrone,
-            };
-        }
-        let mut num9 = (crate::app::frame::rand01(rng) * 4.0) as u32;
-        if num9 == 3 {
-            if !walker_alive {
-                return NpcKind::MartianWalker;
-            }
-            num9 = (crate::app::frame::rand01(rng) * 3.0) as u32;
-        }
-        return match num9 {
-            0 => NpcKind::GrayGrunt,
-            1 => NpcKind::GigaZapper,
-            _ => NpcKind::MartianOfficer,
-        };
-    }
-    // `invasionType == 3`'s table (`NPC.cs:1460-1484`): the Flying Dutchman
-    // 491 (the half-points window) is the boss-minion follow-up; the
-    // Captain 216 1/30 while none alive; the Deadeye 1/11, the Corsair
-    // 1/9, the Deckhand's musketeer 1/7, the CaptainsMate 1/3, else the
-    // Deckhand.
-    if invasion_type == 3 {
-        // The Dutchman (`NPC.cs:1460-1468`): the half-points window
-        // (the drained fraction in [0.5, 1)) spawns the ship — its four
-        // cannons fight for it.
-        if progress_frac >= 0.5 && progress_frac < 1.0 {
-            return NpcKind::FlyingDutchman;
-        }
-        let r = crate::app::frame::rand01(rng);
-        if r < 1.0 / 30.0 {
-            return NpcKind::PirateCaptain;
-        }
-        if r < 1.0 / 30.0 + 1.0 / 11.0 {
-            return NpcKind::PirateArcher;
-        }
-        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 {
-            return NpcKind::PirateCorsair;
-        }
-        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 + 1.0 / 7.0 {
-            return NpcKind::PirateArcher;
-        }
-        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 + 1.0 / 7.0 + 1.0 / 3.0 {
-            return NpcKind::PirateCaptainsMate;
-        }
-        return NpcKind::PirateDeckhand;
-    }
-    let r = crate::app::frame::rand01(rng);
-    if r < 1.0 / 9.0 {
-        NpcKind::GoblinSorcerer
-    } else if r < 1.0 / 9.0 + 1.0 / 5.0 {
-        NpcKind::GoblinThief
-    } else if r < 1.0 / 9.0 + 1.0 / 5.0 + 1.0 / 3.0 {
-        NpcKind::GoblinPeon
-    } else if r < 1.0 / 9.0 + 1.0 / 5.0 + 2.0 / 3.0 {
-        NpcKind::GoblinWarrior
-    } else {
-        NpcKind::GoblinArcher
-    }
-}
-
 /// `NPC.ReleaseNPC` as the shimmer release uses it (`WorldItem.GetShimmered`'s
 /// makeNPC arm, `WorldItem.cs:1747-1772`): the spawn with
 /// `shimmerTransparency = 1f`. The C# releases through `ReleaseNPC`, which
@@ -2200,26 +2065,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npc_timer -= dt;
     // Fixed 60 Hz NPC simulation, like NPC.cs. Updating per rendered frame made
     // enemies move faster on high-refresh displays.
-    // The invasion spawn inputs captured before the npc_step split borrows
-    // (`ShouldSpawnInvasionEnemies` + the table pick read only the world /
-    // the player pos / the summoner-alive flag).
-    let inv_input = {
-        let w = &app.world;
-        let p = app.player.as_ref();
-        if let Some(p) = p {
-            if should_spawn_invasion_enemies(w, p.y, p.x) {
-                let summoner_alive = app
-                    .npcs
-                    .iter()
-                    .any(|n| n.kind == NpcKind::GoblinSummoner && n.hp > 0);
-                Some((p.x, p.y, summoner_alive))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    };
     // The Golem's anchor write (`NPC.cs:19507`'s `NPC.golemBoss`): the
     // body's centre / velocity.X / life ratio for the head and fist
     // tethers. Hoisted BEFORE the AI pass: the C# parts read
@@ -2243,42 +2088,51 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.golem_present = false;
         }
     }
-    // Pre-compute player center and nearby NPCs for the invasion spawn
-    // path (needed before `app` is mutably borrowed below). Extract only
-    // the fields we need to avoid borrow conflicts with the closure.
-    let player_opt = app.player.as_ref().map(|p| {
-        let (pcx, pcy) = p.center();
-        let nearby = app
-            .npcs
-            .iter()
-            .filter(|n| {
-                let (cx, cy) = n.center();
-                (cx - pcx).abs() < spawner::S_WIDTH as f32 * 0.5
-                    && (cy - pcy).abs() < spawner::S_HEIGHT as f32 * 0.5
-            })
-            .count() as f32;
-        (pcx, pcy, nearby, p.x, p.y, p.max_hp)
-    });
-    let (inv_pcx, inv_pcy, inv_nearby, inv_px, inv_py, inv_max_hp) =
-        player_opt.unwrap_or((0.0, 0.0, 0.0, 0.0, 0.0, 100));
-    // Pre-extract scene_metrics and camera values needed for the invasion block
-    // to avoid long-lived borrows that conflict with later mutable borrows of app.
-    let water_candle_count = app.scene_metrics.water_candle_count;
-    let peace_candle_count = app.scene_metrics.peace_candle_count;
-    let camera_y = app.camera.y;
     let item_rng = &mut app.item_rng;
     let npc_rng = app.npc_rng;
     let player = &mut app.player;
-    let mut invasion_pick: Option<(NpcKind, f32, f32)> = None;
     // Limit the scope of borrows to just the tick closure
     {
         let world = &app.world;
         let npcs = &mut app.npcs;
+        let audio = &mut app.audio;
         app.npc_step.tick(dt.min(0.25), |step| {
             if let Some(player) = player {
                 for n in npcs.iter_mut() {
                     n.update_rng(world, player, step, item_rng);
                     black_slime_darkness_touch(n, player, item_rng);
+                    // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
+                    // sounds ride the same per-NPC stream after the AI's
+                    // draws — the table's rolls, then the legacy family's
+                    // slot/pitch draws. The C#'s `Main.netMode == 2` gate
+                    // (`NPC.cs:92245`) is the dedicated server's; the port
+                    // has none. No ported kind matches the critter table
+                    // yet (M4-NPC's roster has no critter ids), so the
+                    // emitter stays silent until they land.
+                    let mut hi_roll =
+                        |hi: u32| crate::app::frame::rand_range(item_rng, hi);
+                    let cue = crate::ambient_sound::critter_sound_cue(
+                        n.kind.to_u16() as i32,
+                        world.day_time,
+                        world.time,
+                        (world.world_surface * 16.0) as f32,
+                        n.y,
+                        n.vx.abs(),
+                        &mut hi_roll,
+                    );
+                    if let Some((legacy_id, style)) = cue {
+                        let mut signed = |lo: i32, hi: i32| {
+                            crate::app::frame::rand_range_signed(item_rng, lo, hi)
+                        };
+                        if let Some(voice) = crate::ambient_sound::critter_legacy_voice(
+                            legacy_id,
+                            style as u32,
+                            &mut signed,
+                            &|slot| audio.zombie_playing(slot),
+                        ) {
+                            audio.play_critter(voice, n.x, n.y);
+                        }
+                    }
                 }
             }
         });
@@ -3404,8 +3258,39 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // `downedGolemBoss`/`downedMartians` rolls, the skyMob
                 // dispatch's type-4 read, and `AnyDanger`'s boss loop —
                 // the port's boss-flagged kinds; the pillar countdown and
-                // the moon events have no sources yet).
-                invaders: inv_input.is_some(),
+                // the moon events have no sources yet). `SetSpawnFlags`'s
+                // write is `ShouldSpawnInvasionEnemies(player.position)`
+                // (`NPC.cs:403`) — read here, at the same per-attempt
+                // point; the ladder's pick inputs ride the ctx (the
+                // roster gates read `AnyNPCs` once per attempt, the
+                // progress fields read `invasionSizeStart`/`invasionSize`).
+                invaders: should_spawn_invasion_enemies(&app.world, player.y, player.x),
+                invasion_summoner_alive: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::GoblinSummoner),
+                invasion_captain_alive: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::PirateCaptain),
+                invasion_walker_alive: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::MartianWalker),
+                invasion_saucer_alive: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::MartianSaucerCore),
+                invasion_progress_30: app.world.invasion_size_start > 0
+                    && (app.world.invasion_size_start - app.world.invasion_size) as f32
+                        / app.world.invasion_size_start as f32
+                        >= 0.3,
+                invasion_progress_frac: if app.world.invasion_size_start > 0 {
+                    (app.world.invasion_size_start - app.world.invasion_size) as f32
+                        / app.world.invasion_size_start as f32
+                } else {
+                    0.0
+                },
                 downed_golem: app.world.downed_golem,
                 downed_martians: app.world.downed_martians,
                 invasion_type: app.world.invasion_type,
@@ -3449,6 +3334,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             })
         });
         let mut rng = spawner::FastRandom::new(npc_rng);
+        // One spawn path (`NPC.cs:308-342`): the pipeline's own gates and
+        // the 50-candidate scan, then `SpawnAnNPC`'s zone chain — the
+        // invaders ladder wins the dispatch by the ctx's `invaders` flag,
+        // so an active invasion spawns through the same `try_spawn_an_npc`
+        // attempt as every natural spawn (the retired pre-path rebuilt the
+        // gates, drew the pick from `item_rng` and placed the NPC at the
+        // fixed `(px − 600, py − 400)` offset).
+        let (spawn, suppressed) = spawner::spawn_npc_call(ctx, &mut rng, app.spawn_no_cycle);
+        app.spawn_no_cycle = false; // the latch is consumed by one call
+        spawned = spawn;
+        let _ = suppressed;
         // `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) — the
         // invasion table overrides the natural roll (`NPC.cs`'s
         // `this.invaders` branch ahead of the normal picks). The pick now
@@ -3808,6 +3704,31 @@ mod tests {
 
     /// `AI_000_TransformBoundNPC`'s 589 → 588 arm (`NPC.cs:19833-19836`): the
     /// talk frees the sleeping Golfer and raises `savedGolfer` (`:52938`).
+
+    /// S1-E-25's emitter contract (`NPC.UpdateNPC_CritterSounds`,
+    /// `NPC.cs:92244-92340`): an NPC the critter table does not name consumes
+    /// no `Main.rand` draws — the port's roster has no critter kinds yet
+    /// (M4-NPC), so the zombie's id 3 must leave the per-NPC stream
+    /// untouched through the `NPC.cs:90323` seam.
+    #[test]
+    fn the_critter_seam_consumes_no_rolls_outside_the_table() {
+        let mut rng = 0u64;
+        let mut hi_roll = |hi: u32| crate::app::frame::rand_range(&mut rng, hi);
+        assert_eq!(
+            crate::ambient_sound::critter_sound_cue(
+                NpcKind::Zombie.to_u16() as i32,
+                true,
+                1000.0,
+                3000.0,
+                3000.0,
+                1.0,
+                &mut hi_roll
+            ),
+            None,
+            "the zombie is outside the critter table"
+        );
+        assert_eq!(rng, 0, "out-of-table types consume no draws");
+    }
 
     /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
     /// a dye-material row (the dye materials / the Strange Plants) — the
@@ -4226,6 +4147,12 @@ mod tests {
                     downed_golem: false,
                     downed_martians: false,
                     invasion_type: 0,
+                    invasion_summoner_alive: false,
+                    invasion_captain_alive: false,
+                    invasion_walker_alive: false,
+                    invasion_saucer_alive: false,
+                    invasion_progress_30: false,
+                    invasion_progress_frac: 0.0,
                     any_danger: false,
                     probe_exists: false,
                     sky_behind_player: false,
@@ -4763,6 +4690,102 @@ mod invasion_tests {
         w
     }
 
+    /// DW-1.1 (dirty, watched RED pre-fix): with an active invasion inside
+    /// the ±3000 px window, the invader spawns on a machinery-found tile —
+    /// in the spawn area, non-solid at the spawn point, ground below — not
+    /// at the retired fixed `(px − 600, py − 400)` offset, and facing the
+    /// player (`NPC.cs:308-342`'s one path through `FindSpawnTile` →
+    /// `SpawnAnNPC`'s `else if (this.invaders)` ladder `:1424-1541`, the
+    /// `NewNPC` `Bottom` placement `:80772`). The pick's rolls leave the
+    /// item stream alone (`item_rng` unchanged across the whole loop — the
+    /// invasion path draws only from the spawner stream, DW-1.2).
+    #[test]
+    fn invasion_spawns_land_on_machinery_found_tiles() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        // The active goblin invasion: the surface band and the ±3000 px
+        // window around `invasionX` (the player's own column).
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 100;
+        app.world.invasion_size_start = 100;
+        app.world.invasion_delay = 0;
+        app.world.invasion_goblins = true;
+        app.world.invasion_x = 150.0;
+        app.npc_timer = 0.0;
+        let item_rng_before = app.item_rng;
+        let solid = |w: &World, tx: i32, ty: i32| {
+            w.tile(tx, ty)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+        };
+        let mut spawned = false;
+        for _ in 0..20000 {
+            update_npcs(&mut app, 1.0 / 60.0);
+            let Some(n) = app.npcs.last() else { continue };
+            if !matches!(
+                n.kind,
+                NpcKind::GoblinSorcerer
+                    | NpcKind::GoblinThief
+                    | NpcKind::GoblinPeon
+                    | NpcKind::GoblinWarrior
+                    | NpcKind::GoblinArcher
+                    | NpcKind::GoblinSummoner
+            ) {
+                continue;
+            }
+            let (w, h) = n.kind.size();
+            let tile_x = ((n.x + w * 0.5) / TILE_PX).floor() as i32;
+            let mid_row = ((n.y + h * 0.5) / TILE_PX).floor() as i32;
+            let feet_row = ((n.y + h) / TILE_PX).floor() as i32;
+            // The spawn area (`GetSpawnArea`, NPC.cs:931-967): the player's
+            // tile ± (sWidth/16 x 0.7, sHeight/16 x 0.7).
+            let px_tile = (150.0 * TILE_PX / TILE_PX).floor() as i32;
+            let py_tile = (118.0 * TILE_PX / TILE_PX).floor() as i32;
+            let area_x = (spawner::S_WIDTH / 16 * 7) / 10;
+            let area_y = (spawner::S_HEIGHT / 16 * 7) / 10;
+            assert!(
+                tile_x >= px_tile - area_x && tile_x < px_tile + area_x,
+                "the spawn tile is in the spawn area (tile_x {tile_x})"
+            );
+            assert!(
+                feet_row >= py_tile - area_y && feet_row < py_tile + area_y,
+                "the spawn tile is in the spawn area (feet row {feet_row})"
+            );
+            assert!(
+                !solid(&app.world, tile_x, mid_row),
+                "non-solid at the spawn point (tile {tile_x},{mid_row})"
+            );
+            assert!(
+                solid(&app.world, tile_x, feet_row) || solid(&app.world, tile_x, feet_row + 1),
+                "ground below the spawn point (feet row {feet_row})"
+            );
+            // The machinery's facing rule (`TargetClosest`, npc.rs:6998) —
+            // toward the player, not the ±1-by-`invasion_x` stand-in.
+            let expected_facing = if 150.0 * TILE_PX >= n.x + w * 0.5 {
+                1
+            } else {
+                -1
+            };
+            assert_eq!(n.facing, expected_facing, "facing toward the player");
+            // Not the retired fixed offset.
+            assert!(
+                (n.x - (150.0 * TILE_PX - 600.0)).abs() > 1.0
+                    || (n.y - (118.0 * TILE_PX - 400.0)).abs() > 1.0,
+                "not at the fixed (px-600, py-400) offset"
+            );
+            spawned = true;
+            break;
+        }
+        assert!(spawned, "an invader spawned inside the window");
+        assert_eq!(
+            app.item_rng, item_rng_before,
+            "the invasion path draws nothing from the item stream"
+        );
+    }
+
     #[test]
     fn the_morning_roll_arms_the_invasion() {
         // `UpdateTime_StartDay`'s roll: the smashed orb + the pre-defeat 1/3
@@ -4863,8 +4886,10 @@ mod invasion_tests {
 
     #[test]
     fn the_invasion_spawn_window_and_table() {
-        // `ShouldSpawnInvasionEnemies`: the surface band + the ±3000 px
-        // window around invasionX; the table picks the goblin kinds.
+        // `ShouldSpawnInvasionEnemies` (NPC.cs:442-463): the surface band +
+        // the ±3000 px window around invasionX. (The pick's table tests
+        // moved beside the ladder into `spawner.rs`'s test module — the
+        // pick lives there since the S1-F-12 placement half.)
         let mut w = surface_world();
         w.invasion_type = 1;
         w.invasion_size = 120;
@@ -4881,42 +4906,6 @@ mod invasion_tests {
             !should_spawn_invasion_enemies(&w, 400.0 * TILE_PX, 20.0 * TILE_PX),
             "the cave band refuses"
         );
-        // The table: the picks are always goblins.
-        let mut rng = 7u64;
-        for _ in 0..40 {
-            let kind = invasion_spawn_pick(&mut rng, false, false, 1, false, false, false, 0.0);
-            assert!(matches!(
-                kind,
-                NpcKind::GoblinSorcerer
-                    | NpcKind::GoblinThief
-                    | NpcKind::GoblinPeon
-                    | NpcKind::GoblinWarrior
-                    | NpcKind::GoblinArcher
-            ));
-        }
-        // The hardmode summoner: only when none alive.
-        let mut rng = 3u64;
-        let mut saw_summoner = false;
-        for _ in 0..200 {
-            if matches!(
-                invasion_spawn_pick(&mut rng, true, false, 1, false, false, false, 0.0),
-                NpcKind::GoblinSummoner
-            ) {
-                saw_summoner = true;
-                break;
-            }
-        }
-        assert!(saw_summoner, "the hardmode summoner roll");
-        let mut rng = 7u64;
-        for _ in 0..200 {
-            assert!(
-                !matches!(
-                    invasion_spawn_pick(&mut rng, true, true, 1, false, false, false, 0.0),
-                    NpcKind::GoblinSummoner
-                ),
-                "the alive summoner blocks the roll"
-            );
-        }
     }
     #[test]
     fn the_eow_middle_split_lives_as_a_new_head() {
@@ -5027,7 +5016,6 @@ mod invasion_tests {
     mod frost_invasion_tests {
         use super::*;
         use crate::app::flow::front_flow_tests::flow_app;
-        use crate::npc::Npc;
         use crate::world_sim::editing::use_snow_globe;
         use tr_core::tile::{FLAG_ACTIVE, Tile};
 
@@ -5113,31 +5101,6 @@ mod invasion_tests {
             assert!(!app.world.downed_goblins, "the goblin flag untouched");
             assert_eq!(app.world.invasion_type, 0);
         }
-
-        #[test]
-        fn the_frost_spawn_table_picks_the_trio() {
-            // `invasionType == 2`'s table: the SnowmanGangsta 1/7, the SnowBalla
-            // 1/3, else the MysterySnowman — always the frost trio.
-            let mut rng = 9u64;
-            for _ in 0..60 {
-                assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 2, false, false, false, 0.0),
-                    NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
-                ));
-            }
-            // The goblin table stays on type 1.
-            let mut rng = 9u64;
-            for _ in 0..40 {
-                assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 1, false, false, false, 0.0),
-                    NpcKind::GoblinSorcerer
-                        | NpcKind::GoblinThief
-                        | NpcKind::GoblinPeon
-                        | NpcKind::GoblinWarrior
-                        | NpcKind::GoblinArcher
-                ));
-            }
-        }
     }
 }
 
@@ -5220,36 +5183,6 @@ mod pirate_invasion_tests {
         assert_eq!(app.world.invasion_type, 0);
     }
 
-    #[test]
-    fn the_pirate_spawn_table_picks_the_crew() {
-        // `invasionType == 3`'s table: the Captain 1/30, the Deadeye 1/11,
-        // the Corsair 1/9, the Archer 1/7, the CaptainsMate 1/3, else the
-        // Deckhand — always the pirate crew.
-        let mut rng = 11u64;
-        for _ in 0..80 {
-            assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false, 0.0),
-                NpcKind::PirateDeckhand
-                    | NpcKind::PirateCaptainsMate
-                    | NpcKind::PirateArcher
-                    | NpcKind::PirateCorsair
-                    | NpcKind::PirateCaptain
-            ));
-        }
-        // The Captain roll fires within the 1/30 odds.
-        let mut rng = 5u64;
-        let mut saw_captain = false;
-        for _ in 0..600 {
-            if matches!(
-                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false, 0.0),
-                NpcKind::PirateCaptain
-            ) {
-                saw_captain = true;
-                break;
-            }
-        }
-        assert!(saw_captain, "the Captain roll fires");
-    }
     #[test]
     fn the_golem_death_chain() {
         // `:79346`'s case 245 + `:84957`'s detach: the BODY's death
@@ -5454,77 +5387,6 @@ mod invasion_bar_tests {
             assert!(app.world.downed_martians, "the martian defeat flag");
             assert!(!app.world.downed_pirates, "the pirate flag untouched");
             assert_eq!(app.world.invasion_type, 0);
-        }
-
-        #[test]
-        fn the_martian_spawn_table_picks_the_ground_four() {
-            // `invasionType == 4`'s ported table (`NPC.cs:1487-1540`): every
-            // rolled kind is one of the ported five — the ground four (the
-            // GrayGrunt 385, the GigaZapper 389, the Officer 383, the Walker
-            // 520's walk-in), the Engineer 386's rider arm and the Drone 388's
-            // num8 >= 4 arm; the Saucer 395/Rider 390/RayGunner 382/Scrambler
-            // 381 arms consume their rolls and map to the ground fallback.
-            let mut rng = 13u64;
-            let mut seen_engineer = false;
-            let mut seen_drone = false;
-            let mut seen_walker = false;
-            for _ in 0..600 {
-                let kind = invasion_spawn_pick(&mut rng, false, false, 4, false, false, false, 0.0);
-                assert!(
-                    matches!(
-                        kind,
-                        NpcKind::GrayGrunt
-                            | NpcKind::GigaZapper
-                            | NpcKind::MartianOfficer
-                            | NpcKind::MartianWalker
-                            | NpcKind::MartianEngineer
-                            | NpcKind::MartianDrone
-                            | NpcKind::RayGunner
-                            | NpcKind::BrainScrambler
-                            | NpcKind::ScutlixRider
-                            | NpcKind::MartianSaucerCore
-                    ),
-                    "the unported kinds never surface: {kind:?}"
-                );
-                seen_engineer |= kind == NpcKind::MartianEngineer;
-                seen_drone |= kind == NpcKind::MartianDrone;
-                seen_walker |= kind == NpcKind::MartianWalker;
-            }
-            assert!(seen_engineer, "the num6 >= 6 arm's Engineer half");
-            assert!(seen_drone, "the num8 >= 4 arm's Drone");
-            assert!(seen_walker, "the walk-in gate's Walker");
-            let mut rng = 3u64;
-            let mut seen_ray = false;
-            let mut seen_scrambler = false;
-            let mut seen_rider = false;
-            for _ in 0..1200 {
-                match invasion_spawn_pick(&mut rng, false, false, 4, true, false, false, 0.0) {
-                    NpcKind::RayGunner => seen_ray = true,
-                    NpcKind::BrainScrambler => seen_scrambler = true,
-                    NpcKind::ScutlixRider => seen_rider = true,
-                    _ => {}
-                }
-            }
-            assert!(seen_ray, "the num8 < 2 arm's RayGunner");
-            assert!(seen_scrambler, "the num8 == 2 arm's BrainScrambler");
-            assert!(seen_rider, "the num6 >= 6 arm's Rider half");
-            // The walker's uniqueness: while one lives, the num9 == 3 arm
-            // re-rolls the ground chain instead.
-            let mut rng = 5u64;
-            for _ in 0..200 {
-                assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 4, true, false, false, 0.0),
-                    NpcKind::GrayGrunt
-                        | NpcKind::GigaZapper
-                        | NpcKind::MartianOfficer
-                        | NpcKind::MartianEngineer
-                        | NpcKind::MartianDrone
-                        | NpcKind::RayGunner
-                        | NpcKind::BrainScrambler
-                        | NpcKind::ScutlixRider
-                        | NpcKind::MartianSaucerCore
-                ));
-            }
         }
     }
 
@@ -6521,30 +6383,6 @@ mod dutchman_tests {
             }
         }
         assert!(drops > 0, "the ship drops pirates over time");
-    }
-
-    #[test]
-    fn the_type3_table_spawns_the_dutchman_in_the_half_window() {
-        // `NPC.cs:1460-1468`: the half-points window spawns the ship;
-        // elsewhere the pirate table runs.
-        let mut rng = 21u64;
-        for _ in 0..200 {
-            assert_eq!(
-                invasion_spawn_pick(&mut rng, false, false, 3, false, false, true, 0.75),
-                NpcKind::FlyingDutchman
-            );
-        }
-        let mut rng = 21u64;
-        for _ in 0..200 {
-            assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 3, false, false, true, 0.25),
-                NpcKind::PirateCaptain
-                    | NpcKind::PirateArcher
-                    | NpcKind::PirateCorsair
-                    | NpcKind::PirateCaptainsMate
-                    | NpcKind::PirateDeckhand
-            ));
-        }
     }
 }
 
