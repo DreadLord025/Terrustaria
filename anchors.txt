@@ -191,3 +191,4 @@ tools/gen_recipes.py|cs_tiles|S1-L-11 - the reverse recipes derive from the C# i
 
 crates/tr-core/src/wld/sections/tiles.rs|fn write_tile_record|S1-J-1 - the .wld tile section writes the four wire colours into the chained header bytes exactly as the C# (b2 0x02/0x04/0x08 for wire()/wire2()/wire3(), b3 0x20 for wire4() - WorldFile.cs:1508-1532)
 crates/tr-core/src/wld/mod.rs|fn load_tiles|S1-J-1 - the .wld reader restores the four wire colours (LoadWorldTiles:2614-2632/2651-2654) into every row of the RLE run (CopyFrom :2711)
+docs/research/24-spawner-invasions.md|S1-F-13-moon-wave-rosters|S1-F-13 scope-verified: the moon-event wave kinds are unported (25 NpcKind rows missing), so the roster row is L-sized; the C# sources of the ladder + the wave machinery + the start/stop are pinned
