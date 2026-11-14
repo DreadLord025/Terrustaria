@@ -13321,3 +13321,50 @@ Deviations:
   the classic values.
 * **The MP-only branches** (`Main.netMode != 0`) use the single-player
   values.
+
+## The King Slime's machine (S1-D-3g, 2026-11-14)
+
+`AI_015_KingSlime` (`NPC.cs:43121-43414`) is the King Slime's family
+machine: the hop cycle, the shrink/grow teleport, the hp-scaled body and
+the minion batches. The port ran a simplified arm — a hop on a timer, a
+stand-in teleport next to the player, a fixed body — and it spawned **a
+minion on every landing**, while the C#'s batches come every 5 % of the
+hp (1-3 slimes, `Next(1, 4)`).
+
+The arm now carries the C#'s machine:
+
+* **the hop cycle** (`:43285-43326`): the grounded timer runs at 2/tick
+  plus the hp-scaled additions (the 0.8/0.6/0.4/0.2/0.1 life bands), the
+  hop itself is the -8/-6/-13 jump with the 4/4.5/3.5 push, and the air
+  control is the 0.2 push (or the 0.93 damping) toward the facing;
+* **the teleport** (`:43177-43211`, `:43219-43284`): the player out of
+  sight for 300 ticks shrinks the King Slime (the scale ramp over 60
+  ticks), it blinks onto the picked spot and grows back (30 ticks). The
+  spot comes from `AI_015_KingSlime_FindTeleportSpot` (`:43087-43119`):
+  a solid (or platform) tile with clear air below and a sight line to the
+  player, in the 10/7 ring around the player and then the 6/2 one; the
+  anti-cheese case (out of sight for 360 ticks or the player 2000 px away)
+  lands on the player instead;
+* **the hp-scaled body** (`:43340-43356`): `num9 = life / lifeMax * 0.5 +
+  0.75` drives both the draw scale and the 98x92 box — the port's new
+  `Npc::size_override` carries the per-NPC box (the C#'s `base.width`/
+  `base.height`);
+* **the minion batches** (`:43357-43395`): every 5 % of the hp the King
+  Slime spawns 1-3 slimes (the `ai[3]` hp latch).
+
+Deviations:
+
+* **The dust and the gore are SKIPPED** (`:43253-43281`, `:43327-43339`) —
+  no dust/gore layer.
+* **The MP-only branches use the single-player values.**
+* **`NPC.timeLeft` is not ported**: the port's NPCs carry no despawn timer,
+  so the C#'s "the closing timer clears the state" arm (`:43212-43218`) and
+  the `timeLeft > 10` gate on the teleport (`:43180`) ride the normal
+  machine.
+* **The getGood world's rows** (the shrinking scale factor, the 6-px air
+  control) are the classic values — the port carries no world-seed flag.
+* **The minions' `ai[0] = -1000 * Next(3)` / `ai[1] = -1`** (`:43386-43388`)
+  ride the port's slime spawn: the slimes' own machine (`AI_001_Slimes`) is
+  not ported yet.
+* **The minion positions** stay the sim's (the surface near the King
+  Slime) rather than the C#'s random offsets inside its box.
