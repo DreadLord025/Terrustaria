@@ -1480,6 +1480,7 @@ impl NpcKind {
             NpcKind::GoblinPeon => 1.5,         // the num83 group
             NpcKind::GoblinThief => 2.0,        // the cap-2 group (`:57554`)
             NpcKind::GoblinWarrior => 1.0,      // the num107 default
+            NpcKind::Spazmatism => 2.0,        // the cap-2 group (`:57554`)
             NpcKind::PirateDeckhand => 2.0,     // the cap-2 group
             NpcKind::PirateCaptainsMate => 3.0, // the cap-3 group (`:57520`)
             NpcKind::PirateArcher => 2.0,       // the shooters' group (`:59722`)
@@ -4611,7 +4612,10 @@ impl Npc {
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::TheDestroyer => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
-            NpcKind::Retinazer | NpcKind::Spazmatism => self.update_twin(world, player),
+            // The Retinazer (325) rides the aiStyle-57 machine; the
+            // Spazmatism (326) is an aiStyle-3 fighter (the walker).
+            NpcKind::Retinazer => self.update_retinazer(world, player, rng),
+            NpcKind::Spazmatism => self.update_spazmatism(world, player),
             NpcKind::Plantera => self.update_plantera(world, player),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
             NpcKind::Creeper => self.update_creeper(world, player, rng),
@@ -12607,6 +12611,254 @@ impl Npc {
     /// the charge (the 480-tick cycle, the direct velocity x 8.5), the
     /// decel (the 40 ticks x0.98). The laser/spit phases and the second-
     /// form transformations = the follow-ups.
+    /// `AI()`'s aiStyle-57 block (`NPC.cs:32761-33043`) — the Retinazer's
+    /// machine: the idle (0), the stomp (1), the spin (2), the beam (3) and
+    /// the charge (4), the horizontal drift toward the player and the
+    /// vertical hover.
+    ///
+    /// The light and the dust are SKIPPED — no dust/light layer. The
+    /// day-time `EncourageDespawn(10)` rides the world's own day arm (the
+    /// port's NPCs carry no despawn timer).
+    fn update_retinazer(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        // `:32764-32772` — the horizontal speed cap (the hp bands; the
+        // day-time raises it to 8).
+        let mut speed = 2.0f32;
+        if self.hp * 4 < self.max_hp * 3 {
+            speed = 3.0;
+        }
+        if self.hp * 2 < self.max_hp {
+            speed = 4.0;
+        }
+        if world.day_time {
+            speed = 8.0;
+        }
+        // `:32789` — the "firing" flag: the states that hold the boss still
+        // while it shoots.
+        let mut firing = false;
+        match self.ai[0] as i32 {
+            0 => {
+                // `:32794-32815` — the idle: the counter (the faster it
+                // loses hp, the faster it counts) and then the next state.
+                self.ai[1] += 1.0;
+                if self.hp * 2 < self.max_hp {
+                    self.ai[1] += 1.0;
+                }
+                if self.hp * 4 < self.max_hp {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] >= 300.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = if self.hp * 4 < self.max_hp {
+                        crate::app::frame::rand_range_signed(rng, 3, 5) as f32
+                    } else {
+                        crate::app::frame::rand_range_signed(rng, 1, 3) as f32
+                    };
+                }
+            }
+            1 => {
+                // `:32836-32866` — the stomp: the flaming wood every 15
+                // ticks.
+                firing = true;
+                self.ai[1] += 1.0;
+                if self.ai[1] % 15.0 == 0.0 {
+                    let origin = Vec2::new(cx, cy + 30.0);
+                    let mut dx = pcx - origin.x;
+                    let mut dy = pcy - origin.y;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    dx = dx / d * 10.0;
+                    dy = dy / d * 10.0;
+                    let sx = dx
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.01);
+                    let sy = dy
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.01);
+                    self.wants_hostile_shot.push((
+                        crate::projectile::FLAMING_WOOD,
+                        origin.x,
+                        origin.y,
+                        sx,
+                        sy,
+                        50,
+                    ));
+                }
+                if self.ai[1] >= 120.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            2 => {
+                // `:32868-32929` — the spin: the Greek fires every eighth
+                // tick between the 60th and the 240th.
+                firing = true;
+                self.ai[1] += 1.0;
+                if self.ai[1] > 60.0 && self.ai[1] < 240.0 && self.ai[1] % 8.0 == 0.0 {
+                    let origin = Vec2::new(cx, cy + 30.0);
+                    let mut dx = pcx - origin.x;
+                    let mut dy = pcy - origin.y - dx.abs() * 0.3;
+                    let mut shot_speed = 10.0f32;
+                    shot_speed += dx.abs() * 0.004;
+                    if shot_speed > 14.0 {
+                        shot_speed = 14.0;
+                    }
+                    dx += crate::app::frame::rand_range_signed(rng, -50, 51) as f32;
+                    dy -= crate::app::frame::rand_range_signed(rng, 50, 201) as f32;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    dx = dx / d * shot_speed;
+                    dy = dy / d * shot_speed;
+                    let kind = crate::app::frame::rand_range_signed(rng, 326, 329) as u16;
+                    let sx = dx
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.01);
+                    let sy = dy
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.01);
+                    self.wants_hostile_shot
+                        .push((kind, origin.x, origin.y, sx, sy, 40));
+                }
+                if self.ai[1] >= 300.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            3 => {
+                // `:32930-32956` — the beam: the flaming wood every 30 ticks.
+                speed = 4.0;
+                self.ai[1] += 1.0;
+                if self.ai[1] % 30.0 == 0.0 {
+                    let origin = Vec2::new(cx, cy + 30.0);
+                    let mut dx = pcx - origin.x;
+                    let mut dy = pcy - origin.y;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    dx = dx / d * 16.0;
+                    dy = dy / d * 16.0;
+                    let sx = dx
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.001);
+                    let sy = dy
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.001);
+                    self.wants_hostile_shot.push((
+                        crate::projectile::FLAMING_WOOD,
+                        origin.x,
+                        origin.y,
+                        sx,
+                        sy,
+                        75,
+                    ));
+                }
+                if self.ai[1] >= 120.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            4 => {
+                // `:32957-32990` — the charge: the Greek fires every tenth
+                // tick.
+                speed = 4.0;
+                self.ai[1] += 1.0;
+                if self.ai[1] % 10.0 == 0.0 {
+                    let origin = Vec2::new(cx, cy + 30.0);
+                    let mut dx = pcx - origin.x;
+                    let mut dy = pcy - origin.y - dx.abs() * 0.2;
+                    let mut shot_speed = 12.0f32;
+                    shot_speed += dx.abs() * 0.002;
+                    if shot_speed > 16.0 {
+                        shot_speed = 16.0;
+                    }
+                    dx += crate::app::frame::rand_range_signed(rng, -50, 51) as f32;
+                    dy -= crate::app::frame::rand_range_signed(rng, 50, 201) as f32;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    dx = dx / d * shot_speed;
+                    dy = dy / d * shot_speed;
+                    let kind = crate::app::frame::rand_range_signed(rng, 326, 329) as u16;
+                    let sx = dx
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.005);
+                    let sy = dy
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.005);
+                    self.wants_hostile_shot
+                        .push((kind, origin.x, origin.y, sx, sy, 50));
+                }
+                if self.ai[1] >= 240.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            _ => {}
+        }
+        // `:32991-32995` — the horizontal damp close to the player.
+        if (cx - pcx).abs() < 50.0 {
+            firing = true;
+        }
+        if firing {
+            self.vx *= 0.9;
+            if self.vx > -0.1 && self.vx < 0.1 {
+                self.vx = 0.0;
+            }
+        } else {
+            if self.facing > 0 {
+                self.vx = (self.vx * 20.0 + speed) / 21.0;
+            }
+            if self.facing < 0 {
+                self.vx = (self.vx * 20.0 - speed) / 21.0;
+            }
+        }
+        // `:33012-33040` — the vertical hover: the player-overlap test, the
+        // solid-tile probe under the boss and the fall/rise ramps.
+        let probe_x = cx - 40.0;
+        let probe_y = self.y + h - 20.0;
+        let over_player = self.x < player.x
+            && self.x + w > player.x + crate::player::WIDTH
+            && self.y + h < player.y + player.height - 16.0;
+        if over_player {
+            self.vy += 0.5;
+        } else if collides_rect(world, probe_x, probe_y, 80.0, 20.0) {
+            if self.vy > 0.0 {
+                self.vy = 0.0;
+            }
+            if self.vy > -0.2 {
+                self.vy -= 0.025;
+            } else {
+                self.vy -= 0.2;
+            }
+            if self.vy < -4.0 {
+                self.vy = -4.0;
+            }
+        } else {
+            if self.vy < 0.0 {
+                self.vy = 0.0;
+            }
+            if self.vy < 0.1 {
+                self.vy += 0.025;
+            } else {
+                self.vy += 0.5;
+            }
+        }
+        if self.vy > 10.0 {
+            self.vy = 10.0;
+        }
+    }
+
+    /// The Spazmatism (326) — the Twins' ground fighter: the C#'s aiStyle-3
+    /// family (`AI_003_Fighters`, `NPC.cs:55856+`) with the cap-2 group's
+    /// walk speed (`:57554-57578`).
+    fn update_spazmatism(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        let speed = NpcKind::Spazmatism.ai3_walk_speed().unwrap_or(2.0);
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+    }
+
     fn update_twin(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -17032,8 +17284,9 @@ mod tests {
 
     #[test]
     fn the_twin_cycles_and_maps() {
-        // `AI_030/031`'s v1 cycle: the hover 480 ticks → the charge (the
-        // velocity 8.5) → the decel.
+        // `AI_057`'s machine (the Retinazer, `NPC.cs:32761-33043`): the idle
+        // counts 300 ticks and then picks the next state (the stomp 1-2 or
+        // the beam 3-4).
         let mut w = ground_air();
         w.day_time = false;
         let mut ret = Npc::new(NpcKind::Retinazer, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
@@ -17041,13 +17294,30 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
-            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let mut rng = 0u64;
+        for _ in 0..300 {
+            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
-        assert!(ret.cast_windup == 1, "the charge phase armed");
-        ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
-        let speed = (ret.vx * ret.vx + ret.vy * ret.vy).sqrt();
-        assert!((speed - 8.5).abs() < 0.1, "the charge speed ({speed})");
+        assert!(
+            ret.ai[0] >= 1.0 && ret.ai[0] <= 4.0,
+            "the next state armed ({})",
+            ret.ai[0]
+        );
+        // The stomp (the state 1) fires the flaming wood every 15 ticks.
+        ret.ai[0] = 1.0;
+        ret.ai[1] = 0.0;
+        ret.wants_hostile_shot.clear();
+        for _ in 0..15 {
+            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let shots: Vec<_> = ret
+            .wants_hostile_shot
+            .iter()
+            .filter(|s| s.0 == crate::projectile::FLAMING_WOOD)
+            .copied()
+            .collect();
+        assert_eq!(shots.len(), 1, "the stomp fires the flaming wood");
+        assert_eq!(shots[0].5, 50, "the shot's damage");
         // The stats round-trip.
         assert_eq!(ret.size(), (100.0, 110.0));
         assert_eq!(ret.max_hp, 20000);

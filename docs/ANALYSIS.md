@@ -13636,3 +13636,36 @@ Deviations:
 * **The cannon inherits the Dutchman's velocity and `timeLeft`** in the C#;
   the port's carrier link carries the position and the timers only, so the
   cannon keeps its own movement.
+
+## The Retinazer's machine (S1-D-3i, 2026-11-14)
+
+`AI_057` (`NPC.cs:32761-33043`) is the Retinazer's family machine — the
+Twins' left boss ✓ (the Spazmatism is an aiStyle-3 ground fighter ✓).
+The port ran one EoC-shaped v1 arm for both Twins: a hover, a dash and a
+decay.
+
+The Retinazer's arm now carries the C#'s machine:
+
+* **the idle** (`ai[0] == 0`, `:32794-32815`): the `ai[1]` counter (the
+  faster it loses hp, the faster it counts) and, at 300, the next state
+  (the stomp 1-2, or the beam 3-4 below a quarter hp);
+* **the stomp** (1, `:32836-32866`): the flaming wood every 15 ticks;
+* **the spin** (2, `:32868-32929`): the Greek fires every eighth tick
+  between the 60th and the 240th;
+* **the beam** (3, `:32930-32956`): the flaming wood every 30 ticks;
+* **the charge** (4, `:32957-32990`): the Greek fires every tenth tick;
+* **the movement** (`:32991-33040`): the horizontal drift toward the
+  player (the speed cap 2, 3 and 4 per the hp band, 8 in the day-time)
+  with the damp inside 50 px, and the vertical hover — the player-overlap
+  test, the solid-tile probe under the boss and the rise/fall ramps.
+
+The shots' rows come with it: the flaming wood (325) and the Greek fires
+(326/327/328) get their `SetDefaults` slices (`Projectile.cs:3249-3277`).
+The Spazmatism (326) leaves the shared v1 arm for the aiStyle-3 walker
+(the cap-2 group, `:57554`).
+
+Deviations:
+
+* **The light and the dust are SKIPPED** — no dust/light layer.
+* **The day-time `EncourageDespawn(10)`** rides the world's own day arm (the
+  port's NPCs carry no despawn timer).
