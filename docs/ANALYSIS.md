@@ -4742,9 +4742,11 @@ Deviations, all deliberate:
 
 ## Mounts framework (M2-MOUNT-1)
 
-`crates/tr-app/src/mount.rs` holds the `MountData` port (a 12-row ground table with the
-exact `Mount.cs:696-2567` constants — Rudolph, Bunny, Slime, Scutlix, Unicorn, Basilisk,
-the three horses, PogoStick, Wall-of-Flesh Goat, Queen Slime), the `MountState` instance
+`crates/tr-app/src/mount.rs` holds the `MountData` port (a 66-row table with the
+exact `Mount.cs:696-2567` constants — every `MountID` id, the 16 rows that were
+missing until S1-L-9 included: Turtle, GolfCart, Flamingo, SpookyWood, Santank,
+Wolf, Velociraptor, Rat, the four roller skates and the four Chillemts), the
+`MountState` instance
 core (`SetMount`/`Dismount`/`CheckMountBuff`/`Reset` — `Mount.cs:6196-6305`/`:6142-6194`/
 `:5275-5281`/`:675-694`, keeping the vanilla quirk that `fatigue`/`abilityCooldown`/
 `abilityDuration` survive `Reset`), the saddle-item and mount-buff lookups (the
@@ -4773,9 +4775,25 @@ bottom-anchored (`:6264-6277`) and restores through the shrink path of
 `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2513`).
 
 Deviations:
-- **Partial table (50 of `MountID.Count` 66)** — `set_mount` rejects ids outside the
-  table where vanilla fills every row; the remaining categories land with
-  M2-MOUNT-2/3/4.
+- **Full table (66 of `MountID.Count` 66), but the rows are data only** — S1-L-9
+  landed every `Mount.Initialize` row (`Mount.cs:696-2567`), the `Item.mountType`
+  rows and the `SetMount`/`Dismount` extras; the per-type *behaviour* still waits
+  for M2-MOUNT-2/3/4:
+  - the Spooky Wood's light (`emitsLight`/`lightColor`, `Mount.cs:1951-1952`,
+    applied at `:3632-3636`) needs the entity-light API (S1-E-5) — the row carries
+    the colour, nothing consumes it yet;
+  - the `Dismount`'s `noItems` restore for the transformation mounts 55/56
+    (`Mount.cs:6152-6155`) needs the `noItems`/`cursed` pair the port does not
+    carry — constants-off;
+  - the SuperCart writer (`_shouldSuperCart`, `Mount.cs:4798`) reads
+    `Player.UsingSuperCart` (`Player.cs:3966-3980`); the port carries the
+    `unlockedSuperCart`/`enabledSuperCart` pair, but the unlock writer (item 3353,
+    `Player.cs:45207-45211`, `:55718`) and the UI toggle are not ported — the flag
+    stays false in play, while the stat overrides themselves are the vanilla
+    20/20/0.1/15/5.15 (`:6660-6664`);
+  - the per-type animator arms of `UpdateFrame` (the drill rotation, the bee
+    wings, the Chillemt dust, `:3637-4142`) stay unported — the rows' frame
+    bands, the idle ranges and the rat's own idle table are ported.
 - **No net sync** — `SetMount`/`Dismount`'s msg 13 (`Mount.cs:6222-6225`, `:6172-6175`)
   has no multiplayer surface.
 - **No gravDir branch** — the flip block gated `!mount.Active` (`Player.cs:26690-26733`)
@@ -4790,9 +4808,11 @@ Deviations:
   + `PlayerNoSpaceTeleport` (`:6052-6070`) cannot fire; the grow-probe half of
   `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2490-2508`) returns `None`
   until a consumer appears.
-- **Cart/ability branches reserved** — the OnTrack/roller-skate/drill arms of
+- **Cart/ability branches reserved** — the OnTrack/drill arms of
   the per-tick block are comment-marked (M2-MOUNT-3/4); the SuperCart stat overrides
-  read 0; `Mount.Hover` (hover mounts) cannot fire while no row sets `usesHover`.
+  read the vanilla values (20/20/0.1/15/5.15, `Mount.cs:6660-6664`) but the flag
+  that selects them is constants-off (see above); `Mount.Hover` (hover mounts)
+  cannot fire while no row sets `usesHover`.
   The Fishron arm (id 12) is ported: the 60/420-tick `MountFishronSpecialCounter`
   and the halving gate the Cute Fishron's run stats (`Player.cs:26655-26659`).
 - **Charge/stomp damage deferred** — the dash-contact damage (`Player.cs:20108-20170`)
@@ -4806,8 +4826,10 @@ Deviations:
 
 Verification: the unit tests across `mount.rs`/`player.rs`/`render/player_layers.rs`
 (the table constants, the set/dismount guards, the merge modes, the jump/fall
-interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle, the
-animator states, the draw math); `TR_SHOT` twin runs SHA256-equal with
+interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle,
+the animator states, the draw math; S1-L-9 adds the 66-row per-id table, the
+item rows, the SuperCart statics, the `SetMount`/`Dismount` extras, the Chillemt
+damage bonus and the rat's idle band); `TR_SHOT` twin runs SHA256-equal with
 `TR_MOUNT=unicorn` over `assets/test/master.trwld` at frame 120.
 
 ## Projectile pool (M4-PROJ-1)
@@ -12363,6 +12385,65 @@ counterpart (the mouse item never blocks the craft here); the
 `UsingOrReusingItem`/`IsStackingItems` gates of `flag3` (`Player.cs:23098`)
 are unmodelled item-use state.
 
+## The crafting pipeline (S1-L-11d, 2026-11-14)
+
+`CraftingRequests.CreateResult` (`CraftingRequests.cs:122-131`) is ported as
+`craft.rs::create_result`: the recipe's `createItem` cloned, `Item.OnCreated`'s
+type swap (`Item.cs:48936-48942` — the ShellphoneDummy 5437 becomes the
+Shellphone 5358) and `Item.Prefix(-1)`'s natural roll for a stack ≤ 1
+(`Item.cs:504-610`). The grant carries the rolled prefix (`Item.CanStack`,
+`Item.cs:49865-49872`), and the C#'s cursor gate
+(`Main.CursorHasSpaceToCraftRecipe`, `Main.cs:42309-42345`) makes a prefixable
+recipe craft **once** per click while the stackable ones (the torches) keep
+crafting — the gate refuses a prefixable result outright
+(`!item.CanHavePrefixes()`).
+
+The crafting reach is the C#'s formula, `craft.rs::tile_reach`: the statics
+`Player.tileRangeX/Y` (the defaults 5/3, `Player.cs:2496-2498`/`:57113-57114`)
+with the per-tick writes — the Journey mode's Far Placement Range power
+(×2 and +8/+8, `Player.cs:18818-18826`), the Extendo Grip / the Architect's
+Gizmo Pack (+3/+2, `:13040-13044`), the held Toolbox (+1/+1, `:14955-14958`) —
+then `TileReachCheckSettings.Simple`'s 20-tile clamp
+(`TileReachCheckSettings.cs:20-34`, `:84`) and the artisan loaf's +4
+(`Player.cs:35671`). The two gated recipes are ported too
+(`needTorchGodsFavor` — the Torch God's potion 5573 and the master 5638 — and
+`needMechdusa` — the 5334 row), with the gates `player.unlockedBiomeTorches`
+and `SpecialSeedFeatures.Mechdusa` (`Recipe.cs:349-356`).
+
+Deviations:
+
+- **The crafted item goes into the inventory, not the cursor.** The C# hands
+  the result to `Main.mouseItem` (`Main.CraftItem_GrantItem`,
+  `Main.cs:42607-42612`) and the player places it with a click; the port grants
+  it straight into the inventory (`clicks.rs::handle_crafting_clicks`). The
+  cursor gate is therefore evaluated against the **previous result** instead of
+  the cursor's content (`craft.rs::result_fits_next`) — the observable
+  quantity matches the C#'s (a prefixable recipe crafts once), but the player
+  never holds the crafted item on the cursor.
+- **The artisan loaf's effect is not ported.** The flag
+  `Player.ateArtisanBread` rides the player and the reach reads it, but the
+  item that sets it (5326, `Player.cs:45218-45221`) has no ported use effect,
+  so the +4 is unreachable in play.
+- **The Torch God's unlock is not ported.** `player.unlockedBiomeTorches`
+  (`Player.cs:2046`) rides the player and the gate reads it, but the unlock
+  itself (the Torch God's dialogue) is unported, so the two gated recipes stay
+  closed.
+- **The prefix roll's stream.** The C# draws `Item.Prefix` from the same
+  global `Main.rand` as the alchemy discount; the port's natural rolls ride
+  `App::prefix_rng` and the crafting discount rides `App::craft_rng` — two
+  stand-ins for one C# stream (the S1-A-11/S1-L-6c residual).
+- **The quickCraft / remote-craft half is out** — the C#'s request queue
+  (`CraftingRequests.CraftViaRequest`, `:142-174`) is the multiplayer path and
+  the port's MP has no crafting requests.
+
+The recipe table grew with it: the generator's tail branch broke out of the
+expansion loop **before** copying the text that precedes
+`Recipe.CreateReverseWallRecipes()` (`Recipe.cs:15148`), so the 414 authored
+rows between the last expansion mark and that call were dropped (the audit's
+"2 481 executed sites" was the generator's own truncated output). The branch
+now copies that text: the table is **3 206 rows = 2 895 authored + 311
+reverse**, and the pin in `tools/test_gen_recipes.py` re-taken.
+
 ## The sliced block light chain (S1-G-9, 2026-11-13)
 
 `DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3516-3640`) is the port's
@@ -12759,6 +12840,76 @@ vanilla scans the VISUAL screen rect") pointed at a stale line reference.
 The arm is `SceneMetrics.cs:468-480`, INSIDE `ScanTiles` — the C# scans the
 same 169×124 zone window the port scans, so the port's window is verbatim;
 the port's comment now says so.
+
+## The Deerclops' projectile family (S1-D-4b-5, 2026-11-14)
+
+The ROADMAP's S1-D-4b-5 slice covers the Deerclops' two projectile
+families: the aiStyle-157 ice spike (`Projectile.cs:51358-51477`) and the
+Insanity Shadow's spawn (`Projectile.RandomizeInsanityShadowFor`,
+`Projectile.cs:42408-42493`) — the spawn that feeds the aiStyle-187 arm
+landed with S1-D-4b-1.
+
+**The aiStyle-157 arm** (the 961; the 1041 rides the same style and has no
+ported row). The arm's parameter row for the 961 (`:51376-51389`) is the
+fade-in window 10, the fade-out from the 10th tick and the kill at the
+20th; the first tick takes the rotation from the velocity and rolls one of
+the sheet's five frames (`Main.rand.Next(5)`, `:51439`).
+
+**The `Opacity` property** (`Projectile.cs:540-549`) is a view over
+`alpha`, not a field of its own: the getter is `1 - alpha / 255` and the
+setter writes `alpha = (int)Clamp((1 - value) * 255, 0, 255)`. The port
+models it with the `opacity_of`/`alpha_of` helpers. The S1-D-4b-1 arm (the
+aiStyle-133 Dark Mage marker) had carried the opacity as a separate slot
+field; that field is gone and the arm writes the alpha, exactly as the
+C#'s property does — the marker's alpha now runs 255 → 242 → 0 → 127 → 255
+(the dying tick) instead of the separate opacity value.
+
+**The shadow hand's spawn** now rides the C#'s pick
+(`Projectile.RandomizeInsanityShadowFor`): the four cases are the arm's
+four variations (`Projectile.cs:42592-42634`), each handing the arm the
+variation's start age (0 / 180 / 300 / 390) and the angle, plus the
+position and the velocity. The port's old spawn (a made-up ring of six
+hands with a stand-in velocity) had no `ai` payload, so every shadow ran
+the arm's variation 0 (the drift) — the arm's other three variations were
+dead code.
+
+**The spawn-site `ai0`/`ai1` payload** (`NewProjectile`'s trailing
+arguments, `Projectile.cs:10862-10863`) rides the new
+`Npc::wants_hostile_shot_ai` request list (`HostileShotAi`): the shots
+whose call site passes a non-zero `ai0`/`ai1`. The list joins the plain
+`wants_hostile_shot` one (whose call sites pass zero). The S1-D-4b-4
+slicer's per-kind table in the sim's drain is retired: the Saucer deathray
+now carries its owner slot from the spawn site (`ai0 = whoAmI + 1`, the
+C#'s own value — the port's `Npc::slot` is the sim's current index) and
+the missile its `ai1 = 20f`.
+
+Two more Deerclops divergences fell out of the port:
+
+* **The rubble is the 962, not the 961** (`NPC.cs:44463`: the chunk, the
+  aiStyle-1 flight, `ai1 = 6 + Next(6)`), and the port now has the 962's
+  row (`:9199-9206`). The port's rubble shot the 961 (the forward spike)
+  instead.
+* **The "blizzard" state spawns no projectile** (`NPC.cs:44285-44320`):
+  it chills the player (the buff 32, 720 ticks, inside 800 px). The port
+  fired a damage-0 spike at the Deerclops instead — a stand-in with no
+  vanilla counterpart, now gone. The buff itself is the buff row
+  (S1-E-7).
+
+Deviations:
+
+* **The dust and the sound are SKIPPED** (the arm's `:51431-51464` and
+  `:51453-51461`) — no dust/sound layer. The frame roll is kept: it is
+  the visible state.
+* **The C#'s rejection loop never rejects in the port**
+  (`Projectile.cs:42476-42493`): the only player IS the target, and the
+  C# skips the target in that check, so the pick runs once.
+* **The C#'s spike cadence and tile scan are the port's stand-in**: the
+  forward/both-sides rows (`MakeSpikesForward`/`MakeSpikesBothSides`,
+  `NPC.cs:44466-44534`) and `FindBestY` (`:44586-44640`) pick the spike's
+  tile row from the ground scan; the port fires its own rows at the
+  Deerclops' feet (the `ai1` scale factor is the C#'s). The rubble's
+  `ShootRubbleUp` tile scan and up-bias (`:44448-44465`) are the same
+  stand-in. The follow-up row is the cadence row.
 
 ## The invasion surface band (S1-F-18, 2026-11-14)
 

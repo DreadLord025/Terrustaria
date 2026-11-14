@@ -299,6 +299,9 @@ pub const DUTCHMAN_SHELL: u16 = 240;
 /// `ProjectileID.DeerclopsIceSpike` (961) — the ice-spike volley
 /// (`NPC.cs:44582`'s `TryMakingSpike`).
 pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
+/// `ProjectileID.DeerclopsIceChunk` (962, `Projectile.cs:9199-9206`) — the
+/// Deerclops' rubble chunk (the aiStyle-1 flight).
+pub const DEERCLOPS_ICE_CHUNK: u16 = 962;
 /// `ProjectileID.InsanityShadowHostile` (965) — the shadow-hand burst
 /// (`NPC.cs:44394`'s `RandomizeInsanityShadowFor`).
 pub const SHADOW_HAND: u16 = 965;
@@ -1223,6 +1226,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:1839-1848` — the scrap: 14x14, aiStyle 14,
             // penetrate -1, timeLeft 360.
             SAUCER_SCRAP => (14.0, 14.0, 14, -1, 360, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9199-9206` — the ice chunk: 16x16, aiStyle 1,
+            // `penetrate = -1`, `extraUpdates = 2`, `timeLeft = 220`,
+            // `alpha = 255`, water-ignoring (the Deerclops' rubble).
+            DEERCLOPS_ICE_CHUNK => (
+                16.0,
+                16.0,
+                1,
+                -1,
+                220,
+                2,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:9270-9279` — the ice spike: 32x32, aiStyle 157
             // (the sharp-tears family), tileCollide false, ignoreWater.
             DEERCLOPS_ICE_SPIKE => (
@@ -1235,7 +1253,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 false,
-                RESET_STATE,
+                // `Projectile.cs:9083` — the spike's `alpha = 255`.
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:9307-9317` — the shadow hand: 40x40, aiStyle
             // 187, penetrate -1, tileCollide false, timeLeft 300.
@@ -2637,12 +2656,6 @@ pub struct Projectile {
     /// `Projectile.alpha` (`:326`, reset `:779`) — the draw fade, which the AI
     /// arms also read as a state marker (the magic families, Phase 3).
     pub alpha: i32,
-    /// `Projectile.Opacity` (`:540`, the stock `1f`) — the draw-time colour
-    /// multiplier, distinct from `alpha` (the 0-255 transparency): the
-    /// aiStyle-133 raise marker ramps it 0 → 1 → 0 over its 80 ticks
-    /// (`Projectile.cs:36457-36470`). The port has no projectile draw pass
-    /// yet, so the field carries the arm's state only.
-    pub opacity: f32,
     /// `Projectile.scale` (`:320`, reset `:785`).
     pub scale: f32,
     /// `Projectile.frame` (`:331`, reset `:786`) — the animation sheet row the
@@ -2779,7 +2792,6 @@ impl Default for Projectile {
             ai: [0.0; 4],
             local_ai: [0.0; 3],
             alpha: 0,
-            opacity: 1.0,
             scale: 1.0,
             frame: 0,
             frame_counter: 0,
@@ -8411,9 +8423,12 @@ impl Projectile {
                 self.time_left = 0;
                 0.0
             };
-            // `:36453` — the opacity write (the C# assigns it after the
-            // kill arm, so the dying tick lands on 0).
-            self.opacity = opacity;
+            // `:36453` — the opacity write. The C#'s `Opacity` is a property
+            // over `alpha` (`Projectile.cs:540-549`), so the write lands on
+            // the alpha: `alpha = (int)Clamp((1 - value) * 255, 0, 255)`.
+            // The C# assigns it after the kill arm, so the dying tick lands
+            // on the value 0 (the alpha 255).
+            self.alpha = alpha_of(opacity);
         }
         // The 674's heal arm (`:36456-36498`) has no ported row.
         // `HandleMovement`: the marker's row keeps `tileCollide = false`, so
@@ -8565,6 +8580,65 @@ impl Projectile {
         // `:42288` — the age counter.
         self.ai[0] += 1.0;
         // `HandleMovement`: the explosion's row keeps `tileCollide = false`.
+        self.kill_step(world);
+    }
+
+    /// `AI_157_SharpTears` (`Projectile.cs:51358-51477`) — the Deerclops'
+    /// ice spike (961) and the Dead Cells' flint wave (1041).
+    ///
+    /// The port's kind set carries the 961 (the 1041 rides the same style),
+    /// so the arm ports the 961's parameter row (`:51376-51389`): the
+    /// 10-tick fade-in, the fade-out from the 10th tick and the kill at the
+    /// 20th. The scale follows the C#'s `Opacity` property (a view over
+    /// `alpha`, `Projectile.cs:540-549`) times the spawn's `ai[1]`.
+    ///
+    /// The dust (`:51431-51464`) and the sound (`:51453-51461`) are SKIPPED
+    /// — no dust/sound layer — but the frame roll (`Main.rand.Next(5)`,
+    /// `:51439`) is kept: it is the visible state.
+    fn ai_sharp_tears(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // The 961's row (`:51376-51389`): the fade-in window 10, the fade-out
+        // from 10, the kill at 20, the 5-frame sheet.
+        const FADE_IN_END: f32 = 10.0;
+        const FADE_OUT_START: f32 = 10.0;
+        const KILL_AT: f32 = 20.0;
+        const FRAMES: i32 = 5;
+        // `:51411-51413` — the phase gates (read before the counter's
+        // advance).
+        let fading_in = self.ai[0] < FADE_IN_END && self.ai[0] >= 0.0;
+        let fading_out = self.ai[0] >= FADE_OUT_START;
+        let dying = self.ai[0] >= KILL_AT;
+        // `:51414` — the age counter.
+        self.ai[0] += 1.0;
+        // `:51415-51418` — the negative-age arm (the spawn's `ai[1]` scale).
+        if self.ai[0] < 0.0 {
+            self.alpha = 255;
+            self.scale = 0.1 * self.ai[1];
+        }
+        // `:51426-51434` — the first tick: the rotation and the frame roll.
+        if self.local_ai[0] == 0.0 && self.ai[0] >= 0.0 {
+            self.local_ai[0] = 1.0;
+            self.rot = self.vel.y.atan2(self.vel.x);
+            // `Main.rand.Next(maxValue)` (exclusive of the bound).
+            self.frame = rng.next_range(0, FRAMES);
+        }
+        // `:51442-51446` — the fade-in: the opacity climbs 0.1/tick and the
+        // scale follows it.
+        if fading_in {
+            let opacity = opacity_of(self.alpha) + 0.1;
+            self.alpha = alpha_of(opacity);
+            self.scale = opacity_of(self.alpha) * self.ai[1];
+        }
+        // `:51447-51451` — the fade-out.
+        if fading_out {
+            let opacity = opacity_of(self.alpha) - 0.2;
+            self.alpha = alpha_of(opacity);
+        }
+        // `:51452-51454` — the kill.
+        if dying {
+            self.kill();
+            return;
+        }
+        // `HandleMovement`: the spike's row keeps `tileCollide = false`.
         self.kill_step(world);
     }
 
@@ -8807,6 +8881,104 @@ fn shadow_hand_variation(age: f32) -> (i32, f32, f32) {
         return (3, age - num, num2 - num);
     }
     (0, age, 180.0)
+}
+
+/// `Projectile.RandomizeInsanityShadowFor` (`Projectile.cs:42408-42493`) —
+/// the Insanity Shadow's spawn pick: the spawn position, the spawn velocity
+/// and the two `ai` slots the shadow hand's arm reads (the variation's
+/// start age and the angle). The four cases are the arm's four variations
+/// (`:42592-42634`): the case 0 is the drift, 1 the tethered swing, 2 the
+/// burst and 3 the spin.
+///
+/// The C#'s rejection loop (the spawn must not land on a player other than
+/// the target, up to eight tries) never rejects in the port: the only
+/// player IS the target, and the C# skips the target in that check
+/// (`:42485-42493`) — so the pick runs once.
+pub fn randomize_insanity_shadow_for(
+    target_center: Vec2,
+    target_velocity: Vec2,
+    is_hostile: bool,
+    rng: &mut dyn tr_core::loot::DropRng,
+) -> (Vec2, Vec2, f32, f32) {
+    // `:42414-42418` — the side (`Next(2) * 2 - 1`), the case (`Next(4)`),
+    // the distance, the speed divisor and the velocity lead.
+    // The C#'s `Next(2)` / `Next(4)` are exclusive of the bound (the
+    // `UnifiedRandom.Next(min, max)` contract, `UnifiedRandom.cs:120-132`).
+    let mut side = rng.next_range(0, 2) * 2 - 1;
+    let case = rng.next_range(0, 4);
+    let distance = if is_hostile { 200.0 } else { 100.0 };
+    let mut divisor = if is_hostile { 30.0 } else { 20.0 };
+    let lead = if is_hostile { 30.0 } else { 0.0 };
+    // `:42419-42422` — the hostile shadow flips the side when the target
+    // already moves that way.
+    if is_hostile && target_velocity.x * side as f32 > 0.0 {
+        side = -side;
+    }
+    if case == 0 && is_hostile {
+        // `:42428-42431` — the drift case's divisor grows by 10 on a
+        // hostile spawn.
+        divisor += 10.0;
+    }
+    match case {
+        1 => {
+            // `:42450-42457` — the tethered swing.
+            let angle = std::f32::consts::TAU * rng.next_float();
+            let reach = if is_hostile { distance } else { distance * 0.5 };
+            let position = target_center - rotation_vector(angle) * reach;
+            let velocity = rotation_vector(angle) * if is_hostile { 4.0 } else { 2.0 };
+            (
+                position,
+                velocity,
+                180.0,
+                angle - std::f32::consts::FRAC_PI_2,
+            )
+        }
+        2 => {
+            // `:42458-42464` — the burst.
+            let angle = std::f32::consts::TAU * rng.next_float();
+            let position = target_center - rotation_vector(angle) * distance;
+            let velocity = rotation_vector(angle) * if is_hostile { 4.0 } else { 2.0 };
+            (position, velocity, 300.0, angle)
+        }
+        3 => {
+            // `:42465-42481` — the spin: the spawn walks the arc backwards.
+            let angle = std::f32::consts::TAU * rng.next_float();
+            let steps = if is_hostile { 60.0 } else { 30.0 };
+            let spin = std::f32::consts::FRAC_PI_2 / steps * (rng.next_float() * 2.0 - 1.0);
+            let mut position = target_center + target_velocity * steps;
+            let mut vector = rotation_vector(angle) * if is_hostile { 8.0 } else { 3.0 };
+            for _ in 0..(steps as i32) {
+                position -= vector;
+                vector = rotate(vector, -spin);
+            }
+            (position, vector, 390.0, spin)
+        }
+        _ => {
+            // `:42432-42448` — the drift: the position and the velocity both
+            // ride the jittered angle.
+            let angle = (rng.next_float() * 2.0 - 1.0) * std::f32::consts::PI * 0.125;
+            let position = target_center
+                + target_velocity * lead
+                + rotate(Vec2::new(side as f32 * -distance, 0.0), angle);
+            let speed = side as f32 * distance / if is_hostile { divisor + 10.0 } else { divisor };
+            (position, rotate(Vec2::new(speed, 0.0), angle), 0.0, 0.0)
+        }
+    }
+}
+
+/// `Projectile.Opacity` (`Projectile.cs:540-549`) — the property is a view
+/// over `alpha`, not a field of its own: the getter is `1 - alpha / 255` and
+/// the setter writes `alpha = (int)Clamp((1 - value) * 255, 0, 255)`. The
+/// aiStyle-133 raise marker ramps it 0 → 1 → 0 over its 80 ticks
+/// (`:36442-36453`) and the aiStyle-157 spikes ride it (`:51442-51451`).
+fn opacity_of(alpha: i32) -> f32 {
+    1.0 - alpha as f32 / 255.0
+}
+
+/// `Projectile.Opacity`'s setter (`Projectile.cs:546-549`): the alpha the
+/// opacity value stands for.
+fn alpha_of(opacity: f32) -> i32 {
+    ((1.0 - opacity) * 255.0).clamp(0.0, 255.0) as i32
 }
 
 /// `Vector2.ToRotationVector2()` (XNA): the unit vector at the angle —
@@ -11163,6 +11335,10 @@ impl ProjectilePool {
                         // window, the uniform re-pick (one rng draw) and the
                         // (v*29+d)/30 blend.
                         59 => self.slots[i].ai_spectre_wrath(&npcs[..], rng),
+                        // The aiStyle-157 Deerclops ice spike
+                        // (`:51358-51477`): the opacity ramp, the scale and
+                        // the 20-tick life.
+                        157 => self.slots[i].ai_sharp_tears(world, rng),
                         // The aiStyle-79 Saucer deathray (`:30791-30910`):
                         // the owner check and the beam that hangs from the
                         // owner to the ground.
@@ -16703,7 +16879,6 @@ mod phasmal_projectile_tests {
             whip_use_animation: 0.0,
             scale: 1.0,
             alpha: 255,
-            opacity: 1.0,
             falling_tile: None,
             detonated: false,
             minion: false,
@@ -16940,7 +17115,6 @@ mod ritual_projectile_tests {
             whip_use_animation: 0.0,
             scale: 1.0,
             alpha: 255,
-            opacity: 1.0,
             falling_tile: None,
             detonated: false,
             minion: false,
@@ -17135,7 +17309,7 @@ mod widened_state_tests {
     /// sweep lives here rather than over `0..2048`. The rows whose C#
     /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
     /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
-    const BASELINE_ROWS: [u16; 46] = [
+    const BASELINE_ROWS: [u16; 45] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -17151,7 +17325,6 @@ mod widened_state_tests {
         SAUCER_MISSILE,
         SAUCER_LASER,
         SAUCER_SCRAP,
-        DEERCLOPS_ICE_SPIKE,
         BOMB_SKELETRON,
         MUSKET_BALL,
         TRAP_DART,
@@ -17279,6 +17452,10 @@ mod widened_state_tests {
         assert_eq!(shadow.alpha, 255, "`alpha = 255` (`:9121`)");
         let marker = proj_data(DARK_MAGE_MARKER).unwrap_or_else(|| panic!("the marker lost its row"));
         assert_eq!(marker.alpha, 255, "`alpha = 255` (`:7213`)");
+        // The Deerclops' ice spike (`:9083`) writes `alpha = 255` too, so it
+        // leaves the reset sweep as well.
+        let spike = proj_data(DEERCLOPS_ICE_SPIKE).unwrap_or_else(|| panic!("the spike lost its row"));
+        assert_eq!(spike.alpha, 255, "`alpha = 255` (`:9083`)");
         assert!(
             proj_data(187).is_none(),
             "the flame jet stays a passthrough"
@@ -23075,43 +23252,42 @@ mod s1_d_4b_1_tests {
             time_left: 900,
             ..Default::default()
         };
-        // Tick 1: `ai[0] = 1` → the opacity is 1/20.
+        // Tick 1: `ai[0] = 1` → the opacity is 1/20, and the C#'s
+        // `Opacity` is a property over `alpha` (`Projectile.cs:540-549`):
+        // the write lands on `alpha = (int)((1 - 0.05) * 255) = 242`.
         p.ai_dark_mage_raise(&w);
         assert_eq!(p.ai[0], 1.0);
+        assert_eq!(p.alpha, 242, "the ramp opens on the alpha");
         assert!(
-            (p.opacity - 0.05).abs() < 1e-6,
-            "the ramp opens ({})",
-            p.opacity
+            (opacity_of(p.alpha) - 0.05).abs() < 1e-3,
+            "the opacity is 1/20"
         );
-        // Tick 20: `ai[0] = 20` → the opacity is 1.
+        // Tick 20: `ai[0] = 20` → the opacity is 1 → the alpha 0.
         for _ in 0..19 {
             p.ai_dark_mage_raise(&w);
         }
         assert_eq!(p.ai[0], 20.0);
-        assert!((p.opacity - 1.0).abs() < 1e-6, "the ramp is open");
+        assert_eq!(p.alpha, 0, "the ramp is open");
         // Tick 60: the opacity holds at 1.
         for _ in 0..40 {
             p.ai_dark_mage_raise(&w);
         }
         assert_eq!(p.ai[0], 60.0);
-        assert!((p.opacity - 1.0).abs() < 1e-6, "the ramp holds");
-        // Tick 70: the descending range has fallen to 0.5.
+        assert_eq!(p.alpha, 0, "the ramp holds");
+        // Tick 70: the descending range has fallen to 0.5 → the alpha 127.
         for _ in 0..10 {
             p.ai_dark_mage_raise(&w);
         }
         assert_eq!(p.ai[0], 70.0);
-        assert!(
-            (p.opacity - 0.5).abs() < 1e-6,
-            "the ramp closes ({})",
-            p.opacity
-        );
-        // Tick 80: the marker dies.
+        assert_eq!(p.alpha, 127, "the ramp closes ({})", p.alpha);
+        // Tick 80: the marker dies and the opacity write lands on 0 (the
+        // alpha 255).
         for _ in 0..10 {
             p.ai_dark_mage_raise(&w);
         }
         assert_eq!(p.ai[0], 80.0);
         assert!(!p.active, "the marker dies at the 80th tick");
-        assert_eq!(p.opacity, 0.0, "the dying tick lands on 0");
+        assert_eq!(p.alpha, 255, "the dying tick lands on the opacity 0");
     }
 
     /// S1-D-4b-1 — the aiStyle-187 Insanity shadow
@@ -23513,5 +23689,113 @@ mod s1_d_4b_4_tests {
         };
         p.ai_saucer_deathray(&w, &npcs, None);
         assert!(!p.active, "the owner's no-target state kills the ray");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_5_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-D-4b-5 — the aiStyle-157 Deerclops ice spike
+    /// (`Projectile.cs:51358-51477`): the first tick's rotation + frame
+    /// roll, the opacity ramp (the C#'s `Opacity` property over `alpha`),
+    /// the scale and the 20-tick life.
+    #[test]
+    fn s1_d_4b_5_the_sharp_tears_spike_fades_and_dies() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: DEERCLOPS_ICE_SPIKE,
+            pos: Vec2::new(100.0, 100.0),
+            vel: Vec2::new(0.0, -1.0),
+            ai: [0.0, 0.2, 0.0, 0.0],
+            w: 32.0,
+            h: 32.0,
+            alpha: 255,
+            time_left: 3600,
+            ..Default::default()
+        };
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(7);
+        p.ai_sharp_tears(&w, &mut rng);
+        // The first tick: the rotation rides the velocity and the frame is
+        // one of the sheet's five.
+        assert!(
+            (p.rot - (-std::f32::consts::FRAC_PI_2)).abs() < 1e-5,
+            "the rotation ({})",
+            p.rot
+        );
+        assert!((0..5).contains(&p.frame), "the frame roll ({})", p.frame);
+        // The fade-in: the opacity climbs 0.1/tick, so the alpha drops from
+        // 255 to 229 and the scale follows the opacity times `ai[1]`.
+        assert_eq!(p.alpha, 229, "the fade-in ({})", p.alpha);
+        assert!(
+            p.scale > 0.0 && p.scale < 0.2 * 0.2,
+            "the scale follows the opacity ({})",
+            p.scale
+        );
+        // The fade-out opens at the 10th tick and the kill lands on the 21st.
+        let mut ticks = 1;
+        while p.active && ticks < 60 {
+            p.ai_sharp_tears(&w, &mut rng);
+            ticks += 1;
+        }
+        assert!(!p.active, "the spike dies");
+        assert_eq!(ticks, 21, "the 21st tick is the kill ({ticks})");
+    }
+
+    /// S1-D-4b-5 — `Projectile.RandomizeInsanityShadowFor`
+    /// (`Projectile.cs:42408-42493`): the pick hands the shadow hand's arm
+    /// the variation's start age (0 / 180 / 300 / 390) and the angle, and
+    /// the spawn rides the target's velocity.
+    #[test]
+    fn s1_d_4b_5_the_shadow_hand_spawn_hands_the_variation_age() {
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(11);
+        let center = Vec2::new(100.0, 100.0);
+        let target_velocity = Vec2::new(2.0, 0.0);
+        let mut ages = std::collections::BTreeSet::new();
+        for _ in 0..128 {
+            let (pos, vel, ai0, ai1) =
+                randomize_insanity_shadow_for(center, target_velocity, true, &mut rng);
+            assert!(
+                matches!(ai0, 0.0 | 180.0 | 300.0 | 390.0),
+                "the variation age ({ai0})"
+            );
+            ages.insert(ai0 as i32);
+            // The spawn sits around the target (the hostile distance 200 px)
+            // and never inside it.
+            let distance = pos.distance(center);
+            assert!(distance > 10.0, "the spawn clears the target ({distance})");
+            // The spin case (390) walks a 60-step arc, so the spawn can
+            // land a few hundred pixels out.
+            assert!(distance < 800.0, "the spawn stays in range ({distance})");
+            if ai0 != 0.0 {
+                assert!(vel.length() > 0.0, "the armed variations fly");
+            }
+            if ai0 == 180.0 || ai0 == 300.0 {
+                // The tethered/burst cases carry the angle in `ai[1]` (the
+                // tethered one is the raw angle minus π/2).
+                assert!(ai1 > -2.0 && ai1 < 6.5, "the angle ({ai1})");
+            }
+        }
+        assert_eq!(ages.len(), 4, "the four variations show up ({ages:?})");
     }
 }
