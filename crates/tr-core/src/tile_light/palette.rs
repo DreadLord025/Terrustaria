@@ -226,10 +226,11 @@ pub fn hsl_to_rgb(hue: f32, saturation: f32, luminosity: f32) -> [f32; 3] {
     ]
 }
 
-/// `WorldGen.paintColor(color)` (`WorldGen.cs:43921`) — the paint colour used when a
-/// lamp is painted.
-pub fn paint_color(color: u8) -> [f32; 3] {
-    let (r, g, b) = match color {
+/// `WorldGen.paintColor(color)` (`WorldGen.cs:43921`) — the byte table itself:
+/// the C# builds a `Color` from these exact bytes (never floats), so every
+/// consumer that reads `color.R/G/B` must read these, not a re-quantisation.
+pub fn paint_color_bytes(color: u8) -> [u8; 3] {
+    match color {
         1 | 13 => (255, 0, 0),
         2 | 14 => (255, 127, 0),
         3 | 15 => (255, 255, 0),
@@ -249,7 +250,14 @@ pub fn paint_color(color: u8) -> [f32; 3] {
         29 => (25, 25, 25),
         30 => (200, 200, 200),
         _ => (255, 255, 255),
-    };
+    }
+    .into()
+}
+
+/// `WorldGen.paintColor(color)` (`WorldGen.cs:43921`) — the paint colour used when a
+/// lamp is painted, normalised to the scanner's float space.
+pub fn paint_color(color: u8) -> [f32; 3] {
+    let [r, g, b] = paint_color_bytes(color);
     [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]
 }
 

@@ -1780,6 +1780,33 @@ that reaches a row's end with a full run (`num6 = 0`, `MapHelper.cs:3214-3225`,
 is written as the run's length), so the port's own decoder round-trips it; a
 byte-level vanilla `LoadMapVersion2` would misread that one case.
 
+### The `.map` deflate stream (S1-L-5)
+
+The uncompressed prefix (header + option tables, `MapHelper.cs:3050-3123`) and
+the pre-deflate row body (`:3125-3318`, `file.rs::encode_tiles`) are 1:1 and
+pinned byte-for-byte by the `s1_l_5_body_matches_vanilla_and_the_wrapper_is_faithful`
+test: the encoder output equals the frozen `tools/MapDeflateHarness/map-body.bin`
+fixture, and the vanilla reference stream
+(`tools/MapDeflateHarness/fw48-reference.deflate`, produced by a real
+`DeflateStream` on this machine's .NET FW 4.8.1 via `tools/MapDeflateHarness/fw48`,
+compiled with the in-box `csc.exe`) inflates back onto that same body.
+
+The compressed bytes themselves are **deliberately not byte-identical** to
+vanilla's and cannot be: vanilla runs on .NET Framework 4.8(.1), whose
+`clrcompression.dll` embeds a Microsoft-patched zlib (version string 1.3.1) whose
+output no stock zlib reproduces. Measured on the frozen body (55 585 bytes):
+vanilla 35 414; zlib 1.3.1 via `zlib-rs` 36 300 at *every* (level, memLevel,
+strategy) combination probed; .NET 10's own stock-zlib `DeflateStream` 36 295
+(unequal to vanilla's bytes, and its `Write` chunking is not chunk-invariant,
+while the vanilla runtime's is — "chunked == single: yes"). The port therefore
+wraps the body with `flate2`'s `zlib-rs` backend at the C# ctor default
+(`CompressionLevel.Optimal` = zlib level 6, `MapHelper.cs:3047` — the pre-S1-L-5
+code used `Compression::fast()`), which is the closest faithful stand-in and
+still inflates identically on both sides: vanilla's reader accepts our stream and
+our reader accepts vanilla's (the `loads_a_real_vanilla_map` reader test). The
+MP tile-block compressor (`net.rs`) shares the backend switch; its C#-side
+parity is S1-I scope.
+
 ## Localization (M6)
 
 `tr-core/src/localization/` ports `Terraria.Localization`'s core:

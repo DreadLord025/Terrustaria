@@ -24,7 +24,6 @@ use option::{get_background_type, get_tile_type, get_wall_type};
 
 use crate::lighting::LightMap;
 use crate::tile::LiquidKind;
-use crate::tile_light::paint_color;
 use crate::world::World;
 
 /// One world-map pixel (`Terraria.Map.MapTile`).
@@ -151,16 +150,11 @@ pub fn is_background(map_type: u16) -> bool {
 
 /// `MapHelper.MapColor` (`MapHelper.cs:1823-1874`).
 ///
-/// `paintColor(c)` is reused from [`crate::tile_light::paint_color`] (a faithful
-/// `WorldGen.paintColor` port); its normalised floats are converted back to the
-/// original bytes (divergence ruling 7).
+/// `paintColor(c)` is the exact byte table from [`crate::tile_light::paint_color_bytes`]
+/// — the C# `MapColor` multiplies `color.R/G/B` (bytes), so the old float
+/// re-quantisation (ruling 7) is replaced by the exact bytes (S1-L-5).
 fn map_color(ty: u16, old: &mut [u8; 3], color_type: u8) {
-    let pc = paint_color(color_type);
-    let color = [
-        (pc[0] * 255.0).round() as u8,
-        (pc[1] * 255.0).round() as u8,
-        (pc[2] * 255.0).round() as u8,
-    ];
+    let color = crate::tile_light::paint_color_bytes(color_type);
     // Sort so `num` is the largest channel (MapHelper.cs:1826-1840).
     let mut num = old[0] as f32 / 255.0;
     let mut num2 = old[1] as f32 / 255.0;
@@ -622,6 +616,27 @@ mod tests {
         let mt = MapTile::create(ty, 255, 0);
         assert_eq!(get_map_tile_color(mt, 0, 0), color_table().color(ty));
         assert_eq!(get_map_tile_color(mt, 0, 0), [128, 128, 128]);
+    }
+
+    #[test]
+    fn map_color_uses_the_exact_paint_color_bytes() {
+        // The C# `WorldGen.paintColor` builds a `Color` from these exact bytes
+        // (`WorldGen.cs:43921-44033`); `MapHelper.MapColor` multiplies them
+        // (`MapHelper.cs:1844-1871`). The byte table itself is pinned here and
+        // `map_color` reads it directly — no float re-quantisation in between.
+        let c = crate::tile_light::paint_color_bytes;
+        assert_eq!(c(0), [255, 255, 255]);
+        assert_eq!(c(1), [255, 0, 0]);
+        assert_eq!(c(5), [0, 255, 0]);
+        assert_eq!(c(9), [0, 0, 255]);
+        assert_eq!(c(13), [255, 0, 0]);
+        assert_eq!(c(25), [75, 75, 75]);
+        assert_eq!(c(26), [255, 255, 255]);
+        assert_eq!(c(27), [175, 175, 175]);
+        assert_eq!(c(28), [255, 178, 125]);
+        assert_eq!(c(29), [25, 25, 25]);
+        assert_eq!(c(30), [200, 200, 200]);
+        assert_eq!(c(200), [255, 255, 255]); // the C# default is the untouched white
     }
 
     #[test]
