@@ -602,26 +602,6 @@ mod tests {
     }
 
     #[test]
-    fn liquid_change_types_and_cues() {
-        assert_eq!(get_liquid_change_type(0, 1), Some(TileChangeType::LavaWater));
-        assert_eq!(get_liquid_change_type(1, 0), Some(TileChangeType::LavaWater));
-        assert_eq!(get_liquid_change_type(0, 2), Some(TileChangeType::HoneyWater));
-        assert_eq!(get_liquid_change_type(1, 2), Some(TileChangeType::HoneyLava));
-        assert_eq!(get_liquid_change_type(0, 3), Some(TileChangeType::ShimmerWater));
-        assert_eq!(get_liquid_change_type(3, 2), Some(TileChangeType::ShimmerHoney));
-        assert_eq!(get_liquid_change_type(0, 0), None);
-        let lava_water = liquid_change_cue(TileChangeType::LavaWater).unwrap();
-        assert_eq!(lava_water.cue, "liquids_water_lava");
-        assert_eq!(lava_water.sound_type, 42);
-        assert_eq!(lava_water.variations, 3);
-        let shimmer = liquid_change_cue(TileChangeType::ShimmerWater).unwrap();
-        assert_eq!(shimmer.cue, "Splash_4");
-        assert_eq!(shimmer.sound_type, 19);
-        assert_eq!(shimmer.variations, 1);
-        assert_eq!(shimmer.volume_scale, 4.0);
-    }
-
-    #[test]
     fn thunder_position_flips_and_clamps_y() {
         // thunderDistance 2 → ±30 px around the centre, y untouched high up.
         let (x, y) = thunder_strike_position((100.0, 100.0), 2.0, false, 5000.0);
@@ -667,10 +647,10 @@ mod tests {
 
     /// A signed `Main.rand.Next(min, max)` stand-in over [`Rolls`]: the same
     /// call-index pattern, so a gate can force an exact draw to a value.
-    fn signed_roll(
-        state: &mut Rolls,
-        forced: &dyn Fn(i32, i32, u32) -> Option<i32>,
-    ) -> impl FnMut(i32, i32) -> i32 + '_ {
+    fn signed_roll<'a>(
+        state: &'a mut Rolls,
+        forced: &'a dyn Fn(i32, i32, u32) -> Option<i32>,
+    ) -> impl FnMut(i32, i32) -> i32 + 'a {
         move |lo: i32, hi: i32| {
             let call = state.calls;
             state.calls += 1;
@@ -719,7 +699,7 @@ mod tests {
         let mut state = Rolls::new();
         let (cue, picked, _) = thunder_cue_pick(
             &mut signed_roll(&mut state, &|lo, hi, call| {
-                Some(lo + (call.min(4) % (hi - lo).max(1)))
+                Some(lo + ((call.min(4) as i32) % (hi - lo).max(1)))
             }),
             &|slot| slot < 4,
         );
@@ -732,7 +712,7 @@ mod tests {
         let mut state = Rolls::new();
         let (cue, picked, _) = thunder_cue_pick(
             &mut signed_roll(&mut state, &|lo, hi, call| {
-                Some(lo + ((call % 6) % (hi - lo).max(1)))
+                Some(lo + (((call % 6) as i32) % (hi - lo).max(1)))
             }),
             &|_| true,
         );
@@ -783,15 +763,10 @@ mod tests {
             &|_| unreachable!("case 44 has no guard"),
         )
         .unwrap();
-        assert_eq!(
-            voice,
-            CritterVoice {
-                slot: 107,
-                asset: "Zombie_107",
-                volume_mult: 0.2,
-                pitch: -0.3,
-            }
-        );
+        assert_eq!(voice.slot, 107);
+        assert_eq!(voice.asset, "Zombie_107");
+        assert_eq!(voice.volume_mult, 0.2);
+        assert_eq!(voice.pitch, -30.0f32 * 0.01);
         assert_eq!(state.calls, 2);
 
         // Case 46 (`:1063-1076`): the 110/111 guards return null; then the

@@ -2305,7 +2305,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         };
                         if let Some(voice) = crate::ambient_sound::critter_legacy_voice(
                             legacy_id,
-                            style,
+                            style as u32,
                             &mut signed,
                             &|slot| audio.zombie_playing(slot),
                         ) {
@@ -3806,6 +3806,31 @@ mod tests {
 
     /// `AI_000_TransformBoundNPC`'s 589 → 588 arm (`NPC.cs:19833-19836`): the
     /// talk frees the sleeping Golfer and raises `savedGolfer` (`:52938`).
+
+    /// S1-E-25's emitter contract (`NPC.UpdateNPC_CritterSounds`,
+    /// `NPC.cs:92244-92340`): an NPC the critter table does not name consumes
+    /// no `Main.rand` draws — the port's roster has no critter kinds yet
+    /// (M4-NPC), so the zombie's id 3 must leave the per-NPC stream
+    /// untouched through the `NPC.cs:90323` seam.
+    #[test]
+    fn the_critter_seam_consumes_no_rolls_outside_the_table() {
+        let mut rng = 0u64;
+        let mut hi_roll = |hi: u32| crate::app::frame::rand_range(&mut rng, hi);
+        assert_eq!(
+            crate::ambient_sound::critter_sound_cue(
+                NpcKind::Zombie.to_u16() as i32,
+                true,
+                1000.0,
+                3000.0,
+                3000.0,
+                1.0,
+                &mut hi_roll
+            ),
+            None,
+            "the zombie is outside the critter table"
+        );
+        assert_eq!(rng, 0, "out-of-table types consume no draws");
+    }
 
     /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
     /// a dye-material row (the dye materials / the Strange Plants) — the
