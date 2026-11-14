@@ -1417,7 +1417,9 @@ pub(crate) fn draw_player(
         item_uv: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(uv, _)| uv),
-        aim: player.swing_aim,
+        // `Player.itemRotation` — the shooting styles' aim rotation
+        // (`Player.cs:47371-47378`), computed by the sim.
+        item_rotation: player.frame_inputs.item_rotation,
         item_size: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)

@@ -12522,3 +12522,59 @@ thirds + its item-rotation arm, the shoot style's back arm, the hold
 styles' arms and the aim mirror. All seven are mutation-checked (RED on
 the pre-fix code).
 
+## The held item's placement (S1-G-17, 2026-11-14)
+
+`ItemCheck_ApplyUseStyle` (`Player.cs:50686-51375`) and
+`ItemCheck_ApplyHoldStyle` (`:50275-50584`) set the held item's
+`itemLocation` + `itemRotation` per use/hold style — the C# computes them
+in the sim, the port computed them in the draw with a single generic arm.
+Three real defects came out of that:
+
+* The useStyle-1 swing's **middle third took the X sign from the swing
+  start** (`itemLocation.X = position.X + width*0.5 - (frame.W*0.5 - num) *
+  direction`, `Player.cs:50829`) — the C# only subtracts in the *start*
+  third; the end (`:50742`) and the middle (`:50773`) add. The item jumped
+  to the other side of the body in the middle of every swing.
+* The useStyle 5 item's rotation was the raw mouse angle, not the C#'s
+  `Player.itemRotation` (`atan2(aimY * direction, aimX * direction) -
+  fullRotation`, `:47371-47378`) — off by PI when facing left (the same
+  mirror the S1-G-16 composite arm needed).
+* The rest anchor was the holdStyle-1 one for *every* hold style, and the
+  use styles 2/6/7/9/11/12/14/15 rode the useStyle-1 arc.
+
+The port now places the item per style (`render/player_layers.rs`'s
+`use_item_placement` / `hold_item_placement`):
+
+* the use styles 1 (the thirds + `item_rotation`), 2 (the `num11` table
+  over the composite stretch), 3 (the thrust), 4 (the hold-up), 5 (the
+  aim), 6/7 (the drinks), 9 (the bow — through the ported
+  `GetFrontHandPosition`, `:50617-50647`), 11 (the `num13` table over the
+  composite stretch), 12 (the guitar), 14 and 15;
+* the hold styles 1, 2, 3, 4 (the umbrella), 5, 6 and 8.
+
+The port's frame: `pos_x`/`pos_y` are `base.position`, `center_x` is
+`base.Center.X`, `mounted_y` is `MountedCenter.Y` (`position.Y + height/2`
+= `position.Y + 21`) and `headgear` is `Main.OffsetsPlayerHeadgear`
+(`Main.cs:66638-66662`). The `gfxOffY` ease rides the anchor
+(`PlayerDrawSet.cs:368`).
+
+Deviations (deliberate, bounded):
+
+* The useStyle 8 (the throw) keeps the useStyle-1 arc: the C#'s three
+  phases compare the raw `itemAnimation` counter with the item's
+  `useAnimation` (`:51199/:51226`) and the port's draw only carries the
+  normalised fraction.
+* The useStyle 13 (the rapier) keeps the useStyle-1 arc: the C# leaves
+  `itemLocation` at the hold-style value (the branch sets no location,
+  `:51174-51196`).
+* The per-item nudges (the style-1 types 2330/2320/2341/671, the hold
+  styles' torch/fishing-pole/staff specials, the biome torches) are not
+  ported; the generic arms carry them.
+* `mountOffset` is 0 and `gravDir` is 1 (the port has no mount offset and
+  no gravity flip).
+
+Tests: `render::player_layers::tests`'s four `s1_g_17_*` cases (the swing
+thirds' X sign, the shoot style's item rotation, the hold styles' anchors
+and the eat style's stretch table) — all mutation-checked (RED on the
+pre-fix code).
+
