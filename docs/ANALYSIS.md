@@ -8253,6 +8253,16 @@ Deviations and accepted changes:
 
 The entity messages and the smoothing are 1:1 ports; the deviations:
 
+- **The peer inventory slots are carried.** `5 PlayerInventory`
+  (`MessageBuffer.cs:399-462`) puts one slot into the receiving player's
+  inventory copy: the server attributes it to the sending client
+  (`:409-412`), stores it and relays it to the other clients
+  (`:454-457`, the `PlayerItemSlotID.CanRelay` slots
+  `PlayerItemSlotID.cs:168-186` — the inventory, the armour, the dye, the
+  misc, the misc-dye and the fourth bank; the first three banks and the
+  trash are not). The server keeps the per-slot inventory
+  (`Server::slot_inventory`) and the clients keep each peer's
+  (`PlayerNet::inventory`).
 - **The remote offsets are the C#'s `netOffset`.** `Player.netOffset`
   (`Player.cs:1622`) accrues on every incoming `13 PlayerControls`
   (`MessageBuffer.cs:1000-1004`) and decays in `Player.UpdateNetOffset`
@@ -13782,3 +13792,33 @@ Deviations:
   verbatim and the skipped arms carry their C# cites.
 * **The day-time `EncourageDespawn(10)`** (`:20071-20073`) rides the sim's
   day cull (the Eye rises out of the player's view and is removed).
+
+## The NPC hit and death sounds (S1-E-21a, 2026-11-14)
+
+The first wave of the sound bank (S1-E-21) landed with S1-E-21a: the NPCs
+now play their **own** hit and death cues.
+
+`NpcKind::hit_sound` / `NpcKind::death_sound` (`crates/tr-app/src/npc.rs`)
+carry the C#'s per-kind table — `NPC.HitSound` / `NPC.DeathSound`
+(`NPC.cs:6475-6477`, the `SetDefaults` assignments). The C#'s `null` guard
+(`NPC.cs:8537`) is kept: the kinds with no row in `SetDefaults` (the Brain
+Scrambler 381 and the Ray Gunner 382) play nothing. The cue names are the
+legacy asset names — the sound id 3 family is `NPC_Hit_N` and the sound id 4
+family is `NPC_Killed_N` (`LegacySoundPlayer.cs:646`/`:676`).
+
+The two call sites are the C#'s: the melee strike plays the kind's hit cue
+at the NPC's position (`NPC.StrikeNPC`, `:81544-81553`) and the death plays
+the kind's death cue at its centre (`NPC.checkDead`, `:91852`).
+
+Deliberate deviations:
+
+1. The C#'s trackable styles pick a random variation
+   (`LegacySoundStyle.Style`, `LegacySoundStyle.cs:33-38`); the port plays
+   the first file of the family (the `_0` asset) — the same asset family, a
+   fixed member. The C#'s own pick comes from a clock-seeded static random,
+   so it is not reproducible there either.
+2. The legacy per-sound pitch and the per-family instance reuse (the C#'s
+   `SoundNpcHit[n]` pool) stay unported — the research's open sound gaps.
+3. The C#'s special hit cues for the newest NPCs (the Turkey/Undead/Vampire
+   hurts, `NPC.cs:81535-81545`) have no ported kinds.
+
