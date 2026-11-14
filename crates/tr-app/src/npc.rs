@@ -9150,7 +9150,7 @@ impl Npc {
     /// constants; `Main.npc[localAI[i]]`'s sibling references ride the
     /// pre-pass crew counts; the 448's extra args (0, 20) fold out; the
     /// expert-mode bridge arm is constants-off (no difficulty flags).
-    fn update_saucer_mount(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+    fn update_saucer_mount(&mut self, world: &World, player: &Player, rng: &mut u64) {
         if self.carrier_x < 0.0 {
             return;
         }
@@ -9170,7 +9170,12 @@ impl Npc {
         if self.carrier_timer < 0.0 {
             self.carrier_timer = self.ai[3];
         }
-        self.ai[3] = self.carrier_timer;
+        // The Flying Dutchman's cannon owns its `ai[3]` (the C#'s 492 block
+        // counts its own reload, `:35760-35762`), so the core's timer does
+        // not mirror into it.
+        if self.kind != NpcKind::FlyingDutchmanCannon {
+            self.ai[3] = self.carrier_timer;
+        }
         // The display inheritance (`NPC.cs:35625-35651`): every mount
         // copies the core's `rotation` so the family tilts as one body,
         // and (`NPC.cs:35669-35676`) its `spriteDirection` — the cannon
@@ -9214,6 +9219,65 @@ impl Npc {
                         self.wants_hostile_shot
                             .push((449u16, cx + vx, cy + vy, vx, vy, 35));
                     }
+                }
+            }
+            NpcKind::FlyingDutchmanCannon => {
+                // `:35753-35823` — the Dutchman's cannon: the 240-tick
+                // reload, the line-of-sight gate, the shot and the eight-ray
+                // aim.
+                if self.ai[3] < 240.0 {
+                    self.ai[3] += 1.0;
+                }
+                let (pcx, pcy) = player.center();
+                if crate::projectile::can_hit(
+                    world,
+                    self.x,
+                    self.y,
+                    w,
+                    h,
+                    player.x,
+                    player.y,
+                    crate::player::WIDTH,
+                    player.height,
+                ) {
+                    if self.ai[3] >= 240.0 {
+                        // The shot (`:35773-35782`): the normalized
+                        // direction to the player × 14, minus 5 on the Y.
+                        self.ai[3] = 0.0;
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt();
+                        let (mut vx, mut vy) = if d > 0.0 {
+                            (dx / d, dy / d)
+                        } else {
+                            (0.0, 1.0)
+                        };
+                        vx *= 14.0;
+                        vy *= 14.0;
+                        vy -= 5.0;
+                        self.wants_hostile_shot.push((240u16, cx, cy, vx, vy, 30));
+                    } else {
+                        // The aim scan (`:35789-35812`): the closest of the
+                        // eight rays around the cannon sets `ai[2]`.
+                        let mut best = 0usize;
+                        let mut best_d = f32::INFINITY;
+                        for k in 0..8 {
+                            let quarter = k as f32 * std::f32::consts::FRAC_PI_4;
+                            let ray = Vec2::new(quarter.sin(), quarter.cos());
+                            let probe = Vec2::new(cx, cy) + ray * 50.0;
+                            let d = (probe - Vec2::new(pcx, pcy)).length();
+                            if d < best_d {
+                                best_d = d;
+                                best = k;
+                            }
+                        }
+                        self.ai[2] = (best + 1) as f32;
+                        if self.sprite_dir == 1 {
+                            self.ai[2] = 9.0 - self.ai[2];
+                        }
+                    }
+                } else if self.ai[2] != 0.0 {
+                    self.ai[2] = 0.0;
                 }
             }
             NpcKind::MartianSaucerCannon => {
@@ -21457,6 +21521,60 @@ mod s1_d_4b_5d_tests {
         assert!(
             d.wants_hostile_shot_ai.is_empty(),
             "the chill aura fires no projectile"
+        );
+    }
+
+    /// S1-D-4b-5e — the Flying Dutchman's cannon (`NPC.cs:35753-35823`): the
+    /// 240-tick reload, the line-of-sight gate and the shell's shot.
+    #[test]
+    fn s1_d_4b_5e_the_dutchman_cannon_fires_its_shell() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let w = w;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 32.0 * TILE_PX;
+        player.y = 20.0 * TILE_PX;
+        let mut cannon = Npc::new(
+            NpcKind::FlyingDutchmanCannon,
+            30.0 * TILE_PX,
+            29.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        cannon.hp = cannon.max_hp;
+        // The mount's anchor (the carrier write-through).
+        cannon.carrier_x = 30.0 * TILE_PX + 15.0;
+        cannon.carrier_y = 29.0 * TILE_PX + 15.0;
+        cannon.carrier_timer = 0.0;
+        let mut rng = 12345u64;
+        // The reload: the shot lands on the 240th tick.
+        for _ in 0..240 {
+            cannon.update_saucer_mount(&w, &player, &mut rng);
+        }
+        let shells: Vec<_> = cannon
+            .wants_hostile_shot
+            .iter()
+            .filter(|s| s.0 == 240u16)
+            .copied()
+            .collect();
+        assert_eq!(shells.len(), 1, "the cannon fires its shell");
+        assert_eq!(shells[0].5, 30, "the shell's damage");
+        // The shot points at the player (the direction × 14, minus 5 on Y).
+        assert!(
+            shells[0].3 > 0.0,
+            "the shell flies at the player ({:?})",
+            shells[0]
         );
     }
 }
