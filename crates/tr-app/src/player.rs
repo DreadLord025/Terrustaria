@@ -4394,7 +4394,7 @@ impl Player {
             self.floor_visuals(world);
         }
 
-        self.update_survival(rng);
+        self.update_survival(world, rng);
 
         if self.x < 0.0 {
             self.x = 0.0;
@@ -6792,14 +6792,30 @@ impl Player {
             self.minion_attack_target_npc = -1;
         }
     }
-    fn update_survival(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
-        // The Wet-buff effects and the DoT derivation are the flag sources the
-        // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
-        // (`Player.cs:11740-11751, 18949-19103`).
-        self.refresh_wet_state();
-        let dots = self.derive_dot_inputs(self.buffs.expert_mode);
-
-        if self.in_water {
+    /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath only
+    /// drains while the **head** is under the water — the C#'s
+    /// `Collision.DrownCollision` probe (`:23193`), not the "any water"
+    /// stand-in the port used before S1-E-13b. The drain's shape is the
+    /// C#'s: the breath counter (`breathCD`) reaches `breathCDMax` (7) before
+    /// a tick is taken, and the refill is 3 ticks per tick out of the water.
+    ///
+    /// The C#'s accessory arms (the Merman armour 250/4275, the breathing
+    /// reed, the gills, the shimmering and the mount 4) have no ported
+    /// counterparts yet — the port has no accessory system for them, so the
+    /// probe's own flag decides.
+    fn check_drowning(&mut self, world: &World) {
+        // `this.gravDir` is -1 for the vanilla gravity — the probe sits at the
+        // head; the NPCs' call passes 1 (the feet).
+        let drowning = crate::collision::drown_collision(
+            world,
+            self.x,
+            self.y,
+            WIDTH as i32,
+            self.body_height() as i32,
+            -1.0,
+            false,
+        );
+        if drowning {
             self.breath_cd += 1;
             if self.breath_cd >= BREATH_CD {
                 self.breath_cd = 0;
@@ -6813,6 +6829,16 @@ impl Player {
             self.breath = (self.breath + 3).min(BREATH_MAX);
             self.breath_cd = 0;
         }
+    }
+
+    fn update_survival(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // The Wet-buff effects and the DoT derivation are the flag sources the
+        // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
+        // (`Player.cs:11740-11751, 18949-19103`).
+        self.refresh_wet_state();
+        let dots = self.derive_dot_inputs(self.buffs.expert_mode);
+
+        self.check_drowning(world);
 
         // `Player.Update` → `UpdateLifeRegen` / `UpdateManaRegen`
         // (`Player.cs:25977,25995`). The aura/item/grapple inputs stay at their
@@ -7396,14 +7422,14 @@ mod tests {
         p.hurt_cd = 0.0;
         for _ in 0..5 {
             p.in_lava = true;
-            p.update_survival(&mut tr_core::UnifiedRandom::default());
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         }
         assert_eq!(p.hp, 100, "the budget absorbed the lava");
         assert_eq!(p.lava_time, 0);
         // The next frame burns for the vanilla 80.
         p.in_lava = true;
         p.hurt_cd = 0.0;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 20, "the 80-damage lava hit");
         assert!(p.buffs.find_buff_index(24).is_some(), "On Fire");
     }
@@ -7777,12 +7803,13 @@ mod tests {
         // DW-1.3 — Player.cs:19361-19384: a drain kill carries its reason out
         // of UpdateLifeRegen; update_survival parks it on the player for the
         // death pipeline (the default generic attribution here = Burned, 8).
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.dot_death, None); // a healthy tick records nothing
         p.hp = 8;
         p.regen.life_regen_count = -1200;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Burned));
     }
@@ -9982,6 +10009,47 @@ mod tests {
         assert!(p.hp < 100, "drowning should hurt, hp {}", p.hp);
     }
 
+    /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath follows
+    /// `Collision.DrownCollision` — the **head** probe, not "any water".
+    #[test]
+    fn the_breath_drains_only_while_the_head_is_under() {
+        let pool = |rows: std::ops::Range<i32>| {
+            let mut w = ground_world();
+            for x in 0..64 {
+                for y in rows.clone() {
+                    let i = w.index(x, y);
+                    w.tiles[i].liquid = 255;
+                }
+            }
+            w
+        };
+        // The player stands on the ground (row 60): the feet at 960, the head
+        // probe at [931, 943].
+        // A shallow pool (row 59 only) — the water's surface is at 944, so
+        // the head stays dry and the breath is untouched.
+        let mut w = pool(59..60);
+        let mut p = Player::spawn(&w);
+        p.x = 10.0 * 16.0 + 8.0;
+        p.y = 60.0 * 16.0 - 42.0;
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert_eq!(p.breath, BREATH_MAX, "the head stays dry");
+        // A deep pool — the head goes under and the breath runs down.
+        let mut w = pool(50..60);
+        let mut p = Player::spawn(&w);
+        p.x = 10.0 * 16.0 + 8.0;
+        p.y = 60.0 * 16.0 - 42.0;
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(
+            p.breath < BREATH_MAX,
+            "the head is under the water, breath {}",
+            p.breath
+        );
+    }
+
     #[test]
     fn health_regenerates_after_a_delay() {
         let w = ground_world();
@@ -10117,8 +10185,10 @@ mod tests {
 
     /// A player with a large life pool for 300-tick drain runs; `update_survival`
     /// only (the buff timers are not decremented there, so the buff holds).
-    fn drain_rig() -> Player {
-        drain_rig_in(&World::new("t".into(), 64, 800))
+    fn drain_rig() -> (Player, World) {
+        let w = World::new("t".into(), 64, 800);
+        let p = drain_rig_in(&w);
+        (p, w)
     }
 
     /// The world-parameterized twin (M5-SEED-2's vampirism rigs pass a world
@@ -10240,11 +10310,11 @@ mod tests {
             (30, false, 0, Some(0)),     // Bleeding: ramp reset only, no drain
         ];
         for &(id, expert, regen, loss) in rows {
-            let mut p = drain_rig();
+            let (mut p, dw) = drain_rig();
             p.buffs.expert_mode = expert;
             p.buffs.add_buff(id, 600);
             for _ in 0..300 {
-                p.update_survival(&mut tr_core::UnifiedRandom::default());
+                p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
             }
             assert_eq!(
                 p.regen.life_regen, regen,
@@ -10263,22 +10333,22 @@ mod tests {
         // DW-2.2 — `Player.cs:27750-27761`: only 24 and 323 are deleted; the
         // rest of the fire/poison family rides through the water.
         for id in [24, 323] {
-            let mut p = drain_rig();
+            let (mut p, dw) = drain_rig();
             p.buffs.add_buff(id, 600);
             p.in_water = true;
             p.wet = true;
-            p.update_survival(&mut tr_core::UnifiedRandom::default());
+            p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
             assert!(
                 p.buffs.find_buff_index(id).is_none(),
                 "water must cure buff {id}"
             );
         }
         for id in [44, 324, 39, 67, 20, 68, 144, 30] {
-            let mut p = drain_rig();
+            let (mut p, dw) = drain_rig();
             p.buffs.add_buff(id, 600);
             p.in_water = true;
             p.wet = true;
-            p.update_survival(&mut tr_core::UnifiedRandom::default());
+            p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
             assert!(
                 p.buffs.find_buff_index(id).is_some(),
                 "water must not cure buff {id}"
@@ -10290,13 +10360,13 @@ mod tests {
     fn lava_wet_blocks_the_water_extinguish() {
         // DW-2.2 — `!base.lavaWet` guard (`Player.cs:27751`): standing in lava
         // the water cannot cure OnFire. (The lava hit also re-hurt: hp 70.)
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
         p.in_water = true;
         p.wet = true;
         p.in_lava = true;
         p.lava_wet = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert!(
             p.buffs.find_buff_index(24).is_some(),
             "lavaWet blocks the cure"
@@ -10310,11 +10380,11 @@ mod tests {
         // water-only `wet` flag; the C# `WetCollision` flag would cover honey
         // too (Collision.cs:1608-1618) — deviation recorded for
         // docs/ANALYSIS.md (Phase 4).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
         p.in_water = true; // the physics probe covers water | honey
         p.honey_wet = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert!(
             p.buffs.find_buff_index(24).is_some(),
             "honey must not cure OnFire"
@@ -10326,15 +10396,15 @@ mod tests {
         // DW-2.2 quirk — the C# extinguish loop does not rescan after `DelBuff`
         // compaction (`Player.cs:27753-27761`): with 24 and 323 both held, one
         // tick deletes the first and skips the shifted-in second.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
         p.buffs.add_buff(323, 600);
         p.in_water = true;
         p.wet = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         let left = p.buffs.active_types();
         assert_eq!(left.len(), 1, "one fire buff survives the shift-skip");
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert!(
             p.buffs.active_types().is_empty(),
             "the second falls next tick"
@@ -10345,9 +10415,9 @@ mod tests {
     fn lava_contact_grants_onfire_420() {
         // DW-2.3 — `Player.cs:27710-27711`: a landed lava Hurt grants
         // AddBuff(24, 420); while the iframes run (`num81 == 0`) nothing lands.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.in_lava = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
         assert_eq!(p.buffs.buff_time[idx], 420);
         // `:27705` — the classic lava hit is 80 (`num79`), the 420-tick On
@@ -10355,14 +10425,14 @@ mod tests {
         assert_eq!(p.hp, 1000 - 80);
         // Inside the iframes the hit (and therefore the grant) repeats nothing.
         let hp = p.hp;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, hp, "no second lava hit inside the iframes");
         // Expert doubles the buff time through the AddBuff chain
         // (`AddBuff_DetermineBuffTimeToAdd`, 24 is in the difficulty set).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.expert_mode = true;
         p.in_lava = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         let idx = p.buffs.find_buff_index(24).unwrap();
         assert_eq!(p.buffs.buff_time[idx], 840);
     }
@@ -10448,10 +10518,10 @@ mod tests {
     fn wet_self_removes_on_lava_contact() {
         // `Player.cs:11741-11744`: the Wet branch deletes itself while
         // `lavaWet`, granting no immunities that frame.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(103, 600);
         p.in_lava = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert!(p.buffs.find_buff_index(103).is_none());
         assert!(!p.buffs.buff_immune[24], "no fire immunity without Wet");
     }
@@ -10460,23 +10530,23 @@ mod tests {
     fn honey_softens_a_drain_by_four_and_never_heals() {
         // DW-2.5 — `Player.cs:19096-19103`: honey +4 to a negative regen,
         // clamped at 0 — never positive, no heal from the mitigation itself.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(20, 600); // Poisoned −4
         p.buffs.add_buff(48, 600); // Honey
         for _ in 0..300 {
-            p.update_survival(&mut tr_core::UnifiedRandom::default());
+            p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         }
         assert_eq!(p.regen.life_regen, 0, "−4 + 4 clamps at 0");
         assert_eq!(p.hp, 1000, "a softened −4 drains nothing");
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(70, 600); // Venom −30
         p.buffs.add_buff(48, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -26, "−30 + 4 stays negative");
         // Honey without a drain never adds anything (the +2 aura is M2-BUFF-5).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(48, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, 0);
         assert_eq!(p.hp, 1000);
     }
@@ -10485,23 +10555,23 @@ mod tests {
     fn fire_family_deltas_sum_with_dripping_slime() {
         // Dirty — fire debuffs coexist and sum (`Player.cs` has no replace
         // chain); drippingSlime (137) doubles the fire family only.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600); // OnFire −8
         p.buffs.add_buff(324, 600); // Frostburn2 −16
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -24);
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
         p.buffs.add_buff(324, 600);
         p.buffs.add_buff(137, 600); // drippingSlime
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -48, "drip doubles both fire parts");
         // A poison part is not doubled by the drip.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(20, 600); // Poisoned −4
         p.buffs.add_buff(24, 600); // OnFire −8
         p.buffs.add_buff(137, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -20, "−4 poison + (−8×2) fire");
     }
 
@@ -10510,9 +10580,9 @@ mod tests {
     #[test]
     fn the_vampirism_world_trades_the_on_fire_drain_for_its_own() {
         // The classic row first — the flag is off on a classic world.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -8);
         // The seeded world: the flag rides the world's micro seeds, captured
         // at `Player::spawn` (`WorldGen.cs:555-558`).
@@ -10522,19 +10592,19 @@ mod tests {
         let mut p = drain_rig_in(&w);
         assert!(p.vampirism, "the flag reaches the player");
         p.buffs.add_buff(24, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -100, "the vampirism OnFire drain");
         // The drip double is 100 too, and only the fire family is affected.
         let mut p = drain_rig_in(&w);
         p.buffs.add_buff(24, 600);
         p.buffs.add_buff(137, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -200, "drip doubles the 100");
         let mut p = drain_rig_in(&w);
         p.buffs.add_buff(20, 600); // Poisoned −4 (unchanged)
         p.buffs.add_buff(24, 600); // OnFire −100
         p.buffs.add_buff(137, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -204, "−4 poison + (−100×2) fire");
     }
 
@@ -10542,17 +10612,17 @@ mod tests {
     fn electrified_drains_more_while_moving() {
         // Dirty — `Player.cs:19074-19086`: −8, −32 more while `controlLeft ||
         // controlRight` (the run keys, not velocity).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(144, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -8);
         p.control_left = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -40, "−8 −32 with the left key");
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(144, 600);
         p.control_right = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -40, "−8 −32 with the right key");
     }
 
@@ -10562,7 +10632,7 @@ mod tests {
         // generic 22→9→10→23→8) is this phase's job; unit checks on the
         // derivation against `Player.cs:19313-19331,19361-19385`.
         let derive = |buffs: &[i32], expert: bool| -> DotDerivation {
-            let mut p = drain_rig();
+            let (mut p, _dw) = drain_rig();
             p.buffs.expert_mode = expert;
             for &id in buffs {
                 p.buffs.add_buff(id, 600);
@@ -10598,18 +10668,18 @@ mod tests {
     fn fast_lane_kill_carries_the_derived_reason() {
         // The derivation → engine seam end-to-end: the drain kill returns the
         // reason the held buffs selected (world_sim resolves the text).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(68, 600); // suffocating → fast lane, reason 7
         p.regen.life_regen_count = -600;
         p.hp = 3;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Suffocation));
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(20, 600); // poisoned → generic lane, reason 9
         p.regen.life_regen_count = -120;
         p.hp = 1;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Poison));
     }
@@ -12659,13 +12729,13 @@ mod tests {
         p.lava_time = 0;
         let hp = p.hp;
         let mut rng = DodgeRng::with_rolls(&[0]);
-        p.update_survival(&mut rng);
+        p.update_survival(&w, &mut rng);
         assert_eq!(p.hp, hp, "the belt ate the lava hit");
         assert!(p.buffs.find_buff_index(24).is_none(), "no OnFire on a dodge");
         // The counterpart: a missed roll lands the 80 damage and grants.
         expire_dodge_window(&mut p);
         let mut rng = DodgeRng::with_rolls(&[1]);
-        p.update_survival(&mut rng);
+        p.update_survival(&w, &mut rng);
         assert!(p.hp < hp);
         assert!(p.buffs.find_buff_index(24).is_some(), "OnFire on the landed hit");
     }

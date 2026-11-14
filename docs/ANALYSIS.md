@@ -13156,3 +13156,42 @@ Deviations:
   the factor is 1 — except for the kinds whose scale the port does not
   carry (the goblins' 0.9/0.95/1.1), which the group does not scale
   anyway.
+
+## The drowning family (S1-E-13b, 2026-11-14)
+
+`crates/tr-app/src/collision.rs` ports `Collision.DrownCollision`
+(`Collision.cs:1383-1432`) and the two water-line helpers
+(`GetWaterLine` `:1498-1544`, `GetWaterLineIterate` `:1551-1570`). The
+drown probe is the C#'s: the 10x12 box at the entity's head (the centre
+column, `Position.Y + height/2 - 6` for the vanilla gravity, `:1385-1400`),
+the liquid's surface offset (`(256 - liquid) / 32 * 2`, `:1421-1423`), the
+lava and shimmer exclusion (the honey drowns, `:1416`) and the solid-floor
+row (the gravity-side row of the scan, `:1409`/`:1416`) — the `includeSlopes`
+mode lifts that exclusion for the sloped and half-brick blocks, exactly like
+the C#'s `blockType() != 0` arm.
+
+`Player::check_drowning` (`Player.cs:23191-23281`) replaces the port's
+"the player is in water" stand-in with that probe: the breath meter now
+drains only while the **head** is under the surface, and refills with the
+C#'s 3 ticks per tick (`breathCD`/`breathCDMax` kept). Before this row the
+port's breath drained whenever the wet flags said "somewhere in water", so
+wading through a shallow pool cost air.
+
+Deliberate deviations:
+
+1. The C#'s accessory arms (the Merman armour 250/4275, the breathing reed,
+   the gills, the shimmering and the mount 4) have no ported counterparts —
+   the port has no accessory system for them, so the probe's own flag
+   decides.
+2. The C#'s drowning bubbles and the drowning death sound (23) ride the
+   effect and audio systems, which are out of scope here.
+3. `Utils.Clamp(value, 0, Main.maxTilesY - 40)` folds a negative bound back
+   onto itself for the small test worlds; the port clamps the bound at zero
+   instead (the scan then runs empty either way).
+4. The port runs the breath drain inside `update_survival` (the merged
+   life-regen step); the C#'s `CheckDrowning` sits later in `Player.Update`
+   (`:27655`, after `StickyMovement`).
+
+Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `StickyTiles` +
+`Player.StickyMovement`, `SwitchTiles`, `BuildTileContacts`,
+`noSlopeCollision` and `AdvancedTileCollision`.
