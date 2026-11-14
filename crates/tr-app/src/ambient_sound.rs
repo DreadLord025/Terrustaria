@@ -791,7 +791,10 @@ mod tests {
                 3 => Some(1),   // Next(2) != 0 → 112
                 _ => Some(-10), // the pitch
             }),
-            &|s| s == 110 || s == 111,
+            // The guards run before the pick: a busy 110 or 111 blocks the
+            // cue outright (`:1064-1069`) — the first block pins that. Here
+            // both are free.
+            &|_| false,
         )
         .unwrap();
         assert_eq!(voice.slot, 112);
@@ -860,7 +863,8 @@ mod tests {
                     Some(lo)
                 }
             }),
-            &|s| s == 15,
+            // The busy-15 block is the same shape the case-32 block pins.
+            &|_| false,
         )
         .unwrap();
         assert_eq!(voice.slot, 15);
