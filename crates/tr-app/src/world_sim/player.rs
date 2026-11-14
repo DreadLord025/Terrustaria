@@ -1133,7 +1133,7 @@ mod tests {
     }
 
     /// DW-3.1 — the `world_sim` drain: the tick's queued spark particles land
-    /// in the App's `minecart::Sparks` pool (the `Main.dust` stand-in) and the
+    /// in the App's shared `particles::DustPool` (the `Main.dust` analog) and the
     /// queued cues go out through `app.audio.play_at` (a silent no-op without
     /// an output device) — both pendings end up empty.
     /// The rig body: `seed` seeds the spark stream, the camera rides the

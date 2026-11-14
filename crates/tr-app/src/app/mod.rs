@@ -921,7 +921,7 @@ impl App {
 
     /// The per-call inputs `Dust.NewDust` reads off `Main` (`Dust.cs:77-98`),
     /// S1-E-1 phase 2: `gameMenu` is the front state (`menu.is_some() ||
-    /// front.is_some()`, the mod.rs:1024 gate), `gamePaused` is S1-B-3's
+    /// front.is_some()`, the mod.rs:1054 gate), `gamePaused` is S1-B-3's
     /// field, sync loads never generate (`isGeneratingOrLoadingWorld` only
     /// covers the async loader), `screenPosition` is the view's world-px
     /// top-left and `screenWidth/Height` the UI size the C# cull rect uses
