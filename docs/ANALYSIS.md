@@ -4742,9 +4742,11 @@ Deviations, all deliberate:
 
 ## Mounts framework (M2-MOUNT-1)
 
-`crates/tr-app/src/mount.rs` holds the `MountData` port (a 12-row ground table with the
-exact `Mount.cs:696-2567` constants — Rudolph, Bunny, Slime, Scutlix, Unicorn, Basilisk,
-the three horses, PogoStick, Wall-of-Flesh Goat, Queen Slime), the `MountState` instance
+`crates/tr-app/src/mount.rs` holds the `MountData` port (a 66-row table with the
+exact `Mount.cs:696-2567` constants — every `MountID` id, the 16 rows that were
+missing until S1-L-9 included: Turtle, GolfCart, Flamingo, SpookyWood, Santank,
+Wolf, Velociraptor, Rat, the four roller skates and the four Chillemts), the
+`MountState` instance
 core (`SetMount`/`Dismount`/`CheckMountBuff`/`Reset` — `Mount.cs:6196-6305`/`:6142-6194`/
 `:5275-5281`/`:675-694`, keeping the vanilla quirk that `fatigue`/`abilityCooldown`/
 `abilityDuration` survive `Reset`), the saddle-item and mount-buff lookups (the
@@ -4773,9 +4775,25 @@ bottom-anchored (`:6264-6277`) and restores through the shrink path of
 `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2513`).
 
 Deviations:
-- **Partial table (50 of `MountID.Count` 66)** — `set_mount` rejects ids outside the
-  table where vanilla fills every row; the remaining categories land with
-  M2-MOUNT-2/3/4.
+- **Full table (66 of `MountID.Count` 66), but the rows are data only** — S1-L-9
+  landed every `Mount.Initialize` row (`Mount.cs:696-2567`), the `Item.mountType`
+  rows and the `SetMount`/`Dismount` extras; the per-type *behaviour* still waits
+  for M2-MOUNT-2/3/4:
+  - the Spooky Wood's light (`emitsLight`/`lightColor`, `Mount.cs:1951-1952`,
+    applied at `:3632-3636`) needs the entity-light API (S1-E-5) — the row carries
+    the colour, nothing consumes it yet;
+  - the `Dismount`'s `noItems` restore for the transformation mounts 55/56
+    (`Mount.cs:6152-6155`) needs the `noItems`/`cursed` pair the port does not
+    carry — constants-off;
+  - the SuperCart writer (`_shouldSuperCart`, `Mount.cs:4798`) reads
+    `Player.UsingSuperCart` (`Player.cs:3966-3980`); the port carries the
+    `unlockedSuperCart`/`enabledSuperCart` pair, but the unlock writer (item 3353,
+    `Player.cs:45207-45211`, `:55718`) and the UI toggle are not ported — the flag
+    stays false in play, while the stat overrides themselves are the vanilla
+    20/20/0.1/15/5.15 (`:6660-6664`);
+  - the per-type animator arms of `UpdateFrame` (the drill rotation, the bee
+    wings, the Chillemt dust, `:3637-4142`) stay unported — the rows' frame
+    bands, the idle ranges and the rat's own idle table are ported.
 - **No net sync** — `SetMount`/`Dismount`'s msg 13 (`Mount.cs:6222-6225`, `:6172-6175`)
   has no multiplayer surface.
 - **No gravDir branch** — the flip block gated `!mount.Active` (`Player.cs:26690-26733`)
@@ -4790,9 +4808,11 @@ Deviations:
   + `PlayerNoSpaceTeleport` (`:6052-6070`) cannot fire; the grow-probe half of
   `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2490-2508`) returns `None`
   until a consumer appears.
-- **Cart/ability branches reserved** — the OnTrack/roller-skate/drill arms of
+- **Cart/ability branches reserved** — the OnTrack/drill arms of
   the per-tick block are comment-marked (M2-MOUNT-3/4); the SuperCart stat overrides
-  read 0; `Mount.Hover` (hover mounts) cannot fire while no row sets `usesHover`.
+  read the vanilla values (20/20/0.1/15/5.15, `Mount.cs:6660-6664`) but the flag
+  that selects them is constants-off (see above); `Mount.Hover` (hover mounts)
+  cannot fire while no row sets `usesHover`.
   The Fishron arm (id 12) is ported: the 60/420-tick `MountFishronSpecialCounter`
   and the halving gate the Cute Fishron's run stats (`Player.cs:26655-26659`).
 - **Charge/stomp damage deferred** — the dash-contact damage (`Player.cs:20108-20170`)
@@ -4806,8 +4826,10 @@ Deviations:
 
 Verification: the unit tests across `mount.rs`/`player.rs`/`render/player_layers.rs`
 (the table constants, the set/dismount guards, the merge modes, the jump/fall
-interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle, the
-animator states, the draw math); `TR_SHOT` twin runs SHA256-equal with
+interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle,
+the animator states, the draw math; S1-L-9 adds the 66-row per-id table, the
+item rows, the SuperCart statics, the `SetMount`/`Dismount` extras, the Chillemt
+damage bonus and the rat's idle band); `TR_SHOT` twin runs SHA256-equal with
 `TR_MOUNT=unicorn` over `assets/test/master.trwld` at frame 120.
 
 ## Projectile pool (M4-PROJ-1)
