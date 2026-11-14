@@ -1745,8 +1745,9 @@ pub(crate) fn should_spawn_invasion_enemies(world: &World, player_y: f32, player
         return false;
     }
     // `position.Y < Main.worldSurface * 16.0 + NPC.sHeight` — the px-space
-    // compare (`NPC.sHeight` = 200).
-    if player_y < (world.world_surface * 16.0 + 200.0) as f32
+    // compare (`NPC.sHeight` = 1200, `NPC.cs:6769`; the port used 200, which
+    // made the band ~6x too narrow — S1-F-18).
+    if player_y < (world.world_surface * 16.0 + crate::spawner::S_HEIGHT as f64) as f32
         || (world.spawn_y as f32) > world.world_surface as f32
     {
         let num = 3000.0;
@@ -2686,16 +2687,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the archer's Wooden Arrow Hostile 81): the update pass set
     // `wants_hostile_shot`, this pass resolves it into the pool (the
     // knockback 0 — the C# call's `KnockBack: 0f`).
+    //
+    // The requester travels with the shot: the C#'s saucer deathray is
+    // spawned with `ai0 = base.whoAmI + 1` (`NPC.cs:35917`/`:36437`) — the
+    // spawner's own slot index — and the deathray's arm reads that slot to
+    // find its owner (the port's NPC vec is compacted, so the index is the
+    // sim's current one).
     let mut shots = Vec::new();
-    for n in app.npcs.iter_mut() {
-        shots.append(&mut n.wants_hostile_shot);
+    for (i, n) in app.npcs.iter_mut().enumerate() {
+        for shot in n.wants_hostile_shot.drain(..) {
+            shots.push((i, shot));
+        }
     }
-    for (kind, sx, sy, svx, svy, dmg) in shots {
+    for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
         #[cfg(test)]
         eprintln!(
             "[spawn-dbg] pool slots active: {}",
             app.projectiles.slots().iter().filter(|p| p.active).count()
         );
+        // The C#'s spawn-site `ai0`/`ai1` payload (`NewProjectile`'s
+        // trailing arguments, `Projectile.cs:10862-10863`): the deathray's
+        // owner slot + 1 (`NPC.cs:35917`/`:36437`) and the missile's 20-tick
+        // arming delay (`NPC.cs:35845`).
+        let (ai0, ai1) = match kind {
+            crate::projectile::SAUCER_DEATHRAY => ((owner_slot + 1) as f32, 0.0),
+            crate::projectile::SAUCER_MISSILE => (0.0, 20.0),
+            _ => (0.0, 0.0),
+        };
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
         // (`NPC.cs:49891`) and the Frost Legion throws'
         // (`NPC.cs:29022`/`:29084`).
@@ -2715,6 +2733,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 dmg,
                 0.0,
                 time_left,
+            );
+        } else if ai0 != 0.0 || ai1 != 0.0 {
+            app.projectiles.spawn_hostile_ai(
+                kind,
+                Vec2::new(sx, sy),
+                Vec2::new(svx, svy),
+                dmg,
+                0.0,
+                ai0,
+                ai1,
             );
         } else {
             app.projectiles
@@ -3189,13 +3217,30 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 })
                 .count() as f32;
             Some(spawner::SpawnContext {
-                // The scene flags arrive as the systems land (hardmode
-                // M5-HARDFORCE, blood moon M2-WEATHER, zones M5-BIOME); the
-                // candle zones ride the M2-BUFF-5 scene scan
-                // (`SceneMetrics.CalculateZones`, `:706-708`).
+                // `Player.UpdateBiomes` (`Player.cs:16692-16730`): the
+                // player's zone flags come from the scene metrics, and the
+                // spawn gates read them (`NPC.SetSpawnFlags` →
+                // `GetSpawnRate`, `NPC.cs:311-313`).
                 flags: spawner::SpawnFlags {
-                    zone_water_candle: app.scene_metrics.water_candle_count > 0,
-                    zone_peace_candle: app.scene_metrics.peace_candle_count > 0,
+                    zone_dungeon: app.scene_metrics.zone_dungeon,
+                    zone_jungle: app.scene_metrics.zone_jungle,
+                    // `Player.ZoneEvil` = the corrupt or crimson zone.
+                    zone_evil: app.scene_metrics.zone_corrupt
+                        || app.scene_metrics.zone_crimson,
+                    zone_temple: app.scene_metrics.zone_lihzhard_temple,
+                    zone_underground_desert: app.scene_metrics.zone_underground_desert,
+                    zone_meteor: app.scene_metrics.zone_meteor,
+                    // The deep-underground band (`NPC.cs:3799`): below the
+                    // surface, above the rock layer's midpoint, and none of
+                    // the snow/crimson/corrupt/hallow zones.
+                    zone_hallow_deep: !app.scene_metrics.zone_snow
+                        && !app.scene_metrics.zone_crimson
+                        && !app.scene_metrics.zone_corrupt
+                        && !app.scene_metrics.zone_hallow,
+                    zone_graveyard: app.scene_metrics.zone_graveyard,
+                    zone_sandstorm: app.scene_metrics.zone_sandstorm,
+                    zone_water_candle: app.scene_metrics.zone_water_candle,
+                    zone_peace_candle: app.scene_metrics.zone_peace_candle,
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,
@@ -4702,10 +4747,16 @@ mod invasion_tests {
             !should_spawn_invasion_enemies(&w, 110.0 * TILE_PX, 250.0 * TILE_PX),
             "far from invasionX"
         );
-        // The underground band: no invasion spawns.
+        // The band is `NPC.sHeight` = 1200 px below the surface
+        // (`NPC.cs:6769`): the world's surface is row 120 = px 1920, so the
+        // band reaches px 3120 — 3000 px down still spawns, 3200 does not.
         assert!(
-            !should_spawn_invasion_enemies(&w, 400.0 * TILE_PX, 20.0 * TILE_PX),
-            "the cave band refuses"
+            should_spawn_invasion_enemies(&w, 3000.0, 20.0 * TILE_PX),
+            "the 1200 px band holds"
+        );
+        assert!(
+            !should_spawn_invasion_enemies(&w, 3200.0, 20.0 * TILE_PX),
+            "below the band refuses"
         );
     }
     #[test]

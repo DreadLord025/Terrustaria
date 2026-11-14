@@ -1198,12 +1198,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
-            // `Projectile.cs:1804-1818` — the deathray: 30x30, aiStyle 79
-            // (the port's boomerang family's homing stand-in), penetrate
-            // -1, tileCollide false, timeLeft 240.
+            // `Projectile.cs:5188-5197` — the deathray: 30x30, aiStyle 79,
+            // penetrate -1, tileCollide false, ignoreWater, timeLeft 240
+            // (the arm is `ai_saucer_deathray`, S1-D-4b-4).
             SAUCER_DEATHRAY => (30.0, 30.0, 79, -1, 240, 0, false, false, false, RESET_STATE),
-            // `Projectile.cs:1816-1825` — the missile: 14x14, aiStyle 80
-            // (the port's boomerang return stand-in), penetrate -1.
+            // `Projectile.cs:5199-5206` — the missile: 14x14, aiStyle 80,
+            // penetrate -1, tileCollide false (the arm is
+            // `ai_saucer_missile`, S1-D-4b-4).
             SAUCER_MISSILE => (
                 14.0,
                 14.0,
@@ -1238,6 +1239,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ),
             // `Projectile.cs:9307-9317` — the shadow hand: 40x40, aiStyle
             // 187, penetrate -1, tileCollide false, timeLeft 300.
+            // `InsanityShadowHostile` (`Projectile.cs:9116-9126`): 40x40,
+            // aiStyle 187, `penetrate = -1`, `timeLeft = 300`, `alpha = 255`,
+            // no tile collision, water-ignoring.
             SHADOW_HAND => (
                 40.0,
                 40.0,
@@ -1248,7 +1252,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:1896-1903` — the bomb: 22x22, aiStyle 16,
             // penetrate -1, hostile.
@@ -1419,6 +1423,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // `FlaironBubble` (`Projectile.cs:4857-4868`): 14x14, aiStyle 70,
+            // `penetrate = 1`, `alpha = 255`, `timeLeft = 120`.
             FLAIRON_BUBBLE => (
                 14.0,
                 14.0,
@@ -1429,7 +1435,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),            // The bombs (`:1106-1121`, `:1198-1205`, `:5862-5896`); the
             // fuse seeds ride `NewProjectileSetup` (`:10970-10993`): 180
             // ticks for the bombs, 300 for the dynamite. The sticky set
@@ -1575,6 +1581,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // marker 673 + the heal marker 674 (10x10, aiStyle 133, alpha
             // 255, tileCollide false, timeLeft 900) and the shadowflame
             // 675 (10x10, aiStyle 1, alpha 255, penetrate -1).
+            // `DD2DarkMageRaise` / `DD2DarkMageHeal` (`Projectile.cs:7208-7219`):
+            // 10x10, aiStyle 133, `alpha = 255`, `timeLeft = 900`,
+            // `penetrate = -1`, no tile collision, water-ignoring.
             DARK_MAGE_MARKER => (
                 10.0,
                 10.0,
@@ -1585,7 +1594,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             DARK_MAGE_FLAME => (
                 10.0,
@@ -1814,7 +1823,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `CascadeExplosion` (`:10528-10541`): 32×32, aiStyle 189, the
             // `alpha = 255`/`hide` pair, `penetrate = 4`, local-immunity with
             // `localNPCHitCooldown = -1`.
-            CASCADE_EXPLOSION => (32.0, 32.0, 189, 4, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            CASCADE_EXPLOSION => (
+                32.0,
+                32.0,
+                189,
+                4,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             // `TheEyeOfCthulhuDash` (`:10596-10608`): 100×100, aiStyle 210,
             // `timeLeft = 600`, `penetrate = -1`, local-immunity −1.
             EYE_OF_CTHULHU_DASH => (100.0, 100.0, 210, -1, 600, 0, false, false, false, RESET_STATE),
@@ -2617,6 +2637,12 @@ pub struct Projectile {
     /// `Projectile.alpha` (`:326`, reset `:779`) — the draw fade, which the AI
     /// arms also read as a state marker (the magic families, Phase 3).
     pub alpha: i32,
+    /// `Projectile.Opacity` (`:540`, the stock `1f`) — the draw-time colour
+    /// multiplier, distinct from `alpha` (the 0-255 transparency): the
+    /// aiStyle-133 raise marker ramps it 0 → 1 → 0 over its 80 ticks
+    /// (`Projectile.cs:36457-36470`). The port has no projectile draw pass
+    /// yet, so the field carries the arm's state only.
+    pub opacity: f32,
     /// `Projectile.scale` (`:320`, reset `:785`).
     pub scale: f32,
     /// `Projectile.frame` (`:331`, reset `:786`) — the animation sheet row the
@@ -2753,6 +2779,7 @@ impl Default for Projectile {
             ai: [0.0; 4],
             local_ai: [0.0; 3],
             alpha: 0,
+            opacity: 1.0,
             scale: 1.0,
             frame: 0,
             frame_counter: 0,
@@ -8251,6 +8278,542 @@ impl Projectile {
         })
         .collect()
     }
+
+    /// `AI()`'s aiStyle-70 block (`Projectile.cs:30304-30354`) — the Flairon
+    /// Bubble (405): the one-shot target scan, the homing blend, the
+    /// no-target fade and the scale roll.
+    ///
+    /// The C#'s `Main.rand` draws ride the pool's `Main.rand` analogue in the
+    /// source's order: the `Next(35, 75)` turn weight first, then the two
+    /// `Next(-100, 101)` jitter values (`:30324`), then the `Next(80, 121)`
+    /// scale roll (`:30341`).
+    ///
+    /// Deviation from the source: the C#'s target is a `Main.npc` **slot**
+    /// index (`Main.npc[(int)ai[0] - 1]`, `:30324`/`:30329`), and the port's
+    /// NPC vec drops the dead, so a stored index can name a different NPC (or
+    /// none) than the C#'s slot did. The port keeps the index shape (the
+    /// Nebula Arcanum's `ai[1] = index + 1` precedent) and reads it with
+    /// `npcs.get`, so a vanished target steers nowhere instead of at the
+    /// C#'s stale slot.
+    fn ai_flairon_bubble(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        if self.ai[0] == 0.0 {
+            // `:30307-30318` — the acquire scan: the closest chaseable NPC
+            // inside 650 px with a clear `Collision.CanHit` line. The scan
+            // keeps the *running minimum* distance, so the tightest target
+            // wins (not the first one found).
+            let mut scan = 650.0f32;
+            let mut best: i32 = -1;
+            for (i, n) in npcs.iter().enumerate() {
+                let distance = center.distance(npc_center(n));
+                if distance >= scan {
+                    continue;
+                }
+                // `:30314` `nPC8.CanBeChasedBy(this)`.
+                if !chaseable(n) {
+                    continue;
+                }
+                // `:30314` `Collision.CanHit(...)` — the tile line of sight.
+                let (nw, nh) = n.size();
+                if !can_hit(
+                    world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh,
+                ) {
+                    continue;
+                }
+                scan = distance;
+                best = i as i32;
+            }
+            // `:30319` — `ai[0] = num548 + 1` (the target's index plus one;
+            // zero means "no target").
+            self.ai[0] = if best >= 0 { best as f32 + 1.0 } else { 0.0 };
+            // `:30320-30321` — no target: the counter starts at −15 and the
+            // fade arm counts it back up to 0, which re-arms the scan.
+            if self.ai[0] == 0.0 {
+                self.ai[0] = -15.0;
+            }
+            if self.ai[0] > 0.0 {
+                // `:30323-30326` — the first steering step: the turn weight
+                // `Next(35, 75) / 30f`, then the two jitter draws, then the
+                // `(v * 20 + d * weight) / 21` blend.
+                let weight = rng.next_range(35, 75) as f32 / 30.0;
+                let jitter = Vec2::new(
+                    rng.next_range(-100, 101) as f32,
+                    rng.next_range(-100, 101) as f32,
+                );
+                if let Some(n) = npcs.get((self.ai[0] as usize) - 1) {
+                    let dir = safe_normalize(npc_center(n) - center + jitter);
+                    self.vel = (self.vel * 20.0 + dir * weight) / 21.0;
+                }
+            }
+        } else if self.ai[0] > 0.0 {
+            // `:30328-30331` — the steady homing: the `(v * 40 + d * 12) / 41`
+            // blend toward the held target.
+            if let Some(n) = npcs.get((self.ai[0] as usize) - 1) {
+                let dir = safe_normalize(npc_center(n) - center);
+                self.vel = (self.vel * 40.0 + dir * 12.0) / 41.0;
+            }
+        } else {
+            // `:30332-30339` — the no-target fade: the counter climbs back
+            // toward 0, the alpha falls 25/tick to its 50 floor and the
+            // velocity decays 5%.
+            self.ai[0] += 1.0;
+            self.alpha -= 25;
+            if self.alpha < 50 {
+                self.alpha = 50;
+            }
+            self.vel *= 0.95;
+        }
+        // `:30340-30344` — the scale roll: one `Next(80, 121) / 100f` draw,
+        // then the scale follows it every tick.
+        if self.ai[1] == 0.0 {
+            self.ai[1] = rng.next_range(80, 121) as f32 / 100.0;
+        }
+        self.scale = self.ai[1];
+        // `HandleMovement`'s terminal default (`:19848-19851`): the bubble's
+        // row keeps its `tileCollide`, so a blocked move steps into the tile
+        // and dies.
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-133 block (`Projectile.cs:36435-36498`) — the Dark
+    /// Mage raise marker (673) and the heal mark (674).
+    ///
+    /// The port's kind set carries the 673 only (the 674 has no `proj_data`
+    /// row), so the arm ports the marker's ramp: the summon cue at the 70th
+    /// tick (SKIPPED — no tracked-sound layer), the counter, the opacity
+    /// curve and the kill past 80.
+    fn ai_dark_mage_raise(&mut self, world: &World) {
+        if self.kind == DARK_MAGE_MARKER {
+            // `:36438-36440` — the summon cue at `ai[0] == 70` (SKIPPED: no
+            // tracked-sound layer in the pool).
+            // `:36441` — the counter.
+            self.ai[0] += 1.0;
+            // `:36442-36452` — the opacity ramp: 0 → 1 over the first 20
+            // ticks, 1 until the 60th, then back to 0 by the 80th; the kill
+            // rides the last arm.
+            let opacity = if self.ai[0] < 20.0 {
+                // `Utils.GetLerpValue(0f, 20f, ai[0], clamped: true)`.
+                get_lerp_value(0.0, 20.0, self.ai[0])
+            } else if self.ai[0] < 60.0 {
+                1.0
+            } else if self.ai[0] < 80.0 {
+                // `Utils.GetLerpValue(80f, 60f, ai[0], clamped: true)` — the
+                // descending range, so the ramp falls from 1 to 0.
+                get_lerp_value(80.0, 60.0, self.ai[0])
+            } else {
+                // `:36451-36452` — `this.Kill()`.
+                self.active = false;
+                self.time_left = 0;
+                0.0
+            };
+            // `:36453` — the opacity write (the C# assigns it after the
+            // kill arm, so the dying tick lands on 0).
+            self.opacity = opacity;
+        }
+        // The 674's heal arm (`:36456-36498`) has no ported row.
+        // `HandleMovement`: the marker's row keeps `tileCollide = false`, so
+        // the position simply follows the (zero) velocity.
+        self.kill_step(world);
+    }
+
+    /// `AI_187_ShadowHand` (`Projectile.cs:42502-42591`) with its variation
+    /// helper (`:42592-42634`) — the Insanity shadow (964 friendly / 965
+    /// hostile).
+    ///
+    /// The tracked sound (`:42507-42515`: the cue on the first tick of each
+    /// variation and the per-tick position update of the playing sound) is
+    /// SKIPPED — the pool has no tracked-sound layer (S1-E-23). The alpha
+    /// ramp, the four variation choreographies and the kill are ported.
+    fn ai_insanity_shadow(&mut self, world: &World) {
+        // `:42593-42633` — the variation pick.
+        let (variation, fake_counter, counter_max) = shadow_hand_variation(self.ai[0]);
+        let from_value = fake_counter / counter_max;
+        // `:42516-42527` — the alpha ramp: +25/tick over the last 15 ticks of
+        // the variation, −25/tick before that, floored at 50 and capped at
+        // 255.
+        if fake_counter > counter_max - 15.0 {
+            self.alpha += 25;
+            if self.alpha > 255 {
+                self.alpha = 255;
+            }
+        } else {
+            self.alpha -= 25;
+            if self.alpha < 50 {
+                self.alpha = 50;
+            }
+        }
+        // `:42528-42532` — the variation's end: the last tick of the ramp
+        // kills the shadow.
+        if fake_counter >= counter_max - 1.0 {
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        match variation {
+            0 => {
+                // `:42534-42540` — the drift: the velocity decays 2%, the
+                // sprite faces the flight and the rotation follows it (plus
+                // π when facing left).
+                self.vel *= 0.98;
+                self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+                self.sprite_direction = self.direction;
+                self.rot = self.vel.y.atan2(self.vel.x);
+                if self.sprite_direction == -1 {
+                    self.rot += std::f32::consts::PI;
+                }
+            }
+            1 => {
+                // `:42541-42557` — the tethered swing: the shadow orbits the
+                // point 70 px behind its rotation, the turn rate follows the
+                // two remap pairs and the centre is rewritten from the new
+                // rotation.
+                let mut arm = 70.0f32;
+                self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+                self.sprite_direction = self.direction;
+                if self.vel.length() > 0.1 {
+                    self.vel *= 0.95;
+                }
+                arm *= self.direction as f32;
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                let anchor = center - rotation_vector(self.rot) * arm;
+                let num2 =
+                    remap(from_value, 0.3, 0.5, 0.0, 1.0) * remap(from_value, 0.45, 0.5, 1.0, 0.0);
+                let num3 =
+                    remap(from_value, 0.5, 0.55, 0.0, 1.0) * remap(from_value, 0.5, 1.0, 1.0, 0.0);
+                self.rot += (num2 * std::f32::consts::PI / 60.0
+                    + num3 * -std::f32::consts::PI * 8.0 / 60.0)
+                    * -(self.direction as f32);
+                self.rot = wrap_angle(self.rot);
+                let new_center = anchor + rotation_vector(self.rot) * arm;
+                self.pos = new_center - Vec2::new(self.w * 0.5, self.h * 0.5);
+            }
+            2 => {
+                // `:42558-42568` — the burst: the velocity points along the
+                // `ai[1]` angle with the two remap pairs' length.
+                let num4 = remap(from_value, 0.0, 0.4, 1.0, 0.0);
+                let num5 =
+                    remap(from_value, 0.3, 0.4, 0.0, 1.0) * remap(from_value, 0.4, 1.0, 1.0, 0.0);
+                self.vel = rotation_vector(self.ai[1]) * (num4 * 2.0 + num5 * 8.0 + 0.01);
+                self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+                self.sprite_direction = self.direction;
+                self.rot = self.vel.y.atan2(self.vel.x);
+                if self.sprite_direction == -1 {
+                    self.rot += std::f32::consts::PI;
+                }
+            }
+            3 => {
+                // `:42569-42575` — the spin: the velocity rotates by the
+                // `ai[1]` angle every tick.
+                self.vel = rotate(self.vel, self.ai[1]);
+                self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+                self.sprite_direction = self.direction;
+                self.rot = self.vel.y.atan2(self.vel.x);
+                if self.sprite_direction == -1 {
+                    self.rot += std::f32::consts::PI;
+                }
+            }
+            _ => {}
+        }
+        // `:42577` — the age counter.
+        self.ai[0] += 1.0;
+        // `HandleMovement`: the shadow's row keeps `tileCollide = false`, so
+        // the position follows the velocity without a tile probe.
+        self.kill_step(world);
+    }
+
+    /// `AI_189_Volcano` (`Projectile.cs:42264-42371`) — the Volcano (978) and
+    /// the Cascade Explosion (1125).
+    ///
+    /// The arm's dust and gore bursts (`:42305-42369`) are SKIPPED — the port
+    /// has no dust or gore layer (S1-E-1/S1-E-4) — and with them the arm's
+    /// `Main.rand` draws, which all belong to those blocks (the gem-staff
+    /// arm's zero-RNG precedent). The audible part — the alpha flash, the
+    /// scale ramp, the five-frame life and the kill — is ported.
+    fn ai_volcano(&mut self, world: &World) {
+        // `:42266-42269` — the explosion cue on the first tick (SKIPPED: no
+        // sound layer in the pool; the C#'s `soundDelay` latch rides it).
+        // `:42270` — the alpha flash: the two remaps open and close the
+        // window, so the sprite fades out and back in.
+        self.alpha = (255.0f32
+            * (1.0
+                - remap(self.ai[0], 0.0, 2.0, 0.0, 1.0) * remap(self.ai[0], 6.0, 10.0, 1.0, 0.0)))
+            as i32;
+        // `:42276` — the scale ramp; the Cascade Explosion (1125) takes its
+        // scale from `ai[1]` instead (`:42278`).
+        if self.kind == CASCADE_EXPLOSION {
+            self.scale = self.ai[1];
+        } else {
+            self.scale = 1.0 + self.ai[0] / 15.0;
+        }
+        // `:42280-42287` — the five-frame life: the frame advances every
+        // second tick and the fifth frame kills.
+        self.frame_counter += 1;
+        if self.frame_counter >= 2 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 5 {
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+        }
+        // `:42288` — the age counter.
+        self.ai[0] += 1.0;
+        // `HandleMovement`: the explosion's row keeps `tileCollide = false`.
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-79 block (`Projectile.cs:30791-30910`) — the Martian
+    /// Saucer's deathray (447): the owner check, the beam that hangs from the
+    /// owner down to the ground (or the player's feet) and the 4-frame loop.
+    ///
+    /// The owner is the NPC that spawned the ray (`ai0 = base.whoAmI + 1`,
+    /// the shell's `:35917` and the core's `:36437`). The port's NPC vec is
+    /// compacted (the dead are culled every tick), so the stored index can
+    /// name a different NPC than the C#'s fixed slot did — the port keeps
+    /// the index shape and re-checks the owner's kind (the C#'s own `type`
+    /// gate), so a stale index kills the ray instead of aiming it at a
+    /// stranger.
+    ///
+    /// The shell's `ai[0]` points at the core in the C# (`:35895-35907`);
+    /// the port links the family by kind (the carrier write-through), so
+    /// the core is found by its kind.
+    ///
+    /// The dust (`:30863-30878`) is SKIPPED — no dust layer.
+    fn ai_saucer_deathray(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&crate::player::Player>,
+    ) {
+        // `:30793-30799` — the owner's slot: `ai[0] - 1`.
+        let owner_index = self.ai[0] as i32 - 1;
+        let Some(owner) = npcs.get(owner_index.max(0) as usize) else {
+            self.kill();
+            return;
+        };
+        let is_shell = owner.kind == NpcKind::MartianSaucer;
+        let is_core = owner.kind == NpcKind::MartianSaucerCore;
+        // `:30800-30837` — the owner's state check.
+        let mut valid = self.ai[0] != 0.0 && (is_shell || is_core);
+        if valid && is_shell {
+            // `:30805-30813` — the shell's `ai[0]` must name a live core (the
+            // port links the family by kind).
+            valid = npcs.iter().any(|n| n.kind == NpcKind::MartianSaucerCore);
+        }
+        if valid && is_core {
+            // `:30829-30832` — the core's phase: the ray lives only in the
+            // core's attack phase and in the second half of its 120-tick
+            // cycle.
+            valid = (owner.ai[3] % 120.0) >= 60.0 && owner.ai[0] == 2.0;
+        }
+        // `:30833-30835` — the owner's own phase gate (the shell's and the
+        // core's `ai[0]` must not be one of the three "no target" states).
+        if valid && (owner.ai[0] == 1.0 || owner.ai[0] == -1.0 || owner.ai[0] == -2.0) {
+            valid = false;
+        }
+        if !valid {
+            // `:30838-30841` — the ray dies.
+            self.kill();
+            return;
+        }
+        // `:30843` — the beam's top: the owner's centre + 46.
+        let (ow, oh) = owner.size();
+        let owner_center = Vec2::new(owner.x + ow * 0.5, owner.y + oh * 0.5);
+        let top = owner_center.y + 46.0;
+        // `:30844-30854` — the beam's bottom: the target player's feet. The
+        // C#'s target is the owner's own target (the core's, when the owner
+        // is the shell); the port's NPCs carry no target field and the local
+        // player is the only one.
+        let bottom = match player {
+            Some(p) if !p.dead => p.y + p.height,
+            _ => top,
+        };
+        let bottom_row = bottom / 16.0;
+        let tile_x = (owner_center.x as i32) / 16;
+        let tile_y = (top as i32) / 16;
+        // `:30856-30871` — the ground scan: the first solid row at or below
+        // the beam's start (the `+ 1` arm) or the first solid row under the
+        // player's feet (the walk, capped at 150 rows).
+        let mut len = 0i32;
+        if (tile_y as f32) >= bottom_row && solid_block(world, tile_x, tile_y) {
+            len = 1;
+        } else {
+            while len < 150 && tile_y + len < world.height as i32 {
+                let row = tile_y + len;
+                if (row as f32) >= bottom_row && solid_block(world, tile_x, row) {
+                    len -= 1;
+                    break;
+                }
+                len += 1;
+            }
+        }
+        // `:30872-30874` — the beam's placement: the owner's column, the top
+        // row, and the height the scan found.
+        self.pos.x = owner_center.x - self.w * 0.5;
+        self.pos.y = top;
+        self.h = (len + 1) as f32 * 16.0;
+        // `:30875-30878` — the last row's trim: the beam stops 2 px above a
+        // solid tile's edge.
+        let bottom_px = self.pos.y as i32 + self.h as i32;
+        if solid_block(world, tile_x, bottom_px / 16) {
+            self.h -= (bottom_px % 16) as f32 - 2.0;
+        }
+        // `:30882-30887` — the 4-frame loop (every fifth tick).
+        self.frame_counter += 1;
+        if self.frame_counter >= 5 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 4 {
+                self.frame = 0;
+            }
+        }
+        // `HandleMovement`: the ray's row keeps `tileCollide = false` and its
+        // velocity is zero, so the position stands.
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-80 block (`Projectile.cs:30911-31000`) — the Martian
+    /// Saucer's missile (448): the 20-tick arming delay, the target pick, the
+    /// 30-tick homing turn, the 180-tick life and the 42-px player contact.
+    ///
+    /// The dust (`:30920-30929`/`:30946-30956`/`:30963-30971`) is SKIPPED — no
+    /// dust layer.
+    fn ai_saucer_missile(&mut self, world: &World, player: Option<&crate::player::Player>) {
+        if self.ai[0] == 0.0 && self.ai[1] > 0.0 {
+            // `:30914` — the arming delay: the spawn passes `ai1 = 20f`
+            // (`NPC.cs:35845`), and the arm counts it down.
+            self.ai[1] -= 1.0;
+        } else if self.ai[0] == 0.0 && self.ai[1] == 0.0 {
+            // `:30916-30922` — the arming: the target pick (the C#'s
+            // `Player.FindClosest` — the port's local player is the only
+            // one) and the speed-up.
+            self.ai[0] = 1.0;
+            self.ai[1] = 0.0;
+            let speed = self.vel.length();
+            self.vel = safe_normalize(self.vel) * (speed + 4.0);
+        } else if self.ai[0] == 1.0 {
+            // `:30928-30953` — the flight.
+            self.tile_collide = true;
+            self.local_ai[1] += 1.0;
+            if self.local_ai[1] == 180.0 {
+                // `:30934-30937` — the life ends.
+                self.kill();
+                return;
+            }
+            if self.local_ai[1] >= 0.0 && self.local_ai[1] < 30.0 {
+                // `:30939-30951` — the homing turn: the angle to the target,
+                // wrapped to ±π, turned at 0.2 rad/tick.
+                if let Some(p) = player {
+                    let (pcx, pcy) = p.center();
+                    let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                    let to = Vec2::new(pcx - center.x, pcy - center.y);
+                    let mut delta = to.y.atan2(to.x) - self.vel.y.atan2(self.vel.x);
+                    if delta > std::f32::consts::PI {
+                        delta -= std::f32::consts::PI * 2.0;
+                    }
+                    if delta < -std::f32::consts::PI {
+                        delta += std::f32::consts::PI * 2.0;
+                    }
+                    self.vel = rotate(self.vel, delta * 0.2);
+                }
+            }
+        }
+        // `:30955` — the rotation: the flight's angle + π/2.
+        self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_2;
+        // `:30956-30962` — the 3-frame loop (every third tick).
+        self.frame_counter += 1;
+        if self.frame_counter >= 3 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 3 {
+                self.frame = 0;
+            }
+        }
+        // `:30973-30982` — the player contact: a living player within 42 px
+        // kills the missile.
+        if let Some(p) = player {
+            if !p.dead {
+                let (pcx, pcy) = p.center();
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                if center.distance(Vec2::new(pcx, pcy)) <= 42.0 {
+                    self.kill();
+                    return;
+                }
+            }
+        }
+        // `HandleMovement`: the row keeps `tileCollide = false` until the
+        // flight arm turns it on — then a blocked move kills the missile.
+        self.kill_step(world);
+    }
+
+    /// `Kill()` (`Projectile.cs:70644-70648`): the slot's death — `active`
+    /// off and `timeLeft` zeroed.
+    fn kill(&mut self) {
+        self.active = false;
+        self.time_left = 0;
+    }
+}
+
+/// `Main.tile[x, y].nactive() && Main.tileSolid[type] && !Main.tileSolidTop[type]`
+/// (`Projectile.cs:30847-30861`'s beam scan): the C#'s block test — the tile
+/// is set and in its active state, it is a full solid and it is not a
+/// platform (a `tileSolidTop` tile). Unlike [`full_solid`] it carries no
+/// slope or half-brick term; the `active()` term is the port's stand-in for
+/// the C#'s `nactive()` (an empty position reads as kind 0 = dirt, and only
+/// the active flag says it is not there).
+fn solid_block(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.active()
+            && !t.inactive()
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+    })
+}
+
+/// `AI_187_ShadowHand_GetVariation` (`Projectile.cs:42592-42634`) — the
+/// variation pick and the per-variation window: `(variation, fakeCounter,
+/// counterMax)`. The windows are 0-180 (variation 0), 180-300 (variation 1),
+/// 300-390 (variation 2) and 390-480 (variation 3); the counter is the age
+/// inside the window.
+///
+/// The C#'s variation-2 arm does not `return` (`:42624-42628`), so it falls
+/// through into the variation-3 test; the reduced counter can never reach the
+/// third window's range, so the fall-through changes nothing.
+fn shadow_hand_variation(age: f32) -> (i32, f32, f32) {
+    let mut num = 0.0f32;
+    let mut num2 = 180.0f32;
+    if age >= num && age < num2 {
+        return (0, age, num2);
+    }
+    num = num2;
+    num2 += 120.0;
+    if age >= num && age < num2 {
+        return (1, age - num, num2 - num);
+    }
+    num = num2;
+    num2 += 90.0;
+    if age >= num && age < num2 {
+        return (2, age - num, num2 - num);
+    }
+    num = num2;
+    num2 += 90.0;
+    if age >= num && age < num2 {
+        return (3, age - num, num2 - num);
+    }
+    (0, age, 180.0)
+}
+
+/// `Vector2.ToRotationVector2()` (XNA): the unit vector at the angle —
+/// `(cos, sin)`.
+fn rotation_vector(angle: f32) -> Vec2 {
+    let (s, c) = angle.sin_cos();
+    Vec2::new(c, s)
 }
 
 /// The followup kinds' frame-sliced draw quad ([`Projectile::frame_quad`]'s
@@ -9704,6 +10267,28 @@ impl ProjectilePool {
         Some(slot)
     }
 
+    /// The hostile shot with the C#'s `ai0`/`ai1` payload — `NewProjectile`'s
+    /// trailing arguments (`Projectile.cs:10862-10863`). The saucer pair
+    /// reads them: the deathray's `ai0` is its owner NPC's slot + 1
+    /// (`NPC.cs:35917`/`:36437`) and the missile's `ai1` is its 20-tick
+    /// arming delay (`NPC.cs:35845`).
+    pub fn spawn_hostile_ai(
+        &mut self,
+        kind: u16,
+        pos: Vec2,
+        vel: Vec2,
+        damage: i32,
+        knock_back: f32,
+        ai0: f32,
+        ai1: f32,
+    ) -> Option<usize> {
+        let slot = self.spawn_with_data_owned(
+            kind, 255, pos.x, pos.y, vel.x, vel.y, damage, knock_back, ai0, ai1,
+        )?;
+        self.slots[slot].friendly = false;
+        Some(slot)
+    }
+
     /// The hostile shot with the explicit `timeLeft` override — the
     /// AI_037 arm's `Main.projectile[num12].timeLeft = 300`
     /// (`NPC.cs:49891`).
@@ -10578,6 +11163,28 @@ impl ProjectilePool {
                         // window, the uniform re-pick (one rng draw) and the
                         // (v*29+d)/30 blend.
                         59 => self.slots[i].ai_spectre_wrath(&npcs[..], rng),
+                        // The aiStyle-79 Saucer deathray (`:30791-30910`):
+                        // the owner check and the beam that hangs from the
+                        // owner to the ground.
+                        79 => self.slots[i].ai_saucer_deathray(world, &npcs[..], player.as_deref()),
+                        // The aiStyle-80 Saucer missile (`:30911-31000`): the
+                        // arming delay, the homing turn and the contact.
+                        80 => self.slots[i].ai_saucer_missile(world, player.as_deref()),
+                        // The aiStyle-70 Flairon Bubble (`:30304-30354`): the
+                        // one-shot acquire scan, the homing blend, the
+                        // no-target fade and the scale roll.
+                        70 => self.slots[i].ai_flairon_bubble(world, &npcs[..], rng),
+                        // The aiStyle-133 Dark Mage raise marker
+                        // (`:36435-36453`): the opacity ramp and the kill.
+                        133 => self.slots[i].ai_dark_mage_raise(world),
+                        // The aiStyle-187 Insanity shadow (`:42502-42591`):
+                        // the four variation choreographies and the alpha
+                        // ramp.
+                        187 => self.slots[i].ai_insanity_shadow(world),
+                        // The aiStyle-189 Volcano / Cascade Explosion
+                        // (`:42264-42303`): the alpha flash, the scale ramp
+                        // and the five-frame life.
+                        189 => self.slots[i].ai_volcano(world),
                         // The aiStyle-71 Typhoon (`:30355-30454`): the lock,
                         // the turn, the accel and the full tile reflect.
                         71 => self.slots[i].ai_typhoon(world, &npcs[..]),
@@ -16096,6 +16703,7 @@ mod phasmal_projectile_tests {
             whip_use_animation: 0.0,
             scale: 1.0,
             alpha: 255,
+            opacity: 1.0,
             falling_tile: None,
             detonated: false,
             minion: false,
@@ -16332,6 +16940,7 @@ mod ritual_projectile_tests {
             whip_use_animation: 0.0,
             scale: 1.0,
             alpha: 255,
+            opacity: 1.0,
             falling_tile: None,
             detonated: false,
             minion: false,
@@ -16523,8 +17132,10 @@ mod widened_state_tests {
 
     /// Every kind the data table carries today — the Phase-1 baseline set.
     /// The magic rows arrive in Phase 2 and carry their own state, so the
-    /// sweep lives here rather than over `0..2048`.
-    const BASELINE_ROWS: [u16; 48] = [
+    /// sweep lives here rather than over `0..2048`. The rows whose C#
+    /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
+    /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
+    const BASELINE_ROWS: [u16; 46] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -16541,7 +17152,6 @@ mod widened_state_tests {
         SAUCER_LASER,
         SAUCER_SCRAP,
         DEERCLOPS_ICE_SPIKE,
-        SHADOW_HAND,
         BOMB_SKELETRON,
         MUSKET_BALL,
         TRAP_DART,
@@ -16569,7 +17179,6 @@ mod widened_state_tests {
         DD2_SPEAR,
         DD2_SPEAR_T3,
         DD2_BOMB,
-        DARK_MAGE_MARKER,
         DARK_MAGE_FLAME,
         BETSY_BREATH,
         BETSY_FIREBALL,
@@ -16663,6 +17272,13 @@ mod widened_state_tests {
         let frost = proj_data(FROST_BOLT).unwrap_or_else(|| panic!("the Frost Staff bolt lost its row"));
         assert_eq!(frost.alpha, 255, "`alpha = 255` (`:4497-4507`)");
         assert_eq!(frost.penetrate, 2);
+        // S1-D-4b-1: the shadow hand (`:9116-9126`) and the Dark Mage marker
+        // (`:7208-7219`) write `alpha = 255` in their `SetDefaults` arms, so
+        // they leave the reset sweep too.
+        let shadow = proj_data(SHADOW_HAND).unwrap_or_else(|| panic!("the shadow hand lost its row"));
+        assert_eq!(shadow.alpha, 255, "`alpha = 255` (`:9121`)");
+        let marker = proj_data(DARK_MAGE_MARKER).unwrap_or_else(|| panic!("the marker lost its row"));
+        assert_eq!(marker.alpha, 255, "`alpha = 255` (`:7213`)");
         assert!(
             proj_data(187).is_none(),
             "the flame jet stays a passthrough"
@@ -22357,5 +22973,545 @@ mod use_path_tests {
         n.max_hp = 40;
         n.hp = 40;
         n
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_1_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+
+    /// The empty world the arms read: the aiStyle-70 acquire scan walks the
+    /// tiles between the bubble and its target, and an empty world reads as
+    /// walkable (no solid tile blocks the line).
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 800)
+    }
+
+    /// A live, chaseable NPC at the given position.
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    /// S1-D-4b-1 — the aiStyle-70 Flairon Bubble (`Projectile.cs:30304-30354`):
+    /// the one-shot acquire scan picks the closest chaseable NPC inside 650 px
+    /// with a clear `Collision.CanHit` line, the held target steers the
+    /// bubble with the `(v * 40 + d * 12) / 41` blend, and with no target the
+    /// counter starts at −15 and the alpha falls 25/tick to its 50 floor.
+    #[test]
+    fn s1_d_4b_1_the_flairon_bubble_acquires_the_closest_npc_and_homes() {
+        let w = world();
+        // Two chaseable NPCs: the scan keeps the *closest* one, not the first.
+        let near = npc_at(NpcKind::Zombie, 260.0, 100.0);
+        let far = npc_at(NpcKind::Zombie, 700.0, 100.0);
+        let npcs = vec![far, near];
+        let mut p = Projectile {
+            active: true,
+            kind: FLAIRON_BUBBLE,
+            pos: Vec2::new(100.0, 93.0),
+            w: 14.0,
+            h: 14.0,
+            alpha: 255,
+            time_left: 120,
+            ..Default::default()
+        };
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(1234);
+        p.ai_flairon_bubble(&w, &npcs, &mut rng);
+        // `ai[0] = index + 1` — the near NPC is the second entry.
+        assert_eq!(p.ai[0], 2.0, "the scan commits the closest target");
+        // The scale roll: `Next(80, 121) / 100f`.
+        assert!(
+            (0.80..=1.21).contains(&p.scale),
+            "the scale roll lands in the C#'s band ({})",
+            p.scale
+        );
+        assert_eq!(p.scale, p.ai[1]);
+        // The held target steers the bubble: the velocity points at the NPC
+        // (the near one is to the right).
+        assert!(
+            p.vel.x > 0.0,
+            "the bubble turns toward the target ({:?})",
+            p.vel
+        );
+        // The homing keeps pulling right on the next ticks.
+        let before = p.vel.x;
+        p.ai_flairon_bubble(&w, &npcs, &mut rng);
+        assert!(p.vel.x > before, "the homing blend keeps the pull");
+        // With no target the counter starts at −15 and the alpha falls.
+        let mut q = Projectile {
+            active: true,
+            kind: FLAIRON_BUBBLE,
+            pos: Vec2::new(100.0, 93.0),
+            w: 14.0,
+            h: 14.0,
+            alpha: 255,
+            time_left: 120,
+            ..Default::default()
+        };
+        q.ai_flairon_bubble(&w, &[], &mut rng);
+        assert_eq!(q.ai[0], -15.0, "no target: the counter starts at −15");
+        assert_eq!(q.alpha, 255, "the fade arm runs on the next tick");
+        q.ai_flairon_bubble(&w, &[], &mut rng);
+        assert_eq!(q.ai[0], -14.0, "the fade counts back up");
+        assert_eq!(q.alpha, 230, "the alpha falls 25 per tick");
+    }
+
+    /// S1-D-4b-1 — the aiStyle-133 Dark Mage raise marker
+    /// (`Projectile.cs:36435-36453`): the opacity ramps 0 → 1 over the first
+    /// 20 ticks, holds at 1 until the 60th, then falls back to 0 by the 80th,
+    /// where the marker dies.
+    #[test]
+    fn s1_d_4b_1_the_dark_mage_marker_ramps_its_opacity_and_dies() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: DARK_MAGE_MARKER,
+            w: 10.0,
+            h: 10.0,
+            alpha: 255,
+            time_left: 900,
+            ..Default::default()
+        };
+        // Tick 1: `ai[0] = 1` → the opacity is 1/20.
+        p.ai_dark_mage_raise(&w);
+        assert_eq!(p.ai[0], 1.0);
+        assert!(
+            (p.opacity - 0.05).abs() < 1e-6,
+            "the ramp opens ({})",
+            p.opacity
+        );
+        // Tick 20: `ai[0] = 20` → the opacity is 1.
+        for _ in 0..19 {
+            p.ai_dark_mage_raise(&w);
+        }
+        assert_eq!(p.ai[0], 20.0);
+        assert!((p.opacity - 1.0).abs() < 1e-6, "the ramp is open");
+        // Tick 60: the opacity holds at 1.
+        for _ in 0..40 {
+            p.ai_dark_mage_raise(&w);
+        }
+        assert_eq!(p.ai[0], 60.0);
+        assert!((p.opacity - 1.0).abs() < 1e-6, "the ramp holds");
+        // Tick 70: the descending range has fallen to 0.5.
+        for _ in 0..10 {
+            p.ai_dark_mage_raise(&w);
+        }
+        assert_eq!(p.ai[0], 70.0);
+        assert!(
+            (p.opacity - 0.5).abs() < 1e-6,
+            "the ramp closes ({})",
+            p.opacity
+        );
+        // Tick 80: the marker dies.
+        for _ in 0..10 {
+            p.ai_dark_mage_raise(&w);
+        }
+        assert_eq!(p.ai[0], 80.0);
+        assert!(!p.active, "the marker dies at the 80th tick");
+        assert_eq!(p.opacity, 0.0, "the dying tick lands on 0");
+    }
+
+    /// S1-D-4b-1 — the aiStyle-187 Insanity shadow
+    /// (`Projectile.cs:42502-42634`): the four variation windows (180/120/90/90
+    /// ticks), the alpha ramp (+25 over the last 15 ticks of a window, −25
+    /// before it, floored at 50) and the kill on the window's last tick.
+    #[test]
+    fn s1_d_4b_1_the_insanity_shadow_runs_its_four_variations() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: SHADOW_HAND,
+            w: 40.0,
+            h: 40.0,
+            alpha: 255,
+            time_left: 300,
+            vel: Vec2::new(4.0, 0.0),
+            ..Default::default()
+        };
+        // The variation windows: 0-180, 180-300, 300-390, 390-480.
+        assert_eq!(shadow_hand_variation(0.0), (0, 0.0, 180.0));
+        assert_eq!(shadow_hand_variation(179.0), (0, 179.0, 180.0));
+        assert_eq!(shadow_hand_variation(180.0), (1, 0.0, 120.0));
+        assert_eq!(shadow_hand_variation(299.0), (1, 119.0, 120.0));
+        assert_eq!(shadow_hand_variation(300.0), (2, 0.0, 90.0));
+        assert_eq!(shadow_hand_variation(389.0), (2, 89.0, 90.0));
+        assert_eq!(shadow_hand_variation(390.0), (3, 0.0, 90.0));
+        assert_eq!(shadow_hand_variation(479.0), (3, 89.0, 90.0));
+        // Tick 1 of variation 0: the drift decays the velocity 2%.
+        p.ai_insanity_shadow(&w);
+        assert!(
+            (p.vel.x - 3.92).abs() < 1e-4,
+            "the drift decays ({})",
+            p.vel.x
+        );
+        assert_eq!(p.ai[0], 1.0, "the age counter advances");
+        assert_eq!(p.alpha, 230, "the alpha falls 25 per tick");
+        // The variation-0 window ends on its last tick: the C#'s kill arm is
+        // `fakeCounter >= counterMax - 1f` (`:42529`), so the shadow dies at
+        // the window's 179th tick (the window runs to 180).
+        p.ai[0] = 179.0;
+        p.ai_insanity_shadow(&w);
+        assert!(!p.active, "the window's last tick kills the shadow");
+        // The alpha floor is 50.
+        let mut q = Projectile {
+            active: true,
+            kind: SHADOW_HAND,
+            w: 40.0,
+            h: 40.0,
+            alpha: 60,
+            time_left: 300,
+            ..Default::default()
+        };
+        q.ai_insanity_shadow(&w);
+        assert_eq!(q.alpha, 50, "the alpha floor holds at 50");
+    }
+
+    /// S1-D-4b-1 — the aiStyle-189 Volcano / Cascade Explosion
+    /// (`Projectile.cs:42264-42303`): the alpha flash (the two remaps open and
+    /// close the window), the scale and the five-frame life (the frame
+    /// advances every second tick, the fifth frame kills).
+    #[test]
+    fn s1_d_4b_1_the_volcano_flashes_and_dies_in_five_frames() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: CASCADE_EXPLOSION,
+            w: 32.0,
+            h: 32.0,
+            alpha: 255,
+            time_left: 300,
+            ai: [0.0, 1.5, 0.0, 0.0],
+            ..Default::default()
+        };
+        // Tick 1: the alpha is the remap pair at `ai[0] = 0` → 255.
+        p.ai_volcano(&w);
+        assert_eq!(p.alpha, 255);
+        assert_eq!(
+            p.scale, 1.5,
+            "the Cascade Explosion takes its scale from ai[1]"
+        );
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(p.frame_counter, 1);
+        // Tick 2: the frame advances (the frame counter wraps at 2).
+        p.ai_volcano(&w);
+        assert_eq!(p.frame, 1);
+        assert_eq!(p.frame_counter, 0);
+        // The alpha dips to 0 in the middle of the window: at `ai[0] = 2` the
+        // first remap is 1 and the second is still 1.
+        let mut q = Projectile {
+            active: true,
+            kind: CASCADE_EXPLOSION,
+            w: 32.0,
+            h: 32.0,
+            alpha: 255,
+            time_left: 300,
+            ai: [2.0, 1.0, 0.0, 0.0],
+            ..Default::default()
+        };
+        q.ai_volcano(&w);
+        assert_eq!(q.alpha, 0, "the flash bottoms out mid-window");
+        // The fifth frame kills: the frame advances every second tick, so the
+        // kill lands on the explosion's 10th tick — two of them already ran
+        // above, so the loop sees eight.
+        let mut ticks = 0;
+        while p.active && ticks < 40 {
+            p.ai_volcano(&w);
+            ticks += 1;
+        }
+        assert!(!p.active, "the explosion dies on its fifth frame");
+        assert_eq!(
+            ticks, 8,
+            "the fifth frame lands on the tenth tick ({ticks})"
+        );
+    }
+
+    /// S1-D-4b-1 — the four rows' `SetDefaults` slice: the `alpha = 255` the
+    /// C# writes on each kind (the port's rows dropped it), the Cascade
+    /// Explosion's local-immunity pair and the boxes.
+    #[test]
+    fn s1_d_4b_1_the_four_rows_carry_the_csharp_set_defaults() {
+        let bubble = proj_data(FLAIRON_BUBBLE).expect("the row exists");
+        assert_eq!((bubble.w, bubble.h), (14.0, 14.0));
+        assert_eq!(bubble.ai_style, 70);
+        assert_eq!(bubble.penetrate, 1);
+        assert_eq!(bubble.time_left, 120);
+        assert_eq!(bubble.alpha, 255, "the C#'s alpha = 255");
+        let marker = proj_data(DARK_MAGE_MARKER).expect("the row exists");
+        assert_eq!((marker.w, marker.h), (10.0, 10.0));
+        assert_eq!(marker.ai_style, 133);
+        assert_eq!(marker.time_left, 900);
+        assert_eq!(marker.alpha, 255);
+        let shadow = proj_data(SHADOW_HAND).expect("the row exists");
+        assert_eq!((shadow.w, shadow.h), (40.0, 40.0));
+        assert_eq!(shadow.ai_style, 187);
+        assert_eq!(shadow.time_left, 300);
+        assert_eq!(shadow.alpha, 255);
+        let blast = proj_data(CASCADE_EXPLOSION).expect("the row exists");
+        assert_eq!((blast.w, blast.h), (32.0, 32.0));
+        assert_eq!(blast.ai_style, 189);
+        assert_eq!(blast.penetrate, 4);
+        assert_eq!(blast.alpha, 255);
+        assert!(blast.uses_local_immunity);
+        assert_eq!(blast.local_hit_cooldown, -1);
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_4_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down, so the deathray's
+    /// beam scan finds a floor.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn saucer(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 0, 0.0);
+        n.max_hp = 10000;
+        n.hp = 10000;
+        n
+    }
+
+    /// S1-D-4b-4 — the aiStyle-80 Saucer missile
+    /// (`Projectile.cs:30911-31000`): the 20-tick arming delay (the spawn's
+    /// `ai1 = 20f`), the arming tick (the target pick + the speed-up), the
+    /// 30-tick homing turn, the 180-tick life and the 42-px player contact.
+    #[test]
+    fn s1_d_4b_4_the_saucer_missile_arms_after_twenty_ticks_and_homes() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: SAUCER_MISSILE,
+            pos: Vec2::new(100.0, 100.0),
+            vel: Vec2::new(8.0, 0.0),
+            ai: [0.0, 20.0, 0.0, 0.0],
+            w: 14.0,
+            h: 14.0,
+            time_left: 300,
+            ..Default::default()
+        };
+        // The 20-tick arming delay: `ai[1]` counts down and `ai[0]` stays 0.
+        for _ in 0..20 {
+            p.ai_saucer_missile(&w, None);
+            assert_eq!(p.ai[0], 0.0, "the missile stays unarmed during the delay");
+        }
+        assert_eq!(p.ai[1], 0.0, "the delay ends on the 20th tick");
+        // The arming tick: the flight state, the target (the local player)
+        // and the speed-up (`Normalize(velocity) * (speed + 4f)`).
+        p.ai_saucer_missile(&w, None);
+        assert_eq!(p.ai[0], 1.0, "the missile arms");
+        assert!(
+            (p.vel.length() - 12.0).abs() < 1e-3,
+            "the speed-up ({:?})",
+            p.vel
+        );
+        assert!(p.tile_collide, "the flight arm turns the tile collision on");
+        // The rotation: the flight's angle + π/2.
+        let expected = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
+        assert!(
+            (p.rot - expected).abs() < 1e-5,
+            "the rotation rides the velocity"
+        );
+        // The homing: a player above the missile turns the flight up.
+        let mut player = Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 20.0;
+        p.ai_saucer_missile(&w, Some(&player));
+        // The player sits above the missile, so the turn points up (the
+        // screen's -Y).
+        assert!(
+            p.vel.y < 0.0,
+            "the missile turns toward the player ({:?})",
+            p.vel
+        );
+        // The life: the flight counter reaches 180 and the missile dies.
+        let mut ticks = 0;
+        while p.active && ticks < 400 {
+            p.ai_saucer_missile(&w, Some(&player));
+            ticks += 1;
+        }
+        assert!(!p.active, "the missile dies at its 180-tick life end");
+        assert!(ticks < 200, "the life is 180 ticks ({ticks})");
+    }
+
+    /// S1-D-4b-4 — the aiStyle-80 missile's player contact: a living player
+    /// within 42 px kills it (`Projectile.cs:30973-30982`).
+    #[test]
+    fn s1_d_4b_4_the_saucer_missile_dies_on_the_player_contact() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 100.0;
+        let mut p = Projectile {
+            active: true,
+            kind: SAUCER_MISSILE,
+            pos: Vec2::new(100.0, 100.0),
+            vel: Vec2::new(0.0, 0.0),
+            ai: [0.0, 0.0, 0.0, 0.0],
+            w: 14.0,
+            h: 14.0,
+            ..Default::default()
+        };
+        p.ai_saucer_missile(&w, Some(&player));
+        assert!(!p.active, "the contact kills the missile");
+    }
+
+    /// S1-D-4b-4 — the aiStyle-79 Saucer deathray
+    /// (`Projectile.cs:30791-30910`): the ray hangs from its owner NPC — the
+    /// owner's column, the top at the owner's centre + 46 — down to the
+    /// ground, and the owner's state gates the ray's life.
+    #[test]
+    fn s1_d_4b_4_the_saucer_deathray_hangs_from_its_owner() {
+        let w = world();
+        // The owner: the shell (392) at (100, 50); its box is 150x80, so the
+        // centre is (175, 90) and the beam's top is 136.
+        let owner = saucer(NpcKind::MartianSaucer, 100.0, 50.0);
+        let npcs = vec![owner];
+        let mut p = Projectile {
+            active: true,
+            kind: SAUCER_DEATHRAY,
+            w: 30.0,
+            h: 30.0,
+            // The row keeps `tileCollide = false` (`Projectile.cs:5188-5197`)
+            // — the beam hangs inside the ground without colliding.
+            tile_collide: false,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            time_left: 240,
+            ..Default::default()
+        };
+        // Without a core the shell's ray dies (the C#'s `num594` gate).
+        p.ai_saucer_deathray(&w, &npcs, None);
+        assert!(!p.active, "the shell's ray needs a live core");
+        // With the core the ray hangs from the owner.
+        let mut core = saucer(NpcKind::MartianSaucerCore, 100.0, 50.0);
+        core.ai[0] = 2.0;
+        core.ai[3] = 60.0;
+        let npcs = vec![npcs[0].clone(), core];
+        let mut p = Projectile {
+            active: true,
+            kind: SAUCER_DEATHRAY,
+            w: 30.0,
+            h: 30.0,
+            // The row keeps `tileCollide = false` (`Projectile.cs:5188-5197`)
+            // — the beam hangs inside the ground without colliding.
+            tile_collide: false,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            time_left: 240,
+            ..Default::default()
+        };
+        p.ai_saucer_deathray(&w, &npcs, None);
+        assert!(p.active, "the ray lives with a core");
+        assert_eq!(p.pos.x, 175.0 - 15.0, "the beam sits on the owner's column");
+        assert_eq!(
+            p.pos.y,
+            90.0 + 46.0,
+            "the beam starts at the owner's centre + 46"
+        );
+        // The ground scan: the solid row 30 is the floor, so the beam's
+        // height runs from its top row (8) down to the floor.
+        // The scan runs from the beam's top row (8) down to the floor row
+        // (30) and the last row's trim takes the beam's bottom 6 px off the
+        // raw count — it ends inside the floor's row, just above the tile's
+        // edge.
+        let bottom = p.pos.y + p.h;
+        assert!(p.h > 0.0, "the beam has a height ({})", p.h);
+        assert!(
+            bottom >= 30.0 * 16.0 && bottom < 31.0 * 16.0,
+            "the beam reaches the ground row ({bottom})"
+        );
+        // The 4-frame loop: every fifth tick (the arm already ran once
+        // above, so the counter stands at 1).
+        for _ in 0..3 {
+            p.ai_saucer_deathray(&w, &npcs, None);
+        }
+        assert_eq!(p.frame, 0, "the frame waits for the fifth tick");
+        assert_eq!(p.frame_counter, 4);
+        p.ai_saucer_deathray(&w, &npcs, None);
+        assert_eq!(p.frame, 1, "the frame advances every fifth tick");
+        assert_eq!(p.frame_counter, 0);
+    }
+
+    /// S1-D-4b-4 — the aiStyle-79 deathray's owner gates: the core's phase
+    /// (`ai[3] % 120 >= 60` and `ai[0] == 2`) and the owner's own
+    /// `ai[0] ∉ {1, -1, -2}` (`Projectile.cs:30805-30837`).
+    #[test]
+    fn s1_d_4b_4_the_saucer_deathray_dies_without_a_valid_owner_phase() {
+        let w = world();
+        let mut core = saucer(NpcKind::MartianSaucerCore, 100.0, 50.0);
+        core.ai[0] = 2.0;
+        core.ai[3] = 10.0; // the first half of the cycle
+        let npcs = vec![core];
+        let mut p = Projectile {
+            active: true,
+            kind: SAUCER_DEATHRAY,
+            w: 30.0,
+            h: 30.0,
+            // The row keeps `tileCollide = false` (`Projectile.cs:5188-5197`)
+            // — the beam hangs inside the ground without colliding.
+            tile_collide: false,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            time_left: 240,
+            ..Default::default()
+        };
+        p.ai_saucer_deathray(&w, &npcs, None);
+        assert!(!p.active, "the core's phase gate kills the ray");
+        // The core in its attack phase keeps the ray alive.
+        let mut core = saucer(NpcKind::MartianSaucerCore, 100.0, 50.0);
+        core.ai[0] = 2.0;
+        core.ai[3] = 90.0;
+        let npcs = vec![core];
+        let mut p = Projectile {
+            active: true,
+            kind: SAUCER_DEATHRAY,
+            w: 30.0,
+            h: 30.0,
+            // The row keeps `tileCollide = false` (`Projectile.cs:5188-5197`)
+            // — the beam hangs inside the ground without colliding.
+            tile_collide: false,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            time_left: 240,
+            ..Default::default()
+        };
+        p.ai_saucer_deathray(&w, &npcs, None);
+        assert!(p.active, "the core's attack phase keeps the ray");
+        // The owner's "no target" states kill the ray.
+        let mut core = saucer(NpcKind::MartianSaucerCore, 100.0, 50.0);
+        core.ai[0] = -1.0;
+        core.ai[3] = 90.0;
+        let npcs = vec![core];
+        let mut p = Projectile {
+            active: true,
+            kind: SAUCER_DEATHRAY,
+            w: 30.0,
+            h: 30.0,
+            // The row keeps `tileCollide = false` (`Projectile.cs:5188-5197`)
+            // — the beam hangs inside the ground without colliding.
+            tile_collide: false,
+            ai: [1.0, 0.0, 0.0, 0.0],
+            time_left: 240,
+            ..Default::default()
+        };
+        p.ai_saucer_deathray(&w, &npcs, None);
+        assert!(!p.active, "the owner's no-target state kills the ray");
     }
 }

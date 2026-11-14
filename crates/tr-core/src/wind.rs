@@ -83,6 +83,10 @@ pub struct Wind {
     /// sticky storm flag; the Lost Kite's speed and frame rate read it
     /// (`AmbientSky.cs:259-271`).
     pub storming: bool,
+    /// `TileDrawing._windGrid` (`TileDrawing.cs:114`, S1-G-8): the player-
+    /// moved gust grid the push family reads. The `Update` chain rides the
+    /// frame's sway-counter pass (`TileDrawing.cs:377-378`).
+    pub wind_grid: WindGrid,
 }
 
 impl Wind {
@@ -109,6 +113,7 @@ impl Wind {
             frozen: false,
             happy_windy_day: false,
             storming: false,
+            wind_grid: WindGrid::new(),
         }
     }
 
@@ -399,6 +404,333 @@ fn get_lerp_value(from: f32, to: f32, t: f32, clamped: bool) -> f32 {
         }
     }
     (t - from) / (to - from)
+}
+
+/// One `WindGrid.WindCoord` (`WindGrid.cs:8-15`): the tick the cell was last
+/// disturbed and the movement direction that disturbed it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WindCoord {
+    time: i32,
+    direction_x: i32,
+    direction_y: i32,
+}
+
+/// One `GetWindTime` result (`WindGrid.cs:41-54`): the ticks left in the
+/// push window and the recorded direction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WindTime {
+    pub time_left: i32,
+    pub direction_x: i32,
+    pub direction_y: i32,
+}
+
+/// `Terraria.GameContent.Drawing.WindGrid` (`WindGrid.cs:6-102`, S1-G-8):
+/// the player-moved gust grid. Players walking through tiles stamp
+/// `(tick, direction)` cells; the draw passes sample them through
+/// `GetWindTime` and convert the decay into the sway push. The lookup wraps
+/// the grid modulo its size (`:43`), so a cell read always lands — the grid
+/// only has to cover the screen for the stamps to be coherent
+/// (`TileDrawing.cs:7773-7778`'s `SetSize(lastTileX - firstTileX, ...)`).
+#[derive(Clone, Debug)]
+pub struct WindGrid {
+    grid: Vec<WindCoord>,
+    /// The allocated backing dims (`_grid.GetLength(0/1)`, `WindGrid.cs:58`).
+    alloc_width: usize,
+    alloc_height: usize,
+    width: usize,
+    height: usize,
+    game_time: i32,
+}
+
+impl Default for WindGrid {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WindGrid {
+    /// `WindGrid.cs:17-23`: the 1×1 starting grid.
+    pub fn new() -> Self {
+        Self {
+            grid: vec![WindCoord::default(); 1],
+            alloc_width: 1,
+            alloc_height: 1,
+            width: 1,
+            height: 1,
+            game_time: 0,
+        }
+    }
+
+    /// `WindGrid.SetSize` (`WindGrid.cs:25-30`): the dimensions only grow;
+    /// `ResizeGrid` (`:56-62`) reallocates — zeroing every stamped cell —
+    /// when either dimension outgrew the backing array.
+    pub fn set_size(&mut self, target_width: i32, target_height: i32) {
+        self.width = self.width.max(target_width.max(1) as usize);
+        self.height = self.height.max(target_height.max(1) as usize);
+        if self.width > self.alloc_width || self.height > self.alloc_height {
+            self.alloc_width = self.width;
+            self.alloc_height = self.height;
+            self.grid = vec![WindCoord::default(); self.width * self.height];
+        }
+    }
+
+    /// `WindGrid.Update` (`WindGrid.cs:32-39`): the clock ticks every
+    /// `TileDrawing.Update`; `ScanPlayers` rides the caller (it needs the
+    /// world, the player and the camera — see [`Wind::scan_player`]).
+    pub fn update(&mut self) {
+        self.game_time += 1;
+    }
+
+    /// `WindGrid.GetWindTime` (`WindGrid.cs:41-54`): the modulo lookup, and
+    /// the window is expired when `coord.Time + threshold < gameTime` —
+    /// otherwise the ticks since the stamp are the time left.
+    pub fn get_wind_time(&self, tile_x: i32, tile_y: i32, time_threshold: i32) -> WindTime {
+        let coord = self.grid
+            [(tile_x.rem_euclid(self.width as i32) * self.height as i32
+                + tile_y.rem_euclid(self.height as i32)) as usize];
+        let time_left = if coord.time + time_threshold < self.game_time {
+            0
+        } else {
+            self.game_time - coord.time
+        };
+        WindTime {
+            time_left,
+            direction_x: coord.direction_x,
+            direction_y: coord.direction_y,
+        }
+    }
+
+    /// `WindGrid.SetWindTime` (`WindGrid.cs:64-71`).
+    pub fn set_wind_time(&mut self, tile_x: i32, tile_y: i32, direction_x: i32, direction_y: i32) {
+        let idx = (tile_x.rem_euclid(self.width as i32) * self.height as i32
+            + tile_y.rem_euclid(self.height as i32)) as usize;
+        self.grid[idx] = WindCoord {
+            time: self.game_time,
+            direction_x,
+            direction_y,
+        };
+    }
+}
+
+/// `Collision.GetTilesIn` (`Collision.cs:4350-4372`): every tile the pixel
+/// rect overlaps, clamped to `maxTilesX - 1` / `maxTilesY - 40` — the
+/// `Main.tile[i, j] != null` filter is the port's in-bounds check.
+pub fn get_tiles_in(
+    world: &World,
+    top_left: (f32, f32),
+    bottom_right: (f32, f32),
+) -> Vec<(i32, i32)> {
+    // `Vector2.ToTileCoordinates()` — the int cast truncates toward zero.
+    let px = top_left.0 as i32 / 16;
+    let py = top_left.1 as i32 / 16;
+    let px2 = bottom_right.0 as i32 / 16;
+    let py2 = bottom_right.1 as i32 / 16;
+    let max_x = world.width - 1;
+    let max_y = world.height - 40;
+    let x0 = px.clamp(0, max_x);
+    let y0 = py.clamp(0, max_y);
+    let x1 = px2.clamp(0, max_x);
+    let y1 = py2.clamp(0, max_y);
+    let mut tiles = Vec::new();
+    for i in x0..=x1 {
+        for j in y0..=y1 {
+            if world.tile(i, j).is_some() {
+                tiles.push((i, j));
+            }
+        }
+    }
+    tiles
+}
+
+impl Wind {
+    /// `WindGrid.ScanPlayer` (`WindGrid.cs:88-101`, S1-G-8): the player's
+    /// movement direction stamps every tile their hitbox overlaps. The
+    /// gates — `!active || dead || velocity == 0 || !cameraRect.Intersects
+    /// (hitbox) || velocity.HasNaNs()` — ride the caller's inputs: the
+    /// hitbox in world pixels (`TopLeft`/`BottomRight`), the velocity and
+    /// the camera rect (`CenteredRectangle(Camera.Center,
+    /// Camera.UnscaledSize)`). The C# scans `Main.myPlayer` in single-player
+    /// and all 255 slots on a client (`:75-86`); the port's roster is the
+    /// one local player.
+    pub fn scan_player(
+        &mut self,
+        world: &World,
+        top_left_px: (f32, f32),
+        bottom_right_px: (f32, f32),
+        velocity: (f32, f32),
+        camera_center: (f32, f32),
+        camera_size: (f32, f32),
+    ) {
+        let (vx, vy) = velocity;
+        if vx == 0.0 && vy == 0.0 || vx.is_nan() || vy.is_nan() {
+            return;
+        }
+        // `Utils.CenteredRectangle(center, size).Intersects(hitbox)`: the
+        // two rects overlap on both axes.
+        let cam_left = camera_center.0 - camera_size.0 * 0.5;
+        let cam_right = camera_center.0 + camera_size.0 * 0.5;
+        let cam_top = camera_center.1 - camera_size.1 * 0.5;
+        let cam_bottom = camera_center.1 + camera_size.1 * 0.5;
+        if bottom_right_px.0 <= cam_left
+            || top_left_px.0 >= cam_right
+            || bottom_right_px.1 <= cam_top
+            || top_left_px.1 >= cam_bottom
+        {
+            return;
+        }
+        let direction_x = vx.signum() as i32;
+        let direction_y = vy.signum() as i32;
+        for (x, y) in get_tiles_in(world, top_left_px, bottom_right_px) {
+            self.wind_grid.set_wind_time(x, y, direction_x, direction_y);
+        }
+    }
+
+    /// `TileDrawing.GetWindGridPush` (`TileDrawing.cs:8554-8563`): the
+    /// triangle push over the `pushAnimationTimeTotal` window — the rise in
+    /// the second half, the fall in the first, signed by the recorded
+    /// direction.
+    pub fn get_wind_grid_push(
+        &self,
+        i: i32,
+        j: i32,
+        push_animation_time_total: i32,
+        push_force_per_frame: f32,
+    ) -> f32 {
+        let wind = self
+            .wind_grid
+            .get_wind_time(i, j, push_animation_time_total);
+        if wind.time_left >= push_animation_time_total / 2 {
+            (push_animation_time_total - wind.time_left) as f32
+                * push_force_per_frame
+                * wind.direction_x as f32
+        } else {
+            wind.time_left as f32 * push_force_per_frame * wind.direction_x as f32
+        }
+    }
+
+    /// `TileDrawing.GetWindGridPush2Axis` (`TileDrawing.cs:8565-8578`): the
+    /// same triangle on both axes.
+    pub fn get_wind_grid_push_2axis(
+        &self,
+        i: i32,
+        j: i32,
+        push_animation_time_total: i32,
+        push_force_per_frame: f32,
+    ) -> (f32, f32) {
+        let wind = self
+            .wind_grid
+            .get_wind_time(i, j, push_animation_time_total);
+        let (t, dx, dy) = (
+            wind.time_left as f32,
+            wind.direction_x as f32,
+            wind.direction_y as f32,
+        );
+        if wind.time_left >= push_animation_time_total / 2 {
+            let push = (push_animation_time_total - wind.time_left) as f32 * push_force_per_frame;
+            (push * dx, push * dy)
+        } else {
+            (t * push_force_per_frame * dx, t * push_force_per_frame * dy)
+        }
+    }
+
+    /// `TileDrawing.GetWindGridPushComplex` (`TileDrawing.cs:8580-8607`):
+    /// the `loops` saw-tooth push over one window, optionally flipping the
+    /// direction every other loop.
+    pub fn get_wind_grid_push_complex(
+        &self,
+        i: i32,
+        j: i32,
+        push_animation_time_total: i32,
+        total_push_force: f32,
+        loops: i32,
+        flip_direction_per_loop: bool,
+    ) -> f32 {
+        let wind = self
+            .wind_grid
+            .get_wind_time(i, j, push_animation_time_total);
+        let num = wind.time_left as f32 / push_animation_time_total as f32;
+        let num2 = (num * loops as f32) as i32;
+        let num3 = num * loops as f32 % 1.0;
+        let mut direction_x = wind.direction_x;
+        if flip_direction_per_loop && num2 % 2 == 1 {
+            direction_x *= -1;
+        }
+        if num * loops as f32 % 1.0 > 0.5 {
+            (1.0 - num3) * total_push_force * direction_x as f32 * (loops - num2) as f32
+        } else {
+            num3 * total_push_force * direction_x as f32 * (loops - num2) as f32
+        }
+    }
+
+    /// `TileDrawing.GetAverageWindGridPush` (`TileDrawing.cs:9195-9215`):
+    /// the mean non-zero push over the rect.
+    pub fn get_average_wind_grid_push(
+        &self,
+        top_left_x: i32,
+        top_left_y: i32,
+        size_x: i32,
+        size_y: i32,
+        total_push_time: i32,
+        push_force_per_frame: f32,
+    ) -> f32 {
+        let mut num = 0.0;
+        let mut num2 = 0;
+        for i in 0..size_x {
+            for j in 0..size_y {
+                let push =
+                    self.get_wind_grid_push(top_left_x + i, top_left_y + j, total_push_time, push_force_per_frame);
+                if push != 0.0 {
+                    num += push;
+                    num2 += 1;
+                }
+            }
+        }
+        if num2 == 0 {
+            return 0.0;
+        }
+        num / num2 as f32
+    }
+
+    /// `TileDrawing.GetHighestWindGridPushComplex` (`TileDrawing.cs:9218-9233`):
+    /// the push of the cell with the smallest non-zero `timeLeft` — sampled
+    /// at the rect's x centre (the C#'s own `for i in 0..1` quirk, `:9225`)
+    /// over `sizeY` rows.
+    pub fn get_highest_wind_grid_push_complex(
+        &self,
+        top_left_x: i32,
+        top_left_y: i32,
+        size_x: i32,
+        size_y: i32,
+        total_push_time: i32,
+        push_force_per_frame: f32,
+        loops: i32,
+        swap_loop_dir: bool,
+    ) -> f32 {
+        let mut result = 0.0;
+        let mut num = i32::MAX;
+        for i in 0..1 {
+            for j in 0..size_y {
+                let wind = self.wind_grid.get_wind_time(
+                    top_left_x + i + size_x / 2,
+                    top_left_y + j,
+                    total_push_time,
+                );
+                let push_complex = self.get_wind_grid_push_complex(
+                    top_left_x + i,
+                    top_left_y + j,
+                    total_push_time,
+                    push_force_per_frame,
+                    loops,
+                    swap_loop_dir,
+                );
+                if wind.time_left < num && wind.time_left != 0 {
+                    result = push_complex;
+                    num = wind.time_left;
+                }
+            }
+        }
+        result
+    }
 }
 
 #[cfg(test)]
@@ -779,7 +1111,7 @@ pub fn advance_vine_counter(counter: &mut f32, wind_speed: f32) {
 
 #[cfg(test)]
 mod set_tests {
-    use super::SWAYS_IN_WIND_BASIC;
+    use super::*;
     use crate::wind::leaf_frequency;
 
     #[test]
@@ -804,6 +1136,148 @@ mod set_tests {
         assert_eq!(leaf_frequency(0.5), 200 * 7);
         assert_eq!(leaf_frequency(1.05), 20 * 7);
         assert_eq!(leaf_frequency(1.5), 10 * 7);
+    }
+
+    /// S1-G-8's gust sequence test (`TileDrawing.cs:8554-8563` +
+    /// `WindGrid.cs:41-71`): a right-moving player stamps `(5, 5)` with
+    /// direction `(+1, 0)`; the 20-tick 0.35 push is the rise/fall triangle
+    /// — the fall half peaks at the window's midpoint and expires at 0.
+    #[test]
+    fn the_gust_push_triangle_rises_and_falls_over_its_window() {
+        let mut wind = Wind::new(1);
+        wind.wind_grid.set_size(64, 64);
+        for _ in 0..100 {
+            wind.wind_grid.update();
+        }
+        wind.wind_grid.set_wind_time(5, 5, 1, 0);
+        // Tick 101: time_left 1 — the rise half (`1 < 20/2`).
+        wind.wind_grid.update();
+        assert_eq!(wind.wind_grid.get_wind_time(5, 5, 20).time_left, 1);
+        assert!((wind.get_wind_grid_push(5, 5, 20, 0.35) - 0.35).abs() < 1e-6);
+        // Tick 110: the peak (`10 >= 10` → `(20-10) * 0.35`).
+        for _ in 0..9 {
+            wind.wind_grid.update();
+        }
+        assert!((wind.get_wind_grid_push(5, 5, 20, 0.35) - 3.5).abs() < 1e-5);
+        // Tick 115: the fall half.
+        for _ in 0..5 {
+            wind.wind_grid.update();
+        }
+        assert!((wind.get_wind_grid_push(5, 5, 20, 0.35) - 5.0 * 0.35).abs() < 1e-5);
+        // Tick 121: the window expired (`coord.Time + 20 < gameTime`).
+        for _ in 0..6 {
+            wind.wind_grid.update();
+        }
+        assert_eq!(wind.get_wind_grid_push(5, 5, 20, 0.35), 0.0);
+    }
+
+    /// `WindGrid.ScanPlayer` (`WindGrid.cs:88-101`): a moving player inside
+    /// the camera stamps every tile their hitbox overlaps with the
+    /// velocity's signs; a still or off-camera player stamps nothing.
+    #[test]
+    fn scan_player_stamps_the_hitbox_tiles_with_the_velocity_signs() {
+        let mut wind = Wind::new(1);
+        let mut world = World::new("t".into(), 200, 300);
+        wind.wind_grid.set_size(200, 300);
+        for _ in 0..50 {
+            wind.wind_grid.update();
+        }
+        // The hitbox spans tiles (10..12, 20..22) — 3×3 tiles at 16 px.
+        let top_left = (160.0, 320.0);
+        let bottom_right = (207.0, 367.0);
+        // The camera rect covers the hitbox (its centre rides the hitbox).
+        let camera = (184.0, 343.0);
+        wind.scan_player(
+            &world,
+            top_left,
+            bottom_right,
+            (3.0, -2.0),
+            camera,
+            (1600.0, 900.0),
+        );
+        for x in 10..=12 {
+            for y in 20..=22 {
+                let t = wind.wind_grid.get_wind_time(x, y, 20);
+                assert_eq!((t.direction_x, t.direction_y), (1, -1), "tile {x},{y}");
+                assert_eq!(t.time_left, 0, "stamped this tick (the ticks since it)");
+            }
+        }
+        // A still player stamps nothing new (`velocity == 0` gate).
+        wind.wind_grid.update();
+        wind.scan_player(
+            &world,
+            top_left,
+            bottom_right,
+            (0.0, 0.0),
+            camera,
+            (1600.0, 900.0),
+        );
+        let t = wind.wind_grid.get_wind_time(10, 20, 20);
+        assert_eq!(t.time_left, 1, "the stamp decayed untouched");
+        // An off-camera player gates out (`CenteredRectangle ∩ hitbox`).
+        wind.scan_player(
+            &world,
+            top_left,
+            bottom_right,
+            (3.0, 0.0),
+            (10.0, 10.0),
+            (160.0, 90.0),
+        );
+        let t = wind.wind_grid.get_wind_time(10, 20, 20);
+        assert!(t.time_left < 3, "no fresh stamp landed");
+    }
+
+    /// `WindGrid.GetWindTime`'s modulo lookup (`WindGrid.cs:43`): a read
+    /// past the grid wraps onto the stamped cell.
+    #[test]
+    fn the_grid_lookup_wraps_modulo_its_size() {
+        let mut grid = WindGrid::new();
+        grid.set_size(8, 8);
+        grid.set_wind_time(3, 3, 1, 0);
+        let t = grid.get_wind_time(3 + 8, 3 + 8, 20);
+        assert_eq!((t.direction_x, t.time_left), (1, 0), "the wrapped cell");
+    }
+
+    /// `WindGrid.SetSize`/`ResizeGrid` (`WindGrid.cs:25-62`): the dims only
+    /// grow and a reallocation zeroes the stamped cells.
+    #[test]
+    fn set_size_grows_and_a_reallocation_zeroes_the_stamps() {
+        let mut grid = WindGrid::new();
+        grid.set_size(16, 16);
+        grid.set_wind_time(5, 5, 1, 1);
+        assert_eq!(grid.get_wind_time(5, 5, 20).direction_x, 1);
+        grid.set_size(16, 16);
+        assert_eq!(
+            grid.get_wind_time(5, 5, 20).direction_x,
+            1,
+            "a same-size SetSize keeps the grid"
+        );
+        grid.set_size(32, 32);
+        assert_eq!(
+            grid.get_wind_time(5, 5, 20).direction_x,
+            0,
+            "the realloc zeroed the stamps"
+        );
+    }
+
+    /// `TileDrawing.GetWindGridPushComplex` (`TileDrawing.cs:8580-8607`):
+    /// the `loops` saw-tooth with the per-loop direction flip.
+    #[test]
+    fn the_complex_push_flips_direction_per_loop() {
+        let mut wind = Wind::new(1);
+        wind.wind_grid.set_size(8, 8);
+        for _ in 0..10 {
+            wind.wind_grid.update();
+        }
+        // Stamp at tick 10, then tick 15: time_left 5 of a 60 window →
+        // num = 5/60, num2 = 0 (5/60*3 = 0.25 → int 0), num3 = 0.25
+        // (≤ 0.5 → the rise arm).
+        wind.wind_grid.set_wind_time(2, 2, 1, 0);
+        for _ in 0..5 {
+            wind.wind_grid.update();
+        }
+        let push = wind.get_wind_grid_push_complex(2, 2, 60, 1.26, 3, true);
+        assert!((push - 0.25 * 1.26 * 1.0 * 3.0).abs() < 1e-5, "push {push}");
     }
 }
 

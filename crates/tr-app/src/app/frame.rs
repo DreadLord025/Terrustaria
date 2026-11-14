@@ -30,6 +30,17 @@ use crate::ui;
 use crate::ui::text::{border_string, hud_text, hud_text_width};
 use crate::world_sim::clock::advance_time_with_events;
 
+/// Records one **draw**-branch phase for the draw-order pinning test
+/// (`S1-B-7`). A no-op outside `cfg(test)` — the names make the
+/// `Main.DoDraw` order (`Main.cs:62249-62326`) assertable instead of only
+/// readable. A free function (not an `App` method): the draw branch holds
+/// a mutable borrow of the GPU handle across the passes.
+#[inline]
+fn draw_phase(#[cfg_attr(not(test), allow(unused_variables))] name: &'static str) {
+    #[cfg(test)]
+    draw_phase_trace::record(name);
+}
+
 impl App {
     /// Records one world-branch phase for the order-pinning test below
     /// (`S1-B-1`). A no-op outside `cfg(test)` — the phase names exist to make
@@ -242,6 +253,17 @@ impl App {
             server: matches!(self.net, crate::app::NetRole::Host(_)),
         });
 
+        // `SoundEngine.Update` (`SoundEngine.cs:48-68`, S1-E-23): the pause
+        // edge (`FocusHelper.PauseSounds` = `!GameplayActive && netMode == 0`,
+        // where `GameplayActive = IsSelectedApplication && !gamePaused` —
+        // `FocusHelper.cs:11-20`/`:97-105`) rides the window-focus and the
+        // S1-B-3 pause gate, then the pool's per-frame update re-volumes
+        // every tracked `ActiveSound` against the fresh listener and reaps
+        // the dead.
+        let pause_sounds = (!self.window_focused || self.game_paused)
+            && matches!(self.net, crate::app::NetRole::Off);
+        self.audio.update_tracked(pause_sounds);
+
         // `Main.Ambience` (`Main.cs:13466-13515`): every 15 ticks (¼ s) the
         // waterfall/lavafall loops re-volume from the strength scans; the
         // volume math is the LegacySoundPlayer case 34/35 (the distance
@@ -408,6 +430,12 @@ impl App {
                 // is not solid for the entity half of the tick — the liquid
                 // pass re-arms it (`Liquid.cs:451`, S1-L-14).
                 self.liquids.clear_bubble_for_entities();
+                // `CraftingUI.RecipeFilterHack`'s gate (`CraftingUI.cs:112-121`)
+                // plus `NewCraftingUI.OnDeactivate`'s clear (`:912-914`): the
+                // station filter only lives while the crafting page is up.
+                if !self.crafting_open {
+                    self.craft_filter = None;
+                }
                 // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
                 // pass. The sleeping counts it exports (`:17844-17859`) gate the
                 // clock's rate, so they land right after it.
@@ -1197,6 +1225,37 @@ impl App {
                     );
                 });
 
+                // `TileDrawing.Update`'s WindGrid chain (`TileDrawing.cs:377-378`,
+                // S1-G-8): the grid covers the screen's draw area
+                // (`EnsureWindGridSize`, `:7773-7778` — the port's view rect is
+                // the waterfall scan's camera±half shape) and ticks every
+                // update; then the moving player stamps the tiles their
+                // hitbox overlaps (`WindGrid.ScanPlayer`, `WindGrid.cs:73-101`
+                // — the single-player arm; the port's roster is the one local
+                // player). The push family's draw-pass consumers are the
+                // S1-G-1 tile passes (the grass/vine sway reads the grid).
+                {
+                    let half = screen * 0.5 / *zoom;
+                    let vx0 = ((camera.x - half.x) / TILE_PX).floor() as i32;
+                    let vx1 = ((camera.x + half.x) / TILE_PX).ceil() as i32;
+                    let vy0 = ((camera.y - half.y) / TILE_PX).floor() as i32;
+                    let vy1 = ((camera.y + half.y) / TILE_PX).ceil() as i32;
+                    wind.wind_grid.set_size(vx1 - vx0, vy1 - vy0);
+                    wind.wind_grid.update();
+                    if wind.sway_enabled {
+                        if let Some(p) = player.as_ref() {
+                            wind.scan_player(
+                                world,
+                                (p.x, p.y),
+                                (p.x + crate::player::WIDTH, p.y + p.height),
+                                (p.vx, p.vy),
+                                (camera.x, camera.y),
+                                (screen.x, screen.y),
+                            );
+                        }
+                    }
+                }
+
                 // Liquids animate the texture at 8 fps; include the frame in the G6
                 // key only when the world has any liquid.
                 let liquid_anim = if *has_liquids {
@@ -1314,6 +1373,7 @@ impl App {
                     world.world_surface,
                     world.width,
                 );
+                draw_phase("sky");
                 draw_sky(
                     renderer,
                     draw_cam,
@@ -1341,6 +1401,7 @@ impl App {
                     sky_tint,
                     self.atmo,
                 );
+                draw_phase("world");
                 if !reuse_world {
                     tile_stats = draw_tiles(
                         renderer,
@@ -1434,6 +1495,7 @@ impl App {
                 }
                 crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
 
+                draw_phase("rain");
                 rain.draw(renderer, lookups, light, draw_cam, world_zoom, screen);
                 // `Main.DrawDust`'s 268 entries: the flying sand, the same
                 // world-effect range as the rain (`Main.DrawRain`'s draw call
@@ -1450,9 +1512,11 @@ impl App {
                 // rides the tile batch after the liquids, under the
                 // over-wire entities (the port draws it before the
                 // projectiles, matching `DrawCachedProjsOverWiresUI`).
+                draw_phase("wires");
                 crate::render::wires::draw_wires(
                     renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
                 );
+                draw_phase("projectiles");
                 for p in projectiles.slots().iter().filter(|p| p.active) {
                     // The yoyo family's string anchors on the player's
                     // centre (`Main.cs:27943-27945`'s mountedCenter +
@@ -1644,6 +1708,8 @@ impl App {
                             &in_range,
                             &adj,
                             &zones,
+                            self.craft_filter.as_ref(),
+                            None,
                             &gates,
                         )
                     } else {
@@ -2194,8 +2260,29 @@ pub(crate) mod phase_trace {
     }
 }
 
+/// The draw branch's phase trace (`S1-B-7`): the `Main.DoDraw` order
+/// (`Main.cs:62249-62326`) made assertable. Separate from the update
+/// trace — the two run in different branches of `frame()`.
+pub(crate) mod draw_phase_trace {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static PHASES: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(crate) fn record(name: &'static str) {
+        PHASES.with(|p| p.borrow_mut().push(name));
+    }
+
+    /// Drains the current thread's trace (one frame's worth).
+    pub(crate) fn take() -> Vec<&'static str> {
+        PHASES.with(|p| std::mem::take(&mut *p.borrow_mut()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::draw_phase_trace;
     use super::phase_trace;
     use crate::app::App;
     use crate::app::flow::FrontScreen;
@@ -2245,6 +2332,44 @@ mod tests {
         let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         app.player = Some(crate::player::Player::spawn(&app.world));
         app
+    }
+
+    /// The draw-phase call names of a source file, in order.
+    fn draw_phase_calls(src: &str) -> Vec<&str> {
+        let mut out = Vec::new();
+        let mut rest = src;
+        // The needle is assembled at run time — the literal must not appear
+        // in this helper's own source.
+        let needle = ["draw_phase", "(\""].concat();
+        while let Some(at) = rest.find(needle.as_str()) {
+            rest = &rest[at + needle.len()..];
+            let end = rest.find('"').expect("a closed phase name");
+            out.push(&rest[..end]);
+            rest = &rest[end..];
+        }
+        out
+    }
+
+    #[test]
+    fn the_draw_passes_run_in_the_csharp_order() {
+        let tiles = include_str!("../render/tiles.rs");
+        let frame = include_str!("frame.rs");
+        // The world pass's entity phases: the NPCs behind the tiles
+        // (`:63293`) → the NPCs over the tiles (`:63301`) → the players
+        // (`:62256`) → the dropped items (`:62278`).
+        assert_eq!(
+            draw_phase_calls(tiles),
+            ["npcs_behind_tiles", "npcs", "player", "items"],
+            "the entities must follow Main.cs:62249-62326"
+        );
+        // The frame's draw passes: the sky (`:62080`) → the world pass
+        // (`:62249`) → the rain/dust (`:62279`/`:62293`) → the wires
+        // (`:62303`) → the projectiles over the wires UI (`:62315`).
+        assert_eq!(
+            draw_phase_calls(frame),
+            ["sky", "world", "rain", "wires", "projectiles"],
+            "the draw passes must follow Main.cs:62249-62326"
+        );
     }
 
     #[test]

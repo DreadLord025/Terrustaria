@@ -639,6 +639,13 @@ pub(crate) struct App {
     pub(crate) liquids: LiquidSystem,
     pub(crate) liquid_step: FixedStepper,
     pub(crate) liquid_tick: u32,
+    /// `CraftingUI._lastFilter` (`CraftingUI.cs:130`): the station filter the
+    /// player's right-click on a crafting station installed
+    /// (`Player.GetCraftingFilterForTile`, `Player.cs:33312-33335`, via
+    /// `OpenCloseFilter`); `CraftingUI.RecipeFilterHack` exposes it to
+    /// `Recipe.UpdateRecipeList` only while the crafting page is up
+    /// (`CraftingUI.cs:112-121`) — the port reads it behind the same gate.
+    pub(crate) craft_filter: Option<craft::CraftingFilter>,
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     pub(crate) waterfall: tr_core::waterfall::WaterfallManager,
     pub(crate) waterfall_step: FixedStepper,
@@ -2942,6 +2949,7 @@ impl App {
             // `Player.cs:33517` — chest.rs:409), so the panel + the player
             // inventory draw together.
             inventory_open: crate::env::inv_open() || tr_chest.is_some(),
+            craft_filter: None,
             bestiary: app_bestiary,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
@@ -3708,6 +3716,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
             match hit {
                 edit::TileInteraction::None => {
                     log::info!("TR_TOGGLE {},{} -> none", op.x, op.y)
+                }
+                edit::TileInteraction::StationInteract { kind } => {
+                    log::info!("TR_TOGGLE {},{} -> station probe ({kind})", op.x, op.y)
                 }
                 edit::TileInteraction::DoorOpened { object_drops } => log::info!(
                     "TR_TOGGLE {},{} -> opened ({} drops)",

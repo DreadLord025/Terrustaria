@@ -420,6 +420,85 @@ pub(crate) static TILE_COUNTS_AS: &[(u16, u16)] = &[
 /// and the water fountain (207) count as water sources.
 pub(crate) const COUNTS_AS_WATER: [u16; 2] = [172, 207];
 
+/// `NewCraftingUI.RecipeFilter`'s two station-driven forms
+/// (`NewCraftingUI.cs:132-186`): the crafting-station tab and the water
+/// source. `CraftingUI._lastFilter` carries the clicked station's filter
+/// into `Recipe.UpdateRecipeList` through `CraftingUI.RecipeFilterHack`
+/// (`CraftingUI.cs:112-121`, `Recipe.cs:244`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CraftingFilter {
+    /// `CraftStationRecipeFilter` (`NewCraftingUI.cs:132-169`): the clicked
+    /// station tile and its `TileCountsAs` descendants.
+    Station { tile: u16 },
+    /// `WaterSourceRecipeFilter` (`NewCraftingUI.cs:171-186`): the sink /
+    /// the water fountain.
+    WaterSource { tile: u16 },
+}
+
+impl CraftingFilter {
+    /// `CraftStationRecipeFilter.Accepts` (`NewCraftingUI.cs:157-169`) /
+    /// `WaterSourceRecipeFilter.Accepts` (`:178-185`): a recipe without a
+    /// station and a liquid need passes both filters
+    /// (`recipe.DoesNotNeedTileOrLiquid`, `Recipe.cs:106-115` — no
+    /// `requiredTile` and no water/honey/lava need), the station filter
+    /// keeps only recipes whose `requiredTile` sits in the accept set (the
+    /// clicked tile + its `TileCountsAs` descendants,
+    /// `:143-156`), and the water filter keeps the `needWater` rows.
+    pub(crate) fn accepts(&self, r: &Recipe) -> bool {
+        let does_not_need_tile_or_liquid = r.stations.is_empty()
+            && !r.need_honey
+            && !r.need_water
+            && !r.need_lava;
+        if does_not_need_tile_or_liquid {
+            return true;
+        }
+        match self {
+            CraftingFilter::Station { tile } => match r.stations.first() {
+                Some(&required) => station_accepts(*tile, required),
+                None => false,
+            },
+            CraftingFilter::WaterSource { .. } => r.need_water,
+        }
+    }
+}
+
+/// `CraftStationRecipeFilter`'s `acceptTileTypes` membership (`:143-156`):
+/// the clicked tile, plus everything its `TileCountsAs` chain reaches —
+/// the same walk [`satisfies_station`] reads from the other end.
+fn station_accepts(clicked: u16, required: u16) -> bool {
+    satisfies_station(required, clicked)
+}
+
+/// `Player.GetCraftingFilterForTile` (`Player.cs:33312-33335`): a clicked
+/// tile opens the crafting menu filtered to itself — the recipes that use
+/// the tile (the `TileUsedInRecipes` set, inherited through the
+/// `TileCountsAs` chains, `Recipe.cs:577-600`) get the station filter, the
+/// `CountsAsWaterForCrafting` tiles get the water filter, and the
+/// `TileID.Sets.DoesNotOpenCraftingMenuOnInteract` pair (215, 207 —
+/// `TileID.cs:552`) opens nothing.
+pub(crate) fn get_crafting_filter_for_tile(kind: u16) -> Option<CraftingFilter> {
+    if matches!(kind, 215 | 207) {
+        return None;
+    }
+    if tile_used_in_recipes(kind) {
+        return Some(CraftingFilter::Station { tile: kind });
+    }
+    if COUNTS_AS_WATER.contains(&kind) {
+        return Some(CraftingFilter::WaterSource { tile: kind });
+    }
+    None
+}
+
+/// `Recipe.TileUsedInRecipes` + `UpdateInheritedTilesUsedInRecipes`
+/// (`Recipe.cs:577-600`, the fill at `:16732`): the recipes' own
+/// `requiredTile` set, inherited through the `TileCountsAs` chains.
+fn tile_used_in_recipes(kind: u16) -> bool {
+    RECIPES.iter().any(|r| r.stations.contains(&kind))
+        || TILE_COUNTS_AS
+            .iter()
+            .any(|&(child, parent)| child == kind && tile_used_in_recipes(parent))
+}
+
 /// Does standing near `kind` satisfy a `required` station? `kind` itself, or
 /// its `TileCountsAs` chain reaching `required`.
 fn satisfies_station(required: u16, kind: u16) -> bool {
@@ -730,34 +809,77 @@ pub(crate) fn craftable(
 }
 
 /// The panel's recipe list — `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`):
-/// environment × enough-ingredients. The port's older "any ingredient
-/// present" partial list is gone; the classic pane shows craftable rows only.
+/// the guide-item branch replaces the whole list with the recipes naming the
+/// held item (`CollectGuideRecipes`, `:262-284`); otherwise the station
+/// filter (`CraftingUI.RecipeFilterHack`) gates first, then environment ×
+/// enough-ingredients. The port's older "any ingredient present" partial
+/// list is gone; the classic pane shows craftable rows only.
 pub(crate) fn available(
     inv: &[ItemSlot; INV],
     chests: &[WorldChest],
     in_range: &[usize],
     adj: &Adjacent,
     zones: &Zones,
+    filter: Option<&CraftingFilter>,
+    guide_item: Option<u16>,
 ) -> Vec<usize> {
-    available_with_gates(inv, chests, in_range, adj, zones, &Gates::default())
+    available_with_gates(
+        inv,
+        chests,
+        in_range,
+        adj,
+        zones,
+        filter,
+        guide_item,
+        &Gates::default(),
+    )
 }
 
 /// [`available`] plus the two world/player gates — the C#'s
 /// `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`) filters through
 /// `Recipe.CanCraft`, which reads them (`Recipe.cs:349-356`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn available_with_gates(
     inv: &[ItemSlot; INV],
     chests: &[WorldChest],
     in_range: &[usize],
     adj: &Adjacent,
     zones: &Zones,
+    filter: Option<&CraftingFilter>,
+    guide_item: Option<u16>,
     gates: &Gates,
 ) -> Vec<usize> {
+    // `:237-241`: a guide item replaces the whole list — the recipes naming
+    // it among their requirements, no environment or ingredient gate.
+    if let Some(guide) = guide_item {
+        return collect_guide_recipes(guide);
+    }
     let owned = collect_owned(inv, chests, in_range);
     RECIPES
         .iter()
         .enumerate()
-        .filter(|(_, r)| craftable(r, &owned, adj, zones) && gates_allow(r, gates))
+        .filter(|(_, r)| {
+            // `:246`: `(recipeFilterHack == null || recipeFilterHack.Accepts(recipe))`
+            // comes before the environment and the ingredient tests.
+            filter.is_none_or(|f| f.accepts(r))
+                && craftable(r, &owned, adj, zones)
+                && gates_allow(r, gates)
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// `Recipe.CollectGuideRecipes` (`Recipe.cs:262-284`): every recipe with a
+/// requirement matching the guide item — the groups match their members
+/// (`RequiredItemEntry.Matches`).
+fn collect_guide_recipes(guide_item: u16) -> Vec<usize> {
+    if guide_item == 0 {
+        return Vec::new();
+    }
+    RECIPES
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.required.iter().any(|req| req.matches(guide_item)))
         .map(|(i, _)| i)
         .collect()
 }
@@ -1630,14 +1752,14 @@ mod tests {
         let zones = Zones::default();
         // 16 wood: the work bench (10) is craftable, the door (6) too.
         let inv = inv_with(&[(9, 16)]);
-        let av = available(&inv, &[], &[], &adj, &zones);
+        let av = available(&inv, &[], &[], &adj, &zones, None, None);
         assert!(av.iter().any(|&i| RECIPES[i].create.0 == 36));
         assert!(av.iter().any(|&i| RECIPES[i].create.0 == 25));
         // The water bottle is not: no water, no bottle.
         assert!(!av.iter().any(|&i| RECIPES[i].create.0 == 126));
         // 9 wood: the bench drops off the list.
         let inv = inv_with(&[(9, 9)]);
-        let av = available(&inv, &[], &[], &adj, &zones);
+        let av = available(&inv, &[], &[], &adj, &zones, None, None);
         assert!(!av.iter().any(|&i| RECIPES[i].create.0 == 36));
     }
 
@@ -2413,5 +2535,143 @@ mod tests {
         );
         assert_eq!(made.len(), 10, "the stackable torch crafts ten times");
         assert_eq!(made[0].count, 3, "three torches per craft");
+    }
+
+    // ---- S1-L-11c: the station-tab filters (`NewCraftingUI.cs:78-186`) ----
+
+    /// The first recipe row creating `create` (the tests' stable handles).
+    fn row_with_create(create: u16) -> usize {
+        RECIPES
+            .iter()
+            .position(|r| r.create.0 == create)
+            .unwrap_or_else(|| panic!("no recipe creates {create}"))
+    }
+
+    /// The `Adjacent` the craft path reads: `nearby` lists the station tile
+    /// kinds standing in reach (`Player.AdjTiles`).
+    fn test_adj(nearby: &[u16]) -> Adjacent {
+        Adjacent {
+            tiles: nearby.to_vec(),
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        }
+    }
+
+    #[test]
+    fn the_station_click_filters_the_available_list() {
+        // `CraftStationRecipeFilter.Accepts` (`NewCraftingUI.cs:157-169`) via
+        // `Recipe.UpdateRecipeList`'s first gate (`Recipe.cs:246`): with the
+        // filter up, only the accepted station's rows stay. The accept set
+        // is the clicked tile plus its `TileCountsAs` equivalents
+        // (`:143-156`; 17 -> 215), so the iron-anvil rows (station 17) keep
+        // their slot under the 17 click and drop under the 96 click.
+        let mut inv = [crate::item::EMPTY_SLOT; INV];
+        inv[0] = ItemSlot { kind: 170, count: 10, ..crate::item::EMPTY_SLOT };
+        inv[1] = ItemSlot { kind: 68, count: 8, ..crate::item::EMPTY_SLOT };
+        let adj = test_adj(&[]);
+        let zones = Zones::default();
+        let plain = available(&inv, &[], &[], &test_adj(&[17, 96]), &zones, None, None);
+        let anvil_row = row_with_create(2243);
+        let lasagna_row = row_with_create(5092);
+        assert!(plain.contains(&anvil_row) && plain.contains(&lasagna_row));
+        // Clicking the iron anvil (17): the player stands at it
+        // (`this.AdjTiles()`, `Player.cs:33282`), the anvil row stays, the
+        // 96 row drops.
+        let f17 = CraftingFilter::Station { tile: 17 };
+        let av17 = available(&inv, &[], &[], &test_adj(&[17]), &zones, Some(&f17), None);
+        assert!(av17.contains(&anvil_row), "the 17 row survives its own click");
+        assert!(!av17.contains(&lasagna_row), "the 96 row drops under the 17 click");
+        for &i in &av17 {
+            let stations = RECIPES[i].stations;
+            // The hand rows pass both filters (`DoesNotNeedTileOrLiquid`).
+            assert!(stations.is_empty() || station_accepts(17, stations[0]), "row {i}");
+        }
+        // Clicking the 96 station mirrors it.
+        let f96 = CraftingFilter::Station { tile: 96 };
+        let av96 = available(&inv, &[], &[], &test_adj(&[96]), &zones, Some(&f96), None);
+        assert!(av96.contains(&lasagna_row));
+        assert!(!av96.contains(&anvil_row));
+    }
+
+    #[test]
+    fn the_water_source_click_filters_the_liquid_recipes() {
+        // `WaterSourceRecipeFilter.Accepts` (`NewCraftingUI.cs:178-185`):
+        // only the `needWater` rows survive — and the environment gate still
+        // demands the adjacency the C#'s
+        // `PlayerMeetsEnvironmentConditions` reads (the clicked sink IS the
+        // water source, `adjWater = true`).
+        let mut inv = [crate::item::EMPTY_SLOT; INV];
+        // The glowing mushroom's water-anchored row (126 <- 31,
+        // `need_water: true`).
+        inv[0] = ItemSlot { kind: 31, count: 10, ..crate::item::EMPTY_SLOT };
+        let mut adj = test_adj(&[]);
+        adj.water = true;
+        let zones = Zones::default();
+        let f = CraftingFilter::WaterSource { tile: 172 };
+        let av = available(&inv, &[], &[], &adj, &zones, Some(&f), None);
+        assert!(!av.is_empty(), "the water recipes exist");
+        for &i in &av {
+            assert!(RECIPES[i].need_water, "row {i} is a needWater row");
+        }
+        // Without the water adjacency the same rows fail the environment
+        // gate (`PlayerMeetsEnvironmentConditions`, `Recipe.cs:247`).
+        let adj_off = test_adj(&[]);
+        let av_dry = available(&inv, &[], &[], &adj_off, &zones, Some(&f), None);
+        assert!(av_dry.is_empty(), "no water adjacency - no water recipes");
+    }
+
+    #[test]
+    fn the_guide_item_replaces_the_available_list() {
+        // `Recipe.UpdateRecipeList`'s branch (`Recipe.cs:237-241`) +
+        // `CollectGuideRecipes` (`:262-284`): with a guide item up, the list
+        // is exactly the recipes naming it — no environment or ingredient
+        // gate, and the groups match their members.
+        let inv = [crate::item::EMPTY_SLOT; INV];
+        let adj = test_adj(&[]);
+        let zones = Zones::default();
+        let guided = available(&inv, &[], &[], &adj, &zones, None, Some(170));
+        let anvil_row = row_with_create(2243);
+        assert!(guided.contains(&anvil_row), "the 170 row names the guide item");
+        assert!(guided
+            .iter()
+            .all(|&i| RECIPES[i].required.iter().any(|q| q.matches(170))),
+            "every row names the guide item");
+        // The C#'s `Main.InGuideCraftMenu && guideItem.IsAir` arm
+        // (`NewCraftingUI.cs:256-258`) yields an empty list.
+        let air = available(&inv, &[], &[], &adj, &zones, None, Some(0));
+        assert!(air.is_empty());
+    }
+
+    #[test]
+    fn the_station_click_resolution_follows_the_c_sharp_sets() {
+        // `Player.GetCraftingFilterForTile` (`Player.cs:33312-33335`): the
+        // recipes-use tiles get the station filter, the
+        // `CountsAsWaterForCrafting` pair gets the water filter, the
+        // `DoesNotOpenCraftingMenuOnInteract` pair (215 excluded by the
+        // ordering, 207) opens nothing, and a non-station tile opens
+        // nothing.
+        assert_eq!(
+            get_crafting_filter_for_tile(17),
+            Some(CraftingFilter::Station { tile: 17 })
+        );
+        assert_eq!(
+            get_crafting_filter_for_tile(172),
+            Some(CraftingFilter::WaterSource { tile: 172 })
+        );
+        assert_eq!(get_crafting_filter_for_tile(207), None, "the fountain is excluded");
+        assert_eq!(get_crafting_filter_for_tile(5), None, "a tree is not a station");
+    }
+
+    /// The 50-slot inventory with `count` of `kind` in the first slot.
+    fn full_inventory_with(kind: u16, count: u32) -> [ItemSlot; INV] {
+        let mut inv = [crate::item::EMPTY_SLOT; INV];
+        inv[0] = ItemSlot {
+            kind,
+            count,
+            ..crate::item::EMPTY_SLOT
+        };
+        inv
     }
 }
