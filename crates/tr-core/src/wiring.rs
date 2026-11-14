@@ -387,6 +387,14 @@ impl Wiring {
         self.rand.next_max(n.max(0))
     }
 
+    /// The wiring stream itself, for app-side draws that must join it — the
+    /// actuation cascade's `Item.NewItem` drops (`Wiring.cs`'s
+    /// `DeActive`/`ReActive` arm) draw the same stream as the block's other
+    /// `Main.rand` rolls (the S1-L-6c seeded-stream contract).
+    pub fn rand_mut(&mut self) -> &mut UnifiedRandom {
+        &mut self.rand
+    }
+
     /// `Wiring.CheckMech` (`Wiring.cs:455-471`): one cooldown entry per tile
     /// position, at most 999 queued. Returns whether the entry was added.
     pub fn check_mech(&mut self, x: i32, y: i32, time: i32) -> bool {

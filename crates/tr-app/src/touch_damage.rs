@@ -169,7 +169,7 @@ pub fn hurt_tiles(
 pub fn apply_touch_damage(
     world: &World,
     player: &mut crate::player::Player,
-    rng: &mut u64,
+    rng: &mut tr_core::UnifiedRandom,
     width: i32,
     height: i32,
 ) -> bool {
@@ -188,9 +188,10 @@ pub fn apply_touch_damage(
         return false;
     }
     // `Main.DamageVar(num, 0f - this.luck)` — damage taken negates the luck
-    // (`Player.cs:28982`).
-    let mut loot = crate::world_sim::npcs::LootRng(rng);
-    let dmg = tr_core::damage::damage_var(&mut loot, raw, -player.luck());
+    // (`Player.cs:28982`). The roll rides the `UpdatePlayers` stream (the C#
+    // fires inside `Player.Update` under the `UpdatePlayers` swap,
+    // `Player.cs:27608-27614`, `Main.cs:17754`).
+    let dmg = tr_core::damage::damage_var(rng, raw, -player.luck());
     let cx = player.x + width as f32 * 0.5;
     player.hurt(dmg, cx)
 }
@@ -289,7 +290,7 @@ mod tests {
         p.x = 11.0 * 16.0;
         p.y = 30.0 * 16.0 - 30.0;
         let before = p.hp;
-        let mut rng = 7u64;
+        let mut rng = tr_core::UnifiedRandom::new(7);
         assert!(
             apply_touch_damage(&w, &mut p, &mut rng, 20, 42),
             "the spike lands"

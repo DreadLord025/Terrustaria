@@ -167,14 +167,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // The closure's disjoint field captures keep the step borrow
     // (`projectile_step`) apart from the pool/world/npcs/player set. The
     // yoyo rolls (`Projectile.cs:67746`'s jitter, `:67886`'s beam rolls,
-    // `:68041`'s penetrate roll) draw from the app's item stream — the
-    // port's `Main.rand` analogue, the same stream the throw's crit roll
-    // uses. Only this machine's projectiles simulate here — a peer's shots
-    // ride the `27` wire (`Projectile.cs:17210`'s owner gate), and the
-    // server-owned hostile shots (owner 255) only on the host / single-player
-    // (`spawn_hostile`).
+    // `:68041`'s penetrate roll) draw `Main.rand` under the
+    // `UpdateProjectiles` swap (`Main.cs:17775-17777`) — the pass binds its
+    // own named stream. Only this machine's projectiles simulate here — a
+    // peer's shots ride the `27` wire (`Projectile.cs:17210`'s owner gate),
+    // and the server-owned hostile shots (owner 255) only on the host /
+    // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
-    let mut rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+    let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
             &mut app.world,
@@ -184,7 +184,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.player.as_mut(),
             inputs,
             flail_inputs,
-            &mut rng,
+            rng,
             local_owner,
             hostile_local,
         );
@@ -330,5 +330,104 @@ mod summon_fixture_tests {
                 .any(|p| p.active && (p.kind == HORNET || p.kind == FROST_HYDRA)),
             "the pair declined: the pool stayed full of fillers"
         );
+    }
+}
+
+#[cfg(test)]
+mod dw4_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::projectile::WOOD_YOYO;
+    use tr_core::UnifiedRandom;
+
+    /// Two same-kind yoyos out: the doubling `flag` lifetime jitter
+    /// (`Projectile.cs:67746-67749` — one `Next(10, 31)`) is the pass's
+    /// whole draw for the tick.
+    fn yoyo_pair_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // Inside the 8x8-tile fixture world (the out-of-world guard would
+        // deactivate edge spawns on the next tick).
+        for i in 0..2 {
+            app.projectiles.spawn_with_data_ai_owned(
+                WOOD_YOYO,
+                0,
+                32.0 + i as f32 * 16.0,
+                32.0,
+                2.0,
+                0.0,
+                10,
+                4.0,
+                0.0,
+                0.0,
+            );
+        }
+        app
+    }
+
+    /// DW-4.1 (the projectiles pass): one tick with two same-kind yoyos out
+    /// draws exactly the doubling lifetime jitter's one `Next(10, 31)` on the
+    /// `UpdateProjectiles` stream (`Main.cs:17775-17777`), and every other
+    /// stage stream stays pristine (the pass's isolation).
+    #[test]
+    fn test_dw_4_1_projectiles_pass_draws_the_update_projectiles_stream() {
+        let mut app = yoyo_pair_app();
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine",
+                key.name()
+            );
+        }
+        update_projectiles(&mut app, 1.0 / 60.0);
+
+        // The twin: one `Next(10, 31)` from the pristine seed.
+        let mut expect = UnifiedRandom::new(0);
+        let _ = expect.next_range(10, 31);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            expect,
+            "exactly one lifetime-jitter draw on UpdateProjectiles"
+        );
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+    }
+
+    /// DW-4.4: the projectiles pass's determinism pair — two same-seed runs
+    /// of five ticks give byte-equal slot states and stream states.
+    #[test]
+    fn test_dw_4_4_projectiles_pass_determinism_pair() {
+        let run = || {
+            let mut app = yoyo_pair_app();
+            // Two ticks: the unchanneld yoyos start their return soon after
+            // (the release arm), so the pin holds the pair while both live.
+            for _ in 0..2 {
+                update_projectiles(&mut app, 1.0 / 60.0);
+            }
+            let slots: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active)
+                .map(|p| (p.kind, p.pos, p.vel, p.ai, p.local_ai))
+                .collect();
+            (slots, app.rngs.stream(RngKey::UpdateProjectiles).clone())
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a.1, b.1, "the stream replayed identically");
+        assert_eq!(a.0, b.0, "the pool state is byte-equal");
+        assert!(!a.0.is_empty(), "at least one yoyo live across the pair");
     }
 }

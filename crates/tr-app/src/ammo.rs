@@ -683,15 +683,15 @@ pub fn resolve_projectile(
 /// (`Player.cs:53595`, `:53599`, `:53643`, …): a gate that fails spends nothing,
 /// which is what keeps one pick's draw count equal to the vanilla's.
 #[inline]
-fn one_in(m: u32, rng: &mut u64) -> bool {
-    next(rng) % m == 0
+fn one_in(m: u32, rng: &mut tr_core::UnifiedRandom) -> bool {
+    rng.next_max(m as i32) == 0
 }
 
 /// One `Main.rand.Next(m) != 0` roll — the (m-1)/m save family
 /// (`Player.cs:53579`, `:53587`, `:53623`, `:53627`).
 #[inline]
-fn all_but_one_in(m: u32, rng: &mut u64) -> bool {
-    next(rng) % m != 0
+fn all_but_one_in(m: u32, rng: &mut tr_core::UnifiedRandom) -> bool {
+    rng.next_max(m as i32) != 0
 }
 
 /// The not-consume rolls — `Player.PickAmmo`'s whole flag chain
@@ -715,7 +715,7 @@ pub fn not_consume(
     windows: &VolleyWindows,
     flags: &AmmoFlags,
     dont_consume: bool,
-    rng: &mut u64,
+    rng: &mut tr_core::UnifiedRandom,
 ) -> bool {
     // `bool flag = dontConsume` (`Player.cs:53578`).
     let mut flag = dont_consume;
@@ -819,15 +819,6 @@ pub fn not_consume(
         flag = false;
     }
     flag
-}
-
-/// `Main.rand.Next(n)` against the stream (the splitmix mix of `rain.rs`).
-fn next(rng: &mut u64) -> u32 {
-    *rng = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    let mut z = *rng;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    (z ^ (z >> 31)) as u32
 }
 
 #[cfg(test)]
@@ -1083,14 +1074,14 @@ mod tests {
     fn the_not_consume_rolls_are_seed_deterministic() {
         // The shooters' rolls (`Player.cs:53611`, `:53619`…) — the same seed gives
         // the same save pattern.
-        let mut a = 42u64;
-        let mut b = 42u64;
+        let mut a = tr_core::UnifiedRandom::new(42);
+        let mut b = tr_core::UnifiedRandom::new(42);
         let a_seq: Vec<bool> = (0..30).map(|_| roll(98, &mut a)).collect();
         let b_seq: Vec<bool> = (0..30).map(|_| roll(98, &mut b)).collect();
         assert_eq!(a_seq, b_seq, "byte-equal patterns");
         assert!(a_seq.contains(&true), "the Minishark saves sometimes");
         // The shooters without rolls never save.
-        let mut r = 7u64;
+        let mut r = tr_core::UnifiedRandom::new(7);
         assert!((0..50).all(|_| !roll(39, &mut r)), "the wooden bow");
     }
 
@@ -1103,7 +1094,7 @@ mod tests {
     }
 
     /// One roll with the baseline windows, no flags and no `dontConsume`.
-    fn roll(shooter: u16, rng: &mut u64) -> bool {
+    fn roll(shooter: u16, rng: &mut tr_core::UnifiedRandom) -> bool {
         not_consume(
             shooter,
             AMMO_ARROW,
@@ -1116,7 +1107,7 @@ mod tests {
     }
 
     /// One roll with the flag-bearing flags and the baseline windows.
-    fn roll_flags(shooter: u16, flags: &AmmoFlags, rng: &mut u64) -> bool {
+    fn roll_flags(shooter: u16, flags: &AmmoFlags, rng: &mut tr_core::UnifiedRandom) -> bool {
         not_consume(shooter, AMMO_ARROW, 0, &windows(), flags, false, rng)
     }
 
@@ -1133,7 +1124,7 @@ mod tests {
             (5134, 300, 1.0 / 3.0, "the Clentaminator 2's 1/3"),
         ];
         for (shooter, shots, rate, what) in cases {
-            let mut rng = 0xC0FF_EE12u64;
+            let mut rng = tr_core::UnifiedRandom::new(0xC0FF_EE12u64 as i32);
             let saves = (0..shots).filter(|_| roll(shooter, &mut rng)).count();
             let got = saves as f64 / shots as f64;
             assert!(
@@ -1144,8 +1135,8 @@ mod tests {
         // The two 2/3 shooters are NOT each other's swap: 3475 saves when the
         // draw is non-zero, 3930 when it is zero — the same stream therefore
         // gives a different pattern for each.
-        let mut a = 99u64;
-        let mut b = 99u64;
+        let mut a = tr_core::UnifiedRandom::new(99);
+        let mut b = tr_core::UnifiedRandom::new(99);
         let a_seq: Vec<bool> = (0..120).map(|_| roll(3475, &mut a)).collect();
         let b_seq: Vec<bool> = (0..120).map(|_| roll(3930, &mut b)).collect();
         assert_ne!(a_seq, b_seq, "2/3 (`!= 0`) and 1/2 (`== 0`) differ");
@@ -1160,8 +1151,8 @@ mod tests {
         for (shooter, ammo_kind, projectile) in
             [(39u16, AMMO_ARROW, 0u16), (96, 97, 14), (266, 169, 42)]
         {
-            let mut used = 12345u64;
-            let before = used;
+            let mut used = tr_core::UnifiedRandom::new(12345);
+            let before = used.clone();
             for _ in 0..20 {
                 assert!(
                     !not_consume(
@@ -1209,7 +1200,7 @@ mod tests {
             (&cost75, 0.25, "the Vortex Breastplate's 1/4"),
         ];
         for (flags, rate, what) in cases {
-            let mut rng = 0x5EED_1234u64;
+            let mut rng = tr_core::UnifiedRandom::new(0x5EED_1234u64 as i32);
             let saves = (0..600).filter(|_| roll_flags(39, flags, &mut rng)).count();
             let got = saves as f64 / 600.0;
             assert!(
@@ -1223,7 +1214,7 @@ mod tests {
         let mut two = AmmoFlags::default();
         two.ammo_box = true;
         two.ammo_cost75 = true;
-        let mut rng = 77u64;
+        let mut rng = tr_core::UnifiedRandom::new(77);
         let saves = (0..600).filter(|_| roll_flags(39, &two, &mut rng)).count();
         assert!(
             saves > 600 * 4 / 25,
@@ -1239,16 +1230,16 @@ mod tests {
         // with 3475-3540/3930/5134 rollers unset spends exactly ONE draw, the
         // one its own arm takes — the arms the brief's new set added did not
         // change the six guns' streams.
-        let mut a = 4242u64;
-        let mut b = 4242u64;
+        let mut a = tr_core::UnifiedRandom::new(4242);
+        let mut b = tr_core::UnifiedRandom::new(4242);
         for _ in 0..200 {
             assert_eq!(roll(98, &mut a), roll(98, &mut b), "the Minishark's stream");
         }
         // The two 1/3 additions (3930, 5134) draw from the same modulus as the
         // Minishark but only for their own kinds: a 3930 shot and a 98 shot from
         // one seed differ, because the arms are keyed on the kind.
-        let mut c = 4242u64;
-        let mut d = 4242u64;
+        let mut c = tr_core::UnifiedRandom::new(4242);
+        let mut d = tr_core::UnifiedRandom::new(4242);
         let c_seq: Vec<bool> = (0..120).map(|_| roll(3930, &mut c)).collect();
         let d_seq: Vec<bool> = (0..120).map(|_| roll(98, &mut d)).collect();
         assert_ne!(c_seq, d_seq, "the kind gate, not the modulus, decides");
@@ -1263,7 +1254,7 @@ mod tests {
         box_.ammo_box = true;
         let mut potion = AmmoFlags::default();
         potion.ammo_potion = true;
-        let mut rng = 31337u64;
+        let mut rng = tr_core::UnifiedRandom::new(31337);
         // With the Acorn as the shooter the chain always drains — over a stream
         // long enough that the ammoBox arm would have saved ~120 times.
         let saved = (0..600)
@@ -1272,12 +1263,12 @@ mod tests {
         assert_eq!(saved, 0, "the Acorn's clear beats the Ammo Box save");
         // The same flags with a NON-5629 shooter do save — the arms above the
         // clear are not inert, they are only overridden by it.
-        let mut rng = 31337u64;
+        let mut rng = tr_core::UnifiedRandom::new(31337);
         let others = (0..600).filter(|_| roll_flags(39, &box_, &mut rng)).count();
         assert!(others > 60, "the Ammo Box saves ~1/5 for a normal shooter");
         // The potion half behaves the same, and a 5629 shot with BOTH flags
         // still drains.
-        let mut rng = 7u64;
+        let mut rng = tr_core::UnifiedRandom::new(7);
         assert!(
             !(0..200).any(|_| not_consume(
                 5629,
@@ -1306,7 +1297,7 @@ mod tests {
             just_started: false,
             ..VolleyWindows::default()
         };
-        let mut rng = 2024u64;
+        let mut rng = tr_core::UnifiedRandom::new(2024);
         for _ in 0..50 {
             assert!(
                 !not_consume(
@@ -1321,7 +1312,7 @@ mod tests {
                 "the swing's first shot consumes"
             );
         }
-        let mut rng = 2024u64;
+        let mut rng = tr_core::UnifiedRandom::new(2024);
         assert!(
             (0..50).all(|_| not_consume(
                 434,
@@ -1336,7 +1327,7 @@ mod tests {
         );
         // The arm is kind-gated: another shooter with the same window saves
         // nothing.
-        let mut rng = 5u64;
+        let mut rng = tr_core::UnifiedRandom::new(5);
         assert!(
             (0..20).all(|_| !roll_bare(96, &on, &mut rng)),
             "only the Clockwork rides the window"
@@ -1344,7 +1335,7 @@ mod tests {
     }
 
     /// A roll with the baseline flags (the window-only arms' isolation helper).
-    fn roll_bare(shooter: u16, windows: &VolleyWindows, rng: &mut u64) -> bool {
+    fn roll_bare(shooter: u16, windows: &VolleyWindows, rng: &mut tr_core::UnifiedRandom) -> bool {
         not_consume(
             shooter,
             AMMO_ARROW,
@@ -1370,7 +1361,7 @@ mod tests {
             anim_gt_use_anim_minus_8: false,
             ..VolleyWindows::default()
         };
-        let mut rng = 1u64;
+        let mut rng = tr_core::UnifiedRandom::new(1);
         for _ in 0..50 {
             assert!(
                 not_consume(
@@ -1385,7 +1376,7 @@ mod tests {
                 "anim 29 > 22 saves"
             );
         }
-        let mut rng = 1u64;
+        let mut rng = tr_core::UnifiedRandom::new(1);
         for _ in 0..50 {
             assert!(
                 !not_consume(
@@ -1401,7 +1392,7 @@ mod tests {
             );
         }
         // Kind-gated: the same window on another shooter saves nothing.
-        let mut rng = 9u64;
+        let mut rng = tr_core::UnifiedRandom::new(9);
         assert!(
             (0..20).all(|_| !roll_bare(96, &inside, &mut rng)),
             "only the Fairy Queen's item rides this window"
@@ -1440,7 +1431,7 @@ mod tests {
             (779, 85, true, "both keys on one shot"),
         ];
         for (shooter, projectile, want, what) in cases {
-            let mut rng = 64u64;
+            let mut rng = tr_core::UnifiedRandom::new(64);
             let got = (0..30)
                 .filter(|_| {
                     not_consume(
@@ -1466,7 +1457,7 @@ mod tests {
         // arm (`Player.cs:53591`) can save the first shot independently of the
         // window, so its drain rate is the arm's product, not the window's.
         for (shooter, projectile) in [(96u16, 85u16), (779, 0)] {
-            let mut rng = 64u64;
+            let mut rng = tr_core::UnifiedRandom::new(64);
             let saved = (0..30)
                 .filter(|_| {
                     not_consume(
@@ -1496,16 +1487,17 @@ mod tests {
         //    `dontConsume` seeds the flag true — the C# evaluates the arms
         //    regardless of the argument and only the RESULT is discarded;
         //  - `Random` cycling spends 1 more (`Player.cs:53577`, Phase 4's pick).
-        let mut rng = 0xABCD_1234u64;
-        let stream_after = |mut rng: u64, n: usize| {
+        let seed = 0xABCD_1234u64;
+        let stream_after = |seed: u64, n: usize| {
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
             for _ in 0..n {
-                super::next(&mut rng);
+                rng.next();
             }
             rng
         };
         // The Clockwork spends 0 draws on a first shot AND on a later one: the
         // arm is a pure window compare.
-        let mut a = 0xABCD_1234u64;
+        let mut a = tr_core::UnifiedRandom::new(seed as i32);
         let off = VolleyWindows {
             just_started: false,
             ..VolleyWindows::default()
@@ -1519,20 +1511,24 @@ mod tests {
             false,
             &mut a,
         );
-        assert_eq!(a, 0xABCD_1234u64, "the 434 arm draws nothing");
+        assert_eq!(
+            a,
+            stream_after(seed, 0),
+            "the 434 arm draws nothing"
+        );
         // Each of the six guns spends exactly one draw, whatever it returns.
         for shooter in [98u16, 533, 2270, 1782, 1929, 1553] {
-            let mut b = 0xABCD_1234u64;
+            let mut b = tr_core::UnifiedRandom::new(seed as i32);
             let saved = roll(shooter, &mut b);
             assert_eq!(
                 b,
-                stream_after(0xABCD_1234u64, 1),
+                stream_after(seed, 1),
                 "shooter {shooter}: one draw, saved {saved}"
             );
         }
         // Each gunProj item spends exactly one draw with dontConsume true.
         for shooter in [3475u16, 3930, 3540] {
-            let mut c = 0xABCD_1234u64;
+            let mut c = tr_core::UnifiedRandom::new(seed as i32);
             let _ = not_consume(
                 shooter,
                 AMMO_ARROW,
@@ -1544,25 +1540,25 @@ mod tests {
             );
             assert_eq!(
                 c,
-                stream_after(0xABCD_1234u64, 1),
+                stream_after(seed, 1),
                 "gunProj {shooter}: its own roll, dontConsume true"
             );
         }
         // An unmatched shooter with every flag false spends nothing at all.
-        let mut d = 0xABCD_1234u64;
+        let mut d = tr_core::UnifiedRandom::new(seed as i32);
         assert!(!roll(39, &mut d), "the wooden bow");
-        assert_eq!(d, 0xABCD_1234u64, "no arm applies → no draw");
+        assert_eq!(d, stream_after(seed, 0), "no arm applies → no draw");
         // Two flag arms on one shot spend two draws, in the chain's order:
         // ammoBox (draw 1) then ammoCost75 (draw 2) — the second draw's value
         // is the one the cost75 arm's save depends on.
         let mut flags = AmmoFlags::default();
         flags.ammo_box = true;
         flags.ammo_cost75 = true;
-        let mut e = 0xABCD_1234u64;
+        let mut e = tr_core::UnifiedRandom::new(seed as i32);
         roll_flags(39, &flags, &mut e);
         assert_eq!(
             e,
-            stream_after(0xABCD_1234u64, 2),
+            stream_after(seed, 2),
             "two arms, two draws, in the chain's order"
         );
         // The interleave check: a Minishark + Ammo Box shot draws ammoBox FIRST
@@ -1575,13 +1571,13 @@ mod tests {
         let mut disagreements = 0;
         for seed in 1u64..400 {
             let box_first = {
-                let mut d = seed;
+                let mut d = tr_core::UnifiedRandom::new(seed as i32);
                 let a = one_in(5, &mut d);
                 let b = one_in(3, &mut d);
                 a || b
             };
             let shark_first = {
-                let mut d = seed;
+                let mut d = tr_core::UnifiedRandom::new(seed as i32);
                 let a = one_in(3, &mut d);
                 let b = one_in(5, &mut d);
                 a || b
@@ -1590,7 +1586,7 @@ mod tests {
                 continue;
             }
             disagreements += 1;
-            let mut rng = seed;
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
             let got = not_consume(98, AMMO_ARROW, 0, &windows(), &box_only, false, &mut rng);
             assert_eq!(got, box_first, "seed {seed}: ammoBox draws first");
         }
@@ -1608,7 +1604,7 @@ mod tests {
         let mut quiver = AmmoFlags::default();
         quiver.magic_quiver = true;
         for ammo_kind in [AMMO_ARROW, AMMO_STAKE] {
-            let mut rng = 606u64;
+            let mut rng = tr_core::UnifiedRandom::new(606);
             let saves = (0..300)
                 .filter(|_| not_consume(39, ammo_kind, 0, &windows(), &quiver, false, &mut rng))
                 .count();
@@ -1619,8 +1615,8 @@ mod tests {
         }
         // A bullet weapon draws nothing: the gate is stream-invisible.
         for ammo_kind in [97i32, 771, 780, 40 + 1] {
-            let mut rng = 606u64;
-            let before = rng;
+            let mut rng = tr_core::UnifiedRandom::new(606);
+            let before = rng.clone();
             let saves = (0..50)
                 .filter(|_| not_consume(39, ammo_kind, 0, &windows(), &quiver, false, &mut rng))
                 .count();
@@ -1631,8 +1627,8 @@ mod tests {
             assert_eq!(rng, before, "and spends no draw for it");
         }
         // With the flag false the arm is inert for the arrow kinds too.
-        let mut rng = 606u64;
-        let before = rng;
+        let mut rng = tr_core::UnifiedRandom::new(606);
+        let before = rng.clone();
         assert!(
             !(0..50).any(|_| roll_flags(39, &AmmoFlags::default(), &mut rng)),
             "no quiver → no save"
@@ -1653,7 +1649,7 @@ mod tests {
         // A single flag set leaves the other five inert.
         let mut one = AmmoFlags::default();
         one.ammo_cost75 = true;
-        let mut rng = 8128u64;
+        let mut rng = tr_core::UnifiedRandom::new(8128);
         let saves = (0..300).filter(|_| roll_flags(39, &one, &mut rng)).count();
         assert!(saves > 40, "1/4 saves: {saves}");
         assert_eq!(one.ammo_box, false, "the other five stay false");
@@ -1671,12 +1667,12 @@ mod tests {
         // With every window false the two window-keyed arms are inert for a
         // non-window shooter and the 434 arm saves (the "not just started" case
         // the Phase-4 wire will derive).
-        let mut rng = 3u64;
+        let mut rng = tr_core::UnifiedRandom::new(3);
         assert!(
             roll_bare(434, &w, &mut rng),
             "default windows: the Clockwork's arm fires (no first shot)"
         );
-        let mut rng = 3u64;
+        let mut rng = tr_core::UnifiedRandom::new(3);
         assert!(
             !roll_bare(4953, &w, &mut rng),
             "default windows: the Fairy Queen's arm does not"

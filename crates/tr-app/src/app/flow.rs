@@ -627,8 +627,9 @@ impl FrontScreenBehaviours for FrontScreen {
                         // random colour lands on the active category.
                         ui::char_creation::Click::RandomizeColor => {
                             let category = state.category;
-                            let color =
-                                ui::char_creation::randomize_single_color(&mut app.prefix_rng);
+                            let color = ui::char_creation::randomize_single_color(
+                                app.rngs.global(),
+                            );
                             state.draft.set_color_of(category, color);
                             Nav::None
                         }
@@ -654,8 +655,11 @@ impl FrontScreenBehaviours for FrontScreen {
                         // `Click_RandomizePlayer` (`:1545-1657`): the whole
                         // random draft, `Main.rand`-driven.
                         ui::char_creation::Click::RandomizePlayer => {
+                            // `Click_RandomizePlayer` runs on the front end —
+                            // outside every world swap: the bare-`Main.rand`
+                            // stand-in (`app/rng.rs`'s `global`).
                             ui::char_creation::randomize_player(
-                                &mut app.prefix_rng,
+                                app.rngs.global(),
                                 &mut state.draft,
                                 &mut state.hair_picked,
                             );
@@ -2136,8 +2140,6 @@ pub(crate) mod front_flow_tests {
             leaves: Vec::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
-            item_rng: 0,
-            prefix_rng: tr_core::UnifiedRandom::new(0),
             rngs: NamedRngs::new(0),
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
@@ -2950,14 +2952,21 @@ pub(crate) mod front_flow_tests {
     }
 
     #[test]
-    fn the_reforge_roll_consumes_the_prefix_stream() {
-        // `Prefix(-2)` (`Main.cs:41924`) draws from `Main.rand` — the port's
-        // `prefix_rng` (`S1-A-5`), never the npc stream.
+    fn the_reforge_roll_consumes_the_global_stand_in() {
+        // `Prefix(-2)` (`Main.cs:41924`) draws from `Main.rand` — the menu
+        // path's bare-`Main.rand` stand-in (`global()`, DW-4.2), never a
+        // stage stream.
         let mut app = reforge_app();
         let mut expect = tr_core::UnifiedRandom::new(0); // `flow_app`'s seed
         let (expected, _) = crate::prefix::reforge_roll(app.reforge_slot.kind, &mut expect);
         app.reforge_click();
         assert_eq!(app.reforge_slot.prefix, expected);
+        // The global stand-in paid exactly the roll's draws (DW-4.2).
+        assert_eq!(
+            *app.rngs.global(),
+            expect,
+            "the global stand-in paid the reforge roll's draws"
+        );
         // The npcs pass's streams must not advance (the reforge rides the
         // global stand-in).
         assert_eq!(
@@ -2979,6 +2988,47 @@ pub(crate) mod front_flow_tests {
         let coins = app.coins;
         app.reforge_click();
         assert_eq!(app.coins, coins, "the cooldown gates the charge");
+    }
+
+    /// DW-4.2: the char-creation randomize draws the bare-`Main.rand`
+    /// stand-in — the front end runs outside every world swap
+    /// (`Click_RandomizePlayer`, `:1545-1657`): the global stream pays
+    /// exactly the replay's draws and no stage stream moves.
+    #[test]
+    fn test_dw_4_2_char_randomize_draws_the_global_stand_in() {
+        let run = |hit: bool| {
+            let mut app = creation_app(false);
+            let (sw, sh) = app.screen_size();
+            let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+            // The Clothing menu (category 1) holds the template row with the
+            // whole-draft Randomize button.
+            click_creation(&mut app, l.categories[1]);
+            click_creation(&mut app, l.template_buttons[2]);
+            let state = match app.front.as_ref() {
+                Some(FrontScreen::CharCreation(state)) => state.clone(),
+                other => panic!("the creator stays live: {other:?}"),
+            };
+            let global = app.rngs.global().clone();
+            (state.draft.hair, global, hit)
+        };
+        // Two runs: byte-equal drafts and stream states (the seeding is the
+        // world seed — the recorded determinism deviation).
+        let a = run(false);
+        let b = run(false);
+        assert_eq!(a.0, b.0, "the randomize replayed byte-equal");
+        assert_eq!(a.1, b.1, "the global stand-in replayed identically");
+        // The global stream actually drew (the draft's hair rolls land there).
+        assert_ne!(a.1, tr_core::UnifiedRandom::new(0), "global drew");
+        // No stage stream moved (the front end never touches the swaps).
+        let (mut app, _, _) = (creation_app(false), (), ());
+        for key in crate::app::RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                tr_core::UnifiedRandom::new(0),
+                "{} pristine",
+                key.name()
+            );
+        }
     }
 
     #[test]

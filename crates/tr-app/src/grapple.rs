@@ -690,11 +690,12 @@ mod tests {
     fn dw_2_7_a_pool_spawned_hook_flies_latches_and_drives_the_pull() {
         use crate::projectile::ProjectilePool;
         let mut npcs: [crate::npc::Npc; 0] = [];
-        let mut seed: u64 = 0x5EED_1234;
         let w = ground();
         let center = Vec2::new(40.0 * 16.0, 50.0 * 16.0);
         let mut pool = ProjectilePool::new();
-        let mut rng = crate::world_sim::npcs::LootRng(&mut seed);
+        // The pool's roll stream as a `UnifiedRandom` (the `LootRng` bridge
+        // is gone — S1-A-11 P4); the seed rides the constructor.
+        let mut rng = tr_core::UnifiedRandom::new(0x5EED_1234u64 as i32);
         let inputs = crate::projectile::YoyoInputs::default();
         // Aim at a solid tile and let it latch.
         let mut w2 = w;
@@ -737,8 +738,7 @@ mod hook_multi_tests {
     /// One tick's projectile pass on a world with no NPCs.
     fn tick(pool: &mut ProjectilePool, w: &mut World, center: Vec2) {
         let mut npcs: [crate::npc::Npc; 0] = [];
-        let mut seed: u64 = 0x5EED_1234;
-        let mut rng = crate::world_sim::npcs::LootRng(&mut seed);
+        let mut rng = tr_core::UnifiedRandom::new(0x5EED_1234u64 as i32);
         let inputs = YoyoInputs::default();
         pool.update(
             w,

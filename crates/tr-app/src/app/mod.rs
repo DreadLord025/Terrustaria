@@ -627,11 +627,6 @@ pub(crate) struct App {
     pub(crate) liquid_alpha: [f32; 15],
     /// World item drops (`Terraria.Item` first pass).
     pub(crate) items: Vec<ItemDrop>,
-    pub(crate) item_rng: u64,
-    /// The C# `Main.rand` stream the prefix rolls consume (`Item.Prefix`,
-    /// `Item.cs:528`): `UnifiedRandom`, separate from the splitmix streams so a
-    /// prefix roll never perturbs loot/crit/particle draws (`S1-A-5`).
-    pub(crate) prefix_rng: UnifiedRandom,
     /// `Main._rngs` (`Main.cs:1294-1295`): the `Main.SwapRandom` named streams,
     /// one `UnifiedRandom` per stage key, all seeded from the world seed
     /// (`:3210-3212`). Stages take their stream from here instead of reading a
@@ -1127,8 +1122,8 @@ impl App {
     /// kind's defaults, so the reset is the prefix-field write — and the
     /// top-tier 60-tick cooldown (`Main.cs:41924`). The vanilla plays
     /// `BestReforge`/`Item37`; the port's cue set has no such key yet. The roll
-    /// consumes the shared `prefix_rng` (`Main.rand`), like every natural roll
-    /// (`S1-A-5`).
+    /// consumes the bare-`Main.rand` stand-in (`NamedRngs::global`) — the menu
+    /// path runs outside every swap (`S1-A-11` §4).
     pub(crate) fn reforge_click(&mut self) {
         let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
             return;
@@ -1144,8 +1139,11 @@ impl App {
             return;
         }
         self.coins -= cost;
-        let (prefix, top_tier) =
-            crate::prefix::reforge_roll(self.reforge_slot.kind, &mut self.prefix_rng);
+        // `Prefix(-2)` draws `Main.rand` — the menu path runs outside every
+        // swap, so the port's bare-`Main.rand` stand-in (`NamedRngs::global`,
+        // `app/rng.rs`) feeds it.
+        let kind = self.reforge_slot.kind;
+        let (prefix, top_tier) = crate::prefix::reforge_roll(kind, self.rngs.global());
         self.reforge_slot.prefix = prefix;
         if top_tier {
             self.reforge_cooldown = 60;
@@ -2944,10 +2942,6 @@ impl App {
             leaves: Vec::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
-            item_rng: world_seed,
-            // A per-consumer stream like the splitmix fields above, but the
-            // C# `Main.rand` algorithm (the prefix rolls, `S1-A-5`).
-            prefix_rng: UnifiedRandom::new(world_seed as i32),
             // The C# seeds every `SwapRandom` key with the world seed
             // (`Main.cs:3212`); the registry creates them lazily.
             rngs: NamedRngs::new(world_seed as i32),

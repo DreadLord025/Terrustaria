@@ -433,8 +433,9 @@ fn shift_rare(rare: i32, prefix: u16, m: &Multipliers) -> i32 {
 // --- The roll engine --------------------------------------------------------
 
 /// The one draw the engine takes: the C# `UnifiedRandom.Next(int)` (`[0, max)`).
-/// Runtime prefix rolls consume the app's `prefix_rng` ([`UnifiedRandom`]); the
-/// worldgen chest seam adapts its splitmix state ([`SplitMixPrefix`]).
+/// Runtime prefix rolls join their site's stream ([`UnifiedRandom`] — the
+/// stage stream in-world, the bare-`Main.rand` stand-in in menus, S1-A-11);
+/// the worldgen chest seam adapts its splitmix state ([`SplitMixPrefix`]).
 pub trait PrefixRandom {
     fn next_max(&mut self, max: i32) -> i32;
 }
@@ -563,8 +564,8 @@ pub(crate) fn reforge_roll(kind: u16, rng: &mut impl PrefixRandom) -> (u16, bool
 /// The worldgen chest seam's entry (`chest_gen.rs`): the same engine over the
 /// splitmix `chest_rng` stream, kept byte-identical until S1-A-4 puts the chest
 /// loot back on the vanilla `WorldGen.genRand` interleave. Do not use it for
-/// runtime prefix rolls — those take [`roll_prefix`] with the app's
-/// `prefix_rng`.
+/// runtime prefix rolls — those take [`roll_prefix`] with their site's
+/// stream (the stage stream in-world, `global()` in menus).
 pub(crate) fn roll_prefix_splitmix(kind: u16, prefix_want: i32, rng: &mut u64) -> u16 {
     roll_prefix(kind, prefix_want, &mut SplitMixPrefix(rng))
 }

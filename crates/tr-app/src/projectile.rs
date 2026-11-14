@@ -2581,8 +2581,8 @@ pub struct Projectile {
     pub rot: f32,
     pub damage: i32,
     pub knock_back: f32,
-    /// The crit decision rolled at throw time (the item stream lives in the
-    /// app, not in the projectile step).
+    /// The crit decision rolled at throw time (the roll rides the editing
+    /// pass's `UpdatePlayers` stream, not the projectile step's).
     pub crit: bool,
     /// `Projectile.friendly` (`:3115`): true = the player's shots (the pool's
     /// PVE pass hits NPCs), false = the hostile shots (the player-contact
@@ -10249,7 +10249,8 @@ impl ProjectilePool {
             FIRE_WHIP => npc.buffs.add_buff(323, 240), // Hellfire
             COOL_WHIP => npc.buffs.add_buff(324, 240), // Frostburn
             THORN_WHIP => {
-                // `:11738` — the 1/5 roll, from the item stream.
+                // `:11738` — the 1/5 roll, on the pass's `UpdateProjectiles`
+                // stream.
                 if rng.next_range(0, 5) == 0 {
                     npc.buffs.add_buff(20, 180); // Poisoned
                 }

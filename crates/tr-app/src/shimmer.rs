@@ -324,8 +324,8 @@ pub fn decraft_ingredients(recipe_index: usize) -> Vec<DecraftIngredient> {
 ///
 /// `indices` are the drops whose `shimmer_time` crossed 0.9 this step. The
 /// spawns ride the same 60 Hz step (the C#'s `SyncItem`/net arm is MP-only, so
-/// it is out here); the alchemy discount draws the port's `item_rng` (the C#'s
-/// `Main.rand`) exactly like the pot-loot rolls do.
+/// it is out here); the alchemy discount draws `stream(UpdateItems)` (the C#'s
+/// `Main.rand` under the `UpdateItems` swap) exactly like the pot-loot rolls.
 pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
     // The decraft lock checks read the world's downed flags through the
     // thread-local (the pure helpers stay world-free).
@@ -484,12 +484,11 @@ fn apply_decraft(app: &mut App, idx: u32, recipe_index: usize, amount: u32) {
     for ing in ingredients {
         let mut units = ing.units * amount;
         if alchemy {
-            // `:1794-1800` — one `Main.rand.Next(3) == 0` per unit.
+            // `:1794-1800` — one `Main.rand.Next(3) == 0` per unit; the
+            // decraft runs in `WorldItem.GetShimmered` under the `UpdateItems`
+            // swap (`Main.cs:18024`), so the draws ride `UpdateItems`.
             for _ in 0..ing.units * amount {
-                let mut state = app.item_rng;
-                let r = crate::app::rand01(&mut state);
-                app.item_rng = state;
-                if (r * 3.0) as i32 == 0 {
+                if app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(3) == 0 {
                     units = units.saturating_sub(1);
                 }
             }
@@ -502,7 +501,9 @@ fn apply_decraft(app: &mut App, idx: u32, recipe_index: usize, amount: u32) {
         }
     }
     for (kind, count) in spawns {
-        crate::world_sim::items::spawn_item_drop_px(app, kind, count, pos);
+        // `SpawnShimmeredItem` → `Item.NewItem` on the `UpdateItems` stream.
+        let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
+        crate::world_sim::items::spawn_item_drop_px(&mut app.items, rng, kind, count, pos);
     }
     let create_stack = craft::RECIPES.get(recipe_index).map_or(1, |r| r.create.1);
     if let Some(drop) = app.items.get_mut(idx as usize) {

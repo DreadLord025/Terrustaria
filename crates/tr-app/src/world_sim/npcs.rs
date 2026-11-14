@@ -17,8 +17,9 @@ use crate::spawner;
 /// The player's death message: a DoT drain death resolves its attribution's
 /// `DeathText.*` row family (`KillMe(PlayerDeathReason.ByOther(N))` with the
 /// `Lang.cs:1045-1127` variant roll — the C# rides `Main.rand`; the port
-/// draws it from the item stream, the M4-LOOT convention, the first use in
-/// this path); every other death is the `DeathText.Slain` row.
+/// draws it from the `UpdatePlayers` stream (the death runs in
+/// `Player.KillMe` under the `UpdatePlayers` swap)); every other death is
+/// the `DeathText.Slain` row.
 fn dot_death_text(
     pending: Option<DotDeath>,
     player_name: &str,
@@ -37,8 +38,8 @@ fn dot_death_text(
 
 /// `Player.StatusFromNPC` (`Player.cs:22333`), the black-slime row `:22591`:
 /// `npc.type == 1 && npc.netID == -6` rolls `Next(4) == 0` for 900 ticks of
-/// Darkness on touch. The roll rides the item stream — the port's
-/// `Main.rand` stand-in (the M4-LOOT convention).
+/// Darkness on touch. The roll rides the `UpdateNPCs` stream — the C#
+/// `StatusFromNPC` runs inside `NPC.UpdateNPC` under the `UpdateNPCs` swap.
 pub(crate) fn black_slime_darkness_touch(
     slime: &Npc,
     player: &mut crate::player::Player,
@@ -105,7 +106,11 @@ pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
             num -= stack;
             (71, stack as u32)
         };
-        crate::world_sim::items::spawn_item_drop_px(app, kind, stack, Vec2::new(px, py));
+        // The payout is a right-click interaction — `Player.ItemCheck` under
+        // the `UpdatePlayers` swap; the coin spawn draws ride the same
+        // stream as the turn-in's (`Item.NewItem`'s `Main.rand`).
+        let rng = app.rngs.stream(RngKey::UpdatePlayers);
+        crate::world_sim::items::spawn_item_drop_px(&mut app.items, rng, kind, stack, Vec2::new(px, py));
     }
     app.world.tax_money = 0;
     true
@@ -465,7 +470,15 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
     );
     let (ax, ay) = app.npcs[angler_idx].center();
     for line in lines {
-        crate::world_sim::items::spawn_item_drop_px(app, line.item, line.stack, Vec2::new(ax, ay));
+        // The reward spawns join the turn-in's `UpdatePlayers` stream.
+        let rng = app.rngs.stream(RngKey::UpdatePlayers);
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            rng,
+            line.item,
+            line.stack,
+            Vec2::new(ax, ay),
+        );
     }
 }
 
@@ -2646,8 +2659,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if let Some((banner, text)) = app.banners.add_npc_kill_by(entry.net_id, &app.player_name) {
             crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_COMMAND);
             let item = tr_core::bestiary::banner_to_item(banner);
+            // `CountKillForBannersAndDropThem` fires from the death path —
+            // the `UpdateNPCs` stream (`NPC.cs:79818-79827`).
+            let rng = app.rngs.stream(RngKey::UpdateNpcs);
             crate::world_sim::items::spawn_item_drop(
-                app,
+                &mut app.items,
+                rng,
                 item as u16,
                 1,
                 (npc.x / 16.0) as i32,
@@ -3788,25 +3805,12 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
     }
 }
 
-/// The engine's RNG adapter over the app's deterministic item stream.
-pub(crate) struct LootRng<'a>(pub(crate) &'a mut u64);
-
-impl tr_core::loot::DropRng for LootRng<'_> {
-    fn next_range(&mut self, min: i32, max: i32) -> i32 {
-        if max <= min {
-            return min;
-        }
-        min + (crate::app::rand01(self.0) * (max - min) as f32) as i32
-    }
-    fn next_float(&mut self) -> f32 {
-        crate::app::rand01(self.0)
-    }
-}
 
 /// `NPC.NPCLoot_DropMoney` through the ported chain
 /// (`tr_core::loot::drop_money`): the per-kind `NPC.value` base, the
 /// ±20-75 % spread, the six bonus chains and the platinum/gold/silver/copper
-/// split. Coin velocities use the app's item stream like the C# scatter.
+/// split. Coin velocities ride the death path's `UpdateNPCs` stream like
+/// the C# scatter.
 fn spawn_coins(app: &mut App, npc: &Npc) {
     let (x, y) = npc.center();
     // `NPCLoot_DropMoney` fires from the same death path — the `UpdateNPCs`
@@ -4547,7 +4551,7 @@ mod tests {
         // DW-3.1 — the drop rules read the killer's luck (`CommonDrop.cs:36`
         // through `info.luck`) and `NPCLoot_DropMoney` reads
         // `closestPlayer.luck` (`NPC.cs:79622`): at luck 1.0 both hit
-        // branches always fire, so the item stream lands elsewhere than at
+        // branches always fire, so the loot stream lands elsewhere than at
         // luck 0, while luck 0 stays byte-identical to the pre-wiring plain
         // rolls (the double-roll math itself is loot.rs-tested).
         use crate::app::flow::front_flow_tests::flow_app;
