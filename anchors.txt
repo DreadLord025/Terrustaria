@@ -191,3 +191,4 @@ tools/gen_recipes.py|cs_tiles|S1-L-11 - the reverse recipes derive from the C# i
 
 crates/tr-core/src/wld/sections/tiles.rs|fn write_tile_record|S1-J-1 - the .wld tile section writes the four wire colours into the chained header bytes exactly as the C# (b2 0x02/0x04/0x08 for wire()/wire2()/wire3(), b3 0x20 for wire4() - WorldFile.cs:1508-1532)
 crates/tr-core/src/wld/mod.rs|fn load_tiles|S1-J-1 - the .wld reader restores the four wire colours (LoadWorldTiles:2614-2632/2651-2654) into every row of the RLE run (CopyFrom :2711)
+crates/tr-app/src/map.rs|fn s1_l5_synthetic_map|S1-L-5 - the .map deflate parity: the frozen pre-deflate body + the vanilla FW 4.8.1 reference stream inflate back onto it (tools/MapDeflateHarness), the wrapper is raw deflate at CompressionLevel.Optimal via flate2 zlib-rs (MapHelper.cs:3047), and paint_color_bytes is the exact WorldGen.paintColor table (ruling 7 retired)
