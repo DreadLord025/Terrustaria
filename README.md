@@ -207,4 +207,4 @@ full list.
 
 **Author**
 
-Made by **DreadLord025** (@DreadLord025).
+Made by **DreadLord025**, **HugoxDP**.
