@@ -1208,6 +1208,37 @@ impl App {
                     );
                 });
 
+                // `TileDrawing.Update`'s WindGrid chain (`TileDrawing.cs:377-378`,
+                // S1-G-8): the grid covers the screen's draw area
+                // (`EnsureWindGridSize`, `:7773-7778` — the port's view rect is
+                // the waterfall scan's camera±half shape) and ticks every
+                // update; then the moving player stamps the tiles their
+                // hitbox overlaps (`WindGrid.ScanPlayer`, `WindGrid.cs:73-101`
+                // — the single-player arm; the port's roster is the one local
+                // player). The push family's draw-pass consumers are the
+                // S1-G-1 tile passes (the grass/vine sway reads the grid).
+                {
+                    let half = screen * 0.5 / *zoom;
+                    let vx0 = ((camera.x - half.x) / TILE_PX).floor() as i32;
+                    let vx1 = ((camera.x + half.x) / TILE_PX).ceil() as i32;
+                    let vy0 = ((camera.y - half.y) / TILE_PX).floor() as i32;
+                    let vy1 = ((camera.y + half.y) / TILE_PX).ceil() as i32;
+                    wind.wind_grid.set_size(vx1 - vx0, vy1 - vy0);
+                    wind.wind_grid.update();
+                    if wind.sway_enabled {
+                        if let Some(p) = player.as_ref() {
+                            wind.scan_player(
+                                world,
+                                (p.x, p.y),
+                                (p.x + crate::player::WIDTH, p.y + p.height),
+                                (p.vx, p.vy),
+                                (camera.x, camera.y),
+                                (screen.x, screen.y),
+                            );
+                        }
+                    }
+                }
+
                 // Liquids animate the texture at 8 fps; include the frame in the G6
                 // key only when the world has any liquid.
                 let liquid_anim = if *has_liquids {
