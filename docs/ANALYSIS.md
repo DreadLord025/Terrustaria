@@ -13368,3 +13368,42 @@ Deviations:
   not ported yet.
 * **The minion positions** stay the sim's (the surface near the King
   Slime) rather than the C#'s random offsets inside its box.
+
+## The wiring tools (S1-L-6b1, 2026-11-14)
+
+The wiring is now placeable in play: `tr-core/src/edit.rs` grows
+`place_wire`/`kill_wire` (the C#'s four `WorldGen.PlaceWire*`/`KillWire*`
+functions — one per `Tile.wire*` bit, `WorldGen.cs:58111-58230` — folded
+into the port's colour-parameterised side table) and
+`place_actuator`/`kill_actuator` (`WorldGen.cs:58011-58040`), and
+`tr-app/src/world_sim/editing.rs::use_wiring_tool` is
+`Player.ItemCheck_UseWiringTools` (`Player.cs:46749-46920`): the wrench
+family (509 red, 850 blue, 851 green, 3612 yellow) places its wire and
+burns one **Wire item (530)** from the inventory — the tool itself is never
+consumed — the wire cutter (510) takes the wire off in the C#'s order
+(yellow, green, blue, red) and drops the Wire item back into the world, and
+the Actuator (849) marks the tile without consuming a stack
+(`Player.cs:46878-46883`). `Player.CanDoWireStuffHere`
+(`Player.cs:46920-46943`) refuses the unbreakable wall (350) and the temple
+wall (87).
+
+Deliberate deviations:
+
+1. The Actuation Rod (3620) and the Multicolor Wrench (3625) are out of this
+   row: the rod needs `Wiring.Actuate` (`Player.cs:46887-46900`) and the
+   multi-tool the `WiresUI` tool modes (`Player.cs:46903-46918`) — both ride
+   the S1-L-6b2 row with the switch bridge.
+2. `NPC.downedGolemBoss` (the C#'s gate on the temple wall,
+   `Player.cs:46927`) has no ported world flag, so the temple wall refuses
+   the wires exactly as it does before the Golem dies; the dual-dungeons
+   temple check of the same gate needs a seed the port does not carry.
+3. The C#'s wire-removal dust (five dust-50 particles,
+   `WorldGen.cs:58133-58135`) and the net messages are out — the port's dust
+   pool has no per-wire removal cue and the local wire state is the truth.
+4. The C#'s cursor-item icon (`Main.ItemIconCacheUpdate`) rides the port's
+   existing cursor-icon path.
+
+Out (the rest of S1-L-6b): the player→switch bridge
+(`Collision.SwitchTiles`, `Player.cs:32177/32339/34823`), the pressure-plate
+helper and `Wiring.running`'s production readers.
+
