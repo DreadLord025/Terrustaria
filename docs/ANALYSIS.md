@@ -8243,21 +8243,61 @@ already there) and `ui/tooltip.rs` replaced its four hardcoded zero rows with
 `MouseText_DrawItemTooltip_GetLinesInfo`'s real rows (`Main.cs:20631-20800`),
 computed from the port's own `ItemDef` values.
 
-Deliberate deviations and notes:
+Deliberate deviations and notes (S1-E-20 closed the player-side and
+per-item halves — see "The item tooltip rows (S1-E-20)" below):
 
-- **The player-side layers are out** (the accessory/M3 layer): the C#'s
-  `GetWeaponDamageMultiplier` (the port shows the raw item damage), the
-  player crit bonuses (the item's own `crit`), `minionKB`, the magic-quiver
-  ×1.1 knockback and the 3106 stealth arm — each defaults to its neutral value
-  with a comment.
-- **`notAmmo` and `ToolTipDamageMultiplier` are not ported** (no fields), so
-  the damage row's gate is the plain `damage > 0` (the coin-type exception and
-  the ammo gate ride along when the fields land).
+- ~~**The player-side layers are out**~~ — **CLOSED (S1-E-20)**: the damage
+  row carries the player's weapon-damage multiplier, the crit row the player's
+  crit, the knockback row `minionKB` / the magic-quiver ×1.1 / the knockback
+  gloves / the shroomite armour's ranged scale. The accessor fields
+  (`minionKB`, `kbGlove`, `kbBuff`, `shroomiteStealth`, `stealth`, `spaceGun`)
+  are constants-off until the accessory layer grants them.
+- ~~**`ToolTipDamageMultiplier` is not ported**~~ — **CLOSED (S1-E-20)**: the
+  nine doubled ids ride a small table (`ItemID.cs:492`).
+- `notAmmo` is still not ported (no field), so the damage row's gate is the
+  plain `damage > 0` (the coin-type exception and the ammo gate ride along
+  when the field lands).
 - The line geometry (`tooltip_box_rect`, the `(14, 9)` inset, the shadow
   copies) is unchanged — only the row list changed.
 - Without the shipped `Terraria.Localization.Content.*.json` (the gitignored
   resources the loader probes) the keys show through — vanilla's own
   unknown-key behaviour.
+
+## The item tooltip rows (S1-E-20, 2026-11-14)
+
+`Main.MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-21010`) is
+ported in full for the rows the port's own data reaches. The hover name is
+`Item.GetHoverName(item, stack)` (`Item.cs:438-446`): the affix name
+(`Item.AffixName`, `:1194-1201` → `Lang.GetPrefixedItemName`,
+`Lang.cs:225-239` — the prefix name + the item name through the
+`CombineFormat.Prefix` format) plus the stack suffix. The per-item text is
+`Lang.GetTooltip(item.type)` (`Lang.cs:193-196`): the
+`ItemTooltip.<ItemID const name>` language rows, one line each.
+
+The missing rows landed too: the life / mana restore rows and the buff row
+(`CommonItemTooltip.*`, `Main.cs:20876-20904`), the fishing rows
+(`GameUI.PrecentFishingPower` / `BaitRequired` / `BaitPower`, `:20805-20812`),
+the quest / vanity rows (`:20833-20841`), the material / ammo / consumable
+rows (`:20911-20933`) and the wider equipable gate (`:20816`): the hook
+projectiles (`Main.projHook[item.shoot]` — the aiStyle-7 set,
+`Main.cs:6618-6624`), the mounts (`item.mountType != -1`) and the light /
+vanity pets.
+
+Deviations:
+
+- **The result is not a cursor item.** The C# hands the crafted/hovered item
+  to `Main.mouseItem` (`Main.CraftItem_GrantItem`, `Main.cs:42607-42612`) and
+  the tooltip reads that; the port's tooltip reads the hovered slot directly.
+- **The favourite / social rows are out** (`Main.cs:20646-20658`): the
+  tooltip has no favourite or social state to read.
+- **The shop and upgrade rows are out** (`MouseText_DrawItemTooltip_AddShopLines`,
+  `Main.cs:20362`): the port's shop tooltip has no such rows.
+- **The bulk-buy / bulk-craft stack arms are out** (`ItemSlot.EstimateDisplayStack`,
+  `ItemSlot.cs:3150-3162`): the displayed stack is the item's own.
+- **The `InputTrigger_*` substitutions are the keyboard keybind names**
+  (`Lang.cs:150-161` → `PlayerInput.GenerateRawInputList`,
+  `PlayerInput.cs:1948`): the port has no gamepad glyph list, so the
+  keyboard's key names stand in.
 
 
 ## Tile sections (M6-NET-3)
@@ -13014,3 +13054,169 @@ chains' `hideLootReport` flag are not modelled by the port, so the rows
 carry no condition text and the chained rows always print; the town-NPC and
 critter providers, the search filters, the sorting, the flavour and the MP
 kill-sync ride the town/MP subsystems.
+
+## The hurting-tile family (S1-E-13a, 2026-11-14)
+
+`crates/tr-app/src/touch_damage.rs` now carries the vanilla's tile-contact
+hazards in full. `Collision.CanTileHurt` (`Collision.cs:3206-3225`) reads the
+four `TileID.Sets` tables (`TileID.cs:605-609` — `TouchDamageDestroyTile`,
+`Suffocate`, `TouchDamageHot`, `TouchDamageBleeding` and the
+`TouchDamageImmediate` value table), all of which the S1-F-8 generator already
+emits into `tr-core/src/tiledata/sets.rs`: the hand-written nine-row
+immediate table is gone, and the generated bitsets replace the "no ported
+members yet" note the module used to carry. `Collision.HurtTiles`
+(`Collision.cs:3115-3204`) adds the suffocate shrink (`num6 = 2`,
+`:3155-3163`) — the sands pull the box in by two pixels on every side, and a
+sloped suffocating tile is skipped outright (`:3164-3169`).
+
+`Player.ApplyTouchDamage` (`Player.cs:28977-29019`) is ported arm by arm:
+the rolled immediate damage (`Main.DamageVar(num, -luck)`), the burning
+(buff 67 for 20 ticks) and bleeding (buff 30 for 600-1200 ticks) buffs that
+fire only when the hit was *not* swallowed — the C#'s `flag` is set when
+`Hurt` returns 0, so an immune player does not burn or bleed — the
+`suffocateDelay` counter (five ticks in the sand, the sixth suffocates with
+buff 68) and the destroy-on-touch `WorldGen.KillTile` for the four thorn
+tiles. The counter is the C#'s `byte` field (`Player.cs:2318`) and keeps the
+source's quirk: it only resets when another hurt tile is touched, not when
+the player walks out of the sand.
+
+Deliberate deviations:
+
+1. `Player.fireWalk` (the Obsidian Skull) has no ported accessor, so the hot
+   arm always fires — the C#'s `player == null || !player.fireWalk`
+   (`:3220`) with a player that cannot walk on fire.
+2. `Player.shimmering` (the C#'s gate around the whole pass,
+   `Player.cs:27608`) has no ported player state, so the pass always runs.
+3. `Player.TouchedTiles` (the movement-traced fallback in `GetHurtTile`)
+   is still not modelled — the port's box scan covers the same area with the
+   source's own ±1 margin.
+4. `ImmunityCooldownID.TileContactDamage` collapses into the port's single
+   `hurt_cd` (the port carries one immunity window, not the C#'s per-source
+   array).
+5. The bleeding duration's roll rides the port's `item_rng` stream (the C#'s
+   `Main.rand`), the same stream the damage roll already used.
+
+Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `StickyTiles` +
+`Player.StickyMovement`, `SwitchTiles`, `BuildTileContacts`,
+`noSlopeCollision`, `AdvancedTileCollision` and `DrownCollision`/
+`GetWaterLine`.
+## The goblin family's ids (S1-D-3d, 2026-11-14)
+
+The port's four goblin kinds carried **each other's** vanilla `NPCID`: the
+kind named `GoblinThief` sat on the type 26 (the vanilla's **peon**), the
+`GoblinWarrior` on the 27 (the **thief**), the `GoblinArcher` on the 28
+(the **warrior**) and the `GoblinPeon` on the 111 (the **archer**) — the
+peon/thief/warrior/archer cycle rotated by one.
+
+The C#'s rows (`ID/NPCID.cs:10729-10733`/`:10899`, the `SetDefaults` arms
+`NPC.cs:15644-15730`):
+
+| kind | type | HP | damage | defense | kb resist | value |
+| --- | --- | --- | --- | --- | --- | --- |
+| the peon | 26 | 60 | 12 | 4 | 0.8 | 100 |
+| the thief | 27 | 80 | 20 | 6 | 0.7 | 200 |
+| the warrior | 28 | 110 | 25 | 8 | 0.5 | 150 |
+| the archer | 111 | 80 | 20 | 6 | 0.7 | 200 |
+
+The port's stats rows followed the **ids** (the thief carried the peon's
+60 HP, the warrior and the peon the thief's 80, the archer the warrior's
+110), and the bestiary's `net_id` — the C#'s `NPC.type` — carried the
+same rotation. The loot tables key on that net id, so a "Goblin Thief"
+dropped the peon's loot and credited the peon's bestiary entry.
+
+The fix moves the ids and the stats back onto the names: the bestiary's
+four `net_id`s follow the C# (`cs_id` reads them through the S1-F-3
+fallback), and the stats rows carry the C#'s values per name. The port's
+`docs/NPC_AI_TAXONOMY.md` had the C#'s mapping all along ("26/27/28 |
+Goblin Peon/Thief/Warrior | 60/80/110 | 12/20/25 | 4/6/8") — the code
+had drifted from the doc.
+
+Two duplicate match arms died with the fix: the stats functions carried a
+second, by-name set of goblin rows *after* the by-id set, so the correct
+values were unreachable (`unreachable pattern` warnings). The dead rows
+are gone and the effective rows carry the C#'s values.
+
+The port's own wire ids (the `NpcKind` u16 roster: 57/58/59/60) and the
+sprite sheets (`NPC_27`/`NPC_28`/`NPC_111`/`NPC_26`) were already keyed by
+name and are untouched — the kinds, their art and their ids now agree.
+
+## The aiStyle-3 walk-speed table (S1-D-3c, 2026-11-14)
+
+`AI_003_Fighters` (`NPC.cs:55856-59800`) is the vanilla's ground-fighter
+machine: the per-type walk groups, the shooters' stop-and-fire cycle and
+the boss riders. The port ran every kind that rides its walker step at one
+speed — the skeleton's 0.8 for the cave walkers, the pirates and the
+martians, the zombie's own 0.6, the shooters' 5.0 — while the C#'s arm
+carries a per-type velocity cap per group:
+
+| group | cap | kinds (the C#'s rows) |
+| --- | --- | --- |
+| the `num107` default (`:58322-58374`) | 1f | the zombie (3), the undead miner (44), the goblin warrior (28) |
+| the `num83` group (`:57606-57691`) | 1.5f | the skeleton (21), the goblin peon (26); the gray grunt 1.8, the giga zapper 2.25, the vortex rifleman 6, the vortex soldier 4 |
+| the cap-2 group (`:57554-57578`) | 2f | the goblin thief (27), the pirate deckhand (212) |
+| the cap-3 group (`:57520-57552`) | 3f | the pirate captain's mate (213) |
+| the shooters' group (`:59717-59750`) | 1f | the pirate captain (216), the martian officer (383); the pirate archer 2, the corsair 1.5, the scrambler/ray gunner 2, the stardust spider/soldier 2, the vortex hunter 4, the martian walker 4 |
+| the Martian engineer's own arm (`:58032-58069`) | 1.5f | the martian engineer (386) |
+
+`NpcKind::ai3_walk_speed` is the port's table; the zombie, the cave
+walkers (the skeleton, the undead miner, the pirate deckhand, the pirate
+captain's mate), the goblins and the shooters read it instead of their
+hard-coded speed. The kinds whose arm is bespoke (the pillar mobs, the
+vortex family, the Goblin Archer) keep their own speed and are not in the
+table.
+
+Deviations:
+
+* **The C#'s acceleration model is not ported**: the vanilla ramps the
+  velocity toward the cap at 0.07/tick (0.09/0.08/0.5/1.0 for the shooter
+  rows) and decays it ×0.8 past the cap; the port's walker step sets the
+  velocity to the cap directly. The cap itself — the value the C#'s
+  acceleration converges to — is the port's table.
+* **The C#'s scale factor on the `num107` group** (`num107 *= 1f + (1f -
+  this.scale)`, `:58374-58376`) rides the kind's `scale` (the vanilla's
+  humanoid scales are 0.9-1.1); the port's scale is 1 for these kinds, so
+  the factor is 1 — except for the kinds whose scale the port does not
+  carry (the goblins' 0.9/0.95/1.1), which the group does not scale
+  anyway.
+
+## The Brain of Cthulhu's machine (S1-D-3e, 2026-11-14)
+
+`AI_054` (`NPC.cs:32370-32656`) is the Brain of Cthulhu's family machine:
+the creeper swarm's shield, the blink machine (the Brain teleports around
+the player, fading out and in), the retreat when its swarm dies and the
+despawn ramp when the player leaves the Crimson zone. The port ran a
+stand-in — a 60-tick drift toward the player plus a 9-px dash.
+
+The arm now carries the C#'s machine:
+
+* **the normal phase** (`:32522-32527`): the velocity points at the player
+  at 1 px/tick (the getGood world's 3);
+* **the blink** (`:32532-32599`): the `localAI[1]` timer (120 + `Next(300)`
+  ticks, re-rolled every tick) picks a tile 12-40 tiles from the player
+  (the signs are random, the player's velocity leads the pick, the tile
+  must be free of solid blocks and — after the 75th try — in line of sight
+  of the player), the fade-in (alpha + 5/tick to 255) teleports the Brain
+  onto it and the fade-out (alpha − 5/tick) returns to the normal phase;
+* **the retreat** (`:32401-32518`): with no Creeper left the Brain switches
+  to `ai[0] = -1` and drifts at 8 px through the 50/51 blend; its timer
+  (60 + `Next(120)` ticks) picks a tile 10-12 tiles out (no sight gate) and
+  the `-2`/`-3` states fade the Brain in on it and back out;
+* **the despawn ramp** (`:32619-32636`): a dead player or a player out of
+  the Crimson zone sinks the Brain (`velocity.Y += (localAI[3] - 60) * 0.25`)
+  and fades it out.
+
+The creeper swarm's spawn and the shield stay in the sim's pass
+(`world_sim/npcs.rs`: the 20 Creepers + `dont_take_damage` while one
+lives); the arm's "no Creeper left" test needs the live count, so the sim
+writes it into `Npc::brain_local[2]` (the C#'s `num818`).
+
+Deviations:
+
+* **The gore/dust burst is SKIPPED** (`:32401-32419`) — no dust/gore layer.
+* **The MP-only branches use the single-player values** (`Main.netMode !=
+  0`): the port has no multiplayer arm, so the blink's period, the fade
+  rates and the "crimson boss" bookkeeping are the single-player ones.
+* **`justHit` rides the port's `hurt_cd`** (the hit cooldown) — the C#'s
+  flag is a single tick, the port's window is the timer the other arms
+  use for the same purpose (the port's convention, documented in the
+  Goblin Archer's arm).

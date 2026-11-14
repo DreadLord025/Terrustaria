@@ -59,17 +59,17 @@ pub enum NpcKind {
     Hornet,
     /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
     MeteorHead,
-    /// `NPCID.GoblinThief` (26) — the invasion runner (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinThief` (27) — the invasion runner (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 12, def 4, 60 HP, kb 0.8, value 100).
     GoblinThief,
-    /// `NPCID.GoblinWarrior` (27) — the invasion fighter (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinWarrior` (28) — the invasion fighter (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
     GoblinWarrior,
-    /// `NPCID.GoblinArcher` (28) — the invasion archer (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinArcher` (111) — the invasion archer (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 25, def 8, 110 HP, kb 0.5, value 150; the arrows
     /// ride the projectile work).
     GoblinArcher,
-    /// `NPCID.GoblinPeon` (111) — the invasion grunt (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinPeon` (26) — the invasion grunt (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
     GoblinPeon,
     /// `NPCID.GoblinSummoner` (471) — the hardmode invasion caster
@@ -1458,6 +1458,44 @@ impl NpcKind {
         crate::bestiary::entry_for_npc(self, SlimeVariant::Blue).net_id
     }
 
+    /// `AI_003_Fighters`'s per-type walk-speed caps (`NPC.cs:57403-59800`):
+    /// the velocity ceiling each kind walks at.
+    ///
+    /// The C#'s groups:
+    /// - the `num107` default (`:58322-58374`): 1f;
+    /// - the `num83` group (`:57606-57691`): 1.5f with the per-type rows;
+    /// - the cap-2 group (`:57554-57578`);
+    /// - the cap-3 group (`:57520-57552`);
+    /// - the shooters' group (`:59717-59750`): 1f with the per-type rows;
+    /// - the Martian engineer's own arm (`:58032-58069`): 1.5f.
+    ///
+    /// The kinds whose arm is bespoke (the pillar mobs, the vortex family,
+    /// the Goblin Archer) carry their own speed and are not listed — the
+    /// table is the walkers' shared source.
+    pub fn ai3_walk_speed(self) -> Option<f32> {
+        Some(match self {
+            NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
+            NpcKind::Skeleton => 1.5,           // the num83 group (`:57606`)
+            NpcKind::UndeadMiner => 1.0,        // the num107 default
+            NpcKind::GoblinPeon => 1.5,         // the num83 group
+            NpcKind::GoblinThief => 2.0,        // the cap-2 group (`:57554`)
+            NpcKind::GoblinWarrior => 1.0,      // the num107 default
+            NpcKind::PirateDeckhand => 2.0,     // the cap-2 group
+            NpcKind::PirateCaptainsMate => 3.0, // the cap-3 group (`:57520`)
+            NpcKind::PirateArcher => 2.0,       // the shooters' group (`:59722`)
+            NpcKind::PirateCorsair => 1.5,      // the shooters' group (`:59727`)
+            NpcKind::PirateCaptain => 1.0,      // the shooters' default (`:59717`)
+            NpcKind::BrainScrambler => 2.0,     // the shooters' group (`:59731`)
+            NpcKind::RayGunner => 2.0,          // the shooters' group (`:59731`)
+            NpcKind::MartianOfficer => 1.0,     // the shooters' default (`:59717`)
+            NpcKind::GrayGrunt => 1.8,          // the num83 group (`:57649`)
+            NpcKind::MartianEngineer => 1.5,    // its own arm (`:58032`)
+            NpcKind::GigaZapper => 2.25,        // the num83 group (`:57653`)
+            NpcKind::MartianWalker => 4.0,      // the shooters' group (`:59735`)
+            _ => return None,
+        })
+    }
+
     /// `NPC.GetNPCInvasionGroup(type)` (`NPC.cs`): the goblin army's members
     /// (26/27/28/29/111/471) — every ported invasion NPC. The other groups
     /// (pirate 2, snow 3, ...) have no NPCs in the ported set.
@@ -2013,9 +2051,9 @@ impl NpcKind {
             // The casters: `SetDefaults` cases 29/45/32/24.
             // `NPC.cs`'s cases 26 (60) / 27+111 (80) / 28 (110) / 29 (40) /
             // 471 (2000).
-            NpcKind::GoblinThief => 60,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 80,
-            NpcKind::GoblinArcher => 110,
+            NpcKind::GoblinPeon => 60,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher => 80,
+            NpcKind::GoblinWarrior => 110,
             NpcKind::GoblinSorcerer => 40,
             NpcKind::GoblinSummoner => 2000,
             // The frost trio: 200/240/220 (`NPC.cs`'s cases 143-145).
@@ -2259,9 +2297,9 @@ impl NpcKind {
             // The casters: `SetDefaults` damage 20/20/20/30.
             // `NPC.cs`'s cases 26 (12) / 27+111 (20) / 28 (25) / 29 (20) /
             // 471 (80).
-            NpcKind::GoblinThief => 12,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 20,
-            NpcKind::GoblinArcher => 25,
+            NpcKind::GoblinPeon => 12,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher | NpcKind::GoblinSorcerer => 20,
+            NpcKind::GoblinWarrior => 25,
             NpcKind::GoblinSummoner => 80,
             // The frost trio: 50/65/55.
             NpcKind::SnowmanGangsta => 50,
@@ -2616,6 +2654,11 @@ pub struct Npc {
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
+    /// `AI_054`'s `localAI[0..4]` (`NPC.cs:32370-32656`) — the Brain of
+    /// Cthulhu's machine: the blink timer (`localAI[1]`), the port's
+    /// Creeper count (`localAI[2]`, the C#'s sound latch slot — the sim
+    /// writes the count) and the despawn ramp (`localAI[3]`).
+    pub brain_local: [f32; 4],
     /// The VortexRifleman's `localAI[3]` one-shot latch
     /// (`AI_003_Fighters`' `NPC.cs:58465-58469` 0 -> 1 arm: the first
     /// tick rearms `ai[3]` to −120, once).
@@ -2787,6 +2830,70 @@ pub(crate) fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
     }
     angle = (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
     angle
+}
+
+/// The Brain of Cthulhu's blink target (`NPC.cs:32440-32474` for the
+/// retreat, `:32546-32578` for the normal phase): a random tile near the
+/// player, up to 100 tries. The `range` is the pick's tile radius and
+/// `sight_gate` the normal phase's `Collision.CanHit` condition (the
+/// retreat has none). The player's velocity leads the pick (`:32454-32460`).
+fn brain_pick_tile(
+    solid_tile: &dyn Fn(i32, i32) -> bool,
+    sight_ok: &dyn Fn(i32, i32) -> bool,
+    pcx: f32,
+    pcy: f32,
+    pvx: f32,
+    pvy: f32,
+    min: i32,
+    max: i32,
+    sight_gate: bool,
+    rng: &mut u64,
+) -> Option<(i32, i32)> {
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        let mut tx = (pcx as i32) / 16;
+        let mut ty = (pcy as i32) / 16;
+        let mut ox = crate::app::frame::rand_range_signed(rng, min, max + 1);
+        let mut oy = crate::app::frame::rand_range_signed(rng, min, max + 1);
+        if crate::app::frame::rand_range(rng, 2) == 0 {
+            ox = -ox;
+        }
+        if crate::app::frame::rand_range(rng, 2) == 0 {
+            oy = -oy;
+        }
+        // `:32454-32460` — the player's velocity leads the pick.
+        let mut v = Vec2::new(ox as f32 * 16.0, oy as f32 * 16.0);
+        let player_dir = safe_dir(Vec2::new(pvx, pvy), Vec2::Y);
+        let v_dir = safe_dir(v, Vec2::ZERO);
+        if player_dir.dot(v_dir) > 0.0 {
+            v += v_dir * 16.0 * (pvx * pvx + pvy * pvy).sqrt();
+        }
+        tx += (v.x / 16.0) as i32;
+        ty += (v.y / 16.0) as i32;
+        let free = !solid_tile(tx, ty);
+        let ok = if sight_gate {
+            free && (tries > 75 || sight_ok(tx, ty))
+        } else {
+            free
+        };
+        if tries > 100 || ok {
+            return Some((tx, ty));
+        }
+        if tries > 100 {
+            return None;
+        }
+    }
+}
+
+/// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`): the
+/// zero/NaN direction falls back to `default`.
+fn safe_dir(v: Vec2, default: Vec2) -> Vec2 {
+    if v == Vec2::ZERO || v.is_nan() {
+        default
+    } else {
+        v.normalize()
+    }
 }
 
 /// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
@@ -3189,6 +3296,7 @@ impl Npc {
             immortal: false,
             friendly: kind.is_town_resident() || kind == NpcKind::SleepingAngler,
             swarm_done: false,
+            brain_local: [0.0; 4],
             moon_local: [0.0; 3],
             moon_core_alive: false,
             moon_parts: [-1, -1, -1],
@@ -3267,9 +3375,9 @@ impl Npc {
             // The casters: `SetDefaults` knockBackResist 0.6/0.6/0.6/0.5.
             // `NPC.cs`'s cases 26 (0.8) / 27+111 (0.7) / 28 (0.5) / 29 (0.6)
             // / 471 (0.15).
-            NpcKind::GoblinThief => 0.8,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 0.7,
-            NpcKind::GoblinArcher => 0.5,
+            NpcKind::GoblinPeon => 0.8,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher => 0.7,
+            NpcKind::GoblinWarrior => 0.5,
             NpcKind::GoblinSorcerer => 0.6,
             // The frost trio: kb 0.6.
             NpcKind::GoblinSummoner => 0.15,
@@ -3488,10 +3596,6 @@ impl Npc {
             NpcKind::Plantera => 0.0,
             NpcKind::BrainOfCthulhu => 0.45,
             NpcKind::Creeper => 0.8,
-            NpcKind::GoblinPeon => 0.8,
-            NpcKind::GoblinThief => 0.7,
-            NpcKind::GoblinWarrior => 0.5,
-            NpcKind::GoblinArcher => 0.7,
             NpcKind::BoundGoblin => 0.5,
             NpcKind::GoblinTinkerer => 0.5,
             NpcKind::SkeletronPrime => 0.0,
@@ -3545,9 +3649,9 @@ impl Npc {
             // The casters: `SetDefaults` defense 2/4/2/16.
             // `NPC.cs`'s cases 26 (4) / 27+111 (6) / 28 (8) / 29 (2) /
             // 471 (26).
-            NpcKind::GoblinThief => 4,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 6,
-            NpcKind::GoblinArcher => 8,
+            NpcKind::GoblinPeon => 4,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher => 6,
+            NpcKind::GoblinWarrior => 8,
             NpcKind::GoblinSorcerer => 2,
             // The frost trio: 20/26/22.
             NpcKind::SnowmanGangsta => 20,
@@ -3752,10 +3856,6 @@ impl Npc {
             NpcKind::Plantera => 14,
             NpcKind::BrainOfCthulhu => 14,
             NpcKind::Creeper => 10,
-            NpcKind::GoblinPeon => 4,
-            NpcKind::GoblinThief => 6,
-            NpcKind::GoblinWarrior => 8,
-            NpcKind::GoblinArcher => 6,
             // def 15 both (`:10254`, `:10279`).
             NpcKind::BoundGoblin => 15,
             NpcKind::GoblinTinkerer => 15,
@@ -3866,9 +3966,9 @@ impl Npc {
             // The casters: `SetDefaults` value 200/5000/140/350.
             // `NPC.cs`'s cases 26 (100) / 27+111 (200) / 28 (150) / 29 (200)
             // / 471 (5000).
-            NpcKind::GoblinThief => 100.0,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 200.0,
-            NpcKind::GoblinArcher => 150.0,
+            NpcKind::GoblinPeon => 100.0,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher | NpcKind::GoblinSorcerer => 200.0,
+            NpcKind::GoblinWarrior => 150.0,
             NpcKind::GoblinSummoner => 5000.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
@@ -4021,10 +4121,7 @@ impl Npc {
             NpcKind::Plantera => 150000.0,
             NpcKind::BrainOfCthulhu => 50000.0,
             NpcKind::Creeper => 0.0,
-            NpcKind::GoblinPeon => 100.0,
-            NpcKind::GoblinThief => 200.0,
-            NpcKind::GoblinWarrior => 150.0,
-            NpcKind::GoblinArcher => 200.0,
+
             NpcKind::BoundGoblin => 0.0,
             NpcKind::GoblinTinkerer => 0.0,
             NpcKind::KingSlime => 10_000.0,
@@ -4202,7 +4299,7 @@ impl Npc {
             NpcKind::SkeletronPrime => self.update_prime(world, player),
             NpcKind::Retinazer | NpcKind::Spazmatism => self.update_twin(world, player),
             NpcKind::Plantera => self.update_plantera(world, player),
-            NpcKind::BrainOfCthulhu => self.update_brain(world, player),
+            NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
             NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
@@ -6491,7 +6588,9 @@ impl Npc {
         if near {
             self.facing = if dx >= 0.0 { 1 } else { -1 };
             self.sprite_dir = self.facing;
-            self.vx = self.facing as f32 * 0.6;
+            // The C#'s cap for the zombie (`AI_003_Fighters`'s `num107`
+            // default group, `NPC.cs:58322-58374`): 1f.
+            self.vx = self.facing as f32 * NpcKind::Zombie.ai3_walk_speed().unwrap_or(1.0);
         } else {
             self.vx *= 0.9;
         }
@@ -6972,10 +7071,15 @@ impl Npc {
             pcx,
             pcy,
             crate::npc_ai::WalkerParams {
-                // `NPC.cs` case 21: velocity.X target ~0.8 (the skeleton is
-                // a faster zombie), the jump -6.2, the aggro the zombie's
-                // 80x40-tile window.
-                speed: 0.8,
+                // The C#'s per-type cap (`AI_003_Fighters`, the `num83` /
+                // `num107` / cap-2 / cap-3 groups, `NPC.cs:57520-58374`):
+                // the skeleton 1.5, the undead miner 1.0, the pirate
+                // deckhand 2.0 and the pirate captain's mate 3.0. The jump
+                // -6.2 and the zombie's 80x40-tile aggro window stay.
+                speed: self
+                    .kind
+                    .ai3_walk_speed()
+                    .expect("the cave walkers' aiStyle-3 cap"),
                 jump: -6.2,
                 aggro_x: 80.0 * TILE_PX,
                 aggro_y: 40.0 * TILE_PX,
@@ -8320,7 +8424,13 @@ impl Npc {
         // The walk: the vanilla's walker step (the grounded damping and
         // the 0.9 stop-damp ride it).
         let params = crate::npc_ai::WalkerParams {
-            speed: 5.0,
+            // The C#'s per-type cap (`AI_003_Fighters`'s shooters' group,
+            // `NPC.cs:59717-59750`): the pirate archer 2, the corsair 1.5,
+            // the captain 1, the scrambler/ray gunner 2.
+            speed: self
+                .kind
+                .ai3_walk_speed()
+                .expect("the shooters' aiStyle-3 cap"),
             jump: -6.2,
             aggro_x: 80.0 * TILE_PX,
             aggro_y: 40.0 * TILE_PX,
@@ -13047,38 +13157,188 @@ impl Npc {
         self.ai[0] = 0.0;
     }
 
-    fn update_brain(&mut self, world: &World, player: &Player) {
+    /// `AI()`'s aiStyle-54 block (`NPC.cs:32370-32656`) — the Brain of
+    /// Cthulhu's machine: the blink (the `-1`/`-2`/`-3` retreat and the
+    /// `0`/`1`/`2` normal states), the velocity model and the despawn ramp.
+    ///
+    /// The creeper swarm's spawn and the shield ride the sim's pass
+    /// (`world_sim/npcs.rs`: the 20 Creepers + `dont_take_damage` while one
+    /// lives — the C#'s `localAI[0]` init and its shield); the arm reads the
+    /// live Creeper count from `brain_local[2]` (the sim's write).
+    ///
+    /// The gore/dust burst (`:32401-32419`) is SKIPPED — no dust/gore layer.
+    /// The MP-only branches (`Main.netMode != 0`) use the single-player
+    /// values (the port has no multiplayer arm).
+    fn update_brain(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        if self.caster_counter == 0 && self.cast_windup == 0 {
-            self.caster_counter = 1;
-        }
-        if self.cast_windup == 2 && self.caster_counter > 40 {
+        // The `WorldGen.SolidTile` analog (the active + the solid set).
+        let solid_tile = |x: i32, y: i32| -> bool {
+            world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+        };
+        if self.ai[0] < 0.0 {
+            // `:32420-32430` — the retreat's velocity: the 8-px drift toward
+            // the player through the 50/51 blend.
             let dx = pcx - cx;
             let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 9.0;
-            self.vy = dy / d * 9.0;
-            self.cast_windup = 3;
-            self.caster_counter = 0;
-        } else if self.cast_windup == 3 {
-            self.vx *= 0.98;
-            self.vy *= 0.98;
-            if self.vx.abs() < 0.1 && self.vy.abs() < 0.1 {
-                self.cast_windup = 0;
-                self.caster_counter = 0;
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            let k = 8.0 / d;
+            self.vx = (self.vx * 50.0 + dx * k) / 51.0;
+            self.vy = (self.vy * 50.0 + dy * k) / 51.0;
+            match self.ai[0] as i32 {
+                -1 => {
+                    // `:32431-32478` — the blink timer and the target tile.
+                    self.brain_local[1] += 1.0;
+                    if self.hurt_cd > 0.0 {
+                        // The C#'s `justHit` roll (`localAI[1] -= Next(5)`).
+                        self.brain_local[1] -= crate::app::frame::rand_range(rng, 5) as f32;
+                    }
+                    let period = 60.0 + crate::app::frame::rand_range(rng, 120) as f32;
+                    if self.brain_local[1] >= period {
+                        self.brain_local[1] = 0.0;
+                        // The tile pick: up to 100 tries, 10-12 tiles out
+                        // (`:32440-32474`). The retreat has no sight gate.
+                        if let Some((tx, ty)) = brain_pick_tile(
+                            &solid_tile,
+                            &|_tx: i32, _ty: i32| true,
+                            pcx,
+                            pcy,
+                            player.vx,
+                            player.vy,
+                            10,
+                            12,
+                            false,
+                            rng,
+                        ) {
+                            self.ai[3] = 0.0;
+                            self.ai[0] = -2.0;
+                            self.ai[1] = tx as f32;
+                            self.ai[2] = ty as f32;
+                        }
+                    }
+                }
+                -2 => {
+                    // `:32479-32501` — the fade-in and the teleport.
+                    self.vx *= 0.9;
+                    self.vy *= 0.9;
+                    self.ai[3] += 25.0;
+                    if self.ai[3] >= 255.0 {
+                        self.ai[3] = 255.0;
+                        self.x = self.ai[1] * 16.0 - (w * 0.5) as f32;
+                        self.y = self.ai[2] * 16.0 - (h * 0.5) as f32;
+                        self.ai[0] = -3.0;
+                    }
+                    self.alpha = (self.ai[3] as i32).clamp(0, 255) as u8;
+                }
+                -3 => {
+                    // `:32502-32518` — the fade-out.
+                    self.ai[3] -= 25.0;
+                    if self.ai[3] <= 0.0 {
+                        self.ai[3] = 0.0;
+                        self.ai[0] = -1.0;
+                    }
+                    self.alpha = (self.ai[3] as i32).clamp(0, 255) as u8;
+                }
+                _ => {}
             }
         } else {
+            // `:32522-32527` — the normal phase's velocity: straight at the
+            // player at 1 px/tick.
             let dx = pcx - cx;
             let dy = pcy - cy;
-            self.vx += dx.signum() * 0.05;
-            self.vy += dy.signum() * 0.05;
-            self.caster_counter += 1;
-            if self.caster_counter >= 60 {
-                self.cast_windup = 2;
+            let d = (dx * dx + dy * dy).sqrt();
+            let speed = 1.0f32;
+            if d < speed {
+                self.vx = dx;
+                self.vy = dy;
+            } else {
+                self.vx = dx / d * speed;
+                self.vy = dy / d * speed;
             }
+            match self.ai[0] as i32 {
+                0 => {
+                    // `:32532-32580` — the Creeper check and the blink timer.
+                    if self.brain_local[2] == 0.0 {
+                        // No Creeper left: the Brain retreats.
+                        self.ai[0] = -1.0;
+                        self.brain_local[1] = 0.0;
+                        self.alpha = 0;
+                    }
+                    self.brain_local[1] += 1.0;
+                    if self.brain_local[1] >= 120.0 + crate::app::frame::rand_range(rng, 300) as f32
+                    {
+                        self.brain_local[1] = 0.0;
+                        // The tile pick: 12-40 tiles out, with the sight gate
+                        // after the 75th try (`:32546-32578`).
+                        let sight = |tx: i32, ty: i32| {
+                            crate::projectile::can_hit(
+                                world,
+                                tx as f32 * 16.0,
+                                ty as f32 * 16.0,
+                                1.0,
+                                1.0,
+                                player.x,
+                                player.y,
+                                crate::player::WIDTH,
+                                player.height,
+                            )
+                        };
+                        if let Some((tx, ty)) = brain_pick_tile(
+                            &solid_tile,
+                            &sight,
+                            pcx,
+                            pcy,
+                            player.vx,
+                            player.vy,
+                            12,
+                            40,
+                            true,
+                            rng,
+                        ) {
+                            self.ai[0] = 1.0;
+                            self.ai[1] = tx as f32;
+                            self.ai[2] = ty as f32;
+                        }
+                    }
+                }
+                1 => {
+                    // `:32581-32591` — the fade-in and the teleport.
+                    self.alpha += 5;
+                    if self.alpha >= 255 {
+                        self.alpha = 255;
+                        self.x = self.ai[1] * 16.0 - (w * 0.5) as f32;
+                        self.y = self.ai[2] * 16.0 - (h * 0.5) as f32;
+                        self.ai[0] = 2.0;
+                    }
+                }
+                2 => {
+                    // `:32592-32599` — the fade-out.
+                    self.alpha -= 5;
+                    if self.alpha <= 0 {
+                        self.alpha = 0;
+                        self.ai[0] = 0.0;
+                    }
+                }
+                _ => {}
+            }
+        }
+        // `:32619-32636` — the despawn ramp: a dead player or a player out
+        // of the Crimson zone sinks the Brain and fades it out.
+        if player.dead || !player.zones.crimson {
+            if self.brain_local[3] < 120.0 {
+                self.brain_local[3] += 1.0;
+            }
+            if self.brain_local[3] > 60.0 {
+                self.vy += (self.brain_local[3] - 60.0) * 0.25;
+            }
+            self.ai[0] = 2.0;
+            self.alpha = 10;
+        } else if self.brain_local[3] > 0.0 {
+            self.brain_local[3] -= 1.0;
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
         self.sprite_dir = self.facing;
@@ -16237,23 +16497,54 @@ mod tests {
 
     #[test]
     fn the_brain_teleport_dashes() {
-        // `AI_054`'s v1 cycle: the telegraph 60 ticks -> the dash (the
-        // velocity 9) -> the decay -> the telegraph reset.
+        // `AI_054` (S1-D-3e): the Brain's machine is the blink — the normal
+        // phase drifts at 1 px/tick, the timer picks a tile near the player,
+        // the fade-in teleports the Brain onto it and the fade-out returns
+        // to the normal phase.
         let mut w = ground_air();
         w.day_time = false;
         let mut br = Npc::new(NpcKind::BrainOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
         br.hp = br.max_hp;
+        // A live Creeper keeps the Brain in its normal phase (the C#'s
+        // `num818` check — the sim writes the count).
+        br.brain_local[2] = 1.0;
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..59 {
-            br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
-        }
-        assert!(br.cast_windup == 2, "the dash armed");
-        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
-        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        player.zones.crimson = true;
+        let mut rng = 0u64;
+        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         let speed = (br.vx * br.vx + br.vy * br.vy).sqrt();
-        assert!((speed - 9.0).abs() < 0.2, "the dash speed ({speed})");
+        assert!((speed - 1.0).abs() < 0.01, "the normal drift's speed ({speed})");
+        // The blink: the timer picks the tile, the fade-in teleports.
+        for _ in 0..600 {
+            br.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if br.ai[0] == 1.0 {
+                break;
+            }
+        }
+        assert_eq!(br.ai[0], 1.0, "the blink armed the fade-in");
+        let tile_x = br.ai[1];
+        let tile_y = br.ai[2];
+        for _ in 0..60 {
+            br.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if br.ai[0] == 2.0 {
+                break;
+            }
+        }
+        assert_eq!(br.ai[0], 2.0, "the fade-in teleported the Brain");
+        // The teleport lands the Brain on the tile; the tick's own
+        // integration (`position += velocity`) adds the drift on top.
+        assert!(
+            (br.x - (tile_x * 16.0 - 80.0)).abs() <= 1.0,
+            "the Brain sits on the tile ({})",
+            br.x
+        );
+        assert!(
+            (br.y - (tile_y * 16.0 - 55.0)).abs() <= 1.0,
+            "the Brain sits on the tile ({})",
+            br.y
+        );
         // The stats round-trip.
         assert_eq!(br.size(), (160.0, 110.0));
         assert_eq!(br.max_hp, 1250);
@@ -16269,21 +16560,22 @@ mod tests {
     #[test]
     fn the_goblin_kinds_spawn_and_maps() {
         // `SetDefaults` cases 26/27/28/111: the stats + the kind↔u16
-        // round-trip + the bestiary rows (the vanilla ids: the Thief 26,
-        // the Warrior 27, the Archer 28, the Peon 111).
+        // round-trip + the bestiary rows. The vanilla ids: the Peon 26, the
+        // Thief 27, the Warrior 28, the Archer 111 (S1-D-3d — the port's
+        // four kinds had carried each other's ids).
         let w = ground_air();
         let thief = Npc::spawn_cave_walker(&w, 20, NpcKind::GoblinThief).expect("the thief spawns");
-        assert_eq!(thief.max_hp, 60);
-        assert_eq!(NpcKind::GoblinThief.contact_damage(), 12);
+        assert_eq!(thief.max_hp, 80);
+        assert_eq!(NpcKind::GoblinThief.contact_damage(), 20);
         let archer =
             Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
-        assert_eq!(archer.max_hp, 110);
-        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 25);
+        assert_eq!(archer.max_hp, 80);
+        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 20);
         for (kind, net) in [
-            (NpcKind::GoblinThief, 26),
-            (NpcKind::GoblinWarrior, 27),
-            (NpcKind::GoblinArcher, 28),
-            (NpcKind::GoblinPeon, 111),
+            (NpcKind::GoblinPeon, 26),
+            (NpcKind::GoblinThief, 27),
+            (NpcKind::GoblinWarrior, 28),
+            (NpcKind::GoblinArcher, 111),
         ] {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);
@@ -19799,18 +20091,19 @@ mod s1_d_3b_tests {
 
     #[test]
     fn goblin_fighters_use_skeleton_walker_not_shadowed_goblin_arm() {
-        // R-05-3 / S1-D-3b: GoblinThief/Warrior/Peon must reach the skeleton
-        // walker arm (`update_skeleton`, WalkerParams speed 0.8) instead of the
-        // shadowing `update_goblin` arm (speed 1.0). NPC.cs:15644/15658/15714.
+        // R-05-3 / S1-D-3b: GoblinThief/Warrior/Peon must reach the walker
+        // arm instead of the shadowing `update_goblin` arm (speed 1.0).
+        // S1-D-3c: the walk speed is the C#'s per-type cap (the thief 2,
+        // the warrior 1, the peon 1.5 — `NPC.cs:57554`/`:57606`/`:58322`).
         let w = flat_world();
         let mut player = crate::player::Player::spawn(&w);
         // place target far to the right, both on the floor
         player.x = 140.0 * 16.0;
         player.y = 68.0 * 16.0;
-        for kind in [
-            NpcKind::GoblinThief,
-            NpcKind::GoblinWarrior,
-            NpcKind::GoblinPeon,
+        for (kind, cap) in [
+            (NpcKind::GoblinThief, 2.0),
+            (NpcKind::GoblinWarrior, 1.0),
+            (NpcKind::GoblinPeon, 1.5),
         ] {
             let mut n = bare(kind);
             n.x = 80.0 * 16.0;
@@ -19821,8 +20114,8 @@ mod s1_d_3b_tests {
                 n.update(&w, &mut player, 1.0 / 60.0);
             }
             assert!(
-                n.vx.abs() <= 0.95,
-                "{kind:?} must use skeleton walker (speed <= ~0.8), got vx={}",
+                (n.vx - cap).abs() < 0.01,
+                "{kind:?} must walk at the C#'s cap {cap}, got vx={}",
                 n.vx
             );
             assert!(
@@ -20068,5 +20361,216 @@ mod s1_f_3_tests {
         assert_eq!(NpcKind::Zombie.cs_id(), 3);
         assert_eq!(NpcKind::Guide.cs_id(), 22);
         assert_eq!(NpcKind::Angler.cs_id(), 369);
+    }
+
+    /// S1-D-3c — `AI_003_Fighters`'s per-type walk-speed caps
+    /// (`NPC.cs:57403-59800`): the C#'s groups and their rows.
+    #[test]
+    fn s1_d_3c_the_ai_style_3_walk_speeds_match_the_csharp_caps() {
+        // The `num107` default group (`:58322-58374`): 1f.
+        assert_eq!(NpcKind::Zombie.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::UndeadMiner.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::GoblinWarrior.ai3_walk_speed(), Some(1.0));
+        // The `num83` group (`:57606-57691`): 1.5f with the per-type rows.
+        assert_eq!(NpcKind::Skeleton.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::GoblinPeon.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::GrayGrunt.ai3_walk_speed(), Some(1.8));
+        assert_eq!(NpcKind::GigaZapper.ai3_walk_speed(), Some(2.25));
+        // The cap-2 (`:57554-57578`) and cap-3 (`:57520-57552`) groups.
+        assert_eq!(NpcKind::GoblinThief.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::PirateDeckhand.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::PirateCaptainsMate.ai3_walk_speed(), Some(3.0));
+        // The shooters' group (`:59717-59750`).
+        assert_eq!(NpcKind::PirateArcher.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::PirateCorsair.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::PirateCaptain.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::BrainScrambler.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::RayGunner.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::MartianOfficer.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::MartianWalker.ai3_walk_speed(), Some(4.0));
+        // The Martian engineer's own arm (`:58032-58069`).
+        assert_eq!(NpcKind::MartianEngineer.ai3_walk_speed(), Some(1.5));
+        // The kinds outside the table carry their own arm's speed (the
+        // vortex rifleman's own arm already uses the C#'s 6f cap, the
+        // `num83` row `:57677`).
+        assert_eq!(NpcKind::Slime.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::DemonEye.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::VortexRifleman.ai3_walk_speed(), None);
+    }
+
+    /// S1-D-3d — the goblin family's ids and stats: the port's four goblin
+    /// kinds carried each other's vanilla `NPCID` (the peon/thief/warrior/
+    /// archer were rotated), so the stats rows, the bestiary's net ids and
+    /// the loot table's key were one step off the C#.
+    ///
+    /// The C#'s rows (`ID/NPCID.cs:10729-10733`/`:10899` and the
+    /// `SetDefaults` arms `NPC.cs:15644-15730`):
+    /// - the peon (26): 60 HP, 12 damage, 4 defense, kb 0.8, value 100;
+    /// - the thief (27): 80 HP, 20 damage, 6 defense, kb 0.7, value 200;
+    /// - the warrior (28): 110 HP, 25 damage, 8 defense, kb 0.5, value 150;
+    /// - the archer (111): 80 HP, 20 damage, 6 defense, kb 0.7, value 200.
+    #[test]
+    fn s1_d_3d_the_goblin_kinds_carry_their_vanilla_ids_and_stats() {
+        assert_eq!(NpcKind::GoblinPeon.cs_id(), 26, "NPCID.GoblinPeon");
+        assert_eq!(NpcKind::GoblinThief.cs_id(), 27, "NPCID.GoblinThief");
+        assert_eq!(NpcKind::GoblinWarrior.cs_id(), 28, "NPCID.GoblinWarrior");
+        assert_eq!(NpcKind::GoblinArcher.cs_id(), 111, "NPCID.GoblinArcher");
+        // The stats rows.
+        assert_eq!(NpcKind::GoblinPeon.max_hp(), 60);
+        assert_eq!(NpcKind::GoblinThief.max_hp(), 80);
+        assert_eq!(NpcKind::GoblinWarrior.max_hp(), 110);
+        assert_eq!(NpcKind::GoblinArcher.max_hp(), 80);
+        assert_eq!(NpcKind::GoblinPeon.contact_damage(), 12);
+        assert_eq!(NpcKind::GoblinThief.contact_damage(), 20);
+        assert_eq!(NpcKind::GoblinWarrior.contact_damage(), 25);
+        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 20);
+        let npc = |kind| Npc::new(kind, 0.0, 0.0, 0, 0.0);
+        assert_eq!(npc(NpcKind::GoblinPeon).defense(), 4);
+        assert_eq!(npc(NpcKind::GoblinThief).defense(), 6);
+        assert_eq!(npc(NpcKind::GoblinWarrior).defense(), 8);
+        assert_eq!(npc(NpcKind::GoblinArcher).defense(), 6);
+        assert_eq!(npc(NpcKind::GoblinPeon).knock_back_resist(), 0.8);
+        assert_eq!(npc(NpcKind::GoblinThief).knock_back_resist(), 0.7);
+        assert_eq!(npc(NpcKind::GoblinWarrior).knock_back_resist(), 0.5);
+        assert_eq!(npc(NpcKind::GoblinArcher).knock_back_resist(), 0.7);
+        assert_eq!(npc(NpcKind::GoblinPeon).value(), 100.0);
+        assert_eq!(npc(NpcKind::GoblinThief).value(), 200.0);
+        assert_eq!(npc(NpcKind::GoblinWarrior).value(), 150.0);
+        assert_eq!(npc(NpcKind::GoblinArcher).value(), 200.0);
+    }
+}
+
+#[cfg(test)]
+mod s1_d_3e_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn brain() -> Npc {
+        let mut n = Npc::new(NpcKind::BrainOfCthulhu, 200.0, 100.0, 0, 0.0);
+        n.hp = n.max_hp;
+        n
+    }
+
+    /// S1-D-3e — the Brain of Cthulhu's machine (`NPC.cs:32370-32656`): the
+    /// normal phase drifts at 1 px/tick, the blink timer picks a tile near
+    /// the player, the fade-in teleports the Brain onto it and the fade-out
+    /// returns to the normal phase.
+    #[test]
+    fn s1_d_3e_the_brain_blinks_to_a_tile_near_the_player() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        player.zones.crimson = true;
+        let mut b = brain();
+        // A live Creeper keeps the Brain in its normal phase (the C#'s
+        // `num818` check).
+        b.brain_local[2] = 1.0;
+        // The normal phase: the 1-px drift toward the player.
+        b.update_brain(&w, &player, &mut 12345u64);
+        assert!(
+            (b.vx.hypot(b.vy) - 1.0).abs() < 0.01,
+            "the normal phase drifts at 1 px/tick ({:?})",
+            (b.vx, b.vy)
+        );
+        assert!(
+            b.vx > 0.0 && b.vy > 0.0,
+            "the drift points at the player ({:?})",
+            (b.vx, b.vy)
+        );
+        // The blink timer: after 120 + Next(300) ticks the Brain picks a tile
+        // and fades in (alpha += 5 per tick) before teleporting.
+        let mut rng = 12345u64;
+        for _ in 0..500 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == 1.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], 1.0, "the blink armed the fade-in");
+        let tile_x = b.ai[1];
+        let tile_y = b.ai[2];
+        // The fade-in runs 51 ticks (alpha 0 -> 255) and then teleports.
+        for _ in 0..60 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == 2.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], 2.0, "the fade-in teleported the Brain");
+        assert!(
+            (b.x - (tile_x * 16.0 - 80.0)).abs() <= 1.0,
+            "the Brain sits on the tile ({})",
+            b.x
+        );
+        assert!(
+            (b.y - (tile_y * 16.0 - 55.0)).abs() <= 1.0,
+            "the Brain sits on the tile ({})",
+            b.y
+        );
+        // The fade-out returns to the normal phase.
+        for _ in 0..80 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == 0.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], 0.0, "the fade-out returns to the normal phase");
+        assert_eq!(b.alpha, 0, "the Brain is invisible again");
+    }
+
+    /// S1-D-3e — the Brain's retreat: with no Creeper left (`brain_local[2]`
+    /// = 0) the Brain switches to the `-1` state, and the retreat's states
+    /// fade the Brain in on the picked tile and back out.
+    #[test]
+    fn s1_d_3e_the_brain_retreats_when_the_creepers_are_gone() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        player.zones.crimson = true;
+        let mut b = brain();
+        b.brain_local[2] = 0.0; // no creeper left
+        b.update_brain(&w, &player, &mut 999u64);
+        assert_eq!(b.ai[0], -1.0, "the Brain retreats without its swarm");
+        assert_eq!(b.alpha, 0, "the retreat starts invisible");
+        // The retreat's timer picks a tile (60 + Next(120) ticks) and the
+        // `-2` state fades the Brain in on it.
+        let mut rng = 999u64;
+        for _ in 0..400 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == -2.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], -2.0, "the retreat armed its fade-in");
+        for _ in 0..80 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == -3.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], -3.0, "the retreat faded the Brain in");
+        assert_eq!(b.alpha, 255, "the retreat's fade-in is full");
     }
 }
