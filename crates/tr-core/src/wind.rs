@@ -512,6 +512,18 @@ impl WindGrid {
     }
 }
 
+/// `Utils.Clamp` (`Utils.cs:223-234`): the C#'s clamp tests the max
+/// first, so a reversed range folds onto the max.
+fn cs_clamp(value: i32, min: i32, max: i32) -> i32 {
+    if value > max {
+        return max;
+    }
+    if value < min {
+        return min;
+    }
+    value
+}
+
 /// `Collision.GetTilesIn` (`Collision.cs:4350-4372`): every tile the pixel
 /// rect overlaps, clamped to `maxTilesX - 1` / `maxTilesY - 40` — the
 /// `Main.tile[i, j] != null` filter is the port's in-bounds check.
@@ -527,10 +539,13 @@ pub fn get_tiles_in(
     let py2 = bottom_right.1 as i32 / 16;
     let max_x = world.width - 1;
     let max_y = world.height - 40;
-    let x0 = px.clamp(0, max_x);
-    let y0 = py.clamp(0, max_y);
-    let x1 = px2.clamp(0, max_x);
-    let y1 = py2.clamp(0, max_y);
+    // `Utils.Clamp` (`Utils.cs:223-234`): the max is tested first, so a
+    // reversed range (a world shorter than the 40-row underworld margin)
+    // folds onto the max instead of panicking.
+    let x0 = cs_clamp(px, 0, max_x);
+    let y0 = cs_clamp(py, 0, max_y);
+    let x1 = cs_clamp(px2, 0, max_x);
+    let y1 = cs_clamp(py2, 0, max_y);
     let mut tiles = Vec::new();
     for i in x0..=x1 {
         for j in y0..=y1 {

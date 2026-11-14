@@ -3145,9 +3145,9 @@ pub(crate) const WIRE_ITEM: u16 = 530;
 /// (`Player.cs:46749-46920`) — the wrench family, the cutter and the
 /// actuator.
 ///
-/// The Actuation Rod (3620) and the Multicolor Wrench (3625) are not in
-/// this set: the rod needs `Wiring.Actuate` (`Player.cs:46887-46900`) and
-/// the multi-tool the `WiresUI` tool modes (`Player.cs:46903-46918`).
+/// The Multicolor Wrench (3625) is not in this set: the multi-tool needs
+/// the `WiresUI` tool modes (`Player.cs:46903-46918`) and the mass wire
+/// operation (`Wiring.MassWireOperation`, `Wiring.cs:419-453`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum WiringTool {
     /// The wrench family: 509 red, 850 blue, 851 green, 3612 yellow.
@@ -3156,6 +3156,8 @@ pub(crate) enum WiringTool {
     Cut,
     /// 849 — the actuator.
     Actuator,
+    /// 3620 — the Actuation Rod.
+    ActuationRod,
 }
 
 /// The tool kind → its action (`ItemID`, `ID/ItemID.cs:2701-2743/:3381-3385/
@@ -3169,6 +3171,7 @@ fn wiring_tool(kind: u16) -> Option<WiringTool> {
         3612 => WiringTool::Place(WireColor::Yellow),
         510 => WiringTool::Cut,
         849 => WiringTool::Actuator,
+        3620 => WiringTool::ActuationRod,
         _ => return None,
     })
 }
@@ -3251,6 +3254,35 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
                 }
             }
             false
+        }
+        WiringTool::ActuationRod => {
+            // `Player.cs:46887-46900`: the rod flips the tile's actuator
+            // state — the tile must carry the actuator bit, and the lock
+            // keeps the rod to one actuation per tick.
+            let Some(inactive) = app.world.tile(tx, ty).map(|t| t.inactive()) else {
+                return false;
+            };
+            let Some(p) = app.player.as_mut() else {
+                return false;
+            };
+            // The C#'s gate (`Player.cs:46894`): the rod acts when the lock
+            // is free or when the lock's setting matches the tile's current
+            // state — the lock keeps one tile from flipping twice.
+            if p.actuation_rod_lock && p.actuation_rod_lock_setting != inactive {
+                return false;
+            }
+            if !app.wiring.actuate(&mut app.world, tx, ty) {
+                return false;
+            }
+            let now_inactive = app.world.tile(tx, ty).map_or(inactive, |t| t.inactive());
+            if now_inactive == inactive {
+                return false;
+            }
+            p.actuation_rod_lock = true;
+            // `Player.cs:46897`: the lock remembers the state the tile had
+            // before the actuation.
+            p.actuation_rod_lock_setting = inactive;
+            true
         }
         WiringTool::Actuator => {
             // `WorldGen.PlaceActuator` (`Player.cs:46878-46883`) — the C#'s
@@ -5963,6 +5995,45 @@ mod tests {
             app.world.tiles[i].flags |= FLAG_ACTIVE;
             assert!(interact_tile(&mut app, 10, 19), "kind {kind}");
         }
+    }
+
+    /// The Actuation Rod (3620) flips the tile's actuator state
+    /// (`Player.cs:46887-46900` → `Wiring.Actuate`, `Wiring.cs:390-405`),
+    /// and the rod's lock keeps it from flipping the same tile twice
+    /// (`Player.cs:46894-46897`).
+    #[test]
+    fn the_actuation_rod_flips_the_actuator_tile() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // A stone block carrying the actuator bit at (10, 19).
+        let i = app.world.index(10, 19);
+        app.world.tiles[i].kind = 1;
+        app.world.tiles[i].flags |= FLAG_ACTIVE | tr_core::tile::FLAG_ACTUATOR;
+        app.inventory[app.selected] = slot(3620, 1);
+        assert!(use_wiring_tool(&mut app, 10, 19), "the rod flips the tile");
+        assert!(
+            app.world.tile(10, 19).unwrap().inactive(),
+            "the tile went off"
+        );
+        assert!(
+            !use_wiring_tool(&mut app, 10, 19),
+            "the rod's lock refuses the second flip"
+        );
+    }
+
+    /// A tile without the actuator bit refuses the rod (`Wiring.cs:391-393`).
+    #[test]
+    fn the_actuation_rod_needs_an_actuator_tile() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let i = app.world.index(10, 19);
+        app.world.tiles[i].kind = 1;
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        app.inventory[app.selected] = slot(3620, 1);
+        assert!(!use_wiring_tool(&mut app, 10, 19));
+        assert!(!app.world.tile(10, 19).unwrap().inactive());
     }
 
     // --- the wiring tools (`ItemCheck_UseWiringTools`) -------------------
