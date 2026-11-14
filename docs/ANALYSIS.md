@@ -1549,6 +1549,12 @@ because the gate is the C#'s top-to-top `Main.player[target].position.Y - base.p
   applies it unconditionally. So the port over-adds for the Eater of Souls (6) and the
   Hornet (42) — the two kinds whose `flag5` is false — and is correct for the Meteor Head
   (23) and the Servant of Cthulhu (5), whose `flag5` is true.
+
+Both residuals are now closed **for the Servant of Cthulhu**: S1-D-3k gives
+type 5 its own `AI_005` branch (`update_servant_of_cthulhu`) with the 8-px
+aim floor, the `flag5` double-add and the dead-target flee vector, so it no
+longer rides the shared archetype. The Eater of Souls (6), the Hornet (42) and
+the Meteor Head (23) still do — the S1-D-3l follow-up.
 * the per-difficulty / secret-seed overrides (`:50308-50316` expert-mode and remix for
   type 6; `:50345-50348` type 231's 3/0.017) are constants-off: the presets are the
   normal-mode values, like the other archetype tables.
@@ -13714,6 +13720,79 @@ Deviations:
 * **The day-time `EncourageDespawn(10)`** rides the world's own day arm (the
   port's NPCs carry no despawn timer).
 
+## The Eye of Cthulhu's machine (S1-D-3k, 2026-11-14)
+
+`AI_004` (`NPC.cs:19960-20801`) is the Eye's whole family machine — the
+hover phase (0), the two spin phases (1, 2) and the final dash phase (3) —
+plus the servant bursts. The port's `update_eye_of_cthulhu` already carried
+the phase-1 hover, the dash chain and the final phase's shape; three deltas
+remained, and the servant (the Eye's minion, type 5) ran on the *shared*
+hover archetype instead of the C#'s own `AI_005` branch.
+
+**The spin hand-off (the inverted reset).** The C#'s spin block
+(`:20287-20301`) ramps `ai[2]` (the spin speed) to 0.5 in phase 1 and decays
+it in phase 2; the phase hand-off (`:20356-20361`) resets `ai[2]` **only**
+when the phase reaches 3 (`if (this.ai[0] == 3f) this.ai[2] = 0f;`). The
+port had the test inverted (`if self.ai[0] != 3.0`), so the phase-1 → 2
+hand-off zeroed the spin speed: the Eye's third phase stood still instead
+of decaying from 0.5, and the phase-2 → 3 hand-off kept a stale speed. The
+fix restores the C#'s hand-off: the phase-2 spin now decays from 0.5 to 0
+over its 100 ticks, and the final phase starts with the spin stopped.
+
+**The final phase's damage.** The C#'s final phase writes
+`this.damage = GetAttackDamage_LerpBetweenFinalValues(23, 18)`
+(`:20392-20408`) — the classic difficulty remaps onto the first value, so
+the contact damage rises from the `SetDefaults` 15 to **23** in the final
+phase. The port kept the 15 for the whole fight; the arm now carries the
+override (`damage_override = Some(23)`). The defense drop (`this.defense = 0`,
+the same block) was already there.
+
+**The servant's spawn point.** `NPC.NewNPC` takes the spawn point as the
+NPC's **bottom centre** (`NPC.cs:80770` — `nPC.Bottom = new Vector2(X, Y)`,
+whose setter writes `position = (X - width/2, Y - height)`, `Entity.cs:122-132`)
+and the call site truncates it to whole pixels (`NPC.cs:20180`:
+`(int)vector2.X, (int)vector2.Y`). The port placed the servant at
+`(X - 10, Y - 10)` — 10 px too low and un-truncated. The spawn helper now
+writes the bottom-centre convention and the truncation.
+
+**The servant's own machine.** The Servant of Cthulhu (type 5) runs
+`AI_005_EaterOfSouls` — the C#'s type-5 branch (`:50379-50383`: the speed 5,
+the accel 0.03) plus the shared fly core (`:50418-50579`) and the type-5
+rotation (`:50652-50655`). The port ran it through the shared hover
+archetype, which misses two things the C# does:
+
+* the aim is quantised to the **8-px grid** — the target's centre and the
+  servant's own centre both floor to 8 px (`:50421-50424`) and the aim is
+  the difference of the snapped values;
+* the approach's **double-add on a sign reversal** is gated by `flag5`
+  (`:50447`), which is *true* for type 5.
+
+The servant's own arm (`update_servant_of_cthulhu`) now carries the C#'s
+branch: the snapped aim, the 5-speed / 0.03-accel approach with the
+double-add, the dead-target flee vector (`num4 = direction * num/2`,
+`num5 = -num/2`, `:50480-50484`) and the velocity tilt
+(`rotation = atan2(velocity.Y, velocity.X) - 1.57`). Its `noGravity` +
+`noTileCollide` (`SetDefaults` case 5) make the step a raw integration —
+no tile collision (the shared archetype bounced the servant off tiles).
+
+The residuals of the S1-D-1 hover section (the 8-px floor and the `flag5`
+gate) therefore remain only for the kinds that still ride the archetype —
+the Eater of Souls (6), the Hornet (42) and the Meteor Head (23) — where
+`flag5` is false for the first two: the shared `hover_step` still
+over-adds for them. That is the S1-D-3l follow-up.
+
+Deviations:
+
+* **The dust and the gore** (the 1-in-5 dust at `:20062-20067`, the
+  spin-phase gore at `:20365-20375`) are skipped — the port has no dust or
+  gore layer.
+* **The expert / `getGoodWorld` branches** (the rage sub-states `ai[1] =
+  3/4/5`, the expert servant bursts, the phase-3 dash speed bonuses) are
+  constants-off: the port has no difficulty flag, so the classic path runs
+  verbatim and the skipped arms carry their C# cites.
+* **The day-time `EncourageDespawn(10)`** (`:20071-20073`) rides the sim's
+  day cull (the Eye rises out of the player's view and is removed).
+
 ## The NPC hit and death sounds (S1-E-21a, 2026-11-14)
 
 The first wave of the sound bank (S1-E-21) landed with S1-E-21a: the NPCs
@@ -13742,3 +13821,4 @@ Deliberate deviations:
    `SoundNpcHit[n]` pool) stay unported — the research's open sound gaps.
 3. The C#'s special hit cues for the newest NPCs (the Turkey/Undead/Vampire
    hurts, `NPC.cs:81535-81545`) have no ported kinds.
+

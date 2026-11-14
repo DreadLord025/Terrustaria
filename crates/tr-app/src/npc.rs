@@ -3718,10 +3718,19 @@ impl Npc {
     }
 
     /// The aiStyle-4 block's `NPC.NewNPC(..., 5)` minion spawn
-    /// (`NPC.cs:4598` of the AI()): the servant appears 10 px out along the
+    /// (`NPC.cs:20180` of the AI()): the servant appears 10 px out along the
     /// aim and inherits the launch velocity (`vector3.X/Y`).
+    ///
+    /// `NPC.NewNPC` takes the spawn point as the NPC's BOTTOM centre
+    /// (`NPC.cs:80770` — `nPC.Bottom = new Vector2(X, Y)`, whose setter
+    /// (`Entity.cs:122-132`) writes `position = (X - width/2, Y - height)`),
+    /// and the call site truncates it to whole pixels
+    /// (`NPC.cs:20180`: `(int)vector2.X, (int)vector2.Y`).
     pub fn spawn_servant_of_cthulhu(x: f32, y: f32, vx: f32, vy: f32) -> Self {
-        let mut npc = Self::new(NpcKind::ServantOfCthulhu, x - 10.0, y - 10.0, 1, 0.0);
+        let (w, h) = NpcKind::ServantOfCthulhu.size();
+        let x = (x as i32) as f32;
+        let y = (y as i32) as f32;
+        let mut npc = Self::new(NpcKind::ServantOfCthulhu, x - w * 0.5, y - h, 1, 0.0);
         npc.vx = vx;
         npc.vy = vy;
         npc
@@ -5222,9 +5231,7 @@ impl Npc {
             NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
             NpcKind::KingSlime => self.update_king_slime(world, player, rng),
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
-            NpcKind::ServantOfCthulhu => {
-                self.update_hover(world, player, HoverParams::SERVANT_OF_CTHULHU)
-            }
+            NpcKind::ServantOfCthulhu => self.update_servant_of_cthulhu(player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => {
                 self.update_caster(world, player, rng)
@@ -7530,7 +7537,12 @@ impl Npc {
                 } else {
                     self.ai[0] += 1.0;
                     self.ai[1] = 0.0;
-                    if self.ai[0] != 3.0 {
+                    // `:20356-20361` — the spin speed resets ONLY when the
+                    // phase reaches 3 (the final machine); the phase 1 → 2
+                    // hand-off keeps the 0.5 spin, so the phase-2 spin
+                    // decays from 0.5 (the `else` ramp at `:20295-20301`)
+                    // instead of standing still.
+                    if self.ai[0] == 3.0 {
                         self.ai[2] = 0.0;
                     }
                 }
@@ -7550,6 +7562,12 @@ impl Npc {
         // speed, 130-tick chains; the expert rage sub-states
         // `ai[1] = 3/4/5` are out with the flag2/flag3 gates).
         self.defense_override = Some(0);
+        // `:20392-20408` — the final phase's contact damage:
+        // `GetAttackDamage_LerpBetweenFinalValues(23, 18)` remaps the
+        // classic difficulty onto the first value → 23 (the phase 1/2
+        // damage is the `SetDefaults` 15). The master cap is a no-op in
+        // classic.
+        self.damage_override = Some(23);
         if self.ai[1] == 0.0 {
             // The hover at 120 px above (6 speed, 0.07 accel).
             let cx = self.x + w * 0.5;
@@ -7631,6 +7649,91 @@ impl Npc {
     fn integrate_no_tile_collide(&mut self) {
         self.x += self.vx;
         self.y += self.vy;
+    }
+
+    /// `AI_005_EaterOfSouls`'s type-5 branch (`NPC.cs:50379-50383` — the
+    /// `num`/`num2` pair) + the shared fly core (`:50418-50579`) + the
+    /// type-5 rotation (`:50652-50655`) — the Servant of Cthulhu, the
+    /// Eye's minion.
+    ///
+    /// The servant flies on the 8-px snapped aim (`(int)(x / 8f) * 8` on
+    /// both the target's centre and its own), approaches it at the 5-speed
+    /// with the 0.03 accel (the `flag5` double-add on the sign flips —
+    /// type 5 keeps `flag5` true) and tilts with its velocity. A dead
+    /// target flips the aim to the flee vector (`:50480-50484`).
+    ///
+    /// `SetDefaults` case 5 gives it `noGravity` + `noTileCollide`, so the
+    /// step is a raw integration (no tile collision, no gravity).
+    fn update_servant_of_cthulhu(&mut self, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        // The `num`/`num2` pair (`NPC.cs:50379-50383` — type 5): the speed
+        // 5 and the accel 0.03, the shared table's servant row.
+        let params = HoverParams::SERVANT_OF_CTHULHU;
+        // `:50418-50426` — the 8-px grid snap: the target's centre and the
+        // NPC's own centre both floor to the 8-px grid, and the aim is the
+        // difference of the snapped values.
+        let mut num4 = ((pcx / 8.0) as i32 * 8) as f32;
+        let mut num5 = ((pcy / 8.0) as i32 * 8) as f32;
+        let own_x = ((self.x + w * 0.5) / 8.0) as i32 * 8;
+        let own_y = ((self.y + h * 0.5) / 8.0) as i32 * 8;
+        num4 -= own_x as f32;
+        num5 -= own_y as f32;
+        // `:50427-50444` — the normalized aim at the `num` speed; a zero
+        // distance keeps the current velocity (`num4 = velocity.X`).
+        let num6 = (num4 * num4 + num5 * num5).sqrt();
+        if num6 == 0.0 {
+            num4 = self.vx;
+            num5 = self.vy;
+        } else {
+            let scale = params.max_speed / num6;
+            num4 *= scale;
+            num5 *= scale;
+        }
+        // `:50480-50484` — a dead target: the servant flies off along the
+        // facing direction (`num`/`2` sideways, `-num`/`2` down).
+        if player.hp <= 0 {
+            num4 = self.facing as f32 * params.max_speed / 2.0;
+            num5 = -params.max_speed / 2.0;
+        }
+        // `:50547-50578` — the approach (`num2`) with the `flag5` double-add
+        // on the sign flips (type 5 keeps `flag5` true).
+        if self.vx < num4 {
+            self.vx += params.accel;
+            if self.vx < 0.0 && num4 > 0.0 {
+                self.vx += params.accel;
+            }
+        } else if self.vx > num4 {
+            self.vx -= params.accel;
+            if self.vx > 0.0 && num4 < 0.0 {
+                self.vx -= params.accel;
+            }
+        }
+        if self.vy < num5 {
+            self.vy += params.accel;
+            if self.vy < 0.0 && num5 > 0.0 {
+                self.vy += params.accel;
+            }
+        } else if self.vy > num5 {
+            self.vy -= params.accel;
+            if self.vy > 0.0 && num5 < 0.0 {
+                self.vy -= params.accel;
+            }
+        }
+        // `:50652-50655` — the rotation: the velocity tilt (the servant is
+        // in the `else` arm — the aim-tilt types are 6/94/173/619).
+        self.rotation = self.vy.atan2(self.vx) - 1.57;
+        self.integrate_no_tile_collide();
+        // The 2-frame flap (`Main.npcFrameCount[5] = 2`).
+        self.frame_counter += 1.0;
+        if self.frame_counter >= 8.0 {
+            self.frame_counter = 0.0;
+            self.frame = if self.frame + 1 >= 2 {
+                0
+            } else {
+                self.frame + 1
+            };
+        }
     }
 
     /// `AI_015_KingSlime` (`NPC.cs:43121-43414`) — the King Slime's machine:
@@ -17338,6 +17441,101 @@ mod tests {
         eoc2.hp = eoc2.max_hp;
         eoc2.update_rng(&w2, &mut player, 1.0 / 60.0, &mut 0u64);
         assert!(eoc2.vy < 0.0, "the day flee rises");
+    }
+
+    #[test]
+    fn the_eoc_phases_through_the_spin_to_the_final_dash() {
+        // `AI_004`'s phase machine (`NPC.cs:19960-20801`): the 50%-hp gate
+        // (`:20315-20322`) → the first spin (`ai[0]` 1) → the spin's
+        // hand-off (`ai[0]` 2) → the final dash (`ai[0]` 3).
+        //
+        // The spin speed (`ai[2]`) is the phase's tell: the phase-1 spin
+        // ramps it to 0.5 (`:20287-20293`), the hand-off KEEPS it (the
+        // reset rides the `ai[0] == 3` branch only, `:20356-20361`) and
+        // the phase-2 spin decays it (`:20295-20301`).
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        eoc.hp = eoc.max_hp / 2 - 1;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        // The hp gate: the phase-0 arm hands over to the first spin.
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(eoc.ai[0], 1.0, "the 50% gate starts the spin");
+        // The spin: 100 ticks → the second spin phase, the 0.5 spin speed
+        // carried over (the C# resets it only at `ai[0] == 3`).
+        for _ in 0..100 {
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(eoc.ai[0], 2.0, "the first spin hands over to the second");
+        assert!(
+            (eoc.ai[2] - 0.5).abs() < 0.001,
+            "the spin speed carries over ({})",
+            eoc.ai[2]
+        );
+        // The second spin decays the speed and hands over to the final
+        // phase: the defense drops to 0 and the contact damage rises to
+        // the 23 of `GetAttackDamage_LerpBetweenFinalValues(23, 18)`.
+        for _ in 0..100 {
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(eoc.ai[0], 3.0, "the second spin hands over to the final");
+        assert_eq!(eoc.ai[2], 0.0, "the final phase stops the spin");
+        // The final phase's stats ride its arm (the hand-off tick still ran
+        // the spin block).
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(eoc.defense_override, Some(0), "the defense drops to 0");
+        assert_eq!(eoc.damage_override, Some(23), "the final phase's damage");
+    }
+
+    #[test]
+    fn the_servant_flies_on_the_snapped_aim() {
+        // `AI_005`'s type-5 branch (`NPC.cs:50379-50383` + `:50418-50579`):
+        // the aim snaps to the 8-px grid on both the target's centre and
+        // the servant's own (`:50421-50424`), the speed is 5 and the accel
+        // 0.03, and the rotation rides the velocity (`:50652-50655`).
+        //
+        // The setup puts the player's centre 4 px right of the servant's
+        // — the unsnapped aim would drift right, the snapped aim (both
+        // centres floor to the same 8-px cell) stays vertical.
+        let w = ground_air();
+        let mut servant = Npc::new(NpcKind::ServantOfCthulhu, 990.0, 990.0, 1, 0.0);
+        let mut player = surface_player(&w);
+        player.x = 994.0; // the centre x = 1004 (the servant's = 1000)
+        player.y = 1579.0; // the centre y = 1600
+        for _ in 0..200 {
+            servant.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(
+            servant.vx.abs() < 0.01,
+            "the snapped aim keeps the servant vertical ({})",
+            servant.vx
+        );
+        assert!(
+            (servant.vy - 5.0).abs() < 0.05,
+            "the servant flies at the C#'s 5 speed ({})",
+            servant.vy
+        );
+        let tilt = servant.vy.atan2(servant.vx) - 1.57;
+        assert!(
+            (servant.rotation - tilt).abs() < 0.0001,
+            "the rotation rides the velocity ({})",
+            servant.rotation
+        );
+    }
+
+    #[test]
+    fn the_servant_spawn_lands_on_the_new_npc_bottom() {
+        // `NPC.NewNPC` takes the spawn point as the NPC's BOTTOM centre
+        // (`NPC.cs:80770` → `Entity.cs:122-132`: `position = (X - w/2,
+        // Y - h)`) and the call site truncates it to whole pixels
+        // (`NPC.cs:20180`).
+        let servant = Npc::spawn_servant_of_cthulhu(100.7, 200.7, 1.0, 2.0);
+        assert_eq!(servant.x, 100.0 - 10.0, "the x is the bottom-centre");
+        assert_eq!(servant.y, 200.0 - 20.0, "the y is the bottom");
+        assert_eq!(servant.vx, 1.0);
+        assert_eq!(servant.vy, 2.0);
     }
 
     #[test]
