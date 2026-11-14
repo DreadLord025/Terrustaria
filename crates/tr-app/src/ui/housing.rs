@@ -218,35 +218,21 @@ pub fn hide_pvp_icons(cells: &[Cell], screen_width: f32) -> bool {
     cells.iter().any(|c| (c.x - origin) <= -144.0)
 }
 
-/// The `NPCName` localization key of a town kind — the C# reads
+/// The localized type name of a town kind — the C# reads
 /// `Main.npc[num].FullName`, which is the *given* name ("Andrew") plus the
 /// type name; the port stores no per-NPC names, so the type name is what the
 /// tooltip can honestly show (recorded in `docs/ANALYSIS.md`).
-fn name_key(kind: NpcKind) -> Option<&'static str> {
-    Some(match kind {
-        NpcKind::Guide => "NPCName.Guide",
-        NpcKind::Merchant => "NPCName.Merchant",
-        NpcKind::Nurse => "NPCName.Nurse",
-        NpcKind::Demolitionist => "NPCName.Demolitionist",
-        NpcKind::Dryad => "NPCName.Dryad",
-        NpcKind::ArmsDealer => "NPCName.ArmsDealer",
-        NpcKind::Clothier => "NPCName.Clothier",
-        NpcKind::GoblinTinkerer => "NPCName.GoblinTinkerer",
-        NpcKind::Painter => "NPCName.Painter",
-        NpcKind::WitchDoctor => "NPCName.WitchDoctor",
-        NpcKind::Mechanic => "NPCName.Mechanic",
-        NpcKind::Wizard => "NPCName.Wizard",
-        NpcKind::DyeTrader => "NPCName.DyeTrader",
-        NpcKind::PartyGirl => "NPCName.PartyGirl",
-        NpcKind::Stylist => "NPCName.Stylist",
-        NpcKind::TravellingMerchant => "NPCName.TravellingMerchant",
-        NpcKind::Angler => "NPCName.Angler",
-        NpcKind::TaxCollector => "NPCName.TaxCollector",
-        NpcKind::Golfer => "NPCName.Golfer",
-        NpcKind::Zoologist => "NPCName.Zoologist",
-        NpcKind::Princess => "NPCName.Princess",
-        _ => return None,
-    })
+///
+/// `Lang.GetNPCName(netId)` (`Lang.cs:188-195`) answers it from the
+/// `NPCName.{const name}` key, so the table is the id class' own spellings
+/// (`NPCID.cs`) instead of a hand-written list.
+fn npc_type_name(kind: NpcKind) -> Option<String> {
+    let name = crate::lang::npc_name(kind.cs_id() as i32);
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 /// `Main.cs:42062-42063`: `text = (num6 != 0) ? Main.npc[num7].FullName :
@@ -270,8 +256,8 @@ pub fn label(head: usize, npc: Option<usize>, npcs: &[Npc]) -> Option<String> {
         return Some(crate::lang::text("Inter.8"));
     }
     let kind = npcs.get(npc?)?.kind;
-    Some(match name_key(kind) {
-        Some(key) => crate::lang::text(key),
+    Some(match npc_type_name(kind) {
+        Some(name) => name,
         // A head with no key keeps its vanilla type surface rather than an
         // empty tooltip.
         None => crate::lang::text("Inter.8"),
