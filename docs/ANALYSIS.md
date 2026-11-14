@@ -13486,3 +13486,26 @@ covers only NPC kinds the port does not ship), `PressurePlateHelper`'s
 plate 428 (`PressurePlateHelper.cs`, the "stays pressed while a player
 stands on it" plate), the Actuation Rod (3620) and the multi-wrench (3625).
 
+
+## The Deerclops' rubble and chill aura (S1-D-4b-5d, 2026-11-14)
+
+Two more Deerclops stand-ins fell out with the spike rows
+(S1-D-4b-5b):
+
+* **the rubble** (the state 2, `NPC.cs:44242-44263`): the C#'s rubble is
+  the **962** (the ice chunk, the aiStyle-1 flight) — not the 961 (the
+  forward spike) — and it falls one rock per tick from the 32nd, for twenty
+  ticks. `AI_123_Deerclops_ShootRubbleUp` (`:44448-44465`) walks down the
+  column from the Deerclops' top (ten tiles up, three forward) to the first
+  solid tile and throws the rock up at the row's angle
+  (`(0, -1)` rotated by `whichOne * direction * 0.7 * (PI / 4 / howMany)`)
+  with the `ai1 = 6 + Next(6)` payload. The C#'s first velocity (the
+  up-bias target) is overwritten right after, so only the rotated vector
+  stands.
+* **the chill aura** (the state 3, `NPC.cs:44285-44320`): the C#'s
+  "blizzard" spawns **no projectile** — every fourth tick from the 28th it
+  slows the player within 800 px (the Slow buff 32, 720 ticks). The port
+  fired a damage-0 spike every tick instead; that stand-in is gone.
+
+The port's `update_deerclops` now takes a `&mut Player` (the aura writes
+the player's buff).

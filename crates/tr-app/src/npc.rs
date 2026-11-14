@@ -2905,6 +2905,49 @@ fn safe_dir(v: Vec2, default: Vec2) -> Vec2 {
     }
 }
 
+/// `AI_123_Deerclops_ShootRubbleUp` (`NPC.cs:44448-44465`): the rock lands
+/// on the first solid tile under the Deerclops' top (ten tiles up and three
+/// forward) and flies up at the row's angle.
+fn deerclops_shoot_rubble_up(npc: &mut Npc, world: &World, rng: &mut u64, which_one: i32) {
+    let how_many = 20i32;
+    let spacing = 1i32;
+    let (w, _h) = npc.size();
+    // `:44257-44260` — the source tile: the Deerclops' top, three tiles
+    // forward and ten up.
+    let source_x = ((npc.x + w * 0.5) as i32) / 16 + npc.facing * 3;
+    let source_y = (npc.y as i32) / 16 - 10;
+    let num2 = which_one * spacing;
+    for i in 0..35 {
+        let x = source_x + num2 * npc.facing;
+        let y = source_y + i;
+        if !solid_block(world, x, y) {
+            continue;
+        }
+        // The C#'s first velocity (the up-bias target) is overwritten by the
+        // rotated `(0, -1)` right after (`:44458-44459`), so only the latter
+        // stands.
+        let angle = which_one as f32
+            * npc.facing as f32
+            * 0.7
+            * (std::f32::consts::PI / 4.0 / how_many as f32);
+        let (sin, cos) = angle.sin_cos();
+        let v = Vec2::new(sin, -cos);
+        let speed = 8.0 + crate::app::rand01(rng) * 8.0;
+        npc.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+            kind: crate::projectile::DEERCLOPS_ICE_CHUNK,
+            x: x as f32 * 16.0 + 8.0,
+            y: y as f32 * 16.0 - 8.0,
+            vx: v.x * speed,
+            vy: v.y * speed,
+            damage: 18,
+            ai0: 0.0,
+            // `:44463` — the chunk's `ai1 = 6 + Next(6)`.
+            ai1: 6.0 + crate::app::frame::rand_range(rng, 6) as f32,
+        });
+        break;
+    }
+}
+
 /// `AI_123_Deerclops_MakeSpikesForward`/`MakeSpikesBothSides` +
 /// `TryMakingSpike` (`NPC.cs:44466-44534`, `:44575-44585`): the Deerclops'
 /// ice-spike rows. `how_many` is the row's spread (20 forward, 15 both
@@ -12969,7 +13012,7 @@ impl Npc {
         self.y += self.vy;
     }
 
-    fn update_deerclops(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_deerclops(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -13052,36 +13095,32 @@ impl Npc {
                 }
             }
             2 => {
-                // The rubble up (`:44242-44263`): the 18-dmg rocks.
+                // `:44242-44263` — the rubble: from the 32nd tick, one
+                // rock per tick (the row's spread is 20).
                 self.ai[1] += 1.0;
                 if self.ai[1] >= 32.0 {
-                    for i in 0..20 {
-                        let spread = (crate::app::rand01(rng) - 0.5) * 2.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            cx,
-                            cy,
-                            spread * 6.0,
-                            -8.0 - crate::app::rand01(rng) * 8.0,
-                            18,
-                        ));
+                    let elapsed = self.ai[1] as i32 - 32;
+                    if elapsed < 20 {
+                        deerclops_shoot_rubble_up(self, world, rng, elapsed);
                     }
+                }
+                if self.ai[1] >= 60.0 {
                     self.ai[0] = 0.0;
                     self.ai[1] = 0.0;
                 }
             }
             3 => {
-                // The slow-debuff blizzard (`:44264-44307`).
+                // `:44264-44307` — the chill aura: every fourth tick from
+                // the 28th the player within 800 px gets the Slow buff (32)
+                // for 720 ticks — the C# spawns NO projectile here.
                 self.ai[1] += 1.0;
-                if self.ai[1] >= 20.0 {
-                    self.wants_hostile_shot.push((
-                        crate::projectile::DEERCLOPS_ICE_SPIKE,
-                        cx,
-                        cy - 40.0,
-                        0.0,
-                        0.0,
-                        0,
-                    ));
+                if (self.ai[1] as i32) % 4 == 0 && self.ai[1] >= 28.0 {
+                    if !player.dead
+                        && player.buffs.find_buff_index(32).is_none()
+                        && ((cx - pcx).powi(2) + (cy - pcy).powi(2)).sqrt() < 800.0
+                    {
+                        player.buffs.add_buff(32, 720);
+                    }
                 }
                 if self.ai[1] >= 60.0 {
                     self.ai[0] = 0.0;
@@ -19217,7 +19256,7 @@ mod tests {
         // at 0 (vulnerable); the spawn state -1 pins it at -10.
         assert!(!d.dont_take_damage, "the fresh spawn is open");
         for _ in 0..31 {
-            d.update_deerclops(&w, &player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng);
         }
         assert!(d.dont_take_damage, "the 450px ramp shields");
         // Tick the state 0 selection: the quiet close-range stall fires
@@ -19225,10 +19264,10 @@ mod tests {
         d.ai[1] = 200.0;
         d.vx = 0.0;
         d.on_ground = true;
-        d.update_deerclops(&w, &player, &mut rng);
+        d.update_deerclops(&w, &mut player, &mut rng);
         assert_eq!(d.ai[0], 5.0, "the hand burst state");
         for _ in 0..60 {
-            d.update_deerclops(&w, &player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng);
         }
         assert_eq!(d.ai[0], 0.0, "the burst ends back to the walk");
         let hands = d.wants_hostile_shot_ai.len();
@@ -19247,7 +19286,7 @@ mod tests {
         d.ai[0] = 1.0;
         d.ai[1] = 0.0;
         for _ in 0..40 {
-            d.update_deerclops(&w, &player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng);
         }
         let spikes: Vec<_> = d
             .wants_hostile_shot_ai
@@ -21262,7 +21301,7 @@ mod s1_d_4b_5b_tests {
         d.ai[0] = 1.0;
         d.ai[1] = 0.0;
         for _ in 0..36 {
-            d.update_deerclops(&w, &player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng);
         }
         let spikes: Vec<_> = d
             .wants_hostile_shot_ai
@@ -21289,7 +21328,7 @@ mod s1_d_4b_5b_tests {
         // tick: the volleys land on the 36th, the 40th, ...).
         let before = d.wants_hostile_shot_ai.len();
         for _ in 0..3 {
-            d.update_deerclops(&w, &player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng);
         }
         assert_eq!(
             d.wants_hostile_shot_ai.len(),
@@ -21297,11 +21336,115 @@ mod s1_d_4b_5b_tests {
             "the cadence waits four ticks"
         );
         // The fourth tick opens the second volley.
-        d.update_deerclops(&w, &player, &mut rng);
+        d.update_deerclops(&w, &mut player, &mut rng);
         assert_eq!(
             d.wants_hostile_shot_ai.len() - before,
             4,
             "the second volley is four spikes"
+        );
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_5d_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-D-4b-5d — the Deerclops' rubble (`AI_123_Deerclops_ShootRubbleUp`,
+    /// `NPC.cs:44448-44465`): from the 32nd tick one rock per tick lands on
+    /// the first solid tile under the Deerclops — and the rock is the 962
+    /// (the ice chunk), not the 961 (the forward spike).
+    #[test]
+    fn s1_d_4b_5d_the_deerclops_rubble_falls_one_chunk_per_tick() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 32.0 * 16.0;
+        player.y = 20.0 * 16.0;
+        let mut d = Npc::new(NpcKind::Deerclops, 20.0 * 16.0, 29.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        let mut rng = 12345u64;
+        // The state 2 (the rubble): 32 ticks to the first rock.
+        d.ai[0] = 2.0;
+        d.ai[1] = 0.0;
+        for _ in 0..32 {
+            d.update_deerclops(&w, &mut player, &mut rng);
+        }
+        let rocks: Vec<_> = d
+            .wants_hostile_shot_ai
+            .iter()
+            .filter(|s| s.kind == crate::projectile::DEERCLOPS_ICE_CHUNK)
+            .copied()
+            .collect();
+        assert_eq!(rocks.len(), 1, "the first tick makes one rock");
+        // The rock lands on the ground row under the Deerclops.
+        assert!(
+            (rocks[0].y - 8.0 - 30.0 * 16.0).abs() < 24.0,
+            "the rock lands on the ground row ({})",
+            rocks[0].y
+        );
+        assert_eq!(rocks[0].damage, 18, "the rock's damage");
+        // The next tick makes the second rock (the cadence is one per tick).
+        d.update_deerclops(&w, &mut player, &mut rng);
+        let rocks: Vec<_> = d
+            .wants_hostile_shot_ai
+            .iter()
+            .filter(|s| s.kind == crate::projectile::DEERCLOPS_ICE_CHUNK)
+            .copied()
+            .collect();
+        assert_eq!(rocks.len(), 2, "the rubble falls one rock per tick");
+    }
+
+    /// S1-D-4b-5d — the Deerclops' chill aura (`NPC.cs:44285-44320`): the
+    /// state 3 spawns no projectile — it slows the player (the Slow buff
+    /// 32, 720 ticks) within 800 px.
+    #[test]
+    fn s1_d_4b_5d_the_deerclops_chill_aura_slows_the_player() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 32.0 * 16.0;
+        player.y = 25.0 * 16.0;
+        let mut d = Npc::new(NpcKind::Deerclops, 30.0 * 16.0, 29.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        let mut rng = 12345u64;
+        // The state 3 (the chill aura): the buff lands on the 28th tick.
+        d.ai[0] = 3.0;
+        d.ai[1] = 0.0;
+        for _ in 0..27 {
+            d.update_deerclops(&w, &mut player, &mut rng);
+        }
+        assert!(
+            player.buffs.find_buff_index(32).is_none(),
+            "the aura waits for its 28th tick"
+        );
+        d.update_deerclops(&w, &mut player, &mut rng);
+        assert!(
+            player.buffs.find_buff_index(32).is_some(),
+            "the Slow buff lands on the 28th tick"
+        );
+        // The aura spawns no projectile.
+        assert!(
+            d.wants_hostile_shot_ai.is_empty(),
+            "the chill aura fires no projectile"
         );
     }
 }
