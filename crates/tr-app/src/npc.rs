@@ -4286,7 +4286,7 @@ impl Npc {
             | NpcKind::PartyGirl
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
-            NpcKind::SkeletronHead => self.update_skeletron(world, player),
+            NpcKind::SkeletronHead => self.update_skeletron(world, player, rng),
             NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
             NpcKind::WallOfFleshEye => self.update_wof_eye(world, player),
             NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
@@ -7649,51 +7649,195 @@ impl Npc {
     /// the 7 cap), the charge (the 480-tick cycle, the direct velocity
     /// x 8), the decel (the 40 ticks x0.98). The spinning hands (the
     /// separate NPCs 36) = the follow-ups.
-    fn update_skeletron(&mut self, world: &World, player: &Player) {
+    /// `AI()`'s aiStyle-11 block (`NPC.cs:21919-22298`) — the Skeletron
+    /// head's machine: the spin state (0), the charge (1), the enraged
+    /// day-time state (2) and the despawn (3).
+    ///
+    /// The hands' spawn rides the sim's pass (the C#'s `ai[0] == 0` init,
+    /// `:21924-21941`); the arm reads the live hand count from `ai[3]`
+    /// (the sim's write).
+    ///
+    /// The dust (`:22280-22296`) and the sounds are SKIPPED — no dust/sound
+    /// layer.
+    fn update_skeletron(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        let hover_y = pcy - 280.0;
-        if self.cast_windup == 0 {
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.07;
-            if self.vx.abs() > 7.0 {
-                self.vx = 7.0 * self.vx.signum();
-            }
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.07;
-            if self.vy.abs() > 7.0 {
-                self.vy = 7.0 * self.vy.signum();
-            }
-            self.caster_counter += 1;
-            if self.caster_counter >= 480 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 8.0;
-            self.vy = dy / d * 8.0;
-            self.cast_windup = 2;
-        } else {
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
+        // `:21923` — the defense resets to the kind's base every tick.
+        self.defense_override = None;
+        // `:21949-21957` — a dead player or one 2000 px away → the despawn.
+        let far = (self.x - player.x).abs() > 2000.0 || (self.y - player.y).abs() > 2000.0;
+        if player.dead || far {
+            self.ai[1] = 3.0;
+        }
+        // `:21958-21962` — the daytime → the enraged state.
+        if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
+            self.ai[1] = 2.0;
+        }
+        match self.ai[1] as i32 {
+            0 => {
+                // `:22019-22051` — the spin: the timer (800 ticks → the
+                // charge), the rotation and the hover acceleration.
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 800.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 1.0;
                 }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
+                self.rotation = self.vx / 15.0;
+                let (accel_y, cap_y, accel_x, cap_x) = if world.hard_mode {
+                    (0.03f32, 4.0f32, 0.07f32, 9.5f32)
+                } else {
+                    (0.02, 2.0, 0.05, 8.0)
+                };
+                if self.y > player.y - 250.0 {
+                    if self.vy > 0.0 {
+                        self.vy *= 0.98;
+                    }
+                    self.vy -= accel_y;
+                    if self.vy > cap_y {
+                        self.vy = cap_y;
+                    }
+                } else if self.y < player.y - 250.0 {
+                    if self.vy < 0.0 {
+                        self.vy *= 0.98;
+                    }
+                    self.vy += accel_y;
+                    if self.vy < -cap_y {
+                        self.vy = -cap_y;
+                    }
                 }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
+                if cx > pcx {
+                    if self.vx > 0.0 {
+                        self.vx *= 0.98;
+                    }
+                    self.vx -= accel_x;
+                    if self.vx > cap_x {
+                        self.vx = cap_x;
+                    }
+                }
+                if cx < pcx {
+                    if self.vx < 0.0 {
+                        self.vx *= 0.98;
+                    }
+                    self.vx += accel_x;
+                    if self.vx < -cap_x {
+                        self.vx = -cap_x;
+                    }
+                }
+                // `:21978-22018` — the expert mode's spin shot: every 80
+                // ticks (40 with no hand left) the head fires a skull.
+                if world.hard_mode {
+                    let hands = self.ai[3] as i32;
+                    let period = if hands == 0 { 40.0 } else { 80.0 };
+                    if self.ai[2] % period == 0.0
+                        && crate::projectile::can_hit(
+                            world,
+                            cx,
+                            cy,
+                            1.0,
+                            1.0,
+                            player.x,
+                            player.y,
+                            crate::player::WIDTH,
+                            player.height,
+                        )
+                    {
+                        let speed = if hands == 0 { 5.0 } else { 3.0 };
+                        let mut dx =
+                            pcx - cx + crate::app::frame::rand_range_signed(rng, -20, 21) as f32;
+                        let mut dy =
+                            pcy - cy + crate::app::frame::rand_range_signed(rng, -20, 21) as f32;
+                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                        dx = dx / d * speed;
+                        dy = dy / d * speed;
+                        // The jitter (`:22005-22006`).
+                        dx += crate::app::frame::rand_range_signed(rng, -50, 51) as f32 * 0.01;
+                        dy += crate::app::frame::rand_range_signed(rng, -50, 51) as f32 * 0.01;
+                        let len = (dx * dx + dy * dy).sqrt().max(1.0);
+                        dx = dx / len * speed;
+                        dy = dy / len * speed;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::SKULL,
+                            cx + dx * 5.0,
+                            cy + dy * 5.0,
+                            dx + self.vx,
+                            dy + self.vy,
+                            17,
+                        ));
+                    }
                 }
             }
+            1 => {
+                // `:22118-22244` — the charge: the defense drops by 10, the
+                // timer (400 ticks → the spin) and the 1.5-px rush.
+                self.defense_override = Some(self.defense() - 10);
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 400.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+                self.rotation += self.facing as f32 * 0.3;
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let mut speed = if world.hard_mode { 3.5 } else { 1.5 };
+                if world.hard_mode {
+                    // `:22188-22227` — the expert's distance ramp.
+                    if d > 150.0 {
+                        speed *= 1.05;
+                    }
+                    for threshold in [
+                        200.0, 250.0, 300.0, 350.0, 400.0, 450.0, 500.0, 550.0, 600.0,
+                    ] {
+                        if d > threshold {
+                            speed *= 1.1;
+                        }
+                    }
+                    // `:22228-22236` — the hand count's share.
+                    match self.ai[3] as i32 {
+                        0 => speed *= 1.1,
+                        1 => speed *= 1.05,
+                        _ => {}
+                    }
+                }
+                let k = speed / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
+            }
+            2 => {
+                // `:22245-22259` — the enraged state: the invulnerable
+                // 8-px rush.
+                self.damage_override = Some(9999);
+                self.defense_override = Some(9999);
+                self.rotation += self.facing as f32 * 0.3;
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let k = 8.0 / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
+            }
+            3 => {
+                // `:22260-22270` — the despawn: the sink and the damp.
+                self.vy += 0.1;
+                if self.vy < 0.0 {
+                    self.vy *= 0.95;
+                }
+                self.vx *= 0.95;
+            }
+            _ => {}
+        }
+        // `:22019` — the spin state restores the kind's damage.
+        if self.ai[1] == 0.0 {
+            self.damage_override = None;
+        } else if self.ai[1] == 1.0 {
+            let base_damage = self.kind.contact_damage();
+            self.damage_override = Some(if world.hard_mode {
+                (base_damage as f32 * 1.3) as i32
+            } else {
+                base_damage
+            });
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
         self.sprite_dir = self.facing;
@@ -16117,8 +16261,8 @@ mod tests {
 
     #[test]
     fn the_skeletron_cycles() {
-        // `AI_011`'s v1 cycle: the hover 480 ticks → the charge (the
-        // velocity 8) → the decel.
+        // `AI_011` (S1-D-3f): the spin state (0) hovers for 800 ticks, then
+        // the charge (1) rushes at the player for 400 ticks.
         let mut w = ground_air();
         w.day_time = false;
         let mut sk = Npc::new(NpcKind::SkeletronHead, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
@@ -16126,13 +16270,19 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
-            sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let mut rng = 0u64;
+        for _ in 0..800 {
+            sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
-        assert!(sk.cast_windup == 1, "the charge phase armed");
-        sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(sk.ai[1], 1.0, "the charge phase armed");
+        sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
-        assert!((speed - 8.0).abs() < 0.1, "the charge speed ({speed})");
+        assert!((speed - 1.5).abs() < 0.1, "the charge speed ({speed})");
+        // The charge ends after 400 ticks and the spin resumes.
+        for _ in 0..400 {
+            sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(sk.ai[1], 0.0, "the spin resumed");
     }
 
     #[test]
@@ -20572,5 +20722,81 @@ mod s1_d_3e_tests {
         }
         assert_eq!(b.ai[0], -3.0, "the retreat faded the Brain in");
         assert_eq!(b.alpha, 255, "the retreat's fade-in is full");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_3f_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-D-3f — the Skeletron head's machine (`NPC.cs:21919-22298`): the
+    /// daytime turns the head into the enraged state (the invulnerable
+    /// 8-px rush) and the charge state drops the defense by 10.
+    #[test]
+    fn s1_d_3f_the_skeletron_head_enrages_in_the_daylight() {
+        let mut w = world();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 200.0, 100.0, 0, 0.0);
+        sk.hp = sk.max_hp;
+        let mut rng = 12345u64;
+        // The night: the head spins (the state 0) and hovers.
+        sk.update_skeletron(&w, &player, &mut rng);
+        assert_eq!(sk.ai[1], 0.0, "the head spins at night");
+        // The daylight: the enraged state.
+        w.day_time = true;
+        sk.update_skeletron(&w, &player, &mut rng);
+        assert_eq!(sk.ai[1], 2.0, "the daylight enrages the head");
+        assert_eq!(sk.damage_override, Some(9999), "the enraged damage");
+        assert_eq!(sk.defense_override, Some(9999), "the enraged defense");
+        let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
+        assert!((speed - 8.0).abs() < 0.01, "the enraged rush ({speed})");
+    }
+
+    /// S1-D-3f — the charge state (`NPC.cs:22118-22244`): the defense
+    /// drops by 10 and the head rushes at the player.
+    #[test]
+    fn s1_d_3f_the_skeletron_charge_drops_the_defense() {
+        let mut w = world();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 200.0, 100.0, 0, 0.0);
+        sk.hp = sk.max_hp;
+        sk.ai[1] = 1.0; // the charge state
+        let base_defense = sk.defense();
+        let mut rng = 12345u64;
+        sk.update_skeletron(&w, &player, &mut rng);
+        assert_eq!(
+            sk.defense_override,
+            Some(base_defense - 10),
+            "the charge drops the defense"
+        );
+        let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
+        assert!((speed - 1.5).abs() < 0.01, "the charge speed ({speed})");
     }
 }

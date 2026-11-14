@@ -302,6 +302,9 @@ pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
 /// `ProjectileID.DeerclopsIceChunk` (962, `Projectile.cs:9199-9206`) — the
 /// Deerclops' rubble chunk (the aiStyle-1 flight).
 pub const DEERCLOPS_ICE_CHUNK: u16 = 962;
+/// `ProjectileID.Skull` (270, `Projectile.cs:3558-3566`) — the Skeletron
+/// head's spin shot (the expert mode's fired skull).
+pub const SKULL: u16 = 270;
 /// `ProjectileID.InsanityShadowHostile` (965) — the shadow-hand burst
 /// (`NPC.cs:44394`'s `RandomizeInsanityShadowFor`).
 pub const SHADOW_HAND: u16 = 965;
@@ -1226,6 +1229,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:1839-1848` — the scrap: 14x14, aiStyle 14,
             // penetrate -1, timeLeft 360.
             SAUCER_SCRAP => (14.0, 14.0, 14, -1, 360, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:3558-3566` — the skull: 26x26, aiStyle 1,
+            // `penetrate = 3`, `alpha = 255`, hostile (the Skeletron head's
+            // expert spin shot).
+            SKULL => (
+                26.0,
+                26.0,
+                1,
+                3,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:9199-9206` — the ice chunk: 16x16, aiStyle 1,
             // `penetrate = -1`, `extraUpdates = 2`, `timeLeft = 220`,
             // `alpha = 255`, water-ignoring (the Deerclops' rubble).
