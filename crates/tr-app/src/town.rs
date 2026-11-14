@@ -7,7 +7,7 @@
 //! load-path `FixAgainstExploits` home re-validation, and `ShimmeredTownNpcs`
 //! = `NPC.ShimmeredTownNPCs` (`NPC.cs:6071`).
 
-use tr_core::housing::{check_room, room_needs, start_room_check};
+use tr_core::housing::{check_room, room_needs, score_room, start_room_check};
 use tr_core::wld::sections::npcs::NPCID_COUNT;
 use tr_core::world::World;
 use tr_core::wld::sections::WldTownRoom;
@@ -46,14 +46,22 @@ pub fn quick_find_home(world: &World, tile_x: i32, tile_y: i32) -> Option<(i32, 
     None
 }
 
-/// One scan spot: the room check + the furniture needs.
+/// One scan spot: the room check + the furniture needs + the room score.
+///
+/// `WorldGen.QuickFindHome` (`WorldGen.cs:5732-5795`) runs `RoomNeeds` and
+/// then `ScoreRoom` (`:5858-5992`), which picks the room's **best** home
+/// spot — `WorldGen.bestX/bestY` — not the scan's centre. The C# writes the
+/// home only when `hiScore > 0` (`:5769-5771`).
 fn scan_spot(world: &World, x: i32, y: i32) -> Option<(i32, i32)> {
     let scan = check_room(world, x, y).ok()?;
     if !room_needs(&scan.house_tiles) {
         return None;
     }
-    // `WorldGen.bestX/bestY` = the scan's centre (the room's found tile).
-    Some((x, y))
+    let (bx, by, score) = score_room(world, &scan)?;
+    if score <= 0 {
+        return None;
+    }
+    Some((bx, by))
 }
 
 /// `WorldGen.TownManager` (`TownRoomManager.cs:11-13`): one room per town NPC

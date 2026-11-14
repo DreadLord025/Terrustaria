@@ -4422,6 +4422,39 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Town housing (S1-E-11a, 2026-11-14)
+
+`WorldGen.ScoreRoom` (`WorldGen.cs:5858-5992`) landed in `tr-core::housing`:
+the room's **score** and its **best home spot** (`WorldGen.bestX/bestY`).
+
+- **The base**: 50 minus the evil count over the tested area (the room's
+  bounds grown by 5/3 + 40 and clipped, `:5994-6020`); the evil count is
+  `GetTileTypeCountByCategory(counts, TotalGoodEvil)` (`:5845-5856`) over the
+  active tiles' kinds (`:5831-5843`). A room scoring −250 or worse is
+  rejected outright (`:5889-5892`).
+- **The candidates**: the room's own area (`:5897-5899`); each needs an active
+  solid tile, a home spot (the tile 379 never is, `:6021-6029`), solid
+  neighbours left and right and no solid tile in the box below (`:5901-5904`).
+- **The furniture**: the 5×4 block above each candidate scores +5 for a
+  non-solid tile and −5 for a solid one, −20 for a door (10/388) or an open
+  door anchor (389), the ninth column −15 each and a chest −30 each
+  (`:5910-5951`); the tile kinds of `TileID.Sets.IgnoredInHouseScore` and the
+  `BasicChest` set are the C#'s (`TileID.cs:620`/`:570`).
+- **The room membership**: the three cells above the spot must be in the
+  room's mask (`WorldGen.roomTiles`, `:5953-5972`) and the room must hold the
+  spot itself.
+
+`town.rs::scan_spot` now returns the scored spot instead of the scan's
+centre, so `quick_find_home` picks the room's best home (the C#'s
+`QuickFindHome` → `RoomNeeds` → `ScoreRoom` → `hiScore > 0` chain,
+`WorldGen.cs:5732-5795`).
+
+Deviations: the occupancy half (`ScoreRoom_IsThisRoomOccupiedBySomeone`
+`:5814-5829`) and the shared-room adjustment (`:5936-5939`) need the NPC
+list and the `housingCategory` occupancy — they land with the housing
+occupancy follow-up; the relocation (`MoveTownNPC`/`moveRoom`,
+`WorldGen.cs:4685`/`:4843`) and `GetHouseholdStatus` are still out.
+
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
