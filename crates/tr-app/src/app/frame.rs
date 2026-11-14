@@ -1259,6 +1259,11 @@ impl App {
                         held | (phase << 16)
                     },
                     light_generation: light.generation(),
+                    // S1-H-15: `shade` multiplies every tile tint by the style's
+                    // brightness, and the Darkness debuff's `blind` flag drops it
+                    // 1.2 → 1.0 (`Lighting.cs:108-116`) — the input must ride the
+                    // key or a blind gain/loss keeps the previous frame's tints.
+                    brightness: style.brightness.to_bits(),
                     waterfall: waterfall.anim_key(),
                     net_key: {
                         // FNV-1a over the peers' smoothed state and the NPC
