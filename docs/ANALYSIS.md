@@ -1943,17 +1943,25 @@ ported the remaining three and verified the fourth:
 
 Deviations (deliberate):
 
-* The tracked-sound layer (`ActiveSound`/`SlotId`/`SoundPlayer.PlayTrackedSound`) is not
-  modelled; each emitter owns its sink or cue directly. The observable behaviour (start
-  conditions, volume ramp, split, stop) matches; the C# GC of a dead slot has nothing to
-  map to (a sink never dies in the port).
+* The tracked-sound layer is ported (S1-E-23: `tracked_sound.rs`'s
+  `SoundPlayer`/`ActiveSound` over `tr_core::slot`'s `SlotVector(4096)`; the
+  SceneState blizzard loops ride it verbatim). Two engine seams remain: the
+  per-frame **re-pan** is baked at creation (XNA re-pans the live instance
+  every `ActiveSound.Update`, `ActiveSound.cs:148` — a rodio sink cannot; the
+  volume leg is live), and `SoundInstanceGarbageCollector` maps to nothing
+  (rodio drops its finished sources). The C#'s try/catch around the blizzard
+  block permanently disables the emitter when a play fails (`:191-193`'s
+  `_disabledBlizzardSound`); the port retries next frame instead.
 * The pitch mechanism is a rate resample (`2^pitch`, nearest frame), not XNA's DSP —
   the audible effect of the small jitter rolls (±0.07 octaves) is the intended one.
-* The liquid-change garnish rolls (the trackable variation pick and the splash pitch)
-  ride the engine's `LegacySoundStyle.Random` stand-in (`audio.rs::style_random`,
-  `UnifiedRandom` seeded 1): the C# draws them from a `Environment.TickCount`-seeded
-  static (`LegacySoundStyle.cs:9`) and — for the splash pitch — from `Main.rand` mid
-  liquid-pass; the port's liquid engine is pure, so no world stream is touched.
+* The engine's two static style streams are `UnifiedRandom` stand-ins seeded 1:
+  `audio.rs::style_random` (`LegacySoundStyle.Random`, the variation picks) and
+  `audio.rs::sound_style_random` (`SoundStyle._random`, the tracked `GetRandomPitch`
+  rolls). The C# seeds both with `Environment.TickCount` (`LegacySoundStyle.cs:9`,
+  `SoundStyle.cs:8`) — unobservable streams. The liquid-change splash pitch rides
+  `style_random` too: the C# draws it from `Main.rand` mid liquid-pass
+  (`LegacySoundPlayer.cs:883`), and the port's liquid engine is pure, so no world
+  stream is touched.
 * The thunder slot/pitch rolls and the critter rolls come from the owning system's
   stream (the WEATHER-1/WEATHER-2 per-consumer convention), not the shared `Main.rand`
   the C# draws.
@@ -12381,6 +12389,74 @@ clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
 their own passes; the hover text feeds the map's text line through
 `ui::text::hud_text` (the C# `ref text`).
 
+## The missing projectile AI arms (S1-D-4b-1, 2026-11-14)
+
+The ROADMAP's S1-D-4b row ("19 styles have a `proj_data` row but no
+dispatch arm — those projectiles hold position forever") is not one
+landable task: the 19 styles span ~5 300 C# lines of arms plus the two
+mega-families (`AI_026`'s 6 922 lines over 68 types, `AI_067`'s 2 081
+over 16). The row is therefore split into S1-D-4b-1..8 by family — the
+same precedent S1-D-4c set for the vortex styles — and the contract
+stays "arm them, never remove the rows": every style keeps its
+`proj_data` row and gains its dispatch arm.
+
+S1-D-4b-1 ports the four self-contained styles:
+
+* **aiStyle 70 — the Flairon Bubble** (`Projectile.cs:30304-30354`):
+  the one-shot acquire scan (the closest chaseable NPC inside 650 px
+  with a clear `Collision.CanHit` line — the running-minimum distance,
+  so the tightest target wins), the first steering step
+  (`(v * 20 + d * weight) / 21` with `weight = Next(35, 75) / 30f` and
+  the ±100 px jitter), the steady homing (`(v * 40 + d * 12) / 41`), the
+  no-target path (the counter starts at −15 and climbs back to 0, the
+  alpha falls 25/tick to its 50 floor, the velocity decays 5%) and the
+  scale roll (`Next(80, 121) / 100f`).
+* **aiStyle 133 — the Dark Mage raise marker**
+  (`Projectile.cs:36435-36453`): the counter, the `GetLerpValue`
+  opacity ramp (0 → 1 over 20 ticks, 1 until the 60th, back to 0 by the
+  80th) and the kill. The 674's heal arm has no ported row.
+* **aiStyle 187 — the Insanity shadow** (`Projectile.cs:42502-42634`):
+  the four variation windows (180/120/90/90 ticks) with the alpha ramp
+  (+25/tick over the last 15 ticks of a window, −25/tick before it,
+  floored at 50) and the kill on the window's last tick, then the four
+  choreographies (the drift, the tethered swing, the burst, the spin).
+* **aiStyle 189 — the Volcano / Cascade Explosion**
+  (`Projectile.cs:42264-42303`): the two-remap alpha flash, the scale
+  ramp and the five-frame life (the frame advances every second tick,
+  the fifth frame kills).
+
+Deviations (each deliberate, each with its C# citation in the arm):
+
+* **The dust and gore of the explosion are SKIPPED**
+  (`:42305-42369`) — the port has no dust or gore layer (S1-E-1 /
+  S1-E-4 are in flight). With them the arm's `Main.rand` draws go too
+  (every one of them belongs to a dust/gore block), so the arm keeps the
+  gem-staff arm's zero-RNG invariant (`Projectile.cs:37643-38001`).
+* **The tracked sounds are SKIPPED** — the summon cue
+  (`:36438-36440`), the shadow's per-tick sound-position update
+  (`:42507-42515`) and the explosion cue (`:42266-42269`): the pool has
+  no tracked-sound layer (S1-E-23). The shadow's `localAI[1]` slot stays
+  untouched, as in the C#'s other arms with no sound layer.
+* **`Projectile.Opacity` (`:540`) is a state-only field**: the port has
+  no projectile draw pass yet, so the aiStyle-133 ramp writes the slot
+  and nothing reads it yet. The field defaults to the C#'s `1f`.
+* **The Flairon Bubble's target is an NPC-slot index** in the C#
+  (`Main.npc[(int)ai[0] - 1]`, `:30324`/`:30329`). The port's NPC vec
+  drops the dead, so a stored index can name a different NPC (or none)
+  than the C#'s slot did; the port keeps the index shape (the Nebula
+  Arcanum's `ai[1] = index + 1` precedent) and reads it with
+  `npcs.get`, so a vanished target steers nowhere instead of at the
+  C#'s stale slot.
+* **Four `proj_data` rows were wrong and are now faithful**: the
+  Flairon Bubble (405, `:4864`), the Dark Mage marker (673, `:7213`),
+  the Insanity shadow (965, `:9121`) and the Cascade Explosion (1125,
+  `:10536`) all write `alpha = 255` in their `SetDefaults` arms, and the
+  1125 also writes `usesLocalNPCImmunity = true` with
+  `localNPCHitCooldown = -1` (`:10538-10539`). The port's rows dropped
+  all of it (the `RESET_STATE` alpha 0), so the arms would have started
+  from the wrong alpha — the aiStyle-70 fade arm floors the alpha at 50,
+  which would have *raised* a 0 to 50 on the first fade tick.
+
 ## The composite arm poses (S1-G-16, 2026-11-14)
 
 `Player.compositeFrontArm`/`compositeBackArm` (`Player.cs:1906/:4347-4365`)
@@ -12501,3 +12577,4 @@ Tests: `render::player_layers::tests`'s four `s1_g_17_*` cases (the swing
 thirds' X sign, the shoot style's item rotation, the hold styles' anchors
 and the eat style's stretch table) — all mutation-checked (RED on the
 pre-fix code).
+

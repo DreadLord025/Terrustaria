@@ -139,7 +139,7 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
 | Slime Rain | PORTED | `weather.rs::slime_rain_roll` `:279`, `start_slime_rain` `:295`, decay `:172-177`; `world.rs:194-201` | `the_slime_rain_roll_gates_and_king_counter` (the 32 400-54 000 band, the afternoon refusal, the King + hysteresis) |
 | Meteor | PORTED | `worldgen::meteor::night_roll`/`resolve`, `weather.rs:254-271` | `the_meteor_roll_and_boss_death_flag`; no `Shimmer`/dust shower path |
 | Orb-break reaction | PORTED | `tr-core/src/edit.rs::check_orb` | the 2×2 anchor snap + the third-break boss summon (M4-EVENT-3c) |
-| Pumpkin / Snow Moon | PARTIAL | `world.rs:203-205`, `spawner.rs:63-64`, `:237`, `:360-363` | the flags + the raid pacing are ported; **no wave roster** — `spawn_npc_at` never reads `moon_event` (grep: only `SpawnFlags`, `get_spawn_rate` and tests) |
+| Pumpkin / Snow Moon | PARTIAL | `world.rs:203-205`, `spawner.rs:63-64`, `:237`, `:360-363` | the flags + the raid pacing are ported; **no wave roster** — `spawn_npc_at` never reads `moon_event` (grep: only `SpawnFlags`, `get_spawn_rate` and tests); no wave counter, no points accounting, no start trigger — and the **wave kinds themselves are unported** (no `NpcKind` for the ids 305-352), so the row is L-sized (deviation #9) |
 | Old One's Army (DD2) | PORTED | `tr-core/src/dd2.rs`, `world_sim/dd2` lane spawn, `world.rs:220-274` | the difficulty tiers, the wave rosters, the lane rate; `save.rs:437-535` persists the state |
 | Cultist → pillars → Moon Lord | PORTED | `world_sim/lunar.rs` (`:35-212`), `world.rs:230-263` | `trigger_lunar_apocalypse`, the shield family, the countdowns, `anyone_near_cultists` |
 | Lantern Night | MISSING | — | no state anywhere (`grep lantern_night` → 0 in `crates/`); C# `GameContent\Events\LanternNight.cs` |
@@ -243,10 +243,30 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
    those events are unported — it becomes real the moment they land.
 9. **Pumpkin/Snow Moon are pacing-only** — *behavioural, high*. `World.pumpkin_moon`/`snow_moon`
    exist (`world.rs:203-205`) and `get_spawn_rate` applies the raid pacing (`:360-363`), but
-   `spawn_npc_at` never reads `moon_event` — the C# wave tables inside `SpawnAnNPC`
-   (`NPC.cs:2560-2960`'s moon-event arms) are entirely absent, so a moon event floods the world
-   with ordinary surface enemies instead of the wave roster. ROADMAP's M4-EVENT-2 row has no DONE
-   entry; treat any claim of completion as unverified.
+   `spawn_npc_at` never reads `moon_event` — the C# wave tables inside `SpawnAnNPC` are entirely
+   absent, so a moon event floods the world with ordinary surface enemies instead of the wave
+   roster. ROADMAP's M4-EVENT-2 row has no DONE entry; treat any claim of completion as
+   unverified. **Re-scoped 2026-11-14 (`S1-F-13-moon-wave-rosters`, verified against the
+   decompile):** the arms are the snow ladder `NPC.cs:2804-3222` and the pumpkin ladder
+   `:3224-3612` (not `:2560-2960`), and — the seed's premise is **refuted** — the wave kinds are
+   **not** ported: the Pumpkin family (305-314 `Scarecrow1-10`, 315 `HeadlessHorseman`, 325
+   `MourningWood`, 326 `Splinterling`, 327 `Pumpking`, 329 `Hellhound`, 330 `Poltergeist`) and the
+   Snow family (338-340 `ZombieElf*`, 341 `PresentMimic`, 342 `GingerbreadMan`, 343 `Yeti`, 344
+   `Everscream`, 345 `IceQueen`, 346 `SantaNK1`, 347 `ElfCopter`, 348/349 `Nutcracker*`, 350
+   `ElfArcher`, 351 `Krampus`, 352 `Flocko`) have **no `NpcKind` variant** in
+   `crates/tr-app/src/npc.rs`. The M4-EVENT-8..19 rows cover the **Lunar** events (the pillars /
+   the Moon Lord / the DD2), not the moon events. The row is therefore **L**-sized: the roster
+   needs 25 new NPC kinds (their `SetDefaults` rows + the per-aiStyle machines + the sprites)
+   beside the ladder. The wave machinery's sources: `NPC.waveNumber`/`waveKills`/
+   `totalInvasionPoints` (`NPC.cs:6049-6051`), the points table
+   (`NPC.MoonEventRequiredPointsPerWaveLookup`, `:95292-95301`), the kill accounting
+   (`CheckProgressSnowMoon`/`CheckProgressPumpkinMoon`, `:78440-78720`) with
+   `GetMoonEventPointScalar` (`:78432-78460`), and the start/stop
+   (`Main.startPumpkinMoon`/`startSnowMoon`/`stopMoonEvent`, `Main.cs:10953-11015`, the dawn stop
+   `:65148`/`:65392`). The events also have **no start trigger** in the port: the C# starts them
+   from the Pumpkin Moon Medallion (1844) / the Naughty Present (1958)
+   (`Player.cs:43974-43985`/`:44041-44052`); the real-date `checkHalloween`/`checkXMas`
+   (`Main.cs:13118-13172`) only drive the ambience.
 10. **Lantern Night, Birthday Party, the Sandstorm event and the cultist ritual delay are missing**
     — *behavioural, medium* (each). No state exists in `World` (grep for `lantern_night`/`party_time`/
     a sandstorm timer → nothing). Consequences beyond the absent visuals: `Luck`'s lantern-night
@@ -287,9 +307,16 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
   carry-outs ride `SpawnRate` (`no_worms`/`spawn_friendly`), the graveyard flag landed in
   `SpawnFlags` (constants-off until the M2-BUFF scan feeds it), the consumers (skyMob, piranha,
   Devourer, Giant Worm) read the flags.
-- **M — Moon-event wave rosters** (`SpawnAnNPC`'s pumpkin/snow-moon arms `NPC.cs:2560-2960`):
-  the per-wave kind tables behind `World.pumpkin_moon`/`snow_moon` in `spawn_npc_at`, plus the
-  wave counter. Bigger than it looks — most of the wave kinds are already ported by M4-EVENT-8..19.
+- **L — Moon-event wave rosters** (`SpawnAnNPC`'s pumpkin/snow-moon arms: the snow ladder
+  `NPC.cs:2804-3222` + the pumpkin ladder `:3224-3612`): the per-wave kind tables behind
+  `World.pumpkin_moon`/`snow_moon` in `spawn_npc_at`, plus the wave counter. **Re-scoped
+  2026-11-14 (`S1-F-13-moon-wave-rosters`):** the old "most of the wave kinds are already ported
+  by M4-EVENT-8..19" premise is **refuted** — those rows are the **Lunar** events; the moon
+  events' 25 NPC kinds are unported, so the row needs the kinds (their `SetDefaults` rows, the
+  per-aiStyle machines, the sprites) before the ladder can spawn anything. Proposed split:
+  **S1-F-13a** (the wave machinery + the ladder over the C# ids), **S1-F-13b** (the Pumpkin
+  family), **S1-F-13c** (the Snow family), then the roster's spawn wiring + the event trigger
+  (the Pumpkin Moon Medallion 1844 / the Naughty Present 1958). Sources: deviation #9 above.
 - **M — Lantern Night + Birthday Party + Sandstorm event + the cultist ritual delay**: four small
   schedulers on `World` (flags + timers), the C# sources are `GameContent\Events\LanternNight.cs`,
   `BirthdayParty.cs`, `Sandstorm.cs`, `CultistRitual.cs`; they unlock the eclipse `stopEvents`

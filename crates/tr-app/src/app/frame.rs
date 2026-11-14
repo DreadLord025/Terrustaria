@@ -242,6 +242,17 @@ impl App {
             server: matches!(self.net, crate::app::NetRole::Host(_)),
         });
 
+        // `SoundEngine.Update` (`SoundEngine.cs:48-68`, S1-E-23): the pause
+        // edge (`FocusHelper.PauseSounds` = `!GameplayActive && netMode == 0`,
+        // where `GameplayActive = IsSelectedApplication && !gamePaused` —
+        // `FocusHelper.cs:11-20`/`:97-105`) rides the window-focus and the
+        // S1-B-3 pause gate, then the pool's per-frame update re-volumes
+        // every tracked `ActiveSound` against the fresh listener and reaps
+        // the dead.
+        let pause_sounds = (!self.window_focused || self.game_paused)
+            && matches!(self.net, crate::app::NetRole::Off);
+        self.audio.update_tracked(pause_sounds);
+
         // `Main.Ambience` (`Main.cs:13466-13515`): every 15 ticks (¼ s) the
         // waterfall/lavafall loops re-volume from the strength scans; the
         // volume math is the LegacySoundPlayer case 34/35 (the distance
@@ -404,6 +415,10 @@ impl App {
                 // `WorldUpdateStepper.DrawnThisUpdate = false` at the step
                 // head (`Main.cs:17747`, right after `_gameUpdateCount++`).
                 self.stepper.drawn_this_update = false;
+                // `Main.tileSolid[379] = false` (`Main.cs:17753`): the bubble
+                // is not solid for the entity half of the tick — the liquid
+                // pass re-arms it (`Liquid.cs:451`, S1-L-14).
+                self.liquids.clear_bubble_for_entities();
                 // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
                 // pass. The sleeping counts it exports (`:17844-17859`) gate the
                 // clock's rate, so they land right after it.
