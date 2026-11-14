@@ -1255,6 +1255,11 @@ impl App {
                         held | (phase << 16)
                     },
                     light_generation: light.generation(),
+                    // S1-H-15: `shade` multiplies every tile tint by the style's
+                    // brightness, and the Darkness debuff's `blind` flag drops it
+                    // 1.2 → 1.0 (`Lighting.cs:108-116`) — the input must ride the
+                    // key or a blind gain/loss keeps the previous frame's tints.
+                    brightness: style.brightness.to_bits(),
                     waterfall: waterfall.anim_key(),
                     net_key: {
                         // FNV-1a over the peers' smoothed state and the NPC
@@ -2992,4 +2997,17 @@ pub(crate) fn next_rand(state: &mut u64) -> u64 {
 
 pub(crate) fn rand01(state: &mut u64) -> f32 {
     (next_rand(state) >> 40) as f32 / (1u32 << 24) as f32
+}
+
+/// The u64 streams' `Main.rand.Next(max)`-shaped roll — `next_rand` modulo,
+/// the same shape `Rain::range` uses (uniform over 0..hi).
+pub(crate) fn rand_range(state: &mut u64, hi: u32) -> u32 {
+    (next_rand(state) % hi.max(1) as u64) as u32
+}
+
+/// The u64 streams' signed `Main.rand.Next(min, max)` — the critter
+/// family's pitch draws (`Next(-70, 1)` and friends,
+/// `LegacySoundPlayer.cs:450`-family) ride it.
+pub(crate) fn rand_range_signed(state: &mut u64, lo: i32, hi: i32) -> i32 {
+    lo + (next_rand(state) % (hi.saturating_sub(lo).max(1)) as u64) as i32
 }
