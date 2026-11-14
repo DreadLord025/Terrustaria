@@ -11,14 +11,15 @@
 //!   `audio.rs::set_ambient_loop`.
 //! * **Critter sounds** (`NPC.cs:92244-92340`, `UpdateNPC_CritterSounds`) —
 //!   the one-shot bird/frog/ambient cues with the type gates and the
-//!   per-type variation. The table lives here; the caller waits for the
-//!   critter NPC kinds (the port's roster has none — see `npc.rs`), so the
-//!   table runs with the call sites pinning its inputs.
+//!   per-type variation. The table lives here and the caller rides the NPC
+//!   update loop (`world_sim/npcs.rs`, the `NPC.cs:90323` position — after
+//!   the AI's draws, per NPC); the legacy zombie-family voice resolution
+//!   ([`critter_legacy_voice`]) consumes the same stream in the C#'s order.
 //! * **Liquid-change sounds** (`WorldGen.cs:4632-4650`,
 //!   `PlayLiquidChangeSound`) — the water/lava/honey merge cues fired from
-//!   `Liquid.CreateLiquidMergeTile` (`Liquid.cs:1355-1357`). The cue table
-//!   lives here; the merge pass is not ported (`tr-core/liquid.rs` has the
-//!   settle but no merge tiles), so no caller yet.
+//!   `Liquid.CreateLiquidMergeTile` (`Liquid.cs:1345-1347`). The cue table
+//!   lives here; the tr-core liquid engine queues its merge events
+//!   (`LiquidSystem::drain_merge_events`) and the liquid tick plays them.
 //! * **Thunder** (`Main.cs:58741-58766`) — the strike position and the
 //!   `FocusHelper.UpdateBackgroundThunder` / `thunderSkipSound` gates; the
 //!   position math and the gating table live here, the cue plays from the
@@ -84,38 +85,10 @@ pub fn blizzard_loop_volumes(
     (num11 * volume, (1.0 - num11) * volume, volume)
 }
 
-/// `TileChangeType` (the liquid merge kinds `WorldGen.GetLiquidChangeType`
-/// can return).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TileChangeType {
-    /// water + lava.
-    LavaWater,
-    /// honey + water.
-    HoneyWater,
-    /// honey + lava.
-    HoneyLava,
-    /// shimmer + water.
-    ShimmerWater,
-    /// shimmer + lava.
-    ShimmerLava,
-    /// shimmer + honey.
-    ShimmerHoney,
-}
-
-/// `WorldGen.GetLiquidChangeType`: the two liquid types (0 water, 1 lava,
-/// 2 honey, 3 shimmer) → the merge kind.
-pub fn get_liquid_change_type(liquid_type: i32, other_liquid_type: i32) -> Option<TileChangeType> {
-    let kind = match (liquid_type, other_liquid_type) {
-        (0, 1) | (1, 0) => TileChangeType::LavaWater,
-        (0, 2) | (2, 0) => TileChangeType::HoneyWater,
-        (1, 2) | (2, 1) => TileChangeType::HoneyLava,
-        (0, 3) | (3, 0) => TileChangeType::ShimmerWater,
-        (1, 3) | (3, 1) => TileChangeType::ShimmerLava,
-        (2, 3) | (3, 2) => TileChangeType::ShimmerHoney,
-        _ => return None,
-    };
-    Some(kind)
-}
+/// The `WorldGen.TileChangeType` (`WorldGen.cs:4656-4684`'s enum) merge
+/// kinds — tr-core's liquid engine owns it (its merge events report the
+/// kind, `Liquid.cs:1345`), this module maps it to the cue table.
+pub use tr_core::liquid::TileChangeType;
 
 /// One `PlayLiquidChangeSound` row (`WorldGen.cs:4632-4650`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -126,20 +99,28 @@ pub struct LiquidChangeCue {
     /// (`:233`) for the shimmer arms.
     pub cue: &'static str,
     /// The `LegacySoundPlayer` sound type: 42 = the trackable case
-    /// (`LegacySoundPlayer.cs:1382`).
+    /// (`LegacySoundPlayer.cs:1382`), 19 = the splash case.
     pub sound_type: u32,
     /// `LegacySoundStyle.Variations` (`LegacySoundStyle.cs:14`): 1 for the
-    /// shimmer arms, 3 for the `Liquids*` tracks (`SoundID.cs:1600-1602`).
+    /// shimmer arm, 3 for the `Liquids*` tracks (`SoundID.cs:1600-1602`).
     pub variations: u32,
-    /// `PlaySound`'s `volumeScale` argument (`WorldGen.cs:4644`: the shimmer
-    /// arms pass 4).
+    /// The per-case `num2` multiplier the `LegacySoundPlayer` applies:
+    /// 1.0 for the `Liquids*` tracks, 0.75 for the shimmer arm — case 19's
+    /// `num2 *= 0.75f` for variants 4/5 (`LegacySoundPlayer.cs:880-884`;
+    /// `WorldGen.cs:4644`'s trailing `4` is the Style argument, not a
+    /// volume scale).
     pub volume_scale: f32,
+    /// The shimmer arm's case-19 pitch roll bounds (`Next(-20, 1)`,
+    /// `LegacySoundPlayer.cs:883`); the `Liquids*` rows carry none (the
+    /// style path's `PitchVariance` is the engine's documented gap).
+    pub pitch_roll: Option<(i32, i32)>,
 }
 
 /// `WorldGen.PlayLiquidChangeSound`'s merge table: the honey/lava pairs use
 /// `SoundID.Liquids*` (three variations each, `SoundID.cs:1600-1602`'s
 /// `CreateTrackable(name, 3, SoundType.Ambient)`), the three shimmer arms
-/// share the legacy `PlaySound(19, x, y, 4)` (`WorldGen.cs:4644-4650`).
+/// share the legacy `PlaySound(19, x, y, Style 4)` (`WorldGen.cs:4644-4650`)
+/// — case 19's `SoundSplash[4]`.
 pub fn liquid_change_cue(event: TileChangeType) -> Option<LiquidChangeCue> {
     let cue = match event {
         TileChangeType::LavaWater => LiquidChangeCue {
@@ -147,31 +128,38 @@ pub fn liquid_change_cue(event: TileChangeType) -> Option<LiquidChangeCue> {
             sound_type: 42,
             variations: 3,
             volume_scale: 1.0,
+            pitch_roll: None,
         },
         TileChangeType::HoneyWater => LiquidChangeCue {
             cue: "liquids_honey_water",
             sound_type: 42,
             variations: 3,
             volume_scale: 1.0,
+            pitch_roll: None,
         },
         TileChangeType::HoneyLava => LiquidChangeCue {
             cue: "liquids_honey_lava",
             sound_type: 42,
             variations: 3,
             volume_scale: 1.0,
+            pitch_roll: None,
         },
         TileChangeType::ShimmerWater
         | TileChangeType::ShimmerLava
         | TileChangeType::ShimmerHoney => LiquidChangeCue {
             // `PlaySound(19, x, y, 4)` (`WorldGen.cs:4644-4650`) → case 19 →
             // `SoundSplash[4]` (`LegacySoundPlayer.cs:871`, the Style doubles
-            // as the splash variant). The 4/5 variants cut the volume ×0.75
-            // and jitter the pitch (`:878-884`) — the caller's seam.
+            // as the splash variant). Variant 4 cuts the volume ×0.75 and
+            // jitters the pitch `Next(-20, 1)` (`:880-884`); the playing
+            // guard (`:872-874`) and the 4↔5 cross-guard (`:896-909`) are
+            // the caller's seam.
             cue: "Splash_4",
             sound_type: 19,
             variations: 1,
-            volume_scale: 4.0,
+            volume_scale: 0.75,
+            pitch_roll: Some((-20, 1)),
         },
+        TileChangeType::None => return None,
     };
     Some(cue)
 }
@@ -289,11 +277,18 @@ pub fn critter_sound_cue(
 }
 
 /// The per-thunder-strike cue family (`LegacySoundPlayer.cs:454-476`'s case
-/// 43): the slot pick and the pitch jitter, resolved inside the port's
-/// per-consumer stream like the vanilla's `Main.rand` draws. `slot_roll`
-/// stands in for `Main.rand.Next(SoundThunder.Length)`, `pitch_roll` for
-/// `Main.rand.Next(-10, 11)`.
-pub fn thunder_cue_slot(slot_roll: u32, pitch_roll: i32) -> (&'static str, f32) {
+/// 43): the slot pick re-rolls while the picked instance is still playing —
+/// one initial `Next(6)` draw plus up to six re-rolls inside the loop — then
+/// the pitch jitter `Next(-10, 11) * 0.01f` (`:471`), all resolved inside
+/// the port's per-consumer stream like the vanilla's `Main.rand` draws.
+///
+/// `roll` stands in for `Main.rand.Next(min, max)` (the max exclusive), and
+/// `is_playing(slot)` for `SoundInstanceThunder[slot].State == Playing` —
+/// the engine's live instance table.
+pub fn thunder_cue_pick(
+    roll: &mut dyn FnMut(i32, i32) -> i32,
+    is_playing: &dyn Fn(u32) -> bool,
+) -> (&'static str, u32, f32) {
     // `Sounds/Thunder_0..5` (`LegacySoundPlayer.cs:182-187`).
     const THUNDER: [&str; 6] = [
         "Thunder_0",
@@ -303,7 +298,185 @@ pub fn thunder_cue_slot(slot_roll: u32, pitch_roll: i32) -> (&'static str, f32) 
         "Thunder_4",
         "Thunder_5",
     ];
-    (THUNDER[(slot_roll % 6) as usize], pitch_roll as f32 * 0.01)
+    let mut slot = roll(0, 6).max(0) as u32;
+    // `:456-464`: the re-roll loop — one pass per family entry, so at most
+    // six re-rolls before the pick gives up and steals the slot (`:466-467`'s
+    // Stop() — the engine's sink replacement).
+    for _ in 0..6 {
+        if !is_playing(slot) {
+            break;
+        }
+        slot = roll(0, 6).max(0) as u32;
+    }
+    (
+        THUNDER[slot as usize % 6],
+        slot % 6,
+        roll(-10, 11) as f32 * 0.01,
+    )
+}
+
+/// One zombie-family voice (`LegacySoundPlayer.cs`'s `SoundZombie` bank):
+/// what `SoundEngine.PlaySound(legacy id, x, y, style)` resolves to for the
+/// critter table's cues. `SoundZombie[k]` loads `Sounds/Zombie_<k>`
+/// (`LegacySoundPlayer.cs:214-222`, the 131-entry bank `:112`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CritterVoice {
+    /// The `SoundInstanceZombie` slot the case guards/overwrites
+    /// (`LegacySoundPlayer.cs:112`'s instance array — the engine's per-slot
+    /// playing table).
+    pub slot: usize,
+    /// The `Sounds/Zombie_<slot>.xnb` asset (the bank's name convention,
+    /// `:221`).
+    pub asset: &'static str,
+    /// The per-case `num2` multiplier (`Volume = num2 * mult`).
+    pub volume_mult: f32,
+    /// The per-case `Main.rand.Next(lo, hi) * 0.01f` pitch, in XNA octaves.
+    pub pitch: f32,
+}
+
+/// The legacy zombie-family cases behind the critter table's ids
+/// (`LegacySoundPlayer.cs:1051-1076`'s 44/46 and `:1099-1213`'s
+/// 30/31/32/67/68/69/33), each consuming its `Main.rand` draws in the C#'s
+/// order — slot picks, the rare-swap arms and the pitch — inside the port's
+/// per-NPC stream. `roll(min, max)` stands in for `Main.rand.Next(min, max)`
+/// (max exclusive, min may be negative); `is_playing(slot)` stands in for
+/// `SoundInstanceZombie[slot].State == Playing` (the guard returns null =
+/// silent, `:1064-1069` and friends). `style` carries the critter table's
+/// `Style` argument (case 32's slot — the per-type variation, `:1133`).
+pub fn critter_legacy_voice(
+    legacy_id: u32,
+    style: u32,
+    roll: &mut dyn FnMut(i32, i32) -> i32,
+    is_playing: &dyn Fn(usize) -> bool,
+) -> Option<CritterVoice> {
+    let voice = |slot: usize, volume_mult: f32, pitch: i32| CritterVoice {
+        slot,
+        asset: zombie_asset(slot),
+        volume_mult,
+        pitch: pitch as f32 * 0.01,
+    };
+    match legacy_id {
+        // `:1051-1062`: `Next(106, 109)` slot pick, no guard (the old
+        // instance is overwritten and keeps playing), ×0.2, `Next(-70, 1)`.
+        44 => {
+            let slot = roll(106, 109).max(0) as usize;
+            Some(voice(slot, 0.2, roll(-70, 1)))
+        }
+        // `:1063-1076`: the 110/111 guards, then `Next(110, 112)` and the
+        // rare `Next(300) == 0` swap arm (`Next(3) == 0 → 114`, else
+        // `Next(2) != 0 → 112` else 113); ×0.9, `Next(-10, 11)`.
+        46 => {
+            if is_playing(110) || is_playing(111) {
+                return None;
+            }
+            let mut slot = roll(110, 112).max(0) as usize;
+            if roll(0, 300) == 0 {
+                slot = if roll(0, 3) == 0 {
+                    114
+                } else if roll(0, 2) != 0 {
+                    112
+                } else {
+                    113
+                };
+            }
+            Some(voice(slot, 0.9, roll(-10, 11)))
+        }
+        // `:1099-1124`: `Next(10, 12)`, the rare `Next(300) == 0` arm
+        // re-targets 12 behind the playing guard; ×0.75, and the pitch range
+        // splits on the re-target (`Next(-70, 1)` vs `Next(-40, 21)`).
+        30 => {
+            let mut slot = roll(10, 12).max(0) as usize;
+            if roll(0, 300) == 0 {
+                if is_playing(12) {
+                    return None;
+                }
+                slot = 12;
+            }
+            let pitch = if slot != 12 { roll(-70, 1) } else { roll(-40, 21) };
+            Some(voice(slot, 0.75, pitch))
+        }
+        // `:1125-1132`: the owl's slot 13, no guard, ×0.35, `Next(-40, 21)`.
+        31 => Some(voice(13, 0.35, roll(-40, 21))),
+        // `:1133-1143`: the Style argument is the slot (the per-type
+        // variation), the playing guard blocks a busy slot; ×0.15,
+        // `Next(-70, 26)`.
+        32 => {
+            let slot = style as usize;
+            if is_playing(slot) {
+                return None;
+            }
+            Some(voice(slot, 0.15, roll(-70, 26)))
+        }
+        // `:1144-1155`: `Next(118, 121)` behind the guard; ×0.3,
+        // `Next(-5, 6)`.
+        67 => {
+            let slot = roll(118, 121).max(0) as usize;
+            if is_playing(slot) {
+                return None;
+            }
+            Some(voice(slot, 0.3, roll(-5, 6)))
+        }
+        // `:1156-1167`: `Next(126, 129)` behind the guard; ×0.22,
+        // `Next(-5, 6)`.
+        68 => {
+            let slot = roll(126, 129).max(0) as usize;
+            if is_playing(slot) {
+                return None;
+            }
+            Some(voice(slot, 0.22, roll(-5, 6)))
+        }
+        // `:1168-1179`: `Next(129, 131)` behind the guard; ×0.2,
+        // `Next(-5, 6)`.
+        69 => {
+            let slot = roll(129, 131).max(0) as usize;
+            if is_playing(slot) {
+                return None;
+            }
+            Some(voice(slot, 0.2, roll(-5, 6)))
+        }
+        // `:1200-1213`: the slot-15 frog arm behind the guard; ×0.2,
+        // `Next(-10, 31)`.
+        33 => {
+            if is_playing(15) {
+                return None;
+            }
+            Some(voice(15, 0.2, roll(-10, 31)))
+        }
+        _ => None,
+    }
+}
+
+/// The zombie bank's asset name (`LegacySoundPlayer.cs:221`'s
+/// `Sounds/Zombie_ + k`, the 131-entry bank `:112`) — the slots the critter
+/// table's cases can name.
+fn zombie_asset(slot: usize) -> &'static str {
+    match slot {
+        10 => "Zombie_10",
+        11 => "Zombie_11",
+        12 => "Zombie_12",
+        13 => "Zombie_13",
+        14 => "Zombie_14",
+        15 => "Zombie_15",
+        16 => "Zombie_16",
+        17 => "Zombie_17",
+        18 => "Zombie_18",
+        19 => "Zombie_19",
+        106 => "Zombie_106",
+        107 => "Zombie_107",
+        108 => "Zombie_108",
+        112 => "Zombie_112",
+        113 => "Zombie_113",
+        114 => "Zombie_114",
+        118 => "Zombie_118",
+        119 => "Zombie_119",
+        120 => "Zombie_120",
+        126 => "Zombie_126",
+        127 => "Zombie_127",
+        128 => "Zombie_128",
+        129 => "Zombie_129",
+        130 => "Zombie_130",
+        _ => "Zombie_0",
+    }
 }
 
 /// `Main.cs:58741-58759`'s thunder strike tick (the `currentDayRateIteration
@@ -429,26 +602,6 @@ mod tests {
     }
 
     #[test]
-    fn liquid_change_types_and_cues() {
-        assert_eq!(get_liquid_change_type(0, 1), Some(TileChangeType::LavaWater));
-        assert_eq!(get_liquid_change_type(1, 0), Some(TileChangeType::LavaWater));
-        assert_eq!(get_liquid_change_type(0, 2), Some(TileChangeType::HoneyWater));
-        assert_eq!(get_liquid_change_type(1, 2), Some(TileChangeType::HoneyLava));
-        assert_eq!(get_liquid_change_type(0, 3), Some(TileChangeType::ShimmerWater));
-        assert_eq!(get_liquid_change_type(3, 2), Some(TileChangeType::ShimmerHoney));
-        assert_eq!(get_liquid_change_type(0, 0), None);
-        let lava_water = liquid_change_cue(TileChangeType::LavaWater).unwrap();
-        assert_eq!(lava_water.cue, "liquids_water_lava");
-        assert_eq!(lava_water.sound_type, 42);
-        assert_eq!(lava_water.variations, 3);
-        let shimmer = liquid_change_cue(TileChangeType::ShimmerWater).unwrap();
-        assert_eq!(shimmer.cue, "Splash_4");
-        assert_eq!(shimmer.sound_type, 19);
-        assert_eq!(shimmer.variations, 1);
-        assert_eq!(shimmer.volume_scale, 4.0);
-    }
-
-    #[test]
     fn thunder_position_flips_and_clamps_y() {
         // thunderDistance 2 → ±30 px around the centre, y untouched high up.
         let (x, y) = thunder_strike_position((100.0, 100.0), 2.0, false, 5000.0);
@@ -492,14 +645,240 @@ mod tests {
         );
     }
 
-    #[test]
-    fn thunder_cue_slot_wraps_the_six_family() {
-        for slot in 0..12u32 {
-            let (cue, _) = thunder_cue_slot(slot, 0);
-            assert_eq!(cue, format!("Thunder_{}", slot % 6));
+    /// A signed `Main.rand.Next(min, max)` stand-in over [`Rolls`]: the same
+    /// call-index pattern, so a gate can force an exact draw to a value.
+    fn signed_roll<'a>(
+        state: &'a mut Rolls,
+        forced: &'a dyn Fn(i32, i32, u32) -> Option<i32>,
+    ) -> impl FnMut(i32, i32) -> i32 + 'a {
+        move |lo: i32, hi: i32| {
+            let call = state.calls;
+            state.calls += 1;
+            if let Some(v) = forced(lo, hi, call) {
+                return v;
+            }
+            lo + (1 % (hi - lo).max(1)) as i32
         }
-        let (_, pitch) = thunder_cue_slot(0, -7);
+    }
+
+    #[test]
+    fn thunder_cue_pick_wraps_the_six_family() {
+        // A free engine: one slot draw + the pitch draw, the slot cycles.
+        for slot in 0..6u32 {
+            let mut state = Rolls::new();
+            let (cue, picked, _) = thunder_cue_pick(
+                &mut signed_roll(&mut state, &|lo, hi, _| {
+                    Some(lo + (slot as i32 % (hi - lo).max(1)))
+                }),
+                &|_| false,
+            );
+            assert_eq!(cue, format!("Thunder_{slot}"));
+            assert_eq!(picked, slot);
+            assert_eq!(state.calls, 2, "one slot draw + one pitch draw");
+        }
+        // The pitch jitter is `Next(-10, 11) * 0.01`.
+        let mut state = Rolls::new();
+        let (_, _, pitch) = thunder_cue_pick(
+            &mut signed_roll(&mut state, &|lo, hi, call| {
+                if call == 1 {
+                    Some(-7)
+                } else {
+                    Some(lo)
+                }
+            }),
+            &|_| false,
+        );
         assert!((pitch + 0.07).abs() < 1e-6);
+    }
+
+    #[test]
+    fn thunder_cue_pick_rerolls_while_the_slot_is_playing() {
+        // `LegacySoundPlayer.cs:456-464`: every draw lands on a playing slot
+        // for the first five re-rolls, then the engine frees up — the pick
+        // takes the sixth draw's slot. 1 initial + 5 re-rolls + the pitch.
+        let mut state = Rolls::new();
+        let (cue, picked, _) = thunder_cue_pick(
+            &mut signed_roll(&mut state, &|lo, hi, call| {
+                Some(lo + ((call.min(4) as i32) % (hi - lo).max(1)))
+            }),
+            &|slot| slot < 4,
+        );
+        assert_eq!(cue, "Thunder_4");
+        assert_eq!(picked, 4);
+        assert_eq!(state.calls, 6, "1 initial + 4 re-rolls + the pitch");
+        // All six slots busy for the whole loop: the pick stops after the
+        // six re-rolls (1 + 6 slot draws) and steals the last pick's slot
+        // (`:466-467`'s Stop()), then still draws the pitch.
+        let mut state = Rolls::new();
+        let (cue, picked, _) = thunder_cue_pick(
+            &mut signed_roll(&mut state, &|lo, hi, call| {
+                Some(lo + (((call % 6) as i32) % (hi - lo).max(1)))
+            }),
+            &|_| true,
+        );
+        assert_eq!(cue, "Thunder_0", "call 6 → (6 % 6) = 0");
+        assert_eq!(picked, 0);
+        assert_eq!(state.calls, 8, "7 slot draws + the pitch");
+    }
+
+    #[test]
+    fn liquid_change_cues_match_the_case_tables() {
+        // The trackable pairs: `Sounds/Custom/<name>_<0..2>`, volume 1, no
+        // legacy pitch roll (`SoundID.cs:1600-1602`).
+        let lava_water = liquid_change_cue(TileChangeType::LavaWater).unwrap();
+        assert_eq!(lava_water.cue, "liquids_water_lava");
+        assert_eq!(lava_water.sound_type, 42);
+        assert_eq!(lava_water.variations, 3);
+        assert_eq!(lava_water.volume_scale, 1.0);
+        assert_eq!(lava_water.pitch_roll, None);
+        // The shimmer arm: `PlaySound(19, x, y, Style 4)` → case 19's
+        // `SoundSplash[4]`, volume ×0.75 and `Next(-20, 1)` pitch
+        // (`LegacySoundPlayer.cs:871-884`).
+        let shimmer = liquid_change_cue(TileChangeType::ShimmerWater).unwrap();
+        assert_eq!(shimmer.cue, "Splash_4");
+        assert_eq!(shimmer.sound_type, 19);
+        assert_eq!(shimmer.variations, 1);
+        assert_eq!(shimmer.volume_scale, 0.75);
+        assert_eq!(shimmer.pitch_roll, Some((-20, 1)));
+        assert!(liquid_change_cue(TileChangeType::None).is_none());
+    }
+
+    #[test]
+    fn critter_voices_resolve_the_zombie_family_in_order() {
+        // Case 44 (`:1051-1062`): `Next(106, 109)` → the slot asset, no
+        // guard, ×0.2, `Next(-70, 1) * 0.01`.
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            44,
+            1,
+            &mut signed_roll(&mut state, &|lo, hi, call| {
+                if call == 0 {
+                    Some(107)
+                } else if call == 1 {
+                    Some(-30)
+                } else {
+                    Some(lo)
+                }
+            }),
+            &|_| unreachable!("case 44 has no guard"),
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 107);
+        assert_eq!(voice.asset, "Zombie_107");
+        assert_eq!(voice.volume_mult, 0.2);
+        assert_eq!(voice.pitch, -30.0f32 * 0.01);
+        assert_eq!(state.calls, 2);
+
+        // Case 46 (`:1063-1076`): the 110/111 guards return null; then the
+        // slot draw, the rare `Next(300)` swap (`Next(3) == 0 → 114`) and
+        // the pitch — four draws in the C#'s order when the swap fires.
+        let mut state = Rolls::new();
+        assert!(
+            critter_legacy_voice(46, 1, &mut signed_roll(&mut state, &|_, _, _| Some(0)), &|s| {
+                s == 111
+            })
+            .is_none(),
+            "a busy 111 blocks the whole cue"
+        );
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            46,
+            1,
+            &mut signed_roll(&mut state, &|lo, hi, call| match call {
+                0 => Some(110), // Next(110, 112)
+                1 => Some(0),   // Next(300) == 0 → swap
+                2 => Some(1),   // Next(3) == 1 → the Next(2) arm
+                3 => Some(1),   // Next(2) != 0 → 112
+                _ => Some(-10), // the pitch
+            }),
+            // The guards run before the pick: a busy 110 or 111 blocks the
+            // cue outright (`:1064-1069`) — the first block pins that. Here
+            // both are free.
+            &|_| false,
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 112);
+        assert_eq!(voice.asset, "Zombie_112");
+        assert_eq!(voice.volume_mult, 0.9);
+        assert_eq!(state.calls, 5, "slot + Next(300) + Next(3) + Next(2) + pitch");
+
+        // Case 32 (`:1133-1143`): the Style is the slot, behind the guard;
+        // ×0.15, `Next(-70, 26)`.
+        let mut state = Rolls::new();
+        assert!(
+            critter_legacy_voice(32, 17, &mut signed_roll(&mut state, &|_, _, _| Some(0)), &|s| s
+                == 17)
+            .is_none(),
+            "a busy style slot blocks the cue"
+        );
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            32,
+            18,
+            &mut signed_roll(&mut state, &|lo, hi, call| {
+                if call == 0 {
+                    Some(26 - 1)
+                } else {
+                    Some(lo)
+                }
+            }),
+            &|s| s == 14,
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 18);
+        assert_eq!(voice.asset, "Zombie_18");
+        assert_eq!(voice.volume_mult, 0.15);
+        assert!((voice.pitch - 0.25).abs() < 1e-6);
+        assert_eq!(state.calls, 1);
+
+        // Case 30 (`:1099-1124`): `Next(10, 12)` without the rare arm keeps
+        // the `Next(-70, 1)` pitch; ×0.75.
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            30,
+            1,
+            &mut signed_roll(&mut state, &|lo, hi, call| match call {
+                0 => Some(11),
+                1 => Some(299), // Next(300) != 0 → no swap
+                _ => Some(-70),
+            }),
+            &|s| s == 12,
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 11);
+        assert_eq!(voice.asset, "Zombie_11");
+        assert_eq!(voice.volume_mult, 0.75);
+        assert!((voice.pitch + 0.7).abs() < 1e-6);
+
+        // Case 33 (`:1200-1213`): slot 15 behind the guard; ×0.2,
+        // `Next(-10, 31)`.
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            33,
+            1,
+            &mut signed_roll(&mut state, &|lo, hi, call| {
+                if call == 0 {
+                    Some(31 - 1)
+                } else {
+                    Some(lo)
+                }
+            }),
+            // The busy-15 block is the same shape the case-32 block pins.
+            &|_| false,
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 15);
+        assert_eq!(voice.volume_mult, 0.2);
+        assert!((voice.pitch - 0.30).abs() < 1e-6);
+
+        // An id outside the family resolves to nothing.
+        let mut state = Rolls::new();
+        assert!(
+            critter_legacy_voice(19, 4, &mut signed_roll(&mut state, &|_, _, _| Some(0)), &|_| {
+                false
+            })
+            .is_none()
+        );
     }
 
     #[test]

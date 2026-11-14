@@ -68,7 +68,18 @@ pub struct LiquidSystem {
     /// (`Liquid.cs:1333`/`:1447`). The port's settlement pass never runs
     /// during generation yet (R-12-5 plumbs it), so it stays `false`.
     generating: bool,
+    /// The `WorldGen.PlayLiquidChangeSound` events (`Liquid.cs:1345-1347`,
+    /// S1-E-25): one row per live-game merge tile — `(kind, x, y)` in tile
+    /// coordinates, drained by the audio caller after the pass. The C# plays
+    /// the cue inline (`!Main.gameMenu && !isGeneratingOrLoadingWorld`);
+    /// the port's engine is pure, so the caller's seam carries it.
+    merge_events: Vec<(TileChangeType, i32, i32)>,
 }
+
+/// One `PlayLiquidChangeSound` row (`WorldGen.cs:4632-4650`): the merge kind
+/// and the merge-tile's tile coordinates (the C#'s `x`/`y`; the sound lands
+/// at `x * 16 + 8, y * 16 + 8` — `count` is the default 1).
+pub type LiquidMergeEvent = (TileChangeType, i32, i32);
 
 impl LiquidSystem {
     /// `Liquid.maxLiquid` (`Liquid.cs:1672`) — the active-list capacity the
@@ -111,11 +122,19 @@ impl LiquidSystem {
             quick_fall: false,
             generating: false,
             remix_world_gen: false,
+            merge_events: Vec::new(),
         }
     }
 
     pub fn active_len(&self) -> usize {
         self.active.len()
+    }
+
+    /// The `PlayLiquidChangeSound` rows this pass queued (`Liquid.cs:1345-1347`),
+    /// drained by the audio caller — the C# plays them inline during the
+    /// merge (`!Main.gameMenu && !isGeneratingOrLoadingWorld`).
+    pub fn drain_merge_events(&mut self) -> Vec<LiquidMergeEvent> {
+        std::mem::take(&mut self.merge_events)
     }
 
     pub fn buffered_len(&self) -> usize {
@@ -630,10 +649,15 @@ impl LiquidSystem {
         create_merge_tiles_during_gen: bool,
     ) {
         // `WorldGen.GetLiquidChangeType` (`WorldGen.cs:4656-4684`) — the
-        // change kind for the sound and the MP message; unused until those
-        // land.
-        let _liquid_change_type =
-            get_liquid_change_type(this_liquid_type, liquid_merge_type);
+        // change kind the merge reports. The live-game arm queues
+        // `PlayLiquidChangeSound` (`Liquid.cs:1345-1347`'s
+        // `!Main.gameMenu && !isGeneratingOrLoadingWorld` gate — the port's
+        // settlement pass only runs in-game, so `!generating` is the gate);
+        // the generation arm stays silent.
+        let liquid_change_type = get_liquid_change_type(this_liquid_type, liquid_merge_type);
+        if !self.generating {
+            self.merge_events.push((liquid_change_type, x, y));
+        }
         if self.generating && !create_merge_tiles_during_gen {
             let mut liquid_type: i32 = match liquid_merge_tile_type {
                 229 => 0,
@@ -1086,6 +1110,49 @@ mod tests {
         sys.liquid_check(&mut w, 4, 4, 0, false);
         assert_eq!(w.tile(4, 5).unwrap().kind, 56, "the stone cell was merged into");
         assert_eq!(w.tile(4, 4).unwrap().liquid, 0);
+    }
+
+    #[test]
+    fn the_live_merge_queues_its_sound_and_generation_stays_silent() {
+        // `Liquid.cs:1345-1347`: the runtime branch plays
+        // `PlayLiquidChangeSound(liquidChangeType, x, y)` — the same
+        // container-merge fixture as above reports
+        // `(LavaWater, 4, 5)` once, then the queue drains empty; the
+        // generation arm (`:1333`'s strip branch) queues nothing.
+        let mut w = basin(9, 8);
+        let chest = w.index(4, 4);
+        w.tiles[chest] = Tile {
+            kind: 21,
+            ..Default::default()
+        };
+        w.tiles[chest].flags |= FLAG_ACTIVE;
+        w.tiles[chest].liquid = 30;
+        let stone = w.index(4, 5);
+        w.tiles[stone] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[stone].flags |= FLAG_ACTIVE;
+        w.tiles[stone].liquid = 30;
+        set_kind(&mut w.tiles[stone], 1);
+        let mut sys = LiquidSystem::new(&w);
+        sys.liquid_check(&mut w, 4, 4, 0, false);
+        assert_eq!(
+            sys.drain_merge_events(),
+            vec![(TileChangeType::LavaWater, 4, 5)],
+            "the live merge reports its liquid-change sound"
+        );
+        assert!(sys.drain_merge_events().is_empty(), "drained");
+
+        // The generation arm: `isGeneratingOrLoadingWorld` blocks the sound
+        // (`Liquid.cs:1345`'s gate) — the same merge queues nothing.
+        let mut sys = LiquidSystem::new(&w);
+        sys.generating = true;
+        sys.liquid_check(&mut w, 4, 4, 0, false);
+        assert!(
+            sys.drain_merge_events().is_empty(),
+            "generation never queues a liquid-change sound"
+        );
     }
 
     #[test]
