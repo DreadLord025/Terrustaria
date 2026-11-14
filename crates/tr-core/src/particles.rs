@@ -30,6 +30,33 @@ use crate::unified_random::UnifiedRandom;
 use crate::world::World;
 use glam::Vec2;
 
+/// The draw seam the pool rolls on (S1-E-1 phase 2): the C# `Next`/`NextFloat`
+/// conversions (`UnifiedRandom.cs:120-141`) over the **caller's** stream —
+/// `Dust.NewDust` rolls `Main.rand`, and the port's clients keep their own
+/// per-consumer streams (the minecart's and the sandstorm's splitmix state)
+/// feeding them straight to [`DustPool::new_dust`]. One draw = one stream
+/// step; no new streams or instances are created.
+pub trait DustRng {
+    /// `Next(max)` — `[0, max)`.
+    fn next_max(&mut self, max: i32) -> i32;
+    /// `Next(min, max)` — `[min, max)`.
+    fn next_range(&mut self, min: i32, max: i32) -> i32;
+    /// `Utils.NextFloat` (`Utils.cs:1198-1201`).
+    fn next_float(&mut self) -> f32;
+}
+
+impl DustRng for UnifiedRandom {
+    fn next_max(&mut self, max: i32) -> i32 {
+        UnifiedRandom::next_max(self, max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        UnifiedRandom::next_range(self, min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        UnifiedRandom::next_float(self)
+    }
+}
+
 /// The refuse sentinel: `NewDust` returns 6000 when no slot is taken
 /// (`Dust.cs:79` and passim); `Main.dust[6000]` exists but is never scanned
 /// (`Main.cs:66985`, scan `Dust.cs:103`).
@@ -241,11 +268,13 @@ impl DustPool {
 
     /// `Dust.NewDust` (`Dust.cs:75-256`) — the only allocator, verbatim:
     /// guards → cull → scan + pressure bands → default block → ChildSafety →
-    /// per-type tweaks. Returns the slot index, or [`DUST_SENTINEL`].
+    /// per-type tweaks. Returns the slot index, or [`DUST_SENTINEL`]. The
+    /// pressure bands and the default block roll the caller's stream (see
+    /// [`DustRng`]).
     #[allow(clippy::too_many_arguments)]
-    pub fn new_dust(
+    pub fn new_dust<R: DustRng>(
         &mut self,
-        rng: &mut UnifiedRandom,
+        rng: &mut R,
         ctx: &SpawnCtx,
         world: &World,
         position: Vec2,
