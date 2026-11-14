@@ -3339,9 +3339,30 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // M5-HARDFORCE, blood moon M2-WEATHER, zones M5-BIOME); the
                 // candle zones ride the M2-BUFF-5 scene scan
                 // (`SceneMetrics.CalculateZones`, `:706-708`).
+                // `Player.UpdateBiomes` (`Player.cs:16692-16730`): the
+                // player's zone flags come from the scene metrics, and the
+                // spawn gates read them (`NPC.SetSpawnFlags` →
+                // `GetSpawnRate`, `NPC.cs:311-313`).
                 flags: spawner::SpawnFlags {
-                    zone_water_candle: app.scene_metrics.water_candle_count > 0,
-                    zone_peace_candle: app.scene_metrics.peace_candle_count > 0,
+                    zone_dungeon: app.scene_metrics.zone_dungeon,
+                    zone_jungle: app.scene_metrics.zone_jungle,
+                    // `Player.ZoneEvil` = the corrupt or crimson zone.
+                    zone_evil: app.scene_metrics.zone_corrupt
+                        || app.scene_metrics.zone_crimson,
+                    zone_temple: app.scene_metrics.zone_lihzhard_temple,
+                    zone_underground_desert: app.scene_metrics.zone_underground_desert,
+                    zone_meteor: app.scene_metrics.zone_meteor,
+                    // The deep-underground band (`NPC.cs:3799`): below the
+                    // surface, above the rock layer's midpoint, and none of
+                    // the snow/crimson/corrupt/hallow zones.
+                    zone_hallow_deep: !app.scene_metrics.zone_snow
+                        && !app.scene_metrics.zone_crimson
+                        && !app.scene_metrics.zone_corrupt
+                        && !app.scene_metrics.zone_hallow,
+                    zone_graveyard: app.scene_metrics.zone_graveyard,
+                    zone_sandstorm: app.scene_metrics.zone_sandstorm,
+                    zone_water_candle: app.scene_metrics.zone_water_candle,
+                    zone_peace_candle: app.scene_metrics.zone_peace_candle,
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,
@@ -3485,7 +3506,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     day_time: day_time,
                     player_life_max: inv_max_hp,
                     underworld_for_bats: (camera_y / 16.0) as i32 > height - 200,
+                    // The same player-zone chain (`Player.UpdateBiomes`).
                     flags: spawner::SpawnFlags {
+                        zone_dungeon: app.scene_metrics.zone_dungeon,
+                        zone_jungle: app.scene_metrics.zone_jungle,
+                        zone_evil: app.scene_metrics.zone_corrupt
+                            || app.scene_metrics.zone_crimson,
+                        zone_temple: app.scene_metrics.zone_lihzhard_temple,
+                        zone_underground_desert: app.scene_metrics.zone_underground_desert,
+                        zone_meteor: app.scene_metrics.zone_meteor,
+                        zone_hallow_deep: !app.scene_metrics.zone_snow
+                            && !app.scene_metrics.zone_crimson
+                            && !app.scene_metrics.zone_corrupt
+                            && !app.scene_metrics.zone_hallow,
+                        zone_graveyard: app.scene_metrics.zone_graveyard,
+                        zone_sandstorm: app.scene_metrics.zone_sandstorm,
                         zone_water_candle: water_candle_count > 0,
                         zone_peace_candle: peace_candle_count > 0,
                         ..spawner::SpawnFlags::default()

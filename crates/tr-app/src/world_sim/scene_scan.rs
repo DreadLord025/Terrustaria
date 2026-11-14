@@ -93,6 +93,10 @@ pub(crate) fn scan_scene_at(
         raining,
         sandstorm_happening,
     );
+    // `CalculateZones`' wall terms (`SceneMetrics.cs:694-699`): the centre
+    // tile's wall — the temple/granite/marble/hive/gem-cave zones and the
+    // underground desert.
+    metrics.calculate_wall_zones(world);
     metrics
 }
 
@@ -138,10 +142,12 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
             {
                 metrics.ocean_sand_tile_count += 1;
             }
-            // The M6-AUDIO-2 music-box arm (`SceneMetrics.cs:4489-4501`):
-            // tile 139 with `frameX >= 36` decodes `frameY / 36` into the
-            // box id; 100 is the silent box. (The vanilla scans the VISUAL
-            // screen rect; the port's 169x124 window stands in.)
+            // The M6-AUDIO-2 music-box arm (`SceneMetrics.cs:468-480`): tile
+            // 139 with `frameX >= 36` decodes `frameY / 36` into the box id;
+            // 100 is the silent box. The arm sits INSIDE `ScanTiles` — the
+            // C# scans the same 169x124 zone window the port scans (the
+            // research's "visual screen rect" note pointed at a stale line
+            // reference; the port's window is verbatim).
             if tile.kind == 139 && tile.frame_x >= 36 {
                 let num = tile.frame_y as i32 / 36;
                 if num == 100 {

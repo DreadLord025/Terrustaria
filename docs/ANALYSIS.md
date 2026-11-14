@@ -12240,3 +12240,34 @@ is the tile-space identity); the minimap call (`Main.cs:55703`, with the
 clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
 their own passes; the hover text feeds the map's text line through
 `ui::text::hud_text` (the C# `ref text`).
+
+## The scene-metrics zone chain (S1-L-1, 2026-11-14)
+
+`SceneMetrics.CalculateZones` (`SceneMetrics.cs:660-710`) computes more
+than the port carried: the depth bands (`ZoneSkyHeight`,
+`ZoneOverworldHeight`, `BelowSurface`, `ZoneDirtLayerHeight`,
+`ZoneRockLayerHeight`, `ZoneUnderworldHeight`, `:672-677`), the centre
+tile's wall zones (`ZoneLihzhardTemple` 87, `ZoneGranite` 184/180,
+`ZoneMarble` 183/178, `ZoneHive` 108/86, `ZoneGemCave` 48..53 and
+`ZoneUndergroundDesert` — the desert + under the surface + a
+sandstone/hardened-sand/223 wall + no `Main.wallHouse` wall, `:694-699`)
+and the candle zones (`:706-708`). The port's `SceneMetrics` now carries
+them, `SceneMetrics::calculate_wall_zones` reads the centre tile, and
+`Player.UpdateBiomes`' chain (`Player.cs:16692-16730`) feeds the spawner's
+`SpawnFlags`: before this, the dungeon/jungle/evil/temple/
+underground-desert/meteor/graveyard/sandstorm arms in `GetSpawnRate`
+(`NPC.cs:473-810`) were constants-off, so every zone-gated spawn rate
+multiplier was dead.
+
+Scope notes: the per-tile `SetSpawnFlagsForChosenTile`
+(`NPC.cs:1050-1278` — the marble/granite proximity and the dual-dungeons
+rescan) rides the per-candidate work; the moon-tower proximity zones
+(`CloseEnoughTo*Tower`) ride the pillar/tower systems; `ZoneEvil` is the
+port's merged corrupt-or-crimson flag (the C# keeps the two apart in some
+arms).
+
+Doc-truth fix: the research's music-box deviation (research/14's D9 — "the
+vanilla scans the VISUAL screen rect") pointed at a stale line reference.
+The arm is `SceneMetrics.cs:468-480`, INSIDE `ScanTiles` — the C# scans the
+same 169×124 zone window the port scans, so the port's window is verbatim;
+the port's comment now says so.
