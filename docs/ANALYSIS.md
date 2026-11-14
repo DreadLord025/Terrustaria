@@ -1943,17 +1943,25 @@ ported the remaining three and verified the fourth:
 
 Deviations (deliberate):
 
-* The tracked-sound layer (`ActiveSound`/`SlotId`/`SoundPlayer.PlayTrackedSound`) is not
-  modelled; each emitter owns its sink or cue directly. The observable behaviour (start
-  conditions, volume ramp, split, stop) matches; the C# GC of a dead slot has nothing to
-  map to (a sink never dies in the port).
+* The tracked-sound layer is ported (S1-E-23: `tracked_sound.rs`'s
+  `SoundPlayer`/`ActiveSound` over `tr_core::slot`'s `SlotVector(4096)`; the
+  SceneState blizzard loops ride it verbatim). Two engine seams remain: the
+  per-frame **re-pan** is baked at creation (XNA re-pans the live instance
+  every `ActiveSound.Update`, `ActiveSound.cs:148` — a rodio sink cannot; the
+  volume leg is live), and `SoundInstanceGarbageCollector` maps to nothing
+  (rodio drops its finished sources). The C#'s try/catch around the blizzard
+  block permanently disables the emitter when a play fails (`:191-193`'s
+  `_disabledBlizzardSound`); the port retries next frame instead.
 * The pitch mechanism is a rate resample (`2^pitch`, nearest frame), not XNA's DSP —
   the audible effect of the small jitter rolls (±0.07 octaves) is the intended one.
-* The liquid-change garnish rolls (the trackable variation pick and the splash pitch)
-  ride the engine's `LegacySoundStyle.Random` stand-in (`audio.rs::style_random`,
-  `UnifiedRandom` seeded 1): the C# draws them from a `Environment.TickCount`-seeded
-  static (`LegacySoundStyle.cs:9`) and — for the splash pitch — from `Main.rand` mid
-  liquid-pass; the port's liquid engine is pure, so no world stream is touched.
+* The engine's two static style streams are `UnifiedRandom` stand-ins seeded 1:
+  `audio.rs::style_random` (`LegacySoundStyle.Random`, the variation picks) and
+  `audio.rs::sound_style_random` (`SoundStyle._random`, the tracked `GetRandomPitch`
+  rolls). The C# seeds both with `Environment.TickCount` (`LegacySoundStyle.cs:9`,
+  `SoundStyle.cs:8`) — unobservable streams. The liquid-change splash pitch rides
+  `style_random` too: the C# draws it from `Main.rand` mid liquid-pass
+  (`LegacySoundPlayer.cs:883`), and the port's liquid engine is pure, so no world
+  stream is touched.
 * The thunder slot/pitch rolls and the critter rolls come from the owning system's
   stream (the WEATHER-1/WEATHER-2 per-consumer convention), not the shared `Main.rand`
   the C# draws.

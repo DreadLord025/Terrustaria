@@ -123,15 +123,11 @@ const LIQUID_CHANGE_CUES: &[&str] = &[
     "liquids_honey_lava_2",
 ];
 
-/// The SceneState ambient loops (`SceneState.cs:189-253`): the blizzard's
-/// outside (`blizzard_strong_loop`, `SoundID.cs:1599`'s `WithVolume(0.5f)`)
-/// and inside-building tracks. Unlike the positional SFX above these are
-/// global (no position → no attenuation, `ActiveSound.cs:140-152`) and their
-/// volume is re-set every frame by [`Audio::set_ambient_loop`]. The second
-/// tuple field is the `LegacySoundStyle.Volume` the engine multiplies in
-/// (`ActiveSound.DetermineIntendedVolume` `:155-165`).
-const AMBIENT_LOOP_CUES: &[(&str, f32)] =
-    &[("blizzard_strong_loop", 0.5), ("blizzard_inside_building_loop", 1.0)];
+/// The trackable cues the tracked-sound layer plays by name
+/// (`Sounds/Custom/<cue>.xnb`, `LegacySoundPlayer.cs:257`; S1-E-23): the
+/// SceneState blizzard loops (`SoundID.cs:1598-1599`) — the styles carry
+/// their own volume (`ambient_sound::blizzard_strong_loop_style`).
+const TRACKED_CUES: &[&str] = &["blizzard_strong_loop", "blizzard_inside_building_loop"];
 
 fn sound_type(cue: &str) -> u32 {
     SFX_CUES
@@ -185,14 +181,17 @@ pub struct Audio {
     liquid_loops: [Option<rodio::Sink>; 2],
     /// The decoded SceneState ambient loops (`blizzard_strong_loop` /
     /// `blizzard_inside_building_loop`, from `Sounds/Custom/<name>.xnb` —
-    /// the trackable path, `LegacySoundPlayer.cs:257`).
-    ambient_loop_cues: HashMap<&'static str, (u16, u32, Vec<i16>, f32)>,
-    /// One live sink per [`AMBIENT_LOOP_CUES`] entry, created on the first
-    /// non-zero volume — the SceneState `PlayTrackedSound` +
-    /// re-create-if-dead policy (`SceneState.cs:197-228`). A sink muted at
-    /// volume 0 keeps playing, like the vanilla instance the `SlotId` keeps
-    /// alive (`:231-246`).
-    ambient_loops: HashMap<&'static str, rodio::Sink>,
+    /// the trackable path, `LegacySoundPlayer.cs:257`). The blizzard loops
+    /// play through the tracked layer (S1-E-23) — the styles are
+    /// `ambient_sound::blizzard_*_style` and the slots live on the port's
+    /// `SceneState`.
+    tracked: crate::tracked_sound::SoundPlayer,
+    /// `SoundStyle._random` (`SoundStyle.cs:8-9`): the static stream
+    /// `GetRandomPitch` draws from (`:40-43`) — distinct from
+    /// [`Audio::style_random`] (`LegacySoundStyle.Random`). The C# seeds
+    /// both with `Environment.TickCount` (unobservable); the port seeds a
+    /// fixed 1 (ANALYSIS, S1-E-23).
+    sound_style_random: tr_core::unified_random::UnifiedRandom,
     /// The decoded `Sounds/Liquid_{0,1}` loops (channels, rate, samples).
     liquid_cues: [Option<(u16, u32, Vec<i16>)>; 2],
     /// Per-frame `Main.Camera.Center` + the volume sliders (see [`crate::sound`]).
@@ -253,10 +252,11 @@ impl Audio {
                     Err(e) => log::debug!("sound {name}: {e:#}"),
                 }
             }
-            // The liquid-change trackables: `Sounds/Custom/<name>_<n>.xnb`
-            // (`LegacySoundPlayer.cs:257`'s trackable path, S1-E-25).
+            // The liquid-change trackables + the tracked layer's cues:
+            // `Sounds/Custom/<name>[_<n>].xnb` (`LegacySoundPlayer.cs:257`'s
+            // trackable path, S1-E-25/S1-E-23).
             if let Some(custom) = content.map(|c| c.join("Sounds").join("Custom")) {
-                for name in LIQUID_CHANGE_CUES {
+                for name in LIQUID_CHANGE_CUES.iter().chain(TRACKED_CUES.iter()) {
                     let path = custom.join(format!("{name}.xnb"));
                     match load_sound(&path) {
                         Ok(s) => {
@@ -267,7 +267,7 @@ impl Audio {
                                 .collect();
                             cues.insert(*name, (s.channels, s.sample_rate, samples));
                         }
-                        Err(e) => log::debug!("liquid change cue {name}: {e:#}"),
+                        Err(e) => log::debug!("trackable cue {name}: {e:#}"),
                     }
                 }
             }
@@ -292,38 +292,15 @@ impl Audio {
             }
         }
         log::info!("audio: {} PCM cues loaded", cues.len());
-        // The SceneState loops: `Sounds/Custom/<name>.xnb`, the trackable
-        // path (`LegacySoundPlayer.cs:257`), global PCM like the liquid ones.
-        let mut ambient_loop_cues: HashMap<&'static str, (u16, u32, Vec<i16>, f32)> =
-            HashMap::new();
-        if let Some(dir) = content.map(|c| c.join("Sounds").join("Custom")) {
-            for (name, style_volume) in AMBIENT_LOOP_CUES {
-                let path = dir.join(format!("{name}.xnb"));
-                match load_sound(&path) {
-                    Ok(s) => {
-                        let samples = s
-                            .data
-                            .chunks_exact(2)
-                            .map(|b| i16::from_le_bytes([b[0], b[1]]))
-                            .collect();
-                        ambient_loop_cues.insert(
-                            name,
-                            (s.channels, s.sample_rate, samples, *style_volume),
-                        );
-                    }
-                    Err(e) => log::debug!("ambient loop {name}: {e:#}"),
-                }
-            }
-        }
         Self {
             _stream: stream,
             handle,
             cues,
             played: Default::default(),
             liquid_loops: [None, None],
+            tracked: crate::tracked_sound::SoundPlayer::default(),
+            sound_style_random: tr_core::unified_random::UnifiedRandom::new(1),
             liquid_cues,
-            ambient_loop_cues,
-            ambient_loops: HashMap::new(),
             listener: Listener {
                 camera_center: (0.0, 0.0),
                 sound_volume: 1.0,
@@ -590,47 +567,157 @@ impl Audio {
         }
     }
 
-    /// One of the SceneState ambient loops (`SceneState.cs:189-228`): the
-    /// caller passes the `ActiveSound.Volume` the C# stores every frame, the
-    /// engine half here mirrors `ActiveSound.DetermineIntendedVolume`
-    /// (`ActiveSound.cs:155-165`) — a global cue has no attenuation, so the
-    /// final gain is `clamp(Style.Volume × volume × ambientVolume, 0, 1)`.
-    ///
-    /// Start/stop policy = the C# `GetActiveSound`/`PlayTrackedSound` pair
-    /// (`:197-228`): a sink is created on the first non-zero volume and kept
-    /// afterwards, so a fade-out and back continues the same instance (the
-    /// C# mutes the live instance at volume 0 and only drops the `SlotId`
-    /// once it is gone).
-    pub fn set_ambient_loop(&mut self, name: &'static str, volume: f32) {
-        let Some((channels, rate, samples, style_volume)) =
-            self.ambient_loop_cues.get(name).cloned()
-        else {
-            return;
+    /// `SoundEngine.PlayTrackedSound(SoundStyle)`'s global arm
+    /// (`SoundEngine.cs:114-122` + `SoundPlayer.cs:44-52`): a global
+    /// tracked play — no position, so `ActiveSound` skips the attenuation
+    /// and the pan (`ActiveSound.cs:63-66`). S1-E-23.
+    pub fn play_tracked_global(&mut self, style: crate::tracked_sound::TrackedStyle) -> tr_core::slot::SlotId {
+        self.play_tracked_inner(style, None, Default::default(), false, None)
+    }
+
+    /// `SoundEngine.PlayTrackedSound(SoundStyle, Vector2, overrides)`
+    /// (`SoundEngine.cs:103-112` + `SoundPlayer.cs:11-23`): the positioned
+    /// tracked play — the 10 000-px screen-centre guard
+    /// (`SoundPlayer.cs:17-20`'s `DistanceSquared > 100000000`) and the
+    /// `MaxTrackedInstances` cap (`SoundEngine.cs:104-107`) run before the
+    /// pool add. S1-E-23.
+    pub fn play_tracked(
+        &mut self,
+        style: crate::tracked_sound::TrackedStyle,
+        x: f32,
+        y: f32,
+        overrides: crate::tracked_sound::SoundPlayOverrides,
+    ) -> tr_core::slot::SlotId {
+        // `SoundPlayer.cs:17-20`: the distance guard against the screen
+        // centre (`Main.screenPosition + screenWidth/2, screenHeight/2` —
+        // the port's camera centre).
+        let dx = x - self.listener.camera_center.0;
+        let dy = y - self.listener.camera_center.1;
+        if dx * dx + dy * dy > 100000000.0 {
+            return tr_core::slot::SlotId::INVALID;
+        }
+        self.play_tracked_inner(style, Some((x, y)), overrides, false, None)
+    }
+
+    /// `SoundEngine.PlayTrackedLoopedSound` (`SoundEngine.cs:133-144` +
+    /// `SoundPlayer.cs:25-37`): the looped tracked play with its
+    /// `LoopedPlayCondition` (`ActiveSound.cs:91-101`). S1-E-23.
+    pub fn play_tracked_looped(
+        &mut self,
+        style: crate::tracked_sound::TrackedStyle,
+        x: f32,
+        y: f32,
+        condition: crate::tracked_sound::LoopedPlayCondition,
+        overrides: crate::tracked_sound::SoundPlayOverrides,
+    ) -> tr_core::slot::SlotId {
+        let dx = x - self.listener.camera_center.0;
+        let dy = y - self.listener.camera_center.1;
+        if dx * dx + dy * dy > 100000000.0 {
+            return tr_core::slot::SlotId::INVALID;
+        }
+        self.play_tracked_inner(style, Some((x, y)), overrides, true, Some(condition))
+    }
+
+    /// The tracked plays' shared tail (`ActiveSound.cs:45-101`): the
+    /// variation pick (`LegacySoundStyle.cs:21-28`, the engine's
+    /// [`Audio::style_random`]), the pitch roll (`SoundStyle.cs:40-43`, the
+    /// engine's [`Audio::sound_style_random`]), the sink at the intended
+    /// initial gain (`:85`), then the pool add.
+    fn play_tracked_inner(
+        &mut self,
+        style: crate::tracked_sound::TrackedStyle,
+        position: Option<(f32, f32)>,
+        overrides: crate::tracked_sound::SoundPlayOverrides,
+        looped: bool,
+        condition: Option<crate::tracked_sound::LoopedPlayCondition>,
+    ) -> tr_core::slot::SlotId {
+        // `SoundEngine.cs:104-107`: the cap.
+        if self.tracked.style_is_at_cap(&style) {
+            return tr_core::slot::SlotId::INVALID;
+        }
+        let asset = style.random_sound(&mut self.style_random);
+        let pitch = style.get_random_pitch(&mut self.sound_style_random);
+        let Some((channels, rate, samples)) = self.cues.get(asset.as_str()) else {
+            return tr_core::slot::SlotId::INVALID;
         };
-        let Some(handle) = &self.handle else { return };
-        let volume = (style_volume * volume * self.listener.ambient_volume).clamp(0.0, 1.0);
-        if volume > 0.0 && !self.ambient_loops.contains_key(name) {
-            // `SceneState.cs:197-206`: a dead sound is re-created.
-            let buf = rodio::buffer::SamplesBuffer::new(channels, rate, samples)
-                .convert_samples::<f32>();
-            let source = Panned {
-                inner: buf.repeat_infinite(),
-                channels,
-                left: 1.0,
-                right: 1.0,
-                channel: 0,
-            };
-            if let Ok(sink) = rodio::Sink::try_new(handle) {
-                sink.append(source);
-                sink.set_volume(volume);
-                log::info!("audio: ambient loop {name} started ({volume:.3})");
-                self.ambient_loops.insert(name, sink);
+        let is_global = position.is_none();
+        let pos = position.unwrap_or((0.0, 0.0));
+        // `ActiveSound.cs:148`'s pan — baked at creation (the engine
+        // deviation: the vanilla re-pans the live instance every update).
+        let pan = if is_global {
+            0.0
+        } else {
+            let dx = pos.0 - self.listener.camera_center.0;
+            (dx / (crate::sound::MAX_WORLD_VIEW_WIDTH * 0.5)).clamp(-1.0, 1.0)
+        };
+        let mut active = crate::tracked_sound::ActiveSound::new(
+            style,
+            pos,
+            is_global,
+            overrides,
+            condition,
+            None,
+            pan,
+            pitch,
+        );
+        // `:85`'s `Volume = DetermineIntendedVolume()` — the initial gain
+        // the sink starts at (the per-frame update keeps it live).
+        let initial_gain = active.determine_intended_volume(&self.listener);
+        if let Some(handle) = &self.handle {
+            if let Ok(s) = rodio::Sink::try_new(handle) {
+                let buf = rodio::buffer::SamplesBuffer::new(*channels, *rate, samples.clone())
+                    .convert_samples::<f32>();
+                let (left, right) = sound::pan_gains(pan);
+                if looped {
+                    // `ActiveSound.cs:96`'s `IsLooped = true`.
+                    s.append(Panned {
+                        inner: buf.repeat_infinite(),
+                        channels: *channels,
+                        left: initial_gain * left,
+                        right: initial_gain * right,
+                        channel: 0,
+                    });
+                } else {
+                    s.append(Panned {
+                        inner: buf,
+                        channels: *channels,
+                        left: initial_gain * left,
+                        right: initial_gain * right,
+                        channel: 0,
+                    });
+                }
+                s.set_volume(initial_gain.clamp(0.0, 1.0));
+                active.attach_sink(s);
             }
-            return;
         }
-        if let Some(sink) = self.ambient_loops.get_mut(name) {
-            sink.set_volume(volume);
-        }
+        self.tracked.add(active)
+    }
+
+    /// `SoundEngine.Update` (`SoundEngine.cs:48-68`): the pause edge
+    /// (`FocusHelper.PauseSounds` — `!GameplayActive && netMode == 0`, the
+    /// caller's seam) then the pool's per-frame update
+    /// (`SoundPlayer.cs:88-105`, which re-computes every `ActiveSound`'s
+    /// volume against the live listener and reaps the dead).
+    pub fn update_tracked(&mut self, pause_sounds: bool) {
+        self.tracked.update_pause_state(pause_sounds);
+        self.tracked.update(&self.listener);
+    }
+
+    /// `SoundPlayer.GetActiveSound` (`SoundPlayer.cs:54-61`) — the callers
+    /// hold the `SlotId` and mutate the sound through it
+    /// (`SceneState.cs:233`'s `activeSound3.Volume = ...`).
+    pub fn get_active_sound(
+        &self,
+        id: tr_core::slot::SlotId,
+    ) -> Option<&crate::tracked_sound::ActiveSound> {
+        self.tracked.get_active_sound(id)
+    }
+
+    pub fn get_active_sound_mut(
+        &mut self,
+        id: tr_core::slot::SlotId,
+    ) -> Option<&mut crate::tracked_sound::ActiveSound> {
+        self.tracked.get_active_sound_mut(id)
     }
 }
 
