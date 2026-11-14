@@ -3645,8 +3645,18 @@ impl Projectile {
         local_owner: bool,
         // The hook's own `u64` stream (`Main.rand`'s stand-in).
         hook_rng: Option<&mut u64>,
+        // `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`).
+        blacklisted: &[(i32, i32)],
     ) -> crate::grapple::HookTick {
-        crate::grapple::ai_hook(self, world, player_center, owner_dead, local_owner, hook_rng)
+        crate::grapple::ai_hook(
+            self,
+            world,
+            player_center,
+            owner_dead,
+            local_owner,
+            hook_rng,
+            blacklisted,
+        )
     }
 
     fn shuriken(x: f32, y: f32, vx: f32, vy: f32, crit: bool) -> Self {
@@ -9851,6 +9861,11 @@ pub struct ProjectilePool {
     /// the app's wind is wired in through [`ProjectilePool::set_wind`] — no
     /// ported arm's behaviour changes meanwhile.
     wind_speed: f32,
+    /// `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`) per
+    /// owner: the tiles that owner's hooks may not latch on. The C# rebuilds
+    /// the set when a hook latches (`Projectile.cs:52772` →
+    /// `Player.UpdateBlacklistedTilesForGrappling` `:6210-6248`).
+    hook_blacklist: HashMap<u8, Vec<(i32, i32)>>,
 }
 
 impl Default for ProjectilePool {
@@ -10127,7 +10142,35 @@ impl ProjectilePool {
             hook_grap_count: 0,
             hook_rng: 0,
             wind_speed: 0.0,
+            hook_blacklist: HashMap::new(),
         }
+    }
+
+    /// `Player.UpdateBlacklistedTilesForGrappling` (`Player.cs:6210-6248`) for
+    /// one owner: the tiles that owner's attached hooks may not latch on.
+    ///
+    /// The C# rebuilds the player's set when one of its hooks latches
+    /// (`Projectile.cs:52772`); the port keeps it per owner in the pool.
+    fn refresh_hook_blacklist(&mut self, world: &World, owner: u8) {
+        let attached: Vec<(i32, i32)> = self
+            .slots
+            .iter()
+            .filter(|p| {
+                p.active
+                    && p.owner == owner
+                    && proj_data(p.kind).is_some_and(|d| d.ai_style == 7)
+                    && p.ai[0] == 2.0
+            })
+            .map(|p| {
+                let c = p.center();
+                (
+                    crate::grapple::tile_of(c.0, world.width),
+                    crate::grapple::tile_of(c.1, world.height),
+                )
+            })
+            .collect();
+        let list = crate::grapple::blacklisted_tiles(world, &attached);
+        self.hook_blacklist.insert(owner, list);
     }
 
     /// The wind vector the AI arms' tail applies
@@ -11263,8 +11306,21 @@ impl ProjectilePool {
                             // The stream is copied out and back so the slot
                             // borrow and the rng borrow never overlap.
                             let mut rng = self.hook_rng;
-                            let tick =
-                                self.slots[i].ai_hook(world, center, dead, local, Some(&mut rng));
+                            // `Player._blackListedTileCoordsForGrappling`
+                            // (`Player.cs:6202`) — the owner's refused tiles.
+                            let blacklist: Vec<(i32, i32)> = self
+                                .hook_blacklist
+                                .get(&self.slots[i].owner)
+                                .cloned()
+                                .unwrap_or_default();
+                            let tick = self.slots[i].ai_hook(
+                                world,
+                                center,
+                                dead,
+                                local,
+                                Some(&mut rng),
+                                &blacklist,
+                            );
                             self.hook_rng = rng;
                             let crack = tick.crack;
                             let attached = tick.attached;
@@ -11277,6 +11333,9 @@ impl ProjectilePool {
                                 self.register_hook(i);
                                 if latched {
                                     let owner = self.slots[i].owner;
+                                    // `:52772` — the latch rebuilds the
+                                    // owner's refused-tile set.
+                                    self.refresh_hook_blacklist(world, owner);
                                     let cap =
                                         crate::grapple::hook_spec_id(self.slots[i].kind).max_attached;
                                     let mut count = 0usize;
@@ -12670,6 +12729,32 @@ mod tests {
         w.compute_column_surface();
         w.compute_chunks();
         w
+    }
+
+    /// S1-L-10a — the latch rebuilds the owner's refused-tile set
+    /// (`Projectile.cs:52772` → `Player.UpdateBlacklistedTilesForGrappling`
+    /// `:6210-6248`): the air around an attached hook is refused.
+    #[test]
+    fn the_latch_refreshes_the_hook_blacklist() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        // An attached hook (the `ai[0] == 2` state) over the dirt row (y=30).
+        pool.slots[0] = Projectile {
+            active: true,
+            kind: crate::projectile::HOOK,
+            owner: 3,
+            ai: [2.0, 0.0, 0.0, 0.0],
+            w: 18.0,
+            h: 18.0,
+            pos: Vec2::new(10.0 * 16.0 + 8.0 - 9.0, 29.0 * 16.0 + 8.0 - 9.0),
+            ..Default::default()
+        };
+        pool.refresh_hook_blacklist(&w, 3);
+        let list = pool.hook_blacklist.get(&3).expect("the owner's set");
+        assert!(list.contains(&(10, 28)), "{:?}", list);
+        assert!(list.contains(&(9, 29)), "{:?}", list);
+        // The solid ground row stays latchable.
+        assert!(!list.contains(&(10, 30)), "{:?}", list);
     }
 
     /// M4-PROJ-6b: `AI_040_LeafBlower` (`Projectile.cs:38003-38082`) — the
