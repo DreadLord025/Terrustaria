@@ -214,9 +214,14 @@ fn tile_type_count_by_category(
 /// The C# writes the result into the `WorldGen.hiScore`/`bestX`/`bestY`
 /// globals; the port returns them. The occupancy half
 /// (`ScoreRoom_IsThisRoomOccupiedBySomeone` `:5814-5829`) needs the NPC list
-/// and lives with the caller (`town.rs`), so this scores an empty room; the
-/// shared-room adjustment (`:5936-5939`) rides it.
-pub fn score_room(world: &World, scan: &RoomScan) -> Option<(i32, i32, i32)> {
+/// and lives with the caller (`town.rs`); `shared_room_x` is the C#'s
+/// `WorldGen.sharedRoomX` — the home of a NPC the room may be shared with —
+/// and drives the `:5936-5939` adjustment.
+pub fn score_room(
+    world: &World,
+    scan: &RoomScan,
+    shared_room_x: Option<i32>,
+) -> Option<(i32, i32, i32)> {
     let mut hi_score = 0;
     // `:5877-5883`: the evil count over the tested area lowers the base.
     let (tx1, tx2, ty1, ty2) = tested_room_bounds(world, scan);
@@ -284,6 +289,12 @@ pub fn score_room(world: &World, scan: &RoomScan) -> Option<(i32, i32, i32)> {
                     } else {
                         num -= 20;
                     }
+                }
+            }
+            // `:5936-5939`: a spot next to the shared room scores 1.
+            if let Some(shared) = shared_room_x {
+                if num >= 1 && (shared - i).abs() < 3 {
+                    num = 1;
                 }
             }
             // `:5940-5951`: the chest and column penalties.
@@ -569,7 +580,7 @@ mod tests {
         let mut w = ground();
         carve_room(&mut w, 50, 100, 12, 9, &[15, 14, 4, 10]);
         let scan = check_room(&w, 55, 105).expect("the room scans");
-        let (bx, by, score) = score_room(&w, &scan).expect("the room scores");
+        let (bx, by, score) = score_room(&w, &scan, None).expect("the room scores");
         assert!(score > 0, "the score: {score}");
         assert!(bx >= scan.x1 && bx <= scan.x2, "the x is inside the room");
         assert!(by >= scan.y1 && by <= scan.y2, "the y is inside the room");

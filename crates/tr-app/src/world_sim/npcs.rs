@@ -2169,16 +2169,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.town_look_timer = 0.0;
         let world = &app.world;
         let npcs = &mut app.npcs;
-        for n in npcs.iter_mut() {
+        // The positions first: the room scan reads the whole NPC list (the
+        // occupancy), so the mutable pass runs before it.
+        let mut asking: Vec<(usize, i32, i32)> = Vec::new();
+        for (i, n) in npcs.iter().enumerate() {
             if n.kind != NpcKind::Guide || n.home.is_some() {
                 continue;
             }
-            let tx = (n.x / TILE_PX) as i32;
-            let ty = (n.y / TILE_PX) as i32;
-            if let Some((hx, hy)) = crate::town::quick_find_home(world, tx, ty) {
+            asking.push((i, (n.x / TILE_PX) as i32, (n.y / TILE_PX) as i32));
+        }
+        for (i, tx, ty) in asking {
+            // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
+            if let Some((hx, hy)) = crate::town::quick_find_home(world, npcs, tx, ty, Some(i)) {
                 // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
                 // the home assigns, the homeless flag clears.
-                n.home = Some((hx, hy));
+                npcs[i].home = Some((hx, hy));
             }
         }
     }
@@ -2229,7 +2234,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             if let Some(player) = app.player.as_ref() {
                 let xt = (player.x / TILE_PX) as i32;
                 let yt = (player.y / TILE_PX) as i32;
-                if let Some((hx, hy)) = crate::town::quick_find_home(&app.world, xt, yt) {
+                if let Some((hx, hy)) = crate::town::quick_find_home(&app.world, &app.npcs, xt, yt, None) {
                     if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
                         // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
                         // the room assigns and the homeless flag clears.

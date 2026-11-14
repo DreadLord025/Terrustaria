@@ -466,7 +466,8 @@ pub(crate) fn spawn_travel_npc(
             }
             let tx = (n.x / tr_core::TILE_PX) as i32;
             let ty = (n.y / tr_core::TILE_PX) as i32;
-            if let Some(h) = crate::town::quick_find_home(world, tx, ty) {
+            // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
+            if let Some(h) = crate::town::quick_find_home(world, npcs, tx, ty, Some(i)) {
                 homes.push((i, h));
             }
         }
