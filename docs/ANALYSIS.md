@@ -6956,7 +6956,7 @@ rows now derive from the C# item data, `Item.SetDefaults`
 createTile/createWall, not from `itemdata.rs`; `gen_recipes.py --check`
 and `tools/test_gen_recipes.py` gate the drift):
 
-- the main body (2475 `AddRecipe` calls) + the 35 `Add*Furniture`
+- the main body (2475 `AddRecipe` calls) + the 34 `Add*Furniture`
   helpers spliced at their call positions + the `AddCritterStatueRecipe`
   rows (50 Stone + 5 critter at tile 283, needGraveyardBiome);
 - the `for` loops (`<=` and `<` forms), the `int[,] array` colour table,
