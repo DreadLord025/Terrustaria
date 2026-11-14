@@ -404,6 +404,10 @@ impl App {
                 // `WorldUpdateStepper.DrawnThisUpdate = false` at the step
                 // head (`Main.cs:17747`, right after `_gameUpdateCount++`).
                 self.stepper.drawn_this_update = false;
+                // `Main.tileSolid[379] = false` (`Main.cs:17753`): the bubble
+                // is not solid for the entity half of the tick — the liquid
+                // pass re-arms it (`Liquid.cs:451`, S1-L-14).
+                self.liquids.clear_bubble_for_entities();
                 // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
                 // pass. The sleeping counts it exports (`:17844-17859`) gate the
                 // clock's rate, so they land right after it.

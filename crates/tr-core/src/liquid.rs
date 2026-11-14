@@ -74,6 +74,22 @@ pub struct LiquidSystem {
     /// the cue inline (`!Main.gameMenu && !isGeneratingOrLoadingWorld`);
     /// the port's engine is pure, so the caller's seam carries it.
     merge_events: Vec<(TileChangeType, i32, i32)>,
+    /// `Liquid.tilesIgnoreWater`'s state (`Liquid.cs:69-73`): during a pass
+    /// the grate 546 and the boulder family lose solidity, so water falls
+    /// through grates and settles past boulders; the C#'s stock
+    /// `Main.tileSolid[546] = true` (`Main.cs:10124`) is restored at the
+    /// pass tail (`Liquid.cs:1157`). `UpdateLiquid` wraps the whole runtime
+    /// pass (`:986`/`:1157`); the gen-only sites (`SettleWaterAt` `:151`/
+    /// `:288`, `QuickWater` `:115`/`:135`, `WorldGen.cs:34767`/`:80417`)
+    /// stay with the unported gen passes.
+    ignore_solids: bool,
+    /// `Main.tileSolid[379]` (`Liquid.cs:451` vs `Main.cs:17753`/`:17799`):
+    /// the bubble is solid for the liquid pass itself and not solid for the
+    /// entity half of the tick — the C# clears it in
+    /// `DoUpdateInWorld_Inner` (`:17753`, before the players) and the
+    /// runtime `UpdateLiquid` re-arms it per cell. The app layer clears the
+    /// flag at the tick head (the `:17753` seam).
+    bubble_solid: bool,
 }
 
 /// One `PlayLiquidChangeSound` row (`WorldGen.cs:4632-4650`): the merge kind
@@ -123,11 +139,23 @@ impl LiquidSystem {
             generating: false,
             remix_world_gen: false,
             merge_events: Vec::new(),
+            // The stock solidity: the grate and the boulders are solid and
+            // the bubble is not (`Main.cs:10124`, `Main.cs:17753`).
+            ignore_solids: false,
+            bubble_solid: false,
         }
     }
 
     pub fn active_len(&self) -> usize {
         self.active.len()
+    }
+
+    /// `Main.cs:17753` — `Main.tileSolid[379] = false` at the world-tick
+    /// head (after `UpdateParticleSystems_World`, before the players): the
+    /// bubble is not solid for the entity half of the tick. The runtime
+    /// `UpdateLiquid` re-arms it ([`Self::update`], `Liquid.cs:451`).
+    pub fn clear_bubble_for_entities(&mut self) {
+        self.bubble_solid = false;
     }
 
     /// The `PlayLiquidChangeSound` rows this pass queued (`Liquid.cs:1345-1347`),
@@ -168,7 +196,7 @@ impl LiquidSystem {
             return;
         }
         let Some(t) = world.tile(x, y) else { return };
-        if t.liquid == 0 || is_solid(t) {
+        if t.liquid == 0 || self.tile_is_solid(t) {
             return;
         }
         if self.active.len() >= MAX_ACTIVE {
@@ -199,6 +227,13 @@ impl LiquidSystem {
     /// One `Liquid.UpdateLiquid` call. Tick this at 30 Hz, like the original
     /// (every second 60 Hz world tick).
     pub fn update(&mut self, world: &mut World) {
+        // `Liquid.UpdateLiquid`'s scope (`Liquid.cs:986`/`:1157`): the grate
+        // and the boulders lose solidity for the whole pass, and the bubble
+        // gains it (`Liquid.Update`'s `Main.tileSolid[379] = true`, `:451` —
+        // the C# re-arms it per cell; nothing clears it inside the pass, so
+        // one arm here is the same state).
+        self.ignore_solids = true;
+        self.bubble_solid = true;
         // `Liquid.cs:1069-1106`: the window is a fixed `curMaxLiquid / cycles`
         // stride and the `numLiquid` clamp re-walks the *whole* list whenever it is
         // shorter than one stride, so a small active list is simulated every call
@@ -239,6 +274,11 @@ impl LiquidSystem {
         if self.dirty {
             world.revision = world.revision.wrapping_add(1);
         }
+        // `Liquid.tilesIgnoreWater(ignoreSolids: false)` at the pass tail
+        // (`Liquid.cs:1157`) — the grate/boulder solidity is the stock one
+        // again until the next pass. The bubble stays solid until the app's
+        // `Main.cs:17753` seam (the tick head, before the players).
+        self.ignore_solids = false;
     }
 
     /// `wetCounter >= cycles` bookkeeping: retire dead entries, promote buffered cells.
@@ -278,7 +318,7 @@ impl LiquidSystem {
     ) -> (u16, u8) {
         let i = world.index(x, y);
         let start = world.tiles[i];
-        if is_solid(&start) || start.liquid == 0 {
+        if self.tile_is_solid(&start) || start.liquid == 0 {
             return (KILL_DEAD, delay);
         }
         let kind = kind_code(start.liquid_kind());
@@ -340,7 +380,7 @@ impl LiquidSystem {
 
         // --- fall through the cell below ---------------------------------------
         if let Some(below) = world.tile(x, y + 1).copied() {
-            if !is_solid(&below)
+            if !self.tile_is_solid(&below)
                 && (below.liquid == 0 || kind_code(below.liquid_kind()) == kind)
                 && below.liquid < 255
             {
@@ -379,12 +419,12 @@ impl LiquidSystem {
 
             let same = |t: Option<Tile>| {
                 t.is_some_and(|t| {
-                    !is_solid(&t) && t.liquid > 0 && kind_code(t.liquid_kind()) == kind
+                    !self.tile_is_solid(&t) && t.liquid > 0 && kind_code(t.liquid_kind()) == kind
                 })
             };
             let open = |t: Option<Tile>| {
                 t.is_some_and(|t| {
-                    !is_solid(&t) && (t.liquid == 0 || kind_code(t.liquid_kind()) == kind)
+                    !self.tile_is_solid(&t) && (t.liquid == 0 || kind_code(t.liquid_kind()) == kind)
                 })
             };
             let f2 = open(left);
@@ -878,22 +918,145 @@ fn set_kind(t: &mut Tile, code: u8) {
     }
 }
 
-/// `Main.tileSolid[type] && !Main.tileSolidTop[type]` on a `nactive()` tile —
-/// `Tile.nactive()` = `active() && !inActive()` (`Tile.cs`), so an actuated
-/// tile lets the liquid through (`Liquid.cs:171/:236/:457`).
-#[inline]
-fn is_solid(t: &Tile) -> bool {
-    t.active()
-        && t.flags & crate::tile::FLAG_INACTIVE == 0
-        && (t.kind as usize) < td::TILE_COUNT
-        && td::TILE_SOLID.has(t.kind)
-        && !td::TILE_SOLID_TOP.has(t.kind)
+/// `WorldGen.SetBoulderSolidity`'s tile set (`WorldGen.cs:11009-11019`) —
+/// the nine boulder kinds the liquid pass strips (`Liquid.tilesIgnoreWater`
+/// calls it alongside the grate 546).
+const BOULDER_SOLIDS: [u16; 9] = [138, 484, 664, 711, 712, 713, 714, 715, 716];
+
+impl LiquidSystem {
+    /// `Main.tileSolid[type] && !Main.tileSolidTop[type]` on a `nactive()`
+    /// tile — `Tile.nactive()` = `active() && !inActive()` (`Tile.cs`), so an
+    /// actuated tile lets the liquid through (`Liquid.cs:171/:236/:457`) —
+    /// plus the pass-scoped toggles (S1-L-14): the grate 546 and the boulder
+    /// family are non-solid while [`Self::ignore_solids`] is up
+    /// (`Liquid.tilesIgnoreWater`, `Liquid.cs:69-73`), and the bubble 379 is
+    /// solid exactly while [`Self::bubble_solid`] is up (`Liquid.cs:451` vs
+    /// `Main.cs:17753`).
+    #[inline]
+    fn tile_is_solid(&self, t: &Tile) -> bool {
+        if !t.active() || t.flags & crate::tile::FLAG_INACTIVE != 0 {
+            return false;
+        }
+        let kind = t.kind;
+        if kind as usize >= td::TILE_COUNT {
+            return false;
+        }
+        if self.ignore_solids && (kind == 546 || BOULDER_SOLIDS.contains(&kind)) {
+            return false;
+        }
+        if kind == 379 {
+            return self.bubble_solid;
+        }
+        td::TILE_SOLID.has(kind) && !td::TILE_SOLID_TOP.has(kind)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::tile::FLAG_ACTIVE;
+
+    #[test]
+    fn the_water_falls_through_the_grate_during_the_pass() {
+        // S1-L-14 (`Liquid.cs:69-73`/`:986`/`:1157`): the runtime pass lifts
+        // the grate 546's solidity (`Main.tileSolid[546] = !ignoreSolids`,
+        // the stock `true` at `Main.cs:10124`), so water above a grate
+        // lands under it.
+        let mut w = World::new("liquid".into(), 9, 11);
+        // A grate shelf at y=5, water above it at y=4.
+        for x in 3..6 {
+            let i = w.index(x, 5);
+            w.tiles[i] = Tile { kind: 546, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            let j = w.index(x, 4);
+            w.tiles[j].liquid = 255;
+            w.mark_chunk(x, 4);
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        // The water delay gate moves a cell every ~6 ticks (`Liquid.cs:484`).
+        for _ in 0..40 {
+            sys.update(&mut w);
+        }
+        let above: i32 = (3..6).map(|x| w.tiles[w.index(x, 4)].liquid as i32).sum();
+        let mut below: i64 = 0;
+        for x in 0..9 {
+            for y in 6..11 {
+                below += w.tiles[w.index(x, y)].liquid as i64;
+            }
+        }
+        let below = below as i32;
+        assert!(above < 255, "the water left the shelf ({above} left)");
+        assert!(below > 0, "the water fell through the grate ({below})");
+    }
+
+    #[test]
+    fn the_bubble_blocks_the_liquid_pass_and_releases_for_entities() {
+        // S1-L-14 (`Liquid.cs:451` vs `Main.cs:17753`): the bubble 379 is
+        // solid for the liquid pass itself — the water above it stays put —
+        // and `clear_bubble_for_entities` returns the stock non-solid state
+        // for the entity half of the tick.
+        let mut w = World::new("liquid".into(), 9, 11);
+        for x in 3..6 {
+            let i = w.index(x, 5);
+            w.tiles[i] = Tile { kind: 379, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            let j = w.index(x, 4);
+            w.tiles[j].liquid = 255;
+            w.mark_chunk(x, 4);
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        for _ in 0..8 {
+            sys.update(&mut w);
+        }
+        let above: i32 = (3..6).map(|x| w.tiles[w.index(x, 4)].liquid as i32).sum();
+        let below: i32 = (3..6).map(|x| w.tiles[w.index(x, 6)].liquid as i32).sum();
+        assert!(below == 0, "the bubble held the water ({below} passed)");
+        assert!(above > 0, "the water stayed above ({above})");
+        // The pass tail keeps the bubble solid — `Main.cs:17753` clears it
+        // at the next tick's head, before the entity half.
+        sys.clear_bubble_for_entities();
+        assert!(!sys.bubble_solid, "the stock bubble is not solid");
+    }
+
+    #[test]
+    fn the_boulder_loses_solidity_for_the_pass() {
+        // S1-L-14 (`WorldGen.SetBoulderSolidity`, `WorldGen.cs:11009-11019`,
+        // via `Liquid.tilesIgnoreWater`): the boulder 138 does not hold the
+        // water during the pass.
+        let mut w = World::new("liquid".into(), 9, 11);
+        for x in 3..6 {
+            let i = w.index(x, 5);
+            w.tiles[i] = Tile { kind: 138, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            let j = w.index(x, 4);
+            w.tiles[j].liquid = 255;
+            w.mark_chunk(x, 4);
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        for _ in 0..40 {
+            sys.update(&mut w);
+        }
+        let mut below: i64 = 0;
+        for x in 0..9 {
+            for y in 6..11 {
+                below += w.tiles[w.index(x, y)].liquid as i64;
+            }
+        }
+        let below = below as i32;
+        assert!(below > 0, "the water fell past the boulder ({below})");
+    }
 
     fn basin(width: i32, wall_y: i32) -> World {
         let mut w = World::new("liquid".into(), width, wall_y + 3);
