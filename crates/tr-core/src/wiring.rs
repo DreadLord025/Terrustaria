@@ -268,6 +268,21 @@ pub struct Wiring {
     /// toilet 497 arms). The app layer spawns the projectiles and applies the
     /// app-side gates (`BunnyCannonCanFire`, the fountain dedupe).
     device_shots: Vec<DeviceShot>,
+    /// `Wiring._currentWireColor` (`Wiring.cs:848`): the flood's colour, read
+    /// by the tile-429 WireBulb arm (`:1583-1613`).
+    current_color: u8,
+    /// `Wiring.running` (`Wiring.cs:531`/`:654`): the flag is up while a
+    /// `TripWire` walks its four colour passes; `SwitchMB`/`SwitchFountain`
+    /// gate their `SkipWire` calls on it (`WorldGen.cs:50983`/`:51177`).
+    running: bool,
+    /// The announcement-box hits (`HitWireSingle`'s case 425,
+    /// `Wiring.cs:1177-1236`): the `(num7, num8)` 2×2 anchor and the sign
+    /// text for `Main.NewTextMultiline`. The app layer drains, applies the
+    /// `AnnouncementBoxRange` distance gate and prints to the chat.
+    announcement_events: Vec<(i32, i32, String)>,
+    /// `HitWireSingle`'s case-455 party-toggle requests
+    /// (`BirthdayParty.ToggleManualParty`, `BirthdayParty.cs:202-217`).
+    party_toggles: u32,
 }
 
 /// A device shot request: one `Projectile.NewProjectile` call from the device
@@ -540,6 +555,47 @@ impl Wiring {
         } else if kind == 443 {
             // The geyser erupts through the switch too (`:293-296`).
             self.geyser_trap(world, i, j);
+        } else {
+            // The lever (132) / detonator (411) else-arm (`Wiring.cs:343-
+            // 377`): the 2×2 block's frameX shifts by ±36 (the direction
+            // reads from the negative frame offsets, `% 4`, `< -1` flips),
+            // a live 411 neighbour arms `CheckMech(60)`, the block's tiles
+            // shift, the anchor re-frames and the 2×2 wire trips.
+            if !matches!(kind, 132 | 411) {
+                return;
+            }
+            let mut num5: i32 = 36;
+            let mut num6: i32 = -(i32::from(frame_x) / 18);
+            let mut num7: i32 = -(i32::from(frame_y) / 18);
+            num6 %= 4;
+            if num6 < -1 {
+                num6 += 2;
+                num5 = -36;
+            }
+            num6 += i;
+            num7 += j;
+            if world.tile(num6, num7).is_some_and(|t| t.kind == 411) {
+                self.check_mech(num6, num7, 60); // `:359-361`
+            }
+            for k in num6..num6 + 2 {
+                for l in num7..num7 + 2 {
+                    if world
+                        .tile(k, l)
+                        .is_some_and(|t| t.kind == 132 || t.kind == 411)
+                    {
+                        let f = world.tile_frame_x(k, l);
+                        world.set_tile_frame_x(k, l, f + num5);
+                    }
+                }
+            }
+            // `WorldGen.TileFrame(num6, num7)` (`:366`) — the port has no
+            // single-cell `TileFrame` entry (only the 3×3 `SquareTileFrame`
+            // walk, which would frame eight cells the C# call does not
+            // touch), so the wake is not run here; the lever/detonator has
+            // no support cascade (a wall-mounted device) — noted in
+            // research-23's D5 closure.
+            // `SoundEngine.PlaySound(28, ...)` (`:367`) — D19, unported.
+            self.trip_wire(world, num6, num7, 2, 2); // `:368`
         }
     }
 
@@ -548,6 +604,9 @@ impl Wiring {
     /// collection, the `Teleport()` call per registered pair, the pixel-box
     /// pass and the logic-gate pass.
     pub fn trip_wire(&mut self, world: &mut World, left: i32, top: i32, width: i32, height: i32) {
+        // `Wiring.running = true` (`Wiring.cs:531`); `SwitchMB`/`SwitchFountain`
+        // gate their `SkipWire` calls on the flag (`WorldGen.cs:50983`).
+        self.running = true;
         let mut pairs: [((f32, f32), (f32, f32)); 4] = [((-1.0, -1.0), (-1.0, -1.0)); 4];
         for (pass, color) in [
             (0, WireColor::Red),
@@ -558,7 +617,8 @@ impl Wiring {
             self.trip_wire_color(world, left, top, width, height, color);
             pairs[pass] = (self.teleport[0], self.teleport[1]);
         }
-        self.pixel_box_pass(world);
+        // `Wiring.running = false` (`Wiring.cs:654`) — before the tail.
+        self.running = false;
         // `for (num4 = 0; num4 < 8; num4 += 2) { … Teleport(); }`
         // (`Wiring.cs:651-661`): both pads registered → one teleport call.
         for pair in pairs {
@@ -566,7 +626,10 @@ impl Wiring {
                 self.teleport(world, pair.0, pair.1);
             }
         }
-        // `Wiring.LogicGatePass()` at the end of `TripWire` (`Wiring.cs:665`).
+        // `Wiring.PixelBoxPass()` (`:664`) runs AFTER the teleport loop (the
+        // port used to run it before — research-23 D3), then
+        // `Wiring.LogicGatePass()` (`:665`).
+        self.pixel_box_pass(world);
         self.logic_gate_pass(world);
     }
 
@@ -624,6 +687,17 @@ impl Wiring {
     /// Drains the teleport events computed by the last `TripWire`.
     pub fn take_teleport_events(&mut self) -> Vec<((f32, f32), (f32, f32))> {
         std::mem::take(&mut self.teleport_events)
+    }
+
+    /// Drains the announcement-box texts (case 425's `Main.NewTextMultiline`).
+    pub fn take_announcement_events(&mut self) -> Vec<(i32, i32, String)> {
+        std::mem::take(&mut self.announcement_events)
+    }
+
+    /// Drains the party-toggle count (case 455's
+    /// `BirthdayParty.ToggleManualParty`).
+    pub fn take_party_toggles(&mut self) -> u32 {
+        std::mem::take(&mut self.party_toggles)
     }
 
     /// The trap family (`HitWireSingle`'s case 137, `Wiring.cs:1760-1993`):
@@ -1892,16 +1966,76 @@ impl Wiring {
             self.skip.insert((x, y));
             self.to_process.insert((x, y), TO_PROCESS_COUNT);
         }
+        // `Wiring._currentWireColor = wireType` (`Wiring.cs:848`) — the
+        // tile-429 WireBulb arm reads it (`:1583-1613`).
+        self.current_color = color as u8;
         // `HitWire` pops from the front (`DoubleStack.PopFront`) — BFS.
-        while let Some(((x, y), _)) = next.pop_front() {
+        while let Some(((x, y), dir)) = next.pop_front() {
             if !self.skip.contains(&(x, y)) {
                 self.hit_wire_single(world, x, y);
             }
-            for (dx, dy) in [(0, 1), (0, -1), (1, 0), (-1, 0)] {
+            for (j, (dx, dy)) in [(0, (0, 1)), (1, (0, -1)), (2, (1, 0)), (3, (-1, 0))] {
                 let nx = x + dx;
                 let ny = y + dy;
                 if nx < 2 || nx >= world.width - 2 || ny < 2 || ny >= world.height - 2 {
                     continue;
+                }
+                // `Tile tile = Main.tile[num2, num3]` — the NEIGHBOUR; `Tile
+                // tile2 = Main.tile[x, y]` — the CURRENT cell (`:890-899`).
+                let Some(neighbor) = world.tile(nx, ny) else {
+                    continue;
+                };
+                let Some(cur) = world.tile(x, y) else {
+                    continue;
+                };
+                // `byte b = 3; if (tile.type == 424 || tile.type == 445) b = 0;`
+                // (`:900-902`) — the count comes from the NEIGHBOUR's kind: a
+                // wire pipe/pixel box neighbour gets no `_toProcess` entry, so
+                // it can re-enter this flood freely (research-23 D1 — the port
+                // used to test the current cell here).
+                let b: u8 = if neighbor.kind == 424 || neighbor.kind == 445 { 0 } else { 3 };
+                // `tile2.type == 424`: the wire pipe filters the propagation
+                // direction by `frameX / 18` — 0 straight, 1 cross, 2 corner
+                // (`Wiring.cs:905-928`); `j` is the neighbour step, `dir` the
+                // direction the CURRENT cell was entered from.
+                if cur.kind == 424 {
+                    match cur.frame_x / 18 {
+                        0 => {
+                            if j != dir {
+                                continue;
+                            }
+                        }
+                        1 => {
+                            let ok = (dir == 0 && j == 3)
+                                || (dir == 3 && j == 0)
+                                || (dir == 1 && j == 2)
+                                || (dir == 2 && j == 1);
+                            if !ok {
+                                continue;
+                            }
+                        }
+                        2 => {
+                            let ok = (dir == 0 && j == 2)
+                                || (dir == 2 && j == 0)
+                                || (dir == 1 && j == 3)
+                                || (dir == 3 && j == 1);
+                            if !ok {
+                                continue;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                // `tile2.type == 445`: only the straight step passes, and the
+                // step direction is recorded in `_PixelBoxTriggers` (`:929-
+                // 943`) — 2 for a vertical step, 1 for a horizontal one; the
+                // pass fires when both directions marked the cell.
+                if cur.kind == 445 {
+                    if j != dir {
+                        continue;
+                    }
+                    let bit: u8 = if j == 0 || j == 1 { 2 } else { 1 };
+                    *self.pixel_box_triggers.entry((x, y)).or_insert(0) |= bit;
                 }
                 if !world.wires.get(nx, ny, color) {
                     continue;
@@ -1915,12 +2049,10 @@ impl Wiring {
                     continue;
                 }
                 next.push_back((point, dx_y_to_dir(dx, dy)));
-                // `byte b = 3` (`:898`), `b = 0` through a junction box (424)
-                // — the enqueued cell absorbs that many re-entries.
-                if world.tile(x, y).is_some_and(|t| t.kind == 424 || t.kind == 445) {
-                    continue;
+                // `if (b > 0) _toProcess.Add(point2, b)` (`:971-974`).
+                if b > 0 {
+                    self.to_process.insert(point, i32::from(b));
                 }
-                self.to_process.insert(point, 3);
             }
         }
         self.skip.clear();
@@ -1944,9 +2076,12 @@ impl Wiring {
         let tile_frame_x = tile.frame_x;
         let tile_frame_y = tile.frame_y;
         let half_brick = tile.half_brick();
-        // `HitWireSingle`'s `doSkipWires = true` → `SkipWire` (`Wiring.cs:998`,
-        // `:1000`-area): the fired cell never re-fires within this flood.
-        self.skip.insert((i, j));
+        // `doSkipWires = true` (`Wiring.cs:998`) is a Toggle*-helper argument,
+        // NOT a blanket skip: the C# only skips the cells each device arm
+        // names (`Wiring.SkipWire`) — a cell whose counter was exhausted can
+        // re-enter `HitWireSingle` later in the same flood (`Wiring.cs:956-
+        // 968`; research-23 D2 — the port used to skip the cell here for
+        // every arm).
         if actuator {
             self.actuate_forced(world, i, j);
         }
@@ -1971,6 +2106,7 @@ impl Wiring {
                 if frame_x == 36 {
                     num50 = 0;
                 }
+                self.skip.insert((i, j)); // `Wiring.SkipWire(i, j)` (`:1064`)
                 world.set_tile_frame_x(i, j, frame_x + num50);
                 self.lamps_to_check.push_back((i, j));
             }
@@ -2079,7 +2215,578 @@ impl Wiring {
             141 => self.explosives(world, i, j),
             210 => self.explode_mine(world, i, j),
             443 => self.geyser_trap(world, i, j),
+            // ---- S1-L-6: the arms below close research-23 D8's missing set
+            // ---- (the tile-mechanical half; Hopper 21/467, Extractinator
+            // ---- 219/642 and the switch-track 314 need unported systems —
+            // ---- see the research note).
+            // The type-pair swap 255..268 (`:1033-1050`): the two halves
+            // (e.g. the pressure-plate colours) toggle ±7, then the wake.
+            k if (255..=268).contains(&k) => {
+                if !actuator {
+                    let next = if k >= 262 { k - 7 } else { k + 7 };
+                    world.swap_tile_kind(i, j, next);
+                    let _ = crate::edit::square_tile_frame_default(world, i, j);
+                }
+                // `return;` — outside the `!actuator` guard (`:1047`).
+            }
+            // The stone slab / sand stone slab big frame shift (406,
+            // `:1075-1093`): the 3×3 anchor from `frameX/Y % 54 / 18`; the
+            // shift is +54 or −108 (the 3-frame sprite's wrap), SkipWire 3×3.
+            406 => {
+                let num18 = (tile_frame_x % 54 / 18) as i32;
+                let num19 = (tile_frame_y % 54 / 18) as i32;
+                let (num20, num21) = (i - num18, j - num19);
+                // `int num22 = 54; if (Main.tile[num20, num21].frameY >= 108)
+                // num22 = -108;` (`:1083-1086`).
+                let num22: i32 = if world.tile_frame_y(num20, num21) >= 108 {
+                    -108
+                } else {
+                    54
+                };
+                for x in num20..num20 + 3 {
+                    for y in num21..num21 + 3 {
+                        self.skip.insert((x, y)); // `Wiring.SkipWire` (`:1090`)
+                        let f = world.tile_frame_y(x, y);
+                        world.set_tile_frame_y(x, y, f + num22);
+                    }
+                }
+            }
+            // The crystal block / glass platform family shift (452,
+            // `:1095-1117`): the 3×3 anchor, the frameX ±54 by the anchor's
+            // own frameX, SkipWire 3×3.
+            452 => {
+                let num11 = (tile_frame_x % 54 / 18) as i32;
+                let num12 = (tile_frame_y % 54 / 18) as i32;
+                let (num13, num14) = (i - num11, j - num12);
+                let num15: i32 = if world.tile_frame_x(num13, num14) >= 54 {
+                    -54
+                } else {
+                    54
+                };
+                for x in num13..num13 + 3 {
+                    for y in num14..num14 + 3 {
+                        self.skip.insert((x, y)); // `Wiring.SkipWire` (`:1112`)
+                        let f = world.tile_frame_x(x, y);
+                        world.set_tile_frame_x(x, y, f + num15);
+                    }
+                }
+            }
+            // The detonator block shift (411, `:1119-1136`): the 2×2 anchor,
+            // the frameX ±36 by the anchor's frameX, SkipWire 2×2.
+            411 => {
+                let num43 = (tile_frame_x % 36 / 18) as i32;
+                let num44 = (tile_frame_y % 36 / 18) as i32;
+                let (num45, num46) = (i - num43, j - num44);
+                let num47: i32 = if world.tile_frame_x(num45, num46) >= 36 {
+                    -36
+                } else {
+                    36
+                };
+                for x in num45..num45 + 2 {
+                    for y in num46..num46 + 2 {
+                        self.skip.insert((x, y)); // `Wiring.SkipWire` (`:1131`)
+                        let f = world.tile_frame_x(x, y);
+                        world.set_tile_frame_x(x, y, f + num47);
+                    }
+                }
+            }
+            // The announcement box (425, `Wiring.cs:1177-1236`): the 2×2
+            // SkipWire, then the disabled guard, then the sign text through
+            // `Main.NewTextMultiline` — the app prints the drained texts
+            // (`announcement_events`). The MP branches are not ported.
+            425 => {
+                let num5 = (tile_frame_x % 36 / 18) as i32;
+                let num6 = (tile_frame_y % 36 / 18) as i32;
+                let (num7, num8) = (i - num5, j - num6);
+                for x in num7..num7 + 2 {
+                    for y in num8..num8 + 2 {
+                        self.skip.insert((x, y)); // `Wiring.SkipWire` (`:1184-1189`)
+                    }
+                }
+                if world.announcement_box_disabled {
+                    return; // `:1190-1192`
+                }
+                // `Sign.ReadSign(num7, num8, CreateIfMissing: false)` (`:1195`):
+                // the existing sign at the 2×2 anchor only.
+                let sign = world
+                    .signs
+                    .iter()
+                    .find(|s| (s.x == num7 || s.x == num7 + 1) && (s.y == num8 || s.y == num8 + 1))
+                    .map(|s| s.text.clone());
+                let Some(text) = sign else {
+                    return;
+                };
+                if text.trim().is_empty() {
+                    return; // `string.IsNullOrWhiteSpace` (`:1197`)
+                }
+                // `Main.AnnouncementBoxRange == -1` → announce unconditionally;
+                // otherwise only inside the range from the pad centre
+                // (`:1202-1233`). The single-player branch only; the app
+                // resolves the player-distance gate.
+                self.announcement_events.push((num7, num8, text));
+            }
+            // The wire bulb (429, `:1583-1613`): `frameX` steps by the
+            // colour's bit — red +18/−18, green +36, blue +72, yellow +144 —
+            // the direction flips when that colour's bit is already set.
+            429 => {
+                let num154 = (tile_frame_x / 18) as i32;
+                let flag8 = num154 % 2 >= 1;
+                let flag9 = num154 % 4 >= 2;
+                let flag10 = num154 % 8 >= 4;
+                let flag11 = num154 % 16 >= 8;
+                let mut num155: i16 = 0;
+                let flag12;
+                match self.current_color {
+                    1 => {
+                        num155 = 18;
+                        flag12 = !flag8;
+                    }
+                    2 => {
+                        num155 = 72;
+                        flag12 = !flag10;
+                    }
+                    3 => {
+                        num155 = 36;
+                        flag12 = !flag9;
+                    }
+                    4 => {
+                        num155 = 144;
+                        flag12 = !flag11;
+                    }
+                    _ => flag12 = false,
+                }
+                if flag12 {
+                    world.set_tile_frame_x(i, j, i32::from(tile_frame_x) + i32::from(num155));
+                } else {
+                    world.set_tile_frame_x(i, j, i32::from(tile_frame_x) - i32::from(num155));
+                }
+            }
+            // The fireplace (405, `:3044-3072`).
+            405 => self.toggle_fire_place(world, i, j, tile_frame_x, tile_frame_y),
+            // The holiday light (149 → `ToggleHolidayLight`, `:2800-2815`).
+            149 => self.toggle_holiday_light(world, i, j, tile_frame_x),
+            // The pixel box frame shift (244, `:1618-1640`): the 3×2 anchor,
+            // frameX ±54 by the anchor's frameX, SkipWire 3×2.
+            244 => {
+                let mut num80 = (tile_frame_x / 18) as i32;
+                while num80 >= 3 {
+                    num80 -= 3;
+                }
+                let mut num81 = (tile_frame_y / 18) as i32;
+                while num81 >= 3 {
+                    num81 -= 3;
+                }
+                let (num82, num83) = (i - num80, j - num81);
+                let num84: i32 = if world.tile_frame_x(num82, num83) >= 54 {
+                    -54
+                } else {
+                    54
+                };
+                for x in num82..num82 + 3 {
+                    for y in num83..num83 + 2 {
+                        self.skip.insert((x, y)); // `Wiring.SkipWire` (`:1631`)
+                        let f = world.tile_frame_x(x, y);
+                        world.set_tile_frame_x(x, y, f + num84);
+                    }
+                }
+            }
+            // The campfire (565, `:1642-1665`): the 2×2 anchor, frameX ±36,
+            // SkipWire 2×2.
+            565 => {
+                let mut num123 = (tile_frame_x / 18) as i32;
+                while num123 >= 2 {
+                    num123 -= 2;
+                }
+                let mut num124 = (tile_frame_y / 18) as i32;
+                while num124 >= 2 {
+                    num124 -= 2;
+                }
+                let (num125, num126) = (i - num123, j - num124);
+                let num127: i32 = if world.tile_frame_x(num125, num126) >= 36 {
+                    -36
+                } else {
+                    36
+                };
+                for x in num125..num125 + 2 {
+                    for y in num126..num126 + 2 {
+                        self.skip.insert((x, y)); // `Wiring.SkipWire` (`:1655`)
+                        let f = world.tile_frame_x(x, y);
+                        world.set_tile_frame_x(x, y, f + num127);
+                    }
+                }
+            }
+            // The hanging lantern (42 → `ToggleHangingLantern`, `:2817-2842`).
+            42 => self.toggle_hanging_lantern(world, i, j, tile_frame_x, tile_frame_y),
+            // The lamp (93 → `ToggleLamp`, `:2935-2962`).
+            93 => self.toggle_lamp(world, i, j, tile_frame_x, tile_frame_y),
+            // The 2×2 light family (95/100/126/173/564 → `Toggle2x2Light`,
+            // `:2843-2878`).
+            95 | 100 | 126 | 173 | 564 => {
+                self.toggle_2x2_light(world, i, j, tile_frame_x, tile_frame_y)
+            }
+            // The chandelier (34 → `ToggleChandelier`, `:2963-2999`).
+            34 => self.toggle_chandelier(world, i, j, tile_frame_x, tile_frame_y),
+            // The candle family (33/49/174/372/646 → `ToggleCandle`,
+            // `:2920-2934`).
+            33 | 49 | 174 | 372 | 646 => self.toggle_candle(world, i, j, tile_frame_x),
+            // The lamp post (92 → `ToggleLampPost`, `:2879-2902`).
+            92 => self.toggle_lamp_post(world, i, j, tile_frame_x, tile_frame_y),
+            // The music boxes (35/139 → `WorldGen.SwitchMB`, `:50958-50988`).
+            35 | 139 => self.switch_mb(world, i, j, tile_frame_x, tile_frame_y),
+            // The fountains (207 → `WorldGen.SwitchFountain`, `:51150-51193`).
+            207 => self.switch_fountain(world, i, j, tile_frame_x, tile_frame_y),
+            // The monoliths (410/480/509/657/658/720/721/725/733 →
+            // `WorldGen.SwitchMonolith`, `:51004-51148`).
+            410 | 480 | 509 | 657 | 658 | 720 | 721 | 725 | 733 => {
+                self.switch_monolith(world, i, j, kind, tile_frame_x, tile_frame_y)
+            }
+            // The party centre (455 → `BirthdayParty.ToggleManualParty`,
+            // `BirthdayParty.cs:202-217`): the flag flip rides the request —
+            // the app layer owns the `WorldEvents` book.
+            455 => self.party_toggles = self.party_toggles.saturating_add(1),
+            // The water fountain's stone block pair (546/557, `:2546-2552`):
+            // the type swap + the wake.
+            546 => {
+                world.swap_tile_kind(i, j, 557);
+                let _ = crate::edit::square_tile_frame_default(world, i, j);
+            }
+            557 => {
+                world.swap_tile_kind(i, j, 546);
+                let _ = crate::edit::square_tile_frame_default(world, i, j);
+            }
+            // The weighted pressure-plate's big frame shift (506, `:2503-
+            // 2531`): the 2×3 anchor from `frameY / 18 % 3`, the active+same-
+            // kind validation over the sprite, then the frameX ±72.
+            506 => {
+                let num75 = j - i32::from(tile_frame_y / 18 % 3);
+                let mut num76 = (tile_frame_x / 18) as i32;
+                while num76 >= 2 {
+                    num76 -= 2;
+                }
+                num76 = i - num76;
+                // `WorldGen.ValidateTileSquareIsActiveAndOfType(num76, num75,
+                // 2, 3, type)` (`:2512`).
+                let mut valid = true;
+                for x in num76..num76 + 2 {
+                    for y in num75..num75 + 3 {
+                        if !world.tile(x, y).is_some_and(|t| t.active() && t.kind == kind) {
+                            valid = false;
+                        }
+                    }
+                }
+                if !valid {
+                    return; // `break` out of the case (`:2513`)
+                }
+                for y in num75..num75 + 3 {
+                    for x in num76..num76 + 2 {
+                        self.skip.insert((x, y)); // `Wiring.SkipWire` (`:2514-2519`)
+                    }
+                }
+                let num77: i32 = if world.tile_frame_x(num76, num75) >= 72 {
+                    -72
+                } else {
+                    72
+                };
+                for x in num76..num76 + 2 {
+                    for y in num75..num75 + 3 {
+                        let f = world.tile_frame_x(x, y);
+                        world.set_tile_frame_x(x, y, f + num77);
+                    }
+                }
+            }
             _ => {}
+        }
+    }
+
+    /// `Wiring.ToggleHolidayLight` (`Wiring.cs:2800-2815`): the frameX ±54.
+    fn toggle_holiday_light(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16) {
+        let f = world.tile_frame_x(i, j);
+        if i32::from(frame_x) < 54 {
+            world.set_tile_frame_x(i, j, f + 54);
+        } else {
+            world.set_tile_frame_x(i, j, f - 54);
+        }
+    }
+
+    /// `Wiring.ToggleHangingLantern` (`Wiring.cs:2817-2842`): the 2-tall
+    /// sprite's frameX ±18, SkipWire on both cells.
+    fn toggle_hanging_lantern(
+        &mut self,
+        world: &mut World,
+        i: i32,
+        j: i32,
+        frame_x: i16,
+        frame_y: i16,
+    ) {
+        let mut num = i32::from(frame_y / 18);
+        while num >= 2 {
+            num -= 2;
+        }
+        let num2 = j - num;
+        let num3: i32 = if frame_x > 0 { -18 } else { 18 };
+        world.set_tile_frame_x(i, num2, world.tile_frame_x(i, num2) + num3);
+        world.set_tile_frame_x(i, num2 + 1, world.tile_frame_x(i, num2 + 1) + num3);
+        self.skip.insert((i, num2));
+        self.skip.insert((i, num2 + 1));
+    }
+
+    /// `Wiring.Toggle2x2Light` (`Wiring.cs:2843-2878`): the 2×2 sprite's
+    /// frameX ±36 around its anchor, SkipWire 2×2.
+    fn toggle_2x2_light(
+        &mut self,
+        world: &mut World,
+        i: i32,
+        j: i32,
+        frame_x: i16,
+        frame_y: i16,
+    ) {
+        let mut num = i32::from(frame_y / 18);
+        while num >= 2 {
+            num -= 2;
+        }
+        let num = j - num;
+        let mut num2 = i32::from(frame_x / 18);
+        if num2 > 1 {
+            num2 -= 2;
+        }
+        let num2 = i - num2;
+        let num3: i32 = if world.tile_frame_x(num2, num) > 0 { -36 } else { 36 };
+        for x in num2..num2 + 2 {
+            for y in num..num + 2 {
+                world.set_tile_frame_x(x, y, world.tile_frame_x(x, y) + num3);
+                self.skip.insert((x, y)); // `Wiring.SkipWire` (`:2870-2873`)
+            }
+        }
+    }
+
+    /// `Wiring.ToggleLampPost` (`Wiring.cs:2879-2902`): the 6-tall lamp's
+    /// frameX ±18 down its column, SkipWire per cell.
+    fn toggle_lamp_post(
+        &mut self,
+        world: &mut World,
+        i: i32,
+        j: i32,
+        frame_x: i16,
+        frame_y: i16,
+    ) {
+        let num = j - i32::from(frame_y / 18);
+        let num2: i32 = if frame_x > 0 { -18 } else { 18 };
+        for k in num..num + 6 {
+            world.set_tile_frame_x(i, k, world.tile_frame_x(i, k) + num2);
+            self.skip.insert((i, k)); // `Wiring.SkipWire` (`:2895-2898`)
+        }
+    }
+
+    /// `Wiring.ToggleCandle` (`Wiring.cs:2920-2934`): the cell's frameX ±18.
+    fn toggle_candle(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16) {
+        let num: i32 = if frame_x > 0 { -18 } else { 18 };
+        world.set_tile_frame_x(i, j, world.tile_frame_x(i, j) + num);
+    }
+
+    /// `Wiring.ToggleLamp` (`Wiring.cs:2935-2962`): the 3-tall sprite's
+    /// frameX ±18, SkipWire on the three cells.
+    fn toggle_lamp(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
+        let mut num = i32::from(frame_y / 18);
+        while num >= 3 {
+            num -= 3;
+        }
+        let num = j - num;
+        let num2: i32 = if frame_x > 0 { -18 } else { 18 };
+        for y in num..num + 3 {
+            world.set_tile_frame_x(i, y, world.tile_frame_x(i, y) + num2);
+            self.skip.insert((i, y)); // `Wiring.SkipWire` (`:2952-2955`)
+        }
+    }
+
+    /// `Wiring.ToggleChandelier` (`Wiring.cs:2963-2999`): the 3×3 sprite's
+    /// frameX ±54 around its anchor (`frameX % 108` picks the lit state),
+    /// SkipWire 3×3.
+    fn toggle_chandelier(
+        &mut self,
+        world: &mut World,
+        i: i32,
+        j: i32,
+        frame_x: i16,
+        frame_y: i16,
+    ) {
+        let mut num = i32::from(frame_y / 18);
+        while num >= 3 {
+            num -= 3;
+        }
+        let num2 = j - num;
+        let mut num3 = i32::from(frame_x % 108 / 18);
+        if num3 > 2 {
+            num3 -= 3;
+        }
+        let num3 = i - num3;
+        let num4: i32 = if world.tile_frame_x(num3, num2) % 108 > 0 {
+            -54
+        } else {
+            54
+        };
+        for x in num3..num3 + 3 {
+            for y in num2..num2 + 3 {
+                world.set_tile_frame_x(x, y, world.tile_frame_x(x, y) + num4);
+                self.skip.insert((x, y)); // `Wiring.SkipWire` (`:2988-2991`)
+            }
+        }
+    }
+
+    /// `Wiring.ToggleFirePlace` (`Wiring.cs:3044-3072`): the 3×2 sprite's
+    /// frameX ±54 around its anchor, SkipWire 3×2.
+    fn toggle_fire_place(
+        &mut self,
+        world: &mut World,
+        i: i32,
+        j: i32,
+        frame_x: i16,
+        frame_y: i16,
+    ) {
+        let num = i32::from(frame_x % 54 / 18);
+        let num2 = i32::from(frame_y % 36 / 18);
+        let (num3, num4) = (i - num, j - num2);
+        let num5: i32 = if world.tile_frame_x(num3, num4) >= 54 {
+            -54
+        } else {
+            54
+        };
+        for x in num3..num3 + 3 {
+            for y in num4..num4 + 2 {
+                self.skip.insert((x, y)); // `Wiring.SkipWire` (`:3060-3063`)
+                world.set_tile_frame_x(x, y, world.tile_frame_x(x, y) + num5);
+            }
+        }
+    }
+
+    /// `WorldGen.SwitchMB` (`WorldGen.cs:50958-50988`): the music box's 2×2
+    /// sprite flips its frameX ±36; the `Wiring.running` gate wraps the
+    /// `SkipWire` calls (`:50983-50987`).
+    fn switch_mb(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
+        let mut num3 = i32::from(frame_y / 18);
+        while num3 >= 2 {
+            num3 -= 2;
+        }
+        let mut num4 = i32::from(frame_x / 18);
+        if num4 >= 2 {
+            num4 -= 2;
+        }
+        let (num, num2) = (i - num4, j - num3);
+        for x in num..num + 2 {
+            for y in num2..num2 + 2 {
+                if world
+                    .tile(x, y)
+                    .is_some_and(|t| t.active() && (t.kind == 139 || t.kind == 35))
+                {
+                    let f = world.tile_frame_x(x, y);
+                    if f < 36 {
+                        world.set_tile_frame_x(x, y, f + 36);
+                    } else {
+                        world.set_tile_frame_x(x, y, f - 36);
+                    }
+                }
+            }
+        }
+        if self.running {
+            for x in num..num + 2 {
+                for y in num2..num2 + 2 {
+                    self.skip.insert((x, y));
+                }
+            }
+        }
+    }
+
+    /// `WorldGen.SwitchFountain` (`WorldGen.cs:51150-51193`): the fountain's
+    /// 2×4 sprite flips its frameY ±72; the `Wiring.running` gate wraps the
+    /// `SkipWire` calls (`:51177-51187`).
+    fn switch_fountain(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
+        let mut num3 = i32::from(frame_x / 18);
+        while num3 >= 2 {
+            num3 -= 2;
+        }
+        let mut num4 = i32::from(frame_y / 18);
+        if num4 >= 4 {
+            num4 -= 4;
+        }
+        let (num, num2) = (i - num3, j - num4);
+        for x in num..num + 2 {
+            for y in num2..num2 + 4 {
+                if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 207) {
+                    let f = world.tile_frame_y(x, y);
+                    if f < 72 {
+                        world.set_tile_frame_y(x, y, f + 72);
+                    } else {
+                        world.set_tile_frame_y(x, y, f - 72);
+                    }
+                }
+            }
+        }
+        if self.running {
+            for x in num..num + 2 {
+                for y in num2..num2 + 4 {
+                    self.skip.insert((x, y));
+                }
+            }
+        }
+    }
+
+    /// `WorldGen.SwitchMonolith` (`WorldGen.cs:51004-51148`): the monolith's
+    /// sprite (2×3, 3×3 for the 733 Moon-Lord one) flips its frameY — ±56
+    /// for the 410, ±54 for the rest, the 658 wraps by 162; the
+    /// `Wiring.running` gate wraps the `SkipWire` calls (`:51137-51146`).
+    fn switch_monolith(
+        &mut self,
+        world: &mut World,
+        i: i32,
+        j: i32,
+        kind: u16,
+        frame_x: i16,
+        frame_y: i16,
+    ) {
+        let mut num = 2i32;
+        let num2 = 3i32;
+        if kind == 733 {
+            num = 3;
+        }
+        let mut num5 = i32::from(frame_x / 18);
+        while num5 >= num {
+            num5 -= num;
+        }
+        let mut num6 = i32::from(frame_y / 18);
+        while num6 >= num2 {
+            num6 -= num2;
+        }
+        let (num3, num4) = (i - num5, j - num6);
+        for x in num3..num3 + num {
+            for y in num4..num4 + num2 {
+                let Some(t) = world.tile(x, y) else {
+                    continue;
+                };
+                if !t.active() {
+                    continue;
+                }
+                let step: i32 = match t.kind {
+                    410 => 56,
+                    _ => 54,
+                };
+                let f = world.tile_frame_y(x, y);
+                if t.kind == 658 {
+                    // `frameY += 54; if (frameY >= 162) frameY -= 162;`
+                    // (`:51073-51080`).
+                    let f = f + 54;
+                    world.set_tile_frame_y(x, y, if f >= 162 { f - 162 } else { f });
+                } else if f < step {
+                    world.set_tile_frame_y(x, y, f + step);
+                } else {
+                    world.set_tile_frame_y(x, y, f - step);
+                }
+            }
+        }
+        if self.running {
+            for x in num3..num3 + num {
+                for y in num4..num4 + num2 {
+                    self.skip.insert((x, y));
+                }
+            }
         }
     }
 
@@ -4848,3 +5555,194 @@ mod device_tests {
         assert_eq!(shots, 1, "one shot, then both cooldowns hold");
     }
 }
+
+#[cfg(test)]
+mod s1_l6_tests {
+    //! S1-L-6's flood rules (research-23 D1/D2/D3) and the restored device
+    //! arms (D5/D8): every test pins the C# line it transcribes.
+
+    use super::*;
+    use crate::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// The device fixture: the device at `(x, y)` and a wired switch two
+    /// tiles left feeding a red line into the device cell (the flood seeds
+    /// are `SkipWire`-suppressed, so the device cannot be the trip source).
+    fn wired_device(x: i32, y: i32, kind: u16, frame_x: i16, frame_y: i16) -> World {
+        let mut w = world();
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let si = w.index(x - 2, y);
+        w.tiles[si] = Tile {
+            kind: 135,
+            ..Default::default()
+        };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        w.wires.set(x - 2, y, WireColor::Red, true);
+        w.wires.set(x - 1, y, WireColor::Red, true);
+        w.wires.set(x, y, WireColor::Red, true);
+        w
+    }
+
+    /// A bare active tile at `(x, y)` (no wire).
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_pixel_box_fires_only_from_both_directions() {
+        // `Wiring.cs:929-943` + `PixelBoxPass` (`:666-678`): a 445 pixel box
+        // records a direction bit per straight entry (2 vertical, 1
+        // horizontal); the pass flips its frameX (0↔18) only when both bits
+        // are set in one flood (value == 3). The box sits OUTSIDE the seed
+        // rect (a seed carries the 4-count `_toProcess` entry, and the
+        // horizontal entries would just decrement it).
+        // One-sided flood: the horizontal branch only — no flip.
+        let mut w = world();
+        put(&mut w, 10, 20, 445, 0, 0);
+        for (x, y) in [(9, 20), (10, 20), (11, 20), (9, 21)] {
+            w.wires.set(x, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 2);
+        assert_eq!(w.tile_frame_x(10, 20), 0, "one direction only — no flip");
+        // Both directions: the (9,21) → (10,21) branch enters the box from
+        // below (dir 1) and marks the vertical bit — flip.
+        let mut w = world();
+        put(&mut w, 10, 20, 445, 0, 0);
+        for (x, y) in [(9, 20), (10, 20), (11, 20), (9, 21), (10, 21)] {
+            w.wires.set(x, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 2);
+        assert_eq!(w.tile_frame_x(10, 20), 18, "both directions marked — flip");
+    }
+
+    #[test]
+    fn the_wire_bulb_steps_by_the_wire_colour() {
+        // `Wiring.cs:1583-1613`: red steps ±18; the direction flips when the
+        // colour's bit is already set.
+        let mut w = wired_device(10, 20, 429, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_x(10, 20), 18, "red steps +18 from a clear bit");
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_x(10, 20), 0, "red steps −18 back");
+    }
+
+    #[test]
+    fn the_type_pair_swap_toggles_255_262() {
+        // `Wiring.cs:1033-1050`: types 255..261 step +7, 262..268 step −7.
+        let mut w = wired_device(10, 20, 255, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 262, "255 → 262");
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile(10, 20).unwrap().kind, 255, "262 → 255");
+    }
+
+    #[test]
+    fn the_candle_toggles_its_frame() {
+        // `ToggleCandle` (`Wiring.cs:2920-2934`): frameX 0 → +18 → −18.
+        let mut w = wired_device(10, 20, 33, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_x(10, 20), 18);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_x(10, 20), 0);
+    }
+
+    #[test]
+    fn the_monolith_flips_its_frame_y() {
+        // `WorldGen.SwitchMonolith` (`WorldGen.cs:51004-51148`): the 480
+        // monolith's frameY flips ±54.
+        let mut w = wired_device(10, 20, 480, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_y(10, 20), 54);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(w.tile_frame_y(10, 20), 0);
+    }
+
+    #[test]
+    fn the_announcement_box_prints_the_sign_text() {
+        // `Wiring.cs:1177-1236`: the disabled guard and the sign text
+        // through `Main.NewTextMultiline` — the app prints the drained
+        // (anchor, text) pair.
+        let mut w = world();
+        put(&mut w, 10, 20, 425, 0, 0);
+        w.signs.push(crate::wld::sections::WldSign {
+            text: "hello wiring".into(),
+            x: 10,
+            y: 20,
+        });
+        let si = w.index(8, 20);
+        w.tiles[si] = Tile {
+            kind: 135,
+            ..Default::default()
+        };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        w.wires.set(8, 20, WireColor::Red, true);
+        w.wires.set(9, 20, WireColor::Red, true);
+        w.wires.set(10, 20, WireColor::Red, true);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let events = wiring.take_announcement_events();
+        assert_eq!(events.len(), 1, "the box's text is announced");
+        assert_eq!(events[0].0, 10, "the anchor x");
+        assert_eq!(events[0].1, 20, "the anchor y");
+        assert_eq!(events[0].2, "hello wiring");
+        // The disabled guard (`Main.AnnouncementBoxDisabled`).
+        w.announcement_box_disabled = true;
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert!(wiring.take_announcement_events().is_empty());
+    }
+
+    #[test]
+    fn the_party_centre_requests_the_toggle() {
+        // `Wiring.cs:2033` → `BirthdayParty.ToggleManualParty`.
+        let mut w = wired_device(10, 20, 455, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(wiring.take_party_toggles(), 1);
+    }
+
+    #[test]
+    fn the_hit_switch_else_arm_shifts_the_lever_block_and_trips() {
+        // `Wiring.cs:343-377`: a 132 lever shifts its 2×2 block's frameX by
+        // +36 and trips the 2×2 rect. The lamp sits OUTSIDE the rect on a
+        // wired cell reached from the rect's wire — a wired cell inside the
+        // rect is a flood seed and seeds are `SkipWire`-suppressed
+        // (`Wiring.cs:841`).
+        let mut w = world();
+        put(&mut w, 10, 20, 132, 0, 0);
+        put(&mut w, 10, 21, 132, 0, 0);
+        put(&mut w, 11, 21, 132, 0, 0);
+        put(&mut w, 12, 20, 421, 0, 0);
+        // The rect's wire on (11, 20) (no tile), the lamp's own cell wire.
+        w.wires.set(10, 20, WireColor::Red, true);
+        w.wires.set(11, 20, WireColor::Red, true);
+        w.wires.set(12, 20, WireColor::Red, true);
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 10, 20);
+        assert_eq!(w.tile_frame_x(10, 20), 36, "the lever shifted");
+        assert_eq!(w.tile(12, 20).unwrap().kind, 422, "the lamp swapped");
+    }
+}
+

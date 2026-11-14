@@ -445,6 +445,14 @@ Ported in `tr-core/src/lighting/`:
    default). Adding a mode (Sepia, Monochrome, ...) is a variant plus a style; the draw pass
    needs no new path.
 
+   The brightness is also a G6 key input (S1-H-15): `Lighting.UpdateGlobalBrightness`
+   (`Lighting.cs:108-116`) drops it 1.2 → 1.0 while the Darkness debuff's `blind` flag
+   holds, and `LightStyle::shade` multiplies every tile tint by it, so the bit-exact
+   brightness rides `WorldFrameKey::brightness` — a blind gain/loss invalidates the
+   cached world range instead of serving the old tints. The buff bar itself redraws in
+   the uncached UI pass (chat and the emote wheel have no draw path yet, S1-E-26), so
+   this is the only HUD-state input the world range carries today.
+
 Verified numerically with `TR_LIGHT_AT`: at midday the stored world reports
 `light at 3200,402 = 0.560,0.560,0.560` for the first dirt row under the grass — exactly
 `Main.tileColor` (white) × `0.56`; the renderer multiplies that by `GlobalBrightness`.
@@ -1780,6 +1788,33 @@ that reaches a row's end with a full run (`num6 = 0`, `MapHelper.cs:3214-3225`,
 is written as the run's length), so the port's own decoder round-trips it; a
 byte-level vanilla `LoadMapVersion2` would misread that one case.
 
+### The `.map` deflate stream (S1-L-5)
+
+The uncompressed prefix (header + option tables, `MapHelper.cs:3050-3123`) and
+the pre-deflate row body (`:3125-3318`, `file.rs::encode_tiles`) are 1:1 and
+pinned byte-for-byte by the `s1_l_5_body_matches_vanilla_and_the_wrapper_is_faithful`
+test: the encoder output equals the frozen `tools/MapDeflateHarness/map-body.bin`
+fixture, and the vanilla reference stream
+(`tools/MapDeflateHarness/fw48-reference.deflate`, produced by a real
+`DeflateStream` on this machine's .NET FW 4.8.1 via `tools/MapDeflateHarness/fw48`,
+compiled with the in-box `csc.exe`) inflates back onto that same body.
+
+The compressed bytes themselves are **deliberately not byte-identical** to
+vanilla's and cannot be: vanilla runs on .NET Framework 4.8(.1), whose
+`clrcompression.dll` embeds a Microsoft-patched zlib (version string 1.3.1) whose
+output no stock zlib reproduces. Measured on the frozen body (55 585 bytes):
+vanilla 35 414; zlib 1.3.1 via `zlib-rs` 36 300 at *every* (level, memLevel,
+strategy) combination probed; .NET 10's own stock-zlib `DeflateStream` 36 295
+(unequal to vanilla's bytes, and its `Write` chunking is not chunk-invariant,
+while the vanilla runtime's is — "chunked == single: yes"). The port therefore
+wraps the body with `flate2`'s `zlib-rs` backend at the C# ctor default
+(`CompressionLevel.Optimal` = zlib level 6, `MapHelper.cs:3047` — the pre-S1-L-5
+code used `Compression::fast()`), which is the closest faithful stand-in and
+still inflates identically on both sides: vanilla's reader accepts our stream and
+our reader accepts vanilla's (the `loads_a_real_vanilla_map` reader test). The
+MP tile-block compressor (`net.rs`) shares the backend switch; its C#-side
+parity is S1-I scope.
+
 ## Localization (M6)
 
 `tr-core/src/localization/` ports `Terraria.Localization`'s core:
@@ -1879,16 +1914,32 @@ ported the remaining three and verified the fourth:
   volumes. The sink is created on the first non-zero volume and then kept (muted at 0) —
   the C# `SlotId` policy.
 * **Thunder strike** (`Main.cs:58747-58766`). The cue plays from the weather tick with the
-  C# position math and the `case 43` family (`Thunder_0..5`) from Rain's own stream. Two
-  documented gaps: the `case 43` re-roll-on-playing loop has no port model (no per-slot
-  instance bookkeeping), and the pitch jitter is consumed but not applied (the rodio
-  sources have no pitch control — the same gap as the BG-20 liquid loops).
-* **Critter sounds** (`NPC.cs:92244-92340`) and **liquid-change sounds**
-  (`WorldGen.cs:4632-4650`) land as pure, tested tables. Their call sites need the critter
-  NPC kinds (M4-NPC — the roster has none today) and the liquid merge pass
-  (`Liquid.CreateLiquidMergeTile`, `Liquid.cs:1324` — `tr-core/liquid.rs` ports the settle
-  but not the merge tiles), so they run constants-off with citations, the M6-MUSIC-1
-  pattern.
+  C# position math and the `case 43` family (`Thunder_0..5`) from Rain's own stream.
+  S1-E-25 closes both documented gaps: the `case 43` re-roll-on-playing loop is modelled —
+  the port tracks a live sink per `SoundInstanceThunder` slot (`LegacySoundPlayer.cs:113`,
+  `audio.rs::thunder_slots`), `Rain::thunder_step` reads it live through its
+  `is_playing` callback and re-rolls like `:456-464`, and the play replaces the picked
+  slot's instance (`:466-476`'s Stop + CreateInstance) — and the pitch jitter is applied:
+  `SoundEffectInstance.Pitch` is XNA octaves, so the engine resamples the PCM at a
+  `2^pitch` rate (`audio.rs::resample_i16`, frame-aligned, nearest frame — the legacy
+  engine skips/repeats frames).
+* **Liquid-change sounds** (`WorldGen.cs:4632-4650`, S1-E-25): the liquid merge pass is
+  ported (`tr-core/liquid.rs`'s `LiquidCheck`/`CreateLiquidMergeTile`), so the merge
+  queues its `PlayLiquidChangeSound` event (`LiquidSystem::drain_merge_events`,
+  `Liquid.cs:1345-1347`'s `!gameMenu && !isGeneratingOrLoadingWorld` gate = the engine's
+  `!generating`) and the liquid tick plays it: the `Liquids*` rows ride the trackable
+  style path — the `Style` getter picks the variation per play
+  (`LegacySoundStyle.cs:21-28`) — and the shimmer arm rides case 19
+  (`SoundSplash[4]`, the playing guard, the ×0.75 cut and the `Next(-20, 1)` pitch;
+  `WorldGen.cs:4644`'s trailing `4` is the Style argument, not a volume scale).
+* **Critter sounds** (`NPC.cs:92244-92340`, S1-E-25): the caller rides the NPC update
+  loop at the `NPC.cs:90323` position (after the AI's draws, the same per-NPC stream),
+  and the legacy zombie-family cases behind the table's ids are modelled per C#
+  (`LegacySoundPlayer.cs:1051-1076`/`:1099-1213`: the slot picks, the 110/111-style
+  playing guards, the ×0.2..×0.9 volume cuts and the pitch ranges, in the C#'s draw
+  order). The port's roster still has no critter NPC kinds (M4-NPC), so the emitter
+  stays silent until they land — the seam, the asset bank (`Sounds/Zombie_*`) and the
+  resolution are in place.
 
 Deviations (deliberate):
 
@@ -1896,8 +1947,16 @@ Deviations (deliberate):
   modelled; each emitter owns its sink or cue directly. The observable behaviour (start
   conditions, volume ramp, split, stop) matches; the C# GC of a dead slot has nothing to
   map to (a sink never dies in the port).
-* The thunder/pitch and critter rolls come from the owning system's stream (the
-  WEATHER-1/WEATHER-2 per-consumer convention), not the shared `Main.rand` the C# draws.
+* The pitch mechanism is a rate resample (`2^pitch`, nearest frame), not XNA's DSP —
+  the audible effect of the small jitter rolls (±0.07 octaves) is the intended one.
+* The liquid-change garnish rolls (the trackable variation pick and the splash pitch)
+  ride the engine's `LegacySoundStyle.Random` stand-in (`audio.rs::style_random`,
+  `UnifiedRandom` seeded 1): the C# draws them from a `Environment.TickCount`-seeded
+  static (`LegacySoundStyle.cs:9`) and — for the splash pitch — from `Main.rand` mid
+  liquid-pass; the port's liquid engine is pure, so no world stream is touched.
+* The thunder slot/pitch rolls and the critter rolls come from the owning system's
+  stream (the WEATHER-1/WEATHER-2 per-consumer convention), not the shared `Main.rand`
+  the C# draws.
 * `FocusHelper.UpdateBackgroundThunder`'s unfocused half and `StopAmbientSounds`
   (`Main.cs:11040-11045`) stay as BG-20 pinned them (the port always claims focus).
 * The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
