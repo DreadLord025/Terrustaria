@@ -448,11 +448,6 @@ impl App {
                     .player
                     .as_ref()
                     .is_some_and(|p| p.sleeping && p.sleep_time >= 120);
-                let hp = self.player.as_ref().map_or(0, |p| p.hp);
-                if hp < self.last_hp {
-                    self.audio.play("Player_Hit_0");
-                }
-                self.last_hp = hp;
                 // `Main.UpdateAudio_DecideOnNewMusic` reads the scene centre, not the
                 // player: underground once the view centre passes the world surface
                 // (`Main.cs:12815`).
