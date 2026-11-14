@@ -383,13 +383,25 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // `QuickGrapple` (`Player.cs:27480-27492` + `:6296-6478`) — one hook
         // out at a time (the vanilla `num7 = 1` recycle path for the
         // single-hook items), aimed at the mouse world position.
-        static HOOK_PREV: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        let hook_edge =
-            input.hook && !HOOK_PREV.swap(input.hook, std::sync::atomic::Ordering::Relaxed);
+        // The edge is the C#'s per-player `releaseHook` latch
+        // (`Player.cs:27481-27489`) — the port used a process-global
+        // stand-in, which made the edge fire for the wrong player.
+        let hook_edge = if input.hook {
+            let edge = p.release_hook;
+            p.release_hook = false;
+            edge
+        } else {
+            p.release_hook = true;
+            false
+        };
         // `Player.QuickGrapple` (`Player.cs:6334-6337`): a mount not in the
-        // CanUseHooks set dismounts before the hook fires — every row in this
-        // table (the set is {54, 57-60}).
-        if hook_edge && !p.dead && p.mount.is_active() {
+        // CanUseHooks set dismounts before the hook fires — the set is
+        // {54, 57-60} (`mount::can_use_hooks`).
+        if hook_edge
+            && !p.dead
+            && p.mount.is_active()
+            && !crate::mount::can_use_hooks(p.mount.kind())
+        {
             p.try_dismount(&app.world);
         }
         if hook_edge && !p.dead {
@@ -1176,6 +1188,40 @@ mod tests {
             .map(|p| p.kind)
             .collect();
         assert_eq!(kinds, vec![32], "the item's `shoot` picks the hook kind");
+    }
+
+    /// S1-L-10c — `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount
+    /// dismounts before the hook fires only when it is outside
+    /// `MountID.Sets.CanUseHooks` ({54, 57-60}) — the port dismounted every
+    /// mount.
+    #[test]
+    fn the_quick_grapple_keeps_a_mount_inside_can_use_hooks() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        // The row 54 is in the set.
+        app.player.as_mut().unwrap().set_mount(54, false);
+        app.keys.insert(KeyCode::KeyG);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(
+            app.player.as_ref().unwrap().mount.is_active(),
+            "the set's mount stays mounted"
+        );
+    }
+
+    /// S1-L-10c — the other side of the same gate: a mount outside the set
+    /// dismounts when the hook fires.
+    #[test]
+    fn the_quick_grapple_dismounts_a_mount_outside_can_use_hooks() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        // The Unicorn (10) is not in the set.
+        app.player.as_mut().unwrap().set_mount(10, false);
+        app.keys.insert(KeyCode::KeyG);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.player.as_ref().unwrap().mount.is_active(),
+            "the mount dismounted"
+        );
     }
 
     /// Review probe (Phase 2 gate fix 2) — the `update_player` wiring
