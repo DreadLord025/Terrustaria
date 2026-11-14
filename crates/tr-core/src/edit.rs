@@ -193,6 +193,22 @@ pub(crate) fn square_tile_frame_gen(world: &mut World, x: i32, y: i32) {
     square_tile_frame(world, x, y, true, &mut destroy_object, &mut kill);
 }
 
+/// `WorldGen.SquareTileFrame(i, j)` with the default `resetFrame: true`
+/// (`WorldGen.cs:80185-80196`) — the wiring devices' post-toggle wake
+/// (`Wiring.cs:1009`, `:1045`, `:1641`-area, `:2385`-area): the 3×3
+/// `TileFrame` walk whose `Check*` chain may pop the tile's object, the
+/// produced drops handed to the app layer.
+pub fn square_tile_frame_default(world: &mut World, x: i32, y: i32) -> Vec<ObjectDrop> {
+    let mut destroy_object = false;
+    let mut kill = TileKill {
+        kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
+        ..Default::default()
+    };
+    square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill);
+    after_edit(world, x, y);
+    kill.object_drops
+}
+
 /// The body of `KillTile` plus the shared `WorldGen.destroyObject` flag
 /// (:4236). The guarded checks re-entered through the cascade's own `KillTile`
 /// calls early-return while the flag is set; the unguarded `CheckAlch`,

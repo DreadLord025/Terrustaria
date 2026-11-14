@@ -2095,11 +2095,44 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     {
         let world = &app.world;
         let npcs = &mut app.npcs;
+        let audio = &mut app.audio;
         app.npc_step.tick(dt.min(0.25), |step| {
             if let Some(player) = player {
                 for n in npcs.iter_mut() {
                     n.update_rng(world, player, step, item_rng);
                     black_slime_darkness_touch(n, player, item_rng);
+                    // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
+                    // sounds ride the same per-NPC stream after the AI's
+                    // draws — the table's rolls, then the legacy family's
+                    // slot/pitch draws. The C#'s `Main.netMode == 2` gate
+                    // (`NPC.cs:92245`) is the dedicated server's; the port
+                    // has none. No ported kind matches the critter table
+                    // yet (M4-NPC's roster has no critter ids), so the
+                    // emitter stays silent until they land.
+                    let mut hi_roll =
+                        |hi: u32| crate::app::frame::rand_range(item_rng, hi);
+                    let cue = crate::ambient_sound::critter_sound_cue(
+                        n.kind.to_u16() as i32,
+                        world.day_time,
+                        world.time,
+                        (world.world_surface * 16.0) as f32,
+                        n.y,
+                        n.vx.abs(),
+                        &mut hi_roll,
+                    );
+                    if let Some((legacy_id, style)) = cue {
+                        let mut signed = |lo: i32, hi: i32| {
+                            crate::app::frame::rand_range_signed(item_rng, lo, hi)
+                        };
+                        if let Some(voice) = crate::ambient_sound::critter_legacy_voice(
+                            legacy_id,
+                            style as u32,
+                            &mut signed,
+                            &|slot| audio.zombie_playing(slot),
+                        ) {
+                            audio.play_critter(voice, n.x, n.y);
+                        }
+                    }
                 }
             }
         });
@@ -3472,6 +3505,31 @@ mod tests {
 
     /// `AI_000_TransformBoundNPC`'s 589 → 588 arm (`NPC.cs:19833-19836`): the
     /// talk frees the sleeping Golfer and raises `savedGolfer` (`:52938`).
+
+    /// S1-E-25's emitter contract (`NPC.UpdateNPC_CritterSounds`,
+    /// `NPC.cs:92244-92340`): an NPC the critter table does not name consumes
+    /// no `Main.rand` draws — the port's roster has no critter kinds yet
+    /// (M4-NPC), so the zombie's id 3 must leave the per-NPC stream
+    /// untouched through the `NPC.cs:90323` seam.
+    #[test]
+    fn the_critter_seam_consumes_no_rolls_outside_the_table() {
+        let mut rng = 0u64;
+        let mut hi_roll = |hi: u32| crate::app::frame::rand_range(&mut rng, hi);
+        assert_eq!(
+            crate::ambient_sound::critter_sound_cue(
+                NpcKind::Zombie.to_u16() as i32,
+                true,
+                1000.0,
+                3000.0,
+                3000.0,
+                1.0,
+                &mut hi_roll
+            ),
+            None,
+            "the zombie is outside the critter table"
+        );
+        assert_eq!(rng, 0, "out-of-table types consume no draws");
+    }
 
     /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
     /// a dye-material row (the dye materials / the Strange Plants) — the

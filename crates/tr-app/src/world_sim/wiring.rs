@@ -143,6 +143,30 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         trap_requests.extend(app.wiring.take_trap_requests());
         // The device shots (cannons, fireworks, explosives/mine/geyser/toilet).
         device_shots.extend(app.wiring.take_device_shots());
+        // The announcement box's texts (`HitWireSingle`'s case 425 →
+        // `Main.NewTextMultiline`, `Wiring.cs:1202-1233`): the C# `Color.Pink`
+        // chat line. `AnnouncementBoxRange == -1` announces unconditionally;
+        // otherwise only a player within the range of the box's first cell
+        // centre (`num7 * 16 + 16, num8 * 16 + 16`) hears it.
+        for (bx, by, text) in app.wiring.take_announcement_events() {
+            let in_range = app.world.announcement_box_range == -1
+                || app.player.as_ref().is_some_and(|p| {
+                    let (cx, cy) = p.center();
+                    let dx = cx - (bx as f32 * 16.0 + 16.0);
+                    let dy = cy - (by as f32 * 16.0 + 16.0);
+                    (dx * dx + dy * dy).sqrt() <= app.world.announcement_box_range as f32
+                });
+            if in_range {
+                crate::chat::broadcast_death_text(&mut app.chat, &text, [255, 192, 203]);
+            }
+        }
+        // The party centre's toggles (`HitWireSingle`'s case 455 →
+        // `BirthdayParty.ToggleManualParty`, `BirthdayParty.cs:202-217`):
+        // `ManualParty = !ManualParty` per request; the up-state change's
+        // `CheckForAchievement` (progression event 25) is E-18's follow-up.
+        for _ in 0..app.wiring.take_party_toggles() {
+            app.world_events.manual_party = !app.world_events.manual_party;
+        }
         for (from, to) in app.wiring.take_teleport_events() {
             let ax = (from.0 * 16.0) as i32;
             let ay = (from.1 * 16.0) as i32 - 48;
