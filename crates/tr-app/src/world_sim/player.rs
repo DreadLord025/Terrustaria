@@ -676,6 +676,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // stage swap `Main.cs:17755-17757`): the tick's hurt rolls (the
             // dodge block, the lava `Hurt`) draw from it (S1-A-10).
             let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            // `PressurePlateHelper.PlayerLastPosition` (`PressurePlateHelper.
+            // cs:16`): the player's position at the end of the last tick —
+            // the port's `prev_x`/`prev_y` hold it until this tick's update
+            // overwrites them.
+            let plate_last = (p.prev_x, p.prev_y);
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -712,6 +717,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     y,
                 );
             }
+            // `PressurePlateHelper.UpdatePlayerPosition(this)`
+            // (`Player.cs:28276`): the weighted pressure plates (428) the
+            // player stands on.
+            crate::world_sim::wiring::update_pressure_plates(
+                &mut app.wiring,
+                &mut app.world,
+                p.x,
+                p.y,
+                plate_last.0,
+                plate_last.1,
+                crate::player::WIDTH as f32,
+                crate::player::HEIGHT as f32,
+            );
             if run_eligible && p.vy == 0.0 {
                 run_pixels += (p.x - run_x0).abs();
             }

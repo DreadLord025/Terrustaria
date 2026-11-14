@@ -275,6 +275,12 @@ pub struct Wiring {
     /// `TripWire` walks its four colour passes; `SwitchMB`/`SwitchFountain`
     /// gate their `SkipWire` calls on it (`WorldGen.cs:50983`/`:51177`).
     running: bool,
+    /// `PressurePlateHelper.PressurePlatesPressed`
+    /// (`PressurePlateHelper.cs:14`): the weighted pressure plates (428) the
+    /// player holds down. The C#'s map holds a 255-slot bool array per
+    /// plate (the players standing on it); the port has one player, so the
+    /// set of the held plates is the same state.
+    pressure_plates_pressed: HashSet<(i32, i32)>,
     /// The announcement-box hits (`HitWireSingle`'s case 425,
     /// `Wiring.cs:1177-1236`): the `(num7, num8)` 2×2 anchor and the sign
     /// text for `Main.NewTextMultiline`. The app layer drains, applies the
@@ -503,6 +509,58 @@ impl Wiring {
 
     fn set_mech_time(&mut self, num: usize, time: i32) {
         self.mechs[num].time = time;
+    }
+
+    /// `Wiring.Actuate` (`Wiring.cs:390-405`): the Actuation Rod flips the
+    /// tile's actuator state — the tile must carry the actuator bit, and the
+    /// flip runs the de-activate/re-activate cascade. Returns whether the
+    /// tile was an actuator at all.
+    pub fn actuate(&mut self, world: &mut World, i: i32, j: i32) -> bool {
+        let Some(t) = world.tile(i, j) else {
+            return false;
+        };
+        if t.flags & crate::tile::FLAG_ACTUATOR == 0 {
+            return false;
+        }
+        if t.inactive() {
+            self.re_active(world, i, j);
+        } else {
+            self.de_active(world, i, j);
+        }
+        true
+    }
+
+    /// `PressurePlateHelper.MoveInto` (`PressurePlateHelper.cs:118-133`):
+    /// the player takes the weighted plate down — the switch fires once
+    /// (`PokeLocation`, `:157-165`).
+    pub fn press_plate(&mut self, world: &mut World, i: i32, j: i32) {
+        if !self.pressure_plates_pressed.insert((i, j)) {
+            return;
+        }
+        self.poke_location(world, i, j);
+    }
+
+    /// `PressurePlateHelper.MoveAwayFrom` (`PressurePlateHelper.cs:135-155`):
+    /// the player leaves the plate — the switch fires again, so the device
+    /// releases.
+    pub fn release_plate(&mut self, world: &mut World, i: i32, j: i32) {
+        if !self.pressure_plates_pressed.remove(&(i, j)) {
+            return;
+        }
+        self.poke_location(world, i, j);
+    }
+
+    /// Whether the player holds the weighted pressure plate down
+    /// (`PressurePlateHelper.PressurePlatesPressed`, `PressurePlateHelper.cs:14`).
+    pub fn plate_is_pressed(&self, x: i32, y: i32) -> bool {
+        self.pressure_plates_pressed.contains(&(x, y))
+    }
+
+    /// `PressurePlateHelper.PokeLocation` (`PressurePlateHelper.cs:157-165`):
+    /// the teleport block for one iteration, then the switch fires.
+    fn poke_location(&mut self, world: &mut World, i: i32, j: i32) {
+        self.set_block_player_teleportation(true);
+        self.hit_switch(world, i, j);
     }
 
     /// `Wiring.HitSwitch` (`Wiring.cs:259-525`): a player/device interaction

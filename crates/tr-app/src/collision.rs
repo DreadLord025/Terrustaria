@@ -1169,6 +1169,18 @@ mod tests {
         );
     }
 
+    /// The NPC's call site (`NPC.cs:90504`, the `objType` 2 call): the
+    /// row-0 plate answers every entity.
+    #[test]
+    fn the_npc_call_trips_the_row_zero_plate() {
+        let mut w = switch_world(135, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 2).hit,
+            "the NPC trips the plate"
+        );
+    }
+
     /// The land mine (210) answers every entity and explodes through the
     /// switch (`Collision.cs:3314-3319` → `Wiring.HitSwitch` → the mine's
     /// shot).

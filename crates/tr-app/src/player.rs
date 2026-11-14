@@ -597,6 +597,12 @@ pub struct Player {
     /// between simulation ticks on high-refresh displays.
     pub prev_x: f32,
     pub prev_y: f32,
+    /// `Player.ActuationRodLock` / `ActuationRodLockSetting`
+    /// (`Player.cs:2616-2618`): the Actuation Rod acts once per tick — the
+    /// lock and the tile state it saw (`ResetEffects` clears the lock,
+    /// `:18804`).
+    pub actuation_rod_lock: bool,
+    pub actuation_rod_lock_setting: bool,
     /// `Entity.oldPosition` (`Player.cs:28071`): the position before this
     /// tick's movement. The switch-tile bridge (`Collision.SwitchTiles`,
     /// `Player.cs:28274-28275`) reads it to tell "the entity moved onto the
@@ -1573,6 +1579,8 @@ impl Player {
             prev_y: sy,
             old_x: sx,
             old_y: sy,
+            actuation_rod_lock: false,
+            actuation_rod_lock_setting: false,
             vx: 0.0,
             vy: 0.0,
             on_ground: false,
@@ -3238,6 +3246,9 @@ impl Player {
         // flag re-derives per tick from the mount head-set (`Mount.cs:4797`).
         self.just_jumped = false;
         self.auto_jump = false;
+        // `Player.cs:18804`: the Actuation Rod's per-tick lock clears with
+        // the rest of `ResetEffects`.
+        self.actuation_rod_lock = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()
