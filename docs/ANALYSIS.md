@@ -13033,6 +13033,51 @@ carry no condition text and the chained rows always print; the town-NPC and
 critter providers, the search filters, the sorting, the flavour and the MP
 kill-sync ride the town/MP subsystems.
 
+## The hurting-tile family (S1-E-13a, 2026-11-14)
+
+`crates/tr-app/src/touch_damage.rs` now carries the vanilla's tile-contact
+hazards in full. `Collision.CanTileHurt` (`Collision.cs:3206-3225`) reads the
+four `TileID.Sets` tables (`TileID.cs:605-609` — `TouchDamageDestroyTile`,
+`Suffocate`, `TouchDamageHot`, `TouchDamageBleeding` and the
+`TouchDamageImmediate` value table), all of which the S1-F-8 generator already
+emits into `tr-core/src/tiledata/sets.rs`: the hand-written nine-row
+immediate table is gone, and the generated bitsets replace the "no ported
+members yet" note the module used to carry. `Collision.HurtTiles`
+(`Collision.cs:3115-3204`) adds the suffocate shrink (`num6 = 2`,
+`:3155-3163`) — the sands pull the box in by two pixels on every side, and a
+sloped suffocating tile is skipped outright (`:3164-3169`).
+
+`Player.ApplyTouchDamage` (`Player.cs:28977-29019`) is ported arm by arm:
+the rolled immediate damage (`Main.DamageVar(num, -luck)`), the burning
+(buff 67 for 20 ticks) and bleeding (buff 30 for 600-1200 ticks) buffs that
+fire only when the hit was *not* swallowed — the C#'s `flag` is set when
+`Hurt` returns 0, so an immune player does not burn or bleed — the
+`suffocateDelay` counter (five ticks in the sand, the sixth suffocates with
+buff 68) and the destroy-on-touch `WorldGen.KillTile` for the four thorn
+tiles. The counter is the C#'s `byte` field (`Player.cs:2318`) and keeps the
+source's quirk: it only resets when another hurt tile is touched, not when
+the player walks out of the sand.
+
+Deliberate deviations:
+
+1. `Player.fireWalk` (the Obsidian Skull) has no ported accessor, so the hot
+   arm always fires — the C#'s `player == null || !player.fireWalk`
+   (`:3220`) with a player that cannot walk on fire.
+2. `Player.shimmering` (the C#'s gate around the whole pass,
+   `Player.cs:27608`) has no ported player state, so the pass always runs.
+3. `Player.TouchedTiles` (the movement-traced fallback in `GetHurtTile`)
+   is still not modelled — the port's box scan covers the same area with the
+   source's own ±1 margin.
+4. `ImmunityCooldownID.TileContactDamage` collapses into the port's single
+   `hurt_cd` (the port carries one immunity window, not the C#'s per-source
+   array).
+5. The bleeding duration's roll rides the port's `item_rng` stream (the C#'s
+   `Main.rand`), the same stream the damage roll already used.
+
+Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `StickyTiles` +
+`Player.StickyMovement`, `SwitchTiles`, `BuildTileContacts`,
+`noSlopeCollision`, `AdvancedTileCollision` and `DrownCollision`/
+`GetWaterLine`.
 ## The goblin family's ids (S1-D-3d, 2026-11-14)
 
 The port's four goblin kinds carried **each other's** vanilla `NPCID`: the
