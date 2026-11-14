@@ -189,3 +189,5 @@ crates/tr-app/src/spawner.rs|fn invasion_spawn_pick|S1-F-12 - the invasion spawn
 tools/gen_recipes.py|cs_tiles|S1-L-11 - the reverse recipes derive from the C# item data (Item.SetDefaults createTile/createWall parse: SetDefaults1..5, if-range blocks, DefaultTo* delegation); 2791 rows = 2480 authored + 311 reverse, gated by gen_recipes.py --check + tools/test_gen_recipes.py + craft.rs the_reverse_rows_match_the_csharp_derivation
 
 
+crates/tr-core/src/wld/sections/tiles.rs|fn write_tile_record|S1-J-1 - the .wld tile section writes the four wire colours into the chained header bytes exactly as the C# (b2 0x02/0x04/0x08 for wire()/wire2()/wire3(), b3 0x20 for wire4() - WorldFile.cs:1508-1532)
+crates/tr-core/src/wld/mod.rs|fn load_tiles|S1-J-1 - the .wld reader restores the four wire colours (LoadWorldTiles:2614-2632/2651-2654) into every row of the RLE run (CopyFrom :2711)

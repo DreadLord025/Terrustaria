@@ -114,6 +114,30 @@ Tile flags we map 1:1 into a packed 16-byte struct (`tr-core/src/tile.rs`): acti
 half-brick, actuator, inactive, fullbright, liquid kind, liquid amount, slope, paint, wall,
 plus the computed wall autotile cell (`wall_col`, `wall_row`).
 
+### The tile section's four wire bits (S1-J-1, 2026-11-14)
+
+The C# keeps the four wire colours inside the tile's own headers: `wire()`,
+`wire2()` and `wire3()` are `sTileHeader` bits 0x80/0x100/0x200
+(`Tile.cs:623-672`) and `wire4()` is a `bTileHeader` bit 0x80
+(`Tile.cs:437-452`). `SaveWorldTiles` writes them into the chained header
+bytes — `b2` 0x02/0x04/0x08 for the three `sTileHeader` wires and `b3` 0x20 for
+`wire4()` (`WorldFile.cs:1508-1532`) — and `LoadWorldTiles` restores them
+(`:2614-2632`, `:2651-2654`), with `CopyFrom` (`:2711`) copying them into every
+row of an RLE run.
+
+The port stores the colours in the sparse `World.wires` table (the packed
+12-byte `Tile` has no header space — see the wiring deviation below), so the
+writer reads them from there and the reader writes them back. The bytes are
+the C#'s: the tile section of a fixture world is byte-identical to the output
+of a `dotnet` run of the decompiled `SaveWorldTiles` (the golden fixture in
+`wld/mod.rs::s1_j_1_the_tile_section_matches_the_csharp_bytes`).
+
+The second half of the fix is the **batching equality**: `Tile.isTheSameAs`
+compares the packed `sTileHeader` (`Tile.cs:161`), and the wire bits live in
+it — so two tiles that differ only by a wire are **not** batched
+(`WorldFile.cs:1577`). The port's `encoded_same` now compares the four colours
+too, which makes the RLE run boundaries match the C#'s.
+
 ### The eleven sections (all eleven ported, both directions — M6-SAVE-1, 2026-11-09)
 
 `SaveWorld_Version2:1150-1165` / `LoadWorld_Version2:1760-1851`: a 70-byte prologue
@@ -4804,10 +4828,15 @@ lamp-pair frame flip.
 Deviations:
 
 - **Wire colours live in a sparse side table** (`World.wires: WireState`) —
-  the C# packs them as `sTileHeader` bits (`Tile.cs:623-657`) and the port's
-  12-byte `Tile` has no header space (E1). Persistence in `.trwld`/`.map` is
-  pending (M6-SAVE-1); synthetic test worlds set wires through
-  `World.wires.set`.
+  the C# packs them as `sTileHeader` bits (`Tile.cs:623-672`) and the port's
+  12-byte `Tile` has no header space (E1). The **persistence is 1:1**: the
+  `.wld` tile section writes them exactly where the C# does — `b2` 0x02/0x04/
+  0x08 for `wire()`/`wire2()`/`wire3()` and `b3` 0x20 for `wire4()`
+  (`WorldFile.cs:1508-1532`) — and the reader restores them
+  (`LoadWorldTiles:2614-2632`/`:2651-2654`, copied into every row of an RLE
+  run by `CopyFrom`), so the `.wld` tile section is byte-identical to the
+  C#'s (S1-J-1); the `.trwld` keeps its own v7 wire section. Only the
+  in-memory layout differs.
 - **Device entity effects are passthroughs** — the mine (210), geyser (443),
   statue spawns, pumps (`XferWater`), teleporters and the cannons' projectiles
   belong to M7-WIRE-2/5; their `HitSwitch`/`HitWireSingle` cases currently do
