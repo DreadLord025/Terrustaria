@@ -3623,6 +3623,14 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         return true;
     }
     match &result {
+        edit::TileInteraction::HitSwitch { x, y } => {
+            // `Player.cs:32174-32178`: the used tile is a lever (132), a
+            // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
+            // the click is consumed.
+            app.wiring.hit_switch(&mut app.world, *x, *y);
+            app.world_key = None;
+            return true;
+        }
         edit::TileInteraction::ChairSit {
             seat_x,
             seat_y,
@@ -3768,6 +3776,9 @@ fn interaction_events(
         // The furniture interactions are consumed in `interact_tile` ahead of
         // this mapping; the arms only keep the match exhaustive.
         edit::TileInteraction::CandleToggled => (None, Vec::new()),
+        // The switch trip is consumed in `interact_tile` ahead of this
+        // mapping — no cue, no drops.
+        edit::TileInteraction::HitSwitch { .. } => (None, Vec::new()),
         edit::TileInteraction::ChairSit { .. } => (None, Vec::new()),
         edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
         edit::TileInteraction::BedSleep { .. } => (None, Vec::new()),
@@ -5924,6 +5935,34 @@ mod tests {
             !app2.world.tile(10, 19).unwrap().active(),
             "nothing written"
         );
+    }
+
+    /// The switch family (`Player.cs:32171-32179`): using a lever (132), a
+    /// switch (136) or a timer (144) trips the wiring.
+    #[test]
+    fn using_a_switch_trips_the_wiring() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        let i = app.world.index(10, 19);
+        app.world.tiles[i].kind = 136; // the switch tile
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
+        // `Wiring.HitSwitch`'s switch arm (`:279-288`) flips the tile's
+        // frame between 0 and 18.
+        assert_eq!(app.world.tile_frame_y(10, 19), 18, "the switch flipped");
+    }
+
+    /// The lever (132) and the timer (144) take the same arm.
+    #[test]
+    fn the_lever_and_the_timer_take_the_same_arm() {
+        for kind in [132u16, 144] {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = object_world();
+            let i = app.world.index(10, 19);
+            app.world.tiles[i].kind = kind;
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+            assert!(interact_tile(&mut app, 10, 19), "kind {kind}");
+        }
     }
 
     // --- the wiring tools (`ItemCheck_UseWiringTools`) -------------------

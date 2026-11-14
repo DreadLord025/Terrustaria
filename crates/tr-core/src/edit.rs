@@ -2865,6 +2865,11 @@ pub enum TileInteraction {
     /// (frameX > 0) ? -18 : 18`. No sound; the flame overlay and the light
     /// emission follow the frame.
     CandleToggled,
+    /// `Player.cs:32174-32178`: the used tile is a lever (132), a switch
+    /// (136) or a timer (144) — `Wiring.HitSwitch` fires and the click is
+    /// consumed. The wiring itself is app-side (the core has no wiring
+    /// state), so the interaction carries the cell.
+    HitSwitch { x: i32, y: i32 },
     /// The chair sit decoded (`PlayerSittingHelper.GetSittingTargetInfo`'s
     /// case 15, `PlayerSittingHelper.cs:163-182`): the seat world position is
     /// the chair's bottom-centre shifted `targetDirection * 6` px, the
@@ -2944,6 +2949,12 @@ pub fn interact_at(
     };
     if !t.active() {
         return TileInteraction::None;
+    }
+    // The switch family (`Player.cs:32171-32179`): using a lever (132), a
+    // switch (136) or a timer (144) trips the wiring. The C#'s chain tests
+    // the kind literal before the dials and the furniture.
+    if matches!(t.kind, 132 | 136 | 144) {
+        return TileInteraction::HitSwitch { x: i, y: j };
     }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no

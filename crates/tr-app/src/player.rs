@@ -597,6 +597,12 @@ pub struct Player {
     /// between simulation ticks on high-refresh displays.
     pub prev_x: f32,
     pub prev_y: f32,
+    /// `Entity.oldPosition` (`Player.cs:28071`): the position before this
+    /// tick's movement. The switch-tile bridge (`Collision.SwitchTiles`,
+    /// `Player.cs:28274-28275`) reads it to tell "the entity moved onto the
+    /// plate" from "the entity stands on it".
+    pub old_x: f32,
+    pub old_y: f32,
     pub vx: f32,
     pub vy: f32,
     pub on_ground: bool,
@@ -1561,6 +1567,8 @@ impl Player {
             y: sy,
             prev_x: sx,
             prev_y: sy,
+            old_x: sx,
+            old_y: sy,
             vx: 0.0,
             vy: 0.0,
             on_ground: false,
@@ -4294,6 +4302,11 @@ impl Player {
         }
         // The AABB resolve (`TileCollision` + the step/slope helpers): the
         // velocity phase above only shaped `velocity`; this integrates it.
+        // `base.oldPosition = base.position` (`Player.cs:28071`): the position
+        // before this tick's movement — the switch-tile bridge reads it to
+        // tell "moved onto the plate" from "stands on it".
+        self.old_x = self.x;
+        self.old_y = self.y;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
