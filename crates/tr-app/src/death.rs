@@ -10,7 +10,7 @@ use glam::Vec2;
 
 use crate::app::{App, RngKey};
 use crate::regen::DotDeath;
-use tr_core::{TILE_PX, UnifiedRandom};
+use tr_core::TILE_PX;
 
 /// `Player.DropItems(gemsOnly: true)` (`Player.cs:54302-54315`): softcore
 /// death drops only the large gems from the inventory
@@ -306,6 +306,7 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tr_core::UnifiedRandom;
 
     #[test]
     fn death_text_key_matches_the_by_other_table() {

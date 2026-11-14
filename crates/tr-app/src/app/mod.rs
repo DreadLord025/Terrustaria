@@ -34,7 +34,7 @@ use tr_core::framing;
 use tr_core::lighting::{LightMap, LightMode};
 use tr_core::liquid::LiquidSystem;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, UnifiedRandom, World, edit, save, wld, worldgen};
+use tr_core::{TILE_PX, World, edit, save, wld, worldgen};
 use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::keyboard::KeyCode;
 use winit::window::Window;
@@ -601,11 +601,10 @@ pub(crate) struct App {
     /// (`AmbienceServer.cs:77-84`).
     pub(crate) scene_metrics: tr_core::scene::SceneMetrics,
     /// The `AmbientSky` manager + `AmbienceServer` scheduler
-    /// (`crates/tr-app/src/ambience.rs`).
+    /// (`crates/tr-app/src/ambience.rs`). Its scheduler draws ride
+    /// [`Self::rngs`]`::global()` — the bare-`Main.rand` stand-in
+    /// (`Main.cs:17214-17216`), shared with chat commands and menu rolls.
     pub(crate) ambience: crate::ambience::Ambience,
-    /// The scheduler's `Main.rand` stand-in stream (the seed the inlined
-    /// `NetAmbienceModule` loopback hands to `FastRandom`).
-    pub(crate) ambience_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -2933,7 +2932,6 @@ impl App {
                 }
                 ambience
             },
-            ambience_rng: world_seed,
 
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,

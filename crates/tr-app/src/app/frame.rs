@@ -568,7 +568,11 @@ impl App {
             self.phase("ambience");
             {
                 let ambience = &mut self.ambience;
-                let ambience_rng = &mut self.ambience_rng;
+                // The scheduler's draws ride the bare-`Main.rand` stand-in
+                // (`Main.cs:17214-17216` runs `AmbienceServer.Update` outside
+                // every swap) — the shared `NamedRngs::global()` stream, which
+                // chat commands and menu rolls also draw between frames.
+                let ambience_rng = self.rngs.global();
                 let ctx = crate::ambience::AmbienceCtx {
                     world: &self.world,
                     day_time: self.world.day_time,

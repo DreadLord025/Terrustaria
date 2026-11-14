@@ -3,16 +3,16 @@
 //! `Spawner.SpawnNPC` ambient spawn attempt.
 
 use glam::Vec2;
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 
 use crate::achievements;
 use crate::app::{App, RngKey};
-use tr_core::UnifiedRandom;
 use crate::item::ItemDrop;
 use crate::npc::{Npc, NpcKind, SlimeVariant};
 use crate::regen::DotDeath;
 use crate::registry;
 use crate::spawner;
+use tr_core::UnifiedRandom;
 
 /// The player's death message: a DoT drain death resolves its attribution's
 /// `DeathText.*` row family (`KillMe(PlayerDeathReason.ByOther(N))` with the
@@ -20,11 +20,7 @@ use crate::spawner;
 /// draws it from the `UpdatePlayers` stream (the death runs in
 /// `Player.KillMe` under the `UpdatePlayers` swap)); every other death is
 /// the `DeathText.Slain` row.
-fn dot_death_text(
-    pending: Option<DotDeath>,
-    player_name: &str,
-    rng: &mut UnifiedRandom,
-) -> String {
+fn dot_death_text(pending: Option<DotDeath>, player_name: &str, rng: &mut UnifiedRandom) -> String {
     match pending {
         Some(death) => {
             // `Main.rand.Next(variants) + 1` (`Lang.cs:1057-1127`).
@@ -110,7 +106,13 @@ pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
         // the `UpdatePlayers` swap; the coin spawn draws ride the same
         // stream as the turn-in's (`Item.NewItem`'s `Main.rand`).
         let rng = app.rngs.stream(RngKey::UpdatePlayers);
-        crate::world_sim::items::spawn_item_drop_px(&mut app.items, rng, kind, stack, Vec2::new(px, py));
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            rng,
+            kind,
+            stack,
+            Vec2::new(px, py),
+        );
     }
     app.world.tax_money = 0;
     true
@@ -435,10 +437,7 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
 /// four sub-rolls on `Main.rand`'s stream, each spawning at the Angler's
 /// centre (`QuickSpawnItem`'s drops).
 fn give_angler_reward(app: &mut App, angler_idx: usize) {
-    let quests_done = app
-        .player
-        .as_ref()
-        .map_or(0, |p| p.angler_quests_finished);
+    let quests_done = app.player.as_ref().map_or(0, |p| p.angler_quests_finished);
     let hard_mode = app.world.hard_mode;
     // `GetAnglerReward`'s `questItemType` — the 5303/5302 Jellyfish arm
     // gates on the current quest fish (`Player.cs:56345-56354`).
@@ -533,12 +532,7 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
 /// port has no table for; the depth band (`rockLayer * 2 + maxTilesY) / 3`
 /// and the rate ride the same cadence.
 pub(crate) fn try_spawn_sleeping_golfer(app: &mut App) -> bool {
-    if app.world.saved_golfer
-        || app
-            .npcs
-            .iter()
-            .any(|n| n.kind == NpcKind::SleepingGolfer)
-    {
+    if app.world.saved_golfer || app.npcs.iter().any(|n| n.kind == NpcKind::SleepingGolfer) {
         return false;
     }
     let Some(p) = app.player.as_ref() else {
@@ -547,8 +541,7 @@ pub(crate) fn try_spawn_sleeping_golfer(app: &mut App) -> bool {
     let ty = (p.y / TILE_PX) as i32;
     // `(rockLayer * 2 + maxTilesY) / 3` — the deep band the C# checks
     // (`:1683`'s `num10 *= 0.5` branch).
-    let deep_band =
-        (app.world.rock_layer * 2.0 + app.world.height as f64) / 3.0;
+    let deep_band = (app.world.rock_layer * 2.0 + app.world.height as f64) / 3.0;
     if (ty as f64) <= app.world.rock_layer || (ty as f64) <= deep_band {
         return false;
     }
@@ -568,19 +561,14 @@ pub(crate) fn try_spawn_sleeping_golfer(app: &mut App) -> bool {
         ty as f32 * TILE_PX - 34.0,
         1,
         0.0,
-        );
+    );
     m.hp = m.max_hp;
     app.npcs.push(m);
     true
 }
 
 pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
-    if app.world.saved_stylist
-        || app
-            .npcs
-            .iter()
-            .any(|n| n.kind == NpcKind::WebbedStylist)
-    {
+    if app.world.saved_stylist || app.npcs.iter().any(|n| n.kind == NpcKind::WebbedStylist) {
         return false;
     }
     let Some(p) = app.player.as_ref() else {
@@ -591,10 +579,7 @@ pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
     if (ty as f64) <= app.world.rock_layer {
         return false;
     }
-    let water = app
-        .world
-        .tile(tx, ty)
-        .is_some_and(|t| t.has_any_liquid());
+    let water = app.world.tile(tx, ty).is_some_and(|t| t.has_any_liquid());
     // `Next(8) == 0` (`NPC.cs:1670`'s spider-wall arm).
     if water || app.rngs.stream(RngKey::UpdateTime).next_max(8) != 0 {
         return false;
@@ -631,10 +616,7 @@ pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
         .world
         .tile(tx, ty + 1)
         .is_some_and(|t| t.active() && SAND.contains(&t.kind));
-    let water = app
-        .world
-        .tile(tx, ty)
-        .is_some_and(|t| t.has_any_liquid());
+    let water = app.world.tile(tx, ty).is_some_and(|t| t.has_any_liquid());
     let near_edge = tx < BEACH || tx > app.world.width as i32 - BEACH;
     let above_surface = (ty as f64) < app.world.world_surface;
     // `:1775`'s ocean-water arm vs `:1925`'s beach-sand arm — the water arm
@@ -837,13 +819,7 @@ pub(crate) fn update_worms(app: &mut App) {
     let rng = app.rngs.stream(RngKey::UpdateNpcs);
     let world = &app.world;
     let player = app.player.as_ref().map(|p| (p.center().0, p.center().1));
-    update_worms_in(
-        world,
-        player,
-        &mut app.npcs,
-        rng,
-        &mut app.next_worm_id,
-    );
+    update_worms_in(world, player, &mut app.npcs, rng, &mut app.next_worm_id);
 }
 
 /// The worm pass's core — the pieces the tests drive directly (the world,
@@ -975,7 +951,9 @@ pub(crate) fn update_worms_in(
                     // base.height, player.position, player.width,
                     // player.height)` — the centres stand in for the
                     // boxes (the anchor math is `centre / 16`).
-                    if crate::projectile::can_hit(world, npcs[i].x, npcs[i].y, lw, lh, pcx, pcy, 0.0, 0.0) {
+                    if crate::projectile::can_hit(
+                        world, npcs[i].x, npcs[i].y, lw, lh, pcx, pcy, 0.0, 0.0,
+                    ) {
                         // The four `Next(-20, 21)` draws
                         // (`NPC.cs:49866-49871`).
                         let mut dx = pcx - cx + rng.next_range(-20, 21) as f32;
@@ -1066,7 +1044,13 @@ pub(crate) fn update_worms_in(
 /// `+0.11` (the cap `num45`), the horizontal steering (`:51940-51972`); in
 /// the ground it flies straight at the tile-snapped player (`:51997-52002`).
 /// `noTileCollide` is family-wide — no collision blocks the head.
-fn worm_head_step(npc: &mut Npc, world: &tr_core::World, pcx: f32, pcy: f32, _rng: &mut UnifiedRandom) {
+fn worm_head_step(
+    npc: &mut Npc,
+    world: &tr_core::World,
+    pcx: f32,
+    pcy: f32,
+    _rng: &mut UnifiedRandom,
+) {
     let (w, h) = npc.size();
     // `flag3`: the dig-mode scan (`:51575-51597`).
     let mut flag3 = false;
@@ -1171,7 +1155,7 @@ pub(crate) fn voodoo_doll_lava_death(app: &mut App, pos: Vec2, stack: u32) {
 pub(crate) fn spawn_wof_at(app: &mut App, pos: Vec2) -> bool {
     let world = &app.world;
     let underworld = world.height as i32 - 200; // `Main.UnderworldLayer`
-    // The gates: the depth (`pos.Y / 16 < maxTilesY - 205`) and the wall.
+                                                // The gates: the depth (`pos.Y / 16 < maxTilesY - 205`) and the wall.
     if (pos.y / TILE_PX) < (world.height as f32 - 205.0)
         || app
             .npcs
@@ -1359,7 +1343,11 @@ pub(crate) fn tower_shield_max(world: &tr_core::World) -> i32 {
 /// (`NPC.cs:79288-79324`). Returns the drained tower's kind index
 /// (0 solar / 1 vortex / 2 nebula / 3 stardust) when the shield absorbed
 /// the hit, or `None` when the tower fights bare.
-pub(crate) fn tower_shield_absorb(world: &mut tr_core::World, tower: usize, dmg: i32) -> Option<i32> {
+pub(crate) fn tower_shield_absorb(
+    world: &mut tr_core::World,
+    tower: usize,
+    dmg: i32,
+) -> Option<i32> {
     let strength = match tower {
         0 => &mut world.tower_shield_solar,
         1 => &mut world.tower_shield_vortex,
@@ -1560,10 +1548,8 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
     app.invasion_progress_icon = 3;
     app.invasion_progress_wave = wave;
     app.invasion_progress_display_left = 160;
-    let passed = tr_core::dd2::wave_budget_passed(
-        app.world.dd2_wave,
-        &mut app.world.dd2_wave_kills,
-    );
+    let passed =
+        tr_core::dd2::wave_budget_passed(app.world.dd2_wave, &mut app.world.dd2_wave_kills);
     if passed {
         app.world.dd2_wave_kills = 0.0;
         app.world.dd2_wave += 1;
@@ -1754,14 +1740,15 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
         .any(|n| n.kind == NpcKind::DD2EterniaCrystal && n.hp > 0);
     // The win-death resolve (`AI`'s aiStyle-105 arm's
     // `DD2Event.StopInvasion`): the event stops and the crystal goes.
-    if app.npcs.iter().any(|n| {
-        n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop
-    }) {
+    if app
+        .npcs
+        .iter()
+        .any(|n| n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop)
+    {
         app.world.dd2_event_ongoing = false;
         app.world.dd2_spawn_hold = 0;
-        app.npcs.retain(|n| {
-            !(n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop)
-        });
+        app.npcs
+            .retain(|n| !(n.kind == NpcKind::DD2EterniaCrystal && n.wants_event_stop));
     }
 }
 
@@ -2301,7 +2288,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // pre-pass write is the closest same-tick value (the post-pass write
     // below fed the parts a 1-tick stale ratio).
     {
-        let body = app.npcs.iter().find(|n| n.kind == NpcKind::Golem && n.hp > 0);
+        let body = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Golem && n.hp > 0);
         if let Some(body) = body {
             let (bw, bh) = body.size();
             app.world.golem_present = true;
@@ -2329,7 +2319,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .count() as f32;
         (pcx, pcy, nearby, p.x, p.y, p.max_hp)
     });
-    let (inv_pcx, inv_pcy, inv_nearby, inv_px, inv_py, inv_max_hp) = player_opt.unwrap_or((0.0, 0.0, 0.0, 0.0, 0.0, 100));
+    let (inv_pcx, inv_pcy, inv_nearby, inv_px, inv_py, inv_max_hp) =
+        player_opt.unwrap_or((0.0, 0.0, 0.0, 0.0, 0.0, 100));
     // Pre-extract scene_metrics and camera values needed for the invasion block
     // to avoid long-lived borrows that conflict with later mutable borrows of app.
     let water_candle_count = app.scene_metrics.water_candle_count;
@@ -2361,7 +2352,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // far enough off-screen; the port culls it above the player's view).
     let player_y = player.as_ref().map(|p| p.y).unwrap_or(0.0);
     if app.world.day_time {
-        app.npcs.retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
+        app.npcs
+            .retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
     }
     // The worm pass (`AI_006`): the chain movement after the per-NPC step
     // (the vanilla interleaves it in the slot order; the port's pass reads
@@ -3318,8 +3310,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // `UpdatePlayers` swap (`Main.cs:17754`). The C# variant roll is
             // `Main.rand.Next(n) + 1` (`Lang.cs:1057-1127`) — one integer
             // draw per death, before the player borrow is taken.
-            let death_text =
-                dot_death_text(player.dot_death, &app.player_name, app.rngs.stream(RngKey::UpdatePlayers));
+            let death_text = dot_death_text(
+                player.dot_death,
+                &app.player_name,
+                app.rngs.stream(RngKey::UpdatePlayers),
+            );
             player.dot_death = None;
             drop(player);
             // `Player.KillMe`'s chat broadcast: the resolved message in
@@ -3484,10 +3479,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // `(worldSurface * 4 + rockLayer) / 5` — the Mechanic's deep
                 // dungeon band, read against the player's spawn tile.
                 below_deep_dungeon: {
-                    let ty = app
-                        .player
-                        .as_ref()
-                        .map_or(0, |p| (p.y / TILE_PX) as i32);
+                    let ty = app.player.as_ref().map_or(0, |p| (p.y / TILE_PX) as i32);
                     (ty as f64) > (app.world.world_surface * 4.0 + app.world.rock_layer) / 5.0
                 },
                 // The skyMob/probe gates (`SetSpawnFlags`' `invaders`, the
@@ -3566,120 +3558,120 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let world = &app.world;
             let npcs = &app.npcs;
             if let Some((ix, iy, summoner_alive)) = inv_input {
-            let progress_frac = if world.invasion_size_start > 0 {
-                (world.invasion_size_start - world.invasion_size) as f32
-                    / world.invasion_size_start as f32
-            } else {
-                0.0
-            };
-            let walker_alive = npcs
-                .iter()
-                .any(|n| n.hp > 0 && n.kind == NpcKind::MartianWalker);
-            // `!NPC.AnyNPCs(395)`: the Saucer kind is unported (its AI
-            // family is the follow-up), so the gate reads false until it
-            // lands.
-            let saucer_alive = false;
-            // The 30% window: `(sizeStart - size) / sizeStart >= 0.3`.
-            let progress_30 = world.invasion_size_start > 0
-                && (world.invasion_size_start - world.invasion_size) as f32
-                    / world.invasion_size_start as f32
-                    >= 0.3;
-
-            // Build a spawn context with `invaders: true` so `get_spawn_rate`
-            // applies the invaders override (NPC.cs:781-785). Use pre-computed
-            // player center and nearby count to avoid borrow conflicts.
-            let inv_ctx = spawner::SpawnContext {
-                world,
-                player_center: (inv_pcx, inv_pcy),
-                player_pos: (inv_px, inv_py),
-                nearby_active_npcs: inv_nearby,
-                town_npcs: 0,
-                day_time: day_time,
-                player_life_max: inv_max_hp,
-                underworld_for_bats: (camera_y / 16.0) as i32 > height - 200,
-                flags: spawner::SpawnFlags {
-                    zone_water_candle: water_candle_count > 0,
-                    zone_peace_candle: peace_candle_count > 0,
-                    ..spawner::SpawnFlags::default()
-                },
-                bound_goblin_ok: downed_goblins
-                    && !saved_goblin
-                    && !npcs.iter().any(|n| {
-                        n.hp > 0 && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
-                    }),
-                bound_wizard_ok: hard_mode
-                    && !saved_wizard
-                    && !npcs.iter().any(|n| {
-                        n.hp > 0 && matches!(n.kind, NpcKind::BoundWizard | NpcKind::Wizard)
-                    }),
-                bound_mech_ok: downed_skeletron
-                    && !saved_mech
-                    && !npcs.iter().any(|n| {
-                        n.hp > 0 && matches!(n.kind, NpcKind::BoundMechanic | NpcKind::Mechanic)
-                    }),
-                below_deep_dungeon: {
-                    let ty = (inv_py / TILE_PX) as i32;
-                    (ty as f64) > (world_surface * 4.0 + rock_layer) / 5.0
-                },
-                invaders: true,
-                downed_golem: downed_golem,
-                downed_martians: downed_martians,
-                invasion_type: invasion_type,
-                any_danger: invasion_type > 0
-                    || npcs.iter().any(|n| {
-                        n.hp > 0
-                            && matches!(
-                                n.kind,
-                                NpcKind::KingSlime
-                                    | NpcKind::EyeOfCthulhu
-                                    | NpcKind::QueenBee
-                                    | NpcKind::SkeletronHead
-                                    | NpcKind::WallOfFlesh
-                                    | NpcKind::TheDestroyer
-                                    | NpcKind::SkeletronPrime
-                                    | NpcKind::Retinazer
-                                    | NpcKind::Spazmatism
-                                    | NpcKind::Plantera
-                                    | NpcKind::BrainOfCthulhu
-                                    | NpcKind::Golem
-                                    | NpcKind::GolemHead
-                                    | NpcKind::GolemFistLeft
-                                    | NpcKind::GolemFistRight
-                                    | NpcKind::GolemHeadFree
-                            )
-                    }),
-                probe_exists: npcs
+                let progress_frac = if world.invasion_size_start > 0 {
+                    (world.invasion_size_start - world.invasion_size) as f32
+                        / world.invasion_size_start as f32
+                } else {
+                    0.0
+                };
+                let walker_alive = npcs
                     .iter()
-                    .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe),
-                sky_behind_player: {
-                    let px = (inv_pcx / TILE_PX) as i32;
-                    let py = (inv_pcy / TILE_PX) as i32;
-                    world
-                        .tile(px, py)
-                        .is_some_and(|t| spawner::LIGHT_WALLS.contains(&t.wall) || t.wall == 73)
-                },
-            };
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::MartianWalker);
+                // `!NPC.AnyNPCs(395)`: the Saucer kind is unported (its AI
+                // family is the follow-up), so the gate reads false until it
+                // lands.
+                let saucer_alive = false;
+                // The 30% window: `(sizeStart - size) / sizeStart >= 0.3`.
+                let progress_30 = world.invasion_size_start > 0
+                    && (world.invasion_size_start - world.invasion_size) as f32
+                        / world.invasion_size_start as f32
+                        >= 0.3;
 
-            let rate = spawner::get_spawn_rate(&inv_ctx, rng);
-            // The two hard gates from `TrySpawnAnNPC` (NPC.cs:312-318).
-            if inv_nearby < rate.max_spawns as f32 && rng.next_max(rate.spawn_rate) == 0 {
-                let kind = invasion_spawn_pick(
-                    rng,
-                    hard_mode,
-                    summoner_alive,
-                    invasion_type,
-                    walker_alive,
-                    saucer_alive,
-                    progress_30,
-                    progress_frac,
-                );
-                invasion_pick = Some((kind, ix, iy));
+                // Build a spawn context with `invaders: true` so `get_spawn_rate`
+                // applies the invaders override (NPC.cs:781-785). Use pre-computed
+                // player center and nearby count to avoid borrow conflicts.
+                let inv_ctx = spawner::SpawnContext {
+                    world,
+                    player_center: (inv_pcx, inv_pcy),
+                    player_pos: (inv_px, inv_py),
+                    nearby_active_npcs: inv_nearby,
+                    town_npcs: 0,
+                    day_time: day_time,
+                    player_life_max: inv_max_hp,
+                    underworld_for_bats: (camera_y / 16.0) as i32 > height - 200,
+                    flags: spawner::SpawnFlags {
+                        zone_water_candle: water_candle_count > 0,
+                        zone_peace_candle: peace_candle_count > 0,
+                        ..spawner::SpawnFlags::default()
+                    },
+                    bound_goblin_ok: downed_goblins
+                        && !saved_goblin
+                        && !npcs.iter().any(|n| {
+                            n.hp > 0
+                                && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
+                        }),
+                    bound_wizard_ok: hard_mode
+                        && !saved_wizard
+                        && !npcs.iter().any(|n| {
+                            n.hp > 0 && matches!(n.kind, NpcKind::BoundWizard | NpcKind::Wizard)
+                        }),
+                    bound_mech_ok: downed_skeletron
+                        && !saved_mech
+                        && !npcs.iter().any(|n| {
+                            n.hp > 0 && matches!(n.kind, NpcKind::BoundMechanic | NpcKind::Mechanic)
+                        }),
+                    below_deep_dungeon: {
+                        let ty = (inv_py / TILE_PX) as i32;
+                        (ty as f64) > (world_surface * 4.0 + rock_layer) / 5.0
+                    },
+                    invaders: true,
+                    downed_golem: downed_golem,
+                    downed_martians: downed_martians,
+                    invasion_type: invasion_type,
+                    any_danger: invasion_type > 0
+                        || npcs.iter().any(|n| {
+                            n.hp > 0
+                                && matches!(
+                                    n.kind,
+                                    NpcKind::KingSlime
+                                        | NpcKind::EyeOfCthulhu
+                                        | NpcKind::QueenBee
+                                        | NpcKind::SkeletronHead
+                                        | NpcKind::WallOfFlesh
+                                        | NpcKind::TheDestroyer
+                                        | NpcKind::SkeletronPrime
+                                        | NpcKind::Retinazer
+                                        | NpcKind::Spazmatism
+                                        | NpcKind::Plantera
+                                        | NpcKind::BrainOfCthulhu
+                                        | NpcKind::Golem
+                                        | NpcKind::GolemHead
+                                        | NpcKind::GolemFistLeft
+                                        | NpcKind::GolemFistRight
+                                        | NpcKind::GolemHeadFree
+                                )
+                        }),
+                    probe_exists: npcs
+                        .iter()
+                        .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe),
+                    sky_behind_player: {
+                        let px = (inv_pcx / TILE_PX) as i32;
+                        let py = (inv_pcy / TILE_PX) as i32;
+                        world
+                            .tile(px, py)
+                            .is_some_and(|t| spawner::LIGHT_WALLS.contains(&t.wall) || t.wall == 73)
+                    },
+                };
+
+                let rate = spawner::get_spawn_rate(&inv_ctx, rng);
+                // The two hard gates from `TrySpawnAnNPC` (NPC.cs:312-318).
+                if inv_nearby < rate.max_spawns as f32 && rng.next_max(rate.spawn_rate) == 0 {
+                    let kind = invasion_spawn_pick(
+                        rng,
+                        hard_mode,
+                        summoner_alive,
+                        invasion_type,
+                        walker_alive,
+                        saucer_alive,
+                        progress_30,
+                        progress_frac,
+                    );
+                    invasion_pick = Some((kind, ix, iy));
+                }
             }
         }
-    }
         if invasion_pick.is_none() {
-            let (spawn, suppressed) =
-                spawner::spawn_npc_call(ctx, &mut *rng, app.spawn_no_cycle);
+            let (spawn, suppressed) = spawner::spawn_npc_call(ctx, &mut *rng, app.spawn_no_cycle);
             app.spawn_no_cycle = false; // the latch is consumed by one call
             spawned = spawn;
             let _ = suppressed;
@@ -3710,7 +3702,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npc_timer = 1.0 / 60.0;
 }
-
 
 /// The full NPC loot through the rule engine
 /// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
@@ -3746,9 +3737,18 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             // `TenthAnniversaryIsUp`/`DontStarveIsUp`/`RemixSeed`/
             // `SkyblockIsUp` conditions) now read the world's identity —
             // until this branch they were dead (`..Default::default()`).
-            tenth_anniversary: app.world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
-            dont_starve: app.world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
-            skyblock: app.world.seeds.contains(tr_core::seeds::SeedFlags::SKYBLOCK),
+            tenth_anniversary: app
+                .world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            dont_starve: app
+                .world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+            skyblock: app
+                .world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::SKYBLOCK),
             remix_seed: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
             // M5-SEED-2: `Main.forceHalloweenForever` / `Main.forceXMasForever`
             // (`Main.cs:13168` / `:13135`), which `InitializeSecretSeeds`
@@ -3805,7 +3805,6 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
     }
 }
 
-
 /// `NPC.NPCLoot_DropMoney` through the ported chain
 /// (`tr_core::loot::drop_money`): the per-kind `NPC.value` base, the
 /// ±20-75 % spread, the six bonus chains and the platinum/gold/silver/copper
@@ -3852,7 +3851,6 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
 mod tests {
     use super::*;
     use tr_core::World;
-
 
     /// `AI_000_TransformBoundNPC`'s 376 → 369 arm (`NPC.cs:19853-19856`): the
     /// talk transforms the Sleeping Angler into the Angler in place and
@@ -4077,7 +4075,10 @@ mod tests {
         // (`Main.cs:65548-65555`), so the next update is a check.
         app.town_arrival.check_for_spawns = 7199;
         update_npcs(&mut app, 1.0 / 60.0);
-        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::Golfer), "he arrives");
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Golfer),
+            "he arrives"
+        );
         let count = app.npcs.len();
         update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.npcs.len(), count, "one arrival only");
@@ -4332,7 +4333,10 @@ mod tests {
             .find(|n| n.kind == NpcKind::Angler)
             .expect("the Angler");
         assert_eq!(angler.max_hp, 250, "the town twin's body");
-        assert!(angler.home.is_none(), "Transform case 369 leaves him homeless");
+        assert!(
+            angler.home.is_none(),
+            "Transform case 369 leaves him homeless"
+        );
         assert!(app.world.saved_angler, "the saved flag raises");
         assert!(
             !app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler),
@@ -4361,7 +4365,11 @@ mod tests {
         a.hp = a.max_hp;
         let ai = app.npcs.len();
         app.npcs.push(a);
-        let idx = app.npcs.iter().position(|n| n.kind == NpcKind::Angler).unwrap();
+        let idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::Angler)
+            .unwrap();
         assert_eq!(idx, ai);
         let before = app.items.len();
         assert!(angler_turn_in(&mut app, idx), "the hand-in runs");
@@ -4382,12 +4390,13 @@ mod tests {
             .achievements
             .list
             .iter()
-            .any(|a| a.name == "GOOD_LITTLE_SLAVE"
-                && a.conditions[0].value == 1));
+            .any(|a| a.name == "GOOD_LITTLE_SLAVE" && a.conditions[0].value == 1));
         // The reward lands at the Angler's centre.
         let (ax, ay) = app.npcs[idx].center();
         assert!(
-            app.items.iter().any(|d| (d.pos.x - ax).abs() < 40.0 && (d.pos.y - ay).abs() < 40.0),
+            app.items
+                .iter()
+                .any(|d| (d.pos.x - ax).abs() < 40.0 && (d.pos.y - ay).abs() < 40.0),
             "the drops ride the Angler"
         );
         // The same-day refusal.
@@ -4419,7 +4428,10 @@ mod tests {
         update_npcs(&mut app, 1.0 / 60.0);
         assert!(!app.world.angler_swap_pending, "the request resolves");
         assert!(!app.world.angler_quest_finished, "the day resets");
-        assert!(!app.world.angler_quest_turned_in, "the player's slot resets");
+        assert!(
+            !app.world.angler_quest_turned_in,
+            "the player's slot resets"
+        );
         assert!(
             (app.world.angler_quest as usize) < crate::angler::QUEST_POOL.len(),
             "a valid pool index"
@@ -4471,11 +4483,14 @@ mod tests {
         // `savedAngler` closes the search.
         app.npcs.clear();
         app.world.saved_angler = true;
-        assert!(!try_spawn_sleeping_angler(&mut app), "the saved flag stops it");
+        assert!(
+            !try_spawn_sleeping_angler(&mut app),
+            "the saved flag stops it"
+        );
     }
 
     #[test]
-    fn black_slime_darkness_touch_rolls_the_item_stream() {
+    fn black_slime_darkness_touch_rolls_the_update_npcs_stream() {
         // `Next(4) == 0` ≈ `rand01 < 0.25`: a crafted seed pins both
         // outcomes; a non-black slime never rolls (the stream state proves
         // it — the deny seed under the blue slime leaves the rng untouched).
@@ -4526,7 +4541,9 @@ mod tests {
 
     #[test]
     fn dot_death_text_selects_table_over_stub() {
-        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // DW-1.3 — the death collection resolves the DoT table text when the
         // drain left a reason (`Player.cs:19321-19331,19362-19385`) and the
         // Slain row for any other death (`Lang.cs` CreateDeathMessage).
@@ -4654,10 +4671,7 @@ mod tests {
             halloween.contains(&1774),
             "endlessHalloween drops the Goodie Bag"
         );
-        assert!(
-            xmas.contains(&1869),
-            "endlessChristmas drops the Present"
-        );
+        assert!(xmas.contains(&1869), "endlessChristmas drops the Present");
     }
 
     #[cfg(test)]
@@ -4665,7 +4679,7 @@ mod tests {
         use super::*;
         use crate::app::flow::front_flow_tests::flow_app;
         use crate::npc::Npc;
-        use tr_core::tile::{FLAG_ACTIVE, LiquidKind, Tile};
+        use tr_core::tile::{LiquidKind, Tile, FLAG_ACTIVE};
         use tr_core::world::World;
 
         /// A hell world: the stone floor at row `hell_floor`, the lava pool on
@@ -4716,11 +4730,10 @@ mod tests {
             let pos = Vec2::new(200.0 * TILE_PX, 498.5 * TILE_PX);
             crate::world_sim::npcs::voodoo_doll_lava_death(&mut app, pos, 1);
             // The Guide died.
-            assert!(
-                app.npcs
-                    .iter()
-                    .all(|n| n.kind != NpcKind::Guide || n.hp <= 0)
-            );
+            assert!(app
+                .npcs
+                .iter()
+                .all(|n| n.kind != NpcKind::Guide || n.hp <= 0));
             // The wall spawned inside the underworld band.
             let wall = app
                 .npcs
@@ -4780,16 +4793,14 @@ mod tests {
             app.npcs.push(merchant);
             let pos = Vec2::new(200.0 * TILE_PX, 498.5 * TILE_PX);
             crate::world_sim::npcs::voodoo_doll_lava_death(&mut app, pos, 2);
-            assert!(
-                app.npcs
-                    .iter()
-                    .all(|n| n.kind != NpcKind::Guide || n.hp <= 0)
-            );
-            assert!(
-                app.npcs
-                    .iter()
-                    .all(|n| n.kind != NpcKind::Merchant || n.hp <= 0)
-            );
+            assert!(app
+                .npcs
+                .iter()
+                .all(|n| n.kind != NpcKind::Guide || n.hp <= 0));
+            assert!(app
+                .npcs
+                .iter()
+                .all(|n| n.kind != NpcKind::Merchant || n.hp <= 0));
         }
     }
 }
@@ -4799,7 +4810,7 @@ mod invasion_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::npc::Npc;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     /// A surface world (the invasion fights at the spawn's surface band).
     fn surface_world() -> World {
@@ -5088,7 +5099,7 @@ mod invasion_tests {
         use crate::app::flow::front_flow_tests::flow_app;
         use crate::npc::Npc;
         use crate::world_sim::editing::use_snow_globe;
-        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
 
         fn surface_world() -> World {
             let mut w = World::new("t".into(), 300, 200);
@@ -5206,7 +5217,7 @@ mod pirate_invasion_tests {
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::npc::Npc;
     use crate::world_sim::editing::use_pirate_map;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn surface_world() -> World {
         let mut w = World::new("t".into(), 300, 200);
@@ -5356,8 +5367,8 @@ mod invasion_bar_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::npc::Npc;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
     use tr_core::World;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn surface_world() -> World {
         let mut w = World::new("t".into(), 300, 200);
@@ -5606,7 +5617,10 @@ mod invasion_bar_tests {
         app.invasion_progress_display_left = 160;
         app.invasion_progress_alpha = 1.0;
         update_invasion_state(&mut app);
-        assert!(app.invasion_progress_alpha > 0.0, "the default leaves the alpha");
+        assert!(
+            app.invasion_progress_alpha > 0.0,
+            "the default leaves the alpha"
+        );
         app.settings.event_progress = 0;
         app.invasion_progress_alpha = 0.7;
         app.invasion_progress_display_left = 120;
@@ -6192,27 +6206,24 @@ mod saucer_tests {
         core.hp = core.max_hp;
         app.npcs.push(core);
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
-        assert!(
-            app.npcs
-                .iter()
-                .any(|n| n.kind == NpcKind::MartianSaucerTurret)
-        );
+        assert!(app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::MartianSaucerTurret));
         for n in app.npcs.iter_mut() {
             if n.kind == NpcKind::MartianSaucerCore {
                 n.hp = 0;
             }
         }
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
-        assert!(
-            !app.npcs
-                .iter()
-                .any(|n| n.kind == NpcKind::MartianSaucerCore)
-        );
-        assert!(
-            !app.npcs
-                .iter()
-                .any(|n| n.kind == NpcKind::MartianSaucerTurret)
-        );
+        assert!(!app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::MartianSaucerCore));
+        assert!(!app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::MartianSaucerTurret));
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MartianSaucer));
     }
 
@@ -6252,10 +6263,26 @@ mod saucer_tests {
                 .unwrap()
                 .sprite_dir
         };
-        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 1), 1, "seat 1 faces right");
-        assert_eq!(seat_dir(NpcKind::MartianSaucerCannon, 0), -1, "seat 0 faces left");
-        assert_eq!(seat_dir(NpcKind::MartianSaucerTurret, 0), -1, "the turret takes the core's");
-        assert_eq!(seat_dir(NpcKind::MartianSaucer, 0), -1, "the shell takes the core's");
+        assert_eq!(
+            seat_dir(NpcKind::MartianSaucerCannon, 1),
+            1,
+            "seat 1 faces right"
+        );
+        assert_eq!(
+            seat_dir(NpcKind::MartianSaucerCannon, 0),
+            -1,
+            "seat 0 faces left"
+        );
+        assert_eq!(
+            seat_dir(NpcKind::MartianSaucerTurret, 0),
+            -1,
+            "the turret takes the core's"
+        );
+        assert_eq!(
+            seat_dir(NpcKind::MartianSaucer, 0),
+            -1,
+            "the shell takes the core's"
+        );
     }
 
     #[test]
@@ -6293,7 +6320,10 @@ mod saucer_tests {
         } else {
             6
         };
-        assert!(row == 6 || row == 8, "the right-side aim rows are 6/8: {row}");
+        assert!(
+            row == 6 || row == 8,
+            "the right-side aim rows are 6/8: {row}"
+        );
         assert!(
             (3..=8).contains(&row),
             "the aim never lands on the upward rows 1/2/7: {row}"
@@ -6606,8 +6636,16 @@ mod dutchman_tests {
         // `Next(20)` result feeds the count); outside it never does.
         let mut in_window_ships = 0;
         for seed in 0..200i32 {
-            if invasion_spawn_pick(&mut UnifiedRandom::new(seed + 1), false, false, 3, false, false, true, 0.75)
-                == NpcKind::FlyingDutchman
+            if invasion_spawn_pick(
+                &mut UnifiedRandom::new(seed + 1),
+                false,
+                false,
+                3,
+                false,
+                false,
+                true,
+                0.75,
+            ) == NpcKind::FlyingDutchman
             {
                 in_window_ships += 1;
             }
@@ -6674,7 +6712,13 @@ mod prime_limb_tests {
         // The head rides inside the 300x200 test world, 20 tiles above the
         // surface (an out-of-world spawn would hit the head's own
         // off-world clamp on the first tick).
-        let mut head = Npc::new(NpcKind::SkeletronPrime, 160.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        let mut head = Npc::new(
+            NpcKind::SkeletronPrime,
+            160.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
         head.hp = head.max_hp;
         app.npcs.push(head);
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
@@ -6696,7 +6740,10 @@ mod prime_limb_tests {
             }
         }
         // The anchor write-through feeds the tether: the limbs ride it.
-        assert!(app.world.prime_present, "the head anchors the world's Prime fields");
+        assert!(
+            app.world.prime_present,
+            "the head anchors the world's Prime fields"
+        );
         assert!(app.world.prime_x > 0.0 && app.world.prime_y > 0.0);
     }
 }
@@ -7257,7 +7304,13 @@ mod dd2_goblin_tests {
         let (_app, mut player) = app_with_player();
         let world = surface_world();
         let mut rng = UnifiedRandom::new(7);
-        let mut n = Npc::new(NpcKind::DD2WitherBeast, 145.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::DD2WitherBeast,
+            145.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = 300; // the wounded beast (500 max)
         n.ai[0] = 1.0;
         n.ai[1] = 1.0;
@@ -7309,7 +7362,10 @@ mod crystal_summon_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -7354,7 +7410,9 @@ mod crystal_summon_tests {
         );
         assert_eq!(app.world.dd2_wave, 1, "the first wave");
         assert!(
-            app.npcs.iter().any(|n| n.kind == NpcKind::DD2EterniaCrystal),
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::DD2EterniaCrystal),
             "the crystal spawned"
         );
         assert_eq!(app.inventory[app.selected].count, 0, "the item consumed");
@@ -7401,7 +7459,10 @@ mod dd2_wave_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -7476,7 +7537,10 @@ mod crystal_death_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -7512,7 +7576,9 @@ mod crystal_death_tests {
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(!app.world.dd2_event_ongoing, "the event stops");
         assert!(
-            !app.npcs.iter().any(|m| m.kind == NpcKind::DD2EterniaCrystal),
+            !app.npcs
+                .iter()
+                .any(|m| m.kind == NpcKind::DD2EterniaCrystal),
             "the crystal is gone"
         );
     }
@@ -7531,7 +7597,10 @@ mod cultist_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -7603,7 +7672,10 @@ mod cultist_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -7867,8 +7939,24 @@ mod worm_tests {
         // The crawltipede chain + the stardust worm head (`NPC.cs`'s cases
         // 412/413/414/402/518): the port ids 141-145 and the vanilla rows.
         for (kind, id, w, h, hp, dmg, def) in [
-            (NpcKind::SolarCrawltipedeHead, 141u16, 20.0, 20.0, 10000, 120, 1000),
-            (NpcKind::SolarCrawltipedeBody, 142, 20.0, 20.0, 10000, 80, 1000),
+            (
+                NpcKind::SolarCrawltipedeHead,
+                141u16,
+                20.0,
+                20.0,
+                10000,
+                120,
+                1000,
+            ),
+            (
+                NpcKind::SolarCrawltipedeBody,
+                142,
+                20.0,
+                20.0,
+                10000,
+                80,
+                1000,
+            ),
             (NpcKind::SolarCrawltipedeTail, 143, 20.0, 20.0, 10000, 50, 0),
             (NpcKind::StardustWormHead, 144, 32.0, 32.0, 1200, 80, 10),
             (NpcKind::SolarSpearman, 145, 22.0, 56.0, 1000, 80, 28),
@@ -7881,7 +7969,11 @@ mod worm_tests {
             assert_eq!(n.defense(), def);
             // The chain + the worm head are kb 0; the spearman keeps its
             // own 0.4 row.
-            let kb = if kind == NpcKind::SolarSpearman { 0.4 } else { 0.0 };
+            let kb = if kind == NpcKind::SolarSpearman {
+                0.4
+            } else {
+                0.0
+            };
             assert_eq!(n.knock_back_resist(), kb);
         }
     }
@@ -7938,7 +8030,13 @@ mod worm_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::StardustWormHead, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::StardustWormHead,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         n.ai[2] = 569.0;
         player.x = 170.0 * TILE_PX;
@@ -7947,7 +8045,11 @@ mod worm_tests {
         n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         assert!(n.wants_stardust_mark, "the mark fires at the 570th tick");
         let speed = (n.vx * n.vx + n.vy * n.vy).sqrt();
-        assert!((speed - 6.0).abs() < 0.1, "the velocity re-normalises to 6: {}", speed);
+        assert!(
+            (speed - 6.0).abs() < 0.1,
+            "the velocity re-normalises to 6: {}",
+            speed
+        );
         // The cycle resets at 600.
         n.ai[2] = 599.0;
         n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
@@ -8011,7 +8113,13 @@ mod tower_mob_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::StardustSpiderBig, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::StardustSpiderBig,
+            150.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         player.x = 170.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
@@ -8041,7 +8149,13 @@ mod tower_mob_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::StardustSpiderSmall, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::StardustSpiderSmall,
+            150.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         n.ai[1] = 239.0; // one tick under the burst
         player.x = 170.0 * TILE_PX;
@@ -8073,7 +8187,13 @@ mod tower_mob_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::StardustSoldier, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::StardustSoldier,
+            150.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         player.x = 170.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
@@ -8101,7 +8221,13 @@ mod tower_mob_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::SolarSroller, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::SolarSroller,
+            150.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         n.ai[0] = 1.0; // the wind-up state
         n.ai[1] = 29.0; // one tick under the collapse
@@ -8134,7 +8260,13 @@ mod tower_mob_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::SolarCorite, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::SolarCorite,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         n.ai[0] = 3.0; // the implosion state
         player.x = 170.0 * TILE_PX;
@@ -8182,7 +8314,16 @@ mod nebula_trio_tests {
         // The three nebula pillar mobs (`NPC.cs`'s cases 420/421/424):
         // the port ids 130-132, the sizes, the hp and the vanilla rows.
         for (kind, id, w, h, hp, dmg, def, kb) in [
-            (NpcKind::NebulaFloater, 130u16, 40.0, 40.0, 1300, 75, 20, 0.5),
+            (
+                NpcKind::NebulaFloater,
+                130u16,
+                40.0,
+                40.0,
+                1300,
+                75,
+                20,
+                0.5,
+            ),
             (NpcKind::BrainSuckler, 131, 44.0, 44.0, 330, 70, 34, 0.5),
             (NpcKind::Predictor, 132, 22.0, 56.0, 700, 80, 30, 0.6),
         ] {
@@ -8207,7 +8348,13 @@ mod nebula_trio_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::NebulaFloater,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         player.x = 170.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
@@ -8236,7 +8383,13 @@ mod nebula_trio_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::NebulaFloater, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::NebulaFloater,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         n.ai[0] = 470.0;
         player.x = 170.0 * TILE_PX;
@@ -8276,7 +8429,13 @@ mod nebula_trio_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::BrainSuckler, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::BrainSuckler,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         n.ai[0] = 1.0; // the approach phase
         player.x = 150.0 * TILE_PX;
@@ -8330,7 +8489,11 @@ mod nebula_trio_tests {
                 "the muzzle X: {}",
                 shot.1
             );
-            assert!((shot.2 - (cy - 6.0)).abs() < 8.0, "the muzzle Y: {}", shot.2);
+            assert!(
+                (shot.2 - (cy - 6.0)).abs() < 8.0,
+                "the muzzle Y: {}",
+                shot.2
+            );
         }
     }
 }
@@ -8363,7 +8526,16 @@ mod vortex_trio_tests {
         // The three vortex hive mobs (`NPC.cs`'s cases 426/427/428): the
         // port ids 127-129, the sizes, the hp and the vanilla rows.
         for (kind, id, w, h, hp, dmg, def, kb) in [
-            (NpcKind::VortexHunter, 127u16, 50.0, 62.0, 1000, 100, 44, 0.3),
+            (
+                NpcKind::VortexHunter,
+                127u16,
+                50.0,
+                62.0,
+                1000,
+                100,
+                44,
+                0.3,
+            ),
             (NpcKind::VortexAlien, 128, 40.0, 28.0, 500, 75, 20, 0.5),
             (NpcKind::VortexHeadcrab, 129, 24.0, 26.0, 200, 50, 6, 1.0),
         ] {
@@ -8564,8 +8736,14 @@ mod moon_lord_tests {
             assert_eq!(n.knock_back_resist(), 0.0);
         }
         // The core alone carries a value (`NPC.cs:14130`: 1 platinum).
-        assert_eq!(Npc::new(NpcKind::MoonLordCore, 0.0, 0.0, 1, 0.0).value(), 1_000_000.0);
-        assert_eq!(Npc::new(NpcKind::MoonLordHead, 0.0, 0.0, 1, 0.0).value(), 0.0);
+        assert_eq!(
+            Npc::new(NpcKind::MoonLordCore, 0.0, 0.0, 1, 0.0).value(),
+            1_000_000.0
+        );
+        assert_eq!(
+            Npc::new(NpcKind::MoonLordHead, 0.0, 0.0, 1, 0.0).value(),
+            0.0
+        );
     }
 
     #[test]
@@ -8574,7 +8752,13 @@ mod moon_lord_tests {
         // opens the hands (`ai[2]` 0/1) + the head request; the sim
         // resolves it into the three NPCs at the core's offsets.
         let (mut app, _player) = app_player();
-        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
         core.hp = core.max_hp;
         app.npcs.push(core);
         for _ in 0..61 {
@@ -8616,7 +8800,12 @@ mod moon_lord_tests {
         // the 4-tick cadence inside the eyelid window.
         let (_app, mut player) = app_player();
         let world = fixture();
-        let mut hand = linked(NpcKind::MoonLordHand, 150.0 * TILE_PX - 400.0, 100.0 * TILE_PX - 100.0, 0);
+        let mut hand = linked(
+            NpcKind::MoonLordHand,
+            150.0 * TILE_PX - 400.0,
+            100.0 * TILE_PX - 100.0,
+            0,
+        );
         hand.ai[2] = 0.0;
         // The sequencer picks the attack from the table, so the timer
         // lands inside the Phantasmal Eyes attack on a shot tick.
@@ -8640,7 +8829,12 @@ mod moon_lord_tests {
         // centre + (−350, −100) — the port's hand pulls toward it.
         let (_app, mut player) = app_player();
         let world = fixture();
-        let mut hand = linked(NpcKind::MoonLordHand, 150.0 * TILE_PX - 400.0, 100.0 * TILE_PX - 100.0, 0);
+        let mut hand = linked(
+            NpcKind::MoonLordHand,
+            150.0 * TILE_PX - 400.0,
+            100.0 * TILE_PX - 100.0,
+            0,
+        );
         hand.ai[2] = 0.0;
         hand.ai[0] = 0.0; // the hover
         let before = hand.center().0;
@@ -8667,8 +8861,8 @@ mod moon_lord_tests {
         let (ccx, ccy) = (150.0 * TILE_PX, 100.0 * TILE_PX);
         let mut head = linked(NpcKind::MoonLordHead, ccx, ccy - 400.0, 0);
         head.ai[0] = 1.0; // the phantom deathray attack
-        // The head row's deathray slot starts at the 825th elapsed tick;
-        // its 180th in-attack tick (the shot) is the timer's 1005th.
+                          // The head row's deathray slot starts at the 825th elapsed tick;
+                          // its 180th in-attack tick (the shot) is the timer's 1005th.
         head.ai[1] = 1004.0;
         let mut rng = UnifiedRandom::new(7);
         let mut shot = None;
@@ -8696,7 +8890,13 @@ mod moon_lord_tests {
         // `downed_moon_lord` (`NPC.cs:79397-79404`).
         let (_app, mut player) = app_player();
         let world = fixture();
-        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
         core.hp = core.max_hp;
         core.ai[0] = 2.0;
         let mut rng = UnifiedRandom::new(7);
@@ -8716,7 +8916,13 @@ mod moon_lord_tests {
 
         // The flag leg through the sim.
         let (mut app, _p) = app_player();
-        let mut c = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        let mut c = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
         c.hp = 0;
         app.npcs.push(c);
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
@@ -8731,7 +8937,13 @@ mod moon_lord_tests {
         let (mut app, mut player) = app_player();
         // The head needs its core alive for the pre-pass link (the vanilla
         // parts self-kill without one).
-        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
         core.hp = core.max_hp;
         app.npcs.push(core);
         player.buffs.add_buff(145, 840);
@@ -8799,7 +9011,8 @@ mod moon_lord_tests {
         assert_eq!(s.0, 452, "the PhantasmalEye");
         assert_eq!(s.5, 35, "the eye's classic damage constant");
     }
-}#[cfg(test)]
+}
+#[cfg(test)]
 mod pillar_mob_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
@@ -8811,7 +9024,10 @@ mod pillar_mob_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -8897,7 +9113,6 @@ mod pillar_mob_tests {
     }
 }
 
-
 #[cfg(test)]
 mod shard_tests {
     use super::*;
@@ -8910,7 +9125,10 @@ mod shard_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
@@ -8925,7 +9143,15 @@ mod shard_tests {
         for (kind, id, w, h, hp, def, kb) in [
             (NpcKind::StardustCellBig, 121u16, 44.0, 44.0, 300, 50, 0.3),
             (NpcKind::StardustCellSmall, 116, 22.0, 22.0, 300, 0, 0.4),
-            (NpcKind::StardustJellyfishBig, 117, 40.0, 60.0, 1500, 38, 0.03),
+            (
+                NpcKind::StardustJellyfishBig,
+                117,
+                40.0,
+                60.0,
+                1500,
+                38,
+                0.03,
+            ),
             (NpcKind::NebulaBeast, 118, 50.0, 44.0, 850, 46, 0.2),
             (NpcKind::VortexRifleman, 119, 30.0, 56.0, 800, 40, 0.4),
             (NpcKind::VortexSoldier, 120, 22.0, 56.0, 700, 34, 0.6),
@@ -8964,7 +9190,11 @@ mod shard_tests {
         for _ in 0..120 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         }
-        assert!((n.ai[0] - 120.0).abs() < 0.01, "the ramp's counter: {}", n.ai[0]);
+        assert!(
+            (n.ai[0] - 120.0).abs() < 0.01,
+            "the ramp's counter: {}",
+            n.ai[0]
+        );
     }
 
     #[test]
@@ -9024,7 +9254,11 @@ mod shard_tests {
         for _ in 0..150 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         }
-        assert!((n.scale - 1.15).abs() < 0.01, "the mid-ramp scale: {}", n.scale);
+        assert!(
+            (n.scale - 1.15).abs() < 0.01,
+            "the mid-ramp scale: {}",
+            n.scale
+        );
         for _ in 0..160 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         }
@@ -9044,7 +9278,13 @@ mod shard_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::NebulaBeast, 150.0 * TILE_PX, 115.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::NebulaBeast,
+            150.0 * TILE_PX,
+            115.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         player.x = 160.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
@@ -9125,7 +9365,13 @@ mod shard_tests {
             (a, p)
         };
         let world = fixture();
-        let mut n = Npc::new(NpcKind::StardustCellBig, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        let mut n = Npc::new(
+            NpcKind::StardustCellBig,
+            150.0 * TILE_PX,
+            108.0 * TILE_PX,
+            1,
+            0.0,
+        );
         n.hp = n.max_hp;
         player.x = 160.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
@@ -9145,308 +9391,336 @@ mod shard_tests {
         );
     }
 
-#[cfg(test)]
-mod dd2_lane_tests {
-    use super::*;
-    use crate::app::flow::front_flow_tests::flow_app;
-    use crate::player::Player;
+    #[cfg(test)]
+    mod dd2_lane_tests {
+        use super::*;
+        use crate::app::flow::front_flow_tests::flow_app;
+        use crate::player::Player;
 
-    fn surface_world() -> World {
-        let mut w = World::new("t".into(), 300, 200);
-        w.world_surface = 120.0;
-        for x in 0..w.width {
-            for y in 120..w.height {
-                let i = w.index(x, y);
-                w.tiles[i] = tr_core::Tile {
-                    kind: 1,
-                    ..Default::default()
-                };
-                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        fn surface_world() -> World {
+            let mut w = World::new("t".into(), 300, 200);
+            w.world_surface = 120.0;
+            for x in 0..w.width {
+                for y in 120..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i] = tr_core::Tile {
+                        kind: 1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+                }
             }
+            w.compute_column_surface();
+            w
         }
-        w.compute_column_surface();
-        w
-    }
 
-    #[test]
-    fn the_lane_spawn_rolls_pick_the_waves_roster() {
-        // `Difficulty_1_SpawnMonsterFromGate` (`DD2Event.cs:1011-1105`):
-        // the per-wave switch's caps. With an empty world the wave-1 goblin
-        // spawns; the wave-2 roll's `Next(7)` gate.
-        let empty = |_t: u16| 0i32;
-        // Wave 1: always the squire under the cap.
-        let pick = tr_core::dd2::lane_spawn_roll_d1(1, &empty, 0, 60, false, || 0.9);
-        assert_eq!(pick.first, Some(552));
-        assert_eq!(pick.second, None);
-        // Wave 2: `Next(7) == 0` → the bomber, else the squire.
-        let pick = tr_core::dd2::lane_spawn_roll_d1(2, &empty, 0, 60, false, || 0.05);
-        assert_eq!(pick.first, Some(555));
-        let pick = tr_core::dd2::lane_spawn_roll_d1(2, &empty, 0, 60, false, || 0.9);
-        assert_eq!(pick.first, Some(552));
-        // The cap refuses: 50 goblins alive → no spawn.
-        let full = |t: u16| if t == 552 { 60 } else { 0 };
-        let pick = tr_core::dd2::lane_spawn_roll_d1(1, &full, 0, 60, false, || 0.9);
-        assert_eq!(pick.first, None);
-        // Wave 4: the wyvern rides `Next(12)` under its cap.
-        let pick = tr_core::dd2::lane_spawn_roll_d1(4, &empty, 0, 60, false, || 0.01);
-        assert_eq!(pick.first, Some(558));
-        let pick = tr_core::dd2::lane_spawn_roll_d1(4, &empty, 0, 60, false, || 0.5);
-        assert_eq!(pick.first, Some(552));
-        // Wave 3: the javeliner rides `Next(6)` ahead of the goblins.
-        let pick = tr_core::dd2::lane_spawn_roll_d1(3, &empty, 0, 60, false, || 0.01);
-        assert_eq!(pick.first, Some(561));
-        let pick = tr_core::dd2::lane_spawn_roll_d1(3, &empty, 0, 60, false, || 0.5);
-        assert_eq!(pick.first, Some(552));
-        // Wave 5: the Dark Mage rides the half-kill gate (`:1078`), but the
-        // chain after it re-assigns `num4` whenever it fires — so the boss
-        // only survives when the goblins already sit at their cap.
-        let full = |t: u16| if t == 564 { 0 } else { 60 };
-        let pick = tr_core::dd2::lane_spawn_roll_d1(5, &full, 31, 60, false, || 0.9);
-        assert_eq!(pick.first, Some(564), "the Dark Mage past the half-kill gate");
-        let pick = tr_core::dd2::lane_spawn_roll_d1(5, &full, 10, 60, false, || 0.9);
-        assert_eq!(pick.first, None, "the gate holds before half the wave is dead");
-        let pick = tr_core::dd2::lane_spawn_roll_d1(5, &empty, 31, 60, false, || 0.01);
-        assert_eq!(pick.first, Some(558), "the chain outranks the boss spawn");
-    }
-
-    #[test]
-    fn the_tier_two_and_three_rolls_carry_their_waves() {
-        let empty = |_t: u16| 0i32;
-        // D2 wave 1: the tier-3 arm under `Next(20)`.
-        let pick = tr_core::dd2::lane_spawn_roll_d2(1, &empty, 0, 60, false, || 0.01);
-        assert_eq!(pick.first, Some(562));
-        // D2 wave 7's boss arm: the Ogre on the kill gate. The left lane
-        // short-circuits `!leftGate`, so it needs no roll; the right lane
-        // spends its `Next(2)`.
-        let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 10, 60, false, || 0.9);
-        assert_eq!(pick.first, Some(576), "the left lane's Ogre");
-        let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 10, 60, true, || 0.25);
-        assert_eq!(pick.first, Some(576), "the right lane's Ogre");
-        let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 10, 60, true, || 0.75);
-        assert_eq!(pick.first, Some(553), "the coin misses, the squire pair");
-        let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 6, 60, false, || 0.9);
-        assert_eq!(pick.first, Some(553), "under the 10% kill gate");
-        // D2 wave 3's squire pair: the chain's rolls fail (`Next(7)/(10)/(8)`)
-        // and `Next(4) == 0` drops the 556 beside the 553.
-        let pick = tr_core::dd2::lane_spawn_roll_d2(3, &empty, 0, 60, false, || 0.2);
-        assert_eq!(pick.first, Some(553));
-        assert_eq!(pick.second, Some(556));
-        let pick = tr_core::dd2::lane_spawn_roll_d2(3, &empty, 0, 60, false, || 0.9);
-        assert_eq!(pick.first, Some(553));
-        assert_eq!(pick.second, None);
-        // D2 wave 5's flyer arm: the ogre's and archer's rolls fail, the
-        // flyer's `Next(4)` gate passes, then `Next(2)` coins between the
-        // hound's 574 and the 572.
-        let seq = std::cell::Cell::new(0usize);
-        let roll = || {
-            let rolls = [0.2f32, 0.9, 0.2, 0.9];
-            let i = seq.get();
-            seq.set(i + 1);
-            rolls[i.min(rolls.len() - 1)]
-        };
-        let pick = tr_core::dd2::lane_spawn_roll_d2(5, &empty, 0, 60, false, roll);
-        assert_eq!(pick.first, Some(574));
-        let seq = std::cell::Cell::new(0usize);
-        let roll = || {
-            let rolls = [0.2f32, 0.9, 0.2, 0.1];
-            let i = seq.get();
-            seq.set(i + 1);
-            rolls[i.min(rolls.len() - 1)]
-        };
-        let pick = tr_core::dd2::lane_spawn_roll_d2(5, &empty, 0, 60, false, roll);
-        assert_eq!(pick.first, Some(572));
-        // D3 wave 6: the balista's one-shot survives only when the second
-        // chain's rolls fail and its squire cap is full.
-        let full = |t: u16| if t == 554 || t == 557 { 60 } else { 0 };
-        let seq = std::cell::Cell::new(0usize);
-        let roll = || {
-            let rolls = [0.01f32, 0.9];
-            let i = seq.get();
-            seq.set(i + 1);
-            rolls[i.min(rolls.len() - 1)]
-        };
-        let pick = tr_core::dd2::lane_spawn_roll_d3(6, &full, roll);
-        assert_eq!(pick.first, Some(577), "the balista the second chain spares");
-        // D3 wave 4's sapper.
-        let pick = tr_core::dd2::lane_spawn_roll_d3(4, &empty, || 0.01);
-        assert_eq!(pick.first, Some(565));
-        // D3 wave 1: the tier-3 arm, and the squire pair's 557 on `Next(7)`.
-        let pick = tr_core::dd2::lane_spawn_roll_d3(1, &empty, || 0.01);
-        assert_eq!(pick.first, Some(563));
-        let pick = tr_core::dd2::lane_spawn_roll_d3(1, &empty, || 0.1);
-        assert_eq!(pick.first, Some(554));
-        assert_eq!(pick.second, Some(557));
-    }
-
-    #[test]
-    fn the_tier_three_wave_six_chains_run_side_by_side() {
-        // `DD2Event.cs:1691-1728`: wave 6 runs two independent `if` chains —
-        // the second one re-assigns `num8` whenever it fires, so the glider
-        // (578) it picks outranks the balista (577) the first chain picked.
-        let empty = |_t: u16| 0i32;
-        let pick = tr_core::dd2::lane_spawn_roll_d3(6, &empty, || 0.01);
-        assert_eq!(pick.first, Some(578));
-        // With the glider at its cap the second chain's failed rolls carry it
-        // to the squire pair, whose `Next(3)` drops the 557.
-        let capped = |t: u16| if t == 578 { 40 } else { 0 };
-        let pick = tr_core::dd2::lane_spawn_roll_d3(6, &capped, || 0.3);
-        assert_eq!(pick.first, Some(554), "the second chain's squire pair");
-        assert_eq!(pick.second, Some(557));
-        // Both chains empty and the squire cap full: nothing spawns.
-        let full = |t: u16| if t == 554 || t == 557 { 60 } else { 0 };
-        let pick = tr_core::dd2::lane_spawn_roll_d3(6, &full, || 0.9);
-        assert_eq!(pick.first, None);
-    }
-
-    #[test]
-    fn the_lane_portal_round_trips_and_paces_its_spawns() {
-        // The 549's row + `AI`'s aiStyle-106 pacing: the `ai[0]` counter
-        // opens a spawn every `LaneSpawnRate` frames and resets at three
-        // times the rate (`NPC.cs:40992-41001`).
-        let kind = NpcKind::DD2LanePortal;
-        assert_eq!(kind.to_u16(), 147);
-        assert_eq!(NpcKind::from_u16(147), Some(kind));
-        let mut n = Npc::new(kind, 150.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
-        assert_eq!((n.size().0, n.size().1), (78.0, 130.0));
-        assert_eq!(n.max_hp, 5);
-        assert_eq!(n.defense(), 20);
-        assert_eq!(n.defense(), 20);
-        // The ID window: `leftGate` rides `ai[2]` (`NPC.cs:40972`).
-        let mut world = surface_world();
-        // The event's pre-wave hold parks the counter (`:40988`), and the
-        // wave picks the lane rate (`Difficulty_1_GetEnemiesForWave(2)`).
-        world.dd2_spawn_hold = 0;
-        world.dd2_wave = 2;
-        let mut player = Player::spawn(&world);
-        player.x = 160.0 * TILE_PX;
-        player.y = 118.0 * TILE_PX;
-        // With the hold up the gate never counts.
-        let mut held = surface_world();
-        held.dd2_spawn_hold = 3;
-        for _ in 0..120 {
-            n.update_rng(&held, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(7));
+        #[test]
+        fn the_lane_spawn_rolls_pick_the_waves_roster() {
+            // `Difficulty_1_SpawnMonsterFromGate` (`DD2Event.cs:1011-1105`):
+            // the per-wave switch's caps. With an empty world the wave-1 goblin
+            // spawns; the wave-2 roll's `Next(7)` gate.
+            let empty = |_t: u16| 0i32;
+            // Wave 1: always the squire under the cap.
+            let pick = tr_core::dd2::lane_spawn_roll_d1(1, &empty, 0, 60, false, || 0.9);
+            assert_eq!(pick.first, Some(552));
+            assert_eq!(pick.second, None);
+            // Wave 2: `Next(7) == 0` → the bomber, else the squire.
+            let pick = tr_core::dd2::lane_spawn_roll_d1(2, &empty, 0, 60, false, || 0.05);
+            assert_eq!(pick.first, Some(555));
+            let pick = tr_core::dd2::lane_spawn_roll_d1(2, &empty, 0, 60, false, || 0.9);
+            assert_eq!(pick.first, Some(552));
+            // The cap refuses: 50 goblins alive → no spawn.
+            let full = |t: u16| if t == 552 { 60 } else { 0 };
+            let pick = tr_core::dd2::lane_spawn_roll_d1(1, &full, 0, 60, false, || 0.9);
+            assert_eq!(pick.first, None);
+            // Wave 4: the wyvern rides `Next(12)` under its cap.
+            let pick = tr_core::dd2::lane_spawn_roll_d1(4, &empty, 0, 60, false, || 0.01);
+            assert_eq!(pick.first, Some(558));
+            let pick = tr_core::dd2::lane_spawn_roll_d1(4, &empty, 0, 60, false, || 0.5);
+            assert_eq!(pick.first, Some(552));
+            // Wave 3: the javeliner rides `Next(6)` ahead of the goblins.
+            let pick = tr_core::dd2::lane_spawn_roll_d1(3, &empty, 0, 60, false, || 0.01);
+            assert_eq!(pick.first, Some(561));
+            let pick = tr_core::dd2::lane_spawn_roll_d1(3, &empty, 0, 60, false, || 0.5);
+            assert_eq!(pick.first, Some(552));
+            // Wave 5: the Dark Mage rides the half-kill gate (`:1078`), but the
+            // chain after it re-assigns `num4` whenever it fires — so the boss
+            // only survives when the goblins already sit at their cap.
+            let full = |t: u16| if t == 564 { 0 } else { 60 };
+            let pick = tr_core::dd2::lane_spawn_roll_d1(5, &full, 31, 60, false, || 0.9);
+            assert_eq!(
+                pick.first,
+                Some(564),
+                "the Dark Mage past the half-kill gate"
+            );
+            let pick = tr_core::dd2::lane_spawn_roll_d1(5, &full, 10, 60, false, || 0.9);
+            assert_eq!(
+                pick.first, None,
+                "the gate holds before half the wave is dead"
+            );
+            let pick = tr_core::dd2::lane_spawn_roll_d1(5, &empty, 31, 60, false, || 0.01);
+            assert_eq!(pick.first, Some(558), "the chain outranks the boss spawn");
         }
-        assert!(!n.wants_dd2_spawn, "the hold parks the counter");
-        n.ai[0] = 0.0;
-        n.caster_counter = 0;
-        let mut spawns = 0;
-        for _ in 0..200 {
+
+        #[test]
+        fn the_tier_two_and_three_rolls_carry_their_waves() {
+            let empty = |_t: u16| 0i32;
+            // D2 wave 1: the tier-3 arm under `Next(20)`.
+            let pick = tr_core::dd2::lane_spawn_roll_d2(1, &empty, 0, 60, false, || 0.01);
+            assert_eq!(pick.first, Some(562));
+            // D2 wave 7's boss arm: the Ogre on the kill gate. The left lane
+            // short-circuits `!leftGate`, so it needs no roll; the right lane
+            // spends its `Next(2)`.
+            let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 10, 60, false, || 0.9);
+            assert_eq!(pick.first, Some(576), "the left lane's Ogre");
+            let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 10, 60, true, || 0.25);
+            assert_eq!(pick.first, Some(576), "the right lane's Ogre");
+            let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 10, 60, true, || 0.75);
+            assert_eq!(pick.first, Some(553), "the coin misses, the squire pair");
+            let pick = tr_core::dd2::lane_spawn_roll_d2(7, &empty, 6, 60, false, || 0.9);
+            assert_eq!(pick.first, Some(553), "under the 10% kill gate");
+            // D2 wave 3's squire pair: the chain's rolls fail (`Next(7)/(10)/(8)`)
+            // and `Next(4) == 0` drops the 556 beside the 553.
+            let pick = tr_core::dd2::lane_spawn_roll_d2(3, &empty, 0, 60, false, || 0.2);
+            assert_eq!(pick.first, Some(553));
+            assert_eq!(pick.second, Some(556));
+            let pick = tr_core::dd2::lane_spawn_roll_d2(3, &empty, 0, 60, false, || 0.9);
+            assert_eq!(pick.first, Some(553));
+            assert_eq!(pick.second, None);
+            // D2 wave 5's flyer arm: the ogre's and archer's rolls fail, the
+            // flyer's `Next(4)` gate passes, then `Next(2)` coins between the
+            // hound's 574 and the 572.
+            let seq = std::cell::Cell::new(0usize);
+            let roll = || {
+                let rolls = [0.2f32, 0.9, 0.2, 0.9];
+                let i = seq.get();
+                seq.set(i + 1);
+                rolls[i.min(rolls.len() - 1)]
+            };
+            let pick = tr_core::dd2::lane_spawn_roll_d2(5, &empty, 0, 60, false, roll);
+            assert_eq!(pick.first, Some(574));
+            let seq = std::cell::Cell::new(0usize);
+            let roll = || {
+                let rolls = [0.2f32, 0.9, 0.2, 0.1];
+                let i = seq.get();
+                seq.set(i + 1);
+                rolls[i.min(rolls.len() - 1)]
+            };
+            let pick = tr_core::dd2::lane_spawn_roll_d2(5, &empty, 0, 60, false, roll);
+            assert_eq!(pick.first, Some(572));
+            // D3 wave 6: the balista's one-shot survives only when the second
+            // chain's rolls fail and its squire cap is full.
+            let full = |t: u16| if t == 554 || t == 557 { 60 } else { 0 };
+            let seq = std::cell::Cell::new(0usize);
+            let roll = || {
+                let rolls = [0.01f32, 0.9];
+                let i = seq.get();
+                seq.set(i + 1);
+                rolls[i.min(rolls.len() - 1)]
+            };
+            let pick = tr_core::dd2::lane_spawn_roll_d3(6, &full, roll);
+            assert_eq!(pick.first, Some(577), "the balista the second chain spares");
+            // D3 wave 4's sapper.
+            let pick = tr_core::dd2::lane_spawn_roll_d3(4, &empty, || 0.01);
+            assert_eq!(pick.first, Some(565));
+            // D3 wave 1: the tier-3 arm, and the squire pair's 557 on `Next(7)`.
+            let pick = tr_core::dd2::lane_spawn_roll_d3(1, &empty, || 0.01);
+            assert_eq!(pick.first, Some(563));
+            let pick = tr_core::dd2::lane_spawn_roll_d3(1, &empty, || 0.1);
+            assert_eq!(pick.first, Some(554));
+            assert_eq!(pick.second, Some(557));
+        }
+
+        #[test]
+        fn the_tier_three_wave_six_chains_run_side_by_side() {
+            // `DD2Event.cs:1691-1728`: wave 6 runs two independent `if` chains —
+            // the second one re-assigns `num8` whenever it fires, so the glider
+            // (578) it picks outranks the balista (577) the first chain picked.
+            let empty = |_t: u16| 0i32;
+            let pick = tr_core::dd2::lane_spawn_roll_d3(6, &empty, || 0.01);
+            assert_eq!(pick.first, Some(578));
+            // With the glider at its cap the second chain's failed rolls carry it
+            // to the squire pair, whose `Next(3)` drops the 557.
+            let capped = |t: u16| if t == 578 { 40 } else { 0 };
+            let pick = tr_core::dd2::lane_spawn_roll_d3(6, &capped, || 0.3);
+            assert_eq!(pick.first, Some(554), "the second chain's squire pair");
+            assert_eq!(pick.second, Some(557));
+            // Both chains empty and the squire cap full: nothing spawns.
+            let full = |t: u16| if t == 554 || t == 557 { 60 } else { 0 };
+            let pick = tr_core::dd2::lane_spawn_roll_d3(6, &full, || 0.9);
+            assert_eq!(pick.first, None);
+        }
+
+        #[test]
+        fn the_lane_portal_round_trips_and_paces_its_spawns() {
+            // The 549's row + `AI`'s aiStyle-106 pacing: the `ai[0]` counter
+            // opens a spawn every `LaneSpawnRate` frames and resets at three
+            // times the rate (`NPC.cs:40992-41001`).
+            let kind = NpcKind::DD2LanePortal;
+            assert_eq!(kind.to_u16(), 147);
+            assert_eq!(NpcKind::from_u16(147), Some(kind));
+            let mut n = Npc::new(kind, 150.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+            assert_eq!((n.size().0, n.size().1), (78.0, 130.0));
+            assert_eq!(n.max_hp, 5);
+            assert_eq!(n.defense(), 20);
+            assert_eq!(n.defense(), 20);
+            // The ID window: `leftGate` rides `ai[2]` (`NPC.cs:40972`).
+            let mut world = surface_world();
+            // The event's pre-wave hold parks the counter (`:40988`), and the
+            // wave picks the lane rate (`Difficulty_1_GetEnemiesForWave(2)`).
+            world.dd2_spawn_hold = 0;
+            world.dd2_wave = 2;
+            let mut player = Player::spawn(&world);
+            player.x = 160.0 * TILE_PX;
+            player.y = 118.0 * TILE_PX;
+            // With the hold up the gate never counts.
+            let mut held = surface_world();
+            held.dd2_spawn_hold = 3;
+            for _ in 0..120 {
+                n.update_rng(&held, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(7));
+            }
+            assert!(!n.wants_dd2_spawn, "the hold parks the counter");
+            n.ai[0] = 0.0;
+            n.caster_counter = 0;
+            let mut spawns = 0;
+            for _ in 0..200 {
+                n.update_rng(&world, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(7));
+                if n.wants_dd2_spawn {
+                    spawns += 1;
+                    n.wants_dd2_spawn = false;
+                }
+            }
+            // `Difficulty_1_GetEnemiesForWave(2)`'s rate: three attempts in 200
+            // ticks (at 60, 120 and 180 — the 3× reset lands at 180).
+            assert_eq!(spawns, 3, "the lane's spawn attempts: {}", spawns);
+            // The right lane's ID rides ai[2] = 1.
+            n.ai[2] = 1.0;
+            n.caster_counter = 0;
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(7));
-            if n.wants_dd2_spawn {
-                spawns += 1;
-                n.wants_dd2_spawn = false;
+            assert!(n.wants_lane_right, "the right lane's flag");
+        }
+
+        #[test]
+        fn the_crystal_parks_the_gates_fade() {
+            // `NPC.cs:41014-41017`: while `AnyNPCs(548)` stands the gate's
+            // 180-tick arm returns early, so the gate never fades and stays
+            // unkillable.
+            let mut n = Npc::new(
+                NpcKind::DD2LanePortal,
+                150.0 * TILE_PX,
+                118.0 * TILE_PX,
+                1,
+                0.0,
+            );
+            let mut world = surface_world();
+            world.dd2_spawn_hold = 0;
+            world.dd2_crystal_alive = true;
+            let mut player = Player::spawn(&world);
+            let mut rng = UnifiedRandom::new(7);
+            for _ in 0..400 {
+                n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
             }
+            assert_eq!(n.ai[1], 0.0, "the fade never opens");
+            assert!(n.dont_take_damage, "the crystal keeps the gate up");
+            assert_eq!(n.scale, 1.0, "the gate holds its scale");
+            // Crystal gone: the fade opens and the gate dies at 550 — the fade's
+            // own counter runs 180 (the phase change) + 550 (the death) ticks.
+            world.dd2_crystal_alive = false;
+            let mut n = Npc::new(
+                NpcKind::DD2LanePortal,
+                150.0 * TILE_PX,
+                118.0 * TILE_PX,
+                1,
+                0.0,
+            );
+            for _ in 0..800 {
+                n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            }
+            assert_eq!(n.ai[1], 1.0, "the fade arm opened");
+            assert!(n.hp <= 0, "the gate dies at 550: {}", n.hp);
         }
-        // `Difficulty_1_GetEnemiesForWave(2)`'s rate: three attempts in 200
-        // ticks (at 60, 120 and 180 — the 3× reset lands at 180).
-        assert_eq!(spawns, 3, "the lane's spawn attempts: {}", spawns);
-        // The right lane's ID rides ai[2] = 1.
-        n.ai[2] = 1.0;
-        n.caster_counter = 0;
-        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(7));
-        assert!(n.wants_lane_right, "the right lane's flag");
-    }
 
-    #[test]
-    fn the_crystal_parks_the_gates_fade() {
-        // `NPC.cs:41014-41017`: while `AnyNPCs(548)` stands the gate's
-        // 180-tick arm returns early, so the gate never fades and stays
-        // unkillable.
-        let mut n = Npc::new(NpcKind::DD2LanePortal, 150.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
-        let mut world = surface_world();
-        world.dd2_spawn_hold = 0;
-        world.dd2_crystal_alive = true;
-        let mut player = Player::spawn(&world);
-        let mut rng = UnifiedRandom::new(7);
-        for _ in 0..400 {
-            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-        }
-        assert_eq!(n.ai[1], 0.0, "the fade never opens");
-        assert!(n.dont_take_damage, "the crystal keeps the gate up");
-        assert_eq!(n.scale, 1.0, "the gate holds its scale");
-        // Crystal gone: the fade opens and the gate dies at 550 — the fade's
-        // own counter runs 180 (the phase change) + 550 (the death) ticks.
-        world.dd2_crystal_alive = false;
-        let mut n = Npc::new(NpcKind::DD2LanePortal, 150.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
-        for _ in 0..800 {
-            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-        }
-        assert_eq!(n.ai[1], 1.0, "the fade arm opened");
-        assert!(n.hp <= 0, "the gate dies at 550: {}", n.hp);
-    }
-
-    #[test]
-    fn the_gate_spawns_the_waves_goblin_at_its_bottom() {
-        // `DD2Event.cs:556-570`'s resolve: the gate's bottom is the spawn
-        // point, the wave-1 goblin is the tier-1 pick, and the goblin cap
-        // refuses a second one.
-        let mut world = surface_world();
-        world.dd2_spawn_hold = 0;
-        world.dd2_crystal_alive = false;
-        world.dd2_event_ongoing = true;
-        world.dd2_wave = 1;
-        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
-        app.world = world;
-        let (_, ph) = (78.0, 130.0);
-        let (gx, gy) = (150.0 * TILE_PX, 118.0 * TILE_PX);
-        let mut gate = Npc::new(NpcKind::DD2LanePortal, gx, gy, 1, 0.0);
-        gate.wants_dd2_spawn = true;
-        app.npcs.push(gate);
-        update_npcs(&mut app, 1.0 / 60.0);
-        let goblins: Vec<&Npc> = app
-            .npcs
-            .iter()
-            .filter(|n| n.kind == NpcKind::DD2GoblinT1)
-            .collect();
-        assert_eq!(goblins.len(), 1, "the wave-1 squire spawns");
-        assert!(
-            (goblins[0].x - gx).abs() < 1.0 && (goblins[0].y - (gy + ph)).abs() < 1.0,
-            "the spawn rides the gate's bottom"
-        );
-        // The gate's second attempt also spawns — the cap is 50.
-        let mut gate = Npc::new(NpcKind::DD2LanePortal, gx, gy, 1, 0.0);
-        gate.wants_dd2_spawn = true;
-        app.npcs.push(gate);
-        update_npcs(&mut app, 1.0 / 60.0);
-        assert_eq!(
-            app.npcs
+        #[test]
+        fn the_gate_spawns_the_waves_goblin_at_its_bottom() {
+            // `DD2Event.cs:556-570`'s resolve: the gate's bottom is the spawn
+            // point, the wave-1 goblin is the tier-1 pick, and the goblin cap
+            // refuses a second one.
+            let mut world = surface_world();
+            world.dd2_spawn_hold = 0;
+            world.dd2_crystal_alive = false;
+            world.dd2_event_ongoing = true;
+            world.dd2_wave = 1;
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            app.world = world;
+            let (_, ph) = (78.0, 130.0);
+            let (gx, gy) = (150.0 * TILE_PX, 118.0 * TILE_PX);
+            let mut gate = Npc::new(NpcKind::DD2LanePortal, gx, gy, 1, 0.0);
+            gate.wants_dd2_spawn = true;
+            app.npcs.push(gate);
+            update_npcs(&mut app, 1.0 / 60.0);
+            let goblins: Vec<&Npc> = app
+                .npcs
                 .iter()
                 .filter(|n| n.kind == NpcKind::DD2GoblinT1)
-                .count(),
-            2,
-            "the goblin cap is 50"
-        );
-    }
+                .collect();
+            assert_eq!(goblins.len(), 1, "the wave-1 squire spawns");
+            assert!(
+                (goblins[0].x - gx).abs() < 1.0 && (goblins[0].y - (gy + ph)).abs() < 1.0,
+                "the spawn rides the gate's bottom"
+            );
+            // The gate's second attempt also spawns — the cap is 50.
+            let mut gate = Npc::new(NpcKind::DD2LanePortal, gx, gy, 1, 0.0);
+            gate.wants_dd2_spawn = true;
+            app.npcs.push(gate);
+            update_npcs(&mut app, 1.0 / 60.0);
+            assert_eq!(
+                app.npcs
+                    .iter()
+                    .filter(|n| n.kind == NpcKind::DD2GoblinT1)
+                    .count(),
+                2,
+                "the goblin cap is 50"
+            );
+        }
 
-    #[test]
-    fn the_gate_drops_the_unported_picks() {
-        // The tier-3 wave-6 roster: its two chains pick from the balista
-        // (577), the drake (569), the tier-2 mystic (571) and the Kobold
-        // walker pair — M4-EVENT-19 ported all of them, so the pick now
-        // spawns and only the still-unported kobold flyer (574/575) drops.
-        let mut world = surface_world();
-        world.hard_mode = true;
-        world.downed_mech_boss1 = true;
-        world.downed_golem = true;
-        world.dd2_spawn_hold = 0;
-        world.dd2_event_ongoing = true;
-        world.dd2_wave = 6;
-        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
-        app.world = world;
-        let mut gate = Npc::new(NpcKind::DD2LanePortal, 150.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
-        gate.wants_dd2_spawn = true;
-        app.npcs.push(gate);
-        update_npcs(&mut app, 1.0 / 60.0);
-        // The intent was consumed, so the resolve ran — the pick's kind is
-        // ported now, so one of the wave-6 families walks out.
-        assert!(app.npcs.iter().all(|n| !n.wants_dd2_spawn), "the resolve ran");
-        assert!(
-            app.npcs.iter().filter(|n| n.hp > 0).count() > 1,
-            "the tier-3 wave-6 pick spawns: {}",
-            app.npcs.iter().filter(|n| n.hp > 0).count()
-        );
+        #[test]
+        fn the_gate_drops_the_unported_picks() {
+            // The tier-3 wave-6 roster: its two chains pick from the balista
+            // (577), the drake (569), the tier-2 mystic (571) and the Kobold
+            // walker pair — M4-EVENT-19 ported all of them, so the pick now
+            // spawns and only the still-unported kobold flyer (574/575) drops.
+            let mut world = surface_world();
+            world.hard_mode = true;
+            world.downed_mech_boss1 = true;
+            world.downed_golem = true;
+            world.dd2_spawn_hold = 0;
+            world.dd2_event_ongoing = true;
+            world.dd2_wave = 6;
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            app.world = world;
+            let mut gate = Npc::new(
+                NpcKind::DD2LanePortal,
+                150.0 * TILE_PX,
+                118.0 * TILE_PX,
+                1,
+                0.0,
+            );
+            gate.wants_dd2_spawn = true;
+            app.npcs.push(gate);
+            update_npcs(&mut app, 1.0 / 60.0);
+            // The intent was consumed, so the resolve ran — the pick's kind is
+            // ported now, so one of the wave-6 families walks out.
+            assert!(
+                app.npcs.iter().all(|n| !n.wants_dd2_spawn),
+                "the resolve ran"
+            );
+            assert!(
+                app.npcs.iter().filter(|n| n.hp > 0).count() > 1,
+                "the tier-3 wave-6 pick spawns: {}",
+                app.npcs.iter().filter(|n| n.hp > 0).count()
+            );
+        }
     }
-}
 }
 
 #[cfg(test)]
@@ -9481,13 +9755,49 @@ mod dd2_tier_tests {
             (NpcKind::DD2WyvernT2, 170, 38.0, 38.0, 180, 75, 16, 0.2),
             (NpcKind::DD2WyvernT3, 171, 38.0, 38.0, 600, 100, 30, 0.05),
             (NpcKind::DD2DarkMageT3, 172, 34.0, 62.0, 4000, 90, 38, 0.0),
-            (NpcKind::DD2WitherBeastT3, 173, 18.0, 40.0, 1400, 80, 40, 0.05),
+            (
+                NpcKind::DD2WitherBeastT3,
+                173,
+                18.0,
+                40.0,
+                1400,
+                80,
+                40,
+                0.05,
+            ),
             (NpcKind::DD2DrakinT2, 174, 42.0, 58.0, 900, 60, 30, 0.0),
             (NpcKind::DD2DrakinT3, 175, 42.0, 58.0, 3000, 90, 40, 0.0),
-            (NpcKind::DD2KoboldWalkerT2, 176, 18.0, 40.0, 260, 60, 26, 0.2),
-            (NpcKind::DD2KoboldWalkerT3, 177, 18.0, 40.0, 800, 80, 32, 0.1),
+            (
+                NpcKind::DD2KoboldWalkerT2,
+                176,
+                18.0,
+                40.0,
+                260,
+                60,
+                26,
+                0.2,
+            ),
+            (
+                NpcKind::DD2KoboldWalkerT3,
+                177,
+                18.0,
+                40.0,
+                800,
+                80,
+                32,
+                0.1,
+            ),
             (NpcKind::DD2KoboldFlyerT2, 178, 38.0, 38.0, 170, 50, 16, 0.4),
-            (NpcKind::DD2KoboldFlyerT3, 179, 38.0, 38.0, 580, 80, 32, 0.25),
+            (
+                NpcKind::DD2KoboldFlyerT3,
+                179,
+                38.0,
+                38.0,
+                580,
+                80,
+                32,
+                0.25,
+            ),
             (NpcKind::DD2OgreT2, 180, 96.0, 124.0, 5000, 70, 34, 0.0),
             (NpcKind::DD2OgreT3, 181, 96.0, 124.0, 13000, 90, 40, 0.0),
         ] {
@@ -9598,13 +9908,7 @@ mod dd2_tier_tests {
     /// window latches at 300 ticks and the spit leaves on `num9` (36).
     #[test]
     fn the_ogre_latches_its_chase_window_and_spits() {
-        let mut n = Npc::new(
-            NpcKind::DD2OgreT2,
-            150.0 * TILE_PX,
-            112.0 * TILE_PX,
-            1,
-            0.0,
-        );
+        let mut n = Npc::new(NpcKind::DD2OgreT2, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
         let world = fixture();
         let mut player = Player::spawn(&world);
         // 640 px away: past `num4 + 300` (430) but inside the spit's 1000-px
@@ -9722,12 +10026,7 @@ mod dw3_tests {
                 continue; // the spawner's own stream is DW-3.3's pin
             }
             let want = pristine_of(&a, key);
-            assert_eq!(
-                *a.rngs.stream(key),
-                want,
-                "{} stayed pristine",
-                key.name()
-            );
+            assert_eq!(*a.rngs.stream(key), want, "{} stayed pristine", key.name());
         }
     }
 
@@ -9748,7 +10047,11 @@ mod dw3_tests {
 
         update_npcs(&mut a, 1.0 / 60.0);
         let after = a.rngs.stream(RngKey::UpdateNpcs).clone();
-        assert_ne!(after, UnifiedRandom::new(a.world.seed as i32), "the loot drew");
+        assert_ne!(
+            after,
+            UnifiedRandom::new(a.world.seed as i32),
+            "the loot drew"
+        );
 
         // The twin: the same death through the loot fns directly, from the
         // pristine stream — the NPCLoot order (coins, then the rule engine,
