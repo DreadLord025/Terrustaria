@@ -28,7 +28,8 @@ Handled C# forms (everything else in the body is tail bookkeeping and skipped):
   notDecraftable / corruption / crimson / AddCustomShimmerResult - ignored
     (decrafting/shimmer bookkeeping; corruption|crimson do NOT gate crafting -
     they only feed ItemID.Sets.IsCraftedCorruption/Crimson, `Recipe.cs:15252-15257`)
-  needTorchGodsFavor / needMechdusa - the row is SKIPPED (no port system)
+  needTorchGodsFavor / needMechdusa - ported as the recipe flags (the gates
+    are the player's unlockedBiomeTorches and the "for the worthy" seed)
   for (int i = A; i <= B; i++) { ... }         - textual expansion
   int[,] array = new int[N, 2] { ... } + for (j < array.GetLength(0)) - expanded
   Recipe.AddCritterStatueRecipe(a[, b[, RecipeGroups.X]]) - synthesized rows
@@ -57,7 +58,6 @@ FLAG_MAP = {
     "needSnowBiome": "need_snow",
     "needGraveyardBiome": "need_graveyard",
 }
-SKIP_FLAGS = {"needTorchGodsFavor", "needMechdusa"}
 
 
 def method_body(src, signature_re):
@@ -478,7 +478,11 @@ def parse_block(text, env, ctx, origin):
         if re.match(r"Recipe\.currentRecipe\.alchemy = true;$", line):
             row.flags["alchemy"] = True
             continue
-        m = re.match(r"Recipe\.currentRecipe\.(needWater|needHoney|needLava|needSnowBiome|needGraveyardBiome) = true;$", line)
+        m = re.match(
+            r"Recipe\.currentRecipe\.(needWater|needHoney|needLava|needSnowBiome"
+            r"|needGraveyardBiome) = true;$",
+            line,
+        )
         if m:
             row.flags[FLAG_MAP[m.group(1)]] = True
             continue
@@ -582,8 +586,7 @@ def expand_body(body, ctx, origin):
             out.append(body[i:])
             break
         pos, kind = min(marks)
-        if kind != "tail":
-            out.append(body[i:pos])
+        out.append(body[i:pos])
         if kind == "tail":
             break  # the C# tail derives the reverse recipes (this script emits them itself)
         if kind == "for":
@@ -768,7 +771,13 @@ def emit(rows, ctx):
         lines.append(f"    required: &[{req_s}],")
         if row.tile is not None:
             lines.append(f"    stations: &[{row.tile}],")
-        for f in ("need_water", "need_honey", "need_lava", "need_snow", "need_graveyard"):
+        for f in (
+            "need_water",
+            "need_honey",
+            "need_lava",
+            "need_snow",
+            "need_graveyard",
+        ):
             if row.flags.get(f):
                 lines.append(f"    {f}: true,")
         # `AddRecipe` auto-sets alchemy iff the station is the placed bottle

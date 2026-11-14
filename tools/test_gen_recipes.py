@@ -18,7 +18,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gen_recipes  # noqa: E402
 
-GOLDEN_AUTHORED = 2480   # 2 481 executed Add* sites - 1 skipped needTorchGodsFavor
+# The executed Add* sites of `Recipe.SetupRecipes` (1.4.5.8) — 2 892 rows.
+# The count was 2 480 until S1-L-11d: the generator's tail branch dropped the
+# 414 rows that sit between the last expansion mark and
+# `Recipe.CreateReverseWallRecipes()` (`Recipe.cs:15148`); the three gated
+# rows (`needTorchGodsFavor` x2, `needMechdusa`) are still skipped here.
+GOLDEN_AUTHORED = 2892
 GOLDEN_REVERSE = 311
 
 
