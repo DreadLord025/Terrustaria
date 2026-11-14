@@ -14063,3 +14063,44 @@ death state. The port's core stays in its `ai[0] == 0` phase with
 projectile path (which lacks the C#'s `dontTakeDamage` gate,
 `Projectile.cs:12662-12666`) can land a hit. Both halves belong together:
 the gate alone would make the Moon Lord unkillable.
+
+## The Moon Lord core's phases (S1-D-6c, 2026-11-14)
+
+`AI_077_MoonLordCore` (`NPC.cs:41157-41575`) runs the core through four
+phases, and the port's state machine had lost two of them:
+
+| phase | the C# | the port (before) |
+| --- | --- | --- |
+| init | `localAI[3] == 0` → 1, `ai[0] = -1` (`:41163-41168`) | `ai[0] == 0` → -1, **every tick** |
+| spawn-in | `ai[0] == -1`, 60 ticks, then the hands + the head (`:41193-41235`) | the same, but the phase re-armed |
+| waiting | `ai[0] == 0`: the hover + the part bookkeeping (`:41236-41291`) | unreachable — the init re-armed the phase |
+| vulnerable | `ai[0] == 1`: the hover, `dontTakeDamage = false` (`:41294-41310`) | unreachable |
+| death | `ai[0] == 2` (`:41307-41445`) | the same |
+
+**The init latch.** The C#'s latch is `localAI[3]` (0 → 1) — a one-shot.
+The port tested `ai[0] == 0` instead, so every return to the zero state
+re-armed the spawn phase: the core asked for its parts again every 60
+ticks and a second pair of hands + a second head rode out behind the
+first. `moon_spawn_latch` is the port's `localAI[3]`.
+
+**The vulnerable phase.** The C#'s `flag2` check (`:41270-41285`) hands
+the core `ai[0] = 1` and `dontTakeDamage = false` once all three parts
+are in their death state. The port had no such transition: the core stayed
+shielded and only the projectile path (which lacked the C#'s
+`dontTakeDamage` gate) could land a hit. `moon_parts_dead` is the sim's
+resolution of the C#'s check (the core's own AI has no NPC list — the
+same shape as the carrier mirrors).
+
+**The projectile's shield gate.** `Damage_PVE`'s outer walk skips the
+shielded NPC (`Projectile.cs:12583`: `!nPC.dontTakeDamage`). The port's
+`damage_pve` had no such gate, so the shots went through the Moon Lord's
+shield and the Brain's Creeper shield. The box walk (`Damage()`,
+`:14087-14119`) has no gate in the C# — the port keeps it that way.
+
+**The C#'s `flag` arm.** `NPC.cs:41251-41269` takes the core down when a
+slot points at no living part. In the C# a dead part stays `active`
+through its death animation, so the arm only fires for a part that
+vanished; the port removes the dead parts at once, so "the part is gone"
+is the normal death and the arm would kill the core on the first part's
+fall. The port implements the `flag2` arm only — the `flag` arm's
+counterpart does not exist in the port's immediate-death model.

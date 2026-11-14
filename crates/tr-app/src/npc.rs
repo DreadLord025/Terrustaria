@@ -3119,6 +3119,15 @@ pub struct Npc {
     /// no living part takes the core down with it. The sim resolves the
     /// ids each tick (the core's own AI has no NPC list).
     pub moon_parts_lost: bool,
+    /// The core's `flag2` check (`NPC.cs:41270-41285`): all three parts in
+    /// their death state hand the core its vulnerable phase (`ai[0] = 1`,
+    /// `dontTakeDamage = false`). The sim resolves the ids each tick.
+    pub moon_parts_dead: bool,
+    /// `AI_077`'s init latch (`NPC.cs:41163-41168`): `localAI[3]` 0 → 1
+    /// arms the spawn phase once. Without the latch the core re-armed the
+    /// phase on every return to the zero state and spawned a second pair
+    /// of hands every 60 ticks.
+    pub moon_spawn_latch: bool,
     pub rifleman_rearmed: bool,
     /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
     /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
@@ -4057,6 +4066,8 @@ impl Npc {
             moon_core_alive: false,
             moon_parts: [0, 0, 0],
             moon_parts_lost: false,
+            moon_parts_dead: false,
+            moon_spawn_latch: false,
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
@@ -11028,9 +11039,13 @@ impl Npc {
     /// Deviations: `MoonlordDeathDrama` (the light/explosion/pieces event)
     /// is unmodelled — the port's drama is the timer + the 622 smoke.
     fn update_moon_lord_core(&mut self, _world: &World, player: &Player, rng: &mut u64) {
-        // `:41163-41168`'s init: the first tick arms the spawn phase.
-        if self.ai[0] == 0.0 {
+        // `:41163-41168`'s init: the first tick arms the spawn phase. The
+        // C#'s latch is `localAI[3]` (0 → 1) — a one-shot; the port's
+        // `ai[0] == 0` test alone re-armed the phase on every return to
+        // the zero state (a second hands+head every 60 ticks).
+        if self.ai[0] == 0.0 && !self.moon_spawn_latch {
             self.ai[0] = -1.0;
+            self.moon_spawn_latch = true;
         }
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -11124,12 +11139,14 @@ impl Npc {
                     self.x += pcx - cx;
                     self.y += pcy - cy - 150.0;
                 }
-                // `:41251-41291`'s part bookkeeping: a missing part opens
-                // the death ride, and all parts dead-and-ghosted hands the
-                // core its vulnerable phase.
-                if self.moon_parts_lost {
-                    self.ai[0] = 2.0;
-                    self.ai[1] = 0.0;
+                // `:41251-41291`'s part bookkeeping: all three parts in
+                // their death state hand the core its vulnerable phase
+                // (`ai[0] = 1`, `dontTakeDamage = false`). The check runs
+                // in the C#'s `ai[0] == 0` phase only — the vulnerable
+                // phase is past it.
+                if self.ai[0] == 0.0 && self.moon_parts_dead {
+                    self.ai[0] = 1.0;
+                    self.dont_take_damage = false;
                 }
             }
         }

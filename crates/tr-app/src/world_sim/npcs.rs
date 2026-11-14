@@ -1939,8 +1939,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     // The core's part bookkeeping (`AI_077`'s `:41229-41232` +
     // `:41251-41291`): the three stored slots hold the parts' ids (the
-    // `localAI[0..2]` link the spawn handed out), so the core's loss
-    // check — a missing part opens the death ride — resolves them.
+    // `localAI[0..2]` link the spawn handed out), so the core's checks
+    // resolve them.
     for i in 0..app.npcs.len() {
         if app.npcs[i].kind != NpcKind::MoonLordCore {
             continue;
@@ -1948,20 +1948,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // The C#'s flag (`:41251-41269`): a slot that points at no living
         // part takes the core down with it.
         let mut lost = false;
+        // The C#'s flag2 (`:41270-41285`): all three parts in their death
+        // state hand the core its vulnerable phase. A slot that never
+        // got a part is not a dead part.
+        let mut dead = true;
         for uid in app.npcs[i].moon_parts {
             if uid <= 0 {
                 lost = true;
+                dead = false;
                 continue;
             }
-            let alive = app
-                .npcs
-                .iter()
-                .any(|m| m.uid as i32 == uid && m.hp > 0);
+            let alive = app.npcs.iter().any(|m| m.uid as i32 == uid && m.hp > 0);
             if !alive {
                 lost = true;
+            } else {
+                dead = false;
             }
         }
         app.npcs[i].moon_parts_lost = lost;
+        app.npcs[i].moon_parts_dead = dead;
     }
     // `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
     // (`Main.cs:65373`): the clock arms it at the day boundary (the
@@ -8938,6 +8943,87 @@ mod moon_lord_tests {
             })
             .count();
         assert_eq!(alive_parts, 0, "the parts fall with their core");
+    }
+
+    #[test]
+    fn the_core_spawns_its_parts_once() {
+        // `AI_077`'s init latch (`NPC.cs:41163-41168`'s `localAI[3]` 0 → 1):
+        // the core arms the spawn phase once and the two hands + the head
+        // ride out one set. The port's `ai[0] == 0` test alone re-armed
+        // the phase on every return to the zero state — a second pair of
+        // hands every 60 ticks.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        for _ in 0..200 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let hands = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHand)
+            .count();
+        let heads = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHead)
+            .count();
+        assert_eq!(hands, 2, "the two hands — and only the two");
+        assert_eq!(heads, 1, "the head — and only the head");
+    }
+
+    #[test]
+    fn the_core_becomes_vulnerable_when_its_parts_die() {
+        // `AI_077`'s `flag2` (`NPC.cs:41270-41285`): all three parts in
+        // their death state hand the core its vulnerable phase (`ai[0] =
+        // 1`, `dontTakeDamage = false`).
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        for _ in 0..61 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let core_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordCore)
+            .expect("the core");
+        assert_eq!(app.npcs[core_idx].ai[0], 0.0, "the waiting phase");
+        assert!(
+            app.npcs[core_idx].dont_take_damage,
+            "the core is shielded while its parts live"
+        );
+        // The parts die: the core's bookkeeping sees all three gone.
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MoonLordHand || n.kind == NpcKind::MoonLordHead {
+                n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let core_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordCore)
+            .expect("the core");
+        assert_eq!(app.npcs[core_idx].ai[0], 1.0, "the vulnerable phase");
+        assert!(
+            !app.npcs[core_idx].dont_take_damage,
+            "the core takes the hits now"
+        );
     }
 
     #[test]
