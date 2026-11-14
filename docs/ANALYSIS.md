@@ -13884,6 +13884,72 @@ Deliberate deviations:
    hurts, `NPC.cs:81535-81545`) have no ported kinds.
 
 
+## The hover family's residuals (S1-D-3l, 2026-11-14)
+
+`AI_005_EaterOfSouls` (`NPC.cs:50244-50760`) is the shared fly core of the
+hover family. The port's `npc_ai::hover_step` had the shape — the target
+vector scaled to the kind's `num`, the `num2` approach, the type-42 scale
+factor and its surface-gated damping — but five things of the source were
+missing, and the frame clock ran twice.
+
+**The 8-px aim floor** (`:50421-50424`). The C# floors the target's centre
+and the NPC's own centre to the 8-px grid and takes the aim as the
+difference of the snapped values:
+`num4 = (int)(num4 / 8f) * 8; vector.X = (int)(vector.X / 8f) * 8;`. The
+port aimed at the exact centre. The floor is now in `hover_step` (and in
+the Servant of Cthulhu's own arm, S1-D-3k).
+
+**The `flag5` gate** (`:50447`). The approach's extra add on a sign
+reversal is gated:
+`flag5 = type ∉ {6, 42, 94, 139, 173, 619} ∧ type ∉ [231, 235]`. The port
+applied it to every hover kind, so the Eater of Souls (6) and the Hornet
+(42) over-added on every reversal. `HoverParams` now carries `double_add`
+and the table sets it per kind.
+
+**The dead-target flee vector** (`:50299`/`:50480-50484`). A dead player
+replaces the aim with `num4 = direction * num/2; num5 = -num/2` — the NPC
+flies off along its facing. `HoverTarget` now carries the dead flag.
+
+**The per-kind rotation arms** (`:50580-50655`). The C# ends the core with
+one of four shapes, and the port had none of them:
+
+| kind | arm | the port |
+| --- | --- | --- |
+| 6/94/173/619 | `rotation = atan2(num5, num4) - 1.57` (the aim tilt) | — |
+| 23 | the sprite-aim arm: the sprite direction follows the aim's x sign, `rotation = atan2(num5, num4)` (+π to the left) | — |
+| 42/176/205/231-235 | the sprite direction follows the velocity's x sign, `rotation = velocity.X * 0.1` | — |
+| the rest | `rotation = atan2(velocity.Y, velocity.X) - 1.57` | — |
+
+`HoverParams::rotation` now selects the arm (`HoverRotation`).
+
+**The tile collision** (`:50656-50688`). The C#'s bounce arm covers the
+kinds that collide with the tiles: `velocity.X = oldVelocity.X * -num14`
+(`num14` = 0.7, 0.4 for the types 6/173) plus the small-velocity clamps
+(`|v| < 2` → ±2 on the x, `|v| < 1.5` → ±2 on the y). The port bounced
+every hover kind with a flat ×0.5 — and it bounced the kinds that
+`SetDefaults` gives `noTileCollide` (the Eater of Souls and the Meteor
+Head), which in the source fly straight through the tiles. `HoverParams` now
+carries `no_tile_collide` and `bounce`.
+
+**The frame clock ran twice.** `update_hover` advanced the frame counter
+*and* `find_frame` advanced it again (the C#'s `NPC.FindFrame` is the only
+owner), so the hovers' flap advanced at half the stride. The frame handling
+now lives in `find_frame` alone — and the Hornet gets the C#'s four-phase
+flap (`:74907-74934`: two ticks a phase over the rows 0/1/2/1) instead of
+the port's 8-tick stride over three rows.
+
+Deviations:
+
+* **The tile collision** is the port's rectangle probe
+  (`crate::player::collides_rect`) instead of the C#'s tile sweep with
+  `oldVelocity`; the bounce's factor and the clamps are the source's.
+* **The dust and the wet arms** (`:50695-50730`) are skipped — the port has
+  no dust layer and no wet flag on the hovers.
+* **The per-difficulty / secret-seed overrides** (`:50308-50316` the remix
+  values for type 6, `:50345-50348` type 231's 3/0.017) are constants-off.
+* **The `facing` write** at the end of the step is the port's convention
+  (the C#'s `base.direction` is not written by `AI_005`); the render uses
+  `spriteDirection`, which the rotation arms now own.
 ## The player voice cues (S1-E-21b, 2026-11-14)
 
 The second wave of the sound bank: the player's own hurt and death cues.
@@ -13915,3 +13981,4 @@ Deliberate deviations:
    plays the legacy cue everywhere.
 4. The C#'s local-player hurt sound plays non-positionally
    (`Player.cs:38572`); the port's drain plays it without a position ✓.
+
