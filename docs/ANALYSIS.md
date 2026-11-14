@@ -8247,6 +8247,16 @@ Deviations and accepted changes:
 
 The entity messages and the smoothing are 1:1 ports; the deviations:
 
+- **The peer inventory slots are carried.** `5 PlayerInventory`
+  (`MessageBuffer.cs:399-462`) puts one slot into the receiving player's
+  inventory copy: the server attributes it to the sending client
+  (`:409-412`), stores it and relays it to the other clients
+  (`:454-457`, the `PlayerItemSlotID.CanRelay` slots
+  `PlayerItemSlotID.cs:168-186` — the inventory, the armour, the dye, the
+  misc, the misc-dye and the fourth bank; the first three banks and the
+  trash are not). The server keeps the per-slot inventory
+  (`Server::slot_inventory`) and the clients keep each peer's
+  (`PlayerNet::inventory`).
 - **The remote offsets are the C#'s `netOffset`.** `Player.netOffset`
   (`Player.cs:1622`) accrues on every incoming `13 PlayerControls`
   (`MessageBuffer.cs:1000-1004`) and decays in `Player.UpdateNetOffset`
