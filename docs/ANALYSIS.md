@@ -6950,8 +6950,11 @@ snap beside the spawn; the load-time NPC spawn is suppressed under the pin).
 `tools/gen_recipes.py` reads the decompiled `Terraria/Recipe.cs`
 `SetupRecipes` and emits `crates/tr-app/src/recipes_gen.rs` - the whole
 table as ONE `&[Recipe, ...]` expression spliced via
-`include!` into `RECIPES`. 2764 rows in the C# registration order
-(= the UI listing order):
+`include!` into `RECIPES`. 2 791 rows in the C# registration order
+(= the UI listing order; re-pinned 2026-11-14 by S1-L-11 - the reverse
+rows now derive from the C# item data, `Item.SetDefaults`
+createTile/createWall, not from `itemdata.rs`; `gen_recipes.py --check`
+and `tools/test_gen_recipes.py` gate the drift):
 
 - the main body (2475 `AddRecipe` calls) + the 35 `Add*Furniture`
   helpers spliced at their call positions + the `AddCritterStatueRecipe`
@@ -6960,13 +6963,17 @@ table as ONE `&[Recipe, ...]` expression spliced via
   the `ItemID.Sets.TextureCopyLoad[i]` lookups, the shared locals
   (`int type = 3234;`) and the `(int)((float)num * 2.5f)` casts are all
   expanded/evaluated;
-- 284 derived reverse rows: `CreateReversePlatformRecipes` +
-  `CreateReverseWallRecipes` (`Recipe.cs:16648-16694`) flip every
-  single-ingredient recipe whose result is a placed platform
-  (`TileID.Sets.Platforms` {19, 427, 435-439}) or a placed wall
-  (`createWall > 0`, the ingredient not a wall) and insert it right
-  after the source with `notDecraftable` - the port carries that exact
-  flag as `Recipe.not_decraftable` (the craft direction ignores it).
+- 311 derived reverse rows: `CreateReversePlatformRecipes` +
+  `CreateReverseWallRecipes` (`Recipe.cs:15148-15149`, bodies
+  `:16652-16702`) flip every single-ingredient recipe whose result is a
+  placed platform (`TileID.Sets.Platforms` {19, 427, 435-439}) or a
+  placed wall (`createWall > 0`, the ingredient not a wall) and insert
+  it right after the source with `notDecraftable` - the port carries
+  that exact flag as `Recipe.not_decraftable` (the craft direction
+  ignores it). The flips are derived from the C#'s own item registry
+  (`Item.SetDefaults`); the deliberate parse gap is the `default:` switch
+  sections (only the monolith series 2192-2198 is affected, and none of
+  them is a single-ingredient recipe result).
 
 Findings the hand table had wrong (the generator is the truth now):
 
