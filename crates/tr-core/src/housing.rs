@@ -65,6 +65,262 @@ pub struct RoomScan {
     pub num_tiles: i32,
     /// The distinct active tile kinds inside the room (`WorldGen.houseTile`).
     pub house_tiles: Vec<u16>,
+    /// `WorldGen.roomTiles` — the tiles the room flood reached. The score
+    /// reads it through `Housing_CheckIfInRoom` (`WorldGen.cs:6031-6039`).
+    pub room_tiles: std::collections::HashSet<(i32, i32)>,
+}
+
+/// `WorldGen.IsOpenDoorAnchorFrame` (`WorldGen.cs:69171-69184`): an active
+/// door (11) whose frame marks an open anchor — `frameX % 72` below 18 or at
+/// least 54.
+fn is_open_door_anchor_frame(tile: &crate::tile::Tile) -> bool {
+    if !tile.active() || tile.kind != 11 {
+        return false;
+    }
+    let num = tile.frame_x % 72;
+    if num >= 18 {
+        num >= 54
+    } else {
+        true
+    }
+}
+
+/// `TileID.Sets.IgnoredInHouseScore` (`TileID.cs:620`): the tile kinds the
+/// house score ignores.
+const IGNORED_IN_HOUSE_SCORE: &[u16] = &[4, 3, 73, 82, 83, 84, 386];
+
+/// `TileID.Sets.BasicChest` (`TileID.cs:570`): the chest kinds the score
+/// counts separately (the −30 penalty each).
+const BASIC_CHEST: &[u16] = &[21, 467];
+
+/// `WorldGen.ScoreRoom_CanBeHomeSpot` (`WorldGen.cs:6021-6029`): the tile 379
+/// (the "candelabra") is never a home spot.
+fn can_be_home_spot(tile: &crate::tile::Tile) -> bool {
+    !(tile.active() && tile.kind == 379)
+}
+
+/// `WorldGen.Housing_CheckIfInRoom` (`WorldGen.cs:6031-6039`): the room mask.
+fn housing_check_if_in_room(scan: &RoomScan, x: i32, y: i32) -> bool {
+    scan.room_tiles.contains(&(x, y))
+}
+
+/// `Collision.SolidTiles` (`Collision.cs:1862-1878`): any solid tile in the
+/// box.
+fn solid_tiles_in_box(world: &World, x1: i32, x2: i32, y1: i32, y2: i32) -> bool {
+    for x in x1..=x2 {
+        for y in y1..=y2 {
+            if world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && TILE_SOLID.has(t.kind))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.Housing_GetTestedRoomBounds` (`WorldGen.cs:5994-6020`): the
+/// room's bounds grown by 5/3 + 40 and clipped to the world.
+fn tested_room_bounds(world: &World, scan: &RoomScan) -> (i32, i32, i32, i32) {
+    let mut start_x = scan.x1 - 5 - 1 - 40;
+    let mut end_x = scan.x2 + 5 + 1 + 40;
+    let mut start_y = scan.y1 - 3 - 1 - 40;
+    let mut end_y = scan.y2 + 3 + 1 + 40;
+    if start_x < 5 {
+        start_x = 5;
+    }
+    if end_x >= world.width as i32 - 5 {
+        end_x = world.width as i32 - 6;
+    }
+    if start_y < 5 {
+        start_y = 5;
+    }
+    if end_y >= world.height as i32 - 5 {
+        end_y = world.height as i32 - 6;
+    }
+    (start_x, end_x, start_y, end_y)
+}
+
+/// `WorldGen.CountTileTypesInArea` (`WorldGen.cs:5831-5843`): the active
+/// tiles' counts per kind.
+fn count_tile_types_in_area(
+    world: &World,
+    start_x: i32,
+    end_x: i32,
+    start_y: i32,
+    end_y: i32,
+) -> std::collections::HashMap<u16, i32> {
+    let mut counts = std::collections::HashMap::new();
+    for x in start_x..=end_x {
+        for y in start_y..=end_y {
+            if let Some(t) = world.tile(x, y) {
+                if t.active() {
+                    *counts.entry(t.kind).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    counts
+}
+
+/// The tile scan groups `WorldGen.GetTileTypeCountByCategory` reads
+/// (`WorldGen.cs:5845-5856`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TileScanGroup {
+    None,
+    Corruption,
+    Crimson,
+    Hallow,
+    TotalGoodEvil,
+}
+
+/// `WorldGen.GetTileTypeCountByCategory` (`WorldGen.cs:5845-5856`): the
+/// category sums over the tile counts. The port carries the three groups the
+/// house score needs (the `TotalGoodEvil` roll).
+fn tile_type_count_by_category(
+    counts: &std::collections::HashMap<u16, i32>,
+    group: TileScanGroup,
+) -> i32 {
+    let count = |kind: u16| counts.get(&kind).copied().unwrap_or(0);
+    match group {
+        TileScanGroup::Corruption => {
+            count(23) + count(24) + count(25) + count(32) + count(112) + count(163)
+                + count(400) + count(398)
+                - 5 * count(27)
+        }
+        TileScanGroup::Crimson => {
+            count(199) + count(203) + count(200) + count(401) + count(399) + count(234)
+                + count(352)
+                - 5 * count(27)
+        }
+        TileScanGroup::Hallow => {
+            count(109) + count(110) + count(113) + count(117) + count(116) + count(164)
+                + count(403) + count(402)
+        }
+        TileScanGroup::TotalGoodEvil => {
+            tile_type_count_by_category(counts, TileScanGroup::Hallow)
+                - (tile_type_count_by_category(counts, TileScanGroup::Corruption)
+                    + tile_type_count_by_category(counts, TileScanGroup::Crimson)
+                    + 5 * count(27))
+        }
+        TileScanGroup::None => 0,
+    }
+}
+
+/// `WorldGen.ScoreRoom` (`WorldGen.cs:5858-5992`): the room's score and its
+/// best home spot.
+///
+/// The C# writes the result into the `WorldGen.hiScore`/`bestX`/`bestY`
+/// globals; the port returns them. The occupancy half
+/// (`ScoreRoom_IsThisRoomOccupiedBySomeone` `:5814-5829`) needs the NPC list
+/// and lives with the caller (`town.rs`), so this scores an empty room; the
+/// shared-room adjustment (`:5936-5939`) rides it.
+pub fn score_room(world: &World, scan: &RoomScan) -> Option<(i32, i32, i32)> {
+    let mut hi_score = 0;
+    // `:5877-5883`: the evil count over the tested area lowers the base.
+    let (tx1, tx2, ty1, ty2) = tested_room_bounds(world, scan);
+    let counts = count_tile_types_in_area(world, tx1 + 1, tx2 - 1, ty1 + 2, ty2 + 1);
+    let mut evil = -tile_type_count_by_category(&counts, TileScanGroup::TotalGoodEvil);
+    if evil < 50 {
+        evil = 0;
+    }
+    let base = 50 - evil;
+    if base <= -250 {
+        // `:5889-5892`: the room is rejected outright.
+        return None;
+    }
+    let mut best: Option<(i32, i32, i32)> = None;
+    // `:5897-5899`: the room's own area.
+    for i in (scan.x1 + 1)..scan.x2 {
+        for j in (scan.y1 + 2)..(scan.y2 + 2) {
+            // `:5901-5904`: the candidate must be an active, solid, framed
+            // tile with solid neighbours.
+            let Some(tile) = world.tile(i, j) else {
+                continue;
+            };
+            if !tile.active()
+                || !can_be_home_spot(&tile)
+                || !TILE_SOLID.has(tile.kind)
+                || solid_tiles_in_box(world, i - 1, i + 1, j - 3, j - 1)
+            {
+                continue;
+            }
+            let framed = |x: i32, y: i32| {
+                world
+                    .tile(x, y)
+                    .is_some_and(|t| t.active() && TILE_SOLID.has(t.kind))
+            };
+            if !framed(i - 1, j) || !framed(i + 1, j) {
+                continue;
+            }
+            let mut num = base;
+            let mut on_column = 0;
+            let mut chests = 0;
+            // `:5910-5930`: the furniture around the spot scores the room.
+            for k in (i - 2)..(i + 3) {
+                for l in (j - 4)..j {
+                    let Some(t) = world.tile(k, l) else {
+                        continue;
+                    };
+                    if !t.active() || IGNORED_IN_HOUSE_SCORE.contains(&t.kind) {
+                        continue;
+                    }
+                    if t.kind == 11 && !is_open_door_anchor_frame(&t) {
+                        continue;
+                    }
+                    if k == i {
+                        on_column += 1;
+                    } else if BASIC_CHEST.contains(&t.kind) {
+                        chests += 1;
+                    } else if t.kind == 10 || t.kind == 388 {
+                        num -= 20;
+                    } else if !is_open_door_anchor_frame(&t) && t.kind != 389 {
+                        if TILE_SOLID.has(t.kind) {
+                            num -= 5;
+                        } else {
+                            num += 5;
+                        }
+                    } else {
+                        num -= 20;
+                    }
+                }
+            }
+            // `:5940-5951`: the chest and column penalties.
+            if num > 0 && chests > 0 {
+                num = (num - 30 * chests).max(1);
+            }
+            if num > 0 && on_column > 0 {
+                num = (num - 15 * on_column).max(1);
+            }
+            if num <= hi_score {
+                continue;
+            }
+            // `:5953-5972`: the three cells above the spot must be in the
+            // room and the room must hold the spot itself.
+            let mut in_room = housing_check_if_in_room(scan, i, j);
+            let mut above = [false; 3];
+            for m in 1..=3 {
+                let solid = world
+                    .tile(i, j - m)
+                    .is_some_and(|t| t.active() && TILE_SOLID.has(t.kind));
+                if !solid {
+                    above[(m - 1) as usize] = true;
+                }
+                if !housing_check_if_in_room(scan, i, j - m) {
+                    above[(m - 1) as usize] = false;
+                }
+            }
+            if above.iter().any(|v| !*v) {
+                in_room = false;
+            }
+            if in_room && housing_check_if_in_room(scan, i, j - 1) {
+                hi_score = num;
+                best = Some((i, j, num));
+            }
+        }
+    }
+    best
 }
 
 /// `WorldGen.RoomNeeds` (`:5717-5756`): the house-tile table against the
@@ -94,6 +350,7 @@ pub fn check_room(world: &World, x: i32, y: i32) -> Result<RoomScan, RoomFailure
         y2: y,
         num_tiles: 0,
         house_tiles: Vec::new(),
+        room_tiles: std::collections::HashSet::new(),
     };
     let mut visited = std::collections::HashSet::new();
     let mut stack = vec![(x, y)];
@@ -112,6 +369,9 @@ pub fn check_room(world: &World, x: i32, y: i32) -> Result<RoomScan, RoomFailure
     if scan.num_tiles < MIN_ROOM_TILES {
         return Err(RoomFailure::RoomIsTooSmall);
     }
+    // `WorldGen.roomTiles` — the flood's reached tiles (`StartRoomCheck`
+    // `:6041-6117` marks every tile it scans).
+    scan.room_tiles = visited;
     Ok(scan)
 }
 
@@ -300,6 +560,26 @@ mod tests {
         assert_eq!(scan.x2, 61);
         assert!(scan.num_tiles >= MIN_ROOM_TILES);
         assert!(room_needs(&scan.house_tiles));
+    }
+
+    #[test]
+    fn the_room_score_picks_the_best_home_spot() {
+        // `WorldGen.ScoreRoom` (`WorldGen.cs:5858-5992`): the best spot
+        // inside the room — not the scan's centre.
+        let mut w = ground();
+        carve_room(&mut w, 50, 100, 12, 9, &[15, 14, 4, 10]);
+        let scan = check_room(&w, 55, 105).expect("the room scans");
+        let (bx, by, score) = score_room(&w, &scan).expect("the room scores");
+        assert!(score > 0, "the score: {score}");
+        assert!(bx >= scan.x1 && bx <= scan.x2, "the x is inside the room");
+        assert!(by >= scan.y1 && by <= scan.y2, "the y is inside the room");
+        // The spot's three cells above are inside the room (`:5953-5972`).
+        for m in 1..=3 {
+            assert!(
+                scan.room_tiles.contains(&(bx, by - m)),
+                "the cell above the spot is in the room"
+            );
+        }
     }
 
     #[test]

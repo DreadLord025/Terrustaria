@@ -4422,6 +4422,39 @@ Deviations:
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
 
+## Town housing (S1-E-11a, 2026-11-14)
+
+`WorldGen.ScoreRoom` (`WorldGen.cs:5858-5992`) landed in `tr-core::housing`:
+the room's **score** and its **best home spot** (`WorldGen.bestX/bestY`).
+
+- **The base**: 50 minus the evil count over the tested area (the room's
+  bounds grown by 5/3 + 40 and clipped, `:5994-6020`); the evil count is
+  `GetTileTypeCountByCategory(counts, TotalGoodEvil)` (`:5845-5856`) over the
+  active tiles' kinds (`:5831-5843`). A room scoring −250 or worse is
+  rejected outright (`:5889-5892`).
+- **The candidates**: the room's own area (`:5897-5899`); each needs an active
+  solid tile, a home spot (the tile 379 never is, `:6021-6029`), solid
+  neighbours left and right and no solid tile in the box below (`:5901-5904`).
+- **The furniture**: the 5×4 block above each candidate scores +5 for a
+  non-solid tile and −5 for a solid one, −20 for a door (10/388) or an open
+  door anchor (389), the ninth column −15 each and a chest −30 each
+  (`:5910-5951`); the tile kinds of `TileID.Sets.IgnoredInHouseScore` and the
+  `BasicChest` set are the C#'s (`TileID.cs:620`/`:570`).
+- **The room membership**: the three cells above the spot must be in the
+  room's mask (`WorldGen.roomTiles`, `:5953-5972`) and the room must hold the
+  spot itself.
+
+`town.rs::scan_spot` now returns the scored spot instead of the scan's
+centre, so `quick_find_home` picks the room's best home (the C#'s
+`QuickFindHome` → `RoomNeeds` → `ScoreRoom` → `hiScore > 0` chain,
+`WorldGen.cs:5732-5795`).
+
+Deviations: the occupancy half (`ScoreRoom_IsThisRoomOccupiedBySomeone`
+`:5814-5829`) and the shared-room adjustment (`:5936-5939`) need the NPC
+list and the `housingCategory` occupancy — they land with the housing
+occupancy follow-up; the relocation (`MoveTownNPC`/`moveRoom`,
+`WorldGen.cs:4685`/`:4843`) and `GetHouseholdStatus` are still out.
+
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
@@ -13416,6 +13449,38 @@ Deliberate deviations:
 Out (the rest of S1-L-6b): the player→switch bridge
 (`Collision.SwitchTiles`, `Player.cs:32177/32339/34823`), the pressure-plate
 helper and `Wiring.running`'s production readers.
+
+
+## The Deerclops' ice-spike rows (S1-D-4b-5b, 2026-11-14)
+
+`AI_123_Deerclops_MakeSpikesForward`/`MakeSpikesBothSides` +
+`TryMakingSpike` + `TryMakingSpike_FindBestY` (`NPC.cs:44466-44534`,
+`:44575-44640`) are the Deerclops' signature attack: the spikes rain down
+on the ground near the player, in volleys.
+
+The port fired a stand-in — all twenty spikes at once, from the Deerclops'
+feet, straight up. The arm now carries the C#'s shape:
+
+* **the forward row** (state 1, `:44466-44500`): from the 36th tick, every
+  fourth tick makes four spikes (the row's spread is 20 tiles);
+* **the both-sides row** (state 4, `:44502-44532`): from the 56th tick,
+  every second tick makes the row's spikes on both sides (the spread is 15
+  tiles);
+* **the spike's landing row** (`:44586-44640`): `FindBestY` walks the
+  column toward the player's feet and keeps the walkable row closest to
+  them, then walks up through the solid tiles and down to the first
+  walkable one;
+* **the spike's flight** (`:44582`): the `(0, -1)` vector rotated by
+  `whichOne * dir * 0.7 * (PI / 4 / howMany)` and the `ai1` scale factor
+  (`0.1 + rand * 0.1 + xOffset * 1.1 / howMany`).
+
+The two tile probes the C#'s helper uses ride with it:
+`WorldGen.ActiveAndWalkableTile` (`WorldGen.cs:70300-70318` — the tile is
+active, solid and not framed off) and `WorldGen.SolidTile`
+(`:70111-70132` — the full solid block, no slope and no top-only tile).
+
+The rubble's own tile scan (`AI_123_Deerclops_ShootRubbleUp`,
+`:44448-44465`) is still the port's stand-in — the follow-up row.
 
 ## The switch bridge (S1-L-6b2, 2026-11-14)
 
