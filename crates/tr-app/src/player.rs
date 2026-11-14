@@ -597,6 +597,12 @@ pub struct Player {
     /// between simulation ticks on high-refresh displays.
     pub prev_x: f32,
     pub prev_y: f32,
+    /// `Entity.oldPosition` (`Player.cs:28071`): the position before this
+    /// tick's movement. The switch-tile bridge (`Collision.SwitchTiles`,
+    /// `Player.cs:28274-28275`) reads it to tell "the entity moved onto the
+    /// plate" from "the entity stands on it".
+    pub old_x: f32,
+    pub old_y: f32,
     pub vx: f32,
     pub vy: f32,
     pub on_ground: bool,
@@ -921,6 +927,10 @@ pub struct Player {
     no_fall_dmg: bool,
     /// `Player.hasWings` (`Player.cs:1336`): any wing equipped (M3-EQUIP-3).
     pub has_wings: bool,
+    /// `Player.releaseHook` (`Player.cs:27483-27489`): the "the hook key was
+    /// released" latch the quick-grapple edge reads (`controlHook` +
+    /// `releaseHook` → `QuickGrapple`).
+    pub release_hook: bool,
     /// `Player.grappling[0] != -1` (the per-tick rebuilt grapple state): the
     /// hook is attached and `GrappleMovement` drives the velocity.
     pub grappling_active: bool,
@@ -1561,6 +1571,8 @@ impl Player {
             y: sy,
             prev_x: sx,
             prev_y: sy,
+            old_x: sx,
+            old_y: sy,
             vx: 0.0,
             vy: 0.0,
             on_ground: false,
@@ -1611,6 +1623,7 @@ impl Player {
             c_minecart: 0,
             c_mount: 0,
             c_grapple: 0,
+            release_hook: true,
             equipped_prefix: [0; 20],
             banks: std::array::from_fn(|_| std::array::from_fn(|_| crate::item::EMPTY_SLOT)),
             chest: crate::bank::CHEST_CLOSED,
@@ -4294,6 +4307,11 @@ impl Player {
         }
         // The AABB resolve (`TileCollision` + the step/slope helpers): the
         // velocity phase above only shaped `velocity`; this integrates it.
+        // `base.oldPosition = base.position` (`Player.cs:28071`): the position
+        // before this tick's movement — the switch-tile bridge reads it to
+        // tell "moved onto the plate" from "stands on it".
+        self.old_x = self.x;
+        self.old_y = self.y;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
@@ -6450,6 +6468,11 @@ impl Player {
         // carries the current velocity through untouched.
         if hooks.is_empty() {
             return;
+        }
+        // `:22620-22623` — a mount not in the `MountID.Sets.CanUseHooks` set
+        // ({54, 57-60}) dismounts while the hooks are out.
+        if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
+            self.try_dismount(world);
         }
         // `RefreshMovementAbilities` (`Player.cs:22858-22867`): the flight
         // budgets refill every tick while grappling.
@@ -8905,6 +8928,55 @@ mod tests {
         );
         // GoingDownWithGrapple: the pull points up here.
         assert!(!p.going_down_with_grapple);
+    }
+
+    /// `Player.GrappleMovement`'s dismount (`Player.cs:22620-22623`): a mount
+    /// outside `MountID.Sets.CanUseHooks` ({54, 57-60}) dismounts while the
+    /// hooks are out — the port dismounted every mount.
+    #[test]
+    fn s1_l_10_a_mount_outside_can_use_hooks_dismounts() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The Unicorn (10) is not in the CanUseHooks set.
+        p.set_mount(10, false);
+        assert!(p.mount.is_active(), "the mount is up");
+        let grapple: &[(u16, Vec2, f32)] =
+            &[(crate::projectile::HOOK, Vec2::new(p.x, p.y - 100.0), 0.0)];
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            grapple,
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
+        assert!(!p.mount.is_active(), "the mount dismounted");
+    }
+
+    /// The same gate at the fire edge (`Player.QuickGrapple`,
+    /// `Player.cs:6334-6337`): the set's own rows stay mounted.
+    #[test]
+    fn s1_l_10_a_mount_inside_can_use_hooks_stays() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The row 54 is in `MountID.Sets.CanUseHooks`.
+        p.set_mount(54, false);
+        assert!(p.mount.is_active(), "the mount is up");
+        let grapple: &[(u16, Vec2, f32)] =
+            &[(crate::projectile::HOOK, Vec2::new(p.x, p.y - 100.0), 0.0)];
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            grapple,
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
+        assert!(p.mount.is_active(), "the mount stays mounted");
     }
 
     /// `Player.cs:22645`: the fall origin refreshes per tick while

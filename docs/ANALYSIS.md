@@ -10622,6 +10622,14 @@ S1-L-10b landed the two hand-overs:
   the 25-spark wheel burst. The equipped cart (the misc-equip 2) wins over
   the wooden minecart (`:22676-22679`); the port reads it per tick.
 
+S1-L-10c fixed the mount dismount's gate: `Player.GrappleMovement`
+(`Player.cs:22620-22623`) and the fire edge (`:6334-6337`) dismount only a
+mount **outside** `MountID.Sets.CanUseHooks` ({54, 57-60}) — the port
+dismounted every mount, so a cart or a grappling mount was dropped the moment
+a hook went out. The fire edge is now the C#'s own per-player latch
+(`Player.releaseHook`, `:27481-27489`) instead of a process-global flag that
+fired the hook for the wrong player.
+
 Deferred to their own rows: the chain/sprite rendering and the `light` /
 `projFrames[652]` animation (nothing in `render/` reads `proj_data`),
 `Minecart.FrameTrack` (the track switch table needs `Tile.FrontTrack` /
@@ -13441,4 +13449,73 @@ Deliberate deviations:
 Out (the rest of S1-L-6b): the player→switch bridge
 (`Collision.SwitchTiles`, `Player.cs:32177/32339/34823`), the pressure-plate
 helper and `Wiring.running`'s production readers.
+
+
+## The Deerclops' ice-spike rows (S1-D-4b-5b, 2026-11-14)
+
+`AI_123_Deerclops_MakeSpikesForward`/`MakeSpikesBothSides` +
+`TryMakingSpike` + `TryMakingSpike_FindBestY` (`NPC.cs:44466-44534`,
+`:44575-44640`) are the Deerclops' signature attack: the spikes rain down
+on the ground near the player, in volleys.
+
+The port fired a stand-in — all twenty spikes at once, from the Deerclops'
+feet, straight up. The arm now carries the C#'s shape:
+
+* **the forward row** (state 1, `:44466-44500`): from the 36th tick, every
+  fourth tick makes four spikes (the row's spread is 20 tiles);
+* **the both-sides row** (state 4, `:44502-44532`): from the 56th tick,
+  every second tick makes the row's spikes on both sides (the spread is 15
+  tiles);
+* **the spike's landing row** (`:44586-44640`): `FindBestY` walks the
+  column toward the player's feet and keeps the walkable row closest to
+  them, then walks up through the solid tiles and down to the first
+  walkable one;
+* **the spike's flight** (`:44582`): the `(0, -1)` vector rotated by
+  `whichOne * dir * 0.7 * (PI / 4 / howMany)` and the `ai1` scale factor
+  (`0.1 + rand * 0.1 + xOffset * 1.1 / howMany`).
+
+The two tile probes the C#'s helper uses ride with it:
+`WorldGen.ActiveAndWalkableTile` (`WorldGen.cs:70300-70318` — the tile is
+active, solid and not framed off) and `WorldGen.SolidTile`
+(`:70111-70132` — the full solid block, no slope and no top-only tile).
+
+The rubble's own tile scan (`AI_123_Deerclops_ShootRubbleUp`,
+`:44448-44465`) is still the port's stand-in — the follow-up row.
+
+## The switch bridge (S1-L-6b2, 2026-11-14)
+
+`crates/tr-app/src/collision.rs::switch_tiles` ports `Collision.SwitchTiles`
+(`Collision.cs:3227-3360`): the entity→switch scan over the pressure plates
+(135), the land mine (210), the geyser trap (443) and the projectile
+pressure pad (442). The C#'s shape is kept — the ±1-margin box around the
+entity, the type-442 projectile-pad branch (the four frame rects and the
+`Utils.FloatIntersect` test, `Utils.cs:982-989`), the "the entity moved onto
+it" rule (the entity's box must reach the tile's `y + 12` line and its old
+box must not have been over it) and the frame-row table that picks who may
+trigger which plate (the rows 2/3/4/6/7 answer only the player, row 5 answers
+nobody).
+
+The player's call site runs in the fixed step (`Player.cs:28274-28275`, the
+`objType` 5 call) and reads the new `Player.old_x`/`old_y` — the C#'s
+`Entity.oldPosition` (`Player.cs:28071`), captured before the tick's
+movement. The tile-use arm is the new `edit::TileInteraction::HitSwitch`:
+using a lever (132), a switch (136) or a timer (144) trips the wiring
+(`Player.cs:32171-32179`), which the app answers with `Wiring::hit_switch`.
+
+Deliberate deviations:
+
+1. The scan's answer is the C#'s return value: only the pressure plates
+   consume the entity — the mine and the geyser arms `continue` the scan
+   (`Collision.cs:3319`/`:3326`), so they fire their effect without
+   consuming it. The port keeps that shape.
+2. The row-7 pressure plate's break (`WorldGen.KillTile`, `:3348-3352`)
+   drops the plate's item; the port's core has no item pool, so the drop
+   travels back to the app as `SwitchOutcome::dropped` and is spawned there.
+3. The C#'s net messages (59/13/17) are out — the local wiring state is the
+   truth.
+
+Out (the rest of S1-L-6b): the NPC call site (`NPC.cs:90504`, whose fuse arm
+covers only NPC kinds the port does not ship), `PressurePlateHelper`'s
+plate 428 (`PressurePlateHelper.cs`, the "stays pressed while a player
+stands on it" plate), the Actuation Rod (3620) and the multi-wrench (3625).
 
