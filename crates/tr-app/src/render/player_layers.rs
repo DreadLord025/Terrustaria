@@ -5,6 +5,8 @@
 
 use super::BgTex;
 use super::entities::PlayerAssets;
+use crate::player::CompositeArmState;
+use crate::player::CompositeStretch;
 
 /// The starter palette of `Player_0_*` (`colorBodySkin`/`colorShirt`/... from
 /// the default skin; the M3-EQUIP equipment palette will replace these).
@@ -81,49 +83,6 @@ pub(crate) struct LayerSprite {
     /// unpacks (`PlayerDrawHelper.cs:29-60`). Assigned by `apply_dye` after
     /// assembly; the builders keep 0.
     pub(crate) dye: u32,
-}
-
-/// `Player.CompositeArmStretchAmount` (`Player.cs`, рядом с
-/// `CompositeArmData:219`): how far the composite arm stretches.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CompositeStretch {
-    Full,
-    ThreeQuarters,
-    Quarter,
-    None,
-}
-
-impl CompositeStretch {
-    /// The sheet row of the stretch (`PlayerDrawSet.cs:2254-2268`):
-    /// Full→0, ThreeQuarters→1, Quarter→2, None→3.
-    fn row(self) -> u32 {
-        match self {
-            CompositeStretch::Full => 0,
-            CompositeStretch::ThreeQuarters => 1,
-            CompositeStretch::Quarter => 2,
-            CompositeStretch::None => 3,
-        }
-    }
-}
-
-/// `Player.CompositeArmData` (`Player.cs:219`): the per-arm composite state —
-/// `enabled` switches the arm onto the composite sheet columns
-/// (front 7 / back 8) at the stretch row, with `rotation` applied around the
-/// composite pivot; disabled arms keep the per-body-frame cells.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct CompositeArmState {
-    pub(crate) enabled: bool,
-    pub(crate) stretch: CompositeStretch,
-    pub(crate) rotation: f32,
-}
-
-impl CompositeArmState {
-    /// The disabled arm — per-body-frame cells, no rotation.
-    pub(crate) const DISABLED: CompositeArmState = CompositeArmState {
-        enabled: false,
-        stretch: CompositeStretch::None,
-        rotation: 0.0,
-    };
 }
 
 /// `PlayerDrawSet.UpdateCompositeArm` (`PlayerDrawSet.cs:2246-2271`): an
@@ -868,78 +827,6 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         52.0,
     );
     out
-}
-
-/// One arm composite pass: skin(7) + sleeve(13) + shirt(6) at one cell
-/// (`PlayerDrawLayers.cs:3661-3706`, `Players[8]` skipped — no starter colour).
-/// The composite front arm is vanilla-disabled for our item set: useStyle 1
-/// never calls `SetCompositeArmFront` (`Player.cs:50686-50953` sets only
-/// `itemRotation`/`itemLocation`), so the arm pose rides the bodyFrame thirds
-/// through `front_arm_cell` and the item swings by `itemRotation`. Styles that
-/// do enable it (5/9/11) arrive with the bow/thrown-item tasks.
-pub(crate) fn swing_stand_in(use_style: u8, swing: f32, facing: f32) -> CompositeArmState {
-    // The per-style composite arms (`ApplyItemDrawData`'s
-    // `SetCompositeArmFront/Back` calls): style 1 never enables them
-    // (`Player.cs:50686-50953`), styles 2/11/13 do.
-    let progress = 1.0 - swing; // itemAnimationMax - itemAnimation, normalized
-    let stretch = |p: f32| {
-        if p <= 0.25 {
-            CompositeStretch::Full
-        } else if p <= 0.5 {
-            CompositeStretch::ThreeQuarters
-        } else if p <= 0.75 {
-            CompositeStretch::Quarter
-        } else {
-            CompositeStretch::None
-        }
-    };
-    match use_style {
-        // `Player.cs:50936-50956` (EatFood): both arms at -pi/2 * dir, the
-        // stretch walking Full -> None as the use runs out.
-        2 => {
-            let st = stretch(progress);
-            CompositeArmState {
-                enabled: true,
-                stretch: st,
-                rotation: -std::f32::consts::FRAC_PI_2 * facing,
-            }
-        }
-        // `Player.cs:51006-51007` (MowTheLawn): the front arm Quarter at
-        // -pi/4 * dir, the back arm Full at -pi/16.
-        11 => CompositeArmState {
-            enabled: true,
-            stretch: {
-                let p = progress * 2.0;
-                if p <= 0.25 {
-                    CompositeStretch::Full
-                } else if p <= 0.5 {
-                    CompositeStretch::ThreeQuarters
-                } else if p <= 0.75 {
-                    CompositeStretch::Quarter
-                } else {
-                    CompositeStretch::None
-                }
-            },
-            rotation: -std::f32::consts::FRAC_PI_4 * facing,
-        },
-        // `Player.cs:51195` (Rapier): the front arm at the item rotation
-        // minus pi/2 * dir, the stretch by the swing thirds.
-        13 => {
-            let st = if progress <= 0.33 {
-                CompositeStretch::Full
-            } else if progress <= 0.66 {
-                CompositeStretch::ThreeQuarters
-            } else {
-                CompositeStretch::Quarter
-            };
-            CompositeArmState {
-                enabled: true,
-                stretch: st,
-                rotation: -std::f32::consts::FRAC_PI_2 * facing,
-            }
-        }
-        _ => CompositeArmState::DISABLED,
-    }
 }
 
 /// One arm composite pass: skin(7) + sleeve(13) + shirt(6) at one cell
@@ -1692,16 +1579,6 @@ mod tests {
             assert_eq!(l.rotation, 0.0, "{:?}", l.part);
             assert_eq!(l.pos, [100.0, 200.0], "{:?}", l.part);
         }
-    }
-
-    #[test]
-    fn test_dw_2_4_swing_stand_in() {
-        // useStyle 1 never enables the composite front arm
-        // (`Player.cs:50686-50953` sets only itemRotation/itemLocation): the
-        // arm pose rides the bodyFrame thirds through `front_arm_cell`.
-        assert_eq!(swing_stand_in(1, 0.5, 1.0), CompositeArmState::DISABLED);
-        assert_eq!(swing_stand_in(1, 1.0, 1.0), CompositeArmState::DISABLED);
-        assert_eq!(swing_stand_in(1, 0.0, 1.0), CompositeArmState::DISABLED);
     }
 
     #[test]

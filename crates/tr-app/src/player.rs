@@ -291,6 +291,63 @@ pub fn offsets_player_headgear_y(row: usize) -> f32 {
     }
 }
 
+/// `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
+/// `atan2(aimY * direction, aimX * direction) - fullRotation`. The port keeps
+/// the aim as an angle, so the mirrored `atan2` is the angle + PI when the
+/// player faces left.
+pub fn item_rotation_for_aim(aim: f32, facing: i32, full_rotation: f32) -> f32 {
+    let mirrored = if facing < 0 {
+        std::f32::consts::PI
+    } else {
+        0.0
+    };
+    aim + mirrored - full_rotation
+}
+
+/// `Player.CompositeArmStretchAmount` (`Player.cs:211-216`): how far the
+/// composite arm stretches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompositeStretch {
+    Full,
+    None,
+    Quarter,
+    ThreeQuarters,
+}
+
+impl CompositeStretch {
+    /// The sheet row of the stretch (`PlayerDrawSet.cs:2254-2268`):
+    /// Full=0, None=3, Quarter=2, ThreeQuarters=1.
+    pub fn row(self) -> u32 {
+        match self {
+            CompositeStretch::Full => 0,
+            CompositeStretch::None => 3,
+            CompositeStretch::Quarter => 2,
+            CompositeStretch::ThreeQuarters => 1,
+        }
+    }
+}
+
+/// `Player.CompositeArmData` (`Player.cs:219`): the per-arm composite state —
+/// `enabled` switches the arm onto the composite sheet columns
+/// (front 7 / back 8) at the stretch row, with `rotation` applied around the
+/// composite pivot; disabled arms keep the per-body-frame cells.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CompositeArmState {
+    pub enabled: bool,
+    pub stretch: CompositeStretch,
+    pub rotation: f32,
+}
+
+impl CompositeArmState {
+    /// The disabled arm — per-body-frame cells, no rotation (the per-tick
+    /// reset at `AnimatePlayerAndGetItemFrame`, `Player.cs:43376-43377`).
+    pub const DISABLED: CompositeArmState = CompositeArmState {
+        enabled: false,
+        stretch: CompositeStretch::None,
+        rotation: 0.0,
+    };
+}
+
 /// The held-item inputs of `PlayerFrame()` (`Player.cs:36144-36147`). The C#
 /// reads `this.inventory[this.selectedItem]` straight out of the player; the
 /// port keeps the inventory in the app, so the app hands the same fields in
@@ -313,7 +370,17 @@ pub struct FrameInputs {
     pub swing_active: bool,
     /// `itemAnimation / itemAnimationMax` (1 at the start, 0 at the end).
     pub swing_remaining: f32,
-    /// `itemRotation * direction` — the useStyle 5 aim.
+    /// The raw animation counters (`Player.itemAnimation`/`itemAnimationMax`)
+    /// — the composite assignments read the raw phases.
+    pub swing_anim: f32,
+    pub swing_anim_max: f32,
+    /// `Item.useAnimation` — the style 13's rhythm base.
+    pub use_animation: i32,
+    /// `Player.itemRotation` for the shooting styles (`Player.cs:47371-47378`):
+    /// `atan2(aimY * direction, aimX * direction) - fullRotation`. The style 13
+    /// composite arm reads it (`itemRotation * Directions.Y`, `:51195`).
+    pub item_rotation: f32,
+    /// `itemRotation * direction` — the useStyle 5 aim (`Player.cs:36423`).
     pub aim_relative: f32,
     /// `!wet || !item.noWet` — the two held-item arms that the water kills.
     pub hold_style_dry: bool,
@@ -645,6 +712,12 @@ pub struct Player {
     /// `Player.legFrameCounter`: accumulates `|velocity.X| * 1.3` while walking and
     /// advances a leg row every `8.0`.
     leg_frame_counter: f32,
+    /// `Player.compositeFrontArm` / `compositeBackArm` (`Player.cs:1906/:4347`)
+    /// — the composite arm poses the item-use styles assign (S1-C-4's
+    /// swing parity); reset to DISABLED per frame and reassigned by the
+    /// item-composite block.
+    pub composite_front: CompositeArmState,
+    pub composite_back: CompositeArmState,
     /// `Player.bodyFrameCounter` (`Player.cs:36594`): only the `legs == 140`
     /// walk branch accumulates it (`|velocity.X| * 0.5`); every other body arm
     /// either zeroes it or leaves it alone.
@@ -1359,6 +1432,8 @@ impl Player {
         };
         Self {
             dead: false,
+            composite_front: crate::player::CompositeArmState::DISABLED,
+            composite_back: crate::player::CompositeArmState::DISABLED,
             deaths_pve: 0,
             angler_quests_finished: 0,
             golfer_score: 0,
@@ -4640,7 +4715,320 @@ impl Player {
             self.leg_frame_counter = 0.0;
             self.leg_frame = 5;
         }
+        // `AnimatePlayerAndGetItemFrame` (`Player.cs:43372-43380`): the
+        // composite arms reset to DISABLED per frame and
+        // `ItemCheck_ApplyUseStyle` reassigns them. The hold arms run when
+        // `ItemTimeIsZero` (no swing); the use arms when `itemAnimation > 0`.
+        self.composite_front = CompositeArmState::DISABLED;
+        self.composite_back = CompositeArmState::DISABLED;
+        if held.swing_active {
+            self.apply_item_composite_arms(&held);
+        } else {
+            self.apply_hold_composite_arms(&held);
+        }
     }
+
+    /// `ItemCheck_ApplyUseStyle`'s composite-arm assignments
+    /// (`Player.cs:50686-51320`), per `useStyle`. The rotations/curves are
+    /// verbatim; `dir` is `Player.direction` (`gravDir` is always 1).
+    fn apply_item_composite_arms(&mut self, held: &FrameInputs) {
+        let dir = self.facing as f32;
+        let progress = 1.0 - held.swing_remaining;
+        match held.use_style {
+            // `:50936-50955` (useStyle 2, EatFood): both arms at -PI/2 * dir;
+            // the stretch walks Full -> None by `num10` quarters
+            // (`num10 = 1 - itemAnimation / itemAnimationMax`).
+            2 => {
+                let st = if progress <= 0.25 {
+                    CompositeStretch::Full
+                } else if progress <= 0.5 {
+                    CompositeStretch::ThreeQuarters
+                } else if progress <= 0.75 {
+                    CompositeStretch::Quarter
+                } else {
+                    CompositeStretch::None
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    rotation: -std::f32::consts::FRAC_PI_2 * dir,
+                };
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    rotation: -std::f32::consts::FRAC_PI_2 * dir,
+                };
+            }
+            // `:50885-50911` (useStyle 9): the front arm Full along the
+            // `num7 -> num8` arc — `num6 = 2*PI/5`, `num7 = -num6/2 +
+            // (1 - lerp) * num6 + PI/10`, `num8 = num7 - PI/2`, mirrored for
+            // `direction == -1`; `lerp = GetLerpValue(0, 0.7, progress)`
+            // clamped.
+            9 => {
+                let lerp = (progress / 0.7).clamp(0.0, 1.0);
+                let num6 = std::f32::consts::PI * 2.0 / 5.0;
+                let num7 = -num6 * 0.5 + (1.0 - lerp) * num6 + (std::f32::consts::PI / 10.0);
+                let mut num8 = num7 - std::f32::consts::FRAC_PI_2;
+                if dir < 0.0 {
+                    num8 = -num8;
+                }
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: num8,
+                };
+            }
+            // `:50978-51007` (useStyle 11, MowTheLawn): the front arm walks
+            // `num12 = progress * 2` through the two-cycle table; the back
+            // arm pins Full at -PI/16 (no direction term).
+            11 => {
+                let num12 = progress * 2.0;
+                let st = if num12 > 1.75 {
+                    CompositeStretch::Full
+                } else if num12 > 1.5 {
+                    CompositeStretch::ThreeQuarters
+                } else if num12 > 1.25 {
+                    CompositeStretch::Quarter
+                } else if num12 > 0.75 {
+                    CompositeStretch::None
+                } else if num12 > 0.5 {
+                    CompositeStretch::Quarter
+                } else if num12 > 0.25 {
+                    CompositeStretch::ThreeQuarters
+                } else {
+                    CompositeStretch::Full
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    rotation: -std::f32::consts::FRAC_PI_4 * dir,
+                };
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: -(std::f32::consts::PI / 16.0),
+                };
+            }
+            // `:51174-51196` (useStyle 13, Rapier): the front arm at
+            // `itemRotation * gravDir - PI/2 * dir`, the stretch walking
+            // Quarter -> ThreeQuarters -> Full by thirds of
+            // `1 - (itemAnimation % useAnim) / useAnim`.
+            13 => {
+                let anim = held.swing_anim.max(0.0);
+                let max = held.swing_anim_max.max(1.0);
+                let num20 = 1.0 - (anim % max) / max;
+                let st = if num20 > 0.66 {
+                    CompositeStretch::Full
+                } else if num20 > 0.33 {
+                    CompositeStretch::ThreeQuarters
+                } else {
+                    CompositeStretch::Quarter
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    // `itemRotation * Directions.Y` — `Directions.Y` is the
+                    // gravity direction, always 1 in the port.
+                    rotation: held.item_rotation - std::f32::consts::FRAC_PI_2 * dir,
+                };
+            }
+            // `:51349-51360` (useStyle 14): the back arm Full at
+            // `-3*PI/4 * dir`; the front arm untouched.
+            14 => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: std::f32::consts::PI * -3.0 / 4.0 * dir,
+                };
+            }
+            // `:51361-51375` (useStyle 15): both arms at -2*PI/5 * dir — the
+            // back ThreeQuarters, the front Full.
+            15 => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::ThreeQuarters,
+                    rotation: std::f32::consts::PI * -2.0 / 5.0 * dir,
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: std::f32::consts::PI * -2.0 / 5.0 * dir,
+                };
+            }
+            // `:51197-51274` (useStyle 8, the throw): three phases — the
+            // wind-up (the first tick), the swing arc, the follow-through.
+            // The port's swing never overshoots `itemAnimationMax`, so the
+            // `itemAnimation > useAnimation` arm is unreachable (documented).
+            8 => {
+                let anim = held.swing_anim;
+                let use_anim = held.use_animation as f32;
+                if anim >= use_anim - 1.0 && anim <= use_anim {
+                    // `:51205-51229`: the wind-up.
+                    let mut item_rot = f32::hypot(10.0 * dir, 10.0) + std::f32::consts::FRAC_PI_4;
+                    if dir < 0.0 {
+                        item_rot += std::f32::consts::FRAC_PI_2;
+                    }
+                    let num21 = -(std::f32::consts::PI / 10.0) * if dir < 0.0 { -1.0 } else { 1.0 };
+                    let mut num22 = item_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+                    if dir > 0.0 {
+                        num22 += std::f32::consts::FRAC_PI_2;
+                    }
+                    self.composite_front = CompositeArmState {
+                        enabled: true,
+                        stretch: CompositeStretch::Full,
+                        rotation: num22 + num21,
+                    };
+                    self.composite_back = CompositeArmState {
+                        enabled: true,
+                        stretch: CompositeStretch::ThreeQuarters,
+                        rotation: num22 - num21,
+                    };
+                } else {
+                    // `:51246-51273`: the swing arc
+                    // (`num26 = 1 - itemAnimation / itemAnimationMax`).
+                    let num26 = 1.0 - held.swing_remaining;
+                    let st = if num26 > 0.6 {
+                        CompositeStretch::Quarter
+                    } else {
+                        CompositeStretch::ThreeQuarters
+                    };
+                    let num27 = -(std::f32::consts::PI / 10.0)
+                        * (1.0 - num26 * 2.2)
+                        * if dir < 0.0 { -1.0 } else { 1.0 };
+                    let num28 = (num26 * std::f32::consts::PI * 0.6
+                        + std::f32::consts::PI * 2.0 / 5.0)
+                        * -dir
+                        + std::f32::consts::PI
+                        - std::f32::consts::FRAC_PI_4
+                        + std::f32::consts::PI;
+                    let num28 = if dir > 0.0 {
+                        num28 + std::f32::consts::FRAC_PI_2
+                    } else {
+                        num28
+                    };
+                    self.composite_front = CompositeArmState {
+                        enabled: true,
+                        stretch: CompositeStretch::Full,
+                        rotation: num28 + num27,
+                    };
+                    self.composite_back = CompositeArmState {
+                        enabled: true,
+                        stretch: st,
+                        rotation: num28 - num27,
+                    };
+                }
+            }
+            // `:51275-51320` (useStyle 12, Guitar): the front arm walks
+            // `num30 = progress * 2` (the two-cycle table with None at
+            // 0.75..1.25) with `num31 = cos(num30 * PI) * 0.2`; the back arm
+            // Quarter at `(-PI/4 - num31/2) * dir`.
+            12 => {
+                let num30 = progress * 2.0;
+                let num31 = (num30 * std::f32::consts::PI).cos() * 0.2;
+                let st = if num30 > 1.75 {
+                    CompositeStretch::Full
+                } else if num30 > 1.5 {
+                    CompositeStretch::ThreeQuarters
+                } else if num30 > 1.25 {
+                    CompositeStretch::Quarter
+                } else if num30 > 0.75 {
+                    CompositeStretch::None
+                } else if num30 > 0.5 {
+                    CompositeStretch::Quarter
+                } else if num30 > 0.25 {
+                    CompositeStretch::ThreeQuarters
+                } else {
+                    CompositeStretch::Full
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    rotation: (-std::f32::consts::FRAC_PI_4 + num31) * dir,
+                };
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Quarter,
+                    rotation: (-std::f32::consts::FRAC_PI_4 - num31 * 0.5) * dir,
+                };
+            }
+            _ => {}
+        }
+    }
+
+    /// `HoldItem`'s holdStyle composite arms (`Player.cs:50520-50582`). The
+    /// holdStyle 1/2/3/7 rows ride the body-frame chain (no composite); the
+    /// holdStyle 5/6 arms gate on `!pulley`; `can_visually_hold` gates the
+    /// whole chain (`Player.cs:50271`).
+    fn apply_hold_composite_arms(&mut self, held: &FrameInputs) {
+        if !held.can_visually_hold || held.swing_active {
+            return;
+        }
+        let dir = self.facing as f32;
+        match held.hold_style {
+            // `:50520-50549` (holdStyle 4, the umbrella): the front arm Full
+            // and the back ThreeQuarters around `num9 +/- num8`.
+            4 => {
+                let mut item_rot = f32::hypot(10.0 * dir, 10.0) + std::f32::consts::FRAC_PI_4;
+                if dir < 0.0 {
+                    item_rot += std::f32::consts::FRAC_PI_2;
+                }
+                let num8 = -(std::f32::consts::PI / 10.0) * if dir < 0.0 { -1.0 } else { 1.0 };
+                let mut num9 = item_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+                if dir > 0.0 {
+                    num9 += std::f32::consts::FRAC_PI_2;
+                }
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: num9 + num8,
+                };
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::ThreeQuarters,
+                    rotation: num9 - num8,
+                };
+            }
+            // `:50550-50562` (holdStyle 5): the back Quarter at -PI/4 * dir
+            // and the front Full at -0.39269912 * dir.
+            5 if !self.pulley => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Quarter,
+                    rotation: -std::f32::consts::FRAC_PI_4 * dir,
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: -0.39269912 * dir,
+                };
+            }
+            // `:50563-50570` (holdStyle 6): the back ThreeQuarters at
+            // -3*PI/5 * dir.
+            6 if !self.pulley => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::ThreeQuarters,
+                    rotation: std::f32::consts::PI * -3.0 / 5.0 * dir,
+                };
+            }
+            // `:50575-50582` (holdStyle 8): the back ThreeQuarters and the
+            // front Full at -2*PI/5 * dir.
+            8 => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::ThreeQuarters,
+                    rotation: std::f32::consts::PI * -2.0 / 5.0 * dir,
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: std::f32::consts::PI * -2.0 / 5.0 * dir,
+                };
+            }
+            _ => {}
+        }
+    }
+
 
     /// `Player.ShouldDrawWingsThatAreAlwaysAnimated` (`Player.cs:30737-30748`):
     /// the three always-animated wing sets keep the rest legs while airborne.
@@ -12355,5 +12743,177 @@ mod summon_tests {
         assert_eq!(p.buffs.find_buff_index(161), None);
         p.update(&w, PlayerInput::default());
         assert!(!p.deadly_sphere_minion);
+    }
+}
+
+#[cfg(test)]
+mod s1_player_composite_tests {
+    use super::*;
+
+    /// A frame-inputs builder with the raw counters the composite styles read.
+    fn inputs(style: u8, remaining: f32, anim: f32, max: f32) -> FrameInputs {
+        FrameInputs {
+            use_style: style,
+            use_style_blocks_frames: true,
+            item_type: 0,
+            hold_style: 0,
+            can_visually_hold: true,
+            swing_active: true,
+            swing_remaining: remaining,
+            swing_anim: anim,
+            swing_anim_max: max,
+            use_animation: max as i32,
+            item_rotation: 0.0,
+            aim_relative: 0.0,
+            hold_style_dry: true,
+            torch_hold_ok: true,
+            grapple_dx: 0.0,
+            grapple_dy: 0.0,
+        }
+    }
+
+    #[test]
+    fn s1_pc_the_eat_style_assigns_both_arms_by_quarters() {
+        // `Player.cs:50936-50955`: the both-arms -PI/2 pose, the stretch
+        // walking Full -> None by `num10` quarters.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let held = inputs(2, 0.0, 20.0, 20.0); // progress = 1 -> None
+        p.apply_item_composite_arms(&held);
+        // `Player.cs:50953-50954`: the arm stays enabled with the `None`
+        // stretch (the relaxed row) — it is not turned off.
+        assert!(
+            p.composite_front.enabled,
+            "the arm stays on the relaxed row"
+        );
+        assert_eq!(p.composite_front.stretch, CompositeStretch::None);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::None);
+        let held = inputs(2, 1.0, 1.0, 20.0); // progress = 0 -> Full
+        p.apply_item_composite_arms(&held);
+        assert!(p.composite_front.enabled);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        // The back arm rides the same stretch (the C# sets both).
+        assert!(p.composite_back.enabled);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::Full);
+        assert!(
+            (p.composite_front.rotation + std::f32::consts::FRAC_PI_2).abs() < 1e-6,
+            "the eat pose lifts the arms"
+        );
+    }
+
+    #[test]
+    fn s1_pc_the_mow_style_walks_the_two_cycle_and_pins_the_back_arm() {
+        // `Player.cs:50978-51007`: the front arm's `num12 = progress * 2`
+        // two-cycle table; the back arm Full at -PI/16 (no direction term).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let held = inputs(11, 0.0, 40.0, 20.0); // progress 1 -> num12 2 -> Full
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::Full);
+        assert!(
+            (p.composite_back.rotation + std::f32::consts::PI / 16.0).abs() < 1e-6,
+            "the back arm's constant pose"
+        );
+        let held = inputs(11, 0.75, 40.0, 20.0); // progress 0.25 -> num12 0.5 -> ThreeQuarters
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::ThreeQuarters);
+    }
+
+    #[test]
+    fn s1_pc_the_rapier_stretch_walks_quarter_to_full() {
+        // `Player.cs:51174-51196`: `num20 = 1 - (anim % useAnim)/useAnim`;
+        // the stretch Quarter (<=0.33) -> ThreeQuarters -> Full.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        // The fresh swing: anim = max -> num20 = 1 -> Full.
+        let held = inputs(13, 1.0, 20.0, 20.0);
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        // The late swing: anim = 5 of 20 -> num20 = 0.75 -> Full.
+        let held = inputs(13, 0.25, 5.0, 20.0);
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        // The mid swing: anim = 15 of 20 -> num20 = 0.25 -> Quarter.
+        let held = inputs(13, 0.25, 15.0, 20.0);
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Quarter);
+    }
+
+    #[test]
+    fn s1_pc_the_rapier_arm_reads_the_item_rotation() {
+        // `Player.cs:51195`: the front arm at `itemRotation * Directions.Y -
+        // PI/2 * direction` (`Directions.Y` is the gravity direction, 1 in
+        // the port).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let mut held = inputs(13, 1.0, 20.0, 20.0);
+        held.item_rotation = 0.5;
+        p.apply_item_composite_arms(&held);
+        assert!(
+            (p.composite_front.rotation - (0.5 - std::f32::consts::FRAC_PI_2)).abs() < 1e-6,
+            "the rapier arm follows the item rotation"
+        );
+        // Facing left: the C#'s `- PI/2 * direction` flips the lift.
+        p.facing = -1;
+        p.apply_item_composite_arms(&held);
+        assert!(
+            (p.composite_front.rotation - (0.5 + std::f32::consts::FRAC_PI_2)).abs() < 1e-6,
+            "the rapier arm mirrors with the direction"
+        );
+    }
+
+    #[test]
+    fn s1_pc_the_item_rotation_mirrors_the_aim_with_the_direction() {
+        // `Player.cs:47378`: `itemRotation = atan2(aimY * direction, aimX *
+        // direction) - fullRotation` — the mirrored `atan2` is the aim + PI
+        // when the player faces left (not the negated angle).
+        let right = item_rotation_for_aim(0.75, 1, 0.0);
+        assert!((right - 0.75).abs() < 1e-6, "facing right keeps the aim");
+        let left = item_rotation_for_aim(0.75, -1, 0.0);
+        assert!(
+            (left - (0.75 + std::f32::consts::PI)).abs() < 1e-6,
+            "facing left mirrors the aim vector"
+        );
+        // The sleep pose's `fullRotation` rides the subtraction.
+        let asleep = item_rotation_for_aim(0.75, 1, std::f32::consts::FRAC_PI_2);
+        assert!((asleep - (0.75 - std::f32::consts::FRAC_PI_2)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn s1_pc_the_shoot_style_pins_the_back_arm_full() {
+        // `Player.cs:51349-51360`: the useStyle 14 pose — the back arm Full
+        // at -3*PI/4 * dir; the front arm untouched (DISABLED).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let held = inputs(14, 1.0, 20.0, 20.0);
+        p.apply_item_composite_arms(&held);
+        assert!(
+            !p.composite_front.enabled,
+            "the front arm rides the body rows"
+        );
+        assert!(p.composite_back.enabled);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::Full);
+        assert!(
+            (p.composite_back.rotation - std::f32::consts::PI * -3.0 / 4.0).abs() < 1e-6,
+            "the -3*PI/4 aim"
+        );
+    }
+
+    #[test]
+    fn s1_pc_the_hold_composite_arms_follow_the_hold_styles() {
+        // `Player.cs:50520-50582`: the holdStyle 4 umbrella pose (the front
+        // Full + the back ThreeQuarters), the holdStyle 5's back Quarter at
+        // -PI/4 * dir, and the holdStyle 8's both arms at -2*PI/5 * dir.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let mut held = inputs(0, 0.0, 0.0, 0.0);
+        held.swing_active = false;
+        held.hold_style = 4;
+        p.apply_hold_composite_arms(&held);
+        assert!(p.composite_front.enabled && p.composite_back.enabled);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::ThreeQuarters);
+        held.hold_style = 5;
+        p.apply_hold_composite_arms(&held);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::Quarter);
+        assert!((p.composite_back.rotation + std::f32::consts::FRAC_PI_4).abs() < 1e-6);
+        held.hold_style = 8;
+        p.apply_hold_composite_arms(&held);
+        assert!((p.composite_front.rotation - std::f32::consts::PI * -2.0 / 5.0).abs() < 1e-6);
     }
 }
