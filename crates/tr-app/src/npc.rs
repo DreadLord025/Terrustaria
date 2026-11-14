@@ -2504,6 +2504,12 @@ pub struct Npc {
     pub slime: SlimeVariant,
     pub x: f32,
     pub y: f32,
+    /// `Entity.oldPosition` (`NPC.cs:92605`): the position before this
+    /// tick's movement. The switch-tile bridge (`Collision.SwitchTiles`,
+    /// `NPC.cs:90504`) reads it to tell "the NPC moved onto the plate" from
+    /// "the NPC stands on it".
+    pub old_x: f32,
+    pub old_y: f32,
     pub vx: f32,
     pub vy: f32,
     pub hp: i32,
@@ -3490,6 +3496,8 @@ impl Npc {
             slime: SlimeVariant::Blue,
             x,
             y,
+            old_x: x,
+            old_y: y,
             vx: 0.0,
             vy: 0.0,
             given_name: String::new(),
@@ -4508,6 +4516,10 @@ impl Npc {
     /// The real step with the caller's RNG stream — the caster teleport
     /// search draws from it where the C# hits `Main.rand` (`NPC.cs:18948`).
     pub fn update_rng(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut u64) {
+        // `base.oldPosition = base.position` (`NPC.cs:92605`, right before the
+        // position integration) — the switch-tile bridge reads it.
+        self.old_x = self.x;
+        self.old_y = self.y;
         // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
         // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
         // the frame's movement, exactly like the original.

@@ -13519,3 +13519,42 @@ covers only NPC kinds the port does not ship), `PressurePlateHelper`'s
 plate 428 (`PressurePlateHelper.cs`, the "stays pressed while a player
 stands on it" plate), the Actuation Rod (3620) and the multi-wrench (3625).
 
+## The weighted plate and the actuation rod (S1-L-6b3, 2026-11-14)
+
+The rest of the wiring row landed with S1-L-6b3:
+
+- **The NPCs trip the plates too.** The world sim runs the same
+  `Collision.SwitchTiles` scan over the updated NPCs (the `objType` 2 call,
+  `NPC.cs:90504`), reading the new `Npc.old_x`/`old_y` — the C#'s
+  `Entity.oldPosition` (`NPC.cs:92605`, right before the position
+  integration). The port sets the pair at the head of the NPC update (the
+  C#'s set it right before the integration, after the AI shaped the
+  velocity); for the port's walkers the two are the same position.
+- **`PressurePlateHelper.UpdatePlayerPosition`** (`PressurePlateHelper.cs:60-100`)
+  is `world_sim::wiring::update_pressure_plates`: the weighted pressure
+  plate (428) holds while the player's deflated box reaches the plate's
+  lower ten pixels and releases when the player leaves it — each transition
+  fires the plate's switch (`PokeLocation`, `:157-165`, with the teleport
+  block for one iteration). The C#'s helper keeps the last position per
+  player; the port takes it as a parameter (the sim captures the player's
+  `prev_x`/`prev_y` before the tick's movement — the position the C#'s
+  `PlayerLastPosition` holds). The C#'s per-plate 255-slot bool array is a
+  set of the held plates in the port (one player).
+- **The Actuation Rod (3620)** is `Wiring.Actuate` (`Wiring.cs:390-405`),
+  now `Wiring::actuate`: the tile must carry the actuator bit and the flip
+  runs the de-activate/re-activate cascade. The player's per-tick lock
+  (`Player.ActuationRodLock`/`ActuationRodLockSetting`, `Player.cs:2616-2618`,
+  cleared by `ResetEffects` at `:18804`) keeps one tile from flipping twice
+  (`:46894-46897`).
+
+Deliberate deviations:
+
+1. The C#'s `NPC.cs:90504` fuse arm (`ai[0] = 1; ai[1] = 400; ai[2] = 0` for
+   the explosive NPC kinds) has no ported member — the kinds in the list are
+   not in the port's roster — so only the plate trip lands.
+2. The multi-wrench (3625) stays out: it needs the `WiresUI` tool modes
+   (`Player.cs:46903-46918`) and `Wiring.MassWireOperation`
+   (`Wiring.cs:419-453`).
+3. `Collision.GetTilesIn`'s clamp is now the C#'s `Utils.Clamp`
+   (`Utils.cs:223-234` — the max is tested first), so a world shorter than
+   the 40-row underworld margin folds onto the max instead of panicking.

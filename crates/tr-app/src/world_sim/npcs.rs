@@ -2147,6 +2147,42 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         });
     }
     app.npc_step.cap_backlog();
+    // `NPC.cs:90504`: the switch-tile bridge — an NPC whose box reaches a
+    // pressure plate trips the wiring (the C#'s call sits right after the
+    // NPC's collision pass, inside `NPC.Update`). The port runs it as a
+    // pass over the updated NPCs: the C#'s per-NPC order is kept by the
+    // slot order, and the scan's own effect (the plate trips) does not
+    // depend on the other NPCs' updates.
+    {
+        let mut wiring = &mut app.wiring;
+        let world = &mut app.world;
+        for n in app.npcs.iter() {
+            let (w, h) = n.size();
+            let switch = crate::collision::switch_tiles(
+                wiring,
+                world,
+                n.x,
+                n.y,
+                n.old_x,
+                n.old_y,
+                w as i32,
+                h as i32,
+                2, // the NPC's objType (`NPC.cs:90504`)
+            );
+            if let Some((item, x, y)) = switch.dropped {
+                // `WorldGen.KillTile`'s drop for the broken plate.
+                crate::world_sim::items::spawn_item_drop_fields(
+                    &mut app.items,
+                    &mut app.item_rng,
+                    &mut app.prefix_rng,
+                    item,
+                    1,
+                    x,
+                    y,
+                );
+            }
+        }
+    }
     // The eye's climb-away despawn (`EncourageDespawn(10)` from the
     // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
     // far enough off-screen; the port culls it above the player's view).
