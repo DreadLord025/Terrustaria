@@ -41,6 +41,7 @@ mod minecart;
 mod mount;
 mod net;
 mod npc;
+mod npc_chat;
 mod revenge;
 mod npc_ai;
 mod npc_buffs;
