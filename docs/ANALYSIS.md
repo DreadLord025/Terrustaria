@@ -10587,6 +10587,14 @@ S1-L-10b landed the two hand-overs:
   the 25-spark wheel burst. The equipped cart (the misc-equip 2) wins over
   the wooden minecart (`:22676-22679`); the port reads it per tick.
 
+S1-L-10c fixed the mount dismount's gate: `Player.GrappleMovement`
+(`Player.cs:22620-22623`) and the fire edge (`:6334-6337`) dismount only a
+mount **outside** `MountID.Sets.CanUseHooks` ({54, 57-60}) — the port
+dismounted every mount, so a cart or a grappling mount was dropped the moment
+a hook went out. The fire edge is now the C#'s own per-player latch
+(`Player.releaseHook`, `:27481-27489`) instead of a process-global flag that
+fired the hook for the wrong player.
+
 Deferred to their own rows: the chain/sprite rendering and the `light` /
 `projFrames[652]` animation (nothing in `render/` reads `proj_data`),
 `Minecart.FrameTrack` (the track switch table needs `Tile.FrontTrack` /
