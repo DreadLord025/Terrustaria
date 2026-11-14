@@ -199,8 +199,10 @@ impl LanguageManager {
         }
     }
 
-    /// `LanguageManager.ReloadLanguage`.
-    fn reload_language(&mut self, target_culture: GameCulture) {
+    /// `LanguageManager.ReloadLanguage` — reload the texts from the
+    /// registered sources (the public seam for the tests and for a runtime
+    /// re-load).
+    pub fn reload_language(&mut self, target_culture: GameCulture) {
         if self.active_culture != Some(self.fallback_culture) {
             self.set_all_text_values_to_keys();
             if target_culture != self.fallback_culture {

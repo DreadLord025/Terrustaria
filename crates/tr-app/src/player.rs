@@ -1125,6 +1125,21 @@ pub struct Player {
     // the ×1.1 speed fuse (`:53543`). Cleared and re-derived per tick by the
     // grant seam in `world_sim/player.rs` (`ResetEffects` `:18605`).
     pub magic_quiver: bool,
+    // ------------------------------- the tooltip's player-side layers (S1-E-20)
+    // `Player.minionKB` (`Player.cs`): the summon knockback bonus the
+    // tooltip's knockback row adds (`Main.cs:20749`).
+    pub minion_kb: f32,
+    // `Player.kbGlove` / `kbBuff` (`Player.cs`): the knockback gloves' and
+    // buff's bonuses (the tooltip's knockback row, `Main.cs:20333-20340`).
+    pub kb_glove: bool,
+    pub kb_buff: bool,
+    // `Player.shroomiteStealth` + `stealth` (`Player.cs`): the shroomite
+    // armour's ranged knockback scale (`Main.cs:20342-20345`).
+    pub shroomite_stealth: bool,
+    pub stealth: f32,
+    // `Player.spaceGun` (`Player.cs`): the mana row's exemption
+    // (`Main.cs:20917`).
+    pub space_gun: bool,
     /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
     /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
     /// damage (`:53537-53541`).
@@ -1714,6 +1729,12 @@ impl Player {
             channel_item: 0,
             channel_target: Vec2::ZERO,
             magic_quiver: false,
+            minion_kb: 0.0,
+            kb_glove: false,
+            kb_buff: false,
+            shroomite_stealth: false,
+            stealth: 0.0,
+            space_gun: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
             ammo_box: false,
