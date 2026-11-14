@@ -2654,6 +2654,15 @@ pub struct Npc {
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
+    /// `AI_015_KingSlime`'s `localAI[0..4]` (`NPC.cs:43121-43414`) — the
+    /// King Slime's machine: the line-of-sight counter (`localAI[0]`), the
+    /// teleport target (`localAI[1]`/`localAI[2]`) and the init latch
+    /// (`localAI[3]`).
+    pub king_slime_local: [f32; 4],
+    /// The per-NPC box override (`NPC.base.width`/`base.height`) — the King
+    /// Slime rescales its body with its hp (`AI_015`'s `base.width = (int)
+    /// (98f * this.scale)`, `NPC.cs:43347-43352`).
+    pub size_override: Option<(f32, f32)>,
     /// `AI_054`'s `localAI[0..4]` (`NPC.cs:32370-32656`) — the Brain of
     /// Cthulhu's machine: the blink timer (`localAI[1]`), the port's
     /// Creeper count (`localAI[2]`, the C#'s sound latch slot — the sim
@@ -2894,6 +2903,68 @@ fn safe_dir(v: Vec2, default: Vec2) -> Vec2 {
     } else {
         v.normalize()
     }
+}
+
+/// `AI_015_KingSlime_FindTeleportSpot` + `BuildKingSlimeTeleportCache`
+/// (`NPC.cs:43077-43119`): the tile the King Slime teleports onto — a
+/// solid (or platform) tile with clear air below and a line of sight to
+/// the player, in the ring around the player (the 10/7 cache, then the
+/// 6/2 one). The anti-cheese case lands on the player instead.
+fn king_slime_find_teleport_spot(
+    world: &World,
+    player: &Player,
+    anti_cheese: bool,
+    rng: &mut u64,
+) -> (f32, f32) {
+    let (pcx, pcy) = player.center();
+    let player_bottom = (pcx, player.y + player.height);
+    if anti_cheese {
+        return player_bottom;
+    }
+    let tx = (pcx as i32) / 16;
+    let ty = (pcy as i32) / 16;
+    // `TileID.Sets.Platforms` (`ID/TileID.cs:534`).
+    const PLATFORMS: [u16; 7] = [19, 427, 435, 436, 437, 438, 439];
+    for (outer, inner) in [(10i32, 7i32), (6, 2)] {
+        let mut cache: Vec<(i32, i32)> = Vec::new();
+        // The four bands (`:43080-43083`).
+        for (x0, x1, y0, y1) in [
+            (tx - outer, tx - inner, ty - outer, ty + outer),
+            (tx + inner, tx + outer, ty - outer, ty + outer),
+            (tx - inner, tx + inner, ty - outer, ty - inner),
+            (tx - inner, tx + inner, ty + inner, ty + outer),
+        ] {
+            for x in x0..=x1 {
+                for y in y0..=y1 {
+                    let Some(t) = world.tile(x, y) else {
+                        continue;
+                    };
+                    let solid = tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind);
+                    let platform = PLATFORMS.contains(&t.kind);
+                    let below_solid = world
+                        .tile(x, y - 1)
+                        .is_some_and(|b| b.active() && tr_core::tiledata::TILE_SOLID.has(b.kind));
+                    if !t.active() || !(solid || platform) || below_solid {
+                        continue;
+                    }
+                    // `:43065-43066` — the spot's position and the sight line.
+                    let pos = Vec2::new(x as f32 * 16.0 + 8.0, y as f32 * 16.0 - 46.0);
+                    if crate::projectile::can_hit_line(
+                        world, pos.x, pos.y, 0.0, 0.0, pcx, pcy, 0.0, 0.0,
+                    ) {
+                        cache.push((x, y));
+                    }
+                }
+            }
+        }
+        if !cache.is_empty() {
+            let pick = crate::app::frame::rand_range(rng, cache.len() as u32) as usize;
+            let (x, y) = cache[pick];
+            return (x as f32 * 16.0 + 8.0, y as f32 * 16.0);
+        }
+    }
+    player_bottom
 }
 
 /// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
@@ -3296,6 +3367,8 @@ impl Npc {
             immortal: false,
             friendly: kind.is_town_resident() || kind == NpcKind::SleepingAngler,
             swarm_done: false,
+            king_slime_local: [0.0; 4],
+            size_override: None,
             brain_local: [0.0; 4],
             moon_local: [0.0; 3],
             moon_core_alive: false,
@@ -4137,6 +4210,11 @@ impl Npc {
     /// The scaled size for slime variants (the hitbox rides
     /// `SetDefaults_ForNetId`'s size scale).
     pub fn size(&self) -> (f32, f32) {
+        // The per-NPC box override (`NPC.base.width`/`base.height`) — the
+        // King Slime's hp-scaled body (`AI_015`, `NPC.cs:43347-43352`).
+        if let Some((w, h)) = self.size_override {
+            return (w, h);
+        }
         let (w, h) = self.kind.size();
         if self.kind == NpcKind::Slime {
             let s = self.slime.stats().scale;
@@ -4527,7 +4605,7 @@ impl Npc {
             NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
             NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
             NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
-            NpcKind::KingSlime => self.update_king_slime(world, player, dt),
+            NpcKind::KingSlime => self.update_king_slime(world, player, rng),
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
             NpcKind::ServantOfCthulhu => {
                 self.update_hover(world, player, HoverParams::SERVANT_OF_CTHULHU)
@@ -6940,67 +7018,176 @@ impl Npc {
         self.y += self.vy;
     }
 
-    fn update_king_slime(&mut self, world: &World, player: &mut Player, dt: f32) {
-        let (w, h) = NpcKind::KingSlime.size();
+    /// `AI_015_KingSlime` (`NPC.cs:43121-43414`) — the King Slime's machine:
+    /// the hop cycle (the hp-scaled rate), the shrink/grow teleport, the
+    /// hp-scaled body and the 5 %-hp minion batches.
+    ///
+    /// The dust and the gore are SKIPPED — no dust/gore layer. The MP-only
+    /// branches use the single-player values.
+    fn update_king_slime(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
+        // `:43123-43131` — the flags and the getGood world's scale factor.
+        let mut num = 1.0f32;
+        let mut num2 = 1.0f32;
+        let mut flag2 = false;
+        let mut flag3 = false;
+        let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let (cx, cy) = self.center();
-        let dx = pcx - cx;
-        self.facing = if dx >= 0.0 { 1 } else { -1 };
-        self.sprite_dir = self.facing;
-        self.hop_timer -= dt;
-        if self.on_ground && self.hop_timer <= 0.0 {
-            self.vx = self.facing as f32 * 2.4;
-            self.vy = -8.0;
-            self.on_ground = false;
-            self.hop_timer = 1.4 + (self.anim * 2.7).sin().abs() * 0.8;
+        let ph = player.height;
+        // `:43136-43147` — the init: the `ai[3]` hp latch and the one-shot
+        // `localAI[3]` arm (which drops the body into its first scale).
+        if self.ai[3] == 0.0 && self.hp > 0 {
+            self.ai[3] = self.max_hp as f32;
         }
-        // Teleport next to the player when they outrun the boss.
-        if (dx.abs() > 70.0 * TILE_PX || (pcy - cy).abs() > 50.0 * TILE_PX) && self.on_ground {
-            let side = if dx >= 0.0 { -1 } else { 1 };
-            let tx = ((pcx / TILE_PX) as i32 + side * 10).clamp(4, world.width - 5);
-            let top = world.surface_of(tx);
-            if top < world.height - 2 {
-                let (w2, h2) = NpcKind::KingSlime.size();
-                let nx = tx as f32 * TILE_PX + 8.0 - w2 * 0.5;
-                let ny = top as f32 * TILE_PX - h2;
-                if !collides_rect(world, nx, ny, w2, h2) {
-                    self.x = nx;
-                    self.y = ny;
-                    self.vx = 0.0;
-                    self.vy = 0.0;
-                    self.on_ground = true;
+        if self.king_slime_local[3] == 0.0 {
+            self.king_slime_local[3] = 1.0;
+            self.ai[0] = -100.0;
+        }
+        // `:43149-43176` — the despawn: a dead player or one 3000 px away
+        // sends the King Slime to the world's far corner.
+        let distance = ((cx - pcx).powi(2) + (cy - pcy).powi(2)).sqrt();
+        if player.dead || distance > 3000.0 {
+            self.king_slime_local[1] = world.width as f32 * 16.0;
+            self.king_slime_local[2] = world.height as f32 * 16.0;
+            self.ai[0] = 0.0;
+            self.ai[1] = 5.0;
+        }
+        // `:43177-43196` — the teleport: the player out of sight for 300
+        // ticks (and the King Slime grounded) shrinks and blinks.
+        if !player.dead && self.ai[2] >= 300.0 && self.ai[1] < 5.0 && self.vy == 0.0 {
+            self.ai[2] = 0.0;
+            self.ai[0] = 0.0;
+            self.ai[1] = 5.0;
+            // The anti-cheese case (`:43185-43191`): the King Slime has been
+            // out of sight for 360 ticks or the player is 2000 px away.
+            let anti_cheese = self.king_slime_local[0] >= 360.0 || distance > 2000.0;
+            if self.king_slime_local[0] >= 360.0 {
+                self.king_slime_local[0] = 360.0;
+            }
+            let (tx, ty) = king_slime_find_teleport_spot(world, player, anti_cheese, rng);
+            self.king_slime_local[1] = tx;
+            self.king_slime_local[2] = ty;
+        }
+        // `:43197-43211` — the line-of-sight counters.
+        let visible = crate::projectile::can_hit_line(world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0)
+            && (self.y - (player.y + ph)).abs() <= 160.0;
+        if !visible {
+            self.ai[2] += 1.0;
+            self.king_slime_local[0] += 1.0;
+        } else {
+            self.king_slime_local[0] -= 1.0;
+            if self.king_slime_local[0] < 0.0 {
+                self.king_slime_local[0] = 0.0;
+            }
+        }
+        // `:43212-43218` — the closing timer clears the state. The port's
+        // NPCs carry no `NPC.timeLeft` (the despawn timer is the world's
+        // own row), so the arm cannot watch the closing window — the state
+        // clears with the normal machine instead.
+        if self.ai[1] == 5.0 {
+            // `:43219-43261` — the shrink: the scale ramps down over 60 ticks
+            // and the King Slime teleports onto the picked spot.
+            flag2 = true;
+            self.ai[0] += 1.0;
+            num = 0.5 + ((60.0 - self.ai[0]) / 60.0).clamp(0.0, 1.0) * 0.5;
+            if self.ai[0] >= 60.0 {
+                flag3 = true;
+                self.x = self.king_slime_local[1] - w * 0.5;
+                self.y = self.king_slime_local[2] - h;
+                self.ai[1] = 6.0;
+                self.ai[0] = 0.0;
+            }
+        } else if self.ai[1] == 6.0 {
+            // `:43262-43284` — the grow-back: 30 ticks at the same ramp.
+            flag2 = true;
+            self.ai[0] += 1.0;
+            num = 0.5 + (self.ai[0] / 30.0).clamp(0.0, 1.0) * 0.5;
+            if self.ai[0] >= 30.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+            }
+        }
+        // `:43285-43326` — the movement: the hop cycle (grounded) and the
+        // air control.
+        if self.vy == 0.0 {
+            self.vx *= 0.8;
+            if self.vx > -0.1 && self.vx < 0.1 {
+                self.vx = 0.0;
+            }
+            if !flag2 {
+                // The hop timer — the faster the King Slime is hurt, the
+                // faster it hops.
+                self.ai[0] += 2.0;
+                let life = self.hp as f32 / self.max_hp as f32;
+                if life < 0.8 {
+                    self.ai[0] += 1.0;
+                }
+                if life < 0.6 {
+                    self.ai[0] += 1.0;
+                }
+                if life < 0.4 {
+                    self.ai[0] += 2.0;
+                }
+                if life < 0.2 {
+                    self.ai[0] += 3.0;
+                }
+                if life < 0.1 {
+                    self.ai[0] += 4.0;
+                }
+                if self.ai[0] >= 0.0 {
+                    if self.ai[1] == 3.0 {
+                        self.vy = -13.0;
+                        self.vx += 3.5 * self.facing as f32;
+                        self.ai[0] = -200.0;
+                        self.ai[1] = 0.0;
+                    } else if self.ai[1] == 2.0 {
+                        self.vy = -6.0;
+                        self.vx += 4.5 * self.facing as f32;
+                        self.ai[0] = -120.0;
+                        self.ai[1] += 1.0;
+                    } else {
+                        self.vy = -8.0;
+                        self.vx += 4.0 * self.facing as f32;
+                        self.ai[0] = -120.0;
+                        self.ai[1] += 1.0;
+                    }
+                }
+            }
+        } else {
+            // `:43327-43339` — the air control: the push toward the facing.
+            let num7 = 3.0f32;
+            if (self.facing == 1 && self.vx < num7) || (self.facing == -1 && self.vx > -num7) {
+                if (self.facing == -1 && self.vx < 0.1) || (self.facing == 1 && self.vx > -0.1) {
+                    self.vx += 0.2 * self.facing as f32;
+                } else {
+                    self.vx *= 0.93;
                 }
             }
         }
-        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
-        let nx = self.x + self.vx;
-        if !collides_rect(world, nx, self.y, w, h) {
-            self.x = nx;
-        } else {
-            self.vx = -self.vx * 0.4;
+        // `:43340-43356` — the body scale: the hp drives the size (the
+        // C#'s `num9`).
+        let num9 = (self.hp as f32 / self.max_hp as f32 * 0.5 + 0.75) * num * num2;
+        if num9 != self.scale || self.king_slime_local[3] == 1.0 {
+            let new_w = 98.0 * num9;
+            let new_h = 92.0 * num9;
+            // The C#'s recentre (`:43346-43351`): the bottom-right corner
+            // stays put.
+            self.x += w * 0.5 - new_w * 0.5;
+            self.y += h - new_h;
+            self.scale = num9;
+            self.size_override = Some((new_w, new_h));
         }
-        let ny = self.y + self.vy;
-        let was_air = !self.on_ground;
-        if !collides_rect(world, self.x, ny, w, h) {
-            self.y = ny;
-            self.on_ground = false;
-        } else if self.vy > 0.0 {
-            let ty = ((ny + h) / TILE_PX).floor() as i32;
-            self.y = ty as f32 * TILE_PX - h;
-            self.vy = 0.0;
-            self.on_ground = true;
-            self.vx *= 0.5;
-            if was_air {
-                self.wants_minion = true;
-            }
-        } else if self.vy < 0.0 {
-            let ty = (ny / TILE_PX).floor() as i32;
-            self.y = (ty + 1) as f32 * TILE_PX;
-            self.vy = 0.0;
+        // `:43357-43395` — the minion batches: every 5 % of the hp the King
+        // Slime spawns 1-3 slimes.
+        let num10 = (self.max_hp as f32 * 0.05) as i32;
+        if self.hp + num10 >= self.ai[3] as i32 {
+            return;
         }
-        if self.y > world.height as f32 * TILE_PX + 400.0 {
-            self.hp = 0;
-        }
+        self.ai[3] = self.hp as f32;
+        let count = crate::app::frame::rand_range_signed(rng, 1, 4).max(1);
+        self.wants_minion = true;
+        self.wants_minion_batch = count as u32;
+        let _ = num2;
     }
 
     /// The contact overlap test (`contact`'s AABB) as a pure read —
@@ -20798,5 +20985,94 @@ mod s1_d_3f_tests {
         );
         let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
         assert!((speed - 1.5).abs() < 0.01, "the charge speed ({speed})");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_3g_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn king() -> Npc {
+        let mut n = Npc::new(NpcKind::KingSlime, 200.0, 300.0, 0, 0.0);
+        n.hp = n.max_hp;
+        n
+    }
+
+    /// S1-D-3g — the King Slime's body scales with its hp
+    /// (`AI_015_KingSlime`, `NPC.cs:43340-43356`): the scale is
+    /// `life / lifeMax * 0.5 + 0.75` and the box is 98x92 times it.
+    #[test]
+    fn s1_d_3g_the_king_slime_scales_with_its_hp() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        let mut k = king();
+        let mut rng = 12345u64;
+        k.update_king_slime(&w, &mut player, &mut rng);
+        // The full-hp scale: 0.5 + 0.75 = 1.25.
+        assert!(
+            (k.scale - 1.25).abs() < 0.001,
+            "the full-hp scale ({})",
+            k.scale
+        );
+        assert_eq!(k.size_override, Some((98.0 * 1.25, 92.0 * 1.25)));
+        // At half the hp the scale drops to 1.0.
+        k.hp = k.max_hp / 2;
+        k.update_king_slime(&w, &mut player, &mut rng);
+        assert!(
+            (k.scale - 1.0).abs() < 0.001,
+            "the half-hp scale ({})",
+            k.scale
+        );
+    }
+
+    /// S1-D-3g — the minion batches (`NPC.cs:43357-43395`): every 5 % of the
+    /// hp the King Slime spawns 1-3 slimes (the C#'s `Next(1, 4)`).
+    #[test]
+    fn s1_d_3g_the_king_slime_spawns_a_batch_every_five_percent() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        let mut k = king();
+        let mut rng = 12345u64;
+        // The first tick: the `ai[3]` latch is set to the full hp — no batch.
+        k.update_king_slime(&w, &mut player, &mut rng);
+        assert!(!k.wants_minion, "no batch at the full hp");
+        // A hair of damage is not enough (the 5 % window).
+        k.hp = k.max_hp - 1;
+        k.update_king_slime(&w, &mut player, &mut rng);
+        assert!(!k.wants_minion, "no batch inside the 5 % window");
+        // A 5 % loss spawns the batch.
+        k.hp = k.max_hp - (k.max_hp / 20) - 1;
+        k.update_king_slime(&w, &mut player, &mut rng);
+        assert!(k.wants_minion, "the 5 % batch");
+        assert!(
+            (1..=3).contains(&k.wants_minion_batch),
+            "the batch is 1-3 ({})",
+            k.wants_minion_batch
+        );
     }
 }

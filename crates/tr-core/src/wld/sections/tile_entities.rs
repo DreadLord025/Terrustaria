@@ -50,7 +50,7 @@ pub struct WldTeItem {
 }
 
 /// The extra payload of an entity kind, exactly the bytes `WriteExtraData`
-/// emits. [`WldTeExtra::Unported`] is the display doll: its shape is consumed
+/// emits. The display doll carries its contents (S1-L-7a)
 /// on read and re-emitted empty on write, so a stream stays in step.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum WldTeExtra {
@@ -74,8 +74,14 @@ pub enum WldTeExtra {
     /// Kite/critter anchor: the held item type
     /// (`TELeashedEntityAnchorWithItem.cs:12-21`, a bare `short`).
     Anchor { item_type: i16 },
-    /// `TEDisplayDoll`: the record's bytes are read and discarded.
-    Unported,
+    /// `TEDisplayDoll` (`TEDisplayDoll.cs:157-213`): the nine equip slots,
+    /// the nine dye slots, the misc slot and the pose byte.
+    DisplayDoll {
+        equip: [Option<WldTeItem>; 9],
+        dye: [Option<WldTeItem>; 9],
+        misc: Option<WldTeItem>,
+        pose: u8,
+    },
 }
 
 /// One entity record head (`TileEntity.Write`, `SaveTileEntities:3309`).
@@ -165,24 +171,21 @@ fn read_extra(r: &mut Reader, ty: u8, version: i32) -> Option<WldTeExtra> {
         },
         // The pylon carries no extra bytes at all.
         TeKind::TeleportationPylon => WldTeExtra::None,
-        // `TEDisplayDoll.ReadExtraData` (`:185-213`): the shape is consumed,
-        // the contents are not kept.
-        TeKind::DisplayDoll => {
-            skip_display_doll(r, version)?;
-            WldTeExtra::Unported
-        }
+        // `TEDisplayDoll.ReadExtraData` (`:185-213`): the shape and the
+        // contents are both kept.
+        TeKind::DisplayDoll => read_display_doll(r, version)?,
     })
 }
 
-/// `TEDisplayDoll.ReadExtraData` verbatim, minus the item stores: two presence
-/// bitsBytes, the pose byte (`>= 307`), a third bitsByte (`>= 308`), then the
-/// present slots of the nine-slot equip and dye arrays, the single misc slot
-/// and — for version 311 exactly — the equip slot the third bitsByte's bit 1
-/// displaced to the tail (`:170-173`, `:208-213`).
-fn skip_display_doll(r: &mut Reader, version: i32) -> Option<()> {
+/// `TEDisplayDoll.ReadExtraData` verbatim (`TEDisplayDoll.cs:185-213`): two
+/// presence bitsBytes, the pose byte (`>= 307`), a third bitsByte (`>= 308`),
+/// then the present slots of the nine-slot equip and dye arrays, the single
+/// misc slot and — for version 311 exactly — the equip slot the third
+/// bitsByte's bit 1 displaced to the tail (`:170-173`, `:208-213`).
+fn read_display_doll(r: &mut Reader, version: i32) -> Option<WldTeExtra> {
     let equip_bits = r.u8()?;
     let dye_bits = r.u8()?;
-    let _pose = if version >= 307 { r.u8()? } else { 0 };
+    let pose = if version >= 307 { r.u8()? } else { 0 };
     let mut misc_bits = if version >= 308 { r.u8()? } else { 0 };
     // `gameVersion == 311`: bit 1 is lifted out of the misc mask and its triple
     // is read last.
@@ -195,24 +198,33 @@ fn skip_display_doll(r: &mut Reader, version: i32) -> Option<()> {
     // bitsByte's bits 1 and 2, so the mask reaches 9 bits.
     let equip_mask = equip_bits as u32 | if misc_bits & (1 << 1) != 0 { 256 } else { 0 };
     let dye_mask = dye_bits as u32 | if misc_bits & (1 << 2) != 0 { 256 } else { 0 };
+    let mut equip: [Option<WldTeItem>; 9] = std::array::from_fn(|_| None);
     for bit in 0..9 {
         if equip_mask & (1 << bit) != 0 {
-            read_item(r)?;
+            equip[bit] = Some(read_item(r)?);
         }
     }
+    let mut dye: [Option<WldTeItem>; 9] = std::array::from_fn(|_| None);
     for bit in 0..9 {
         if dye_mask & (1 << bit) != 0 {
-            read_item(r)?;
+            dye[bit] = Some(read_item(r)?);
         }
     }
     // `this._misc` has one slot (`TEDisplayDoll.cs:113`).
+    let mut misc = None;
     if misc_bits & 1 != 0 {
-        read_item(r)?;
+        misc = Some(read_item(r)?);
     }
     if tail_item {
-        read_item(r)?;
+        // The 311 layout put the ninth equip slot at the tail.
+        equip[8] = Some(read_item(r)?);
     }
-    Some(())
+    Some(WldTeExtra::DisplayDoll {
+        equip,
+        dye,
+        misc,
+        pose,
+    })
 }
 
 /// The triple's wire form (`TEItemFrame.cs:47-50`).
@@ -272,18 +284,56 @@ fn write_extra(w: &mut Writer, extra: &WldTeExtra, version: i32) {
             w.boolean(*on);
         }
         WldTeExtra::Anchor { item_type } => w.i16(*item_type),
-        // The empty display doll: three cleared bitsBytes and the pose byte
-        // (`TEDisplayDoll.cs:196-205` writes the pose unconditionally from
-        // 307 on). No load ever keeps one, so this arm only fires on a
-        // hand-built record — but an empty form keeps that record parseable.
-        WldTeExtra::Unported => {
-            w.u8(0);
-            w.u8(0);
+        // `TEDisplayDoll.WriteExtraData` (`TEDisplayDoll.cs:157-213`): the
+        // two presence bitsBytes over the equip and dye rows, the pose byte
+        // (from 307 on) and the third bitsByte (from 308 on) over the misc
+        // slot and the ninth equip/dye slots; then the present items in the
+        // equip, dye and misc order.
+        WldTeExtra::DisplayDoll {
+            equip,
+            dye,
+            misc,
+            pose,
+        } => {
+            let mut equip_bits = 0u8;
+            for bit in 0..8 {
+                if equip[bit].is_some() {
+                    equip_bits |= 1 << bit;
+                }
+            }
+            let mut dye_bits = 0u8;
+            for bit in 0..8 {
+                if dye[bit].is_some() {
+                    dye_bits |= 1 << bit;
+                }
+            }
+            let mut misc_bits = 0u8;
+            if misc.is_some() {
+                misc_bits |= 1;
+            }
+            if equip[8].is_some() {
+                misc_bits |= 1 << 1;
+            }
+            if dye[8].is_some() {
+                misc_bits |= 1 << 2;
+            }
+            w.u8(equip_bits);
+            w.u8(dye_bits);
             if version >= 307 {
-                w.u8(0);
+                w.u8(*pose);
             }
             if version >= 308 {
-                w.u8(0);
+                w.u8(misc_bits);
+            }
+            for item in equip
+                .iter()
+                .chain(dye.iter())
+                .chain(std::iter::once(misc))
+                .flatten()
+            {
+                w.i16(item.kind);
+                w.u8(item.prefix);
+                w.i16(item.stack);
             }
         }
     }
@@ -348,7 +398,10 @@ fn in_world(world: &World, x: i16, y: i16) -> bool {
 /// nineteen triples) has no home in `TeData`, and a hollow record would
 /// desynchronise the vanilla reader.
 fn is_storable(kind: TeKind) -> bool {
-    !matches!(kind, TeKind::DisplayDoll)
+    // `TEDisplayDoll.WriteExtraData` (`:157-213`) writes the doll's contents,
+    // so the C# keeps it — the port dropped it (the "lossy" deviation D9).
+    let _ = kind;
+    true
 }
 
 /// The wire payload → the stored payload. The one-slot item holders' triple is
@@ -358,7 +411,18 @@ fn is_storable(kind: TeKind) -> bool {
 /// its bitsByte bit, so a set bit yields the triple exactly as read.
 fn store_data(extra: &WldTeExtra) -> TeData {
     match extra {
-        WldTeExtra::None | WldTeExtra::Unported => TeData::None,
+        WldTeExtra::None => TeData::None,
+        WldTeExtra::DisplayDoll {
+            equip,
+            dye,
+            misc,
+            pose,
+        } => TeData::DisplayDoll {
+            equip: store_slots(equip),
+            dye: store_slots(dye),
+            misc: misc.as_ref().and_then(store_item),
+            pose: *pose,
+        },
         WldTeExtra::Item { item } => TeData::Item(store_item(item)),
         WldTeExtra::HatRack { items, dyes } => {
             TeData::HatRack(store_slots(items), store_slots(dyes))
@@ -387,11 +451,12 @@ fn store_item(item: &WldTeItem) -> Option<TeItem> {
 
 /// The hat rack's two arrays, presence per slot (the bitsByte bit decides, so
 /// `and_then` keeps the wire's airness for the ported item kind).
-fn store_slots(slots: &[Option<WldTeItem>; 2]) -> [Option<TeItem>; 2] {
-    [
-        slots[0].as_ref().and_then(store_item),
-        slots[1].as_ref().and_then(store_item),
-    ]
+fn store_slots<const N: usize>(slots: &[Option<WldTeItem>; N]) -> [Option<TeItem>; N] {
+    let mut out = [None; N];
+    for (i, slot) in slots.iter().enumerate() {
+        out[i] = slot.as_ref().and_then(store_item);
+    }
+    out
 }
 
 /// `SaveTileEntities:3306-3310`: the live books in `ByID` order (see
@@ -429,6 +494,17 @@ fn wire_data(data: &TeData) -> WldTeExtra {
         TeData::Anchor(item_type) => WldTeExtra::Anchor {
             item_type: *item_type as i16,
         },
+        TeData::DisplayDoll {
+            equip,
+            dye,
+            misc,
+            pose,
+        } => WldTeExtra::DisplayDoll {
+            equip: wire_slots_from(equip),
+            dye: wire_slots_from(dye),
+            misc: misc.as_ref().map(wire_item),
+            pose: *pose,
+        },
     }
 }
 
@@ -441,11 +517,12 @@ fn wire_item(item: &TeItem) -> WldTeItem {
 }
 
 /// The store's hat-rack arrays → the wire's, one record per present slot.
-fn wire_slots_from(slots: &[Option<TeItem>; 2]) -> [Option<WldTeItem>; 2] {
-    [
-        slots[0].as_ref().map(wire_item),
-        slots[1].as_ref().map(wire_item),
-    ]
+fn wire_slots_from<const N: usize>(slots: &[Option<TeItem>; N]) -> [Option<WldTeItem>; N] {
+    let mut out: [Option<WldTeItem>; N] = std::array::from_fn(|_| None);
+    for (i, slot) in slots.iter().enumerate() {
+        out[i] = slot.as_ref().map(wire_item);
+    }
+    out
 }
 
 pub fn empty(data: &SectionData) -> bool {
@@ -534,6 +611,25 @@ mod tests {
         w
     }
 
+    /// A display doll tile (470) at (10, 10) — `frameY == 0 && frameX % 36 ==
+    /// 0` (`TEDisplayDoll.cs:851-858`) — and an item frame at (10, 11).
+    fn doll_world() -> World {
+        let mut w = World::new("t".into(), 32, 32);
+        let i = w.index(10, 10);
+        w.tiles[i] = Tile {
+            kind: 470,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let j = w.index(10, 11);
+        w.tiles[j] = Tile {
+            kind: 395,
+            ..Default::default()
+        };
+        w.tiles[j].flags |= FLAG_ACTIVE;
+        w
+    }
+
     /// A hat rack tile (475) at (5, 5): `frameY == 0 && frameX % 54 == 0`.
     fn hat_rack_world() -> World {
         let mut w = frame_world();
@@ -589,6 +685,86 @@ mod tests {
         let (read_back, pos) = read_at(&bytes, VER);
         assert_eq!(read_back.as_ref(), Some(&records), "the structs survive");
         assert_eq!(pos, bytes.len(), "the read consumes every byte");
+    }
+
+    /// S1-L-7a — the display doll's payload survives the `.wld`
+    /// (`TEDisplayDoll.WriteExtraData` `TEDisplayDoll.cs:157-213` /
+    /// `ReadExtraData` `:185-213`): the nine equip slots, the nine dye slots,
+    /// the misc slot and the pose byte.
+    #[test]
+    fn the_display_doll_payload_round_trips() {
+        let mut equip: [Option<WldTeItem>; 9] = std::array::from_fn(|_| None);
+        equip[0] = Some(item(75, 42, 250));
+        equip[8] = Some(item(1000, 0, 1));
+        let mut dye: [Option<WldTeItem>; 9] = std::array::from_fn(|_| None);
+        dye[3] = Some(item(3454, 0, 1));
+        let records = vec![entity(
+            3,
+            0,
+            10,
+            10,
+            WldTeExtra::DisplayDoll {
+                equip,
+                dye,
+                misc: Some(item(24, 0, 1)),
+                pose: 200,
+            },
+        )];
+        let bytes = section(&records);
+        let (read_back, pos) = read_at(&bytes, VER);
+        assert_eq!(read_back.as_ref(), Some(&records), "the doll survives");
+        assert_eq!(pos, bytes.len(), "the payload length matches");
+    }
+
+    /// S1-L-7a — the doll's byte layout is the C#'s: the equip and dye
+    /// presence bitsBytes, the pose byte and the third bitsByte (the misc
+    /// slot, the ninth equip and the ninth dye), then the present items.
+    #[test]
+    fn the_display_doll_payload_is_hand_computed() {
+        let mut equip: [Option<WldTeItem>; 9] = std::array::from_fn(|_| None);
+        equip[0] = Some(item(75, 42, 250));
+        equip[8] = Some(item(1000, 0, 1));
+        let mut dye: [Option<WldTeItem>; 9] = std::array::from_fn(|_| None);
+        dye[3] = Some(item(3454, 0, 1));
+        let records = vec![entity(
+            3,
+            0,
+            10,
+            10,
+            WldTeExtra::DisplayDoll {
+                equip,
+                dye,
+                misc: Some(item(24, 0, 1)),
+                pose: 200,
+            },
+        )];
+        let bytes = section(&records);
+        // The section's count (4 bytes) and the record head (9 bytes) come
+        // first; the payload follows.
+        let payload = &bytes[13..];
+        assert_eq!(payload[0], 0b0000_0001, "the equip presence byte");
+        assert_eq!(payload[1], 0b0000_1000, "the dye presence byte");
+        assert_eq!(payload[2], 200, "the pose byte");
+        assert_eq!(
+            payload[3],
+            0b0000_0011,
+            "the misc bitsByte: the misc slot and the ninth equip (the ninth dye is empty)"
+        );
+        // The present items (`short type, byte prefix, short stack`): the
+        // equip 0, the equip 8, the dye 3 and the misc.
+        assert_eq!(&payload[4..6], &i16_bytes(75));
+        assert_eq!(payload[6], 42);
+        assert_eq!(&payload[7..9], &i16_bytes(250));
+        assert_eq!(&payload[9..11], &i16_bytes(1000));
+        assert_eq!(payload[11], 0);
+        assert_eq!(&payload[12..14], &i16_bytes(1));
+        assert_eq!(&payload[14..16], &i16_bytes(3454));
+        assert_eq!(payload[16], 0);
+        assert_eq!(&payload[17..19], &i16_bytes(1));
+        assert_eq!(&payload[19..21], &i16_bytes(24));
+        assert_eq!(payload[21], 0);
+        assert_eq!(&payload[22..24], &i16_bytes(1));
+        assert_eq!(payload.len(), 24, "the payload length");
     }
 
     #[test]
@@ -932,7 +1108,18 @@ mod tests {
         let records = records.expect("reads");
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].ty, 3);
-        assert_eq!(records[0].extra, WldTeExtra::Unported);
+        // S1-L-7a: the doll keeps its contents (the C# writes them back).
+        match &records[0].extra {
+            WldTeExtra::DisplayDoll { equip, dye, misc, pose } => {
+                assert_eq!(*pose, 3);
+                assert_eq!(equip[0].as_ref().map(|i| (i.kind, i.prefix, i.stack)), Some((75, 1, 1)));
+                assert_eq!(equip[2].as_ref().map(|i| (i.kind, i.prefix, i.stack)), Some((76, 2, 2)));
+                assert_eq!(dye[1].as_ref().map(|i| (i.kind, i.prefix, i.stack)), Some((3454, 0, 1)));
+                assert_eq!(dye[8].as_ref().map(|i| (i.kind, i.prefix, i.stack)), Some((3460, 1, 1)));
+                assert_eq!(misc.as_ref().map(|i| (i.kind, i.prefix, i.stack)), Some((150, 0, 5)));
+            }
+            other => panic!("the doll's payload: {other:?}"),
+        }
         assert_eq!(records[1].ty, 0, "the dummy behind it parsed");
         assert_eq!(records[1].extra, WldTeExtra::Dummy { npc: 7 });
         assert_eq!(pos, doll_end, "the cursor lands on the next record");
@@ -970,7 +1157,10 @@ mod tests {
             let (records, pos) = read_at(&stream, version);
             let records = records.expect("reads");
             assert_eq!(records.len(), 1, "version {version}");
-            assert_eq!(records[0].extra, WldTeExtra::Unported);
+            assert!(matches!(
+                records[0].extra,
+                WldTeExtra::DisplayDoll { .. }
+            ));
             assert_eq!(
                 pos,
                 4 + 9 + payload_len,
@@ -1017,28 +1207,41 @@ mod tests {
 
     #[test]
     fn test_DW_5_4_the_skipped_doll_leaves_the_books_on_load() {
-        // The doll's record is consumed but its entity is not kept: it would
-        // have to be written back from state the port does not hold.
-        let mut world = frame_world();
+        // S1-L-7a: the doll's entity is kept — the C# writes the doll with
+        // its contents (`TEDisplayDoll.WriteExtraData` `:157-213`).
+        let mut world = doll_world();
+        let mut equip: [Option<WldTeItem>; 9] = std::array::from_fn(|_| None);
+        equip[0] = Some(item(75, 0, 1));
         apply_loaded(
             &mut world,
             &[
-                entity(3, 0, 10, 10, WldTeExtra::Unported),
+                entity(
+                    3,
+                    0,
+                    10,
+                    10,
+                    WldTeExtra::DisplayDoll {
+                        equip,
+                        dye: std::array::from_fn(|_| None),
+                        misc: None,
+                        pose: 200,
+                    },
+                ),
                 entity(
                     1,
                     1,
                     10,
-                    10,
+                    11,
                     WldTeExtra::Item {
                         item: item(75, 0, 1),
                     },
                 ),
             ],
         );
-        assert_eq!(world.tile_entities.live_entities().count(), 1);
+        assert_eq!(world.tile_entities.live_entities().count(), 2);
         assert_eq!(
             world.tile_entities.get_at(10, 10).map(|e| e.kind),
-            Some(TeKind::ItemFrame)
+            Some(TeKind::DisplayDoll)
         );
         // The id slots still count every record read.
         assert_eq!(world.tile_entities.next_id(), 2);
@@ -1046,20 +1249,34 @@ mod tests {
 
     #[test]
     fn test_DW_5_4_the_empty_doll_form_stays_parseable() {
-        // The defensive writer: a hand-built unported record re-emits the
-        // cleared bitsBytes, so the stream stays in step.
-        let bytes = section(&[entity(3, 0, 1, 1, WldTeExtra::Unported)]);
+        // S1-L-7a: the empty doll re-emits the cleared bitsBytes and the
+        // pose byte, so the stream stays in step.
+        let bytes = section(&[entity(
+            3,
+            0,
+            1,
+            1,
+            WldTeExtra::DisplayDoll {
+                equip: std::array::from_fn(|_| None),
+                dye: std::array::from_fn(|_| None),
+                misc: None,
+                pose: 0,
+            },
+        )]);
         let want = [
             &[3u8][..],
             &0i32.to_le_bytes()[..],
             &1i16.to_le_bytes()[..],
             &1i16.to_le_bytes()[..],
-            &[0u8, 0, 0, 0][..], // three cleared bitsBytes and the pose
+            &[0u8, 0, 0, 0][..], // two cleared presence bytes, the pose, the misc
         ]
         .concat();
         assert_eq!(&bytes[4..], want);
         let (back, pos) = read_at(&bytes, VER);
-        assert_eq!(back.map(|v| v[0].extra.clone()), Some(WldTeExtra::Unported));
+        assert!(matches!(
+            back.map(|v| v[0].extra.clone()),
+            Some(WldTeExtra::DisplayDoll { .. })
+        ));
         assert_eq!(pos, bytes.len());
     }
 
