@@ -371,7 +371,9 @@ merge if the change is code-shape relevant); avoid two agents racing on
 - Tiles are 16 px on an 18 px sheet grid (2 px padding); tree trunks are 20×20 on a 22 px
   grid; walls use 36 px cells with an 8 px inset. Keep source rects on those grids.
 - The renderer draws one atlas through one instanced sprite pipeline. Sprites carry an
-  optional rotation; tint is pre-linearised in WGSL to match XNA byte multiplies.
+  optional rotation; the tint rides XNA's byte multiplies exactly — the WGSL
+  multiplies the sRGB bytes in gamma space and linearises the product once
+  (the piecewise sRGB EOTF, S1-G-4).
 - Lighting uses the original `TileLightScanner` seeds and `LightMap` blur; the 9-slice
   block path (`GetColor9Slice`) is what makes Color/White mode smooth.
 - Optimisation policy (Milestone 1.5): the in-game zoom range stays 1.0–2.0; **no LOD,
@@ -385,6 +387,11 @@ merge if the change is code-shape relevant); avoid two agents racing on
   **`cargo` may exit 1 on success in this project; judge only by the `test result: ok`
   lines.** (`persist::tests::migrates_version_2_kinds_to_item_ids` is the one known
   broken test; the `--skip` is permanent until it is fixed.)
+- Generated data tables must not drift: when the change touches items/recipes (or
+  anything the generators read), run `python tools/gen_recipes.py --check`,
+  `python tools/test_gen_recipes.py` and `python tools/GenItemData/gen.py --check`.
+  A failing check means regenerate and commit the generated file in the same
+  task, never by hand.
 - For visual work, take deterministic screenshots (`TR_SHOT`, `TR_CAM`, `TR_DAY`,
   `TR_NOPLAYER`, `TR_NO_BG`, `TR_UI=<screen>`, `TR_DEBUG=0`) and compare with
   `tools/pixel_diff.py`; two identical runs must be SHA256-equal. Check zoom 1.0,

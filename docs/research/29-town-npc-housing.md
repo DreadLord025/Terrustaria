@@ -192,7 +192,7 @@ The brief's framing does not match the shipped game:
 | Pylon: the item drop when a pylon breaks (`Framing_CheckTile`) | `TETeleportationPylon.cs:58-108` | — | **MISSING** (the TE row M7-TE-2 ports only the pylon's `ValidTile`) |
 | Pylon: the net module (`NetTeleportPylonModule`), the map layer | `NetModules/NetTeleportPylonModule.cs` (81), `Map/TeleportPylonsMapLayer.cs` (120) | — | **MISSING** (net + map layers are out of this module) |
 | The housing catalogue UI (the NPC heads, the hover names) | `Main.cs:41993-42107` | `tr-app/src/ui/housing.rs` (468) | **PORTED** |
-| Chatter: `NPC.GetChat`, `ConditionalDialogue`, the 10 chatter tables | `NPC.cs:93766`, `6539`, `90519-90529`, `93976-94794` | — | **MISSING** (research/05 lists `CheckDialogue` among the un-ported `UpdateNPC` phases) |
+| Chatter: `NPC.GetChat`, `ConditionalDialogue`, the 10 chatter tables | `NPC.cs:93766`, `6539`, `90519-90529`, `93976-94794` | `tr-app/src/npc_chat.rs` (`get_chat` + the presence flags + the event texts) + `lang.rs::dialog`/`random_from_category` | **PARTIAL** (S1-E-10a, 2026-11-14: the `GetChat` ladder and the 22 town kinds' lines landed with the `LegacyDialog` rows; the chat UI (the right-click, the bubble, the dialogue panel) and `ConditionalDialogue` are still out) |
 | The pet chatter lines (Dog/Cat/Bunny/Slime) | `NPCInteractions.cs:341-353` | — | **MISSING** |
 | The town head-count (`townNPCs`) used by the music ladder | `NPC.cs:165`, `Main.cs:12199` | the town roster in `world_sim/npcs.rs` | **PARTIAL** (the count's consumers live in the audio module) |
 

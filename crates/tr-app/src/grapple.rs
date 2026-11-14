@@ -126,7 +126,13 @@ impl HookTick {
 /// (`Projectile.cs:52868-52879`): `nactive()` and (solid, or tile 314, or a
 /// tree trunk / the cactus for the Squirrel Hook 865). The `403` guard is the
 /// source's first line — without it the TrackHook would latch any solid tile.
-pub(crate) fn can_latch(hook_type: u16, world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn can_latch(
+    hook_type: u16,
+    world: &World,
+    x: i32,
+    y: i32,
+    blacklisted: &[(i32, i32)],
+) -> bool {
     let Some(t) = world.tile(x, y) else {
         return false;
     };
@@ -136,15 +142,150 @@ pub(crate) fn can_latch(hook_type: u16, world: &World, x: i32, y: i32) -> bool {
     if hook_type == TRACK_HOOK && t.kind != tr_core::smart_cursor::TRACK_TILE {
         return false;
     }
+    // `Player.IsBlacklistedForGrappling` (`Player.cs:6205-6208`) — the tile the
+    // hook already crossed is refused (`Projectile.cs:52699`).
+    if blacklisted.contains(&(x, y)) {
+        return false;
+    }
     tr_core::tiledata::TILE_SOLID.has(t.kind)
         || t.kind == tr_core::smart_cursor::TRACK_TILE
         || (hook_type == SQUIRREL_HOOK && tr_core::tiledata::SET_IS_A_TREE_TRUNK.has(t.kind))
         || (hook_type == SQUIRREL_HOOK && t.kind == 323)
 }
 
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70133`): an active, fully
+/// solid tile — not a solid-top, not a half brick, no slope and not inactive.
+/// (The C#'s out-of-world read throws into the catch → `false`.)
+fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && !t.inactive()
+}
+
+/// `Player.UpdateBlacklistedTilesForGrappling` (`Player.cs:6210-6248`): the
+/// tiles the hook may not latch on.
+///
+/// For every attached hook the 3x3 around its centre contributes the
+/// **non-solid** tiles (`:6220-6229`) — the hook must not re-latch on the air
+/// it crossed — and, when the hook sits on a minecart track or a platform,
+/// the 5x5 around it contributes the track and platform tiles (`:6230-6246`).
+///
+/// The C# keeps them in a `HashSet<Point>` (`Player.cs:6202`); the port keeps
+/// the unique list.
+pub(crate) fn blacklisted_tiles(world: &World, attached: &[(i32, i32)]) -> Vec<(i32, i32)> {
+    let mut out: Vec<(i32, i32)> = Vec::new();
+    let mut push = |p: (i32, i32), out: &mut Vec<(i32, i32)>| {
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    };
+    for &(px, py) in attached {
+        // `:6220-6229` — the 3x3 around the hook: the non-solid tiles.
+        for j in -1..=1 {
+            for k in -1..=1 {
+                let (x, y) = (px + j, py + k);
+                if !solid_tile(world, x, y) {
+                    push((x, y), &mut out);
+                }
+            }
+        }
+        // `:6230-6246` — on a track or a platform: the 5x5 around it, the
+        // track and platform tiles only.
+        let on_track_or_platform = world.tile(px, py).is_some_and(|t| {
+            t.active()
+                && (t.kind == tr_core::smart_cursor::TRACK_TILE
+                    || tr_core::tiledata::SET_PLATFORMS.has(t.kind))
+        });
+        if !on_track_or_platform {
+            continue;
+        }
+        for l in -2..=2 {
+            for m in -2..=2 {
+                let (x, y) = (px + l, py + m);
+                if world.tile(x, y).is_some_and(|t| {
+                    t.active()
+                        && (t.kind == tr_core::smart_cursor::TRACK_TILE
+                            || tr_core::tiledata::SET_PLATFORMS.has(t.kind))
+                }) {
+                    push((x, y), &mut out);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `Player.DoQueenSlimeHookTeleport` (`Player.cs:22742-22755`): the Queen
+/// Slime's hook (935) drags the player to the hook in 150 tile-collision steps
+/// of 12 px each, then the style-10 teleport lands.
+///
+/// The C#'s `TileCollision(velocity, position, fallThrough: true,
+/// ignorePlats: true)` returns the new position; the port's collision returns
+/// the resolved velocity, so the position advances by it.
+pub(crate) fn queen_slime_hook_teleport(
+    world: &World,
+    position: Vec2,
+    size: Vec2,
+    target: Vec2,
+) -> Vec2 {
+    let mut vector = position;
+    for _ in 0..150 {
+        // `(vector + Size / 2).DirectionTo(target).SafeNormalize(Vector2.Zero) * 12f`
+        let step = (target - (vector + size * 0.5)).normalize_or(Vec2::ZERO) * 12.0;
+        let tc = crate::collision::tile_collision(
+            world,
+            [vector.x, vector.y],
+            [step.x, step.y],
+            size.x,
+            size.y,
+            true, // `fallThrough`
+            true, // `ignorePlats`
+        );
+        vector += Vec2::new(tc.vel[0], tc.vel[1]);
+    }
+    vector
+}
+
+/// `Main.projHook` (`Main.cs:6620-6624`): the aiStyle-7 projectiles — the
+/// grappling hooks an item's `shoot` can point at.
+pub(crate) fn is_hook_projectile(kind: u16) -> bool {
+    crate::projectile::proj_data(kind).is_some_and(|d| d.ai_style == 7)
+}
+
+/// `Player.QuickGrapple_GetItemToUse` (`Player.cs:6481-6500`): the grapple
+/// slot (the misc-equip 4) first, then the inventory — the first item whose
+/// `shoot` is a grappling hook. Returns the hook kind.
+///
+/// The C# scans the 58 inventory slots (the main 50 plus the coin and ammo
+/// rows); the coin and ammo rows carry no hook, so the port's main slots
+/// answer the same.
+pub(crate) fn quick_grapple_item(
+    misc_equips: &[crate::item::ItemSlot],
+    inventory: &[crate::item::ItemSlot],
+) -> Option<u16> {
+    let pick = |slot: &crate::item::ItemSlot| {
+        let shoot = crate::itemdata::ITEMS.get(slot.kind as usize)?.projectile?;
+        is_hook_projectile(shoot).then_some(shoot)
+    };
+    // `:6484-6487` — the grapple misc-equip slot wins.
+    if let Some(slot) = misc_equips.get(4) {
+        if let Some(kind) = pick(slot) {
+            return Some(kind);
+        }
+    }
+    // `:6490-6497` — the inventory scan.
+    inventory.iter().find_map(pick)
+}
+
 /// `(point / 16)` clamped into the world — the C# `ToTileCoordinates` under
 /// the scan's `[0, maxTiles*]` clamp.
-fn tile_of(px: f32, tiles: i32) -> i32 {
+pub(crate) fn tile_of(px: f32, tiles: i32) -> i32 {
     ((px / 16.0) as i32).clamp(0, tiles - 1)
 }
 
@@ -353,6 +494,9 @@ pub(crate) fn ai_hook(
     local_owner: bool,
     // The hook's own `u64` stream (None off the local player's machine).
     hook_rng: Option<&mut u64>,
+    // `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`) — the
+    // tiles this owner's hooks may not latch on.
+    blacklisted: &[(i32, i32)],
 ) -> HookTick {
     let center = slot.pos + Vec2::new(slot.w * 0.5, slot.h * 0.5);
     // `:52572-52574` — a dead owner kills the hook.
@@ -430,7 +574,7 @@ pub(crate) fn ai_hook(
             // absence or unsolidifying sends it back to Retract.
             let tx = tile_of(slot.center().0, world.width);
             let ty = tile_of(slot.center().1, world.height);
-            if !can_latch(slot.kind, world, tx, ty) {
+            if !can_latch(slot.kind, world, tx, ty, blacklisted) {
                 slot.ai[0] = 1.0;
             } else {
                 return HookTick::attached_at(Vec2::new(slot.center().0, slot.center().1), false, crack);
@@ -459,7 +603,7 @@ pub(crate) fn ai_hook(
                 {
                     continue;
                 }
-                if !can_latch(slot.kind, world, i, j) {
+                if !can_latch(slot.kind, world, i, j, blacklisted) {
                     continue;
                 }
                 // `:52703-52719` — latch: the velocity zeroes, the position
@@ -486,6 +630,97 @@ mod tests {
     use super::*;
     use crate::projectile::{HOOK, SKELETRON_HAND, SQUIRREL_HOOK, TRACK_HOOK};
     use crate::test_world_helpers::ground;
+
+    /// S1-L-10b — `Player.DoQueenSlimeHookTeleport` (`Player.cs:22742-22755`):
+    /// the player is dragged to the hook in 150 steps of 12 px.
+    #[test]
+    fn the_queen_slime_hook_drags_the_player_to_the_hook() {
+        let w = ground();
+        // The player at the tile (20, 18) — the ground starts at row 30, so
+        // the drag is horizontal and the collision never fires.
+        let start = Vec2::new(20.0 * 16.0, 18.0 * 16.0);
+        let target = Vec2::new(24.0 * 16.0, 18.0 * 16.0);
+        let size = Vec2::new(20.0, 42.0);
+        let end = queen_slime_hook_teleport(&w, start, size, target);
+        // The direction runs from the player's CENTRE to the hook, and every
+        // step is a full 12 px — the C#'s 150 steps therefore land within one
+        // step of the hook (the walk oscillates around it).
+        let center = end + size * 0.5;
+        assert!((center - target).length() < 12.0, "{:?}", end);
+    }
+
+    /// S1-L-10a — `Player.UpdateBlacklistedTilesForGrappling`
+    /// (`Player.cs:6210-6248`): the non-solid 3x3 around an attached hook and
+    /// the track/platform 5x5 when the hook sits on one.
+    #[test]
+    fn the_latch_blacklist_covers_the_air_and_the_track() {
+        let mut w = ground();
+        // The hook sits on the dirt ground (the tile 1 is solid); the tiles
+        // around it are air, so they enter the blacklist.
+        let tiles = blacklisted_tiles(&w, &[(50, 119)]);
+        assert!(tiles.contains(&(49, 118)), "{:?}", tiles);
+        assert!(tiles.contains(&(50, 118)), "{:?}", tiles);
+        assert!(tiles.contains(&(51, 119)), "{:?}", tiles);
+        // The solid ground row does not.
+        assert!(!tiles.contains(&(50, 120)), "{:?}", tiles);
+        assert!(!tiles.contains(&(51, 120)), "{:?}", tiles);
+        // A hook on a minecart track blacklists the track tiles around it.
+        let mut w2 = ground();
+        for x in 48..=52 {
+            for y in 118..=120 {
+                let i = w2.index(x, y);
+                w2.tiles[i].kind = tr_core::smart_cursor::TRACK_TILE;
+                w2.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let tiles = blacklisted_tiles(&w2, &[(50, 119)]);
+        assert!(tiles.contains(&(48, 118)), "{:?}", tiles);
+        assert!(tiles.contains(&(52, 120)), "{:?}", tiles);
+        // A hook on plain dirt keeps only the air tiles.
+        let tiles = blacklisted_tiles(&w2, &[(100, 119)]);
+        assert!(!tiles.contains(&(98, 118)), "{:?}", tiles);
+    }
+
+    /// S1-L-10a — the blacklist gate in the latch scan
+    /// (`Projectile.cs:52699` → `Player.IsBlacklistedForGrappling`).
+    #[test]
+    fn a_blacklisted_tile_is_refused() {
+        let w = ground();
+        // The dirt at (50, 120) is solid, so the hook may latch on it.
+        assert!(can_latch(HOOK, &w, 50, 120, &[]));
+        // Once the tile is blacklisted the latch is refused.
+        assert!(!can_latch(HOOK, &w, 50, 120, &[(50, 120)]));
+    }
+
+    /// S1-L-10a — `Player.QuickGrapple_GetItemToUse` (`Player.cs:6481-6500`):
+    /// the grapple misc-equip slot wins, then the inventory; a non-hook item
+    /// is skipped.
+    #[test]
+    fn the_quick_grapple_picks_the_hook_item() {
+        let hook_slot = crate::item::ItemSlot {
+            kind: 84, // the Grappling Hook (`Item.shoot` = 13)
+            name: "Grappling Hook",
+            count: 1,
+            prefix: 0,
+        };
+        let sword = crate::item::ItemSlot {
+            kind: 4, // the Iron Broadsword — no `shoot`
+            name: "Iron Broadsword",
+            count: 1,
+            prefix: 0,
+        };
+        let misc = [crate::item::EMPTY_SLOT; crate::inv::MISC];
+        let inventory = [sword; crate::item::INV];
+        assert_eq!(quick_grapple_item(&misc, &inventory), None);
+        // The inventory scan finds the hook.
+        let mut inv = inventory;
+        inv[3] = hook_slot;
+        assert_eq!(quick_grapple_item(&misc, &inv), Some(13));
+        // The grapple slot wins over the inventory.
+        let mut misc = misc;
+        misc[4] = hook_slot;
+        assert_eq!(quick_grapple_item(&misc, &inv), Some(13));
+    }
 
     /// Spawn a hook the way `spawn_hook` does (a pool-free helper: the state
     /// machine reads only the slot).
@@ -527,18 +762,18 @@ mod tests {
         // Fly: 320 px out, under the Hook's 300 limit... no, 320 > 300, so the
         // very first tick retracts.
         assert_eq!(h.ai[0], 0.0);
-        let t = ai_hook(&mut h, &w, pc, false, false, None);
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
         assert_eq!(h.ai[0], 1.0, "past 300 px the hook retracts");
         assert!(!t.dead);
         // The source sets the retract velocity on the following tick (the Fly
         // arm only flips `ai[0]` this one), so the speed appears after it.
-        ai_hook(&mut h, &w, pc, false, false, None);
+        ai_hook(&mut h, &w, pc, false, false, None, &[]);
         let speed = h.vel.length();
         assert!((speed - 11.0).abs() < 1e-3, "retract speed 11, got {speed}");
         assert!(h.vel.y < 0.0, "toward the player above");
         // Walk it in and watch it die at the 24 px reach.
         for _ in 0..40 {
-            if ai_hook(&mut h, &w, pc, false, false, None).dead {
+            if ai_hook(&mut h, &w, pc, false, false, None, &[]).dead {
                 break;
             }
         }
@@ -562,7 +797,7 @@ mod tests {
         // Close enough that the Fly state survives the tick (the 300 px trigger
         // would flip it to Retract before the scan).
         let pc = player(40.0 * 16.0, 61.0 * 16.0 - 240.0);
-        let t = ai_hook(&mut h, &w, pc, false, false, None);
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
         assert!(t.attached.is_some(), "latched");
         assert_eq!(h.ai[0], 2.0, "attached state");
         assert_eq!(
@@ -574,7 +809,7 @@ mod tests {
         assert_eq!(h.damage, 0, "damage zeroes on latch");
         // The pinned center is the tile's, so it stops moving.
         let frozen = h.pos;
-        ai_hook(&mut h, &w, pc, false, false, None);
+        ai_hook(&mut h, &w, pc, false, false, None, &[]);
         assert_eq!(h.pos, frozen, "no integration while attached");
     }
 
@@ -586,11 +821,11 @@ mod tests {
         let mut h = hook(TRACK_HOOK, 40.0 * 16.0, 62.0 * 16.0);
         h.vel = Vec2::new(0.0, 1.0);
         let pc = player(40.0 * 16.0, 80.0 * 16.0);
-        let t = ai_hook(&mut h, &w, pc, false, false, None);
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
         assert!(t.attached.is_none(), "stone is not a track");
         // Now the track tile at the same spot.
         put(&mut w, 40, 62, tr_core::smart_cursor::TRACK_TILE);
-        let t = ai_hook(&mut h, &w, pc, false, false, None);
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
         assert!(t.attached.is_some(), "the track latches");
     }
 
@@ -604,13 +839,13 @@ mod tests {
         let mut plain = hook(HOOK, 40.0 * 16.0, 62.0 * 16.0);
         plain.vel = Vec2::new(0.0, 1.0);
         assert!(
-            ai_hook(&mut plain, &w, pc, false, false, None).attached.is_none(),
+            ai_hook(&mut plain, &w, pc, false, false, None, &[]).attached.is_none(),
             "the plain Hook refuses the trunk"
         );
         let mut squirrel = hook(SQUIRREL_HOOK, 40.0 * 16.0, 62.0 * 16.0);
         squirrel.vel = Vec2::new(0.0, 1.0);
         assert!(
-            ai_hook(&mut squirrel, &w, pc, false, false, None).attached.is_some(),
+            ai_hook(&mut squirrel, &w, pc, false, false, None, &[]).attached.is_some(),
             "the Squirrel Hook latches it"
         );
     }
@@ -625,17 +860,17 @@ mod tests {
         let mut h = hook(HOOK, 40.0 * 16.0, 62.0 * 16.0);
         h.vel = Vec2::new(0.0, 1.0);
         let pc = player(40.0 * 16.0, 80.0 * 16.0);
-        assert!(ai_hook(&mut h, &w, pc, false, false, None).attached.is_some());
+        assert!(ai_hook(&mut h, &w, pc, false, false, None, &[]).attached.is_some());
         // Break the tile.
         let i = w.index(40, 62);
         w.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
-        let t = ai_hook(&mut h, &w, pc, false, false, None);
+        let t = ai_hook(&mut h, &w, pc, false, false, None, &[]);
         assert_eq!(h.ai[0], 1.0, "broken tile retracts the hook");
         assert!(t.attached.is_none());
         // An out-of-range cell never latches.
         let mut far = hook(HOOK, -500.0, -500.0);
         far.vel = Vec2::new(1.0, 0.0);
-        assert!(ai_hook(&mut far, &w, pc, false, false, None).attached.is_none());
+        assert!(ai_hook(&mut far, &w, pc, false, false, None, &[]).attached.is_none());
     }
 
     // `:52594-52596` the hard cap and `:52572-52574` the owner-death kill.
@@ -644,14 +879,14 @@ mod tests {
         let w = ground();
         let mut h = hook(HOOK, 0.0, 0.0);
         let pc = player(2600.0, 0.0);
-        assert!(ai_hook(&mut h, &w, pc, false, false, None).dead, ">2500 px kills");
+        assert!(ai_hook(&mut h, &w, pc, false, false, None, &[]).dead, ">2500 px kills");
         // The cap is `>`, so exactly 2500 survives.
         let mut edge = hook(HOOK, 0.0, 0.0);
         edge.pos = Vec2::ZERO;
-        let t = ai_hook(&mut edge, &w, player(2500.0, 0.0), false, false, None);
+        let t = ai_hook(&mut edge, &w, player(2500.0, 0.0), false, false, None, &[]);
         assert!(!t.dead, "exactly 2500 px survives");
         let mut live = hook(HOOK, 0.0, 0.0);
-        assert!(ai_hook(&mut live, &w, player(10.0, 0.0), true, false, None).dead, "a dead owner kills");
+        assert!(ai_hook(&mut live, &w, player(10.0, 0.0), true, false, None, &[]).dead, "a dead owner kills");
     }
 
     // The rotation (`:52576-52581`) — the Squirrel Hook's steering reads it, so
@@ -661,19 +896,19 @@ mod tests {
         let w = ground();
         let pc = player(100.0, -100.0);
         let mut fly = hook(SQUIRREL_HOOK, 0.0, 0.0);
-        ai_hook(&mut fly, &w, pc, false, false, None);
+        ai_hook(&mut fly, &w, pc, false, false, None, &[]);
         let snapped = |r: f32| (r.abs() / (std::f32::consts::PI * 0.5)).fract().abs() < 1e-6
             || ((r.abs() / (std::f32::consts::PI * 0.5)).fract() - 1.0).abs() < 1e-6;
         assert!(!snapped(fly.rot), "flying keeps the raw atan2");
         let mut att = hook(SQUIRREL_HOOK, 0.0, 0.0);
         att.ai[0] = 2.0;
         att.pos = Vec2::ZERO;
-        ai_hook(&mut att, &w, pc, false, false, None);
+        ai_hook(&mut att, &w, pc, false, false, None, &[]);
         assert!(snapped(att.rot), "attached snaps to a quarter turn");
         // 256's rotation is the plain base formula (the `+3.9250002` offset is
         // visual-only and stays out).
         let mut hand = hook(SKELETRON_HAND, 0.0, 0.0);
-        ai_hook(&mut hand, &w, pc, false, false, None);
+        ai_hook(&mut hand, &w, pc, false, false, None, &[]);
         assert!((hand.rot - (-100.0f32).atan2(0.0)).abs() > 0.0, "the base formula");
     }
 
@@ -1088,7 +1323,7 @@ mod crack_tests {
             let mut seed: u64 = 0xB17C_0DE5;
             for _ in 0..4096 {
                 let mut h = one_hook();
-                let tick = ai_hook(&mut h, &w, center, false, true, Some(&mut seed));
+                let tick = ai_hook(&mut h, &w, center, false, true, Some(&mut seed), &[]);
                 if tick.crack.is_some() {
                     n += 1;
                 }
@@ -1104,7 +1339,7 @@ mod crack_tests {
         // A non-local owner never rolls.
         let mut h = one_hook();
         let mut seed: u64 = 1;
-        assert!(ai_hook(&mut h, &w, center, false, false, Some(&mut seed)).crack.is_none());
+        assert!(ai_hook(&mut h, &w, center, false, false, Some(&mut seed), &[]).crack.is_none());
         // A non-cracked tile never breaks even though the roll runs.
         let i = w.index(40, 41);
         w.tiles[i].kind = 1;
@@ -1112,7 +1347,7 @@ mod crack_tests {
         let mut seed2: u64 = 2;
         let mut found = 0;
         for _ in 0..4096 {
-            if ai_hook(&mut h2, &w, center, false, true, Some(&mut seed2)).crack.is_some() {
+            if ai_hook(&mut h2, &w, center, false, true, Some(&mut seed2), &[]).crack.is_some() {
                 found += 1;
             }
         }

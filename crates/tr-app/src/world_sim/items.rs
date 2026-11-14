@@ -240,14 +240,56 @@ pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty:
 /// `Player.DropItemFromExtractinator` `Player.cs:42081-42089`). The draws keep
 /// the `Item.NewItem` order: the velocity/phase first, the prefix last.
 pub(crate) fn spawn_item_drop_px(app: &mut App, kind: u16, count: u32, pos: Vec2) {
-    let r1 = rand01(&mut app.item_rng);
-    let r2 = rand01(&mut app.item_rng);
-    let r3 = rand01(&mut app.item_rng);
+    spawn_item_drop_px_fields(
+        &mut app.items,
+        &mut app.item_rng,
+        &mut app.prefix_rng,
+        kind,
+        count,
+        pos,
+    );
+}
+
+/// The field-wise variant of [`spawn_item_drop_px`] — the call sites that
+/// already hold a borrow of one of the app's fields (the player, inside the
+/// fixed-step closure) and therefore cannot take the whole `&mut App`.
+pub(crate) fn spawn_item_drop_fields(
+    items: &mut Vec<ItemDrop>,
+    item_rng: &mut u64,
+    prefix_rng: &mut tr_core::UnifiedRandom,
+    kind: u16,
+    count: u32,
+    tx: i32,
+    ty: i32,
+) {
+    spawn_item_drop_px_fields(
+        items,
+        item_rng,
+        prefix_rng,
+        kind,
+        count,
+        Vec2::new(tx as f32 * TILE_PX, ty as f32 * TILE_PX),
+    );
+}
+
+/// The pixel-position core of [`spawn_item_drop_px`] — the `Item.NewItem`
+/// draw order (the velocity/phase first, the prefix last).
+pub(crate) fn spawn_item_drop_px_fields(
+    items: &mut Vec<ItemDrop>,
+    item_rng: &mut u64,
+    prefix_rng: &mut tr_core::UnifiedRandom,
+    kind: u16,
+    count: u32,
+    pos: Vec2,
+) {
+    let r1 = rand01(item_rng);
+    let r2 = rand01(item_rng);
+    let r3 = rand01(item_rng);
     // `Item.NewItem`'s `prefix: -1` on the tile/pot loot calls
     // (`WorldGen.cs:54248+`): the natural roll, drawn after the velocity
     // like the C# spawn order. Non-prefixable kinds draw nothing
     // (`Prefix(-1)`'s `CanHavePrefixes` gate).
-    let prefix = crate::prefix::roll_prefix(kind, -1, &mut app.prefix_rng);
+    let prefix = crate::prefix::roll_prefix(kind, -1, prefix_rng);
     let drop = ItemDrop::new(
         kind,
         count.max(1),
@@ -258,9 +300,9 @@ pub(crate) fn spawn_item_drop_px(app: &mut App, kind: u16, count: u32, pos: Vec2
         -2.2 - r2 * 1.2,
         r3 * std::f32::consts::TAU,
     );
-    app.items.push(drop);
-    if app.items.len() > 300 {
-        app.items.remove(0);
+    items.push(drop);
+    if items.len() > 300 {
+        items.remove(0);
     }
 }
 

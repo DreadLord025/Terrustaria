@@ -130,6 +130,12 @@ pub struct World {
     /// `Main.bloodMoon` (`AmbienceServer.cs:50`); persisted the same way
     /// (`_tempBloodMoon`, `WorldFile.cs:1279`).
     pub blood_moon: bool,
+    /// `Main.AnnouncementBoxDisabled` (`Main.cs:3073`): the `-disableannouncementbox`
+    /// launch switch gates the announcement box's case 425 (`Wiring.cs:1190`).
+    pub announcement_box_disabled: bool,
+    /// `Main.AnnouncementBoxRange` (`Main.cs:66530`, stock −1): the range in
+    /// px inside which the box's text reaches the player (`Wiring.cs:1202`).
+    pub announcement_box_range: i32,
     /// `Main.raining` / `Main.rainTime` / `Main.maxRaining` — the rain
     /// event's persisted state. The C#'s flag block writes the save-time
     /// snapshot (`_tempRaining`/`_tempRainTime`/`_tempMaxRain`,
@@ -427,6 +433,11 @@ impl World {
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
             variants: vec![0; (width as usize) * (height as usize)],
             frame_rng: crate::unified_random::UnifiedRandom::new(0),
+            // `Main.AnnouncementBoxDisabled`'s stock is false (the launch
+            // switch off) and `Main.AnnouncementBoxRange`'s stock is -1
+            // (`Main.cs:66530`).
+            announcement_box_disabled: false,
+            announcement_box_range: -1,
             wires: crate::wiring::WireState::default(),
             tile_entities: crate::tile_entities::TileEntities::default(),
             signs: Vec::new(),

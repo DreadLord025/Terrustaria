@@ -204,13 +204,15 @@ pub struct ThunderInputs {
 pub struct ThunderStrike {
     /// The `Sounds/Thunder_<0..5>` cue family (`LegacySoundPlayer.cs:454`).
     pub cue: &'static str,
+    /// The picked `SoundInstanceThunder` slot (`LegacySoundPlayer.cs:455`'s
+    /// `num12`, re-rolled while playing) — the engine's sink to replace.
+    pub slot: u32,
     /// The strike position in world pixels (already the C#'s `(int)` cast).
     pub x: f32,
     pub y: f32,
     /// `Main.rand.Next(-10, 11) * 0.01` (`LegacySoundPlayer.cs:471`): the
-    /// instance pitch jitter. The port's source plumbing has no pitch control
-    /// (the liquid-loop deviation is the same), so the roll is consumed for
-    /// stream fidelity and the value carried unused.
+    /// instance pitch jitter, in XNA octaves — the engine applies it as a
+    /// playback-rate resample (`2^pitch`).
     pub pitch: f32,
 }
 
@@ -356,6 +358,12 @@ impl Rain {
         lo + (self.next_u64() % (hi.saturating_sub(lo).max(1) as u64)) as u32
     }
 
+    /// The signed `Main.rand.Next(min, max)` — the thunder pitch draw
+    /// (`Next(-10, 11)`, `LegacySoundPlayer.cs:471`) rides it.
+    fn range_signed(&mut self, lo: i32, hi: i32) -> i32 {
+        lo + (self.next_u64() % (hi.saturating_sub(lo).max(1)) as u64) as i32
+    }
+
     /// Fixed 60 Hz stepping, independent of frame rate. The drop sim and the
     /// visual ramps only — the event lifecycle moved onto the shared world tick
     /// (`update_time`, driven by `world_sim::weather::update_world_tick`) and the
@@ -493,8 +501,14 @@ impl Rain {
     /// Returns the thunder strike cue when the delay reaches 0 this tick
     /// (`Main.cs:58752-58761`, M6-AUDIO-1) — the position, the focus/skip
     /// gate and the cue-slot/pitch rolls all resolve inside Rain's own
-    /// stream like the vanilla's `Main.rand` draws.
-    pub(crate) fn thunder_step(&mut self, weather: ThunderInputs) -> Option<ThunderStrike> {
+    /// stream like the vanilla's `Main.rand` draws. `is_playing(slot)` is
+    /// the engine's `SoundInstanceThunder[slot].State == Playing` — the
+    /// case-43 re-roll loop reads it live (`LegacySoundPlayer.cs:456-464`).
+    pub(crate) fn thunder_step(
+        &mut self,
+        weather: ThunderInputs,
+        is_playing: &dyn Fn(u32) -> bool,
+    ) -> Option<ThunderStrike> {
         let mut strike = None;
         if self.thunder_delay > 0 {
             self.thunder_delay -= 1;
@@ -502,7 +516,7 @@ impl Rain {
                 // `Main.cs:58751-58768`: the strike — the position
                 // (`thunderDistance * 15` off the scene centre, clamped to
                 // `worldSurface * 16 - 500`) behind the focus/skip gate, then
-                // the case-43 cue family and its pitch jitter.
+                // the case-43 cue family (the re-roll loop + the pitch).
                 let flip_left = self.range(0, 2) == 0;
                 let (x, y) = crate::ambient_sound::thunder_strike_position(
                     (weather.scene_center[0], weather.scene_center[1]),
@@ -514,12 +528,16 @@ impl Rain {
                     true,
                     weather.thunder_skip_sound,
                 ) {
-                    let (cue, pitch) = crate::ambient_sound::thunder_cue_slot(
-                        self.range(0, 6),
-                        // `Main.rand.Next(-10, 11)` (`LegacySoundPlayer.cs:471`).
-                        self.range(0, 21) as i32 - 10,
-                    );
-                    strike = Some(ThunderStrike { cue, x, y, pitch });
+                    let mut cue_roll = |lo: i32, hi: i32| self.range_signed(lo, hi);
+                    let (cue, slot, pitch) =
+                        crate::ambient_sound::thunder_cue_pick(&mut cue_roll, is_playing);
+                    strike = Some(ThunderStrike {
+                        cue,
+                        slot,
+                        x,
+                        y,
+                        pitch,
+                    });
                 }
                 // The vanilla drains `thunderDistance` to 0 with the strike;
                 // the re-arm roll below reads it as 0.
@@ -1278,10 +1296,10 @@ mod tests {
         rain.lightning_decay = 0.05; // `NewLightning`'s upper decay rate.
         // The flash rise/decay lives in the lightning chain — `thunder_step`,
         // once per world tick since M1.4-BG-22 — not in the drop sim's tick.
-        rain.thunder_step(ThunderInputs::default());
+        rain.thunder_step(ThunderInputs::default(), &|_| false);
         assert!(rain.flash < 1.0 && rain.flash > 0.7);
         for _ in 0..30 {
-            rain.thunder_step(ThunderInputs::default());
+            rain.thunder_step(ThunderInputs::default(), &|_| false);
         }
         assert_eq!(rain.flash, 0.0, "flash must decay to zero");
     }
@@ -1301,7 +1319,7 @@ mod tests {
         };
         // Delay 1 → the strike fires with distance 4 → ±60 px off the centre,
         // the y untouched above the surface clamp.
-        let strike = rain.thunder_step(weather).expect("a strike");
+        let strike = rain.thunder_step(weather, &|_| false).expect("a strike");
         assert!(
             (strike.x == 740.0) || (strike.x == 860.0),
             "x = {}",
@@ -1320,7 +1338,7 @@ mod tests {
             "the vanilla drains it with the strike"
         );
         // No delay: no strike, and the stream is untouched.
-        assert_eq!(rain.thunder_step(weather), None);
+        assert_eq!(rain.thunder_step(weather, &|_| false), None);
     }
 
     // M5-SEED-2: the `moreLightning` / `noLightning` micro seeds
@@ -1346,7 +1364,7 @@ mod tests {
             let mut n = 0u32;
             let mut up = false;
             for _ in 0..20_000 {
-                w.thunder_step(weather);
+                w.thunder_step(weather, &|_| false);
                 if w.flash > 0.0 && !up {
                     n += 1;
                 }
@@ -1452,7 +1470,7 @@ mod tests {
                 .filter_map(|_| {
                     rain.thunder_delay = 1;
                     rain.thunder_distance = 4;
-                    rain.thunder_step(weather)
+                    rain.thunder_step(weather, &|_| false)
                 })
                 .collect::<Vec<_>>()
         };

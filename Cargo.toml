@@ -21,7 +21,10 @@ winit = "0.30"
 egui = "0.37"
 egui-wgpu = "0.37"
 egui-winit = "0.37"
-flate2 = "1"
+# The `zlib-rs` backend: the C# `DeflateStream` (`.map`, `.wld`, MP) is zlib's
+# deflate at `CompressionLevel.Optimal`, and only a zlib-shaped compressor is
+# byte-identical to it (`miniz_oxide` emits a valid but different stream).
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 font8x8 = "0.3"
 rayon = "1"

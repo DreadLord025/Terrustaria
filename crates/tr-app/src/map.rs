@@ -703,8 +703,10 @@ pub fn save_map_file(
     let header = tr_core::map::write_map_header(world);
     let tables = tr_core::map::write_option_tables();
     let body = tr_core::map::encode_tiles(map, world.width as usize, world.height as usize);
-    // The C# `DeflateStream` is raw deflate (no zlib/gzip wrapper).
-    let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+    // The C# `DeflateStream` is raw deflate (no zlib/gzip wrapper); its
+    // `CompressionMode.Compress` ctor default is `CompressionLevel.Optimal`
+    // (zlib level 6) (`MapHelper.cs:3047`).
+    let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
     encoder.write_all(&body)?;
     let deflated = encoder.finish()?;
 
@@ -1476,6 +1478,270 @@ mod tests {
         let got = head_icon_pos(center_px, pos, 4.0, screen);
         assert_close(got[0], 796.0, 1e-3);
         assert_close(got[1], 449.6, 1e-3);
+    }
+
+    // ---- S1-L-5: the `.map` deflate parity (`MapHelper.InternalSaveMap`) ----
+    //
+    // The compressed layer is NOT byte-identical to vanilla: the vanilla
+    // runtime's `clrcompression.dll` (.NET FW 4.8.1) embeds a Microsoft-patched
+    // zlib whose output no stock zlib reproduces at any parameter combination
+    // (the evidence and the parameter probe live in ANALYSIS.md, "The `.map`
+    // deflate stream"). What IS 1:1 and frozen here: the uncompressed prefix,
+    // the pre-deflate row body, and the wrapper semantics (raw deflate at the
+    // `CompressionMode.Compress` ctor default = `CompressionLevel.Optimal`).
+
+    /// The frozen pre-deflate row body for the synthetic map below — what the
+    /// Rust encoder must emit and what vanilla's `DeflateStream` compressed
+    /// byte-for-byte (`fw48-reference.deflate` inflates back onto it). Dump
+    /// with `S1_L5_DUMP_BODY=<path>`.
+    const S1_L5_BODY: &[u8] = include_bytes!("../../../tools/MapDeflateHarness/map-body.bin");
+    /// The vanilla FW 4.8.1 `DeflateStream` bytes for that body — the
+    /// reproducible divergence evidence, produced by `tools/MapDeflateHarness/fw48`.
+    const S1_L5_FW_REFERENCE: &[u8] =
+        include_bytes!("../../../tools/MapDeflateHarness/fw48-reference.deflate");
+    /// Our own zlib-rs level-6 output for that body — the regression pin for
+    /// the compressor choice. Dump with `S1_L5_DUMP_FLATE2=<path>`.
+    const S1_L5_OUR_DEFLATE: &[u8] =
+        include_bytes!("../../../tools/MapDeflateHarness/rust-deflate.bin");
+
+    /// The S1-L-5 synthetic map: 320x64, `world_surface` 20, `rock_layer` 32.
+    ///
+    /// The rows walk every `encode_tiles` category and every run shape: dark
+    /// skip-runs (single, mid-row and `> 255`), `light == 255` exact runs
+    /// (`Equals`), variable-light runs (`EqualsWithoutLight`) including one
+    /// that spans the full row (the row-end case), painted tiles/walls,
+    /// 16-bit tile and wall types, all four liquid slots (the shimmer rides
+    /// slot 0's `0x40` bit), the sky-gradient band, the dirt/rock depth bands
+    /// and the hell band. The reader resolves the depth-bound slots by row:
+    /// a dirt/rock colour is picked by `l < rockLayer` (`LoadMapVersion2:4002`)
+    /// and the sky/hell slot by `l < worldSurface` (`:3999`), so sky rows sit
+    /// above the surface, hell below it, dirt above `rock_layer`, rock below.
+    fn s1_l5_synthetic_map() -> (Vec<MapTile>, usize, usize, f64, f64) {
+        let t = color_table();
+        let w = 320usize;
+        let h = 64usize;
+        let surface = 20.0f64;
+        let rock = 32.0f64;
+        assert!(
+            t.wall_position as usize > t.tile_position as usize + 300,
+            "the tile band must span a relative type > 255"
+        );
+        assert!(
+            t.liquid_position as usize > t.wall_position as usize + 300,
+            "the wall band must span a relative type > 255"
+        );
+        let mut map = vec![MapTile::default(); w * h];
+        let mut rng = 0x5EED_1C55u32;
+        let mut nxt = move || {
+            rng ^= rng << 13;
+            rng ^= rng >> 17;
+            rng ^= rng << 5;
+            rng
+        };
+        let put = |map: &mut Vec<MapTile>, x: usize, y: usize, tile: MapTile| {
+            map[y * w + x] = tile;
+        };
+
+        // l=0: one dark skip-run across the whole row (run 319 > 255).
+        // l=1: alternating dark tiles and lit tiles whose types vary.
+        for x in (0..w).step_by(2) {
+            let ty = t.tile_position + ((x / 2) % 7) as u16 + 1;
+            put(&mut map, x + 1, 1, MapTile::create(ty, 25 + (nxt() % 60) as u8, 0));
+        }
+        // l=2: one variable-light run spanning the full row — the row-end case
+        // with a two-byte run length and a light byte per run tile.
+        for x in 0..w {
+            put(&mut map, x, 2, MapTile::create(t.tile_position + 5, 20 + (x % 9) as u8, 0));
+        }
+        // l=3: two tile types in blocks of 5, one colour per block.
+        for x in 0..w {
+            let ty = if (x / 5) % 2 == 0 {
+                t.tile_position + 1
+            } else {
+                t.tile_position + 2
+            };
+            put(&mut map, x, 3, MapTile::create(ty, 30 + (nxt() % 200) as u8, ((x / 5) % 6) as u8));
+        }
+        // l=4: a 16-bit tile type (relative 300): a 40-tile `light == 255`
+        // exact run, then variable-light singles.
+        for x in 0..40 {
+            put(&mut map, x, 4, MapTile::create(t.tile_position + 300, 255, 0));
+        }
+        for x in 40..w {
+            put(&mut map, x, 4, MapTile::create(t.tile_position + 300, 60 + (nxt() % 120) as u8, (x % 3) as u8));
+        }
+        // l=5: painted walls in blocks.
+        for x in 0..w {
+            let ty = t.wall_position + ((x / 8) % 4) as u16 * 2;
+            put(&mut map, x, 5, MapTile::create(ty, 55 + (nxt() % 90) as u8, ((x / 8) % 6) as u8));
+        }
+        // l=6: a 16-bit wall type (relative 300).
+        for x in 0..w {
+            put(&mut map, x, 6, MapTile::create(t.wall_position + 300, 90, (x % 4) as u8));
+        }
+        // l=7: all four liquid slots; the shimmer rides slot 0's `0x40` bit.
+        for x in 0..w {
+            put(&mut map, x, 7, MapTile::create(t.liquid_position + (x % 4) as u16, 45 + (nxt() % 50) as u8, 0));
+        }
+        // l=8..12: sky rows (above the surface): no type or light is stored;
+        // the reader rebuilds the gradient from the row (`:3999`).
+        for l in 8..13usize {
+            let gradient = ((255.0 * (l as f64 / surface)) as u8) as u16;
+            for x in 0..w {
+                put(&mut map, x, l, MapTile::create(t.sky_position + gradient, 255, (l % 4) as u8));
+            }
+        }
+        // l=13: a long dark skip-run broken by a single lit tile mid-row.
+        put(&mut map, 137, 13, MapTile::create(t.tile_position + 9, 40, 2));
+        // l=14: dark.
+        // l=15..19: dirt rows (above rock_layer; the dirt band is 256 wide, so
+        // every relative type stays one byte).
+        for l in 15..20usize {
+            for x in 0..w {
+                let ty = t.dirt_position + ((x / 3 + l) % 220) as u16;
+                put(&mut map, x, l, MapTile::create(ty, 35 + (nxt() % 150) as u8, ((x + l) % 7) as u8));
+            }
+        }
+        // l=20..23: between the surface and rock_layer — tiles, walls and
+        // liquids only (the depth-bound slots would decode differently here).
+        for l in 20..24usize {
+            for x in 0..w {
+                let ty = match x % 3 {
+                    0 => t.tile_position + ((x / 3 + l) % 250) as u16 + 1,
+                    1 => t.wall_position + ((x / 5 + l) % 40) as u16 * 3,
+                    _ => t.liquid_position + (x % 3) as u16,
+                };
+                put(&mut map, x, l, MapTile::create(ty, 40 + (nxt() % 180) as u8, (x % 5) as u8));
+            }
+        }
+        // l=24..25: `light == 255` whole-row exact runs.
+        for l in 24..26usize {
+            for x in 0..w {
+                put(&mut map, x, l, MapTile::create(t.tile_position + 11, 255, 0));
+            }
+        }
+        // l=26..27: walls whose type+colour repeat every 9 tiles with varying
+        // lights (variable-light runs of 8 plus a mismatch).
+        for l in 26..28usize {
+            for x in 0..w {
+                put(&mut map, x, l, MapTile::create(t.wall_position + (x % 9) as u16, 70 + (nxt() % 100) as u8, (x % 9) as u8));
+            }
+        }
+        // l=28..31: walls and liquids, painted.
+        for l in 28..32usize {
+            for x in 0..w {
+                let ty = if x % 2 == 0 {
+                    t.wall_position + (x / 2 % 30) as u16
+                } else {
+                    t.liquid_position + (l % 3) as u16
+                };
+                put(&mut map, x, l, MapTile::create(ty, 50 + (nxt() % 140) as u8, (l % 9) as u8));
+            }
+        }
+        // l=32..40: rock rows (at/below rock_layer).
+        for l in 32..41usize {
+            for x in 0..w {
+                let ty = t.rock_position + ((x / 4 + l) % 200) as u16;
+                put(&mut map, x, l, MapTile::create(ty, 45 + (nxt() % 120) as u8, ((x + l) % 8) as u8));
+            }
+        }
+        // l=41..63: hell rows (below the surface): category 6, no type stored;
+        // the reader maps them to the single hell entry by depth.
+        for l in 41..64usize {
+            for x in 0..w {
+                put(&mut map, x, l, MapTile::create(t.hell_position, 60 + (nxt() % 130) as u8, (x % 9) as u8));
+            }
+        }
+        (map, w, h, surface, rock)
+    }
+
+    #[test]
+    fn s1_l_5_body_matches_vanilla_and_the_wrapper_is_faithful() {
+        let (map, w, h, surface, rock) = s1_l5_synthetic_map();
+        let body = tr_core::map::encode_tiles(&map, w, h);
+
+        // The encoder is pinned byte-for-byte to the frozen body fixture — the
+        // pre-deflate layer is the part of the format that is 1:1.
+        assert_eq!(
+            body,
+            S1_L5_BODY.to_vec(),
+            "encode_tiles drifted from the frozen body fixture"
+        );
+
+        // The vanilla FW 4.8.1 `DeflateStream` bytes inflate back onto exactly
+        // our body: the compressed layer interoperates, its bytes do not match
+        // any stock zlib (see ANALYSIS.md, "The `.map` deflate stream").
+        use std::io::Read;
+        let mut decoder = flate2::read::DeflateDecoder::new(S1_L5_FW_REFERENCE);
+        let mut inflated = Vec::new();
+        decoder.read_to_end(&mut inflated).unwrap();
+        assert_eq!(
+            inflated,
+            body,
+            "the vanilla reference stream inflates to a different body"
+        );
+
+        // Our encoder: raw deflate at the C# ctor default (Optimal, level 6),
+        // pinned so the compressor choice cannot drift silently.
+        use std::io::Write;
+        let mut encoder =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+        encoder.write_all(&body).unwrap();
+        let deflated = encoder.finish().unwrap();
+        assert_eq!(
+            deflated,
+            S1_L5_OUR_DEFLATE.to_vec(),
+            "our deflate encoder drifted"
+        );
+
+        // And the body still round-trips through the reader.
+        let t = color_table();
+        let header = tr_core::map::MapHeader {
+            version: tr_core::map::MAP_FORMAT_VERSION,
+            seed: 0,
+            height: h as i32,
+            width: w as i32,
+            tile_count: tr_core::mapdata::TILE_COUNT as i16,
+            wall_count: tr_core::mapdata::WALL_COUNT as i16,
+            liquid_count: 4,
+            sky_count: 256,
+            dirt_count: 256,
+            rock_count: 256,
+        };
+        let decoded = tr_core::map::decode_tiles(
+            &body,
+            &header,
+            &t.tile_option_counts,
+            &t.wall_option_counts,
+            w,
+            h,
+            surface,
+            rock,
+        )
+        .expect("the S1-L-5 body must decode");
+        assert_eq!(decoded, map);
+    }
+
+    #[test]
+    fn s1_l_5_dump_body() {
+        let Ok(path) = std::env::var("S1_L5_DUMP_BODY") else {
+            return;
+        };
+        let (map, w, h, ..) = s1_l5_synthetic_map();
+        std::fs::write(path, tr_core::map::encode_tiles(&map, w, h)).unwrap();
+    }
+
+    #[test]
+    fn s1_l_5_dump_flate2() {
+        let Ok(path) = std::env::var("S1_L5_DUMP_FLATE2") else {
+            return;
+        };
+        use std::io::Write;
+        let mut encoder =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+        encoder.write_all(S1_L5_BODY).unwrap();
+        let deflated = encoder.finish().unwrap();
+        std::fs::write(path, &deflated).unwrap();
     }
 }
 

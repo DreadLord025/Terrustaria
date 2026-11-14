@@ -52,20 +52,52 @@ pub fn database() -> &'static ItemDropDatabase {
     })
 }
 
-/// The bestiary's per-entry drop lines — the  view of the same registrations the executor runs
-/// (ItemDropBestiaryInfoElement reads the database's rules; the port
-/// restates the family's rows so the info page and the drops stay in sync
-/// until the rules walk themselves for display, M4-BEST-1 follow-up).
-/// denom <= 1 = the always-drop case.
-pub fn drop_lines(net_id: i32) -> &'static [(i32, i32, i32, i32)] {
-    match net_id {
-        BLUE_SLIME => &[(23, 1, 2, 1)],
-        RED_SLIME | PURPLE_SLIME | BLACK_SLIME => &[(23, 2, 5, 1)],
-        PINKY => &[(3111, 25, 50, 1), (1309, 0, 0, 100)],
-        _ => &[],
-    }
+/// The bestiary's drop rows for one NPC — `BestiaryDatabase.ExtractDropsForNPC`
+/// (`BestiaryDatabase.cs:70-88`): the NPC's rules report their rows with a
+/// fresh feed (the rate 1.0). The C# keeps them on the bestiary entry; the
+/// port derives them on demand from the same database the executor runs.
+pub fn drop_rows(net_id: i32) -> Vec<tr_core::loot::DropRateInfo> {
+    database().report_droprates(net_id)
 }
 
+
+
+#[cfg(test)]
+mod s1_e_15_tests {
+    use super::*;
+
+    #[test]
+    fn the_generated_database_reports_the_blue_slimes_gel() {
+        // `BestiaryDatabase.ExtractDroprates` over the generated
+        // registrations: the blue slime (1) drops the gel (23) 1-2 — the
+        // C#'s `ItemDropRule.Gel(1, 1, 2)` row.
+        let rows = drop_rows(BLUE_SLIME);
+        assert!(!rows.is_empty(), "the blue slime's drop rows");
+        // The gel rows: the normal one (1-2) and the extra-gel one (2-4 —
+        // `DropBasedOnExtraGel` reports both).
+        let gel = rows
+            .iter()
+            .find(|r| r.item_id == 23 && (r.stack_min, r.stack_max) == (1, 2))
+            .expect("the gel row");
+        assert!((gel.drop_rate - 1.0).abs() < 1e-6, "always");
+        assert!(
+            rows.iter()
+                .any(|r| r.item_id == 23 && (r.stack_min, r.stack_max) == (2, 4)),
+            "the extra-gel row: {rows:?}"
+        );
+        // The bladed glove (1309) at the normal/expert split.
+        assert!(rows.iter().any(|r| r.item_id == 1309), "{rows:?}");
+    }
+
+    #[test]
+    fn the_pinky_reports_both_of_its_rows() {
+        // The pinky (-4): 25-50 Pink Gel (3111) plus the Bladed Glove
+        // (1309) at the expert-normal split.
+        let rows = drop_rows(PINKY);
+        assert!(rows.iter().any(|r| r.item_id == 3111), "{rows:?}");
+        assert!(rows.iter().any(|r| r.item_id == 1309), "{rows:?}");
+    }
+}
 
 #[cfg(test)]
 mod tests {

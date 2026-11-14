@@ -907,7 +907,18 @@ pub fn draw_hud(
                     count,
                     prefix: 0,
                 };
-                tooltip::draw_item_tooltip(r, lookups, mouse_pos, Some(&hover), screen, pulse);
+                tooltip::draw_item_tooltip(
+                    r,
+                    lookups,
+                    mouse_pos,
+                    Some(&hover),
+                    screen,
+                    pulse,
+                    tooltip::TooltipContext {
+                        player,
+                        ..Default::default()
+                    },
+                );
             }
         }
     } else {
@@ -1030,7 +1041,24 @@ pub fn draw_hud(
         tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
             .map(|i| &inventory[i])
     };
-    tooltip::draw_item_tooltip(r, lookups, mouse_pos, hover_item, screen, pulse);
+    // `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
+    // held item's own crit, which the tooltip's crit row subtracts
+    // (`Main.cs:20701`).
+    let held_crit = crate::registry::get(inventory[selected].kind).map_or(0, |d| d.crit);
+    tooltip::draw_item_tooltip(
+        r,
+        lookups,
+        mouse_pos,
+        hover_item,
+        screen,
+        pulse,
+        tooltip::TooltipContext {
+            prefix: hover_item.map_or(0, |h| h.prefix),
+            player,
+            held_crit,
+            ..Default::default()
+        },
+    );
     if let Some(text) = pvp_hover_text {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
     }

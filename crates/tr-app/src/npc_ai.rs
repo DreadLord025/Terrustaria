@@ -158,10 +158,31 @@ pub fn flyer_step(
     }
 }
 
+/// `AI_005`'s per-kind rotation arm (`NPC.cs:50580-50655`) — the four
+/// shapes the fly core ends with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HoverRotation {
+    /// `:50643-50646` — the aim tilt (`atan2(num5, num4) - 1.57`): the
+    /// types 6/94/173/619.
+    Aim,
+    /// `:50580-50592` — the sprite-aim arm (type 23): the sprite direction
+    /// follows the aim's x sign and the rotation is `atan2(num5, num4)`
+    /// (+π when the aim points left).
+    SpriteAim,
+    /// `:50647-50651` — the type-42/176/205/231-235 arm: the sprite
+    /// direction follows the velocity's x sign and the rotation is
+    /// `velocity.X * 0.1`.
+    VelocityX,
+    /// `:50652-50655` — the else arm: the velocity tilt
+    /// (`atan2(velocity.Y, velocity.X) - 1.57`).
+    Velocity,
+}
+
 /// The hover tunables — `AI_005_EaterOfSouls`'s per-kind `num`/`num2`
-/// pairs (`NPC.cs:50302-50383`: the max speed / the acceleration). The table
-/// is pinned by `the_hover_presets_match_the_csharp_table`, so the anchors
-/// cannot drift again (the pre-audit HORNET carried type 205's pair).
+/// pairs (`NPC.cs:50302-50383`: the max speed / the acceleration) plus the
+/// per-kind gates of the shared fly core. The table is pinned by
+/// `the_hover_presets_match_the_csharp_table`, so the anchors cannot drift
+/// again (the pre-audit HORNET carried type 205's pair).
 #[derive(Clone, Copy, Debug)]
 pub struct HoverParams {
     /// `num` — the desired speed (the target vector scaled to it).
@@ -173,34 +194,74 @@ pub struct HoverParams {
     /// ×0.97 climb/dive damping. `false` for every other hover kind, which
     /// keeps the plain `num`/`num2` and never damps.
     pub surface_damped: bool,
+    /// `flag5` (`NPC.cs:50447`) — the approach's extra add on a sign
+    /// reversal. It is true for the kinds **outside** {6, 42, 94, 139, 173,
+    /// 619} and outside [231, 235]; the Eater of Souls (6) and the Hornet
+    /// (42) are in the excluded set and never get the extra add.
+    pub double_add: bool,
+    /// `noTileCollide` (`SetDefaults`) — the kinds that fly through the
+    /// tiles (`AI_005`'s own kind list at `:50656` excludes them from the
+    /// bounce arm); the others bounce with `bounce`.
+    pub no_tile_collide: bool,
+    /// The tile bounce's restitution (`NPC.cs:50656-50688`): `num14` = 0.7
+    /// for the family, 0.4 for the types 6/173.
+    pub bounce: f32,
+    /// The per-kind rotation arm (`NPC.cs:50580-50655`).
+    pub rotation: HoverRotation,
 }
 
 impl HoverParams {
     /// The Eater of Souls (type 6; `NPC.cs:50304-50307`: num 4, num2 0.02).
+    /// `flag5` is false for it (`:50447`) and it flies through the tiles
+    /// (`SetDefaults` case 6: `noTileCollide`), so it never bounces; the
+    /// rotation is the aim tilt (`:50643-50646`).
     pub const EATER_OF_SOULS: Self = Self {
         max_speed: 4.0,
         accel: 0.02,
         surface_damped: false,
+        double_add: false,
+        no_tile_collide: true,
+        bounce: 0.4,
+        rotation: HoverRotation::Aim,
     };
     /// The Hornet (type 42; `NPC.cs:50341-50344`: num 3.5, num2 0.021).
     /// Type 205 is the *other* hover kind (`NPC.cs:50364-50367`: 3.25/0.018) —
-    /// this preset must not carry its pair.
+    /// this preset must not carry its pair. `flag5` is false for the Hornet
+    /// (`:50447`), it **collides** with the tiles (`SetDefaults` case 42 sets
+    /// `noGravity` only), so it takes the ×0.7 bounce (`:50658`), and its
+    /// rotation is the `velocity.X * 0.1` arm (`:50647-50651`).
     pub const HORNET: Self = Self {
         max_speed: 3.5,
         accel: 0.021,
         surface_damped: true,
+        double_add: false,
+        no_tile_collide: false,
+        bounce: 0.7,
+        rotation: HoverRotation::VelocityX,
     };
-    /// The Servant of Cthulhu (type 5; `NPC.cs:50379-50382`: num 5, num2 0.03).
+    /// The Servant of Cthulhu (type 5; `NPC.cs:50379-50382`: num 5, num2
+    /// 0.03). The servant has its own arm now (S1-D-3k); the row stays as
+    /// the record of the C#'s type-5 pair.
     pub const SERVANT_OF_CTHULHU: Self = Self {
         max_speed: 5.0,
         accel: 0.03,
         surface_damped: false,
+        double_add: true,
+        no_tile_collide: true,
+        bounce: 0.4,
+        rotation: HoverRotation::Velocity,
     };
     /// The Meteor Head (type 23; `NPC.cs:50374-50377`: num 1, num2 0.03).
+    /// `flag5` is true for it, it flies through the tiles (`SetDefaults`
+    /// case 23) and its rotation is the sprite-aim arm (`:50580-50592`).
     pub const METEOR_HEAD: Self = Self {
         max_speed: 1.0,
         accel: 0.03,
         surface_damped: false,
+        double_add: true,
+        no_tile_collide: true,
+        bounce: 0.7,
+        rotation: HoverRotation::SpriteAim,
     };
 }
 
@@ -217,21 +278,32 @@ pub struct HoverTarget {
     pub center_y: f32,
     /// The target's top edge Y (`targetData.Position.Y`) — the damping gate.
     pub top_y: f32,
+    /// The target is dead (`NPC.cs:50299` — `flag = player.dead`): the fly
+    /// core flips to the flee vector (`:50480-50484`).
+    pub dead: bool,
+}
+
+/// The 8-px grid floor of the aim (`NPC.cs:50421-50424`):
+/// `(int)(value / 8f) * 8`.
+fn snap8(value: f32) -> f32 {
+    ((value / 8.0) as i32 * 8) as f32
 }
 
 /// `AI_005_EaterOfSouls`'s fly core (`NPC.cs:50418-50579`, ahead of the
 /// per-kind dash/attack arms): the desired velocity = the normalized target
 /// vector × `num`; the velocity approaches it by `num2` per tick with the
-/// double-add on the sign flips (`:50547-50578`). The type-42/231-235 family
-/// also takes the `num`/`num2` `2f - scale` factor (`:50350-50351`) and the
-/// surface-gated ×0.97 vertical damping (`:50352-50362`), applied to
+/// `flag5`-gated double-add on the sign flips (`:50547-50578`). The type-42
+/// family also takes the `num`/`num2` `2f - scale` factor (`:50350-50351`)
+/// and the surface-gated ×0.97 vertical damping (`:50352-50362`), applied to
 /// `velocity.Y` before the approach like the source.
-pub fn hover_step(
-    npc: &mut Npc,
-    world: &World,
-    target: HoverTarget,
-    params: HoverParams,
-) {
+///
+/// The aim is quantised to the 8-px grid (`:50421-50424`) — the target's
+/// centre and the NPC's own centre both floor to 8 px — and the dead-target
+/// flee vector (`:50480-50484`) replaces it. The step ends with the
+/// per-kind rotation arm (`:50580-50655`) and the tile collision: the
+/// `noTileCollide` kinds fly straight through, the others bounce with
+/// `num14` (`:50656-50688`).
+pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: HoverParams) {
     let (w, h) = (npc_size_w(npc), npc_size_h(npc));
     // The type-42/231-235 arm (`NPC.cs:50350-50351`): `num`/`num2` scale by
     // `2f - this.scale` (identity for a default-scale Hornet).
@@ -243,7 +315,7 @@ pub fn hover_step(
     };
     // The same family's vertical damping (`NPC.cs:50352-50362`): only above
     // `worldSurface`, `velocity.Y *= 0.97` when the target is 300+ px below
-    // (climb) or < 80 px below (dive). Applied before the approach (`:50547`).
+    // (a climb) or < 80 px below (a dive). Applied before the approach (`:50547`).
     if params.surface_damped && (npc.y / TILE_PX) < world.world_surface as f32 {
         let top_dy = target.top_y - npc.y;
         if top_dy > 300.0 && npc.vy < 0.0 {
@@ -254,51 +326,103 @@ pub fn hover_step(
         }
     }
     let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
-    let mut dx = target.center_x - cx;
-    let mut dy = target.center_y - cy;
-    let dist = (dx * dx + dy * dy).sqrt();
-    if dist != 0.0 {
-        let scale = max_speed / dist;
-        dx *= scale;
-        dy *= scale;
+    // `:50418-50426` — the 8-px grid snap: the target's centre and the
+    // NPC's own centre both floor to the 8-px grid, and the aim is the
+    // difference of the snapped values.
+    let mut aim_x = snap8(target.center_x) - snap8(cx);
+    let mut aim_y = snap8(target.center_y) - snap8(cy);
+    // `:50427-50444` — the normalized aim at the `num` speed; a zero
+    // distance keeps the current velocity (`num4 = velocity.X`).
+    let num6 = (aim_x * aim_x + aim_y * aim_y).sqrt();
+    if num6 == 0.0 {
+        aim_x = npc.vx;
+        aim_y = npc.vy;
     } else {
-        dx = npc.vx;
-        dy = npc.vy;
+        let scale = max_speed / num6;
+        aim_x *= scale;
+        aim_y *= scale;
     }
-    // The approach with the double-add on the sign flips (`NPC.cs:50547-50578`).
-    if npc.vx < dx {
+    // `:50480-50484` — a dead target: the NPC flies off along the facing
+    // direction (`num`/`2` sideways, `-num`/`2` down).
+    if target.dead {
+        aim_x = npc.facing as f32 * max_speed / 2.0;
+        aim_y = -max_speed / 2.0;
+    }
+    // `:50547-50578` — the approach (`num2`) with the `flag5` double-add
+    // on the sign flips.
+    if npc.vx < aim_x {
         npc.vx += accel;
-        if dx > 0.0 && npc.vx < 0.0 {
+        if params.double_add && npc.vx < 0.0 && aim_x > 0.0 {
             npc.vx += accel;
         }
-    } else if npc.vx > dx {
+    } else if npc.vx > aim_x {
         npc.vx -= accel;
-        if dx < 0.0 && npc.vx > 0.0 {
+        if params.double_add && npc.vx > 0.0 && aim_x < 0.0 {
             npc.vx -= accel;
         }
     }
-    if npc.vy < dy {
+    if npc.vy < aim_y {
         npc.vy += accel;
-        if dy > 0.0 && npc.vy < 0.0 {
+        if params.double_add && npc.vy < 0.0 && aim_y > 0.0 {
             npc.vy += accel;
         }
-    } else if npc.vy > dy {
+    } else if npc.vy > aim_y {
         npc.vy -= accel;
-        if dy < 0.0 && npc.vy > 0.0 {
+        if params.double_add && npc.vy > 0.0 && aim_y < 0.0 {
             npc.vy -= accel;
         }
     }
-    let nx = npc.x + npc.vx;
-    if !crate::player::collides_rect(world, nx, npc.y, w, h) {
-        npc.x = nx;
-    } else {
-        npc.vx = -npc.vx * 0.5;
+    // `:50580-50655` — the per-kind rotation arm.
+    match params.rotation {
+        HoverRotation::Aim => npc.rotation = aim_y.atan2(aim_x) - 1.57,
+        HoverRotation::SpriteAim => {
+            if aim_x > 0.0 {
+                npc.sprite_dir = 1;
+                npc.rotation = aim_y.atan2(aim_x);
+            } else if aim_x < 0.0 {
+                npc.sprite_dir = -1;
+                npc.rotation = aim_y.atan2(aim_x) + 3.14;
+            }
+        }
+        HoverRotation::VelocityX => {
+            npc.sprite_dir = if npc.vx > 0.0 { 1 } else { -1 };
+            npc.rotation = npc.vx * 0.1;
+        }
+        HoverRotation::Velocity => npc.rotation = npc.vy.atan2(npc.vx) - 1.57,
     }
-    let ny = npc.y + npc.vy;
-    if !crate::player::collides_rect(world, npc.x, ny, w, h) {
-        npc.y = ny;
+    // `:50656-50688` — the tile collision. The `noTileCollide` kinds (the
+    // Eater of Souls, the Meteor Head) fly straight through; the others
+    // bounce off the wall with `num14` and the small-velocity clamps.
+    let old_vx = npc.vx;
+    let old_vy = npc.vy;
+    if params.no_tile_collide {
+        npc.x += npc.vx;
+        npc.y += npc.vy;
     } else {
-        npc.vy = -npc.vy * 0.5;
+        let nx = npc.x + npc.vx;
+        if !crate::player::collides_rect(world, nx, npc.y, w, h) {
+            npc.x = nx;
+        } else {
+            npc.vx = old_vx * -params.bounce;
+            if npc.facing == -1 && npc.vx > 0.0 && npc.vx < 2.0 {
+                npc.vx = 2.0;
+            }
+            if npc.facing == 1 && npc.vx < 0.0 && npc.vx > -2.0 {
+                npc.vx = -2.0;
+            }
+        }
+        let ny = npc.y + npc.vy;
+        if !crate::player::collides_rect(world, npc.x, ny, w, h) {
+            npc.y = ny;
+        } else {
+            npc.vy = old_vy * -params.bounce;
+            if npc.vy > 0.0 && npc.vy < 1.5 {
+                npc.vy = 2.0;
+            }
+            if npc.vy < 0.0 && npc.vy > -1.5 {
+                npc.vy = -2.0;
+            }
+        }
     }
     npc.facing = if target.center_x >= cx { 1 } else { -1 };
 }
