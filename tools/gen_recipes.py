@@ -7,8 +7,11 @@ Sources (paths relative to the repo root):
   decompiled/Terraria/ID/ItemID.cs   - item names + `Sets.TextureCopyLoad`
   decompiled/Terraria/ID/TileID.cs   - tile constants (`SetCraftingStation(TileID.X)`)
                                        + `Sets.Platforms` (the reverse recipes)
-  crates/tr-app/src/itemdata.rs      - the port's item registry (validation) and the
-                                       per-item placed tile/wall (the reverse recipes)
+  decompiled/Terraria/Item.cs        - the C#'s own item registry: the per-type
+                                       placed tile/wall (`SetDefaults1..5`) that the
+                                       reverse recipes derive from (`Item.cs:169/171`,
+                                       `:48663`, `:49010`)
+  crates/tr-app/src/itemdata.rs      - the port's item registry (id validation only)
   crates/tr-app/src/craft.rs         - the port's RecipeGroups table (validation)
 
 Usage: python tools/gen_recipes.py [--check]
@@ -25,14 +28,16 @@ Handled C# forms (everything else in the body is tail bookkeeping and skipped):
   notDecraftable / corruption / crimson / AddCustomShimmerResult - ignored
     (decrafting/shimmer bookkeeping; corruption|crimson do NOT gate crafting -
     they only feed ItemID.Sets.IsCraftedCorruption/Crimson, `Recipe.cs:15252-15257`)
-  needTorchGodsFavor / needMechdusa - the row is SKIPPED (no port system)
+  needTorchGodsFavor / needMechdusa - ported as the recipe flags (the gates
+    are the player's unlockedBiomeTorches and the "for the worthy" seed)
   for (int i = A; i <= B; i++) { ... }         - textual expansion
   int[,] array = new int[N, 2] { ... } + for (j < array.GetLength(0)) - expanded
   Recipe.AddCritterStatueRecipe(a[, b[, RecipeGroups.X]]) - synthesized rows
   Recipe.Add*Furniture()                       - the helper body spliced in place
   CreateReversePlatformRecipes/CreateReverseWallRecipes - emitted by this script
-    (the C# derives them from the finished table and inserts each reverse right
-    after its source row, `Recipe.cs:16648-16694`)
+    (the C# derives them from the finished table + the per-item `createTile`/
+    `createWall` of `Item.SetDefaults`, and inserts each reverse right after its
+    source row, `Recipe.cs:15148-15149`, `:16648-16694`)
 """
 import re
 import sys
@@ -52,8 +57,9 @@ FLAG_MAP = {
     "needLava": "need_lava",
     "needSnowBiome": "need_snow",
     "needGraveyardBiome": "need_graveyard",
+    "needTorchGodsFavor": "need_torch_gods_favor",
+    "needMechdusa": "need_mechdusa",
 }
-SKIP_FLAGS = {"needTorchGodsFavor", "needMechdusa"}
 
 
 def method_body(src, signature_re):
@@ -93,6 +99,8 @@ def snake_upper(name):
 
 class Ctx:
     def __init__(self):
+        self.warnings = []
+        self.skipped = []   # (origin, reason)
         recipe_cs = (DECOMP / "Recipe.cs").read_text(encoding="utf-8")
         item_cs = (DECOMP / "ID" / "ItemID.cs").read_text(encoding="utf-8")
         tile_cs = (DECOMP / "ID" / "TileID.cs").read_text(encoding="utf-8")
@@ -136,17 +144,154 @@ class Ctx:
             if gid in rust_by_id:
                 self.group_consts[mname.group(1)] = rust_by_id[gid]
 
-        # The port's item registry: the id set + per-item placed tile/wall.
+        # The port's item registry: the id set only (emission validation).
         self.port_ids = {int(x) for x in re.findall(r"\bid: (\d+),", itemdata_rs)}
-        self.port_tiles, self.port_walls = {}, {}
-        for m in re.finditer(r"id: (\d+),((?:.|\n)*?)\},", itemdata_rs):
-            iid = int(m.group(1))
-            t = re.search(r"tile: Some\((\d+)\)", m.group(2))
-            w = re.search(r"wall: Some\((\d+)\)", m.group(2))
-            if t:
-                self.port_tiles[iid] = int(t.group(1))
-            if w:
-                self.port_walls[iid] = int(w.group(1))
+
+        # The C#'s own item registry: the per-type placed tile/wall the reverse
+        # recipes derive from (`Item.SetDefaults`, `Item.cs:48663`). `ResetStats`
+        # resets both to -1 (`:49010`) and dispatches to `SetDefaults1..5` by
+        # type range; every assignment is a literal inside the per-type switch —
+        # the only other `createTile`/`createWall` references in Item.cs are the
+        # field declarations (`:169`/`:171`) and the reset.
+        self.cs_tiles, self.cs_walls = {}, {}
+        item_body_src = (DECOMP / "Item.cs").read_text(encoding="utf-8")
+        # Deliberate parse gap (S1-L-11): `default:` switch sections are not
+        # interpreted — emulating them needs the whole control flow of
+        # SetDefaults (which types reach which nested switch). The only
+        # uncovered ids are the monolith series 2192-2198
+        # (`default: this.createTile = 300 + type - 2192;`, `Item.cs:27635`);
+        # none of them is a single-ingredient recipe result, so the reverse
+        # derivation is unaffected (checked by tools/test_gen_recipes.py).
+
+        # The `DefaultTo*` helpers that place a tile/wall
+        # (`DefaultToPlaceableTile`/`DefaultToPlaceableWall` take the id as a
+        # parameter, `Item.cs:48402`/`:48492`; the rest assign literals). Their
+        # case-side calls are resolved by interpreting the helper body with the
+        # call's arguments bound to the parameters.
+        self.default_helpers = {}
+        for hm in re.finditer(
+            r"(?:public|private) void (DefaultTo\w+)\(([^)]*)\)\s*\n\t\{", item_body_src
+        ):
+            hbody = method_body(item_body_src, re.escape(hm.group(0)))
+            if hbody is None:
+                continue
+            if not re.search(r"this\.(createTile|createWall)\s*=", hbody) and not re.search(
+                r"this\.(?:DefaultTo)\w+\(", hbody
+            ):
+                continue
+            params = []
+            for p in hm.group(2).split(","):
+                pm = re.search(r"(\w+)\s*(?:=\s*([^,]+))?$", p.strip())
+                if pm:
+                    params.append((pm.group(1), pm.group(2)))
+            self.default_helpers[hm.group(1)] = (params, hbody)
+
+        for n in (1, 2, 3, 4, 5):
+            body = method_body(
+                item_body_src, rf"private void SetDefaults{n}\(int type\)\s*\n\t\{{"
+            )
+            if body is None:
+                # A missing body would silently gut the reverse derivation.
+                raise SystemExit(f"gen_recipes: Item.cs SetDefaults{n} not found")
+
+            def apply_tile_call(line, iids, depth=0, parent_env=None):
+                """Resolve a `this.DefaultTo*(...)` case-side call for every
+                stacked case id; returns False for non-calls. Helper bodies may
+                delegate (`DefaultToMonolith` -> `DefaultToPlaceableTile`,
+                `Item.cs:47761-47768`), so the body is interpreted line by line
+                with the call's arguments bound to the parameters."""
+                mc = re.match(r"\t+this\.(DefaultTo\w+)\(", line)
+                if not (mc and mc.group(1) in self.default_helpers):
+                    return False
+                if not line.rstrip().endswith(");"):
+                    return False
+                params, hbody = self.default_helpers[mc.group(1)]
+                inner = line[line.index("(") + 1 : line.rindex(")")].strip()
+                raw_args = [a.strip() for a in inner.split(",")] if inner else []
+                if depth > 8:
+                    raise SystemExit("gen_recipes: DefaultTo* delegation too deep")
+                for iid in iids:
+                    env = {"type": iid}
+                    if parent_env:
+                        env.update(parent_env)
+                    for k, (pname, _dflt) in enumerate(params):
+                        if k >= len(raw_args):
+                            break
+                        # `DefaultToTorch(0, allowWaterPlacement: true)` — drop
+                        # the C# named-argument label.
+                        raw = re.sub(r"^\w+:\s*", "", raw_args[k])
+                        if raw in ("true", "false"):
+                            env[pname] = raw   # bool parameters never reach the tile/wall math
+                        else:
+                            env[pname] = eval_case_expr(raw, iid, self, f"Item.cs case {iid} arg", env)
+                    # C# parameter defaults fill the omitted trailing args
+                    # (`DefaultToPlaceableTile(ushort tile, int style = 0)`).
+                    for k, (pname, dflt) in enumerate(params):
+                        if pname not in env and dflt is not None:
+                            if dflt in ("true", "false"):
+                                env[pname] = dflt
+                            else:
+                                env[pname] = eval_case_expr(dflt, iid, self, f"{mc.group(1)} default", env)
+                    for hline in hbody.splitlines():
+                        ma = re.fullmatch(r"\t+this\.(createTile|createWall) = (.+);", hline)
+                        if ma:
+                            v = eval_expr(ma.group(2), env, self, f"Item.cs case {iid} {mc.group(1)}")
+                            if v is not None:
+                                table = self.cs_tiles if ma.group(1) == "createTile" else self.cs_walls
+                                table[iid] = int(v)
+                            continue
+                        if apply_tile_call(hline, [iid], depth + 1, parent_env=env):
+                            continue
+                return True
+
+            # `if (type >= A && type <= B) { ... this.createTile = ...;
+            # return; }` blocks ahead of the switch — one assignment covers
+            # the whole range (`Item.cs:18299`, `:22786`).
+            for im in re.finditer(r"if \(type >= (\d+) && type <= (\d+)\)\s*\n\t+\{", body):
+                ob = body.index("{", im.start())
+                cb = span_of(body, ob)
+                ibody = body[ob + 1 : cb]
+                lo_i, hi_i = int(im.group(1)), int(im.group(2))
+                rng = range(lo_i, hi_i + 1)
+                for line in ibody.splitlines():
+                    if apply_tile_call(line, rng):
+                        continue
+                    ma = re.fullmatch(r"\t+this\.(createTile|createWall) = (.+);", line)
+                    if ma:
+                        table = self.cs_tiles if ma.group(1) == "createTile" else self.cs_walls
+                        for iid in rng:
+                            v = eval_case_expr(ma.group(2), iid, self, f"Item.cs if-range {iid}")
+                            if v is not None:
+                                table[iid] = int(v)
+
+            case_ids = []   # the current stacked `case a: case b:` label group
+            for line in body.splitlines():
+                m = re.fullmatch(r"\t*case (-?\d+):", line)
+                if m:
+                    case_ids.append(int(m.group(1)))
+                    continue
+                if re.fullmatch(r"\t*default:", line):
+                    case_ids = []   # applies to every unmatched type; skip
+                    continue
+                # A C# switch section cannot fall through into the next one:
+                # every non-empty section ends with `break` (or `return`),
+                # which closes the stacked label group.
+                if re.fullmatch(r"\t*(break|return);", line):
+                    case_ids = []
+                    continue
+                # `this.DefaultToPlaceableWall(27);` and friends.
+                if apply_tile_call(line, case_ids):
+                    continue
+                m = re.fullmatch(r"\t+this\.(createTile|createWall) = (.+);", line)
+                if m and case_ids:
+                    table = self.cs_tiles if m.group(1) == "createTile" else self.cs_walls
+                    for iid in case_ids:
+                        # Series items assign from `type`
+                        # (`this.createWall = 116 + type - 1948;`), so the
+                        # expression is evaluated per stacked case id.
+                        v = eval_case_expr(m.group(2), iid, self, f"Item.cs case {iid}")
+                        if v is not None:
+                            table[iid] = int(v)
 
         self.helper_bodies = {}
         for name in set(re.findall(r"private static void (Add\w+)\(\)", recipe_cs)):
@@ -154,8 +299,6 @@ class Ctx:
                 recipe_cs, rf"private static void {name}\(\)\s*\n\t\{{"
             )
         self.recipe_cs = recipe_cs
-        self.warnings = []
-        self.skipped = []   # (origin, reason)
 
 
 # ---------------------------------------------------------------- row parsing
@@ -175,11 +318,29 @@ def eval_expr(expr, env, ctx, origin):
     """A restricted C# int expression: literals, locals, `+`/`-`/`*`, casts,
     the `2.5f` float literals, the `ItemID.Sets.TextureCopyLoad[i]` lookup."""
     expr = expr.strip()
-    for _ in range(3):
+    for _ in range(4):
         m = re.fullmatch(r"\(int\)\((.*)\)", expr)
         if not m:
             break
         expr = m.group(1).strip()
+    # Peel one balanced pair of outer parentheses per round
+    # (`430 + (type - 3633)` parses its right side through here).
+    for _ in range(4):
+        if expr.startswith("(") and expr.endswith(")"):
+            depth = 0
+            balanced = True
+            for i, ch in enumerate(expr):
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth == 0 and i != len(expr) - 1:
+                        balanced = False
+                        break
+            if balanced and depth == 0:
+                expr = expr[1:-1].strip()
+                continue
+        break
     m = re.fullmatch(r"\((?:float|int)\)\(?([^()]*)\)?", expr)
     if m:
         return eval_expr(m.group(1).strip(), env, ctx, origin)
@@ -209,6 +370,25 @@ def eval_expr(expr, env, ctx, origin):
         return env[expr]
     ctx.warnings.append(f"{origin}: cannot evaluate `{expr}`")
     return None
+
+
+def peel_numeric_casts(s):
+    """`(ushort)726` -> `726` — the helper-call arguments carry explicit casts."""
+    return re.sub(r"\((?:sbyte|byte|short|ushort|int|uint)\)\s*", "", s).strip()
+
+
+def eval_case_expr(expr, iid, ctx, origin, base_env=None):
+    """Evaluate one `createTile`/`createWall` right-hand side for case id
+    `iid`: casts are peeled and `(type - N)` is rewritten `type - N` (the
+    series forms in Item.cs); `+`/`-` are left-associative, so dropping the
+    parentheses is identity. `base_env` carries the enclosing helper's
+    parameters through a delegated call."""
+    expr = peel_numeric_casts(expr)
+    expr = re.sub(r"\(\s*type([^()]*)\)", r"type\1", expr)
+    env = {"type": iid}
+    if base_env:
+        env.update(base_env)
+    return eval_expr(expr, env, ctx, origin)
 
 
 def slot_index(spec, env, ctx, origin):
@@ -300,14 +480,14 @@ def parse_block(text, env, ctx, origin):
         if re.match(r"Recipe\.currentRecipe\.alchemy = true;$", line):
             row.flags["alchemy"] = True
             continue
-        m = re.match(r"Recipe\.currentRecipe\.(needWater|needHoney|needLava|needSnowBiome|needGraveyardBiome) = true;$", line)
+        m = re.match(
+            r"Recipe\.currentRecipe\.(needWater|needHoney|needLava|needSnowBiome"
+            r"|needGraveyardBiome|needTorchGodsFavor|needMechdusa) = true;$",
+            line,
+        )
         if m:
             row.flags[FLAG_MAP[m.group(1)]] = True
             continue
-        m = re.match(r"Recipe\.currentRecipe\.(needTorchGodsFavor|needMechdusa) = true;$", line)
-        if m:
-            ctx.skipped.append((origin, m.group(1)))
-            return None
         if re.match(
             r"Recipe\.currentRecipe\.(notDecraftable|corruption|crimson|acceptedGroups)"
             r"|Recipe\.currentRecipe\.AddCustomShimmerResult|Recipe\.currentRecipe\.Shimmer",
@@ -404,8 +584,7 @@ def expand_body(body, ctx, origin):
             out.append(body[i:])
             break
         pos, kind = min(marks)
-        if kind != "tail":
-            out.append(body[i:pos])
+        out.append(body[i:pos])
         if kind == "tail":
             break  # the C# tail derives the reverse recipes (this script emits them itself)
         if kind == "for":
@@ -515,36 +694,49 @@ def validate(rows, ctx):
 
 
 def reverse_rows(rows, ctx):
-    """`CreateReversePlatformRecipes` (`Recipe.cs:16648-16666`) +
-    `CreateReverseWallRecipes` (`:16672-16694`): for each single-ingredient
-    recipe whose result is a placed platform (a `Sets.Platforms` tile) or a
-    placed wall (`createWall > 0`), insert the flipped recipe right after the
-    source (`notDecraftable` - irrelevant to the craft direction)."""
-    out = []
-    for row in rows:
-        out.append(row)
-        if len([s for s in row.required if s]) != 1:
-            continue
-        src_slot = next(s for s in row.required if s)
-        cid = row.create[0]
-        tile = ctx.port_tiles.get(cid)
-        wall = ctx.port_walls.get(cid)
-        rev = None
-        if tile is not None and tile in ctx.platforms:
-            rev = Row(row.origin + " reverse")
-            rev.create = [src_slot[0], src_slot[1]]
-            rev.required = [[cid, row.create[1], None]]
-            rev.tile = row.tile
-        elif wall is not None and wall > 0 and ctx.port_walls.get(src_slot[0]) is None:
-            rev = Row(row.origin + " reverse")
-            rev.create = [src_slot[0], src_slot[1]]
-            rev.required = [[cid, row.create[1], None]]
-            rev.tile = row.tile
-        if rev is not None:
-            # `Main.recipe[i + 1].notDecraftable = true` (`Recipe.cs:16665`).
-            rev.flags["not_decraftable"] = True
-            out.append(rev)
-    return out
+    """`CreateReverseWallRecipes` then `CreateReversePlatformRecipes` — the C#
+    call order (`Recipe.cs:15148-15149`). Each pass captures the table at its
+    entry (`int num = Recipe.numRecipes`) and inserts the flipped recipe right
+    after its source (`Main.recipe[i + 1]`, `notDecraftable` — irrelevant to the
+    craft direction). The conditions are the C#'s own, over the C# item data:
+    walls  `createItem.createWall > 0 && requiredItem[1].type == 0 &&
+            requiredItem[0].createWall == -1`   (`Recipe.cs:16681-16683`),
+    platforms `createItem.createTile >= 0 && TileID.Sets.Platforms[createTile] &&
+            requiredItem[1].type == 0`          (`Recipe.cs:16655-16657`).
+    A reverse row never re-triggers either pass: its createItem is the source's
+    ingredient (`createWall == -1`, and `createTile` not a platform by the
+    source row's own condition)."""
+    def reverse_pass(rows, want_walls):
+        out = []
+        for row in rows:
+            out.append(row)
+            # `requiredItem[1].type == 0` - exactly one ingredient slot.
+            if len([s for s in row.required if s]) != 1:
+                continue
+            src_slot = next(s for s in row.required if s)
+            cid = row.create[0]
+            hit = False
+            if want_walls:
+                hit = (
+                    ctx.cs_walls.get(cid, -1) > 0
+                    and ctx.cs_walls.get(src_slot[0], -1) == -1
+                )
+            else:
+                tile = ctx.cs_tiles.get(cid, -1)
+                hit = tile >= 0 and tile in ctx.platforms
+            if hit:
+                rev = Row(row.origin + " reverse")
+                rev.create = [src_slot[0], src_slot[1]]
+                rev.required = [[cid, row.create[1], None]]
+                rev.tile = row.tile
+                # `Main.recipe[i + 1].notDecraftable = true` (`Recipe.cs:16665`).
+                rev.flags["not_decraftable"] = True
+                out.append(rev)
+        return out
+
+    rows = reverse_pass(rows, want_walls=True)      # Recipe.cs:15148
+    rows = reverse_pass(rows, want_walls=False)     # Recipe.cs:15149
+    return rows
 
 
 def emit(rows, ctx):
@@ -577,7 +769,15 @@ def emit(rows, ctx):
         lines.append(f"    required: &[{req_s}],")
         if row.tile is not None:
             lines.append(f"    stations: &[{row.tile}],")
-        for f in ("need_water", "need_honey", "need_lava", "need_snow", "need_graveyard"):
+        for f in (
+            "need_water",
+            "need_honey",
+            "need_lava",
+            "need_snow",
+            "need_graveyard",
+            "need_torch_gods_favor",
+            "need_mechdusa",
+        ):
             if row.flags.get(f):
                 lines.append(f"    {f}: true,")
         # `AddRecipe` auto-sets alchemy iff the station is the placed bottle

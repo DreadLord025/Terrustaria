@@ -3,12 +3,12 @@
 //! head icon and the UI-space character preview.
 use super::BgTex;
 use super::player_layers::{
-    CompositeArmState, LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell, hair_uv,
-    swing_stand_in,
+    LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell, hair_uv,
 };
 use super::sky::sky_tex;
 use crate::assets;
 use crate::npc::{Npc, NpcKind};
+use crate::player::CompositeArmState;
 use crate::player::Player;
 use crate::registry;
 use crate::ui;
@@ -53,8 +53,8 @@ pub(crate) struct PlayerAssets {
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the ground + hover/flyer + cart sets.
-    pub(crate) mount_back: [Option<BgTex>; 50],
-    pub(crate) mount_front: [Option<BgTex>; 50],
+    pub(crate) mount_back: [Option<BgTex>; crate::mount::MOUNT_COUNT],
+    pub(crate) mount_front: [Option<BgTex>; crate::mount::MOUNT_COUNT],
 }
 
 impl Default for PlayerAssets {
@@ -76,8 +76,8 @@ impl Default for PlayerAssets {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
-            mount_back: [None; 50],
-            mount_front: [None; 50],
+            mount_back: [None; crate::mount::MOUNT_COUNT],
+            mount_front: [None; crate::mount::MOUNT_COUNT],
         }
     }
 }
@@ -1417,7 +1417,14 @@ pub(crate) fn draw_player(
         item_uv: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(uv, _)| uv),
-        aim: player.swing_aim,
+        // `Player.itemRotation` — the shooting styles' aim rotation
+        // (`Player.cs:47371-47378`), computed by the sim.
+        item_rotation: player.frame_inputs.item_rotation,
+        // The raw animation counters in ticks (`Player.itemAnimation`,
+        // `Player.cs:43378`): the port's swing timer runs in seconds.
+        swing_anim_ticks: player.frame_inputs.swing_anim * 60.0,
+        swing_max_ticks: player.frame_inputs.swing_anim_max * 60.0,
+        use_animation: player.frame_inputs.use_animation,
         item_size: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)
@@ -1426,12 +1433,12 @@ pub(crate) fn draw_player(
         head_armor,
         body_armor,
         leg_armor,
-        front_arm: swing_stand_in(
-            held.map_or(1, |(kind, _)| crate::item::use_style(kind)),
-            swing,
-            player.facing as f32,
-        ),
-        back_arm: CompositeArmState::DISABLED,
+        // The live `Player.compositeFrontArm`/`compositeBackArm`
+        // (`Player.cs:1906`) — the sim assigns them per `useStyle`/`holdStyle`
+        // (the S1-G-16 swing parity); the renderer's composite machine
+        // consumes them.
+        front_arm: player.composite_front,
+        back_arm: player.composite_back,
         // `DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront`
         // (`PlayerDrawLayers.cs:211`, `:2912`) — the live mount's inputs.
         mount: if player.mount.is_active() {

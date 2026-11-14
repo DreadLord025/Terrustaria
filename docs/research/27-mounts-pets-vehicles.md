@@ -137,7 +137,7 @@ slices), `crates/tr-app/src/world_sim/player.rs` (the fixed-step wiring),
 | Hook fire tables (`num6`/`num7` vs `num14`) | `Player.cs:6296-6478` | `grapple.rs:163-191` | PORTED (the disagreement kept verbatim) | — |
 | Item-driven hook fire | `Player.cs:6481-6500` + `ItemCheck_TryStartUse` | `TR_HOOK` env pin instead (`world_sim/player.rs:234`) | MISSING | behavioural (medium) |
 | Grapple pull (`GetGrapplingForces`) | `Player.cs:22613-22856` | `grapple.rs::grapple_pull` :266 + `player.rs` | PORTED | — |
-| Mount dismount on grapple | `Player.cs:22620-22623` (`!CanUseHooks[type]`) | `world_sim/player.rs:351-356` (unconditional, at the fire edge) | PARTIAL (no set check) | behavioural (low, latent) |
+| Mount dismount on grapple | `Player.cs:22620-22623` (`!CanUseHooks[type]`) | `world_sim/player.rs` (the fire edge) + `player.rs::grapple_movement` | PORTED (S1-L-10c, 2026-11-14) | — the set check `MountID.Sets.CanUseHooks` = {54, 57-60} (`mount::can_use_hooks`) now gates both edges; before it the port dismounted **every** mount when a hook went out |
 | Latch blacklist / Queen-Slime teleport / TrackHook→cart transfer / net msg / chain render | `Player.cs:6205-6248`, `Projectile.cs` | absent | MISSING (admitted in ANALYSIS) | behavioural (medium) |
 | Minion budget (`maxMinions`/`numMinions`/`slotsMinions`) | `Player.cs:1260-1264`, `:17775`, `:51786` | `player.rs:254-258`, `projectile.rs:7453-7471`, `world_sim/player.rs:118-160` | PORTED | — |
 | Buff slots (`maxBuffs = 44`) | `Player.cs:57106` | `buffs.rs:21` `MAX_BUFFS = 44` | PORTED | — |

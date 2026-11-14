@@ -383,13 +383,25 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // `QuickGrapple` (`Player.cs:27480-27492` + `:6296-6478`) — one hook
         // out at a time (the vanilla `num7 = 1` recycle path for the
         // single-hook items), aimed at the mouse world position.
-        static HOOK_PREV: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        let hook_edge =
-            input.hook && !HOOK_PREV.swap(input.hook, std::sync::atomic::Ordering::Relaxed);
+        // The edge is the C#'s per-player `releaseHook` latch
+        // (`Player.cs:27481-27489`) — the port used a process-global
+        // stand-in, which made the edge fire for the wrong player.
+        let hook_edge = if input.hook {
+            let edge = p.release_hook;
+            p.release_hook = false;
+            edge
+        } else {
+            p.release_hook = true;
+            false
+        };
         // `Player.QuickGrapple` (`Player.cs:6334-6337`): a mount not in the
-        // CanUseHooks set dismounts before the hook fires — every row in this
-        // table (the set is {54, 57-60}).
-        if hook_edge && !p.dead && p.mount.is_active() {
+        // CanUseHooks set dismounts before the hook fires — the set is
+        // {54, 57-60} (`mount::can_use_hooks`).
+        if hook_edge
+            && !p.dead
+            && p.mount.is_active()
+            && !crate::mount::can_use_hooks(p.mount.kind())
+        {
             p.try_dismount(&app.world);
         }
         if hook_edge && !p.dead {
@@ -400,7 +412,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `:6420-6424`), and only then the spawn (`:6458-6477`).
             let owner = app.local_id as u8;
             let (flight, attached) = app.projectiles.hook_counts(owner);
-            let mut kind = hook_type as u16;
+            // `Player.QuickGrapple_GetItemToUse` (`Player.cs:6481-6500`): the
+            // grapple slot (the misc-equip 4) first, then the inventory — the
+            // first item whose `shoot` is a grappling hook. The C# returns
+            // when no hook item is held (`:6320-6323`); the port keeps the
+            // `TR_HOOK` pin as the stand-in for the granting items (M3-EQUIP-3),
+            // so the fire still happens without one.
+            let item_hook = crate::grapple::quick_grapple_item(
+                &app.equip.misc_equips,
+                &app.inventory,
+            );
+            let mut kind = item_hook.unwrap_or(hook_type as u16);
             if !crate::grapple::fire_allowed(flight, attached, kind) {
                 return;
             }
@@ -454,7 +476,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.x + crate::player::WIDTH * 0.5,
                 p.y + crate::player::HEIGHT * 0.5,
             );
-            app.projectiles.spawn_hook(
+            let spawned = app.projectiles.spawn_hook(
                 kind,
                 center,
                 mouse_world,
@@ -513,6 +535,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.equipped[i] = app.equip.armor[i].kind;
             p.equipped_prefix[i] = app.equip.armor[i].prefix;
         }
+        // `:22676-22679` — the Track Hook hands the player to the equipped
+        // cart mount (the misc-equip 2) when it is a cart row; the wooden
+        // minecart (13) is the default. The C#'s `expertOnly` gate rides the
+        // journey/expert flags the port does not carry.
+        p.cart_mount = app
+            .equip
+            .misc_equips
+            .get(2)
+            .filter(|s| s.count > 0)
+            .and_then(|s| crate::mount::mount_type_of_item(s.kind))
+            .filter(|m| *m >= 0 && crate::mount::is_cart(*m))
+            .unwrap_or(13);
         // `IsVoidVaultEnabled`'s per-tick refresh (`Player.cs:24550-24553`
         // — `useVoidBag`'s scan :23171-23180; the port scans the grid plus
         // the coin/ammo rows the App holds).
@@ -577,6 +611,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     dy = dy / n - (p.y + p.height * 0.5);
                 }
             }
+            // `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
+            // `atan2(aimY * direction, aimX * direction) - fullRotation`. The
+            // port keeps the aim as an angle, so the mirrored `atan2` is the
+            // angle + PI when the player faces left.
+            let dir = p.facing as f32;
+            let item_rotation =
+                crate::player::item_rotation_for_aim(app.swing_aim, p.facing, p.full_rotation);
             p.frame_inputs = crate::player::FrameInputs {
                 use_style,
                 // `flag6` (`Player.cs:36146`): the hidden/raise-lamp/hold-orb
@@ -591,7 +632,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 } else {
                     0.0
                 },
-                aim_relative: app.swing_aim * p.facing as f32,
+                swing_anim: app.swing,
+                swing_anim_max: app.swing_max,
+                use_animation: crate::registry::get(kind).map_or(0, |d| i32::from(d.use_animation)),
+                // `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
+                // `atan2(aimY * direction, aimX * direction) - fullRotation`.
+                // The port keeps the aim as an angle, so the mirrored
+                // `atan2` is the angle + PI when the player faces left.
+                item_rotation,
+                // `num21 = itemRotation * direction` (`Player.cs:36423`).
+                aim_relative: item_rotation * dir,
                 // `!wet || !item.noWet` and `!happyFunTorchTime ||
                 // createTile != 4` — the port has neither item field, so both
                 // gates are open (documented in ANALYSIS).
@@ -626,6 +676,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // stage swap `Main.cs:17755-17757`): the tick's hurt rolls (the
             // dodge block, the lava `Hurt`) draw from it (S1-A-10).
             let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            // `PressurePlateHelper.PlayerLastPosition` (`PressurePlateHelper.
+            // cs:16`): the player's position at the end of the last tick —
+            // the port's `prev_x`/`prev_y` hold it until this tick's update
+            // overwrites them.
+            let plate_last = (p.prev_x, p.prev_y);
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -635,6 +690,45 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.rain.is_raining(),
                 Some(&app.wind),
                 rng,
+            );
+            // `Player.cs:28274-28275`: the switch-tile bridge — the player's
+            // box reaching a pressure plate trips the wiring (the C#'s call
+            // sits right after `FloorVisuals`, inside `Player.Update`).
+            let switch = crate::collision::switch_tiles(
+                &mut app.wiring,
+                &mut app.world,
+                p.x,
+                p.y,
+                p.old_x,
+                p.old_y,
+                crate::player::WIDTH as i32,
+                crate::player::HEIGHT as i32,
+                5, // the player's objType (`Collision.SwitchTiles`)
+            );
+            if let Some((item, x, y)) = switch.dropped {
+                // `WorldGen.KillTile`'s drop for the broken plate.
+                crate::world_sim::items::spawn_item_drop_fields(
+                    &mut app.items,
+                    &mut app.item_rng,
+                    &mut app.prefix_rng,
+                    item,
+                    1,
+                    x,
+                    y,
+                );
+            }
+            // `PressurePlateHelper.UpdatePlayerPosition(this)`
+            // (`Player.cs:28276`): the weighted pressure plates (428) the
+            // player stands on.
+            crate::world_sim::wiring::update_pressure_plates(
+                &mut app.wiring,
+                &mut app.world,
+                p.x,
+                p.y,
+                plate_last.0,
+                plate_last.1,
+                crate::player::WIDTH as f32,
+                crate::player::HEIGHT as f32,
             );
             if run_eligible && p.vy == 0.0 {
                 run_pixels += (p.x - run_x0).abs();
@@ -671,14 +765,36 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.invalidate_minion_target(&app.npcs);
             // `Player.cs:27608-27614`: right after the NPC collision pass,
             // the tile-contact damage check (`GetHurtTile` +
-            // `ApplyTouchDamage`) — the spike hazard the dungeon pass paints.
-            crate::touch_damage::apply_touch_damage(
-                &app.world,
+            // `ApplyTouchDamage`) — the spike hazard the dungeon pass paints,
+            // the hellstone's burn, the sands' suffocation and the thorns
+            // that break under a touch.
+            let touch = crate::touch_damage::apply_touch_damage(
+                &mut app.world,
                 p,
                 &mut app.item_rng,
                 crate::player::WIDTH as i32,
-                crate::player::HEIGHT as i32,
+                // `Player.GetHurtTile` (`Player.cs:28956`): the cart's body
+                // sits 16 px higher, so the scan's box is that much shorter.
+                if p.cart_mounted {
+                    p.body_height() as i32 - 16
+                } else {
+                    p.body_height() as i32
+                },
             );
+            // `WorldGen.KillTile`'s item drop (`Player.cs:29013`) — the
+            // thorns drop nothing in the vanilla, but the drop path is the
+            // source's own (`registry::tile_drop`).
+            if let Some((x, y, Some(item))) = touch.destroyed {
+                crate::world_sim::items::spawn_item_drop_fields(
+                    &mut app.items,
+                    &mut app.item_rng,
+                    &mut app.prefix_rng,
+                    item,
+                    1,
+                    x,
+                    y,
+                );
+            }
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires
             // `Wiring.HitSwitch` at the magnet tile (net message 59 is out of
@@ -694,6 +810,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             app.minecart_sparks.spawn(sparks);
             for cue in p.take_cart_sounds() {
                 app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+            }
+            // `Player.PlayHurtSound` (`Player.cs:38525`) and
+            // `Player.PlayDeathSound` (`Player.cs:38868`): the player's own
+            // hurt/death cues. The C# plays the local player's hurt sound
+            // non-positionally (`Player.cs:38572`).
+            if let Some(cue) = p.take_hurt_sound() {
+                app.audio.play(cue);
+            }
+            if let Some(cue) = p.take_death_sound() {
+                let (px, py) = p.center();
+                app.audio.play_at(cue, px, py, 1.0);
             }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
@@ -716,7 +843,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // kills every aiStyle-7 slot this player owns. The pool-wide scan is
         // the source's own `for (i < 1000)` loop; the multi-hook phase moves it
         // into the pool beside the recycle tables.
-        if !p.grappling_active {
+        //
+        // The C# calls the removal from the jump-off (`:22733`), the sign
+        // interaction (`:33379`), the minecart-hook launch (`:33557`) and the
+        // TrackHook→cart transfer (`:22675`) — not from "the player is not
+        // grappling", so a freshly fired hook survives its own tick.
+        if p.release_grappling_hooks {
+            p.release_grappling_hooks = false;
             let owner = app.local_id as u8;
             let hooks: Vec<usize> = app
                 .projectiles
@@ -1057,6 +1190,67 @@ mod tests {
             assert_eq!(p.ammo_cycling.mode, crate::ammo::AmmoCyclingMode::None);
             assert_eq!((p.ammo_cycling.cooldown, p.ammo_cycling.offset), (0, 0));
         }
+    }
+
+    /// S1-L-10a — `Player.QuickGrapple_GetItemToUse` (`Player.cs:6481-6500`):
+    /// the hook fires with the kind the held item's `shoot` points at (the
+    /// Ivy Whip 185 shoots the Ivy Whip hook 32, not the default Hook 13).
+    #[test]
+    fn the_quick_grapple_uses_the_hook_item() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 185,
+            name: "Ivy Whip",
+            count: 1,
+            prefix: 0,
+        };
+        // The port's extra quick-grapple key (`G`) — the default `cHook`
+        // bind is not in the fixture's keymap.
+        app.keys.insert(KeyCode::KeyG);
+        update_player(&mut app, 1.0 / 60.0);
+        let kinds: Vec<u16> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.owner == app.local_id as u8)
+            .map(|p| p.kind)
+            .collect();
+        assert_eq!(kinds, vec![32], "the item's `shoot` picks the hook kind");
+    }
+
+    /// S1-L-10c — `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount
+    /// dismounts before the hook fires only when it is outside
+    /// `MountID.Sets.CanUseHooks` ({54, 57-60}) — the port dismounted every
+    /// mount.
+    #[test]
+    fn the_quick_grapple_keeps_a_mount_inside_can_use_hooks() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        // The row 54 is in the set.
+        app.player.as_mut().unwrap().set_mount(54, false);
+        app.keys.insert(KeyCode::KeyG);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(
+            app.player.as_ref().unwrap().mount.is_active(),
+            "the set's mount stays mounted"
+        );
+    }
+
+    /// S1-L-10c — the other side of the same gate: a mount outside the set
+    /// dismounts when the hook fires.
+    #[test]
+    fn the_quick_grapple_dismounts_a_mount_outside_can_use_hooks() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        // The Unicorn (10) is not in the set.
+        app.player.as_mut().unwrap().set_mount(10, false);
+        app.keys.insert(KeyCode::KeyG);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.player.as_ref().unwrap().mount.is_active(),
+            "the mount dismounted"
+        );
     }
 
     /// Review probe (Phase 2 gate fix 2) — the `update_player` wiring

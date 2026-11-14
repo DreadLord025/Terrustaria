@@ -12,6 +12,80 @@ use crate::app::App;
 use crate::npc::Npc;
 use crate::npc::NpcKind;
 
+/// `PressurePlateHelper.UpdatePlayerPosition`
+/// (`PressurePlateHelper.cs:60-100`): the **weighted** pressure plates
+/// (428) — the ones that stay pressed while the player stands on them.
+///
+/// The C#'s shape: the old tile list (the tiles the player covered last
+/// tick, inset by one pixel) and the new one, the player's box deflated by
+/// one pixel and the same box at the last position. A plate is *pressed*
+/// when the player's box reaches the plate's top ten pixels and it was not
+/// reached before, and *released* when the player left it — each transition
+/// fires the plate's switch (`PokeLocation`, `:157-165`).
+///
+/// The C#'s helper keeps the last position per player; the port takes it as
+/// a parameter (the sim captures the player's `prev_x`/`prev_y` before the
+/// tick's movement — the same position the C#'s `PlayerLastPosition` holds).
+pub(crate) fn update_pressure_plates(
+    wiring: &mut tr_core::wiring::Wiring,
+    world: &mut tr_core::world::World,
+    player_x: f32,
+    player_y: f32,
+    last_x: f32,
+    last_y: f32,
+    width: f32,
+    height: f32,
+) {
+    // `Collision.GetTilesIn` over the two boxes, each inset by one pixel
+    // (`PressurePlateHelper.cs:62-64`).
+    let old_tiles = tr_core::wind::get_tiles_in(
+        world,
+        (last_x + 1.0, last_y + 1.0),
+        (last_x + width - 1.0, last_y + height - 1.0),
+    );
+    let new_tiles = tr_core::wind::get_tiles_in(
+        world,
+        (player_x + 1.0, player_y + 1.0),
+        (player_x + width - 1.0, player_y + height - 1.0),
+    );
+    // The player's box, deflated by one pixel on each side (`:65-66`).
+    let hit = (player_x + 1.0, player_y + 1.0, width - 2.0, height - 2.0);
+    let old_hit = (last_x + 1.0, last_y + 1.0, width - 2.0, height - 2.0);
+    // The plate's own rect: the tile's top ten pixels
+    // (`pressurePlateBounds`, `PressurePlateHelper.cs:11`/:70-71).
+    let plate_rect = |x: i32, y: i32| (x as f32 * 16.0, y as f32 * 16.0 + 6.0, 16.0, 10.0);
+    let intersects = |r: (f32, f32, f32, f32), b: (f32, f32, f32, f32)| -> bool {
+        // `Rectangle.Intersects` (XNA): the strict overlap test.
+        r.0 < b.0 + b.2 && r.0 + r.2 > b.0 && r.1 < b.1 + b.3 && r.1 + r.3 > b.1
+    };
+    // The release pass (`:68-81`): the plate the player left.
+    for &(px, py) in &old_tiles {
+        if !world
+            .tile(px, py)
+            .is_some_and(|t| t.active() && t.kind == 428)
+        {
+            continue;
+        }
+        if !intersects(hit, plate_rect(px, py)) && !new_tiles.contains(&(px, py)) {
+            wiring.release_plate(world, px, py);
+        }
+    }
+    // The press pass (`:82-95`): the plate the player reached.
+    for &(px, py) in &new_tiles {
+        if !world
+            .tile(px, py)
+            .is_some_and(|t| t.active() && t.kind == 428)
+        {
+            continue;
+        }
+        if intersects(hit, plate_rect(px, py))
+            && (!old_tiles.contains(&(px, py)) || !intersects(old_hit, plate_rect(px, py)))
+        {
+            wiring.press_plate(world, px, py);
+        }
+    }
+}
+
 /// Fixed 60 Hz wiring stepping: the mech queue's timers/traps plus the
 /// teleporter events computed by the last `TripWire` (`Wiring.cs:651-661`).
 /// The engine half (`Wiring::update` + the pad pairs) lives in
@@ -143,6 +217,30 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         trap_requests.extend(app.wiring.take_trap_requests());
         // The device shots (cannons, fireworks, explosives/mine/geyser/toilet).
         device_shots.extend(app.wiring.take_device_shots());
+        // The announcement box's texts (`HitWireSingle`'s case 425 →
+        // `Main.NewTextMultiline`, `Wiring.cs:1202-1233`): the C# `Color.Pink`
+        // chat line. `AnnouncementBoxRange == -1` announces unconditionally;
+        // otherwise only a player within the range of the box's first cell
+        // centre (`num7 * 16 + 16, num8 * 16 + 16`) hears it.
+        for (bx, by, text) in app.wiring.take_announcement_events() {
+            let in_range = app.world.announcement_box_range == -1
+                || app.player.as_ref().is_some_and(|p| {
+                    let (cx, cy) = p.center();
+                    let dx = cx - (bx as f32 * 16.0 + 16.0);
+                    let dy = cy - (by as f32 * 16.0 + 16.0);
+                    (dx * dx + dy * dy).sqrt() <= app.world.announcement_box_range as f32
+                });
+            if in_range {
+                crate::chat::broadcast_death_text(&mut app.chat, &text, [255, 192, 203]);
+            }
+        }
+        // The party centre's toggles (`HitWireSingle`'s case 455 →
+        // `BirthdayParty.ToggleManualParty`, `BirthdayParty.cs:202-217`):
+        // `ManualParty = !ManualParty` per request; the up-state change's
+        // `CheckForAchievement` (progression event 25) is E-18's follow-up.
+        for _ in 0..app.wiring.take_party_toggles() {
+            app.world_events.manual_party = !app.world_events.manual_party;
+        }
         for (from, to) in app.wiring.take_teleport_events() {
             let ax = (from.0 * 16.0) as i32;
             let ay = (from.1 * 16.0) as i32 - 48;
@@ -431,6 +529,31 @@ mod tests {
 
     fn world() -> tr_core::world::World {
         tr_core::world::World::new("t".into(), 64, 64)
+    }
+
+    /// The weighted pressure plate (428) under the player's feet: the
+    /// player stands on it, then leaves.
+    #[test]
+    fn the_weighted_plate_presses_and_releases() {
+        let mut w = world();
+        let i = w.index(10, 19);
+        w.tiles[i].kind = 428; // the WeightedPressurePlate
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut wiring = tr_core::wiring::Wiring::new();
+        // The player's box [168, 188] x [278, 320]; the plate's own rect is
+        // its tile's lower ten pixels (`PressurePlateHelper.cs:11`/:70-71)
+        // — 310..320 — which the player's deflated box (279..319) reaches.
+        let px = 10.0 * 16.0 + 8.0;
+        let py = 20.0 * 16.0 - 42.0;
+        // The player arrives from above: the old position was off the plate.
+        update_pressure_plates(&mut wiring, &mut w, px, py, px, py - 64.0, 20.0, 42.0);
+        assert!(wiring.plate_is_pressed(10, 19), "the plate is held");
+        // Standing still changes nothing.
+        update_pressure_plates(&mut wiring, &mut w, px, py, px, py, 20.0, 42.0);
+        assert!(wiring.plate_is_pressed(10, 19), "still held");
+        // The player walks away: the plate releases.
+        update_pressure_plates(&mut wiring, &mut w, px, py - 128.0, px, py, 20.0, 42.0);
+        assert!(!wiring.plate_is_pressed(10, 19), "the plate released");
     }
 
     /// The standard device rig: the device at (10, 20) with the given frame,

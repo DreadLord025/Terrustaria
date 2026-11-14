@@ -54,6 +54,11 @@ pub(crate) struct MountData {
     /// `flightTimeMax` (:165); 0 = the mount cannot fly (`CanFly` :2860-2879).
     pub flight_time_max: i32,
     pub uses_hover: bool,
+    /// `MountData.emitsLight` (`Mount.cs:198`) — the row adds its
+    /// `lightColor` to the tile light every tick (`Mount.cs:3632-3636`).
+    pub emits_light: bool,
+    /// `MountData.lightColor` (`Mount.cs:199`) — the RGB the row emits.
+    pub light_color: (f32, f32, f32),
     pub run_speed: f32,
     pub dash_speed: f32,
     pub swim_speed: f32,
@@ -87,6 +92,11 @@ pub(crate) struct MountData {
     pub can_use_wings: bool,
     pub movement_stats_are_additive: bool,
     pub back_sheet: &'static str,
+    /// `MountData.backTextureExtra` (`Mount.cs:135`) — the second back strip
+    /// (the C#'s draw type 1, `Mount.cs:5516`). The port's mount renderer
+    /// draws the back and front strips only (draw types 0 and 2); the field
+    /// carries the row's data like `front_extra_sheet` does.
+    pub back_extra_sheet: &'static str,
     pub back_glow_sheet: &'static str,
     pub front_sheet: &'static str,
     pub front_extra_sheet: &'static str,
@@ -107,6 +117,8 @@ const BASE: MountData = MountData {
     height_boost: 0,
     flight_time_max: 0,
     uses_hover: false,
+    emits_light: false,
+    light_color: (0.0, 0.0, 0.0),
     run_speed: 0.0,
     dash_speed: 0.0,
     swim_speed: 0.0,
@@ -173,6 +185,7 @@ const BASE: MountData = MountData {
     can_use_wings: false,
     movement_stats_are_additive: false,
     back_sheet: "",
+    back_extra_sheet: "",
     back_glow_sheet: "",
     front_sheet: "",
     front_extra_sheet: "",
@@ -1302,6 +1315,343 @@ const STEAMPUNK_MINECART: MountData = cart(36, 255, "Extra_128");
 const HELLWIZARD_MINECART: MountData = cart(38, 269, "Extra_150");
 const FART_MINECART: MountData = cart_vo(51, 338, "Extra_246");
 const TERRA_FART_MINECART: MountData = cart_vo(53, 346, "Extra_251");
+// -- S1-L-9: the sixteen rows `Mount.Initialize` never ported -----------------
+
+/// 4 Turtle (`Mount.cs:1112-1162`): the reef rider — buff 131, heightBoost
+/// 26, fallDamage 1, run 2 / dash 5 / swim 10, accel 0.08, jump 12/3.7 and
+/// twelve frames of a 26 px player offset.
+const TURTLE: MountData = MountData {
+    id: 4,
+    buff: 131,
+    height_boost: 26,
+    flight_time_max: 0,
+    fall_damage: 1.0,
+    run_speed: 2.0,
+    dash_speed: 5.0,
+    swim_speed: 10.0,
+    acceleration: 0.08,
+    jump_height: 12,
+    jump_speed: 3.7,
+    spawn_dust: 56,
+    total_frames: 12,
+    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 0, count: 6, delay: 12, loops: false },
+    flying: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    in_air: FrameSet { start: 3, count: 1, delay: 12, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    swim: FrameSet { start: 6, count: 6, delay: 12, loops: false },
+    back_sheet: "Mount_Turtle",
+    x_offset: 1,
+    y_offset: 13,
+    player_y_offsets: &[26; 12],
+    body_frame: 3,
+    player_head_offset: 28,
+    ..BASE
+};
+
+/// 17 GolfCartSomebodySaveMe (`Mount.cs:1694-1739`): buff 212, heightBoost
+/// 16, fallDamage 0.2, run 8, accel 0.25, jump 20/8.01 — the four-frame
+/// cart with the `Extra_96`/`Extra_97` sheet pair.
+const GOLF_CART: MountData = MountData {
+    id: 17,
+    buff: 212,
+    height_boost: 16,
+    flight_time_max: 0,
+    fall_damage: 0.2,
+    run_speed: 8.0,
+    acceleration: 0.25,
+    jump_height: 20,
+    jump_speed: 8.01,
+    spawn_dust: 15,
+    total_frames: 4,
+    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 0, count: 4, delay: 12, loops: false },
+    flying: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    in_air: FrameSet { start: 1, count: 1, delay: 12, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    swim: FrameSet { start: 1, count: 1, delay: 12, loops: false },
+    back_sheet: "Extra_97",
+    back_extra_sheet: "Extra_96",
+    x_offset: 2,
+    y_offset: 1, // `:1713` — `17 - heightBoost`
+    player_y_offsets: &[8; 4],
+    body_frame: 3,
+    player_head_offset: 18,
+    ..BASE
+};
+
+/// 37 Flamingo (`Mount.cs:1796-1841`): buff 265, heightBoost 12, fallDamage
+/// 0.2, run 6, accel 0.15, jump 14/6.01 — ten frames, body row 4.
+const FLAMINGO: MountData = MountData {
+    id: 37,
+    buff: 265,
+    height_boost: 12,
+    flight_time_max: 0,
+    fall_damage: 0.2,
+    run_speed: 6.0,
+    acceleration: 0.15,
+    jump_height: 14,
+    jump_speed: 6.01,
+    spawn_dust: 282,
+    total_frames: 10,
+    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 2, count: 7, delay: 20, loops: false },
+    flying: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    in_air: FrameSet { start: 1, count: 1, delay: 12, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    // `:1830-1832`: the swim band rides the running count/start with its own
+    // 10-tick delay.
+    swim: FrameSet { start: 2, count: 7, delay: 10, loops: false },
+    back_sheet: "Extra_149",
+    x_offset: 5,
+    y_offset: 1,
+    player_y_offsets: &[20; 10],
+    body_frame: 4,
+    player_head_offset: 20,
+    ..BASE
+};
+
+/// 45 SpookyWood (`Mount.cs:1940-1985`): buff 280, heightBoost 25, fallDamage
+/// 0.1, run 12 / dash 16, accel 0.5, jump 14/7 — the only row that emits
+/// light (`:1951-1952`).
+const SPOOKY_WOOD: MountData = MountData {
+    id: 45,
+    buff: 280,
+    height_boost: 25,
+    flight_time_max: 0,
+    fall_damage: 0.1,
+    emits_light: true,
+    light_color: (0.6, 0.4, 0.35),
+    run_speed: 12.0,
+    dash_speed: 16.0,
+    acceleration: 0.5,
+    jump_height: 14,
+    jump_speed: 7.0,
+    spawn_dust: 6,
+    total_frames: 8,
+    standing: FrameSet { start: 0, count: 1, delay: 20, loops: false },
+    running: FrameSet { start: 2, count: 6, delay: 20, loops: false },
+    flying: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    in_air: FrameSet { start: 1, count: 1, delay: 20, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    swim: FrameSet { start: 2, count: 6, delay: 20, loops: false },
+    back_sheet: "Extra_167",
+    back_glow_sheet: "GlowMask_283",
+    x_offset: 2, // `:1962` — the second write wins
+    y_offset: 1,
+    player_y_offsets: &[30; 8],
+    body_frame: 0,
+    player_head_offset: 20,
+    ..BASE
+};
+
+/// 46 Santank (`Mount.cs:1987-2039`): the ability mount — buff 281, the
+/// 40-charge ability (`:1994-1996`), run 8 / dash 8, accel 0.4, jump 8/9.01
+/// and 27 frames.
+static SANTANK_Y_OFFSETS: [i32; 27] = [
+    4, 6, 6, 4, 4, 4, 4, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+];
+const SANTANK: MountData = MountData {
+    id: 46,
+    buff: 281,
+    height_boost: 0,
+    flight_time_max: 0,
+    fatigue_max: 0,
+    fall_damage: 0.0,
+    ability_charge_max: 40,
+    ability_cooldown: 40,
+    ability_duration: 0,
+    run_speed: 8.0,
+    dash_speed: 8.0,
+    acceleration: 0.4,
+    jump_height: 8,
+    jump_speed: 9.01,
+    block_extra_jumps: false,
+    spawn_dust: 15,
+    total_frames: 27,
+    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 0, count: 11, delay: 12, loops: false },
+    flying: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    in_air: FrameSet { start: 1, count: 11, delay: 12, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    swim: FrameSet { start: 0, count: 11, delay: 12, loops: false },
+    front_sheet: "Extra_168",
+    front_extra_sheet: "Extra_168",
+    x_offset: 1,
+    y_offset: 1,
+    player_y_offsets: &SANTANK_Y_OFFSETS,
+    body_frame: 3,
+    player_head_offset: 2,
+    ..BASE
+};
+
+/// 52 Wolf (`Mount.cs:2246-2308`): buff 342, fallDamage 0.1, run 9.5, accel
+/// 0.18, jump 18/9.01 — fifteen frames with the mouth-position delegate.
+static WOLF_Y_OFFSETS: [i32; 15] = [0, -14, -10, -8, 18, -2, 0, 2, 4, 4, 2, 0, 4, 2, -4];
+const WOLF: MountData = MountData {
+    id: 52,
+    buff: 342,
+    flight_time_max: 0,
+    fall_damage: 0.1,
+    run_speed: 9.5,
+    acceleration: 0.18,
+    jump_height: 18,
+    jump_speed: 9.01,
+    spawn_dust: 31,
+    total_frames: 15,
+    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 5, count: 6, delay: 20, loops: false },
+    flying: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    in_air: FrameSet { start: 12, count: 3, delay: 12, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    swim: FrameSet { start: 12, count: 3, delay: 12, loops: false },
+    front_sheet: "Extra_253",
+    front_extra_sheet: "Extra_254",
+    x_offset: 4,
+    y_offset: -1,
+    player_y_offsets: &WOLF_Y_OFFSETS,
+    body_frame: 3,
+    ..BASE
+};
+
+/// 54 Velociraptor (`Mount.cs:2310-2360`): buff 370, fallDamage 0.1, run 4.5
+/// / dash 7.5, accel 0.15, jump 15/6.01 — the only row of the new set with a
+/// flying band (5 frames from 16).
+const VELOCIRAPTOR: MountData = MountData {
+    id: 54,
+    buff: 370,
+    flight_time_max: 0,
+    fall_damage: 0.1,
+    run_speed: 4.5,
+    dash_speed: 7.5,
+    acceleration: 0.15,
+    jump_height: 15,
+    jump_speed: 6.01,
+    spawn_dust: 31,
+    total_frames: 21,
+    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 8, count: 7, delay: 20, loops: false },
+    flying: FrameSet { start: 16, count: 5, delay: 6, loops: false },
+    in_air: FrameSet { start: 5, count: 2, delay: 6, loops: false },
+    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    swim: FrameSet { start: 5, count: 2, delay: 6, loops: false },
+    front_sheet: "Extra_271",
+    front_extra_sheet: "Extra_272",
+    x_offset: 4,
+    y_offset: -4,
+    player_y_offsets: &[0; 21],
+    body_frame: 0,
+    ..BASE
+};
+
+/// 55 Rat (`Mount.cs:2362-2415`): buff 374, fallDamage 0.1, run 4.5 / dash 7.5,
+/// accel 0.15, jump 15/6.01 — the transformation mount that dismounts on item
+/// use (`:2371`).
+const RAT: MountData = MountData {
+    id: 55,
+    buff: 374,
+    flight_time_max: 0,
+    fall_damage: 0.1,
+    dismounts_on_item_use: true,
+    run_speed: 4.5,
+    dash_speed: 7.5,
+    acceleration: 0.15,
+    jump_height: 15,
+    jump_speed: 6.01,
+    spawn_dust: 31,
+    total_frames: 16,
+    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
+    running: FrameSet { start: 4, count: 7, delay: 12, loops: false },
+    dashing: FrameSet { start: 11, count: 5, delay: 16, loops: false },
+    flying: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    in_air: FrameSet { start: 12, count: 3, delay: 6, loops: false },
+    idle: FrameSet { start: 0, count: 4, delay: 16, loops: false },
+    swim: FrameSet { start: 12, count: 3, delay: 6, loops: false },
+    front_sheet: "Extra_273",
+    x_offset: 0,
+    y_offset: -2,
+    player_y_offsets: &[0; 16],
+    body_frame: 3,
+    player_head_offset: -30,
+    ..BASE
+};
+
+/// `Mount.idleFrames_Rat` (`Mount.cs:6665-6669`) — the rat's own idle-frame
+/// walk (the animator reads it instead of the linear band, `Mount.cs:4194-4208`).
+const RAT_IDLE_FRAMES: [i32; 11] = [0, 1, 3, 2, 3, 2, 3, 2, 1, 0, 0];
+
+/// 57-60 the roller skates — `Mount.SetAsRollerSkate` (`Mount.cs:2569-2605`):
+/// the Minecart-tracks rider with additive movement stats and wings.
+const fn roller_skate(id: i32, buff: i32) -> MountData {
+    MountData {
+        id,
+        buff,
+        spawn_dust: 31,
+        can_ride_minecart_tracks: true,
+        can_use_wings: true,
+        movement_stats_are_additive: true,
+        dash_speed: 1.0,
+        run_speed: 1.0,
+        acceleration: 0.1,
+        jump_height: 2,
+        jump_speed: 1.0,
+        fall_damage: 1.0,
+        block_extra_jumps: false,
+        total_frames: 1,
+        standing: FrameSet { start: 0, count: 1, delay: 6, loops: false },
+        x_offset: 0,
+        body_frame: 3,
+        y_offset: 0,
+        player_y_offsets: &[2],
+        ..BASE
+    }
+}
+const ROLLER_SKATES: MountData = roller_skate(57, 378);
+const ROLLER_SKATES_GREEN: MountData = roller_skate(58, 379);
+const ROLLER_SKATES_WHITE: MountData = roller_skate(59, 380);
+const ROLLER_SKATES_PINK: MountData = roller_skate(60, 381);
+
+/// 62-65 the Chillemt family — `Mount.SetAsChillet`
+/// (`Mount.cs:2670-2745`): buff 387/388/391/392, heightBoost 4, fallDamage
+/// 0.5, run 3, accel 0.32, walkingGraceTimeMax 10 and thirteen frames; the
+/// hard-mode pair (64/65) rides the faster dash and jump (`:2677-2684`).
+static CHILLET_Y_OFFSETS: [i32; 13] = [10, 10, 10, 10, 12, 16, 12, 10, 12, 16, 16, 14, 10];
+const fn chillet(id: i32, buff: i32, back_sheet: &'static str, hardmode: bool) -> MountData {
+    MountData {
+        id,
+        buff,
+        spawn_dust: 15,
+        height_boost: 4,
+        flight_time_max: 0,
+        fall_damage: 0.5,
+        run_speed: 3.0,
+        dash_speed: if hardmode { 9.0 } else { 6.5 },
+        acceleration: 0.32,
+        jump_height: if hardmode { 11 } else { 6 },
+        jump_speed: if hardmode { 8.1 } else { 8.01 },
+        walking_grace_time_max: 10,
+        total_frames: 13,
+        standing: FrameSet { start: 0, count: 4, delay: 12, loops: false },
+        running: FrameSet { start: 6, count: 6, delay: 30, loops: false },
+        dashing: FrameSet { start: 5, count: 7, delay: 130, loops: false },
+        flying: FrameSet { start: 1, count: 6, delay: 6, loops: false },
+        in_air: FrameSet { start: 4, count: 1, delay: 12, loops: false },
+        idle: FrameSet { start: 0, count: 4, delay: 4, loops: true },
+        swim: FrameSet { start: 4, count: 1, delay: 12, loops: false },
+        back_sheet,
+        x_offset: 7,
+        body_frame: 3,
+        y_offset: -10,
+        player_y_offsets: &CHILLET_Y_OFFSETS,
+        player_head_offset: 10,
+        ..BASE
+    }
+}
+const CHILLET: MountData = chillet(62, 387, "Extra_301", false);
+const CHILLET_IGNIS: MountData = chillet(63, 388, "Extra_302", false);
+const TRUSTY_CHILLET: MountData = chillet(64, 391, "Extra_301", true);
+const TRUSTY_CHILLET_IGNIS: MountData = chillet(65, 392, "Extra_302", true);
+
 pub(crate) static MOUNTS: &[MountData] = &[
     RUDOLPH,        // 0
     BUNNY,          // 1
@@ -1353,6 +1703,23 @@ pub(crate) static MOUNTS: &[MountData] = &[
     MOLE_MINECART,     // 39
     FART_MINECART,     // 51
     TERRA_FART_MINECART,// 53
+    // -- S1-L-9: the sixteen rows `Mount.Initialize` never ported ------------
+    TURTLE,            // 4
+    GOLF_CART,         // 17
+    FLAMINGO,          // 37
+    SPOOKY_WOOD,       // 45
+    SANTANK,           // 46
+    WOLF,              // 52
+    VELOCIRAPTOR,      // 54
+    RAT,               // 55
+    ROLLER_SKATES,     // 57
+    ROLLER_SKATES_GREEN, // 58
+    ROLLER_SKATES_WHITE, // 59
+    ROLLER_SKATES_PINK,  // 60
+    CHILLET,           // 62
+    CHILLET_IGNIS,     // 63
+    TRUSTY_CHILLET,    // 64
+    TRUSTY_CHILLET_IGNIS, // 65
 ];
 
 /// The saddle items — `Item.SetDefaults`' `Item.mountType` assignments:
@@ -1363,7 +1730,7 @@ pub(crate) static MOUNTS: &[MountData] = &[
 /// 4785-4787 -> 40-42, `:39395` Pogo Stick 4791 -> 43, `:39413` Wall Of
 /// Flesh Goat Mount Item 4795 -> 44 + (4795 - 4792) = 47, `:40133` Queen
 /// Slime Mount Saddle 4981 -> 50.
-const MOUNT_ITEMS: [(u16, i32); 49] = [
+const MOUNT_ITEMS: [(u16, i32); 69] = [
     (1914, 0),
     (2428, 1),
     (2430, 3),
@@ -1426,6 +1793,35 @@ const MOUNT_ITEMS: [(u16, i32); 49] = [
     (4763, 39),
     (5125, 51),
     (5288, 53),
+    // -- S1-L-9: the items of the sixteen new rows --------------------------
+    // `Item.SetDefaults`' `Item.mountType` assignments: `:24194` Turtle Mount
+    // 2491 -> 4, `:36685` Golf Cart 4264 -> 17, `:38778` Flamingo Feather
+    // 4716 -> 37, `:39413` the `44 + type - 4792` run (4793 -> 45, 4794 ->
+    // 46), `:41600` Wolf Mount 5130 -> 52, `:43366` Velociraptor 5510 ->
+    // 54, `:43512` Rat 5524/5525 -> 55, `:44056` Roller Skates 5599/5600
+    // -> 57, `:44300` 5638/5639/5640 -> 58, `:44313` 5641 -> 59, `:44326`
+    // 5642 -> 60, `:44519` Chillet 5665 -> 62, `:44531` 5666 -> 63,
+    // `:47394` 6150 -> 64, `:47407` 6151 -> 65.
+    (2491, 4),
+    (4264, 17),
+    (4716, 37),
+    (4793, 45),
+    (4794, 46),
+    (5130, 52),
+    (5510, 54),
+    (5524, 55),
+    (5525, 55),
+    (5599, 57),
+    (5600, 57),
+    (5638, 58),
+    (5639, 58),
+    (5640, 58),
+    (5641, 59),
+    (5642, 60),
+    (5665, 62),
+    (5666, 63),
+    (6150, 64),
+    (6151, 65),
 ];
 
 /// `Item.mountType` for the ported rows.
@@ -1474,6 +1870,10 @@ pub(crate) fn mount_type_of_buff(buff: i32) -> Option<i32> {
     MOUNTS.iter().find(|row| row.buff == buff).map(|row| row.id)
 }
 
+/// `MountID.Count` (`MountID.cs:181`) — the number of mount rows the table
+/// carries; the renderer's per-mount sheet arrays are sized by it.
+pub(crate) const MOUNT_COUNT: usize = 66;
+
 /// The index of a mount's row in [`MOUNTS`] — the key of the renderer's
 /// per-mount sheet tables.
 pub(crate) fn mount_index(id: i32) -> Option<usize> {
@@ -1491,13 +1891,13 @@ pub(crate) fn mount_data(id: i32) -> Option<&'static MountData> {
 }
 
 /// The SuperCart stat overrides (`Mount.cs:373-381` statics, read :478-481,
-/// :490-493, :502-505, :2829-2832, :2853-2856). Only the minecart system writes
-/// them (M2-MOUNT-3); until then the values stay 0 and the branches are dead.
-const SUPER_CART_RUN_SPEED: f32 = 0.0;
-const SUPER_CART_DASH_SPEED: f32 = 0.0;
-const SUPER_CART_ACCELERATION: f32 = 0.0;
-const SUPER_CART_JUMP_HEIGHT: i32 = 0;
-const SUPER_CART_JUMP_SPEED: f32 = 0.0;
+/// :490-493, :502-505, :2829-2832, :2853-2856) — the values the static
+/// constructor writes (`Mount.cs:6660-6664`).
+const SUPER_CART_RUN_SPEED: f32 = 20.0;
+const SUPER_CART_DASH_SPEED: f32 = 20.0;
+const SUPER_CART_ACCELERATION: f32 = 0.1;
+const SUPER_CART_JUMP_HEIGHT: i32 = 15;
+const SUPER_CART_JUMP_SPEED: f32 = 5.15;
 
 /// What the caller must apply after a successful [`MountState::set_mount`]:
 /// the buff swap plus the hitbox growth (`SetMount` `Mount.cs:6226`,
@@ -1510,6 +1910,14 @@ pub(crate) struct Equip {
     pub add_buff: i32,
     /// The new player height is `42 + height_boost`, bottom-anchored.
     pub height_boost: i32,
+    /// `Mount.SetMount`'s swap branch (`:6202-6213`) only runs when the mount
+    /// was already active — the cart flip / last boost / full rotation are
+    /// cleared there.
+    pub was_active: bool,
+    /// `Mount.AnyTrackRider` (`Mount.cs:554-567`) on the OLD row: a minecart
+    /// or a minecart-track rider (the roller skates). Only meaningful with
+    /// `was_active`.
+    pub track_rider: bool,
 }
 
 /// The mount instance state — `Mount` (`Mount.cs:325-383`). Plain data so the
@@ -1637,6 +2045,14 @@ impl MountState {
         self.active
     }
 
+    /// `Mount.UpdateEffects` (`Mount.cs:4798`): the Super Cart flag rides the
+    /// cart set (`MountID.Sets.Cart`) and the player's unlock/enable pair.
+    /// The flag then overrides the run/dash/acceleration/jump getters
+    /// (`:478-505`, `:2829-2856`).
+    pub(crate) fn set_should_super_cart(&mut self, value: bool) {
+        self.should_super_cart = value;
+    }
+
     pub(crate) fn kind(&self) -> i32 {
         self.kind
     }
@@ -1661,13 +2077,47 @@ impl MountState {
     /// never emits it for this table. The per-type extras of
     /// `:3637-4142` (drill rotation, bee wings, chillet dust) have no rows
     /// in this table yet.
-    pub(crate) fn update_frame(&mut self, state: i32, vx: f32, vy: f32, just_jumped: bool, control_down: bool) {
+    pub(crate) fn update_frame(
+        &mut self,
+        state: i32,
+        vx: f32,
+        vy: f32,
+        just_jumped: bool,
+        control_down: bool,
+        sliding: bool,
+        dash: i32,
+        dash_delay: i32,
+    ) {
         let Some(row) = self.data() else { return };
-        // `:3583-3611`: a state change resets the counter (the exceptions for
-        // types 48/56/61/55 reference rows outside this table).
+        // `:3583-3611`: a state change resets the counter — unless the row is
+        // one of the four that keep their counter across the switch (48/56/61
+        // and the rat 55, whose sliding arm rides `Player.sliding`).
         if self.frame_state != state {
+            // `:3585-3588`: the bat (56) resets on the dash-state switch.
+            if self.kind == 56
+                && ((self.frame_state == 5 && (dash <= 0 || dash_delay >= 0))
+                    || (self.frame_state != 5 && dash > 0 && dash_delay < 0))
+            {
+                self.frame_counter = 0.0;
+            }
             self.frame_state = state;
-            self.frame_counter = 0.0;
+            let mut flag = true;
+            if self.kind == 48 && (state == 1 || state == 2) {
+                flag = false; // :3591-3594
+            }
+            if self.kind == 56 && (state == 1 || state == 4 || state == 2) {
+                flag = false; // :3595-3598
+            }
+            if self.kind == 61 && (state == 1 || state == 4 || state == 2) {
+                flag = false; // :3599-3602
+            }
+            if self.kind == 55 && (state == 1 || state == 5 || state == 4 || (state == 2 && sliding))
+            {
+                flag = false; // :3603-3606
+            }
+            if flag {
+                self.frame_counter = 0.0;
+            }
         }
         // `:3612-3615`: any non-standing state clears the idle timer.
         if state != FRAME_STANDING {
@@ -1686,18 +2136,42 @@ impl MountState {
         // `:3632-3636`: `emitsLight` — no row in this table sets it.
         match state {
             FRAME_STANDING => {
-                // `:4145-4181`: the idle timer. The per-type ranges (17:
-                // 120-300, 2: 600-900, 55: 120-420) reference rows outside
-                // this table; the base pick is `Main.rand.Next(900, 1500)`
-                // through the stand-in stream.
+                // `:4145-4181`: the idle timer. The per-type ranges are the
+                // C#'s (`Main.rand.Next(min, max)`): 17 → 120-300, 2 → 600-900
+                // (the pigron row is absent from this table), 55 → 120-420;
+                // every other row picks 900-1500. The stand-in stream
+                // replaces `Main.rand` (docs/ANALYSIS.md "the port-wide RNG
+                // deviation"), so the extra vanilla draw of the per-type
+                // overrides is not reproduced.
                 if row.idle.count != 0 && self.idle_time == 0 {
-                    self.idle_time_next = idle_range(&mut self.idle_rng, 900, 1500);
+                    let (lo, hi) = match self.kind {
+                        17 => (120, 300),
+                        55 => (120, 420),
+                        _ => (900, 1500),
+                    };
+                    self.idle_time_next = idle_range(&mut self.idle_rng, lo, hi);
                 }
                 if row.idle.count != 0 {
                     self.idle_time += 1;
                 }
                 self.frame_counter += 1.0;
                 if row.idle.count != 0 && self.idle_time >= self.idle_time_next {
+                    // `:4194-4208`: the rat (55) walks its own idle-frame table
+                    // instead of the linear band.
+                    if self.kind == 55 {
+                        let num32 = ((self.idle_time - self.idle_time_next) as f32
+                            / row.idle.delay as f32
+                            / row.idle.count as f32
+                            * RAT_IDLE_FRAMES.len() as f32) as i32;
+                        if num32 >= RAT_IDLE_FRAMES.len() as i32 {
+                            self.frame_counter = 0.0;
+                            self.frame = row.standing.start;
+                            self.idle_time = 0;
+                        } else {
+                            self.frame = row.idle.start + RAT_IDLE_FRAMES[num32 as usize];
+                        }
+                        return;
+                    }
                     // `:4198-4214`: the idle band; type 55's rat table is
                     // outside this set.
                     let num33 = ((self.idle_time - self.idle_time_next) as f32
@@ -1826,6 +2300,13 @@ impl MountState {
     /// counterpart yet). `wet` is `Player.wet` (the `m == 5` guard :6198).
     pub(crate) fn set_mount(&mut self, m: i32, wet: bool) -> Option<Equip> {
         let old_buff = self.data().map(|d| d.buff);
+        // :6202-6213 — the swap branch reads the OLD row: `AnyTrackRider`
+        // (`:554-567`) is a minecart or a minecart-track rider.
+        let was_active = self.active;
+        let track_rider = self
+            .data()
+            .map(|d| d.minecart || d.can_ride_minecart_tracks)
+            .unwrap_or(false);
         if self.kind == m || m <= -1 || m >= 66 || (m == 5 && wet) || mount_data(m).is_none() {
             return None;
         }
@@ -1833,9 +2314,6 @@ impl MountState {
         if !self.active {
             self.active = true; // :6214-6217
         }
-        // :6202-6213 — the clear-buff/cart/rotation resets only concern an
-        // already-active swap (the clear travels in `Equip`) and carts; neither
-        // carries more state in this set.
         self.fly_time = 0; // :6218
         self.kind = m;
         self.fatigue_max = row.fatigue_max as f32; // :6221
@@ -1852,6 +2330,8 @@ impl MountState {
             clear_buff: old_buff,
             add_buff: row.buff,
             height_boost: row.height_boost,
+            was_active,
+            track_rider,
         })
     }
 
@@ -2504,7 +2984,9 @@ mod tests {
             Equip {
                 clear_buff: None,
                 add_buff: 162,
-                height_boost: 34
+                height_boost: 34,
+                was_active: false,
+                track_rider: false,
             }
         );
         assert!(m.is_active());
@@ -2519,7 +3001,9 @@ mod tests {
             Equip {
                 clear_buff: Some(162),
                 add_buff: 275,
-                height_boost: 34
+                height_boost: 34,
+                was_active: true,
+                track_rider: false,
             }
         );
         assert_eq!(m.kind(), 40);
@@ -2571,6 +3055,348 @@ mod tests {
         m.set_mount(1, false);
         assert!(!m.can_fly(), "flightTimeMax 0 (:2867-2869)");
         assert_eq!(m.run_speed(), 4.0);
+    }
+
+    #[test]
+    fn the_sixteen_missing_rows_carry_the_exact_c_constants() {
+        // S1-L-9 — the rows `Mount.Initialize` (`Mount.cs:696-2567`) never
+        // ported: the table carried 50 of the 66 `MountID` ids. Every value
+        // below is read off the decompiled source.
+
+        // 4 Turtle (`Mount.cs:1112-1162`).
+        let turtle = mount_data(4).unwrap();
+        assert_eq!((turtle.buff, turtle.height_boost), (131, 26));
+        assert_eq!(
+            (turtle.run_speed, turtle.dash_speed, turtle.swim_speed),
+            (2.0, 5.0, 10.0)
+        );
+        assert_eq!(
+            (turtle.acceleration, turtle.jump_height, turtle.jump_speed),
+            (0.08, 12, 3.7)
+        );
+        assert_eq!(
+            (turtle.fall_damage, turtle.spawn_dust, turtle.total_frames),
+            (1.0, 56, 12)
+        );
+        assert_eq!(turtle.back_sheet, "Mount_Turtle");
+        assert_eq!(
+            (
+                turtle.x_offset,
+                turtle.y_offset,
+                turtle.body_frame,
+                turtle.player_head_offset
+            ),
+            (1, 13, 3, 28)
+        );
+
+        // 17 GolfCartSomebodySaveMe (`Mount.cs:1694-1739`).
+        let golf = mount_data(17).unwrap();
+        assert_eq!((golf.buff, golf.height_boost), (212, 16));
+        assert_eq!((golf.run_speed, golf.acceleration), (8.0, 0.25));
+        assert_eq!((golf.jump_height, golf.jump_speed), (20, 8.01));
+        assert_eq!(
+            (golf.fall_damage, golf.spawn_dust, golf.total_frames),
+            (0.2, 15, 4)
+        );
+        assert_eq!(
+            (golf.back_sheet, golf.back_extra_sheet),
+            ("Extra_97", "Extra_96")
+        );
+        assert_eq!(
+            (
+                golf.x_offset,
+                golf.y_offset,
+                golf.body_frame,
+                golf.player_head_offset
+            ),
+            (2, 1, 3, 18)
+        );
+
+        // 37 Flamingo (`Mount.cs:1796-1841`).
+        let flamingo = mount_data(37).unwrap();
+        assert_eq!((flamingo.buff, flamingo.height_boost), (265, 12));
+        assert_eq!((flamingo.run_speed, flamingo.acceleration), (6.0, 0.15));
+        assert_eq!((flamingo.jump_height, flamingo.jump_speed), (14, 6.01));
+        assert_eq!(
+            (flamingo.fall_damage, flamingo.spawn_dust, flamingo.total_frames),
+            (0.2, 282, 10)
+        );
+        assert_eq!(flamingo.back_sheet, "Extra_149");
+        assert_eq!(
+            (
+                flamingo.x_offset,
+                flamingo.y_offset,
+                flamingo.body_frame,
+                flamingo.player_head_offset
+            ),
+            (5, 1, 4, 20)
+        );
+
+        // 45 SpookyWood (`Mount.cs:1940-1985`).
+        let spooky = mount_data(45).unwrap();
+        assert_eq!((spooky.buff, spooky.height_boost), (280, 25));
+        assert_eq!(
+            (spooky.run_speed, spooky.dash_speed, spooky.acceleration),
+            (12.0, 16.0, 0.5)
+        );
+        assert_eq!((spooky.jump_height, spooky.jump_speed), (14, 7.0));
+        assert_eq!(
+            (spooky.fall_damage, spooky.spawn_dust, spooky.total_frames),
+            (0.1, 6, 8)
+        );
+        assert!(spooky.emits_light, ":1951");
+        assert_eq!(spooky.light_color, (0.6, 0.4, 0.35), ":1952");
+        assert_eq!(
+            (spooky.back_sheet, spooky.back_glow_sheet),
+            ("Extra_167", "GlowMask_283")
+        );
+
+        // 46 Santank (`Mount.cs:1987-2039`).
+        let santank = mount_data(46).unwrap();
+        assert_eq!(santank.buff, 281);
+        assert_eq!(santank.height_boost, 0);
+        assert_eq!(
+            (
+                santank.ability_charge_max,
+                santank.ability_cooldown,
+                santank.ability_duration
+            ),
+            (40, 40, 0)
+        );
+        assert_eq!(
+            (santank.run_speed, santank.dash_speed, santank.acceleration),
+            (8.0, 8.0, 0.4)
+        );
+        assert_eq!((santank.jump_height, santank.jump_speed), (8, 9.01));
+        assert_eq!((santank.spawn_dust, santank.total_frames), (15, 27));
+        assert_eq!(
+            (santank.front_sheet, santank.front_extra_sheet),
+            ("Extra_168", "Extra_168")
+        );
+
+        // 52 Wolf (`Mount.cs:2246-2308`).
+        let wolf = mount_data(52).unwrap();
+        assert_eq!(wolf.buff, 342);
+        assert_eq!(
+            (
+                wolf.run_speed,
+                wolf.acceleration,
+                wolf.jump_height,
+                wolf.jump_speed
+            ),
+            (9.5, 0.18, 18, 9.01)
+        );
+        assert_eq!(
+            (wolf.fall_damage, wolf.spawn_dust, wolf.total_frames),
+            (0.1, 31, 15)
+        );
+        assert_eq!(
+            (wolf.front_sheet, wolf.front_extra_sheet),
+            ("Extra_253", "Extra_254")
+        );
+        assert_eq!((wolf.x_offset, wolf.y_offset, wolf.body_frame), (4, -1, 3));
+
+        // 54 Velociraptor (`Mount.cs:2310-2360`).
+        let raptor = mount_data(54).unwrap();
+        assert_eq!(raptor.buff, 370);
+        assert_eq!(
+            (raptor.run_speed, raptor.dash_speed, raptor.acceleration),
+            (4.5, 7.5, 0.15)
+        );
+        assert_eq!((raptor.jump_height, raptor.jump_speed), (15, 6.01));
+        assert_eq!(
+            (raptor.fall_damage, raptor.spawn_dust, raptor.total_frames),
+            (0.1, 31, 21)
+        );
+        assert_eq!(
+            (raptor.front_sheet, raptor.front_extra_sheet),
+            ("Extra_271", "Extra_272")
+        );
+        assert_eq!((raptor.x_offset, raptor.y_offset, raptor.body_frame), (4, -4, 0));
+        assert_eq!(
+            (raptor.flying.start, raptor.flying.count, raptor.flying.delay),
+            (16, 5, 6)
+        );
+
+        // 55 Rat (`Mount.cs:2362-2415`).
+        let rat = mount_data(55).unwrap();
+        assert_eq!(rat.buff, 374);
+        assert!(rat.dismounts_on_item_use, ":2371");
+        assert_eq!(
+            (rat.run_speed, rat.dash_speed, rat.acceleration),
+            (4.5, 7.5, 0.15)
+        );
+        assert_eq!((rat.jump_height, rat.jump_speed), (15, 6.01));
+        assert_eq!(
+            (rat.fall_damage, rat.spawn_dust, rat.total_frames),
+            (0.1, 31, 16)
+        );
+        assert_eq!(rat.front_sheet, "Extra_273");
+        assert_eq!(
+            (
+                rat.x_offset,
+                rat.y_offset,
+                rat.body_frame,
+                rat.player_head_offset
+            ),
+            (0, -2, 3, -30)
+        );
+        assert_eq!(
+            (rat.dashing.start, rat.dashing.count, rat.dashing.delay),
+            (11, 5, 16)
+        );
+
+        // 57-60 the roller skates (`Mount.SetAsRollerSkate`, `Mount.cs:2569-2605`).
+        for (id, buff) in [(57, 378), (58, 379), (59, 380), (60, 381)] {
+            let skate = mount_data(id).unwrap();
+            assert_eq!(skate.buff, buff, "row {id}");
+            assert_eq!(skate.spawn_dust, 31, "row {id}");
+            assert!(skate.can_ride_minecart_tracks, "row {id}");
+            assert!(skate.can_use_wings, "row {id}");
+            assert!(skate.movement_stats_are_additive, "row {id}");
+            assert_eq!(
+                (skate.run_speed, skate.dash_speed, skate.acceleration),
+                (1.0, 1.0, 0.1),
+                "row {id}"
+            );
+            assert_eq!((skate.jump_height, skate.jump_speed), (2, 1.0), "row {id}");
+            assert_eq!(skate.fall_damage, 1.0, "row {id}");
+            assert_eq!(skate.total_frames, 1, "row {id}");
+            assert_eq!(skate.body_frame, 3, "row {id}");
+        }
+
+        // 62-65 the Chillemt family (`Mount.SetAsChillet`, `Mount.cs:2670-2745`).
+        for (id, buff, sheet) in [
+            (62, 387, "Extra_301"),
+            (63, 388, "Extra_302"),
+            (64, 391, "Extra_301"),
+            (65, 392, "Extra_302"),
+        ] {
+            let chillet = mount_data(id).unwrap();
+            assert_eq!(chillet.buff, buff, "row {id}");
+            assert_eq!(chillet.spawn_dust, 15, "row {id}");
+            assert_eq!(chillet.height_boost, 4, "row {id}");
+            assert_eq!(chillet.fall_damage, 0.5, "row {id}");
+            assert_eq!(chillet.run_speed, 3.0, "row {id}");
+            assert_eq!(chillet.acceleration, 0.32, "row {id}");
+            assert_eq!(chillet.walking_grace_time_max, 10, "row {id}");
+            assert_eq!(chillet.total_frames, 13, "row {id}");
+            assert_eq!(chillet.back_sheet, sheet, "row {id}");
+            assert_eq!(
+                (
+                    chillet.x_offset,
+                    chillet.y_offset,
+                    chillet.player_head_offset
+                ),
+                (7, -10, 10),
+                "row {id}"
+            );
+            assert_eq!(
+                (
+                    chillet.dashing.start,
+                    chillet.dashing.count,
+                    chillet.dashing.delay
+                ),
+                (5, 7, 130),
+                "row {id}"
+            );
+            assert!(chillet.idle.loops, "row {id}: :2732");
+        }
+        // The hard-mode pair (64/65) rides the faster numbers (:2677-2684).
+        assert_eq!(
+            (
+                mount_data(64).unwrap().dash_speed,
+                mount_data(64).unwrap().jump_height
+            ),
+            (9.0, 11)
+        );
+        assert_eq!(mount_data(64).unwrap().jump_speed, 8.1);
+        assert_eq!(
+            (
+                mount_data(62).unwrap().dash_speed,
+                mount_data(62).unwrap().jump_height
+            ),
+            (6.5, 6)
+        );
+        assert_eq!(mount_data(62).unwrap().jump_speed, 8.01);
+
+        // Every row's offsets cover its frame count.
+        for id in [4, 17, 37, 45, 46, 52, 54, 55, 57, 58, 59, 60, 62, 63, 64, 65] {
+            let row = mount_data(id).unwrap();
+            assert!(row.buff > 0, "row {id} has no buff");
+            assert_eq!(
+                row.player_y_offsets.len() as i32,
+                row.total_frames,
+                "row {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_new_mount_items_map_to_their_rows() {
+        // S1-L-9 — `Item.SetDefaults`' `Item.mountType` assignments.
+        assert_eq!(mount_type_of_item(2491), Some(4)); // :24194
+        assert_eq!(mount_type_of_item(4264), Some(17)); // :36685
+        assert_eq!(mount_type_of_item(4716), Some(37)); // :38778
+        assert_eq!(mount_type_of_item(4793), Some(45)); // :39413 (44 + type - 4792)
+        assert_eq!(mount_type_of_item(4794), Some(46)); // :39413
+        assert_eq!(mount_type_of_item(5130), Some(52)); // :41600
+        assert_eq!(mount_type_of_item(5510), Some(54)); // :43366
+        assert_eq!(mount_type_of_item(5524), Some(55)); // :43512
+        assert_eq!(mount_type_of_item(5525), Some(55)); // :43512
+        assert_eq!(mount_type_of_item(5599), Some(57)); // :44056
+        assert_eq!(mount_type_of_item(5600), Some(57)); // :44056
+        assert_eq!(mount_type_of_item(5638), Some(58)); // :44300
+        assert_eq!(mount_type_of_item(5639), Some(58)); // :44300
+        assert_eq!(mount_type_of_item(5640), Some(58)); // :44300
+        assert_eq!(mount_type_of_item(5641), Some(59)); // :44313
+        assert_eq!(mount_type_of_item(5642), Some(60)); // :44326
+        assert_eq!(mount_type_of_item(5665), Some(62)); // :44519
+        assert_eq!(mount_type_of_item(5666), Some(63)); // :44531
+        assert_eq!(mount_type_of_item(6150), Some(64)); // :47394
+        assert_eq!(mount_type_of_item(6151), Some(65)); // :47407
+    }
+
+    #[test]
+    fn the_rat_uses_its_own_idle_band_and_frame_table() {
+        // S1-L-9 — `Mount.UpdateFrame` (`Mount.cs:4194-4208`) with
+        // `Mount.idleFrames_Rat` (`:6665-6669`).
+        let mut m = MountState::default();
+        m.set_mount(55, false);
+        m.update_frame(FRAME_STANDING, 0.0, 0.0, false, false, false, 0, 0);
+        assert!(
+            m.idle_time_next >= 120 && m.idle_time_next < 420,
+            "the rat's idle band (:4196-4197): {}",
+            m.idle_time_next
+        );
+        while m.idle_time < m.idle_time_next {
+            m.update_frame(FRAME_STANDING, 0.0, 0.0, false, false, false, 0, 0);
+        }
+        assert_eq!(m.frame, 0, "the table's first entry (:4205)");
+        // 64 ticks later the table index leaves the range and the C# resets
+        // to the standing frame (`:4197-4202`).
+        for _ in 0..64 {
+            m.update_frame(FRAME_STANDING, 0.0, 0.0, false, false, false, 0, 0);
+        }
+        assert_eq!(m.idle_time, 0, "the out-of-range pick resets the timer");
+        assert_eq!(m.frame, m.data().unwrap().standing.start);
+    }
+
+    #[test]
+    fn the_super_cart_statics_are_the_c_values() {
+        // S1-L-9 — `Mount.SuperCart*` (`Mount.cs:6660-6664`), read by the
+        // speed getters when `_shouldSuperCart` is set (:478-505, :2829-2856).
+        let mut m = MountState::default();
+        m.set_mount(6, false); // a cart row
+        assert_eq!(m.run_speed(), 13.0, "the vanilla cart speed");
+        m.set_should_super_cart(true);
+        assert_eq!(m.run_speed(), 20.0);
+        assert_eq!(m.dash_speed(), 20.0);
+        assert_eq!(m.acceleration(), 0.1);
+        assert_eq!(m.jump_height(0.0), 15);
+        assert_eq!(m.jump_speed(0.0), 5.15);
+        m.set_should_super_cart(false);
+        assert_eq!(m.run_speed(), 13.0);
     }
 
     #[test]

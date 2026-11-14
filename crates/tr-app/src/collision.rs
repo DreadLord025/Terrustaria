@@ -660,6 +660,314 @@ pub fn step_down(
     }
 }
 
+/// `Tile.blockType()` (`Tile.cs:202-214`): 0 = a full block, 1 = a half
+/// brick, 2-5 = the four slopes.
+fn block_type(t: &Tile) -> u8 {
+    if t.half_brick() {
+        return 1;
+    }
+    let s = t.slope();
+    if s > 0 {
+        s + 1
+    } else {
+        0
+    }
+}
+
+/// `Collision.DrownCollision` (`Collision.cs:1383-1432`): the head box's
+/// water test — the 10x12 probe at the head (`vector`), the liquid's surface
+/// offset (`(256 - liquid) / 32 * 2`, `:1421-1423`) and the solid-floor
+/// exclusion on the gravity-side row (`num4`, `:1409`/`:1416`).
+///
+/// `grav_dir` is the C#'s (`-1` = the vanilla gravity): the probe sits at the
+/// head for `-1` and at the feet for `1` (the NPCs' call). `include_slopes`
+/// is the C#'s `includeSlopes` — the solid-floor exclusion then also accepts
+/// the sloped blocks.
+pub fn drown_collision(
+    world: &World,
+    pos_x: f32,
+    pos_y: f32,
+    width: i32,
+    height: i32,
+    grav_dir: f32,
+    include_slopes: bool,
+) -> bool {
+    let num = 10.min(width);
+    let num2 = 12.min(height);
+    // `:1385-1400`: the probe's top-left — the centre column, the head row.
+    let vx = pos_x + (width / 2) as f32 - (num / 2) as f32;
+    let mut vy = pos_y - 2.0;
+    if grav_dir == -1.0 {
+        vy += (height / 2) as f32 - 6.0;
+    }
+    let value = (pos_x / 16.0) as i32 - 1;
+    let value2 = ((pos_x + width as f32) / 16.0) as i32 + 2;
+    let value3 = (pos_y / 16.0) as i32 - 1;
+    let value4 = ((pos_y + height as f32) / 16.0) as i32 + 2;
+    let num3 = value.clamp(0, world.width - 1);
+    let value2 = value2.clamp(0, world.width - 1);
+    // `Main.maxTilesY - 40` (`:1407-1408`) — the underworld boundary row.
+    // The C#'s `Utils.Clamp` folds a negative bound back onto itself (the
+    // scan then runs empty); the port clamps the bound at zero instead.
+    let bottom = world.height.saturating_sub(40).max(0);
+    let value3 = value3.clamp(0, bottom);
+    let value4 = value4.clamp(0, bottom);
+    let num4 = if grav_dir == 1.0 { value3 } else { value4 - 1 };
+    for i in num3..value2 {
+        for j in value3..value4 {
+            let Some(t) = world.tile(i, j) else {
+                continue;
+            };
+            if t.liquid == 0 {
+                continue;
+            }
+            // `!tile.lava() && !tile.shimmer()` — the honey drowns, the lava
+            // and the shimmer do not.
+            if matches!(t.liquid_kind(), tr_core::tile::LiquidKind::Lava | tr_core::tile::LiquidKind::Shimmer)
+            {
+                continue;
+            }
+            // `:1416`: the solid floor at the gravity-side row — the water
+            // under a solid block does not drown.
+            if j == num4
+                && t.active()
+                && solid_kind(t.kind)
+                && !td::TILE_SOLID_TOP.has(t.kind)
+                && !(include_slopes && block_type(t) != 0)
+            {
+                continue;
+            }
+            let mut ty = j as f32 * 16.0;
+            let mut num5 = 16.0f32;
+            let num6 = (256.0 - t.liquid as f32) / 32.0;
+            ty += num6 * 2.0;
+            num5 -= (num6 * 2.0) as i32 as f32;
+            if vx + num as f32 > i as f32 * 16.0
+                && vx < i as f32 * 16.0 + 16.0
+                && vy + num2 as f32 > ty
+                && vy < ty + num5
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `Utils.FloatIntersect` (`Utils.cs:982-989`): the two boxes overlap. The
+/// C#'s comparisons are strict, so a touching edge still counts as an
+/// overlap.
+fn float_intersect(
+    r1x: f32,
+    r1y: f32,
+    r1w: f32,
+    r1h: f32,
+    r2x: f32,
+    r2y: f32,
+    r2w: f32,
+    r2h: f32,
+) -> bool {
+    if r1x > r2x + r2w || r1y > r2y + r2h || r1x + r1w < r2x || r1y + r1h < r2y {
+        return false;
+    }
+    true
+}
+
+/// The outcome of [`switch_tiles`]: the C#'s return value (whether a
+/// pressure plate consumed the entity — the mine and the geyser arms
+/// `continue` the scan, so they never set it) and the item the broken plate
+/// dropped (the C#'s `WorldGen.KillTile` drop, which the app spawns).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SwitchOutcome {
+    pub hit: bool,
+    /// `(item, x, y)` — the plate's drop.
+    pub dropped: Option<(u16, i32, i32)>,
+}
+
+/// `Collision.SwitchTiles` (`Collision.cs:3227-3360`): the entity→switch
+/// bridge — the pressure plates (135), the land mine (210), the geyser trap
+/// (443) and the projectile pressure pad (442).
+///
+/// The scan is the C#'s: the ±1-margin box around the entity, the four
+/// switch kinds, the type-442 projectile-pad branch (the four frame rects,
+/// `objType == 4` only, `:3266-3307`) and the "the entity moved onto it"
+/// test (`:3310`): the entity's box must reach the tile's `y + 12` line and
+/// its old box must not have been over it.
+///
+/// `obj_type` is the C#'s: 1 = the NPC, 2 = the NPC's other call, 3 = the
+/// projectile, 4 = the projectile's pad call, 5 = the player.
+pub fn switch_tiles(
+    wiring: &mut tr_core::wiring::Wiring,
+    world: &mut World,
+    pos_x: f32,
+    pos_y: f32,
+    old_pos_x: f32,
+    old_pos_y: f32,
+    width: i32,
+    height: i32,
+    obj_type: i32,
+) -> SwitchOutcome {
+    let mut num = (pos_x / 16.0) as i32 - 1;
+    let mut num2 = ((pos_x + width as f32) / 16.0) as i32 + 2;
+    let mut num3 = (pos_y / 16.0) as i32 - 1;
+    let mut num4 = ((pos_y + height as f32) / 16.0) as i32 + 2;
+    num = num.max(0);
+    num2 = num2.min(world.width);
+    num3 = num3.max(0);
+    num4 = num4.min(world.height - 40);
+    for i in num..num2 {
+        for j in num3..num4 {
+            let Some(t) = world.tile(i, j) else {
+                continue;
+            };
+            let kind = t.kind;
+            if !t.active() || !matches!(kind, 135 | 210 | 443 | 442) {
+                continue;
+            }
+            let vector_x = i as f32 * 16.0;
+            let vector_y = j as f32 * 16.0 + 12.0;
+            let mut flag = false;
+            if kind == 442 {
+                if obj_type == 4 {
+                    // `:3270-3300`: the four projectile-pad frames' rects.
+                    let (r1x, r1y, r1w, r1h) = match t.frame_x / 22 {
+                        0 => (i as f32 * 16.0, j as f32 * 16.0 + 6.0, 16.0, 10.0),
+                        1 => (i as f32 * 16.0, j as f32 * 16.0, 16.0, 10.0),
+                        2 => (i as f32 * 16.0, j as f32 * 16.0, 10.0, 16.0),
+                        3 => (i as f32 * 16.0 + 6.0, j as f32 * 16.0, 10.0, 16.0),
+                        // The C#'s switch has no default arm: the rect stays
+                        // empty and the intersect test fails.
+                        _ => (0.0, 0.0, 0.0, 0.0),
+                    };
+                    if float_intersect(
+                        r1x, r1y, r1w, r1h, pos_x, pos_y, width as f32, height as f32,
+                    ) && !float_intersect(
+                        r1x, r1y, r1w, r1h, old_pos_x, old_pos_y, width as f32, height as f32,
+                    ) {
+                        wiring.hit_switch(world, i, j);
+                        return SwitchOutcome {
+                            hit: true,
+                            ..Default::default()
+                        };
+                    }
+                }
+                // The pad never takes the general path below (`:3308-3310`).
+                flag = true;
+            }
+            if flag
+                || !(pos_x + width as f32 > vector_x)
+                || !(pos_x < vector_x + 16.0)
+                || !(pos_y + height as f32 > vector_y)
+                || !((pos_y as f64) < (vector_y as f64) + 4.01)
+                || (old_pos_x + width as f32 > vector_x
+                    && old_pos_x < vector_x + 16.0
+                    && old_pos_y + height as f32 > vector_y
+                    && (old_pos_y as f64) < (vector_y as f64) + 16.01)
+            {
+                continue;
+            }
+            match kind {
+                // The land mine explodes through the switch (`:3314-3319`).
+                210 => {
+                    wiring.hit_switch(world, i, j);
+                    continue;
+                }
+                // The geyser trap only answers the player and the NPCs
+                // (`:3320-3326`).
+                443 => {
+                    if obj_type == 1 || obj_type == 5 {
+                        wiring.hit_switch(world, i, j);
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            // `:3328-3337`: the pressure plate's frame row picks who may
+            // trigger it — the rows 2/3/4/6/7 answer only the player, and row
+            // 5 answers nobody.
+            let num5 = t.frame_y / 18;
+            let mut flag2 = true;
+            if matches!(num5, 4 | 2 | 3 | 6 | 7) && obj_type != 5 {
+                flag2 = false;
+            }
+            if num5 == 5 && (obj_type == 1 || obj_type == 4 || obj_type == 5) {
+                flag2 = false;
+            }
+            if !flag2 {
+                continue;
+            }
+            wiring.hit_switch(world, i, j);
+            let mut outcome = SwitchOutcome {
+                hit: true,
+                ..Default::default()
+            };
+            if num5 == 7 {
+                // `:3348-3352`: the row-7 plate breaks under the touch. The
+                // C#'s `WorldGen.KillTile` drops the plate's item — the port's
+                // core has no item pool, so the drop travels back to the app.
+                let frame_y = world.tile(i, j).map_or(0, |t| t.frame_y);
+                outcome.dropped = crate::registry::tile_drop(kind, frame_y).map(|item| (item, i, j));
+                tr_core::edit::kill_tile(world, i, j, false);
+            }
+            return outcome;
+        }
+    }
+    SwitchOutcome::default()
+}
+
+/// `Collision.GetWaterLine` (`Collision.cs:1498-1544`): the water surface's
+/// height in the column `x`, or `None` when the column holds no water. The
+/// scan looks at the four rows around `y` (`:1521-1543`) and the height is
+/// the liquid amount's shortfall from the row's bottom
+/// (`waterLineHeight -= liquid / 16`, the C#'s integer division).
+pub fn get_water_line(world: &World, x: i32, y: i32) -> Option<f32> {
+    // `WorldGen.InWorld(X, Y, 10)` (`:1501`).
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return None;
+    }
+    let liquid_at = |row: i32| -> u8 {
+        world
+            .tile(x, row)
+            .map_or(0, |t| t.liquid)
+    };
+    if liquid_at(y - 2) > 0 {
+        return None;
+    }
+    if liquid_at(y - 1) > 0 {
+        let l = liquid_at(y - 1);
+        return Some(y as f32 * 16.0 - (l / 16) as f32);
+    }
+    if liquid_at(y) > 0 {
+        let l = liquid_at(y);
+        return Some((y + 1) as f32 * 16.0 - (l / 16) as f32);
+    }
+    if liquid_at(y + 1) > 0 {
+        let l = liquid_at(y + 1);
+        return Some((y + 2) as f32 * 16.0 - (l / 16) as f32);
+    }
+    None
+}
+
+/// `Collision.GetWaterLineIterate` (`Collision.cs:1551-1570`): the water
+/// line of the column's surface — the walk up to the first dry row and the
+/// shortfall of the row below it.
+pub fn get_water_line_iterate(world: &World, x: i32, y: i32) -> Option<f32> {
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return None;
+    }
+    let mut y = y;
+    while y > 0 && world.tile(x, y).map_or(0, |t| t.liquid) > 0 {
+        y -= 1;
+    }
+    y += 1;
+    let t = world.tile(x, y)?;
+    if t.liquid > 0 {
+        let below = world.tile(x, y - 1).map_or(0, |t| t.liquid);
+        return Some(y as f32 * 16.0 - (below / 16) as f32);
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -676,6 +984,276 @@ mod tests {
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// The head probe's geometry (`Collision.cs:1385-1400`): the 10x12 box
+    /// at the player's head (the gravity -1 case).
+    fn head_probe(pos_x: f32, pos_y: f32) -> (f32, f32) {
+        let width = 20;
+        let height = 42;
+        let num = 10.min(width);
+        let num2 = 12.min(height);
+        let vx = pos_x + (width / 2) as f32 - (num / 2) as f32;
+        let vy = pos_y - 2.0 + (height / 2) as f32 - 6.0;
+        (vx, vy)
+    }
+
+    fn put_water(w: &mut World, x: i32, y: i32, liquid: u8, kind: tr_core::tile::LiquidKind) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = liquid;
+        w.tiles[i].set_liquid_kind(kind);
+    }
+
+    /// `Collision.DrownCollision` (`:1383-1432`): the head under the water
+    /// drowns, the head above it does not.
+    #[test]
+    fn the_drown_probe_tests_the_head_only() {
+        use tr_core::tile::LiquidKind;
+        let mut w = world();
+        put_water(&mut w, 10, 7, 255, LiquidKind::Water);
+        // The player's head (the probe at [155, 165] x [113, 125]) is under
+        // the water of row 7 (112..128).
+        assert!(
+            drown_collision(&w, 150.0, 100.0, 20, 42, -1.0, false),
+            "the head under the water drowns"
+        );
+        // The same player 40 px higher: the head is above the surface.
+        assert!(
+            !drown_collision(&w, 150.0, 60.0, 20, 42, -1.0, false),
+            "the head above the water does not drown"
+        );
+        // The probe's own geometry — the C#'s centre column, 10 px wide.
+        let (vx, vy) = head_probe(150.0, 100.0);
+        assert_eq!(vx, 155.0);
+        assert_eq!(vy, 113.0);
+    }
+
+    /// The liquid's surface offset (`:1421-1423`): a half-full tile only
+    /// drowns when the head reaches its lower half.
+    #[test]
+    fn the_drown_probe_follows_the_liquid_surface() {
+        use tr_core::tile::LiquidKind;
+        let mut w = world();
+        // Half full (128): the water fills the tile's lower 8 px (120..128).
+        put_water(&mut w, 10, 7, 128, LiquidKind::Water);
+        assert!(
+            drown_collision(&w, 150.0, 100.0, 20, 42, -1.0, false),
+            "the probe reaches the lower half"
+        );
+        // The probe ends at 125 in the case above; 8 px higher it ends at
+        // 117 and stays clear of the surface.
+        assert!(
+            !drown_collision(&w, 150.0, 92.0, 20, 42, -1.0, false),
+            "the probe stays above the surface"
+        );
+    }
+
+    /// The liquid kinds (`:1416`): the lava and the shimmer do not drown, the
+    /// honey does.
+    #[test]
+    fn only_the_water_and_the_honey_drown() {
+        use tr_core::tile::LiquidKind;
+        for (kind, drowns) in [
+            (LiquidKind::Water, true),
+            (LiquidKind::Honey, true),
+            (LiquidKind::Lava, false),
+            (LiquidKind::Shimmer, false),
+        ] {
+            let mut w = world();
+            put_water(&mut w, 10, 7, 255, kind);
+            assert_eq!(
+                drown_collision(&w, 150.0, 100.0, 20, 42, -1.0, false),
+                drowns,
+                "{kind:?}"
+            );
+        }
+    }
+
+    /// The solid-floor exclusion (`:1409`/`:1416`): the water inside a solid
+    /// block on the gravity-side row does not drown — unless the sloped
+    /// blocks count as solid (`includeSlopes`).
+    ///
+    /// The gravity-side row is `value3` for the feet probe (the NPCs' call,
+    /// `gravDir = 1`) and `value4 - 1` for the head probe (the player's) —
+    /// the head probe never reaches its own gravity-side row, so the arm is
+    /// exercised through the feet probe.
+    #[test]
+    fn the_solid_floor_excludes_the_water_under_it() {
+        use tr_core::tile::LiquidKind;
+        let mut w = world();
+        // The feet probe at y = 16 reaches row 0 (the scan's first row).
+        put(&mut w, 10, 0, 1);
+        put_water(&mut w, 10, 0, 255, LiquidKind::Water);
+        assert!(
+            !drown_collision(&w, 150.0, 16.0, 20, 42, 1.0, false),
+            "the solid block shields the water"
+        );
+        assert!(
+            !drown_collision(&w, 150.0, 16.0, 20, 42, 1.0, true),
+            "a full block is a floor in both modes"
+        );
+        // The half brick's `blockType` is 1 (`Tile.cs:202-214`), so the
+        // `includeSlopes` mode stops treating it as a floor.
+        let mut w = world();
+        put(&mut w, 10, 0, 1);
+        let hi = w.index(10, 0);
+        w.tiles[hi].flags |= tr_core::tile::FLAG_HALF_BRICK;
+        put_water(&mut w, 10, 0, 255, LiquidKind::Water);
+        assert!(
+            !drown_collision(&w, 150.0, 16.0, 20, 42, 1.0, false),
+            "the half brick is a floor too"
+        );
+        assert!(
+            drown_collision(&w, 150.0, 16.0, 20, 42, 1.0, true),
+            "the sloped blocks are not a floor"
+        );
+    }
+
+    /// The switch-tile bridge (`Collision.cs:3227-3360`): a world with one
+    /// switch tile of the given kind and frame row.
+    fn switch_world(kind: u16, frame_y: i16) -> World {
+        let mut w = world();
+        let i = w.index(10, 20);
+        w.tiles[i].kind = kind;
+        w.tiles[i].frame_y = frame_y;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w
+    }
+
+    /// The player walks onto the pressure plate: the switch trips
+    /// (`Collision.cs:3310`'s "moved onto it" test).
+    #[test]
+    fn the_player_walking_onto_a_pressure_plate_trips_it() {
+        let mut w = switch_world(135, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        // The player's box [168, 188] x [300, 342]; the plate's hit line is
+        // at 20 * 16 + 12 = 332 and its old box was above it.
+        let outcome = switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5);
+        assert!(outcome.hit, "the plate trips");
+    }
+
+    /// The player who already stands on the plate does not re-trip it
+    /// (`Collision.cs:3310`'s old-position arm).
+    #[test]
+    fn standing_on_the_plate_does_not_trip_it_again() {
+        let mut w = switch_world(135, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        let outcome = switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 300.0, 20, 42, 5);
+        assert!(!outcome.hit, "the old position was over the plate");
+    }
+
+    /// The pressure plate's frame row picks who may trigger it
+    /// (`Collision.cs:3328-3337`): the rows 2/3/4/6/7 answer only the
+    /// player, and row 5 answers nobody.
+    #[test]
+    fn the_plate_rows_pick_who_may_trigger_them() {
+        // Row 2: the player trips it, the NPC does not.
+        let mut w = switch_world(135, 2 * 18);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5).hit,
+            "the player trips the row-2 plate"
+        );
+        let mut w = switch_world(135, 2 * 18);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            !switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 1).hit,
+            "the NPC does not trip the row-2 plate"
+        );
+        // Row 5: nobody answers it.
+        let mut w = switch_world(135, 5 * 18);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            !switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5).hit,
+            "the row-5 plate answers nobody"
+        );
+    }
+
+    /// The NPC's call site (`NPC.cs:90504`, the `objType` 2 call): the
+    /// row-0 plate answers every entity.
+    #[test]
+    fn the_npc_call_trips_the_row_zero_plate() {
+        let mut w = switch_world(135, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 2).hit,
+            "the NPC trips the plate"
+        );
+    }
+
+    /// The land mine (210) answers every entity and explodes through the
+    /// switch (`Collision.cs:3314-3319` → `Wiring.HitSwitch` → the mine's
+    /// shot).
+    #[test]
+    fn the_land_mine_explodes_when_an_entity_reaches_it() {
+        let mut w = switch_world(210, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        let outcome = switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5);
+        // The C#'s mine arm `continue`s the scan (`Collision.cs:3319`), so the
+        // scan's answer stays false — only the pressure plates consume it.
+        assert!(!outcome.hit, "the mine does not consume the scan");
+        let shots = wiring.take_device_shots();
+        assert_eq!(shots.len(), 1, "the mine fires once");
+        assert_eq!(shots[0].kind, 164, "the mine's explosion projectile");
+    }
+
+    /// The geyser trap (443) answers the player and the NPCs only
+    /// (`Collision.cs:3320-3326`).
+    #[test]
+    fn the_geyser_trap_answers_the_player_only() {
+        let mut w = switch_world(443, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            !switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5).hit,
+            "the geyser does not consume the scan"
+        );
+        let mut w = switch_world(443, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        assert!(
+            !switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 3).hit,
+            "the projectile does not trip the geyser"
+        );
+        // The projectile's call would also answer the geyser's shot; the
+        // player's call fires it.
+        let mut w = switch_world(443, 0);
+        let mut wiring = tr_core::wiring::Wiring::new();
+        switch_tiles(&mut wiring, &mut w, 168.0, 300.0, 168.0, 280.0, 20, 42, 5);
+        assert!(
+            !wiring.take_device_shots().is_empty(),
+            "the geyser fires for the player"
+        );
+    }
+
+    /// `Collision.GetWaterLine` (`:1498-1544`): the surface height of the
+    /// column, read from the four rows around the query.
+    #[test]
+    fn the_water_line_reads_the_column_surface() {
+        let mut w = world();
+        put_water(&mut w, 10, 5, 255, tr_core::tile::LiquidKind::Water);
+        // The surface of a full tile: the row's bottom (96) less the
+        // liquid's shortfall (255 / 16 = 15).
+        assert_eq!(get_water_line(&w, 10, 5), Some(81.0));
+        assert_eq!(get_water_line(&w, 10, 6), Some(81.0), "one row below");
+        assert_eq!(get_water_line(&w, 10, 4), Some(81.0), "one row above");
+        assert_eq!(get_water_line(&w, 10, 3), None, "clear of the water");
+        // Half full: the shortfall is 128 / 16 = 8.
+        let mut w = world();
+        put_water(&mut w, 10, 5, 128, tr_core::tile::LiquidKind::Water);
+        assert_eq!(get_water_line(&w, 10, 5), Some(88.0));
+    }
+
+    /// `Collision.GetWaterLineIterate` (`:1551-1570`): the walk up to the
+    /// column's surface.
+    #[test]
+    fn the_iterated_water_line_walks_up_the_column() {
+        let mut w = world();
+        put_water(&mut w, 10, 5, 255, tr_core::tile::LiquidKind::Water);
+        put_water(&mut w, 10, 6, 255, tr_core::tile::LiquidKind::Water);
+        // The walk climbs to the first dry row and reports the surface of the
+        // row below it.
+        assert_eq!(get_water_line_iterate(&w, 10, 6), Some(80.0));
+        assert_eq!(get_water_line_iterate(&w, 10, 5), Some(80.0));
+        assert_eq!(get_water_line_iterate(&w, 10, 7), None, "a dry column");
     }
 
     #[test]

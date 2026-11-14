@@ -153,8 +153,14 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         // (1) `Main.cs:58739`: `currentDayRateIteration == 0` — thunder once.
         // M6-AUDIO-1: the strike returns its cue and position
         // (`Main.cs:58752-58761`), played here against the current listener.
-        if let Some(strike) = rain.thunder_step(weather) {
-            app.audio.play_at(strike.cue, strike.x, strike.y, 1.0);
+        // S1-E-25: the case-43 re-roll loop reads the engine's live thunder
+        // instances (`LegacySoundPlayer.cs:456-464`), and the pick replaces
+        // the slot's instance (`:466-476`'s Stop() + CreateInstance).
+        if let Some(strike) = rain.thunder_step(weather, &|slot| {
+            app.audio.thunder_playing(slot)
+        }) {
+            app.audio
+                .play_thunder(strike.slot, strike.cue, strike.x, strike.y, strike.pitch);
         }
         // (2) `Main.cs:17228-17231` + `:58830-58950`: the wind walk, once per
         // dayRate iteration, with the real `Main.maxRaining` (`:58832`).
@@ -460,7 +466,8 @@ pub(crate) fn spawn_travel_npc(
             }
             let tx = (n.x / tr_core::TILE_PX) as i32;
             let ty = (n.y / tr_core::TILE_PX) as i32;
-            if let Some(h) = crate::town::quick_find_home(world, tx, ty) {
+            // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
+            if let Some(h) = crate::town::quick_find_home(world, npcs, tx, ty, Some(i)) {
                 homes.push((i, h));
             }
         }

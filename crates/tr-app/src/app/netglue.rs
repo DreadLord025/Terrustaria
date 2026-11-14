@@ -243,10 +243,25 @@ impl App {
                 server.set_slot_name(id, pi.name.clone());
                 log::info!("slot {id} announced as {}", pi.name);
             }
-            // `case 5` — one inventory slot. The server keeps no peer
-            // inventory state yet (it lands with M6-NET-2's peer state), so
-            // the message is accepted and dropped — see docs/ANALYSIS.md.
-            C2s::Inventory { .. } => {}
+            // `case 5` — one inventory slot (`MessageBuffer.cs:399-462`).
+            // The server attributes the slot to the sending client
+            // (`:409-412`), stores it in that client's copy of the
+            // inventory and relays it to the other clients (`:454-457`,
+            // `PlayerItemSlotID.CanRelay`).
+            C2s::Inventory { slot, item } => {
+                let peer = id as u8;
+                server.set_slot_inventory(id, slot as u8, item);
+                if player_item_slot::can_relay(slot) {
+                    server.broadcast_except(
+                        &S2c::Inventory {
+                            player_id: peer,
+                            slot,
+                            item,
+                        },
+                        id,
+                    );
+                }
+            }
             // `case 6` — the world request (`MessageBuffer.cs:462-472`).
             C2s::WorldRequest => {
                 if server.state(id) == slot_state::CONNECTED {
@@ -1127,8 +1142,27 @@ impl App {
                     self.net_reserved.insert(o.slot, (o.reserved_for, o.hold));
                 }
             }
-            // Unused in this milestone (the chunk stream replaces them).
-            S2c::Inventory { .. } => {}
+            // `case 5` — one peer inventory slot (`MessageBuffer.cs:399-462`):
+            // the slot lands in that peer's inventory copy.
+            S2c::Inventory {
+                player_id,
+                slot,
+                item,
+            } => {
+                let peer = player_id as u32;
+                let (px, py) = self.net_peer_spawn_pos();
+                self.remote_players
+                    .entry(peer)
+                    .or_insert_with(|| net::PlayerNet {
+                        id: peer,
+                        name: String::new(),
+                        x: px,
+                        y: py,
+                        ..Default::default()
+                    })
+                    .inventory
+                    .insert(slot as u8, item);
+            }
         }
     }
 
@@ -1639,7 +1673,34 @@ impl App {
             if len <= 0.0 {
                 continue;
             }
-            let step = (len * 0.1).max(2.0) * scale;
+            // `Player.UpdateNetOffset` (`Player.cs:28721-28750`): an offset
+            // shorter than 2 px is cleared outright (`:28730-28734`).
+            if len < 2.0 {
+                p.off_x = 0.0;
+                p.off_y = 0.0;
+                continue;
+            }
+            // `:28737-28747` — the collision boost: the tile collision at
+            // `position + netOffset` that eats the velocity raises the step,
+            // so a peer pushed into a wall snaps back faster.
+            let mut min_step = 2.0f32;
+            let resolved = crate::collision::tile_collision(
+                &self.world,
+                [p.x + p.off_x, p.y + p.off_y],
+                [p.vx, p.vy],
+                crate::player::WIDTH as f32,
+                crate::player::HEIGHT as f32,
+                false,
+                false,
+            );
+            let value = Vec2::new(p.vx - resolved.vel[0], p.vy - resolved.vel[1]);
+            if value != Vec2::new(p.vx, p.vy) {
+                let num4 = value.dot(Vec2::new(p.off_x, p.off_y));
+                if num4 >= 1.0 {
+                    min_step = min_step.max(value.length_squared() * len / num4 * 1.0001);
+                }
+            }
+            let step = min_step.max(len * 0.1) * scale;
             let k = ((len - step) / len).max(0.0);
             p.off_x *= k;
             p.off_y *= k;
@@ -1654,11 +1715,26 @@ impl App {
             if len <= 0.0 {
                 continue;
             }
+            // `NPC.UpdateNetOffset` (`NPC.cs:90280-90310`): the step is
+            // `2 + 2*(len/range)` and the offset moves toward zero along its
+            // own direction (`:90300-90302`).
             let step = (2.0 + 2.0 * len / SMOOTHING_RANGE) * scale;
             let k = ((len - step) / len).max(0.0);
             npc.net_offset *= k;
             if npc.net_offset.length() < 0.5 {
                 npc.net_offset = Vec2::ZERO;
+            }
+            // `:90306-90310` — a town NPC that reached its home drops the
+            // offset: the smoothed position is the home itself.
+            if let Some((hx, hy)) = npc.home {
+                let (nw, nh) = npc.size();
+                let home = Vec2::new(
+                    hx as f32 * 16.0 + 8.0 - nw * 0.5,
+                    hy as f32 * 16.0 - nh - 0.1,
+                );
+                if Vec2::new(npc.x, npc.y).distance(home) < 1.0 {
+                    npc.net_offset = Vec2::ZERO;
+                }
             }
             dirty = true;
         }
@@ -1820,6 +1896,21 @@ mod player_item_slot {
     /// `PlayerItemSlotID.Bank1_0 + bank * 40` (the `Bank1_0..Bank4_39` block).
     pub const fn bank_1_0(bank: usize) -> i16 {
         BANK_1_0 + (bank as i16) * 40
+    }
+
+    /// `PlayerItemSlotID.CanRelay` (`PlayerItemSlotID.cs:168-186`): the
+    /// slots the server relays to the other clients. The inventory (58), the
+    /// armour (20), the dye (10), the misc (5) and the misc-dye (5) blocks are
+    /// relayable, and so is the fourth bank; the first three banks and the
+    /// trash are not.
+    pub fn can_relay(slot: i16) -> bool {
+        // 0..99: the inventory, the armour, the dye, the misc and the
+        // misc-dye blocks.
+        if (0..99).contains(&slot) {
+            return true;
+        }
+        // The fourth bank (`Bank4_0`, the only relayable bank).
+        (bank_1_0(3)..bank_1_0(3) + 40).contains(&slot)
     }
 }
 
@@ -2339,6 +2430,65 @@ mod handshake_tests {
             "the offset is the visual lag: {:.2}",
             peer.off_x
         );
+    }
+
+    #[test]
+    fn the_net_offset_is_cleared_below_two_pixels() {
+        // The C#'s shortcut: under 2 px the offset is zeroed in one tick.
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.player.as_mut().unwrap().x = 100.0;
+        pump(&mut host_app, &mut client_app, 12);
+        host_app.player.as_mut().unwrap().x = 161.0;
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = client_app.remote_players.get_mut(&0).expect("host peer stored");
+        peer.off_x = 1.5;
+        peer.off_y = 0.0;
+        client_app.net_interp_tick(1.0 / 60.0);
+        assert_eq!(client_app.remote_players[&0].off_x, 0.0);
+    }
+
+    #[test]
+    fn the_peer_inventory_slot_relays_to_the_other_clients() {
+        // `MessageBuffer.cs:399-462` — the server stores the client's slot
+        // and relays it to the other clients (`PlayerItemSlotID.CanRelay`
+        // `:454-457`).
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr.clone(), String::new()));
+        // A second client on the same host.
+        let mut second = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        // The second client's join push carries its 59 grid slots; the relay
+        // lands them in the first client's peer state.
+        let peer = second.local_id as u32;
+        let mut relayed = 0usize;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            relayed = client_app
+                .remote_players
+                .get(&peer)
+                .map(|p| p.inventory.len())
+                .unwrap_or(0);
+            if relayed > 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(relayed > 0, "the relayed inventory slots");
     }
 
     #[test]

@@ -193,6 +193,22 @@ pub(crate) fn square_tile_frame_gen(world: &mut World, x: i32, y: i32) {
     square_tile_frame(world, x, y, true, &mut destroy_object, &mut kill);
 }
 
+/// `WorldGen.SquareTileFrame(i, j)` with the default `resetFrame: true`
+/// (`WorldGen.cs:80185-80196`) — the wiring devices' post-toggle wake
+/// (`Wiring.cs:1009`, `:1045`, `:1641`-area, `:2385`-area): the 3×3
+/// `TileFrame` walk whose `Check*` chain may pop the tile's object, the
+/// produced drops handed to the app layer.
+pub fn square_tile_frame_default(world: &mut World, x: i32, y: i32) -> Vec<ObjectDrop> {
+    let mut destroy_object = false;
+    let mut kill = TileKill {
+        kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
+        ..Default::default()
+    };
+    square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill);
+    after_edit(world, x, y);
+    kill.object_drops
+}
+
 /// The body of `KillTile` plus the shared `WorldGen.destroyObject` flag
 /// (:4236). The guarded checks re-entered through the cascade's own `KillTile`
 /// calls early-return while the flag is set; the unguarded `CheckAlch`,
@@ -2528,6 +2544,78 @@ pub fn can_kill_tile(
     !chest_holds_items(anchor_x, anchor_y)
 }
 
+/// `WorldGen.PlaceWire` / `PlaceWire2` / `PlaceWire3` / `PlaceWire4`
+/// (`WorldGen.cs:58111-58218`): the four wire colours' placement. The C# has
+/// one one-line function per `Tile.wire*` bit (`Tile.cs:623-657`); the port
+/// keeps the wires in the side table ([`crate::wiring::WireState`]), so the
+/// colour is a parameter and the four functions are one.
+///
+/// The C#'s sound (`SoundEngine.PlaySound(0, i * 16, j * 16)`) and its net
+/// message are app-side.
+pub fn place_wire(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    color: crate::wiring::WireColor,
+) -> bool {
+    if !world.in_bounds(x, y) {
+        return false;
+    }
+    if world.wires.get(x, y, color) {
+        return false;
+    }
+    world.wires.set(x, y, color, true);
+    true
+}
+
+/// `WorldGen.KillWire` / `KillWire2` / `KillWire3` / `KillWire4`
+/// (`WorldGen.cs:58122-58230`): the wire comes off the tile. The C#'s item
+/// drop (`Item.NewItem(..., 530)`) and its dust are app-side — the core has
+/// no item pool.
+pub fn kill_wire(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    color: crate::wiring::WireColor,
+) -> bool {
+    if !world.in_bounds(x, y) {
+        return false;
+    }
+    if !world.wires.get(x, y, color) {
+        return false;
+    }
+    world.wires.set(x, y, color, false);
+    true
+}
+
+/// `WorldGen.PlaceActuator` (`WorldGen.cs:58011-58020`): the actuator bit on
+/// the tile (`Tile.actuator`, `Tile.cs:691-694`).
+pub fn place_actuator(world: &mut World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.flags & crate::tile::FLAG_ACTUATOR != 0 {
+        return false;
+    }
+    let i = world.index(x, y);
+    world.tiles[i].flags |= crate::tile::FLAG_ACTUATOR;
+    true
+}
+
+/// `WorldGen.KillActuator` (`WorldGen.cs:58022-58040`): the actuator bit
+/// comes off. The C#'s item drop (849) and its dust are app-side.
+pub fn kill_actuator(world: &mut World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.flags & crate::tile::FLAG_ACTUATOR == 0 {
+        return false;
+    }
+    let i = world.index(x, y);
+    world.tiles[i].flags &= !crate::tile::FLAG_ACTUATOR;
+    true
+}
+
 /// Removes the background wall at `(x, y)`. Returns the wall id.
 pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
     let t = *world.tile(x, y)?;
@@ -2736,6 +2824,14 @@ fn place_planter_box(world: &mut World, x: i32, y: i32, style: i32) -> bool {
 #[derive(Debug)]
 pub enum TileInteraction {
     None,
+    /// `Player.cs:33279-33284` — the unconditional tail of
+    /// `TileInteractionsUse`: every tile that reaches it hands the click to
+    /// `GetCraftingFilterForTile` (`:33312-33335`); the app layer decides
+    /// whether the kind is a crafting station (`TileUsedInRecipes`, the
+    /// `TileCountsAs` inheritance included) or a water source, and only a
+    /// resolved filter consumes the click (the C#'s `flag2 = true` under
+    /// the non-null check).
+    StationInteract { kind: u16 },
     /// `WorldGen.OpenDoor` succeeded (`SoundEngine.PlaySound(8)`, `:37732`).
     DoorOpened {
         object_drops: Vec<ObjectDrop>,
@@ -2769,6 +2865,11 @@ pub enum TileInteraction {
     /// (frameX > 0) ? -18 : 18`. No sound; the flame overlay and the light
     /// emission follow the frame.
     CandleToggled,
+    /// `Player.cs:32174-32178`: the used tile is a lever (132), a switch
+    /// (136) or a timer (144) — `Wiring.HitSwitch` fires and the click is
+    /// consumed. The wiring itself is app-side (the core has no wiring
+    /// state), so the interaction carries the cell.
+    HitSwitch { x: i32, y: i32 },
     /// The chair sit decoded (`PlayerSittingHelper.GetSittingTargetInfo`'s
     /// case 15, `PlayerSittingHelper.cs:163-182`): the seat world position is
     /// the chair's bottom-centre shifted `targetDirection * 6` px, the
@@ -2849,6 +2950,12 @@ pub fn interact_at(
     if !t.active() {
         return TileInteraction::None;
     }
+    // The switch family (`Player.cs:32171-32179`): using a lever (132), a
+    // switch (136) or a timer (144) trips the wiring. The C#'s chain tests
+    // the kind literal before the dials and the furniture.
+    if matches!(t.kind, 132 | 136 | 144) {
+        return TileInteraction::HitSwitch { x: i, y: j };
+    }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no
     // defs for 356/663 (they place through the legacy single-tile route), so
@@ -2884,7 +2991,10 @@ pub fn interact_at(
     // where the C# chain tests `Main.tile[myX, myY].type` literals
     // (`Player.cs:32835`/:32857 for 10/11).
     let Some(def) = crate::tileobject::def_for_tile(t.kind) else {
-        return TileInteraction::None;
+        // No registry def: the C# chain falls through to the crafting
+        // station tail (`Player.cs:33279`), which the legacy single-tile
+        // kinds (the dials aside — they returned above) reach as well.
+        return TileInteraction::StationInteract { kind: t.kind };
     };
     match def.interaction {
         crate::tileobject::Interaction::Bank(bank) => {
@@ -3004,7 +3114,9 @@ pub fn interact_at(
             // `DropItemFromExtractinator` `:42081-42089`).
             TileInteraction::Extractinator
         }
-        crate::tileobject::Interaction::None => TileInteraction::None,
+        crate::tileobject::Interaction::None => {
+            TileInteraction::StationInteract { kind: t.kind }
+        }
         crate::tileobject::Interaction::Door => {
             let mut drops = Vec::new();
             if t.kind == 10 {
@@ -5186,16 +5298,26 @@ mod tests {
     #[test]
     fn test_DW_4_1_interact_at_ignores_non_interaction_tiles() {
         // The fall-through contract: a stone tile, an air cell and a chest
-        // (registry kind with `Interaction::None`) all return `None`.
+        // (registry kind with `Interaction::None`). The C# tail
+        // (`Player.cs:33279-33284`) hands every reached tile to the crafting
+        // station probe — the active tiles answer `StationInteract`, the air
+        // cell never reaches the dispatcher (`None`); the app layer resolves
+        // whether the probed kind is a station.
         let mut w = closed_door_world();
         assert!(place_item_tile(&mut w, 14, 19, 21, 0, 1));
         let blocked = no_blocker as fn(i32, i32) -> bool;
-        for (x, y) in [(10i32, 20i32), (12, 18), (14, 19)] {
-            assert!(matches!(
-                interact_at(&mut w, x, y, 1, &blocked),
-                TileInteraction::None
-            ));
-        }
+        assert!(matches!(
+            interact_at(&mut w, 10, 20, 1, &blocked),
+            TileInteraction::StationInteract { kind: 1 }
+        ));
+        assert!(matches!(
+            interact_at(&mut w, 12, 18, 1, &blocked),
+            TileInteraction::None
+        ));
+        assert!(matches!(
+            interact_at(&mut w, 14, 19, 1, &blocked),
+            TileInteraction::StationInteract { kind: 21 }
+        ));
     }
 
     /// A 40x40 world with a placed 3x3 extractinator at origin (9, 17)
@@ -5245,9 +5367,11 @@ mod tests {
             interact_at(&mut w, 9, 17, 1, &blocked),
             TileInteraction::Extractinator
         ));
+        // The non-extractinator cell reaches the C#'s station tail
+        // (`Player.cs:33279`).
         assert!(matches!(
             interact_at(&mut w, 5, 20, 1, &blocked),
-            TileInteraction::None
+            TileInteraction::StationInteract { .. }
         ));
     }
 
@@ -5698,10 +5822,10 @@ mod tests {
                 "tile {kind} opens chest {chest}"
             );
         }
-        // An ordinary tile: no interaction.
+        // An ordinary tile: the C# station tail answers (`Player.cs:33279`).
         let mut w = soil_world(2);
         let hit = interact_at(&mut w, 10, 20, 1, &|_, _| false);
-        assert!(matches!(hit, TileInteraction::None));
+        assert!(matches!(hit, TileInteraction::StationInteract { .. }));
     }
 
     #[test]
@@ -6935,14 +7059,19 @@ mod tests {
         set_active(&mut w, 10, 19, 356);
         set_active(&mut w, 11, 19, 1); // stone next to the sundial
         let blocked = no_blocker as fn(i32, i32) -> bool;
-        for (x, y) in [(11i32, 19i32), (10, 20), (12, 19)] {
-            assert!(
-                matches!(
-                    interact_at(&mut w, x, y, 1, &blocked),
-                    TileInteraction::None
-                ),
-                "({x}, {y}) has no interaction"
-            );
+        // The dial's own cell (10, 19) answered above; the active tiles
+        // (the stone (11, 19), the floor (10, 20)) reach the C#'s station
+        // tail (`Player.cs:33279`), the air cell (12, 19) stays `None`.
+        for (x, y, air) in [(11i32, 19i32, false), (10, 20, false), (12, 19, true)] {
+            let hit = interact_at(&mut w, x, y, 1, &blocked);
+            if air {
+                assert!(matches!(hit, TileInteraction::None), "({x}, {y}) is air");
+            } else {
+                assert!(
+                    matches!(hit, TileInteraction::StationInteract { .. }),
+                    "({x}, {y}) probes the station tail"
+                );
+            }
         }
         assert!(!w.fast_forward_to_dawn && !w.fast_forward_to_dusk);
         assert_eq!(w.sundial_cooldown, 0);

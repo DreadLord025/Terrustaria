@@ -59,17 +59,17 @@ pub enum NpcKind {
     Hornet,
     /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
     MeteorHead,
-    /// `NPCID.GoblinThief` (26) — the invasion runner (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinThief` (27) — the invasion runner (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 12, def 4, 60 HP, kb 0.8, value 100).
     GoblinThief,
-    /// `NPCID.GoblinWarrior` (27) — the invasion fighter (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinWarrior` (28) — the invasion fighter (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
     GoblinWarrior,
-    /// `NPCID.GoblinArcher` (28) — the invasion archer (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinArcher` (111) — the invasion archer (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 25, def 8, 110 HP, kb 0.5, value 150; the arrows
     /// ride the projectile work).
     GoblinArcher,
-    /// `NPCID.GoblinPeon` (111) — the invasion grunt (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinPeon` (26) — the invasion grunt (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
     GoblinPeon,
     /// `NPCID.GoblinSummoner` (471) — the hardmode invasion caster
@@ -1495,6 +1495,420 @@ impl NpcKind {
         crate::bestiary::entry_for_npc(self, SlimeVariant::Blue).net_id
     }
 
+    /// `AI_003_Fighters`'s per-type walk-speed caps (`NPC.cs:57403-59800`):
+    /// the velocity ceiling each kind walks at.
+    ///
+    /// The C#'s groups:
+    /// - the `num107` default (`:58322-58374`): 1f;
+    /// - the `num83` group (`:57606-57691`): 1.5f with the per-type rows;
+    /// - the cap-2 group (`:57554-57578`);
+    /// - the cap-3 group (`:57520-57552`);
+    /// - the shooters' group (`:59717-59750`): 1f with the per-type rows;
+    /// - the Martian engineer's own arm (`:58032-58069`): 1.5f.
+    ///
+    /// The kinds whose arm is bespoke (the pillar mobs, the vortex family,
+    /// the Goblin Archer) carry their own speed and are not listed — the
+    /// table is the walkers' shared source.
+    /// `NPC.HitSound` (`NPC.cs:6475`, the per-kind `SetDefaults` assignment)
+    /// — the cue the strike plays (`NPC.StrikeNPC`, `:81544-81553`).
+    ///
+    /// `None` is the C#'s `null` (`NPC.cs:8537`): the kinds with no row in
+    /// `SetDefaults` play no hit sound. The cue names are the legacy asset
+    /// names — the sound id 3 family is `NPC_Hit_N` (`SoundID.NPCHitN`).
+    pub fn hit_sound(self) -> Option<&'static str> {
+        Some(match self {
+            NpcKind::Slime => "NPC_Hit_1",
+            NpcKind::DemonEye => "NPC_Hit_1",
+            NpcKind::Zombie => "NPC_Hit_1",
+            NpcKind::KingSlime => "NPC_Hit_1",
+            NpcKind::EyeOfCthulhu => "NPC_Hit_1",
+            NpcKind::Hungry => "NPC_Hit_9",
+            NpcKind::LeechHead => "NPC_Hit_9",
+            NpcKind::ServantOfCthulhu => "NPC_Hit_1",
+            NpcKind::WanderingEye => "NPC_Hit_1",
+            NpcKind::Guide => "NPC_Hit_1",
+            NpcKind::Skeleton => "NPC_Hit_2",
+            NpcKind::UndeadMiner => "NPC_Hit_2",
+            NpcKind::CaveBat => "NPC_Hit_1",
+            NpcKind::JungleBat => "NPC_Hit_1",
+            NpcKind::Hellbat => "NPC_Hit_1",
+            NpcKind::VoodooDemon => "NPC_Hit_21",
+            NpcKind::EaterOfSouls => "NPC_Hit_1",
+            NpcKind::Hornet => "NPC_Hit_1",
+            NpcKind::MeteorHead => "NPC_Hit_3",
+            NpcKind::GoblinSorcerer => "NPC_Hit_1",
+            NpcKind::Tim => "NPC_Hit_2",
+            NpcKind::DarkCaster => "NPC_Hit_2",
+            NpcKind::FireImp => "NPC_Hit_1",
+            NpcKind::ChaosBall => "NPC_Hit_3",
+            NpcKind::BurningSphere => "NPC_Hit_3",
+            NpcKind::WaterSphere => "NPC_Hit_3",
+            NpcKind::Goldfish => "NPC_Hit_1",
+            NpcKind::Piranha => "NPC_Hit_1",
+            NpcKind::Shark => "NPC_Hit_1",
+            NpcKind::DevourerHead => "NPC_Hit_1",
+            NpcKind::GiantWormHead => "NPC_Hit_1",
+            NpcKind::Merchant => "NPC_Hit_1",
+            NpcKind::Dryad => "NPC_Hit_1",
+            NpcKind::Nurse => "NPC_Hit_1",
+            NpcKind::ArmsDealer => "NPC_Hit_1",
+            NpcKind::Demolitionist => "NPC_Hit_1",
+            NpcKind::Painter => "NPC_Hit_1",
+            NpcKind::WitchDoctor => "NPC_Hit_1",
+            NpcKind::Clothier => "NPC_Hit_1",
+            NpcKind::TravellingMerchant => "NPC_Hit_1",
+            NpcKind::Angler => "NPC_Hit_1",
+            NpcKind::Wizard => "NPC_Hit_1",
+            NpcKind::Mechanic => "NPC_Hit_1",
+            NpcKind::Stylist => "NPC_Hit_1",
+            NpcKind::TaxCollector => "NPC_Hit_1",
+            NpcKind::Golfer => "NPC_Hit_1",
+            NpcKind::Zoologist => "NPC_Hit_1",
+            NpcKind::Princess => "NPC_Hit_1",
+            NpcKind::DyeTrader => "NPC_Hit_1",
+            NpcKind::PartyGirl => "NPC_Hit_1",
+            NpcKind::QueenBee => "NPC_Hit_1",
+            NpcKind::SkeletronHead => "NPC_Hit_2",
+            NpcKind::WallOfFlesh => "NPC_Hit_8",
+            NpcKind::TheDestroyer => "NPC_Hit_4",
+            NpcKind::SkeletronPrime => "NPC_Hit_4",
+            NpcKind::Retinazer => "NPC_Hit_1",
+            NpcKind::Spazmatism => "NPC_Hit_1",
+            NpcKind::Plantera => "NPC_Hit_1",
+            NpcKind::BrainOfCthulhu => "NPC_Hit_9",
+            NpcKind::Creeper => "NPC_Hit_9",
+            NpcKind::GoblinThief => "NPC_Hit_1",
+            NpcKind::GoblinWarrior => "NPC_Hit_1",
+            NpcKind::GoblinArcher => "NPC_Hit_1",
+            NpcKind::GoblinPeon => "NPC_Hit_1",
+            NpcKind::GoblinSummoner => "NPC_Hit_40",
+            NpcKind::SnowmanGangsta => "NPC_Hit_11",
+            NpcKind::SnowBalla => "NPC_Hit_11",
+            NpcKind::MysterySnowman => "NPC_Hit_11",
+            NpcKind::MartianOfficer => "NPC_Hit_39",
+            NpcKind::GrayGrunt => "NPC_Hit_39",
+            NpcKind::MartianEngineer => "NPC_Hit_39",
+            NpcKind::GigaZapper => "NPC_Hit_39",
+            NpcKind::MartianWalker => "NPC_Hit_4",
+            NpcKind::MartianProbe => "NPC_Hit_4",
+            NpcKind::MartianDrone => "NPC_Hit_42",
+            NpcKind::ScutlixRider => "NPC_Hit_39",
+            NpcKind::Scutlix => "NPC_Hit_51",
+            NpcKind::MartianSaucer => "NPC_Hit_4",
+            NpcKind::MartianSaucerTurret => "NPC_Hit_4",
+            NpcKind::MartianSaucerCannon => "NPC_Hit_4",
+            NpcKind::MartianSaucerCore => "NPC_Hit_4",
+            NpcKind::FlyingDutchman => "NPC_Hit_19",
+            NpcKind::FlyingDutchmanCannon => "NPC_Hit_4",
+            NpcKind::DD2GoblinT1 => "dd2_goblin_hurt_0",
+            NpcKind::DD2GoblinT2 => "dd2_goblin_hurt_0",
+            NpcKind::DD2GoblinT3 => "dd2_goblin_hurt_0",
+            NpcKind::DD2GoblinBomberT1 => "dd2_goblin_bomber_hurt_0",
+            NpcKind::DD2GoblinBomberT2 => "dd2_goblin_bomber_hurt_0",
+            NpcKind::DD2GoblinBomberT3 => "dd2_goblin_bomber_hurt_0",
+            NpcKind::DD2JavelinT1 => "dd2_javelin_throwers_hurt_0",
+            NpcKind::DD2JavelinT2 => "dd2_javelin_throwers_hurt_0",
+            NpcKind::DD2JavelinT3 => "dd2_javelin_throwers_hurt_0",
+            NpcKind::DD2SkeletonT1 => "dd2_skeleton_hurt_0",
+            NpcKind::DD2SkeletonT3 => "dd2_skeleton_hurt_0",
+            NpcKind::DD2DarkMage => "dd2_dark_mage_hurt_0",
+            NpcKind::DD2Betsy => "dd2_betsy_hurt_0",
+            NpcKind::DD2WitherBeast => "dd2_wither_beast_hurt_0",
+            NpcKind::DD2Bartender => "NPC_Hit_1",
+            NpcKind::DD2EterniaCrystal => "dd2_crystal_cart_impact_0",
+            NpcKind::DD2LanePortal => "NPC_Hit_1",
+            NpcKind::DD2WyvernT1 => "dd2_wyvern_hurt_0",
+            NpcKind::DD2WyvernT2 => "dd2_wyvern_hurt_0",
+            NpcKind::DD2WyvernT3 => "dd2_wyvern_hurt_0",
+            NpcKind::DD2DarkMageT3 => "dd2_dark_mage_hurt_0",
+            NpcKind::DD2WitherBeastT3 => "dd2_wither_beast_hurt_0",
+            NpcKind::DD2DrakinT2 => "dd2_drakin_hurt_0",
+            NpcKind::DD2DrakinT3 => "dd2_drakin_hurt_0",
+            NpcKind::DD2KoboldWalkerT2 => "dd2_kobold_hurt_0",
+            NpcKind::DD2KoboldWalkerT3 => "dd2_kobold_hurt_0",
+            NpcKind::DD2KoboldFlyerT2 => "dd2_kobold_flyer_hurt_0",
+            NpcKind::DD2KoboldFlyerT3 => "dd2_kobold_flyer_hurt_0",
+            NpcKind::DD2OgreT2 => "dd2_ogre_hurt_0",
+            NpcKind::DD2OgreT3 => "dd2_ogre_hurt_0",
+            NpcKind::AncientCultist => "NPC_Hit_55",
+            NpcKind::StardustTower => "NPC_Hit_1",
+            NpcKind::NebulaTower => "NPC_Hit_1",
+            NpcKind::SolarTower => "NPC_Hit_1",
+            NpcKind::VortexTower => "NPC_Hit_1",
+            NpcKind::StardustCellBig => "NPC_Hit_1",
+            NpcKind::StardustCellSmall => "NPC_Hit_1",
+            NpcKind::StardustJellyfishBig => "NPC_Hit_1",
+            NpcKind::NebulaBeast => "NPC_Hit_6",
+            NpcKind::VortexRifleman => "NPC_Hit_1",
+            NpcKind::VortexSoldier => "NPC_Hit_1",
+            NpcKind::VortexHunter => "NPC_Hit_1",
+            NpcKind::VortexAlien => "NPC_Hit_1",
+            NpcKind::NebulaFloater => "NPC_Hit_1",
+            NpcKind::BrainSuckler => "NPC_Hit_1",
+            NpcKind::StardustSpiderBig => "NPC_Hit_6",
+            NpcKind::StardustSpiderSmall => "NPC_Hit_1",
+            NpcKind::StardustSoldier => "NPC_Hit_6",
+            NpcKind::SolarDrakomire => "NPC_Hit_1",
+            NpcKind::SolarDrakomireRider => "NPC_Hit_1",
+            NpcKind::SolarSroller => "NPC_Hit_7",
+            NpcKind::SolarCorite => "NPC_Hit_3",
+            NpcKind::SolarCrawltipedeHead => "NPC_Hit_11",
+            NpcKind::SolarCrawltipedeBody => "NPC_Hit_11",
+            NpcKind::SolarCrawltipedeTail => "NPC_Hit_8",
+            NpcKind::StardustWormHead => "NPC_Hit_1",
+            NpcKind::SolarSpearman => "NPC_Hit_1",
+            NpcKind::SolarSelenian => "NPC_Hit_1",
+            NpcKind::Predictor => "NPC_Hit_1",
+            NpcKind::VortexHeadcrab => "NPC_Hit_1",
+            NpcKind::MoonLordHead => "NPC_Hit_57",
+            NpcKind::MoonLordHand => "NPC_Hit_57",
+            NpcKind::MoonLordCore => "NPC_Hit_57",
+            NpcKind::MoonLordFreeEye => "NPC_Hit_1",
+            NpcKind::MoonLordLeechBlob => "NPC_Hit_57",
+            NpcKind::PirateDeckhand => "NPC_Hit_1",
+            NpcKind::PirateCaptainsMate => "NPC_Hit_1",
+            NpcKind::PirateArcher => "NPC_Hit_1",
+            NpcKind::PirateCorsair => "NPC_Hit_1",
+            NpcKind::PirateCaptain => "NPC_Hit_1",
+            NpcKind::Golem => "NPC_Hit_4",
+            NpcKind::PrimeCannon => "NPC_Hit_4",
+            NpcKind::PrimeSaw => "NPC_Hit_4",
+            NpcKind::PrimeVice => "NPC_Hit_4",
+            NpcKind::PrimeLaser => "NPC_Hit_4",
+            NpcKind::WallOfFleshEye => "NPC_Hit_8",
+            NpcKind::SkeletronHand => "NPC_Hit_2",
+            NpcKind::Deerclops => "deerclops_hit_0",
+            NpcKind::GoblinTinkerer => "NPC_Hit_1",
+            NpcKind::EaterOfWorldsHead => "NPC_Hit_1",
+            NpcKind::DevourerBody => "NPC_Hit_1",
+            NpcKind::DevourerTail => "NPC_Hit_1",
+            NpcKind::GiantWormBody => "NPC_Hit_1",
+            NpcKind::GiantWormTail => "NPC_Hit_1",
+            NpcKind::EaterOfWorldsBody => "NPC_Hit_1",
+            NpcKind::EaterOfWorldsTail => "NPC_Hit_1",
+            NpcKind::GolemHead => "NPC_Hit_4",
+            NpcKind::GolemFistLeft => "NPC_Hit_4",
+            NpcKind::GolemHeadFree => "NPC_Hit_4",
+            NpcKind::BoundGoblin => "NPC_Hit_1",
+            NpcKind::BoundWizard => "NPC_Hit_1",
+            NpcKind::BoundMechanic => "NPC_Hit_1",
+            NpcKind::SleepingAngler => "NPC_Hit_1",
+            NpcKind::WebbedStylist => "NPC_Hit_1",
+            NpcKind::SleepingGolfer => "NPC_Hit_1",
+            _ => return None,
+        })
+    }
+
+    /// `NPC.DeathSound` (`NPC.cs:6477`) — the cue the death plays
+    /// (`NPC.checkDead`, `:91852`). The sound id 4 family is the
+    /// `NPC_Killed_N` assets (`SoundID.NPCDeathN`).
+    pub fn death_sound(self) -> Option<&'static str> {
+        Some(match self {
+            NpcKind::Slime => "NPC_Killed_1",
+            NpcKind::DemonEye => "NPC_Killed_1",
+            NpcKind::Zombie => "NPC_Killed_2",
+            NpcKind::KingSlime => "NPC_Killed_1",
+            NpcKind::EyeOfCthulhu => "NPC_Killed_1",
+            NpcKind::Hungry => "NPC_Killed_11",
+            NpcKind::LeechHead => "NPC_Killed_12",
+            NpcKind::ServantOfCthulhu => "NPC_Killed_1",
+            NpcKind::WanderingEye => "NPC_Killed_1",
+            NpcKind::Guide => "NPC_Killed_1",
+            NpcKind::Skeleton => "NPC_Killed_2",
+            NpcKind::UndeadMiner => "NPC_Killed_2",
+            NpcKind::CaveBat => "NPC_Killed_4",
+            NpcKind::JungleBat => "NPC_Killed_4",
+            NpcKind::Hellbat => "NPC_Killed_4",
+            NpcKind::VoodooDemon => "NPC_Killed_24",
+            NpcKind::EaterOfSouls => "NPC_Killed_1",
+            NpcKind::Hornet => "NPC_Killed_1",
+            NpcKind::MeteorHead => "NPC_Killed_3",
+            NpcKind::GoblinSorcerer => "NPC_Killed_1",
+            NpcKind::Tim => "NPC_Killed_2",
+            NpcKind::DarkCaster => "NPC_Killed_2",
+            NpcKind::FireImp => "NPC_Killed_1",
+            NpcKind::ChaosBall => "NPC_Killed_3",
+            NpcKind::BurningSphere => "NPC_Killed_3",
+            NpcKind::WaterSphere => "NPC_Killed_3",
+            NpcKind::Goldfish => "NPC_Killed_1",
+            NpcKind::Piranha => "NPC_Killed_1",
+            NpcKind::Shark => "NPC_Killed_1",
+            NpcKind::DevourerHead => "NPC_Killed_1",
+            NpcKind::GiantWormHead => "NPC_Killed_1",
+            NpcKind::Merchant => "NPC_Killed_1",
+            NpcKind::Dryad => "NPC_Killed_1",
+            NpcKind::Nurse => "NPC_Killed_1",
+            NpcKind::ArmsDealer => "NPC_Killed_1",
+            NpcKind::Demolitionist => "NPC_Killed_1",
+            NpcKind::Painter => "NPC_Killed_1",
+            NpcKind::WitchDoctor => "NPC_Killed_1",
+            NpcKind::Clothier => "NPC_Killed_1",
+            NpcKind::TravellingMerchant => "NPC_Killed_1",
+            NpcKind::Angler => "NPC_Killed_6",
+            NpcKind::Wizard => "NPC_Killed_1",
+            NpcKind::Mechanic => "NPC_Killed_1",
+            NpcKind::Stylist => "NPC_Killed_1",
+            NpcKind::TaxCollector => "NPC_Killed_1",
+            NpcKind::Golfer => "NPC_Killed_1",
+            NpcKind::Zoologist => "NPC_Killed_1",
+            NpcKind::Princess => "NPC_Killed_6",
+            NpcKind::DyeTrader => "NPC_Killed_1",
+            NpcKind::PartyGirl => "NPC_Killed_1",
+            NpcKind::QueenBee => "NPC_Killed_66",
+            NpcKind::SkeletronHead => "NPC_Killed_2",
+            NpcKind::WallOfFlesh => "NPC_Killed_10",
+            NpcKind::TheDestroyer => "NPC_Killed_14",
+            NpcKind::SkeletronPrime => "NPC_Killed_14",
+            NpcKind::Retinazer => "NPC_Killed_14",
+            NpcKind::Spazmatism => "NPC_Killed_14",
+            NpcKind::Plantera => "NPC_Killed_1",
+            NpcKind::BrainOfCthulhu => "NPC_Killed_11",
+            NpcKind::Creeper => "NPC_Killed_11",
+            NpcKind::GoblinThief => "NPC_Killed_1",
+            NpcKind::GoblinWarrior => "NPC_Killed_1",
+            NpcKind::GoblinArcher => "NPC_Killed_1",
+            NpcKind::GoblinPeon => "NPC_Killed_1",
+            NpcKind::GoblinSummoner => "NPC_Killed_42",
+            NpcKind::SnowmanGangsta => "NPC_Killed_15",
+            NpcKind::SnowBalla => "NPC_Killed_15",
+            NpcKind::MysterySnowman => "NPC_Killed_15",
+            NpcKind::MartianOfficer => "NPC_Killed_57",
+            NpcKind::GrayGrunt => "NPC_Killed_57",
+            NpcKind::MartianEngineer => "NPC_Killed_57",
+            NpcKind::GigaZapper => "NPC_Killed_57",
+            NpcKind::MartianWalker => "NPC_Killed_14",
+            NpcKind::MartianProbe => "NPC_Killed_14",
+            NpcKind::MartianDrone => "NPC_Killed_44",
+            NpcKind::ScutlixRider => "NPC_Killed_57",
+            NpcKind::Scutlix => "NPC_Killed_54",
+            NpcKind::MartianSaucer => "NPC_Killed_14",
+            NpcKind::MartianSaucerTurret => "NPC_Killed_14",
+            NpcKind::MartianSaucerCannon => "NPC_Killed_14",
+            NpcKind::MartianSaucerCore => "NPC_Killed_14",
+            NpcKind::FlyingDutchman => "NPC_Killed_22",
+            NpcKind::FlyingDutchmanCannon => "NPC_Killed_14",
+            NpcKind::DD2GoblinT1 => "dd2_goblin_death_0",
+            NpcKind::DD2GoblinT2 => "dd2_goblin_death_0",
+            NpcKind::DD2GoblinT3 => "dd2_goblin_death_0",
+            NpcKind::DD2GoblinBomberT1 => "dd2_goblin_bomber_death_0",
+            NpcKind::DD2GoblinBomberT2 => "dd2_goblin_bomber_death_0",
+            NpcKind::DD2GoblinBomberT3 => "dd2_goblin_bomber_death_0",
+            NpcKind::DD2JavelinT1 => "dd2_javelin_throwers_death_0",
+            NpcKind::DD2JavelinT2 => "dd2_javelin_throwers_death_0",
+            NpcKind::DD2JavelinT3 => "dd2_javelin_throwers_death_0",
+            NpcKind::DD2SkeletonT1 => "dd2_skeleton_death_0",
+            NpcKind::DD2SkeletonT3 => "dd2_skeleton_death_0",
+            NpcKind::DD2DarkMage => "dd2_dark_mage_death_0",
+            NpcKind::DD2Betsy => "dd2_betsy_death_0",
+            NpcKind::DD2WitherBeast => "dd2_wither_beast_death_0",
+            NpcKind::DD2Bartender => "NPC_Killed_1",
+            NpcKind::DD2EterniaCrystal => "NPC_Killed_15",
+            NpcKind::DD2LanePortal => "NPC_Killed_1",
+            NpcKind::DD2WyvernT1 => "dd2_wyvern_death_0",
+            NpcKind::DD2WyvernT2 => "dd2_wyvern_death_0",
+            NpcKind::DD2WyvernT3 => "dd2_wyvern_death_0",
+            NpcKind::DD2DarkMageT3 => "dd2_dark_mage_death_0",
+            NpcKind::DD2WitherBeastT3 => "dd2_wither_beast_death_0",
+            NpcKind::DD2DrakinT2 => "dd2_drakin_death_0",
+            NpcKind::DD2DrakinT3 => "dd2_drakin_death_0",
+            NpcKind::DD2KoboldWalkerT2 => "dd2_kobold_death_0",
+            NpcKind::DD2KoboldWalkerT3 => "dd2_kobold_death_0",
+            NpcKind::DD2KoboldFlyerT2 => "dd2_kobold_flyer_death_0",
+            NpcKind::DD2KoboldFlyerT3 => "dd2_kobold_flyer_death_0",
+            NpcKind::DD2OgreT2 => "dd2_ogre_death_0",
+            NpcKind::DD2OgreT3 => "dd2_ogre_death_0",
+            NpcKind::AncientCultist => "NPC_Killed_59",
+            NpcKind::StardustTower => "NPC_Killed_1",
+            NpcKind::NebulaTower => "NPC_Killed_1",
+            NpcKind::SolarTower => "NPC_Killed_1",
+            NpcKind::VortexTower => "NPC_Killed_1",
+            NpcKind::StardustCellBig => "NPC_Killed_1",
+            NpcKind::StardustCellSmall => "NPC_Killed_1",
+            NpcKind::StardustJellyfishBig => "NPC_Killed_1",
+            NpcKind::NebulaBeast => "NPC_Killed_1",
+            NpcKind::VortexRifleman => "NPC_Killed_6",
+            NpcKind::VortexSoldier => "NPC_Killed_5",
+            NpcKind::VortexHunter => "NPC_Killed_6",
+            NpcKind::VortexAlien => "NPC_Killed_6",
+            NpcKind::NebulaFloater => "NPC_Killed_1",
+            NpcKind::BrainSuckler => "NPC_Killed_1",
+            NpcKind::StardustSpiderBig => "NPC_Killed_1",
+            NpcKind::StardustSpiderSmall => "NPC_Killed_5",
+            NpcKind::StardustSoldier => "NPC_Killed_1",
+            NpcKind::SolarDrakomire => "NPC_Killed_1",
+            NpcKind::SolarDrakomireRider => "NPC_Killed_1",
+            NpcKind::SolarSroller => "NPC_Killed_5",
+            NpcKind::SolarCorite => "NPC_Killed_3",
+            NpcKind::SolarCrawltipedeHead => "NPC_Killed_22",
+            NpcKind::SolarCrawltipedeBody => "NPC_Killed_22",
+            NpcKind::SolarCrawltipedeTail => "NPC_Killed_22",
+            NpcKind::StardustWormHead => "NPC_Killed_1",
+            NpcKind::SolarSpearman => "NPC_Killed_1",
+            NpcKind::SolarSelenian => "NPC_Killed_1",
+            NpcKind::Predictor => "NPC_Killed_5",
+            NpcKind::VortexHeadcrab => "NPC_Killed_1",
+            NpcKind::MoonLordHead => "NPC_Killed_62",
+            NpcKind::MoonLordHand => "NPC_Killed_62",
+            NpcKind::MoonLordFreeEye => "NPC_Killed_1",
+            NpcKind::MoonLordLeechBlob => "NPC_Killed_62",
+            NpcKind::PirateDeckhand => "NPC_Killed_1",
+            NpcKind::PirateCaptainsMate => "NPC_Killed_1",
+            NpcKind::PirateArcher => "NPC_Killed_1",
+            NpcKind::PirateCorsair => "NPC_Killed_1",
+            NpcKind::PirateCaptain => "NPC_Killed_1",
+            NpcKind::Golem => "NPC_Killed_14",
+            NpcKind::PrimeCannon => "NPC_Killed_14",
+            NpcKind::PrimeSaw => "NPC_Killed_14",
+            NpcKind::PrimeVice => "NPC_Killed_14",
+            NpcKind::PrimeLaser => "NPC_Killed_14",
+            NpcKind::WallOfFleshEye => "NPC_Killed_10",
+            NpcKind::SkeletronHand => "NPC_Killed_2",
+            NpcKind::Deerclops => "deerclops_death",
+            NpcKind::GoblinTinkerer => "NPC_Killed_1",
+            NpcKind::EaterOfWorldsHead => "NPC_Killed_1",
+            NpcKind::DevourerBody => "NPC_Killed_1",
+            NpcKind::DevourerTail => "NPC_Killed_1",
+            NpcKind::GiantWormBody => "NPC_Killed_1",
+            NpcKind::GiantWormTail => "NPC_Killed_1",
+            NpcKind::EaterOfWorldsBody => "NPC_Killed_1",
+            NpcKind::EaterOfWorldsTail => "NPC_Killed_1",
+            NpcKind::GolemFistLeft => "NPC_Killed_14",
+            NpcKind::GolemHeadFree => "NPC_Killed_14",
+            NpcKind::BoundGoblin => "NPC_Killed_1",
+            NpcKind::BoundWizard => "NPC_Killed_1",
+            NpcKind::BoundMechanic => "NPC_Killed_1",
+            NpcKind::SleepingAngler => "NPC_Killed_6",
+            NpcKind::WebbedStylist => "NPC_Killed_1",
+            NpcKind::SleepingGolfer => "NPC_Killed_1",
+            _ => return None,
+        })
+    }
+
+    pub fn ai3_walk_speed(self) -> Option<f32> {
+        Some(match self {
+            NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
+            NpcKind::Skeleton => 1.5,           // the num83 group (`:57606`)
+            NpcKind::UndeadMiner => 1.0,        // the num107 default
+            NpcKind::GoblinPeon => 1.5,         // the num83 group
+            NpcKind::GoblinThief => 2.0,        // the cap-2 group (`:57554`)
+            NpcKind::GoblinWarrior => 1.0,      // the num107 default
+            NpcKind::Spazmatism => 2.0,        // the cap-2 group (`:57554`)
+            NpcKind::PirateDeckhand => 2.0,     // the cap-2 group
+            NpcKind::PirateCaptainsMate => 3.0, // the cap-3 group (`:57520`)
+            NpcKind::PirateArcher => 2.0,       // the shooters' group (`:59722`)
+            NpcKind::PirateCorsair => 1.5,      // the shooters' group (`:59727`)
+            NpcKind::PirateCaptain => 1.0,      // the shooters' default (`:59717`)
+            NpcKind::BrainScrambler => 2.0,     // the shooters' group (`:59731`)
+            NpcKind::RayGunner => 2.0,          // the shooters' group (`:59731`)
+            NpcKind::MartianOfficer => 1.0,     // the shooters' default (`:59717`)
+            NpcKind::GrayGrunt => 1.8,          // the num83 group (`:57649`)
+            NpcKind::MartianEngineer => 1.5,    // its own arm (`:58032`)
+            NpcKind::GigaZapper => 2.25,        // the num83 group (`:57653`)
+            NpcKind::MartianWalker => 4.0,      // the shooters' group (`:59735`)
+            _ => return None,
+        })
+    }
+
     /// `NPC.GetNPCInvasionGroup(type)` (`NPC.cs`): the goblin army's members
     /// (26/27/28/29/111/471) — every ported invasion NPC. The other groups
     /// (pirate 2, snow 3, ...) have no NPCs in the ported set.
@@ -2052,9 +2466,9 @@ impl NpcKind {
             // The casters: `SetDefaults` cases 29/45/32/24.
             // `NPC.cs`'s cases 26 (60) / 27+111 (80) / 28 (110) / 29 (40) /
             // 471 (2000).
-            NpcKind::GoblinThief => 60,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 80,
-            NpcKind::GoblinArcher => 110,
+            NpcKind::GoblinPeon => 60,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher => 80,
+            NpcKind::GoblinWarrior => 110,
             NpcKind::GoblinSorcerer => 40,
             NpcKind::GoblinSummoner => 2000,
             // The frost trio: 200/240/220 (`NPC.cs`'s cases 143-145).
@@ -2298,9 +2712,9 @@ impl NpcKind {
             // The casters: `SetDefaults` damage 20/20/20/30.
             // `NPC.cs`'s cases 26 (12) / 27+111 (20) / 28 (25) / 29 (20) /
             // 471 (80).
-            NpcKind::GoblinThief => 12,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 20,
-            NpcKind::GoblinArcher => 25,
+            NpcKind::GoblinPeon => 12,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher | NpcKind::GoblinSorcerer => 20,
+            NpcKind::GoblinWarrior => 25,
             NpcKind::GoblinSummoner => 80,
             // The frost trio: 50/65/55.
             NpcKind::SnowmanGangsta => 50,
@@ -2472,6 +2886,22 @@ impl NpcKind {
     }
 }
 
+/// The hostile-shot request with the C#'s `ai0`/`ai1` payload —
+/// `NPC.NewProjectile`'s trailing arguments (`Projectile.cs:10862-10863`).
+/// The plain [`Npc::wants_hostile_shot`] list carries the shots whose call
+/// site passes zero.
+#[derive(Clone, Copy, Debug)]
+pub struct HostileShotAi {
+    pub kind: u16,
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub damage: i32,
+    pub ai0: f32,
+    pub ai1: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Npc {
     /// `NPC.shimmerTransparency` (`NPC.cs`'s field) — the 1.0 of a
@@ -2489,6 +2919,12 @@ pub struct Npc {
     pub slime: SlimeVariant,
     pub x: f32,
     pub y: f32,
+    /// `Entity.oldPosition` (`NPC.cs:92605`): the position before this
+    /// tick's movement. The switch-tile bridge (`Collision.SwitchTiles`,
+    /// `NPC.cs:90504`) reads it to tell "the NPC moved onto the plate" from
+    /// "the NPC stands on it".
+    pub old_x: f32,
+    pub old_y: f32,
     pub vx: f32,
     pub vy: f32,
     pub hp: i32,
@@ -2647,6 +3083,20 @@ pub struct Npc {
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
+    /// `AI_015_KingSlime`'s `localAI[0..4]` (`NPC.cs:43121-43414`) — the
+    /// King Slime's machine: the line-of-sight counter (`localAI[0]`), the
+    /// teleport target (`localAI[1]`/`localAI[2]`) and the init latch
+    /// (`localAI[3]`).
+    pub king_slime_local: [f32; 4],
+    /// The per-NPC box override (`NPC.base.width`/`base.height`) — the King
+    /// Slime rescales its body with its hp (`AI_015`'s `base.width = (int)
+    /// (98f * this.scale)`, `NPC.cs:43347-43352`).
+    pub size_override: Option<(f32, f32)>,
+    /// `AI_054`'s `localAI[0..4]` (`NPC.cs:32370-32656`) — the Brain of
+    /// Cthulhu's machine: the blink timer (`localAI[1]`), the port's
+    /// Creeper count (`localAI[2]`, the C#'s sound latch slot — the sim
+    /// writes the count) and the despawn ramp (`localAI[3]`).
+    pub brain_local: [f32; 4],
     /// The VortexRifleman's `localAI[3]` one-shot latch
     /// (`AI_003_Fighters`' `NPC.cs:58465-58469` 0 -> 1 arm: the first
     /// tick rearms `ai[3]` to −120, once).
@@ -2669,6 +3119,19 @@ pub struct Npc {
     /// (kind, x, y, vx, vy, damage) payloads the sim resolves into the pool
     /// (the `wants_sphere` shape; the Vec = a per-tick volley).
     pub wants_hostile_shot: Vec<(u16, f32, f32, f32, f32, i32)>,
+    /// The hostile shots that carry the C#'s `ai0`/`ai1` payload — the
+    /// `NewProjectile(..., ai0, ai1)` call-site values
+    /// (`Projectile.cs:10862-10863`): the Saucer deathray's owner slot + 1
+    /// (`NPC.cs:35917`/`:36437`), the Saucer missile's 20-tick arming delay
+    /// (`NPC.cs:35845`), the Deerclops' ice spike's scale factor
+    /// (`NPC.cs:44582`) and the Insanity Shadow's variation age + angle
+    /// (`NPC.cs:44394`).
+    pub wants_hostile_shot_ai: Vec<HostileShotAi>,
+    /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
+    /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
+    /// every tick), so the index is the sim's current one; the sim writes it
+    /// before each NPC's update.
+    pub slot: usize,
     /// The probe's escape resolve (`AI()`'s aiStyle-80 phase-2 arm:
     /// `Main.StartInvasion(4); active = false;`) — the AI holds `&World`,
     /// so the sim resolves the invasion and removes the NPC.
@@ -2805,6 +3268,356 @@ pub(crate) fn angle_lerp(cur: f32, target: f32, amount: f32) -> f32 {
     }
     angle = (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
     angle
+}
+
+/// The Brain of Cthulhu's blink target (`NPC.cs:32440-32474` for the
+/// retreat, `:32546-32578` for the normal phase): a random tile near the
+/// player, up to 100 tries. The `range` is the pick's tile radius and
+/// `sight_gate` the normal phase's `Collision.CanHit` condition (the
+/// retreat has none). The player's velocity leads the pick (`:32454-32460`).
+fn brain_pick_tile(
+    solid_tile: &dyn Fn(i32, i32) -> bool,
+    sight_ok: &dyn Fn(i32, i32) -> bool,
+    pcx: f32,
+    pcy: f32,
+    pvx: f32,
+    pvy: f32,
+    min: i32,
+    max: i32,
+    sight_gate: bool,
+    rng: &mut u64,
+) -> Option<(i32, i32)> {
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        let mut tx = (pcx as i32) / 16;
+        let mut ty = (pcy as i32) / 16;
+        let mut ox = crate::app::frame::rand_range_signed(rng, min, max + 1);
+        let mut oy = crate::app::frame::rand_range_signed(rng, min, max + 1);
+        if crate::app::frame::rand_range(rng, 2) == 0 {
+            ox = -ox;
+        }
+        if crate::app::frame::rand_range(rng, 2) == 0 {
+            oy = -oy;
+        }
+        // `:32454-32460` — the player's velocity leads the pick.
+        let mut v = Vec2::new(ox as f32 * 16.0, oy as f32 * 16.0);
+        let player_dir = safe_dir(Vec2::new(pvx, pvy), Vec2::Y);
+        let v_dir = safe_dir(v, Vec2::ZERO);
+        if player_dir.dot(v_dir) > 0.0 {
+            v += v_dir * 16.0 * (pvx * pvx + pvy * pvy).sqrt();
+        }
+        tx += (v.x / 16.0) as i32;
+        ty += (v.y / 16.0) as i32;
+        let free = !solid_tile(tx, ty);
+        let ok = if sight_gate {
+            free && (tries > 75 || sight_ok(tx, ty))
+        } else {
+            free
+        };
+        if tries > 100 || ok {
+            return Some((tx, ty));
+        }
+        if tries > 100 {
+            return None;
+        }
+    }
+}
+
+/// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`): the
+/// zero/NaN direction falls back to `default`.
+fn safe_dir(v: Vec2, default: Vec2) -> Vec2 {
+    if v == Vec2::ZERO || v.is_nan() {
+        default
+    } else {
+        v.normalize()
+    }
+}
+
+/// `AI_123_Deerclops_ShootRubbleUp` (`NPC.cs:44448-44465`): the rock lands
+/// on the first solid tile under the Deerclops' top (ten tiles up and three
+/// forward) and flies up at the row's angle.
+fn deerclops_shoot_rubble_up(npc: &mut Npc, world: &World, rng: &mut u64, which_one: i32) {
+    let how_many = 20i32;
+    let spacing = 1i32;
+    let (w, _h) = npc.size();
+    // `:44257-44260` — the source tile: the Deerclops' top, three tiles
+    // forward and ten up.
+    let source_x = ((npc.x + w * 0.5) as i32) / 16 + npc.facing * 3;
+    let source_y = (npc.y as i32) / 16 - 10;
+    let num2 = which_one * spacing;
+    for i in 0..35 {
+        let x = source_x + num2 * npc.facing;
+        let y = source_y + i;
+        if !solid_block(world, x, y) {
+            continue;
+        }
+        // The C#'s first velocity (the up-bias target) is overwritten by the
+        // rotated `(0, -1)` right after (`:44458-44459`), so only the latter
+        // stands.
+        let angle = which_one as f32
+            * npc.facing as f32
+            * 0.7
+            * (std::f32::consts::PI / 4.0 / how_many as f32);
+        let (sin, cos) = angle.sin_cos();
+        let v = Vec2::new(sin, -cos);
+        let speed = 8.0 + crate::app::rand01(rng) * 8.0;
+        npc.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+            kind: crate::projectile::DEERCLOPS_ICE_CHUNK,
+            x: x as f32 * 16.0 + 8.0,
+            y: y as f32 * 16.0 - 8.0,
+            vx: v.x * speed,
+            vy: v.y * speed,
+            damage: 18,
+            ai0: 0.0,
+            // `:44463` — the chunk's `ai1 = 6 + Next(6)`.
+            ai1: 6.0 + crate::app::frame::rand_range(rng, 6) as f32,
+        });
+        break;
+    }
+}
+
+/// `AI_123_Deerclops_MakeSpikesForward`/`MakeSpikesBothSides` +
+/// `TryMakingSpike` (`NPC.cs:44466-44534`, `:44575-44585`): the Deerclops'
+/// ice-spike rows. `how_many` is the row's spread (20 forward, 15 both
+/// sides), `stride` the cadence (4 / 2 ticks), `trigger` the tick the row
+/// opens at (36 / 56) and `both_sides` the mirrored row.
+fn deerclops_make_spikes(
+    npc: &mut Npc,
+    world: &World,
+    player: &Player,
+    rng: &mut u64,
+    how_many: i32,
+    stride: i32,
+    trigger: f32,
+    both_sides: bool,
+) {
+    let phase = npc.ai[1];
+    if phase < trigger {
+        return;
+    }
+    // `:44481-44483` — the source tile: the Deerclops' bottom, three tiles
+    // forward.
+    let (w, h) = npc.size();
+    let source_x = ((npc.x + w * 0.5) as i32) / 16 + npc.facing * 3;
+    let source_y = ((npc.y + h) as i32) / 16;
+    // `:44484-44492` — the batch window: the ticks since the trigger,
+    // rounded down to the stride.
+    let elapsed = phase as i32 - trigger as i32;
+    let base = elapsed / stride * stride;
+    let mut end = base + stride;
+    if elapsed % stride != 0 {
+        end = base;
+    }
+    if both_sides {
+        // `:44525-44529` — the mirrored row: the spikes walk down from the
+        // batch's start, each one on both sides.
+        let mut i = base;
+        while i >= 0 && i < end && i < how_many {
+            let x_offset = i;
+            deerclops_try_make_spike(
+                npc, world, player, rng, source_x, source_y, npc.facing, how_many, -i, x_offset,
+            );
+            deerclops_try_make_spike(
+                npc,
+                world,
+                player,
+                rng,
+                source_x,
+                source_y,
+                -npc.facing,
+                how_many,
+                -i,
+                x_offset,
+            );
+            i -= 1;
+        }
+    } else {
+        // `:44493-44496` — the forward row.
+        let mut i = base;
+        while i < end && i < how_many {
+            deerclops_try_make_spike(
+                npc, world, player, rng, source_x, source_y, npc.facing, how_many, i, i,
+            );
+            i += 1;
+        }
+    }
+}
+
+/// `AI_123_Deerclops_TryMakingSpike` (`NPC.cs:44575-44585`): the spike's
+/// tile row comes from `FindBestY`, and the spike itself flies at the
+/// row's angle (`(0, -1)` rotated by `whichOne * dir * 0.7 * (PI / 4 /
+/// howMany)`) with the `ai1` scale factor.
+fn deerclops_try_make_spike(
+    npc: &mut Npc,
+    world: &World,
+    player: &Player,
+    rng: &mut u64,
+    source_x: i32,
+    source_y: i32,
+    dir: i32,
+    how_many: i32,
+    which_one: i32,
+    x_offset: i32,
+) {
+    let x = source_x + x_offset * dir;
+    let y = deerclops_find_best_y(world, player, source_y, x);
+    if !active_and_walkable(world, x, y) {
+        return;
+    }
+    let angle =
+        which_one as f32 * dir as f32 * 0.7 * (std::f32::consts::PI / 4.0 / how_many as f32);
+    let (sin, cos) = angle.sin_cos();
+    let vel = Vec2::new(
+        Vec2::new(0.0, -1.0).x * cos - Vec2::new(0.0, -1.0).y * sin,
+        Vec2::new(0.0, -1.0).x * sin + Vec2::new(0.0, -1.0).y * cos,
+    );
+    // `:44582` — the spike's `ai1`: the scale factor.
+    let ai1 = 0.1 + crate::app::rand01(rng) * 0.1 + x_offset as f32 * 1.1 / how_many as f32;
+    npc.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+        kind: crate::projectile::DEERCLOPS_ICE_SPIKE,
+        x: x as f32 * 16.0 + 8.0,
+        y: y as f32 * 16.0 - 8.0,
+        vx: vel.x,
+        vy: vel.y,
+        damage: 13,
+        ai0: 0.0,
+        ai1,
+    });
+}
+
+/// `AI_123_Deerclops_TryMakingSpike_FindBestY` (`NPC.cs:44586-44640`): the
+/// tile row the spike lands on — the walkable row closest to the player's
+/// feet along the column, then the walk up through the solid tiles and the
+/// walk down to the first walkable one.
+fn deerclops_find_best_y(world: &World, player: &Player, source_y: i32, x: i32) -> i32 {
+    let mut num = source_y;
+    let (pcx, _) = player.center();
+    let bottom_y = player.y + player.height;
+    let target_row = (bottom_y / 16.0) as i32;
+    let step = (target_row - num).signum();
+    let stop = target_row + step * 15;
+    let mut best: Option<i32> = None;
+    let mut best_dist = f32::INFINITY;
+    let mut i = num;
+    while i != stop {
+        if active_and_walkable(world, x, i) {
+            let tile = Vec2::new(x as f32 * 16.0, i as f32 * 16.0);
+            let d = tile.distance(Vec2::new(pcx, bottom_y));
+            if best.is_none() || d < best_dist {
+                best = Some(i);
+                best_dist = d;
+            }
+        }
+        i += step;
+    }
+    if let Some(row) = best {
+        num = row;
+    }
+    // `:44619-44627` — the walk up through the solid tiles.
+    for _ in 0..20 {
+        if num < 10 {
+            break;
+        }
+        if !solid_block(world, x, num) {
+            break;
+        }
+        num -= 1;
+    }
+    // `:44628-44638` — the walk down to the first walkable tile.
+    for _ in 0..20 {
+        if num > world.height as i32 - 10 {
+            break;
+        }
+        if active_and_walkable(world, x, num) {
+            break;
+        }
+        num += 1;
+    }
+    num
+}
+
+/// `WorldGen.ActiveAndWalkableTile` (`WorldGen.cs:70300-70318`): the tile is
+/// active, solid and not the framed-off "inactive" state.
+fn active_and_walkable(world: &World, x: i32, y: i32) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && !t.inactive() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+}
+
+/// `WorldGen.SolidTile` (`WorldGen.cs:70111-70132`): the full solid block
+/// (active, solid, not a top-only tile, no slope, not framed off).
+fn solid_block(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.active()
+            && !t.inactive()
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            && !t.half_brick()
+            && t.slope() == 0
+    })
+}
+
+/// `AI_015_KingSlime_FindTeleportSpot` + `BuildKingSlimeTeleportCache`
+/// (`NPC.cs:43077-43119`): the tile the King Slime teleports onto — a
+/// solid (or platform) tile with clear air below and a line of sight to
+/// the player, in the ring around the player (the 10/7 cache, then the
+/// 6/2 one). The anti-cheese case lands on the player instead.
+fn king_slime_find_teleport_spot(
+    world: &World,
+    player: &Player,
+    anti_cheese: bool,
+    rng: &mut u64,
+) -> (f32, f32) {
+    let (pcx, pcy) = player.center();
+    let player_bottom = (pcx, player.y + player.height);
+    if anti_cheese {
+        return player_bottom;
+    }
+    let tx = (pcx as i32) / 16;
+    let ty = (pcy as i32) / 16;
+    // `TileID.Sets.Platforms` (`ID/TileID.cs:534`).
+    const PLATFORMS: [u16; 7] = [19, 427, 435, 436, 437, 438, 439];
+    for (outer, inner) in [(10i32, 7i32), (6, 2)] {
+        let mut cache: Vec<(i32, i32)> = Vec::new();
+        // The four bands (`:43080-43083`).
+        for (x0, x1, y0, y1) in [
+            (tx - outer, tx - inner, ty - outer, ty + outer),
+            (tx + inner, tx + outer, ty - outer, ty + outer),
+            (tx - inner, tx + inner, ty - outer, ty - inner),
+            (tx - inner, tx + inner, ty + inner, ty + outer),
+        ] {
+            for x in x0..=x1 {
+                for y in y0..=y1 {
+                    let Some(t) = world.tile(x, y) else {
+                        continue;
+                    };
+                    let solid = tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind);
+                    let platform = PLATFORMS.contains(&t.kind);
+                    let below_solid = world
+                        .tile(x, y - 1)
+                        .is_some_and(|b| b.active() && tr_core::tiledata::TILE_SOLID.has(b.kind));
+                    if !t.active() || !(solid || platform) || below_solid {
+                        continue;
+                    }
+                    // `:43065-43066` — the spot's position and the sight line.
+                    let pos = Vec2::new(x as f32 * 16.0 + 8.0, y as f32 * 16.0 - 46.0);
+                    if crate::projectile::can_hit_line(
+                        world, pos.x, pos.y, 0.0, 0.0, pcx, pcy, 0.0, 0.0,
+                    ) {
+                        cache.push((x, y));
+                    }
+                }
+            }
+        }
+        if !cache.is_empty() {
+            let pick = crate::app::frame::rand_range(rng, cache.len() as u32) as usize;
+            let (x, y) = cache[pick];
+            return (x as f32 * 16.0 + 8.0, y as f32 * 16.0);
+        }
+    }
+    player_bottom
 }
 
 /// `AI`'s aiStyle-76 ground scan: the solid-tile count under the given
@@ -2952,10 +3765,19 @@ impl Npc {
     }
 
     /// The aiStyle-4 block's `NPC.NewNPC(..., 5)` minion spawn
-    /// (`NPC.cs:4598` of the AI()): the servant appears 10 px out along the
+    /// (`NPC.cs:20180` of the AI()): the servant appears 10 px out along the
     /// aim and inherits the launch velocity (`vector3.X/Y`).
+    ///
+    /// `NPC.NewNPC` takes the spawn point as the NPC's BOTTOM centre
+    /// (`NPC.cs:80770` — `nPC.Bottom = new Vector2(X, Y)`, whose setter
+    /// (`Entity.cs:122-132`) writes `position = (X - width/2, Y - height)`),
+    /// and the call site truncates it to whole pixels
+    /// (`NPC.cs:20180`: `(int)vector2.X, (int)vector2.Y`).
     pub fn spawn_servant_of_cthulhu(x: f32, y: f32, vx: f32, vy: f32) -> Self {
-        let mut npc = Self::new(NpcKind::ServantOfCthulhu, x - 10.0, y - 10.0, 1, 0.0);
+        let (w, h) = NpcKind::ServantOfCthulhu.size();
+        let x = (x as i32) as f32;
+        let y = (y as i32) as f32;
+        let mut npc = Self::new(NpcKind::ServantOfCthulhu, x - w * 0.5, y - h, 1, 0.0);
         npc.vx = vx;
         npc.vy = vy;
         npc
@@ -3149,6 +3971,8 @@ impl Npc {
             slime: SlimeVariant::Blue,
             x,
             y,
+            old_x: x,
+            old_y: y,
             vx: 0.0,
             vy: 0.0,
             given_name: String::new(),
@@ -3208,11 +4032,16 @@ impl Npc {
             immortal: false,
             friendly: kind.is_town_resident() || kind == NpcKind::SleepingAngler,
             swarm_done: false,
+            king_slime_local: [0.0; 4],
+            size_override: None,
+            brain_local: [0.0; 4],
             moon_local: [0.0; 3],
             moon_core_alive: false,
             moon_parts: [-1, -1, -1],
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
+            wants_hostile_shot_ai: Vec::new(),
+            slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
             wants_scutlix: false,
@@ -3284,9 +4113,9 @@ impl Npc {
             // The casters: `SetDefaults` knockBackResist 0.6/0.6/0.6/0.5.
             // `NPC.cs`'s cases 26 (0.8) / 27+111 (0.7) / 28 (0.5) / 29 (0.6)
             // / 471 (0.15).
-            NpcKind::GoblinThief => 0.8,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 0.7,
-            NpcKind::GoblinArcher => 0.5,
+            NpcKind::GoblinPeon => 0.8,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher => 0.7,
+            NpcKind::GoblinWarrior => 0.5,
             NpcKind::GoblinSorcerer => 0.6,
             // The frost trio: kb 0.6.
             NpcKind::GoblinSummoner => 0.15,
@@ -3505,10 +4334,6 @@ impl Npc {
             NpcKind::Plantera => 0.0,
             NpcKind::BrainOfCthulhu => 0.45,
             NpcKind::Creeper => 0.8,
-            NpcKind::GoblinPeon => 0.8,
-            NpcKind::GoblinThief => 0.7,
-            NpcKind::GoblinWarrior => 0.5,
-            NpcKind::GoblinArcher => 0.7,
             NpcKind::BoundGoblin => 0.5,
             NpcKind::GoblinTinkerer => 0.5,
             NpcKind::SkeletronPrime => 0.0,
@@ -3562,9 +4387,9 @@ impl Npc {
             // The casters: `SetDefaults` defense 2/4/2/16.
             // `NPC.cs`'s cases 26 (4) / 27+111 (6) / 28 (8) / 29 (2) /
             // 471 (26).
-            NpcKind::GoblinThief => 4,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 6,
-            NpcKind::GoblinArcher => 8,
+            NpcKind::GoblinPeon => 4,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher => 6,
+            NpcKind::GoblinWarrior => 8,
             NpcKind::GoblinSorcerer => 2,
             // The frost trio: 20/26/22.
             NpcKind::SnowmanGangsta => 20,
@@ -3769,10 +4594,6 @@ impl Npc {
             NpcKind::Plantera => 14,
             NpcKind::BrainOfCthulhu => 14,
             NpcKind::Creeper => 10,
-            NpcKind::GoblinPeon => 4,
-            NpcKind::GoblinThief => 6,
-            NpcKind::GoblinWarrior => 8,
-            NpcKind::GoblinArcher => 6,
             // def 15 both (`:10254`, `:10279`).
             NpcKind::BoundGoblin => 15,
             NpcKind::GoblinTinkerer => 15,
@@ -3883,9 +4704,9 @@ impl Npc {
             // The casters: `SetDefaults` value 200/5000/140/350.
             // `NPC.cs`'s cases 26 (100) / 27+111 (200) / 28 (150) / 29 (200)
             // / 471 (5000).
-            NpcKind::GoblinThief => 100.0,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 200.0,
-            NpcKind::GoblinArcher => 150.0,
+            NpcKind::GoblinPeon => 100.0,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher | NpcKind::GoblinSorcerer => 200.0,
+            NpcKind::GoblinWarrior => 150.0,
             NpcKind::GoblinSummoner => 5000.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
@@ -4038,10 +4859,7 @@ impl Npc {
             NpcKind::Plantera => 150000.0,
             NpcKind::BrainOfCthulhu => 50000.0,
             NpcKind::Creeper => 0.0,
-            NpcKind::GoblinPeon => 100.0,
-            NpcKind::GoblinThief => 200.0,
-            NpcKind::GoblinWarrior => 150.0,
-            NpcKind::GoblinArcher => 200.0,
+
             NpcKind::BoundGoblin => 0.0,
             NpcKind::GoblinTinkerer => 0.0,
             NpcKind::KingSlime => 10_000.0,
@@ -4057,6 +4875,11 @@ impl Npc {
     /// The scaled size for slime variants (the hitbox rides
     /// `SetDefaults_ForNetId`'s size scale).
     pub fn size(&self) -> (f32, f32) {
+        // The per-NPC box override (`NPC.base.width`/`base.height`) — the
+        // King Slime's hp-scaled body (`AI_015`, `NPC.cs:43347-43352`).
+        if let Some((w, h)) = self.size_override {
+            return (w, h);
+        }
         let (w, h) = self.kind.size();
         if self.kind == NpcKind::Slime {
             let s = self.slime.stats().scale;
@@ -4293,6 +5116,10 @@ impl Npc {
     /// The real step with the caller's RNG stream — the caster teleport
     /// search draws from it where the C# hits `Main.rand` (`NPC.cs:18948`).
     pub fn update_rng(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut u64) {
+        // `base.oldPosition = base.position` (`NPC.cs:92605`, right before the
+        // position integration) — the switch-tile bridge reads it.
+        self.old_x = self.x;
+        self.old_y = self.y;
         // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
         // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
         // the frame's movement, exactly like the original.
@@ -4330,7 +5157,7 @@ impl Npc {
             | NpcKind::PartyGirl
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
-            NpcKind::SkeletronHead => self.update_skeletron(world, player),
+            NpcKind::SkeletronHead => self.update_skeletron(world, player, rng),
             NpcKind::SkeletronHand => self.update_skeletron_hand(world, player),
             NpcKind::WallOfFleshEye => self.update_wof_eye(world, player),
             NpcKind::PrimeCannon | NpcKind::PrimeSaw | NpcKind::PrimeVice | NpcKind::PrimeLaser => {
@@ -4341,9 +5168,12 @@ impl Npc {
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::TheDestroyer => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
-            NpcKind::Retinazer | NpcKind::Spazmatism => self.update_twin(world, player),
+            // The Retinazer (325) rides the aiStyle-57 machine; the
+            // Spazmatism (326) is an aiStyle-3 fighter (the walker).
+            NpcKind::Retinazer => self.update_retinazer(world, player, rng),
+            NpcKind::Spazmatism => self.update_spazmatism(world, player),
             NpcKind::Plantera => self.update_plantera(world, player),
-            NpcKind::BrainOfCthulhu => self.update_brain(world, player),
+            NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
             NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
@@ -4571,11 +5401,9 @@ impl Npc {
             NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
             NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
             NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
-            NpcKind::KingSlime => self.update_king_slime(world, player, dt),
+            NpcKind::KingSlime => self.update_king_slime(world, player, rng),
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
-            NpcKind::ServantOfCthulhu => {
-                self.update_hover(world, player, HoverParams::SERVANT_OF_CTHULHU)
-            }
+            NpcKind::ServantOfCthulhu => self.update_servant_of_cthulhu(player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => {
                 self.update_caster(world, player, rng)
@@ -6632,7 +7460,9 @@ impl Npc {
         if near {
             self.facing = if dx >= 0.0 { 1 } else { -1 };
             self.sprite_dir = self.facing;
-            self.vx = self.facing as f32 * 0.6;
+            // The C#'s cap for the zombie (`AI_003_Fighters`'s `num107`
+            // default group, `NPC.cs:58322-58374`): 1f.
+            self.vx = self.facing as f32 * NpcKind::Zombie.ai3_walk_speed().unwrap_or(1.0);
         } else {
             self.vx *= 0.9;
         }
@@ -6879,7 +7709,12 @@ impl Npc {
                 } else {
                     self.ai[0] += 1.0;
                     self.ai[1] = 0.0;
-                    if self.ai[0] != 3.0 {
+                    // `:20356-20361` — the spin speed resets ONLY when the
+                    // phase reaches 3 (the final machine); the phase 1 → 2
+                    // hand-off keeps the 0.5 spin, so the phase-2 spin
+                    // decays from 0.5 (the `else` ramp at `:20295-20301`)
+                    // instead of standing still.
+                    if self.ai[0] == 3.0 {
                         self.ai[2] = 0.0;
                     }
                 }
@@ -6899,6 +7734,12 @@ impl Npc {
         // speed, 130-tick chains; the expert rage sub-states
         // `ai[1] = 3/4/5` are out with the flag2/flag3 gates).
         self.defense_override = Some(0);
+        // `:20392-20408` — the final phase's contact damage:
+        // `GetAttackDamage_LerpBetweenFinalValues(23, 18)` remaps the
+        // classic difficulty onto the first value → 23 (the phase 1/2
+        // damage is the `SetDefaults` 15). The master cap is a no-op in
+        // classic.
+        self.damage_override = Some(23);
         if self.ai[1] == 0.0 {
             // The hover at 120 px above (6 speed, 0.07 accel).
             let cx = self.x + w * 0.5;
@@ -6982,67 +7823,261 @@ impl Npc {
         self.y += self.vy;
     }
 
-    fn update_king_slime(&mut self, world: &World, player: &mut Player, dt: f32) {
-        let (w, h) = NpcKind::KingSlime.size();
+    /// `AI_005_EaterOfSouls`'s type-5 branch (`NPC.cs:50379-50383` — the
+    /// `num`/`num2` pair) + the shared fly core (`:50418-50579`) + the
+    /// type-5 rotation (`:50652-50655`) — the Servant of Cthulhu, the
+    /// Eye's minion.
+    ///
+    /// The servant flies on the 8-px snapped aim (`(int)(x / 8f) * 8` on
+    /// both the target's centre and its own), approaches it at the 5-speed
+    /// with the 0.03 accel (the `flag5` double-add on the sign flips —
+    /// type 5 keeps `flag5` true) and tilts with its velocity. A dead
+    /// target flips the aim to the flee vector (`:50480-50484`).
+    ///
+    /// `SetDefaults` case 5 gives it `noGravity` + `noTileCollide`, so the
+    /// step is a raw integration (no tile collision, no gravity).
+    fn update_servant_of_cthulhu(&mut self, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        // The `num`/`num2` pair (`NPC.cs:50379-50383` — type 5): the speed
+        // 5 and the accel 0.03, the shared table's servant row.
+        let params = HoverParams::SERVANT_OF_CTHULHU;
+        // `:50418-50426` — the 8-px grid snap: the target's centre and the
+        // NPC's own centre both floor to the 8-px grid, and the aim is the
+        // difference of the snapped values.
+        let mut num4 = ((pcx / 8.0) as i32 * 8) as f32;
+        let mut num5 = ((pcy / 8.0) as i32 * 8) as f32;
+        let own_x = ((self.x + w * 0.5) / 8.0) as i32 * 8;
+        let own_y = ((self.y + h * 0.5) / 8.0) as i32 * 8;
+        num4 -= own_x as f32;
+        num5 -= own_y as f32;
+        // `:50427-50444` — the normalized aim at the `num` speed; a zero
+        // distance keeps the current velocity (`num4 = velocity.X`).
+        let num6 = (num4 * num4 + num5 * num5).sqrt();
+        if num6 == 0.0 {
+            num4 = self.vx;
+            num5 = self.vy;
+        } else {
+            let scale = params.max_speed / num6;
+            num4 *= scale;
+            num5 *= scale;
+        }
+        // `:50480-50484` — a dead target: the servant flies off along the
+        // facing direction (`num`/`2` sideways, `-num`/`2` down).
+        if player.hp <= 0 {
+            num4 = self.facing as f32 * params.max_speed / 2.0;
+            num5 = -params.max_speed / 2.0;
+        }
+        // `:50547-50578` — the approach (`num2`) with the `flag5` double-add
+        // on the sign flips (type 5 keeps `flag5` true).
+        if self.vx < num4 {
+            self.vx += params.accel;
+            if self.vx < 0.0 && num4 > 0.0 {
+                self.vx += params.accel;
+            }
+        } else if self.vx > num4 {
+            self.vx -= params.accel;
+            if self.vx > 0.0 && num4 < 0.0 {
+                self.vx -= params.accel;
+            }
+        }
+        if self.vy < num5 {
+            self.vy += params.accel;
+            if self.vy < 0.0 && num5 > 0.0 {
+                self.vy += params.accel;
+            }
+        } else if self.vy > num5 {
+            self.vy -= params.accel;
+            if self.vy > 0.0 && num5 < 0.0 {
+                self.vy -= params.accel;
+            }
+        }
+        // `:50652-50655` — the rotation: the velocity tilt (the servant is
+        // in the `else` arm — the aim-tilt types are 6/94/173/619).
+        self.rotation = self.vy.atan2(self.vx) - 1.57;
+        self.integrate_no_tile_collide();
+        // The 2-frame flap (`Main.npcFrameCount[5] = 2`).
+        self.frame_counter += 1.0;
+        if self.frame_counter >= 8.0 {
+            self.frame_counter = 0.0;
+            self.frame = if self.frame + 1 >= 2 {
+                0
+            } else {
+                self.frame + 1
+            };
+        }
+    }
+
+    /// `AI_015_KingSlime` (`NPC.cs:43121-43414`) — the King Slime's machine:
+    /// the hop cycle (the hp-scaled rate), the shrink/grow teleport, the
+    /// hp-scaled body and the 5 %-hp minion batches.
+    ///
+    /// The dust and the gore are SKIPPED — no dust/gore layer. The MP-only
+    /// branches use the single-player values.
+    fn update_king_slime(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
+        // `:43123-43131` — the flags and the getGood world's scale factor.
+        let mut num = 1.0f32;
+        let mut num2 = 1.0f32;
+        let mut flag2 = false;
+        let mut flag3 = false;
+        let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let (cx, cy) = self.center();
-        let dx = pcx - cx;
-        self.facing = if dx >= 0.0 { 1 } else { -1 };
-        self.sprite_dir = self.facing;
-        self.hop_timer -= dt;
-        if self.on_ground && self.hop_timer <= 0.0 {
-            self.vx = self.facing as f32 * 2.4;
-            self.vy = -8.0;
-            self.on_ground = false;
-            self.hop_timer = 1.4 + (self.anim * 2.7).sin().abs() * 0.8;
+        let ph = player.height;
+        // `:43136-43147` — the init: the `ai[3]` hp latch and the one-shot
+        // `localAI[3]` arm (which drops the body into its first scale).
+        if self.ai[3] == 0.0 && self.hp > 0 {
+            self.ai[3] = self.max_hp as f32;
         }
-        // Teleport next to the player when they outrun the boss.
-        if (dx.abs() > 70.0 * TILE_PX || (pcy - cy).abs() > 50.0 * TILE_PX) && self.on_ground {
-            let side = if dx >= 0.0 { -1 } else { 1 };
-            let tx = ((pcx / TILE_PX) as i32 + side * 10).clamp(4, world.width - 5);
-            let top = world.surface_of(tx);
-            if top < world.height - 2 {
-                let (w2, h2) = NpcKind::KingSlime.size();
-                let nx = tx as f32 * TILE_PX + 8.0 - w2 * 0.5;
-                let ny = top as f32 * TILE_PX - h2;
-                if !collides_rect(world, nx, ny, w2, h2) {
-                    self.x = nx;
-                    self.y = ny;
-                    self.vx = 0.0;
-                    self.vy = 0.0;
-                    self.on_ground = true;
+        if self.king_slime_local[3] == 0.0 {
+            self.king_slime_local[3] = 1.0;
+            self.ai[0] = -100.0;
+        }
+        // `:43149-43176` — the despawn: a dead player or one 3000 px away
+        // sends the King Slime to the world's far corner.
+        let distance = ((cx - pcx).powi(2) + (cy - pcy).powi(2)).sqrt();
+        if player.dead || distance > 3000.0 {
+            self.king_slime_local[1] = world.width as f32 * 16.0;
+            self.king_slime_local[2] = world.height as f32 * 16.0;
+            self.ai[0] = 0.0;
+            self.ai[1] = 5.0;
+        }
+        // `:43177-43196` — the teleport: the player out of sight for 300
+        // ticks (and the King Slime grounded) shrinks and blinks.
+        if !player.dead && self.ai[2] >= 300.0 && self.ai[1] < 5.0 && self.vy == 0.0 {
+            self.ai[2] = 0.0;
+            self.ai[0] = 0.0;
+            self.ai[1] = 5.0;
+            // The anti-cheese case (`:43185-43191`): the King Slime has been
+            // out of sight for 360 ticks or the player is 2000 px away.
+            let anti_cheese = self.king_slime_local[0] >= 360.0 || distance > 2000.0;
+            if self.king_slime_local[0] >= 360.0 {
+                self.king_slime_local[0] = 360.0;
+            }
+            let (tx, ty) = king_slime_find_teleport_spot(world, player, anti_cheese, rng);
+            self.king_slime_local[1] = tx;
+            self.king_slime_local[2] = ty;
+        }
+        // `:43197-43211` — the line-of-sight counters.
+        let visible = crate::projectile::can_hit_line(world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0)
+            && (self.y - (player.y + ph)).abs() <= 160.0;
+        if !visible {
+            self.ai[2] += 1.0;
+            self.king_slime_local[0] += 1.0;
+        } else {
+            self.king_slime_local[0] -= 1.0;
+            if self.king_slime_local[0] < 0.0 {
+                self.king_slime_local[0] = 0.0;
+            }
+        }
+        // `:43212-43218` — the closing timer clears the state. The port's
+        // NPCs carry no `NPC.timeLeft` (the despawn timer is the world's
+        // own row), so the arm cannot watch the closing window — the state
+        // clears with the normal machine instead.
+        if self.ai[1] == 5.0 {
+            // `:43219-43261` — the shrink: the scale ramps down over 60 ticks
+            // and the King Slime teleports onto the picked spot.
+            flag2 = true;
+            self.ai[0] += 1.0;
+            num = 0.5 + ((60.0 - self.ai[0]) / 60.0).clamp(0.0, 1.0) * 0.5;
+            if self.ai[0] >= 60.0 {
+                flag3 = true;
+                self.x = self.king_slime_local[1] - w * 0.5;
+                self.y = self.king_slime_local[2] - h;
+                self.ai[1] = 6.0;
+                self.ai[0] = 0.0;
+            }
+        } else if self.ai[1] == 6.0 {
+            // `:43262-43284` — the grow-back: 30 ticks at the same ramp.
+            flag2 = true;
+            self.ai[0] += 1.0;
+            num = 0.5 + (self.ai[0] / 30.0).clamp(0.0, 1.0) * 0.5;
+            if self.ai[0] >= 30.0 {
+                self.ai[1] = 0.0;
+                self.ai[0] = 0.0;
+            }
+        }
+        // `:43285-43326` — the movement: the hop cycle (grounded) and the
+        // air control.
+        if self.vy == 0.0 {
+            self.vx *= 0.8;
+            if self.vx > -0.1 && self.vx < 0.1 {
+                self.vx = 0.0;
+            }
+            if !flag2 {
+                // The hop timer — the faster the King Slime is hurt, the
+                // faster it hops.
+                self.ai[0] += 2.0;
+                let life = self.hp as f32 / self.max_hp as f32;
+                if life < 0.8 {
+                    self.ai[0] += 1.0;
+                }
+                if life < 0.6 {
+                    self.ai[0] += 1.0;
+                }
+                if life < 0.4 {
+                    self.ai[0] += 2.0;
+                }
+                if life < 0.2 {
+                    self.ai[0] += 3.0;
+                }
+                if life < 0.1 {
+                    self.ai[0] += 4.0;
+                }
+                if self.ai[0] >= 0.0 {
+                    if self.ai[1] == 3.0 {
+                        self.vy = -13.0;
+                        self.vx += 3.5 * self.facing as f32;
+                        self.ai[0] = -200.0;
+                        self.ai[1] = 0.0;
+                    } else if self.ai[1] == 2.0 {
+                        self.vy = -6.0;
+                        self.vx += 4.5 * self.facing as f32;
+                        self.ai[0] = -120.0;
+                        self.ai[1] += 1.0;
+                    } else {
+                        self.vy = -8.0;
+                        self.vx += 4.0 * self.facing as f32;
+                        self.ai[0] = -120.0;
+                        self.ai[1] += 1.0;
+                    }
+                }
+            }
+        } else {
+            // `:43327-43339` — the air control: the push toward the facing.
+            let num7 = 3.0f32;
+            if (self.facing == 1 && self.vx < num7) || (self.facing == -1 && self.vx > -num7) {
+                if (self.facing == -1 && self.vx < 0.1) || (self.facing == 1 && self.vx > -0.1) {
+                    self.vx += 0.2 * self.facing as f32;
+                } else {
+                    self.vx *= 0.93;
                 }
             }
         }
-        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
-        let nx = self.x + self.vx;
-        if !collides_rect(world, nx, self.y, w, h) {
-            self.x = nx;
-        } else {
-            self.vx = -self.vx * 0.4;
+        // `:43340-43356` — the body scale: the hp drives the size (the
+        // C#'s `num9`).
+        let num9 = (self.hp as f32 / self.max_hp as f32 * 0.5 + 0.75) * num * num2;
+        if num9 != self.scale || self.king_slime_local[3] == 1.0 {
+            let new_w = 98.0 * num9;
+            let new_h = 92.0 * num9;
+            // The C#'s recentre (`:43346-43351`): the bottom-right corner
+            // stays put.
+            self.x += w * 0.5 - new_w * 0.5;
+            self.y += h - new_h;
+            self.scale = num9;
+            self.size_override = Some((new_w, new_h));
         }
-        let ny = self.y + self.vy;
-        let was_air = !self.on_ground;
-        if !collides_rect(world, self.x, ny, w, h) {
-            self.y = ny;
-            self.on_ground = false;
-        } else if self.vy > 0.0 {
-            let ty = ((ny + h) / TILE_PX).floor() as i32;
-            self.y = ty as f32 * TILE_PX - h;
-            self.vy = 0.0;
-            self.on_ground = true;
-            self.vx *= 0.5;
-            if was_air {
-                self.wants_minion = true;
-            }
-        } else if self.vy < 0.0 {
-            let ty = (ny / TILE_PX).floor() as i32;
-            self.y = (ty + 1) as f32 * TILE_PX;
-            self.vy = 0.0;
+        // `:43357-43395` — the minion batches: every 5 % of the hp the King
+        // Slime spawns 1-3 slimes.
+        let num10 = (self.max_hp as f32 * 0.05) as i32;
+        if self.hp + num10 >= self.ai[3] as i32 {
+            return;
         }
-        if self.y > world.height as f32 * TILE_PX + 400.0 {
-            self.hp = 0;
-        }
+        self.ai[3] = self.hp as f32;
+        let count = crate::app::frame::rand_range_signed(rng, 1, 4).max(1);
+        self.wants_minion = true;
+        self.wants_minion_batch = count as u32;
+        let _ = num2;
     }
 
     /// The contact overlap test (`contact`'s AABB) as a pure read —
@@ -7113,10 +8148,15 @@ impl Npc {
             pcx,
             pcy,
             crate::npc_ai::WalkerParams {
-                // `NPC.cs` case 21: velocity.X target ~0.8 (the skeleton is
-                // a faster zombie), the jump -6.2, the aggro the zombie's
-                // 80x40-tile window.
-                speed: 0.8,
+                // The C#'s per-type cap (`AI_003_Fighters`, the `num83` /
+                // `num107` / cap-2 / cap-3 groups, `NPC.cs:57520-58374`):
+                // the skeleton 1.5, the undead miner 1.0, the pirate
+                // deckhand 2.0 and the pirate captain's mate 3.0. The jump
+                // -6.2 and the zombie's 80x40-tile aggro window stay.
+                speed: self
+                    .kind
+                    .ai3_walk_speed()
+                    .expect("the cave walkers' aiStyle-3 cap"),
                 jump: -6.2,
                 aggro_x: 80.0 * TILE_PX,
                 aggro_y: 40.0 * TILE_PX,
@@ -7686,51 +8726,195 @@ impl Npc {
     /// the 7 cap), the charge (the 480-tick cycle, the direct velocity
     /// x 8), the decel (the 40 ticks x0.98). The spinning hands (the
     /// separate NPCs 36) = the follow-ups.
-    fn update_skeletron(&mut self, world: &World, player: &Player) {
+    /// `AI()`'s aiStyle-11 block (`NPC.cs:21919-22298`) — the Skeletron
+    /// head's machine: the spin state (0), the charge (1), the enraged
+    /// day-time state (2) and the despawn (3).
+    ///
+    /// The hands' spawn rides the sim's pass (the C#'s `ai[0] == 0` init,
+    /// `:21924-21941`); the arm reads the live hand count from `ai[3]`
+    /// (the sim's write).
+    ///
+    /// The dust (`:22280-22296`) and the sounds are SKIPPED — no dust/sound
+    /// layer.
+    fn update_skeletron(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        let hover_y = pcy - 280.0;
-        if self.cast_windup == 0 {
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.07;
-            if self.vx.abs() > 7.0 {
-                self.vx = 7.0 * self.vx.signum();
-            }
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.07;
-            if self.vy.abs() > 7.0 {
-                self.vy = 7.0 * self.vy.signum();
-            }
-            self.caster_counter += 1;
-            if self.caster_counter >= 480 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 8.0;
-            self.vy = dy / d * 8.0;
-            self.cast_windup = 2;
-        } else {
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
+        // `:21923` — the defense resets to the kind's base every tick.
+        self.defense_override = None;
+        // `:21949-21957` — a dead player or one 2000 px away → the despawn.
+        let far = (self.x - player.x).abs() > 2000.0 || (self.y - player.y).abs() > 2000.0;
+        if player.dead || far {
+            self.ai[1] = 3.0;
+        }
+        // `:21958-21962` — the daytime → the enraged state.
+        if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
+            self.ai[1] = 2.0;
+        }
+        match self.ai[1] as i32 {
+            0 => {
+                // `:22019-22051` — the spin: the timer (800 ticks → the
+                // charge), the rotation and the hover acceleration.
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 800.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 1.0;
                 }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
+                self.rotation = self.vx / 15.0;
+                let (accel_y, cap_y, accel_x, cap_x) = if world.hard_mode {
+                    (0.03f32, 4.0f32, 0.07f32, 9.5f32)
+                } else {
+                    (0.02, 2.0, 0.05, 8.0)
+                };
+                if self.y > player.y - 250.0 {
+                    if self.vy > 0.0 {
+                        self.vy *= 0.98;
+                    }
+                    self.vy -= accel_y;
+                    if self.vy > cap_y {
+                        self.vy = cap_y;
+                    }
+                } else if self.y < player.y - 250.0 {
+                    if self.vy < 0.0 {
+                        self.vy *= 0.98;
+                    }
+                    self.vy += accel_y;
+                    if self.vy < -cap_y {
+                        self.vy = -cap_y;
+                    }
                 }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
+                if cx > pcx {
+                    if self.vx > 0.0 {
+                        self.vx *= 0.98;
+                    }
+                    self.vx -= accel_x;
+                    if self.vx > cap_x {
+                        self.vx = cap_x;
+                    }
+                }
+                if cx < pcx {
+                    if self.vx < 0.0 {
+                        self.vx *= 0.98;
+                    }
+                    self.vx += accel_x;
+                    if self.vx < -cap_x {
+                        self.vx = -cap_x;
+                    }
+                }
+                // `:21978-22018` — the expert mode's spin shot: every 80
+                // ticks (40 with no hand left) the head fires a skull.
+                if world.hard_mode {
+                    let hands = self.ai[3] as i32;
+                    let period = if hands == 0 { 40.0 } else { 80.0 };
+                    if self.ai[2] % period == 0.0
+                        && crate::projectile::can_hit(
+                            world,
+                            cx,
+                            cy,
+                            1.0,
+                            1.0,
+                            player.x,
+                            player.y,
+                            crate::player::WIDTH,
+                            player.height,
+                        )
+                    {
+                        let speed = if hands == 0 { 5.0 } else { 3.0 };
+                        let mut dx =
+                            pcx - cx + crate::app::frame::rand_range_signed(rng, -20, 21) as f32;
+                        let mut dy =
+                            pcy - cy + crate::app::frame::rand_range_signed(rng, -20, 21) as f32;
+                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                        dx = dx / d * speed;
+                        dy = dy / d * speed;
+                        // The jitter (`:22005-22006`).
+                        dx += crate::app::frame::rand_range_signed(rng, -50, 51) as f32 * 0.01;
+                        dy += crate::app::frame::rand_range_signed(rng, -50, 51) as f32 * 0.01;
+                        let len = (dx * dx + dy * dy).sqrt().max(1.0);
+                        dx = dx / len * speed;
+                        dy = dy / len * speed;
+                        self.wants_hostile_shot.push((
+                            crate::projectile::SKULL,
+                            cx + dx * 5.0,
+                            cy + dy * 5.0,
+                            dx + self.vx,
+                            dy + self.vy,
+                            17,
+                        ));
+                    }
                 }
             }
+            1 => {
+                // `:22118-22244` — the charge: the defense drops by 10, the
+                // timer (400 ticks → the spin) and the 1.5-px rush.
+                self.defense_override = Some(self.defense() - 10);
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 400.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+                self.rotation += self.facing as f32 * 0.3;
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let mut speed = if world.hard_mode { 3.5 } else { 1.5 };
+                if world.hard_mode {
+                    // `:22188-22227` — the expert's distance ramp.
+                    if d > 150.0 {
+                        speed *= 1.05;
+                    }
+                    for threshold in [
+                        200.0, 250.0, 300.0, 350.0, 400.0, 450.0, 500.0, 550.0, 600.0,
+                    ] {
+                        if d > threshold {
+                            speed *= 1.1;
+                        }
+                    }
+                    // `:22228-22236` — the hand count's share.
+                    match self.ai[3] as i32 {
+                        0 => speed *= 1.1,
+                        1 => speed *= 1.05,
+                        _ => {}
+                    }
+                }
+                let k = speed / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
+            }
+            2 => {
+                // `:22245-22259` — the enraged state: the invulnerable
+                // 8-px rush.
+                self.damage_override = Some(9999);
+                self.defense_override = Some(9999);
+                self.rotation += self.facing as f32 * 0.3;
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let k = 8.0 / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
+            }
+            3 => {
+                // `:22260-22270` — the despawn: the sink and the damp.
+                self.vy += 0.1;
+                if self.vy < 0.0 {
+                    self.vy *= 0.95;
+                }
+                self.vx *= 0.95;
+            }
+            _ => {}
+        }
+        // `:22019` — the spin state restores the kind's damage.
+        if self.ai[1] == 0.0 {
+            self.damage_override = None;
+        } else if self.ai[1] == 1.0 {
+            let base_damage = self.kind.contact_damage();
+            self.damage_override = Some(if world.hard_mode {
+                (base_damage as f32 * 1.3) as i32
+            } else {
+                base_damage
+            });
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
         self.sprite_dir = self.facing;
@@ -8461,7 +9645,13 @@ impl Npc {
         // The walk: the vanilla's walker step (the grounded damping and
         // the 0.9 stop-damp ride it).
         let params = crate::npc_ai::WalkerParams {
-            speed: 5.0,
+            // The C#'s per-type cap (`AI_003_Fighters`'s shooters' group,
+            // `NPC.cs:59717-59750`): the pirate archer 2, the corsair 1.5,
+            // the captain 1, the scrambler/ray gunner 2.
+            speed: self
+                .kind
+                .ai3_walk_speed()
+                .expect("the shooters' aiStyle-3 cap"),
             jump: -6.2,
             aggro_x: 80.0 * TILE_PX,
             aggro_y: 40.0 * TILE_PX,
@@ -8614,7 +9804,7 @@ impl Npc {
     /// constants; `Main.npc[localAI[i]]`'s sibling references ride the
     /// pre-pass crew counts; the 448's extra args (0, 20) fold out; the
     /// expert-mode bridge arm is constants-off (no difficulty flags).
-    fn update_saucer_mount(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+    fn update_saucer_mount(&mut self, world: &World, player: &Player, rng: &mut u64) {
         if self.carrier_x < 0.0 {
             return;
         }
@@ -8634,7 +9824,12 @@ impl Npc {
         if self.carrier_timer < 0.0 {
             self.carrier_timer = self.ai[3];
         }
-        self.ai[3] = self.carrier_timer;
+        // The Flying Dutchman's cannon owns its `ai[3]` (the C#'s 492 block
+        // counts its own reload, `:35760-35762`), so the core's timer does
+        // not mirror into it.
+        if self.kind != NpcKind::FlyingDutchmanCannon {
+            self.ai[3] = self.carrier_timer;
+        }
         // The display inheritance (`NPC.cs:35625-35651`): every mount
         // copies the core's `rotation` so the family tilts as one body,
         // and (`NPC.cs:35669-35676`) its `spriteDirection` — the cannon
@@ -8680,6 +9875,65 @@ impl Npc {
                     }
                 }
             }
+            NpcKind::FlyingDutchmanCannon => {
+                // `:35753-35823` — the Dutchman's cannon: the 240-tick
+                // reload, the line-of-sight gate, the shot and the eight-ray
+                // aim.
+                if self.ai[3] < 240.0 {
+                    self.ai[3] += 1.0;
+                }
+                let (pcx, pcy) = player.center();
+                if crate::projectile::can_hit(
+                    world,
+                    self.x,
+                    self.y,
+                    w,
+                    h,
+                    player.x,
+                    player.y,
+                    crate::player::WIDTH,
+                    player.height,
+                ) {
+                    if self.ai[3] >= 240.0 {
+                        // The shot (`:35773-35782`): the normalized
+                        // direction to the player × 14, minus 5 on the Y.
+                        self.ai[3] = 0.0;
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt();
+                        let (mut vx, mut vy) = if d > 0.0 {
+                            (dx / d, dy / d)
+                        } else {
+                            (0.0, 1.0)
+                        };
+                        vx *= 14.0;
+                        vy *= 14.0;
+                        vy -= 5.0;
+                        self.wants_hostile_shot.push((240u16, cx, cy, vx, vy, 30));
+                    } else {
+                        // The aim scan (`:35789-35812`): the closest of the
+                        // eight rays around the cannon sets `ai[2]`.
+                        let mut best = 0usize;
+                        let mut best_d = f32::INFINITY;
+                        for k in 0..8 {
+                            let quarter = k as f32 * std::f32::consts::FRAC_PI_4;
+                            let ray = Vec2::new(quarter.sin(), quarter.cos());
+                            let probe = Vec2::new(cx, cy) + ray * 50.0;
+                            let d = (probe - Vec2::new(pcx, pcy)).length();
+                            if d < best_d {
+                                best_d = d;
+                                best = k;
+                            }
+                        }
+                        self.ai[2] = (best + 1) as f32;
+                        if self.sprite_dir == 1 {
+                            self.ai[2] = 9.0 - self.ai[2];
+                        }
+                    }
+                } else if self.ai[2] != 0.0 {
+                    self.ai[2] = 0.0;
+                }
+            }
             NpcKind::MartianSaucerCannon => {
                 // The 440-580 window (`NPC.cs:35820-35858`).
                 let t = self.ai[3];
@@ -8687,8 +9941,18 @@ impl Npc {
                 if in_window && core_open && (t - 440.0) % 20.0 == 0.0 {
                     let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
                     let (vx, vy) = (side * ang.cos() * 8.0, ang.sin() * 8.0);
-                    self.wants_hostile_shot
-                        .push((448u16, cx + side * 36.0, cy + 8.0, vx, vy, 50));
+                    // The missile (`:35845`): the C# passes `ai1 = 20f` —
+                    // the arm's 20-tick arming delay.
+                    self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                        kind: 448u16,
+                        x: cx + side * 36.0,
+                        y: cy + 8.0,
+                        vx,
+                        vy,
+                        damage: 50,
+                        ai0: 0.0,
+                        ai1: 20.0,
+                    });
                 }
             }
             _ => {
@@ -8697,7 +9961,19 @@ impl Npc {
                 let t = self.ai[3];
                 let core_phase0 = self.carrier_phase == 0.0;
                 if core_phase0 && t >= 20.0 && t < 260.0 && (t - 20.0) == 0.0 {
-                    self.wants_hostile_shot.push((447u16, cx, cy, 0.0, 0.0, 50));
+                    // The deathray (`:35917`): the C# passes `ai0 =
+                    // base.whoAmI + 1` — the spawner's own slot index — and
+                    // the arm reads it to find its owner.
+                    self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                        kind: 447u16,
+                        x: cx,
+                        y: cy,
+                        vx: 0.0,
+                        vy: 0.0,
+                        damage: 50,
+                        ai0: self.slot as f32 + 1.0,
+                        ai1: 0.0,
+                    });
                 }
                 // The windows: the core's gun phase (2) opens them always;
                 // else the 280-400 and 440-580 bands.
@@ -11877,99 +13153,144 @@ impl Npc {
     /// repeat; the day-rage (`damage/defense 9999`, the 8-32 chase) and
     /// the dead-player despawn (`EncourageDespawn(500)`). The four limbs
     /// spawn once on the first tick (the port's `wants_limbs` flag).
+    /// `AI()`'s aiStyle-32 block (`NPC.cs:27626-27942`) — the Skeletron
+    /// Prime's machine: the hover (0), the charge (1), the day-time rage (2)
+    /// and the despawn (3).
+    ///
+    /// The four limbs' spawn rides the sim's pass (`wants_limbs` ✓ — the
+    /// C#'s `ai[0] == 0` init, `:27632-27660`). The Mech Queen's rows
+    /// (`NPC.IsMechQueenUp`) are skipped — the port has no Mech Queen.
     fn update_prime(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        let dist = (pcx - cx).hypot(pcy - cy);
-        // The state selection (`:27662-27676`).
-        if player.hp <= 0 || dist > 6000.0 {
+        // `:27628-27630` — the damage and the defense reset to the kind's.
+        self.damage_override = None;
+        self.defense_override = None;
+        // `:27641-27656` — the despawn: a dead player or one 6000 px away.
+        let far = (self.x - player.x).abs() > 6000.0 || (self.y - player.y).abs() > 6000.0;
+        if player.dead || far {
             self.ai[1] = 3.0;
-        } else if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
+        }
+        // `:27657-27661` — the day-time → the rage.
+        if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
             self.ai[1] = 2.0;
         }
-        // The limb spawn (the one-shot).
+        // The limb spawn (the C#'s `ai[0] == 0` init, `:27632-27660`): the
+        // sim resolves the four limbs (`wants_limbs`).
         if self.caster_counter == 0 && self.cast_windup == 0 {
             self.caster_counter = 1;
             self.wants_limbs = true;
         }
-        if self.ai[1] == 0.0 {
-            // The hover (`:27677-27764`): the Y steer to `player.Y` in
-            // the ±200/±500 bands, the X steer to ±100, the 0.1/2 caps,
-            // the 0.98 friction; the 600-tick cycle flips to the rage.
-            self.ai[2] += 1.0;
-            // The roll (`:27694-27698`): the hover's rotation rides the
-            // drift `velocity.X / 15` (the Mech Queen eases into half of
-            // it through `AngleLerp`) — the v1 never wrote a rotation, so
-            // the head drew bolt upright while it strafed.
-            self.rotation = if self.ai[3] != 0.0 {
-                angle_lerp(self.rotation, self.vx / 15.0 * 0.5, 0.75)
-            } else {
-                self.vx / 15.0
-            };
-            let target_y = if pcy > cy + 200.0 {
-                pcy - 500.0
-            } else if pcy < cy - 200.0 {
-                pcy - 200.0
-            } else {
-                pcy
-            };
-            self.vy += (target_y - cy).signum() * 0.1;
-            self.vy = self.vy.clamp(-2.0, 2.0);
-            let target_x = if pcx > cx + 100.0 {
-                cx + 100.0
-            } else if pcx < cx - 100.0 {
-                cx - 100.0
-            } else {
-                cx
-            };
-            self.vx += (target_x - cx).signum() * 0.1;
-            self.vx = self.vx.clamp(-8.0, 8.0);
-            self.vx *= 0.98;
-            if self.ai[2] >= 600.0 {
-                self.ai[1] = 1.0;
-                self.ai[2] = 0.0;
+        match self.ai[1] as i32 {
+            0 => {
+                // `:27679-27764` — the hover: the 600-tick cycle, the
+                // rotation (the drift / 15) and the acceleration bands.
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 600.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 1.0;
+                }
+                self.rotation = self.vx / 15.0;
+                let (accel_y, cap_y, accel_x, cap_x) = if world.hard_mode {
+                    (0.03f32, 4.0f32, 0.07f32, 9.5f32)
+                } else {
+                    (0.1, 2.0, 0.1, 8.0)
+                };
+                // `:27730-27751` — the vertical band: the 200 band above
+                // the player and the 500 band below it.
+                if self.y > pcy - 200.0 {
+                    if self.vy > 0.0 {
+                        self.vy *= 0.98;
+                    }
+                    self.vy -= accel_y;
+                    if self.vy > cap_y {
+                        self.vy = cap_y;
+                    }
+                } else if self.y < pcy - 500.0 {
+                    if self.vy < 0.0 {
+                        self.vy *= 0.98;
+                    }
+                    self.vy += accel_y;
+                    if self.vy < -cap_y {
+                        self.vy = -cap_y;
+                    }
+                }
+                // `:27752-27764` — the horizontal band: 100 px either side.
+                if cx > pcx + 100.0 {
+                    if self.vx > 0.0 {
+                        self.vx *= 0.98;
+                    }
+                    self.vx -= accel_x;
+                    if self.vx > cap_x {
+                        self.vx = cap_x;
+                    }
+                }
+                if cx < pcx - 100.0 {
+                    if self.vx < 0.0 {
+                        self.vx *= 0.98;
+                    }
+                    self.vx += accel_x;
+                    if self.vx < -cap_x {
+                        self.vx = -cap_x;
+                    }
+                }
             }
-        } else if self.ai[1] == 1.0 {
-            // The enraged charge (`:27765-27859`): the straight line at
-            // the classic 2, the 400-tick duration.
-            self.ai[2] += 1.0;
-            // The spin (`:27781-27786`): the head rolls `direction * 0.3`
-            // per tick (the Mech Queen eases into the half-drift instead) —
-            // the port's find_frame case 127 pins row 2 for this phase, so
-            // the roll is the only motion the wide row shows.
-            self.rotation = if self.ai[3] != 0.0 {
-                angle_lerp(self.rotation, self.vx / 15.0 * 0.5, 0.75)
-            } else {
-                self.rotation + self.facing as f32 * 0.3
-            };
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(0.001);
-            self.vx = dx / d * 2.0;
-            self.vy = dy / d * 2.0;
-            if self.ai[2] >= 400.0 {
-                self.ai[1] = 0.0;
-                self.ai[2] = 0.0;
+            1 => {
+                // `:27765-27859` — the charge: the damage and the defense
+                // double, the 400-tick cycle, the roll and the rush.
+                self.defense_override = Some(self.defense() * 2);
+                self.damage_override = Some(self.kind.contact_damage() * 2);
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 400.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+                self.rotation += self.facing as f32 * 0.3;
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let mut speed = if world.hard_mode { 6.0 } else { 2.0 };
+                if world.hard_mode {
+                    // `:27800-27833` — the expert's distance ramp.
+                    if d > 150.0 {
+                        speed *= 1.05;
+                    }
+                    for threshold in [
+                        200.0, 250.0, 300.0, 350.0, 400.0, 450.0, 500.0, 550.0, 600.0,
+                    ] {
+                        if d > threshold {
+                            speed *= 1.1;
+                        }
+                    }
+                }
+                let k = speed / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
             }
-        } else if self.ai[1] == 2.0 {
-            // The day-rage (`:27860-27892`): the 8-32 chase.
-            self.rotation = if self.ai[3] != 0.0 {
-                angle_lerp(self.rotation, self.vx / 15.0 * 0.5, 0.75)
-            } else {
-                self.rotation + self.facing as f32 * 0.3
-            };
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(0.001);
-            let speed = (10.0 + d / 100.0).clamp(8.0, 32.0);
-            self.vx = dx / d * speed;
-            self.vy = dy / d * speed;
-        } else {
-            // The despawn drift (`:27893-27941`).
-            self.vy += 0.1;
-            self.vx *= 0.95;
+            2 => {
+                // `:27860-27892` — the day-time rage: the invulnerable
+                // 8-32 chase.
+                self.damage_override = Some(9999);
+                self.defense_override = Some(9999);
+                self.rotation += self.facing as f32 * 0.3;
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                let speed = (10.0 + d / 100.0).clamp(8.0, 32.0);
+                let k = speed / d;
+                self.vx = dx * k;
+                self.vy = dy * k;
+            }
+            _ => {
+                // `:27893-27941` — the despawn drift.
+                self.vy += 0.1;
+                if self.vy < 0.0 {
+                    self.vy *= 0.95;
+                }
+                self.vx *= 0.95;
+            }
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
         self.sprite_dir = self.facing;
@@ -11985,6 +13306,254 @@ impl Npc {
     /// the charge (the 480-tick cycle, the direct velocity x 8.5), the
     /// decel (the 40 ticks x0.98). The laser/spit phases and the second-
     /// form transformations = the follow-ups.
+    /// `AI()`'s aiStyle-57 block (`NPC.cs:32761-33043`) — the Retinazer's
+    /// machine: the idle (0), the stomp (1), the spin (2), the beam (3) and
+    /// the charge (4), the horizontal drift toward the player and the
+    /// vertical hover.
+    ///
+    /// The light and the dust are SKIPPED — no dust/light layer. The
+    /// day-time `EncourageDespawn(10)` rides the world's own day arm (the
+    /// port's NPCs carry no despawn timer).
+    fn update_retinazer(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        // `:32764-32772` — the horizontal speed cap (the hp bands; the
+        // day-time raises it to 8).
+        let mut speed = 2.0f32;
+        if self.hp * 4 < self.max_hp * 3 {
+            speed = 3.0;
+        }
+        if self.hp * 2 < self.max_hp {
+            speed = 4.0;
+        }
+        if world.day_time {
+            speed = 8.0;
+        }
+        // `:32789` — the "firing" flag: the states that hold the boss still
+        // while it shoots.
+        let mut firing = false;
+        match self.ai[0] as i32 {
+            0 => {
+                // `:32794-32815` — the idle: the counter (the faster it
+                // loses hp, the faster it counts) and then the next state.
+                self.ai[1] += 1.0;
+                if self.hp * 2 < self.max_hp {
+                    self.ai[1] += 1.0;
+                }
+                if self.hp * 4 < self.max_hp {
+                    self.ai[1] += 1.0;
+                }
+                if self.ai[1] >= 300.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = if self.hp * 4 < self.max_hp {
+                        crate::app::frame::rand_range_signed(rng, 3, 5) as f32
+                    } else {
+                        crate::app::frame::rand_range_signed(rng, 1, 3) as f32
+                    };
+                }
+            }
+            1 => {
+                // `:32836-32866` — the stomp: the flaming wood every 15
+                // ticks.
+                firing = true;
+                self.ai[1] += 1.0;
+                if self.ai[1] % 15.0 == 0.0 {
+                    let origin = Vec2::new(cx, cy + 30.0);
+                    let mut dx = pcx - origin.x;
+                    let mut dy = pcy - origin.y;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    dx = dx / d * 10.0;
+                    dy = dy / d * 10.0;
+                    let sx = dx
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.01);
+                    let sy = dy
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.01);
+                    self.wants_hostile_shot.push((
+                        crate::projectile::FLAMING_WOOD,
+                        origin.x,
+                        origin.y,
+                        sx,
+                        sy,
+                        50,
+                    ));
+                }
+                if self.ai[1] >= 120.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            2 => {
+                // `:32868-32929` — the spin: the Greek fires every eighth
+                // tick between the 60th and the 240th.
+                firing = true;
+                self.ai[1] += 1.0;
+                if self.ai[1] > 60.0 && self.ai[1] < 240.0 && self.ai[1] % 8.0 == 0.0 {
+                    let origin = Vec2::new(cx, cy + 30.0);
+                    let mut dx = pcx - origin.x;
+                    let mut dy = pcy - origin.y - dx.abs() * 0.3;
+                    let mut shot_speed = 10.0f32;
+                    shot_speed += dx.abs() * 0.004;
+                    if shot_speed > 14.0 {
+                        shot_speed = 14.0;
+                    }
+                    dx += crate::app::frame::rand_range_signed(rng, -50, 51) as f32;
+                    dy -= crate::app::frame::rand_range_signed(rng, 50, 201) as f32;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    dx = dx / d * shot_speed;
+                    dy = dy / d * shot_speed;
+                    let kind = crate::app::frame::rand_range_signed(rng, 326, 329) as u16;
+                    let sx = dx
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.01);
+                    let sy = dy
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.01);
+                    self.wants_hostile_shot
+                        .push((kind, origin.x, origin.y, sx, sy, 40));
+                }
+                if self.ai[1] >= 300.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            3 => {
+                // `:32930-32956` — the beam: the flaming wood every 30 ticks.
+                speed = 4.0;
+                self.ai[1] += 1.0;
+                if self.ai[1] % 30.0 == 0.0 {
+                    let origin = Vec2::new(cx, cy + 30.0);
+                    let mut dx = pcx - origin.x;
+                    let mut dy = pcy - origin.y;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    dx = dx / d * 16.0;
+                    dy = dy / d * 16.0;
+                    let sx = dx
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.001);
+                    let sy = dy
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.001);
+                    self.wants_hostile_shot.push((
+                        crate::projectile::FLAMING_WOOD,
+                        origin.x,
+                        origin.y,
+                        sx,
+                        sy,
+                        75,
+                    ));
+                }
+                if self.ai[1] >= 120.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            4 => {
+                // `:32957-32990` — the charge: the Greek fires every tenth
+                // tick.
+                speed = 4.0;
+                self.ai[1] += 1.0;
+                if self.ai[1] % 10.0 == 0.0 {
+                    let origin = Vec2::new(cx, cy + 30.0);
+                    let mut dx = pcx - origin.x;
+                    let mut dy = pcy - origin.y - dx.abs() * 0.2;
+                    let mut shot_speed = 12.0f32;
+                    shot_speed += dx.abs() * 0.002;
+                    if shot_speed > 16.0 {
+                        shot_speed = 16.0;
+                    }
+                    dx += crate::app::frame::rand_range_signed(rng, -50, 51) as f32;
+                    dy -= crate::app::frame::rand_range_signed(rng, 50, 201) as f32;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    dx = dx / d * shot_speed;
+                    dy = dy / d * shot_speed;
+                    let kind = crate::app::frame::rand_range_signed(rng, 326, 329) as u16;
+                    let sx = dx
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.005);
+                    let sy = dy
+                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.005);
+                    self.wants_hostile_shot
+                        .push((kind, origin.x, origin.y, sx, sy, 50));
+                }
+                if self.ai[1] >= 240.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[0] = 0.0;
+                }
+            }
+            _ => {}
+        }
+        // `:32991-32995` — the horizontal damp close to the player.
+        if (cx - pcx).abs() < 50.0 {
+            firing = true;
+        }
+        if firing {
+            self.vx *= 0.9;
+            if self.vx > -0.1 && self.vx < 0.1 {
+                self.vx = 0.0;
+            }
+        } else {
+            if self.facing > 0 {
+                self.vx = (self.vx * 20.0 + speed) / 21.0;
+            }
+            if self.facing < 0 {
+                self.vx = (self.vx * 20.0 - speed) / 21.0;
+            }
+        }
+        // `:33012-33040` — the vertical hover: the player-overlap test, the
+        // solid-tile probe under the boss and the fall/rise ramps.
+        let probe_x = cx - 40.0;
+        let probe_y = self.y + h - 20.0;
+        let over_player = self.x < player.x
+            && self.x + w > player.x + crate::player::WIDTH
+            && self.y + h < player.y + player.height - 16.0;
+        if over_player {
+            self.vy += 0.5;
+        } else if collides_rect(world, probe_x, probe_y, 80.0, 20.0) {
+            if self.vy > 0.0 {
+                self.vy = 0.0;
+            }
+            if self.vy > -0.2 {
+                self.vy -= 0.025;
+            } else {
+                self.vy -= 0.2;
+            }
+            if self.vy < -4.0 {
+                self.vy = -4.0;
+            }
+        } else {
+            if self.vy < 0.0 {
+                self.vy = 0.0;
+            }
+            if self.vy < 0.1 {
+                self.vy += 0.025;
+            } else {
+                self.vy += 0.5;
+            }
+        }
+        if self.vy > 10.0 {
+            self.vy = 10.0;
+        }
+    }
+
+    /// The Spazmatism (326) — the Twins' ground fighter: the C#'s aiStyle-3
+    /// family (`AI_003_Fighters`, `NPC.cs:55856+`) with the cap-2 group's
+    /// walk speed (`:57554-57578`).
+    fn update_spazmatism(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        let speed = NpcKind::Spazmatism.ai3_walk_speed().unwrap_or(2.0);
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+    }
+
     fn update_twin(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -12466,7 +14035,7 @@ impl Npc {
         self.y += self.vy;
     }
 
-    fn update_deerclops(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_deerclops(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -12539,59 +14108,42 @@ impl Npc {
             1 => {
                 // The ice spikes forward (`:44203-44217` + the helper).
                 self.ai[1] += 1.0;
-                if self.ai[1] == 36.0 {
-                    // The spread (`:44579`): the per-index angle
-                    // `whichOne * dir * 0.7 * (PI/4 / howMany)` — the
-                    // port's trace sits on the Y velocity's slope; the
-                    // forward row walks the direction's sign.
-                    for i in 0..20 {
-                        let x = cx + self.facing as f32 * (3 + i * 1) as f32 * 16.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            x,
-                            cy + 40.0,
-                            0.0,
-                            -1.0,
-                            13,
-                        ));
-                    }
-                }
+                // `:44466-44500` — the forward row: from the 36th tick,
+                // every fourth tick makes four spikes (the row's spread is
+                // 20 tiles).
+                deerclops_make_spikes(self, world, player, rng, 20, 4, 36.0, false);
                 if self.ai[1] >= 80.0 {
                     self.ai[0] = 0.0;
                     self.ai[1] = 0.0;
                 }
             }
             2 => {
-                // The rubble up (`:44242-44263`): the 18-dmg rocks.
+                // `:44242-44263` — the rubble: from the 32nd tick, one
+                // rock per tick (the row's spread is 20).
                 self.ai[1] += 1.0;
                 if self.ai[1] >= 32.0 {
-                    for i in 0..20 {
-                        let spread = (crate::app::rand01(rng) - 0.5) * 2.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            cx,
-                            cy,
-                            spread * 6.0,
-                            -8.0 - crate::app::rand01(rng) * 8.0,
-                            18,
-                        ));
+                    let elapsed = self.ai[1] as i32 - 32;
+                    if elapsed < 20 {
+                        deerclops_shoot_rubble_up(self, world, rng, elapsed);
                     }
+                }
+                if self.ai[1] >= 60.0 {
                     self.ai[0] = 0.0;
                     self.ai[1] = 0.0;
                 }
             }
             3 => {
-                // The slow-debuff blizzard (`:44264-44307`).
+                // `:44264-44307` — the chill aura: every fourth tick from
+                // the 28th the player within 800 px gets the Slow buff (32)
+                // for 720 ticks — the C# spawns NO projectile here.
                 self.ai[1] += 1.0;
-                if self.ai[1] >= 20.0 {
-                    self.wants_hostile_shot.push((
-                        crate::projectile::DEERCLOPS_ICE_SPIKE,
-                        cx,
-                        cy - 40.0,
-                        0.0,
-                        0.0,
-                        0,
-                    ));
+                if (self.ai[1] as i32) % 4 == 0 && self.ai[1] >= 28.0 {
+                    if !player.dead
+                        && player.buffs.find_buff_index(32).is_none()
+                        && ((cx - pcx).powi(2) + (cy - pcy).powi(2)).sqrt() < 800.0
+                    {
+                        player.buffs.add_buff(32, 720);
+                    }
                 }
                 if self.ai[1] >= 60.0 {
                     self.ai[0] = 0.0;
@@ -12601,27 +14153,10 @@ impl Npc {
             4 => {
                 // The ice spikes both sides (`:44218-44233` + the helper).
                 self.ai[1] += 1.0;
-                if self.ai[1] == 56.0 {
-                    for i in 0..15 {
-                        let x = cx + (i as f32) * 16.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            x,
-                            cy + 40.0,
-                            0.0,
-                            -1.0,
-                            13,
-                        ));
-                        self.wants_hostile_shot.push((
-                            crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            cx - (i as f32) * 16.0,
-                            cy + 40.0,
-                            0.0,
-                            -1.0,
-                            13,
-                        ));
-                    }
-                }
+                // `:44502-44532` — the both-sides row: from the 56th tick,
+                // every second tick makes the row's spikes on both sides
+                // (the spread is 15 tiles).
+                deerclops_make_spikes(self, world, player, rng, 15, 2, 56.0, true);
                 if self.ai[1] >= 90.0 {
                     self.ai[0] = 0.0;
                     self.ai[1] = 0.0;
@@ -12632,22 +14167,31 @@ impl Npc {
                 // the 965 at 15 dmg, the 60-tick total.
                 self.ai[1] += 1.0;
                 if self.ai[1] == 30.0 {
-                    let face = self.facing as f32;
-                    for i in 0..6 {
-                        let ang =
-                            (i as f32 / 6.0) * std::f32::consts::TAU + self.facing_move_phase(rng);
-                        let spawn_x = cx + ang.cos() * 120.0;
-                        let spawn_y = cy + ang.sin() * 120.0;
-                        let to_x = (pcx - spawn_x) / 40.0;
-                        let to_y = (pcy - spawn_y) / 40.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::SHADOW_HAND,
-                            spawn_x,
-                            spawn_y,
-                            to_x * face * 0.7 + to_x * 0.3,
-                            to_y,
-                            15,
-                        ));
+                    // The C#'s pick (`Projectile.RandomizeInsanityShadowFor`,
+                    // `Projectile.cs:42408-42493`): the position, the velocity
+                    // and the two `ai` slots — the arm's variation age and
+                    // the angle (`:42592-42634`). The C#'s rejection loop
+                    // (the spawn must not land on a player other than the
+                    // target) never rejects in the port: the only player IS
+                    // the target, and the C# skips the target in that check.
+                    let mut shadow_rng = crate::world_sim::npcs::LootRng(rng);
+                    for _ in 0..6 {
+                        let (pos, vel, ai0, ai1) = crate::projectile::randomize_insanity_shadow_for(
+                            Vec2::new(pcx, pcy),
+                            Vec2::new(player.vx, player.vy),
+                            true,
+                            &mut shadow_rng,
+                        );
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: crate::projectile::SHADOW_HAND,
+                            x: pos.x,
+                            y: pos.y,
+                            vx: vel.x,
+                            vy: vel.y,
+                            damage: 15,
+                            ai0,
+                            ai1,
+                        });
                     }
                 }
                 if self.ai[1] >= 60.0 {
@@ -13146,38 +14690,188 @@ impl Npc {
         self.ai[0] = 0.0;
     }
 
-    fn update_brain(&mut self, world: &World, player: &Player) {
+    /// `AI()`'s aiStyle-54 block (`NPC.cs:32370-32656`) — the Brain of
+    /// Cthulhu's machine: the blink (the `-1`/`-2`/`-3` retreat and the
+    /// `0`/`1`/`2` normal states), the velocity model and the despawn ramp.
+    ///
+    /// The creeper swarm's spawn and the shield ride the sim's pass
+    /// (`world_sim/npcs.rs`: the 20 Creepers + `dont_take_damage` while one
+    /// lives — the C#'s `localAI[0]` init and its shield); the arm reads the
+    /// live Creeper count from `brain_local[2]` (the sim's write).
+    ///
+    /// The gore/dust burst (`:32401-32419`) is SKIPPED — no dust/gore layer.
+    /// The MP-only branches (`Main.netMode != 0`) use the single-player
+    /// values (the port has no multiplayer arm).
+    fn update_brain(&mut self, world: &World, player: &Player, rng: &mut u64) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
         let cy = self.y + h * 0.5;
-        if self.caster_counter == 0 && self.cast_windup == 0 {
-            self.caster_counter = 1;
-        }
-        if self.cast_windup == 2 && self.caster_counter > 40 {
+        // The `WorldGen.SolidTile` analog (the active + the solid set).
+        let solid_tile = |x: i32, y: i32| -> bool {
+            world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+        };
+        if self.ai[0] < 0.0 {
+            // `:32420-32430` — the retreat's velocity: the 8-px drift toward
+            // the player through the 50/51 blend.
             let dx = pcx - cx;
             let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 9.0;
-            self.vy = dy / d * 9.0;
-            self.cast_windup = 3;
-            self.caster_counter = 0;
-        } else if self.cast_windup == 3 {
-            self.vx *= 0.98;
-            self.vy *= 0.98;
-            if self.vx.abs() < 0.1 && self.vy.abs() < 0.1 {
-                self.cast_windup = 0;
-                self.caster_counter = 0;
+            let d = (dx * dx + dy * dy).sqrt().max(0.001);
+            let k = 8.0 / d;
+            self.vx = (self.vx * 50.0 + dx * k) / 51.0;
+            self.vy = (self.vy * 50.0 + dy * k) / 51.0;
+            match self.ai[0] as i32 {
+                -1 => {
+                    // `:32431-32478` — the blink timer and the target tile.
+                    self.brain_local[1] += 1.0;
+                    if self.hurt_cd > 0.0 {
+                        // The C#'s `justHit` roll (`localAI[1] -= Next(5)`).
+                        self.brain_local[1] -= crate::app::frame::rand_range(rng, 5) as f32;
+                    }
+                    let period = 60.0 + crate::app::frame::rand_range(rng, 120) as f32;
+                    if self.brain_local[1] >= period {
+                        self.brain_local[1] = 0.0;
+                        // The tile pick: up to 100 tries, 10-12 tiles out
+                        // (`:32440-32474`). The retreat has no sight gate.
+                        if let Some((tx, ty)) = brain_pick_tile(
+                            &solid_tile,
+                            &|_tx: i32, _ty: i32| true,
+                            pcx,
+                            pcy,
+                            player.vx,
+                            player.vy,
+                            10,
+                            12,
+                            false,
+                            rng,
+                        ) {
+                            self.ai[3] = 0.0;
+                            self.ai[0] = -2.0;
+                            self.ai[1] = tx as f32;
+                            self.ai[2] = ty as f32;
+                        }
+                    }
+                }
+                -2 => {
+                    // `:32479-32501` — the fade-in and the teleport.
+                    self.vx *= 0.9;
+                    self.vy *= 0.9;
+                    self.ai[3] += 25.0;
+                    if self.ai[3] >= 255.0 {
+                        self.ai[3] = 255.0;
+                        self.x = self.ai[1] * 16.0 - (w * 0.5) as f32;
+                        self.y = self.ai[2] * 16.0 - (h * 0.5) as f32;
+                        self.ai[0] = -3.0;
+                    }
+                    self.alpha = (self.ai[3] as i32).clamp(0, 255) as u8;
+                }
+                -3 => {
+                    // `:32502-32518` — the fade-out.
+                    self.ai[3] -= 25.0;
+                    if self.ai[3] <= 0.0 {
+                        self.ai[3] = 0.0;
+                        self.ai[0] = -1.0;
+                    }
+                    self.alpha = (self.ai[3] as i32).clamp(0, 255) as u8;
+                }
+                _ => {}
             }
         } else {
+            // `:32522-32527` — the normal phase's velocity: straight at the
+            // player at 1 px/tick.
             let dx = pcx - cx;
             let dy = pcy - cy;
-            self.vx += dx.signum() * 0.05;
-            self.vy += dy.signum() * 0.05;
-            self.caster_counter += 1;
-            if self.caster_counter >= 60 {
-                self.cast_windup = 2;
+            let d = (dx * dx + dy * dy).sqrt();
+            let speed = 1.0f32;
+            if d < speed {
+                self.vx = dx;
+                self.vy = dy;
+            } else {
+                self.vx = dx / d * speed;
+                self.vy = dy / d * speed;
             }
+            match self.ai[0] as i32 {
+                0 => {
+                    // `:32532-32580` — the Creeper check and the blink timer.
+                    if self.brain_local[2] == 0.0 {
+                        // No Creeper left: the Brain retreats.
+                        self.ai[0] = -1.0;
+                        self.brain_local[1] = 0.0;
+                        self.alpha = 0;
+                    }
+                    self.brain_local[1] += 1.0;
+                    if self.brain_local[1] >= 120.0 + crate::app::frame::rand_range(rng, 300) as f32
+                    {
+                        self.brain_local[1] = 0.0;
+                        // The tile pick: 12-40 tiles out, with the sight gate
+                        // after the 75th try (`:32546-32578`).
+                        let sight = |tx: i32, ty: i32| {
+                            crate::projectile::can_hit(
+                                world,
+                                tx as f32 * 16.0,
+                                ty as f32 * 16.0,
+                                1.0,
+                                1.0,
+                                player.x,
+                                player.y,
+                                crate::player::WIDTH,
+                                player.height,
+                            )
+                        };
+                        if let Some((tx, ty)) = brain_pick_tile(
+                            &solid_tile,
+                            &sight,
+                            pcx,
+                            pcy,
+                            player.vx,
+                            player.vy,
+                            12,
+                            40,
+                            true,
+                            rng,
+                        ) {
+                            self.ai[0] = 1.0;
+                            self.ai[1] = tx as f32;
+                            self.ai[2] = ty as f32;
+                        }
+                    }
+                }
+                1 => {
+                    // `:32581-32591` — the fade-in and the teleport.
+                    self.alpha += 5;
+                    if self.alpha >= 255 {
+                        self.alpha = 255;
+                        self.x = self.ai[1] * 16.0 - (w * 0.5) as f32;
+                        self.y = self.ai[2] * 16.0 - (h * 0.5) as f32;
+                        self.ai[0] = 2.0;
+                    }
+                }
+                2 => {
+                    // `:32592-32599` — the fade-out.
+                    self.alpha -= 5;
+                    if self.alpha <= 0 {
+                        self.alpha = 0;
+                        self.ai[0] = 0.0;
+                    }
+                }
+                _ => {}
+            }
+        }
+        // `:32619-32636` — the despawn ramp: a dead player or a player out
+        // of the Crimson zone sinks the Brain and fades it out.
+        if player.dead || !player.zones.crimson {
+            if self.brain_local[3] < 120.0 {
+                self.brain_local[3] += 1.0;
+            }
+            if self.brain_local[3] > 60.0 {
+                self.vy += (self.brain_local[3] - 60.0) * 0.25;
+            }
+            self.ai[0] = 2.0;
+            self.alpha = 10;
+        } else if self.brain_local[3] > 0.0 {
+            self.brain_local[3] -= 1.0;
         }
         self.facing = if self.vx >= 0.0 { 1 } else { -1 };
         self.sprite_dir = self.facing;
@@ -13920,6 +15614,36 @@ pub fn to_wld(npcs: &[Npc]) -> tr_core::wld::sections::WldNpcs {
 
 #[cfg(test)]
 mod tests {
+    /// S1-E-21a — the per-kind hit/death cues (`NPC.HitSound`/`NPC.DeathSound`,
+    /// `NPC.cs:6475-6477`, the `SetDefaults` assignments).
+    #[test]
+    fn the_npc_hit_and_death_cues_follow_the_vanilla_table() {
+        // The zombie's rows (`NPC.cs:8607-8608`: NPCHit1 / NPCDeath2).
+        assert_eq!(NpcKind::Zombie.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Zombie.death_sound(), Some("NPC_Killed_2"));
+        // The skeleton's rows (`NPC.cs:9044-9045`: NPCHit2 / NPCDeath2).
+        assert_eq!(NpcKind::Skeleton.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::Skeleton.death_sound(), Some("NPC_Killed_2"));
+        // The bosses' own rows (the Wall of Flesh 113, the Skeletron Prime
+        // 127, the Deerclops 668).
+        assert_eq!(NpcKind::WallOfFlesh.hit_sound(), Some("NPC_Hit_8"));
+        assert_eq!(NpcKind::WallOfFlesh.death_sound(), Some("NPC_Killed_10"));
+        assert_eq!(NpcKind::SkeletronPrime.hit_sound(), Some("NPC_Hit_4"));
+        assert_eq!(NpcKind::Deerclops.hit_sound(), Some("deerclops_hit_0"));
+        assert_eq!(NpcKind::Deerclops.death_sound(), Some("deerclops_death"));
+        // The DD2 family's trackable cues (`SoundID.CreateTrackable`,
+        // `SoundID.cs:1627+`).
+        assert_eq!(NpcKind::DD2GoblinT1.hit_sound(), Some("dd2_goblin_hurt_0"));
+        assert_eq!(
+            NpcKind::DD2GoblinT1.death_sound(),
+            Some("dd2_goblin_death_0")
+        );
+        // The C#'s `null` guard (`NPC.cs:8537`): the Brain Scrambler (381) and
+        // the Ray Gunner (382) carry no row — no hit sound at all.
+        assert_eq!(NpcKind::BrainScrambler.hit_sound(), None);
+        assert_eq!(NpcKind::RayGunner.death_sound(), None);
+    }
+
     #[test]
     fn the_hover_kinds_spawn_fly_and_map() {
         // The Eater of Souls (6)/Hornet (42)/Meteor Head (23): the hovers
@@ -15957,6 +17681,101 @@ mod tests {
     }
 
     #[test]
+    fn the_eoc_phases_through_the_spin_to_the_final_dash() {
+        // `AI_004`'s phase machine (`NPC.cs:19960-20801`): the 50%-hp gate
+        // (`:20315-20322`) → the first spin (`ai[0]` 1) → the spin's
+        // hand-off (`ai[0]` 2) → the final dash (`ai[0]` 3).
+        //
+        // The spin speed (`ai[2]`) is the phase's tell: the phase-1 spin
+        // ramps it to 0.5 (`:20287-20293`), the hand-off KEEPS it (the
+        // reset rides the `ai[0] == 3` branch only, `:20356-20361`) and
+        // the phase-2 spin decays it (`:20295-20301`).
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        eoc.hp = eoc.max_hp / 2 - 1;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        // The hp gate: the phase-0 arm hands over to the first spin.
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(eoc.ai[0], 1.0, "the 50% gate starts the spin");
+        // The spin: 100 ticks → the second spin phase, the 0.5 spin speed
+        // carried over (the C# resets it only at `ai[0] == 3`).
+        for _ in 0..100 {
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(eoc.ai[0], 2.0, "the first spin hands over to the second");
+        assert!(
+            (eoc.ai[2] - 0.5).abs() < 0.001,
+            "the spin speed carries over ({})",
+            eoc.ai[2]
+        );
+        // The second spin decays the speed and hands over to the final
+        // phase: the defense drops to 0 and the contact damage rises to
+        // the 23 of `GetAttackDamage_LerpBetweenFinalValues(23, 18)`.
+        for _ in 0..100 {
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(eoc.ai[0], 3.0, "the second spin hands over to the final");
+        assert_eq!(eoc.ai[2], 0.0, "the final phase stops the spin");
+        // The final phase's stats ride its arm (the hand-off tick still ran
+        // the spin block).
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(eoc.defense_override, Some(0), "the defense drops to 0");
+        assert_eq!(eoc.damage_override, Some(23), "the final phase's damage");
+    }
+
+    #[test]
+    fn the_servant_flies_on_the_snapped_aim() {
+        // `AI_005`'s type-5 branch (`NPC.cs:50379-50383` + `:50418-50579`):
+        // the aim snaps to the 8-px grid on both the target's centre and
+        // the servant's own (`:50421-50424`), the speed is 5 and the accel
+        // 0.03, and the rotation rides the velocity (`:50652-50655`).
+        //
+        // The setup puts the player's centre 4 px right of the servant's
+        // — the unsnapped aim would drift right, the snapped aim (both
+        // centres floor to the same 8-px cell) stays vertical.
+        let w = ground_air();
+        let mut servant = Npc::new(NpcKind::ServantOfCthulhu, 990.0, 990.0, 1, 0.0);
+        let mut player = surface_player(&w);
+        player.x = 994.0; // the centre x = 1004 (the servant's = 1000)
+        player.y = 1579.0; // the centre y = 1600
+        for _ in 0..200 {
+            servant.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(
+            servant.vx.abs() < 0.01,
+            "the snapped aim keeps the servant vertical ({})",
+            servant.vx
+        );
+        assert!(
+            (servant.vy - 5.0).abs() < 0.05,
+            "the servant flies at the C#'s 5 speed ({})",
+            servant.vy
+        );
+        let tilt = servant.vy.atan2(servant.vx) - 1.57;
+        assert!(
+            (servant.rotation - tilt).abs() < 0.0001,
+            "the rotation rides the velocity ({})",
+            servant.rotation
+        );
+    }
+
+    #[test]
+    fn the_servant_spawn_lands_on_the_new_npc_bottom() {
+        // `NPC.NewNPC` takes the spawn point as the NPC's BOTTOM centre
+        // (`NPC.cs:80770` → `Entity.cs:122-132`: `position = (X - w/2,
+        // Y - h)`) and the call site truncates it to whole pixels
+        // (`NPC.cs:20180`).
+        let servant = Npc::spawn_servant_of_cthulhu(100.7, 200.7, 1.0, 2.0);
+        assert_eq!(servant.x, 100.0 - 10.0, "the x is the bottom-centre");
+        assert_eq!(servant.y, 200.0 - 20.0, "the y is the bottom");
+        assert_eq!(servant.vx, 1.0);
+        assert_eq!(servant.vy, 2.0);
+    }
+
+    #[test]
     fn the_eoc_spawns_and_maps() {
         // The stats ride `SetDefaults` case 4; the bestiary entry
         // round-trips.
@@ -16021,8 +17840,8 @@ mod tests {
 
     #[test]
     fn the_skeletron_cycles() {
-        // `AI_011`'s v1 cycle: the hover 480 ticks → the charge (the
-        // velocity 8) → the decel.
+        // `AI_011` (S1-D-3f): the spin state (0) hovers for 800 ticks, then
+        // the charge (1) rushes at the player for 400 ticks.
         let mut w = ground_air();
         w.day_time = false;
         let mut sk = Npc::new(NpcKind::SkeletronHead, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
@@ -16030,13 +17849,19 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
-            sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let mut rng = 0u64;
+        for _ in 0..800 {
+            sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
-        assert!(sk.cast_windup == 1, "the charge phase armed");
-        sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(sk.ai[1], 1.0, "the charge phase armed");
+        sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
-        assert!((speed - 8.0).abs() < 0.1, "the charge speed ({speed})");
+        assert!((speed - 1.5).abs() < 0.1, "the charge speed ({speed})");
+        // The charge ends after 400 ticks and the spin resumes.
+        for _ in 0..400 {
+            sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(sk.ai[1], 0.0, "the spin resumed");
     }
 
     #[test]
@@ -16311,6 +18136,9 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
+        // The hover resets the damage and the defense to the kind's rows
+        // (`:27628-27630`), so the base is readable before the charge.
+        let base_defense = pr.defense();
         for _ in 0..600 {
             pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         }
@@ -16321,11 +18149,28 @@ mod tests {
             (speed - 2.0).abs() < 0.2,
             "the classic charge speed ({speed})"
         );
+        // `:27767-27768` — the charge doubles the damage and the defense.
+        assert_eq!(
+            pr.damage_override,
+            Some(NpcKind::SkeletronPrime.contact_damage() * 2),
+            "the charge doubles the damage"
+        );
+        assert_eq!(
+            pr.defense_override,
+            Some(base_defense * 2),
+            "the charge doubles the defense"
+        );
         // The 400-tick charge falls back to the hover.
         for _ in 0..400 {
             pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         }
         assert_eq!(pr.ai[1], 0.0, "the hover resumes");
+        // `:27862-27863` — the day-time rage is invulnerable.
+        w.day_time = true;
+        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(pr.ai[1], 2.0, "the day-time rage armed");
+        assert_eq!(pr.damage_override, Some(9999), "the rage's damage");
+        assert_eq!(pr.defense_override, Some(9999), "the rage's defense");
     }
 
     #[test]
@@ -16344,8 +18189,9 @@ mod tests {
 
     #[test]
     fn the_twin_cycles_and_maps() {
-        // `AI_030/031`'s v1 cycle: the hover 480 ticks → the charge (the
-        // velocity 8.5) → the decel.
+        // `AI_057`'s machine (the Retinazer, `NPC.cs:32761-33043`): the idle
+        // counts 300 ticks and then picks the next state (the stomp 1-2 or
+        // the beam 3-4).
         let mut w = ground_air();
         w.day_time = false;
         let mut ret = Npc::new(NpcKind::Retinazer, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
@@ -16353,13 +18199,30 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..480 {
-            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let mut rng = 0u64;
+        for _ in 0..300 {
+            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
-        assert!(ret.cast_windup == 1, "the charge phase armed");
-        ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
-        let speed = (ret.vx * ret.vx + ret.vy * ret.vy).sqrt();
-        assert!((speed - 8.5).abs() < 0.1, "the charge speed ({speed})");
+        assert!(
+            ret.ai[0] >= 1.0 && ret.ai[0] <= 4.0,
+            "the next state armed ({})",
+            ret.ai[0]
+        );
+        // The stomp (the state 1) fires the flaming wood every 15 ticks.
+        ret.ai[0] = 1.0;
+        ret.ai[1] = 0.0;
+        ret.wants_hostile_shot.clear();
+        for _ in 0..15 {
+            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        let shots: Vec<_> = ret
+            .wants_hostile_shot
+            .iter()
+            .filter(|s| s.0 == crate::projectile::FLAMING_WOOD)
+            .copied()
+            .collect();
+        assert_eq!(shots.len(), 1, "the stomp fires the flaming wood");
+        assert_eq!(shots[0].5, 50, "the shot's damage");
         // The stats round-trip.
         assert_eq!(ret.size(), (100.0, 110.0));
         assert_eq!(ret.max_hp, 20000);
@@ -16401,23 +18264,54 @@ mod tests {
 
     #[test]
     fn the_brain_teleport_dashes() {
-        // `AI_054`'s v1 cycle: the telegraph 60 ticks -> the dash (the
-        // velocity 9) -> the decay -> the telegraph reset.
+        // `AI_054` (S1-D-3e): the Brain's machine is the blink — the normal
+        // phase drifts at 1 px/tick, the timer picks a tile near the player,
+        // the fade-in teleports the Brain onto it and the fade-out returns
+        // to the normal phase.
         let mut w = ground_air();
         w.day_time = false;
         let mut br = Npc::new(NpcKind::BrainOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
         br.hp = br.max_hp;
+        // A live Creeper keeps the Brain in its normal phase (the C#'s
+        // `num818` check — the sim writes the count).
+        br.brain_local[2] = 1.0;
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        for _ in 0..59 {
-            br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
-        }
-        assert!(br.cast_windup == 2, "the dash armed");
-        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
-        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        player.zones.crimson = true;
+        let mut rng = 0u64;
+        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         let speed = (br.vx * br.vx + br.vy * br.vy).sqrt();
-        assert!((speed - 9.0).abs() < 0.2, "the dash speed ({speed})");
+        assert!((speed - 1.0).abs() < 0.01, "the normal drift's speed ({speed})");
+        // The blink: the timer picks the tile, the fade-in teleports.
+        for _ in 0..600 {
+            br.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if br.ai[0] == 1.0 {
+                break;
+            }
+        }
+        assert_eq!(br.ai[0], 1.0, "the blink armed the fade-in");
+        let tile_x = br.ai[1];
+        let tile_y = br.ai[2];
+        for _ in 0..60 {
+            br.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if br.ai[0] == 2.0 {
+                break;
+            }
+        }
+        assert_eq!(br.ai[0], 2.0, "the fade-in teleported the Brain");
+        // The teleport lands the Brain on the tile; the tick's own
+        // integration (`position += velocity`) adds the drift on top.
+        assert!(
+            (br.x - (tile_x * 16.0 - 80.0)).abs() <= 1.0,
+            "the Brain sits on the tile ({})",
+            br.x
+        );
+        assert!(
+            (br.y - (tile_y * 16.0 - 55.0)).abs() <= 1.0,
+            "the Brain sits on the tile ({})",
+            br.y
+        );
         // The stats round-trip.
         assert_eq!(br.size(), (160.0, 110.0));
         assert_eq!(br.max_hp, 1250);
@@ -16433,21 +18327,22 @@ mod tests {
     #[test]
     fn the_goblin_kinds_spawn_and_maps() {
         // `SetDefaults` cases 26/27/28/111: the stats + the kind↔u16
-        // round-trip + the bestiary rows (the vanilla ids: the Thief 26,
-        // the Warrior 27, the Archer 28, the Peon 111).
+        // round-trip + the bestiary rows. The vanilla ids: the Peon 26, the
+        // Thief 27, the Warrior 28, the Archer 111 (S1-D-3d — the port's
+        // four kinds had carried each other's ids).
         let w = ground_air();
         let thief = Npc::spawn_cave_walker(&w, 20, NpcKind::GoblinThief).expect("the thief spawns");
-        assert_eq!(thief.max_hp, 60);
-        assert_eq!(NpcKind::GoblinThief.contact_damage(), 12);
+        assert_eq!(thief.max_hp, 80);
+        assert_eq!(NpcKind::GoblinThief.contact_damage(), 20);
         let archer =
             Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
-        assert_eq!(archer.max_hp, 110);
-        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 25);
+        assert_eq!(archer.max_hp, 80);
+        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 20);
         for (kind, net) in [
-            (NpcKind::GoblinThief, 26),
-            (NpcKind::GoblinWarrior, 27),
-            (NpcKind::GoblinArcher, 28),
-            (NpcKind::GoblinPeon, 111),
+            (NpcKind::GoblinPeon, 26),
+            (NpcKind::GoblinThief, 27),
+            (NpcKind::GoblinWarrior, 28),
+            (NpcKind::GoblinArcher, 111),
         ] {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);
@@ -18612,7 +20507,7 @@ mod tests {
         // at 0 (vulnerable); the spawn state -1 pins it at -10.
         assert!(!d.dont_take_damage, "the fresh spawn is open");
         for _ in 0..31 {
-            d.update_deerclops(&w, &player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng);
         }
         assert!(d.dont_take_damage, "the 450px ramp shields");
         // Tick the state 0 selection: the quiet close-range stall fires
@@ -18620,33 +20515,48 @@ mod tests {
         d.ai[1] = 200.0;
         d.vx = 0.0;
         d.on_ground = true;
-        d.update_deerclops(&w, &player, &mut rng);
+        d.update_deerclops(&w, &mut player, &mut rng);
         assert_eq!(d.ai[0], 5.0, "the hand burst state");
         for _ in 0..60 {
-            d.update_deerclops(&w, &player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng);
         }
         assert_eq!(d.ai[0], 0.0, "the burst ends back to the walk");
-        let hands = d.wants_hostile_shot.len();
+        let hands = d.wants_hostile_shot_ai.len();
         assert!(hands >= 6, "the 6-shadow-hand burst ({hands})");
+        // The C#'s pick hands the arm its variation age + angle
+        // (`Projectile.RandomizeInsanityShadowFor`, `Projectile.cs:42408-42493`).
+        for hand in d.wants_hostile_shot_ai.iter() {
+            assert_eq!(hand.kind, crate::projectile::SHADOW_HAND);
+            assert!(
+                matches!(hand.ai0, 0.0 | 180.0 | 300.0 | 390.0),
+                "the variation age ({})",
+                hand.ai0
+            );
+        }
         // The spike volley (state 1).
         d.ai[0] = 1.0;
         d.ai[1] = 0.0;
         for _ in 0..40 {
-            d.update_deerclops(&w, &player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng);
         }
         let spikes: Vec<_> = d
-            .wants_hostile_shot
+            .wants_hostile_shot_ai
             .iter()
-            .filter(|(kind, ..)| *kind == crate::projectile::DEERCLOPS_ICE_SPIKE)
+            .filter(|shot| shot.kind == crate::projectile::DEERCLOPS_ICE_SPIKE)
             .copied()
             .collect();
+        // The C#'s cadence (`:44484-44496`): from the 36th tick, every
+        // fourth tick makes four spikes — the 40-tick window sees two
+        // volleys.
         assert!(
-            spikes.len() >= 20,
+            spikes.len() >= 8,
             "the spike volley adds shots ({})",
             spikes.len()
         );
-        for (_, _, _, _, _, dmg) in spikes.iter() {
-            assert_eq!(*dmg, 13, "the spike damage");
+        for spike in spikes.iter() {
+            assert_eq!(spike.damage, 13, "the spike damage");
+            // `:44582` — the spike's `ai1` is its scale factor.
+            assert!(spike.ai1 >= 0.1, "the scale factor ({})", spike.ai1);
         }
         // The life ramp: the speed cap rises as the hp falls.
         let fast = 3.5 + 1.0 * (1.0 - d.hp as f32 / d.max_hp as f32);
@@ -19951,18 +21861,19 @@ mod s1_d_3b_tests {
 
     #[test]
     fn goblin_fighters_use_skeleton_walker_not_shadowed_goblin_arm() {
-        // R-05-3 / S1-D-3b: GoblinThief/Warrior/Peon must reach the skeleton
-        // walker arm (`update_skeleton`, WalkerParams speed 0.8) instead of the
-        // shadowing `update_goblin` arm (speed 1.0). NPC.cs:15644/15658/15714.
+        // R-05-3 / S1-D-3b: GoblinThief/Warrior/Peon must reach the walker
+        // arm instead of the shadowing `update_goblin` arm (speed 1.0).
+        // S1-D-3c: the walk speed is the C#'s per-type cap (the thief 2,
+        // the warrior 1, the peon 1.5 — `NPC.cs:57554`/`:57606`/`:58322`).
         let w = flat_world();
         let mut player = crate::player::Player::spawn(&w);
         // place target far to the right, both on the floor
         player.x = 140.0 * 16.0;
         player.y = 68.0 * 16.0;
-        for kind in [
-            NpcKind::GoblinThief,
-            NpcKind::GoblinWarrior,
-            NpcKind::GoblinPeon,
+        for (kind, cap) in [
+            (NpcKind::GoblinThief, 2.0),
+            (NpcKind::GoblinWarrior, 1.0),
+            (NpcKind::GoblinPeon, 1.5),
         ] {
             let mut n = bare(kind);
             n.x = 80.0 * 16.0;
@@ -19973,8 +21884,8 @@ mod s1_d_3b_tests {
                 n.update(&w, &mut player, 1.0 / 60.0);
             }
             assert!(
-                n.vx.abs() <= 0.95,
-                "{kind:?} must use skeleton walker (speed <= ~0.8), got vx={}",
+                (n.vx - cap).abs() < 0.01,
+                "{kind:?} must walk at the C#'s cap {cap}, got vx={}",
                 n.vx
             );
             assert!(
@@ -20220,5 +22131,625 @@ mod s1_f_3_tests {
         assert_eq!(NpcKind::Zombie.cs_id(), 3);
         assert_eq!(NpcKind::Guide.cs_id(), 22);
         assert_eq!(NpcKind::Angler.cs_id(), 369);
+    }
+
+    /// S1-D-3c — `AI_003_Fighters`'s per-type walk-speed caps
+    /// (`NPC.cs:57403-59800`): the C#'s groups and their rows.
+    #[test]
+    fn s1_d_3c_the_ai_style_3_walk_speeds_match_the_csharp_caps() {
+        // The `num107` default group (`:58322-58374`): 1f.
+        assert_eq!(NpcKind::Zombie.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::UndeadMiner.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::GoblinWarrior.ai3_walk_speed(), Some(1.0));
+        // The `num83` group (`:57606-57691`): 1.5f with the per-type rows.
+        assert_eq!(NpcKind::Skeleton.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::GoblinPeon.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::GrayGrunt.ai3_walk_speed(), Some(1.8));
+        assert_eq!(NpcKind::GigaZapper.ai3_walk_speed(), Some(2.25));
+        // The cap-2 (`:57554-57578`) and cap-3 (`:57520-57552`) groups.
+        assert_eq!(NpcKind::GoblinThief.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::PirateDeckhand.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::PirateCaptainsMate.ai3_walk_speed(), Some(3.0));
+        // The shooters' group (`:59717-59750`).
+        assert_eq!(NpcKind::PirateArcher.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::PirateCorsair.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::PirateCaptain.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::BrainScrambler.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::RayGunner.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::MartianOfficer.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::MartianWalker.ai3_walk_speed(), Some(4.0));
+        // The Martian engineer's own arm (`:58032-58069`).
+        assert_eq!(NpcKind::MartianEngineer.ai3_walk_speed(), Some(1.5));
+        // The kinds outside the table carry their own arm's speed (the
+        // vortex rifleman's own arm already uses the C#'s 6f cap, the
+        // `num83` row `:57677`).
+        assert_eq!(NpcKind::Slime.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::DemonEye.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::VortexRifleman.ai3_walk_speed(), None);
+    }
+
+    /// S1-D-3d — the goblin family's ids and stats: the port's four goblin
+    /// kinds carried each other's vanilla `NPCID` (the peon/thief/warrior/
+    /// archer were rotated), so the stats rows, the bestiary's net ids and
+    /// the loot table's key were one step off the C#.
+    ///
+    /// The C#'s rows (`ID/NPCID.cs:10729-10733`/`:10899` and the
+    /// `SetDefaults` arms `NPC.cs:15644-15730`):
+    /// - the peon (26): 60 HP, 12 damage, 4 defense, kb 0.8, value 100;
+    /// - the thief (27): 80 HP, 20 damage, 6 defense, kb 0.7, value 200;
+    /// - the warrior (28): 110 HP, 25 damage, 8 defense, kb 0.5, value 150;
+    /// - the archer (111): 80 HP, 20 damage, 6 defense, kb 0.7, value 200.
+    #[test]
+    fn s1_d_3d_the_goblin_kinds_carry_their_vanilla_ids_and_stats() {
+        assert_eq!(NpcKind::GoblinPeon.cs_id(), 26, "NPCID.GoblinPeon");
+        assert_eq!(NpcKind::GoblinThief.cs_id(), 27, "NPCID.GoblinThief");
+        assert_eq!(NpcKind::GoblinWarrior.cs_id(), 28, "NPCID.GoblinWarrior");
+        assert_eq!(NpcKind::GoblinArcher.cs_id(), 111, "NPCID.GoblinArcher");
+        // The stats rows.
+        assert_eq!(NpcKind::GoblinPeon.max_hp(), 60);
+        assert_eq!(NpcKind::GoblinThief.max_hp(), 80);
+        assert_eq!(NpcKind::GoblinWarrior.max_hp(), 110);
+        assert_eq!(NpcKind::GoblinArcher.max_hp(), 80);
+        assert_eq!(NpcKind::GoblinPeon.contact_damage(), 12);
+        assert_eq!(NpcKind::GoblinThief.contact_damage(), 20);
+        assert_eq!(NpcKind::GoblinWarrior.contact_damage(), 25);
+        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 20);
+        let npc = |kind| Npc::new(kind, 0.0, 0.0, 0, 0.0);
+        assert_eq!(npc(NpcKind::GoblinPeon).defense(), 4);
+        assert_eq!(npc(NpcKind::GoblinThief).defense(), 6);
+        assert_eq!(npc(NpcKind::GoblinWarrior).defense(), 8);
+        assert_eq!(npc(NpcKind::GoblinArcher).defense(), 6);
+        assert_eq!(npc(NpcKind::GoblinPeon).knock_back_resist(), 0.8);
+        assert_eq!(npc(NpcKind::GoblinThief).knock_back_resist(), 0.7);
+        assert_eq!(npc(NpcKind::GoblinWarrior).knock_back_resist(), 0.5);
+        assert_eq!(npc(NpcKind::GoblinArcher).knock_back_resist(), 0.7);
+        assert_eq!(npc(NpcKind::GoblinPeon).value(), 100.0);
+        assert_eq!(npc(NpcKind::GoblinThief).value(), 200.0);
+        assert_eq!(npc(NpcKind::GoblinWarrior).value(), 150.0);
+        assert_eq!(npc(NpcKind::GoblinArcher).value(), 200.0);
+    }
+}
+
+#[cfg(test)]
+mod s1_d_3e_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn brain() -> Npc {
+        let mut n = Npc::new(NpcKind::BrainOfCthulhu, 200.0, 100.0, 0, 0.0);
+        n.hp = n.max_hp;
+        n
+    }
+
+    /// S1-D-3e — the Brain of Cthulhu's machine (`NPC.cs:32370-32656`): the
+    /// normal phase drifts at 1 px/tick, the blink timer picks a tile near
+    /// the player, the fade-in teleports the Brain onto it and the fade-out
+    /// returns to the normal phase.
+    #[test]
+    fn s1_d_3e_the_brain_blinks_to_a_tile_near_the_player() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        player.zones.crimson = true;
+        let mut b = brain();
+        // A live Creeper keeps the Brain in its normal phase (the C#'s
+        // `num818` check).
+        b.brain_local[2] = 1.0;
+        // The normal phase: the 1-px drift toward the player.
+        b.update_brain(&w, &player, &mut 12345u64);
+        assert!(
+            (b.vx.hypot(b.vy) - 1.0).abs() < 0.01,
+            "the normal phase drifts at 1 px/tick ({:?})",
+            (b.vx, b.vy)
+        );
+        assert!(
+            b.vx > 0.0 && b.vy > 0.0,
+            "the drift points at the player ({:?})",
+            (b.vx, b.vy)
+        );
+        // The blink timer: after 120 + Next(300) ticks the Brain picks a tile
+        // and fades in (alpha += 5 per tick) before teleporting.
+        let mut rng = 12345u64;
+        for _ in 0..500 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == 1.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], 1.0, "the blink armed the fade-in");
+        let tile_x = b.ai[1];
+        let tile_y = b.ai[2];
+        // The fade-in runs 51 ticks (alpha 0 -> 255) and then teleports.
+        for _ in 0..60 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == 2.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], 2.0, "the fade-in teleported the Brain");
+        assert!(
+            (b.x - (tile_x * 16.0 - 80.0)).abs() <= 1.0,
+            "the Brain sits on the tile ({})",
+            b.x
+        );
+        assert!(
+            (b.y - (tile_y * 16.0 - 55.0)).abs() <= 1.0,
+            "the Brain sits on the tile ({})",
+            b.y
+        );
+        // The fade-out returns to the normal phase.
+        for _ in 0..80 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == 0.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], 0.0, "the fade-out returns to the normal phase");
+        assert_eq!(b.alpha, 0, "the Brain is invisible again");
+    }
+
+    /// S1-D-3e — the Brain's retreat: with no Creeper left (`brain_local[2]`
+    /// = 0) the Brain switches to the `-1` state, and the retreat's states
+    /// fade the Brain in on the picked tile and back out.
+    #[test]
+    fn s1_d_3e_the_brain_retreats_when_the_creepers_are_gone() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        player.zones.crimson = true;
+        let mut b = brain();
+        b.brain_local[2] = 0.0; // no creeper left
+        b.update_brain(&w, &player, &mut 999u64);
+        assert_eq!(b.ai[0], -1.0, "the Brain retreats without its swarm");
+        assert_eq!(b.alpha, 0, "the retreat starts invisible");
+        // The retreat's timer picks a tile (60 + Next(120) ticks) and the
+        // `-2` state fades the Brain in on it.
+        let mut rng = 999u64;
+        for _ in 0..400 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == -2.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], -2.0, "the retreat armed its fade-in");
+        for _ in 0..80 {
+            b.update_brain(&w, &player, &mut rng);
+            if b.ai[0] == -3.0 {
+                break;
+            }
+        }
+        assert_eq!(b.ai[0], -3.0, "the retreat faded the Brain in");
+        assert_eq!(b.alpha, 255, "the retreat's fade-in is full");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_3f_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-D-3f — the Skeletron head's machine (`NPC.cs:21919-22298`): the
+    /// daytime turns the head into the enraged state (the invulnerable
+    /// 8-px rush) and the charge state drops the defense by 10.
+    #[test]
+    fn s1_d_3f_the_skeletron_head_enrages_in_the_daylight() {
+        let mut w = world();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 200.0, 100.0, 0, 0.0);
+        sk.hp = sk.max_hp;
+        let mut rng = 12345u64;
+        // The night: the head spins (the state 0) and hovers.
+        sk.update_skeletron(&w, &player, &mut rng);
+        assert_eq!(sk.ai[1], 0.0, "the head spins at night");
+        // The daylight: the enraged state.
+        w.day_time = true;
+        sk.update_skeletron(&w, &player, &mut rng);
+        assert_eq!(sk.ai[1], 2.0, "the daylight enrages the head");
+        assert_eq!(sk.damage_override, Some(9999), "the enraged damage");
+        assert_eq!(sk.defense_override, Some(9999), "the enraged defense");
+        let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
+        assert!((speed - 8.0).abs() < 0.01, "the enraged rush ({speed})");
+    }
+
+    /// S1-D-3f — the charge state (`NPC.cs:22118-22244`): the defense
+    /// drops by 10 and the head rushes at the player.
+    #[test]
+    fn s1_d_3f_the_skeletron_charge_drops_the_defense() {
+        let mut w = world();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 200.0, 100.0, 0, 0.0);
+        sk.hp = sk.max_hp;
+        sk.ai[1] = 1.0; // the charge state
+        let base_defense = sk.defense();
+        let mut rng = 12345u64;
+        sk.update_skeletron(&w, &player, &mut rng);
+        assert_eq!(
+            sk.defense_override,
+            Some(base_defense - 10),
+            "the charge drops the defense"
+        );
+        let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
+        assert!((speed - 1.5).abs() < 0.01, "the charge speed ({speed})");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_3g_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn king() -> Npc {
+        let mut n = Npc::new(NpcKind::KingSlime, 200.0, 300.0, 0, 0.0);
+        n.hp = n.max_hp;
+        n
+    }
+
+    /// S1-D-3g — the King Slime's body scales with its hp
+    /// (`AI_015_KingSlime`, `NPC.cs:43340-43356`): the scale is
+    /// `life / lifeMax * 0.5 + 0.75` and the box is 98x92 times it.
+    #[test]
+    fn s1_d_3g_the_king_slime_scales_with_its_hp() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        let mut k = king();
+        let mut rng = 12345u64;
+        k.update_king_slime(&w, &mut player, &mut rng);
+        // The full-hp scale: 0.5 + 0.75 = 1.25.
+        assert!(
+            (k.scale - 1.25).abs() < 0.001,
+            "the full-hp scale ({})",
+            k.scale
+        );
+        assert_eq!(k.size_override, Some((98.0 * 1.25, 92.0 * 1.25)));
+        // At half the hp the scale drops to 1.0.
+        k.hp = k.max_hp / 2;
+        k.update_king_slime(&w, &mut player, &mut rng);
+        assert!(
+            (k.scale - 1.0).abs() < 0.001,
+            "the half-hp scale ({})",
+            k.scale
+        );
+    }
+
+    /// S1-D-3g — the minion batches (`NPC.cs:43357-43395`): every 5 % of the
+    /// hp the King Slime spawns 1-3 slimes (the C#'s `Next(1, 4)`).
+    #[test]
+    fn s1_d_3g_the_king_slime_spawns_a_batch_every_five_percent() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        let mut k = king();
+        let mut rng = 12345u64;
+        // The first tick: the `ai[3]` latch is set to the full hp — no batch.
+        k.update_king_slime(&w, &mut player, &mut rng);
+        assert!(!k.wants_minion, "no batch at the full hp");
+        // A hair of damage is not enough (the 5 % window).
+        k.hp = k.max_hp - 1;
+        k.update_king_slime(&w, &mut player, &mut rng);
+        assert!(!k.wants_minion, "no batch inside the 5 % window");
+        // A 5 % loss spawns the batch.
+        k.hp = k.max_hp - (k.max_hp / 20) - 1;
+        k.update_king_slime(&w, &mut player, &mut rng);
+        assert!(k.wants_minion, "the 5 % batch");
+        assert!(
+            (1..=3).contains(&k.wants_minion_batch),
+            "the batch is 1-3 ({})",
+            k.wants_minion_batch
+        );
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_5b_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-D-4b-5b — the Deerclops' ice-spike row
+    /// (`AI_123_Deerclops_MakeSpikesForward`, `NPC.cs:44466-44500`): from
+    /// the 36th tick, every fourth tick makes four spikes, and each spike
+    /// lands on the ground row `FindBestY` picks (`NPC.cs:44586-44640`).
+    #[test]
+    fn s1_d_4b_5b_the_deerclops_spikes_fall_in_batches_of_four() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 32.0 * 16.0;
+        player.y = 20.0 * 16.0;
+        let mut d = Npc::new(NpcKind::Deerclops, 20.0 * 16.0, 29.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        let mut rng = 12345u64;
+        // The state 1 (the forward spikes): 36 ticks to the first volley.
+        d.ai[0] = 1.0;
+        d.ai[1] = 0.0;
+        for _ in 0..36 {
+            d.update_deerclops(&w, &mut player, &mut rng);
+        }
+        let spikes: Vec<_> = d
+            .wants_hostile_shot_ai
+            .iter()
+            .filter(|s| s.kind == crate::projectile::DEERCLOPS_ICE_SPIKE)
+            .copied()
+            .collect();
+        assert_eq!(spikes.len(), 4, "the first volley is four spikes");
+        // The spikes land on the ground row under the player (the solid
+        // tiles start at row 30) and fly at the row's angle.
+        for spike in spikes.iter() {
+            assert!(
+                (spike.y - 8.0 - 30.0 * 16.0).abs() < 24.0,
+                "the spike lands on the ground row ({})",
+                spike.y
+            );
+            assert!(
+                spike.vx.abs() + spike.vy.abs() > 0.5,
+                "the spike flies at an angle ({:?})",
+                (spike.vx, spike.vy)
+            );
+        }
+        // The next three ticks make no spike (the cadence is every fourth
+        // tick: the volleys land on the 36th, the 40th, ...).
+        let before = d.wants_hostile_shot_ai.len();
+        for _ in 0..3 {
+            d.update_deerclops(&w, &mut player, &mut rng);
+        }
+        assert_eq!(
+            d.wants_hostile_shot_ai.len(),
+            before,
+            "the cadence waits four ticks"
+        );
+        // The fourth tick opens the second volley.
+        d.update_deerclops(&w, &mut player, &mut rng);
+        assert_eq!(
+            d.wants_hostile_shot_ai.len() - before,
+            4,
+            "the second volley is four spikes"
+        );
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_5d_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-D-4b-5d — the Deerclops' rubble (`AI_123_Deerclops_ShootRubbleUp`,
+    /// `NPC.cs:44448-44465`): from the 32nd tick one rock per tick lands on
+    /// the first solid tile under the Deerclops — and the rock is the 962
+    /// (the ice chunk), not the 961 (the forward spike).
+    #[test]
+    fn s1_d_4b_5d_the_deerclops_rubble_falls_one_chunk_per_tick() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 32.0 * 16.0;
+        player.y = 20.0 * 16.0;
+        let mut d = Npc::new(NpcKind::Deerclops, 20.0 * 16.0, 29.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        let mut rng = 12345u64;
+        // The state 2 (the rubble): 32 ticks to the first rock.
+        d.ai[0] = 2.0;
+        d.ai[1] = 0.0;
+        for _ in 0..32 {
+            d.update_deerclops(&w, &mut player, &mut rng);
+        }
+        let rocks: Vec<_> = d
+            .wants_hostile_shot_ai
+            .iter()
+            .filter(|s| s.kind == crate::projectile::DEERCLOPS_ICE_CHUNK)
+            .copied()
+            .collect();
+        assert_eq!(rocks.len(), 1, "the first tick makes one rock");
+        // The rock lands on the ground row under the Deerclops.
+        assert!(
+            (rocks[0].y - 8.0 - 30.0 * 16.0).abs() < 24.0,
+            "the rock lands on the ground row ({})",
+            rocks[0].y
+        );
+        assert_eq!(rocks[0].damage, 18, "the rock's damage");
+        // The next tick makes the second rock (the cadence is one per tick).
+        d.update_deerclops(&w, &mut player, &mut rng);
+        let rocks: Vec<_> = d
+            .wants_hostile_shot_ai
+            .iter()
+            .filter(|s| s.kind == crate::projectile::DEERCLOPS_ICE_CHUNK)
+            .copied()
+            .collect();
+        assert_eq!(rocks.len(), 2, "the rubble falls one rock per tick");
+    }
+
+    /// S1-D-4b-5d — the Deerclops' chill aura (`NPC.cs:44285-44320`): the
+    /// state 3 spawns no projectile — it slows the player (the Slow buff
+    /// 32, 720 ticks) within 800 px.
+    #[test]
+    fn s1_d_4b_5d_the_deerclops_chill_aura_slows_the_player() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 32.0 * 16.0;
+        player.y = 25.0 * 16.0;
+        let mut d = Npc::new(NpcKind::Deerclops, 30.0 * 16.0, 29.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        let mut rng = 12345u64;
+        // The state 3 (the chill aura): the buff lands on the 28th tick.
+        d.ai[0] = 3.0;
+        d.ai[1] = 0.0;
+        for _ in 0..27 {
+            d.update_deerclops(&w, &mut player, &mut rng);
+        }
+        assert!(
+            player.buffs.find_buff_index(32).is_none(),
+            "the aura waits for its 28th tick"
+        );
+        d.update_deerclops(&w, &mut player, &mut rng);
+        assert!(
+            player.buffs.find_buff_index(32).is_some(),
+            "the Slow buff lands on the 28th tick"
+        );
+        // The aura spawns no projectile.
+        assert!(
+            d.wants_hostile_shot_ai.is_empty(),
+            "the chill aura fires no projectile"
+        );
+    }
+
+    /// S1-D-4b-5e — the Flying Dutchman's cannon (`NPC.cs:35753-35823`): the
+    /// 240-tick reload, the line-of-sight gate and the shell's shot.
+    #[test]
+    fn s1_d_4b_5e_the_dutchman_cannon_fires_its_shell() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let w = w;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 32.0 * TILE_PX;
+        player.y = 20.0 * TILE_PX;
+        let mut cannon = Npc::new(
+            NpcKind::FlyingDutchmanCannon,
+            30.0 * TILE_PX,
+            29.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        cannon.hp = cannon.max_hp;
+        // The mount's anchor (the carrier write-through).
+        cannon.carrier_x = 30.0 * TILE_PX + 15.0;
+        cannon.carrier_y = 29.0 * TILE_PX + 15.0;
+        cannon.carrier_timer = 0.0;
+        let mut rng = 12345u64;
+        // The reload: the shot lands on the 240th tick.
+        for _ in 0..240 {
+            cannon.update_saucer_mount(&w, &player, &mut rng);
+        }
+        let shells: Vec<_> = cannon
+            .wants_hostile_shot
+            .iter()
+            .filter(|s| s.0 == 240u16)
+            .copied()
+            .collect();
+        assert_eq!(shells.len(), 1, "the cannon fires its shell");
+        assert_eq!(shells[0].5, 30, "the shell's damage");
+        // The shot points at the player (the direction × 14, minus 5 on Y).
+        assert!(
+            shells[0].3 > 0.0,
+            "the shell flies at the player ({:?})",
+            shells[0]
+        );
     }
 }

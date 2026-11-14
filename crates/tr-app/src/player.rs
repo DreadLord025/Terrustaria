@@ -291,6 +291,63 @@ pub fn offsets_player_headgear_y(row: usize) -> f32 {
     }
 }
 
+/// `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
+/// `atan2(aimY * direction, aimX * direction) - fullRotation`. The port keeps
+/// the aim as an angle, so the mirrored `atan2` is the angle + PI when the
+/// player faces left.
+pub fn item_rotation_for_aim(aim: f32, facing: i32, full_rotation: f32) -> f32 {
+    let mirrored = if facing < 0 {
+        std::f32::consts::PI
+    } else {
+        0.0
+    };
+    aim + mirrored - full_rotation
+}
+
+/// `Player.CompositeArmStretchAmount` (`Player.cs:211-216`): how far the
+/// composite arm stretches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompositeStretch {
+    Full,
+    None,
+    Quarter,
+    ThreeQuarters,
+}
+
+impl CompositeStretch {
+    /// The sheet row of the stretch (`PlayerDrawSet.cs:2254-2268`):
+    /// Full=0, None=3, Quarter=2, ThreeQuarters=1.
+    pub fn row(self) -> u32 {
+        match self {
+            CompositeStretch::Full => 0,
+            CompositeStretch::None => 3,
+            CompositeStretch::Quarter => 2,
+            CompositeStretch::ThreeQuarters => 1,
+        }
+    }
+}
+
+/// `Player.CompositeArmData` (`Player.cs:219`): the per-arm composite state —
+/// `enabled` switches the arm onto the composite sheet columns
+/// (front 7 / back 8) at the stretch row, with `rotation` applied around the
+/// composite pivot; disabled arms keep the per-body-frame cells.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CompositeArmState {
+    pub enabled: bool,
+    pub stretch: CompositeStretch,
+    pub rotation: f32,
+}
+
+impl CompositeArmState {
+    /// The disabled arm — per-body-frame cells, no rotation (the per-tick
+    /// reset at `AnimatePlayerAndGetItemFrame`, `Player.cs:43376-43377`).
+    pub const DISABLED: CompositeArmState = CompositeArmState {
+        enabled: false,
+        stretch: CompositeStretch::None,
+        rotation: 0.0,
+    };
+}
+
 /// The held-item inputs of `PlayerFrame()` (`Player.cs:36144-36147`). The C#
 /// reads `this.inventory[this.selectedItem]` straight out of the player; the
 /// port keeps the inventory in the app, so the app hands the same fields in
@@ -313,7 +370,17 @@ pub struct FrameInputs {
     pub swing_active: bool,
     /// `itemAnimation / itemAnimationMax` (1 at the start, 0 at the end).
     pub swing_remaining: f32,
-    /// `itemRotation * direction` — the useStyle 5 aim.
+    /// The raw animation counters (`Player.itemAnimation`/`itemAnimationMax`)
+    /// — the composite assignments read the raw phases.
+    pub swing_anim: f32,
+    pub swing_anim_max: f32,
+    /// `Item.useAnimation` — the style 13's rhythm base.
+    pub use_animation: i32,
+    /// `Player.itemRotation` for the shooting styles (`Player.cs:47371-47378`):
+    /// `atan2(aimY * direction, aimX * direction) - fullRotation`. The style 13
+    /// composite arm reads it (`itemRotation * Directions.Y`, `:51195`).
+    pub item_rotation: f32,
+    /// `itemRotation * direction` — the useStyle 5 aim (`Player.cs:36423`).
     pub aim_relative: f32,
     /// `!wet || !item.noWet` — the two held-item arms that the water kills.
     pub hold_style_dry: bool,
@@ -530,6 +597,18 @@ pub struct Player {
     /// between simulation ticks on high-refresh displays.
     pub prev_x: f32,
     pub prev_y: f32,
+    /// `Player.ActuationRodLock` / `ActuationRodLockSetting`
+    /// (`Player.cs:2616-2618`): the Actuation Rod acts once per tick — the
+    /// lock and the tile state it saw (`ResetEffects` clears the lock,
+    /// `:18804`).
+    pub actuation_rod_lock: bool,
+    pub actuation_rod_lock_setting: bool,
+    /// `Entity.oldPosition` (`Player.cs:28071`): the position before this
+    /// tick's movement. The switch-tile bridge (`Collision.SwitchTiles`,
+    /// `Player.cs:28274-28275`) reads it to tell "the entity moved onto the
+    /// plate" from "the entity stands on it".
+    pub old_x: f32,
+    pub old_y: f32,
     pub vx: f32,
     pub vy: f32,
     pub on_ground: bool,
@@ -584,6 +663,16 @@ pub struct Player {
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
+    /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
+    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
+    /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
+    /// so the flag stays false in play — the reach formula reads it.
+    pub ate_artisan_bread: bool,
+    /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
+    /// biome torches — the gate on the `needTorchGodsFavor` recipes
+    /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
+    /// is unported, so the flag stays false in play.
+    pub unlocked_biome_torches: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -645,6 +734,12 @@ pub struct Player {
     /// `Player.legFrameCounter`: accumulates `|velocity.X| * 1.3` while walking and
     /// advances a leg row every `8.0`.
     leg_frame_counter: f32,
+    /// `Player.compositeFrontArm` / `compositeBackArm` (`Player.cs:1906/:4347`)
+    /// — the composite arm poses the item-use styles assign (S1-C-4's
+    /// swing parity); reset to DISABLED per frame and reassigned by the
+    /// item-composite block.
+    pub composite_front: CompositeArmState,
+    pub composite_back: CompositeArmState,
     /// `Player.bodyFrameCounter` (`Player.cs:36594`): only the `legs == 140`
     /// walk branch accumulates it (`|velocity.X| * 0.5`); every other body arm
     /// either zeroes it or leaves it alone.
@@ -838,6 +933,10 @@ pub struct Player {
     no_fall_dmg: bool,
     /// `Player.hasWings` (`Player.cs:1336`): any wing equipped (M3-EQUIP-3).
     pub has_wings: bool,
+    /// `Player.releaseHook` (`Player.cs:27483-27489`): the "the hook key was
+    /// released" latch the quick-grapple edge reads (`controlHook` +
+    /// `releaseHook` → `QuickGrapple`).
+    pub release_hook: bool,
     /// `Player.grappling[0] != -1` (the per-tick rebuilt grapple state): the
     /// hook is attached and `GrappleMovement` drives the velocity.
     pub grappling_active: bool,
@@ -870,6 +969,17 @@ pub struct Player {
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
     rocket_release: bool,
+    /// The cart mount the Track Hook hands the player to
+    /// (`Player.cs:22676-22679`): the equipped cart (the misc-equip 2) when
+    /// it is a cart row, else the wooden minecart (13). The app refreshes it
+    /// per tick from the misc-equip slot.
+    pub cart_mount: i32,
+    /// `Player.RemoveAllGrapplingHooks` (`Player.cs:33562-33566`) — the
+    /// request the caller applies to the hook pool. The C# calls it from the
+    /// jump-off (`Player.cs:22733`), the sign interaction (`:33379`), the
+    /// minecart-hook launch (`:33557`) and the TrackHook→cart transfer
+    /// (`:22675`); the jump-off is the one the port models here.
+    pub release_grappling_hooks: bool,
     /// `Player.releaseJump` (`Player.cs`): jump was released since the last
     /// press — the wing/rocket refills on the ground gate on it.
     release_jump: bool,
@@ -951,6 +1061,10 @@ pub struct Player {
     slippy2: bool,
     powerrun: bool,
     running_on_sand: bool,
+    /// `Player.suffocateDelay` (`Player.cs:2318`): the tick counter the
+    /// suffocating tiles (the sands) advance — the sixth tick in the sand
+    /// suffocates (`Player.ApplyTouchDamage`, `Player.cs:28996-29010`).
+    pub suffocate_delay: u8,
     /// The liquid displacement fraction `Player.WetCollision` integrates free
     /// axes with (`Player.cs:23436-23451`): water/lava 0.5, honey 0.25
     /// (`Player.cs:28168-28195`), dry 1.0.
@@ -973,6 +1087,13 @@ pub struct Player {
     /// toggled on each bounce while a direction key is held
     /// (`Player.cs:28123-28130`).
     pub cart_flip: bool,
+    /// `Player.unlockedSuperCart` (`Player.cs:2052`): the Super Cart is
+    /// unlocked by the item 3353 (`Player.cs:45207-45211`, `:55718`) — that
+    /// writer is not ported yet, so the flag stays false in play.
+    pub unlocked_super_cart: bool,
+    /// `Player.enabledSuperCart` (`Player.cs:2054`, default true): the
+    /// player's Super Cart toggle. The UI that flips it is not ported yet.
+    pub enabled_super_cart: bool,
     /// `Player.onTrack` (`Player.cs:2811`): this tick's `Minecart.TrackCollision`
     /// result bit 0 — the body rides a rail. Couples the collision heights
     /// (pitfall §10.9).
@@ -1002,6 +1123,13 @@ pub struct Player {
     /// The `Player.cs:28237-28241` switch trip handed to the caller (the C#
     /// `HitTrackSwitch` needs `&mut World`; the tick takes `&World`).
     pending_switch_trip: Option<(i32, i32)>,
+    /// `Player.PlayHurtSound` (`Player.cs:38569-38712`): the hurt cue the
+    /// damage path queues (`Player.cs:38525`) — the caller owns the audio
+    /// device, so the Player hands the cue over.
+    pending_hurt_sound: Option<&'static str>,
+    /// `Player.PlayDeathSound` (`Player.cs:38715-38744`): the death cue
+    /// `Player.KillMe` queues (`Player.cs:38868`).
+    pending_death_sound: Option<&'static str>,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
@@ -1035,6 +1163,21 @@ pub struct Player {
     // the ×1.1 speed fuse (`:53543`). Cleared and re-derived per tick by the
     // grant seam in `world_sim/player.rs` (`ResetEffects` `:18605`).
     pub magic_quiver: bool,
+    // ------------------------------- the tooltip's player-side layers (S1-E-20)
+    // `Player.minionKB` (`Player.cs`): the summon knockback bonus the
+    // tooltip's knockback row adds (`Main.cs:20749`).
+    pub minion_kb: f32,
+    // `Player.kbGlove` / `kbBuff` (`Player.cs`): the knockback gloves' and
+    // buff's bonuses (the tooltip's knockback row, `Main.cs:20333-20340`).
+    pub kb_glove: bool,
+    pub kb_buff: bool,
+    // `Player.shroomiteStealth` + `stealth` (`Player.cs`): the shroomite
+    // armour's ranged knockback scale (`Main.cs:20342-20345`).
+    pub shroomite_stealth: bool,
+    pub stealth: f32,
+    // `Player.spaceGun` (`Player.cs`): the mana row's exemption
+    // (`Main.cs:20917`).
+    pub space_gun: bool,
     /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
     /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
     /// damage (`:53537-53541`).
@@ -1359,6 +1502,8 @@ impl Player {
         };
         Self {
             dead: false,
+            composite_front: crate::player::CompositeArmState::DISABLED,
+            composite_back: crate::player::CompositeArmState::DISABLED,
             deaths_pve: 0,
             angler_quests_finished: 0,
             golfer_score: 0,
@@ -1439,6 +1584,10 @@ impl Player {
             y: sy,
             prev_x: sx,
             prev_y: sy,
+            old_x: sx,
+            old_y: sy,
+            actuation_rod_lock: false,
+            actuation_rod_lock_setting: false,
             vx: 0.0,
             vy: 0.0,
             on_ground: false,
@@ -1489,12 +1638,15 @@ impl Player {
             c_minecart: 0,
             c_mount: 0,
             c_grapple: 0,
+            release_hook: true,
             equipped_prefix: [0; 20],
             banks: std::array::from_fn(|_| std::array::from_fn(|_| crate::item::EMPTY_SLOT)),
             chest: crate::bank::CHEST_CLOSED,
             chest_x: 0,
             chest_y: 0,
             void_vault_enabled: false,
+            ate_artisan_bread: false,
+            unlocked_biome_torches: false,
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
@@ -1556,6 +1708,8 @@ impl Player {
             rocket_boots: 0,
             can_rocket: false,
             rocket_release: false,
+            cart_mount: 13,
+            release_grappling_hooks: false,
             release_jump: false,
             try_keeping_hovering_down: false,
             try_keeping_hovering_up: false,
@@ -1592,6 +1746,7 @@ impl Player {
             slippy2: false,
             powerrun: false,
             running_on_sand: false,
+            suffocate_delay: 0,
             liquid_move_speed: 1.0,
             in_lava: false,
             gfx_off_y: 0.0,
@@ -1600,6 +1755,8 @@ impl Player {
             stair_fall: false,
             cart_mounted: false,
             cart_flip: false,
+            unlocked_super_cart: false,
+            enabled_super_cart: true,
             on_track: false,
             on_wrong_ground: false,
             track_boost: 0.0,
@@ -1609,6 +1766,8 @@ impl Player {
             full_rotation_origin: (0.0, 0.0),
             fall_start2: (sy / TILE_PX) as i32,
             pending_switch_trip: None,
+            pending_hurt_sound: None,
+            pending_death_sound: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
@@ -1618,6 +1777,12 @@ impl Player {
             channel_item: 0,
             channel_target: Vec2::ZERO,
             magic_quiver: false,
+            minion_kb: 0.0,
+            kb_glove: false,
+            kb_buff: false,
+            shroomite_stealth: false,
+            stealth: 0.0,
+            space_gun: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
             ammo_box: false,
@@ -1940,6 +2105,18 @@ impl Player {
         self.pending_switch_trip.take()
     }
 
+    /// Takes the queued hurt cue (`Player.PlayHurtSound`, `Player.cs:38525`)
+    /// — the caller owns the audio device.
+    pub(crate) fn take_hurt_sound(&mut self) -> Option<&'static str> {
+        self.pending_hurt_sound.take()
+    }
+
+    /// Takes the queued death cue (`Player.PlayDeathSound`,
+    /// `Player.cs:38868`).
+    pub(crate) fn take_death_sound(&mut self) -> Option<&'static str> {
+        self.pending_death_sound.take()
+    }
+
     /// Takes the tick's queued spark particles (the `Main.dust` handoff —
     /// the caller owns the pool).
     pub(crate) fn take_cart_sparks(&mut self) -> Vec<crate::minecart::SparkP> {
@@ -2119,6 +2296,9 @@ impl Player {
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
         // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
         let _ = self.dismount(world, true);
+        // `Player.KillMe`'s tail (`Player.cs:38868`): the death cue — the
+        // legacy "Player Killed" id 5 (`Player.cs:38737`, the default arm).
+        self.pending_death_sound = Some("Player_Killed");
     }
 
     /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
@@ -2700,6 +2880,12 @@ impl Player {
         self.hurt_cd = tr_core::damage::iframes_for(amount, false, false) as f32 / 60.0;
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
+        // `Player.Hurt`'s tail (`Player.cs:38525`): the hurt cue. The C#'s
+        // voice system picks the family (`voiceVariant` 1 = the legacy
+        // "Player Hit" id 1, 2 = the female id 20, 3 = the default trackable)
+        // — the port has no voice setting, so the default variant 1 stands
+        // (`Player.cs:56045`).
+        self.pending_hurt_sound = Some("Player_Hit_0");
         if knock_back && !self.no_knockback {
             let dir = if self.x + WIDTH * 0.5 >= from_x {
                 1.0
@@ -3090,6 +3276,9 @@ impl Player {
         // flag re-derives per tick from the mount head-set (`Mount.cs:4797`).
         self.just_jumped = false;
         self.auto_jump = false;
+        // `Player.cs:18804`: the Actuation Rod's per-tick lock clears with
+        // the rest of `ResetEffects`.
+        self.actuation_rod_lock = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()
@@ -4005,7 +4194,7 @@ impl Player {
         // vector to the attached hook center clamped to the pull speed. The
         // fall origin refreshes per tick (no fall damage accrues).
         if grappling {
-            self.grapple_movement(grapple, input, item_in_use);
+            self.grapple_movement(world, grapple, input, item_in_use);
         }
 
         // The flight section (`Player.cs:26744-27360`): the wings and the
@@ -4159,6 +4348,11 @@ impl Player {
         }
         // The AABB resolve (`TileCollision` + the step/slope helpers): the
         // velocity phase above only shaped `velocity`; this integrates it.
+        // `base.oldPosition = base.position` (`Player.cs:28071`): the position
+        // before this tick's movement — the switch-tile bridge reads it to
+        // tell "moved onto the plate" from "stands on it".
+        self.old_x = self.x;
+        self.old_y = self.y;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
@@ -4272,7 +4466,7 @@ impl Player {
             self.floor_visuals(world);
         }
 
-        self.update_survival(rng);
+        self.update_survival(world, rng);
 
         if self.x < 0.0 {
             self.x = 0.0;
@@ -4334,7 +4528,16 @@ impl Player {
                 crate::mount::FRAME_RUNNING
             };
             self.mount
-                .update_frame(state, self.vx, self.vy, self.just_jumped, self.control_down);
+                .update_frame(
+                    state,
+                    self.vx,
+                    self.vy,
+                    self.just_jumped,
+                    self.control_down,
+                    self.sliding,
+                    self.dash,
+                    self.dash_delay,
+                );
         }
     }
 
@@ -4393,6 +4596,9 @@ impl Player {
                         self.vy,
                         self.just_jumped,
                         self.control_down,
+                        self.sliding,
+                        self.dash,
+                        self.dash_delay,
                     );
                     self.try_landing(world);
                 } else if self.wet {
@@ -4404,6 +4610,9 @@ impl Player {
                         self.vy,
                         self.just_jumped,
                         self.control_down,
+                        self.sliding,
+                        self.dash,
+                        self.dash_delay,
                     );
                 } else {
                     // `:36207-36212`: plain air.
@@ -4413,6 +4622,9 @@ impl Player {
                         self.vy,
                         self.just_jumped,
                         self.control_down,
+                        self.sliding,
+                        self.dash,
+                        self.dash_delay,
                     );
                     self.try_landing(world);
                 }
@@ -4433,6 +4645,9 @@ impl Player {
                     self.vy,
                     self.just_jumped,
                     self.control_down,
+                    self.sliding,
+                    self.dash,
+                    self.dash_delay,
                 );
             }
         }
@@ -4640,7 +4855,320 @@ impl Player {
             self.leg_frame_counter = 0.0;
             self.leg_frame = 5;
         }
+        // `AnimatePlayerAndGetItemFrame` (`Player.cs:43372-43380`): the
+        // composite arms reset to DISABLED per frame and
+        // `ItemCheck_ApplyUseStyle` reassigns them. The hold arms run when
+        // `ItemTimeIsZero` (no swing); the use arms when `itemAnimation > 0`.
+        self.composite_front = CompositeArmState::DISABLED;
+        self.composite_back = CompositeArmState::DISABLED;
+        if held.swing_active {
+            self.apply_item_composite_arms(&held);
+        } else {
+            self.apply_hold_composite_arms(&held);
+        }
     }
+
+    /// `ItemCheck_ApplyUseStyle`'s composite-arm assignments
+    /// (`Player.cs:50686-51320`), per `useStyle`. The rotations/curves are
+    /// verbatim; `dir` is `Player.direction` (`gravDir` is always 1).
+    fn apply_item_composite_arms(&mut self, held: &FrameInputs) {
+        let dir = self.facing as f32;
+        let progress = 1.0 - held.swing_remaining;
+        match held.use_style {
+            // `:50936-50955` (useStyle 2, EatFood): both arms at -PI/2 * dir;
+            // the stretch walks Full -> None by `num10` quarters
+            // (`num10 = 1 - itemAnimation / itemAnimationMax`).
+            2 => {
+                let st = if progress <= 0.25 {
+                    CompositeStretch::Full
+                } else if progress <= 0.5 {
+                    CompositeStretch::ThreeQuarters
+                } else if progress <= 0.75 {
+                    CompositeStretch::Quarter
+                } else {
+                    CompositeStretch::None
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    rotation: -std::f32::consts::FRAC_PI_2 * dir,
+                };
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    rotation: -std::f32::consts::FRAC_PI_2 * dir,
+                };
+            }
+            // `:50885-50911` (useStyle 9): the front arm Full along the
+            // `num7 -> num8` arc — `num6 = 2*PI/5`, `num7 = -num6/2 +
+            // (1 - lerp) * num6 + PI/10`, `num8 = num7 - PI/2`, mirrored for
+            // `direction == -1`; `lerp = GetLerpValue(0, 0.7, progress)`
+            // clamped.
+            9 => {
+                let lerp = (progress / 0.7).clamp(0.0, 1.0);
+                let num6 = std::f32::consts::PI * 2.0 / 5.0;
+                let num7 = -num6 * 0.5 + (1.0 - lerp) * num6 + (std::f32::consts::PI / 10.0);
+                let mut num8 = num7 - std::f32::consts::FRAC_PI_2;
+                if dir < 0.0 {
+                    num8 = -num8;
+                }
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: num8,
+                };
+            }
+            // `:50978-51007` (useStyle 11, MowTheLawn): the front arm walks
+            // `num12 = progress * 2` through the two-cycle table; the back
+            // arm pins Full at -PI/16 (no direction term).
+            11 => {
+                let num12 = progress * 2.0;
+                let st = if num12 > 1.75 {
+                    CompositeStretch::Full
+                } else if num12 > 1.5 {
+                    CompositeStretch::ThreeQuarters
+                } else if num12 > 1.25 {
+                    CompositeStretch::Quarter
+                } else if num12 > 0.75 {
+                    CompositeStretch::None
+                } else if num12 > 0.5 {
+                    CompositeStretch::Quarter
+                } else if num12 > 0.25 {
+                    CompositeStretch::ThreeQuarters
+                } else {
+                    CompositeStretch::Full
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    rotation: -std::f32::consts::FRAC_PI_4 * dir,
+                };
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: -(std::f32::consts::PI / 16.0),
+                };
+            }
+            // `:51174-51196` (useStyle 13, Rapier): the front arm at
+            // `itemRotation * gravDir - PI/2 * dir`, the stretch walking
+            // Quarter -> ThreeQuarters -> Full by thirds of
+            // `1 - (itemAnimation % useAnim) / useAnim`.
+            13 => {
+                let anim = held.swing_anim.max(0.0);
+                let max = held.swing_anim_max.max(1.0);
+                let num20 = 1.0 - (anim % max) / max;
+                let st = if num20 > 0.66 {
+                    CompositeStretch::Full
+                } else if num20 > 0.33 {
+                    CompositeStretch::ThreeQuarters
+                } else {
+                    CompositeStretch::Quarter
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    // `itemRotation * Directions.Y` — `Directions.Y` is the
+                    // gravity direction, always 1 in the port.
+                    rotation: held.item_rotation - std::f32::consts::FRAC_PI_2 * dir,
+                };
+            }
+            // `:51349-51360` (useStyle 14): the back arm Full at
+            // `-3*PI/4 * dir`; the front arm untouched.
+            14 => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: std::f32::consts::PI * -3.0 / 4.0 * dir,
+                };
+            }
+            // `:51361-51375` (useStyle 15): both arms at -2*PI/5 * dir — the
+            // back ThreeQuarters, the front Full.
+            15 => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::ThreeQuarters,
+                    rotation: std::f32::consts::PI * -2.0 / 5.0 * dir,
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: std::f32::consts::PI * -2.0 / 5.0 * dir,
+                };
+            }
+            // `:51197-51274` (useStyle 8, the throw): three phases — the
+            // wind-up (the first tick), the swing arc, the follow-through.
+            // The port's swing never overshoots `itemAnimationMax`, so the
+            // `itemAnimation > useAnimation` arm is unreachable (documented).
+            8 => {
+                let anim = held.swing_anim;
+                let use_anim = held.use_animation as f32;
+                if anim >= use_anim - 1.0 && anim <= use_anim {
+                    // `:51205-51229`: the wind-up.
+                    let mut item_rot = 10.0f32.atan2(10.0 * dir) + std::f32::consts::FRAC_PI_4;
+                    if dir < 0.0 {
+                        item_rot += std::f32::consts::FRAC_PI_2;
+                    }
+                    let num21 = -(std::f32::consts::PI / 10.0) * if dir < 0.0 { -1.0 } else { 1.0 };
+                    let mut num22 = item_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+                    if dir > 0.0 {
+                        num22 += std::f32::consts::FRAC_PI_2;
+                    }
+                    self.composite_front = CompositeArmState {
+                        enabled: true,
+                        stretch: CompositeStretch::Full,
+                        rotation: num22 + num21,
+                    };
+                    self.composite_back = CompositeArmState {
+                        enabled: true,
+                        stretch: CompositeStretch::ThreeQuarters,
+                        rotation: num22 - num21,
+                    };
+                } else {
+                    // `:51246-51273`: the swing arc
+                    // (`num26 = 1 - itemAnimation / itemAnimationMax`).
+                    let num26 = 1.0 - held.swing_remaining;
+                    let st = if num26 > 0.6 {
+                        CompositeStretch::Quarter
+                    } else {
+                        CompositeStretch::ThreeQuarters
+                    };
+                    let num27 = -(std::f32::consts::PI / 10.0)
+                        * (1.0 - num26 * 2.2)
+                        * if dir < 0.0 { -1.0 } else { 1.0 };
+                    let num28 = (num26 * std::f32::consts::PI * 0.6
+                        + std::f32::consts::PI * 2.0 / 5.0)
+                        * -dir
+                        + std::f32::consts::PI
+                        - std::f32::consts::FRAC_PI_4
+                        + std::f32::consts::PI;
+                    let num28 = if dir > 0.0 {
+                        num28 + std::f32::consts::FRAC_PI_2
+                    } else {
+                        num28
+                    };
+                    self.composite_front = CompositeArmState {
+                        enabled: true,
+                        stretch: CompositeStretch::Full,
+                        rotation: num28 + num27,
+                    };
+                    self.composite_back = CompositeArmState {
+                        enabled: true,
+                        stretch: st,
+                        rotation: num28 - num27,
+                    };
+                }
+            }
+            // `:51275-51320` (useStyle 12, Guitar): the front arm walks
+            // `num30 = progress * 2` (the two-cycle table with None at
+            // 0.75..1.25) with `num31 = cos(num30 * PI) * 0.2`; the back arm
+            // Quarter at `(-PI/4 - num31/2) * dir`.
+            12 => {
+                let num30 = progress * 2.0;
+                let num31 = (num30 * std::f32::consts::PI).cos() * 0.2;
+                let st = if num30 > 1.75 {
+                    CompositeStretch::Full
+                } else if num30 > 1.5 {
+                    CompositeStretch::ThreeQuarters
+                } else if num30 > 1.25 {
+                    CompositeStretch::Quarter
+                } else if num30 > 0.75 {
+                    CompositeStretch::None
+                } else if num30 > 0.5 {
+                    CompositeStretch::Quarter
+                } else if num30 > 0.25 {
+                    CompositeStretch::ThreeQuarters
+                } else {
+                    CompositeStretch::Full
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: st,
+                    rotation: (-std::f32::consts::FRAC_PI_4 + num31) * dir,
+                };
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Quarter,
+                    rotation: (-std::f32::consts::FRAC_PI_4 - num31 * 0.5) * dir,
+                };
+            }
+            _ => {}
+        }
+    }
+
+    /// `HoldItem`'s holdStyle composite arms (`Player.cs:50520-50582`). The
+    /// holdStyle 1/2/3/7 rows ride the body-frame chain (no composite); the
+    /// holdStyle 5/6 arms gate on `!pulley`; `can_visually_hold` gates the
+    /// whole chain (`Player.cs:50271`).
+    fn apply_hold_composite_arms(&mut self, held: &FrameInputs) {
+        if !held.can_visually_hold || held.swing_active {
+            return;
+        }
+        let dir = self.facing as f32;
+        match held.hold_style {
+            // `:50520-50549` (holdStyle 4, the umbrella): the front arm Full
+            // and the back ThreeQuarters around `num9 +/- num8`.
+            4 => {
+                let mut item_rot = 10.0f32.atan2(10.0 * dir) + std::f32::consts::FRAC_PI_4;
+                if dir < 0.0 {
+                    item_rot += std::f32::consts::FRAC_PI_2;
+                }
+                let num8 = -(std::f32::consts::PI / 10.0) * if dir < 0.0 { -1.0 } else { 1.0 };
+                let mut num9 = item_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+                if dir > 0.0 {
+                    num9 += std::f32::consts::FRAC_PI_2;
+                }
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: num9 + num8,
+                };
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::ThreeQuarters,
+                    rotation: num9 - num8,
+                };
+            }
+            // `:50550-50562` (holdStyle 5): the back Quarter at -PI/4 * dir
+            // and the front Full at -0.39269912 * dir.
+            5 if !self.pulley => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Quarter,
+                    rotation: -std::f32::consts::FRAC_PI_4 * dir,
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: -0.39269912 * dir,
+                };
+            }
+            // `:50563-50570` (holdStyle 6): the back ThreeQuarters at
+            // -3*PI/5 * dir.
+            6 if !self.pulley => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::ThreeQuarters,
+                    rotation: std::f32::consts::PI * -3.0 / 5.0 * dir,
+                };
+            }
+            // `:50575-50582` (holdStyle 8): the back ThreeQuarters and the
+            // front Full at -2*PI/5 * dir.
+            8 => {
+                self.composite_back = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::ThreeQuarters,
+                    rotation: std::f32::consts::PI * -2.0 / 5.0 * dir,
+                };
+                self.composite_front = CompositeArmState {
+                    enabled: true,
+                    stretch: CompositeStretch::Full,
+                    rotation: std::f32::consts::PI * -2.0 / 5.0 * dir,
+                };
+            }
+            _ => {}
+        }
+    }
+
 
     /// `Player.ShouldDrawWingsThatAreAlwaysAnimated` (`Player.cs:30737-30748`):
     /// the three always-animated wing sets keep the rest legs while airborne.
@@ -5296,9 +5824,10 @@ impl Player {
     }
 
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
-    /// swap, the buff clear/add (`:6203`/`:6226`) and the bottom-anchored
-    /// hitbox growth (`:6264-6277` — no PlayerSize delegate exists in this
-    /// set; the type-44 dash reset `:6228-6235` cannot fire without that row).
+    /// swap, the buff clear/add (`:6203`/`:6226`), the swap resets
+    /// (`:6205-6213`), the pirate-ship dash reset (`:6228-6235`) and the
+    /// bottom-anchored hitbox growth (`:6264-6277` — no PlayerSize delegate
+    /// exists in this set; the type-44 row does exist, so its reset fires).
     pub fn set_mount(&mut self, m: i32, wet: bool) -> bool {
         let Some(equip) = self.mount.set_mount(m, wet) else {
             return false;
@@ -5306,8 +5835,33 @@ impl Player {
         if let Some(old) = equip.clear_buff {
             self.clear_buff_type(old);
         }
+        // `:6205-6213` — the swap branch: a track rider clears the cart flip
+        // and the last boost, every mount clears the full rotation.
+        if equip.was_active {
+            if equip.track_rider {
+                self.cart_flip = false;
+                self.last_boost = (0, 0);
+            }
+            self.full_rotation = 0.0;
+            self.full_rotation_origin = (0.0, 0.0);
+        }
         self.buffs.add_buff(equip.add_buff, 3600);
+        // `:6228-6235` — the pirate ship (44) drops the dash and damps the
+        // velocity on mount.
+        if m == 44 {
+            self.vx *= 0.2;
+            self.vy *= 0.2;
+            self.dash = 0;
+            self.dash_type = 0;
+            self.dash_delay = 0;
+            self.dash_time = 0;
+        }
         self.grow_hitbox(HEIGHT + equip.height_boost as f32);
+        // `:6279-6282` — the UFO (7) and the drill (8) centre the full
+        // rotation on the grown box.
+        if m == 7 || m == 8 {
+            self.full_rotation_origin = (WIDTH as f32 / 2.0, self.height as f32 / 2.0);
+        }
         true
     }
 
@@ -5319,15 +5873,20 @@ impl Player {
         self.y -= self.height;
     }
 
-    /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
-    /// and the hitbox restore. `ignore_effect` stands in for the spawn dust
-    /// (`:6167-6170` — no dust system yet).
+    /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear,
+    /// the full-rotation reset (`:6161-6162`) and the hitbox restore.
+    /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
+    /// system yet); the `noItems` restore (`:6152-6155`) needs the `noItems` /
+    /// `cursed` pair the port does not carry — constants-off.
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
         let Some(buff) = self.mount.dismount() else {
             return false;
         };
         let _ = ignore_effect;
         self.clear_buff_type(buff);
+        // `:6161-6162` — the dismount clears the full rotation.
+        self.full_rotation = 0.0;
+        self.full_rotation_origin = (0.0, 0.0);
         // `:6176-6193`: the restore — the 20x42 box from the bottom center;
         // on failure the Y patch accepts the overlap (the collision step
         // resolves it next tick, as in the original). The resize goes through
@@ -5481,6 +6040,12 @@ impl Player {
     /// runs those at :25656/:26011, both before the run-speed merge — the
     /// combined method keeps their relative order. Only reachable while not
     /// grappling (the caller's `:26622` branch).
+    /// `Player.UsingSuperCart` (`Player.cs:3966-3980`): the Super Cart counts
+    /// only when it is both unlocked and enabled.
+    pub fn using_super_cart(&self) -> bool {
+        self.unlocked_super_cart && self.enabled_super_cart
+    }
+
     fn update_mount(
         &mut self,
         world: &World,
@@ -5492,6 +6057,22 @@ impl Player {
         }
         // `Mount.cs:4797`: the mount head-sets the auto-jump flag per tick.
         self.auto_jump = self.mount.auto_jump();
+        // `Mount.UpdateEffects` (`Mount.cs:4798`): the Super Cart flag rides
+        // the cart set (`MountID.Sets.Cart`) and the player's unlock/enable
+        // pair (`Player.UsingSuperCart`, `Player.cs:3966-3980`).
+        self.mount.set_should_super_cart(
+            crate::mount::is_cart(self.mount.kind()) && self.using_super_cart(),
+        );
+        // `Mount.UpdateEffects` (`Mount.cs:4806-4814`): the Chillemt mounts
+        // add 0.1 to every damage class. The vanilla applies this after the
+        // stat recompute (`Player.ResetEffects`), which is the port's order
+        // too — `update_mount` runs after the equip pass.
+        if matches!(self.mount.kind(), 62..=65) {
+            self.melee_damage += 0.1;
+            self.ranged_damage += 0.1;
+            self.magic_damage += 0.1;
+            self.minion_damage += 0.1;
+        }
         // `Mount.cs:4982-5008` (`UpdateEffects` case 12): the Cute Fishron
         // re-arms its special window when hurt or standing in water/rain.
         if self.mount.kind() == 12 {
@@ -5829,8 +6410,97 @@ impl Player {
     /// `Player.GrappleMovement` (`Player.cs:22613-22740`): the pull replaces
     /// the velocity; the jump-off detaches. `hook` is `(center, type)` of the
     /// attached hook (the param already filters to the attached state).
+    /// `Player.GrappleMovement`'s Track Hook hand-over (`Player.cs:22659-22693`):
+    /// the Track Hook (403) gives the player to the minecart when its box
+    /// overlaps the player over a track tile.
+    ///
+    /// The C# removes every grappling hook first (`:22675`), snaps the player
+    /// onto the track's rail sub-column (`Minecart.GetOnTrack` `:1200-1241`),
+    /// refuses a solid body (`Collision.SolidCollision` `:22683`) and then
+    /// mounts the cart (`Mount.SetMount` `:22687`) with the wheel-sparks
+    /// burst (`:22689-22690`).
+    pub(crate) fn track_hook_cart_transfer(
+        &mut self,
+        world: &World,
+        hooks: &[(u16, Vec2, f32)],
+    ) -> bool {
+        let Some((_, center, _)) = hooks
+            .iter()
+            .find(|(kind, ..)| *kind == crate::projectile::TRACK_HOOK)
+        else {
+            return false;
+        };
+        let Some(data) = crate::projectile::proj_data(crate::projectile::TRACK_HOOK) else {
+            return false;
+        };
+        let hook_x = center.x - data.w * 0.5;
+        let hook_y = center.y - data.h * 0.5;
+        // `:22664-22666` — the hook's box against the player's box.
+        if !(hook_x < self.x + WIDTH as f32
+            && hook_x + data.w >= self.x
+            && hook_y < self.y + self.height
+            && hook_y + data.h >= self.y)
+        {
+            return false;
+        }
+        // `:22668-22670` — the tile under the hook's centre.
+        let tx = (center.x as i32) / 16;
+        let ty = (center.y as i32) / 16;
+        self.vx = 0.0;
+        self.vy = 0.0;
+        if !world
+            .tile(tx, ty)
+            .is_some_and(|t| t.kind == tr_core::smart_cursor::TRACK_TILE)
+        {
+            return false;
+        }
+        // `:22675` — the hooks go before the probe.
+        self.release_grappling_hooks = true;
+        let mut position = Vec2::new(
+            center.x - WIDTH as f32 * 0.5,
+            center.y - self.height as f32 * 0.5,
+        );
+        let height_boost = crate::mount::mount_data(self.cart_mount)
+            .map(|row| row.height_boost)
+            .unwrap_or(0);
+        let height = self.height + height_boost as f32;
+        // `:22680-22683` — the on-track snap and the solid-body refusal.
+        if !crate::minecart::get_on_track(
+            world,
+            tx,
+            ty,
+            &mut position,
+            WIDTH as i32,
+            height as i32,
+        ) {
+            return false;
+        }
+        if collides_rect(world, position.x, position.y, WIDTH as f32, height - 20.0) {
+            return false;
+        }
+        // `:22684-22688` — the position, the rotation and the mount.
+        self.x = position.x;
+        self.y = position.y;
+        self.prev_x = position.x;
+        self.prev_y = position.y;
+        self.cart_mounted = true;
+        self.set_mount(self.cart_mount, self.wet);
+        // `:22689-22690` — the wheel-sparks burst (25 sparks).
+        minecart::wheel_sparks(
+            &mut self.pending_sparks,
+            &mut self.spark_rng,
+            position,
+            WIDTH as i32,
+            height as i32,
+            25,
+            self.full_rotation,
+        );
+        true
+    }
+
     fn grapple_movement(
         &mut self,
+        world: &World,
         hooks: &[(u16, Vec2, f32)],
         input: PlayerInput,
         item_in_use: bool,
@@ -5839,6 +6509,11 @@ impl Player {
         // carries the current velocity through untouched.
         if hooks.is_empty() {
             return;
+        }
+        // `:22620-22623` — a mount not in the `MountID.Sets.CanUseHooks` set
+        // ({54, 57-60}) dismounts while the hooks are out.
+        if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
+            self.try_dismount(world);
         }
         // `RefreshMovementAbilities` (`Player.cs:22858-22867`): the flight
         // budgets refill every tick while grappling.
@@ -5873,6 +6548,9 @@ impl Player {
         // `:22655-22658`: the pull points downward → the platforms fall
         // through (`GoingDownWithGrapple`).
         self.going_down_with_grapple = pull.going_down;
+        // `:22659-22693`: the Track Hook (403) hands the player to the minecart
+        // when its box overlaps the player over a track tile.
+        self.track_hook_cart_transfer(world, hooks);
 
         // `:22670-22676`: the direction follows the pull; an exactly-zero X
         // takes the Squirrel Hook's preferred direction instead. The C# gates
@@ -5913,9 +6591,10 @@ impl Player {
                     self.release_jump = false;
                 }
                 self.refresh_double_jumps();
-                // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`): the
-                // caller observes `grappling_active == false` and drops the
-                // hook.
+                // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`, called
+                // from the jump-off `:22733`): the caller drops the owner's
+                // hooks.
+                self.release_grappling_hooks = true;
                 self.grappling_active = false;
             }
         } else {
@@ -6283,14 +6962,30 @@ impl Player {
             self.minion_attack_target_npc = -1;
         }
     }
-    fn update_survival(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
-        // The Wet-buff effects and the DoT derivation are the flag sources the
-        // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
-        // (`Player.cs:11740-11751, 18949-19103`).
-        self.refresh_wet_state();
-        let dots = self.derive_dot_inputs(self.buffs.expert_mode);
-
-        if self.in_water {
+    /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath only
+    /// drains while the **head** is under the water — the C#'s
+    /// `Collision.DrownCollision` probe (`:23193`), not the "any water"
+    /// stand-in the port used before S1-E-13b. The drain's shape is the
+    /// C#'s: the breath counter (`breathCD`) reaches `breathCDMax` (7) before
+    /// a tick is taken, and the refill is 3 ticks per tick out of the water.
+    ///
+    /// The C#'s accessory arms (the Merman armour 250/4275, the breathing
+    /// reed, the gills, the shimmering and the mount 4) have no ported
+    /// counterparts yet — the port has no accessory system for them, so the
+    /// probe's own flag decides.
+    fn check_drowning(&mut self, world: &World) {
+        // `this.gravDir` is -1 for the vanilla gravity — the probe sits at the
+        // head; the NPCs' call passes 1 (the feet).
+        let drowning = crate::collision::drown_collision(
+            world,
+            self.x,
+            self.y,
+            WIDTH as i32,
+            self.body_height() as i32,
+            -1.0,
+            false,
+        );
+        if drowning {
             self.breath_cd += 1;
             if self.breath_cd >= BREATH_CD {
                 self.breath_cd = 0;
@@ -6304,6 +6999,16 @@ impl Player {
             self.breath = (self.breath + 3).min(BREATH_MAX);
             self.breath_cd = 0;
         }
+    }
+
+    fn update_survival(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // The Wet-buff effects and the DoT derivation are the flag sources the
+        // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
+        // (`Player.cs:11740-11751, 18949-19103`).
+        self.refresh_wet_state();
+        let dots = self.derive_dot_inputs(self.buffs.expert_mode);
+
+        self.check_drowning(world);
 
         // `Player.Update` → `UpdateLifeRegen` / `UpdateManaRegen`
         // (`Player.cs:25977,25995`). The aura/item/grapple inputs stay at their
@@ -6887,14 +7592,14 @@ mod tests {
         p.hurt_cd = 0.0;
         for _ in 0..5 {
             p.in_lava = true;
-            p.update_survival(&mut tr_core::UnifiedRandom::default());
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         }
         assert_eq!(p.hp, 100, "the budget absorbed the lava");
         assert_eq!(p.lava_time, 0);
         // The next frame burns for the vanilla 80.
         p.in_lava = true;
         p.hurt_cd = 0.0;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 20, "the 80-damage lava hit");
         assert!(p.buffs.find_buff_index(24).is_some(), "On Fire");
     }
@@ -7268,12 +7973,13 @@ mod tests {
         // DW-1.3 — Player.cs:19361-19384: a drain kill carries its reason out
         // of UpdateLifeRegen; update_survival parks it on the player for the
         // death pipeline (the default generic attribution here = Burned, 8).
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.dot_death, None); // a healthy tick records nothing
         p.hp = 8;
         p.regen.life_regen_count = -1200;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Burned));
     }
@@ -8265,6 +8971,55 @@ mod tests {
         assert!(!p.going_down_with_grapple);
     }
 
+    /// `Player.GrappleMovement`'s dismount (`Player.cs:22620-22623`): a mount
+    /// outside `MountID.Sets.CanUseHooks` ({54, 57-60}) dismounts while the
+    /// hooks are out — the port dismounted every mount.
+    #[test]
+    fn s1_l_10_a_mount_outside_can_use_hooks_dismounts() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The Unicorn (10) is not in the CanUseHooks set.
+        p.set_mount(10, false);
+        assert!(p.mount.is_active(), "the mount is up");
+        let grapple: &[(u16, Vec2, f32)] =
+            &[(crate::projectile::HOOK, Vec2::new(p.x, p.y - 100.0), 0.0)];
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            grapple,
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
+        assert!(!p.mount.is_active(), "the mount dismounted");
+    }
+
+    /// The same gate at the fire edge (`Player.QuickGrapple`,
+    /// `Player.cs:6334-6337`): the set's own rows stay mounted.
+    #[test]
+    fn s1_l_10_a_mount_inside_can_use_hooks_stays() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The row 54 is in `MountID.Sets.CanUseHooks`.
+        p.set_mount(54, false);
+        assert!(p.mount.is_active(), "the mount is up");
+        let grapple: &[(u16, Vec2, f32)] =
+            &[(crate::projectile::HOOK, Vec2::new(p.x, p.y - 100.0), 0.0)];
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            grapple,
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
+        assert!(p.mount.is_active(), "the mount stays mounted");
+    }
+
     /// `Player.cs:22645`: the fall origin refreshes per tick while
     /// grappling — a long pull never accrues fall damage.
     #[test]
@@ -8479,6 +9234,24 @@ mod tests {
         // The vanilla leaves `maxRunSpeed` at 3.0 — the boots only widen the
         // acceleration window (the continuation to accRunSpeed).
         assert!((p.max_run_speed_value() - 3.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_hurt_and_the_death_queue_their_voice_cues() {
+        // S1-E-21b — `Player.Hurt`'s tail plays the hurt cue
+        // (`Player.cs:38525`) and `Player.KillMe` the death cue
+        // (`Player.cs:38868`).
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(p.take_hurt_sound().is_none(), "nothing queued yet");
+        p.hurt_cd = 0.0;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.take_hurt_sound(), Some("Player_Hit_0"));
+        // The cue is a one-shot: the caller drains it.
+        assert!(p.take_hurt_sound().is_none());
+        // The death queues its own cue (`Player.cs:38868`).
+        p.start_death(&w, false, false);
+        assert_eq!(p.take_death_sound(), Some("Player_Killed"));
     }
 
     #[test]
@@ -9473,6 +10246,47 @@ mod tests {
         assert!(p.hp < 100, "drowning should hurt, hp {}", p.hp);
     }
 
+    /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath follows
+    /// `Collision.DrownCollision` — the **head** probe, not "any water".
+    #[test]
+    fn the_breath_drains_only_while_the_head_is_under() {
+        let pool = |rows: std::ops::Range<i32>| {
+            let mut w = ground_world();
+            for x in 0..64 {
+                for y in rows.clone() {
+                    let i = w.index(x, y);
+                    w.tiles[i].liquid = 255;
+                }
+            }
+            w
+        };
+        // The player stands on the ground (row 60): the feet at 960, the head
+        // probe at [931, 943].
+        // A shallow pool (row 59 only) — the water's surface is at 944, so
+        // the head stays dry and the breath is untouched.
+        let mut w = pool(59..60);
+        let mut p = Player::spawn(&w);
+        p.x = 10.0 * 16.0 + 8.0;
+        p.y = 60.0 * 16.0 - 42.0;
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert_eq!(p.breath, BREATH_MAX, "the head stays dry");
+        // A deep pool — the head goes under and the breath runs down.
+        let mut w = pool(50..60);
+        let mut p = Player::spawn(&w);
+        p.x = 10.0 * 16.0 + 8.0;
+        p.y = 60.0 * 16.0 - 42.0;
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(
+            p.breath < BREATH_MAX,
+            "the head is under the water, breath {}",
+            p.breath
+        );
+    }
+
     #[test]
     fn health_regenerates_after_a_delay() {
         let w = ground_world();
@@ -9608,8 +10422,10 @@ mod tests {
 
     /// A player with a large life pool for 300-tick drain runs; `update_survival`
     /// only (the buff timers are not decremented there, so the buff holds).
-    fn drain_rig() -> Player {
-        drain_rig_in(&World::new("t".into(), 64, 800))
+    fn drain_rig() -> (Player, World) {
+        let w = World::new("t".into(), 64, 800);
+        let p = drain_rig_in(&w);
+        (p, w)
     }
 
     /// The world-parameterized twin (M5-SEED-2's vampirism rigs pass a world
@@ -9731,11 +10547,11 @@ mod tests {
             (30, false, 0, Some(0)),     // Bleeding: ramp reset only, no drain
         ];
         for &(id, expert, regen, loss) in rows {
-            let mut p = drain_rig();
+            let (mut p, dw) = drain_rig();
             p.buffs.expert_mode = expert;
             p.buffs.add_buff(id, 600);
             for _ in 0..300 {
-                p.update_survival(&mut tr_core::UnifiedRandom::default());
+                p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
             }
             assert_eq!(
                 p.regen.life_regen, regen,
@@ -9754,22 +10570,22 @@ mod tests {
         // DW-2.2 — `Player.cs:27750-27761`: only 24 and 323 are deleted; the
         // rest of the fire/poison family rides through the water.
         for id in [24, 323] {
-            let mut p = drain_rig();
+            let (mut p, dw) = drain_rig();
             p.buffs.add_buff(id, 600);
             p.in_water = true;
             p.wet = true;
-            p.update_survival(&mut tr_core::UnifiedRandom::default());
+            p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
             assert!(
                 p.buffs.find_buff_index(id).is_none(),
                 "water must cure buff {id}"
             );
         }
         for id in [44, 324, 39, 67, 20, 68, 144, 30] {
-            let mut p = drain_rig();
+            let (mut p, dw) = drain_rig();
             p.buffs.add_buff(id, 600);
             p.in_water = true;
             p.wet = true;
-            p.update_survival(&mut tr_core::UnifiedRandom::default());
+            p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
             assert!(
                 p.buffs.find_buff_index(id).is_some(),
                 "water must not cure buff {id}"
@@ -9781,13 +10597,13 @@ mod tests {
     fn lava_wet_blocks_the_water_extinguish() {
         // DW-2.2 — `!base.lavaWet` guard (`Player.cs:27751`): standing in lava
         // the water cannot cure OnFire. (The lava hit also re-hurt: hp 70.)
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
         p.in_water = true;
         p.wet = true;
         p.in_lava = true;
         p.lava_wet = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert!(
             p.buffs.find_buff_index(24).is_some(),
             "lavaWet blocks the cure"
@@ -9801,11 +10617,11 @@ mod tests {
         // water-only `wet` flag; the C# `WetCollision` flag would cover honey
         // too (Collision.cs:1608-1618) — deviation recorded for
         // docs/ANALYSIS.md (Phase 4).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
         p.in_water = true; // the physics probe covers water | honey
         p.honey_wet = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert!(
             p.buffs.find_buff_index(24).is_some(),
             "honey must not cure OnFire"
@@ -9817,15 +10633,15 @@ mod tests {
         // DW-2.2 quirk — the C# extinguish loop does not rescan after `DelBuff`
         // compaction (`Player.cs:27753-27761`): with 24 and 323 both held, one
         // tick deletes the first and skips the shifted-in second.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
         p.buffs.add_buff(323, 600);
         p.in_water = true;
         p.wet = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         let left = p.buffs.active_types();
         assert_eq!(left.len(), 1, "one fire buff survives the shift-skip");
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert!(
             p.buffs.active_types().is_empty(),
             "the second falls next tick"
@@ -9836,9 +10652,9 @@ mod tests {
     fn lava_contact_grants_onfire_420() {
         // DW-2.3 — `Player.cs:27710-27711`: a landed lava Hurt grants
         // AddBuff(24, 420); while the iframes run (`num81 == 0`) nothing lands.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.in_lava = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
         assert_eq!(p.buffs.buff_time[idx], 420);
         // `:27705` — the classic lava hit is 80 (`num79`), the 420-tick On
@@ -9846,14 +10662,14 @@ mod tests {
         assert_eq!(p.hp, 1000 - 80);
         // Inside the iframes the hit (and therefore the grant) repeats nothing.
         let hp = p.hp;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, hp, "no second lava hit inside the iframes");
         // Expert doubles the buff time through the AddBuff chain
         // (`AddBuff_DetermineBuffTimeToAdd`, 24 is in the difficulty set).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.expert_mode = true;
         p.in_lava = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         let idx = p.buffs.find_buff_index(24).unwrap();
         assert_eq!(p.buffs.buff_time[idx], 840);
     }
@@ -9939,10 +10755,10 @@ mod tests {
     fn wet_self_removes_on_lava_contact() {
         // `Player.cs:11741-11744`: the Wet branch deletes itself while
         // `lavaWet`, granting no immunities that frame.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(103, 600);
         p.in_lava = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert!(p.buffs.find_buff_index(103).is_none());
         assert!(!p.buffs.buff_immune[24], "no fire immunity without Wet");
     }
@@ -9951,23 +10767,23 @@ mod tests {
     fn honey_softens_a_drain_by_four_and_never_heals() {
         // DW-2.5 — `Player.cs:19096-19103`: honey +4 to a negative regen,
         // clamped at 0 — never positive, no heal from the mitigation itself.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(20, 600); // Poisoned −4
         p.buffs.add_buff(48, 600); // Honey
         for _ in 0..300 {
-            p.update_survival(&mut tr_core::UnifiedRandom::default());
+            p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         }
         assert_eq!(p.regen.life_regen, 0, "−4 + 4 clamps at 0");
         assert_eq!(p.hp, 1000, "a softened −4 drains nothing");
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(70, 600); // Venom −30
         p.buffs.add_buff(48, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -26, "−30 + 4 stays negative");
         // Honey without a drain never adds anything (the +2 aura is M2-BUFF-5).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(48, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, 0);
         assert_eq!(p.hp, 1000);
     }
@@ -9976,23 +10792,23 @@ mod tests {
     fn fire_family_deltas_sum_with_dripping_slime() {
         // Dirty — fire debuffs coexist and sum (`Player.cs` has no replace
         // chain); drippingSlime (137) doubles the fire family only.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600); // OnFire −8
         p.buffs.add_buff(324, 600); // Frostburn2 −16
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -24);
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
         p.buffs.add_buff(324, 600);
         p.buffs.add_buff(137, 600); // drippingSlime
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -48, "drip doubles both fire parts");
         // A poison part is not doubled by the drip.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(20, 600); // Poisoned −4
         p.buffs.add_buff(24, 600); // OnFire −8
         p.buffs.add_buff(137, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -20, "−4 poison + (−8×2) fire");
     }
 
@@ -10001,9 +10817,9 @@ mod tests {
     #[test]
     fn the_vampirism_world_trades_the_on_fire_drain_for_its_own() {
         // The classic row first — the flag is off on a classic world.
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(24, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -8);
         // The seeded world: the flag rides the world's micro seeds, captured
         // at `Player::spawn` (`WorldGen.cs:555-558`).
@@ -10013,19 +10829,19 @@ mod tests {
         let mut p = drain_rig_in(&w);
         assert!(p.vampirism, "the flag reaches the player");
         p.buffs.add_buff(24, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -100, "the vampirism OnFire drain");
         // The drip double is 100 too, and only the fire family is affected.
         let mut p = drain_rig_in(&w);
         p.buffs.add_buff(24, 600);
         p.buffs.add_buff(137, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -200, "drip doubles the 100");
         let mut p = drain_rig_in(&w);
         p.buffs.add_buff(20, 600); // Poisoned −4 (unchanged)
         p.buffs.add_buff(24, 600); // OnFire −100
         p.buffs.add_buff(137, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -204, "−4 poison + (−100×2) fire");
     }
 
@@ -10033,17 +10849,17 @@ mod tests {
     fn electrified_drains_more_while_moving() {
         // Dirty — `Player.cs:19074-19086`: −8, −32 more while `controlLeft ||
         // controlRight` (the run keys, not velocity).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(144, 600);
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -8);
         p.control_left = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -40, "−8 −32 with the left key");
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(144, 600);
         p.control_right = true;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.regen.life_regen, -40, "−8 −32 with the right key");
     }
 
@@ -10053,7 +10869,7 @@ mod tests {
         // generic 22→9→10→23→8) is this phase's job; unit checks on the
         // derivation against `Player.cs:19313-19331,19361-19385`.
         let derive = |buffs: &[i32], expert: bool| -> DotDerivation {
-            let mut p = drain_rig();
+            let (mut p, _dw) = drain_rig();
             p.buffs.expert_mode = expert;
             for &id in buffs {
                 p.buffs.add_buff(id, 600);
@@ -10089,18 +10905,18 @@ mod tests {
     fn fast_lane_kill_carries_the_derived_reason() {
         // The derivation → engine seam end-to-end: the drain kill returns the
         // reason the held buffs selected (world_sim resolves the text).
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(68, 600); // suffocating → fast lane, reason 7
         p.regen.life_regen_count = -600;
         p.hp = 3;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Suffocation));
-        let mut p = drain_rig();
+        let (mut p, dw) = drain_rig();
         p.buffs.add_buff(20, 600); // poisoned → generic lane, reason 9
         p.regen.life_regen_count = -120;
         p.hp = 1;
-        p.update_survival(&mut tr_core::UnifiedRandom::default());
+        p.update_survival(&dw, &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Poison));
     }
@@ -10204,6 +11020,30 @@ mod tests {
     /// defaults, the mount buff is granted, and the body grows 42 -> 52
     /// bottom-center. A same-type re-mount is a no-op (`:6198`); the death
     /// path strips the ride state (`Player.cs:38907`).
+    /// S1-L-10b — `Player.GrappleMovement`'s Track Hook hand-over
+    /// (`Player.cs:22659-22693`): the hook over a track tile gives the
+    /// player to the minecart.
+    #[test]
+    fn the_track_hook_hands_the_player_to_the_cart() {
+        let mut w = cart_world();
+        // A straight rail on row 30; the player stands above it.
+        rail_run(&mut w, 30, 20, 30);
+        let mut p = Player::spawn(&w);
+        p.x = 25.0 * 16.0;
+        p.y = 28.0 * 16.0;
+        // The Track Hook (403) sits on the rail, overlapping the player.
+        let hook_center = Vec2::new(25.0 * 16.0 + 8.0, 30.0 * 16.0 + 8.0);
+        let hooks = [(crate::projectile::TRACK_HOOK, hook_center, 0.0)];
+        assert!(p.track_hook_cart_transfer(&w, &hooks));
+        assert!(p.cart_mounted, "the cart ride starts");
+        assert_eq!(p.mount.kind(), 13, "the wooden minecart (:22676)");
+        // The hooks go before the probe (:22675).
+        assert!(p.release_grappling_hooks);
+        // The player snapped onto the rail (the magnet rides the rail
+        // surface, so the body sits above it).
+        assert!(p.y < 30.0 * 16.0, "the snapped y: {}", p.y);
+    }
+
     #[test]
     fn mount_cart_sets_the_ride_state_fields() {
         let w = cart_world();
@@ -10992,6 +11832,55 @@ mod tests {
         assert!(!p.cart_flip);
     }
     // -- M2-MOUNT-1 phase 2: the per-tick mount block ------------------------
+
+    #[test]
+    fn the_mount_set_and_dismount_extras_follow_the_c() {
+        // S1-L-9 — `Mount.SetMount` (`Mount.cs:6196-6305`) / `Dismount`
+        // (`:6142-6194`): the pirate-ship dash reset (`:6228-6235`), the
+        // UFO/drill rotation origin (`:6279-6282`), the swap resets
+        // (`:6205-6213`) and the dismount's rotation clear (`:6161-6162`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.vx = 10.0;
+        p.vy = -4.0;
+        p.dash = 2;
+        p.dash_type = 3;
+        p.dash_delay = 5;
+        assert!(p.set_mount(44, false));
+        assert!((p.vx - 2.0).abs() < 0.001, "velocity *= 0.2 (:6230)");
+        assert!((p.vy + 0.8).abs() < 0.001, "velocity *= 0.2 (:6230)");
+        assert_eq!(p.dash, 0, ":6231");
+        assert_eq!(p.dash_type, 0, ":6232");
+        assert_eq!(p.dash_delay, 0, ":6233");
+        // The UFO (7) centres the full rotation on the (grown) box.
+        p.full_rotation = 0.5;
+        assert!(p.set_mount(7, false));
+        assert_eq!(p.full_rotation_origin, (10.0, p.height / 2.0), ":6281");
+        // A swap clears the rotation (`:6210-6211`).
+        p.full_rotation = 0.5;
+        p.full_rotation_origin = (3.0, 4.0);
+        assert!(p.set_mount(10, false));
+        assert_eq!(p.full_rotation, 0.0);
+        assert_eq!(p.full_rotation_origin, (0.0, 0.0));
+        // The dismount clears it too (`:6161-6162`).
+        p.full_rotation = 0.25;
+        assert!(p.dismount(&w, true));
+        assert_eq!(p.full_rotation, 0.0);
+        assert_eq!(p.full_rotation_origin, (0.0, 0.0));
+    }
+
+    #[test]
+    fn the_chillemt_mounts_add_a_tenth_to_every_damage_class() {
+        // `Mount.UpdateEffects` (`Mount.cs:4806-4814`) — the Chillemt mounts.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(62, false);
+        p.update_mount(&w, false, None);
+        assert!((p.melee_damage - 1.1).abs() < 0.0001, "{}", p.melee_damage);
+        assert!((p.ranged_damage - 1.1).abs() < 0.0001);
+        assert!((p.magic_damage - 1.1).abs() < 0.0001);
+        assert!((p.minion_damage - 1.1).abs() < 0.0001);
+    }
 
     #[test]
     fn the_mount_replaces_the_run_stats_and_suppresses_the_wings() {
@@ -12101,13 +12990,13 @@ mod tests {
         p.lava_time = 0;
         let hp = p.hp;
         let mut rng = DodgeRng::with_rolls(&[0]);
-        p.update_survival(&mut rng);
+        p.update_survival(&w, &mut rng);
         assert_eq!(p.hp, hp, "the belt ate the lava hit");
         assert!(p.buffs.find_buff_index(24).is_none(), "no OnFire on a dodge");
         // The counterpart: a missed roll lands the 80 damage and grants.
         expire_dodge_window(&mut p);
         let mut rng = DodgeRng::with_rolls(&[1]);
-        p.update_survival(&mut rng);
+        p.update_survival(&w, &mut rng);
         assert!(p.hp < hp);
         assert!(p.buffs.find_buff_index(24).is_some(), "OnFire on the landed hit");
     }
@@ -12355,5 +13244,217 @@ mod summon_tests {
         assert_eq!(p.buffs.find_buff_index(161), None);
         p.update(&w, PlayerInput::default());
         assert!(!p.deadly_sphere_minion);
+    }
+}
+
+#[cfg(test)]
+mod s1_player_composite_tests {
+    use super::*;
+
+    /// A frame-inputs builder with the raw counters the composite styles read.
+    fn inputs(style: u8, remaining: f32, anim: f32, max: f32) -> FrameInputs {
+        FrameInputs {
+            use_style: style,
+            use_style_blocks_frames: true,
+            item_type: 0,
+            hold_style: 0,
+            can_visually_hold: true,
+            swing_active: true,
+            swing_remaining: remaining,
+            swing_anim: anim,
+            swing_anim_max: max,
+            use_animation: max as i32,
+            item_rotation: 0.0,
+            aim_relative: 0.0,
+            hold_style_dry: true,
+            torch_hold_ok: true,
+            grapple_dx: 0.0,
+            grapple_dy: 0.0,
+        }
+    }
+
+    #[test]
+    fn s1_pc_the_eat_style_assigns_both_arms_by_quarters() {
+        // `Player.cs:50936-50955`: the both-arms -PI/2 pose, the stretch
+        // walking Full -> None by `num10` quarters.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let held = inputs(2, 0.0, 20.0, 20.0); // progress = 1 -> None
+        p.apply_item_composite_arms(&held);
+        // `Player.cs:50953-50954`: the arm stays enabled with the `None`
+        // stretch (the relaxed row) — it is not turned off.
+        assert!(
+            p.composite_front.enabled,
+            "the arm stays on the relaxed row"
+        );
+        assert_eq!(p.composite_front.stretch, CompositeStretch::None);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::None);
+        let held = inputs(2, 1.0, 1.0, 20.0); // progress = 0 -> Full
+        p.apply_item_composite_arms(&held);
+        assert!(p.composite_front.enabled);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        // The back arm rides the same stretch (the C# sets both).
+        assert!(p.composite_back.enabled);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::Full);
+        assert!(
+            (p.composite_front.rotation + std::f32::consts::FRAC_PI_2).abs() < 1e-6,
+            "the eat pose lifts the arms"
+        );
+    }
+
+    #[test]
+    fn s1_pc_the_mow_style_walks_the_two_cycle_and_pins_the_back_arm() {
+        // `Player.cs:50978-51007`: the front arm's `num12 = progress * 2`
+        // two-cycle table; the back arm Full at -PI/16 (no direction term).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let held = inputs(11, 0.0, 40.0, 20.0); // progress 1 -> num12 2 -> Full
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::Full);
+        assert!(
+            (p.composite_back.rotation + std::f32::consts::PI / 16.0).abs() < 1e-6,
+            "the back arm's constant pose"
+        );
+        let held = inputs(11, 0.75, 40.0, 20.0); // progress 0.25 -> num12 0.5 -> ThreeQuarters
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::ThreeQuarters);
+    }
+
+    #[test]
+    fn s1_pc_the_rapier_stretch_walks_quarter_to_full() {
+        // `Player.cs:51174-51196`: `num20 = 1 - (anim % useAnim)/useAnim`;
+        // the stretch Quarter (<=0.33) -> ThreeQuarters -> Full.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        // The fresh swing: anim = max -> num20 = 1 -> Full.
+        let held = inputs(13, 1.0, 20.0, 20.0);
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        // The late swing: anim = 5 of 20 -> num20 = 0.75 -> Full.
+        let held = inputs(13, 0.25, 5.0, 20.0);
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        // The mid swing: anim = 15 of 20 -> num20 = 0.25 -> Quarter.
+        let held = inputs(13, 0.25, 15.0, 20.0);
+        p.apply_item_composite_arms(&held);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Quarter);
+    }
+
+    #[test]
+    fn s1_pc_the_rapier_arm_reads_the_item_rotation() {
+        // `Player.cs:51195`: the front arm at `itemRotation * Directions.Y -
+        // PI/2 * direction` (`Directions.Y` is the gravity direction, 1 in
+        // the port).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let mut held = inputs(13, 1.0, 20.0, 20.0);
+        held.item_rotation = 0.5;
+        p.apply_item_composite_arms(&held);
+        assert!(
+            (p.composite_front.rotation - (0.5 - std::f32::consts::FRAC_PI_2)).abs() < 1e-6,
+            "the rapier arm follows the item rotation"
+        );
+        // Facing left: the C#'s `- PI/2 * direction` flips the lift.
+        p.facing = -1;
+        p.apply_item_composite_arms(&held);
+        assert!(
+            (p.composite_front.rotation - (0.5 + std::f32::consts::FRAC_PI_2)).abs() < 1e-6,
+            "the rapier arm mirrors with the direction"
+        );
+    }
+
+    #[test]
+    fn s1_pc_the_item_rotation_mirrors_the_aim_with_the_direction() {
+        // `Player.cs:47378`: `itemRotation = atan2(aimY * direction, aimX *
+        // direction) - fullRotation` — the mirrored `atan2` is the aim + PI
+        // when the player faces left (not the negated angle).
+        let right = item_rotation_for_aim(0.75, 1, 0.0);
+        assert!((right - 0.75).abs() < 1e-6, "facing right keeps the aim");
+        let left = item_rotation_for_aim(0.75, -1, 0.0);
+        assert!(
+            (left - (0.75 + std::f32::consts::PI)).abs() < 1e-6,
+            "facing left mirrors the aim vector"
+        );
+        // The sleep pose's `fullRotation` rides the subtraction.
+        let asleep = item_rotation_for_aim(0.75, 1, std::f32::consts::FRAC_PI_2);
+        assert!((asleep - (0.75 - std::f32::consts::FRAC_PI_2)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn s1_pc_the_shoot_style_pins_the_back_arm_full() {
+        // `Player.cs:51349-51360`: the useStyle 14 pose — the back arm Full
+        // at -3*PI/4 * dir; the front arm untouched (DISABLED).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let held = inputs(14, 1.0, 20.0, 20.0);
+        p.apply_item_composite_arms(&held);
+        assert!(
+            !p.composite_front.enabled,
+            "the front arm rides the body rows"
+        );
+        assert!(p.composite_back.enabled);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::Full);
+        assert!(
+            (p.composite_back.rotation - std::f32::consts::PI * -3.0 / 4.0).abs() < 1e-6,
+            "the -3*PI/4 aim"
+        );
+    }
+
+    #[test]
+    fn s1_pc_the_hold_composite_arms_follow_the_hold_styles() {
+        // `Player.cs:50520-50582`: the holdStyle 4 umbrella pose (the front
+        // Full + the back ThreeQuarters), the holdStyle 5's back Quarter at
+        // -PI/4 * dir, and the holdStyle 8's both arms at -2*PI/5 * dir.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let mut held = inputs(0, 0.0, 0.0, 0.0);
+        held.swing_active = false;
+        held.hold_style = 4;
+        p.apply_hold_composite_arms(&held);
+        assert!(p.composite_front.enabled && p.composite_back.enabled);
+        assert_eq!(p.composite_front.stretch, CompositeStretch::Full);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::ThreeQuarters);
+        held.hold_style = 5;
+        p.apply_hold_composite_arms(&held);
+        assert_eq!(p.composite_back.stretch, CompositeStretch::Quarter);
+        assert!((p.composite_back.rotation + std::f32::consts::FRAC_PI_4).abs() < 1e-6);
+        held.hold_style = 8;
+        p.apply_hold_composite_arms(&held);
+        assert!((p.composite_front.rotation - std::f32::consts::PI * -2.0 / 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn s1_g_18_the_umbrella_rotation_is_the_vector_rotation() {
+        // `Player.cs:50524`: the umbrella's `itemRotation =
+        // new Vector2(10 * direction, 10f).ToRotation() + PI/4` — the XNA
+        // `ToRotation` is `atan2(Y, X)`, NOT the vector's length (the port
+        // used `hypot`, which produced a nonsense angle).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        let mut held = inputs(0, 0.0, 0.0, 0.0);
+        held.swing_active = false;
+        held.hold_style = 4;
+        p.apply_hold_composite_arms(&held);
+        // Facing right: `itemRotation = atan2(10, 10) + PI/4 = PI/2`,
+        // `num9 = itemRotation - PI/4 + PI (+ PI/2 when facing right)`,
+        // `num8 = -PI/10`; the front arm is at `num9 + num8`.
+        let item_rot = 10.0f32.atan2(10.0) + std::f32::consts::FRAC_PI_4;
+        let num9 = item_rot - std::f32::consts::FRAC_PI_4
+            + std::f32::consts::PI
+            + std::f32::consts::FRAC_PI_2;
+        let expect = num9 - std::f32::consts::PI / 10.0;
+        assert!(
+            (p.composite_front.rotation - expect).abs() < 1e-6,
+            "{} vs {}",
+            p.composite_front.rotation,
+            expect
+        );
+        // Facing left: `atan2(10, -10) + PI/4 + PI/2`, and `num8` flips.
+        p.facing = -1;
+        p.apply_hold_composite_arms(&held);
+        let item_rot = 10.0f32.atan2(-10.0) + std::f32::consts::FRAC_PI_4
+            + std::f32::consts::FRAC_PI_2;
+        let num9 = item_rot - std::f32::consts::FRAC_PI_4 + std::f32::consts::PI;
+        let expect = num9 + std::f32::consts::PI / 10.0;
+        assert!(
+            (p.composite_front.rotation - expect).abs() < 1e-6,
+            "{} vs {}",
+            p.composite_front.rotation,
+            expect
+        );
     }
 }

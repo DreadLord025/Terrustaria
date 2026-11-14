@@ -499,6 +499,9 @@ pub struct PlayerNet {
     /// `x + off_x` (see `netglue::decay_net_offsets`).
     pub off_x: f32,
     pub off_y: f32,
+    /// `Main.player[id].inventory` — the peer's slot state, fed by the
+    /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`).
+    pub inventory: HashMap<u8, NetItem>,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -2551,6 +2554,10 @@ pub struct Slot {
     pub state: i32,
     pub name: String,
     pub last_seen: Instant,
+    /// `Main.player[id].inventory` — the peer's slot state, fed by the
+    /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`). The C#'s
+    /// server keeps the same per-client copy of the inventory.
+    pub inventory: HashMap<u8, NetItem>,
     /// `RemoteClient.TileSections` (`RemoteClient.cs:31`): the flattened
     /// `sections_w * sections_h` latch grid of the sections already streamed.
     pub sections: Vec<bool>,
@@ -2623,6 +2630,7 @@ impl Server {
                         state: slot_state::FRESH,
                         name: String::new(),
                         last_seen: Instant::now(),
+                        inventory: HashMap::new(),
                         sections: Vec::new(),
                         sections_w: 0,
                     },
@@ -2722,6 +2730,25 @@ impl Server {
                 c.name = name;
             }
         }
+    }
+
+    /// Stores one peer inventory slot — `Main.player[id].inventory[slot]`
+    /// (`MessageBuffer.cs:399-462`'s `slot.Item = item`).
+    pub fn set_slot_inventory(&self, id: u32, slot: u8, item: NetItem) {
+        if let Ok(mut s) = self.slots.lock() {
+            if let Some(c) = s.get_mut(&id) {
+                c.inventory.insert(slot, item);
+            }
+        }
+    }
+
+    /// The peer's inventory slots (a snapshot).
+    pub fn slot_inventory(&self, id: u32) -> HashMap<u8, NetItem> {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&id).map(|c| c.inventory.clone()))
+            .unwrap_or_default()
     }
 
     /// All connected slot ids (snapshot for sweeps/iterations).

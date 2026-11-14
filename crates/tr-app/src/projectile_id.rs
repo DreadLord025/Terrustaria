@@ -1152,6 +1152,35 @@ pub const PROJECTILE_COUNT: i32 = 1136;
 
 /// The constant spelling for `id`, or `"None"` for the out-of-range ids
 /// (`Lang.projectile`'s array bounds cover 0..Count).
+/// `Main.projHook` (`Main.cs:701`, filled at `:6618-6624`): the projectiles
+/// whose `aiStyle` is 7 — the grappling hooks. The tooltip's equipable gate
+/// reads it (`Main.cs:20816`).
+pub fn is_hook_projectile(id: i32) -> bool {
+    matches!(
+        id,
+        13 | 32
+            | 73
+            | 74
+            | 165
+            | 230..=235
+            | 256
+            | 315
+            | 322
+            | 331
+            | 332
+            | 372
+            | 396
+            | 403
+            | 446
+            | 489
+            | 646..=649
+            | 652
+            | 753
+            | 865
+            | 935
+    )
+}
+
 pub fn projectile_const_name(id: i32) -> &'static str {
     if id < 0 || id >= PROJECTILE_COUNT {
         return "None";
