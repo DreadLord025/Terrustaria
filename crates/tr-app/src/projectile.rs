@@ -302,6 +302,16 @@ pub const DEERCLOPS_ICE_SPIKE: u16 = 961;
 /// `ProjectileID.DeerclopsIceChunk` (962, `Projectile.cs:9199-9206`) — the
 /// Deerclops' rubble chunk (the aiStyle-1 flight).
 pub const DEERCLOPS_ICE_CHUNK: u16 = 962;
+/// `ProjectileID.FlamingWood` (325, `Projectile.cs:3249-3259`) — the
+/// Retinazer's shot.
+pub const FLAMING_WOOD: u16 = 325;
+/// `ProjectileID.GreekFire1` (326, `Projectile.cs:3260-3277`) — the
+/// Retinazer's Greek fire.
+pub const GREEK_FIRE_1: u16 = 326;
+/// `ProjectileID.GreekFire2` (327) — the Greek fire's second size.
+pub const GREEK_FIRE_2: u16 = 327;
+/// `ProjectileID.GreekFire3` (328) — the Greek fire's third size.
+pub const GREEK_FIRE_3: u16 = 328;
 /// `ProjectileID.Skull` (270, `Projectile.cs:3558-3566`) — the Skeletron
 /// head's spin shot (the expert mode's fired skull).
 pub const SKULL: u16 = 270;
@@ -1243,6 +1253,59 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3249-3259` — the flaming wood: 14x14, aiStyle 1,
+            // hostile, `penetrate = -1`, no tile collision, `timeLeft = 420`.
+            FLAMING_WOOD => (
+                14.0,
+                14.0,
+                1,
+                -1,
+                420,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:3260-3277` — the Greek fires: the aiStyle-14
+            // flight, hostile, `penetrate = -1`, `timeLeft = 360` (the three
+            // sizes: 14x14, 12x14, 6x12).
+            GREEK_FIRE_1 => (
+                14.0,
+                14.0,
+                14,
+                -1,
+                360,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 0, 1.0),
+            ),
+            GREEK_FIRE_2 => (
+                12.0,
+                14.0,
+                14,
+                -1,
+                360,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 0, 1.0),
+            ),
+            GREEK_FIRE_3 => (
+                6.0,
+                12.0,
+                14,
+                -1,
+                360,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 0, 1.0),
             ),
             // `Projectile.cs:9199-9206` — the ice chunk: 16x16, aiStyle 1,
             // `penetrate = -1`, `extraUpdates = 2`, `timeLeft = 220`,
