@@ -214,10 +214,10 @@ multiplayer-client path, never a single-player or menu one (research/42, finding
   homeless record's stale home coordinates are not carried into live state.
 - **Tile entities**: the dummy's and the logic sensor's payloads are carried from the
   file even though nothing reads their runtime halves; the display doll's payload is
-  read and **dropped** (`is_storable`) because its `WriteExtraData` shape (three
-  bitsBytes, a pose byte, up to nineteen triples) has no home in `TeData` and a hollow
-  record would desynchronise a vanilla reader — so a `.wld` round-trip is not byte-exact
-  for a world with dolls; the kite/critter anchors' `IsTileValidForEntity` is the anchor
+  carried too since S1-L-7a (`TEDisplayDoll.WriteExtraData` `TEDisplayDoll.cs:157-213`
+  writes the nine equip slots, the nine dye slots, the misc slot and the pose byte, so
+  the doll is storable and a `.wld` round-trip is byte-exact again); the kite/critter
+  anchors' `IsTileValidForEntity` is the anchor
   kind alone (`TEKiteAnchor.cs`/`TECritterAnchor.cs`), which the shared head check
   settles.
 - **Signs and plates**: the store is the positional `Vec<WldSign>` (exactly the non-null
@@ -5447,8 +5447,10 @@ and the training dummy lands as the engine state machine.
   && frameX % 18 == 0`), the jar 698, the kite anchor 723, the doll 470,
   the pylon 597.
 
-Deviations: the display doll (970 lines — the armor poses, the dye slots,
-the mannequin interactions) is its own follow-up; the pylon network is
+Deviations: the display doll's **payload** landed with S1-L-7a (the nine equip
+slots, the nine dye slots, the misc slot and the pose byte ride the `.wld`
+byte-exactly), while its runtime half (the armor poses, the dye slots, the
+mannequin interactions) stays its own follow-up; the pylon network is
 M7-PYLON-1; the leashed critter/kite anchors need the critter entities;
 the dummy's DPS-meter hook rides the NPC 488 landing.
 
