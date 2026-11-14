@@ -445,6 +445,14 @@ Ported in `tr-core/src/lighting/`:
    default). Adding a mode (Sepia, Monochrome, ...) is a variant plus a style; the draw pass
    needs no new path.
 
+   The brightness is also a G6 key input (S1-H-15): `Lighting.UpdateGlobalBrightness`
+   (`Lighting.cs:108-116`) drops it 1.2 → 1.0 while the Darkness debuff's `blind` flag
+   holds, and `LightStyle::shade` multiplies every tile tint by it, so the bit-exact
+   brightness rides `WorldFrameKey::brightness` — a blind gain/loss invalidates the
+   cached world range instead of serving the old tints. The buff bar itself redraws in
+   the uncached UI pass (chat and the emote wheel have no draw path yet, S1-E-26), so
+   this is the only HUD-state input the world range carries today.
+
 Verified numerically with `TR_LIGHT_AT`: at midday the stored world reports
 `light at 3200,402 = 0.560,0.560,0.560` for the first dirt row under the grass — exactly
 `Main.tileColor` (white) × `0.56`; the renderer multiplies that by `GlobalBrightness`.
