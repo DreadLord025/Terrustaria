@@ -1906,8 +1906,8 @@ mod tests {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
-            mount_back: [Some(sheet()); 50],
-            mount_front: [Some(sheet()); 50],
+            mount_back: [Some(sheet()); crate::mount::MOUNT_COUNT],
+            mount_front: [Some(sheet()); crate::mount::MOUNT_COUNT],
         }
     }
 
