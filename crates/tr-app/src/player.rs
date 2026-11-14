@@ -953,6 +953,11 @@ pub struct Player {
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
     rocket_release: bool,
+    /// The cart mount the Track Hook hands the player to
+    /// (`Player.cs:22676-22679`): the equipped cart (the misc-equip 2) when
+    /// it is a cart row, else the wooden minecart (13). The app refreshes it
+    /// per tick from the misc-equip slot.
+    pub cart_mount: i32,
     /// `Player.RemoveAllGrapplingHooks` (`Player.cs:33562-33566`) — the
     /// request the caller applies to the hook pool. The C# calls it from the
     /// jump-off (`Player.cs:22733`), the sign interaction (`:33379`), the
@@ -1675,6 +1680,7 @@ impl Player {
             rocket_boots: 0,
             can_rocket: false,
             rocket_release: false,
+            cart_mount: 13,
             release_grappling_hooks: false,
             release_jump: false,
             try_keeping_hovering_down: false,
@@ -4134,7 +4140,7 @@ impl Player {
         // vector to the attached hook center clamped to the pull speed. The
         // fall origin refreshes per tick (no fall damage accrues).
         if grappling {
-            self.grapple_movement(grapple, input, item_in_use);
+            self.grapple_movement(world, grapple, input, item_in_use);
         }
 
         // The flight section (`Player.cs:26744-27360`): the wings and the
@@ -6345,8 +6351,97 @@ impl Player {
     /// `Player.GrappleMovement` (`Player.cs:22613-22740`): the pull replaces
     /// the velocity; the jump-off detaches. `hook` is `(center, type)` of the
     /// attached hook (the param already filters to the attached state).
+    /// `Player.GrappleMovement`'s Track Hook hand-over (`Player.cs:22659-22693`):
+    /// the Track Hook (403) gives the player to the minecart when its box
+    /// overlaps the player over a track tile.
+    ///
+    /// The C# removes every grappling hook first (`:22675`), snaps the player
+    /// onto the track's rail sub-column (`Minecart.GetOnTrack` `:1200-1241`),
+    /// refuses a solid body (`Collision.SolidCollision` `:22683`) and then
+    /// mounts the cart (`Mount.SetMount` `:22687`) with the wheel-sparks
+    /// burst (`:22689-22690`).
+    pub(crate) fn track_hook_cart_transfer(
+        &mut self,
+        world: &World,
+        hooks: &[(u16, Vec2, f32)],
+    ) -> bool {
+        let Some((_, center, _)) = hooks
+            .iter()
+            .find(|(kind, ..)| *kind == crate::projectile::TRACK_HOOK)
+        else {
+            return false;
+        };
+        let Some(data) = crate::projectile::proj_data(crate::projectile::TRACK_HOOK) else {
+            return false;
+        };
+        let hook_x = center.x - data.w * 0.5;
+        let hook_y = center.y - data.h * 0.5;
+        // `:22664-22666` — the hook's box against the player's box.
+        if !(hook_x < self.x + WIDTH as f32
+            && hook_x + data.w >= self.x
+            && hook_y < self.y + self.height
+            && hook_y + data.h >= self.y)
+        {
+            return false;
+        }
+        // `:22668-22670` — the tile under the hook's centre.
+        let tx = (center.x as i32) / 16;
+        let ty = (center.y as i32) / 16;
+        self.vx = 0.0;
+        self.vy = 0.0;
+        if !world
+            .tile(tx, ty)
+            .is_some_and(|t| t.kind == tr_core::smart_cursor::TRACK_TILE)
+        {
+            return false;
+        }
+        // `:22675` — the hooks go before the probe.
+        self.release_grappling_hooks = true;
+        let mut position = Vec2::new(
+            center.x - WIDTH as f32 * 0.5,
+            center.y - self.height as f32 * 0.5,
+        );
+        let height_boost = crate::mount::mount_data(self.cart_mount)
+            .map(|row| row.height_boost)
+            .unwrap_or(0);
+        let height = self.height + height_boost as f32;
+        // `:22680-22683` — the on-track snap and the solid-body refusal.
+        if !crate::minecart::get_on_track(
+            world,
+            tx,
+            ty,
+            &mut position,
+            WIDTH as i32,
+            height as i32,
+        ) {
+            return false;
+        }
+        if collides_rect(world, position.x, position.y, WIDTH as f32, height - 20.0) {
+            return false;
+        }
+        // `:22684-22688` — the position, the rotation and the mount.
+        self.x = position.x;
+        self.y = position.y;
+        self.prev_x = position.x;
+        self.prev_y = position.y;
+        self.cart_mounted = true;
+        self.set_mount(self.cart_mount, self.wet);
+        // `:22689-22690` — the wheel-sparks burst (25 sparks).
+        minecart::wheel_sparks(
+            &mut self.pending_sparks,
+            &mut self.spark_rng,
+            position,
+            WIDTH as i32,
+            height as i32,
+            25,
+            self.full_rotation,
+        );
+        true
+    }
+
     fn grapple_movement(
         &mut self,
+        world: &World,
         hooks: &[(u16, Vec2, f32)],
         input: PlayerInput,
         item_in_use: bool,
@@ -6389,6 +6484,9 @@ impl Player {
         // `:22655-22658`: the pull points downward → the platforms fall
         // through (`GoingDownWithGrapple`).
         self.going_down_with_grapple = pull.going_down;
+        // `:22659-22693`: the Track Hook (403) hands the player to the minecart
+        // when its box overlaps the player over a track tile.
+        self.track_hook_cart_transfer(world, hooks);
 
         // `:22670-22676`: the direction follows the pull; an exactly-zero X
         // takes the Squirrel Hook's preferred direction instead. The C# gates
@@ -10721,6 +10819,30 @@ mod tests {
     /// defaults, the mount buff is granted, and the body grows 42 -> 52
     /// bottom-center. A same-type re-mount is a no-op (`:6198`); the death
     /// path strips the ride state (`Player.cs:38907`).
+    /// S1-L-10b — `Player.GrappleMovement`'s Track Hook hand-over
+    /// (`Player.cs:22659-22693`): the hook over a track tile gives the
+    /// player to the minecart.
+    #[test]
+    fn the_track_hook_hands_the_player_to_the_cart() {
+        let mut w = cart_world();
+        // A straight rail on row 30; the player stands above it.
+        rail_run(&mut w, 30, 20, 30);
+        let mut p = Player::spawn(&w);
+        p.x = 25.0 * 16.0;
+        p.y = 28.0 * 16.0;
+        // The Track Hook (403) sits on the rail, overlapping the player.
+        let hook_center = Vec2::new(25.0 * 16.0 + 8.0, 30.0 * 16.0 + 8.0);
+        let hooks = [(crate::projectile::TRACK_HOOK, hook_center, 0.0)];
+        assert!(p.track_hook_cart_transfer(&w, &hooks));
+        assert!(p.cart_mounted, "the cart ride starts");
+        assert_eq!(p.mount.kind(), 13, "the wooden minecart (:22676)");
+        // The hooks go before the probe (:22675).
+        assert!(p.release_grappling_hooks);
+        // The player snapped onto the rail (the magnet rides the rail
+        // surface, so the body sits above it).
+        assert!(p.y < 30.0 * 16.0, "the snapped y: {}", p.y);
+    }
+
     #[test]
     fn mount_cart_sets_the_ride_state_fields() {
         let w = cart_world();

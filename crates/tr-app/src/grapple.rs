@@ -221,6 +221,37 @@ pub(crate) fn blacklisted_tiles(world: &World, attached: &[(i32, i32)]) -> Vec<(
     out
 }
 
+/// `Player.DoQueenSlimeHookTeleport` (`Player.cs:22742-22755`): the Queen
+/// Slime's hook (935) drags the player to the hook in 150 tile-collision steps
+/// of 12 px each, then the style-10 teleport lands.
+///
+/// The C#'s `TileCollision(velocity, position, fallThrough: true,
+/// ignorePlats: true)` returns the new position; the port's collision returns
+/// the resolved velocity, so the position advances by it.
+pub(crate) fn queen_slime_hook_teleport(
+    world: &World,
+    position: Vec2,
+    size: Vec2,
+    target: Vec2,
+) -> Vec2 {
+    let mut vector = position;
+    for _ in 0..150 {
+        // `(vector + Size / 2).DirectionTo(target).SafeNormalize(Vector2.Zero) * 12f`
+        let step = (target - (vector + size * 0.5)).normalize_or(Vec2::ZERO) * 12.0;
+        let tc = crate::collision::tile_collision(
+            world,
+            [vector.x, vector.y],
+            [step.x, step.y],
+            size.x,
+            size.y,
+            true, // `fallThrough`
+            true, // `ignorePlats`
+        );
+        vector += Vec2::new(tc.vel[0], tc.vel[1]);
+    }
+    vector
+}
+
 /// `Main.projHook` (`Main.cs:6620-6624`): the aiStyle-7 projectiles — the
 /// grappling hooks an item's `shoot` can point at.
 pub(crate) fn is_hook_projectile(kind: u16) -> bool {
@@ -599,6 +630,24 @@ mod tests {
     use super::*;
     use crate::projectile::{HOOK, SKELETRON_HAND, SQUIRREL_HOOK, TRACK_HOOK};
     use crate::test_world_helpers::ground;
+
+    /// S1-L-10b — `Player.DoQueenSlimeHookTeleport` (`Player.cs:22742-22755`):
+    /// the player is dragged to the hook in 150 steps of 12 px.
+    #[test]
+    fn the_queen_slime_hook_drags_the_player_to_the_hook() {
+        let w = ground();
+        // The player at the tile (20, 18) — the ground starts at row 30, so
+        // the drag is horizontal and the collision never fires.
+        let start = Vec2::new(20.0 * 16.0, 18.0 * 16.0);
+        let target = Vec2::new(24.0 * 16.0, 18.0 * 16.0);
+        let size = Vec2::new(20.0, 42.0);
+        let end = queen_slime_hook_teleport(&w, start, size, target);
+        // The direction runs from the player's CENTRE to the hook, and every
+        // step is a full 12 px — the C#'s 150 steps therefore land within one
+        // step of the hook (the walk oscillates around it).
+        let center = end + size * 0.5;
+        assert!((center - target).length() < 12.0, "{:?}", end);
+    }
 
     /// S1-L-10a — `Player.UpdateBlacklistedTilesForGrappling`
     /// (`Player.cs:6210-6248`): the non-solid 3x3 around an attached hook and

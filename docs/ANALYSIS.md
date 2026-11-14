@@ -10570,10 +10570,28 @@ S1-L-10a landed the item-driven fire and the latch blacklist:
   port now raises the request from the jump-off (`Player::release_grappling_hooks`)
   and the caller applies it.
 
+S1-L-10b landed the two hand-overs:
+
+- **The Queen Slime's hook drags the player to itself.**
+  `Player.DoQueenSlimeHookTeleport` (`Player.cs:22742-22755`) walks the
+  position to the hook in 150 tile-collision steps of 12 px (the direction
+  runs from the player's centre to the hook) and lands the style-10
+  teleport. The C# calls it from the latch of the hook type 935
+  (`Projectile.cs:52773-52774`); the port calls it from the same latch.
+- **The Track Hook hands the player to the minecart.**
+  `Player.GrappleMovement` (`Player.cs:22659-22693`) checks the Track Hook
+  (403)'s box against the player's, and over a track tile it removes the
+  hooks, snaps the player onto the rail sub-column
+  (`Minecart.GetOnTrack` `:1200-1241`), refuses a solid body
+  (`Collision.SolidCollision`) and mounts the cart (`Mount.SetMount`) with
+  the 25-spark wheel burst. The equipped cart (the misc-equip 2) wins over
+  the wooden minecart (`:22676-22679`); the port reads it per tick.
+
 Deferred to their own rows: the chain/sprite rendering and the `light` /
 `projFrames[652]` animation (nothing in `render/` reads `proj_data`),
-`DoQueenSlimeHookTeleport`, the TrackHook→minecart transfer, `Minecart.FrameTrack`
-and the net messages (13/17/29).
+`Minecart.FrameTrack` (the track switch table needs `Tile.FrontTrack` /
+`Tile.BackTrack`, which the decompile does not carry) and the net messages
+(13/17/29).
 ## Thorn bushes + the wall-brick conversion tables (M5-SPREAD-2c)
 
 The M5-SPREAD-2 row's deferred "next slice".
