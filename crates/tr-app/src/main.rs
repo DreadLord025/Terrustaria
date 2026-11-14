@@ -31,6 +31,7 @@ mod itemdata;
 mod item_sorting;
 mod sortdata;
 mod lang;
+mod lang_tables;
 mod loot_db;
 mod loot_db_gen;
 mod map;

@@ -7488,6 +7488,46 @@ positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
 stands in for `miscDyes[3]`; the UI dye column (context 12) already
 renders the slots.
 
+## Localization name tables (S1-L-12, 2026-11-14)
+
+The C# builds its name caches by reflecting over the id classes and reading the
+key `<Category>.<ConstName>` (`Lang.FillNameCacheArray`, `Lang.cs:450-464`), so
+the constant spelling IS the localization key. The port now reads the same
+keys through `lang.rs`:
+
+* `npc_name(id)` — `Lang.GetNPCName` (`Lang.cs:188-195`), including the
+  negative net ids (the `NPCID.FromNetId` map plus the twelve explicit slime
+  rows, `Lang.cs:524-533`).
+* `buff_name` / `buff_description` — `Lang.cs:241-249`.
+* `emoji_name` — `Lang.cs:211-218` (a missing entry stays blank, like the
+  C#'s `leaveMissingEntriesBlank`).
+* `prefix_name`, `projectile_name`, `item_tooltip` — the `Prefix`,
+  `ProjectileName` and `ItemTooltip` key families.
+* `map_object_name` — `Lang.GetMapObjectName` (`Lang.cs:77-84`): the
+  `Lang.BuildMapAtlas` legend (`Lang.cs:554-...`), with the tree-trunk loop
+  (`:565-572`) and the `itemNameCache[N]` rows.
+* The legacy index tables the port did not reach: `world_gen`
+  (`LegacyWorldGen.{i}`), `misc` (`LegacyMisc.{i}`), `mp`
+  (`LegacyMultiplayer.{i}`), `chest_type` (`LegacyChestType.{i}`),
+  `chest_type2` (`LegacyChestType2.{i}`) and `dresser_type`
+  (`LegacyDresserType.{i}`).
+
+The `NPCID` and `BuffID` const walks are generated (`tools/gen_lang_tables.py`
+→ `lang_tables.rs`; `--check` is part of the verification) so the key
+spelling cannot drift from the decompiled source.
+
+Deviations:
+* **`GetPrefixedItemName` is not ported** — the C# picks a gender variation
+  (`Language.TryGetVariation`) and formats it through `CombineFormat.Prefix`
+  (`Lang.cs:225-239`); the port exposes the plain prefix name.
+* **The item tooltip content is not ported** — `item_tooltip` resolves the
+  `ItemTooltip.{const name}` key, but the per-item tooltip *lines* are the
+  M3-ITEM / S1-E-20 work.
+* **The map legend is addressed by tile/option** — the C#'s
+  `Lang.GetMapObjectName` takes the colour-lookup id; the port offers
+  `map_object_name(lookup_id)` (the C#'s signature) and
+  `map_object_name_for_tile(tile, option)` over the same table.
+
 ## Localization runtime + retail fonts (M6-LOCALIZE-wire-fonts, 2026-11-07)
 
 **Resource source:** the C# embeds its 84 strings files as assembly manifest
@@ -11674,7 +11714,8 @@ showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
   name otherwise. The C# prints `Main.npc[n].FullName`, i.e. the *given* name
   plus the type ("Andrew the Guide"); the port stores no per-NPC given names, so
   it prints the type name from the `NPCName.<Kind>` localization key
-  (`housing::name_key`) — the same string the bestiary entry carries.
+  (`housing::npc_type_name` → `lang::npc_name`, the C#'s
+  `Lang.GetNPCName`) — the same string the bestiary entry carries.
 * **Not ported**: the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
   because the port has no `Main.mouseNPC` housing query at all; the
   `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
