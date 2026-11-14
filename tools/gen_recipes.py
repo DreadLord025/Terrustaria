@@ -153,6 +153,13 @@ class Ctx:
         # field declarations (`:169`/`:171`) and the reset.
         self.cs_tiles, self.cs_walls = {}, {}
         item_body_src = (DECOMP / "Item.cs").read_text(encoding="utf-8")
+        # Deliberate parse gap (S1-L-11): `default:` switch sections are not
+        # interpreted — emulating them needs the whole control flow of
+        # SetDefaults (which types reach which nested switch). The only
+        # uncovered ids are the monolith series 2192-2198
+        # (`default: this.createTile = 300 + type - 2192;`, `Item.cs:27635`);
+        # none of them is a single-ingredient recipe result, so the reverse
+        # derivation is unaffected (checked by tools/test_gen_recipes.py).
 
         # The `DefaultTo*` helpers that place a tile/wall
         # (`DefaultToPlaceableTile`/`DefaultToPlaceableWall` take the id as a
