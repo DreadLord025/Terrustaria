@@ -1458,6 +1458,44 @@ impl NpcKind {
         crate::bestiary::entry_for_npc(self, SlimeVariant::Blue).net_id
     }
 
+    /// `AI_003_Fighters`'s per-type walk-speed caps (`NPC.cs:57403-59800`):
+    /// the velocity ceiling each kind walks at.
+    ///
+    /// The C#'s groups:
+    /// - the `num107` default (`:58322-58374`): 1f;
+    /// - the `num83` group (`:57606-57691`): 1.5f with the per-type rows;
+    /// - the cap-2 group (`:57554-57578`);
+    /// - the cap-3 group (`:57520-57552`);
+    /// - the shooters' group (`:59717-59750`): 1f with the per-type rows;
+    /// - the Martian engineer's own arm (`:58032-58069`): 1.5f.
+    ///
+    /// The kinds whose arm is bespoke (the pillar mobs, the vortex family,
+    /// the Goblin Archer) carry their own speed and are not listed — the
+    /// table is the walkers' shared source.
+    pub fn ai3_walk_speed(self) -> Option<f32> {
+        Some(match self {
+            NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
+            NpcKind::Skeleton => 1.5,           // the num83 group (`:57606`)
+            NpcKind::UndeadMiner => 1.0,        // the num107 default
+            NpcKind::GoblinPeon => 1.5,         // the num83 group
+            NpcKind::GoblinThief => 2.0,        // the cap-2 group (`:57554`)
+            NpcKind::GoblinWarrior => 1.0,      // the num107 default
+            NpcKind::PirateDeckhand => 2.0,     // the cap-2 group
+            NpcKind::PirateCaptainsMate => 3.0, // the cap-3 group (`:57520`)
+            NpcKind::PirateArcher => 2.0,       // the shooters' group (`:59722`)
+            NpcKind::PirateCorsair => 1.5,      // the shooters' group (`:59727`)
+            NpcKind::PirateCaptain => 1.0,      // the shooters' default (`:59717`)
+            NpcKind::BrainScrambler => 2.0,     // the shooters' group (`:59731`)
+            NpcKind::RayGunner => 2.0,          // the shooters' group (`:59731`)
+            NpcKind::MartianOfficer => 1.0,     // the shooters' default (`:59717`)
+            NpcKind::GrayGrunt => 1.8,          // the num83 group (`:57649`)
+            NpcKind::MartianEngineer => 1.5,    // its own arm (`:58032`)
+            NpcKind::GigaZapper => 2.25,        // the num83 group (`:57653`)
+            NpcKind::MartianWalker => 4.0,      // the shooters' group (`:59735`)
+            _ => return None,
+        })
+    }
+
     /// `NPC.GetNPCInvasionGroup(type)` (`NPC.cs`): the goblin army's members
     /// (26/27/28/29/111/471) — every ported invasion NPC. The other groups
     /// (pirate 2, snow 3, ...) have no NPCs in the ported set.
@@ -6480,7 +6518,9 @@ impl Npc {
         if near {
             self.facing = if dx >= 0.0 { 1 } else { -1 };
             self.sprite_dir = self.facing;
-            self.vx = self.facing as f32 * 0.6;
+            // The C#'s cap for the zombie (`AI_003_Fighters`'s `num107`
+            // default group, `NPC.cs:58322-58374`): 1f.
+            self.vx = self.facing as f32 * NpcKind::Zombie.ai3_walk_speed().unwrap_or(1.0);
         } else {
             self.vx *= 0.9;
         }
@@ -6961,10 +7001,15 @@ impl Npc {
             pcx,
             pcy,
             crate::npc_ai::WalkerParams {
-                // `NPC.cs` case 21: velocity.X target ~0.8 (the skeleton is
-                // a faster zombie), the jump -6.2, the aggro the zombie's
-                // 80x40-tile window.
-                speed: 0.8,
+                // The C#'s per-type cap (`AI_003_Fighters`, the `num83` /
+                // `num107` / cap-2 / cap-3 groups, `NPC.cs:57520-58374`):
+                // the skeleton 1.5, the undead miner 1.0, the pirate
+                // deckhand 2.0 and the pirate captain's mate 3.0. The jump
+                // -6.2 and the zombie's 80x40-tile aggro window stay.
+                speed: self
+                    .kind
+                    .ai3_walk_speed()
+                    .expect("the cave walkers' aiStyle-3 cap"),
                 jump: -6.2,
                 aggro_x: 80.0 * TILE_PX,
                 aggro_y: 40.0 * TILE_PX,
@@ -8309,7 +8354,13 @@ impl Npc {
         // The walk: the vanilla's walker step (the grounded damping and
         // the 0.9 stop-damp ride it).
         let params = crate::npc_ai::WalkerParams {
-            speed: 5.0,
+            // The C#'s per-type cap (`AI_003_Fighters`'s shooters' group,
+            // `NPC.cs:59717-59750`): the pirate archer 2, the corsair 1.5,
+            // the captain 1, the scrambler/ray gunner 2.
+            speed: self
+                .kind
+                .ai3_walk_speed()
+                .expect("the shooters' aiStyle-3 cap"),
             jump: -6.2,
             aggro_x: 80.0 * TILE_PX,
             aggro_y: 40.0 * TILE_PX,
@@ -19789,18 +19840,19 @@ mod s1_d_3b_tests {
 
     #[test]
     fn goblin_fighters_use_skeleton_walker_not_shadowed_goblin_arm() {
-        // R-05-3 / S1-D-3b: GoblinThief/Warrior/Peon must reach the skeleton
-        // walker arm (`update_skeleton`, WalkerParams speed 0.8) instead of the
-        // shadowing `update_goblin` arm (speed 1.0). NPC.cs:15644/15658/15714.
+        // R-05-3 / S1-D-3b: GoblinThief/Warrior/Peon must reach the walker
+        // arm instead of the shadowing `update_goblin` arm (speed 1.0).
+        // S1-D-3c: the walk speed is the C#'s per-type cap (the thief 2,
+        // the warrior 1, the peon 1.5 — `NPC.cs:57554`/`:57606`/`:58322`).
         let w = flat_world();
         let mut player = crate::player::Player::spawn(&w);
         // place target far to the right, both on the floor
         player.x = 140.0 * 16.0;
         player.y = 68.0 * 16.0;
-        for kind in [
-            NpcKind::GoblinThief,
-            NpcKind::GoblinWarrior,
-            NpcKind::GoblinPeon,
+        for (kind, cap) in [
+            (NpcKind::GoblinThief, 2.0),
+            (NpcKind::GoblinWarrior, 1.0),
+            (NpcKind::GoblinPeon, 1.5),
         ] {
             let mut n = bare(kind);
             n.x = 80.0 * 16.0;
@@ -19811,8 +19863,8 @@ mod s1_d_3b_tests {
                 n.update(&w, &mut player, 1.0 / 60.0);
             }
             assert!(
-                n.vx.abs() <= 0.95,
-                "{kind:?} must use skeleton walker (speed <= ~0.8), got vx={}",
+                (n.vx - cap).abs() < 0.01,
+                "{kind:?} must walk at the C#'s cap {cap}, got vx={}",
                 n.vx
             );
             assert!(
@@ -20058,6 +20110,41 @@ mod s1_f_3_tests {
         assert_eq!(NpcKind::Zombie.cs_id(), 3);
         assert_eq!(NpcKind::Guide.cs_id(), 22);
         assert_eq!(NpcKind::Angler.cs_id(), 369);
+    }
+
+    /// S1-D-3c — `AI_003_Fighters`'s per-type walk-speed caps
+    /// (`NPC.cs:57403-59800`): the C#'s groups and their rows.
+    #[test]
+    fn s1_d_3c_the_ai_style_3_walk_speeds_match_the_csharp_caps() {
+        // The `num107` default group (`:58322-58374`): 1f.
+        assert_eq!(NpcKind::Zombie.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::UndeadMiner.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::GoblinWarrior.ai3_walk_speed(), Some(1.0));
+        // The `num83` group (`:57606-57691`): 1.5f with the per-type rows.
+        assert_eq!(NpcKind::Skeleton.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::GoblinPeon.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::GrayGrunt.ai3_walk_speed(), Some(1.8));
+        assert_eq!(NpcKind::GigaZapper.ai3_walk_speed(), Some(2.25));
+        // The cap-2 (`:57554-57578`) and cap-3 (`:57520-57552`) groups.
+        assert_eq!(NpcKind::GoblinThief.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::PirateDeckhand.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::PirateCaptainsMate.ai3_walk_speed(), Some(3.0));
+        // The shooters' group (`:59717-59750`).
+        assert_eq!(NpcKind::PirateArcher.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::PirateCorsair.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::PirateCaptain.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::BrainScrambler.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::RayGunner.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::MartianOfficer.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::MartianWalker.ai3_walk_speed(), Some(4.0));
+        // The Martian engineer's own arm (`:58032-58069`).
+        assert_eq!(NpcKind::MartianEngineer.ai3_walk_speed(), Some(1.5));
+        // The kinds outside the table carry their own arm's speed (the
+        // vortex rifleman's own arm already uses the C#'s 6f cap, the
+        // `num83` row `:57677`).
+        assert_eq!(NpcKind::Slime.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::DemonEye.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::VortexRifleman.ai3_walk_speed(), None);
     }
 
     /// S1-D-3d — the goblin family's ids and stats: the port's four goblin

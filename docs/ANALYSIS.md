@@ -13032,3 +13032,42 @@ are gone and the effective rows carry the C#'s values.
 The port's own wire ids (the `NpcKind` u16 roster: 57/58/59/60) and the
 sprite sheets (`NPC_27`/`NPC_28`/`NPC_111`/`NPC_26`) were already keyed by
 name and are untouched — the kinds, their art and their ids now agree.
+
+## The aiStyle-3 walk-speed table (S1-D-3c, 2026-11-14)
+
+`AI_003_Fighters` (`NPC.cs:55856-59800`) is the vanilla's ground-fighter
+machine: the per-type walk groups, the shooters' stop-and-fire cycle and
+the boss riders. The port ran every kind that rides its walker step at one
+speed — the skeleton's 0.8 for the cave walkers, the pirates and the
+martians, the zombie's own 0.6, the shooters' 5.0 — while the C#'s arm
+carries a per-type velocity cap per group:
+
+| group | cap | kinds (the C#'s rows) |
+| --- | --- | --- |
+| the `num107` default (`:58322-58374`) | 1f | the zombie (3), the undead miner (44), the goblin warrior (28) |
+| the `num83` group (`:57606-57691`) | 1.5f | the skeleton (21), the goblin peon (26); the gray grunt 1.8, the giga zapper 2.25, the vortex rifleman 6, the vortex soldier 4 |
+| the cap-2 group (`:57554-57578`) | 2f | the goblin thief (27), the pirate deckhand (212) |
+| the cap-3 group (`:57520-57552`) | 3f | the pirate captain's mate (213) |
+| the shooters' group (`:59717-59750`) | 1f | the pirate captain (216), the martian officer (383); the pirate archer 2, the corsair 1.5, the scrambler/ray gunner 2, the stardust spider/soldier 2, the vortex hunter 4, the martian walker 4 |
+| the Martian engineer's own arm (`:58032-58069`) | 1.5f | the martian engineer (386) |
+
+`NpcKind::ai3_walk_speed` is the port's table; the zombie, the cave
+walkers (the skeleton, the undead miner, the pirate deckhand, the pirate
+captain's mate), the goblins and the shooters read it instead of their
+hard-coded speed. The kinds whose arm is bespoke (the pillar mobs, the
+vortex family, the Goblin Archer) keep their own speed and are not in the
+table.
+
+Deviations:
+
+* **The C#'s acceleration model is not ported**: the vanilla ramps the
+  velocity toward the cap at 0.07/tick (0.09/0.08/0.5/1.0 for the shooter
+  rows) and decays it ×0.8 past the cap; the port's walker step sets the
+  velocity to the cap directly. The cap itself — the value the C#'s
+  acceleration converges to — is the port's table.
+* **The C#'s scale factor on the `num107` group** (`num107 *= 1f + (1f -
+  this.scale)`, `:58374-58376`) rides the kind's `scale` (the vanilla's
+  humanoid scales are 0.9-1.1); the port's scale is 1 for these kinds, so
+  the factor is 1 — except for the kinds whose scale the port does not
+  carry (the goblins' 0.9/0.95/1.1), which the group does not scale
+  anyway.
