@@ -2098,7 +2098,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let audio = &mut app.audio;
         app.npc_step.tick(dt.min(0.25), |step| {
             if let Some(player) = player {
-                for n in npcs.iter_mut() {
+                for (i, n) in npcs.iter_mut().enumerate() {
+                    // The NPC's slot index (the C#'s `NPC.whoAmI`) — the
+                    // spawn requests that carry an owner reference (the
+                    // Saucer deathray's `ai0 = whoAmI + 1`) read it.
+                    n.slot = i;
                     n.update_rng(world, player, step, item_rng);
                     black_slime_darkness_touch(n, player, item_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
@@ -2693,9 +2697,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // find its owner (the port's NPC vec is compacted, so the index is the
     // sim's current one).
     let mut shots = Vec::new();
+    let mut ai_shots = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
         for shot in n.wants_hostile_shot.drain(..) {
             shots.push((i, shot));
+        }
+        for shot in n.wants_hostile_shot_ai.drain(..) {
+            ai_shots.push(shot);
         }
     }
     for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
@@ -2704,15 +2712,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             "[spawn-dbg] pool slots active: {}",
             app.projectiles.slots().iter().filter(|p| p.active).count()
         );
-        // The C#'s spawn-site `ai0`/`ai1` payload (`NewProjectile`'s
-        // trailing arguments, `Projectile.cs:10862-10863`): the deathray's
-        // owner slot + 1 (`NPC.cs:35917`/`:36437`) and the missile's 20-tick
-        // arming delay (`NPC.cs:35845`).
-        let (ai0, ai1) = match kind {
-            crate::projectile::SAUCER_DEATHRAY => ((owner_slot + 1) as f32, 0.0),
-            crate::projectile::SAUCER_MISSILE => (0.0, 20.0),
-            _ => (0.0, 0.0),
-        };
+        let _ = owner_slot;
         // The `timeLeft = 300` overrides: the AI_037 arm's laser
         // (`NPC.cs:49891`) and the Frost Legion throws'
         // (`NPC.cs:29022`/`:29084`).
@@ -2733,16 +2733,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 0.0,
                 time_left,
             );
-        } else if ai0 != 0.0 || ai1 != 0.0 {
-            app.projectiles.spawn_hostile_ai(
-                kind,
-                Vec2::new(sx, sy),
-                Vec2::new(svx, svy),
-                dmg,
-                0.0,
-                ai0,
-                ai1,
-            );
         } else {
             app.projectiles
                 .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0);
@@ -2752,6 +2742,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             "[after-dbg] spawn kind={} active_now={}",
             kind,
             app.projectiles.slots().iter().filter(|p| p.active).count()
+        );
+    }
+    // The shots that carry the C#'s `ai0`/`ai1` payload (`NewProjectile`'s
+    // trailing arguments, `Projectile.cs:10862-10863`): the deathray's owner
+    // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
+    // spike's scale factor and the Insanity Shadow's variation age + angle.
+    for shot in ai_shots {
+        app.projectiles.spawn_hostile_ai(
+            shot.kind,
+            Vec2::new(shot.x, shot.y),
+            Vec2::new(shot.vx, shot.vy),
+            shot.damage,
+            0.0,
+            shot.ai0,
+            shot.ai1,
         );
     }
     // The WoF's spawn requests + the World state the Hungry reads

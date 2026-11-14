@@ -12719,3 +12719,73 @@ vanilla scans the VISUAL screen rect") pointed at a stale line reference.
 The arm is `SceneMetrics.cs:468-480`, INSIDE `ScanTiles` — the C# scans the
 same 169×124 zone window the port scans, so the port's window is verbatim;
 the port's comment now says so.
+
+## The Deerclops' projectile family (S1-D-4b-5, 2026-11-14)
+
+The ROADMAP's S1-D-4b-5 slice covers the Deerclops' two projectile
+families: the aiStyle-157 ice spike (`Projectile.cs:51358-51477`) and the
+Insanity Shadow's spawn (`Projectile.RandomizeInsanityShadowFor`,
+`Projectile.cs:42408-42493`) — the spawn that feeds the aiStyle-187 arm
+landed with S1-D-4b-1.
+
+**The aiStyle-157 arm** (the 961; the 1041 rides the same style and has no
+ported row). The arm's parameter row for the 961 (`:51376-51389`) is the
+fade-in window 10, the fade-out from the 10th tick and the kill at the
+20th; the first tick takes the rotation from the velocity and rolls one of
+the sheet's five frames (`Main.rand.Next(5)`, `:51439`).
+
+**The `Opacity` property** (`Projectile.cs:540-549`) is a view over
+`alpha`, not a field of its own: the getter is `1 - alpha / 255` and the
+setter writes `alpha = (int)Clamp((1 - value) * 255, 0, 255)`. The port
+models it with the `opacity_of`/`alpha_of` helpers. The S1-D-4b-1 arm (the
+aiStyle-133 Dark Mage marker) had carried the opacity as a separate slot
+field; that field is gone and the arm writes the alpha, exactly as the
+C#'s property does — the marker's alpha now runs 255 → 242 → 0 → 127 → 255
+(the dying tick) instead of the separate opacity value.
+
+**The shadow hand's spawn** now rides the C#'s pick
+(`Projectile.RandomizeInsanityShadowFor`): the four cases are the arm's
+four variations (`Projectile.cs:42592-42634`), each handing the arm the
+variation's start age (0 / 180 / 300 / 390) and the angle, plus the
+position and the velocity. The port's old spawn (a made-up ring of six
+hands with a stand-in velocity) had no `ai` payload, so every shadow ran
+the arm's variation 0 (the drift) — the arm's other three variations were
+dead code.
+
+**The spawn-site `ai0`/`ai1` payload** (`NewProjectile`'s trailing
+arguments, `Projectile.cs:10862-10863`) rides the new
+`Npc::wants_hostile_shot_ai` request list (`HostileShotAi`): the shots
+whose call site passes a non-zero `ai0`/`ai1`. The list joins the plain
+`wants_hostile_shot` one (whose call sites pass zero). The S1-D-4b-4
+slicer's per-kind table in the sim's drain is retired: the Saucer deathray
+now carries its owner slot from the spawn site (`ai0 = whoAmI + 1`, the
+C#'s own value — the port's `Npc::slot` is the sim's current index) and
+the missile its `ai1 = 20f`.
+
+Two more Deerclops divergences fell out of the port:
+
+* **The rubble is the 962, not the 961** (`NPC.cs:44463`: the chunk, the
+  aiStyle-1 flight, `ai1 = 6 + Next(6)`), and the port now has the 962's
+  row (`:9199-9206`). The port's rubble shot the 961 (the forward spike)
+  instead.
+* **The "blizzard" state spawns no projectile** (`NPC.cs:44285-44320`):
+  it chills the player (the buff 32, 720 ticks, inside 800 px). The port
+  fired a damage-0 spike at the Deerclops instead — a stand-in with no
+  vanilla counterpart, now gone. The buff itself is the buff row
+  (S1-E-7).
+
+Deviations:
+
+* **The dust and the sound are SKIPPED** (the arm's `:51431-51464` and
+  `:51453-51461`) — no dust/sound layer. The frame roll is kept: it is
+  the visible state.
+* **The C#'s rejection loop never rejects in the port**
+  (`Projectile.cs:42476-42493`): the only player IS the target, and the
+  C# skips the target in that check, so the pick runs once.
+* **The C#'s spike cadence and tile scan are the port's stand-in**: the
+  forward/both-sides rows (`MakeSpikesForward`/`MakeSpikesBothSides`,
+  `NPC.cs:44466-44534`) and `FindBestY` (`:44586-44640`) pick the spike's
+  tile row from the ground scan; the port fires its own rows at the
+  Deerclops' feet (the `ai1` scale factor is the C#'s). The rubble's
+  `ShootRubbleUp` tile scan and up-bias (`:44448-44465`) are the same
+  stand-in. The follow-up row is the cadence row.
