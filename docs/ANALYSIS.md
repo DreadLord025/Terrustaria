@@ -13323,3 +13323,89 @@ Deviations:
   the classic values.
 * **The MP-only branches** (`Main.netMode != 0`) use the single-player
   values.
+
+## The King Slime's machine (S1-D-3g, 2026-11-14)
+
+`AI_015_KingSlime` (`NPC.cs:43121-43414`) is the King Slime's family
+machine: the hop cycle, the shrink/grow teleport, the hp-scaled body and
+the minion batches. The port ran a simplified arm — a hop on a timer, a
+stand-in teleport next to the player, a fixed body — and it spawned **a
+minion on every landing**, while the C#'s batches come every 5 % of the
+hp (1-3 slimes, `Next(1, 4)`).
+
+The arm now carries the C#'s machine:
+
+* **the hop cycle** (`:43285-43326`): the grounded timer runs at 2/tick
+  plus the hp-scaled additions (the 0.8/0.6/0.4/0.2/0.1 life bands), the
+  hop itself is the -8/-6/-13 jump with the 4/4.5/3.5 push, and the air
+  control is the 0.2 push (or the 0.93 damping) toward the facing;
+* **the teleport** (`:43177-43211`, `:43219-43284`): the player out of
+  sight for 300 ticks shrinks the King Slime (the scale ramp over 60
+  ticks), it blinks onto the picked spot and grows back (30 ticks). The
+  spot comes from `AI_015_KingSlime_FindTeleportSpot` (`:43087-43119`):
+  a solid (or platform) tile with clear air below and a sight line to the
+  player, in the 10/7 ring around the player and then the 6/2 one; the
+  anti-cheese case (out of sight for 360 ticks or the player 2000 px away)
+  lands on the player instead;
+* **the hp-scaled body** (`:43340-43356`): `num9 = life / lifeMax * 0.5 +
+  0.75` drives both the draw scale and the 98x92 box — the port's new
+  `Npc::size_override` carries the per-NPC box (the C#'s `base.width`/
+  `base.height`);
+* **the minion batches** (`:43357-43395`): every 5 % of the hp the King
+  Slime spawns 1-3 slimes (the `ai[3]` hp latch).
+
+Deviations:
+
+* **The dust and the gore are SKIPPED** (`:43253-43281`, `:43327-43339`) —
+  no dust/gore layer.
+* **The MP-only branches use the single-player values.**
+* **`NPC.timeLeft` is not ported**: the port's NPCs carry no despawn timer,
+  so the C#'s "the closing timer clears the state" arm (`:43212-43218`) and
+  the `timeLeft > 10` gate on the teleport (`:43180`) ride the normal
+  machine.
+* **The getGood world's rows** (the shrinking scale factor, the 6-px air
+  control) are the classic values — the port carries no world-seed flag.
+* **The minions' `ai[0] = -1000 * Next(3)` / `ai[1] = -1`** (`:43386-43388`)
+  ride the port's slime spawn: the slimes' own machine (`AI_001_Slimes`) is
+  not ported yet.
+* **The minion positions** stay the sim's (the surface near the King
+  Slime) rather than the C#'s random offsets inside its box.
+
+## The wiring tools (S1-L-6b1, 2026-11-14)
+
+The wiring is now placeable in play: `tr-core/src/edit.rs` grows
+`place_wire`/`kill_wire` (the C#'s four `WorldGen.PlaceWire*`/`KillWire*`
+functions — one per `Tile.wire*` bit, `WorldGen.cs:58111-58230` — folded
+into the port's colour-parameterised side table) and
+`place_actuator`/`kill_actuator` (`WorldGen.cs:58011-58040`), and
+`tr-app/src/world_sim/editing.rs::use_wiring_tool` is
+`Player.ItemCheck_UseWiringTools` (`Player.cs:46749-46920`): the wrench
+family (509 red, 850 blue, 851 green, 3612 yellow) places its wire and
+burns one **Wire item (530)** from the inventory — the tool itself is never
+consumed — the wire cutter (510) takes the wire off in the C#'s order
+(yellow, green, blue, red) and drops the Wire item back into the world, and
+the Actuator (849) marks the tile without consuming a stack
+(`Player.cs:46878-46883`). `Player.CanDoWireStuffHere`
+(`Player.cs:46920-46943`) refuses the unbreakable wall (350) and the temple
+wall (87).
+
+Deliberate deviations:
+
+1. The Actuation Rod (3620) and the Multicolor Wrench (3625) are out of this
+   row: the rod needs `Wiring.Actuate` (`Player.cs:46887-46900`) and the
+   multi-tool the `WiresUI` tool modes (`Player.cs:46903-46918`) — both ride
+   the S1-L-6b2 row with the switch bridge.
+2. `NPC.downedGolemBoss` (the C#'s gate on the temple wall,
+   `Player.cs:46927`) has no ported world flag, so the temple wall refuses
+   the wires exactly as it does before the Golem dies; the dual-dungeons
+   temple check of the same gate needs a seed the port does not carry.
+3. The C#'s wire-removal dust (five dust-50 particles,
+   `WorldGen.cs:58133-58135`) and the net messages are out — the port's dust
+   pool has no per-wire removal cue and the local wire state is the truth.
+4. The C#'s cursor-item icon (`Main.ItemIconCacheUpdate`) rides the port's
+   existing cursor-icon path.
+
+Out (the rest of S1-L-6b): the player→switch bridge
+(`Collision.SwitchTiles`, `Player.cs:32177/32339/34823`), the pressure-plate
+helper and `Wiring.running`'s production readers.
+

@@ -2544,6 +2544,78 @@ pub fn can_kill_tile(
     !chest_holds_items(anchor_x, anchor_y)
 }
 
+/// `WorldGen.PlaceWire` / `PlaceWire2` / `PlaceWire3` / `PlaceWire4`
+/// (`WorldGen.cs:58111-58218`): the four wire colours' placement. The C# has
+/// one one-line function per `Tile.wire*` bit (`Tile.cs:623-657`); the port
+/// keeps the wires in the side table ([`crate::wiring::WireState`]), so the
+/// colour is a parameter and the four functions are one.
+///
+/// The C#'s sound (`SoundEngine.PlaySound(0, i * 16, j * 16)`) and its net
+/// message are app-side.
+pub fn place_wire(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    color: crate::wiring::WireColor,
+) -> bool {
+    if !world.in_bounds(x, y) {
+        return false;
+    }
+    if world.wires.get(x, y, color) {
+        return false;
+    }
+    world.wires.set(x, y, color, true);
+    true
+}
+
+/// `WorldGen.KillWire` / `KillWire2` / `KillWire3` / `KillWire4`
+/// (`WorldGen.cs:58122-58230`): the wire comes off the tile. The C#'s item
+/// drop (`Item.NewItem(..., 530)`) and its dust are app-side — the core has
+/// no item pool.
+pub fn kill_wire(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    color: crate::wiring::WireColor,
+) -> bool {
+    if !world.in_bounds(x, y) {
+        return false;
+    }
+    if !world.wires.get(x, y, color) {
+        return false;
+    }
+    world.wires.set(x, y, color, false);
+    true
+}
+
+/// `WorldGen.PlaceActuator` (`WorldGen.cs:58011-58020`): the actuator bit on
+/// the tile (`Tile.actuator`, `Tile.cs:691-694`).
+pub fn place_actuator(world: &mut World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.flags & crate::tile::FLAG_ACTUATOR != 0 {
+        return false;
+    }
+    let i = world.index(x, y);
+    world.tiles[i].flags |= crate::tile::FLAG_ACTUATOR;
+    true
+}
+
+/// `WorldGen.KillActuator` (`WorldGen.cs:58022-58040`): the actuator bit
+/// comes off. The C#'s item drop (849) and its dust are app-side.
+pub fn kill_actuator(world: &mut World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.flags & crate::tile::FLAG_ACTUATOR == 0 {
+        return false;
+    }
+    let i = world.index(x, y);
+    world.tiles[i].flags &= !crate::tile::FLAG_ACTUATOR;
+    true
+}
+
 /// Removes the background wall at `(x, y)`. Returns the wall id.
 pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
     let t = *world.tile(x, y)?;
