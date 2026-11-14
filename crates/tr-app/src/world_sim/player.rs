@@ -577,6 +577,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     dy = dy / n - (p.y + p.height * 0.5);
                 }
             }
+            // `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
+            // `atan2(aimY * direction, aimX * direction) - fullRotation`. The
+            // port keeps the aim as an angle, so the mirrored `atan2` is the
+            // angle + PI when the player faces left.
+            let dir = p.facing as f32;
+            let item_rotation =
+                crate::player::item_rotation_for_aim(app.swing_aim, p.facing, p.full_rotation);
             p.frame_inputs = crate::player::FrameInputs {
                 use_style,
                 // `flag6` (`Player.cs:36146`): the hidden/raise-lamp/hold-orb
@@ -591,7 +598,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 } else {
                     0.0
                 },
-                aim_relative: app.swing_aim * p.facing as f32,
+                swing_anim: app.swing,
+                swing_anim_max: app.swing_max,
+                use_animation: crate::registry::get(kind).map_or(0, |d| i32::from(d.use_animation)),
+                // `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
+                // `atan2(aimY * direction, aimX * direction) - fullRotation`.
+                // The port keeps the aim as an angle, so the mirrored
+                // `atan2` is the angle + PI when the player faces left.
+                item_rotation,
+                // `num21 = itemRotation * direction` (`Player.cs:36423`).
+                aim_relative: item_rotation * dir,
                 // `!wet || !item.noWet` and `!happyFunTorchTime ||
                 // createTile != 4` — the port has neither item field, so both
                 // gates are open (documented in ANALYSIS).

@@ -138,6 +138,11 @@ fn sound_type(cue: &str) -> u32 {
         .iter()
         .find(|(n, _)| *n == cue)
         .map(|(_, t)| *t)
+        // The liquid-change trackables ride the legacy path through the
+        // trackable case (`SoundEngine.PlaySound(style)` →
+        // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
+        // ambient-scaling switch treats 42 like any unlisted id.
+        .or_else(|| LIQUID_CHANGE_CUES.contains(&cue).then_some(42))
         .unwrap_or(0)
 }
 
