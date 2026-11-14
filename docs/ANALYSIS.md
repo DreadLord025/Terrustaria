@@ -7488,6 +7488,46 @@ positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
 stands in for `miscDyes[3]`; the UI dye column (context 12) already
 renders the slots.
 
+## Localization name tables (S1-L-12, 2026-11-14)
+
+The C# builds its name caches by reflecting over the id classes and reading the
+key `<Category>.<ConstName>` (`Lang.FillNameCacheArray`, `Lang.cs:450-464`), so
+the constant spelling IS the localization key. The port now reads the same
+keys through `lang.rs`:
+
+* `npc_name(id)` — `Lang.GetNPCName` (`Lang.cs:188-195`), including the
+  negative net ids (the `NPCID.FromNetId` map plus the twelve explicit slime
+  rows, `Lang.cs:524-533`).
+* `buff_name` / `buff_description` — `Lang.cs:241-249`.
+* `emoji_name` — `Lang.cs:211-218` (a missing entry stays blank, like the
+  C#'s `leaveMissingEntriesBlank`).
+* `prefix_name`, `projectile_name`, `item_tooltip` — the `Prefix`,
+  `ProjectileName` and `ItemTooltip` key families.
+* `map_object_name` — `Lang.GetMapObjectName` (`Lang.cs:77-84`): the
+  `Lang.BuildMapAtlas` legend (`Lang.cs:554-...`), with the tree-trunk loop
+  (`:565-572`) and the `itemNameCache[N]` rows.
+* The legacy index tables the port did not reach: `world_gen`
+  (`LegacyWorldGen.{i}`), `misc` (`LegacyMisc.{i}`), `mp`
+  (`LegacyMultiplayer.{i}`), `chest_type` (`LegacyChestType.{i}`),
+  `chest_type2` (`LegacyChestType2.{i}`) and `dresser_type`
+  (`LegacyDresserType.{i}`).
+
+The `NPCID` and `BuffID` const walks are generated (`tools/gen_lang_tables.py`
+→ `lang_tables.rs`; `--check` is part of the verification) so the key
+spelling cannot drift from the decompiled source.
+
+Deviations:
+* **`GetPrefixedItemName` is not ported** — the C# picks a gender variation
+  (`Language.TryGetVariation`) and formats it through `CombineFormat.Prefix`
+  (`Lang.cs:225-239`); the port exposes the plain prefix name.
+* **The item tooltip content is not ported** — `item_tooltip` resolves the
+  `ItemTooltip.{const name}` key, but the per-item tooltip *lines* are the
+  M3-ITEM / S1-E-20 work.
+* **The map legend is addressed by tile/option** — the C#'s
+  `Lang.GetMapObjectName` takes the colour-lookup id; the port offers
+  `map_object_name(lookup_id)` (the C#'s signature) and
+  `map_object_name_for_tile(tile, option)` over the same table.
+
 ## Localization runtime + retail fonts (M6-LOCALIZE-wire-fonts, 2026-11-07)
 
 **Resource source:** the C# embeds its 84 strings files as assembly manifest
@@ -11714,7 +11754,8 @@ showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
   name otherwise. The C# prints `Main.npc[n].FullName`, i.e. the *given* name
   plus the type ("Andrew the Guide"); the port stores no per-NPC given names, so
   it prints the type name from the `NPCName.<Kind>` localization key
-  (`housing::name_key`) — the same string the bestiary entry carries.
+  (`housing::npc_type_name` → `lang::npc_name`, the C#'s
+  `Lang.GetNPCName`) — the same string the bestiary entry carries.
 * **Not ported**: the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
   because the port has no `Main.mouseNPC` housing query at all; the
   `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
@@ -12881,6 +12922,76 @@ The arm is `SceneMetrics.cs:468-480`, INSIDE `ScanTiles` — the C# scans the
 same 169×124 zone window the port scans, so the port's window is verbatim;
 the port's comment now says so.
 
+## The Deerclops' projectile family (S1-D-4b-5, 2026-11-14)
+
+The ROADMAP's S1-D-4b-5 slice covers the Deerclops' two projectile
+families: the aiStyle-157 ice spike (`Projectile.cs:51358-51477`) and the
+Insanity Shadow's spawn (`Projectile.RandomizeInsanityShadowFor`,
+`Projectile.cs:42408-42493`) — the spawn that feeds the aiStyle-187 arm
+landed with S1-D-4b-1.
+
+**The aiStyle-157 arm** (the 961; the 1041 rides the same style and has no
+ported row). The arm's parameter row for the 961 (`:51376-51389`) is the
+fade-in window 10, the fade-out from the 10th tick and the kill at the
+20th; the first tick takes the rotation from the velocity and rolls one of
+the sheet's five frames (`Main.rand.Next(5)`, `:51439`).
+
+**The `Opacity` property** (`Projectile.cs:540-549`) is a view over
+`alpha`, not a field of its own: the getter is `1 - alpha / 255` and the
+setter writes `alpha = (int)Clamp((1 - value) * 255, 0, 255)`. The port
+models it with the `opacity_of`/`alpha_of` helpers. The S1-D-4b-1 arm (the
+aiStyle-133 Dark Mage marker) had carried the opacity as a separate slot
+field; that field is gone and the arm writes the alpha, exactly as the
+C#'s property does — the marker's alpha now runs 255 → 242 → 0 → 127 → 255
+(the dying tick) instead of the separate opacity value.
+
+**The shadow hand's spawn** now rides the C#'s pick
+(`Projectile.RandomizeInsanityShadowFor`): the four cases are the arm's
+four variations (`Projectile.cs:42592-42634`), each handing the arm the
+variation's start age (0 / 180 / 300 / 390) and the angle, plus the
+position and the velocity. The port's old spawn (a made-up ring of six
+hands with a stand-in velocity) had no `ai` payload, so every shadow ran
+the arm's variation 0 (the drift) — the arm's other three variations were
+dead code.
+
+**The spawn-site `ai0`/`ai1` payload** (`NewProjectile`'s trailing
+arguments, `Projectile.cs:10862-10863`) rides the new
+`Npc::wants_hostile_shot_ai` request list (`HostileShotAi`): the shots
+whose call site passes a non-zero `ai0`/`ai1`. The list joins the plain
+`wants_hostile_shot` one (whose call sites pass zero). The S1-D-4b-4
+slicer's per-kind table in the sim's drain is retired: the Saucer deathray
+now carries its owner slot from the spawn site (`ai0 = whoAmI + 1`, the
+C#'s own value — the port's `Npc::slot` is the sim's current index) and
+the missile its `ai1 = 20f`.
+
+Two more Deerclops divergences fell out of the port:
+
+* **The rubble is the 962, not the 961** (`NPC.cs:44463`: the chunk, the
+  aiStyle-1 flight, `ai1 = 6 + Next(6)`), and the port now has the 962's
+  row (`:9199-9206`). The port's rubble shot the 961 (the forward spike)
+  instead.
+* **The "blizzard" state spawns no projectile** (`NPC.cs:44285-44320`):
+  it chills the player (the buff 32, 720 ticks, inside 800 px). The port
+  fired a damage-0 spike at the Deerclops instead — a stand-in with no
+  vanilla counterpart, now gone. The buff itself is the buff row
+  (S1-E-7).
+
+Deviations:
+
+* **The dust and the sound are SKIPPED** (the arm's `:51431-51464` and
+  `:51453-51461`) — no dust/sound layer. The frame roll is kept: it is
+  the visible state.
+* **The C#'s rejection loop never rejects in the port**
+  (`Projectile.cs:42476-42493`): the only player IS the target, and the
+  C# skips the target in that check, so the pick runs once.
+* **The C#'s spike cadence and tile scan are the port's stand-in**: the
+  forward/both-sides rows (`MakeSpikesForward`/`MakeSpikesBothSides`,
+  `NPC.cs:44466-44534`) and `FindBestY` (`:44586-44640`) pick the spike's
+  tile row from the ground scan; the port fires its own rows at the
+  Deerclops' feet (the `ai1` scale factor is the C#'s). The rubble's
+  `ShootRubbleUp` tile scan and up-bias (`:44448-44465`) are the same
+  stand-in. The follow-up row is the cadence row.
+
 ## The invasion surface band (S1-F-18, 2026-11-14)
 
 `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) compares
@@ -12892,3 +13003,72 @@ vanilla's 1200) and the window test pins both edges (3000 px below the
 surface spawns, 3200 px does not — the test world's surface is row 120 =
 px 1920). The ±3000 px window around `invasionX` and the town-NPC fallback
 stay as they were (the latter rides the town roster).
+
+## The drop-rate report (S1-E-15, 2026-11-14)
+
+`IItemDropRule.ReportDroprates` and its data (`DropRateInfo`,
+`DropRateInfoChainFeed`) are ported into `tr_core::loot`: the trait gains
+`report_droprates` (the default reports nothing, so the rule classes that
+S1-E-14 still has to port compile unchanged), and the port's rule classes
+report with the C#'s formulas — `CommonDrop`'s
+`(numerator / denominator) * the parent's rate`, `CommonDropWithRerolls`'s
+`1 - (1 - numerator/denominator)^rerolls`, `OneFromOptionsDrop`'s shared
+per-option rate, the nested rules' (expert/master/extra-gel) pairs, and
+`DropOneByOne`'s chunk-scaled stack range. `Chains.ReportDroprates`
+(`Chains.cs:24-30`) scales the chained rule's feed by `1 - the parent's own
+rate`. `ItemDropDatabase::report_droprates` is
+`BestiaryDatabase.ExtractDropsForNPC` (`BestiaryDatabase.cs:70-88`): the
+NPC's rules report their rows with a fresh feed (the rate 1.0) and the
+globals stay out.
+
+The bestiary's "Drops:" list now prints those rows instead of the 4-row
+hand-written table (`ui/bestiary.rs`) — the stack range + the rate, in
+`UIBestiaryInfoItemLine.GetDropInfo`'s format (`UIBestiaryInfoItemLine.cs:78-104`)
+with `Utils.PrettifyPercentDisplay`'s trimmed percentage
+(`Utils.cs:1105-1109`).
+
+Scope notes: the C#'s condition lists (`DropRateInfo.conditions`) and the
+chains' `hideLootReport` flag are not modelled by the port, so the rows
+carry no condition text and the chained rows always print; the town-NPC and
+critter providers, the search filters, the sorting, the flavour and the MP
+kill-sync ride the town/MP subsystems.
+
+## The goblin family's ids (S1-D-3d, 2026-11-14)
+
+The port's four goblin kinds carried **each other's** vanilla `NPCID`: the
+kind named `GoblinThief` sat on the type 26 (the vanilla's **peon**), the
+`GoblinWarrior` on the 27 (the **thief**), the `GoblinArcher` on the 28
+(the **warrior**) and the `GoblinPeon` on the 111 (the **archer**) — the
+peon/thief/warrior/archer cycle rotated by one.
+
+The C#'s rows (`ID/NPCID.cs:10729-10733`/`:10899`, the `SetDefaults` arms
+`NPC.cs:15644-15730`):
+
+| kind | type | HP | damage | defense | kb resist | value |
+| --- | --- | --- | --- | --- | --- | --- |
+| the peon | 26 | 60 | 12 | 4 | 0.8 | 100 |
+| the thief | 27 | 80 | 20 | 6 | 0.7 | 200 |
+| the warrior | 28 | 110 | 25 | 8 | 0.5 | 150 |
+| the archer | 111 | 80 | 20 | 6 | 0.7 | 200 |
+
+The port's stats rows followed the **ids** (the thief carried the peon's
+60 HP, the warrior and the peon the thief's 80, the archer the warrior's
+110), and the bestiary's `net_id` — the C#'s `NPC.type` — carried the
+same rotation. The loot tables key on that net id, so a "Goblin Thief"
+dropped the peon's loot and credited the peon's bestiary entry.
+
+The fix moves the ids and the stats back onto the names: the bestiary's
+four `net_id`s follow the C# (`cs_id` reads them through the S1-F-3
+fallback), and the stats rows carry the C#'s values per name. The port's
+`docs/NPC_AI_TAXONOMY.md` had the C#'s mapping all along ("26/27/28 |
+Goblin Peon/Thief/Warrior | 60/80/110 | 12/20/25 | 4/6/8") — the code
+had drifted from the doc.
+
+Two duplicate match arms died with the fix: the stats functions carried a
+second, by-name set of goblin rows *after* the by-id set, so the correct
+values were unreachable (`unreachable pattern` warnings). The dead rows
+are gone and the effective rows carry the C#'s values.
+
+The port's own wire ids (the `NpcKind` u16 roster: 57/58/59/60) and the
+sprite sheets (`NPC_27`/`NPC_28`/`NPC_111`/`NPC_26`) were already keyed by
+name and are untouched — the kinds, their art and their ids now agree.

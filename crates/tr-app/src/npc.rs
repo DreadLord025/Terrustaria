@@ -59,17 +59,17 @@ pub enum NpcKind {
     Hornet,
     /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
     MeteorHead,
-    /// `NPCID.GoblinThief` (26) — the invasion runner (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinThief` (27) — the invasion runner (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 12, def 4, 60 HP, kb 0.8, value 100).
     GoblinThief,
-    /// `NPCID.GoblinWarrior` (27) — the invasion fighter (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinWarrior` (28) — the invasion fighter (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
     GoblinWarrior,
-    /// `NPCID.GoblinArcher` (28) — the invasion archer (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinArcher` (111) — the invasion archer (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 25, def 8, 110 HP, kb 0.5, value 150; the arrows
     /// ride the projectile work).
     GoblinArcher,
-    /// `NPCID.GoblinPeon` (111) — the invasion grunt (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinPeon` (26) — the invasion grunt (`NPC.cs`: 18×38,
     /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
     GoblinPeon,
     /// `NPCID.GoblinSummoner` (471) — the hardmode invasion caster
@@ -2013,9 +2013,9 @@ impl NpcKind {
             // The casters: `SetDefaults` cases 29/45/32/24.
             // `NPC.cs`'s cases 26 (60) / 27+111 (80) / 28 (110) / 29 (40) /
             // 471 (2000).
-            NpcKind::GoblinThief => 60,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 80,
-            NpcKind::GoblinArcher => 110,
+            NpcKind::GoblinPeon => 60,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher => 80,
+            NpcKind::GoblinWarrior => 110,
             NpcKind::GoblinSorcerer => 40,
             NpcKind::GoblinSummoner => 2000,
             // The frost trio: 200/240/220 (`NPC.cs`'s cases 143-145).
@@ -2259,9 +2259,9 @@ impl NpcKind {
             // The casters: `SetDefaults` damage 20/20/20/30.
             // `NPC.cs`'s cases 26 (12) / 27+111 (20) / 28 (25) / 29 (20) /
             // 471 (80).
-            NpcKind::GoblinThief => 12,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 20,
-            NpcKind::GoblinArcher => 25,
+            NpcKind::GoblinPeon => 12,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher | NpcKind::GoblinSorcerer => 20,
+            NpcKind::GoblinWarrior => 25,
             NpcKind::GoblinSummoner => 80,
             // The frost trio: 50/65/55.
             NpcKind::SnowmanGangsta => 50,
@@ -2431,6 +2431,22 @@ impl NpcKind {
             NpcKind::ServantOfCthulhu => 12,
         }
     }
+}
+
+/// The hostile-shot request with the C#'s `ai0`/`ai1` payload —
+/// `NPC.NewProjectile`'s trailing arguments (`Projectile.cs:10862-10863`).
+/// The plain [`Npc::wants_hostile_shot`] list carries the shots whose call
+/// site passes zero.
+#[derive(Clone, Copy, Debug)]
+pub struct HostileShotAi {
+    pub kind: u16,
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub damage: i32,
+    pub ai0: f32,
+    pub ai1: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -2622,6 +2638,19 @@ pub struct Npc {
     /// (kind, x, y, vx, vy, damage) payloads the sim resolves into the pool
     /// (the `wants_sphere` shape; the Vec = a per-tick volley).
     pub wants_hostile_shot: Vec<(u16, f32, f32, f32, f32, i32)>,
+    /// The hostile shots that carry the C#'s `ai0`/`ai1` payload — the
+    /// `NewProjectile(..., ai0, ai1)` call-site values
+    /// (`Projectile.cs:10862-10863`): the Saucer deathray's owner slot + 1
+    /// (`NPC.cs:35917`/`:36437`), the Saucer missile's 20-tick arming delay
+    /// (`NPC.cs:35845`), the Deerclops' ice spike's scale factor
+    /// (`NPC.cs:44582`) and the Insanity Shadow's variation age + angle
+    /// (`NPC.cs:44394`).
+    pub wants_hostile_shot_ai: Vec<HostileShotAi>,
+    /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
+    /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
+    /// every tick), so the index is the sim's current one; the sim writes it
+    /// before each NPC's update.
+    pub slot: usize,
     /// The probe's escape resolve (`AI()`'s aiStyle-80 phase-2 arm:
     /// `Main.StartInvasion(4); active = false;`) — the AI holds `&World`,
     /// so the sim resolves the invasion and removes the NPC.
@@ -3165,6 +3194,8 @@ impl Npc {
             moon_parts: [-1, -1, -1],
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
+            wants_hostile_shot_ai: Vec::new(),
+            slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
             wants_scutlix: false,
@@ -3236,9 +3267,9 @@ impl Npc {
             // The casters: `SetDefaults` knockBackResist 0.6/0.6/0.6/0.5.
             // `NPC.cs`'s cases 26 (0.8) / 27+111 (0.7) / 28 (0.5) / 29 (0.6)
             // / 471 (0.15).
-            NpcKind::GoblinThief => 0.8,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 0.7,
-            NpcKind::GoblinArcher => 0.5,
+            NpcKind::GoblinPeon => 0.8,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher => 0.7,
+            NpcKind::GoblinWarrior => 0.5,
             NpcKind::GoblinSorcerer => 0.6,
             // The frost trio: kb 0.6.
             NpcKind::GoblinSummoner => 0.15,
@@ -3457,10 +3488,6 @@ impl Npc {
             NpcKind::Plantera => 0.0,
             NpcKind::BrainOfCthulhu => 0.45,
             NpcKind::Creeper => 0.8,
-            NpcKind::GoblinPeon => 0.8,
-            NpcKind::GoblinThief => 0.7,
-            NpcKind::GoblinWarrior => 0.5,
-            NpcKind::GoblinArcher => 0.7,
             NpcKind::BoundGoblin => 0.5,
             NpcKind::GoblinTinkerer => 0.5,
             NpcKind::SkeletronPrime => 0.0,
@@ -3514,9 +3541,9 @@ impl Npc {
             // The casters: `SetDefaults` defense 2/4/2/16.
             // `NPC.cs`'s cases 26 (4) / 27+111 (6) / 28 (8) / 29 (2) /
             // 471 (26).
-            NpcKind::GoblinThief => 4,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 6,
-            NpcKind::GoblinArcher => 8,
+            NpcKind::GoblinPeon => 4,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher => 6,
+            NpcKind::GoblinWarrior => 8,
             NpcKind::GoblinSorcerer => 2,
             // The frost trio: 20/26/22.
             NpcKind::SnowmanGangsta => 20,
@@ -3721,10 +3748,6 @@ impl Npc {
             NpcKind::Plantera => 14,
             NpcKind::BrainOfCthulhu => 14,
             NpcKind::Creeper => 10,
-            NpcKind::GoblinPeon => 4,
-            NpcKind::GoblinThief => 6,
-            NpcKind::GoblinWarrior => 8,
-            NpcKind::GoblinArcher => 6,
             // def 15 both (`:10254`, `:10279`).
             NpcKind::BoundGoblin => 15,
             NpcKind::GoblinTinkerer => 15,
@@ -3835,9 +3858,9 @@ impl Npc {
             // The casters: `SetDefaults` value 200/5000/140/350.
             // `NPC.cs`'s cases 26 (100) / 27+111 (200) / 28 (150) / 29 (200)
             // / 471 (5000).
-            NpcKind::GoblinThief => 100.0,
-            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 200.0,
-            NpcKind::GoblinArcher => 150.0,
+            NpcKind::GoblinPeon => 100.0,
+            NpcKind::GoblinThief | NpcKind::GoblinArcher | NpcKind::GoblinSorcerer => 200.0,
+            NpcKind::GoblinWarrior => 150.0,
             NpcKind::GoblinSummoner => 5000.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
@@ -3990,10 +4013,7 @@ impl Npc {
             NpcKind::Plantera => 150000.0,
             NpcKind::BrainOfCthulhu => 50000.0,
             NpcKind::Creeper => 0.0,
-            NpcKind::GoblinPeon => 100.0,
-            NpcKind::GoblinThief => 200.0,
-            NpcKind::GoblinWarrior => 150.0,
-            NpcKind::GoblinArcher => 200.0,
+
             NpcKind::BoundGoblin => 0.0,
             NpcKind::GoblinTinkerer => 0.0,
             NpcKind::KingSlime => 10_000.0,
@@ -8515,8 +8535,18 @@ impl Npc {
                 if in_window && core_open && (t - 440.0) % 20.0 == 0.0 {
                     let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
                     let (vx, vy) = (side * ang.cos() * 8.0, ang.sin() * 8.0);
-                    self.wants_hostile_shot
-                        .push((448u16, cx + side * 36.0, cy + 8.0, vx, vy, 50));
+                    // The missile (`:35845`): the C# passes `ai1 = 20f` —
+                    // the arm's 20-tick arming delay.
+                    self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                        kind: 448u16,
+                        x: cx + side * 36.0,
+                        y: cy + 8.0,
+                        vx,
+                        vy,
+                        damage: 50,
+                        ai0: 0.0,
+                        ai1: 20.0,
+                    });
                 }
             }
             _ => {
@@ -8525,7 +8555,19 @@ impl Npc {
                 let t = self.ai[3];
                 let core_phase0 = self.carrier_phase == 0.0;
                 if core_phase0 && t >= 20.0 && t < 260.0 && (t - 20.0) == 0.0 {
-                    self.wants_hostile_shot.push((447u16, cx, cy, 0.0, 0.0, 50));
+                    // The deathray (`:35917`): the C# passes `ai0 =
+                    // base.whoAmI + 1` — the spawner's own slot index — and
+                    // the arm reads it to find its owner.
+                    self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                        kind: 447u16,
+                        x: cx,
+                        y: cy,
+                        vx: 0.0,
+                        vy: 0.0,
+                        damage: 50,
+                        ai0: self.slot as f32 + 1.0,
+                        ai1: 0.0,
+                    });
                 }
                 // The windows: the core's gun phase (2) opens them always;
                 // else the 280-400 and 440-580 bands.
@@ -12371,17 +12413,22 @@ impl Npc {
                     // The spread (`:44579`): the per-index angle
                     // `whichOne * dir * 0.7 * (PI/4 / howMany)` — the
                     // port's trace sits on the Y velocity's slope; the
-                    // forward row walks the direction's sign.
+                    // forward row walks the direction's sign. The C#'s
+                    // `ai1` (`:44582`) is the spike's scale factor:
+                    // `0.1f + rand * 0.1f + xOffset * 1.1f / howMany`.
                     for i in 0..20 {
                         let x = cx + self.facing as f32 * (3 + i * 1) as f32 * 16.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::DEERCLOPS_ICE_SPIKE,
+                        let ai1 = 0.1 + crate::app::rand01(rng) * 0.1 + (3 + i) as f32 * 1.1 / 20.0;
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: crate::projectile::DEERCLOPS_ICE_SPIKE,
                             x,
-                            cy + 40.0,
-                            0.0,
-                            -1.0,
-                            13,
-                        ));
+                            y: cy + 40.0,
+                            vx: 0.0,
+                            vy: -1.0,
+                            damage: 13,
+                            ai0: 0.0,
+                            ai1,
+                        });
                     }
                 }
                 if self.ai[1] >= 80.0 {
@@ -12430,24 +12477,30 @@ impl Npc {
                 // The ice spikes both sides (`:44218-44233` + the helper).
                 self.ai[1] += 1.0;
                 if self.ai[1] == 56.0 {
+                    // The both-sides row (`:44528-44529`): the C#'s `ai1`
+                    // (`:44582`) is the spike's scale factor.
                     for i in 0..15 {
-                        let x = cx + (i as f32) * 16.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            x,
-                            cy + 40.0,
-                            0.0,
-                            -1.0,
-                            13,
-                        ));
-                        self.wants_hostile_shot.push((
-                            crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            cx - (i as f32) * 16.0,
-                            cy + 40.0,
-                            0.0,
-                            -1.0,
-                            13,
-                        ));
+                        let ai1 = 0.1 + crate::app::rand01(rng) * 0.1 + i as f32 * 1.1 / 15.0;
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            x: cx + (i as f32) * 16.0,
+                            y: cy + 40.0,
+                            vx: 0.0,
+                            vy: -1.0,
+                            damage: 13,
+                            ai0: 0.0,
+                            ai1,
+                        });
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: crate::projectile::DEERCLOPS_ICE_SPIKE,
+                            x: cx - (i as f32) * 16.0,
+                            y: cy + 40.0,
+                            vx: 0.0,
+                            vy: -1.0,
+                            damage: 13,
+                            ai0: 0.0,
+                            ai1,
+                        });
                     }
                 }
                 if self.ai[1] >= 90.0 {
@@ -12460,22 +12513,31 @@ impl Npc {
                 // the 965 at 15 dmg, the 60-tick total.
                 self.ai[1] += 1.0;
                 if self.ai[1] == 30.0 {
-                    let face = self.facing as f32;
-                    for i in 0..6 {
-                        let ang =
-                            (i as f32 / 6.0) * std::f32::consts::TAU + self.facing_move_phase(rng);
-                        let spawn_x = cx + ang.cos() * 120.0;
-                        let spawn_y = cy + ang.sin() * 120.0;
-                        let to_x = (pcx - spawn_x) / 40.0;
-                        let to_y = (pcy - spawn_y) / 40.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::SHADOW_HAND,
-                            spawn_x,
-                            spawn_y,
-                            to_x * face * 0.7 + to_x * 0.3,
-                            to_y,
-                            15,
-                        ));
+                    // The C#'s pick (`Projectile.RandomizeInsanityShadowFor`,
+                    // `Projectile.cs:42408-42493`): the position, the velocity
+                    // and the two `ai` slots — the arm's variation age and
+                    // the angle (`:42592-42634`). The C#'s rejection loop
+                    // (the spawn must not land on a player other than the
+                    // target) never rejects in the port: the only player IS
+                    // the target, and the C# skips the target in that check.
+                    let mut shadow_rng = crate::world_sim::npcs::LootRng(rng);
+                    for _ in 0..6 {
+                        let (pos, vel, ai0, ai1) = crate::projectile::randomize_insanity_shadow_for(
+                            Vec2::new(pcx, pcy),
+                            Vec2::new(player.vx, player.vy),
+                            true,
+                            &mut shadow_rng,
+                        );
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: crate::projectile::SHADOW_HAND,
+                            x: pos.x,
+                            y: pos.y,
+                            vx: vel.x,
+                            vy: vel.y,
+                            damage: 15,
+                            ai0,
+                            ai1,
+                        });
                     }
                 }
                 if self.ai[1] >= 60.0 {
@@ -16196,21 +16258,22 @@ mod tests {
     #[test]
     fn the_goblin_kinds_spawn_and_maps() {
         // `SetDefaults` cases 26/27/28/111: the stats + the kind↔u16
-        // round-trip + the bestiary rows (the vanilla ids: the Thief 26,
-        // the Warrior 27, the Archer 28, the Peon 111).
+        // round-trip + the bestiary rows. The vanilla ids: the Peon 26, the
+        // Thief 27, the Warrior 28, the Archer 111 (S1-D-3d — the port's
+        // four kinds had carried each other's ids).
         let w = ground_air();
         let thief = Npc::spawn_cave_walker(&w, 20, NpcKind::GoblinThief).expect("the thief spawns");
-        assert_eq!(thief.max_hp, 60);
-        assert_eq!(NpcKind::GoblinThief.contact_damage(), 12);
+        assert_eq!(thief.max_hp, 80);
+        assert_eq!(NpcKind::GoblinThief.contact_damage(), 20);
         let archer =
             Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
-        assert_eq!(archer.max_hp, 110);
-        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 25);
+        assert_eq!(archer.max_hp, 80);
+        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 20);
         for (kind, net) in [
-            (NpcKind::GoblinThief, 26),
-            (NpcKind::GoblinWarrior, 27),
-            (NpcKind::GoblinArcher, 28),
-            (NpcKind::GoblinPeon, 111),
+            (NpcKind::GoblinPeon, 26),
+            (NpcKind::GoblinThief, 27),
+            (NpcKind::GoblinWarrior, 28),
+            (NpcKind::GoblinArcher, 111),
         ] {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);
@@ -18389,8 +18452,18 @@ mod tests {
             d.update_deerclops(&w, &player, &mut rng);
         }
         assert_eq!(d.ai[0], 0.0, "the burst ends back to the walk");
-        let hands = d.wants_hostile_shot.len();
+        let hands = d.wants_hostile_shot_ai.len();
         assert!(hands >= 6, "the 6-shadow-hand burst ({hands})");
+        // The C#'s pick hands the arm its variation age + angle
+        // (`Projectile.RandomizeInsanityShadowFor`, `Projectile.cs:42408-42493`).
+        for hand in d.wants_hostile_shot_ai.iter() {
+            assert_eq!(hand.kind, crate::projectile::SHADOW_HAND);
+            assert!(
+                matches!(hand.ai0, 0.0 | 180.0 | 300.0 | 390.0),
+                "the variation age ({})",
+                hand.ai0
+            );
+        }
         // The spike volley (state 1).
         d.ai[0] = 1.0;
         d.ai[1] = 0.0;
@@ -18398,9 +18471,9 @@ mod tests {
             d.update_deerclops(&w, &player, &mut rng);
         }
         let spikes: Vec<_> = d
-            .wants_hostile_shot
+            .wants_hostile_shot_ai
             .iter()
-            .filter(|(kind, ..)| *kind == crate::projectile::DEERCLOPS_ICE_SPIKE)
+            .filter(|shot| shot.kind == crate::projectile::DEERCLOPS_ICE_SPIKE)
             .copied()
             .collect();
         assert!(
@@ -18408,8 +18481,10 @@ mod tests {
             "the spike volley adds shots ({})",
             spikes.len()
         );
-        for (_, _, _, _, _, dmg) in spikes.iter() {
-            assert_eq!(*dmg, 13, "the spike damage");
+        for spike in spikes.iter() {
+            assert_eq!(spike.damage, 13, "the spike damage");
+            // `:44582` — the spike's `ai1` is its scale factor.
+            assert!(spike.ai1 >= 0.1, "the scale factor ({})", spike.ai1);
         }
         // The life ramp: the speed cap rises as the hp falls.
         let fast = 3.5 + 1.0 * (1.0 - d.hp as f32 / d.max_hp as f32);
@@ -19983,5 +20058,46 @@ mod s1_f_3_tests {
         assert_eq!(NpcKind::Zombie.cs_id(), 3);
         assert_eq!(NpcKind::Guide.cs_id(), 22);
         assert_eq!(NpcKind::Angler.cs_id(), 369);
+    }
+
+    /// S1-D-3d — the goblin family's ids and stats: the port's four goblin
+    /// kinds carried each other's vanilla `NPCID` (the peon/thief/warrior/
+    /// archer were rotated), so the stats rows, the bestiary's net ids and
+    /// the loot table's key were one step off the C#.
+    ///
+    /// The C#'s rows (`ID/NPCID.cs:10729-10733`/`:10899` and the
+    /// `SetDefaults` arms `NPC.cs:15644-15730`):
+    /// - the peon (26): 60 HP, 12 damage, 4 defense, kb 0.8, value 100;
+    /// - the thief (27): 80 HP, 20 damage, 6 defense, kb 0.7, value 200;
+    /// - the warrior (28): 110 HP, 25 damage, 8 defense, kb 0.5, value 150;
+    /// - the archer (111): 80 HP, 20 damage, 6 defense, kb 0.7, value 200.
+    #[test]
+    fn s1_d_3d_the_goblin_kinds_carry_their_vanilla_ids_and_stats() {
+        assert_eq!(NpcKind::GoblinPeon.cs_id(), 26, "NPCID.GoblinPeon");
+        assert_eq!(NpcKind::GoblinThief.cs_id(), 27, "NPCID.GoblinThief");
+        assert_eq!(NpcKind::GoblinWarrior.cs_id(), 28, "NPCID.GoblinWarrior");
+        assert_eq!(NpcKind::GoblinArcher.cs_id(), 111, "NPCID.GoblinArcher");
+        // The stats rows.
+        assert_eq!(NpcKind::GoblinPeon.max_hp(), 60);
+        assert_eq!(NpcKind::GoblinThief.max_hp(), 80);
+        assert_eq!(NpcKind::GoblinWarrior.max_hp(), 110);
+        assert_eq!(NpcKind::GoblinArcher.max_hp(), 80);
+        assert_eq!(NpcKind::GoblinPeon.contact_damage(), 12);
+        assert_eq!(NpcKind::GoblinThief.contact_damage(), 20);
+        assert_eq!(NpcKind::GoblinWarrior.contact_damage(), 25);
+        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 20);
+        let npc = |kind| Npc::new(kind, 0.0, 0.0, 0, 0.0);
+        assert_eq!(npc(NpcKind::GoblinPeon).defense(), 4);
+        assert_eq!(npc(NpcKind::GoblinThief).defense(), 6);
+        assert_eq!(npc(NpcKind::GoblinWarrior).defense(), 8);
+        assert_eq!(npc(NpcKind::GoblinArcher).defense(), 6);
+        assert_eq!(npc(NpcKind::GoblinPeon).knock_back_resist(), 0.8);
+        assert_eq!(npc(NpcKind::GoblinThief).knock_back_resist(), 0.7);
+        assert_eq!(npc(NpcKind::GoblinWarrior).knock_back_resist(), 0.5);
+        assert_eq!(npc(NpcKind::GoblinArcher).knock_back_resist(), 0.7);
+        assert_eq!(npc(NpcKind::GoblinPeon).value(), 100.0);
+        assert_eq!(npc(NpcKind::GoblinThief).value(), 200.0);
+        assert_eq!(npc(NpcKind::GoblinWarrior).value(), 150.0);
+        assert_eq!(npc(NpcKind::GoblinArcher).value(), 200.0);
     }
 }
