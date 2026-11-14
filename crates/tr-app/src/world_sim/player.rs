@@ -674,6 +674,32 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 Some(&app.wind),
                 rng,
             );
+            // `Player.cs:28274-28275`: the switch-tile bridge — the player's
+            // box reaching a pressure plate trips the wiring (the C#'s call
+            // sits right after `FloorVisuals`, inside `Player.Update`).
+            let switch = crate::collision::switch_tiles(
+                &mut app.wiring,
+                &mut app.world,
+                p.x,
+                p.y,
+                p.old_x,
+                p.old_y,
+                crate::player::WIDTH as i32,
+                crate::player::HEIGHT as i32,
+                5, // the player's objType (`Collision.SwitchTiles`)
+            );
+            if let Some((item, x, y)) = switch.dropped {
+                // `WorldGen.KillTile`'s drop for the broken plate.
+                crate::world_sim::items::spawn_item_drop_fields(
+                    &mut app.items,
+                    &mut app.item_rng,
+                    &mut app.prefix_rng,
+                    item,
+                    1,
+                    x,
+                    y,
+                );
+            }
             if run_eligible && p.vy == 0.0 {
                 run_pixels += (p.x - run_x0).abs();
             }
