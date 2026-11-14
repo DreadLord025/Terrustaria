@@ -3352,15 +3352,58 @@ explosion drops nothing.
 
 The spawn: the skyMob dispatch's drone arm (`:1395-1398` — `invaders &&
 invasionType == 4` → the Drone at the candidate tile) runs through the
-spawner verbatim, and the ground table's roll chain is complete now:
-`num6` `Next(7)` → the Saucer gate (`Next(45)` + the 30% progress +
-`!AnyNPCs(395)`) → the num6 >= 6 rider arm (`Next(20)` + the gate → the
-unported Scutlix Rider; the `Next(2)` split → the Engineer 386) → the
-num8 `Next(5)` ray arm (the RayGunner 382 / Scrambler 381 unported,
-`>= 4` → the Drone 388) → the else arm's ground chain (the `Next(4)`
-with the 520 walk-in gate's `Next(3)` fallback). Every roll consumes
-the stream where the C#'s short-circuit reaches it; the four unported
-kinds' hits map to the ground fallback until their AI families land.
+spawner verbatim, and the ground table's roll chain is complete now
+(the S1-F-12 rewrite of the pick — one `Next(n)` per arm, exactly where
+the C# draws): `num6` `Next(7)` → the Saucer gate (`(Next(45) == 0) &
+flag6` — bitwise `&`: the draw fires even when the 30%-progress +
+`!AnyNPCs(395)` gate is closed) → the num6 >= 6 rider arm (`(Next(20)
+== 0) & flag6` → the Saucer core 395; else the `Next(2)` split → the
+Scutlix Rider's net 390 or the Engineer 386) → the num8 `Next(5)` ray
+arm (<2 → the RayGunner 382, 2|3 → the BrainScrambler 381, `>= 4` →
+the Drone 388) → the else arm's ground chain (the `Next(4)` with the
+520 walk-in gate's `Next(3)` fallback). Every roll consumes the stream
+where the C#'s short-circuit reaches it; the pick's only unported kind
+is the Parrot 252's pirate arm (see the S1-F-12 section).
+
+## The invasion spawn placement (S1-F-12, 2026-11-14)
+
+The row's placement half: an invasion spawn is produced by the same
+`try_spawn_an_npc` pipeline as every natural spawn — `FindSpawnTile`'s
+50-candidate scan, the safe-area/screen/ground checks, then
+`SpawnAnNPC`'s `else if (this.invaders)` ladder (`NPC.cs:1424-1541`)
+dispatching on the ctx's `invaders` flag at its zone-chain position
+(after the skyMob dispatch, before the water ladder). The retired
+pre-path rebuilt the gates in a cloned ctx, drew the kind pick from
+`item_rng` and placed the NPC at the fixed `(px − 600, py − 400)` offset
+with a tile-Y clamp and a ±1-by-`invasionX` facing — all gone; the
+machinery's placement is `SpawnNPC`/`NewNPC`'s `Bottom =
+(spawnTileX*16+8, spawnTileY*16)` (`NPC.cs:5238/:80772`) and the facing
+is the machinery's `TargetClosest` rule (toward the player).
+
+The stream (S1-A-10): the whole path rides the one spawner stream in
+the C# draw order — `get_spawn_rate`'s (ctx-gated) draws →
+`Next(spawnRate)` → the scan → `GetZombieSettings`'s `Next(7)` → the
+ladder arms' `Next(n)` rolls. `item_rng` loses the pick's draws (an
+interleave the C# never had). The pick inputs ride `SpawnContext`
+(`invasion_type` + summoner/captain/walker/saucer alive +
+`progress_30`/`progress_frac`, read once per attempt at the ctx build —
+the C#'s `AnyNPCs`/`invasionSize*` reads are per-ladder).
+
+Deviations (documented):
+- The kind per arm resolves through the port's bestiary net id, so the
+  spawned net id is the C#'s; the port's kind *names* for net
+  26/27/28/111 (the goblin quartet) and net 144/145 (SnowBalla/
+  MysterySnowman) are shifted vs 1.4.5's `NPCID.cs` — the pre-existing
+  roster mapping, the rename is the bestiary pass's concern.
+- The pirate table's Parrot 252 has no `NpcKind`: the roll consumes
+  where the C#'s does, the outcome maps to the Corsair.
+- The Dutchman arm's `Collision.SolidTiles` scan and the boss-minion
+  follow-up are out of scope: the half-points window (read through the
+  drained fraction) draws its `Next(20)` and the ship spawns on the hit.
+- `invasion_saucer_alive` reads the live `MartianSaucerCore` roster
+  (`AnyNPCs(395)` verbatim) where the retired pre-path hardcoded
+  `false`; `invasion_captain_alive` (the pirate table's `!AnyNPCs(216)`)
+  joins the ctx the same way.
 
 ## The martian riders (M4-EVENT-4d)
 
@@ -4063,7 +4106,9 @@ player; the size 80+40 per qualified player; the march column on the
 world's far side).
 
 The spawn: `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) —
-the px-space surface band (`position.Y < worldSurface*16 + sHeight` = 200)
+the px-space surface band (`position.Y < worldSurface*16 + sHeight`; the C#
+`sHeight` is 1200, `NPC.cs:6769` — the port's fn uses 200, the S1-F-18
+follow-up)
 plus the ±3000 px window around `invasionX` — overrides the natural roll
 with the goblin table (`:1419-1450`): the hardmode Summoner 1/30 (while
 none alive), the Sorcerer 1/9, the Thief 1/5, the Peon 1/3, the Warrior
@@ -6934,23 +6979,30 @@ snap beside the spawn; the load-time NPC spawn is suppressed under the pin).
 `tools/gen_recipes.py` reads the decompiled `Terraria/Recipe.cs`
 `SetupRecipes` and emits `crates/tr-app/src/recipes_gen.rs` - the whole
 table as ONE `&[Recipe, ...]` expression spliced via
-`include!` into `RECIPES`. 2764 rows in the C# registration order
-(= the UI listing order):
+`include!` into `RECIPES`. 2 791 rows in the C# registration order
+(= the UI listing order; re-pinned 2026-11-14 by S1-L-11 - the reverse
+rows now derive from the C# item data, `Item.SetDefaults`
+createTile/createWall, not from `itemdata.rs`; `gen_recipes.py --check`
+and `tools/test_gen_recipes.py` gate the drift):
 
-- the main body (2475 `AddRecipe` calls) + the 35 `Add*Furniture`
+- the main body (2475 `AddRecipe` calls) + the 34 `Add*Furniture`
   helpers spliced at their call positions + the `AddCritterStatueRecipe`
   rows (50 Stone + 5 critter at tile 283, needGraveyardBiome);
 - the `for` loops (`<=` and `<` forms), the `int[,] array` colour table,
   the `ItemID.Sets.TextureCopyLoad[i]` lookups, the shared locals
   (`int type = 3234;`) and the `(int)((float)num * 2.5f)` casts are all
   expanded/evaluated;
-- 284 derived reverse rows: `CreateReversePlatformRecipes` +
-  `CreateReverseWallRecipes` (`Recipe.cs:16648-16694`) flip every
-  single-ingredient recipe whose result is a placed platform
-  (`TileID.Sets.Platforms` {19, 427, 435-439}) or a placed wall
-  (`createWall > 0`, the ingredient not a wall) and insert it right
-  after the source with `notDecraftable` - the port carries that exact
-  flag as `Recipe.not_decraftable` (the craft direction ignores it).
+- 311 derived reverse rows: `CreateReversePlatformRecipes` +
+  `CreateReverseWallRecipes` (`Recipe.cs:15148-15149`, bodies
+  `:16652-16702`) flip every single-ingredient recipe whose result is a
+  placed platform (`TileID.Sets.Platforms` {19, 427, 435-439}) or a
+  placed wall (`createWall > 0`, the ingredient not a wall) and insert
+  it right after the source with `notDecraftable` - the port carries
+  that exact flag as `Recipe.not_decraftable` (the craft direction
+  ignores it). The flips are derived from the C#'s own item registry
+  (`Item.SetDefaults`); the deliberate parse gap is the `default:` switch
+  sections (only the monolith series 2192-2198 is affected, and none of
+  them is a single-ingredient recipe result).
 
 Findings the hand table had wrong (the generator is the truth now):
 
