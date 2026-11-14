@@ -8247,6 +8247,19 @@ Deviations and accepted changes:
 
 The entity messages and the smoothing are 1:1 ports; the deviations:
 
+- **The remote offsets are the C#'s `netOffset`.** `Player.netOffset`
+  (`Player.cs:1622`) accrues on every incoming `13 PlayerControls`
+  (`MessageBuffer.cs:1000-1004`) and decays in `Player.UpdateNetOffset`
+  (`:28721-28750` — `max(2, 10% of the lag)` per tick, the
+  collision-boosted step `:28737-28747`, the under-2 px clear `:28730-28734`);
+  the NPC twin is `NPC.UpdateNetOffset` (`NPC.cs:90280-90310` — the
+  `2 + 2*(len/range)` step, the hard snap above the range and the town NPC's
+  drop at its home `:90306-90310`). S1-I-3 landed the two arms the port had
+  missed (the peers' under-2 px clear + the collision boost, the NPC's
+  town-home clear) and corrected the audit note that had called the whole
+  mechanism port-invented (research/17's D9). The dt scaling (one 60 Hz tick
+  per `dt * 60`) stays a port convenience.
+
 - **`13 PlayerState` carries the port's render extension.** The C# derives
   each peer's animation frames and on-ground state from its local simulation
   of that player (`Main.player[i].Update` runs on every peer); the port

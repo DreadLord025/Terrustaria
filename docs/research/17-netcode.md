@@ -236,10 +236,16 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
   is `net_interp_tick` (`netglue.rs:1620-1657`) — per-frame decay of an `off_x/off_y`
   error offset for peers and `npc.net_offset` for NPCs, with `SMOOTHING_RANGE = 300`
   and a hard snap above it (`a_teleport_farther_than_the_range_snaps_the_offset`).
-  C# has no such smoothing in `Player`; its smoothing is engine-side (ReLogic
-  interpolation of remote sockets), so this is a port-invented mechanism, not a 1:1
-  port. The C# counterpart for *where* peers are seeded is `net_peer_spawn_pos`
-  (`netglue.rs:1666-1671`, citing `MessageBuffer.cs:908-930`).
+  **Correction (S1-I-3, 2026-11-14): this is NOT a port-invented mechanism.** The
+  C# has the same offsets: `Player.netOffset` (`Player.cs:1622`) accrues on every
+  incoming `13 PlayerControls` (`MessageBuffer.cs:1000-1004`) and decays in
+  `Player.UpdateNetOffset` (`Player.cs:28721-28750` — `max(2, 10% of the lag)`
+  per tick, the collision-boosted step at `:28737-28747`, the under-2 px clear at
+  `:28730-28734`); the NPC twin is `NPC.UpdateNetOffset` (`NPC.cs:90280-90310` —
+  the `2 + 2*(len/range)` step, the hard snap above the range and the town NPC's
+  drop at its home `:90306-90310`). The earlier "port-invented" reading of this
+  section was wrong. The C# counterpart for *where* peers are seeded is
+  `net_peer_spawn_pos` (`netglue.rs:1666-1671`, citing `MessageBuffer.cs:908-930`).
 - Stale NPC culling: `NPC_STALE = 200 ms` (`netglue.rs:52`) with
   `npc_snapshots_keep_the_slot_and_despawn_on_absence` — C# despawns only on the
   server's explicit `23` with `active = false`, so this is a client-side timeout that
@@ -284,7 +290,7 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
 | 6 | **`7 WorldInfo` carries defaults** for 11 bg styles, ice/jungle backs, tree/cave backups, 13 tree-top bytes, 14 flag groups, ore tiers, dungeon point, spawn list, `lobbyId` (ANALYSIS.md:7267-7274). `lobbyId = 0` without a social API. | behavioural | yes |
 | 7 | **`NetworkText` is literal-mode only** (mode byte 0 + string, `NetworkText.cs:65-70`); keyed/format text and the substitution list are not ported, so kick/status text is English-literal, not localized (ANALYSIS.md:7256-7260). | behavioural | yes |
 | 8 | **`5 WorldChunk`/whole-world blob replaces `10 TileSection` streaming.** ANALYSIS.md:7250-7255 admits M6-NET-3 was to replace the producer; `client_install_world` (`netglue.rs:1231`) consumes slices announced by `9 Status` and closed by `49`. | behavioural | yes |
-| 9 | **Client-side smoothing is invented, not ported.** `net_interp_tick`'s exponential decay (`len*0.1` min 2 px for peers, `2 + 2*len/300` for NPCs) has no C# counterpart; vanilla relies on ReLogic socket interpolation. Any determinism/screenshot comparison of remote-entity pixels is port-specific. | pixel / behavioural | no |
+| 9 | **Client-side smoothing is ported, not invented** (corrected 2026-11-14, S1-I-3). The C#'s `Player.netOffset` (`Player.cs:1622`) accrues on every incoming `13 PlayerControls` (`MessageBuffer.cs:1000-1004`) and decays in `Player.UpdateNetOffset` (`:28721-28750`: `max(2, 10% of the lag)` per tick, the collision-boosted step, the under-2 px clear); the NPC twin is `NPC.UpdateNetOffset` (`NPC.cs:90280-90310`: the `2 + 2*(len/range)` step, the hard snap above the range, the town NPC's drop at its home). S1-I-3 landed the two arms the port had missed — the peers' under-2 px clear and the collision-boosted step — and the NPC's town-home clear. | pixel / behavioural | **fixed** (S1-I-3 — the port matches the C#'s rules; the dt scaling (one 60 Hz tick per `dt * 60`) stays a port convenience) |
 | 10 | **NPC stale timeout (200 ms) is port-only** — vanilla despawns only on an explicit server `23` with `active = false`. | behavioural | no |
 | 11 | **The port's `12 PlayerSpawn` arm is gate-whitelisted** (`GATE_WHITELIST` contains 12) whereas C# allows `b > 12` for the 9 whitelisted ids only; harmless, but the gate no longer matches `MessageBuffer.cs:165` literally. | cosmetic | no |
 | 12 | **Idle sweep is tick-count → wall-clock**: `TimeOutTimer > 7200` ticks (`Main.cs:64610-64618`) became a 120 s `IDLE_TIMEOUT` (`net.rs:41`). 7200 ticks at 60 Hz = 120 s, so the intent matches, but a frame-paced sweep is not tick-exact. | determinism | yes — ANALYSIS.md:7294-7297 "port-tuned" |
