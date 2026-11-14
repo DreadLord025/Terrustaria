@@ -12992,3 +12992,43 @@ chains' `hideLootReport` flag are not modelled by the port, so the rows
 carry no condition text and the chained rows always print; the town-NPC and
 critter providers, the search filters, the sorting, the flavour and the MP
 kill-sync ride the town/MP subsystems.
+
+## The goblin family's ids (S1-D-3d, 2026-11-14)
+
+The port's four goblin kinds carried **each other's** vanilla `NPCID`: the
+kind named `GoblinThief` sat on the type 26 (the vanilla's **peon**), the
+`GoblinWarrior` on the 27 (the **thief**), the `GoblinArcher` on the 28
+(the **warrior**) and the `GoblinPeon` on the 111 (the **archer**) — the
+peon/thief/warrior/archer cycle rotated by one.
+
+The C#'s rows (`ID/NPCID.cs:10729-10733`/`:10899`, the `SetDefaults` arms
+`NPC.cs:15644-15730`):
+
+| kind | type | HP | damage | defense | kb resist | value |
+| --- | --- | --- | --- | --- | --- | --- |
+| the peon | 26 | 60 | 12 | 4 | 0.8 | 100 |
+| the thief | 27 | 80 | 20 | 6 | 0.7 | 200 |
+| the warrior | 28 | 110 | 25 | 8 | 0.5 | 150 |
+| the archer | 111 | 80 | 20 | 6 | 0.7 | 200 |
+
+The port's stats rows followed the **ids** (the thief carried the peon's
+60 HP, the warrior and the peon the thief's 80, the archer the warrior's
+110), and the bestiary's `net_id` — the C#'s `NPC.type` — carried the
+same rotation. The loot tables key on that net id, so a "Goblin Thief"
+dropped the peon's loot and credited the peon's bestiary entry.
+
+The fix moves the ids and the stats back onto the names: the bestiary's
+four `net_id`s follow the C# (`cs_id` reads them through the S1-F-3
+fallback), and the stats rows carry the C#'s values per name. The port's
+`docs/NPC_AI_TAXONOMY.md` had the C#'s mapping all along ("26/27/28 |
+Goblin Peon/Thief/Warrior | 60/80/110 | 12/20/25 | 4/6/8") — the code
+had drifted from the doc.
+
+Two duplicate match arms died with the fix: the stats functions carried a
+second, by-name set of goblin rows *after* the by-id set, so the correct
+values were unreachable (`unreachable pattern` warnings). The dead rows
+are gone and the effective rows carry the C#'s values.
+
+The port's own wire ids (the `NpcKind` u16 roster: 57/58/59/60) and the
+sprite sheets (`NPC_27`/`NPC_28`/`NPC_111`/`NPC_26`) were already keyed by
+name and are untouched — the kinds, their art and their ids now agree.
