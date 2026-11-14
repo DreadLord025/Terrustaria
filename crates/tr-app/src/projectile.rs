@@ -12563,6 +12563,14 @@ impl ProjectilePool {
             if n.hp <= 0 {
                 continue;
             }
+            // `Damage_PVE`'s outer gate (`Projectile.cs:12583`):
+            // `!nPC.dontTakeDamage` — the shielded NPC (the Moon Lord's
+            // core before its vulnerable phase, the Brain's Creeper
+            // shield) refuses the shot. The box walk (`Damage()`) has no
+            // such gate in the C# (`:14087-14119`).
+            if n.dont_take_damage {
+                continue;
+            }
             let p = &self.slots[slot];
             if !self.target_allowed(slot, p, idx as u16) {
                 continue;
@@ -13132,6 +13140,40 @@ mod tests {
         pool.damage_player(slot, Some(&mut player), &mut rng);
         assert!(player.hp < hp0, "the 9999 shot lands through the belt");
         assert!(rng.draws.is_empty(), "no dodge roll ran");
+    }
+
+    /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
+    /// (`Projectile.cs:12583`): `!nPC.dontTakeDamage`. The Moon Lord's
+    /// core wears the shield until its parts are dead; the Brain's
+    /// Creeper shield blocks the hits while it lives.
+    #[test]
+    fn the_projectiles_refuse_the_shielded_npcs() {
+        let w = ground();
+        let mut zombie = Npc::spawn_zombie(&w, 30).expect("the zombie spawns");
+        zombie.x = 100.0;
+        zombie.y = 100.0;
+        zombie.dont_take_damage = true;
+        let mut npcs = vec![zombie];
+        let mut player = crate::player::Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(SHURIKEN, 0, Vec2::new(108.0, 108.0), Vec2::ZERO, 10, 5.0, false)
+            .expect("the slot");
+        let hp = npcs[0].hp;
+        pool.update(
+            &mut w.clone(),
+            &mut npcs,
+            None,
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert_eq!(npcs[0].hp, hp, "the shot passes through the shield");
+        assert!(pool.slots[slot].active, "and the shot is not consumed");
     }
 
     /// BUG-23: the friendly refusal on the player's shots —
