@@ -2341,6 +2341,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // drains the army's points and reports the progress.
     for npc in &dead {
         report_invasion_kill(app, npc.kind);
+        // `NPC.checkDead` plays `this.DeathSound` at `base.Center`
+        // (`NPC.cs:91852`) — the kind's own death cue (the C#'s `null`
+        // guard: the kinds with no row play nothing).
+        if let Some(cue) = npc.kind.death_sound() {
+            let (w, h) = npc.size();
+            app.audio.play_at(cue, npc.x + w * 0.5, npc.y + h * 0.5, 1.0);
+        }
     }
     // The Golem's death chain (`:79346`'s event-flag case 245 + the
     // head's detach at `:84957`): the BODY's death raises

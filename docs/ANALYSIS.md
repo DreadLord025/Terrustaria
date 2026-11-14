@@ -13713,3 +13713,32 @@ Deviations:
   Queen.
 * **The day-time `EncourageDespawn(10)`** rides the world's own day arm (the
   port's NPCs carry no despawn timer).
+
+## The NPC hit and death sounds (S1-E-21a, 2026-11-14)
+
+The first wave of the sound bank (S1-E-21) landed with S1-E-21a: the NPCs
+now play their **own** hit and death cues.
+
+`NpcKind::hit_sound` / `NpcKind::death_sound` (`crates/tr-app/src/npc.rs`)
+carry the C#'s per-kind table — `NPC.HitSound` / `NPC.DeathSound`
+(`NPC.cs:6475-6477`, the `SetDefaults` assignments). The C#'s `null` guard
+(`NPC.cs:8537`) is kept: the kinds with no row in `SetDefaults` (the Brain
+Scrambler 381 and the Ray Gunner 382) play nothing. The cue names are the
+legacy asset names — the sound id 3 family is `NPC_Hit_N` and the sound id 4
+family is `NPC_Killed_N` (`LegacySoundPlayer.cs:646`/`:676`).
+
+The two call sites are the C#'s: the melee strike plays the kind's hit cue
+at the NPC's position (`NPC.StrikeNPC`, `:81544-81553`) and the death plays
+the kind's death cue at its centre (`NPC.checkDead`, `:91852`).
+
+Deliberate deviations:
+
+1. The C#'s trackable styles pick a random variation
+   (`LegacySoundStyle.Style`, `LegacySoundStyle.cs:33-38`); the port plays
+   the first file of the family (the `_0` asset) — the same asset family, a
+   fixed member. The C#'s own pick comes from a clock-seeded static random,
+   so it is not reproducible there either.
+2. The legacy per-sound pitch and the per-family instance reuse (the C#'s
+   `SoundNpcHit[n]` pool) stay unported — the research's open sound gaps.
+3. The C#'s special hit cues for the newest NPCs (the Turkey/Undead/Vampire
+   hurts, `NPC.cs:81535-81545`) have no ported kinds.
