@@ -14,22 +14,32 @@ use tr_core::wld::sections::WldTownRoom;
 
 use crate::npc::Npc;
 
-/// `QuickFindHome` (`WorldGen.cs:5759-5805`): the three-pass room scan
+/// `QuickFindHome` (`WorldGen.cs:5732-5795`): the three-pass room scan
 /// around `(tile_x, tile_y)` — the exact tile, the ±1 ring, the ±10 ring
 /// with stride 2 — the first pass whose room both scans and furnishes
 /// wins. Returns the `(best_x, best_y)` spot.
-pub fn quick_find_home(world: &World, tile_x: i32, tile_y: i32) -> Option<(i32, i32)> {
+///
+/// `npcs` is the live NPC list (the room's occupancy, `ScoreRoom`'s
+/// `ScoreRoom_IsThisRoomOccupiedBySomeone` `:5814-5829`); `ignore` is the
+/// NPC asking for the home (the C#'s `ignoreNPC`).
+pub fn quick_find_home(
+    world: &World,
+    npcs: &[Npc],
+    tile_x: i32,
+    tile_y: i32,
+    ignore: Option<usize>,
+) -> Option<(i32, i32)> {
     if tile_x <= 10 || tile_y <= 10 || tile_x >= world.width - 10 || tile_y >= world.height - 10 {
         return None;
     }
     // The pass 1: the exact tile (the scan reads `homeTileY - 1`).
-    if let Some((bx, by)) = scan_spot(world, tile_x, tile_y - 1) {
+    if let Some((bx, by)) = scan_spot(world, npcs, tile_x, tile_y - 1, ignore) {
         return Some((bx, by));
     }
     // The pass 2: the ±1 ring.
     for i in (tile_x - 1)..=(tile_x + 1) {
         for j in (tile_y - 1)..=(tile_y + 1) {
-            if let Some((bx, by)) = scan_spot(world, i, j) {
+            if let Some((bx, by)) = scan_spot(world, npcs, i, j, ignore) {
                 return Some((bx, by));
             }
         }
@@ -38,7 +48,7 @@ pub fn quick_find_home(world: &World, tile_x: i32, tile_y: i32) -> Option<(i32, 
     let num = 10;
     for k in (tile_x - num..=(tile_x + num)).step_by(2) {
         for l in (tile_y - num..=(tile_y + num)).step_by(2) {
-            if let Some((bx, by)) = scan_spot(world, k, l) {
+            if let Some((bx, by)) = scan_spot(world, npcs, k, l, ignore) {
                 return Some((bx, by));
             }
         }
@@ -52,16 +62,62 @@ pub fn quick_find_home(world: &World, tile_x: i32, tile_y: i32) -> Option<(i32, 
 /// then `ScoreRoom` (`:5858-5992`), which picks the room's **best** home
 /// spot — `WorldGen.bestX/bestY` — not the scan's centre. The C# writes the
 /// home only when `hiScore > 0` (`:5769-5771`).
-fn scan_spot(world: &World, x: i32, y: i32) -> Option<(i32, i32)> {
+fn scan_spot(
+    world: &World,
+    npcs: &[Npc],
+    x: i32,
+    y: i32,
+    ignore: Option<usize>,
+) -> Option<(i32, i32)> {
     let scan = check_room(world, x, y).ok()?;
     if !room_needs(&scan.house_tiles) {
         return None;
     }
-    let (bx, by, score) = score_room(world, &scan)?;
+    // `ScoreRoom_IsThisRoomOccupiedBySomeone` (`WorldGen.cs:5814-5829`): a
+    // housed town NPC whose home is in the room occupies it, so the room
+    // scores −1 and no home is assigned. The C#'s
+    // `CanNPCsLiveWithEachOther` compares the two `housingCategory` fields
+    // (`TownRoomManager.cs:144-156`); the port's town kinds all carry the
+    // vanilla default category 0 (the category-1 kinds 637/638 are not
+    // ported), so a housed NPC always conflicts.
+    let (occupied, shared_room_x) = room_occupancy(&scan, npcs, ignore);
+    if occupied {
+        return None;
+    }
+    let (bx, by, score) = score_room(world, &scan, shared_room_x)?;
     if score <= 0 {
         return None;
     }
     Some((bx, by))
+}
+
+/// `WorldGen.ScoreRoom_IsThisRoomOccupiedBySomeone` (`WorldGen.cs:5814-5829`):
+/// the room's occupancy and the C#'s `WorldGen.sharedRoomX` (the home of a
+/// NPC the room may be shared with).
+fn room_occupancy(
+    scan: &tr_core::housing::RoomScan,
+    npcs: &[Npc],
+    ignore: Option<usize>,
+) -> (bool, Option<i32>) {
+    let mut shared = None;
+    for (i, npc) in npcs.iter().enumerate() {
+        if Some(i) == ignore {
+            continue;
+        }
+        if !npc.kind.is_town_npc() {
+            continue;
+        }
+        let Some((hx, hy)) = npc.home else {
+            continue;
+        };
+        if !scan.room_tiles.contains(&(hx, hy)) || !scan.room_tiles.contains(&(hx, hy - 1)) {
+            continue;
+        }
+        // The categories differ → the room is shared; the port's kinds share
+        // the default category, so this is the occupied arm.
+        return (true, shared);
+    }
+    (false, shared)
 }
 
 /// `WorldGen.TownManager` (`TownRoomManager.cs:11-13`): one room per town NPC
@@ -262,7 +318,7 @@ mod tests {
         // the Guide's position up to 10 tiles away.
         let mut w = ground();
         build_furnished_room(&mut w, 60, 100, 12, 9);
-        let home = quick_find_home(&w, 72, 108);
+        let home = quick_find_home(&w, &[], 72, 108, None);
         assert!(home.is_some(), "the scan finds the room");
         let (hx, hy) = home.unwrap();
         assert!((60..=71).contains(&hx), "hx {hx}");
@@ -270,11 +326,35 @@ mod tests {
     }
 
     #[test]
+    fn a_housed_town_npc_occupies_the_room() {
+        // `ScoreRoom_IsThisRoomOccupiedBySomeone` (`WorldGen.cs:5814-5829`):
+        // a housed town NPC whose home is in the room refuses the home.
+        let mut w = ground();
+        build_furnished_room(&mut w, 60, 100, 12, 9);
+        // The Guide lives in the room (the home tile and the one above it).
+        let resident = town_npc(
+            crate::npc::NpcKind::Guide,
+            65.0 * 16.0,
+            106.0 * 16.0,
+            Some((65, 106)),
+        );
+        assert!(
+            quick_find_home(&w, &[resident], 72, 108, None).is_none(),
+            "the occupied room is refused"
+        );
+        // The asking NPC itself does not block its own room (`ignoreNPC`).
+        assert!(
+            quick_find_home(&w, &[], 72, 108, None).is_some(),
+            "the empty room still answers"
+        );
+    }
+
+    #[test]
     fn an_unfurnished_room_rejects() {
         // A room without furniture: the scan fails everywhere.
         let mut w = ground();
         build_furnished_room_with(&mut w, 60, 100, 12, 9, &[]);
-        assert!(quick_find_home(&w, 72, 108).is_none());
+        assert!(quick_find_home(&w, &[], 72, 108, None).is_none());
     }
 
     // --- the room state (`TownRoomManager`) -------------------------------

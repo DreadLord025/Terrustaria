@@ -4449,11 +4449,20 @@ centre, so `quick_find_home` picks the room's best home (the C#'s
 `QuickFindHome` → `RoomNeeds` → `ScoreRoom` → `hiScore > 0` chain,
 `WorldGen.cs:5732-5795`).
 
-Deviations: the occupancy half (`ScoreRoom_IsThisRoomOccupiedBySomeone`
-`:5814-5829`) and the shared-room adjustment (`:5936-5939`) need the NPC
-list and the `housingCategory` occupancy — they land with the housing
-occupancy follow-up; the relocation (`MoveTownNPC`/`moveRoom`,
-`WorldGen.cs:4685`/`:4843`) and `GetHouseholdStatus` are still out.
+S1-E-11b added the occupancy: `town.rs::room_occupancy` ports
+`ScoreRoom_IsThisRoomOccupiedBySomeone` (`WorldGen.cs:5814-5829`) — a housed
+town NPC whose home (and the cell above it) is in the room refuses the home
+(the C#'s `hiScore = -1`), and the asking NPC is skipped through the
+`ignoreNPC` argument. The C#'s `CanNPCsLiveWithEachOther`
+(`TownRoomManager.cs:144-156`) compares the two `housingCategory` fields;
+the port's town kinds all carry the vanilla default category 0 (the
+category-1 kinds 637/638 are not ported), so a housed NPC always conflicts
+and the shared-room arm (`WorldGen.sharedRoomX`, `:5936-5939`) is
+unreachable — the score takes the shared room as an argument.
+
+Deviations: the relocation (`MoveTownNPC`/`moveRoom`, `WorldGen.cs:4685`/
+`:4843`), `GetHouseholdStatus` and the `lookForHomeTimeout` gate are still
+out.
 
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
