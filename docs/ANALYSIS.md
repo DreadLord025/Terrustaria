@@ -13417,6 +13417,38 @@ Out (the rest of S1-L-6b): the player→switch bridge
 (`Collision.SwitchTiles`, `Player.cs:32177/32339/34823`), the pressure-plate
 helper and `Wiring.running`'s production readers.
 
+
+## The Deerclops' ice-spike rows (S1-D-4b-5b, 2026-11-14)
+
+`AI_123_Deerclops_MakeSpikesForward`/`MakeSpikesBothSides` +
+`TryMakingSpike` + `TryMakingSpike_FindBestY` (`NPC.cs:44466-44534`,
+`:44575-44640`) are the Deerclops' signature attack: the spikes rain down
+on the ground near the player, in volleys.
+
+The port fired a stand-in — all twenty spikes at once, from the Deerclops'
+feet, straight up. The arm now carries the C#'s shape:
+
+* **the forward row** (state 1, `:44466-44500`): from the 36th tick, every
+  fourth tick makes four spikes (the row's spread is 20 tiles);
+* **the both-sides row** (state 4, `:44502-44532`): from the 56th tick,
+  every second tick makes the row's spikes on both sides (the spread is 15
+  tiles);
+* **the spike's landing row** (`:44586-44640`): `FindBestY` walks the
+  column toward the player's feet and keeps the walkable row closest to
+  them, then walks up through the solid tiles and down to the first
+  walkable one;
+* **the spike's flight** (`:44582`): the `(0, -1)` vector rotated by
+  `whichOne * dir * 0.7 * (PI / 4 / howMany)` and the `ai1` scale factor
+  (`0.1 + rand * 0.1 + xOffset * 1.1 / howMany`).
+
+The two tile probes the C#'s helper uses ride with it:
+`WorldGen.ActiveAndWalkableTile` (`WorldGen.cs:70300-70318` — the tile is
+active, solid and not framed off) and `WorldGen.SolidTile`
+(`:70111-70132` — the full solid block, no slope and no top-only tile).
+
+The rubble's own tile scan (`AI_123_Deerclops_ShootRubbleUp`,
+`:44448-44465`) is still the port's stand-in — the follow-up row.
+
 ## The switch bridge (S1-L-6b2, 2026-11-14)
 
 `crates/tr-app/src/collision.rs::switch_tiles` ports `Collision.SwitchTiles`
@@ -13453,3 +13485,4 @@ Out (the rest of S1-L-6b): the NPC call site (`NPC.cs:90504`, whose fuse arm
 covers only NPC kinds the port does not ship), `PressurePlateHelper`'s
 plate 428 (`PressurePlateHelper.cs`, the "stays pressed while a player
 stands on it" plate), the Actuation Rod (3620) and the multi-wrench (3625).
+

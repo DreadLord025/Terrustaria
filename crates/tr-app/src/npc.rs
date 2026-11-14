@@ -2905,6 +2905,187 @@ fn safe_dir(v: Vec2, default: Vec2) -> Vec2 {
     }
 }
 
+/// `AI_123_Deerclops_MakeSpikesForward`/`MakeSpikesBothSides` +
+/// `TryMakingSpike` (`NPC.cs:44466-44534`, `:44575-44585`): the Deerclops'
+/// ice-spike rows. `how_many` is the row's spread (20 forward, 15 both
+/// sides), `stride` the cadence (4 / 2 ticks), `trigger` the tick the row
+/// opens at (36 / 56) and `both_sides` the mirrored row.
+fn deerclops_make_spikes(
+    npc: &mut Npc,
+    world: &World,
+    player: &Player,
+    rng: &mut u64,
+    how_many: i32,
+    stride: i32,
+    trigger: f32,
+    both_sides: bool,
+) {
+    let phase = npc.ai[1];
+    if phase < trigger {
+        return;
+    }
+    // `:44481-44483` — the source tile: the Deerclops' bottom, three tiles
+    // forward.
+    let (w, h) = npc.size();
+    let source_x = ((npc.x + w * 0.5) as i32) / 16 + npc.facing * 3;
+    let source_y = ((npc.y + h) as i32) / 16;
+    // `:44484-44492` — the batch window: the ticks since the trigger,
+    // rounded down to the stride.
+    let elapsed = phase as i32 - trigger as i32;
+    let base = elapsed / stride * stride;
+    let mut end = base + stride;
+    if elapsed % stride != 0 {
+        end = base;
+    }
+    if both_sides {
+        // `:44525-44529` — the mirrored row: the spikes walk down from the
+        // batch's start, each one on both sides.
+        let mut i = base;
+        while i >= 0 && i < end && i < how_many {
+            let x_offset = i;
+            deerclops_try_make_spike(
+                npc, world, player, rng, source_x, source_y, npc.facing, how_many, -i, x_offset,
+            );
+            deerclops_try_make_spike(
+                npc,
+                world,
+                player,
+                rng,
+                source_x,
+                source_y,
+                -npc.facing,
+                how_many,
+                -i,
+                x_offset,
+            );
+            i -= 1;
+        }
+    } else {
+        // `:44493-44496` — the forward row.
+        let mut i = base;
+        while i < end && i < how_many {
+            deerclops_try_make_spike(
+                npc, world, player, rng, source_x, source_y, npc.facing, how_many, i, i,
+            );
+            i += 1;
+        }
+    }
+}
+
+/// `AI_123_Deerclops_TryMakingSpike` (`NPC.cs:44575-44585`): the spike's
+/// tile row comes from `FindBestY`, and the spike itself flies at the
+/// row's angle (`(0, -1)` rotated by `whichOne * dir * 0.7 * (PI / 4 /
+/// howMany)`) with the `ai1` scale factor.
+fn deerclops_try_make_spike(
+    npc: &mut Npc,
+    world: &World,
+    player: &Player,
+    rng: &mut u64,
+    source_x: i32,
+    source_y: i32,
+    dir: i32,
+    how_many: i32,
+    which_one: i32,
+    x_offset: i32,
+) {
+    let x = source_x + x_offset * dir;
+    let y = deerclops_find_best_y(world, player, source_y, x);
+    if !active_and_walkable(world, x, y) {
+        return;
+    }
+    let angle =
+        which_one as f32 * dir as f32 * 0.7 * (std::f32::consts::PI / 4.0 / how_many as f32);
+    let (sin, cos) = angle.sin_cos();
+    let vel = Vec2::new(
+        Vec2::new(0.0, -1.0).x * cos - Vec2::new(0.0, -1.0).y * sin,
+        Vec2::new(0.0, -1.0).x * sin + Vec2::new(0.0, -1.0).y * cos,
+    );
+    // `:44582` — the spike's `ai1`: the scale factor.
+    let ai1 = 0.1 + crate::app::rand01(rng) * 0.1 + x_offset as f32 * 1.1 / how_many as f32;
+    npc.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+        kind: crate::projectile::DEERCLOPS_ICE_SPIKE,
+        x: x as f32 * 16.0 + 8.0,
+        y: y as f32 * 16.0 - 8.0,
+        vx: vel.x,
+        vy: vel.y,
+        damage: 13,
+        ai0: 0.0,
+        ai1,
+    });
+}
+
+/// `AI_123_Deerclops_TryMakingSpike_FindBestY` (`NPC.cs:44586-44640`): the
+/// tile row the spike lands on — the walkable row closest to the player's
+/// feet along the column, then the walk up through the solid tiles and the
+/// walk down to the first walkable one.
+fn deerclops_find_best_y(world: &World, player: &Player, source_y: i32, x: i32) -> i32 {
+    let mut num = source_y;
+    let (pcx, _) = player.center();
+    let bottom_y = player.y + player.height;
+    let target_row = (bottom_y / 16.0) as i32;
+    let step = (target_row - num).signum();
+    let stop = target_row + step * 15;
+    let mut best: Option<i32> = None;
+    let mut best_dist = f32::INFINITY;
+    let mut i = num;
+    while i != stop {
+        if active_and_walkable(world, x, i) {
+            let tile = Vec2::new(x as f32 * 16.0, i as f32 * 16.0);
+            let d = tile.distance(Vec2::new(pcx, bottom_y));
+            if best.is_none() || d < best_dist {
+                best = Some(i);
+                best_dist = d;
+            }
+        }
+        i += step;
+    }
+    if let Some(row) = best {
+        num = row;
+    }
+    // `:44619-44627` — the walk up through the solid tiles.
+    for _ in 0..20 {
+        if num < 10 {
+            break;
+        }
+        if !solid_block(world, x, num) {
+            break;
+        }
+        num -= 1;
+    }
+    // `:44628-44638` — the walk down to the first walkable tile.
+    for _ in 0..20 {
+        if num > world.height as i32 - 10 {
+            break;
+        }
+        if active_and_walkable(world, x, num) {
+            break;
+        }
+        num += 1;
+    }
+    num
+}
+
+/// `WorldGen.ActiveAndWalkableTile` (`WorldGen.cs:70300-70318`): the tile is
+/// active, solid and not the framed-off "inactive" state.
+fn active_and_walkable(world: &World, x: i32, y: i32) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && !t.inactive() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+}
+
+/// `WorldGen.SolidTile` (`WorldGen.cs:70111-70132`): the full solid block
+/// (active, solid, not a top-only tile, no slope, not framed off).
+fn solid_block(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.active()
+            && !t.inactive()
+            && tr_core::tiledata::TILE_SOLID.has(t.kind)
+            && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            && !t.half_brick()
+            && t.slope() == 0
+    })
+}
+
 /// `AI_015_KingSlime_FindTeleportSpot` + `BuildKingSlimeTeleportCache`
 /// (`NPC.cs:43077-43119`): the tile the King Slime teleports onto — a
 /// solid (or platform) tile with clear air below and a line of sight to
@@ -12861,28 +13042,10 @@ impl Npc {
             1 => {
                 // The ice spikes forward (`:44203-44217` + the helper).
                 self.ai[1] += 1.0;
-                if self.ai[1] == 36.0 {
-                    // The spread (`:44579`): the per-index angle
-                    // `whichOne * dir * 0.7 * (PI/4 / howMany)` — the
-                    // port's trace sits on the Y velocity's slope; the
-                    // forward row walks the direction's sign. The C#'s
-                    // `ai1` (`:44582`) is the spike's scale factor:
-                    // `0.1f + rand * 0.1f + xOffset * 1.1f / howMany`.
-                    for i in 0..20 {
-                        let x = cx + self.facing as f32 * (3 + i * 1) as f32 * 16.0;
-                        let ai1 = 0.1 + crate::app::rand01(rng) * 0.1 + (3 + i) as f32 * 1.1 / 20.0;
-                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
-                            kind: crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            x,
-                            y: cy + 40.0,
-                            vx: 0.0,
-                            vy: -1.0,
-                            damage: 13,
-                            ai0: 0.0,
-                            ai1,
-                        });
-                    }
-                }
+                // `:44466-44500` — the forward row: from the 36th tick,
+                // every fourth tick makes four spikes (the row's spread is
+                // 20 tiles).
+                deerclops_make_spikes(self, world, player, rng, 20, 4, 36.0, false);
                 if self.ai[1] >= 80.0 {
                     self.ai[0] = 0.0;
                     self.ai[1] = 0.0;
@@ -12928,33 +13091,10 @@ impl Npc {
             4 => {
                 // The ice spikes both sides (`:44218-44233` + the helper).
                 self.ai[1] += 1.0;
-                if self.ai[1] == 56.0 {
-                    // The both-sides row (`:44528-44529`): the C#'s `ai1`
-                    // (`:44582`) is the spike's scale factor.
-                    for i in 0..15 {
-                        let ai1 = 0.1 + crate::app::rand01(rng) * 0.1 + i as f32 * 1.1 / 15.0;
-                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
-                            kind: crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            x: cx + (i as f32) * 16.0,
-                            y: cy + 40.0,
-                            vx: 0.0,
-                            vy: -1.0,
-                            damage: 13,
-                            ai0: 0.0,
-                            ai1,
-                        });
-                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
-                            kind: crate::projectile::DEERCLOPS_ICE_SPIKE,
-                            x: cx - (i as f32) * 16.0,
-                            y: cy + 40.0,
-                            vx: 0.0,
-                            vy: -1.0,
-                            damage: 13,
-                            ai0: 0.0,
-                            ai1,
-                        });
-                    }
-                }
+                // `:44502-44532` — the both-sides row: from the 56th tick,
+                // every second tick makes the row's spikes on both sides
+                // (the spread is 15 tiles).
+                deerclops_make_spikes(self, world, player, rng, 15, 2, 56.0, true);
                 if self.ai[1] >= 90.0 {
                     self.ai[0] = 0.0;
                     self.ai[1] = 0.0;
@@ -19115,8 +19255,11 @@ mod tests {
             .filter(|shot| shot.kind == crate::projectile::DEERCLOPS_ICE_SPIKE)
             .copied()
             .collect();
+        // The C#'s cadence (`:44484-44496`): from the 36th tick, every
+        // fourth tick makes four spikes — the 40-tick window sees two
+        // volleys.
         assert!(
-            spikes.len() >= 20,
+            spikes.len() >= 8,
             "the spike volley adds shots ({})",
             spikes.len()
         );
@@ -21073,6 +21216,92 @@ mod s1_d_3g_tests {
             (1..=3).contains(&k.wants_minion_batch),
             "the batch is 1-3 ({})",
             k.wants_minion_batch
+        );
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_5b_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The ground fixture: solid tiles from row 30 down.
+    fn world() -> tr_core::World {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// S1-D-4b-5b — the Deerclops' ice-spike row
+    /// (`AI_123_Deerclops_MakeSpikesForward`, `NPC.cs:44466-44500`): from
+    /// the 36th tick, every fourth tick makes four spikes, and each spike
+    /// lands on the ground row `FindBestY` picks (`NPC.cs:44586-44640`).
+    #[test]
+    fn s1_d_4b_5b_the_deerclops_spikes_fall_in_batches_of_four() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 32.0 * 16.0;
+        player.y = 20.0 * 16.0;
+        let mut d = Npc::new(NpcKind::Deerclops, 20.0 * 16.0, 29.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        let mut rng = 12345u64;
+        // The state 1 (the forward spikes): 36 ticks to the first volley.
+        d.ai[0] = 1.0;
+        d.ai[1] = 0.0;
+        for _ in 0..36 {
+            d.update_deerclops(&w, &player, &mut rng);
+        }
+        let spikes: Vec<_> = d
+            .wants_hostile_shot_ai
+            .iter()
+            .filter(|s| s.kind == crate::projectile::DEERCLOPS_ICE_SPIKE)
+            .copied()
+            .collect();
+        assert_eq!(spikes.len(), 4, "the first volley is four spikes");
+        // The spikes land on the ground row under the player (the solid
+        // tiles start at row 30) and fly at the row's angle.
+        for spike in spikes.iter() {
+            assert!(
+                (spike.y - 8.0 - 30.0 * 16.0).abs() < 24.0,
+                "the spike lands on the ground row ({})",
+                spike.y
+            );
+            assert!(
+                spike.vx.abs() + spike.vy.abs() > 0.5,
+                "the spike flies at an angle ({:?})",
+                (spike.vx, spike.vy)
+            );
+        }
+        // The next three ticks make no spike (the cadence is every fourth
+        // tick: the volleys land on the 36th, the 40th, ...).
+        let before = d.wants_hostile_shot_ai.len();
+        for _ in 0..3 {
+            d.update_deerclops(&w, &player, &mut rng);
+        }
+        assert_eq!(
+            d.wants_hostile_shot_ai.len(),
+            before,
+            "the cadence waits four ticks"
+        );
+        // The fourth tick opens the second volley.
+        d.update_deerclops(&w, &player, &mut rng);
+        assert_eq!(
+            d.wants_hostile_shot_ai.len() - before,
+            4,
+            "the second volley is four spikes"
         );
     }
 }
