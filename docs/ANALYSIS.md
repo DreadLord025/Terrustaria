@@ -12240,3 +12240,65 @@ is the tile-space identity); the minimap call (`Main.cs:55703`, with the
 clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
 their own passes; the hover text feeds the map's text line through
 `ui::text::hud_text` (the C# `ref text`).
+
+## The carrier's life pool (S1-D-6, 2026-11-14)
+
+`NPC.realLife` (`NPC.cs:6161`) is the C#'s carrier link: an NPC index that
+points at the NPC whose life the linked NPC shares. `AI_006_Worms` gives the
+head `ai[3] = whoAmI` + `realLife = whoAmI` and hands the link to every
+child (`NPC.cs:51305-51363`); `AI_037_Destroyer` does the same for the
+Destroyer (`:49836-49853`) and the crawltipede's own arm for its chain
+(`:51369-51392`). The Eater of Worlds is the one exception — C# forces
+`realLife = -1` for types 13-15 (`:51129-51132`), so every EoW segment owns
+its own life.
+
+The three consequences the port now carries:
+
+* **One pool.** `StrikeNPC_Inner`'s `realLife` arm (`:81374-81378`) puts the
+  damage on the carrier's `life` and copies the carrier's `life`/`lifeMax`
+  back onto the struck segment. The pool's size is the carrier's `lifeMax`:
+  the Devourer 100 (`:8771`), the Giant Worm 30 (`:8858`), the Leech 60
+  (`:10413`), the solar crawltipede 10000 (`:15273`), the Destroyer **80000**
+  (`:10667` — the port carried the per-segment 8000, so the whole worm was
+  eight times too tanky).
+* **A carrier-bound death.** `checkDead` returns early for a link whose
+  carrier is not itself (`:78040-78042`), so a segment never runs the death
+  events: no loot, no coins, no bestiary credit, no banner, no invasion
+  kill credit. Only the carrier's death carries them.
+* **A chain without orphans.** A classic family's link dies with its leader
+  (`:51425-51433`); the `Transform(13)`/`Transform(15)` split is the Eater
+  of Worlds' rule only (`:51498-51519`). The port used to split the
+  Devourer's and the Giant Worm's bodies into new heads — a segment that
+  outlived its chain.
+
+Port notes:
+
+* **The carrier link is a stable identity, not an index.** The vanilla's
+  `realLife` is an NPC index, but `App::npcs` compacts every frame (the
+  death retain in `world_sim/npcs.rs`), so an index would not survive the
+  frame. The port's chain identity (`worm_id` + `seg_index`) stands in: the
+  carrier is the link with `seg_index == 0` (`Npc::carrier_index`).
+* **The mirror is continuous.** C# copies the carrier's `life` onto the
+  segment when the segment is struck; the port's worm pass mirrors it every
+  frame, so a segment never shows a stale life. The observable result is the
+  same: the pool empties the whole chain at once, and the DoT on a segment
+  (which C# also loses — it writes the segment's stale `life`) cannot kill a
+  link.
+* **The two strikes without the NPC list defer.** The EoC shield-dash and
+  the thorns reflect (`Npc::contact`) have no access to the NPC list, so
+  their damage is parked in `pending_pool_damage` and the worm pass pays it
+  to the carrier in the same frame. The melee, the projectile and the net
+  paths resolve the carrier directly (`Npc::strike_melee` /
+  `Npc::strike_projectile`).
+* **The net mode carries no chains.** The net snapshot rebuilds `App::npcs`
+  from the wire (kind/position/life), so the links have no `worm_id` there
+  and a remote strike lands on the segment itself. The host owns the
+  simulation, as in the vanilla.
+* **The tail's damage multiplier.** `NPC.takenDamageMultiplier`
+  (`:81244-81246`) multiplies the strike before it lands; the solar
+  crawltipede's tail (414) carries 10 (`:15316`) — the tail is the softest
+  point of the chain by a factor of ten.
+* **Still open.** The worm families' boss health bar (`Main.cs:45979`'s
+  `DrawInterface_Healthbar_Worm`, the carrier's life on the bar) and the
+  Moon Lord carrier + the DD2 anchors (the port's kind-search pre-passes
+  instead of the C#'s explicit index links) are the S1-D-6b row.
