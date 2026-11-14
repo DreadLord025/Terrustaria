@@ -2581,6 +2581,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // `NPC.cs:22318`'s `head.position`): the same shape as the Golem's.
+    // The Skeletron head's init (`NPC.cs:21924-21941`) spawns the two hands
+    // — the lower (`ai[0] = -1`) and the upper (`ai[0] = 1`, `ai[3] = 150`).
     {
         let head = app
             .npcs
@@ -2591,7 +2593,45 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let (hw, hh) = head.size();
             app.world.skeletron_x = head.x + hw * 0.5;
             app.world.skeletron_y = head.y;
-            let _ = hh;
+            if head.ai[0] == 0.0 {
+                // The init latch (`:21925-21927`).
+                let mut init = app
+                    .npcs
+                    .iter_mut()
+                    .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0);
+                if let Some(head) = init.as_mut() {
+                    head.ai[0] = 1.0;
+                }
+                let mut hands = Vec::new();
+                for (side, ai3) in [(-1.0f32, 0.0f32), (1.0, 150.0)] {
+                    let mut hand = Npc::new(
+                        NpcKind::SkeletronHand,
+                        head.x + hw * 0.5 - 75.0,
+                        head.y + hh * 0.5 - 75.0,
+                        0,
+                        0.0,
+                    );
+                    hand.hp = hand.max_hp;
+                    hand.ai[0] = side;
+                    hand.ai[3] = ai3;
+                    hands.push(hand);
+                }
+                app.npcs.append(&mut hands);
+            }
+        }
+        // The live hand count (the C#'s `num168`): the expert mode's spin
+        // shot and the charge's speed scale with it.
+        let hands_alive = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SkeletronHand && n.hp > 0)
+            .count() as f32;
+        if let Some(head) = app
+            .npcs
+            .iter_mut()
+            .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
+        {
+            head.ai[3] = hands_alive;
         }
     }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
@@ -8809,6 +8849,63 @@ mod pillar_mob_tests {
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.world.downed_tower_solar, "the downed flag");
         assert!(!app.world.tower_active_solar, "the tower deactivates");
+    }
+
+    /// S1-D-3f — the Skeletron head's init (`NPC.cs:21924-21941`): the
+    /// first tick spawns the two hands — the lower (`ai[0] = -1`) and the
+    /// upper (`ai[0] = 1`, `ai[3] = 150`).
+    #[test]
+    fn the_skeletron_head_spawns_its_two_hands() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // The surface world (the flow app's own world is 8x8 tiles).
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        let mut head = Npc::new(NpcKind::SkeletronHead, 150.0 * TILE_PX, 1600.0, 1, 0.0);
+        head.hp = head.max_hp;
+        app.npcs.push(head);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let hands: Vec<_> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SkeletronHand)
+            .collect();
+        assert_eq!(hands.len(), 2, "the two hands spawned");
+        let lower = hands
+            .iter()
+            .find(|h| h.ai[0] < 0.0)
+            .expect("the lower hand");
+        let upper = hands
+            .iter()
+            .find(|h| h.ai[0] > 0.0)
+            .expect("the upper hand");
+        assert_eq!(upper.ai[3], 150.0, "the upper hand's ai[3]");
+        // The init latch: the hands spawn once.
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::SkeletronHand)
+                .count(),
+            2,
+            "the hands spawn once"
+        );
     }
 }
 

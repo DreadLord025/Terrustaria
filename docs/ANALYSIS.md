@@ -13197,6 +13197,44 @@ Deviations:
   carry (the goblins' 0.9/0.95/1.1), which the group does not scale
   anyway.
 
+## The drowning family (S1-E-13b, 2026-11-14)
+
+`crates/tr-app/src/collision.rs` ports `Collision.DrownCollision`
+(`Collision.cs:1383-1432`) and the two water-line helpers
+(`GetWaterLine` `:1498-1544`, `GetWaterLineIterate` `:1551-1570`). The
+drown probe is the C#'s: the 10x12 box at the entity's head (the centre
+column, `Position.Y + height/2 - 6` for the vanilla gravity, `:1385-1400`),
+the liquid's surface offset (`(256 - liquid) / 32 * 2`, `:1421-1423`), the
+lava and shimmer exclusion (the honey drowns, `:1416`) and the solid-floor
+row (the gravity-side row of the scan, `:1409`/`:1416`) — the `includeSlopes`
+mode lifts that exclusion for the sloped and half-brick blocks, exactly like
+the C#'s `blockType() != 0` arm.
+
+`Player::check_drowning` (`Player.cs:23191-23281`) replaces the port's
+"the player is in water" stand-in with that probe: the breath meter now
+drains only while the **head** is under the surface, and refills with the
+C#'s 3 ticks per tick (`breathCD`/`breathCDMax` kept). Before this row the
+port's breath drained whenever the wet flags said "somewhere in water", so
+wading through a shallow pool cost air.
+
+Deliberate deviations:
+
+1. The C#'s accessory arms (the Merman armour 250/4275, the breathing reed,
+   the gills, the shimmering and the mount 4) have no ported counterparts —
+   the port has no accessory system for them, so the probe's own flag
+   decides.
+2. The C#'s drowning bubbles and the drowning death sound (23) ride the
+   effect and audio systems, which are out of scope here.
+3. `Utils.Clamp(value, 0, Main.maxTilesY - 40)` folds a negative bound back
+   onto itself for the small test worlds; the port clamps the bound at zero
+   instead (the scan then runs empty either way).
+4. The port runs the breath drain inside `update_survival` (the merged
+   life-regen step); the C#'s `CheckDrowning` sits later in `Player.Update`
+   (`:27655`, after `StickyMovement`).
+
+Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `StickyTiles` +
+`Player.StickyMovement`, `SwitchTiles`, `BuildTileContacts`,
+`noSlopeCollision` and `AdvancedTileCollision`.
 ## The Brain of Cthulhu's machine (S1-D-3e, 2026-11-14)
 
 `AI_054` (`NPC.cs:32370-32656`) is the Brain of Cthulhu's family machine:
@@ -13238,3 +13276,48 @@ Deviations:
   flag is a single tick, the port's window is the timer the other arms
   use for the same purpose (the port's convention, documented in the
   Goblin Archer's arm).
+
+## The Skeletron head's machine (S1-D-3f, 2026-11-14)
+
+`AI_011` (`NPC.cs:21919-22298`) is the Skeletron head's family machine:
+the two hands' spawn, the spin state, the charge, the enraged day-time
+state and the despawn. The port ran an EoC-shaped v1 — a 480-tick hover
+into an 8-px dash — and the head never spawned its hands (the hand's own
+arm was ported but nothing created the hands).
+
+The arm now carries the C#'s machine:
+
+* **the spin state (`ai[1] == 0`, `:22019-22117`)**: the `ai[2]` timer
+  (800 ticks → the charge), the rotation (`velocity.X / 15`) and the hover
+  acceleration — the 250-px band above/below the player, the 0.02/0.05
+  accelerations and the 2/8 caps (the expert's 0.03/0.07 and 4/9.5);
+* **the charge (`ai[1] == 1`, `:22118-22244`)**: the defense drops by 10,
+  the timer (400 ticks → the spin) and the 1.5-px rush (the expert's 3.5
+  with the per-distance ramp and the hand-count share);
+* **the enraged state (`ai[1] == 2`, `:22245-22259`)**: the day-time (or
+  the type-68) turns the head invulnerable — the damage and the defense
+  9999 — and it rushes at 8 px;
+* **the despawn (`ai[1] == 3`, `:22260-22270`)**: a dead player or one
+  2000 px away sinks the head and damps it;
+* **the expert's spin shot** (`:21978-22018`): every 80 ticks (40 with no
+  hand left) the head fires a **Skull (270)** — the projectile's row is
+  new (`Projectile.cs:3558-3566`: 26x26, the aiStyle-1 flight, penetrate
+  3, alpha 255, hostile).
+
+The hands' spawn rides the sim's pass (the C#'s `ai[0] == 0` init,
+`:21924-21941`): the lower hand (`ai[0] = -1`) and the upper hand
+(`ai[0] = 1`, `ai[3] = 150`). The live hand count — the C#'s `num168` —
+rides the head's `ai[3]` (the sim's write), because the arm reads it for
+the expert's shot cadence and the charge's speed.
+
+Deviations:
+
+* **The dust is SKIPPED** (`:22280-22296`) — no dust layer.
+* **The sounds are SKIPPED** (the spawn cue, the spin cue and the charge
+  cue) — no sound layer.
+* **The red-hat adjustments** (`RedHatSkeletronAdjustmentsEnabled`, the
+  `flag21` rows) are the world-seed flags the port does not carry; the
+  getGood world's rows (the 40-creeper count, the 0.8 spin period) ride
+  the classic values.
+* **The MP-only branches** (`Main.netMode != 0`) use the single-player
+  values.
