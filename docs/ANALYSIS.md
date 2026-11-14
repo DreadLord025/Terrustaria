@@ -12385,6 +12385,65 @@ counterpart (the mouse item never blocks the craft here); the
 `UsingOrReusingItem`/`IsStackingItems` gates of `flag3` (`Player.cs:23098`)
 are unmodelled item-use state.
 
+## The crafting pipeline (S1-L-11d, 2026-11-14)
+
+`CraftingRequests.CreateResult` (`CraftingRequests.cs:122-131`) is ported as
+`craft.rs::create_result`: the recipe's `createItem` cloned, `Item.OnCreated`'s
+type swap (`Item.cs:48936-48942` — the ShellphoneDummy 5437 becomes the
+Shellphone 5358) and `Item.Prefix(-1)`'s natural roll for a stack ≤ 1
+(`Item.cs:504-610`). The grant carries the rolled prefix (`Item.CanStack`,
+`Item.cs:49865-49872`), and the C#'s cursor gate
+(`Main.CursorHasSpaceToCraftRecipe`, `Main.cs:42309-42345`) makes a prefixable
+recipe craft **once** per click while the stackable ones (the torches) keep
+crafting — the gate refuses a prefixable result outright
+(`!item.CanHavePrefixes()`).
+
+The crafting reach is the C#'s formula, `craft.rs::tile_reach`: the statics
+`Player.tileRangeX/Y` (the defaults 5/3, `Player.cs:2496-2498`/`:57113-57114`)
+with the per-tick writes — the Journey mode's Far Placement Range power
+(×2 and +8/+8, `Player.cs:18818-18826`), the Extendo Grip / the Architect's
+Gizmo Pack (+3/+2, `:13040-13044`), the held Toolbox (+1/+1, `:14955-14958`) —
+then `TileReachCheckSettings.Simple`'s 20-tile clamp
+(`TileReachCheckSettings.cs:20-34`, `:84`) and the artisan loaf's +4
+(`Player.cs:35671`). The two gated recipes are ported too
+(`needTorchGodsFavor` — the Torch God's potion 5573 and the master 5638 — and
+`needMechdusa` — the 5334 row), with the gates `player.unlockedBiomeTorches`
+and `SpecialSeedFeatures.Mechdusa` (`Recipe.cs:349-356`).
+
+Deviations:
+
+- **The crafted item goes into the inventory, not the cursor.** The C# hands
+  the result to `Main.mouseItem` (`Main.CraftItem_GrantItem`,
+  `Main.cs:42607-42612`) and the player places it with a click; the port grants
+  it straight into the inventory (`clicks.rs::handle_crafting_clicks`). The
+  cursor gate is therefore evaluated against the **previous result** instead of
+  the cursor's content (`craft.rs::result_fits_next`) — the observable
+  quantity matches the C#'s (a prefixable recipe crafts once), but the player
+  never holds the crafted item on the cursor.
+- **The artisan loaf's effect is not ported.** The flag
+  `Player.ateArtisanBread` rides the player and the reach reads it, but the
+  item that sets it (5326, `Player.cs:45218-45221`) has no ported use effect,
+  so the +4 is unreachable in play.
+- **The Torch God's unlock is not ported.** `player.unlockedBiomeTorches`
+  (`Player.cs:2046`) rides the player and the gate reads it, but the unlock
+  itself (the Torch God's dialogue) is unported, so the two gated recipes stay
+  closed.
+- **The prefix roll's stream.** The C# draws `Item.Prefix` from the same
+  global `Main.rand` as the alchemy discount; the port's natural rolls ride
+  `App::prefix_rng` and the crafting discount rides `App::craft_rng` — two
+  stand-ins for one C# stream (the S1-A-11/S1-L-6c residual).
+- **The quickCraft / remote-craft half is out** — the C#'s request queue
+  (`CraftingRequests.CraftViaRequest`, `:142-174`) is the multiplayer path and
+  the port's MP has no crafting requests.
+
+The recipe table grew with it: the generator's tail branch broke out of the
+expansion loop **before** copying the text that precedes
+`Recipe.CreateReverseWallRecipes()` (`Recipe.cs:15148`), so the 414 authored
+rows between the last expansion mark and that call were dropped (the audit's
+"2 481 executed sites" was the generator's own truncated output). The branch
+now copies that text: the table is **3 206 rows = 2 895 authored + 311
+reverse**, and the pin in `tools/test_gen_recipes.py` re-taken.
+
 ## The sliced block light chain (S1-G-9, 2026-11-13)
 
 `DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3516-3640`) is the port's
