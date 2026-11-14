@@ -10506,12 +10506,34 @@ and 3 for 935).
   grapple tests pin type 13 (whose values were and stay right) and are left
   as the regression anchor, with the new values asserted separately.
 
+S1-L-10a landed the item-driven fire and the latch blacklist:
+
+- **The hook kind comes from the item.** `Player.QuickGrapple_GetItemToUse`
+  (`Player.cs:6481-6500`) picks the grapple slot (the misc-equip 4) first and
+  then the first inventory item whose `shoot` is an aiStyle-7 projectile
+  (`Main.projHook`, `Main.cs:6620-6624`); the hook fires with that kind.
+  The C# returns when no hook item is held (`:6320-6323`); the port keeps the
+  `TR_HOOK` pin as the stand-in for the granting items (M3-EQUIP-3).
+- **The latch blacklist is rebuilt on every latch.** The C#'s
+  `UpdateBlacklistedTilesForGrappling` (`Player.cs:6210-6248`) puts the
+  non-solid 3x3 around each attached hook into the refused set, and — when the
+  hook sits on a minecart track or a platform — the track and platform tiles
+  of the 5x5 around it; the latch scan refuses those tiles
+  (`Projectile.cs:52699` → `Player.IsBlacklistedForGrappling` `:6205-6208`).
+  The port keeps the set per owner in the projectile pool and rebuilds it when
+  a hook latches (`Projectile.cs:52772`).
+- **`RemoveAllGrapplingHooks` is no longer "the player is not grappling".**
+  The C# calls it from the jump-off (`Player.cs:22733`), the sign interaction
+  (`:33379`), the minecart-hook launch (`:33557`) and the TrackHook→cart
+  transfer (`:22675`); the port's stand-in killed every hook on every tick the
+  player was unattached — which killed the hook in the tick it fired. The
+  port now raises the request from the jump-off (`Player::release_grappling_hooks`)
+  and the caller applies it.
+
 Deferred to their own rows: the chain/sprite rendering and the `light` /
-`projFrames[652]` animation (nothing in `render/` reads `proj_data`), the
-item-driven fire (`QuickGrapple_GetItemToUse` + `ItemCheck_TryStartUse`),
-the latch blacklist (`UpdateBlacklistedTilesForGrappling`),
-`DoQueenSlimeHookTeleport`, the TrackHook→minecart transfer, and the net
-messages (13/17/29).
+`projFrames[652]` animation (nothing in `render/` reads `proj_data`),
+`DoQueenSlimeHookTeleport`, the TrackHook→minecart transfer, `Minecart.FrameTrack`
+and the net messages (13/17/29).
 ## Thorn bushes + the wall-brick conversion tables (M5-SPREAD-2c)
 
 The M5-SPREAD-2 row's deferred "next slice".

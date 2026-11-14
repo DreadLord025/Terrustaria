@@ -953,6 +953,12 @@ pub struct Player {
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
     rocket_release: bool,
+    /// `Player.RemoveAllGrapplingHooks` (`Player.cs:33562-33566`) — the
+    /// request the caller applies to the hook pool. The C# calls it from the
+    /// jump-off (`Player.cs:22733`), the sign interaction (`:33379`), the
+    /// minecart-hook launch (`:33557`) and the TrackHook→cart transfer
+    /// (`:22675`); the jump-off is the one the port models here.
+    pub release_grappling_hooks: bool,
     /// `Player.releaseJump` (`Player.cs`): jump was released since the last
     /// press — the wing/rocket refills on the ground gate on it.
     release_jump: bool,
@@ -1650,6 +1656,7 @@ impl Player {
             rocket_boots: 0,
             can_rocket: false,
             rocket_release: false,
+            release_grappling_hooks: false,
             release_jump: false,
             try_keeping_hovering_down: false,
             try_keeping_hovering_up: false,
@@ -6396,9 +6403,10 @@ impl Player {
                     self.release_jump = false;
                 }
                 self.refresh_double_jumps();
-                // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`): the
-                // caller observes `grappling_active == false` and drops the
-                // hook.
+                // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`, called
+                // from the jump-off `:22733`): the caller drops the owner's
+                // hooks.
+                self.release_grappling_hooks = true;
                 self.grappling_active = false;
             }
         } else {

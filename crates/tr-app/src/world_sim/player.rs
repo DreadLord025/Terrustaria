@@ -400,7 +400,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `:6420-6424`), and only then the spawn (`:6458-6477`).
             let owner = app.local_id as u8;
             let (flight, attached) = app.projectiles.hook_counts(owner);
-            let mut kind = hook_type as u16;
+            // `Player.QuickGrapple_GetItemToUse` (`Player.cs:6481-6500`): the
+            // grapple slot (the misc-equip 4) first, then the inventory — the
+            // first item whose `shoot` is a grappling hook. The C# returns
+            // when no hook item is held (`:6320-6323`); the port keeps the
+            // `TR_HOOK` pin as the stand-in for the granting items (M3-EQUIP-3),
+            // so the fire still happens without one.
+            let item_hook = crate::grapple::quick_grapple_item(
+                &app.equip.misc_equips,
+                &app.inventory,
+            );
+            let mut kind = item_hook.unwrap_or(hook_type as u16);
             if !crate::grapple::fire_allowed(flight, attached, kind) {
                 return;
             }
@@ -454,7 +464,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.x + crate::player::WIDTH * 0.5,
                 p.y + crate::player::HEIGHT * 0.5,
             );
-            app.projectiles.spawn_hook(
+            let spawned = app.projectiles.spawn_hook(
                 kind,
                 center,
                 mouse_world,
@@ -732,7 +742,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // kills every aiStyle-7 slot this player owns. The pool-wide scan is
         // the source's own `for (i < 1000)` loop; the multi-hook phase moves it
         // into the pool beside the recycle tables.
-        if !p.grappling_active {
+        //
+        // The C# calls the removal from the jump-off (`:22733`), the sign
+        // interaction (`:33379`), the minecart-hook launch (`:33557`) and the
+        // TrackHook→cart transfer (`:22675`) — not from "the player is not
+        // grappling", so a freshly fired hook survives its own tick.
+        if p.release_grappling_hooks {
+            p.release_grappling_hooks = false;
             let owner = app.local_id as u8;
             let hooks: Vec<usize> = app
                 .projectiles
@@ -1073,6 +1089,33 @@ mod tests {
             assert_eq!(p.ammo_cycling.mode, crate::ammo::AmmoCyclingMode::None);
             assert_eq!((p.ammo_cycling.cooldown, p.ammo_cycling.offset), (0, 0));
         }
+    }
+
+    /// S1-L-10a — `Player.QuickGrapple_GetItemToUse` (`Player.cs:6481-6500`):
+    /// the hook fires with the kind the held item's `shoot` points at (the
+    /// Ivy Whip 185 shoots the Ivy Whip hook 32, not the default Hook 13).
+    #[test]
+    fn the_quick_grapple_uses_the_hook_item() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 185,
+            name: "Ivy Whip",
+            count: 1,
+            prefix: 0,
+        };
+        // The port's extra quick-grapple key (`G`) — the default `cHook`
+        // bind is not in the fixture's keymap.
+        app.keys.insert(KeyCode::KeyG);
+        update_player(&mut app, 1.0 / 60.0);
+        let kinds: Vec<u16> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.owner == app.local_id as u8)
+            .map(|p| p.kind)
+            .collect();
+        assert_eq!(kinds, vec![32], "the item's `shoot` picks the hook kind");
     }
 
     /// Review probe (Phase 2 gate fix 2) — the `update_player` wiring
