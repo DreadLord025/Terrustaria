@@ -472,4 +472,34 @@ impl GorePool {
 fn num2_dropped(_gore_type: i32) -> i32 {
     0
 }
-// Adding required GoreID.Sets table and Update logic as per exploration.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::World;
+
+    struct VecRng { draws: Vec<i32>, idx: usize }
+    impl VecRng { fn new(draws: Vec<i32>) -> Self { Self { draws, idx: 0 } } }
+    impl GoreRng for VecRng {
+        fn next_max(&mut self, max: i32) -> i32 { let v = self.draws[self.idx]; self.idx += 1; assert!(v < max); v }
+        fn next_range(&mut self, min: i32, max: i32) -> i32 { let v = self.draws[self.idx]; self.idx += 1; assert!(v >= min && v < max); v }
+        fn next_float(&mut self) -> f32 { self.next_range(0, 100) as f32 / 100.0 }
+    }
+
+    #[test]
+    fn new_gore_consumes_rng_in_order_and_sets_velocity() {
+        let mut pool = GorePool::new();
+        let mut rng = VecRng::new(vec![10, 20]);
+        let world = World {
+            width: 10,
+            height: 10,
+            tiles: (0..10).flat_map(|_| (0..10).map(|_| Some(()))).collect(),
+        };
+        let idx = pool.new_gore(&mut rng, &world, Vec2::new(32.0, 32.0), Vec2::new(0.0, 0.0), 1, 1.0);
+        assert_eq!(idx, 0);
+        let gore = pool.slot(0);
+        assert_eq!(gore.gore_type, 1);
+        assert_eq!(gore.position, Vec2::new(32.0, 32.0));
+        assert_eq!(gore.velocity.x, 2.0);
+        assert_eq!(gore.velocity.y, -1.0);
+    }
+}
