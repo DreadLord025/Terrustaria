@@ -31,9 +31,9 @@
 //! the texture-dependent arms — the port has no texture tracking in `tr-core`,
 //! so every `TextureAssets.Gore[...].IsLoaded` test is `false` (the geometry
 //! fallbacks are exact, the position-adjust arms are no-ops until the asset
-//! seam lands), and `GoreID.Sets.IsDrip`/`SpecialAI`/`DisappearSpeed` are not
-//! ported yet, so the arms gated on them (`:1355-1360`, `:1390-1430`) wait for
-//! the `GoreID` step.
+//! seam lands). The `GoreID.Sets` tables (`GoreID.cs:20-23`) are ported in
+//! [`crate::gore_id`], so the arms gated on them (`:1355-1360`, `:1390-1456`)
+//! run.
 
 use crate::unified_random::UnifiedRandom;
 use crate::world::World;
@@ -385,8 +385,18 @@ impl GorePool {
             gore.sticky = true;
             gore.time_left = gore_time;
         }
-        // `GoreID.Sets.IsDrip` arm (`Gore.cs:1355-1360`): the Sets table is
-        // not ported yet (module docs) — no-op here.
+        // `GoreID.Sets.IsDrip` arm (`Gore.cs:1355-1360`): the drip types get a
+        // 15-row sheet, sit behind the tiles and live three times as long.
+        if gore_type >= 0
+            && (gore_type as usize) < crate::gore_id::GORE_COUNT
+            && crate::gore_id::is_drip(gore_type as usize)
+        {
+            let gore_time = self.gore_time;
+            let gore = self.slot_mut(num);
+            gore.frame.row_count = 15;
+            gore.behind_tiles = true;
+            gore.time_left = gore_time * 3;
+        }
         // Type 16/17 arm (`Gore.cs:1361-1366`).
         if gore_type == 16 || gore_type == 17 {
             let gore = self.slot_mut(num);
@@ -416,22 +426,80 @@ impl GorePool {
             gore.time_left = 10 + rng.next_max(6);
             gore.sticky = false;
         }
-        // `GoreID.Sets.SpecialAI` arms (`Gore.cs:1390-1406`) and the 411-430
+        // `GoreID.Sets.SpecialAI` arms (`Gore.cs:1390-1406`), the 411-430
         // (`:1407-1421`), 907-909 (`:1422-1429`) and SpecialAI == 2
-        // (`:1430-1441`) chains: the Sets tables and the texture probes are
-        // not ported yet (module drops).
-        if matches!(num2_dropped(gore_type), 4 | 5 | 6) {
-            // The alpha/timeLeft pairs of `SpecialAI == 4/5/6`
-            // (`Gore.cs:1442-1456`): the gate itself is the dropped
-            // `SpecialAI` table — unreachable until it lands; kept here so
-            // the follow-up is a table-only change.
+        // (`:1430-1441`) chains.
+        let special_ai = if gore_type >= 0 && (gore_type as usize) < crate::gore_id::GORE_COUNT {
+            crate::gore_id::special_ai(gore_type as usize)
+        } else {
+            0
+        };
+        if special_ai == 3 {
+            // `Gore.cs:1391-1402`: the velocity rolls first, then the sheet's
+            // row and the frame counter — four draws, in that order.
+            let vel_x = (rng.next_float() - 0.5) * 1.0;
+            let vel_y = rng.next_float() * (std::f32::consts::PI * 2.0);
+            let leaf = (910..=925).contains(&gore_type)
+                || (1113..=1121).contains(&gore_type)
+                || (1248..=1255).contains(&gore_type)
+                || gore_type == 1257
+                || gore_type == 1278;
+            let row = rng.next_max(8);
+            let counter = rng.next_max(8);
             let gore = self.slot_mut(num);
-            gore.alpha = 254;
-            gore.time_left = match num2_dropped(gore_type) {
-                4 => 300,
-                5 => 240,
-                _ => 480,
+            gore.velocity = Vec2::new(vel_x, vel_y);
+            gore.frame = SpriteFrame {
+                current_column: 0,
+                current_row: row as u8,
+                column_count: if leaf { 32 } else { 1 },
+                row_count: 8,
             };
+            gore.frame_counter = counter as u8;
+        }
+        if special_ai == 1 {
+            // `Gore.cs:1403-1406`: two `NextFloat` draws, no other roll.
+            let vel_x = (rng.next_float() - 0.5) * 3.0;
+            let vel_y = rng.next_float() * (std::f32::consts::PI * 2.0);
+            self.slot_mut(num).velocity = Vec2::new(vel_x, vel_y);
+        }
+        // The 411-430 arm (`Gore.cs:1407-1421`) is gated on
+        // `TextureAssets.Gore[Type].IsLoaded` — the port has no texture
+        // tracking, so it draws no random numbers (module drops).
+        if (907..=909).contains(&gore_type) {
+            // `Gore.cs:1422-1429`: the sheet row, then the frame counter.
+            let row = rng.next_max(3);
+            let counter = rng.next_max(5);
+            let gore = self.slot_mut(num);
+            gore.sticky = true;
+            gore.frame.row_count = 3;
+            gore.frame.current_row = row as u8;
+            gore.frame_counter = counter as u8;
+            gore.rotation = 0.0;
+        }
+        if special_ai == 2 {
+            // `Gore.cs:1430-1441`: only the sticky flag is unconditional — the
+            // alpha/velocity/position/timeLeft writes sit behind
+            // `TextureAssets.Gore[Type].IsLoaded` (module drops).
+            self.slot_mut(num).sticky = false;
+        }
+        match special_ai {
+            // `Gore.cs:1442-1456`: the 4/5/6 rows.
+            4 => {
+                let gore = self.slot_mut(num);
+                gore.alpha = 254;
+                gore.time_left = 300;
+            }
+            5 => {
+                let gore = self.slot_mut(num);
+                gore.alpha = 254;
+                gore.time_left = 240;
+            }
+            6 => {
+                let gore = self.slot_mut(num);
+                gore.alpha = 254;
+                gore.time_left = 480;
+            }
+            _ => {}
         }
         // Deactivate if outside of the world (`Gore.cs:1457-1460`): returns
         // the sentinel with the slot left inactive — the C#'s own shape.
@@ -465,13 +533,6 @@ impl GorePool {
     }
 }
 
-/// The `GoreID.Sets.SpecialAI[type]` lookup stub: the table is not ported yet,
-/// so this reports "no special AI" for every type (module drops) and the
-/// 4/5/6 arm above is currently unreachable. Kept as the single seam the
-/// `GoreID` step fills in.
-fn num2_dropped(_gore_type: i32) -> i32 {
-    0
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -485,15 +546,17 @@ mod tests {
         fn next_float(&mut self) -> f32 { self.next_range(0, 100) as f32 / 100.0 }
     }
 
+    /// A 64x64 world — the tile probe of `DeactivateIfOutsideOfWorld`
+    /// (`Gore.cs:292-306`) must find a tile under the spawn.
+    fn world() -> World {
+        World::new("test".into(), 64, 64)
+    }
+
     #[test]
     fn new_gore_consumes_rng_in_order_and_sets_velocity() {
         let mut pool = GorePool::new();
         let mut rng = VecRng::new(vec![10, 20]);
-        let world = World {
-            width: 10,
-            height: 10,
-            tiles: (0..10).flat_map(|_| (0..10).map(|_| Some(()))).collect(),
-        };
+        let world = world();
         let idx = pool.new_gore(&mut rng, &world, Vec2::new(32.0, 32.0), Vec2::new(0.0, 0.0), 1, 1.0);
         assert_eq!(idx, 0);
         let gore = pool.slot(0);
@@ -501,5 +564,107 @@ mod tests {
         assert_eq!(gore.position, Vec2::new(32.0, 32.0));
         assert_eq!(gore.velocity.x, 2.0);
         assert_eq!(gore.velocity.y, -1.0);
+    }
+
+    /// `Gore.cs:1355-1360` — the `IsDrip` row: 15 frames, behind the tiles
+    /// and three times the life.
+    #[test]
+    fn the_drip_types_get_the_fifteen_frame_sheet() {
+        let mut pool = GorePool::new();
+        let mut rng = VecRng::new(vec![10, 20]);
+        let world = world();
+        let idx = pool.new_gore(&mut rng, &world, Vec2::new(32.0, 32.0), Vec2::new(0.0, 0.0), 706, 1.0);
+        assert_eq!(idx, 0);
+        let gore = pool.slot(0);
+        assert_eq!(gore.frame.row_count, 15);
+        assert_eq!(gore.frame.column_count, 1);
+        assert!(gore.behind_tiles);
+        assert_eq!(gore.time_left, GORE_TIME_DEFAULT * 3);
+    }
+
+    /// `Gore.cs:1391-1402` — `SpecialAI == 3`: the two `NextFloat` velocity
+    /// draws come first, then the sheet row, then the frame counter.
+    #[test]
+    fn the_special_ai_three_arm_rolls_velocity_then_row_then_counter() {
+        let mut pool = GorePool::new();
+        let mut rng = VecRng::new(vec![10, 20, 50, 60, 3, 4]);
+        let world = world();
+        let idx = pool.new_gore(&mut rng, &world, Vec2::new(32.0, 32.0), Vec2::new(0.0, 0.0), 910, 1.0);
+        assert_eq!(idx, 0);
+        let gore = pool.slot(0);
+        // (NextFloat() - 0.5f) * 1f and NextFloat() * (PI * 2f).
+        assert_eq!(gore.velocity.x, 0.0);
+        assert_eq!(gore.velocity.y, 0.6 * (std::f32::consts::PI * 2.0));
+        // The leaf rows get the 32-column sheet.
+        assert_eq!(gore.frame.column_count, 32);
+        assert_eq!(gore.frame.row_count, 8);
+        assert_eq!(gore.frame.current_row, 3);
+        assert_eq!(gore.frame_counter, 4);
+    }
+
+    /// `Gore.cs:1403-1406` — `SpecialAI == 1`: the wider velocity kick.
+    #[test]
+    fn the_special_ai_one_arm_rolls_two_floats() {
+        let mut pool = GorePool::new();
+        let mut rng = VecRng::new(vec![10, 20, 25, 75]);
+        let world = world();
+        let idx = pool.new_gore(&mut rng, &world, Vec2::new(32.0, 32.0), Vec2::new(0.0, 0.0), 860, 1.0);
+        assert_eq!(idx, 0);
+        let gore = pool.slot(0);
+        assert_eq!(gore.velocity.x, -0.75);
+        assert_eq!(gore.velocity.y, 0.75 * (std::f32::consts::PI * 2.0));
+    }
+
+    /// `Gore.cs:1422-1429` — the 907-909 balloons: the sheet row, then the
+    /// frame counter.
+    #[test]
+    fn the_balloon_types_roll_the_row_and_the_counter() {
+        let mut pool = GorePool::new();
+        let mut rng = VecRng::new(vec![10, 20, 2, 4]);
+        let world = world();
+        let idx = pool.new_gore(&mut rng, &world, Vec2::new(32.0, 32.0), Vec2::new(0.0, 0.0), 907, 1.0);
+        assert_eq!(idx, 0);
+        let gore = pool.slot(0);
+        assert!(gore.sticky);
+        assert_eq!(gore.frame.row_count, 3);
+        assert_eq!(gore.frame.current_row, 2);
+        assert_eq!(gore.frame_counter, 4);
+        assert_eq!(gore.rotation, 0.0);
+    }
+
+    /// `Gore.cs:1442-1456` — the `SpecialAI == 4/5/6` alpha/life rows.
+    #[test]
+    fn the_special_ai_four_five_six_rows_set_alpha_and_life() {
+        for (gore_type, life) in [(1087, 300), (1091, 240), (1202, 480)] {
+            let mut pool = GorePool::new();
+            let mut rng = VecRng::new(vec![10, 20]);
+            let world = world();
+            let idx = pool.new_gore(
+                &mut rng,
+                &world,
+                Vec2::new(32.0, 32.0),
+                Vec2::new(0.0, 0.0),
+                gore_type,
+                1.0,
+            );
+            assert_eq!(idx, 0);
+            let gore = pool.slot(0);
+            assert_eq!(gore.alpha, 254);
+            assert_eq!(gore.time_left, life);
+        }
+    }
+
+    /// `Gore.cs:1430-1441` — `SpecialAI == 2`: only the sticky flag is
+    /// unconditional; the rest waits for the texture seam.
+    #[test]
+    fn the_special_ai_two_arm_only_clears_sticky() {
+        let mut pool = GorePool::new();
+        let mut rng = VecRng::new(vec![10, 20]);
+        let world = world();
+        let idx = pool.new_gore(&mut rng, &world, Vec2::new(32.0, 32.0), Vec2::new(0.0, 0.0), 825, 1.0);
+        assert_eq!(idx, 0);
+        let gore = pool.slot(0);
+        assert!(!gore.sticky);
+        assert_eq!(gore.time_left, GORE_TIME_DEFAULT);
     }
 }
