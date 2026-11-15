@@ -3,9 +3,10 @@
 
 use glam::Vec2;
 use tr_core::TILE_PX;
+use tr_core::UnifiedRandom;
 
 use crate::achievements;
-use crate::app::{App, NetRole, rand01};
+use crate::app::{App, NetRole};
 use crate::item::{ItemDrop, slot_for_pickup};
 use crate::registry;
 
@@ -126,14 +127,26 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                             && n.extra_value < coin_copper
                             && n.extra_value + coin_copper < 999_000_000
                     }) {
-                        // `num7 = item.stack * (50..75)/100` (:1155-1160).
+                        // `num5 = Main.rand.Next(50, 76) * 0.01f` + the
+                        // copper (71) `Next(51)` and silver (72) `Next(26)`
+                        // extras, clamped at 1f; `num6 = (int)(stack * num5)`
+                        // clamped 1..stack (`WorldItem.cs:1158-1172`). The
+                        // pickup runs inside `WorldItem.UpdateItem` under the
+                        // `UpdateItems` swap (`Main.cs:18024`) — the draws
+                        // ride the `UpdateItems` stream.
                         let share = if drop.count == 1 {
                             1
                         } else {
-                            let mut rng_state = app.item_rng;
-                            let r = crate::app::rand01(&mut rng_state);
-                            app.item_rng = rng_state;
-                            ((drop.count as f32 * (50.0 + r * 25.0)) as u32).clamp(1, drop.count)
+                            let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
+                            let mut num5 = rng.next_range(50, 76) as f32 * 0.01;
+                            if drop.kind == 71 {
+                                num5 += rng.next_max(51) as f32 * 0.01;
+                            }
+                            if drop.kind == 72 {
+                                num5 += rng.next_max(26) as f32 * 0.01;
+                            }
+                            num5 = num5.min(1.0);
+                            ((drop.count as f32 * num5) as u32).clamp(1, drop.count)
                         };
                         picked = registry::coin_value(drop.kind) * share as u64;
                         npc.extra_value += picked;
@@ -225,9 +238,22 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
 /// Spawns the drop left by a broken tile, with a small random pop like
 /// `Item.NewItem` — `count` carries the C# stack (`Item.NewItem`'s `stack`
 /// argument; the pot/pile/herb loot rolls spawn several items at once).
-pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty: i32) {
+///
+/// `rng` is the CALLER's stage stream (`Item.NewItem` draws `Main.rand` = the
+/// active swap's stream, `Item.cs:49654-49727`) — shared by every pass, so
+/// each caller feeds its own; no field lookups here (the drop list comes in
+/// too, so the caller's stream borrow and the list stay disjoint).
+pub(crate) fn spawn_item_drop(
+    items: &mut Vec<ItemDrop>,
+    rng: &mut UnifiedRandom,
+    kind: u16,
+    count: u32,
+    tx: i32,
+    ty: i32,
+) {
     spawn_item_drop_px(
-        app,
+        items,
+        rng,
         kind,
         count,
         Vec2::new(tx as f32 * TILE_PX, ty as f32 * TILE_PX),
@@ -238,58 +264,24 @@ pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty:
 /// name a world position instead of a tile cell (`Item.RequestNewItem`'s
 /// `center`, e.g. the extractinator's cursor drop,
 /// `Player.DropItemFromExtractinator` `Player.cs:42081-42089`). The draws keep
-/// the `Item.NewItem` order: the velocity/phase first, the prefix last.
-pub(crate) fn spawn_item_drop_px(app: &mut App, kind: u16, count: u32, pos: Vec2) {
-    spawn_item_drop_px_fields(
-        &mut app.items,
-        &mut app.item_rng,
-        &mut app.prefix_rng,
-        kind,
-        count,
-        pos,
-    );
-}
-
-/// The field-wise variant of [`spawn_item_drop_px`] — the call sites that
-/// already hold a borrow of one of the app's fields (the player, inside the
-/// fixed-step closure) and therefore cannot take the whole `&mut App`.
-pub(crate) fn spawn_item_drop_fields(
+/// the port's pinned `Item.NewItem` order (the velocity/phase triplet, then
+/// the prefix; the C# runs event remaps → `Prefix` → velocity, the recorded
+/// order deviation) — all on `rng`, the site's stage stream (`Item.Prefix`
+/// reads `Main.rand` = the active swap, `Item.cs:527`).
+pub(crate) fn spawn_item_drop_px(
     items: &mut Vec<ItemDrop>,
-    item_rng: &mut u64,
-    prefix_rng: &mut tr_core::UnifiedRandom,
-    kind: u16,
-    count: u32,
-    tx: i32,
-    ty: i32,
-) {
-    spawn_item_drop_px_fields(
-        items,
-        item_rng,
-        prefix_rng,
-        kind,
-        count,
-        Vec2::new(tx as f32 * TILE_PX, ty as f32 * TILE_PX),
-    );
-}
-
-/// The pixel-position core of [`spawn_item_drop_px`] — the `Item.NewItem`
-/// draw order (the velocity/phase first, the prefix last).
-pub(crate) fn spawn_item_drop_px_fields(
-    items: &mut Vec<ItemDrop>,
-    item_rng: &mut u64,
-    prefix_rng: &mut tr_core::UnifiedRandom,
+    rng: &mut UnifiedRandom,
     kind: u16,
     count: u32,
     pos: Vec2,
 ) {
-    let r1 = rand01(item_rng);
-    let r2 = rand01(item_rng);
-    let r3 = rand01(item_rng);
+    let r1 = rng.next_float();
+    let r2 = rng.next_float();
+    let r3 = rng.next_float();
     // `Item.NewItem`'s `prefix: -1` on the tile/pot loot calls
-    // (`WorldGen.cs:54248+`): the natural roll, drawn after the velocity
-    // like the C# spawn order. Non-prefixable kinds draw nothing
-    // (`Prefix(-1)`'s `CanHavePrefixes` gate).
-    let prefix = crate::prefix::roll_prefix(kind, -1, prefix_rng);
+    // (`WorldGen.cs:54248+`): the natural roll. Non-prefixable kinds draw
+    // nothing (`Prefix(-1)`'s `CanHavePrefixes` gate).
+    let prefix = crate::prefix::roll_prefix(kind, -1, rng);
     let drop = ItemDrop::new(
         kind,
         count.max(1),
@@ -304,6 +296,41 @@ pub(crate) fn spawn_item_drop_px_fields(
     if items.len() > 300 {
         items.remove(0);
     }
+}
+
+/// The field-wise pixel variant of [`spawn_item_drop_px`] — the call sites that
+/// already hold a borrow of one of the app's fields (the player, inside the
+/// fixed-step closure) and therefore cannot take the whole `&mut App`; the
+/// caller feeds its stage stream, exactly like the pixel entry point above
+/// (S1-L-6b1's field-wise split kept, with one stream instead of the old
+/// item/prefix pair).
+pub(crate) fn spawn_item_drop_px_fields(
+    items: &mut Vec<ItemDrop>,
+    rng: &mut UnifiedRandom,
+    kind: u16,
+    count: u32,
+    pos: Vec2,
+) {
+    spawn_item_drop_px(items, rng, kind, count, pos);
+}
+
+/// The field-wise tile variant of [`spawn_item_drop`] — same borrow reason;
+/// the tile cell becomes the pixel spawn point here.
+pub(crate) fn spawn_item_drop_fields(
+    items: &mut Vec<ItemDrop>,
+    rng: &mut UnifiedRandom,
+    kind: u16,
+    count: u32,
+    tx: i32,
+    ty: i32,
+) {
+    spawn_item_drop_px(
+        items,
+        rng,
+        kind,
+        count,
+        Vec2::new(tx as f32 * TILE_PX, ty as f32 * TILE_PX),
+    );
 }
 
 #[cfg(test)]
@@ -448,6 +475,49 @@ mod shimmer_tests {
         assert!(!app.items.iter().any(|d| d.kind == 3077), "source gone");
     }
 
+    /// DW-4.1 (the items pass) + DW-4.4: the decraft arm's draws (the
+    /// ingredient spawns' velocity/prefix, plus the alchemy discount when the
+    /// recipe is one) ride the `UpdateItems` stream (`Main.cs:18024`'s
+    /// `UpdateItems` swap) and every other stage stream stays pristine; two
+    /// same-seed runs replay byte-equal (the pair).
+    #[test]
+    fn test_dw_4_1_items_pass_draws_the_update_items_stream() {
+        let run = || {
+            let mut app = shimmer_world();
+            app.items.push(resting_drop(3077, 60)); // Silk Rope x30 (recipe 62)
+            for _ in 0..120 {
+                update_items(&mut app, 1.0 / 60.0);
+            }
+            let drops: Vec<(u16, u32)> =
+                app.items.iter().map(|d| (d.kind, d.count)).collect();
+            let streams: Vec<_> = crate::app::RngKey::ALL
+                .iter()
+                .map(|k| (k.name(), app.rngs.stream(*k).clone()))
+                .collect();
+            (drops, streams)
+        };
+        let a = run();
+        let b = run();
+        // The pair: byte-equal drops and stream states (DW-4.4).
+        assert_eq!(a.0, b.0, "the decraft replayed byte-equal");
+        assert_eq!(a.1, b.1, "every stream replayed identically");
+        // The decraft ran and drew the items stream.
+        assert!(a.0.iter().any(|(k, _)| *k == 225), "the decraft ran");
+        assert_ne!(
+            a.1.iter().find(|(n, _)| *n == "UpdateItems").unwrap().1,
+            UnifiedRandom::new(0),
+            "UpdateItems drew"
+        );
+        // The isolation: no other stage stream moved (flow_app's seed is 0,
+        // so pristine == the seed state).
+        for (name, state) in &a.1 {
+            if *name == "UpdateItems" {
+                continue;
+            }
+            assert_eq!(*state, UnifiedRandom::new(0), "{name} stayed pristine");
+        }
+    }
+
     #[test]
     fn a_non_transformable_item_never_transforms() {
         let mut app = shimmer_world();
@@ -479,27 +549,77 @@ mod shimmer_tests {
 mod spawn_rng_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
     use tr_core::UnifiedRandom;
 
-    /// `Item.NewItem`'s velocity/phase draws stay on the splitmix `item_rng`;
-    /// the `prefix: -1` roll takes the C# `Main.rand` stream (`prefix_rng`,
-    /// `S1-A-5`), so a prefix roll never perturbs loot draws.
+    /// DW-4.2 (with DW-4.1): `Item.NewItem`'s draws — the velocity/phase
+    /// triplet then the `Prefix(-1)` roll — ride the CALLER's stage stream as
+    /// one stream (`Item.cs:49654-49727`'s `Main.rand`, `Item.cs:527`'s
+    /// `Prefix`); the port's pinned draw order stays, the stream joins. Four
+    /// draws exactly.
     #[test]
-    fn the_prefix_roll_consumes_the_prefix_stream_only() {
+    fn the_spawn_draws_ride_the_callers_stream() {
         let mut app = flow_app(None, vec![], vec![]);
-        app.prefix_rng = UnifiedRandom::new(4242);
-        let mut expect_prefix_rng = UnifiedRandom::new(4242);
-        let expected_prefix = crate::prefix::roll_prefix(1, -1, &mut expect_prefix_rng);
-        let mut expect_item_rng = app.item_rng;
-        let _ = rand01(&mut expect_item_rng);
-        let _ = rand01(&mut expect_item_rng);
-        let _ = rand01(&mut expect_item_rng);
+        *app.rngs.stream(RngKey::UpdateItems) = UnifiedRandom::new(4242);
+        // The twin: the same four draws replayed directly.
+        let mut expect = UnifiedRandom::new(4242);
+        let _ = (expect.next_float(), expect.next_float(), expect.next_float());
+        let expected_prefix = crate::prefix::roll_prefix(1, -1, &mut expect);
 
-        spawn_item_drop_px(&mut app, 1, 1, Vec2::new(5.0, 5.0));
+        let rng = app.rngs.stream(RngKey::UpdateItems);
+        spawn_item_drop_px(&mut app.items, rng, 1, 1, Vec2::new(5.0, 5.0));
 
         assert_eq!(app.items[0].prefix, expected_prefix);
-        assert_eq!(app.item_rng, expect_item_rng, "three velocity draws only");
-        assert_eq!(app.prefix_rng.peek(), expect_prefix_rng.peek());
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateItems),
+            expect,
+            "four draws exactly: the triplet, then the prefix roll"
+        );
+    }
+
+    /// The revenge coin-suck's faithful share shape
+    /// (`WorldItem.cs:1158-1172`): `Next(50, 76) * 0.01f` plus the copper (71)
+    /// `Next(51)` and silver (72) `Next(26)` extras on the `UpdateItems`
+    /// stream — a copper stack spends exactly two draws.
+    #[test]
+    fn the_revenge_share_draws_next_50_76_plus_the_coin_extras() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = crate::test_world_helpers::ground();
+        w.compute_column_surface();
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        let (px, py) = app.player.as_ref().unwrap().center();
+        // A copper coin stack at the player's feet (the pickup magnet range).
+        let mut drop = ItemDrop::new(71, 10, 0, px, py, 0.0, 0.0, 0.0);
+        drop.age = 1.0;
+        // A hostile NPC straddling the drop's box (lifeMax > 5, not
+        // statue-spawned, within the 16x24 px window): its center pinned to
+        // the drop's.
+        let mut zombie = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        let (zw, zh) = zombie.size();
+        let dc = drop.center();
+        zombie.x = dc.x - zw * 0.5;
+        zombie.y = dc.y - zh * 0.5;
+        app.npcs.push(zombie);
+        app.items.push(drop);
+        *app.rngs.stream(RngKey::UpdateItems) = UnifiedRandom::new(4242);
+        update_items(&mut app, 1.0 / 60.0);
+        // The coin was (partly) sucked into the NPC's extraValue.
+        let sucked = app.npcs[0].extra_value;
+        assert!(sucked > 0, "the revenge share ran");
+        assert!(sucked <= 10 * registry::coin_value(71), "at most the stack");
+        // The twin: the same two draws (Next(50,76), then copper's Next(51)).
+        let mut expect = UnifiedRandom::new(4242);
+        expect.next_range(50, 76);
+        expect.next_max(51);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateItems),
+            expect,
+            "copper spends exactly the pair of draws"
+        );
     }
 }
 

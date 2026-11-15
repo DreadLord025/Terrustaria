@@ -66,7 +66,7 @@ impl ChatMonitor {
         &mut self,
         raw: &str,
         player_name: &str,
-        rng: &mut u64,
+        rng: &mut tr_core::UnifiedRandom,
         emotes: &mut crate::emotes::EmoteSystem,
     ) {
         self.send_with(raw, player_name, rng, emotes, None);
@@ -79,7 +79,7 @@ impl ChatMonitor {
         &mut self,
         raw: &str,
         player_name: &str,
-        rng: &mut u64,
+        rng: &mut tr_core::UnifiedRandom,
         emotes: &mut crate::emotes::EmoteSystem,
         player: Option<&crate::player::Player>,
     ) {
@@ -107,7 +107,9 @@ impl ChatMonitor {
                 // `RollCommand.ProcessIncomingMessage` (`:14-18`):
                 // `*{name} rolls a {1..100}` in the ServerMessage color —
                 // `Lang.mp[9]` = "rolls a" (`Legacy.json:839`).
-                let num = crate::app::next_rand(rng) % 100 + 1;
+                // `Main.rand.Next(1, 101)` (`RollCommand.cs:14`) — the bare
+                // `Main.rand` stream the caller feeds (`global`).
+                let num = rng.next_range(1, 101);
                 self.new_text(format!("*{player_name} rolls a {num}"), COLOR_SERVER_MESSAGE);
             }
             "rps" => {
@@ -118,7 +120,8 @@ impl ChatMonitor {
                 if player.is_some_and(|p| p.dead) {
                     return;
                 }
-                let pick = [37i32, 38, 36][(crate::app::next_rand(rng) % 3) as usize];
+                // `Main.rand.NextFromList<int>(37, 38, 36)` (`RockPaperScissorsCommand.cs:23`).
+                let pick = rng.next_from_slice(&[37i32, 38, 36]);
                 emotes.new_bubble(pick);
             }
             "me" | "emote" => {
@@ -263,7 +266,7 @@ mod tests {
     fn plain_text_says_with_the_name_tag() {
         // `SayChatCommand` + `DisplayMessage`'s `{name-tag} {text}` prefix.
         let mut chat = ChatMonitor::default();
-        chat.send("hello world", "Belsin", &mut 1, &mut crate::emotes::EmoteSystem::default());
+        chat.send("hello world", "Belsin", &mut tr_core::UnifiedRandom::new(1), &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin hello world");
         assert_eq!(chat.messages[0].color, [255, 255, 255]);
     }
@@ -271,19 +274,19 @@ mod tests {
     #[test]
     fn the_commands_route_and_the_unknown_falls_back_to_say() {
         let mut chat = ChatMonitor::default();
-        chat.send("/roll", "Belsin", &mut 7, &mut crate::emotes::EmoteSystem::default());
+        chat.send("/roll", "Belsin", &mut tr_core::UnifiedRandom::new(7), &mut crate::emotes::EmoteSystem::default());
         assert!(chat.messages[0].text.starts_with("*Belsin rolls a "));
         let num: u32 = chat.messages[0].text.rsplit(' ').next().unwrap().parse().unwrap();
         assert!((1..=100).contains(&num));
         assert_eq!(chat.messages[0].color, COLOR_SERVER_MESSAGE);
         // The roster command lists the local player.
-        chat.send("/players", "Belsin", &mut 7, &mut crate::emotes::EmoteSystem::default());
+        chat.send("/players", "Belsin", &mut tr_core::UnifiedRandom::new(7), &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin");
         // An unknown command says the raw text (the `_defaultCommand` arm).
-        chat.send("/frobnicate now", "Belsin", &mut 7, &mut crate::emotes::EmoteSystem::default());
+        chat.send("/frobnicate now", "Belsin", &mut tr_core::UnifiedRandom::new(7), &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin /frobnicate now");
         // `/say` rest routes as a plain say.
-        chat.send("/say hi there", "Belsin", &mut 7, &mut crate::emotes::EmoteSystem::default());
+        chat.send("/say hi there", "Belsin", &mut tr_core::UnifiedRandom::new(7), &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin hi there");
     }
 
@@ -307,13 +310,13 @@ mod tests {
         p.deaths_pve = 3;
         p.deaths_pvp = 1;
         let emotes = &mut crate::emotes::EmoteSystem::default();
-        chat.send_with("/death", "Belsin", &mut 7, emotes, Some(&p));
+        chat.send_with("/death", "Belsin", &mut tr_core::UnifiedRandom::new(7), emotes, Some(&p));
         // `LegacyMultiplayer.23` = "*{0} was slain {1} times."
         assert_eq!(chat.messages[0].text, "*Belsin was slain 3 times.");
         assert_eq!(chat.messages[0].color, COLOR_DEATH);
         // The PVP counter: `LegacyMultiplayer.24` = "*{0} was slain by other
         // players {1} times."
-        chat.send_with("/pvpdeath", "Belsin", &mut 7, emotes, Some(&p));
+        chat.send_with("/pvpdeath", "Belsin", &mut tr_core::UnifiedRandom::new(7), emotes, Some(&p));
         assert_eq!(
             chat.messages[0].text,
             "*Belsin was slain by other players 1 time."
@@ -321,9 +324,9 @@ mod tests {
         // One death switches to the singular key (`:25`/`:26`).
         p.deaths_pve = 1;
         p.deaths_pvp = 1;
-        chat.send_with("/death", "Belsin", &mut 7, emotes, Some(&p));
+        chat.send_with("/death", "Belsin", &mut tr_core::UnifiedRandom::new(7), emotes, Some(&p));
         assert_eq!(chat.messages[0].text, "*Belsin was slain 1 time.");
-        chat.send_with("/pvpdeath", "Belsin", &mut 7, emotes, Some(&p));
+        chat.send_with("/pvpdeath", "Belsin", &mut tr_core::UnifiedRandom::new(7), emotes, Some(&p));
         assert_eq!(
             chat.messages[0].text,
             "*Belsin was slain by other players 1 time."
@@ -339,7 +342,7 @@ mod tests {
         chat.send_with(
             "/party hi",
             "Belsin",
-            &mut 7,
+            &mut tr_core::UnifiedRandom::new(7),
             &mut crate::emotes::EmoteSystem::default(),
             None,
         );
