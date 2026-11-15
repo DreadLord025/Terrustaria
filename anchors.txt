@@ -251,3 +251,4 @@ crates/tr-app/src/npc.rs|pub carrier_uid|S1-D-6b - the explicit carrier links: t
 crates/tr-app/src/npc.rs|pub moon_spawn_latch|S1-D-6c - the Moon Lord core's phase machine: the localAI[3] init latch (one spawn of the two hands + the head), the flag2 vulnerable phase (all three parts dead -> ai[0] = 1, dontTakeDamage = false, NPC.cs:41270-41285) and the projectile walk's dontTakeDamage shield gate (Projectile.cs:12583)
 
 crates/tr-app/src/npc_ai.rs|TownWeaponParams|S1-D-3n - the town-NPC (aiStyle 7) melee weapon presets: the per-type swing damage, knockback and item-size rows of the ai[0] == 15 state (NPC.cs:55018-55054)
+crates/tr-app/src/render/sky.rs|draw_front_trees|S1-C-9 - the forest surface front layers: bgScale 1.25/1.31/1.34 (C# 61275/61304) x2 (C# 59329), bgParallax 0.40/0.43/0.49 (C# 61276), the bgTopY tops 1350/1600/1850 (C# 61277/61399/61473 minus pushBGTopHack 150, Main.cs 59302/59353/59525)
