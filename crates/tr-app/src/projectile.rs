@@ -23197,26 +23197,172 @@ mod minion_ai_tests {
 
 #[cfg(test)]
 mod sentry_tests {
+    /// S1-D-4b-2 - `AI_053_FrostHydra` (`Projectile.cs:37266-37490`): the init
+    /// latch (`localAI[0]==0` -> `localAI[1]=1`, `localAI[0]=1`, `ai[0]=120`),
+    /// the tail's decrement in the same tick (120 -> 119), the free fall
+    /// (`velocity.X = 0`, `velocity.Y += 0.2`, the 16 clamp), the 60/90-tick
+    /// reload and the 309/967 shot kinds.
     #[test]
     fn test_ai_053_frosthydra_initialization() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        pool.slots[hydra].local_ai[0] = 0.0;
+        let mut npcs: Vec<Npc> = Vec::new();
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        let proj = &pool.slots[hydra];
+        assert_eq!(proj.local_ai[1], 1.0, "localAI[1] latches to 1 at the init");
+        assert_eq!(proj.local_ai[0], 1.0, "localAI[0] flips to 1 at the init");
+        assert_eq!(proj.ai[0], 119.0, "ai[0] is 120 after the init; the tail decrements it");
+    }
+
+    /// S1-D-4b-2 - the reload and the shot: with `ai[0] <= 0` the Hydra
+    /// re-arms for 60 ticks (59 after the tail's decrement) and fires the
+    /// C#'s 309 shot at the 9 px muzzle speed.
     #[test]
-    fn test_ai_053_full_cycle() {
+    fn test_ai_053_frosthydra_cooldown_and_shot() {
         let mut pool = ProjectilePool::new();
-        let mut world = world();
-        let mut player = player(&world);
-        let projectile = pool.spawn(FROST_HYDRA, 0, (5.0, 5.0), Vec2::ZERO, 45, 0.9, ENEMIES).unwrap();
-        tick(&mut pool, &mut world, &mut None);
-        assert!(pool.slots[projectile].vel.y > 0.0 && pool.slots[projectile].vel.y <= 16.0, "Falling AI violated velocity clamp");
+        let mut w = world();
+        let mut p = player(&w);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        pool.slots[hydra].ai[0] = 0.0;
+        let mut npcs: Vec<Npc> = vec![npc_at(NpcKind::Zombie, 900.0, 300.0)];
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        let proj = &pool.slots[hydra];
+        assert_eq!(proj.ai[0], 59.0, "the reload is 60 ticks; the tail decrements it");
+        let shot = pool
+            .slots
+            .iter()
+            .find(|s| s.active && s.kind == 309)
+            .expect("the Frost Hydra fires its 309 shot");
+        let len = (shot.vel.x * shot.vel.x + shot.vel.y * shot.vel.y).sqrt();
+        assert!((len - 9.0).abs() < 0.01, "the shot rides the 9 px muzzle speed: {len}");
+        assert_eq!(shot.owner, 0, "the shot belongs to the local player");
+    }
+
+    /// S1-D-4b-2 - the Houndius variant: the 966 reloads for 90 ticks (89
+    /// after the tail's decrement) and fires the C#'s 967 shot at 12.5 px.
+    #[test]
+    fn test_ai_053_houndius_shot() {
         let mut pool = ProjectilePool::new();
-        let mut world = ground();
-        let owner_id = 0;
-        let projectile = pool.spawn(FROST_HYDRA, owner_id, Vec2::ZERO, Vec2::ZERO, 100, 0.5, false).unwrap();
-        let p = &mut pool.slots[projectile];
-        p.local_ai[0] = 0.0;
-        tick(&mut pool, &mut world(), &mut player(&world()));
-        assert_eq!(p.local_ai[0], 1.0, "local_ai[0] not set to initialized value");
-        assert_eq!(p.local_ai[1], 1.0, "local_ai[1] not correctly modified at initialization");
-        assert_eq!(p.ai[0], 120.0, "ai[0] did not enter full cooldown");
+        let mut w = world();
+        let mut p = player(&w);
+        let houndius = spawn_sentry(&mut pool, HOUNDIUS_SHOOTIUS, 300.0, 300.0, 36000);
+        pool.slots[houndius].ai[0] = 0.0;
+        let mut npcs: Vec<Npc> = vec![npc_at(NpcKind::Zombie, 900.0, 300.0)];
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        let proj = &pool.slots[houndius];
+        assert_eq!(proj.ai[0], 89.0, "the Houndius reloads for 90 ticks; the tail decrements it");
+        let shot = pool
+            .slots
+            .iter()
+            .find(|s| s.active && s.kind == 967)
+            .expect("the Houndius fires its 967 shot");
+        let len = (shot.vel.x * shot.vel.x + shot.vel.y * shot.vel.y).sqrt();
+        assert!((len - 12.5).abs() < 0.01, "the shot rides the 12.5 px muzzle speed: {len}");
+    }
+
+    /// S1-D-4b-2 - no target: the reload stays untouched, the tail still
+    /// decrements the counter and no shot is produced.
+    #[test]
+    fn test_ai_053_without_a_target() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        pool.slots[hydra].ai[0] = 5.0;
+        let mut npcs: Vec<Npc> = Vec::new();
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        let proj = &pool.slots[hydra];
+        assert_eq!(proj.ai[0], 4.0, "the tail decrements ai[0] every tick");
+        assert!(
+            !pool.slots.iter().any(|s| s.active && s.kind == 309),
+            "no target, no shot"
+        );
+    }
+
+    /// S1-D-4b-2 - the free fall: `velocity.X` is zeroed, `velocity.Y` grows
+    /// by 0.2 per tick and the C# clamps it at 16.
+    #[test]
+    fn test_ai_053_free_fall() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..100 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+            let proj = &pool.slots[hydra];
+            assert_eq!(proj.vel.x, 0.0, "the free fall zeroes velocity.X");
+            assert!(proj.vel.y > 0.0, "the free fall accelerates downwards");
+            assert!(proj.vel.y <= 16.0, "the C# clamps velocity.Y at 16");
+        }
     }
     use super::*;
     use crate::npc::{Npc, NpcKind};
