@@ -252,3 +252,5 @@ crates/tr-app/src/npc.rs|pub moon_spawn_latch|S1-D-6c - the Moon Lord core's pha
 
 crates/tr-app/src/npc_ai.rs|TownWeaponParams|S1-D-3n - the town-NPC (aiStyle 7) melee weapon presets: the per-type swing damage, knockback and item-size rows of the ai[0] == 15 state (NPC.cs:55018-55054)
 crates/tr-app/src/render/sky.rs|draw_front_trees|S1-C-9 - the forest surface front layers: bgScale 1.25/1.31/1.34 (C# 61275/61304) x2 (C# 59329), bgParallax 0.40/0.43/0.49 (C# 61276), the bgTopY tops 1350/1600/1850 (C# 61277/61399/61473 minus pushBGTopHack 150, Main.cs 59302/59353/59525)
+crates/tr-core/src/world.rs|pub fn start_pumpkin_moon|S1-F-13 a-slice - the moon-event wave machinery: the wave table + the per-kind points tables, start/stop at the dusk and dawn boundaries, the medallion/Naughty-Present triggers, the two CheckProgress walks and the boss cap on World
+crates/tr-app/src/spawner.rs|fn frost_moon_ladder|S1-F-13 a-slice - the roster ladders on the spawner stream: frost (NPC.cs:2804-3222) + pumpkin (:3224-3548) in spawn_npc_at's zone chain, the vanilla Next(n) order, the CountNPCS && caps, the 30 wave arms consuming without spawning until F-13b/c
