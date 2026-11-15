@@ -11827,7 +11827,8 @@ impl ProjectilePool {
                             };
                             let mut shot: Option<(u16, f32, f32, f32, f32, i32, f32)> = None;
                             let projectile = &mut self.slots[i];
-                            // Ported AI_053_FrostHydra behavior (Projectile.cs:37266-37490)
+                            // `AI_053_FrostHydra` (`:37266-37490`). The C#'s `netUpdate`
+                            // calls have no Rust field - skipped.
                             if projectile.local_ai[0] == 0.0 {
                                 projectile.local_ai[1] = 1.0;
                                 projectile.local_ai[0] = 1.0;
@@ -11839,7 +11840,11 @@ impl ProjectilePool {
                                     projectile.frame = 0;
                                 }
                             }
-                            // Handle free fall when projectile is not flagged.
+                            // The free fall (`:37336-37344`). The C#'s backpack branch
+                            // (`:37314-37335`) is unreachable in this port.
+                            // ponytail: no sentry-backpack support - add when the
+                            // Player gains `accSentryBackpack` and the grab-cooldown
+                            // test of `CanGetPickedUpBySentryBackpack`.
                             if projectile.ai[2] == 0.0 {
                                 projectile.vel.x = 0.0;
                                 projectile.vel.y += 0.2;
