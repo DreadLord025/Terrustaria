@@ -570,6 +570,21 @@ impl App {
                     self.phase("npcs");
                     self.update_npcs(dt);
                 }
+                // `Main.UpdateWorld_Gores` (`Main.cs:17971-17996`, called at
+                // `:17771-17774`): the 600-slot walk, between the NPCs and the
+                // projectiles. Its rolls ride the stage's own named stream
+                // (`Main.SwapRandom("UpdateGores")`).
+                self.phase("gores");
+                {
+                    let rng = self.rngs.stream(crate::app::RngKey::UpdateGores);
+                    let wind_for_visuals = self.wind.speed_current;
+                    self.gore.update(
+                        rng,
+                        &self.world,
+                        &crate::gore_seam::AppGoreCollision,
+                        wind_for_visuals,
+                    );
+                }
                 // `Main.UpdateWorld_Projectiles` (`Main.cs:17976`) runs **before**
                 // `UpdateWorld_Items` (`:18004`).
                 self.phase("projectiles");
@@ -2303,9 +2318,12 @@ mod tests {
     ///   windy day / ambience), the tile-edit pass, the net pass and the map.
     ///
     /// Every phase name is emitted once per in-world frame.
-    const WORLD_PHASES: [&str; 19] = [
+    const WORLD_PHASES: [&str; 20] = [
         "players",
         "npcs",
+        // `Main.UpdateWorld_Gores` (`Main.cs:17971`, called at `:17771`) sits
+        // between the NPCs and the projectiles.
+        "gores",
         "projectiles",
         "items",
         "dust",
