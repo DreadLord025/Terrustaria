@@ -9,7 +9,7 @@ use tr_core::lighting::{LightMap, LightStyle};
 use tr_core::tile_light::FastRandom;
 use tr_core::tiledata as td;
 use tr_core::wind;
-use tr_core::{TILE_PX, World, tree};
+use tr_core::{tree, World, TILE_PX};
 use tr_render::SpriteRenderer;
 
 /// `TileDrawing.EmitTreeLeaves`' spawn, resolved at draw time by the tree scan.
@@ -235,7 +235,51 @@ pub(crate) fn draw_tree_foliage(
             let Some(t) = world.tile(tx, ty) else {
                 continue;
             };
-            if !t.active() || !tree::is_tree(t.kind) {
+            if !t.active() {
+                continue;
+            }
+            // Palm canopy (`TileDrawing.cs:8254-8297`): kind 323 frameX 88..=132
+            // draws only the top canopy — no generic arms, no branch sprite.
+            if t.kind == 323 && (88..=132).contains(&t.frame_x) {
+                let biome = tr_core::drawdata::palm_tree_biome(world, tx, ty);
+                let Some(palm) = palm_canopy_data(biome, t.frame_x) else {
+                    continue;
+                };
+                let Some(uv) =
+                    lookups.foliage_uv(palm.style, true, palm.src_x, palm.src_y, palm.w, palm.h)
+                else {
+                    continue;
+                };
+                let c = style.shade(light.get(tx, ty), tx, ty, anim_time);
+                let color = [c[0], c[1], c[2], 1.0];
+                // `bool flag = tile.wall > 0` (`TileDrawing.cs:8073`).
+                let cycle = if t.wall > 0 {
+                    0.0
+                } else {
+                    wind.cycle(tx, ty, tree_counter)
+                };
+                let (pos, rot, origin) = palm_placement(
+                    tx as f32 * TILE_PX,
+                    ty as f32 * TILE_PX,
+                    t.frame_y as i32,
+                    palm.w as f32,
+                    palm.h as f32,
+                    palm.x_off as f32,
+                    palm.y_off as f32,
+                    cycle,
+                );
+                r.push_sprite_origin_rot(
+                    pos,
+                    [palm.w as f32, palm.h as f32],
+                    uv,
+                    color,
+                    rot,
+                    origin,
+                );
+                quads += 1;
+                continue;
+            }
+            if !tree::is_tree(t.kind) {
                 continue;
             }
             let Some(part) = tree::TreePart::marker(t.frame_x, t.frame_y) else {
@@ -423,6 +467,70 @@ fn ground_tile(world: &World, x: i32, y: i32) -> Option<u16> {
     None
 }
 
+/// `TileDrawing.cs:8254-8297`: the Palm canopy frame — the top sheet style, its
+/// source rect (column from `frameX`, row from the biome) and size.
+struct PalmCanopy {
+    style: usize,
+    src_x: i32,
+    src_y: i32,
+    w: u32,
+    h: u32,
+    x_off: i32,
+    y_off: i32,
+}
+
+/// `TileDrawing.cs:8255-8279`: frameX 110 => column 1, 132 => 2, else 0; normal
+/// palms (biome 0..=3) use style 15 / 80x80 / row `biome * 82` / offset 32,0;
+/// Oasis palms (biome 4..=7) style 21 / 114x98 / row `(biome - 4) * 98` / 48,2.
+/// Source X is `column * (width + 2)`. `None` outside the eight biomes.
+fn palm_canopy_data(biome: i32, frame_x: i16) -> Option<PalmCanopy> {
+    if !(0..=7).contains(&biome) {
+        return None;
+    }
+    let column = match frame_x {
+        110 => 1,
+        132 => 2,
+        _ => 0,
+    };
+    let (style, w, h, src_y, x_off, y_off) = if biome >= 4 {
+        (21, 114, 98, (biome - 4) * 98, 48, 2)
+    } else {
+        (15, 80, 80, biome * 82, 32, 0)
+    };
+    Some(PalmCanopy {
+        style,
+        src_x: column * (w + 2),
+        src_y,
+        w: w as u32,
+        h: h as u32,
+        x_off,
+        y_off,
+    })
+}
+
+/// `TileDrawing.cs:8284-8291`: the canopy is drawn with `position` =
+/// `(x*16 - xOff + frameY + w/2, y*16 + 16 + yOff)` and origin `(w/2, h)`, so
+/// the unrotated top-left is `(x*16 - xOff + frameY, y*16 + 16 + yOff - h)`.
+/// The sway adds `cycle*2` to X and `|cycle|*2` to Y and rotates
+/// `cycle * 0.08`. Returns `(top_left, rotation, origin)`.
+#[allow(clippy::too_many_arguments)]
+fn palm_placement(
+    px: f32,
+    py: f32,
+    frame_y: i32,
+    w: f32,
+    h: f32,
+    x_off: f32,
+    y_off: f32,
+    cycle: f32,
+) -> ([f32; 2], f32, [f32; 2]) {
+    let pos = [
+        px - x_off + frame_y as f32 + cycle * 2.0,
+        py + 16.0 + y_off - h + cycle.abs() * 2.0,
+    ];
+    (pos, cycle * 0.08, [w * 0.5, h])
+}
+
 /// `TileDrawing.cs:8136-8149` (the `frameX == 22` top arm): the canopy centre
 /// sits at `px + 8 - top_w/2 + cycle*2`, sinks by `py + 16 - top_h +
 /// abs(cycle)*2`, and rotates `cycle * 0.08`. Returns `(position, rotation)`.
@@ -510,38 +618,53 @@ fn tree_leaf_pass_style(top_kind: u16, frame_y: i16, ground: u16, x: i32) -> (i3
 }
 
 #[cfg(test)]
-#[test]
-fn variant_foliage_styles_match_worldgen() {
-    let matches = [
-        (583, (22, 116.0, 96.0)),
-        (584, (23, 116.0, 96.0)),
-        (585, (24, 116.0, 96.0)),
-        (586, (25, 116.0, 96.0)),
-        (587, (26, 116.0, 96.0)),
-        (588, (27, 116.0, 96.0)),
-        (589, (28, 116.0, 96.0)),
-        (596, (29, 118.0, 96.0)),
-        (616, (30, 118.0, 96.0)),
-        (634, (31, 116.0, 96.0)),
-    ];
-    for &(kind, (style, top_w, top_h)) in &matches {
-        let f = tree::Foliage::for_ground(kind, 633, 198).unwrap();
-        assert_eq!((f.style, f.top_w, f.top_h), (style, top_w, top_h));
-    }
-
-    // Invalid variant -> None
-    assert!(tree::Foliage::for_ground(596, 70, 198).is_none());
-    assert!(tree::Foliage::for_ground(634, 70, 198).is_none());
-    assert!(tree::Foliage::for_ground(583, 70, 198).is_none());
-
-    // Common -> Some
-    let common = tree::Foliage::for_ground(5, 2, 198).unwrap();
-    assert_eq!(common.style, 0);
-}
 mod tests {
     use super::*;
 
     const EPS: f32 = 1e-4;
+
+    /// `WorldGen.GetGemTreeFoliageData` / `GetVanityTreeFoliageData` /
+    /// `GetAshTreeFoliageData` (`WorldGen.cs:62801-62879`): the style, canopy
+    /// size, and the ground each variant accepts.
+    #[test]
+    fn variant_foliage_styles_match_worldgen() {
+        let matches = [
+            (583, (22, 116.0, 96.0)),
+            (584, (23, 116.0, 96.0)),
+            (585, (24, 116.0, 96.0)),
+            (586, (25, 116.0, 96.0)),
+            (587, (26, 116.0, 96.0)),
+            (588, (27, 116.0, 96.0)),
+            (589, (28, 116.0, 96.0)),
+            (596, (29, 118.0, 96.0)),
+            (616, (30, 118.0, 96.0)),
+            (634, (31, 116.0, 96.0)),
+        ];
+        for &(kind, (style, top_w, top_h)) in &matches {
+            // `GemTreeGroundTest` accepts stone/moss, `VanityTreeGroundTest`
+            // grass, `AshTreeGroundTest` only ash.
+            let ground = match kind {
+                583..=589 => 1,
+                634 => 633,
+                _ => 2,
+            };
+            let f = tree::Foliage::for_ground(kind, ground, 198).unwrap();
+            assert_eq!(
+                (f.style, f.top_w, f.top_h),
+                (style, top_w, top_h),
+                "kind {kind}"
+            );
+        }
+
+        // Invalid variant -> None
+        assert!(tree::Foliage::for_ground(596, 70, 198).is_none());
+        assert!(tree::Foliage::for_ground(634, 70, 198).is_none());
+        assert!(tree::Foliage::for_ground(583, 70, 198).is_none());
+
+        // Common -> Some
+        let common = tree::Foliage::for_ground(5, 2, 198).unwrap();
+        assert_eq!(common.style, 0);
+    }
 
     /// `TileDrawing.cs:8136-8149` (the `frameX == 22` top arm): the canopy
     /// centre sits at `px + 8 - top_w/2 + cycle*2`, sinks by
@@ -601,5 +724,93 @@ mod tests {
         let (pos, _) = super::branch_placement(tree::TreePart::BranchRight, 48.0, 96.0, -0.5);
         assert!((pos[0] - (48.0 - 0.5 - 1.0)).abs() < EPS);
         assert!((pos[1] - 84.0).abs() < EPS);
+    }
+
+    /// `TileDrawing.cs:8254-8297`: Palm canopy parameters.
+    /// Normal Palm (biome 0..3): style 15, 80x80, source row biome*82, offsets 32/0.
+    /// Oasis Palm (biome 4..7): style 21, 114x98, source row (biome-4)*98, offsets 48/2.
+    #[test]
+    fn palm_canopy_data_maps_biome_to_style_size_row_offsets() {
+        // Normal palms
+        let d = super::palm_canopy_data(0, 88).unwrap();
+        assert_eq!(
+            (d.style, d.w, d.h, d.src_y, d.x_off, d.y_off),
+            (15, 80, 80, 0, 32, 0)
+        );
+        let d = super::palm_canopy_data(3, 88).unwrap();
+        assert_eq!(
+            (d.style, d.w, d.h, d.src_y, d.x_off, d.y_off),
+            (15, 80, 80, 3 * 82, 32, 0)
+        );
+        // Oasis palms
+        let d = super::palm_canopy_data(4, 88).unwrap();
+        assert_eq!(
+            (d.style, d.w, d.h, d.src_y, d.x_off, d.y_off),
+            (21, 114, 98, 0, 48, 2)
+        );
+        let d = super::palm_canopy_data(7, 88).unwrap();
+        assert_eq!(
+            (d.style, d.w, d.h, d.src_y, d.x_off, d.y_off),
+            (21, 114, 98, 3 * 98, 48, 2)
+        );
+        // Invalid biome returns None
+        assert!(super::palm_canopy_data(-1, 88).is_none());
+        assert!(super::palm_canopy_data(8, 88).is_none());
+    }
+
+    /// FrameX 88 => column 0, 110 => 1, 132 => 2; others 0.
+    #[test]
+    fn palm_canopy_column_from_frame_x() {
+        assert_eq!(super::palm_canopy_data(0, 88).unwrap().src_x, 0);
+        assert_eq!(super::palm_canopy_data(0, 110).unwrap().src_x, 1 * (80 + 2));
+        assert_eq!(super::palm_canopy_data(0, 132).unwrap().src_x, 2 * (80 + 2));
+        assert_eq!(super::palm_canopy_data(0, 100).unwrap().src_x, 0);
+        // Oasis uses 114 width
+        assert_eq!(
+            super::palm_canopy_data(4, 110).unwrap().src_x,
+            1 * (114 + 2)
+        );
+    }
+
+    /// Palm placement (`TileDrawing.cs:8284-8297`): the drawn position is
+    /// `(x*16 - xOff + frameY + w/2, y*16 + 16 + yOff)` with origin `(w/2, h)`,
+    /// so the unrotated top-left is `(x*16 - xOff + frameY, y*16 + 16 + yOff - h)`;
+    /// the sway adds `cycle*2` to X, `|cycle|*2` to Y and rotates `cycle * 0.08`.
+    #[test]
+    fn palm_placement_matches_csharp_formula() {
+        // Biome 0 (normal), frameY = 0, cycle = 0.
+        let (pos, rot, origin) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 0, 80.0, 80.0, 32.0, 0.0, 0.0);
+        assert!((pos[0] - (160.0 - 32.0)).abs() < EPS);
+        assert!((pos[1] - (320.0 + 16.0 - 80.0)).abs() < EPS);
+        assert!(rot.abs() < EPS);
+        assert_eq!(origin, [40.0, 80.0]);
+
+        // cycle = 1.0: X += 2, Y += 2, rot = 0.08.
+        let (pos, rot, _) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 0, 80.0, 80.0, 32.0, 0.0, 1.0);
+        assert!((pos[0] - (160.0 - 32.0 + 2.0)).abs() < EPS);
+        assert!((pos[1] - (320.0 + 16.0 - 80.0 + 2.0)).abs() < EPS);
+        assert!((rot - 0.08).abs() < EPS);
+
+        // cycle = -1.0: X -= 2, Y += 2 (abs), rot = -0.08.
+        let (pos, rot, _) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 0, 80.0, 80.0, 32.0, 0.0, -1.0);
+        assert!((pos[0] - (160.0 - 32.0 - 2.0)).abs() < EPS);
+        assert!((pos[1] - (320.0 + 16.0 - 80.0 + 2.0)).abs() < EPS);
+        assert!((rot - -0.08).abs() < EPS);
+
+        // frameY shifts X by its own value (`position4.X` gets `frameY2`).
+        let (pos, _, _) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 22, 80.0, 80.0, 32.0, 0.0, 0.0);
+        assert!((pos[0] - (160.0 - 32.0 + 22.0)).abs() < EPS);
+
+        // Oasis (biome 4): 114x98, offsets 48/2.
+        let (pos, rot, origin) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 0, 114.0, 98.0, 48.0, 2.0, 0.0);
+        assert!((pos[0] - (160.0 - 48.0)).abs() < EPS);
+        assert!((pos[1] - (320.0 + 16.0 + 2.0 - 98.0)).abs() < EPS);
+        assert!(rot.abs() < EPS);
+        assert_eq!(origin, [57.0, 98.0]);
     }
 }
