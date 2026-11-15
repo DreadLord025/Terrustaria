@@ -11825,6 +11825,7 @@ impl ProjectilePool {
                                     npcs,
                                 )
                             };
+                            let mut shot: Option<(u16, f32, f32, f32, f32, i32, f32)> = None;
                             let projectile = &mut self.slots[i];
                             // Ported AI_053_FrostHydra behavior (Projectile.cs:37266-37490)
                             if projectile.local_ai[0] == 0.0 {
@@ -11852,44 +11853,54 @@ impl ProjectilePool {
                             } else {
                                 Vec2::ZERO
                             };
-                            if let Some((target_slot, mut x, mut y)) =
-                                self.sentry_npc_targeting(projectile, world, firing_offset, false, 1000.0, player_target, npcs)
-                            {
-                                if projectile.kind == FROST_HYDRA && projectile.ai[1] != target_slot as f32 {
+                            if let Some((target_slot, target_x, target_y)) = aim {
+                                if projectile.kind == HOUNDIUS_SHOOTIUS && projectile.ai[1] != target_slot as f32 {
                                     projectile.ai[1] = target_slot as f32;
                                 }
                                 // Convert absolute AIM into relative for Animation/Frame logic.
                                 let proj_center = projectile.pos + Vec2::new(projectile.w * 0.5, projectile.h * 0.5);
-                                x -= proj_center.x;
-                                y -= proj_center.y;
+                                let rel_x = target_x - proj_center.x;
+                                let rel_y = target_y - proj_center.y;
+                                let mut num9 = 0;
                                 if projectile.kind != HOUNDIUS_SHOOTIUS {
                                     if projectile.frame_counter > 0 {
                                         projectile.frame_counter -= 1;
                                     }
                                     if projectile.frame_counter <= 0 {
-                                        let mut frame = projectile.frame;
-                                        let mut num9 = 0;
-                                        projectile.sprite_direction = if x < 0.0 { -1 } else { 1 };
-                                        num9 = if y > 0.0 {
+                                        let old_frame = projectile.frame;
+                                        let old_dir = projectile.sprite_direction;
+                                        projectile.sprite_direction =
+                                            if rel_x < 0.0 { -1 } else { 1 };
+                                        num9 = if rel_y > 0.0 {
                                             0
-                                        } else if y.abs() > x.abs() * 3.0 {
+                                        } else if rel_y.abs() > rel_x.abs() * 3.0 {
                                             4
-                                        } else if y.abs() > x.abs() * 2.0 {
+                                        } else if rel_y.abs() > rel_x.abs() * 2.0 {
                                             3
-                                        } else if x.abs() > y.abs() * 3.0 {
+                                        } else if rel_x.abs() > rel_y.abs() * 3.0 {
                                             0
                                         } else {
-                                            if x.abs() > y.abs() * 2.0 { 1 } else { 2 }
+                                            if rel_x.abs() > rel_y.abs() * 2.0 { 1 } else { 2 }
                                         };
                                         // Finalize frame logic.
-                                        frame = match projectile.kind {
+                                        let mut frame = match projectile.kind {
                                             FROST_HYDRA => num9 * 2,
                                             QUEEN_SPIDER => num9,
-                                            _ => frame,
+                                            _ => old_frame,
                                         };
-                                        if frame != projectile.frame || num9 != projectile.sprite_direction {
-                                            projectile.frame_counter = if projectile.ai[0] <= 0.0 { 4 } else { 8 };
-                                            projectile.frame = frame;
+                                        // The Hydra's extra frame (`:37392-37395`).
+                                        if projectile.ai[0] > 40.0
+                                            && projectile.local_ai[1] == 0.0
+                                            && projectile.kind == FROST_HYDRA
+                                        {
+                                            frame += 1;
+                                        }
+                                        projectile.frame = frame;
+                                        if old_frame != projectile.frame
+                                            || old_dir != projectile.sprite_direction
+                                        {
+                                            projectile.frame_counter =
+                                                if projectile.ai[0] <= 0.0 { 4 } else { 8 };
                                         }
                                     }
                                 }
@@ -11908,21 +11919,31 @@ impl ProjectilePool {
                                             HOUNDIUS_SHOOTIUS => (967, 12.5),
                                             _ => (309, 6.0),
                                         };
-                                        let off = match num9 {
-                                            0 => Vec2::new(24.0 * projectile.sprite_direction as f32, 12.0),
-                                            1 => Vec2::new(24.0 * projectile.sprite_direction as f32, 0.0),
-                                            2 => Vec2::new(24.0 * projectile.sprite_direction as f32, -2.0),
-                                            3 => Vec2::new(14.0 * projectile.sprite_direction as f32, -6.0),
-                                            4 => Vec2::new(2.0 * projectile.sprite_direction as f32, -14.0),
-                                            _ => Vec2::ZERO,
-                                        } + if projectile.sprite_direction < 0 {
-                                            Vec2::new(10.0, 0.0)
-                                        } else {
-                                            Vec2::ZERO
-                                        };
+                                        // The muzzle (`:37438-37465`): the 966 keeps
+                                        // the bare firing offset.
+                                        let mut off = firing_offset;
+                                        if projectile.kind != HOUNDIUS_SHOOTIUS {
+                                            off = off + match num9 {
+                                                0 => Vec2::new(24.0 * projectile.sprite_direction as f32, 12.0),
+                                                1 => Vec2::new(24.0 * projectile.sprite_direction as f32, 0.0),
+                                                2 => Vec2::new(24.0 * projectile.sprite_direction as f32, -2.0),
+                                                3 => Vec2::new(14.0 * projectile.sprite_direction as f32, -6.0),
+                                                4 => Vec2::new(2.0 * projectile.sprite_direction as f32, -14.0),
+                                                _ => Vec2::ZERO,
+                                            };
+                                            if projectile.sprite_direction < 0 {
+                                                off.x += 10.0;
+                                            }
+                                        }
                                         let muzzle = proj_center + off;
-                                        let vel = (Vec2::new(x, y).normalize() * muzzle_v).into();
-                                        self.spawn_with_data_ai_owned(shot_kind, local_owner, muzzle.x, muzzle.y, vel.x, vel.y, projectile.damage, projectile.knock_back, 0.0, 0.0);
+                                        // The shot rides from the muzzle to the target
+                                        // at the muzzle speed (`:37466-37470`).
+                                        let dx = target_x - muzzle.x;
+                                        let dy = target_y - muzzle.y;
+                                        let len = (dx * dx + dy * dy).sqrt();
+                                        let k = if len > 0.0 { muzzle_v / len } else { 0.0 };
+                                        let (damage, knock_back) = (projectile.damage, projectile.knock_back);
+                                        shot = Some((shot_kind, muzzle.x, muzzle.y, dx * k, dy * k, damage, knock_back));
                                     }
                                 }
                             } else if projectile.kind == HOUNDIUS_SHOOTIUS {
@@ -11938,7 +11959,12 @@ impl ProjectilePool {
                             if projectile.ai[0] > 0.0 {
                                 projectile.ai[0] -= 1.0;
                             }
-                            store_sentry_aim(projectile, aim);
+                            // The pool spawns the shot once the slot's borrow ends.
+                            if let Some((kind, x, y, vx, vy, damage, kb)) = shot {
+                                let _ = self.spawn_with_data_ai_owned(
+                                    kind, local_owner, x, y, vx, vy, damage, kb, 0.0, 0.0,
+                                );
+                            }
                         }
                         197 => {
                             // `AI_197`'s targeting call
