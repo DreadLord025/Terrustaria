@@ -29,7 +29,7 @@
 //! (`Next(2) != 0`) verbatim; the creative spread-stop rides the
 //! `allowed_to_spread` input.
 
-use crate::tile_light::FastRandom;
+use crate::UnifiedRandom;
 use crate::world::World;
 
 /// `TileID.Sets.SpreadsCorruption` (`TileID.cs:580`).
@@ -275,7 +275,7 @@ pub fn hard_update_world(
     y: i32,
     downed_plant_boss: bool,
     allowed_to_spread: bool,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) {
     let Some(t) = world.tile(x, y) else {
         return;
@@ -292,8 +292,8 @@ pub fn hard_update_world(
     if matches!(kind, 211 | 346) {
         // `Next(3) != 0`: the 4-dir neighbour growth into the mud/the jungle
         // grass, gated by `CanChlorophyteGrow`.
-        if rng.next(3) != 0 {
-            let (dx, dy) = match rng.next(4) {
+        if rng.next_max(3) != 0 {
+            let (dx, dy) = match rng.next_max(4) {
                 0 => (1, 0),
                 1 => (-1, 0),
                 2 => (0, 1),
@@ -310,8 +310,8 @@ pub fn hard_update_world(
         }
         // The ±6 random re-scan (`Convert(..., 9)` — the mud/jungle cells
         // near the source convert too).
-        let nx = x + (rng.next(13) as i32 - 6);
-        let ny = y + (rng.next(13) as i32 - 6);
+        let nx = x + (rng.next_max(13) as i32 - 6);
+        let ny = y + (rng.next_max(13) as i32 - 6);
         if world
             .tile(nx, ny)
             .is_some_and(|t| t.active() && matches!(t.kind, 59 | 60))
@@ -323,7 +323,7 @@ pub fn hard_update_world(
     }
     // `:69688-69691`: the post-PlantBoss worlds halve the spread; the
     // creative spread-stop gate.
-    if downed_plant_boss && rng.next(2) != 0 {
+    if downed_plant_boss && rng.next_max(2) != 0 {
         return;
     }
     if !allowed_to_spread {
@@ -337,8 +337,8 @@ pub fn hard_update_world(
     // The spread loop (`:69696-69860`): the ±3 target, the chlorophyte
     // defence, the sunflower suppression, the conversions with the
     // `Next(2) == 0` re-roll chain.
-    let mut tx = x + (rng.next(7) as i32 - 3);
-    let mut ty = y + (rng.next(7) as i32 - 3);
+    let mut tx = x + (rng.next_max(7) as i32 - 3);
+    let mut ty = y + (rng.next_max(7) as i32 - 3);
     loop {
         if !(10..world.width - 10).contains(&tx) || !(10..world.height - 10).contains(&ty) {
             break;
@@ -358,13 +358,13 @@ pub fn hard_update_world(
         if !convertible {
             break;
         }
-        let reroll = rng.next(2) == 0;
+        let reroll = rng.next_max(2) == 0;
         convert_cell(world, tx, ty, corruption, false);
         if !reroll {
             break;
         }
-        tx += rng.next(7) as i32 - 3;
-        ty += rng.next(7) as i32 - 3;
+        tx += rng.next_max(7) as i32 - 3;
+        ty += rng.next_max(7) as i32 - 3;
     }
 }
 
@@ -410,7 +410,7 @@ pub fn gerunner(
     speed_x: f64,
     good: bool,
     corruption: bool,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) {
     let scale = world.width as f64 / 4200.0;
     let num2 = (rng.next_range(200, 250) as f64) * scale;
@@ -473,7 +473,7 @@ pub fn gerunner(
 /// the hallow V on one side and the evil V on the other (the C# `GERunner(
 /// num3, 0, 3·num5, 5f)` good + `GERunner(num4, 0, −3·num5, 5f, good:
 /// false)`); the start xs sit ±`maxTilesX/7` off the middle.
-pub fn initialize_hard_mode(world: &mut World, corruption: bool, rng: &mut FastRandom) {
+pub fn initialize_hard_mode(world: &mut World, corruption: bool, rng: &mut UnifiedRandom) {
     let offset = world.width / 7;
     // `num5 = ±1` (`WorldGen.cs:31585-31590`) — the velocity `3·num5` gives
     // the 3:5 V slope verbatim.
@@ -543,7 +543,7 @@ mod runner_tests {
     #[test]
     fn the_gerunner_carves_the_v_strip() {
         let mut w = world();
-        let mut rng = FastRandom::new(9);
+        let mut rng = UnifiedRandom::new(9);
         gerunner(&mut w, 400, 2.0, true, false, &mut rng);
         // The strip: the hallowed grass/pearlstone along the V from the
         // sky to the bottom.
@@ -576,7 +576,7 @@ mod runner_tests {
         // The evil runner with the corruption: the grass → the corrupt
         // grass 23, the stone → the ebonstone 25.
         let mut w = world();
-        let mut rng = FastRandom::new(10);
+        let mut rng = UnifiedRandom::new(10);
         gerunner(&mut w, 400, -2.0, false, true, &mut rng);
         let corrupt = w
             .tiles
@@ -590,7 +590,7 @@ mod runner_tests {
     fn initialize_hard_mode_runs_both_runners() {
         // The corruption world (the crimson world swaps the evil kinds).
         let mut w = world();
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         initialize_hard_mode(&mut w, true, &mut rng);
         let hallowed = w
             .tiles
@@ -606,7 +606,7 @@ mod runner_tests {
         assert!(corrupt > 200, "the evil V ({corrupt})");
         // The crimson world: the evil kinds swap (199/203/234).
         let mut w2 = world();
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         initialize_hard_mode(&mut w2, false, &mut rng);
         let crimson = w2
             .tiles
@@ -650,7 +650,7 @@ mod tests {
         let mut runs = 0;
         for seed in 1u64..400 {
             let mut w = w.clone();
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             hard_update_world(&mut w, 30, 80, false, true, &mut rng);
             runs += 1;
             grew += w
@@ -769,7 +769,7 @@ mod tests {
         // the tile — the already-corrupt tiles leave the Convert map).
         let i = w.index(199, 200);
         w.tiles[i].wall = 1;
-        let mut rng = FastRandom::new(1);
+        let mut rng = UnifiedRandom::new(1);
         for _ in 0..200 {
             hard_update_world(&mut w, 200, 200, false, true, &mut rng);
         }
@@ -788,7 +788,7 @@ mod tests {
         put(&mut w, 201, 200, 2);
         put(&mut w, 204, 200, 27); // the sunflower two tiles out
         put(&mut w, 203, 200, 2);
-        let mut rng = FastRandom::new(3);
+        let mut rng = UnifiedRandom::new(3);
         for _ in 0..100 {
             hard_update_world(&mut w, 200, 200, false, true, &mut rng);
         }
@@ -801,7 +801,7 @@ mod tests {
         put(&mut w, 200, 200, 211); // the chlorophyte
         put(&mut w, 202, 200, 23); // the corrupt grass next to it
         put(&mut w, 205, 200, 2); // the grass beyond the defence radius
-        let mut rng = FastRandom::new(4);
+        let mut rng = UnifiedRandom::new(4);
         for _ in 0..100 {
             hard_update_world(&mut w, 202, 200, false, true, &mut rng);
         }
@@ -824,7 +824,7 @@ mod tests {
             }
         }
         put(&mut w, 200, 200, 211);
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         let mut grew = false;
         for _ in 0..200 {
             hard_update_world(&mut w, 200, 200, false, true, &mut rng);
@@ -842,7 +842,7 @@ mod tests {
         let mut w = world();
         put(&mut w, 200, 200, 25);
         put(&mut w, 201, 200, 2);
-        let mut rng = FastRandom::new(6);
+        let mut rng = UnifiedRandom::new(6);
         for _ in 0..100 {
             hard_update_world(&mut w, 200, 200, false, false, &mut rng);
         }

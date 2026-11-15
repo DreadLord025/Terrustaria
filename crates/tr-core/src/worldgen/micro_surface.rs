@@ -407,9 +407,16 @@ fn world_is_infected(world: &mut World, rng: &mut super::Rng, micro: MicroSeedFl
 
 /// `DoStartInHardmode` (`WorldGen.cs:1899-1903`): the world starts hardmode
 /// — `Main.hardMode = true` + `WorldGen.initializeHardMode()`.
+///
+/// The feed is a `UnifiedRandom` seeded with the world seed: during
+/// generation `Main.rand = new UnifiedRandom(seed)` (`WorldGen.cs:6611`,
+/// `:11144`) and `genRand` == `Main.rand` (`:4445`), so the C#'s
+/// `initializeHardMode` draws exactly this stream (the pre-S1-A-11 local
+/// `FastRandom` was a wrong-algorithm stand-in; the pinned hash worlds never
+/// set the `startInHardmode` secret seed, so their hashes are untouched).
 fn start_in_hardmode(world: &mut World, opts: &GenOptions) {
     world.hard_mode = true;
-    let mut rng = crate::tile_light::FastRandom::new(opts.seed as u64);
+    let mut rng = crate::UnifiedRandom::new(opts.seed as i32);
     spread::initialize_hard_mode(world, opts.crimson, &mut rng);
 }
 
