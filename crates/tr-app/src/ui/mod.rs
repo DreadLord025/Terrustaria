@@ -12,6 +12,7 @@ pub mod char_select;
 pub mod clipboard;
 pub(crate) mod chest;
 pub mod chrome;
+pub(crate) mod coin_slot;
 pub mod color;
 pub mod crafting;
 pub mod cursor;
@@ -676,7 +677,7 @@ pub fn draw_hud(
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
     ingame_options: Option<(&Settings, &ingame_options::IngameOptions)>,
-    shop: Option<(&[u16], f32)>,
+    shop: Option<(&[crate::shop::ShopEntry], f32, bool)>,
     chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
     bank: Option<(&[ItemSlot], i32)>,
@@ -686,11 +687,32 @@ pub fn draw_hud(
     // `Player.hideVisibleAccessory` — the accessory visible/hidden ticks beside
     // the accessory column (`Main.cs:41425-41460`).
     hide_visible_accessory: &[bool; 10],
+    // The buff bar (`Main.DrawInterface_Resources_Buffs`, `Main.cs:43203`):
+    // the per-slot alpha (`Main.buffAlpha`), the right-release edge
+    // (`Main.mouseRightRelease`) and the removal requests — the C# removes
+    // in the draw pass, the port drains them in the tick. `vampireSeed`
+    // gates the sub-10 duration hides (`Main.cs:43298`).
+    buff_alpha: &mut [f32; crate::buffs::MAX_BUFFS],
+    buff_removals: &mut Vec<usize>,
+    right_release: bool,
+    vampire_seed: bool,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
     // hotbar (30).
     resources::draw(r, lookups, screen, player, camera, zoom, pulse);
+    if let Some(p) = player {
+        resources::draw_buffs(
+            r,
+            lookups,
+            p,
+            buff_alpha,
+            mouse_pos,
+            right_release,
+            buff_removals,
+            vampire_seed,
+        );
+    }
 
     // `ItemSlot.Draw` / `Main.DrawInventory`: with the inventory open the hotbar is
     // row 0 of a 10x5 grid of 56 px cells at (20,20) at `inventoryScale = 0.85`
@@ -800,12 +822,15 @@ pub fn draw_hud(
         // happiness-adjusted prices in a text column above the inventory
         // grid (the vanilla draws the item slots at (406, 258+); the slot
         // frames land with the slot-work pass).
-        if let Some((stock, mood)) = shop {
+        if let Some((stock, mood, discount)) = shop {
             text::hud_text(r, lookups, 40.0, 34.0, 0.85, [1.0; 4], "Shop");
-            for (i, id) in stock.iter().enumerate().take(10) {
+            for (i, entry) in stock.iter().enumerate().take(10) {
                 let y = 50.0 + i as f32 * 16.0;
-                let def = &crate::itemdata::ITEMS[*id as usize];
-                let price = crate::shop::buy_price(*id, mood);
+                let def = &crate::itemdata::ITEMS[entry.item as usize];
+                // The displayed price follows `Main.cs:20457`: buyOnce/
+                // isAShopItem rows show the buying value, the rest the
+                // selling value.
+                let price = crate::shop::display_price_row(entry, discount, mood);
                 text::hud_text(
                     r,
                     lookups,
@@ -882,7 +907,18 @@ pub fn draw_hud(
                     count,
                     prefix: 0,
                 };
-                tooltip::draw_item_tooltip(r, lookups, mouse_pos, Some(&hover), screen, pulse);
+                tooltip::draw_item_tooltip(
+                    r,
+                    lookups,
+                    mouse_pos,
+                    Some(&hover),
+                    screen,
+                    pulse,
+                    tooltip::TooltipContext {
+                        player,
+                        ..Default::default()
+                    },
+                );
             }
         }
     } else {
@@ -1005,7 +1041,24 @@ pub fn draw_hud(
         tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
             .map(|i| &inventory[i])
     };
-    tooltip::draw_item_tooltip(r, lookups, mouse_pos, hover_item, screen, pulse);
+    // `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
+    // held item's own crit, which the tooltip's crit row subtracts
+    // (`Main.cs:20701`).
+    let held_crit = crate::registry::get(inventory[selected].kind).map_or(0, |d| d.crit);
+    tooltip::draw_item_tooltip(
+        r,
+        lookups,
+        mouse_pos,
+        hover_item,
+        screen,
+        pulse,
+        tooltip::TooltipContext {
+            prefix: hover_item.map_or(0, |h| h.prefix),
+            player,
+            held_crit,
+            ..Default::default()
+        },
+    );
     if let Some(text) = pvp_hover_text {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
     }

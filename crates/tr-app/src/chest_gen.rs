@@ -1,44 +1,42 @@
 //! World chest loot generation — the port of `WorldGen.AddBuriedChest`'s
 //! stocking block (`WorldGen.cs:35871-37580`).
 //!
-//! The seam: the port's worldgen places the chest TILES
-//! (`worldgen::structures::place_chest`), but the item store
-//! (`App.world_chests`) stays empty until the world loads — vanilla stocks
-//! the `Chest` objects inline with the placement, rolling `genRand` and
-//! `Prefix(-1)` on the weapon/accessory rows. This module re-creates that
-//! stocking at `App::new`: it scans the world for the chest anchors
-//! (kind 21/341, `frame_x == 0 && frame_y == 0` — the anchor the
-//! `chests_in_range` matcher uses) and rolls a deterministic
-//! per-world-chest stream (`chest_rng`, the port's per-consumer stream
-//! convention) so every world re-loads with the same loot.
+//! The seam (S1-A-4): the loot rolls at GENERATION time, exactly the
+//! vanilla's inline shape. The placement sites in `tr-core` resolve the
+//! anchor's context and band (`tr_core::worldgen::chest_stock`), hand the
+//! [`ChestSiteEvent`](tr_core::worldgen::chest_stock::ChestSiteEvent) to the
+//! [`ChestStock`] hook the app passes into `generate_with_chest_stock`, and
+//! write the rolled rows into `World.chests` — the records that save with
+//! the world and become the store at load. Nothing rolls at load: a `.wld`'s
+//! store is the file's chests (`LoadChests`, `WorldFile.cs:2723-2805`), a
+//! `.trwld`'s store is the file's native records. The draws ride the
+//! placing pass's own stream (`WorldGenRand`) — the C#'s `genRand`
+//! interleave at the pass granularity (the port's per-pass stream model,
+//! ANALYSIS) — and the prefix rolls draw from the same stream
+//! (`Item.Prefix`'s `isGeneratingOrLoadingWorld → WorldGen.genRand` arm,
+//! `Item.cs:531`).
 //!
 //! The roll is the whole C# block: the depth band (surface
 //! `y < worldSurface+25` / mid `y < rockLayer` / deep
 //! `y < maxTilesY-250` / else), the rows with their verbatim probabilities
 //! (`Next(6) == 0` etc), the stack ranges, and the `Prefix(-1)` calls
-//! routed through the ported `prefix::roll_prefix_splitmix(kind, -1, rng)` — the
-//! engine over the splitmix chest stream until S1-A-4 restores the vanilla
-//! `genRand` interleave.
+//! routed through the ported `prefix::roll_prefix` engine.
 //! Out of scope here (documented in the ROADMAP row): the seed-flavour rows
 //! (vampire/errorWorld/rainbow/tenthAnniversary, `SecretSeed`/`Main`
-//! statics the port does not generate), the `GenVars` cross-chest fairness
-//! flags (`generatedShadowKey`/`gennedLivingMahoganyWands` — once per
-//! world in vanilla, approximated here per-chest with the vanilla odds),
-//! the remix/tenth-anniversary/FTW variants of the ported arms.
+//! statics the port does not generate), the `generatedShadowKey`/
+//! `generatedRamRune` fairness flags (the underworld/water arms they gate
+//! have no gen-time sites yet), the remix/tenth-anniversary/FTW variants of
+//! the ported arms.
 
 use crate::chest::WorldChest;
 use crate::item::{EMPTY_SLOT, ItemSlot};
 use crate::prefix;
-use tr_core::save::ChestRecord;
+use tr_core::save::{ChestItem, ChestRecord};
 use tr_core::tile::FLAG_ACTIVE;
 use tr_core::world::World;
 
 /// The chest tile kinds an anchor can carry (`craft::CHEST_TILES`).
 const CHEST_KINDS: [u16; 2] = [21, 341];
-/// `AddBuriedChest`'s bands: the anchor's y is the floor row; vanilla's
-/// `num7` is the chest's base row — the port uses the anchor directly.
-const SURFACE_BAND_PAD: i32 = 25;
-const DEEP_BAND_PAD: i32 = 250;
 /// `GenVars.hellChestItem` — the underwater-chest 939 override carries the
 /// water chests' item; the unused slot keeps the vanilla name.
 const UNDERWATER_ITEM: u16 = 939;
@@ -125,48 +123,24 @@ impl Row {
     }
 }
 
-/// The port's per-consumer splitmix stream (`rain.rs`'s `next_u64` shape).
-fn next_u64(rng: &mut u64) -> u64 {
-    *rng = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    let mut z = *rng;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    z ^ (z >> 31)
-}
-
-/// `UnifiedRandom.Next(max)` — `[0, max)`.
-fn next(rng: &mut u64, max: u64) -> u64 {
-    next_u64(rng) % max
+/// `UnifiedRandom.Next(max)` — `[0, max)` — over the placing pass's own
+/// stream (S1-A-4: the C#'s `genRand` draws, the pass-granularity stand-in).
+fn next(rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand, max: u64) -> u64 {
+    if max == 0 {
+        return 0;
+    }
+    tr_core::worldgen::chest_stock::WorldGenRand::next(rng, max as i32) as u64
 }
 
 /// `Next(min, max)` — `[min, max)`.
-fn ranged(rng: &mut u64, min: u64, max: u64) -> u64 {
+fn ranged(rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand, min: u64, max: u64) -> u64 {
     min + next(rng, max.saturating_sub(min))
 }
 
-/// The band the anchor's depth picks (`AddBuriedChest`'s four arms,
-/// `:36222`/`:36503`/`:36803`/`:37162`; the remix variants collapse to the
-/// same bands for the worlds the port generates).
-#[derive(Clone, Copy, PartialEq)]
-enum Band {
-    Surface,
-    Mid,
-    Deep,
-    Deepest,
-}
-
-fn band_for(y: i32, world_surface: f64, rock_layer: f64, height: i32) -> Band {
-    let num7 = y as f64;
-    if num7 < world_surface + SURFACE_BAND_PAD as f64 {
-        Band::Surface
-    } else if num7 < rock_layer {
-        Band::Mid
-    } else if num7 < height as f64 - DEEP_BAND_PAD as f64 {
-        Band::Deep
-    } else {
-        Band::Deepest
-    }
-}
+/// The band/context types live in `tr_core::worldgen::chest_stock` now
+/// (S1-A-4): the placement sites resolve them from the world state and ride
+/// the `ChestSiteEvent`.
+use tr_core::worldgen::chest_stock::Band;
 
 /// `WorldGen.GetDungeonLootAndChestStyle` (:35800-35848): the 8-row dungeon
 /// cycle + the hell override. The counter wrap and the advance are
@@ -210,106 +184,10 @@ impl DungeonCycle {
     }
 }
 
-/// `WorldGen.GetNextJungleChestItem` (`WorldGen.cs:10170-10196`): the jungle
-/// chests' main item — the `GenVars.JungleItemCount % 4` cycle over the
-/// living-wood wand family {211, 212, 213, 964} with the two rare overrides
-/// (`Next(15) == 0` → 2292, else `Next(20) == 0` → 3017), the counter
-/// advancing once per item (`:10196`).
-///
-/// The counter's walk is the port's approximation: vanilla's
-/// `JungleItemCount` advances once per *attempted* shrine chest, in the
-/// `GenVars.JChestX[i]` spot order (`ChestsInJungleShrines` `WorldGen.cs:17219`),
-/// while the port's load-time sweep advances it once per stocked jungle
-/// anchor, in the scan order — the same per-world counter semantics
-/// (deterministic across loads), a different order (ANALYSIS "World chest
-/// loot (M5-CHEST-gen)"). The `Prefix(-1)` on the row rides the caller, the
-/// vanilla slot-0 arm's `chest.item[0].Prefix(-1)` (`:36230`).
-struct JungleCycle {
-    count: u32,
-}
-
-impl JungleCycle {
-    fn new() -> Self {
-        Self { count: 0 }
-    }
-
-    /// The next main item. The vanilla draw order is exact: the cycle pick
-    /// is branch-free, the `Next(15)` gate rolls first and the `Next(20)`
-    /// gate only rolls on its else (`:10186-10194`).
-    fn take(&mut self, rng: &mut u64) -> u16 {
-        let mut item = match self.count % 4 {
-            0 => 211,
-            1 => 212,
-            2 => 213,
-            _ => 964,
-        };
-        if next(rng, 15) == 0 {
-            item = 2292;
-        } else if next(rng, 20) == 0 {
-            item = 3017;
-        }
-        self.count += 1;
-        item
-    }
-}
-
-/// The per-chest context the style dispatcher reads (`flag*` arms of
-/// `:36010-36205`): the jungle/mahogany/skyware/idol/dungeon flags
-/// approximated by the anchors' surroundings.
-struct Context {
-    /// `flag4` — the jungle family (the C# reads `chestStyle == 10`
-    /// `:36089`, which the port cannot see: `worldgen::structures::place_chest`
-    /// writes the plain frames — the port's stand-in is the jungle grass
-    /// 60 at the anchor).
-    jungle: bool,
-    /// `flag6` — the living-tree family (wall 244 at the anchor, the C#'s
-    /// `:36135-36144` condition).
-    living_tree: bool,
-    /// `flag3` — the pyramid's own sandstone walls (187): the `Pyramid`
-    /// structure's chest (`WorldGen.cs:27853-27873`), whose main item the
-    /// CALLER pre-sets (the Pharaoh family), so it never takes the
-    /// underground-desert table below.
-    pyramid: bool,
-    /// `flag3`'s underground-desert arm (`:36023`'s `IsUndergroundDesert(i, k)`
-    /// disjunct): the hardened-sand shell walls 216 the desert's hive writes
-    /// (`worldgen/desert.rs`). The vanilla's desert-table main and the
-    /// `flag3` extras (`:36814-36823`) ride this family.
-    desert: bool,
-    /// `flag4` — the living mahogany family (wall 63 wood walls + the tulip
-    /// 1683/the 2422 column in the room).
-    mahogany: bool,
-    /// `flag2` — the ice family (the 147/161/162/197 floor / the style 11,
-    /// the C#'s `:36064` condition).
-    ice: bool,
-    /// `flag7` — the granite/marble family (the 164/401 walls).
-    granite: bool,
-    /// `flag8` — the dungeon idol (`flag9`-style 464/241 walls).
-    idol: bool,
-    /// `flag9` — the dungeon-key family (`Main.wallDungeon`, the walls the
-    /// dungeon zone requires — `tr_core::scene::is_dungeon_wall`); the port's
-    /// dungeon pass writes 7/8/9 (`worldgen/biomes.rs:1754`), so the probe
-    /// reads those instead of the old wall-24 stand-in.
-    dungeon: bool,
-    /// `flag12` — the skyware family (the floating-island houses). The C#
-    /// probes the sky cloud walls (`HouseBuilder`'s cloud interiors); the
-    /// port's island houses write `WALL_CLOUD` = 73
-    /// (`worldgen/islands.rs:26`/`:133`), so the probe reads that — the old
-    /// 216/187 probe now reads the underground desert's shell walls
-    /// (`worldgen/desert.rs`'s `WALL_HARDENED_SAND`) and misfired there.
-    sky: bool,
-    /// `flag13` — the water/beach family.
-    water: bool,
-}
-
-impl Context {
-    /// The port's merged wood family — the pre-existing approximation arms
-    /// (the pottery and the 2198 rows) ran on one flag before the flag4 /
-    /// flag6 split; they keep the combined gate so their behaviour is
-    /// unchanged.
-    fn wood_family(&self) -> bool {
-        self.jungle || self.living_tree
-    }
-}
+/// The per-chest context the style dispatcher reads — `ChestCtx`, resolved
+/// by the placement site (S1-A-4: `tr_core::worldgen::chest_stock`). The
+/// alias keeps the stocking arms' spelling.
+use tr_core::worldgen::chest_stock::ChestCtx as Context;
 
 /// The `flag3` arm's `flag20` depth test with the no-hive `GenVars` values
 /// (`High = maxTilesY`, `Low = 0`, `GenVars.cs:142-148`): the vanilla's
@@ -322,7 +200,7 @@ fn deep_desert_chest(height: i32, y: i32) -> bool {
 
 /// The `flag3` arm's main pick (`:36043`): `Utils.SelectRandom` over the
 /// shallow four, or the deep three when `flag20` holds (`:36041`).
-fn desert_chest_main(rng: &mut u64, deep: bool) -> u16 {
+fn desert_chest_main(rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand, deep: bool) -> u16 {
     let table: &[u16] = if deep {
         &DESERT_CHEST_DEEP
     } else {
@@ -331,21 +209,10 @@ fn desert_chest_main(rng: &mut u64, deep: bool) -> u16 {
     table[next(rng, table.len() as u64) as usize]
 }
 
-/// `Pyramid`'s own chest main (`:27853-27864`): the `Next(3)` with the
-/// `== 0 → Next(3)` re-roll, so the Pharaoh'sMask 848 lands only on two
-/// zeros (1/9) and the 857/934 on the other eight ninths.
-fn pyramid_chest_main(rng: &mut u64) -> u16 {
-    let mut pick = next(rng, 3);
-    if pick == 0 {
-        pick = next(rng, 3);
-    }
-    PYRAMID_CHEST[pick as usize]
-}
-
 /// `flag2`'s main pick (`:36075-36083`): the seven-item table then the 1/20
 /// Extractinator override, in the C# order. The remix's `1319 → 725` swap
 /// (`:36076-36079`) stays parked — the port generates no remix worlds.
-fn ice_chest_main(rng: &mut u64) -> u16 {
+fn ice_chest_main(rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand) -> u16 {
     let mut item = ICE_CHEST[next(rng, ICE_CHEST.len() as u64) as usize];
     if item == ICE_CHEST_REMIX {
         // The remix arm — parked with the remix worlds (`ICE_CHEST_REMIX_ITEM`).
@@ -356,27 +223,13 @@ fn ice_chest_main(rng: &mut u64) -> u16 {
     item
 }
 
-/// `IslandHouse`'s main (`:79344-79363`): the `skyIslandHouseCount` cycle,
-/// with the `> 3 → genRand.Next(4)` re-roll on the fifth and later house.
-/// The counter advances once per sky chest stocked — the vanilla's advances
-/// once per island house built (`:79344`), the port's approximation
-/// (ANALYSIS "World chest loot (M5-CHEST-gen)").
-fn sky_island_chest_main(houses: u32, rng: &mut u64) -> u16 {
-    let pick = if houses > 3 {
-        next(rng, SKY_ISLAND_CHEST.len() as u64)
-    } else {
-        houses as u64
-    };
-    SKY_ISLAND_CHEST[pick as usize]
-}
-
 /// `WorldGen.Reset`'s hell-chest shuffle (`:11246-11258`): the
 /// `while (list.Count > 0)` draw — a uniform pick-and-remove over the five
 /// items, once per world before any chest stocks. The vanilla shuffles the
 /// worldgen `genRand` at the reset; the port runs the same algorithm over
 /// the sweep's stream at the front of `generate_world_chests`, so a world
 /// re-loads with the same table (ANALYSIS).
-fn shuffle_hell_chest(rng: &mut u64, remix: bool) -> [u16; 5] {
+fn shuffle_hell_chest(rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand, remix: bool) -> [u16; 5] {
     let mut list: Vec<u16> = if remix {
         HELL_CHEST_REMIX.to_vec()
     } else {
@@ -403,64 +256,20 @@ fn next_hell_chest(table: &[u16; 5], counter: &mut usize) -> u16 {
     item
 }
 
-fn context_at(world: &World, x: i32, y: i32) -> Context {
-    let near = |wx: u16| {
-        (-2..=2).any(|dx| {
-            (-2..=0).any(|dy| {
-                world
-                    .tile(x + dx, y + dy)
-                    .is_some_and(|t| t.active() && t.kind == wx)
-            })
-        })
-    };
-    let wall_near = |wx: u16| {
-        (-2..=2).any(|dx| {
-            (-2..=0).any(|dy| {
-                world
-                    .tile(x + dx, y + dy)
-                    .is_some_and(|t| t.wall == wx)
-            })
-        })
-    };
-    let wall_near_where = |pred: &dyn Fn(u16) -> bool| {
-        (-2..=2).any(|dx| {
-            (-2..=0).any(|dy| {
-                world
-                    .tile(x + dx, y + dy)
-                    .is_some_and(|t| pred(t.wall))
-            })
-        })
-    };
-    let dungeon_wall = |wx: u16| tr_core::scene::is_dungeon_wall(wx);
-    Context {
-        jungle: near(60),
-        living_tree: wall_near(244),
-        pyramid: wall_near(187),
-        desert: wall_near(216),
-        mahogany: wall_near(63),
-        ice: near(147) || near(161) || near(162) || near(197),
-        granite: wall_near(164) || wall_near(401),
-        idol: wall_near(464) || wall_near(241),
-        dungeon: wall_near_where(&dungeon_wall),
-        sky: wall_near(73),
-        water: near(4869) || wall_near(24),
-    }
-}
-
 /// `ItemSlot::Prefix(-1)` on a row: the natural roll through the ported
 /// engine (the `roll_prefix_splitmix(kind, -1, rng)` — the 1/4 no-prefix gate, the
 /// ReducedNaturalChance arm, the rejection retry). The prefix lands on the
 /// row's id; the id kinds outside the ported engine roll 0 (no prefix) with
 /// **no stream draws** (the `CanHavePrefixes` early return).
-fn roll_prefix_on(rng: &mut u64, row: &mut Row) {
-    row.prefix = prefix::roll_prefix_splitmix(row.kind, -1, rng);
+fn roll_prefix_on(rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand, row: &mut Row) {
+    row.prefix = prefix::roll_prefix(row.kind, -1, rng);
 }
 
 /// The surface band's weapon row (`:36269-36331`): the `Next(11)` weapon
 /// pick — 280 Spear/281 Blowgun/284 Flintlock/285 Musket/953 Pistol/946
 /// Shortsword/3068 MusketBall?/3069/3084/4341/6165 — each with the natural
 /// prefix.
-fn surface_weapon(rng: &mut u64) -> Row {
+fn surface_weapon(rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand) -> Row {
     let num15 = next(rng, 11);
     let mut row = match num15 {
         0 => Row::plain(280),
@@ -483,7 +292,7 @@ fn surface_weapon(rng: &mut u64) -> Row {
 /// `:36583-36603`: the Shadow/Suspecting/Sergeant/Mr/General/Legend —
 /// 49/50/53/54/5011/975 — or the `Next(4)` pick in the deepest
 /// `:37196-37208`: 49/50/53/54).
-fn deep_weapon(rng: &mut u64, deepest: bool) -> Row {
+fn deep_weapon(rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand, deepest: bool) -> Row {
     let pick = if deepest {
         next(rng, 4)
     } else {
@@ -509,7 +318,7 @@ fn stock_band(
     ctx: &Context,
     chest_style: i32,
     chest_kind: u16,
-    rng: &mut u64,
+    rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand,
 ) -> Vec<Row> {
     let mut out: Vec<Row> = Vec::with_capacity(16);
     // Row 0: the special slot/weapon (`flag*` extras follow the main item).
@@ -939,7 +748,7 @@ fn stock_band(
 /// `Item.GetRandomVoiceItem` (`Item.cs:49427-49450`): the fourteen-item voice
 /// table, `Next(14)` picking one (case 0 and the unreachable upper cases fall
 /// to 5499).
-fn voice_change_item(rng: &mut u64) -> u16 {
+fn voice_change_item(rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand) -> u16 {
     match next(rng, 14) {
         1 => 5500,
         2 => 5501,
@@ -980,52 +789,44 @@ fn ore_pick() -> u16 {
 /// `flag3`/`flag2`/`flag8`/`IslandHouse` main tables, the underwater
 /// override 939), then the depth band rows.
 fn stock_chest(
-    world: &World,
-    x: i32,
-    y: i32,
-    hell: bool,
-    chest_style: i32,
-    chest_kind: u16,
+    ev: &tr_core::worldgen::chest_stock::ChestSiteEvent,
     dungeon: &mut DungeonCycle,
-    jungle: &mut JungleCycle,
     genned_wands: &mut bool,
     hell_chest: &[u16; 5],
     hell_counter: &mut usize,
-    sky_houses: &mut u32,
-    rng: &mut u64,
+    rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand,
 ) -> Vec<Row> {
-    let ctx = context_at(world, x, y);
-    let band = band_for(
-        y,
-        world.world_surface,
-        world.rock_layer as f64,
-        world.height,
-    );
+    let ctx = ev.ctx;
+    let band = ev.band;
+    let chest_style = ev.chest_style;
+    let chest_kind = ev.chest_tile_type;
+    let y = ev.y;
     let mut rows = stock_band(band, &ctx, chest_style, chest_kind, rng);
     if ctx.dungeon {
         // The dungeon-family chests cycle the fixed loot item
         // (`DungeonUtils.cs:342-355`); the shallow caves roll the plain
         // `num10 == 0` skip.
-        if let Some(item) = dungeon.take(hell) {
+        if let Some(item) = dungeon.take(ev.hell) {
             rows.insert(0, Row::plain(item.0));
         }
-    } else if ctx.jungle {
+    } else if ctx.jungle && ev.main_item != 0 {
         // The jungle family's main item — the `GetNextJungleChestItem`
-        // cycle replaces the band-weapon approximation on slot 0. The
-        // vanilla water override only fires on `num10 == 0`
-        // (`:36201-36203`), so the cycle wins over it wherever both
-        // families read true.
-        let mut row = Row::plain(jungle.take(rng));
+        // cycle's pick, drawn at the shrine site (`structures.rs`, S1-A-4)
+        // and riding `main_item` exactly as the C#'s caller pre-sets
+        // `mainItemInChest` (`:17219-17220`). The vanilla water override
+        // only fires on `num10 == 0` (`:36201-36203`), so the cycle wins
+        // over it wherever both families read true. The vanilla slot-0
+        // arm's `chest.item[0].Prefix(-1)` (`:36230`) rolls here.
+        let mut row = Row::plain(ev.main_item);
         roll_prefix_on(rng, &mut row);
         rows.insert(0, row);
-    } else if ctx.pyramid {
+    } else if ctx.pyramid && ev.main_item != 0 {
         // The `Pyramid` structure's own chest (`:27853-27873`): its main is
-        // pre-set by the CALLER, so the vanilla's `flag3` arm never fires on
-        // it (its `num10 != 0` disjuncts all fail) — the Pharaoh double-roll
-        // and the `flag11` companion ride this family instead.
-        let main = pyramid_chest_main(rng);
-        rows.insert(0, Row::plain(main));
-        if main == 848 {
+        // pre-set by the CALLER (the Pharaoh double-roll, drawn at the site
+        // since S1-A-4), so the vanilla's `flag3` arm never fires on it (its
+        // `num10 != 0` disjuncts all fail).
+        rows.insert(0, Row::plain(ev.main_item));
+        if ev.main_item == 848 {
             // `flag11`'s companion (`:36234-36239`) — slot 1, right after the
             // mask's slot 0.
             rows.insert(1, Row::plain(PHARAOHS_ROBE));
@@ -1033,19 +834,18 @@ fn stock_chest(
     } else if ctx.desert {
         // `flag3`'s underground-desert arm (`:36023-36047`): the shallow
         // four or the deep three by `flag20`'s hive-depth test.
-        let deep = deep_desert_chest(world.height, y);
+        let deep = deep_desert_chest(ev.height, y);
         rows.insert(0, Row::plain(desert_chest_main(rng, deep)));
     } else if ctx.ice {
         // `flag2`'s main arm (`:36064-36088`): the seven-item table with the
         // 1/20 Extractinator override.
         rows.insert(0, Row::plain(ice_chest_main(rng)));
-    } else if ctx.sky {
+    } else if ctx.sky && ev.main_item != 0 {
         // `IslandHouse`'s main (`:79344-79363`): the sky-island house count
-        // cycle, re-rolled past the fourth house.
-        let main = sky_island_chest_main(*sky_houses, rng);
-        *sky_houses += 1;
-        rows.insert(0, Row::plain(main));
-    } else if hell {
+        // cycle — drawn at the island-house site since S1-A-4 (the counter
+        // advances there, `:79394`).
+        rows.insert(0, Row::plain(ev.main_item));
+    } else if ev.hell {
         // `flag8`'s main arm (`:36115-36118`): the world-shuffled
         // `GenVars.hellChestItem` table, the `GenVars.hellChest` counter
         // advancing after the place (`:36210-36217`).
@@ -1145,127 +945,108 @@ fn stock_chest(
     rows
 }
 
-/// The port's chest-store sweep: every kind-21/341 anchor
-/// (`frame_x == 0 && frame_y == 0`) stocks one `WorldChest`. The stream is
-/// seeded per world (`seed ^ const | 1`, the per-consumer convention) so a
-/// world reloads with the same loot, and the roster can never exceed the
-/// vanilla 8000 chest population.
-pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
-    if world.width <= 4 || world.height <= 4 {
-        return Vec::new();
-    }
-    // The tenth-anniversary chest sweep (`FinishTenthAnniversaryWorld`'s
-    // `ImproveAllChestContents`, `!getGoodWorldGen` — `:24278-24280`): the
-    // anniversary seed's stocked chests take the good prefixes instead. The
-    // port stocks at load time, so the sweep rides this seam.
-    let improve_prefixes = world
-        .seeds
-        .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
-        && !world
-            .seeds
-            .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
-    let seed = world
-        .seed
-        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        .wrapping_add(0x2545_F491_4F6C_DD1D);
-    let mut rng = seed | 1;
-    let mut out: Vec<WorldChest> = Vec::new();
-    let mut dungeon = DungeonCycle::new();
-    let mut jungle = JungleCycle::new();
-    // `GenVars.gennedLivingMahoganyWands` — false per world (`GenVars`'
-    // reset), the flag4 arm's once-per-world fairness (`:36824`).
-    let mut genned_wands = false;
-    let hell_chest = HELL_CHEST;
-    let mut hell_counter = 0usize;
-    let mut sky_houses = 0u32;
-    // `WorldGen.Reset`'s hell-chest shuffle (`:11246-11258`) — the table is
-    // drawn once per world, before any chest stocks, so every load reads the
-    // same five-item order; the remix row swaps the 112 for the 683.
-    let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
-    let hell_chest = shuffle_hell_chest(&mut rng, remix);
-    // `GenVars.hellChest` — 0 per world (`GenVars`' reset), the flag14 arm's
-    // counter (`:36210-36217`).
-    let mut hell_counter = 0usize;
-    // `GenVars.skyIslandHouseCount` — 0 per world, the `IslandHouse` cycle's
-    // counter (`:79344`).
-    let mut sky_houses = 0u32;
-    for y in 1..world.height - 1 {
-        for x in 1..world.width - 1 {
-            let Some(t) = world.tile(x, y) else { continue };
-            if !t.active() || !CHEST_KINDS.contains(&t.kind) {
-                continue;
-            }
-            // Every chest's LEFT cell carries `frame_x = 18 * style` in the
-            // port's tile-object writer (`tileobject.rs:2072-2082`), so a
-            // styled chest (the temple's 16, the jungle's 10, the water 17)
-            // is an anchor too — the old `frame_x != 0` gate skipped them
-            // (`frame_y` stays 0 on the left cell). The RIGHT half is also a
-            // multiple of 18 (`frame_x = 18 + 18 * style`), so the anchor
-            // picks the left cell only: no chest-kind tile directly left.
-            if t.frame_y != 0 || t.frame_x % 18 != 0 {
-                continue;
-            }
-            if let Some(left) = world.tile(x - 1, y) {
-                if left.active() && CHEST_KINDS.contains(&left.kind) {
-                    continue;
-                }
-            }
-            let chest_style = t.frame_x as i32 / 18;
-            if t.flags & FLAG_ACTIVE == 0 {
-                continue;
-            }
-            let hell = doubled_hell_depth(world, y);
-            let rows = stock_chest(
-                world,
-                x,
-                y,
-                hell,
-                chest_style,
-                t.kind,
-                &mut dungeon,
-                &mut jungle,
-                &mut genned_wands,
-                &hell_chest,
-                &mut hell_counter,
-                &mut sky_houses,
-                &mut rng,
-            );
-            if rows.is_empty() {
-                continue;
-            }
-            let mut slots: Vec<ItemSlot> = Vec::with_capacity(rows.len());
-            for row in rows {
-                slots.push(ItemSlot {
-                    kind: row.kind,
-                    name: crate::registry::name(row.kind),
-                    count: row.count.max(1),
-                    prefix: row.prefix,
-                });
-            }
-            let _ = EMPTY_SLOT;
-            out.push(WorldChest {
-                tile: (x, y),
-                slots,
-                name: String::new(),
-                max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
-            });
-            dungeon.advance(true);
-            if out.len() >= 8000 {
-                break;
-            }
-        }
-    }
-    if improve_prefixes {
-        improve_all_chest_contents(&mut out, &mut rng);
-    }
-    out
+/// S1-A-4: the gen-time stocking driver — the hook the app hands to
+/// `tr_core::worldgen::generate_with_chest_stock`. One per world; owns the
+/// once-per-world state the C# keeps in `GenVars`/the stocking statics (the
+/// hell table's Reset shuffle, the `flag8` counter, the flag4
+/// `gennedLivingMahoganyWands`, the dungeon cycle) and returns the rolled
+/// rows per event; the placement site writes them into `World.chests`.
+pub(crate) struct ChestStock {
+    dungeon: DungeonCycle,
+    genned_wands: bool,
+    hell_chest: [u16; 5],
+    hell_counter: usize,
 }
 
-/// The hell-band check (`:36223`'s `num7 > maxTilesY - 205` arm): the port's
-/// flattened approximation — below the rock layer and past the 205-tile
-/// margin.
-fn doubled_hell_depth(world: &World, y: i32) -> bool {
-    y > world.height - 205
+impl ChestStock {
+    pub(crate) fn new(seed: u64, remix: bool) -> Self {
+        // `WorldGen.Reset`'s hell-chest shuffle (`:11246-11258`) — the
+        // Reset-window draws ride `UnifiedRandom(seed)`: the vanilla
+        // algorithm and per-world determinism, the sequence position
+        // standing in for genRand's Reset state (ANALYSIS).
+        let mut gen_rand = tr_core::UnifiedRandom::new(seed as i32);
+        Self {
+            dungeon: DungeonCycle::new(),
+            genned_wands: false,
+            hell_chest: shuffle_hell_chest(&mut gen_rand, remix),
+            hell_counter: 0,
+        }
+    }
+
+    /// One event = one stocked chest. The rows become the chest's slots
+    /// (in order — the save's implicit-air compression keeps them packed,
+    /// `save::ChestRecord`'s shape).
+    fn stock(
+        &mut self,
+        ev: &tr_core::worldgen::chest_stock::ChestSiteEvent,
+        rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand,
+    ) -> Vec<ChestItem> {
+        let rows = stock_chest(
+            ev,
+            &mut self.dungeon,
+            &mut self.genned_wands,
+            &self.hell_chest,
+            &mut self.hell_counter,
+            rng,
+        );
+        rows.into_iter()
+            .map(|row| ChestItem {
+                stack: row.count.max(1) as i32,
+                kind: row.kind,
+                prefix: row.prefix as u8,
+            })
+            .collect()
+    }
+}
+
+/// The hook closure for the generation call: `Some(&mut hook)` into
+/// `generate_with_chest_stock` with a [`ChestStock`] captured.
+pub(crate) fn chest_stock_hook(
+    seed: u64,
+    remix: bool,
+) -> impl FnMut(
+    &tr_core::worldgen::chest_stock::ChestSiteEvent,
+    &mut dyn tr_core::worldgen::chest_stock::WorldGenRand,
+) -> Vec<ChestItem> {
+    let mut stock = ChestStock::new(seed, remix);
+    move |ev: &tr_core::worldgen::chest_stock::ChestSiteEvent,
+          rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand| {
+        stock.stock(ev, rng)
+    }
+}
+
+/// The stocking-arms' test shim — the driver over a synthetic event with the
+/// anchor resolved the way the placement sites do (`context_at` + `band_for`
+/// + the caller's hell gate). `main_item` rides the site-side rolls (the
+/// jungle/sky cycles moved to `GenVars`, S1-A-4).
+#[cfg(test)]
+fn stock_chest_at(
+    stock: &mut ChestStock,
+    w: &World,
+    x: i32,
+    y: i32,
+    hell: bool,
+    chest_style: i32,
+    chest_kind: u16,
+    main_item: u16,
+    rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand,
+) -> Vec<ChestItem> {
+    let ctx = tr_core::worldgen::chest_stock::context_at(w, x, y);
+    let ev = tr_core::worldgen::chest_stock::ChestSiteEvent {
+        x,
+        y,
+        chest_style,
+        chest_tile_type: chest_kind,
+        main_item,
+        not_near_other_chests: false,
+        hell,
+        ctx,
+        band: tr_core::worldgen::chest_stock::band_for(y, w.world_surface, w.rock_layer, w.height),
+        world_surface: w.world_surface,
+        rock_layer: w.rock_layer,
+        height: w.height,
+    };
+    stock.stock(&ev, rng)
 }
 
 /// M6-SAVE-1b: the save's v7 chest records (`save::load`, `SaveChests`'s
@@ -1343,7 +1124,7 @@ const GOOD_PREFIX_SUMMONER: &[u16] = &[85, 59, 95, 96, 97];
 /// (`FinishTenthAnniversaryWorld`, `!getGoodWorldGen`); the port stocks its
 /// chests at load time, so the sweep rides the same load-time seam — the
 /// documented `chest_gen` deviation.
-pub(crate) fn improve_all_chest_contents(chests: &mut [WorldChest], rng: &mut u64) {
+pub(crate) fn improve_all_chest_contents(chests: &mut [WorldChest], rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand) {
     for chest in chests.iter_mut() {
         for slot in chest.slots.iter_mut() {
             if slot.kind == 0 {
@@ -1356,7 +1137,7 @@ pub(crate) fn improve_all_chest_contents(chests: &mut [WorldChest], rng: &mut u6
 
 /// `GiveItemGoodPrefixes` (`:24733-24754`): the accessory / melee / ranged /
 /// magic / summon arms in the C# order.
-fn give_item_good_prefixes(slot: &mut ItemSlot, rng: &mut u64) {
+fn give_item_good_prefixes(slot: &mut ItemSlot, rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand) {
     let def = match crate::itemdata::ITEMS.get(slot.kind as usize) {
         Some(d) => d,
         None => return,
@@ -1381,7 +1162,7 @@ fn give_item_good_prefixes(slot: &mut ItemSlot, rng: &mut u64) {
 /// `PrefixItemFromOptions` (`:24760-24778`): try the option list in the
 /// `Next(count)` order — the first prefix the item actually takes wins, and
 /// the original prefix is restored when none does.
-fn prefix_item_from_options(slot: &mut ItemSlot, options: &[u16], rng: &mut u64) {
+fn prefix_item_from_options(slot: &mut ItemSlot, options: &[u16], rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand) {
     let prefix = slot.prefix;
     // `item.Prefix(-3)` is the `CanHavePrefixes` gate (the port's roll returns
     // 0 for both a rejection and the no-op mode, so the gate reads the
@@ -1393,7 +1174,7 @@ fn prefix_item_from_options(slot: &mut ItemSlot, options: &[u16], rng: &mut u64)
     while !list.is_empty() {
         let index = (next(rng, list.len() as u64)) as usize;
         let num = list[index];
-        let rolled = prefix::roll_prefix_splitmix(slot.kind, num as i32, rng);
+        let rolled = prefix::roll_prefix(slot.kind, num as i32, rng);
         slot.prefix = rolled;
         if rolled == num {
             return;
@@ -1414,37 +1195,68 @@ pub(crate) fn merge_store(mut rolled: Vec<crate::chest::WorldChest>, seeded: Vec
     rolled
 }
 
-/// The `.wld` load path's store (`LoadChests:2723`): the file's chests win —
-/// they are the player's own contents — and the deterministic re-roll only
-/// fills the anchors the file does not carry. Unlike [`merge_store`], the
-/// loaded roster keeps its file order and its tombstones (`Chest.RemoveChest`
-/// nulls the array slot, so every held `Player.chest` index stays valid), and
-/// it leads: a vanilla world that never stored a chest for an anchor gets the
-/// roll's stock for it, while a player-placed chest beyond worldgen's roster
-/// survives untouched.
-pub(crate) fn displace_loaded_chests(
-    rolled: Vec<crate::chest::WorldChest>,
-    loaded: Vec<crate::chest::WorldChest>,
-) -> Vec<crate::chest::WorldChest> {
-    let taken: std::collections::HashSet<(i32, i32)> = loaded
-        .iter()
-        .filter(|c| !is_displaced_removed(c))
-        .map(|c| c.tile)
-        .collect();
-    let mut out = loaded;
-    out.extend(rolled.into_iter().filter(|c| !taken.contains(&c.tile)));
-    out
-}
-
-/// A tombstone reads as "no anchor here" for the displacement's taken-set
-/// (the C# `Main.chest[i] == null`), mirroring `chest::find_chest`'s skip.
-fn is_displaced_removed(c: &crate::chest::WorldChest) -> bool {
-    c.tile == (i32::MIN, i32::MIN)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// S1-A-4: the gen-time loot is deterministic per seed — two generations
+    /// of the same seed through two freshly-built drivers produce identical
+    /// `World.chests` records (the placement-order state — the hell counter,
+    /// the wands flag, the cycles — advances identically), and the rows are
+    /// real content: every stocked record carries the band's rows.
+    #[test]
+    fn the_gen_time_stock_is_deterministic_per_seed_s1_a_4() {
+        let opts = tr_core::worldgen::GenOptions {
+            seed: 91,
+            ..Default::default()
+        };
+        let mut a = chest_stock_hook(42, false);
+        let mut b = chest_stock_hook(42, false);
+        let wa = tr_core::worldgen::generate_with_chest_stock(&opts, Some(&mut a));
+        let wb = tr_core::worldgen::generate_with_chest_stock(&opts, Some(&mut b));
+        assert!(!wa.chests.is_empty(), "the world stocks its chests");
+        assert_eq!(wa.chests.len(), wb.chests.len(), "the same chest count");
+        for (ca, cb) in wa.chests.iter().zip(wb.chests.iter()) {
+            assert_eq!((ca.x, ca.y), (cb.x, cb.y), "the same anchor");
+            assert_eq!(ca.slots, cb.slots, "the same rows");
+        }
+        assert!(
+            wa.chests.iter().all(|c| !c.slots.is_empty()),
+            "every record stocks rows"
+        );
+    }
+
+    /// The test shim: the anchor event the way the placement sites build it
+    /// (`context_at` + `band_for` + the hell gate, S1-A-4), stocked through a
+    /// [`ChestStock`] on a fresh `UnifiedRandom` stream — the row-content
+    /// tests' stand-in for the site wiring.
+    fn stock_anchor(
+        stock: &mut ChestStock,
+        w: &World,
+        x: i32,
+        y: i32,
+        style: i32,
+        kind: u16,
+        main: u16,
+    ) -> Vec<ChestItem> {
+        let ctx = tr_core::worldgen::chest_stock::context_at(w, x, y);
+        let ev = tr_core::worldgen::chest_stock::ChestSiteEvent {
+            x,
+            y,
+            chest_style: style,
+            chest_tile_type: kind,
+            main_item: main,
+            not_near_other_chests: false,
+            hell: y > w.height - 205,
+            ctx,
+            band: tr_core::worldgen::chest_stock::band_for(y, w.world_surface, w.rock_layer, w.height),
+            world_surface: w.world_surface,
+            rock_layer: w.rock_layer,
+            height: w.height,
+        };
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        stock.stock(&ev, &mut rng)
+    }
 
     /// A world with the floor rows laid at 20 (like the editing test rig).
     fn rig() -> World {
@@ -1501,7 +1313,7 @@ mod tests {
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         }];
-        let mut rng = 0x5EED_u64 | 1;
+        let mut rng = tr_core::UnifiedRandom::new(0x5EED);
         improve_all_chest_contents(&mut chests, &mut rng);
         let good = [81u16, 59, 57];
         assert!(
@@ -1521,7 +1333,7 @@ mod tests {
             name: String::new(),
             max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
         }];
-        let mut rng2 = 0x5EED_u64 | 1;
+        let mut rng2 = tr_core::UnifiedRandom::new(0x5EED);
         improve_all_chest_contents(&mut again, &mut rng2);
         assert_eq!(
             chests[0].slots[0].prefix, again[0].slots[0].prefix,
@@ -1534,9 +1346,8 @@ mod tests {
         // The surface band: the weapon row + the consumable rows.
         let mut w = rig();
         put_chest(&mut w, 40, 199); // the anchor: the floor row is 200
-        let chests = generate_world_chests(&w);
-        assert_eq!(chests.len(), 1, "one anchor stocks one chest");
-        let rows = &chests[0].slots;
+        let mut stock = ChestStock::new(0x5EED, false);
+        let rows = &stock_anchor(&mut stock, &w, 40, 199, 0, 21, 0);
         assert!(
             rows.len() >= 2,
             "the surface band carries at least the weapon row"
@@ -1555,9 +1366,9 @@ mod tests {
         // The deep band (below the rock layer): the deep weapon + the gems.
         let mut w = rig();
         put_chest(&mut w, 40, 295); // the anchor: the floor row is 296? use 294
-        let chests = generate_world_chests(&w);
-        assert_eq!(chests.len(), 1);
-        assert!(chests[0].slots.len() >= 2);
+        let mut stock = ChestStock::new(0x5EED, false);
+        let rows = stock_anchor(&mut stock, &w, 40, 295, 0, 21, 0);
+        assert!(rows.len() >= 2);
     }
 
     #[test]
@@ -1567,29 +1378,14 @@ mod tests {
         put_chest(&mut w, 40, 199);
         put_chest(&mut w, 60, 194);
         put_chest(&mut w, 80, 210);
-        let a = generate_world_chests(&w);
-        let b = generate_world_chests(&w);
-        assert_eq!(a.len(), b.len());
-        for (ca, cb) in a.iter().zip(b.iter()) {
-            assert_eq!(ca.tile, cb.tile);
-            assert_eq!(ca.slots, cb.slots);
+        // Two identically-built drivers agree row-for-row on the same
+        // anchor sequence (the placement order the sites walk).
+        let spots = [(40, 199, 0u16), (60, 194, 0), (80, 210, 0)];
+        let mut a = ChestStock::new(7, false);
+        let mut b = ChestStock::new(7, false);
+        for (x, y, main) in spots {
+            assert_eq!(stock_anchor(&mut a, &w, x, y, 0, 21, main), stock_anchor(&mut b, &w, x, y, 0, 21, main));
         }
-    }
-
-    #[test]
-    fn test_chest_gen_non_anchor_cells_skip() {
-        // Only the frame-0/0 anchor stocks; the other three cells skip.
-        let mut w = rig();
-        put_chest(&mut w, 40, 199);
-        let chests = generate_world_chests(&w);
-        assert_eq!(chests.len(), 1);
-        assert_eq!(chests[0].tile, (40, 199));
-    }
-
-    #[test]
-    fn test_chest_gen_empty_world_has_no_chests() {
-        let w = World::new("empty".into(), 200, 300);
-        assert!(generate_world_chests(&w).is_empty());
     }
 
     /// One rolled chest at (x, y) — the generator's own stock.
@@ -1622,43 +1418,11 @@ mod tests {
         }
     }
 
-    /// DW-3.4 — the `.wld` load path (M6-SAVE-1 phase 3): the file's chests win
-    /// and the roll only fills the anchors the file does not carry. The loaded
-    /// roster leads — its order and its tombstones are the C# `Main.chest`
-    /// array's, so a held `Player.chest` index stays valid.
-    #[test]
-    fn test_DW_3_4_the_wld_load_displaces_the_reroll() {
-        let roll = vec![rolled(40, 199, 21), rolled(60, 194, 22)];
-        let file = vec![
-            crate::chest::WorldChest {
-                tile: (i32::MIN, i32::MIN), // a removed slot (`Chest.RemoveChest`)
-                slots: Vec::new(),
-                name: String::new(),
-                max_items: 40,
-            },
-            loaded(40, 199, "Stash", 9),
-            loaded(90, 90, "Extra", 8), // a player-placed chest worldgen never rolls
-        ];
-        let store = displace_loaded_chests(roll, file);
-        assert_eq!(store.len(), 4);
-        // The file's roster keeps its slots and order, tombstones included.
-        assert!(store[0].tile == (i32::MIN, i32::MIN));
-        assert_eq!(store[1].name, "Stash");
-        assert_eq!(store[1].slots[0].count, 99, "the player's contents win");
-        assert_eq!(store[2].tile, (90, 90), "a player-placed chest survives");
-        // Only the anchor the file does not carry is filled by the roll.
-        assert_eq!(store[3].tile, (60, 194));
-        assert_eq!(store[3].slots[0].count, 3, "the roll's stock");
-        // And the roll never re-stocks an anchor the file owns.
-        assert!(
-            store.iter().filter(|c| c.tile == (40, 199)).count() == 1,
-            "the rolled (40,199) is displaced"
-        );
-    }
-
-    /// DW-3.4 — the `.trwld` path is untouched: `merge_store` still appends
-    /// the seeded store after the roll's survivors with its own order (the
-    /// `TR_CHEST` fixture's behaviour the load path has always had).
+    /// DW-3.4 — the `.trwld` path keeps `merge_store`: the file's native
+    /// records (the gen-time loot for a saved generated world) + the
+    /// `TR_CHEST` fixture. S1-A-4 retired the `.wld` displacement half —
+    /// nothing rolls at load, so the file's chests ARE the store
+    /// (`LoadChests`, `WorldFile.cs:2723-2805`).
     #[test]
     fn test_DW_3_4_the_trwld_path_keeps_merge_store() {
         let roll = vec![rolled(40, 199, 21), rolled(60, 194, 22)];
@@ -1669,64 +1433,13 @@ mod tests {
         assert_eq!(store[0].tile, (60, 194));
         assert_eq!(store[1].tile, (40, 199));
         assert_eq!(store[1].name, "Fixture");
-        // The two functions differ in order, not in win semantics.
-        let displaced =
-            displace_loaded_chests(vec![rolled(40, 199, 21)], vec![loaded(40, 199, "F", 9)]);
-        assert_eq!(
-            displaced[0].name, "F",
-            "the loaded roster leads on the .wld path"
-        );
     }
-    #[test]
-    fn the_jungle_cycle_walks_the_four_item_table() {
-        // `GetNextJungleChestItem`'s `JungleItemCount % 4` table
-        // (`WorldGen.cs:10170-10196`) — a seed whose override draws miss
-        // shows the raw 4-step cycle.
-        let seed = (1u64..2000)
-            .find(|&s| {
-                let mut rng = s | 1;
-                let mut cycle = JungleCycle::new();
-                (0..4).all(|_| {
-                    let item = cycle.take(&mut rng);
-                    matches!(item, 211 | 212 | 213 | 964)
-                })
-            })
-            .expect("a clean seed exists in the first 2000");
-        let mut rng = seed | 1;
-        let mut cycle = JungleCycle::new();
-        let items: Vec<u16> = (0..4).map(|_| cycle.take(&mut rng)).collect();
-        assert_eq!(items, vec![211, 212, 213, 964], "the 4-step wand table");
-        // The counter wraps at 4 — the fifth draw starts the cycle again.
-        assert_eq!(cycle.count, 4);
-    }
-
-    #[test]
-    fn the_jungle_cycle_overrides_roll_the_rare_items() {
-        // The two overrides: `Next(15) == 0` → 2292 (checked first), else
-        // `Next(20) == 0` → 3017 (the else-only roll).
-        let flower_seed = (1u64..4000)
-            .find(|&s| {
-                let mut rng = s | 1;
-                JungleCycle::new().take(&mut rng) == 2292
-            })
-            .expect("the 1/15 override is reachable");
-        let mut rng = flower_seed | 1;
-        assert_eq!(JungleCycle::new().take(&mut rng), 2292, "`Next(15) == 0`");
-        let shell_seed = (1u64..4000)
-            .find(|&s| {
-                let mut rng = s | 1;
-                JungleCycle::new().take(&mut rng) == 3017
-            })
-            .expect("the 1/20 override is reachable");
-        let mut rng = shell_seed | 1;
-        assert_eq!(JungleCycle::new().take(&mut rng), 3017, "`Next(20) == 0`");
-    }
-
     #[test]
     fn jungle_chests_stock_the_cycle_item() {
-        // A jungle-family anchor (tile 60 near the anchor) stocks the
-        // cycle item on slot 0 — not the band weapon the approximation
-        // used before.
+        // A jungle-family anchor (tile 60 near the anchor) stocks the site's
+        // cycle pick on slot 0 — the `main_item` the shrine site draws
+        // (`GetNextJungleChestItem`, `structures.rs`), with its
+        // `Prefix(-1)` roll (`:36230`), not the band weapon.
         let mut w = rig();
         // The jungle grass beside the chest seat (`context_at`'s `near(60)`).
         for (dx, dy) in [(-2i32, 0i32), (-2, -1), (-2, -2)] {
@@ -1738,49 +1451,11 @@ mod tests {
             };
         }
         put_chest(&mut w, 100, 198);
-        let mut dungeon = DungeonCycle::new();
-        let mut jungle = JungleCycle::new();
-        let mut rng = 42u64 | 1;
-        let mut genned_wands = false;
-        let hell_chest = HELL_CHEST;
-        let mut hell_counter = 0usize;
-        let mut sky_houses = 0u32;
-        let rows = stock_chest(
-            &w,
-            100,
-            198,
-            false,
-            0,
-            21,
-            &mut dungeon,
-            &mut jungle,
-            &mut genned_wands,
-            &hell_chest,
-            &mut hell_counter,
-            &mut sky_houses,
-            &mut rng,
-        );
-        let slot0 = &rows[0];
-        assert!(
-            matches!(slot0.kind, 211 | 212 | 213 | 964 | 2292 | 3017),
-            "slot 0 rides the jungle cycle ({})",
-            slot0.kind
-        );
-        assert_eq!(jungle.count, 1, "the counter advances per stocked chest");
-        // A second jungle chest in the same world takes the next cycle
-        // entry when no override fires — the per-world counter semantics.
-        let mut seen_next = false;
-        for seed in 1..4000 {
-            let mut rng2 = seed | 1;
-            let mut c2 = JungleCycle::new();
-            let first = c2.take(&mut rng2);
-            let second = c2.take(&mut rng2);
-            if matches!(first, 211 | 212 | 213 | 964) && matches!(second, 212 | 213 | 964 | 2292) {
-                seen_next = true;
-                break;
-            }
-        }
-        assert!(seen_next, "the counter walks the table");
+        let mut stock = ChestStock::new(42, false);
+        let slots = stock_anchor(&mut stock, &w, 100, 198, 0, 21, 212);
+        assert_eq!(slots[0].kind, 212, "slot 0 rides the site's cycle pick");
+        // The band weapon moved to slot 1 — the insert, not a replacement.
+        assert!(slots.len() >= 2, "the band rows follow ({:?})", slots.iter().map(|s| s.kind).collect::<Vec<_>>());
     }
 
     /// A rig tall enough for a real Deep band (`y < height - 250` past the
@@ -1819,7 +1494,7 @@ mod tests {
                 w.tiles[i].wall = 73;
             }
         }
-        let ctx = context_at(&w, 120, 198);
+        let ctx = tr_core::worldgen::chest_stock::context_at(&w, 120, 198);
         assert!(ctx.sky, "the cloud wall reads as the skyware family");
         let mut w2 = rig();
         for dx in -2i32..=0 {
@@ -1828,7 +1503,7 @@ mod tests {
                 w2.tiles[i].wall = 216; // the underground desert's shell
             }
         }
-        let ctx2 = context_at(&w2, 120, 198);
+        let ctx2 = tr_core::worldgen::chest_stock::context_at(&w2, 120, 198);
         assert!(
             !ctx2.sky,
             "the desert's shell wall is not the skyware family"
@@ -1849,7 +1524,7 @@ mod tests {
             }
         }
         assert!(
-            context_at(&w, 120, 198).dungeon,
+            tr_core::worldgen::chest_stock::context_at(&w, 120, 198).dungeon,
             "wall 8 reads as the dungeon"
         );
         let mut w2 = rig();
@@ -1859,7 +1534,7 @@ mod tests {
                 w2.tiles[i].wall = 24; // the old stand-in
             }
         }
-        assert!(!context_at(&w2, 120, 198).dungeon, "wall 24 does not");
+        assert!(!tr_core::worldgen::chest_stock::context_at(&w2, 120, 198).dungeon, "wall 24 does not");
     }
 
     /// The anchor gate decodes the chest style off the left cell's
@@ -1879,11 +1554,11 @@ mod tests {
                 ..Default::default()
             };
         }
-        let chests = generate_world_chests(&w);
-        assert_eq!(chests.len(), 1, "the styled chest stocks once");
+        let mut stock = ChestStock::new(0x5EED, false);
+        let slots = stock_anchor(&mut stock, &w, 60, 197, 16, 21, 0);
         // `flag13` (`:37419-37427`): the Lihzahrd Furnace guaranteed, then the
         // Solar Tablet at 1/5 or the Lunar Tablet stack.
-        let kinds: Vec<u16> = chests[0].slots.iter().map(|s| s.kind).collect();
+        let kinds: Vec<u16> = slots.iter().map(|s| s.kind).collect();
         assert!(
             kinds.contains(&2195),
             "the temple furnace landed: {kinds:?}"
@@ -1905,7 +1580,7 @@ mod tests {
         // seeds cover the table.
         let mut seen = Vec::new();
         for seed in 1u64..600 {
-            let mut rng = seed | 1;
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
             if next(&mut rng, 12) == 0 {
                 let item = voice_change_item(&mut rng);
                 assert!(table.contains(&item), "item {item} is outside the table");
@@ -1937,28 +1612,9 @@ mod tests {
         let mut fish = 0;
         let mut runs = 0;
         for seed in 1u64..900 {
-            let mut dungeon = DungeonCycle::new();
-            let mut jungle = JungleCycle::new();
-            let mut genned_wands = false;
-            let hell_chest = HELL_CHEST;
-            let mut hell_counter = 0usize;
-            let mut sky_houses = 0u32;
-            let mut rng = seed | 1;
-            let rows = stock_chest(
-                &w,
-                100,
-                338,
-                false,
-                0,
-                21,
-                &mut dungeon,
-                &mut jungle,
-                &mut genned_wands,
-                &hell_chest,
-                &mut hell_counter,
-                &mut sky_houses,
-                &mut rng,
-            );
+            let mut stock = ChestStock::new(seed, false);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            let rows = stock_chest_at(&mut stock, &w, 100, 338, false, 0, 21, 0, &mut rng);
             runs += 1;
             machines += rows.iter().filter(|r| r.kind == 2198).count();
             fish += rows.iter().filter(|r| r.kind == 669).count();
@@ -1984,28 +1640,9 @@ mod tests {
         // the arms add nothing.
         let mut w = rig();
         put_chest(&mut w, 100, 198);
-        let mut dungeon = DungeonCycle::new();
-        let mut jungle = JungleCycle::new();
-        let mut genned_wands = false;
-        let hell_chest = HELL_CHEST;
-        let mut hell_counter = 0usize;
-        let mut sky_houses = 0u32;
-        let mut rng = 42u64 | 1;
-        let plain = stock_chest(
-            &w,
-            100,
-            198,
-            false,
-            0,
-            21,
-            &mut dungeon,
-            &mut jungle,
-            &mut genned_wands,
-            &hell_chest,
-            &mut hell_counter,
-            &mut sky_houses,
-            &mut rng,
-        );
+        let mut stock = ChestStock::new(42, false);
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        let plain = stock_chest_at(&mut stock, &w, 100, 198, false, 0, 21, 0, &mut rng);
         let family_ids: &[u16] = &[
             5629, 4429, 4427, 5528, 3199, 4346, 4066, 3360, 3361, 4426, 5525,
         ];
@@ -2031,28 +1668,9 @@ mod tests {
         // The tail rows added after the deep arm (the ice machine/fish, the
         // voice change) moved the stream, so the 1/5 row's seed is swept.
         let hit = (1u64..500).find(|seed| {
-            let mut dungeon = DungeonCycle::new();
-            let mut jungle = JungleCycle::new();
-            let mut genned_wands = false;
-            let hell_chest = HELL_CHEST;
-            let mut hell_counter = 0usize;
-            let mut sky_houses = 0u32;
-            let mut rng = seed | 1;
-            let rows = stock_chest(
-                &w,
-                100,
-                338,
-                false,
-                0,
-                21,
-                &mut dungeon,
-                &mut jungle,
-                &mut genned_wands,
-                &hell_chest,
-                &mut hell_counter,
-                &mut sky_houses,
-                &mut rng,
-            );
+            let mut stock = ChestStock::new(*seed, false);
+            let mut rng = tr_core::UnifiedRandom::new(*seed as i32);
+            let rows = stock_chest_at(&mut stock, &w, 100, 338, false, 0, 21, 0, &mut rng);
             rows.iter().any(|r| r.kind == 3199)
         });
         assert!(hit.is_some(), "the ice family's 1/5 row fires");
@@ -2092,96 +1710,29 @@ mod tests {
         // fairness gate then keeps the pair granted once for the world.
         let seed = (1u64..400)
             .find(|&s| {
-                let wands = |rows: &[Row]| {
+                let wands = |rows: &[ChestItem]| {
                     rows.iter()
                         .filter(|r| r.kind == 3360 || r.kind == 3361)
                         .count()
                 };
-                let mut dungeon = DungeonCycle::new();
-                let mut jungle = JungleCycle::new();
-                let mut genned_wands = false;
-                let hell_chest = HELL_CHEST;
-                let mut hell_counter = 0usize;
-                let mut sky_houses = 0u32;
-                let mut rng = s | 1;
-                let first = stock_chest(
-                    &w,
-                    30,
-                    49,
-                    false,
-                    0,
-                    21,
-                    &mut dungeon,
-                    &mut jungle,
-                    &mut genned_wands,
-                    &hell_chest,
-                    &mut hell_counter,
-                    &mut sky_houses,
-                    &mut rng,
-                );
-                let second = stock_chest(
-                    &w,
-                    30,
-                    49,
-                    false,
-                    0,
-                    21,
-                    &mut dungeon,
-                    &mut jungle,
-                    &mut genned_wands,
-                    &hell_chest,
-                    &mut hell_counter,
-                    &mut sky_houses,
-                    &mut rng,
-                );
+                let mut stock = ChestStock::new(s, false);
+                let mut rng = tr_core::UnifiedRandom::new(s as i32);
+                let first = stock_chest_at(&mut stock, &w, 30, 49, false, 0, 21, 0, &mut rng);
+                let second = stock_chest_at(&mut stock, &w, 30, 49, false, 0, 21, 0, &mut rng);
                 wands(&first) == 2 && wands(&second) == 0
             })
             .expect("a seed whose second call misses the 1/5 roll exists");
-        let mut dungeon = DungeonCycle::new();
-        let mut jungle = JungleCycle::new();
-        let mut genned_wands = false;
-        let hell_chest = HELL_CHEST;
-        let mut hell_counter = 0usize;
-        let mut sky_houses = 0u32;
-        let mut rng = seed | 1;
-        let rows = stock_chest(
-            &w,
-            30,
-            49,
-            false,
-            0,
-            21,
-            &mut dungeon,
-            &mut jungle,
-            &mut genned_wands,
-            &hell_chest,
-            &mut hell_counter,
-            &mut sky_houses,
-            &mut rng,
-        );
-        assert!(genned_wands, "the fairness flag trips on the first grant");
+        let mut stock = ChestStock::new(seed, false);
+        let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+        let rows = stock_chest_at(&mut stock, &w, 30, 49, false, 0, 21, 0, &mut rng);
         let wands = rows
             .iter()
             .filter(|r| r.kind == 3360 || r.kind == 3361)
             .count();
         assert_eq!(wands, 2, "both wands row together ({wands})");
-        // A second chest with the same seed now needs the 1/5 roll — with
+        // A second chest with the same driver now needs the 1/5 roll — with
         // this stream it does not fire again, so the pair is granted once.
-        let rows2 = stock_chest(
-            &w,
-            30,
-            49,
-            false,
-            0,
-            21,
-            &mut dungeon,
-            &mut jungle,
-            &mut genned_wands,
-            &hell_chest,
-            &mut hell_counter,
-            &mut sky_houses,
-            &mut rng,
-        );
+        let rows2 = stock_chest_at(&mut stock, &w, 30, 49, false, 0, 21, 0, &mut rng);
         let wands2 = rows2
             .iter()
             .filter(|r| r.kind == 3360 || r.kind == 3361)
@@ -2200,12 +1751,8 @@ mod tests {
         // row (a second 1/2), and the flag13 water pair (1/5 raincoat, else
         // 3-7 potions). The flag4 pair and the globe ride the families
         // either tile block carries, so they apply to both anchor kinds.
-        let mut dungeon = DungeonCycle::new();
-        let mut jungle = JungleCycle::new();
-        let mut genned_wands = false;
-        let hell_chest = HELL_CHEST;
-        let mut hell_counter = 0usize;
-        let mut sky_houses = 0u32;
+
+        let mut stock = ChestStock::new(3, false);
 
         // A water-family anchor (tile 4869 beside the seat) takes the globe
         // unconditionally and exactly one of the water pair.
@@ -2221,22 +1768,8 @@ mod tests {
             }
         }
         put_chest(&mut w, 100, 198);
-        let mut rng = 3u64 | 1;
-        let rows = stock_chest(
-            &w,
-            100,
-            198,
-            false,
-            0,
-            21,
-            &mut dungeon,
-            &mut jungle,
-            &mut genned_wands,
-            &hell_chest,
-            &mut hell_counter,
-            &mut sky_houses,
-            &mut rng,
-        );
+        let mut rng = tr_core::UnifiedRandom::new(3);
+        let rows = stock_chest_at(&mut stock, &w, 100, 198, false, 0, 21, 0, &mut rng);
         assert!(
             rows.iter().any(|r| r.kind == 2195),
             "the flag13 globe is unconditional"
@@ -2262,24 +1795,11 @@ mod tests {
         put_chest(&mut w, 100, 198);
         let hits = (1u64..400)
             .filter(|&seed| {
-                let mut rng = seed | 1;
-                stock_chest(
-                    &w,
-                    100,
-                    198,
-                    false,
-                    0,
-                    21,
-                    &mut dungeon,
-                    &mut jungle,
-                    &mut genned_wands,
-                    &hell_chest,
-                    &mut hell_counter,
-                    &mut sky_houses,
-                    &mut rng,
-                )
-                .iter()
-                .any(|r| r.kind == 2204)
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                stock_chest_at(&mut stock, &w, 100, 198, false, 0, 21, 0, &mut rng)
+                    .iter()
+                    .any(|r| r.kind == 2204)
             })
             .count();
         assert!(hits > 0, "the 1/4 flag4 row fires on some stream ({hits})");
@@ -2296,24 +1816,11 @@ mod tests {
             }
         }
         let rows13 = (1u64..64).any(|seed| {
-            let mut rng = seed | 1;
-            stock_chest(
-                &w,
-                100,
-                198,
-                false,
-                13,
-                21,
-                &mut dungeon,
-                &mut jungle,
-                &mut genned_wands,
-                &hell_chest,
-                &mut hell_counter,
-                &mut sky_houses,
-                &mut rng,
-            )
-            .iter()
-            .any(|r| r.kind == 5234)
+            let mut stock = ChestStock::new(seed, false);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            stock_chest_at(&mut stock, &w, 100, 198, false, 13, 21, 0, &mut rng)
+                .iter()
+                .any(|r| r.kind == 5234)
         });
         assert!(rows13, "the style-13 row fires on some stream");
     }
@@ -2324,12 +1831,6 @@ mod tests {
         // (`:37384-47400`) apply to the wooden chests only; the mahogany
         // (467/341) block (`:47466-47500`) repeats just the flag4/flag2/
         // flag12 rows. The port gates the 21-only rows on the anchor kind.
-        let mut dungeon = DungeonCycle::new();
-        let mut jungle = JungleCycle::new();
-        let mut genned_wands = false;
-        let hell_chest = HELL_CHEST;
-        let mut hell_counter = 0usize;
-        let mut sky_houses = 0u32;
 
         // A dungeon-family anchor: the flag9 row (2192) rolls 1/8.
         let mut w = rig();
@@ -2342,23 +1843,10 @@ mod tests {
         put_chest(&mut w, 100, 198);
         let hits = (1u64..600)
             .filter(|&seed| {
-                let mut rng = seed | 1;
-                stock_chest(
-                    &w,
-                    100,
-                    198,
-                    false,
-                    0,
-                    21,
-                    &mut dungeon,
-                    &mut jungle,
-                    &mut genned_wands,
-                    &hell_chest,
-                    &mut hell_counter,
-                    &mut sky_houses,
-                    &mut rng,
-                )
-                .iter()
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                stock_chest_at(&mut stock, &w, 100, 198, false, 0, 21, 0, &mut rng)
+                    .iter()
                 .any(|r| r.kind == 2192)
             })
             .count();
@@ -2382,22 +1870,9 @@ mod tests {
                 w.tiles[i].kind = 341;
             }
         }
-        let mut rng = 3u64 | 1;
-        let mahog = stock_chest(
-            &w,
-            100,
-            198,
-            false,
-            25,
-            341,
-            &mut dungeon,
-            &mut jungle,
-            &mut genned_wands,
-            &hell_chest,
-            &mut hell_counter,
-            &mut sky_houses,
-            &mut rng,
-        );
+        let mut stock = ChestStock::new(3, false);
+        let mut rng = tr_core::UnifiedRandom::new(3);
+        let mahog = stock_chest_at(&mut stock, &w, 100, 198, false, 25, 341, 0, &mut rng);
         assert!(
             !mahog.iter().any(|r| matches!(r.kind, 2766 | 2767 | 5234)),
             "the 21-only rows skip the mahogany anchor: {:?}",
@@ -2414,24 +1889,11 @@ mod tests {
         }
         put_chest(&mut w2, 100, 198);
         let rows21 = (1u64..64).find(|&seed| {
-            let mut rng = seed | 1;
-            stock_chest(
-                &w2,
-                100,
-                198,
-                false,
-                25,
-                21,
-                &mut dungeon,
-                &mut jungle,
-                &mut genned_wands,
-                &hell_chest,
-                &mut hell_counter,
-                &mut sky_houses,
-                &mut rng,
-            )
-            .iter()
-            .any(|r| matches!(r.kind, 2766 | 2767 | 5234))
+            let mut stock = ChestStock::new(seed, false);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            stock_chest_at(&mut stock, &w2, 100, 198, false, 25, 21, 0, &mut rng)
+                .iter()
+                .any(|r| matches!(r.kind, 2766 | 2767 | 5234))
         });
         assert!(rows21.is_some(), "the 21 anchor takes a 21-only row");
     }
@@ -2449,7 +1911,7 @@ mod tests {
                 w.tiles[i].wall = 187; // the pyramid's sandstone
             }
         }
-        let ctx = context_at(&w, 120, 198);
+        let ctx = tr_core::worldgen::chest_stock::context_at(&w, 120, 198);
         assert!(ctx.pyramid, "the sandstone reads the pyramid family");
         assert!(!ctx.desert, "and not the desert one");
     }
@@ -2467,38 +1929,16 @@ mod tests {
             }
         }
         put_chest(&mut w, 100, 197);
-        // Over many streams every main is one of the three Pharaoh items and
-        // the robe only ever rides a mask chest.
+        // The main roll moved to the site (`structures.rs`, `:27853-27873`);
+        // the hook inserts the site's pick and the robe only ever rides a
+        // mask chest. All three mains walk the arm.
         let mut mask_with_robe = 0u32;
         let mut pair_without_mask = 0u32;
-        for seed in 1u64..600 {
-            let mut dungeon = DungeonCycle::new();
-            let mut jungle = JungleCycle::new();
-            let mut genned_wands = false;
-            let hell_chest = HELL_CHEST;
-            let mut hell_counter = 0usize;
-            let mut sky_houses = 0u32;
-            let mut rng = seed | 1;
-            let rows = stock_chest(
-                &w,
-                100,
-                197,
-                false,
-                0,
-                21,
-                &mut dungeon,
-                &mut jungle,
-                &mut genned_wands,
-                &hell_chest,
-                &mut hell_counter,
-                &mut sky_houses,
-                &mut rng,
-            );
-            let main = rows[0].kind;
-            assert!(
-                matches!(main, 848 | 857 | 934),
-                "slot 0 rides the Pharaoh table ({main})"
-            );
+        for main in [848u16, 857, 934] {
+            let mut stock = ChestStock::new(42, false);
+            let mut rng = tr_core::UnifiedRandom::new(42);
+            let rows = stock_chest_at(&mut stock, &w, 100, 197, false, 0, 21, main, &mut rng);
+            assert_eq!(rows[0].kind, main, "slot 0 rides the site's pick ({main})");
             if main == 848 {
                 assert_eq!(rows[1].kind, PHARAOHS_ROBE, "the robe rides slot 1");
                 mask_with_robe += 1;
@@ -2507,7 +1947,7 @@ mod tests {
                 pair_without_mask += 1;
             }
         }
-        assert!(mask_with_robe > 0, "the 1/9 mask+robe pair is reachable");
+        assert!(mask_with_robe > 0, "the mask+robe pair lands");
         assert!(pair_without_mask > 0, "and the 857/934 arms dominate");
     }
 
@@ -2540,28 +1980,9 @@ mod tests {
                 }
             }
             put_chest(&mut w, 100, y as i32);
-            let mut dungeon = DungeonCycle::new();
-            let mut jungle = JungleCycle::new();
-            let mut genned_wands = false;
-            let hell_chest = HELL_CHEST;
-            let mut hell_counter = 0usize;
-            let mut sky_houses = 0u32;
-            let mut rng = 42u64 | 1;
-            let rows = stock_chest(
-                &w,
-                100,
-                y as i32,
-                false,
-                0,
-                21,
-                &mut dungeon,
-                &mut jungle,
-                &mut genned_wands,
-                &hell_chest,
-                &mut hell_counter,
-                &mut sky_houses,
-                &mut rng,
-            );
+            let mut stock = ChestStock::new(42, false);
+            let mut rng = tr_core::UnifiedRandom::new(42);
+            let rows = stock_chest_at(&mut stock, &w, 100, y as i32, false, 0, 21, 0, &mut rng);
             assert_eq!(
                 deep_desert_chest(w.height, y as i32),
                 deep_flag,
@@ -2590,28 +2011,9 @@ mod tests {
             };
         }
         put_chest(&mut w, 100, 198);
-        let mut dungeon = DungeonCycle::new();
-        let mut jungle = JungleCycle::new();
-        let mut genned_wands = false;
-        let hell_chest = HELL_CHEST;
-        let mut hell_counter = 0usize;
-        let mut sky_houses = 0u32;
-        let mut rng = 42u64 | 1;
-        let rows = stock_chest(
-            &w,
-            100,
-            198,
-            false,
-            0,
-            21,
-            &mut dungeon,
-            &mut jungle,
-            &mut genned_wands,
-            &hell_chest,
-            &mut hell_counter,
-            &mut sky_houses,
-            &mut rng,
-        );
+        let mut stock = ChestStock::new(42, false);
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        let rows = stock_chest_at(&mut stock, &w, 100, 198, false, 0, 21, 0, &mut rng);
         assert!(
             matches!(
                 rows[0].kind,
@@ -2638,27 +2040,27 @@ mod tests {
             let _ = slot;
             put_chest(&mut w, *x, 199);
         }
-        let chests = generate_world_chests(&w);
-        let mains: Vec<u16> = chests.iter().map(|c| c.slots[0].kind).collect();
+        // The cycle itself moved to the site (`islands.rs::build_house`,
+        // `GenVars.skyIslandHouseCount`); the hook inserts the site's pick
+        // (`main_item`) into slot 0 — the walk order rides the same table.
+        let mut stock = ChestStock::new(0x5EED, false);
+        let mut stock2 = ChestStock::new(0x5EED, false);
+        let mut mains = Vec::new();
+        for (x, main) in [(40, 159u16), (60, 65), (80, 158), (100, 2219)] {
+            let slots = stock_anchor(&mut stock, &w, x, 199, 13, 21, main);
+            mains.push(slots[0].kind);
+        }
         assert_eq!(
             mains,
             vec![159, 65, 158, 2219],
             "the four houses walk the vanilla table in order: {mains:?}"
         );
-        // A fifth house re-rolls (`> 3 → Next(4)`): any of the four lands.
-        for dx in -2i32..=0 {
-            for dy in -2i32..=0 {
-                let i = w.index(120 + dx, 197 + dy);
-                w.tiles[i].wall = 73;
-            }
+        // The style-13 pottery row (the second 1/2 roll) does not displace
+        // the main — the second driver re-runs the walk cleanly.
+        for (x, main) in [(40, 159u16), (60, 65), (80, 158), (100, 2219)] {
+            let slots = stock_anchor(&mut stock2, &w, x, 199, 13, 21, main);
+            assert_eq!(slots[0].kind, main, "the main rides slot 0 ({x})");
         }
-        put_chest(&mut w, 120, 199);
-        let chests = generate_world_chests(&w);
-        let fifth = chests.last().map(|c| c.slots[0].kind).unwrap_or(0);
-        assert!(
-            SKY_ISLAND_CHEST.contains(&fifth),
-            "the fifth house re-rolls the table ({fifth})"
-        );
     }
 
     /// `WorldGen.Reset`'s hell-chest shuffle (`:11246-11258`): the five items
@@ -2667,7 +2069,7 @@ mod tests {
     #[test]
     fn the_hell_table_shuffles_to_a_permutation() {
         for seed in 1u64..200 {
-            let mut rng = seed | 1;
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
             let table = shuffle_hell_chest(&mut rng, false);
             let mut sorted = table.to_vec();
             sorted.sort_unstable();
@@ -2675,7 +2077,7 @@ mod tests {
             want.sort_unstable();
             assert_eq!(sorted, want, "the shuffle permutes the table ({seed})");
         }
-        let mut rng = 42u64 | 1;
+        let mut rng = tr_core::UnifiedRandom::new(42);
         assert_eq!(
             shuffle_hell_chest(&mut rng, true)
                 .iter()
@@ -2695,15 +2097,18 @@ mod tests {
         for x in [40i32, 60, 80, 100, 120, 140] {
             put_chest(&mut w, x, 199);
         }
-        let chests = generate_world_chests(&w);
-        let mains: Vec<u16> = chests.iter().map(|c| c.slots[0].kind).collect();
-        // The same world-seeded stream `generate_world_chests` opens with:
-        // the shuffle is the stream's first consumer.
-        let seed = 42u64
-            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-            .wrapping_add(0x2545_F491_4F6C_DD1D);
-        let mut stream = seed | 1;
-        let table = shuffle_hell_chest(&mut stream, false);
+        // The driver's `UnifiedRandom(seed)` shuffle is the walk's source —
+        // the same table the hook's counter walks with the wrap.
+        let mut stock = ChestStock::new(42, false);
+        let table = {
+            let mut stream = tr_core::UnifiedRandom::new(42);
+            shuffle_hell_chest(&mut stream, false)
+        };
+        let mut mains = Vec::new();
+        for x in [40i32, 60, 80, 100, 120, 140] {
+            let slots = stock_anchor(&mut stock, &w, x, 199, 0, 21, 0);
+            mains.push(slots[0].kind);
+        }
         assert_eq!(
             mains,
             vec![table[0], table[1], table[2], table[3], table[4], table[0]],
@@ -2734,28 +2139,9 @@ mod tests {
             }
         }
         put_chest(&mut w, 100, 197);
-        let mut dungeon = DungeonCycle::new();
-        let mut jungle = JungleCycle::new();
-        let mut genned_wands = false;
-        let hell_chest = HELL_CHEST;
-        let mut hell_counter = 0usize;
-        let mut sky_houses = 0u32;
-        let mut rng = 42u64 | 1;
-        let rows = stock_chest(
-            &w,
-            100,
-            197,
-            false,
-            0,
-            21,
-            &mut dungeon,
-            &mut jungle,
-            &mut genned_wands,
-            &hell_chest,
-            &mut hell_counter,
-            &mut sky_houses,
-            &mut rng,
-        );
+        let mut stock = ChestStock::new(42, false);
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        let rows = stock_chest_at(&mut stock, &w, 100, 197, false, 0, 21, 0, &mut rng);
         assert!(
             !matches!(
                 rows[0].kind,

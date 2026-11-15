@@ -197,12 +197,8 @@ Rust (target):
   it is missing 72 → the Midas buff would not be flushed when another flask is drunk.
   **Verify which table `AddBuff_RemoveOldMeleeBuffsOfMatchingType` (Player.cs:5347)
   consults before changing anything.** Not admitted in ROADMAP/ANALYSIS.
-- **D-3 — the Nurse removes protected debuffs (behavioural/medium).**
-  `BuffID.Sets.NurseCannotRemoveDebuff` (BuffID.cs:52, 20 ids: 21,28,34,43,48,86,87,89,
-  146,147,157,158,165,199,215,321,332,333,334,350) is not modelled; the Rust nurse heal
-  clears every debuff (`app/mod.rs:1251-1260`). The C# price formula also counts
-  "removable debuffs" only — the Rust `nurse_heal_cost_for` (app/mod.rs:4293) counts
-  *all* debuffs, so the **price is also wrong** for a player holding a protected debuff.
+- **D-3 — the Nurse removes protected debuffs (behavioural/medium).** **CLOSED by prior landing, verified 2026-11-13 (S1-E-8):** `NurseCannotRemoveDebuff`’s 20 ids match (`buffs.rs::NURSE_CANNOT_REMOVE_DEBUFF`), both gates carry the list (the price’s `buffTime > 60` and the removal’s `buffTime > 0`), and the over-charge ladder is complete except the constants-off `Main.expertMode` ×2.
+
 - **D-4 — the effect table is ~15 % ported (behavioural/high).**
   The C# `UpdateBuffs` chain is 251 arms over ~290 ids; the Rust covers ≈40 ids across
   five modules. Unported examples that change play: 3 Swiftness / 5 Ironskin / 7

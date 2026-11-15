@@ -149,6 +149,11 @@ pub(crate) struct App {
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
     /// takes the next id, the segments share it.
     pub(crate) next_worm_id: u32,
+    /// The NPC id counter (`NPC.whoAmI`, `NPC.cs:6145`) — the stable
+    /// identity the boss-part links ride (`ai[3]`, `localAI[0..2]`). The
+    /// C#'s id is the NPC slot; the port's list compacts every frame, so
+    /// the id is handed out once and never reused.
+    pub(crate) next_npc_uid: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
@@ -162,11 +167,18 @@ pub(crate) struct App {
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
-    /// The stock captured at the open (`Chest.item[]`).
-    pub(crate) shop_stock: Vec<u16>,
+    /// The stock captured at the open (`Chest.item[]`) — the rows carry
+    /// their per-row price fields (`Item.shopCustomPrice`/`buyOnce`/
+    /// `isAShopItem`), priced by `Item.GetStoreValue`.
+    pub(crate) shop_stock: Vec<crate::shop::ShopEntry>,
     /// The happiness multiplier captured at the open
     /// (`currentShoppingSettings.PriceAdjustment`).
     pub(crate) shop_mood: f32,
+    /// `Player.discountAvailable` (`Player.cs:25638`): refreshed from
+    /// `discountEquipped` when no shop is open; the Discount Card writer
+    /// lands with the equipment pass (S1-C-12) — the price arms
+    /// (`Player.cs:35369-35378`) consume it today.
+    pub(crate) discount_available: bool,
     /// The closed shop — the state cleared (`Main.npcShop = -1`'s
     /// equivalent).
     pub(crate) shop_closed_flag: bool,
@@ -299,9 +311,13 @@ pub(crate) struct App {
     /// `Main.instance.textBlinkerCount/State` (`Main.cs:2287-2289`) — the
     /// chest-panel name editor's caret blinker (`ui::chest::TextBlinker`).
     pub(crate) text_blinker: ui::chest::TextBlinker,
-    /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
-    /// alchemy discount rolls.
-    pub(crate) craft_rng: u64,
+    /// The crafting RNG stream — the alchemy discount rolls
+    /// (`Recipe.cs:221`'s `Main.rand.Next(3)`; the exact C# `UnifiedRandom`
+    /// generator seeded per world like the wiring RNG, S1-L-6c).
+    pub(crate) craft_rng: tr_core::unified_random::UnifiedRandom,
+    /// The coin cells' display-state machine (`CoinSlot.cs`, S1-H-9): the
+    /// entry arrays the vanilla carries as statics, owned by the App.
+    pub(crate) coin_slot: crate::ui::coin_slot::CoinSlotState,
     /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
     /// .cs:315`): the cached coin carriers. Session-only — cleared on the
     /// world unload (the vanilla never saves them).
@@ -424,6 +440,9 @@ pub(crate) struct App {
     pub(crate) join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     pub(crate) map: Option<map::WorldMap>,
+    /// `Terraria.Map.MapUpdateQueue` (`MapUpdateQueue.cs`): the edit-side map
+    /// refresh queues, drained per frame (`Main.cs:61862`).
+    pub(crate) map_queue: map::MapUpdateQueue,
     /// `Main.grabMapX`/`grabMapY`: the cursor anchor of an in-progress
     /// fullscreen-map drag (`Main.cs:55346-55354`).
     pub(crate) map_grab: Option<[f32; 2]>,
@@ -451,13 +470,31 @@ pub(crate) struct App {
     pub(crate) pvp_icons_forced: bool,
     pub(crate) audio: audio::Audio,
     pub(crate) music: audio::MusicSystem,
-    pub(crate) last_hp: i32,
     /// `Main.saveTime`: seconds since the last autosave (`Main.cs:19751-19765`).
     pub(crate) autosave: f32,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     pub(crate) mouse_item: ItemSlot,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
+    /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
+    /// button's release edge, consumed per frame).
+    pub(crate) ui_right_release: bool,
+    /// `Main.buffAlpha[Player.maxBuffs]` (`Main.cs:668`-ish): the buff bar's
+    /// per-slot icon alpha (`Main.DrawBuffIcon`).
+    pub(crate) buff_alpha: [f32; crate::buffs::MAX_BUFFS],
+    /// The buff bar's right-click removal requests — the C# removes in the
+    /// draw pass (`Main.cs:43348`); the port drains them in the tick.
+    pub(crate) buff_removals: Vec<usize>,
+    /// `Main.focusRecipe` (`Main.cs:1729`): the selected recipe row's index
+    /// into the available list — the first click focuses, the next crafts.
+    pub(crate) focus_recipe: i32,
+    /// `Main._currentRecipeBeingCrafted` (`Main.cs:2352`): the held-repeat's
+    /// recipe lock — a different recipe or a maxStack-1 product resets it.
+    pub(crate) current_recipe_being_crafted: i32,
+    /// `Main._preventCraftingBecauseClickWasUsedToChangeFocusedRecipe`
+    /// (`Main.cs:2353`): the focus click's lock, cleared when the buttons
+    /// release (`:42301-42305`).
+    pub(crate) prevent_craft_click: bool,
     /// `UserInterface`'s pointer machine (`UserInterface.cs:53-91`, `:230-255`):
     /// the press/release → click/`DoubleClick` caches with the 500 ms window and
     /// the 200 ms state-change lockout. Fed by `app/loop.rs` (the front screens'
@@ -500,6 +537,18 @@ pub(crate) struct App {
     pub(crate) dev_break: Option<(i32, i32)>,
     pub(crate) dev_place: Vec<(i32, i32, u16)>,
     pub(crate) camera: Vec2,
+    /// The gfx-quality state (S1-B-6): `Main.gfxQuality`'s adaptive loop and
+    /// the per-update budgets it feeds (`Main.cs:953`/`:955`,
+    /// `:16960-17101`).
+    pub(crate) gfx_quality: world_sim::gfx_quality::GfxQuality,
+    /// The world-event schedulers' state (S1-F-14): `LanternNight`,
+    /// `BirthdayParty` and `CultistRitual`'s delay machine.
+    pub(crate) world_events: crate::world_events::WorldEvents,
+    /// The C#'s draw-time camera state (`Main.cs:463`/`:477`/`:1097-1099`):
+    /// the teleport lerp pair, the object-tracking pan and the vestigial
+    /// `DebugCameraPan` accumulator. S1-B-4 moved the camera update to the
+    /// draw path; the update tail runs the pan/lerp walks (`:17814-17815`).
+    pub(crate) camera_state: world_sim::camera::CameraState,
     pub(crate) zoom: f32,
     /// `TR_ZOOM` pins the zoom for screenshots, ignoring the settings value.
     pub(crate) zoom_pinned: bool,
@@ -516,6 +565,46 @@ pub(crate) struct App {
     /// `releaseMount` latch). An `App` field rather than a `static` so two
     /// headless apps in one test process cannot share it.
     pub(crate) mount_prev: bool,
+    /// `Main.gamePaused` (`Main.cs:645`): the world-sim freeze written by the
+    /// two pause sources — the focus arm (`Main.cs:17138`) and the in-game
+    /// gate's arm pair (`Main.cs:17197-17201`). Cleared on world load
+    /// (`Main.cs:19856` → [`App::enter_loaded_world`] / the fresh [`App::new`]
+    /// a `swap_world` builds). Read by the Phase-2 HUD overlay.
+    pub(crate) game_paused: bool,
+    /// `FocusHelper.IsSelectedApplication`'s core (`FocusHelper.cs:135-136` —
+    /// `Main.instance.IsActive`): the window's focus, fed by winit's
+    /// `WindowEvent::Focused` (`app/loop.rs`). Defaults to `true` so a headless
+    /// frame (no window events) plays like a focused one.
+    pub(crate) window_focused: bool,
+    /// `PlayerInput.MouseInfo.XButton1`'s held state (`WorldUpdateStepper.cs:48`
+    /// — the step key's mouse arm). Fed by winit's `MouseButton::Back`
+    /// (`app/loop.rs`); consumed by the Phase-2 stepper.
+    pub(crate) mouse_back_held: bool,
+    /// `Main.GameUpdateCount` (`Main.cs:857`/`:2772`) — one increment per
+    /// *executed* world step (`DoUpdateInWorld_Inner`'s head, `Main.cs:17746`),
+    /// not per drawn frame (that is [`App::frame_count`]). Initialised 65536 by
+    /// `ResetGameCounter` (`Main.cs:6442-6445`), whose `OnWorldLoad` hook
+    /// (`Main.cs:6605`) makes a world load reset it — the fresh [`App::new`]
+    /// a `swap_world` builds carries the same reset. The Phase-2 stepper's
+    /// `StartUpdateCount` pin and the HUD overlay read it.
+    pub(crate) game_update_count: u32,
+    /// `Terraria.Testing.WorldUpdateStepper` (`WorldUpdateStepper.cs:7-58`)
+    /// — the testing step-frame state; see [`crate::world_stepper`]. The
+    /// `pauseworld` toggle, the End/NumpadAdd/XButton1 pacing and the
+    /// `Updates Since Paused` overlay pin live here; the gate site is
+    /// `app/frame.rs`'s `step_allowed` (`Main.cs:17278`).
+    pub(crate) stepper: crate::world_stepper::WorldUpdateStepper,
+    /// The step keys' this-frame reading
+    /// (`WorldUpdateStepper.GetStepKeyState`'s `down`, `:39-43`): pinned at
+    /// the frame head where the events have landed, consumed by the
+    /// `Main.cs:17278` gate.
+    pub(crate) step_input_down: bool,
+    /// The step keys' previous-frame reading (the `wasDown` half, `:42`).
+    /// Shifted from [`App::step_input_down`] every frame — the
+    /// `Main.oldKeyState = Main.keyState` snapshot's analog
+    /// (`Main.cs:18381-18382`, the region the port already runs at the frame
+    /// head through [`App::update_view_zoom_keys`]).
+    pub(crate) step_input_was: bool,
     pub(crate) mouse_down: bool,
     pub(crate) last_mouse: Vec2,
     pub(crate) last_frame: Instant,
@@ -553,6 +642,13 @@ pub(crate) struct App {
     pub(crate) liquids: LiquidSystem,
     pub(crate) liquid_step: FixedStepper,
     pub(crate) liquid_tick: u32,
+    /// `CraftingUI._lastFilter` (`CraftingUI.cs:130`): the station filter the
+    /// player's right-click on a crafting station installed
+    /// (`Player.GetCraftingFilterForTile`, `Player.cs:33312-33335`, via
+    /// `OpenCloseFilter`); `CraftingUI.RecipeFilterHack` exposes it to
+    /// `Recipe.UpdateRecipeList` only while the crafting page is up
+    /// (`CraftingUI.cs:112-121`) — the port reads it behind the same gate.
+    pub(crate) craft_filter: Option<craft::CraftingFilter>,
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     pub(crate) waterfall: tr_core::waterfall::WaterfallManager,
     pub(crate) waterfall_step: FixedStepper,
@@ -710,7 +806,7 @@ pub(crate) struct App {
 /// G6: everything the world instance range (sky strips, tiles, walls, dark rects)
 /// depends on, compared bit-exactly. A hit keeps the previous frame's instances and
 /// only redraws the UI; the light map has its own cache (D2) inside `LightMap`.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct WorldFrameKey {
     /// Camera floored to its tile: sub-tile pans keep the world range (the GPU
     /// transform moves it) while the background range is rebuilt every frame.
@@ -735,6 +831,11 @@ pub(crate) struct WorldFrameKey {
     pub(crate) hand_key: u32,
     /// Light-map generation; a recompute (D3) changes tile tints.
     pub(crate) light_generation: u64,
+    /// `LightStyle::brightness` (`Lighting.cs:108-116`): the Darkness debuff's
+    /// `blind` flag drops `GlobalBrightness` 1.2 → 1.0, and `shade` multiplies
+    /// every tile tint by it — an HUD-buff input inside the cached world range,
+    /// so it must ride the key (S1-H-15).
+    pub(crate) brightness: u32,
     /// Waterfall animation frames + visible-list revision (0 when none visible).
     pub(crate) waterfall: u64,
     /// Remote peers' smoothed positions/animations and the NPC smoothing
@@ -742,6 +843,43 @@ pub(crate) struct WorldFrameKey {
     /// range. Zero in single-player (the offsets are zero and no peers).
     pub(crate) net_key: u32,
     pub(crate) world_revision: u64,
+}
+
+#[cfg(test)]
+mod frame_key {
+    use super::*;
+
+    /// S1-H-15: the Darkness debuff's `blind` flag drops `LightStyle::brightness`
+    /// 1.2 → 1.0 (`Lighting.cs:108-116`) and `LightStyle::shade` multiplies every
+    /// tile tint by it, so the brightness rides the G6 `WorldFrameKey` — two
+    /// frames that differ only in the blind state must not share a cached world
+    /// range. (The buff bar itself redraws in the uncached UI pass; chat and the
+    /// emote wheel have no draw path yet — S1-E-26 — so the buff bar's world-input
+    /// is the only HUD key this frame needs.)
+    #[test]
+    fn blind_brightness_changes_the_frame_key() {
+        let key = |brightness: f32| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: brightness.to_bits(),
+            waterfall: 0,
+            net_key: 0,
+            world_revision: 0,
+        };
+        assert_ne!(key(1.2), key(1.0), "blind's GlobalBrightness drop must change the key");
+        assert_eq!(key(1.2), key(1.2), "an unchanged brightness must not");
+    }
 }
 
 /// `TR_POSE=sit|sleep` — writes the furniture beside the world spawn and
@@ -888,20 +1026,16 @@ impl App {
         }
         // `Main.cs:67191-67192`: `cMapZoomIn = "Add"`, `cMapZoomOut =
         // "Subtract"` — the menuMode 272727 rows, not a fixed key.
-        if self
-            .keys
-            .iter()
-            .any(|k| map_binds[crate::input_map::MapAction::ZoomIn.index()].as_str()
-                == crate::input_map::key_name(*k))
-        {
+        if self.keys.iter().any(|k| {
+            map_binds[crate::input_map::MapAction::ZoomIn.index()].as_str()
+                == crate::input_map::key_name(*k)
+        }) {
             m.scale = map::map_key_scale(m.scale, true);
         }
-        if self
-            .keys
-            .iter()
-            .any(|k| map_binds[crate::input_map::MapAction::ZoomOut.index()].as_str()
-                == crate::input_map::key_name(*k))
-        {
+        if self.keys.iter().any(|k| {
+            map_binds[crate::input_map::MapAction::ZoomOut.index()].as_str()
+                == crate::input_map::key_name(*k)
+        }) {
             m.scale = map::map_key_scale(m.scale, false);
         }
         // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
@@ -948,7 +1082,30 @@ impl App {
         }
     }
 
+    /// `Main.MaxWorldViewSize` (`Main.cs:677-681`): the design view the zoom
+    /// floor keeps the world inside.
+    pub(crate) const MAX_WORLD_VIEW_SIZE: (f32, f32) = (1920.0, 1200.0);
+    /// `Main.SupportWideScreen` (`Main.cs:1819`) — the C# init `false`
+    /// (`Main.cs:67046`). The port has no settings row for it (the settings
+    /// work owns the row), so the computed arm runs (S1-G-7).
+    pub(crate) const SUPPORT_WIDE_SCREEN: bool = false;
 
+    /// `Main.ForcedMinimumZoom` (`Main.cs:61989-61994`, computed per draw):
+    /// `max(max(1f, screenWidth / MaxWorldViewSize.X), screenHeight /
+    /// MaxWorldViewSize.Y)` — the zoom floor that keeps the visible world
+    /// inside the design size. `Main.SupportWideScreen` forces it to 1f
+    /// (`:61992-61994`). The two view matrices consume it split:
+    /// `BackgroundViewMatrix.Zoom = ForcedMinimumZoom` (`:61998`) and
+    /// `GameViewMatrix.Zoom = ForcedMinimumZoom * Clamp(GameZoomTarget, 1f,
+    /// 2f)` (`:61999`) — the port's `zoom` is that clamp (S1-B-5).
+    pub(crate) fn forced_minimum_zoom(screen: (f32, f32)) -> f32 {
+        if Self::SUPPORT_WIDE_SCREEN {
+            return 1.0;
+        }
+        let val = screen.0 / Self::MAX_WORLD_VIEW_SIZE.0;
+        let y_arm = screen.1 / Self::MAX_WORLD_VIEW_SIZE.1;
+        val.max(1.0).max(y_arm)
+    }
 
     /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
     pub(crate) fn advance_disco(&mut self) {
@@ -1072,10 +1229,16 @@ impl App {
     /// slot_for_pickup). Returns false when the purse is short or the slot
     /// is out of range.
     pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
-        let Some(item) = self.shop_stock.get(slot).copied() else {
+        // `ItemSlot.HandleShopSlot` (`UI/ItemSlot.cs:2059-2060`): the
+        // charge is `GetItemExpectedPrice`'s buying value for the stock
+        // ROW (the row's `shopCustomPrice`/`buyOnce` ride
+        // `Item.GetStoreValue`, `Item.cs:49901-49908`).
+        let Some(entry) = self.shop_stock.get(slot) else {
             return false;
         };
-        let price = crate::shop::buy_price(item, self.shop_mood) as u64;
+        let item = entry.item;
+        let price = crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood)
+            as u64;
         if self.coins < price {
             return false;
         }
@@ -1248,24 +1411,36 @@ impl App {
     }
 
     /// `Main.GetNurseHealCost` (`Main.cs:40054-40100`): the missing life
-    /// plus the removable debuffs x100, multiplied by the happiness
-    /// adjustment. The boss-progression/expert/discount multipliers sit
-    /// constants-off (the downed tracking lands with the boss work).
+    /// plus the removable debuffs x100 — a slot counts when
+    /// `Main.debuff[b] && buffTime > 60 && !NurseCannotRemoveDebuff[b]` —
+    /// then the boss-progression ladder, the discount and the happiness
+    /// adjustment. The expert x2 stays constants-off (the difficulty
+    /// plumbing rides R-03-6).
     pub(crate) fn nurse_heal_cost(&self, nurse_idx: usize) -> i32 {
         let Some(player) = self.player.as_ref() else {
             return 0;
         };
         let missing = player.max_hp - player.hp;
-        let debuffs = player
-            .buffs
-            .active_types()
-            .iter()
-            .filter(|t| crate::buffs::is_debuff(**t))
-            .count() as i32;
+        let debuffs = player.remountable_debuff_count();
         let npc = &self.npcs[nurse_idx];
         let mood =
             crate::happiness::process_mood(&self.world, &self.npcs, npc, player.center(), false);
-        nurse_heal_cost_for(missing, debuffs, mood.multiplier)
+        let w = &self.world;
+        nurse_heal_cost_for(
+            missing,
+            debuffs,
+            mood.multiplier,
+            &NurseCostFlags {
+                downed_golem: w.downed_golem,
+                downed_plant_boss: w.downed_plant_boss,
+                downed_mech_any: w.downed_mech_boss1 || w.downed_mech_boss2 || w.downed_mech_boss3,
+                hard_mode: w.hard_mode,
+                downed_boss3_or_queen_bee: w.downed_skeletron || w.downed_queen_bee,
+                downed_boss2: w.downed_eow,
+                downed_boss1: w.downed_eoc,
+                discount_available: self.discount_available,
+            },
+        )
     }
 
     /// `Main.NPCChatText_DoNurseHeal` (`Main.cs:40103+`): `BuyItem(healCost)`
@@ -1280,19 +1455,31 @@ impl App {
             return false;
         };
         player.hp = player.max_hp;
-        // The removable debuffs clear (`DoNurseHeal`'s removal block).
-        let types: Vec<i32> = player
-            .buffs
-            .active_types()
-            .iter()
-            .copied()
-            .filter(|t| crate::buffs::is_debuff(*t))
-            .collect();
-        for t in types {
-            player.buffs.clear_buff(t);
-        }
+        // The removable debuffs clear (`DoNurseHeal`'s removal block,
+        // `Main.cs:40147`: `Main.debuff[b] && buffTime > 0 &&
+        // !NurseCannotRemoveDebuff[b]`).
+        player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
         true
+    }
+
+    /// The edit-to-map-queue hook: the edited tile's 3x3 ring queues for
+    /// the map refresh — `WorldGen.TileFrame`'s head queues its tile
+    /// (`WorldGen.cs:81334`) and `SquareTileFrame`'s walk (`:80185-80197`)
+    /// is the port's `reframe_area` ring. The `Main.mapEnabled` gate rides
+    /// (`MapUpdateQueue.cs:24`'s `!Main.mapEnabled` return).
+    pub(crate) fn queue_map_ring(&mut self, x: i32, y: i32) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                self.map_queue.add_tile(m, x + dx, y + dy);
+            }
+        }
     }
 
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
@@ -1315,6 +1502,85 @@ impl App {
         self.pointer.tick(f64::from(dt) * 1000.0);
     }
 
+    /// `Main.CanPauseGame` (`Main.cs:17315-17327`) — the in-game pause gate's
+    /// condition. netMode is always 0 in the port (single-player), so the C#'s
+    /// `if (netMode == 0)` wrapper is dropped and the body runs as written:
+    ///
+    /// - unconditional arms: the in-game options window (`ingameOptionsWindow`)
+    ///   and the `InGameUI` overlay states — the achievements menu ports to
+    ///   [`App::achievements_open`] (the controls-rebind half of the C#'s
+    ///   `CurrentState == ManageControlsMenu` has no port UI — deviation). The
+    ///   bestiary overlay is an `InGameUI` state but **not** one of the two
+    ///   named ones — it never pauses unconditionally (the review-pass
+    ///   correction; see the code comment);
+    /// - the `autoPause` arm adds `playerInventory` ([`App::inventory_open`])
+    ///   and the other visible in-game UIState (`InGameUI.IsVisible` ≈ the
+    ///   achievements + bestiary overlays; `LocalPlayer.sign >= 0` has no sign
+    ///   UI to gate — deviation, Phase-3 ANALYSIS).
+    ///
+    /// Nothing here draws or rolls RNG: the pause removes phases, adds none.
+    pub(crate) fn can_pause_game(&self) -> bool {
+        // `flag |= ingameOptionsWindow | (InGameUI.IsVisible && (…ManageControlsMenu || …AchievementsMenu))`
+        // (`Main.cs:17320`). The bestiary is an `InGameUI` state too
+        // (`IngameFancyUI.OpenUIState(Main.BestiaryUI)` →
+        // `Main.InGameUI.SetState`, `Main.cs:42459`/`IngameFancyUI.cs:78`), but
+        // its `CurrentState` is neither of the two named ones — it is caught
+        // only by the autoPause arm's bare `InGameUI.IsVisible` below, so the
+        // bestiary open never pauses by itself.
+        let mut flag = self.ingame_options.open || self.achievements_open;
+        // `if (autoPause) flag |= playerInventory | (LocalPlayer.sign >= 0) | InGameUI.IsVisible`
+        // (`Main.cs:17322-17324`) — the bare `InGameUI.IsVisible` half is the
+        // achievements + bestiary overlays; the inventory rides its own arm.
+        if self.settings.auto_pause {
+            flag |= self.inventory_open || self.achievements_open || self.bestiary_open;
+        }
+        flag
+    }
+
+    /// `Main.ShouldUpdateEntities` (`Main.cs:17717-17726`): the world-preparation
+    /// half of the `DoUpdateInWorld` gate (`Main.cs:17278`; the stepper half is
+    /// Phase 2). The port installs worlds synchronously at frame boundaries —
+    /// [`App::new`], [`App::swap_world`] and `client_install_world` swap the
+    /// world in whole — so `_worldPreparationState == Ready` and
+    /// `!WorldGen.generatingWorld` hold on every frame the world branch runs
+    /// (the C#'s async load states are not ported). The named seam keeps the
+    /// `Main.cs:17278` call site 1:1 and gives Phase 2 its gate.
+    pub(crate) fn should_update_entities(&self) -> bool {
+        true
+    }
+
+    /// `Main.DoUpdate_WhilePaused` (`Main.cs:17329-17407`) — what keeps living
+    /// while the in-game gate holds. The C# body, arm by arm, and where each
+    /// lives in the port (every portable arm is already event- or draw-driven,
+    /// so this shell carries no executable state of its own yet):
+    ///
+    /// - `WorldGen.generatingWorld` early return (`:17332`): the port has no
+    ///   generating state (sync loads, see [`App::should_update_entities`]).
+    /// - the `controlInv`/`controlCreativeMenu` edge latches → `ToggleInv`/
+    ///   `ToggleCreativeMenu` (`:17335-17362`): the port's toggle fires on the
+    ///   key event itself (`loop.rs::world_key`, the `cInv`/Escape route) and
+    ///   nothing gates it on the pause — the C# UX (items movable while the
+    ///   world is frozen) is already the port's. No creative menu exists
+    ///   (deviation).
+    /// - `playerInventory` → `RefreshInfoAccs`/`DoScrollingInInventory`/
+    ///   `dropItemCheck` (`:17365-17369`): no info-accessory pass (deviation);
+    ///   the wheel scroll routes through the pointer machine's wheel event
+    ///   (S1-H-4, event-driven); the held-item drop rides the click cluster's
+    ///   trash/transfer path (event-driven).
+    /// - `head/body/legs` from `GetEffectiveArmor` (`:17370-17385`): draw-driven
+    ///   here — `Player::update_frames`/`render_key` recompute the display rows
+    ///   from the equip slots at draw time.
+    /// - `editSign`/`editChest` arms (`:17386-17397`): the port has no sign
+    ///   editor and the chest-rename editor is a keyboard session (event
+    ///   path) — no per-frame clear to port (deviation).
+    /// - `Player.tileTargetX/Y` + `LookForTileInteractions`/`ChestChangeEvents`/
+    ///   `UpdateNearbyCraftingTiles` (`:17398-17406`): the port fuses the tile
+    ///   target + interactions into `update_editing` (step-gated, so frozen
+    ///   while paused) and the crafting adjacency into the HUD draw's
+    ///   `craft::scan_adjacent` (`app/frame.rs`, draw time — live). The
+    ///   frozen-target half is a recorded deviation (Phase-3 ANALYSIS).
+    pub(crate) fn do_update_while_paused(&mut self) {}
+
     /// The "the world is live now" state that both world-install paths end on:
     /// the front end closes and the legacy menu hands its settings hint back.
     /// `Main.LoadWorld` and the net install both leave `Main.gameMenu` false
@@ -1328,6 +1594,10 @@ impl App {
         self.front_backup = None;
         self.front_hint = None;
         self.front_hover_hit = None;
+        // `Main.gamePaused = false` in `LoadWorld`'s tail (`Main.cs:19856`): a
+        // world never enters paused. (`GameUpdateCount` resets through the
+        // `OnWorldLoad` hook — the fresh [`App::new`] both install paths build.)
+        self.game_paused = false;
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -1355,7 +1625,8 @@ impl App {
             pvp_draw,
             // `Main.cs:2911-2919`: `ShouldTeamSelectDraw` — always inside the
             // PVP gate, else the team-based-spawns seed (not ported: false).
-            team_select_draw: pvp_draw,            hide: self.hide_pvp_and_team_icons,
+            team_select_draw: pvp_draw,
+            hide: self.hide_pvp_and_team_icons,
             hostile,
             team,
             team_cooldown: self.team_cooldown,
@@ -1711,8 +1982,10 @@ impl App {
         let settings = self.settings.clone();
         let shot_path = self.shot_path.clone();
         let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
-        let music =
-            std::mem::replace(&mut self.music, audio::MusicSystem::new(assets::content_dir()));
+        let music = std::mem::replace(
+            &mut self.music,
+            audio::MusicSystem::new(assets::content_dir()),
+        );
         let window = self.window.take();
         let gpu = self.gpu.take();
         let post = self.post.take();
@@ -2392,7 +2665,11 @@ impl App {
         // is the source, so a remix world's rain starts like vanilla.
         wind.remix_world = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
         let liquids_sim = LiquidSystem::new(&world);
-        let rain = Rain::new(world_seed);
+        let mut rain = Rain::new(world_seed);
+        // `SetOngoingToTemps` (`WorldFile.cs:159-162`): the load applies the
+        // save-time snapshot — the rain event comes back, `cloudAlpha` :=
+        // `maxRaining`. The triple rode the `.trwld` v14 block (S1-J-7).
+        rain.restore_saved(world.raining, world.rain_time, world.max_raining);
         let ambient_waterfall = (0.0, 0.0, 0.0);
         let ambient_lavafall = (0.0, 0.0, 0.0);
         let ambient_counter = 0.0f32;
@@ -2453,24 +2730,15 @@ impl App {
         // with a pinned seed, so the creature skies stay screenshotable
         // without waiting for the 10-120 s scheduler. Test harness only.
         let ambience_pin = crate::env::ambience_pin();
-        // The chests roll their loot here — before the struct literal moves
-        // `world` (`AddBuriedChest`'s stock inline with the placement, the
-        // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
-        // chest merges in (its anchor is already stocked — the roll skips).
-        //
-        // M6-SAVE-1: a `.wld` load takes the file's chests instead — they are
-        // the player's own contents, and the roll only fills the anchors the
-        // file does not carry (`chest_gen::displace_loaded_chests`, the C#'s
-        // `LoadChests` shape: `Main.chest` is the file, nothing rolls). The
-        // `TR_CHEST` fixture is a generated-world screenshot hook, so it never
-        // merges into a `.wld` store; the `.trwld` path keeps `merge_store`
-        // byte-for-byte. Both branches run here because they read `world`.
-        let world_chests = crate::chest_gen::generate_world_chests(&world);
-        // M6-SAVE-1b: the save's own chests seed the store ahead of the roll —
-        // `LoadChests` (`WorldFile.cs:2723-2805`)'s records as the seed half of
-        // `merge_store`, whose collision rule drops a rolled anchor a saved
-        // chest already claims (so the saved slots win, exactly the anchor this
-        // branch exists for).
+        // The chests' loot is fixed at GENERATION time (S1-A-4): the
+        // placement sites rolled it through the stocking hook and the
+        // records ride `World.chests`, so a freshly generated world's store
+        // reads them directly — the C#'s `AddBuriedChest` inline shape. A
+        // `.wld` load runs no worldgen, so its store is the file's own
+        // chests (`LoadChests`, `WorldFile.cs:2723-2805` — `Main.chest` is
+        // the file, nothing rolls); a `.trwld` load's store is the file's
+        // native records (the gen-time loot the save carried). The
+        // `TR_CHEST` fixture merges in as before.
         let ore_tiers_seed = world.ore_tiers;
         let seeded_chests = crate::chest_gen::store_from_records(&world, &sections.native.chests);
         // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
@@ -2478,14 +2746,6 @@ impl App {
         // them inside the world-flags block.
         let seeded_banners: Vec<(i32, i32)> =
             sections.native.banners.iter().map(|b| (b.banner, b.kills)).collect();
-        // Hoisted shadowing of the roll: a `.wld` load takes the file's chests
-        // instead — they are the player's own contents, and the roll only fills
-        // the anchors the file does not carry (`chest_gen::displace_loaded_chests`,
-        // the C#'s `LoadChests` shape: `Main.chest` is the file, nothing rolls).
-        // The `TR_CHEST` fixture is a generated-world screenshot hook, so it
-        // never merges into a `.wld` store; the `.trwld` path keeps
-        // `merge_store` byte-for-byte. Both branches run here because they
-        // read `world`.
         let world_chests = if sections.from_wld {
             let mut loaded = crate::chest::from_wld(&sections.data.chests);
             // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
@@ -2494,12 +2754,12 @@ impl App {
             if sections.version < 115 {
                 crate::chest::fix_dresser_chests(&mut loaded, &world);
             }
-            crate::chest_gen::displace_loaded_chests(world_chests, loaded)
+            loaded
         } else {
-            crate::chest_gen::merge_store(
-                crate::chest_gen::merge_store(world_chests, seeded_chests),
-                tr_chest_store,
-            )
+            // The `.trwld`/fresh-world path: the file's native records (the
+            // gen-time loot for a saved generated world) + the `TR_CHEST`
+            // fixture. Nothing rolls (S1-A-4).
+            crate::chest_gen::merge_store(seeded_chests, tr_chest_store)
         };
         // `LoadBestiary:3402` + `LoadCreativePowers:3418` (the last two
         // sections, applied to their state owners). A `.wld`'s bestiary tracker
@@ -2581,12 +2841,14 @@ impl App {
             npc_assets,
             npc_timer: 6.0,
             next_worm_id: 1,
+            next_npc_uid: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
             in_reforge_menu: false,
             reforge_slot: EMPTY_SLOT,
             reforge_cooldown: 0,
             shop_mood: 1.0,
+            discount_available: false,
             shop_closed_flag: false,
             creative_powers,
             debug_panel: crate::debug_panel::DebugPanel::new(),
@@ -2685,6 +2947,7 @@ impl App {
             // `Player.cs:33517` — chest.rs:409), so the panel + the player
             // inventory draw together.
             inventory_open: crate::env::inv_open() || tr_chest.is_some(),
+            craft_filter: None,
             bestiary: app_bestiary,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
@@ -2773,7 +3036,12 @@ impl App {
             cursor_override: -1,
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
-            craft_rng: world_seed,
+            // The craft RNG (`Main.rand` in the C#, `Recipe.cs:221`) seeds
+            // from the world; vanilla seeds `Main.rand` from the clock
+            // (`Main.cs:6461-6463`) — the same deterministic stand-in as the
+            // wiring RNG (S1-L-6c).
+            craft_rng: tr_core::unified_random::UnifiedRandom::new(world_seed as i32 | 1),
+            coin_slot: crate::ui::coin_slot::CoinSlotState::new(),
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             menu: menu_state,
@@ -2819,6 +3087,7 @@ impl App {
             net_rtt_ms: 0,
             join_target,
             map: Some(world_map),
+            map_queue: map::MapUpdateQueue::default(),
             map_grab: None,
             minimap_hover: None,
             // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
@@ -2830,11 +3099,16 @@ impl App {
             pvp_icons_forced: crate::env::pvp_icons(),
             audio: audio::Audio::new(assets::content_dir()),
             music: audio::MusicSystem::new(assets::content_dir()),
-            last_hp: 100,
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
             ui_left_press: false,
             ui_right_press: false,
+            ui_right_release: false,
+            buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
+            buff_removals: Vec::new(),
+            focus_recipe: 0,
+            current_recipe_being_crafted: -1,
+            prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),
             pointer_ms: 0.0,
             pointer_event: None,
@@ -2863,6 +3137,9 @@ impl App {
             dev_break,
             dev_place,
             camera: Vec2::ZERO,
+            camera_state: Default::default(),
+            gfx_quality: Default::default(),
+            world_events: Default::default(),
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
@@ -2870,6 +3147,17 @@ impl App {
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
             mount_prev: false,
+            // `Main.gamePaused` starts false and `ResetGameCounter` pins
+            // `GameUpdateCount` at 65536 (`Main.cs:6442-6445`, the `OnWorldLoad`
+            // hook at `:6605`) — both ride this constructor, so a `swap_world`
+            // reset is the same write the boot path makes.
+            game_paused: false,
+            window_focused: true,
+            mouse_back_held: false,
+            game_update_count: 65536,
+            stepper: crate::world_stepper::WorldUpdateStepper::new(),
+            step_input_down: false,
+            step_input_was: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
             last_frame: Instant::now(),
@@ -3413,6 +3701,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 edit::TileInteraction::None => {
                     log::info!("TR_TOGGLE {},{} -> none", op.x, op.y)
                 }
+                edit::TileInteraction::StationInteract { kind } => {
+                    log::info!("TR_TOGGLE {},{} -> station probe ({kind})", op.x, op.y)
+                }
                 edit::TileInteraction::DoorOpened { object_drops } => log::info!(
                     "TR_TOGGLE {},{} -> opened ({} drops)",
                     op.x,
@@ -3471,6 +3762,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 edit::TileInteraction::BankOpen { bank } => {
                     log::info!("TR_TOGGLE {},{} -> bank {bank}", op.x, op.y)
                 }
+                edit::TileInteraction::HitSwitch { x, y } => {
+                    log::info!("TR_TOGGLE {},{} -> switch {x},{y}", op.x, op.y)
+                }
             }
         }
     }
@@ -3492,7 +3786,12 @@ pub(crate) fn build_atlas_reusing_static(
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
-) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(
+    Atlas,
+    Option<tr_render::FontAtlas>,
+    assets::Lookups,
+    (u32, u32, usize, usize),
+)> {
     build_atlas_inner(world, assets_dir, static_cache, fonts_cache)
 }
 
@@ -3501,7 +3800,12 @@ fn build_atlas_inner(
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
-) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(
+    Atlas,
+    Option<tr_render::FontAtlas>,
+    assets::Lookups,
+    (u32, u32, usize, usize),
+)> {
     let (mut tile_ids, wall_ids) = assets::usage(&world);
     // The hotbar can place these even when the loaded world does not use them yet.
     tile_ids.insert(4); // torch
@@ -3847,10 +4151,7 @@ pub(crate) fn latest_own_world() -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
-        let is_trwld = path
-            .extension()
-            .is_some_and(|e| e == "trwld")
-            && path.is_file();
+        let is_trwld = path.extension().is_some_and(|e| e == "trwld") && path.is_file();
         if !is_trwld {
             continue;
         }
@@ -3871,11 +4172,21 @@ pub(crate) fn terrstaria_world() -> Result<PathBuf> {
     if !path.exists() || regen {
         let seed = crate::env::seed().unwrap_or(1);
         let t = Instant::now();
-        let world = worldgen::generate(&worldgen::GenOptions {
-            seed,
+        // `GenOptions::default()` carries no seed flags — no remix table.
+        let mut chest_stock = crate::chest_gen::chest_stock_hook(seed, false);
+        let world = worldgen::generate_with_chest_stock(
+            &worldgen::GenOptions {
+                seed,
+                ..Default::default()
+            },
+            Some(&mut chest_stock),
+        );
+        // The gen-time chest loot rides the save's native v7 section (S1-A-4).
+        let side = save::WorldSide {
+            chests: world.chests.clone(),
             ..Default::default()
-        });
-        save::save(&path, &world, &save::WorldSide::default())?;
+        };
+        save::save(&path, &world, &side)?;
         log::info!(
             "generated '{}' (seed {seed}) in {:.0} ms -> {}",
             world.name,
@@ -3923,7 +4234,6 @@ mod tr_hooks {
         unsafe { std::env::remove_var(name) };
         out
     }
-
 
     /// BUG-21 end to end: the select-world Play enters the world (the lobby does
     /// not come back) and the second swap reuses the cached atlas/font halves
@@ -3985,7 +4295,10 @@ mod tr_hooks {
         assert_eq!(app.world.name, "Beta", "the selected world is live");
         assert!(app.static_sheets.is_some(), "the static half is cached");
         assert!(app.fonts_cache.is_some(), "the font tables are cached");
-        assert!(app.font_atlas.is_some(), "the font page texture rides the swap");
+        assert!(
+            app.font_atlas.is_some(),
+            "the font page texture rides the swap"
+        );
 
         // The second Play reuses both caches (the decode half is pinned by
         // `assets::tests::test_the_second_atlas_build_reuses_the_static_half`,
@@ -4305,7 +4618,12 @@ mod tr_hooks {
         // A minimal `.trwld` through the real save path — `load_world` reads
         // a file (the scratch-file pattern of persist.rs's tests).
         let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
+        save::save(
+            &path,
+            &World::new("pins".into(), 32, 32),
+            &save::WorldSide::default(),
+        )
+        .unwrap();
 
         // Edition 2024: env mutation is `unsafe` (a parallel reader could
         // observe a half-update); the ENV_LOCK above is that serialization.
@@ -4349,7 +4667,12 @@ mod tr_hooks {
         unsafe { std::env::remove_var("TR_MOONDIAL") };
 
         let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
-        save::save(&path, &World::new("pins".into(), 32, 32), &save::WorldSide::default()).unwrap();
+        save::save(
+            &path,
+            &World::new("pins".into(), 32, 32),
+            &save::WorldSide::default(),
+        )
+        .unwrap();
         let (world, sections) = load_world(&path).expect("scratch world loads");
         let _ = std::fs::remove_file(&path);
 
@@ -4358,12 +4681,81 @@ mod tr_hooks {
     }
 }
 
-/// `GetNurseHealCost`'s core arithmetic (`Main.cs:40054-40100`): the
-/// missing life plus the removable debuffs x100, times the happiness
-/// adjustment. The boss-progression/expert/discount multipliers sit
-/// constants-off.
-pub(crate) fn nurse_heal_cost_for(missing: i32, debuff_count: i32, mood: f32) -> i32 {
-    ((missing + debuff_count * 100) as f32 * mood) as i32
+/// `GetNurseHealCost`'s boss-progression ladder inputs (`Main.cs:40069-40088`
+/// + the discount `:40094-40096`) — the World's downed flags and the
+/// Discount Card's `discountAvailable` (R-03-5's field). The expert x2
+/// (`:40091-40093`) sits out with the difficulty plumbing (R-03-6).
+pub(crate) struct NurseCostFlags {
+    pub downed_golem: bool,
+    pub downed_plant_boss: bool,
+    pub downed_mech_any: bool,
+    pub hard_mode: bool,
+    pub downed_boss3_or_queen_bee: bool,
+    pub downed_boss2: bool,
+    pub downed_boss1: bool,
+    pub discount_available: bool,
+}
+
+/// `GetNurseHealCost`'s core arithmetic (`Main.cs:40054-40100`): the missing
+/// life plus the removable debuffs x100, the if/else-if ladder (the
+/// Golem 200 ×, the Plant 150 ×, the mechs 100 ×, hardmode 60 ×, the
+/// Skeletron/Queen-Bee pair 25 ×, boss2 10 ×, boss1 3 ×), the Discount
+/// Card's `(int)((float)num * 0.8f)` truncation, then the happiness
+/// adjustment.
+pub(crate) fn nurse_heal_cost_for(
+    missing: i32,
+    debuff_count: i32,
+    mood: f32,
+    flags: &NurseCostFlags,
+) -> i32 {
+    let mut num = missing + debuff_count * 100;
+    if flags.downed_golem {
+        num *= 200;
+    } else if flags.downed_plant_boss {
+        num *= 150;
+    } else if flags.downed_mech_any {
+        num *= 100;
+    } else if flags.hard_mode {
+        num *= 60;
+    } else if flags.downed_boss3_or_queen_bee {
+        num *= 25;
+    } else if flags.downed_boss2 {
+        num *= 10;
+    } else if flags.downed_boss1 {
+        num *= 3;
+    }
+    if flags.discount_available {
+        num = (num as f32 * 0.8f32) as i32;
+    }
+    (num as f32 * mood) as i32
+}
+
+#[cfg(test)]
+mod s1_g_7_tests {
+    use super::*;
+
+    #[test]
+    fn forced_minimum_zoom_matches_the_c_sharp_computation() {
+        // Main.cs:61989-61994: `val = screenWidth / MaxWorldViewSize.X`,
+        // `ForcedMinimumZoom = max(max(1f, val), screenHeight /
+        // MaxWorldViewSize.Y)` — the floor keeps the visible world inside the
+        // 1920x1200 design size (Main.cs:677-681). At or below it the floor
+        // is 1; either arm alone lifts it.
+        assert_eq!(App::forced_minimum_zoom((1920.0, 1200.0)), 1.0);
+        assert_eq!(App::forced_minimum_zoom((960.0, 600.0)), 1.0);
+        assert!((App::forced_minimum_zoom((2560.0, 1200.0)) - 2560.0 / 1920.0).abs() < f32::EPSILON);
+        assert!((App::forced_minimum_zoom((1920.0, 1440.0)) - 1440.0 / 1200.0).abs() < f32::EPSILON);
+        assert!((App::forced_minimum_zoom((3840.0, 2400.0)) - 2.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn support_wide_screen_is_the_c_sharp_init_default() {
+        // Main.cs:67046 (`Main.SupportWideScreen = false`): the port carries
+        // no settings row for it, so the computed arm runs and the toggle
+        // stays unported (S1-G-7). The arm itself: `Main.SupportWideScreen`
+        // forces the floor to 1f (`:61992-61994`).
+        assert!(!App::SUPPORT_WIDE_SCREEN);
+    }
 }
 
 #[cfg(test)]

@@ -211,8 +211,15 @@ mod tests {
     // changes — every hash moves. (The `variants` field itself is not hashed;
     // the frame pixels are.) Values measured on the merged tree (BUG-25 +
     // S1-A-3 together).
-    const SEED42_512: u32 = 3221031423;
-    const DEFAULT_WORLD: u32 = 235359465;
+    const SEED42_512: u32 = 2673964944;
+    const DEFAULT_WORLD: u32 = 594519700;
+    // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
+    // on their pass's stream now — the shrines' jungle item + `Next(2)`
+    // x-jitter (`WorldGen.cs:10170-10196`/`:17220`), the pyramid's main-item
+    // double roll (`:27853-27873`) and the hell house's `832`/`4281` roll
+    // (`:29292-29297`) — and every chest writes its resolved `num9` style
+    // into the frames (`:35978-35988`), so the srng tail and the chest tiles
+    // move. Values re-measured on the merged tree (S1-A-3's pins + S1-A-4).
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
 
     #[test]

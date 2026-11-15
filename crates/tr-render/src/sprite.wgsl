@@ -119,6 +119,35 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     return out;
 }
 
+// The sRGB EOTF — the exact piecewise `IEC 61966-2-1` curve, not the
+// `pow(x, 2.2)` shortcut (S1-G-4, research/41 D-5). The atlas view
+// (`sprite.rs:162`) and the swapchain both use `Rgba8UnormSrgb`, so the GPU
+// decodes the stored bytes with THIS curve and re-encodes the fragment with
+// its exact inverse; the shader's colour algebra (the tint's pre-linearisation,
+// the paint/dye constants, the negative-paint inversion) must talk to the same
+// curve to land on the vanilla's byte multiplies.
+fn srgb_decode(c: f32) -> f32 {
+    if (c <= 0.04045) {
+        return c / 12.92;
+    }
+    return pow((c + 0.055) / 1.055, 2.4);
+}
+
+fn srgb_encode(c: f32) -> f32 {
+    if (c <= 0.0031308) {
+        return c * 12.92;
+    }
+    return 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+}
+
+fn srgb_decode_rgb(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(srgb_decode(c.r), srgb_decode(c.g), srgb_decode(c.b));
+}
+
+fn srgb_encode_rgb(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(srgb_encode(c.r), srgb_encode(c.g), srgb_encode(c.b));
+}
+
 fn paint_rgb(pid: u32) -> vec3<f32> {
     var table = array<vec3<f32>, 32>(
         vec3<f32>(1.0),
@@ -169,13 +198,21 @@ fn paint_recolor(tex: vec4<f32>, pid: u32) -> vec4<f32> {
         return tex;
     }
     if (pid == 30u) {
-        return vec4<f32>(1.0 - tex.rgb, tex.a);
+        // The vanilla inverts the sRGB byte (`255 - tex_byte`); in this
+        // shader's linear samples the exact form is decode(1 - encode(tex)),
+        // which round-trips to the same byte (S1-G-4).
+        return vec4<f32>(srgb_decode_rgb(vec3<f32>(1.0) - srgb_encode_rgb(tex.rgb)), tex.a);
     }
     if (pid == 31u) {
         return tex;
     }
     let lum = dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114));
-    return vec4<f32>(paint_rgb(pid) * lum, tex.a);
+    // `paint_rgb` holds the sRGB bytes of `WorldGen.paintColor`
+    // (`WorldGen.cs:43921`); the samples are linear (the sRGB atlas view
+    // decoded them), so the constant decodes with the same curve. The wash
+    // itself stays the documented reconstruction (the vanilla's compiled
+    // pass is not in the decompile — ANALYSIS "Paint recolour").
+    return vec4<f32>(srgb_decode_rgb(paint_rgb(pid)) * lum, tex.a);
 }
 
 // The armor-dye passes. The vanilla effect compiles from `Main.Assets[
@@ -193,11 +230,15 @@ fn dye_recolor(tex: vec4<f32>, dye: u32, grad_v: f32) -> vec4<f32> {
     }
     let p = dyes[min(dye - 1u, 47u)];
     let lum = dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114));
+    // The dye colors are baked sRGB bytes (`DyeInitializer`); the samples are
+    // linear, so the constants decode with the same curve as the paint wash
+    // (S1-G-4). The reconstruction itself stays documented as approximate —
+    // the vanilla's compiled effect is not in the decompile.
     if (p.mode == 1u) {
-        return vec4<f32>(p.color.rgb * lum, tex.a);
+        return vec4<f32>(srgb_decode_rgb(p.color.rgb) * lum, tex.a);
     }
     if (p.mode == 2u) {
-        let col = mix(p.color.rgb, p.secondary.rgb, grad_v);
+        let col = srgb_decode_rgb(mix(p.color.rgb, p.secondary.rgb, grad_v));
         return vec4<f32>(col * lum, tex.a);
     }
     return tex;
@@ -243,10 +284,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // compiled HLSL is not in the decompile), 25 black, 26 white, 27 gray,
     // 28 brown, 29 shadow, 30 negative, 31 illuminant (drawn unpainted, like
     // the vanilla pass 0; the glow is light-side).
-    // Terraria multiplies sprite tints in gamma space: XNA's `Color * Color` is a
-    // plain byte multiply on sRGB values. The atlas is sRGB-decoded and the swapchain
-    // encodes on write, so pre-linearise the tint to get the same result on screen.
-    let tint = pow(max(in.color.rgb, vec3<f32>(0.0)), vec3<f32>(2.2));
     // XNA's `BlendState.AlphaBlend` is premultiplied: the rgb source factor is
     // `One`, so a tint with alpha 0 (the tile flames' `Color(200,200,200,0)`)
     // ADDS the texture rgb to the destination instead of fading out. The atlas
@@ -257,5 +294,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let alpha = tex.a * in.color.a;
     let dyed = dye_recolor(tex, in.dye, in.grad_v);
     let painted = paint_recolor(dyed, u32(in.paint + 0.5));
-    return vec4<f32>(painted.rgb * tint, alpha);
+    // The SpriteBatch tint: XNA's formats are plain `Color` (no sRGB decode),
+    // so the vanilla multiplies the baked texture's sRGB bytes with the tint
+    // bytes in gamma space and the backbuffer stores that product raw:
+    // `display_byte = tex_byte * tint_byte / 255`. The port's atlas decodes
+    // and its swapchain re-encodes, so the fragment carries the product
+    // linearised ONCE — `encode(f)` lands on the product byte exactly, which
+    // is what `f = srgb_decode(baked_srgb * tint_srgb)` gives (`encode ∘
+    // decode` is the identity). Linearising the tint alone
+    // (`pow(tint, 2.2)` before S1-G-4, or the piecewise decode of it) solved
+    // the wrong equation: `decode(tex) * decode(tint)` ≠ `decode(tex * tint)`
+    // — that drifted up to 7 LSB per channel (S1-G-4, research/41 D-5).
+    let baked = srgb_encode_rgb(painted.rgb);
+    let tint = srgb_decode_rgb(baked * max(in.color.rgb, vec3<f32>(0.0)));
+    return vec4<f32>(tint, alpha);
 }

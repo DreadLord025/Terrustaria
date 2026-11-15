@@ -1352,7 +1352,6 @@ pub(crate) mod front_flow_tests {
         }
     }
 
-
     #[test]
     fn bug17_a_front_click_plays_the_activation_cue() {
         // Bug 17: the front-end clicks play the menu open (10) — the vanilla
@@ -1402,7 +1401,11 @@ pub(crate) mod front_flow_tests {
             }
             app.front_hover_hit = hit;
         }
-        assert_eq!(app.audio.played_count(), before + 1, "one tick on the enter");
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "one tick on the enter"
+        );
         // A second hover inside the same element is silent.
         let hit2 = app.front_hit();
         if hit2 != app.front_hover_hit {
@@ -1575,7 +1578,9 @@ pub(crate) mod front_flow_tests {
         let now = app.anim_time as f64 * 1000.0;
         let hit = app.front_hit();
         if !app.pointer.clicks_disabled() {
-            app.pointer_event = app.pointer.press(now, ui::pointer::PointerButton::Left, hit);
+            app.pointer_event = app
+                .pointer
+                .press(now, ui::pointer::PointerButton::Left, hit);
         }
         app.handle_front_click();
     }
@@ -1585,7 +1590,9 @@ pub(crate) mod front_flow_tests {
     fn front_release(app: &mut App) {
         let now = app.anim_time as f64 * 1000.0;
         let hit = app.front_hit();
-        app.pointer_event = app.pointer.release(now, ui::pointer::PointerButton::Left, hit);
+        app.pointer_event = app
+            .pointer
+            .release(now, ui::pointer::PointerButton::Left, hit);
     }
 
     /// A centre point inside `rect`, aimed the way the tests point the mouse.
@@ -1612,10 +1619,7 @@ pub(crate) mod front_flow_tests {
     /// player's real `Worlds` directory (`app/mod.rs:1105-1113`), which other
     /// tests leave files in — the click table must read the fixture, not
     /// whatever the disk held, so the list is overwritten after the entry.
-    fn open_world_select(
-        app: &mut App,
-        worlds: Vec<ui::save_list::WorldEntry>,
-    ) {
+    fn open_world_select(app: &mut App, worlds: Vec<ui::save_list::WorldEntry>) {
         app.enter_front(FrontScreen::WorldSelect);
         app.worlds = worlds;
     }
@@ -1733,7 +1737,10 @@ pub(crate) mod front_flow_tests {
             matches!(app.front, Some(FrontScreen::WorldSelect)),
             "a Journey mismatch must not leave world select"
         );
-        assert!(app.play_world.is_none(), "no world is parked on a rejection");
+        assert!(
+            app.play_world.is_none(),
+            "no world is parked on a rejection"
+        );
         assert_eq!(
             app.front_hint.as_deref(),
             Some(reject.as_str()),
@@ -1912,6 +1919,7 @@ pub(crate) mod front_flow_tests {
             ambient_waterfall: (0.0, 0.0, 0.0),
             ambient_lavafall: (0.0, 0.0, 0.0),
             ambient_counter: 0.0,
+            craft_filter: None,
             bestiary: tr_core::bestiary::WorldBestiary::new(),
             town_rooms: crate::town::TownRooms::new(),
             shimmered_npcs: crate::town::ShimmeredTownNpcs::new(),
@@ -1959,6 +1967,7 @@ pub(crate) mod front_flow_tests {
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             next_worm_id: 1,
+            next_npc_uid: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
             in_reforge_menu: false,
@@ -1967,6 +1976,7 @@ pub(crate) mod front_flow_tests {
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             shop_mood: 1.0,
+            discount_available: false,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
             debug_panel: crate::debug_panel::DebugPanel::new(),
@@ -1998,7 +2008,11 @@ pub(crate) mod front_flow_tests {
             cursor_override: -1,
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
-            craft_rng: 1,
+            // The pre-world bootstrap stream; crafting needs a loaded world —
+            // `enter_loaded_world` re-seeds it from the world seed
+            // (`app/mod.rs`).
+            craft_rng: tr_core::unified_random::UnifiedRandom::new(1),
+            coin_slot: crate::ui::coin_slot::CoinSlotState::new(),
             menu: None,
             front,
             front_backup: None,
@@ -2042,6 +2056,7 @@ pub(crate) mod front_flow_tests {
             net_rtt_ms: 0,
             join_target: None,
             map: None,
+            map_queue: crate::map::MapUpdateQueue::default(),
             map_grab: None,
             minimap_hover: None,
             map_style: 1,
@@ -2052,11 +2067,16 @@ pub(crate) mod front_flow_tests {
             pvp_icons_forced: false,
             audio: audio::Audio::new(None),
             music: audio::MusicSystem::new(None),
-            last_hp: 100,
             autosave: 0.0,
             mouse_item: EMPTY_SLOT,
             ui_left_press: false,
             ui_right_press: false,
+            ui_right_release: false,
+            buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
+            buff_removals: Vec::new(),
+            focus_recipe: 0,
+            current_recipe_being_crafted: -1,
+            prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),
             pointer_ms: 0.0,
             pointer_event: None,
@@ -2080,6 +2100,9 @@ pub(crate) mod front_flow_tests {
             dev_break: None,
             dev_place: Vec::new(),
             camera: Vec2::ZERO,
+            camera_state: Default::default(),
+            gfx_quality: Default::default(),
+            world_events: Default::default(),
             zoom: 1.0,
             zoom_pinned: false,
             debug: false,
@@ -2087,6 +2110,15 @@ pub(crate) mod front_flow_tests {
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
             mount_prev: false,
+            // S1-B-3 (the `App::new` comment carries the citations): an
+            // unpaused, focused boot with the counter at the C# reset value.
+            game_paused: false,
+            window_focused: true,
+            mouse_back_held: false,
+            game_update_count: 65536,
+            stepper: crate::world_stepper::WorldUpdateStepper::new(),
+            step_input_down: false,
+            step_input_was: false,
             mouse_down: false,
             last_mouse: Vec2::ZERO,
             last_frame: Instant::now(),
@@ -3104,7 +3136,10 @@ pub(crate) mod front_flow_tests {
             Some(std::path::Path::new("saves/Beta.trwld")),
             "the pressed card's file rides the swap"
         );
-        assert!(app.front.is_none(), "the launch arm closes the front screens");
+        assert!(
+            app.front.is_none(),
+            "the launch arm closes the front screens"
+        );
     }
 
     /// `UIWorldListItem.PlayGame`'s tail: the loaded world is entered, not
@@ -3151,10 +3186,7 @@ pub(crate) mod front_flow_tests {
         let mut loaded = flow_app(None, Vec::new(), Vec::new());
         loaded.hydrate_favorites(bits);
         assert!(loaded.is_favorite(3) && loaded.is_favorite(9));
-        assert!(
-            !loaded.is_favorite(4),
-            "the untouched slot stays unstarred"
-        );
+        assert!(!loaded.is_favorite(4), "the untouched slot stays unstarred");
         // The toggle is reversible and the bits follow it.
         loaded.toggle_favorite(3);
         assert_eq!(loaded.favorite_bits(), 1 << 9);
@@ -3177,7 +3209,10 @@ pub(crate) mod front_flow_tests {
         // The menu env is the menu arm regardless of which screen is up.
         let mut no_menu = flow_app(None, Vec::new(), Vec::new());
         no_menu.update_menu_music();
-        assert_eq!(no_menu.music.cur_music, 51, "no front screen: the plain track");
+        assert_eq!(
+            no_menu.music.cur_music, 51,
+            "no front screen: the plain track"
+        );
     }
 
     /// The world-creation screen's seed text feeds the menu ladder — the

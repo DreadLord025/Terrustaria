@@ -13,10 +13,19 @@ pub(crate) fn update_liquids(app: &mut App, dt: f32) {
     let liquid_tick = &mut app.liquid_tick;
     let liquids = &mut app.liquids;
     let world = &mut app.world;
+    let audio = &mut app.audio;
     app.liquid_step.tick(dt, |_| {
         *liquid_tick = liquid_tick.wrapping_add(1);
         if *liquid_tick % 2 == 0 {
             liquids.update(world);
+            // `Liquid.cs:1345-1347`: the live merge plays its
+            // `PlayLiquidChangeSound` inline — the port's engine is pure,
+            // so it queues the events and the tick plays them here
+            // (S1-E-25). The C#'s `!Main.gameMenu` half of the gate is the
+            // caller's own: the settlement pass never runs in the menu.
+            for (kind, x, y) in liquids.drain_merge_events() {
+                audio.play_liquid_change(kind, x, y);
+            }
         }
     });
     app.liquid_step.cap_backlog();

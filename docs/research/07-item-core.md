@@ -159,7 +159,7 @@ Rust:
 | Reforge cost | PARTIAL | `shop.rs::reforge_cost` `:1272-1277` | `value × stack × PriceAdjustment / 3` matches the inline block `Main.cs:41584-41601`; the Discount-Card ×0.8 arm (`Main.cs:41588-41590`) is not modelled (no discount accessory) |
 | `GetItemExpectedPrice` | PARTIAL | `shop.rs::buy_price` `:1257`, `::sell_price` `:1282` | the non-`buyOnce` arms (×adjustment / ÷adjustment) match `Player.cs:35387-35388` incl. banker's rounding; but the port reads the **kind default** `ITEMS[i].value` while the C# reads the instance's `GetStoreValue()` (`Item.cs:49901-49908`, prefix `value²`), and the `buyOnce` + `discountAvailable` arms (`:35369-35383`, `:35390-35396`) are absent |
 | Rarity name colour | PARTIAL | `ui\tooltip.rs::item_name_color` `:107-129` | −11, −1, 1..10 and ≥11 are byte-identical to `Main.cs:20568-20619` (verified in this pass); the `diff == 1`/`diff == 2` master/journey overrides (`:20620-20627`) and the dynamic −12/−13 arms (`:20564-20567`) are not modelled |
-| Tooltip rows | PARTIAL | `ui\tooltip.rs::item_tooltip_lines` `:166-296` | the stat rows are faithful (damage + class suffix, crit, use-time tiers, knockback words, defense/pick/`axe × 5`/hammer, `tileBoost` sign only when positive — all verified against `Main.cs:20843-20875`); missing: `Item.ToolTip` per-item text, the player-side layers, heal/mana/fishing-pole/mount/pet/quest/vanity/`tileWand` rows and the stack-suffixed `GetHoverName` (below) |
+| Tooltip rows | PARTIAL | `ui\tooltip.rs::item_tooltip_lines` `:166-296` | **S1-E-20 (2026-11-14)**: the rows now match `MouseText_DrawItemTooltip_GetLinesInfo` (`Main.cs:20631-21010`) over a `TooltipContext` — the hover name (the affix + the stack suffix), the per-item `Item.ToolTip` text, the player-side layers (the damage multiplier, the crit, `minionKB`, the quiver, the gloves, the shroomite scale) and the life/mana/fishing/quest/vanity/material rows; the stat rows are faithful (damage + class suffix, crit, use-time tiers, knockback words, defense/pick/`axe × 5`/hammer, `tileBoost` sign only when positive — all verified against `Main.cs:20843-20875`); missing: `Item.ToolTip` per-item text, the player-side layers, heal/mana/fishing-pole/mount/pet/quest/vanity/`tileWand` rows and the stack-suffixed `GetHoverName` (below) |
 | `CanStack` | PASS | `crate::bank::can_stack` | ported (`ROADMAP.md:1393`, M3-CHEST-INT) against `Item.cs:49865-49871` |
 | Lava immunity / `TurnToAir` for drops | PARTIAL | `world_sim\items.rs:100-104` | the `rare ∈ {0,−1}` burn + immune-set test `rare0_drops_burn_in_lava_and_the_immune_set_survives` `:473`; the item-level `TurnToAir` (`Item.cs:49884`) and `IsLavaImmuneRegardlessOfRarity` breadth are not separately verified here — UNVERIFIED against the full set |
 
@@ -262,19 +262,21 @@ vanilla tooltip) and for the *price* math (no money-format or discount-card test
    (`Player.cs:35369-35383`, `:35390-35396`) are missing entirely. The reforge cost at
    least takes the caller's current value (`shop.rs:1272`) and documents the prefix
    scaling (`:1267-1271`).
-5. **Tooltip is a subset of `GetLinesInfo`** (behavioural/cosmetic, medium, admitted in
-   the port's own comments `ui\tooltip.rs:163-165`, `:252-256`). Missing rows: the
-   per-item `Item.ToolTip` text, the player-side layers (weapon damage multiplier, crit
-   bonuses, `minionKB`, the quiver ×1.1), `healLife`/`healMana`/mana-restore rows
-   (`Main.cs:20876+`), the fishing-pole pair (`PrecentFishingPower`/`BaitRequired`,
-   `:20805-20810` — the registry has no `fishingPole` field), and the equipable gate is
-   narrower than the C#: the port tests only `head/body/leg_slot > 0 || accessory`
-   (`:257`) while `Main.cs:20816` also admits `projHook[shoot]`, `mountType != -1` and
-   light/vanity-pet buffs; `vanity` (`tip[24]` `:20838-20841`), `questItem`
-   (`inter[65]` `:20833-20836`) and `tileWand` (`tip[52]` `:20828-20831`) rows are
-   absent. Line 0 also drops the stack suffix — the C# uses
-   `Item.GetHoverName(item, ItemSlot.EstimateDisplayStack(item))` (`Main.cs:20633`), the
-   port `lang::item_name(kind)` (`lang.rs:161`).
+5. ~~**Tooltip is a subset of `GetLinesInfo`**~~ — **CLOSED 2026-11-14 (S1-E-20)**:
+   `ui/tooltip.rs::item_tooltip_lines` ports the rows over a `TooltipContext` (the
+   prefix, the displayed stack, the player, the held item's crit): the per-item
+   `Item.ToolTip` text (`Lang.GetTooltip`, `Lang.cs:193-196`), the player-side layers
+   (the weapon-damage multiplier, the crit bonuses, `minionKB`, the quiver ×1.1, the
+   knockback gloves, the shroomite armour's ranged scale), the `healLife`/`healMana`/
+   mana-restore rows (`Main.cs:20876+`), the fishing-pole pair
+   (`RecentFishingPower`/`BaitRequired`, `:20805-20810`), the wider equipable gate
+   (`:20816` — the aiStyle-7 hook projectiles, `mountType != -1`, the light/vanity-pet
+   buffs), the `vanity` (`tip[24]` `:20838-20841`) and `questItem` (`inter[65]`
+   `:20833-20836`) rows and the hover name's stack suffix
+   (`Item.GetHoverName(item, ItemSlot.EstimateDisplayStack(item))`, `Main.cs:20633`).
+   The `tileWand` row (`tip[52]`) stays out (the registry has no `tileWand` field), and
+   the favourite / social / shop rows and the bulk-craft stack arm are the recorded
+   deviations (ANALYSIS "The item tooltip rows (S1-E-20)").
 6. **Rarity colour: the journey/master overrides are missing** (cosmetic, low, admitted
    in `ui\tooltip.rs:124-125`). `item_name_color` `:107-129` matches
    `Main.cs:20568-20619` exactly for the static rarities, but `diff == 1` (mcColor) and

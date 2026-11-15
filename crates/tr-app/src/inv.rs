@@ -71,3 +71,22 @@ impl Default for EquipSlots {
     }
 }
 
+
+#[cfg(test)]
+mod s1_l_11f_tests {
+    use super::*;
+
+    #[test]
+    fn the_slot_capacity_matches_the_c_sharp_split() {
+        // `Player.inventory = Item[59]` (`Player.cs:1576`): 0..49 the
+        // grid/hotbar, 50..53 the coins, 54..57 the ammo and 58 the trash
+        // (`inventory[58]`, `Player.cs:5130/:5145`). The port splits the same
+        // capacity across `inventory[INV]` + `equip.coins[COINS]` +
+        // `equip.ammo[AMMO]` + `equip.trash` — the totals agree.
+        assert_eq!(crate::item::INV, 50, "the grid/hotbar slots");
+        assert_eq!(COINS + AMMO, 8, "the coin/ammo rows");
+        assert_eq!(INV_SLOTS, 58, "the carry slots the UI hits");
+        // The 59th slot: the C#'s `inventory[58]` trash stash is the port's
+        // `equip.trash` (the BUG-20 shift-click test covers its behavior).
+    }
+}

@@ -53,6 +53,25 @@ fn enumerate_item_icon_ids(images_dir: &Path) -> Vec<u16> {
     ids
 }
 
+/// The `Images/Buff_<id>.xnb` icon ids (`enumerate_item_icon_ids`'s shape).
+fn enumerate_buff_icon_ids(images_dir: &Path) -> Vec<u16> {
+    let Ok(entries) = std::fs::read_dir(images_dir) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<u16> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            let id = name.strip_prefix("Buff_")?.strip_suffix(".xnb")?;
+            id.parse::<u16>().ok()
+        })
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
 /// The two halves of the atlas content: the world-derived sheets (the tile and
 /// wall sheets this world's usage scan asked for) and the world-independent
 /// ones (backgrounds, NPCs, items, UI, …).
@@ -626,6 +645,16 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Bubble",
         "NPC_Head_Boss_7",
         "UI/UI_BossBar",
+        // The map overlay layers (`Main.cs:66551`'s `Main.MapIcons`): the
+        // spawn/bed markers, the ping animation and the layer Extras
+        // (`TextureAssets.Extra[n] = Images/Extra_n`, AssetInitializer.cs:365).
+        "UI/SpawnPoint",
+        "UI/SpawnBed",
+        "UI/MapPing",
+        "Extra_182",
+        "Extra_282",
+        "Extra_299",
+        "Extra_305",
         "UI/Cursor_0",
         "UI/Cursor_1",
         "Mana",
@@ -996,6 +1025,20 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         match result {
             Ok(img) => images.push(img),
             Err(_) => failed_items.push(id),
+        }
+    }
+
+    // The buff icons (`TextureAssets.Buff[type]`, `Images/Buff_<id>`): the
+    // `Main.DrawBuffIcon` source (`Main.cs:43310`). Enumerated like the
+    // items — a missing file just leaves that id's icon unpicked.
+    let buff_ids = enumerate_buff_icon_ids(dir);
+    let buff_images: Vec<(u16, Result<AtlasImage>)> = buff_ids
+        .par_iter()
+        .map(|&id| (id, load_png(dir, &format!("Buff_{id}"), SheetLayout::Raw)))
+        .collect();
+    for (id, result) in buff_images {
+        if let Ok(img) = result {
+            images.push(img);
         }
     }
     if !failed_items.is_empty() {
@@ -1576,6 +1619,17 @@ pub struct Lookups {
     pub npc_heads: Vec<Option<tr_render::SheetRect>>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
+    /// The map overlay icons (`Main.MapIcons`' layers, `Main.cs:66551`).
+    pub map_spawn: Option<tr_render::SheetRect>,
+    pub map_spawn_bed: Option<tr_render::SheetRect>,
+    pub map_ping: Option<tr_render::SheetRect>,
+    pub extra_182: Option<tr_render::SheetRect>,
+    pub extra_282: Option<tr_render::SheetRect>,
+    pub extra_299: Option<tr_render::SheetRect>,
+    pub extra_305: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Buff[type]` (`Images/Buff_<id>`): the buff bar's icons
+    /// (`Main.DrawBuffIcon`, `Main.cs:43310`).
+    pub buff_icons: HashMap<u16, tr_render::SheetRect>,
     /// `Fonts/Mouse_Text` for UI labels and item names.
     pub ui_font: Option<UiFont>,
     /// `Fonts/Item_Stack` for stack counts and slot numbers.
@@ -1930,6 +1984,20 @@ impl Lookups {
                     Some((name.strip_prefix("Item_")?.parse::<u16>().ok()?, *rect))
                 })
                 .collect(),
+            buff_icons: atlas
+                .sheets
+                .iter()
+                .filter_map(|(name, rect)| {
+                    Some((name.strip_prefix("Buff_")?.parse::<u16>().ok()?, *rect))
+                })
+                .collect(),
+            map_spawn: atlas.sheet("UI/SpawnPoint").copied(),
+            map_spawn_bed: atlas.sheet("UI/SpawnBed").copied(),
+            map_ping: atlas.sheet("UI/MapPing").copied(),
+            extra_182: atlas.sheet("Extra_182").copied(),
+            extra_282: atlas.sheet("Extra_282").copied(),
+            extra_299: atlas.sheet("Extra_299").copied(),
+            extra_305: atlas.sheet("Extra_305").copied(),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),

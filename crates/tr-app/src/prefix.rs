@@ -130,6 +130,13 @@ pub(crate) fn in_set(set: &[u16], kind: u16) -> bool {
     set.binary_search(&kind).is_ok()
 }
 
+/// `Item.CanHavePrefixes` (`Item.cs:1136-1140`): the kind has a rollable
+/// prefix table at all. The crafting cursor gate reads it
+/// (`Main.CursorHasSpaceToCraftRecipe`, `Main.cs:42325`).
+pub(crate) fn can_have_prefixes(kind: u16) -> bool {
+    rollable_prefixes(kind).is_some()
+}
+
 /// `Item.GetRollablePrefixes` (`Item.cs:1101-1140`): the check order decides
 /// the table for kinds that sit in several sets.
 pub(crate) fn rollable_prefixes(kind: u16) -> Option<&'static [u16]> {
@@ -440,9 +447,14 @@ pub trait PrefixRandom {
     fn next_max(&mut self, max: i32) -> i32;
 }
 
-impl PrefixRandom for UnifiedRandom {
+/// The blanket adapter: every [`WorldGenRand`](tr_core::worldgen::chest_stock::WorldGenRand)
+/// stream rolls prefixes directly — the runtime `prefix_rng` ([`UnifiedRandom`])
+/// and the gen-time chest stocking's pass stream alike (S1-A-4: the same
+/// stream the row draws ride, the C#'s single-`genRand` interleave at the
+/// pass granularity).
+impl<T: tr_core::worldgen::chest_stock::WorldGenRand + ?Sized> PrefixRandom for T {
     fn next_max(&mut self, max: i32) -> i32 {
-        UnifiedRandom::next_max(self, max)
+        T::next(self, max)
     }
 }
 
@@ -475,7 +487,11 @@ impl PrefixRandom for SplitMixPrefix<'_> {
 /// the reduced set 1/3 none); `-2` rolls a non-zero prefix (the best-value
 /// marker feeds `rolledPrefixIsTopTier`, which the port does not need); `-3`
 /// keeps the current prefix (a no-op here); `-4` clears to none.
-pub fn roll_prefix(kind: u16, prefix_want: i32, rng: &mut impl PrefixRandom) -> u16 {
+pub fn roll_prefix<T: PrefixRandom + ?Sized>(
+    kind: u16,
+    prefix_want: i32,
+    rng: &mut T,
+) -> u16 {
     let Some(rollable) = rollable_prefixes(kind) else {
         // `CanHavePrefixes` gate — no roll, no draws (`Item.cs:515-518`).
         return 0;

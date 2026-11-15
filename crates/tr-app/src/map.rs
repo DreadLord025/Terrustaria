@@ -5,7 +5,10 @@
 
 use glam::Vec2;
 use tr_core::lighting::LightMap;
-use tr_core::map::{MapTile, get_map_tile_color, reveal_rect};
+use tr_core::map::{
+    MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect, unlock_map_tile_pretty,
+    update_map_lighting, update_type,
+};
 use tr_core::{TILE_PX, World};
 use tr_render::SpriteRenderer;
 
@@ -386,6 +389,10 @@ pub fn draw_map_background(r: &mut SpriteRenderer, bg: MapBg, screen: Vec2, sky:
 pub struct WorldMap {
     /// Row-major `y * width + x`, matching `World::index`.
     pub tiles: Vec<MapTile>,
+    /// The tile-grid dims (`tiles`' row-major shape); `WorldMap.QueueUpdate`
+    /// bounds-checks against them (`WorldMap.cs:96`).
+    tiles_w: usize,
+    tiles_h: usize,
     pub open: bool,
     /// `Main.mapFullscreenScale` (px per tile) and `Main.mapFullscreenPos` (tiles).
     pub scale: f32,
@@ -403,12 +410,18 @@ pub struct WorldMap {
     needs_full_upload: bool,
     /// `Main.resetMapFull`: recentre on the next `prepare`.
     reset_pos: bool,
+    /// `PingMapLayer`'s pool (`PingMapLayer.cs:16-19`): the ping positions
+    /// in world tiles + their age in seconds (the C# stamps `DateTime.Now`
+    /// and compares `TotalSeconds > 15`).
+    pub pings: Vec<([f32; 2], f32)>,
 }
 
 impl WorldMap {
     pub fn new(world: &World) -> Self {
         Self {
             tiles: vec![MapTile::default(); (world.width as usize) * (world.height as usize)],
+            tiles_w: world.width as usize,
+            tiles_h: world.height as usize,
             open: false,
             scale: MAP_FULLSCREEN_SCALE_DEFAULT,
             pos: [0.0, 0.0],
@@ -418,29 +431,104 @@ impl WorldMap {
             uploaded: false,
             needs_full_upload: false,
             reset_pos: true,
+            pings: Vec::new(),
         }
     }
 
-    /// Reveals a `75x47` window around the player 4x/second from `light`.
+    /// Reveals 4x/second from `light` — the `LightingEngine.ExportToMiniMap`
+    /// rect (`LightingEngine.cs:246-262`): the engine's processed area
+    /// shrunk 28 px on every side, intersected with the world bounds inset
+    /// 40 and the scene area (`MapHelper.sceneArea`,
+    /// `MapHelper.cs:1819` = the player tile centre's
+    /// `SceneMetrics.ZoneScanSize` box — `SceneMetrics.cs:917-919`'s
+    /// 1920x1200 / 16 + the 25 px padding). The port used to reveal a fixed
+    /// player-centred 75x47 box (the audit's D10) — a smaller, trail-prone
+    /// window than the vanilla's view-derived one.
     pub fn update(&mut self, world: &World, player: Option<&Player>, light: &LightMap, dt: f32) {
-        let Some(p) = player else { return };
         self.timer += dt;
         if self.timer < 0.25 {
             return;
         }
         self.timer = 0.0;
-        let px = (p.x / TILE_PX) as i32;
-        let py = (p.y / TILE_PX) as i32;
-        let changed = reveal_rect(
-            world,
-            &mut self.tiles,
-            light,
-            px - 37,
-            py - 23,
-            px + 37,
-            py + 23,
-        );
+        // `:256`: `MapHelper.sceneArea` is the scene-metrics scan's
+        // player-centred box — its C# static defaults to `Rectangle.Empty`,
+        // so without a scan (no player) the intersect is empty and nothing
+        // reveals.
+        let Some(p) = player else {
+            return;
+        };
+        // `LightingEngine.cs:252`: the processed area minus 28 px per side.
+        let (ax, ay, aw, ah) = (light.x0, light.y0, light.w, light.h);
+        let mut x0 = ax + 28;
+        let mut y0 = ay + 28;
+        let mut x1 = ax + aw - 28;
+        let mut y1 = ay + ah - 28;
+        // `:253-255`: the world bounds inset 40.
+        x0 = x0.max(40);
+        y0 = y0.max(40);
+        x1 = x1.min(world.width - 40);
+        y1 = y1.min(world.height - 40);
+        // The player tile centre's 169x124 zone-scan box
+        // (`SceneMetrics.cs:919`'s `ZoneScanSize`).
+        let cx = (p.x / TILE_PX) as i32;
+        let cy = (p.y / TILE_PX) as i32;
+        let (hw, hh) = (169 / 2, 124 / 2);
+        x0 = x0.max(cx - hw);
+        y0 = y0.max(cy - hh);
+        x1 = x1.min(cx + hw);
+        y1 = y1.min(cy + hh);
+        if x0 > x1 || y0 > y1 {
+            return;
+        }
+        let changed = reveal_rect(world, &mut self.tiles, light, x0, y0, x1, y1);
         self.dirty.extend(changed);
+    }
+
+    /// `WorldMap.UpdateType` (`WorldMap.cs:65-93`) — see the tr-core free fn.
+    pub fn update_type(&mut self, world: &World, x: i32, y: i32) -> bool {
+        crate::map::update_type(world, &mut self.tiles, x, y)
+    }
+
+    /// `WorldMap.QueueUpdate` (`WorldMap.cs:95-105`) — see the tr-core free fn.
+    pub fn queue_update(&mut self, x: i32, y: i32) -> bool {
+        crate::map::queue_update(
+            &mut self.tiles,
+            x,
+            y,
+            self.tiles_w as i32,
+            self.tiles_h as i32,
+        )
+    }
+
+    /// `WorldMap.ClearEdges` (`WorldMap.cs:260-285`) — the map load's edge
+    /// clear (`WorldMap.cs:210`).
+    pub fn clear_edges(&mut self, world: &World) {
+        crate::map::clear_edges(&mut self.tiles, world.width, world.height);
+    }
+
+    /// The edit-queue drain's push (the `MapRenderer.QueueChange` analog —
+    /// the frame routes `MapUpdateQueue::update`'s changed tiles here).
+    pub(crate) fn push_dirty(&mut self, tiles: Vec<(i32, i32)>) {
+        self.dirty.extend(tiles);
+    }
+
+    /// `PingMapLayer.Add` (`PingMapLayer.cs:47-51`): up to 100 pings; the
+    /// position is world tiles. The C# caller rides the ping net message —
+    /// the port has no multiplayer, so the pool stays empty in-game (the
+    /// seam exists for the net task).
+    pub fn add_ping(&mut self, pos: [f32; 2]) {
+        if self.pings.len() < 100 {
+            self.pings.push((pos, 0.0));
+        }
+    }
+
+    /// `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:37-40`): the pings
+    /// older than 15 s drop.
+    pub fn age_pings(&mut self, dt: f32) {
+        for p in self.pings.iter_mut() {
+            p.1 += dt;
+        }
+        self.pings.retain(|p| p.1 <= 15.0);
     }
 
     /// Tiles changed since the previous call (`prepare` uploads these).
@@ -455,6 +543,9 @@ impl WorldMap {
         if !load_map_file(world, &mut self.tiles, path).unwrap_or(false) {
             return false;
         }
+        // `WorldMap.Load`'s edge clear (`WorldMap.cs:210`): the 40-tile
+        // world border bands come back unrevealed.
+        self.clear_edges(world);
         // Drop any pending single-tile writes; the full upload replaces them.
         self.dirty.clear();
         self.needs_full_upload = true;
@@ -565,7 +656,9 @@ impl WorldMap {
         _lookups: &assets::Lookups,
         world: &World,
         screen: Vec2,
-    ) {
+    ) -> ([f32; 2], f32) {
+        // The callers need the overlay context's offset/scale
+        // (`Main.cs:55996`'s `MapIcons.Draw` arguments) — return the pair.
         // `Main.cs:55431-55485`: the wooden scroll frame (928x248).
         if let Some(uv) = r.uv("Map", 0.0, 0.0, 928.0, 248.0) {
             let rect = map_frame_rect(self.pos, self.scale, screen, world);
@@ -584,6 +677,13 @@ impl WorldMap {
             q.uv,
             [1.0; 4],
         );
+        // `Main.cs:55996`: the overlay offset is the map's top-left px minus
+        // the 10-px frame inset, and the draw scale rides the map scale
+        // (`num77`'s formula — `Main.cs:55975-55985`).
+        (
+            [q.dest[0] - 10.0 * self.scale, q.dest[1] - 10.0 * self.scale],
+            self.scale,
+        )
     }
 }
 
@@ -603,8 +703,10 @@ pub fn save_map_file(
     let header = tr_core::map::write_map_header(world);
     let tables = tr_core::map::write_option_tables();
     let body = tr_core::map::encode_tiles(map, world.width as usize, world.height as usize);
-    // The C# `DeflateStream` is raw deflate (no zlib/gzip wrapper).
-    let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+    // The C# `DeflateStream` is raw deflate (no zlib/gzip wrapper); its
+    // `CompressionMode.Compress` ctor default is `CompressionLevel.Optimal`
+    // (zlib level 6) (`MapHelper.cs:3047`).
+    let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
     encoder.write_all(&body)?;
     let deflated = encoder.finish()?;
 
@@ -777,7 +879,11 @@ mod tests {
         let mut wm = WorldMap::new(&world);
         assert!(!wm.needs_full_upload);
         assert!(wm.load(&world, &path));
-        assert_eq!(wm.tiles, saved);
+        // `WorldMap.cs:210`: the load clears the 40-tile edge bands after
+        // the file body — the interior compares, the bands are wiped.
+        let mut expected = saved.clone();
+        crate::map::clear_edges(&mut expected, world.width, world.height);
+        assert_eq!(wm.tiles, expected);
         assert!(wm.needs_full_upload);
 
         let mut fresh = WorldMap::new(&world);
@@ -822,8 +928,11 @@ mod tests {
     /// The `ground_world` from `player.rs`: a 64x128 world with a solid band
     /// `y in 60..128`, spawn at `(10, 40)`.
     fn ground_world() -> World {
-        let mut w = World::new("t".into(), 64, 128);
-        for x in 0..64 {
+        // The world is 200 wide so the reveal rect's world-bounds inset 40
+        // (`LightingEngine.cs:253-255`) leaves a live window around the
+        // spawn column.
+        let mut w = World::new("t".into(), 200, 128);
+        for x in 0..200 {
             for y in 60..128 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile {
@@ -839,9 +948,133 @@ mod tests {
     }
 
     #[test]
+    fn update_type_refreshes_a_queued_tile_after_an_edit() {
+        // `WorldMap.cs:65-93`: the queued flag arms a re-derive; the tile
+        // keeps its light and picks the new world state.
+        let mut world = ground_world();
+        let px = 100usize;
+        let py = 40usize;
+        // A revealed water-free stone tile at (100, 40).
+        let i = world.index(px as i32, py as i32);
+        world.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        let mut m = WorldMap::new(&world);
+        // The map tile derives from the world (the colour included) — a
+        // hand-built create(1, 200, 0) would mismatch on the colour.
+        assert!(crate::map::update_map_lighting(&world, &mut m.tiles, 100, 40, 200));
+        // Queue + drain: nothing changed yet (the world matches).
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, px as i32, py as i32);
+        assert!(q.update(&world, &mut m).is_empty(), "no change yet");
+        // The tile becomes air: the queued refresh re-derives to the
+        // background (the type flips, the light stays). The first drain
+        // consumed the entry, so the edit re-queues.
+        world.tiles[i] = Tile::default();
+        q.add_tile(&mut m, 100, 40);
+        let changed = q.update(&world, &mut m);
+        assert_eq!(changed, vec![(px as i32, py as i32)]);
+        assert_ne!(m.tiles[i].ty, 1, "the type re-derived");
+        assert_eq!(m.tiles[i].light, 200, "the light kept");
+    }
+
+    #[test]
+    fn queue_update_refuses_dark_and_already_queued_tiles() {
+        // `WorldMap.cs:99-102`.
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 40);
+        m.tiles[i] = MapTile::create(1, 0, 0); // dark
+        assert!(!m.queue_update(100, 40));
+        m.tiles[i] = MapTile::create(1, 200, 0);
+        assert!(m.queue_update(100, 40));
+        assert!(!m.queue_update(100, 40), "the dedupe flag");
+    }
+
+    #[test]
+    fn unlock_map_tile_pretty_falls_off_and_skips_solids_and_lava() {
+        // `WorldMap.cs:135-174`: the 11x11 Manhattan falloff, the solid and
+        // the non-lava-liquid skips, the wall 0.8 / underground 0.7 tints.
+        let mut world = ground_world();
+        world.world_surface = 70.0; // the falloff rows sit above it
+        let mut m = WorldMap::new(&world);
+        // The air cell at (100, 60) reveals itself at 255 and its ring by
+        // the Manhattan falloff — (100, 59) is one step out: 255*4/5 = 204.
+        let (sx, sy) = (100, 60);
+        let si = world.index(sx, sy);
+        world.tiles[si] = Tile::default();
+        unlock_map_tile_pretty(&world, &mut m.tiles, sx, sy);
+        // The centre is a SKY-background air tile — `CreateMapTile`'s
+        // sky arm forces the light to 255 (`MapHelper.cs`'s skyPosition
+        // chain), so the falloff input 255 rides through. The ring reveals
+        // (its sky tiles also clamp to 255); the exact per-tile number is
+        // the sky override's, not the falloff's.
+        assert_eq!(m.tiles[world.index(sx, sy)].light, 255, "the centre");
+        assert!(
+            m.tiles[world.index(100, 59)].light > 0,
+            "the ring reveals"
+        );
+        assert!(m.tiles[world.index(100, 56)].light > 0, "the ring edge reveals");
+        assert_eq!(m.tiles[world.index(100, 54)].light, 0, "beyond the radius stays dark");
+        // The stone cell refuses the whole walk — itself and its ring stay
+        // dark (`WorldGen.SolidTile`, `WorldMap.cs:136-139`).
+        let (gx, gy) = (120, 60);
+        unlock_map_tile_pretty(&world, &mut m.tiles, gx, gy);
+        assert_eq!(m.tiles[world.index(gx, gy)].light, 0, "the solid skips");
+        assert_eq!(m.tiles[world.index(gx, gy - 1)].light, 0, "the ring stays dark");
+        // The lava cell refuses (`:144-147`).
+        let si = world.index(140, 60);
+        world.tiles[si] = Tile::default();
+        world.tiles[si].liquid = 200;
+        world.tiles[si].flags |= FLAG_ACTIVE | tr_core::tile::FLAG_LIQUID_LAVA;
+        unlock_map_tile_pretty(&world, &mut m.tiles, 140, 60);
+        assert_eq!(m.tiles[world.index(140, 60)].light, 0, "the lava skips");
+    }
+
+    #[test]
+    fn clear_edges_wipes_the_40_tile_bands() {
+        // `WorldMap.cs:260-285`.
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        for t in m.tiles.iter_mut() {
+            *t = MapTile::create(1, 255, 0);
+        }
+        m.clear_edges(&world);
+        assert_eq!(m.tiles[world.index(0, 0)].light, 0);
+        assert_eq!(m.tiles[world.index(39, 100)].light, 0);
+        assert_eq!(m.tiles[world.index(100, 10)].light, 0);
+        assert_eq!(m.tiles[world.index(100, 60)].light, 255, "the interior keeps");
+        assert_eq!(m.tiles[world.index(100, 39)].light, 0, "the top band");
+        assert_eq!(m.tiles[world.index(100, 40)].light, 255, "the first interior row");
+        assert_eq!(m.tiles[world.index(100, 88)].light, 0, "the bottom band");
+    }
+
+    #[test]
+    fn the_edit_queue_round_trips_into_the_map() {
+        // `MapUpdateQueue.cs:43-71`: the per-tile add queues once (the
+        // dedupe) and the drain reports the changed tiles once.
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 40);
+        m.tiles[i] = MapTile::create(1, 200, 0);
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, 100, 40);
+        q.add_tile(&mut m, 100, 40);
+        world.tiles[i] = Tile::default(); // the edit
+        let changed = q.update(&world, &mut m);
+        assert_eq!(changed.len(), 1, "the dedupe");
+        assert_ne!(m.tiles[i].ty, 1);
+    }
+
+    #[test]
     fn reveal_window_marks_tiles_around_the_player() {
         let world = ground_world();
-        let p = Player::spawn(&world);
+        let mut p = Player::spawn(&world);
+        // The world's 40-tile border bands are un-revealable
+        // (`LightingEngine.cs:253-255`'s inset + `ClearEdges`) — spawn mid-map.
+        p.x = 100.0 * TILE_PX;
         let px = (p.x / TILE_PX) as i32;
         let py = (p.y / TILE_PX) as i32;
         let light = LightMap::compute(
@@ -1245,5 +1478,331 @@ mod tests {
         let got = head_icon_pos(center_px, pos, 4.0, screen);
         assert_close(got[0], 796.0, 1e-3);
         assert_close(got[1], 449.6, 1e-3);
+    }
+
+    // ---- S1-L-5: the `.map` deflate parity (`MapHelper.InternalSaveMap`) ----
+    //
+    // The compressed layer is NOT byte-identical to vanilla: the vanilla
+    // runtime's `clrcompression.dll` (.NET FW 4.8.1) embeds a Microsoft-patched
+    // zlib whose output no stock zlib reproduces at any parameter combination
+    // (the evidence and the parameter probe live in ANALYSIS.md, "The `.map`
+    // deflate stream"). What IS 1:1 and frozen here: the uncompressed prefix,
+    // the pre-deflate row body, and the wrapper semantics (raw deflate at the
+    // `CompressionMode.Compress` ctor default = `CompressionLevel.Optimal`).
+
+    /// The frozen pre-deflate row body for the synthetic map below — what the
+    /// Rust encoder must emit and what vanilla's `DeflateStream` compressed
+    /// byte-for-byte (`fw48-reference.deflate` inflates back onto it). Dump
+    /// with `S1_L5_DUMP_BODY=<path>`.
+    const S1_L5_BODY: &[u8] = include_bytes!("../../../tools/MapDeflateHarness/map-body.bin");
+    /// The vanilla FW 4.8.1 `DeflateStream` bytes for that body — the
+    /// reproducible divergence evidence, produced by `tools/MapDeflateHarness/fw48`.
+    const S1_L5_FW_REFERENCE: &[u8] =
+        include_bytes!("../../../tools/MapDeflateHarness/fw48-reference.deflate");
+    /// Our own zlib-rs level-6 output for that body — the regression pin for
+    /// the compressor choice. Dump with `S1_L5_DUMP_FLATE2=<path>`.
+    const S1_L5_OUR_DEFLATE: &[u8] =
+        include_bytes!("../../../tools/MapDeflateHarness/rust-deflate.bin");
+
+    /// The S1-L-5 synthetic map: 320x64, `world_surface` 20, `rock_layer` 32.
+    ///
+    /// The rows walk every `encode_tiles` category and every run shape: dark
+    /// skip-runs (single, mid-row and `> 255`), `light == 255` exact runs
+    /// (`Equals`), variable-light runs (`EqualsWithoutLight`) including one
+    /// that spans the full row (the row-end case), painted tiles/walls,
+    /// 16-bit tile and wall types, all four liquid slots (the shimmer rides
+    /// slot 0's `0x40` bit), the sky-gradient band, the dirt/rock depth bands
+    /// and the hell band. The reader resolves the depth-bound slots by row:
+    /// a dirt/rock colour is picked by `l < rockLayer` (`LoadMapVersion2:4002`)
+    /// and the sky/hell slot by `l < worldSurface` (`:3999`), so sky rows sit
+    /// above the surface, hell below it, dirt above `rock_layer`, rock below.
+    fn s1_l5_synthetic_map() -> (Vec<MapTile>, usize, usize, f64, f64) {
+        let t = color_table();
+        let w = 320usize;
+        let h = 64usize;
+        let surface = 20.0f64;
+        let rock = 32.0f64;
+        assert!(
+            t.wall_position as usize > t.tile_position as usize + 300,
+            "the tile band must span a relative type > 255"
+        );
+        assert!(
+            t.liquid_position as usize > t.wall_position as usize + 300,
+            "the wall band must span a relative type > 255"
+        );
+        let mut map = vec![MapTile::default(); w * h];
+        let mut rng = 0x5EED_1C55u32;
+        let mut nxt = move || {
+            rng ^= rng << 13;
+            rng ^= rng >> 17;
+            rng ^= rng << 5;
+            rng
+        };
+        let put = |map: &mut Vec<MapTile>, x: usize, y: usize, tile: MapTile| {
+            map[y * w + x] = tile;
+        };
+
+        // l=0: one dark skip-run across the whole row (run 319 > 255).
+        // l=1: alternating dark tiles and lit tiles whose types vary.
+        for x in (0..w).step_by(2) {
+            let ty = t.tile_position + ((x / 2) % 7) as u16 + 1;
+            put(&mut map, x + 1, 1, MapTile::create(ty, 25 + (nxt() % 60) as u8, 0));
+        }
+        // l=2: one variable-light run spanning the full row — the row-end case
+        // with a two-byte run length and a light byte per run tile.
+        for x in 0..w {
+            put(&mut map, x, 2, MapTile::create(t.tile_position + 5, 20 + (x % 9) as u8, 0));
+        }
+        // l=3: two tile types in blocks of 5, one colour per block.
+        for x in 0..w {
+            let ty = if (x / 5) % 2 == 0 {
+                t.tile_position + 1
+            } else {
+                t.tile_position + 2
+            };
+            put(&mut map, x, 3, MapTile::create(ty, 30 + (nxt() % 200) as u8, ((x / 5) % 6) as u8));
+        }
+        // l=4: a 16-bit tile type (relative 300): a 40-tile `light == 255`
+        // exact run, then variable-light singles.
+        for x in 0..40 {
+            put(&mut map, x, 4, MapTile::create(t.tile_position + 300, 255, 0));
+        }
+        for x in 40..w {
+            put(&mut map, x, 4, MapTile::create(t.tile_position + 300, 60 + (nxt() % 120) as u8, (x % 3) as u8));
+        }
+        // l=5: painted walls in blocks.
+        for x in 0..w {
+            let ty = t.wall_position + ((x / 8) % 4) as u16 * 2;
+            put(&mut map, x, 5, MapTile::create(ty, 55 + (nxt() % 90) as u8, ((x / 8) % 6) as u8));
+        }
+        // l=6: a 16-bit wall type (relative 300).
+        for x in 0..w {
+            put(&mut map, x, 6, MapTile::create(t.wall_position + 300, 90, (x % 4) as u8));
+        }
+        // l=7: all four liquid slots; the shimmer rides slot 0's `0x40` bit.
+        for x in 0..w {
+            put(&mut map, x, 7, MapTile::create(t.liquid_position + (x % 4) as u16, 45 + (nxt() % 50) as u8, 0));
+        }
+        // l=8..12: sky rows (above the surface): no type or light is stored;
+        // the reader rebuilds the gradient from the row (`:3999`).
+        for l in 8..13usize {
+            let gradient = ((255.0 * (l as f64 / surface)) as u8) as u16;
+            for x in 0..w {
+                put(&mut map, x, l, MapTile::create(t.sky_position + gradient, 255, (l % 4) as u8));
+            }
+        }
+        // l=13: a long dark skip-run broken by a single lit tile mid-row.
+        put(&mut map, 137, 13, MapTile::create(t.tile_position + 9, 40, 2));
+        // l=14: dark.
+        // l=15..19: dirt rows (above rock_layer; the dirt band is 256 wide, so
+        // every relative type stays one byte).
+        for l in 15..20usize {
+            for x in 0..w {
+                let ty = t.dirt_position + ((x / 3 + l) % 220) as u16;
+                put(&mut map, x, l, MapTile::create(ty, 35 + (nxt() % 150) as u8, ((x + l) % 7) as u8));
+            }
+        }
+        // l=20..23: between the surface and rock_layer — tiles, walls and
+        // liquids only (the depth-bound slots would decode differently here).
+        for l in 20..24usize {
+            for x in 0..w {
+                let ty = match x % 3 {
+                    0 => t.tile_position + ((x / 3 + l) % 250) as u16 + 1,
+                    1 => t.wall_position + ((x / 5 + l) % 40) as u16 * 3,
+                    _ => t.liquid_position + (x % 3) as u16,
+                };
+                put(&mut map, x, l, MapTile::create(ty, 40 + (nxt() % 180) as u8, (x % 5) as u8));
+            }
+        }
+        // l=24..25: `light == 255` whole-row exact runs.
+        for l in 24..26usize {
+            for x in 0..w {
+                put(&mut map, x, l, MapTile::create(t.tile_position + 11, 255, 0));
+            }
+        }
+        // l=26..27: walls whose type+colour repeat every 9 tiles with varying
+        // lights (variable-light runs of 8 plus a mismatch).
+        for l in 26..28usize {
+            for x in 0..w {
+                put(&mut map, x, l, MapTile::create(t.wall_position + (x % 9) as u16, 70 + (nxt() % 100) as u8, (x % 9) as u8));
+            }
+        }
+        // l=28..31: walls and liquids, painted.
+        for l in 28..32usize {
+            for x in 0..w {
+                let ty = if x % 2 == 0 {
+                    t.wall_position + (x / 2 % 30) as u16
+                } else {
+                    t.liquid_position + (l % 3) as u16
+                };
+                put(&mut map, x, l, MapTile::create(ty, 50 + (nxt() % 140) as u8, (l % 9) as u8));
+            }
+        }
+        // l=32..40: rock rows (at/below rock_layer).
+        for l in 32..41usize {
+            for x in 0..w {
+                let ty = t.rock_position + ((x / 4 + l) % 200) as u16;
+                put(&mut map, x, l, MapTile::create(ty, 45 + (nxt() % 120) as u8, ((x + l) % 8) as u8));
+            }
+        }
+        // l=41..63: hell rows (below the surface): category 6, no type stored;
+        // the reader maps them to the single hell entry by depth.
+        for l in 41..64usize {
+            for x in 0..w {
+                put(&mut map, x, l, MapTile::create(t.hell_position, 60 + (nxt() % 130) as u8, (x % 9) as u8));
+            }
+        }
+        (map, w, h, surface, rock)
+    }
+
+    #[test]
+    fn s1_l_5_body_matches_vanilla_and_the_wrapper_is_faithful() {
+        let (map, w, h, surface, rock) = s1_l5_synthetic_map();
+        let body = tr_core::map::encode_tiles(&map, w, h);
+
+        // The encoder is pinned byte-for-byte to the frozen body fixture — the
+        // pre-deflate layer is the part of the format that is 1:1.
+        assert_eq!(
+            body,
+            S1_L5_BODY.to_vec(),
+            "encode_tiles drifted from the frozen body fixture"
+        );
+
+        // The vanilla FW 4.8.1 `DeflateStream` bytes inflate back onto exactly
+        // our body: the compressed layer interoperates, its bytes do not match
+        // any stock zlib (see ANALYSIS.md, "The `.map` deflate stream").
+        use std::io::Read;
+        let mut decoder = flate2::read::DeflateDecoder::new(S1_L5_FW_REFERENCE);
+        let mut inflated = Vec::new();
+        decoder.read_to_end(&mut inflated).unwrap();
+        assert_eq!(
+            inflated,
+            body,
+            "the vanilla reference stream inflates to a different body"
+        );
+
+        // Our encoder: raw deflate at the C# ctor default (Optimal, level 6),
+        // pinned so the compressor choice cannot drift silently.
+        use std::io::Write;
+        let mut encoder =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+        encoder.write_all(&body).unwrap();
+        let deflated = encoder.finish().unwrap();
+        assert_eq!(
+            deflated,
+            S1_L5_OUR_DEFLATE.to_vec(),
+            "our deflate encoder drifted"
+        );
+
+        // And the body still round-trips through the reader.
+        let t = color_table();
+        let header = tr_core::map::MapHeader {
+            version: tr_core::map::MAP_FORMAT_VERSION,
+            seed: 0,
+            height: h as i32,
+            width: w as i32,
+            tile_count: tr_core::mapdata::TILE_COUNT as i16,
+            wall_count: tr_core::mapdata::WALL_COUNT as i16,
+            liquid_count: 4,
+            sky_count: 256,
+            dirt_count: 256,
+            rock_count: 256,
+        };
+        let decoded = tr_core::map::decode_tiles(
+            &body,
+            &header,
+            &t.tile_option_counts,
+            &t.wall_option_counts,
+            w,
+            h,
+            surface,
+            rock,
+        )
+        .expect("the S1-L-5 body must decode");
+        assert_eq!(decoded, map);
+    }
+
+    #[test]
+    fn s1_l_5_dump_body() {
+        let Ok(path) = std::env::var("S1_L5_DUMP_BODY") else {
+            return;
+        };
+        let (map, w, h, ..) = s1_l5_synthetic_map();
+        std::fs::write(path, tr_core::map::encode_tiles(&map, w, h)).unwrap();
+    }
+
+    #[test]
+    fn s1_l_5_dump_flate2() {
+        let Ok(path) = std::env::var("S1_L5_DUMP_FLATE2") else {
+            return;
+        };
+        use std::io::Write;
+        let mut encoder =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+        encoder.write_all(S1_L5_BODY).unwrap();
+        let deflated = encoder.finish().unwrap();
+        std::fs::write(path, &deflated).unwrap();
+    }
+}
+
+/// `Terraria.Map.MapUpdateQueue` (`MapUpdateQueue.cs:21-108`): the edit-side
+/// map refresh queues — the per-tile queue (`MapUpdateQueue.Add(int, int)`,
+/// the `Main.Map.QueueUpdate` dedupe) and the area queue
+/// (`MapUpdateQueue.Add(Rectangle)`). The `Main.dedServ`/`generatingWorld`/
+/// `!mapEnabled` gates ride the callers. `Update()` (`Main.cs:61862`) drains
+/// both through `WorldMap.UpdateType` and reports the changed tiles (the
+/// C# feeds `MapRenderer.QueueChange`; the port re-uploads via `dirty`).
+#[derive(Default)]
+pub struct MapUpdateQueue {
+    areas: Vec<[i32; 4]>,
+    tiles: Vec<(i32, i32)>,
+}
+
+impl MapUpdateQueue {
+    /// `MapUpdateQueue.Add(Rectangle)` (`MapUpdateQueue.cs:23-41`): the
+    /// world-clamped rect queues every tile it covers.
+    pub fn add_area(&mut self, map: &mut WorldMap, x: i32, y: i32, w: i32, h: i32) {
+        let (mw, mh) = (map.tiles_w as i32, map.tiles_h as i32);
+        let x0 = x.max(0);
+        let y0 = y.max(0);
+        let x1 = (x + w).min(mw);
+        let y1 = (y + h).min(mh);
+        self.areas.push([x0, y0, x1 - x0, y1 - y0]);
+        for i in x0..x1 {
+            for j in y0..y1 {
+                map.queue_update(i, j);
+            }
+        }
+    }
+
+    /// `MapUpdateQueue.Add(int, int)` (`MapUpdateQueue.cs:43-60`): the
+    /// per-tile queue behind `Main.Map.QueueUpdate`'s dedupe.
+    pub fn add_tile(&mut self, map: &mut WorldMap, x: i32, y: i32) {
+        if !map.queue_update(x, y) {
+            return; // `:44`: the gate skips the enqueue
+        }
+        self.tiles.push((x, y));
+    }
+
+    /// `MapUpdateQueue.Update` (`MapUpdateQueue.cs:62-71`): both queues drain
+    /// through `WorldMap.UpdateType`; the changed tiles return (the C#'s
+    /// `MapRenderer.QueueChange`).
+    pub fn update(&mut self, world: &World, map: &mut WorldMap) -> Vec<(i32, i32)> {
+        let mut changed = Vec::new();
+        for (x, y) in std::mem::take(&mut self.tiles) {
+            if map.update_type(world, x, y) {
+                changed.push((x, y));
+            }
+        }
+        for [x, y, w, h] in std::mem::take(&mut self.areas) {
+            for i in x..x + w {
+                for j in y..y + h {
+                    if map.update_type(world, i, j) {
+                        changed.push((i, j));
+                    }
+                }
+            }
+        }
+        changed
     }
 }

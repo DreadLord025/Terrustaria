@@ -124,6 +124,10 @@ impl PassId {
     /// `FilterWaterDistortion` (phase 4): uv offset where the water mask
     /// ([`FilterImages::water_mask`]) covers the pixel.
     pub const WATER_DISTORTION: PassId = PassId(9);
+    /// `FilterMoonLordShake` (S1-G-6): the Moon Lord ritual's screen shake —
+    /// the whole view wobbles by `uIntensity` (the `Main.cs:64977-64979`
+    /// countdown formula the tick driver feeds).
+    pub const MOON_LORD_SHAKE: PassId = PassId(10);
 }
 
 /// Filter name → vanilla pass name → WGSL pass index. Rows are the
@@ -144,7 +148,7 @@ pub const PASS_TABLE: &[(&str, &str, u32)] = &[
     ("MonolithStardust", "FilterMiniTower", 0),
     ("MonolithVortex", "FilterMiniTower", 0),
     ("MoonLord", "FilterMoonLord", 0),
-    ("MoonLordShake", "FilterMoonLordShake", 0),
+    ("MoonLordShake", "FilterMoonLordShake", 10),
     ("MonolithMoonLord", "FilterMoonLord", 0),
     ("Graveyard", "FilterGraveyard", 1),
     ("testInvert", "FilterInvert", 0),
@@ -740,6 +744,8 @@ mod tests {
                 // Phase 4: the two distortion passes.
                 "FilterHeatDistortion" => PassId::HEAT_DISTORTION,
                 "FilterWaterDistortion" => PassId::WATER_DISTORTION,
+                // S1-G-6: the shake pass.
+                "FilterMoonLordShake" => PassId::MOON_LORD_SHAKE,
                 // Not ported: the towers/monoliths/MoonLord/CRT/test passes
                 // (M4/test content).
                 _ => PassId::PASSTHROUGH,

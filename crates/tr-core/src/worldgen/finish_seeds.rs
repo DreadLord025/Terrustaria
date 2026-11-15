@@ -744,7 +744,7 @@ mod tests {
         }
     }
 
-    fn streams(seed: u64) -> Streams {
+    fn streams(seed: u64) -> Streams<'static> {
         Streams::new(seed)
     }
 

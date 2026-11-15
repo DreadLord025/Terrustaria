@@ -456,17 +456,17 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
         .filter(|s| s.kind != 0 && s.count > 0)
         .map(|s| s.kind)
         .collect();
-    // The turn-in is the player's item-use interaction (`Player.ItemCheck`
-    // under the `UpdatePlayers` swap) — the reward rolls ride
-    // `stream(UpdatePlayers)`.
-    let lines = crate::angler::angler_reward(
-        quests_done,
-        hard_mode,
-        quest_item,
-        adjustment,
-        &owned,
-        app.rngs.stream(RngKey::UpdatePlayers),
-    );
+        // The turn-in is the player's item-use interaction (`Player.ItemCheck`
+        // under the `UpdatePlayers` swap) — the reward rolls ride
+        // `stream(UpdatePlayers)`.
+        let lines = crate::angler::angler_reward(
+            quests_done,
+            hard_mode,
+            quest_item,
+            adjustment,
+            &owned,
+            app.rngs.stream(RngKey::UpdatePlayers),
+        );
     let (ax, ay) = app.npcs[angler_idx].center();
     for line in lines {
         // The reward spawns join the turn-in's `UpdatePlayers` stream.
@@ -580,8 +580,8 @@ pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
         return false;
     }
     let water = app.world.tile(tx, ty).is_some_and(|t| t.has_any_liquid());
-    // `Next(8) == 0` (`NPC.cs:1670`'s spider-wall arm).
-    if water || app.rngs.stream(RngKey::UpdateTime).next_max(8) != 0 {
+        // `Next(8) == 0` (`NPC.cs:1670`'s spider-wall arm).
+        if water || app.rngs.stream(RngKey::UpdateTime).next_max(8) != 0 {
         return false;
     }
     let mut m = Npc::new(
@@ -687,6 +687,9 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         crate::happiness::process_mood(&app.world, &app.npcs, &app.npcs[idx], (pcx, pcy), false);
     let flags = crate::shop::ShopFlags {
         hard_mode: app.world.hard_mode,
+        downed_slime_king: app.world.downed_slime_king,
+        downed_queen_slime: app.world.downed_queen_slime,
+        downed_moon_lord: app.world.downed_moon_lord,
         night: !app.world.day_time,
         blood_moon: app.world.blood_moon,
         zone_snow: app.scene_metrics.zone_snow,
@@ -736,7 +739,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         .filter(|sl| sl.kind != 0 && sl.count > 0)
         .map(|sl| sl.kind)
         .collect();
-    app.shop_stock = crate::shop::resolve_stock(shop, &flags, &inv_ids);
+    app.shop_stock = crate::shop::resolve_stock_entries(shop, &flags, &inv_ids);
     app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
     // `TinkererReforge` (`NPCInteractions.cs:407-423`) opens the reforge
@@ -796,16 +799,20 @@ pub(crate) fn update_brain_state(app: &mut App) {
                 b.swarm_done = true;
             }
         }
-        let creepers_alive = app
+        // The Creeper count: the C#'s `num818` (`NPC.cs:32534-32538`) — the
+        // Brain retreats when the swarm is gone, so the arm reads the count.
+        let creeper_count = app
             .npcs
             .iter()
-            .any(|n| n.kind == NpcKind::Creeper && n.hp > 0);
+            .filter(|n| n.kind == NpcKind::Creeper && n.hp > 0)
+            .count() as f32;
         if let Some(b) = app
             .npcs
             .iter_mut()
             .find(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
         {
-            b.dont_take_damage = creepers_alive;
+            b.brain_local[2] = creeper_count;
+            b.dont_take_damage = creeper_count > 0.0;
         }
     } else {
         app.world.brain_present = false;
@@ -913,6 +920,33 @@ pub(crate) fn update_worms_in(
         npcs.push(child);
         i += 1;
     }
+    // The `realLife` pool pass (`NPC.cs:81374-81378`): the CARRIER owns the
+    // life of a linked segment. The strikes that run without the NPC list
+    // (the EoC shield-dash and the thorns reflect inside `Npc::contact`)
+    // park their damage on the segment; the carrier pays it here.
+    for i in 0..npcs.len() {
+        let dmg = npcs[i].pending_pool_damage;
+        if dmg == 0 {
+            continue;
+        }
+        npcs[i].pending_pool_damage = 0;
+        let Some(carrier) = Npc::carrier_index(npcs, i) else {
+            continue;
+        };
+        npcs[carrier].hp -= dmg;
+    }
+    // The mirror (`NPC.cs:81377-81378`): a segment shows the carrier's
+    // `life`/`lifeMax` — the pool is one number, the whole chain's.
+    for i in 0..npcs.len() {
+        if !npcs[i].has_carrier() {
+            continue;
+        }
+        let Some(carrier) = Npc::carrier_index(npcs, i) else {
+            continue;
+        };
+        npcs[i].hp = npcs[carrier].hp;
+        npcs[i].max_hp = npcs[carrier].max_hp;
+    }
     // The follower trail (`:51867-51922`) + the chain death
     // (`:51425-51433`).
     for i in 0..npcs.len() {
@@ -954,10 +988,10 @@ pub(crate) fn update_worms_in(
                     if crate::projectile::can_hit(
                         world, npcs[i].x, npcs[i].y, lw, lh, pcx, pcy, 0.0, 0.0,
                     ) {
-                        // The four `Next(-20, 21)` draws
-                        // (`NPC.cs:49866-49871`).
-                        let mut dx = pcx - cx + rng.next_range(-20, 21) as f32;
-                        let mut dy = pcy - cy + rng.next_range(-20, 21) as f32;
+                            // The four `Next(-20, 21)` draws
+                            // (`NPC.cs:49866-49871`).
+                            let mut dx = pcx - cx + rng.next_range(-20, 21) as f32;
+                            let mut dy = pcy - cy + rng.next_range(-20, 21) as f32;
                         let d = (dx * dx + dy * dy).sqrt().max(1.0);
                         dx = dx / d * 8.0 + rng.next_range(-20, 21) as f32 * 0.05;
                         dy = dy / d * 8.0 + rng.next_range(-20, 21) as f32 * 0.05;
@@ -978,17 +1012,14 @@ pub(crate) fn update_worms_in(
             .iter()
             .find(|n| n.worm_id == wid && n.seg_index == seg - 1 && n.hp > 0)
         else {
-            // `NPC.cs:51507-51511`'s split: the orphaned MIDDLE link
-            // becomes its own worm's head (`Transform(13, ai[0])`); the
-            // TAIL with a dead leader dies silently (`:51488-51502`'s
-            // `life = 0` arms); the mech worm's same-kind chain keeps the
-            // port's whole-tail death.
-            if npcs[i].kind.is_worm_mid() && npcs[i].kind.worm_next() != npcs[i].kind {
-                npcs[i].kind = match npcs[i].kind {
-                    NpcKind::DevourerBody => NpcKind::DevourerHead,
-                    NpcKind::GiantWormBody => NpcKind::GiantWormHead,
-                    _ => NpcKind::EaterOfWorldsHead,
-                };
+            // `NPC.cs:51498-51502`: the orphaned MIDDLE link becomes its
+            // own worm's head (`Transform(13, ai[0])`) — the Eater of
+            // Worlds' rule only. The classic families' links die with
+            // their leader (`NPC.cs:51425-51433`: `life = 0` +
+            // `checkDead`), and so does the Destroyer's (`AI_037`'s
+            // `NPC.cs:49820-49828`).
+            if npcs[i].kind == NpcKind::EaterOfWorldsBody {
+                npcs[i].kind = NpcKind::EaterOfWorldsHead;
             } else {
                 npcs[i].hp = 0;
             }
@@ -1005,9 +1036,10 @@ pub(crate) fn update_worms_in(
         npcs[i].y += dy * num62;
         npcs[i].rotation = dy.atan2(dx) + 1.57;
     }
-    // The followerless mid becomes the tail (`NPC.cs:51513-51519`'s
-    // `Transform(15, 0f, ai[1])`): the chain's front end closes when the
-    // link behind died. The classic families only — the mech worm's
+    // The followerless link: `NPC.cs:51513-51519`'s `Transform(15, 0f,
+    // ai[1])` — the Eater of Worlds' body becomes the tail. The classic
+    // families' links die with the chain instead (`NPC.cs:51396-51433`:
+    // the follower gone → `life = 0` + `checkDead`); the mech worm's
     // same-kind chain has no mid/tail kinds to swap to.
     for i in 0..npcs.len() {
         if !npcs[i].kind.is_worm_mid()
@@ -1021,11 +1053,27 @@ pub(crate) fn update_worms_in(
             .iter()
             .any(|n| n.worm_id == wid && n.seg_index == seg + 1 && n.hp > 0);
         if !follower_alive {
-            npcs[i].kind = match npcs[i].kind {
-                NpcKind::DevourerBody => NpcKind::DevourerTail,
-                NpcKind::GiantWormBody => NpcKind::GiantWormTail,
-                _ => NpcKind::EaterOfWorldsTail,
-            };
+            if npcs[i].kind == NpcKind::EaterOfWorldsBody {
+                npcs[i].kind = NpcKind::EaterOfWorldsTail;
+            } else {
+                npcs[i].hp = 0;
+            }
+        }
+    }
+    // The Eater of Worlds' head: `NPC.cs:51502-51509` — the head dies when
+    // its follower is gone (the EoW's own life pools let a body fall on
+    // its own). The classic families' heads cannot lose a follower on
+    // their own — their links share the head's pool (`realLife`).
+    for i in 0..npcs.len() {
+        if npcs[i].hp <= 0 || npcs[i].kind != NpcKind::EaterOfWorldsHead {
+            continue;
+        }
+        let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
+        let follower_alive = npcs
+            .iter()
+            .any(|n| n.worm_id == wid && n.seg_index == seg + 1 && n.hp > 0);
+        if !follower_alive {
+            npcs[i].hp = 0;
         }
     }
     // The heads: the dig/air machine (`:51923-52051`).
@@ -1514,17 +1562,45 @@ pub(crate) fn check_invasion_progress_display(app: &mut App) {
     }
 }
 
-/// The kill-credit block (`NPC.cs:78236-78279`): the group matches the
-/// active invasion → `invasionSize -= num9` (the Summoner 471's 10-point
-/// kill, the rest 1) + `ReportInvasionProgress(sizeStart - size, sizeStart,
-/// group + 3, 0)`.
+/// `NPC.FindFirstNPC(551)` (`NPC.cs:80287-80303`) — the Old One's Army's
+/// Betsy, the wave-7 anchor: its live life ratio (`life/lifeMax`), or
+/// `None` when no Betsy is on the field (the C#'s `-1` arm).
+fn dd2_betsy_hp_ratio(app: &App) -> Option<f32> {
+    let betsy = app
+        .npcs
+        .iter()
+        .find(|n| n.kind == NpcKind::DD2Betsy && n.hp > 0)?;
+    if betsy.max_hp <= 0 {
+        return None;
+    }
+    Some(betsy.hp as f32 / betsy.max_hp as f32)
+}
+
+/// The event's tier (`DD2Event.FindProperDifficulty`, `:358-370`): the
+/// hardmode mech/golem gates pick the wave budgets and the kill worth.
+fn dd2_tier(app: &App) -> i32 {
+    tr_core::dd2::find_tier(
+        app.world.hard_mode,
+        app.world.downed_mech_boss1 || app.world.downed_mech_boss2 || app.world.downed_mech_boss3,
+        app.world.downed_golem,
+    )
+}
+
 /// `DD2Event.CheckProgress` (`DD2Event.cs:366-392`) — the Old One's Army's
-/// kill advance: the kill's worth rides the tier (the ported families are
-/// the tier-1 rows worth 1.0), the wave's budget
-/// (`DD2Event::required_wave_kills`) opens the next wave with the 1800-tick
-/// break, and the wave-6 sentinel is the win (`WonThisRun`).
+/// kill advance: the kill's worth rides the tier (`GetMonsterPointsWorth`,
+/// `:546-554`), the wave's budget (`GetInvasionStatus` → the tier's
+/// `Difficulty_N_GetRequiredWaveKills`) opens the next wave with the
+/// 1800-tick break, and the wave-6 sentinel is the win (`WonThisRun`).
 fn dd2_report_kill(app: &mut App, kind: NpcKind) {
-    let roster = tr_core::dd2::enemies_for_wave(app.world.dd2_wave).0;
+    // The event's tier (`FindProperDifficulty`, `:358-370`): the wave
+    // rosters, the budgets and the kill worth all ride it.
+    let tier = dd2_tier(app);
+    let wave = app.world.dd2_wave;
+    let roster: &[u16] = match tier {
+        3 => tr_core::dd2::enemies_for_wave_t3(wave).0,
+        2 => tr_core::dd2::enemies_for_wave_t2(wave).0,
+        _ => tr_core::dd2::enemies_for_wave(wave).0,
+    };
     if !roster.iter().any(|k| nid_of(*k) == Some(kind)) {
         // The kill outside the wave's roster scores nothing.
         return;
@@ -1534,22 +1610,34 @@ fn dd2_report_kill(app: &mut App, kind: NpcKind) {
     if app.world.dd2_spawn_hold != 0 {
         return;
     }
-    let worth = tr_core::dd2::KILL_WORTH_T1;
+    // `GetMonsterPointsWorth` (`:546-554`): the tier's worth row.
+    let worth = match tier {
+        3 => tr_core::dd2::KILL_WORTH_T3,
+        2 => tr_core::dd2::KILL_WORTH_T2,
+        _ => tr_core::dd2::KILL_WORTH_T1,
+    };
+    // `GetInvasionStatus` (`:517-536`): the bucket is the wave's kills
+    // BEFORE this kill lands; the tier's table may replace it (the
+    // wave-7 Betsy bucket, `FindFirstNPC(551)`, `:1487-1494`).
+    let mut kills_i = app.world.dd2_wave_kills as i32;
+    let required = match tier {
+        2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills_i),
+        3 => tr_core::dd2::required_wave_kills_t3(wave, &mut kills_i, dd2_betsy_hp_ratio(app)),
+        _ => tr_core::dd2::required_wave_kills(wave, &mut kills_i),
+    };
     app.world.dd2_wave_kills += worth;
     // `DD2Event.CheckProgress` (`DD2Event.cs:376-392`): the wave report rides
     // `Main.ReportInvasionProgress(currentKillCount, requiredKillCount, 3,
     // currentWave)` — icon 3 is the `Extra[79]` Old One's Army sheet and the
     // `> 0` wave selects `DrawInvasionProgress`'s `Game.WaveMessage` arm.
-    let wave = app.world.dd2_wave;
-    let mut kills_i = app.world.dd2_wave_kills as i32;
-    let required = tr_core::dd2::required_wave_kills(wave, &mut kills_i);
-    app.invasion_progress = kills_i;
+    // `currentKillCount += (int)num` (`:373`) adds the kill's worth.
+    app.invasion_progress = kills_i + worth as i32;
     app.invasion_progress_max = required;
     app.invasion_progress_icon = 3;
     app.invasion_progress_wave = wave;
     app.invasion_progress_display_left = 160;
-    let passed =
-        tr_core::dd2::wave_budget_passed(app.world.dd2_wave, &mut app.world.dd2_wave_kills);
+        let passed =
+            tr_core::dd2::wave_budget_passed(app.world.dd2_wave, &mut app.world.dd2_wave_kills);
     if passed {
         app.world.dd2_wave_kills = 0.0;
         app.world.dd2_wave += 1;
@@ -1637,17 +1725,17 @@ fn spawn_dd2_from_gate(app: &mut App, sx: f32, sy: f32, left_gate: bool) -> Vec<
     if !app.world.dd2_event_ongoing {
         return Vec::new();
     }
-    let tier = tr_core::dd2::find_tier(
-        app.world.hard_mode,
-        app.world.downed_mech_boss1 || app.world.downed_mech_boss2 || app.world.downed_mech_boss3,
-        app.world.downed_golem,
-    );
+    let tier = dd2_tier(app);
     let wave = app.world.dd2_wave;
     // `GetInvasionStatus`'s pair: the wave's budget and the score so far.
     let kills = app.world.dd2_wave_kills as i32;
     let required = match tier {
         2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills.clone()),
-        3 => tr_core::dd2::required_wave_kills_t3(wave, &mut kills.clone(), 0.0),
+        3 => tr_core::dd2::required_wave_kills_t3(
+            wave,
+            &mut kills.clone(),
+            dd2_betsy_hp_ratio(app),
+        ),
         _ => tr_core::dd2::required_wave_kills(wave, &mut kills.clone()),
     };
     // The pool's live counts (`NPC.CountNPCS`) — the roll reads them per id.
@@ -1789,8 +1877,9 @@ pub(crate) fn should_spawn_invasion_enemies(world: &World, player_y: f32, player
         return false;
     }
     // `position.Y < Main.worldSurface * 16.0 + NPC.sHeight` — the px-space
-    // compare (`NPC.sHeight` = 200).
-    if player_y < (world.world_surface * 16.0 + 200.0) as f32
+    // compare (`NPC.sHeight` = 1200, `NPC.cs:6769`; the port used 200, which
+    // made the band ~6x too narrow — S1-F-18).
+    if player_y < (world.world_surface * 16.0 + crate::spawner::S_HEIGHT as f64) as f32
         || (world.spawn_y as f32) > world.world_surface as f32
     {
         let num = 3000.0;
@@ -1976,13 +2065,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
     crate::world_sim::lunar::update_moon_lord_countdown(app);
+    // The stable identity (`NPC.whoAmI`, `NPC.cs:6145`): every NPC takes
+    // its id once. The C#'s boss-part links (`ai[3]`, `localAI[0..2]`)
+    // point at these ids; the port's list compacts every frame, so the
+    // ids — not the Vec indices — carry the link.
+    {
+        let mut next = app.next_npc_uid;
+        for n in app.npcs.iter_mut() {
+            if n.uid == 0 {
+                n.uid = next;
+                next += 1;
+            }
+        }
+        app.next_npc_uid = next;
+    }
     // The Moon Lord parts' carrier write-through (`AI_078`'s `:41642` /
     // `AI_079`'s `:42098` read `Main.npc[ai[3]].Center` live) — the
-    // PRE-pass: each 397/396/400/401 finds its core, mirrors the core's
-    // centre into `carrier_x/y`, and drops the link (so the machine
-    // self-kills) when the core died. The leech blob's anchor is the
-    // head (`AI_082`'s `:36630-36640`) — its `ai[0]` holds the head's
-    // index + 1 in the vanilla; the port links by kind instead.
+    // PRE-pass: each 397/396/400/401 finds ITS core (the `ai[3]` link,
+    // the stable id the spawn handed out), mirrors the core's centre into
+    // `carrier_x/y`, and drops the link (so the machine self-kills) when
+    // the core died. The leech blob's anchor is the head (`AI_082`'s
+    // `:36630-36640`) — its `ai[0]` holds the head's index + 1 in the
+    // vanilla; the port keeps the head's id.
     for i in 0..app.npcs.len() {
         let kind = app.npcs[i].kind;
         if kind != NpcKind::MoonLordHand
@@ -1992,12 +2096,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         {
             continue;
         }
-        let want = if kind == NpcKind::MoonLordLeechBlob {
-            NpcKind::MoonLordHead
-        } else {
-            NpcKind::MoonLordCore
-        };
-        let core = app.npcs.iter().position(|m| m.kind == want && m.hp > 0);
+        // The link: the carrier's stable id (`ai[3]`). A part whose link
+        // was never handed out (a hand spawned outside the Moon Lord's
+        // spawn arm) falls back to the core of its family.
+        let mut carrier_uid = app.npcs[i].carrier_uid;
+        if carrier_uid == 0 {
+            let want = if kind == NpcKind::MoonLordLeechBlob {
+                NpcKind::MoonLordHead
+            } else {
+                NpcKind::MoonLordCore
+            };
+            carrier_uid = app
+                .npcs
+                .iter()
+                .find(|m| m.kind == want && m.hp > 0)
+                .map(|m| m.uid)
+                .unwrap_or(0);
+            app.npcs[i].carrier_uid = carrier_uid;
+        }
+        let core = app
+            .npcs
+            .iter()
+            .position(|m| m.uid == carrier_uid && m.uid != 0 && m.hp > 0);
         match core {
             Some(ci) => {
                 let (ccx, ccy) = app.npcs[ci].center();
@@ -2014,36 +2134,35 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // The core's part bookkeeping (`AI_077`'s `:41229-41232` +
-    // `:41251-41291`): the three stored slots mirror the live parts (the
-    // hands split by their `ai[2]` slot), so the core's loss check — a
-    // missing part opens the death ride — reads them.
+    // `:41251-41291`): the three stored slots hold the parts' ids (the
+    // `localAI[0..2]` link the spawn handed out), so the core's checks
+    // resolve them.
     for i in 0..app.npcs.len() {
         if app.npcs[i].kind != NpcKind::MoonLordCore {
             continue;
         }
-        let mut slots = [-1i32, -1, -1];
-        for (slot, want) in [
-            (0usize, NpcKind::MoonLordHand),
-            (1usize, NpcKind::MoonLordHand),
-            (2usize, NpcKind::MoonLordHead),
-        ] {
-            for j in 0..app.npcs.len() {
-                if app.npcs[j].kind != want || app.npcs[j].hp <= 0 {
-                    continue;
-                }
-                let hand_slot = app.npcs[j].ai[2] as i32;
-                let fits = if want == NpcKind::MoonLordHand {
-                    hand_slot == slot as i32
-                } else {
-                    // The head has no `ai[2]` slot of its own.
-                    hand_slot == 0
-                };
-                if fits && slots[slot] < 0 {
-                    slots[slot] = j as i32;
-                }
+        // The C#'s flag (`:41251-41269`): a slot that points at no living
+        // part takes the core down with it.
+        let mut lost = false;
+        // The C#'s flag2 (`:41270-41285`): all three parts in their death
+        // state hand the core its vulnerable phase. A slot that never
+        // got a part is not a dead part.
+        let mut dead = true;
+        for uid in app.npcs[i].moon_parts {
+            if uid <= 0 {
+                lost = true;
+                dead = false;
+                continue;
+            }
+            let alive = app.npcs.iter().any(|m| m.uid as i32 == uid && m.hp > 0);
+            if !alive {
+                lost = true;
+            } else {
+                dead = false;
             }
         }
-        app.npcs[i].moon_parts = slots;
+        app.npcs[i].moon_parts_lost = lost;
+        app.npcs[i].moon_parts_dead = dead;
     }
     // `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` request
     // (`Main.cs:65373`): the clock arms it at the day boundary (the
@@ -2260,26 +2379,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npc_timer -= dt;
     // Fixed 60 Hz NPC simulation, like NPC.cs. Updating per rendered frame made
     // enemies move faster on high-refresh displays.
-    // The invasion spawn inputs captured before the npc_step split borrows
-    // (`ShouldSpawnInvasionEnemies` + the table pick read only the world /
-    // the player pos / the summoner-alive flag).
-    let inv_input = {
-        let w = &app.world;
-        let p = app.player.as_ref();
-        if let Some(p) = p {
-            if should_spawn_invasion_enemies(w, p.y, p.x) {
-                let summoner_alive = app
-                    .npcs
-                    .iter()
-                    .any(|n| n.kind == NpcKind::GoblinSummoner && n.hp > 0);
-                Some((p.x, p.y, summoner_alive))
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    };
     // The Golem's anchor write (`NPC.cs:19507`'s `NPC.golemBoss`): the
     // body's centre / velocity.X / life ratio for the head and fist
     // tethers. Hoisted BEFORE the AI pass: the C# parts read
@@ -2332,21 +2431,92 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // scoped-bind pattern, `clock.rs:108-111`).
     let npcs_rng = app.rngs.stream(RngKey::UpdateNpcs);
     let player = &mut app.player;
-    let mut invasion_pick: Option<(NpcKind, f32, f32)> = None;
     // Limit the scope of borrows to just the tick closure
     {
         let world = &app.world;
         let npcs = &mut app.npcs;
+        let audio = &mut app.audio;
         app.npc_step.tick(dt.min(0.25), |step| {
             if let Some(player) = player {
-                for n in npcs.iter_mut() {
+                for (i, n) in npcs.iter_mut().enumerate() {
+                    // The NPC's slot index (the C#'s `NPC.whoAmI`) — the
+                    // spawn requests that carry an owner reference (the
+                    // Saucer deathray's `ai0 = whoAmI + 1`) read it.
+                    n.slot = i;
                     n.update_rng(world, player, step, npcs_rng);
                     black_slime_darkness_touch(n, player, npcs_rng);
+                    // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
+                    // sounds ride the same per-NPC stream after the AI's
+                    // draws — the table's rolls, then the legacy family's
+                    // slot/pitch draws. The C#'s `Main.netMode == 2` gate
+                    // (`NPC.cs:92245`) is the dedicated server's; the port
+                    // has none. No ported kind matches the critter table
+                    // yet (M4-NPC's roster has no critter ids), so the
+                    // emitter stays silent until they land.
+                    let mut hi_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
+                    let cue = crate::ambient_sound::critter_sound_cue(
+                        n.kind.to_u16() as i32,
+                        world.day_time,
+                        world.time,
+                        (world.world_surface * 16.0) as f32,
+                        n.y,
+                        n.vx.abs(),
+                        &mut hi_roll,
+                    );
+                    if let Some((legacy_id, style)) = cue {
+                        let mut signed = |lo: i32, hi: i32| npcs_rng.next_range(lo, hi);
+                        if let Some(voice) = crate::ambient_sound::critter_legacy_voice(
+                            legacy_id,
+                            style as u32,
+                            &mut signed,
+                            &|slot| audio.zombie_playing(slot),
+                        ) {
+                            audio.play_critter(voice, n.x, n.y);
+                        }
+                    }
                 }
-            }
+                }
         });
     }
     app.npc_step.cap_backlog();
+    // `NPC.cs:90504`: the switch-tile bridge — an NPC whose box reaches a
+    // pressure plate trips the wiring (the C#'s call sits right after the
+    // NPC's collision pass, inside `NPC.Update`). The port runs it as a
+    // pass over the updated NPCs: the C#'s per-NPC order is kept by the
+    // slot order, and the scan's own effect (the plate trips) does not
+    // depend on the other NPCs' updates.
+    {
+        let mut wiring = &mut app.wiring;
+        let world = &mut app.world;
+        for n in app.npcs.iter() {
+            let (w, h) = n.size();
+            let switch = crate::collision::switch_tiles(
+                wiring,
+                world,
+                n.x,
+                n.y,
+                n.old_x,
+                n.old_y,
+                w as i32,
+                h as i32,
+                2, // the NPC's objType (`NPC.cs:90504`)
+            );
+            if let Some((item, x, y)) = switch.dropped {
+                // `WorldGen.KillTile`'s drop for the broken plate — the
+                // switch bridge runs inside `NPC.UpdateNPC` (the `UpdateNpcs`
+                // swap, `Main.cs:17767-17769`), so the roll rides the AI
+                // group's stream.
+                crate::world_sim::items::spawn_item_drop_fields(
+                    &mut app.items,
+                    npcs_rng,
+                    item,
+                    1,
+                    x,
+                    y,
+                );
+            }
+        }
+    }
     // The eye's climb-away despawn (`EncourageDespawn(10)` from the
     // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
     // far enough off-screen; the port culls it above the player's view).
@@ -2369,16 +2539,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.town_look_timer = 0.0;
         let world = &app.world;
         let npcs = &mut app.npcs;
-        for n in npcs.iter_mut() {
+        // The positions first: the room scan reads the whole NPC list (the
+        // occupancy), so the mutable pass runs before it.
+        let mut asking: Vec<(usize, i32, i32)> = Vec::new();
+        for (i, n) in npcs.iter().enumerate() {
             if n.kind != NpcKind::Guide || n.home.is_some() {
                 continue;
             }
-            let tx = (n.x / TILE_PX) as i32;
-            let ty = (n.y / TILE_PX) as i32;
-            if let Some((hx, hy)) = crate::town::quick_find_home(world, tx, ty) {
+            asking.push((i, (n.x / TILE_PX) as i32, (n.y / TILE_PX) as i32));
+        }
+        for (i, tx, ty) in asking {
+            // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
+            if let Some((hx, hy)) = crate::town::quick_find_home(world, npcs, tx, ty, Some(i)) {
                 // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
                 // the home assigns, the homeless flag clears.
-                n.home = Some((hx, hy));
+                npcs[i].home = Some((hx, hy));
             }
         }
     }
@@ -2435,7 +2610,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             if let Some(player) = app.player.as_ref() {
                 let xt = (player.x / TILE_PX) as i32;
                 let yt = (player.y / TILE_PX) as i32;
-                if let Some((hx, hy)) = crate::town::quick_find_home(&app.world, xt, yt) {
+                if let Some((hx, hy)) = crate::town::quick_find_home(&app.world, &app.npcs, xt, yt, None) {
                     if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
                         // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
                         // the room assigns and the homeless flag clears.
@@ -2505,7 +2680,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // The invasion kill credit (`NPC.cs:78236-78279`): the group match
     // drains the army's points and reports the progress.
     for npc in &dead {
+        // `NPC.checkDead`'s carrier guard (`NPC.cs:78040-78042`): a
+        // linked segment never runs the death events — the carrier's
+        // death carries them.
+        if npc.has_carrier() {
+            continue;
+        }
         report_invasion_kill(app, npc.kind);
+        // `NPC.checkDead` plays `this.DeathSound` at `base.Center`
+        // (`NPC.cs:91852`) — the kind's own death cue (the C#'s `null`
+        // guard: the kinds with no row play nothing).
+        if let Some(cue) = npc.kind.death_sound() {
+            let (w, h) = npc.size();
+            app.audio.play_at(cue, npc.x + w * 0.5, npc.y + h * 0.5, 1.0);
+        }
     }
     // The Golem's death chain (`:79346`'s event-flag case 245 + the
     // head's detach at `:84957`): the BODY's death raises
@@ -2728,6 +2916,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
             _ => {}
         }
+        // `NPC.checkDead`'s carrier guard (`NPC.cs:78040-78042`): a linked
+        // segment drops nothing — the loot, the coins, the bestiary credit
+        // and the banners ride the carrier's death (`NPC.cs:78839-78850`).
+        if npc.has_carrier() {
+            continue;
+        }
         spawn_coins(app, &npc);
         spawn_loot(app, &npc);
     }
@@ -2811,6 +3005,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // `NPC.cs:22318`'s `head.position`): the same shape as the Golem's.
+    // The Skeletron head's init (`NPC.cs:21924-21941`) spawns the two hands
+    // — the lower (`ai[0] = -1`) and the upper (`ai[0] = 1`, `ai[3] = 150`).
     {
         let head = app
             .npcs
@@ -2821,7 +3017,45 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let (hw, hh) = head.size();
             app.world.skeletron_x = head.x + hw * 0.5;
             app.world.skeletron_y = head.y;
-            let _ = hh;
+            if head.ai[0] == 0.0 {
+                // The init latch (`:21925-21927`).
+                let mut init = app
+                    .npcs
+                    .iter_mut()
+                    .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0);
+                if let Some(head) = init.as_mut() {
+                    head.ai[0] = 1.0;
+                }
+                let mut hands = Vec::new();
+                for (side, ai3) in [(-1.0f32, 0.0f32), (1.0, 150.0)] {
+                    let mut hand = Npc::new(
+                        NpcKind::SkeletronHand,
+                        head.x + hw * 0.5 - 75.0,
+                        head.y + hh * 0.5 - 75.0,
+                        0,
+                        0.0,
+                    );
+                    hand.hp = hand.max_hp;
+                    hand.ai[0] = side;
+                    hand.ai[3] = ai3;
+                    hands.push(hand);
+                }
+                app.npcs.append(&mut hands);
+            }
+        }
+        // The live hand count (the C#'s `num168`): the expert mode's spin
+        // shot and the charge's speed scale with it.
+        let hands_alive = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::SkeletronHand && n.hp > 0)
+            .count() as f32;
+        if let Some(head) = app
+            .npcs
+            .iter_mut()
+            .find(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
+        {
+            head.ai[3] = hands_alive;
         }
     }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
@@ -2925,18 +3159,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the archer's Wooden Arrow Hostile 81): the update pass set
     // `wants_hostile_shot`, this pass resolves it into the pool (the
     // knockback 0 — the C# call's `KnockBack: 0f`).
+    //
+    // The requester travels with the shot: the C#'s saucer deathray is
+    // spawned with `ai0 = base.whoAmI + 1` (`NPC.cs:35917`/`:36437`) — the
+    // spawner's own slot index — and the deathray's arm reads that slot to
+    // find its owner (the port's NPC vec is compacted, so the index is the
+    // sim's current one).
     let mut shots = Vec::new();
-    for n in app.npcs.iter_mut() {
-        shots.append(&mut n.wants_hostile_shot);
+    let mut ai_shots = Vec::new();
+    for (i, n) in app.npcs.iter_mut().enumerate() {
+        for shot in n.wants_hostile_shot.drain(..) {
+            shots.push((i, shot));
+        }
+        for shot in n.wants_hostile_shot_ai.drain(..) {
+            ai_shots.push(shot);
+        }
     }
-    for (kind, sx, sy, svx, svy, dmg) in shots {
+    for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
         #[cfg(test)]
         eprintln!(
             "[spawn-dbg] pool slots active: {}",
             app.projectiles.slots().iter().filter(|p| p.active).count()
         );
-        // The AI_037 arm's `timeLeft = 300` override rides the laser.
-        let time_left = if kind == crate::projectile::DESTROYER_LASER {
+        let _ = owner_slot;
+        // The `timeLeft = 300` overrides: the AI_037 arm's laser
+        // (`NPC.cs:49891`) and the Frost Legion throws'
+        // (`NPC.cs:29022`/`:29084`).
+        let time_left = if kind == crate::projectile::DESTROYER_LASER
+            || kind == crate::projectile::BULLET_SNOWMAN
+            || kind == crate::projectile::SNOW_BALL_HOSTILE
+        {
             300
         } else {
             0
@@ -2959,6 +3211,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             "[after-dbg] spawn kind={} active_now={}",
             kind,
             app.projectiles.slots().iter().filter(|p| p.active).count()
+        );
+    }
+    // The shots that carry the C#'s `ai0`/`ai1` payload (`NewProjectile`'s
+    // trailing arguments, `Projectile.cs:10862-10863`): the deathray's owner
+    // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
+    // spike's scale factor and the Insanity Shadow's variation age + angle.
+    for shot in ai_shots {
+        app.projectiles.spawn_hostile_ai(
+            shot.kind,
+            Vec2::new(shot.x, shot.y),
+            Vec2::new(shot.vx, shot.vy),
+            shot.damage,
+            0.0,
+            shot.ai0,
+            shot.ai1,
         );
     }
     // The WoF's spawn requests + the World state the Hungry reads
@@ -3171,7 +3438,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     // The Moon Lord's spawn-in (`AI_077`'s `:41209-41232`): the two hands
     // (`ai[2]` 0/1) at the core's centre + seat*800 - 400 / -100 and the
-    // head 400 px above, all carrying the core's index in `ai[3]`.
+    // head 400 px above, all carrying the core's id in `ai[3]`.
     for i in 0..app.npcs.len() {
         if !app.npcs[i].wants_moon_parts {
             continue;
@@ -3180,8 +3447,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let (cw, ch) = app.npcs[i].size();
         let ccx = app.npcs[i].x + cw * 0.5;
         let ccy = app.npcs[i].y + ch * 0.5;
-        let core_i = i as i32;
+        // The core's own id (`NPC.whoAmI`) — the link the parts carry in
+        // `ai[3]` and the core keeps in its `localAI[0..2]`.
+        let core_uid = app.npcs[i].uid;
+        let mut next_uid = app.next_npc_uid;
         let mut parts: Vec<Npc> = Vec::new();
+        let mut part_uids = [0i32; 3];
         for seat in 0..2 {
             let mut hand = Npc::new(
                 NpcKind::MoonLordHand,
@@ -3192,24 +3463,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             );
             hand.hp = hand.max_hp;
             hand.ai[2] = seat as f32;
-            hand.ai[3] = core_i as f32;
+            hand.ai[3] = core_uid as f32;
+            hand.uid = next_uid;
+            next_uid += 1;
+            hand.carrier_uid = core_uid;
             hand.carrier_x = ccx;
             hand.carrier_y = ccy;
             hand.carrier_timer = 1.0;
             hand.moon_core_alive = true;
+            part_uids[seat] = hand.uid as i32;
             parts.push(hand);
         }
         let mut head = Npc::new(NpcKind::MoonLordHead, ccx, ccy - 400.0, 0, 0.0);
         head.hp = head.max_hp;
-        head.ai[3] = core_i as f32;
+        head.ai[3] = core_uid as f32;
+        head.uid = next_uid;
+        next_uid += 1;
+        head.carrier_uid = core_uid;
         head.carrier_x = ccx;
         head.carrier_y = ccy;
         head.carrier_timer = 1.0;
         head.moon_core_alive = true;
+        part_uids[2] = head.uid as i32;
         parts.push(head);
-        // `:41229-41232`'s stored slots (the vanilla's `localAI[0..2]`).
-        let base = app.npcs.len() as i32;
-        app.npcs[i].moon_parts = [base, base + 1, base + 2];
+        // `:41229-41232`'s stored slots (the vanilla's `localAI[0..2]`):
+        // the parts' ids.
+        app.npcs[i].moon_parts = part_uids;
+        app.next_npc_uid = next_uid;
         app.npcs.extend(parts);
         break;
     }
@@ -3228,9 +3508,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.npcs[i].wants_moon_leech = false;
         let head_i = i as i32;
+        let head_uid = app.npcs[i].uid;
         // The head's own leech projectiles ride the projectile pool; the
         // port spawns the clot for every leeched player the sim knows of.
         let mut clots: Vec<Npc> = Vec::new();
+        let mut next_uid = app.next_npc_uid;
         if let Some(player) = app.player.as_ref() {
             let buffed = player.buffs.find_buff_index(145).is_some();
             if buffed {
@@ -3243,6 +3525,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 );
                 clot.hp = clot.max_hp;
                 clot.ai[0] = head_i as f32 + 1.0;
+                clot.uid = next_uid;
+                next_uid += 1;
+                // `AI_082`'s anchor (`NPC.cs:36630-36640`): the head.
+                clot.carrier_uid = head_uid;
                 clot.carrier_x = ccx;
                 clot.carrier_y = ccy;
                 clot.carrier_timer = 1.0;
@@ -3250,6 +3536,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 clots.push(clot);
             }
         }
+        app.next_npc_uid = next_uid;
         app.npcs.extend(clots);
     }
     // The Dutchman's pirate-drop resolve (`AI_093`'s `Next(300)` arm):
@@ -3438,13 +3725,30 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 })
                 .count() as f32;
             Some(spawner::SpawnContext {
-                // The scene flags arrive as the systems land (hardmode
-                // M5-HARDFORCE, blood moon M2-WEATHER, zones M5-BIOME); the
-                // candle zones ride the M2-BUFF-5 scene scan
-                // (`SceneMetrics.CalculateZones`, `:706-708`).
+                // `Player.UpdateBiomes` (`Player.cs:16692-16730`): the
+                // player's zone flags come from the scene metrics, and the
+                // spawn gates read them (`NPC.SetSpawnFlags` →
+                // `GetSpawnRate`, `NPC.cs:311-313`).
                 flags: spawner::SpawnFlags {
-                    zone_water_candle: app.scene_metrics.water_candle_count > 0,
-                    zone_peace_candle: app.scene_metrics.peace_candle_count > 0,
+                    zone_dungeon: app.scene_metrics.zone_dungeon,
+                    zone_jungle: app.scene_metrics.zone_jungle,
+                    // `Player.ZoneEvil` = the corrupt or crimson zone.
+                    zone_evil: app.scene_metrics.zone_corrupt
+                        || app.scene_metrics.zone_crimson,
+                    zone_temple: app.scene_metrics.zone_lihzhard_temple,
+                    zone_underground_desert: app.scene_metrics.zone_underground_desert,
+                    zone_meteor: app.scene_metrics.zone_meteor,
+                    // The deep-underground band (`NPC.cs:3799`): below the
+                    // surface, above the rock layer's midpoint, and none of
+                    // the snow/crimson/corrupt/hallow zones.
+                    zone_hallow_deep: !app.scene_metrics.zone_snow
+                        && !app.scene_metrics.zone_crimson
+                        && !app.scene_metrics.zone_corrupt
+                        && !app.scene_metrics.zone_hallow,
+                    zone_graveyard: app.scene_metrics.zone_graveyard,
+                    zone_sandstorm: app.scene_metrics.zone_sandstorm,
+                    zone_water_candle: app.scene_metrics.zone_water_candle,
+                    zone_peace_candle: app.scene_metrics.zone_peace_candle,
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,
@@ -3486,8 +3790,39 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // `downedGolemBoss`/`downedMartians` rolls, the skyMob
                 // dispatch's type-4 read, and `AnyDanger`'s boss loop —
                 // the port's boss-flagged kinds; the pillar countdown and
-                // the moon events have no sources yet).
-                invaders: inv_input.is_some(),
+                // the moon events have no sources yet). `SetSpawnFlags`'s
+                // write is `ShouldSpawnInvasionEnemies(player.position)`
+                // (`NPC.cs:403`) — read here, at the same per-attempt
+                // point; the ladder's pick inputs ride the ctx (the
+                // roster gates read `AnyNPCs` once per attempt, the
+                // progress fields read `invasionSizeStart`/`invasionSize`).
+                invaders: should_spawn_invasion_enemies(&app.world, player.y, player.x),
+                invasion_summoner_alive: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::GoblinSummoner),
+                invasion_captain_alive: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::PirateCaptain),
+                invasion_walker_alive: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::MartianWalker),
+                invasion_saucer_alive: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::MartianSaucerCore),
+                invasion_progress_30: app.world.invasion_size_start > 0
+                    && (app.world.invasion_size_start - app.world.invasion_size) as f32
+                        / app.world.invasion_size_start as f32
+                        >= 0.3,
+                invasion_progress_frac: if app.world.invasion_size_start > 0 {
+                    (app.world.invasion_size_start - app.world.invasion_size) as f32
+                        / app.world.invasion_size_start as f32
+                } else {
+                    0.0
+                },
                 downed_golem: app.world.downed_golem,
                 downed_martians: app.world.downed_martians,
                 invasion_type: app.world.invasion_type,
@@ -3530,172 +3865,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 },
             })
         });
-        // The invasion pick rides the SAME persistent `SpawnNPC` stream
-        // (the C#'s `this.invaders` branch runs inside `Spawner.SpawnNPC`,
-        // `NPC.cs:303-338`).
-        // `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) — the
-        // invasion table overrides the natural roll (`NPC.cs`'s
-        // `this.invaders` branch ahead of the normal picks). The pick now
-        // rides the same gates as `TrySpawnAnNPC` (NPC.cs:310-319):
-        // `GetSpawnRate` -> nearby < maxSpawns -> Next(spawnRate) != 0.
-        // Pre-extract fields needed for the invasion block to avoid borrow conflicts.
-        let invasion_size_start = app.world.invasion_size_start;
-        let invasion_size = app.world.invasion_size;
-        let invasion_type = app.world.invasion_type;
-        let hard_mode = app.world.hard_mode;
-        let downed_goblins = app.world.downed_goblins;
-        let saved_goblin = app.world.saved_goblin;
-        let saved_wizard = app.world.saved_wizard;
-        let downed_skeletron = app.world.downed_skeletron;
-        let saved_mech = app.world.saved_mech;
-        let world_surface = app.world.world_surface;
-        let rock_layer = app.world.rock_layer;
-        let height = app.world.height;
-        let downed_golem = app.world.downed_golem;
-        let downed_martians = app.world.downed_martians;
-        let day_time = app.world.day_time;
-        {
-            let world = &app.world;
-            let npcs = &app.npcs;
-            if let Some((ix, iy, summoner_alive)) = inv_input {
-                let progress_frac = if world.invasion_size_start > 0 {
-                    (world.invasion_size_start - world.invasion_size) as f32
-                        / world.invasion_size_start as f32
-                } else {
-                    0.0
-                };
-                let walker_alive = npcs
-                    .iter()
-                    .any(|n| n.hp > 0 && n.kind == NpcKind::MartianWalker);
-                // `!NPC.AnyNPCs(395)`: the Saucer kind is unported (its AI
-                // family is the follow-up), so the gate reads false until it
-                // lands.
-                let saucer_alive = false;
-                // The 30% window: `(sizeStart - size) / sizeStart >= 0.3`.
-                let progress_30 = world.invasion_size_start > 0
-                    && (world.invasion_size_start - world.invasion_size) as f32
-                        / world.invasion_size_start as f32
-                        >= 0.3;
-
-                // Build a spawn context with `invaders: true` so `get_spawn_rate`
-                // applies the invaders override (NPC.cs:781-785). Use pre-computed
-                // player center and nearby count to avoid borrow conflicts.
-                let inv_ctx = spawner::SpawnContext {
-                    world,
-                    player_center: (inv_pcx, inv_pcy),
-                    player_pos: (inv_px, inv_py),
-                    nearby_active_npcs: inv_nearby,
-                    town_npcs: 0,
-                    day_time: day_time,
-                    player_life_max: inv_max_hp,
-                    underworld_for_bats: (camera_y / 16.0) as i32 > height - 200,
-                    flags: spawner::SpawnFlags {
-                        zone_water_candle: water_candle_count > 0,
-                        zone_peace_candle: peace_candle_count > 0,
-                        ..spawner::SpawnFlags::default()
-                    },
-                    bound_goblin_ok: downed_goblins
-                        && !saved_goblin
-                        && !npcs.iter().any(|n| {
-                            n.hp > 0
-                                && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
-                        }),
-                    bound_wizard_ok: hard_mode
-                        && !saved_wizard
-                        && !npcs.iter().any(|n| {
-                            n.hp > 0 && matches!(n.kind, NpcKind::BoundWizard | NpcKind::Wizard)
-                        }),
-                    bound_mech_ok: downed_skeletron
-                        && !saved_mech
-                        && !npcs.iter().any(|n| {
-                            n.hp > 0 && matches!(n.kind, NpcKind::BoundMechanic | NpcKind::Mechanic)
-                        }),
-                    below_deep_dungeon: {
-                        let ty = (inv_py / TILE_PX) as i32;
-                        (ty as f64) > (world_surface * 4.0 + rock_layer) / 5.0
-                    },
-                    invaders: true,
-                    downed_golem: downed_golem,
-                    downed_martians: downed_martians,
-                    invasion_type: invasion_type,
-                    any_danger: invasion_type > 0
-                        || npcs.iter().any(|n| {
-                            n.hp > 0
-                                && matches!(
-                                    n.kind,
-                                    NpcKind::KingSlime
-                                        | NpcKind::EyeOfCthulhu
-                                        | NpcKind::QueenBee
-                                        | NpcKind::SkeletronHead
-                                        | NpcKind::WallOfFlesh
-                                        | NpcKind::TheDestroyer
-                                        | NpcKind::SkeletronPrime
-                                        | NpcKind::Retinazer
-                                        | NpcKind::Spazmatism
-                                        | NpcKind::Plantera
-                                        | NpcKind::BrainOfCthulhu
-                                        | NpcKind::Golem
-                                        | NpcKind::GolemHead
-                                        | NpcKind::GolemFistLeft
-                                        | NpcKind::GolemFistRight
-                                        | NpcKind::GolemHeadFree
-                                )
-                        }),
-                    probe_exists: npcs
-                        .iter()
-                        .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe),
-                    sky_behind_player: {
-                        let px = (inv_pcx / TILE_PX) as i32;
-                        let py = (inv_pcy / TILE_PX) as i32;
-                        world
-                            .tile(px, py)
-                            .is_some_and(|t| spawner::LIGHT_WALLS.contains(&t.wall) || t.wall == 73)
-                    },
-                };
-
-                let rate = spawner::get_spawn_rate(&inv_ctx, rng);
-                // The two hard gates from `TrySpawnAnNPC` (NPC.cs:312-318).
-                if inv_nearby < rate.max_spawns as f32 && rng.next_max(rate.spawn_rate) == 0 {
-                    let kind = invasion_spawn_pick(
-                        rng,
-                        hard_mode,
-                        summoner_alive,
-                        invasion_type,
-                        walker_alive,
-                        saucer_alive,
-                        progress_30,
-                        progress_frac,
-                    );
-                    invasion_pick = Some((kind, ix, iy));
-                }
-            }
-        }
-        if invasion_pick.is_none() {
-            let (spawn, suppressed) = spawner::spawn_npc_call(ctx, &mut *rng, app.spawn_no_cycle);
-            app.spawn_no_cycle = false; // the latch is consumed by one call
-            spawned = spawn;
-            let _ = suppressed;
-        }
-    }
-    // The invasion spawn resolves after the tick: the C# decrements the
-    // size at the KILL (`report_invasion_kill`), the spawn only places the
-    // NPC.
-    if let Some((kind, px, py)) = invasion_pick {
-        let mut inv = Npc::new(
-            kind,
-            px - 600.0,
-            py - 400.0,
-            if px > app.world.invasion_x as f32 {
-                -1
-            } else {
-                1
-            },
-            0.0,
-        );
-        inv.hp = inv.max_hp;
-        let ty = ((inv.y / TILE_PX) as i32).clamp(2, app.world.height - 3);
-        inv.y = ty as f32 * TILE_PX;
-        spawned = Some(inv);
     }
     if let Some(n) = spawned {
         app.npcs.push(n);
@@ -3868,6 +4037,35 @@ mod tests {
 
     /// `AI_000_TransformBoundNPC`'s 589 → 588 arm (`NPC.cs:19833-19836`): the
     /// talk frees the sleeping Golfer and raises `savedGolfer` (`:52938`).
+
+    /// S1-E-25's emitter contract (`NPC.UpdateNPC_CritterSounds`,
+    /// `NPC.cs:92244-92340`): an NPC the critter table does not name consumes
+    /// no `Main.rand` draws — the port's roster has no critter kinds yet
+    /// (M4-NPC), so the zombie's id 3 must leave the per-NPC stream
+    /// untouched through the `NPC.cs:90323` seam.
+    #[test]
+    fn the_critter_seam_consumes_no_rolls_outside_the_table() {
+        let mut rng = UnifiedRandom::new(0);
+        let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+        assert_eq!(
+            crate::ambient_sound::critter_sound_cue(
+                NpcKind::Zombie.to_u16() as i32,
+                true,
+                1000.0,
+                3000.0,
+                3000.0,
+                1.0,
+                &mut hi_roll
+            ),
+            None,
+            "the zombie is outside the critter table"
+        );
+        assert_eq!(
+            rng,
+            UnifiedRandom::new(0),
+            "out-of-table types consume no draws"
+        );
+    }
 
     /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries
     /// a dye-material row (the dye materials / the Strange Plants) — the
@@ -4291,6 +4489,12 @@ mod tests {
                     downed_golem: false,
                     downed_martians: false,
                     invasion_type: 0,
+                    invasion_summoner_alive: false,
+                    invasion_captain_alive: false,
+                    invasion_walker_alive: false,
+                    invasion_saucer_alive: false,
+                    invasion_progress_30: false,
+                    invasion_progress_frac: 0.0,
                     any_danger: false,
                     probe_exists: false,
                     sky_behind_player: false,
@@ -4381,16 +4585,42 @@ mod tests {
         // `AchievementsHelper.HandleAnglerService` (`Main.cs:40260`,
         // `AchievementsHelper.cs:411-418`): the flag and the four `Finish`
         // counters advance on the turn-in.
-        assert!(app
-            .achievements
-            .list
-            .iter()
-            .any(|a| a.name == "SERVANT_IN_TRAINING" && a.completed));
-        assert!(app
-            .achievements
-            .list
-            .iter()
-            .any(|a| a.name == "GOOD_LITTLE_SLAVE" && a.conditions[0].value == 1));
+        // The table: the picks are always goblins.
+        let mut rng = UnifiedRandom::new(7);
+        for _ in 0..40 {
+            let kind = invasion_spawn_pick(&mut rng, false, false, 1, false, false, false, 0.0);
+            assert!(matches!(
+                kind,
+                NpcKind::GoblinSorcerer
+                    | NpcKind::GoblinThief
+                    | NpcKind::GoblinPeon
+                    | NpcKind::GoblinWarrior
+                    | NpcKind::GoblinArcher
+            ));
+        }
+        // The hardmode summoner: only when none alive.
+        let mut rng = UnifiedRandom::new(3);
+        let mut saw_summoner = false;
+        for _ in 0..200 {
+            if matches!(
+                invasion_spawn_pick(&mut rng, true, false, 1, false, false, false, 0.0),
+                NpcKind::GoblinSummoner
+            ) {
+                saw_summoner = true;
+                break;
+            }
+        }
+        assert!(saw_summoner, "the hardmode summoner roll");
+        let mut rng = UnifiedRandom::new(7);
+        for _ in 0..200 {
+            assert!(
+                !matches!(
+                    invasion_spawn_pick(&mut rng, true, true, 1, false, false, false, 0.0),
+                    NpcKind::GoblinSummoner
+                ),
+                "the alive summoner blocks the roll"
+            );
+        }
         // The reward lands at the Angler's centre.
         let (ax, ay) = app.npcs[idx].center();
         assert!(
@@ -4833,6 +5063,103 @@ mod invasion_tests {
         w
     }
 
+    /// DW-1.1 (dirty, watched RED pre-fix): with an active invasion inside
+    /// the ±3000 px window, the invader spawns on a machinery-found tile —
+    /// in the spawn area, non-solid at the spawn point, ground below — not
+    /// at the retired fixed `(px − 600, py − 400)` offset, and facing the
+    /// player (`NPC.cs:308-342`'s one path through `FindSpawnTile` →
+    /// `SpawnAnNPC`'s `else if (this.invaders)` ladder `:1424-1541`, the
+    /// `NewNPC` `Bottom` placement `:80772`). The pick's rolls leave the
+    /// item stream alone (`UpdateItems` unchanged across the whole loop —
+    /// the invasion path draws only from the spawner stream, DW-1.2).
+    #[test]
+    fn invasion_spawns_land_on_machinery_found_tiles() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        // The active goblin invasion: the surface band and the ±3000 px
+        // window around `invasionX` (the player's own column).
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 100;
+        app.world.invasion_size_start = 100;
+        app.world.invasion_delay = 0;
+        app.world.invasion_goblins = true;
+        app.world.invasion_x = 150.0;
+        app.npc_timer = 0.0;
+        let item_stream_before = app.rngs.stream(RngKey::UpdateItems).clone();
+        let solid = |w: &World, tx: i32, ty: i32| {
+            w.tile(tx, ty)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+        };
+        let mut spawned = false;
+        for _ in 0..20000 {
+            update_npcs(&mut app, 1.0 / 60.0);
+            let Some(n) = app.npcs.last() else { continue };
+            if !matches!(
+                n.kind,
+                NpcKind::GoblinSorcerer
+                    | NpcKind::GoblinThief
+                    | NpcKind::GoblinPeon
+                    | NpcKind::GoblinWarrior
+                    | NpcKind::GoblinArcher
+                    | NpcKind::GoblinSummoner
+            ) {
+                continue;
+            }
+            let (w, h) = n.kind.size();
+            let tile_x = ((n.x + w * 0.5) / TILE_PX).floor() as i32;
+            let mid_row = ((n.y + h * 0.5) / TILE_PX).floor() as i32;
+            let feet_row = ((n.y + h) / TILE_PX).floor() as i32;
+            // The spawn area (`GetSpawnArea`, NPC.cs:931-967): the player's
+            // tile ± (sWidth/16 x 0.7, sHeight/16 x 0.7).
+            let px_tile = (150.0 * TILE_PX / TILE_PX).floor() as i32;
+            let py_tile = (118.0 * TILE_PX / TILE_PX).floor() as i32;
+            let area_x = (spawner::S_WIDTH / 16 * 7) / 10;
+            let area_y = (spawner::S_HEIGHT / 16 * 7) / 10;
+            assert!(
+                tile_x >= px_tile - area_x && tile_x < px_tile + area_x,
+                "the spawn tile is in the spawn area (tile_x {tile_x})"
+            );
+            assert!(
+                feet_row >= py_tile - area_y && feet_row < py_tile + area_y,
+                "the spawn tile is in the spawn area (feet row {feet_row})"
+            );
+            assert!(
+                !solid(&app.world, tile_x, mid_row),
+                "non-solid at the spawn point (tile {tile_x},{mid_row})"
+            );
+            assert!(
+                solid(&app.world, tile_x, feet_row) || solid(&app.world, tile_x, feet_row + 1),
+                "ground below the spawn point (feet row {feet_row})"
+            );
+            // The machinery's facing rule (`TargetClosest`, npc.rs:6998) —
+            // toward the player, not the ±1-by-`invasion_x` stand-in.
+            let expected_facing = if 150.0 * TILE_PX >= n.x + w * 0.5 {
+                1
+            } else {
+                -1
+            };
+            assert_eq!(n.facing, expected_facing, "facing toward the player");
+            // Not the retired fixed offset.
+            assert!(
+                (n.x - (150.0 * TILE_PX - 600.0)).abs() > 1.0
+                    || (n.y - (118.0 * TILE_PX - 400.0)).abs() > 1.0,
+                "not at the fixed (px-600, py-400) offset"
+            );
+            spawned = true;
+            break;
+        }
+        assert!(spawned, "an invader spawned inside the window");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateItems),
+            item_stream_before,
+            "the invasion path draws nothing from the item stream"
+        );
+    }
+
     #[test]
     fn the_morning_roll_arms_the_invasion() {
         // `UpdateTime_StartDay`'s roll: the smashed orb + the pre-defeat 1/3
@@ -4933,8 +5260,10 @@ mod invasion_tests {
 
     #[test]
     fn the_invasion_spawn_window_and_table() {
-        // `ShouldSpawnInvasionEnemies`: the surface band + the ±3000 px
-        // window around invasionX; the table picks the goblin kinds.
+        // `ShouldSpawnInvasionEnemies` (NPC.cs:442-463): the surface band +
+        // the ±3000 px window around invasionX. (The pick's table tests
+        // moved beside the ladder into `spawner.rs`'s test module — the
+        // pick lives there since the S1-F-12 placement half.)
         let mut w = surface_world();
         w.invasion_type = 1;
         w.invasion_size = 120;
@@ -4946,10 +5275,16 @@ mod invasion_tests {
             !should_spawn_invasion_enemies(&w, 110.0 * TILE_PX, 250.0 * TILE_PX),
             "far from invasionX"
         );
-        // The underground band: no invasion spawns.
+        // The band is `NPC.sHeight` = 1200 px below the surface
+        // (`NPC.cs:6769`): the world's surface is row 120 = px 1920, so the
+        // band reaches px 3120 — 3000 px down still spawns, 3200 does not.
         assert!(
-            !should_spawn_invasion_enemies(&w, 400.0 * TILE_PX, 20.0 * TILE_PX),
-            "the cave band refuses"
+            should_spawn_invasion_enemies(&w, 3000.0, 20.0 * TILE_PX),
+            "the 1200 px band holds"
+        );
+        assert!(
+            !should_spawn_invasion_enemies(&w, 3200.0, 20.0 * TILE_PX),
+            "below the band refuses"
         );
         // The table: the picks are always goblins.
         let mut rng = UnifiedRandom::new(7);
@@ -5097,7 +5432,6 @@ mod invasion_tests {
     mod frost_invasion_tests {
         use super::*;
         use crate::app::flow::front_flow_tests::flow_app;
-        use crate::npc::Npc;
         use crate::world_sim::editing::use_snow_globe;
         use tr_core::tile::{Tile, FLAG_ACTIVE};
 
@@ -7303,7 +7637,7 @@ mod dd2_goblin_tests {
         // missing hp) and the walk through the harness.
         let (_app, mut player) = app_with_player();
         let world = surface_world();
-        let mut rng = UnifiedRandom::new(7);
+            let mut rng = UnifiedRandom::new(7);
         let mut n = Npc::new(
             NpcKind::DD2WitherBeast,
             145.0 * TILE_PX,
@@ -7521,6 +7855,43 @@ mod dd2_wave_tests {
         app.world.dd2_wave = 1; // the roster is the Goblin T1 552 only.
         report_invasion_kill(&mut app, NpcKind::Skeleton);
         assert_eq!(app.world.dd2_wave_kills, 0.0);
+    }
+
+    #[test]
+    fn the_betsy_anchor_drives_the_seventh_wave() {
+        // `Difficulty_3_GetRequiredWaveKills`'s wave-7 arm
+        // (`DD2Event.cs:1487-1494`): the wave's progress is the Betsy's
+        // own life (`NPC.FindFirstNPC(551)`) — `100 - life/lifeMax*100`
+        // — and the budget is 100.
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        // The tier-3 gate: hardmode with the Golem down.
+        app.world.hard_mode = true;
+        app.world.downed_golem = true;
+        app.world.dd2_wave = 7;
+        app.world.dd2_wave_kills = 0.0;
+        app.world.dd2_spawn_hold = 0;
+        let mut betsy = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
+        betsy.hp = betsy.max_hp / 2;
+        app.npcs.push(betsy);
+        // A wave-7 kill (the roster holds Betsy 551).
+        report_invasion_kill(&mut app, NpcKind::DD2Betsy);
+        assert_eq!(app.invasion_progress_max, 100, "the wave's budget");
+        assert_eq!(
+            app.invasion_progress, 50 + 4,
+            "the Betsy's HP bucket plus the kill's worth"
+        );
+        // No Betsy on the field: the C#'s `-1` arm takes the budget of 1.
+        app.npcs.clear();
+        app.world.dd2_wave = 7;
+        app.world.dd2_wave_kills = 0.0;
+        app.world.dd2_spawn_hold = 0;
+        report_invasion_kill(&mut app, NpcKind::DD2Betsy);
+        assert_eq!(app.invasion_progress_max, 1, "the no-Betsy budget");
     }
 }
 
@@ -7748,8 +8119,8 @@ mod tower_shield_tests {
 #[cfg(test)]
 mod lunar_chain_tests {
     use super::*;
-    use crate::app::flow::front_flow_tests::flow_app;
     use crate::app::App;
+    use crate::app::flow::front_flow_tests::flow_app;
 
     fn surface_world() -> World {
         let mut w = World::new("t".into(), 300, 200);
@@ -7864,6 +8235,124 @@ mod lunar_chain_tests {
             .count();
         assert_eq!(cores, 1, "the Moon Lord spawns");
         assert_eq!(app.world.moon_lord_countdown, 0);
+    }
+
+    #[test]
+    fn s1_g_6_the_shake_driver_rolls_the_c_sharp_intensity_formula() {
+        // Main.cs:64977-64979 (S1-G-6): while the countdown runs the driver
+        // computes `intensity = clamp(sin((float)cd / 60f * 0.5f) * 2f, 0, 1)
+        // * (0.75f - 0.5f * ((float)cd / (float)max))` on the PRE-decrement
+        // value and feeds the MoonLordShake filter's `UseIntensity`; the
+        // activation gate follows the countdown.
+        let mut app = app_ready();
+        // cd = 24 sits inside the sin window's unsaturated band (sin(arg) x 2
+        // in (0, 1)), where the argument width is observable — cd = 3600 rides
+        // a trough where every sin argument clamps to the same 0.
+        app.world.moon_lord_countdown = 24;
+        app.world.max_moon_lord_countdown = 3600;
+        crate::world_sim::lunar::update_moon_lord_countdown(&mut app);
+        assert!(
+            app.filter_driver.moon_lord_shake_wanted,
+            "the filter is active while the countdown runs"
+        );
+        let i = app
+            .filter_driver
+            .moon_lord_shake_intensity
+            .expect("the formula ran");
+        let want = ((((24.0f32 / 60.0 * 0.5) as f64).sin() as f32 * 2.0).clamp(0.0, 1.0))
+            * (0.75f32 - 0.5f32 * (24.0f32 / 3600.0f32));
+        assert!((i - want).abs() < 1e-6, "{i} vs {want}");
+        // The pre-decrement semantics: the formula consumed 24, the tick
+        // then dropped the counter.
+        assert_eq!(app.world.moon_lord_countdown, 23);
+    }
+
+    #[test]
+    fn s1_g_6_the_shake_filter_deactivates_but_keeps_the_last_intensity() {
+        // Main.cs:64982-64984: at countdown 0 the filter deactivates (the
+        // `else if (IsActive) Deactivate` arm); `UseIntensity` persists —
+        // the shader state survives like the C#'s (`:64980` never resets it).
+        let mut app = app_ready();
+        app.world.moon_lord_countdown = 1;
+        app.world.max_moon_lord_countdown = 3600;
+        crate::world_sim::lunar::update_moon_lord_countdown(&mut app);
+        assert!(app.filter_driver.moon_lord_shake_wanted, "active at 1");
+        crate::world_sim::lunar::update_moon_lord_countdown(&mut app);
+        assert!(
+            !app.filter_driver.moon_lord_shake_wanted,
+            "deactivated at 0"
+        );
+        assert!(
+            app.filter_driver.moon_lord_shake_intensity.is_some(),
+            "UseIntensity persists"
+        );
+    }
+
+    #[test]
+    fn s1_g_6_the_shake_intensity_sweeps_the_ritual_window() {
+        // The sin window (`:64977`): the intensity is 0 at the sin troughs
+        // and nonzero at the crests across the 60-second ritual.
+        let mut app = app_ready();
+        app.world.max_moon_lord_countdown = 3600;
+        let mut saw_nonzero = false;
+        for cd in 1..3600u32 {
+            app.world.moon_lord_countdown = cd as i32;
+            crate::world_sim::lunar::update_moon_lord_countdown(&mut app);
+            let i = app
+                .filter_driver
+                .moon_lord_shake_intensity
+                .expect("the formula ran");
+            if i > 0.0 {
+                saw_nonzero = true;
+            }
+        }
+        assert!(saw_nonzero, "the sin window lifts the intensity");
+    }
+
+    #[test]
+    fn s1_g_6_the_shake_pass_rides_the_chain_at_very_high() {
+        // ScreenEffectInitializer.cs:23 — `EffectPriority.VeryHigh`; the
+        // equal-priority activations apply after their earlier siblings
+        // (`FilterManager.OnActivate` `:70-76`), so the shake chains after
+        // the WaterDistortion.
+        let mut driver =
+            crate::app::filters::FilterDriver::with_pins(crate::app::filters::EnvPins::default());
+        driver.moon_lord_shake_intensity = Some(0.5);
+        driver.moon_lord_shake_wanted = true;
+        driver
+            .board
+            .manage(tr_core::scene::FilterId::MoonLordShake, true, true);
+        // The hand-built stand-in for `build_params`' output — its
+        // MoonLordShake arm sets the Zero target (`UseTargetPosition`,
+        // `MoonLordScreenShaderData.cs`) over the NEUTRAL One default.
+        driver.moon_lord_shake = Some(tr_render::FilterParams {
+            intensity: 0.5,
+            target_pos: [0.0, 0.0],
+            ..tr_render::FilterParams::NEUTRAL
+        });
+        let chain = driver.chain(false);
+        let passes: Vec<u32> = chain.iter().map(|p| p.pass.0).collect();
+        assert!(
+            passes.contains(&tr_render::PassId::MOON_LORD_SHAKE.0),
+            "the shake pass is in the chain: {passes:?}"
+        );
+        let shake = chain
+            .iter()
+            .find(|p| p.pass.0 == tr_render::PassId::MOON_LORD_SHAKE.0)
+            .expect("the shake pass");
+        assert!((shake.params.intensity - 0.5).abs() < f32::EPSILON);
+        assert_eq!(shake.params.target_pos, [0.0, 0.0], "the Zero target");
+    }
+
+    #[test]
+    fn s1_g_6_the_shake_pass_rides_the_index_table() {
+        // post.rs::PASS_TABLE row — `FilterMoonLordShake` is WGSL pass 10
+        // (the phase-4 distortion family), not the passthrough it used to be.
+        assert_eq!(
+            tr_render::PassId(10),
+            tr_render::PassId::MOON_LORD_SHAKE,
+            "the table row and the const agree"
+        );
     }
 
     #[test]
@@ -8017,6 +8506,111 @@ mod worm_tests {
             .count();
         assert_eq!(bodies, 29, "the 29 bodies");
         assert_eq!(tails, 1, "the single tail closing the chain");
+    }
+
+    #[test]
+    fn the_crawltipede_tail_takes_ten_times_the_damage() {
+        // `NPC.takenDamageMultiplier` (`NPC.cs:81244-81246`): the solar
+        // crawltipede's tail (414) carries 10 (`NPC.cs:15316`) — the
+        // strike lands on the carrier's pool multiplied by ten.
+        let w = fixture();
+        let mut head = Npc::new(
+            NpcKind::SolarCrawltipedeHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        let pool = npcs[0].max_hp;
+        assert_eq!(pool, 10000, "the crawltipede's head carries the pool");
+        let tail = npcs.len() - 1;
+        assert_eq!(npcs[tail].kind, NpcKind::SolarCrawltipedeTail);
+        let tail_x = npcs[tail].x;
+        assert!(Npc::strike_melee(&mut npcs, tail, 7, tail_x, 0.0, false));
+        assert_eq!(npcs[0].hp, pool - 70, "the tail's hit is multiplied by ten");
+    }
+
+    #[test]
+    fn the_carrier_chain_leaves_no_orphans_and_no_segment_loot() {
+        // The ROADMAP's S1-D-6 criterion — the chain's integrity. The
+        // segments share the carrier's life (`NPC.realLife`,
+        // `NPC.cs:81374-81378`) and die with it; `NPC.checkDead`'s carrier
+        // guard (`NPC.cs:78040-78042`) keeps the loot, the coins and the
+        // bestiary credit on the carrier alone.
+        let (mut app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        app.npcs.push(Npc::new(
+            NpcKind::DevourerHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        ));
+        app.npcs[0].hp = app.npcs[0].max_hp;
+        // Assemble the chain through the worm pass.
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        for _ in 0..4 {
+            crate::world_sim::npcs::update_worms_in(
+                &world,
+                Some(player.center()),
+                &mut app.npcs,
+                &mut rng,
+                &mut next_id,
+            );
+        }
+        assert!(app.npcs.len() >= 10, "the chain assembled ({})", app.npcs.len());
+        let items_before = app.items.len();
+        // The carrier dies: the pool is empty, so the whole chain falls.
+        app.npcs[0].hp = 0;
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            Some(player.center()),
+            &mut app.npcs,
+            &mut rng,
+            &mut next_id,
+        );
+        assert!(
+            app.npcs.iter().all(|n| n.hp <= 0),
+            "no orphan survives the carrier"
+        );
+        // The death sweep: the carrier's loot only.
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().all(|n| n.kind != NpcKind::DevourerHead),
+            "the whole chain is gone"
+        );
+        let dropped = app.items.len() - items_before;
+        // The control: the same carrier on its own drops exactly the same
+        // — the links drop nothing.
+        let (mut control, _cplayer) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        control.npcs.push(Npc::new(
+            NpcKind::DevourerHead,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        ));
+        control.npcs[0].hp = 0;
+        update_npcs(&mut control, 1.0 / 60.0);
+        assert_eq!(
+            dropped,
+            control.items.len(),
+            "the segments drop nothing — only the carrier's loot"
+        );
     }
 
     #[test]
@@ -8791,6 +9385,166 @@ mod moon_lord_tests {
             .filter(|n| n.kind == NpcKind::MoonLordHand && n.hp > 0)
             .count();
         assert_eq!(alive_hands, 2, "the hands keep their link");
+    }
+
+    #[test]
+    fn the_moon_lord_parts_keep_their_own_core() {
+        // `AI_077`'s link (`NPC.cs:41229-41232`): the parts carry the
+        // core's id in `ai[3]` and the core keeps the parts' ids in its
+        // `localAI[0..2]`. The link is explicit — the stable id, not
+        // "the first core of the kind".
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        for _ in 0..61 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let core_uid = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MoonLordCore)
+            .map(|n| n.uid)
+            .expect("the core");
+        assert!(core_uid > 0, "the core took an id");
+        for part in app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHand || n.kind == NpcKind::MoonLordHead)
+        {
+            assert_eq!(
+                part.carrier_uid, core_uid,
+                "the part points at its own core"
+            );
+            assert_eq!(part.ai[3] as u32, core_uid, "the C#'s ai[3] link");
+        }
+        // The core's slots hold the parts' ids.
+        let slots: [i32; 3] = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MoonLordCore)
+            .map(|n| n.moon_parts)
+            .expect("the core");
+        for uid in slots {
+            assert!(uid > 0, "the slot holds a part id");
+            assert!(
+                app.npcs.iter().any(|n| n.uid as i32 == uid),
+                "the slot points at a live part"
+            );
+        }
+        // The core dies: its parts fall with it — the link points at the
+        // dead core, not at another Moon Lord.
+        let mut second = Npc::new(
+            NpcKind::MoonLordCore,
+            60.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        second.hp = second.max_hp;
+        app.npcs.push(second);
+        let core_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordCore && n.uid == core_uid)
+            .expect("the first core");
+        app.npcs[core_idx].hp = 0;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let alive_parts = app
+            .npcs
+            .iter()
+            .filter(|n| {
+                (n.kind == NpcKind::MoonLordHand || n.kind == NpcKind::MoonLordHead) && n.hp > 0
+            })
+            .count();
+        assert_eq!(alive_parts, 0, "the parts fall with their core");
+    }
+
+    #[test]
+    fn the_core_spawns_its_parts_once() {
+        // `AI_077`'s init latch (`NPC.cs:41163-41168`'s `localAI[3]` 0 → 1):
+        // the core arms the spawn phase once and the two hands + the head
+        // ride out one set. The port's `ai[0] == 0` test alone re-armed
+        // the phase on every return to the zero state — a second pair of
+        // hands every 60 ticks.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        for _ in 0..200 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let hands = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHand)
+            .count();
+        let heads = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::MoonLordHead)
+            .count();
+        assert_eq!(hands, 2, "the two hands — and only the two");
+        assert_eq!(heads, 1, "the head — and only the head");
+    }
+
+    #[test]
+    fn the_core_becomes_vulnerable_when_its_parts_die() {
+        // `AI_077`'s `flag2` (`NPC.cs:41270-41285`): all three parts in
+        // their death state hand the core its vulnerable phase (`ai[0] =
+        // 1`, `dontTakeDamage = false`).
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        for _ in 0..61 {
+            crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        }
+        let core_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordCore)
+            .expect("the core");
+        assert_eq!(app.npcs[core_idx].ai[0], 0.0, "the waiting phase");
+        assert!(
+            app.npcs[core_idx].dont_take_damage,
+            "the core is shielded while its parts live"
+        );
+        // The parts die: the core's bookkeeping sees all three gone.
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::MoonLordHand || n.kind == NpcKind::MoonLordHead {
+                n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let core_idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordCore)
+            .expect("the core");
+        assert_eq!(app.npcs[core_idx].ai[0], 1.0, "the vulnerable phase");
+        assert!(
+            !app.npcs[core_idx].dont_take_damage,
+            "the core takes the hits now"
+        );
     }
 
     #[test]
@@ -10161,6 +10915,19 @@ mod dw3_tests {
             before_players,
             "the reward rolls drew UpdatePlayers"
         );
+        // The turn-in's own bookkeeping (`Main.cs`'s quest-complete rows —
+        // S1-E-2's achievement feeds): the handed-in quest completes the
+        // servant rows.
+        assert!(a
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "SERVANT_IN_TRAINING" && a.completed));
+        assert!(a
+            .achievements
+            .list
+            .iter()
+            .any(|a| a.name == "GOOD_LITTLE_SLAVE" && a.conditions[0].value == 1));
     }
 
     /// DW-3.4: the player death pipeline rides `stream(UpdatePlayers)` —

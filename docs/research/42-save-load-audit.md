@@ -91,7 +91,7 @@ port's native `.trwld` (`save.rs`) вЂ” and the App picks one per file path.
 | --- | --- | --- | --- |
 | `.wld` prologue + pointer table (v326) | PORTED | `wld/mod.rs::to_bytes` (347), `sections/header.rs::write_bitmap` | Same shape: `i32 326`, 20-byte metadata, `i16 11`, 11 Г— `i32` pointers backfilled at offset 24. The revision is the previous file's +1 (`FileMetadata.IncrementAndWrite`). `test_DW_1_4_the_prologue_and_pointers_are_hand_computed` pins the bytes. |
 | `.wld` world header + flags | PARTIAL | `sections/header.rs::write_world_head`, `sections/flags.rs::write` | Layout is 1:1. Generator version/`UniqueId`/`WorldId`/`LastPlayed` are now persisted and roundtripped on `World` (S1-J-2, 2026-11-13). Remaining deviations: unowned secret-seed/flavour fields keep defaults and seed text remains the decimal seed (the C#'s can be any text). |
-| `.wld` tile section | PARTIAL | `sections/tiles.rs::write` | Record layout, header chain, payload order and the 1-/2-byte run count are exact. **The four wire bits are not written** (`b2` 0x02/0x04/0x08 = wire/wire2/wire3, `b3` 0x20 = wire4) в†’ not byte-identical, and the wire state is lost on load. |
+| `.wld` tile section | PORTED | `sections/tiles.rs::write` | Record layout, header chain, payload order and the 1-/2-byte run count are exact. **The four wire bits are written** (`b2` 0x02/0x04/0x08 = wire/wire2/wire3, `b3` 0x20 = wire4) — **S1-J-1, 2026-11-14** — and the reader restores them, so the section is byte-identical to the C#'s on the fixture world (the golden bytes come from a `dotnet` run of the decompiled `SaveWorldTiles`) and the wire state survives a `.wld` round trip. |
 | `.wld` chests / signs / NPCs / TEs / plates / town rooms / bestiary / creative powers | PORTED (shape) | `sections/chests.rs`, `signs.rs`, `npcs.rs`, `tile_entities.rs`, `pressure_plates.rs`, `town_rooms.rs`, `bestiary.rs`, `creative_powers.rs` | Every codec mirrors the C# field-by-field, keeps the C# version gates and refuses hostile counts. Two documented gaps: the `version < 251` `unlocked*Spawn` recompute (npcs.rs) and `TEDisplayDoll` state (tile_entities.rs). |
 | `.wld` footer | PARTIAL | `wld/mod.rs` (367-370) | `bool true`, `string name`, `i32 0` вЂ” the C# writes the real `WorldId` (`SaveFooter:1752-1758`); the port keeps no world id. |
 | `.wld` load path | PORTED | `wld/mod.rs::parse_table` (203), `load_sections` (395) | The pointer walk + the per-section end-offset check + the version gates (`sections/mod.rs::DEFS`). |
@@ -101,7 +101,7 @@ port's native `.trwld` (`save.rs`) вЂ” and the App picks one per file path.
 | `.map` (explored map) | PORTED (separate) | `saveglue.rs::App::save_map` (197) / `load_map` (210) | Outside the world/player formats; noted here because the C# writes it inside `Player.InternalSavePlayer`. |
 | Autosave cadence | PORTED | `saveglue.rs::save_world` (27-162), the `frame.rs` tick | The port's 600 s branch (`frame.rs`, `!gameMenu && autoSave`) is the single-player reduction of `Main.cs:19751-19765` (`(autoSave || netMode == 2)`, which nets to `autoSave` at `netMode == 0`), and `save_world` writes the world + player sidecar + map. The 300 s `saveToonWhilePlaying` branch (`Main.cs:19743-19749`) is gated `netMode == 1` (`:19739`) — **multiplayer client only**, unreachable in the single-player port (S1-J-6 refuted 2026-11-13); the menu arm (`:19767-19769`) only stops the timer. |
 | Cloud save path | MISSING | вЂ” | The C# writes `Main.CloudWorldPath` / `Main.CloudPlayerPath` through `FileUtilities.Write(..., useCloudSaving)` в†’ `SocialAPI.Cloud.Write` (`WorldFile.cs:940`, `Main.cs:4820-4870`). The port writes a local path only; cloud is Steam/Social = out of scope (module 38). |
-| Save-time "temp" snapshot | UNKNOWN | вЂ” | The C# snapshots day/time/weather into `_temp*` and restores it on load (`SetTempToOngoing` 1040-1066 / `SetOngoingToTemps` 152-179). The Rust flags writer emits the world's own values; the exact temp mechanism was not checked. |
+| Save-time "temp" snapshot | VERIFIED+PORTED (S1-J-7) | вЂ” | The C# snapshots day/time/weather into `_temp*` and restores it on load (`SetTempToOngoing` 1040-1066 / `SetOngoingToTemps` 152-179). The Rust flags writer emits the world's own values; the exact temp mechanism was not checked. |
 
 ### Section table (byte formats, C# vs Rust)
 
@@ -110,7 +110,7 @@ port's native `.trwld` (`save.rs`) вЂ” and the App picks one per file path.
 | 0 prologue | `i32 326` + `FileMetadata` (20) + `i16 11` + 11Г—`i32` pointers + `u16 TileID.Count` + importance bitmap (LSB-first) | same (`wld/mod.rs:350-355`, `header.rs::write_bitmap`) | **YES** (layout+values) | Only the revision differs by design (+1 per save). The bitmap uses the world's own table в†’ a shorter table yields a shorter bitmap. |
 | 1 world header | `string name`, `string seed`, `u64 generatorVersion`, `16 B GUID`, `i32 worldId`, 4Г—`i32` bounds, `i32 maxTilesY`, `i32 maxTilesX` | same order/shape | **NO** (values) | generator version 0, GUID zeros, world id 0, seed = decimal text. |
 | 1 flags block | `SaveWorldFlags:1238-1430` вЂ” a long fixed sequence of `bool/i32/i64/f32/f64` | `flags.rs::write` вЂ” same field order, unowned fields = C# defaults | **NO** (values) | `LastPlayed` = min date (the C# writes `UtcNow`), the secret-seed booleans = `false`. |
-| 2 tiles | per-tile record: `b` [+`b2` +`b3` +`b4` chain] + payload (`u8 type` [`u8 type>>8`] [`4 B frames`] [`u8 paint`] [`u8 wall`] [`u8 wallColor`] [`u8 liquid`] [`u8 wall>>8`]) + run count (`u8`, or `u8` low + `u8` high) | `sections/tiles.rs::write_tile_record` вЂ” identical record, identical byte order | **NO** | The C# writes the 4 wire bits; the port drops them. The batching equality also differs (`isTheSameAs` compares the wire bits в†’ different run boundaries). |
+| 2 tiles | per-tile record: `b` [+`b2` +`b3` +`b4` chain] + payload (`u8 type` [`u8 type>>8`] [`4 B frames`] [`u8 paint`] [`u8 wall`] [`u8 wallColor`] [`u8 liquid`] [`u8 wall>>8`]) + run count (`u8`, or `u8` low + `u8` high) | `sections/tiles.rs::write_tile_record` — identical record, identical byte order | **YES** (fixture world, S1-J-1 2026-11-14) | The four wire bits are written where the C# writes them (`b2` 0x02/0x04/0x08, `b3` 0x20) and the batching equality compares them, so the run boundaries match; the golden bytes come from a `dotnet` run of the decompiled `SaveWorldTiles`. A full C#-written world file is still S1-J-3's fixture. |
 | 3 chests | `i16 count`; per chest `i32 x`, `i32 y`, `string name`, `i32 maxItems` (v294+; older files carry one shared `i16` before the loop); per slot `i16 stack` (+ `i32 type`, `u8 prefix` when stack > 0) | `sections/chests.rs` вЂ” same | **UNKNOWN** | Field-for-field mirror; no golden-byte fixture exists. |
 | 4 signs | `i16 count`; per sign `string text`, `i32 x`, `i32 y` (text **before** position) | `sections/signs.rs` вЂ” same | **UNKNOWN** | The text-first order is preserved. |
 | 5 NPCs | 3 lists: (a) shimmered town bitmap = `i32 count` + `i32` indices, (b) terminator-delimited town NPCs (`bool active`, `i32 netID`, `string givenName`, `Vector2`, `bool homeless`, `i32 homeX/homeY`, `BitsByte`, вЂ¦), (c) terminator-delimited `SavesAndLoads` NPCs | `sections/npcs.rs` вЂ” same | **UNKNOWN** | The `version < 251` `unlocked*Spawn` recompute is deliberately not ported (documented). |
@@ -225,24 +225,28 @@ boundary (`App::swap_world`), so a background *parse* is possible but adds littl
 
 ## Deviations & risks
 
-1. **The `.wld` tile section drops the four wire bits** (C# `b2` 0x02/0x04/0x08,
-   `b3` 0x20) вЂ” `crates/tr-core/src/wld/sections/tiles.rs:103-105` states it
-   explicitly: the port keeps wires in a side table (`World.wires`, used by the
-   `.trwld` v6 tail) and its `.wld` reader never restores them.
-   Severity: **behavioural** (data loss on a `.wld` round trip + no byte parity).
-   Consequence 2: the C#'s batching equality (`Tile.isTheSameAs:155-197`, which
-   compares `sTileHeader`/`bTileHeader`, i.e. the wire bits) differs from the
-   port's `encoded_same` (`tiles.rs:219-259`), so the **run boundaries** differ
-   too в†’ the byte divergence is not only in the header bits.
-   ROADMAP/ANALYSIS: the Rust module doc admits it locally; the M6-SAVE-1 ROADMAP
-   row claims "all 11 `.wld` sections read + written" without this caveat.
+1. ~~**The `.wld` tile section drops the four wire bits**~~ — **CLOSED 2026-11-14**
+   (S1-J-1, `S1-J-1-wld-wire-bits`): `sections/tiles.rs::write_tile_record` now
+   writes them exactly where the C# does (C# `b2` 0x02/0x04/0x08, `b3` 0x20 —
+   `WorldFile.cs:1508-1532`) and `wld/mod.rs::load_tiles` restores them
+   (`LoadWorldTiles:2614-2632`/`:2651-2654`, copied into every row of an RLE
+   run by `CopyFrom` `:2711`), so the wire state survives a `.wld` round trip.
+   The port still keeps the colours in a side table (`World.wires`, also the
+   `.trwld` v7 tail) — only the **in-memory** layout differs from the C#'s
+   `sTileHeader` bits. Consequence 2 is closed with it: `encoded_same` now
+   compares the four colours, because the C#'s batching equality
+   (`Tile.isTheSameAs:155-197`) compares `sTileHeader`/`bTileHeader` — the wire
+   bits — so the **run boundaries** match. The tile section's bytes are pinned
+   against a `dotnet` run of the decompiled `SaveWorldTiles`
+   (`s1_j_1_the_tile_section_matches_the_csharp_bytes`); a full C#-written world
+   file remains S1-J-3's fixture.
 2. **The `.wld` world header + flags write placeholder values** (generator
    version 0, GUID zeros, world id 0, `LastPlayed` = min date, the secret-seed
    booleans `false`) вЂ” `sections/header.rs:49-60`, `sections/flags.rs:220-274`.
    Severity: **behavioural** (a vanilla client reads a different seed/GUID/world id)
    but harmless inside the port. The deviations are documented per line in the Rust
    source; the ROADMAP row does not mention them.
-3. **No rolling backups, no `.bak`, no post-write validation** вЂ” the C# keeps up
+3. **No rolling backups, no `.bak`, no post-write validation** — **CLOSED 2026-11-13** (`S1-J-4-bak-backups`: the post-write walk + the rolling rotation with the C#'s own slot numbering — the bare `.bak` is slot 1, the numbered slots start at `.bak2`) вЂ” the C# keeps up
    to 9 numbered backups (`DoRollingBackups:966-1004`) and re-reads the file to
    validate it, restoring the `.bak` on failure (`InternalSaveWorld:941-962`).
    The port writes tmp+rename only (`wld::save:319-321`).
@@ -263,18 +267,22 @@ boundary (`App::swap_world`), so a background *parse* is possible but adds littl
    the faithful single-player reduction, and `save_world` covers world + player
    + map.
 7. **The port has two world formats** (`.wld` vanilla-shaped and `.trwld` native),
-   chosen by file extension at save time (`saveglue.rs:27-28`) вЂ” the vanilla's
+   chosen by file extension at save time — **CLOSED as the documented contract 2026-11-13** (S1-J-8: "The world-format contract (S1-J-8)" in ANALYSIS — `.trwld` canonical, `.wld` interchange, the doubling bounded). Original text: вЂ” the vanilla's
    single `.wld` is split. Severity: **cosmetic/architectural**, but it doubles the
    save surface for Stage-2 (two compressors, two readers).
-8. The C#'s "temp" save snapshot (day/time/weather restored on load) is not
-   verified in the port вЂ” severity **UNKNOWN**.
+8. The C#'s "temp" save snapshot (day/time/weather restored on load) — CLOSED
+   by S1-J-7 (2026-11-13): the mechanism verified against the source and the rain
+   triple ported as the `.trwld` v14 block вЂ” severity **UNKNOWN**.
 
 ## Task seeds
 
-- **S** вЂ” write the four wire bits in `sections/tiles.rs::write_tile_record`
+- ~~**S** — write the four wire bits in `sections/tiles.rs::write_tile_record`
   (`b2` 0x02/0x04/0x08, `b3` 0x20) and add them to `encoded_same`; the source
-  data already exists (`World.wires`, the `.trwld` v6 side table). Closes
-  deviation 1 and makes the tile section byte-comparable.
+  data already exists (`World.wires`, the `.trwld` v7 side table). Closes
+  deviation 1 and makes the tile section byte-comparable.~~ — **DONE (S1-J-1,
+  2026-11-14)**: the writer emits the four colours, `encoded_same` compares
+  them, the reader restores them, and the tile section's bytes are pinned
+  against a `dotnet` run of the decompiled `SaveWorldTiles`.
 - **M** вЂ” a golden-byte harness: one C#-written `.wld` (or one hand-computed
   fixture per section) + a test that asserts the Rust writer's bytes are
   identical. Today the only byte fixtures live inside the Rust tests

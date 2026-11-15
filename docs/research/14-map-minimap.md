@@ -237,9 +237,11 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
 - **D7 — paint id source (ruling 6).** pixel · *admitted* (option.rs:62, 671; mod.rs:259-264).
   `tile.paint()` reads the tile byte; wall paint lives in `World.extras` and is substituted in
   `create_map_tile` only when `new_color` still equals the tile paint.
-- **D8 — paint colour float→byte (ruling 7).** pixel · *admitted* (mod.rs:154-163).
-  `WorldGen.paintColor`'s normalised floats are re-quantised to bytes; `MapHelper.MapColor` worked
-  in float space, so painted map pixels can differ by ±1 per channel.
+- **D8 — paint colour float→byte (ruling 7).** pixel · **retired (S1-L-5, 2026-11-14)**.
+  The original claim — `paintColor` floats re-quantised to bytes can shift a painted map pixel by
+  ±1 per channel — is gone: `paint_color_bytes` (`palette.rs`) is now the exact `WorldGen.paintColor`
+  byte table (`WorldGen.cs:43921-44033`), `map_color` multiplies those bytes directly like the C#
+  `MapColor`, and `map_color_uses_the_exact_paint_color_bytes` pins the table.
 - **D9 — `sceneArea` / `sceneSnowiness` not ported (ruling 8).** behavioural · *admitted*
   (option.rs:691-692). `MapHelper.cs:2044-2067` prefers `SceneMetrics.SnowTileCount` when the tile
   is inside the captured scan area; the port always runs the 10-px-stride neighbour scan
@@ -307,6 +309,18 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   content-lost-triggered full refresh (`MapRenderer.cs:363-377`) are replaced by the port's
   `uploaded`/`needs_full_upload` pair, which is equivalent for a correct upload but never re-runs a
   full sweep after a GPU reset.
+- **D23 — the `.map` deflate stream is not byte-identical to vanilla's (S1-L-5).** determinism ·
+  *admitted* (map.rs:706-711, `tools/MapDeflateHarness`, ANALYSIS.md "The `.map` deflate stream").
+  The wrapper semantics are faithful (raw deflate, no zlib wrapper, at the `CompressionMode.Compress`
+  ctor default = `CompressionLevel.Optimal`/zlib level 6 — the port previously used `fast()`), but
+  the vanilla runtime's `clrcompression.dll` (.NET FW 4.8.1) embeds a Microsoft-patched zlib whose
+  output no stock zlib reproduces: for the frozen S1-L-5 body it emits 35 414 bytes against
+  zlib 1.3.1's 36 300 at *every* (level, memLevel, strategy) combination probed via `zlib-rs`
+  (`zrs-probe`), while .NET 10's own stock-zlib `DeflateStream` produces 36 295. The committed
+  reference (`tools/MapDeflateHarness/fw48-reference.deflate`) inflates back onto the port's body
+  byte-for-byte, so the layer interoperates — only the compressed bytes differ. The chunking is
+  chunk-invariant on the vanilla runtime (the `fw48/` generator reports "chunked == single: yes";
+  modern .NET's is not).
 
 Risk summary: the highest-severity gaps are the map **invalidation** story (D14) — tile changes
 outside the reveal window are silently lost to the map — and the missing icon layers (D19), both

@@ -191,6 +191,7 @@ pub fn draw(
     panel: &DebugPanel,
     npcs: &[Npc],
     world: &tr_core::World,
+    stepper_paused: bool,
 ) {
     if !panel.open {
         return;
@@ -313,7 +314,7 @@ pub fn draw(
             }
         }
         Tab::World => {
-            let rows: [(&str, [f32; 4]); 9] = [
+            let rows: [(&str, [f32; 4]); 11] = [
                 (
                     &format!("Hardmode: {}", if world.hard_mode { "ON" } else { "OFF" }),
                     if world.hard_mode { R } else { G },
@@ -346,7 +347,29 @@ pub fn draw(
                     ),
                     if world.invasion_goblins { R } else { Y },
                 ),
+                // S1-B-3: this row restores M4-EVENT-3a's (commit 331304d4)
+                // intent — its click arm (row 8) existed since that landing,
+                // but the drawn row was never added, so the drawn "Kill All
+                // NPCs" actually toggled the slime rain.
+                (
+                    &format!(
+                        "Slime Rain: {}",
+                        if world.slime_rain { "ON" } else { "OFF" }
+                    ),
+                    if world.slime_rain { R } else { G },
+                ),
                 ("Kill All NPCs", R),
+                // S1-B-3: the `pauseworld` toggle (`ToolkitDebugCommands.cs:742-749`,
+                // `WorldUpdateStepper.TogglePaused`, `WorldUpdateStepper.cs:45-49`)
+                // — the port has no chat DebugCommand dispatcher, so it rides
+                // the F3 panel (the recorded deviation).
+                (
+                    &format!(
+                        "Pause World: {}",
+                        if stepper_paused { "ON" } else { "OFF" }
+                    ),
+                    if stepper_paused { R } else { G },
+                ),
             ];
             for (i, (label, c)) in rows.iter().enumerate() {
                 txt(
@@ -611,6 +634,14 @@ fn world_click(app: &mut App, row: usize) {
                 }
             }
         }
+        10 => {
+            // The `pauseworld` toggle (`ToolkitDebugCommands.cs:742-749`):
+            // `WorldUpdateStepper.TogglePaused` (`WorldUpdateStepper.cs:45-49`)
+            // flips `Paused` and re-pins `StartUpdateCount` to the current
+            // `GameUpdateCount` — the port's F3-panel surface (the recorded
+            // deviation for the absent chat DebugCommand dispatcher).
+            app.stepper.toggle_paused(app.game_update_count);
+        }
         _ => {}
     }
 }
@@ -710,4 +741,87 @@ pub fn end_drag(app: &mut App) -> bool {
         return true;
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DW-2.4 — the World tab's `Pause World` row toggles the stepper: the
+    /// `pauseworld` behaviour (`ToolkitDebugCommands.cs:742-749`) on the
+    /// panel surface (the port's recorded deviation — no chat DebugCommand
+    /// dispatcher). The click flips `stepper.paused` and re-pins the count
+    /// (`WorldUpdateStepper.cs:45-49`); the second click resumes.
+    #[test]
+    fn s1_b_3_debug_panel_pauseworld_row_toggles() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.game_update_count = 70000;
+        app.debug_panel.open = true;
+        app.debug_panel.tab = Tab::World;
+        // The World list starts at `content_rect().y + FILTER_H`; row 10 is
+        // `Pause World` (0-7 the world rows, 8 Slime Rain, 9 Kill All NPCs).
+        let pn = panel_rect(app.debug_panel.pos);
+        let list_top = content_rect(&pn)[1] + FILTER_H;
+        let mouse = Vec2::new(pn[0] + 10.0, list_top + 10.0 * ROW_H + ROW_H * 0.5);
+        assert!(
+            handle_click(&mut app, mouse),
+            "the panel consumed the Pause World click"
+        );
+        assert!(app.stepper.paused, "the row toggled pauseworld on");
+        assert_eq!(
+            app.stepper.start_update_count, 70000,
+            "the toggle pinned StartUpdateCount to GameUpdateCount"
+        );
+        assert!(
+            app.stepper.hud_text(app.game_update_count).is_some(),
+            "the overlay source turns on with the row"
+        );
+        assert!(
+            handle_click(&mut app, mouse),
+            "the second click consumed too"
+        );
+        assert!(!app.stepper.paused, "the second click resumed the world");
+        assert_eq!(
+            app.stepper.start_update_count, 70000,
+            "the resume toggle re-pinned as well (the unconditional write)"
+        );
+    }
+
+    /// The row-8 restore (S1-B-3's drift fix): the drawn `Slime Rain` row
+    /// maps to the click arm M4-EVENT-3a added (commit 331304d4) — and the
+    /// drawn `Kill All NPCs` row kills NPCs again instead of toggling the
+    /// slime rain.
+    #[test]
+    fn s1_b_3_world_tab_rows_map_1_to_1_after_the_drift_fix() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // A small ground world (the flow fixture's bare 8x8 has no computed
+        // column surfaces, so the slime spawn scan returns None there).
+        let mut w = tr_core::World::new("t".into(), 40, 40);
+        for x in 0..40 {
+            for y in 24..40 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        app.world = w;
+        app.debug_panel.open = true;
+        app.debug_panel.tab = Tab::World;
+        app.world.slime_rain = false;
+        let pn = panel_rect(app.debug_panel.pos);
+        let list_top = content_rect(&pn)[1] + FILTER_H;
+        let click = |row: f32| Vec2::new(pn[0] + 10.0, list_top + row * ROW_H + ROW_H * 0.5);
+        assert!(handle_click(&mut app, click(8.0)));
+        assert!(app.world.slime_rain, "row 8 toggles the slime rain");
+        // Row 9: Kill All NPCs — an alive slime dies, the slime rain stays.
+        app.npcs = vec![crate::npc::Npc::spawn_slime(&app.world, 20).expect("the slime spawns")];
+        assert!(app.npcs[0].hp > 0);
+        assert!(handle_click(&mut app, click(9.0)));
+        assert!(app.world.slime_rain, "row 9 did not touch the slime rain");
+        assert_eq!(app.npcs[0].hp, 0, "row 9 killed the NPC");
+    }
 }

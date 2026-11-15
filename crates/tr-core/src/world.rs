@@ -123,11 +123,30 @@ pub struct World {
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
-    /// `Main.eclipse` — runtime event flag; no M1 event sets it (readers:
-    /// `AmbienceServer.cs:34`, `:66`). Runtime-only, not saved.
+    /// `Main.eclipse` — the hardmode event flag (readers: `AmbienceServer
+    /// .cs:34`, `:66`). Persisted in the flags block — the C# writes the
+    /// save-time snapshot `_tempEclipse` (`WorldFile.cs:1280`).
     pub eclipse: bool,
-    /// `Main.bloodMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
+    /// `Main.bloodMoon` (`AmbienceServer.cs:50`); persisted the same way
+    /// (`_tempBloodMoon`, `WorldFile.cs:1279`).
     pub blood_moon: bool,
+    /// `Main.AnnouncementBoxDisabled` (`Main.cs:3073`): the `-disableannouncementbox`
+    /// launch switch gates the announcement box's case 425 (`Wiring.cs:1190`).
+    pub announcement_box_disabled: bool,
+    /// `Main.AnnouncementBoxRange` (`Main.cs:66530`, stock −1): the range in
+    /// px inside which the box's text reaches the player (`Wiring.cs:1202`).
+    pub announcement_box_range: i32,
+    /// `Main.raining` / `Main.rainTime` / `Main.maxRaining` — the rain
+    /// event's persisted state. The C#'s flag block writes the save-time
+    /// snapshot (`_tempRaining`/`_tempRainTime`/`_tempMaxRain`,
+    /// `WorldFile.cs:1312-1314`; `SetTempToOngoing` `:1058-1060` copies the
+    /// live values before the write) and `SetOngoingToTemps` (`:159-162`)
+    /// restores them on load — `Main.cloudAlpha` comes back as `maxRaining`.
+    /// The live state lives on the App's `Rain` (`tr-app/src/rain.rs`);
+    /// these are the file payload the save path syncs both ways (S1-J-7).
+    pub raining: bool,
+    pub rain_time: i32,
+    pub max_raining: f32,
     /// `CurrentFrameFlags.SleepingPlayersCount == ActivePlayersCount &&
     /// SleepingPlayersCount > 0` (`Main.cs:17856-17859` → `UpdateTimeRate`'s
     /// all-asleep flag, `Main.cs:6209`): every present player is fully asleep
@@ -139,6 +158,10 @@ pub struct World {
     /// the world-persistent boss states. The save wire rides the .wld
     /// flags block (M6-SAVE's world sections).
     pub downed_slime_king: bool,
+    /// `NPC.downedQueenSlime` (`Chest.cs:3428`'s stock gate) — the vanilla
+    /// `.wld` flags block carries it (`WorldFile.cs:1396`); the port's own
+    /// save rides the v15 tail (S1-F-16).
+    pub downed_queen_slime: bool,
     pub downed_eoc: bool,
     pub downed_eow: bool,
     pub downed_skeletron: bool,
@@ -256,7 +279,6 @@ pub struct World {
     /// `NPC.downedMoonlord` — the final boss beaten (halves the shield max).
     pub downed_moon_lord: bool,
     /// `NPC.downedAncientCultist` (`NPC.cs:79393`): the cultist beaten.
-
     pub downed_ancient_cultist: bool,
 
     /// `NPC.LunarApocalypseIsUp` (`NPC.cs:6419`) — the towers' apocalypse
@@ -267,7 +289,7 @@ pub struct World {
     /// (`StartImpendingDoom`'s writes, `Main.cs:64987`'s tick).
     pub moon_lord_countdown: i32,
     pub max_moon_lord_countdown: i32,
-        /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
+    /// `NPC.TowerActive*` (`NPC.cs:6411-6417`): the four towers alive.
     pub tower_active_solar: bool,
     pub tower_active_vortex: bool,
     pub tower_active_nebula: bool,
@@ -379,6 +401,16 @@ pub struct World {
     /// the save can carry it (M6-SAVE-1f — the vanilla writes it in the
     /// world-flags block, `WorldFile.cs:1315-1321` + `:1444-1450`).
     pub ore_tiers: crate::ores::SavedOreTiers,
+    /// `Main.chest[]` as it exists at the end of generation — the vanilla
+    /// stocks every chest's inventory **inline with its placement** inside
+    /// `AddBuriedChest` (`WorldGen.cs:35871-37580`), and the records save
+    /// with the world. S1-A-4 moved the port's stocking from the load-time
+    /// re-roll to these gen-time rolls: a freshly generated world carries
+    /// its own loot, a `.wld` load's records come from the file (the C#'s
+    /// `LoadChests` — `Main.chest` is the file, nothing rolls), and the
+    /// empty list simply means "no chest placed yet". The App's runtime
+    /// store materialises from these at `enter_loaded_world`.
+    pub chests: Vec<crate::save::ChestRecord>,
 
     // --- world identity / file metadata (S1-J-2, `IO/WorldFile.cs`) ---------
     /// `Main.ActiveWorldFileData.WorldGeneratorVersion` (`WorldFile.cs:1225`).
@@ -401,12 +433,18 @@ impl World {
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
             variants: vec![0; (width as usize) * (height as usize)],
             frame_rng: crate::unified_random::UnifiedRandom::new(0),
+            // `Main.AnnouncementBoxDisabled`'s stock is false (the launch
+            // switch off) and `Main.AnnouncementBoxRange`'s stock is -1
+            // (`Main.cs:66530`).
+            announcement_box_disabled: false,
+            announcement_box_range: -1,
             wires: crate::wiring::WireState::default(),
             tile_entities: crate::tile_entities::TileEntities::default(),
             signs: Vec::new(),
             pressure_plates: Vec::new(),
             frame_important: Vec::new(),
             ore_tiers: crate::ores::SavedOreTiers::new(),
+            chests: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,
@@ -417,6 +455,7 @@ impl World {
             moon_type: 0,
             moon_phase: 0,
             downed_slime_king: false,
+            downed_queen_slime: false,
             downed_eoc: false,
             downed_eow: false,
             downed_skeletron: false,
@@ -465,6 +504,9 @@ impl World {
             extras: std::collections::HashMap::new(),
             eclipse: false,
             blood_moon: false,
+            raining: false,
+            rain_time: 0,
+            max_raining: 0.0,
             all_players_asleep: false,
             pumpkin_moon: false,
             snow_moon: false,

@@ -80,7 +80,7 @@ pub(crate) fn fnv1a64(name: &str) -> u64 {
 /// (`noise.rs`: "the output streams of both are part of the world contract");
 /// `Rng` construction draws nothing, so creating all three up front (vanilla
 /// creates its per-pass stream inside `RunPass`) shifts no draw.
-pub(crate) struct Streams {
+pub(crate) struct Streams<'a> {
     /// The world seed everything here derives from (`new`'s argument, kept so
     /// `pass_rng` stays seed-keyed).
     #[allow(dead_code)] // read only by `pass_rng` until Phase 3
@@ -94,15 +94,22 @@ pub(crate) struct Streams {
     /// The structures stream — shrines, chests, altars, pyramids, pots,
     /// hives, forts, temple, mini-biomes (`srng`).
     pub(crate) srng: Rng,
+    /// The chest-stocking hook (S1-A-4) — `None` on the plain `generate`
+    /// path (the tr-core tests), `Some` when the app stocks the world's
+    /// chests at generation time (`generate_with_chest_stock`). Each chest
+    /// placement site hands its event to it — the C#'s `AddBuriedChest`
+    /// inline roll.
+    pub(crate) chest_stock: Option<&'a mut super::chest_stock::ChestStockHook<'a>>,
 }
 
-impl Streams {
-    pub(crate) fn new(seed: u64) -> Streams {
+impl<'a> Streams<'a> {
+    pub(crate) fn new(seed: u64) -> Streams<'a> {
         Streams {
             seed,
             rng: Rng(seed ^ 0xA076_1D64_78BD_642F),
             drng: Rng(seed ^ 0x5DEE_CE66_D1A4_9B5F),
             srng: Rng(seed ^ 0x9E37_79B9_7F4A_7C15),
+            chest_stock: None,
         }
     }
 
@@ -252,6 +259,17 @@ pub(crate) struct GenVars {
     /// tile/wall ids swap (`:11298-11304`: ebonstone 25 ↔ crimstone 203,
     /// ebonstone wall 3 ↔ crimstone wall 83). Derived, never drawn.
     pub(crate) flip_infections: bool,
+    /// `GenVars.JungleItemCount` (`GenVars.cs`, advanced per shrine-chest
+    /// attempt, `WorldGen.cs:10196`/`:17219`): the jungle chests' main-item
+    /// cycle counter — the `% 4` walk over the living-wood family with the
+    /// two rare overrides (`GetNextJungleChestItem`, `:10170-10196`). S1-A-4:
+    /// drawn at the shrine-chest site, in the C#'s spot order.
+    pub(crate) jungle_chest_cycle: u32,
+    /// `GenVars.skyIslandHouseCount` (`GenVars.cs`, the `IslandHouse`'s
+    /// main-item cycle counter, `WorldGen.cs:79344-79363`): the sky houses'
+    /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
+    /// drawn at the island-house site, once per house.
+    pub(crate) sky_island_house_count: u32,
 }
 
 impl Default for GenVars {
@@ -285,6 +303,10 @@ impl Default for GenVars {
             left_beach_end: 0,
             right_beach_start: 0,
             // The shell anchors zero in Reset (`WorldGen.cs:11168-11171`).
+            jungle_chest_cycle: 0,
+            // `GenVars.skyIslandHouseCount` zeroes in Reset too
+            // (`GenVars.cs`'s statics).
+            sky_island_house_count: 0,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1883,7 +1905,13 @@ fn step_chests(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    structures::pass_chests(world, &gv.shrine_spots, &mut streams.srng);
+    structures::pass_chests(
+        world,
+        &gv.shrine_spots,
+        &mut gv.jungle_chest_cycle,
+        &mut streams.srng,
+        streams.chest_stock.as_deref_mut(),
+    );
 }
 
 fn step_altars(
@@ -1912,6 +1940,7 @@ fn step_pyramids(
         map.desert_end,
         &map.heights,
         &mut streams.srng,
+        streams.chest_stock.as_deref_mut(),
     );
 }
 
@@ -1946,6 +1975,7 @@ fn step_spider_caves(
         world.rock_layer,
         world.world_surface,
         hell_top as f64,
+        streams.chest_stock.as_deref_mut(),
     );
 }
 
@@ -2020,7 +2050,12 @@ fn step_hell_forts(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    structures::pass_hell_forts(world, gv.layers().hell_top, &mut streams.srng);
+    structures::pass_hell_forts(
+        world,
+        gv.layers().hell_top,
+        &mut streams.srng,
+        streams.chest_stock.as_deref_mut(),
+    );
 }
 
 fn step_temple_part2(
@@ -2097,7 +2132,12 @@ fn step_cave_houses(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    mini_biomes::pass_cave_houses(world, gv.layers().rock_layer, &mut streams.srng);
+    mini_biomes::pass_cave_houses(
+        world,
+        gv.layers().rock_layer,
+        &mut streams.srng,
+        streams.chest_stock.as_deref_mut(),
+    );
 }
 
 fn step_campsites(
@@ -2224,12 +2264,19 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
-    islands::pass_floating_islands(world, &map.heights, &mut streams.drng);
+    let heights = gv.map().heights.to_vec();
+    islands::pass_floating_islands(
+        world,
+        &heights,
+        &mut streams.drng,
+        streams.chest_stock.as_deref_mut(),
+        opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        &mut gv.sky_island_house_count,
+    );
 }
 
 fn step_slopes(

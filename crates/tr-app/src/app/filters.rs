@@ -164,6 +164,14 @@ pub(crate) struct FilterDriver {
     pub(crate) heat: Option<FilterParams>,
     /// WaterDistortion's uniform while its filter is visible.
     pub(crate) water: Option<FilterParams>,
+    /// `Filters.Scene["MoonLordShake"].GetShader().Intensity` — the
+    /// `UseIntensity` the ritual tick feeds (`Main.cs:64980`, S1-G-6); it
+    /// persists while the filter is inactive, like the C# shader state.
+    pub(crate) moon_lord_shake_intensity: Option<f32>,
+    /// The activation gate: `NPC.MoonLordCountdown > 0` (`Main.cs:64976`).
+    pub(crate) moon_lord_shake_wanted: bool,
+    /// MoonLordShake's uniform while its filter is visible.
+    pub(crate) moon_lord_shake: Option<FilterParams>,
 }
 
 impl FilterDriver {
@@ -188,6 +196,9 @@ impl FilterDriver {
             output: None,
             winner: None,
             heat: None,
+            moon_lord_shake_intensity: None,
+            moon_lord_shake_wanted: false,
+            moon_lord_shake: None,
             water: None,
         };
         driver.sync_settings(&crate::settings::Settings::default());
@@ -232,6 +243,13 @@ impl FilterDriver {
                 FilterId::WaterDistortion.priority(),
                 p,
                 PassId::WATER_DISTORTION,
+            );
+        }
+        if let Some(p) = self.moon_lord_shake {
+            push(
+                FilterId::MoonLordShake.priority(),
+                p,
+                PassId::MOON_LORD_SHAKE,
             );
         }
         // Stable: equal priorities keep insertion order.
@@ -343,6 +361,22 @@ impl FilterDriver {
             water_distortion_active(self.wave_quality),
             inputs.skip_transitions,
         );
+        // S1-G-6: the MoonLordShake gate — `NPC.MoonLordCountdown > 0`
+        // (`Main.cs:64976`); the direct `Filters.Scene.Activate/Deactivate`
+        // calls of `:64976-64984` are the same active-edge flip the board's
+        // `manage` performs. The vanilla deactivates abruptly (the direct
+        // `Deactivate`, no fade-out) — the board's fade-out is the recorded
+        // deviation (ANALYSIS).
+        self.board.manage(
+            FilterId::MoonLordShake,
+            self.moon_lord_shake_wanted,
+            inputs.skip_transitions,
+        );
+        self.moon_lord_shake = if self.board.is_active(FilterId::MoonLordShake) {
+            Some(self.build_params(FilterId::MoonLordShake, metrics, state, inputs))
+        } else {
+            None
+        };
         // `:126-133`: the WaterDistortion `UseIntensity` (the shader keeps it
         // after deactivation, so the fade-out reuses the last value).
         if self.board.is_active(FilterId::WaterDistortion) {
@@ -479,6 +513,16 @@ impl FilterDriver {
         params.opacity = self.board.opacity(id);
 
         match id {
+            FilterId::MoonLordShake => {
+                // S1-G-6: `UseIntensity` (the tick driver) over the
+                // `ScreenShaderData` default 1 (`:17`); `UseTargetPosition(
+                // Zero)` — the exact `UpdateMoonLordIndex` value while the
+                // filter is active, because no Moon Lord exists before the
+                // countdown lands (`MoonLordScreenShaderData.cs`).
+                params.pass_index = tr_render::PassId::MOON_LORD_SHAKE.0;
+                params.target_pos = [0.0, 0.0];
+                params.intensity = self.moon_lord_shake_intensity.unwrap_or(1.0);
+            }
             FilterId::Graveyard => {
                 // `SceneState.cs:107-114` (`:113`'s UseIntensity(1.2) is a
                 // constant; `:109`'s progress ramps with the intensity).

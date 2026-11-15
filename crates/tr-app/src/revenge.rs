@@ -103,7 +103,7 @@ pub(crate) fn expiration_addon(coin_value: u64) -> u64 {
 /// the port's boss kinds (the `NPC.boss` flag rows — the Eye 4, the King
 /// Slime 50, the EoW head 13, the Brain 63, the Queen Bee 43, the
 /// Skeletron 35, the Wall of Flesh 114, the mech trio 125/126/127).
-const BOSS_KINDS: &[NpcKind] = &[
+pub(crate) const BOSS_KINDS: &[NpcKind] = &[
     NpcKind::EyeOfCthulhu,
     NpcKind::QueenBee,
     NpcKind::SkeletronHead,

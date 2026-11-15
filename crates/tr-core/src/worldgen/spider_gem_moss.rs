@@ -597,7 +597,14 @@ fn place_framed(world: &mut World, x: i32, y: i32, kind: u16, frame_x: i32) -> b
 /// region and decorates the open cells: the buried chest (1/15 of the floored
 /// cells), the pot, the stalactite on a ceiling, the large piles and the
 /// small piles on a floor.
-fn spread_spider(world: &mut World, rng: &mut Rng, x: i32, y: i32, hell_top: f64) {
+fn spread_spider(
+    world: &mut World,
+    rng: &mut Rng,
+    x: i32,
+    y: i32,
+    hell_top: f64,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) {
     if !in_world(world, x, y, 0) {
         return;
     }
@@ -644,9 +651,28 @@ fn spread_spider(world: &mut World, rng: &mut Rng, x: i32, y: i32, hell_top: f64
                 if floored && rng.range(0, 3) == 0 {
                     if rng.range(0, 15) == 0 {
                         // `AddBuriedChest(x, y, 939, notNearOtherChests: true,
-                        // 15, trySlope: false, 0)` — the port places the chest
-                        // tile; its stock rides M5-CHEST-gen.
-                        let _ = place_chest(world, item.0, item.1);
+                        // 15, trySlope: false, 0)` (`:17412-17414`) — the web
+                        // chest's main item 939, style 15. S1-A-4: the stock
+                        // rides inline.
+                        let style = super::structures::resolved_chest_style(
+                            15,
+                            939,
+                            item.1,
+                            world.world_surface,
+                        );
+                        if place_chest(world, item.0, item.1, style) {
+                            super::chest_stock::stock_placed_chest(
+                                world,
+                                stock.as_deref_mut(),
+                                rng,
+                                item.0,
+                                item.1,
+                                style,
+                                21,
+                                939,
+                                true,
+                            );
+                        }
                     } else {
                         let style = rng.range(19, 21);
                         place_pot(world, rng, item.0, item.1, style);
@@ -930,6 +956,7 @@ pub(crate) fn pass_spider_caves(
     rock_layer: f64,
     world_surface: f64,
     hell_top: f64,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
 ) -> u32 {
     // `WorldGen.cs:17358`: the pass is skipped whole under
     // `Variations.noSpiderCavesActuallyNoSpiderCaves` — the M5-SEED-2 seed
@@ -958,7 +985,7 @@ pub(crate) fn pass_spider_caves(
             c = count_tiles(world, x, y, true, max_spider_count);
         }
         if tries < retries {
-            spread_spider(world, rng, x, y, hell_top);
+            spread_spider(world, rng, x, y, hell_top, stock.as_deref_mut());
             placed += 1;
         }
     }
@@ -1290,7 +1317,7 @@ mod tests {
         let mut w = flat_world(600, 300, 40);
         carve_pocket(&mut w, px, py, size, size);
         let mut rng = Rng(0x51DE_C0DE);
-        spread_spider(&mut w, &mut rng, px + 10, py + 10, 180.0);
+        spread_spider(&mut w, &mut rng, px + 10, py + 10, 180.0, None);
         let spider = w.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count();
         assert!(spider >= (size * size) as usize, "the spider wall spread ({spider})");
         // The liquid inside the cave is cleared.
@@ -1309,7 +1336,7 @@ mod tests {
         let mut rng = Rng(0xABCD);
         let rock = w.rock_layer;
         let surface = w.world_surface;
-        let placed = pass_spider_caves(&mut w, &mut rng, rock, surface, 780.0);
+        let placed = pass_spider_caves(&mut w, &mut rng, rock, surface, 780.0, None);
         assert!(placed >= 1, "the pass placed a spider cave");
         let spider = w.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count();
         assert!(spider >= 500, "the spider wall covers the cave ({spider})");
@@ -1325,7 +1352,7 @@ mod tests {
         w.micro_seeds |= crate::seeds::MicroSeedFlags::NO_SPIDER_CAVES;
         let mut rng = Rng(0xABCD);
         let (rock, surface) = (w.rock_layer, w.world_surface);
-        let placed = pass_spider_caves(&mut w, &mut rng, rock, surface, 780.0);
+        let placed = pass_spider_caves(&mut w, &mut rng, rock, surface, 780.0, None);
         assert_eq!(placed, 0, "the pass is skipped whole");
         assert_eq!(w.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count(), 0);
         // A crowded secret-seed list (count >= 4) keeps the pass running — the
@@ -1340,7 +1367,7 @@ mod tests {
         assert!(crowded.micro_seeds.count() >= 4);
         let mut rng2 = Rng(0xABCD);
         let (rock2, surface2) = (crowded.rock_layer, crowded.world_surface);
-        let ran = pass_spider_caves(&mut crowded, &mut rng2, rock2, surface2, 780.0);
+        let ran = pass_spider_caves(&mut crowded, &mut rng2, rock2, surface2, 780.0, None);
         assert!(ran >= 1, "the crowded world still runs the pass");
         assert!(crowded.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count() >= 500);
     }
@@ -1352,7 +1379,7 @@ mod tests {
         for seed in 0..60u64 {
             let mut w = flat_world(600, 300, 40);
             carve_pocket(&mut w, px, py, size, size);
-            spread_spider(&mut w, &mut Rng(seed), px + 10, py + 10, 180.0);
+            spread_spider(&mut w, &mut Rng(seed), px + 10, py + 10, 180.0, None);
             let pots = w.tiles.iter().filter(|t| t.kind == TILE_POT).count();
             let stal = w.tiles.iter().filter(|t| t.kind == TILE_STALACTITE).count();
             if pots >= 2 && stal >= 2 {

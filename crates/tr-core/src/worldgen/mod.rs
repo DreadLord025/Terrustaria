@@ -17,6 +17,7 @@
 
 mod biome_detail;
 mod biomes;
+pub mod chest_stock;
 pub mod dungeon;
 pub mod dungeon_features;
 mod caves;
@@ -123,6 +124,18 @@ pub(crate) const WALL_DIRT: u16 = 2;
 pub(crate) const WALL_SANDSTONE: u16 = 187;
 
 pub fn generate(opts: &GenOptions) -> World {
+    generate_with_chest_stock(opts, None)
+}
+
+/// The generation entry with the chest-stocking hook (S1-A-4): each chest
+/// placement site hands its [`chest_stock::ChestSiteEvent`] to the hook and
+/// writes the rolled rows into `World.chests`, so the world's loot is fixed
+/// at generation time — the C#'s `AddBuriedChest` shape. `generate` (no
+/// hook) leaves `World.chests` empty; `None` is the tr-core-tests path.
+pub fn generate_with_chest_stock<'a>(
+    opts: &GenOptions,
+    chest_stock: Option<&'a mut chest_stock::ChestStockHook<'a>>,
+) -> World {
     let width = opts.width.max(512);
     let height = opts.height.max(512);
     let mut world = World::new(opts.name.clone(), width, height);
@@ -142,6 +155,7 @@ pub fn generate(opts: &GenOptions) -> World {
     let noise = Noise { seed: opts.seed };
     let config = config::WorldGenConfig::parse();
     let mut streams = pipeline::Streams::new(opts.seed);
+    streams.chest_stock = chest_stock;
     pipeline::run(&mut world, &mut streams, opts, &noise, &config);
     world
 }
@@ -670,6 +684,62 @@ mod tests {
         assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
     }
 
+    /// S1-A-4: the chest stocking runs at GENERATION time — each placement
+    /// site hands its event to the hook and writes the rolled rows into
+    /// `World.chests` (the C#'s `AddBuriedChest` inline shape), and two
+    /// generations of the same seed agree chest-for-chest (the site draws
+    /// are stream-deterministic; the hook here is a fixed-row stub — the
+    /// loot-table determinism rides the tr-app driver's tests). A record
+    /// whose anchor a LATER pass destroyed (the port's temple writes brick
+    /// over the tiles the C#'s `PlaceTile` would refuse) reads as the C#'s
+    /// stale record: `store_from_records`'s `FixAgainstExploits` cull drops
+    /// it at the App conversion, so only the SURVIVING records must sit on
+    /// chest anchors.
+    #[test]
+    fn the_chests_stock_at_generation_time_s1_a_4() {
+        let hook = |_ev: &chest_stock::ChestSiteEvent,
+                    _rng: &mut dyn chest_stock::WorldGenRand| {
+            vec![crate::save::ChestItem { stack: 1, kind: 9, prefix: 0 }]
+        };
+        let mut a = hook;
+        let opts = GenOptions {
+            seed: 33,
+            ..Default::default()
+        };
+        let w = generate_with_chest_stock(&opts, Some(&mut a));
+        assert!(
+            !w.chests.is_empty(),
+            "the placement sites stocked the world ({})",
+            w.chests.len()
+        );
+        let mut survivors = 0usize;
+        for c in &w.chests {
+            let t = w
+                .tile(c.x, c.y)
+                .expect("the record's anchor is inside the world");
+            if t.active() && (t.kind == 21 || t.kind == 341) {
+                survivors += 1;
+            }
+        }
+        assert!(
+            survivors >= w.chests.len() - 4,
+            "the anchors survive except the few a later pass writes over ({} of {})",
+            survivors,
+            w.chests.len()
+        );
+        // A second generation of the same seed agrees chest-for-chest.
+        let mut b = |_ev: &chest_stock::ChestSiteEvent,
+                     _rng: &mut dyn chest_stock::WorldGenRand| {
+            vec![crate::save::ChestItem { stack: 1, kind: 9, prefix: 0 }]
+        };
+        let w2 = generate_with_chest_stock(&opts, Some(&mut b));
+        assert_eq!(w.chests.len(), w2.chests.len());
+        for (ca, cb) in w.chests.iter().zip(w2.chests.iter()) {
+            assert_eq!((ca.x, ca.y), (cb.x, cb.y));
+            assert_eq!(ca.slots, cb.slots);
+        }
+    }
+
     #[test]
     fn the_micro_biomes_place_the_content() {
         // The 4200-world carries the cave houses (the wood frames 27 + the
@@ -1076,14 +1146,16 @@ mod tests {
         assert!(count(480) > 300, "the pyramid brick ({})", count(480));
         assert!(count(28) > 50, "the pots ({})", count(28));
         // The chest tiles come in intact 2x2 quads — every chest anchor
-        // (frame 0,0) has its three siblings.
+        // (frame_y 0, the style's base column `frame_x = 18 * style`) has
+        // its three siblings (S1-A-4: the styles ride the resolved `num9`).
         let mut anchors = 0;
         for y in 1..w.height - 2 {
             for x in 1..w.width - 2 {
                 let t = w.tile(x, y).unwrap();
-                if t.active() && t.kind == 21 && t.frame_x == 0 && t.frame_y == 0 {
+                if t.active() && t.kind == 21 && t.frame_y == 0 && t.frame_x % 18 == 0 {
+                    let base = t.frame_x;
                     let ok =
-                        [(1i32, 0i32, 18i16), (0, 1, 0), (1, 1, 18)]
+                        [(1i32, 0i32, base + 18i16), (0, 1, base), (1, 1, base + 18)]
                             .iter()
                             .all(|(dx, dy, fx)| {
                                 w.tile(x + dx, y + dy).is_some_and(|n| {

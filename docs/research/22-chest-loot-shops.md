@@ -199,9 +199,11 @@ research:
 4. **`discountAvailable` and `shopSpecialCurrency` are missing** (behavioural):
    the 0.8 Discount Card factor (`:35369-35374`) and the `calcForSelling =
    calcForBuying` aliasing for `isAShopItem` are not modelled at all.
-5. **Two stock conditions hard-false** (behavioural, small): `shop.rs:1268-1270`
-   returns `false` for `StockWhen::HardModeMoonlord` and
-   `DownedBothSlimes` ("not ported yet"), so those rows can never appear.
+5. **Two stock conditions hard-false** (behavioural, small): **CLOSED
+   2026-11-13** (`S1-F-16-chest-icons-stock-when`): the gates read the World
+   flags through `ShopFlags` (`downed_slime_king`/`downed_queen_slime`/
+   `downed_moon_lord`; the Queen Slime flag landed on `World` + the `.trwld`
+   v15 bit per `WorldFile.cs:1396`); the Princess's 5266/5044 rows resolve.
 6. **Four rule classes + two conditions missing** (behavioural): the boss-side
    rules `SlimeBody`/`StatueMimic`/`MechBossSpawners`/`FromOptionsWithoutRepeats`
    and `NamedNPC`/`RedHatSkeletron` — 13 rows, warned in M4-LOOT-2. Unknown item
@@ -245,7 +247,9 @@ research:
   `dresserTypeToIcon` (+ `Initialize`'s overrides) for the chest UI. Depends on
   `GetItemDrop_Dressers` being ported.
 - **S — the two dead stock gates**: `HardModeMoonlord` / `DownedBothSlimes`
-  (`shop.rs:1268-1270`) once `downedMoonlord`/`downedQueenSlime` reach `World`.
+  (`shop.rs:1268-1270`) once `downedMoonlord`/`downedQueenSlime` reach `World`. —
+  **DONE 2026-11-13** (`S1-F-16-chest-icons-stock-while` typo guard: the branch is
+  `S1-F-16-chest-icons-stock-when`).
 - **S — bestiary drop rates**: `DropRateInfo` + `ReportDroprates`
   (`DropRateInfoChainFeed`) behind M4-BEST-1.
 - **S — price rounding audit** (f64 vs f32) if a half-value price shows up in

@@ -298,6 +298,41 @@ pub(crate) fn spawn_item_drop_px(
     }
 }
 
+/// The field-wise pixel variant of [`spawn_item_drop_px`] — the call sites that
+/// already hold a borrow of one of the app's fields (the player, inside the
+/// fixed-step closure) and therefore cannot take the whole `&mut App`; the
+/// caller feeds its stage stream, exactly like the pixel entry point above
+/// (S1-L-6b1's field-wise split kept, with one stream instead of the old
+/// item/prefix pair).
+pub(crate) fn spawn_item_drop_px_fields(
+    items: &mut Vec<ItemDrop>,
+    rng: &mut UnifiedRandom,
+    kind: u16,
+    count: u32,
+    pos: Vec2,
+) {
+    spawn_item_drop_px(items, rng, kind, count, pos);
+}
+
+/// The field-wise tile variant of [`spawn_item_drop`] — same borrow reason;
+/// the tile cell becomes the pixel spawn point here.
+pub(crate) fn spawn_item_drop_fields(
+    items: &mut Vec<ItemDrop>,
+    rng: &mut UnifiedRandom,
+    kind: u16,
+    count: u32,
+    tx: i32,
+    ty: i32,
+) {
+    spawn_item_drop_px(
+        items,
+        rng,
+        kind,
+        count,
+        Vec2::new(tx as f32 * TILE_PX, ty as f32 * TILE_PX),
+    );
+}
+
 #[cfg(test)]
 mod shimmer_tests {
     use super::*;

@@ -116,8 +116,8 @@ format and alpha behaviour as the vanilla XNA stack, so the frame is pixel-ident
 | Tiles 16 px on an 18 px sheet grid | PORTED | `atlas.rs::SheetLayout::Tile` (13-33) | `geometry() == (18, 0)` — matches AGENTS.md and `ANALYSIS.md:1416`. |
 | Walls 36 px cells with an 8 px inset | PORTED | `atlas.rs::SheetLayout::Wall` (13-33) | `geometry() == (36, 8)`; `ANALYSIS.md:1417` documents the vanilla's 32×32 source rect offset by −8 landing the inner 16×16 on the tile. |
 | Tree trunks 20×20 on a 22 px grid | PORTED | `tr-core/src/tree.rs:15,17` (`TRUNK_GRID = 22`, `TRUNK_SIZE = 20.0`), `assets.rs:2511-2512` | Matches AGENTS.md; trees bypass the 16×16 block-frame table (`assets.rs::rect_uv`). |
-| WGSL tint pre-linearisation | PORTED (approximate) | `sprite.wgsl:231` — `pow(max(in.color.rgb, 0.0), vec3(2.2))` | The intent (XNA multiplies bytes in sRGB space; the atlas is sRGB-decoded and the swapchain re-encodes, so the tint must be linearised) is right, but `pow(x, 2.2)` is **not** the sRGB EOTF and the tint's alpha is correctly left un-linearised (`sprite.wgsl:239`). See D-5. |
-| Paint recolour | PARTIAL | `sprite.wgsl:113-170` | 32-entry `paint_rgb` table + `paint_recolor`; the vanilla's compiled HLSL passes are not in the decompile — the port washes the texel with the hue and lets the luminance carry detail (`ANALYSIS.md:673-684`). The wash runs on **linear** samples (the atlas is sRGB-decoded), the vanilla multiplies sRGB bytes (D-5). |
+| WGSL tint | PORTED (S1-G-4, 2026-11-14) | `sprite.wgsl` — the piecewise sRGB EOTF helpers (`srgb_decode`/`srgb_encode`) and the gamma-space product `decode(encode(painted) * tint)` | The vanilla's formats are plain `Color` (no decode), so its SpriteBatch multiplies sRGB bytes in gamma space and the backbuffer stores the product raw; the port's sRGB atlas + swapchain re-derive that byte exactly by linearising the product once. `tint_parity_with_the_csharp_byte_multiply` pins it over every `(tex, tint)` pair (exact against the rounded float product, ±1 against the truncating `Color * Color` reading); alpha stays un-linearised (correct). |
+| Paint recolour | PARTIAL | `sprite.wgsl:113-170` | 32-entry `paint_rgb` table + `paint_recolor`; the vanilla's compiled HLSL passes are not in the decompile — the port washes the texel with the hue and lets the luminance carry detail (`ANALYSIS.md:673-684`). The wash runs on linear samples and the `paint_rgb`/dye constants decode with the same piecewise EOTF (S1-G-4); the wash *shape* itself stays the documented reconstruction (D-5's residue). |
 | Armor-dye passes | PARTIAL | `sprite.wgsl:181-195`, `sprite.rs:54-63,722` | Two reconstructed modes (colour wash, gradient) over a 48-slot uniform table; the vanilla's `.fx` bytecode is not in the decompile (documented in `sprite.wgsl:172-180`). |
 | Post-filter chain | PARTIAL | `post.rs` + `post.wgsl` | 9 of the 29 `Filters.Scene` rows are wired (Graveyard, Noir, BloodMoon, Sandstorm ×2, Blizzard ×2, Heat, Water); the other 20 resolve to the passthrough (`post.rs:136-175`). The distortion amplitudes are visual approximations (`post.wgsl:134-137`). |
 | ReLogic content pipeline | PORTED (bypassed) | `tr-content/src/{xnb,lzx,dxt,texture,font,effect}.rs` | The vanilla `ReLogic.Content.Readers.XnbReader` defers to XNA's `ContentManager` (`ANALYSIS.md:1403-1405`); `PngReader` is a debug-only path. The port re-implements the container + LZX + DXT1/3/5 itself (`texture.rs:99-106`), which is why the atlas pixels are identical (`ANALYSIS.md:1460-1468`). The `ReLogic.Graphics.DynamicSpriteFont` reader is ported as the BC2 font array (`sprite.rs:430-478`). |
@@ -158,7 +158,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
 
 ## Deviations & risks
 
-- **D-1 — "2 draw calls" in ROADMAP is wrong (documentation, cosmetic).**
+- **D-1 — "2 draw calls" in ROADMAP is wrong (documentation, cosmetic).** **CLOSED 2026-11-13** (`S1-G-12-draw-call-claim`: the ARCHITECTURE.md claims corrected to the 6-buffer structure and pinned by `sprite.rs::PASS_BUFFERS` + `tests/doc_claims.rs`). The original text follows.
   `ROADMAP.md:64` claims the renderer issues 2 draw calls; `sprite.rs::draw_ranges`
   issues **one `pass.draw` per non-empty range** (1195-1239) → up to 6 per frame, and
   with `TR_POST=1` the frame is 3 + 3 plus 1..4 filter passes (`post.rs::MAX_CHAIN`).
@@ -190,30 +190,31 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   half a texel; vanilla samples the exact texel of its own sheet. Any sprite whose
   source rect abuts a mip/pad boundary can bleed one texel of a neighbour.
 - **D-5 — Tint and recolour maths happen in the wrong colour space (pixel, medium).**
-  `sprite.wgsl:231` uses `pow(tint, 2.2)` — an approximation of the sRGB EOTF, not the
-  piecewise sRGB curve the GPU actually applies to the atlas, so
-  `srgb_decode(tex) * pow(tint,2.2)` ≠ `srgb_decode(tex_srgb * tint_srgb)`: the
-  composite drifts by a fraction of an LSB to ~1 % per channel. The vanilla multiplies
-  **bytes** in sRGB space (`XNA Color * Color` = `(a*b)/255` integer division), which
-  truncates — the project already records a 1-LSB divergence for one such case
-  (`ANALYSIS.md:424-425`). `paint_recolor` (`sprite.wgsl:158-170`) and `dye_recolor`
-  (181-195) additionally wash **linear** samples with sRGB-authored constants, while
-  the vanilla's paint/dye HLSL multiplied sRGB bytes (the `.fx` bytecode is not in the
-  decompile — `ANALYSIS.md:673-684` admits the paint approximation, but not the
-  colour-space shift).
+  **CLOSED 2026-11-14** (`S1-G-4-srgb-eotf-tint`): `sprite.wgsl` now carries the exact
+  piecewise sRGB EOTF (`srgb_decode`/`srgb_encode`), and the tint rides the vanilla's
+  real equation — XNA's formats are plain `Color`, so the SpriteBatch multiplies sRGB
+  bytes in gamma space and the non-sRGB backbuffer stores the product raw;
+  `decode(encode(painted) * tint)` lands the port's displayed byte on that product
+  exactly (the old `pow(tint, 2.2)` — and even linearising the tint with the piecewise
+  decode — solved the wrong equation, up to 7 LSB off per channel). The paint/dye
+  constants decode with the same curve; the wash *shape* stays the documented
+  reconstruction (the `.fx` bytecode is not in the decompile — `ANALYSIS.md:673-684`).
+  Tests: `srgb_eotf_round_trips_every_byte`, `tint_parity_with_the_csharp_byte_multiply`
+  (256×256 pairs), `sprite_wgsl_compiles_headless`; the A/B shots show the corrected
+  output (max 9 LSB over the frame, deterministic).
 - **D-6 — Rasteriser culling not reproduced (pixel, low).** The vanilla flips
   `Main.Rasterizer` between `CullCounterClockwise` (56690) and `CullClockwise` (62006)
   and uses `RasterizerState.CullNone` for the immediate batches; the port is
   `cull_mode: None` everywhere (`sprite.rs:345`). Winding only matters if a quad is
   built clockwise, which the port's own winding never is — low risk, but the cull
   state is not 1:1.
-- **D-7 — `MoonLordShake` filter inert (behavioural, medium).** `Main.cs:64976-64984`
+- **D-7 — `MoonLordShake` filter inert (behavioural, medium).** **CLOSED 2026-11-13** (`S1-G-6-moon-lord-shake`): the tick driver (the pre-decrement intensity formula, `lunar.rs`) feeds `FilterId::MoonLordShake` (`EffectPriority.VeryHigh`, `ScreenEffectInitializer.cs:23`) → WGSL pass 10 (the phase-4 approximation — the compiled HLSL is content-side). The deathray/Core target tracking (`UpdateMoonLordIndex`) is unreachable in the filter's lifetime (no Moon Lord exists while the countdown runs) and the `LatestFilterStrength` consumer (`Main.cs:26325`, the death colour) is the death-colour system's follow-up. The original text follows. `Main.cs:64976-64984`
   activates the `MoonLordShake` scene filter during the Moonlord fight;
   `post.rs:147` maps it to pass index 0 (passthrough), so the screen shake never
   happens. The camera itself is unaffected in vanilla either (no camera-offset shake
   exists), so this is purely the missing filter. `Main.UseScreenShake` is ported as a
   settings flag (`settings.rs:180,291`) but gates nothing.
-- **D-8 — Zoom model differs from `GameViewMatrix` (pixel, medium).** Vanilla applies
+- **D-8 — Zoom model differs from `GameViewMatrix` (pixel, medium).** **CLOSED 2026-11-13** (`S1-G-7-forced-minimum-zoom`): `App::forced_minimum_zoom` (`app/mod.rs`) ports the per-draw floor — `max(max(1f, sw/1920), sh/1200)` (`Main.cs:61989-61994` over `MaxWorldViewSize` `:677-681`), `SupportWideScreen` forcing 1f (`:61992-61994`; the C# init `false` `:67046` is the port's constants-off value, no settings row yet) — and the draw scope splits the matrices: `bg_zoom` (the bare floor, `BackgroundViewMatrix.Zoom` `:61998`) drives the sky/background chain and `world_zoom = bg_zoom * zoom` (`GameViewMatrix.Zoom` `:61999`) drives tiles/liquids/dust/wires/entities/the GPU passes, the draw_cam pixel snap, the waterfall view box and the G6 `WorldFrameKey`'s effective zoom. A/B: the default 1600x900 window at zoom 1.0 is byte-identical pre/post (SHA256 `6d80f51c...`), TR_ZOOM=1.5 replays SHA256-equal (`13c4e162...` x2). The original text follows. Vanilla applies
   a raw scale matrix (`Main.Transform` = `GameViewMatrix.TransformationMatrix`,
   `Main.cs:2743`; zoom clamped 1..2 at `Main.cs:16808/16812`); the port snaps the
   camera to the zoom grid (`frame.rs:817`, per module 02) and clamps zoom in the
@@ -222,7 +223,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   `Main.cs:61999`) has **no located equivalent** — the port therefore renders a wider
   world view than vanilla on wide screens. Module 01/02 own the camera; flagged here
   because it is a *graphics-layer* contract.
-- **D-9 — Scissor clipping absent (behavioural + pixel, medium).** Vanilla scissors
+- **D-9 — Scissor clipping absent (behavioural + pixel, medium).** Vanilla scissors** **VERIFIED-DONE 2026-11-14 (S1-G-5):** the scissor landed with S1-H-2 (the `ClipStack` + the per-instance clip rect + the WGSL discard; the clipped UI rows = the lists and the achievements). The original text follows.
   UI lists (`Main.ScissorState`, `Main.cs:2329`; `Main.cs:40406-40414`,
   `25403-25424`). The port has no scissor (`char_creation.rs:1859`); clipped UI
   regions (inventory/scroll lists, `UIList.OverflowHidden`) bleed or are skipped.
@@ -287,10 +288,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   XNA's `Deferred` grouping. This is the structural fix for D-3/D-11 and would also
   make the atlas packing irrelevant to ordering. Depends on the S blend test and the
   draw-order contract (M).
-- **L** — Colour-space audit of the whole sprite path: replace `pow(tint, 2.2)` with
-  the exact sRGB EOTF, decide whether the paint/dye washes belong in sRGB or linear
-  space, and compare against the vanilla's byte multiply with a pixel-diff harness
-  (a handful of reference tints × the 5 light modes). Depends on the S blend test.
+- **L** — ~~Colour-space audit of the whole sprite path~~ **consumed by S1-G-4 (2026-11-14)**: the EOTF is exact, the tint equation is byte-pinned, and the washes decode their constants; the remaining wash-shape question stays admitted under the paint reconstruction.
 - **M** — Locate or add the `Main.ForcedMinimumZoom` equivalent
   (`Main.cs:243`, `61991`) and the runtime `GameZoomTarget` step
   (`Main.cs:16808/16812`); this is the last half of D-8. Depends on module 01's

@@ -345,3 +345,153 @@ mod tests {
         assert_eq!(mana_star_count(40), 2);
     }
 }
+
+/// `Main.DrawInterface_Resources_Buffs`'s slot layout (`Main.cs:43215-43224`):
+/// 11 icons per row, 38 px pitch, the rows 50 px apart from the 76 px first
+/// row — the occupied slots pack (the empty ones never advance the count).
+pub fn buff_slot_pos(num3: usize) -> [f32; 2] {
+    let mut x = 32.0 + num3 as f32 * 38.0;
+    let mut y = 76.0;
+    let mut num5 = num3 as i32;
+    while num5 >= 11 {
+        num5 -= 11;
+        x = 32.0 + num5 as f32 * 38.0;
+        y += 50.0;
+    }
+    [x, y]
+}
+
+/// `Lang.LocalizedDuration` (`Lang.cs:1158-1207`) with the call's
+/// `(abbreviated: true, showAllAvailableUnits: false)`: the biggest unit
+/// wins and the running remainder ceilings into it (`time > 1 day` →
+/// `days + 1`). The `Misc.Short*` keys ride the localized json.
+pub(crate) fn localized_duration(seconds: i32) -> String {
+    let t = seconds as i64;
+    if t / 86400 > 0 {
+        let n = if t > 86400 { t / 86400 + 1 } else { t / 86400 };
+        return format!("{n} {}", crate::lang::text("Misc.ShortDays"));
+    }
+    if t / 3600 > 0 {
+        let n = if t > 3600 { t / 3600 + 1 } else { t / 3600 };
+        return format!("{n} {}", crate::lang::text("Misc.ShortHours"));
+    }
+    if t / 60 > 0 {
+        let n = if t > 60 { t / 60 + 1 } else { t / 60 };
+        return format!("{n} {}", crate::lang::text("Misc.ShortMinutes"));
+    }
+    format!("{t} {}", crate::lang::text("Misc.ShortSeconds"))
+}
+
+/// `Main.TryGetBuffTime` (`Main.cs:43290-43305`): the duration-text gate —
+/// the vanity/light pets and `Main.buffNoTimeDisplay` hide it, the honey-48
+/// wet gate, the expert wet-46 gate, and the vampire seed's sub-10 gates for
+/// 23/24/32. Returns the tick count.
+pub(crate) fn try_get_buff_time(p: &Player, slot: usize, vampire_seed: bool) -> Option<i32> {
+    let b = p.buffs.buff_type[slot];
+    if crate::buffs::is_vanity_pet(b)
+        || crate::buffs::is_light_pet(b)
+        || crate::buffs::is_no_time_display(b)
+        || (p.honey_wet && b == 48)
+        || (p.wet && p.buffs.expert_mode && b == 46)
+    {
+        return None;
+    }
+    let t = p.buffs.buff_time[slot];
+    if vampire_seed && t < 10 && (b == 24 || b == 23 || b == 32) {
+        return None;
+    }
+    Some(t)
+}
+
+/// `Main.DrawBuffIcon` (`Main.cs:43307-43368`) + the grid walk of
+/// `DrawInterface_Resources_Buffs` (`:43203-43250`). The icons tint by the
+/// per-slot alpha (`Main.buffAlpha` — the port's `buff_alpha`), the hover
+/// raises it 0.1 and the rest decays 0.05 clamped to [0.4, 1]; the
+/// right-click-release pushes the slot onto `removals` (the C# removes in
+/// the draw — the port drains the request in the tick). The hover's
+/// `drawBuffText` slot feeds the name/tooltip block (`:43250-43270`), which
+/// stays out of this pass (the tooltip text rides the localization work).
+/// The fullscreen-map second call site (`:41335`) rides the map tasks.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_buffs(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    player: &Player,
+    buff_alpha: &mut [f32; crate::buffs::MAX_BUFFS],
+    mouse: Vec2,
+    right_release: bool,
+    removals: &mut Vec<usize>,
+    vampire_seed: bool,
+) {
+    let mut num3 = 0usize;
+    for i in 0..crate::buffs::MAX_BUFFS {
+        let bt = player.buffs.buff_type[i];
+        // The empty-slot reset (`:43231-43233`).
+        if bt == 0 {
+            buff_alpha[i] = 0.4;
+            continue;
+        }
+        let [x, y] = buff_slot_pos(num3);
+        num3 += 1;
+        let Some(rect) = lookups.buff_icons.get(&(bt as u16)) else {
+            continue;
+        };
+        let (w, h) = (rect.width as f32, rect.height as f32);
+        let Some(uv) = lookups.hud_uv(Some(rect)) else {
+            continue;
+        };
+        // The icon (`:43311`): the full sheet tinted by the slot alpha.
+        let a = buff_alpha[i];
+        r.push_ui_sprite([x, y], [w, h], uv, [a, a, a, a]);
+        // The duration text (`:43317-43327`): `FontAssets.ItemStack` at 0.8
+        // under the icon.
+        if let Some(t) = try_get_buff_time(player, i, vampire_seed) {
+            if t > 2 {
+                let text = localized_duration(t / 60);
+                crate::ui::text::hud_text(r, lookups, x, y + h, 0.85, [1.0; 4], &text);
+            }
+        }
+        // The hover + the right-click removal (`:43328-43349`).
+        if mouse.x < x + w && mouse.y < y + h && mouse.x > x && mouse.y > y {
+            buff_alpha[i] += 0.1;
+            if right_release {
+                removals.push(i);
+            }
+        } else {
+            buff_alpha[i] -= 0.05;
+        }
+        // The clamp (`:43355-43361`).
+        if buff_alpha[i] > 1.0 {
+            buff_alpha[i] = 1.0;
+        } else if (buff_alpha[i] as f64) < 0.4 {
+            buff_alpha[i] = 0.4;
+        }
+    }
+}
+
+#[cfg(test)]
+mod s1_e_6_tests {
+    use super::*;
+
+    #[test]
+    fn buff_slot_grid_wraps_at_11_with_the_38_50_pitch() {
+        // `Main.cs:43215-43224`: the first row `32 + i*38` at y 76, the wrap
+        // resets x and steps y by 50.
+        assert_eq!(buff_slot_pos(0), [32.0, 76.0]);
+        assert_eq!(buff_slot_pos(10), [32.0 + 10.0 * 38.0, 76.0]);
+        assert_eq!(buff_slot_pos(11), [32.0, 126.0]);
+        assert_eq!(buff_slot_pos(12), [70.0, 126.0]);
+    }
+
+    #[test]
+    fn localized_duration_ceilings_the_running_remainder() {
+        // `Lang.cs:1158-1207` with (abbreviated, showAll=false): the biggest
+        // unit wins, `time > 1 unit` bumps the count.
+        assert!(localized_duration(30).starts_with("30 "), "s: {}", localized_duration(30));
+        assert!(localized_duration(90).starts_with("2 "), "m+1: {}", localized_duration(90));
+        assert!(localized_duration(3600).starts_with("1 "), "h: {}", localized_duration(3600));
+        assert!(localized_duration(5400).starts_with("2 "), "h+1: {}", localized_duration(5400));
+        assert!(localized_duration(86_400 * 2 + 1).starts_with("3 "), "d+1: {}", localized_duration(86_400 * 2 + 1));
+    }
+}
+

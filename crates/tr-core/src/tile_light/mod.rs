@@ -13,7 +13,8 @@ mod palette;
 mod scanner;
 
 pub use palette::{
-    hsl_to_rgb, paint_color, shimmer_base_color, torch_color, FastRandom, CAGE_FRAMES, TORCH_LIGHT,
+    hsl_to_rgb, paint_color, paint_color_bytes, shimmer_base_color, torch_color, FastRandom,
+    CAGE_FRAMES, TORCH_LIGHT,
 };
 pub use scanner::apply_tile_light;
 

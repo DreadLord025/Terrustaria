@@ -124,6 +124,7 @@ pub(crate) fn pass_cave_houses(
     world: &mut World,
     rock_layer: f64,
     rng: &mut super::Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
 ) -> u32 {
     let count = 8 + rng.range(0, 5) as i32;
     let mut placed = 0u32;
@@ -214,8 +215,24 @@ pub(crate) fn pass_cave_houses(
                 world.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
-        // The chest on the floor.
-        let _ = place_chest(world, x - 1, y + hh / 2 - 1);
+        // The chest on the floor — `HouseBuilder.PlaceChests`
+        // (`HouseBuilder.cs:666-692`): the wood builder's `chestStyle = 0`
+        // and `chestTileType = 21` (`WoodHouseBuilder.cs`'s defaults), the
+        // main item 0. S1-A-4: the stock rides inline.
+        let style = super::structures::resolved_chest_style(0, 0, y + hh / 2 - 1, world.world_surface);
+        if place_chest(world, x - 1, y + hh / 2 - 1, style) {
+            super::chest_stock::stock_placed_chest(
+                world,
+                stock.as_deref_mut(),
+                rng,
+                x - 1,
+                y + hh / 2 - 1,
+                style,
+                21,
+                0,
+                false,
+            );
+        }
         placed += 1;
     }
     placed
@@ -690,12 +707,12 @@ mod tests {
         let mut bigger_total = 0usize;
         for seed in 1..=6u64 {
             let mut classic = cave_world(width, 900);
-            pass_cave_houses(&mut classic, 400.0, &mut Rng(seed));
+            pass_cave_houses(&mut classic, 400.0, &mut Rng(seed), None);
             classic_total += frame_tiles(&classic);
 
             let mut bigger = cave_world(width, 900);
             bigger.micro_seeds |= MicroSeedFlags::BIGGER_ABANDONED_HOUSES;
-            pass_cave_houses(&mut bigger, 400.0, &mut Rng(seed));
+            pass_cave_houses(&mut bigger, 400.0, &mut Rng(seed), None);
             bigger_total += frame_tiles(&bigger);
         }
         assert!(
@@ -713,13 +730,13 @@ mod tests {
         // gate rather than a second implementation).
         let a = {
             let mut w = cave_world(900, 900);
-            pass_cave_houses(&mut w, 400.0, &mut Rng(99));
+            pass_cave_houses(&mut w, 400.0, &mut Rng(99), None);
             frame_tiles(&w)
         };
         let b = {
             let mut w = cave_world(900, 900);
             w.micro_seeds = MicroSeedFlags::none();
-            pass_cave_houses(&mut w, 400.0, &mut Rng(99));
+            pass_cave_houses(&mut w, 400.0, &mut Rng(99), None);
             frame_tiles(&w)
         };
         assert_eq!(a, b);

@@ -35,13 +35,17 @@ pub(crate) const TILE_PYRAMID_BRICK: u16 = 480;
 pub(crate) const WALL_SHRINE: u16 = 24;
 
 /// The chest 2×2: the anchor tile `(x, y)` with the frame corners
-/// (`TileObject`'s chest frames — frame_x 0/18, frame_y 0/18).
-pub(crate) fn place_chest(world: &mut World, x: i32, y: i32) -> bool {
+/// (`TileObject`'s chest frames — the port's `frame_x = 18 * style`
+/// convention, `tileobject.rs:2072-2082`). `style` is the C#'s resolved
+/// `num9` (`:35978-35988`): the caller's `chestStyle` when `>= 0`, else the
+/// `flag15` default (1 — the gold chest — below `worldSurface + 25`).
+pub(crate) fn place_chest(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let base = (18 * style) as i16;
     for (dx, dy, fx, fy) in [
-        (0i32, 0i32, 0i16, 0i16),
-        (1, 0, 18, 0),
-        (0, 1, 0, 18),
-        (1, 1, 18, 18),
+        (0i32, 0i32, base, 0i16),
+        (1, 0, base + 18, 0),
+        (0, 1, base, 18),
+        (1, 1, base + 18, 18),
     ] {
         let (px, py) = (x + dx, y + dy);
         if px < 1 || py < 1 || px >= world.width - 1 || py >= world.height - 1 {
@@ -52,10 +56,10 @@ pub(crate) fn place_chest(world: &mut World, x: i32, y: i32) -> bool {
         }
     }
     for (dx, dy, fx, fy) in [
-        (0i32, 0i32, 0i16, 0i16),
-        (1, 0, 18, 0),
-        (0, 1, 0, 18),
-        (1, 1, 18, 18),
+        (0i32, 0i32, base, 0i16),
+        (1, 0, base + 18, 0),
+        (0, 1, base, 18),
+        (1, 1, base + 18, 18),
     ] {
         let i = world.index(x + dx, y + dy);
         let t = &mut world.tiles[i];
@@ -66,6 +70,47 @@ pub(crate) fn place_chest(world: &mut World, x: i32, y: i32) -> bool {
         t.liquid = 0;
     }
     true
+}
+
+/// The resolved chest style — `AddBuriedChest`'s `num9` arm
+/// (`WorldGen.cs:35978-35988`): the caller's `chestStyle` when it is
+/// `>= 0`, else `1` (the gold chest) once the anchor sits below
+/// `worldSurface + 25` (`flag15`; the `mainItemInChest > 0` disjunct rides
+/// the same default). The remix variant of `flag15` stays out (M5-SEED-2).
+pub(crate) fn resolved_chest_style(chest_style: i32, main_item: u16, y: i32, world_surface: f64) -> i32 {
+    if chest_style >= 0 {
+        return chest_style;
+    }
+    let flag15 = y as f64 >= world_surface + super::chest_stock::SURFACE_BAND_PAD as f64;
+    if flag15 || main_item > 0 {
+        1
+    } else {
+        0
+    }
+}
+
+/// `GetNextJungleChestItem` (`WorldGen.cs:10170-10196`): the jungle chests'
+/// main item — the `JungleItemCount % 4` cycle over the living-wood family
+/// {211, 212, 213, 964} with the two rare overrides (`Next(15) == 0` →
+/// 2292, else `Next(20) == 0` → 3017), the counter advancing once per
+/// item (`:10196`). The vanilla draw order is exact: the cycle pick is
+/// branch-free, the `Next(15)` gate rolls first, the `Next(20)` gate only
+/// rolls on its else. Drawn at the shrine-chest site per spot (S1-A-4 —
+/// the C# calls it before `AddBuriedChest`, even for a failed place).
+pub(crate) fn get_next_jungle_chest_item(cycle: &mut u32, rng: &mut super::Rng) -> u16 {
+    let mut item = match *cycle % 4 {
+        0 => 211,
+        1 => 212,
+        2 => 213,
+        _ => 964,
+    };
+    if rng.range(0, 15) == 0 {
+        item = 2292;
+    } else if rng.range(0, 20) == 0 {
+        item = 3017;
+    }
+    *cycle += 1;
+    item
 }
 
 /// `JungleShrines` (`WorldGen.cs:15977-16140`): the hut rooms inside the
@@ -186,15 +231,39 @@ pub(crate) fn pass_jungle_shrines(
 
 /// `ChestsInJungleShrines` + the underground gold chests (`:17211+`): the
 /// shrine spots take the chests first, then the cave floors in the cavern
-/// layer scatter the rest (the count `maxTilesX / 40` shape).
+/// layer scatter the rest (the count `maxTilesX / 40` shape). S1-A-4: the
+/// shrine arm draws the C#'s per-spot sequence — the jungle item
+/// (`GetNextJungleChestItem`, `:10170-10196`), the `Next(2)` x-jitter
+/// (`:17220`) — and both arms stock inline through the hook, exactly
+/// `AddBuriedChest`'s shape.
 pub(crate) fn pass_chests(
     world: &mut World,
     shrine_spots: &[(i32, i32)],
+    jungle_cycle: &mut u32,
     rng: &mut super::Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
 ) -> u32 {
     let mut placed = 0u32;
     for (x, y) in shrine_spots {
-        if place_chest(world, *x, y + 1) {
+        // `:17219-17220` — the item draw and the `Next(2)` jitter ride the
+        // stream per attempted spot, before the placement.
+        let main = get_next_jungle_chest_item(jungle_cycle, rng);
+        let jitter = rng.range(0, 2);
+        let cx = *x + jitter;
+        let cy = *y + 1;
+        let style = 10; // `chestStyle: 10` (`:17220`) — the jungle chest.
+        if place_chest(world, cx, cy, style) {
+            super::chest_stock::stock_placed_chest(
+                world,
+                stock.as_deref_mut(),
+                rng,
+                cx,
+                cy,
+                style,
+                TILE_CHEST,
+                main,
+                false,
+            );
             placed += 1;
         }
     }
@@ -212,7 +281,21 @@ pub(crate) fn pass_chests(
         if !below {
             continue;
         }
-        if place_chest(world, x, y) {
+        // `AddBuriedChest(num6, num7, 0, false, -1, false, 0)` (`:17024`) —
+        // the plain gold-chest arm: main item 0, the `num9` default.
+        let style = resolved_chest_style(-1, 0, y, world.world_surface);
+        if place_chest(world, x, y, style) {
+            super::chest_stock::stock_placed_chest(
+                world,
+                stock.as_deref_mut(),
+                rng,
+                x,
+                y,
+                style,
+                TILE_CHEST,
+                0,
+                false,
+            );
             placed += 1;
         }
     }
@@ -282,6 +365,7 @@ pub(crate) fn pass_pyramids(
     desert_end: i32,
     surface: &[i32],
     rng: &mut super::Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
 ) -> u32 {
     if desert_end - desert_start < 120 {
         return 0;
@@ -332,7 +416,32 @@ pub(crate) fn pass_pyramids(
                 }
             }
         }
-        if place_chest(world, x0 - 2, base - 2) {
+        // The pyramid's own chest (`WorldGen.cs:27853-27873`): the main
+        // item's double roll — `Next(3)`, a `0` re-rolls `Next(3)`, the
+        // tenth-anniversary `0 → 1` (M5-SEED-1 keeps it out) — then the
+        // style-1 place and the inline stock (S1-A-4).
+        let mut roll = rng.range(0, 3);
+        if roll == 0 {
+            roll = rng.range(0, 3);
+        }
+        let main = match roll {
+            0 => 848, // `Pharaoh'sMask`
+            1 => 857, // `SandstorminaBottle`
+            _ => 934, // `FlyingCarpet`
+        };
+        let style = resolved_chest_style(1, main, base - 2, world.world_surface);
+        if place_chest(world, x0 - 2, base - 2, style) {
+            super::chest_stock::stock_placed_chest(
+                world,
+                stock.as_deref_mut(),
+                rng,
+                x0 - 2,
+                base - 2,
+                style,
+                TILE_CHEST,
+                main,
+                false,
+            );
             placed += 1;
         }
     }
@@ -501,7 +610,12 @@ pub(crate) fn pass_beehives(
 /// `HellFort` (`WorldGen.cs:32683+`, the tile 75 / the wall 14 defaults):
 /// the brick boxes in the hell layer — the shell with the carved rooms, the
 /// lava pools on the floors and the chests.
-pub(crate) fn pass_hell_forts(world: &mut World, hell_top: i32, rng: &mut super::Rng) -> u32 {
+pub(crate) fn pass_hell_forts(
+    world: &mut World,
+    hell_top: i32,
+    rng: &mut super::Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) -> u32 {
     let count = 2 + (world.width / 4200) as i32;
     let mut placed = 0u32;
     let cy_lo = hell_top + 20;
@@ -549,8 +663,25 @@ pub(crate) fn pass_hell_forts(world: &mut World, hell_top: i32, rng: &mut super:
                 }
             }
         }
-        // The chest in the upper room.
-        if place_chest(world, cx - 3, cy - hh / 2 - 1) {
+        // The chest in the upper room — the hell house's own chest
+        // (`WorldGen.cs:29290-29341`, the non-remix arm): the main item is
+        // `832`, a `Next(3) == 0` swaps in `4281` (`:29292-29297`), the
+        // style is the caller's `chestStyle: 12` (`:29341`). S1-A-4: the
+        // stock rides inline.
+        let main = if rng.range(0, 3) == 0 { 4281 } else { 832 };
+        let style = resolved_chest_style(12, main, cy - hh / 2 - 1, world.world_surface);
+        if place_chest(world, cx - 3, cy - hh / 2 - 1, style) {
+            super::chest_stock::stock_placed_chest(
+                world,
+                stock.as_deref_mut(),
+                rng,
+                cx - 3,
+                cy - hh / 2 - 1,
+                style,
+                TILE_CHEST,
+                main,
+                false,
+            );
             placed += 1;
         }
     }

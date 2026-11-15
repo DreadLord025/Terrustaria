@@ -210,6 +210,94 @@ pub enum TeData {
     /// item type (0 = none). The anchor behaviour halves are M7-TE-2; the
     /// field rides the `.wld` so a file round-trips byte-exactly.
     Anchor(i32),
+    /// `TEDisplayDoll` (`TEDisplayDoll.cs:113-155`, `:157-213`): the nine
+    /// equip slots, the nine dye slots, the misc slot and the pose byte. The
+    /// C# writes the doll with its contents (`WriteExtraData`), so the port
+    /// keeps them too (S1-L-7a).
+    DisplayDoll {
+        equip: [Option<TeItem>; 9],
+        dye: [Option<TeItem>; 9],
+        misc: Option<TeItem>,
+        pose: u8,
+    },
+}
+
+/// `TEDisplayDoll`'s payload write (`TEDisplayDoll.cs:157-213`): the two
+/// presence bitsBytes over the equip and dye rows, the pose byte and the
+/// third bitsByte over the misc slot and the ninth equip/dye slots; then the
+/// present items in the equip, dye and misc order.
+fn display_doll_write(
+    equip: &[Option<TeItem>; 9],
+    dye: &[Option<TeItem>; 9],
+    misc: &Option<TeItem>,
+    pose: u8,
+    w: &mut Writer,
+) {
+    let mut equip_bits = 0u8;
+    for bit in 0..8 {
+        if equip[bit].is_some() {
+            equip_bits |= 1 << bit;
+        }
+    }
+    let mut dye_bits = 0u8;
+    for bit in 0..8 {
+        if dye[bit].is_some() {
+            dye_bits |= 1 << bit;
+        }
+    }
+    let mut misc_bits = 0u8;
+    if misc.is_some() {
+        misc_bits |= 1;
+    }
+    if equip[8].is_some() {
+        misc_bits |= 1 << 1;
+    }
+    if dye[8].is_some() {
+        misc_bits |= 1 << 2;
+    }
+    w.u8(equip_bits);
+    w.u8(dye_bits);
+    w.u8(pose);
+    w.u8(misc_bits);
+    for item in equip
+        .iter()
+        .chain(dye.iter())
+        .chain(std::iter::once(misc))
+        .flatten()
+    {
+        item.write(w);
+    }
+}
+
+/// `TEDisplayDoll`'s payload read (`TEDisplayDoll.cs:185-213`) — the inverse
+/// of [`display_doll_write`].
+fn display_doll_read(
+    r: &mut Reader<'_>,
+) -> Option<([Option<TeItem>; 9], [Option<TeItem>; 9], Option<TeItem>, u8)> {
+    let equip_bits = r.u8()?;
+    let dye_bits = r.u8()?;
+    let pose = r.u8()?;
+    let misc_bits = r.u8()?;
+    let equip_mask = equip_bits as u32 | if misc_bits & (1 << 1) != 0 { 256 } else { 0 };
+    let dye_mask = dye_bits as u32 | if misc_bits & (1 << 2) != 0 { 256 } else { 0 };
+    let mut equip: [Option<TeItem>; 9] = [None; 9];
+    for bit in 0..9 {
+        if equip_mask & (1 << bit) != 0 {
+            equip[bit] = Some(TeItem::read(r)?);
+        }
+    }
+    let mut dye: [Option<TeItem>; 9] = [None; 9];
+    for bit in 0..9 {
+        if dye_mask & (1 << bit) != 0 {
+            dye[bit] = Some(TeItem::read(r)?);
+        }
+    }
+    let misc = if misc_bits & 1 != 0 {
+        Some(TeItem::read(r)?)
+    } else {
+        None
+    };
+    Some((equip, dye, misc, pose))
 }
 
 impl TeData {
@@ -247,6 +335,16 @@ impl TeData {
             // (`TEItemFrame`'s item type without the prefix/stack); the port
             // widens the field to `i32` like the Dummy's NPC slot.
             TeData::Anchor(item) => w.i16(*item as i16),
+            // `TEDisplayDoll.WriteExtraData` (`TEDisplayDoll.cs:157-213`):
+            // the two presence bitsBytes, the pose byte and the third
+            // bitsByte (the misc slot and the ninth equip/dye slots), then
+            // the present items in the equip, dye and misc order.
+            TeData::DisplayDoll {
+                equip,
+                dye,
+                misc,
+                pose,
+            } => display_doll_write(equip, dye, misc, *pose, w),
             // `TileEntity.cs:209-211`: the pylon and the Dead Cells jar
             // carry no extra data.
             TeData::None => {}
@@ -286,6 +384,16 @@ impl TeData {
             // in `TeData::write` is the twin of this one.
             TeKind::KiteAnchor | TeKind::CritterAnchor => {
                 TeData::Anchor(r.i16()? as i32)
+            }
+            // `TEDisplayDoll.ReadExtraData` (`TEDisplayDoll.cs:185-213`).
+            TeKind::DisplayDoll => {
+                let (equip, dye, misc, pose) = display_doll_read(r)?;
+                TeData::DisplayDoll {
+                    equip,
+                    dye,
+                    misc,
+                    pose,
+                }
             }
             // `TileEntity.cs:209-211`: DisplayDoll 3, TeleportationPylon 7 and
             // DeadCellsDisplayJar 8 write no extra data

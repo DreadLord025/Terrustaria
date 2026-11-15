@@ -36,6 +36,9 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     );
     let snow_tile_count = app.scene_metrics.snow_tile_count;
     let zone_rain = app.scene_metrics.zone_rain;
+    // The snow spawn cap scales with the gfx quality (S1-B-6,
+    // `Main.cs:13057`).
+    app.rain.gfx_quality = app.gfx_quality.quality;
     app.rain.update(
         &app.world,
         app.camera,
@@ -150,8 +153,14 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         // (1) `Main.cs:58739`: `currentDayRateIteration == 0` — thunder once.
         // M6-AUDIO-1: the strike returns its cue and position
         // (`Main.cs:58752-58761`), played here against the current listener.
-        if let Some(strike) = rain.thunder_step(weather) {
-            app.audio.play_at(strike.cue, strike.x, strike.y, 1.0);
+        // S1-E-25: the case-43 re-roll loop reads the engine's live thunder
+        // instances (`LegacySoundPlayer.cs:456-464`), and the pick replaces
+        // the slot's instance (`:466-476`'s Stop() + CreateInstance).
+        if let Some(strike) = rain.thunder_step(weather, &|slot| {
+            app.audio.thunder_playing(slot)
+        }) {
+            app.audio
+                .play_thunder(strike.slot, strike.cue, strike.x, strike.y, strike.pitch);
         }
         // (2) `Main.cs:17228-17231` + `:58830-58950`: the wind walk, once per
         // dayRate iteration, with the real `Main.maxRaining` (`:58832`).
@@ -176,8 +185,30 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             // (the C# falls back to a fresh `Player()`).
             app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
         );
-        // (4) `Main.cs:64966`; the TR_SANDSTORM pin freezes the state machine
-        // (the periodic intention roll would fight the pin — phase-1 glue doc).
+        // (4) `Main.cs:64963-64966`: the event walks — CultistRitual
+        // (the delay decay + the recheck window's AnyDanger arm),
+        // BirthdayParty/LanternNight (the persistence clears riding the
+        // sky edges), then Sandstorm; the TR_SANDSTORM pin freezes the
+        // state machine (the periodic intention roll would fight the pin —
+        // phase-1 glue doc). S1-F-14.
+        // The cultist delay's decay: the `recheck` window's `AnyDanger` arm
+        // walks the port's boss-flagged kinds (`CultistRitual.UpdateTime`).
+        let any_danger = world.invasion_type > 0
+            || app.npcs
+                .iter()
+                .any(|n| n.hp > 0 && crate::revenge::BOSS_KINDS.contains(&n.kind));
+        if crate::world_events::update_time_cultist(&mut app.world_events, day_rate, any_danger) {
+            // The ritual window opened — the spawn rides the caller's
+            // floor/LOS gates (S1-F-14's TrySpawning predicate contract).
+        }
+        crate::world_events::update_time_party(&mut app.world_events);
+        // `LanternNight.UpdateTime`'s persistence gate: the lanterns ride
+        // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`).
+        let lantern_can_persist = !world.day_time;
+        let _ = crate::world_events::update_time_lanterns(
+            &mut app.world_events,
+            lantern_can_persist,
+        );
         if scene_state.forced_severity.is_none() {
             sandstorm.update_time(day_rate, wind.speed_current);
         }
@@ -471,7 +502,8 @@ pub(crate) fn spawn_travel_npc(
             }
             let tx = (n.x / tr_core::TILE_PX) as i32;
             let ty = (n.y / tr_core::TILE_PX) as i32;
-            if let Some(h) = crate::town::quick_find_home(world, tx, ty) {
+            // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
+            if let Some(h) = crate::town::quick_find_home(world, npcs, tx, ty, Some(i)) {
                 homes.push((i, h));
             }
         }
