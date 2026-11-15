@@ -2303,6 +2303,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 14x14, aiStyle 28, `penetrate = 3`, `extraUpdates = 3`.
             FROST_BLAST_FRIENDLY => (14.0, 14.0, 28, 3, 3600, 3, true, false, false, RESET_STATE),
             QUEEN_SPIDER => (66.0, 50.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4625` - the Queen Spider's egg: 16x16, aiStyle 14,
+            // `penetrate = -1`, `timeLeft = 60`.
+            SPIDER_EGG => (16.0, 16.0, 14, -1, 60, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:4625` — the Queen Spider's egg: 16x16, aiStyle 14.
             SPIDER_EGG => (16.0, 16.0, 14, -1, 60, 0, true, false, false, RESET_STATE),
             HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
@@ -23239,6 +23242,11 @@ mod sentry_tests {
         let mut w = world();
         let mut p = player(&w);
         let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        // The C#'s init latch owns the first tick (`localAI[0]==0` sets
+        // `ai[0]=120`), so the reload branch only runs once the counter
+        // has counted down to zero; the latch is pre-armed here.
+        pool.slots[hydra].local_ai[0] = 1.0;
+        pool.slots[hydra].local_ai[1] = 1.0;
         pool.slots[hydra].ai[0] = 0.0;
         let mut npcs: Vec<Npc> = vec![npc_at(NpcKind::Zombie, 900.0, 300.0)];
         p.num_minions = 0;
@@ -23275,6 +23283,10 @@ mod sentry_tests {
         let mut w = world();
         let mut p = player(&w);
         let houndius = spawn_sentry(&mut pool, HOUNDIUS_SHOOTIUS, 300.0, 300.0, 36000);
+        // The C#'s init latch owns the first tick; pre-arm it so the
+        // reload branch is the one under test.
+        pool.slots[houndius].local_ai[0] = 1.0;
+        pool.slots[houndius].local_ai[1] = 1.0;
         pool.slots[houndius].ai[0] = 0.0;
         let mut npcs: Vec<Npc> = vec![npc_at(NpcKind::Zombie, 900.0, 300.0)];
         p.num_minions = 0;
@@ -23310,6 +23322,10 @@ mod sentry_tests {
         let mut w = world();
         let mut p = player(&w);
         let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        // The C#'s init latch owns the first tick; pre-arm it so the
+        // counter is the one under test.
+        pool.slots[hydra].local_ai[0] = 1.0;
+        pool.slots[hydra].local_ai[1] = 1.0;
         pool.slots[hydra].ai[0] = 5.0;
         let mut npcs: Vec<Npc> = Vec::new();
         p.num_minions = 0;
