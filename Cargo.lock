@@ -2666,6 +2666,7 @@ dependencies = [
  "serde_json",
  "tr-content",
  "tr-core",
+ "tr-debug",
  "tr-render",
  "wgpu",
  "winit",
@@ -2687,6 +2688,13 @@ dependencies = [
  "log",
  "rayon",
  "serde_json",
+]
+
+[[package]]
+name = "tr-debug"
+version = "0.1.0"
+dependencies = [
+ "glam",
 ]
 
 [[package]]
