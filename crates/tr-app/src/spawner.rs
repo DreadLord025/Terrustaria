@@ -89,6 +89,51 @@ pub struct SpawnFlags {
     pub wof_active: bool,
 }
 
+/// The wave-20 boss kinds the `Spawner` ctor weights (`NPC.cs:273-286`):
+/// 315/325/327/328/344/345/346, each with its `SetDefaults` `npcSlots`
+/// (the common reset is `npcSlots = 1f`, `NPC.cs:8510`; the per-type writes
+/// are `NPC.cs:12978`/`:13115`/`:13142`/`:13158`/`:13355`/`:13369`/`:13386`).
+pub const MOON_BOSS_SLOTS: [(u16, f32); 7] = [
+    (315, 1.0),
+    (325, 3.0),
+    (327, 5.0),
+    (328, 0.0),
+    (344, 3.0),
+    (345, 5.0),
+    (346, 4.0),
+];
+
+/// A boss kind's weight in the ctor's sum — `None` for every other type.
+pub fn moon_boss_slots(npc_type: u16) -> Option<f32> {
+    MOON_BOSS_SLOTS
+        .iter()
+        .find(|(id, _)| *id == npc_type)
+        .map(|(_, slots)| *slots)
+}
+
+/// `Spawner`'s ctor weighted sum over the live boss kinds
+/// (`NPC.cs:274-283`) — the ctx's boss-cap input (the `invasion_saucer_alive`
+/// pattern). All seven kinds are unported until F-13b/c, so the port's count
+/// is structurally 0.
+pub fn moon_boss_cap_count(npcs: &[Npc]) -> f32 {
+    npcs.iter()
+        .filter(|n| n.hp > 0)
+        .filter_map(|n| moon_boss_slots(n.kind.to_u16()))
+        .sum()
+}
+
+/// The ctor's bound for the port's single active player
+/// (`NPC.cs:285`): `(int)(defaultMaxSpawns × (2 + 0.3 × players))` = 11 — the
+/// same `5·2.3` the moon raid pacing reads (`spawner.rs:396`).
+pub fn moon_boss_cap_bound() -> i32 {
+    (DEFAULT_MAX_SPAWNS as f64 * (2.0 + 0.3 * 1.0)) as i32
+}
+
+/// `Spawner.reachedInvasionBossCap` (`NPC.cs:286`): the C#'s `>=` compare.
+pub fn moon_boss_cap_reached(count: f32) -> bool {
+    count >= moon_boss_cap_bound() as f32
+}
+
 /// `Main.wallLight` (`Main.cs:10578-10595`) — the wall list
 /// `SetSpawnFlags`' `skyBehindPlayer` gate reads (plus wall 73's separate
 /// `||` arm, `NPC.cs:412`).
@@ -160,6 +205,11 @@ pub struct SpawnContext<'a> {
     /// player's tile is light-passing (or wall 73) — the skyMob probe
     /// arm's open-sky gate.
     pub sky_behind_player: bool,
+    /// The `Spawner` ctor's boss cap input (`NPC.cs:262-286`): the weighted
+    /// `npcSlots` count over the live wave-20 boss kinds — the moon ladders
+    /// compare it against [`moon_boss_cap_reached`]. Structurally 0 until the
+    /// kinds land (F-13b/c).
+    pub moon_boss_cap_count: f32,
 }
 
 /// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap,
@@ -1610,6 +1660,7 @@ mod tests {
             any_danger: false,
             probe_exists: false,
             sky_behind_player: false,
+            moon_boss_cap_count: 0.0,
         }
     }
 
@@ -2469,6 +2520,7 @@ mod tests {
             any_danger: false,
             probe_exists: false,
             sky_behind_player: false,
+            moon_boss_cap_count: 0.0,
         }
     }
 
@@ -2666,6 +2718,7 @@ mod tests {
                     any_danger: false,
                     probe_exists: false,
                     sky_behind_player: false,
+                    moon_boss_cap_count: 0.0,
                 };
                 let (spawned, _) = spawn_npc_call(Some(ctx), &mut rng, false);
                 decisions.push(spawned.map(|n| (n.kind as u8, n.x.to_bits())));
@@ -2926,6 +2979,7 @@ mod tests {
             any_danger: false,
             probe_exists: false,
             sky_behind_player: true,
+            moon_boss_cap_count: 0.0,
         }
     }
 
@@ -3468,5 +3522,55 @@ mod tests {
             saw_ground |= n.kind != NpcKind::MartianDrone;
         }
         assert!(saw_ground, "the ground ladder ran on the unlatched tile");
+    }
+
+    // --- S1-F-13 Phase 1: the wave-20 boss cap (`Spawner`'s ctor) ---
+
+    /// DW-1.4: the slots table, transcribed from each kind's `SetDefaults`
+    /// (`NPC.cs:8510`'s common reset is 1; the writes are `:12978` (315),
+    /// `:13115` (325), `:13142` (327), `:13158` (328), `:13355` (344),
+    /// `:13369` (345), `:13386` (346)).
+    #[test]
+    fn the_boss_cap_slots_table_matches_the_c_sharp() {
+        for (id, slots) in [
+            (315u16, 1.0f32),
+            (325, 3.0),
+            (327, 5.0),
+            (328, 0.0),
+            (344, 3.0),
+            (345, 5.0),
+            (346, 4.0),
+        ] {
+            assert_eq!(moon_boss_slots(id), Some(slots), "kind {id} weighs {slots}");
+        }
+        // Every other type is outside the ctor's switch.
+        for id in [4u16, 50, 305, 338, 352, 1253, 6296] {
+            assert_eq!(moon_boss_slots(id), None, "kind {id} is not a wave-20 boss");
+        }
+        assert_eq!(moon_boss_slots(0), None);
+    }
+
+    /// DW-1.4: the weighted count over the live NPCs is 0 while the seven
+    /// kinds are unported (F-13b/c) — so the cap stays false, and any number
+    /// of ported NPCs never moves it.
+    #[test]
+    fn the_boss_cap_counts_zero_while_the_kinds_are_unported() {
+        let npcs: Vec<Npc> = (0..24)
+            .map(|i| Npc::new(NpcKind::Zombie, i as f32 * 32.0, 100.0, 1, 0.0))
+            .collect();
+        assert_eq!(moon_boss_cap_count(&npcs), 0.0);
+        assert!(!moon_boss_cap_reached(0.0));
+        assert_eq!(moon_boss_cap_count(&[]), 0.0);
+    }
+
+    /// DW-1.4: the bound — the port's single active player reads
+    /// `(int)(defaultMaxSpawns × (2 + 0.3 × players))` = 11 (`NPC.cs:285`), the
+    /// same `5·2.3` the moon raid pacing forces, and the C# `>=` compare.
+    #[test]
+    fn the_boss_cap_bound_is_the_single_player_5_2_3() {
+        assert_eq!(moon_boss_cap_bound(), 11);
+        assert!(!moon_boss_cap_reached(10.9), "10.9 < 11 stays open");
+        assert!(moon_boss_cap_reached(11.0), "the C# >= reaches at 11");
+        assert!(moon_boss_cap_reached(20.0));
     }
 }

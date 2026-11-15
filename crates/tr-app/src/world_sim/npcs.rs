@@ -2341,6 +2341,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // drains the army's points and reports the progress.
     for npc in &dead {
         report_invasion_kill(app, npc.kind);
+        // `NPC.cs:78230-78232`'s death-site pair — `CheckProgressFrostMoon`
+        // then `CheckProgressPumpkinMoon` — the C# runs them right after
+        // `DD2Event.CheckProgress` and before the invasion group's match. The
+        // port bundles the DD2 walk and the group accounting inside
+        // `report_invasion_kill` (disjoint state: the invasion size vs the
+        // moon-event waves, and neither draws the RNG), so the moon walks
+        // ride right behind it; each walk self-gates on its own flag, so a
+        // single running event walks alone.
+        app.world.report_frost_moon_kill(npc.kind.to_u16());
+        app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
     }
     // The Golem's death chain (`:79346`'s event-flag case 245 + the
     // head's detach at `:84957`): the BODY's death raises
@@ -3331,6 +3341,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     zone_sandstorm: app.scene_metrics.zone_sandstorm,
                     zone_water_candle: app.scene_metrics.zone_water_candle,
                     zone_peace_candle: app.scene_metrics.zone_peace_candle,
+                    // `Main.pumpkinMoon || Main.snowMoon` — the raid pacing's
+                    // moon override (`NPC.cs:771-774`): the events force
+                    // `5·2.3` max spawns / rate 20 the moment they are up.
+                    moon_event: app.world.pumpkin_moon || app.world.snow_moon,
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,
@@ -3445,6 +3459,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         .tile(px, py)
                         .is_some_and(|t| spawner::LIGHT_WALLS.contains(&t.wall) || t.wall == 73)
                 },
+                // `Spawner`'s ctor boss cap (`NPC.cs:262-286`): the weighted
+                // slots count over the live wave-20 boss kinds — structurally
+                // 0 until the kinds land.
+                moon_boss_cap_count: spawner::moon_boss_cap_count(&app.npcs),
             })
         });
         let mut rng = spawner::FastRandom::new(npc_rng);
@@ -4092,6 +4110,7 @@ mod tests {
                     any_danger: false,
                     probe_exists: false,
                     sky_behind_player: false,
+                    moon_boss_cap_count: 0.0,
                 };
                 let mut rng = crate::spawner::FastRandom::new(seed + 1);
                 if let Some(n) = crate::spawner::try_spawn_an_npc(&ctx, &mut rng) {
