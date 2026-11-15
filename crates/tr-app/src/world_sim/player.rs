@@ -708,8 +708,7 @@ let spawned = app.projectiles.spawn_hook(
                 // `WorldGen.KillTile`'s drop for the broken plate.
                 crate::world_sim::items::spawn_item_drop_fields(
                     &mut app.items,
-                    &mut app.item_rng,
-                    &mut app.prefix_rng,
+                    rng,
                     item,
                     1,
                     x,
@@ -767,10 +766,12 @@ let spawned = app.projectiles.spawn_hook(
             // `ApplyTouchDamage`) — the spike hazard the dungeon pass paints,
             // the hellstone's burn, the sands' suffocation and the thorns
             // that break under a touch.
+            // `Player.Update` runs under the `UpdatePlayers` swap
+            // (`Main.cs:17754`): the roll rides `stream(UpdatePlayers)`.
             let touch = crate::touch_damage::apply_touch_damage(
                 &mut app.world,
                 p,
-                &mut app.item_rng,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 crate::player::WIDTH as i32,
                 // `Player.GetHurtTile` (`Player.cs:28956`): the cart's body
                 // sits 16 px higher, so the scan's box is that much shorter.
@@ -784,10 +785,14 @@ let spawned = app.projectiles.spawn_hook(
             // thorns drop nothing in the vanilla, but the drop path is the
             // source's own (`registry::tile_drop`).
             if let Some((x, y, Some(item))) = touch.destroyed {
+                // `WorldGen.KillTile`'s item drop (`Player.cs:29013`) — the
+                // thorns drop nothing in the vanilla, but the drop path is the
+                // source's own (`registry::tile_drop`); the roll rides the same
+                // `UpdatePlayers` stream as the touch pass above.
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 crate::world_sim::items::spawn_item_drop_fields(
                     &mut app.items,
-                    &mut app.item_rng,
-                    &mut app.prefix_rng,
+                    rng,
                     item,
                     1,
                     x,
@@ -897,12 +902,96 @@ let spawned = app.projectiles.spawn_hook(
 mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
     use crate::inv::EquipSlots;
     use crate::item::EMPTY_SLOT;
     use crate::player::Player;
+    use crate::touch_damage::BUFF_BLEEDING;
     use tr_core::tile::FLAG_ACTIVE;
     use tr_core::wiring::WireColor;
-    use tr_core::{Tile, World};
+    use tr_core::{Tile, UnifiedRandom, World};
+
+    /// DW-4.1 (the players group) + DW-4.4: the touch-damage rolls draw the
+    /// `UpdatePlayers` stream — one `update_player` tick standing on spikes
+    /// spends `DamageVar`'s draw and then the landing-hit's bleeding duration
+    /// `Next(600, 1200)` (`Player.cs:28982` + `:28986-28994` — the S1-E-13a
+    /// burning/bleeding arm rides the same `Main.rand`, here the
+    /// `UpdatePlayers` swap, `Player.cs:27608-27614`, `Main.cs:17754`), the
+    /// landed HP and the buff duration match the twin replay, and no other
+    /// stage stream moves (the pass's isolation).
+    #[test]
+    fn test_dw_4_1_the_touch_roll_draws_the_update_players_stream() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // The touch_damage.rs rig shape: a deep world with a 3x3 spike block
+        // the player's box stands in.
+        app.world = World::new("spikes".into(), 40, 200);
+        app.world.compute_column_surface();
+        for x in 10..13 {
+            for y in 30..33 {
+                let i = app.world.index(x, y);
+                app.world.tiles[i] = Tile {
+                    kind: crate::touch_damage::SPIKE,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut p = Player::spawn(&app.world);
+        p.x = 11.0 * 16.0;
+        p.y = 30.0 * 16.0 - 30.0;
+        app.player = Some(p);
+        // Every stream starts pristine at the world seed (flow_app's seed 0).
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine",
+                key.name()
+            );
+        }
+        let hp_0 = app.player.as_ref().unwrap().hp;
+        update_player(&mut app, 1.0 / 60.0);
+
+        // The twin: `DamageVar`'s draw, then the bleeding arm's duration roll
+        // (both off the pristine seed-0 stream).
+        let mut expect = UnifiedRandom::new(0);
+        let expected_dmg = tr_core::damage::damage_var(&mut expect, 60.0, 0.0);
+        let expected_bleed = expect.next_range(600, 1200);
+        assert_eq!(
+            app.player.as_ref().unwrap().hp,
+            hp_0 - expected_dmg,
+            "the spike's rolled 60 landed through the same draws"
+        );
+        let slot = app
+            .player
+            .as_ref()
+            .unwrap()
+            .buffs
+            .find_buff_index(BUFF_BLEEDING)
+            .expect("the spike's bleeding landed");
+        assert_eq!(
+            app.player.as_ref().unwrap().buffs.buff_time[slot],
+            expected_bleed,
+            "the bleeding duration is the same stream's second draw"
+        );
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            expect,
+            "exactly the DamageVar draw on the UpdatePlayers stream"
+        );
+        // The isolation: no other stage stream moved.
+        for key in RngKey::ALL {
+            if key == RngKey::UpdatePlayers {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+    }
 
     /// The ammo-mastery test rig: a plain standing player in an empty world,
     /// with one tick of `update_player`'s fixed step available.

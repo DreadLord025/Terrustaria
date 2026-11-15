@@ -625,8 +625,16 @@ impl App {
             &adj,
             &zones,
             &gates,
+            // The craft rolls ride the App's craft stream (S1-L-11e
+            // territory); the crafted item's `Item.Prefix(-1)` roll
+            // (`CraftingRequests.cs:139`) draws the bare `Main.rand` — the
+            // crafting interaction runs in `UpdateInventory` outside every
+            // `SwapRandom` block (`Main.cs` ~17180 vs `DoUpdateInWorld`
+            // :17226) — so the port stands it in with `NamedRngs::global()`,
+            // the stream reforge and char-creation randomize also draw
+            // (S1-A-11's bare-`Main.rand` stand-in).
             &mut self.craft_rng,
-            &mut self.prefix_rng,
+            self.rngs.global(),
             num,
         );
         if !crafted.is_empty() {
@@ -3966,10 +3974,14 @@ mod s1_h_7_tests {
             prefix: 0,
         };
         // The engine's own roll, replayed from the same stream state: the
-        // grant must carry exactly what `Item.Prefix(-1)` rolled. The seed is
-        // pinned so the roll is a non-zero prefix.
-        app.prefix_rng = tr_core::unified_random::UnifiedRandom::new(11);
-        let mut expect_rng = app.prefix_rng.clone();
+        // grant must carry exactly what `Item.Prefix(-1)` rolled. The craft
+        // interaction is menu-contexted in the C# (`Main.cs` ~17180, outside
+        // every swap), so the roll rides the bare-`Main.rand` stand-in
+        // `global()` — the S1-A-11 re-point of the former `App::prefix_rng`.
+        // The registry is seeded 11 so the roll is a non-zero prefix (the
+        // world seed 0 lands `Prefix`'s 25% no-prefix arm for the pickaxe).
+        app.rngs = crate::app::rng::NamedRngs::new(11);
+        let mut expect_rng = app.rngs.global().clone();
         let expected = crate::prefix::roll_prefix(1, -1, &mut expect_rng);
         let mouse = recipe_mouse(&app, 1);
         app.mouse_pos = mouse;
