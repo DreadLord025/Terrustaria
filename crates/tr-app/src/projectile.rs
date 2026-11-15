@@ -2306,8 +2306,6 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4625` - the Queen Spider's egg: 16x16, aiStyle 14,
             // `penetrate = -1`, `timeLeft = 60`.
             SPIDER_EGG => (16.0, 16.0, 14, -1, 60, 0, true, false, false, RESET_STATE),
-            // `Projectile.cs:4625` — the Queen Spider's egg: 16x16, aiStyle 14.
-            SPIDER_EGG => (16.0, 16.0, 14, -1, 60, 0, true, false, false, RESET_STATE),
             HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9153` — the Houndius' fireball: 14x14, aiStyle 28.
             HOUNDIUS_SHOOTIUS_FIREBALL => (14.0, 14.0, 28, 1, 3600, 0, true, false, false, RESET_STATE),
@@ -22477,7 +22475,9 @@ mod summon_tests {
         // The shot families are NOT this phase's rows (the sentry shots land
         // with the later projectile-family tasks) — 374/376/389/614 the
         // minion shots, 378/379 the Queen Spider's SentryShots.
-        for kind in [374, 376, 389, 614, 378, 379] {
+        // 378 (the Queen Spider's SentryShot) landed with S1-D-4b-2's
+        // `AI_053_FrostHydra` port; the other shot rows are still pending.
+        for kind in [374, 376, 389, 614, 379] {
             assert!(proj_data(kind).is_none(), "kind {kind} has no row yet");
         }
     }
