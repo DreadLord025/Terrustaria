@@ -2884,7 +2884,8 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   +2), 726 (−2 then the `Tile.blockType()` ledges ±6 and +2 for the
   half-brick/slope arms), 723/724 (the four anchor sides), 129 (the 2 px nudge
   away from the shard's cell) and 323 (`vector.X += frameY` for the palm
-  rows)), `skip_draw` (751/752 off their `(0, 0)` frame), `light_scale` (51/697
+  rows)), `skip_draw` (751/752 off their `(0, 0)` frame and 323's frond
+  columns 88..=132), `light_scale` (51/697
   `finalColor = tileLight * 0.5`), `src_alpha` (129's 100/255, and 0 for the
   big `frameX >= 324` shards) and `no_width_adjust`
   (`TileID.Sets.DoNotAdjustDrawPositionBasedOnTileWidth = {711}`). The
@@ -2892,10 +2893,12 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   arm shares `vector`), honours `skip_draw` before the sprite (the `return`
   arms), folds `light_scale`/`src_alpha` into `push_lit`'s colour, and skips
   the `(tileWidth − 16) / 2` centring for 711. Parked: the disco arms
-  (160/692, they need `Main.DiscoR/G/B` in the draw data), case 83's texture
-  override, and case 323's `return` for the frond columns 88..=132 — the port
-  has no palm canopy pass, so hiding those columns would delete the palm tops;
-  they keep drawing in the tile pass (deviation). Test:
+  (160/692, they need `Main.DiscoR/G/B` in the draw data) and case 83's texture
+  override. Case 323's `return` for the frond columns 88..=132 is ported as
+  `skip_draw`; those columns are drawn by the tree pass instead
+  (`render/foliage.rs::palm_canopy_data`, the `TileDrawing.cs:8254-8297` arm —
+  the canopy is registered in the special tree pass at `:4262-4267` and drawn
+  from `TileDrawing.DrawTrees`, so the single-tile pass must not draw it too). Test:
   `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
   arm, the half-brick/slope `blockType` table of 726, the shard alphas).
 
