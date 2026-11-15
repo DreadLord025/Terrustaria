@@ -8023,6 +8023,57 @@ impl Projectile {
         self.vel.x += wind_speed * WIND_PHYSICS_STRENGTH;
     }
 
+    /// `HandleMovement`'s half for the aiStyle-53 sentries (308 Frost Hydra,
+    /// 377 Queen Spider, 966 Houndius Shootius): `Collision.TileCollision`
+    /// (`:17587-17650`, `flag6 = false` for aiStyle 53 at `:17532-17535`) then
+    /// `UpdatePosition`'s `position += velocity` (`:19858`/`:20445`).
+    ///
+    /// The blocked-move chain is SKIPPED entirely (`:18635` excludes exactly
+    /// 308/377/966), so a sentry blocked by a tile does NOT die and does not
+    /// bounce - it just stops against the tile and its own AI gravity keeps
+    /// pushing.
+    fn sentry_hydra_step(&mut self, world: &World) {
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            false,
+            false,
+        );
+        self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        self.pos += self.vel;
+    }
+
+    /// `HandleMovement`'s blocked-move arm for the aiStyle-197 ceiling/hover
+    /// turret (`:18637-18643`): `AI_197_HandleTileCollision` (`:40246-40305`),
+    /// whose state half is `ai[0] = 1f` (`:40250`). The sound, the `HitTiles`
+    /// kick and the 1025 dust/gore burst (`:40248-40316`) are SKIPPED - the
+    /// pool has no sound, dust or gore layer. The move itself is
+    /// `Collision.TileCollision` (`flag6 = true` at `:17536-17539`) then
+    /// `UpdatePosition`'s `position += velocity` (`:19858`/`:20445`).
+    fn sentry_turret_step(&mut self, world: &World) {
+        let before = self.vel;
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            true,
+            true,
+        );
+        self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        self.pos += self.vel;
+        // `:40250` - the stuck latch, reached only from the blocked arm and
+        // only while the AI has not already latched (`:18639`, `ai[0] == 0`
+        // is checked before the call, so the latch is one-shot per stuck run).
+        if self.vel != before && self.ai[0] == 0.0 {
+            self.ai[0] = 1.0;
+        }
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -11971,6 +12022,12 @@ impl ProjectilePool {
                                     kind, local_owner, x, y, vx, vy, damage, kb, 0.0, 0.0,
                                 );
                             }
+                            // `HandleMovement` -> `UpdatePosition` (`:19858`/`:20445`):
+                            // the position integrates the velocity after the AI, once per
+                            // sub-step. The aiStyle-53 rows keep `tileCollide = true` but are
+                            // excluded from the blocked-move chain (`:18635` names 308/377/966
+                            // explicitly), so a blocked sentry neither dies nor bounces.
+                            self.slots[i].sentry_hydra_step(world);
                         }
                         197 => {
                                 // `AI_197_CeilingAndHoverTurret` (`Projectile.cs:40307-40479`).
@@ -12013,11 +12070,13 @@ impl ProjectilePool {
                                     let mut solid_below = false;
                                     for j in 0..SCAN_TILES {
                                         let ty = tile_y + j;
-                                        // `WorldGen.InWorld(x, y, 2)` (`:40379`).
-                                        if tile_x < -2
-                                            || tile_x >= world.width + 2
-                                            || ty < -2
-                                            || ty >= world.height + 2
+                                        // `WorldGen.InWorld(x, y, 2)` (`:40379`): the fluff
+                                        // margin is INSIDE the bounds, so the scan stops two
+                                        // tiles short of every edge (`WorldGen.cs:6553-6554`).
+                                        if tile_x < 2
+                                            || tile_x >= world.width - 2
+                                            || ty < 2
+                                            || ty >= world.height - 2
                                         {
                                             break;
                                         }
@@ -12116,6 +12175,14 @@ impl ProjectilePool {
                                         kind, local_owner, x, y, vx, vy, damage, kb, 0.0, 0.0,
                                     );
                                 }
+                                // `HandleMovement` -> `UpdatePosition` (`:19858`/`:20445`).
+                                // The aiStyle-197 rows keep `tileCollide = true` and are NOT in
+                                // the blocked-move chain's kill default: their arm
+                                // (`:18637-18643`) calls `AI_197_HandleTileCollision`, whose
+                                // observable half is `ai[0] = 1f` (`:40250`). The sound, the
+                                // `HitTiles` and the 1025 gore/dust burst (`:40248-40316`) are
+                                // SKIPPED - no sound, dust or gore layer in the pool.
+                                self.slots[i].sentry_turret_step(world);
                         }
                         115 => self.slots[i].ai_yoyo_beam(world),
                         62 => {
@@ -23597,6 +23664,11 @@ mod sentry_tests {
     
         /// S1-D-4b-2 - the hover: with a solid tile under it the barnacle sinks
         /// by 0.1 px per tick and the C# clamps the fall at 12 px (`:40415-40421`).
+        ///
+        /// The window is short on purpose: the hover is driven by the 15-tile
+        /// scan under the sprite (`:40374-40388`), and the rise lifts the
+        /// sprite out of that window within a dozen ticks - past it `:40425`
+        /// damps the velocity to zero, which is also the C#'s behaviour.
         #[test]
         fn test_ai_197_hovers_and_clamps_the_fall() {
             let mut pool = ProjectilePool::new();
@@ -23613,8 +23685,10 @@ mod sentry_tests {
             }
             let mut p = player(&w);
             let barnacle = spawn_sentry(&mut pool, DEAD_CELLS_BARNACLE, 300.0, 300.0, 36000);
+            let start_y = pool.slots[barnacle].pos.y;
             let mut npcs: Vec<Npc> = Vec::new();
-            for _ in 0..200 {
+            let mut lowest = 0.0f32;
+            for _ in 0..10 {
                 p.num_minions = 0;
                 p.slots_minions = 0.0;
                 pool.update(
@@ -23629,10 +23703,24 @@ mod sentry_tests {
                     0,
                     true,
                 );
+                lowest = lowest.min(pool.slots[barnacle].vel.y);
             }
-            let vel = pool.slots[barnacle].vel;
-            assert!(vel.y >= -12.0, "the C# clamps the fall at 12 px: {}", vel.y);
-            assert!(vel.y < 0.0, "the hover sinks while a tile is under it");
+            assert!(
+                lowest >= -12.0,
+                "the C# clamps the rise at 12 px: {}",
+                lowest
+            );
+            assert!(
+                lowest < 0.0,
+                "the hover lifts while a tile is under it: {}",
+                lowest
+            );
+            assert!(
+                pool.slots[barnacle].pos.y < start_y,
+                "the hover actually moves the sprite up: {} -> {}",
+                start_y,
+                pool.slots[barnacle].pos.y
+            );
         }
     
         /// S1-D-4b-2 - the barnacle's frame: outside the stuck state it holds
@@ -23767,10 +23855,22 @@ mod sentry_tests {
 
     /// DW-5.3 — the lifetime: a sentry dies exactly at `SentryLifeTime` 36000
     /// (35999 alive, 36000 dead) and its damage rides the pool's recompute.
+    ///
+    /// The hydra free-falls (`:37336-37344`) and `HandleMovement` integrates
+    /// it, so the test needs a floor - without one the out-of-world guard kills
+    /// it long before the lifetime, which is the C#'s behaviour too.
     #[test]
     fn test_DW_5_3_the_sentry_lifetime_and_damage() {
         let mut pool = ProjectilePool::new();
         let mut w = world();
+        for x in 0..64 {
+            let i = w.index(x, 25);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
         let mut p = player(&w);
         p.minion_damage = 1.5;
         let slot = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
