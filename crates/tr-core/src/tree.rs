@@ -313,9 +313,37 @@ impl Foliage {
     /// Chooses the texture set from the ground tile the tree grows on. The original
     /// also randomises forest styles per world region (`TreeTops.GetTreeStyle`); our
     /// generated world uses style 0, so loaded forest trees do too.
-    pub fn for_ground(ground_kind: u16, frame_y: i16) -> Self {
+    pub fn for_ground(kind: u16, ground_kind: u16, frame_y: i16) -> Option<Self> {
         let frame = tree_frame(frame_y);
-        match biome(ground_kind) {
+        match TreeVariant::of(kind) {
+            Some(variant @ (TreeVariant::Gem | TreeVariant::Vanity | TreeVariant::Ash)) => {
+                if !variant.ground_valid(ground_kind as i32) {
+                    return None;
+                }
+                return Some(match variant {
+                    TreeVariant::Gem => Self {
+                        style: 22 + (kind - 583) as usize,
+                        top_w: 116.0,
+                        top_h: 96.0,
+                        frame,
+                    },
+                    TreeVariant::Vanity => Self {
+                        style: if kind == 596 { 29 } else { 30 },
+                        top_w: 118.0,
+                        top_h: 96.0,
+                        frame,
+                    },
+                    _ => Self {
+                        style: 31,
+                        top_w: 116.0,
+                        top_h: 96.0,
+                        frame,
+                    },
+                });
+            }
+            _ => {}
+        }
+        Some(match biome(ground_kind) {
             1 => Self {
                 style: 2,
                 top_w: 114.0,
@@ -358,23 +386,41 @@ impl Foliage {
                 top_h: 80.0,
                 frame,
             },
-        }
+        })
     }
 }
 
 /// Finds the ground tile below a tree marker and returns its foliage data.
 /// Mirrors `WorldGen.GetCommonTreeFoliageData`'s downward search (100 tiles).
-pub fn foliage_at(world: &World, x: i32, y: i32, part: TreePart, frame_y: i16) -> Foliage {
+pub fn foliage_at(
+    world: &World,
+    x: i32,
+    y: i32,
+    part: TreePart,
+    frame_y: i16,
+    kind: u16,
+) -> Option<Foliage> {
     let tx = x + part.trunk_offset();
+    if let Some(variant) = TreeVariant::of(kind) {
+        for dy in 0..100 {
+            let Some(t) = world.tile(tx, y + dy) else {
+                break;
+            };
+            if t.active() && !is_tree(t.kind) && variant.ground_valid(t.kind as i32) {
+                return Some(Foliage::for_ground(kind, t.kind, frame_y).unwrap());
+            }
+        }
+        return None;
+    }
     for dy in 0..100 {
         let Some(t) = world.tile(tx, y + dy) else {
             break;
         };
         if t.active() && !is_tree(t.kind) {
-            return Foliage::for_ground(t.kind, frame_y);
+            return Some(Foliage::for_ground(kind, t.kind, frame_y).unwrap());
         }
     }
-    Foliage::for_ground(2, frame_y)
+    return Some(Foliage::for_ground(kind, 2, frame_y).unwrap());
 }
 
 /// Biome section of `Tiles_5.png` for a trunk tile, found by following the trunk
@@ -411,7 +457,7 @@ mod tests {
     fn forest_uses_first_sheet_section() {
         assert_eq!(trunk_sheet_offset(2), 0);
         assert_eq!(trunk_sheet_offset(147), 176 * 4);
-        assert_eq!(Foliage::for_ground(2, 198).style, 0);
-        assert_eq!(Foliage::for_ground(60, 198).top_h, 96.0);
+        assert_eq!(Foliage::for_ground(5, 2, 198).unwrap().style, 0);
+        assert_eq!(Foliage::for_ground(5, 60, 198).unwrap().top_h, 96.0);
     }
 }
