@@ -175,17 +175,18 @@ impl ApplicationHandler for App {
                                         self.send_chat_message("", &text);
                                     } else {
                                         let name = self.player_name.clone();
-                                        let mut rng = self.item_rng;
-                                        // The chat commands read the player
-                                        // state (`DeathCommand`'s counters).
+                                        // The chat commands draw the bare
+                                        // `Main.rand` stand-in (the C# chat
+                                        // path runs outside every swap); they
+                                        // also read the player state
+                                        // (`DeathCommand`'s counters).
                                         self.chat.send_with(
                                             &text,
                                             &name,
-                                            &mut rng,
+                                            self.rngs.global(),
                                             &mut self.emotes,
                                             self.player.as_ref(),
                                         );
-                                        self.item_rng = rng;
                                     }
                                     // The host relays the lines its own submit
                                     // produced (slot 0 is the host's author).

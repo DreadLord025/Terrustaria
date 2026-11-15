@@ -8,23 +8,31 @@
 //! resolution clears it and runs `dropMeteor` — the site pick (away
 //! from the spawn, the open-sky scan) then the 5-phase ore stamp.
 
-use crate::flame::random_int;
 use crate::tile::FLAG_ACTIVE;
 use crate::tiledata::TILE_SOLID;
+use crate::unified_random::UnifiedRandom;
 use crate::world::World;
 
 /// `TileID.Meteorite` (`TileID.cs`'s 37).
 pub const METEORITE: u16 = 37;
 
-/// `Main.cs:65230`'s night roll: `Next(50) == 0 && NPC.downedBoss2`.
-pub fn night_roll(rng: &mut u64, downed_boss2: bool) -> bool {
-    downed_boss2 && random_int(rng, 0, 50) == 0
+/// `Main.cs:65230`'s night roll: `Main.rand.Next(50) == 0 && NPC.downedBoss2` —
+/// the `Next(50)` draw happens every `UpdateTime_StartNight` (it is the
+/// leftmost operand), the boss flag only gates the flag raise. The stream is
+/// `_rngs["UpdateTime"]`: `UpdateTime_StartNight` runs inside `Main.UpdateTime`
+/// (`Main.cs:17795`'s swap).
+pub fn night_roll(rng: &mut UnifiedRandom, downed_boss2: bool) -> bool {
+    rng.next_max(50) == 0 && downed_boss2
 }
 
 /// `NPC.cs:79450-79456`'s orb-boss death arm: the guaranteed first
-/// (`!downedBoss2`), the `Next(2) == 0` afterwards.
-pub fn boss_death_roll(rng: &mut u64, downed_boss2: bool) -> bool {
-    !downed_boss2 || random_int(rng, 0, 2) == 0
+/// (`!downedBoss2`, no draw), the `Next(2) == 0` afterwards. The stream is the
+/// caller's — the death arm runs under `UpdateNPCs` (`NPC.checkDead` →
+/// `DoDeathEvents` inside `NPC.UpdateNPC`, `Main.cs:17767-17769`), so the
+/// npcs pass feeds `UpdateNPCs` (S1-A-11 P3) and the weather site would feed
+/// `UpdateTime`.
+pub fn boss_death_roll(rng: &mut UnifiedRandom, downed_boss2: bool) -> bool {
+    !downed_boss2 || rng.next_max(2) == 0
 }
 
 /// The site-scan's decay threshold (`:6302`'s 600 -> the `:6356` 100
@@ -50,9 +58,10 @@ fn solid_no_plat(w: &World, x: i32, y: i32) -> bool {
 /// `WorldGen.meteor(int i, int j)` (`:6367-6549`): the validity gates
 /// (the 50-border + the 70x70 important-tile box — the player/NPC rect
 /// gates fold to the caller's distance check) then the 5-phase stamp.
-/// The vanilla's `genRand` arms port as the deterministic
-/// `random_int` stream (`rng`).
-pub fn meteor(world: &mut World, i: i32, j: i32, rng: &mut u64) -> bool {
+/// The vanilla's `genRand` arms port as `UnifiedRandom` draws (`rng` —
+/// `Next(min, max)`/`Next(max)` per site; inside `HandleMeteorFall` the C#
+/// `Main.rand` rides the caller's stream).
+pub fn meteor(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) -> bool {
     // Gate 1 (`:6369-6376`): the 50-tile border.
     if i < 50 || i > world.width - 50 || j < 50 || j > world.height - 50 {
         return false;
@@ -71,16 +80,16 @@ pub fn meteor(world: &mut World, i: i32, j: i32, rng: &mut u64) -> bool {
     }
     // Phase 1 (`:6421-6445`): the ore body — the jagged top edge, the
     // 0.9 radius, the air carve + the meteorite write.
-    let num = random_int(rng, 17, 23);
+    let num = rng.next_range(17, 23);
     for x in (i - num)..(i + num) {
         for y in (j - num)..(j + num) {
             let dx = x - i;
             let dy = y - j;
-            let r = num as f32 * 0.9 + (random_int(rng, -4, 5)) as f32;
+            let r = num as f32 * 0.9 + (rng.next_range(-4, 5)) as f32;
             if (dx * dx + dy * dy) as f32 >= r * r {
                 continue;
             }
-            if y <= j + random_int(rng, -2, 3) - 5 {
+            if y <= j + rng.next_range(-2, 3) - 5 {
                 if solid_no_plat(world, x, y) {
                     if let Some(t) = world.tile_mut(x, y) {
                         t.kind = METEORITE;
@@ -96,12 +105,12 @@ pub fn meteor(world: &mut World, i: i32, j: i32, rng: &mut u64) -> bool {
         }
     }
     // Phase 2 (`:6446-6461`): the hollowing.
-    let num2 = random_int(rng, 8, 14);
+    let num2 = rng.next_range(8, 14);
     for x in (i - num2)..(i + num2) {
         for y in (j - num2)..(j + num2) {
             let dx = x - i;
             let dy = y - j;
-            let r = num2 as f32 * 0.8 + (random_int(rng, -3, 4)) as f32;
+            let r = num2 as f32 * 0.8 + (rng.next_range(-3, 4)) as f32;
             if (dx * dx + dy * dy) as f32 >= r * r {
                 continue;
             }
@@ -115,7 +124,7 @@ pub fn meteor(world: &mut World, i: i32, j: i32, rng: &mut u64) -> bool {
     }
     // Phase 3 (`:6462-6491`): the destroy-for-meteors sweep + the liquid
     // carve in the 25-35 radius (0.7) around the site.
-    let num3 = random_int(rng, 25, 35);
+    let num3 = rng.next_range(25, 35);
     for x in (i - num3)..(i + num3) {
         for y in (j - num3)..(i + num3) {
             let dx = x - i;
@@ -136,7 +145,7 @@ pub fn meteor(world: &mut World, i: i32, j: i32, rng: &mut u64) -> bool {
     // Phases 4+5 (`:6492-6541`): the outer fill rings (the 1/10 and the
     // 1/20 per-tile chances.
     for &(base, chance) in &[(23, 10), (30, 20)] {
-        let n = random_int(rng, base, base + 9);
+        let n = rng.next_range(base, base + 9);
         let r = n as f32 * 0.8;
         for x in (i - n)..(i + n) {
             for y in (j - n)..(j + n) {
@@ -145,7 +154,7 @@ pub fn meteor(world: &mut World, i: i32, j: i32, rng: &mut u64) -> bool {
                 if (dx * dx + dy * dy) as f32 >= r * r {
                     continue;
                 }
-                if random_int(rng, 0, chance) != 0 {
+                if rng.next_max(chance) != 0 {
                     continue;
                 }
                 if let Some(t) = world.tile_mut(x, y) {
@@ -166,7 +175,10 @@ pub fn meteor(world: &mut World, i: i32, j: i32, rng: &mut u64) -> bool {
 /// `WorldGen.dropMeteor()` (`:6246-6365`): the site pick. The ore-cap
 /// pre-scan (`:6272-6290`'s 400 x maxTilesX/4200) and the player/NPC
 /// rect gates fold — the port runs the pick on the loaded world.
-pub fn drop_meteor(world: &World, spawn_x: i32, rng: &mut u64) -> Option<(i32, i32)> {
+/// The C# X pick is `Main.rand.Next(150, maxTilesX - 150)` (`:6301`/`:6303`);
+/// the port's `150 + Next(0, max(1, width - 300))` keeps that shape with the
+/// small-world guard the splitmix fixture worlds need.
+pub fn drop_meteor(world: &World, spawn_x: i32, rng: &mut UnifiedRandom) -> Option<(i32, i32)> {
     let num5 = (world.world_surface * 0.3) as i32;
     let mut num3 = OPEN_SKY_START;
     let mut attempts = 0;
@@ -175,9 +187,9 @@ pub fn drop_meteor(world: &World, spawn_x: i32, rng: &mut u64) -> Option<(i32, i
         attempts += 1;
         // The X pick: away from the spawn's +-8% (`:6300-6305`).
         let band = (world.width as f64 * 0.08) as i32;
-        let mut x = 150 + random_int(rng, 0, (world.width - 300).max(1));
+        let mut x = 150 + rng.next_range(0, (world.width - 300).max(1));
         if (x - spawn_x).abs() < band {
-            x = 150 + random_int(rng, 0, (world.width - 300).max(1));
+            x = 150 + rng.next_range(0, (world.width - 300).max(1));
         }
         // The row scan from num5 down (`:6306-6353`): the first active
         // solid row, then the 30x30 count.
@@ -223,8 +235,12 @@ fn clone_tiles(world: &World) -> World {
 }
 
 /// `Main.HandleMeteorFall` (`:65469-65502`): the dusk resolution —
-/// `time > 16200 && spawnMeteor` clears the flag and lands the ore.
-pub fn resolve(world: &mut World, time: f64, rng: &mut u64) -> bool {
+/// `time > 16200 && spawnMeteor` clears the flag and lands the ore. The
+/// stream is the caller's `UpdateTime` (`HandleMeteorFall` runs inside
+/// `Main.UpdateTime`, `Main.cs:65141`); the C#'s failed-pick
+/// `Next(3)` meteor-shower arm is not ported (no shower system), so no
+/// draw stands in for it.
+pub fn resolve(world: &mut World, time: f64, rng: &mut UnifiedRandom) -> bool {
     if time <= 16200.0 || !world.spawn_meteor {
         return false;
     }
@@ -258,10 +274,12 @@ mod tests {
     #[test]
     fn the_meteor_stamps_the_ore_body() {
         // `meteor`'s phase 1: the ore body carves the air and writes the
-        // meteorite tiles around the site.
+        // meteorite tiles around the site. (S1-A-11 P2: the draws moved from
+        // the splitmix `random_int` bridge to `UnifiedRandom` — the structural
+        // pins survive, the seed fixtures are stream states now.)
         let mut w = World::new("t".into(), 400, 400);
         ground(&mut w, 120);
-        let mut rng = 9u64;
+        let mut rng = UnifiedRandom::new(9);
         assert!(meteor(&mut w, 200, 130, &mut rng));
         let ore = w
             .tiles
@@ -280,7 +298,7 @@ mod tests {
         let mut w = World::new("t".into(), 400, 400);
         ground(&mut w, 120);
         w.spawn_meteor = true;
-        let mut rng = 4u64;
+        let mut rng = UnifiedRandom::new(4);
         assert!(resolve(&mut w, 16201.0, &mut rng));
         assert!(!w.spawn_meteor, "the flag cleared");
         assert!(!resolve(&mut w, 16202.0, &mut rng), "no second landing");
@@ -293,10 +311,14 @@ mod tests {
 
     #[test]
     fn the_rolls_gate_on_the_boss_flag() {
-        // The night roll needs the boss-2 downing; the death roll is the
-        // guaranteed-first.
-        let mut rng = 1u64;
-        assert!(!night_roll(&mut rng, false));
+        // The night roll needs the boss-2 downing (`Main.cs:65230` — but the
+        // `Next(50)` draw happens BEFORE the flag read, every StartNight);
+        // the death roll is the guaranteed-first with no draw (`NPC.cs:79450`).
+        let mut rng = UnifiedRandom::new(1);
+        assert!(
+            !night_roll(&mut rng, false),
+            "the flag still gates the raise"
+        );
         let mut hits = 0;
         for _ in 0..500 {
             if night_roll(&mut rng, true) {
@@ -304,6 +326,24 @@ mod tests {
             }
         }
         assert!(hits > 0 && hits < 40, "the 1/50 rate ({hits})");
-        assert!(boss_death_roll(&mut rng, false));
+        assert!(boss_death_roll(&mut rng, false), "the guaranteed first");
+    }
+
+    /// DW-2.2 (S1-A-11): the night roll consumes exactly one `Next(50)` draw
+    /// even when the boss flag is down — the C#'s leftmost operand
+    /// (`Main.cs:65230`) draws before the flag read. Pinned by twin-stream
+    /// equality: two `Next(50)` draws land the stream in the same state as a
+    /// night_roll(gated) + night_roll(rolling) pair.
+    #[test]
+    fn the_night_roll_draws_next50_before_the_boss_flag_read() {
+        let mut rng = UnifiedRandom::new(42);
+        let mut twin = UnifiedRandom::new(42);
+        assert!(!night_roll(&mut rng, false));
+        twin.next_max(50);
+        assert_eq!(rng, twin, "exactly one Next(50) draw when gated off");
+        // The rolling call consumes one more draw.
+        let _ = night_roll(&mut rng, true);
+        twin.next_max(50);
+        assert_eq!(rng, twin, "one Next(50) draw per rolling call");
     }
 }

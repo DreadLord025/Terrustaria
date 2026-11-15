@@ -299,7 +299,10 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // caps read the pool).
     for drop in actuation_drops {
         if let Some(id) = crate::registry::tile_drop(drop.tile_kind, 0) {
-            crate::world_sim::items::spawn_item_drop(app, id, 1, drop.x, drop.y);
+            // The spawn joins the wiring block's own seeded stream (the
+            // S1-L-6c contract; the C# truth is `UpdateWorldGen` — ANALYSIS).
+            let rng = app.wiring.rand_mut();
+            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, 1, drop.x, drop.y);
         }
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with

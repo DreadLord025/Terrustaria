@@ -27,7 +27,7 @@
 //! is the app's hammer path (the C#'s hammer-power gate and the WoF
 //! prerequisite = the follow-ups).
 
-use crate::tile_light::FastRandom;
+use crate::UnifiedRandom;
 use crate::world::World;
 
 /// The replace set of `OreRunner` (`WorldGen.cs:48886-48888`): the natural
@@ -77,7 +77,7 @@ pub fn ore_runner(
     strength: i32,
     steps: i32,
     kind: u16,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) {
     let mut num = strength as f64;
     let mut left = steps as f64;
@@ -164,7 +164,7 @@ pub fn smash_altar(
     world: &mut World,
     tiers: &mut SavedOreTiers,
     altar_count: i32,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) -> u16 {
     let scale = world.width as f64 / 4200.0;
     let tier = (altar_count % 3) as i32;
@@ -174,7 +174,7 @@ pub fn smash_altar(
         0 => {
             if tiers.cobalt == -1 {
                 tiers.cobalt = 107;
-                if rng.next(2) == 0 {
+                if rng.next_max(2) == 0 {
                     tiers.cobalt = 221;
                 }
             }
@@ -188,7 +188,7 @@ pub fn smash_altar(
         1 => {
             if tiers.mythril == -1 {
                 tiers.mythril = 108;
-                if rng.next(2) == 0 {
+                if rng.next_max(2) == 0 {
                     tiers.mythril = 222;
                 }
             }
@@ -201,7 +201,7 @@ pub fn smash_altar(
         _ => {
             if tiers.adamantite == -1 {
                 tiers.adamantite = 111;
-                if rng.next(2) == 0 {
+                if rng.next_max(2) == 0 {
                     tiers.adamantite = 223;
                 }
             }
@@ -263,7 +263,7 @@ mod tests {
     fn the_tier_selection_and_bands_are_verbatim() {
         let mut w = world();
         let mut tiers = SavedOreTiers::new();
-        let mut rng = FastRandom::new(1);
+        let mut rng = UnifiedRandom::new(1);
         // The first smash: the cobalt 107 or the palladium 221.
         let ore = smash_altar(&mut w, &mut tiers, 0, &mut rng);
         assert!(matches!(ore, 107 | 221), "tier 1 ore {ore}");
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn the_ore_runner_places_veins() {
         let mut w = world();
-        let mut rng = FastRandom::new(2);
+        let mut rng = UnifiedRandom::new(2);
         ore_runner(&mut w, 600, 400, 12, 20, 107, &mut rng);
         let cobalt = w
             .tiles
@@ -318,7 +318,7 @@ mod tests {
             }
         }
         let mut tiers = SavedOreTiers::new();
-        let mut rng = FastRandom::new(3);
+        let mut rng = UnifiedRandom::new(3);
         let cobalt = smash_altar(&mut w, &mut tiers, 0, &mut rng);
         let mythril = smash_altar(&mut w, &mut tiers, 1, &mut rng);
         let adam = smash_altar(&mut w, &mut tiers, 2, &mut rng);

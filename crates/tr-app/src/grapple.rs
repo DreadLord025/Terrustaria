@@ -492,8 +492,10 @@ pub(crate) fn ai_hook(
     // The slot's owner is this machine's player — the C#'s `myPlayer` gate on
     // the cracked-brick break (`:52586`).
     local_owner: bool,
-    // The hook's own `u64` stream (None off the local player's machine).
-    hook_rng: Option<&mut u64>,
+    // The pass's roll stream (`Main.rand` = the active `UpdateProjectiles`
+    // swap, `Main.cs:17775-17777`); `None` keeps the off-machine callers
+    // draw-free, like the C#'s `myPlayer` gate.
+    rng: Option<&mut dyn tr_core::loot::DropRng>,
     // `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`) — the
     // tiles this owner's hooks may not latch on.
     blacklisted: &[(i32, i32)],
@@ -528,21 +530,22 @@ pub(crate) fn ai_hook(
         };
     }
 
-    // `:52586-52595` — the local player's hook has a 1-in-16 chance per tick of
-    // breaking the cracked-brick tile under its center. The roll rides the
-    // hook's own named u64 stream (`Main.rand`'s interleaving with other
-    // consumers is not replayable; the stream choice is an ANALYSIS deviation).
+    // `:52586-52595` — the local player's hook breaks the cracked-brick tile
+    // under its center on `Main.rand.Next(16) == 0`, drawn ONLY when the C#
+    // `&&` chain reaches it (the tile test short-circuits the roll — the
+    // re-read fixed the splitmix-era un-gated draw). The roll rides the
+    // `UpdateProjectiles` stream (`AI_007_GrapplingHooks` runs in
+    // `UpdateWorld_Projectiles`, `Main.cs:17775-17777`).
     let mut crack = None;
     if local_owner {
-        if let Some(rng) = hook_rng {
+        if let Some(rng) = rng {
             let tx = tile_of(center.x, world.width);
             let ty = tile_of(center.y, world.height);
             if tx > 0 && ty > 0 && tx < world.width && ty < world.height {
                 let broken = world.tile(tx, ty).is_some_and(|t| {
                     t.active() && tr_core::tiledata::SET_CRACKED_BRICKS.has(t.kind)
                 });
-                let roll = crate::app::frame::next_rand(rng);
-                if broken && roll % 16 == 0 {
+                if broken && rng.next_range(0, 16) == 0 {
                     crack = Some((tx, ty));
                 }
             }
@@ -925,11 +928,12 @@ mod tests {
     fn dw_2_7_a_pool_spawned_hook_flies_latches_and_drives_the_pull() {
         use crate::projectile::ProjectilePool;
         let mut npcs: [crate::npc::Npc; 0] = [];
-        let mut seed: u64 = 0x5EED_1234;
         let w = ground();
         let center = Vec2::new(40.0 * 16.0, 50.0 * 16.0);
         let mut pool = ProjectilePool::new();
-        let mut rng = crate::world_sim::npcs::LootRng(&mut seed);
+        // The pool's roll stream as a `UnifiedRandom` (the `LootRng` bridge
+        // is gone — S1-A-11 P4); the seed rides the constructor.
+        let mut rng = tr_core::UnifiedRandom::new(0x5EED_1234u64 as i32);
         let inputs = crate::projectile::YoyoInputs::default();
         // Aim at a solid tile and let it latch.
         let mut w2 = w;
@@ -972,8 +976,7 @@ mod hook_multi_tests {
     /// One tick's projectile pass on a world with no NPCs.
     fn tick(pool: &mut ProjectilePool, w: &mut World, center: Vec2) {
         let mut npcs: [crate::npc::Npc; 0] = [];
-        let mut seed: u64 = 0x5EED_1234;
-        let mut rng = crate::world_sim::npcs::LootRng(&mut seed);
+        let mut rng = tr_core::UnifiedRandom::new(0x5EED_1234u64 as i32);
         let inputs = YoyoInputs::default();
         pool.update(
             w,
@@ -1320,7 +1323,7 @@ mod crack_tests {
         let mut counts = Vec::new();
         for _ in 0..2 {
             let mut n = 0usize;
-            let mut seed: u64 = 0xB17C_0DE5;
+            let mut seed = tr_core::UnifiedRandom::new(0xB17C_0DE5u64 as i32);
             for _ in 0..4096 {
                 let mut h = one_hook();
                 let tick = ai_hook(&mut h, &w, center, false, true, Some(&mut seed), &[]);
@@ -1336,15 +1339,17 @@ mod crack_tests {
             "about 1/16 of 4096: {}",
             counts[0]
         );
-        // A non-local owner never rolls.
+        // A non-local owner never rolls (`Main.myPlayer == this.owner`).
         let mut h = one_hook();
-        let mut seed: u64 = 1;
+        let mut seed = tr_core::UnifiedRandom::new(1);
         assert!(ai_hook(&mut h, &w, center, false, false, Some(&mut seed), &[]).crack.is_none());
-        // A non-cracked tile never breaks even though the roll runs.
+        // A non-cracked tile never breaks — and the C# `&&` short-circuit
+        // means the roll does not even run there (the stream is untouched).
         let i = w.index(40, 41);
         w.tiles[i].kind = 1;
         let mut h2 = one_hook();
-        let mut seed2: u64 = 2;
+        let mut seed2 = tr_core::UnifiedRandom::new(2);
+        let pristine = seed2.clone();
         let mut found = 0;
         for _ in 0..4096 {
             if ai_hook(&mut h2, &w, center, false, true, Some(&mut seed2), &[]).crack.is_some() {
@@ -1352,6 +1357,7 @@ mod crack_tests {
             }
         }
         assert_eq!(found, 0, "only the cracked bricks break");
+        assert_eq!(seed2, pristine, "the gated roll never drew");
     }
 
     /// `:22845-22847` — no registered hook carries the caller's velocity through
