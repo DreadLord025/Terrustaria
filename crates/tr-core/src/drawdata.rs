@@ -1328,14 +1328,16 @@ impl TileDrawData {
                 3 => self.draw_dx += 2,
                 _ => {}
             },
-            // `case 323` — the palm (`:1150-1156`): every row shifts right by
-            // its own `frameY`. The C# also `return`s for the frond columns
-            // 88..=132 because `DrawTrees` draws the canopy from the tree pass;
-            // the port has no palm canopy pass, so those columns keep drawing
-            // here (a documented deviation — hiding them would delete the palm
-            // tops).
+            // `case 323` — the palm (`:1152-1158`): the frond columns 88..=132
+            // `return` (the canopy comes from the tree pass,
+            // `TileDrawing.cs:8254-8297`); every other row shifts right by its
+            // own `frameY`.
             323 => {
-                self.draw_dx += frame_y;
+                if (88..=132).contains(&frame_x) {
+                    self.skip_draw = true;
+                } else {
+                    self.draw_dx += frame_y;
+                }
             }
             // `case 114` (`:1157-1162`): the source rectangle grows 2 px when
             // the tile is not on its first row.
@@ -2180,7 +2182,6 @@ mod tests {
         assert_eq!(palm_tree_biome(&w2, 500, 10), 3);
     }
 
-
     #[test]
     fn the_positional_switch_nudges_and_hides_the_sprites() {
         // `DrawSingleTile`'s switch (`TileDrawing.cs:1020-1159`): the per-type
@@ -2283,13 +2284,26 @@ mod tests {
             assert!((t.src_alpha - alpha).abs() < 1e-6, "129 ({fx},{fy}) alpha");
         }
 
-        // 323 palm (`:1150-1156`): the trunk shifts right by its own `frameY`.
-        // The frond columns keep drawing here (the port has no palm canopy
-        // pass, see the deviation on `apply_world_corrections`).
+        // 323 palm (`:1152-1158`): the trunk shifts right by its own `frameY`;
+        // the frond columns 88..=132 `return` there (the canopy is drawn by the
+        // tree pass) and so are skipped here.
         for fy in [0i16, 22, 44] {
             let mut t = TileDrawData::default();
             t.apply_world_corrections(&w, 323, 20, 20, 0, fy, 0);
             assert_eq!((t.draw_dx, t.skip_draw), (fy, false), "323 frameY {fy}");
+        }
+        for fx in [88i16, 110, 132] {
+            let mut t = TileDrawData::default();
+            t.apply_world_corrections(&w, 323, 20, 20, fx, 22, 0);
+            assert!(t.skip_draw, "323 frameX {fx} must be skipped");
+            assert_eq!(t.draw_dx, 0, "323 frameX {fx} leaves the position alone");
+        }
+        // The bounds are inclusive; column 66/154 is ordinary trunk.
+        for fx in [66i16, 154] {
+            let mut t = TileDrawData::default();
+            t.apply_world_corrections(&w, 323, 20, 20, fx, 22, 0);
+            assert!(!t.skip_draw, "323 frameX {fx} draws");
+            assert_eq!(t.draw_dx, 22, "323 frameX {fx} shifts");
         }
 
         // 114 (`:1157-1162`): the source rectangle grows 2 px below row 0.
