@@ -3625,7 +3625,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // per-call LCG advance the splitmix bridge needed dies outright.
     let mut spawned = None;
     if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
-        let rng = app.rngs.stream(RngKey::SpawnNpc);
+        let mut rng = app.rngs.stream(RngKey::SpawnNpc);
         // The Slime Rain sky spawns (`SlimeRainSpawns`, `NPC.cs:5892-5960`)
         // — the pre-roll before the regular spawner (`:296-302`'s call
         // order): the depth/crowd gates (the player below
@@ -3865,6 +3865,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 },
             })
         });
+        // The one spawn path (`NPC.cs:308-342`) on the persistent `SpawnNPC`
+        // stream: `spawn_npc_call` (S1-F-12 extract) runs the gates, the
+        // 50-candidate scan and `SpawnAnNPC`'s zone chain — the invaders
+        // ladder wins the dispatch through the ctx's `invaders` flag; the
+        // retired pre-path rebuilt the gates, drew the pick off `item_rng`
+        // and placed the NPC at a fixed offset. The state persists across
+        // ticks in the stream (S1-A-11).
+        let (spawn, _suppressed) = spawner::spawn_npc_call(ctx, &mut rng, app.spawn_no_cycle);
+        app.spawn_no_cycle = false; // the latch is consumed by one call
+        spawned = spawn;
     }
     if let Some(n) = spawned {
         app.npcs.push(n);

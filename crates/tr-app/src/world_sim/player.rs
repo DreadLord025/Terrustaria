@@ -896,15 +896,18 @@ mod tests {
     use crate::inv::EquipSlots;
     use crate::item::EMPTY_SLOT;
     use crate::player::Player;
+    use crate::touch_damage::BUFF_BLEEDING;
     use tr_core::tile::FLAG_ACTIVE;
     use tr_core::wiring::WireColor;
     use tr_core::{Tile, UnifiedRandom, World};
 
-    /// DW-4.1 (the players group) + DW-4.4: the touch-damage roll draws the
+    /// DW-4.1 (the players group) + DW-4.4: the touch-damage rolls draw the
     /// `UpdatePlayers` stream — one `update_player` tick standing on spikes
-    /// spends exactly `DamageVar`'s single draw (the check fires inside
-    /// `Player.Update` under the `UpdatePlayers` swap, `Player.cs:27608-27614`,
-    /// `Main.cs:17754`), the landed HP matches the twin replay, and no other
+    /// spends `DamageVar`'s draw and then the landing-hit's bleeding duration
+    /// `Next(600, 1200)` (`Player.cs:28982` + `:28986-28994` — the S1-E-13a
+    /// burning/bleeding arm rides the same `Main.rand`, here the
+    /// `UpdatePlayers` swap, `Player.cs:27608-27614`, `Main.cs:17754`), the
+    /// landed HP and the buff duration match the twin replay, and no other
     /// stage stream moves (the pass's isolation).
     #[test]
     fn test_dw_4_1_the_touch_roll_draws_the_update_players_stream() {
@@ -939,13 +942,27 @@ mod tests {
         let hp_0 = app.player.as_ref().unwrap().hp;
         update_player(&mut app, 1.0 / 60.0);
 
-        // The twin: `DamageVar`'s single draw from the pristine seed.
+        // The twin: `DamageVar`'s draw, then the bleeding arm's duration roll
+        // (both off the pristine seed-0 stream).
         let mut expect = UnifiedRandom::new(0);
         let expected_dmg = tr_core::damage::damage_var(&mut expect, 60.0, 0.0);
+        let expected_bleed = expect.next_range(600, 1200);
         assert_eq!(
             app.player.as_ref().unwrap().hp,
             hp_0 - expected_dmg,
             "the spike's rolled 60 landed through the same draws"
+        );
+        let slot = app
+            .player
+            .as_ref()
+            .unwrap()
+            .buffs
+            .find_buff_index(BUFF_BLEEDING)
+            .expect("the spike's bleeding landed");
+        assert_eq!(
+            app.player.as_ref().unwrap().buffs.buff_time[slot],
+            expected_bleed,
+            "the bleeding duration is the same stream's second draw"
         );
         assert_eq!(
             *app.rngs.stream(RngKey::UpdatePlayers),
