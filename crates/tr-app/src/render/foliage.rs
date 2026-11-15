@@ -9,7 +9,7 @@ use tr_core::lighting::{LightMap, LightStyle};
 use tr_core::tile_light::FastRandom;
 use tr_core::tiledata as td;
 use tr_core::wind;
-use tr_core::{tree, World, TILE_PX};
+use tr_core::{TILE_PX, World, tree};
 use tr_render::SpriteRenderer;
 
 /// `TileDrawing.EmitTreeLeaves`' spawn, resolved at draw time by the tree scan.
@@ -241,7 +241,9 @@ pub(crate) fn draw_tree_foliage(
             let Some(part) = tree::TreePart::marker(t.frame_x, t.frame_y) else {
                 continue;
             };
-            let f = tree::foliage_at(world, tx, ty, part, t.frame_y);
+            let Some(f) = tree::foliage_at(world, tx, ty, part, t.frame_y, t.kind) else {
+                continue;
+            };
             if lookups.foliage.get(f.style).is_none_or(|s| s.is_none()) {
                 continue;
             }
@@ -508,6 +510,34 @@ fn tree_leaf_pass_style(top_kind: u16, frame_y: i16, ground: u16, x: i32) -> (i3
 }
 
 #[cfg(test)]
+#[test]
+fn variant_foliage_styles_match_worldgen() {
+    let matches = [
+        (583, (22, 116.0, 96.0)),
+        (584, (23, 116.0, 96.0)),
+        (585, (24, 116.0, 96.0)),
+        (586, (25, 116.0, 96.0)),
+        (587, (26, 116.0, 96.0)),
+        (588, (27, 116.0, 96.0)),
+        (589, (28, 116.0, 96.0)),
+        (596, (29, 118.0, 96.0)),
+        (616, (30, 118.0, 96.0)),
+        (634, (31, 116.0, 96.0)),
+    ];
+    for &(kind, (style, top_w, top_h)) in &matches {
+        let f = tree::Foliage::for_ground(kind, 633, 198).unwrap();
+        assert_eq!((f.style, f.top_w, f.top_h), (style, top_w, top_h));
+    }
+
+    // Invalid variant -> None
+    assert!(tree::Foliage::for_ground(596, 70, 198).is_none());
+    assert!(tree::Foliage::for_ground(634, 70, 198).is_none());
+    assert!(tree::Foliage::for_ground(583, 70, 198).is_none());
+
+    // Common -> Some
+    let common = tree::Foliage::for_ground(5, 2, 198).unwrap();
+    assert_eq!(common.style, 0);
+}
 mod tests {
     use super::*;
 
