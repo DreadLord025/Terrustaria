@@ -12777,6 +12777,15 @@ clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
 their own passes; the hover text feeds the map's text line through
 `ui::text::hud_text` (the C# `ref text`).
 
+## Dust & gore (module 15) (S1-E-1, 2026-11-14)
+
+`crates/tr-core/src/particles.rs` is the `Main.dust` analog: the C# keeps the pool as the static `Main.dust[6001]` array plus the three static pressure counters (`Dust.dCount`, `lavaBubbles`, `SandStormCount`, `Dust.cs:12-16`), and the port carries the same global-pool semantics — one pool the App owns, spawns addressed by slot, slot 6000 the refuse sentinel `NewDust` returns and never scans (`Main.cs:66985`, `Dust.cs:79`/`:103`). The spawn path is a 1:1 transcription of `Dust.cs:10-407`: the guard chain (`:77-101`), the off-screen cull with the `400*(1-dCount)` margin (`:89-97`), the first-inactive-slot scan and the five pressure bands (`:103-152`), the default block with the per-100 frame shift (`:153-193`), the `ChildSafety` re-type arm (`:194-213`, `ChildSafety.cs:33`) and the per-type tweak chain (`:214-252`). The pool draws from the caller-passed stream (the `DustRng` seam, the C# `Next`/`NextFloat` conversions `UnifiedRandom.cs:120-141`), so per-consumer streams are preserved: the pool's band rolls are the only added draws on the clients' streams. The sand spawn site additionally regained the C# `NewDust` velocity/scale rolls the stand-in had skipped (`Sandstorm.cs:226`; the final 0.9 scale pin unchanged), and `Settings::blood` arms `pool.child_safety` at spawn — blood on is the vanilla default (the gate skipped), blood off sets `ChildSafety.Disabled` false and the re-type fires.
+
+The migration retired one stand-in cap: the wheel sparks' `MAX_SPARKS` = 500 (the `minecart::Sparks` pool, pinned to no pressure) — the cart's queued requests now spawn type 213 through the shared pool with the cart's own stream. The flying sand's emit budget is not a stand-in and did not retire: it is the C#'s own line, `num7 = 1000*screenW/maxScreenW` with `gfxQuality` pinned to its no-pressure value 1.0 (`Sandstorm.cs:161`, ported at `sand.rs:106` over `MAX_SCREEN_W = 1920`); the migration only switched its subtrahend to the shared pool's live type-268 count — the budget stands, its pressure is now the pool's.
+
+Scope notes and documented drops, each recorded at its site: the `shader`/`customData` record fields (no draw-shader chain; the `customData` followers live in `UpdateDust`, S1-E-3), the `Main.rand == null` re-seed and `Main.netMode == 2` server guards and the dead `Main.NoPooling` realloc arm (`Main.cs:67208` sets it false), and the `DANGEROUS` set = the 8 listed ids (5, 227, 273, 237, 248, 249, 250, 251 — `SetFactory.cs:97-107`; research/15's earlier inverted reading of that set is corrected). tr-app injects the wet probe through the seam (`player::wet_collision`, the `Dust.cs:248` probe). The child-safety sync runs `sync_child_safety` once per frame, so a settings toggle lands one tick late; `max_dust_to_draw`'s first frame reads the seed 0 (unreachable in production — the frame loop sets it before any spawn); the 268 draw keeps the stand-in's 10-px cell until E-3 ports the real draw, and the `NewDust` `Next(1)` gate draw is absent in both the stand-in and the port (pre-existing).
+
+What remains: E-2 (the per-type table + `GetAlpha`/`GetColor`), E-3 (the generic `UpdateDust` tail + the `maxDustToDraw` gate + the dust light), E-4 (gore: `NewGore`/`GoreID.Sets`/`Gore.Update` + the leaves), the `rain.rs` re-point and the NPC/Projectile/player call sites — the caller-coverage table in `docs/research/15-dust-gore.md` stays authoritative.
 ## The carrier's life pool (S1-D-6, 2026-11-14)
 
 `NPC.realLife` (`NPC.cs:6161`) is the C#'s carrier link: an NPC index that
@@ -14159,3 +14168,32 @@ vanished; the port removes the dead parts at once, so "the part is gone"
 is the normal death and the arm would kill the core on the first part's
 fall. The port implements the `flag2` arm only — the `flag` arm's
 counterpart does not exist in the port's immediate-death model.
+
+## The town-NPC melee swing (S1-D-3n, 2026-11-15)
+
+`NPC.AI_007_TownEntities` carries the town-NPC family (the `aiStyle 7` arm,
+`NPC.cs:52965-55561`). Its melee state (`ai[0] == 15`, `NPC.cs:54995-55114`)
+reads four per-type numbers: `num78` (the swing damage, scaled by
+`NPC.GetAttackDamage_ForTownNPC`), `num79` (the swing knockback) and
+`num80`/`num81` (the swing item width and height, taken by
+`NPC.GetSwingStats`). The C# rows live at `NPC.cs:55018-55054`:
+
+| NPC | type | damage | knockback | item |
+| --- | --- | --- | --- | --- |
+| Dye Trader | 207 | 11 | 4.25 | 32x32 |
+| Tax Collector | 441 | 9 | 3.5 | 28x28 |
+| Stylist | 353 | 10 | 5 | 32x32 |
+| town pets | - | 10 | 3 | 32x32 |
+
+**The port.** `crates/tr-app/src/npc_ai.rs::TownWeaponParams` carries those
+four numbers as the `DYE_TRADER`, `TAX_COLLECTOR`, `STYLIST` and `TOWN_PET`
+rows, with the C# line cites; the table test
+`s1_d_3n_tests::the_town_weapon_presets_match_the_csharp_table` pins them.
+
+**The deliberate gap.** The swing machine itself is not ported: it needs
+`NPC.GetSwingStats` (`NPC.cs:66485`), `NPC.StrikeNPCNoInteraction` and
+`GameDifficultyData.TownNPCDamageMultiplier` (`NPC.cs:7062-7065`), and the
+port has no swing-stats helper, no NPC-to-NPC strike path and no difficulty
+multiplier for the town-NPC damage. Porting the machine is a follow-up under
+S1-D-3; the preset table lands first so the numbers have one home. `num77`
+and `maxValue4` are not read by the swing code and stay unported.

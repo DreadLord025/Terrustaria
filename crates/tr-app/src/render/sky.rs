@@ -1179,8 +1179,8 @@ pub(crate) fn draw_sky(
         last: &mut amb_last,
     });
     if show_bg {
-        // `DrawSurfaceBG_Forest` (tree set 1 = `Background_50..52`): parallax
-        // 0.40/0.43/0.49, scale 2.5/2.62/2.68, tops +1300/+1550/+1800. The middle
+        // `DrawSurfaceBG_Forest` (tree set 1 = `Background_50..52`): bgScale 1.25/1.31/1.34 (C# 61275/61304)
+        // x2 (C# 59329); bgParallax 0.40/0.43/0.49 (C# 61276); tops 1350/1600/1850 = C# 61277/61399/61473 min pushBG 150.
         // layer is mirrored horizontally (`tex == 51`).
         draw_front_trees(
             r,
@@ -1192,7 +1192,7 @@ pub(crate) fn draw_sky(
             [2.5, 2.62, 2.68],
             [0.40, 0.43, 0.49],
             [1800.0, 1950.0, 2100.0],
-            [1300.0, 1550.0, 1800.0],
+            [1350.0, 1600.0, 1850.0],
             Some(1),
             magic,
             sc_adj,

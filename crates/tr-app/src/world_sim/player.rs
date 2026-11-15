@@ -274,6 +274,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             app.death_text = crate::lang::inter(38);
         }
     }
+    // The dust spawn ctx (S1-E-1 phase 2), copied out before the player
+    // borrow so the closure stays on disjoint field captures; the front
+    // state and the pause flag cannot change inside the player tick.
+    let spawn_ctx = app.spawn_ctx();
     if let Some(p) = app.player.as_mut() {
         // `Player.ResetEffects`' journey block, re-run every tick: the godmode
         // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
@@ -317,18 +321,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             let danger_near = p.near_any_npcs_that_block_respawn(&app.npcs, invasion_live);
             // `Main.snowMoon || Main.pumpkinMoon || DD2Event.Ongoing`
             // (`Player.cs:38984-38986`).
-            let moon_event_live = app.world.snow_moon
-                || app.world.pumpkin_moon
-                || app.world.dd2_event_ongoing;
+            let moon_event_live =
+                app.world.snow_moon || app.world.pumpkin_moon || app.world.dd2_event_ongoing;
             app.respawn_skip_available =
                 p.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
             let mut respawn_now = false;
             app.player_step.tick(dt, |_| {
-                respawn_now =
-                    p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
-                        || respawn_now;
+                respawn_now = p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
+                    || respawn_now;
                 p.reset_projectile_caches();
-                p.update_projectile_caches(&app.projectiles);            });
+                p.update_projectile_caches(&app.projectiles);
+            });
             // The buff bar's removal requests (`Main.TryRemovingBuff`,
             // `Main.cs:43348`'s draw-pass mutation — the draw pushed the
             // slots, the tick applies them): non-debuffs only, the mount's
@@ -427,11 +430,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 return;
             }
             // The Dual Hook's colour swap: a blue head already out means red.
-            let blue_out = app
-                .projectiles
-                .slots()
-                .iter()
-                .any(|pr| pr.active && pr.owner == owner && pr.kind == crate::projectile::DUAL_HOOK_BLUE);
+            let blue_out = app.projectiles.slots().iter().any(|pr| {
+                pr.active && pr.owner == owner && pr.kind == crate::projectile::DUAL_HOOK_BLUE
+            });
             if kind == crate::projectile::DUAL_HOOK_BLUE && blue_out {
                 kind = crate::grapple::dual_next_kind(true);
             }
@@ -444,7 +445,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     .filter(|pr| {
                         pr.active
                             && pr.owner == owner
-                            && (crate::projectile::LUNAR_HOOK_SOLAR..=crate::projectile::LUNAR_HOOK_STARDUST)
+                            && (crate::projectile::LUNAR_HOOK_SOLAR
+                                ..=crate::projectile::LUNAR_HOOK_STARDUST)
                                 .contains(&pr.kind)
                     })
                     .max_by_key(|pr| pr.time_left)
@@ -476,7 +478,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.x + crate::player::WIDTH * 0.5,
                 p.y + crate::player::HEIGHT * 0.5,
             );
-            let spawned = app.projectiles.spawn_hook(
+let spawned = app.projectiles.spawn_hook(
                 kind,
                 center,
                 mouse_world,
@@ -582,11 +584,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // mounts hold nothing (`MountID.Sets.DontHoldItems`,
             // `MountID.cs:46`) and the umbrella hold (4) is off while
             // mounted, roped or airborne (`Player.cs:50209-50224`).
-            let mounted_blocks_hold =
-                p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
+            let mounted_blocks_hold = p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
             let can_visually_hold = !mounted_blocks_hold
-                && (hold_style != 4
-                    || (!p.pulley && p.vy == 0.0 && !p.mount.is_active()));
+                && (hold_style != 4 || (!p.pulley && p.vy == 0.0 && !p.mount.is_active()));
             // The hooks' centroid relative to the body centre
             // (`Player.cs:36502-36520`): only the body row leans on it.
             let mut dx = 0.0f32;
@@ -597,8 +597,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 for pr in app.projectiles.slots() {
                     if !pr.active
                         || pr.owner != owner
-                        || !crate::projectile::proj_data(pr.kind)
-                            .is_some_and(|d| d.ai_style == 7)
+                        || !crate::projectile::proj_data(pr.kind).is_some_and(|d| d.ai_style == 7)
                     {
                         continue;
                     }
@@ -809,10 +808,22 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
             // The wheel-spark drain: the tick queued fully-rolled dust-213
             // particles (`Minecart.WheelSparks` → `DelegateMethods.Minecart.Sparks`)
-            // and the C# sound sites' cues; the pool is the App's `Main.dust`
-            // stand-in and the cues go straight out.
+            // and the C# sound sites' cues; each request becomes the pool's
+            // type-213 slot (`Main.UpdateWorld_Dust`, `Main.cs:18047`) and the
+            // pool's rolls ride the client's stream (`SplitmixRand` — S1-E-1
+            // phase 2).
             let sparks = p.take_cart_sparks();
-            app.minecart_sparks.spawn(sparks);
+            if !sparks.is_empty() {
+                for s in sparks {
+                    crate::minecart::spawn_spark(
+                        &mut app.dust,
+                        &mut crate::app::SplitmixRand(&mut p.spark_rng),
+                        &spawn_ctx,
+                        &app.world,
+                        s,
+                    );
+                }
+            }
             for cue in p.take_cart_sounds() {
                 app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
             }
@@ -864,8 +875,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 .filter(|(_, pr)| {
                     pr.active
                         && pr.owner == owner
-                        && crate::projectile::proj_data(pr.kind)
-                            .is_some_and(|d| d.ai_style == 7)
+                        && crate::projectile::proj_data(pr.kind).is_some_and(|d| d.ai_style == 7)
                 })
                 .map(|(i, _)| i)
                 .collect();
@@ -1028,7 +1038,10 @@ mod tests {
         let p = app.player.as_mut().unwrap();
         assert!(!p.creative_god_mode);
         p.hurt_cd = 0.0;
-        assert!(p.hurt(10, 0.0, &mut tr_core::UnifiedRandom::default(), true), "the hurt lands once the power is off");
+        assert!(
+            p.hurt(10, 0.0, &mut tr_core::UnifiedRandom::default(), true),
+            "the hurt lands once the power is off"
+        );
     }
 
     /// An equipment row carrying `kind`.
@@ -1411,11 +1424,14 @@ mod tests {
     }
 
     /// DW-3.1 — the `world_sim` drain: the tick's queued spark particles land
-    /// in the App's `minecart::Sparks` pool (the `Main.dust` stand-in) and the
+    /// in the App's shared `particles::DustPool` (the `Main.dust` analog) and the
     /// queued cues go out through `app.audio.play_at` (a silent no-op without
     /// an output device) — both pendings end up empty.
-    #[test]
-    fn update_player_drains_cart_sparks_into_the_pool() {
+    /// The rig body: `seed` seeds the spark stream, the camera rides the
+    /// player (the pool's C# cull spans the view, `Dust.cs:97-101`), and the
+    /// pool is reset after the settle ticks so the braking burst's landings
+    /// count alone.
+    fn braking_pool_count(seed: u64) -> usize {
         let mut app = flow_app(None, vec![], vec![]);
         // A straight rail on row 12 (frame 1) — the ride fixture.
         app.world = World::new("cart".into(), 64, 32);
@@ -1436,29 +1452,40 @@ mod tests {
         p.prev_x = p.x;
         p.prev_y = p.y;
         p.vx = 12.0;
-        // An all-gates-pass stream seed: the braking tick queues 3 sparks.
-        p.spark_rng = seed_with_spark_count(10.4, 3);
+        p.spark_rng = seed;
+        // The camera rides the player: the pool's C# cull spans the view
+        // (`Dust.cs:97-101`), so every drain's spawn passes it.
+        app.camera = Vec2::new(p.x + 10.0, p.y + 26.0);
         app.player = Some(p);
         // The settle tick brings the previous tick's `onTrack` up.
         for _ in 0..2 {
             update_player(&mut app, 1.0 / 60.0);
         }
+        // The settle ticks drained their own rolling sparks into the pool —
+        // start the burst count clean.
+        app.dust = tr_core::particles::DustPool::new();
         // Brake: hold left.
         app.keys.insert(KeyCode::KeyA);
         update_player(&mut app, 1.0 / 60.0);
-        let p = app.player.as_mut().unwrap();
-        assert!(
-            p.take_cart_sparks().is_empty(),
-            "the drain emptied the queue"
-        );
-        assert!(p.take_cart_sounds().is_empty(), "the cues went out");
-        assert_eq!(app.minecart_sparks.count(), 3, "the pool holds the sparks");
+        crate::minecart::live_type(&app.dust, 213)
+    }
+
+    #[test]
+    fn update_player_drains_cart_sparks_into_the_pool() {
+        // A stream seed whose braking tick lands 3 sparks — the seed search
+        // now runs the whole tick+drain pipeline, because the pool's spawn
+        // rolls ride the same stream (S1-E-1 phase 2) and the settle ticks'
+        // landed bursts consume pool draws ahead of the brake.
+        let seed = (1u64..)
+            .find(|&s| braking_pool_count(s) == 3)
+            .expect("a seed braking into 3 sparks");
+        assert_eq!(braking_pool_count(seed), 3);
     }
 
     /// Finds a stream seed where one rolling call at `|vx| = vel_x` queues
-    /// exactly `want` sparks — the gate rolls interleave with the 14-roll
-    /// sparks (the rain.rs seed-search idiom, run against the same emitter
-    /// constants the tick passes).
+    /// exactly `want` sparks — the gate rolls interleave with the per-spark
+    /// request rolls (the rain.rs seed-search idiom, run against the same
+    /// emitter constants the tick passes).
     fn seed_with_spark_count(vel_x: f32, want: usize) -> u64 {
         for s in 1u64.. {
             let mut sparks = Vec::new();

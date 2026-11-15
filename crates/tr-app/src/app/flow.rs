@@ -1197,6 +1197,63 @@ impl App {
 
 #[cfg(test)]
 pub(crate) mod front_flow_tests {
+
+    /// DW-2.4 — `Settings::blood` arms the pool's `ChildSafety` gate at
+    /// spawn: blood OFF arms the gate (`Disabled = false`) and a dangerous
+    /// type (227, one of `SetFactory.cs:97-107`'s blood set) re-types or
+    /// deactivates per the spawn arm (`Dust.cs:194-213`); blood ON — the
+    /// vanilla default — leaves the dangerous type untouched. The spawn-site
+    /// gate, not the draw.
+    #[test]
+    fn s1_e_1_the_blood_setting_arms_the_spawn_gate() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let world = World::new("blood".into(), 8, 8);
+        let ctx = crate::app::spawn_ctx_from(
+            false,
+            false,
+            glam::Vec2::new(0.0, 0.0),
+            glam::Vec2::new(1600.0, 900.0),
+            1.0,
+            6000,
+        );
+        let spawn = |app: &mut App| {
+            let mut rng = tr_core::UnifiedRandom::new(7);
+            app.dust.new_dust(
+                &mut rng,
+                &ctx,
+                &world,
+                glam::Vec2::new(100.0, 100.0),
+                1,
+                1,
+                227,
+                0.0,
+                0.0,
+                0,
+                tr_core::particles::Color::default(),
+                1.0,
+            )
+        };
+        // Blood OFF — the gate arms and the dangerous spawn is rewritten.
+        app.settings.blood = false;
+        app.sync_child_safety(None);
+        assert!(!app.dust.child_safety.disabled, "the gate armed");
+        let idx = spawn(&mut app);
+        assert_ne!(idx, tr_core::particles::DUST_SENTINEL);
+        let d = app.dust.slot(idx);
+        assert!(
+            !d.active || d.dust_type != 227,
+            "the dangerous blood type was rewritten (re-type 16 or deactivation)"
+        );
+        // Blood ON — the vanilla default: the gate is skipped.
+        app.settings.blood = true;
+        app.sync_child_safety(None);
+        assert!(app.dust.child_safety.disabled, "the gate skipped");
+        let idx = spawn(&mut app);
+        assert_ne!(idx, tr_core::particles::DUST_SENTINEL);
+        let d = app.dust.slot(idx);
+        assert!(d.active && d.dust_type == 227, "the blood type untouched");
+    }
+
     use super::*;
     use crate::*;
 
@@ -2158,7 +2215,13 @@ pub(crate) mod front_flow_tests {
             ore_tiers: tr_core::ores::SavedOreTiers::new(),
             rain: Rain::new(1),
             sand: crate::sand::Sand::new(1),
-            minecart_sparks: crate::minecart::Sparks::new(),
+            dust: {
+                // The `Main.dust[6001]` init with the type-34 wet probe (see
+                // App::new — S1-E-1 phase 2).
+                let mut dust = tr_core::particles::DustPool::new();
+                dust.set_wet_probe(Box::new(crate::player::wet_collision));
+                dust
+            },
             wind: tr_core::wind::Wind::new(1),
             world_tick_step: FixedStepper::new(1.0 / 60.0, 8),
             atmo: 1.0,

@@ -20,7 +20,7 @@ pub(crate) mod settings_ui;
 
 // The RNG helpers live in `frame` with their main consumer, but the world
 // simulation and the sky reach them through the app root.
-pub(crate) use frame::{next_rand, rand01};
+pub(crate) use frame::{SplitmixRand, next_rand, rand01};
 pub(crate) use rng::{NamedRngs, RngKey};
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -667,10 +667,11 @@ pub(crate) struct App {
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
     pub(crate) sand: crate::sand::Sand,
-    /// The minecart wheel sparks (`Minecart.WheelSparks` → the type-213 dust)
-    /// — the `Main.dust` stand-in for the cart's pool, fed by the `world_sim`
-    /// drain and ticked/drawn with the other world dust.
-    pub(crate) minecart_sparks: crate::minecart::Sparks,
+    /// `Main.dust` (`Main.cs:66985`): the 6001-slot pressure-gated pool —
+    /// the wheel sparks and the sandstorm spawn/tick/draw through it
+    /// (S1-E-1 phase 2); the `world_sim` drain feeds the cart's queued
+    /// requests into it and the frame ticks/draws the client slots.
+    pub(crate) dust: tr_core::particles::DustPool,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
     /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
     pub(crate) ambient_waterfall: (f32, f32, f32),
@@ -962,6 +963,25 @@ impl App {
         world_sim::camera::screen_size(self)
     }
 
+    /// The per-call inputs `Dust.NewDust` reads off `Main` (`Dust.cs:77-98`),
+    /// S1-E-1 phase 2: `gameMenu` is the front state (`menu.is_some() ||
+    /// front.is_some()`, the mod.rs:1054 gate), `gamePaused` is S1-B-3's
+    /// field, sync loads never generate (`isGeneratingOrLoadingWorld` only
+    /// covers the async loader), `screenPosition` is the view's world-px
+    /// top-left and `screenWidth/Height` the UI size the C# cull rect uses
+    /// verbatim (`Dust.cs:97-101`).
+    pub(crate) fn spawn_ctx(&self) -> tr_core::particles::SpawnCtx {
+        let (sw, sh) = self.screen_size();
+        spawn_ctx_from(
+            self.menu.is_some() || self.front.is_some(),
+            self.game_paused,
+            self.camera,
+            Vec2::new(sw, sh),
+            self.zoom,
+            self.gfx_quality.max_dust_to_draw,
+        )
+    }
+
     /// `Main.mH` (`Main.cs:45771-45783`): 256 while the minimap HUD is live,
     /// clamped by the 600 px equipment push-up — the same value `frame()`
     /// hands the inventory draw, so the HUD hit tests and the draw agree.
@@ -970,6 +990,16 @@ impl App {
             && self.map.as_ref().is_some_and(|m| !m.open)
             && self.map_style == 1;
         crate::ui::minimap::main_m_h(minimap_live, self.screen_size().1)
+    }
+
+    /// `ChildSafety.Disabled = GoreVisualsAllowed` — the settings load/store
+    /// pair (`Main.cs:4101`, `:4349`) and the toggle (`:50055`). The blood
+    /// toggle ON is the vanilla default (the gate skipped); OFF arms the
+    /// spawn-side re-type (`ChildSafety.cs:33`). The menu owns the live copy
+    /// while it is open, so `menu_blood` carries that copy's flag and `None`
+    /// falls back to the stored settings; run once per frame from `frame()`.
+    pub(crate) fn sync_child_safety(&mut self, menu_blood: Option<bool>) {
+        self.dust.child_safety.disabled = menu_blood.unwrap_or(self.settings.blood);
     }
 
     /// `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): `EquipPage` is the
@@ -1237,8 +1267,8 @@ impl App {
             return false;
         };
         let item = entry.item;
-        let price = crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood)
-            as u64;
+        let price =
+            crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
         if self.coins < price {
             return false;
         }
@@ -2744,8 +2774,12 @@ impl App {
         // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
         // v8 section's recorded counts restore the tally; the vanilla rides
         // them inside the world-flags block.
-        let seeded_banners: Vec<(i32, i32)> =
-            sections.native.banners.iter().map(|b| (b.banner, b.kills)).collect();
+        let seeded_banners: Vec<(i32, i32)> = sections
+            .native
+            .banners
+            .iter()
+            .map(|b| (b.banner, b.kills))
+            .collect();
         let world_chests = if sections.from_wld {
             let mut loaded = crate::chest::from_wld(&sections.data.chests);
             // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
@@ -2804,7 +2838,15 @@ impl App {
             post: None,
             noise_tex: None,
             sand: crate::sand::Sand::new(1),
-            minecart_sparks: crate::minecart::Sparks::new(),
+            dust: {
+                // The `Main.dust[6001]` init (`Main.cs:66985`) with the type-34
+                // wet probe injected once: `Collision.WetCollision`'s port is
+                // `player::wet_collision` (`Dust.cs:248` probe, `S1-E-1`
+                // decision 2) — tr-core cannot depend on tr-app.
+                let mut dust = tr_core::particles::DustPool::new();
+                dust.set_wet_probe(Box::new(crate::player::wet_collision));
+                dust
+            },
             water_mask: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
@@ -4211,6 +4253,30 @@ pub(crate) fn find_content_dir() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.join("Images").is_dir())
 }
 
+/// `SpawnCtx` from the pieces a world-sim stage holds at hand (the C# reads
+/// the `Main` statics directly; the port's stages keep disjoint field
+/// borrows, so the front-state/pause flags, the camera and the quality cap
+/// arrive separately — `App::spawn_ctx` is the whole-App convenience).
+/// `screen` is the UI size the C# cull rect uses verbatim (`Dust.cs:97-101`)
+/// and `camera` the view's world-px centre.
+pub(crate) fn spawn_ctx_from(
+    game_menu: bool,
+    game_paused: bool,
+    camera: Vec2,
+    screen: Vec2,
+    zoom: f32,
+    max_dust_to_draw: i32,
+) -> tr_core::particles::SpawnCtx {
+    tr_core::particles::SpawnCtx {
+        game_menu,
+        game_paused,
+        generating: false,
+        screen_position: camera - screen * 0.5 / zoom,
+        screen_size: screen,
+        max_dust_to_draw,
+    }
+}
+
 #[cfg(test)]
 mod tr_hooks {
     use super::*;
@@ -4743,8 +4809,12 @@ mod s1_g_7_tests {
         // is 1; either arm alone lifts it.
         assert_eq!(App::forced_minimum_zoom((1920.0, 1200.0)), 1.0);
         assert_eq!(App::forced_minimum_zoom((960.0, 600.0)), 1.0);
-        assert!((App::forced_minimum_zoom((2560.0, 1200.0)) - 2560.0 / 1920.0).abs() < f32::EPSILON);
-        assert!((App::forced_minimum_zoom((1920.0, 1440.0)) - 1440.0 / 1200.0).abs() < f32::EPSILON);
+        assert!(
+            (App::forced_minimum_zoom((2560.0, 1200.0)) - 2560.0 / 1920.0).abs() < f32::EPSILON
+        );
+        assert!(
+            (App::forced_minimum_zoom((1920.0, 1440.0)) - 1440.0 / 1200.0).abs() < f32::EPSILON
+        );
         assert!((App::forced_minimum_zoom((3840.0, 2400.0)) - 2.0).abs() < f32::EPSILON);
     }
 

@@ -969,151 +969,192 @@ pub(crate) struct CartCue {
     pub(crate) y: f32,
 }
 
-/// One `Dust` type-213 particle (`MinecartID.Spark` dust — the wheel spark).
+/// One queued spark spawn request — the pre-`NewDust` half of
+/// `DelegateMethods.Minecart.Sparks` (`DelegateMethods.cs:225-227`): the ±13
+/// side offset rotated by `Minecart.rotation` (the `Dust.NewDust` position
+/// argument) and the two `Next(-2,3)` speed arguments the C# evaluates before
+/// the call. The `world_sim` drain turns it into the pool's type-213 slot
+/// ([`spawn_spark`]); the pool's own rolls then ride the same stream.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct SparkP {
+pub(crate) struct SparkSpawn {
     pub(crate) pos: Vec2,
-    pub(crate) vel: Vec2,
-    pub(crate) scale: f32,
-    pub(crate) fade_in: f32,
-    /// The sheet row picked at spawn (`10 * Main.rand.Next(3)`,
-    /// `Dust.cs:164`).
-    pub(crate) frame: u8,
-    pub(crate) no_gravity: bool,
-    /// The draw rotation (`Dust.cs:744/:2080` — zeroed then `+= vel.X * 0.5`).
-    pub(crate) rot: f32,
+    pub(crate) speed_x: f32,
+    pub(crate) speed_y: f32,
 }
 
-/// The `Main.dust` stand-in for the wheel sparks: a plain pool the App owns,
-/// ticked once per frame and drawn in the world layer (the rain/sand
-/// emitter pattern).
-pub(crate) struct Sparks {
-    parts: Vec<SparkP>,
+/// Live population of one dust type in the pool — the tests' read and the
+/// sand budget's `Dust.SandStormCount` stand-in (`Sandstorm.cs:166`).
+pub(crate) fn live_type(pool: &tr_core::particles::DustPool, ty: i32) -> usize {
+    pool.slots()[..tr_core::particles::DUST_SENTINEL]
+        .iter()
+        .filter(|d| d.active && d.dust_type == ty)
+        .count()
 }
 
-impl Sparks {
-    pub(crate) fn new() -> Self {
-        Sparks { parts: Vec::new() }
+/// The drain-time half of `DelegateMethods.Minecart.Sparks`
+/// (`DelegateMethods.cs:227-242`): the pool's verbatim type-213 spawn — its
+/// rolls ride the client's stream — then the delegate's post-spawn arms. The
+/// arms roll even when the pool refused: the C# blindly writes
+/// `Main.dust[6000]`, the sentinel slot (`Dust.cs:79`), which is never
+/// scanned or drawn.
+pub(crate) fn spawn_spark<R: tr_core::particles::DustRng>(
+    pool: &mut tr_core::particles::DustPool,
+    rng: &mut R,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+    spawn: SparkSpawn,
+) -> usize {
+    // `DelegateMethods.cs:226`: `Dust.NewDust(dustPosition, 1, 1, 213,
+    // Next(-2,3), Next(-2,3))` — the speed args were rolled at queue time
+    // ([`wheel_sparks`]); the pool rolls its own chain on the same stream.
+    let idx = pool.new_dust(
+        rng,
+        ctx,
+        world,
+        spawn.pos,
+        1,
+        1,
+        213,
+        spawn.speed_x,
+        spawn.speed_y,
+        0,
+        tr_core::particles::Color::default(),
+        1.0,
+    );
+    // `:227-229`: `noGravity = true` twice (verbatim), then the fadeIn band
+    // over the pool's rolled scale.
+    let slot = pool.slot_mut(idx);
+    slot.no_gravity = true;
+    slot.fade_in = slot.scale + 1.0 + 0.01 * rng.next_max(51) as f32;
+    slot.no_gravity = true;
+    // `:230-232`: the velocity recipe — three rolls, then the `:233` lift.
+    slot.velocity *= rng.next_range(15, 51) as f32 * 0.01;
+    slot.velocity.x *= rng.next_range(25, 101) as f32 * 0.01;
+    slot.velocity.y -= rng.next_range(15, 31) as f32 * 0.1;
+    slot.position.y -= 4.0;
+    // `:234-241`: 2-in-3 the spark gains gravity; otherwise it stays
+    // weightless and shrinks.
+    if rng.next_max(3) != 0 {
+        slot.no_gravity = false;
+    } else {
+        slot.scale *= 0.6;
     }
+    idx
+}
 
-    /// Appends a tick's queued particles (the `world_sim` drain). The pool cap
-    /// stands in for the C# 6000-slot pool's pressure bands (`Dust.cs:101-141`):
-    /// pinned to no pressure, overflow drops the new particle.
-    pub(crate) fn spawn(&mut self, new: Vec<SparkP>) {
-        for p in new {
-            if self.parts.len() < MAX_SPARKS {
-                self.parts.push(p);
+/// The type-213 `Dust.UpdateDust` pass over the pool's 213 slots, in the C#
+/// source order. Death deactivates the slot (`Dust.cs:449` and passim) — the
+/// pool keeps its 6000 fixed slots.
+pub(crate) fn tick(pool: &mut tr_core::particles::DustPool, camera: Vec2, screen: Vec2, zoom: f32) {
+    // `Main.screenPosition.Y + Main.screenHeight` (`Dust.cs:2343`) — the
+    // world-pixel bottom of the view.
+    let bottom = camera.y + screen.y * 0.5 / zoom;
+    for i in 0..tr_core::particles::DUST_SENTINEL {
+        // `Main.cs:18066`: the tick head re-pins the slot's index (the
+        // `CloneDust` guard's dependency, `Dust.cs:258-265`).
+        pool.slot_mut(i).dust_index = i;
+        if !pool.slot(i).active || pool.slot(i).dust_type != 213 {
+            continue;
+        }
+        let d = pool.slot_mut(i);
+        // `Dust.cs:447-449`: runaway scale dies.
+        if d.scale > 10.0 {
+            d.active = false;
+            continue;
+        }
+        // `:476`: the move.
+        d.position += d.velocity;
+        // (`:737-756`: the type-213 arm resets rotation and adds light —
+        // the port writes no dust light; the rotation value is rebuilt
+        // below.)
+        // `:1819-1829` (the generic `!noGravity` tail; 213 is not 107):
+        // the spark falls.
+        if !d.no_gravity {
+            d.velocity.y += 0.1;
+        }
+        // `:2071-2072` (the `41`/`44`/else-if chain tail): the air drag.
+        d.velocity.x *= 0.99;
+        // `:744` + `:2080`: rotation is zeroed by the 213 arm each tick,
+        // then the generic arm adds the drag — net `velocity.X * 0.5`.
+        d.rotation = d.velocity.x * 0.5;
+        // `:2083-2124`: the fadeIn ramp (`:2106-2108`: the 213 arm gains
+        // 0.1/tick while the spawn fadeIn stands; `:2119-2124`: then
+        // −0.2/tick — the spark burns out fast).
+        if d.fade_in > 0.0 && d.fade_in < 100.0 {
+            d.scale += 0.1;
+            if d.scale > d.fade_in {
+                d.fade_in = 0.0;
+            }
+        } else {
+            d.scale -= 0.2;
+        }
+        // `:2335-2341` (the `!= 304 && noGravity` chain tail): the
+        // gravity-free spark dampens; once the fadeIn stands down it also
+        // shrinks.
+        if d.no_gravity {
+            d.velocity *= 0.92;
+            if d.fade_in == 0.0 {
+                d.scale -= 0.04;
             }
         }
-    }
-
-    /// The type-213 `Dust.UpdateDust` pass, in the C# source order.
-    pub(crate) fn tick(&mut self, camera: Vec2, screen: Vec2, zoom: f32) {
-        // `Main.screenPosition.Y + Main.screenHeight` (`Dust.cs:2343`) — the
-        // world-pixel bottom of the view.
-        let bottom = camera.y + screen.y * 0.5 / zoom;
-        let mut i = 0;
-        while i < self.parts.len() {
-            let mut p = self.parts[i];
-            // `Dust.cs:447-449`: runaway scale dies.
-            if p.scale > 10.0 {
-                self.parts.swap_remove(i);
-                continue;
-            }
-            // `:476`: the move.
-            p.pos += p.vel;
-            // (`:737-756`: the type-213 arm resets rotation and adds light —
-            // the port writes no dust light; the rotation value is rebuilt
-            // below.)
-            // `:1819-1829` (the generic `!noGravity` tail; 213 is not 107):
-            // the spark falls.
-            if !p.no_gravity {
-                p.vel.y += 0.1;
-            }
-            // `:2071-2072` (the `41`/`44`/else-if chain tail): the air drag.
-            p.vel.x *= 0.99;
-            // `:744` + `:2080`: rotation is zeroed by the 213 arm each tick,
-            // then the generic arm adds the drag — net `vel.X * 0.5`.
-            p.rot = p.vel.x * 0.5;
-            // `:2083-2124`: the fadeIn ramp (`:2106-2108`: the 213 arm gains
-            // 0.1/tick while the spawn fadeIn stands; `:2119-2124`: then
-            // −0.2/tick — the spark burns out fast).
-            if p.fade_in > 0.0 && p.fade_in < 100.0 {
-                p.scale += 0.1;
-                if p.scale > p.fade_in {
-                    p.fade_in = 0.0;
-                }
-            } else {
-                p.scale -= 0.2;
-            }
-            // `:2335-2341` (the `!= 304 && noGravity` chain tail): the
-            // gravity-free spark dampens; once the fadeIn stands down it also
-            // shrinks.
-            if p.no_gravity {
-                p.vel *= 0.92;
-                if p.fade_in == 0.0 {
-                    p.scale -= 0.04;
-                }
-            }
-            // `:2343-2345`: below the view it dies.
-            if p.pos.y > bottom {
-                self.parts.swap_remove(i);
-                continue;
-            }
-            // `:2393-2395`: the scale floor — `num86` stays 0.1 with the
-            // pool-pressure `dCount` nibbles pinned to 0 (no pressure).
-            if p.scale < 0.1 {
-                self.parts.swap_remove(i);
-                continue;
-            }
-            self.parts[i] = p;
-            i += 1;
+        // `:2343-2345`: below the view it dies.
+        if d.position.y > bottom {
+            d.active = false;
+            continue;
+        }
+        // `:2393-2395`: the scale floor — the `dCount` nibbles stay 0 here
+        // (the shared head's maintenance is E-3).
+        if d.scale < 0.1 {
+            d.active = false;
         }
     }
+}
 
-    /// The generic `Main.DrawDust` draw (`Main.cs:39003-39013`) with the
-    /// type-213 pins: the draw scale is forced to 1 (`:38974-38977`), the tint
-    /// is `GetAlpha`'s 213 arm — a self-lit scale-scaled gray with no light
-    /// term (`Dust.cs:2498-2501`) — and the `GetColor` overlay never fires
-    /// (the spawn colour is default-black, `Main.cs:39006`).
-    pub(crate) fn draw(
-        &mut self,
-        r: &mut tr_render::sprite::SpriteRenderer,
-        lookups: &crate::assets::Lookups,
-        camera: Vec2,
-        zoom: f32,
-        screen: Vec2,
-    ) {
-        let to_screen = |p: Vec2| {
-            [
-                (p.x - camera.x) * zoom + screen.x * 0.5,
-                (p.y - camera.y) * zoom + screen.y * 0.5,
-            ]
+/// The generic `Main.DrawDust` draw (`Main.cs:39003-39013`) over the pool's
+/// type-213 slots with the type-213 pins: the draw scale is forced to 1
+/// (`:38974-38977`), the tint is `GetAlpha`'s 213 arm — a self-lit
+/// scale-scaled gray with no light term (`Dust.cs:2498-2501`) — and the
+/// `GetColor` overlay never fires (the spawn colour is default-black,
+/// `Main.cs:39006`).
+pub(crate) fn draw(
+    pool: &tr_core::particles::DustPool,
+    r: &mut tr_render::sprite::SpriteRenderer,
+    lookups: &crate::assets::Lookups,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+) {
+    let to_screen = |p: Vec2| {
+        [
+            (p.x - camera.x) * zoom + screen.x * 0.5,
+            (p.y - camera.y) * zoom + screen.y * 0.5,
+        ]
+    };
+    for d in &pool.slots()[..tr_core::particles::DUST_SENTINEL] {
+        if !d.active || d.dust_type != 213 {
+            continue;
+        }
+        // `Dust.frame` for 213 (`Dust.cs:177-189`): the pool's per-100 shift
+        // gives x = 10*213 − 2000 = 130, y = 60 + 10*row, an 8×8 cell.
+        let Some(uv) = lookups.dust_uv(d.frame_x, d.frame_y, d.frame_w as u32, d.frame_h as u32)
+        else {
+            continue;
         };
-        for p in &self.parts {
-            // `Dust.frame` for 213 (`Dust.cs:177-189`): x = 10*213 − 2000 =
-            // 130, y = 60 + 10*row, an 8×8 cell.
-            let Some(uv) = lookups.dust_uv(130, 60 + p.frame as i32 * 10, 8, 8) else {
-                continue;
-            };
-            // `int num2 = (int)(scale / 2.5f * 255f)` — the XNA `Color(int,…)`
-            // ctor byte-casts, so scales past 2.5 wrap.
-            let n = (p.scale / 2.5 * 255.0) as i32;
-            let a = (n as u8) as f32 / 255.0;
-            // `Main.cs:38974-38977`: draw scale 1 — the 8 px frame at zoom.
-            let size = 8.0 * zoom;
-            r.push_fx_sprite_rot(to_screen(p.pos), [size, size], uv, [a, a, a, a], p.rot);
-        }
-    }
-
-    /// Live population (tests).
-    pub(crate) fn count(&self) -> usize {
-        self.parts.len()
+        // `int num2 = (int)(scale / 2.5f * 255f)` — the XNA `Color(int,…)`
+        // ctor byte-casts, so scales past 2.5 wrap.
+        let n = (d.scale / 2.5 * 255.0) as i32;
+        let a = (n as u8) as f32 / 255.0;
+        // `Main.cs:38974-38977`: draw scale 1 — the 8 px frame at zoom.
+        let size = 8.0 * zoom;
+        r.push_fx_sprite_rot(
+            to_screen(d.position),
+            [size, size],
+            uv,
+            [a, a, a, a],
+            d.rotation,
+        );
     }
 }
-
-/// The pool cap (see [`Sparks::spawn`]).
-const MAX_SPARKS: usize = 500;
 
 /// `Main.rand.Next(max)` over the port's splitmix stream (the sand.rs
 /// convention: `Next(0)` rolls 0).
@@ -1127,9 +1168,12 @@ fn next_range(rng: &mut u64, min: i32, max_exclusive: i32) -> i32 {
 }
 
 /// `Minecart.WheelSparks` (`Minecart.cs:1623-1630`): the magnet-formula spark
-/// point, then `spark_count` delegate calls.
+/// point, then `spark_count` delegate calls. Each call queues one request —
+/// the pre-`NewDust` rolls of `DelegateMethods.Minecart.Sparks`
+/// (`DelegateMethods.cs:225-226`) on the client's stream; the pool's rolls
+/// ride the same stream at drain time ([`spawn_spark`]).
 pub(crate) fn wheel_sparks(
-    sparks: &mut Vec<SparkP>,
+    sparks: &mut Vec<SparkSpawn>,
     rng: &mut u64,
     position: Vec2,
     width: i32,
@@ -1141,61 +1185,20 @@ pub(crate) fn wheel_sparks(
     // MagnetOffset`, the same arithmetic as `GetMagnetPosition` (`:1290-1294`).
     let at = magnet_position(position, width, height);
     for _ in 0..spark_count {
-        sparks.push(sparks_one(rng, at, rotation));
-    }
-}
-
-/// `DelegateMethods.Minecart.Sparks` (`DelegateMethods.cs:223-242`) — one
-/// spark, all 14 rolls in the C# order (the two `NewDust` speed arguments, the
-/// six in-`NewDust` rolls `Dust.cs:159-191`, then the emitter's own six).
-fn sparks_one(rng: &mut u64, dust_position: Vec2, rotation: f32) -> SparkP {
-    // `:225`: the ±13 side offset rotated by `Minecart.rotation`
-    // (`Vector2.RotatedBy`: (x cosθ − y sinθ, x sinθ + y cosθ)).
-    let side: f32 = if next_int(rng, 2) == 0 { -13.0 } else { 13.0 };
-    let rotated = Vec2::new(13.0 * rotation.cos(), 13.0 * rotation.sin()) * side.signum();
-    // `:226`: the `Dust.NewDust(dustPosition, 1, 1, 213, Next(-2,3), Next(-2,3))`
-    // argument rolls first (C# evaluates the args before the call).
-    let speed_x = next_range(rng, -2, 3) as f32;
-    let speed_y = next_range(rng, -2, 3) as f32;
-    // `Dust.cs:159-160`: the 1×1 box clamps to 5, so both jitters roll
-    // `Next(1)` (always 0) and add 4 px. ChildSafety.Disabled = true pins the
-    // dangerous-dust branch off (`ChildSafety.cs:38`) — no roll there.
-    let _jitter_x = next_int(rng, 1);
-    let _jitter_y = next_int(rng, 1);
-    let mut pos = dust_position + rotated + Vec2::new(4.0, 4.0);
-    // `Dust.cs:161-162`: the base velocity plus the caller's speed.
-    let mut vel = Vec2::new(
-        next_range(rng, -20, 21) as f32 * 0.1 + speed_x,
-        next_range(rng, -20, 21) as f32 * 0.1 + speed_y,
-    );
-    // `Dust.cs:164`: the sheet row.
-    let frame = next_int(rng, 3) as u8;
-    // `Dust.cs:190-191`: `scale = 1 + Next(-20,21)*0.01` (the Scale arg is 1).
-    let mut scale = 1.0 + next_range(rng, -20, 21) as f32 * 0.01;
-    // `:228`: `fadeIn = scale + 1 + 0.01 * Next(0,51)`.
-    let fade_in = scale + 1.0 + 0.01 * next_int(rng, 51) as f32;
-    let mut no_gravity = true; // `:227/:229`
-    // `:230-232`: the velocity recipe.
-    vel *= next_range(rng, 15, 51) as f32 * 0.01;
-    vel.x *= next_range(rng, 25, 101) as f32 * 0.01;
-    vel.y -= next_range(rng, 15, 31) as f32 * 0.1;
-    // `:233`.
-    pos.y -= 4.0;
-    // `:234-241`: 2-in-3 the spark falls; otherwise it stays weightless and
-    // shrinks.
-    if next_int(rng, 3) != 0 {
-        no_gravity = false;
-    } else {
-        scale *= 0.6;
-    }
-    SparkP {
-        pos,
-        vel,
-        scale,
-        fade_in,
-        frame,
-        no_gravity,
-        rot: 0.0,
+        // `DelegateMethods.cs:225`: the ±13 side offset rotated by
+        // `Minecart.rotation` (`Vector2.RotatedBy`: (x cosθ − y sinθ,
+        // x sinθ + y cosθ)).
+        let side: f32 = if next_int(rng, 2) == 0 { -13.0 } else { 13.0 };
+        let rotated = Vec2::new(13.0 * rotation.cos(), 13.0 * rotation.sin()) * side.signum();
+        // `:226`: the `Next(-2,3)` speed arguments — the C# evaluates the
+        // `NewDust` args before the call.
+        let speed_x = next_range(rng, -2, 3) as f32;
+        let speed_y = next_range(rng, -2, 3) as f32;
+        sparks.push(SparkSpawn {
+            pos: at + rotated,
+            speed_x,
+            speed_y,
+        });
     }
 }
 
@@ -1204,7 +1207,7 @@ fn sparks_one(rng: &mut u64, dust_position: Vec2, rotation: f32) -> SparkP {
 /// the threshold chain over `|velocity.X|` vs `max_run_speed`.
 pub(crate) fn rolling_wheel_sparks(
     sounds: &mut Vec<CartCue>,
-    sparks: &mut Vec<SparkP>,
+    sparks: &mut Vec<SparkSpawn>,
     rng: &mut u64,
     position: Vec2,
     width: i32,
@@ -2274,9 +2277,9 @@ mod tests {
     }
 
     /// Finds a seed where one rolling call at `|vx| = vel_x` queues exactly
-    /// `want` sparks — the gate rolls interleave with the 14-roll sparks, so
-    /// the wanted gate outcomes sit at strided stream positions only the real
-    /// roll order knows.
+    /// `want` sparks — the gate rolls interleave with the per-spark request
+    /// rolls (side + the two speed args), so the wanted gate outcomes sit at
+    /// strided stream positions only the real roll order knows.
     fn seed_with_spark_count(vel_x: f32, want: usize) -> u64 {
         for s in 1u64.. {
             let mut sparks = Vec::new();
@@ -2301,24 +2304,68 @@ mod tests {
 
     const SPARK_POS: Vec2 = Vec2::new(100.0, 200.0);
 
-    /// DW-3.1 — one spark reproduces the `DelegateMethods.Minecart.Sparks`
-    /// spawn math (`DelegateMethods.cs:223-242`) with `Dust.NewDust`'s rolls
-    /// inlined (`Dust.cs:159-191`): the ±13 side offset rotated by
-    /// `Minecart.rotation` plus the +4/−4 px box/lift pair, the upward
-    /// velocity recipe, the sheet row and the scale/fadeIn bands, the 2-in-3
-    /// gravity flip, and exact stream replay.
+    /// A spawn ctx that passes every guard with no cull pressure: the world
+    /// view is far larger than the test positions need.
+    fn spark_ctx() -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::new(-1000.0, -1000.0),
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// Queues one spark at `at` with rotation `rot` and spawns it through a
+    /// fresh pool; returns the slot index. The request roll and the drain
+    /// share one stream state, exactly like the tick → drain handoff.
+    fn spawn_one(at: Vec2, rot: f32, seed: u64) -> (tr_core::particles::DustPool, usize) {
+        let mut queue = Vec::new();
+        let mut rng = seed;
+        wheel_sparks(&mut queue, &mut rng, at, 20, 52, 1, rot);
+        let mut pool = tr_core::particles::DustPool::new();
+        let world = World::new("spark".into(), 8, 8);
+        let ctx = spark_ctx();
+        let mut idx = tr_core::particles::DUST_SENTINEL;
+        for s in &queue {
+            idx = spawn_spark(
+                &mut pool,
+                &mut crate::app::SplitmixRand(&mut rng),
+                &ctx,
+                &world,
+                *s,
+            );
+        }
+        (pool, idx)
+    }
+
+    /// DW-3.1 (repointed to the pool, S1-E-1 phase 2) — one spark reproduces
+    /// the `DelegateMethods.Minecart.Sparks` spawn math
+    /// (`DelegateMethods.cs:223-242`): the emitter's request rolls (the ±13
+    /// side offset, the two `Next(-2,3)` speed args) then the pool's verbatim
+    /// `NewDust` block (`Dust.cs:159-191`) and the delegate arms on the same
+    /// stream — the +4/−4 px box/lift pair, the upward velocity recipe, the
+    /// sheet row and the scale/fadeIn bands, the 2-in-3 gravity flip, and
+    /// exact stream replay.
     #[test]
-    fn sparks_one_reproduces_the_dust_213_spawn_math() {
+    fn the_pool_spawn_reproduces_the_dust_213_math() {
         let at = Vec2::new(1000.0, 2000.0);
         let rot = 0.5f32;
         let (cos, sin) = (rot.cos(), rot.sin());
+        // `wheel_sparks` applies the magnet formula first (`Minecart.cs:1625`):
+        // the delegate's `dustPosition` is the magnet point.
+        let mag = magnet_position(at, 20, 52);
         let mut weightless = 0;
         for seed in 1..=200u64 {
-            let mut rng = seed;
-            let p = sparks_one(&mut rng, at, rot);
-            // The position: `at ± (13cos, 13sin) + (4, 4)` then `pos.Y -= 4`
+            let (pool, idx) = spawn_one(at, rot, seed);
+            assert!(idx != tr_core::particles::DUST_SENTINEL, "spawned");
+            let d = pool.slot(idx);
+            // The position: `mag ± (13cos, 13sin) + (4, 4)` then `pos.Y -= 4`
             // — the +4/−4 cancel in Y (`:225` + `Dust.cs:159-160` + `:233`).
-            let off = p.pos - at;
+            // The 1×1 box clamps to 5, so both jitters roll `Next(1)` —
+            // always 0 (`Dust.cs:159-160`).
+            let off = d.position - mag;
             let side_x = if off.x > 4.0 { 13.0 * cos } else { -13.0 * cos };
             assert!((off.x - 4.0 - side_x).abs() < 1e-3, "side x: {}", off.x);
             assert!((off.y.abs() - 13.0 * sin).abs() < 1e-3, "side y: {}", off.y);
@@ -2327,109 +2374,155 @@ mod tests {
             // by 0.15..0.5, then the X scale 0.25..1 and the Y lift 1.5..3):
             // vel.Y ∈ [−5, 0.5], vel.X ∈ [−2, 2].
             assert!(
-                p.vel.y >= -5.0 - 1e-3 && p.vel.y <= 0.5 + 1e-3,
+                d.velocity.y >= -5.0 - 1e-3 && d.velocity.y <= 0.5 + 1e-3,
                 "vel.y {}",
-                p.vel.y
+                d.velocity.y
             );
-            assert!(p.vel.x.abs() <= 2.0 + 1e-3, "vel.x {}", p.vel.x);
+            assert!(d.velocity.x.abs() <= 2.0 + 1e-3, "vel.x {}", d.velocity.x);
             // The sheet row (`Dust.cs:164`) and the scale/fadeIn bands
-            // (`Dust.cs:190-191`, `:228`).
-            assert!(p.frame <= 2);
-            assert!(p.scale >= 0.8 * 0.6 - 1e-4 && p.scale <= 1.2 + 1e-4);
-            assert!((1.8..=2.7).contains(&p.fade_in), "fade {}", p.fade_in);
+            // (`Dust.cs:190-191`, `:228`): the pool's per-100 shift puts
+            // type 213 at frame_x 130, frame_y 60 + 10*row.
+            let row = (d.frame_y - 60) / 10;
+            assert!((0..=2).contains(&row), "row {}", row);
+            assert_eq!(d.frame_x, 130);
+            assert!(d.scale >= 0.8 * 0.6 - 1e-4 && d.scale <= 1.2 + 1e-4);
+            assert!((1.8..=2.7).contains(&d.fade_in), "fade {}", d.fade_in);
             // `:234-241`: 2-in-3 the spark gains gravity.
-            if p.no_gravity {
+            if d.no_gravity {
                 weightless += 1;
             }
+            assert!(d.active, "the slot stays live");
+            assert_eq!(d.dust_type, 213);
         }
         assert!(
             (40..=140).contains(&weightless),
             "the 1-in-3 weightless flip: {weightless}/200"
         );
         // The same seed replays byte-identically.
-        let mut rng = 42u64;
-        let a = sparks_one(&mut rng, at, rot);
-        let mut rng = 42u64;
-        let b = sparks_one(&mut rng, at, rot);
-        assert_eq!(a, b);
+        let (a, ia) = spawn_one(at, rot, 42);
+        let (b, ib) = spawn_one(at, rot, 42);
+        assert_eq!(ia, ib);
+        let da = a.slot(ia);
+        let db = b.slot(ib);
+        assert_eq!(da.position, db.position);
+        assert_eq!(da.velocity, db.velocity);
+        assert_eq!(da.scale, db.scale);
+        assert_eq!(da.fade_in, db.fade_in);
+        assert_eq!(da.frame_x, db.frame_x);
+        assert_eq!(da.frame_y, db.frame_y);
+        assert_eq!(da.no_gravity, db.no_gravity);
     }
 
-    /// DW-3.1 — `Minecart.WheelSparks` (`Minecart.cs:1623-1630`) lands every
-    /// spark on the magnet point (the `:1625` formula — the same arithmetic
-    /// as `GetMagnetPosition`, `:1290-1294`) and emits exactly `spark_count`.
+    /// DW-3.1 (repointed) — `Minecart.WheelSparks` (`Minecart.cs:1623-1630`)
+    /// lands every spark on the magnet point (the `:1625` formula — the same
+    /// arithmetic as `GetMagnetPosition`, `:1290-1294`) and emits exactly
+    /// `spark_count` requests, which the pool spawn places at `at ± 13 + 4`.
     #[test]
     fn wheel_sparks_lands_on_the_magnet_point_with_the_requested_count() {
-        let mut sparks = Vec::new();
+        let mut queue = Vec::new();
         let mut rng = 7u64;
-        wheel_sparks(&mut sparks, &mut rng, SPARK_POS, 20, 52, 10, 0.0);
-        assert_eq!(sparks.len(), 10, "the landing burst's count");
+        wheel_sparks(&mut queue, &mut rng, SPARK_POS, 20, 52, 10, 0.0);
+        assert_eq!(queue.len(), 10, "the landing burst's count");
         let at = magnet_position(SPARK_POS, 20, 52);
         assert_eq!(at, Vec2::new(110.0, 252.0), "the bottom-center point");
-        for p in &sparks {
-            // Rotation 0: the side offset is (±13, 0) — x ∈ {at+17, at−9}
-            // after the +4 box, y untouched.
-            assert!(
-                (p.pos.x - 127.0).abs() < 1e-4 || (p.pos.x - 101.0).abs() < 1e-4,
-                "x {}",
-                p.pos.x
+        // Rotation 0: the side offset is (±13, 0) — x ∈ {at+17, at−9} after
+        // the pool's +4 box jitter (`Next(1)` = 0), y untouched before the
+        // delegate's −4 lift.
+        let world = World::new("spark".into(), 8, 8);
+        let ctx = spark_ctx();
+        let mut pool = tr_core::particles::DustPool::new();
+        for s in &queue {
+            spawn_spark(
+                &mut pool,
+                &mut crate::app::SplitmixRand(&mut rng),
+                &ctx,
+                &world,
+                *s,
             );
-            assert_eq!(p.pos.y, 252.0);
+        }
+        for i in 0..10 {
+            let d = pool.slot(i);
+            assert!(
+                (d.position.x - 127.0).abs() < 1e-4 || (d.position.x - 101.0).abs() < 1e-4,
+                "x {}",
+                d.position.x
+            );
+            assert_eq!(d.position.y, 252.0);
         }
     }
 
-    /// DW-3.1 — the pool tick runs the type-213 `Dust.UpdateDust` arms in the
-    /// C# source order: the generic gravity fall (`Dust.cs:1819-1829`), the X
-    /// drag (`:2071-2072`), the rotation (`:744` + `:2080`), the fadeIn ramp
-    /// (`:2083-2124`) and the noGravity damp (`:2335-2341`).
+    /// Hand-places an active type-213 slot at (`x`, 100) — the AI tests'
+    /// fixture (the old `s.parts.push(SparkP{..})` shape, now the pool's).
+    fn spark_slot(
+        pool: &mut tr_core::particles::DustPool,
+        slot: usize,
+        x: f32,
+        set: impl FnOnce(&mut tr_core::particles::Dust),
+    ) {
+        let d = pool.slot_mut(slot);
+        d.active = true;
+        d.dust_type = 213;
+        d.position = Vec2::new(x, 100.0);
+        d.velocity = Vec2::ZERO;
+        d.scale = 1.0;
+        d.fade_in = 0.0;
+        d.frame_x = 130;
+        d.frame_y = 60;
+        d.frame_w = 8;
+        d.frame_h = 8;
+        set(d);
+    }
+
+    /// DW-3.1 (repointed) — the pool tick runs the type-213
+    /// `Dust.UpdateDust` arms in the C# source order: the generic gravity
+    /// fall (`Dust.cs:1819-1829`), the X drag (`:2071-2072`), the rotation
+    /// (`:744` + `:2080`), the fadeIn ramp (`:2083-2124`) and the noGravity
+    /// damp (`:2335-2341`).
     #[test]
     fn sparks_ai_runs_the_type_213_update() {
         let cam = Vec2::ZERO;
         let screen = Vec2::new(1600.0, 900.0);
         // The falling spark: gravity +0.1, X drag ×0.99, the fade-done
         // shrink −0.2, no damp.
-        let mut s = Sparks::new();
-        s.parts.push(SparkP {
-            pos: Vec2::new(100.0, 100.0),
-            vel: Vec2::new(2.0, 0.0),
-            scale: 1.0,
-            fade_in: 0.0,
-            frame: 0,
-            no_gravity: false,
-            rot: 9.0,
+        let mut pool = tr_core::particles::DustPool::new();
+        spark_slot(&mut pool, 0, 100.0, |d| {
+            d.velocity = Vec2::new(2.0, 0.0);
+            d.no_gravity = false;
+            d.rotation = 9.0;
         });
-        s.tick(cam, screen, 1.0);
-        let p = &s.parts[0];
-        assert_eq!(p.pos, Vec2::new(102.0, 100.0), "the move precedes the AI");
-        assert_eq!(p.vel, Vec2::new(1.98, 0.1));
-        assert_eq!(p.rot, 0.99, "rotation = vel.X * 0.5");
+        tick(&mut pool, cam, screen, 1.0);
+        let p = pool.slot(0);
+        assert_eq!(
+            p.position,
+            Vec2::new(102.0, 100.0),
+            "the move precedes the AI"
+        );
+        assert_eq!(p.velocity, Vec2::new(1.98, 0.1));
+        assert_eq!(p.rotation, 0.99, "rotation = vel.X * 0.5");
         assert!((p.scale - 0.8).abs() < 1e-6, "the fade-done shrink −0.2");
         // The weightless spark with a live fadeIn: the ramp climbs 0.1/tick
         // until it passes `fadeIn`, which stands down; the damp (×0.92) runs
         // every tick and adds −0.04 once the fadeIn is gone.
-        let mut s = Sparks::new();
-        s.parts.push(SparkP {
-            pos: Vec2::new(100.0, 100.0),
-            vel: Vec2::new(2.0, 1.0),
-            scale: 1.0,
-            fade_in: 1.15,
-            frame: 1,
-            no_gravity: true,
-            rot: 0.0,
+        let mut pool = tr_core::particles::DustPool::new();
+        spark_slot(&mut pool, 0, 100.0, |d| {
+            d.velocity = Vec2::new(2.0, 1.0);
+            d.fade_in = 1.15;
+            d.no_gravity = true;
         });
-        s.tick(cam, screen, 1.0);
-        let p = &s.parts[0];
-        assert_eq!(p.vel, Vec2::new(2.0 * 0.99 * 0.92, 0.92));
+        tick(&mut pool, cam, screen, 1.0);
+        let p = pool.slot(0);
+        assert_eq!(p.velocity, Vec2::new(2.0 * 0.99 * 0.92, 0.92));
         assert_eq!(p.scale, 1.1, "the ramp's first +0.1");
         assert_eq!(p.fade_in, 1.15, "still under the fadeIn");
-        s.tick(cam, screen, 1.0);
-        let p = &s.parts[0];
+        tick(&mut pool, cam, screen, 1.0);
+        let p = pool.slot(0);
         assert_eq!(p.fade_in, 0.0, "1.2 > 1.15 stands the fadeIn down");
         assert!(
             (p.scale - 1.16).abs() < 1e-5,
             "1.2 then the fade-done −0.04"
         );
-        s.tick(cam, screen, 1.0);
-        let p = &s.parts[0];
+        tick(&mut pool, cam, screen, 1.0);
+        let p = pool.slot(0);
         assert!(
             (p.scale - 0.92).abs() < 1e-5,
             "the burn-out −0.2 then the damp −0.04"
@@ -2442,30 +2535,232 @@ mod tests {
     fn the_type_213_ai_dies_below_the_view_and_at_the_scale_floor() {
         let cam = Vec2::ZERO;
         let screen = Vec2::new(1600.0, 900.0);
-        let mut s = Sparks::new();
-        s.parts.push(SparkP {
-            pos: Vec2::new(0.0, 451.0),
-            vel: Vec2::ZERO,
-            scale: 1.0,
-            fade_in: 0.0,
-            frame: 0,
-            no_gravity: true,
-            rot: 0.0,
+        let mut pool = tr_core::particles::DustPool::new();
+        spark_slot(&mut pool, 0, 0.0, |d| {
+            d.position.y = 451.0;
+            d.no_gravity = true;
         });
-        s.tick(cam, screen, 1.0);
-        assert_eq!(s.count(), 0, "below the view bottom (450) it dies");
-        let mut s = Sparks::new();
-        s.parts.push(SparkP {
-            pos: Vec2::new(0.0, 100.0),
-            vel: Vec2::ZERO,
-            scale: 0.15,
-            fade_in: 0.0,
-            frame: 0,
-            no_gravity: false,
-            rot: 0.0,
+        tick(&mut pool, cam, screen, 1.0);
+        assert_eq!(
+            live_type(&pool, 213),
+            0,
+            "below the view bottom (450) it dies"
+        );
+        let mut pool = tr_core::particles::DustPool::new();
+        spark_slot(&mut pool, 0, 0.0, |d| {
+            d.position.y = 100.0;
+            d.scale = 0.15;
+            d.no_gravity = false;
         });
-        s.tick(cam, screen, 1.0);
-        assert_eq!(s.count(), 0, "the −0.2 shrink crosses the 0.1 floor");
+        tick(&mut pool, cam, screen, 1.0);
+        assert_eq!(
+            live_type(&pool, 213),
+            0,
+            "the −0.2 shrink crosses the 0.1 floor"
+        );
+    }
+
+    /// DW-2.3 (the sparks half) — a paused or menu ctx refuses the drain's
+    /// spawn: the pool's guard chain (`Dust.cs:77-96`) gates it; the
+    /// delegate's post-spawn arms still roll onto the refused sentinel
+    /// (`Main.dust[6000]`), which never becomes a live slot.
+    #[test]
+    fn s1_e_1_the_ctx_gates_stop_the_spark_drain() {
+        let world = World::new("spark".into(), 8, 8);
+        for menu in [true, false] {
+            let ctx = tr_core::particles::SpawnCtx {
+                game_menu: menu,
+                game_paused: !menu,
+                ..spark_ctx()
+            };
+            let mut pool = tr_core::particles::DustPool::new();
+            let mut rng = 42u64;
+            let idx = spawn_spark(
+                &mut pool,
+                &mut crate::app::SplitmixRand(&mut rng),
+                &ctx,
+                &world,
+                SparkSpawn {
+                    pos: SPARK_POS,
+                    speed_x: 0.0,
+                    speed_y: 0.0,
+                },
+            );
+            assert_eq!(
+                idx,
+                tr_core::particles::DUST_SENTINEL,
+                "the ctx gate refused the spawn"
+            );
+            assert_eq!(live_type(&pool, 213), 0);
+            assert!(!pool.slot(tr_core::particles::DUST_SENTINEL).active);
+        }
+    }
+
+    /// A counting `DustRng` over the splitmix state — DW-2.5's probe: the
+    /// `SplitmixRand` semantics with a draw counter.
+    struct CountingRand {
+        state: u64,
+        draws: u32,
+    }
+
+    impl CountingRand {
+        fn sample(&mut self) -> f64 {
+            self.draws += 1;
+            (crate::app::next_rand(&mut self.state) >> 11) as f64 / (1u64 << 53) as f64
+        }
+    }
+
+    impl tr_core::particles::DustRng for CountingRand {
+        fn next_max(&mut self, max: i32) -> i32 {
+            (self.sample() * max as f64) as i32
+        }
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            (self.sample() * (max - min) as f64) as i32 + min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.sample() as f32
+        }
+    }
+
+    /// A stream state whose first splitmix draw samples ≥ `floor` — the
+    /// refuse-band probe (any draw of `Next(4)` with sample ≥ 0.25 refuses).
+    fn state_with_first_sample_at_least(floor: f64) -> u64 {
+        for s in 1u64.. {
+            let mut st = s;
+            let sample = (crate::app::next_rand(&mut st) >> 11) as f64 / (1u64 << 53) as f64;
+            if sample >= floor {
+                return s;
+            }
+        }
+        unreachable!()
+    }
+
+    /// A stream state whose first splitmix draw samples < `ceiling` — the
+    /// pass-band probe (`Next(4)` with sample < 0.25 rolls 0).
+    fn state_with_first_sample_below(ceiling: f64) -> u64 {
+        for s in 1u64.. {
+            let mut st = s;
+            let sample = (crate::app::next_rand(&mut st) >> 11) as f64 / (1u64 << 53) as f64;
+            if sample < ceiling {
+                return s;
+            }
+        }
+        unreachable!()
+    }
+
+    /// DW-2.1 — the queued spark surfaces as a type-213 pool entry: the
+    /// request → `spawn_spark` → slot path, the drain the C#'s
+    /// `Main.dust` writes ride.
+    #[test]
+    fn s1_e_1_the_queued_spark_surfaces_as_a_type_213_pool_entry() {
+        let (pool, idx) = spawn_one(SPARK_POS, 0.0, 9);
+        assert_ne!(idx, tr_core::particles::DUST_SENTINEL);
+        let d = pool.slot(idx);
+        assert!(d.active && d.dust_type == 213, "the 213 entry");
+        assert_eq!(live_type(&pool, 213), 1);
+    }
+
+    /// DW-2.1 — the stand-in's 500-spark cap retires: the pool pressure
+    /// governs (the C# 6000-slot scan + the bands, `Dust.cs:103-152`).
+    #[test]
+    fn s1_e_1_the_500_cap_retires_and_pool_pressure_governs() {
+        let world = World::new("spark".into(), 8, 8);
+        let ctx = spark_ctx();
+        // 600 sparks in a fresh pool all land (slots 0..599, far below the
+        // pressure bands) — the stand-in's MAX_SPARKS = 500 dropped the
+        // last 100.
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut queue = Vec::new();
+        let mut rng = 11u64;
+        wheel_sparks(&mut queue, &mut rng, SPARK_POS, 20, 52, 600, 0.0);
+        for s in &queue {
+            spawn_spark(
+                &mut pool,
+                &mut crate::app::SplitmixRand(&mut rng),
+                &ctx,
+                &world,
+                *s,
+            );
+        }
+        assert_eq!(live_type(&pool, 213), 600, "the 500 cap is gone");
+        // Pressure governs: past the 0.9 band (slots 0..=5400 active) a
+        // refusing stream adds no live slot — the pool's own refusal.
+        let mut pool = tr_core::particles::DustPool::new();
+        for i in 0..=5400 {
+            pool.slot_mut(i).active = true;
+        }
+        let refuse_state = state_with_first_sample_at_least(0.25);
+        let mut counting = CountingRand {
+            state: refuse_state,
+            draws: 0,
+        };
+        spawn_spark(
+            &mut pool,
+            &mut counting,
+            &ctx,
+            &world,
+            SparkSpawn {
+                pos: SPARK_POS,
+                speed_x: 0.0,
+                speed_y: 0.0,
+            },
+        );
+        assert_eq!(live_type(&pool, 213), 0, "the band refused the spawn");
+    }
+
+    /// DW-2.5 (the minecart site) — the pool's band rolls are the ONLY new
+    /// draws on the spark stream: with the bands inactive the spawn consumes
+    /// exactly the C#'s 11 drain rolls (the pool's 6 `NewDust` rolls + the
+    /// delegate's 5; the stand-in drew the same 11 inline), a crossed band
+    /// adds exactly the one conditional `Next(4)` roll, and a band refusal
+    /// leaves the delegate's 5 rolling (the C# writes `Main.dust[6000]`
+    /// blindly, `Dust.cs:79`).
+    #[test]
+    fn s1_e_1_the_pool_rolls_are_the_only_new_spark_draws() {
+        let world = World::new("spark".into(), 8, 8);
+        let ctx = spark_ctx();
+        let spawn = SparkSpawn {
+            pos: SPARK_POS,
+            speed_x: 0.0,
+            speed_y: 0.0,
+        };
+        // Bands inactive: 6 + 5 = 11 draws, no band roll.
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut counting = CountingRand {
+            state: 42,
+            draws: 0,
+        };
+        spawn_spark(&mut pool, &mut counting, &ctx, &world, spawn);
+        assert_eq!(counting.draws, 11, "pool 6 + delegate 5, bands inactive");
+        // A crossed 0.9 band that accepts: the one `Next(4)` roll added.
+        let pass_state = state_with_first_sample_below(0.25);
+        let mut pool = tr_core::particles::DustPool::new();
+        for i in 0..=5400 {
+            pool.slot_mut(i).active = true;
+        }
+        let mut counting = CountingRand {
+            state: pass_state,
+            draws: 0,
+        };
+        spawn_spark(&mut pool, &mut counting, &ctx, &world, spawn);
+        assert_eq!(
+            counting.draws, 12,
+            "the band's Next(4) + the 11 spawn rolls"
+        );
+        // A crossed 0.9 band that refuses: one band roll + the delegate's 5,
+        // and no live slot.
+        let refuse_state = state_with_first_sample_at_least(0.25);
+        let mut pool = tr_core::particles::DustPool::new();
+        for i in 0..=5400 {
+            pool.slot_mut(i).active = true;
+        }
+        let mut counting = CountingRand {
+            state: refuse_state,
+            draws: 0,
+        };
+        spawn_spark(&mut pool, &mut counting, &ctx, &world, spawn);
+        assert_eq!(counting.draws, 6, "the band roll + the delegate's 5");
+        assert_eq!(live_type(&pool, 213), 0);
     }
 
     /// DW-3.2 — the threshold chain (`Player.cs:19873-19902`, mirrored at
@@ -2575,10 +2870,13 @@ mod tests {
         );
         assert_eq!(sparks.len(), 1);
         let mut twin = 12345u64;
-        for _ in 0..14 {
+        for _ in 0..3 {
             crate::app::next_rand(&mut twin);
         }
-        assert_eq!(rng, twin, "one spark = exactly the 14 emitter rolls");
+        assert_eq!(
+            rng, twin,
+            "one spark = the 3 request rolls (side + speeds); the pool's              11 rolls ride the same stream at drain time (S1-E-1 phase 2)"
+        );
     }
 
     /// DW-3.2 + the plan's P3 boundary — the f64 compares
@@ -2628,10 +2926,11 @@ mod tests {
         assert_eq!(sparks.len(), 1, "0.33·max takes the guaranteed branch");
     }
 
-    /// DW-3.2 — the gate rolls and the per-spark emitter rolls consume ONE
-    /// stream in the C# order: the hi branch burns 3 gate rolls plus 14 per
+    /// DW-3.2 — the gate rolls and the per-spark request rolls consume ONE
+    /// stream in the C# order: the hi branch burns 3 gate rolls plus 3 per
     /// accepted spark (`Player.cs:19873-19902` interleaved with
-    /// `DelegateMethods.cs:223-242` + `Dust.cs:159-191`).
+    /// `DelegateMethods.cs:223-227`); the pool's 11 spawn rolls continue the
+    /// same stream at drain time (S1-E-1 phase 2).
     #[test]
     fn the_gate_rolls_and_spark_rolls_share_one_stream_in_order() {
         let max = 13.0f32;
@@ -2653,10 +2952,13 @@ mod tests {
         );
         assert_eq!(sparks.len(), 2);
         let mut twin = seed;
-        for _ in 0..(3 + 2 * 14) {
+        for _ in 0..(3 + 2 * 3) {
             crate::app::next_rand(&mut twin);
         }
-        assert_eq!(rng, twin, "3 gate rolls + 2 sparks of 14");
+        assert_eq!(
+            rng, twin,
+            "3 gate rolls + 2 sparks of 3 request rolls; the pool's rolls              continue the same stream at drain time"
+        );
         // hi branch, all gates fail → the 3 rolls only.
         let seed = seed_with_spark_count(10.4, 0);
         let mut sparks = Vec::new();
