@@ -259,3 +259,5 @@ crates/tr-core/src/gore.rs|fn update_leaf|S1-E-4 - Gore.Gore_UpdateLeaf (Gore.cs
 crates/tr-core/src/gore.rs|fn update_sail|S1-E-4 - Gore.Gore_UpdateSail (Gore.cs:1211-1271): the rising tile pass and the PI/60 flutter with the PI rotation offset
 crates/tr-core/src/gore.rs|fn update_chum_floating_chunk|S1-E-4 - the 1208 floating chum chunk (Gore.cs:590-671) and ChumFloatingChunk_GetWaterLine (:262-290), with the 1201 splash spawn at :645-656
 crates/tr-core/src/gore.rs|trait GoreCollision|S1-E-4 - the collision seam for the update walk: TileCollision (Collision.cs:2292), WetCollision (:1572) and SlopeCollision (:1791) injected by the App, mirroring the dust pool's WetProbe seam
+crates/tr-app/src/gore_seam.rs|impl GoreCollision for AppGoreCollision|S1-E-4 - the App-side gore collision seam: forwards to collision::tile_collision, player::wet_collision and collision::slope_collision
+crates/tr-app/src/app/frame.rs|"gores"|S1-E-4 - the UpdateWorld_Gores stage: the gore pool ticks between npcs and projectiles (Main.cs:17771-17774) on RngKey::UpdateGores with WindForVisuals

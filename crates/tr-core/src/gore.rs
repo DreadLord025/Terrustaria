@@ -839,7 +839,7 @@ impl GorePool {
                 self.update_sticky(world, collision, flag, num);
             } else {
                 // `Gore.cs:1020-1023`: the free-floating fade.
-                let alpha = crate::gore_id::disappear_speed_alpha(gore_type.max(0) as usize);
+                let alpha = crate::gore_id::disappear_speed_alpha_checked(gore_type);
                 self.slots[num].alpha += 2 * alpha;
             }
         }

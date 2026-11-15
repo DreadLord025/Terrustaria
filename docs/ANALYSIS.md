@@ -12757,8 +12757,7 @@ array plus the listed `(id, value)` pairs. `special_ai` (default 0),
 (`219..=331`, `943..=1242`) that shipped with the draft — the defaults matter:
 a zero `disappear_speed` would have frozen every timer.
 
-The update walk is `Gore.Update` (`Gore.cs:308-1083`) split into the driver
-(`update`, `Main.UpdateWorld_Gores` `Main.cs:17971-17996`), `update_slot` (the
+The update walk is `Gore.Update` (`Gore.cs:308-1083`) split into the driver(`update`, `Main.UpdateWorld_Gores` `Main.cs:17971-17996`), `update_slot` (the
 main chain) and the twelve helpers the C# factors out: the four cloud/spark
 rows (`:110-260`), the drip animation (`:378-529`), the drip collision pass
 (`:915-977`), the sticky rest (`:978-1019`), the chum bucket and its floating
@@ -12782,15 +12781,29 @@ the port actually needs from them.
 `tr-core` cannot depend on `tr-app`'s collision ports, so the walk takes a
 [`GoreCollision`] seam (`tile_collision` = `Collision.cs:2292`, `wet_collision`
 = `:1572`, `slope_collision` = `:1791`), the same injection pattern the dust
-pool uses for its wet probe (`particles.rs:197-202`). The App implements it
-over `collision::tile_collision`, `player::wet_collision` and
-`collision::slope_collision`.
+pool uses for its wet probe (`particles.rs:197-202`). The App implements it in
+`crates/tr-app/src/gore_seam.rs` over `collision::tile_collision`,
+`player::wet_collision` and `collision::slope_collision`. The C#
+`SlopeCollision` declares a `gravity` parameter (`Collision.cs:1791`) and never
+reads it, so the port's `slope_collision` without it is exact, not a
+simplification.
+
+The App owns the pool as `App.gore` (`Main.gore`), ticks it in the `gores`
+phase of the fixed step — between `npcs` and `projectiles`, the C# order at
+`Main.cs:17767-17775` — on the stage's own named stream
+(`Main.SwapRandom("UpdateGores")`, `RngKey::UpdateGores`), and feeds it
+`Main.WindForVisuals` = `Wind::speed_current` (`Main.cs:2823`). The blood
+toggle drives the same `ChildSafety.Disabled` static for both pools
+(`ChildSafety.cs:15` — one static in the C#, so `sync_child_safety` sets both).
+The draw pass stays unported, which is why no gore is visible yet.
 
 Tested (`cargo test -p tr-core gore --lib`, 14 passing): the spawn order and
 velocity, the drip sheet, the `SpecialAI` 1/2/3/4-6 arms, the balloon rows, and
 the three lifecycle tests (sticky countdown → alpha fade → deactivate; the free
 gore's double-speed fade `:1020-1023`; the floor cloud's wind drift and expiry
-`:112-136`).
+`:112-136`). The seam has its own forward test (`gore_seam::tests`), and the
+App's phase-order golden test now pins `gores` between `npcs` and
+`projectiles`.
 ## The carrier's life pool (S1-D-6, 2026-11-14)
 
 `NPC.realLife` (`NPC.cs:6161`) is the C#'s carrier link: an NPC index that

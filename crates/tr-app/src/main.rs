@@ -47,6 +47,7 @@ mod npc_ai;
 mod npc_buffs;
 mod persist;
 mod grapple;
+mod gore_seam;
 mod creative;
 mod creative_sacrifices;
 mod happiness;
