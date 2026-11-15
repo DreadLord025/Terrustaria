@@ -45,6 +45,12 @@ impl Sand {
         }
     }
 
+    /// The client stream state, for the shared tick's `DustRng` adapter
+    /// (S1-E-3 — `Dust.UpdateDust`'s `Main.rand` draws ride it).
+    pub(crate) fn rng_mut(&mut self) -> &mut u64 {
+        &mut self.rng
+    }
+
     fn next_u64(&mut self) -> u64 {
         self.rng = self.rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.rng;
@@ -265,6 +271,8 @@ impl Sand {
 /// Death deactivates the slot — the pool keeps its 6000 fixed slots.
 pub fn tick(
     pool: &mut DustPool,
+    rng: &mut impl tr_core::particles::DustRng,
+    max_dust_to_draw: i32,
     show_visuals: bool,
     player_vy: f32,
     camera: Vec2,
@@ -272,65 +280,62 @@ pub fn tick(
     zoom: f32,
     world: &World,
 ) {
-    let bottom = camera.y + screen.y * 0.5 / zoom;
+    // S1-E-3: the shared `Dust.UpdateDust` loop (`Dust.cs:420-2423`,
+    // `DustPool::update_dust`) drives the head, the move, the bottom kill and
+    // the scale floor; this file keeps only the type-268 chain arms.
     let px = tr_core::TILE_PX;
-    for i in 0..DUST_SENTINEL {
-        // `Main.cs:18066`: the tick head re-pins the slot's index (the
-        // `CloneDust` guard's dependency, `Dust.cs:258-265`).
-        pool.slot_mut(i).dust_index = i;
-        if !pool.slot(i).active || pool.slot(i).dust_type != 268 {
-            continue;
-        }
-        let d = pool.slot_mut(i);
-        // `Dust.cs:451-454`: runaway scale dies.
-        if d.scale > 10.0 {
-            d.active = false;
-            continue;
-        }
-        // `:476`: the move.
-        d.position += d.velocity;
-        // `:1789-1796`: the speed-up and the scale drift; without the
-        // visuals the storm's dust shrinks away.
-        d.velocity *= 1.0050251;
-        d.scale += 0.01;
-        if !show_visuals {
-            d.scale -= 0.05;
-        }
-        // `:1800-1809`: the player's fall drags the sand along.
-        if player_vy > 0.0 {
-            if d.fade_in == 0.0 && d.velocity.y < player_vy {
-                d.velocity.y += (player_vy - d.velocity.y) * 0.04;
+    pool.update_dust(
+        &tr_core::particles::UpdateCtx {
+            max_dust_to_draw,
+            screen_position: camera,
+            screen_height: screen.y * 0.5 / zoom,
+        },
+        rng,
+        |d: &mut tr_core::particles::Dust| {
+            if d.dust_type != 268 {
+                return false;
             }
-            d.position.y += player_vy * 0.2;
-        }
-        // `:1811-1818`: over solid ground the dust dampens; in the open it
-        // oscillates on the sine and falls. The spawn fadeIn keeps the
-        // first tick damp-free (vanilla reads it before the ramp zeroes).
-        if d.fade_in == 0.0 && solid_at(world, d.position, px) {
-            d.scale *= 0.9;
-            d.velocity *= 0.25;
-        } else {
-            d.velocity.y = (d.position.x * 0.0043982295).sin() * 2.0 + 3.0;
-        }
-        // `Dust.cs:2082-2109`: the generic fadeIn ramp — one +0.03 tick
-        // while the spawn fadeIn stands, then it zeroes and the generic
-        // −0.01 tail takes over. With the storm on the two cancel and the
-        // scale holds; without it the dust loses 0.05/tick.
-        if d.fade_in > 0.0 && d.fade_in < 100.0 {
-            d.scale += 0.03;
-            if d.scale > d.fade_in {
-                d.fade_in = 0.0;
+            // `:1789-1796`: the speed-up and the scale drift; without the
+            // visuals the storm's dust shrinks away.
+            d.velocity *= 1.0050251;
+            d.scale += 0.01;
+            if !show_visuals {
+                d.scale -= 0.05;
             }
-        } else {
-            d.scale -= 0.01;
-        }
-        // `:2342-2344`: below the view it dies; `:2393-2394`: the scale
-        // floor (the dCount nibbles are 0 here — the shared head's
-        // maintenance is E-3).
-        if d.position.y > bottom || d.scale < 0.1 {
-            d.active = false;
-        }
-    }
+            // `:1800-1809`: the player's fall drags the sand along.
+            if player_vy > 0.0 {
+                if d.fade_in == 0.0 && d.velocity.y < player_vy {
+                    d.velocity.y += (player_vy - d.velocity.y) * 0.04;
+                }
+                d.position.y += player_vy * 0.2;
+            }
+            // `:1811-1818`: over solid ground the dust dampens; in the open
+            // it oscillates on the sine and falls. The spawn fadeIn keeps the
+            // first tick damp-free (vanilla reads it before the ramp zeroes).
+            if d.fade_in == 0.0 && solid_at(world, d.position, px) {
+                d.scale *= 0.9;
+                d.velocity *= 0.25;
+            } else {
+                d.velocity.y = (d.position.x * 0.0043982295).sin() * 2.0 + 3.0;
+            }
+            // `:2082-2109`: the generic fadeIn ramp — one +0.03 tick while
+            // the spawn fadeIn stands, then it zeroes and the generic −0.01
+            // tail takes over. With the storm on the two cancel and the
+            // scale holds; without it the dust loses 0.05/tick.
+            if d.fade_in > 0.0 && d.fade_in < 100.0 {
+                d.scale += 0.03;
+                if d.scale > d.fade_in {
+                    d.fade_in = 0.0;
+                }
+            } else {
+                d.scale -= 0.01;
+            }
+            // The 268 arm matched: the chain's final `else if` (the generic
+            // gravity tail, `Dust.cs:2335`) must not run — either/or, per the
+            // C#'s single if/else-if chain.
+            true
+        },
+    );
 }
 
 /// `Main.DrawDust`'s generic path (`Main.cs:39005-39013`) over the pool's
@@ -429,6 +434,12 @@ fn solid_at(world: &World, pos: Vec2, px: f32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A deterministic stream for the shared tick's ChildSafety arm
+    /// (S1-E-3): a fixed seed, no production stream touched.
+    fn tr7() -> tr_core::unified_random::UnifiedRandom {
+        tr_core::unified_random::UnifiedRandom::new(7)
+    }
     use crate::minecart::live_type;
     use tr_core::particles::DustPool;
     use tr_core::tile::FLAG_ACTIVE;
@@ -617,6 +628,67 @@ mod tests {
     }
 
     #[test]
+    /// DW-2.2/2.3 — the sandstorm tick is the shared `Dust.UpdateDust` loop
+    /// with the 268 chain arms as the hook: the shared head moves the slot
+    /// (`Dust.cs:477`), the 268 arm runs (the speed-up, the scale drift, the
+    /// sine fall), the matched arm excludes the generic gravity tail, and
+    /// `dCount` lands at 0.
+    #[test]
+    fn s1_e_3_the_sand_storm_tick_rides_the_shared_update_dust_loop() {
+        let w = sand_world();
+        let mut pool = DustPool::new();
+        sand_slot(&mut pool, 0, Vec2::new(CAMERA.x, CAMERA.y - 200.0), |d| {
+            d.velocity = Vec2::new(2.0, 0.0);
+            d.fade_in = 0.0;
+            d.scale = 0.0;
+        });
+        let pos0 = pool.slot(0).position;
+        let vel0 = pool.slot(0).velocity;
+        tick(
+            &mut pool,
+            &mut tr7(),
+            6000,
+            true,
+            0.0,
+            CAMERA,
+            SCREEN,
+            1.0,
+            &w,
+        );
+        let d = pool.slot(0);
+        assert_eq!(d.position, pos0 + vel0, "the shared move precedes the arm");
+        assert_eq!(d.velocity.x, 2.0 * 1.0050251, "the 268 speed-up, no tail damp");
+        // The sine reads the post-move position (the shared head's `:477`
+        // precedes the arm).
+        assert_eq!(
+            d.velocity.y,
+            ((pos0.x + vel0.x) * 0.0043982295).sin() * 2.0 + 3.0,
+            "the sine fall reads the moved position"
+        );
+        // fadeIn 0 at the tick head: the drift +0.01 and the ramp's generic
+        // −0.01 cancel (the C# note at `Dust.cs:2082-2109`).
+        assert!((d.scale - 0.0).abs() < 1e-6, "the storm drift and the fade-done −0.01 cancel");
+        assert_eq!(pool.d_count, 0.0, "one active slot, then the dead recompute");
+        // The bottom kill rides the shared loop (the shared `else` and tail).
+        let mut pool = DustPool::new();
+        sand_slot(&mut pool, 0, Vec2::new(CAMERA.x, CAMERA.y + SCREEN.y * 0.5 + 100.0), |d| {
+            d.velocity = Vec2::new(1.0, 1.0);
+            d.fade_in = 0.0;
+        });
+        tick(
+            &mut pool,
+            &mut tr7(),
+            6000,
+            true,
+            0.0,
+            CAMERA,
+            SCREEN,
+            1.0,
+            &w,
+        );
+        assert_eq!(live_268(&pool), 0, "below the view bottom it dies (shared loop)");
+    }
+
     fn the_ai_holds_scale_with_visuals_and_fades_without() {
         // `Dust.cs:1789-1796` + `:2082-2109`: with the storm on, the +0.01
         // drift, the fadeIn's one-off +0.03 and the generic −0.01 cancel —
@@ -625,12 +697,12 @@ mod tests {
         let w = sand_world();
         let mut on = DustPool::new();
         sand_slot(&mut on, 0, Vec2::new(CAMERA.x, CAMERA.y - 200.0), |_| {});
-        tick(&mut on, true, 0.0, CAMERA, SCREEN, 1.0, &w);
+        tick(&mut on, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
         assert!(
             (on.slot(0).scale - 0.94).abs() < 1e-3,
             "tick 1 settles at 0.94"
         );
-        tick(&mut on, true, 0.0, CAMERA, SCREEN, 1.0, &w);
+        tick(&mut on, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
         assert!(
             (on.slot(0).scale - 0.94).abs() < 1e-3,
             "the storm's dust holds the stable scale, got {}",
@@ -640,7 +712,7 @@ mod tests {
         sand_slot(&mut off, 0, Vec2::new(CAMERA.x, CAMERA.y - 200.0), |_| {});
         let mut ticks = 0;
         while live_268(&off) > 0 && ticks < 40 {
-            tick(&mut off, false, 0.0, CAMERA, SCREEN, 1.0, &w);
+            tick(&mut off, &mut tr7(), 6000, false, 0.0, CAMERA, SCREEN, 1.0, &w);
             ticks += 1;
         }
         assert_eq!(live_268(&off), 0, "the orphaned dust fades out");
@@ -657,7 +729,7 @@ mod tests {
         let mut s = Sand::new(7);
         let mut pool = DustPool::new();
         emit(&mut s, &mut pool, &m, &w, 1.0);
-        tick(&mut pool, true, 0.0, CAMERA, SCREEN, 1.0, &w);
+        tick(&mut pool, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
         for d in &pool.slots()[..DUST_SENTINEL] {
             if !d.active || d.dust_type != 268 {
                 continue;
@@ -687,6 +759,8 @@ mod tests {
         );
         tick(
             &mut pool,
+            &mut tr7(),
+            6000,
             true,
             0.0,
             CAMERA,
@@ -710,8 +784,8 @@ mod tests {
         for _ in 0..30 {
             emit(&mut a, &mut pa, &m, &w, 0.8);
             emit(&mut b, &mut pb, &m, &w, 0.8);
-            tick(&mut pa, true, 0.0, CAMERA, SCREEN, 1.0, &w);
-            tick(&mut pb, true, 0.0, CAMERA, SCREEN, 1.0, &w);
+            tick(&mut pa, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
+            tick(&mut pb, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
         }
         for i in 0..DUST_SENTINEL {
             let (da, db) = (pa.slot(i), pb.slot(i));

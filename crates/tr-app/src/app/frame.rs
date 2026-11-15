@@ -581,7 +581,31 @@ impl App {
                 // `world_sim::scene_scan::update_scene`).
                 self.phase("dust");
                 let (sw, sh) = self.screen_size();
-                crate::minecart::tick(&mut self.dust, self.camera, Vec2::new(sw, sh), self.zoom);
+                // The tick rides a client stream: the riding player's
+                // `spark_rng` (the cart's own) when a player exists, else the
+                // NamedRngs' global stream (the C#'s single `Main.rand`
+                // equivalent — `self.rngs.global()`, `app/rng.rs`); no new
+                // stream instances either (S1-E-3).
+                let max_dust = self.gfx_quality.max_dust_to_draw;
+                let dust = &mut self.dust;
+                match self.player.as_mut() {
+                    Some(p) => crate::minecart::tick(
+                        dust,
+                        &mut crate::app::SplitmixRand(&mut p.spark_rng),
+                        max_dust,
+                        self.camera,
+                        Vec2::new(sw, sh),
+                        self.zoom,
+                    ),
+                    None => crate::minecart::tick(
+                        dust,
+                        self.rngs.global(),
+                        max_dust,
+                        self.camera,
+                        Vec2::new(sw, sh),
+                        self.zoom,
+                    ),
+                }
                 // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
                 // runs after the entity half, never before it.
                 self.phase("time");
