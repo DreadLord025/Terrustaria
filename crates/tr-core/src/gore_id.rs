@@ -36,6 +36,17 @@ pub fn special_ai(gore_type: usize) -> i32 {
     }
 }
 
+/// `GoreID.Sets.SpecialAI[Type]` with the C#'s array bound: a type outside
+/// `[0, GORE_COUNT)` has no row — the C# would throw an index error, the
+/// port reads the default `0`.
+pub fn special_ai_checked(gore_type: i32) -> i32 {
+    if gore_type >= 0 && (gore_type as usize) < GORE_COUNT {
+        special_ai(gore_type as usize)
+    } else {
+        0
+    }
+}
+
 /// `GoreID.Sets.DisappearSpeed[Type]` (`GoreID.cs:21`) — the per-tick decay of
 /// `timeLeft` (`Gore.cs:112`).
 pub fn disappear_speed(gore_type: usize) -> i32 {
@@ -56,6 +67,25 @@ pub fn disappear_speed_alpha(gore_type: usize) -> i32 {
         1024..=1026 => 7,
         1218 => 3,
         _ => 1,
+    }
+}
+
+/// `GoreID.Sets.DisappearSpeed[Type]` with the C#'s array bound (a type
+/// outside `[0, GORE_COUNT)` reads the default `1`).
+pub fn disappear_speed_checked(gore_type: i32) -> i32 {
+    if gore_type >= 0 && (gore_type as usize) < GORE_COUNT {
+        disappear_speed(gore_type as usize)
+    } else {
+        1
+    }
+}
+
+/// `GoreID.Sets.DisappearSpeedAlpha[Type]` with the C#'s array bound.
+pub fn disappear_speed_alpha_checked(gore_type: i32) -> i32 {
+    if gore_type >= 0 && (gore_type as usize) < GORE_COUNT {
+        disappear_speed_alpha(gore_type as usize)
+    } else {
+        1
     }
 }
 
