@@ -11973,26 +11973,149 @@ impl ProjectilePool {
                             }
                         }
                         197 => {
-                            // `AI_197`'s targeting call
-                            // (`Projectile.cs:40435-40449`): the `(0, 10)`
-                            // firing offset and the `1000 + num3*16` reach (the
-                            // barnacle's own `num3` rides its unported body —
-                            // ANALYSIS).
-                            let player_target =
-                                player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
-                            let aim = {
-                                let p = &self.slots[i];
-                                p.sentry_npc_targeting(
-                                    world,
-                                    Vec2::new(0.0, 10.0),
-                                    false,
-                                    1000.0,
-                                    player_target,
-                                    npcs,
-                                )
-                            };
-                            let p = &mut self.slots[i];
-                            store_sentry_aim(p, aim);
+                                // `AI_197_CeilingAndHoverTurret` (`Projectile.cs:40307-40479`).
+                                // The C# order: the init latch, the constants, the solid probe, the
+                                // backpack gate, the tile scan, the stuck-in-a-tile reset, the frame
+                                // pick, the hover motion, then the targeting and the 50-tick reload.
+                                const SCAN_TILES: i32 = 15;
+                                const FIRE_TICKS: f32 = 50.0;
+                                const SHOT_KIND: u16 = 1026;
+                                const SHOT_SPEED: f32 = 12.0;
+                                let barnacle = self.slots[i].kind == DEAD_CELLS_BARNACLE;
+                                let player_target =
+                                    player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
+                                // The firing offset (`:40438`): `(0, 10)`. The backpack mode drops it to
+                                // `(0, 0)`, but that branch is unreachable in this port.
+                                let firing_offset = Vec2::new(0.0, 10.0);
+                                // The reach (`:40444-40448`): 1000, plus the scan height for the barnacle.
+                                let reach = if barnacle {
+                                    1000.0 + SCAN_TILES as f32 * TILE_PX as f32
+                                } else {
+                                    1000.0
+                                };
+                                let mut shot: Option<(u16, f32, f32, f32, f32, i32, f32)> = None;
+                                {
+                                    let projectile = &mut self.slots[i];
+                                    // The init latch (`:40310-40325`).
+                                    if projectile.local_ai[1] == 0.0 {
+                                        projectile.local_ai[1] = 1.0;
+                                        if barnacle {
+                                            projectile.frame = 3;
+                                        }
+                                    }
+                                    // The solid probe (`:40332-40333`).
+                                    let probe = projectile.pos + projectile.vel + Vec2::new(0.0, -2.0);
+                                    let stuck = box_solid(world, probe, projectile.w, projectile.h);
+                                    // The tile scan (`:40374-40388`): the first solid or sloped tile under
+                                    // the projectile's top corner.
+                                    let tile_x = (projectile.pos.x / TILE_PX as f32) as i32;
+                                    let tile_y = (projectile.pos.y / TILE_PX as f32) as i32;
+                                    let mut solid_below = false;
+                                    for j in 0..SCAN_TILES {
+                                        let ty = tile_y + j;
+                                        // `WorldGen.InWorld(x, y, 2)` (`:40379`).
+                                        if tile_x < -2
+                                            || tile_x >= world.width + 2
+                                            || ty < -2
+                                            || ty >= world.height + 2
+                                        {
+                                            break;
+                                        }
+                                        if tile_solid_at(world, projectile.pos.x, ty) {
+                                            solid_below = true;
+                                            break;
+                                        }
+                                    }
+                                    // The stuck-in-a-tile reset (`:40389-40393`).
+                                    if local_owner == projectile.owner && projectile.ai[0] == 1.0 && !stuck {
+                                        projectile.ai[0] = 0.0;
+                                    }
+                                    // The frame pick (`:40394-40407`).
+                                    if barnacle {
+                                        if projectile.ai[0] == 1.0 {
+                                            if projectile.frame < 0 || projectile.frame >= 3 {
+                                                projectile.frame = rng.next_range(0, 3);
+                                            }
+                                        } else {
+                                            projectile.frame = 3;
+                                        }
+                                    }
+                                    // The hover motion (`:40408-40430`).
+                                    if solid_below {
+                                        if projectile.ai[0] == 1.0 {
+                                            projectile.vel = Vec2::ZERO;
+                                        } else {
+                                            projectile.vel.y -= 0.1;
+                                            if projectile.vel.y < -12.0 {
+                                                projectile.vel.y = -12.0;
+                                            }
+                                        }
+                                    } else {
+                                        projectile.vel *= 0.9;
+                                        if projectile.vel.length() < 0.01 {
+                                            projectile.vel = Vec2::ZERO;
+                                        }
+                                    }
+                                }
+                                // The backpack gate (`:40334-40338`) and the backpack branch
+                                // (`:40339-40373`) are unreachable in this port: the project has no
+                                // `accSentryBackpack` support, so `ai[2]` stays 0. The branch also
+                                // rides the owner's head and calls `AI_197_HandleTileCollision`
+                                // (`Projectile.cs:40246-40305`), whose C# body is empty in this decompile.
+                                // ponytail: no sentry-backpack support - add when the Player gains
+                                // `accSentryBackpack` and the grab-cooldown/hitbox test of
+                                // `CanGetPickedUpBySentryBackpack`.
+                                // The targeting and the reload (`:40431-40463`); only the local owner fires.
+                                if local_owner == self.slots[i].owner {
+                                    let aim = {
+                                        let p = &self.slots[i];
+                                        p.sentry_npc_targeting(
+                                            world,
+                                            firing_offset,
+                                            false,
+                                            reach,
+                                            player_target,
+                                            npcs,
+                                        )
+                                    };
+                                    self.slots[i].local_ai[0] += 1.0;
+                                    if self.slots[i].local_ai[0] >= FIRE_TICKS {
+                                        match aim {
+                                            Some((_slot, target_x, target_y)) => {
+                                                self.slots[i].local_ai[0] = 0.0;
+                                                let (cx, cy) = self.slots[i].center();
+                                                let muzzle = Vec2::new(cx + firing_offset.x, cy + firing_offset.y);
+                                                let target = Vec2::new(target_x, target_y);
+                                                let dir = target - muzzle;
+                                                let len = (dir.x * dir.x + dir.y * dir.y).sqrt();
+                                                let vel = if len > 0.0 {
+                                                    dir * (SHOT_SPEED / len)
+                                                } else {
+                                                    Vec2::ZERO
+                                                };
+                                                shot = Some((
+                                                    SHOT_KIND,
+                                                    muzzle.x,
+                                                    muzzle.y,
+                                                    vel.x,
+                                                    vel.y,
+                                                    self.slots[i].damage,
+                                                    self.slots[i].knock_back,
+                                                ));
+                                            }
+                                            None => {
+                                                // The C# holds the counter at the interval until a target
+                                                // appears (`:40453-40457`).
+                                                self.slots[i].local_ai[0] = FIRE_TICKS;
+                                            }
+                                        }
+                                    }
+                                }
+                                if let Some((kind, x, y, vx, vy, damage, kb)) = shot {
+                                    let _ = self.spawn_with_data_ai_owned(
+                                        kind, local_owner, x, y, vx, vy, damage, kb, 0.0, 0.0,
+                                    );
+                                }
                         }
                         115 => self.slots[i].ai_yoyo_beam(world),
                         62 => {
@@ -23380,6 +23503,163 @@ mod sentry_tests {
             assert!(proj.vel.y <= 16.0, "the C# clamps velocity.Y at 16");
         }
     }
+        /// S1-D-4b-2 - `AI_197_CeilingAndHoverTurret` (`Projectile.cs:40307-40479`):
+        /// the barnacle fires its 1026 shot every 50 ticks at the C#'s 12 px
+        /// muzzle speed.
+        #[test]
+        fn test_ai_197_barnacle_fires_every_50_ticks() {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let barnacle = spawn_sentry(&mut pool, DEAD_CELLS_BARNACLE, 300.0, 300.0, 36000);
+            let mut npcs: Vec<Npc> = vec![npc_at(NpcKind::Zombie, 900.0, 300.0)];
+            for _ in 0..49 {
+                p.num_minions = 0;
+                p.slots_minions = 0.0;
+                pool.update(
+                    &mut w,
+                    &mut npcs,
+                    None,
+                    None,
+                    Some(&mut p),
+                    YoyoInputs::default(),
+                    FlailInputs::default(),
+                    &mut rng(),
+                    0,
+                    true,
+                );
+            }
+            assert!(
+                !pool.slots.iter().any(|s| s.active && s.kind == 1026),
+                "the 50-tick reload has not elapsed"
+            );
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+            let shot = pool
+                .slots
+                .iter()
+                .find(|s| s.active && s.kind == 1026)
+                .expect("the barnacle fires its 1026 shot");
+            let len = (shot.vel.x * shot.vel.x + shot.vel.y * shot.vel.y).sqrt();
+            assert!((len - 12.0).abs() < 0.01, "the shot rides the 12 px muzzle speed: {len}");
+            assert_eq!(
+                pool.slots[barnacle].local_ai[0], 0.0,
+                "the reload counter restarts"
+            );
+        }
+    
+        /// S1-D-4b-2 - without a target the C# holds the reload counter at the
+        /// interval and fires nothing (`:40453-40457`).
+        #[test]
+        fn test_ai_197_without_a_target_holds_the_reload() {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let barnacle = spawn_sentry(&mut pool, DEAD_CELLS_BARNACLE, 300.0, 300.0, 36000);
+            let mut npcs: Vec<Npc> = Vec::new();
+            for _ in 0..60 {
+                p.num_minions = 0;
+                p.slots_minions = 0.0;
+                pool.update(
+                    &mut w,
+                    &mut npcs,
+                    None,
+                    None,
+                    Some(&mut p),
+                    YoyoInputs::default(),
+                    FlailInputs::default(),
+                    &mut rng(),
+                    0,
+                    true,
+                );
+            }
+            assert!(
+                !pool.slots.iter().any(|s| s.active && s.kind == 1026),
+                "no target, no shot"
+            );
+            assert_eq!(
+                pool.slots[barnacle].local_ai[0], 50.0,
+                "the counter holds at the interval"
+            );
+        }
+    
+        /// S1-D-4b-2 - the hover: with a solid tile under it the barnacle sinks
+        /// by 0.1 px per tick and the C# clamps the fall at 12 px (`:40415-40421`).
+        #[test]
+        fn test_ai_197_hovers_and_clamps_the_fall() {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            // A solid floor under the barnacle: the C#'s tile scan
+            // (`:40374-40388`) walks 15 tiles down from the top corner.
+            for x in 0..64 {
+                let i = w.index(x, 25);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+            let mut p = player(&w);
+            let barnacle = spawn_sentry(&mut pool, DEAD_CELLS_BARNACLE, 300.0, 300.0, 36000);
+            let mut npcs: Vec<Npc> = Vec::new();
+            for _ in 0..200 {
+                p.num_minions = 0;
+                p.slots_minions = 0.0;
+                pool.update(
+                    &mut w,
+                    &mut npcs,
+                    None,
+                    None,
+                    Some(&mut p),
+                    YoyoInputs::default(),
+                    FlailInputs::default(),
+                    &mut rng(),
+                    0,
+                    true,
+                );
+            }
+            let vel = pool.slots[barnacle].vel;
+            assert!(vel.y >= -12.0, "the C# clamps the fall at 12 px: {}", vel.y);
+            assert!(vel.y < 0.0, "the hover sinks while a tile is under it");
+        }
+    
+        /// S1-D-4b-2 - the barnacle's frame: outside the stuck state it holds
+        /// frame 3 (`:40403-40406`).
+        #[test]
+        fn test_ai_197_barnacle_holds_frame_three() {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let barnacle = spawn_sentry(&mut pool, DEAD_CELLS_BARNACLE, 300.0, 300.0, 36000);
+            let mut npcs: Vec<Npc> = Vec::new();
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+            assert_eq!(pool.slots[barnacle].frame, 3, "the barnacle holds frame 3");
+        }
     use super::*;
     use crate::npc::{Npc, NpcKind};
     use crate::player::Player;
