@@ -14113,3 +14113,32 @@ vanished; the port removes the dead parts at once, so "the part is gone"
 is the normal death and the arm would kill the core on the first part's
 fall. The port implements the `flag2` arm only — the `flag` arm's
 counterpart does not exist in the port's immediate-death model.
+
+## The town-NPC melee swing (S1-D-3n, 2026-11-15)
+
+`NPC.AI_007_TownEntities` carries the town-NPC family (the `aiStyle 7` arm,
+`NPC.cs:52965-55561`). Its melee state (`ai[0] == 15`, `NPC.cs:54995-55114`)
+reads four per-type numbers: `num78` (the swing damage, scaled by
+`NPC.GetAttackDamage_ForTownNPC`), `num79` (the swing knockback) and
+`num80`/`num81` (the swing item width and height, taken by
+`NPC.GetSwingStats`). The C# rows live at `NPC.cs:55018-55054`:
+
+| NPC | type | damage | knockback | item |
+| --- | --- | --- | --- | --- |
+| Dye Trader | 207 | 11 | 4.25 | 32x32 |
+| Tax Collector | 441 | 9 | 3.5 | 28x28 |
+| Stylist | 353 | 10 | 5 | 32x32 |
+| town pets | - | 10 | 3 | 32x32 |
+
+**The port.** `crates/tr-app/src/npc_ai.rs::TownWeaponParams` carries those
+four numbers as the `DYE_TRADER`, `TAX_COLLECTOR`, `STYLIST` and `TOWN_PET`
+rows, with the C# line cites; the table test
+`s1_d_3n_tests::the_town_weapon_presets_match_the_csharp_table` pins them.
+
+**The deliberate gap.** The swing machine itself is not ported: it needs
+`NPC.GetSwingStats` (`NPC.cs:66485`), `NPC.StrikeNPCNoInteraction` and
+`GameDifficultyData.TownNPCDamageMultiplier` (`NPC.cs:7062-7065`), and the
+port has no swing-stats helper, no NPC-to-NPC strike path and no difficulty
+multiplier for the town-NPC damage. Porting the machine is a follow-up under
+S1-D-3; the preset table lands first so the numbers have one home. `num77`
+and `maxValue4` are not read by the swing code and stay unported.

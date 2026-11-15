@@ -961,3 +961,57 @@ mod tests {
         );
     }
 }
+
+
+/// `AI_007_TownEntities`'s melee weapon presets (`NPC.cs:55004-55054`).
+///
+/// The `ai[0] == 15` swing state reads four per-type numbers: `num78` (the
+/// swing damage, later scaled by `GetAttackDamage_ForTownNPC`), `num79` (the
+/// swing knockback) and `num80`/`num81` (the swing's item width and height,
+/// which `NPC.GetSwingStats` takes).
+#[derive(Clone, Copy, Debug)]
+pub struct TownWeaponParams {
+    /// `num78` вЂ” the swing damage before the difficulty multiplier.
+    pub damage: i32,
+    /// `num79` вЂ” the swing knockback.
+    pub knockback: f32,
+    /// `num80` вЂ” the swing's item width (`GetSwingStats`'s `itemWidth`).
+    pub width: i32,
+    /// `num81` вЂ” the swing's item height (`GetSwingStats`'s `itemHeight`).
+    pub height: i32,
+}
+
+impl TownWeaponParams {
+    /// The Dye Trader's exotic scimitar (`NPC.cs:55018-55025`): the damage 11,
+    /// the knockback 4.25 and the 32x32 scimitar.
+    pub const DYE_TRADER: Self = Self {
+        damage: 11,
+        knockback: 4.25,
+        width: 32,
+        height: 32,
+    };
+    /// The Tax Collector's cane (`NPC.cs:55026-55038`): the damage 9, the
+    /// knockback 3.5 and the 28x28 cane.
+    pub const TAX_COLLECTOR: Self = Self {
+        damage: 9,
+        knockback: 3.5,
+        width: 28,
+        height: 28,
+    };
+    /// The Stylist's scissors (`NPC.cs:55039-55045`): the damage 10, the
+    /// knockback 5 and the 32x32 scissors.
+    pub const STYLIST: Self = Self {
+        damage: 10,
+        knockback: 5.0,
+        width: 32,
+        height: 32,
+    };
+    /// The town pets' shared row (`NPC.cs:55047-55053`): the damage 10, the
+    /// knockback 3 and the 32x32 claw.
+    pub const TOWN_PET: Self = Self {
+        damage: 10,
+        knockback: 3.0,
+        width: 32,
+        height: 32,
+    };
+}
