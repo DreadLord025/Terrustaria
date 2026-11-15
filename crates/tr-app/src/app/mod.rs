@@ -716,6 +716,11 @@ pub(crate) struct App {
     pub(crate) sunflower_wind_step: FixedStepper,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
+    /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
+    /// `UpdateWorld_Gores` (`Main.cs:17971-17996`) after the NPCs and before
+    /// the projectiles (`:17767-17775`). Its collision probes are injected once
+    /// at init through [`crate::gore_seam::AppGoreCollision`].
+    pub(crate) gore: tr_core::gore::GorePool,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -999,7 +1004,11 @@ impl App {
     /// while it is open, so `menu_blood` carries that copy's flag and `None`
     /// falls back to the stored settings; run once per frame from `frame()`.
     pub(crate) fn sync_child_safety(&mut self, menu_blood: Option<bool>) {
-        self.dust.child_safety.disabled = menu_blood.unwrap_or(self.settings.blood);
+        let disabled = menu_blood.unwrap_or(self.settings.blood);
+        self.dust.child_safety.disabled = disabled;
+        // `ChildSafety.Disabled` is one static in the C# (`ChildSafety.cs:15`),
+        // so the gore spawn gate reads the same flag.
+        self.gore.child_safety.disabled = disabled;
     }
 
     /// `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): `EquipPage` is the
@@ -3268,6 +3277,10 @@ impl App {
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             leaves: Vec::new(),
+            // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
+            // slots plus the refuse sentinel; `goreTime` seeds its 600
+            // (`Gore.cs:1507-1510`).
+            gore: tr_core::gore::GorePool::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             // The C# seeds every `SwapRandom` key with the world seed

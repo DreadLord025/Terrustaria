@@ -12789,6 +12789,79 @@ The migration retired one stand-in cap: the wheel sparks' `MAX_SPARKS` = 500 (th
 Scope notes and documented drops, each recorded at its site: the `shader`/`customData` record fields (no draw-shader chain; the `customData` followers live in `UpdateDust`, S1-E-3), the `Main.rand == null` re-seed and `Main.netMode == 2` server guards and the dead `Main.NoPooling` realloc arm (`Main.cs:67208` sets it false), and the `DANGEROUS` set = the 8 listed ids (5, 227, 273, 237, 248, 249, 250, 251 — `SetFactory.cs:97-107`; research/15's earlier inverted reading of that set is corrected). tr-app injects the wet probe through the seam (`player::wet_collision`, the `Dust.cs:248` probe). The child-safety sync runs `sync_child_safety` once per frame, so a settings toggle lands one tick late; `max_dust_to_draw`'s first frame reads the seed 0 (unreachable in production — the frame loop sets it before any spawn); the 268 draw keeps the stand-in's 10-px cell until E-3 ports the real draw, and the `NewDust` `Next(1)` gate draw is absent in both the stand-in and the port (pre-existing).
 
 What remains: E-2 (the per-type table + `GetAlpha`/`GetColor`), E-3 (the generic `UpdateDust` tail + the `maxDustToDraw` gate + the dust light), E-4 (gore: `NewGore`/`GoreID.Sets`/`Gore.Update` + the leaves), the `rain.rs` re-point and the NPC/Projectile/player call sites — the caller-coverage table in `docs/research/15-dust-gore.md` stays authoritative.
+
+## Gore: the pool, the spawn family and the update walk (S1-E-4, 2026-11-16)
+
+`crates/tr-core/src/gore.rs` carries `Main.gore[601]` (`Main.cs:66990`) as
+[`GorePool`]: 600 live slots plus the sentinel 600 that `NewGore` returns for a
+refused spawn and never scans (`Gore.cs:1308-1320`). The record is
+`Gore.cs:14-42` field for field; `sticky = true`, `timeLeft = goreTime` and
+`Frame = new SpriteFrame(1, 1)` are the struct initialiser, and `goreTime` is
+the pool-level static (`:1507-1510`, 600).
+
+The RNG contract, resolved against `Gore.cs:1327-1328` verbatim (an earlier
+checkpoint summary misread it as `Next(2)` → X → Y): one `Next(10, 31)` on
+`velocity.Y` **first**, then one `Next(-20, 21)` on `velocity.X`. Nothing else
+in `NewGore` rolls except the two ChildSafety draws (`Next(11, 14)` then
+`NextFloat()`, `:1336-1338`, only when the gate is armed and the type is
+dangerous) and the two type-1225 draws (`:1375-1382`). The per-type arms
+(`:1355-1456`) are pure writes.
+
+`crates/tr-core/src/gore_id.rs` is `GoreID.Sets` (`GoreID.cs:20-23`) built the
+way `SetFactory` builds it (`SetFactory.cs:97-130`): a default for the whole
+array plus the listed `(id, value)` pairs. `special_ai` (default 0),
+`disappear_speed` (default **1**), `disappear_speed_alpha` (default **1**) and
+`is_drip` (default false) replace the earlier fabricated range table
+(`219..=331`, `943..=1242`) that shipped with the draft — the defaults matter:
+a zero `disappear_speed` would have frozen every timer.
+
+The update walk is `Gore.Update` (`Gore.cs:308-1083`) split into the driver(`update`, `Main.UpdateWorld_Gores` `Main.cs:17971-17996`), `update_slot` (the
+main chain) and the twelve helpers the C# factors out: the four cloud/spark
+rows (`:110-260`), the drip animation (`:378-529`), the drip collision pass
+(`:915-977`), the sticky rest (`:978-1019`), the chum bucket and its floating
+chunk plus `ChumFloatingChunk_GetWaterLine` (`:552-671`, `:262-290`), the
+`SpecialAI == 2` smoke row (`:767-843`), the 411-430 pages (`:844-912`),
+`Gore_UpdateLeaf` (`:1085-1209`) and `Gore_UpdateSail` (`:1211-1271`).
+
+Documented drops, each at its site: the texture-gated arms are the port's
+`TextureAssets.Gore[...].IsLoaded == false` path throughout (`Gore::width`/
+`height`/`aabb_rectangle` return the C#'s own 1/1 fallbacks, and the size
+probes keep `32f` — `4f` for the ogre-spit rows — so the collision boxes are
+exactly the C#'s unloaded-texture sizes); the entity lights (`Lighting.AddLight`
+at `:258`, `:940`, `:1076`) wait for S1-E-5; the 716/1383 shimmer tint
+(`:917-941`) needs `LiquidRenderer.GetShimmerBaseColor`; the `SoundEngine` hits
+and the water-shader ripple (`:953`, `:965`, `:967`) need the audio and shader
+seams; and the player-rect/dust-burst arms (`:794-841`, `:850-864`, `:883-910`,
+`:1119-1122`) need the entity and dust pools on the core side. None of those
+draws a random number, so the stream order is untouched — which is the property
+the port actually needs from them.
+
+`tr-core` cannot depend on `tr-app`'s collision ports, so the walk takes a
+[`GoreCollision`] seam (`tile_collision` = `Collision.cs:2292`, `wet_collision`
+= `:1572`, `slope_collision` = `:1791`), the same injection pattern the dust
+pool uses for its wet probe (`particles.rs:197-202`). The App implements it in
+`crates/tr-app/src/gore_seam.rs` over `collision::tile_collision`,
+`player::wet_collision` and `collision::slope_collision`. The C#
+`SlopeCollision` declares a `gravity` parameter (`Collision.cs:1791`) and never
+reads it, so the port's `slope_collision` without it is exact, not a
+simplification.
+
+The App owns the pool as `App.gore` (`Main.gore`), ticks it in the `gores`
+phase of the fixed step — between `npcs` and `projectiles`, the C# order at
+`Main.cs:17767-17775` — on the stage's own named stream
+(`Main.SwapRandom("UpdateGores")`, `RngKey::UpdateGores`), and feeds it
+`Main.WindForVisuals` = `Wind::speed_current` (`Main.cs:2823`). The blood
+toggle drives the same `ChildSafety.Disabled` static for both pools
+(`ChildSafety.cs:15` — one static in the C#, so `sync_child_safety` sets both).
+The draw pass stays unported, which is why no gore is visible yet.
+
+Tested (`cargo test -p tr-core gore --lib`, 14 passing): the spawn order and
+velocity, the drip sheet, the `SpecialAI` 1/2/3/4-6 arms, the balloon rows, and
+the three lifecycle tests (sticky countdown → alpha fade → deactivate; the free
+gore's double-speed fade `:1020-1023`; the floor cloud's wind drift and expiry
+`:112-136`). The seam has its own forward test (`gore_seam::tests`), and the
+App's phase-order golden test now pins `gores` between `npcs` and
+`projectiles`.
 ## The carrier's life pool (S1-D-6, 2026-11-14)
 
 `NPC.realLife` (`NPC.cs:6161`) is the C#'s carrier link: an NPC index that
