@@ -22985,3 +22985,35 @@ mod s1_d_4b_5d_tests {
         );
     }
 }
+
+
+/// S1-D-3n вЂ” the town-NPC melee weapon presets (`NPC.cs:55004-55054`): the
+/// per-type damage, knockback and item size the `ai[0] == 15` swing reads.
+#[cfg(test)]
+mod s1_d_3n_tests {
+    use crate::npc_ai::TownWeaponParams;
+
+    #[test]
+    fn the_town_weapon_presets_match_the_csharp_table() {
+        // The Dye Trader (`NPC.cs:55018-55025`).
+        assert_eq!(TownWeaponParams::DYE_TRADER.damage, 11);
+        assert_eq!(TownWeaponParams::DYE_TRADER.knockback, 4.25);
+        assert_eq!(TownWeaponParams::DYE_TRADER.width, 32);
+        assert_eq!(TownWeaponParams::DYE_TRADER.height, 32);
+        // The Tax Collector (`NPC.cs:55026-55038`).
+        assert_eq!(TownWeaponParams::TAX_COLLECTOR.damage, 9);
+        assert_eq!(TownWeaponParams::TAX_COLLECTOR.knockback, 3.5);
+        assert_eq!(TownWeaponParams::TAX_COLLECTOR.width, 28);
+        assert_eq!(TownWeaponParams::TAX_COLLECTOR.height, 28);
+        // The Stylist (`NPC.cs:55039-55045`).
+        assert_eq!(TownWeaponParams::STYLIST.damage, 10);
+        assert_eq!(TownWeaponParams::STYLIST.knockback, 5.0);
+        assert_eq!(TownWeaponParams::STYLIST.width, 32);
+        assert_eq!(TownWeaponParams::STYLIST.height, 32);
+        // The town pets (`NPC.cs:55047-55053`).
+        assert_eq!(TownWeaponParams::TOWN_PET.damage, 10);
+        assert_eq!(TownWeaponParams::TOWN_PET.knockback, 3.0);
+        assert_eq!(TownWeaponParams::TOWN_PET.width, 32);
+        assert_eq!(TownWeaponParams::TOWN_PET.height, 32);
+    }
+}
