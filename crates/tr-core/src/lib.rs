@@ -16,8 +16,6 @@ pub mod extract;
 pub mod falling;
 pub mod flame;
 pub mod framing;
-pub mod gore;
-pub mod gore_id;
 pub mod housing;
 pub mod lighting;
 pub mod liquid;
