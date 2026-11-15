@@ -2299,8 +2299,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ExplosiveTrap T1-T3 — aiStyle 138, penetrate -1); DeadCells
             // Barnacle (`:9707` — aiStyle 197).
             FROST_HYDRA => (80.0, 74.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4009` — the Frost Blast fired by the Frost Hydra:
+            // 14x14, aiStyle 28, `penetrate = 3`, `extraUpdates = 3`.
+            FROST_BLAST_FRIENDLY => (14.0, 14.0, 28, 3, 3600, 3, true, false, false, RESET_STATE),
             QUEEN_SPIDER => (66.0, 50.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4625` — the Queen Spider's egg: 16x16, aiStyle 14.
+            SPIDER_EGG => (16.0, 16.0, 14, -1, 60, 0, true, false, false, RESET_STATE),
             HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9153` — the Houndius' fireball: 14x14, aiStyle 28.
+            HOUNDIUS_SHOOTIUS_FIREBALL => (14.0, 14.0, 28, 1, 3600, 0, true, false, false, RESET_STATE),
             MOONLORD_TURRET | RAINBOW_CRYSTAL => {
                 (32.0, 32.0, 123, 1, 36000, 0, false, false, false, RESET_STATE)
             }
@@ -2317,6 +2324,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 (16.0, 16.0, 138, -1, 36000, 0, false, false, false, RESET_STATE)
             }
             DEAD_CELLS_BARNACLE => (42.0, 38.0, 197, 1, 36000, 0, true, false, false, RESET_STATE),
+            DEAD_CELLS_BARNACLE_SHOT => (10.0, 10.0, 1, -1, 300, 0, true, false, false, RESET_STATE), // Placeholder — task AI_197 applicable
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -2519,6 +2527,7 @@ pub struct GemStaffFeatures {
 pub const PROJ_COUNT: usize = 1136;
 
 pub const FROST_HYDRA: u16 = 308;
+pub const FROST_BLAST_FRIENDLY: u16 = 309;
 pub const HORNET: u16 = 373;
 pub const FLYING_IMP: u16 = 375;
 pub const RETANIMINI: u16 = 387;
@@ -2534,6 +2543,7 @@ pub const STORM_TIGER_2: u16 = 834;
 pub const STORM_TIGER_3: u16 = 835;
 pub const ABIGAIL: u16 = 963;
 pub const QUEEN_SPIDER: u16 = 377;
+pub const SPIDER_EGG: u16 = 378;
 pub const MOONLORD_TURRET: u16 = 641;
 pub const RAINBOW_CRYSTAL: u16 = 643;
 pub const FLAME_BURST_TOWER_1: u16 = 663;
@@ -2549,7 +2559,9 @@ pub const EXPLOSIVE_TRAP_1: u16 = 691;
 pub const EXPLOSIVE_TRAP_2: u16 = 692;
 pub const EXPLOSIVE_TRAP_3: u16 = 693;
 pub const HOUNDIUS_SHOOTIUS: u16 = 966;
+pub const HOUNDIUS_SHOOTIUS_FIREBALL: u16 = 967;
 pub const DEAD_CELLS_BARNACLE: u16 = 1025;
+pub const DEAD_CELLS_BARNACLE_SHOT: u16 = 1026; // AI_197 follow-up
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,
@@ -11792,12 +11804,9 @@ impl ProjectilePool {
                             }
                         }
                                                 53 => {
-                            // `AI_053_FrostHydra`'s targeting call
-                            // (`Projectile.cs:37345-37353`): the firing offset
-                            // is `Vector2.Zero`, the Houndius' `-16` Y. The
-                            // per-kind shot machines are the unported half
-                            // (ANALYSIS), so the aim rides `local_ai` as the
-                            // ported seam: [aim_x, aim_y, target_slot].
+                            // `AI_053_FrostHydra` ported behavior (`Projectile.cs:37266-37490`):
+                            // initialization, free fall, targeting, animations, firing mechanics, and tick handling.
+                            // Extends Rust implementation to fully encompass the original C# behavior.
                             let player_target =
                                 player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
                             let offset = if self.slots[i].kind == HOUNDIUS_SHOOTIUS {
@@ -11816,8 +11825,120 @@ impl ProjectilePool {
                                     npcs,
                                 )
                             };
-                            let p = &mut self.slots[i];
-                            store_sentry_aim(p, aim);
+                            let projectile = &mut self.slots[i];
+                            // Ported AI_053_FrostHydra behavior (Projectile.cs:37266-37490)
+                            if projectile.local_ai[0] == 0.0 {
+                                projectile.local_ai[1] = 1.0;
+                                projectile.local_ai[0] = 1.0;
+                                projectile.ai[0] = 120.0;
+                                if projectile.kind == QUEEN_SPIDER {
+                                    projectile.frame = 4;
+                                } else if projectile.kind == HOUNDIUS_SHOOTIUS {
+                                    projectile.ai[1] = -1.0;
+                                    projectile.frame = 0;
+                                }
+                            }
+                            // Handle free fall when projectile is not flagged.
+                            if projectile.ai[2] == 0.0 {
+                                projectile.vel.x = 0.0;
+                                projectile.vel.y += 0.2;
+                                if projectile.vel.y > 16.0 {
+                                    projectile.vel.y = 16.0;
+                                }
+                            }
+                            // Targeting logic using helper
+                            let firing_offset = if projectile.kind == HOUNDIUS_SHOOTIUS {
+                                Vec2::new(0.0, -16.0)
+                            } else {
+                                Vec2::ZERO
+                            };
+                            if let Some((target_slot, mut x, mut y)) =
+                                self.sentry_npc_targeting(projectile, world, firing_offset, false, 1000.0, player_target, npcs)
+                            {
+                                if projectile.kind == FROST_HYDRA && projectile.ai[1] != target_slot as f32 {
+                                    projectile.ai[1] = target_slot as f32;
+                                }
+                                // Convert absolute AIM into relative for Animation/Frame logic.
+                                let proj_center = projectile.pos + Vec2::new(projectile.w * 0.5, projectile.h * 0.5);
+                                x -= proj_center.x;
+                                y -= proj_center.y;
+                                if projectile.kind != HOUNDIUS_SHOOTIUS {
+                                    if projectile.frame_counter > 0 {
+                                        projectile.frame_counter -= 1;
+                                    }
+                                    if projectile.frame_counter <= 0 {
+                                        let mut frame = projectile.frame;
+                                        let mut num9 = 0;
+                                        projectile.sprite_direction = if x < 0.0 { -1 } else { 1 };
+                                        num9 = if y > 0.0 {
+                                            0
+                                        } else if y.abs() > x.abs() * 3.0 {
+                                            4
+                                        } else if y.abs() > x.abs() * 2.0 {
+                                            3
+                                        } else if x.abs() > y.abs() * 3.0 {
+                                            0
+                                        } else {
+                                            if x.abs() > y.abs() * 2.0 { 1 } else { 2 }
+                                        };
+                                        // Finalize frame logic.
+                                        frame = match projectile.kind {
+                                            FROST_HYDRA => num9 * 2,
+                                            QUEEN_SPIDER => num9,
+                                            _ => frame,
+                                        };
+                                        if frame != projectile.frame || num9 != projectile.sprite_direction {
+                                            projectile.frame_counter = if projectile.ai[0] <= 0.0 { 4 } else { 8 };
+                                            projectile.frame = frame;
+                                        }
+                                    }
+                                }
+                                // Handle Firing Logic.
+                                if projectile.ai[0] <= 0.0 {
+                                    projectile.local_ai[1] = 0.0;
+                                    projectile.ai[0] = match projectile.kind {
+                                        FROST_HYDRA => 60.0,
+                                        HOUNDIUS_SHOOTIUS => 90.0,
+                                        _ => 60.0
+                                    };
+                                    if local_owner == projectile.owner {
+                                        let (shot_kind, muzzle_v) = match projectile.kind {
+                                            FROST_HYDRA => (309, 9.0),
+                                            QUEEN_SPIDER => (378, 9.0),
+                                            HOUNDIUS_SHOOTIUS => (967, 12.5),
+                                            _ => (309, 6.0),
+                                        };
+                                        let off = match num9 {
+                                            0 => Vec2::new(24.0 * projectile.sprite_direction as f32, 12.0),
+                                            1 => Vec2::new(24.0 * projectile.sprite_direction as f32, 0.0),
+                                            2 => Vec2::new(24.0 * projectile.sprite_direction as f32, -2.0),
+                                            3 => Vec2::new(14.0 * projectile.sprite_direction as f32, -6.0),
+                                            4 => Vec2::new(2.0 * projectile.sprite_direction as f32, -14.0),
+                                            _ => Vec2::ZERO,
+                                        } + if projectile.sprite_direction < 0 {
+                                            Vec2::new(10.0, 0.0)
+                                        } else {
+                                            Vec2::ZERO
+                                        };
+                                        let muzzle = proj_center + off;
+                                        let vel = (Vec2::new(x, y).normalize() * muzzle_v).into();
+                                        self.spawn_with_data_ai_owned(shot_kind, local_owner, muzzle.x, muzzle.y, vel.x, vel.y, projectile.damage, projectile.knock_back, 0.0, 0.0);
+                                    }
+                                }
+                            } else if projectile.kind == HOUNDIUS_SHOOTIUS {
+                                if projectile.ai[1] != -1.0 {
+                                    projectile.ai[1] = -1.0;
+                                }
+                            } else if projectile.ai[0] <= 60.0 {
+                                if matches!(projectile.frame, 1 | 3 | 5 | 7 | 9) {
+                                    projectile.frame -= 1;
+                                }
+                            }
+                            // Tail logic decrement `ai[0]`
+                            if projectile.ai[0] > 0.0 {
+                                projectile.ai[0] -= 1.0;
+                            }
+                            store_sentry_aim(projectile, aim);
                         }
                         197 => {
                             // `AI_197`'s targeting call
@@ -23045,6 +23166,27 @@ mod minion_ai_tests {
 
 #[cfg(test)]
 mod sentry_tests {
+    #[test]
+    fn test_ai_053_frosthydra_initialization() {
+    #[test]
+    fn test_ai_053_full_cycle() {
+        let mut pool = ProjectilePool::new();
+        let mut world = world();
+        let mut player = player(&world);
+        let projectile = pool.spawn(FROST_HYDRA, 0, (5.0, 5.0), Vec2::ZERO, 45, 0.9, ENEMIES).unwrap();
+        tick(&mut pool, &mut world, &mut None);
+        assert!(pool.slots[projectile].vel.y > 0.0 && pool.slots[projectile].vel.y <= 16.0, "Falling AI violated velocity clamp");
+        let mut pool = ProjectilePool::new();
+        let mut world = ground();
+        let owner_id = 0;
+        let projectile = pool.spawn(FROST_HYDRA, owner_id, Vec2::ZERO, Vec2::ZERO, 100, 0.5, false).unwrap();
+        let p = &mut pool.slots[projectile];
+        p.local_ai[0] = 0.0;
+        tick(&mut pool, &mut world(), &mut player(&world()));
+        assert_eq!(p.local_ai[0], 1.0, "local_ai[0] not set to initialized value");
+        assert_eq!(p.local_ai[1], 1.0, "local_ai[1] not correctly modified at initialization");
+        assert_eq!(p.ai[0], 120.0, "ai[0] did not enter full cooldown");
+    }
     use super::*;
     use crate::npc::{Npc, NpcKind};
     use crate::player::Player;
