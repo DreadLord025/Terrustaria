@@ -2324,7 +2324,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 (16.0, 16.0, 138, -1, 36000, 0, false, false, false, RESET_STATE)
             }
             DEAD_CELLS_BARNACLE => (42.0, 38.0, 197, 1, 36000, 0, true, false, false, RESET_STATE),
-            DEAD_CELLS_BARNACLE_SHOT => (10.0, 10.0, 1, -1, 300, 0, true, false, false, RESET_STATE), // Placeholder — task AI_197 applicable
+            DEAD_CELLS_BARNACLE_SHOT => (14.0, 14.0, 28, 1, 3600, 2, true, false, false, RESET_STATE), // Projectile.cs:9717
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
