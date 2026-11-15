@@ -2052,8 +2052,9 @@ impl App {
                     );
                 }
 
-                // The debug cheat-sheet panel (the self-contained
-                // debug_panel.rs) — independent of F1.
+                // The debug cheat-sheet panel (`debug_panel.rs`) — independent
+                // of F1. Compiled only with the `debug` feature.
+                #[cfg(feature = "debug")]
                 if self.debug_panel.open {
                     crate::debug_panel::draw(
                         renderer,

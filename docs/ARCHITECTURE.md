@@ -176,6 +176,15 @@ an agent needs before touching code.
   `string.Format`), `json.rs` (the trailing-comma-tolerant loader for the shipped
   `Terraria.Localization.Content.<culture>.*.json`). Not yet wired into the UI.
 
+### `tr-debug` — the F3 developer workbench
+
+- `lib.rs` — panel **state**, **layout**, **hit-testing** and the `Event` intent
+  vocabulary. It deliberately imports no game type: `tr-app` is a binary crate, so
+  the dependency runs `tr-app → tr-debug`, never the reverse. The host supplies the
+  rows, draws through `Layout`, and applies an `Event` to its own state.
+- Compiled only with the Cargo feature `debug` (`tr-app/Cargo.toml`, default OFF):
+  `cargo build --release` links neither the crate nor `debug_panel.rs`.
+
 ### `tr-render` — GPU
 
 - `gpu.rs` — wgpu 30 instance/device/surface. Backend defaults to **Vulkan**
