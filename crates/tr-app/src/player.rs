@@ -14,11 +14,11 @@ use tr_core::{TILE_PX, World};
 
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
-use crate::npc::Npc;
 use crate::dye;
 use crate::item::{INV, ItemSlot};
 use crate::luck::LuckState;
 use crate::minecart;
+use crate::npc::Npc;
 use crate::projectile::{BABY_BIRD, PROJ_COUNT, ProjectilePool};
 use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
 use glam::Vec2;
@@ -1123,13 +1123,20 @@ pub struct Player {
     /// The `Player.cs:28237-28241` switch trip handed to the caller (the C#
     /// `HitTrackSwitch` needs `&mut World`; the tick takes `&World`).
     pending_switch_trip: Option<(i32, i32)>,
+    /// `Player.PlayHurtSound` (`Player.cs:38569-38712`): the hurt cue the
+    /// damage path queues (`Player.cs:38525`) — the caller owns the audio
+    /// device, so the Player hands the cue over.
+    pending_hurt_sound: Option<&'static str>,
+    /// `Player.PlayDeathSound` (`Player.cs:38715-38744`): the death cue
+    /// `Player.KillMe` queues (`Player.cs:38868`).
+    pending_death_sound: Option<&'static str>,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
     pub spark_rng: u64,
-    /// The tick's queued spark particles, drained by `world_sim` into the
-    /// App's `minecart::Sparks` pool (the `Main.dust` stand-in).
-    pending_sparks: Vec<crate::minecart::SparkP>,
+    /// The tick's queued spark spawn requests, drained by `world_sim` into
+    /// the App's `Main.dust` pool (S1-E-1 phase 2).
+    pending_sparks: Vec<crate::minecart::SparkSpawn>,
     /// The tick's queued minecart cues (Item53/55/56), drained into
     /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
     pending_cart_sounds: Vec<crate::minecart::CartCue>,
@@ -1759,6 +1766,8 @@ impl Player {
             full_rotation_origin: (0.0, 0.0),
             fall_start2: (sy / TILE_PX) as i32,
             pending_switch_trip: None,
+            pending_hurt_sound: None,
+            pending_death_sound: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
@@ -2096,9 +2105,21 @@ impl Player {
         self.pending_switch_trip.take()
     }
 
-    /// Takes the tick's queued spark particles (the `Main.dust` handoff —
-    /// the caller owns the pool).
-    pub(crate) fn take_cart_sparks(&mut self) -> Vec<crate::minecart::SparkP> {
+/// Takes the queued hurt cue (`Player.PlayHurtSound`, `Player.cs:38525`)
+    /// — the caller owns the audio device.
+    pub(crate) fn take_hurt_sound(&mut self) -> Option<&'static str> {
+        self.pending_hurt_sound.take()
+    }
+
+    /// Takes the queued death cue (`Player.PlayDeathSound`,
+    /// `Player.cs:38868`).
+    pub(crate) fn take_death_sound(&mut self) -> Option<&'static str> {
+        self.pending_death_sound.take()
+    }
+
+    /// Takes the tick's queued spark spawn requests (the `Main.dust`
+    /// handoff — the caller owns the pool).
+    pub(crate) fn take_cart_sparks(&mut self) -> Vec<crate::minecart::SparkSpawn> {
         std::mem::take(&mut self.pending_sparks)
     }
 
@@ -2275,6 +2296,9 @@ impl Player {
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
         // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
         let _ = self.dismount(world, true);
+        // `Player.KillMe`'s tail (`Player.cs:38868`): the death cue — the
+        // legacy "Player Killed" id 5 (`Player.cs:38737`, the default arm).
+        self.pending_death_sound = Some("Player_Killed");
     }
 
     /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
@@ -2326,8 +2350,8 @@ impl Player {
         npcs.iter().any(|n| {
             let (nx, ny) = n.center();
             let (w, h) = n.size();
-            let overlaps = (nx - cx).abs() <= half_w + w * 0.5
-                && (ny - cy).abs() <= half_h + h * 0.5;
+            let overlaps =
+                (nx - cx).abs() <= half_w + w * 0.5 && (ny - cy).abs() <= half_h + h * 0.5;
             if !overlaps {
                 return false;
             }
@@ -2348,11 +2372,7 @@ impl Player {
         danger_near: bool,
         moon_event_live: bool,
     ) -> bool {
-        !(self.ghost_like()
-            || self.dead_time < 90
-            || boss_near
-            || danger_near
-            || moon_event_live)
+        !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near || moon_event_live)
     }
 
     /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
@@ -2766,15 +2786,16 @@ impl Player {
     /// `Player.GetArmorPenetration` (`Player.cs:4365-4373`): the flat sum,
     /// plus the melee-only row when the hit is melee (`sItem.melee`).
     pub fn get_armor_penetration(&self, melee: bool) -> i32 {
-        self.armor_penetration + if melee { self.melee_armor_penetration } else { 0 }
+        self.armor_penetration
+            + if melee {
+                self.melee_armor_penetration
+            } else {
+                0
+            }
     }
 
     pub fn thorns_damage(&self, incoming: i32) -> i32 {
-        let multiplier = if self.turtle_thorns {
-            2.0
-        } else {
-            self.thorns
-        };
+        let multiplier = if self.turtle_thorns { 2.0 } else { self.thorns };
         let mut total = 0;
         if multiplier > 0.0 {
             total += ((incoming as f32 * multiplier) as i32).min(1000);
@@ -2856,6 +2877,12 @@ impl Player {
         self.hurt_cd = tr_core::damage::iframes_for(amount, false, false) as f32 / 60.0;
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
+        // `Player.Hurt`'s tail (`Player.cs:38525`): the hurt cue. The C#'s
+        // voice system picks the family (`voiceVariant` 1 = the legacy
+        // "Player Hit" id 1, 2 = the female id 20, 3 = the default trackable)
+        // — the port has no voice setting, so the default variant 1 stands
+        // (`Player.cs:56045`).
+        self.pending_hurt_sound = Some("Player_Hit_0");
         if knock_back && !self.no_knockback {
             let dir = if self.x + WIDTH * 0.5 >= from_x {
                 1.0
@@ -4770,11 +4797,7 @@ impl Player {
                 self.body_frame = if matches!(self.wings_logic, 22 | 28 | 45) {
                     0
                 } else if self.vy > 0.0 {
-                    if self.control_jump {
-                        6
-                    } else {
-                        5
-                    }
+                    if self.control_jump { 6 } else { 5 }
                 } else {
                     6
                 };
@@ -5170,7 +5193,6 @@ impl Player {
         // `remaining < (1 - frac)` (itemAnimation runs 1 -> 0).
         let inv = 1.0 - remaining;
         match use_style {
-
             // `:36312-36326` (blocks/placeables; `type == 0` shares it) —
             // rows 1 -> 2 -> 3 by thirds.
             1 | 0 => {
@@ -5915,10 +5937,7 @@ impl Player {
             return false;
         }
         // `:6599`: `!Cart[m] && !CanUseHooks[m] && grappling[0] >= 0`.
-        if !crate::mount::is_cart(m)
-            && !crate::mount::can_use_hooks(m)
-            && self.grappling_active
-        {
+        if !crate::mount::is_cart(m) && !crate::mount::can_use_hooks(m) && self.grappling_active {
             return false;
         }
         true
@@ -6010,18 +6029,13 @@ impl Player {
     /// runs those at :25656/:26011, both before the run-speed merge — the
     /// combined method keeps their relative order. Only reachable while not
     /// grappling (the caller's `:26622` branch).
-    /// `Player.UsingSuperCart` (`Player.cs:3966-3980`): the Super Cart counts
+/// `Player.UsingSuperCart` (`Player.cs:3966-3980`): the Super Cart counts
     /// only when it is both unlocked and enabled.
     pub fn using_super_cart(&self) -> bool {
         self.unlocked_super_cart && self.enabled_super_cart
     }
 
-    fn update_mount(
-        &mut self,
-        world: &World,
-        raining: bool,
-        wind: Option<&tr_core::wind::Wind>,
-    ) {
+    fn update_mount(&mut self, world: &World, raining: bool, wind: Option<&tr_core::wind::Wind>) {
         if !self.mount.is_active() {
             return;
         }
@@ -6887,7 +6901,6 @@ impl Player {
         crate::luck::on_town_npc_death(&mut self.luck_state, npc_type, self.dead);
     }
 
-
     /// `Player.MinionNPCTargetAim` (`Player.cs:56913-56931`): the summon
     /// staff's right-click picks the nearest chaseable NPC to the mouse world
     /// point; a second click on the same target clears it.
@@ -7194,7 +7207,6 @@ impl Player {
         }
     }
 
-
     /// Deterministic identity for the G6 world-range cache.
     pub fn render_key(&self) -> u32 {
         let mut h = self.x.to_bits().wrapping_mul(0x9E37_79B1);
@@ -7413,7 +7425,10 @@ mod tests {
             1.12
         );
         let bow2 = p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 100, 40);
-        assert!((bow2 - bow).abs() < 1e-6, "the helmet does not touch the bow");
+        assert!(
+            (bow2 - bow).abs() < 1e-6,
+            "the helmet does not touch the bow"
+        );
         // The specialist arm: rocket ammo 771 and the
         // `IsRangedSpecialistWeapon` ids ride rocketDamage (`:3986`) — but
         // only after the arrow/bullet checks (the C#'s `if` order), so a
@@ -7431,7 +7446,10 @@ mod tests {
         let bow3 = p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Ranged, 1156, 40);
         assert!((bow3 - bow).abs() < 1e-6, "arrow ammo wins over the id");
         // The non-ranged classes keep their table (`:53390`/`:53410-53419`).
-        assert_eq!(p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Melee, 100, 40), 1.0);
+        assert_eq!(
+            p.weapon_damage_multiplier_with_ammo(registry::DamageClass::Melee, 100, 40),
+            1.0
+        );
     }
 
     /// M3-EQUIP-5 — `Player.statDefense` is derived inside the tick, in the
@@ -7731,12 +7749,24 @@ mod tests {
         p.stat_defense = 0;
         p.hp = 100;
         p.hurt_cd = 0.0;
-        p.hurt_inner(40, p.x - 10.0, false, &mut tr_core::UnifiedRandom::default(), true);
+        p.hurt_inner(
+            40,
+            p.x - 10.0,
+            false,
+            &mut tr_core::UnifiedRandom::default(),
+            true,
+        );
         assert_eq!(p.hp, 70, "the cut, not the raw 40");
         // A 1-damage hit past 25% endurance truncates to 0, then the
         // `num2 < 1 -> 1` floor (`Player.cs:38378-38381`) lifts it back to 1.
         p.hurt_cd = 0.0;
-        p.hurt_inner(1, p.x - 10.0, false, &mut tr_core::UnifiedRandom::default(), true);
+        p.hurt_inner(
+            1,
+            p.x - 10.0,
+            false,
+            &mut tr_core::UnifiedRandom::default(),
+            true,
+        );
         assert_eq!(p.hp, 69, "the sub-one hit floors to 1, not 0");
     }
 
@@ -7753,7 +7783,13 @@ mod tests {
         p.stat_defense = 0;
         p.hp = 100;
         p.hurt_cd = 0.0;
-        assert!(p.hurt_inner(1, p.x - 10.0, false, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.hurt_inner(
+            1,
+            p.x - 10.0,
+            false,
+            &mut tr_core::UnifiedRandom::default(),
+            true
+        ));
         assert_eq!(p.hp, 99, "the hit lands for the floored 1, not 0");
         assert!(
             (p.hurt_cd - 20.0 / 60.0).abs() < 1e-6,
@@ -8085,7 +8121,11 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        assert!(p.wet, "the tick must be wet: center row {}", (p.y / TILE_PX) as i32);
+        assert!(
+            p.wet,
+            "the tick must be wet: center row {}",
+            (p.y / TILE_PX) as i32
+        );
         assert_eq!(p.jump_height, 30, "the water jump height");
         assert!((p.jump_speed - 6.01).abs() < 1e-5, "the water jump speed");
     }
@@ -8322,9 +8362,16 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.buffs.add_buff(21, 3600); // protected
         p.buffs.add_buff(20, 3600); // removable
-        assert_eq!(p.remountable_debuff_count(), 1, "the protected one stays out of the price");
+        assert_eq!(
+            p.remountable_debuff_count(),
+            1,
+            "the protected one stays out of the price"
+        );
         p.clear_nurse_removable_debuffs();
-        assert!(p.buffs.find_buff_index(21).is_some(), "the protected one survives");
+        assert!(
+            p.buffs.find_buff_index(21).is_some(),
+            "the protected one survives"
+        );
         assert_eq!(p.buffs.find_buff_index(20), None, "the removable clears");
     }
 
@@ -8338,7 +8385,11 @@ mod tests {
         assert_eq!(p.remountable_debuff_count(), 0);
         p.buffs.buff_time[p.buffs.find_buff_index(20).unwrap()] = 1;
         p.clear_nurse_removable_debuffs();
-        assert_eq!(p.buffs.find_buff_index(20), None, "the removal clears at time 1");
+        assert_eq!(
+            p.buffs.find_buff_index(20),
+            None,
+            "the removal clears at time 1"
+        );
     }
 
     #[test]
@@ -8391,7 +8442,8 @@ mod tests {
         let w = World::new("t".into(), 64, 800);
         let mut p = Player::spawn(&w);
         let (px, py) = p.center();
-        let goblin = crate::npc::Npc::new(crate::npc::NpcKind::GoblinWarrior, px + 200.0, py, 1, 0.0);
+        let goblin =
+            crate::npc::Npc::new(crate::npc::NpcKind::GoblinWarrior, px + 200.0, py, 1, 0.0);
         let slime = crate::npc::Npc::new(crate::npc::NpcKind::Slime, px + 200.0, py, 1, 0.0);
         // Inside the rect while the invasion runs — blocked.
         assert!(p.near_any_npcs_that_block_respawn(&[goblin.clone()], true));
@@ -8400,13 +8452,7 @@ mod tests {
         // A commoner NPC is not an invasion group member.
         assert!(!p.near_any_npcs_that_block_respawn(&[slime], true));
         // Out of the inflated view rect (1920x1080 + 320 px): no block.
-        let far = crate::npc::Npc::new(
-            crate::npc::NpcKind::GoblinWarrior,
-            px + 4000.0,
-            py,
-            1,
-            0.0,
-        );
+        let far = crate::npc::Npc::new(crate::npc::NpcKind::GoblinWarrior, px + 4000.0, py, 1, 0.0);
         assert!(!p.near_any_npcs_that_block_respawn(&[far], true));
         // The gate itself: a nearby danger NPC vetoes the skip.
         p.dead_time = 200;
@@ -8928,7 +8974,16 @@ mod tests {
         let hook_center = Vec2::new(p.x + 80.0, p.y - 60.0);
         // One registered Hook — the multi-hook seam's single-member case.
         let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, hook_center, 0.0)];
-        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None, &mut tr_core::UnifiedRandom::default());
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            grapple,
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
         // The speed cap 11 px/tick for the Hook (13).
@@ -9000,7 +9055,16 @@ mod tests {
         let center = Vec2::new(p.x, p.y - 300.0);
         let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
         for _ in 0..40 {
-            p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None, &mut tr_core::UnifiedRandom::default());
+            p.update_with_grapple(
+                &w,
+                PlayerInput::default(),
+                grapple,
+                false,
+                false,
+                false,
+                None,
+                &mut tr_core::UnifiedRandom::default(),
+            );
             // GrappleMovement refreshes the origin BEFORE the position
             // integrates — one row behind the current position, like the
             // original's call order (:27645 vs the collision block).
@@ -9087,7 +9151,16 @@ mod tests {
         // One attached Hook below the player.
         let center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
         let grapple: &[(u16, Vec2, f32)] = &[(crate::projectile::HOOK, center, 0.0)];
-        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false, false, None, &mut tr_core::UnifiedRandom::default());
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            grapple,
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
         assert!(p.going_down_with_grapple, "the pull points down");
     }
 
@@ -9207,6 +9280,24 @@ mod tests {
     }
 
     #[test]
+    fn the_hurt_and_the_death_queue_their_voice_cues() {
+        // S1-E-21b — `Player.Hurt`'s tail plays the hurt cue
+        // (`Player.cs:38525`) and `Player.KillMe` the death cue
+        // (`Player.cs:38868`).
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(p.take_hurt_sound().is_none(), "nothing queued yet");
+        p.hurt_cd = 0.0;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.take_hurt_sound(), Some("Player_Hit_0"));
+        // The cue is a one-shot: the caller drains it.
+        assert!(p.take_hurt_sound().is_none());
+        // The death queues its own cue (`Player.cs:38868`).
+        p.start_death(&w, false, false);
+        assert_eq!(p.take_death_sound(), Some("Player_Killed"));
+    }
+
+    #[test]
     fn the_godmode_power_swallows_hits_death_and_refills() {
         // `GodmodePower` -> `Player.creativeGodMode` (`Player.cs:25493-25497`);
         // `Hurt` returns 0 before the iframes (`:38203-38206`) and `KillMe`
@@ -9219,14 +9310,27 @@ mod tests {
         p.creative_god_mode = true;
         p.hurt_cd = 0.0;
         let hp = p.hp;
-        assert!(!p.hurt(50, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true), "the hit is swallowed");
+        assert!(
+            !p.hurt(
+                50,
+                p.x + 100.0,
+                &mut tr_core::UnifiedRandom::default(),
+                true
+            ),
+            "the hit is swallowed"
+        );
         assert_eq!(p.hp, hp, "no damage");
         assert_eq!(p.vx, 0.0, "no knockback");
         p.start_death(&w, false, false);
         assert!(!p.dead, "KillMe refuses while the power is on");
         // Switching the power off restores both arms.
         p.creative_god_mode = false;
-        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.hurt(
+            10,
+            p.x + 100.0,
+            &mut tr_core::UnifiedRandom::default(),
+            true
+        ));
         p.hp = 0;
         p.start_death(&w, false, false);
         assert!(p.dead);
@@ -11607,12 +11711,14 @@ mod tests {
         assert_eq!(p.pending_sparks.len(), 10, "the 10-spark burst");
         assert_eq!(p.pending_cart_sounds.len(), 1);
         assert_eq!(p.pending_cart_sounds[0].cue, "Item_53");
-        // Every spark sits at the pre-call magnet point (rotation 0 on the
-        // flat rail): y exactly `pre_y + 52`, x = pre_x + 10 ± 13 + 4.
+        // Every request sits at the pre-call magnet point (rotation 0 on the
+        // flat rail): y exactly `pre_y + 52`, x = pre_x + 10 ± 13 — the +4
+        // box jitter lands in the pool slot at the drain (`Next(1)` = 0,
+        // `Dust.cs:159-160`).
         for s in &p.pending_sparks {
             assert_eq!(s.pos.y, pre_y + 52.0);
             assert!(
-                (s.pos.x - (pre_x + 27.0)).abs() < 1e-3 || (s.pos.x - (pre_x + 1.0)).abs() < 1e-3,
+                (s.pos.x - (pre_x + 23.0)).abs() < 1e-3 || (s.pos.x - (pre_x - 3.0)).abs() < 1e-3,
                 "x {}",
                 s.pos.x
             );
@@ -12255,13 +12361,21 @@ mod tests {
         assert_eq!(p.mount_fishron_special_counter, 60.0);
         assert_eq!(p.max_run_speed_value(), row.run_speed);
         // The window survives the tick's one-point decay (`:25625-25628`).
-        p.update_with_grapple(&w, PlayerInput::default(), &[], false, false, false, None, &mut tr_core::UnifiedRandom::default());
+        p.update_with_grapple(
+            &w,
+            PlayerInput::default(),
+            &[],
+            false,
+            false,
+            false,
+            None,
+            &mut tr_core::UnifiedRandom::default(),
+        );
         assert!(p.mount_fishron_special_counter > 0.0);
         // The full tick leaves the mount in its air frame; the `+13.5` arm
         // (`Mount.cs:461-464`) would mask the halving probe, so put it back
         // on the ground state the wading case runs in.
-        p.mount
-            .test_set_frame_state(crate::mount::FRAME_STANDING);
+        p.mount.test_set_frame_state(crate::mount::FRAME_STANDING);
         // Wading re-arms the 420-tick window (`Mount.cs:5005-5008`).
         p.mount_fishron_special_counter = 0.0;
         p.hp = p.max_hp;
@@ -12709,7 +12823,10 @@ mod tests {
         let mut p = dodge_player_with(&[6189]);
         let hp = p.hp;
         let mut rng = DodgeRng::with_rolls(&[0]);
-        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the sash dodge fires");
+        assert!(
+            !p.hurt(20, p.x + 100.0, &mut rng, true),
+            "the sash dodge fires"
+        );
         assert_eq!(p.hp, hp, "no damage on the dodge");
         assert_eq!(rng.draws, vec![(0, 10)]);
         // A missed roll lands the hit through the same source.
@@ -12726,7 +12843,10 @@ mod tests {
         let mut p = dodge_player_with(&[963]);
         let hp = p.hp;
         let mut rng = DodgeRng::with_rolls(&[0]);
-        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the belt dodge fires");
+        assert!(
+            !p.hurt(20, p.x + 100.0, &mut rng, true),
+            "the belt dodge fires"
+        );
         assert_eq!(p.hp, hp);
         assert_eq!(rng.draws, vec![(0, 10)]);
         expire_dodge_window(&mut p);
@@ -12744,7 +12864,10 @@ mod tests {
         // even with 321 active, the buff only gates the dodge itself.
         let mut p = dodge_player_with(&[3223]);
         let mut rng = DodgeRng::with_rolls(&[0]);
-        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the brain dodge fires");
+        assert!(
+            !p.hurt(20, p.x + 100.0, &mut rng, true),
+            "the brain dodge fires"
+        );
         assert_eq!(rng.draws, vec![(0, 6)]);
         // The dodge armed buff 321 itself (240 ticks): the next hit roll is
         // still drawn, but no dodge comes out of it.
@@ -12752,8 +12875,15 @@ mod tests {
         expire_dodge_window(&mut p);
         let hp = p.hp;
         let mut rng = DodgeRng::with_rolls(&[0]);
-        assert!(p.hurt(20, p.x + 100.0, &mut rng, true), "buff 321 gates the dodge");
-        assert_eq!(rng.draws, vec![(0, 6)], "the draw happened anyway (C# order)");
+        assert!(
+            p.hurt(20, p.x + 100.0, &mut rng, true),
+            "buff 321 gates the dodge"
+        );
+        assert_eq!(
+            rng.draws,
+            vec![(0, 6)],
+            "the draw happened anyway (C# order)"
+        );
         assert!(p.hp < hp);
         // Unarmed: a would-be-hitting roll draws nothing at all.
         let mut p = dodge_player_with(&[0]);
@@ -12786,7 +12916,10 @@ mod tests {
         // (`:38215-38227`); shadow (not armed here) draws nothing.
         let mut p = dodge_player_with(&[6189, 963, 3223]);
         let mut rng = DodgeRng::with_rolls(&[]);
-        assert!(p.hurt(20, p.x + 100.0, &mut rng, true), "no dodge, the hit lands");
+        assert!(
+            p.hurt(20, p.x + 100.0, &mut rng, true),
+            "no dodge, the hit lands"
+        );
         assert_eq!(rng.draws, vec![(0, 10), (0, 10), (0, 6)]);
     }
 
@@ -12811,13 +12944,19 @@ mod tests {
         let mut rng = DodgeRng::with_rolls(&[0]);
         assert!(!p.hurt(50, p.x + 100.0, &mut rng, true));
         assert_eq!(p.hp, hp);
-        assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4, "the 80-tick dodge window");
+        assert!(
+            (p.hurt_cd - 80.0 / 60.0).abs() < 1e-4,
+            "the 80-tick dodge window"
+        );
         // `longInvince` lifts the pair to 120.
         expire_dodge_window(&mut p);
         p.long_invince = true;
         let mut rng = DodgeRng::with_rolls(&[0]);
         assert!(!p.hurt(50, p.x + 100.0, &mut rng, true));
-        assert!((p.hurt_cd - 120.0 / 60.0).abs() < 1e-4, "the 120-tick window");
+        assert!(
+            (p.hurt_cd - 120.0 / 60.0).abs() < 1e-4,
+            "the 120-tick window"
+        );
     }
 
     #[test]
@@ -12828,12 +12967,7 @@ mod tests {
         let mut rng = DodgeRng::with_rolls(&[0]);
         assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 300);
-        let count = p
-            .buffs
-            .active_types()
-            .iter()
-            .filter(|&&b| b == 321)
-            .count();
+        let count = p.buffs.active_types().iter().filter(|&&b| b == 321).count();
         assert_eq!(count, 1, "one buff-321 add");
         let i = p.buffs.find_buff_index(321).unwrap();
         assert_eq!(p.buffs.buff_time[i], 240);
@@ -12944,13 +13078,19 @@ mod tests {
         let mut rng = DodgeRng::with_rolls(&[0]);
         p.update_survival(&w, &mut rng);
         assert_eq!(p.hp, hp, "the belt ate the lava hit");
-        assert!(p.buffs.find_buff_index(24).is_none(), "no OnFire on a dodge");
+        assert!(
+            p.buffs.find_buff_index(24).is_none(),
+            "no OnFire on a dodge"
+        );
         // The counterpart: a missed roll lands the 80 damage and grants.
         expire_dodge_window(&mut p);
         let mut rng = DodgeRng::with_rolls(&[1]);
         p.update_survival(&w, &mut rng);
         assert!(p.hp < hp);
-        assert!(p.buffs.find_buff_index(24).is_some(), "OnFire on the landed hit");
+        assert!(
+            p.buffs.find_buff_index(24).is_some(),
+            "OnFire on the landed hit"
+        );
     }
 
     #[test]

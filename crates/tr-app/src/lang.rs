@@ -606,6 +606,27 @@ pub fn item_name(id: u16) -> String {
     }
 }
 
+/// `Lang.dialog(i)` (`Lang.cs:170-173`): `LegacyDialog.{i}` — the town NPCs'
+/// dialog lines.
+pub fn dialog(i: i32) -> String {
+    text(&format!("LegacyDialog.{i}"))
+}
+
+/// `LanguageManager.GetCategorySize` — the number of entries in a category
+/// (the C#'s `Language.FindAll(Lang.CreateDialogFilter(prefix))` length).
+pub fn category_size(category: &str) -> usize {
+    manager().lock().unwrap().category_size(category)
+}
+
+/// `Language.SelectRandom(Lang.CreateDialogFilter(prefix))`
+/// (`LanguageManager.cs:392-411`) — a random text from the category; the
+/// caller draws the index so the stream stays the caller's.
+pub fn random_from_category(category: &str, index: usize) -> String {
+    let mut m = manager().lock().unwrap();
+    m.random_from_category(category, index)
+        .value_with(&|name| m.substitution(name))
+}
+
 /// `GameCulture.FromLegacyId` — the language-menu rows are 1-based legacy ids
 /// (`Main.cs:48520` passes `selectedMenu` straight through).
 pub fn culture_from_legacy_id(id: i32) -> GameCulture {

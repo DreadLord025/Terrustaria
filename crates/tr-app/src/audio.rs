@@ -26,7 +26,52 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_1", 2),
     ("Coin_0", 18),
     ("Player_Hit_0", 1),
+    // The legacy "Player Killed" id 5 (`Player.PlayDeathSound`,
+    // `Player.cs:38737`) — the `Sounds/Player_Killed.xnb` asset.
+    ("Player_Killed", 5),
     ("NPC_Hit_1", 3),
+    // The NPC hit family (the C#'s sound id 3, `LegacySoundPlayer.cs:646`):
+    // the per-kind hit cues (`NPC.HitSound`, `NPC.cs:6475`) — the Skeletron's
+    // "NPC_Hit_2", the skeleton's, the bosses' rows.
+    ("NPC_Hit_1", 3),
+    ("NPC_Hit_2", 3),
+    ("NPC_Hit_3", 3),
+    ("NPC_Hit_4", 3),
+    ("NPC_Hit_6", 3),
+    ("NPC_Hit_7", 3),
+    ("NPC_Hit_8", 3),
+    ("NPC_Hit_9", 3),
+    ("NPC_Hit_11", 3),
+    ("NPC_Hit_19", 3),
+    ("NPC_Hit_21", 3),
+    ("NPC_Hit_39", 3),
+    ("NPC_Hit_40", 3),
+    ("NPC_Hit_42", 3),
+    ("NPC_Hit_51", 3),
+    ("NPC_Hit_55", 3),
+    ("NPC_Hit_57", 3),
+    ("NPC_Killed_1", 4),
+    ("NPC_Killed_2", 4),
+    ("NPC_Killed_3", 4),
+    ("NPC_Killed_4", 4),
+    ("NPC_Killed_5", 4),
+    ("NPC_Killed_6", 4),
+    ("NPC_Killed_10", 4),
+    ("NPC_Killed_11", 4),
+    ("NPC_Killed_12", 4),
+    ("NPC_Killed_14", 4),
+    ("NPC_Killed_15", 4),
+    ("NPC_Killed_22", 4),
+    ("NPC_Killed_24", 4),
+    ("NPC_Killed_42", 4),
+    ("NPC_Killed_44", 4),
+    ("NPC_Killed_54", 4),
+    ("NPC_Killed_57", 4),
+    ("NPC_Killed_59", 4),
+    ("NPC_Killed_62", 4),
+    ("NPC_Killed_66", 4),
+    // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
+    // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),
     // `SoundEngine.PlaySound(8/:9)` — `WorldGen.OpenDoor` (`WorldGen.cs:37732`)
     // and `CloseDoor` (`:31906`).
@@ -108,6 +153,42 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_130", 69),
 ];
 
+/// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and
+/// the Deerclops' (`SoundID.CreateTrackable`, `SoundID.cs:1627+/:1691`).
+///
+/// The C#'s trackable styles pick a random variation
+/// (`LegacySoundStyle.Style`, `LegacySoundStyle.cs:33-38`); the port plays
+/// the first one (the `_0` file) — the same asset family, a fixed member.
+const NPC_CUSTOM_CUES: &[&str] = &[
+    "dd2_betsy_death_0",
+    "dd2_betsy_hurt_0",
+    "dd2_crystal_cart_impact_0",
+    "dd2_dark_mage_death_0",
+    "dd2_dark_mage_hurt_0",
+    "dd2_drakin_death_0",
+    "dd2_drakin_hurt_0",
+    "dd2_goblin_bomber_death_0",
+    "dd2_goblin_bomber_hurt_0",
+    "dd2_goblin_death_0",
+    "dd2_goblin_hurt_0",
+    "dd2_javelin_throwers_death_0",
+    "dd2_javelin_throwers_hurt_0",
+    "dd2_kobold_death_0",
+    "dd2_kobold_flyer_death_0",
+    "dd2_kobold_flyer_hurt_0",
+    "dd2_kobold_hurt_0",
+    "dd2_ogre_death_0",
+    "dd2_ogre_hurt_0",
+    "dd2_skeleton_death_0",
+    "dd2_skeleton_hurt_0",
+    "dd2_wither_beast_death_0",
+    "dd2_wither_beast_hurt_0",
+    "dd2_wyvern_death_0",
+    "dd2_wyvern_hurt_0",
+    "deerclops_death",
+    "deerclops_hit_0",
+];
+
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
 /// (`SoundID.cs:1600-1602`'s `CreateTrackable(name, 3, SoundType.Ambient)` —
 /// three variations each, S1-E-25's `WorldGen.PlayLiquidChangeSound`).
@@ -138,7 +219,9 @@ fn sound_type(cue: &str) -> u32 {
         // trackable case (`SoundEngine.PlaySound(style)` →
         // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
         // ambient-scaling switch treats 42 like any unlisted id.
-        .or_else(|| LIQUID_CHANGE_CUES.contains(&cue).then_some(42))
+        .or_else(|| {
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue)).then_some(42)
+    })
         .unwrap_or(0)
 }
 
@@ -256,7 +339,11 @@ impl Audio {
             // `Sounds/Custom/<name>[_<n>].xnb` (`LegacySoundPlayer.cs:257`'s
             // trackable path, S1-E-25/S1-E-23).
             if let Some(custom) = content.map(|c| c.join("Sounds").join("Custom")) {
-                for name in LIQUID_CHANGE_CUES.iter().chain(TRACKED_CUES.iter()) {
+                for name in LIQUID_CHANGE_CUES
+                    .iter()
+                    .chain(TRACKED_CUES.iter())
+                    .chain(NPC_CUSTOM_CUES.iter())
+                {
                     let path = custom.join(format!("{name}.xnb"));
                     match load_sound(&path) {
                         Ok(s) => {
@@ -1828,6 +1915,32 @@ mod tests {
         assert_eq!(sound_type("Unlock"), 22);
         for name in ["Menu_Open", "Menu_Close", "Menu_Tick", "Unlock"] {
             assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
+    /// S1-E-21a — the NPC hit/death cue families: the sound id 3 (the hits)
+    /// and the sound id 4 (the deaths) carry the per-kind cues, and the
+    /// `Sounds/Custom/` trackables ride the legacy id 42.
+    #[test]
+    fn the_npc_hit_and_death_cues_are_registered() {
+        // The two families (`LegacySoundPlayer.cs:646`/`:676`).
+        assert_eq!(sound_type("NPC_Hit_1"), 3);
+        assert_eq!(sound_type("NPC_Hit_2"), 3);
+        assert_eq!(sound_type("NPC_Killed_1"), 4);
+        assert_eq!(sound_type("NPC_Killed_2"), 4);
+        for name in ["NPC_Hit_1", "NPC_Hit_2", "NPC_Killed_1", "NPC_Killed_2"] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+        // The player's death cue (the legacy id 5, `Player.PlayDeathSound`,
+        // `Player.cs:38737`).
+        assert_eq!(sound_type("Player_Killed"), 5);
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Player_Killed"));
+        // The custom trackables (`SoundID.CreateTrackable`, `SoundID.cs:1627+`)
+        // ride the legacy trackable path (the sound id 42).
+        assert_eq!(sound_type("dd2_goblin_hurt_0"), 42);
+        assert_eq!(sound_type("deerclops_hit_0"), 42);
+        for name in ["dd2_goblin_hurt_0", "deerclops_hit_0", "deerclops_death"] {
+            assert!(NPC_CUSTOM_CUES.contains(&name), "{name} in the custom list");
         }
     }
 
