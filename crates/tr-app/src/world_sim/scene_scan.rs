@@ -36,7 +36,13 @@ pub(crate) fn scan_scene(
         player.x + player::WIDTH * 0.5,
         player.y + player::HEIGHT * 0.5,
     ];
-    scan_scene_at(world, center, raining, sandstorm_happening, player.shimmer_wet)
+    scan_scene_at(
+        world,
+        center,
+        raining,
+        sandstorm_happening,
+        player.shimmer_wet,
+    )
 }
 
 /// The injectable center variant of `scan_scene`: the headless TR_NOPLAYER
@@ -125,9 +131,7 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
                 // `SceneMetrics.cs:365-371`: inactive tiles only feed the
                 // liquid counts (`_liquidCounts`) — the shimmer count is the
                 // M1 reader (`ShimmerTileCount` = `_liquidCounts[3]`, `:594`).
-                if tile.liquid > 0
-                    && tile.liquid_kind() == tr_core::tile::LiquidKind::Shimmer
-                {
+                if tile.liquid > 0 && tile.liquid_kind() == tr_core::tile::LiquidKind::Shimmer {
                     metrics.shimmer_tile_count += 1;
                 }
                 continue;
@@ -294,18 +298,34 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         *bg_delay,
     );
     let player_vy = player.as_ref().map(|p| p.vy).unwrap_or(0.0);
+    // The spawn ctx rides the disjoint field borrows (the whole-App
+    // `spawn_ctx` would clash with the destructure's `&mut` fields).
+    let ctx = crate::app::spawn_ctx_from(
+        app.menu.is_some() || app.front.is_some(),
+        app.game_paused,
+        *camera,
+        screen,
+        *zoom,
+        app.gfx_quality.max_dust_to_draw,
+    );
     app.sand.emit_dust(
         &app.scene_metrics,
         sandstorm.severity,
         show,
         wind.speed_current,
+        &ctx,
+        world,
+        &mut app.dust,
+    );
+    crate::sand::tick(
+        &mut app.dust,
+        show,
+        player_vy,
         *camera,
         screen,
         *zoom,
         world,
     );
-    app.sand
-        .tick(show, player_vy, *camera, screen, *zoom, world);
     // `Main.UpdateSceneMetrics` (`Main.cs:62560`): the scan center is the
     // local player's center; headless shots (TR_NOPLAYER) stand in the camera.
     let center = player
@@ -317,9 +337,7 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         center,
         rain.is_raining(),
         sandstorm.happening,
-        player
-            .as_ref()
-            .is_some_and(|p| p.shimmer_wet),
+        player.as_ref().is_some_and(|p| p.shimmer_wet),
     );
     // `Main.SceneState.Update` (`Main.cs:17816`); the `skipTransitions` the
     // manage calls read is the pre-update value — vanilla flips it at `:62`,
@@ -424,17 +442,12 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // the frame applies (`frame.rs`'s `rain_dim`). Only the Noir formula
     // reads it (no M1 activation path).
     let quantised = (world.time / 60.0).floor() * 60.0;
-    let c =
-        crate::render::sky::color_of_the_skies(quantised, world.day_time, world.moon_phase);
+    let c = crate::render::sky::color_of_the_skies(quantised, world.day_time, world.moon_phase);
     let rain_dim = (1.0 - rain.visual_alpha() * 0.9).max(0.1);
     let mut c = [c[0] * rain_dim, c[1] * rain_dim, c[2] * rain_dim];
     // `ModifyHorizonLight` (`Main.cs:63921`) — the same blend the frame's
     // light-map sky colour takes, so the filters see the tinted tileColor.
-    let atmo = crate::render::sky::atmosphere_factor(
-        camera.y,
-        world.world_surface,
-        world.width,
-    );
+    let atmo = crate::render::sky::atmosphere_factor(camera.y, world.world_surface, world.width);
     crate::render::sky::modify_horizon_light(
         &mut c,
         world.moon_phase,
@@ -504,28 +517,82 @@ mod tests {
         // candles and the lantern/star ranges ride their frame windows; the
         // wrong-frame tile does not count.
         // The lit campfire: 215 with frameY < 36.
-        let m = scan_scene_at(&aura_world(215, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        let m = scan_scene_at(
+            &aura_world(215, 0, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
         assert!(m.has_campfire);
         // An unlit campfire frame (>= 36) does not count.
-        let m = scan_scene_at(&aura_world(215, 0, 54), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        let m = scan_scene_at(
+            &aura_world(215, 0, 54),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
         assert!(!m.has_campfire);
         // The water candle: 49 with frameX < 18.
-        let m = scan_scene_at(&aura_world(49, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        let m = scan_scene_at(
+            &aura_world(49, 0, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
         assert_eq!(m.water_candle_count, 1);
-        let m = scan_scene_at(&aura_world(49, 18, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        let m = scan_scene_at(
+            &aura_world(49, 18, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
         assert_eq!(m.water_candle_count, 0);
         // The peace/shadow candles count separately.
-        let m = scan_scene_at(&aura_world(372, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        let m = scan_scene_at(
+            &aura_world(372, 0, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
         assert_eq!(m.peace_candle_count, 1);
-        let m = scan_scene_at(&aura_world(646, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        let m = scan_scene_at(
+            &aura_world(646, 0, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
         assert_eq!(m.shadow_candle_count, 1);
         // The heart lantern range 324-358 vs the star range 252-286 on 42.
-        let m = scan_scene_at(&aura_world(42, 0, 324), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        let m = scan_scene_at(
+            &aura_world(42, 0, 324),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
         assert!(m.has_heart_lantern && !m.has_star_in_bottle);
-        let m = scan_scene_at(&aura_world(42, 0, 252), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        let m = scan_scene_at(
+            &aura_world(42, 0, 252),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
         assert!(m.has_star_in_bottle && !m.has_heart_lantern);
         // The snapshot the Player reads.
-        let m = scan_scene_at(&aura_world(215, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        let m = scan_scene_at(
+            &aura_world(215, 0, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
         assert!(m.auras().campfire);
     }
 
