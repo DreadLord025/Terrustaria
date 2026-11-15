@@ -457,7 +457,7 @@ mod tests {
     fn forest_uses_first_sheet_section() {
         assert_eq!(trunk_sheet_offset(2), 0);
         assert_eq!(trunk_sheet_offset(147), 176 * 4);
-        assert_eq!(Foliage::for_ground(2, 198).style, 0);
-        assert_eq!(Foliage::for_ground(60, 198).top_h, 96.0);
+        assert_eq!(Foliage::for_ground(5, 2, 198).unwrap().style, 0);
+        assert_eq!(Foliage::for_ground(5, 60, 198).unwrap().top_h, 96.0);
     }
 }
