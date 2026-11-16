@@ -13724,6 +13724,73 @@ Deliberate deviations:
 4. **`stickyBreak` survives a respawn.** The C# writes the counter at exactly
    four sites, all inside `StickyMovement` (`:22938`, `:22948`, `:23085`);
    `Player.Spawn` never clears it, so the port's revive path does not either.
+## The remaining collision family (S1-E-13d, 2026-11-16)
+
+`crates/tr-app/src/collision.rs` gains the five functions S1-E-13's parent row
+still listed after the 13a/13b/13c splits.
+
+* `no_slope_collision` (`Collision.cs:2033-2133`) is `tile_collision` with the
+  slope gates removed (`:2059`'s solid conjunct has no `slope()` arm at all).
+  The up arm keeps its `+ 0.01f` (`:2124`); the down arm has no `gravDir` term
+  (`:2088` is bare `vector4.Y - (vector3.Y + Height)`), unlike
+  `TileCollision`'s caller-supplied `gravDir`.
+* `advanced_tile_collision` (`:4422-4566`) keeps the slope gates but adds the
+  `forcedIgnoredTiles` conjunct (`:4449`), the neighbour-slope exemptions on the
+  two side arms (`:4514-4518` skips a slope 2/4 tile to the left,
+  `:4534-4538` a slope 1/3 tile to the right) and the `gravDir`-dependent
+  nudges — `-0.01f` on the down arm when `gravDir == -1` (`:4507`), `+0.01f` on
+  the up arm when `gravDir == 1` (`:4557`).
+* `hit_tiles` / `hit_tiles_in_a_circle` (`:3063-3108`, `:3016-3061`) share one
+  scan. Its box test is **inclusive** on all four edges (`:3101`), unlike
+  `TileCollision`'s strict comparisons, and the horizontal clamp stops at
+  `Main.maxTilesX`, not `maxTilesX - 1` (`:3027`). The circle arm adds the
+  centre-distance gate `(centre - (tile + (8, 8))).Length() < (Width + Height) / 4`
+  (`:3054`).
+* `build_tile_contacts` (`:2135-2290`) enumerates `TileContact`s: the position
+  truncates to whole pixels first (`:2137`), the window is `(x - 1) / 16 - 1 ..
+  (x + 1 + w) / 16 + 1` and `(y - 1) / 16 - 1 .. (y + 3 + h) / 16 + 1`
+  (`:2140-2143`), the Left/Right arms exclude slopes 3/1 and 4/2 respectively
+  (`:2177`/`:2181`), and the Top/Bottom arms switch on the slope with the
+  slope-3/4 inset variants (`:2232-2257`) and a diagonal `BottomLeft`/
+  `BottomRight` fallback when the box only grazes a corner (`:2260-2287`).
+  Overlaps are `(int)Math.Max(Math.Min(...) - Math.Max(...) + 0.5f, 1f)`.
+
+`tile_dust_amount` ports `WorldGen.KillTile_GetTileDustAmount`
+(`WorldGen.cs:66597-66685`) so the hit scan's effect half is expressible.
+
+Deliberate deviations:
+
+1. **`HitTiles` never destroys a tile, because the source does not either.**
+   Both call sites answer a hit with `WorldGen.KillTile(i, j, fail: true,
+   effectOnly: true)`; that overload runs `CheckTileBreakability`, the
+   item/furniture-rack drops and the dust loop, then **returns** at
+   `WorldGen.cs:63704-63707` before any removal, framing or item spawn. The
+   port therefore returns the hit cells and `tile_dust_amount` gives the counts
+   the C# would spawn. `tr_core::edit::kill_tile` is the *destructive*
+   `KillTile` and must not be called here: doing so would break tiles the
+   vanilla only shakes.
+2. **The dust and the shake sound are not spawned.** The port has no tile-dust
+   layer (the same gap the failing mine tick records at
+   `world_sim/editing.rs:1350`) and no `SoundEngine` handle in
+   `collision.rs`. `tile_dust_amount` is the seam a dust layer would call;
+   until it exists the scan is a pure geometry query.
+3. **`advanced_tile_collision`, `no_slope_collision` and `build_tile_contacts`
+   are unexercised.** Their only callers are
+   `NPC.Collision_MoveSandshark` (`NPC.cs:92732`), `NPC.Collision_MoveSnailOnSlopes`
+   (`:92782`) and `Collision.ApplyConveyorBeltMovementToVelocity`
+   (`Collision.cs:3921`, a `WorldItem` routine the port has no owner for). The
+   sandshark/snail NPC families and the world-item conveyor path are unported,
+   so the three functions are marked `#[allow(dead_code)]` with the missing
+   caller named in place rather than inventing one. They are covered by unit
+   tests, not by gameplay.
+4. **`build_tile_contacts` returns its list instead of filling
+   `Collision.contacts`.** The C# passes a shared list and clears it (`:2139`);
+   the port allocates. Same contents, no shared mutable static.
+5. **The `Main.tile[i ± 1, j] == null → new Tile()` allocations**
+   (`:4514-4517`, `:4534-4537`, `:63533-63536`) fold out: the port's tile array
+   is dense, so a missing neighbour reads as an empty tile through
+   `world.tile()`'s `Option`, which is what the allocation would have produced.
+
 ## The Brain of Cthulhu's machine (S1-D-3e, 2026-11-14)
 
 `AI_054` (`NPC.cs:32370-32656`) is the Brain of Cthulhu's family machine:
