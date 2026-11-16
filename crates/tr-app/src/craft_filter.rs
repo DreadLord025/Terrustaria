@@ -350,17 +350,29 @@ mod tests {
     /// 267/1307 (`ItemFilters.cs:352-365`).
     #[test]
     fn consumables_exclude_placeables() {
-        assert!(fits_filter(FilterKind::Consumables, def(267)), "Voodoo Doll");
+        assert!(
+            fits_filter(FilterKind::Consumables, def(267)),
+            "Voodoo Doll"
+        );
         assert!(fits_filter(FilterKind::Consumables, def(1307)));
-        assert!(!fits_filter(FilterKind::Consumables, def(2)), "places tile 0");
-        assert!(fits_filter(FilterKind::Consumables, def(28)), "Healing Potion");
+        assert!(
+            !fits_filter(FilterKind::Consumables, def(2)),
+            "places tile 0"
+        );
+        assert!(
+            fits_filter(FilterKind::Consumables, def(28)),
+            "Healing Potion"
+        );
     }
 
     /// `Tools` reads the four tool stats plus the hand-listed ids
     /// (`ItemFilters.cs:146-173`).
     #[test]
     fn tools_read_the_stats_and_the_extra_ids() {
-        assert!(fits_filter(FilterKind::Tools, def(1)), "Iron Pickaxe, pick 40");
+        assert!(
+            fits_filter(FilterKind::Tools, def(1)),
+            "Iron Pickaxe, pick 40"
+        );
         assert!(fits_filter(FilterKind::Tools, def(213)), "a listed id");
         assert!(!fits_filter(FilterKind::Tools, def(4)), "Iron Broadsword");
     }
@@ -369,7 +381,10 @@ mod tests {
     #[test]
     fn materials_is_the_flag() {
         assert!(fits_filter(FilterKind::Materials, def(2)), "Dirt Block");
-        assert!(!fits_filter(FilterKind::Materials, def(4)), "Iron Broadsword");
+        assert!(
+            !fits_filter(FilterKind::Materials, def(4)),
+            "Iron Broadsword"
+        );
     }
 
     /// `MiscFallback` is the negation of the other ten (`ItemFilters.cs:417-425`).
