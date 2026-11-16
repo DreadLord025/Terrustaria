@@ -334,3 +334,4 @@ crates/tr-app/src/world_sim/npcs.rs|notify_progression(10)|S1-E-18c - the four i
 crates/tr-app/src/world_sim/editing.rs|notify_progression(42)|S1-E-18d - the Flymeal hit on a town NPC fires TERRARIST (42), the Player.cs:44377-44387 branch that rides the melee hit
 crates/tr-app/src/shimmer.rs|notify_progression(27)|S1-E-18e - the shimmer decraft/transform tail fires TRANSMUTE_ITEM (27), WorldItem.cs:1849
 crates/tr-app/src/world_sim/wiring.rs|notify_progression(25)|S1-E-18f - a party coming up fires THROW_A_PARTY (25) from the wired party centre and the natural morning roll (BirthdayParty.cs:142/:162)
+crates/tr-app/src/debug_panel.rs|fn world_rows|S1-E-35 - the F3 World tab weather toggles: Rain rides Main.StartRain/StopRain (Main.cs:64659-64727 / :64644-64658), Sandstorm rides Sandstorm.StartSandstorm/StopSandstorm (Sandstorm.cs:117-129)
