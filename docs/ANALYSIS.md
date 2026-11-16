@@ -2036,9 +2036,12 @@ The deviations below are deliberate and are the places the port is **not** pixel
   stay deterministic. The equipment columns keep the **loadout-1** colours
   (`ItemSlot.LoadoutSlotColors[0]`, `ItemSlot.cs:365-371`) since loadouts 2/3 are not
   modelled.
-* The page tabs, defence counter, guide text and PVP icons are drawn but not
-  interactive (`ItemSlot.Handle` is out of scope for this milestone), and
+* The page tabs, defence counter and guide text are drawn but not interactive, and
   `Player.statDefense` is not modelled, so the defence counter always shows `0`.
+  `ItemSlot.Handle` over the four equipment columns landed with S1-H-5
+  (`clicks.rs::equip_slot_click` + `ui::inventory::equip_cell_at`), so the armour,
+  vanity, dye and misc cells now take presses, hover tooltips and the right-click
+  ladder.
 * The bestiary/emote/achievement shortcut buttons and the NPC-housing page
   (`EquipPage 1`) are not drawn yet.
 * `Main.inventoryBack`-tinted labels use white instead of the pulsing
@@ -2048,6 +2051,20 @@ The deviations below are deliberate and are the places the port is **not** pixel
   vanilla coordinates (`ui/mod.rs` + `clicks.rs`; the Reforge[0]/[1] button
   textures and the coin breakdown stay out). The guide/crafting slots keep
   their empty frames.
+* **Equipment swaps (S1-H-5) — deviations from `ItemSlot.cs:3283-3650`.**
+  `Item.wingSlot` is not carried by `ItemDef`, so `CanEquipBothAccessories`
+  (`:3451-3472`) loses its `wingSlot > 0` arm: two different wings are accepted
+  together where vanilla refuses them (the 3580 vanity-wings exception has no
+  meaning without the flag). `Player.IsItemSlotUnlockedAndUsable`
+  (`Player.cs:12579-12604`) is reduced to the port's constants — `extraAccessory`
+  (Demon Heart) and `Main.masterMode` are not modelled, so rows 8/9 and their
+  vanity twins 18/19 are permanently unusable and every other row is usable.
+  The achievement hooks (`AchievementsHelper.NotifyItemPickup`/`HandleOnEquip`),
+  the display-doll `NetMessage.SendData` tails and the `AnnounceTransfer` call
+  have no port counterpart (single-player, no achievement events from swaps).
+  `MouseItemSwap`'s favourite clear rides the port's positional `favorite_slots`
+  table instead of a per-`ItemSlot` flag; the equipment arrays are outside that
+  key space, so only the grid cell's entry is dropped.
 
 ### Closed hotbar and mouse item (`ui/mod.rs`, `ui/slot.rs`)
 

@@ -323,6 +323,90 @@ fn hit_test(mouse: Vec2, x: f32, y: f32, scale: f32, cell: f32) -> bool {
     mouse.x >= x && mouse.x <= x + cell * scale && mouse.y >= y && mouse.y <= y + cell * scale
 }
 
+/// The equipment cell under `mouse` as `(context, index)` — the three
+/// right-hand columns of `Main.DrawInventory`'s armour block (`Main.cs:41396-41524`:
+/// `Player.armor[0..9]` ctx 8/10, `armor[10..19]` ctx 9/11, `dye[0..9]` ctx 12)
+/// and the misc page's two columns (`:41172-41223`: `miscEquips` ctx 16-20,
+/// `miscDyes` ctx 33). `index` is the array index the C# passes to
+/// `ItemSlot.Handle`. The draw pass hovers with this geometry and the click pass
+/// resolves the same cell, so the two copies cannot drift.
+///
+/// The housing page (`EquipPage == 1`) owns its own cells (`housing::hover`).
+pub(crate) fn equip_cell_at(
+    mouse: Vec2,
+    screen: Vec2,
+    m_h: f32,
+    equip_page: i32,
+    cell: f32,
+) -> Option<(i32, usize)> {
+    let base_y = equip_base_y(
+        screen.y,
+        m_h,
+        BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+        INVENTORY_SCALE,
+    );
+    if equip_page == EQUIP_PAGE_MISC {
+        // `Main.cs:41177,41190`: misc equips at `screenWidth - 92`, misc dyes
+        // one 47 px pitch left.
+        let misc_x = screen.x - 92.0;
+        // `Main.cs:41199-41219`: context per misc-equip row.
+        const MISC_CONTEXT: [i32; crate::inv::MISC] = [19, 20, 18, 17, 16];
+        for l in 0..2usize {
+            let x = misc_x - l as f32 * MISC_PITCH;
+            for m in 0..crate::inv::MISC {
+                let y = misc_row_y(base_y, m);
+                if hit_test(mouse, x, y, INVENTORY_SCALE, cell) {
+                    return Some(if l == 0 { (MISC_CONTEXT[m], m) } else { (33, m) });
+                }
+            }
+        }
+        return None;
+    }
+    if equip_page == EQUIP_PAGE_HOUSING {
+        return None;
+    }
+    let armor_x = equip_column_x(EquipColumn::Armor, screen.x);
+    let vanity_x = equip_column_x(EquipColumn::Vanity, screen.x);
+    let dye_x = equip_column_x(EquipColumn::Dye, screen.x);
+    // `Main.cs:41396-41463`: `Player.armor[0..9]` (context 8, 10 below row 2).
+    let mut row = 0usize;
+    for idx in 0..10usize {
+        if (idx == 8 && !DEMON_HEART_SLOT) || (idx == 9 && !MASTER_SLOT) {
+            continue;
+        }
+        let y = equip_row_y(base_y, row, idx > 2, INVENTORY_SCALE);
+        if hit_test(mouse, armor_x, y, INVENTORY_SCALE, cell) {
+            return Some((if idx > 2 { 10 } else { 8 }, idx));
+        }
+        row += 1;
+    }
+    // `Main.cs:41469-41496`: `Player.armor[10..19]` (context 9, 11 below row 2).
+    row = 0;
+    for idx in 10..20usize {
+        if (idx == 18 && !DEMON_HEART_SLOT) || (idx == 19 && !MASTER_SLOT) {
+            continue;
+        }
+        let y = equip_row_y(base_y, row, idx > 12, INVENTORY_SCALE);
+        if hit_test(mouse, vanity_x, y, INVENTORY_SCALE, cell) {
+            return Some((if idx > 12 { 11 } else { 9 }, idx));
+        }
+        row += 1;
+    }
+    // `Main.cs:41502-41523`: `Player.dye[0..9]` (context 12).
+    row = 0;
+    for idx in 0..crate::inv::DYE {
+        if (idx == 8 && !DEMON_HEART_SLOT) || (idx == 9 && !MASTER_SLOT) {
+            continue;
+        }
+        let y = equip_row_y(base_y, row, idx > 2, INVENTORY_SCALE);
+        if hit_test(mouse, dye_x, y, INVENTORY_SCALE, cell) {
+            return Some((12, idx));
+        }
+        row += 1;
+    }
+    None
+}
+
 /// One coin/ammo cell through the shared draw path: the favorited arm swaps the
 /// gold sheet, everything else keeps `Main.inventoryBack`.
 fn draw_row_slot(
@@ -1056,5 +1140,53 @@ mod tests {
                 rect[1]
             );
         }
+    }
+
+    /// `equip_cell_at` resolves the same cells `draw` hovers: the armour,
+    /// vanity and dye columns, the misc page's two columns, and nothing on the
+    /// housing page.
+    #[test]
+    fn equip_cell_at_matches_the_drawn_columns() {
+        let screen = Vec2::new(SCREEN_W, SCREEN_H);
+        let base_y = equip_page_base_y(SCREEN_H, 0.0);
+        let (armor_x, vanity_x, dye_x) = (
+            equip_column_x(EquipColumn::Armor, SCREEN_W),
+            equip_column_x(EquipColumn::Vanity, SCREEN_W),
+            equip_column_x(EquipColumn::Dye, SCREEN_W),
+        );
+        // The centre of a cell is inside its own rectangle.
+        let at = |x: f32, row: usize, lower: bool| {
+            Vec2::new(x + 10.0, equip_row_y(base_y, row, lower, SCALE) + 10.0)
+        };
+        assert_eq!(equip_cell_at(at(armor_x, 0, false), screen, 0.0, 0, 52.0), Some((8, 0)));
+        assert_eq!(equip_cell_at(at(armor_x, 2, false), screen, 0.0, 0, 52.0), Some((8, 2)));
+        // `num38 > 2` switches to context 10 and the 4 px lower block.
+        assert_eq!(equip_cell_at(at(armor_x, 3, true), screen, 0.0, 0, 52.0), Some((10, 3)));
+        assert_eq!(equip_cell_at(at(armor_x, 7, true), screen, 0.0, 0, 52.0), Some((10, 7)));
+        // Vanity `Player.armor[10..19]`.
+        assert_eq!(equip_cell_at(at(vanity_x, 0, false), screen, 0.0, 0, 52.0), Some((9, 10)));
+        assert_eq!(equip_cell_at(at(vanity_x, 3, true), screen, 0.0, 0, 52.0), Some((11, 13)));
+        // Dyes.
+        assert_eq!(equip_cell_at(at(dye_x, 0, false), screen, 0.0, 0, 52.0), Some((12, 0)));
+        assert_eq!(equip_cell_at(at(dye_x, 3, true), screen, 0.0, 0, 52.0), Some((12, 3)));
+        // Misc page: `miscEquips` at screenWidth-92, `miscDyes` one 47 left.
+        let misc_x = SCREEN_W - 92.0;
+        let misc = |x: f32, row: usize| Vec2::new(x + 10.0, misc_row_y(base_y, row) + 10.0);
+        assert_eq!(
+            equip_cell_at(misc(misc_x, 0), screen, 0.0, EQUIP_PAGE_MISC, 52.0),
+            Some((19, 0))
+        );
+        assert_eq!(
+            equip_cell_at(misc(misc_x, 4), screen, 0.0, EQUIP_PAGE_MISC, 52.0),
+            Some((16, 4))
+        );
+        assert_eq!(
+            equip_cell_at(misc(misc_x - MISC_PITCH, 2), screen, 0.0, EQUIP_PAGE_MISC, 52.0),
+            Some((33, 2))
+        );
+        // The housing page answers `None` (its own cells own the pointer).
+        assert_eq!(equip_cell_at(at(armor_x, 0, false), screen, 0.0, EQUIP_PAGE_HOUSING, 52.0), None);
+        // Nothing outside the columns.
+        assert_eq!(equip_cell_at(Vec2::new(10.0, 10.0), screen, 0.0, 0, 52.0), None);
     }
 }

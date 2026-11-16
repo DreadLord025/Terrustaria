@@ -2050,6 +2050,7 @@ pub(crate) mod front_flow_tests {
             // player picked with the tabs, which `resolve_equip_page()` feeds
             // back into `equip_page` every frame.
             equip_page_selected: 0,
+            dye_swap_counter: 0,
             selected: 0,
             hotbar_scales: [0.75; HOTBAR],
             inventory_open: false,
