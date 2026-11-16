@@ -9135,7 +9135,35 @@ The projectile and strike messages are 1:1 ports; the deviations:
   tiles.
 - **The projectile `netSpam` budget is the C#'s numbers, port-tuned**: 60
   budget, 5 cost, refill 10 per net tick (the C#'s 1/tick at 60 Hz); a
-  parked projectile retries on the next tick (`netUpdate2`'s park).## Cave decorations (M5-STRUCT-5)
+  parked projectile retries on the next tick (`netUpdate2`'s park).
+
+## The message families (S1-E-27)
+
+The chest/sign/wiring/buff arms are 1:1 ports of `MessageBuffer.cs:1868-1982`,
+`:2366-2405`, `:2454-2480`, `:2565-2593`, `:2682-2693`, `:3059-3078`,
+`:3216-3227` and `:4429-4438`; the one deliberate deviation:
+
+- **`world_chests` is a lazy array, not the C#'s `Main.chest[8000]`.** The C#
+  client holds all 8000 `Chest` objects from the world load, so `32`/`69`/`155`
+  can index any slot and `Chest.CreateWorldChest` is only the "no chest here
+  yet" case (`:3071`). The port ships chests on demand, so the net arms
+  materialise the slot they address (`App::materialise_chest_slot`). A
+  materialised slot starts at `chest::unplaced_tile()` =
+  `(i32::MIN, i32::MIN + 1)` - deliberately *not* `removed_tile()`
+  (`(i32::MIN, i32::MIN)`), because `set_chest_slot` refuses a removed slot and
+  the `32` burst must land; it is also unreachable as a world coordinate, so
+  `find_chest` never matches it before the `33`/`69` body assigns the real
+  tile. The `33` arm performs that assignment, which is what keeps the `69`
+  rename's `chest.x/y == num/num` guard (`:3073`) working.
+- **The `33` name rides `BinaryWriter.Write(string)`**, i.e. the 7-bit length
+  then the UTF-8 bytes - not a raw byte run and not the `num24` length byte
+  again. `num24` only gates whether the string is present (`NetMessage.cs:890-901`:
+  `1..20` accepted, `0`/`>20` become `255`).
+- **`50 PlayerBuffs` keeps the ids but not the times.** The C# forces every
+  entry's `buffTime` to 60 (`:2470-2471`) and the client's copy is reset each
+  packet, so the port's peer record stores only the id list.
+
+## Cave decorations (M5-STRUCT-5)
 
 Ported from `decompiled/Terraria/WorldGen.cs` (the four cave-decor passes) into `crates/tr-core/src/worldgen/spider_gem_moss.rs`: `Spider Caves` (`:17356-17427`), `Gem Caves` (`:17428-17471`), `Moss` (`:17472-17700`) and `Webs And Honey` (`:19995-20063`), plus the helpers `countTiles`/`nextCount` (`:9546-9635`), `Spread.Spider` (`:3682-3789`), `Spread.Gem` (`:3594-3680`), `Spread.Gemmable` (`:3791-3798`), `Spread.Moss` (`:3526-3592`), `gemCave` (`:9719`), `randGem` (`:9737`), `randGemTile` (`:9747`), `randMoss` (`:9764`), `neonMossBiome` (`:9783`), `setMoss` (`:9878`), `PlaceTight` (`:38303`), `PlaceUncheckedStalactite` (`:38327-38641`), `PlacePot` (`:54066`) and `PlaceSmallPile` (`:46815`).
 
@@ -10212,8 +10240,20 @@ Deviations and notes:
   `Main.rand` rolls, 963's cry/attack cues, 613's `Lighting.AddLight`, the per-kind
   `frameCounter` machines and `strongBees` (373's bee cooldown keeps the default 90) —
   the port has no general `Main.dust` pool and the projectile slot carries no frame
-  fields. The cooldown machines' `rand(1,4)`/`rand(3)` extra increments stand at their
-  deterministic minimum.
+  fields. (The cooldown machines' `Main.rand` extra increments ARE ported — they gate
+  the next shot rather than dust; see S1-D-5 below.)
+- **S1-D-5 (2026-11-16) closed the last `AI_062` behaviour gaps**: the Imp's return
+  state pins `ai[1] = 80f` every tick (`Projectile.cs:65676`, so it holds fire until it
+  is back beside the owner — the port had no pin at all and the Imp could fire
+  mid-flight), the re-follow gate gains the `!Collision.SolidCollision` term
+  (`:65704`, a minion embedded in solid tiles keeps the 15 f return speed instead of
+  dropping to 6 f), and the per-kind fire cooldowns take their `Main.rand` extra
+  increments (`:65931` hornet `Next(1,4)`, `:65950`/`:65966`/`:65982`/`:65998` the
+  `Next(3)` pair) on the pass's `UpdateProjectiles` stream (`Main.cs:17775-17777`).
+  Determinism note: the rolls were previously absent, so a summon-heavy world's
+  `UpdateProjectiles` stream shifts by one draw per live minion per tick — that stream
+  is per-pass and nothing else reads it (the worldgen/`FastRandom` streams are
+  untouched), and the count is now the C#'s.
 - **LOS approximation**: `ai_flying_minion`/`sentry_npc_targeting` route `CanHitLine`/
   `CanHit` through the shared tile walk (`can_hit_line`, the yoyo's `yoyo_can_hit`
   renamed) and `SolidCollision` through a five-point box test (`box_solid`) — the C#'s
@@ -12829,6 +12869,32 @@ Scope notes:
 - **The fullscreen-map call site** (`Main.cs:41335`'s column layout) rides
   the map tasks (S1-L-4's layers).
 
+### Second pass (2026-11-16): the driver
+
+The primitives above were already present (the audit's "MISSING" rows for
+`UnlockMapSection`/`ClearEdges`/`MapUpdateQueue` were stale). What was missing
+was the *caller* and the *throttle*:
+
+- **`UnlockMapSection` had no caller.** The `/map` chat command
+  (`ToolkitDebugCommands.cs:480-494`) sets `DebugOptions.unlockMap` and
+  `Main.refreshMap`, which Main consumes at `:61873-61877` by walking the
+  section manager's draw queue. The port has no section manager (the whole
+  world is resident), so `WorldMap::unlock_map` walks every 200×150 section
+  directly; `unlock_section` applies the same `Utils.Clamp(v, 40, max-40)`
+  the C# does (`WorldMap.cs:111-119`) to the dirty rect it re-uploads.
+  Exposed as the F3 World-tab row "Reveal Map (pretty)" — the missing chat
+  dispatcher is why the debug panel carries it.
+- **The refresh was a `dt` timer, not `mapTime`.** `WorldMap::update` used a
+  hardcoded 0.25 s accumulator; the C# gates `ExportToMiniMap` on
+  `Main.mapTime == 0` (`LegacyLighting.cs:349`) after decrementing it per
+  frame (`Main.cs:61818-61821`) and re-arming from `mapTimeMax`
+  (`:16995-17000`, the gfx-quality budget — 0 above quality 0.8, which is why
+  a good machine exports every frame). The port now carries `map_time`/
+  `map_time_max` and the frame feeds `gfx_quality.map_time_max` in; `dt` is
+  ignored. `mapDelay` and the `renderCount == 3` phase gate ride the same
+  legacy-engine state the port has no equivalent of (it exports inline), so
+  only the `mapTime` half is modelled.
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into
@@ -12911,26 +12977,40 @@ rows between the last expansion mark and that call were dropped (the audit's
 now copies that text: the table is **3 206 rows = 2 895 authored + 311
 reverse**, and the pin in `tools/test_gen_recipes.py` re-taken.
 
-## The sliced block light chain (S1-G-9, 2026-11-13)
+## The sliced block light chain (S1-G-9, 2026-11-13; corrected 2026-11-16)
 
-`DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3516-3640`) is the port's
+`DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3517-3664`) is the port's
 `render/tiles.rs::push_sliced` — and the chain now matches the C# exactly:
 `Lighting.GetColor9Slice`'s 3×3 neighbourhood colours average with the
-tile's own light (`(slices[i] + vector) * 0.5`, `:3556-3559` — the port
-used to draw the raw neighbourhood slices, washing the big blocks out
-against vanilla), then `GetFinalLight`'s actuation arm
-(`TileDrawing.cs:4394-4396`, the ×0.4 ghost) applies per slice. The caller
-passes the tile's own light already ghosted (`drawData.tileLight` is
-`GetFinalLight`'s output at `:1019`) plus the actuation flag. The high/medium
+tile's own **raw** light (`(slices[i] + vector) * 0.5`, `:3578-3581`), then
+`GetFinalLight` (`:4391-4402`) applies the tint and the actuation ghost
+(`Tile.actColor`, `Tile.cs:282-288`, ×0.4) to that average. The high/medium
 split (the 9-slice vs the 4-quad paths on `_highQualityLightingRequirement`/
-`_mediumQualityLightingRequirement`) rides the existing thresholds.
+`_mediumQualityLightingRequirement`, `:3524` / `:3605`) rides the existing
+thresholds, and a Glow-coated block replaces every slice with
+`_glowPaintColorSlices` (`:3530-3533` / `:3611-3614`, all `Vector3.One`).
 
-Scope notes: the fullbright glow-paint slices (`:3551-3554`,
-`_glowPaintColorSlices`) and `GetFinalLight`'s shine arm
-(`ShouldTileShine` → `Main.shine`) have no port counterparts yet — both ride
-the paint work (S1-G-2's row). The A/B shot (a placed dirt block at the
-dusk, `TR_CAM=100,78` + `TR_PLACE`) shows the 10 576-px delta the average
-introduces; two identical runs are SHA-equal.
+Two defects in the 2026-11-13 landing, fixed by `S1-G-9-sliced-final-light`:
+
+* **The double ghost.** `GetFinalLight`'s `Color` overload (`:4358`) takes
+  `tileLight` **by value** and `:1019` assigns the result to
+  `drawData.finalColor` — `drawData.tileLight` stays the raw
+  `Lighting.GetColor` (`:871`). Only the `Vector3` overload (`:4391`) writes
+  through `ref`. So `:3528`'s `vector` is unghosted, and the port's caller-side
+  ghost plus the per-slice ghost composed to 0.16 instead of 0.4. `push_sliced`
+  now samples the raw light itself and the `own` argument is gone, so the
+  double-ghost cannot come back.
+* **The Glow slices.** `fullbrightBlock()` blocks draw their slices at
+  `Vector3.One` `_glowPaintColorSlices`; the port fed the neighbourhood light
+  instead, so Glow-coated blocks stayed dark. Both arms apply the replacement.
+
+Each slice is pushed with `push_sprite_paint`, carrying the tile's paint byte
+as the flat arm does.
+
+Scope notes: `GetFinalLight`'s shine arm (`ShouldTileShine` → `Main.shine`)
+has no port counterpart — `Main.tileShine2` is unported (drawdata.rs:509), so
+the branch is unreachable; the non-White `colorTint` is the minecart path
+only (`:3788`). Both ride the paint work (S1-G-2's row).
 
 ## The map overlay layers (S1-L-4, 2026-11-14)
 
@@ -12944,18 +13024,38 @@ have port drivers draw: SpawnMapLayer (the world spawn + the bed marker —
 the C# reads `localPlayer.SpawnX/SpawnY`, the port keeps the bed spawn on
 `World.bed_spawn`), BossBagMapLayer (the `ItemID.cs:1383` 21-kind set over
 the drop pool) and PingMapLayer (the 100-cap pool, the 15 s expiry, the 1x5
-row cycling at 10 Hz). The three data-gated layers keep their C# bodies but
-draw nothing: Digtoise (the 1098/1123 projectiles are not spawned),
-TeamBasedSpawn (the seed is in M5-SEED-2's deferred list) and
-TeleportPylons (`TeleportPylonsSystem` is not ported — the tile-entity
-work).
+row cycling at 10 Hz).
+
+**Second pass (2026-11-16, `S1-L-4-map-overlay-layers`)** closed the three
+stubs and the missing call site. Digtoise draws: `digtoise_marker` scans the
+projectile pool for the first active 1098/1123 whose `owner == 0` (the port's
+standing stand-in for `Main.myPlayer`, as in `projectile.rs`/`grapple.rs`),
+yielding `(Bottom, spriteDirection)` — `Bottom / 16 + (0.5, 0)` bottom-aligned,
+column 1 when `spriteDirection <= 0` (`DigtoiseMapLayer.cs:14-26`). TeleportPylons
+draws the live network: `tr_core::pylons::scan_pylons` feeds `MapIconInputs::pylons`,
+each marker anchored at `PositionInTiles.ToVector2() + (1.5, 2)` centre-aligned
+through `MapOverlayContext::draw_tinted` (the `MapOverlayDrawContext.cs:218-242`
+`color * opacity` form), dimmed to `Color.Gray * 0.5f` = 0.25 when
+`is_player_near_a_pylon` is false (`TeleportPylonsMapLayer.cs:39-42`/`:65-89`).
+`PylonType::style()` (`self as u8`) is the inverse of `from_tile_style` and
+supplies the `SpriteFrame` column, since the map layer's column *is* the type
+discriminant. `WorldMap::tile_revealed` (`WorldMap.cs:406-409`) backs the
+`IsRevealed` fog gate (`TeleportPylonsMapLayer.cs:112-119`) with a bounds guard
+the C# gets for free from its world-sized jagged array. TeamBasedSpawn stays
+gated: both `Main.teamBasedSpawnsSeed` and `ExtraSpawnPointManager` are unported
+(M5-SEED-2's deferred list), so the branch is the faithful shape with no data
+behind it.
 
 Scope notes: the fullscreen call rides `Main.cs:55996`'s position (the
 map's top-left minus the 10 px frame inset, `mapPosition = Vector2.Zero`
-is the tile-space identity); the minimap call (`Main.cs:55703`, with the
-clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
-their own passes; the hover text feeds the map's text line through
-`ui::text::hud_text` (the C# `ref text`).
+is the tile-space identity); the **minimap** call (`Main.cs:55696-55703`) is
+wired in the same pass — the clip is `map_minimap_quad`'s destination rect and
+the draw scale is the C#'s `num46 = ((mapMinimapScale * 0.25f * 2f + 1f) / 3f)`
+capped at 1. The pylon scan is snapshotted once per frame and only while the map
+or minimap is actually drawing, so the TE walk stays off the hot path.
+`DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are their own passes;
+the hover text feeds the map's text line through `ui::text::hud_text` (the C#
+`ref text`).
 
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14)
 
@@ -14743,6 +14843,53 @@ below are recorded rather than resolved:
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
 
+## S1-L-1 - scene metrics: ScanOnScreenTiles / ScanNPCPositions / the ore finder (2026-11-16)
+
+The scan now runs the whole `SceneMetrics.Scan` body (`SceneMetrics.cs:326-351`) in
+source order: `ScanTiles`, `ScanOnScreenTiles`, `ScanNPCPositions`,
+`AggregateTileCounts`, `CalculateZones`. Readings behind deliberate deviations:
+
+* **The visual rect.** `Main.cs:62536-62537` is `Main.GetAreaToLight()` then
+  `.Inflate(28, 28)`; `GetAreaToLight` (`:63926-63936`) is the *scaled* camera rect,
+  `floor(pos/16) - 1` to `floor((pos+size)/16) + 2`. The port has no
+  `GameViewMatrix`, and its `camera` + `screen / zoom` is exactly the world-space
+  view the tile pass already draws (`render/tiles.rs:312-318`), so the rect is
+  derived the same way. Zoom is the only divergence: vanilla's scaled camera differs
+  from ours by the view matrix translation, which the port does not model. The rect
+  only gates the music box / clock / fountain / monolith reads, all of which are
+  single-tile proximity probes - a one-tile difference shifts a fountain colour by at
+  most one tile of the view, never the pixel output of an unrelated pass.
+* **`ScanNPCPositions` is gated on `npcs` being passed**, not on the C#
+  `settings.ScanNPCPositions` bool (`Main.cs:62541` always sets it; `Player.cs:16683`
+  also always sets it). `scan_scene_at` (the unit-test entry) passes none, so the
+  array stays zeroed there - the C# would clear it in `Reset` regardless (`:786`).
+* **`nPC.active` is approximated by `hp > 0`.** The port reaps dead NPCs at the end of
+  the NPC tick (`world_sim/npcs.rs`'s `retain(|n| n.hp > 0)`), so a slot in
+  `app.npcs` with `hp <= 0` is the transient state between the kill and the retain -
+  which the C# would also skip via `active == false`.
+* **`NPCBannerBuff` indexing** keeps the port's `vec![false; 320]`; the C# is
+  `BannerSystem.MaxBannerTypes = 293` (`BannerSystem.cs:1453`). Only ids < 293 are
+  ever written by `banner_num_from_frame`, so the wider vec is inert.
+* **Not ported (no reader in the port):** `PartyMonolithCount` (the party monolith
+  tile is not in the port's tile set), `MoonLordMonolith` (tile 623's state only
+  feeds `ManageSpecialBiomeVisuals("MoonLord", ...)`, unported), `CanPlayCreditsRoll`
+  (`ActiveMusicBox == 85` only gates the credits roll, which the port does not have),
+  and the `AddPlayerEffects` arms for held items 148/3117/5322 plus
+  `player.musicBox`/`musicBoxSilence`/`happyFunTorchTime` (`:747-774`) - the player
+  struct has none of those fields. `shimmerWet` is the one `AddPlayerEffects` input
+  the port does carry and it is wired (it was already).
+* **`ActiveFountainColor` has no consumer yet.** `Main.CalculateWaterStyle`
+  (`Main.cs:57387-57392`) returns it when `>= 0`, but the port's
+  `biome::calculate_water_style` derives the style from the camera alone and does not
+  take the metrics. Wiring it means threading the scan through three call sites
+  (`frame.rs:1131`, `render/tiles.rs:322`, `rain.rs:941`) — the water-style half of
+  the row, not this one.
+* **`TownNPCCount` is now real.** It feeds `MusicEnv.town_npcs` (the `>= 3` town
+  music gate, `Main.cs:12199`) and `SpawnContext.town_npcs` (the spawn-pressure
+  tiers, `NPC.cs:604-621`), both of which were hardcoded to `0` with an "M4-TOWN"
+  comment. The port does spawn town NPCs (`NpcKind::is_town_npc`), so this was a
+  real behavioural gap, not a placeholder.
+
 ### S1-E-37's remaining deviations
 
 Three, all forced by the port's shape:
@@ -14954,6 +15101,47 @@ Count: 1 421 -> 1 582 registrations. The remaining 166 warnings are
 table, not a `Dictionary`, because the C# is a `switch` with three contiguous
 runs (`51..62`, `63..75`, and the `default: 438 + style - 2`) — the run form
 keeps the port readable against `WorldGen.cs:37928-37991`.
+
+## Golf (S1-E-9, 2026-11-16)
+
+Three `tr-core` modules: `ball.rs` (the generic `Terraria.Physics` engine),
+`golf.rs` (`GolfHelper`'s arithmetic/table half) and `golf_state.rs`
+(`GolfState` + `GolfBallTrackRecord`). All ported 1:1 with `file:line`
+citations; 28 tests.
+
+**The `Materials.json` gap.** `GolfHelper.ContactListener` and `HitGolfBall`
+read five per-tile floats (`TileGolfPhysics.{Direct,Side,Club,PassThrough}`
+`ImpactDampening` + `ImpactDampeningResistanceEfficiency`) through
+`TileMaterials.GetByTileId`. `TileMaterials.cs:22-24` deserialises them from
+`Terraria.GameContent.Metadata.MaterialData.Materials.json`, an **embedded
+resource of `Terraria.dll`** - not a file. This repo has neither the DLL nor the
+JSON (`assets/Content/` holds only `Fonts`, `Images`, `Sounds`), so the table is
+unrecoverable. The port therefore reaches it through a `GolfMaterials` trait
+whose default (`DefaultMaterials`) returns `GolfPhysics::default()`, i.e. **1.0
+for every factor**. That is the identity for all four uses (the side/direct
+blend, `velocity * 1.0`, `lerp(v * 1.0, v, e) == v`; the bumper push uses no
+material at all), so an unknown material leaves the ball's motion untouched
+rather than inventing a friction value. Consequence: on real terrain the ball
+does not yet slow on landing; wiring the retail JSON (or a hand-built table)
+into `impl GolfMaterials` is the only remaining work for exact contact feel.
+
+**`GolfBall` is a value snapshot, not a `Projectile`.** `GolfState` keeps a live
+`Projectile` reference and re-validates it on every `GetLastHitBall`
+(`active`, `IsAGolfBall[type]`, `owner == Main.myPlayer`, `ai[1]`). `tr-core` has
+no projectile pool, so the caller supplies a `&GolfBall` snapshot and the same
+four guards read it. `Main.myPlayer` is a real parameter threaded through
+`get_last_hit_ball` - the owner check is a genuine comparison (a test varies both
+sides), not a constant.
+
+**`BALL_RETURN_PENALTY = 1` is dead.** `GolfState.cs:8` declares it and never
+reads it; it is omitted rather than carried as a dead constant.
+
+**Scope.** Ported: the ball engine, the shot model, the club table, the contact
+listener's bounce/bumper/hole-capture/pass-through decisions, the score record
+and the per-client state. Not ported: the projectile AIs 721/722 and 739-752,
+the golf UI, `FancyGolfPredictionLine`, tee placement, netcode, and the
+dust/sound/chat effects (the listener reports contacts instead of performing
+them, so the caller owns those).
 ## The conveyor-belt family (S1-E-13e, 2026-11-16)
 
 `crates/tr-app/src/collision.rs::build_tile_contacts` ports

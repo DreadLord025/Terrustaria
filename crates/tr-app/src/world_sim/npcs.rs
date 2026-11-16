@@ -1516,15 +1516,26 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         return;
     }
     if app.world.invasion_size <= 0 {
-        // `SetEventFlagCleared(ref NPC.downedGoblins, 0)` +
-        // `AchievementsHelper.NotifyProgressionEvent(10)` — the port's
-        // achievement engine has no progression-kind rows yet (the
-        // flag-set state carries the defeat).
+        // `SetEventFlagCleared(ref NPC.downedX, n)` + the matching
+        // `AchievementsHelper.NotifyProgressionEvent` (`Main.cs:64335-64354`):
+        // goblins 10, frost 12, pirates 11, martians 13.
         match app.world.invasion_type {
-            2 => app.world.downed_frost = true,
-            3 => app.world.downed_pirates = true,
-            4 => app.world.downed_martians = true,
-            _ => app.world.downed_goblins = true,
+            2 => {
+                app.world.downed_frost = true;
+                let _ = app.achievements.notify_progression(12);
+            }
+            3 => {
+                app.world.downed_pirates = true;
+                let _ = app.achievements.notify_progression(11);
+            }
+            4 => {
+                app.world.downed_martians = true;
+                let _ = app.achievements.notify_progression(13);
+            }
+            _ => {
+                app.world.downed_goblins = true;
+                let _ = app.achievements.notify_progression(10);
+            }
         }
         invasion_warning(app);
         app.world.invasion_type = 0;
@@ -2531,6 +2542,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // pass over the updated NPCs: the C#'s per-NPC order is kept by the
     // slot order, and the scan's own effect (the plate trips) does not
     // depend on the other NPCs' updates.
+    // The `59 HitSwitch` send sites (`Collision.cs:3304`/`:3318`/`:3324`/
+    // `:3347`): collected by the scan below, sent once the `app.wiring`/
+    // `app.world` borrows (and the `player` borrow) release.
+    let mut switch_sends: Vec<(i32, i32)> = Vec::new();
     {
         let mut wiring = &mut app.wiring;
         let world = &mut app.world;
@@ -2561,12 +2576,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     y,
                 );
             }
+            // `Collision.cs:3304`/`:3318`/`:3324`/`:3347` — the `59 HitSwitch`
+            // send sits on every fired switch.
+            switch_sends.extend(switch.switches.iter().copied());
         }
     }
     // The eye's climb-away despawn (`EncourageDespawn(10)` from the
     // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
     // far enough off-screen; the port culls it above the player's view).
     let player_y = player.as_ref().map(|p| p.y).unwrap_or(0.0);
+    // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
+    for (x, y) in switch_sends {
+        app.send_hit_switch(x, y);
+    }
     if app.world.day_time {
         app.npcs
             .retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
@@ -3830,7 +3852,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 player_center: (pcx, pcy),
                 player_pos: (player.x, player.y),
                 nearby_active_npcs: nearby,
-                town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                town_npcs: app.scene_metrics.town_npc_count,
                 day_time: app.world.day_time,
                 player_life_max: app.player.as_ref().map_or(100, |p| p.max_hp),
                 underworld_for_bats: (app.camera.y / 16.0) as i32 > app.world.height - 200,
@@ -5705,6 +5727,48 @@ mod invasion_tests {
             assert!(app.world.downed_frost, "the frost defeat flag");
             assert!(!app.world.downed_goblins, "the goblin flag untouched");
             assert_eq!(app.world.invasion_type, 0);
+            // `Main.cs:64343` — the clear also fires the frost achievement
+            // (TIN_FOIL_HATTER's `PROGRESSION_EVENT_12`).
+            assert!(progression(&app, 12), "the frost clear credits 12");
+            assert!(!progression(&app, 10), "the goblin id stays untouched");
+        }
+
+        /// Whether the `PROGRESSION_EVENT_<id>` condition is completed on any
+        /// row (`AchievementCondition.Name`, the save key).
+        fn progression(app: &App, id: u32) -> bool {
+            let key = format!("PROGRESSION_EVENT_{id}");
+            app.achievements
+                .list
+                .iter()
+                .flat_map(|a| a.conditions.iter())
+                .any(|c| c.name == key && c.completed)
+        }
+
+        /// S1-E-18c — all four invasion clears fire their `Main.cs:64335-64354`
+        /// ids: goblins 10 (GOBLIN_PUNTER), pirates 11 (WALK_THE_PLANK),
+        /// frost 12 (DO_YOU_WANT_TO_SLAY_A_SNOWMAN), martians 13
+        /// (TIN_FOIL_HATTER).
+        #[test]
+        fn s1_e_18c_each_invasion_clear_fires_its_achievement() {
+            for (invasion_type, id) in [(1i32, 10u32), (2, 12), (3, 11), (4, 13)] {
+                let mut app = flow_app(None, vec![], vec![]);
+                app.world = surface_world();
+                app.world.invasion_type = invasion_type;
+                app.world.invasion_size = 0;
+                app.world.invasion_size_start = 120;
+                update_invasion_state(&mut app);
+                assert_eq!(app.world.invasion_type, 0, "type {invasion_type} cleared");
+                assert!(progression(&app, id), "type {invasion_type} credits {id}");
+                // Exactly one id: the other three stay open.
+                for other in [10u32, 11, 12, 13] {
+                    if other != id {
+                        assert!(
+                            !progression(&app, other),
+                            "type {invasion_type} must not credit {other}"
+                        );
+                    }
+                }
+            }
         }
 
         #[test]

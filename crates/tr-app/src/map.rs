@@ -6,8 +6,8 @@
 use glam::Vec2;
 use tr_core::lighting::LightMap;
 use tr_core::map::{
-    MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect, unlock_map_tile_pretty,
-    update_map_lighting, update_type,
+    MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect, unlock_map_section,
+    unlock_map_tile_pretty, update_map_lighting, update_type,
 };
 use tr_core::{TILE_PX, World};
 use tr_render::SpriteRenderer;
@@ -399,7 +399,12 @@ pub struct WorldMap {
     pub pos: [f32; 2],
     /// `Main.mapMinimapScale` (`Main.cs:66751`), fixed at 1.05 (no minimap-zoom UI yet).
     pub minimap_scale: f32,
-    timer: f32,
+    /// `Main.mapTime` (`Main.cs:803`) — the countdown that gates the
+    /// lighting → map export (`LegacyLighting.cs:349`).
+    map_time: i32,
+    /// `Main.mapTimeMax` (`Main.cs:801`) — the refresh budget the countdown
+    /// re-arms from; the gfx-quality loop writes it (`Main.cs:16995-17000`).
+    pub map_time_max: i32,
     /// Tiles revealed/changed since the last `take_dirty` (Task 6 uploads these).
     dirty: Vec<(i32, i32)>,
     /// The world-sized map texture exists (`ensure_map_texture` has run).
@@ -429,7 +434,8 @@ impl WorldMap {
             scale: MAP_FULLSCREEN_SCALE_DEFAULT,
             pos: [0.0, 0.0],
             minimap_scale: 1.05,
-            timer: 1.0,
+            map_time: 0,
+            map_time_max: 0,
             dirty: Vec::new(),
             uploaded: false,
             needs_full_upload: false,
@@ -449,11 +455,19 @@ impl WorldMap {
     /// player-centred 75x47 box (the audit's D10) — a smaller, trail-prone
     /// window than the vanilla's view-derived one.
     pub fn update(&mut self, world: &World, player: Option<&Player>, light: &LightMap, dt: f32) {
-        self.timer += dt;
-        if self.timer < 0.25 {
+        let _ = dt;
+        // `Main.cs:61818-61821` — the C# decrements `mapTime` once per frame;
+        // `ExportToMiniMap` (`LightingEngine.cs:246-270`) is what the legacy
+        // engine runs when `mapTime == 0` (`LegacyLighting.cs:349`), re-arming
+        // it from `mapTimeMax` (`Main.cs:16995-17000`, the gfx-quality budget:
+        // 0 above quality 0.8). The port's frame calls this once per update, so
+        // the frame counter is the gate — the old `dt`-based 0.25 s timer was a
+        // fixed cadence that ignored the quality budget.
+        if self.map_time > 0 {
+            self.map_time -= 1;
             return;
         }
-        self.timer = 0.0;
+        self.map_time = self.map_time_max;
         // `:256`: `MapHelper.sceneArea` is the scene-metrics scan's
         // player-centred box — its C# static defaults to `Rectangle.Empty`,
         // so without a scan (no player) the intersect is empty and nothing
@@ -510,6 +524,43 @@ impl WorldMap {
         crate::map::clear_edges(&mut self.tiles, world.width, world.height);
     }
 
+    /// `WorldMap.UnlockMapSection` (`WorldMap.cs:109-138`) — the 200x150
+    /// section clamped into the world inset 40. `pretty` is the C#'s
+    /// `DebugOptions.unlockMap == 2` (`:120`, the `/map pretty` chat command,
+    /// `ToolkitDebugCommands.cs:480-494`); the other mode is the full
+    /// `UpdateLighting(255)` sweep. The section rect goes dirty: the C# queues
+    /// each revealed tile through `MapRenderer.QueueChange`, and re-uploading
+    /// the rect is the same pixels for one texture sync.
+    pub fn unlock_section(&mut self, world: &World, sx: i32, sy: i32, pretty: bool) {
+        crate::map::unlock_map_section(world, &mut self.tiles, sx, sy, pretty);
+        // `:111-119` — the same 40 inset clamp the C# applies (nested so a
+        // test-sized world's inverted range cannot panic).
+        let clamp = |v: i32, max: i32| v.clamp(40, (max - 40).max(40));
+        let x0 = clamp(sx * 200, world.width);
+        let x1 = clamp(sx * 200 + 200, world.width);
+        let y0 = clamp(sy * 150, world.height);
+        let y1 = clamp(sy * 150 + 150, world.height);
+        for y in y0..y1 {
+            for x in x0..x1 {
+                self.dirty.push((x, y));
+            }
+        }
+    }
+
+    /// The `/map` chat command's reveal (`ToolkitDebugCommands.cs:480-494`):
+    /// every section of the world, as the C# does by walking
+    /// `Main.sectionManager`'s draw queue. `pretty` selects
+    /// `UnlockMapTilePretty` (the 11x11 Manhattan falloff) over the flat 255.
+    pub fn unlock_map(&mut self, world: &World, pretty: bool) {
+        let sx = (world.width as f32 / 200.0).ceil() as i32;
+        let sy = (world.height as f32 / 150.0).ceil() as i32;
+        for y in 0..sy {
+            for x in 0..sx {
+                self.unlock_section(world, x, y, pretty);
+            }
+        }
+    }
+
     /// The edit-queue drain's push (the `MapRenderer.QueueChange` analog —
     /// the frame routes `MapUpdateQueue::update`'s changed tiles here).
     pub(crate) fn push_dirty(&mut self, tiles: Vec<(i32, i32)>) {
@@ -546,6 +597,18 @@ impl WorldMap {
     /// Tiles changed since the previous call (`prepare` uploads these).
     pub fn take_dirty(&mut self) -> Vec<(i32, i32)> {
         std::mem::take(&mut self.dirty)
+    }
+
+    /// `Main.mapTime` (`Main.cs:803`).
+    pub fn map_time(&self) -> i32 {
+        self.map_time
+    }
+
+    /// `WorldMap.IsRevealed` (`WorldMap.cs:406-409`): the tile has been
+    /// explored. The C# reads `_tiles[x, y].Light > 0`; the port's guard is on
+    /// the bounds because its array is flat.
+    pub fn tile_revealed(&self, world: &World, x: i32, y: i32) -> bool {
+        world.in_bounds(x, y) && self.tiles[world.index(x, y)].light > 0
     }
 
     /// Loads the explored tiles from `<world>.map` (`MapHelper.LoadMap`, invoked
@@ -1061,6 +1124,75 @@ mod tests {
         assert_eq!(m.tiles[world.index(100, 39)].light, 0, "the top band");
         assert_eq!(m.tiles[world.index(100, 40)].light, 255, "the first interior row");
         assert_eq!(m.tiles[world.index(100, 88)].light, 0, "the bottom band");
+    }
+
+    /// S1-L-3 — `WorldMap.UnlockMapSection` (`WorldMap.cs:109-138`) drives a
+    /// 200x150 section clamped into the 40 inset; the `/map` command
+    /// (`ToolkitDebugCommands.cs:480-494`) walks every section. The debug
+    /// reveal's two modes (`DebugOptions.unlockMap == 1` flat 255 vs `== 2`
+    /// the pretty falloff) differ, and both mark the rect dirty for re-upload.
+    #[test]
+    fn s1_l_3_unlock_map_section_reveals_its_clamped_rect() {
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        m.unlock_section(&world, 0, 0, false);
+        // Section 0 clamps to [40, 200+40) — `:111-119`.
+        assert_eq!(m.tiles[world.index(100, 60)].light, 255, "inside the section");
+        assert_eq!(m.tiles[world.index(30, 60)].light, 0, "before the 40 inset");
+        assert!(
+            m.dirty.contains(&(100, 60)),
+            "the revealed rect queues for re-upload"
+        );
+        // The pretty mode runs the 11x11 Manhattan falloff per tile instead of
+        // the flat 255 (`:120-129`), so it reveals a different (darker) result
+        // somewhere in the same rect.
+        let mut p = WorldMap::new(&world);
+        p.unlock_section(&world, 0, 0, true);
+        assert!(
+            p.tiles.iter().any(|t| t.light > 0),
+            "the pretty walk reveals tiles too"
+        );
+        let pretty_darker = (0..p.tiles.len()).any(|i| p.tiles[i].light != m.tiles[i].light);
+        assert!(pretty_darker, "the two unlock modes differ");
+    }
+
+    /// S1-L-3 — `mapTime`/`mapTimeMax` (`Main.cs:801-803`, `:61818-61821`):
+    /// the export is gated on the countdown, which re-arms from the budget.
+    #[test]
+    fn s1_l_3_the_map_time_countdown_gates_the_export() {
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let mut p = Player::spawn(&world);
+        let (px, py) = ((p.x / 16.0) as i32, (p.y / 16.0) as i32);
+        p.x = px as f32 * 16.0;
+        p.y = py as f32 * 16.0;
+        let light = LightMap::compute(
+            &world,
+            px - 40,
+            py - 30,
+            px + 40,
+            py + 30,
+            &LightParams::default(),
+        );
+        // The C# starts `mapTime == 0` (`Main.cs:803`), so the first frame
+        // exports and re-arms from the budget (`LegacyLighting.cs:349-373`).
+        m.map_time_max = 3;
+        m.update(&world, Some(&p), &light, 0.016);
+        assert!(m.tiles.iter().any(|t| t.light > 0), "the first frame exports");
+        let _ = m.take_dirty();
+        // The next three frames only count down.
+        for _ in 0..3 {
+            m.update(&world, Some(&p), &light, 0.016);
+        }
+        assert!(m.take_dirty().is_empty(), "nothing exports mid-countdown");
+        // The fourth frame hits zero, exports (no new pixels — the map is
+        // already fully revealed) and re-arms from the budget.
+        m.update(&world, Some(&p), &light, 0.016);
+        assert_eq!(
+            m.map_time(),
+            3,
+            "the export re-arms `mapTime` from `mapTimeMax` (`LegacyLighting.cs:373`)"
+        );
     }
 
     #[test]

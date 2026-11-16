@@ -528,6 +528,36 @@ mod shimmer_tests {
         let d = &app.items[0];
         assert!(!d.shimmered);
         assert_eq!(d.count, 5);
+        // S1-E-18e — a drop the C# never hands to `GetShimmered`
+        // (`CanShimmer()` false) credits nothing.
+        assert!(!progression(&app, 27), "no transmute, no TRANSMUTE_ITEM");
+    }
+
+    /// S1-E-18e — `WorldItem.cs:1849`'s shared tail notifies progression 27
+    /// (TRANSMUTE_ITEM) after any arm that reaches it, the decraft included.
+    #[test]
+    fn s1_e_18e_a_shimmer_transmute_credits_transmute_item() {
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(3077, 60)); // Silk Rope — decraftable
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        assert!(app.items.iter().any(|d| d.kind == 225), "the decraft ran");
+        assert!(
+            progression(&app, 27),
+            "the shimmer tail credits TRANSMUTE_ITEM"
+        );
+    }
+
+    /// Whether the `PROGRESSION_EVENT_<id>` condition (`AchievementCondition
+    /// .Name`, the save key) is completed on any row.
+    fn progression(app: &App, id: u32) -> bool {
+        let key = format!("PROGRESSION_EVENT_{id}");
+        app.achievements
+            .list
+            .iter()
+            .flat_map(|a| a.conditions.iter())
+            .any(|c| c.name == key && c.completed)
     }
 
     #[test]
