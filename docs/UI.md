@@ -599,6 +599,19 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 
 ## Dev hooks and verification
 
+* **The F3 developer workbench (`tr-debug`, S1-E-29).** `F3` toggles a Hybrid
+  Workbench: a tab rail (Items / NPCs / Bosses / World / Recipes), a filter field,
+  a dense icon+text list and an inspector strip. Controls: `wheel` scrolls the
+  list under the pointer, `↑`/`↓` move the keyboard focus (the list works without
+  a mouse), `Enter` applies the focused row, `Backspace` edits the filter, the
+  title bar drags the panel. Item ids come from `itemdata::ITEMS`, recipes from
+  `craft::RECIPES` (the Recipes tab gives the recipe result), and the World tab
+  keeps the eleven legacy rows unchanged. **The panel exists only in builds with
+  the `debug` feature** (`cargo run --features debug`); `cargo build --release`
+  contains no panel, no `debug_panel` module and none of its strings. This is
+  deliberately *not* the vanilla F3 (which is `Loadout3`,
+  `PlayerInput.cs:2090` → `TriggersSet.cs:813-816` → `TrySwitchingLoadout(2)`) —
+  vanilla 1.4.5.8 has no debug overlay to be 1:1 with.
 * **`TR_SHOT` reaches the world but not (always) the interface — re-check
   2026-11-12.** Four captures taken on a clean `main`: `TR_SHOT_FRAME=20/60/300`
   with `TR_INV`, `TR_CHEST` and `TR_NOMENU` set in turn. Every one came back

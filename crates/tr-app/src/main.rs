@@ -16,6 +16,7 @@ mod buffs;
 mod chat;
 mod chest;
 mod collision;
+#[cfg(feature = "debug")]
 mod debug_panel;
 mod death;
 mod dye;
@@ -47,6 +48,7 @@ mod npc_ai;
 mod npc_buffs;
 mod persist;
 mod grapple;
+mod gore_seam;
 mod creative;
 mod creative_sacrifices;
 mod happiness;

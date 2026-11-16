@@ -7,13 +7,14 @@
 //! `main.rs`.)
 
 pub(crate) mod clicks;
+pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
-mod rng;
+pub(crate) mod rng;
 pub(crate) mod saveglue;
 pub(crate) mod session;
 pub(crate) mod settings_ui;
@@ -34,7 +35,7 @@ use tr_core::framing;
 use tr_core::lighting::{LightMap, LightMode};
 use tr_core::liquid::LiquidSystem;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, UnifiedRandom, World, edit, save, wld, worldgen};
+use tr_core::{TILE_PX, World, edit, save, wld, worldgen};
 use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::keyboard::KeyCode;
 use winit::window::Window;
@@ -158,7 +159,9 @@ pub(crate) struct App {
     pub(crate) creative_powers: crate::creative::CreativePowers,
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
     /// module; delete the field + the module + the call sites to remove).
-    pub(crate) debug_panel: crate::debug_panel::DebugPanel,
+    /// Compiled only with the `debug` feature (see `tr-app/Cargo.toml`).
+    #[cfg(feature = "debug")]
+    pub(crate) debug_panel: tr_debug::Panel,
     /// The favorited inventory slots (`Item.favorited`'s port — the slot
     /// indices, not the per-item flag; the v1 tracks the slot positions).
     pub(crate) favorite_slots: Vec<usize>,
@@ -191,7 +194,6 @@ pub(crate) struct App {
     /// `Main.reforgeCooldown` (`Main.cs:67053`): 60 ticks after a top-tier
     /// roll (`:41924`), decremented per tick (`:17121-17123`).
     pub(crate) reforge_cooldown: i32,
-    pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
     pub(crate) spawn_no_cycle: bool,
@@ -208,6 +210,9 @@ pub(crate) struct App {
     /// by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) from the held item
     /// and falling back to this when nothing overrides it (`Main.cs:42864-42867`).
     pub(crate) equip_page_selected: i32,
+    /// `ItemSlot.dyeSwapCounter` (`ItemSlot.cs:3549-3564`): the round-robin
+    /// slot `DyeSwap` starts its empty scan from and advances past.
+    pub(crate) dye_swap_counter: usize,
     pub(crate) selected: usize,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
@@ -662,8 +667,6 @@ pub(crate) struct App {
     pub(crate) te_step: FixedStepper,
     /// The world-growth pass (`WorldGen.UpdateWorld`'s rate loops, M7-GROWTH-1).
     pub(crate) growth_step: FixedStepper,
-    /// The growth stream (the `Main.rand` rolls inside `UpdateWorld`).
-    pub(crate) growth_rng: tr_core::tile_light::FastRandom,
     /// The saved hardmode ore tiers (`SavedOreTiers`, the altar smashes).
     pub(crate) ore_tiers: tr_core::ores::SavedOreTiers,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
@@ -701,11 +704,10 @@ pub(crate) struct App {
     /// (`AmbienceServer.cs:77-84`).
     pub(crate) scene_metrics: tr_core::scene::SceneMetrics,
     /// The `AmbientSky` manager + `AmbienceServer` scheduler
-    /// (`crates/tr-app/src/ambience.rs`).
+    /// (`crates/tr-app/src/ambience.rs`). Its scheduler draws ride
+    /// [`Self::rngs`]`::global()` — the bare-`Main.rand` stand-in
+    /// (`Main.cs:17214-17216`), shared with chat commands and menu rolls.
     pub(crate) ambience: crate::ambience::Ambience,
-    /// The scheduler's `Main.rand` stand-in stream (the seed the inlined
-    /// `NetAmbienceModule` loopback hands to `FastRandom`).
-    pub(crate) ambience_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -720,6 +722,11 @@ pub(crate) struct App {
     pub(crate) sunflower_wind_step: FixedStepper,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
+    /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
+    /// `UpdateWorld_Gores` (`Main.cs:17971-17996`) after the NPCs and before
+    /// the projectiles (`:17767-17775`). Its collision probes are injected once
+    /// at init through [`crate::gore_seam::AppGoreCollision`].
+    pub(crate) gore: tr_core::gore::GorePool,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -727,11 +734,6 @@ pub(crate) struct App {
     pub(crate) liquid_alpha: [f32; 15],
     /// World item drops (`Terraria.Item` first pass).
     pub(crate) items: Vec<ItemDrop>,
-    pub(crate) item_rng: u64,
-    /// The C# `Main.rand` stream the prefix rolls consume (`Item.Prefix`,
-    /// `Item.cs:528`): `UnifiedRandom`, separate from the splitmix streams so a
-    /// prefix roll never perturbs loot/crit/particle draws (`S1-A-5`).
-    pub(crate) prefix_rng: UnifiedRandom,
     /// `Main._rngs` (`Main.cs:1294-1295`): the `Main.SwapRandom` named streams,
     /// one `UnifiedRandom` per stage key, all seeded from the world seed
     /// (`:3210-3212`). Stages take their stream from here instead of reading a
@@ -1008,7 +1010,11 @@ impl App {
     /// while it is open, so `menu_blood` carries that copy's flag and `None`
     /// falls back to the stored settings; run once per frame from `frame()`.
     pub(crate) fn sync_child_safety(&mut self, menu_blood: Option<bool>) {
-        self.dust.child_safety.disabled = menu_blood.unwrap_or(self.settings.blood);
+        let disabled = menu_blood.unwrap_or(self.settings.blood);
+        self.dust.child_safety.disabled = disabled;
+        // `ChildSafety.Disabled` is one static in the C# (`ChildSafety.cs:15`),
+        // so the gore spawn gate reads the same flag.
+        self.gore.child_safety.disabled = disabled;
     }
 
     /// `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): `EquipPage` is the
@@ -1361,8 +1367,8 @@ impl App {
     /// kind's defaults, so the reset is the prefix-field write — and the
     /// top-tier 60-tick cooldown (`Main.cs:41924`). The vanilla plays
     /// `BestReforge`/`Item37`; the port's cue set has no such key yet. The roll
-    /// consumes the shared `prefix_rng` (`Main.rand`), like every natural roll
-    /// (`S1-A-5`).
+    /// consumes the bare-`Main.rand` stand-in (`NamedRngs::global`) — the menu
+    /// path runs outside every swap (`S1-A-11` §4).
     pub(crate) fn reforge_click(&mut self) {
         let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
             return;
@@ -1378,8 +1384,11 @@ impl App {
             return;
         }
         self.coins -= cost;
-        let (prefix, top_tier) =
-            crate::prefix::reforge_roll(self.reforge_slot.kind, &mut self.prefix_rng);
+        // `Prefix(-2)` draws `Main.rand` — the menu path runs outside every
+        // swap, so the port's bare-`Main.rand` stand-in (`NamedRngs::global`,
+        // `app/rng.rs`) feeds it.
+        let kind = self.reforge_slot.kind;
+        let (prefix, top_tier) = crate::prefix::reforge_roll(kind, self.rngs.global());
         self.reforge_slot.prefix = prefix;
         if top_tier {
             self.reforge_cooldown = 60;
@@ -2937,11 +2946,11 @@ impl App {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
-            debug_panel: crate::debug_panel::DebugPanel::new(),
+            #[cfg(feature = "debug")]
+            debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
             play_world: None,
             invasion_spawn_timer: 0.0,
-            npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
             inventory,
@@ -3024,6 +3033,7 @@ impl App {
             // `TR_EQUIPPAGE` seeds the *selected* page too, so the pin survives
             // the per-frame `SelectEquipPage` resolution below.
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
+            dye_swap_counter: 0,
             selected: 0,
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];
@@ -3286,7 +3296,6 @@ impl App {
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
-            growth_rng: tr_core::tile_light::FastRandom::new(world_seed),
             // M6-SAVE-1f: the tiers ride the World (the worldgen setup roll
             // wrote them there; a loaded save's v11 section restored them),
             // so the runtime copy reads them back instead of the static
@@ -3308,19 +3317,18 @@ impl App {
                 }
                 ambience
             },
-            ambience_rng: world_seed,
 
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             leaves: Vec::new(),
+            // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
+            // slots plus the refuse sentinel; `goreTime` seeds its 600
+            // (`Gore.cs:1507-1510`).
+            gore: tr_core::gore::GorePool::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
-            item_rng: world_seed,
-            // A per-consumer stream like the splitmix fields above, but the
-            // C# `Main.rand` algorithm (the prefix rolls, `S1-A-5`).
-            prefix_rng: UnifiedRandom::new(world_seed as i32),
             // The C# seeds every `SwapRandom` key with the world seed
             // (`Main.cs:3212`); the registry creates them lazily.
             rngs: NamedRngs::new(world_seed as i32),
@@ -3336,14 +3344,7 @@ impl App {
             mine_released: false,
             item_time: 0.0,
             coins,
-            // The hooks' own `Main.rand` stand-in (`AI_007`'s 1/16
-            // cracked-brick break, `Projectile.cs:52586-52595`) — seeded from
-            // the world seed beside the other per-consumer streams.
-            projectiles: {
-                let mut p = ProjectilePool::new();
-                p.seed_hooks(world_seed);
-                p
-            },
+            projectiles: ProjectilePool::new(),
             tomb_falls: Vec::new(),
             lost_coins: 0,
             lost_coin_string: String::new(),

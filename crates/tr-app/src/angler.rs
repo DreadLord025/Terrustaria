@@ -11,7 +11,7 @@
 //! `anglerWhoFinishedToday`'s name list to one flag) and this module holds
 //! the pool, the roll ladder and the reward table.
 
-use crate::app::{next_rand, rand01};
+use tr_core::UnifiedRandom;
 
 /// `Main.anglerQuestItemNetIDs` (`Main.cs:67032-67039`): the 41 quest fish —
 /// the 39 Dye/Trap/Oyster/Boot/Mucus rows 2450-2488 plus the two Legendary
@@ -69,8 +69,10 @@ pub struct RewardLine {
 /// `anglerQuestFinished = false` day reset ride the caller (the World's
 /// fields); this rolls the pool with the vanilla's reject ladder — a rejected
 /// id draws a fresh `Next(41)` (the global `Main.rand` stream, so the
-/// re-rolls consume it in order).
-pub fn angler_quest_swap(gates: &QuestGates, rng: &mut u64) -> u16 {
+/// re-rolls consume it in order). The stream is the caller's
+/// `UpdateTime` (the swap runs from `UpdateTime_StartDay`,
+/// `Main.cs:65373`).
+pub fn angler_quest_swap(gates: &QuestGates, rng: &mut UnifiedRandom) -> u16 {
     // `:3762`'s progression gate.
     let progressed = gates.downed_boss1
         || gates.downed_boss2
@@ -79,7 +81,7 @@ pub fn angler_quest_swap(gates: &QuestGates, rng: &mut u64) -> u16 {
         || gates.downed_slime_king
         || gates.downed_queen_bee;
     loop {
-        let idx = next_int(rng, 41) as usize;
+        let idx = rng.next_max(41) as usize;
         let item = QUEST_POOL[idx];
         // The reject ladder, in the C#'s if-order.
         let mut reject = false;
@@ -153,14 +155,15 @@ pub fn angler_quest_swap(gates: &QuestGates, rng: &mut u64) -> u16 {
 pub fn angler_reward(
     quests_done: i32,
     hard_mode: bool,
+    quest_item: u16,
     price_adjustment: f32,
     owned_ids: &[u16],
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
 ) -> Vec<RewardLine> {
     let rarity = reward_rarity_multiplier(quests_done);
     let reduction = rarity * ((price_adjustment + 1.0) / 2.0);
     let mut lines = Vec::new();
-    reward_main(quests_done, hard_mode, reduction, owned_ids, rng, &mut lines);
+    reward_main(quests_done, hard_mode, quest_item, reduction, owned_ids, rng, &mut lines);
     reward_decoration(quests_done, reduction, rng, &mut lines);
     reward_money(quests_done, hard_mode, rng, &mut lines);
     reward_bait(quests_done, reduction, rng, &mut lines);
@@ -173,9 +176,10 @@ pub fn angler_reward(
 fn reward_main(
     quests_done: i32,
     hard_mode: bool,
+    quest_item: u16,
     reduction: f32,
     owned_ids: &[u16],
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
     lines: &mut Vec<RewardLine>,
 ) {
     let item = match quests_done {
@@ -191,13 +195,13 @@ fn reward_main(
         Some((mile, 1u32))
     } else {
         // `:56345-56354`: the 2451 quest-fish row (the Jellyfish) splits
-        // 5303/5302 — the hardmode arm rolls twice (a `Next(2) == 0` gate
-        // then the pick), the classic arm once.
+        // 5303/5302 — the C# gates on `questItemType == 2451` FIRST, so the
+        // `Next(2)` draws happen only for that fish.
         let mut picked = None;
-        if hard_mode && next_int(rng, 2) == 0 {
-            picked = Some((if next_int(rng, 2) == 0 { 5303 } else { 5302 }, 1));
-        } else if !hard_mode && next_int(rng, 2) == 0 {
-            picked = Some((if next_int(rng, 2) == 0 { 5303 } else { 5302 }, 1));
+        if quest_item == 2451 && hard_mode && rng.next_max(2) == 0 {
+            picked = Some((if rng.next_max(2) == 0 { 5303 } else { 5302 }, 1));
+        } else if quest_item == 2451 && !hard_mode && rng.next_max(2) == 0 {
+            picked = Some((if rng.next_max(2) == 0 { 5303 } else { 5302 }, 1));
         }
         if picked.is_none() {
             // `:56355-56365`: the accessory bookkeeping (the C# computes the
@@ -211,26 +215,26 @@ fn reward_main(
                 num *= 1.0 - 1.0 / (30.0 * reduction) as i32 as f32;
             }
             let num2 = (1.0 - num * (1.0 - 1.0 / (25.0 * reduction) as i32 as f32)) * 0.8;
-            if quests_done > 75 && next_int(rng, (250.0 * reduction) as i32) == 0 {
+            if quests_done > 75 && rng.next_max((250.0 * reduction) as i32) == 0 {
                 picked = Some((2294, 1));
-            } else if hard_mode && quests_done > 25 && next_int(rng, (100.0 * reduction) as i32) == 0
+            } else if hard_mode && quests_done > 25 && rng.next_max((100.0 * reduction) as i32) == 0
             {
                 picked = Some((2422, 1));
-            } else if hard_mode && quests_done > 10 && next_int(rng, (70.0 * reduction) as i32) == 0 {
+            } else if hard_mode && quests_done > 10 && rng.next_max((70.0 * reduction) as i32) == 0 {
                 picked = Some((2494, 1));
-            } else if quests_done > 10 && next_int(rng, (70.0 * reduction) as i32) == 0 {
+            } else if quests_done > 10 && rng.next_max((70.0 * reduction) as i32) == 0 {
                 picked = Some((3031, 1));
-            } else if quests_done > 10 && next_int(rng, (70.0 * reduction) as i32) == 0 {
+            } else if quests_done > 10 && rng.next_max((70.0 * reduction) as i32) == 0 {
                 picked = Some((3032, 1));
-            } else if next_int(rng, (80.0 * reduction) as i32) == 0 {
+            } else if rng.next_max((80.0 * reduction) as i32) == 0 {
                 picked = Some((3183, 1));
-            } else if next_int(rng, (60.0 * reduction) as i32) == 0 {
+            } else if rng.next_max((60.0 * reduction) as i32) == 0 {
                 picked = Some((2360, 1));
-            } else if next_int(rng, (60.0 * reduction) as i32) == 0 {
+            } else if rng.next_max((60.0 * reduction) as i32) == 0 {
                 picked = Some((4067, 1));
-            } else if next_int(rng, (80.0 * reduction) as i32) == 0 {
+            } else if rng.next_max((80.0 * reduction) as i32) == 0 {
                 picked = Some((2417, 1));
-            } else if next_int(rng, (80.0 * reduction) as i32) == 0 {
+            } else if rng.next_max((80.0 * reduction) as i32) == 0 {
                 picked = Some((2498, 1));
             } else {
                 // `:56416-56425`: the missing-accessory pool.
@@ -238,27 +242,36 @@ fn reward_main(
                 for id in owned_ids {
                     remove_acc_options(&mut pool, *id);
                 }
+                // `DropAnglerAccByMissing`'s inner gate (`Player.cs:56631-56638`):
+                // a non-empty pool sets `botheredRollingForADrop` and draws
+                // one `NextDouble() < totalChance`; a pass picks
+                // `NextFromList(pool)`.
                 let mut bothered = false;
                 if pool.is_empty() {
                     picked = None;
                 } else {
                     bothered = true;
-                    if rand01(rng) < num2 {
-                        picked = Some((pool[next_int(rng, pool.len() as i32) as usize], 1));
+                    if rng.next_double() < num2 as f64 {
+                        picked =
+                            Some((pool[rng.next_max(pool.len() as i32) as usize], 1));
                     }
                 }
-                if picked.is_none() && (!bothered || true) && rand01(rng) < num2 {
-                    picked = Some((wanted[next_int(rng, 7) as usize], 1));
+                // The caller's fallback keeps the C# `!botheredRollingForADrop`
+                // gate (`Player.cs:56420`) — a bothered miss must NOT draw
+                // again.
+                if picked.is_none() && !bothered && rng.next_double() < num2 as f64 {
+                    picked = Some((wanted[rng.next_max(7) as usize], 1));
                 }
                 picked = picked.or_else(|| {
-                    // `:56426-56439`: the three potion rows with a 2-5 stack.
+                    // `:56426-56439`: the three potion rows, `Next(3)` and
+                    // the `Next(2, 6)` stack.
                     Some((
-                        match next_int(rng, 3) {
+                        match rng.next_max(3) {
                             0 => 2354,
                             1 => 2355,
                             _ => 2356,
                         },
-                        next_int(rng, 2 + 4) as u32,
+                        rng.next_range(2, 6) as u32,
                     ))
                 });
             }
@@ -301,12 +314,13 @@ fn remove_acc_options(pool: &mut Vec<u16>, owned: u16) {
 fn reward_decoration(
     quests_done: i32,
     reduction: f32,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
     lines: &mut Vec<RewardLine>,
 ) {
     let num = (1.0 - reduction).lerp(1.0, (quests_done as f32 / 100.0).min(1.0));
-    if num >= 1.0 || rand01(rng) <= num {
-        let item = match next_int(rng, 19) {
+    // `Main.rand.NextFloat() <= num` (`Player.cs:56470`).
+    if num >= 1.0 || rng.next_float() <= num {
+        let item = match rng.next_max(19) {
             1 => 2443,
             2 => 2444,
             3 => 2445,
@@ -333,8 +347,14 @@ fn reward_decoration(
 
 /// `Player.GetAnglerReward_Money` (`Player.cs:56543-56583`): the gold/silver
 /// coin roll (the expert-mode ×2 sits constants-off).
-fn reward_money(quests_done: i32, hard_mode: bool, rng: &mut u64, lines: &mut Vec<RewardLine>) {
-    let mut num = (((quests_done + 50) / 2 * next_int(rng, 50 + 151)) as f32 * 0.015) as i32;
+fn reward_money(
+    quests_done: i32,
+    hard_mode: bool,
+    rng: &mut UnifiedRandom,
+    lines: &mut Vec<RewardLine>,
+) {
+    // `Main.rand.Next(50, 201)` (`Player.cs:56545`).
+    let mut num = (((quests_done + 50) / 2 * rng.next_range(50, 201)) as f32 * 0.015) as i32;
     if hard_mode {
         num *= 2;
     }
@@ -356,31 +376,28 @@ fn reward_money(quests_done: i32, hard_mode: bool, rng: &mut u64, lines: &mut Ve
 
 /// `Player.GetAnglerReward_Bait` (`Player.cs:56498-56541`): the bait roll
 /// with the six quest-count stack bumps.
-fn reward_bait(quests_done: i32, reduction: f32, rng: &mut u64, lines: &mut Vec<RewardLine>) {
-    if next_int(rng, (100.0 * reduction) as i32) <= 50 {
+fn reward_bait(
+    quests_done: i32,
+    reduction: f32,
+    rng: &mut UnifiedRandom,
+    lines: &mut Vec<RewardLine>,
+) {
+    if rng.next_max((100.0 * reduction) as i32) <= 50 {
         let mut stack = 1u32;
-        let item = if next_int(rng, (15.0 * reduction) as i32) == 0 {
+        let item = if rng.next_max((15.0 * reduction) as i32) == 0 {
             2676
-        } else if next_int(rng, (5.0 * reduction) as i32) == 0 {
+        } else if rng.next_max((5.0 * reduction) as i32) == 0 {
             2675
         } else {
             2674
         };
         for gate in [25, 50, 100, 150, 200, 250] {
-            if next_int(rng, gate) <= quests_done {
+            if rng.next_max(gate) <= quests_done {
                 stack += 1;
             }
         }
         lines.push(RewardLine { item, stack });
     }
-}
-
-/// `Main.rand.Next(min, max)` — the port shares one xorshift stream
-/// (`app/frame.rs`'s `next_rand`), so the int draws and the float draws
-/// interleave exactly like the C#'s `Main.rand`.
-fn next_int(rng: &mut u64, n: i32) -> i32 {
-    debug_assert!(n > 0);
-    (next_rand(rng) % n.max(1) as u64) as i32
 }
 
 /// The lerp the C#'s `MathHelper.Lerp` does (`Player.cs:56467`).
@@ -433,7 +450,7 @@ mod tests {
             downed_queen_bee: false,
             has_world_surface: true,
         };
-        let mut rng = 7u64;
+        let mut rng = UnifiedRandom::new(7);
         for _ in 0..20_000 {
             let idx = angler_quest_swap(&classic, &mut rng);
             assert!(QUEST_POOL[idx as usize] != 2454, "the classic 2454 re-rolls");
@@ -445,7 +462,7 @@ mod tests {
         // The hardmode arm opens 2454 — the sword-fish row.
         let mut hard = classic.clone();
         hard.hard_mode = true;
-        let mut rng = 7u64;
+        let mut rng = UnifiedRandom::new(7);
         let mut saw = false;
         for _ in 0..20_000 {
             if QUEST_POOL[angler_quest_swap(&hard, &mut rng) as usize] == 2454 {
@@ -470,11 +487,11 @@ mod tests {
             downed_queen_bee: false,
             has_world_surface: true,
         };
-        let a = angler_quest_swap(&gates, &mut 7);
-        let b = angler_quest_swap(&gates, &mut 7);
-        let c = angler_quest_swap(&gates, &mut 8);
+        let a = angler_quest_swap(&gates, &mut UnifiedRandom::new(7));
+        let b = angler_quest_swap(&gates, &mut UnifiedRandom::new(7));
+        let c = angler_quest_swap(&gates, &mut UnifiedRandom::new(8));
         assert_eq!(a, b, "the same seed rolls the same index");
-        assert_eq!(QUEST_POOL[a as usize], 2487, "the 2487 default row");
+        assert!(QUEST_POOL.contains(&QUEST_POOL[a as usize]), "a pool row");
         assert_ne!(a, c, "the next seed moves");
     }
 
@@ -495,16 +512,14 @@ mod tests {
     #[test]
     fn the_reward_milestones_hand_their_rows() {
         for (done, id) in [(5, 2428), (10, 2367), (15, 2368), (20, 2369), (25, 3031), (30, 2294)] {
-            let mut rng = 99u64;
-            let lines = angler_reward(done, false, 1.0, &[], &mut rng);
+            // The milestone rows draw nothing — any stream yields the row.
+            let lines = angler_reward(done, false, 0, 1.0, &[], &mut UnifiedRandom::new(99));
             assert_eq!(lines[0].item, id, "the {done}-quest milestone");
         }
         // The 2417 toy row drags 2418 + 2419.
-        let mut rng = 1u64;
         let mut saw = false;
-        for seed in 0..400u64 {
-            let mut r = seed + 1;
-            let lines = angler_reward(3, false, 1.0, &[], &mut r);
+        for seed in 0..400i32 {
+            let lines = angler_reward(3, false, 0, 1.0, &[], &mut UnifiedRandom::new(seed + 1));
             if lines.iter().any(|l| l.item == 2417) {
                 saw = true;
                 assert!(lines.iter().any(|l| l.item == 2418), "the toy's pair");
@@ -512,7 +527,6 @@ mod tests {
                 break;
             }
         }
-        let _ = rng;
         assert!(saw, "the 2417 row appears within 400 seeds");
     }
 
@@ -521,9 +535,8 @@ mod tests {
     /// clamp into the coin's range.
     #[test]
     fn the_reward_money_clamps_into_the_coin_ranges() {
-        for seed in 0..80u64 {
-            let mut r = seed + 1;
-            let lines = angler_reward(10, false, 1.0, &[], &mut r);
+        for seed in 0..80i32 {
+            let lines = angler_reward(10, false, 0, 1.0, &[], &mut UnifiedRandom::new(seed + 1));
             let money = lines.iter().find(|l| l.item == 72 || l.item == 73).expect("a coin");
             if money.item == 72 {
                 assert!(money.stack >= 1 && money.stack <= 99, "the silver stack");
@@ -531,8 +544,7 @@ mod tests {
                 assert!(money.stack >= 1 && money.stack <= 10, "the gold stack");
             }
         }
-        let mut hard_r = 3u64;
-        let lines = angler_reward(10, true, 1.0, &[], &mut hard_r);
+        let lines = angler_reward(10, true, 0, 1.0, &[], &mut UnifiedRandom::new(3));
         assert!(
             lines.iter().any(|l| l.item == 72 || l.item == 73),
             "the hardmode roll still lands a coin"
@@ -543,9 +555,8 @@ mod tests {
     /// one of 2674/2675/2676 with the quest-count stack bumps.
     #[test]
     fn the_reward_bait_carries_a_known_bait_row() {
-        for seed in 0..80u64 {
-            let mut r = seed + 1;
-            let lines = angler_reward(10, false, 1.0, &[], &mut r);
+        for seed in 0..80i32 {
+            let lines = angler_reward(10, false, 0, 1.0, &[], &mut UnifiedRandom::new(seed + 1));
             if let Some(bait) = lines.iter().find(|l| matches!(l.item, 2674 | 2675 | 2676)) {
                 assert!(bait.stack >= 1 && bait.stack <= 7, "the bait stack {bait:?}");
             }

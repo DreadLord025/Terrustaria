@@ -20,7 +20,7 @@ use glam::Vec2;
 
 use crate::app::App;
 use crate::biome::is_snow_biome;
-use tr_core::TILE_PX;
+use tr_core::{UnifiedRandom, TILE_PX};
 
 /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
 /// per-tick velocity regardless of frame rate. The visual ramps scale by
@@ -228,7 +228,9 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         if world.slime_rain_time > 0.0 {
             world.slime_rain_time -= day_rate as f64;
             if world.slime_rain_time <= 0.0 {
-                stop_slime_rain(world, &mut app.npc_rng);
+                // The expiry's `StopSlimeRain` runs inside `Main.UpdateTime`'s
+                // slime clock (`Main.cs:64853`) — the `UpdateTime` stream.
+                stop_slime_rain(world, app.rngs.stream(crate::app::RngKey::UpdateTime));
             }
         } else if world.slime_rain_time < 0.0 {
             world.slime_rain_time += day_rate as f64;
@@ -257,8 +259,14 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             if !ready {
                 num3 *= 5.0;
             }
-            if slime_rain_roll(&world, ready, &mut app.npc_rng) {
-                start_slime_rain(world, &mut app.npc_rng);
+            // The roll + `StartSlimeRain` ride `UpdateTime` (`Main.cs:64945`
+            // inside the rain section of `Main.UpdateTime`).
+            if slime_rain_roll(
+                &world,
+                ready,
+                app.rngs.stream(crate::app::RngKey::UpdateTime),
+            ) {
+                start_slime_rain(world, app.rngs.stream(crate::app::RngKey::UpdateTime));
             }
         }
         // (7) `Main.cs:65004-65042`: the Travelling Merchant's visit
@@ -277,7 +285,7 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         } else if !world.is_fast_forwarding()
             && world.day_time
             && world.time < 27000.0
-            && travel_visit_roll(world, &mut app.npc_rng)
+            && travel_visit_roll(world, app.rngs.stream(crate::app::RngKey::UpdateTime))
         {
             // `:65027-65034`'s resident gate — the town NPCs, the Old
             // Man (37) and the Skeleton Merchant (453) excluded (neither
@@ -288,10 +296,13 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
                 .filter(|n| n.kind.is_town_resident())
                 .count();
             if residents >= 2 {
+                // `WorldGen.SpawnTravelNPC` is called from `Main.UpdateTime`
+                // (`Main.cs:65037`) — the visit roll, the stock regeneration
+                // and the site pick all ride `UpdateTime`.
                 spawn_travel_npc(
                     world,
                     &mut app.npcs,
-                    &mut app.npc_rng,
+                    app.rngs.stream(crate::app::RngKey::UpdateTime),
                     app.player.as_ref(),
                     &mut app.chat,
                 );
@@ -304,9 +315,15 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // `deerclops_roll`, the spawn `SpawnOnPlayer`'s shape.
     let crossed = night_pre && world.time >= 16200.0 && night_raining;
     if crossed {
-        let mut r = app.npc_rng;
-        let passed = crate::world_sim::weather::deerclops_roll(app, &mut r);
-        app.npc_rng = r;
+        let zone_snow = app.scene_metrics.zone_snow;
+        let passed = deerclops_roll(
+            &app.world,
+            app.player.as_ref(),
+            zone_snow,
+            // `Main.cs:65121-65134` runs inside `Main.UpdateTime` — the
+            // `UpdateTime` stream.
+            app.rngs.stream(crate::app::RngKey::UpdateTime),
+        );
         if passed {
             let at = app.player.as_ref().map(|p| p.center());
             crate::world_sim::weather::spawn_deerclops(app, at);
@@ -320,40 +337,48 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     if !app.world.spawn_meteor {
         let dusk = dusk_pre && app.world.time >= 32400.0;
         if dusk {
-            let mut r = app.npc_rng;
-            if tr_core::worldgen::meteor::night_roll(&mut r, app.world.downed_eow) {
+            // `UpdateTime_StartNight`'s roll (`Main.cs:65230`) — the
+            // `UpdateTime` stream (the arm rides the port's weather phase;
+            // the within-stream order deviation is the ANALYSIS note).
+            if tr_core::worldgen::meteor::night_roll(
+                app.rngs.stream(crate::app::RngKey::UpdateTime),
+                app.world.downed_eow,
+            ) {
                 app.world.spawn_meteor = true;
             }
-            app.npc_rng = r;
         }
     } else {
+        // `HandleMeteorFall` runs inside `Main.UpdateTime` (`Main.cs:65141`)
+        // — the resolution draws `UpdateTime`.
         let now = app.world.time;
-        let mut r = app.npc_rng;
-        tr_core::worldgen::meteor::resolve(&mut app.world, now, &mut r);
-        app.npc_rng = r;
+        tr_core::worldgen::meteor::resolve(
+            &mut app.world,
+            now,
+            app.rngs.stream(crate::app::RngKey::UpdateTime),
+        );
     }
 }
 
-/// `Main.cs:64938-64949`'s roll shape: `Next(450000/dayRate)` — halved
-/// before the first King, x1.5 hardmode after, x5 without a fight-ready
-/// player; the classic requires ready (`(flag3 || expertMode)` folds).
-pub(crate) fn slime_rain_roll(world: &tr_core::World, ready: bool, rng: &mut u64) -> bool {
-    let mut num3 = 450000.0 / (world.day_rate().max(1) as f64);
+/// `Main.cs:64932-64947`'s roll shape: `num3 = (int)(450000.00000000006 /
+/// dayRate)` — halved before the first King, x1.5 hardmode after, x5 without
+/// a fight-ready player; the classic requires ready (`(flag3 || expertMode)`
+/// folds to `ready`), and the roll is `Main.rand.Next(num3) == 0` — one
+/// `Next(num3)` draw, consumed only when the gates pass (`&&` order).
+pub(crate) fn slime_rain_roll(
+    world: &tr_core::World,
+    ready: bool,
+    rng: &mut UnifiedRandom,
+) -> bool {
+    let mut num3 = (450000.00000000006f64 / (world.day_rate().max(1) as f64)) as i32;
     if !world.downed_slime_king {
-        num3 /= 2.0;
+        num3 /= 2;
     } else if world.hard_mode {
-        num3 *= 1.5;
+        num3 = (num3 as f64 * 1.5) as i32;
     }
     if !ready {
-        num3 *= 5.0;
+        num3 *= 5;
     }
-    ready && num3 > 0.0 && (crate::app::rand01(rng) as f64) < 1.0 / num3
-}
-
-/// `Main.rand.Next(min, max)` — the shared xorshift stream (`next_rand`),
-/// the `% range` the port uses for the C# integer draws.
-fn next_range(rng: &mut u64, min: i32, max: i32) -> i32 {
-    min + (crate::app::next_rand(rng) % (max - min).max(1) as u64) as i32
+    ready && num3 > 0 && rng.next_max(num3) == 0
 }
 
 /// `Main.StopSlimeRain()` (`Main.cs:64787-64820`): the single-player arm —
@@ -361,40 +386,51 @@ fn next_range(rng: &mut u64, min: i32, max: i32) -> i32 {
 /// `-Next(3024, 6048) * 100` (it climbs back to zero in the tick's slime
 /// clock). The kill counter is NOT cleared here — the C# only resets it in
 /// `StartSlimeRain`. A no-op when the rain is already down (`:64789-64792`).
-pub(crate) fn stop_slime_rain(world: &mut tr_core::World, rng: &mut u64) {
+pub(crate) fn stop_slime_rain(world: &mut tr_core::World, rng: &mut UnifiedRandom) {
     if !world.slime_rain {
         return;
     }
-    world.slime_rain_time = -(next_range(rng, 3024, 6048) as f64) * 100.0;
+    world.slime_rain_time = -(rng.next_range(3024, 6048) as f64) * 100.0;
     world.slime_rain = false;
 }
 
 /// `StartSlimeRain` (`Main.cs:64742-64776`): the duration
 /// Next(32400, 54000), the kill counter reset; the rain/invasion gates
 /// live at the caller (the tick's morning arm).
-pub(crate) fn start_slime_rain(world: &mut tr_core::World, rng: &mut u64) {
+pub(crate) fn start_slime_rain(world: &mut tr_core::World, rng: &mut UnifiedRandom) {
     world.slime_rain = true;
-    world.slime_rain_time = 32400.0 + (crate::app::rand01(rng) as f64) * 21600.0;
+    // `Main.cs:64767`: `slimeRainTime = Main.rand.Next(32400, 54000)` — one
+    // integer draw (the C#'s `slimeRainTime <= 0` re-arm gate is implied by
+    // the roll gate, which requires `!slimeRain`).
+    world.slime_rain_time = rng.next_range(32400, 54000) as f64;
     world.slime_rain_kills = 0;
 }
 
 /// `Main.cs:65121-65134`'s midnight-crossing arm: the instantaneous
 /// `num4 < 16200 && time >= 16200` crossing while raining, the
-/// `!downedDeerclops || Next(4) == 0` repeat roll, and the player
-/// gates (above the surface, ZoneSnow, no nearby town NPCs,
-/// `statLifeMax2 >= 200 || statDefense >= 9`). The `CanSpawnEnemiesNear`
-/// and `AnyDanger` arms fold (no danger scan ported). Returns the
-/// player's centre to spawn at.
-pub(crate) fn deerclops_roll(app: &App, rng: &mut u64) -> bool {
-    if !(app.world.downed_deerclops || crate::app::rand01(rng) < 0.25) {
+/// `!downedDeerclops || Next(4) == 0` repeat roll (`:65123` — the first
+/// encounter is guaranteed and draws nothing; afterwards one `Next(4)`
+/// draw, 1-in-4; the pre-P2 arm had this polarity flipped and now resolves
+/// toward the C#), and the player gates (above the surface, ZoneSnow, no
+/// nearby town NPCs, `statLifeMax2 >= 200 || statDefense >= 9`). The
+/// `CanSpawnEnemiesNear` and `AnyDanger` arms fold (no danger scan
+/// ported). The world/player/zone inputs are discrete params so the
+/// caller can borrow the `UpdateTime` stream alongside them.
+pub(crate) fn deerclops_roll(
+    world: &tr_core::World,
+    player: Option<&crate::player::Player>,
+    zone_snow: bool,
+    rng: &mut UnifiedRandom,
+) -> bool {
+    if world.downed_deerclops && rng.next_max(4) != 0 {
         return false;
     }
-    let Some(p) = app.player.as_ref() else {
+    let Some(p) = player else {
         return false;
     };
     if p.dead
-        || p.y >= (app.world.world_surface * 16.0) as f32
-        || !app.scene_metrics.zone_snow
+        || p.y >= (world.world_surface * 16.0) as f32
+        || !zone_snow
         || !(p.max_hp >= 200 || p.stat_defense >= 9)
     {
         return false;
@@ -412,12 +448,12 @@ pub(crate) fn spawn_deerclops(app: &mut App, player: Option<(f32, f32)>) {
     app.npcs.push(d);
 }
 
-/// `Main.cs:65024-65025`'s day-rate roll shape: `num6 = 27000 / dayRate` and
-/// `Main.rand.Next(num6 * 4) == 0`, one roll per tick over the first half of
-/// the day — so the port's per-tick LCG takes `1 / (4 * num6)`.
-pub(crate) fn travel_visit_roll(world: &tr_core::World, rng: &mut u64) -> bool {
-    let num6 = 27000.0 / (world.day_rate().max(1) as f64);
-    (crate::app::rand01(rng) as f64) < 1.0 / (num6 * 4.0)
+/// `Main.cs:65024-65034`'s day-rate roll shape: `num6 = (int)(27000 /
+/// dayRate)` and `Main.rand.Next(num6 * 4) == 0` — one `Next(num6*4)` draw
+/// per tick over the first half of the day.
+pub(crate) fn travel_visit_roll(world: &tr_core::World, rng: &mut UnifiedRandom) -> bool {
+    let num6 = (27000.0 / (world.day_rate().max(1) as f64)) as i32;
+    rng.next_max(num6 * 4) == 0
 }
 
 /// `WorldGen.SpawnTravelNPC` (`WorldGen.cs:5251-5407`): the merchant's
@@ -426,7 +462,7 @@ pub(crate) fn travel_visit_roll(world: &tr_core::World, rng: &mut u64) -> bool {
 pub(crate) fn spawn_travel_npc(
     world: &mut tr_core::World,
     npcs: &mut Vec<crate::npc::Npc>,
-    npc_rng: &mut u64,
+    rng: &mut UnifiedRandom,
     player: Option<&crate::player::Player>,
     chat: &mut crate::chat::ChatMonitor,
 ) {
@@ -448,7 +484,7 @@ pub(crate) fn spawn_travel_npc(
     // `:5264-5265`: the stock roll + the shop sync (the port has no network
     // layer for it — the World's array rides the same tick).
     let luck = player.map_or(0.0, |p| p.luck());
-    world.travel_shop = crate::shop::setup_travel_shop(world, luck, npc_rng);
+    world.travel_shop = crate::shop::setup_travel_shop(world, luck, rng);
     // `:5267-5279`: the anchored homes of the resident town NPCs (the port
     // carries the home on `Npc.home`).
     let mut homes: Vec<(usize, (i32, i32))> = npcs
@@ -467,7 +503,9 @@ pub(crate) fn spawn_travel_npc(
             let tx = (n.x / tr_core::TILE_PX) as i32;
             let ty = (n.y / tr_core::TILE_PX) as i32;
             // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
-            if let Some(h) = crate::town::quick_find_home(world, npcs, tx, ty, Some(i)) {
+            if let Some(h) =
+                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), n.kind.net_id())
+            {
                 homes.push((i, h));
             }
         }
@@ -475,7 +513,8 @@ pub(crate) fn spawn_travel_npc(
     if homes.is_empty() {
         return;
     }
-    let pick = roll_int_pub(npc_rng, 0, homes.len() as i32) as usize;
+    // `Main.rand.Next(num)` over the anchored homes (`WorldGen.cs:5298`).
+    let pick = rng.next_max(homes.len() as i32) as usize;
     let (_, (home_x, home_y)) = homes[pick];
     let mut best_x = home_x;
     let best_y = home_y;
@@ -506,7 +545,7 @@ pub(crate) fn spawn_travel_npc(
     // attempts reject the ±1 band around the home tile, the last 10 accept
     // anything but the exact home tile.
     for attempt in 0..30 {
-        let roll = roll_int_pub(npc_rng, min_x, max_x + 1);
+        let roll = rng.next_range(min_x, max_x + 1);
         if attempt < 20 {
             if roll < best_x - 1 || roll > best_x + 1 {
                 best_x = roll;
@@ -639,11 +678,6 @@ pub(crate) fn unspawn_travel_npc(
     );
 }
 
-/// `Main.rand.Next(min, max)` — the same arithmetic as the shop's own roll
-/// helper (kept local so this module needs no extra import cycle).
-fn roll_int_pub(rng: &mut u64, min: i32, max: i32) -> i32 {
-    min + (crate::app::rand01(rng) * (max - min) as f32) as i32
-}
 
 #[cfg(test)]
 mod tests {
@@ -734,23 +768,25 @@ mod tests {
     }
 
 
-    /// `Main.cs:65009-65040`'s day roll shape: `num6 = 27000 / dayRate` and
-    /// `Main.rand.Next(num6 * 4) == 0` — the fast-forward (dayRate 60) puts
-    /// one hit per 1800 ticks, so a 20000-tick sweep hits (and lands in a
-    /// sane band); the afternoon refuses.
+    /// `Main.cs:65024-65034`'s day roll shape: `num6 = (int)(27000/dayRate)`
+    /// and `Main.rand.Next(num6 * 4) == 0` — the fast-forward (dayRate 60)
+    /// puts one hit per 1800 ticks; the seed-42 stream's 20000 draws land 14
+    /// hits (the splitmix seed hunt re-pinned to the named-stream prefix,
+    /// S1-A-11 P2). The afternoon refuses through the caller's gate (the
+    /// DW-2.1 tick pins pin that arm).
     #[test]
     fn the_travel_merchant_roll_is_day_rate_scaled() {
         let mut app = flow_app(None, vec![], vec![]);
-        app.world.fast_forward_to_dawn = true; // dayRate 60 -> 1/1800 per tick
-        let mut rng = 0x51AB_C37Fu64;
+        app.world.fast_forward_to_dawn = true; // dayRate 60 -> num6 = 450
+        let mut rng = UnifiedRandom::new(42);
         let mut hits = 0;
         for _ in 0..20_000 {
             if super::travel_visit_roll(&app.world, &mut rng) {
                 hits += 1;
             }
         }
-        assert!(hits >= 1 && hits <= 200, "the roll band: {hits}");
-        let mut r = 5u64;
+        assert_eq!(hits, 14, "the Next(1800) hit count on the seed-42 prefix");
+        let mut r = UnifiedRandom::new(5);
         app.world.fast_forward_to_dawn = false;
         assert!(
             super::travel_visit_roll(&app.world, &mut r) || true,
@@ -773,7 +809,7 @@ mod tests {
         second.home = Some((5, 4));
         app.npcs.push(first);
         app.npcs.push(second);
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         super::spawn_travel_npc(
             &mut app.world,
             &mut app.npcs,
@@ -832,7 +868,6 @@ mod tests {
         // A player standing on the merchant: the safe-range rect (62 x 39
         // tiles around his centre tile) keeps him.
         app.player = Some(crate::player::Player::spawn(&app.world));
-        let mut rng = 9u64;
         super::unspawn_travel_npc(&mut app.npcs, app.player.as_ref(), &mut app.chat);
         assert_eq!(app.npcs.len(), 1, "the nearby player keeps him");
         // Walk the player far away and the merchant leaves.
@@ -979,39 +1014,39 @@ mod tests {
         player.max_hp = 200;
         player.stat_defense = 10;
         app.player = Some(player);
-        // The roll shape: the ready player + the King downed = 1/300000
-        // per tick at dayRate 1 (450000 x1.5 /2? no: /2 then... the
-        // order: /2 (the King downed) — 225000; the hardmode arm is
-        // ELSE-if).
+        // The roll shape on the named stream (`Main.cs:64945`'s
+        // `Next(num3) == 0`; the King downed + classic = num3 450000 at
+        // dayRate 1 — the `/2` arm is the NOT-downed one, `Main.cs:64936`):
+        // the seed-42 stream pins the first hit and every draw before it
+        // (the splitmix seed hunt is gone, S1-A-11 P2).
         app.world.downed_slime_king = true;
         app.world.hard_mode = false;
-        let mut rng = 1u64;
-        let fired = (0..500000u64).any(|seed| {
-            let mut r = seed + 1;
-            crate::world_sim::weather::slime_rain_roll(&app.world, true, &mut r)
-        });
-        assert!(fired, "the roll fires within 500000 seeds");
-        // The not-ready x5: the threshold quadruples the rarity — the
-        // forced shape assert rides the modifier math instead (the
-        // ready=false arm consumes one roll and returns false early? no —
-        // it rolls against 1/num3 with num3 x5 — the direct prove: the
-        // not-ready NEVER fires without... the vanilla `(flag3 ||
-        // expertMode)` gate means the classic not-ready never rolls.
+        let mut rng = UnifiedRandom::new(42);
+        let fired_at = (0..500_000usize)
+            .find(|_| crate::world_sim::weather::slime_rain_roll(&app.world, true, &mut rng))
+            .expect("the stream hits within 500000 draws");
+        assert_eq!(fired_at, 115_297, "the first Next(450000) hit on seed 42");
+        // The not-ready arm consumes no draw — the C#'s `(flag3 ||
+        // expertMode)` gate short-circuits before `Next(num3)`
+        // (`Main.cs:64945`), so the classic not-ready never rolls.
+        let mut fresh = UnifiedRandom::new(42);
+        let pristine = fresh.clone();
         assert!(!crate::world_sim::weather::slime_rain_roll(
-            &app.world, false, &mut rng
+            &app.world, false, &mut fresh
         ));
-        // The start fields.
-        crate::world_sim::weather::start_slime_rain(&mut app.world, &mut rng);
+        assert_eq!(fresh, pristine, "the not-ready gate draws nothing");
+        // The start fields: one `Next(32400, 54000)` duration draw
+        // (`Main.cs:64767`) and the kill counter reset.
+        crate::world_sim::weather::start_slime_rain(&mut app.world, &mut fresh);
         assert!(app.world.slime_rain);
-        assert!(
-            app.world.slime_rain_time >= 32400.0 && app.world.slime_rain_time <= 54000.0,
-            "the duration band"
+        assert_eq!(
+            app.world.slime_rain_time, 46831.0,
+            "the Next(32400, 54000) duration on seed 42"
         );
         assert_eq!(app.world.slime_rain_kills, 0);
         // The gates: the afternoon tick leaves the state untouched.
         app.world.slime_rain = false;
         app.world.time = 30000.0;
-        app.npc_rng = 7;
         super::update_world_tick(&mut app, 1.0 / 60.0);
         assert!(!app.world.slime_rain, "the afternoon refuses");
         // The kill counter: the King spawns at 75 (the first downed) and
@@ -1085,20 +1120,45 @@ mod tests {
         player.max_hp = 200;
         app.player = Some(player);
         app.world = big;
-        // The base life refuses.
+        // The base life refuses (the player gates run after the roll arm).
         app.player.as_mut().unwrap().max_hp = 100;
         app.player.as_mut().unwrap().stat_defense = 0;
-        let mut rng = 1u64;
-        assert!(!crate::world_sim::weather::deerclops_roll(&app, &mut rng));
-        // The readiness passes the gates; the roll itself is the 1/4
-        // repeat (downed) or the guaranteed first — hunt a seed.
+        let mut rng = UnifiedRandom::new(42);
+        assert!(!crate::world_sim::weather::deerclops_roll(
+            &app.world,
+            app.player.as_ref(),
+            true,
+            &mut rng,
+        ));
+        // The guaranteed first: `!downedDeerclops` passes `Main.cs:65123`'s
+        // leftmost `||` operand with NO draw — twin equality pins it (the
+        // pre-P2 arm had this polarity flipped; resolved toward the C#).
         app.player.as_mut().unwrap().max_hp = 200;
         app.scene_metrics.zone_snow = true;
-        let fired = (0..500u64).any(|seed| {
-            let mut r = seed + 1;
-            crate::world_sim::weather::deerclops_roll(&app, &mut r)
-        });
-        assert!(fired, "the roll fires within 500 seeds");
+        let mut fresh = UnifiedRandom::new(42);
+        let pristine = fresh.clone();
+        assert!(crate::world_sim::weather::deerclops_roll(
+            &app.world,
+            app.player.as_ref(),
+            app.scene_metrics.zone_snow,
+            &mut fresh,
+        ));
+        assert_eq!(fresh, pristine, "the first encounter draws nothing");
+        // The repeat: one `Next(4)` draw, 1-in-4 — the seed-42 stream hits
+        // on its second draw (the first misses).
+        app.world.downed_deerclops = true;
+        assert!(!crate::world_sim::weather::deerclops_roll(
+            &app.world,
+            app.player.as_ref(),
+            app.scene_metrics.zone_snow,
+            &mut fresh,
+        ));
+        assert!(crate::world_sim::weather::deerclops_roll(
+            &app.world,
+            app.player.as_ref(),
+            app.scene_metrics.zone_snow,
+            &mut fresh,
+        ));
         // The spawn + the death flag.
         let at = app.player.as_ref().map(|p| p.center());
         crate::world_sim::weather::spawn_deerclops(&mut app, at);
@@ -1150,7 +1210,9 @@ mod tests {
         // `NPC.cs:79450-79456` arm).
         let mut app = flow_app(None, vec![], vec![]);
         app.world.downed_eow = false;
-        let mut rng = 1u64;
+        // `Main.cs:65230`: the `Next(50)` draw happens before the boss-flag
+        // read — a gated-off call still consumes exactly one draw.
+        let mut rng = UnifiedRandom::new(42);
         assert!(!tr_core::worldgen::meteor::night_roll(
             &mut rng,
             app.world.downed_eow
@@ -1161,6 +1223,284 @@ mod tests {
                 hits += 1;
             }
         }
-        assert!(hits > 10 && hits < 70, "the 1/50 rate ({hits})");
+        assert_eq!(hits, 47, "the 1/50 rate over the seed-42 prefix");
+        // The orb-boss death arm (`NPC.cs:79450-79456`): the guaranteed
+        // first with no draw, then `Next(2)` — seed 42's first two draws
+        // miss (1) then hit (0).
+        let mut rng2 = UnifiedRandom::new(42);
+        assert!(tr_core::worldgen::meteor::boss_death_roll(&mut rng2, false));
+        assert!(!tr_core::worldgen::meteor::boss_death_roll(&mut rng2, true));
+        assert!(tr_core::worldgen::meteor::boss_death_roll(&mut rng2, true));
+    }
+
+    /// DW-2.1: one weather tick consumes EXACTLY the weather rolls' draws
+    /// from the `UpdateTime` stream — the slime-rain roll (`Main.cs:64945`,
+    /// one `Next(num3)`) and the travel visit roll (`Main.cs:65025-65034`,
+    /// one `Next(num6 * 4)`), in that order. Twin-stream equality proves the
+    /// count and the order (no more, no fewer draws); the C# int pipelines
+    /// are mirrored by hand so a shape drift breaks the equality. The
+    /// crossings (deerclops, meteor night) do not fire on this tick and
+    /// draw nothing.
+    #[test]
+    fn test_dw_2_1_weather_tick_pins_the_update_time_stream_prefix() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.day_time = true;
+        app.world.time = 10000.0;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200; // AnyPlayerReadyToFightKingSlime: lifeMax > 140
+        player.stat_defense = 10; // && statDefense > 8 — the roll draws
+        app.player = Some(player);
+        update_world_tick(&mut app, STEP);
+
+        // The C# draw shapes, mirrored by hand: `num3`
+        // (`Main.cs:64933-64943`) = (int)(450000.00000000006/dayRate), /2
+        // (no King downed), the hardmode ELSE-if not taken, the ready
+        // player so no x5; `num6` (`Main.cs:65028-65033`) =
+        // (int)(27000/dayRate), `Next(num6 * 4)`.
+        let day_rate = app.world.day_rate().max(1);
+        let mut num3 = (450000.00000000006f64 / day_rate as f64) as i32;
+        num3 /= 2;
+        let num6 = (27000.0f64 / day_rate as f64) as i32;
+        let mut twin = UnifiedRandom::new(app.world.seed as i32);
+        let slime_fired = twin.next_max(num3) == 0;
+        let _travel_fired = twin.next_max(num6 * 4) == 0;
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateTime),
+            twin,
+            "the tick consumed exactly Next(num3) + Next(num6*4) from UpdateTime"
+        );
+        assert_eq!(
+            app.world.slime_rain, slime_fired,
+            "the roll decided the slime rain"
+        );
+    }
+
+    /// DW-2.1 (boundary): an afternoon tick consumes NOTHING from
+    /// `UpdateTime` — the slime roll's `time < 27000` gate and the travel
+    /// roll's day gate both refuse, no crossing fires, and the slime clock
+    /// sits at zero.
+    #[test]
+    fn test_dw_2_1_afternoon_tick_consumes_no_update_time_draws() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.day_time = true;
+        app.world.time = 30000.0;
+        let pristine = UnifiedRandom::new(app.world.seed as i32);
+        update_world_tick(&mut app, STEP);
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateTime),
+            pristine,
+            "the afternoon tick drew nothing"
+        );
+    }
+
+    /// DW-2.2: the meteor resolution rides `UpdateTime` — with the flag up,
+    /// the tick's `HandleMeteorFall` arm draws `drop_meteor` + `meteor`
+    /// from the named stream (the stream advanced; every other stage
+    /// stream stays pristine), the flag clears and the ore lands.
+    #[test]
+    fn test_dw_2_2_meteor_resolve_rides_the_update_time_stream() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut big = tr_core::World::new("t".into(), 400, 400);
+        for x in 0..400 {
+            for y in 120..400 {
+                let i = big.index(x, y);
+                big.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        big.compute_column_surface();
+        big.time = 17000.0; // > 16200: the resolve window
+        big.spawn_meteor = true;
+        app.world = big;
+        let pristine = UnifiedRandom::new(app.world.seed as i32);
+        update_world_tick(&mut app, STEP);
+        assert!(!app.world.spawn_meteor, "the flag cleared");
+        let ore = app
+            .world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == tr_core::worldgen::meteor::METEORITE)
+            .count();
+        assert!(ore > 100, "the ore landed ({ore})");
+        assert_ne!(
+            *app.rngs.stream(crate::app::RngKey::UpdateTime),
+            pristine,
+            "the resolution drew UpdateTime"
+        );
+        // Every OTHER stage stream is untouched (the binding choice).
+        for key in crate::app::RngKey::ALL {
+            if key == crate::app::RngKey::UpdateTime {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(app.world.seed as i32),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+    }
+
+    /// DW-2.3: two same-seed runs of `update_world_tick` produce identical
+    /// worlds and identical stream states — the weather group's determinism
+    /// pair.
+    #[test]
+    fn test_dw_2_3_weather_tick_determinism_pair() {
+        let mut a = flow_app(None, vec![], vec![]);
+        let mut b = flow_app(None, vec![], vec![]);
+        for app in [&mut a, &mut b] {
+            app.world.day_time = true;
+            app.world.time = 10000.0;
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.max_hp = 200;
+            player.stat_defense = 10;
+            app.player = Some(player);
+        }
+        update_world_tick(&mut a, STEP);
+        update_world_tick(&mut b, STEP);
+        assert_eq!(a.world.tiles, b.world.tiles, "tile grids diverged");
+        assert_eq!(
+            (a.world.world_surface, a.world.rock_layer),
+            (b.world.world_surface, b.world.rock_layer)
+        );
+        assert_eq!(
+            (
+                a.world.slime_rain,
+                a.world.slime_rain_time,
+                a.world.slime_rain_kills
+            ),
+            (
+                b.world.slime_rain,
+                b.world.slime_rain_time,
+                b.world.slime_rain_kills
+            ),
+            "the slime-rain state matches"
+        );
+        assert_eq!(
+            *a.rngs.stream(crate::app::RngKey::UpdateTime),
+            *b.rngs.stream(crate::app::RngKey::UpdateTime),
+            "the UpdateTime streams match"
+        );
+        // And every other stage stream matches across the pair.
+        for key in crate::app::RngKey::ALL {
+            assert_eq!(
+                *a.rngs.stream(key),
+                *b.rngs.stream(key),
+                "{} matches across the pair",
+                key.name()
+            );
+        }
+    }
+
+    /// The batch-review blocker's edge case, now executed:
+    /// `Main.StopSlimeRain`'s SP arm (`Main.cs:64787-64820`) sets the clock
+    /// to `-Next(3024, 6048) * 100` (`:64805`) — ONE integer draw, negated
+    /// and scaled. Twin equality pins the draw shape (the stream consumed
+    /// exactly one `Next(3024, 6048)`), the exact seed-42 value pins the
+    /// ×100 arithmetic, and the already-down no-op arm (`:64789-64792`)
+    /// consumes nothing.
+    #[test]
+    fn the_stop_slime_rain_cooldown_is_one_next3024_6048_draw() {
+        let mut world = tr_core::World::new("t".into(), 8, 8);
+        world.slime_rain = true;
+        world.slime_rain_time = 100.0; // a positive (raining) clock
+        let mut rng = UnifiedRandom::new(42);
+        crate::world_sim::weather::stop_slime_rain(&mut world, &mut rng);
+        // The twin: exactly one `Next(3024, 6048)` draw, ×100 negative.
+        let mut twin = UnifiedRandom::new(42);
+        let want = -(twin.next_range(3024, 6048) as f64) * 100.0;
+        assert_eq!(
+            rng, twin,
+            "the cooldown consumed exactly one Next(3024, 6048) draw"
+        );
+        assert!(!world.slime_rain, "the rain is down");
+        assert_eq!(
+            world.slime_rain_time, want,
+            "the -Next(3024,6048)*100 clock"
+        );
+        assert_eq!(want, -504_400.0, "the seed-42 draw is 5044");
+        // The already-down no-op arm (`Main.cs:64789-64792`) draws nothing
+        // and leaves the cooldown alone.
+        let pristine = rng.clone();
+        crate::world_sim::weather::stop_slime_rain(&mut world, &mut rng);
+        assert_eq!(rng, pristine, "the !slime_rain guard draws nothing");
+        assert_eq!(world.slime_rain_time, want, "the cooldown untouched");
+    }
+
+    /// The King-death caller (`NPC.cs:79405-79410`'s case 50 through the
+    /// port's kill path, npcs.rs) consumes its duration draw from the
+    /// `UpdateNPCs` stream — `checkDead` runs inside `NPC.UpdateNPC` under
+    /// the `UpdateNPCs` swap (`Main.cs:17767-17769`) — and the rain goes
+    /// down with the same negated-×100 cooldown. Exactly one `UpdateNPCs`
+    /// draw for the whole death tick (the death path's only other named
+    /// consumer is the orb-boss `boss_death_roll`, not this kill).
+    #[test]
+    fn the_king_death_stops_the_slime_rain_on_the_update_npcs_stream() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut big = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = big.index(x, y);
+                big.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        big.compute_column_surface();
+        big.slime_rain = true;
+        big.slime_rain_time = 30000.0;
+        app.world = big;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        let mut king = crate::npc::Npc::new(
+            crate::npc::NpcKind::KingSlime,
+            30.0 * 16.0,
+            118.0 * 16.0,
+            1,
+            0.0,
+        );
+        king.hp = 0; // dead on arrival — the kill path runs this tick
+        app.npcs.push(king);
+
+        // The twin: the one `Next(3024, 6048)` draw the stop consumes.
+        let mut twin = UnifiedRandom::new(app.world.seed as i32);
+        let want_cooldown = -(twin.next_range(3024, 6048) as f64) * 100.0;
+
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+
+        assert!(app.world.downed_slime_king, "the boss flag raised");
+        assert!(!app.world.slime_rain, "the King's death stopped the rain");
+        assert_eq!(
+            app.world.slime_rain_time, want_cooldown,
+            "the negated-×100 cooldown from the UpdateNPCs draw"
+        );
+        assert_eq!(
+            want_cooldown, -522_000.0,
+            "the seed-0 draw is 5220 (the twin replay already proved the shape)"
+        );
+        // The value pin above already proves the stop's draw is the FIRST
+        // `UpdateNPCs` draw of the death tick (a prior draw would shift the
+        // cooldown off the twin's first `Next(3024, 6048)`). Since P3 the
+        // same tick's NPCLoot half (coins/loot) also draws `UpdateNPCs` —
+        // the stream sits past the twin by the King's loot sequence, pinned
+        // per-group in DW-3.2's loot test.
+        assert_ne!(
+            *app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            twin,
+            "the death tick drew past the stop (the loot sequence follows)"
+        );
+        // The weather stream is untouched by the kill path (the two callers'
+        // streams differ exactly as the C#'s swaps make them).
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateTime),
+            UnifiedRandom::new(app.world.seed as i32),
+            "UpdateTime untouched by the King's death"
+        );
     }
 }

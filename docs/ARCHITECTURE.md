@@ -37,6 +37,7 @@ an agent needs before touching code.
 | NPCs, spawning, projectiles | `npc.rs`, `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
 | Items, drops, inventory slots | `item.rs`, `itemdata.rs` (generated — 6196 rows), `registry.rs` (accessor surface), `variants.rs` (ItemVariants), `inv.rs`; drop tick in `world_sim/items.rs` |
 | Lighting and tile light seeding | `tr-core/src/lighting/`, `tr-core/src/tile_light/` |
+| Gores: the pool, `NewGore`, the `Update` walk | `tr-core/src/gore.rs`, `gore_id.rs` (`GoreID.Sets`); the collision seam in `gore_seam.rs` (App); the `gores` fixed-step stage in `app/frame.rs` |
 | Liquids: flow sim, draw cache, waterfalls | `tr-core/src/liquid.rs`, `liquid_draw.rs`, `waterfall/` |
 | Tile objects: the registry, placement, the KillTile cascade | `tr-core/src/tileobject.rs`, `tr-core/src/edit.rs`; the drop resolution in `world_sim/editing.rs` |
 | World generation | `tr-core/src/worldgen/` |
@@ -174,6 +175,15 @@ an agent needs before touching code.
   `format.rs` (`VariableText` `{Name}`/`{?Name}`/`{$Key}`, `format_net` for
   `string.Format`), `json.rs` (the trailing-comma-tolerant loader for the shipped
   `Terraria.Localization.Content.<culture>.*.json`). Not yet wired into the UI.
+
+### `tr-debug` — the F3 developer workbench
+
+- `lib.rs` — panel **state**, **layout**, **hit-testing** and the `Event` intent
+  vocabulary. It deliberately imports no game type: `tr-app` is a binary crate, so
+  the dependency runs `tr-app → tr-debug`, never the reverse. The host supplies the
+  rows, draws through `Layout`, and applies an `Event` to its own state.
+- Compiled only with the Cargo feature `debug` (`tr-app/Cargo.toml`, default OFF):
+  `cargo build --release` links neither the crate nor `debug_panel.rs`.
 
 ### `tr-render` — GPU
 
