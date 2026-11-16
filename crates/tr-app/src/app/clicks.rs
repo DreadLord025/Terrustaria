@@ -268,6 +268,90 @@ pub(crate) fn context_accepts(context: i32, kind: u16) -> bool {
     pick_item_movement_action(context, &check, 0, &EMPTY_SLOT) != -1
 }
 
+/// `Main.DrawInventory`'s misc-equip context -> `Player.miscEquips` index
+/// (`Main.cs:41196-41215`: 19 pet, 20 light, 18 cart, 17 mount, 16 grapple —
+/// the same `MISC_CONTEXT` the draw lays out).
+fn misc_index(context: i32) -> Option<usize> {
+    Some(match context {
+        19 => 0,
+        20 => 1,
+        18 => 2,
+        17 => 3,
+        16 => 4,
+        _ => return None,
+    })
+}
+
+/// `Item.IsNotTheSameAs` (`Item.cs:49847-49854`): different type, or the same
+/// count and a different prefix.
+fn is_not_the_same_as(a: &ItemSlot, b: &ItemSlot) -> bool {
+    if a.kind == b.kind && a.count == b.count {
+        return a.prefix != b.prefix;
+    }
+    true
+}
+
+/// `ItemSlot.LeftClick`'s action-1 body (`ItemSlot.cs:1019-1119`) — the equip
+/// rows. The achievement hooks and the display-doll net packets are
+/// constants-off (ANALYSIS). Returns whether a cue should play.
+fn equip_left_click(held: &mut ItemSlot, target: &mut ItemSlot) -> bool {
+    if held.count == 1 && held.kind > 0 && target.kind > 0 && is_not_the_same_as(target, held) {
+        // `:1020-1023` — the one-for-one swap with something already worn.
+        std::mem::swap(held, target);
+        true
+    } else if held.count == 0 && target.kind > 0 {
+        // `:1044-1058` — taking the worn piece onto an air cursor.
+        std::mem::swap(held, target);
+        true
+    } else if held.kind > 0 && target.count == 0 {
+        // `:1060-1084` — placing onto an empty row: one at a time unless the
+        // cursor holds a single.
+        if held.count == 1 {
+            std::mem::swap(held, target);
+        } else {
+            *target = ItemSlot {
+                count: 1,
+                ..*held
+            };
+            held.count -= 1;
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// `ItemSlot.LeftClick`'s action-2 body (`ItemSlot.cs:1121-1218`) — the dye
+/// rows, which additionally demand that a held dye is not the worn kind.
+fn dye_left_click(held: &mut ItemSlot, target: &mut ItemSlot, held_dye: bool) -> bool {
+    if held.count == 1 && held_dye && target.kind > 0 && target.kind != held.kind {
+        // `:1122-1125`
+        std::mem::swap(held, target);
+        true
+    } else if held.count == 0 && target.kind > 0 {
+        // `:1148-1162`
+        std::mem::swap(held, target);
+        true
+    } else if held_dye && target.count == 0 {
+        // `:1164-1187` — the multi-stack path is `SetDefaults(type)`, which
+        // resets the prefix (`Item.cs:49022` sets `stack = 1`).
+        if held.count == 1 {
+            std::mem::swap(held, target);
+        } else {
+            held.count -= 1;
+            *target = ItemSlot {
+                kind: held.kind,
+                name: held.name,
+                count: 1,
+                prefix: 0,
+            };
+        }
+        true
+    } else {
+        false
+    }
+}
+
 impl App {
     /// The slot under the cursor, using the same geometry as `draw_hud`.
     pub(crate) fn slot_at_mouse(&self) -> Option<usize> {
@@ -427,6 +511,169 @@ impl App {
         } as i32;
         self.coin_slot
             .force_slot_state(vs, context, target.kind, target.count);
+    }
+
+    /// The equipment cell `(context, index)`'s item, through the split arrays
+    /// (`App::equip`): armour 8/10 and vanity 9/11 both live in
+    /// `Player.armor`, 12 in `Player.dye`, 16-20 in `miscEquips`, 33 in
+    /// `miscDyes` (`ItemSlot.cs:42-110`'s context ids).
+    fn equip_cell(&self, context: i32, idx: usize) -> ItemSlot {
+        if let Some(m) = misc_index(context) {
+            return self.equip.misc_equips[m];
+        }
+        match context {
+            8 | 9 | 10 | 11 => self.equip.armor.get(idx).copied().unwrap_or(EMPTY_SLOT),
+            12 => self.equip.dye.get(idx).copied().unwrap_or(EMPTY_SLOT),
+            33 => self.equip.misc_dyes.get(idx).copied().unwrap_or(EMPTY_SLOT),
+            _ => EMPTY_SLOT,
+        }
+    }
+
+    fn set_equip_cell(&mut self, context: i32, idx: usize, v: ItemSlot) {
+        if let Some(m) = misc_index(context) {
+            self.equip.misc_equips[m] = v;
+            return;
+        }
+        match context {
+            8 | 9 | 10 | 11 => {
+                if let Some(c) = self.equip.armor.get_mut(idx) {
+                    *c = v;
+                }
+            }
+            12 => {
+                if let Some(c) = self.equip.dye.get_mut(idx) {
+                    *c = v;
+                }
+            }
+            33 => {
+                if let Some(c) = self.equip.misc_dyes.get_mut(idx) {
+                    *c = v;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// One equipment cell's press — `ItemSlot.Handle` over the armour, vanity,
+    /// dye and misc rows (`Main.cs:41288,41450,41491,41519`): left runs
+    /// `PickItemMovementAction`'s action 1 (equip) / 2 (dye) body, right the
+    /// `RightClick` ladder's vanity swap (`:1678-1684`) or the shared paced
+    /// pickup split.
+    fn equip_slot_click(&mut self, context: i32, idx: usize, left: bool, right_edge: bool) {
+        let mut held = self.mouse_item;
+        let mut target = self.equip_cell(context, idx);
+        if left {
+            // `:927` — the action table; `:928-931` refuses everything but
+            // action 3 off a press edge.
+            match pick_item_movement_action(context, &held, idx, &target) {
+                1 => {
+                    if equip_left_click(&mut held, &mut target) {
+                        self.audio.play("Grab"); // `:1023,1057,1075,1083`
+                    }
+                }
+                2 => {
+                    let held_dye = registry::get(held.kind).is_some_and(|d| d.dye > 0);
+                    if dye_left_click(&mut held, &mut target, held_dye) {
+                        self.audio.play("Grab"); // `:1125,1161,1179,1186`
+                    }
+                }
+                _ => {}
+            }
+            self.mouse_item = held;
+        } else {
+            // `RightClick` (`:1654-1698`): the swap arms need an air cursor or
+            // one that cannot stack with the cell.
+            let can_stack = crate::bank::can_stack(&held, &target);
+            if held.count == 0 || !can_stack {
+                if context == 9 || context == 11 {
+                    // `:1678-1684` — `SwapVanityEquip(inv, context, slot,
+                    // player)` against the real counterpart `slot - 10`.
+                    if right_edge {
+                        self.vanity_swap(idx, context);
+                    }
+                    return;
+                }
+            }
+            // `:1700-1713` — the paced one-per-transfer split.
+            let can_take = held.count == 0
+                || (can_stack && held.count < registry::max_stack(target.kind));
+            if can_take {
+                target = self.right_click_split(target);
+            } else if right_edge {
+                // The port's press-edge place-one carry (research/20 §5).
+                if target.count == 0 {
+                    target = ItemSlot {
+                        count: 1,
+                        ..held
+                    };
+                    held.count -= 1;
+                    if held.count == 0 {
+                        held = EMPTY_SLOT;
+                    }
+                    self.mouse_item = held;
+                }
+            }
+        }
+        self.set_equip_cell(context, idx, target);
+    }
+
+    /// `ItemSlot.SwapEquip` (`ItemSlot.cs:3283-3363`) applied to a container
+    /// cell: the item is reassigned to its equipment slot and the destination's
+    /// previous content lands back in `slot`. The favourites clear on both
+    /// sides (`SwapClearFavorite`, `:349/:3635`; `EquipSwap`'s `:3644`), which
+    /// for the port means dropping the grid cell's positional favourite — the
+    /// equipment arrays are outside the favourite key space.
+    fn swap_equip_click(&mut self, ctx0_index: Option<usize>, item: &mut ItemSlot) -> bool {
+        if item.count == 0 {
+            return false; // `:3286-3289`
+        }
+        use crate::app::equip_swap::{SwapTarget, swap_equip_target};
+        let Some(target) = swap_equip_target(
+            item,
+            &self.equip.armor,
+            &self.equip.dye,
+            &mut self.dye_swap_counter,
+        ) else {
+            return false;
+        };
+        match target {
+            SwapTarget::Armor(slot) => std::mem::swap(item, &mut self.equip.armor[slot]),
+            SwapTarget::Dye(slot) => std::mem::swap(item, &mut self.equip.dye[slot]),
+            SwapTarget::Misc(slot) => {
+                // `EquipSwap` (`:3640-3650`): the source's favourite clears.
+                std::mem::swap(item, &mut self.equip.misc_equips[slot]);
+            }
+        }
+        if let Some(idx) = ctx0_index {
+            self.favorite_slots.retain(|&f| f != idx);
+        }
+        // `Main.EquipPageSelected = 0/2` (`:3296,3306,3316,3326,3336,3344,3354`):
+        // jump to the page the item just landed on.
+        self.equip_page_selected = match target {
+            SwapTarget::Misc(_) => crate::ui::inventory::EQUIP_PAGE_MISC,
+            _ => 0,
+        };
+        self.audio.play("Grab"); // `SoundEngine.PlaySound(7)` on every arm
+        true
+    }
+
+    /// `ItemSlot.SwapVanityEquip` (`ItemSlot.cs:1867-1899`): swap the vanity
+    /// row `slot` with the real row `slot - 10`, both favourites cleared
+    /// (`SwapClearFavorite`, `:1878`). `Main.npcShop > 0` stands down (`:1869`).
+    fn vanity_swap(&mut self, slot: usize, context: i32) {
+        if self.shop_npc.is_some() {
+            return; // `:1869-1872`
+        }
+        let Some(real) = slot.checked_sub(10) else {
+            return;
+        };
+        let (a, b) = (self.equip.armor[slot], self.equip.armor[real]);
+        if !crate::app::equip_swap::vanity_swap_allowed(&a, &b, context, slot, &self.equip.armor)
+        {
+            return; // `:1874-1877`
+        }
+        self.equip.armor.swap(slot, real);
+        self.audio.play("Grab"); // `:1879` — `SoundEngine.PlaySound(7)`
     }
 
     /// `MinimapFrameManager.DrawTo` -> `MinimapFrame.Update`
@@ -1158,6 +1405,25 @@ impl App {
             }
             return;
         }
+        // The equipment columns (`Main.cs:41288,41450,41491,41519`): armour,
+        // vanity, dye and — on the misc page — the misc-equip/misc-dye pair.
+        // `ItemSlot.Handle` runs for every cell `DrawInventory` draws, so the
+        // press is resolved through the same `equip_cell_at` geometry the
+        // hover uses.
+        if self.inventory_open {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            let m_h = self.main_m_h();
+            let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+            // The housing page owns its own cells — `equip_cell_at` answers
+            // `None` there, so it falls through to the grid probe below.
+            if let Some((ctx, idx)) =
+                ui::inventory::equip_cell_at(self.mouse_pos, screen, m_h, self.equip_page, cell)
+            {
+                self.equip_slot_click(ctx, idx, left, right_edge);
+                return;
+            }
+        }
         // The coin (ctx 1) and ammo (ctx 2) rows: `Main.DrawInventory` handles
         // every cell it draws (`Main.cs:41752-41782`), and the shared grid
         // probe below knows nothing about them (`slot_at_mouse` covers the
@@ -1203,9 +1469,27 @@ impl App {
         let mut target = self.inventory[slot];
         // The `:1707` pickup gate: an air cursor, or the same kind/prefix with
         // cursor room. This decides pickup vs the port's press-edge carry.
-        let can_take = held.count == 0
-            || (crate::bank::can_stack(&held, &target)
-                && held.count < registry::max_stack(target.kind));
+        let can_stack = crate::bank::can_stack(&held, &target);
+        let can_take = held.count == 0 || (can_stack && held.count < registry::max_stack(target.kind));
+        // `RightClick`'s swap ladder (`ItemSlot.cs:1658,1685-1697`): an air
+        // cursor or one that cannot stack with the cell enters the swap block
+        // first, and a single wearable / dye jumps to its equipment row on the
+        // press edge (`Main.mouseRightRelease`) instead of being picked up.
+        if !left
+            && (held.count == 0 || !can_stack)
+            && target.count == 1
+            && target.kind > 0
+            && (crate::app::equip_swap::can_be_equipped(&target)
+                || registry::get(target.kind).is_some_and(|d| d.dye > 0))
+        {
+            if right_edge {
+                let mut item = target;
+                if self.swap_equip_click(Some(slot), &mut item) {
+                    self.inventory[slot] = item;
+                }
+            }
+            return;
+        }
         if left {
             // The action-0 movement shared with the chest grid
             // (`left_click_movement`); the C# plays 7 when an item sits on
@@ -3748,6 +4032,140 @@ mod tests {
         app.ui_left_press = true;
         app.handle_inventory_clicks();
         assert_eq!(app.player.as_ref().unwrap().team, 0);
+    }
+
+    // ------------------------------------------------------------------
+    // S1-H-5 — the equipment columns and the right-click equip ladder
+    // ------------------------------------------------------------------
+
+    /// Inside the inventory grid's cell (0, 0).
+    const INV_SLOT_0: Vec2 = Vec2::new(48.0, 48.0);
+
+    /// The pointer over the cell `(context, index)` of `page`, found through
+    /// the same `equip_cell_at` the click dispatch resolves the press with.
+    fn equip_mouse(app: &App, page: i32, context: i32, idx: usize) -> Vec2 {
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let m_h = app.main_m_h();
+        let cell = app.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+        for y in 0..sh as i32 {
+            for x in sw as i32 - 240..sw as i32 {
+                let p = Vec2::new(x as f32, y as f32);
+                if ui::inventory::equip_cell_at(p, screen, m_h, page, cell) == Some((context, idx)) {
+                    return p;
+                }
+            }
+        }
+        panic!("no cell ({context}, {idx}) on equip page {page}");
+    }
+
+    /// `ItemSlot.Handle` over `Main.DrawInventory`'s armour column
+    /// (`Main.cs:41288`) -> `PickItemMovementAction` action 1 (`:1530-1538`)
+    /// -> the `:1060-1084` place-one arm.
+    #[test]
+    fn s1_h_5_left_click_equips_into_the_armour_column() {
+        let mut app = inv_app();
+        app.mouse_item = slot(89, 1);
+        app.mouse_pos = equip_mouse(&app, 0, 8, 0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[0], slot(89, 1), "the helmet lands in armor[0]");
+        assert_eq!(app.mouse_item.count, 0, "the cursor drained");
+    }
+
+    /// Action 2 (`:1560-1565` + `:1121-1218`): the dye column takes a dye and
+    /// refuses everything else.
+    #[test]
+    fn s1_h_5_the_dye_column_takes_dye_only() {
+        let mut app = inv_app();
+        app.mouse_item = slot(4, 1);
+        app.mouse_pos = equip_mouse(&app, 0, 12, 0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.dye[0].count, 0, "a sword is no dye");
+        assert_eq!(app.mouse_item.kind, 4, "the cursor keeps it");
+        app.mouse_item = slot(1007, 1);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.dye[0], slot(1007, 1), "the red dye goes in");
+        assert_eq!(app.mouse_item.count, 0);
+    }
+
+    /// Right-press the grid's first cell with a single `kind` in it —
+    /// `RightClick`'s `:1689-1696` arm.
+    fn right_click_grid0(kind: u16) -> App {
+        let mut app = inv_app();
+        app.inventory[0] = slot(kind, 1);
+        app.mouse_pos = INV_SLOT_0;
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        app
+    }
+
+    /// `SwapEquip`'s arm ladder (`ItemSlot.cs:3291-3358`) through the grid
+    /// right-click, and `Main.EquipPageSelected` following the item.
+    #[test]
+    fn s1_h_5_right_click_swaps_the_equipment_rows() {
+        let a = right_click_grid0(89);
+        assert_eq!(a.equip.armor[0], slot(89, 1), "helmet -> armor[0]");
+        assert_eq!(a.inventory[0].count, 0, "the grid cell emptied");
+        assert_eq!(a.equip_page_selected, 0, "`:3296`");
+
+        let a = right_click_grid0(1007);
+        assert_eq!(a.equip.dye[0], slot(1007, 1), "dye -> dye[0]");
+        assert_eq!(a.dye_swap_counter, 1, "`:3564` advanced");
+
+        let a = right_click_grid0(84);
+        assert_eq!(a.equip.misc_equips[4], slot(84, 1), "grapple -> misc[4]");
+        assert_eq!(
+            a.equip_page_selected,
+            crate::ui::inventory::EQUIP_PAGE_MISC,
+            "`:3306`"
+        );
+
+        let a = right_click_grid0(1914);
+        assert_eq!(a.equip.misc_equips[3], slot(1914, 1), "mount -> misc[3]");
+        let a = right_click_grid0(2343);
+        assert_eq!(a.equip.misc_equips[2], slot(2343, 1), "minecart -> misc[2]");
+        let a = right_click_grid0(115);
+        assert_eq!(a.equip.misc_equips[1], slot(115, 1), "light pet -> misc[1]");
+        let a = right_click_grid0(603);
+        assert_eq!(a.equip.misc_equips[0], slot(603, 1), "vanity pet -> misc[0]");
+
+        // A plain sword has no arm: the ladder falls through to the paced
+        // pickup (`:1700-1713`) and the sword rides the cursor.
+        let a = right_click_grid0(4);
+        assert_eq!(a.inventory[0].count, 0, "picked up, not equipped");
+        assert_eq!(a.mouse_item, slot(4, 1));
+        assert_eq!(a.equip.misc_equips[0].count, 0);
+    }
+
+    /// `SwapEquip`'s `SwapClearFavorite` (`:3635`): the port's positional
+    /// favourite table drops the cell the item left.
+    #[test]
+    fn s1_h_5_the_swap_clears_the_grid_favourite() {
+        let mut app = inv_app();
+        app.inventory[0] = slot(89, 1);
+        app.favorite_slots.push(0);
+        app.mouse_pos = INV_SLOT_0;
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[0].kind, 89);
+        assert!(!app.is_favorite(0), "the favourite cleared with the move");
+    }
+
+    /// `RightClick`'s context 9/11 arm (`:1678-1684`) -> `SwapVanityEquip`
+    /// (`:1867-1899`): the vanity row and its real counterpart trade.
+    #[test]
+    fn s1_h_5_right_click_swaps_a_vanity_row() {
+        let mut app = inv_app();
+        app.equip.armor[0] = slot(89, 1);
+        app.equip.armor[10] = slot(237, 1);
+        app.mouse_pos = equip_mouse(&app, 0, 9, 10);
+        app.ui_right_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.armor[0], slot(237, 1), "the real row");
+        assert_eq!(app.equip.armor[10], slot(89, 1), "the vanity row");
     }
 }
 

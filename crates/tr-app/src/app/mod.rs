@@ -7,6 +7,7 @@
 //! `main.rs`.)
 
 pub(crate) mod clicks;
+pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
@@ -158,7 +159,9 @@ pub(crate) struct App {
     pub(crate) creative_powers: crate::creative::CreativePowers,
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
     /// module; delete the field + the module + the call sites to remove).
-    pub(crate) debug_panel: crate::debug_panel::DebugPanel,
+    /// Compiled only with the `debug` feature (see `tr-app/Cargo.toml`).
+    #[cfg(feature = "debug")]
+    pub(crate) debug_panel: tr_debug::Panel,
     /// The favorited inventory slots (`Item.favorited`'s port — the slot
     /// indices, not the per-item flag; the v1 tracks the slot positions).
     pub(crate) favorite_slots: Vec<usize>,
@@ -207,6 +210,9 @@ pub(crate) struct App {
     /// by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) from the held item
     /// and falling back to this when nothing overrides it (`Main.cs:42864-42867`).
     pub(crate) equip_page_selected: i32,
+    /// `ItemSlot.dyeSwapCounter` (`ItemSlot.cs:3549-3564`): the round-robin
+    /// slot `DyeSwap` starts its empty scan from and advances past.
+    pub(crate) dye_swap_counter: usize,
     pub(crate) selected: usize,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
@@ -2902,7 +2908,8 @@ impl App {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
-            debug_panel: crate::debug_panel::DebugPanel::new(),
+            #[cfg(feature = "debug")]
+            debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
             play_world: None,
             invasion_spawn_timer: 0.0,
@@ -2988,6 +2995,7 @@ impl App {
             // `TR_EQUIPPAGE` seeds the *selected* page too, so the pin survives
             // the per-frame `SelectEquipPage` resolution below.
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
+            dye_swap_counter: 0,
             selected: 0,
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];

@@ -2036,7 +2036,8 @@ pub(crate) mod front_flow_tests {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
-            debug_panel: crate::debug_panel::DebugPanel::new(),
+            #[cfg(feature = "debug")]
+            debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
             play_world: None,
             invasion_spawn_timer: 0.0,
@@ -2049,6 +2050,7 @@ pub(crate) mod front_flow_tests {
             // player picked with the tabs, which `resolve_equip_page()` feeds
             // back into `equip_page` every frame.
             equip_page_selected: 0,
+            dye_swap_counter: 0,
             selected: 0,
             hotbar_scales: [0.75; HOTBAR],
             inventory_open: false,
