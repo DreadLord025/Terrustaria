@@ -1154,7 +1154,7 @@ mod tests {
         ] {
             w.invasion_type = ty;
             w.invasion_size = 100;
-            let rows = world_rows(&w, false);
+            let rows = world_rows(&w, false, false);
             assert!(
                 rows[7].0.starts_with(want),
                 "type {ty} row: {:?}",
@@ -1163,7 +1163,7 @@ mod tests {
         }
         w.invasion_type = 0;
         assert!(
-            world_rows(&w, false)[7].0.starts_with("Goblin Army: OFF"),
+            world_rows(&w, false, false)[7].0.starts_with("Goblin Army: OFF"),
             "the idle row"
         );
     }
