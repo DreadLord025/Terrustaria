@@ -4425,7 +4425,7 @@ the King Slime hooks (the 93-then-5 ladder order kept).
 
 `tools/gen_loot.py` reads the decompiled
 `GameContent/ItemDropRules/ItemDropDatabase.cs` `Populate()` and emits
-`crates/tr-app/src/loot_db_gen.rs` - `loot_db::database()`, **1574
+`crates/tr-app/src/loot_db_gen.rs` - `loot_db::database()`, **1421
 net-id registrations over the 643 C# register sites** in the C# order.
 The C# `RegisterToNPC(type)` expands to the type itself + the negative
 net-id family (`PrepareNPCNetIDsByTypeDictionary` over `NPCID.NetIdMap`
@@ -4469,52 +4469,6 @@ FromOptionsWithoutRepeats rule classes (each needs its own event state).
 The unknown item ids (the ~20 warn-only OneFromOptions sets) emit and
 resolve - the executor drops only registry-known items, so they surface
 as the registry scale-up work.
-
-### The four remaining rule classes (S1-E-14, 2026-11-16)
-
-`SlimeBodyItemDrop` (`SlimeBodyItemDropRule.cs:15-33`) drops the item a
-slime swallowed: the gate is `NPCID.Sets.SlimeCanContainItems[type]`
-(`NPCID.cs:10443` = 1, 59, 147, 184, 537) **and** `0 < ai[1] <
-ItemID.Count`, and `GetDropInfo` (`:35-116`) supplies the per-item stack
-range (item 8 → 5-10, 71 → 50-99, 2/3/9/… → 10-25, the rest 1-1).
-`StatueMimicItemDrop` (`StatueMimicItemDropRule.cs:15-36`) has no set
-gate — only the same `ai[1]` id range — and maps the style through
-`WorldGen.StatueStyleToItem` (`WorldGen.cs:37928-37991`, ported
-verbatim: the ten singles, the 51-62 and 63-75 runs, the 76-82 singles
-and the `438 + style - 2` fallback). `MechBossSpawnersDrop`
-(`MechBossSpawnersDropRule.cs:16-55`) needs a valuable kill, hardmode
-and at least one mech undowned, and refuses `info.IsInSimulation`
-(`DropAttemptInfo.cs:13`); each undowned mech then rolls
-`RollLuck(2500)` in 1/2/3 order for its spawner (556/544/557).
-`FromOptionsWithoutRepeats` (`FromOptionsWithoutRepeatsDropRule.cs:27-64`)
-picks `dropCount` distinct ids by take-and-remove and reports
-`1 - prod((n-1)/n)` over the shrinking pool.
-
-The production side: `spawn_loot` passes `is_in_simulation: false`
-(`NPCLoot` is the real death path, not the bestiary's simulated one) and
-resolves `slime_can_contain_items` from the positive type
-(`NPCID.FromNetId` over `NPC_NET_ID_MAP`) with `ai1` from `npc.ai[1]`.
-
-**The generator hole this task exposed.** `tools/gen_loot.py` spliced
-the `Populate()` bodies through `this.RegisterX();` calls, but only one
-level deep. `Populate` calls `RegisterBosses`, which calls
-`RegisterBoss_EOC`/`_WOF`/`_MoonLord`/… — that second level was never
-walked, so **no boss registration at all reached `loot_db_gen.rs`**:
-`register_to_npc(113, boss_bag(3324))` and the Moon Lord's whole table
-were absent, not just the four rules this row names. The walk now
-recurses (`process_stream(..., src, depth)`, capped at 8) and resolves
-the local `short type = N;` / `int[] ids = {…};` bindings, so the table
-went 1421 → 1574 registrations. Two consequences were fixed with it:
-the local-condition binding (`Conditions.X c = new Conditions.X();`)
-now routes through `SKIP_CONDITIONS` (the recursion made
-`RedHatSkeletron` reachable and it emitted a `Cond::` variant that does
-not exist), and `SKIP_RULE_CLASSES` is empty — all four classes emit.
-The two conditions stay skipped: `NamedNPC` needs the localized given
-name and `RedHatSkeletron` needs the legendary-difficulty flag, neither
-of which the port models. Reported-but-emitted oddities keep their old
-shape: the ~20 warn-only `OneFromOptions` sets name item ids the
-registry does not carry (`check_item` warns and returns `None`, so the
-row emits and the executor drops the unknown id).
 
 ## Buff slots (M2-BUFF-1)
 
@@ -15232,3 +15186,51 @@ Deliberate gaps, all recorded here rather than guessed:
 * The item box stays the port's 14 px (`item.rs::SIZE`) rather than the C#'s
   16 (`WorldItem.cs:138`): widening it changes every existing drop's
   collision, which is a separate task.
+
+## The screen effects (S1-E-16, 2026-11-16)
+
+`crates/tr-core/src/scene.rs` carries the three `SceneState` state machines
+verbatim, in the C#'s order (`SceneState.cs:75-77`):
+`ScreenObstruction.Update` (`ScreenObstruction.cs:13-46`),
+`ScreenDarkness.Update` (`ScreenDarkness.cs:12-34`) and
+`MoonlordDeathDrama.Update` (`MoonlordDeathDrama.cs:155-193`). The draw halves
+live in `crates/tr-app/src/render/screen_fx.rs`, wired at the vanilla seams:
+`DrawBack` right after the background overlays (`Main.cs:62217`), `DrawFront`,
+`DrawWhite` and `ScreenObstruction.Draw` after the projectiles
+(`Main.cs:62322-62324`), the MoonExplosion pieces and blasts inside
+`DoDraw_WallsTilesNPCs` (`Main.cs:63276-63277`).
+
+`UnbreakableWallScan.InsideUnbreakableWalls`/`LineScan`
+(`UnbreakableWallScan.cs:39-84`) is ported with the 250-tile scan distance, the
+eight directions, the `wallColor() >= 16` test and the eight-fold rotation of
+the hit mask. The `DangerousDungeonCurse` tier ladders (`:5-27`, `:32-55`) are
+pure functions taking the zone/downed flags the `tr-app` driver reads.
+
+Deliberate deviations, recorded rather than guessed:
+
+* `DebugOptions.devLightTilesCheat` has no port, so the `ScreenObstruction`
+  0.25 cap on the wall arm (`ScreenObstruction.cs:23-28`) is omitted and the
+  0.9 clamp always applies.
+* The `ScreenDarkness` walk normally scans `Main.npc[]`; `tr-core` has no NPC
+  list, so the driver fills `SceneMetrics::screen_darkness_npcs` from the
+  `tr-app` NPC vec with only the fields the two arms read. The C# loop is
+  last-match-wins and that semantics is kept.
+* Wall of Flesh (113) abandonment: the C# reads `npc.localAI[1]`, but the port
+  folds the WoF ramp into `ai[0]` (`npc.rs:9160-9168`), so `local_ai1` is filled
+  from `ai[0]`.
+* Duke Fishron (370) is not a ported `NpcKind` - the phase 10+/9-with-timer arm
+  is code-complete but unexercised until that boss lands.
+* `ScreenObstruction.Draw`'s `MagicPixel` stand-in is the renderer's built-in
+  `white_uv` quad (`push_fx_rect`). `MoonlordPiece.GetLight` averages the port's
+  `LightMap` rather than `Lighting.GetColor` - the same tile colours, a
+  different seam.
+* `DrawPaladinsShield` and `DrawInfernoRings` are **not** drawn: their gates are
+  `Player.hasPaladinShield` / `defendedByPaladin` / `inferno` and the
+  `flameRingScale` / `flameRingRot` animation state, none of which the port's
+  `Player` carries. The sheets (`Extra_98`, `FlameRing`) load so the draws can
+  be added without touching the asset pipeline.
+* The lens flare (`Main.DrawLensFlare`, `Main.cs:62509-62514`) is a
+  `NextHorizonRenderer` feature that the port does not have.
+* `FocusHelper.AllowPlayerToEmitEffects` (the `!WorldUpdateStepper.DrawnThisUpdate`
+  split between a drawn and a stepped frame) is unported, so an inferno-ring
+  animation would always advance - moot while the draw is unwritten.

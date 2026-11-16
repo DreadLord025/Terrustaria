@@ -983,6 +983,7 @@ impl App {
                 remote_players,
                 map,
                 hell_black_box_bottom,
+                scene_state,
                 ..
             } = self;
 
@@ -1097,7 +1098,7 @@ impl App {
                     // `Main.shimmerDarken` / `Main.liquidAlpha[13]`: shimmer is not
                     // simulated yet, so both stay at their neutral value.
                     // `Main.shimmerDarken` (SceneState.UpdateShimmer ramps).
-                    shimmer_darken: self.scene_state.shimmer_darken,
+                    shimmer_darken: scene_state.shimmer_darken,
                     shimmer_alpha: 0.0,
                     // `Main.sundialCooldown`/`Main.moondialCooldown`
                     // (`Main.cs:2161`/`:2165`): the scanner and the glow pass
@@ -1466,6 +1467,9 @@ impl App {
                     self.game_update_count,
                     self.mouse_text_color,
                 );
+                // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
+                // `Overlays.Scene.Draw(Background)`.
+                crate::render::screen_fx::draw_darkness_back(renderer, screen, scene_state);
                 draw_phase("world");
                 if !reuse_world {
                     tile_stats = draw_tiles(
@@ -1582,6 +1586,26 @@ impl App {
                 crate::render::wires::draw_wires(
                     renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
                 );
+                // `Main.cs:63276-63277` (`DoDraw_WallsTilesNPCs`): the Moon
+                // Lord's death drama pieces + blasts, after the walls and the
+                // WoF/back gore, under the non-solid tiles.
+                crate::render::screen_fx::draw_moonlord_pieces(
+                    renderer,
+                    lookups,
+                    light,
+                    draw_cam,
+                    world_zoom,
+                    screen,
+                    scene_state,
+                );
+                crate::render::screen_fx::draw_moonlord_explosions(
+                    renderer,
+                    lookups,
+                    draw_cam,
+                    world_zoom,
+                    screen,
+                    scene_state,
+                );
                 draw_phase("projectiles");
                 for p in projectiles.slots().iter().filter(|p| p.active) {
                     // The yoyo family's string anchors on the player's
@@ -1605,6 +1629,34 @@ impl App {
                         anim_time % 3600.0,
                     );
                 }
+                // `Main.cs:62322-62324`: `ScreenDarkness.DrawFront`,
+                // `MoonlordDeathDrama.DrawWhite` and `ScreenObstruction.Draw`
+                // close the world pass, after the projectiles (`:62251`) and
+                // the over-wire cached projectiles (`:62315`).
+                crate::render::screen_fx::draw_darkness_front(renderer, screen, scene_state);
+                crate::render::screen_fx::draw_white(renderer, screen, scene_state);
+                // `:55` — `PerspectivePlayer.getRect()` in framebuffer pixels.
+                let player_rect = render_player
+                    .as_ref()
+                    .or(player.as_ref())
+                    .map(|p| {
+                        let sx = (p.x - draw_cam.x) * world_zoom + screen.x * 0.5;
+                        let sy = (p.y - draw_cam.y) * world_zoom + screen.y * 0.5;
+                        [
+                            sx,
+                            sy + p.gfx_off_y * world_zoom,
+                            crate::player::WIDTH * world_zoom,
+                            crate::player::HEIGHT * world_zoom,
+                        ]
+                    })
+                    .unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                crate::render::screen_fx::draw_obstruction(
+                    renderer,
+                    lookups,
+                    screen,
+                    player_rect,
+                    scene_state.screen_obstruction,
+                );
 
                 let boss = npcs
                     .iter()

@@ -20,14 +20,15 @@ Handled forms (everything else is skipped with a warning):
   RULE := ItemDropRule.<ctor>(args) | new <RuleClass>(args) | rule.OnSuccess(R) |
           rule.OnFailedRoll(R)
 
-Skipped (no port system yet): the NamedNPC/RedHatSkeletron conditions.
+Skipped (no port system yet): the NamedNPC/RedHatSkeletron conditions and the
+FromOptionsWithoutRepeats/MechBossSpawners/SlimeBody/StatueMimic rule classes.
 """
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DECOMP = ROOT / "decompiled" / "Terraria"
+DECOMP = Path(r"C:/Users/DreadLord/Desktop/Terraria-Rust/decompiled") / "Terraria"
 OUT = ROOT / "crates" / "tr-app" / "src" / "loot_db_gen.rs"
 
 # The conditions the generator can express (the `Cond` enum variants); the
@@ -95,7 +96,12 @@ COND_NAMES = {
 # The skipped conditions (no port system) - reported per use.
 SKIP_CONDITIONS = {"NamedNPC": "needs the localized given name", "RedHatSkeletron": "needs the legendary difficulty + the NPC adjustment flag"}
 
-SKIP_RULE_CLASSES = {}
+SKIP_RULE_CLASSES = {
+    "FromOptionsWithoutRepeatsDropRule": "no without-repeats engine rule yet",
+    "MechBossSpawnersDropRule": "the mech spawner pick needs the downed-mechs pickup state",
+    "SlimeBodyItemDropRule": "the slime-body rain needs the slime-rain event state",
+    "StatueMimicItemDropRule": "the statue-mimic switch needs the mimic spawn state",
+}
 
 
 def body_of(src, sig):
@@ -447,30 +453,6 @@ class Gen:
                 self.warn(f"{where}: OneFromRulesRule with a skipped sub-rule")
                 return None
             return f"OneFromRulesRule::new(vec![{', '.join(rust)}])"
-        if cls == "SlimeBodyItemDropRule":
-            return "slime_body_item_drop()"
-        if cls == "StatueMimicItemDropRule":
-            return "statue_mimic_item_drop()"
-        if cls == "MechBossSpawnersDropRule":
-            return "mech_boss_spawners_drop()"
-        if cls == "FromOptionsWithoutRepeatsDropRule":
-            a = split_args(args)
-
-            def num(x):
-                x = x.strip()
-                if re.fullmatch(r"-?\d+", x):
-                    return int(x)
-                v = (locals_ or {}).get(x)
-                return v if isinstance(v, int) else None
-
-            vals = [num(x) for x in a]
-            if any(v is None for v in vals):
-                self.warn(f"{where}: FromOptionsWithoutRepeats with an unresolved option")
-                return None
-            return (
-                f"from_options_without_repeats({vals[0]}"
-                f", &[{', '.join(map(str, vals[1:]))}])"
-            )
         if cls in SKIP_RULE_CLASSES:
             self.warn(f"{where}: rule class {cls} skipped ({SKIP_RULE_CLASSES[cls]})")
             return None
@@ -546,13 +528,7 @@ class Gen:
             if rule is None:
                 return
             rule = self.apply_chains(rule, chains, where, locals_)
-            nid = a[0]
-            if not re.fullmatch(r"-?\d+", nid):
-                nid = (locals_ or {}).get(nid)
-                if nid is None:
-                    self.warn(f"{where}: unresolved npc id `{a[0]}`")
-                    return
-            nid = int(nid)
+            nid = int(a[0])
             ids = [nid]
             if nid > 0:
                 ids += self.families.get(nid, [])
@@ -636,10 +612,9 @@ class Gen:
 
 ARRAY_RE = re.compile(r"int\[\] (\w+) = new int\[\d*\]\s*\{([^}]*)\};")
 LOCAL_COND_RE = re.compile(r"[\w.]+ (\w+) = new Conditions\.(\w+)\(\);")
-LOCAL_INT_RE = re.compile(r"(?:short|int|byte|ushort) (\w+) = (-?\d+);")
 
 
-def process_stream(g, statements, gen, locals_, src=None, depth=0):
+def process_stream(g, statements, gen, locals_):
     """Parse one method's statement stream with its local scope."""
     for st in statements:
         m = ARRAY_RE.search(st)
@@ -648,26 +623,8 @@ def process_stream(g, statements, gen, locals_, src=None, depth=0):
             continue
         m = LOCAL_COND_RE.fullmatch(st)
         if m:
-            name = m.group(2)
-            # Route through the registry so a skipped condition stays skipped
-            # (previously unreachable until the nested-method walk landed).
-            if name in SKIP_CONDITIONS:
-                g.warn(f"{st}: condition {name} skipped ({SKIP_CONDITIONS[name]})")
-                continue
-            locals_[m.group(1)] = f"Cond::{COND_NAMES.get(name, name)}"
+            locals_[m.group(1)] = f"Cond::{m.group(2)}"
             continue
-        m = LOCAL_INT_RE.fullmatch(st)
-        if m:
-            locals_[m.group(1)] = int(m.group(2))
-            continue
-        # A bare `this.RegisterX();` splices that method's body in place - the
-        # table nests (`Populate` -> `RegisterBosses` -> `RegisterBoss_MoonLord`).
-        m = re.fullmatch(r"this\.(\w+)\(\);", st)
-        if m and src is not None and depth < 8:
-            meth = body_of(src, r"private void %s\(\)" % m.group(1))
-            if meth is not None:
-                process_stream(g, split_statements(meth), gen, {}, src, depth + 1)
-                continue
         g.statement(st, gen, locals_)
 
 
@@ -693,8 +650,7 @@ def main():
         "    not_scaling_with_luck, one_from_options, one_from_options_not_scaling_with_luck,",
         "    scaling_with_only_bad_luck, status_immunity_item, with_rerolls, Cond,",
         "    chain_on_failed_roll, chain_on_success, CommonDrop, DropBasedOnExpertMode,",
-        "    DropBasedOnMasterMode, from_options_without_repeats, mech_boss_spawners_drop,",
-        "    slime_body_item_drop, statue_mimic_item_drop,",
+        "    DropBasedOnMasterMode,",
         "    ItemDropDatabase, OneFromRulesRule,",
         "};",
         "",
@@ -710,9 +666,9 @@ def main():
             if meth is None:
                 print(f"generator: method {m.group(1)} not found")
                 continue
-            process_stream(g, split_statements(meth), gen, {}, src)
+            process_stream(g, split_statements(meth), gen, {})
             continue
-        process_stream(g, [st], gen, {}, src)
+        process_stream(g, [st], gen, {})
     gen.append("}")
     text = "\n".join(gen) + "\n"
 
