@@ -191,25 +191,28 @@ pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
 /// `partyable` folds `CanNPCParty`'s gates (`:55-64`) over the port's
 /// compacted vec — the C#'s `OrderBy(Main.rand.Next())` pick indexes the
 /// port's vec slots (deviation recorded).
+///
+/// Returns the `CheckForAchievement()` call the C# makes at `:142` — the
+/// party just came up, so THROW_A_PARTY (25) credits (S1-E-18f).
 pub(crate) fn check_morning_party(
     ev: &mut WorldEvents,
     party_girl_present: bool,
     partyable: &[bool],
     rng: &mut dyn FnMut(i32, i32) -> i32,
-) {
+) -> bool {
     if !party_girl_present {
-        return;
+        return false;
     }
     if ev.party_days_on_cooldown > 0 {
         ev.party_days_on_cooldown -= 1;
-        return;
+        return false;
     }
     if rng(0, 10) != 0 {
-        return;
+        return false;
     }
     let candidates: Vec<usize> = (0..partyable.len()).filter(|&i| partyable[i]).collect();
     if candidates.len() < 5 {
-        return;
+        return false;
     }
     ev.genuine_party = true;
     ev.party_days_on_cooldown = rng(5, 11);
@@ -231,6 +234,8 @@ pub(crate) fn check_morning_party(
     for &(i, _) in order.iter().take(num) {
         ev.celebrating_npcs.push(i);
     }
+    // `BirthdayParty.cs:142` — `CheckForAchievement` on the fresh party.
+    true
 }
 
 /// `LanternNight.UpdateTime` (`LanternNight.cs:150-170`): the genuine
@@ -374,7 +379,11 @@ mod tests {
         check_morning_party(&mut ev, false, &partyable, &mut rng);
         assert_eq!(draws, 0);
         let mut seq = [0i32, 6i32, 1i32, 1i32].into_iter();
-        check_morning_party(&mut ev, true, &partyable, &mut |lo, hi| seq.next().unwrap_or(lo));
+        // S1-E-18f — the return is `:142`'s `CheckForAchievement` call.
+        assert!(
+            check_morning_party(&mut ev, true, &partyable, &mut |lo, hi| seq.next().unwrap_or(lo)),
+            "a fresh party credits THROW_A_PARTY"
+        );
         assert!(ev.genuine_party);
         assert_eq!(ev.party_days_on_cooldown, 6);
         assert_eq!(ev.celebrating_npcs.len(), 1);
