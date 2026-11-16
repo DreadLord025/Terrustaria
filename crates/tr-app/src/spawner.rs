@@ -1557,7 +1557,7 @@ const MOON_WAVE_KIND_COUNT: i32 = 0;
 /// (`Some(1)` = `!AnyNPCs(id)`) and `None` for an ungated roll. Returns
 /// whether the arm's whole condition held — the C#'s `else if` chain draws the
 /// next roll only while the previous arm's did not.
-fn moon_arm(picked: &mut Option<u16>, rng: &mut FastRandom, n: i32, cap: Option<i32>, kind: u16) -> bool {
+fn moon_arm(picked: &mut Option<u16>, rng: &mut UnifiedRandom, n: i32, cap: Option<i32>, kind: u16) -> bool {
     moon_arm_count(picked, rng, n, cap, kind, MOON_WAVE_KIND_COUNT)
 }
 
@@ -1567,13 +1567,13 @@ fn moon_arm(picked: &mut Option<u16>, rng: &mut FastRandom, n: i32, cap: Option<
 /// `else if` chain advances to the next arm).
 fn moon_arm_count(
     picked: &mut Option<u16>,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
     n: i32,
     cap: Option<i32>,
     kind: u16,
     count: i32,
 ) -> bool {
-    let hit = rng.next(n) == 0 && cap.map_or(true, |c| count < c);
+    let hit = rng.next_max(n) == 0 && cap.map_or(true, |c| count < c);
     if hit && picked.is_none() {
         *picked = Some(kind);
     }
@@ -1584,9 +1584,9 @@ fn moon_arm_count(
 /// no earlier arm fired (the `else if` short-circuit), and the chain falls
 /// through to `fallback` — the C#'s final `else` type, or `None` for the snow
 /// wave 14, whose chain has no `else` (`NPC.cs:2958`).
-fn moon_chain<F>(rng: &mut FastRandom, arms: &[(i32, Option<i32>, u16)], fallback: F) -> Option<u16>
+fn moon_chain<F>(rng: &mut UnifiedRandom, arms: &[(i32, Option<i32>, u16)], fallback: F) -> Option<u16>
 where
-    F: FnOnce(&mut FastRandom) -> Option<u16>,
+    F: FnOnce(&mut UnifiedRandom) -> Option<u16>,
 {
     let mut picked: Option<u16> = None;
     for (n, cap, kind) in arms {
@@ -1612,17 +1612,17 @@ where
 /// no-spawn outcome: the wave-20 trio behind a reached boss cap (`:2815`).
 /// Every picked kind is an unported wave kind (F-13b/c) — the dispatch consumes
 /// the pick without spawning.
-fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> {
+fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16> {
     let wave = ctx.world.wave_number;
     // The 341 head (`:2807-2811`) runs at every wave, before the `>= 20`
     // check, and is the block's only arm that returns on a hit.
-    if rng.next(30) == 0 && MOON_WAVE_KIND_COUNT < 4 {
+    if rng.next_max(30) == 0 && MOON_WAVE_KIND_COUNT < 4 {
         return Some(341);
     }
     if wave >= 20 {
         // `num44 = Next(3)` (`:2814`) is drawn BEFORE the boss-cap gate
         // (`:2815`): the stream consumes even when the cap is reached.
-        let num44 = rng.next(3);
+        let num44 = rng.next_max(3);
         if moon_boss_cap_reached(ctx.moon_boss_cap_count) {
             return None;
         }
@@ -1707,10 +1707,10 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> {
             rng,
             &[(10, Some(1), 345), (10, Some(1), 344), (8, None, 343), (3, None, 342)],
             // `Main.rand.Next(338, 341)` (`:3021`) IS the chosen type.
-            |r| Some(338 + r.next(3) as u16),
+            |r| Some(338 + r.next_max(3) as u16),
         ),
         11 => moon_chain(rng, &[(10, Some(1), 345), (6, None, 352), (2, None, 342)], |r| {
-            Some(338 + r.next(3) as u16)
+            Some(338 + r.next_max(3) as u16)
         }),
         10 => moon_chain(
             rng,
@@ -1721,7 +1721,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> {
                 (3, None, 348),
                 (3, None, 347),
             ],
-            |r| Some(338 + r.next(3) as u16),
+            |r| Some(338 + r.next_max(3) as u16),
         ),
         9 => moon_chain(
             rng,
@@ -1734,20 +1734,20 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> {
             |_| Some(350),
         ),
         7 => moon_chain(rng, &[(10, Some(1), 346), (3, None, 342), (4, None, 350)], |r| {
-            Some(338 + r.next(3) as u16)
+            Some(338 + r.next_max(3) as u16)
         }),
         6 => moon_chain(rng, &[(10, Some(2), 344), (4, None, 347), (2, None, 348)], |_| Some(350)),
         5 => moon_chain(rng, &[(10, Some(1), 344), (4, None, 350), (8, None, 348)], |r| {
-            Some(338 + r.next(3) as u16)
+            Some(338 + r.next_max(3) as u16)
         }),
         4 => moon_chain(rng, &[(10, Some(1), 344), (4, None, 350), (3, None, 342)], |r| {
-            Some(338 + r.next(3) as u16)
+            Some(338 + r.next_max(3) as u16)
         }),
         3 => moon_chain(rng, &[(8, None, 348), (4, None, 350), (3, None, 342)], |r| {
-            Some(338 + r.next(3) as u16)
+            Some(338 + r.next_max(3) as u16)
         }),
-        2 => moon_chain(rng, &[(3, None, 350)], |r| Some(338 + r.next(3) as u16)),
-        _ => moon_chain(rng, &[(3, None, 342)], |r| Some(338 + r.next(3) as u16)),
+        2 => moon_chain(rng, &[(3, None, 350)], |r| Some(338 + r.next_max(3) as u16)),
+        _ => moon_chain(rng, &[(3, None, 342)], |r| Some(338 + r.next_max(3) as u16)),
     }
 }
 
@@ -1757,14 +1757,14 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> {
 /// C# spawns BOTH NPCs in one attempt (the picker returns the first; the stream
 /// stays 1:1 — the deviation is recorded in ANALYSIS).
 fn pumpkin_327_chain<F>(
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
     n: i32,
     cap: Option<i32>,
     chain: &[(i32, Option<i32>, u16)],
     fallback: F,
 ) -> Option<u16>
 where
-    F: FnOnce(&mut FastRandom) -> Option<u16>,
+    F: FnOnce(&mut UnifiedRandom) -> Option<u16>,
 {
     let mut picked = None;
     moon_arm(&mut picked, rng, n, cap, 327);
@@ -1775,7 +1775,7 @@ where
 /// Main.pumpkinMoon` arm (`NPC.cs:3224-3548`) — the `waveNumber >= 20` boss
 /// trio (`:3227`) and the `switch (waveNumber2)` cases (`:3246`). Same return
 /// contract as [`frost_moon_ladder`].
-fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> {
+fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16> {
     let wave = ctx.world.wave_number;
     if wave >= 20 {
         // The trio sits WHOLLY inside `!reachedInvasionBossCap` (`:3229`): a
@@ -1788,7 +1788,7 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> 
             return picked; // 327
         }
         // `Next(3) != 0 && CountNPCS(325) < 2` (`:3235`) — the inverted roll.
-        if rng.next(3) != 0 && MOON_WAVE_KIND_COUNT < 2 {
+        if rng.next_max(3) != 0 && MOON_WAVE_KIND_COUNT < 2 {
             return Some(325);
         }
         // The 315 arm (`:3239`) draws no roll.
@@ -1829,7 +1829,7 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> 
             10,
             Some(1),
             &[(7, Some(2), 325), (5, None, 330), (3, None, 326)],
-            |r| Some(305 + r.next(10) as u16),
+            |r| Some(305 + r.next_max(10) as u16),
         ),
         14 => pumpkin_327_chain(
             rng,
@@ -1842,7 +1842,7 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> 
                 (7, None, 329),
                 (3, None, 326),
             ],
-            |r| Some(305 + r.next(10) as u16),
+            |r| Some(305 + r.next_max(10) as u16),
         ),
         13 => moon_chain(
             rng,
@@ -1852,30 +1852,30 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<u16> 
         12 => moon_chain(rng, &[(5, Some(1), 327)], |_| Some(330)),
         11 => moon_chain(rng, &[(7, Some(2), 325), (3, None, 330)], |_| Some(326)),
         10 => moon_chain(rng, &[(10, Some(1), 327), (3, None, 329)], |r| {
-            Some(305 + r.next(10) as u16)
+            Some(305 + r.next_max(10) as u16)
         }),
         9 => moon_chain(
             rng,
             &[(10, Some(2), 325), (8, None, 330), (5, None, 329), (2, None, 326)],
-            |r| Some(305 + r.next(10) as u16),
+            |r| Some(305 + r.next_max(10) as u16),
         ),
         8 => moon_chain(rng, &[(8, Some(2), 315), (4, None, 330)], |_| Some(329)),
         7 => moon_chain(rng, &[(7, Some(2), 325), (4, None, 330)], |_| Some(329)),
         6 => moon_chain(rng, &[(7, Some(2), 325), (2, None, 326)], |r| {
-            Some(305 + r.next(10) as u16)
+            Some(305 + r.next_max(10) as u16)
         }),
         5 => moon_chain(rng, &[(10, Some(1), 315)], |_| Some(329)),
         4 => {
             // Verbatim quirk (`:3511-3513`): the roll gates on `!AnyNPCs(325)`
             // but the arm spawns 330.
             moon_chain(rng, &[(8, Some(1), 330), (2, None, 326)], |r| {
-                Some(305 + r.next(10) as u16)
+                Some(305 + r.next_max(10) as u16)
             })
         }
         3 => moon_chain(rng, &[(3, None, 329)], |_| Some(326)),
-        2 => moon_chain(rng, &[(3, None, 326)], |r| Some(305 + r.next(10) as u16)),
+        2 => moon_chain(rng, &[(3, None, 326)], |r| Some(305 + r.next_max(10) as u16)),
         // `:3545` — the C#'s default: no roll gate, the type is `Next(305, 315)`.
-        _ => Some(305 + rng.next(10) as u16),
+        _ => Some(305 + rng.next_max(10) as u16),
     }
 }
 
@@ -3953,16 +3953,16 @@ mod tests {
         let mut saw_head = 0;
         let mut saw_trio = 0;
         for seed in 1..=200u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             let spawn = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
             // The ladder's pick on its own stream: after the style draw
             // `GetZombieSettings` puts ahead of every arm (`NPC.cs:1284`).
-            let mut pick_rng = FastRandom::new(seed);
-            let _style = pick_rng.next(7);
+            let mut pick_rng = UnifiedRandom::new(seed as i32);
+            let _style = pick_rng.next_max(7);
             let picked = frost_moon_ladder(&c, &mut pick_rng);
-            let mut r#ref = FastRandom::new(seed);
-            let _style = r#ref.next(7); // `GetZombieSettings` (`NPC.cs:1284`)
-            if r#ref.next(30) == 0 {
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // `GetZombieSettings` (`NPC.cs:1284`)
+            if r#ref.next_max(30) == 0 {
                 // The 341 head hit (`:2807-2811`): the C# spawns and returns —
                 // the trio's `Next(3)` is never drawn, so the replay stops
                 // here. `CountNPCS(341) < 4` is open (the count is
@@ -3974,7 +3974,7 @@ mod tests {
                     "seed {seed}: the head arm picks the vanilla Eskimo type"
                 );
             } else {
-                let num44 = r#ref.next(3); // the boss-trio pick (`:2814`)
+                let num44 = r#ref.next_max(3); // the boss-trio pick (`:2814`)
                 let trio = match num44 {
                     0 => 345u16,
                     1 => 346,
@@ -3992,11 +3992,11 @@ mod tests {
                 "seed {seed}: the unported trio kind must not spawn"
             );
             assert_eq!(
-                pick_rng.0, r#ref.0,
+                pick_rng.peek(), r#ref.peek(),
                 "seed {seed}: the ladder's stream tail is the vanilla draw order"
             );
             assert_eq!(
-                rng.0, r#ref.0,
+                rng.peek(), r#ref.peek(),
                 "seed {seed}: `spawn_npc_at`'s stream tail is the vanilla draw order"
             );
         }
@@ -4015,20 +4015,20 @@ mod tests {
         let mut c = ctx(&w, 25.0 * 16.0, false);
         c.moon_boss_cap_count = 20.0; // >= the bound (11): the cap is reached
         for seed in 1..=200u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             let spawn = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
-            let mut pick_rng = FastRandom::new(seed);
-            let _style = pick_rng.next(7);
+            let mut pick_rng = UnifiedRandom::new(seed as i32);
+            let _style = pick_rng.next_max(7);
             let picked = frost_moon_ladder(&c, &mut pick_rng);
-            let mut r#ref = FastRandom::new(seed);
-            let _style = r#ref.next(7); // `GetZombieSettings` (`NPC.cs:1284`)
-            let _head = r#ref.next(30); // the 341 head arm (`:2807`) — still drawn
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // `GetZombieSettings` (`NPC.cs:1284`)
+            let _head = r#ref.next_max(30); // the 341 head arm (`:2807`) — still drawn
             if _head == 0 {
                 // The head arm's hit still spawns 341 behind the cap — only
                 // the boss trio is gated (`:2815`).
                 assert_eq!(picked, Some(341), "seed {seed}: the head arm is not gated");
             } else {
-                let _num44 = r#ref.next(3); // `:2814` — drawn BEFORE the cap gate
+                let _num44 = r#ref.next_max(3); // `:2814` — drawn BEFORE the cap gate
                 assert_eq!(
                     picked, None,
                     "seed {seed}: the reached cap suppresses the trio (and keeps its draw)"
@@ -4039,11 +4039,11 @@ mod tests {
                 "seed {seed}: nothing spawns with the cap reached"
             );
             assert_eq!(
-                pick_rng.0, r#ref.0,
+                pick_rng.peek(), r#ref.peek(),
                 "seed {seed}: the cap-reached stream tail is the vanilla draw order"
             );
             assert_eq!(
-                rng.0, r#ref.0,
+                rng.peek(), r#ref.peek(),
                 "seed {seed}: `spawn_npc_at`'s cap-reached tail is the vanilla order"
             );
         }
@@ -4060,25 +4060,25 @@ mod tests {
         // The reference replay: an arm that hits stops the chain (one Next(10)
         // consumed); an arm that misses draws its Next(10) and advances.
         for seed in 1..=200u64 {
-            let mut rng = FastRandom::new(seed);
-            let _style = rng.next(7); // `GetZombieSettings` (`NPC.cs:1284`)
-            let mut r#ref = FastRandom::new(seed);
-            let _s = r#ref.next(7); // the style draw (outside the ladder)
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let _style = rng.next_max(7); // `GetZombieSettings` (`NPC.cs:1284`)
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _s = r#ref.next_max(7); // the style draw (outside the ladder)
             // The 341 head arm (`:2807-2811`) is INSIDE the ladder and returns
             // on its hit — the replay mirrors it.
-            let head = r#ref.next(30);
+            let head = r#ref.next_max(30);
             let expect = if head == 0 {
                 Some(341u16)
             } else {
-                let n1 = r#ref.next(10); // arm 1: 345 (`:2832-2835`)
+                let n1 = r#ref.next_max(10); // arm 1: 345 (`:2832-2835`)
                 if n1 == 0 {
                     Some(345)
                 } else {
-                    let n2 = r#ref.next(10); // arm 2: 346 (`:2836-2839`)
+                    let n2 = r#ref.next_max(10); // arm 2: 346 (`:2836-2839`)
                     if n2 == 0 {
                         Some(346)
                     } else {
-                        let n3 = r#ref.next(10); // arm 3: 344 (`:2840-2843`)
+                        let n3 = r#ref.next_max(10); // arm 3: 344 (`:2840-2843`)
                         if n3 == 0 {
                             Some(344)
                         } else {
@@ -4093,7 +4093,7 @@ mod tests {
                 "seed {seed}: the wave-19 chain must replay the C# branch order"
             );
             assert_eq!(
-                rng.0, r#ref.0,
+                rng.peek(), r#ref.peek(),
                 "seed {seed}: the else-if short-circuit consumes exactly one Next(10) per fired arm"
             );
         }
@@ -4107,10 +4107,10 @@ mod tests {
     #[test]
     fn a_closed_count_cap_suppresses_its_arm_and_advances() {
         let mut picked = None;
-        let mut rng = FastRandom::new(1);
+        let mut rng = UnifiedRandom::new(1);
         // A seed whose first Next(10) hits, with the cap open: the arm fires.
-        let hit_seed = (1..=100u64).find(|&s| FastRandom::new(s).next(10) == 0).unwrap();
-        let mut rng = FastRandom::new(hit_seed);
+        let hit_seed = (1..=100u64).find(|&s| UnifiedRandom::new(s as i32).next_max(10) == 0).unwrap();
+        let mut rng = UnifiedRandom::new(hit_seed as i32);
         assert!(moon_arm_count(
             &mut picked, &mut rng, 10, Some(4), 345, 0
         ));
@@ -4118,11 +4118,11 @@ mod tests {
         // The same roll, the cap closed (count 4 >= 4): suppressed, no pick,
         // the draw consumed.
         let mut picked2 = None;
-        let mut rng2 = FastRandom::new(hit_seed);
+        let mut rng2 = UnifiedRandom::new(hit_seed as i32);
         let fired = moon_arm_count(&mut picked2, &mut rng2, 10, Some(4), 345, 4);
         assert!(!fired, "the closed cap suppresses the pick");
         assert_eq!(picked2, None, "nothing picked behind the closed cap");
-        assert_eq!(rng2.0, rng.0, "the roll was still drawn (the C# && order)");
+        assert_eq!(rng2.peek(), rng.peek(), "the roll was still drawn (the C# && order)");
     }
 
     /// DW-2.3: every unported wave-kind arm consumes the C#'s draws and returns
@@ -4136,7 +4136,7 @@ mod tests {
             let w = moon_world(wave, true);
             let c = ctx(&w, 25.0 * 16.0, false);
             for seed in 1..=100u64 {
-                let mut rng = FastRandom::new(seed);
+                let mut rng = UnifiedRandom::new(seed as i32);
                 let picked = frost_moon_ladder(&c, &mut rng);
                 if let Some(kind) = picked {
                     assert!(
@@ -4144,7 +4144,7 @@ mod tests {
                         "wave {wave} seed {seed}: picked {kind} is not a vanilla snow wave id"
                     );
                 }
-                let spawns = spawn_npc_at(&c, &mut FastRandom::new(seed), 210, 25 * 16, false, false, false);
+                let spawns = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 25 * 16, false, false, false);
                 assert!(
                     spawns.is_none(),
                     "wave {wave} seed {seed}: no unported wave kind spawns"
@@ -4162,42 +4162,42 @@ mod tests {
         // replay (style + head + the ladder) — the pumpkin arm never runs.
         let w = moon_world(5, true);
         let c = ctx(&w, 25.0 * 16.0, false);
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         let _ = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
         // The ladder draws its own head arm internally (`NPC.cs:2807`) — the
         // replay is the style draw then the ladder on the same stream.
-        let mut pick_rng = FastRandom::new(7);
-        pick_rng.next(7); // `GetZombieSettings` (`NPC.cs:1284`)
+        let mut pick_rng = UnifiedRandom::new(7);
+        pick_rng.next_max(7); // `GetZombieSettings` (`NPC.cs:1284`)
         let _ = frost_moon_ladder(&c, &mut pick_rng);
-        let mut pumpkin_only = FastRandom::new(7);
-        pumpkin_only.next(7);
+        let mut pumpkin_only = UnifiedRandom::new(7);
+        pumpkin_only.next_max(7);
         let _ = pumpkin_moon_ladder(&c, &mut pumpkin_only);
         assert_eq!(
-            rng.0, pick_rng.0,
+            rng.peek(), pick_rng.peek(),
             "the snow dispatch replays the frost ladder exactly"
         );
         assert_ne!(
-            rng.0, pumpkin_only.0,
+            rng.peek(), pumpkin_only.peek(),
             "the snow dispatch must NOT run the pumpkin ladder"
         );
         // (b) pumpkin only: the dispatch replays the pumpkin ladder, not the
         // frost one (their draws differ from wave 5 on).
         let w = moon_world(5, false);
         let c = ctx(&w, 25.0 * 16.0, false);
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         let _ = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
-        let mut frost_only = FastRandom::new(7);
-        frost_only.next(7);
+        let mut frost_only = UnifiedRandom::new(7);
+        frost_only.next_max(7);
         let _ = frost_moon_ladder(&c, &mut frost_only);
-        let mut pumpkin_only = FastRandom::new(7);
-        pumpkin_only.next(7);
+        let mut pumpkin_only = UnifiedRandom::new(7);
+        pumpkin_only.next_max(7);
         let _ = pumpkin_moon_ladder(&c, &mut pumpkin_only);
         assert_eq!(
-            rng.0, pumpkin_only.0,
+            rng.peek(), pumpkin_only.peek(),
             "the pumpkin dispatch replays the pumpkin ladder"
         );
         assert_ne!(
-            rng.0, frost_only.0,
+            rng.peek(), frost_only.peek(),
             "the pumpkin dispatch must NOT run the frost ladder"
         );
         // (c) by day the moon arms never draw: the day dispatch's stream is
@@ -4207,12 +4207,12 @@ mod tests {
         let mut w_plain = World::new("t".into(), 400, 700);
         w_plain.world_surface = 30.0;
         let c_day_plain = ctx(&w_plain, 25.0 * 16.0, true);
-        let mut rng_moon = FastRandom::new(7);
+        let mut rng_moon = UnifiedRandom::new(7);
         let _ = spawn_npc_at(&c_day_moon, &mut rng_moon, 210, 25 * 16, false, false, false);
-        let mut rng_plain = FastRandom::new(7);
+        let mut rng_plain = UnifiedRandom::new(7);
         let _ = spawn_npc_at(&c_day_plain, &mut rng_plain, 210, 25 * 16, false, false, false);
         assert_eq!(
-            rng_moon.0, rng_plain.0,
+            rng_moon.peek(), rng_plain.peek(),
             "by day the moon arms draw nothing — the flags leave the day stream untouched"
         );
     }
