@@ -248,6 +248,11 @@ pub struct World {
     /// `Main.slimeRainKillCount` — the kill counter (the negative half
     /// after the King spawns = the vanilla's hysteresis).
     pub slime_rain_kills: i32,
+    /// `Main.slimeWarningTime` (`Main.cs:1051`) — the announcement
+    /// countdown armed by `StartSlimeRain`/`StopSlimeRain`
+    /// (`:64776`/`:64811`) and run down by `UpdateSlimeRainWarning`
+    /// (`:65504-65522`); `slimeWarningDelay` is 420 (`:66802`).
+    pub slime_warning_time: i32,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -503,6 +508,7 @@ impl World {
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,
+            slime_warning_time: 0,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,
@@ -676,12 +682,18 @@ impl World {
         if !any_player_life_over_120 {
             return false;
         }
+        self.start_blood_moon();
+        true
+    }
+
+    /// The blood-moon hit body (`Main.cs:65344-65346`), the roll factored out:
+    /// the flag up and both dial cooldowns force-reset ("instantly reusable
+    /// after certain celestial events"). `roll_blood_moon`'s success path and
+    /// the F3 panel's start row share it (S1-E-37).
+    pub fn start_blood_moon(&mut self) {
         self.blood_moon = true;
-        // `:65344-65346` — "instantly reusable after certain celestial
-        // events".
         self.sundial_cooldown = 0;
         self.moondial_cooldown = 0;
-        true
     }
 
     /// `UpdateTime_StartDay`'s solar-eclipse roll (`Main.cs:65421-65430`):
