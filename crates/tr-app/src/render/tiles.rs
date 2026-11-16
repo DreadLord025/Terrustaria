@@ -555,11 +555,16 @@ pub(crate) fn draw_tiles(
             let ex = ((cx + 1) * chunk - 1).min(x1);
             for tx in sx..=ex {
                 let tile = &world.tiles[row_base + tx as usize];
-                let mut l = light.get(tx, ty);
+                let raw_l = light.get(tx, ty);
+                let inactive = tile.flags & tr_core::tile::FLAG_INACTIVE != 0;
+                let mut l = raw_l;
                 // `Tile.actColor` (`Tile.cs:272-290`) via
                 // `TileDrawing.GetFinalLight` (`TileDrawing.cs:4380-4397`):
                 // an actuated (inactive) tile draws ghosted — RGB × 0.4.
-                if tile.flags & tr_core::tile::FLAG_INACTIVE != 0 {
+                // This is `drawData.finalColor` (`:1019`); the sliced arm
+                // re-derives its own per-slice colour from the RAW
+                // `drawData.tileLight` (`:3528`) instead.
+                if inactive {
                     l = [l[0] * 0.4, l[1] * 0.4, l[2] * 0.4];
                 }
                 let active = tile.active();
@@ -865,7 +870,10 @@ pub(crate) fn draw_tiles(
                     // the half-brick draw never carries `src_y_shift`.
                     push_half(r, pos, tf.uv, l, style, tx, ty, anim_time);
                     stats.quads += 1;
-                } else if style.sliced_blocks && solid && l[0].max(l[1]).max(l[2]) > MEDIUM_LIGHT {
+                } else if style.sliced_blocks
+                    && solid
+                    && raw_l[0].max(raw_l[1]).max(raw_l[2]) > MEDIUM_LIGHT
+                {
                     stats.quads += push_sliced(
                         r,
                         pos,
@@ -876,8 +884,9 @@ pub(crate) fn draw_tiles(
                         ty,
                         anim_time,
                         HIGH_LIGHT,
-                        l,
-                        tile.flags & tr_core::tile::FLAG_INACTIVE != 0,
+                        inactive,
+                        tile.fullbright_block(),
+                        tile.paint(),
                     );
                 } else if sway != 0.0 {
                     // The plain-size sway members (e.g. the sunflower 113, whose
@@ -1391,6 +1400,26 @@ fn push_half(
     );
 }
 
+/// `DrawSingleTile_SlicedBlock`'s per-slice light (`TileDrawing.cs:3578-3581`,
+/// `:3634-3637`): the slice averages the neighbourhood colour with the tile's
+/// own RAW light, then `GetFinalLight` (`:4391-4402`) applies the tint and the
+/// actuation ghost (`Tile.actColor`, `Tile.cs:282-288`) to that average.
+/// `Main.shine` (`:4400`) is unported (tileShine2); the tint is `Color.White`
+/// everywhere but the minecart path (`:3788`), so it is not threaded here.
+#[inline]
+fn sliced_light(slice: [f32; 3], own: [f32; 3], ghost: bool) -> [f32; 3] {
+    let avg = [
+        (slice[0] + own[0]) * 0.5,
+        (slice[1] + own[1]) * 0.5,
+        (slice[2] + own[2]) * 0.5,
+    ];
+    if ghost {
+        [avg[0] * 0.4, avg[1] * 0.4, avg[2] * 0.4]
+    } else {
+        avg
+    }
+}
+
 /// Bug 19: the half-brick arm with `DrawSingleTile`'s local rectangle Y shift
 /// (`TileDrawing.cs:1298` draws `rectangle`, which case 80 mutated) — the
 /// source row moves by `src_y`, the draw box stays the top 8 rows.
@@ -1407,8 +1436,9 @@ fn push_sliced(
     ty: i32,
     time: f32,
     high_threshold: f32,
-    own: [f32; 3],
     ghost: bool,
+    fullbright: bool,
+    paint: u8,
 ) -> u32 {
     const SLICE_POS: [(f32, f32, f32, f32); 9] = [
         (0.0, 0.0, 4.0, 4.0),
@@ -1421,56 +1451,47 @@ fn push_sliced(
         (4.0, 12.0, 8.0, 4.0),
         (12.0, 12.0, 4.0, 4.0),
     ];
+    // `TileDrawing.cs:3528`: `vector = drawData.tileLight.ToVector3()` — the
+    // RAW light (`Lighting.GetColor`, `:871`). `:1019`'s `GetFinalLight`
+    // assigns `finalColor` and never touches `tileLight`, so the ghost must
+    // not be applied here twice.
+    let own = light.get(tx, ty);
     let mut quads = 0;
     if own[0].max(own[1]).max(own[2]) > high_threshold {
-        let slices = light.slice9(tx, ty);
+        let mut slices = light.slice9(tx, ty);
+        // `TileDrawing.cs:3530-3533`: a Glow-coated block replaces every slice
+        // with `_glowPaintColorSlices` (`:160-...`, all `Vector3.One`).
+        if fullbright {
+            slices = [[1.0; 3]; 9];
+        }
         for (i, &(x, y, w, h)) in SLICE_POS.iter().enumerate() {
-            // `DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3556-3559`): each
-            // slice averages the neighbourhood colour with the tile's own
-            // (already actuation-ghosted) light, then `GetFinalLight`
-            // applies the actuation ghost per slice
-            // (`TileDrawing.cs:3560` + `:4394-4396`). The fullbright glow
-            // paint (`:3551-3554`) has no port counterpart yet.
-            let avg = [
-                (slices[i][0] + own[0]) * 0.5,
-                (slices[i][1] + own[1]) * 0.5,
-                (slices[i][2] + own[2]) * 0.5,
-            ];
-            let lit = if ghost {
-                [avg[0] * 0.4, avg[1] * 0.4, avg[2] * 0.4]
-            } else {
-                avg
-            };
-            let c = style.shade(lit, tx, ty, time);
-            r.push_sprite(
+            let c = style.shade(sliced_light(slices[i], own, ghost), tx, ty, time);
+            r.push_sprite_paint(
                 [pos[0] + x, pos[1] + y],
                 [w, h],
                 sub_uv(uv, x, y, w, h),
                 [c[0], c[1], c[2], 1.0],
+                0.0,
+                paint,
             );
             quads += 1;
         }
     } else {
-        let slices = light.quad4(tx, ty);
+        let mut slices = light.quad4(tx, ty);
         const QUAD_POS: [(f32, f32); 4] = [(0.0, 0.0), (8.0, 0.0), (0.0, 8.0), (8.0, 8.0)];
+        // `TileDrawing.cs:3611-3614`: the same Glow slice replacement.
+        if fullbright {
+            slices = [[1.0; 3]; 4];
+        }
         for (i, &(x, y)) in QUAD_POS.iter().enumerate() {
-            // The medium path's own avg + ghost (`TileDrawing.cs:3620-3640`).
-            let avg = [
-                (slices[i][0] + own[0]) * 0.5,
-                (slices[i][1] + own[1]) * 0.5,
-                (slices[i][2] + own[2]) * 0.5,
-            ];
-            let lit = if ghost {
-                [avg[0] * 0.4, avg[1] * 0.4, avg[2] * 0.4]
-            } else {
-                avg
-            };
-            let c = style.shade(lit, tx, ty, time);
-            r.push_sprite(
+            let c = style.shade(sliced_light(slices[i], own, ghost), tx, ty, time);
+            r.push_sprite_paint(
                 [pos[0] + x, pos[1] + y],
                 [8.0, 8.0],
                 sub_uv(uv, x, y, 8.0, 8.0),
                 [c[0], c[1], c[2], 1.0],
+                0.0,
+                paint,
             );
             quads += 1;
         }
@@ -1612,24 +1633,19 @@ mod tests {
     use tr_core::wind::Wind;
 
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain
-    // (`TileDrawing.cs:3556-3564`) — the slice averages the neighbourhood
-    // colour with the tile's own ghosted light, then `GetFinalLight`
-    // applies the actuation ghost per slice (`:4394-4396`).
+    // (`TileDrawing.cs:3578-3581` high arm, `:3634-3637` medium arm): the
+    // slice averages the neighbourhood colour with the tile's own RAW light
+    // (`drawData.tileLight`, `:3528`), then `GetFinalLight` (`:4391-4402`)
+    // applies the tint and the actuation ghost (`Tile.actColor`,
+    // `Tile.cs:282-288`) to that AVERAGE.
     #[test]
     fn sliced_block_averages_the_neighbourhood_with_the_own_light() {
         // The centre slice: (own + own) * 0.5 = own; an edge slice: the
         // average of the two.
         let own = [0.8, 0.6, 0.4];
-        let neighbour = [0.2, 0.2, 0.2];
-        let centre = [(own[0] + own[0]) * 0.5, (own[1] + own[1]) * 0.5, (own[2] + own[2]) * 0.5];
-        assert_eq!(centre, own);
-        let edge = [
-            (neighbour[0] + own[0]) * 0.5,
-            (neighbour[1] + own[1]) * 0.5,
-            (neighbour[2] + own[2]) * 0.5,
-        ];
-        let want: [f32; 3] = [0.5, 0.4, 0.3];
-        assert!(edge.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-6));
+        assert_eq!(sliced_light(own, own, false), own);
+        let edge = sliced_light([0.2, 0.2, 0.2], own, false);
+        assert_eq!(edge, [0.5, 0.4, 0.3]);
     }
 
     #[test]
@@ -1637,31 +1653,43 @@ mod tests {
         // `TileDrawing.cs:4394-4396`: the actuated tile's RGB x 0.4 rides
         // the per-slice GetFinalLight — the ghost hits the AVERAGE, not the
         // raw slice.
-        let slice = [0.5, 0.5, 0.5];
-        let own = [0.1, 0.1, 0.1];
-        let avg = [
-            (slice[0] + own[0]) * 0.5,
-            (slice[1] + own[1]) * 0.5,
-            (slice[2] + own[2]) * 0.5,
-        ];
-        let ghosted = [avg[0] * 0.4, avg[1] * 0.4, avg[2] * 0.4];
-        assert_eq!(ghosted, [0.12, 0.12, 0.12]);
-        // The pre-fix shape (the ghost on the raw neighbour, no avg) would
-        // read 0.04/0.04/0.04 — the regression pin.
+        let got = sliced_light([0.5, 0.5, 0.5], [0.1, 0.1, 0.1], true);
+        assert!((got[0] - 0.12).abs() < 1e-6, "{got:?}");
+        // The pre-fix shape (the ghost on the raw neighbour, no avg) reads
+        // 0.04 — the regression pin.
+        let raw_neighbour_ghost = 0.5f32 * 0.4;
+        assert!((raw_neighbour_ghost - got[0]).abs() > 0.05);
     }
 
     #[test]
-    fn sliced_block_uses_the_ghosted_own_light_in_the_average() {
-        // The caller's `own` arrives actuation-ghosted (`:1019`'s
-        // drawData.tileLight is `GetFinalLight`'s output); the average rides
-        // the ghosted value, so a ghosted own dims the centre slice.
+    fn sliced_block_uses_the_raw_own_light_in_the_average() {
+        // S1-G-9's second half: `:3528` feeds the sliced arm the RAW
+        // `drawData.tileLight`, so the caller must not pre-ghost `own` — the
+        // per-slice `GetFinalLight` is the only ×0.4 in the chain. Ghosting
+        // the caller's value too would square the factor (0.4 -> 0.16).
         let raw_own = [0.5, 0.5, 0.5];
-        let ghosted_own = [0.2, 0.2, 0.2];
-        let centre_from_raw = [(raw_own[0] + raw_own[0]) * 0.5, (raw_own[1] + raw_own[1]) * 0.5, (raw_own[2] + raw_own[2]) * 0.5];
-        let centre_from_ghosted = [(ghosted_own[0] + ghosted_own[0]) * 0.5, (ghosted_own[1] + ghosted_own[1]) * 0.5, (ghosted_own[2] + ghosted_own[2]) * 0.5];
-        assert_eq!(centre_from_raw, [0.5, 0.5, 0.5]);
-        assert_eq!(centre_from_ghosted, [0.2, 0.2, 0.2]);
-        assert_ne!(centre_from_raw, centre_from_ghosted);
+        let slice = [0.5, 0.5, 0.5];
+        let good = sliced_light(slice, raw_own, true);
+        let double_ghosted = sliced_light(slice, [0.2, 0.2, 0.2], true);
+        assert!((good[0] - 0.2).abs() < 1e-6, "{good:?}");
+        assert!((double_ghosted[0] - 0.14).abs() < 1e-6, "{double_ghosted:?}");
+        assert!((good[0] - double_ghosted[0]).abs() > 0.05);
+    }
+
+    #[test]
+    fn sliced_block_glow_coating_draws_full_white_slices() {
+        // `TileDrawing.cs:3530-3533` / `:3611-3614`: a Glow-coated
+        // (`fullbrightBlock`) block replaces every slice with
+        // `_glowPaintColorSlices` (`:160-...`, all `Vector3.One`), so each
+        // slice averages 1.0 with the own light — the centre slice is at
+        // least 0.5 whatever the darkness.
+        for own in [[0.0, 0.0, 0.0], [0.2, 0.3, 0.4]] {
+            let centre = sliced_light([1.0; 3], own, false);
+            assert!(centre.iter().zip(own).all(|(c, o)| c >= &(o * 0.5)));
+        }
+        assert_eq!(sliced_light([1.0; 3], [1.0; 3], false), [1.0; 3]);
+        // Without the glow replacement a black cell stays black.
+        assert_eq!(sliced_light([0.0; 3], [0.0; 3], false), [0.0; 3]);
     }
 
 
