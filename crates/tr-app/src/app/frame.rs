@@ -1859,6 +1859,9 @@ impl App {
                         &mut self.buff_removals,
                         right_release,
                         vampire_seed,
+                        // `Player.HasNPCBannerBuff`'s table — the Monster
+                        // Banner's hover list (`Main.cs:21360-21388`).
+                        &self.scene_metrics.npc_banner_buff,
                     );
                     // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                     // the coin cells' animation clocks step per frame after
