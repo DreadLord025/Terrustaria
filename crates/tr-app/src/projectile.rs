@@ -168,6 +168,10 @@ pub const CURSED_FLAME: u16 = 96;
 /// `ProjectileID.EyeFire` (101) — the Spazmatism's phase-2 spit
 /// (`NPC.cs:27519`'s `num467`).
 pub const EYE_FIRE: u16 = 101;
+/// `ProjectileID.FlamesTrap` (188) тАФ the Spazmatism's phase-2 flamethrower
+/// (`Projectile.cs:2752-2763`: 6x6, aiStyle 23, friendly + hostile, trap,
+/// penetrate -1, extraUpdates 2).
+pub const FLAMES_TRAP: u16 = 188;
 /// `ProjectileID.BrainScramblerBolt` (436) — the Scrambler's ray
 /// (`NPC.cs`'s `num412`/`:26640`).
 pub const BRAIN_SCRAMBLER: u16 = 436;
@@ -1178,6 +1182,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 RESET_STATE,
+            ),
+            // `Projectile.cs:2752-2763` тАФ the FlamesTrap (188): 6x6, aiStyle
+            // 23, friendly + hostile, alpha 255, penetrate -1, extraUpdates 2,
+            // trap.
+            FLAMES_TRAP => (
+                6.0,
+                6.0,
+                23,
+                -1,
+                TIME_LEFT_DEFAULT,
+                2,
+                true,
+                false,
+                true,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:1602-1610` — the Scrambler's bolt: 10x10,
             // aiStyle 1, hostile, ignoreWater.
@@ -8672,6 +8691,436 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI()`'s `aiStyle == 23` branch (`Projectile.cs:25861-25935`) тАФ the
+    /// Eye Fire (101) and the Flames Trap (188): the 10-tick launch ramp
+    /// (`ai[0]` 8тЖТ10 scales the dust, 11+ the full size), the 60-tick life cap
+    /// and the spinning sprite.
+    ///
+    /// The port has no `Main.dust` layer (S1-E-1), so the dust block
+    /// (`:25896-25928`) and its `Main.rand` draws are SKIPPED; everything the
+    /// arm does to the projectile itself is ported.
+    fn ai_eye_fire(&mut self, world: &World) {
+        // `:25863-25870` тАФ the Flames Trap (188) floors its launch counter at
+        // 8 and counts `localAI[0]` (the `Damage_CanDealDamage` gate at
+        // `:12448` reads it: `localAI[0] < 5`).
+        if self.kind == FLAMES_TRAP {
+            if self.ai[0] < 8.0 {
+                self.ai[0] = 8.0;
+            }
+            self.local_ai[0] += 1.0;
+        }
+        // `:25871-25874` тАФ the 60-tick life cap.
+        if self.time_left > 60 {
+            self.time_left = 60;
+        }
+        // `:25875-25893` / `:25930-25933` тАФ the launch ramp. Both arms advance
+        // the counter by one (the 8/9/10 dust-scale ladder and the dust itself
+        // are the skipped layer), so the net effect on the slot is the ++.
+        self.ai[0] += 1.0;
+        // `:25934` тАФ the spin: `rotation += 0.3f * direction`.
+        self.rot += 0.3 * self.direction as f32;
+        self.kill_step(world);
+    }
+
+    /// `AI_158_BabyBird` (`Projectile.cs:48757-48928`) тАФ the buff-216 baby bird
+    /// (759, the style's only kind): the perch keep-alive, the 6-tick 5-frame
+    /// walk, the 800-px target hunt with the intersect/close/far/all-home
+    /// bands, and the ring/stack formation around the owner's head.
+    ///
+    /// The caller pre-computes the three sibling reads
+    /// ([`ProjectilePool::baby_bird_group`]) because the arm cannot see the
+    /// pool: the C#'s `AI_GetMyGroupIndexAndFillBlackList` index and the two
+    /// separation loops (`:48825-48846` at `width * 3` / 0.025f and
+    /// `:48881-48902` at `width` / 0.05f).
+    ///
+    /// The arm owns its movement: `HandleMovement`'s pet arm
+    /// (`:17479-17487`, the type-759 `flag6 = true` at `:17573`) always falls
+    /// through platforms, and `correctSlopeCollision` (set from `projPet` at
+    /// `:707`) skips the slope pass тАФ so a blocked axis just stops.
+    fn ai_baby_bird(
+        &mut self,
+        world: &World,
+        mut player: Option<&mut crate::player::Player>,
+        npcs: &[Npc],
+        group_index: i32,
+        sep_attack: Vec2,
+        sep_home: Vec2,
+    ) {
+        let frames = proj_frames(self.kind) as i32;
+        // `:48760-48778` тАФ the pet keep-alive: death clears the flag, a live
+        // flag pins `timeLeft = 2`, and the 6-tick walk wraps at `frames - 1`.
+        {
+            let dead = player.as_ref().is_some_and(|p| p.dead);
+            let held = player.as_ref().is_some_and(|p| p.baby_bird);
+            if dead {
+                if let Some(p) = player.as_deref_mut() {
+                    p.baby_bird = false;
+                }
+            }
+            if held {
+                self.time_left = 2;
+            }
+        }
+        self.frame_counter += 1;
+        if self.frame_counter >= 6 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= frames - 1 {
+                self.frame = 0;
+            }
+        }
+        // `:48779-48782` тАФ the parameter block.
+        let num = 6.0f32;
+        let num2 = 8.0f32;
+        let num3 = 800.0f32;
+        let num4 = 150.0f32;
+        // `:48784` тАФ `skipIfCannotHitWithOwnBody: false`.
+        let mut attack_target =
+            self.minion_find_target_in_range(world, npcs, player.as_deref(), num3, false, true);
+        // `:48785-48788` тАФ the owner-side 800-px drop.
+        if attack_target != -1 {
+            let far = player.as_ref().is_some_and(|p| {
+                let (pcx, pcy) = p.center();
+                let n = &npcs[attack_target as usize];
+                Vec2::new(pcx, pcy).distance(npc_center(n)) > num3
+            });
+            if far {
+                attack_target = -1;
+            }
+        }
+        if attack_target != -1 {
+            let n = &npcs[attack_target as usize];
+            let (nw, nh) = n.size();
+            // `:48791-48794` тАФ clear the body first, then re-enable the tiles.
+            if !box_solid(world, self.pos, self.w, self.h) {
+                self.tile_collide = true;
+            }
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let target = npc_center(n);
+            let num5 = center.distance(target);
+            // `:48797` тАФ the rectangle intersect (both rects are integer-truncated
+            // in the C#, so the box test here is the raw float one).
+            let overlap = self.pos.x < n.x + nw
+                && self.pos.x + self.w > n.x
+                && self.pos.y < n.y + nh
+                && self.pos.y + self.h > n.y;
+            if overlap {
+                // `:48799-48807` тАФ inside: pass through and sprint, capped.
+                self.tile_collide = false;
+                if self.vel.x.abs() + self.vel.y.abs() < num2 {
+                    self.vel *= 1.1;
+                }
+                let len = self.vel.length();
+                if len > num2 {
+                    self.vel *= num2 / len;
+                }
+            } else if num5 > num4 {
+                // `:48809-48812` тАФ far: the 0.15 blend toward the 6-unit chase.
+                let dir = (target - center).normalize_or_zero();
+                self.vel = self.vel.lerp(dir * num, 0.15);
+            } else {
+                // `:48815-48821` тАФ close: the 0.35 sign-step, capped.
+                self.tile_collide = false;
+                let dir = target - center;
+                self.vel += Vec2::new(csign(dir.x), csign(dir.y)) * 0.35;
+                let len = self.vel.length();
+                if len > num2 {
+                    self.vel *= num2 / len;
+                }
+            }
+            // `:48823-48846` тАФ the tight (0.025f / width*3) separation.
+            self.vel += sep_attack;
+            // `:48847-48849` тАФ the steep rock and the facing.
+            self.rot = self.vel.x * 0.1;
+            self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+            self.sprite_direction = self.direction;
+            self.pet_movement(world, player.as_deref());
+            return;
+        }
+        // `:48852` тАФ no target: fly.
+        self.tile_collide = false;
+        // `:48853-48857` тАФ the group index (already folded by the caller) and
+        // the home spot.
+        self.local_ai[0] = group_index as f32;
+        let Some(p) = player.as_deref() else {
+            self.kill_step(world);
+            return;
+        };
+        let home = ai_158_home_location(p, group_index);
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let num8 = center.distance(home);
+        // `:48859` тАФ the upright-and-unrotated gate (no head rotation port).
+        let flag = p.full_rotation == 0.0;
+        if num8 > 2000.0 {
+            // `:48860-48868` тАФ the teleport home.
+            self.snap_to_home(home, frames, p.facing);
+        } else if num8 > 40.0 {
+            // `:48869-48905` тАФ the outbound flight with the wide separation.
+            let num9 = num + num8 * 0.006;
+            let dir = (home - center).normalize_or_zero();
+            let dir = dir * (1.0 + (5.0 - 1.0) * get_lerp_value(40.0, 800.0, num8));
+            self.vel = self.vel.lerp(dir * num9, 0.025);
+            let len = self.vel.length();
+            if len > num9 {
+                self.vel *= num9 / len;
+            }
+            self.vel += sep_home;
+            self.rot = self.vel.x * 0.04;
+            self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+            self.sprite_direction = self.direction;
+        } else if num8 > 8.0 + Vec2::new(p.vx, p.vy).length() {
+            // `:48907-48917` тАФ the hover at the owner's speed.
+            let dir = home - center;
+            self.vel += Vec2::new(csign(dir.x), csign(dir.y)) * 0.05;
+            let len = self.vel.length();
+            if len > num {
+                self.vel *= num / len;
+            }
+            self.rot = self.vel.x * 0.1;
+            self.direction = if self.vel.x > 0.0 { 1 } else { -1 };
+            self.sprite_direction = self.direction;
+        } else if flag {
+            // `:48919-48927` тАФ the perch.
+            self.snap_to_home(home, frames, p.facing);
+        }
+        self.pet_movement(world, player.as_deref());
+    }
+
+    /// `:48861-48867` / `:48921-48926` тАФ the perch snap: the centre onto the
+    /// home spot, the last frame, the frozen velocity and the owner's facing.
+    fn snap_to_home(&mut self, home: Vec2, frames: i32, facing: i32) {
+        self.pos = home - Vec2::new(self.w * 0.5, self.h * 0.5);
+        self.frame = frames - 1;
+        self.frame_counter = 0;
+        self.vel = Vec2::ZERO;
+        self.direction = facing;
+        self.sprite_direction = facing;
+        self.rot = 0.0;
+    }
+
+    /// `HandleMovement`'s pet movement (`:17479-17487`, the type-759
+    /// `flag6 = true` at `:17573`): `Collision.TileCollision` with the
+    /// fall-through pair set, then `position += velocity`. `projPet` sets
+    /// `correctSlopeCollision` (`:707`), so the slope pass never runs; the
+    /// projectile is a minion and a blocked move only stops it (`:17851`'s
+    /// kill arm belongs to the non-pet default).
+    fn pet_movement(&mut self, world: &World, player: Option<&crate::player::Player>) {
+        let _ = player;
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            true,
+            true,
+        );
+        self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        self.pos += self.vel;
+    }
+
+    /// `Projectile.Minion_FindTargetInRange` (`Projectile.cs:48990-49027`) тАФ
+    /// the minion target walk: the owner's whip mark first (`respectOwnerTarget`)
+    /// then the closest chaseable NPC whose distance to the minion *or* the
+    /// owner is in range and that the caller may reach. `skip_if_cannot_hit`
+    /// gates the `CanHitWithOwnBody` probe; the boss arm skips the view rect.
+    fn minion_find_target_in_range(
+        &self,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&crate::player::Player>,
+        start_attack_range: f32,
+        skip_if_cannot_hit: bool,
+        respect_owner_target: bool,
+    ) -> i32 {
+        let mut num = start_attack_range;
+        let mut num2 = num;
+        let mut num3 = num;
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let (pcx, pcy) = player.map_or((center.x, center.y), |p| p.center());
+        let player_center = Vec2::new(pcx, pcy);
+        // `:48995-49003` тАФ the owner's whipped target wins outright.
+        if respect_owner_target {
+            let mark = player.map_or(-1, |p| p.minion_attack_target_npc);
+            if mark >= 0 {
+                if let Some(n) = npcs.get(mark as usize) {
+                    if chaseable(n)
+                        && self.is_in_range_of_me_or_my_owner(world, n, num, player)
+                    {
+                        return mark;
+                    }
+                }
+            }
+        }
+        // `:49004` тАФ the view rect (`Utils.CenteredRectangle(player.Center,
+        // MaxWorldViewSize)` = 1920x1200, `Main.cs:677-681`).
+        let view = (
+            pcx - 960.0,
+            pcy - 600.0,
+            pcx + 960.0,
+            pcy + 600.0,
+        );
+        let mut attack_target = -1;
+        for (i, n) in npcs.iter().enumerate() {
+            if !chaseable(n) {
+                continue;
+            }
+            if !self.is_in_range_of_me_or_my_owner(world, n, num, player) {
+                continue;
+            }
+            if skip_if_cannot_hit && !self.can_hit_with_own_body(world, n) {
+                continue;
+            }
+            let (nw, nh) = n.size();
+            // `:49012` тАФ `nPC.boss || rectangle.Intersects(nPC.Hitbox)`. The
+            // port's boss proxy is `revenge::BOSS_KINDS` (no `NPC.boss` field).
+            let in_view = (n.x < view.2 && n.x + nw > view.0 && n.y < view.3 && n.y + nh > view.1)
+                || crate::revenge::BOSS_KINDS.contains(&n.kind);
+            if !in_view {
+                continue;
+            }
+            attack_target = i as i32;
+            let my_distance = center.distance(npc_center(n));
+            let player_distance = player_center.distance(npc_center(n));
+            if num2 > my_distance {
+                num2 = my_distance;
+            }
+            if num3 > player_distance {
+                num3 = player_distance;
+            }
+            num = num2.min(num3);
+        }
+        attack_target
+    }
+
+    /// `Projectile.IsInRangeOfMeOrMyOwner` (`Projectile.cs:51496-51514`): the
+    /// closer-to-me-or-the-owner test with the reach probe folded in (the
+    /// out-params collapse to the predicate here тАФ every caller reads the
+    /// bool).
+    fn is_in_range_of_me_or_my_owner(
+        &self,
+        world: &World,
+        n: &Npc,
+        max_distance: f32,
+        player: Option<&crate::player::Player>,
+    ) -> bool {
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let player_center = player.map_or(center, |p| {
+            let (cx, cy) = p.center();
+            Vec2::new(cx, cy)
+        });
+        let target = npc_center(n);
+        let mut my_distance = center.distance(target);
+        if my_distance < max_distance && !self.can_hit_with_own_body(world, n) {
+            my_distance = f32::INFINITY;
+        }
+        let mut player_distance = player_center.distance(target);
+        if player_distance < max_distance
+            && !self.can_hit_with_melee_weapon(world, n, player, player_center)
+        {
+            player_distance = f32::INFINITY;
+        }
+        let closer_is_me = my_distance < player_distance;
+        if closer_is_me {
+            my_distance <= max_distance
+        } else {
+            player_distance <= max_distance
+        }
+    }
+
+    /// `Projectile.CanHitWithOwnBody` (`Projectile.cs:12413-12444`): the reach
+    /// cap (`ownerHitCheckDistance`, default 1000f `:304`) plus the four
+    /// sight lines. The `ExtendedCanHitCheckRange` arm is the 833/834/835
+    /// Storm Tiger set (`ProjectileID.cs:539`) тАФ no ported caller reaches it,
+    /// so it stays out (ANALYSIS).
+    ///
+    /// The offset arithmetic is the C#'s integer arithmetic verbatim
+    /// (`direction * width / 2` and `-height / 3` are both `int` divisions
+    /// there), and `gravDir` is the port's constant 1 (`Player.Directions`,
+    /// `Player.cs:3849` тАФ the port models upright players only).
+    fn can_hit_with_own_body(&self, world: &World, n: &Npc) -> bool {
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let (nw, nh) = n.size();
+        let target = npc_center(n);
+        if center.distance(target) > 1000.0 {
+            return false;
+        }
+        // `:12419` тАФ the box test, then the three `CanHitLine` probes from the
+        // body's front edge (shoulder line, the foot line).
+        if can_hit(
+            world,
+            self.pos.x,
+            self.pos.y,
+            self.w,
+            self.h,
+            n.x,
+            n.y,
+            nw,
+            nh,
+        ) {
+            return true;
+        }
+        let ax = center.x + ((self.direction * self.w as i32) / 2) as f32;
+        let ay = center.y + (-(self.h as i32) / 3) as f32;
+        can_hit_line(world, ax, ay, 0.0, 0.0, target.x, target.y + (-(nh as i32) / 3) as f32, 0.0, 0.0)
+            || can_hit_line(world, ax, ay, 0.0, 0.0, target.x, target.y, 0.0, 0.0)
+            || can_hit_line(
+                world,
+                center.x + ((self.direction * self.w as i32) / 2) as f32,
+                center.y,
+                0.0,
+                0.0,
+                target.x,
+                target.y + (nh as i32 / 3) as f32,
+                0.0,
+                0.0,
+            )
+    }
+
+    /// `Projectile.CanHitWithMeleeWeapon` (`Projectile.cs:12400-12411`): the
+    /// same reach cap against the OWNER's box and centre тАФ the melee swing's
+    /// own-body reach, not the minion's. The `gravDir` factor here is a
+    /// float multiply (`(float)(-height) / 3f`), unlike the own-body form's
+    /// integer division.
+    fn can_hit_with_melee_weapon(
+        &self,
+        world: &World,
+        n: &Npc,
+        player: Option<&crate::player::Player>,
+        player_center: Vec2,
+    ) -> bool {
+        let (nw, nh) = n.size();
+        let target = npc_center(n);
+        if player_center.distance(target) > 1000.0 {
+            return false;
+        }
+        // The C# indexes `Main.player[this.owner]`; without a resolved owner
+        // the port has no box to probe, so the reach cap above is all it can
+        // answer (the same fold the `owner: None` arms use elsewhere).
+        let Some(p) = player else {
+            return true;
+        };
+        let ph = p.height;
+        if can_hit(world, p.x, p.y, crate::player::WIDTH, ph, n.x, n.y, nw, nh) {
+            return true;
+        }
+        let ax = player_center.x + ((p.facing * crate::player::WIDTH as i32) / 2) as f32;
+        let ay = player_center.y + (-ph) / 3.0;
+        can_hit_line(world, ax, ay, 0.0, 0.0, target.x, target.y + (-(nh as i32) / 3) as f32, 0.0, 0.0)
+            || can_hit_line(world, ax, ay, 0.0, 0.0, target.x, target.y, 0.0, 0.0)
+            || can_hit_line(
+                world,
+                player_center.x + ((p.facing * crate::player::WIDTH as i32) / 2) as f32,
+                player_center.y,
+                0.0,
+                0.0,
+                target.x,
+                target.y + (nh as i32 / 3) as f32,
+                0.0,
+                0.0,
+            )
+    }
+
     /// `AI_157_SharpTears` (`Projectile.cs:51358-51477`) — the Deerclops'
     /// ice spike (961) and the Dead Cells' flint wave (1041).
     ///
@@ -9191,6 +9640,9 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The Nebula Blaze pair (`Main.cs:8552-8553`). The animating AI_001
         // hook (`Projectile.cs:54561-54569`) is unported, so `frame` stays 0.
         NEBULA_BLAZE_1 | NEBULA_BLAZE_2 => 4,
+        // The baby bird's 5-frame sheet (`Main.cs:8506`) тАФ `AI_158`'s
+        // `frame == projFrames - 1` perch test reads it (`:48773`, `:12480`).
+        BABY_BIRD => 5,
         _ => 1,
     }
 }
@@ -9598,6 +10050,74 @@ fn chaseable_held(n: &Npc) -> bool {
 fn npc_center(n: &Npc) -> Vec2 {
     let (w, h) = n.size();
     Vec2::new(n.x + w * 0.5, n.y + h * 0.5)
+}
+
+/// `Math.Sign(float)` тАФ the C#'s float overload, which yields 0 for 0 rather
+/// than Rust's `signum` 1. The minion steering adds `(sign, sign) * k`, so the
+/// zero must stay zero.
+fn csign(v: f32) -> f32 {
+    if v > 0.0 {
+        1.0
+    } else if v < 0.0 {
+        -1.0
+    } else {
+        0.0
+    }
+}
+
+/// `Projectile.AI_158_GetHomeLocation(Player master, int stackedIndex)`
+/// (`Projectile.cs:48930-48988`): the baby bird's perch spot тАФ the headgear
+/// row lift, the four mount arms, the six-slot ring around the head and the
+/// stack lift per full ring, all measured from `RotatedRelativePoint(
+/// MountedCenter)` minus the 21-px eye line and floored.
+///
+/// The C#'s `master.Directions` is `(direction, gravDir)` (`Player.cs:3849`);
+/// the port keeps `gravDir = 1`, so the Y halves are single `+=`s (`-2f`,
+/// `-10f`, `-16f` per stack).
+fn ai_158_home_location(master: &crate::player::Player, stacked_index: i32) -> Vec2 {
+    let d = master.facing as f32;
+    // `:48932-48938` тАФ the body row (`bodyFrame.Height` is the constant 56
+    // the port's `body_frame` index partition already matches; the headgear
+    // accessor takes the row).
+    let mut pos = Vec2::new(0.0, crate::player::offsets_player_headgear_y(master.body_frame as usize));
+    pos.y -= 2.0;
+    // `:48939-48961` тАФ the mount arms.
+    if master.mount.is_active() {
+        match master.mount.kind() {
+            52 => {
+                pos.y += 6.0;
+                pos.x -= d * 10.0;
+            }
+            54 => {
+                pos = master.apply_head_offset_from_mount(pos);
+                pos.x -= d * 14.0;
+            }
+            55 | 56 => {
+                pos = master.apply_head_offset_from_mount(pos);
+                pos += Vec2::new(0.0, -4.0);
+            }
+            61 => {
+                pos = master.apply_head_offset_from_mount(pos);
+                pos += Vec2::new(2.0 * d, -4.0);
+            }
+            _ => {}
+        }
+    }
+    // `:48962-48983` тАФ the ring offsets.
+    pos += match stacked_index % 6 {
+        1 => Vec2::new(d * 8.0, -2.0),
+        2 => Vec2::new(d * -10.0, -2.0),
+        4 => Vec2::new(d * 10.0, -10.0),
+        5 => Vec2::new(d * -12.0, -10.0),
+        3 => Vec2::new(0.0, -10.0),
+        _ => Vec2::ZERO,
+    };
+    // `:48984` тАФ the per-stack lift.
+    pos += Vec2::new(0.0, -16.0) * (stacked_index / 6) as f32;
+    // `:48985-48987` тАФ the anchor plus the eye line, floored.
+    let (mcx, mcy) = master.mounted_center();
+    let anchor = master.rotated_relative_point(Vec2::new(mcx, mcy), 0);
+    (anchor + Vec2::new(0.0, -21.0) + pos).floor()
 }
 
 /// `Collision.CanHitLine(Vector2, int, int, Vector2, int, int)`
@@ -10263,6 +10783,51 @@ impl ProjectilePool {
     /// (`Projectile.cs:16777-16781`, the port's `Main.windSpeedCurrent`).
     pub fn set_wind(&mut self, wind_speed: f32) {
         self.wind_speed = wind_speed;
+    }
+
+    /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
+    /// the two same-kind separation loops `AI_158` runs
+    /// (`:48823-48846` at `0.025f`/`width * 3` and `:48881-48902` at
+    /// `0.05f`/`width`) тАФ pre-computed here because the slot arm cannot read
+    /// the pool. Returns `(group index, attack-band push, home-band push)`.
+    ///
+    /// The group index counts only the perched siblings for 759
+    /// (`projectile.frame == projFrames - 1`, `:51902`); the 1119 arm of the
+    /// same test has no ported kind.
+    fn baby_bird_group(&self, me: usize) -> (i32, Vec2, Vec2) {
+        let this = &self.slots[me];
+        let frames = proj_frames(this.kind) as i32;
+        let mut index = 0i32;
+        let mut sep_attack = Vec2::ZERO;
+        let mut sep_home = Vec2::ZERO;
+        for (i, other) in self.slots.iter().enumerate() {
+            if !other.active || other.owner != this.owner || other.kind != this.kind {
+                continue;
+            }
+            // `:51902` тАФ the 759 group only counts perched birds.
+            if other.kind == BABY_BIRD && other.frame != frames - 1 {
+                continue;
+            }
+            if me > i {
+                index += 1;
+            }
+            if i == me {
+                continue;
+            }
+            let manhattan =
+                (this.pos.x - other.pos.x).abs() + (this.pos.y - other.pos.y).abs();
+            // `:48827` тАФ the attack band, `width * 3` wide, 0.025f per axis.
+            if manhattan < this.w * 3.0 {
+                sep_attack.x += if this.pos.x < other.pos.x { -0.025 } else { 0.025 };
+                sep_attack.y += if this.pos.y < other.pos.y { -0.025 } else { 0.025 };
+            }
+            // `:48883` тАФ the home band, `width` wide, 0.05f per axis.
+            if manhattan < this.w {
+                sep_home.x += if this.pos.x < other.pos.x { -0.05 } else { 0.05 };
+                sep_home.y += if this.pos.y < other.pos.y { -0.05 } else { 0.05 };
+            }
+        }
+        (index, sep_attack, sep_home)
     }
 
     /// Sets the slot's crit flag (the throw path rolls it at spawn time).
@@ -11523,6 +12088,26 @@ impl ProjectilePool {
                         // The aiStyle-71 Typhoon (`:30355-30454`): the lock,
                         // the turn, the accel and the full tile reflect.
                         71 => self.slots[i].ai_typhoon(world, &npcs[..]),
+                        // The aiStyle-23 Eye Fire (101) / Flames Trap (188)
+                        // (`:25861-25935`): the launch ramp, the 60-tick cap
+                        // and the spin.
+                        23 => self.slots[i].ai_eye_fire(world),
+                        // The aiStyle-158 Baby Bird (759) (`:48757-48928`): the
+                        // perch keep-alive, the walk and the home formation.
+                        // The sibling reads (the group index and the two
+                        // separation pushes) are pre-computed from the pool тАФ
+                        // the arm cannot see the other slots.
+                        158 => {
+                            let (group, sep_attack, sep_home) = self.baby_bird_group(i);
+                            self.slots[i].ai_baby_bird(
+                                world,
+                                player.as_deref_mut(),
+                                npcs,
+                                group,
+                                sep_attack,
+                                sep_home,
+                            );
+                        }
                         // The Nebula Arcanum pair (`:34638-34887`): the two
                         // flight modes + the homing + the subshot roll; the
                         // 618's spawn rides back out (`FlailTick.spawn`'s
@@ -24053,3 +24638,276 @@ mod s1_d_4b_5e_tests {
         assert_eq!(shell.alpha, 0, "the shell is invisible");
     }
 }
+
+#[cfg(test)]
+mod s1_d_4b_5c_tests {
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 512, 64)
+    }
+
+    fn just(kind: u16) -> Projectile {
+        Projectile {
+            active: true,
+            kind,
+            w: 6.0,
+            h: 6.0,
+            direction: 1,
+            time_left: 18000,
+            ..Default::default()
+        }
+    }
+
+    /// One pool tick with the C#'s per-tick minion counters cleared
+    /// (`Player.cs:28279-28281` тАФ the port clears them in `world_sim`).
+    fn step(
+        pool: &mut ProjectilePool,
+        w: &mut World,
+        p: &mut crate::player::Player,
+        npcs: &mut Vec<Npc>,
+        rng: &mut tr_core::tile_light::FastRandom,
+    ) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            true,
+        );
+    }
+
+    /// The aiStyle-23 Flames Trap arm (`Projectile.cs:25863-25870`): the launch
+    /// counter floors at 8 and `localAI[0]` counts up (the
+    /// `Damage_CanDealDamage` gate `:12448` reads it), the life caps at 60 and
+    /// the counter advances one per tick.
+    #[test]
+    fn s1_d_4b_5c_the_flames_trap_floors_and_counts_its_launch() {
+        let mut p = just(FLAMES_TRAP);
+        p.ai[0] = 0.0;
+        let w = world();
+        p.ai_eye_fire(&w);
+        assert_eq!(p.ai[0], 9.0, ":25865-25868 floors 0 to 8, :25890 adds one");
+        assert_eq!(p.local_ai[0], 1.0, ":25869 counts the launch");
+        assert_eq!(p.time_left, 60, ":25871-25874 caps the life at 60");
+        assert!((p.rot - 0.3).abs() < 1e-6, ":25934 spins 0.3 * direction");
+    }
+
+    /// The Eye Fire arm (`Projectile.cs:25875-25893`): without the trap's
+    /// floor, a counter at 0 stays below 7 and only takes the plain `++`
+    /// (`:25932`); the spin is direction-mirrored (`:25934`).
+    #[test]
+    fn s1_d_4b_5c_the_eye_fire_advances_the_plain_counter() {
+        let mut p = just(EYE_FIRE);
+        p.ai[0] = 0.0;
+        p.direction = -1;
+        let w = world();
+        p.ai_eye_fire(&w);
+        assert_eq!(p.ai[0], 1.0, ":25932 тАФ the below-7 arm just counts");
+        assert_eq!(p.local_ai[0], 0.0, "the Eye Fire does not count launches");
+        assert!((p.rot + 0.3).abs() < 1e-6, ":25934 mirrors with direction");
+    }
+
+    /// The aiStyle-158 walk (`Projectile.cs:48770-48777`): 6 ticks per frame,
+    /// wrapping at `projFrames - 1` (so the last frame is only reachable by
+    /// the perch snap тАФ the walk wraps before it).
+    #[test]
+    fn s1_d_4b_5c_the_baby_bird_walks_six_ticks_per_frame() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.baby_bird = true;
+        // Spawn far enough from home (> 40, < 2000) that the walk arm runs and
+        // no teleport/perch masks it. The spot must stay inside the world тАФ
+        // the out-of-world guard (`:16683-16703`) rescues a minion onto its
+        // owner and skips the AI for that sub-step.
+        let home = ai_158_home_location(&p, 0);
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                BABY_BIRD,
+                0,
+                home.x + 300.0,
+                home.y + 300.0,
+                0.0,
+                0.0,
+                10,
+                1.0,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..5 {
+            step(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        }
+        assert_eq!(pool.slots()[slot].frame, 0, "five ticks is not a frame yet");
+        step(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert_eq!(pool.slots()[slot].frame, 1, ":48770-48777 the sixth tick");
+        assert_eq!(proj_frames(BABY_BIRD), 5, "Main.cs:8506 тАФ five frames");
+    }
+
+    /// The keep-alive (`Projectile.cs:48760-48769`): a dead owner clears the
+    /// flag, a live one pins `timeLeft = 2`.
+    #[test]
+    fn s1_d_4b_5c_the_baby_bird_pin_follows_the_buff_flag() {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut w = world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.baby_bird = true;
+        let home = ai_158_home_location(&p, 0);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                BABY_BIRD,
+                0,
+                home.x + 200.0,
+                home.y,
+                0.0,
+                0.0,
+                10,
+                1.0,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        step(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert_eq!(
+            pool.slots()[slot].time_left, 1,
+            "the pin of 2 minus the tail's decrement (`:17201`)"
+        );
+        // The dead-owner arm clears the flag on the next tick.
+        p.dead = true;
+        step(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        assert!(!p.baby_bird, ":48762-48765 the death clears the flag");
+    }
+
+    /// The perch snap (`Projectile.cs:48919-48927`): the bird's centre inside
+    /// the `8 + |player.velocity|` band of the home spot with an upright
+    /// player sits on the LAST frame, frozen, facing the owner.
+    #[test]
+    fn s1_d_4b_5c_the_baby_bird_perches_on_the_last_frame() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.baby_bird = true;
+        p.facing = -1;
+        let home = ai_158_home_location(&p, 0);
+        // The C# sets `Center = vector2`, so spawn the box centred on home.
+        let slot = pool
+            .spawn_with_data_ai_owned(
+                BABY_BIRD,
+                0,
+                home.x - 5.0,
+                home.y - 5.0,
+                1.0,
+                0.0,
+                10,
+                1.0,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        step(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let bird = &pool.slots()[slot];
+        assert_eq!(bird.frame, 4, ":48922 the perch frame is projFrames - 1");
+        assert_eq!(bird.direction, -1, ":48925 the owner's facing");
+        assert_eq!(bird.sprite_direction, -1);
+        assert_eq!(bird.rot, 0.0, ":48926 the perched rotation is zero");
+        assert!(
+            bird.vel.length() < 1e-6,
+            ":48924 the perch freezes the velocity ({:?})",
+            bird.vel
+        );
+        assert!(!bird.tile_collide, ":48852 the no-target arm flies freely");
+    }
+
+    /// The home spot (`Projectile.cs:48930-48988`): the headgear lift minus 2,
+    /// the six-slot ring and the per-stack lift, all off
+    /// `RotatedRelativePoint(MountedCenter)` minus the 21-px eye line.
+    ///
+    /// With the port's `gravDir = 1` and no mount, `home = Center + gfxOffY -
+    /// (0, 21) + (0, headgear - 2)`.
+    #[test]
+    fn s1_d_4b_5c_the_home_spot_walks_the_ring_and_the_stack() {
+        let w = world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.facing = 1;
+        p.body_frame = 0; // `offsets_player_headgear_y(0)` = 2
+        let (cx, cy) = p.center();
+        let top = cy - 21.0; // headgear 2 тИТ 2 = 0
+
+        // Slot 0: no ring offset and no stack.
+        let h0 = ai_158_home_location(&p, 0);
+        assert_eq!(h0, Vec2::new(cx.floor(), top.floor()), "slot 0");
+
+        // Slot 1: `direction * 8` right, `-2` up (`:48965`).
+        let h1 = ai_158_home_location(&p, 1);
+        assert_eq!(h1, Vec2::new((cx + 8.0).floor(), (top - 2.0).floor()));
+
+        // Slot 2: `direction * -10` (`:48968`).
+        let h2 = ai_158_home_location(&p, 2);
+        assert_eq!(h2.x, (cx - 10.0).floor(), ":48968 the -10 ring slot");
+
+        // Slot 6 opens the second ring: `-16` more (`:48984`).
+        let h6 = ai_158_home_location(&p, 6);
+        assert_eq!(h6.y, (top - 16.0).floor(), ":48984 the per-stack lift");
+    }
+
+    /// The four reach helpers (`Projectile.cs:12400-12444`): the 1000-px cap
+    /// alone refuses a far target, and open air clears the four sight lines.
+    #[test]
+    fn s1_d_4b_5c_the_reach_helpers_cap_at_1000px() {
+        let w = world();
+        let p = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = p.center();
+        let pc = Vec2::new(pcx, pcy);
+        let mut proj = just(BABY_BIRD);
+        proj.w = 10.0;
+        proj.h = 10.0;
+        // The minion rides just off the owner тАФ the C#'s `Distance` reads the
+        // PROJECTILE for the own-body probe and the PLAYER for the melee one.
+        proj.pos = Vec2::new(pcx + 30.0, pcy);
+        proj.direction = 1;
+
+        let near = {
+            let mut n = Npc::new(NpcKind::Slime, pcx + 20.0, pcy - 8.0, 1, 0.0);
+            n.max_hp = 40;
+            n.hp = 40;
+            n
+        };
+        let far = {
+            let mut n = Npc::new(NpcKind::Slime, pcx + 1400.0, pcy, 1, 0.0);
+            n.max_hp = 40;
+            n.hp = 40;
+            n
+        };
+        assert!(
+            proj.can_hit_with_own_body(&w, &near),
+            ":12419 the open-air shoulder line clears"
+        );
+        assert!(
+            !proj.can_hit_with_own_body(&w, &far),
+            ":12415 the 1000-px cap"
+        );
+        assert!(
+            proj.can_hit_with_melee_weapon(&w, &near, Some(&p), pc),
+            ":12406 the owner's box clears in open air"
+        );
+        assert!(
+            !proj.can_hit_with_melee_weapon(&w, &far, Some(&p), pc),
+            ":12402 the owner-side 1000-px cap"
+        );
+    }
+}
+
