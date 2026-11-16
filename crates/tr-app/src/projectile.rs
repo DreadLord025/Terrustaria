@@ -10911,7 +10911,7 @@ fn wrap_angle(angle: f32) -> f32 {
 
 /// `Utils.AngleTowards(curAngle, targetAngle, maxChange)` (`Utils.cs:2053-2069`):
 /// the wrapped shortest-way turn, clamped to `max_change`.
-fn angle_towards(cur: f32, target: f32, max_change: f32) -> f32 {
+pub(crate) fn angle_towards(cur: f32, target: f32, max_change: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
     let mut cur = wrap_angle(cur);
     let target = wrap_angle(target);
