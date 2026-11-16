@@ -14710,33 +14710,41 @@ below are recorded rather than resolved:
   no station, ingredient or crafting-hour check. That is deliberate for a debug give
   and is *not* a claim about `Recipe`'s availability rules (`Recipe.cs:15162-15191`
   etc. stay unported).
-* **Action semantics are frozen.** The World rows, the spawns and the pause row keep
-  their pre-existing bodies. The pause row *is* exact (`WorldUpdateStepper.cs:45-49`)
-  and its test pins it.
-* **S1-E-37 — the world-event rows now ride the C# entry points.** The panel no longer
-  writes the event state by hand:
-  * Hardmode calls `WorldGen.StartHardmode`'s runner half (`WorldGen.cs:31707-31709`
-    → `spread::initialize_hard_mode`, the two V runners and their RNG order).
-  * Goblin Army calls `Main.StartInvasion` (`Main.cs:64435-64486`) behind
-    `CanStartInvasion`'s 200-life gate (`:64424-64432`) — `80 + 40 × players` instead
-    of the old flat 80, the type-3/type-4 sizes, and the `Next(2)` side pick
-    (`:64476-64483`) on the `UpdateTime` stream.
-  * Slime Rain calls `Main.StartSlimeRain` (`:64742-64785`, the duration
-    `Next(32400, 54000)`) and `Main.StopSlimeRain` (`:64787-64806`, the
-    `-Next(3024, 6048) × 100` cooldown), and refuses a start while it is already
-    raining (`:64761-64764`).
-  Deliberate deviations that remain, all recorded in `docs/ROADMAP.md` S1-E-37:
-  * `StartHardmode`'s `TransformWorldOnBackgroundThread` (`:31721-31742`) and the
-    `UndoSpawnedItemProtection`/achievement/broadcast follow-up are unported — the
-    port's `initialize_hard_mode` runs inline on the growth phase, and the row keeps a
-    toggle-off as the debug revert (the C# has none: `:31703` returns early).
-  * The kill-all row has no C# equivalent (it is the port's own F3 affordance) and
-    stays as is.
-  * `Main.remixWorld`/`isThereAWorldSurface`/the announcements and the `netMode` arms
-    of both functions fold out — the port is single-player and neither flag exists.
+* **Action semantics.** The World rows now call the real C# entries (S1-E-37, landed
+  2026-11-16) instead of flipping flags — `WorldGen.StartHardmode`
+  (`WorldGen.cs:31701-31719`, the runner half *and* the `Lang.misc[15]` broadcast plus
+  progression 9), `Main.StartInvasion` (`Main.cs:64435-64486`), `Main.StartSlimeRain`/
+  `StopSlimeRain` (`:64742-64820`) and the blood-moon hit body (`:65344-65346`). The
+  goblin row's old `80` and the slime row's `43200` were both wrong and are gone. The
+  panel cannot switch hardmode back off: the C# `StartHardmode` returns early when
+  `hardMode` is set (`:31703`), and the port's `start_hardmode` does the same, so the
+  old toggle-off revert is gone. The **kill-all row stays project-specific**: no
+  `KillAll`/`KillAllNPCs` exists in the decompilation, so its `hp = 0` sweep is the
+  port's own dev shortcut and is not claimed as a port. The pause row *is* exact
+  (`WorldUpdateStepper.cs:45-49`) and its test pins it. `main.remixWorld`/
+  `isThereAWorldSurface`/the announcement and `netMode` arms of the invasion and slime
+  functions fold out — the port is single-player and none of those flags exist.
 * **Upstream reference only.** The feature set takes *behaviour* references from
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
+
+### S1-E-37's remaining deviations
+
+Three, all forced by the port's shape:
+
+* **The bare RNG stream.** The C# debug console is a chat-command dispatcher
+  (`ToolkitDebugCommands`) running outside every `Main.SwapRandom` block, so the
+  `Main.rand` it touches is the bare stream. The port has no chat-command layer
+  (S1-E-29's deviation) and models it with `NamedRngs::global()` (the `key: None`
+  arm of `start_invasion_in` and the slime rows' draws), seeded from the world seed
+  rather than `DateTime.Now.Ticks` — the S1-A-10 deviation, unchanged here.
+* **`StartHardmode` runs inline.** `WorldGen.StartHardmode` (`WorldGen.cs:31701-31719`)
+  defers the strip walk to a background thread
+  (`TransformWorldOnBackgroundThread`, `:31721-31742`) and queues the chat/achievement
+  follow-up back to the main thread. The port's `start_hardmode` transforms inline
+  and then runs the follow-up in the same call. `TryProtectingSpawnedItems`/
+  `UndoSpawnedItemProtection` (`:31708`/`:31717`) have no ported consumer.
+* **The kill-all row has no C# counterpart** (see above) — its sweep stays as-is.
 
 ## The boss sprite direction and roll audit (S1-G-19, 2026-11-16)
 
