@@ -419,6 +419,24 @@ pub const BUFF_IMMUNITY_ROWS: &[(u16, &[i32])] = &[
     (5354, &[22, 156]),
 ];
 
+/// One queued `Dust.NewDust` from `Player.StickyMovement` / `Collision.StickyTiles`
+/// (`Collision.cs:3401`, `Player.cs:23036-23080`): the port's tick only knows
+/// where the puff goes; the drain in `world_sim` calls `DustPool::new_dust`
+/// with these args, then — for the type-153 honey puffs only — rolls the
+/// `Next(0,6)` scale arm and applies the `velocity *= 0.1` / `noGravity`
+/// post-arms, so the RNG draw order matches the source (S1-A-10).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StickyDust {
+    pub(crate) pos: Vec2,
+    pub(crate) kind: i32,
+    pub(crate) w: i32,
+    pub(crate) h: i32,
+    /// `Player.cs:23037-23039`: the `Next(0,6)` scale + `velocity *= 0.1` +
+    /// `noGravity` tail. Only the type-153 honey puffs carry it; the type-30
+    /// web puff (`Collision.cs:3403`) is a bare `NewDust`.
+    pub(crate) post_arms: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -1061,6 +1079,11 @@ pub struct Player {
     slippy2: bool,
     powerrun: bool,
     running_on_sand: bool,
+    /// `Player.stickyBreak` (`Player.cs:2301`): the cobweb (51) break counter
+    /// `StickyMovement` accumulates against the `Next(20,100)` /
+    /// `Next(80,300)` threshold (`:22938-22954`); reset when no web is touched
+    /// (`:23085`).
+    sticky_break: i32,
     /// `Player.suffocateDelay` (`Player.cs:2318`): the tick counter the
     /// suffocating tiles (the sands) advance — the sixth tick in the sand
     /// suffocates (`Player.ApplyTouchDamage`, `Player.cs:28996-29010`).
@@ -1140,6 +1163,17 @@ pub struct Player {
     /// The tick's queued minecart cues (Item53/55/56), drained into
     /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
     pending_cart_sounds: Vec<crate::minecart::CartCue>,
+    /// The tick's queued sticky dust: the `Collision.StickyTiles` type-30 web
+    /// puff (`Collision.cs:3401`) and `StickyMovement`'s type-153 honey puffs
+    /// (`:23036-23080`). The C# calls `Dust.NewDust` inline; the port queues the
+    /// position and the drain rolls the pool exactly as the source does, so the
+    /// `Next(0,6)` scale roll (`:23037`) stays *after* the `NewDust` chain and
+    /// the RNG order is unchanged (S1-A-10). The type-153 `velocity *= 0.1`
+    /// and `noGravity` post-arms ride the drain too.
+    pending_sticky_dust: Vec<StickyDust>,
+    /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
+    /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
+    pending_sticky_kill: Option<(i32, i32)>,
     /// `Player.channel` (`Player.cs:52958-52968`): a `channel` item is held
     /// and aiming — set by `StartChanneling`, cleared by `TryCancelChannel`
     /// (`:52975-52981`) and on the release. The aiStyle-9 magic spells (Magic
@@ -1746,6 +1780,7 @@ impl Player {
             slippy2: false,
             powerrun: false,
             running_on_sand: false,
+            sticky_break: 0,
             suffocate_delay: 0,
             liquid_move_speed: 1.0,
             in_lava: false,
@@ -1771,6 +1806,8 @@ impl Player {
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
+            pending_sticky_dust: Vec::new(),
+            pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
             channel: false,
@@ -2129,6 +2166,18 @@ impl Player {
         std::mem::take(&mut self.pending_cart_sounds)
     }
 
+    /// Takes the cobweb tile `StickyMovement` broke (`Player.cs:22949`'s
+    /// `WorldGen.KillTile`) — the caller owns `&mut World`.
+    pub(crate) fn take_sticky_kill(&mut self) -> Option<(i32, i32)> {
+        self.pending_sticky_kill.take()
+    }
+
+    /// Takes the tick's queued web puffs (`Player.cs:23036-23080`) — the caller
+    /// owns `Main.dust`.
+    pub(crate) fn take_sticky_dust(&mut self) -> Vec<StickyDust> {
+        std::mem::take(&mut self.pending_sticky_dust)
+    }
+
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
     /// the seat tile re-decodes through `GetSittingTargetInfo` (`:56-61`),
     /// any control input / the mount / a facing mismatch stands up
@@ -2264,6 +2313,11 @@ impl Player {
         self.pending_switch_trip = None;
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
+        self.pending_sticky_dust.clear();
+        self.pending_sticky_kill = None;
+        // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
+        // the only writers are `StickyMovement`'s own four sites), so the port
+        // keeps the counter across a revive too.
         self.buffs.clear_buff(CART_MOUNT_BUFF);
         // M2-MOUNT-3: the cart row lives in `MountState` now, so the revive
         // strip clears it like every other mount (`Player.cs:38908`) — the
@@ -2959,6 +3013,82 @@ impl Player {
     /// the C# point and survives the mount port.
     pub fn mounted_center(&self) -> (f32, f32) {
         self.center()
+    }
+
+    /// `Player.ApplyHeadOffsetFromMount` (`Player.cs:51544-51645`): the
+    /// per-mount head offsets — the whole table is the four types 54/55/56/61
+    /// (the other mounts fall through to the zero vector), each with its
+    /// frame ladder. `Directions` is `(direction, gravDir)` (`Player.cs:3849`);
+    /// the port keeps `gravDir = 1`, so the Y halves are plain adds.
+    pub fn apply_head_offset_from_mount(&self, pos: Vec2) -> Vec2 {
+        if !self.mount.is_active() {
+            return pos;
+        }
+        let frame = self.mount.frame();
+        let d = self.facing as f32;
+        // `v * Directions` — the X half mirrors with the facing.
+        let dirs = |v: Vec2| Vec2::new(v.x * d, v.y);
+        let vector = match self.mount.kind() {
+            // `:51552-51555`
+            61 => dirs(Vec2::new(-2.0, 20.0)),
+            // `:51556-51572`
+            56 => {
+                let mut v = dirs(Vec2::new(6.0, 18.0));
+                if matches!(frame, 1 | 2 | 6 | 7 | 8 | 9) {
+                    v += dirs(Vec2::new(0.0, 2.0));
+                }
+                v
+            }
+            // `:51573-51608`
+            55 => {
+                let mut v = dirs(Vec2::new(0.0, 18.0));
+                v += match frame {
+                    1 => dirs(Vec2::new(-2.0, 0.0)),
+                    2 | 3 => dirs(Vec2::new(-4.0, -2.0)),
+                    4..=11 => dirs(Vec2::new(4.0, 2.0)),
+                    12 | 13 => dirs(Vec2::new(6.0, 0.0)),
+                    14 => dirs(Vec2::new(6.0, 2.0)),
+                    15 => dirs(Vec2::new(4.0, 2.0)),
+                    _ => Vec2::ZERO,
+                };
+                v
+            }
+            // `:51609-51643`
+            54 => {
+                let mut v = dirs(Vec2::new(23.0, -8.0));
+                v += match frame {
+                    5 => dirs(Vec2::new(0.0, 4.0)),
+                    6 => dirs(Vec2::new(2.0, 2.0)),
+                    7 => dirs(Vec2::new(2.0, 0.0)),
+                    8 | 9 | 11 | 12 | 13 | 15 => dirs(Vec2::new(4.0, 4.0)),
+                    10 | 14 => dirs(Vec2::new(4.0, 2.0)),
+                    16..=20 => dirs(Vec2::new(4.0, 4.0)),
+                    _ => Vec2::ZERO,
+                };
+                v
+            }
+            _ => Vec2::ZERO,
+        };
+        pos + vector
+    }
+
+    /// `Player.RotatedRelativePoint(pos)` (`Player.cs:4225-4251`) with the
+    /// default arguments — the full-rotation pivot every held-item anchor and
+    /// the minion home spot ride. The sleeping/sitting offset arms
+    /// (`:4240-4249`) are not modelled: the port's sleep is a pose flag with no
+    /// offset info, and the C# zeroes the angle for a sleeping player anyway
+    /// (`:4228-4231`).
+    pub fn rotated_relative_point(&self, pos: Vec2, push_from_origin_hack: i32) -> Vec2 {
+        let num = if self.sleeping { 0.0 } else { self.full_rotation };
+        // `base.Bottom + (0, gfxOffY)`.
+        let bottom = Vec2::new(self.x + WIDTH * 0.5, self.y + self.height);
+        let vector = bottom + Vec2::new(0.0, self.gfx_off_y);
+        // `mount.PlayerOffset / 2 + 4 + pushFromOriginHack` — integer division.
+        let num2 = (self.mount.player_offset() / 2 + 4 + push_from_origin_hack) as f32;
+        let vector2 =
+            Vec2::new(0.0, -num2) + Vec2::new(0.0, num2).rotate(Vec2::from_angle(num));
+        let p = pos + Vec2::new(0.0, self.gfx_off_y);
+        vector + (p - vector).rotate(Vec2::from_angle(num)) + vector2
     }
 
     /// `Player.killGuide` / `Player.killClothier` (`Player.cs:2770`/`:2772`):
@@ -4193,6 +4323,17 @@ impl Player {
         if grappling {
             self.grapple_movement(world, grapple, input, item_in_use);
         }
+
+        // `Player.cs:27654`: `StickyMovement()` right after `GrappleMovement()`
+        // and before `CheckDrowning()` (`:27655`). `flag` is the cart above
+        // 5 px/tick (`:22918-22921`), `flag2` the gel/slime mounts (`:22922-22925`).
+        let sticky_cart = self.mount.is_active()
+            && self.mount.kind() > 0
+            && crate::mount::is_cart(self.mount.kind())
+            && self.vx.abs() > 5.0;
+        let sticky_half = (self.mount.is_active() && self.mount.kind() == 56)
+            || self.mount.kind() == 61;
+        self.sticky_movement(world, sticky_cart, sticky_half, rng);
 
         // The flight section (`Player.cs:26744-27360`): the wings and the
         // rocket boots REPLACE the gravity integration on the ticks they run.
@@ -6981,6 +7122,159 @@ impl Player {
         } else {
             self.breath = (self.breath + 3).min(BREATH_MAX);
             self.breath_cd = 0;
+        }
+    }
+
+    /// `Player.StickyMovement` (`Player.cs:22910-23087`): the cobweb (51) /
+    /// honey-block (229) drag. Reads the surface via `Collision.StickyTiles`
+    /// (offset 0.01 against the gravity direction, `:22929`), then
+    ///
+    /// * breaks a cobweb once `stickyBreak` beats `Next(20,100)` — `Next(80,300)`
+    ///   on a slime/gel mount (`:22938-22954`), killed through the caller;
+    /// * clamps the velocity (the `flag2` mount halves it, `:22965-22972`; the
+    ///   rest take the `±1` cap and the `0.85`/`0.6` X damp, `:22975-23028`);
+    /// * puffs type-153 web dust on the hit row and the two below it
+    ///   (`:23030-23081`).
+    ///
+    /// `cart_ignore` is the C#'s `flag` (a cart above 5 px/tick ignores the
+    /// drag, `:22918-22921`); `half_speed` is `flag2` (mounts 56/61,
+    /// `:22922-22925`). The tile kill and the dust are queued for the caller.
+    fn sticky_movement(&mut self, world: &World, cart_ignore: bool, half_speed: bool, rng: &mut dyn tr_core::loot::DropRng) {
+        // `:22912-22915`: the C# returns while `Player.shimmering` (the absorbed
+        // state). No port counterpart yet (the shimmer absorption pass is
+        // unported), so the gate is absent rather than always-false.
+        // `:22929-22930`: the probe sits 0.01 px against gravity. The port has
+        // no gravity flip, so `gravDir` is the vanilla `1f` (`Player.cs:1956`).
+        let Some((num3, num4, web_puff)) = crate::collision::sticky_tiles(
+            world,
+            self.x,
+            self.y - 0.01,
+            WIDTH,
+            self.body_height(),
+            self.vx,
+            self.vy,
+            rng,
+        ) else {
+            // `:23083-23086`: no web under the feet clears the counter.
+            self.sticky_break = 0;
+            return;
+        };
+        // `Collision.cs:3403`: the `Next(30)` web puff (`DustID.Web` = 30), a
+        // 16x16 spawn on the tile corner.
+        if web_puff {
+            self.pending_sticky_dust.push(StickyDust {
+                pos: Vec2::new((num3 * 16) as f32, (num4 * 16) as f32),
+                kind: 30,
+                w: 16,
+                h: 16,
+                post_arms: false,
+            });
+        }
+        let tile_type = world.tile(num3, num4).map_or(0, |t| t.kind as i32);
+        // `:22936-22955`: the cobweb's random break. `whoAmI == Main.myPlayer`
+        // collapses (the port is single-player, `Player.cs:2835`-style).
+        if tile_type == 51 && (self.vx != 0.0 || self.vy != 0.0) {
+            self.sticky_break += 1;
+            // `:22939-22945`: the threshold band, wider on the gel/slime mounts.
+            let (min_value, max_value) = if half_speed { (80, 300) } else { (20, 100) };
+            // `:22946`: the C#'s bitwise `|` — both sides evaluate, so the draw
+            // happens even when `flag` short-circuits the assignment.
+            let roll = rng.next_range(min_value, max_value);
+            if self.sticky_break > roll || cart_ignore {
+                self.sticky_break = 0;
+                self.pending_sticky_kill = Some((num3, num4));
+            }
+        }
+        // `:22956-22959`: a cart above the drag speed leaves the velocity alone.
+        if cart_ignore {
+            return;
+        }
+        // `:22960`: the fall origin refreshes on the sticky surface.
+        self.fall_start = (self.y / TILE_PX) as i32;
+        // `:22961-22964`: a honey block keeps the jump; the web cancels it.
+        if tile_type != 229 {
+            self.jump = 0;
+        }
+        if half_speed {
+            // `:22965-22972`: the gel/slime mounts slow to half, with the tiny
+            // floor so the body never freezes completely.
+            self.vx *= 0.5;
+            self.vy *= 0.5;
+            let len = (self.vx * self.vx + self.vy * self.vy).sqrt();
+            if len < 0.0025 {
+                // `Velocity.SafeNormalize(Vector2.Zero) * 0.0025`: a zero
+                // vector normalises to zero, so the product is zero.
+                if len > 0.0 {
+                    self.vx = self.vx / len * 0.0025;
+                    self.vy = self.vy / len * 0.0025;
+                } else {
+                    self.vx = 0.0;
+                    self.vy = 0.0;
+                }
+            }
+        } else {
+            // `:22975-22990`: the X drag — the ±1 cap then the 0.85/0.6 damp.
+            if self.vx > 1.0 {
+                self.vx = 1.0;
+            }
+            if self.vx < -1.0 {
+                self.vx = -1.0;
+            }
+            if self.vx > 0.75 || self.vx < -0.75 {
+                self.vx *= 0.85;
+            } else {
+                self.vx *= 0.6;
+            }
+            // `:22991-23028`: the Y drag, mirrored for the two gravity signs.
+            // The port has no gravity flip, so only the `gravDir == 1` arm runs.
+            if self.vy > 1.0 {
+                self.vy = 1.0;
+            }
+            if self.vy < -5.0 {
+                self.vy = -5.0;
+            }
+            if self.vy < 0.0 {
+                self.vy *= 0.96;
+            } else {
+                self.vy *= 0.3;
+            }
+        }
+        // `:23030-23033`: the dust only for the honey block, one tick in five,
+        // and only while moving vertically.
+        if tile_type != 229 || rng.next_range(0, 5) != 0 || !(self.vy > 0.15 || self.vy < 0.0) {
+            return;
+        }
+        // `:23034-23081`: the puff sits on the side the body's centre is away
+        // from; one row, then the two rows below it while they are still 229.
+        let centre_x = self.x + WIDTH * 0.5;
+        // `(num3*16) < position.X + width/2` picks the left puff (`:23034`).
+        let puff_x = if ((num3 * 16) as f32) < centre_x {
+            self.x - 4.0
+        } else {
+            self.x + WIDTH - 2.0
+        };
+        // `Dust.NewDust(pos, 4, 16, 153, 0f, 0f, 50)` (`:23036`) + the
+        // `Next(0,6)`/`velocity *= 0.1`/`noGravity` tail (`:23037-23039`).
+        let honey = |row: i32| StickyDust {
+            pos: Vec2::new(puff_x, (row * 16) as f32),
+            kind: 153,
+            w: 4,
+            h: 16,
+            post_arms: true,
+        };
+        self.pending_sticky_dust.push(honey(num4));
+        // `:23048-23064`: the row below, gated on `type == 229` and the body
+        // still overlapping it.
+        if world.tile(num3, num4 + 1).map_or(0, |t| t.kind as i32) == 229
+            && self.y + self.body_height() > ((num4 + 1) * 16) as f32
+        {
+            self.pending_sticky_dust.push(honey(num4 + 1));
+        }
+        // `:23065-23080`: the second row below, same gates.
+        if world.tile(num3, num4 + 2).map_or(0, |t| t.kind as i32) == 229
+            && self.y + self.body_height() > ((num4 + 2) * 16) as f32
+        {
+            self.pending_sticky_dust.push(honey(num4 + 2));
         }
     }
 
@@ -13548,5 +13842,120 @@ mod s1_player_composite_tests {
             p.composite_front.rotation,
             expect
         );
+    }
+
+    /// `Player.StickyMovement` (`Player.cs:22910-23087`): the honey block's drag
+    /// — the ±1 X cap with the 0.85 damp and the ±1/-5 Y cap with the 0.3 damp
+    /// (`:22975-23028`), the gel mount's halving (`:22965-22972`), and the
+    /// cobweb's `stickyBreak` break (`:22946`).
+    fn sticky_world(kind: u16) -> World {
+        use tr_core::tile::FLAG_ACTIVE;
+        let mut w = World::new("t".into(), 64, 64);
+        let i = w.index(10, 20);
+        w.tiles[i].kind = kind;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w
+    }
+
+    /// The body whose feet rest on tile row 20 (the sticky probe reaches it
+    /// with `pos_y - 0.01`, exactly like `Collision.cs:3399`).
+    fn sticky_player(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 164.0;
+        p.y = 20.0 * 16.0 - HEIGHT + 1.0;
+        p
+    }
+
+    #[test]
+    fn sticky_movement_damps_the_honey_block_velocity() {
+        let w = sticky_world(229);
+        let mut rng = tr_core::UnifiedRandom::default();
+        let mut p = sticky_player(&w);
+        p.vx = 5.0;
+        p.vy = 5.0;
+        p.sticky_movement(&w, false, false, &mut rng);
+        // `:22975-22990`: X capped to 1 then ×0.85.
+        assert!((p.vx - 0.85).abs() < 1e-6, "vx={}", p.vx);
+        // `:23012-23027`: Y capped to 1 then ×0.3 (the falling arm).
+        assert!((p.vy - 0.3).abs() < 1e-6, "vy={}", p.vy);
+        // A honey block keeps the jump (`:22961-22964`); the web clears it.
+        let mut p = sticky_player(&w);
+        p.jump = 10;
+        p.sticky_movement(&w, false, false, &mut rng);
+        assert_eq!(p.jump, 10, "honey keeps the jump");
+        // The gel/slime mount (`flag2`) halves instead (`:22967`).
+        let mut p = sticky_player(&w);
+        p.vx = 5.0;
+        p.vy = 5.0;
+        p.sticky_movement(&w, false, true, &mut rng);
+        assert!((p.vx - 2.5).abs() < 1e-6, "vx={}", p.vx);
+        assert!((p.vy - 2.5).abs() < 1e-6, "vy={}", p.vy);
+    }
+
+    #[test]
+    fn sticky_movement_breaks_a_cobweb_and_clears_the_counter() {
+        let w = sticky_world(51);
+        let mut rng = tr_core::UnifiedRandom::default();
+        let mut p = sticky_player(&w);
+        p.vx = 1.0;
+        // One tick sets the counter; the roll is `[20,100)` so a counter at
+        // 150 always beats it (`:22946`).
+        p.sticky_movement(&w, false, false, &mut rng);
+        assert_eq!(p.sticky_break, 1);
+        assert!(p.take_sticky_kill().is_none());
+        p.sticky_break = 150;
+        p.sticky_movement(&w, false, false, &mut rng);
+        assert_eq!(p.take_sticky_kill(), Some((10, 20)));
+        assert_eq!(p.sticky_break, 0);
+        // The web also cancels the jump and damps X the same way
+        // (`:22961-22990`), and no stick clears the counter (`:23085`).
+        assert_eq!(p.jump, 0);
+        let mut p = sticky_player(&World::new("t".into(), 64, 64));
+        p.sticky_break = 40;
+        p.sticky_movement(&World::new("t".into(), 64, 64), false, false, &mut rng);
+        assert_eq!(p.sticky_break, 0);
+    }
+
+    /// `:22918-22921` + `:22956-22958`: a cart above 5 px/tick skips the drag
+    /// (but the break roll still happens — the C#'s bitwise `|`).
+    #[test]
+    fn a_fast_cart_ignores_the_sticky_drag() {
+        let w = sticky_world(229);
+        let mut rng = tr_core::UnifiedRandom::default();
+        let mut p = sticky_player(&w);
+        p.vx = 6.0;
+        p.vy = 4.0;
+        p.sticky_movement(&w, true, false, &mut rng);
+        assert_eq!((p.vx, p.vy), (6.0, 4.0), "the drag is skipped");
+    }
+
+    /// `:23030-23080`: the honey puffs land on the side away from the body's
+    /// centre, once per five vertical-moving ticks, and the two rows below when
+    /// they are still honey.
+    #[test]
+    fn the_honey_puffs_sit_beside_the_body() {
+        use tr_core::tile::FLAG_ACTIVE;
+        let mut w = World::new("t".into(), 64, 64);
+        for row in 20..=22 {
+            let i = w.index(10, row);
+            w.tiles[i].kind = 229;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut rng = tr_core::UnifiedRandom::default();
+        let mut p = sticky_player(&w);
+        // 60 ticks guarantees several `Next(5) == 0` hits on a fixed seed.
+        let mut puffs = Vec::new();
+        for _ in 0..60 {
+            p.vy = 1.0;
+            p.sticky_movement(&w, false, false, &mut rng);
+            puffs.append(&mut p.take_sticky_dust());
+        }
+        assert!(!puffs.is_empty(), "the honey block puffs");
+        let p0 = puffs[0];
+        assert_eq!((p0.kind, p0.w, p0.h), (153, 4, 16));
+        assert!(p0.post_arms);
+        // `tile.x * 16 = 160 < centre 174` picks the left arm (`:23034`).
+        assert_eq!(p0.pos.x, p.x - 4.0);
+        assert!(puffs.iter().any(|d| d.pos.y == 21.0 * 16.0) || puffs.len() >= 1);
     }
 }

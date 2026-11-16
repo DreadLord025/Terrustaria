@@ -874,6 +874,101 @@ mod tests {
         );
     }
 
+    /// `S1-E-37`: the World tab's event rows ride the C# entry points —
+    /// `StartInvasion` sizes the army `80 + 40 x the qualifying players`
+    /// (`Main.cs:64456`) behind the 200-life gate (`:64424-64432`), and
+    /// `StartSlimeRain`/`StopSlimeRain` own the duration/cooldown draws
+    /// (`:64767`, `:64805`) instead of the old hard-coded 43200 midpoint.
+    #[test]
+    fn s1_e_37_world_rows_ride_the_csharp_event_entry_points() {
+        let mut app = flow_app();
+        app.debug_panel.open = true;
+        app.debug_panel.tab = Tab::World;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+
+        // The 200-life gate: a 100-life character cannot call the army.
+        app.player.as_mut().unwrap().max_hp = 100;
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 7,
+            },
+        );
+        assert!(!app.world.invasion_goblins, "under 200 life refuses");
+
+        app.player.as_mut().unwrap().max_hp = 200;
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 7,
+            },
+        );
+        assert!(app.world.invasion_goblins);
+        assert_eq!(
+            app.world.invasion_size, 120,
+            "80 + 40 x 1 qualifying player"
+        );
+        assert_eq!(app.world.invasion_size_start, 120);
+        assert_eq!(app.world.invasion_type, 1, "the goblin type");
+        // The march origin is `StartInvasion`'s `Next(2)` pick (`:64476-64483`).
+        assert!(
+            app.world.invasion_x == 0.0 || app.world.invasion_x == app.world.width as f64,
+            "the side pick lands on one pole"
+        );
+
+        // The slime rain: the C# duration band, not the old 43200 midpoint.
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 8,
+            },
+        );
+        assert!(app.world.slime_rain);
+        assert!(
+            (32400.0..54000.0).contains(&app.world.slime_rain_time),
+            "Next(32400, 54000), got {}",
+            app.world.slime_rain_time
+        );
+        assert_eq!(app.world.slime_rain_kills, 0);
+        // The stop arms the negative `-Next(3024, 6048) * 100` cooldown.
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 8,
+            },
+        );
+        assert!(!app.world.slime_rain);
+        assert!(
+            (-604_800.0..=-302_400.0).contains(&app.world.slime_rain_time),
+            "the cooldown band, got {}",
+            app.world.slime_rain_time
+        );
+
+        // The hardmode row runs `WorldGen.StartHardmode` (`WorldGen.cs:31701-31719`).
+        // A second click is a no-op: the C# early-returns when `hardMode` is
+        // already set (`:31703`) and there is no un-hardmode in vanilla.
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 0,
+            },
+        );
+        assert!(app.world.hard_mode);
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 0,
+            },
+        );
+        assert!(app.world.hard_mode, "no un-hardmode exists (:31703)");
+    }
+
     #[test]
     fn s1_e_29_the_world_tab_keeps_its_eleven_rows() {
         let app = flow_app();

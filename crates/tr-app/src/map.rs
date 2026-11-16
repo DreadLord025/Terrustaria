@@ -63,7 +63,7 @@ pub struct MapQuad {
 
 /// The fullscreen map origin (`num`/`num2`, `Main.cs:55425-55430`): `pos` in tiles,
 /// `scale` in px/tile, `screen` in px.
-fn map_origin(pos: [f32; 2], scale: f32, screen: Vec2) -> [f32; 2] {
+pub fn map_origin(pos: [f32; 2], scale: f32, screen: Vec2) -> [f32; 2] {
     [
         screen.x * 0.5 - pos[0] * scale + 10.0 * scale,
         screen.y * 0.5 - pos[1] * scale + 10.0 * scale,
@@ -414,6 +414,9 @@ pub struct WorldMap {
     /// in world tiles + their age in seconds (the C# stamps `DateTime.Now`
     /// and compares `TotalSeconds > 15`).
     pub pings: Vec<([f32; 2], f32)>,
+    /// `Main.TriggerPing`'s MP half (`Main.cs:56546-56549`): the markers added
+    /// this frame that still need the `NetPingModule` relay.
+    pub ping_outbox: Vec<[f32; 2]>,
 }
 
 impl WorldMap {
@@ -432,6 +435,7 @@ impl WorldMap {
             needs_full_upload: false,
             reset_pos: true,
             pings: Vec::new(),
+            ping_outbox: Vec::new(),
         }
     }
 
@@ -513,13 +517,21 @@ impl WorldMap {
     }
 
     /// `PingMapLayer.Add` (`PingMapLayer.cs:47-51`): up to 100 pings; the
-    /// position is world tiles. The C# caller rides the ping net message —
-    /// the port has no multiplayer, so the pool stays empty in-game (the
-    /// seam exists for the net task).
+    /// position is world tiles. The C# caller is `Main.TriggerPing`
+    /// (`Main.cs:56541-56551`), which adds locally and - in MP - also sends the
+    /// `NetPingModule` packet.
     pub fn add_ping(&mut self, pos: [f32; 2]) {
         if self.pings.len() < 100 {
             self.pings.push((pos, 0.0));
         }
+    }
+
+    /// `Main.TriggerPing` (`Main.cs:56541-56551`): add the marker and queue
+    /// the relay, which the frame sends through `NetPingModule` when a
+    /// connection is live (`Main.cs:56546-56549`).
+    pub(crate) fn trigger_ping(&mut self, pos: [f32; 2]) {
+        self.add_ping(pos);
+        self.ping_outbox.push(pos);
     }
 
     /// `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:37-40`): the pings

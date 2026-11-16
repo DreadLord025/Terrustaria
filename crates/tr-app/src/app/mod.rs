@@ -7,6 +7,7 @@
 //! `main.rs`.)
 
 pub(crate) mod clicks;
+pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
@@ -209,6 +210,9 @@ pub(crate) struct App {
     /// by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) from the held item
     /// and falling back to this when nothing overrides it (`Main.cs:42864-42867`).
     pub(crate) equip_page_selected: i32,
+    /// `ItemSlot.dyeSwapCounter` (`ItemSlot.cs:3549-3564`): the round-robin
+    /// slot `DyeSwap` starts its empty scan from and advances past.
+    pub(crate) dye_swap_counter: usize,
     pub(crate) selected: usize,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
@@ -383,7 +387,7 @@ pub(crate) struct App {
     /// (`Netplay.cs:469-543`); stays at 0 while hosting.
     pub(crate) net_state: i32,
     /// The `10 TileBlock` sections buffered while the host streams the world,
-    /// applied in order at `WorldComplete` (the C#'s section stream,
+    /// applied in order at `49 InitialSpawn` (the C#'s section stream,
     /// `MessageBuffer.cs:812-841`).
     pub(crate) net_pending_sections: Vec<net::TileBlock>,
     /// The `7 WorldInfo` header, held until the blob completes the install.
@@ -434,11 +438,16 @@ pub(crate) struct App {
     /// The host slot id per client-npc index (the `28 NPCStrike` target and
     /// the `23` order), parallel to `npcs` on a joining client.
     pub(crate) net_npc_slots: Vec<u32>,
-    /// The `82` module cadence counter and the last ping send stamp (the
-    /// client's RTT diagnostic, `NetPingModule`).
-    pub(crate) net_module_beat: u32,
+    /// The `154 Ping` round trip (`Net/Ping.cs`: the stopwatch restart point
+    /// and the `_waitingForResponse` flag).
     pub(crate) net_ping_at: Option<Instant>,
+    pub(crate) net_ping_waiting: bool,
     pub(crate) net_rtt_ms: u32,
+    /// `Main._lastPingMousePosition` / `_lastPingMouseDownTime`
+    /// (`Main.cs:377,379`): the double-click detector for the fullscreen
+    /// map's ping (`:55486-55495` - two presses within 0.5 s and 2 px).
+    pub(crate) last_ping_pos: Vec2,
+    pub(crate) last_ping_time: f64,
     pub(crate) join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     pub(crate) map: Option<map::WorldMap>,
@@ -2991,6 +3000,7 @@ impl App {
             // `TR_EQUIPPAGE` seeds the *selected* page too, so the pin survives
             // the per-frame `SelectEquipPage` resolution below.
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
+            dye_swap_counter: 0,
             selected: 0,
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];
@@ -3133,12 +3143,14 @@ impl App {
             net_reserved: HashMap::new(),
             net_ps_last: net::PlayerState::default(),
             net_beat: 0,
-            net_module_beat: 0,
             net_proj_last: HashMap::new(),
             net_proj_spam: HashMap::new(),
             net_npc_slots: Vec::new(),
             net_ping_at: None,
+            net_ping_waiting: false,
             net_rtt_ms: 0,
+            last_ping_pos: Vec2::ZERO,
+            last_ping_time: 0.0,
             join_target,
             map: Some(world_map),
             map_queue: map::MapUpdateQueue::default(),
