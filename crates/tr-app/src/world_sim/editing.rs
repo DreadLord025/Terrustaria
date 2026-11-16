@@ -9047,6 +9047,10 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     app.npcs.push(crystal);
     app.world.dd2_event_ongoing = true;
     app.world.dd2_wave = 1;
+    // `StartInvasion` (`DD2Event.cs:273-275`): the counters and the boss
+    // latches start clean (`:268-270`).
+    app.world.dd2_wave_kills = 0.0;
+    app.world.dd2_latches = tr_core::dd2::DownedLatches::default();
     let held = app.inventory[app.selected];
     app.swing_max = crate::item::use_animation_secs(held.kind);
     app.swing = app.swing_max;

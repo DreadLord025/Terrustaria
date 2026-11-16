@@ -4144,6 +4144,31 @@ swap the rosters (the T2 heavy units 553/562/572/568, the T3 leet
 554/557/563 with Betsy 551 on wave 7), the budgets climb 60→220, and
 wave 7's tier-3 budget is Betsy's own HP bucket.
 
+## The Old One's Army's kill worth (S1-E-12)
+
+`tr_core::dd2::monster_points_worth` is `DD2Event.GetMonsterPointsWorth`
+(`DD2Event.cs:546-554`) over the three tier bodies (`:1106-1130`,
+`:1199-1223`, `:1509-1528`): a kill outside the two family id ranges
+(`(uint)(id-551) <= 14` / `(uint)(id-568) <= 10`) scores 0 — note the
+skeletons 566/567 sit between the ranges and score nothing, exactly as
+the C#'s casts do. Tier 1's wave 5 freezes the ordinary kills at
+`waveKills >= 139` (only the Dark Mages 564/565 score, latching
+`_downedDarkMageT1`), tier 2's wave 7 does the same at 219 (only the
+Ogres 576/577, `_downedOgreT2`), and tier 3's wave 7 scores Betsy (551)
+alone. The latches live in `World::dd2_latches`, reset by
+`use_etherian_crystal` (`StartInvasion`'s `:268-275`), and lift their
+wave's kill cap in `required_wave_kills`/`required_wave_kills_t2`
+(`:993`, `:1181`).
+
+Deliberate reductions: `Main.expertMode` is constants-off (the world
+carries no game mode — the same reduction as `spawner.rs`'s town block
+and the nurse's heal cost), so the band's `!expertMode ? 1 : 2`
+collapses to 1 and the `waveKills == 138` / `== 218` anti-overshoot rows
+(`:1119`, `:1212`) return the same 1 that the classic arm already does.
+The latches are not saved: `DD2Event.Save` (`:151-156`) writes only the
+three tier flags, so a reload mid-wave starts a fresh invasion's latch
+state, as the C#'s statics do.
+
 ## The Ancient Cultist (M4-EVENT-6)
 
 The Lunar Events' summoner (422, aiStyle 94): the 180-tick ritual

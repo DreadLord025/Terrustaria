@@ -338,6 +338,12 @@ pub struct World {
     /// still stands — the lane gates' aiStyle-106 arm parks their fade while
     /// it does.
     pub dd2_crystal_alive: bool,
+    /// `DD2Event._downedDarkMageT1` / `_downedOgreT2` (`:61-63`): the wave
+    /// bosses' death latches — the tier tables' kill-worth rows set them and
+    /// the wave-5/-7 kill caps read them (`:993`, `:1181`). The invasion's
+    /// start clears them (`:268-269`); the C# never saves them (`Save`
+    /// writes only the three tier flags, `:151-156`), so neither do we.
+    pub dd2_latches: crate::dd2::DownedLatches,
     pub invasion_type: i32,
     /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
     /// points (`invasion_size` rides the Goblin Army block's field).
@@ -568,6 +574,7 @@ impl World {
             dd2_lost: false,
             dd2_lane_rate: crate::dd2::LANE_SPAWN_RATE,
             dd2_crystal_alive: false,
+            dd2_latches: crate::dd2::DownedLatches::default(),
             tower_shield_solar: 0,
             tower_shield_vortex: 0,
             tower_shield_nebula: 0,
