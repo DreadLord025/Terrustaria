@@ -1181,6 +1181,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     if n.kind == NpcKind::Nurse {
                         dmg *= 2;
                     }
+                    // `:44377-44387` — the Flymeal's second block: a hit on a
+                    // `townNPC` fires TERRARIST (42). The C# splits it from the
+                    // `:44345` multiplier arm but gates on the same item and
+                    // both run before `StrikeNPC` (`:44404`). Both predicates
+                    // collapse to `is_town_npc_like()` here: it *is* the
+                    // vanilla `townNPC` flag, and `isLikeATownNPC` only adds
+                    // type 453, which the port does not ship.
+                    let _ = app.achievements.notify_progression(42);
                 }
                 // `:44383`: `num2 += nPC.checkArmorPenetration(
                 // this.GetArmorPenetration(sItem.melee), armorPenetrationPercent)`
@@ -4317,6 +4325,12 @@ mod tests {
         let hp = a.npcs[0].hp;
         mine_frames(&mut a, 1);
         assert!(a.npcs[0].hp < hp, "the Flymeal gets through the friendly gate");
+        // `Player.cs:44377-44387` — the Flymeal's `townNPC` branch fires
+        // TERRARIST (42).
+        assert!(
+            progression(&a, 42),
+            "the Flymeal credits TERRARIST on a town NPC"
+        );
         // The doubled 15 plus the 100 % armour penetration clears the
         // Guide's defence 30 by a wide margin (the sword's ~0 would not).
         assert!(
@@ -4345,6 +4359,22 @@ mod tests {
         c.inventory[c.selected].kind = 24;
         mine_frames(&mut c, 1);
         assert!(c.npcs[0].hp < hp, "the hostile is still hittable");
+        // S1-E-18d — the `townNPC` predicate: a plain slime never credits
+        // TERRARIST, and the Stick of Doom is a different item (`:44345` is
+        // gated on 5129, `:44377` too).
+        assert!(!progression(&c, 42), "a hostile credits nothing");
+        assert!(!progression(&b, 42), "the Stick of Doom is not the Flymeal");
+    }
+
+    /// Whether the `PROGRESSION_EVENT_<id>` condition (`AchievementCondition
+    /// .Name`, the save key) is completed on any row.
+    fn progression(app: &App, id: u32) -> bool {
+        let key = format!("PROGRESSION_EVENT_{id}");
+        app.achievements
+            .list
+            .iter()
+            .flat_map(|a| a.conditions.iter())
+            .any(|c| c.name == key && c.completed)
     }
 
     fn melee_app() -> App {
