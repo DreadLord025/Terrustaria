@@ -257,6 +257,19 @@ pub struct World {
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
     pub snow_moon: bool,
+    /// `NPC.waveNumber` (`NPC.cs:6051`, no initializer — 0 until an event
+    /// starts, 1 at the start, 20 terminal): the running moon event's
+    /// current wave. Runtime-only, not saved.
+    pub wave_number: i32,
+    /// `NPC.waveKills` (`NPC.cs:6050`): the current wave's points — the
+    /// progress walk adds the per-kind table value × the scalar and zeroes
+    /// it when the wave advances. Runtime-only, not saved.
+    pub wave_kills: f32,
+    /// `NPC.totalInvasionPoints` (`NPC.cs:6049`): the run's total points.
+    /// Write-only in the port — its C# readers are the out-of-scope
+    /// broadcast (`Main.cs:10949`) and the MP sync; kept for state parity.
+    /// Runtime-only, not saved.
+    pub total_invasion_points: f32,
     /// `Main.hardMode` (`AmbienceServer.cs:61`). Runtime-only, not saved.
     pub hard_mode: bool,
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
@@ -536,6 +549,9 @@ impl World {
             all_players_asleep: false,
             pumpkin_moon: false,
             snow_moon: false,
+            wave_number: 0,
+            wave_kills: 0.0,
+            total_invasion_points: 0.0,
             hard_mode: false,
 
             altars_smashed: 0,
@@ -631,6 +647,137 @@ impl World {
         }
         // `dayRate = 1` is the ported fallback (`:6221-6224` gameMenu arm).
         1
+    }
+
+    /// `NPC.MoonEventRequiredPointsPerWaveLookup` (`NPC.cs:95289-95300`):
+    /// the per-wave `waveKills` requirement, indexed by `waveNumber`. The
+    /// index-0 and index-20 entries are 0 — the terminal waves carry no
+    /// requirement and never advance.
+    pub const MOON_WAVE_REQUIREMENTS: [i32; 21] = [
+        0, 25, 40, 50, 80, 100, 160, 180, 200, 250, 300, 375, 450, 525, 675, 850, 1025, 1325,
+        1550, 2000, 0,
+    ];
+
+    /// `Main.startPumpkinMoon` (`Main.cs:10979-10996`): the flag, the twin's
+    /// clear, the blood moon's clear, then the single-player arm — the points
+    /// reset and `waveNumber = 1`. The wave-1 broadcast and the damage
+    /// tracker are UI/MP (out). Draws nothing.
+    pub fn start_pumpkin_moon(&mut self) {
+        self.pumpkin_moon = true;
+        self.snow_moon = false;
+        self.blood_moon = false;
+        self.total_invasion_points = 0.0;
+        self.wave_kills = 0.0;
+        self.wave_number = 1;
+    }
+
+    /// `Main.startSnowMoon` (`Main.cs:10998-11017`): the snow twin — same
+    /// shape, the flags mirrored.
+    pub fn start_snow_moon(&mut self) {
+        self.snow_moon = true;
+        self.pumpkin_moon = false;
+        self.blood_moon = false;
+        self.total_invasion_points = 0.0;
+        self.wave_kills = 0.0;
+        self.wave_number = 1;
+    }
+
+    /// `Main.stopMoonEvent` (`Main.cs:10953-10976`): each flag's clear is
+    /// unconditional and carries the `netMode != 1` point/wave resets — the
+    /// port is single-player, so both arms run; with no event running the
+    /// whole call is a no-op (the C# guards on the flag too).
+    pub fn stop_moon_event(&mut self) {
+        if self.pumpkin_moon || self.snow_moon {
+            self.pumpkin_moon = false;
+            self.snow_moon = false;
+            self.total_invasion_points = 0.0;
+            self.wave_kills = 0.0;
+            self.wave_number = 0;
+        }
+    }
+
+    /// `NPC.GetMoonEventPointScalar` (`NPC.cs:78432-78440`): master 2.5 /
+    /// expert 2 / normal 1. The port is single-difficulty, so the normal
+    /// arm's 1x is the port's reduction (recorded in ANALYSIS).
+    pub const MOON_POINT_SCALAR: f32 = 1.0;
+
+    /// `CheckProgressFrostMoon`'s per-type table (`NPC.cs:78518-78549`) —
+    /// the Snow/Frost Moon family's kill points, 0 for every other type.
+    fn frost_moon_points(npc_type: u16) -> f32 {
+        match npc_type {
+            338 | 339 | 340 => 1.0,
+            341 => 20.0,
+            342 => 2.0,
+            343 => 18.0,
+            344 => 50.0,
+            345 => 150.0,
+            346 => 100.0,
+            347 => 8.0,
+            348 | 349 => 4.0,
+            350 => 3.0,
+            351 => 10.0,
+            352 => 5.0,
+            _ => 0.0,
+        }
+    }
+
+    /// `CheckProgressPumpkinMoon`'s per-type table (`NPC.cs:78658-78682`) —
+    /// the Pumpkin Moon family's kill points, 0 for every other type.
+    fn pumpkin_moon_points(npc_type: u16) -> f32 {
+        match npc_type {
+            305..=314 => 1.0,
+            315 => 50.0,
+            325 => 75.0,
+            326 => 2.0,
+            327 => 150.0,
+            329 => 5.0,
+            330 => 10.0,
+            _ => 0.0,
+        }
+    }
+
+    /// The shared walk body — `CheckProgressFrostMoon`/`CheckProgressPumpkinMoon`
+    /// (`NPC.cs:78472-78586`, `:78600-78719`): the requirement read at the
+    /// kill's wave, the points added, the advance when the requirement is met
+    /// and non-zero. The wave-text broadcast and the
+    /// `ReportInvasionProgress` bar are UI/MP — out. Draws nothing.
+    fn moon_event_kill_walk(&mut self, npc_type: u16, points: fn(u16) -> f32) {
+        // `MoonEventRequiredPointsPerWaveLookup[NPC.waveNumber]` — the C# index
+        // runs 0..20 (the start's 1 and the stop's 0 are both valid, the table
+        // has 21 rows); an out-of-range wave reads the terminal 0 rather than
+        // panicking.
+        let requirement = Self::MOON_WAVE_REQUIREMENTS
+            .get(self.wave_number as usize)
+            .copied()
+            .unwrap_or(0);
+        let gained = points(npc_type) * Self::MOON_POINT_SCALAR;
+        self.wave_kills += gained;
+        self.total_invasion_points += gained;
+        if self.wave_kills >= requirement as f32 && requirement != 0 {
+            // `NPC.waveKills = 0f; NPC.waveNumber++;` — the C# recomputes the
+            // requirement right after for the broadcast (out of scope).
+            self.wave_kills = 0.0;
+            self.wave_number += 1;
+        }
+    }
+
+    /// `NPC.CheckProgressFrostMoon` (`NPC.cs:78445-78586`) on the kill of
+    /// `npc_type` — self-gates on `Main.snowMoon`, so a kill under any other
+    /// state (or another event's family) scores nothing.
+    pub fn report_frost_moon_kill(&mut self, npc_type: u16) {
+        if !self.snow_moon {
+            return;
+        }
+        self.moon_event_kill_walk(npc_type, Self::frost_moon_points);
+    }
+
+    /// `NPC.CheckProgressPumpkinMoon` (`NPC.cs:78588-78719`) on the kill of
+    /// `npc_type` — self-gates on `Main.pumpkinMoon`.
+    pub fn report_pumpkin_moon_kill(&mut self, npc_type: u16) {
+        if !self.pumpkin_moon {
+            return;
+        }
+        self.moon_event_kill_walk(npc_type, Self::pumpkin_moon_points);
     }
 
     /// `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`): the
@@ -1212,6 +1359,259 @@ mod tests {
     }
 
     use super::*;
+
+    // --- S1-F-13 Phase 1: the moon-event state, the start/stop, the walks ---
+
+    /// DW-1.3 (dirty): the wave-advance thresholds, transcribed from the C#
+    /// tables (`NPC.cs:95289-95300`): wave 1 requires 25, wave 2 requires 40,
+    /// wave 3 requires 50. A 1-point Snow-Frost kill (338) leaves 24 and
+    /// holds wave 1; the next 2-point kill (342) reaches 26 >= 25 and the wave
+    /// advances to 2 with `waveKills` back at 0. The Pumpkin Moon's 315 is
+    /// 50 points and clears wave 1's 25 in one kill.
+    #[test]
+    fn the_wave_advances_at_the_c_sharp_thresholds() {
+        // Snow: wave 1's requirement is 25 — 352's 5 points reach 20 in four
+        // kills (holding wave 1) and the fifth takes 25 >= 25 into wave 2.
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_snow_moon();
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (1, 0.0, 0.0)
+        );
+        for _ in 0..4 {
+            w.report_frost_moon_kill(352);
+        }
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (1, 20.0, 20.0),
+            "20 < 25 holds wave 1"
+        );
+        w.report_frost_moon_kill(352);
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (2, 0.0, 25.0),
+            "25 >= 25 advances to wave 2 and zeroes the wave's points"
+        );
+        // Wave 2's requirement is 40: 343 (18) + 341 (20) = 38 < 40 holds,
+        // one more 344 (50) clears it into wave 3.
+        w.report_frost_moon_kill(343);
+        w.report_frost_moon_kill(341);
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (2, 38.0, 63.0),
+            "38 < 40 holds wave 2 (the run's points keep accruing: 25+18+20)"
+        );
+        w.report_frost_moon_kill(344);
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (3, 0.0, 113.0),
+            "88 >= 40 advances to wave 3 (25+18+20+50)"
+        );
+        // Pumpkin: 315's 50 clears wave 1's 25 in a single kill.
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_pumpkin_moon();
+        w.report_pumpkin_moon_kill(315);
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (2, 0.0, 50.0),
+            "50 >= 25 advances the pumpkin wave"
+        );
+    }
+
+    /// DW-1.3: the per-kind points tables — the Frost Moon's
+    /// `NPC.cs:78518-78549` switch and the Pumpkin Moon's `:78658-78682`
+    /// switch, times the single-mode 1x scalar.
+    #[test]
+    fn the_wave_kind_tables_match_the_c_sharp_points() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_snow_moon();
+        // (type, points) in the C# switch's own order.
+        let snow = [
+            (338, 1.0),
+            (339, 1.0),
+            (340, 1.0),
+            (341, 20.0),
+            (342, 2.0),
+            (343, 18.0),
+            (344, 50.0),
+            (345, 150.0),
+            (346, 100.0),
+            (347, 8.0),
+            (348, 4.0),
+            (349, 4.0),
+            (350, 3.0),
+            (351, 10.0),
+            (352, 5.0),
+        ];
+        let mut expected_total = 0.0;
+        // Wave 20 is terminal (requirement 0), so a single kill holds its
+        // points and every row's table value reads off `waveKills` directly —
+        // the family's big kinds (344/345/346) would otherwise advance past
+        // wave 1's 25 on the very first kill.
+        for (npc_type, points) in snow {
+            let mut w = World::new("t".into(), 40, 40);
+            w.start_snow_moon();
+            w.wave_number = 20;
+            w.report_frost_moon_kill(npc_type);
+            assert_eq!(
+                (w.wave_kills, w.total_invasion_points),
+                (points, points),
+                "snow {npc_type} must be worth {points}"
+            );
+            expected_total += points;
+        }
+        // One fresh world summing the whole snow family keeps the total: the
+        // 1-point kinds hold wave 1 while the big ones advance it, and the
+        // run's `totalInvasionPoints` is the sum either way.
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_snow_moon();
+        for (npc_type, _) in snow {
+            w.report_frost_moon_kill(npc_type);
+        }
+        assert_eq!(w.total_invasion_points, expected_total);
+        let pumpkin = [
+            (305, 1.0),
+            (306, 1.0),
+            (307, 1.0),
+            (308, 1.0),
+            (309, 1.0),
+            (310, 1.0),
+            (311, 1.0),
+            (312, 1.0),
+            (313, 1.0),
+            (314, 1.0),
+            (315, 50.0),
+            (325, 75.0),
+            (326, 2.0),
+            (327, 150.0),
+            (329, 5.0),
+            (330, 10.0),
+        ];
+        for (npc_type, points) in pumpkin {
+            let mut w = World::new("t".into(), 40, 40);
+            w.start_pumpkin_moon();
+            w.wave_number = 20;
+            w.report_pumpkin_moon_kill(npc_type);
+            assert_eq!(
+                (w.wave_kills, w.total_invasion_points),
+                (points, points),
+                "pumpkin {npc_type} must be worth {points}"
+            );
+        }
+    }
+
+    /// DW-1.3: the walk only runs for the ACTIVE event's family — a pumpkin
+    /// kill during a snow moon (and the twin) adds nothing.
+    #[test]
+    fn a_non_family_kill_adds_nothing() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_snow_moon();
+        w.report_frost_moon_kill(305);
+        assert_eq!(
+            (w.wave_kills, w.total_invasion_points, w.wave_number),
+            (0.0, 0.0, 1),
+            "a pumpkin kind during the snow moon scores nothing"
+        );
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_pumpkin_moon();
+        w.report_pumpkin_moon_kill(344);
+        assert_eq!(
+            (w.wave_kills, w.total_invasion_points, w.wave_number),
+            (0.0, 0.0, 1),
+            "a snow kind during the pumpkin moon scores nothing"
+        );
+        // And while no event runs neither walk moves.
+        let mut w = World::new("t".into(), 40, 40);
+        w.report_frost_moon_kill(344);
+        w.report_pumpkin_moon_kill(315);
+        assert_eq!(
+            (w.wave_kills, w.total_invasion_points, w.wave_number),
+            (0.0, 0.0, 0)
+        );
+    }
+
+    /// DW-1.3: the `requirement == 0` terminal waves never advance — wave 20
+    /// (lookup index 20) and the post-stop wave 0 (index 0) both hold.
+    #[test]
+    fn the_terminal_waves_never_advance() {
+        for terminal in [0, 20] {
+            let mut w = World::new("t".into(), 40, 40);
+            w.start_snow_moon();
+            w.wave_number = terminal;
+            w.report_frost_moon_kill(345);
+            assert_eq!(
+                (w.wave_number, w.wave_kills, w.total_invasion_points),
+                (terminal, 150.0, 150.0),
+                "wave {terminal} carries no requirement and never advances"
+            );
+            let mut w = World::new("t".into(), 40, 40);
+            w.start_pumpkin_moon();
+            w.wave_number = terminal;
+            w.report_pumpkin_moon_kill(327);
+            assert_eq!(
+                (w.wave_number, w.wave_kills, w.total_invasion_points),
+                (terminal, 150.0, 150.0),
+                "wave {terminal} carries no requirement and never advances"
+            );
+        }
+    }
+
+    /// DW-1.1 (state half): `Main.startPumpkinMoon`/`startSnowMoon`
+    /// (`Main.cs:10979-11017`) — the flags, the mutual clear, the blood
+    /// moon's clear and the single-player resets with `waveNumber = 1`.
+    #[test]
+    fn the_start_functions_raise_one_flag_and_reset_the_waves() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.snow_moon = true;
+        w.blood_moon = true;
+        w.wave_number = 9;
+        w.wave_kills = 123.0;
+        w.total_invasion_points = 456.0;
+        w.start_pumpkin_moon();
+        assert!(w.pumpkin_moon && !w.snow_moon && !w.blood_moon);
+        assert_eq!((w.wave_number, w.wave_kills, w.total_invasion_points), (1, 0.0, 0.0));
+        // The twin: the snow start clears the pumpkin's flag and inherits the
+        // same resets.
+        w.wave_number = 9;
+        w.wave_kills = 12.0;
+        w.total_invasion_points = 34.0;
+        w.start_snow_moon();
+        assert!(!w.pumpkin_moon && w.snow_moon && !w.blood_moon);
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (1, 0.0, 0.0)
+        );
+        // A fresh world has no wave state until an event starts.
+        let w = World::new("t".into(), 40, 40);
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (0, 0.0, 0.0)
+        );
+    }
+
+    /// DW-1.2 (state half): `Main.stopMoonEvent` (`Main.cs:10953-10976`) — the
+    /// flag clears are unconditional, the point/wave resets ride the
+    /// single-player arm (only when a flag was up), and the blood moon is
+    /// NOT the stop's target.
+    #[test]
+    fn the_stop_clears_both_flags_and_zeroes_the_waves() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_snow_moon();
+        w.report_frost_moon_kill(344);
+        w.wave_number = 7;
+        w.stop_moon_event();
+        assert!(!w.pumpkin_moon && !w.snow_moon);
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (0, 0.0, 0.0)
+        );
+        // A stop with no event running touches nothing else.
+        let mut w = World::new("t".into(), 40, 40);
+        w.blood_moon = true;
+        w.stop_moon_event();
+        assert!(w.blood_moon, "the stop does not clear the blood moon");
+        assert_eq!((w.wave_number, w.wave_kills, w.total_invasion_points), (0, 0.0, 0.0));
+    }
 
     #[test]
     fn event_flags_default_false_and_stay_out_of_the_save() {

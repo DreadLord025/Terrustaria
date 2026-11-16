@@ -374,6 +374,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 602 && held.count > 0 && use_snow_globe(app) {
             return;
         }
+        // `ItemCheck_UseEventItems`' moon arms (`Player.cs:43974-43985`,
+        // `:44041-44052`): the Pumpkin Moon Medallion 1844 → `startPumpkinMoon`,
+        // the Naughty Present 1958 → `startSnowMoon` — the
+        // `!dayTime && !pumpkinMoon && !snowMoon && !DD2Event.Ongoing` gates,
+        // the `ApplyItemTime` swing and `SoundEngine.PlaySound(15, ...)`. The
+        // C#'s mid-swing `ItemTimeIsZero && itemAnimation > 0` precondition
+        // rides the port's event-item seam (`mine_down`, the `use_snow_globe`
+        // shape); the `Main.NewText` row is UI — out.
+        if held.kind == 1844 && held.count > 0 && use_pumpkin_moon_medallion(app) {
+            return;
+        }
+        if held.kind == 1958 && held.count > 0 && use_naughty_present(app) {
+            return;
+        }
         // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
         // 44028-44034`): the 3601 use gates on `downedGolemBoss && hardMode
         // && !AnyDanger && !AnyoneNearCultists` and calls
@@ -8356,6 +8370,56 @@ pub fn use_snow_globe(app: &mut App) -> bool {
     true
 }
 
+/// The shared moon-item swing: `Player.ApplyItemTime`'s re-arm
+/// (`Player.cs:4416-4418`, the swing timers the `use_snow_globe` shape sets)
+/// plus `SoundEngine.PlaySound(15, ...)` — the `SoundID.Roar` (15) both C#
+/// arms play.
+fn apply_moon_item(app: &mut App) {
+    app.audio.play("Roar_0");
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+}
+
+/// The Pumpkin Moon Medallion 1844 (`ItemCheck_UseEventItems`,
+/// `Player.cs:43974-43985`): `!dayTime && !pumpkinMoon && !snowMoon &&
+/// !DD2Event.Ongoing` — the refusal is free; otherwise `Main.startPumpkinMoon`.
+/// The `Main.NewText` row is UI — out.
+pub(crate) fn use_pumpkin_moon_medallion(app: &mut App) -> bool {
+    if app.world.day_time
+        || app.world.pumpkin_moon
+        || app.world.snow_moon
+        || app.world.dd2_event_ongoing
+    {
+        return false;
+    }
+    apply_moon_item(app);
+    app.world.start_pumpkin_moon();
+    true
+}
+
+/// The Naughty Present 1958 (`Player.cs:44041-44052`): the snow twin — same
+/// gates, `Main.startSnowMoon`.
+pub(crate) fn use_naughty_present(app: &mut App) -> bool {
+    if app.world.day_time
+        || app.world.pumpkin_moon
+        || app.world.snow_moon
+        || app.world.dd2_event_ongoing
+    {
+        return false;
+    }
+    apply_moon_item(app);
+    app.world.start_snow_moon();
+    true
+}
+
 pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
     let eye_alive = app
         .npcs
@@ -8961,5 +9025,118 @@ mod use_loop_tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");
         assert_eq!(p.slots_minions, 1.0);
+    }
+}
+
+/// S1-F-13 Phase 1: the medallion / Naughty-Present triggers
+/// (`Player.cs:43974-43985`, `:44041-44052`).
+#[cfg(test)]
+mod moon_item_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// A held stack of the given kind in the selected slot, over an app whose
+    /// world is at night with no events running.
+    fn night_app(kind: u16) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.inventory[app.selected] = ItemSlot {
+            kind,
+            name: "test".into(),
+            count: 1,
+            prefix: 0,
+        };
+        app.world.day_time = false;
+        app
+    }
+
+    /// DW-1.1: the medallion at night starts the Pumpkin Moon — the flags,
+    /// the resets, `waveNumber = 1`, the stack payment and the swing.
+    #[test]
+    fn the_medallion_at_night_starts_the_pumpkin_moon() {
+        let mut app = night_app(1844);
+        assert!(use_pumpkin_moon_medallion(&mut app));
+        assert!(app.world.pumpkin_moon && !app.world.snow_moon);
+        assert_eq!(
+            (
+                app.world.wave_number,
+                app.world.wave_kills,
+                app.world.total_invasion_points
+            ),
+            (1, 0.0, 0.0),
+            "Main.cs:10979-10996's single-player resets"
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the use paid one");
+        assert!(app.swing > 0.0, "ApplyItemTime armed the swing");
+    }
+
+    /// DW-1.1: the Naughty Present starts the Snow Moon twin — and the
+    /// mutual clears work in both directions.
+    #[test]
+    fn the_naughty_present_at_night_starts_the_snow_moon() {
+        let mut app = night_app(1958);
+        assert!(use_naughty_present(&mut app));
+        assert!(app.world.snow_moon && !app.world.pumpkin_moon);
+        assert_eq!(
+            (
+                app.world.wave_number,
+                app.world.wave_kills,
+                app.world.total_invasion_points
+            ),
+            (1, 0.0, 0.0)
+        );
+        // The mutual clear lives in `start_*` itself (covered on `World`):
+        // the C# trigger's `!pumpkinMoon && !snowMoon` gate means the medallion
+        // can never be used over the twin — a running snow moon refuses it
+        // and its state stays untouched.
+        let mut app = night_app(1844);
+        app.world.start_snow_moon();
+        app.world.wave_number = 6;
+        assert!(!use_pumpkin_moon_medallion(&mut app));
+        assert!(app.world.snow_moon && !app.world.pumpkin_moon);
+        assert_eq!(app.world.wave_number, 6, "the refusal leaves the twin alone");
+        assert_eq!(app.inventory[app.selected].count, 1, "and it is free");
+        // And the present over a running pumpkin moon refuses the same way.
+        let mut app = night_app(1958);
+        app.world.start_pumpkin_moon();
+        app.world.wave_number = 6;
+        assert!(!use_naughty_present(&mut app));
+        assert!(app.world.pumpkin_moon && !app.world.snow_moon);
+        assert_eq!(app.world.wave_number, 6);
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    /// DW-1.1: by day, with either moon event running, or under the Old One's
+    /// Army the triggers refuse — and the refusal is free (`Player.cs:43974`'s
+    /// `!dayTime && !pumpkinMoon && !snowMoon && !DD2Event.Ongoing`).
+    #[test]
+    fn the_moon_items_refuse_by_day_or_with_an_event_running() {
+        let mut app = night_app(1844);
+        app.world.day_time = true;
+        assert!(!use_pumpkin_moon_medallion(&mut app));
+        assert!(!app.world.pumpkin_moon && !app.world.snow_moon);
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        assert!(!use_naughty_present(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        // A running pumpkin event refuses the present and the twin's arm...
+        let mut app = night_app(1958);
+        app.world.start_pumpkin_moon();
+        assert!(!use_naughty_present(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // ...and a running snow event refuses the medallion.
+        let mut app = night_app(1844);
+        app.world.start_snow_moon();
+        assert!(!use_pumpkin_moon_medallion(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The Old One's Army refuses both.
+        let mut app = night_app(1844);
+        app.world.dd2_event_ongoing = true;
+        assert!(!use_pumpkin_moon_medallion(&mut app));
+        let mut app = night_app(1958);
+        app.world.dd2_event_ongoing = true;
+        assert!(!use_naughty_present(&mut app));
     }
 }
