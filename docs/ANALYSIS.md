@@ -14061,6 +14061,58 @@ Deviations:
   the port's carrier link carries the position and the timers only, so the
   cannon keeps its own movement.
 
+## The Eye Fire / Flames Trap and the Baby Bird (S1-D-4b-5c, 2026-11-16)
+
+Two leftover styles ride the Eye and Moon Lord chains: **23** and **158**.
+
+* **Style 23 is two types.** `aiStyle = 23` covers the Eye Fire (**101**,
+  `ProjectileID.EyeFire`) and the Flames Trap (**188**,
+  `ProjectileID.FlameTrap`). They share the whole arm; only the trap arms the
+  launch-counter floor (`if (ai[0] < 8) ai[0] = 8;`, `Projectile.cs:25863-25868`)
+  and the 60-tick life cap (`:25871-25874`). Both count launches in
+  `localAI[0]` (`:25869`, `:25892`), which `Damage_CanDealDamage` (`:12448`)
+  reads to refuse the shot while the counter is still below 7 — so the counter
+  is load-bearing state, not decoration.
+* **Style 158 is one type**, the Baby Bird pet (**759**): `projFrames[759] = 5`
+  (`Main.cs:8506`). The arm keeps the pet alive while the `babyBird` buff flag
+  is set (`timeLeft = 2`, `:48760-48769`), walks its five frames at six ticks
+  per frame wrapping at `projFrames - 1` (`:48770-48777`), and snaps onto the
+  owner's home spot on the **last** frame when inside the
+  `8 + |player.velocity|` band (`:48919-48927`) — the walk never reaches the
+  last frame itself, which is why the perch frame is only visible while
+  sitting. The target scan is `Minion_FindTargetInRange` (`:48990-49027`) with
+  the four reach helpers `CanHitWithOwnBody` / `CanHitWithOwnMeleeWeapon`
+  (`:12400-12444`).
+
+Deliberate deviations and skips (all one-line-cited in the code):
+
+* **Dust, gore and sound are skipped** in both arms — the pool has no
+  `Main.dust` layer and no sound sink, matching the `ai_volcano` /
+  `ai_sharp_tears` precedent above. The `Dust.NewDust` calls in the C# blocks
+  are recorded at the site, not ported.
+* **The two separation loops and the group index are computed pool-side.**
+  `AI_158` walks `Main.projectile` twice to find its sibling birds and its own
+  index among them (`:51895-51911`); a slot arm cannot see its siblings, so
+  `ProjectilePool::baby_bird_group` pre-computes the group index and both
+  separation vectors and hands them to `ai_baby_bird`. The arithmetic is the
+  C#'s verbatim; only the *where* moved.
+* **`gravDir = 1` and `mounted_center == center` are folded.** The port has no
+  gravity flip and no mount pivot offset, so `AI_158`'s
+  `RotatedRelativePoint(MountedCenter)` chain reduces to
+  `Center + gfxOffY - (0, 21) + (0, headgear - 2)`. `Player::`
+  `apply_head_offset_from_mount` and `rotated_relative_point` are ported
+  faithfully anyway (the mount ids that do move the head are live), so the fold
+  is one call site, not a missing function.
+* **`correctSlopeCollision` is `projPet`, so `pet_movement` skips the slope
+  pass.** `Projectile.cs:707` sets `correctSlopeCollision = projPet`;
+  `AI_158`'s pet movement therefore runs `Collision.TileCollision` with
+  `fallThrough = fall2 = true` and no `correctSlopeCollision` pass. The port
+  calls `collision::tile_collision(..., fall_through = true, fall2 = true)` and
+  omits the slope correction — faithful to the C# for this flag combination.
+* **`NPC.boss` has no port field.** The arm's boss bypass
+  (`if (npc.boss) ...`) reads `crate::revenge::BOSS_KINDS` instead; the set is
+  derived from the C# `npc.boss` assignments, so the predicate is the same.
+
 ## The Retinazer's machine (S1-D-3i, 2026-11-14)
 
 `AI_057` (`NPC.cs:32761-33043`) is the Retinazer's family machine — the
@@ -14526,12 +14578,29 @@ below are recorded rather than resolved:
   and is *not* a claim about `Recipe`'s availability rules (`Recipe.cs:15162-15191`
   etc. stay unported).
 * **Action semantics are frozen.** The World rows, the spawns and the pause row keep
-  their pre-existing bodies. Their fidelity is **not** claimed: the world-event rows
-  are `PARTIAL_PROJECT_SPECIFIC` (goblin 80 vs the C# `80+40*players`,
-  `Main.cs:64435-64470`; slime rain 43200 vs the C# `32400-53999`,
-  `Main.cs:64742-64806`), and the kill-all row has no C# equivalent. Those are
-  recorded as S1-E-37 in `docs/ROADMAP.md`. The pause row *is* exact
-  (`WorldUpdateStepper.cs:45-49`) and its test pins it.
+  their pre-existing bodies. The pause row *is* exact (`WorldUpdateStepper.cs:45-49`)
+  and its test pins it.
+* **S1-E-37 — the world-event rows now ride the C# entry points.** The panel no longer
+  writes the event state by hand:
+  * Hardmode calls `WorldGen.StartHardmode`'s runner half (`WorldGen.cs:31707-31709`
+    → `spread::initialize_hard_mode`, the two V runners and their RNG order).
+  * Goblin Army calls `Main.StartInvasion` (`Main.cs:64435-64486`) behind
+    `CanStartInvasion`'s 200-life gate (`:64424-64432`) — `80 + 40 × players` instead
+    of the old flat 80, the type-3/type-4 sizes, and the `Next(2)` side pick
+    (`:64476-64483`) on the `UpdateTime` stream.
+  * Slime Rain calls `Main.StartSlimeRain` (`:64742-64785`, the duration
+    `Next(32400, 54000)`) and `Main.StopSlimeRain` (`:64787-64806`, the
+    `-Next(3024, 6048) × 100` cooldown), and refuses a start while it is already
+    raining (`:64761-64764`).
+  Deliberate deviations that remain, all recorded in `docs/ROADMAP.md` S1-E-37:
+  * `StartHardmode`'s `TransformWorldOnBackgroundThread` (`:31721-31742`) and the
+    `UndoSpawnedItemProtection`/achievement/broadcast follow-up are unported — the
+    port's `initialize_hard_mode` runs inline on the growth phase, and the row keeps a
+    toggle-off as the debug revert (the C# has none: `:31703` returns early).
+  * The kill-all row has no C# equivalent (it is the port's own F3 affordance) and
+    stays as is.
+  * `Main.remixWorld`/`isThereAWorldSurface`/the announcements and the `netMode` arms
+    of both functions fold out — the port is single-player and neither flag exists.
 * **Upstream reference only.** The feature set takes *behaviour* references from
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
