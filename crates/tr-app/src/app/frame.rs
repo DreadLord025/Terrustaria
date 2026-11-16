@@ -1752,7 +1752,9 @@ impl App {
                                     .seeds
                                     .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
                         };
-                        craft::available_with_gates(
+                        // `NewCraftingUI.cs:596-611`: the grid shows only the
+                        // recipes whose product passes the filterer.
+                        self.craft_filters.shown(craft::available_with_gates(
                             inventory,
                             &self.world_chests,
                             &in_range,
@@ -1761,7 +1763,7 @@ impl App {
                             self.craft_filter.as_ref(),
                             None,
                             &gates,
-                        )
+                        ))
                     } else {
                         Vec::new()
                     };
@@ -1794,6 +1796,7 @@ impl App {
                         settings.boss_bar_text,
                         self.inventory_open,
                         self.crafting_open,
+                        self.craft_filters.active_flags(),
                         &self.mouse_item,
                         self.mouse_pos,
                         &self.cursor,

@@ -660,6 +660,12 @@ pub(crate) struct App {
     /// `Recipe.UpdateRecipeList` only while the crafting page is up
     /// (`CraftingUI.cs:112-121`) — the port reads it behind the same gate.
     pub(crate) craft_filter: Option<craft::CraftingFilter>,
+    /// `NewCraftingUI._filterer` (`NewCraftingUI.cs:216`, built at `:281-299`):
+    /// the 11-tab recipe filter strip's state. `Main.focusRecipe` stays an
+    /// `availableRecipe` index while the grid shows only the survivors
+    /// (`:596-611`), which is what `craft::available_with_gates` + [`shown`]
+    /// reproduce.
+    pub(crate) craft_filters: crate::craft_filter::FilterBoard,
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     pub(crate) waterfall: tr_core::waterfall::WaterfallManager,
     pub(crate) waterfall_step: FixedStepper,
@@ -3017,6 +3023,7 @@ impl App {
             // inventory draw together.
             inventory_open: crate::env::inv_open() || tr_chest.is_some(),
             craft_filter: None,
+            craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: app_bestiary,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(

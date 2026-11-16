@@ -664,6 +664,9 @@ pub fn draw_hud(
     boss_bar_text: bool,
     inventory_open: bool,
     crafting_open: bool,
+    // `EntryFilterer.ActiveFilters` as the strip's eleven slots
+    // (`UICreativeItemsInfiniteFilteringOptions.cs:104-110`).
+    craft_filter_flags: [bool; 11],
     mouse_item: &ItemSlot,
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
@@ -896,7 +899,31 @@ pub fn draw_hud(
         // stays off, and a fresh character has neither expert mode nor the
         // creative inventory unblocked.
         if crafting_open {
-            crafting::draw(r, lookups, screen, mouse_pos, craft, false, false);
+            crafting::draw(
+                r,
+                lookups,
+                screen,
+                mouse_pos,
+                craft,
+                false,
+                false,
+                craft_filter_flags,
+            );
+            // The hovered filter tab's label — `ShowButtonName`
+            // (`UICreativeItemsInfiniteFilteringOptions.cs:125-132`):
+            // `MouseTextNoOverride(Language.GetTextValue(GetDisplayNameKey()))`.
+            // It runs on the tab's `OnUpdate`, before the recipe tooltip below,
+            // and the two can never overlap (a tab is outside the grid).
+            if let Some(i) = crafting::filter_hit(screen, mouse_pos) {
+                tooltip::draw_mouse_text(
+                    r,
+                    lookups,
+                    mouse_pos,
+                    &crate::lang::text(crate::craft_filter::FILTERS[i].display_name_key()),
+                    screen,
+                    pulse,
+                );
+            }
             // Hovering a recipe shows the crafted item's tooltip
             // (`Main.HoverOverCraftingItemButton`, `Main.cs:42250`).
             if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft) {

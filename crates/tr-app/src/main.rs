@@ -69,6 +69,7 @@ mod ambience;
 mod ambient_sound;
 mod chest_gen;
 mod craft;
+mod craft_filter;
 mod registry;
 mod variants;
 mod render;
