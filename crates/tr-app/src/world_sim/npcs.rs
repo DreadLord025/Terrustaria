@@ -3785,7 +3785,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 player_center: (pcx, pcy),
                 player_pos: (player.x, player.y),
                 nearby_active_npcs: nearby,
-                town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                town_npcs: app.scene_metrics.town_npc_count,
                 day_time: app.world.day_time,
                 player_life_max: app.player.as_ref().map_or(100, |p| p.max_hp),
                 underworld_for_bats: (app.camera.y / 16.0) as i32 > app.world.height - 200,
