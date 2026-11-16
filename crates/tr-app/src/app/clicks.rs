@@ -805,6 +805,19 @@ impl App {
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
+        // The filter strip's tabs (`UICreativeItemsInfiniteFilteringOptions.cs:80-100`):
+        // a click toggles the tab, exclusive across the strip, and queues the
+        // MenuTick the hover cue plays (`:75-78`). `OnClickingOption` →
+        // `ResetRecipes` (`NewCraftingUI.cs:391`) is the shown list itself,
+        // which re-derives every frame, so nothing is cached here.
+        if self.ui_left_press {
+            if let Some(i) = ui::crafting::filter_hit(screen, self.mouse_pos) {
+                self.craft_filters.click(i);
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                self.ui_left_press = false;
+                return true;
+            }
+        }
         // The toggles before the grid: the nearby-chests toggle flips the
         // setting (`CraftingUI.cs:336-355`), and a consumed press does not
         // reach the recipe cells.
@@ -850,7 +863,9 @@ impl App {
             &self.world_chests,
             self.settings.craft_from_nearby_chests,
         );
-        let available = craft::available_with_gates(
+        // `:42250`'s `Main.availableRecipe[recipeIndex]` indexes the RAW list, so
+        // the grid narrows only what is shown (`NewCraftingUI.cs:596-611`).
+        let available = self.craft_filters.shown(craft::available_with_gates(
             &self.inventory,
             &self.world_chests,
             &in_range,
@@ -859,7 +874,7 @@ impl App {
             self.craft_filter.as_ref(),
             None,
             &gates,
-        );
+        ));
         let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
         else {
             return false;
@@ -4371,6 +4386,110 @@ mod s1_h_7_tests {
             .find(|s| s.kind == 8)
             .expect("the partial craft");
         assert_eq!(torches.count, 9, "only 3 wood -> 3 crafts of 3");
+    }
+
+    /// The mouse over the filter tab `i` — `ui::crafting::filter_button_rect`'s
+    /// square (`UICreativeItemsInfiniteFilteringOptions.cs:56-57`).
+    fn filter_mouse(app: &App, i: usize) -> Vec2 {
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        let b = ui::crafting::filter_button_rect(l.filter_strip, i);
+        Vec2::new(b[0] + 20.0, b[1] + 20.0)
+    }
+
+    /// The shown grid — the same call `handle_crafting_clicks` makes.
+    fn shown(app: &App) -> Vec<usize> {
+        let (sw, sh) = app.screen_size();
+        let _ = Vec2::new(sw, sh);
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), (5, 3));
+        let in_range = craft::chests_in_range(
+            &app.world,
+            app.player.as_ref().unwrap(),
+            &app.world_chests,
+            false,
+        );
+        app.craft_filters.shown(craft::available(
+            &app.inventory,
+            &app.world_chests,
+            &in_range,
+            &adj,
+            &craft::Zones::default(),
+            None,
+            None,
+        ))
+    }
+
+    #[test]
+    fn a_filter_tab_click_narrows_the_grid_and_re_click_restores_it() {
+        // `singleFilterButtonClick` (`UICreativeItemsInfiniteFilteringOptions.cs:80-100`):
+        // the clicked tab becomes the only active one, `OnClickingOption` ->
+        // `ResetRecipes` (`NewCraftingUI.cs:391`) re-derives the shown list, and
+        // the grid then holds only the rows whose product passes
+        // (`:596-611`, `:630-641`).
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 30,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 30,
+            prefix: 0,
+        };
+        let all = shown(&app);
+        assert!(
+            all.iter().any(|&r| craft::RECIPES[r].create.0 == 8),
+            "the torch recipe starts shown"
+        );
+        // Tab 0 is `Weapon` (`NewCraftingUI.cs:284`) — a torch deals no damage.
+        app.mouse_pos = filter_mouse(&app, 0);
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks(), "the tab click is consumed");
+        assert_eq!(app.craft_filters.active, Some(0));
+        assert!(!app.ui_left_press, "the press was consumed");
+        let weapons = shown(&app);
+        assert!(weapons
+            .iter()
+            .all(|&r| craft::RECIPES[r].create.0 != 8));
+        assert!(weapons.len() < all.len() || all.is_empty());
+        // Re-clicking the active tab clears it (`:89-93` + `EntryFilterer.ToggleFilter`).
+        app.mine_down = false;
+        app.handle_crafting_clicks();
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert_eq!(app.craft_filters.active, None);
+        assert_eq!(shown(&app).len(), all.len(), "the grid is restored");
+    }
+
+    #[test]
+    fn a_filter_click_does_not_change_the_focused_recipe() {
+        // `Main.focusRecipe` is an `availableRecipe` index (`NewCraftingUI.cs:610`,
+        // `:622`), so narrowing the shown grid must leave it alone.
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 30,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 30,
+            prefix: 0,
+        };
+        app.focus_recipe = 0;
+        app.mouse_pos = filter_mouse(&app, 3); // BuildingBlock
+        app.ui_left_press = true;
+        app.mine_down = true;
+        app.handle_crafting_clicks();
+        assert_eq!(app.craft_filters.active, Some(3));
+        assert_eq!(app.focus_recipe, 0, "the focus index space is preserved");
     }
 
     /// The mouse over a recipe's cell (the grid origin + the 44 px pitch —
