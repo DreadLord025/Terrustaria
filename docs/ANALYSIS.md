@@ -14675,6 +14675,33 @@ below are recorded rather than resolved:
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
 
+## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
+
+`Main.GetBuffTooltip` (`Main.cs:43254-43289`) has a `switch` over the buff id
+whose two arms print a *player-computed* percentage rather than a static
+localization string:
+
+* `case 94` (`ManaSickness`) formats `Player.manaSickReduction` into the
+  `ManaSickness2` row of `Terraria.Localization.Content.en-US.Game.json`.
+* `case 396` (`ManaHeat`) does the same with `Player.manaHeat`.
+
+The port has neither `Player.manaSickReduction` nor `Player.manaHeat`: the
+mana-sickness debuff applies its magic-damage multiplier inline in the damage
+path and stores no reduction field, and 396 does not exist at all. Rather than
+invent a field whose value no other system maintains,
+`ui::resources::buff_tooltip` falls back to the plain `BuffDescription.{name}`
+row for both ids. When the 94/396 buff *effects* land (M2-BUFF-3/4) the fields
+will exist and these two arms can be restored — the ported code is already a
+`match` over the id, so adding them is two arms.
+
+Two further colours are dropped rather than approximated: `MouseTextInner`'s
+`-13` (master) and `-12` (disco) rarity arms read `Main.masterColor` and
+`Main.Disco*`, neither of which the port keeps. The buff hover never passes
+those rarities (`Main.cs:43239-43246` only uses `-10` for the melee buffs and
+`0` otherwise), so they are unreachable from this call site;
+`ui::resources::mouse_text_color` documents them and defers to the shared
+`tooltip::item_name_color` table for every other value.
+
 ## Entity lights (S1-E-5, 2026-11-16)
 
 The C# funnels every `Lighting.AddLight` overload into
