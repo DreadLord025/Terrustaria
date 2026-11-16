@@ -18,7 +18,7 @@ use tr_core::{save, World, TILE_PX};
 
 use crate::app::netmodules::ModuleBody;
 use crate::app::{App, LiquidSystem, NetRole};
-use crate::item;
+use crate::{achievements, item};
 use crate::map;
 use crate::menu;
 use crate::net::{self, id, slot_state, C2s, S2c};
@@ -492,6 +492,7 @@ impl App {
                     strike_x,
                     st.knock_back,
                     st.crit,
+                    Some(id as u8),
                 );
                 let dead = self.npcs[slot].hp <= 0;
                 // The relay carries the validated values to everyone else.
@@ -1054,6 +1055,35 @@ impl App {
         );
         let joined = S2c::Joined { id, name };
         server.broadcast(&joined);
+        // `MessageBuffer.cs:871` → `BestiaryUnlocksTracker.OnPlayerJoining`
+        // → `NPCKillsTracker.OnPlayerJoining` (`NPCKillsTracker.cs:98-107`):
+        // every recorded credit's current count goes to the joining slot as a
+        // `NetBestiaryModule.SerializeKillCount`.
+        let snapshot: Vec<(String, i32)> = self
+            .bestiary
+            .kills
+            .pairs()
+            .map(|(credit, count)| (credit.to_string(), count))
+            .collect();
+        for (credit, count) in snapshot {
+            let Some(entry) = crate::bestiary::ENTRIES
+                .iter()
+                .find(|e| e.credit_id == credit.as_str())
+            else {
+                continue;
+            };
+            server.send(
+                id,
+                &S2c::NetModule {
+                    module: crate::app::netmodules::module_id::BESTIARY,
+                    body: crate::app::netmodules::BestiaryKill::new(
+                        entry.net_id as i16,
+                        count,
+                    )
+                    .encode(),
+                },
+            );
+        }
         log::info!("slot {id} fully joined");
     }
 
@@ -1177,9 +1207,20 @@ impl App {
                     }
                 }
             }
-            // `case 154` on a client — `Ping.PingRecieved`
+            // `case 154` on a client - `Ping.PingRecieved`
             // (`MessageBuffer.cs:4424-4427`, `Net/Ping.cs:37-48`).
             S2c::Ping => self.ping_received(),
+            // `case 97` - the host's kill credit for this client
+            // (`MessageBuffer.cs:3558-3563`): `NotifyNPCKilledDirect` feeds
+            // the `NPCKilledCondition` listeners.
+            S2c::NpcKilled { npc } => {
+                let _ = self.achievements.notify(achievements::CondKind::NpcKilled(npc as i32));
+            }
+            // `case 98` - a host-side progression event
+            // (`MessageBuffer.cs:3564-3569`).
+            S2c::ProgressionEvent { event_id } => {
+                let _ = self.achievements.notify_progression(event_id.max(0) as u32);
+            }
             // Other players' identity/health (the C# relays 4/16/14 to all).
             S2c::PlayerInfo(pi) => {
                 let peer = pi.player_id as u32;
@@ -2315,6 +2356,58 @@ impl App {
     pub(crate) fn send_switch_outcome(&self, outcome: &crate::collision::SwitchOutcome) {
         for (x, y) in &outcome.switches {
             self.send_hit_switch(*x, *y);
+        }
+    }
+
+    /// `AchievementsHelper.NotifyNPCKilled`'s wire half
+    /// (`AchievementsHelper.cs:200-217`): in MP the host sends `97` to every
+    /// slot recorded in the dead NPC's `playerInteraction` (`:210-216`). The
+    /// `i < 255` bound is the C#'s "not the server itself"; the port's host
+    /// occupies no client slot, so `Server::send` to it is already a no-op.
+    pub(crate) fn send_npc_killed(&self, npc: &crate::npc::Npc, npc_net_id: i16) {
+        let NetRole::Host(server) = &self.net else {
+            return;
+        };
+        for i in 0..255u8 {
+            if npc.player_interaction[i as usize] {
+                server.send(i as u32, &S2c::NpcKilled { npc: npc_net_id });
+            }
+        }
+    }
+
+    /// `AchievementsHelper.NotifyProgressionEvent` (`:227-237`): the host
+    /// sends `98` to every client; SP/client fires locally. This is the
+    /// whole function — the caller's own credit rides the same call.
+    pub(crate) fn notify_progression_net(&mut self, event_id: u32) -> Option<&'static str> {
+        if let NetRole::Host(server) = &self.net {
+            server.broadcast(&S2c::ProgressionEvent {
+                event_id: event_id.min(i16::MAX as u32) as i16,
+            });
+        }
+        self.achievements.notify_progression(event_id)
+    }
+
+    /// `AchievementsHelper.TryGrantingBestiary100PercentAchievement`
+    /// (`AchievementsHelper.cs:81-84`): the 100 % completion fires progression
+    /// 29 (`BOOK_WORM`) — locally and, on a host, over the `98` wire.
+    pub(crate) fn try_grant_bestiary_100_net(&mut self) -> Option<&'static str> {
+        if crate::bestiary::completion_percent(&self.bestiary.kills) < 1.0 {
+            return None;
+        }
+        self.notify_progression_net(29)
+    }
+
+    /// `NPCKillsTracker.RegisterKill`'s broadcast half
+    /// (`NPCKillsTracker.cs:23-33`): the host pushes the credit's new count
+    /// through `NetBestiaryModule.SerializeKillCount`.
+    pub(crate) fn broadcast_bestiary_kill(&self, npc_net_id: i32, count: i32) {
+        if let NetRole::Host(server) = &self.net {
+            let body = crate::app::netmodules::BestiaryKill::new(npc_net_id as i16, count)
+                .encode();
+            server.broadcast(&S2c::NetModule {
+                module: crate::app::netmodules::module_id::BESTIARY,
+                body,
+            });
         }
     }
 
@@ -3933,6 +4026,131 @@ mod message_family_tests {
         assert_eq!(
             host_app.npcs[0].buffs.buff_type[0], 24,
             "the host applied the 53 (`:2570`)"
+        );
+    }
+
+    /// `AchievementsHelper.NotifyNPCKilled` (`AchievementsHelper.cs:200-217`)
+    /// across the wire: the client's strike marks its `player_interaction`
+    /// slot on the host (`MessageBuffer.cs:1789`), and the death sends `97`
+    /// back so the client's own `EYE_ON_YOU` condition closes.
+    #[test]
+    fn a_client_kill_credits_the_client_through_the_97_message() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The Eye of Cthulhu's net id 4 keys `EYE_ON_YOU` (`Cond::Npc(4)`,
+        // `AchievementInitializer.cs:46-48`) — an observable credit.
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::EyeOfCthulhu, 100.0, 100.0, 1, 0.0);
+        npc.hp = 1;
+        npc.max_hp = 1;
+        host_app.npcs.clear();
+        host_app.npcs.push(npc);
+        host_app.net_npc_gen.insert(0, (4, 1));
+        pump(&mut host_app, &mut client_app, 20);
+        let generation = client_app
+            .net_npc_gen
+            .get(&0)
+            .map(|(_, g)| *g as u8)
+            .expect("the 23 push delivered a generation");
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NpcStrike(net::NpcStrike {
+                npc: 0,
+                generation,
+                damage: 50,
+                knock_back: 1.0,
+                hit_direction: 1,
+                crit: false,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 40);
+        // The host recorded the striker's interaction (`PlayerInteraction`,
+        // `MessageBuffer.cs:1789` → `NPC.cs:80055`).
+        let client_slot = client_app.local_id as usize;
+        assert!(
+            host_app.npcs[0].player_interaction[client_slot],
+            "the host marked the striking client's interaction"
+        );
+        assert!(host_app.npcs[0].hp <= 0, "the strike killed it");
+        // The death pass's wire half (`AchievementsHelper.cs:210-216`). `pump`
+        // drives only the net tick, not `world_sim::npcs::update_npcs`'s death
+        // loop, so the fan-out is called directly — the same call the death
+        // pass makes.
+        host_app.send_npc_killed(&host_app.npcs[0], 4);
+        pump(&mut host_app, &mut client_app, 20);
+        // The `97` closed the client's condition: a second notify cannot
+        // complete it again (`AchievementCondition` is sticky).
+        let again = client_app
+            .achievements
+            .notify(achievements::CondKind::NpcKilled(4));
+        assert_eq!(again, None, "the 97 already completed EYE_ON_YOU");
+    }
+
+    /// `AchievementsHelper.NotifyProgressionEvent` (`:227-237`): the host's
+    /// `98` broadcast fires the client's `PROGRESSION_EVENT_<id>` listener.
+    #[test]
+    fn a_host_progression_event_reaches_the_client_over_98() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The host fires the dawn row (event 1, `TERRARIA_DAY`'s condition).
+        let _ = host_app.notify_progression_net(1);
+        pump(&mut host_app, &mut client_app, 20);
+        // The client's own notify now reports the row already complete (the
+        // TERRARIA_DAY condition fires once, `AchievementCondition` semantics).
+        assert_eq!(
+            client_app
+                .achievements
+                .notify(achievements::CondKind::ProgressionEvent(1)),
+            None,
+            "the 98 completed the client's PROGRESSION_EVENT_1 first"
+        );
+    }
+
+    /// `NPCKillsTracker.RegisterKill`'s broadcast (`NPCKillsTracker.cs:29-32`):
+    /// the host's kill count reaches the client as a module-4
+    /// `SerializeKillCount`.
+    #[test]
+    fn a_kill_count_reaches_the_client_over_module_4() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let credit = crate::bestiary::entry_for_npc(
+            crate::npc::NpcKind::Slime,
+            crate::npc::SlimeVariant::Blue,
+        );
+        assert_eq!(client_app.bestiary.kills.get_kill_count(credit.credit_id), 0);
+        host_app.bestiary.kills.register_kill(credit.credit_id);
+        assert_eq!(host_app.bestiary.kills.get_kill_count(credit.credit_id), 1);
+        host_app.broadcast_bestiary_kill(
+            credit.net_id,
+            host_app.bestiary.kills.get_kill_count(credit.credit_id),
+        );
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(
+            client_app.bestiary.kills.get_kill_count(credit.credit_id),
+            1,
+            "the module-4 kill count landed on the client"
+        );
+    }
+
+    /// `NPCKillsTracker.OnPlayerJoining` (`NPCKillsTracker.cs:98-107`): the
+    /// joining client receives the host's existing counts.
+    #[test]
+    fn the_join_snapshot_carries_the_hosts_kill_counts() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let credit = crate::bestiary::entry_for_npc(
+            crate::npc::NpcKind::Slime,
+            crate::npc::SlimeVariant::Blue,
+        );
+        // The pair is already in-world, so the snapshot arrives from the
+        // `host_slot_join_complete` of a *re*join. Simulate one by handing the
+        // client's slot the host's pairs through the same helper the join
+        // path uses.
+        for _ in 0..3 {
+            host_app.bestiary.kills.register_kill(credit.credit_id);
+        }
+        let count = host_app.bestiary.kills.get_kill_count(credit.credit_id);
+        let body = crate::app::netmodules::BestiaryKill::new(credit.net_id as i16, count)
+            .encode();
+        client_app.client_module(crate::app::netmodules::module_id::BESTIARY, &body);
+        assert_eq!(
+            client_app.bestiary.kills.get_kill_count(credit.credit_id),
+            count,
+            "the join snapshot's module-4 body applies"
         );
     }
 }

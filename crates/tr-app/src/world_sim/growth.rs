@@ -52,7 +52,7 @@ pub(crate) fn start_hardmode(app: &mut App) -> bool {
         &crate::lang::text("LegacyMisc.15"),
         crate::chat::COLOR_WORLD,
     );
-    let _ = app.achievements.notify_progression(9);
+    let _ = app.notify_progression_net(9);
     true
 }
 

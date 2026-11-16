@@ -460,7 +460,7 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
         // `Nothing` is `CanShimmer() == false` — the C# never reaches
         // `GetShimmered` then, so neither credits.
         if !matches!(outcome, ShimmerOutcome::Nothing | ShimmerOutcome::Refused) {
-            let _ = app.achievements.notify_progression(27);
+            let _ = app.notify_progression_net(27);
         }
     }
     // The air-out sweep (`WorldItem.TurnToAir`'s list effect — the C# marks the
