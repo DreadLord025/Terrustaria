@@ -403,14 +403,141 @@ pub(crate) fn try_get_buff_time(p: &Player, slot: usize, vampire_seed: bool) -> 
     Some(t)
 }
 
+/// `BuffID.Sets.BuffTextHandlers` (`BuffID.cs:54-168`): the 28 buff ids whose
+/// icon text is a live projectile counter instead of the duration. Every entry
+/// is a `CachedProjectileCounterBuffTextHandler(projectiles...)`
+/// (`DataStructures/CachedProjectileCounterBuffTextHandler.cs:3-30`), which
+/// sums the local player's `ownedProjectileCounts` over the listed types.
+const BUFF_TEXT_HANDLERS: [(i32, &[i32]); 28] = [
+    (64, &[266]),
+    (125, &[373]),
+    (49, &[191, 192, 193, 194]),
+    (83, &[317]),
+    (126, &[375]),
+    (134, &[387]),
+    (133, &[390, 391, 392]),
+    (135, &[393, 394, 395]),
+    (139, &[407]),
+    (140, &[423]),
+    (161, &[533]),
+    (182, &[613]),
+    (188, &[626]),
+    (213, &[755]),
+    (214, &[758]),
+    (216, &[759]),
+    (263, &[831]),
+    (271, &[864]),
+    (322, &[946]),
+    (325, &[951]),
+    (335, &[970]),
+    (355, &[1022]),
+    (385, &[1093]),
+    (386, &[1094]),
+    (389, &[1112]),
+    (390, &[1113]),
+    (393, &[1118]),
+    (394, &[1119]),
+];
+
+/// `CachedProjectileCounterBuffTextHandler.HandleBuffText`
+/// (`DataStructures/CachedProjectileCounterBuffTextHandler.cs:12-30`): the
+/// summed `ownedProjectileCounts` of the handler's types as `"xN"`, or `None`
+/// when the sum is zero (the caller then falls back to the duration).
+pub(crate) fn buff_text(p: &Player, slot: usize) -> Option<String> {
+    let b = p.buffs.buff_type[slot];
+    let (_, kinds) = BUFF_TEXT_HANDLERS.iter().find(|(id, _)| *id == b)?;
+    let n: i32 = kinds
+        .iter()
+        .map(|t| p.owned_projectile_counts[*t as usize])
+        .sum();
+    (n > 0).then(|| format!("x{n}"))
+}
+
+/// `Main.GetBuffTooltip` (`Main.cs:43254-43289`): the buff description with
+/// its per-buff overrides. The three WellFed tiers swap to their `_Expert`
+/// rows under `Main.expertMode`; the `ManaSickness` (94) and `ManaHeat` (396)
+/// `switch` arms append a player-computed percentage and are documented drops
+/// — the port has no `Player.manaSickReduction` / `Player.manaHeat`.
+pub(crate) fn buff_tooltip(p: &Player, buff: i32) -> String {
+    let expert = p.buffs.expert_mode;
+    match buff {
+        26 if expert => crate::lang::text("BuffDescription.WellFed_Expert"),
+        206 if expert => crate::lang::text("BuffDescription.WellFed2_Expert"),
+        207 if expert => crate::lang::text("BuffDescription.WellFed3_Expert"),
+        _ => crate::lang::buff_description(buff),
+    }
+}
+
+/// `MouseText_DrawBuffTooltip`'s banner list (`Main.cs:21360-21388`): when the
+/// hovered buff is the Monster Banner (147), `Main.bannerMouseOver` is set and
+/// every banner type the player owns prints its NPC name under the tooltip.
+/// `HasNPCBannerBuff` is the port's `SceneMetrics::npc_banner_buff` scan
+/// (`Player.cs:44197`), and `BannerSystem.BannerToNPC` is
+/// `tr_core::bestiary::banner_to_npc`.
+pub(crate) fn banner_hover_names(npc_banner_buff: &[bool]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (banner, owned) in npc_banner_buff.iter().enumerate() {
+        if !owned {
+            continue;
+        }
+        let npc = tr_core::bestiary::banner_to_npc(banner as i32);
+        if npc != 0 {
+            out.push(crate::lang::npc_name(npc));
+        }
+    }
+    out
+}
+
+/// `MouseTextInner`'s rarity colour table (`Main.cs:20245-20310`) — the
+/// `MouseTextHackZoom` flavour the buff hover passes its `rare` through. It
+/// matches the item-name table (`tooltip::item_name_color`) except for `-10`,
+/// the melee-buff green `(65, 255, 110)` (`:20259-20262`), which the item
+/// table never uses.
+fn mouse_text_color(rare: i32) -> [f32; 4] {
+    match rare {
+        -10 => [65.0 / 255.0, 255.0 / 255.0, 110.0 / 255.0, 1.0],
+        // `-13` (master) and `-12` (disco) read `Main.masterColor` /
+        // `Main.Disco*` — documented drops, no such port global.
+        _ => crate::ui::tooltip::item_name_color(rare),
+    }
+}
+
+/// `MouseText_DrawBuffTooltip` (`Main.cs:21345-21489`) + the `MouseTextInner`
+/// plain-text tail (`:20218-20319`), via the shared block printer. The C# draws
+/// the tooltip string below the name (`:20221` before the name at `:20319`),
+/// both at `Main.mouseTextColor`, and appends the banner names in the green
+/// `(80, 255, 120)` tint (`:21478`).
+pub(crate) fn draw_buff_hover(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    mouse: Vec2,
+    name: &str,
+    tooltip: &str,
+    rarity: i32,
+    screen: Vec2,
+    pulse: UiPulse,
+    banner_names: Vec<String>,
+) {
+    let mut lines = vec![(name.to_string(), mouse_text_color(rarity))];
+    if !tooltip.is_empty() {
+        lines.push((tooltip.to_string(), [1.0, 1.0, 1.0, 1.0]));
+    }
+    for npc in banner_names {
+        lines.push((npc, [80.0 / 255.0, 255.0 / 255.0, 120.0 / 255.0, 1.0]));
+    }
+    crate::ui::tooltip::draw_mouse_text_block(r, lookups, mouse, &lines, screen, pulse);
+}
+
 /// `Main.DrawBuffIcon` (`Main.cs:43307-43368`) + the grid walk of
 /// `DrawInterface_Resources_Buffs` (`:43203-43250`). The icons tint by the
 /// per-slot alpha (`Main.buffAlpha` — the port's `buff_alpha`), the hover
 /// raises it 0.1 and the rest decays 0.05 clamped to [0.4, 1]; the
 /// right-click-release pushes the slot onto `removals` (the C# removes in
-/// the draw — the port drains the request in the tick). The hover's
-/// `drawBuffText` slot feeds the name/tooltip block (`:43250-43270`), which
-/// stays out of this pass (the tooltip text rides the localization work).
+/// the draw — the port drains the request in the tick). The icon text is the
+/// `BuffID.Sets.BuffTextHandlers` counter when the buff has one
+/// (`:43317-43320`), else the duration when over 2 ticks (`:43321-43324`).
+/// Returns the hovered slot — the C#'s `drawBuffText` — which the caller turns
+/// into the name/tooltip block (`:43234-43251`).
 /// The fullscreen-map second call site (`:41335`) rides the map tasks.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_buffs(
@@ -422,8 +549,9 @@ pub fn draw_buffs(
     right_release: bool,
     removals: &mut Vec<usize>,
     vampire_seed: bool,
-) {
+) -> Option<usize> {
     let mut num3 = 0usize;
+    let mut hovered = None;
     for i in 0..crate::buffs::MAX_BUFFS {
         let bt = player.buffs.buff_type[i];
         // The empty-slot reset (`:43231-43233`).
@@ -443,16 +571,21 @@ pub fn draw_buffs(
         // The icon (`:43311`): the full sheet tinted by the slot alpha.
         let a = buff_alpha[i];
         r.push_ui_sprite([x, y], [w, h], uv, [a, a, a, a]);
-        // The duration text (`:43317-43327`): `FontAssets.ItemStack` at 0.8
-        // under the icon.
-        if let Some(t) = try_get_buff_time(player, i, vampire_seed) {
-            if t > 2 {
-                let text = localized_duration(t / 60);
-                crate::ui::text::hud_text(r, lookups, x, y + h, 0.85, [1.0; 4], &text);
-            }
+        // The icon text (`:43316-43327`): the `BuffTextHandlers` counter wins
+        // when the handler yields one, else the duration over 2 ticks —
+        // `FontAssets.ItemStack` at 0.8 under the icon.
+        let text = buff_text(player, i).or_else(|| {
+            try_get_buff_time(player, i, vampire_seed)
+                .filter(|t| *t > 2)
+                .map(|t| localized_duration(t / 60))
+        });
+        if let Some(text) = text {
+            crate::ui::text::hud_text(r, lookups, x, y + h, 0.85, [1.0; 4], &text);
         }
-        // The hover + the right-click removal (`:43328-43349`).
+        // The hover + the right-click removal (`:43328-43349`). The C#'s
+        // `!PlayerInput.IgnoreMouseInterface` gate has no port counterpart.
         if mouse.x < x + w && mouse.y < y + h && mouse.x > x && mouse.y > y {
+            hovered = Some(i);
             buff_alpha[i] += 0.1;
             if right_release {
                 removals.push(i);
@@ -467,6 +600,7 @@ pub fn draw_buffs(
             buff_alpha[i] = 0.4;
         }
     }
+    hovered
 }
 
 #[cfg(test)]
@@ -492,6 +626,114 @@ mod s1_e_6_tests {
         assert!(localized_duration(3600).starts_with("1 "), "h: {}", localized_duration(3600));
         assert!(localized_duration(5400).starts_with("2 "), "h+1: {}", localized_duration(5400));
         assert!(localized_duration(86_400 * 2 + 1).starts_with("3 "), "d+1: {}", localized_duration(86_400 * 2 + 1));
+    }
+
+    #[test]
+    fn the_buff_text_handler_table_is_the_csharp_set() {
+        // `BuffID.cs:54-168`: 28 ids, each a `CachedProjectileCounterBuffTextHandler`.
+        // Every entry is present with its exact projectile list, and no extra id
+        // sneaks in.
+        assert_eq!(BUFF_TEXT_HANDLERS.len(), 28);
+        let ids: Vec<i32> = BUFF_TEXT_HANDLERS.iter().map(|(id, _)| *id).collect();
+        let expected = [
+            64, 125, 49, 83, 126, 134, 133, 135, 139, 140, 161, 182, 188, 213, 214, 216, 263,
+            271, 322, 325, 335, 355, 385, 386, 389, 390, 393, 394,
+        ];
+        assert_eq!(ids, expected, "the handler ids in source order");
+        // Spot-check the multi-type handlers (`BuffID.cs:66`, `:82`, `:86`).
+        let get = |id: i32| BUFF_TEXT_HANDLERS.iter().find(|(k, _)| *k == id).unwrap().1.to_vec();
+        assert_eq!(get(49), vec![191, 192, 193, 194]);
+        assert_eq!(get(133), vec![390, 391, 392]);
+        assert_eq!(get(135), vec![393, 394, 395]);
+        assert_eq!(get(64), vec![266]);
+    }
+
+    #[test]
+    fn the_buff_text_counter_is_xn_and_gated_on_a_positive_sum() {
+        // `CachedProjectileCounterBuffTextHandler.HandleBuffText`
+        // (`CachedProjectileCounterBuffTextHandler.cs:12-30`): the summed
+        // counts as `"xN"`, nothing at zero.
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        // The buff 64's handler watches the projectile 266 (`BuffID.cs:58`).
+        p.buffs.buff_type[0] = 64;
+        assert_eq!(buff_text(&p, 0), None, "no owned projectiles yet");
+        p.owned_projectile_counts[266] = 3;
+        assert_eq!(buff_text(&p, 0).as_deref(), Some("x3"));
+        // The buff 49 sums four types (`BuffID.cs:66`): 1 + 2 = 3.
+        p.buffs.buff_type[0] = 49;
+        assert_eq!(buff_text(&p, 0), None);
+        p.owned_projectile_counts[191] = 1;
+        p.owned_projectile_counts[192] = 2;
+        assert_eq!(buff_text(&p, 0).as_deref(), Some("x3"));
+        // A buff with no handler yields nothing — the duration path takes over.
+        p.buffs.buff_type[0] = 1;
+        assert_eq!(buff_text(&p, 0), None);
+    }
+
+    #[test]
+    fn get_buff_tooltip_swaps_the_well_fed_rows_under_expert() {
+        // `Main.GetBuffTooltip` (`Main.cs:43254-43289`): the three fed tiers
+        // (26 / 206 / 207) use their `_Expert` rows in expert mode, everything
+        // else is the plain description.
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{
+                "BuffName": { "WellFed": "Well Fed" },
+                "BuffDescription": {
+                    "WellFed": "Minor improvements to all stats",
+                    "WellFed_Expert": "Medium improvements to all stats",
+                    "WellFed2": "Major improvements to all stats",
+                    "WellFed2_Expert": "Major improvements to all stats and a bit more",
+                    "WellFed3": "Exquisite improvements to all stats",
+                    "WellFed3_Expert": "Exquisite improvements to all stats and more"
+                }
+            }"#,
+        );
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        p.buffs.expert_mode = false;
+        assert_eq!(buff_tooltip(&p, 26), "Minor improvements to all stats");
+        p.buffs.expert_mode = true;
+        assert_eq!(buff_tooltip(&p, 26), "Medium improvements to all stats");
+        assert_eq!(buff_tooltip(&p, 206), "Major improvements to all stats and a bit more");
+        assert_eq!(buff_tooltip(&p, 207), "Exquisite improvements to all stats and more");
+        // A non-fed buff ignores the flag.
+        p.buffs.expert_mode = false;
+        assert_eq!(buff_tooltip(&p, 26), "Minor improvements to all stats");
+        // The `ManaSickness` (94) / `ManaHeat` (396) percentage arms are
+        // documented drops: they fall back to the plain description row (no
+        // `Player.manaSickReduction` / `manaHeat` in the port).
+        assert_eq!(buff_tooltip(&p, 396), crate::lang::buff_description(396));
+    }
+
+    #[test]
+    fn the_melee_buff_hover_colour_is_the_minus_ten_green() {
+        // `MouseTextInner` (`Main.cs:20259-20262`): `rare == -10` is
+        // `(65, 255, 110)`; the buff hover passes it for the melee buffs
+        // (`Main.cs:43243-43246`).
+        assert_eq!(
+            mouse_text_color(-10),
+            [65.0 / 255.0, 255.0 / 255.0, 110.0 / 255.0, 1.0]
+        );
+        // The shared arms fall through to the item-name table.
+        assert_eq!(mouse_text_color(0), [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(
+            mouse_text_color(1),
+            [150.0 / 255.0, 150.0 / 255.0, 1.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn the_banner_hover_lists_only_owned_banners_with_a_mapped_npc() {
+        // `MouseText_DrawBuffTooltip` (`Main.cs:21363-21387`): every
+        // `BannerSystem.BannerToNPC(i) != 0 && HasNPCBannerBuff(i)` row.
+        let mut owned = vec![false; 320];
+        assert!(banner_hover_names(&owned).is_empty());
+        // Banner 69 maps to a live NPC (`bestiary::banner_to_npc`).
+        owned[69] = true;
+        let names = banner_hover_names(&owned);
+        assert_eq!(names.len(), 1, "{names:?}");
     }
 }
 
