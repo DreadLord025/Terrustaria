@@ -97,6 +97,19 @@ pub(crate) struct WorldChest {
 /// lookup can match it.
 const REMOVED_TILE: (i32, i32) = (i32::MIN, i32::MIN);
 
+/// `Main.chest[i]`'s removed (null) slot: the net arms materialise an array
+/// slot with it before the `69` body fills the tile in.
+pub(crate) const fn removed_tile() -> (i32, i32) {
+    REMOVED_TILE
+}
+
+/// A materialised-but-not-yet-placed array slot: distinct from
+/// [`removed_tile`] (so writes land) and unreachable by [`find_chest`] (so no
+/// lookup matches it). The `33`/`69` arms assign the real tile.
+pub(crate) const fn unplaced_tile() -> (i32, i32) {
+    (i32::MIN, i32::MIN + 1)
+}
+
 /// Whether `chest` is a removed (null) slot.
 fn is_removed(chest: &WorldChest) -> bool {
     chest.tile == REMOVED_TILE
@@ -905,6 +918,28 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // the store entry lazily on the first open (the placement-time
         // creation is unreachable without editing.rs edits — the recorded
         // deviation; an empty entry answers like an absent one).
+        // `:33103-33119` — in MP the client asks the host with `31
+        // RequestChestOpen`; a re-click on the open chest closes locally.
+        if let crate::app::NetRole::Client(client) = &app.net {
+            let (cur, cx, cy) = app
+                .player
+                .as_ref()
+                .map_or((-1, 0, 0), |p| (p.chest, p.chest_x, p.chest_y));
+            if cx == ox && cy == oy && cur != -1 {
+                if let Some(p) = app.player.as_mut() {
+                    p.chest = -1; // `:33107`
+                }
+                play_menu_sound(app, 11); // `:33108`
+            } else {
+                client.send(&crate::net::C2s::ChestOpenRequest(
+                    crate::net::ChestOpenRequest {
+                        x: ox as i16,
+                        y: oy as i16,
+                    },
+                )); // `:33116`
+            }
+            return true;
+        }
         let new_chest = match find_chest(&app.world_chests, ox, oy) {
             Some(i) => i,
             None => create_chest(&mut app.world_chests, ox, oy),

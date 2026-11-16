@@ -9135,7 +9135,35 @@ The projectile and strike messages are 1:1 ports; the deviations:
   tiles.
 - **The projectile `netSpam` budget is the C#'s numbers, port-tuned**: 60
   budget, 5 cost, refill 10 per net tick (the C#'s 1/tick at 60 Hz); a
-  parked projectile retries on the next tick (`netUpdate2`'s park).## Cave decorations (M5-STRUCT-5)
+  parked projectile retries on the next tick (`netUpdate2`'s park).
+
+## The message families (S1-E-27)
+
+The chest/sign/wiring/buff arms are 1:1 ports of `MessageBuffer.cs:1868-1982`,
+`:2366-2405`, `:2454-2480`, `:2565-2593`, `:2682-2693`, `:3059-3078`,
+`:3216-3227` and `:4429-4438`; the one deliberate deviation:
+
+- **`world_chests` is a lazy array, not the C#'s `Main.chest[8000]`.** The C#
+  client holds all 8000 `Chest` objects from the world load, so `32`/`69`/`155`
+  can index any slot and `Chest.CreateWorldChest` is only the "no chest here
+  yet" case (`:3071`). The port ships chests on demand, so the net arms
+  materialise the slot they address (`App::materialise_chest_slot`). A
+  materialised slot starts at `chest::unplaced_tile()` =
+  `(i32::MIN, i32::MIN + 1)` - deliberately *not* `removed_tile()`
+  (`(i32::MIN, i32::MIN)`), because `set_chest_slot` refuses a removed slot and
+  the `32` burst must land; it is also unreachable as a world coordinate, so
+  `find_chest` never matches it before the `33`/`69` body assigns the real
+  tile. The `33` arm performs that assignment, which is what keeps the `69`
+  rename's `chest.x/y == num/num` guard (`:3073`) working.
+- **The `33` name rides `BinaryWriter.Write(string)`**, i.e. the 7-bit length
+  then the UTF-8 bytes - not a raw byte run and not the `num24` length byte
+  again. `num24` only gates whether the string is present (`NetMessage.cs:890-901`:
+  `1..20` accepted, `0`/`>20` become `255`).
+- **`50 PlayerBuffs` keeps the ids but not the times.** The C# forces every
+  entry's `buffTime` to 60 (`:2470-2471`) and the client's copy is reset each
+  packet, so the port's peer record stores only the id list.
+
+## Cave decorations (M5-STRUCT-5)
 
 Ported from `decompiled/Terraria/WorldGen.cs` (the four cave-decor passes) into `crates/tr-core/src/worldgen/spider_gem_moss.rs`: `Spider Caves` (`:17356-17427`), `Gem Caves` (`:17428-17471`), `Moss` (`:17472-17700`) and `Webs And Honey` (`:19995-20063`), plus the helpers `countTiles`/`nextCount` (`:9546-9635`), `Spread.Spider` (`:3682-3789`), `Spread.Gem` (`:3594-3680`), `Spread.Gemmable` (`:3791-3798`), `Spread.Moss` (`:3526-3592`), `gemCave` (`:9719`), `randGem` (`:9737`), `randGemTile` (`:9747`), `randMoss` (`:9764`), `neonMossBiome` (`:9783`), `setMoss` (`:9878`), `PlaceTight` (`:38303`), `PlaceUncheckedStalactite` (`:38327-38641`), `PlacePot` (`:54066`) and `PlaceSmallPile` (`:46815`).
 
