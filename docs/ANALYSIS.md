@@ -4425,7 +4425,7 @@ the King Slime hooks (the 93-then-5 ladder order kept).
 
 `tools/gen_loot.py` reads the decompiled
 `GameContent/ItemDropRules/ItemDropDatabase.cs` `Populate()` and emits
-`crates/tr-app/src/loot_db_gen.rs` - `loot_db::database()`, **1421
+`crates/tr-app/src/loot_db_gen.rs` - `loot_db::database()`, **1574
 net-id registrations over the 643 C# register sites** in the C# order.
 The C# `RegisterToNPC(type)` expands to the type itself + the negative
 net-id family (`PrepareNPCNetIDsByTypeDictionary` over `NPCID.NetIdMap`
@@ -4469,6 +4469,52 @@ FromOptionsWithoutRepeats rule classes (each needs its own event state).
 The unknown item ids (the ~20 warn-only OneFromOptions sets) emit and
 resolve - the executor drops only registry-known items, so they surface
 as the registry scale-up work.
+
+### The four remaining rule classes (S1-E-14, 2026-11-16)
+
+`SlimeBodyItemDrop` (`SlimeBodyItemDropRule.cs:15-33`) drops the item a
+slime swallowed: the gate is `NPCID.Sets.SlimeCanContainItems[type]`
+(`NPCID.cs:10443` = 1, 59, 147, 184, 537) **and** `0 < ai[1] <
+ItemID.Count`, and `GetDropInfo` (`:35-116`) supplies the per-item stack
+range (item 8 → 5-10, 71 → 50-99, 2/3/9/… → 10-25, the rest 1-1).
+`StatueMimicItemDrop` (`StatueMimicItemDropRule.cs:15-36`) has no set
+gate — only the same `ai[1]` id range — and maps the style through
+`WorldGen.StatueStyleToItem` (`WorldGen.cs:37928-37991`, ported
+verbatim: the ten singles, the 51-62 and 63-75 runs, the 76-82 singles
+and the `438 + style - 2` fallback). `MechBossSpawnersDrop`
+(`MechBossSpawnersDropRule.cs:16-55`) needs a valuable kill, hardmode
+and at least one mech undowned, and refuses `info.IsInSimulation`
+(`DropAttemptInfo.cs:13`); each undowned mech then rolls
+`RollLuck(2500)` in 1/2/3 order for its spawner (556/544/557).
+`FromOptionsWithoutRepeats` (`FromOptionsWithoutRepeatsDropRule.cs:27-64`)
+picks `dropCount` distinct ids by take-and-remove and reports
+`1 - prod((n-1)/n)` over the shrinking pool.
+
+The production side: `spawn_loot` passes `is_in_simulation: false`
+(`NPCLoot` is the real death path, not the bestiary's simulated one) and
+resolves `slime_can_contain_items` from the positive type
+(`NPCID.FromNetId` over `NPC_NET_ID_MAP`) with `ai1` from `npc.ai[1]`.
+
+**The generator hole this task exposed.** `tools/gen_loot.py` spliced
+the `Populate()` bodies through `this.RegisterX();` calls, but only one
+level deep. `Populate` calls `RegisterBosses`, which calls
+`RegisterBoss_EOC`/`_WOF`/`_MoonLord`/… — that second level was never
+walked, so **no boss registration at all reached `loot_db_gen.rs`**:
+`register_to_npc(113, boss_bag(3324))` and the Moon Lord's whole table
+were absent, not just the four rules this row names. The walk now
+recurses (`process_stream(..., src, depth)`, capped at 8) and resolves
+the local `short type = N;` / `int[] ids = {…};` bindings, so the table
+went 1421 → 1574 registrations. Two consequences were fixed with it:
+the local-condition binding (`Conditions.X c = new Conditions.X();`)
+now routes through `SKIP_CONDITIONS` (the recursion made
+`RedHatSkeletron` reachable and it emitted a `Cond::` variant that does
+not exist), and `SKIP_RULE_CLASSES` is empty — all four classes emit.
+The two conditions stay skipped: `NamedNPC` needs the localized given
+name and `RedHatSkeletron` needs the legendary-difficulty flag, neither
+of which the port models. Reported-but-emitted oddities keep their old
+shape: the ~20 warn-only `OneFromOptions` sets name item ids the
+registry does not carry (`check_item` warns and returns `None`, so the
+row emits and the executor drops the unknown id).
 
 ## Buff slots (M2-BUFF-1)
 
