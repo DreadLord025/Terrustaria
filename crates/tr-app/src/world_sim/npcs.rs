@@ -1660,57 +1660,79 @@ fn dd2_tier(app: &App) -> i32 {
 /// `Difficulty_N_GetRequiredWaveKills`) opens the next wave with the
 /// 1800-tick break, and the wave-6 sentinel is the win (`WonThisRun`).
 fn dd2_report_kill(app: &mut App, kind: NpcKind) {
-    // The event's tier (`FindProperDifficulty`, `:358-370`): the wave
-    // rosters, the budgets and the kill worth all ride it.
-    let tier = dd2_tier(app);
-    let wave = app.world.dd2_wave;
-    let roster: &[u16] = match tier {
-        3 => tr_core::dd2::enemies_for_wave_t3(wave).0,
-        2 => tr_core::dd2::enemies_for_wave_t2(wave).0,
-        _ => tr_core::dd2::enemies_for_wave(wave).0,
-    };
-    if !roster.iter().any(|k| nid_of(*k) == Some(kind)) {
-        // The kill outside the wave's roster scores nothing.
-        return;
-    }
-    // The hold's refusal runs FIRST (the vanilla's early return) — the
-    // kill under the break scores nothing at all.
+    // `:364`: the hold's refusal runs FIRST — the kill under the break
+    // scores nothing at all.
     if app.world.dd2_spawn_hold != 0 {
         return;
     }
-    // `GetMonsterPointsWorth` (`:546-554`): the tier's worth row.
-    let worth = match tier {
-        3 => tr_core::dd2::KILL_WORTH_T3,
-        2 => tr_core::dd2::KILL_WORTH_T2,
-        _ => tr_core::dd2::KILL_WORTH_T1,
-    };
-    // `GetInvasionStatus` (`:517-536`): the bucket is the wave's kills
-    // BEFORE this kill lands; the tier's table may replace it (the
-    // wave-7 Betsy bucket, `FindFirstNPC(551)`, `:1487-1494`).
-    let mut kills_i = app.world.dd2_wave_kills as i32;
+    // The event's tier (`FindProperDifficulty`, `:358-370`): the wave
+    // budgets and the kill worth ride it.
+    let tier = dd2_tier(app);
+    let wave = app.world.dd2_wave;
+    // `GetInvasionStatus` (`:517-536`) runs next (`:368`): the bucket is
+    // the wave's kills BEFORE this kill lands; the tier's table may replace
+    // it (the wave-7 Betsy bucket, `FindFirstNPC(551)`, `:1487-1494`) and
+    // clamp it (the wave-5/-7 caps read the downed latches, `:993`,
+    // `:1181`).
+    let wave_kills_before = app.world.dd2_wave_kills;
+    let mut kills_i = wave_kills_before as i32;
     let required = match tier {
-        2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills_i),
+        2 => {
+            tr_core::dd2::required_wave_kills_t2(wave, &mut kills_i, app.world.dd2_latches.ogre_t2)
+        }
         3 => tr_core::dd2::required_wave_kills_t3(wave, &mut kills_i, dd2_betsy_hp_ratio(app)),
-        _ => tr_core::dd2::required_wave_kills(wave, &mut kills_i),
+        _ => tr_core::dd2::required_wave_kills(
+            wave,
+            &mut kills_i,
+            app.world.dd2_latches.dark_mage_t1,
+        ),
     };
-    app.world.dd2_wave_kills += worth;
-    // `DD2Event.CheckProgress` (`DD2Event.cs:376-392`): the wave report rides
-    // `Main.ReportInvasionProgress(currentKillCount, requiredKillCount, 3,
-    // currentWave)` — icon 3 is the `Extra[79]` Old One's Army sheet and the
-    // `> 0` wave selects `DrawInvasionProgress`'s `Game.WaveMessage` arm.
-    // `currentKillCount += (int)num` (`:373`) adds the kill's worth.
-    app.invasion_progress = kills_i + worth as i32;
-    app.invasion_progress_max = required;
-    app.invasion_progress_icon = 3;
-    app.invasion_progress_wave = wave;
-    app.invasion_progress_display_left = 160;
-        let passed =
-            tr_core::dd2::wave_budget_passed(app.world.dd2_wave, &mut app.world.dd2_wave_kills);
-    if passed {
+    // `GetMonsterPointsWorth` (`:546-554`): the tier's worth row — 0 for
+    // any id outside the two Old One's Army ranges (`:1117`); the wave-5/-7
+    // boss rows latch (`:1112`, `:1205`).
+    let Some(slain_id) = dd2_pool_id(kind) else {
+        return;
+    };
+    let worth = tr_core::dd2::monster_points_worth(
+        tier,
+        wave,
+        wave_kills_before,
+        slain_id,
+        &mut app.world.dd2_latches,
+    );
+    app.world.dd2_wave_kills += worth as f32;
+    // `:376-380`: the count at or past the tier's budget resets the counter,
+    // opens the next wave and sets `flag`; `:404`'s 1800-tick break follows.
+    // The second `GetInvasionStatus` (`:381`) — the wave-6/8 win sentinel
+    // and its victory scene — is a separate task.
+    let mut completed = false;
+    if app.world.dd2_wave_kills >= required as f32 && required != 0 {
         app.world.dd2_wave_kills = 0.0;
         app.world.dd2_wave += 1;
         app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_WAVE_BREAK;
+        completed = true;
     }
+    // `:451-454`: a kill that moved no count reports nothing.
+    if (kills_i + worth) as f32 == wave_kills_before {
+        return;
+    }
+    // `:455-478`: the wave-completing kill reports the fresh 1/1 pair under
+    // the wave that just finished; the ordinary kill reports the tier's
+    // pair under the current wave.
+    if completed {
+        app.invasion_progress = 1;
+        app.invasion_progress_max = 1;
+    } else {
+        // `currentKillCount += (int)num` (`:373`) adds the kill's worth.
+        app.invasion_progress = kills_i + worth;
+        app.invasion_progress_max = required;
+    }
+    // The report rides `Main.ReportInvasionProgress(…, 3, wave)`: icon 3 is
+    // the `Extra[79]` Old One's Army sheet and the `> 0` wave selects
+    // `DrawInvasionProgress`'s `Game.WaveMessage` arm.
+    app.invasion_progress_icon = 3;
+    app.invasion_progress_wave = wave;
+    app.invasion_progress_display_left = 160;
 }
 
 /// The kind id's reverse — the wave rosters' NPC ids to the port's kinds.
@@ -1798,13 +1820,21 @@ fn spawn_dd2_from_gate(app: &mut App, sx: f32, sy: f32, left_gate: bool) -> Vec<
     // `GetInvasionStatus`'s pair: the wave's budget and the score so far.
     let kills = app.world.dd2_wave_kills as i32;
     let required = match tier {
-        2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills.clone()),
+        2 => tr_core::dd2::required_wave_kills_t2(
+            wave,
+            &mut kills.clone(),
+            app.world.dd2_latches.ogre_t2,
+        ),
         3 => tr_core::dd2::required_wave_kills_t3(
             wave,
             &mut kills.clone(),
             dd2_betsy_hp_ratio(app),
         ),
-        _ => tr_core::dd2::required_wave_kills(wave, &mut kills.clone()),
+        _ => tr_core::dd2::required_wave_kills(
+            wave,
+            &mut kills.clone(),
+            app.world.dd2_latches.dark_mage_t1,
+        ),
     };
     // The pool's live counts (`NPC.CountNPCS`) — the roll reads them per id.
     let counts: std::collections::HashMap<u16, i32> = {
@@ -8136,6 +8166,61 @@ mod dd2_wave_tests {
     }
 
     #[test]
+    fn the_fifth_wave_waits_for_the_dark_mage() {
+        // `Difficulty_1_GetMonsterPointsWorth` (`:1108-1116`): at wave 5
+        // with `waveKills >= 139` only the Dark Mage (564) scores — the
+        // ordinary kill leaves the count, the boss kill passes the budget
+        // and latches (`:1112`).
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 5;
+        app.world.dd2_wave_kills = 139.0;
+        app.world.dd2_spawn_hold = 0;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave_kills, 139.0, "the gate scores 0");
+        assert_eq!(app.world.dd2_wave, 5);
+        assert!(!app.world.dd2_latches.dark_mage_t1);
+        report_invasion_kill(&mut app, NpcKind::DD2DarkMage);
+        assert!(app.world.dd2_latches.dark_mage_t1, "`:1112`'s latch");
+        assert_eq!(app.world.dd2_wave, 6, "the boss kill passes the budget");
+        assert_eq!(app.world.dd2_wave_kills, 0.0);
+        // `:455-462`: the wave-completing report is the fresh 1/1 pair.
+        assert_eq!(app.invasion_progress, 1);
+        assert_eq!(app.invasion_progress_max, 1);
+        assert_eq!(app.invasion_progress_wave, 5);
+    }
+
+    #[test]
+    fn the_seventh_tier_two_wave_waits_for_the_ogre() {
+        // `Difficulty_2_GetMonsterPointsWorth` (`:1201-1209`): at wave 7 with
+        // `waveKills >= 219` only the Ogre (576) scores and latches.
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        // The tier-2 gate: hardmode with a mech boss down.
+        app.world.hard_mode = true;
+        app.world.downed_mech_boss1 = true;
+        app.world.dd2_wave = 7;
+        app.world.dd2_wave_kills = 219.0;
+        app.world.dd2_spawn_hold = 0;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT2);
+        assert_eq!(app.world.dd2_wave_kills, 219.0, "the gate scores 0");
+        assert!(!app.world.dd2_latches.ogre_t2);
+        // `:451-454`: the zero-worth kill reports nothing at all.
+        assert_eq!(app.invasion_progress_max, 0);
+        report_invasion_kill(&mut app, NpcKind::DD2OgreT2);
+        assert!(app.world.dd2_latches.ogre_t2, "`:1205`'s latch");
+        assert_eq!(app.world.dd2_wave, 8, "the Ogre passes the budget");
+    }
+
+    #[test]
     fn the_betsy_anchor_drives_the_seventh_wave() {
         // `Difficulty_3_GetRequiredWaveKills`'s wave-7 arm
         // (`DD2Event.cs:1487-1494`): the wave's progress is the Betsy's
@@ -8160,8 +8245,9 @@ mod dd2_wave_tests {
         report_invasion_kill(&mut app, NpcKind::DD2Betsy);
         assert_eq!(app.invasion_progress_max, 100, "the wave's budget");
         assert_eq!(
-            app.invasion_progress, 50 + 4,
-            "the Betsy's HP bucket plus the kill's worth"
+            app.invasion_progress,
+            50 + 1,
+            "the Betsy's HP bucket plus the kill's worth (`:1513` — 551 scores 1)"
         );
         // No Betsy on the field: the C#'s `-1` arm takes the budget of 1.
         app.npcs.clear();
