@@ -761,6 +761,9 @@ impl App {
             if !paused {
                 self.phase("map");
                 if let Some(m) = self.map.as_mut() {
+                    // `Main.mapTimeMax` (`Main.cs:801`) — the gfx-quality
+                    // budget the countdown re-arms from (`:61818-61821`).
+                    m.map_time_max = self.gfx_quality.map_time_max;
                     m.update(&self.world, self.player.as_ref(), &self.light, dt);
                     // `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:36-39`):
                     // the markers older than 15 s drop while the map is up.
