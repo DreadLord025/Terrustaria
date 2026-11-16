@@ -40,10 +40,9 @@ pub fn slime_database() -> &'static ItemDropDatabase {
 }
 
 /// The full registration table - `ItemDropDatabase.Populate()` ported by
-/// `tools/gen_loot.py` into [`crate::loot_db_gen`] (1582 net-id registrations
-/// over the 633 C# register sites, the families expanded per `NPCID.NetIdMap`,
-/// and the nested `RegisterBoss_*`/`RegisterIceMimic` methods inlined). The
-/// executor resolves a dead NPC's net id against this.
+/// `tools/gen_loot.py` into [`crate::loot_db_gen`] (1405 net-id registrations
+/// over the 643 C# register sites, the families expanded per
+/// `NPCID.NetIdMap`). The executor resolves a dead NPC's net id against this.
 pub fn database() -> &'static ItemDropDatabase {
     static DB: OnceLock<ItemDropDatabase> = OnceLock::new();
     DB.get_or_init(|| {
@@ -51,20 +50,6 @@ pub fn database() -> &'static ItemDropDatabase {
         crate::loot_db_gen::populate(&mut db);
         db
     })
-}
-
-/// `Conditions.NamedNPC.CanDrop` (`Conditions.cs:971-979`): the `HasGivenName`
-/// short-circuit then `GivenName == Language.GetTextValue(neededName)`. Folded
-/// here so [`tr_core::loot::LootNpc`] stays `Copy` (it carries the matched
-/// [`NamedNpc`], not the string).
-pub fn named_npc(given_name: &str) -> Option<tr_core::loot::NamedNpc> {
-    use tr_core::loot::NamedNpc;
-    if given_name.is_empty() {
-        return None; // `NPC.HasGivenName` (`NPC.cs:6741`)
-    }
-    NamedNpc::ALL
-        .into_iter()
-        .find(|who| crate::lang::text(who.key()) == given_name)
 }
 
 /// The bestiary's drop rows for one NPC — `BestiaryDatabase.ExtractDropsForNPC`
@@ -209,117 +194,5 @@ mod tests {
         };
         assert_eq!(resolve(42), resolve(42));
         assert_ne!(resolve(42), resolve(43), "different seeds diverge");
-    }
-
-    // --- S1-E-14: the four rule classes and two conditions in the table ------
-
-    #[test]
-    fn the_global_rule_classes_are_registered() {
-        // `RegisterGlobalRules` (`ItemDropDatabase.cs:689-690`): the mech
-        // spawner and the slime body ride the globals, not a per-NPC row.
-        // The mech spawner's gate (hardmode + an undowned mech) makes it
-        // observable: over 2 000 seeds with mech 1 still owed, the 1/2500
-        // roll fires at least once.
-        let db = database();
-        let mut mech_hits = 0;
-        for seed in 0..2000u64 {
-            let mut rng = tr_core::tile_light::FastRandom::new(seed);
-            let mut i = info(&mut rng);
-            i.flags.hard_mode = true;
-            i.flags.downed_mech2 = true;
-            i.flags.downed_mech3 = true;
-            i.npc.value = 1.0;
-            let mut out = Vec::new();
-            tr_core::loot::try_dropping(db, 3, &mut i, &mut out);
-            if out.iter().any(|r| r.item == 556) {
-                mech_hits += 1;
-            }
-        }
-        assert!(mech_hits > 0, "the global mech spawner rule is live");
-    }
-
-    #[test]
-    fn the_skeletron_red_hat_rows_are_registered() {
-        // `RegisterBoss_Skeletron` (`ItemDropDatabase.cs:560-575`): the five
-        // `ByCondition(RedHatSkeletron, …)` rows (5624/5625/5626/5737/5628)
-        // and the four unconditional rows. The generator's nested-method
-        // expansion is what makes these exist at all.
-        let db = database();
-        let rows = drop_rows(35);
-        for item in [5624, 5625, 5626, 5737, 5628] {
-            assert!(
-                rows.iter().any(|r| r.item_id == item),
-                "the RedHatSkeletron row {item}: {rows:?}"
-            );
-        }
-        for item in [1281, 1273, 1313, 4993] {
-            assert!(rows.iter().any(|r| r.item_id == item), "row {item}");
-        }
-        assert!(!db.rules_for_npc(35).is_empty());
-    }
-
-    #[test]
-    fn the_moon_lords_without_repeats_row_is_registered() {
-        // `RegisterBoss_MoonLord`'s `new FromOptionsWithoutRepeatsDropRule(2,
-        // 3063, 3389, …)` chained on the `NotExpert` leading rule
-        // (`ItemDropDatabase.cs:610`) — the picks are distinct and come from
-        // that option list.
-        const OPTIONS: [i32; 10] = [3063, 3389, 3065, 1553, 3930, 3541, 3570, 3571, 3569, 5480];
-        let db = database();
-        let mut picked = Vec::new();
-        for seed in 0..50u64 {
-            let mut rng = tr_core::tile_light::FastRandom::new(seed);
-            let mut i = info(&mut rng);
-            i.npc.kind = 398;
-            i.npc.value = 1.0;
-            let mut out = Vec::new();
-            tr_core::loot::try_dropping(db, 398, &mut i, &mut out);
-            let from_rule: Vec<i32> = out
-                .iter()
-                .map(|r| r.item)
-                .filter(|id| OPTIONS.contains(id))
-                .collect();
-            assert_eq!(
-                from_rule.len(),
-                2,
-                "two distinct picks (seed {seed}): {out:?}"
-            );
-            assert_ne!(from_rule[0], from_rule[1], "no repeats");
-            picked.extend(from_rule);
-        }
-        picked.sort_unstable();
-        picked.dedup();
-        assert!(
-            picked.len() > 2,
-            "the picks span the option list: {picked:?}"
-        );
-    }
-
-    #[test]
-    fn the_statue_mimic_row_is_registered() {
-        // `RegisterMimic` (`ItemDropDatabase.cs:1132`) -> the nested
-        // `RegisterIceMimic`, where NPC 690 rides `StatueMimicItemDropRule`.
-        assert!(!database().rules_for_npc(690).is_empty());
-    }
-
-    #[test]
-    fn the_named_npc_rows_carry_the_three_keys() {
-        // `RegisterTownNPCDrops` (`ItemDropDatabase.cs:738-740`): the Guide
-        // (22), the Steampunker (178) and the Painter (227).
-        for (npc, item) in [(22, 867), (178, 4372), (227, 5290)] {
-            let rows = drop_rows(npc);
-            assert!(
-                rows.iter().any(|r| r.item_id == item),
-                "NPC {npc}: {rows:?}"
-            );
-        }
-        // The fold itself: only the localized name matches its key.
-        assert_eq!(named_npc(""), None, "no given name");
-        assert_eq!(named_npc("not a name"), None);
-        let andrew = crate::lang::text("GuideNames.Andrew");
-        assert_eq!(
-            named_npc(&andrew),
-            Some(tr_core::loot::NamedNpc::GuideAndrew)
-        );
     }
 }

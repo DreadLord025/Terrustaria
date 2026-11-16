@@ -101,7 +101,7 @@ tables (`Chest.SetupShop` / `SetupTravelShop_*`) and the price maths
 | world-gen chest stocking | PARTIAL | `chest_gen.rs` | `AddBuriedChest` :35871-37580 ported with verbatim odds, but as a **load-time** pass (below), so the RNG order differs from vanilla. |
 | chest icons (`chestTypeToIcon/2/dresserTypeToIcon`) | MISSING | — | No Rust symbol (`Chest.cs:54-62`, `Initialize:229-258`); the UI needs a style→icon-item table. |
 | drop-rule engine | PORTED | `tr-core/src/loot.rs` | All 22 rule-like classes above; 18 engine tests on seeded `FastRandom` streams. |
-| drop database population | PORTED | `loot_db_gen.rs` | 1 582 registrations over the 633 C# register sites (generated, C# order, net-id families, the nested `RegisterBoss_*`/`RegisterIceMimic` bodies inlined); **no rule class or condition skipped** (S1-E-14). 166 registrations still warn — `OneFromOptions` ids absent from `itemdata.rs` (S1-E-2). |
+| drop database population | PARTIAL | `loot_db_gen.rs` | 1 421 registrations over the 643 C# register sites (generated, C# order, net-id families); 4 rule classes + 2 conditions skipped (below). |
 | money roll chain | PORTED | `loot.rs::drop_money` | `NPC.cs:79619-80106`: midas, the +20-75 % spread, the six bonus chains, the blood-moon bump, the two-roll best/worst, the coin split. |
 | `SetupShop` + `SetupTravelShop` | PARTIAL | `shop.rs` | Merchant/travel/dye/golf arms ported with the moon-phase gates; see the shop table below. |
 | price maths | PARTIAL | `shop.rs::buy_price/sell_price` | The 0.8 discount, the `buyOnce` `/5` and `shopSpecialCurrency` are out (see risks). |
@@ -127,41 +127,12 @@ Ported in `loot.rs`: `DropNothing` (L554), `CommonDrop` (L582),
 chain sugar `chain_on_{success,failed_roll,failed_conditions}` (L1184-1210),
 `Cond` (L1350, ~50 `Conditions.*` gates) and the luck variants
 `NotScalingWithLuck` / `ScalingWithOnlyBadLuck` (L1797-1856).
-
-S1-E-14 closed the last four classes and the last two conditions — the
-`ItemDropRules` namespace is now fully covered:
-`SlimeBodyItemDrop` (`SlimeBodyItemDropRule.cs:6-121`), `StatueMimicItemDrop`
-(`StatueMimicItemDropRule.cs:6-36` -> `WorldGen.StatueStyleToItem`,
-`WorldGen.cs:37928-37991`), `MechBossSpawnersDrop`
-(`MechBossSpawnersDropRule.cs:5-66`), `FromOptionsWithoutRepeatsDrop`
-(`FromOptionsWithoutRepeatsDropRule.cs:5-65`), and `Cond::NamedNpc` /
-`Cond::RedHatSkeletron` (`Conditions.cs:962-989` / `:543-559`).
-
-Three deliberate folds, so `LootNpc` stays `Copy` and culture-free:
-* `Conditions.NamedNPC` compares `GivenName` against `Language.GetTextValue`;
-  the caller folds it into `NamedNpc` (three variants) via
-  `loot_db::named_npc`, which resolves each key through `lang::text`.
-* `Conditions.RedHatSkeletron` reads `RedHatSkeletronAdjustmentsEnabled`
-  (four type/`ai[3]`/`localAI[3]` pairs); the caller folds it to one bool. The
-  port currently always passes `false`: `NPC.RedHatSkeletron` (`NPC.cs:80395`)
-  and the sitting-Clothier ritual (`PlayerSittingHelper.cs:81`) are unported,
-  and the port's Skeletron head reuses `ai[3]` for the live hand count, so the
-  field must not be read as the red-hat flag.
-* `MechBossSpawnersDropRule`'s `!info.IsInSimulation` is a constant `true`
-  here — the only resolver is the death path (`NPC.cs:78927-78936`, which
-  passes `IsInSimulation = false`) and there is no projection simulation.
-
-Also out (unchanged): `CustomCurrencyManager` (special shop currency). The
-`ReportDroprates` family (`DropRateInfo`, `DropRateInfoChainFeed`,
-`ItemDropDatabase.report_droprates`) **is** ported (S1-E-15's bestiary feed
-reads it).
-
-**Generator fix (S1-E-14)**: `Populate()`'s nested private-method calls were
-silently skipped, so `RegisterBosses()`'s 22 callees (145 register sites — the
-whole boss table: Skeletron, Moon Lord, the mechs, Queen Slime, Deerclops) and
-`RegisterIceMimic()`'s 2 sites never reached `loot_db_gen.rs`. `tools/gen_loot.py`
-now recurses into them and resolves `short type = 35`-style int locals; the
-count went 1 421 -> 1 582 over 633 sites.
+**Skipped (13 rows, warned in the M4-LOOT-2 row)**: `SlimeBodyItemDropRule`,
+`StatueMimicItemDropRule`, `MechBossSpawnersDropRule`,
+`FromOptionsWithoutRepeatsDropRule` and the `Conditions` entries
+`NamedNPC`/`RedHatSkeletron`. Also out: `DropRateInfo` +
+`ItemDropResolver.ReportDroprates` / `DropRateInfoChainFeed` (bestiary side,
+waits M4-BEST-1) and `CustomCurrencyManager` (special shop currency).
 
 ### Shop coverage
 | C# shop block | C# location | Rust | Status |
