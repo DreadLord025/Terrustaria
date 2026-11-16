@@ -7472,6 +7472,24 @@ impl Player {
         }
         pos = sc.pos;
         vel = sc.vel;
+        // `Player.cs:28225-28232`: the belt pass rides right after
+        // `SlopingCollision`, skipped while shimmering/tongued (and while
+        // locked to a tile - a state the port has no field for).
+        // ponytail: `!shimmering` guard dropped - the port has no
+        // `Player.shimmering` (the absorbed state, S1-E-16); add it there.
+        if !self.holding(38) {
+            collision::step_conveyor_belt_player(
+                world,
+                &mut pos,
+                WIDTH as i32,
+                body_h as i32,
+                1.0,
+                self.gfx_off_y,
+                self.grappling_active,
+                self.pulley,
+                self.on_track,
+            );
+        }
         self.x = pos[0];
         self.y = pos[1];
         self.vx = vel[0];
