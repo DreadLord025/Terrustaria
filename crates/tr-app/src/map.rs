@@ -604,6 +604,13 @@ impl WorldMap {
         self.map_time
     }
 
+    /// `WorldMap.IsRevealed` (`WorldMap.cs:406-409`): the tile has been
+    /// explored. The C# reads `_tiles[x, y].Light > 0`; the port's guard is on
+    /// the bounds because its array is flat.
+    pub fn tile_revealed(&self, world: &World, x: i32, y: i32) -> bool {
+        world.in_bounds(x, y) && self.tiles[world.index(x, y)].light > 0
+    }
+
     /// Loads the explored tiles from `<world>.map` (`MapHelper.LoadMap`, invoked
     /// at world load). Returns `false` when the file is absent or does not match
     /// this world. The whole map texture is re-uploaded on the next `prepare`.

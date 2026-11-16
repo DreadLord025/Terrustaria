@@ -12992,26 +12992,40 @@ rows between the last expansion mark and that call were dropped (the audit's
 now copies that text: the table is **3 206 rows = 2 895 authored + 311
 reverse**, and the pin in `tools/test_gen_recipes.py` re-taken.
 
-## The sliced block light chain (S1-G-9, 2026-11-13)
+## The sliced block light chain (S1-G-9, 2026-11-13; corrected 2026-11-16)
 
-`DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3516-3640`) is the port's
+`DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3517-3664`) is the port's
 `render/tiles.rs::push_sliced` — and the chain now matches the C# exactly:
 `Lighting.GetColor9Slice`'s 3×3 neighbourhood colours average with the
-tile's own light (`(slices[i] + vector) * 0.5`, `:3556-3559` — the port
-used to draw the raw neighbourhood slices, washing the big blocks out
-against vanilla), then `GetFinalLight`'s actuation arm
-(`TileDrawing.cs:4394-4396`, the ×0.4 ghost) applies per slice. The caller
-passes the tile's own light already ghosted (`drawData.tileLight` is
-`GetFinalLight`'s output at `:1019`) plus the actuation flag. The high/medium
+tile's own **raw** light (`(slices[i] + vector) * 0.5`, `:3578-3581`), then
+`GetFinalLight` (`:4391-4402`) applies the tint and the actuation ghost
+(`Tile.actColor`, `Tile.cs:282-288`, ×0.4) to that average. The high/medium
 split (the 9-slice vs the 4-quad paths on `_highQualityLightingRequirement`/
-`_mediumQualityLightingRequirement`) rides the existing thresholds.
+`_mediumQualityLightingRequirement`, `:3524` / `:3605`) rides the existing
+thresholds, and a Glow-coated block replaces every slice with
+`_glowPaintColorSlices` (`:3530-3533` / `:3611-3614`, all `Vector3.One`).
 
-Scope notes: the fullbright glow-paint slices (`:3551-3554`,
-`_glowPaintColorSlices`) and `GetFinalLight`'s shine arm
-(`ShouldTileShine` → `Main.shine`) have no port counterparts yet — both ride
-the paint work (S1-G-2's row). The A/B shot (a placed dirt block at the
-dusk, `TR_CAM=100,78` + `TR_PLACE`) shows the 10 576-px delta the average
-introduces; two identical runs are SHA-equal.
+Two defects in the 2026-11-13 landing, fixed by `S1-G-9-sliced-final-light`:
+
+* **The double ghost.** `GetFinalLight`'s `Color` overload (`:4358`) takes
+  `tileLight` **by value** and `:1019` assigns the result to
+  `drawData.finalColor` — `drawData.tileLight` stays the raw
+  `Lighting.GetColor` (`:871`). Only the `Vector3` overload (`:4391`) writes
+  through `ref`. So `:3528`'s `vector` is unghosted, and the port's caller-side
+  ghost plus the per-slice ghost composed to 0.16 instead of 0.4. `push_sliced`
+  now samples the raw light itself and the `own` argument is gone, so the
+  double-ghost cannot come back.
+* **The Glow slices.** `fullbrightBlock()` blocks draw their slices at
+  `Vector3.One` `_glowPaintColorSlices`; the port fed the neighbourhood light
+  instead, so Glow-coated blocks stayed dark. Both arms apply the replacement.
+
+Each slice is pushed with `push_sprite_paint`, carrying the tile's paint byte
+as the flat arm does.
+
+Scope notes: `GetFinalLight`'s shine arm (`ShouldTileShine` → `Main.shine`)
+has no port counterpart — `Main.tileShine2` is unported (drawdata.rs:509), so
+the branch is unreachable; the non-White `colorTint` is the minecart path
+only (`:3788`). Both ride the paint work (S1-G-2's row).
 
 ## The map overlay layers (S1-L-4, 2026-11-14)
 
@@ -13025,18 +13039,38 @@ have port drivers draw: SpawnMapLayer (the world spawn + the bed marker —
 the C# reads `localPlayer.SpawnX/SpawnY`, the port keeps the bed spawn on
 `World.bed_spawn`), BossBagMapLayer (the `ItemID.cs:1383` 21-kind set over
 the drop pool) and PingMapLayer (the 100-cap pool, the 15 s expiry, the 1x5
-row cycling at 10 Hz). The three data-gated layers keep their C# bodies but
-draw nothing: Digtoise (the 1098/1123 projectiles are not spawned),
-TeamBasedSpawn (the seed is in M5-SEED-2's deferred list) and
-TeleportPylons (`TeleportPylonsSystem` is not ported — the tile-entity
-work).
+row cycling at 10 Hz).
+
+**Second pass (2026-11-16, `S1-L-4-map-overlay-layers`)** closed the three
+stubs and the missing call site. Digtoise draws: `digtoise_marker` scans the
+projectile pool for the first active 1098/1123 whose `owner == 0` (the port's
+standing stand-in for `Main.myPlayer`, as in `projectile.rs`/`grapple.rs`),
+yielding `(Bottom, spriteDirection)` — `Bottom / 16 + (0.5, 0)` bottom-aligned,
+column 1 when `spriteDirection <= 0` (`DigtoiseMapLayer.cs:14-26`). TeleportPylons
+draws the live network: `tr_core::pylons::scan_pylons` feeds `MapIconInputs::pylons`,
+each marker anchored at `PositionInTiles.ToVector2() + (1.5, 2)` centre-aligned
+through `MapOverlayContext::draw_tinted` (the `MapOverlayDrawContext.cs:218-242`
+`color * opacity` form), dimmed to `Color.Gray * 0.5f` = 0.25 when
+`is_player_near_a_pylon` is false (`TeleportPylonsMapLayer.cs:39-42`/`:65-89`).
+`PylonType::style()` (`self as u8`) is the inverse of `from_tile_style` and
+supplies the `SpriteFrame` column, since the map layer's column *is* the type
+discriminant. `WorldMap::tile_revealed` (`WorldMap.cs:406-409`) backs the
+`IsRevealed` fog gate (`TeleportPylonsMapLayer.cs:112-119`) with a bounds guard
+the C# gets for free from its world-sized jagged array. TeamBasedSpawn stays
+gated: both `Main.teamBasedSpawnsSeed` and `ExtraSpawnPointManager` are unported
+(M5-SEED-2's deferred list), so the branch is the faithful shape with no data
+behind it.
 
 Scope notes: the fullscreen call rides `Main.cs:55996`'s position (the
 map's top-left minus the 10 px frame inset, `mapPosition = Vector2.Zero`
-is the tile-space identity); the minimap call (`Main.cs:55703`, with the
-clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
-their own passes; the hover text feeds the map's text line through
-`ui::text::hud_text` (the C# `ref text`).
+is the tile-space identity); the **minimap** call (`Main.cs:55696-55703`) is
+wired in the same pass — the clip is `map_minimap_quad`'s destination rect and
+the draw scale is the C#'s `num46 = ((mapMinimapScale * 0.25f * 2f + 1f) / 3f)`
+capped at 1. The pylon scan is snapshotted once per frame and only while the map
+or minimap is actually drawing, so the TE walk stays off the hot path.
+`DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are their own passes;
+the hover text feeds the map's text line through `ui::text::hud_text` (the C#
+`ref text`).
 
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14)
 
@@ -15167,3 +15201,51 @@ Deliberate gaps, all recorded here rather than guessed:
 * The item box stays the port's 14 px (`item.rs::SIZE`) rather than the C#'s
   16 (`WorldItem.cs:138`): widening it changes every existing drop's
   collision, which is a separate task.
+
+## The screen effects (S1-E-16, 2026-11-16)
+
+`crates/tr-core/src/scene.rs` carries the three `SceneState` state machines
+verbatim, in the C#'s order (`SceneState.cs:75-77`):
+`ScreenObstruction.Update` (`ScreenObstruction.cs:13-46`),
+`ScreenDarkness.Update` (`ScreenDarkness.cs:12-34`) and
+`MoonlordDeathDrama.Update` (`MoonlordDeathDrama.cs:155-193`). The draw halves
+live in `crates/tr-app/src/render/screen_fx.rs`, wired at the vanilla seams:
+`DrawBack` right after the background overlays (`Main.cs:62217`), `DrawFront`,
+`DrawWhite` and `ScreenObstruction.Draw` after the projectiles
+(`Main.cs:62322-62324`), the MoonExplosion pieces and blasts inside
+`DoDraw_WallsTilesNPCs` (`Main.cs:63276-63277`).
+
+`UnbreakableWallScan.InsideUnbreakableWalls`/`LineScan`
+(`UnbreakableWallScan.cs:39-84`) is ported with the 250-tile scan distance, the
+eight directions, the `wallColor() >= 16` test and the eight-fold rotation of
+the hit mask. The `DangerousDungeonCurse` tier ladders (`:5-27`, `:32-55`) are
+pure functions taking the zone/downed flags the `tr-app` driver reads.
+
+Deliberate deviations, recorded rather than guessed:
+
+* `DebugOptions.devLightTilesCheat` has no port, so the `ScreenObstruction`
+  0.25 cap on the wall arm (`ScreenObstruction.cs:23-28`) is omitted and the
+  0.9 clamp always applies.
+* The `ScreenDarkness` walk normally scans `Main.npc[]`; `tr-core` has no NPC
+  list, so the driver fills `SceneMetrics::screen_darkness_npcs` from the
+  `tr-app` NPC vec with only the fields the two arms read. The C# loop is
+  last-match-wins and that semantics is kept.
+* Wall of Flesh (113) abandonment: the C# reads `npc.localAI[1]`, but the port
+  folds the WoF ramp into `ai[0]` (`npc.rs:9160-9168`), so `local_ai1` is filled
+  from `ai[0]`.
+* Duke Fishron (370) is not a ported `NpcKind` - the phase 10+/9-with-timer arm
+  is code-complete but unexercised until that boss lands.
+* `ScreenObstruction.Draw`'s `MagicPixel` stand-in is the renderer's built-in
+  `white_uv` quad (`push_fx_rect`). `MoonlordPiece.GetLight` averages the port's
+  `LightMap` rather than `Lighting.GetColor` - the same tile colours, a
+  different seam.
+* `DrawPaladinsShield` and `DrawInfernoRings` are **not** drawn: their gates are
+  `Player.hasPaladinShield` / `defendedByPaladin` / `inferno` and the
+  `flameRingScale` / `flameRingRot` animation state, none of which the port's
+  `Player` carries. The sheets (`Extra_98`, `FlameRing`) load so the draws can
+  be added without touching the asset pipeline.
+* The lens flare (`Main.DrawLensFlare`, `Main.cs:62509-62514`) is a
+  `NextHorizonRenderer` feature that the port does not have.
+* `FocusHelper.AllowPlayerToEmitEffects` (the `!WorldUpdateStepper.DrawnThisUpdate`
+  split between a drawn and a stepped frame) is unported, so an inferno-ring
+  animation would always advance - moot while the draw is unwritten.

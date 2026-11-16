@@ -453,6 +453,15 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
                 apply_decraft(app, idx, recipe_index, amount);
             }
         }
+        // `WorldItem.cs:1849` — the shared tail every arm falls through to:
+        // `AchievementsHelper.NotifyProgressionEvent(27)` (TRANSMUTE_ITEM).
+        // `Refused` is the two early returns above it (`:1732` the
+        // already-unlocked rainbow slime, `:1754` the active slime rain), and
+        // `Nothing` is `CanShimmer() == false` — the C# never reaches
+        // `GetShimmered` then, so neither credits.
+        if !matches!(outcome, ShimmerOutcome::Nothing | ShimmerOutcome::Refused) {
+            let _ = app.notify_progression_net(27);
+        }
     }
     // The air-out sweep (`WorldItem.TurnToAir`'s list effect — the C# marks the
     // item inactive and the item array's compaction drops it): the zeroed
