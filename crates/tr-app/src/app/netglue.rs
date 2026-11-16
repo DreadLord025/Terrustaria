@@ -85,6 +85,12 @@ impl App {
         };
         if let Some(client) = connect_now {
             client.send(&C2s::Connect(net::CONNECT_VERSION.to_string()));
+            // `Ping.Reset()` (`Netplay.cs:474`): the stopwatch restarts the
+            // moment the connection attempt starts, so the first probe can go
+            // out after the first 250 ms of silence.
+            self.net_ping_at = Some(Instant::now());
+            self.net_ping_waiting = false;
+            self.net_rtt_ms = 0;
         }
         let role = std::mem::replace(&mut self.net, NetRole::Off);
         if let NetRole::Host(server) = &role {
@@ -298,6 +304,10 @@ impl App {
                     self.host_slot_join_complete(server, id, s);
                 }
             }
+            // `case 154` — the server echoes the probe straight back
+            // (`MessageBuffer.cs:4419-4423`); the port's relay is the same
+            // single hop.
+            C2s::Ping => server.send(id, &S2c::Ping),
             C2s::PlayerActive { active: true, .. } => {
                 // The peer is in-world (`case 14`); make sure it has a
                 // remote-player entry (the identity usually arrives first).
@@ -507,7 +517,7 @@ impl App {
                 server.send(id, &S2c::TileBlock(Box::new(block)));
             }
         }
-        server.send(id, &S2c::WorldComplete);
+        server.send(id, &S2c::InitialSpawn);
     }
 
     /// The move-driven section catch-up (the C#'s per-tick
@@ -875,11 +885,14 @@ impl App {
             S2c::SectionRange(range) => {
                 self.apply_section_range(&range);
             }
-            // `case 49` — the world stream is done (`MessageBuffer.cs:2448-2452`):
-            // install in place (the port's `Player.Spawn(SpawningIntoWorld)`)
-            // and announce the spawn with `12 PlayerSpawn`, which completes
-            // the server slot (`MessageBuffer.cs:925-929`).
-            S2c::WorldComplete => {
+            // `case 49` — `InitialSpawn` (`MessageBuffer.cs:2447-2453`): the
+            // server says "spawn in now"; the client installs the streamed
+            // world and answers `12 PlayerSpawn` with `SpawningIntoWorld`
+            // (`Player.Spawn(PlayerSpawnContext.SpawningIntoWorld)`,
+            // `Player.cs:37534-37580`, which also re-sends 12 from the spawn
+            // path at `:37580`). The stream's own completion is the section
+            // walk, not this message.
+            S2c::InitialSpawn => {
                 if self.net_state == net::client_state::SPAWN_REQUESTED {
                     let sections = std::mem::take(&mut self.net_pending_sections);
                     if self.client_install_world(sections) {
@@ -892,13 +905,19 @@ impl App {
                             deaths_pve: 0,
                             deaths_pvp: 0,
                             team: 0,
-                            spawn_context: 0,
+                            // `PlayerSpawnContext.SpawningIntoWorld` (`= 1`):
+                            // `Player.Spawn(context)` re-sends `12` with
+                            // `(int)(byte)context` (`Player.cs:37578-37581`).
+                            spawn_context: 1,
                         }));
                     } else {
                         self.net_disconnect("the world failed to install");
                     }
                 }
             }
+            // `case 154` on a client — `Ping.PingRecieved`
+            // (`MessageBuffer.cs:4424-4427`, `Net/Ping.cs:37-48`).
+            S2c::Ping => self.ping_received(),
             // Other players' identity/health (the C# relays 4/16/14 to all).
             S2c::PlayerInfo(pi) => {
                 let peer = pi.player_id as u32;
@@ -1471,6 +1490,27 @@ impl App {
         if matches!(self.net, NetRole::Off) {
             return;
         }
+        // `Ping.Update` (`Main.cs:17817-17820`) runs once per **frame** in
+        // `UpdateWorld_Client`, not on the 10 Hz net cadence, and needs no
+        // local player object - it only watches its own stopwatch.
+        self.net_ping_tick();
+        // `Main.TriggerPing`'s relay (`Main.cs:56546-56549`): the map markers
+        // added this frame go out as `NetPingModule` packets.
+        let pings = self
+            .map
+            .as_mut()
+            .map(|m| std::mem::take(&mut m.ping_outbox))
+            .unwrap_or_default();
+        for pos in pings {
+            self.send_module(
+                crate::app::netmodules::module_id::PING,
+                &crate::app::netmodules::Ping {
+                    x: pos[0],
+                    y: pos[1],
+                }
+                .encode(),
+            );
+        }
         self.net_timer += dt;
         if self.net_timer < 0.1 {
             return;
@@ -1501,8 +1541,6 @@ impl App {
         // The `27` diff for this machine's own projectiles, sent in the
         // direction the role dictates below.
         let (proj_sends, proj_dead) = self.projectile_sync_plan();
-        // The `82` module cadence (the 1 Hz ping on a client).
-        self.net_module_tick();
         match &self.net {
             NetRole::Host(server) => {
                 // The host's own snapshot, as `13 PlayerState`.
@@ -2929,12 +2967,78 @@ mod handshake_tests {
     #[test]
     fn the_ping_module_measures_an_rtt() {
         let (mut host_app, mut client_app) = in_world_pair();
-        // The client's 1 Hz ping cadence.
-        pump(&mut host_app, &mut client_app, 40);
+        // `Ping.Reset` runs on connect (`Netplay.cs:474`), so the stopwatch is
+        // already armed; age it past the 250 ms probe threshold
+        // (`Net/Ping.cs:29`) instead of waiting for wall-clock time.
+        client_app.net_ping_at = Some(std::time::Instant::now() - std::time::Duration::from_millis(300));
+        client_app.net_ping_waiting = false;
+        pump(&mut host_app, &mut client_app, 4);
         assert!(
             client_app.net_rtt_ms < 10_000,
             "the ping echo came back: rtt {} ms",
             client_app.net_rtt_ms
+        );
+        assert!(
+            !client_app.net_ping_waiting,
+            "PingRecieved cleared the waiting flag (`Net/Ping.cs:41`)"
+        );
+    }
+
+    /// `Main.TriggerPing` (`Main.cs:56541-56551`) relays the marker through
+    /// `NetPingModule`; the host rebroadcasts it to the other clients
+    /// (`NetPingModule.Deserialize`, `NetPingModule.cs:16-33`), where it lands
+    /// in the map's ping pool (`Main.Pings.Add`).
+    #[test]
+    fn the_map_ping_relays_through_the_ping_module() {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr.clone(), String::new()));
+        let mut second = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        assert!(second.map.is_some(), "the client map exists after the join");
+        // The first client pins a spot (the shape `handle_fullmap_ping` uses).
+        client_app
+            .map
+            .as_mut()
+            .expect("client map")
+            .trigger_ping([120.0, 45.0]);
+        let mut landed = None;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            landed = second
+                .map
+                .as_ref()
+                .and_then(|m| m.pings.first().map(|p| p.0));
+            if landed.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(landed, Some([120.0, 45.0]), "the marker reached the peer");
+        // The sender keeps its own copy and the host does not take one
+        // (`broadcast_except`).
+        assert_eq!(
+            client_app.map.as_ref().expect("client map").pings.len(),
+            1,
+            "the sender's own marker"
+        );
+        assert!(
+            host_app.map.as_ref().map_or(true, |m| m.pings.is_empty()),
+            "the host is not a ping sink"
         );
     }
 

@@ -140,7 +140,7 @@ ANALYSIS.md:7288-7293).
 | 37 | RequestPassword | `id::PASSWORD_REQUEST` | `net.rs:74` |
 | 38 | SendPassword | `id::PASSWORD` | `net.rs:75`; the one message the gate lets through at State -1 |
 | 39-48 | ReleaseItemOwnership … LiquidUpdate | NOT-FOUND | no `SendData` arm; 42/68 gate-whitelisted; 48 deprecated for NetLiquidModule (`MessageID.cs:108-109`) |
-| 49 | InitialSpawn | `id::WORLD_COMPLETE` | `net.rs:77` — **renamed**, C# means "client is spawning in", not "world done" |
+| 49 | InitialSpawn | `id::INITIAL_SPAWN` | `net.rs` — the C# meaning (the client spawns in, `MessageBuffer.cs:2447-2453`) is now the port's too: `S2c::InitialSpawn` drives `State 6 → 10` + `12 PlayerSpawn` with `SpawningIntoWorld` |
 | 50-81 | PlayerBuffs … CombatTextInt | NOT-FOUND | 72 has `SendTravelShop` (`NetMessage.cs:2645`); 77 `SendTemporaryAnimation` (:2590); 79 `SendObjectPlacement` (:2573) |
 | 82 | NetModules | `id::NET_MODULE` | `net.rs:68`; the C# arm is `switch (b4)` (`NetMessage.cs:746`) |
 | 83 | Unused83 | NOT-FOUND | deprecated (`MessageID.cs:179-180`) |
@@ -156,7 +156,7 @@ ANALYSIS.md:7288-7293).
 | 146-147 | ShimmerActions / SyncLoadout | NOT-FOUND | 147 gate-whitelisted |
 | 148 | SyncItemCannotBeTakenByEnemiesDeprecated | NOT-FOUND | **not read by `GetData`** |
 | 149-153, 155-158 | DeadCellsDisplayJar … ExtraSpawnSection | NOT-FOUND | includes `SyncItemDespawn` (151) and `SyncChestSize` (155) |
-| 154 | Ping | NOT-FOUND | C# sends it every 250 ms (`Net/Ping.cs:31`); the port has no ping msg |
+| 154 | Ping | `id::PING` | `net.rs` — `C2s::Ping`/`S2c::Ping`, the server echoes it back (`MessageBuffer.cs:4419-4428`), timed by `net_ping_tick`/`ping_received` (`Net/Ping.cs:24-48`) |
 | 159 | RequestSection | NOT-FOUND | the port streams sections unrequested on join (`host_stream_sections`) |
 | 160-162 | ItemPosition / HostToken / DamageNPCAck | NOT-FOUND | `161` compares against `Netplay.HostToken` (`MessageBuffer.cs:4471-4476`) |
 | 201-205 | *(internal)* | `INT_EDIT/PICKUP/JOINED/LEFT/TIME` | `net.rs:90-94`, deliberately outside 1..162 so the gate rejects them pre-spawn |
@@ -211,10 +211,13 @@ the edit/pickup request entry points `request_edit` (:1768) and the module sende
   (ANALYSIS.md:7294-7297).
 - **Ping:** C# `Net/Ping.cs` — `SendData(154)` every 250 ms, `CurrentPing` from a
   `Stopwatch`, with `PingRecieved()` closing the round trip; displayed through
-  `Main.ActiveNetDiagnosticsUI`. The port implements it as a NetModule
-  (`netmodules.rs::module_id::PING`, `Ping` at :186, `ModuleBody::encode` at :512) —
-  i.e. **id 154 is unported and the ping rides module 2**, so a ported client is not
-  wire-compatible with a vanilla one for ping.
+  `Main.ActiveNetDiagnosticsUI`. The port now matches: `id::PING = 154`,
+  `C2s::Ping`/`S2c::Ping` (`net.rs`), the server echoes it back
+  (`netglue.rs`, C2s dispatch), and `net_ping_tick`/`ping_received`
+  (`app/netmodules.rs`) are the `Ping.Update`/`PingRecieved` pair, with
+  `Ping.Reset` on connect. NetModule **2** is `NetPingModule` — the *map* ping
+  relay (`NetworkInitializer.cs:13`, `Main.cs:56541-56551`), which now
+  re-broadcasts markers via `broadcast_except` and adds them to `map.pings`.
 - **Chat:** C# carries chat through `NetTextModule` (module id 1) plus the old ids
   25/26 (both deprecated). Rust `netmodules.rs` has `ChatMessage`/`ServerMessage`
   (132-184) and `send_chat_message` (:467), tested by

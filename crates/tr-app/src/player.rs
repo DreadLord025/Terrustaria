@@ -896,6 +896,13 @@ pub struct Player {
     /// `Main.UpdateWorld_Players` refills the three pools
     /// (`Main.cs:17869-17873`).
     pub creative_god_mode: bool,
+    /// S1-E-34 — the F3 panel's debug god mode. `Player.ResetEffects`
+    /// rewrites `creative_god_mode` from the journey power every tick
+    /// (`Player.cs:18789` / `:25493-25497`), so a debug toggle needs its own
+    /// field: the tick ORs it into `creative_god_mode`, which keeps the three
+    /// existing god-mode gates (`Hurt`, `KillMe`, `Update_NPCCollision` and
+    /// the pool refill) working unchanged.
+    pub debug_god_mode: bool,
     /// `Player.immune` (`Player.cs:2636`-ish): the spawn i-frames flag —
     /// true while `immuneTime` counts down (`UpdateImmunity`,
     /// `Player.cs:18856-18869`).
@@ -1719,6 +1726,7 @@ impl Player {
             breath: BREATH_MAX,
             breath_cd: 0,
             creative_god_mode: false,
+            debug_god_mode: false,
             far_placement_range: false,
             regen: RegenState::default(),
             dot_death: None,
@@ -3013,6 +3021,82 @@ impl Player {
     /// the C# point and survives the mount port.
     pub fn mounted_center(&self) -> (f32, f32) {
         self.center()
+    }
+
+    /// `Player.ApplyHeadOffsetFromMount` (`Player.cs:51544-51645`): the
+    /// per-mount head offsets — the whole table is the four types 54/55/56/61
+    /// (the other mounts fall through to the zero vector), each with its
+    /// frame ladder. `Directions` is `(direction, gravDir)` (`Player.cs:3849`);
+    /// the port keeps `gravDir = 1`, so the Y halves are plain adds.
+    pub fn apply_head_offset_from_mount(&self, pos: Vec2) -> Vec2 {
+        if !self.mount.is_active() {
+            return pos;
+        }
+        let frame = self.mount.frame();
+        let d = self.facing as f32;
+        // `v * Directions` — the X half mirrors with the facing.
+        let dirs = |v: Vec2| Vec2::new(v.x * d, v.y);
+        let vector = match self.mount.kind() {
+            // `:51552-51555`
+            61 => dirs(Vec2::new(-2.0, 20.0)),
+            // `:51556-51572`
+            56 => {
+                let mut v = dirs(Vec2::new(6.0, 18.0));
+                if matches!(frame, 1 | 2 | 6 | 7 | 8 | 9) {
+                    v += dirs(Vec2::new(0.0, 2.0));
+                }
+                v
+            }
+            // `:51573-51608`
+            55 => {
+                let mut v = dirs(Vec2::new(0.0, 18.0));
+                v += match frame {
+                    1 => dirs(Vec2::new(-2.0, 0.0)),
+                    2 | 3 => dirs(Vec2::new(-4.0, -2.0)),
+                    4..=11 => dirs(Vec2::new(4.0, 2.0)),
+                    12 | 13 => dirs(Vec2::new(6.0, 0.0)),
+                    14 => dirs(Vec2::new(6.0, 2.0)),
+                    15 => dirs(Vec2::new(4.0, 2.0)),
+                    _ => Vec2::ZERO,
+                };
+                v
+            }
+            // `:51609-51643`
+            54 => {
+                let mut v = dirs(Vec2::new(23.0, -8.0));
+                v += match frame {
+                    5 => dirs(Vec2::new(0.0, 4.0)),
+                    6 => dirs(Vec2::new(2.0, 2.0)),
+                    7 => dirs(Vec2::new(2.0, 0.0)),
+                    8 | 9 | 11 | 12 | 13 | 15 => dirs(Vec2::new(4.0, 4.0)),
+                    10 | 14 => dirs(Vec2::new(4.0, 2.0)),
+                    16..=20 => dirs(Vec2::new(4.0, 4.0)),
+                    _ => Vec2::ZERO,
+                };
+                v
+            }
+            _ => Vec2::ZERO,
+        };
+        pos + vector
+    }
+
+    /// `Player.RotatedRelativePoint(pos)` (`Player.cs:4225-4251`) with the
+    /// default arguments — the full-rotation pivot every held-item anchor and
+    /// the minion home spot ride. The sleeping/sitting offset arms
+    /// (`:4240-4249`) are not modelled: the port's sleep is a pose flag with no
+    /// offset info, and the C# zeroes the angle for a sleeping player anyway
+    /// (`:4228-4231`).
+    pub fn rotated_relative_point(&self, pos: Vec2, push_from_origin_hack: i32) -> Vec2 {
+        let num = if self.sleeping { 0.0 } else { self.full_rotation };
+        // `base.Bottom + (0, gfxOffY)`.
+        let bottom = Vec2::new(self.x + WIDTH * 0.5, self.y + self.height);
+        let vector = bottom + Vec2::new(0.0, self.gfx_off_y);
+        // `mount.PlayerOffset / 2 + 4 + pushFromOriginHack` — integer division.
+        let num2 = (self.mount.player_offset() / 2 + 4 + push_from_origin_hack) as f32;
+        let vector2 =
+            Vec2::new(0.0, -num2) + Vec2::new(0.0, num2).rotate(Vec2::from_angle(num));
+        let p = pos + Vec2::new(0.0, self.gfx_off_y);
+        vector + (p - vector).rotate(Vec2::from_angle(num)) + vector2
     }
 
     /// `Player.killGuide` / `Player.killClothier` (`Player.cs:2770`/`:2772`):
@@ -7388,6 +7472,24 @@ impl Player {
         }
         pos = sc.pos;
         vel = sc.vel;
+        // `Player.cs:28225-28232`: the belt pass rides right after
+        // `SlopingCollision`, skipped while shimmering/tongued (and while
+        // locked to a tile - a state the port has no field for).
+        // ponytail: `!shimmering` guard dropped - the port has no
+        // `Player.shimmering` (the absorbed state, S1-E-16); add it there.
+        if !self.holding(38) {
+            collision::step_conveyor_belt_player(
+                world,
+                &mut pos,
+                WIDTH as i32,
+                body_h as i32,
+                1.0,
+                self.gfx_off_y,
+                self.grappling_active,
+                self.pulley,
+                self.on_track,
+            );
+        }
         self.x = pos[0];
         self.y = pos[1];
         self.vx = vel[0];
