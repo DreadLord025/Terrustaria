@@ -134,7 +134,7 @@ and one persistent store per world (the `.wld` section 10 triple).
 | `CustomInt` / `CustomFloat` counters | PARTIAL | `achievements.rs::{notify_custom_int,notify_custom_float,notify_with}` | Wrappers + `Value`-setter semantics landed (S1-E-18). Wired: `Pick` (edit), `Finish` flag/int on angler turn-in (`npcs.rs`), `Do` on acorn plant (`editing.rs`), `Move` on grounded running (`world_sim/player.rs`). `Peek` custom flag wired (`chest.rs`). `Pay` and other custom counters remain without owning systems. |
 | Notify sites: NPC kill / pickup / craft / tile | PORTED | `world_sim/npcs.rs`, `items.rs`, `app/clicks.rs`, `editing.rs` | All four wired (single-player). |
 | Notify sites: progression event / custom flag | PARTIAL | `achievements.rs`, `world_sim/{clock,editing,npcs,weather}.rs`, `chest.rs` | S1-E-18 wires progression 1/3/5/6/8/9/16 and selected custom sites (`Finish`, `Peek`, `Do`, `Move`). Remaining progression/custom rows are blocked on missing systems (e.g. 17 partial, 18/19/20, nurse/service/chat/locked-chest paths) or S1-F-15 (29). |
-| `AchievementsHelper.TryGrantingBestiary100PercentAchievement` | MISSING | — | `NotifyProgressionEvent(29)` → `BOOK_WORM` still not wired; blocked on S1-F-15 (`completion_percent`/bestiary tier bug). |
+| `AchievementsHelper.TryGrantingBestiary100PercentAchievement` | PORTED | `achievements.rs::try_grant_bestiary_100` (378), `app/netglue.rs::try_grant_bestiary_100_net` | `NotifyProgressionEvent(29)` → `BOOK_WORM` is wired: the first-key hook fires from `set_kill_count_directly`, and S1-I-5 routes it over `98` on a host. The blocker (S1-F-15's `completion_percent` tier bug) is separate and still open — the hook fires but 100 % is reached too early. |
 | `AchievementManager.Save`/`Load` (Rijndael+BSON) | PARTIAL (documented) | `achievements.rs::{save,load}`, `app/{mod,saveglue}.rs` | Port still writes `achievements.trdat` (plain text), not the vanilla Rijndael-CBC+BSON blob. S1-E-18 binds a save path at bootstrap/world swap and saves on completion and from `save_world`; headless test apps have no bound path. |
 | Achievement unlock popup / advisor / chat tag | MISSING | — | `AchievementUnlockedPopup` (`UI/InGamePopups.cs:13`), `AchievementAdvisor` (`UI/AchievementAdvisor.cs`), `AchievementTagHandler` (`UI/Chat/`) have no port. |
 | `SocialAPI.Achievements` (Steam stats) | OUT OF SCOPE | — | `PORT_MAP.md:268` marks the platform hooks as out of scope. |
@@ -148,7 +148,7 @@ and one persistent store per world (the `.wld` section 10 triple).
 | `BestiaryDatabase.Merge` → `ReportDroprates` | **MISSING** | — | No `report_droprates` anywhere in `crates/`. The bestiary's "Drops:" list reads `loot_db::drop_lines` (`ui/bestiary.rs:1203`), a hand-written 4-row table, so 168 of 172 entries print "(nothing recorded yet)". |
 | `GetBestiaryProgressReport` | PARTIAL | `completion_percent` (1440) | Same predicate (`unlock_state(...).known()`), but the denominator is the port's 172-entry roster, and the tier-4 bug inflates the value to ~95% at world start. The Zoologist gate (`Chest.cs:3265`) reads it. |
 | Bestiary filters / sorting / flavour / spawn info | MISSING | — | `Filters.cs` (184), `SortingSteps.cs` (233), `FlavorTextBestiaryInfoElement`, `RareSpawnBestiaryInfoElement`, `SpawnConditionBestiaryInfoElement`, `HighestOfMultipleUICollectionInfoProvider`, `GoldCritterUICollectionInfoProvider`, `SalamanderShellyDadUICollectionInfoProvider` — none ported. |
-| `NetBestiaryModule` (kill-count sync) | MISSING | — | No MP sync of the kill counts (`NetBestiaryModule.cs`). |
+| `NetBestiaryModule` (kill-count sync) | PORTED (Kill half) | `app/netmodules.rs::BestiaryKill`, `app/netglue.rs::{broadcast_bestiary_kill,send_npc_killed,notify_progression_net}` | S1-I-5: module 4 carries `byte 0 + (short)npcNetId + Write7BitEncodedInt(killcount)` (`NetBestiaryModule.cs:16-23`), broadcast from `NPCKillsTracker.RegisterKill`'s `netMode == 2` arm (`NPCKillsTracker.cs:23-33`) and applied by `SetKillCountDirectly` (`:40-51`). `OnPlayerJoining` (`:98-107`, called at `MessageBuffer.cs:871`) sends the joining slot the whole snapshot. The `Sight`/`Chat` halves (`NetBestiaryModule.cs:25-39`) stay unported — those trackers are not net-synced yet. The `97`/`98` kill-credit and progression wires landed alongside (`MessageBuffer.cs:3558-3569`). |
 
 ## Coverage
 
@@ -223,7 +223,7 @@ and one persistent store per world (the `.wld` section 10 triple).
 | 13 | `ENTRIES` (172) vs `BESTIARY_NPC_SHEET_IDS` (174) — 2 sheet slots have no entry row. | cosmetic | Partly — BUG-15 removed the literal drift, not the skew |
 | 14 | The kill-count and sight/chat sets iterate in sorted order vs the C#'s unspecified `Dictionary`/`HashSet` order — deterministic, but a different byte order in the save. | determinism | Yes — documented in `tr-core/src/bestiary.rs:96-100, 132-136` |
 | 15 | `banner_to_item` keeps only 3 bands (276+/88+/default); the C# has the 292/291/290/289/273/251 specials and the 186-275 bands. It agrees on the port's 11 banners but is wrong on extension. | behavioural (latent) | Partly — `tr-core/src/bestiary.rs:286-287` |
-| 16 | No MP sync of the bestiary kill counts (`NetBestiaryModule`). | behavioural (MP) | **No** |
+| 16 | ~~No MP sync of the bestiary kill counts (NetBestiaryModule).~~ **PORTED (S1-I-5)** - module 4 carries the kill count, the 97/98 wires carry the credit and the progression id; the Sight/Chat halves are still open. | behavioural (MP) | Yes - pp/netmodules.rs::BestiaryKill, pp/netglue.rs |
 | 17 | `Player.HasAchievement`, `Main.achievementTracker` and a `BossAchievement` type **do not exist** in the 1.4.5.8 decompile. The boss kill requirement is the bestiary's banner→`KillsToBanner` chain, and the achievement query is `Main.Achievements.GetAchievement(name).IsCompleted`. | n/a | n/a |
 | 18 | `Achievement.completed` (flag) vs `is_completed()` (derived) disagree for a zero-condition row before and after a load. | behavioural (minor) | **No** |
 | 19 | `CustomFloat` sub-unit progress (`Condition.frac`) is in-memory only; `load_pairs` resets it because the text save stores the whole `value` only. | behavioural (minor) | **No** (documented, S1-E-18) |
@@ -256,8 +256,10 @@ and one persistent store per world (the `.wld` section 10 triple).
   completed achievement (not only the last). Fixes #10, #11.
 - **S** — Reconcile `ENTRIES` (172) with `BESTIARY_NPC_SHEET_IDS` (174) and add
   a test that every sheet slot has an entry and vice versa. Fixes #13.
-- **M** — Port `NetBestiaryModule`: broadcast `SerializeKillCount` on a kill and
-  sync the counts on player join. Fixes #16. Dep: the netcode module's shape.
+- **DONE (S1-I-5, 2026-11-16)** — `NetBestiaryModule` is ported: the host broadcasts
+  `SerializeKillCount` on a kill (`NPCKillsTracker.cs:23-33`) and syncs the counts on
+  player join (`:98-107`), with the `97`/`98` achievement wires
+  (`MessageBuffer.cs:3558-3569`). Fixes #16. The `Sight`/`Chat` halves remain open.
 - **S** — Add a data test that pins every Rust row's condition count against
   `AchievementInitializer.cs` (137 rows / 180 conditions) so the `CreateMany`
   class of bug cannot return. Dep: the first S task.

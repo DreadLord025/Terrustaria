@@ -963,6 +963,7 @@ impl App {
                 liquids,
                 waterfall,
                 rain,
+                sandstorm,
                 sand,
                 dust,
                 liquid_alpha,
@@ -2238,6 +2239,8 @@ impl App {
                         world,
                         self.stepper.paused,
                         self.player.as_ref().is_some_and(|p| p.debug_god_mode),
+                        rain.is_raining(),
+                        sandstorm.happening,
                     );
                 }
 

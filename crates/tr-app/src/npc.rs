@@ -2939,6 +2939,16 @@ pub struct Npc {
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
     pub immune: [i32; 256],
+    /// `NPC.playerInteraction[256]` (`NPC.cs:6085`): who has hit this NPC.
+    /// `AchievementsHelper.NotifyNPCKilled` fans the `97` kill credit out to
+    /// exactly these players (`AchievementsHelper.cs:210-216`), and
+    /// `NPCLoot`'s `GetWereThereAnyInteractions` gate reads it
+    /// (`NPC.cs:78840`, `AnyInteractions` `:78722-78742`). The port fills it
+    /// from `StrikeNPC`'s `owner` (`NPC.cs:81266-81273`).
+    /// ponytail: `interactedWithPlayerLocally` (`NPC.cs:6089`) is skipped — its
+    /// only reader is `AnyBossHindersRespawnTime` (`Player.cs:39100`), which
+    /// the port has not ported yet; add it with that gate.
+    pub player_interaction: [bool; 256],
     /// `NPC.SpawnedFromStatue` (`NPC.cs:6061`): set by the wire-triggered
     /// statue spawns; gates the loot (`NPCLoot`'s StatueSpawnedDropRarity
     /// check, `NPC.cs:78849`).
@@ -4051,6 +4061,7 @@ impl Npc {
             anim: 0.0,
             hurt_cd: 0.0,
             immune: [0; 256],
+            player_interaction: [false; 256],
             spawned_from_statue: false,
             buffs: NpcBuffs::for_kind(kind),
             frame: 0,
@@ -5105,6 +5116,7 @@ impl Npc {
         from_x: f32,
         knock_back: f32,
         crit: bool,
+        owner: Option<u8>,
     ) -> bool {
         {
             let n = &npcs[idx];
@@ -5112,7 +5124,7 @@ impl Npc {
                 return false;
             }
         }
-        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit)
+        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit, owner)
     }
 
     /// `NPC.StrikeNPC` from a projectile: the same pool arm, without the
@@ -5125,11 +5137,12 @@ impl Npc {
         from_x: f32,
         knock_back: f32,
         crit: bool,
+        owner: Option<u8>,
     ) -> bool {
         if npcs[idx].hp <= 0 {
             return false;
         }
-        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit)
+        Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit, owner)
     }
 
     /// `NPC.StrikeNPC_Inner` (`NPC.cs:81235-81458`) with the `realLife`
@@ -5145,6 +5158,7 @@ impl Npc {
         from_x: f32,
         knock_back: f32,
         crit: bool,
+        owner: Option<u8>,
     ) -> bool {
         // `NPC.takenDamageMultiplier` (`NPC.cs:81244-81246`): the solar
         // crawltipede's tail (414) takes ten times the damage
@@ -5158,6 +5172,17 @@ impl Npc {
                 npcs[idx].max_hp = npcs[carrier].max_hp;
             }
             None => npcs[idx].hp -= amount,
+        }
+        // `NPC.StrikeNPC_Inner`'s interaction block (`NPC.cs:81266-81273`),
+        // ahead of the knockback like the C#: `owner == Main.myPlayer` sets
+        // the local flag; single-player applies the full interaction too
+        // (`Main.netMode == 0`). In multiplayer the host's full interaction
+        // arrives through `PlayerInteraction` (`MessageBuffer.cs:1789`), which
+        // the caller passes as `owner`.
+        if let Some(owner) = owner {
+            let target = Npc::carrier_index(npcs, idx).unwrap_or(idx);
+            // `ApplyInteraction_Inner` (`NPC.cs:80035-80056`).
+            npcs[target].player_interaction[owner as usize] = true;
         }
         // The knockback half (`NPC.cs:81389-81458`).
         let n = &mut npcs[idx];
@@ -17789,18 +17814,18 @@ mod tests {
         // A strike on a body link: the head's life takes the damage, the
         // body mirrors it.
         let body_x = npcs[1].x;
-        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false));
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None));
         assert_eq!(npcs[0].hp, pool - 25, "the carrier's life took the hit");
         assert_eq!(npcs[1].hp, pool - 25, "the segment mirrors the carrier");
         assert_eq!(npcs[1].max_hp, pool, "the segment's lifeMax is the carrier's");
         // The tail is a segment too: its hit lands on the same pool.
         let last = npcs.len() - 1;
         let tail_x = npcs[last].x;
-        assert!(Npc::strike_melee(&mut npcs, last, 10, tail_x, 5.0, false));
+        assert!(Npc::strike_melee(&mut npcs, last, 10, tail_x, 5.0, false, None));
         assert_eq!(npcs[0].hp, pool - 35, "the tail hits the same pool");
         // The head's own hit: its life IS the pool (`realLife = whoAmI`).
         let head_x = npcs[0].x;
-        assert!(Npc::strike_melee(&mut npcs, 0, 5, head_x, 5.0, false));
+        assert!(Npc::strike_melee(&mut npcs, 0, 5, head_x, 5.0, false, None));
         assert_eq!(npcs[0].hp, pool - 40, "the head's own life is the pool");
         // The worm pass keeps the mirror: the segments read the carrier's
         // life (`NPC.cs:81377-81378`).
@@ -17825,7 +17850,7 @@ mod tests {
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the EoW assembled ({})", npcs.len());
         let body_x = npcs[1].x;
-        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false));
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None));
         assert_eq!(npcs[1].hp, npcs[1].max_hp - 25, "the segment owns its life");
         assert_eq!(npcs[0].hp, npcs[0].max_hp, "the head's pool is untouched");
     }

@@ -119,15 +119,25 @@ pub(crate) fn advance_time_with_events(
         let rng = app.rngs.stream(crate::app::RngKey::UpdateTime);
         advance_time(&mut app.world, dt, rng, any_player_life_over_120)
     };
+    // The eclipse/blood-moon farewell rows ride before the scheduler block:
+    // the RNG borrow below (`UpdateTime`'s stream) is exclusive, so the
+    // achievement fan-out (which needs `&mut App`) resolves first.
+    if was_day && !app.world.day_time && eclipse_was_up {
+        let _ = app.notify_progression_net(3);
+    }
+    if !was_day && app.world.day_time {
+        if blood_moon_was_up {
+            let _ = app.notify_progression_net(5);
+        }
+        // `Main.cs:65374`'s dawn row.
+        let _ = app.notify_progression_net(1);
+    }
     // The event schedulers' draws ride the same UpdateTime stream the
     // boundary rolls consumed (S1-A-10: one stream, the C#'s
     // `UpdateWorld_Time` order).
     let rng = app.rngs.stream(crate::app::RngKey::UpdateTime);
     if was_day && !app.world.day_time {
-        // StartNight: the eclipse row, then the clear.
-        if eclipse_was_up {
-            let _ = app.achievements.notify_progression(3);
-        }
+        // StartNight: the eclipse row cleared above, then the world clear.
         app.world.eclipse = false;
         // `UpdateTime_StartNight`'s event pair (`Main.cs:65225-65226`):
         // `BirthdayParty.CheckNight()` then `LanternNight.CheckNight()` —
@@ -147,12 +157,8 @@ pub(crate) fn advance_time_with_events(
             &mut |lo, hi| rng.next_range(lo, hi),
         );
     } else if !was_day && app.world.day_time {
-        // StartDay: the blood-moon row, the clear, then the dawn row.
-        if blood_moon_was_up {
-            let _ = app.achievements.notify_progression(5);
-        }
+        // StartDay: the blood-moon row cleared above, then the world clear.
         app.world.blood_moon = false;
-        let _ = app.achievements.notify_progression(1);
         // `UpdateTime_StartDay`'s event pair (`Main.cs:65374-65375`):
         // `BirthdayParty.CheckMorning()` then `LanternNight.CheckMorning()`.
         let party_girl = app.npcs.iter().any(|n| {
@@ -181,7 +187,7 @@ pub(crate) fn advance_time_with_events(
         // `CheckForAchievement`: a natural party coming up credits
         // THROW_A_PARTY (25).
         if party_up {
-            let _ = app.achievements.notify_progression(25);
+            let _ = app.notify_progression_net(25);
         }
         crate::world_events::check_morning_lanterns(&mut app.world_events);
     }

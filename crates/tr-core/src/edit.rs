@@ -2058,6 +2058,119 @@ pub fn pot_break_sound(style: i32) -> u16 {
     }
 }
 
+/// One `KillTile_PlaySounds` cue: the legacy `(sound id, style)` pair — the
+/// app resolves it to the pinned asset ([`crate::audio`], research D3).
+pub type SoundCue = (u16, u16);
+
+/// The cues one `KillTile_PlaySounds` call emits, in play order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct KillSounds {
+    /// The type arm (`WorldGen.cs:66434-66551`).
+    pub primary: Option<SoundCue>,
+    /// The extra cue the 231 arm adds (`:66518-66521`, `SoundID.Item173`).
+    pub extra: Option<SoundCue>,
+    /// The `!fail` shatter tail (`:66554-66574`).
+    pub shatter: Option<SoundCue>,
+}
+
+/// `WorldGen.KillTile_PlaySounds(i, j, fail, tileCache)`
+/// (`WorldGen.cs:66427-66575`) for the hit cell's `kind`/`frame_x`. `fail`
+/// mirrors the C# argument (`false` on the real break, `true` from the
+/// failure-tick callers, `Player.cs:39880`/`Projectile.cs:70219`).
+///
+/// Deviation (research D3): the 147/224 arm rolls `genRand.Next(2)` between
+/// `Item48`/`Item49`; the port pins `Item_48` and draws nothing — audio-only
+/// variation with no state effect.
+pub fn kill_tile_sound(kind: u16, frame_x: i16, fail: bool) -> KillSounds {
+    let fx = i32::from(frame_x);
+    let grass = Some((6, 1));
+    // :66434-66448 — the tail-early arms.
+    let first = if kind == 127 || kind == 623 {
+        Some((2, 27))
+    } else if kind == 147 || kind == 224 {
+        // :66440-66447 — the genRand roll between Item48/Item49 (D3: pinned).
+        Some((2, 48))
+    } else if matches!(kind, 161 | 163 | 164 | 200 | 541 | 736) {
+        Some((2, 50))
+    } else if matches!(kind, 518 | 519 | 528 | 529 | 549 | 637 | 638 | 636) {
+        grass
+    } else if kind == 530 && fx < 270 {
+        grass
+    } else if kind == 705 && fx % 6 < 270 {
+        grass
+    } else {
+        // :66467-66552 — the switch.
+        match kind {
+            // :66469-66478
+            3 | 110 | 254 | 24 => grass,
+            // :66480-66484 — `Main.tileAlch` + the huge herb/plant list.
+            _ if crate::tileobject::tile_alch(kind)
+                || matches!(
+                    kind,
+                    384 | 227 | 32 | 51 | 697 | 52 | 61 | 703 | 62 | 69 | 655 | 71 | 73 | 74
+                        | 113 | 115 | 184 | 192 | 205 | 233 | 352 | 382 | 624 | 656 | 700 | 701
+                ) =>
+            {
+                grass
+            }
+            // :66485-66489 — the mummy's killed cue (Style 11).
+            485 => Some((4, 11)),
+            // :66490-66494
+            201 => grass,
+            // :66495-66499
+            481 | 482 | 483 => Some((2, 127)),
+            // :66500-66504 — the long dirt/stone/metal list → Tink.
+            _ if matches!(
+                kind,
+                1 | 6 | 7 | 8 | 9 | 22 | 140 | 25 | 37 | 38 | 39 | 41 | 43 | 44 | 45 | 46
+                    | 47 | 48 | 56 | 58 | 63 | 64 | 65 | 66 | 67 | 68 | 75 | 76 | 107 | 108
+                    | 111 | 117 | 118 | 119 | 120 | 121 | 122 | 150 | 151 | 152 | 153 | 154
+                    | 155 | 156 | 160 | 161 | 166 | 167 | 168 | 169 | 175 | 176 | 177 | 203
+                    | 202 | 204 | 206 | 211 | 221 | 222 | 223 | 226 | 248 | 249 | 250 | 272
+                    | 273 | 274 | 478 | 284 | 325 | 346 | 347 | 348 | 350 | 367 | 357 | 368
+                    | 369 | 370 | 407 | 472 | 473 | 500 | 501 | 502 | 503 | 546 | 557 | 566
+                    | 618 | 408 | 409 | 669 | 670 | 671 | 672 | 673 | 674 | 675 | 676 | 677
+                    | 678 | 679 | 680 | 681 | 682 | 683 | 684 | 685 | 686 | 687 | 689 | 688
+                    | 690 | 691 | 692 | 726 | 749 | 747 | 743 | 735 | 737 | 745 | 750
+            ) =>
+            {
+                Some((21, 1))
+            }
+            // :66505-66509
+            666 => Some((2, 177)),
+            // :66510-66514
+            739 => Some((3, 25)),
+            // :66515-66523 — the killed sound, plus the crate's item for 231.
+            231 | 195 | 474 => Some((4, 1)),
+            // :66524-66528
+            26 | 695 if fx >= 54 => Some((4, 1)),
+            // :66529-66539 — the inner switch.
+            314 => Some((2, 52)),
+            330..=333 => Some((18, 1)),
+            // :66540-66549 — the default: the glass family pops only on a real
+            // break, everything else digs except the silent 138.
+            _ if !fail
+                && (matches!(kind, 162 | 385 | 129) || (kind == 165 && fx < 54)) =>
+            {
+                Some((2, 27))
+            }
+            _ if kind == 138 => None,
+            _ => Some((0, 1)),
+        }
+    };
+    KillSounds {
+        primary: first,
+        extra: (kind == 231).then_some((2, 173)),
+        // :66554-66574 — the `!fail` shatter tail.
+        shatter: (!fail
+            && matches!(
+                kind,
+                13 | 54 | 326 | 327 | 328 | 329 | 345 | 458 | 459 | 507 | 508 | 708 | 748
+            ))
+        .then_some((13, 1)),
+    }
+}
+
 /// `WorldGen.CheckPot` (`WorldGen.cs:56797-57016`) for tile 28 — the echo pot
 /// 653 is out of scope. The 2x2 needs all four cells active type-28 with the
 /// origin derived from the frames (:56808-56817 — the column from `frameX /
@@ -6212,6 +6325,73 @@ mod tests {
         ] {
             assert_eq!(pot_break_sound(style), sound, "style {style}");
         }
+    }
+
+    #[test]
+    fn s1_e_21c_kill_tile_sound_table() {
+        // `WorldGen.KillTile_PlaySounds` (`WorldGen.cs:66427-66575`) — the
+        // head arms, the switch arms, the default and the shatter tail.
+        let s = |kind: u16, fx: i16, fail: bool| kill_tile_sound(kind, fx, fail);
+        // :66434-66437 — the Item27 family (a real break keeps the tail off).
+        assert_eq!(s(127, 0, false).primary, Some((2, 27)));
+        assert_eq!(s(623, 0, false).primary, Some((2, 27)));
+        // :66438-66448 — 147/224 resolve to Item48 (D3: the roll is pinned).
+        assert_eq!(s(147, 0, false).primary, Some((2, 48)));
+        assert_eq!(s(224, 0, false).primary, Some((2, 48)));
+        // :66449-66452 / :66453-66456
+        assert_eq!(s(161, 0, false).primary, Some((2, 50)));
+        assert_eq!(s(736, 0, false).primary, Some((2, 50)));
+        assert_eq!(s(518, 0, false).primary, Some((6, 1)));
+        assert_eq!(s(636, 0, false).primary, Some((6, 1)));
+        // :66457-66464 — the two frame-gated grass arms.
+        assert_eq!(s(530, 269, false).primary, Some((6, 1)));
+        assert_eq!(s(530, 270, false).primary, Some((0, 1)));
+        // :66461 — `frameX % 6 < 270` is always true (the C# quirk), so 705
+        // is grass at every frame.
+        assert_eq!(s(705, 0, false).primary, Some((6, 1)));
+        assert_eq!(s(705, 276, false).primary, Some((6, 1)));
+        // :66469-66478 — the switch's grass arms.
+        for kind in [3u16, 110, 254, 24] {
+            assert_eq!(s(kind, 0, false).primary, Some((6, 1)), "kind {kind}");
+        }
+        // :66480-66484 — `Main.tileAlch` (82/83/84) + the hair/herb list.
+        for kind in [82u16, 83, 84, 384, 227, 32] {
+            assert_eq!(s(kind, 0, false).primary, Some((6, 1)), "kind {kind}");
+        }
+        // :66485-66489 — the mummy's killed style 11.
+        assert_eq!(s(485, 0, false).primary, Some((4, 11)));
+        // :66495-66499
+        assert_eq!(s(481, 0, false).primary, Some((2, 127)));
+        // :66500-66504 — the dirt/stone list → Tink.
+        assert_eq!(s(1, 0, false).primary, Some((21, 1)));
+        assert_eq!(s(750, 0, false).primary, Some((21, 1)));
+        // :66505-66509 / :66510-66514 / :66515-66523
+        assert_eq!(s(666, 0, false).primary, Some((2, 177)));
+        assert_eq!(s(739, 0, false).primary, Some((3, 25)));
+        assert_eq!(s(231, 0, false).primary, Some((4, 1)));
+        assert_eq!(s(231, 0, false).extra, Some((2, 173)));
+        assert_eq!(s(195, 0, false).extra, None);
+        // :66524-66528 — the frame-gated altar arm.
+        assert_eq!(s(26, 54, false).primary, Some((4, 1)));
+        assert_eq!(s(26, 53, false).primary, Some((0, 1)));
+        // :66529-66539
+        assert_eq!(s(314, 0, false).primary, Some((2, 52)));
+        assert_eq!(s(331, 0, false).primary, Some((18, 1)));
+        // :66540-66549 — the default: the glass family only on a real break.
+        assert_eq!(s(162, 0, false).primary, Some((2, 27)));
+        assert_eq!(s(162, 0, true).primary, Some((0, 1)));
+        assert_eq!(s(165, 0, false).primary, Some((2, 27)));
+        assert_eq!(s(165, 54, false).primary, Some((0, 1)));
+        assert_eq!(s(138, 0, false).primary, None, "138 breaks silently");
+        assert_eq!(s(30, 0, false).primary, Some((0, 1)));
+        // :66554-66574 — the shatter tail rides on `!fail` only.
+        assert_eq!(s(13, 0, false).primary, Some((0, 1)));
+        assert_eq!(s(13, 0, false).shatter, Some((13, 1)));
+        assert_eq!(s(13, 0, true).shatter, None);
+        for kind in [54u16, 326, 748] {
+            assert_eq!(s(kind, 0, false).shatter, Some((13, 1)), "kind {kind}");
+        }
+        assert_eq!(s(21, 0, false).shatter, None);
     }
 
     #[test]

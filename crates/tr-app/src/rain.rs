@@ -713,7 +713,7 @@ impl Rain {
     /// `IsRainingForever` has no save field — both cited inline. `player_luck`
     /// is `GetPlayerWithHighestLuck().luck` (`Player.cs:18213-18229` — the
     /// port's single player; a fresh `Player()` with luck 0 when none).
-    fn start_rain(&mut self, world: &World, remix_world: bool, player_luck: f32) {
+    pub(crate) fn start_rain(&mut self, world: &World, remix_world: bool, player_luck: f32) {
         // `Main.cs:64661`.
         if !remix_world && world.world_surface > 50.0 && !self.raining {
             // `Main.cs:64663-64667`: `range = 25`; the tenth-anniversary 5 needs
@@ -818,7 +818,7 @@ impl Rain {
     /// decays through the visual ramp (`Main.cs:61928-61937`'s not-raining arm —
     /// `target` 0). The `instant` default false is the ported arm;
     /// `IsRainingForever` has no save field.
-    fn stop_rain(&mut self) {
+    pub(crate) fn stop_rain(&mut self) {
         self.rain_time = 0; // `:64648`
         self.raining = false; // `:64649`
         self.target = 0.0; // `:64650` `Main.maxRaining = 0f`

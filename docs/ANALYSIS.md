@@ -229,6 +229,21 @@ multiplayer-client path, never a single-player or menu one (research/42, finding
 - **Bestiary**: the sightings/chats stay empty until the recording behaviour lands
   (owner decision, state + IO only); the kill clamp is one-sided (the file keeps the raw
   value, the in-memory tracker clamps it).
+- **Bestiary kill-credit + progression wires (S1-I-5)**: three deliberate gaps, all
+  recorded rather than faked:
+  (a) `NPC.interactedWithPlayerLocally` (`NPC.cs:6089`) is **not** ported — its only
+  reader is `Player.AnyBossHindersRespawnTime` (`Player.cs:39100`), which the port has
+  not ported; the field's writer (`NPC.cs:81266-81269`) is skipped with it
+  (`npc.rs::player_interaction`'s `ponytail:` comment).
+  (b) `NetBestiaryModule` carries **only** the `Kill` unlock kind
+  (`NetBestiaryModule.cs:16-23`/`:49-56`); the `Sight`/`Chat` bodies
+  (`:25-39`) are never sent and their tag bytes are rejected on read, because
+  `NPCWasNearPlayerTracker`/`NPCWasChatWithTracker` are not net-synced (see the
+  Bestiary collection bullet above).
+  (c) `AchievementsHelper.NotifyNPCKilled`'s SP arm (`:202-208`) and its MP fan-out
+  (`:210-216`) are both keyed on `playerInteraction[]`, but the host's own slot has no
+  client outbox — the port relies on `Server::send` to a non-existent slot being a
+  no-op, where the C#'s `i < 255` bound simply excludes the server. Same net effect.
 - **Creative powers**: the id-8 slider is a `[0,1]` cache on the wire and the ported rate
   1..24 in memory — the codec remaps both directions
   (`ModifyTimeRate.UpdateInfoFromSliderValueCache:877-880`); the three ids the port has
@@ -14556,6 +14571,48 @@ Deliberate deviations:
    hurts, `NPC.cs:81535-81545`) have no ported kinds.
 
 
+## The tile-break sound table (S1-E-21c, 2026-11-16)
+
+`WorldGen.KillTile_PlaySounds` (`WorldGen.cs:66427-66575`, called from
+`KillTile` `:63558`) is the biggest single missing cue table: ~200 tile types
+resolve to one of 13 asset families. It is a pure per-type switch — no state,
+no draw except the 147/224 roll — so it ports as a table.
+
+`tr-core/src/edit.rs::kill_tile_sound(kind, frame_x, fail)` returns
+`KillSounds { primary, extra, shatter }`; the app maps each `(sound id, style)`
+through `world_sim/editing.rs::kill_cue` to a pinned asset and the case's
+volume scale (`LegacySoundPlayer.PlaySound`, `:360-1100`). `break_tile` plays
+the hit cell's cues **once**, before the loot, and the pot events now play
+their real `CheckPot` cues (4/6/13 → `NPC_Killed_1`/`Grass`/`Shatter`) rather
+than the `Dig_1` stand-in.
+
+Deliberate deviations:
+
+1. **Variation families are pinned** (research D3): `Dig_0..2`, `Tink_0..2`
+   and `Item48`/`Item49` are a per-play `Main.rand`/`genRand` pick in the C#;
+   the port plays one fixed member (`Dig_1`, `Tink_1`, `Item_48`). Audio-only:
+   no state depends on the pick.
+2. **The per-play pitch jitter is not applied at the call site**: the
+   `LegacySoundPlayer` cases roll `Main.rand.Next(-10,11)*0.01` (and the
+   item/dig windows) per play. `sound.rs` already carries the roll machinery
+   (`legacy_family_pitch`, S1-E-22) with `Playback.pitch`; the headless
+   `Audio::play_at` path plays without a resampler, so the roll is not wired
+   here. Recorded as an audio-output gap, not a behaviour one.
+3. **The per-family instance pools are not modelled**: the C# stops and
+   recreates `SoundInstanceDig[n]`/`SoundTink[n]`/`SoundItem[n]` per play. The
+   port's `play_at` opens a fresh `rodio` stream per call; the audible result is
+   the same single-shot cue (the tracked-sound layer, S1-E-23, is for the
+   looping/ambient families).
+4. **The per-drop sound is gone**: the port used to play `Dig_1` once per
+   dropped item in `break_tile`. The C# plays the break cue once, at the hit
+   cell, from `KillTile_PlaySounds` — `Item.NewItem` plays nothing. The
+   per-drop cue was an invention and is removed.
+5. **The failure-tick callers stay unported**: `Player.cs:39880` and
+   `Projectile.cs:70219` play the table with `fail: true` while a pickaxe
+   chips an unbreakable tile / a drill bit bites. The port has no per-tick chip
+   path (it refuses the break outright), so only `fail: false` is wired; the
+   table itself carries the `fail` arms (the glass pop and the shatter tail).
+
 ## The hover family's residuals (S1-D-3l, 2026-11-14)
 
 `AI_005_EaterOfSouls` (`NPC.cs:50244-50760`) is the shared fly core of the
@@ -15322,3 +15379,80 @@ Deliberate deviations, recorded rather than guessed:
 * `FocusHelper.AllowPlayerToEmitEffects` (the `!WorldUpdateStepper.DrawnThisUpdate`
   split between a drawn and a stepped frame) is unported, so an inferno-ring
   animation would always advance - moot while the draw is unwritten.
+
+## S1-E-35 - weather control rows (deviation record)
+
+* The F3 rows toggle the two events through vanilla's own entry points
+  (`Rain::start_rain`/`stop_rain` = `Main.StartRain` `Main.cs:64659-64727` /
+  `Main.StopRain` `:64644-64658`; `Sandstorm::start_sandstorm`/`stop_sandstorm`
+  = `Sandstorm.cs:117-129`), never a hand-written state write — the
+  duration/strength ladders and their stream draws are the C# ones.
+* The catalogue cites HEROsMod `GeneralMessages.cs:467-520`; that mod's source
+  is not in `decompiled/`, so only its local half (start/stop) is ported. Its
+  network sync half has no target: the port is single-player, so no
+  `NetMessage` is sent from a debug row (same convention as the S1-E-37 event
+  rows).
+* `world_rows` takes the live `rain.is_raining()` / `sandstorm.happening` flags
+  from the frame instead of reaching into `App` itself, keeping the draw side a
+  pure function of the state it shows (the `god_mode` precedent).
+
+## The Steam transport divergence (S1-I-6, 2026-11-16)
+
+The vanilla runs multiplayer over a pluggable `ISocket`
+(`Net/Sockets/ISocket.cs:3-13`: `Connect`/`AsyncSend`/`AsyncReceive`/
+`StartListening`/`GetRemoteAddress`). Two implementations exist: `TcpSocket`
+(`Net/Sockets/TcpSocket.cs`, 184 lines, the typed-IP path) and `SocialSocket`
+(`Net/Sockets/SocialSocket.cs`, 70 lines), which forwards every call to
+`SocialAPI.Network` — on the retail PC build the Steam module, whose reader and
+writer threads are `Social/Steam/SteamP2PReader.cs` (138) /
+`Social/Steam/SteamP2PWriter.cs` (79) over `Steamworks.Networking`, with the
+lobby browser in `Social/Steam/Lobby.cs` (133) and the client/server modules
+`Social/Steam/NetClientSocialModule.cs` (238) /
+`Social/Steam/NetServerSocialModule.cs` (215). `Netplay.StartListening`
+(`Netplay.cs:222-229`) starts **both** listeners when a social API is present,
+and `Netplay.StartSocialClient` (`:610-617`) is the join path the "Join via
+Steam" row takes; the lobby id the world sync carries is
+`NetSocialModule.GetLobbyId` (`Social/Base/NetSocialModule.cs:37`,
+`Social/Steam/NetClientSocialModule.cs:92`).
+
+**The port's transport is TCP only, deliberately.** `crates/tr-app/src/net.rs`
+binds `TcpListener::bind(("0.0.0.0", port))` (`:3022`, `Server::start` `:3021`)
+and dials `TcpStream::connect(addr)` (`:3331`, `Client::connect` `:3330`); there
+is no `ISocket` trait and no social module. This is the accepted scope of the
+ROADMAP non-goals (`Social/**` — "Steam + WeGame modules, the Workshop, P2P,
+cloud") and `PORT_MAP.md`'s "not ported (by design)" row.
+
+What is **unchanged** by the swap — and why this is a transport divergence, not
+a protocol one:
+
+* the wire frame is the vanilla's (`[u16 LE length][u8 id][body]`,
+  `NetMessage.cs:1677-1684`), the version literal is `Terraria326`
+  (`net.rs:36`), and the join/handshake state machines are ported verbatim
+  (`Netplay.cs:459-544`, the `MessageBuffer.cs` cases);
+* the message ids, the codecs and the send/receive order are the C#'s, so a
+  port-client <-> port-host session behaves as the vanilla wire does.
+
+What **differs**, all observable:
+
+* **No lobby.** `WorldInfo.lobby_id` (`net.rs:1039`) is always `0`
+  (`:3506`/`:3697`); the vanilla client reads the host's lobby id from the join
+  sync. The port cannot be discovered or joined through a lobby browser — the
+  player types an `ip:port`.
+* **No NAT traversal or relay.** Steam P2P (`SteamP2PWriter.QueueSend`,
+  `SteamP2PWriter.cs:41`) reaches peers behind NAT; the port needs a reachable
+  TCP port (default `7777`, `Netplay.cs:33`).
+* **No invites, friends or rich presence.** `SocialAPI.Network.CanInvite`/
+  `OpenInviteInterface` (`IngameOptions.cs:178`/`:264`) stay false, so the invite
+  row is absent exactly as on a no-Steam vanilla build
+  (`crates/tr-app/src/app/settings_ui.rs`), and the multiplayer menu keeps the
+  "Join via Steam" row as a `Hint("Steam join is not ported yet")` dead row
+  (`crates/tr-app/src/menu/pages.rs:411`).
+* **No vanilla interoperability.** The handshake is port-internal (ROADMAP
+  non-goals), so a port client cannot join a Steam-hosted vanilla server even
+  where the wire ids align.
+
+Not ported and not planned: `Terraria/Social/**` (Steam + WeGame), the Workshop,
+Steam Cloud, the overlay / rich-presence / friends modules and the join-request
+manager. Porting the transport would require vendoring Steamworks (its DLL sits
+unused beside the tree) and would not change the port's own wire, so the ROADMAP
+keeps it as this documented divergence rather than a build item.
