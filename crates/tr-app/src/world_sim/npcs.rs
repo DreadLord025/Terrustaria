@@ -2693,7 +2693,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         crate::town::move_room(&mut rooms, npc, (hx, hy));
                         app.town_rooms = rooms;
                         // `:5460`: the relocation fires NO_HOBO (progression 8).
-                        let _ = app.achievements.notify_progression(8);
+                        let _ = app.notify_progression_net(8);
                     } else if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
                         // `WorldGen.cs:5564-5565`: the arrival writes its room.
                         n.home = Some((hx, hy));
@@ -2703,7 +2703,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // `:5580`) waits on a ported Truffle kind, and
                         // REAL_ESTATE_AGENT (17, `:5671`) on the full
                         // `CheckAchievement_RealEstateAndTownSlimes` roster.
-                        let _ = app.achievements.notify_progression(8);
+                        let _ = app.notify_progression_net(8);
                     }
                 }
             }
@@ -2905,15 +2905,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // kill, and no ported kind fails `IsNPCValidForBestiaryKillCredit`.
         let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
         app.bestiary.kills.register_kill(entry.credit_id);
+        // `NPCKillsTracker.RegisterKill`'s `netMode == 2` half
+        // (`NPCKillsTracker.cs:29-32`): the host broadcasts the new count
+        // through `NetBestiaryModule.SerializeKillCount`.
+        app.broadcast_bestiary_kill(
+            entry.net_id,
+            app.bestiary.kills.get_kill_count(entry.credit_id),
+        );
         // `AchievementsHelper.TryGrantingBestiary100PercentAchievement` (`AchievementsHelper.cs:81-84`):
         // when the bestiary completion reaches 100%, fire progression event 29 (BOOK_WORM).
-        let _ = app.achievements.try_grant_bestiary_100(&app.bestiary.kills);
-        // `AchievementsHelper.NotifyNPCKilled` (`GameContent/Achievements/`):
-        // the kill feeds the NPCKilledCondition rows (the M6-ACH-1 hook —
-        // the original wire pass lost it to a mid-script assert).
-        let _ = app
-            .achievements
-            .notify(achievements::CondKind::NpcKilled(entry.net_id));
+        let _ = app.try_grant_bestiary_100_net();
+        // `AchievementsHelper.NotifyNPCKilled` (`AchievementsHelper.cs:200-217`):
+        // the process whose player interacted gets the credit locally
+        // (`:202-208`, and in MP the host's own `97` loops back through its
+        // player slot, `:210-216`); a host additionally fans `97` out to every
+        // other interactor.
+        if npc.player_interaction[app.local_id as usize] {
+            let _ = app
+                .achievements
+                .notify(achievements::CondKind::NpcKilled(entry.net_id));
+        }
+        app.send_npc_killed(npc, entry.net_id as i16);
         // `NPC.CountKillForBannersAndDropThem` (`NPC.cs:79818-79827`) →
         // `BannerSystem.AddNPCKillBy` (M2-BUFF-8): the milestone spawns the
         // banner item at the death spot and announces the tally in the
@@ -2952,7 +2964,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         &mut app.world,
                         app.rngs.stream(crate::app::RngKey::UpdateNpcs),
                     );
-                    let _ = app.achievements.notify_progression(16);
+                    let _ = app.notify_progression_net(16);
                 }
             }
             NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
@@ -2993,7 +3005,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // early-return so a repeat death cannot re-fire it.
                 if !app.world.hard_mode {
                     app.world.hard_mode = true;
-                    let _ = app.achievements.notify_progression(9);
+                    let _ = app.notify_progression_net(9);
                 }
             }
             _ => {}
@@ -8737,7 +8749,7 @@ mod worm_tests {
         let tail = npcs.len() - 1;
         assert_eq!(npcs[tail].kind, NpcKind::SolarCrawltipedeTail);
         let tail_x = npcs[tail].x;
-        assert!(Npc::strike_melee(&mut npcs, tail, 7, tail_x, 0.0, false));
+        assert!(Npc::strike_melee(&mut npcs, tail, 7, tail_x, 0.0, false, None));
         assert_eq!(npcs[0].hp, pool - 70, "the tail's hit is multiplied by ten");
     }
 

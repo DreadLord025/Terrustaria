@@ -324,3 +324,7 @@ crates/tr-app/src/projectile.rs|one tick, plus another on|S1-D-5 - the aiStyle-6
 crates/tr-app/src/craft_filter.rs|fn fits_filter|S1-H-7 - the crafting panel filter strip: the eleven ItemFilters predicates (ItemFilters.cs:71-464) behind EntryFilterer.FitsFilter, and the exclusive 11-tab strip click (UICreativeItemsInfiniteFilteringOptions.cs:80-100)
 crates/tr-core/src/scene.rs|pub fn scan_on_screen_tiles|S1-L-1 - the scene-metrics tail: ScanOnScreenTiles (clock/fountain/monoliths, SceneMetrics.cs:450-577), ScanNPCPositions (ClosestNPCPosition + TownNPCCount, :727-745), UpdateOreFinder/IsValidForOreFinder (:867-903) with the generated ORE_FINDER_PRIORITY (Main.cs:6404-6440)
 crates/tr-app/src/app/mod.rs|notify_custom_float("Pay"|S1-E-18 - the nurse heal credits the paid copper to FREQUENT_FLYER (AchievementsHelper.HandleNurseService, AchievementsHelper.cs:407-410, called from Main.cs:40111)
+crates/tr-app/src/net.rs|pub const NPC_KILLED: u8 = 97|S1-I-5 - the 97/98 achievement wires (MessageBuffer.cs:3558-3569, NetMessage.cs:1347-1352)
+crates/tr-app/src/app/netmodules.rs|pub struct BestiaryKill|S1-I-5 - NetBestiaryModule module 4 kill-count sync (NetBestiaryModule.cs:16-23, NPCKillsTracker.cs:23-33)
+crates/tr-app/src/npc.rs|pub player_interaction: [bool; 256]|S1-I-5 - NPC.playerInteraction filled from StrikeNPC's owner (NPC.cs:6085, :81266-81273)
+crates/tr-app/src/app/netglue.rs|fn send_npc_killed|S1-I-5 - NotifyNPCKilled's per-player 97 fan-out (AchievementsHelper.cs:200-217)
