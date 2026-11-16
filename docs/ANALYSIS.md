@@ -14299,3 +14299,36 @@ port has no swing-stats helper, no NPC-to-NPC strike path and no difficulty
 multiplier for the town-NPC damage. Porting the machine is a follow-up under
 S1-D-3; the preset table lands first so the numbers have one home. `num77`
 and `maxValue4` are not read by the swing code and stay unported.
+
+## The F3 developer workbench (S1-E-29, 2026-11-16)
+
+The F3 cheat-sheet panel is **project-specific**: vanilla Terraria 1.4.5.8 binds F3
+to `Loadout3` (`PlayerInput.cs:2090,2203,2315,2427` в†’ `TriggersSet.cs:813-816` в†’
+`Player.TrySwitchingLoadout(2)`) and ships no debug overlay, so there is no vanilla
+panel to be 1:1 with. The port's panel is therefore a dev tool, and the deviations
+below are recorded rather than resolved:
+
+* **The crate seam.** The panel lives in `tr-debug` (state, layout, hit-testing,
+  `Event` intents) with `tr-app` supplying the rows, the drawing and the action
+  application. The direction is forced: `tr-app` is a binary crate (`[[bin]]`, no
+  `[lib]`), so it cannot be a dependency of `tr-debug`. The gameplay consequence is
+  nil вЂ” the actions are the unchanged code; only the hit-testing moved.
+* **The Cargo feature.** `debug` (default OFF) gates the module, the `App` field,
+  its two initialisers and the six call sites, so a release build without it
+  contains no panel. `TR_DEBUG`/`TR_STATS`/`render/debug.rs` are **not** gated: they
+  are the separate F1 stats overlay and the deterministic-screenshot workflow needs
+  `TR_DEBUG=0`.
+* **Recipes tab.** Gives `craft::RECIPES[i].create` straight into the inventory with
+  no station, ingredient or crafting-hour check. That is deliberate for a debug give
+  and is *not* a claim about `Recipe`'s availability rules (`Recipe.cs:15162-15191`
+  etc. stay unported).
+* **Action semantics are frozen.** The World rows, the spawns and the pause row keep
+  their pre-existing bodies. Their fidelity is **not** claimed: the world-event rows
+  are `PARTIAL_PROJECT_SPECIFIC` (goblin 80 vs the C# `80+40*players`,
+  `Main.cs:64435-64470`; slime rain 43200 vs the C# `32400-53999`,
+  `Main.cs:64742-64806`), and the kill-all row has no C# equivalent. Those are
+  recorded as S1-E-37 in `docs/ROADMAP.md`. The pause row *is* exact
+  (`WorldUpdateStepper.cs:45-49`) and its test pins it.
+* **Upstream reference only.** The feature set takes *behaviour* references from
+  CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
+  or art is copied or adapted, so nothing of theirs ships.

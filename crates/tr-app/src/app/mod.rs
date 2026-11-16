@@ -158,7 +158,9 @@ pub(crate) struct App {
     pub(crate) creative_powers: crate::creative::CreativePowers,
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
     /// module; delete the field + the module + the call sites to remove).
-    pub(crate) debug_panel: crate::debug_panel::DebugPanel,
+    /// Compiled only with the `debug` feature (see `tr-app/Cargo.toml`).
+    #[cfg(feature = "debug")]
+    pub(crate) debug_panel: tr_debug::Panel,
     /// The favorited inventory slots (`Item.favorited`'s port — the slot
     /// indices, not the per-item flag; the v1 tracks the slot positions).
     pub(crate) favorite_slots: Vec<usize>,
@@ -2902,7 +2904,8 @@ impl App {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
-            debug_panel: crate::debug_panel::DebugPanel::new(),
+            #[cfg(feature = "debug")]
+            debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
             play_world: None,
             invasion_spawn_timer: 0.0,

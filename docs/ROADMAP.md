@@ -336,8 +336,29 @@ plausible but cannot express style-specific rules.
 | S1-E-26 | Chat/emote/achievement UI hooks that the framework gap leaves unreachable (module 18's ~40 element classes, ~17 `UIState` screens) — one task per screen family | L | X+B | research/18-ui-framework.md → gap list | — | per-screen parity checklist |
 | S1-E-27 | MP: the missing message families — chest (31-33), sign (46/47), wiring (59), buffs (50/53/54), ping (154) and the `5 PlayerInventory` packet (silently dropped) | L | B | research/17-netcode.md → message-id map | — | per-id round-trip test |
 | S1-E-28 | The `InitialSpawn` semantics (renamed `WORLD_COMPLETE` with the wrong meaning) and the ping relocation to NetModule 2 | M | B | research/17 | — | join sequence test |
+| ✅ S1-E-29 | **F3 developer workbench rework**: the project-specific F3 cheat-sheet panel rebuilt as a Hybrid Workbench (tab rail + inspector strip + dense icon/text list) in the new `tr-debug` crate (state/layout/hit-test/`Event` intents, no game types), behind the Cargo feature `debug` (default OFF) so `cargo build --release` contains no panel. Adds the Recipes tab (recipe result give), the NPC/Boss filter, wheel scroll (the old `handle_scroll` was dead code), arrow-key + Enter navigation and a selected-row inspector. Phase 1 keeps every pre-existing action's semantics verbatim | M | P+B | `crates/tr-debug/src/lib.rs`; `crates/tr-app/src/debug_panel.rs`; gate sites `crates/tr-app/src/main.rs:19`, `app/mod.rs:159-161,2902`, `app/flow.rs:2035`, `app/loop.rs:464,472,500,612,655`, `app/frame.rs:2038-2048`; vanilla F3 = Loadout3 (`PlayerInput.cs:2090,2203,2315,2427` → `TriggersSet.cs:813-816` → `TrySwitchingLoadout(2)`) — no vanilla debug window exists to port; pause row `EXACT_EQUIVALENT` (`WorldUpdateStepper.cs:45-49`) | — | **DONE 2026-11-16**: 13 `tr-debug` unit tests (layout nesting, tab rail, unscrolled hit rows, wheel clamp, keyboard focus/scroll-follow, filter reset); `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids` green **both** with and without `--features debug` (2632 vs 2626 passed — the 6 panel tests live only with the feature); release-binary scan proves `DEBUG [F3]`/`Pause World`/`Blood Moon: ` present with the feature and **absent** without (control strings `Terraria`/`Skeletron`/`NPC_1` still found, so the probe is not vacuous); `anchors.txt` canary verified by mutating the marker (red) and restoring (green) |
+
+## Stage 1E-1 — Debug workbench: blocked on missing Rust seams (S1-E-29 follow-ups)
+
+Upstream CheatSheet/HEROsMod features that cannot be implemented yet: each needs a Rust
+mechanic that does not exist, so they are recorded rather than faked. All are independent
+re-implementations from observed behaviour (no upstream code/assets — CheatSheet has no
+licence and credits Gameiki, HEROsMod is GPLv3).
+
+| id | Task | Size | Sev | Evidence | deps | Verify |
+| --- | --- | --- | --- | --- | --- | --- |
+| S1-E-30 | **Extra accessory slots** (CheatSheet `CheatSheetPlayer.cs:15-31` gives 0–6 extra): blocked — `inv::MISC` is a fixed `[ItemSlot; 5]` (`crates/tr-app/src/inv.rs:22,48`) threaded through the inventory UI, the save format and the netcode slot map (`app/netglue.rs:1890-1891`). Needs a resizable equip-slot model first | M | X | `inv.rs:22,48`; `app/netglue.rs:1890-1891` | — | slot count round-trips through save + net |
+| S1-E-31 | **NPC filter/ban list** (CheatSheet `NPCSlot.cs:48-72`, `CheatSheetNPC.cs:13-36`): blocked — the port spawns from a 35-entry `NPC_LIST` constant (`debug_panel.rs`), with no per-kind spawn hook to veto; also server-authoritative upstream | S | B | `debug_panel.rs` `NPC_LIST` | S1-E-32 | banned kind never spawns |
+| S1-E-32 | **Spawn-rate multiplier 0–10×** (CheatSheet `SpawnRateMultiplier.cs:12-80`): blocked — the port has no `spawnRate`/`maxSpawns` variables; natural spawning is the per-biome NPC spawner without a rate knob | M | B | — | — | spawn count scales with the knob |
+| S1-E-33 | **Paint/tile-stamp tools** (CheatSheet `PaintToolsHotbar.cs:194-652`): blocked — no tile-edit debug API, and tile writes must stay 1:1 with `WorldGen`; a stamp tool would need its own fidelity port | L | B | — | — | stamp matches a `WorldGen` reference |
+| S1-E-34 | **God mode** (CheatSheet `GodMode.cs:56-67`; HEROsMod `GeneralMessages.cs:182-190`): blocked in the sense that a permanent `life = max` write fights the damage path; needs a documented debug-only flag read by `Hurt` | S | B | — | — | damage is swallowed while on |
+| S1-E-35 | **Weather control** (HEROsMod `GeneralMessages.cs:467-520` rain/sandstorm start/stop): blocked — the rain/sandstorm state is simulated (`rain.rs`, `sand.rs`) with no command seam, and upstream syncs it over the network | M | B+P | — | — | start/stop respected by the sim |
+| S1-E-36 | **Clear ground items** (HEROsMod `Network.cs:1109-1119`): blocked only by the network half; the local half (`SetDefaults(0)` over the dropped items) is a small follow-up once MP lands | S | B | — | S1-E-27 | dropped items vanish |
+| S1-E-37 | **World-event actions at 1:1** (hardmode/blood moon/goblin/slime rain/kill-all — the current F3 rows): these exist but are `PARTIAL_PROJECT_SPECIFIC`; each needs its own C# port before its semantics may be called correct (goblin 80 vs C# 80+40×players, `Main.cs:64435-64470`; slime rain 43200 vs C# 32400-53999, `Main.cs:64742-64806`) | M | B | Stage 1E mapping reports | — | per-action C# parity test |
+| S1-E-38 | **MP/auth/groups/permissions/network protocol** (HEROsMod `/auth` `Commands/BecomeAdmin.cs:19-46`, groups, sync): deferred with the whole MP milestone | L | X | — | S1-E-27 | — |
 
 ## Stage 1F — Data, id spaces & tables
+
 
 | id | Task | Size | Sev | Evidence | deps | Verify |
 | --- | --- | --- | --- | --- | --- | --- |
