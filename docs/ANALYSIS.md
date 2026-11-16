@@ -10197,8 +10197,20 @@ Deviations and notes:
   `Main.rand` rolls, 963's cry/attack cues, 613's `Lighting.AddLight`, the per-kind
   `frameCounter` machines and `strongBees` (373's bee cooldown keeps the default 90) —
   the port has no general `Main.dust` pool and the projectile slot carries no frame
-  fields. The cooldown machines' `rand(1,4)`/`rand(3)` extra increments stand at their
-  deterministic minimum.
+  fields. (The cooldown machines' `Main.rand` extra increments ARE ported — they gate
+  the next shot rather than dust; see S1-D-5 below.)
+- **S1-D-5 (2026-11-16) closed the last `AI_062` behaviour gaps**: the Imp's return
+  state pins `ai[1] = 80f` every tick (`Projectile.cs:65676`, so it holds fire until it
+  is back beside the owner — the port had no pin at all and the Imp could fire
+  mid-flight), the re-follow gate gains the `!Collision.SolidCollision` term
+  (`:65704`, a minion embedded in solid tiles keeps the 15 f return speed instead of
+  dropping to 6 f), and the per-kind fire cooldowns take their `Main.rand` extra
+  increments (`:65931` hornet `Next(1,4)`, `:65950`/`:65966`/`:65982`/`:65998` the
+  `Next(3)` pair) on the pass's `UpdateProjectiles` stream (`Main.cs:17775-17777`).
+  Determinism note: the rolls were previously absent, so a summon-heavy world's
+  `UpdateProjectiles` stream shifts by one draw per live minion per tick — that stream
+  is per-pass and nothing else reads it (the worldgen/`FastRandom` streams are
+  untouched), and the count is now the C#'s.
 - **LOS approximation**: `ai_flying_minion`/`sentry_npc_targeting` route `CanHitLine`/
   `CanHit` through the shared tile walk (`can_hit_line`, the yoyo's `yoyo_can_hit`
   renamed) and `SolidCollision` through a five-point box test (`box_solid`) — the C#'s
