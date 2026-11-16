@@ -14766,6 +14766,69 @@ multiplier for the town-NPC damage. Porting the machine is a follow-up under
 S1-D-3; the preset table lands first so the numbers have one home. `num77`
 and `maxValue4` are not read by the swing code and stay unported.
 
+## The moon-event wave machinery + the roster ladders (S1-F-13, 2026-11-15)
+
+The a-slice landed on `S1-F-13-moon-wave-machinery` (phases: the machinery
+`882bf20e`, the ladders `9455e325`). The rate/pacing half was already on
+`SpawnContext`'s `moon_event` flag (`get_spawn_rate`'s `:396` arm — the C#
+`:771-774` moon override, folded next to the invaders override); the wave
+machinery and the two roster ladders are new:
+
+- **State** (`World`): `wave_number` (i32, starts 1), `wave_kills`,
+  `total_invasion_points` — runtime-only (the C#'s moon-event state rides
+  `Main` statics and is saved only inside the invasion-progress's own save
+  section the port's format does not mirror — the persistence deviation).
+- **Walk**: `CheckProgressFrostMoon`/`CheckProgressPumpkinMoon`
+  (`NPC.cs:78445-78600`/`:78588-78719`) as `World` methods, called on the
+  death site beside `report_invasion_kill` (`world_sim/npcs.rs`) — the
+  per-kind points tables (snow `:78518-78549`; pumpkin `:78658+`), the 1×
+  scalar (single-mode: the C#'s master 2.5 / expert 2 arms collapse),
+  `wave_kills >= requirement(&& != 0)` → `wave_kills = 0`, `wave_number++`.
+  The waves key on the vanilla `NPC.type` u16 (all 30 wave kinds are
+  unported until S1-F-13b/c, so the tests drive them directly);
+  `MOON_WAVE_REQUIREMENTS.get()` saturates out-of-range waves to the
+  terminal 0 (the C# array would throw; waves only reach 0..=20).
+- **Start/stop**: `start_pumpkin_moon`/`start_snow_moon`
+  (`Main.cs:10979-11017` — the flags, the mutual clear, the resets,
+  waveNumber=1) and `stop_moon_event` (`:10953-10976`) at BOTH boundaries —
+  the dusk day→night clear (`:65147-65148`) and the dawn clear (`:65392`),
+  riding the port's clock mirrors (`world_sim/clock.rs`, the F-14 pattern).
+- **Triggers**: the medallion 1844 / Naughty Present 1958 ride editing.rs's
+  event-item arms (the `use_snow_globe` seam; the C#'s mid-swing
+  `ItemTimeIsZero && itemAnimation > 0` precondition, gated `!day_time &&
+  !DD2Event.Ongoing` and the other event — `Player.cs:43974-43985`/
+  `:44041-44052`) — ApplyItemTime + sound 15, one stack spent like the
+  port's other event items.
+- **Boss cap**: the weighted `npcSlots` count over kinds 315/325/327/328/
+  344/345/346 vs `players × defaultMaxSpawns×(2+0.3·players)` (the
+  `Spawner` ctor `NPC.cs:262-286`) — all seven kinds unported, so the cap is
+  false until F-13b/c; the slots table travels with the kinds.
+- **The pumpkin-327 quirk**: in the pumpkin cases 18/17/15/14
+  (`NPC.cs:3263`/`:3281`/`:3329`/`:3351`) the leading 327 `if` is a
+  SEPARATE statement from the `else if` chain after it — its roll always
+  draws, and when both fire the C# spawns BOTH NPCs in one attempt. The
+  picker returns the first (`pumpkin_327_chain`, the stream stays 1:1 — the
+  second spawn's dispatch lands with the pool work); the unconditional
+  roll is kept for stream parity.
+- **The ladders**: `spawn_npc_at`'s zone chain gained the frost
+  (`NPC.cs:2804-3222`) and pumpkin (`:3224-3548` — the eclipse arm opens
+  `:3549`) arms at the C#'s dispatch position (after the skyMob dispatch
+  and the invaders arm), keyed `!day_time && (world.snow_moon ||
+  world.pumpkin_moon)` with the surface band `y/16 <= world_surface` (the
+  `remixWorld` alternative's reduction). Every `Main.rand.Next(n)` is
+  re-expressed on the spawner's `FastRandom` with the vanilla thresholds;
+  the per-kind `CountNPCS` caps gate the C#'s `&&` (the roll is always
+  drawn). The arms' picks are the vanilla `NPC.type` u16 — the C#'s only
+  no-spawn outcomes (the wave-14 chain's no-`else` miss, the gated boss
+  trio) included — and every picked wave kind is unported until F-13b/c, so
+  the dispatch consumes the pick and returns no NPC (the Wyvern-arm
+  consume-and-return-None shape). `total_invasion_points` is write-only in
+  the port (its C# readers are the out-of-scope broadcast/MP).
+- **RNG-order (S1-A-10)**: the ladders draw on the one spawner stream in
+  the C# arm order (style `Next(7)` → the head `Next(30)` → the chain's
+  `Next(n)`s); the walks, start/stop, the dawn stop and the triggers draw
+  nothing.
+
 ## The Dark Mage's machine (S1-D-3o, 2026-11-16)
 
 `AI_109_DarkMage` (`NPC.cs:65791-66186`) carries the Old One's Army's
