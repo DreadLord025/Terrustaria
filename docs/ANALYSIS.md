@@ -14398,6 +14398,58 @@ multiplier for the town-NPC damage. Porting the machine is a follow-up under
 S1-D-3; the preset table lands first so the numbers have one home. `num77`
 and `maxValue4` are not read by the swing code and stay unported.
 
+## The Dark Mage's machine (S1-D-3o, 2026-11-16)
+
+`AI_109_DarkMage` (`NPC.cs:65791-66186`) carries the Old One's Army's
+casters (types 564/565). The whole arm is ported in
+`crates/tr-app/src/npc.rs::update_dark_mage`, in the C# statement order:
+
+- the per-kind block (`:65813-65829`: the rotation = `vx * 0.04`,
+  `spriteDirection`, the tunables — `num3` 2, `num4` 0.05, `num5` 0.2,
+  `num6` -0.05, `num7` -0.4, `num8` 0.5, `num9` 0.1, `num10` 0.5,
+  `num11` 0.02; note `flag5 = false`, so the upward probe at
+  `:66058-66078` never runs);
+- the materialize (`:65928-65962`): `localAI[3]` (the port's
+  `caster_counter`) ramps 0 → 60, `alpha = 255` on the first tick, then
+  `alpha -= 5` clamped at 0;
+- the cast cycle (`:65834-65881`) behind `flag6`/`num12 = 0.9`, whose
+  tail (`:66024-66028`) returns before the gravity/steer block: the summon
+  673 at `ai[0] == 64` (`ai[1] == 2`), the shadowflame 675 at 32
+  (`ai[1] == 0`, `direction` re-aimed from the shot vector), the heal 674
+  at 40/48/56 (`ai[1] == 1`), and the `ai[0] <= 0` re-roll (-20 after the
+  shadowflame, -120 otherwise);
+- the re-arm (`:65882-65927`): `ai[0] == 0 && localAI[3] >= 60` picks the
+  97/127/183 window per `ai[1]`, gated by `flag9` (`:65905-65909` — the
+  shadowflame round needs the target within 1000 px and in line of sight);
+- the walk-anchor stuck detector (`:65968-66019`) and the
+  `TargetClosestOldOnesInvasion` retarget / `FaceTarget` write of
+  `direction`+`directionY` (`:66009-66012`, inside the detector's
+  `localAI[2] >= 0` branch);
+- the probe columns (`:66020-66072`), the float gravity (`:66079-66097`),
+  the `collideX`/`collideY` bounces off `oldVelocity` (`:66098-66121`) and
+  the four steer blocks (`:66122-66185`).
+
+`Npc` gained `direction_y`, `collide_x`, `collide_y`, `old_vx`, `old_vy`
+and `dark_mage_local[3]` (the C#'s `directionY`, `collideX`, `collideY`,
+`oldVelocity.X/Y` and `localAI[0..2]`).
+
+**The deliberate gaps.** `DD2Event.RaiseGoblins` (`DD2Event.cs:716-...)`
+needs `_deadGoblinSpots`, the DD2 event's dead-goblin coordinate list, which
+the port's sim does not carry: the summon request rides `wants_sphere` as a
+single `DD2GoblinT1` at the mage's centre instead of one raised goblin per
+recorded death. `DD2Event.CanRaiseGoblinsHere` (`:699-714`, the
+three-deaths-in-800-px gate) is likewise unmodelled, so the `ai[1] == 2` arm
+is never dropped mid-sequence. The re-arm's `flag8` scan (two damaged NPCs
+in the 1200x400 box, `:65884-65896`) needs the NPC list the AI method cannot
+see, and the `OnlyCrystal` half of `TargetClosestOldOnesInvasion`'s search
+(`NPCUtils.cs:268`, the 548 crystal) needs it too — the player arm of the
+search is modelled. `GetAttackDamage_ScaledByDifficulty` runs
+classic (the port has no difficulty-scaled NPC damage for this kind). The
+three tracked sounds (`DD2_EtherianPortalSpawnEnemy` at `localAI[3] == 30`,
+`DD2_DarkMageSummonSkeleton` at `ai[0] == 80`, `DD2_DarkMageCastHeal` at
+`ai[0] == 126`) and the portal dust ramp (`:65944-65961`, dust type 27)
+ride the audio and dust passes, which the port's NPC AI does not drive yet.
+
 ## The F3 developer workbench (S1-E-29, 2026-11-16)
 
 The F3 cheat-sheet panel is **project-specific**: vanilla Terraria 1.4.5.8 binds F3
