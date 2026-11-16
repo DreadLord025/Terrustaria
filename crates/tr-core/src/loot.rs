@@ -161,7 +161,57 @@ pub struct LootNpc {
     pub mechdusa_parts_cleared: bool,
     /// `info.npc.HasPlayerTarget` (the yoyo gates).
     pub has_player_target: bool,
+    /// `info.npc.ai[1]` — the item inside a slime body (`SlimeBodyItemDropRule`)
+    /// and the statue style of the statue mimic (`StatueMimicItemDropRule`).
+    pub ai1: f32,
+    /// `NPC.RedHatSkeletronAdjustmentsEnabled()` (`NPC.cs:66671-66682`) — the
+    /// four (type, ai[3]/localAI[3]) pairs are port state, so the caller folds
+    /// them once.
+    pub red_hat_skeletron: bool,
+    /// `info.npc.GivenName` collapsed to the three names the drop table asks
+    /// for (`Conditions.NamedNPC`, `ItemDropDatabase.cs:738-740`).
+    pub named: Option<NamedNpc>,
 }
+
+/// `Conditions.NamedNPC`'s `neededName` keys — the three registrations the
+/// drop table uses (`ItemDropDatabase.cs:738-740`). The C# compares the NPC's
+/// given name against `Language.GetTextValue(key)`; the caller folds that
+/// comparison into one of these (see `loot_db::named_npc`), which keeps
+/// [`LootNpc`] `Copy` and culture-free.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NamedNpc {
+    /// `"GuideNames.Andrew"` — NPC 22, item 867.
+    GuideAndrew,
+    /// `"SteampunkerNames.Whitney"` — NPC 178, item 4372.
+    SteampunkerWhitney,
+    /// `"PainterNames.Jim"` — NPC 227, item 5290.
+    PainterJim,
+}
+
+impl NamedNpc {
+    pub const ALL: [NamedNpc; 3] = [
+        NamedNpc::GuideAndrew,
+        NamedNpc::SteampunkerWhitney,
+        NamedNpc::PainterJim,
+    ];
+
+    /// The localization key the C# passes as `neededName`.
+    pub fn key(self) -> &'static str {
+        match self {
+            NamedNpc::GuideAndrew => "GuideNames.Andrew",
+            NamedNpc::SteampunkerWhitney => "SteampunkerNames.Whitney",
+            NamedNpc::PainterJim => "PainterNames.Jim",
+        }
+    }
+}
+
+/// `NPCID.Sets.SlimeCanContainItems` (`NPCID.cs:10443`): 1, 59, 147, 184, 537.
+pub fn slime_can_contain_items(npc_type: i32) -> bool {
+    matches!(npc_type, 1 | 59 | 147 | 184 | 537)
+}
+
+/// `ItemID.Count` (`ItemID.cs:14861`).
+pub const ITEM_ID_COUNT: i32 = 6196;
 
 /// One resolved drop — the arguments of `CommonCode.DropItemFromNPC`.
 /// `resets_money` mirrors `DropItemLocalPerClientAndSetNPCMoneyTo0`'s
@@ -1491,6 +1541,27 @@ pub fn drop_nothing() -> Box<dyn ItemDropRule> {
     DropNothing::new()
 }
 
+/// `new SlimeBodyItemDropRule()` (`ItemDropDatabase.cs:690`).
+pub fn slime_body_item_drop() -> Box<dyn ItemDropRule> {
+    SlimeBodyItemDrop::new()
+}
+
+/// `new StatueMimicItemDropRule()` (`ItemDropDatabase.cs:1132`).
+pub fn statue_mimic_item_drop() -> Box<dyn ItemDropRule> {
+    StatueMimicItemDrop::new()
+}
+
+/// `new MechBossSpawnersDropRule()` (`ItemDropDatabase.cs:689`).
+pub fn mech_boss_spawners_drop() -> Box<dyn ItemDropRule> {
+    MechBossSpawnersDrop::new()
+}
+
+/// `new FromOptionsWithoutRepeatsDropRule(dropCount, options...)`
+/// (`ItemDropDatabase.cs:610`).
+pub fn from_options_without_repeats(drop_count: i32, options: &[i32]) -> Box<dyn ItemDropRule> {
+    FromOptionsWithoutRepeatsDrop::new(drop_count, options)
+}
+
 // --- Conditions (`GameContent/ItemDropRules/Conditions.cs`) ------------------
 //
 // The data-driven `Cond` enum ports the gates the registrations use; each
@@ -1612,6 +1683,10 @@ pub enum Cond {
     YoyosAmarok,
     YoyosYelets,
     YoyosHelFire,
+    /// `Conditions.NamedNPC` — the town NPC got the given name the row asks for.
+    NamedNpc(NamedNpc),
+    /// `Conditions.RedHatSkeletron` — the legendary-difficulty Skeletron form.
+    RedHatSkeletron,
     /// `Conditions.NeverTrue` (the explicit dead rule).
     NeverTrue,
 }
@@ -1771,6 +1846,13 @@ impl DropCondition for Cond {
                     && n.value > 0.0
             }
             Cond::NeverTrue => false,
+            // `Conditions.NamedNPC.CanDrop` (`Conditions.cs:971-979`): the
+            // `HasGivenName` short-circuit then the name equality. The caller
+            // folds the `Language.GetTextValue(neededName)` comparison into
+            // `LootNpc::named` (a `LootNpc` stays `Copy`).
+            Cond::NamedNpc(who) => info.npc.named == Some(who),
+            // `Conditions.RedHatSkeletron.CanDrop` (`:545-548`).
+            Cond::RedHatSkeletron => info.npc.red_hat_skeletron,
         }
     }
 }
@@ -1923,6 +2005,272 @@ impl ItemDropRule for OneFromRulesRule {
     }
 }
 impl_chains!(OneFromRulesRule);
+
+// --- The four database-only rule classes -------------------------------------
+
+/// `SlimeBodyItemDropRule` (`SlimeBodyItemDropRule.cs:6-121`): the slime body's
+/// swallowed item (`info.npc.ai[1]`) with its per-item stack table.
+pub struct SlimeBodyItemDrop {
+    chains: Vec<ChainRule>,
+}
+
+impl SlimeBodyItemDrop {
+    pub fn new() -> Box<Self> {
+        Box::new(Self { chains: Vec::new() })
+    }
+
+    /// `GetDropInfo` (`:35-116`): the stack range per swallowed item id.
+    pub fn drop_info(item_id: i32) -> (i32, i32) {
+        match item_id {
+            8 => (5, 10),
+            166 => (2, 6),
+            965 => (20, 45),
+            11 | 12 | 13 | 14 | 174 | 364 | 365 | 366 | 699 | 700 | 701 | 702 | 1104 | 1105
+            | 1106 | 3347 => (3, 13),
+            71 => (50, 99),
+            72 => (20, 99),
+            73 => (1, 2),
+            4343 | 4344 => (2, 5),
+            2 | 3 | 9 | 150 | 593 | 751 | 1103 | 3081 | 3086 | 3609 | 3610 | 5395 => (10, 25),
+            147 | 314 | 1124 | 1125 | 1345 | 3736 | 3737 | 3738 => (2, 5),
+            _ => (1, 1),
+        }
+    }
+}
+
+impl ItemDropRule for SlimeBodyItemDrop {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    /// `CanDrop` (`:15-22`): the slime-body set, `ai[1] > 0` and
+    /// `ai[1] < ItemID.Count`.
+    fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
+        slime_can_contain_items(info.npc.kind)
+            && info.npc.ai1 > 0.0
+            && info.npc.ai1 < ITEM_ID_COUNT as f32
+    }
+    /// `TryDroppingItem` (`:24-33`).
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        let item_id = info.npc.ai1 as i32;
+        let (min, max) = Self::drop_info(item_id);
+        let stack = info.rng.next_range(min, max + 1);
+        out.push(drop_request(item_id, stack, false));
+        DropAttemptResult {
+            state: DropResultState::Success,
+        }
+    }
+    /// `ReportDroprates` (`:118-121`) reports nothing: the swallowed item is
+    /// decided by the NPC, not the rule.
+    fn report_droprates(&self, _drops: &mut Vec<DropRateInfo>, _feed: &DropRateInfoChainFeed) {}
+}
+impl_chains!(SlimeBodyItemDrop);
+
+/// `StatueMimicItemDropRule` (`StatueMimicItemDropRule.cs:6-36`): the statue
+/// mimic (`NPC 690`) drops the item of the statue style it took.
+pub struct StatueMimicItemDrop {
+    chains: Vec<ChainRule>,
+}
+
+impl StatueMimicItemDrop {
+    pub fn new() -> Box<Self> {
+        Box::new(Self { chains: Vec::new() })
+    }
+}
+
+impl ItemDropRule for StatueMimicItemDrop {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    /// `CanDrop` (`:15-22`): `ai[1] > 0 && ai[1] < ItemID.Count`.
+    fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
+        info.npc.ai1 > 0.0 && info.npc.ai1 < ITEM_ID_COUNT as f32
+    }
+    /// `TryDroppingItem` (`:29-36`): `StatueStyleToItem((int)ai[1])`, stack 1.
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        let item = statue_style_to_item(info.npc.ai1 as i32);
+        out.push(drop_request(item, 1, false));
+        DropAttemptResult {
+            state: DropResultState::Success,
+        }
+    }
+    fn report_droprates(&self, _drops: &mut Vec<DropRateInfo>, _feed: &DropRateInfoChainFeed) {}
+}
+impl_chains!(StatueMimicItemDrop);
+
+/// `WorldGen.StatueStyleToItem` (`WorldGen.cs:37928-37991`): the statue style
+/// to the item the statue's break drops.
+pub fn statue_style_to_item(style: i32) -> i32 {
+    match style {
+        0 => 360,
+        1 => 52,
+        43 => 1152,
+        44 => 1153,
+        45 => 1154,
+        46 => 1408,
+        47 => 1409,
+        48 => 1410,
+        49 => 1462,
+        50 => 2672,
+        51..=62 => 3651 + style - 51,
+        63..=75 => 3708 + style - 63,
+        76 => 4397,
+        77 => 4360,
+        78 => 4342,
+        79 => 4466,
+        80 => 5317,
+        81 => 5318,
+        82 => 5319,
+        _ => 438 + style - 2,
+    }
+}
+
+/// `MechBossSpawnersDropRule` (`MechBossSpawnersDropRule.cs:5-66`): the global
+/// 1/2500 roll of the mech summoner each undowned mech still owes.
+pub struct MechBossSpawnersDrop {
+    chains: Vec<ChainRule>,
+}
+
+impl MechBossSpawnersDrop {
+    pub fn new() -> Box<Self> {
+        Box::new(Self { chains: Vec::new() })
+    }
+}
+
+impl ItemDropRule for MechBossSpawnersDrop {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    /// `CanDrop` (`:16-23`): a worth-dropping NPC in hardmode with a mech still
+    /// undowned, outside a simulation. The C#'s `!info.IsInSimulation` term is a
+    /// constant `true` in the port — the only resolver is the death path
+    /// (`NPC.cs:78927-78936`, `IsInSimulation = false`) and there is no
+    /// projection-simulation resolver.
+    fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
+        let f = &info.flags;
+        info.npc.value > 0.0 && f.hard_mode && !(f.downed_mech1 && f.downed_mech2 && f.downed_mech3)
+    }
+    /// `TryDroppingItem` (`:25-55`): three sequential 1/2500 rolls, each
+    /// consuming its own `RollLuck` stream slot, first hit wins.
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        let flags = info.flags;
+        let luck = info.luck;
+        if !flags.downed_mech1 && roll_luck(info.rng, luck, 2500) == 0 {
+            out.push(drop_request(556, 1, false));
+            return DropAttemptResult {
+                state: DropResultState::Success,
+            };
+        }
+        if !flags.downed_mech2 && roll_luck(info.rng, luck, 2500) == 0 {
+            out.push(drop_request(544, 1, false));
+            return DropAttemptResult {
+                state: DropResultState::Success,
+            };
+        }
+        if !flags.downed_mech3 && roll_luck(info.rng, luck, 2500) == 0 {
+            out.push(drop_request(557, 1, false));
+            return DropAttemptResult {
+                state: DropResultState::Success,
+            };
+        }
+        DropAttemptResult {
+            state: DropResultState::FailedRandomRoll,
+        }
+    }
+    /// `ReportDroprates` (`:57-66`): the three rows at 1/2500.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        let rate = 0.0004 * feed.parent_droprate_chance;
+        for item in [556, 544, 557] {
+            drops.push(DropRateInfo {
+                item_id: item,
+                stack_min: 1,
+                stack_max: 1,
+                drop_rate: rate,
+            });
+        }
+        report_chained_rules(self.chained_rules(), 0.0004, drops, feed);
+    }
+}
+impl_chains!(MechBossSpawnersDrop);
+
+/// `FromOptionsWithoutRepeatsDropRule` (`FromOptionsWithoutRepeatsDropRule.cs:5-65`):
+/// `dropCount` distinct picks out of `drop_ids`.
+pub struct FromOptionsWithoutRepeatsDrop {
+    pub drop_ids: Vec<i32>,
+    pub drop_count: i32,
+    chains: Vec<ChainRule>,
+}
+
+impl FromOptionsWithoutRepeatsDrop {
+    pub fn new(drop_count: i32, options: &[i32]) -> Box<Self> {
+        Box::new(Self {
+            drop_ids: options.to_vec(),
+            drop_count,
+            chains: Vec::new(),
+        })
+    }
+}
+
+impl ItemDropRule for FromOptionsWithoutRepeatsDrop {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    /// `TryDroppingItem` (`:27-45`): the C# rebuilds its private
+    /// `_temporaryAvailableItems` from `dropIds` and `RemoveAt`s the picked
+    /// index — the pick comes off the SHRINKING list, exactly as here.
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        let mut available = self.drop_ids.clone();
+        for _ in 0..self.drop_count {
+            if available.is_empty() {
+                break;
+            }
+            let index = info.rng.next_range(0, available.len() as i32) as usize;
+            out.push(drop_request(available[index], 1, false));
+            available.remove(index);
+        }
+        DropAttemptResult {
+            state: DropResultState::Success,
+        }
+    }
+    /// `ReportDroprates` (`:47-65`): every option at `1 - (n-1)/n` accumulated
+    /// over `min(dropCount, n)` draws.
+    fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
+        let mut num = self.drop_ids.len() as i32;
+        let mut num2 = 1f32;
+        let mut so_far = 0;
+        while so_far < self.drop_count && num > 0 {
+            num2 *= (num - 1) as f32 / num as f32;
+            so_far += 1;
+            num -= 1;
+        }
+        let rate = (1.0 - num2) * feed.parent_droprate_chance;
+        for item in &self.drop_ids {
+            drops.push(DropRateInfo {
+                item_id: *item,
+                stack_min: 1,
+                stack_max: 1,
+                drop_rate: rate,
+            });
+        }
+        report_chained_rules(self.chained_rules(), 1.0, drops, feed);
+    }
+}
+impl_chains!(FromOptionsWithoutRepeatsDrop);
 
 // --- The remaining factories (`ItemDropRule.cs:15-115`) ----------------------
 
@@ -2463,5 +2811,232 @@ mod tests {
                 "seed 42 NextFloat through the trait, draw {i}"
             );
         }
+    }
+
+    // --- S1-E-14: the four database-only rule classes ------------------------
+
+    /// `SlimeBodyItemDropRule.GetDropInfo` (`:35-116`) — the per-item stack
+    /// tables, plus the default (1, 1) everything else falls to.
+    #[test]
+    fn the_slime_body_stack_table_matches_the_csharp() {
+        for (item, want) in [
+            (8, (5, 10)),
+            (166, (2, 6)),
+            (965, (20, 45)),
+            (11, (3, 13)),
+            (3347, (3, 13)),
+            (71, (50, 99)),
+            (72, (20, 99)),
+            (73, (1, 2)),
+            (4343, (2, 5)),
+            (4344, (2, 5)),
+            (2, (10, 25)),
+            (5395, (10, 25)),
+            (147, (2, 5)),
+            (3738, (2, 5)),
+            (23, (1, 1)),
+            (6195, (1, 1)),
+        ] {
+            assert_eq!(SlimeBodyItemDrop::drop_info(item), want, "item {item}");
+        }
+    }
+
+    /// `SlimeBodyItemDropRule.CanDrop` (`:15-22`): the five
+    /// `SlimeCanContainItems` types, `ai[1] > 0 && ai[1] < ItemID.Count`.
+    #[test]
+    fn the_slime_body_gate_is_the_can_contain_set_and_an_item_range() {
+        let mut rng = crate::tile_light::FastRandom::new(1);
+        let mut check = |kind: i32, ai1: f32| {
+            let mut i = info(&mut rng);
+            i.npc.kind = kind;
+            i.npc.ai1 = ai1;
+            slime_body_item_drop().can_drop(&mut i)
+        };
+        for kind in [1, 59, 147, 184, 537] {
+            assert!(check(kind, 23.0), "type {kind} may carry an item");
+            assert!(!check(kind, 0.0), "type {kind}: no swallowed item");
+            assert!(
+                !check(kind, ITEM_ID_COUNT as f32),
+                "type {kind}: out of range"
+            );
+        }
+        assert!(!check(2, 23.0), "the Demon Eye is not a slime body");
+    }
+
+    /// `SlimeBodyItemDropRule.TryDroppingItem` (`:24-33`): the dropped item is
+    /// `ai[1]` and the stack rides `Next(min, max + 1)`.
+    #[test]
+    fn the_slime_body_drops_its_swallowed_item_with_the_table_stack() {
+        let mut rng = crate::tile_light::FastRandom::new(42);
+        let mut i = info(&mut rng);
+        i.npc.kind = 1;
+        i.npc.ai1 = 71.0; // torch: 50-99
+        let mut out = Vec::new();
+        let r = resolve_rule(slime_body_item_drop().as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].item, 71);
+        assert!((50..=99).contains(&out[0].stack), "stack {}", out[0].stack);
+    }
+
+    /// `WorldGen.StatueStyleToItem` (`WorldGen.cs:37928-37991`): the named
+    /// styles, the three runs and the `default` arm.
+    #[test]
+    fn statue_styles_map_to_their_items() {
+        for (style, item) in [
+            (0, 360),
+            (1, 52),
+            (43, 1152),
+            (49, 1462),
+            (50, 2672),
+            (51, 3651),
+            (62, 3662),
+            (63, 3708),
+            (75, 3720),
+            (76, 4397),
+            (80, 5317),
+            (82, 5319),
+            // `default: return 438 + style - 2;`
+            (2, 438),
+            (3, 439),
+            (42, 478),
+        ] {
+            assert_eq!(statue_style_to_item(style), item, "style {style}");
+        }
+    }
+
+    /// `StatueMimicItemDropRule` (`:15-36`): the style rides `ai[1]`, stack 1.
+    #[test]
+    fn the_statue_mimic_drops_the_style_item() {
+        let mut rng = crate::tile_light::FastRandom::new(3);
+        let mut i = info(&mut rng);
+        i.npc.kind = 690;
+        i.npc.ai1 = 51.0;
+        let mut out = Vec::new();
+        let r = resolve_rule(statue_mimic_item_drop().as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!((out[0].item, out[0].stack), (3651, 1));
+    }
+
+    /// `MechBossSpawnersDropRule` (`:16-23`): a worth-dropping NPC in hardmode
+    /// with at least one mech still owed.
+    #[test]
+    fn the_mech_spawner_gate_needs_hardmode_value_and_an_undowned_mech() {
+        let mut rng = crate::tile_light::FastRandom::new(1);
+        let rule = mech_boss_spawners_drop();
+        let mut check = |hard_mode: bool, value: f32, mechs: (bool, bool, bool)| {
+            let mut i = info(&mut rng);
+            i.flags.hard_mode = hard_mode;
+            i.npc.value = value;
+            i.flags.downed_mech1 = mechs.0;
+            i.flags.downed_mech2 = mechs.1;
+            i.flags.downed_mech3 = mechs.2;
+            rule.can_drop(&mut i)
+        };
+        assert!(check(true, 1.0, (false, false, false)));
+        assert!(check(true, 1.0, (true, true, false)), "the last mech");
+        assert!(!check(false, 1.0, (false, false, false)), "pre-hardmode");
+        assert!(!check(true, 0.0, (false, false, false)), "worthless NPC");
+        assert!(!check(true, 1.0, (true, true, true)), "all three downed");
+    }
+
+    /// `MechBossSpawnersDropRule.TryDroppingItem` (`:25-55`): the three
+    /// sequential 1/2500 rolls, each gated on its own undowned mech; a hit on
+    /// the third still yields the 556/544/557 order.
+    #[test]
+    fn the_mech_spawner_rolls_one_mech_at_a_time() {
+        // The 556 arm: mech 1 undowned, the other two downed — only that roll
+        // can fire, so the replay is deterministic with luck 0.
+        let rule = mech_boss_spawners_drop();
+        let mut hits = [0usize; 3];
+        for seed in 0..2000u64 {
+            let mut rng = crate::tile_light::FastRandom::new(seed);
+            let mut i = info(&mut rng);
+            i.flags.hard_mode = true;
+            i.flags.downed_mech2 = true;
+            i.flags.downed_mech3 = true;
+            i.npc.value = 1.0;
+            let mut out = Vec::new();
+            if resolve_rule(rule.as_ref(), &mut i, &mut out).state == DropResultState::Success {
+                assert_eq!(out[0].item, 556, "only the mech-1 arm is armed");
+                assert_eq!(out[0].stack, 1);
+                hits[0] += 1;
+            }
+        }
+        // `1/2500` over 2 000 seeds: expect ~0.8 hits; the arm must not be
+        // silently always-off or always-on.
+        assert!(hits[0] < 20, "the 1/2500 gate stayed rare: {hits:?}");
+    }
+
+    /// `FromOptionsWithoutRepeatsDropRule.TryDroppingItem` (`:27-45`): exactly
+    /// `dropCount` DISTINCT picks, drawn off the shrinking list.
+    #[test]
+    fn the_without_repeats_rule_drops_distinct_options() {
+        let rule = from_options_without_repeats(2, &[3008, 3014, 3012, 3015, 3023]);
+        for seed in 0..200u64 {
+            let mut rng = crate::tile_light::FastRandom::new(seed);
+            let mut i = info(&mut rng);
+            let mut out = Vec::new();
+            let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+            assert_eq!(r.state, DropResultState::Success);
+            assert_eq!(out.len(), 2, "dropCount draws");
+            assert_ne!(out[0].item, out[1].item, "no repeats, seed {seed}");
+            for req in &out {
+                assert!([3008, 3014, 3012, 3015, 3023].contains(&req.item));
+                assert_eq!(req.stack, 1);
+            }
+        }
+        // `dropCount` above the option count stops at the list end.
+        let rule = from_options_without_repeats(9, &[1, 2, 3]);
+        let mut rng = crate::tile_light::FastRandom::new(1);
+        let mut out = Vec::new();
+        resolve_rule(rule.as_ref(), &mut info(&mut rng), &mut out);
+        assert_eq!(out.len(), 3, "clamped to the option count");
+    }
+
+    /// `FromOptionsWithoutRepeatsDropRule.ReportDroprates` (`:47-65`): the
+    /// `1 - (n-1)/n` product over `min(dropCount, n)` draws.
+    #[test]
+    fn the_without_repeats_report_matches_the_chain_product() {
+        let rule = from_options_without_repeats(2, &[10, 20, 30]);
+        let mut drops = Vec::new();
+        rule.report_droprates(&mut drops, &DropRateInfoChainFeed::new(1.0));
+        // 1 - (2/3 * 1/2) = 2/3.
+        assert_eq!(drops.len(), 3);
+        for row in &drops {
+            assert!((row.drop_rate - 2.0 / 3.0).abs() < 1e-6, "{row:?}");
+            assert_eq!((row.stack_min, row.stack_max), (1, 1));
+        }
+    }
+
+    /// `Conditions.NamedNPC.CanDrop` (`Conditions.cs:971-979`) and
+    /// `Conditions.RedHatSkeletron.CanDrop` (`:545-548`).
+    #[test]
+    fn the_two_new_conditions_read_their_folded_npc_flags() {
+        let mut rng = crate::tile_light::FastRandom::new(1);
+        let mut check = |named: Option<NamedNpc>, red_hat: bool| {
+            let mut i = info(&mut rng);
+            i.npc.named = named;
+            i.npc.red_hat_skeletron = red_hat;
+            (
+                Cond::NamedNpc(NamedNpc::GuideAndrew).can_drop(&mut i),
+                Cond::RedHatSkeletron.can_drop(&mut i),
+            )
+        };
+        assert_eq!(check(None, false), (false, false));
+        assert_eq!(check(Some(NamedNpc::GuideAndrew), false), (true, false));
+        assert_eq!(check(Some(NamedNpc::PainterJim), false), (false, false));
+        assert_eq!(check(None, true), (false, true));
+    }
+
+    /// The `NamedNpc` keys are the three `ItemDropDatabase.cs:738-740` names.
+    #[test]
+    fn the_named_npc_keys_are_the_table_keys() {
+        assert_eq!(NamedNpc::GuideAndrew.key(), "GuideNames.Andrew");
+        assert_eq!(
+            NamedNpc::SteampunkerWhitney.key(),
+            "SteampunkerNames.Whitney"
+        );
+        assert_eq!(NamedNpc::PainterJim.key(), "PainterNames.Jim");
     }
 }
