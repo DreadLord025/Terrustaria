@@ -227,17 +227,27 @@ impl ItemDrop {
     /// stand-in for the C#'s `Collision.shimmer` flag that
     /// `WorldItem.Update`'s wet half sets (`WorldItem.cs:868-877`).
     fn box_in_shimmer(&self, world: &World) -> bool {
+        self.box_in_liquid(world, |t| tr_core::shimmer::tile_is_shimmer(t))
+    }
+
+    /// `Collision.WetCollision(position, width, height)` (`WorldItem.cs:870`):
+    /// the drop's box overlaps any non-empty liquid cell. This is `base.wet`,
+    /// the gate on most `UpdateItem_VisualEffects` light arms.
+    pub fn box_is_wet(&self, world: &World) -> bool {
+        self.box_in_liquid(world, |t| t.liquid > 0)
+    }
+
+    fn box_in_liquid(&self, world: &World, hit: impl Fn(&tr_core::tile::Tile) -> bool) -> bool {
         let x0 = (self.pos.x / tr_core::TILE_PX) as i32;
         let x1 = ((self.pos.x + SIZE) / tr_core::TILE_PX) as i32;
         let y0 = (self.pos.y / tr_core::TILE_PX) as i32;
         let y1 = ((self.pos.y + SIZE) / tr_core::TILE_PX) as i32;
         for ty in y0..=y1 {
             for tx in x0..=x1 {
-                if world
-                    .tile(tx, ty)
-                    .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
-                {
-                    return true;
+                if let Some(t) = world.tile(tx, ty) {
+                    if hit(t) {
+                        return true;
+                    }
                 }
             }
         }

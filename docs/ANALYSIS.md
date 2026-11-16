@@ -908,8 +908,9 @@ items are collectible but not placeable. Desert structures and loot are not port
 
 ## Surface backgrounds
 
-`Main.DrawSurfaceBG` is ported for the four biomes the generator has: forest (0),
-desert (2), ocean (4) and snow (7). Every layer is gated and tinted by its
+`Main.DrawSurfaceBG` is ported for eight of the surface biomes: forest (0), corrupt (1),
+desert (2), jungle (3), ocean (4), hallow (6), snow (7), crimson (8) and mushroom (9).
+Every layer is gated and tinted by its
 `Main.bgAlphaFrontLayer` / `Main.bgAlphaFarBackLayer` entry
 (`ColorOfSurfaceBackgroundsBase * alpha`), so two biomes blend while `Main.bgStyle`
 cross-fades; a zero alpha skips the layer.
@@ -929,9 +930,51 @@ moves only the world) and the X phase is
 `-IEEERemainder(screenLeft·parallax, scaledWidth) − scaledWidth/2` against the screen's
 left edge, as in `DrawSurfaceBG`.
 
-`Main.GetPreferredBGStyleForPlayer` is approximated with the same camera-column biome
-tests the water style uses — beach → 4, desert → 2, snow → 7, otherwise 0 (the dungeon,
-corruption etc. do not exist in our generator). `DrawBG_HandleBackgroundTransition`
+The five remaining surface variants ride the same front-layer path: corrupt (1), jungle
+(3), hallow (6), crimson (8) and mushroom (9). [`World`] stores one **style byte** per
+biome (`corrupt_bg_style`, …), and `surface_bg_texture_ids` resolves it to the three
+`Background_<id>` ids with `WorldGen.setBG`'s cases 1/2/4/5/8 (`WorldGen.cs:7235-7608`);
+`-1` means the row is not drawn. The ids are derived on demand, so a style change needs
+no atlas rebuild — but the world-dependent sheets are packed at load
+(`assets::load_world_sheets`), hence a world's session must see one style set.
+
+Every row goes through `FrontLayer` + `front_layers`, which is a literal port of each
+`DrawSurfaceBG_*` row: the caller's `(scale, parallax, magic·k + top)` magic numbers,
+then `SetBackgroundOffsets` (`Main.cs:60384-60775`) overriding `bgScale`/`bgParallax` and,
+for the ids whose `num`/`num2` pair is non-zero, replacing `bgTopY` wholesale. That is why
+a style whose id is in the offsets table ignores the caller's row constants. Scale is
+doubled by `bgGlobalScaleMultiplier = 2` (`Main.cs:59329`) and every `top` already carries
+the front loop's `pushBGTopHack = -150` (`Main.cs:59302/59346/59525`).
+
+The per-row quirks are applied *after* the offsets, exactly like the source: corrupt's
+`bgTexIndexes[0] == 56` nudge subtracts 100 from **row 0's id on every row**
+(`Main.cs:61128/61154/61199`); jungle subtracts 200/175/150 for `59`/`60`/`61` and adds
+`DrawSurfaceBG_GetLayerYOffset` on every row (`:59740`, `:60944-61008`); crimson nudges
+row 0 by `+50` for `105` and `-350` for `174`, and row 2's `175` by `-1000` in X, `-400` in
+Y plus one extra tile (`:60206-60291`); hallow's first `SkyManager` boundary is
+`1.2f / parallax` after the offset override (`:60788`); snow and mushroom close with
+`DrawToDepth(1f)` (`:60386`, `:60186`). Row 1 of corrupt/jungle/forest is mirrored
+(`SpriteEffects.FlipHorizontally`), mushroom's three rows each replace the tint with the
+glow colour (`:60001/60065/60127`), clamped at or above the base colour's byte.
+
+The animated sheets (`GetBackgroundRect`, `Main.cs:61220-61262`) sample a 2×2 grid: `235`
+every 20 ticks, `219/220/221/271/272/273/302/303/305/307/309/311/313/315/317/326/337/338/341`
+every 15, `281` every 5, then `Inflate(0, -2)`. `background_frame` halves `w`/`h` because
+`Main.backgroundWidth/Height` are already halved for those ids at load (`:59046-59072`).
+
+**Deviation (Mushroom glow RNG).** `DrawSurfaceBG_Mushroom` rolls
+`Main.rand.Next(28, 42)` once per row (`:60002/60066/60128`). The port derives that value
+from `Main.GameUpdateCount` and the row index through `next_rand` instead of consuming
+`Main.rand`, so the draw path never advances the simulation's RNG stream — a hard
+invariant of the port (a draw-time draw would desync world generation against the
+original for the same seed). The resulting glow oscillates over the same 28..41 range at
+a comparable rate; the two rolls are not bit-identical to the original's.
+
+`Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`) is ported in full, including
+the beach/corrupt-blood-count branches and the glowshroom test; only its final
+`Main.treeX[]` forest sub-style selection (10/11/12) collapses to 0, and the desert
+evil variants (5/13/14) to 2 — both because those style tables are unported.
+`DrawBG_HandleBackgroundTransition`
 waits 30 frames before adopting a new style (60 when entering a forest style), then sets
 `bgDelay = -60` as a 60-frame cooldown (0 for a forest target);
 `UpdateBGVisibility_BackLayer`/`_FrontLayer` move 16 alpha slots at
@@ -946,12 +989,14 @@ original's zoom-1 matrix, so the layers hold their screen size at any game zoom.
 are world objects at a fixed altitude above `worldSurface` and drift with the wind; the
 storm `cloudBG` banks (`Background_112/113`) fade in with `cloudAlpha`.
 
-Not ported: the styles that need `SceneMetrics` beyond our four biomes (corruption 1,
-jungle 3, hallow 6, crimson 8, glowshroom 9, the extra forest sets 10..12 and the desert
-evil variants 5/13/14), the saved `treeBG*` / `desertBackgroundSet` randomisation (tree
-set 1 and the pure desert set are assumed), `DrawSurfaceBG_DrawChangeOverlay` (the black
-flash on first entering a background), the far-cloud depth layers
-(`DrawClouds_Distant/Closer`), the ocean water-line ambience and the `Background_49` fog.
+Not ported: the extra forest sets 10..12 and the desert evil variants 5/13/14 (their
+style tables need `Main.treeX[]` / `Main.desertBackgroundSet`, and only the tree set 1 and
+the pure desert set are packed), the forest styles' per-texture quirks
+(`91`/`173`/`178`/`184`/`282`/`328`/`333`/`329`/`334`, `Main.cs:61278-61301`,
+`:61400-61490`), snow's 20-style table (`Main.snowBG`, style 1 assumed),
+`DrawSurfaceBG_GoodEvilDesert`, `DrawSurfaceBG_DrawChangeOverlay` (the black flash on
+first entering a background), the far-cloud depth layers (`DrawClouds_Distant/Closer`),
+the ocean water-line ambience and the `Background_49` fog.
 
 Also not ported: the per-biome **animated screen effects**. In particular the day-time
 desert **heat shimmer** — `SceneState.ApplyVisuals` enables the `HeatDistortion` filter
@@ -14612,3 +14657,145 @@ Three, all forced by the port's shape:
   and then runs the follow-up in the same call. `TryProtectingSpawnedItems`/
   `UndoSpawnedItemProtection` (`:31708`/`:31717`) have no ported consumer.
 * **The kill-all row has no C# counterpart** (see above) — its sweep stays as-is.
+
+## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
+
+`Main.GetBuffTooltip` (`Main.cs:43254-43289`) has a `switch` over the buff id
+whose two arms print a *player-computed* percentage rather than a static
+localization string:
+
+* `case 94` (`ManaSickness`) formats `Player.manaSickReduction` into the
+  `ManaSickness2` row of `Terraria.Localization.Content.en-US.Game.json`.
+* `case 396` (`ManaHeat`) does the same with `Player.manaHeat`.
+
+The port has neither `Player.manaSickReduction` nor `Player.manaHeat`: the
+mana-sickness debuff applies its magic-damage multiplier inline in the damage
+path and stores no reduction field, and 396 does not exist at all. Rather than
+invent a field whose value no other system maintains,
+`ui::resources::buff_tooltip` falls back to the plain `BuffDescription.{name}`
+row for both ids. When the 94/396 buff *effects* land (M2-BUFF-3/4) the fields
+will exist and these two arms can be restored — the ported code is already a
+`match` over the id, so adding them is two arms.
+
+Two further colours are dropped rather than approximated: `MouseTextInner`'s
+`-13` (master) and `-12` (disco) rarity arms read `Main.masterColor` and
+`Main.Disco*`, neither of which the port keeps. The buff hover never passes
+those rarities (`Main.cs:43239-43246` only uses `-10` for the melee buffs and
+`0` otherwise), so they are unreachable from this call site;
+`ui::resources::mouse_text_color` documents them and defers to the shared
+`tooltip::item_name_color` table for every other value.
+
+## Entity lights (S1-E-5, 2026-11-16)
+
+The C# funnels every `Lighting.AddLight` overload into
+`Lighting.AddLight(int i, int j, float r, float g, float b)` (`Lighting.cs:157-163`),
+which appends to the active `ILightingEngine`'s per-frame list behind
+`!Main.gamePaused && Main.netMode != 2` (`LightingEngine.cs:51-54`). The engine
+max-merges that list onto the working map (`LightingEngine.cs:215-225`) and then
+swaps it with the previous frame's list, clearing the current one
+(`:226-233`) — so a source added this tick is **visible to the light pass one frame
+later**, and only if a swap ran in between (`Main.GameUpdateCount` guards the swap
+against two passes in one update).
+
+Ported here: that list pair (`crates/tr-app/src/entity_lights.rs::EntityLights`) and
+one source family, `WorldItem.UpdateItem_VisualEffects` (`WorldItem.cs:1204-1649`).
+The pass runs in `app/frame.rs` after `LightParams` is built, because that is the
+only place the struct exists; `tr-core`'s `compute_into_with_lights` takes a single
+`&[DynamicLight]`, so `render/tiles.rs` concatenates the waterfall list and the
+entity list into `DrawScratch::all_lights` before the compute. **List order is the
+only ordering constraint** — no ported arm draws RNG, so the frame position of the
+feed cannot change the fixed-step order or any stream.
+
+* **14 arms that draw `Main.rand` are not ported at all** — 5043, 116, 3191,
+  520/3454, 521/3455, 547/3453, 548, 575, 549, 58/1734/1867, 184/1735/1868/4143,
+  522 and 1332 (`WorldItem.cs:1206, 1211, 1224, 1229, 1234, 1239, 1244, 1249, 1254,
+  1259, 1264, 1269, 1274`). Each mixes its `AddLight` with a `Dust.NewDust` whose
+  draws ride `Main.rand`, and the dust system belongs to the S1-E-2/S1-E-3 branches.
+  Skipping a whole arm leaves the stream untouched, which is exact — the port does
+  not consume the `Next(90, 111)` those arms would have drawn.
+* **Two arms are ported for their light half only**: 75 (`:1624-1635`) and the
+  `BossBag` set (`:1636-1648`). Both draw `Main.rand` only inside a
+  `timeSinceItemSpawned % 12 == 0` dust branch that the port does not run, so the
+  `AddLight` line itself is RNG-free and exact; the dust is the dust task's.
+  Because the port omits the whole branch, the `Main.rand` calls are never reached
+  and that arm's stream position is skipped rather than shortened.
+* **The four `Main.essScale` arms (3456-3459) are not ported.** `Main.essScale`
+  drifts between 0.7 and 1.0 once per draw pass (`Main.cs:62264-62277`, seeded 1.0
+  at `:66673`) and has no port field yet. The four rows are all-`Vector3` scaled
+  colours with no other state, so they are cheap to add once `essScale` exists; until
+  then the four gemspark blocks emit no light.
+* **`base.wet` is the gate, not `Collision.WetCollision` verbatim.** The C# sets
+  `base.wet` from `Collision.WetCollision(position, width, height)`
+  (`WorldItem.cs:870`) in the movement half that runs *before*
+  `UpdateItem_VisualEffects` (`:436`). `ItemDrop::box_is_wet` (`crates/tr-app/src/item.rs`)
+  tests the same 14×14 box for `tile.liquid > 0`; `box_in_shimmer` is the same helper
+  with the shimmer predicate. The item box is `ItemDrop::SIZE` (14) in both, matching
+  `Entity.width`/`height` for a dropped item.
+* **The `createTile == 4` arm shadows 19 per-id arms.** `WorldItem.cs:1375` comes
+  before every later `type == N` test, and every placeable torch has
+  `createTile == 4` — so the per-id arms for 3114, 1245, 433, 523, 974, 1333, 4383,
+  5293, 5353, 4384, 3045, 3004, 2274 and 427-432 are **unreachable in vanilla**.
+  They all take the `Lighting.AddLight(base.Center, placeStyle)` overload
+  (`Lighting.cs:151-155`) instead, i.e. `TorchID.TorchColor(placeStyle)` at full
+  amount, positioned by `(int)Center.X / 16` — truncate *then* divide, which the
+  port models as `XAnchor::CenterTruncated` (the two forms differ only for negative
+  pixel positions but the port must not pick one at random). The port keeps the
+  dead arms in source order rather than deleting them: they cost nothing, they keep
+  the arm list comparable to the C#, and deleting them would be an unforced
+  divergence that a later refactor could misread as a *missing* port. The
+  Cursed Torch (523) is the visible case — a `WaterTorches` row, so it stays lit
+  under water where a plain torch goes dark.
+* **Remaining source families.** Projectile (107 call sites), NPC (80), Player (46),
+  Dust (94), Mount (14), TileDrawing (6) and the particles/gore rows are **not**
+  ported. `Gore.Update`'s own lights (`Gore.cs:258`, `:940`, `:1076-1080`) can now be
+  expressed through `EntityLights` but still need a seam from `tr-core` — the gore
+  pool has no light sink, so they stay dropped.
+
+## The last four drop-rule classes (S1-E-14, 2026-11-16)
+
+`ItemDropRules` is now fully covered: `SlimeBodyItemDropRule`,
+`StatueMimicItemDropRule`, `MechBossSpawnersDropRule` and
+`FromOptionsWithoutRepeatsDropRule` are ported in `crates/tr-core/src/loot.rs`
+and reachable from the generated table, and `Conditions.NamedNPC` /
+`Conditions.RedHatSkeletron` are `Cond` variants. Three deliberate folds keep
+`LootNpc` `Copy`:
+
+1. **`Conditions.NamedNPC`** (`Conditions.cs:971-979`) compares
+   `info.npc.GivenName` against `Language.GetTextValue(neededName)`. `LootNpc`
+   cannot hold a `String`, so the comparison is hoisted to the caller:
+   `tr_core::loot::NamedNpc` has exactly the three variants the drop table
+   registers (`GuideNames.Andrew`, `SteampunkerNames.Whitney`,
+   `PainterNames.Jim`), `NamedNpc::key()` is the localization key, and
+   `loot_db::named_npc(&given_name)` resolves it through `lang::text`.
+   `HasGivenName` (`NPC.cs:6741`) is the empty-string early return.
+2. **`Conditions.RedHatSkeletron`** (`Conditions.cs:543-559`) is
+   `NPC.RedHatSkeletronAdjustmentsEnabled()` (`NPC.cs:66671-66682`) — four
+   `(type, ai[3] or localAI[3] == 1)` pairs (35/`ai[3]`, 36/`localAI[3]`,
+   32/`localAI[3]`, 33/`ai[3]`). Folded to `LootNpc::red_hat_skeletron`.
+   `spawn_loot` currently always passes `false`: the only C# writers of those
+   slots are `NPC.RedHatSkeletron` (`NPC.cs:80395`, the Clothier's curse) and
+   the sitting-Clothier ritual (`PlayerSittingHelper.cs:81`), both unported —
+   and the port's Skeletron head stores the live hand count in `ai[3]`
+   (`world_sim/npcs.rs`'s init pass), so reading the field as the flag would be
+   wrong. The five `ByCondition(RedHatSkeletron, …)` rows are registered and
+   report; they simply cannot fire until that summon path lands.
+3. **`MechBossSpawnersDropRule`'s `!info.IsInSimulation`** (`:16-23`) is a
+   constant `true`: the only resolver is the death path (`NPC.cs:78927-78936`,
+   which constructs `DropAttemptInfo` with `IsInSimulation = false`) and the
+   port has no projection simulation.
+
+**The generator bug this found.** `tools/gen_loot.py` read `Populate()`'s
+statement stream but did not follow its `this.RegisterBosses();` /
+`this.RegisterMimic();` calls into the 23 nested private methods, so 147 of the
+633 register sites — the entire boss table, including Skeletron's red-hat rows
+and the Moon Lord's distinct-pick row — were missing from `loot_db_gen.rs`
+without a single warning. `expand_nested` + the `src` parameter of
+`process_stream` now recurse (each method keeps its own locals), and
+`INT_LOCAL_RE` resolves `short type = 35;` / `int type = …` register arguments.
+Count: 1 421 -> 1 582 registrations. The remaining 166 warnings are
+`OneFromOptions` ids that `itemdata.rs` does not model (S1-E-2), unchanged.
+
+**Deliberate simplification.** `statue_style_to_item` is a plain arithmetic
+table, not a `Dictionary`, because the C# is a `switch` with three contiguous
+runs (`51..62`, `63..75`, and the `default: 438 + style - 2`) — the run form
+keeps the port readable against `WorldGen.cs:37928-37991`.

@@ -53,6 +53,10 @@ pub(crate) struct DrawScratch {
     /// previous frame's light list when `LightTiles` runs, so the lights are
     /// swapped here after each world pass and consumed by the next compute.
     pub(crate) waterfall_lights: Vec<tr_core::lighting::DynamicLight>,
+    /// The `waterfall_lights` + `entity_lights` union the light compute reads
+    /// (`LightingEngine.cs:215-225` walks one list; the port concatenates the
+    /// two already-swapped source lists here). Rebuilt each world pass.
+    pub(crate) all_lights: Vec<tr_core::lighting::DynamicLight>,
     /// The waterfall quads walked this frame (`WaterfallManager.draw`), consumed
     /// by the tile pass below.
     pub(crate) waterfall_quads: Vec<tr_core::waterfall::WaterfallDraw>,
@@ -273,6 +277,7 @@ pub(crate) fn draw_tiles(
     light: &mut LightMap,
     scratch: &mut DrawScratch,
     style: &LightStyle,
+    entity_lights: &crate::entity_lights::EntityLights,
     anim_time: f32,
     waterfall: &mut tr_core::waterfall::WaterfallManager,
     player: Option<&Player>,
@@ -326,9 +331,13 @@ pub(crate) fn draw_tiles(
         water_style = n.min(14);
     }
     let t_light = Instant::now();
-    // Vanilla applies the waterfall lights one frame late (the engine keeps the
-    // previous frame's `AddLight` list when `LightTiles` runs); `scratch`
-    // carries exactly that list.
+    // Vanilla applies the `AddLight` list one frame late (the engine keeps the
+    // previous frame's list when `LightTiles` runs, `LightingEngine.cs:210-214`);
+    // `scratch` carries the waterfall sources and `entity_lights` the entity
+    // ones, both already swapped by the previous frame.
+    scratch.all_lights.clear();
+    scratch.all_lights.extend_from_slice(&scratch.waterfall_lights);
+    scratch.all_lights.extend_from_slice(entity_lights.visible());
     light.compute_into_with_lights(
         world,
         x0,
@@ -336,8 +345,8 @@ pub(crate) fn draw_tiles(
         x1,
         y1,
         params,
-        &scratch.waterfall_lights,
-        waterfall.lights_key(),
+        &scratch.all_lights,
+        waterfall.lights_key() ^ entity_lights.key().rotate_left(17),
     );
     let light_ms = t_light.elapsed().as_secs_f32() * 1000.0;
 
