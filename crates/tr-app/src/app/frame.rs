@@ -504,7 +504,7 @@ impl App {
                         && self.camera.y
                             < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
                     shimmer: self.scene_metrics.zone_shimmer,
-                    town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                    town_npcs: self.scene_metrics.town_npc_count,
                     // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
                     cloud_alpha: self.rain.visual_alpha(),
                     zone_rain: self.scene_metrics.zone_rain,

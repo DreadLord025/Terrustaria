@@ -162,6 +162,47 @@ pub struct SceneMetrics {
     pub active_music_box: i32,
     /// `MusicBoxSilence` — the silent box (`frameY / 36 == 100`).
     pub music_box_silence: bool,
+    // — the S1-L-1 tail (`ScanOnScreenTiles` `:450-577`, `ScanNPCPositions`
+    // `:727-745`, `UpdateOreFinder` `:867-886`) —
+    /// `HasClock`: tile 104 anywhere in the visual scan area (`:462-465`).
+    pub has_clock: bool,
+    /// `ActiveFountainColor` (`:486-517`): the last fountain row's colour, -1
+    /// = none. `Main.CalculateWaterStyle` returns it when `>= 0`
+    /// (`Main.cs:57390-57392`).
+    pub active_fountain_color: i32,
+    /// `ActiveMonolithType` (`:518-529`): 0..4 = the vortex/nebula/stardust/
+    /// solar/moon-lord monoliths, -1 = none.
+    pub active_monolith_type: i32,
+    /// `BloodMoonMonolith`: tile 480, `frameY >= 54` (`:530-534`).
+    pub blood_moon_monolith: bool,
+    /// `EchoMonolith`: tile 657, `frameY >= 54` (`:535-539`).
+    pub echo_monolith: bool,
+    /// `ShimmerMonolithState` = `frameY / 54` of tile 658 (`:540-542`).
+    pub shimmer_monolith_state: i32,
+    /// `CRTMonolith` / `RetroMonolith` / `NoirMonolith` /
+    /// `RadioThingMonolith`: tiles 720/721/725/733, `frameY >= 54`
+    /// (`:543-561`).
+    pub crt_monolith: bool,
+    /// See [`SceneMetrics::crt_monolith`].
+    pub retro_monolith: bool,
+    /// See [`SceneMetrics::crt_monolith`].
+    pub noir_monolith: bool,
+    /// See [`SceneMetrics::crt_monolith`].
+    pub radio_thing_monolith: bool,
+    /// `TownNPCCount`: the town NPCs whose centre sits in the
+    /// `TownNPCRectSize` rect around `Center` (`:738-742`).
+    pub town_npc_count: i32,
+    /// `ClosestNPCPosition` (`SceneMetrics.cs:138`): the nearest active NPC of
+    /// each type, in world pixels — `[0.0, 0.0]` = none seen. The index space
+    /// is `NPCID.Count` (`NPCID.cs:12581`).
+    pub closest_npc_position: Vec<[f32; 2]>,
+    /// `BestOreType` / `BestOrePosition`: the highest-priority ore in the scan
+    /// window, nearest first (`:867-886`); -1 = none.
+    pub best_ore_type: i32,
+    /// See [`SceneMetrics::best_ore_type`].
+    pub best_ore_position: (i32, i32),
+    /// `_bestOreDistSq`: the squared tile distance of `best_ore_position`.
+    pub best_ore_dist_sq: i32,
 }
 
 /// The `Player.SceneMetrics` aura read as a Copy snapshot — what
@@ -236,6 +277,17 @@ pub fn is_dungeon_wall(wall: u16) -> bool {
     matches!(wall, 7 | 8 | 9 | 94..=99)
 }
 
+/// `SceneMetrics.IsValidForOreFinder` (`SceneMetrics.cs:888-903`): the metal
+/// detector skips the frame variants that are not the ore itself — tile 227's
+/// placed-metal frames 272..=374 and tile 129's crystal shard frames 324+.
+pub fn is_valid_for_ore_finder(tile: &crate::tile::Tile) -> bool {
+    match tile.kind {
+        227 => (272..=374).contains(&tile.frame_x),
+        129 => tile.frame_x >= 324,
+        _ => true,
+    }
+}
+
 impl SceneMetrics {
     /// `SceneMetrics.Reset` — zeroed counts and flags.
     pub fn new() -> Self {
@@ -301,6 +353,21 @@ impl SceneMetrics {
             zone_shadow_candle: false,
             active_music_box: -1,
             music_box_silence: false,
+            has_clock: false,
+            active_fountain_color: -1,
+            active_monolith_type: -1,
+            blood_moon_monolith: false,
+            echo_monolith: false,
+            shimmer_monolith_state: 0,
+            crt_monolith: false,
+            retro_monolith: false,
+            noir_monolith: false,
+            radio_thing_monolith: false,
+            town_npc_count: 0,
+            closest_npc_position: vec![[0.0; 2]; 697],
+            best_ore_type: -1,
+            best_ore_position: (0, 0),
+            best_ore_dist_sq: i32::MAX,
         }
     }
 
@@ -490,9 +557,121 @@ impl SceneMetrics {
         self.desert_sand_tile_count = (self.sand_tile_count - self.ocean_sand_tile_count).max(0);
     }
 
+    /// `SceneMetrics.ScanOnScreenTiles` (`SceneMetrics.cs:450-577`): the
+    /// visual-area pass — the clock, the music box, the fountain colour and
+    /// the monolith states. `area` is the C#'s `visualScanArea` as
+    /// `(left, top, right, bottom)` in tiles, already inflated by 28
+    /// (`Main.cs:62536-62537`); the C# re-clamps it to the world here.
+    pub fn scan_on_screen_tiles(&mut self, world: &World, area: (i32, i32, i32, i32)) {
+        // `WorldUtils.ClampToWorld` (`WorldBuilding/WorldUtils.cs:9-14`, fluff 0).
+        let left = area.0.clamp(0, world.width);
+        let top = area.1.clamp(0, world.height);
+        let right = area.2.clamp(0, world.width);
+        let bottom = area.3.clamp(0, world.height);
+        for x in left..right {
+            for y in top..bottom {
+                let Some(tile) = world.tile(x, y) else {
+                    continue;
+                };
+                // `:458-461`: absent or inactive tiles are skipped.
+                if !tile.active() {
+                    continue;
+                }
+                // `:462-465`.
+                if tile.kind == 104 {
+                    self.has_clock = true;
+                }
+                match tile.kind {
+                    // `:468-481`: the music box — `frameY / 36` is the track,
+                    // 100 the silent box.
+                    139 => {
+                        if tile.frame_x >= 36 {
+                            let num = tile.frame_y as i32 / 36;
+                            if num == 100 {
+                                self.music_box_silence = true;
+                            } else {
+                                self.active_music_box = num;
+                            }
+                        }
+                    }
+                    // `:482-522`: the fountain colour, keyed on the frame
+                    // column (`frameX / 36`) of the flowing frame.
+                    207 => {
+                        if tile.frame_y >= 72 {
+                            self.active_fountain_color = match tile.frame_x as i32 / 36 {
+                                0 => 0,
+                                1 => 12,
+                                2 => 3,
+                                3 => 5,
+                                4 => 2,
+                                5 => 10,
+                                6 => 4,
+                                7 => 9,
+                                8 => 8,
+                                9 => 6,
+                                _ => -1,
+                            };
+                        }
+                    }
+                    // `:523-534`: the four pillar monoliths share tile 410
+                    // (`frameX / 36` picks one), the Moon Lord's is 509.
+                    410 => {
+                        if tile.frame_y >= 56 {
+                            self.active_monolith_type = tile.frame_x as i32 / 36;
+                        }
+                    }
+                    509 => {
+                        if tile.frame_y >= 56 {
+                            self.active_monolith_type = 4;
+                        }
+                    }
+                    // `:535-573`: the six single-purpose monoliths.
+                    480 => {
+                        self.blood_moon_monolith = self.blood_moon_monolith || tile.frame_y >= 54
+                    }
+                    657 => self.echo_monolith = self.echo_monolith || tile.frame_y >= 54,
+                    658 => self.shimmer_monolith_state = tile.frame_y as i32 / 54,
+                    720 => self.crt_monolith = self.crt_monolith || tile.frame_y >= 54,
+                    721 => self.retro_monolith = self.retro_monolith || tile.frame_y >= 54,
+                    725 => self.noir_monolith = self.noir_monolith || tile.frame_y >= 54,
+                    733 => {
+                        self.radio_thing_monolith = self.radio_thing_monolith || tile.frame_y >= 54
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// `_tileCounts[id]` as an `i32` summand.
     fn count(&self, id: u16) -> i32 {
         self.tile_counts[id as usize] as i32
+    }
+
+    /// `SceneMetrics.UpdateOreFinder` (`SceneMetrics.cs:867-886`): keep the
+    /// highest-priority ore, nearest first. Called from `ScanTiles` per active
+    /// tile (`:445`), so the position rides the scan window.
+    pub fn update_ore_finder(&mut self, pos: (i32, i32), tile: &crate::tile::Tile) {
+        let priority = crate::tiledata::ORE_FINDER_PRIORITY[tile.kind as usize];
+        if priority <= 0 {
+            return;
+        }
+        // `num2` = the standing winner's priority, -1 when none (`:874`).
+        let best = if self.best_ore_type < 0 {
+            -1
+        } else {
+            crate::tiledata::ORE_FINDER_PRIORITY[self.best_ore_type as usize] as i32
+        };
+        if priority as i32 >= best && is_valid_for_ore_finder(tile) {
+            let dx = pos.0 - self.tile_center.0;
+            let dy = pos.1 - self.tile_center.1;
+            let dist_sq = dx * dx + dy * dy;
+            if priority as i32 != best || dist_sq < self.best_ore_dist_sq {
+                self.best_ore_type = tile.kind as i32;
+                self.best_ore_position = pos;
+                self.best_ore_dist_sq = dist_sq;
+            }
+        }
     }
 
     /// `SceneMetrics.CalculateZones` (`SceneMetrics.cs:662-707`), M1 subset.

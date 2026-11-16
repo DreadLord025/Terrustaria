@@ -14743,6 +14743,53 @@ below are recorded rather than resolved:
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
 
+## S1-L-1 - scene metrics: ScanOnScreenTiles / ScanNPCPositions / the ore finder (2026-11-16)
+
+The scan now runs the whole `SceneMetrics.Scan` body (`SceneMetrics.cs:326-351`) in
+source order: `ScanTiles`, `ScanOnScreenTiles`, `ScanNPCPositions`,
+`AggregateTileCounts`, `CalculateZones`. Readings behind deliberate deviations:
+
+* **The visual rect.** `Main.cs:62536-62537` is `Main.GetAreaToLight()` then
+  `.Inflate(28, 28)`; `GetAreaToLight` (`:63926-63936`) is the *scaled* camera rect,
+  `floor(pos/16) - 1` to `floor((pos+size)/16) + 2`. The port has no
+  `GameViewMatrix`, and its `camera` + `screen / zoom` is exactly the world-space
+  view the tile pass already draws (`render/tiles.rs:312-318`), so the rect is
+  derived the same way. Zoom is the only divergence: vanilla's scaled camera differs
+  from ours by the view matrix translation, which the port does not model. The rect
+  only gates the music box / clock / fountain / monolith reads, all of which are
+  single-tile proximity probes - a one-tile difference shifts a fountain colour by at
+  most one tile of the view, never the pixel output of an unrelated pass.
+* **`ScanNPCPositions` is gated on `npcs` being passed**, not on the C#
+  `settings.ScanNPCPositions` bool (`Main.cs:62541` always sets it; `Player.cs:16683`
+  also always sets it). `scan_scene_at` (the unit-test entry) passes none, so the
+  array stays zeroed there - the C# would clear it in `Reset` regardless (`:786`).
+* **`nPC.active` is approximated by `hp > 0`.** The port reaps dead NPCs at the end of
+  the NPC tick (`world_sim/npcs.rs`'s `retain(|n| n.hp > 0)`), so a slot in
+  `app.npcs` with `hp <= 0` is the transient state between the kill and the retain -
+  which the C# would also skip via `active == false`.
+* **`NPCBannerBuff` indexing** keeps the port's `vec![false; 320]`; the C# is
+  `BannerSystem.MaxBannerTypes = 293` (`BannerSystem.cs:1453`). Only ids < 293 are
+  ever written by `banner_num_from_frame`, so the wider vec is inert.
+* **Not ported (no reader in the port):** `PartyMonolithCount` (the party monolith
+  tile is not in the port's tile set), `MoonLordMonolith` (tile 623's state only
+  feeds `ManageSpecialBiomeVisuals("MoonLord", ...)`, unported), `CanPlayCreditsRoll`
+  (`ActiveMusicBox == 85` only gates the credits roll, which the port does not have),
+  and the `AddPlayerEffects` arms for held items 148/3117/5322 plus
+  `player.musicBox`/`musicBoxSilence`/`happyFunTorchTime` (`:747-774`) - the player
+  struct has none of those fields. `shimmerWet` is the one `AddPlayerEffects` input
+  the port does carry and it is wired (it was already).
+* **`ActiveFountainColor` has no consumer yet.** `Main.CalculateWaterStyle`
+  (`Main.cs:57387-57392`) returns it when `>= 0`, but the port's
+  `biome::calculate_water_style` derives the style from the camera alone and does not
+  take the metrics. Wiring it means threading the scan through three call sites
+  (`frame.rs:1131`, `render/tiles.rs:322`, `rain.rs:941`) — the water-style half of
+  the row, not this one.
+* **`TownNPCCount` is now real.** It feeds `MusicEnv.town_npcs` (the `>= 3` town
+  music gate, `Main.cs:12199`) and `SpawnContext.town_npcs` (the spawn-pressure
+  tiers, `NPC.cs:604-621`), both of which were hardcoded to `0` with an "M4-TOWN"
+  comment. The port does spawn town NPCs (`NpcKind::is_town_npc`), so this was a
+  real behavioural gap, not a placeholder.
+
 ### S1-E-37's remaining deviations
 
 Three, all forced by the port's shape:
