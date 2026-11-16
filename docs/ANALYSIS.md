@@ -14719,3 +14719,44 @@ Count: 1 421 -> 1 582 registrations. The remaining 166 warnings are
 table, not a `Dictionary`, because the C# is a `switch` with three contiguous
 runs (`51..62`, `63..75`, and the `default: 438 + style - 2`) — the run form
 keeps the port readable against `WorldGen.cs:37928-37991`.
+
+## Golf (S1-E-9, 2026-11-16)
+
+Three `tr-core` modules: `ball.rs` (the generic `Terraria.Physics` engine),
+`golf.rs` (`GolfHelper`'s arithmetic/table half) and `golf_state.rs`
+(`GolfState` + `GolfBallTrackRecord`). All ported 1:1 with `file:line`
+citations; 28 tests.
+
+**The `Materials.json` gap.** `GolfHelper.ContactListener` and `HitGolfBall`
+read five per-tile floats (`TileGolfPhysics.{Direct,Side,Club,PassThrough}`
+`ImpactDampening` + `ImpactDampeningResistanceEfficiency`) through
+`TileMaterials.GetByTileId`. `TileMaterials.cs:22-24` deserialises them from
+`Terraria.GameContent.Metadata.MaterialData.Materials.json`, an **embedded
+resource of `Terraria.dll`** - not a file. This repo has neither the DLL nor the
+JSON (`assets/Content/` holds only `Fonts`, `Images`, `Sounds`), so the table is
+unrecoverable. The port therefore reaches it through a `GolfMaterials` trait
+whose default (`DefaultMaterials`) returns `GolfPhysics::default()`, i.e. **1.0
+for every factor**. That is the identity for all four uses (the side/direct
+blend, `velocity * 1.0`, `lerp(v * 1.0, v, e) == v`; the bumper push uses no
+material at all), so an unknown material leaves the ball's motion untouched
+rather than inventing a friction value. Consequence: on real terrain the ball
+does not yet slow on landing; wiring the retail JSON (or a hand-built table)
+into `impl GolfMaterials` is the only remaining work for exact contact feel.
+
+**`GolfBall` is a value snapshot, not a `Projectile`.** `GolfState` keeps a live
+`Projectile` reference and re-validates it on every `GetLastHitBall`
+(`active`, `IsAGolfBall[type]`, `owner == Main.myPlayer`, `ai[1]`). `tr-core` has
+no projectile pool, so the caller supplies a `&GolfBall` snapshot and the same
+four guards read it. `Main.myPlayer` is a real parameter threaded through
+`get_last_hit_ball` - the owner check is a genuine comparison (a test varies both
+sides), not a constant.
+
+**`BALL_RETURN_PENALTY = 1` is dead.** `GolfState.cs:8` declares it and never
+reads it; it is omitted rather than carried as a dead constant.
+
+**Scope.** Ported: the ball engine, the shot model, the club table, the contact
+listener's bounce/bumper/hole-capture/pass-through decisions, the score record
+and the per-client state. Not ported: the projectile AIs 721/722 and 739-752,
+the golf UI, `FancyGolfPredictionLine`, tee placement, netcode, and the
+dust/sound/chat effects (the listener reports contacts instead of performing
+them, so the caller owns those).
