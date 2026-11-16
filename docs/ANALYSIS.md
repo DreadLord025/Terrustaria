@@ -10110,6 +10110,32 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+- **The sentry movement layer** (S1-D-4b-2). `AI_053_FrostHydra` (`:37266-37490`) and
+  `AI_197_CeilingAndHoverTurret` (`:40307-40479`) carry no `position += velocity` of
+  their own — the C# integrates them in `HandleMovement` → `UpdatePosition`
+  (`:19858`/`:20445`), after the AI, once per sub-step. The port runs the same two
+  steps as `sentry_hydra_step` / `sentry_turret_step`:
+  - **53** (308 Frost Hydra, 377 Queen Spider, 966 Houndius Shootius): `flag6 = false`
+    (`:17532-17535`, no platform landing) then the plain integrate. These three types
+    are named explicitly in the blocked-move chain's exclusion test (`:18635`), so a
+    blocked sentry neither dies nor bounces — it stops against the tile while its own
+    gravity keeps pushing. Note this is *not* the `kill_step` default: calling that for
+    53 would be a behavioural regression.
+  - **197** (1025 Dead Cells Barnacle, 1128-1146): `flag6 = true` (`:17536-17539`) and
+    the blocked arm runs `AI_197_HandleTileCollision` (`:40246-40305`), whose state
+    half is the one-shot `ai[0] = 1f` latch (`:40250`).
+  - **The `InWorld` fluff margin**. The barnacle's 15-tile ceiling scan
+    (`:40379`) guards with `WorldGen.InWorld(x, y, 2)`, whose margin sits *inside* the
+    bounds (`WorldGen.cs:6553-6554`: `x < 2 || x >= maxTilesX - 2`). An earlier port
+    read the margin as an out-of-bounds overhang (`< -2` / `>= width + 2`) and kept
+    scanning past the world edge.
+  - **Skipped layers** for the three AIs (S1-D-4b-2): `SoundEngine` (`:37274`'s
+    `Item46`, `:40316`'s `Item167`, `:42508`'s tracked `DD2_GhastlyGlaiveImpactGhost`
+    and its per-tick position update), all `Dust`/`Gore` bursts (`:37277-37296`,
+    `:40319-40322`, `:40257-40316`), `Lighting.AddLight`, `Collision.HitTiles`, and
+    `netUpdate`. The pool has no sound, dust, gore, light or net layer; the
+    sentry-backpack branch (`:40334-40343`, `CanGetPickedUpBySentryBackpack`) is
+    likewise unported — no `accSentryBackpack`.
 ## Whips & tag damage (M4-PROJ-7)
 
 The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
@@ -12789,6 +12815,18 @@ The migration retired one stand-in cap: the wheel sparks' `MAX_SPARKS` = 500 (th
 Scope notes and documented drops, each recorded at its site: the `shader`/`customData` record fields (no draw-shader chain; the `customData` followers live in `UpdateDust`, S1-E-3), the `Main.rand == null` re-seed and `Main.netMode == 2` server guards and the dead `Main.NoPooling` realloc arm (`Main.cs:67208` sets it false), and the `DANGEROUS` set = the 8 listed ids (5, 227, 273, 237, 248, 249, 250, 251 — `SetFactory.cs:97-107`; research/15's earlier inverted reading of that set is corrected). tr-app injects the wet probe through the seam (`player::wet_collision`, the `Dust.cs:248` probe). The child-safety sync runs `sync_child_safety` once per frame, so a settings toggle lands one tick late; `max_dust_to_draw`'s first frame reads the seed 0 (unreachable in production — the frame loop sets it before any spawn); the 268 draw keeps the stand-in's 10-px cell until E-3 ports the real draw, and the `NewDust` `Next(1)` gate draw is absent in both the stand-in and the port (pre-existing).
 
 What remains: E-2 (the per-type table + `GetAlpha`/`GetColor`), E-3 (the generic `UpdateDust` tail + the `maxDustToDraw` gate + the dust light), E-4 (gore: `NewGore`/`GoreID.Sets`/`Gore.Update` + the leaves), the `rain.rs` re-point and the NPC/Projectile/player call sites — the caller-coverage table in `docs/research/15-dust-gore.md` stays authoritative.
+
+## Dust colour table (S1-E-2, 2026-11-16)
+
+`crates/tr-core/src/dust_table.rs` is the colour/fade half of the per-type table: `Dust.GetAlpha` (`Dust.cs:2425-2727`), `Dust.GetColor` (`:2729-2772`) and the two visual accessors (`:2774-2790`), transcribed arm for arm in source order so the fall-through chain reads like the C#. The XNA colour algebra the arms use is three private helpers at the top of the file — `Color * float` (every channel scales, then the ctor truncates), `Color.Lerp` (per-channel `MathHelper.Lerp`, truncating cast) and the `ToVector3`/`ToVector4` product (normalised channels, so `a*b/255`) — because the port has no `Microsoft.Xna.Framework` and inventing a full colour type for three operators would be more code than the operators.
+
+The record stays byte-based (`particles::Color`, sRGB bytes, the `Dust.color` carrier), so every `new Color(int, …)` argument takes the C# `(byte)` cast the ctor performs: truncate, wrap past 255. The 213 draw already relied on that wrap before this task (`minecart.rs`, `int num2 = (int)(scale / 2.5f * 255f)`); it now calls the shared table instead of keeping its own copy of the arm.
+
+Two arms are documented drops because they read globals the port does not carry: type 157 (`Main.mouseTextColor`, `Dust.cs:2627-2651`) and type 327 (`Main.rand` + `Main.DiscoR/G/B`, `:2658-2676`). Both fall through to the default formula (`:2712-2724`) rather than inventing a stand-in constant. Type 157 is the rarity-sparkle dust and type 327 the disco dust; neither is spawned by any ported call site yet.
+
+The row’s other columns are deliberately not in this file. Gravity / `noGravity` / velocity scaling has two halves: the spawn-time chain is already verbatim in `particles.rs::new_dust` (`Dust.cs:214-252`, S1-E-1) and the per-tick gravity tail (`:1819-1828`) belongs to the update walk that S1-E-3 sequences. The light column is the ~70 `Lighting.AddLight` arms spread from `Dust.cs:485` to `:2050`, which cannot be ported without the entity-light seam (S1-E-5) — and they are not a table anyway, they are code interleaved with the per-type update arms. The `DustID` names already live at `tr-app::id_tables::DUST_ID` (S1-F-6, 196 named constants + `DustID.Count = 332`), so no second copy exists here.
+
+Verification: five tests (`s1_e_2_*`) assert every constant arm against its C# literal (the table rows, the grey families, the `noLight`/`alpha == 255`/`noGravity` gates), the formula arms against hand-computed values (`306 * num`, `263`’s integer halving, `213`’s `scale/2.5*255`, the three lerp fractions, the two Vector products), the default tail’s `(num+3)/4` and `(num+9)/10` divisors, and the accessors. The arm id-sets (`:2494`, `:2584`, `:2681`) were additionally diffed mechanically against the C# conditions, and the constant-arm colours were extracted from the C# and compared row by row.
 
 ## Gore: the pool, the spawn family and the update walk (S1-E-4, 2026-11-16)
 
