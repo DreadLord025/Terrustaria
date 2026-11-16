@@ -13468,9 +13468,57 @@ Deliberate deviations:
    life-regen step); the C#'s `CheckDrowning` sits later in `Player.Update`
    (`:27655`, after `StickyMovement`).
 
-Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `StickyTiles` +
-`Player.StickyMovement`, `SwitchTiles`, `BuildTileContacts`,
-`noSlopeCollision` and `AdvancedTileCollision`.
+Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `SwitchTiles`,
+`BuildTileContacts`, `noSlopeCollision` and `AdvancedTileCollision`.
+## The sticky-surface family (S1-E-13c, 2026-11-16)
+
+`crates/tr-app/src/collision.rs::sticky_tiles` ports `Collision.StickyTiles`
+(`Collision.cs:3362-3435`): the ±1-tile scan window clamped to
+`Main.maxTilesY - 40` (`:3369-3384`), the cobweb (51) arm with its zero margin
+and `16.01` tall box (`:3396-3406`), and the honey-block (229) arm gated on
+`slope() == 0` (`:3410`) with the 1 px margin plus the half brick's `+8` / `-8`
+shrunken box (`:3414-3423`). The source's inline `Main.rand.Next(30)` type-30
+web puff (`:3401`, `:3425`) is drawn **inside** the probe, at the source's
+position relative to the return, and handed back as a flag: the caller owns
+`Main.dust`, so `Player::sticky_movement` queues it. The 229 arm's copy of that
+`if` tests `Main.tile[i, j].type == 51`, which is always false there and
+short-circuits before the `Next(30)`, so the port passes `false` — drawing it
+would add a stream step the C# never takes.
+
+`Player::sticky_movement` (`Player.cs:22910-23087`) keeps the source's order:
+the `Next(20,100)` / `Next(80,300)` break roll for `stickyBreak`
+(`:22938-22954`) — the C#'s bitwise `|` means the draw happens even when the
+`flag` cart test short-circuits the assignment — then the cart-above-5-px
+early return (`:22956-22958`), `fallStart` (`:22960`), the honey's jump
+exemption (`:22961-22964`), the gel/slime mount's halving with its `0.0025`
+floor (`:22965-22972`), the `±1` X cap with the `0.85`/`0.6` damp and the
+`±1`/`-5` Y cap with the `0.96`/`0.3` damp (`:22975-23028`), and the type-153
+honey puffs on the hit row plus the two rows below (`:23030-23081`) with their
+`Next(0,6)` scale / `velocity *= 0.1` / `noGravity` tail. The tick only has
+`&World`, so the tile kill (`WorldGen.KillTile`, `:22949`) and the puffs are
+queued and drained in `world_sim/player.rs` — the same `pending_sparks`
+pattern the minecart uses; the drain runs `DustPool::new_dust` on the
+`UpdatePlayers` stream, so the pool's own rolls stay interleaved exactly as the
+C# interleaves `Main.rand`.
+
+Call site: `Player::update_with_grapple` invokes it between the grapple block
+and `check_drowning`, matching `Player.cs:27653-27655`
+(`GrappleMovement` → `StickyMovement` → `CheckDrowning`).
+
+Deliberate deviations:
+
+1. **No shimmer gate.** `Player.shimmering` (`:22912-22915`) has no port
+   counterpart yet (the shimmer absorption pass is unported), so the early
+   return is absent rather than always-false.
+2. **No gravity flip.** The C# mirrors the Y drag on `gravDir` (`:22991`,
+   `:23010`); the port has no gravity flip, so only the `gravDir == 1` arm
+   (`:23012-23027`) runs, matching the vanilla's default `1f` (`Player.cs:1956`).
+3. **Hook multi-player gates folded.** `whoAmI == Main.myPlayer` (`:22936`)
+   collapses (the port is single-player) and the `Main.netMode == 1` break
+   replication (`:22950-22953`) is net-only.
+4. **`stickyBreak` survives a respawn.** The C# writes the counter at exactly
+   four sites, all inside `StickyMovement` (`:22938`, `:22948`, `:23085`);
+   `Player.Spawn` never clears it, so the port's revive path does not either.
 ## The Brain of Cthulhu's machine (S1-D-3e, 2026-11-14)
 
 `AI_054` (`NPC.cs:32370-32656`) is the Brain of Cthulhu's family machine:

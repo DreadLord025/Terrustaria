@@ -827,6 +827,44 @@ let spawned = app.projectiles.spawn_hook(
             for cue in p.take_cart_sounds() {
                 app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
             }
+            // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
+            // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs
+            // (`:23036-23080` `Dust.NewDust` + the `Next(0,6)`/`velocity *= 0.1`/
+            // `noGravity` post-arms). The tick queues the position; the pool's
+            // own rolls ride the same `UpdatePlayers` stream, so the draw order
+            // is the source's (S1-A-10).
+            if let Some((wx, wy)) = p.take_sticky_kill() {
+                tr_core::edit::kill_tile(&mut app.world, wx, wy, false);
+            }
+            for puff in p.take_sticky_dust() {
+                let idx = app.dust.new_dust(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &spawn_ctx,
+                    &app.world,
+                    puff.pos,
+                    puff.w,
+                    puff.h,
+                    puff.kind,
+                    0.0,
+                    0.0,
+                    if puff.post_arms { 50 } else { 0 },
+                    tr_core::particles::Color::default(),
+                    1.0,
+                );
+                if !puff.post_arms {
+                    continue;
+                }
+                // `Player.cs:23037-23039`: the `Next(0,6)` scale, the ×0.1
+                // velocity and `noGravity`.
+                let slot = app.dust.slot_mut(idx);
+                slot.scale += app
+                    .rngs
+                    .stream(crate::app::RngKey::UpdatePlayers)
+                    .next_range(0, 6) as f32
+                    * 0.1;
+                slot.velocity *= 0.1;
+                slot.no_gravity = true;
+            }
             // `Player.PlayHurtSound` (`Player.cs:38525`) and
             // `Player.PlayDeathSound` (`Player.cs:38868`): the player's own
             // hurt/death cues. The C# plays the local player's hurt sound
