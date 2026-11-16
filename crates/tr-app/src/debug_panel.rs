@@ -116,7 +116,7 @@ pub(crate) fn row_count(panel: &Panel, tab: Tab) -> usize {
             .iter()
             .filter(|(_, name, _)| matches(&panel.filter, name))
             .count(),
-        Tab::World => 11,
+        Tab::World => 12,
         Tab::Recipes => crate::craft::RECIPES.len(),
     }
 }
@@ -160,6 +160,7 @@ pub fn draw(
     npcs: &[Npc],
     world: &tr_core::World,
     stepper_paused: bool,
+    god_mode: bool,
 ) {
     if !panel.open {
         return;
@@ -274,7 +275,7 @@ pub fn draw(
             }
         }
         Tab::World => {
-            let rows = world_rows(world, stepper_paused);
+            let rows = world_rows(world, stepper_paused, god_mode);
             for vi in 0..visible {
                 let idx = scroll_row + vi;
                 let Some((label, c)) = rows.get(idx) else {
@@ -332,7 +333,7 @@ fn row_bg(r: &mut SpriteRenderer, l: &Layout, panel: &Panel, vi: usize) {
 }
 
 /// The World tab's 11 rows. The order is the click dispatch's (`world_click`).
-fn world_rows(world: &tr_core::World, stepper_paused: bool) -> Vec<(String, [f32; 4])> {
+fn world_rows(world: &tr_core::World, stepper_paused: bool, god_mode: bool) -> Vec<(String, [f32; 4])> {
     vec![
         (
             format!("Hardmode: {}", if world.hard_mode { "ON" } else { "OFF" }),
@@ -368,6 +369,15 @@ fn world_rows(world: &tr_core::World, stepper_paused: bool) -> Vec<(String, [f32
         (
             format!("Pause World: {}", if stepper_paused { "ON" } else { "OFF" }),
             if stepper_paused { R } else { G },
+        ),
+        // S1-E-34 — the debug god-mode toggle. It writes the SAME flag the
+        // journey god-mode power sets (`Player.creative_god_mode`, the
+        // `Player.Hurt` arm `Player.cs:38203-38206`), so `hurt_inner`'s
+        // first gate already swallows every hit; nothing new is needed on the
+        // damage path.
+        (
+            format!("God Mode: {}", if god_mode { "ON" } else { "OFF" }),
+            if god_mode { R } else { G },
         ),
     ]
 }
@@ -774,6 +784,14 @@ fn world_click(app: &mut App, row: usize) {
             // deviation for the absent chat DebugCommand dispatcher).
             app.stepper.toggle_paused(app.game_update_count);
         }
+        11 => {
+            // S1-E-34 — god mode: flip the debug flag, which the player tick
+            // ORs into `creative_god_mode` (the journey power's own flag must
+            // not be clobbered, so the toggle rides a separate field).
+            if let Some(p) = app.player.as_mut() {
+                p.debug_god_mode = !p.debug_god_mode;
+            }
+        }
         _ => {}
     }
 }
@@ -975,11 +993,33 @@ mod tests {
     }
 
     #[test]
-    fn s1_e_29_the_world_tab_keeps_its_eleven_rows() {
+    fn s1_e_29_the_world_tab_keeps_its_twelve_rows() {
         let app = flow_app();
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 11);
-        let rows = world_rows(&app.world, false);
-        assert_eq!(rows.len(), 11, "the draw and the dispatch agree");
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 12);
+        let rows = world_rows(&app.world, false, false);
+        assert_eq!(rows.len(), 12, "the draw and the dispatch agree");
         assert_eq!(rows[10].0, "Pause World: OFF");
+        // S1-E-34 — the god-mode toggle rides the tail row.
+        assert_eq!(rows[11].0, "God Mode: OFF");
+    }
+
+    /// S1-E-34 — the F3 god-mode row flips the debug flag.
+    #[test]
+    fn s1_e_34_the_god_mode_row_flips_the_debug_flag() {
+        let mut app = flow_app();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.debug_panel.open = true;
+        app.debug_panel.tab = Tab::World;
+        super::world_click(&mut app, 11);
+        assert!(
+            app.player.as_ref().unwrap().debug_god_mode,
+            "the row toggled the debug flag on"
+        );
+        assert_eq!(world_rows(&app.world, false, true)[11].0, "God Mode: ON");
+        super::world_click(&mut app, 11);
+        assert!(
+            !app.player.as_ref().unwrap().debug_god_mode,
+            "the row toggles back off"
+        );
     }
 }

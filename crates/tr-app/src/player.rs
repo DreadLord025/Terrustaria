@@ -896,6 +896,13 @@ pub struct Player {
     /// `Main.UpdateWorld_Players` refills the three pools
     /// (`Main.cs:17869-17873`).
     pub creative_god_mode: bool,
+    /// S1-E-34 — the F3 panel's debug god mode. `Player.ResetEffects`
+    /// rewrites `creative_god_mode` from the journey power every tick
+    /// (`Player.cs:18789` / `:25493-25497`), so a debug toggle needs its own
+    /// field: the tick ORs it into `creative_god_mode`, which keeps the three
+    /// existing god-mode gates (`Hurt`, `KillMe`, `Update_NPCCollision` and
+    /// the pool refill) working unchanged.
+    pub debug_god_mode: bool,
     /// `Player.immune` (`Player.cs:2636`-ish): the spawn i-frames flag —
     /// true while `immuneTime` counts down (`UpdateImmunity`,
     /// `Player.cs:18856-18869`).
@@ -1719,6 +1726,7 @@ impl Player {
             breath: BREATH_MAX,
             breath_cd: 0,
             creative_god_mode: false,
+            debug_god_mode: false,
             far_placement_range: false,
             regen: RegenState::default(),
             dot_death: None,

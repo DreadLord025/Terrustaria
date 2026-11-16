@@ -88,15 +88,21 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // _tempRaining
     w.i32(0); // _tempRainTime
     w.f32(0.0); // _tempMaxRain
-                // WorldFile.cs:1316-1325: the hardmode ore tiers (unowned — no port
-                // state) and the eight background styles (owned only for the renderer's
-                // hell sheet, which rides `hellBackStyle`).
+    // WorldFile.cs:1316-1325: the hardmode ore tiers (unowned — no port
+    // state) and the eight background styles. The five surface-variant styles
+    // ride their byte slots (`setBG` 1 corrupt, 2 jungle, 4 hallow,
+    // 5 crimson); the rest stay at the C# default.
     w.i32(0); // Cobalt
     w.i32(0); // Mythril
     w.i32(0); // Adamantite
-    for _ in 0..8 {
-        w.u8(0); // treeBG1..oceanBG
-    }
+    w.u8(0); // setBG(0) treeBG1
+    w.u8(world.corrupt_bg_style); // setBG(1) corruptBG
+    w.u8(world.jungle_bg_style); // setBG(2) jungleBG
+    w.u8(0); // setBG(3) snowBG
+    w.u8(world.hallow_bg_style); // setBG(4) hallowBG
+    w.u8(world.crimson_bg_style); // setBG(5) crimsonBG
+    w.u8(0); // setBG(6) desertBG
+    w.u8(0); // setBG(7) oceanBG
     // WorldFile.cs:1326-1332: clouds and wind — the cloud state is unowned
     // and the wind engine lives in tr-app.
     w.i32(0); // cloudBGActive
@@ -162,8 +168,9 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // DownedInvasionT2
     w.boolean(false); // DownedInvasionT3
                       // WorldFile.cs:1376-1379: the remaining background styles and the
-                      // combat book — unowned.
-    w.u8(0); // mushroomBG
+                      // combat book. `setBG(8) mushroomBG` is port-owned; the rest are
+                      // defaults.
+    w.u8(world.mushroom_bg_style); // mushroomBG
     w.u8(0); // underworldBG
     w.u8(0); // treeBG2
     w.u8(0); // treeBG3
@@ -414,7 +421,15 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     r.skip(4)?; // _tempRainTime
     r.skip(4)?; // _tempMaxRain
     r.skip(3 * 4)?; // SavedOreTiers Cobalt/Mythril/Adamantite
-    r.skip(8)?; // setBG 0..7
+    // `setBG` slots 0..7 (`WorldFile.cs:2211-2218`): only the five
+    // surface-variant styles are port-owned; the rest are skip-read.
+    r.skip(1)?; // setBG(0) treeBG1
+    world.corrupt_bg_style = r.u8()?; // setBG(1) corruptBG
+    world.jungle_bg_style = r.u8()?; // setBG(2) jungleBG
+    r.skip(1)?; // setBG(3) snowBG
+    world.hallow_bg_style = r.u8()?; // setBG(4) hallowBG
+    world.crimson_bg_style = r.u8()?; // setBG(5) crimsonBG
+    r.skip(2)?; // setBG(6..7) desertBG, oceanBG
     r.skip(4)?; // cloudBGActive
     r.skip(2)?; // numClouds
     r.skip(4)?; // windSpeedTarget
@@ -484,7 +499,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     }
     // WorldFile.cs:2219-2233 — the remaining background styles.
     if version > 194 {
-        r.skip(1)?; // setBG(8) mushroomBG
+        world.mushroom_bg_style = r.u8()?; // setBG(8) mushroomBG
     }
     if version >= 215 {
         r.skip(1)?; // setBG(9) underworldBG

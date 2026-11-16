@@ -51,6 +51,10 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// and `SetOngoingToTemps` `:159-162` restores it on load, `cloudAlpha` :=
 /// `maxRaining`); a pre-v14 file loads with the event off, which is also
 /// what the vanilla does for a world saved before the rain block existed.
+/// v16 appended the five surface-background style bytes (`WorldGen.corruptBG`
+/// / `jungleBG` / `hallowBG` / `crimsonBG` at `WorldFile.cs:1319-1323` and
+/// `mushroomBG` at `:1375`) that the `DrawSurfaceBG_*` variants resolve their
+/// `Background_<id>` sheets from; a pre-v16 file loads the `setBG` defaults.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -61,7 +65,7 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
-pub const VERSION: u32 = 15;
+pub const VERSION: u32 = 16;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -410,6 +414,16 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     w.write_all(&world.max_raining.to_le_bytes())?;
     // v15: `NPC.downedQueenSlime` (`WorldFile.cs:1396`'s flags byte).
     w.write_all(&[u8::from(world.downed_queen_slime)])?;
+    // v16: the five surface-background style bytes the renderer resolves ids
+    // from — the vanilla rides them in the flags block (`WorldFile.cs:
+    // 1319-1323`, `:1375`); the port's own block, same values, same order.
+    w.write_all(&[
+        world.corrupt_bg_style,
+        world.jungle_bg_style,
+        world.hallow_bg_style,
+        world.crimson_bg_style,
+        world.mushroom_bg_style,
+    ])?;
     Ok(())
 }
 
@@ -771,6 +785,23 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 15 {
         world.downed_queen_slime = r.u8()? != 0;
     }
+    // v16: the five surface-background style bytes (see the writer's citation).
+    if version >= 16 {
+        world.corrupt_bg_style = r.u8()?;
+        world.jungle_bg_style = r.u8()?;
+        world.hallow_bg_style = r.u8()?;
+        world.crimson_bg_style = r.u8()?;
+        world.mushroom_bg_style = r.u8()?;
+    } else {
+        // A pre-v16 file predates the variants' style tracking: fall back to
+        // the `setBG` defaults (`WorldGen.corruptBG` etc. start at 0, whose
+        // arm is the classic `12/13/14`-style row set).
+        world.corrupt_bg_style = 0;
+        world.jungle_bg_style = 0;
+        world.hallow_bg_style = 0;
+        world.crimson_bg_style = 0;
+        world.mushroom_bg_style = 0;
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -1015,8 +1046,8 @@ mod tests {
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[15, 0, 0, 0],
-            "the writer emits the current v15"
+            &[16, 0, 0, 0],
+            "the writer emits the current v16"
         );
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
@@ -1043,13 +1074,13 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v15 (the Queen Slime flag)
-        // is now the current format, so the gate pins 15.
+        // current one (`save.rs` version gate). v16 (the five surface-bg
+        // style bytes) is now the current format, so the gate pins 16.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&16u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 16 is unsupported");
+        buf[8..12].copy_from_slice(&17u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 17 is unsupported");
     }
 
     #[test]
@@ -1175,9 +1206,9 @@ mod tests {
         assert_eq!(back_micro(&buf), w.micro_seeds.sum());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, w.micro_seeds);
-        // A v11 file (the same stream minus the v12 block and the v13+v14
+        // A v11 file (the same stream minus the v12 block and the v13..v16
         // tails, the version byte restored) loads as the classic world it was.
-        buf.truncate(buf.len() - 10 - EMPTY_V15_TAIL);
+        buf.truncate(buf.len() - 10 - EMPTY_V16_TAIL);
         buf[8..12].copy_from_slice(&11u32.to_le_bytes());
         let (back, _) = parse(&buf).unwrap();
         assert_eq!(back.micro_seeds, crate::seeds::MicroSeedFlags::none());
@@ -1264,18 +1295,19 @@ mod tests {
     /// so the two blocks ahead of it sit this many bytes from the end.
     const EMPTY_V13_TAIL: usize = 8;
     /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
-    /// for an empty rain event). The v15 tail adds the Queen Slime flag byte.
-    const EMPTY_V15_TAIL: usize = EMPTY_V13_TAIL + 9 + 1;
+    /// for an empty rain event), the v15 Queen Slime flag byte and the v16
+    /// five style bytes.
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5;
 
     fn back_flags(buf: &[u8]) -> u16 {
-        let end = buf.len() - EMPTY_V15_TAIL;
+        let end = buf.len() - EMPTY_V16_TAIL;
         u16::from_le_bytes([buf[end - 10], buf[end - 9]])
     }
 
     /// The v12 block's micro u64 bitmask (the eight bytes ahead of the v13
     /// tail).
     fn back_micro(buf: &[u8]) -> u64 {
-        let end = buf.len() - EMPTY_V15_TAIL;
+        let end = buf.len() - EMPTY_V16_TAIL;
         u64::from_le_bytes(buf[end - 8..end].try_into().unwrap())
     }
 
@@ -1557,8 +1589,8 @@ mod tests {
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
         assert_eq!(
             &buf[8..12],
-            &[15, 0, 0, 0],
-            "the writer emits the current v15"
+            &[16, 0, 0, 0],
+            "the writer emits the current v16"
         );
         let (back, side) = parse(&buf).unwrap();
         let back_chests = side.chests;
@@ -2090,5 +2122,35 @@ mod tests {
         write_world(&mut a, &w, &side).unwrap();
         write_world(&mut b, &w, &side).unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn the_five_surface_bg_styles_round_trip() {
+        // `SaveWorldFlags` writes `WorldGen.corruptBG`/`jungleBG`/`hallowBG`/
+        // `crimsonBG` at `WorldFile.cs:1319-1323` and `mushroomBG` at `:1375`;
+        // `LoadWorldFlags` reads them back at `:2211-2218` and `:2219-2221`.
+        let mut w = World::new("Test".into(), 32, 32);
+        w.corrupt_bg_style = 3;
+        w.jungle_bg_style = 4;
+        w.hallow_bg_style = 5;
+        w.crimson_bg_style = 6;
+        w.mushroom_bg_style = 2;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.corrupt_bg_style, 3);
+        assert_eq!(back.jungle_bg_style, 4);
+        assert_eq!(back.hallow_bg_style, 5);
+        assert_eq!(back.crimson_bg_style, 6);
+        assert_eq!(back.mushroom_bg_style, 2);
+        // The style bytes resolve to the `setBG` texture-id rows.
+        assert_eq!(
+            crate::world::surface_bg_texture_ids(1, 3),
+            Some([225, 226, 227])
+        );
+        assert_eq!(
+            crate::world::surface_bg_texture_ids(8, 2),
+            Some([234, 235, 236])
+        );
     }
 }
