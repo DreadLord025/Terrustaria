@@ -269,73 +269,54 @@ impl Sand {
 /// `show_visuals` is the same `ShowSandstormVisuals` the spawner read
 /// (`Dust.cs:430`); `player_vy` is `Main.player[myPlayer].velocity.Y`.
 /// Death deactivates the slot — the pool keeps its 6000 fixed slots.
-pub fn tick(
-    pool: &mut DustPool,
-    rng: &mut impl tr_core::particles::DustRng,
-    max_dust_to_draw: i32,
+/// The type-268 chain arms (`Dust.cs:1789-2109`-family) — the shared
+/// `UpdateDust` loop's per-type hook (S1-E-3). It returns false: these arms
+/// are standalone statements of the C#'s first ladder (they sit between the
+/// position move at `:477` and the fresh `if (dust.type >= 130 ...)` chain
+/// head at `:2127`), so they do NOT exclude the chain's final
+/// `else if (type != 304 && noGravity)` tail (`:2335`) — a no-gravity 268
+/// takes both, exactly like the C#.
+pub(crate) fn type_268_arm(
+    d: &mut tr_core::particles::Dust,
     show_visuals: bool,
     player_vy: f32,
-    camera: Vec2,
-    screen: Vec2,
-    zoom: f32,
     world: &World,
-) {
-    // S1-E-3: the shared `Dust.UpdateDust` loop (`Dust.cs:420-2423`,
-    // `DustPool::update_dust`) drives the head, the move, the bottom kill and
-    // the scale floor; this file keeps only the type-268 chain arms.
+) -> bool {
     let px = tr_core::TILE_PX;
-    pool.update_dust(
-        &tr_core::particles::UpdateCtx {
-            max_dust_to_draw,
-            screen_position: camera,
-            screen_height: screen.y * 0.5 / zoom,
-        },
-        rng,
-        |d: &mut tr_core::particles::Dust| {
-            if d.dust_type != 268 {
-                return false;
-            }
-            // `:1789-1796`: the speed-up and the scale drift; without the
-            // visuals the storm's dust shrinks away.
-            d.velocity *= 1.0050251;
-            d.scale += 0.01;
-            if !show_visuals {
-                d.scale -= 0.05;
-            }
-            // `:1800-1809`: the player's fall drags the sand along.
-            if player_vy > 0.0 {
-                if d.fade_in == 0.0 && d.velocity.y < player_vy {
-                    d.velocity.y += (player_vy - d.velocity.y) * 0.04;
-                }
-                d.position.y += player_vy * 0.2;
-            }
-            // `:1811-1818`: over solid ground the dust dampens; in the open
-            // it oscillates on the sine and falls. The spawn fadeIn keeps the
-            // first tick damp-free (vanilla reads it before the ramp zeroes).
-            if d.fade_in == 0.0 && solid_at(world, d.position, px) {
-                d.scale *= 0.9;
-                d.velocity *= 0.25;
-            } else {
-                d.velocity.y = (d.position.x * 0.0043982295).sin() * 2.0 + 3.0;
-            }
-            // `:2082-2109`: the generic fadeIn ramp — one +0.03 tick while
-            // the spawn fadeIn stands, then it zeroes and the generic −0.01
-            // tail takes over. With the storm on the two cancel and the
-            // scale holds; without it the dust loses 0.05/tick.
-            if d.fade_in > 0.0 && d.fade_in < 100.0 {
-                d.scale += 0.03;
-                if d.scale > d.fade_in {
-                    d.fade_in = 0.0;
-                }
-            } else {
-                d.scale -= 0.01;
-            }
-            // The 268 arm matched: the chain's final `else if` (the generic
-            // gravity tail, `Dust.cs:2335`) must not run — either/or, per the
-            // C#'s single if/else-if chain.
-            true
-        },
-    );
+    // `:1789-1796`: the speed-up and the scale drift; without the visuals
+    // the storm's dust shrinks away.
+    d.velocity *= 1.0050251;
+    d.scale += 0.01;
+    if !show_visuals {
+        d.scale -= 0.05;
+    }
+    // `:1800-1809`: the player's fall drags the sand along.
+    if player_vy > 0.0 {
+        if d.fade_in == 0.0 && d.velocity.y < player_vy {
+            d.velocity.y += (player_vy - d.velocity.y) * 0.04;
+        }
+        d.position.y += player_vy * 0.2;
+    }
+    // `:1811-1818`: over solid ground the dust dampens; in the open it
+    // oscillates on the sine and falls. The spawn fadeIn keeps the first tick
+    // damp-free (vanilla reads it before the ramp zeroes).
+    if d.fade_in == 0.0 && solid_at(world, d.position, px) {
+        d.scale *= 0.9;
+        d.velocity *= 0.25;
+    } else {
+        d.velocity.y = (d.position.x * 0.0043982295).sin() * 2.0 + 3.0;
+    }
+    // `:2082-2109`: the generic fadeIn ramp — one +0.03 tick while the spawn
+    // fadeIn stands, then it zeroes and the generic −0.01 tail takes over.
+    if d.fade_in > 0.0 && d.fade_in < 100.0 {
+        d.scale += 0.03;
+        if d.scale > d.fade_in {
+            d.fade_in = 0.0;
+        }
+    } else {
+        d.scale -= 0.01;
+    }
+    false
 }
 
 /// `Main.DrawDust`'s generic path (`Main.cs:39005-39013`) over the pool's
@@ -644,16 +625,16 @@ mod tests {
         });
         let pos0 = pool.slot(0).position;
         let vel0 = pool.slot(0).velocity;
-        tick(
+        crate::minecart::tick(
             &mut pool,
             &mut tr7(),
             6000,
-            true,
-            0.0,
             CAMERA,
             SCREEN,
             1.0,
             &w,
+            0.0,
+            true,
         );
         let d = pool.slot(0);
         assert_eq!(d.position, pos0 + vel0, "the shared move precedes the arm");
@@ -675,16 +656,16 @@ mod tests {
             d.velocity = Vec2::new(1.0, 1.0);
             d.fade_in = 0.0;
         });
-        tick(
+        crate::minecart::tick(
             &mut pool,
             &mut tr7(),
             6000,
-            true,
-            0.0,
             CAMERA,
             SCREEN,
             1.0,
             &w,
+            0.0,
+            true,
         );
         assert_eq!(live_268(&pool), 0, "below the view bottom it dies (shared loop)");
     }
@@ -697,12 +678,12 @@ mod tests {
         let w = sand_world();
         let mut on = DustPool::new();
         sand_slot(&mut on, 0, Vec2::new(CAMERA.x, CAMERA.y - 200.0), |_| {});
-        tick(&mut on, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
+        crate::minecart::tick(&mut on, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
         assert!(
             (on.slot(0).scale - 0.94).abs() < 1e-3,
             "tick 1 settles at 0.94"
         );
-        tick(&mut on, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
+        crate::minecart::tick(&mut on, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
         assert!(
             (on.slot(0).scale - 0.94).abs() < 1e-3,
             "the storm's dust holds the stable scale, got {}",
@@ -712,7 +693,7 @@ mod tests {
         sand_slot(&mut off, 0, Vec2::new(CAMERA.x, CAMERA.y - 200.0), |_| {});
         let mut ticks = 0;
         while live_268(&off) > 0 && ticks < 40 {
-            tick(&mut off, &mut tr7(), 6000, false, 0.0, CAMERA, SCREEN, 1.0, &w);
+            crate::minecart::tick(&mut off, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, false);
             ticks += 1;
         }
         assert_eq!(live_268(&off), 0, "the orphaned dust fades out");
@@ -729,7 +710,7 @@ mod tests {
         let mut s = Sand::new(7);
         let mut pool = DustPool::new();
         emit(&mut s, &mut pool, &m, &w, 1.0);
-        tick(&mut pool, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
+        crate::minecart::tick(&mut pool, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
         for d in &pool.slots()[..DUST_SENTINEL] {
             if !d.active || d.dust_type != 268 {
                 continue;
@@ -757,16 +738,16 @@ mod tests {
                 d.fade_in = 0.0;
             },
         );
-        tick(
+        crate::minecart::tick(
             &mut pool,
             &mut tr7(),
             6000,
-            true,
-            0.0,
             CAMERA,
             SCREEN,
             1.0,
             &World::new("t".into(), 8, 8),
+            0.0,
+            true,
         );
         assert_eq!(live_268(&pool), 0, "below the view it dies");
     }
@@ -784,8 +765,8 @@ mod tests {
         for _ in 0..30 {
             emit(&mut a, &mut pa, &m, &w, 0.8);
             emit(&mut b, &mut pb, &m, &w, 0.8);
-            tick(&mut pa, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
-            tick(&mut pb, &mut tr7(), 6000, true, 0.0, CAMERA, SCREEN, 1.0, &w);
+            crate::minecart::tick(&mut pa, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
+            crate::minecart::tick(&mut pb, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
         }
         for i in 0..DUST_SENTINEL {
             let (da, db) = (pa.slot(i), pb.slot(i));

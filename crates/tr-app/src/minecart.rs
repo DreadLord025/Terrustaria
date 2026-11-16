@@ -1045,6 +1045,13 @@ pub(crate) fn spawn_spark<R: tr_core::particles::DustRng>(
 /// The type-213 `Dust.UpdateDust` pass over the pool's 213 slots, in the C#
 /// source order. Death deactivates the slot (`Dust.cs:449` and passim) — the
 /// pool keeps its 6000 fixed slots.
+/// `Main.UpdateWorld_Dust`'s single ported pass (`Main.cs:18045-18047`): the
+/// shared `Dust.UpdateDust` loop (`Dust.cs:420-2423`,
+/// `DustPool::update_dust`) drives the head, the move and the kills, and this
+/// entry dispatches the ported per-type arms — the wheel sparks' 213 (this
+/// file) and the flying sand's 268 (`sand.rs`). ONE pass per frame: the C#
+/// calls `UpdateDust` once, so every active slot integrates exactly once (the
+/// two clients' separate tick loops were the batch-review defect).
 pub(crate) fn tick(
     pool: &mut tr_core::particles::DustPool,
     rng: &mut impl tr_core::particles::DustRng,
@@ -1052,10 +1059,10 @@ pub(crate) fn tick(
     camera: Vec2,
     screen: Vec2,
     zoom: f32,
+    world: &tr_core::World,
+    player_vy: f32,
+    show_sandstorm_visuals: bool,
 ) {
-    // S1-E-3: the shared `Dust.UpdateDust` loop (`Dust.cs:420-2423`,
-    // `DustPool::update_dust`) drives the head, the move, the bottom kill and
-    // the scale floor; this file keeps only the type-213 chain arms.
     pool.update_dust(
         &tr_core::particles::UpdateCtx {
             max_dust_to_draw,
@@ -1064,34 +1071,35 @@ pub(crate) fn tick(
         },
         rng,
         |d: &mut tr_core::particles::Dust| {
-            if d.dust_type != 213 {
-                return false;
-            }
-            // `:1819-1829`: the spark falls.
-            if !d.no_gravity {
-                d.velocity.y += 0.1;
-            }
-            // `:2071-2072`: the air drag.
-            d.velocity.x *= 0.99;
-            // `:744` + `:2080`: rotation is rebuilt from the dragged velocity.
-            d.rotation = d.velocity.x * 0.5;
-            // `:2083-2124`: the fadeIn ramp — +0.1/tick while the spawn
-            // fadeIn stands (capped at it), then −0.2/tick (it burns out).
-            if d.fade_in > 0.0 && d.fade_in < 100.0 {
-                d.scale += 0.1;
-                if d.scale > d.fade_in {
-                    d.fade_in = 0.0;
+            if d.dust_type == 213 {
+                // `:1819-1829`: the spark falls.
+                if !d.no_gravity {
+                    d.velocity.y += 0.1;
                 }
-            } else {
-                d.scale -= 0.2;
+                // `:2071-2072`: the air drag.
+                d.velocity.x *= 0.99;
+                // `:744` + `:2080`: rotation is rebuilt from the dragged velocity.
+                d.rotation = d.velocity.x * 0.5;
+                // `:2083-2124`: the fadeIn ramp — +0.1/tick while the spawn
+                // fadeIn stands (capped at it), then −0.2/tick (it burns out).
+                if d.fade_in > 0.0 && d.fade_in < 100.0 {
+                    d.scale += 0.1;
+                    if d.scale > d.fade_in {
+                        d.fade_in = 0.0;
+                    }
+                } else {
+                    d.scale -= 0.2;
+                }
+            } else if d.dust_type == 268 {
+                crate::sand::type_268_arm(d, show_sandstorm_visuals, player_vy, world);
             }
-            // The 213 arm matched: the generic gravity tail (`:2335`) is the
-            // chain's FINAL else-if (its predecessor is the `272` arm,
-            // `Dust.cs:2330-2336`), so the C# applies either the 213 arm or
-            // the tail — never both. The stand-in's duplicated tail block is
-            // dropped here; the scale-floor kill and the bottom kill ride the
-            // shared loop.
-            true
+            // Both arms return false: the 213/268 arms are standalone
+            // statements of the C#'s FIRST ladder (between the `:477` move and
+            // the fresh `if (dust.type >= 130 ...)` chain head at `:2127`), so
+            // they do NOT exclude the second chain's final
+            // `else if (type != 304 && noGravity)` tail (`:2335`) — a
+            // no-gravity 213 takes its arm AND the tail, exactly like the C#.
+            false
         },
     );
 }
@@ -1303,6 +1311,11 @@ mod tests {
     /// (S1-E-3): a fixed seed, no production stream touched.
     fn tr7() -> tr_core::unified_random::UnifiedRandom {
         tr_core::unified_random::UnifiedRandom::new(7)
+    }
+
+    /// The solid-ground world the 213 ticks run against.
+    fn tworld() -> World {
+        World::new("t".into(), 8, 8)
     }
     use tr_core::Tile;
     use tr_core::tile::FLAG_ACTIVE;
@@ -2482,7 +2495,7 @@ mod tests {
             d.no_gravity = false;
             d.rotation = 9.0;
         });
-        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0);
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &tworld(), 0.0, true);
         let p = pool.slot(0);
         assert_eq!(
             p.position,
@@ -2493,28 +2506,36 @@ mod tests {
         assert_eq!(p.rotation, 0.99, "rotation = vel.X * 0.5");
         assert!((p.scale - 0.8).abs() < 1e-6, "the fade-done shrink −0.2");
         // The weightless spark with a live fadeIn: the ramp climbs 0.1/tick
-        // until it passes `fadeIn`, which stands down. The generic gravity
-        // tail does NOT run: the 213 arm matched and `:2335` is the chain's
-        // final else-if (`Dust.cs:2330-2336` — the C# applies either the arm
-        // or the tail, never both), so there is no ×0.92 damp and no −0.04.
+        // until it passes `fadeIn`, which stands down, and the generic gravity
+        // tail ALSO runs — the 213 arm is a standalone statement of the C#'s
+        // first ladder (between the `:477` move and the fresh chain head at
+        // `:2127`), so it does not exclude the second chain's final
+        // `else if (type != 304 && noGravity)` tail (`Dust.cs:2335`): the
+        // ×0.92 damp and the fadeIn-gated −0.04 ride every tick.
         let mut pool = tr_core::particles::DustPool::new();
         spark_slot(&mut pool, 0, 100.0, |d| {
             d.velocity = Vec2::new(2.0, 1.0);
             d.fade_in = 1.15;
             d.no_gravity = true;
         });
-        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0);
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &tworld(), 0.0, true);
         let p = pool.slot(0);
-        assert_eq!(p.velocity, Vec2::new(2.0 * 0.99, 1.0), "the drag only — no tail damp");
-        assert_eq!(p.scale, 1.1, "the ramp's first +0.1");
+        assert_eq!(p.velocity, Vec2::new(2.0 * 0.99 * 0.92, 0.92), "the drag AND the tail damp");
+        assert_eq!(p.scale, 1.1, "the ramp's first +0.1 (fadeIn still live: no −0.04)");
         assert_eq!(p.fade_in, 1.15, "still under the fadeIn");
-        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0);
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &tworld(), 0.0, true);
         let p = pool.slot(0);
         assert_eq!(p.fade_in, 0.0, "1.2 > 1.15 stands the fadeIn down");
-        assert!((p.scale - 1.2).abs() < 1e-5, "1.2 — no fade-done −0.04");
-        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0);
+        assert!(
+            (p.scale - 1.16).abs() < 1e-5,
+            "1.2 then the fade-done −0.04"
+        );
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &tworld(), 0.0, true);
         let p = pool.slot(0);
-        assert!((p.scale - 1.0).abs() < 1e-5, "the burn-out −0.2 only");
+        assert!(
+            (p.scale - 0.92).abs() < 1e-5,
+            "the burn-out −0.2 then the damp −0.04"
+        );
     }
 
     /// The type-213 deaths (`Dust.cs:447-449`, `:2343-2345`, `:2393-2395` —
@@ -2528,7 +2549,7 @@ mod tests {
             d.position.y = 451.0;
             d.no_gravity = true;
         });
-        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0);
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &tworld(), 0.0, true);
         assert_eq!(
             live_type(&pool, 213),
             0,
@@ -2540,7 +2561,7 @@ mod tests {
             d.scale = 0.15;
             d.no_gravity = false;
         });
-        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0);
+        tick(&mut pool, &mut tr7(), 6000, cam, screen, 1.0, &tworld(), 0.0, true);
         assert_eq!(
             live_type(&pool, 213),
             0,
@@ -2588,13 +2609,20 @@ mod tests {
             Vec2::ZERO,
             Vec2::new(1600.0, 900.0),
             1.0,
+            &world,
+            0.0,
+            true,
         );
         let p = pool.slot(idx);
         assert_eq!(p.position, pos0 + Vec2::new(2.0, 0.0), "the shared move precedes the arm");
-        assert_eq!(p.velocity, Vec2::new(1.98, 0.1), "the 213 arm: the drag and the fall — no 0.92 tail");
+        assert_eq!(p.velocity, Vec2::new(1.98, 0.1), "the 213 arm: the drag and the fall (gravity dust: the tail arm needs noGravity)");
         assert!((p.scale - 0.8).abs() < 1e-6, "the burn-out −0.2 (fadeIn 0 at the tick head)");
         assert_eq!(pool.d_count, 0.0, "one active slot, then the dead recompute");
-        // The no-gravity spark proves the either/or: the drag only.
+        // The no-gravity spark proves the tail runs alongside the arm: the
+        // 213 arms are standalone statements of the C#'s first ladder (they
+        // sit between the `:477` move and the fresh chain head at `:2127`),
+        // so they do not exclude the second chain's final
+        // `else if (type != 304 && noGravity)` tail (`Dust.cs:2335`).
         {
             let d = pool.slot_mut(idx);
             d.no_gravity = true;
@@ -2609,9 +2637,12 @@ mod tests {
             Vec2::ZERO,
             Vec2::new(1600.0, 900.0),
             1.0,
+            &world,
+            0.0,
+            true,
         );
         let p = pool.slot(idx);
-        assert_eq!(p.velocity, Vec2::new(2.0 * 0.99, 1.0), "the drag only: the matched arm excluded the tail");
+        assert_eq!(p.velocity, Vec2::new(2.0 * 0.99 * 0.92, 0.92), "the drag AND the tail damp run together");
     }
 
     fn s1_e_1_the_ctx_gates_stop_the_spark_drain() {
