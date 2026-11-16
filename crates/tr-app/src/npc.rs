@@ -2991,6 +2991,13 @@ pub struct Npc {
     /// `NPC.homelessDespawn` (`LoadNPCs:2917-2920`, `SaveNPCs:1734`): a
     /// homeless town NPC this far from any room is on the despawn path.
     pub homeless_despawn: bool,
+    /// `NPC.lookForHomeTimeout` (`NPC.cs:6547`): ticks left before a
+    /// kicked-out NPC looks for a new room again. Decays 1/tick
+    /// (`NPC.cs:90324-90327`); `kickOut` arms it to 3600
+    /// (`NPC.cs:4877`, `NPC.KickOutLookForHomeTimeout` `:95267`) and
+    /// `moveRoom` clears it (`:4852`). The home scans skip a non-zero
+    /// timer (`WorldGen.cs:5621`, `:71635`).
+    pub look_for_home_timeout: i32,
     /// `ai[0]`: the caster's cycle counter (`AI_008`'s 500 init, the
     /// 100/200/300 shot triggers, the 650 teleport threshold).
     pub caster_counter: i32,
@@ -4056,6 +4063,7 @@ impl Npc {
             home: None,
             variation_index: 0,
             homeless_despawn: false,
+            look_for_home_timeout: 0,
             caster_counter: 0,
             cast_windup: 0,
             direction_y: 1,
