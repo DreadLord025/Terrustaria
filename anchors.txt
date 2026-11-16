@@ -335,3 +335,4 @@ crates/tr-app/src/world_sim/editing.rs|notify_progression_net(42)|S1-E-18d - the
 crates/tr-app/src/shimmer.rs|notify_progression_net(27)|S1-E-18e - the shimmer decraft/transform tail fires TRANSMUTE_ITEM (27), WorldItem.cs:1849
 crates/tr-app/src/world_sim/wiring.rs|notify_progression_net(25)|S1-E-18f - a party coming up fires THROW_A_PARTY (25)
 docs/ANALYSIS.md|## The Steam transport divergence (S1-I-6, 2026-11-16)|S1-I-6 - the Steam P2P/lobby transport is excluded by design: the port speaks the vanilla wire (frame, Terraria326, ids, handshake) over TCP (net.rs:3021-3022/:3330-3331, lobby_id = 0) with no ISocket/social module; the unchanged protocol vs the lost lobby/NAT/invite/vanilla-interop is documented
+crates/tr-app/src/debug_panel.rs|fn world_rows|S1-E-35 - the F3 World tab weather toggles: Rain rides Main.StartRain/StopRain (Main.cs:64659-64727 / :64644-64658), Sandstorm rides Sandstorm.StartSandstorm/StopSandstorm (Sandstorm.cs:117-129)

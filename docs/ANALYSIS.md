@@ -15313,6 +15313,22 @@ Deliberate deviations, recorded rather than guessed:
   split between a drawn and a stepped frame) is unported, so an inferno-ring
   animation would always advance - moot while the draw is unwritten.
 
+## S1-E-35 - weather control rows (deviation record)
+
+* The F3 rows toggle the two events through vanilla's own entry points
+  (`Rain::start_rain`/`stop_rain` = `Main.StartRain` `Main.cs:64659-64727` /
+  `Main.StopRain` `:64644-64658`; `Sandstorm::start_sandstorm`/`stop_sandstorm`
+  = `Sandstorm.cs:117-129`), never a hand-written state write — the
+  duration/strength ladders and their stream draws are the C# ones.
+* The catalogue cites HEROsMod `GeneralMessages.cs:467-520`; that mod's source
+  is not in `decompiled/`, so only its local half (start/stop) is ported. Its
+  network sync half has no target: the port is single-player, so no
+  `NetMessage` is sent from a debug row (same convention as the S1-E-37 event
+  rows).
+* `world_rows` takes the live `rain.is_raining()` / `sandstorm.happening` flags
+  from the frame instead of reaching into `App` itself, keeping the draw side a
+  pure function of the state it shows (the `god_mode` precedent).
+
 ## The Steam transport divergence (S1-I-6, 2026-11-16)
 
 The vanilla runs multiplayer over a pluggable `ISocket`
