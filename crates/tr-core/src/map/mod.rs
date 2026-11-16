@@ -357,8 +357,10 @@ pub fn unlock_map_section(world: &World, map: &mut [MapTile], sx: i32, sy: i32, 
     let mut x1 = x0 + 200;
     let mut y0 = sy * 150;
     let mut y1 = y0 + 150;
-    // `:115`: the inset 40 (`num3`).
-    let clamp = |v: i32, max: i32| v.clamp(40, max - 40);
+    // `:115`: the inset 40 (`num3`). A world smaller than the inset cannot be
+    // clamped at all; vanilla's minimum is 4200x1200, so the `max(40)` only
+    // keeps the test-sized worlds from inverting the range.
+    let clamp = |v: i32, max: i32| v.clamp(40, (max - 40).max(40));
     x0 = clamp(x0, world.width);
     x1 = clamp(x1, world.width);
     y0 = clamp(y0, world.height);

@@ -1042,6 +1042,9 @@ mod tests {
     #[test]
     fn s1_l_3_the_reveal_row_unlocks_the_map() {
         let mut app = flow_app();
+        // The reveal clamps into a 40-tile inset, so the fixture's 8x8 world is
+        // too small to have an interior at all.
+        app.world = tr_core::World::new("reveal".into(), 260, 200);
         app.map = Some(crate::map::WorldMap::new(&app.world));
         super::world_click(&mut app, 12);
         let m = app.map.as_ref().unwrap();

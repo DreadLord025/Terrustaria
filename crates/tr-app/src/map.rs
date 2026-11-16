@@ -533,8 +533,9 @@ impl WorldMap {
     /// the rect is the same pixels for one texture sync.
     pub fn unlock_section(&mut self, world: &World, sx: i32, sy: i32, pretty: bool) {
         crate::map::unlock_map_section(world, &mut self.tiles, sx, sy, pretty);
-        // `:111-119` — the same 40 inset clamp the C# applies.
-        let clamp = |v: i32, max: i32| v.clamp(40, max - 40);
+        // `:111-119` — the same 40 inset clamp the C# applies (nested so a
+        // test-sized world's inverted range cannot panic).
+        let clamp = |v: i32, max: i32| v.clamp(40, (max - 40).max(40));
         let x0 = clamp(sx * 200, world.width);
         let x1 = clamp(sx * 200 + 200, world.width);
         let y0 = clamp(sy * 150, world.height);
