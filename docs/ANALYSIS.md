@@ -14786,8 +14786,15 @@ machinery and the two roster ladders are new:
   port's other event items.
 - **Boss cap**: the weighted `npcSlots` count over kinds 315/325/327/328/
   344/345/346 vs `players × defaultMaxSpawns×(2+0.3·players)` (the
-  `Spawner` ctor `NPC.cs:262-286`) — all five kinds unported, so the cap is
+  `Spawner` ctor `NPC.cs:262-286`) — all seven kinds unported, so the cap is
   false until F-13b/c; the slots table travels with the kinds.
+- **The pumpkin-327 quirk**: in the pumpkin cases 18/17/15/14
+  (`NPC.cs:3263`/`:3281`/`:3329`/`:3351`) the leading 327 `if` is a
+  SEPARATE statement from the `else if` chain after it — its roll always
+  draws, and when both fire the C# spawns BOTH NPCs in one attempt. The
+  picker returns the first (`pumpkin_327_chain`, the stream stays 1:1 — the
+  second spawn's dispatch lands with the pool work); the unconditional
+  roll is kept for stream parity.
 - **The ladders**: `spawn_npc_at`'s zone chain gained the frost
   (`NPC.cs:2804-3222`) and pumpkin (`:3224-3548` — the eclipse arm opens
   `:3549`) arms at the C#'s dispatch position (after the skyMob dispatch
