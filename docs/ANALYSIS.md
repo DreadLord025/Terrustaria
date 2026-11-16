@@ -14998,3 +14998,51 @@ Deliberate gaps, all recorded here rather than guessed:
 * The item box stays the port's 14 px (`item.rs::SIZE`) rather than the C#'s
   16 (`WorldItem.cs:138`): widening it changes every existing drop's
   collision, which is a separate task.
+
+## The screen effects (S1-E-16, 2026-11-16)
+
+`crates/tr-core/src/scene.rs` carries the three `SceneState` state machines
+verbatim, in the C#'s order (`SceneState.cs:75-77`):
+`ScreenObstruction.Update` (`ScreenObstruction.cs:13-46`),
+`ScreenDarkness.Update` (`ScreenDarkness.cs:12-34`) and
+`MoonlordDeathDrama.Update` (`MoonlordDeathDrama.cs:155-193`). The draw halves
+live in `crates/tr-app/src/render/screen_fx.rs`, wired at the vanilla seams:
+`DrawBack` right after the background overlays (`Main.cs:62217`), `DrawFront`,
+`DrawWhite` and `ScreenObstruction.Draw` after the projectiles
+(`Main.cs:62322-62324`), the MoonExplosion pieces and blasts inside
+`DoDraw_WallsTilesNPCs` (`Main.cs:63276-63277`).
+
+`UnbreakableWallScan.InsideUnbreakableWalls`/`LineScan`
+(`UnbreakableWallScan.cs:39-84`) is ported with the 250-tile scan distance, the
+eight directions, the `wallColor() >= 16` test and the eight-fold rotation of
+the hit mask. The `DangerousDungeonCurse` tier ladders (`:5-27`, `:32-55`) are
+pure functions taking the zone/downed flags the `tr-app` driver reads.
+
+Deliberate deviations, recorded rather than guessed:
+
+* `DebugOptions.devLightTilesCheat` has no port, so the `ScreenObstruction`
+  0.25 cap on the wall arm (`ScreenObstruction.cs:23-28`) is omitted and the
+  0.9 clamp always applies.
+* The `ScreenDarkness` walk normally scans `Main.npc[]`; `tr-core` has no NPC
+  list, so the driver fills `SceneMetrics::screen_darkness_npcs` from the
+  `tr-app` NPC vec with only the fields the two arms read. The C# loop is
+  last-match-wins and that semantics is kept.
+* Wall of Flesh (113) abandonment: the C# reads `npc.localAI[1]`, but the port
+  folds the WoF ramp into `ai[0]` (`npc.rs:9160-9168`), so `local_ai1` is filled
+  from `ai[0]`.
+* Duke Fishron (370) is not a ported `NpcKind` - the phase 10+/9-with-timer arm
+  is code-complete but unexercised until that boss lands.
+* `ScreenObstruction.Draw`'s `MagicPixel` stand-in is the renderer's built-in
+  `white_uv` quad (`push_fx_rect`). `MoonlordPiece.GetLight` averages the port's
+  `LightMap` rather than `Lighting.GetColor` - the same tile colours, a
+  different seam.
+* `DrawPaladinsShield` and `DrawInfernoRings` are **not** drawn: their gates are
+  `Player.hasPaladinShield` / `defendedByPaladin` / `inferno` and the
+  `flameRingScale` / `flameRingRot` animation state, none of which the port's
+  `Player` carries. The sheets (`Extra_98`, `FlameRing`) load so the draws can
+  be added without touching the asset pipeline.
+* The lens flare (`Main.DrawLensFlare`, `Main.cs:62509-62514`) is a
+  `NextHorizonRenderer` feature that the port does not have.
+* `FocusHelper.AllowPlayerToEmitEffects` (the `!WorldUpdateStepper.DrawnThisUpdate`
+  split between a drawn and a stepped frame) is unported, so an inferno-ring
+  animation would always advance - moot while the draw is unwritten.

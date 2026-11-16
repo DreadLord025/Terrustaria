@@ -253,6 +253,20 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   (`tr-content/src/texture.rs:84-97` reads them but keeps only mip 0). Acceptable
   because the camera zoom is ≤ 2, but a no-LOD guarantee must keep it that way
   (AGENTS.md's optimisation policy).
+- **D-16 — The full-screen overlays are drawn, two effect arms are not
+  (behavioural, low).** S1-E-16 added `crates/tr-app/src/render/screen_fx.rs`:
+  `ScreenDarkness.DrawBack`/`DrawFront`, `MoonlordDeathDrama.DrawWhite`/`DrawPieces`/
+  `DrawExplosions` and `ScreenObstruction.Draw` land at the vanilla seams
+  (`Main.cs:62217`, `:62322-62324`, `:63276-63277`), and the `MagicPixel` quads
+  ride the `fx` range (the UI camera transform, before the map and the interface —
+  the same order as the C#). `DrawPaladinsShield` (`Main.cs:57196`) and
+  `DrawInfernoRings` (`:64275`) are **not** drawn: their gates are
+  `Player.hasPaladinShield` / `defendedByPaladin` / `inferno` plus the
+  `flameRingScale` / `flameRingRot` animation counters, none of which the port's
+  `Player` carries. Their sheets (`Extra_98`, `FlameRing`) load, so the draw arms
+  can be added without touching the asset pipeline. `DrawLensFlare` (`:62509`) is
+  the unported `NextHorizonRenderer`'s. Details in ANALYSIS "The screen effects
+  (S1-E-16)".
 
 ## Task seeds
 
