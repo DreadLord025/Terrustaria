@@ -3986,6 +3986,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
 fn spawn_loot(app: &mut App, npc: &Npc) {
     let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
     let net_id = entry.net_id;
+    // `NPCID.FromNetId` (`NPCID.cs:12089-12104`): a negative net id resolves
+    // against `NetIdMap`; the rules gate on the positive type
+    // (`SlimeBodyItemDropRule.cs:17`'s `NPCID.Sets.SlimeCanContainItems[type]`).
+    let positive_type = if net_id < 0 {
+        crate::lang_tables::NPC_NET_ID_MAP
+            .get((-net_id - 1) as usize)
+            .copied()
+            .unwrap_or(0)
+    } else {
+        net_id
+    };
     let x = npc.x;
     let y = npc.y;
     // `NPCLoot()` fires from the death path inside `NPC.UpdateNPC`
@@ -4002,6 +4013,10 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
         is_master: false,
         active_players: 1,
         extra_gel: false,
+        // `NPCLoot` is the real death path, not the bestiary's
+        // `IsInSimulation` one (`DropAttemptInfo.cs:13`) - the
+        // `MechBossSpawnersDropRule` gate (`MechBossSpawnersDropRule.cs:20`).
+        is_in_simulation: false,
         flags: tr_core::loot::LootFlags {
             hard_mode: app.world.hard_mode,
             day_time: app.world.day_time,
@@ -4053,6 +4068,13 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             spawned_from_statue: npc.spawned_from_statue,
             is_boss: npc.kind == NpcKind::KingSlime,
             has_player_target: true,
+            // `NPCID.Sets.SlimeCanContainItems` (`NPCID.cs:10443`: 1, 59, 147,
+            // 184, 537) and the contained item id (`SlimeBodyItemDropRule.cs:17`).
+            slime_can_contain_items: matches!(
+                positive_type,
+                1 | 59 | 147 | 184 | 537
+            ),
+            ai1: npc.ai[1],
             ..Default::default()
         },
     };
@@ -4973,6 +4995,7 @@ mod tests {
                     is_master: false,
                     active_players: 1,
                     extra_gel: false,
+                    is_in_simulation: false,
                     flags: tr_core::loot::LootFlags {
                         halloween,
                         xmas,
