@@ -732,6 +732,11 @@ pub(crate) struct App {
     /// the projectiles (`:17767-17775`). Its collision probes are injected once
     /// at init through [`crate::gore_seam::AppGoreCollision`].
     pub(crate) gore: tr_core::gore::GorePool,
+    /// The per-frame `Lighting.AddLight` list pair (`LightingEngine.cs:36-38`):
+    /// `_perFrameLights` / `_oldPerFrameLights`. The light pass reads the
+    /// previous frame's list (`LightingEngine.cs:210-214`), so `end_frame` must
+    /// run once per frame after every source has contributed.
+    pub(crate) entity_lights: crate::entity_lights::EntityLights,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -3296,6 +3301,7 @@ impl App {
             // slots plus the refuse sentinel; `goreTime` seeds its 600
             // (`Gore.cs:1507-1510`).
             gore: tr_core::gore::GorePool::new(),
+            entity_lights: crate::entity_lights::EntityLights::default(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             // The C# seeds every `SwapRandom` key with the world seed
