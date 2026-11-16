@@ -100,12 +100,23 @@ impl App {
         }
     }
 
-    pub(crate) fn frame(&mut self) {
+    /// The per-frame head — `Main.Draw`'s top region, named by S1-B-8: the
+    /// live language substitutions, the `TR_SHOT`-pinned frame step, the
+    /// per-frame counters the rest of the frame reads (the zoom keys, the
+    /// adaptive fps counter, the step-key snapshot pair, the animation clock),
+    /// the always-run UI/animation ticks and the autosave budget. Runs on
+    /// **every** frame — menus and focus pauses included — exactly like the
+    /// vanilla's Update/Draw head, so it must stay out of the in-world branch.
+    ///
+    /// `now` is the frame's `Instant`, taken by the caller because the draw half
+    /// timestamps its filter/render passes off the same stamp. Yields
+    /// `(dt, anim_time)`: the frame step (the `TR_SHOT` pin) and the animation
+    /// clock snapshot the draw passes key on.
+    fn frame_head(&mut self, now: Instant) -> (f32, f32) {
         // `Lang.InitGlobalSubstitutions` (S1-L-12b): refresh live `{Name}` values
         // before any UI/text resolves them this frame (`Lang.cs:100-167`).
         crate::lang::refresh_global_substitutions(self);
 
-        let now = Instant::now();
         // `TR_SHOT` pins the animation clock: the sky's twinkle/drift phases read
         // `anim_time`, and wall-clock jitter between runs would make two shots of
         // the same scene differ in a few pixels. A fixed 1/60 step (what vsync
@@ -208,6 +219,19 @@ impl App {
             }
         }
 
+        (dt, anim_time)
+    }
+
+    /// The shared per-frame setup — the region between the head and the two
+    /// frame branches: the GPU (or the inline 1600×900) screen size the whole
+    /// frame draws into, the minimap's `m_h`, the OS cursor visibility, the
+    /// audio listener and pool update, the ambience waterfall/lavafall loops,
+    /// the menu music, and the front end's pending **world swap** at a frame
+    /// boundary (after the swap, before the world branch, so a half-ticked world
+    /// never shows).
+    ///
+    /// Yields `(screen, m_h)` — both are consumed deep in the draw half.
+    fn frame_shared_setup(&mut self, dt: f32) -> (Vec2, f32) {
         let screen = self
             .gpu
             .as_ref()
@@ -353,6 +377,14 @@ impl App {
             }
         }
 
+        (screen, m_h)
+    }
+
+    /// The focus pause arm (S1-B-3), named by S1-B-8. Returns whether this frame
+    /// is focus-paused; the caller gates the in-world branch on the flag, which
+    /// is how the port's fused frame reproduces the C#'s early `return` from
+    /// *Update* while Draw keeps running (the details at the site below).
+    fn frame_focus_pause(&mut self) -> bool {
         // S1-B-3 — the focus pause (`FocusHelper.UpdateFocus`'s `wantsToPause`
         // arm, `Main.cs:17128-17141`): `wantsToPause = (!IsActive &&
         // netMode == 0) && !SettingPlayWhenUnfocused`. The C# clears the mouse
@@ -375,6 +407,19 @@ impl App {
             // its per-frame work is draw/event-driven).
             self.game_paused = true;
         }
+
+        focus_paused
+    }
+
+    pub(crate) fn frame(&mut self) {
+        // The frame's wall-clock stamp: the head derives `dt` from it (the
+        // `TR_SHOT` pin aside) and the draw half's filter/render passes
+        // timestamp off it, so the orchestrator takes it and hands it down.
+        let now = Instant::now();
+        let (dt, anim_time) = self.frame_head(now);
+        let (screen, m_h) = self.frame_shared_setup(dt);
+        let focus_paused = self.frame_focus_pause();
+
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
             // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
             // ticked before the interface handlers read the state.
@@ -3132,6 +3177,269 @@ mod tests {
             app.game_update_count,
             count0 + 1,
             "the 12th mouse-back-held frame steps"
+        );
+    }
+
+    // ---- S1-B-8 phase 1: the frame's named head / setup / pause arms ----
+
+    /// The source slice of one `impl App` fn — from its signature to the next
+    /// top-level item in the impl block. The S1-B-8 marker scans read it, so a
+    /// citation that slipped out of an extracted body (or a body that lost its
+    /// split) fails the scan instead of passing silently against the whole
+    /// file. The needle is the full signature, so a param-set rewrite of the
+    /// head also drops the slice's start and the test that reads it.
+    fn fn_body<'a>(src: &'a str, sig: &str) -> &'a str {
+        let start = src
+            .find(sig)
+            .unwrap_or_else(|| panic!("frame.rs no longer defines `{sig}`"));
+        let rest = &src[start + sig.len()..];
+        let end = ["\n    fn ", "\n    pub(crate) fn "]
+            .iter()
+            .filter_map(|needle| rest.find(needle))
+            .min()
+            .unwrap_or(rest.len());
+        &rest[..end]
+    }
+
+    /// S1-B-8 DW-1.1 — the three named fns exist with their documented yields,
+    /// the orchestrator is the four-line head that hands the stamp and the
+    /// yields down, and each extracted body still carries its A/B/C citation
+    /// markers: the per-line grep-diff of the phase, made repeatable.
+    #[test]
+    fn s1_b_8_phase1_the_frame_head_is_extracted() {
+        let src = include_str!("frame.rs");
+        let head_sig = "fn frame_head(&mut self, now: Instant) -> (f32, f32)";
+        let setup_sig = "fn frame_shared_setup(&mut self, dt: f32) -> (Vec2, f32)";
+        let pause_sig = "fn frame_focus_pause(&mut self) -> bool";
+        assert!(src.contains(head_sig), "frame_head must keep its shape");
+        assert!(src.contains(setup_sig), "frame_shared_setup must keep its shape");
+        assert!(src.contains(pause_sig), "frame_focus_pause must keep its shape");
+        // The orchestrator takes the stamp at its head and passes it on.
+        assert!(
+            src.contains("let now = Instant::now();"),
+            "frame() takes the frame's Instant at its head"
+        );
+        assert!(
+            src.contains("let (dt, anim_time) = self.frame_head(now);"),
+            "frame() calls frame_head with the stamp"
+        );
+        assert!(
+            src.contains("let (screen, m_h) = self.frame_shared_setup(dt);"),
+            "frame() hands dt to frame_shared_setup and takes both yields"
+        );
+        assert!(
+            src.contains("let focus_paused = self.frame_focus_pause();"),
+            "frame() takes the pause flag from frame_focus_pause"
+        );
+
+        // A — the head: the TR_SHOT dt pin and the per-frame counters.
+        let head = fn_body(src, head_sig);
+        for marker in [
+            "`TR_SHOT` pins the animation clock",
+            "Main.cs:16801-16815,18376",
+            "Main.cs:16961-16964",
+            "WorldUpdateStepper.cs:39-43",
+            "UserInterface.cs:203-204",
+            "Main.cs:17048-17051",
+            "IngameOptions.cs:157-199",
+            "Main.cs:45513-45527",
+            "Main.cs:42864-42867",
+            "Main.cs:19751-19765",
+        ] {
+            assert!(head.contains(marker), "frame_head lost `{marker}`");
+        }
+        // B — the setup: the inline screen, mH, cursor, audio, ambience,
+        // menu music and the world swap.
+        let setup = fn_body(src, setup_sig);
+        for marker in [
+            "Main.cs:45771-45783",
+            "FocusHelper.cs:160-163",
+            "SoundEngine.cs:48-68",
+            "Main.cs:13466-13515",
+            "LegacySoundPlayer.cs:383-397",
+            // The strength/50 multiplier arm (the class name rides the line
+            // above the `:1249-1279` marker).
+            "`:1249-1279`",
+            ":12455",
+            "Main.LoadWorld",
+        ] {
+            assert!(setup.contains(marker), "frame_shared_setup lost `{marker}`");
+        }
+        // C — the focus pause: the wantsToPause arm and its two side effects.
+        let pause = fn_body(src, pause_sig);
+        for marker in [
+            "Main.cs:17128-17141",
+            "Main.cs:17129-17134",
+            "Main.cs:17138",
+        ] {
+            assert!(pause.contains(marker), "frame_focus_pause lost `{marker}`");
+        }
+    }
+
+    /// S1-B-8 DW-1.1 (behavioural half) — `frame_head` yields the pinned frame
+    /// step and the animation clock: dt is the clamped wall step, `anim_time`
+    /// advances by exactly dt, the step-key snapshot shifts, and the `TR_SHOT`
+    /// pin overrides the wall clock with the fixed 1/60 step — all as the
+    /// single `frame()` did before the split.
+    #[test]
+    fn s1_b_8_phase1_the_frame_head_yields_the_pinned_dt_and_clock() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // A frame 100 ms late: the clamp at the head yields exactly 0.1 s.
+        let now = std::time::Instant::now();
+        app.last_frame = now - std::time::Duration::from_millis(100);
+        let frames0 = app.frame_count;
+        let anim0 = app.anim_time;
+        let down0 = app.step_input_down;
+        app.keys.insert(KeyCode::End);
+        let (dt, anim_time) = app.frame_head(now);
+        assert!((dt - 0.1).abs() < 1e-6, "dt is the clamped frame step ({dt})");
+        assert!(app.last_frame == now, "the head stores the caller's stamp");
+        assert_eq!(app.frame_count, frames0 + 1, "one head run per frame");
+        assert!(
+            (app.anim_time - (anim0 + dt)).abs() < 1e-6,
+            "anim_time advanced by exactly dt"
+        );
+        assert!(
+            anim_time == app.anim_time,
+            "the yield is the post-step animation clock"
+        );
+        // The step-key snapshot pair (`WorldUpdateStepper.cs:39-43`): `down`
+        // reads live, the previous frame's value shifts into `was`.
+        assert!(app.step_input_down, "End pinned the live step key");
+        assert!(
+            app.step_input_was == down0,
+            "the previous frame's pin shifted into step_input_was"
+        );
+        // The TR_SHOT pin (`Main.cs`'s deterministic-frame contract): whatever
+        // the wall clock says, the step is the fixed 1/60.
+        app.shot_path = Some(std::path::PathBuf::from("s1-b-8-shot.png"));
+        app.last_frame = now - std::time::Duration::from_millis(100);
+        let (pinned, _) = app.frame_head(now);
+        assert!(
+            (pinned - 1.0 / 60.0).abs() < 1e-9,
+            "TR_SHOT pins dt to 1/60 ({pinned})"
+        );
+    }
+
+    /// S1-B-8 DW-1.3 — the setup's inline 1600x900 fallback (not
+    /// `App::screen_size()`'s 1280x720) is what the whole frame draws into,
+    /// and `m_h` comes from that fallback: with a live minimap the setup
+    /// yields 256 while `App::main_m_h()` — the un-unified twin the plan's
+    /// do-not-unify note covers — clamps to 120 (`Main.cs:45795-45798`).
+    #[test]
+    fn s1_b_8_phase1_the_setup_returns_the_inline_screen_fallback() {
+        let mut app = in_world_app();
+        // A live, non-fullscreen minimap: `mapEnabled && !mapFullscreen &&
+        // mapStyle == 1` (`Main.cs:45771-45783`).
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        let (screen, m_h) = app.frame_shared_setup(1.0 / 60.0);
+        assert_eq!(
+            screen,
+            Vec2::new(1600.0, 900.0),
+            "the headless frame draws into the inline 1600x900 fallback"
+        );
+        assert!(
+            (m_h - 256.0).abs() < 1e-6,
+            "m_h is computed from the 900-tall fallback ({m_h})"
+        );
+        assert!(
+            (app.main_m_h() - 120.0).abs() < 1e-6,
+            "App::main_m_h() clamps against screen_size()'s 720 — the twin \
+             that stays separate"
+        );
+    }
+
+    /// S1-B-8 DW-1.3 — the front end's pending world swap is taken inside the
+    /// setup (a frame boundary: after the front screens' clicks parked it and
+    /// before the world branch), and its failure arm keeps the current world
+    /// with the `front_hint` the menus render (`UIWorldListItem.PlayGame` →
+    /// `Main.LoadWorld`, BUG-04).
+    #[test]
+    fn s1_b_8_phase1_the_world_swap_yields_inside_the_setup() {
+        let mut app = in_world_app();
+        let world0 = app.world.name.clone();
+        app.play_world = Some(std::path::PathBuf::from("nowhere-s1-b-8.wld"));
+        let (screen, _m_h) = app.frame_shared_setup(1.0 / 60.0);
+        assert!(
+            app.play_world.is_none(),
+            "the pending world is taken at the frame boundary"
+        );
+        let hint = app.front_hint.as_deref().unwrap_or_default();
+        assert!(
+            hint.starts_with("world load failed"),
+            "the Err arm keeps the menu with its front_hint ({hint})"
+        );
+        assert_eq!(
+            app.world.name, world0,
+            "a failed load keeps the current world (Main.LoadWorld's failure)"
+        );
+        assert_eq!(
+            screen,
+            Vec2::new(1600.0, 900.0),
+            "the frame still draws at the fallback after the failed swap"
+        );
+    }
+
+    /// S1-B-8 DW-1.4 — the Phase-3 re-borrow contract, pinned: the three
+    /// extracted fns are `&mut self` re-borrows with the documented param sets,
+    /// so a param-set rewrite of the frame head (the shape-A spike the
+    /// discovery rejected) fails this test instead of compiling. The sequence
+    /// below also drives the three sequential re-borrows in the orchestrator's
+    /// own order — the shape the draw phases of Phase 3 follow.
+    #[test]
+    fn s1_b_8_phase1_the_re_borrow_strategy_is_the_frame_contract() {
+        // The signatures as function items: a coercion failure is the pin.
+        let _head: fn(&mut App, std::time::Instant) -> (f32, f32) = App::frame_head;
+        let _setup: fn(&mut App, f32) -> (Vec2, f32) = App::frame_shared_setup;
+        let _pause: fn(&mut App) -> bool = App::frame_focus_pause;
+        // The orchestrator's head, driven straight: one stamp, then the three
+        // sequential `&mut self` re-borrows (each borrow ends at its call).
+        let mut app = in_world_app();
+        let now = std::time::Instant::now();
+        let (dt, anim_time) = app.frame_head(now);
+        let (screen, m_h) = app.frame_shared_setup(dt);
+        let focus_paused = app.frame_focus_pause();
+        assert!(dt > 0.0, "the head yielded a frame step");
+        assert!(anim_time >= dt, "the clock advanced with the step");
+        assert_eq!(screen, Vec2::new(1600.0, 900.0), "the setup yielded the fallback");
+        assert!(m_h >= 0.0, "the setup yielded the minimap height");
+        assert!(
+            !focus_paused,
+            "a focused window is not focus-paused (Main.cs:17128-17141)"
+        );
+    }
+
+    /// S1-B-8 DW-1.3 — the `TR_*` reads stay with the blocks that own them:
+    /// the `TR_SHOT` pin reads `shot_path` inside the head (twice: the dt pin
+    /// and the adaptive fps counter) and the cursor gate reads
+    /// `env::no_hud()` inside the setup; neither read crossed the split.
+    #[test]
+    fn s1_b_8_phase1_the_env_reads_stay_inside_the_extracted_bodies() {
+        let src = include_str!("frame.rs");
+        let head = fn_body(src, "fn frame_head(&mut self, now: Instant) -> (f32, f32)");
+        let setup = fn_body(src, "fn frame_shared_setup(&mut self, dt: f32) -> (Vec2, f32)");
+        let pins = head.matches("self.shot_path.is_some()").count();
+        assert_eq!(
+            pins, 2,
+            "the TR_SHOT pin's two shot_path reads stay in frame_head"
+        );
+        assert!(
+            head.contains("self.last_frame = now;"),
+            "frame_head owns the frame stamp store"
+        );
+        let cursors = setup.matches("crate::env::no_hud()").count();
+        assert_eq!(
+            cursors, 1,
+            "the cursor gate's no_hud read stays in frame_shared_setup"
+        );
+        // The reads did not migrate across the A/B boundary.
+        assert!(
+            !head.contains("crate::env::no_hud"),
+            "no_hud belongs to the setup, not the head"
+        );
+        assert!(
+            !setup.contains("shot_path"),
+            "shot_path belongs to the head, not the setup"
         );
     }
 }
