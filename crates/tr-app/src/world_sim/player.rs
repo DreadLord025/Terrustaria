@@ -282,7 +282,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // `Player.ResetEffects`' journey block, re-run every tick: the godmode
         // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
         // tile-range toggle (`:18815-18828`).
-        p.creative_god_mode = power_god_mode;
+        p.creative_god_mode = power_god_mode || p.debug_god_mode;
         p.far_placement_range = power_far_placement;
         // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
         // global the source reads): the frame's `update_scene` scan feeds
@@ -1043,6 +1043,40 @@ mod tests {
     /// One tick of the pass (the stepper runs its closure once per 1/60 s).
     fn tick_ammo(app: &mut App) {
         update_player(app, 1.0 / 60.0);
+    }
+
+    /// S1-E-34 — the F3 debug god mode rides `debug_god_mode` and the tick
+    /// ORs it into `creative_god_mode`, so `Hurt`'s first gate
+    /// (`Player.cs:38203-38206`) swallows the hit even with the journey power
+    /// off. The two flags stay independent: the power's own toggle still
+    /// drives its own half.
+    #[test]
+    fn s1_e_34_the_debug_god_mode_swallows_the_hit_with_the_power_off() {
+        let mut app = ammo_app();
+        app.player.as_mut().unwrap().debug_god_mode = true;
+        let p = app.player.as_mut().unwrap();
+        p.hp = 5;
+        p.mana = 0;
+        p.breath = 0;
+        p.hurt_cd = 0.0;
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            p.creative_god_mode,
+            "the tick ORs the debug flag onto the power flag"
+        );
+        assert_eq!(p.hp, p.max_hp, "the pool refill still runs");
+        let p = app.player.as_mut().unwrap();
+        p.hurt_cd = 0.0;
+        assert!(
+            !p.hurt(10, 0.0, &mut tr_core::UnifiedRandom::default(), true),
+            "the god-mode gate swallows the hit"
+        );
+
+        // Off again: the next tick clears the flag and the hit path is live.
+        app.player.as_mut().unwrap().debug_god_mode = false;
+        tick_ammo(&mut app);
+        assert!(!app.player.as_ref().unwrap().creative_god_mode);
     }
 
     #[test]

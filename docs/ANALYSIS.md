@@ -14061,6 +14061,31 @@ Deviations:
   the port's carrier link carries the position and the timers only, so the
   cannon keeps its own movement.
 
+## The debug god mode (S1-E-34, 2026-11-16)
+
+No new damage-path code. `Player.creative_god_mode` — the journey Godmode power —
+already gates every way a player can take damage: `Hurt` returns before the
+iframes, the defense reduction and the knockback
+(`Player.cs:38203-38206`), `KillMe` refuses the death (`:38809-38812`),
+`Update_NPCCollision` returns before the whole contact pass (`:31321-31324`) and
+`Main.UpdateWorld_Players` refills life/mana/breath (`Main.cs:17869-17873`).
+
+What the task actually adds is the **debug surface**: a twelfth row on the F3
+panel's World tab (`God Mode: ON/OFF`) that flips a new
+`Player::debug_god_mode`.
+
+Deliberate deviation (one-line-cited at the site): the tick ORs
+`debug_god_mode` into `creative_god_mode` instead of writing it directly,
+because `Player.ResetEffects` re-derives `creative_god_mode` from the journey
+power **every tick** (`:18789` clears it, `:25493-25497` re-reads it), so a
+direct toggle would last exactly one tick. Keeping a separate field also keeps
+the two independent: the journey power's own toggle is untouched, and the debug
+flag cannot silently turn the power on. CheatSheet's `GodMode.cs:56-67` and
+HEROsMod's `GeneralMessages.cs:182-190` are mod sources that are not part of
+`decompiled/`, so this row implements the *behaviour* the ROADMAP row describes
+("damage is swallowed while on") on top of the existing vanilla gate rather
+than porting either mod.
+
 ## The Eye Fire / Flames Trap and the Baby Bird (S1-D-4b-5c, 2026-11-16)
 
 Two leftover styles ride the Eye and Moon Lord chains: **23** and **158**.
