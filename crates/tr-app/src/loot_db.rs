@@ -112,6 +112,7 @@ mod tests {
             is_master: false,
             active_players: 1,
             extra_gel: false,
+            is_in_simulation: false,
             flags: LootFlags::default(),
             npc: LootNpc::default(),
         }
