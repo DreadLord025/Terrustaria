@@ -6,6 +6,7 @@
 
 use glam::Vec2;
 use tr_core::World;
+use tr_core::pylons::PylonInfo;
 use tr_render::SpriteRenderer;
 
 use crate::assets;
@@ -77,6 +78,42 @@ impl MapOverlayContext<'_> {
             && self.mouse.y <= hy + hh
     }
 
+    /// `Draw`'s tinted form (`MapOverlayDrawContext.cs:218-242`, the pylon
+    /// markers' `color * opacity`): the same transform and hit test, with the
+    /// colour scaled rather than the plain white.
+    pub fn draw_tinted(
+        &mut self,
+        uv: [f32; 4],
+        size: [f32; 2],
+        position: [f32; 2],
+        alignment: [f32; 2],
+        tint: f32,
+    ) -> bool {
+        if self.opacity == 0.0 {
+            return false; // `:220-223`
+        }
+        let pos = [
+            (position[0] - self.map_position[0]) * self.map_scale + self.map_offset[0],
+            (position[1] - self.map_position[1]) * self.map_scale + self.map_offset[1],
+        ];
+        if let Some(c) = self.clip {
+            if pos[0] < c[0] || pos[1] < c[1] || pos[0] > c[2] || pos[1] > c[3] {
+                return false; // `:225-228`
+            }
+        }
+        let origin = [size[0] * alignment[0], size[1] * alignment[1]];
+        let a = self.opacity * tint;
+        self.r.push_ui_sprite(pos, size, uv, [a, a, a, a]);
+        let hx = pos[0] - origin[0] * self.draw_scale;
+        let hy = pos[1] - origin[1] * self.draw_scale;
+        let hw = size[0] * self.draw_scale;
+        let hh = size[1] * self.draw_scale;
+        self.mouse.x >= hx
+            && self.mouse.x <= hx + hw
+            && self.mouse.y >= hy
+            && self.mouse.y <= hy + hh
+    }
+
     /// `GetUnclampedDrawRegion`'s centre (`MapOverlayDrawContext.cs:60-70`) —
     /// the pylon line's endpoints.
     pub fn unclamped_center(
@@ -113,17 +150,26 @@ fn is_boss_bag(kind: u16) -> bool {
 /// them through one struct.
 pub(crate) struct MapIconInputs<'a> {
     pub world: &'a World,
-    /// `Main.LocalPlayer` — the bed spawn's `SpawnX/Y`.
+    /// `Main.LocalPlayer` — the bed spawn's `SpawnX/Y` and the team.
     pub player: Option<&'a Player>,
     /// `Main.item[400]` — the BossBag drop scan (`BossBagMapLayer.cs:10-24`).
     pub item_drops: &'a [ItemDrop],
-    /// `Main.projectile`'s Digtoise trackers (1098/1123) — the port spawns
-    /// neither, so the list stays empty in-game.
-    pub digtoise: &'a [[f32; 2]],
+    /// `Main.projectile`'s Digtoise trackers (1098/1123) — `(bottom_px,
+    /// sprite_direction)` of the first active one the local player owns, the
+    /// scan breaking on it (`DigtoiseMapLayer.cs:14-25`).
+    pub digtoise: Option<([f32; 2], i32)>,
     /// `PingMapLayer`'s pool.
     pub pings: &'a [([f32; 2], f32)],
-    /// The pylon count — `Main.PylonSystem.Pylons` has no port system yet.
-    pub pylons: usize,
+    /// `Main.PylonSystem.Pylons` (`TeleportPylonsMapLayer.cs:32`) — the live
+    /// network, from `tr_core::pylons::scan_pylons`.
+    pub pylons: &'a [PylonInfo],
+    /// `TeleportPylonsSystem.IsPlayerNearAPylon(Main.LocalPlayer)`
+    /// (`TeleportPylonsMapLayer.cs:39-42`): away from a pylon the markers dim
+    /// to `Color.Gray * 0.5f`.
+    pub near_pylon: bool,
+    /// The map tiles, for `TeleportPylonsMapLayer.IsRevealed` (`:112-119`) —
+    /// only read with the team-based-spawns seed on.
+    pub map: Option<&'a WorldMap>,
     /// The team-based-spawns seed gate (`TeamBasedSpawnMapLayer.cs:10`).
     pub team_based_spawns: bool,
     pub mouse: Vec2,
@@ -155,20 +201,28 @@ pub(crate) fn map_layers_draw(
     };
     let mut text: Option<String> = None;
 
-    // `DigtoiseMapLayer` (`DigtoiseMapLayer.cs:10-27`): the player's
-    // Digtoise tracker (1098/1123) draws Extra_305's 2-frame row,
-    // bottom-aligned at `Bottom / 16 + (0.5, 0)`.
-    for pos in inputs.digtoise {
+    // `DigtoiseMapLayer` (`DigtoiseMapLayer.cs:13-26`): the player's Digtoise
+    // tracker (1098/1123) draws Extra_305's 2-frame row, bottom-aligned at
+    // `Bottom / 16 + (0.5, 0)`; column 1 faces left (`spriteDirection <= 0`).
+    if let Some((bottom, dir)) = inputs.digtoise {
         if let Some(tex) = lookups.extra_305 {
-            let Some(uv) = lookups.hud_uv(Some(&tex)) else {
-                break;
-            };
-            let size = [tex.width as f32 / 2.0, tex.height as f32];
-            if ctx.draw(uv, size, [pos[0] + 0.5, pos[1]], ALIGN_BOTTOM) {
-                text = Some(crate::lang::text("UI.Digtoise"));
+            if let Some(uv) = lookups.hud_uv(Some(&tex)) {
+                let fw = tex.width as f32 / 2.0;
+                let fh = tex.height as f32;
+                let col = if dir <= 0 { 1.0 } else { 0.0 };
+                let uw = uv[2] - uv[0];
+                let uv = [
+                    uv[0] + uw * 0.5 * col,
+                    uv[1],
+                    uv[0] + uw * 0.5 * (col + 1.0),
+                    uv[3],
+                ];
+                let pos = [bottom[0] / 16.0 + 0.5, bottom[1] / 16.0];
+                if ctx.draw(uv, [fw, fh], pos, ALIGN_BOTTOM) {
+                    text = Some(crate::lang::text("UI.Digtoise"));
+                }
             }
         }
-        break;
     }
 
     // `BossBagMapLayer` (`BossBagMapLayer.cs:10-24`): every active boss-bag
@@ -215,27 +269,49 @@ pub(crate) fn map_layers_draw(
         }
     }
 
-    // `TeamBasedSpawnMapLayer` (`TeamBasedSpawnMapLayer.cs:9-21`): the seed
-    // gate — the team-based-spawns seed is not ported (M5-SEED-2's deferred
-    // list) and `ExtraSpawnPointManager` has no counterpart, so the layer
-    // stays dark until that seed lands.
+    // `TeamBasedSpawnMapLayer` (`TeamBasedSpawnMapLayer.cs:11-21`): the seed
+    // gate first. `Main.teamBasedSpawnsSeed` is unported (M5-SEED-2's deferred
+    // list) and so is `ExtraSpawnPointManager`, so the gate stays the C#'s and
+    // nothing draws until that seed lands.
     if inputs.team_based_spawns {
         if let Some(tex) = lookups.extra_282 {
             let _ = lookups.hud_uv(Some(&tex));
         }
     }
 
-    // `TeleportPylonsMapLayer` (`TeleportPylonsMapLayer.cs:38-115`): the
-    // pylon links and the Extra_182/299 markers draw only when
-    // `Main.PylonSystem.Pylons` holds entries — the port has no
-    // `TeleportPylonsSystem` yet (the tile-entity work), so the count is 0
-    // and nothing draws.
-    if inputs.pylons > 0 {
-        if let Some(tex) = lookups.extra_182 {
-            let _ = lookups.hud_uv(Some(&tex));
+    // `TeleportPylonsMapLayer` (`TeleportPylonsMapLayer.cs:65-89`): the
+    // markers. `:39-42` dims them to `Color.Gray * 0.5f` when the player is
+    // not near a pylon; `:112-119` hides the ones the fog covers once the
+    // team-based-spawns seed is on.
+    let pylon_color = if inputs.near_pylon { 1.0 } else { 0.25 };
+    for p in inputs.pylons {
+        // `IsRevealed` (`:112-119`): unconditionally true without the seed.
+        if inputs.team_based_spawns
+            && !inputs
+                .map
+                .is_some_and(|m| m.tile_revealed(inputs.world, p.x as i32, p.y as i32))
+        {
+            continue;
         }
-        if let Some(tex) = lookups.extra_299 {
-            let _ = lookups.hud_uv(Some(&tex));
+        let Some(tex) = lookups.extra_182 else {
+            break;
+        };
+        let Some(uv) = lookups.hud_uv(Some(&tex)) else {
+            break;
+        };
+        let fw = tex.width as f32 / 11.0;
+        let fh = tex.height as f32;
+        let col = p.pylon_type.style() as f32;
+        let uv = [
+            uv[0] + (uv[2] - uv[0]) * col / 11.0,
+            uv[1],
+            uv[0] + (uv[2] - uv[0]) * (col + 1.0) / 11.0,
+            uv[3],
+        ];
+        // `:73-79`: `PositionInTiles.ToVector2() + (1.5, 2)`, centre-aligned.
+        let pos = [p.x as f32 + 1.5, p.y as f32 + 2.0];
+        if ctx.draw_tinted(uv, [fw, fh], pos, ALIGN_CENTER, pylon_color) {
+            text = Some(crate::lang::item_name(p.pylon_type.item_id()));
         }
     }
 
@@ -267,6 +343,21 @@ pub(crate) fn map_layers_draw(
 /// tiles it draws over.
 pub(crate) fn map_pings(map: &WorldMap) -> &[([f32; 2], f32)] {
     &map.pings
+}
+
+/// `DigtoiseMapLayer`'s scan (`DigtoiseMapLayer.cs:14-26`): the first active
+/// projectile of kind 1098/1123 owned by the local player (`Main.myPlayer` is
+/// the port's `owner == 0`). Returns `(Bottom / 16 px, spriteDirection)`; the
+/// C# `break`s on the first match, so the scan stops there too.
+pub(crate) fn digtoise_marker(
+    player: Option<&Player>,
+    pool: &crate::projectile::ProjectilePool,
+) -> Option<([f32; 2], i32)> {
+    player?;
+    pool.slots()
+        .iter()
+        .find(|p| p.active && p.owner == 0 && (p.kind == 1098 || p.kind == 1123))
+        .map(|p| ([p.pos.x + p.w * 0.5, p.pos.y + p.h], p.sprite_direction))
 }
 
 #[cfg(test)]
@@ -327,6 +418,67 @@ mod tests {
         assert_eq!(rows[0], 4, "14.9 s -> row 4");
         m.age_pings(0.2);
         assert!(m.pings.is_empty(), "the 15 s expiry");
+    }
+
+    /// S1-L-4 — `TeleportPylonsMapLayer.cs:73-79`: the marker anchor is
+    /// `PositionInTiles.ToVector2() + (1.5, 2)`, centre-aligned, through the
+    /// context transform (`MapOverlayDrawContext.cs:44-46`).
+    #[test]
+    fn s1_l_4_the_pylon_marker_anchor_is_the_csharp_offset() {
+        let (map_pos, map_off, map_scale) = ([0.0f32, 0.0], [100.0f32, 50.0], 2.0f32);
+        let pylon = (40i16, 30i16);
+        let anchor = [pylon.0 as f32 + 1.5, pylon.1 as f32 + 2.0];
+        let screen = [
+            (anchor[0] - map_pos[0]) * map_scale + map_off[0],
+            (anchor[1] - map_pos[1]) * map_scale + map_off[1],
+        ];
+        assert_eq!(screen, [183.0, 114.0]);
+    }
+
+    /// S1-L-4 — `TeleportPylonsMapLayer.IsRevealed` (`:112-119`) + the port's
+    /// bounds guard: with the team seed on, the fog hides an unexplored pylon;
+    /// without it the answer is a flat true; out-of-bounds never panics.
+    #[test]
+    fn s1_l_4_the_pylon_reveal_gate_follows_the_team_seed() {
+        let world = World::new("t".into(), 200, 200);
+        let mut m = WorldMap::new(&world);
+        assert!(!m.tile_revealed(&world, 40, 30), "nothing explored yet");
+        let i = world.index(40, 30);
+        m.tiles[i].light = 1;
+        assert!(m.tile_revealed(&world, 40, 30), "light > 0 reveals");
+        assert!(!m.tile_revealed(&world, -1, -1), "out of bounds is unrevealed");
+        assert!(!m.tile_revealed(&world, 5000, 5000), "and never panics");
+    }
+
+    /// S1-L-4 — `DigtoiseMapLayer.cs:14-25`: the scan takes the first active
+    /// 1098/1123 owned by the local player (`owner == 0`, vanilla's
+    /// `Main.myPlayer`), yields `Bottom` and the `spriteDirection`.
+    #[test]
+    fn s1_l_4_the_digtoise_marker_is_the_local_players_first_tracker() {
+        let world = World::new("t".into(), 200, 200);
+        let player = Player::spawn(&world);
+        let mut pool = crate::projectile::ProjectilePool::new();
+        assert!(digtoise_marker(Some(&player), &pool).is_none(), "none spawned");
+        // A foreign-owned Digtoise stays invisible to the local map.
+        pool.spawn(1098, 3, Vec2::ZERO, Vec2::ZERO, 0, 0.0, false);
+        // A non-Digtoise local projectile does not qualify either.
+        pool.spawn(1, 0, Vec2::ZERO, Vec2::ZERO, 0, 0.0, false);
+        assert!(digtoise_marker(Some(&player), &pool).is_none());
+        // The local Digtoise does: `Bottom = pos + (w/2, h)`. Its width and
+        // direction come from the spawn's data defaults, so the test pins the
+        // formula rather than the projectile's own fields.
+        let idx = pool
+            .spawn(1098, 0, Vec2::new(160.0, 320.0), Vec2::ZERO, 0, 0.0, false)
+            .unwrap();
+        let p = &pool.slots()[idx];
+        let (bottom, _dir) = digtoise_marker(Some(&player), &pool).unwrap();
+        assert_eq!(
+            bottom,
+            [p.pos.x + p.w * 0.5, p.pos.y + p.h],
+            "Bottom = pos + (w/2, h)"
+        );
+        // No local player, no marker (`Main.LocalPlayer` gates the scan).
+        assert!(digtoise_marker(None, &pool).is_none());
     }
 }
 
