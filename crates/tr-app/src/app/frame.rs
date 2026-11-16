@@ -1449,6 +1449,8 @@ impl App {
                     lookups,
                     sky_tint,
                     self.atmo,
+                    self.game_update_count,
+                    self.mouse_text_color,
                 );
                 draw_phase("world");
                 if !reuse_world {

@@ -908,8 +908,9 @@ items are collectible but not placeable. Desert structures and loot are not port
 
 ## Surface backgrounds
 
-`Main.DrawSurfaceBG` is ported for the four biomes the generator has: forest (0),
-desert (2), ocean (4) and snow (7). Every layer is gated and tinted by its
+`Main.DrawSurfaceBG` is ported for eight of the surface biomes: forest (0), corrupt (1),
+desert (2), jungle (3), ocean (4), hallow (6), snow (7), crimson (8) and mushroom (9).
+Every layer is gated and tinted by its
 `Main.bgAlphaFrontLayer` / `Main.bgAlphaFarBackLayer` entry
 (`ColorOfSurfaceBackgroundsBase * alpha`), so two biomes blend while `Main.bgStyle`
 cross-fades; a zero alpha skips the layer.
@@ -929,9 +930,51 @@ moves only the world) and the X phase is
 `-IEEERemainder(screenLeft·parallax, scaledWidth) − scaledWidth/2` against the screen's
 left edge, as in `DrawSurfaceBG`.
 
-`Main.GetPreferredBGStyleForPlayer` is approximated with the same camera-column biome
-tests the water style uses — beach → 4, desert → 2, snow → 7, otherwise 0 (the dungeon,
-corruption etc. do not exist in our generator). `DrawBG_HandleBackgroundTransition`
+The five remaining surface variants ride the same front-layer path: corrupt (1), jungle
+(3), hallow (6), crimson (8) and mushroom (9). [`World`] stores one **style byte** per
+biome (`corrupt_bg_style`, …), and `surface_bg_texture_ids` resolves it to the three
+`Background_<id>` ids with `WorldGen.setBG`'s cases 1/2/4/5/8 (`WorldGen.cs:7235-7608`);
+`-1` means the row is not drawn. The ids are derived on demand, so a style change needs
+no atlas rebuild — but the world-dependent sheets are packed at load
+(`assets::load_world_sheets`), hence a world's session must see one style set.
+
+Every row goes through `FrontLayer` + `front_layers`, which is a literal port of each
+`DrawSurfaceBG_*` row: the caller's `(scale, parallax, magic·k + top)` magic numbers,
+then `SetBackgroundOffsets` (`Main.cs:60384-60775`) overriding `bgScale`/`bgParallax` and,
+for the ids whose `num`/`num2` pair is non-zero, replacing `bgTopY` wholesale. That is why
+a style whose id is in the offsets table ignores the caller's row constants. Scale is
+doubled by `bgGlobalScaleMultiplier = 2` (`Main.cs:59329`) and every `top` already carries
+the front loop's `pushBGTopHack = -150` (`Main.cs:59302/59346/59525`).
+
+The per-row quirks are applied *after* the offsets, exactly like the source: corrupt's
+`bgTexIndexes[0] == 56` nudge subtracts 100 from **row 0's id on every row**
+(`Main.cs:61128/61154/61199`); jungle subtracts 200/175/150 for `59`/`60`/`61` and adds
+`DrawSurfaceBG_GetLayerYOffset` on every row (`:59740`, `:60944-61008`); crimson nudges
+row 0 by `+50` for `105` and `-350` for `174`, and row 2's `175` by `-1000` in X, `-400` in
+Y plus one extra tile (`:60206-60291`); hallow's first `SkyManager` boundary is
+`1.2f / parallax` after the offset override (`:60788`); snow and mushroom close with
+`DrawToDepth(1f)` (`:60386`, `:60186`). Row 1 of corrupt/jungle/forest is mirrored
+(`SpriteEffects.FlipHorizontally`), mushroom's three rows each replace the tint with the
+glow colour (`:60001/60065/60127`), clamped at or above the base colour's byte.
+
+The animated sheets (`GetBackgroundRect`, `Main.cs:61220-61262`) sample a 2×2 grid: `235`
+every 20 ticks, `219/220/221/271/272/273/302/303/305/307/309/311/313/315/317/326/337/338/341`
+every 15, `281` every 5, then `Inflate(0, -2)`. `background_frame` halves `w`/`h` because
+`Main.backgroundWidth/Height` are already halved for those ids at load (`:59046-59072`).
+
+**Deviation (Mushroom glow RNG).** `DrawSurfaceBG_Mushroom` rolls
+`Main.rand.Next(28, 42)` once per row (`:60002/60066/60128`). The port derives that value
+from `Main.GameUpdateCount` and the row index through `next_rand` instead of consuming
+`Main.rand`, so the draw path never advances the simulation's RNG stream — a hard
+invariant of the port (a draw-time draw would desync world generation against the
+original for the same seed). The resulting glow oscillates over the same 28..41 range at
+a comparable rate; the two rolls are not bit-identical to the original's.
+
+`Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`) is ported in full, including
+the beach/corrupt-blood-count branches and the glowshroom test; only its final
+`Main.treeX[]` forest sub-style selection (10/11/12) collapses to 0, and the desert
+evil variants (5/13/14) to 2 — both because those style tables are unported.
+`DrawBG_HandleBackgroundTransition`
 waits 30 frames before adopting a new style (60 when entering a forest style), then sets
 `bgDelay = -60` as a 60-frame cooldown (0 for a forest target);
 `UpdateBGVisibility_BackLayer`/`_FrontLayer` move 16 alpha slots at
@@ -946,12 +989,14 @@ original's zoom-1 matrix, so the layers hold their screen size at any game zoom.
 are world objects at a fixed altitude above `worldSurface` and drift with the wind; the
 storm `cloudBG` banks (`Background_112/113`) fade in with `cloudAlpha`.
 
-Not ported: the styles that need `SceneMetrics` beyond our four biomes (corruption 1,
-jungle 3, hallow 6, crimson 8, glowshroom 9, the extra forest sets 10..12 and the desert
-evil variants 5/13/14), the saved `treeBG*` / `desertBackgroundSet` randomisation (tree
-set 1 and the pure desert set are assumed), `DrawSurfaceBG_DrawChangeOverlay` (the black
-flash on first entering a background), the far-cloud depth layers
-(`DrawClouds_Distant/Closer`), the ocean water-line ambience and the `Background_49` fog.
+Not ported: the extra forest sets 10..12 and the desert evil variants 5/13/14 (their
+style tables need `Main.treeX[]` / `Main.desertBackgroundSet`, and only the tree set 1 and
+the pure desert set are packed), the forest styles' per-texture quirks
+(`91`/`173`/`178`/`184`/`282`/`328`/`333`/`329`/`334`, `Main.cs:61278-61301`,
+`:61400-61490`), snow's 20-style table (`Main.snowBG`, style 1 assumed),
+`DrawSurfaceBG_GoodEvilDesert`, `DrawSurfaceBG_DrawChangeOverlay` (the black flash on
+first entering a background), the far-cloud depth layers (`DrawClouds_Distant/Closer`),
+the ocean water-line ambience and the `Background_49` fog.
 
 Also not ported: the per-biome **animated screen effects**. In particular the day-time
 desert **heat shimmer** — `SceneState.ApplyVisuals` enables the `HeatDistortion` filter
