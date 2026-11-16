@@ -2302,8 +2302,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ExplosiveTrap T1-T3 — aiStyle 138, penetrate -1); DeadCells
             // Barnacle (`:9707` — aiStyle 197).
             FROST_HYDRA => (80.0, 74.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4009` — the Frost Blast fired by the Frost Hydra:
+            // 14x14, aiStyle 28, `penetrate = 3`, `extraUpdates = 3`.
+            FROST_BLAST_FRIENDLY => (14.0, 14.0, 28, 3, 3600, 3, true, false, false, RESET_STATE),
             QUEEN_SPIDER => (66.0, 50.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:4625` - the Queen Spider's egg: 16x16, aiStyle 14,
+            // `penetrate = -1`, `timeLeft = 60`.
+            SPIDER_EGG => (16.0, 16.0, 14, -1, 60, 0, true, false, false, RESET_STATE),
             HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9153` — the Houndius' fireball: 14x14, aiStyle 28.
+            HOUNDIUS_SHOOTIUS_FIREBALL => (14.0, 14.0, 28, 1, 3600, 0, true, false, false, RESET_STATE),
             MOONLORD_TURRET | RAINBOW_CRYSTAL => {
                 (32.0, 32.0, 123, 1, 36000, 0, false, false, false, RESET_STATE)
             }
@@ -2320,6 +2328,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 (16.0, 16.0, 138, -1, 36000, 0, false, false, false, RESET_STATE)
             }
             DEAD_CELLS_BARNACLE => (42.0, 38.0, 197, 1, 36000, 0, true, false, false, RESET_STATE),
+            DEAD_CELLS_BARNACLE_SHOT => (14.0, 14.0, 28, 1, 3600, 2, true, false, false, RESET_STATE), // Projectile.cs:9717
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -2522,6 +2531,7 @@ pub struct GemStaffFeatures {
 pub const PROJ_COUNT: usize = 1136;
 
 pub const FROST_HYDRA: u16 = 308;
+pub const FROST_BLAST_FRIENDLY: u16 = 309;
 pub const HORNET: u16 = 373;
 pub const FLYING_IMP: u16 = 375;
 pub const RETANIMINI: u16 = 387;
@@ -2539,6 +2549,7 @@ pub const STORM_TIGER_2: u16 = 834;
 pub const STORM_TIGER_3: u16 = 835;
 pub const ABIGAIL: u16 = 963;
 pub const QUEEN_SPIDER: u16 = 377;
+pub const SPIDER_EGG: u16 = 378;
 pub const MOONLORD_TURRET: u16 = 641;
 pub const RAINBOW_CRYSTAL: u16 = 643;
 pub const FLAME_BURST_TOWER_1: u16 = 663;
@@ -2554,7 +2565,9 @@ pub const EXPLOSIVE_TRAP_1: u16 = 691;
 pub const EXPLOSIVE_TRAP_2: u16 = 692;
 pub const EXPLOSIVE_TRAP_3: u16 = 693;
 pub const HOUNDIUS_SHOOTIUS: u16 = 966;
+pub const HOUNDIUS_SHOOTIUS_FIREBALL: u16 = 967;
 pub const DEAD_CELLS_BARNACLE: u16 = 1025;
+pub const DEAD_CELLS_BARNACLE_SHOT: u16 = 1026; // AI_197 follow-up
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,
@@ -8487,6 +8500,57 @@ impl Projectile {
         self.vel.x += wind_speed * WIND_PHYSICS_STRENGTH;
     }
 
+    /// `HandleMovement`'s half for the aiStyle-53 sentries (308 Frost Hydra,
+    /// 377 Queen Spider, 966 Houndius Shootius): `Collision.TileCollision`
+    /// (`:17587-17650`, `flag6 = false` for aiStyle 53 at `:17532-17535`) then
+    /// `UpdatePosition`'s `position += velocity` (`:19858`/`:20445`).
+    ///
+    /// The blocked-move chain is SKIPPED entirely (`:18635` excludes exactly
+    /// 308/377/966), so a sentry blocked by a tile does NOT die and does not
+    /// bounce - it just stops against the tile and its own AI gravity keeps
+    /// pushing.
+    fn sentry_hydra_step(&mut self, world: &World) {
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            false,
+            false,
+        );
+        self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        self.pos += self.vel;
+    }
+
+    /// `HandleMovement`'s blocked-move arm for the aiStyle-197 ceiling/hover
+    /// turret (`:18637-18643`): `AI_197_HandleTileCollision` (`:40246-40305`),
+    /// whose state half is `ai[0] = 1f` (`:40250`). The sound, the `HitTiles`
+    /// kick and the 1025 dust/gore burst (`:40248-40316`) are SKIPPED - the
+    /// pool has no sound, dust or gore layer. The move itself is
+    /// `Collision.TileCollision` (`flag6 = true` at `:17536-17539`) then
+    /// `UpdatePosition`'s `position += velocity` (`:19858`/`:20445`).
+    fn sentry_turret_step(&mut self, world: &World) {
+        let before = self.vel;
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            true,
+            true,
+        );
+        self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        self.pos += self.vel;
+        // `:40250` - the stuck latch, reached only from the blocked arm and
+        // only while the AI has not already latched (`:18639`, `ai[0] == 0`
+        // is checked before the call, so the latch is one-shot per stuck run).
+        if self.vel != before && self.ai[0] == 0.0 {
+            self.ai[0] = 1.0;
+        }
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -12331,12 +12395,9 @@ impl ProjectilePool {
                             }
                         }
                                                 53 => {
-                            // `AI_053_FrostHydra`'s targeting call
-                            // (`Projectile.cs:37345-37353`): the firing offset
-                            // is `Vector2.Zero`, the Houndius' `-16` Y. The
-                            // per-kind shot machines are the unported half
-                            // (ANALYSIS), so the aim rides `local_ai` as the
-                            // ported seam: [aim_x, aim_y, target_slot].
+                            // `AI_053_FrostHydra` ported behavior (`Projectile.cs:37266-37490`):
+                            // initialization, free fall, targeting, animations, firing mechanics, and tick handling.
+                            // Extends Rust implementation to fully encompass the original C# behavior.
                             let player_target =
                                 player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
                             let offset = if self.slots[i].kind == HOUNDIUS_SHOOTIUS {
@@ -12355,30 +12416,312 @@ impl ProjectilePool {
                                     npcs,
                                 )
                             };
-                            let p = &mut self.slots[i];
-                            store_sentry_aim(p, aim);
+                            let mut shot: Option<(u16, f32, f32, f32, f32, i32, f32)> = None;
+                            let projectile = &mut self.slots[i];
+                            // `AI_053_FrostHydra` (`:37266-37490`). The C#'s `netUpdate`
+                            // calls have no Rust field - skipped.
+                            if projectile.local_ai[0] == 0.0 {
+                                projectile.local_ai[1] = 1.0;
+                                projectile.local_ai[0] = 1.0;
+                                projectile.ai[0] = 120.0;
+                                if projectile.kind == QUEEN_SPIDER {
+                                    projectile.frame = 4;
+                                } else if projectile.kind == HOUNDIUS_SHOOTIUS {
+                                    projectile.ai[1] = -1.0;
+                                    projectile.frame = 0;
+                                }
+                            }
+                            // The free fall (`:37336-37344`). The C#'s backpack branch
+                            // (`:37314-37335`) is unreachable in this port.
+                            // ponytail: no sentry-backpack support - add when the
+                            // Player gains `accSentryBackpack` and the grab-cooldown
+                            // test of `CanGetPickedUpBySentryBackpack`.
+                            if projectile.ai[2] == 0.0 {
+                                projectile.vel.x = 0.0;
+                                projectile.vel.y += 0.2;
+                                if projectile.vel.y > 16.0 {
+                                    projectile.vel.y = 16.0;
+                                }
+                            }
+                            // Targeting logic using helper
+                            let firing_offset = if projectile.kind == HOUNDIUS_SHOOTIUS {
+                                Vec2::new(0.0, -16.0)
+                            } else {
+                                Vec2::ZERO
+                            };
+                            if let Some((target_slot, target_x, target_y)) = aim {
+                                if projectile.kind == HOUNDIUS_SHOOTIUS && projectile.ai[1] != target_slot as f32 {
+                                    projectile.ai[1] = target_slot as f32;
+                                }
+                                // Convert absolute AIM into relative for Animation/Frame logic.
+                                let proj_center = projectile.pos + Vec2::new(projectile.w * 0.5, projectile.h * 0.5);
+                                let rel_x = target_x - proj_center.x;
+                                let rel_y = target_y - proj_center.y;
+                                let mut num9 = 0;
+                                if projectile.kind != HOUNDIUS_SHOOTIUS {
+                                    if projectile.frame_counter > 0 {
+                                        projectile.frame_counter -= 1;
+                                    }
+                                    if projectile.frame_counter <= 0 {
+                                        let old_frame = projectile.frame;
+                                        let old_dir = projectile.sprite_direction;
+                                        projectile.sprite_direction =
+                                            if rel_x < 0.0 { -1 } else { 1 };
+                                        num9 = if rel_y > 0.0 {
+                                            0
+                                        } else if rel_y.abs() > rel_x.abs() * 3.0 {
+                                            4
+                                        } else if rel_y.abs() > rel_x.abs() * 2.0 {
+                                            3
+                                        } else if rel_x.abs() > rel_y.abs() * 3.0 {
+                                            0
+                                        } else {
+                                            if rel_x.abs() > rel_y.abs() * 2.0 { 1 } else { 2 }
+                                        };
+                                        // Finalize frame logic.
+                                        let mut frame = match projectile.kind {
+                                            FROST_HYDRA => num9 * 2,
+                                            QUEEN_SPIDER => num9,
+                                            _ => old_frame,
+                                        };
+                                        // The Hydra's extra frame (`:37392-37395`).
+                                        if projectile.ai[0] > 40.0
+                                            && projectile.local_ai[1] == 0.0
+                                            && projectile.kind == FROST_HYDRA
+                                        {
+                                            frame += 1;
+                                        }
+                                        projectile.frame = frame;
+                                        if old_frame != projectile.frame
+                                            || old_dir != projectile.sprite_direction
+                                        {
+                                            projectile.frame_counter =
+                                                if projectile.ai[0] <= 0.0 { 4 } else { 8 };
+                                        }
+                                    }
+                                }
+                                // Handle Firing Logic.
+                                if projectile.ai[0] <= 0.0 {
+                                    projectile.local_ai[1] = 0.0;
+                                    projectile.ai[0] = match projectile.kind {
+                                        FROST_HYDRA => 60.0,
+                                        HOUNDIUS_SHOOTIUS => 90.0,
+                                        _ => 60.0
+                                    };
+                                    if local_owner == projectile.owner {
+                                        let (shot_kind, muzzle_v) = match projectile.kind {
+                                            FROST_HYDRA => (309, 9.0),
+                                            QUEEN_SPIDER => (378, 9.0),
+                                            HOUNDIUS_SHOOTIUS => (967, 12.5),
+                                            _ => (309, 6.0),
+                                        };
+                                        // The muzzle (`:37438-37465`): the 966 keeps
+                                        // the bare firing offset.
+                                        let mut off = firing_offset;
+                                        if projectile.kind != HOUNDIUS_SHOOTIUS {
+                                            off = off + match num9 {
+                                                0 => Vec2::new(24.0 * projectile.sprite_direction as f32, 12.0),
+                                                1 => Vec2::new(24.0 * projectile.sprite_direction as f32, 0.0),
+                                                2 => Vec2::new(24.0 * projectile.sprite_direction as f32, -2.0),
+                                                3 => Vec2::new(14.0 * projectile.sprite_direction as f32, -6.0),
+                                                4 => Vec2::new(2.0 * projectile.sprite_direction as f32, -14.0),
+                                                _ => Vec2::ZERO,
+                                            };
+                                            if projectile.sprite_direction < 0 {
+                                                off.x += 10.0;
+                                            }
+                                        }
+                                        let muzzle = proj_center + off;
+                                        // The shot rides from the muzzle to the target
+                                        // at the muzzle speed (`:37466-37470`).
+                                        let dx = target_x - muzzle.x;
+                                        let dy = target_y - muzzle.y;
+                                        let len = (dx * dx + dy * dy).sqrt();
+                                        let k = if len > 0.0 { muzzle_v / len } else { 0.0 };
+                                        let (damage, knock_back) = (projectile.damage, projectile.knock_back);
+                                        shot = Some((shot_kind, muzzle.x, muzzle.y, dx * k, dy * k, damage, knock_back));
+                                    }
+                                }
+                            } else if projectile.kind == HOUNDIUS_SHOOTIUS {
+                                if projectile.ai[1] != -1.0 {
+                                    projectile.ai[1] = -1.0;
+                                }
+                            } else if projectile.ai[0] <= 60.0 {
+                                if matches!(projectile.frame, 1 | 3 | 5 | 7 | 9) {
+                                    projectile.frame -= 1;
+                                }
+                            }
+                            // Tail logic decrement `ai[0]`
+                            if projectile.ai[0] > 0.0 {
+                                projectile.ai[0] -= 1.0;
+                            }
+                            // The pool spawns the shot once the slot's borrow ends.
+                            if let Some((kind, x, y, vx, vy, damage, kb)) = shot {
+                                let _ = self.spawn_with_data_ai_owned(
+                                    kind, local_owner, x, y, vx, vy, damage, kb, 0.0, 0.0,
+                                );
+                            }
+                            // `HandleMovement` -> `UpdatePosition` (`:19858`/`:20445`):
+                            // the position integrates the velocity after the AI, once per
+                            // sub-step. The aiStyle-53 rows keep `tileCollide = true` but are
+                            // excluded from the blocked-move chain (`:18635` names 308/377/966
+                            // explicitly), so a blocked sentry neither dies nor bounces.
+                            self.slots[i].sentry_hydra_step(world);
                         }
                         197 => {
-                            // `AI_197`'s targeting call
-                            // (`Projectile.cs:40435-40449`): the `(0, 10)`
-                            // firing offset and the `1000 + num3*16` reach (the
-                            // barnacle's own `num3` rides its unported body —
-                            // ANALYSIS).
-                            let player_target =
-                                player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
-                            let aim = {
-                                let p = &self.slots[i];
-                                p.sentry_npc_targeting(
-                                    world,
-                                    Vec2::new(0.0, 10.0),
-                                    false,
-                                    1000.0,
-                                    player_target,
-                                    npcs,
-                                )
-                            };
-                            let p = &mut self.slots[i];
-                            store_sentry_aim(p, aim);
+                                // `AI_197_CeilingAndHoverTurret` (`Projectile.cs:40307-40479`).
+                                // The C# order: the init latch, the constants, the solid probe, the
+                                // backpack gate, the tile scan, the stuck-in-a-tile reset, the frame
+                                // pick, the hover motion, then the targeting and the 50-tick reload.
+                                const SCAN_TILES: i32 = 15;
+                                const FIRE_TICKS: f32 = 50.0;
+                                const SHOT_KIND: u16 = 1026;
+                                const SHOT_SPEED: f32 = 12.0;
+                                let barnacle = self.slots[i].kind == DEAD_CELLS_BARNACLE;
+                                let player_target =
+                                    player.as_ref().map_or(-1, |pl| pl.minion_attack_target_npc);
+                                // The firing offset (`:40438`): `(0, 10)`. The backpack mode drops it to
+                                // `(0, 0)`, but that branch is unreachable in this port.
+                                let firing_offset = Vec2::new(0.0, 10.0);
+                                // The reach (`:40444-40448`): 1000, plus the scan height for the barnacle.
+                                let reach = if barnacle {
+                                    1000.0 + SCAN_TILES as f32 * TILE_PX as f32
+                                } else {
+                                    1000.0
+                                };
+                                let mut shot: Option<(u16, f32, f32, f32, f32, i32, f32)> = None;
+                                {
+                                    let projectile = &mut self.slots[i];
+                                    // The init latch (`:40310-40325`).
+                                    if projectile.local_ai[1] == 0.0 {
+                                        projectile.local_ai[1] = 1.0;
+                                        if barnacle {
+                                            projectile.frame = 3;
+                                        }
+                                    }
+                                    // The solid probe (`:40332-40333`).
+                                    let probe = projectile.pos + projectile.vel + Vec2::new(0.0, -2.0);
+                                    let stuck = box_solid(world, probe, projectile.w, projectile.h);
+                                    // The tile scan (`:40374-40388`): the first solid or sloped tile under
+                                    // the projectile's top corner.
+                                    let tile_x = (projectile.pos.x / TILE_PX as f32) as i32;
+                                    let tile_y = (projectile.pos.y / TILE_PX as f32) as i32;
+                                    let mut solid_below = false;
+                                    for j in 0..SCAN_TILES {
+                                        let ty = tile_y + j;
+                                        // `WorldGen.InWorld(x, y, 2)` (`:40379`): the fluff
+                                        // margin is INSIDE the bounds, so the scan stops two
+                                        // tiles short of every edge (`WorldGen.cs:6553-6554`).
+                                        if tile_x < 2
+                                            || tile_x >= world.width - 2
+                                            || ty < 2
+                                            || ty >= world.height - 2
+                                        {
+                                            break;
+                                        }
+                                        if tile_solid_at(world, projectile.pos.x, ty) {
+                                            solid_below = true;
+                                            break;
+                                        }
+                                    }
+                                    // The stuck-in-a-tile reset (`:40389-40393`).
+                                    if local_owner == projectile.owner && projectile.ai[0] == 1.0 && !stuck {
+                                        projectile.ai[0] = 0.0;
+                                    }
+                                    // The frame pick (`:40394-40407`).
+                                    if barnacle {
+                                        if projectile.ai[0] == 1.0 {
+                                            if projectile.frame < 0 || projectile.frame >= 3 {
+                                                projectile.frame = rng.next_range(0, 3);
+                                            }
+                                        } else {
+                                            projectile.frame = 3;
+                                        }
+                                    }
+                                    // The hover motion (`:40408-40430`).
+                                    if solid_below {
+                                        if projectile.ai[0] == 1.0 {
+                                            projectile.vel = Vec2::ZERO;
+                                        } else {
+                                            projectile.vel.y -= 0.1;
+                                            if projectile.vel.y < -12.0 {
+                                                projectile.vel.y = -12.0;
+                                            }
+                                        }
+                                    } else {
+                                        projectile.vel *= 0.9;
+                                        if projectile.vel.length() < 0.01 {
+                                            projectile.vel = Vec2::ZERO;
+                                        }
+                                    }
+                                }
+                                // The backpack gate (`:40334-40338`) and the backpack branch
+                                // (`:40339-40373`) are unreachable in this port: the project has no
+                                // `accSentryBackpack` support, so `ai[2]` stays 0. The branch also
+                                // rides the owner's head and calls `AI_197_HandleTileCollision`
+                                // (`Projectile.cs:40246-40305`), whose C# body is empty in this decompile.
+                                // ponytail: no sentry-backpack support - add when the Player gains
+                                // `accSentryBackpack` and the grab-cooldown/hitbox test of
+                                // `CanGetPickedUpBySentryBackpack`.
+                                // The targeting and the reload (`:40431-40463`); only the local owner fires.
+                                if local_owner == self.slots[i].owner {
+                                    let aim = {
+                                        let p = &self.slots[i];
+                                        p.sentry_npc_targeting(
+                                            world,
+                                            firing_offset,
+                                            false,
+                                            reach,
+                                            player_target,
+                                            npcs,
+                                        )
+                                    };
+                                    self.slots[i].local_ai[0] += 1.0;
+                                    if self.slots[i].local_ai[0] >= FIRE_TICKS {
+                                        match aim {
+                                            Some((_slot, target_x, target_y)) => {
+                                                self.slots[i].local_ai[0] = 0.0;
+                                                let (cx, cy) = self.slots[i].center();
+                                                let muzzle = Vec2::new(cx + firing_offset.x, cy + firing_offset.y);
+                                                let target = Vec2::new(target_x, target_y);
+                                                let dir = target - muzzle;
+                                                let len = (dir.x * dir.x + dir.y * dir.y).sqrt();
+                                                let vel = if len > 0.0 {
+                                                    dir * (SHOT_SPEED / len)
+                                                } else {
+                                                    Vec2::ZERO
+                                                };
+                                                shot = Some((
+                                                    SHOT_KIND,
+                                                    muzzle.x,
+                                                    muzzle.y,
+                                                    vel.x,
+                                                    vel.y,
+                                                    self.slots[i].damage,
+                                                    self.slots[i].knock_back,
+                                                ));
+                                            }
+                                            None => {
+                                                // The C# holds the counter at the interval until a target
+                                                // appears (`:40453-40457`).
+                                                self.slots[i].local_ai[0] = FIRE_TICKS;
+                                            }
+                                        }
+                                    }
+                                }
+                                if let Some((kind, x, y, vx, vy, damage, kb)) = shot {
+                                    let _ = self.spawn_with_data_ai_owned(
+                                        kind, local_owner, x, y, vx, vy, damage, kb, 0.0, 0.0,
+                                    );
+                                }
+                                // `HandleMovement` -> `UpdatePosition` (`:19858`/`:20445`).
+                                // The aiStyle-197 rows keep `tileCollide = true` and are NOT in
+                                // the blocked-move chain's kill default: their arm
+                                // (`:18637-18643`) calls `AI_197_HandleTileCollision`, whose
+                                // observable half is `ai[0] = 1f` (`:40250`). The sound, the
+                                // `HitTiles` and the 1025 gore/dust burst (`:40248-40316`) are
+                                // SKIPPED - no sound, dust or gore layer in the pool.
+                                self.slots[i].sentry_turret_step(world);
                         }
                         115 => self.slots[i].ai_yoyo_beam(world),
                         62 => {
@@ -22921,9 +23264,10 @@ mod summon_tests {
         assert!(!hydra.uses_id_static_immunity);
         // The shot families are NOT this phase's rows (the sentry shots land
         // with the later projectile-family tasks) — 374/376/614 the minion
-        // shots, 378/379 the Queen Spider's SentryShots. The 389 landed with
-        // S1-D-4b-6 (the Twins' bolt).
-        for kind in [374, 376, 614, 378, 379] {
+        // shots, 379 the Queen Spider's SentryShots. 378 landed with
+        // S1-D-4b-2's `AI_053_FrostHydra`; 389 with S1-D-4b-6 (the Twins'
+        // bolt, a minion arm not a sentry shot).
+        for kind in [374, 376, 614, 379] {
             assert!(proj_data(kind).is_none(), "kind {kind} has no row yet");
         }
     }
@@ -23645,6 +23989,364 @@ mod minion_ai_tests {
 
 #[cfg(test)]
 mod sentry_tests {
+    /// S1-D-4b-2 - `AI_053_FrostHydra` (`Projectile.cs:37266-37490`): the init
+    /// latch (`localAI[0]==0` -> `localAI[1]=1`, `localAI[0]=1`, `ai[0]=120`),
+    /// the tail's decrement in the same tick (120 -> 119), the free fall
+    /// (`velocity.X = 0`, `velocity.Y += 0.2`, the 16 clamp), the 60/90-tick
+    /// reload and the 309/967 shot kinds.
+    #[test]
+    fn test_ai_053_frosthydra_initialization() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        pool.slots[hydra].local_ai[0] = 0.0;
+        let mut npcs: Vec<Npc> = Vec::new();
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        let proj = &pool.slots[hydra];
+        assert_eq!(proj.local_ai[1], 1.0, "localAI[1] latches to 1 at the init");
+        assert_eq!(proj.local_ai[0], 1.0, "localAI[0] flips to 1 at the init");
+        assert_eq!(proj.ai[0], 119.0, "ai[0] is 120 after the init; the tail decrements it");
+    }
+
+    /// S1-D-4b-2 - the reload and the shot: with `ai[0] <= 0` the Hydra
+    /// re-arms for 60 ticks (59 after the tail's decrement) and fires the
+    /// C#'s 309 shot at the 9 px muzzle speed.
+    #[test]
+    fn test_ai_053_frosthydra_cooldown_and_shot() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        // The C#'s init latch owns the first tick (`localAI[0]==0` sets
+        // `ai[0]=120`), so the reload branch only runs once the counter
+        // has counted down to zero; the latch is pre-armed here.
+        pool.slots[hydra].local_ai[0] = 1.0;
+        pool.slots[hydra].local_ai[1] = 1.0;
+        pool.slots[hydra].ai[0] = 0.0;
+        let mut npcs: Vec<Npc> = vec![npc_at(NpcKind::Zombie, 900.0, 300.0)];
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        let proj = &pool.slots[hydra];
+        assert_eq!(proj.ai[0], 59.0, "the reload is 60 ticks; the tail decrements it");
+        let shot = pool
+            .slots
+            .iter()
+            .find(|s| s.active && s.kind == 309)
+            .expect("the Frost Hydra fires its 309 shot");
+        let len = (shot.vel.x * shot.vel.x + shot.vel.y * shot.vel.y).sqrt();
+        assert!((len - 9.0).abs() < 0.01, "the shot rides the 9 px muzzle speed: {len}");
+        assert_eq!(shot.owner, 0, "the shot belongs to the local player");
+    }
+
+    /// S1-D-4b-2 - the Houndius variant: the 966 reloads for 90 ticks (89
+    /// after the tail's decrement) and fires the C#'s 967 shot at 12.5 px.
+    #[test]
+    fn test_ai_053_houndius_shot() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let houndius = spawn_sentry(&mut pool, HOUNDIUS_SHOOTIUS, 300.0, 300.0, 36000);
+        // The C#'s init latch owns the first tick; pre-arm it so the
+        // reload branch is the one under test.
+        pool.slots[houndius].local_ai[0] = 1.0;
+        pool.slots[houndius].local_ai[1] = 1.0;
+        pool.slots[houndius].ai[0] = 0.0;
+        let mut npcs: Vec<Npc> = vec![npc_at(NpcKind::Zombie, 900.0, 300.0)];
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        let proj = &pool.slots[houndius];
+        assert_eq!(proj.ai[0], 89.0, "the Houndius reloads for 90 ticks; the tail decrements it");
+        let shot = pool
+            .slots
+            .iter()
+            .find(|s| s.active && s.kind == 967)
+            .expect("the Houndius fires its 967 shot");
+        let len = (shot.vel.x * shot.vel.x + shot.vel.y * shot.vel.y).sqrt();
+        assert!((len - 12.5).abs() < 0.01, "the shot rides the 12.5 px muzzle speed: {len}");
+    }
+
+    /// S1-D-4b-2 - no target: the reload stays untouched, the tail still
+    /// decrements the counter and no shot is produced.
+    #[test]
+    fn test_ai_053_without_a_target() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        // The C#'s init latch owns the first tick; pre-arm it so the
+        // counter is the one under test.
+        pool.slots[hydra].local_ai[0] = 1.0;
+        pool.slots[hydra].local_ai[1] = 1.0;
+        pool.slots[hydra].ai[0] = 5.0;
+        let mut npcs: Vec<Npc> = Vec::new();
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+        let proj = &pool.slots[hydra];
+        assert_eq!(proj.ai[0], 4.0, "the tail decrements ai[0] every tick");
+        assert!(
+            !pool.slots.iter().any(|s| s.active && s.kind == 309),
+            "no target, no shot"
+        );
+    }
+
+    /// S1-D-4b-2 - the free fall: `velocity.X` is zeroed, `velocity.Y` grows
+    /// by 0.2 per tick and the C# clamps it at 16.
+    #[test]
+    fn test_ai_053_free_fall() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        let hydra = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..100 {
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+            let proj = &pool.slots[hydra];
+            assert_eq!(proj.vel.x, 0.0, "the free fall zeroes velocity.X");
+            assert!(proj.vel.y > 0.0, "the free fall accelerates downwards");
+            assert!(proj.vel.y <= 16.0, "the C# clamps velocity.Y at 16");
+        }
+    }
+        /// S1-D-4b-2 - `AI_197_CeilingAndHoverTurret` (`Projectile.cs:40307-40479`):
+        /// the barnacle fires its 1026 shot every 50 ticks at the C#'s 12 px
+        /// muzzle speed.
+        #[test]
+        fn test_ai_197_barnacle_fires_every_50_ticks() {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let barnacle = spawn_sentry(&mut pool, DEAD_CELLS_BARNACLE, 300.0, 300.0, 36000);
+            let mut npcs: Vec<Npc> = vec![npc_at(NpcKind::Zombie, 900.0, 300.0)];
+            for _ in 0..49 {
+                p.num_minions = 0;
+                p.slots_minions = 0.0;
+                pool.update(
+                    &mut w,
+                    &mut npcs,
+                    None,
+                    None,
+                    Some(&mut p),
+                    YoyoInputs::default(),
+                    FlailInputs::default(),
+                    &mut rng(),
+                    0,
+                    true,
+                );
+            }
+            assert!(
+                !pool.slots.iter().any(|s| s.active && s.kind == 1026),
+                "the 50-tick reload has not elapsed"
+            );
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+            let shot = pool
+                .slots
+                .iter()
+                .find(|s| s.active && s.kind == 1026)
+                .expect("the barnacle fires its 1026 shot");
+            let len = (shot.vel.x * shot.vel.x + shot.vel.y * shot.vel.y).sqrt();
+            assert!((len - 12.0).abs() < 0.01, "the shot rides the 12 px muzzle speed: {len}");
+            assert_eq!(
+                pool.slots[barnacle].local_ai[0], 0.0,
+                "the reload counter restarts"
+            );
+        }
+    
+        /// S1-D-4b-2 - without a target the C# holds the reload counter at the
+        /// interval and fires nothing (`:40453-40457`).
+        #[test]
+        fn test_ai_197_without_a_target_holds_the_reload() {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let barnacle = spawn_sentry(&mut pool, DEAD_CELLS_BARNACLE, 300.0, 300.0, 36000);
+            let mut npcs: Vec<Npc> = Vec::new();
+            for _ in 0..60 {
+                p.num_minions = 0;
+                p.slots_minions = 0.0;
+                pool.update(
+                    &mut w,
+                    &mut npcs,
+                    None,
+                    None,
+                    Some(&mut p),
+                    YoyoInputs::default(),
+                    FlailInputs::default(),
+                    &mut rng(),
+                    0,
+                    true,
+                );
+            }
+            assert!(
+                !pool.slots.iter().any(|s| s.active && s.kind == 1026),
+                "no target, no shot"
+            );
+            assert_eq!(
+                pool.slots[barnacle].local_ai[0], 50.0,
+                "the counter holds at the interval"
+            );
+        }
+    
+        /// S1-D-4b-2 - the hover: with a solid tile under it the barnacle sinks
+        /// by 0.1 px per tick and the C# clamps the fall at 12 px (`:40415-40421`).
+        ///
+        /// The window is short on purpose: the hover is driven by the 15-tile
+        /// scan under the sprite (`:40374-40388`), and the rise lifts the
+        /// sprite out of that window within a dozen ticks - past it `:40425`
+        /// damps the velocity to zero, which is also the C#'s behaviour.
+        #[test]
+        fn test_ai_197_hovers_and_clamps_the_fall() {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            // A solid floor under the barnacle: the C#'s tile scan
+            // (`:40374-40388`) walks 15 tiles down from the top corner.
+            for x in 0..64 {
+                let i = w.index(x, 25);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+            let mut p = player(&w);
+            let barnacle = spawn_sentry(&mut pool, DEAD_CELLS_BARNACLE, 300.0, 300.0, 36000);
+            let start_y = pool.slots[barnacle].pos.y;
+            let mut npcs: Vec<Npc> = Vec::new();
+            let mut lowest = 0.0f32;
+            for _ in 0..10 {
+                p.num_minions = 0;
+                p.slots_minions = 0.0;
+                pool.update(
+                    &mut w,
+                    &mut npcs,
+                    None,
+                    None,
+                    Some(&mut p),
+                    YoyoInputs::default(),
+                    FlailInputs::default(),
+                    &mut rng(),
+                    0,
+                    true,
+                );
+                lowest = lowest.min(pool.slots[barnacle].vel.y);
+            }
+            assert!(
+                lowest >= -12.0,
+                "the C# clamps the rise at 12 px: {}",
+                lowest
+            );
+            assert!(
+                lowest < 0.0,
+                "the hover lifts while a tile is under it: {}",
+                lowest
+            );
+            assert!(
+                pool.slots[barnacle].pos.y < start_y,
+                "the hover actually moves the sprite up: {} -> {}",
+                start_y,
+                pool.slots[barnacle].pos.y
+            );
+        }
+    
+        /// S1-D-4b-2 - the barnacle's frame: outside the stuck state it holds
+        /// frame 3 (`:40403-40406`).
+        #[test]
+        fn test_ai_197_barnacle_holds_frame_three() {
+            let mut pool = ProjectilePool::new();
+            let mut w = world();
+            let mut p = player(&w);
+            let barnacle = spawn_sentry(&mut pool, DEAD_CELLS_BARNACLE, 300.0, 300.0, 36000);
+            let mut npcs: Vec<Npc> = Vec::new();
+            p.num_minions = 0;
+            p.slots_minions = 0.0;
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut p),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut rng(),
+                0,
+                true,
+            );
+            assert_eq!(pool.slots[barnacle].frame, 3, "the barnacle holds frame 3");
+        }
     use super::*;
     use crate::npc::{Npc, NpcKind};
     use crate::player::Player;
@@ -23752,10 +24454,22 @@ mod sentry_tests {
 
     /// DW-5.3 — the lifetime: a sentry dies exactly at `SentryLifeTime` 36000
     /// (35999 alive, 36000 dead) and its damage rides the pool's recompute.
+    ///
+    /// The hydra free-falls (`:37336-37344`) and `HandleMovement` integrates
+    /// it, so the test needs a floor - without one the out-of-world guard kills
+    /// it long before the lifetime, which is the C#'s behaviour too.
     #[test]
     fn test_DW_5_3_the_sentry_lifetime_and_damage() {
         let mut pool = ProjectilePool::new();
         let mut w = world();
+        for x in 0..64 {
+            let i = w.index(x, 25);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
         let mut p = player(&w);
         p.minion_damage = 1.5;
         let slot = spawn_sentry(&mut pool, FROST_HYDRA, 300.0, 300.0, 36000);

@@ -9,7 +9,7 @@ use tr_core::lighting::{LightMap, LightStyle};
 use tr_core::tile_light::FastRandom;
 use tr_core::tiledata as td;
 use tr_core::wind;
-use tr_core::{TILE_PX, World, tree};
+use tr_core::{tree, World, TILE_PX};
 use tr_render::SpriteRenderer;
 
 /// `TileDrawing.EmitTreeLeaves`' spawn, resolved at draw time by the tree scan.
@@ -88,7 +88,15 @@ pub fn tick_leaves(leaves: &mut Vec<LeafGore>, world: &World, wind_speed: f32) {
             // `Collision.TileCollision` + `Collision.SlopeCollision` on the 4x4
             // probe box; the position is the resolved probe position re-anchored
             // by `vector2 = (-4, 0)`, then moved by the residual velocity.
-            let tc = crate::collision::tile_collision(world, probe, [v4.x, v4.y], 4.0, 4.0, false, false);
+            let tc = crate::collision::tile_collision(
+                world,
+                probe,
+                [v4.x, v4.y],
+                4.0,
+                4.0,
+                false,
+                false,
+            );
             v4 = Vec2::from(tc.vel);
             let sc = crate::collision::slope_collision(world, probe, [v4.x, v4.y], 4.0, 4.0, false);
             l.pos = Vec2::new(sc.pos[0] - 4.0, sc.pos[1]);
@@ -117,16 +125,22 @@ pub fn tick_leaves(leaves: &mut Vec<LeafGore>, world: &World, wind_speed: f32) {
                 // the surface); honey/lava are not modelled.
                 l.vel_x = wind_speed;
             }
-            if probe_tile
-                .is_none_or(|t| !(t.active() && td::TILE_SOLID.has(t.kind)))
-                && !in_liquid
+            if probe_tile.is_none_or(|t| !(t.active() && td::TILE_SOLID.has(t.kind))) && !in_liquid
             {
                 // `Gore.cs:1133-1138`: the ground freed up — resume falling.
                 l.phase = 0.1;
                 l.time_left = 0;
                 l.alpha += 20.0;
             }
-            let tc = crate::collision::tile_collision(world, probe, [l.vel_x, -0.2], 3.0, 3.0, false, false);
+            let tc = crate::collision::tile_collision(
+                world,
+                probe,
+                [l.vel_x, -0.2],
+                3.0,
+                3.0,
+                false,
+                false,
+            );
             if in_liquid {
                 l.rot = tc.vel[1].atan2(tc.vel[0]) + std::f32::consts::FRAC_PI_2;
             }
@@ -166,10 +180,7 @@ pub(crate) fn draw_leaves(
         let Some(uv) = lookups.leaf_uv(l.style, l.row) else {
             continue;
         };
-        let c = light.get(
-            (l.pos.x / TILE_PX) as i32,
-            (l.pos.y / TILE_PX) as i32,
-        );
+        let c = light.get((l.pos.x / TILE_PX) as i32, (l.pos.y / TILE_PX) as i32);
         let a = (1.0 - l.alpha / 255.0).clamp(0.0, 1.0);
         let to_screen = |p: Vec2| {
             [
@@ -224,13 +235,59 @@ pub(crate) fn draw_tree_foliage(
             let Some(t) = world.tile(tx, ty) else {
                 continue;
             };
-            if !t.active() || !tree::is_tree(t.kind) {
+            if !t.active() {
+                continue;
+            }
+            // Palm canopy (`TileDrawing.cs:8254-8297`): kind 323 frameX 88..=132
+            // draws only the top canopy — no generic arms, no branch sprite.
+            if t.kind == 323 && (88..=132).contains(&t.frame_x) {
+                let biome = tr_core::drawdata::palm_tree_biome(world, tx, ty);
+                let Some(palm) = palm_canopy_data(biome, t.frame_x) else {
+                    continue;
+                };
+                let Some(uv) =
+                    lookups.foliage_uv(palm.style, true, palm.src_x, palm.src_y, palm.w, palm.h)
+                else {
+                    continue;
+                };
+                let c = style.shade(light.get(tx, ty), tx, ty, anim_time);
+                let color = [c[0], c[1], c[2], 1.0];
+                // `bool flag = tile.wall > 0` (`TileDrawing.cs:8073`).
+                let cycle = if t.wall > 0 {
+                    0.0
+                } else {
+                    wind.cycle(tx, ty, tree_counter)
+                };
+                let (pos, rot, origin) = palm_placement(
+                    tx as f32 * TILE_PX,
+                    ty as f32 * TILE_PX,
+                    t.frame_y as i32,
+                    palm.w as f32,
+                    palm.h as f32,
+                    palm.x_off as f32,
+                    palm.y_off as f32,
+                    cycle,
+                );
+                r.push_sprite_origin_rot(
+                    pos,
+                    [palm.w as f32, palm.h as f32],
+                    uv,
+                    color,
+                    rot,
+                    origin,
+                );
+                quads += 1;
+                continue;
+            }
+            if !tree::is_tree(t.kind) {
                 continue;
             }
             let Some(part) = tree::TreePart::marker(t.frame_x, t.frame_y) else {
                 continue;
             };
-            let f = tree::foliage_at(world, tx, ty, part, t.frame_y);
+            let Some(f) = tree::foliage_at(world, tx, ty, part, t.frame_y, t.kind) else {
+                continue;
+            };
             if lookups.foliage.get(f.style).is_none_or(|s| s.is_none()) {
                 continue;
             }
@@ -254,16 +311,13 @@ pub(crate) fn draw_tree_foliage(
                         // `TileDrawing.cs:8136-8149`: the top leans right with
                         // the sway, sinks by its magnitude, and rotates about
                         // the trunk anchor by `cycle * 0.08`.
-                        let pos = [
-                            px + 8.0 - f.top_w * 0.5 + cycle * 2.0,
-                            py + 16.0 - f.top_h + cycle.abs() * 2.0,
-                        ];
+                        let (pos, rot) = top_placement(px, py, cycle, f.top_w, f.top_h);
                         r.push_sprite_origin_rot(
                             pos,
                             [f.top_w, f.top_h],
                             uv,
                             color,
-                            cycle * 0.08,
+                            rot,
                             [f.top_w * 0.5, f.top_h],
                         );
                         quads += 1;
@@ -280,19 +334,8 @@ pub(crate) fn draw_tree_foliage(
                         // leans away from the trunk for positive sway and
                         // rotates about its trunk-side anchor by
                         // `cycle * 0.06`.
-                        let mut pos = [px - 24.0, py - 12.0];
-                        if cycle > 0.0 {
-                            pos[0] += cycle;
-                        }
-                        pos[0] += cycle.abs() * 2.0;
-                        r.push_sprite_origin_rot(
-                            pos,
-                            [40.0, 40.0],
-                            uv,
-                            color,
-                            cycle * 0.06,
-                            [40.0, 24.0],
-                        );
+                        let (pos, rot) = branch_placement(part, px, py, cycle);
+                        r.push_sprite_origin_rot(pos, [40.0, 40.0], uv, color, rot, [40.0, 24.0]);
                         quads += 1;
                         // `EmitTreeLeaves(x, y, x + 1, floorY2)` — the grass
                         // column is the trunk to the right
@@ -307,19 +350,8 @@ pub(crate) fn draw_tree_foliage(
                         // `TileDrawing.cs:8229-8245` (frameX == 66): mirrored —
                         // the branch leans left for negative sway, origin on
                         // its left edge.
-                        let mut pos = [px, py - 12.0];
-                        if cycle < 0.0 {
-                            pos[0] += cycle;
-                        }
-                        pos[0] -= cycle.abs() * 2.0;
-                        r.push_sprite_origin_rot(
-                            pos,
-                            [40.0, 40.0],
-                            uv,
-                            color,
-                            cycle * 0.06,
-                            [0.0, 30.0],
-                        );
+                        let (pos, rot) = branch_placement(part, px, py, cycle);
+                        r.push_sprite_origin_rot(pos, [40.0, 40.0], uv, color, rot, [0.0, 30.0]);
                         quads += 1;
                         // `EmitTreeLeaves(x, y, x - 1, floorY)` — the trunk to
                         // the left (`TileDrawing.cs:8207-8214`).
@@ -435,10 +467,114 @@ fn ground_tile(world: &World, x: i32, y: i32) -> Option<u16> {
     None
 }
 
-/// `WorldGen.GetTreeLeaf` (`WorldGen.cs:29384-29598`): the leaf gore id for a
-/// tree top. Returns `(tree_frame_extra, pass_style)`; `tree_frame_extra` comes
-/// from the marker's `frameY` (220 → 1, 242 → 2) plus the hallowed column
-/// pattern, and shifts the branch spawn offsets.
+/// `TileDrawing.cs:8254-8297`: the Palm canopy frame — the top sheet style, its
+/// source rect (column from `frameX`, row from the biome) and size.
+struct PalmCanopy {
+    style: usize,
+    src_x: i32,
+    src_y: i32,
+    w: u32,
+    h: u32,
+    x_off: i32,
+    y_off: i32,
+}
+
+/// `TileDrawing.cs:8255-8279`: frameX 110 => column 1, 132 => 2, else 0; normal
+/// palms (biome 0..=3) use style 15 / 80x80 / row `biome * 82` / offset 32,0;
+/// Oasis palms (biome 4..=7) style 21 / 114x98 / row `(biome - 4) * 98` / 48,2.
+/// Source X is `column * (width + 2)`. `None` outside the eight biomes.
+fn palm_canopy_data(biome: i32, frame_x: i16) -> Option<PalmCanopy> {
+    if !(0..=7).contains(&biome) {
+        return None;
+    }
+    let column = match frame_x {
+        110 => 1,
+        132 => 2,
+        _ => 0,
+    };
+    let (style, w, h, src_y, x_off, y_off) = if biome >= 4 {
+        (21, 114, 98, (biome - 4) * 98, 48, 2)
+    } else {
+        (15, 80, 80, biome * 82, 32, 0)
+    };
+    Some(PalmCanopy {
+        style,
+        src_x: column * (w + 2),
+        src_y,
+        w: w as u32,
+        h: h as u32,
+        x_off,
+        y_off,
+    })
+}
+
+/// `TileDrawing.cs:8284-8291`: the canopy is drawn with `position` =
+/// `(x*16 - xOff + frameY + w/2, y*16 + 16 + yOff)` and origin `(w/2, h)`, so
+/// the unrotated top-left is `(x*16 - xOff + frameY, y*16 + 16 + yOff - h)`.
+/// The sway adds `cycle*2` to X and `|cycle|*2` to Y and rotates
+/// `cycle * 0.08`. Returns `(top_left, rotation, origin)`.
+#[allow(clippy::too_many_arguments)]
+fn palm_placement(
+    px: f32,
+    py: f32,
+    frame_y: i32,
+    w: f32,
+    h: f32,
+    x_off: f32,
+    y_off: f32,
+    cycle: f32,
+) -> ([f32; 2], f32, [f32; 2]) {
+    let pos = [
+        px - x_off + frame_y as f32 + cycle * 2.0,
+        py + 16.0 + y_off - h + cycle.abs() * 2.0,
+    ];
+    (pos, cycle * 0.08, [w * 0.5, h])
+}
+
+/// `TileDrawing.cs:8136-8149` (the `frameX == 22` top arm): the canopy centre
+/// sits at `px + 8 - top_w/2 + cycle*2`, sinks by `py + 16 - top_h +
+/// abs(cycle)*2`, and rotates `cycle * 0.08`. Returns `(position, rotation)`.
+fn top_placement(px: f32, py: f32, cycle: f32, top_w: f32, top_h: f32) -> ([f32; 2], f32) {
+    let pos = [
+        px + 8.0 - top_w * 0.5 + cycle * 2.0,
+        py + 16.0 - top_h + cycle.abs() * 2.0,
+    ];
+    let rot = cycle * 0.08;
+    (pos, rot)
+}
+
+/// `TileDrawing.cs:8181-8197` (frameX == 44) and `:8229-8245` (frameX == 66):
+/// the branch position starts at `(x*16 + 16, y*16 + 12)` (left) or
+/// `(x*16, y*16 + 18)` (right, drawn at 40x40 from origin `(0, 30)`, which the
+/// port folds into the same `py - 12` anchor); `X += num12` only when it leans
+/// away from the trunk (`:8187-8190` left-positive, `:8235-8238` right-negative),
+/// then `X ±= |num12| * 2` (`:8191` / `:8239`), rotating `num12 * num4`
+/// (`cycle * 0.06`). Returns `(position, rotation)`.
+fn branch_placement(part: tree::TreePart, px: f32, py: f32, cycle: f32) -> ([f32; 2], f32) {
+    let mut pos = match part {
+        tree::TreePart::BranchLeft => [px - 24.0, py - 12.0],
+        tree::TreePart::BranchRight => [px, py - 12.0],
+        _ => panic!("Invalid tree part for branch_placement: {part:?}"),
+    };
+    match part {
+        tree::TreePart::BranchLeft => {
+            if cycle > 0.0 {
+                pos[0] += cycle;
+            }
+            pos[0] += cycle.abs() * 2.0;
+        }
+        tree::TreePart::BranchRight => {
+            if cycle < 0.0 {
+                pos[0] += cycle;
+            }
+            pos[0] -= cycle.abs() * 2.0;
+        }
+        _ => unreachable!(),
+    }
+    let rot = cycle * 0.06;
+    (pos, rot)
+}
+
 fn tree_leaf_pass_style(top_kind: u16, frame_y: i16, ground: u16, x: i32) -> (i32, i32) {
     let mut tree_frame = match frame_y {
         220 => 1,
@@ -479,4 +615,202 @@ fn tree_leaf_pass_style(top_kind: u16, frame_y: i16, ground: u16, x: i32) -> (i3
         _ => return (tree_frame, -1),
     };
     (tree_frame, base)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EPS: f32 = 1e-4;
+
+    /// `WorldGen.GetGemTreeFoliageData` / `GetVanityTreeFoliageData` /
+    /// `GetAshTreeFoliageData` (`WorldGen.cs:62801-62879`): the style, canopy
+    /// size, and the ground each variant accepts.
+    #[test]
+    fn variant_foliage_styles_match_worldgen() {
+        let matches = [
+            (583, (22, 116.0, 96.0)),
+            (584, (23, 116.0, 96.0)),
+            (585, (24, 116.0, 96.0)),
+            (586, (25, 116.0, 96.0)),
+            (587, (26, 116.0, 96.0)),
+            (588, (27, 116.0, 96.0)),
+            (589, (28, 116.0, 96.0)),
+            (596, (29, 118.0, 96.0)),
+            (616, (30, 118.0, 96.0)),
+            (634, (31, 116.0, 96.0)),
+        ];
+        for &(kind, (style, top_w, top_h)) in &matches {
+            // `GemTreeGroundTest` accepts stone/moss, `VanityTreeGroundTest`
+            // grass, `AshTreeGroundTest` only ash.
+            let ground = match kind {
+                583..=589 => 1,
+                634 => 633,
+                _ => 2,
+            };
+            let f = tree::Foliage::for_ground(kind, ground, 198).unwrap();
+            assert_eq!(
+                (f.style, f.top_w, f.top_h),
+                (style, top_w, top_h),
+                "kind {kind}"
+            );
+        }
+
+        // Invalid variant -> None
+        assert!(tree::Foliage::for_ground(596, 70, 198).is_none());
+        assert!(tree::Foliage::for_ground(634, 70, 198).is_none());
+        assert!(tree::Foliage::for_ground(583, 70, 198).is_none());
+
+        // Common -> Some
+        let common = tree::Foliage::for_ground(5, 2, 198).unwrap();
+        assert_eq!(common.style, 0);
+    }
+
+    /// `TileDrawing.cs:8136-8149` (the `frameX == 22` top arm): the canopy
+    /// centre sits at `px + 8 - top_w/2 + cycle*2`, sinks by
+    /// `py + 16 - top_h + abs(cycle)*2`, and rotates `cycle * 0.08`.
+    #[test]
+    fn top_placement_leans_right_and_sinks_with_the_sway() {
+        let (pos, rot) = super::top_placement(32.0, 64.0, 0.25, 114.0, 96.0);
+        assert!((pos[0] - (32.0 + 8.0 - 57.0 + 0.5)).abs() < EPS);
+        assert!((pos[1] - (64.0 + 16.0 - 96.0 + 0.5)).abs() < EPS);
+        assert!((rot - 0.25 * 0.08).abs() < EPS);
+
+        // A negative cycle shifts left and still *sinks* (abs on Y).
+        let (pos, rot) = super::top_placement(32.0, 64.0, -0.5, 80.0, 140.0);
+        assert!((pos[0] - (32.0 + 8.0 - 40.0 - 1.0)).abs() < EPS);
+        assert!((pos[1] - (64.0 + 16.0 - 140.0 + 1.0)).abs() < EPS);
+        assert!((rot - -0.5 * 0.08).abs() < EPS);
+
+        // No wind, no offset; zero cycle is the vertical rest pose. The
+        // top-left still carries the `position - origin` fold of
+        // `x*16+8, y*16+16` with origin `(top_w/2, top_h)`.
+        let (pos, rot) = super::top_placement(0.0, 0.0, 0.0, 80.0, 80.0);
+        assert!((pos[0] - (0.0 + 8.0 - 40.0)).abs() < EPS);
+        assert!((pos[1] - (0.0 + 16.0 - 80.0)).abs() < EPS);
+        assert!(rot.abs() < EPS);
+    }
+
+    /// `TileDrawing.cs:8181-8197` (frameX == 44) and `:8229-8245` (frameX ==
+    /// 66): both branch arms rotate about their trunk-side anchor by
+    /// `cycle * 0.06`.
+    #[test]
+    fn branch_rotations_are_cycle_times_point_06() {
+        for cycle in [-0.75, -0.1, 0.0, 0.2, 1.5] {
+            let (_, rot_l) = super::branch_placement(tree::TreePart::BranchLeft, 48.0, 96.0, cycle);
+            let (_, rot_r) =
+                super::branch_placement(tree::TreePart::BranchRight, 48.0, 96.0, cycle);
+            assert!((rot_l - cycle * 0.06).abs() < EPS);
+            assert!((rot_r - cycle * 0.06).abs() < EPS);
+        }
+    }
+
+    /// The branch placements lean away from the trunk with the sway
+    /// (`TileDrawing.cs:8181-8197` / `:8229-8245`), mirrored per side.
+    #[test]
+    fn branch_positions_lean_away_from_the_trunk() {
+        // Left branch anchored at `px - 24, py - 12`; positive sway leans
+        // further left (away) by `cycle + abs(cycle)*2`.
+        let (pos, _) = super::branch_placement(tree::TreePart::BranchLeft, 48.0, 96.0, 0.5);
+        assert!((pos[0] - (48.0 - 24.0 + 0.5 + 1.0)).abs() < EPS);
+        assert!((pos[1] - 84.0).abs() < EPS);
+        // Negative sway: no direction term, only the magnitude push.
+        let (pos, _) = super::branch_placement(tree::TreePart::BranchLeft, 48.0, 96.0, -0.5);
+        assert!((pos[0] - (48.0 - 24.0 + 1.0)).abs() < EPS);
+
+        // Right branch anchored at `px, py - 12`, mirrored.
+        let (pos, _) = super::branch_placement(tree::TreePart::BranchRight, 48.0, 96.0, 0.5);
+        assert!((pos[0] - (48.0 - 1.0)).abs() < EPS);
+        let (pos, _) = super::branch_placement(tree::TreePart::BranchRight, 48.0, 96.0, -0.5);
+        assert!((pos[0] - (48.0 - 0.5 - 1.0)).abs() < EPS);
+        assert!((pos[1] - 84.0).abs() < EPS);
+    }
+
+    /// `TileDrawing.cs:8254-8297`: Palm canopy parameters.
+    /// Normal Palm (biome 0..3): style 15, 80x80, source row biome*82, offsets 32/0.
+    /// Oasis Palm (biome 4..7): style 21, 114x98, source row (biome-4)*98, offsets 48/2.
+    #[test]
+    fn palm_canopy_data_maps_biome_to_style_size_row_offsets() {
+        // Normal palms
+        let d = super::palm_canopy_data(0, 88).unwrap();
+        assert_eq!(
+            (d.style, d.w, d.h, d.src_y, d.x_off, d.y_off),
+            (15, 80, 80, 0, 32, 0)
+        );
+        let d = super::palm_canopy_data(3, 88).unwrap();
+        assert_eq!(
+            (d.style, d.w, d.h, d.src_y, d.x_off, d.y_off),
+            (15, 80, 80, 3 * 82, 32, 0)
+        );
+        // Oasis palms
+        let d = super::palm_canopy_data(4, 88).unwrap();
+        assert_eq!(
+            (d.style, d.w, d.h, d.src_y, d.x_off, d.y_off),
+            (21, 114, 98, 0, 48, 2)
+        );
+        let d = super::palm_canopy_data(7, 88).unwrap();
+        assert_eq!(
+            (d.style, d.w, d.h, d.src_y, d.x_off, d.y_off),
+            (21, 114, 98, 3 * 98, 48, 2)
+        );
+        // Invalid biome returns None
+        assert!(super::palm_canopy_data(-1, 88).is_none());
+        assert!(super::palm_canopy_data(8, 88).is_none());
+    }
+
+    /// FrameX 88 => column 0, 110 => 1, 132 => 2; others 0.
+    #[test]
+    fn palm_canopy_column_from_frame_x() {
+        assert_eq!(super::palm_canopy_data(0, 88).unwrap().src_x, 0);
+        assert_eq!(super::palm_canopy_data(0, 110).unwrap().src_x, 1 * (80 + 2));
+        assert_eq!(super::palm_canopy_data(0, 132).unwrap().src_x, 2 * (80 + 2));
+        assert_eq!(super::palm_canopy_data(0, 100).unwrap().src_x, 0);
+        // Oasis uses 114 width
+        assert_eq!(
+            super::palm_canopy_data(4, 110).unwrap().src_x,
+            1 * (114 + 2)
+        );
+    }
+
+    /// Palm placement (`TileDrawing.cs:8284-8297`): the drawn position is
+    /// `(x*16 - xOff + frameY + w/2, y*16 + 16 + yOff)` with origin `(w/2, h)`,
+    /// so the unrotated top-left is `(x*16 - xOff + frameY, y*16 + 16 + yOff - h)`;
+    /// the sway adds `cycle*2` to X, `|cycle|*2` to Y and rotates `cycle * 0.08`.
+    #[test]
+    fn palm_placement_matches_csharp_formula() {
+        // Biome 0 (normal), frameY = 0, cycle = 0.
+        let (pos, rot, origin) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 0, 80.0, 80.0, 32.0, 0.0, 0.0);
+        assert!((pos[0] - (160.0 - 32.0)).abs() < EPS);
+        assert!((pos[1] - (320.0 + 16.0 - 80.0)).abs() < EPS);
+        assert!(rot.abs() < EPS);
+        assert_eq!(origin, [40.0, 80.0]);
+
+        // cycle = 1.0: X += 2, Y += 2, rot = 0.08.
+        let (pos, rot, _) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 0, 80.0, 80.0, 32.0, 0.0, 1.0);
+        assert!((pos[0] - (160.0 - 32.0 + 2.0)).abs() < EPS);
+        assert!((pos[1] - (320.0 + 16.0 - 80.0 + 2.0)).abs() < EPS);
+        assert!((rot - 0.08).abs() < EPS);
+
+        // cycle = -1.0: X -= 2, Y += 2 (abs), rot = -0.08.
+        let (pos, rot, _) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 0, 80.0, 80.0, 32.0, 0.0, -1.0);
+        assert!((pos[0] - (160.0 - 32.0 - 2.0)).abs() < EPS);
+        assert!((pos[1] - (320.0 + 16.0 - 80.0 + 2.0)).abs() < EPS);
+        assert!((rot - -0.08).abs() < EPS);
+
+        // frameY shifts X by its own value (`position4.X` gets `frameY2`).
+        let (pos, _, _) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 22, 80.0, 80.0, 32.0, 0.0, 0.0);
+        assert!((pos[0] - (160.0 - 32.0 + 22.0)).abs() < EPS);
+
+        // Oasis (biome 4): 114x98, offsets 48/2.
+        let (pos, rot, origin) =
+            super::palm_placement(10.0 * 16.0, 20.0 * 16.0, 0, 114.0, 98.0, 48.0, 2.0, 0.0);
+        assert!((pos[0] - (160.0 - 48.0)).abs() < EPS);
+        assert!((pos[1] - (320.0 + 16.0 + 2.0 - 98.0)).abs() < EPS);
+        assert!(rot.abs() < EPS);
+        assert_eq!(origin, [57.0, 98.0]);
+    }
 }
