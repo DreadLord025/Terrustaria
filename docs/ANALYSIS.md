@@ -2884,7 +2884,8 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   +2), 726 (−2 then the `Tile.blockType()` ledges ±6 and +2 for the
   half-brick/slope arms), 723/724 (the four anchor sides), 129 (the 2 px nudge
   away from the shard's cell) and 323 (`vector.X += frameY` for the palm
-  rows)), `skip_draw` (751/752 off their `(0, 0)` frame), `light_scale` (51/697
+  rows)), `skip_draw` (751/752 off their `(0, 0)` frame and 323's frond
+  columns 88..=132), `light_scale` (51/697
   `finalColor = tileLight * 0.5`), `src_alpha` (129's 100/255, and 0 for the
   big `frameX >= 324` shards) and `no_width_adjust`
   (`TileID.Sets.DoNotAdjustDrawPositionBasedOnTileWidth = {711}`). The
@@ -2892,10 +2893,12 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   arm shares `vector`), honours `skip_draw` before the sprite (the `return`
   arms), folds `light_scale`/`src_alpha` into `push_lit`'s colour, and skips
   the `(tileWidth − 16) / 2` centring for 711. Parked: the disco arms
-  (160/692, they need `Main.DiscoR/G/B` in the draw data), case 83's texture
-  override, and case 323's `return` for the frond columns 88..=132 — the port
-  has no palm canopy pass, so hiding those columns would delete the palm tops;
-  they keep drawing in the tile pass (deviation). Test:
+  (160/692, they need `Main.DiscoR/G/B` in the draw data) and case 83's texture
+  override. Case 323's `return` for the frond columns 88..=132 is ported as
+  `skip_draw`; those columns are drawn by the tree pass instead
+  (`render/foliage.rs::palm_canopy_data`, the `TileDrawing.cs:8254-8297` arm —
+  the canopy is registered in the special tree pass at `:4262-4267` and drawn
+  from `TileDrawing.DrawTrees`, so the single-tile pass must not draw it too). Test:
   `drawdata::tests::the_positional_switch_nudges_and_hides_the_sprites` (every
   arm, the half-brick/slope `blockType` table of 726, the shard alphas).
 
@@ -10107,6 +10110,32 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+- **The sentry movement layer** (S1-D-4b-2). `AI_053_FrostHydra` (`:37266-37490`) and
+  `AI_197_CeilingAndHoverTurret` (`:40307-40479`) carry no `position += velocity` of
+  their own — the C# integrates them in `HandleMovement` → `UpdatePosition`
+  (`:19858`/`:20445`), after the AI, once per sub-step. The port runs the same two
+  steps as `sentry_hydra_step` / `sentry_turret_step`:
+  - **53** (308 Frost Hydra, 377 Queen Spider, 966 Houndius Shootius): `flag6 = false`
+    (`:17532-17535`, no platform landing) then the plain integrate. These three types
+    are named explicitly in the blocked-move chain's exclusion test (`:18635`), so a
+    blocked sentry neither dies nor bounces — it stops against the tile while its own
+    gravity keeps pushing. Note this is *not* the `kill_step` default: calling that for
+    53 would be a behavioural regression.
+  - **197** (1025 Dead Cells Barnacle, 1128-1146): `flag6 = true` (`:17536-17539`) and
+    the blocked arm runs `AI_197_HandleTileCollision` (`:40246-40305`), whose state
+    half is the one-shot `ai[0] = 1f` latch (`:40250`).
+  - **The `InWorld` fluff margin**. The barnacle's 15-tile ceiling scan
+    (`:40379`) guards with `WorldGen.InWorld(x, y, 2)`, whose margin sits *inside* the
+    bounds (`WorldGen.cs:6553-6554`: `x < 2 || x >= maxTilesX - 2`). An earlier port
+    read the margin as an out-of-bounds overhang (`< -2` / `>= width + 2`) and kept
+    scanning past the world edge.
+  - **Skipped layers** for the three AIs (S1-D-4b-2): `SoundEngine` (`:37274`'s
+    `Item46`, `:40316`'s `Item167`, `:42508`'s tracked `DD2_GhastlyGlaiveImpactGhost`
+    and its per-tick position update), all `Dust`/`Gore` bursts (`:37277-37296`,
+    `:40319-40322`, `:40257-40316`), `Lighting.AddLight`, `Collision.HitTiles`, and
+    `netUpdate`. The pool has no sound, dust, gore, light or net layer; the
+    sentry-backpack branch (`:40334-40343`, `CanGetPickedUpBySentryBackpack`) is
+    likewise unported — no `accSentryBackpack`.
 ## Whips & tag damage (M4-PROJ-7)
 
 The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
@@ -12786,6 +12815,91 @@ The migration retired one stand-in cap: the wheel sparks' `MAX_SPARKS` = 500 (th
 Scope notes and documented drops, each recorded at its site: the `shader`/`customData` record fields (no draw-shader chain; the `customData` followers live in `UpdateDust`, S1-E-3), the `Main.rand == null` re-seed and `Main.netMode == 2` server guards and the dead `Main.NoPooling` realloc arm (`Main.cs:67208` sets it false), and the `DANGEROUS` set = the 8 listed ids (5, 227, 273, 237, 248, 249, 250, 251 — `SetFactory.cs:97-107`; research/15's earlier inverted reading of that set is corrected). tr-app injects the wet probe through the seam (`player::wet_collision`, the `Dust.cs:248` probe). The child-safety sync runs `sync_child_safety` once per frame, so a settings toggle lands one tick late; `max_dust_to_draw`'s first frame reads the seed 0 (unreachable in production — the frame loop sets it before any spawn); the 268 draw keeps the stand-in's 10-px cell until E-3 ports the real draw, and the `NewDust` `Next(1)` gate draw is absent in both the stand-in and the port (pre-existing).
 
 What remains: E-2 (the per-type table + `GetAlpha`/`GetColor`), E-3 (the generic `UpdateDust` tail + the `maxDustToDraw` gate + the dust light), E-4 (gore: `NewGore`/`GoreID.Sets`/`Gore.Update` + the leaves), the `rain.rs` re-point and the NPC/Projectile/player call sites — the caller-coverage table in `docs/research/15-dust-gore.md` stays authoritative.
+
+## Dust colour table (S1-E-2, 2026-11-16)
+
+`crates/tr-core/src/dust_table.rs` is the colour/fade half of the per-type table: `Dust.GetAlpha` (`Dust.cs:2425-2727`), `Dust.GetColor` (`:2729-2772`) and the two visual accessors (`:2774-2790`), transcribed arm for arm in source order so the fall-through chain reads like the C#. The XNA colour algebra the arms use is three private helpers at the top of the file — `Color * float` (every channel scales, then the ctor truncates), `Color.Lerp` (per-channel `MathHelper.Lerp`, truncating cast) and the `ToVector3`/`ToVector4` product (normalised channels, so `a*b/255`) — because the port has no `Microsoft.Xna.Framework` and inventing a full colour type for three operators would be more code than the operators.
+
+The record stays byte-based (`particles::Color`, sRGB bytes, the `Dust.color` carrier), so every `new Color(int, …)` argument takes the C# `(byte)` cast the ctor performs: truncate, wrap past 255. The 213 draw already relied on that wrap before this task (`minecart.rs`, `int num2 = (int)(scale / 2.5f * 255f)`); it now calls the shared table instead of keeping its own copy of the arm.
+
+Two arms are documented drops because they read globals the port does not carry: type 157 (`Main.mouseTextColor`, `Dust.cs:2627-2651`) and type 327 (`Main.rand` + `Main.DiscoR/G/B`, `:2658-2676`). Both fall through to the default formula (`:2712-2724`) rather than inventing a stand-in constant. Type 157 is the rarity-sparkle dust and type 327 the disco dust; neither is spawned by any ported call site yet.
+
+The row’s other columns are deliberately not in this file. Gravity / `noGravity` / velocity scaling has two halves: the spawn-time chain is already verbatim in `particles.rs::new_dust` (`Dust.cs:214-252`, S1-E-1) and the per-tick gravity tail (`:1819-1828`) belongs to the update walk that S1-E-3 sequences. The light column is the ~70 `Lighting.AddLight` arms spread from `Dust.cs:485` to `:2050`, which cannot be ported without the entity-light seam (S1-E-5) — and they are not a table anyway, they are code interleaved with the per-type update arms. The `DustID` names already live at `tr-app::id_tables::DUST_ID` (S1-F-6, 196 named constants + `DustID.Count = 332`), so no second copy exists here.
+
+Verification: five tests (`s1_e_2_*`) assert every constant arm against its C# literal (the table rows, the grey families, the `noLight`/`alpha == 255`/`noGravity` gates), the formula arms against hand-computed values (`306 * num`, `263`’s integer halving, `213`’s `scale/2.5*255`, the three lerp fractions, the two Vector products), the default tail’s `(num+3)/4` and `(num+9)/10` divisors, and the accessors. The arm id-sets (`:2494`, `:2584`, `:2681`) were additionally diffed mechanically against the C# conditions, and the constant-arm colours were extracted from the C# and compared row by row.
+
+## Gore: the pool, the spawn family and the update walk (S1-E-4, 2026-11-16)
+
+`crates/tr-core/src/gore.rs` carries `Main.gore[601]` (`Main.cs:66990`) as
+[`GorePool`]: 600 live slots plus the sentinel 600 that `NewGore` returns for a
+refused spawn and never scans (`Gore.cs:1308-1320`). The record is
+`Gore.cs:14-42` field for field; `sticky = true`, `timeLeft = goreTime` and
+`Frame = new SpriteFrame(1, 1)` are the struct initialiser, and `goreTime` is
+the pool-level static (`:1507-1510`, 600).
+
+The RNG contract, resolved against `Gore.cs:1327-1328` verbatim (an earlier
+checkpoint summary misread it as `Next(2)` → X → Y): one `Next(10, 31)` on
+`velocity.Y` **first**, then one `Next(-20, 21)` on `velocity.X`. Nothing else
+in `NewGore` rolls except the two ChildSafety draws (`Next(11, 14)` then
+`NextFloat()`, `:1336-1338`, only when the gate is armed and the type is
+dangerous) and the two type-1225 draws (`:1375-1382`). The per-type arms
+(`:1355-1456`) are pure writes.
+
+`crates/tr-core/src/gore_id.rs` is `GoreID.Sets` (`GoreID.cs:20-23`) built the
+way `SetFactory` builds it (`SetFactory.cs:97-130`): a default for the whole
+array plus the listed `(id, value)` pairs. `special_ai` (default 0),
+`disappear_speed` (default **1**), `disappear_speed_alpha` (default **1**) and
+`is_drip` (default false) replace the earlier fabricated range table
+(`219..=331`, `943..=1242`) that shipped with the draft — the defaults matter:
+a zero `disappear_speed` would have frozen every timer.
+
+The update walk is `Gore.Update` (`Gore.cs:308-1083`) split into the driver(`update`, `Main.UpdateWorld_Gores` `Main.cs:17971-17996`), `update_slot` (the
+main chain) and the twelve helpers the C# factors out: the four cloud/spark
+rows (`:110-260`), the drip animation (`:378-529`), the drip collision pass
+(`:915-977`), the sticky rest (`:978-1019`), the chum bucket and its floating
+chunk plus `ChumFloatingChunk_GetWaterLine` (`:552-671`, `:262-290`), the
+`SpecialAI == 2` smoke row (`:767-843`), the 411-430 pages (`:844-912`),
+`Gore_UpdateLeaf` (`:1085-1209`) and `Gore_UpdateSail` (`:1211-1271`).
+
+Documented drops, each at its site: the texture-gated arms are the port's
+`TextureAssets.Gore[...].IsLoaded == false` path throughout (`Gore::width`/
+`height`/`aabb_rectangle` return the C#'s own 1/1 fallbacks, and the size
+probes keep `32f` — `4f` for the ogre-spit rows — so the collision boxes are
+exactly the C#'s unloaded-texture sizes); the entity lights (`Lighting.AddLight`
+at `:258`, `:940`, `:1076`) wait for S1-E-5; the 716/1383 shimmer tint
+(`:917-941`) needs `LiquidRenderer.GetShimmerBaseColor`; the `SoundEngine` hits
+and the water-shader ripple (`:953`, `:965`, `:967`) need the audio and shader
+seams; and the player-rect/dust-burst arms (`:794-841`, `:850-864`, `:883-910`,
+`:1119-1122`) need the entity and dust pools on the core side. None of those
+draws a random number, so the stream order is untouched — which is the property
+the port actually needs from them.
+
+`tr-core` cannot depend on `tr-app`'s collision ports, so the walk takes a
+[`GoreCollision`] seam (`tile_collision` = `Collision.cs:2292`, `wet_collision`
+= `:1572`, `slope_collision` = `:1791`), the same injection pattern the dust
+pool uses for its wet probe (`particles.rs:197-202`). The App implements it in
+`crates/tr-app/src/gore_seam.rs` over `collision::tile_collision`,
+`player::wet_collision` and `collision::slope_collision`. The C#
+`SlopeCollision` declares a `gravity` parameter (`Collision.cs:1791`) and never
+reads it, so the port's `slope_collision` without it is exact, not a
+simplification.
+
+The App owns the pool as `App.gore` (`Main.gore`), ticks it in the `gores`
+phase of the fixed step — between `npcs` and `projectiles`, the C# order at
+`Main.cs:17767-17775` — on the stage's own named stream
+(`Main.SwapRandom("UpdateGores")`, `RngKey::UpdateGores`), and feeds it
+`Main.WindForVisuals` = `Wind::speed_current` (`Main.cs:2823`). The blood
+toggle drives the same `ChildSafety.Disabled` static for both pools
+(`ChildSafety.cs:15` — one static in the C#, so `sync_child_safety` sets both).
+The draw pass stays unported, which is why no gore is visible yet.
+
+Tested (`cargo test -p tr-core gore --lib`, 14 passing): the spawn order and
+velocity, the drip sheet, the `SpecialAI` 1/2/3/4-6 arms, the balloon rows, and
+the three lifecycle tests (sticky countdown → alpha fade → deactivate; the free
+gore's double-speed fade `:1020-1023`; the floor cloud's wind drift and expiry
+`:112-136`). The seam has its own forward test (`gore_seam::tests`), and the
+App's phase-order golden test now pins `gores` between `npcs` and
+`projectiles`.
 ## The carrier's life pool (S1-D-6, 2026-11-14)
 
 `NPC.realLife` (`NPC.cs:6161`) is the C#'s carrier link: an NPC index that
@@ -14245,3 +14359,36 @@ port has no swing-stats helper, no NPC-to-NPC strike path and no difficulty
 multiplier for the town-NPC damage. Porting the machine is a follow-up under
 S1-D-3; the preset table lands first so the numbers have one home. `num77`
 and `maxValue4` are not read by the swing code and stay unported.
+
+## The F3 developer workbench (S1-E-29, 2026-11-16)
+
+The F3 cheat-sheet panel is **project-specific**: vanilla Terraria 1.4.5.8 binds F3
+to `Loadout3` (`PlayerInput.cs:2090,2203,2315,2427` в†’ `TriggersSet.cs:813-816` в†’
+`Player.TrySwitchingLoadout(2)`) and ships no debug overlay, so there is no vanilla
+panel to be 1:1 with. The port's panel is therefore a dev tool, and the deviations
+below are recorded rather than resolved:
+
+* **The crate seam.** The panel lives in `tr-debug` (state, layout, hit-testing,
+  `Event` intents) with `tr-app` supplying the rows, the drawing and the action
+  application. The direction is forced: `tr-app` is a binary crate (`[[bin]]`, no
+  `[lib]`), so it cannot be a dependency of `tr-debug`. The gameplay consequence is
+  nil вЂ” the actions are the unchanged code; only the hit-testing moved.
+* **The Cargo feature.** `debug` (default OFF) gates the module, the `App` field,
+  its two initialisers and the six call sites, so a release build without it
+  contains no panel. `TR_DEBUG`/`TR_STATS`/`render/debug.rs` are **not** gated: they
+  are the separate F1 stats overlay and the deterministic-screenshot workflow needs
+  `TR_DEBUG=0`.
+* **Recipes tab.** Gives `craft::RECIPES[i].create` straight into the inventory with
+  no station, ingredient or crafting-hour check. That is deliberate for a debug give
+  and is *not* a claim about `Recipe`'s availability rules (`Recipe.cs:15162-15191`
+  etc. stay unported).
+* **Action semantics are frozen.** The World rows, the spawns and the pause row keep
+  their pre-existing bodies. Their fidelity is **not** claimed: the world-event rows
+  are `PARTIAL_PROJECT_SPECIFIC` (goblin 80 vs the C# `80+40*players`,
+  `Main.cs:64435-64470`; slime rain 43200 vs the C# `32400-53999`,
+  `Main.cs:64742-64806`), and the kill-all row has no C# equivalent. Those are
+  recorded as S1-E-37 in `docs/ROADMAP.md`. The pause row *is* exact
+  (`WorldUpdateStepper.cs:45-49`) and its test pins it.
+* **Upstream reference only.** The feature set takes *behaviour* references from
+  CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
+  or art is copied or adapted, so nothing of theirs ships.
