@@ -14216,7 +14216,7 @@ impl ProjectilePool {
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
             // as StrikeNPC does before the knockback/HP application.
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), hit_crit);
-            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, from_x, kb, hit_crit);
+            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8));
             // `:14087-14119`: the immunity application.
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 npcs[idx].immune[owner_idx] = 0;
@@ -14334,7 +14334,7 @@ impl ProjectilePool {
             // applies DamageVar and defense/crit like the plain PVE pass.
             let dmg = tr_core::damage::damage_var(rng, damage as f32, luck);
             let strike_dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
-            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit);
+            let landed = Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8));
             if uses_local && self.slots[slot].local_hit_cooldown != -2 {
                 npcs[idx].immune[owner] = 0;
                 self.local_immunity[slot * 256 + idx] = self.slots[slot].local_hit_cooldown;

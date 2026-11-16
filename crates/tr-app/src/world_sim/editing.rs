@@ -1135,6 +1135,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             });
             if let Some(idx) = hit_idx {
                 let n = &app.npcs[idx];
+                // The Flymeal's TERRARIST (42) fires before the strike in the
+                // C# (`Player.cs:44377-44387` vs `:44404`), but the notify
+                // needs `&mut app` — it lands just ahead of the strike below,
+                // still before `StrikeNPC`.
+                let mut flymeal_town_hit = false;
                 // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
                 // crit roll (`meleeCrit` + the item's crit), `DamageVar`, then
                 // `CalculateDamageNPCsTake` with the NPC's defense
@@ -1202,7 +1207,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     // collapse to `is_town_npc_like()` here: it *is* the
                     // vanilla `townNPC` flag, and `isLikeATownNPC` only adds
                     // type 453, which the port does not ship.
-                    let _ = app.achievements.notify_progression(42);
+                    flymeal_town_hit = true;
                 }
                 // `:44383`: `num2 += nPC.checkArmorPenetration(
                 // this.GetArmorPenetration(sItem.melee), armorPenetrationPercent)`
@@ -1230,8 +1235,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 let kb = held_fx.map_or(registry::get(held.kind).map_or(0.0, |d| d.knock_back), |s| s.knock_back);
                 // `NPC.StrikeNPC` (`NPC.cs:81189-81563`): the strike lands on
                 // the carrier's life pool when the hit NPC is a linked
-                // segment (`NPC.realLife`, `NPC.cs:81374-81378`).
-                crate::npc::Npc::strike_melee(&mut app.npcs, idx, dmg, pcx, kb, crit);
+                // segment (`NPC.realLife`, `NPC.cs:81374-81378`). The owner is
+                // this player's slot — `StrikeNPC_Inner`'s interaction gate
+                // key (`NPC.cs:81266-81272`).
+                let me = app.local_id as u8;
+                if flymeal_town_hit {
+                    let _ = app.notify_progression_net(42);
+                }
+                crate::npc::Npc::strike_melee(&mut app.npcs, idx, dmg, pcx, kb, crit, Some(me));
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
                 app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
@@ -1418,7 +1429,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                             )
                         };
                         app.world.altars_smashed = altars + 1;
-                        let _ = app.achievements.notify_progression(6);
+                        let _ = app.notify_progression_net(6);
                         let _ = ore;
                         app.world_key = None;
                     }

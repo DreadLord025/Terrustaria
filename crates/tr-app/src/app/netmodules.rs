@@ -261,6 +261,54 @@ impl Particles {
 }
 
 // ---------------------------------------------------------------------------
+// Bestiary (module 4)
+// ---------------------------------------------------------------------------
+
+/// `NetBestiaryModule`'s body (`NetBestiaryModule.cs:7-73`). The C# carries
+/// three unlock kinds (`BestiaryUnlockType`, `:9-14`); the port sends only
+/// `Kill` — the sights/chats trackers are not net-synced yet (their own
+/// `NetBestiaryModule.SerializeSight/Chat` halves, `:25-39`, ride the M6
+/// follow-up `NPCWasNearPlayerTracker`/`NPCWasChatWithTracker`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BestiaryKill {
+    /// `BestiaryUnlockType.Kill` (`NetBestiaryModule.cs:11`) — the body's
+    /// leading tag byte.
+    pub kind: u8,
+    /// The NPC's net id (`(short)npcNetId`, `:20`).
+    pub npc_net_id: i16,
+    /// `Write7BitEncodedInt(killcount)` (`:21`).
+    pub kill_count: u32,
+}
+
+impl BestiaryKill {
+    /// `NetBestiaryModule.SerializeKillCount` (`:16-23`).
+    pub fn new(npc_net_id: i16, kill_count: i32) -> Self {
+        Self {
+            kind: 0,
+            npc_net_id,
+            kill_count: kill_count.max(0) as u32,
+        }
+    }
+    pub fn write_to(&self, w: net::NetWriter) -> net::NetWriter {
+        w.u8(self.kind).i16(self.npc_net_id).u7(self.kill_count)
+    }
+    /// The `BestiaryUnlockType.Kill` arm of `Deserialize` (`:49-56`); a
+    /// sight/chat body returns `None` (the port does not carry those
+    /// trackers).
+    pub fn read_from(r: &mut net::NetReader) -> Option<Self> {
+        let kind = r.u8()?;
+        if kind != 0 {
+            return None;
+        }
+        Some(Self {
+            kind,
+            npc_net_id: r.i16()?,
+            kill_count: r.u7()?,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
 
@@ -399,6 +447,24 @@ impl App {
             module_id::PARTICLES => {
                 // The port has no particle orchestration yet; the body
                 // round-trips and drops here (documented in ANALYSIS).
+            }
+            module_id::BESTIARY => {
+                // `NetBestiaryModule.Deserialize`'s Kill arm
+                // (`NetBestiaryModule.cs:49-56`): `SetKillCountDirectly`.
+                let Some(bk) = BestiaryKill::read_from(&mut r) else {
+                    return;
+                };
+                let Some(kind) = crate::npc::kind_from_net_id(bk.npc_net_id as i32) else {
+                    return;
+                };
+                let entry = crate::bestiary::entry_for_npc(kind.0, kind.1);
+                self.bestiary
+                    .kills
+                    .set_kill_count_directly(entry.credit_id, bk.kill_count as i32);
+                // `SetKillCountDirectly`'s first-key hook
+                // (`NPCKillsTracker.cs:46-49`) — the client-side reach of
+                // `TryGrantingBestiary100PercentAchievement` (`:81-84`).
+                let _ = self.achievements.try_grant_bestiary_100(&self.bestiary.kills);
             }
             _ => {}
         }
@@ -548,6 +614,12 @@ impl ModuleBody for AmbienceSpawn {
 }
 
 impl ModuleBody for Particles {
+    fn encode(&self) -> Vec<u8> {
+        self.write_to(net::NetWriter::open(0)).finish()[3..].to_vec()
+    }
+}
+
+impl ModuleBody for BestiaryKill {
     fn encode(&self) -> Vec<u8> {
         self.write_to(net::NetWriter::open(0)).finish()[3..].to_vec()
     }
