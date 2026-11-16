@@ -14649,3 +14649,118 @@ below are recorded rather than resolved:
 * **Upstream reference only.** The feature set takes *behaviour* references from
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
+
+## Entity lights (S1-E-5, 2026-11-16)
+
+The C# funnels every `Lighting.AddLight` overload into
+`Lighting.AddLight(int i, int j, float r, float g, float b)` (`Lighting.cs:157-163`),
+which appends to the active `ILightingEngine`'s per-frame list behind
+`!Main.gamePaused && Main.netMode != 2` (`LightingEngine.cs:51-54`). The engine
+max-merges that list onto the working map (`LightingEngine.cs:215-225`) and then
+swaps it with the previous frame's list, clearing the current one
+(`:226-233`) — so a source added this tick is **visible to the light pass one frame
+later**, and only if a swap ran in between (`Main.GameUpdateCount` guards the swap
+against two passes in one update).
+
+Ported here: that list pair (`crates/tr-app/src/entity_lights.rs::EntityLights`) and
+one source family, `WorldItem.UpdateItem_VisualEffects` (`WorldItem.cs:1204-1649`).
+The pass runs in `app/frame.rs` after `LightParams` is built, because that is the
+only place the struct exists; `tr-core`'s `compute_into_with_lights` takes a single
+`&[DynamicLight]`, so `render/tiles.rs` concatenates the waterfall list and the
+entity list into `DrawScratch::all_lights` before the compute. **List order is the
+only ordering constraint** — no ported arm draws RNG, so the frame position of the
+feed cannot change the fixed-step order or any stream.
+
+* **14 arms that draw `Main.rand` are not ported at all** — 5043, 116, 3191,
+  520/3454, 521/3455, 547/3453, 548, 575, 549, 58/1734/1867, 184/1735/1868/4143,
+  522 and 1332 (`WorldItem.cs:1206, 1211, 1224, 1229, 1234, 1239, 1244, 1249, 1254,
+  1259, 1264, 1269, 1274`). Each mixes its `AddLight` with a `Dust.NewDust` whose
+  draws ride `Main.rand`, and the dust system belongs to the S1-E-2/S1-E-3 branches.
+  Skipping a whole arm leaves the stream untouched, which is exact — the port does
+  not consume the `Next(90, 111)` those arms would have drawn.
+* **Two arms are ported for their light half only**: 75 (`:1624-1635`) and the
+  `BossBag` set (`:1636-1648`). Both draw `Main.rand` only inside a
+  `timeSinceItemSpawned % 12 == 0` dust branch that the port does not run, so the
+  `AddLight` line itself is RNG-free and exact; the dust is the dust task's.
+  Because the port omits the whole branch, the `Main.rand` calls are never reached
+  and that arm's stream position is skipped rather than shortened.
+* **The four `Main.essScale` arms (3456-3459) are not ported.** `Main.essScale`
+  drifts between 0.7 and 1.0 once per draw pass (`Main.cs:62264-62277`, seeded 1.0
+  at `:66673`) and has no port field yet. The four rows are all-`Vector3` scaled
+  colours with no other state, so they are cheap to add once `essScale` exists; until
+  then the four gemspark blocks emit no light.
+* **`base.wet` is the gate, not `Collision.WetCollision` verbatim.** The C# sets
+  `base.wet` from `Collision.WetCollision(position, width, height)`
+  (`WorldItem.cs:870`) in the movement half that runs *before*
+  `UpdateItem_VisualEffects` (`:436`). `ItemDrop::box_is_wet` (`crates/tr-app/src/item.rs`)
+  tests the same 14×14 box for `tile.liquid > 0`; `box_in_shimmer` is the same helper
+  with the shimmer predicate. The item box is `ItemDrop::SIZE` (14) in both, matching
+  `Entity.width`/`height` for a dropped item.
+* **The `createTile == 4` arm shadows 19 per-id arms.** `WorldItem.cs:1375` comes
+  before every later `type == N` test, and every placeable torch has
+  `createTile == 4` — so the per-id arms for 3114, 1245, 433, 523, 974, 1333, 4383,
+  5293, 5353, 4384, 3045, 3004, 2274 and 427-432 are **unreachable in vanilla**.
+  They all take the `Lighting.AddLight(base.Center, placeStyle)` overload
+  (`Lighting.cs:151-155`) instead, i.e. `TorchID.TorchColor(placeStyle)` at full
+  amount, positioned by `(int)Center.X / 16` — truncate *then* divide, which the
+  port models as `XAnchor::CenterTruncated` (the two forms differ only for negative
+  pixel positions but the port must not pick one at random). The port keeps the
+  dead arms in source order rather than deleting them: they cost nothing, they keep
+  the arm list comparable to the C#, and deleting them would be an unforced
+  divergence that a later refactor could misread as a *missing* port. The
+  Cursed Torch (523) is the visible case — a `WaterTorches` row, so it stays lit
+  under water where a plain torch goes dark.
+* **Remaining source families.** Projectile (107 call sites), NPC (80), Player (46),
+  Dust (94), Mount (14), TileDrawing (6) and the particles/gore rows are **not**
+  ported. `Gore.Update`'s own lights (`Gore.cs:258`, `:940`, `:1076-1080`) can now be
+  expressed through `EntityLights` but still need a seam from `tr-core` — the gore
+  pool has no light sink, so they stay dropped.
+
+## The last four drop-rule classes (S1-E-14, 2026-11-16)
+
+`ItemDropRules` is now fully covered: `SlimeBodyItemDropRule`,
+`StatueMimicItemDropRule`, `MechBossSpawnersDropRule` and
+`FromOptionsWithoutRepeatsDropRule` are ported in `crates/tr-core/src/loot.rs`
+and reachable from the generated table, and `Conditions.NamedNPC` /
+`Conditions.RedHatSkeletron` are `Cond` variants. Three deliberate folds keep
+`LootNpc` `Copy`:
+
+1. **`Conditions.NamedNPC`** (`Conditions.cs:971-979`) compares
+   `info.npc.GivenName` against `Language.GetTextValue(neededName)`. `LootNpc`
+   cannot hold a `String`, so the comparison is hoisted to the caller:
+   `tr_core::loot::NamedNpc` has exactly the three variants the drop table
+   registers (`GuideNames.Andrew`, `SteampunkerNames.Whitney`,
+   `PainterNames.Jim`), `NamedNpc::key()` is the localization key, and
+   `loot_db::named_npc(&given_name)` resolves it through `lang::text`.
+   `HasGivenName` (`NPC.cs:6741`) is the empty-string early return.
+2. **`Conditions.RedHatSkeletron`** (`Conditions.cs:543-559`) is
+   `NPC.RedHatSkeletronAdjustmentsEnabled()` (`NPC.cs:66671-66682`) — four
+   `(type, ai[3] or localAI[3] == 1)` pairs (35/`ai[3]`, 36/`localAI[3]`,
+   32/`localAI[3]`, 33/`ai[3]`). Folded to `LootNpc::red_hat_skeletron`.
+   `spawn_loot` currently always passes `false`: the only C# writers of those
+   slots are `NPC.RedHatSkeletron` (`NPC.cs:80395`, the Clothier's curse) and
+   the sitting-Clothier ritual (`PlayerSittingHelper.cs:81`), both unported —
+   and the port's Skeletron head stores the live hand count in `ai[3]`
+   (`world_sim/npcs.rs`'s init pass), so reading the field as the flag would be
+   wrong. The five `ByCondition(RedHatSkeletron, …)` rows are registered and
+   report; they simply cannot fire until that summon path lands.
+3. **`MechBossSpawnersDropRule`'s `!info.IsInSimulation`** (`:16-23`) is a
+   constant `true`: the only resolver is the death path (`NPC.cs:78927-78936`,
+   which constructs `DropAttemptInfo` with `IsInSimulation = false`) and the
+   port has no projection simulation.
+
+**The generator bug this found.** `tools/gen_loot.py` read `Populate()`'s
+statement stream but did not follow its `this.RegisterBosses();` /
+`this.RegisterMimic();` calls into the 23 nested private methods, so 147 of the
+633 register sites — the entire boss table, including Skeletron's red-hat rows
+and the Moon Lord's distinct-pick row — were missing from `loot_db_gen.rs`
+without a single warning. `expand_nested` + the `src` parameter of
+`process_stream` now recurse (each method keeps its own locals), and
+`INT_LOCAL_RE` resolves `short type = 35;` / `int type = …` register arguments.
+Count: 1 421 -> 1 582 registrations. The remaining 166 warnings are
+`OneFromOptions` ids that `itemdata.rs` does not model (S1-E-2), unchanged.
+
+**Deliberate simplification.** `statue_style_to_item` is a plain arithmetic
+table, not a `Dictionary`, because the C# is a `switch` with three contiguous
+runs (`51..62`, `63..75`, and the `default: 438 + style - 2`) — the run form
+keeps the port readable against `WorldGen.cs:37928-37991`.
