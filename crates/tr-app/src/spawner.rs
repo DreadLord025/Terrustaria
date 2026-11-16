@@ -8,7 +8,7 @@
 //! here; when a chosen C# type has no `NpcKind` equivalent the attempt simply
 //! returns `None` (the original would spawn that type).
 
-use tr_core::{World, TILE_PX};
+use tr_core::{UnifiedRandom, World, TILE_PX};
 
 use crate::npc::{Npc, NpcKind, SlimeVariant};
 
@@ -25,30 +25,9 @@ pub const UNDERWORLD_LAYER: fn(i32) -> i32 = |max_tiles_y| max_tiles_y - 200;
 const SPAWN_SPACE_X: i32 = 2;
 const SPAWN_SPACE_Y: i32 = 3;
 
-/// Minimal deterministic stand-in for `Main.rand` (xorshift64*). The C# code
-/// only relies on `Next()`/`Next(n)` uniformity, not on the exact sequence.
-pub struct FastRandom(u64);
-
-impl FastRandom {
-    pub fn new(seed: u64) -> Self {
-        Self(seed ^ 0x9E37_79B9_7F4A_7C15)
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        let mut z = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        self.0 = z;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
-    /// `Main.rand.Next(n)`: uniform in `0..n`, matching the C# call sites used
-    /// here (`Next(spawnRate) != 0`, `Next(6) == 0`, ...).
-    pub fn next(&mut self, n: i32) -> i32 {
-        debug_assert!(n > 0);
-        (self.next_u64() % n.max(1) as u64) as i32
-    }
-}
+// The spawner's draws are `Main.rand.Next(...)` under the `SpawnNPC` swap —
+// the persistent `UnifiedRandom` stream the npcs pass binds per tick
+// (`world_sim/npcs.rs`).
 
 /// Inputs to one spawn attempt, mirroring what `Spawner` reads off `Main` and
 /// the `Player` in `SetSpawnFlags`.
@@ -231,7 +210,7 @@ impl SpawnArea {
 /// seed systems land (M5-SEED-1, M6-CREATIVE-1). The luck tail
 /// (`:924-928`, `RollOnlyBadLuckExtreme`) is out of scope (the spawner has
 /// no luck input yet).
-pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
+pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate {
     let f = &ctx.flags;
     let mut rate = SpawnRate {
         spawn_rate: DEFAULT_SPAWN_RATE,
@@ -429,10 +408,10 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
         if ctx.player_center.1 / 16.0 > UNDERWORLD_LAYER(ctx.world.height) as f32 {
             if ctx.town_npcs == 1 {
                 // The skyblock guard (`:805`) is constants-off.
-                if rng.next(2) == 0 {
+                if rng.next_max(2) == 0 {
                     rate.no_worms = true; // `:809`
                 }
-                if rng.next(10) == 0 {
+                if rng.next_max(10) == 0 {
                     rate.spawn_friendly = true; // `:813`
                     rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.5) as i32;
                 // `:814`
@@ -441,10 +420,10 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
                     // `:818`
                 }
             } else if ctx.town_npcs == 2 {
-                if rng.next(4) != 0 {
+                if rng.next_max(4) != 0 {
                     rate.no_worms = true; // `:826`
                 }
-                if rng.next(5) == 0 {
+                if rng.next_max(5) == 0 {
                     rate.spawn_friendly = true; // `:830`
                     rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.5) as i32;
                 // `:831`
@@ -453,10 +432,10 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
                     // `:835`
                 }
             } else if ctx.town_npcs >= 3 {
-                if rng.next(10) != 0 {
+                if rng.next_max(10) != 0 {
                     rate.no_worms = true; // `:842`
                 }
-                if rng.next(3) == 0 {
+                if rng.next_max(3) == 0 {
                     rate.spawn_friendly = true; // `:846`
                     rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.5) as i32;
                 // `:847`
@@ -467,16 +446,16 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
         } else if ctx.town_npcs == 1 {
             rate.no_worms = true; // `:857` (unconditional)
                                   // The skyblock guard (`:858`) is constants-off.
-            if f.zone_graveyard && (!f.zone_peace_candle || rng.next(3) == 0) {
+            if f.zone_graveyard && (!f.zone_peace_candle || rng.next_max(3) == 0) {
                 // `:860`
                 rate.spawn_rate = (rate.spawn_rate as f32 as f64 * 1.66) as i32; // `:862`
-                if rng.next(9) == 1 {
+                if rng.next_max(9) == 1 {
                     // `:863`
                     rate.spawn_friendly = true; // `:865`
                     rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32;
                     // `:866`
                 }
-            } else if rng.next(3) == 1 {
+            } else if rng.next_max(3) == 1 {
                 // `:869`
                 rate.spawn_friendly = true; // `:871`
                 rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32; // `:872`
@@ -485,16 +464,16 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
             }
         } else if ctx.town_npcs == 2 {
             rate.no_worms = true; // `:882`
-            if f.zone_graveyard && (!f.zone_peace_candle || rng.next(3) == 0) {
+            if f.zone_graveyard && (!f.zone_peace_candle || rng.next_max(3) == 0) {
                 // `:883`
                 rate.spawn_rate = (rate.spawn_rate as f32 as f64 * 2.33) as i32; // `:885`
-                if rng.next(6) == 1 {
+                if rng.next_max(6) == 1 {
                     // `:886`
                     rate.spawn_friendly = true; // `:888`
                     rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32;
                     // `:889`
                 }
-            } else if rng.next(3) != 0 {
+            } else if rng.next_max(3) != 0 {
                 // `:892`
                 rate.spawn_friendly = true; // `:894`
                 rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32; // `:895`
@@ -503,10 +482,10 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
             }
         } else if ctx.town_npcs >= 3 {
             rate.no_worms = true; // `:904`
-            if f.zone_graveyard && (!f.zone_peace_candle || rng.next(3) == 0) {
+            if f.zone_graveyard && (!f.zone_peace_candle || rng.next_max(3) == 0) {
                 // `:905`
                 rate.spawn_rate = (rate.spawn_rate as f32 * 3.0) as i32; // `:907`
-                if rng.next(3) == 1 {
+                if rng.next_max(3) == 1 {
                     // `:908`
                     rate.spawn_friendly = true; // `:910`
                     rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32;
@@ -628,7 +607,7 @@ fn post_check_chosen_spawn_tile(world: &World, x: i32, y: i32, ground_y: i32) ->
 /// (`Main.cs:17886`) and advances it once per call regardless of the outcome.
 pub fn spawn_npc_call(
     ctx: Option<SpawnContext<'_>>,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
     no_cycle: bool,
 ) -> (Option<Npc>, bool) {
     if no_cycle {
@@ -742,7 +721,7 @@ pub fn town_npc_at_spawn(micro_seeds: tr_core::seeds::MicroSeedFlags) -> u16 {
     }
 }
 
-pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
+pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 
     // `GetSpawnRate` + the two hard gates in `TrySpawnAnNPC`.
@@ -751,7 +730,7 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
     if ctx.nearby_active_npcs >= rate.max_spawns as f32 {
         return None;
     }
-    if rng.next(rate.spawn_rate) != 0 {
+    if rng.next_max(rate.spawn_rate) != 0 {
         return None;
     }
 
@@ -761,8 +740,8 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
     // tile stays the random air tile).
     let mut sky_mob = false;
     for _ in 0..50 {
-        let num = rng.next(spawn_area.right - spawn_area.left) + spawn_area.left;
-        let mut j = rng.next(spawn_area.bottom - spawn_area.top) + spawn_area.top;
+        let num = rng.next_max(spawn_area.right - spawn_area.left) + spawn_area.left;
+        let mut j = rng.next_max(spawn_area.bottom - spawn_area.top) + spawn_area.top;
         if !ctx.world.in_bounds(num, j) {
             continue;
         }
@@ -793,7 +772,7 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
             && (j as f64) < ctx.world.world_surface * 0.44999998807907104
             && !spawn_friendly
             && ctx.flags.hard_mode
-            && rng.next(10) == 0
+            && rng.next_max(10) == 0
         {
             sky_mob = true;
         } else {
@@ -866,7 +845,7 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
 ///   kind lands with the flyer family.
 fn spawn_npc_at(
     ctx: &SpawnContext,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
     x: i32,
     y: i32,
     sky_mob: bool,
@@ -879,7 +858,7 @@ fn spawn_npc_at(
     // `GetZombieSettings` (`NPC.cs:5583-5612`) is `SpawnAnNPC`'s FIRST
     // statement (`NPC.cs:1284`) — the style roll happens for every spawn,
     // day or night, surface or underground.
-    let zombie_style = rng.next(7);
+    let zombie_style = rng.next_max(7);
     // `playerHasStartingHealth` (`NPC.cs:415`): `statLifeMax <= 100` drops
     // torchZombieChance 12 → `5 - players/2` (single player: 5).
     let torch_zombie_chance = if ctx.player_life_max <= 100 {
@@ -925,10 +904,10 @@ fn spawn_npc_at(
         };
         // The martians' short-circuit rolls — the `Next(mv2)` fires only
         // while `!downedMartians`, and a hit skips the `Next(mv3)`.
-        let probe_roll = if !ctx.downed_martians && rng.next(mv2) == 0 {
+        let probe_roll = if !ctx.downed_martians && rng.next_max(mv2) == 0 {
             true
         } else {
-            rng.next(mv3) == 0
+            rng.next_max(mv3) == 0
         };
         if flag5 && ctx.flags.hard_mode && ctx.downed_golem && probe_roll && !ctx.probe_exists {
             return spawn_martian_probe(x, y);
@@ -939,7 +918,7 @@ fn spawn_npc_at(
         // The Wyvern arm (`:1407-1410`): the kind lands with the flyer
         // family; the roll consumes (the vanilla's `Next(10)` here) and a
         // hit returns no spawn.
-        if ctx.flags.hard_mode && rng.next(10) == 0 {
+        if ctx.flags.hard_mode && rng.next_max(10) == 0 {
             return None;
         }
     }
@@ -1001,7 +980,7 @@ fn spawn_npc_at(
         let is_ocean = (x < 250 || x > ctx.world.width - 250)
             && is_sand
             && (y as f64 / 16.0) < ctx.world.rock_layer;
-        if is_ocean && rng.next(10) == 0 {
+        if is_ocean && rng.next_max(10) == 0 {
             return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Shark);
         }
         // The Piranha arm (`:1929`): `!spawnFriendly && waterTile &&
@@ -1009,20 +988,20 @@ fn spawn_npc_at(
         // `waterTile` gate is the enclosing water ladder; the town block's
         // `spawnFriendly` carry-out short-circuits before the draw.
         if !spawn_friendly
-            && (((y as f64 / 16.0) > ctx.world.rock_layer && rng.next(2) == 0) || tile_kind == 60)
+            && (((y as f64 / 16.0) > ctx.world.rock_layer && rng.next_max(2) == 0) || tile_kind == 60)
         {
             // The mud-critter scan (`:1932`'s `tileType == 60 &&
             // surfaceSpawn && day && Next(3) == 0` → 616/612/613/608) is
             // unmodelled — the roll consumes where the vanilla's gate hits.
-            if tile_kind == 60 && surface && y / 16 > 50 && rng.next(3) == 0 && ctx.day_time {
-                let _ = rng.next(5);
+            if tile_kind == 60 && surface && y / 16 > 50 && rng.next_max(3) == 0 && ctx.day_time {
+                let _ = rng.next_max(5);
             }
             return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Piranha);
         }
         // The underground fish (`:1985`): 63/103 unmodelled — the roll
         // consumes, the port maps to the Goldfish (the closest water
         // critter; the Angler Fish lands with the fish-family pass).
-        if (y as f64 / 16.0) > ctx.world.world_surface && rng.next(3) == 0 {
+        if (y as f64 / 16.0) > ctx.world.world_surface && rng.next_max(3) == 0 {
             return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Goldfish);
         }
         // The water critter arm (`:1996`): `Next(4) == 0 && (x outside the
@@ -1031,7 +1010,7 @@ fn spawn_npc_at(
         // aggressive water fish); the day critter scans (the ducks/the
         // seahorses) sit constants-off; the golden goldfish 592's
         // `goldCritterChance` roll consumes nothing.
-        if rng.next(4) == 0
+        if rng.next_max(4) == 0
             && ((x > 250 && x < ctx.world.width - 250)
                 || (y as f64 / 16.0) > ctx.world.world_surface + 50.0)
         {
@@ -1057,10 +1036,10 @@ fn spawn_npc_at(
             flag17 = false;
         }
         // The martians' short-circuit rolls (100/400 — `:4194`).
-        let probe_roll = if !ctx.downed_martians && rng.next(100) == 0 {
+        let probe_roll = if !ctx.downed_martians && rng.next_max(100) == 0 {
             true
         } else {
-            rng.next(400) == 0
+            rng.next_max(400) == 0
         };
         if flag17 && ctx.flags.hard_mode && ctx.downed_golem && probe_roll && !ctx.probe_exists {
             return spawn_martian_probe(x, y);
@@ -1074,68 +1053,68 @@ fn spawn_npc_at(
         // ---- the night ladder (`NPC.cs:4520-4810`) ----
         // `Next(6) == 0 || (moonPhase == 4 && Next(2) == 0)` (`:4549`): the
         // short-circuit leaves the second roll unconsumed on a first hit.
-        let eyes = rng.next(6) == 0 || (ctx.world.moon_phase == 4 && rng.next(2) == 0);
+        let eyes = rng.next_max(6) == 0 || (ctx.world.moon_phase == 4 && rng.next_max(2) == 0);
         if eyes {
             // `:4551-4558`: hardmode takes the Wandering Eye 1/3 of the time.
-            if ctx.flags.hard_mode && rng.next(3) == 0 {
+            if ctx.flags.hard_mode && rng.next_max(3) == 0 {
                 return Npc::spawn_eye(ctx.world, x).map(|mut n| {
                     n.kind = NpcKind::WanderingEye;
                     n
                 });
             }
-            if rng.next(2) == 0 {
+            if rng.next_max(2) == 0 {
                 // `:4564-4576`: -43 on the 1/4 roll, else type 2 — both the
                 // port's demon eye.
-                let _ = rng.next(4);
+                let _ = rng.next_max(4);
                 return Npc::spawn_eye(ctx.world, x);
             }
             // `:4577-4606`: the five 19X pairs with their 1/3 size-variant
             // roll; the C# spawns BOTH — the port draws the roll and spawns
             // the base (the deviation above).
-            let _ = rng.next(5);
-            let _ = rng.next(3);
+            let _ = rng.next_max(5);
+            let _ = rng.next_max(3);
             return Npc::spawn_eye(ctx.world, x);
         }
         // `:4608-4612`: hardmode blood moon 1/50 → 109 (unmodelled).
-        if ctx.flags.hard_mode && ctx.flags.blood_moon && rng.next(50) == 0 {
+        if ctx.flags.hard_mode && ctx.flags.blood_moon && rng.next_max(50) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4614-4621`: the two bad-luck 300 blood-moon rolls (53, 536).
-        if ctx.flags.blood_moon && rng.next(300) == 0 {
+        if ctx.flags.blood_moon && rng.next_max(300) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
-        if ctx.flags.blood_moon && rng.next(300) == 0 {
+        if ctx.flags.blood_moon && rng.next_max(300) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4623-4627`: a new-moon hardmode 2/3 (104).
-        if ctx.world.moon_phase == 0 && ctx.flags.hard_mode && rng.next(3) != 0 {
+        if ctx.world.moon_phase == 0 && ctx.flags.hard_mode && rng.next_max(3) != 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4628-4631`: hardmode 1/3 (140).
-        if ctx.flags.hard_mode && rng.next(3) == 0 {
+        if ctx.flags.hard_mode && rng.next_max(3) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4632-4645`: blood moon 2/5 → 489/490 (the `Next(2)` picks).
-        if ctx.flags.blood_moon && rng.next(5) < 2 {
-            let _ = rng.next(2);
+        if ctx.flags.blood_moon && rng.next_max(5) < 2 {
+            let _ = rng.next_max(2);
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4646-4665`: the snow/ice tile arm — hardmode's 169/155 rolls,
         // then the Eskimo default (161; all the port's zombie kind).
         if is_ices_snow(tile_kind) || tile_kind == 162 {
-            if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next(4) == 0 {
+            if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next_max(4) == 0 {
                 return Npc::spawn_zombie(ctx.world, x);
             }
-            if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next(3) == 0 {
+            if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next_max(3) == 0 {
                 return Npc::spawn_zombie(ctx.world, x);
             }
-            let _ = rng.next(2); // the armed-expert split (unmodelled)
+            let _ = rng.next_max(2); // the armed-expert split (unmodelled)
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4666-4709`: the rain/graveyard specials — rain and the graveyard
         // flag are constants-off, no rolls.
         // `:4711-4721`: the torch zombie 1/chance (590) — the port's zombie.
-        if rng.next(torch_zombie_chance) == 0 {
+        if rng.next_max(torch_zombie_chance) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
         // M5-SEED-2: `:4728-4731`'s halloween arm — `Main.halloween &&
@@ -1152,9 +1131,9 @@ fn spawn_npc_at(
             .world
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)
-            && rng.next(2) == 0
+            && rng.next_max(2) == 0
         {
-            let _ = rng.next(3); // `Next(319, 322)` — the type pick.
+            let _ = rng.next_max(3); // `Next(319, 322)` — the type pick.
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4732-4735`'s xmas arm — `Main.xMas && Next(2) == 0` →
@@ -1165,31 +1144,31 @@ fn spawn_npc_at(
             .world
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)
-            && rng.next(2) == 0
+            && rng.next_max(2) == 0
         {
-            let _ = rng.next(2); // `Next(331, 333)` — the type pick.
+            let _ = rng.next_max(2); // `Next(331, 333)` — the type pick.
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4736-4758`: the armed-expert zombie styles — still constants-off
         // (the armed variants are unmodelled).
         // `:4764-4810`: the zombie style table (7 biome styles) with the
         // 1/3 big/small variant roll — every outcome is the port's zombie.
-        let _ = rng.next(3);
+        let _ = rng.next_max(3);
         let _ = zombie_style;
         return Npc::spawn_zombie(ctx.world, x);
     }
     // ---- the underground ladder (`NPC.cs:4846-4869`) ----
     // The 1/50 worm roll (hardmode splits 95/10) — unmodelled, the roll
     // still draws and the outcome falls to the slime arm.
-    if rng.next(50) == 0 {
-        let _ = if ctx.flags.hard_mode { rng.next(3) } else { 0 };
+    if rng.next_max(50) == 0 {
+        let _ = if ctx.flags.hard_mode { rng.next_max(3) } else { 0 };
         return spawn_basic_slime(ctx, rng, x, false);
     }
     // `:4852-4858`: hardmode 140/141.
-    if ctx.flags.hard_mode && rng.next(3) == 0 {
+    if ctx.flags.hard_mode && rng.next_max(3) == 0 {
         return spawn_basic_slime(ctx, rng, x, false);
     }
-    if ctx.flags.hard_mode && rng.next(2) == 0 {
+    if ctx.flags.hard_mode && rng.next_max(2) == 0 {
         return spawn_basic_slime(ctx, rng, x, false);
     }
     // `:4863-4867`: the snow-tile arm (147) — unmodelled → the slime arm.
@@ -1211,7 +1190,7 @@ fn spawn_npc_at(
         && !underworld_depth
         && (y as f64 / 16.0) > ctx.world.rock_layer
         && (y as f64 / 16.0) < ctx.world.height as f64 - 210.0
-        && rng.next(20) == 0
+        && rng.next_max(20) == 0
     {
         return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::BoundGoblin);
     }
@@ -1224,13 +1203,13 @@ fn spawn_npc_at(
         && !underworld_depth
         && (y as f64 / 16.0) > ctx.world.rock_layer
         && (y as f64 / 16.0) < ctx.world.height as f64 - 210.0
-        && rng.next(20) == 0
+        && rng.next_max(20) == 0
     {
         return Npc::spawn_cave_walker(ctx.world, x, NpcKind::BoundWizard);
     }
     // The bound Mechanic (`NPC.cs:2653-2657`'s Dungeon arm): the
     // Skeletron downed, `Main.rand.Next(5) == 0`, one per save.
-    if ctx.bound_mech_ok && ctx.below_deep_dungeon && rng.next(5) == 0 {
+    if ctx.bound_mech_ok && ctx.below_deep_dungeon && rng.next_max(5) == 0 {
         return Npc::spawn_cave_walker(ctx.world, x, NpcKind::BoundMechanic);
     }
     // The Devourer: the corruption-cavern roll (`NPC.cs:3701-3710`:
@@ -1238,7 +1217,7 @@ fn spawn_npc_at(
     // `maxValue = 65` (`:1286`); `CanSpawnDevourer` is the custom-seed
     // gate — true in the port; the hardmode 98/99 split waits for the
     // hardmode worm pass).
-    if !no_worms && ctx.flags.zone_evil && rng.next(65) == 0 {
+    if !no_worms && ctx.flags.zone_evil && rng.next_max(65) == 0 {
         return Some(Npc::spawn_worm_head(
             ctx.world,
             x,
@@ -1250,7 +1229,7 @@ fn spawn_npc_at(
     // `underGround && !noWorms && Next(50) == 0 && !ZoneSnow` — the port
     // approximates the snow gate with the snow-floor tiles 147/161; the
     // town block's `noWorms` carry-out short-circuits the roll).
-    if !no_worms && !matches!(tile_kind, 147 | 161) && rng.next(50) == 0 {
+    if !no_worms && !matches!(tile_kind, 147 | 161) && rng.next_max(50) == 0 {
         return Some(Npc::spawn_worm_head(
             ctx.world,
             x,
@@ -1266,7 +1245,7 @@ fn spawn_npc_at(
     // Next(50) never runs.
     if !underworld_depth
         && (y as f64 / 16.0) > (ctx.world.rock_layer + ctx.world.height as f64) / 2.0
-        && rng.next(200) == 0
+        && rng.next_max(200) == 0
     {
         return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::Tim);
     }
@@ -1275,34 +1254,34 @@ fn spawn_npc_at(
     // are unmodelled (constants-off, consume nothing), and a missed imp
     // roll falls through to the cavern arms (the vanilla's remaining
     // underworld arms map to the port's closest kinds there).
-    if underworld_depth && rng.next(14) == 0 {
+    if underworld_depth && rng.next_max(14) == 0 {
         return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::FireImp);
     }
     // The Undead Miner: `Next(20) == 0 → 44` (`:5060` region — the rare
     // cave miner).
-    if rng.next(20) == 0 {
+    if rng.next_max(20) == 0 {
         return Npc::spawn_cave_walker(ctx.world, x, NpcKind::UndeadMiner);
     }
     // The skeleton family: `switch Next(4)` case 0's `Next(3) != 0 → 21`
     // (`:5133-5135`) — the port folds the big/small variants (-47/-46) out
     // and keeps the base skeleton.
-    if rng.next(4) == 0 {
-        if rng.next(3) != 0 {
+    if rng.next_max(4) == 0 {
+        if rng.next_max(3) != 0 {
             return Npc::spawn_cave_walker(ctx.world, x, NpcKind::Skeleton);
         }
-        rng.next(2); // the big/small variant roll consumed
+        rng.next_max(2); // the big/small variant roll consumed
         return Npc::spawn_cave_walker(ctx.world, x, NpcKind::Skeleton);
     }
     // The corruption hover: the Eater of Souls (`NPC.cs`'s corruption arm
     // `Next(6) == 0 → 6` — the port's evil-zone flag gates it).
-    if ctx.flags.zone_evil && rng.next(6) == 0 {
+    if ctx.flags.zone_evil && rng.next_max(6) == 0 {
         if let Some(n) = Npc::spawn_hover(ctx.world, x, y / 16 - 2, NpcKind::EaterOfSouls) {
             return Some(n);
         }
     }
     // The jungle hover: the Hornet (`NPC.cs`'s jungle arm `Next(4) == 0 →
     // 42` — the port's jungle-zone flag gates it).
-    if ctx.flags.zone_jungle && rng.next(4) == 0 {
+    if ctx.flags.zone_jungle && rng.next_max(4) == 0 {
         if let Some(n) = Npc::spawn_hover(ctx.world, x, y / 16 - 2, NpcKind::Hornet) {
             return Some(n);
         }
@@ -1310,7 +1289,7 @@ fn spawn_npc_at(
     // The Cave Bat: the cave-air flyer — `NPC.cs:5233`'s `else → 49` arm;
     // the port's cadence `Next(30)` documents the cave-air rarity (the
     // vanilla's bat rolls sit in the cave-air chain's arms).
-    if rng.next(30) == 0 {
+    if rng.next_max(30) == 0 {
         // The spawn tile from the 50-tile scan is the open cave air (the
         // scan descends to the ground and the pre-ground tile is open).
         // The vanilla bat spawn hangs the bat at the spawn tile; when the
@@ -1362,25 +1341,28 @@ fn spawn_npc_at(
 /// (its roll consumes exactly where the C#'s does); `invasionSize <
 /// invasionSizeStart / 2` reads through the drained fraction
 /// (`progress_frac`) the ctx carries.
-fn invasion_spawn_pick(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<NpcKind> {
+pub(crate) fn invasion_spawn_pick(
+    ctx: &SpawnContext,
+    rng: &mut UnifiedRandom,
+) -> Option<NpcKind> {
     // `invasionType == 1`, the goblin army (`:1429-1440`): the hardmode
     // Summoner 1/30 while none alive (471), then the Sorcerer 1/9 (29), the
     // Peon 1/5 (26), the Archer 1/3 (111), the Thief 1/3 (27), else the
     // Warrior (28) — the port's net-id kinds per arm.
     if ctx.invasion_type == 1 {
-        if ctx.flags.hard_mode && !ctx.invasion_summoner_alive && rng.next(30) == 0 {
+        if ctx.flags.hard_mode && !ctx.invasion_summoner_alive && rng.next_max(30) == 0 {
             return Some(NpcKind::GoblinSummoner); // 471
         }
-        if rng.next(9) == 0 {
+        if rng.next_max(9) == 0 {
             return Some(NpcKind::GoblinSorcerer); // 29
         }
-        if rng.next(5) == 0 {
+        if rng.next_max(5) == 0 {
             return Some(NpcKind::GoblinThief); // 26
         }
-        if rng.next(3) == 0 {
+        if rng.next_max(3) == 0 {
             return Some(NpcKind::GoblinPeon); // 111
         }
-        if rng.next(3) == 0 {
+        if rng.next_max(3) == 0 {
             return Some(NpcKind::GoblinWarrior); // 27
         }
         return Some(NpcKind::GoblinArcher); // 28
@@ -1389,10 +1371,10 @@ fn invasion_spawn_pick(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<NpcKi
     // Snowman 1/7 (145), the Snowman Gangsta 1/3 (143), else the Snow
     // Balla (144) — the port's net-id kinds per arm.
     if ctx.invasion_type == 2 {
-        if rng.next(7) == 0 {
+        if rng.next_max(7) == 0 {
             return Some(NpcKind::MysterySnowman); // 145
         }
-        if rng.next(3) == 0 {
+        if rng.next_max(3) == 0 {
             return Some(NpcKind::SnowmanGangsta); // 143
         }
         return Some(NpcKind::SnowBalla); // 144
@@ -1408,23 +1390,23 @@ fn invasion_spawn_pick(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<NpcKi
     if ctx.invasion_type == 3 {
         if ctx.invasion_progress_frac >= 0.5
             && ctx.invasion_progress_frac < 1.0
-            && rng.next(20) == 0
+            && rng.next_max(20) == 0
         {
             return Some(NpcKind::FlyingDutchman); // 491
         }
-        if rng.next(30) == 0 && !ctx.invasion_captain_alive {
+        if rng.next_max(30) == 0 && !ctx.invasion_captain_alive {
             return Some(NpcKind::PirateCaptain); // 216
         }
-        if rng.next(11) == 0 {
+        if rng.next_max(11) == 0 {
             return Some(NpcKind::PirateCorsair); // 215
         }
-        if rng.next(9) == 0 {
+        if rng.next_max(9) == 0 {
             return Some(NpcKind::PirateCorsair); // 252 Parrot unported
         }
-        if rng.next(7) == 0 {
+        if rng.next_max(7) == 0 {
             return Some(NpcKind::PirateArcher); // 214
         }
-        if rng.next(3) == 0 {
+        if rng.next_max(3) == 0 {
             return Some(NpcKind::PirateCaptainsMate); // 213
         }
         return Some(NpcKind::PirateDeckhand); // 212
@@ -1438,19 +1420,19 @@ fn invasion_spawn_pick(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<NpcKi
     // The roll order is vanilla: num6 (`Next(7)`), then the Saucer gate —
     // `(Next(45) == 0) & flag6` is a bitwise `&`: the draw fires even when
     // the 30%-progress window is closed (`:1494`, `:1500`).
-    let num6 = rng.next(7);
+    let num6 = rng.next_max(7);
     let flag6 = ctx.invasion_progress_30 && !ctx.invasion_saucer_alive;
-    if rng.next(45) == 0 && flag6 {
+    if rng.next_max(45) == 0 && flag6 {
         return Some(NpcKind::MartianSaucerCore); // 395
     }
     if num6 >= 6 {
         // The rider arm (`:1500-1513`): the Saucer gate again (`Next(20)`
         // `& flag6`), else `Next(2)` — the Scutlix Rider's net 390 (0) or
         // the Engineer (386).
-        if rng.next(20) == 0 && flag6 {
+        if rng.next_max(20) == 0 && flag6 {
             return Some(NpcKind::MartianSaucerCore); // 395
         }
-        return if rng.next(2) == 0 {
+        return if rng.next_max(2) == 0 {
             Some(NpcKind::ScutlixRider) // 390
         } else {
             Some(NpcKind::MartianEngineer) // 386
@@ -1459,7 +1441,7 @@ fn invasion_spawn_pick(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<NpcKi
     if num6 >= 4 {
         // The ray arm (`:1514-1520`): `num8 = Next(5)` — <2 the RayGunner
         // (382), >=4 the Drone (388), else the BrainScrambler (381).
-        let num8 = rng.next(5);
+        let num8 = rng.next_max(5);
         return Some(match num8 {
             0 | 1 => NpcKind::RayGunner,      // 382
             2 | 3 => NpcKind::BrainScrambler, // 381
@@ -1470,12 +1452,12 @@ fn invasion_spawn_pick(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<NpcKi
     // the Martian Walker in while none alive (520) and re-rolls `Next(3)`
     // otherwise; then 0 → the Gray Grunt (385), 1 → the Giga Zapper (389),
     // else the Officer (383).
-    let mut num9 = rng.next(4);
+    let mut num9 = rng.next_max(4);
     if num9 == 3 {
         if !ctx.invasion_walker_alive {
             return Some(NpcKind::MartianWalker); // 520
         }
-        num9 = rng.next(3);
+        num9 = rng.next_max(3);
     }
     Some(match num9 {
         0 => NpcKind::GrayGrunt,      // 385
@@ -1514,7 +1496,7 @@ fn spawn_martian_probe(x: i32, y: i32) -> Option<Npc> {
 
 fn spawn_basic_slime(
     ctx: &SpawnContext,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
     x: i32,
     surface: bool,
 ) -> Option<Npc> {
@@ -1539,7 +1521,7 @@ fn spawn_basic_slime(
             .world
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)
-            && rng.next(3) != 0
+            && rng.next_max(3) != 0
         {
             return Npc::spawn_slime_variant(ctx.world, x, SlimeVariant::Blue);
         }
@@ -1547,28 +1529,28 @@ fn spawn_basic_slime(
             .world
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)
-            && rng.next(3) != 0
+            && rng.next_max(3) != 0
         {
             return Npc::spawn_slime_variant(ctx.world, x, SlimeVariant::Blue);
         }
     }
     let dist = (x - ctx.world.spawn_x).abs();
     let variant = if surface {
-        if rng.next(3) == 0 || dist < 200 {
+        if rng.next_max(3) == 0 || dist < 200 {
             SlimeVariant::Green
-        } else if rng.next(10) == 0 && dist > 400 {
+        } else if rng.next_max(10) == 0 && dist > 400 {
             SlimeVariant::Purple
         } else {
             SlimeVariant::Blue
         }
-    } else if rng.next(5) == 0 {
+    } else if rng.next_max(5) == 0 {
         SlimeVariant::Yellow
-    } else if rng.next(2) == 0 {
+    } else if rng.next_max(2) == 0 {
         SlimeVariant::Blue
     } else {
         SlimeVariant::Red
     };
-    let variant = if variant == SlimeVariant::Blue && rng.next(180) == 0 {
+    let variant = if variant == SlimeVariant::Blue && rng.next_max(180) == 0 {
         SlimeVariant::Pinky
     } else {
         variant
@@ -1626,7 +1608,7 @@ mod tests {
     fn surface_day_is_the_plain_default() {
         // No branch applies on the surface at day: 600/5 verbatim.
         let w = ground();
-        let r = get_spawn_rate(&ctx(&w, 25.0 * 16.0, true), &mut FastRandom::new(1));
+        let r = get_spawn_rate(&ctx(&w, 25.0 * 16.0, true), &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (600, 5));
     }
 
@@ -1634,7 +1616,7 @@ mod tests {
     fn night_surface_multiplies() {
         // NPC.cs:540-544: rate x0.6 -> 360, max x1.3 -> (float)6.5 -> 6.
         let w = ground();
-        let r = get_spawn_rate(&ctx(&w, 25.0 * 16.0, false), &mut FastRandom::new(1));
+        let r = get_spawn_rate(&ctx(&w, 25.0 * 16.0, false), &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (360, 6));
     }
 
@@ -1643,7 +1625,7 @@ mod tests {
         // NPC.cs:487-491: rate x0.4 -> 240, max x1.9 -> 9.5 -> 9. The position
         // must clear rock_layer*16 + sHeight (640 + 1200 = 1840 px = tile 115).
         let w = ground();
-        let r = get_spawn_rate(&ctx(&w, 120.0 * 16.0, true), &mut FastRandom::new(1));
+        let r = get_spawn_rate(&ctx(&w, 120.0 * 16.0, true), &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (240, 9));
     }
 
@@ -1654,7 +1636,7 @@ mod tests {
         let w = ground();
         let mut c = ctx(&w, 25.0 * 16.0, true);
         c.nearby_active_npcs = 0.0;
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!(r.spawn_rate, 360);
     }
 
@@ -1665,7 +1647,7 @@ mod tests {
         let w = ground();
         let mut c = ctx(&w, 25.0 * 16.0, false);
         c.flags.blood_moon = true;
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (108, 10));
     }
 
@@ -1681,11 +1663,11 @@ mod tests {
             let mut c = ctx(&w, 120.0 * 16.0, true);
             c.flags.zone_jungle = true;
             c.town_npcs = town;
-            let mut ref_rng = FastRandom::new(1);
+            let mut ref_rng = UnifiedRandom::new(1);
             let (want_rate, want_max) = match town {
                 0 => (96, 13),
                 1 => {
-                    let d = ref_rng.next(3); // `:869`
+                    let d = ref_rng.next_max(3); // `:869`
                     if d == 1 {
                         (jrate, (jmax as f32 as f64 * 0.6) as i32)
                     } else {
@@ -1693,7 +1675,7 @@ mod tests {
                     }
                 }
                 _ => {
-                    let d = ref_rng.next(3); // `:892`
+                    let d = ref_rng.next_max(3); // `:892`
                     if d != 0 {
                         (jrate, (jmax as f32 as f64 * 0.6) as i32)
                     } else {
@@ -1701,7 +1683,7 @@ mod tests {
                     }
                 }
             };
-            let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+            let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
             assert_eq!(r.spawn_rate, want_rate, "jungle town {town} rate");
             assert_eq!(r.max_spawns, want_max, "jungle town {town} max");
         }
@@ -1712,15 +1694,15 @@ mod tests {
     /// The stream fingerprint after `run` — equal to a fresh stream's draws
     /// iff `run` consumed nothing (the `Next(n)` widths differ, but any
     /// consumption shifts the whole tail).
-    fn post_draws(seed: u64, run: impl FnOnce(&mut FastRandom)) -> Vec<i32> {
-        let mut rng = FastRandom::new(seed);
+    fn post_draws(seed: u64, run: impl FnOnce(&mut UnifiedRandom)) -> Vec<i32> {
+        let mut rng = UnifiedRandom::new(seed as i32);
         run(&mut rng);
-        (0..8).map(|_| rng.next(1000)).collect()
+        (0..8).map(|_| rng.next_max(1000)).collect()
     }
 
     fn fresh_draws(seed: u64) -> Vec<i32> {
-        let mut rng = FastRandom::new(seed);
-        (0..8).map(|_| rng.next(1000)).collect()
+        let mut rng = UnifiedRandom::new(seed as i32);
+        (0..8).map(|_| rng.next_max(1000)).collect()
     }
 
     #[test]
@@ -1755,25 +1737,25 @@ mod tests {
         for town in [1, 2, 3] {
             let mut c = ctx(&w, y, true);
             c.town_npcs = town;
-            let mut ref_rng = FastRandom::new(42);
+            let mut ref_rng = UnifiedRandom::new(42);
             let (d1, d2, want_nw, want_fr, want_rate, want_max) = match town {
                 1 => {
-                    let a = ref_rng.next(2); // `:807`
-                    let b = ref_rng.next(10); // `:811`
+                    let a = ref_rng.next_max(2); // `:807`
+                    let b = ref_rng.next_max(10); // `:811`
                     (a, b, a == 0, b == 0, 750, 5)
                 }
                 2 => {
-                    let a = ref_rng.next(4); // `:824`
-                    let b = ref_rng.next(5); // `:828`
+                    let a = ref_rng.next_max(4); // `:824`
+                    let b = ref_rng.next_max(5); // `:828`
                     (a, b, a != 0, b == 0, 900, 5)
                 }
                 _ => {
-                    let a = ref_rng.next(10); // `:840`
-                    let b = ref_rng.next(3); // `:844`
+                    let a = ref_rng.next_max(10); // `:840`
+                    let b = ref_rng.next_max(3); // `:844`
                     (a, b, a != 0, b == 0, 1200, 5)
                 }
             };
-            let r = get_spawn_rate(&c, &mut FastRandom::new(42));
+            let r = get_spawn_rate(&c, &mut UnifiedRandom::new(42));
             assert_eq!(r.no_worms, want_nw, "town {town} noWorms (draws {d1},{d2})");
             assert_eq!(
                 r.spawn_friendly, want_fr,
@@ -1803,10 +1785,10 @@ mod tests {
         for town in [1, 2, 3] {
             let mut c = ctx(&w, y, true);
             c.town_npcs = town;
-            let mut ref_rng = FastRandom::new(42);
+            let mut ref_rng = UnifiedRandom::new(42);
             let (want_fr, want_rate, want_max) = match town {
                 1 => {
-                    let d = ref_rng.next(3); // `:869`
+                    let d = ref_rng.next_max(3); // `:869`
                     (
                         d == 1,
                         if d == 1 { 600 } else { 1200 },
@@ -1814,7 +1796,7 @@ mod tests {
                     )
                 }
                 2 => {
-                    let d = ref_rng.next(3); // `:892`
+                    let d = ref_rng.next_max(3); // `:892`
                     (
                         d != 0,
                         if d != 0 { 600 } else { 1800 },
@@ -1823,7 +1805,7 @@ mod tests {
                 }
                 _ => (true, 600, 3),
             };
-            let r = get_spawn_rate(&c, &mut FastRandom::new(42));
+            let r = get_spawn_rate(&c, &mut UnifiedRandom::new(42));
             assert!(r.no_worms, "town {town} noWorms latches without a draw");
             assert_eq!(r.spawn_friendly, want_fr, "town {town} spawnFriendly");
             assert_eq!(r.spawn_rate, want_rate, "town {town} rate");
@@ -1843,22 +1825,22 @@ mod tests {
             let mut c = ctx(&w, y, true);
             c.town_npcs = town;
             c.flags.zone_graveyard = true;
-            let mut ref_rng = FastRandom::new(42);
+            let mut ref_rng = UnifiedRandom::new(42);
             let (want_fr, want_max) = match town {
                 1 => {
-                    let e = ref_rng.next(9); // `:863`
+                    let e = ref_rng.next_max(9); // `:863`
                     (e == 1, if e == 1 { 3 } else { 5 })
                 }
                 2 => {
-                    let e = ref_rng.next(6); // `:886`
+                    let e = ref_rng.next_max(6); // `:886`
                     (e == 1, if e == 1 { 3 } else { 5 })
                 }
                 _ => {
-                    let e = ref_rng.next(3); // `:908`
+                    let e = ref_rng.next_max(3); // `:908`
                     (e == 1, if e == 1 { 3 } else { 5 })
                 }
             };
-            let r = get_spawn_rate(&c, &mut FastRandom::new(42));
+            let r = get_spawn_rate(&c, &mut UnifiedRandom::new(42));
             assert!(r.no_worms, "town {town} noWorms");
             assert_eq!(
                 r.spawn_rate,
@@ -1885,17 +1867,17 @@ mod tests {
         c.town_npcs = 1;
         c.flags.zone_graveyard = true;
         c.flags.zone_peace_candle = true;
-        let mut ref_rng = FastRandom::new(42);
-        let g = ref_rng.next(3); // the gate roll (`:860`)
-        let r = get_spawn_rate(&c, &mut FastRandom::new(42));
+        let mut ref_rng = UnifiedRandom::new(42);
+        let g = ref_rng.next_max(3); // the gate roll (`:860`)
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(42));
         // The peace-candle modifier already rescaled the rate to 780 and the
         // cap to 3 (`:738-739`, the candle block ahead of the town block).
         if g == 0 {
-            let e = ref_rng.next(9); // `:863`
+            let e = ref_rng.next_max(9); // `:863`
             assert_eq!(r.spawn_rate, 1294, "the graveyard rescale (780 × 1.66)");
             assert_eq!(r.spawn_friendly, e == 1, "the Next(9) friendly roll");
         } else {
-            let d = ref_rng.next(3); // the else-if roll (`:869`) — a second draw
+            let d = ref_rng.next_max(3); // the else-if roll (`:869`) — a second draw
             assert_eq!(r.spawn_friendly, d == 1, "the second Next(3) decides");
             if r.spawn_friendly {
                 assert_eq!(r.max_spawns, 1, "the friendly halving of the 3 cap");
@@ -1990,7 +1972,7 @@ mod tests {
         let mut worm_seed = None;
         let mut devourer_seed = None;
         for seed in 1..8000u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 350 * 16, false, false, false) {
                 match n.kind {
                     NpcKind::GiantWormHead if worm_seed.is_none() => worm_seed = Some(seed),
@@ -2007,7 +1989,7 @@ mod tests {
         for (seed, kind) in [(ws, NpcKind::GiantWormHead), (ds, NpcKind::DevourerHead)] {
             let n = spawn_npc_at(
                 &c,
-                &mut FastRandom::new(seed),
+                &mut UnifiedRandom::new(seed as i32),
                 210,
                 350 * 16,
                 false,
@@ -2028,7 +2010,7 @@ mod tests {
         let mut c = ctx(&w, 330.0 * 16.0, false);
         let mut piranha_seed = None;
         for seed in 1..500u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 340 * 16, false, false, false) {
                 if n.kind == NpcKind::Piranha {
                     piranha_seed = Some(seed);
@@ -2039,7 +2021,7 @@ mod tests {
         let s = piranha_seed.expect("a Piranha seed in the sweep");
         let n = spawn_npc_at(
             &c,
-            &mut FastRandom::new(s),
+            &mut UnifiedRandom::new(s as i32),
             210,
             340 * 16,
             false,
@@ -2092,13 +2074,13 @@ mod tests {
         let w = ground();
         let mut c = ctx(&w, 25.0 * 16.0, true);
         c.flags.zone_dungeon = true;
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!(r.spawn_rate, 10);
         // Post-Skeletron the override stops and the x0.3 branch stands.
         let mut c = ctx(&w, 25.0 * 16.0, true);
         c.flags.zone_dungeon = true;
         c.flags.downed_boss3 = true;
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!(r.spawn_rate, 180);
     }
 
@@ -2109,7 +2091,7 @@ mod tests {
         let w = ground();
         let mut c = ctx(&w, 120.0 * 16.0, true);
         c.flags.zone_underground_desert = true;
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         // 600 x0.4 (deep) x0.2 (UD) = 48 -> floored at 60 (NPC.cs:741-744).
         assert_eq!(r.spawn_rate, 60);
         assert_eq!(r.max_spawns, 15, "x3 of 5 capped at 15");
@@ -2121,7 +2103,7 @@ mod tests {
         let w = ground();
         let mut c = ctx(&w, 25.0 * 16.0, false);
         c.flags.moon_event = true;
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
     }
 
@@ -2131,7 +2113,7 @@ mod tests {
         let w = ground();
         let mut c = ctx(&w, 25.0 * 16.0, false);
         c.invaders = true;
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
     }
 
@@ -2179,13 +2161,13 @@ mod tests {
             .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
         let night = night_ctx_flags(&classic, false, false);
         let holiday = night_ctx_flags(&seeded, false, false);
-        // The stream fingerprint per seed (the `FastRandom` state after one
-        // surface-spawn call): identical everywhere the holiday arm's
+        // The stream fingerprint per seed (the `UnifiedRandom` state after
+        // one surface-spawn call): identical everywhere the holiday arm's
         // short-circuit skips its draw, shifted where it fires.
-        let fingerprint = |c: &SpawnContext<'_>, seed: u64| -> (u64, Option<NpcKind>) {
-            let mut rng = FastRandom::new(seed);
+        let fingerprint = |c: &SpawnContext<'_>, seed: u64| -> (UnifiedRandom, Option<NpcKind>) {
+            let mut rng = UnifiedRandom::new(seed as i32);
             let n = spawn_npc_at(c, &mut rng, 210, 295 * 16, false, false, false).map(|n| n.kind);
-            (rng.0, n)
+            (rng.clone(), n)
         };
         let mut shifted = 0usize;
         let mut compared = 0usize;
@@ -2210,11 +2192,11 @@ mod tests {
         again.compute_column_surface();
         let plain = night_ctx_flags(&again, false, false);
         for seed in 1..500u64 {
-            let mut a = FastRandom::new(seed);
-            let mut b = FastRandom::new(seed);
+            let mut a = UnifiedRandom::new(seed as i32);
+            let mut b = UnifiedRandom::new(seed as i32);
             let _ = spawn_npc_at(&plain, &mut a, 210, 295 * 16, false, false, false);
             let _ = spawn_npc_at(&plain, &mut b, 210, 295 * 16, false, false, false);
-            assert_eq!(a.0, b.0, "the classic ladder replays per seed");
+            assert_eq!(a, b, "the classic ladder replays per seed");
         }
     }
 
@@ -2261,7 +2243,7 @@ mod tests {
     /// The y-parameterized twin (pixels) — the underground tests spawn at
     /// their depth band.
     fn outcome_at(ctx: &SpawnContext<'_>, seed: u64, y_px: i32) -> Option<(NpcKind, SlimeVariant)> {
-        let mut rng = FastRandom::new(seed);
+        let mut rng = UnifiedRandom::new(seed as i32);
         spawn_npc_at(ctx, &mut rng, 210, y_px, false, false, false).map(|n| (n.kind, n.slime))
     }
 
@@ -2401,7 +2383,7 @@ mod tests {
         let mut c = ctx(&w, 350.0 * 16.0, true);
         let mut kinds: Vec<NpcKind> = Vec::new();
         for seed in 1..4000u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 350 * 16, false, false, false) {
                 kinds.push(n.kind);
             }
@@ -2420,7 +2402,7 @@ mod tests {
         cu.underworld_for_bats = true;
         let mut hellbats = 0;
         for seed in 1..6000u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             if let Some(n) = spawn_npc_at(&cu, &mut rng, 210, 350 * 16, false, false, false) {
                 if n.kind == NpcKind::Hellbat {
                     hellbats += 1;
@@ -2478,12 +2460,12 @@ mod tests {
         // With no NPCs nearby the <20% scaling (NPC.cs:670-673) always applies,
         // so the base 600 rate is ×0.6 = 360.
         // Day surface: 600 × 0.6.
-        let r = get_spawn_rate(&ctx_at(&w, true), &mut FastRandom::new(1));
+        let r = get_spawn_rate(&ctx_at(&w, true), &mut UnifiedRandom::new(1));
         assert_eq!(r.spawn_rate, 360);
         assert_eq!(r.max_spawns, 5);
 
         // Night: ×0.6 / ×1.3, then ×0.6 again.
-        let r = get_spawn_rate(&ctx_at(&w, false), &mut FastRandom::new(1));
+        let r = get_spawn_rate(&ctx_at(&w, false), &mut UnifiedRandom::new(1));
         assert_eq!(r.spawn_rate, 216);
         assert_eq!(r.max_spawns, 6);
 
@@ -2493,14 +2475,14 @@ mod tests {
         // 600 -> 240 -> 144 -> 100.8 -> 100.
         let mut c = ctx_at(&w, true);
         c.player_pos = (200.0 * TILE_PX, 420.0 * TILE_PX);
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!(r.spawn_rate, 100);
         assert_eq!(r.max_spawns, 9);
 
         // Underworld doubles the cap (tile y 505 > height - 200 = 500).
         let mut c = ctx_at(&w, true);
         c.player_pos = (200.0 * TILE_PX, 505.0 * TILE_PX);
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!(r.max_spawns, 10);
 
         // The surface town-≥3 arm latches `noWorms` (`:904`), sets
@@ -2509,7 +2491,7 @@ mod tests {
         // untouched (360, the nearby ramp; NPC.cs:673-690).
         let mut c = ctx_at(&w, true);
         c.town_npcs = 3;
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!(r.spawn_rate, 360);
         assert!(r.no_worms && r.spawn_friendly, "the town ≥3 latch arm");
 
@@ -2517,14 +2499,14 @@ mod tests {
         // multiplier applies, the base 600 survives.
         let mut c = ctx_at(&w, true);
         c.nearby_active_npcs = 4.0;
-        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        let r = get_spawn_rate(&c, &mut UnifiedRandom::new(1));
         assert_eq!(r.spawn_rate, 600);
     }
 
     #[test]
     fn spawns_land_outside_the_safe_area() {
         let w = ground_tall();
-        let mut rng = FastRandom::new(0xDEAD_BEEF);
+        let mut rng = UnifiedRandom::new(0xDEAD_BEEFu32 as i32);
         let mut spawned_near = 0;
         for _ in 0..4000 {
             let mut c = ctx_at(&w, false);
@@ -2544,7 +2526,7 @@ mod tests {
     #[test]
     fn night_spawns_zombies_and_eyes_day_spawns_slimes() {
         let w = ground_tall();
-        let mut rng = FastRandom::new(42);
+        let mut rng = UnifiedRandom::new(42);
         let mut saw_zombie = false;
         let mut saw_eye = false;
         for _ in 0..4000 {
@@ -2574,7 +2556,7 @@ mod tests {
     #[test]
     fn nearby_cap_blocks_spawns() {
         let w = ground_tall();
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         let mut c = ctx_at(&w, false);
         c.nearby_active_npcs = 100.0; // far above every max-spawns cap
         for _ in 0..2000 {
@@ -2598,7 +2580,7 @@ mod tests {
     #[test]
     fn the_latch_consumes_one_call_and_clears() {
         let w = ground();
-        let mut rng = FastRandom::new(0xDEAD_BEEF);
+        let mut rng = UnifiedRandom::new(0xDEAD_BEEFu32 as i32);
         // A latched call is fully suppressed — no rate roll, no spawn — and
         // reports that it was consumed (`NPC.cs:80171-80174`).
         let (spawned, suppressed) =
@@ -2616,7 +2598,7 @@ mod tests {
     #[test]
     fn a_missing_eligible_player_is_not_a_latched_call() {
         let w = ground();
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         // `ctx = None` (no living player) skips the pipeline without
         // consuming the latch — `CanSpawnEnemiesNear`, `NPC.cs:349-351`.
         let (spawned, suppressed) = spawn_npc_call(None, &mut rng, false);
@@ -2632,7 +2614,7 @@ mod tests {
         // rolls actually land, so the sequences carry spawns.
         let w = ground_tall();
         let run = |seed: u64| {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             let mut decisions = Vec::new();
             let mut state = seed;
             for _ in 0..900 {
@@ -2672,7 +2654,7 @@ mod tests {
                 state = state
                     .wrapping_mul(6_364_136_223_846_793_005)
                     .wrapping_add(1_442_695_040_888_963_407);
-                rng = FastRandom::new(state);
+                rng = UnifiedRandom::new(state as i32);
             }
             decisions
         };
@@ -2831,7 +2813,7 @@ mod tests {
         let mut others = 0;
         for seed in 1..3000u64 {
             // The ocean column 10 — `outcome_at`'s x is the land 210.
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             match spawn_npc_at(&c3, &mut rng, 10, 300 * 16, false, false, false).map(|n| n.kind) {
                 Some(NpcKind::Shark) => sharks += 1,
                 _ => others += 1,
@@ -2939,7 +2921,7 @@ mod tests {
         for seed in 0..400u64 {
             if let Some(n) = spawn_npc_at(
                 &c,
-                &mut FastRandom::new(seed),
+                &mut UnifiedRandom::new(seed as i32),
                 2,
                 5 * 16,
                 true,
@@ -2966,7 +2948,7 @@ mod tests {
         for seed in 0..400u64 {
             if let Some(n) = spawn_npc_at(
                 &c,
-                &mut FastRandom::new(seed),
+                &mut UnifiedRandom::new(seed as i32),
                 2,
                 5 * 16,
                 true,
@@ -2988,7 +2970,7 @@ mod tests {
         for seed in 0..4000u64 {
             if let Some(n) = spawn_npc_at(
                 &c,
-                &mut FastRandom::new(seed),
+                &mut UnifiedRandom::new(seed as i32),
                 2,
                 29 * 16,
                 false,
@@ -3014,7 +2996,7 @@ mod tests {
         for seed in 0..4000u64 {
             if let Some(n) = spawn_npc_at(
                 &c,
-                &mut FastRandom::new(seed),
+                &mut UnifiedRandom::new(seed as i32),
                 2,
                 29 * 16,
                 false,
@@ -3029,7 +3011,7 @@ mod tests {
         for seed in 0..4000u64 {
             if let Some(n) = spawn_npc_at(
                 &c,
-                &mut FastRandom::new(seed),
+                &mut UnifiedRandom::new(seed as i32),
                 2,
                 29 * 16,
                 false,
@@ -3042,9 +3024,9 @@ mod tests {
     }
 
     // ---- S1-F-12: the invasion pick beside its ladder (`NPC.cs:1424-1541`)
-    // ---- the moved table tests ride `FastRandom` (the spawner stream — the
-    // kind tables and thresholds are the moved ones; the float-stand-in's
-    // `rand01(&mut u64)` draws are retired).
+    // ---- the moved table tests ride the spawner stream
+    // (`UnifiedRandom`): the kind tables and thresholds are the moved ones;
+    // the float-stand-in's `rand01(&mut u64)` draws are retired (S1-A-11).
 
     /// The pick's ctx: an active invasion with the roster gates open — the
     /// tests flip the fields they exercise.
@@ -3064,7 +3046,7 @@ mod tests {
         // Warrior (28) — the port's net-id kinds per arm.
         let w = ground();
         let c = inv_pick_ctx(&w, 1, false);
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         for _ in 0..60 {
             let kind = invasion_spawn_pick(&c, &mut rng).expect("type 1 picks");
             assert!(matches!(
@@ -3078,7 +3060,7 @@ mod tests {
         }
         // The hardmode summoner: only when none alive.
         let mut c = inv_pick_ctx(&w, 1, true);
-        let mut rng = FastRandom::new(3);
+        let mut rng = UnifiedRandom::new(3);
         let mut saw_summoner = false;
         for _ in 0..400 {
             if matches!(
@@ -3091,7 +3073,7 @@ mod tests {
         }
         assert!(saw_summoner, "the hardmode summoner roll");
         c.invasion_summoner_alive = true;
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         for _ in 0..200 {
             assert!(
                 !matches!(
@@ -3111,7 +3093,7 @@ mod tests {
         // kind *names* for net 144/145 ride the pre-existing bestiary ids).
         let w = ground();
         let c = inv_pick_ctx(&w, 2, false);
-        let mut rng = FastRandom::new(9);
+        let mut rng = UnifiedRandom::new(9);
         let (mut gangsta, mut balla, mut mystery) = (false, false, false);
         for _ in 0..120 {
             let kind = invasion_spawn_pick(&c, &mut rng).expect("type 2 picks");
@@ -3126,7 +3108,7 @@ mod tests {
         assert!(gangsta && balla && mystery, "the trio's three arms fire");
         // The goblin table stays on type 1.
         let c = inv_pick_ctx(&w, 1, false);
-        let mut rng = FastRandom::new(9);
+        let mut rng = UnifiedRandom::new(9);
         for _ in 0..40 {
             assert!(matches!(
                 invasion_spawn_pick(&c, &mut rng).expect("type 1 picks"),
@@ -3148,7 +3130,7 @@ mod tests {
         // else the Deckhand (212).
         let w = ground();
         let mut c = inv_pick_ctx(&w, 3, false);
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         for _ in 0..200 {
             assert!(matches!(
                 invasion_spawn_pick(&c, &mut rng).expect("type 3 picks"),
@@ -3160,7 +3142,7 @@ mod tests {
             ));
         }
         // The Captain roll fires within the 1/30 odds...
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         let mut saw_captain = false;
         for _ in 0..1200 {
             if matches!(
@@ -3175,7 +3157,7 @@ mod tests {
         // ...and the `!AnyNPCs(216)` gate blocks it while one lives (the
         // roll itself still consumes — the C#'s `Next(30)` draws first).
         c.invasion_captain_alive = true;
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         for _ in 0..1200 {
             assert!(
                 !matches!(
@@ -3196,7 +3178,7 @@ mod tests {
         let w = ground();
         let mut c = inv_pick_ctx(&w, 3, false);
         c.invasion_progress_frac = 0.75;
-        let mut rng = FastRandom::new(21);
+        let mut rng = UnifiedRandom::new(21);
         let mut saw_dutchman = false;
         for _ in 0..600 {
             match invasion_spawn_pick(&c, &mut rng) {
@@ -3220,7 +3202,7 @@ mod tests {
             "the 1/20 Dutchman roll fires inside the window"
         );
         c.invasion_progress_frac = 0.25;
-        let mut rng = FastRandom::new(21);
+        let mut rng = UnifiedRandom::new(21);
         for _ in 0..600 {
             assert_ne!(
                 invasion_spawn_pick(&c, &mut rng),
@@ -3240,7 +3222,7 @@ mod tests {
         // 381 arms consume their rolls where the vanilla's gates hit.
         let w = ground();
         let c = inv_pick_ctx(&w, 4, false);
-        let mut rng = FastRandom::new(13);
+        let mut rng = UnifiedRandom::new(13);
         let mut seen_engineer = false;
         let mut seen_drone = false;
         let mut seen_walker = false;
@@ -3269,7 +3251,7 @@ mod tests {
         assert!(seen_engineer, "the num6 >= 6 arm's Engineer half");
         assert!(seen_drone, "the num8 >= 4 arm's Drone");
         assert!(seen_walker, "the walk-in gate's Walker");
-        let mut rng = FastRandom::new(3);
+        let mut rng = UnifiedRandom::new(3);
         let mut seen_ray = false;
         let mut seen_scrambler = false;
         let mut seen_rider = false;
@@ -3288,7 +3270,7 @@ mod tests {
         // re-rolls the ground chain instead.
         let mut c = inv_pick_ctx(&w, 4, false);
         c.invasion_walker_alive = true;
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         for _ in 0..200 {
             assert!(matches!(
                 invasion_spawn_pick(&c, &mut rng).expect("type 4 picks"),
@@ -3319,25 +3301,25 @@ mod tests {
         c.invasion_type = 1;
         let mut spawned = 0usize;
         for seed in 1..500u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             let n = spawn_npc_at(&c, &mut rng, 210, 295 * 16, false, false, false)
                 .expect("the invasion arm spawns on the found tile");
-            let mut ref_rng = FastRandom::new(seed);
-            let _style = ref_rng.next(7); // GetZombieSettings
-            let kind = if ref_rng.next(9) == 0 {
+            let mut ref_rng = UnifiedRandom::new(seed as i32);
+            let _style = ref_rng.next_max(7); // GetZombieSettings
+            let kind = if ref_rng.next_max(9) == 0 {
                 NpcKind::GoblinSorcerer // 29
-            } else if ref_rng.next(5) == 0 {
+            } else if ref_rng.next_max(5) == 0 {
                 NpcKind::GoblinThief // 26
-            } else if ref_rng.next(3) == 0 {
+            } else if ref_rng.next_max(3) == 0 {
                 NpcKind::GoblinPeon // 111
-            } else if ref_rng.next(3) == 0 {
+            } else if ref_rng.next_max(3) == 0 {
                 NpcKind::GoblinWarrior // 27
             } else {
                 NpcKind::GoblinArcher // 28
             };
             assert_eq!(n.kind, kind, "seed {seed}: the ladder's kind");
             assert_eq!(
-                rng.0, ref_rng.0,
+                rng, ref_rng,
                 "seed {seed}: the stream tail is the vanilla draw order"
             );
             spawned += 1;
@@ -3355,18 +3337,18 @@ mod tests {
         let mut c = ctx(&w, 295.0 * 16.0, true);
         c.invaders = true;
         c.invasion_type = 4;
-        let ray_arm = |rng: &mut FastRandom| match rng.next(5) {
+        let ray_arm = |rng: &mut UnifiedRandom| match rng.next_max(5) {
             0 | 1 => NpcKind::RayGunner,      // 382
             2 | 3 => NpcKind::BrainScrambler, // 381
             _ => NpcKind::MartianDrone,       // 388
         };
-        let ground_chain = |rng: &mut FastRandom, walker_alive: bool| -> NpcKind {
-            let mut num9 = rng.next(4);
+        let ground_chain = |rng: &mut UnifiedRandom, walker_alive: bool| -> NpcKind {
+            let mut num9 = rng.next_max(4);
             if num9 == 3 {
                 if !walker_alive {
                     return NpcKind::MartianWalker; // 520
                 }
-                num9 = rng.next(3);
+                num9 = rng.next_max(3);
             }
             match num9 {
                 0 => NpcKind::GrayGrunt,      // 385
@@ -3377,16 +3359,16 @@ mod tests {
         // The gate closed (progress_30 false): the `Next(45)`/`Next(20)`
         // draws still consume (the C#'s `&`), the 395 arms never fire.
         for seed in 1..500u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             let n = spawn_npc_at(&c, &mut rng, 210, 295 * 16, false, false, false)
                 .expect("the type-4 ground arm spawns");
-            let mut ref_rng = FastRandom::new(seed);
-            let _style = ref_rng.next(7);
-            let num6 = ref_rng.next(7);
-            let _saucer_gate = ref_rng.next(45); // always drawn
+            let mut ref_rng = UnifiedRandom::new(seed as i32);
+            let _style = ref_rng.next_max(7);
+            let num6 = ref_rng.next_max(7);
+            let _saucer_gate = ref_rng.next_max(45); // always drawn
             let kind = if num6 >= 6 {
-                let _rider_gate = ref_rng.next(20); // always drawn
-                if ref_rng.next(2) == 0 {
+                let _rider_gate = ref_rng.next_max(20); // always drawn
+                if ref_rng.next_max(2) == 0 {
                     NpcKind::ScutlixRider // 390
                 } else {
                     NpcKind::MartianEngineer // 386
@@ -3397,7 +3379,7 @@ mod tests {
                 ground_chain(&mut ref_rng, false)
             };
             assert_eq!(n.kind, kind, "seed {seed}: the closed-gate kind");
-            assert_eq!(rng.0, ref_rng.0, "seed {seed}: the closed-gate stream tail");
+            assert_eq!(rng, ref_rng, "seed {seed}: the closed-gate stream tail");
         }
         // The gate open (progress_30, no Saucer alive): the 395 arms fire
         // on their rolls.
@@ -3407,18 +3389,18 @@ mod tests {
         c.invasion_progress_30 = true;
         let mut saucers = 0u32;
         for seed in 1..500u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             let n = spawn_npc_at(&c, &mut rng, 210, 295 * 16, false, false, false)
                 .expect("the type-4 ground arm spawns");
-            let mut ref_rng = FastRandom::new(seed);
-            let _style = ref_rng.next(7);
-            let num6 = ref_rng.next(7);
-            let kind = if ref_rng.next(45) == 0 {
+            let mut ref_rng = UnifiedRandom::new(seed as i32);
+            let _style = ref_rng.next_max(7);
+            let num6 = ref_rng.next_max(7);
+            let kind = if ref_rng.next_max(45) == 0 {
                 NpcKind::MartianSaucerCore // 395
             } else if num6 >= 6 {
-                if ref_rng.next(20) == 0 {
+                if ref_rng.next_max(20) == 0 {
                     NpcKind::MartianSaucerCore // 395
-                } else if ref_rng.next(2) == 0 {
+                } else if ref_rng.next_max(2) == 0 {
                     NpcKind::ScutlixRider // 390
                 } else {
                     NpcKind::MartianEngineer // 386
@@ -3429,7 +3411,7 @@ mod tests {
                 ground_chain(&mut ref_rng, false)
             };
             assert_eq!(n.kind, kind, "seed {seed}: the open-gate kind");
-            assert_eq!(rng.0, ref_rng.0, "seed {seed}: the open-gate stream tail");
+            assert_eq!(rng, ref_rng, "seed {seed}: the open-gate stream tail");
             saucers += (kind == NpcKind::MartianSaucerCore) as u32;
         }
         assert!(saucers > 0, "the 395 arms fire with the gate open");
@@ -3451,7 +3433,7 @@ mod tests {
         // dispatch returns at its type-4 arm — the probe/Wyvern riders
         // need hardmode, closed here).
         for seed in 1..100u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             let n = spawn_npc_at(&c, &mut rng, 210, 295 * 16, true, false, false)
                 .expect("the drone arm fires");
             assert_eq!(n.kind, NpcKind::MartianDrone, "seed {seed}");
@@ -3462,7 +3444,7 @@ mod tests {
         // ladder's own outcome, not the skyMob channel's).
         let mut saw_ground = false;
         for seed in 1..200u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             let n = spawn_npc_at(&c, &mut rng, 210, 295 * 16, false, false, false)
                 .expect("the ground arm fires");
             saw_ground |= n.kind != NpcKind::MartianDrone;

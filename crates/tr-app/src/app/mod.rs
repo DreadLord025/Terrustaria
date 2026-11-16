@@ -13,14 +13,14 @@ pub(crate) mod frame;
 mod r#loop;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
-mod rng;
+pub(crate) mod rng;
 pub(crate) mod saveglue;
 pub(crate) mod session;
 pub(crate) mod settings_ui;
 
 // The RNG helpers live in `frame` with their main consumer, but the world
 // simulation and the sky reach them through the app root.
-pub(crate) use frame::{next_rand, rand01};
+pub(crate) use frame::{SplitmixRand, next_rand, rand01};
 pub(crate) use rng::{NamedRngs, RngKey};
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -34,7 +34,7 @@ use tr_core::framing;
 use tr_core::lighting::{LightMap, LightMode};
 use tr_core::liquid::LiquidSystem;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, UnifiedRandom, World, edit, save, wld, worldgen};
+use tr_core::{TILE_PX, World, edit, save, wld, worldgen};
 use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::keyboard::KeyCode;
 use winit::window::Window;
@@ -191,7 +191,6 @@ pub(crate) struct App {
     /// `Main.reforgeCooldown` (`Main.cs:67053`): 60 ticks after a top-tier
     /// roll (`:41924`), decremented per tick (`:17121-17123`).
     pub(crate) reforge_cooldown: i32,
-    pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
     pub(crate) spawn_no_cycle: bool,
@@ -662,18 +661,17 @@ pub(crate) struct App {
     pub(crate) te_step: FixedStepper,
     /// The world-growth pass (`WorldGen.UpdateWorld`'s rate loops, M7-GROWTH-1).
     pub(crate) growth_step: FixedStepper,
-    /// The growth stream (the `Main.rand` rolls inside `UpdateWorld`).
-    pub(crate) growth_rng: tr_core::tile_light::FastRandom,
     /// The saved hardmode ore tiers (`SavedOreTiers`, the altar smashes).
     pub(crate) ore_tiers: tr_core::ores::SavedOreTiers,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
     pub(crate) sand: crate::sand::Sand,
-    /// The minecart wheel sparks (`Minecart.WheelSparks` → the type-213 dust)
-    /// — the `Main.dust` stand-in for the cart's pool, fed by the `world_sim`
-    /// drain and ticked/drawn with the other world dust.
-    pub(crate) minecart_sparks: crate::minecart::Sparks,
+    /// `Main.dust` (`Main.cs:66985`): the 6001-slot pressure-gated pool —
+    /// the wheel sparks and the sandstorm spawn/tick/draw through it
+    /// (S1-E-1 phase 2); the `world_sim` drain feeds the cart's queued
+    /// requests into it and the frame ticks/draws the client slots.
+    pub(crate) dust: tr_core::particles::DustPool,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
     /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
     pub(crate) ambient_waterfall: (f32, f32, f32),
@@ -700,11 +698,10 @@ pub(crate) struct App {
     /// (`AmbienceServer.cs:77-84`).
     pub(crate) scene_metrics: tr_core::scene::SceneMetrics,
     /// The `AmbientSky` manager + `AmbienceServer` scheduler
-    /// (`crates/tr-app/src/ambience.rs`).
+    /// (`crates/tr-app/src/ambience.rs`). Its scheduler draws ride
+    /// [`Self::rngs`]`::global()` — the bare-`Main.rand` stand-in
+    /// (`Main.cs:17214-17216`), shared with chat commands and menu rolls.
     pub(crate) ambience: crate::ambience::Ambience,
-    /// The scheduler's `Main.rand` stand-in stream (the seed the inlined
-    /// `NetAmbienceModule` loopback hands to `FastRandom`).
-    pub(crate) ambience_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -719,6 +716,11 @@ pub(crate) struct App {
     pub(crate) sunflower_wind_step: FixedStepper,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
+    /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
+    /// `UpdateWorld_Gores` (`Main.cs:17971-17996`) after the NPCs and before
+    /// the projectiles (`:17767-17775`). Its collision probes are injected once
+    /// at init through [`crate::gore_seam::AppGoreCollision`].
+    pub(crate) gore: tr_core::gore::GorePool,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -726,11 +728,6 @@ pub(crate) struct App {
     pub(crate) liquid_alpha: [f32; 15],
     /// World item drops (`Terraria.Item` first pass).
     pub(crate) items: Vec<ItemDrop>,
-    pub(crate) item_rng: u64,
-    /// The C# `Main.rand` stream the prefix rolls consume (`Item.Prefix`,
-    /// `Item.cs:528`): `UnifiedRandom`, separate from the splitmix streams so a
-    /// prefix roll never perturbs loot/crit/particle draws (`S1-A-5`).
-    pub(crate) prefix_rng: UnifiedRandom,
     /// `Main._rngs` (`Main.cs:1294-1295`): the `Main.SwapRandom` named streams,
     /// one `UnifiedRandom` per stage key, all seeded from the world seed
     /// (`:3210-3212`). Stages take their stream from here instead of reading a
@@ -971,6 +968,25 @@ impl App {
         world_sim::camera::screen_size(self)
     }
 
+    /// The per-call inputs `Dust.NewDust` reads off `Main` (`Dust.cs:77-98`),
+    /// S1-E-1 phase 2: `gameMenu` is the front state (`menu.is_some() ||
+    /// front.is_some()`, the mod.rs:1054 gate), `gamePaused` is S1-B-3's
+    /// field, sync loads never generate (`isGeneratingOrLoadingWorld` only
+    /// covers the async loader), `screenPosition` is the view's world-px
+    /// top-left and `screenWidth/Height` the UI size the C# cull rect uses
+    /// verbatim (`Dust.cs:97-101`).
+    pub(crate) fn spawn_ctx(&self) -> tr_core::particles::SpawnCtx {
+        let (sw, sh) = self.screen_size();
+        spawn_ctx_from(
+            self.menu.is_some() || self.front.is_some(),
+            self.game_paused,
+            self.camera,
+            Vec2::new(sw, sh),
+            self.zoom,
+            self.gfx_quality.max_dust_to_draw,
+        )
+    }
+
     /// `Main.mH` (`Main.cs:45771-45783`): 256 while the minimap HUD is live,
     /// clamped by the 600 px equipment push-up — the same value `frame()`
     /// hands the inventory draw, so the HUD hit tests and the draw agree.
@@ -979,6 +995,20 @@ impl App {
             && self.map.as_ref().is_some_and(|m| !m.open)
             && self.map_style == 1;
         crate::ui::minimap::main_m_h(minimap_live, self.screen_size().1)
+    }
+
+    /// `ChildSafety.Disabled = GoreVisualsAllowed` — the settings load/store
+    /// pair (`Main.cs:4101`, `:4349`) and the toggle (`:50055`). The blood
+    /// toggle ON is the vanilla default (the gate skipped); OFF arms the
+    /// spawn-side re-type (`ChildSafety.cs:33`). The menu owns the live copy
+    /// while it is open, so `menu_blood` carries that copy's flag and `None`
+    /// falls back to the stored settings; run once per frame from `frame()`.
+    pub(crate) fn sync_child_safety(&mut self, menu_blood: Option<bool>) {
+        let disabled = menu_blood.unwrap_or(self.settings.blood);
+        self.dust.child_safety.disabled = disabled;
+        // `ChildSafety.Disabled` is one static in the C# (`ChildSafety.cs:15`),
+        // so the gore spawn gate reads the same flag.
+        self.gore.child_safety.disabled = disabled;
     }
 
     /// `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): `EquipPage` is the
@@ -1246,8 +1276,8 @@ impl App {
             return false;
         };
         let item = entry.item;
-        let price = crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood)
-            as u64;
+        let price =
+            crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
         if self.coins < price {
             return false;
         }
@@ -1293,8 +1323,8 @@ impl App {
     /// kind's defaults, so the reset is the prefix-field write — and the
     /// top-tier 60-tick cooldown (`Main.cs:41924`). The vanilla plays
     /// `BestReforge`/`Item37`; the port's cue set has no such key yet. The roll
-    /// consumes the shared `prefix_rng` (`Main.rand`), like every natural roll
-    /// (`S1-A-5`).
+    /// consumes the bare-`Main.rand` stand-in (`NamedRngs::global`) — the menu
+    /// path runs outside every swap (`S1-A-11` §4).
     pub(crate) fn reforge_click(&mut self) {
         let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
             return;
@@ -1310,8 +1340,11 @@ impl App {
             return;
         }
         self.coins -= cost;
-        let (prefix, top_tier) =
-            crate::prefix::reforge_roll(self.reforge_slot.kind, &mut self.prefix_rng);
+        // `Prefix(-2)` draws `Main.rand` — the menu path runs outside every
+        // swap, so the port's bare-`Main.rand` stand-in (`NamedRngs::global`,
+        // `app/rng.rs`) feeds it.
+        let kind = self.reforge_slot.kind;
+        let (prefix, top_tier) = crate::prefix::reforge_roll(kind, self.rngs.global());
         self.reforge_slot.prefix = prefix;
         if top_tier {
             self.reforge_cooldown = 60;
@@ -2750,8 +2783,12 @@ impl App {
         // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
         // v8 section's recorded counts restore the tally; the vanilla rides
         // them inside the world-flags block.
-        let seeded_banners: Vec<(i32, i32)> =
-            sections.native.banners.iter().map(|b| (b.banner, b.kills)).collect();
+        let seeded_banners: Vec<(i32, i32)> = sections
+            .native
+            .banners
+            .iter()
+            .map(|b| (b.banner, b.kills))
+            .collect();
         let world_chests = if sections.from_wld {
             let mut loaded = crate::chest::from_wld(&sections.data.chests);
             // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
@@ -2810,7 +2847,15 @@ impl App {
             post: None,
             noise_tex: None,
             sand: crate::sand::Sand::new(1),
-            minecart_sparks: crate::minecart::Sparks::new(),
+            dust: {
+                // The `Main.dust[6001]` init (`Main.cs:66985`) with the type-34
+                // wet probe injected once: `Collision.WetCollision`'s port is
+                // `player::wet_collision` (`Dust.cs:248` probe, `S1-E-1`
+                // decision 2) — tr-core cannot depend on tr-app.
+                let mut dust = tr_core::particles::DustPool::new();
+                dust.set_wet_probe(Box::new(crate::player::wet_collision));
+                dust
+            },
             water_mask: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
@@ -2861,7 +2906,6 @@ impl App {
             favorite_slots: Vec::new(),
             play_world: None,
             invasion_spawn_timer: 0.0,
-            npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
             inventory,
@@ -3206,7 +3250,6 @@ impl App {
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
-            growth_rng: tr_core::tile_light::FastRandom::new(world_seed),
             // M6-SAVE-1f: the tiers ride the World (the worldgen setup roll
             // wrote them there; a loaded save's v11 section restored them),
             // so the runtime copy reads them back instead of the static
@@ -3228,19 +3271,18 @@ impl App {
                 }
                 ambience
             },
-            ambience_rng: world_seed,
 
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             leaves: Vec::new(),
+            // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
+            // slots plus the refuse sentinel; `goreTime` seeds its 600
+            // (`Gore.cs:1507-1510`).
+            gore: tr_core::gore::GorePool::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
-            item_rng: world_seed,
-            // A per-consumer stream like the splitmix fields above, but the
-            // C# `Main.rand` algorithm (the prefix rolls, `S1-A-5`).
-            prefix_rng: UnifiedRandom::new(world_seed as i32),
             // The C# seeds every `SwapRandom` key with the world seed
             // (`Main.cs:3212`); the registry creates them lazily.
             rngs: NamedRngs::new(world_seed as i32),
@@ -3256,14 +3298,7 @@ impl App {
             mine_released: false,
             item_time: 0.0,
             coins,
-            // The hooks' own `Main.rand` stand-in (`AI_007`'s 1/16
-            // cracked-brick break, `Projectile.cs:52586-52595`) — seeded from
-            // the world seed beside the other per-consumer streams.
-            projectiles: {
-                let mut p = ProjectilePool::new();
-                p.seed_hooks(world_seed);
-                p
-            },
+            projectiles: ProjectilePool::new(),
             tomb_falls: Vec::new(),
             lost_coins: 0,
             lost_coin_string: String::new(),
@@ -4231,6 +4266,30 @@ pub(crate) fn find_content_dir() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.join("Images").is_dir())
 }
 
+/// `SpawnCtx` from the pieces a world-sim stage holds at hand (the C# reads
+/// the `Main` statics directly; the port's stages keep disjoint field
+/// borrows, so the front-state/pause flags, the camera and the quality cap
+/// arrive separately — `App::spawn_ctx` is the whole-App convenience).
+/// `screen` is the UI size the C# cull rect uses verbatim (`Dust.cs:97-101`)
+/// and `camera` the view's world-px centre.
+pub(crate) fn spawn_ctx_from(
+    game_menu: bool,
+    game_paused: bool,
+    camera: Vec2,
+    screen: Vec2,
+    zoom: f32,
+    max_dust_to_draw: i32,
+) -> tr_core::particles::SpawnCtx {
+    tr_core::particles::SpawnCtx {
+        game_menu,
+        game_paused,
+        generating: false,
+        screen_position: camera - screen * 0.5 / zoom,
+        screen_size: screen,
+        max_dust_to_draw,
+    }
+}
+
 #[cfg(test)]
 mod tr_hooks {
     use super::*;
@@ -4763,8 +4822,12 @@ mod s1_g_7_tests {
         // is 1; either arm alone lifts it.
         assert_eq!(App::forced_minimum_zoom((1920.0, 1200.0)), 1.0);
         assert_eq!(App::forced_minimum_zoom((960.0, 600.0)), 1.0);
-        assert!((App::forced_minimum_zoom((2560.0, 1200.0)) - 2560.0 / 1920.0).abs() < f32::EPSILON);
-        assert!((App::forced_minimum_zoom((1920.0, 1440.0)) - 1440.0 / 1200.0).abs() < f32::EPSILON);
+        assert!(
+            (App::forced_minimum_zoom((2560.0, 1200.0)) - 2560.0 / 1920.0).abs() < f32::EPSILON
+        );
+        assert!(
+            (App::forced_minimum_zoom((1920.0, 1440.0)) - 1440.0 / 1200.0).abs() < f32::EPSILON
+        );
         assert!((App::forced_minimum_zoom((3840.0, 2400.0)) - 2.0).abs() < f32::EPSILON);
     }
 

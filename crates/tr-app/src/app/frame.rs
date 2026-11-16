@@ -570,6 +570,21 @@ impl App {
                     self.phase("npcs");
                     self.update_npcs(dt);
                 }
+                // `Main.UpdateWorld_Gores` (`Main.cs:17971-17996`, called at
+                // `:17771-17774`): the 600-slot walk, between the NPCs and the
+                // projectiles. Its rolls ride the stage's own named stream
+                // (`Main.SwapRandom("UpdateGores")`).
+                self.phase("gores");
+                {
+                    let rng = self.rngs.stream(crate::app::RngKey::UpdateGores);
+                    let wind_for_visuals = self.wind.speed_current;
+                    self.gore.update(
+                        rng,
+                        &self.world,
+                        &crate::gore_seam::AppGoreCollision,
+                        wind_for_visuals,
+                    );
+                }
                 // `Main.UpdateWorld_Projectiles` (`Main.cs:17976`) runs **before**
                 // `UpdateWorld_Items` (`:18004`).
                 self.phase("projectiles");
@@ -581,8 +596,7 @@ impl App {
                 // `world_sim::scene_scan::update_scene`).
                 self.phase("dust");
                 let (sw, sh) = self.screen_size();
-                self.minecart_sparks
-                    .tick(self.camera, Vec2::new(sw, sh), self.zoom);
+                crate::minecart::tick(&mut self.dust, self.camera, Vec2::new(sw, sh), self.zoom);
                 // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
                 // runs after the entity half, never before it.
                 self.phase("time");
@@ -680,7 +694,11 @@ impl App {
                 self.phase("ambience");
                 {
                     let ambience = &mut self.ambience;
-                    let ambience_rng = &mut self.ambience_rng;
+                    // The scheduler's draws ride the bare-`Main.rand` stand-in
+                    // (`Main.cs:17214-17216` runs `AmbienceServer.Update` outside
+                    // every swap) — the shared `NamedRngs::global()` stream, which
+                    // chat commands and menu rolls also draw between frames.
+                    let ambience_rng = self.rngs.global();
                     let ctx = crate::ambience::AmbienceCtx {
                         world: &self.world,
                         day_time: self.world.day_time,
@@ -746,9 +764,7 @@ impl App {
                     // `MapUpdateQueue.Update()` (`Main.cs:61862`): the edit-side
                     // refresh drains through `WorldMap.UpdateType`; the changed
                     // tiles re-upload (`MapRenderer.QueueChange`'s analog).
-                    let changed = self
-                        .map_queue
-                        .update(&self.world, m);
+                    let changed = self.map_queue.update(&self.world, m);
                     m.push_dirty(changed);
                 }
             }
@@ -845,6 +861,12 @@ impl App {
         let mut camera_state = std::mem::take(&mut self.camera_state);
         crate::world_sim::camera::update_camera_at_draw(self, &mut camera_state);
         self.camera_state = camera_state;
+        // `ChildSafety.Disabled = GoreVisualsAllowed` (`Main.cs:4101`,
+        // `:4349`): the gate follows the same live settings copy the cursor
+        // tint reads — synced before the chest reads below pin `&mut self`
+        // out of reach.
+        let menu_blood = self.menu.as_ref().map(|m| m.settings.blood);
+        self.sync_child_safety(menu_blood);
         let chest_editing = self.chest_editing();
         let chest_edit_text = self.chest_edit_text().to_string();
         let chest_open = self.open_container();
@@ -924,7 +946,7 @@ impl App {
                 waterfall,
                 rain,
                 sand,
-                minecart_sparks,
+                dust,
                 liquid_alpha,
                 wind,
                 tree_wind_counter,
@@ -1495,11 +1517,11 @@ impl App {
                 // `Main.DrawDust`'s 268 entries: the flying sand, the same
                 // world-effect range as the rain (`Main.DrawRain`'s draw call
                 // site — world content, under the map batches and the UI).
-                sand.draw(renderer, lookups, light, draw_cam, world_zoom, screen);
+                crate::sand::draw(dust, renderer, lookups, light, draw_cam, world_zoom, screen);
                 // The type-213 wheel sparks — `Main.DrawDust`'s generic
                 // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
                 // world-content range as the rain/sand dust.
-                minecart_sparks.draw(renderer, lookups, draw_cam, world_zoom, screen);
+                crate::minecart::draw(dust, renderer, lookups, draw_cam, world_zoom, screen);
                 crate::render::foliage::draw_leaves(
                     renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
                 );
@@ -2296,9 +2318,12 @@ mod tests {
     ///   windy day / ambience), the tile-edit pass, the net pass and the map.
     ///
     /// Every phase name is emitted once per in-world frame.
-    const WORLD_PHASES: [&str; 19] = [
+    const WORLD_PHASES: [&str; 20] = [
         "players",
         "npcs",
+        // `Main.UpdateWorld_Gores` (`Main.cs:17971`, called at `:17771`) sits
+        // between the NPCs and the projectiles.
+        "gores",
         "projectiles",
         "items",
         "dust",
@@ -2830,13 +2855,11 @@ mod tests {
             count0 + 1,
             "the 12th held frame steps exactly once"
         );
-        assert!(
-            app.world.time > time0,
-            "the stepped world ticked the clock"
-        );
+        assert!(app.world.time > time0, "the stepped world ticked the clock");
         step_one_frame(&mut app);
         assert_eq!(
-            app.game_update_count, count0 + 1,
+            app.game_update_count,
+            count0 + 1,
             "held frame 13 (odd) steps nothing"
         );
         step_one_frame(&mut app);
@@ -2984,11 +3007,17 @@ mod tests {
             // The camera re-pins each frame so the screen-centre cursor stays
             // on the target tile (the camera walks are step-gated and would
             // drift toward the player otherwise).
-            app.camera = Vec2::new(30.0 * tr_core::TILE_PX + 8.0, 260.0 * tr_core::TILE_PX + 8.0);
+            app.camera = Vec2::new(
+                30.0 * tr_core::TILE_PX + 8.0,
+                260.0 * tr_core::TILE_PX + 8.0,
+            );
             step_one_frame(&mut app);
             phase_trace::take();
         }
-        app.camera = Vec2::new(30.0 * tr_core::TILE_PX + 8.0, 260.0 * tr_core::TILE_PX + 8.0);
+        app.camera = Vec2::new(
+            30.0 * tr_core::TILE_PX + 8.0,
+            260.0 * tr_core::TILE_PX + 8.0,
+        );
         step_one_frame(&mut app);
         assert_eq!(
             app.game_update_count, 65536,
@@ -3004,20 +3033,27 @@ mod tests {
         // tile-edit and net halves are inside the gate now.
         assert_eq!(
             phase_trace::take(),
-            ["waterfalls", "weather", "rain", "windy_day", "ambience", "map"],
+            [
+                "waterfalls",
+                "weather",
+                "rain",
+                "windy_day",
+                "ambience",
+                "map"
+            ],
             "a stepper-blocked frame runs no editing or net pass"
         );
 
         // The positive control: the identical rig, gate open — the tile mines.
         let mut app = mining_rig();
         for _ in 0..90 {
-            app.camera = Vec2::new(30.0 * tr_core::TILE_PX + 8.0, 260.0 * tr_core::TILE_PX + 8.0);
+            app.camera = Vec2::new(
+                30.0 * tr_core::TILE_PX + 8.0,
+                260.0 * tr_core::TILE_PX + 8.0,
+            );
             step_one_frame(&mut app);
         }
-        assert_ne!(
-            app.game_update_count, 65536,
-            "the unblocked rig stepped"
-        );
+        assert_ne!(app.game_update_count, 65536, "the unblocked rig stepped");
         assert_eq!(
             app.world.tile(30, 260).map(|t| t.kind),
             Some(0),
@@ -3054,7 +3090,10 @@ mod tests {
         app.player = Some(p);
         app.inventory[app.selected].kind = 1; // the Iron Pickaxe (pick 40)
         app.inventory[app.selected].count = 1;
-        app.camera = Vec2::new(30.0 * tr_core::TILE_PX + 8.0, 260.0 * tr_core::TILE_PX + 8.0);
+        app.camera = Vec2::new(
+            30.0 * tr_core::TILE_PX + 8.0,
+            260.0 * tr_core::TILE_PX + 8.0,
+        );
         // The screen centre of frame()'s headless screen (1600x900 —
         // `frame()`'s `screen` differs from the editing tests' MINE_SCREEN),
         // so the cursor's world point is exactly the camera = the tile.
@@ -3154,6 +3193,32 @@ pub(crate) fn next_rand(state: &mut u64) -> u64 {
 
 pub(crate) fn rand01(state: &mut u64) -> f32 {
     (next_rand(state) >> 40) as f32 / (1u32 << 24) as f32
+}
+
+/// The dust pool's draw seam over the port's splitmix u64 stream state
+/// (S1-E-1 phase 2): the same state the client rolls — no new streams or
+/// instances — fed straight to `DustPool::new_dust`. One splitmix step per
+/// draw, the C# `Next` conversions (`UnifiedRandom.cs:120-141`) over the
+/// 53-bit sample.
+pub(crate) struct SplitmixRand<'a>(pub(crate) &'a mut u64);
+
+impl SplitmixRand<'_> {
+    /// One draw's `[0,1)` sample: one `next_rand` step, 53 fraction bits.
+    fn sample(&mut self) -> f64 {
+        (next_rand(self.0) >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+impl tr_core::particles::DustRng for SplitmixRand<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        (self.sample() * max as f64) as i32
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        (self.sample() * (max - min) as f64) as i32 + min
+    }
+    fn next_float(&mut self) -> f32 {
+        self.sample() as f32
+    }
 }
 
 /// The u64 streams' `Main.rand.Next(max)`-shaped roll — `next_rand` modulo,

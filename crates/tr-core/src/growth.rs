@@ -41,7 +41,7 @@
 //! `Next(11,13)` cap, the three-way fork/lean/highten rolls).
 
 use crate::tile::FLAG_ACTIVE;
-use crate::tile_light::FastRandom;
+use crate::UnifiedRandom;
 use crate::world::World;
 
 /// `TileID.Sets.tileAlch` (`TileID.cs`) — the herb tiles GrowAlch runs on.
@@ -61,16 +61,16 @@ pub fn world_update_rate(day_rate: i32, freeze_time: bool) -> i32 {
 
 /// The alch-seed gate (`:71606-71614`): `Next(num7·100) == 0` skips the
 /// pick; `num7 = Lerp(151, 151·2.8, clamp(maxTilesX/4200 − 1, 0, 1))`.
-pub fn alch_seed_skips(world: &World, rng: &mut FastRandom) -> bool {
+pub fn alch_seed_skips(world: &World, rng: &mut UnifiedRandom) -> bool {
     let t = ((world.width as f64 / 4200.0 - 1.0).clamp(0.0, 1.0));
     let num7 = 151.0 + (151.0 * 2.8 - 151.0) * t;
-    rng.next((num7 * 100.0) as i32) == 0
+    rng.next_max((num7 * 100.0) as i32) == 0
 }
 
 /// `GrowAlch` (`WorldGen.cs:45777-45890`): the herb lifecycle. The stages
 /// ride `frameX` (0/18/36/72/90/108) and the bloom target 83; the mature 84
 /// blooms back; the liquid kill keeps only the matching stage.
-pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: bool, rng: &mut FastRandom) {
+pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: bool, rng: &mut UnifiedRandom) {
     let Some(t) = world.tile(x, y) else {
         return;
     };
@@ -94,17 +94,17 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
         let frame_x = world.tile(x, y).map(|t| t.frame_x).unwrap_or(0);
         let below_surface = y as f64 > world.world_surface;
         let near_underworld = y > world.height - 200;
-        let bloom = if rng.next(50) == 0 && (frame_x == 108 || rng.next(2) == 0) {
+        let bloom = if rng.next_max(50) == 0 && (frame_x == 108 || rng.next_max(2) == 0) {
             true
-        } else if day_time && frame_x == 0 && rng.next(50) == 0 {
+        } else if day_time && frame_x == 0 && rng.next_max(50) == 0 {
             true
-        } else if !day_time && frame_x == 18 && rng.next(50) == 0 {
+        } else if !day_time && frame_x == 18 && rng.next_max(50) == 0 {
             true
-        } else if raining && frame_x == 72 && rng.next(50) == 0 {
+        } else if raining && frame_x == 72 && rng.next_max(50) == 0 {
             true
-        } else if below_surface && frame_x == 36 && rng.next(50) == 0 {
+        } else if below_surface && frame_x == 36 && rng.next_max(50) == 0 {
             true
-        } else if near_underworld && frame_x == 90 && rng.next(50) == 0 {
+        } else if near_underworld && frame_x == 90 && rng.next_max(50) == 0 {
             true
         } else {
             false
@@ -117,15 +117,15 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
         return;
     }
     // `:45862-45883`: the stage-3 flash (`frameX == 36`, 2 of 3 rolls skip).
-    if world.tile(x, y).is_some_and(|t| t.frame_x == 36) && rng.next(3) != 0 {
+    if world.tile(x, y).is_some_and(|t| t.frame_x == 36) && rng.next_max(3) != 0 {
         let kind = world.tile(x, y).map(|t| t.kind).unwrap_or(0);
         if kind == 83 {
-            if rng.next(2) == 0 {
+            if rng.next_max(2) == 0 {
                 if let Some(t) = world.tile_mut(x, y) {
                     t.kind = 84;
                 }
             }
-        } else if kind == 84 || rng.next(5) == 0 {
+        } else if kind == 84 || rng.next_max(5) == 0 {
             if let Some(t) = world.tile_mut(x, y) {
                 t.kind = 83;
             }
@@ -397,7 +397,7 @@ pub fn attempt_grow_tree_from_sapling(
     x: i32,
     y: i32,
     underground: bool,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) -> bool {
     // `InWorld(x, y, 2)` (`:72813-72816`).
     if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
@@ -468,7 +468,7 @@ pub fn attempt_grow_tree_from_sapling(
 /// the liquid gate, the ground checks, the clear-box roll, then plant the
 /// trunk + the branches + the forks (the frame table the worldgen
 /// `plant_trees` shares — the same vanilla tables). Returns the success.
-pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> bool {
+pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut UnifiedRandom) -> bool {
     // The sapling stack walk (:29769).
     let mut j = y;
     while world
@@ -512,7 +512,7 @@ pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> boo
     }
     // The height + the clearance (:29796-29816): `Next(5,17)`, the jungle
     // grass adds 5, the clear box `EmptyTileCheck(i±2, j-num3..j-1, 20)`.
-    let num2 = 5 + rng.next(12);
+    let num2 = 5 + rng.next_max(12);
     let mut num3 = num2 + 4;
     if ground.kind == 60 {
         num3 += 5;
@@ -532,14 +532,14 @@ pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> boo
         let mut num6 = if row_i == 0 || row_i + 1 == height {
             0
         } else {
-            rng.next(10) as i16
+            rng.next_max(10) as i16
         };
         while ((num6 == 5 || num6 == 7) && left_last)
             || ((num6 == 6 || num6 == 7) && right_last)
         {
-            num6 = rng.next(10) as i16;
+            num6 = rng.next_max(10) as i16;
         }
-        let style = rng.next(3) as i16;
+        let style = rng.next_max(3) as i16;
         let dy = style * 22;
         *row = match num6 {
             1 => (0, 66 + dy),
@@ -555,13 +555,13 @@ pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> boo
         right_last = num6 == 6 || num6 == 7;
         let by = top - 1 - row_i as i32;
         if left_last {
-            markers.push((i - 1, by, 44, 198 + rng.next(3) as i16 * 22));
+            markers.push((i - 1, by, 44, 198 + rng.next_max(3) as i16 * 22));
         }
         if right_last {
-            markers.push((i + 1, by, 66, 198 + rng.next(3) as i16 * 22));
+            markers.push((i + 1, by, 66, 198 + rng.next_max(3) as i16 * 22));
         }
     }
-    rows[height - 1] = (22, 198 + rng.next(3) as i16 * 22);
+    rows[height - 1] = (22, 198 + rng.next_max(3) as i16 * 22);
     // The forks: the base style follows the grass neighbours (:29980+).
     let grass_at = |dx: i32| {
         world
@@ -570,7 +570,7 @@ pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> boo
     };
     let left_grass = grass_at(-1);
     let right_grass = grass_at(1);
-    let mut base_style = rng.next(3);
+    let mut base_style = rng.next_max(3);
     if !left_grass && base_style == 0 {
         base_style = 2;
     }
@@ -590,7 +590,7 @@ pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> boo
         base_style = 1;
     }
     if base_style < 3 {
-        let fy = 132 + rng.next(3) as i16 * 22;
+        let fy = 132 + rng.next_max(3) as i16 * 22;
         rows[0] = match base_style {
             0 => (88, fy),
             1 => (0, fy),
@@ -604,7 +604,7 @@ pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> boo
             if world.tile(bx, top - 1).is_some_and(|t| t.active()) {
                 return;
             }
-            let fy = 132 + rng.next(3) as i16 * 22;
+            let fy = 132 + rng.next_max(3) as i16 * 22;
             let idx = world.index(bx, top - 1);
             world.tiles[idx] = crate::tile::Tile {
                 kind: 5,
@@ -663,7 +663,7 @@ pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> boo
 /// i±6 × j-3..j+1 box, >10 sand in it); the cactus arm grows the stack by
 /// one with the 11-height budget and the `Next(11,13)` cap (the fork/lean
 /// arms ride the same rolls).
-pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
+pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) {
     if j <= 0 {
         return;
     }
@@ -795,7 +795,7 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
     }
     // The drunk arm's cap is the 11-20 range (`:56690-56698`); the classic
     // worlds take the 11-13 cap the port already carried.
-    if num9 >= 11 + rng.next(2) {
+    if num9 >= 11 + rng.next_max(2) {
         return;
     }
     num = i;
@@ -858,7 +858,7 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
             flag2 = true;
         }
     }
-    let num12 = rng.next(3);
+    let num12 = rng.next_max(3);
     if num12 == 0 && flag {
         let idx = world.index(num - 1, num2);
         world.tiles[idx] = crate::tile::Tile {
@@ -911,7 +911,7 @@ pub fn update_world_grass_growth(
     min_j: i32,
     max_j: i32,
     allowed_to_spread: bool,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) {
     if i < 10 || j < 10 || i >= world.width as i32 - 10 || j >= world.height as i32 - 10 {
         return;
@@ -938,7 +938,7 @@ pub fn update_world_grass_growth(
     if plant != -1
         && min_j < world.height as i32
         && world.tile(i, min_j).is_none_or(|t| !t.active())
-        && rng.next(max_value) == 0
+        && rng.next_max(max_value) == 0
     {
         let idx = world.index(i, min_j);
         world.tiles[idx] = crate::tile::Tile {
@@ -1194,7 +1194,7 @@ fn count_growing_plant_tiles(world: &World, x: i32, y: i32, range: i32, kind: u1
 /// grass / bamboo under `(x, y)` — the wall/surface guard, the water-depth
 /// window (2..5), the density gates and the write. Returns whether a stalk
 /// landed.
-fn place_bamboo(world: &mut World, x: i32, y: i32, rng: &mut FastRandom) -> bool {
+fn place_bamboo(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) -> bool {
     let min_depth = 2;
     let max_depth = 5;
     let num3 = rng.next_range(1, 21);
@@ -1329,7 +1329,7 @@ fn grow_more_vines(world: &World, x: i32, y: i32) -> bool {
 /// at the vanilla odds (the 1/5 jungle arm, the 70/7 odds for the rest,
 /// 7 when the tile is already the vine kind), behind the free-below gate, the
 /// 10-row look-up through the family grass and `GrowMoreVines`' density.
-pub(crate) fn grow_vine_arm(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
+pub(crate) fn grow_vine_arm(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) {
     let kind = world.tile(i, j).map(|t| (t.active(), t.kind, t.bottom_slope()));
     let Some((active, kind, bottom_slope)) = kind else {
         return;
@@ -1363,7 +1363,7 @@ pub(crate) fn grow_vine_arm(world: &mut World, i: i32, j: i32, rng: &mut FastRan
     } else {
         odds
     };
-    if rng.next(odds) != 0 {
+    if rng.next_max(odds) != 0 {
         return;
     }
     if !grow_more_vines(world, i, j) {
@@ -1408,7 +1408,7 @@ pub fn grow_spike(
     j: i32,
     spike_type: u16,
     land_type: u16,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) {
     // The "converted grass" map (`:45484-45491`): 23 ↔ 661 and 199 ↔ 662;
     // any other `landType` leaves the C# `-1` — no second id matches. The
@@ -1435,7 +1435,7 @@ pub fn grow_spike(
     if num4 >= 3 && t.kind != land_type && t.kind != converted {
         return;
     }
-    let (num2, num3) = match rng.next(4) {
+    let (num2, num3) = match rng.next_max(4) {
         0 => (i, j - 1),
         1 => (i, j + 1),
         2 => (i - 1, j),
@@ -1596,7 +1596,7 @@ fn moss_conversion(this_type: u16, other_type: u16) -> u16 {
 /// The port's omissions (recorded in ANALYSIS): the netcode
 /// (`NetMessage.SendTileSquare`), the paint/coating copy (no color cache) and
 /// the `color` argument of `SpreadGrass` (the port's growth writes carry none).
-fn grow_moss_arm(world: &mut World, i: i32, j: i32, min_i: i32, max_i: i32, min_j: i32, max_j: i32, rng: &mut FastRandom) {
+fn grow_moss_arm(world: &mut World, i: i32, j: i32, min_i: i32, max_i: i32, min_j: i32, max_j: i32, rng: &mut UnifiedRandom) {
     if rng.next_double() >= 0.5 {
         return;
     }
@@ -1627,11 +1627,11 @@ fn grow_moss_arm(world: &mut World, i: i32, j: i32, min_i: i32, max_i: i32, min_
             }
         }
     }
-    if rng.next(6) == 0 {
+    if rng.next_max(6) == 0 {
         // The ±1 spray (`:72404-72421`): a free neighbour takes the loose
         // moss 184.
         let (mut tx, mut ty) = (i, j);
-        match rng.next(4) {
+        match rng.next_max(4) {
             0 => tx -= 1,
             1 => tx += 1,
             2 => ty -= 1,
@@ -1654,7 +1654,7 @@ pub fn update_world_overground_tile(
     raining: bool,
     max_raining: f32,
     wind_speed: f32,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) {
     let kind = world.tile(x, y).map(|t| (t.active(), t.kind));
     let Some((active, kind)) = kind else {
@@ -1675,11 +1675,11 @@ pub fn update_world_overground_tile(
     // `:72219-72228`: the dye-plant head — one `Main.rand.Next(3000)` behind
     // every `nactive` pick, the exotic arm at `Next(15000)` when the cell
     // stands outside the middle 40..60 % of the world and hardmode is on.
-    if rng.next(3000) == 0 {
+    if rng.next_max(3000) == 0 {
         plant_dye(world, x, y, false, rng);
     } else if world.hard_mode
         && ((x as f64) < world.width as f64 * 0.4 || (x as f64) > world.width as f64 * 0.6)
-        && rng.next(15000) == 0
+        && rng.next_max(15000) == 0
     {
         plant_dye(world, x, y, true, rng);
     }
@@ -1690,11 +1690,11 @@ pub fn update_world_overground_tile(
     // The sapling arm (:72430-72434): the kind-20 sapling at `Next(20)`,
     // the beach palm saplings 595/615 at `Next(5)` (the settings profiles
     // land with the vanity trees).
-    if kind == 20 && rng.next(20) == 0 {
+    if kind == 20 && rng.next_max(20) == 0 {
         attempt_grow_tree_from_sapling(world, x, y, false, rng);
         return;
     }
-    if (kind == 595 || kind == 615) && rng.next(5) == 0 {
+    if (kind == 595 || kind == 615) && rng.next_max(5) == 0 {
         // `AttemptToGrowTreeFromSapling`'s 595/615 arms (`:72435-72444`)
         // — the Sakura/Willow settings profiles.
         attempt_grow_tree_from_sapling(world, x, y, false, rng);
@@ -1722,24 +1722,24 @@ pub fn update_world_overground_tile(
         Some(_) if kind == 571 => true,
         _ => false,
     };
-    if bamboo && rng.next(5) == 0 {
+    if bamboo && rng.next_max(5) == 0 {
         let above_free = world
             .tile(x, y - 1)
             .is_some_and(|t| !t.active() || matches!(t.kind, 61 | 74 | 518));
-        let gate = if kind == 60 { rng.next(30) == 0 } else { true };
+        let gate = if kind == 60 { rng.next_max(30) == 0 } else { true };
         if above_free && gate {
             place_bamboo(world, x, y - 1, rng);
         }
     }
     // The cactus arm (:72229-72231): `Next(15)`.
-    if kind == 80 && rng.next(15) == 0 {
+    if kind == 80 && rng.next_max(15) == 0 {
         grow_cactus(world, x, y, rng);
         return;
     }
     // The bare-sand arm (:72282-72284) rolls `Next(300)` inside the
     // beach-distance bounds — the port has no beachDistanceYet; the
     // water-box abort inside `grow_cactus` keeps the shore in check.
-    if matches!(kind, 53 | 234 | 116 | 112) && rng.next(300) == 0 {
+    if matches!(kind, 53 | 234 | 116 | 112) && rng.next_max(300) == 0 {
         grow_cactus(world, x, y, rng);
         return;
     }
@@ -1787,7 +1787,7 @@ pub fn update_world_overground_tile(
         // the corrupt grass 23 and the crimson thorn 352 into the crimson
         // grass 199, both at `Next(3)` — the C# triggers on the THORN tile,
         // not the grass (the grass keys are `landType`'s density map).
-        if (kind == 32 || kind == 352) && rng.next(3) == 0 {
+        if (kind == 32 || kind == 352) && rng.next_max(3) == 0 {
             if kind == 32 {
                 grow_spike(world, x, y, 32, 23, rng);
             } else {
@@ -1806,7 +1806,7 @@ pub fn update_world_overground_tile(
 /// stones below the rock layer roll `Next(5)`, the 4-dir neighbour must be
 /// empty, the radius-6 density stays under 2, the style `Next(18)` (the big
 /// shard `18 + Next(6)` at 1/50).
-pub fn grow_crystal_shards(world: &mut World, x: i32, y: i32, rng: &mut FastRandom) {
+pub fn grow_crystal_shards(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) {
     let Some(t) = world.tile(x, y) else {
         return;
     };
@@ -1817,13 +1817,13 @@ pub fn grow_crystal_shards(world: &mut World, x: i32, y: i32, rng: &mut FastRand
     if (y as f64) <= world.rock_layer {
         return;
     }
-    if rng.next(5) != 0 {
+    if rng.next_max(5) != 0 {
         return;
     }
     // `:69609-69625`: the 4-dir pick — 0 left, 1 right, 2/3 down (the C#'s
     // `default: num3 = ((num != 0) ? 1 : -1)` resolves to +1 for both —
     // the shards never grow upward).
-    let (dx, dy) = match rng.next(4) {
+    let (dx, dy) = match rng.next_max(4) {
         0 => (-1, 0),
         1 => (1, 0),
         _ => (0, 1),
@@ -1849,9 +1849,9 @@ pub fn grow_crystal_shards(world: &mut World, x: i32, y: i32, rng: &mut FastRand
         return;
     }
     // `:69639-69643`: the style — the big shards 18..=23 at 1/50.
-    let mut style = rng.next(18);
-    if rng.next(50) == 0 {
-        style = 18 + rng.next(6);
+    let mut style = rng.next_max(18);
+    if rng.next_max(50) == 0 {
+        style = 18 + rng.next_max(6);
     }
     if let Some(t) = world.tile_mut(nx, ny) {
         t.kind = 129;
@@ -1877,7 +1877,7 @@ pub fn update_world(
     day_time: bool,
     max_raining: f32,
     wind_speed: f32,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) -> u32 {
     let rate = world_update_rate(day_rate, freeze_time);
     if rate == 0 {
@@ -1939,18 +1939,18 @@ pub fn update_world(
 const BEACH_DISTANCE: i32 = 380;
 
 /// `WorldGen.RollRandomSeaShellStyle` (`WorldGen.cs:45170-45187`) over the
-/// growth `FastRandom` stream: the 5 seashell styles on tile 324 — `Next(2)`,
-/// then `Next(10)==0 → 2`, `Next(10)==0 → 3`, `Next(50)==0 → 4` (nested `if`s,
-/// so the later rolls re-roll earlier).
-fn roll_sea_shell_style(rng: &mut FastRandom) -> i32 {
+/// growth pass's `UnifiedRandom` (the C# `genRand`): the 5 seashell styles on
+/// tile 324 — `Next(2)`, then `Next(10)==0 → 2`, `Next(10)==0 → 3`,
+/// `Next(50)==0 → 4` (nested `if`s, so the later rolls re-roll earlier).
+fn roll_sea_shell_style(rng: &mut UnifiedRandom) -> i32 {
     let mut result = rng.next_range(0, 2);
-    if rng.next(10) == 0 {
+    if rng.next_max(10) == 0 {
         result = 2;
     }
-    if rng.next(10) == 0 {
+    if rng.next_max(10) == 0 {
         result = 3;
     }
-    if rng.next(50) == 0 {
+    if rng.next_max(50) == 0 {
         result = 4;
     }
     result
@@ -1970,7 +1970,7 @@ pub fn grow_shell_pile(
     wind_speed: f32,
     max_raining: f32,
     raining: bool,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) -> bool {
     let surface = world.world_surface;
     let width = world.width;
@@ -1993,7 +1993,7 @@ pub fn grow_shell_pile(
     if num5 < 300 {
         num5 = 300;
     }
-    if rng.next(num5.max(1)) != 0 {
+    if rng.next_max(num5.max(1)) != 0 {
         return false;
     }
     // The sand scan (`:72083-72090`): down to the first solid within 15 rows.
@@ -2028,7 +2028,7 @@ pub fn grow_shell_pile(
         return false;
     }
     // The coral on the deep water, the seashell otherwise (`:72111-72130`).
-    let coral = rng.next(2) == 0 && world.tile(i, k).is_some_and(|t| t.liquid >= 230);
+    let coral = rng.next_max(2) == 0 && world.tile(i, k).is_some_and(|t| t.liquid >= 230);
     let style = if coral { 0 } else { roll_sea_shell_style(rng) };
     let idx = world.index(i, k - 1);
     let t = &mut world.tiles[idx];
@@ -2051,9 +2051,9 @@ pub fn grow_shell_pile(
 /// except the 3/73/113/110 set — and 185 while its `frameY == 0` — blocks, as
 /// does any liquid) and stand on solid grass/mushroom
 /// ([`crate::edit::solid_tile`], types 2/109).
-pub fn place_pumpkin(world: &mut World, x: i32, super_y: i32, rng: &mut FastRandom) {
+pub fn place_pumpkin(world: &mut World, x: i32, super_y: i32, rng: &mut UnifiedRandom) {
     // `:52440-52441`: `ushort type = 254; int num = WorldGen.genRand.Next(6) * 36;`
-    let num = rng.next(6) * 36;
+    let num = rng.next_max(6) * 36;
     // `:52442-52445`: the bounds guard — after the roll.
     if x < 5
         || x > world.width as i32 - 5
@@ -2195,7 +2195,7 @@ pub fn grow_pumpkin(world: &mut World, i: i32, j: i32) {
 /// `rng` is the pass's `genRand` stream; the C# reads the worldgen's global
 /// `WorldGen.genRand`, so the step supplies the pipeline's stream for this
 /// pass name.
-pub fn halloween_pumpkins(world: &mut World, rng: &mut FastRandom) {
+pub fn halloween_pumpkins(world: &mut World, rng: &mut UnifiedRandom) {
     // `:20069`: `halloweenGen || endlessHalloween` (the two micro seeds share
     // the arm — `endlessHalloween` also sets `Main.forceHalloweenForever`,
     // `WorldGen.cs:572-574`).
@@ -2217,11 +2217,11 @@ pub fn halloween_pumpkins(world: &mut World, rng: &mut FastRandom) {
             if world
                 .tile(i, j)
                 .is_some_and(|t| t.active() && t.kind == 2)
-                && rng.next(15) == 0
+                && rng.next_max(15) == 0
             {
                 // `:20078-20082`: the pumpkin plus `Next(5)` growth patches.
                 place_pumpkin(world, i, j - 1, rng);
-                let num = rng.next(5);
+                let num = rng.next_max(5);
                 for _ in 0..num {
                     grow_pumpkin(world, i, j - 1);
                 }
@@ -2261,7 +2261,7 @@ mod tests {
         // `(x-1..x, superY-1..superY)`, `frameX` 0/18 across the columns and
         // `frameY` = the `Next(6) * 36` style row (+18 on the bottom half).
         let mut w = pumpkin_world();
-        let mut rng = FastRandom::new(3);
+        let mut rng = UnifiedRandom::new(3);
         place_pumpkin(&mut w, 60, 54, &mut rng);
         let top = w.tile(59, 53).unwrap();
         let right = w.tile(60, 53).unwrap();
@@ -2278,11 +2278,13 @@ mod tests {
         assert!(top.frame_y < 216, "six style rows: 0..180");
         // The roll is drawn even when the placement is refused (the C# draws
         // `Next(6)` before its bounds guard, `:52441-52445`).
-        let mut r1 = FastRandom::new(9);
+        let mut r1 = UnifiedRandom::new(9);
         place_pumpkin(&mut w, 1, 2, &mut r1); // out of bounds: the guard fires
-        let mut r2 = FastRandom::new(9);
-        let _ = r2.next(6);
-        assert_eq!(r1.seed, r2.seed, "the style roll still spends its draw");
+        // The draw-count observable: a twin stream that drew exactly the one
+        // style roll matches the refused call's stream state.
+        let mut twin = UnifiedRandom::new(9);
+        twin.next_max(6);
+        assert_eq!(r1, twin, "the style roll still spends its draw");
     }
 
     #[test]
@@ -2291,7 +2293,7 @@ mod tests {
         // four tiles `frameX += 36` (one 2-tile patch right in the tilesheet),
         // and `:52512-52515` refuses the fifth patch.
         let mut w = pumpkin_world();
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         place_pumpkin(&mut w, 60, 54, &mut rng);
         // The call passes the grass column's own cell (the pumpkin's
         // bottom-right tile), like the C#'s `GrowPumpkin(i, j - 1, 254)`.
@@ -2313,7 +2315,7 @@ mod tests {
         // The soil gate: dig the row out from under the pumpkin and the widen
         // refuses (`:52529`).
         let mut w = pumpkin_world();
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         place_pumpkin(&mut w, 60, 54, &mut rng);
         let i = w.index(59, 55);
         w.tiles[i].flags &= !FLAG_ACTIVE;
@@ -2328,10 +2330,11 @@ mod tests {
         // observable, and a classic world draws nothing at all (the stream is
         // untouched).
         let mut classic = pumpkin_world();
-        let mut rng = FastRandom::new(5);
-        let before = rng.seed;
+        let mut rng = UnifiedRandom::new(5);
         halloween_pumpkins(&mut classic, &mut rng);
-        assert_eq!(rng.seed, before, "a classic world spends no draw");
+        // The draw-count observable: the stream state still equals a pristine
+        // seed-5 stream — no draw was spent.
+        assert_eq!(rng, UnifiedRandom::new(5), "a classic world spends no draw");
         assert!(classic.tiles.iter().all(|t| t.kind != 254), "no pumpkins");
         // The two seeds share the arm (`:20069`).
         for bit in [
@@ -2340,7 +2343,7 @@ mod tests {
         ] {
             let mut w = pumpkin_world();
             w.micro_seeds.insert(bit);
-            halloween_pumpkins(&mut w, &mut FastRandom::new(5));
+            halloween_pumpkins(&mut w, &mut UnifiedRandom::new(5));
             let planted = w.tiles.iter().filter(|t| t.kind == 254).count();
             assert!(planted >= 4, "the flag plants pumpkins: {planted}");
             // Every pumpkin stands directly on the grass row it was rolled
@@ -2391,7 +2394,7 @@ mod tests {
         let mut runs = 0;
         for seed in 1u64..600 {
             let mut w = w.clone();
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             grow_vine_arm(&mut w, 100, 32, &mut rng);
             runs += 1;
             grew += w
@@ -2417,7 +2420,7 @@ mod tests {
         let mut grew2 = 0;
         for seed in 1u64..600 {
             let mut w = w.clone();
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             grow_vine_arm(&mut w, 100, 33, &mut rng);
             grew2 += w
                 .tiles
@@ -2466,7 +2469,7 @@ mod tests {
         let mut runs = 0;
         for seed in 1u64..600 {
             let mut w = w.clone();
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_overground_tile(&mut w, 30, 56, true, false, 0.0, 0.0, &mut rng);
             runs += 1;
             grew += w
@@ -2508,7 +2511,7 @@ mod tests {
         for k in 0..256u64 {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
             let mut w = build(23);
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
             if !w.tile(10, 29).is_some_and(|t| t.active()) {
                 killed = true;
@@ -2521,7 +2524,7 @@ mod tests {
         for k in 0..64u64 {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
             let mut w = build(2);
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
             assert!(
                 w.tile(10, 29).is_some_and(|t| t.active()),
@@ -2549,7 +2552,7 @@ mod tests {
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         spread_grass(&mut w, 10, 20, 0, 2);
         assert!(w.tile(10, 20).is_some_and(|t| t.kind == 2), "the open box converted");
 
@@ -2572,7 +2575,7 @@ mod tests {
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         spread_grass(&mut w, 10, 20, 0, 2);
         assert!(
             w.tile(10, 20).is_some_and(|t| t.kind == 0),
@@ -2597,7 +2600,7 @@ mod tests {
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.tiles[i].set_liquid_kind(crate::tile::LiquidKind::Lava);
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         spread_grass(&mut w, 10, 20, 0, 2);
         assert!(
             w.tile(10, 20).is_some_and(|t| t.kind == 0),
@@ -2644,7 +2647,7 @@ mod tests {
         // the 4200-wide world sits at t = 0 → 151; a 8400-wide world at
         // t = 1 → 422.8. The gate skips on `Next(num7·100) == 0`.
         let w = world();
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         let skips = (0..1000).filter(|_| alch_seed_skips(&w, &mut rng)).count();
         // The skip chance = 1/(151·100) ≈ 1/15100 → ~0.07/1000 rolls; the
         // 4200-world roll is nearly never skipped.
@@ -2656,7 +2659,7 @@ mod tests {
         // The sprout 82 (the stage-0 frame) blooms in the daylight.
         let mut w = world();
         put(&mut w, 30, 90, 82, 0);
-        let mut rng = FastRandom::new(1);
+        let mut rng = UnifiedRandom::new(1);
         let mut bloomed = false;
         for _ in 0..4000 {
             grow_alch(&mut w, 30, 90, true, false, &mut rng);
@@ -2669,7 +2672,7 @@ mod tests {
         // The rain cue drives the stage-72 frame.
         let mut w = world();
         put(&mut w, 30, 90, 82, 72);
-        let mut rng = FastRandom::new(2);
+        let mut rng = UnifiedRandom::new(2);
         let mut bloomed = false;
         for _ in 0..4000 {
             grow_alch(&mut w, 30, 90, false, true, &mut rng);
@@ -2684,7 +2687,7 @@ mod tests {
         // chain's fallbacks.
         let mut w = world();
         put(&mut w, 30, 90, 82, 0);
-        let mut rng = FastRandom::new(3);
+        let mut rng = UnifiedRandom::new(3);
         let mut bloomed = false;
         for _ in 0..400 {
             grow_alch(&mut w, 30, 90, false, false, &mut rng);
@@ -2702,7 +2705,7 @@ mod tests {
         put(&mut w, 30, 90, 82, 0);
         let i = w.index(30, 90);
         w.tiles[i].liquid = 200;
-        let mut rng = FastRandom::new(1);
+        let mut rng = UnifiedRandom::new(1);
         grow_alch(&mut w, 30, 90, true, false, &mut rng);
         assert!(
             w.tile(30, 90).unwrap().flags & FLAG_ACTIVE == 0,
@@ -2722,7 +2725,7 @@ mod tests {
                 }
             }
         }
-        let mut rng = FastRandom::new(4);
+        let mut rng = UnifiedRandom::new(4);
         let mut grew = 0;
         for _ in 0..200 {
             let before = w
@@ -2766,7 +2769,7 @@ mod tests {
         put(&mut w, 100, 200, 2, 0); // the grass
         put(&mut w, 101, 200, 2, 0); // the neighbour soil
         put(&mut w, 100, 199, 20, 0); // the sapling
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         assert!(attempt_grow_tree_from_sapling(&mut w, 100, 199, false, &mut rng));
         assert!(w.tile(100, 199).is_some_and(|t| t.kind == 5), "the trunk over the sapling");
         let trunk = (0..20).filter(|&dy| {
@@ -2781,7 +2784,7 @@ mod tests {
         let i = w.index(101, 199);
         w.tiles[i].liquid = 255;
         w.tiles[i].flags |= FLAG_ACTIVE;
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         assert!(!attempt_grow_tree_from_sapling(&mut w, 100, 199, false, &mut rng));
     }
 
@@ -2801,7 +2804,7 @@ mod tests {
         put(&mut w, 100, 200, 61, 0);
         let mut grew = false;
         for seed in 1..64u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_underground_tile(&mut w, 100, 200, 3, true, true, false, &mut rng);
             if w.tile(100, 200).is_some_and(|t| t.kind == 74) {
                 grew = true;
@@ -2818,7 +2821,7 @@ mod tests {
         put(&mut w2, 99, 201, 60, 0);
         let mut converted = false;
         for seed in 1..64u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_underground_tile(&mut w2, 100, 201, 3, true, true, false, &mut rng);
             if w2.tile(100, 200).is_some_and(|t| t.active()) {
                 converted = true;
@@ -2849,7 +2852,7 @@ mod tests {
             put(&mut w, 100, 201, 519, 0);
             let i = w.index(100, 201);
             w.tiles[i].liquid = 200;
-            let mut rng = FastRandom::new(7);
+            let mut rng = UnifiedRandom::new(7);
             check_cat_tail(&mut w, 100, 201, &mut rng);
             assert_eq!(
                 w.tile(100, 201).map(|t| t.frame_y),
@@ -2874,7 +2877,7 @@ mod tests {
             let i = w.index(100, y);
             w.tiles[i].liquid = 200;
         }
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         for _ in 0..4 {
             grow_cat_tail(&mut w, 100, 201, &mut rng);
         }
@@ -2898,7 +2901,7 @@ mod tests {
         let mut w = world();
         put(&mut w, 100, 202, 2, 0); // dry dirt
         put(&mut w, 100, 201, 519, 0); // the stalk
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         for _ in 0..64 {
             check_cat_tail(&mut w, 100, 201, &mut rng);
             if !w.tile(100, 201).is_some_and(|t| t.active() && t.kind == 519) {
@@ -2927,7 +2930,7 @@ mod tests {
         }
         let mut placed = false;
         for seed in 1..64u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             grow_check_seaweed(&mut w, 100, 209, &mut rng);
             if w.tile(100, 208).is_some_and(|t| t.active() && t.kind == 549) {
                 placed = true;
@@ -2944,7 +2947,7 @@ mod tests {
             w2.tiles[i].liquid = 200;
         }
         for seed in 1..64u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             grow_check_seaweed(&mut w2, 100, 209, &mut rng);
             assert!(
                 !w2.tile(100, 208).is_some_and(|t| t.active()),
@@ -2963,7 +2966,7 @@ mod tests {
         put(&mut w, 100, 210, 53, 0);
         put(&mut w, 100, 209, 549, 0);
         for seed in 1..64u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             grow_check_seaweed(&mut w, 100, 209, &mut rng);
             if !w.tile(100, 209).is_some_and(|t| t.active()) {
                 break;
@@ -2991,7 +2994,7 @@ mod tests {
         }
         let mut placed = false;
         for seed in 1..64u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_underground_tile(&mut w, 100, 205, 3, true, true, false, &mut rng);
             if w.tile(100, 205).is_some_and(|t| t.active() && t.kind == 51) {
                 placed = true;
@@ -3006,7 +3009,7 @@ mod tests {
             put(&mut w2, x, 208, 1, 0);
         }
         for seed in 1..64u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_underground_tile(&mut w2, 100, 205, 3, true, true, false, &mut rng);
             assert!(
                 !w2.tile(100, 205).is_some_and(|t| t.active()),
@@ -3025,10 +3028,11 @@ mod tests {
         put(&mut w, 100, 220, 2, 0);
         let mut seen = Vec::new();
         for k in 0..2048u64 {
-            // The port's `FastRandom` folds tiny seeds onto one style, so the
-            // sweep spreads them with the 64-bit golden ratio.
+            // The sweep spreads the seeds with the 64-bit golden ratio (the
+            // FastRandom-era fixture kept; the i32 truncation preserves the
+            // distinct low bits, so consecutive k still land on new styles).
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             plant_dye(&mut w, 100, 220, false, &mut rng);
             let fx = w.tile(100, 219).map(|t| t.frame_x).unwrap_or(0);
             if !seen.contains(&fx) {
@@ -3052,7 +3056,7 @@ mod tests {
         let mut jungle = Vec::new();
         for k in 0..2048u64 {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             plant_dye(&mut w2, 100, 220, false, &mut rng);
             jungle.push(w2.tile(100, 219).map(|t| t.frame_x).unwrap_or(0));
             if let Some(t) = w2.tile_mut(100, 219) {
@@ -3068,7 +3072,7 @@ mod tests {
         let mut w3 = world();
         w3.world_surface = 250.0;
         put(&mut w3, 100, 220, 80, 0);
-        let mut rng = FastRandom::new(3);
+        let mut rng = UnifiedRandom::new(3);
         plant_dye(&mut w3, 100, 220, false, &mut rng);
         assert_eq!(
             w3.tile(100, 219).map(|t| (t.kind, t.frame_x)),
@@ -3090,7 +3094,7 @@ mod tests {
             let i = w.index(100, y);
             w.tiles[i].liquid = 255;
         }
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         plant_dye(&mut w, 100, 150, false, &mut rng);
         assert_eq!(
             w.tile(100, 149).map(|t| (t.kind, t.frame_x)),
@@ -3106,7 +3110,7 @@ mod tests {
         // A solid above stands band 2's free-above gate down, so the hanging
         // pass is not blocked by the 227 band 2 would have written.
         put(&mut w2, 100, 149, 1, 0);
-        let mut rng = FastRandom::new(5);
+        let mut rng = UnifiedRandom::new(5);
         plant_dye(&mut w2, 100, 150, false, &mut rng);
         assert_eq!(
             w2.tile(100, 151).map(|t| (t.kind, t.frame_x)),
@@ -3123,7 +3127,7 @@ mod tests {
         let mut w = world();
         w.world_surface = 250.0;
         put(&mut w, 100, 220, 2, 0);
-        let mut rng = FastRandom::new(9);
+        let mut rng = UnifiedRandom::new(9);
         plant_dye(&mut w, 100, 220, true, &mut rng);
         let fx = w.tile(100, 219).map(|t| t.frame_x).unwrap_or(0);
         assert!(
@@ -3135,7 +3139,7 @@ mod tests {
         w2.world_surface = 250.0;
         put(&mut w2, 100, 220, 2, 0);
         put(&mut w2, 130, 219, 227, 272);
-        let mut rng = FastRandom::new(9);
+        let mut rng = UnifiedRandom::new(9);
         plant_dye(&mut w2, 100, 220, true, &mut rng);
         assert!(
             !w2.tile(100, 219).is_some_and(|t| t.active()),
@@ -3152,7 +3156,7 @@ mod tests {
         put(&mut w, 100, 150, 1, 0); // stone in the underground band
         let mut seen = false;
         for seed in 1..=40000u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_underground_tile(&mut w, 100, 150, 3, true, true, false, &mut rng);
             if w.tile(100, 149).is_some_and(|t| t.active() && t.kind == 227) {
                 seen = true;
@@ -3169,7 +3173,7 @@ mod tests {
         let mut seen = false;
         for k in 0..40000u64 {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_overground_tile(&mut w2, 100, 190, true, false, 0.0, 0.0, &mut rng);
             if w2.tile(100, 189).is_some_and(|t| t.active() && t.kind == 227) {
                 seen = true;
@@ -3193,7 +3197,7 @@ mod tests {
         let mut flower = None;
         for k in 0..40000u64 {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_overground_tile(&mut w, 120, 149, true, false, 0.0, 0.0, &mut rng);
             flower = flower.or((110..130).find_map(|x| {
                 (140..160)
@@ -3225,7 +3229,7 @@ mod tests {
         assert_eq!(before, 1);
         for k in 0..20000u64 {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(7);
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             update_world_overground_tile(&mut w, 120, 149, true, false, 0.0, 0.0, &mut rng);
         }
         let after = (100..160)
@@ -3273,11 +3277,11 @@ mod tests {
         for x in 100..=140 {
             put(&mut w2, x, 150, 2, 0);
         }
-        let mut rng = FastRandom::new(4);
-        let before = rng.seed;
+        let mut rng = UnifiedRandom::new(4);
         let placed = try_growing_abigails_flower(&mut w2, 120, 149, &mut rng);
         if !placed {
-            assert_ne!(rng.seed, before, "the gate always draws");
+            // The draw-count observable: the stream left its pristine state.
+            assert_ne!(rng, UnifiedRandom::new(4), "the gate always draws");
         }
         assert!(
             (100..160)
@@ -3305,13 +3309,13 @@ mod tests {
         }
         // The corrupt grass in the box (a `SpreadsCorruption` tile).
         put(&mut w, 102, 203, 23, 0);
-        let mut rng = FastRandom::new(3);
+        let mut rng = UnifiedRandom::new(3);
         // The evil cell: the wall itself is a corruption-spreading wall (69)
         // at the source cell, so the arm fires from (102, 203).
         set_wall(&mut w, 102, 203, 69);
         let mut converted = false;
         for seed in 1..64u64 {
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             spread_grass_walls(&mut w, 3, 102, 203, &mut rng);
             // Any wall that left the natural family counts.
             converted = (100..110).any(|x| {
@@ -3332,7 +3336,7 @@ mod tests {
             }
         }
         set_wall(&mut w2, 102, 203, 69); // the spreading wall, but no evil tile
-        let mut rng2 = FastRandom::new(3);
+        let mut rng2 = UnifiedRandom::new(3);
         spread_grass_walls(&mut w2, 3, 102, 203, &mut rng2);
         assert!(
             (100..110).all(|x| (200..205).all(|y| {
@@ -3363,9 +3367,12 @@ mod tests {
                 ..Default::default()
             };
         }
-        // The pick sits above the sand, inside the margin (i < 380).
-        let grew = (1..4096u64).any(|seed| {
-            let mut rng = FastRandom::new(seed);
+        // The pick sits above the sand, inside the margin (i < 380). The
+        // search window is a fixture, not a constant: a 1-in-3000 first draw
+        // needs ~21 hits' worth of seeds to be stable (the UnifiedRandom
+        // re-pin widened it from the FastRandom-era 4096).
+        let grew = (1..65536u64).any(|seed| {
+            let mut rng = UnifiedRandom::new(seed as i32);
             grow_shell_pile(&mut w, 5, 100, 0.0, 0.0, false, &mut rng)
         });
         assert!(grew, "a calm dry day grows a shell pile on the beach");
@@ -3390,7 +3397,7 @@ mod tests {
                 ..Default::default()
             };
         }
-        let mut rng = FastRandom::new(3);
+        let mut rng = UnifiedRandom::new(3);
         // Mid-world (outside the beach margins) never grows.
         assert!(
             !grow_shell_pile(&mut w, 2000, 100, 0.0, 0.0, false, &mut rng),
@@ -3408,7 +3415,7 @@ mod tests {
             };
         }
         for seed in 1..256u64 {
-            let mut rng2 = FastRandom::new(seed);
+            let mut rng2 = UnifiedRandom::new(seed as i32);
             if grow_shell_pile(&mut w2, 5, 100, 0.0, 0.0, false, &mut rng2) {
                 panic!("no sand under the cell yet the pile grew");
             }
@@ -3426,7 +3433,7 @@ mod tests {
             put(&mut w, 100 + dx, 220, 53, 0);
         }
         put(&mut w, 100, 219, 20, 6 * 54); // the style-6 sapling frame
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         let grew = attempt_grow_tree_from_sapling(&mut w, 100, 219, false, &mut rng);
         assert!(grew, "the palm sapling grows on sand");
         assert!(
@@ -3458,7 +3465,7 @@ mod tests {
             put(&mut w, 100 + dx, 220, 2, 0); // forest grass, not sand
         }
         put(&mut w, 100, 219, 20, 6 * 54);
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         assert!(
             !attempt_grow_tree_from_sapling(&mut w, 100, 219, false, &mut rng),
             "the non-sand ground refuses the palm"
@@ -3478,7 +3485,7 @@ mod tests {
             put(&mut w, 100 + dx, 210, 2, 0); // the forest grass
         }
         put(&mut w, 100, 209, 595, 0); // the sapling stack's top
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         let grew = attempt_grow_tree_from_sapling(&mut w, 100, 209, false, &mut rng);
         assert!(grew, "the sakura grows (the gates pass)");
         assert!(
@@ -3500,7 +3507,7 @@ mod tests {
             put(&mut w, 100 + dx, 210, 1, 0); // plain dirt — not in TREE_SOILS
         }
         put(&mut w, 100, 209, 615, 0); // the willow sapling
-        let mut rng = FastRandom::new(11);
+        let mut rng = UnifiedRandom::new(11);
         assert!(
             !attempt_grow_tree_from_sapling(&mut w, 100, 209, false, &mut rng),
             "the non-soil ground refuses"
@@ -3512,7 +3519,7 @@ mod tests {
         }
         put(&mut w2, 100, 209, 615, 0);
         put(&mut w2, 100, 205, 1, 0); // the blocker inside the box
-        let mut rng2 = FastRandom::new(11);
+        let mut rng2 = UnifiedRandom::new(11);
         assert!(
             !attempt_grow_tree_from_sapling(&mut w2, 100, 209, false, &mut rng2),
             "the occupied clear box refuses"
@@ -3551,7 +3558,7 @@ mod tests {
         let mut runs = 0;
         for seed in 1u64..800 {
             let mut w = base.clone();
-            let mut rng = FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
             // j is the column's TOP cell (the C# walks the stack downward).
             grow_cactus(&mut w, 30, 28, &mut rng);
             runs += 1;
@@ -3580,7 +3587,7 @@ mod tests {
         for dx in -8..=8 {
             put(&mut w, 100 + dx, 200, 53, 0); // the sand floor
         }
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         grow_cactus(&mut w, 100, 200, &mut rng);
         assert!(w.tile(100, 199).is_some_and(|t| t.active() && t.kind == 80), "the cactus planted");
         // A cactus crowding (4 in the box) refuses.
@@ -3591,7 +3598,7 @@ mod tests {
         for dx in [-3i32, 3, -5, 5] {
             put(&mut w, 100 + dx, 199, 80, 0); // 4 existing cacti
         }
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         grow_cactus(&mut w, 100, 200, &mut rng);
         assert!(w.tile(100, 199).is_none_or(|t| !t.active() || t.kind != 80), "the crowd gate");
     }
@@ -3605,7 +3612,7 @@ mod tests {
         w.world_surface = 250.0; // the surface below the cells
         put(&mut w, 100, 200, 2, 0); // the grass seed cell
         put(&mut w, 101, 200, 0, 0); // the dirt neighbour
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
         assert!(
             w.tile(101, 200).is_some_and(|t| t.kind == 2),
@@ -3620,7 +3627,7 @@ mod tests {
         put(&mut w, 101, 201, 199, 0);
         put(&mut w, 100, 200, 352, 0); // the thorn being updated
         put(&mut w, 100, 199, 352, 0); // the standing thorn over the land
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         let mut grew = false;
         for tick in 0..200 {
             update_world_overground_tile(&mut w, 100, 200, true, false, 0.0, 0.0, &mut rng);
@@ -3645,7 +3652,7 @@ mod tests {
         // 4200×400 tiles at rate 1: the overground 3e-5·tiles = 50 picks,
         // ×1.5 raining = 75; the underground 1.5e-5·tiles = 25.
         let mut w = world();
-        let mut rng = FastRandom::new(9);
+        let mut rng = UnifiedRandom::new(9);
         let picks = update_world(&mut w, 1, false, false, true, true, 0.0, 0.0, &mut rng);
         assert_eq!(picks, 50 + 25);
         let picks = update_world(&mut w, 1, true, false, true, true, 0.0, 0.0, &mut rng);
@@ -3669,7 +3676,7 @@ mod tests {
         w.world_surface = 250.0;
         put(&mut w, 100, 200, 23, 0); // the corrupt-grass source
         put(&mut w, 101, 200, 0, 0); // the dirt neighbour
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         for _ in 0..50 {
             update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, false, &mut rng);
         }
@@ -3679,7 +3686,7 @@ mod tests {
             "the dirt stays dirt while the spread is stopped"
         );
         // With the flag back on the same arm converts the dirt.
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         for _ in 0..50 {
             update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
         }
@@ -3838,7 +3845,7 @@ mod tests {
         // Drive the arm with the gate roll forced: the arm's first draw is the
         // NextDouble < 0.5 gate — a seeded stream may refuse, so run enough
         // attempts that at least one converts.
-        let mut rng = FastRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         let mut converted = 0;
         for _ in 0..64 {
             grow_moss_arm(&mut w, 10, 20, 9, 11, 19, 21, &mut rng);
@@ -3876,7 +3883,7 @@ pub fn try_growing_tree_by_type(
     tree_tile_type: u16,
     x: i32,
     y: i32,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) -> bool {
     let profile = match tree_tile_type {
         587 => GrowTreeSettings::GEM_TREE_RUBY,
@@ -3911,7 +3918,7 @@ pub fn grow_tree_with_settings(
     checked_x: i32,
     checked_y: i32,
     settings: GrowTreeSettings,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) -> bool {
     // The sapling stack walk (`:30390-30393`).
     let mut num = checked_y;
@@ -3974,15 +3981,15 @@ pub fn grow_tree_with_settings(
     let mut left_branch = false;
     let mut right_branch = false;
     for i in num - num3..num {
-        let num4 = rng.next(3);
-        let mut num5 = rng.next(10);
+        let num4 = rng.next_max(3);
+        let mut num5 = rng.next_max(10);
         if i == num - 1 || i == num - num3 {
             num5 = 0;
         }
         // The re-roll guard (`:30454-30458`): a shape that repeats the same
         // side re-rolls until it picks another.
         while (num5 == 5 || num5 == 7) && left_branch || (num5 == 6 || num5 == 7) && right_branch {
-            num5 = rng.next(10);
+            num5 = rng.next_max(10);
         }
         left_branch = num5 == 5 || num5 == 7;
         right_branch = num5 == 6 || num5 == 7;
@@ -4006,8 +4013,8 @@ pub fn grow_tree_with_settings(
         t.frame_y = fy as i16;
         // The left branch arm (`:30596-30637`).
         if left_branch {
-            let num4 = rng.next(3);
-            let (fx, fy) = if rng.next(3) < 2 {
+            let num4 = rng.next_max(3);
+            let (fx, fy) = if rng.next_max(3) < 2 {
                 (44, 198 + 22 * num4)
             } else {
                 (66, 22 * num4)
@@ -4022,8 +4029,8 @@ pub fn grow_tree_with_settings(
         }
         // The right branch arm (`:30640-30678`).
         if right_branch {
-            let num4 = rng.next(3);
-            let (fx, fy) = if rng.next(3) < 2 {
+            let num4 = rng.next_max(3);
+            let (fx, fy) = if rng.next_max(3) < 2 {
                 (66, 198 + 22 * num4)
             } else {
                 (88, 66 + 22 * num4)
@@ -4045,23 +4052,23 @@ pub fn grow_tree_with_settings(
     };
     let mut flag4 = side_ground(-1);
     let mut flag5 = side_ground(1);
-    if rng.next(3) == 0 {
+    if rng.next_max(3) == 0 {
         flag4 = false;
     }
-    if rng.next(3) == 0 {
+    if rng.next_max(3) == 0 {
         flag5 = false;
     }
     // The side caps (`:30704-30746`).
     if flag5 {
-        let num4 = rng.next(3);
+        let num4 = rng.next_max(3);
         write_tree_frame(world, checked_x + 1, num - 1, settings.tree_tile_type, paint, 22, 132 + 22 * num4);
     }
     if flag4 {
-        let num4 = rng.next(3);
+        let num4 = rng.next_max(3);
         write_tree_frame(world, checked_x - 1, num - 1, settings.tree_tile_type, paint, 44, 132 + 22 * num4);
     }
     // The centre cap (`:30748-30783`).
-    let num4 = rng.next(3);
+    let num4 = rng.next_max(3);
     let (fx, fy) = if flag4 && flag5 {
         (88, 132 + 22 * num4)
     } else if flag4 {
@@ -4075,8 +4082,8 @@ pub fn grow_tree_with_settings(
         write_tree_frame(world, checked_x, num - 1, settings.tree_tile_type, paint, fx, fy);
     }
     // The top cap (`:30785-30818`): the 1/13 branch keeps the 22-column.
-    let num4 = rng.next(3);
-    let (fx, fy) = if rng.next(13) != 0 {
+    let num4 = rng.next_max(3);
+    let (fx, fy) = if rng.next_max(13) != 0 {
         (22, 198 + 22 * num4)
     } else {
         (0, 198 + 22 * num4)
@@ -4109,14 +4116,15 @@ fn write_tree_frame(
 /// `WorldGen.GrowPalmTree` (`WorldGen.cs:27116-27202`) — the palm trunk on
 /// tile 323 (the kind-20 styles 6-9 sapling arm's target). The twin port
 /// `worldgen::ocean::grow_palm_tree` rides the worldgen `Rng` stream
-/// (`oceancave`/`AddTrees`); the growth pass keeps its own `FastRandom`
-/// stream, so the arm is ported locally here (the `growth::spread_grass` /
-/// `evil::spread_grass` precedent) — same maths, same frame table.
+/// (`oceancave`/`AddTrees`); the growth pass rides its own `UnifiedRandom`
+/// (the C# `genRand`), so the arm is ported locally here (the
+/// `growth::spread_grass` / `evil::spread_grass` precedent) — same maths,
+/// same frame table.
 ///
 /// `treeHeightAddon`/`ignoreWalls` park (every ported caller passes 0 /
 /// false) and the `RangeFrame`/`NetMessage` closing arms do not exist in
 /// the port (documented in ANALYSIS).
-pub fn grow_palm_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> bool {
+pub fn grow_palm_tree(world: &mut World, i: i32, y: i32, rng: &mut UnifiedRandom) -> bool {
     if i < 0 || y < 0 || i >= world.width || y >= world.height {
         return false;
     }
@@ -4196,16 +4204,16 @@ pub fn grow_palm_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -
             let num6 = j as f64 / num3 as f64;
             if num6 >= 0.25 {
                 let mut done = false;
-                if num6 < 0.5 && rng.next(13) == 0 {
+                if num6 < 0.5 && rng.next_max(13) == 0 {
                     done = true;
                 }
-                if !done && num6 < 0.7 && rng.next(9) == 0 {
+                if !done && num6 < 0.7 && rng.next_max(9) == 0 {
                     done = true;
                 }
                 if !done && !(num6 < 0.95) {
                     done = true;
                 }
-                if !done && rng.next(5) != 0 {
+                if !done && rng.next_max(5) != 0 {
                     done = true;
                 }
                 // the trailing `|| true` — the group is always true.
@@ -4279,7 +4287,7 @@ pub(crate) fn convert_wall_by_case(
     conversion_type: u8,
     y: i32,
     world_surface: f64,
-    mut rng: Option<&mut FastRandom>,
+    mut rng: Option<&mut UnifiedRandom>,
 ) -> Option<u16> {
     // `(guard set, target)` in the C#'s else-if order.
     let cases: [(usize, u16); 8] = match conversion_type {
@@ -4402,7 +4410,7 @@ pub(crate) fn convert_wall_by_case(
                 if matches!(wall, 69 | 70 | 81) {
                     if (y as f64) < world_surface {
                         if let Some(r) = rng.as_deref_mut() {
-                            return Some(if r.next(10) != 0 { 63 } else { 65 });
+                            return Some(if r.next_max(10) != 0 { 63 } else { 65 });
                         }
                     }
                     return Some(64);
@@ -4525,7 +4533,7 @@ pub fn spread_grass_walls(
     wall_dist: i32,
     i: i32,
     j: i32,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) {
     if i < 10 || j < 10 || i >= world.width - 10 || j >= world.height - 10 {
         return;
@@ -4586,7 +4594,7 @@ pub fn spread_desert_walls(
     wall_dist: i32,
     i: i32,
     j: i32,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) {
     if i < 10 || j < 10 || i >= world.width - 10 || j >= world.height - 10 {
         return;
@@ -4674,7 +4682,7 @@ fn nactive(t: &crate::tile::Tile) -> bool {
 /// the tip frames disagree; an invalid run is killed whole (a 4-tile look-back
 /// above the stalk start through the ground), a valid one gets its soil frame
 /// row in `frameY`.
-pub fn check_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
+pub fn check_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut UnifiedRandom) {
     if cell(world, x, j).is_none() {
         return;
     }
@@ -4765,10 +4773,10 @@ pub fn check_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
     // `:58841-58847`: the shallow-water and the deep-tip rolls — the C#'s
     // `&&` short-circuits, so the `Next(4)` draw only happens when the liquid
     // test passes.
-    if cell(world, x, num2 - 1).is_some_and(|t| t.liquid < 127) && rng.next(4) == 0 {
+    if cell(world, x, num2 - 1).is_some_and(|t| t.liquid < 127) && rng.next_max(4) == 0 {
         flag = true;
     }
-    if cell(world, x, num).is_some_and(|t| t.frame_x >= 180 && t.liquid > 127) && rng.next(4) == 0
+    if cell(world, x, num).is_some_and(|t| t.frame_x >= 180 && t.liquid > 127) && rng.next_max(4) == 0
     {
         flag = true;
     }
@@ -4828,7 +4836,7 @@ pub fn check_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
 /// `18 * Next(2, 5)` and then the tip chain (90 → 108/126..162) which spawns
 /// the next 519 cell above with the matching paired frame, so the stalk gains
 /// one tile per successful tip step.
-pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
+pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut UnifiedRandom) {
     let max_y = world.height as i32 - 50;
     let mut num = j;
     // `:58980-58983`: up through the liquid.
@@ -4901,14 +4909,14 @@ pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
             let wet_below = cell(world, x, num).is_some_and(|t| t.liquid > 0)
                 || cell(world, x, num + 1).is_some_and(|t| t.liquid > 0)
                 || cell(world, x, num + 2).is_some_and(|t| t.liquid > 0);
-            if !cell(world, x, num - 2).is_some_and(|t| t.active()) && wet_below && rng.next(3) == 0
+            if !cell(world, x, num - 2).is_some_and(|t| t.active()) && wet_below && rng.next_max(3) == 0
             {
                 if let Some(t) = world.tile_mut(x, num) {
                     t.frame_x = 108;
                 }
                 place_above(world, 90);
             } else {
-                let pick = rng.next(3) as i16;
+                let pick = rng.next_max(3) as i16;
                 if let Some(t) = world.tile_mut(x, num) {
                     t.frame_x = 126 + pick * 18;
                 }
@@ -4931,13 +4939,13 @@ pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut FastRandom) {
 /// over-dense neighbourhood (the 9×13 box's 30-cap) and otherwise places the
 /// next 549 above when the water below the surface is deep enough
 /// (`k - y < 17 - Next(20)`).
-pub fn grow_check_seaweed(world: &mut World, x: i32, y: i32, rng: &mut FastRandom) {
+pub fn grow_check_seaweed(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) {
     let Some(here) = cell(world, x, y) else { return };
     if (here.kind == 549 && here.liquid < 200)
         || cell(world, x, y - 1).is_some_and(|t| t.liquid < 200)
     {
         // `:58925-58933`: the dry-out kill.
-        if here.active() && here.kind == 549 && rng.next(2) == 0 {
+        if here.active() && here.kind == 549 && rng.next_max(2) == 0 {
             crate::edit::kill_tile(world, x, y, false);
         }
         return;
@@ -4947,7 +4955,7 @@ pub fn grow_check_seaweed(world: &mut World, x: i32, y: i32, rng: &mut FastRando
     // water.
     let blocked = cell(world, x, y - 1).is_some_and(|t| t.active())
         || cell(world, x, y - 2).is_some_and(|t| t.active());
-    let roll = rng.next(1) != 0;
+    let roll = rng.next_max(1) != 0;
     if blocked
         || roll
         || !cell(world, x, y - 2).is_some_and(|t| t.liquid == 255)
@@ -4974,7 +4982,7 @@ pub fn grow_check_seaweed(world: &mut World, x: i32, y: i32, rng: &mut FastRando
         k += 1;
     }
     // `:58962-58968`: the `17 - Next(20)` window and the write.
-    if k - y < 17 - rng.next(20) {
+    if k - y < 17 - rng.next_max(20) {
         if let Some(t) = world.tile_mut(x, y - 1) {
             if !t.active() {
                 t.kind = 549;
@@ -4990,8 +4998,8 @@ pub fn grow_check_seaweed(world: &mut World, x: i32, y: i32, rng: &mut FastRando
 /// solid; an inactive cell becomes a web and reframes. The port generates no
 /// notTheBees/getGoodWorld seeds, so that box test (the missing 62 wall) is
 /// dead here.
-fn grow_web(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
-    if rng.next(10) != 0 {
+fn grow_web(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) {
+    if rng.next_max(10) != 0 {
         return;
     }
     let num = rng.next_range(2, 4);
@@ -5102,8 +5110,8 @@ pub fn place_dye(world: &mut World, x: i32, y: i32, style: i32) -> bool {
 /// Deviation: the C# mixes `Main.rand` (the gate) with `WorldGen.genRand` (the
 /// two spot draws); the port's single `rng` stream feeds both, like every other
 /// growth arm (ANALYSIS, M5-SPREAD-1).
-fn try_growing_abigails_flower(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) -> bool {
-    if rng.next(30) != 0 {
+fn try_growing_abigails_flower(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) -> bool {
+    if rng.next_max(30) != 0 {
         return false;
     }
     let rolls = if world.seeds.contains(crate::seeds::SeedFlags::DONT_STARVE) {
@@ -5190,7 +5198,7 @@ fn no_nearby_abigails_flower(world: &World, i: i32, j: i32) -> bool {
 /// and then dispatches on the soil kind to a style (2 dirt/109, 60 jungle,
 /// 53 sand in full water, 80 mushroom grass, 0/1/59 dirt/stone/clay, the
 /// full-water 5, the exotic `Next(8, 12)`).
-pub fn plant_dye(world: &mut World, i: i32, j: i32, exotic: bool, rng: &mut FastRandom) {
+pub fn plant_dye(world: &mut World, i: i32, j: i32, exotic: bool, rng: &mut UnifiedRandom) {
     let Some(here) = cell(world, i, j) else { return };
     if !here.active() || i < 95 || i > world.width - 95 || j < 95 || j > world.height - 95 {
         return;
@@ -5226,11 +5234,11 @@ pub fn plant_dye(world: &mut World, i: i32, j: i32, exotic: bool, rng: &mut Fast
             }
         } else if here.kind == 2 || here.kind == 109 {
             // `:71339-71347`: the dirt/grass pair rolls 3 or 4.
-            let style = if rng.next(4) == 0 { 4 } else { 3 };
+            let style = if rng.next_max(4) == 0 { 4 } else { 3 };
             place_dye(world, i, j - 1, style);
         } else if here.kind == 60 {
             // `:71348-71356`: the jungle grass rolls 2 or 4.
-            let style = if rng.next(2) == 0 { 2 } else { 4 };
+            let style = if rng.next_max(2) == 0 { 2 } else { 4 };
             place_dye(world, i, j - 1, style);
         } else if here.kind == 53 && water_above_full {
             // `:71357-71360`: the sand arm's water style.
@@ -5271,16 +5279,16 @@ pub fn plant_dye(world: &mut World, i: i32, j: i32, exotic: bool, rng: &mut Fast
             }
         } else if here.kind == 60 {
             // `:71394-71405`: the jungle arm's 2 / 0 / 1 cascade.
-            if rng.next(2) == 0 {
+            if rng.next_max(2) == 0 {
                 place_dye(world, i, j - 1, 2);
-            } else if rng.next(2) == 0 {
+            } else if rng.next_max(2) == 0 {
                 place_dye(world, i, j - 1, 0);
             } else {
                 place_dye(world, i, j - 1, 1);
             }
         } else if matches!(here.kind, 0 | 1 | 59) {
             // `:71406-71414`: the dirt/stone/clay arm rolls 0 or 1.
-            let style = if rng.next(2) == 0 { 0 } else { 1 };
+            let style = if rng.next_max(2) == 0 { 0 } else { 1 };
             place_dye(world, i, j - 1, style);
         } else if water_above_full {
             // `:71415-71418`: the full-water style.
@@ -5346,7 +5354,7 @@ pub fn update_world_underground_tile(
     allowed_to_spread: bool,
     day_time: bool,
     raining: bool,
-    rng: &mut FastRandom,
+    rng: &mut UnifiedRandom,
 ) {
     // The clamped box (`:73216-73231`).
     let min_i = (i - 1).max(10);
@@ -5374,9 +5382,9 @@ pub fn update_world_underground_tile(
     }
     // `:73255-73262`: the dye-plant head — `Main.rand.Next(2500)` on every
     // `nactive` pick, the exotic arm at `Next(10000)` in hardmode.
-    if rng.next(2500) == 0 {
+    if rng.next_max(2500) == 0 {
         plant_dye(world, i, j, false, rng);
-    } else if world.hard_mode && rng.next(10000) == 0 {
+    } else if world.hard_mode && rng.next_max(10000) == 0 {
         plant_dye(world, i, j, true, rng);
     }
     // `:73263-73271`: the cattail arm — the validity sweep, then (on
@@ -5384,7 +5392,7 @@ pub fn update_world_underground_tile(
     // second validity sweep.
     if kind == 519 {
         check_cat_tail(world, i, j, rng);
-        if world.tile(i, j).is_some_and(|t| t.active()) && rng.next(2) == 0 {
+        if world.tile(i, j).is_some_and(|t| t.active()) && rng.next_max(2) == 0 {
             grow_cat_tail(world, i, j, rng);
             check_cat_tail(world, i, j, rng);
         }
@@ -5398,7 +5406,7 @@ pub fn update_world_underground_tile(
     } else if kind == 53
         && world.tile(i, j).is_some_and(|t| !t.top_slope() && !t.half_brick())
         && !world.tile(i, j - 1).is_some_and(|t| t.active())
-        && rng.next(20) == 0
+        && rng.next_max(20) == 0
     {
         grow_check_seaweed(world, i, j, rng);
     }
@@ -5415,7 +5423,7 @@ pub fn update_world_underground_tile(
             allowed_to_spread,
             rng,
         );
-        if matches!(kind, 32 | 352) && rng.next(3) == 0 {
+        if matches!(kind, 32 | 352) && rng.next_max(3) == 0 {
             if kind == 32 {
                 grow_spike(world, i, j, 32, 23, rng);
             } else {
@@ -5425,10 +5433,10 @@ pub fn update_world_underground_tile(
         return;
     }
     // The lily → 74 conversion (`:73296-73310`).
-    if kind == 61 && rng.next(3) == 0 && world.tile(i, j + 1).map(|t| t.kind).unwrap_or(0) != 226 {
+    if kind == 61 && rng.next_max(3) == 0 && world.tile(i, j + 1).map(|t| t.kind).unwrap_or(0) != 226 {
         let frame_x = world.tile(i, j).map(|t| t.frame_x).unwrap_or(0);
         if frame_x < 144 {
-            if rng.next(4) == 0 {
+            if rng.next_max(4) == 0 {
                 if let Some(t) = world.tile_mut(i, j) {
                     t.frame_x = (162 + rng.next_range(0, 8) * 18) as i16;
                 }

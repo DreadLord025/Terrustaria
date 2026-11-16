@@ -299,9 +299,10 @@ impl App {
                 // lines it produced.
                 let before = self.chat.messages.len();
                 let name = server.slot_name(from);
-                let mut rng = self.item_rng;
-                self.chat.send(&msg.text, &name, &mut rng, &mut self.emotes);
-                self.item_rng = rng;
+                // The relayed commands draw the bare-`Main.rand` stand-in
+                // (outside every swap — `app/rng.rs`'s `global`).
+                self.chat
+                    .send(&msg.text, &name, self.rngs.global(), &mut self.emotes);
                 let new_lines: Vec<(String, [u8; 3])> = self
                     .chat
                     .messages

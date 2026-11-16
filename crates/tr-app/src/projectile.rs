@@ -1114,13 +1114,6 @@ fn set_defaults_scale(kind: u16) -> f32 {
 /// vanishes (Phase 1's deviation, fixed by this block). Their aiStyles
 /// 16 dispatch to `ai_bomb`; 147/75/10/181 stay unported stand-ins (the rows
 /// carry the vanilla value for the later AI port — M4-PROJ).
-/// `Main.rand.Next(min, maxExclusive)` over the pool's shared stream: the
-/// half-open range, mapped like the port's other `next_rand` consumers.
-fn rand_range(state: &mut u64, min: i32, max_excl: i32) -> f32 {
-    let span = (max_excl - min).max(1) as u64;
-    min as f32 + (crate::app::frame::next_rand(state) % span) as f32
-}
-
 /// `Vector2.RotatedBy` (`Microsoft.Xna.Framework`): the 2D rotation by an
 /// angle in radians.
 fn rotate(v: Vec2, angle: f32) -> Vec2 {
@@ -2720,8 +2713,8 @@ pub struct Projectile {
     pub rot: f32,
     pub damage: i32,
     pub knock_back: f32,
-    /// The crit decision rolled at throw time (the item stream lives in the
-    /// app, not in the projectile step).
+    /// The crit decision rolled at throw time (the roll rides the editing
+    /// pass's `UpdatePlayers` stream, not the projectile step's).
     pub crit: bool,
     /// `Projectile.friendly` (`:3115`): true = the player's shots (the pool's
     /// PVE pass hits NPCs), false = the hostile shots (the player-contact
@@ -3737,9 +3730,11 @@ impl Projectile {
         // The slot's owner is this machine's player — the C#'s `myPlayer` gate on
         // the cracked-brick break (`Projectile.cs:52586`).
         local_owner: bool,
-        // The hook's own `u64` stream (`Main.rand`'s stand-in).
-        hook_rng: Option<&mut u64>,
-        // `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`).
+        // The pass's roll stream (`Main.rand` under the `UpdateProjectiles`
+        // swap, `Main.cs:17775-17777`); `None` = off-machine callers.
+        hook_rng: Option<&mut dyn tr_core::loot::DropRng>,
+        // `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`) —
+        // the tiles this owner's hooks may not latch on.
         blacklisted: &[(i32, i32)],
     ) -> crate::grapple::HookTick {
         crate::grapple::ai_hook(
@@ -7143,13 +7138,14 @@ impl Projectile {
     /// (`:38040-38043`, `:38050-38054`) and the `Main.rand` dust jitter are
     /// SKIPPED — no dust layer in the pool — while the drift draw
     /// `Main.rand.Next(-100, 101) * 6E-05f` (`:38038-38039`) **is** drawn from
-    /// the pool's shared `Main.rand` stand-in (`hook_rng`), because it steers
-    /// the flight and skipping it would change the trajectory. The two dust
-    /// windows' own gate and `RotatedByRandom` draws stay on that stream too
-    /// (`Utils.cs:1697-1701` takes two values per call), so the draws keep
-    /// their 1:1 positions. `HandleMovement` has no 206 arm, so the blocked
-    /// move dies through the terminal default (`kill_step`).
-    fn ai_leaf_blower(&mut self, world: &World, rng: &mut u64) {
+    /// the pass's `UpdateProjectiles` stream (`Main.cs:17775-17777`), because
+    /// it steers the flight and skipping it would change the trajectory. The
+    /// two dust windows' own gate and `RotatedByRandom` draws stay on that
+    /// stream too (`Utils.cs:1697-1701` takes two `NextDouble` values per
+    /// call), so the draws keep their 1:1 positions. `HandleMovement` has no
+    /// 206 arm, so the blocked move dies through the terminal default
+    /// (`kill_step`).
+    fn ai_leaf_blower(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
         // `localAI[0]++` and the two-sided alpha ramp: fade in at 50/tick once
         // the first 3 ticks are past, fade out at 2/tick after tick 50.
         self.local_ai[0] += 1.0;
@@ -7186,20 +7182,22 @@ impl Projectile {
         }
         self.local_ai[1] += 1.0;
         if self.local_ai[1] == 1.0 {
-            // `:38039-38040` — one RNG draw pair per petal, ±0.006/tick².
-            self.ai[0] = rand_range(rng, -100, 101) * 6E-05;
-            self.ai[1] = rand_range(rng, -100, 101) * 6E-05;
+            // `:38039-38040` — one `Main.rand.Next(-100, 101)` pair per petal,
+            // ±0.006/tick².
+            self.ai[0] = rng.next_range(-100, 101) as f32 * 6E-05;
+            self.ai[1] = rng.next_range(-100, 101) as f32 * 6E-05;
             // `:38041-38048` — the first-tick dust burst: SKIPPED (no dust
             // layer), its `Next(3)` gate and the taken branch's
-            // `RotatedByRandom` pair stay on the stream.
-            if rand_range(rng, 0, 3) != 0.0 {
-                let _ = (crate::app::rand01(rng), crate::app::rand01(rng));
+            // `RotatedByRandom` pair (`Utils.cs:1697-1701` — two `NextDouble`s)
+            // stay on the stream.
+            if rng.next_range(0, 3) != 0 {
+                let _ = (rng.next_float(), rng.next_float());
             }
         }
         // `:38049-38056` — the 1-in-60 dust window below the 60th tick: the
         // same shape, the same skip with the draws kept.
-        if self.local_ai[1] < 60.0 && rand_range(rng, 0, 60) == 0.0 {
-            let _ = (crate::app::rand01(rng), crate::app::rand01(rng));
+        if self.local_ai[1] < 60.0 && rng.next_range(0, 60) == 0 {
+            let _ = (rng.next_float(), rng.next_float());
         }
         // `:38058-38062` — after the 10-tick grace the flight curves: the
         // velocity is rotated by the signed |ai[0]| ramp and damped 3%/tick.
@@ -10007,10 +10005,6 @@ pub struct ProjectilePool {
     /// entries are reachable (the `AI_007` `< 10` guard), so 10 suffice.
     hook_reg: [i16; 10],
     hook_grap_count: usize,
-    /// The hooks' own `Main.rand` stand-in (`AI_007`'s 1/16 cracked-brick break,
-    /// `Projectile.cs:52586-52595`), seeded from the world seed like the other
-    /// per-consumer streams and interleaved with nothing else.
-    hook_rng: u64,
     /// `Main.windSpeedCurrent` as the AI arms' wind tail sees it
     /// (`Projectile.cs:16777-16781`). `0f` = off: the C# gate
     /// `Main.windPhysics` is `false` by default and never set true in the
@@ -10297,7 +10291,6 @@ impl ProjectilePool {
             update_count: 0,
             hook_reg: [-1; 10],
             hook_grap_count: 0,
-            hook_rng: 0,
             wind_speed: 0.0,
             hook_blacklist: HashMap::new(),
         }
@@ -10516,12 +10509,6 @@ impl ProjectilePool {
     /// this; the AI arm and the recycle tables are the only writers.
     pub fn hook_reg(&self) -> (&[i16; 10], usize) {
         (&self.hook_reg, self.hook_grap_count)
-    }
-
-    /// Seed the hooks' `Main.rand` stand-in from the world seed — the app calls it
-    /// once at construction (the pool is built before the world exists).
-    pub fn seed_hooks(&mut self, world_seed: u64) {
-        self.hook_rng = world_seed ^ 0x606B_005B_5EED;
     }
 
     /// `Player.Update`'s `grappling[0] = -1; grapCount = 0` (`:28300-28301`):
@@ -11224,7 +11211,8 @@ impl ProjectilePool {
             FIRE_WHIP => npc.buffs.add_buff(323, 240), // Hellfire
             COOL_WHIP => npc.buffs.add_buff(324, 240), // Frostburn
             THORN_WHIP => {
-                // `:11738` — the 1/5 roll, from the item stream.
+                // `:11738` — the 1/5 roll, on the pass's `UpdateProjectiles`
+                // stream.
                 if rng.next_range(0, 5) == 0 {
                     npc.buffs.add_buff(20, 180); // Poisoned
                 }
@@ -11450,9 +11438,10 @@ impl ProjectilePool {
                         // `AI()`'s `else if (this.aiStyle == 40)`
                         // (`Projectile.cs:27780-27783`) -> `AI_040_LeafBlower`.
                         40 => {
-                            let mut rng = self.hook_rng;
-                            self.slots[i].ai_leaf_blower(world, &mut rng);
-                            self.hook_rng = rng;
+                            // The petal arm draws the pass's threaded stream
+                            // (`AI_040_LeafBlower`'s `Main.rand` rolls under
+                            // the `UpdateProjectiles` swap).
+                            self.slots[i].ai_leaf_blower(world, rng);
                         }
                         7 => {
                             let dead = player.as_ref().is_some_and(|p| p.dead);
@@ -11460,9 +11449,9 @@ impl ProjectilePool {
                             let center = owner
                                 .map(|(x, y)| Vec2::new(x, y))
                                 .unwrap_or(self.slots[i].pos);
-                            // The stream is copied out and back so the slot
-                            // borrow and the rng borrow never overlap.
-                            let mut rng = self.hook_rng;
+                            // The crack roll reborrows the pass's threaded
+                            // stream (the slot borrow and the `&mut *rng`
+                            // reborrow never overlap — disjoint places).
                             // `Player._blackListedTileCoordsForGrappling`
                             // (`Player.cs:6202`) — the owner's refused tiles.
                             let blacklist: Vec<(i32, i32)> = self
@@ -11475,10 +11464,9 @@ impl ProjectilePool {
                                 center,
                                 dead,
                                 local,
-                                Some(&mut rng),
+                                Some(&mut *rng),
                                 &blacklist,
                             );
-                            self.hook_rng = rng;
                             let crack = tick.crack;
                             let attached = tick.attached;
                             let dead = tick.dead;
@@ -13242,7 +13230,7 @@ mod tests {
             time_left: 360,
             ..Default::default()
         };
-        let mut rng = 12345u64;
+        let mut rng = tr_core::UnifiedRandom::new(12345);
         // An empty world: the arm's `kill_step` only reads its bounds.
         let w = tr_core::World::new("t".into(), 512, 64);
         // Ticks 1-3: the alpha holds at 255 (the `> 3f` gate at `:38017`).
@@ -20638,22 +20626,24 @@ mod magic_ai_tests {
     // ---------------------------------------------------------------- Phase 3
     // DW-3.1: the leaf (40), the wrath (59), the arcanum pair (118/119) and
     // the style-51 else branch. Every assertion names its `Projectile.cs` line
-    // range; the seeded rolls replay the arm's draw order off the pool's own
-    // stream — a fresh `FastRandom::new(7)` for the arms that take the update's
-    // rng, the 0-seeded `hook_rng` for the `Main.rand` stand-in.
+    // range; the seeded rolls replay the arm's draw order off the update's
+    // rng — a fresh `FastRandom::new(7)`, the same stream the `step` fixture
+    // threads (S1-A-11 P4: the leaf and the hook arms ride it too).
 
     #[test]
     fn test_dw_3_1_style_40_the_leaf_rolls_its_seeded_deltas_at_local_ai_1() {
         // `:38034-38039`: exactly one `Next(-100, 101)` pair per projectile,
         // at `localAI[1] == 1`, scaled by `6E-05f`. The velocity add
         // (`:38029-38030`) runs before the roll, so the deltas apply from the
-        // second tick on. The stream is the pool's `Main.rand` stand-in
-        // (`hook_rng`), which a fresh pool starts unseeded at 0.
+        // second tick on. The stream is the update's rng (the `step`
+        // fixture's `FastRandom::new(7)`, the pass's threaded
+        // `UpdateProjectiles` stream shape).
         let mut pool = ProjectilePool::new();
         pool.spawn_with_data(LEAF, 10.0 * TILE_PX, 10.0 * TILE_PX, 13.0, 0.0, 20, 0.0);
-        let mut st: u64 = 0;
-        let e0 = rand_range(&mut st, -100, 101) * 6.0e-5;
-        let e1 = rand_range(&mut st, -100, 101) * 6.0e-5;
+        // The twin: the same two draws replayed off the fixture's stream.
+        let mut st = tr_core::tile_light::FastRandom::new(7);
+        let e0 = st.next_range(-100, 101) as f32 * 6.0e-5;
+        let e1 = st.next_range(-100, 101) as f32 * 6.0e-5;
         let mut w = world();
         step(&mut pool, &mut w);
         let p = &pool.slots()[0];

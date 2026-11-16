@@ -214,7 +214,7 @@ pub struct TouchDamageOutcome {
 pub fn apply_touch_damage(
     world: &mut World,
     player: &mut crate::player::Player,
-    rng: &mut u64,
+    rng: &mut tr_core::UnifiedRandom,
     width: i32,
     height: i32,
 ) -> TouchDamageOutcome {
@@ -243,20 +243,22 @@ pub fn apply_touch_damage(
         tile: Some(hit),
         ..Default::default()
     };
-    let mut loot = crate::world_sim::npcs::LootRng(rng);
+    // The hurt's rolls (the damage variance and the dodge) ride the caller's
+    // stage stream — `Player.cs:28982`'s `Main.rand`, here the `UpdatePlayers`
+    // swap (`Player.cs:27608-27614`, `Main.cs:17754`).
     // `:28980-28984`: the immediate damage, and the C#'s `flag` — set when
     // `Hurt` dealt nothing (the hit was swallowed by an immunity).
     let raw = touch_damage_immediate(hit.kind);
     if raw > 0 {
         // `Main.DamageVar(num, 0f - this.luck)` — damage taken negates the
         // luck (`Player.cs:28982`).
-        let dmg = tr_core::damage::damage_var(&mut loot, raw as f32, -player.luck());
+        let dmg = tr_core::damage::damage_var(rng, raw as f32, -player.luck());
         let cx = player.x + width as f32 * 0.5;
-        // The same `LootRng` stream feeds the hurt's dodge rolls; `dodgeable`
-        // keeps `Hurt`'s default `true` — the hazard tiles pass no `dodgeable`
+        // The same stream feeds the hurt's dodge rolls; `dodgeable` keeps
+        // `Hurt`'s default `true` — the hazard tiles pass no `dodgeable`
         // override in the C# (`Player.cs:28982-29019`'s call chain), so a black
         // belt eats spike damage (research S1-C-1 §1.4).
-        outcome.damaged = player.hurt(dmg, cx, &mut loot, true);
+        outcome.damaged = player.hurt(dmg, cx, rng, true);
     }
     let flag = raw > 0 && !outcome.damaged;
     if !flag {
@@ -266,7 +268,7 @@ pub fn apply_touch_damage(
             player.buffs.add_buff(BUFF_BURNING, 20);
         }
         if SET_TOUCH_DAMAGE_BLEEDING.has(hit.kind) {
-            let duration = loot.next_range(600, 1200);
+            let duration = rng.next_range(600, 1200);
             player.buffs.add_buff(BUFF_BLEEDING, duration);
         }
     }
@@ -497,7 +499,7 @@ mod tests {
         p.x = 11.0 * 16.0;
         p.y = 30.0 * 16.0 - 30.0;
         let before = p.hp;
-        let mut rng = 7u64;
+        let mut rng = tr_core::UnifiedRandom::new(7);
         let outcome = apply_touch_damage(&mut w, &mut p, &mut rng, 20, 42);
         assert!(outcome.damaged, "the spike lands");
         let taken = before - p.hp;
@@ -518,7 +520,7 @@ mod tests {
         let mut p = crate::player::Player::spawn(&w);
         p.x = 11.0 * 16.0;
         p.y = 30.0 * 16.0 - 30.0;
-        let mut rng = 7u64;
+        let mut rng = tr_core::UnifiedRandom::new(7);
         apply_touch_damage(&mut w, &mut p, &mut rng, 20, 42);
         let bleed = p.buffs.find_buff_index(BUFF_BLEEDING);
         assert!(bleed.is_some(), "the spikes bleed");
@@ -535,7 +537,7 @@ mod tests {
         let mut p = crate::player::Player::spawn(&w);
         p.x = 11.0 * 16.0;
         p.y = 30.0 * 16.0 - 30.0;
-        let mut rng = 7u64;
+        let mut rng = tr_core::UnifiedRandom::new(7);
         let outcome = apply_touch_damage(&mut w, &mut p, &mut rng, 20, 42);
         assert!(!outcome.damaged, "the hellstone deals no immediate damage");
         let burn = p.buffs.find_buff_index(BUFF_BURNING);
@@ -551,7 +553,7 @@ mod tests {
         let mut p = crate::player::Player::spawn(&w);
         p.x = 11.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let mut rng = 7u64;
+        let mut rng = tr_core::UnifiedRandom::new(7);
         for _ in 0..5 {
             apply_touch_damage(&mut w, &mut p, &mut rng, 20, 42);
             assert!(
@@ -575,7 +577,7 @@ mod tests {
         let mut p = crate::player::Player::spawn(&w);
         p.x = 11.0 * 16.0;
         p.y = 30.0 * 16.0 - 30.0;
-        let mut rng = 7u64;
+        let mut rng = tr_core::UnifiedRandom::new(7);
         let outcome = apply_touch_damage(&mut w, &mut p, &mut rng, 20, 42);
         assert_eq!(outcome.destroyed, Some((11, 30, None)), "the thorn breaks");
         assert!(

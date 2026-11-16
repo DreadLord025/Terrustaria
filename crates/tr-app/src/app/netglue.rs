@@ -2878,6 +2878,54 @@ mod handshake_tests {
         );
     }
 
+    /// DW-5.1 — a relayed chat command draws the bare-`Main.rand` stand-in:
+    /// the host's `global()` pays exactly `Next(1, 101)` (`RollCommand.cs:14`)
+    /// and no stage stream moves (the C# chat path runs outside every swap).
+    #[test]
+    fn test_dw_5_1_chat_commands_draw_the_global_stand_in() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        let mut expected = host_app.rngs.global().clone();
+        let expected_roll = expected.next_range(1, 101);
+        let stage_pre: Vec<_> = crate::app::RngKey::ALL
+            .iter()
+            .map(|&k| (k, host_app.rngs.stream(k).clone()))
+            .collect();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::NetModule {
+                module: crate::app::netmodules::module_id::TEXT,
+                body: crate::app::netmodules::ChatMessage {
+                    command: String::new(),
+                    text: "/roll".into(),
+                }
+                .encode(),
+            });
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let line = host_app
+            .chat
+            .messages
+            .iter()
+            .find(|m| m.text.starts_with("*client rolls a "))
+            .expect("the host relayed the roll");
+        let rolled: u32 = line.text.rsplit(' ').next().unwrap().parse().unwrap();
+        assert_eq!(rolled, expected_roll as u32, "the roll is Next(1, 101)");
+        assert_eq!(
+            host_app.rngs.global(),
+            &expected,
+            "the global stand-in paid exactly the roll's draws"
+        );
+        for (k, pre) in &stage_pre {
+            assert_eq!(
+                host_app.rngs.stream(*k),
+                pre,
+                "{} untouched by the chat command",
+                k.name()
+            );
+        }
+    }
+
     #[test]
     fn the_ping_module_measures_an_rtt() {
         let (mut host_app, mut client_app) = in_world_pair();
@@ -2896,20 +2944,42 @@ mod handshake_tests {
         // The host force-spawns a sky entity; the module relay must land it on
         // the client (`AmbienceServer.SpawnForPlayer`).
         // The forced spawn is consumed by the ambience update (the frame's
-        // ambience step), so run one step before the pump picks it up.
+        // ambience step), so run one step before the pump picks it up. The
+        // scheduler draws the bare-`Main.rand` stand-in (`global()`); the
+        // stream rides through the step via clone/write-back — `ambience_ctx`
+        // borrows the whole App while the update runs (the flow.rs trick).
         {
             let mut amb = std::mem::take(&mut host_app.ambience);
-            let mut rng = host_app.ambience_rng;
+            // Block the regular scheduler so this step exercises ONLY the
+            // forced-spawn path: the pinned seed replaces the host's
+            // `SerializeSkyEntitySpawn` draw and the loopback reads the seed
+            // from the packet — the bare-`Main.rand` stand-in must not
+            // advance anywhere in the chain (no double advance).
+            amb.block_scheduler_for_tests();
+            let pre = host_app.rngs.global().clone();
             amb.forced_spawn_for_tests(crate::ambience::SkyEntityType::Wyvern, -1, 12345);
-            amb.update(1.0 / 60.0, &host_app.ambience_ctx(), &mut rng);
-            host_app.ambience_rng = rng;
+            let mut rng = host_app.rngs.global().clone();
+            {
+                let ctx = host_app.ambience_ctx();
+                amb.update(1.0 / 60.0, &ctx, &mut rng);
+            }
+            *host_app.rngs.global() = rng;
             host_app.ambience = amb;
+            assert_eq!(*host_app.rngs.global(), pre, "the forced spawn drew nothing");
         }
+        let client_pre = client_app.rngs.global().clone();
         pump(&mut host_app, &mut client_app, 25);
         assert!(
             !client_app.ambience.entities.is_empty(),
             "the client spawned the relayed entity: {}",
             client_app.ambience.entities.len()
+        );
+        // The client's loopback spawned from the packet's seed — its own
+        // bare-`Main.rand` stand-in paid nothing.
+        assert_eq!(
+            client_app.rngs.global(),
+            &client_pre,
+            "the loopback deserialize drew nothing"
         );
     }
 
