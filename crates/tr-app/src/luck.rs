@@ -245,10 +245,21 @@ pub fn torch_scan_step(
     let window = 40_i32;
     let top = luck.next_torch_luck_check_center.1 as i32 / 16 - window;
     let bottom = luck.next_torch_luck_check_center.1 as i32 / 16 + window;
-    let x_lo = ((luck.next_torch_luck_check_center.0 as i32 / 16 - window).clamp(10, world.width - 10))
-        as usize;
-    let x_hi = ((luck.next_torch_luck_check_center.0 as i32 / 16 + window).clamp(10, world.width - 10))
-        as usize;
+    // `Utils.Clamp` (`Utils.cs:223-234`) tests the max first, so a world
+    // narrower than the 10-tile margin folds onto the max instead of
+    // panicking on a reversed range (the same fold recorded for the
+    // underground `Collision.GetTilesIn` clamp).
+    let max_x = world.width - 10;
+    let x_lo = if luck.next_torch_luck_check_center.0 as i32 / 16 - window > max_x {
+        max_x
+    } else {
+        (luck.next_torch_luck_check_center.0 as i32 / 16 - window).max(10)
+    };
+    let x_hi = if luck.next_torch_luck_check_center.0 as i32 / 16 + window > max_x {
+        max_x
+    } else {
+        (luck.next_torch_luck_check_center.0 as i32 / 16 + window).max(10)
+    };
     // `for (int i = 0; i < num; i++)` with `num == 1`: exactly one row.
     let row = top + luck.lucky_torch_counter;
     if row < 10 || row > world.height - 10 {
@@ -256,7 +267,7 @@ pub fn torch_scan_step(
         return;
     }
     for x in x_lo..=x_hi {
-        let Some(tile) = world.tile(x as i32, row) else {
+        let Some(tile) = world.tile(x, row) else {
             // `if (tile == null) { return; }` — the whole scan stops.
             return;
         };

@@ -52,6 +52,8 @@ pub struct SceneMetrics {
     pub evil_tile_count: i32,
     /// `metrics.BloodTileCount` (`SceneMetrics.cs:614`, non-remix branch).
     pub blood_tile_count: i32,
+    /// `metrics.HoneyBlockCount` (`SceneMetrics.cs:595`: `_tileCounts[229]`).
+    pub honey_block_count: i32,
     /// `metrics.SurfaceAtmospherics` (`SceneMetrics.cs:698`, `WorldGen.cs:10976`).
     pub surface_atmospherics: bool,
     /// `metrics.ZoneRain` (`SceneMetrics.cs:701`).
@@ -308,6 +310,7 @@ impl SceneMetrics {
             jungle_tile_count: 0,
             evil_tile_count: 0,
             blood_tile_count: 0,
+            honey_block_count: 0,
             surface_atmospherics: false,
             zone_rain: false,
             zone_snow: false,
@@ -500,6 +503,8 @@ impl SceneMetrics {
         // `SceneMetrics.cs:610`: the glowing-mushroom block set.
         self.mushroom_tile_count =
             self.count(70) + self.count(71) + self.count(72) + self.count(528);
+        // `SceneMetrics.cs:595`: `HoneyBlockCount = _tileCounts[229]`.
+        self.honey_block_count = self.count(229);
         // `SceneMetrics.cs:611-612`:
         self.meteor_tile_count = self.count(37);
         self.dungeon_tile_count = self.count(41)

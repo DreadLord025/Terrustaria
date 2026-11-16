@@ -581,31 +581,64 @@ pub fn draw_mouse_text(
     screen: Vec2,
     pulse: UiPulse,
 ) {
-    if text.is_empty() {
+    draw_mouse_text_block(
+        r,
+        lookups,
+        mouse,
+        &[(text.to_string(), [1.0, 1.0, 1.0, 1.0])],
+        screen,
+        pulse,
+    );
+}
+
+/// `Main.MouseTextInner`'s plain-text arm (`Main.cs:20218-20319`) for several
+/// lines: the box measured over every line (the C# measures `cursorText` and
+/// the buff tooltip separately, `:218-221`) and one four-way-shadowed line per
+/// entry, stacked by `line_height`. The buff hover (`:43237-43251`) and the
+/// banner list (`MouseText_DrawBuffTooltip`, `:21345-21489`) ride this.
+pub fn draw_mouse_text_block(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    mouse: Vec2,
+    lines: &[(String, [f32; 4])],
+    screen: Vec2,
+    pulse: UiPulse,
+) {
+    if lines.is_empty() {
         return;
     }
     let lh = line_height(lookups);
-    // `Main.cs:20367-20377`: the single line's measured width, one line tall.
-    let w = hud_text_width(r, lookups, text, 1.0);
-    let rect = tooltip_box_rect(mouse, w, lh, screen);
+    let mut w = 0.0f32;
+    for (text, _) in lines {
+        w = w.max(hud_text_width(r, lookups, text, 1.0));
+    }
+    let h = lh * lines.len() as f32;
+    let rect = tooltip_box_rect(mouse, w, h, screen);
     draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
     // The same `(14, 9)` inset and `mouseTextColor` tint the tooltip uses
-    // (`Main.cs:20400-20407`).
+    // (`Main.cs:20400-20407`, `:20319`).
     let tx = rect[0] + BOX_INSET.x;
     let ty = rect[1] + BOX_INSET.y;
     let tint = pulse.text;
-    for dir in [(-2.0f32, 0.0f32), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
-        hud_text(
-            r,
-            lookups,
-            tx + dir.0,
-            ty + dir.1,
-            1.0,
-            [0.0, 0.0, 0.0, tint],
-            text,
-        );
+    let mut line_y = 0.0;
+    for (text, color) in lines {
+        let line = [color[0] * tint, color[1] * tint, color[2] * tint, tint];
+        // `ChatManager.DrawColorCodedStringWithShadow` (`ChatManager.cs:333-344`)
+        // at the `spread = 2` the interface text uses.
+        for dir in [(-2.0f32, 0.0f32), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
+            hud_text(
+                r,
+                lookups,
+                tx + dir.0,
+                ty + line_y + dir.1,
+                1.0,
+                [0.0, 0.0, 0.0, tint],
+                text,
+            );
+        }
+        hud_text(r, lookups, tx, ty + line_y, 1.0, line, text);
+        line_y += lh;
     }
-    hud_text(r, lookups, tx, ty, 1.0, [tint, tint, tint, tint], text);
 }
 
 /// Index of the slot drawn under `mouse`. Open inventory: the 10x5 grid at

@@ -20,14 +20,47 @@ use tr_core::World;
 /// `Main.rand` is active at the trigger; the port's forced path runs inside
 /// the growth phase). Extracted so tests can pin the stream identity without
 /// the `TR_HARDMODE` env pin.
-fn run_hardmode_init(world: &mut World, corruption: bool, rng: &mut UnifiedRandom) {
+pub(crate) fn run_hardmode_init(world: &mut World, corruption: bool, rng: &mut UnifiedRandom) {
     tr_core::spread::initialize_hard_mode(world, corruption, rng);
+}
+
+/// `WorldGen.StartHardmode()` (`WorldGen.cs:31701-31719`) — the whole entry,
+/// not just the runner half: the `hardMode` early-return (`:31703-31706`, so a
+/// repeat call is a no-op), the switch, `initializeHardMode`'s strip walk
+/// (`:31570-31591`), then the follow-up broadcast — `Lang.misc[15]` ("The
+/// ancient spirits of light and dark have been released.", `:31711`) and
+/// progression event 9 (`:31712`). Returns whether it actually ran.
+///
+/// Deviation: the C# runs the transform on a background thread
+/// (`TransformWorldOnBackgroundThread`, `:31721-31742`) with the chat/achievement
+/// follow-up queued to the main thread; the port transforms inline, so the
+/// follow-up lands in the same call. `TryProtectingSpawnedItems`/`UndoSpawnedItemProtection`
+/// (`:31708`/`:31717`) have no ported consumer (no item-protection state).
+pub(crate) fn start_hardmode(app: &mut App) -> bool {
+    if app.world.hard_mode {
+        return false;
+    }
+    app.world.hard_mode = true;
+    let corruption = (app.world.seed >> 56) & 1 == 1;
+    run_hardmode_init(
+        &mut app.world,
+        corruption,
+        app.rngs.stream(RngKey::UpdateWorldGen),
+    );
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        &crate::lang::text("LegacyMisc.15"),
+        crate::chat::COLOR_WORLD,
+    );
+    let _ = app.achievements.notify_progression(9);
+    true
 }
 
 pub(crate) fn update_growth(app: &mut App, dt: f32) {
     // The hardmode switch (`WorldGen.StartHardmode`, `WorldGen.cs:31701-
-    // 31720`): the dev trigger `TR_HARDMODE=1` (the WoF kill rides the
-    // M4-NPC families) runs the runner half once — on the same phase stream.
+    // 31719`): the dev trigger `TR_HARDMODE=1` runs the runner half only —
+    // `start_hardmode`'s chat/achievement follow-up stays off so a benched
+    // run does not paint the chat log.
     let rng = app.rngs.stream(RngKey::UpdateWorldGen);
     if !app.world.hard_mode && crate::env::hardmode_forced() {
         app.world.hard_mode = true;

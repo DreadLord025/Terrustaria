@@ -100,32 +100,70 @@ pub(crate) fn advance_bg_style(style: &mut i32, delay: &mut i32, preferred: i32)
     }
 }
 
-/// `Main.UpdateBGVisibility_BackLayer` + `Main.UpdateBGVisibility_FrontLayer`.
+/// `SurfaceBackgroundID.Sets.IsDesertVariant` (`ID/SurfaceBackgroundID.cs`):
+/// the four styles whose per-biome desert sets can swap without a fade.
 ///
-/// Far indices: forest 0, desert 1, ocean 3, snow 4. Front indices equal the
-/// style in the supported subset (forest 0, desert 2, ocean 4, snow 7).
-pub(crate) fn advance_bg_alphas(front: &mut [f32; 16], far: &mut [f32; 16], style: i32, speed: f32) {
-    // `DrawBG_ModifyBGFarBackLayerAlpha`: only the wanted layer grows; every other
-    // non-zero layer fades out. (The desert-variant swap guard never applies to
-    // the styles we support.)
-    let far_target = match style {
-        2 => 1,
-        4 => 3,
-        7 => 4,
-        _ => 0,
-    };
-    for i in 0..far.len() {
-        let wanted = far_target == i as i32;
-        if wanted || far[i] != 0.0 {
-            far[i] = (far[i] + if wanted { speed } else { -speed }).clamp(0.0, 1.0);
+/// `Main.UpdateBGVisibility_FrontLayer_IsDesertVariantSwap` (`Main.cs:64120-64143`)
+/// additionally requires both styles to have a set for the current desert biome
+/// (`Main.desertBackgroundSet.{Pure,Corrupt,Hallow,Crimson}.HasAny`). The port has
+/// no desert-set store, so the predicate is always false: the fade-out guard it
+/// feeds (`Main.cs:64109`, `64268`) simplifies to "always fade out".
+/// ponytail: add the sets when `WorldGen.setBG` case 6 (desert) is ported.
+#[allow(dead_code)]
+fn is_desert_variant(style: i32) -> bool {
+    matches!(style, 2 | 5 | 13 | 14)
+}
+
+/// The far-layer indexes a style targets (`Main.UpdateBGVisibility_BackLayer`,
+/// `Main.cs:64145-64209`). Mushroom (9) targets *two* layers: 0 and 6.
+fn far_layer_targets(style: i32, jungle_bg: i32, hallow_bg: i32) -> [Option<usize>; 2] {
+    let one = |i: usize| [Some(i), None];
+    match style {
+        2 => one(1),
+        // Jungle: `jungleBG == 5` sits behind the forest far layer.
+        3 => one(if jungle_bg == 5 { 15 } else { 0 }),
+        // Corrupt, and the corrupt/crimson desert-variant styles.
+        1 | 5 | 13 | 14 => one(2),
+        // Hallow: `hallowBG == 3` has its own far layer.
+        6 => one(if hallow_bg == 3 { 6 } else { 2 }),
+        4 => one(3),
+        7 => one(4),
+        8 => one(5),
+        9 => [Some(0), Some(6)],
+        10 | 11 | 12 => one(style as usize),
+        _ => one(0),
+    }
+}
+
+/// `Main.UpdateBGVisibility_BackLayer` + `Main.UpdateBGVisibility_FrontLayer`
+/// (`Main.cs:64087-64209`), the cross-fade half of `Main.DrawBG`.
+///
+/// The front array is indexed by *style* (so hallow 6, crimson 8, mushroom 9);
+/// the far array uses the biome-layer index of `UpdateBGVisibility_BackLayer`.
+pub(crate) fn advance_bg_alphas(
+    front: &mut [f32; 16],
+    far: &mut [f32; 16],
+    style: i32,
+    jungle_bg: i32,
+    hallow_bg: i32,
+    speed: f32,
+) {
+    // `DrawBG_ModifyBGFarBackLayerAlpha` (`Main.cs:64258-64273`): the wanted
+    // layers grow, every other non-zero layer fades out.
+    let targets = far_layer_targets(style, jungle_bg, hallow_bg);
+    for (i, a) in far.iter_mut().enumerate() {
+        let flag = targets.contains(&Some(i));
+        if flag || *a != 0.0 {
+            *a = (*a + if flag { speed } else { -speed }).clamp(0.0, 1.0);
         }
     }
-    // `UpdateBGVisibility_FrontLayer`: the target layer fades in, the rest out.
-    for i in 0..front.len() {
+    // `UpdateBGVisibility_FrontLayer` (`Main.cs:64087-64118`): the target layer
+    // fades in, the rest out.
+    for (i, a) in front.iter_mut().enumerate() {
         if style == i as i32 {
-            front[i] = (front[i] + speed).min(1.0);
-        } else if front[i] != 0.0 {
-            front[i] = (front[i] - speed).max(0.0);
+            *a = (*a + speed).min(1.0);
+        } else if *a != 0.0 {
+            *a = (*a - speed).max(0.0);
         }
     }
 }
@@ -252,7 +290,7 @@ mod bg_transition_tests {
         far[0] = 1.0;
         // 20 frames at `backgroundLayerTransitionSpeed = 0.05` completes a fade.
         for _ in 0..20 {
-            advance_bg_alphas(&mut front, &mut far, 7, 0.05);
+            advance_bg_alphas(&mut front, &mut far, 7, 0, 0, 0.05);
         }
         assert_eq!(front[0], 0.0);
         assert_eq!(far[0], 0.0);
@@ -269,9 +307,48 @@ mod bg_transition_tests {
         for (style, index) in [(0, 0), (2, 1), (4, 3), (7, 4)] {
             let mut front = [0.0; 16];
             let mut far = [0.0; 16];
-            advance_bg_alphas(&mut front, &mut far, style, 0.05);
+            advance_bg_alphas(&mut front, &mut far, style, 0, 0, 0.05);
             assert_eq!(front[style as usize], 0.05, "front style {style}");
             assert_eq!(far[index], 0.05, "far style {style}");
         }
+    }
+
+    #[test]
+    fn every_front_layer_style_is_its_own_alpha_slot() {
+        // `Main.bgAlphaFrontLayer` is indexed by `Main.bgStyle` directly, so the
+        // five variant styles land on their own slots (`Main.cs:64099-64117`).
+        for style in [1, 3, 6, 8, 9] {
+            let mut front = [0.0; 16];
+            let mut far = [0.0; 16];
+            advance_bg_alphas(&mut front, &mut far, style, 0, 0, 0.05);
+            assert_eq!(front[style as usize], 0.05, "front style {style}");
+            assert_eq!(front.iter().filter(|a| **a != 0.0).count(), 1);
+        }
+    }
+
+    #[test]
+    fn far_layer_mapping_matches_update_bg_visibility_back_layer() {
+        // `Main.cs:64145-64209`, with the two WorldGen-dependent branches.
+        let far = |style, jungle, hallow| {
+            let mut front = [0.0; 16];
+            let mut far = [0.0; 16];
+            advance_bg_alphas(&mut front, &mut far, style, jungle, hallow, 0.05);
+            (0..16).filter(|&i| far[i] > 0.0).collect::<Vec<_>>()
+        };
+        assert_eq!(far(1, 0, 0), vec![2]); // corrupt
+        assert_eq!(far(3, 0, 0), vec![0]); // jungle, jungleBG != 5
+        assert_eq!(far(3, 5, 0), vec![15]); // jungle, jungleBG == 5
+        assert_eq!(far(6, 0, 0), vec![2]); // hallow, hallowBG != 3
+        assert_eq!(far(6, 0, 3), vec![6]); // hallow, hallowBG == 3
+        assert_eq!(far(5, 0, 0), vec![2]); // desert-variant corrupt
+        assert_eq!(far(13, 0, 0), vec![2]); // desert-variant hallow
+        assert_eq!(far(14, 0, 0), vec![2]); // desert-variant crimson
+        assert_eq!(far(8, 0, 0), vec![5]); // crimson
+        // Mushroom targets **two** far layers: 0 and 6.
+        assert_eq!(far(9, 0, 0), vec![0, 6]);
+        // Forest variants are their own far layer.
+        assert_eq!(far(10, 0, 0), vec![10]);
+        assert_eq!(far(11, 0, 0), vec![11]);
+        assert_eq!(far(12, 0, 0), vec![12]);
     }
 }
