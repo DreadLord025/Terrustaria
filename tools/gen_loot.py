@@ -91,17 +91,13 @@ COND_NAMES = {
     "YoyosYelets": "YoyosYelets",
     "YoyosHelFire": "YoyosHelFire",
     "NeverTrue": "NeverTrue",
+    "RedHatSkeletron": "RedHatSkeletron",
 }
 
 # The skipped conditions (no port system) - reported per use.
-SKIP_CONDITIONS = {"NamedNPC": "needs the localized given name", "RedHatSkeletron": "needs the legendary difficulty + the NPC adjustment flag"}
+SKIP_CONDITIONS = {}
 
-SKIP_RULE_CLASSES = {
-    "FromOptionsWithoutRepeatsDropRule": "no without-repeats engine rule yet",
-    "MechBossSpawnersDropRule": "the mech spawner pick needs the downed-mechs pickup state",
-    "SlimeBodyItemDropRule": "the slime-body rain needs the slime-rain event state",
-    "StatueMimicItemDropRule": "the statue-mimic switch needs the mimic spawn state",
-}
+SKIP_RULE_CLASSES = {}
 
 
 def body_of(src, sig):
@@ -284,6 +280,11 @@ class Gen:
         m = re.fullmatch(r"new Conditions\.(\w+)\((-?\d+)\)", expr)
         if m and m.group(1) == "FromCertainWaveAndAbove":
             return f"Cond::FromCertainWaveAndAbove({m.group(2)})"
+        m = re.fullmatch(r"new Conditions\.NamedNPC\(\"(\w+)\.(\w+)\"\)", expr)
+        if m:
+            # `"GuideNames.Andrew"` -> `NamedNpc::GuideAndrew` (the three rows
+            # `ItemDropDatabase.cs:738-740` uses).
+            return f"Cond::NamedNpc(NamedNpc::{m.group(1).removesuffix('Names')}{m.group(2)})"
         m = re.match(r"new Conditions\.(\w+)\(", expr)
         if m:
             if m.group(1) in SKIP_CONDITIONS:
@@ -398,6 +399,22 @@ class Gen:
                 self.check_item(item, where)
                 or f"by_condition({cond}, {item}, {a[1]}, {a[2]}, {a[3]}, {num})"
             )
+        if cls == "SlimeBodyItemDropRule":
+            return "slime_body_item_drop()"
+        if cls == "StatueMimicItemDropRule":
+            return "statue_mimic_item_drop()"
+        if cls == "MechBossSpawnersDropRule":
+            return "mech_boss_spawners_drop()"
+        if cls == "FromOptionsWithoutRepeatsDropRule":
+            a = split_args(args)
+            opts = [self.int_arg(x, locals_) for x in a[1:]]
+            if any(o is None for o in opts):
+                self.warn(f"{where}: FromOptionsWithoutRepeats with an unresolved option")
+                return None
+            return (
+                f"from_options_without_repeats({self.int_arg(a[0], locals_)}"
+                f", &[{', '.join(map(str, opts))}])"
+            )
         if cls == "DropBasedOnExpertMode":
             a = split_args(args)
             normal = self.parse_rule(a[0], where, locals_)
@@ -458,6 +475,18 @@ class Gen:
             return None
         self.warn(f"{where}: unknown rule class {cls}")
         return None
+
+    def int_arg(self, expr, locals_):
+        """A register's NPC-id argument: a literal or one of the C# locals
+        (`short type = 35;`, `int type = ...`)."""
+        expr = expr.strip()
+        if expr in locals_ and isinstance(locals_[expr], int):
+            return locals_[expr]
+        try:
+            return int(expr)
+        except ValueError:
+            self.warn(f"register: unresolved npc id `{expr}`")
+            return None
 
     def check_item(self, item, where, warn=True):
         if item is None or item < 0:
@@ -528,7 +557,9 @@ class Gen:
             if rule is None:
                 return
             rule = self.apply_chains(rule, chains, where, locals_)
-            nid = int(a[0])
+            nid = self.int_arg(a[0], locals_)
+            if nid is None:
+                return
             ids = [nid]
             if nid > 0:
                 ids += self.families.get(nid, [])
@@ -610,12 +641,28 @@ class Gen:
         self.warn(f"{where}: unhandled statement")
 
 
+def expand_nested(src, st):
+    """`this.X();` inside a method body - the C# folds `RegisterBosses()` into
+    22 `RegisterBoss_X()` calls, `RegisterMimic()` into `RegisterIceMimic()`.
+    Returns the callee name, or None."""
+    m = re.fullmatch(r"this\.(\w+)\(\);", st)
+    if not m:
+        return None
+    name = m.group(1)
+    return name if body_of(src, r"private void %s\(\)" % name) is not None else None
+
+
 ARRAY_RE = re.compile(r"int\[\] (\w+) = new int\[\d*\]\s*\{([^}]*)\};")
 LOCAL_COND_RE = re.compile(r"[\w.]+ (\w+) = new Conditions\.(\w+)\(\);")
+# `short type = 35;` / `int chanceDenominator = 9;` - the C# hoists the NPC id
+# and a shared denominator into locals the register calls then use.
+INT_LOCAL_RE = re.compile(r"(?:short|int|byte|ushort) (\w+) = (-?\d+);")
 
 
-def process_stream(g, statements, gen, locals_):
-    """Parse one method's statement stream with its local scope."""
+def process_stream(g, statements, gen, locals_, src=None):
+    """Parse one method's statement stream with its local scope. With `src`,
+    a `this.X();` statement expands into X's body (the C#'s nested
+    `RegisterBosses()` / `RegisterMimic()` calls)."""
     for st in statements:
         m = ARRAY_RE.search(st)
         if m and re.fullmatch(ARRAY_RE, st):
@@ -625,6 +672,19 @@ def process_stream(g, statements, gen, locals_):
         if m:
             locals_[m.group(1)] = f"Cond::{m.group(2)}"
             continue
+        m = INT_LOCAL_RE.fullmatch(st)
+        if m:
+            locals_[m.group(1)] = int(m.group(2))
+            continue
+        if re.fullmatch(r"IItemDropRule \w+ = new LeadingConditionRule\(new Conditions\.\w+\(\)\);", st):
+            continue   # a named rule the register call carries inline anyway
+        if src is not None:
+            nested = expand_nested(src, st)
+            if nested is not None:
+                body = body_of(src, r"private void %s\(\)" % nested)
+                # each method keeps its own int[]/condition locals
+                process_stream(g, split_statements(body), gen, {}, src)
+                continue
         g.statement(st, gen, locals_)
 
 
@@ -652,8 +712,9 @@ def main():
         "    chain_on_failed_roll, chain_on_success, CommonDrop, DropBasedOnExpertMode,",
         "    DropBasedOnMasterMode,",
         "    ItemDropDatabase, OneFromRulesRule,",
-        "};",
-        "",
+        "    from_options_without_repeats, mech_boss_spawners_drop, slime_body_item_drop,",
+        "    statue_mimic_item_drop, NamedNpc,",
+        "};",        "",
         "pub fn populate(db: &mut ItemDropDatabase) {",
     ]
 
@@ -661,14 +722,7 @@ def main():
         m = re.fullmatch(r"this\.(\w+)\(\);", st)
         if m and m.group(1) in ("PrepareNPCNetIDsByTypeDictionary", "TrimDuplicateRulesForNegativeIDs"):
             continue
-        if m:
-            meth = body_of(src, r"private void %s\(\)" % m.group(1))
-            if meth is None:
-                print(f"generator: method {m.group(1)} not found")
-                continue
-            process_stream(g, split_statements(meth), gen, {})
-            continue
-        process_stream(g, [st], gen, {})
+        process_stream(g, [st], gen, {}, src)
     gen.append("}")
     text = "\n".join(gen) + "\n"
 
