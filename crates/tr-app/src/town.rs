@@ -28,18 +28,19 @@ pub fn quick_find_home(
     tile_x: i32,
     tile_y: i32,
     ignore: Option<usize>,
+    asking_net_id: i32,
 ) -> Option<(i32, i32)> {
     if tile_x <= 10 || tile_y <= 10 || tile_x >= world.width - 10 || tile_y >= world.height - 10 {
         return None;
     }
     // The pass 1: the exact tile (the scan reads `homeTileY - 1`).
-    if let Some((bx, by)) = scan_spot(world, npcs, tile_x, tile_y - 1, ignore) {
+    if let Some((bx, by)) = scan_spot(world, npcs, tile_x, tile_y - 1, ignore, asking_net_id) {
         return Some((bx, by));
     }
     // The pass 2: the ±1 ring.
     for i in (tile_x - 1)..=(tile_x + 1) {
         for j in (tile_y - 1)..=(tile_y + 1) {
-            if let Some((bx, by)) = scan_spot(world, npcs, i, j, ignore) {
+            if let Some((bx, by)) = scan_spot(world, npcs, i, j, ignore, asking_net_id) {
                 return Some((bx, by));
             }
         }
@@ -48,7 +49,7 @@ pub fn quick_find_home(
     let num = 10;
     for k in (tile_x - num..=(tile_x + num)).step_by(2) {
         for l in (tile_y - num..=(tile_y + num)).step_by(2) {
-            if let Some((bx, by)) = scan_spot(world, npcs, k, l, ignore) {
+            if let Some((bx, by)) = scan_spot(world, npcs, k, l, ignore, asking_net_id) {
                 return Some((bx, by));
             }
         }
@@ -68,6 +69,7 @@ fn scan_spot(
     x: i32,
     y: i32,
     ignore: Option<usize>,
+    asking_net_id: i32,
 ) -> Option<(i32, i32)> {
     let scan = check_room(world, x, y).ok()?;
     if !room_needs(&scan.house_tiles) {
@@ -77,10 +79,9 @@ fn scan_spot(
     // housed town NPC whose home is in the room occupies it, so the room
     // scores −1 and no home is assigned. The C#'s
     // `CanNPCsLiveWithEachOther` compares the two `housingCategory` fields
-    // (`TownRoomManager.cs:144-156`); the port's town kinds all carry the
-    // vanilla default category 0 (the category-1 kinds 637/638 are not
-    // ported), so a housed NPC always conflicts.
-    let (occupied, shared_room_x) = room_occupancy(&scan, npcs, ignore);
+    // (`TownRoomManager.cs:144-156`), so a same-category occupant refuses the
+    // room while a different-category one only sets `sharedRoomX`.
+    let (occupied, shared_room_x) = room_occupancy(&scan, npcs, ignore, asking_net_id);
     if occupied {
         return None;
     }
@@ -98,6 +99,7 @@ fn room_occupancy(
     scan: &tr_core::housing::RoomScan,
     npcs: &[Npc],
     ignore: Option<usize>,
+    asking_net_id: i32,
 ) -> (bool, Option<i32>) {
     let mut shared = None;
     for (i, npc) in npcs.iter().enumerate() {
@@ -113,12 +115,38 @@ fn room_occupancy(
         if !scan.room_tiles.contains(&(hx, hy)) || !scan.room_tiles.contains(&(hx, hy - 1)) {
             continue;
         }
-        // The categories differ → the room is shared; the port's kinds share
-        // the default category, so this is the occupied arm.
-        return (true, shared);
+        // `:5821-5825`: a conflict refuses the room; otherwise the occupant's
+        // home becomes `sharedRoomX` and the loop keeps looking.
+        if !can_npcs_live_with_each_other(asking_net_id, npc.kind.net_id()) {
+            return (true, None);
+        }
+        shared = Some(hx);
     }
     (false, shared)
 }
+
+/// `HousingCategoryID` (`ID/HousingCategoryID.cs:3-8`): `CommonNPCs = 0`,
+/// `PetNPCs = 1`. `NPC.SetDefaults` writes 0 for every town NPC
+/// (`NPC.cs:8518`) and 1 for the six pet ids — TownCat/TownDog 637/638
+/// (`:17224`), TownBunny 656 (`:17308`), TownSlimeBlue 670 (`:17494`) and
+/// the 678-684 green/old/purple/red/yellow/rainbow/copper slimes
+/// (`:17607`). Keyed by the vanilla net id, like the C#'s
+/// `ContentSamples.NpcsByNetId` lookup (`TownRoomManager.cs:146`).
+pub fn housing_category(net_id: i32) -> i32 {
+    match net_id {
+        637 | 638 | 656 | 670 | 678..=684 => 1,
+        _ => 0,
+    }
+}
+
+/// `TownRoomManager.CanNPCsLiveWithEachOther(int npc1ByType, NPC npc2)`
+/// (`TownRoomManager.cs:144-156`): resolve the asking type through the content
+/// table (an id with no sample lives with anyone, `:146-149`) and then compare
+/// the two `housingCategory` fields (`:153-156`).
+pub fn can_npcs_live_with_each_other(asking_net_id: i32, occupant_net_id: i32) -> bool {
+    housing_category(asking_net_id) != housing_category(occupant_net_id)
+}
+
 
 /// `WorldGen.TownManager` (`TownRoomManager.cs:11-13`): one room per town NPC
 /// — the `_roomLocationPairs` list and the `_hasRoom` fast table the load path
@@ -209,6 +237,30 @@ impl TownRooms {
     /// The room list, for inspection.
     pub fn rooms(&self) -> &[(i32, i32, i32)] {
         &self.rooms
+    }
+
+    /// `TownRoomManager.AddOccupantsToList(Point, List)` (`:22-31`): every
+    /// registered npcID whose room sits exactly on `tile_position`.
+    pub fn occupants_at(&self, tile_position: (i32, i32)) -> Vec<i32> {
+        self.rooms
+            .iter()
+            .filter(|&&(_, x, y)| (x, y) == tile_position)
+            .map(|&(id, _, _)| id)
+            .collect()
+    }
+
+    /// `TownRoomManager.GetHouseholdStatus` (`TownRoomManager.cs:130-142`):
+    /// 1 = homeless, 2 = has a registered room, 0 = neither (a housed NPC the
+    /// book does not know). Sent as message 60's `number4`
+    /// (`NPC.UpdateHomeTileState:52912`).
+    pub fn household_status(&self, homeless: bool, npc_id: i32) -> u8 {
+        if homeless {
+            1
+        } else if self.has_room_quick(npc_id) {
+            2
+        } else {
+            0
+        }
     }
 }
 
@@ -307,10 +359,39 @@ pub fn fix_town_npc_homes(world: &World, npcs: &mut [Npc], rooms: &mut TownRooms
     }
 }
 
+/// `WorldGen.kickOut` (`WorldGen.cs:4869-4879`): the NPC goes homeless and is
+/// barred from looking for a room for `NPC.KickOutLookForHomeTimeout` ticks
+/// (3600 — `NPC.cs:95267`), and its registered room is dropped. The net-mode
+/// arm (`:4871-4875`) is the dedicated server's; the port runs single-player.
+pub fn kick_out(rooms: &mut TownRooms, npc: &mut Npc) {
+    npc.home = None;
+    npc.look_for_home_timeout = KICK_OUT_LOOK_FOR_HOME_TIMEOUT;
+    rooms.kick_out(npc.kind.net_id());
+}
+
+/// `NPC.KickOutLookForHomeTimeout` (`NPC.cs:95267`): one minute of 60 Hz ticks.
+pub const KICK_OUT_LOOK_FOR_HOME_TIMEOUT: i32 = 3600;
+
+/// `WorldGen.moveRoom` (`WorldGen.cs:4843-4855`): the NPC is marked homeless
+/// and its timer cleared, then `SpawnTownNPC(x, y)` re-runs the room check for
+/// that kind and writes the new room. The port splits it: the caller supplies
+/// the re-checked spot (the `SpawnTownNPC` half lives in `world_sim/npcs.rs`),
+/// so this half only clears the timer and registers the new room.
+pub fn move_room(rooms: &mut TownRooms, npc: &mut Npc, spot: (i32, i32)) {
+    npc.look_for_home_timeout = 0;
+    npc.home = Some(spot);
+    rooms.set_room(npc.kind.net_id(), spot.0, spot.1);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_world_helpers::{build_furnished_room, build_furnished_room_with, ground};
+
+    /// The Guide's vanilla net id (`NPCID.Guide = 22`) and a category-1 town
+    /// pet's (`NPCID.TownCat = 637`) — the two `housingCategory` arms.
+    const GUIDE_ID: i32 = 22;
+    const TOWN_CAT_ID: i32 = 637;
 
     #[test]
     fn the_homeless_guide_finds_a_furnished_room() {
@@ -318,7 +399,7 @@ mod tests {
         // the Guide's position up to 10 tiles away.
         let mut w = ground();
         build_furnished_room(&mut w, 60, 100, 12, 9);
-        let home = quick_find_home(&w, &[], 72, 108, None);
+        let home = quick_find_home(&w, &[], 72, 108, None, GUIDE_ID);
         assert!(home.is_some(), "the scan finds the room");
         let (hx, hy) = home.unwrap();
         assert!((60..=71).contains(&hx), "hx {hx}");
@@ -339,13 +420,34 @@ mod tests {
             Some((65, 106)),
         );
         assert!(
-            quick_find_home(&w, &[resident], 72, 108, None).is_none(),
+            quick_find_home(&w, &[resident], 72, 108, None, GUIDE_ID).is_none(),
             "the occupied room is refused"
         );
         // The asking NPC itself does not block its own room (`ignoreNPC`).
         assert!(
-            quick_find_home(&w, &[], 72, 108, None).is_some(),
+            quick_find_home(&w, &[], 72, 108, None, GUIDE_ID).is_some(),
             "the empty room still answers"
+        );
+    }
+
+    #[test]
+    fn a_category_one_tenant_shares_the_room() {
+        // `CanNPCsLiveWithEachOther` (`TownRoomManager.cs:144-156`): the
+        // categories differ → no conflict, and the occupant's home becomes
+        // `sharedRoomX` instead of refusing the room (`WorldGen.cs:5821-5825`).
+        assert!(can_npcs_live_with_each_other(TOWN_CAT_ID, GUIDE_ID));
+        assert!(!can_npcs_live_with_each_other(GUIDE_ID, GUIDE_ID));
+        let mut w = ground();
+        build_furnished_room(&mut w, 60, 100, 12, 9);
+        let resident = town_npc(
+            crate::npc::NpcKind::Guide,
+            65.0 * 16.0,
+            106.0 * 16.0,
+            Some((65, 106)),
+        );
+        assert!(
+            quick_find_home(&w, &[resident], 72, 108, None, TOWN_CAT_ID).is_some(),
+            "a different-category tenant may share the room"
         );
     }
 
@@ -354,7 +456,32 @@ mod tests {
         // A room without furniture: the scan fails everywhere.
         let mut w = ground();
         build_furnished_room_with(&mut w, 60, 100, 12, 9, &[]);
-        assert!(quick_find_home(&w, &[], 72, 108, None).is_none());
+        assert!(quick_find_home(&w, &[], 72, 108, None, GUIDE_ID).is_none());
+    }
+
+    #[test]
+    fn test_DW_4_1b_the_household_status_and_the_relocation_pair() {
+        // `GetHouseholdStatus` (`TownRoomManager.cs:130-142`).
+        let mut rooms = TownRooms::new();
+        assert_eq!(rooms.household_status(true, GUIDE_ID), 1, "homeless wins");
+        assert_eq!(rooms.household_status(false, GUIDE_ID), 0, "no room, no home");
+        rooms.set_room(GUIDE_ID, 65, 105);
+        assert_eq!(rooms.household_status(false, GUIDE_ID), 2, "has a room");
+        assert_eq!(rooms.household_status(true, GUIDE_ID), 1, "homeless overrides");
+
+        // `kickOut` (`WorldGen.cs:4869-4879`): homeless, timer armed, room gone.
+        let mut npc = town_npc(crate::npc::NpcKind::Guide, 0.0, 0.0, Some((65, 105)));
+        kick_out(&mut rooms, &mut npc);
+        assert_eq!(npc.home, None);
+        assert_eq!(npc.look_for_home_timeout, KICK_OUT_LOOK_FOR_HOME_TIMEOUT);
+        assert!(!rooms.has_room_quick(GUIDE_ID));
+
+        // `moveRoom` (`:4843-4855`): timer cleared and the new room registered.
+        move_room(&mut rooms, &mut npc, (80, 120));
+        assert_eq!(npc.home, Some((80, 120)));
+        assert_eq!(npc.look_for_home_timeout, 0);
+        assert_eq!(rooms.rooms(), &[(GUIDE_ID, 80, 120)]);
+        assert_eq!(rooms.occupants_at((80, 120)), vec![GUIDE_ID]);
     }
 
     // --- the room state (`TownRoomManager`) -------------------------------
