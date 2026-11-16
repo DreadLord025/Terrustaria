@@ -66,4 +66,5 @@ pub const TILE_PX: f32 = 16.0;
 /// Stride between tiles inside a tileset texture (16 px art + 2 px padding).
 pub const TILE_STRIDE: i32 = 18;
 pub mod golf;
+pub mod golf_state;
 pub mod gore; pub mod gore_id;

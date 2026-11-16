@@ -18,11 +18,16 @@
 
 use glam::Vec2;
 
-use crate::ball::{BallCollisionEvent, BallContactListener, BallPassThroughEvent, PhysicsProperties};
+use crate::ball::{
+    BallCollisionEvent, BallContactListener, BallPassThroughEvent, PhysicsProperties,
+};
 use crate::tile::Tile;
 
 /// `GolfHelper.cs:471` - `new PhysicsProperties(0.3f, 0.99f)`.
-pub const PHYSICS: PhysicsProperties = PhysicsProperties { gravity: 0.3, drag: 0.99 };
+pub const PHYSICS: PhysicsProperties = PhysicsProperties {
+    gravity: 0.3,
+    drag: 0.99,
+};
 
 /// `GolfHelper.PointsNeededForLevel1/2/3` (`:255-259`) - the Golfer shop tiers.
 pub const POINTS_NEEDED_FOR_LEVEL1: i32 = 500;
@@ -141,9 +146,19 @@ pub fn get_club_properties(item_id: i32) -> ClubProperties {
         4092 | 4588 | 4592 | 4596 => (Vec2::ZERO, v, 0.0),
         4093 | 4589 | 4593 | 4597 => (v, Vec2::new(0.65, 1.5), 1.0),
         4094 | 4590 | 4594 | 4598 => (v, Vec2::new(1.5, 0.65), 0.0),
-        _ => return ClubProperties { minimum_strength: Vec2::ZERO, maximum_strength: Vec2::ZERO, rough_land_resistance: 0.0 },
+        _ => {
+            return ClubProperties {
+                minimum_strength: Vec2::ZERO,
+                maximum_strength: Vec2::ZERO,
+                rough_land_resistance: 0.0,
+            }
+        }
     };
-    ClubProperties { minimum_strength: min, maximum_strength: max, rough_land_resistance: rough }
+    ClubProperties {
+        minimum_strength: min,
+        maximum_strength: max,
+        rough_land_resistance: rough,
+    }
 }
 
 /// `GolfHelper.IsPlayerHoldingClub` (`:291-303`).
@@ -268,7 +283,8 @@ impl<E: Copy> BallContactListener<E> for GolfContactListener<'_> {
         let gp = self.materials.get(collision.tile.kind);
         // `:37` - the side/direct blend along the contact normal.
         *velocity = *velocity * gp.side_impact_dampening
-            + collision.normal * velocity.dot(collision.normal)
+            + collision.normal
+                * velocity.dot(collision.normal)
                 * (gp.direct_impact_dampening - gp.side_impact_dampening);
 
         match collision.tile.kind {
@@ -324,7 +340,9 @@ impl<E: Copy> BallContactListener<E> for GolfContactListener<'_> {
                 *angular_velocity *= 0.8;
             }
             BallPassThroughType::Tile => {
-                let Some(tile) = pass_through.tile else { return };
+                let Some(tile) = pass_through.tile else {
+                    return;
+                };
                 let d = self.materials.get(tile.kind).pass_through_dampening;
                 *velocity *= d;
                 *angular_velocity *= d;
@@ -357,7 +375,10 @@ mod tests {
 
         let wedge = get_club_properties(4093);
         assert_eq!(wedge.maximum_strength, Vec2::new(0.65, 1.5));
-        assert_eq!(wedge.rough_land_resistance, 1.0, "only the wedge resists rough land");
+        assert_eq!(
+            wedge.rough_land_resistance, 1.0,
+            "only the wedge resists rough land"
+        );
 
         // Every id block repeats the same four rows.
         for (a, b) in [(4039, 4587), (4092, 4588), (4093, 4589), (4094, 4590)] {
@@ -387,8 +408,14 @@ mod tests {
         let check = (p.x / r.x).powi(2) + (p.y / r.y).powi(2);
         assert!((check - 1.0).abs() < 1e-5, "on-oval check = {check}");
         // A degenerate radius is zero, not NaN (`:274-277`).
-        assert_eq!(find_vector_on_oval(Vec2::new(1.0, 1.0), Vec2::ZERO), Vec2::ZERO);
-        assert_eq!(find_vector_on_oval(Vec2::new(1.0, 1.0), Vec2::new(0.0, 1.0)), Vec2::ZERO);
+        assert_eq!(
+            find_vector_on_oval(Vec2::new(1.0, 1.0), Vec2::ZERO),
+            Vec2::ZERO
+        );
+        assert_eq!(
+            find_vector_on_oval(Vec2::new(1.0, 1.0), Vec2::new(0.0, 1.0)),
+            Vec2::ZERO
+        );
     }
 
     #[test]
@@ -410,7 +437,10 @@ mod tests {
         let long = calculate_shot_strength(Vec2::new(9.0, 0.0), club);
         let max = find_vector_on_oval(Vec2::new(9.0, 0.0), club.maximum_strength).length();
         assert!((long.absolute_strength - max * 32.0).abs() < 1e-4);
-        assert!((long.relative_strength - 1.0).abs() < 1e-6, "at max, relative = 1");
+        assert!(
+            (long.relative_strength - 1.0).abs() < 1e-6,
+            "at max, relative = 1"
+        );
     }
 
     #[test]
@@ -419,13 +449,34 @@ mod tests {
         // `Player.Bottom`, mirrored for a left-facing player.
         let bottom = Vec2::new(100.0, 100.0);
         assert!(is_golf_shot_valid(Vec2::new(100.0, 100.0), bottom, 1));
-        assert!(is_golf_shot_valid(Vec2::new(116.0, 100.0), bottom, 1), "x = +16");
-        assert!(is_golf_shot_valid(Vec2::new(132.0, 100.0), bottom, 1), "x = +32");
-        assert!(!is_golf_shot_valid(Vec2::new(133.0, 100.0), bottom, 1), "x = +33");
-        assert!(is_golf_shot_valid(Vec2::new(84.0, 100.0), bottom, 1), "x = -16");
-        assert!(!is_golf_shot_valid(Vec2::new(83.0, 100.0), bottom, 1), "x = -17");
-        assert!(is_golf_shot_valid(Vec2::new(100.0, 116.0), bottom, 1), "y = +16");
-        assert!(!is_golf_shot_valid(Vec2::new(100.0, 117.0), bottom, 1), "y = +17");
+        assert!(
+            is_golf_shot_valid(Vec2::new(116.0, 100.0), bottom, 1),
+            "x = +16"
+        );
+        assert!(
+            is_golf_shot_valid(Vec2::new(132.0, 100.0), bottom, 1),
+            "x = +32"
+        );
+        assert!(
+            !is_golf_shot_valid(Vec2::new(133.0, 100.0), bottom, 1),
+            "x = +33"
+        );
+        assert!(
+            is_golf_shot_valid(Vec2::new(84.0, 100.0), bottom, 1),
+            "x = -16"
+        );
+        assert!(
+            !is_golf_shot_valid(Vec2::new(83.0, 100.0), bottom, 1),
+            "x = -17"
+        );
+        assert!(
+            is_golf_shot_valid(Vec2::new(100.0, 116.0), bottom, 1),
+            "y = +16"
+        );
+        assert!(
+            !is_golf_shot_valid(Vec2::new(100.0, 117.0), bottom, 1),
+            "y = +17"
+        );
         // Facing left mirrors x: the ball at +20 is now out of the box.
         assert!(!is_golf_shot_valid(Vec2::new(120.0, 100.0), bottom, -1));
         assert!(is_golf_shot_valid(Vec2::new(80.0, 100.0), bottom, -1));
@@ -445,7 +496,10 @@ mod tests {
         let (_, clamped) = validate_shot(Vec2::new(0.0, 0.0), bottom, 1, steep);
         let angle = clamped.y.atan2(clamped.x);
         assert!((angle - (-1.5207964)).abs() < 1e-5, "angle = {angle}");
-        assert!((clamped.length() - steep.length()).abs() < 1e-4, "length preserved");
+        assert!(
+            (clamped.length() - steep.length()).abs() < 1e-4,
+            "length preserved"
+        );
     }
 
     #[test]
@@ -460,13 +514,18 @@ mod tests {
             time_scale: 1.0,
             normal: Vec2::new(0.0, -1.0),
             impact_point: Vec2::ZERO,
-            tile: Tile { kind: TILE_BUMPER_A, ..Default::default() },
+            tile: Tile {
+                kind: TILE_BUMPER_A,
+                ..Default::default()
+            },
             tile_x: 0,
             tile_y: 0,
             entity: (),
         };
         let listener = Probe(GolfContactListener::new(&mats));
-        listener.0.on_collision(&PHYSICS, &mut pos, &mut vel, &mut collision);
+        listener
+            .0
+            .on_collision(&PHYSICS, &mut pos, &mut vel, &mut collision);
         // tangent = (-normal.y, normal.x) = (1, 0); num2 = 2.5, num3 = 0,
         // so the push is clamp(2.5, 0, 1.25) = 1.25 along +x.
         assert!((vel.x - 1.25).abs() < 1e-6, "vx = {}", vel.x);
@@ -486,20 +545,32 @@ mod tests {
             time_scale: 1.0,
             normal: Vec2::new(0.0, -1.0),
             impact_point: Vec2::ZERO,
-            tile: Tile { kind: TILE_GOLF_HOLE, ..Default::default() },
+            tile: Tile {
+                kind: TILE_GOLF_HOLE,
+                ..Default::default()
+            },
             tile_x: 12,
             tile_y: 34,
             entity: (),
         };
         listener.on_collision(&PHYSICS, &mut pos, &mut vel, &mut c);
         assert_eq!(vel, Vec2::ZERO, "the cup stops the ball");
-        assert_eq!(listener.take_contacts(), vec![GolfContact::InCup { tile_x: 12, tile_y: 34 }]);
+        assert_eq!(
+            listener.take_contacts(),
+            vec![GolfContact::InCup {
+                tile_x: 12,
+                tile_y: 34
+            }]
+        );
 
         // Too fast: not captured.
         let listener = GolfContactListener::new(&mats);
         let mut fast = Vec2::new(200.0, 0.0);
         listener.on_collision(&PHYSICS, &mut pos, &mut fast, &mut c);
-        assert!(listener.take_contacts().is_empty(), "101+ px/step overshoots the cup");
+        assert!(
+            listener.take_contacts().is_empty(),
+            "101+ px/step overshoots the cup"
+        );
 
         // Normal pointing sideways: not captured (the ball rolls over the rim).
         let listener = GolfContactListener::new(&mats);
@@ -528,7 +599,10 @@ mod tests {
         };
         let mut v = Vec2::new(100.0, 100.0);
         listener.on_pass_through(&PHYSICS, &mut pos, &mut v, &mut av, &mut water);
-        assert!((v.x - 91.0).abs() < 1e-4 && (v.y - 91.0).abs() < 1e-4, "{v:?}");
+        assert!(
+            (v.x - 91.0).abs() < 1e-4 && (v.y - 91.0).abs() < 1e-4,
+            "{v:?}"
+        );
         assert!((av - 0.91).abs() < 1e-6, "av = {av}");
 
         av = 1.0;
@@ -575,7 +649,11 @@ mod tests {
                 }
             }
         }
-        let tile = Tile { kind: 1, flags: crate::tile::FLAG_ACTIVE, ..Default::default() };
+        let tile = Tile {
+            kind: 1,
+            flags: crate::tile::FLAG_ACTIVE,
+            ..Default::default()
+        };
         let v = Vec2::new(100.0, 0.0);
 
         // rough = 0: fully dampened.
@@ -587,7 +665,10 @@ mod tests {
         // No tile below: untouched.
         assert_eq!(hit_golf_ball_velocity(v, 1.0, None, &Half), v);
         // An inactive tile is skipped (`tile.active()` gate, `:440`).
-        let inert = Tile { kind: 1, ..Default::default() };
+        let inert = Tile {
+            kind: 1,
+            ..Default::default()
+        };
         assert_eq!(hit_golf_ball_velocity(v, 0.0, Some(inert), &Half), v);
     }
 }

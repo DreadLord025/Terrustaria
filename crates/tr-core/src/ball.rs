@@ -39,13 +39,19 @@ pub struct BallStepResult {
 
 impl BallStepResult {
     pub fn out_of_bounds() -> Self {
-        Self { state: BallState::OutOfBounds }
+        Self {
+            state: BallState::OutOfBounds,
+        }
     }
     pub fn moving() -> Self {
-        Self { state: BallState::Moving }
+        Self {
+            state: BallState::Moving,
+        }
     }
     pub fn resting() -> Self {
-        Self { state: BallState::Resting }
+        Self {
+            state: BallState::Resting,
+        }
     }
 }
 
@@ -237,8 +243,7 @@ pub fn step<E: Copy>(
             flag = true;
             velocity = reflect(velocity, collision.normal);
             listener.on_collision(properties, &mut position, &mut velocity, &mut collision);
-            angular =
-                (collision.normal.x * velocity.y - collision.normal.y * velocity.x) / num2;
+            angular = (collision.normal.x * velocity.y - collision.normal.y * velocity.x) / num2;
         }
     }
 
@@ -329,8 +334,16 @@ fn get_closest_edge_to_circle(
     let bounds = get_tile_bounds(position, size);
     let center = position + size * 0.5;
     let mut e = edges::NONE;
-    e |= if !(velocity.y < 0.0) { edges::TOP } else { edges::BOTTOM };
-    e |= if !(velocity.x < 0.0) { edges::LEFT } else { edges::RIGHT };
+    e |= if !(velocity.y < 0.0) {
+        edges::TOP
+    } else {
+        edges::BOTTOM
+    };
+    e |= if !(velocity.x < 0.0) {
+        edges::LEFT
+    } else {
+        edges::RIGHT
+    };
     e |= if !(velocity.y > velocity.x) {
         edges::TOP_RIGHT_SLOPE
     } else {
@@ -438,14 +451,20 @@ fn get_slope_edge(
             if (*edges_to_test & edges::BOTTOM_RIGHT_SLOPE) == 0 {
                 return None;
             }
-            Some((tile_position + Vec2::new(0.0, 16.0), tile_position + Vec2::new(16.0, 0.0)))
+            Some((
+                tile_position + Vec2::new(0.0, 16.0),
+                tile_position + Vec2::new(16.0, 0.0),
+            ))
         }
         3 => {
             *edges_to_test &= edges::TOP | edges::LEFT | edges::TOP_LEFT_SLOPE;
             if (*edges_to_test & edges::TOP_LEFT_SLOPE) == 0 {
                 return None;
             }
-            Some((tile_position + Vec2::new(0.0, 16.0), tile_position + Vec2::new(16.0, 0.0)))
+            Some((
+                tile_position + Vec2::new(0.0, 16.0),
+                tile_position + Vec2::new(16.0, 0.0),
+            ))
         }
         4 => {
             *edges_to_test &= edges::TOP | edges::RIGHT | edges::TOP_RIGHT_SLOPE;
@@ -470,8 +489,7 @@ fn get_top_or_bottom_edge(
     if (edges_to_test & edges::BOTTOM) != 0 {
         let below = world.tile(x, y + 1).copied();
         if let Some(b) = below {
-            if is_neighbor_solid(Some(&b)) && b.slope() != 1 && b.slope() != 2 && !b.half_brick()
-            {
+            if is_neighbor_solid(Some(&b)) && b.slope() != 1 && b.slope() != 2 && !b.half_brick() {
                 return None;
             }
         }
@@ -541,7 +559,10 @@ fn get_left_or_right_edge(
         if tile.half_brick() {
             start.y += 8.0;
         }
-        return Some((start, Vec2::new(tile_position.x + 16.0, tile_position.y + 16.0)));
+        return Some((
+            start,
+            Vec2::new(tile_position.x + 16.0, tile_position.y + 16.0),
+        ));
     }
     None
 }
@@ -623,7 +644,10 @@ mod tests {
         // `BallCollision.cs:31-47`: drag the angular velocity, drag the
         // velocity, then add `gravity / num4^2` per sub-step.
         let w = world(200, 200);
-        let props = PhysicsProperties { gravity: 0.3, drag: 0.99 };
+        let props = PhysicsProperties {
+            gravity: 0.3,
+            drag: 0.99,
+        };
         let mut body = BallBody {
             position: Vec2::new(1600.0, 1600.0),
             velocity: Vec2::new(10.0, 0.0),
@@ -634,10 +658,18 @@ mod tests {
         // speed 10 -> num4 = ceil(10/2) = 5, num5 = 0.2, gravity term
         // 0.3 / 25 = 0.012 added 5 times = 0.06, then / 0.2 = 0.3.
         assert_eq!(r.state, BallState::Moving);
-        assert!((body.velocity.y - 0.3).abs() < 1e-6, "vy = {}", body.velocity.y);
+        assert!(
+            (body.velocity.y - 0.3).abs() < 1e-6,
+            "vy = {}",
+            body.velocity.y
+        );
         // x: 10 * 0.99 = 9.9, * 0.2 = 1.98 per sub-step, 5 times = 9.9,
         // then / 0.2 = 49.5 -> the sub-step scaling cancels out exactly.
-        assert!((body.velocity.x - 9.9).abs() < 1e-5, "vx = {}", body.velocity.x);
+        assert!(
+            (body.velocity.x - 9.9).abs() < 1e-5,
+            "vx = {}",
+            body.velocity.x
+        );
     }
 
     #[test]
@@ -647,7 +679,10 @@ mod tests {
         // survive. The sub-step split and re-merge is float-lossy, hence the
         // tolerance rather than an exact 1000.
         let w = world(4000, 4000);
-        let props = PhysicsProperties { gravity: 0.3, drag: 0.99 };
+        let props = PhysicsProperties {
+            gravity: 0.3,
+            drag: 0.99,
+        };
         let mut body = BallBody {
             position: Vec2::new(2000.0, 2000.0),
             velocity: Vec2::new(5000.0, 0.0),
@@ -655,7 +690,11 @@ mod tests {
         };
         let mut av = 0.0f32;
         step(&props, &mut body, &mut av, (), &w, &NopListener);
-        assert!((body.velocity.x - 1000.0).abs() < 1e-2, "vx = {}", body.velocity.x);
+        assert!(
+            (body.velocity.x - 1000.0).abs() < 1e-2,
+            "vx = {}",
+            body.velocity.x
+        );
 
         // A speed below the clamp keeps the drag.
         let mut slow = BallBody {
@@ -664,7 +703,11 @@ mod tests {
             size: Vec2::new(16.0, 16.0),
         };
         step(&props, &mut slow, &mut av, (), &w, &NopListener);
-        assert!((slow.velocity.x - 99.0).abs() < 1e-4, "vx = {}", slow.velocity.x);
+        assert!(
+            (slow.velocity.x - 99.0).abs() < 1e-4,
+            "vx = {}",
+            slow.velocity.x
+        );
     }
 
     #[test]
@@ -672,7 +715,10 @@ mod tests {
         // `:63-66` returns before `:85-87` writes the entity back, so the body
         // keeps its pre-step state.
         let w = world(100, 100);
-        let props = PhysicsProperties { gravity: 0.3, drag: 0.99 };
+        let props = PhysicsProperties {
+            gravity: 0.3,
+            drag: 0.99,
+        };
         let before = BallBody {
             position: Vec2::new(16.0, 1600.0),
             velocity: Vec2::new(0.0, 1.0),
@@ -693,7 +739,10 @@ mod tests {
         for x in 0..64 {
             solid(&mut w, x, 100, STONE);
         }
-        let props = PhysicsProperties { gravity: 0.3, drag: 0.99 };
+        let props = PhysicsProperties {
+            gravity: 0.3,
+            drag: 0.99,
+        };
         let mut body = BallBody {
             position: Vec2::new(500.0, 1600.0 - 16.0),
             velocity: Vec2::new(0.0, 6.0),
@@ -705,7 +754,11 @@ mod tests {
         // The reflection flips Y, so the ball is moving up afterwards.
         assert!(body.velocity.y < 0.0, "vy = {}", body.velocity.y);
         // And it was pushed out of the tile: its bottom is above y = 1616.
-        assert!(body.position.y + 16.0 <= 1600.0 + 1e-3, "y = {}", body.position.y);
+        assert!(
+            body.position.y + 16.0 <= 1600.0 + 1e-3,
+            "y = {}",
+            body.position.y
+        );
     }
 
     #[test]
@@ -718,7 +771,10 @@ mod tests {
         for x in 0..64 {
             solid(&mut w, x, 100, STONE);
         }
-        let props = PhysicsProperties { gravity: 0.3, drag: 0.99 };
+        let props = PhysicsProperties {
+            gravity: 0.3,
+            drag: 0.99,
+        };
         let mut body = BallBody {
             position: Vec2::new(500.0, 1584.0),
             velocity: Vec2::new(0.0, -0.1),
@@ -735,7 +791,10 @@ mod tests {
         // i.e. truncate toward zero *then* shift. For x = -1 those agree (both
         // -1), so the discriminating case is x in [-15, -1): floor gives -1
         // while the truncating shift gives 0.
-        assert_eq!(get_tile_bounds(Vec2::new(-1.0, -1.0), Vec2::new(16.0, 16.0)), (-1, 1, -1, 1));
+        assert_eq!(
+            get_tile_bounds(Vec2::new(-1.0, -1.0), Vec2::new(16.0, 16.0)),
+            (-1, 1, -1, 1)
+        );
         assert_eq!((-1.0f32 / 16.0).floor() as i32, -1);
         assert_eq!(((-1.0f32) as i32) >> 4, -1);
         assert_eq!(((-0.5f32 / 16.0).floor()) as i32, -1);
@@ -772,7 +831,10 @@ mod tests {
         let t = w.tile_mut(30, 100).unwrap();
         t.liquid = 255;
         let rec = Recorder(RefCell::new(Vec::new()));
-        let props = PhysicsProperties { gravity: 0.3, drag: 0.99 };
+        let props = PhysicsProperties {
+            gravity: 0.3,
+            drag: 0.99,
+        };
         let mut body = BallBody {
             position: Vec2::new(480.0, 1600.0),
             velocity: Vec2::new(0.0, 0.0),
