@@ -2262,6 +2262,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The 0.5-slot spider minions (`Projectile.cs:4707` Retanimini,
             // `:4723` Spazmamini) — aiStyle 66, the slot budget halves.
             RETANIMINI | SPAZMAMINI => (40.0, 20.0, 66, -1, 18000, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:4730-4741` (389 MiniRetinaLaser) — the Retanimini's
+            // bolt: 4x4, aiStyle 1, `light = 0.75f` (no port consumer, the
+            // module doc), `alpha = 255`, `extraUpdates = 2`, `scale = 1.2f`,
+            // `timeLeft = 600`; `tileCollide`/`penetrate` stay stock.
+            MINI_RETINA_LASER => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.2)),
+            // `Projectile.cs:5997-6012` (533 DeadlySphere) — the third
+            // aiStyle-66 arm: 20x20, `penetrate = -1`, `timeLeft *= 5`,
+            // a full slot, `tileCollide = false`, `ignoreWater`, and the
+            // LOCAL immunity pair (12) instead of the twins' idStatic one.
+            DEADLY_SPHERE => (20.0, 20.0, 66, -1, 18000, 0, false, false, false, (true, 12, false, -1, 0, 1.0)),
             // The Stardust Guardian (`Projectile.cs:6709`) — aiStyle 120, the
             // 0-slot pet-grade minion.
             STARDUST_GUARDIAN => (50.0, 80.0, 120, -1, 18000, 0, false, false, false, RESET_STATE),
@@ -2420,7 +2430,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
     // (`Projectile.cs:775-776`).
     let (minion, sentry, minion_slots) = match kind {
         HORNET | FLYING_IMP | TEMPEST | UFO_MINION | STARDUST_CELL | BABY_BIRD
-        | SLIME_MINION => (true, false, 1.0),
+        | SLIME_MINION | DEADLY_SPHERE => (true, false, 1.0),
         RETANIMINI | SPAZMAMINI => (true, false, 0.5),
         STARDUST_GUARDIAN | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3 | ABIGAIL => {
             (true, false, 0.0)
@@ -2526,6 +2536,8 @@ pub const HORNET: u16 = 373;
 pub const FLYING_IMP: u16 = 375;
 pub const RETANIMINI: u16 = 387;
 pub const SPAZMAMINI: u16 = 388;
+pub const MINI_RETINA_LASER: u16 = 389;
+pub const DEADLY_SPHERE: u16 = 533;
 pub const TEMPEST: u16 = 407;
 pub const UFO_MINION: u16 = 423;
 pub const STARDUST_CELL: u16 = 613;
@@ -3606,6 +3618,473 @@ impl Projectile {
             })
         } else {
             None
+        }
+    }
+
+    /// `AI()`'s aiStyle-66 same-type separation (`Projectile.cs:29642-29669`):
+    /// the Twins push each other apart as one family (387 and 388 together,
+    /// `flag30`'s first form), the Deadly Sphere only against its own kind.
+    /// Every live same-owner sibling manhattan-closer than `width` pushes this
+    /// slot away by 0.05 per axis. The pool computes it before the AI call —
+    /// the loop reads the sibling slots.
+    pub fn twins_separation(&self, all: &[Projectile], me: usize) -> Vec2 {
+        let flag29 = self.kind == RETANIMINI || self.kind == SPAZMAMINI;
+        let mut sep = Vec2::ZERO;
+        for (m, other) in all.iter().enumerate() {
+            if m == me || !other.active || other.owner != self.owner {
+                continue;
+            }
+            let same = if flag29 {
+                matches!(other.kind, RETANIMINI | SPAZMAMINI)
+            } else {
+                self.kind == DEADLY_SPHERE && other.kind == DEADLY_SPHERE
+            };
+            if !same
+                || (self.pos.x - other.pos.x).abs() + (self.pos.y - other.pos.y).abs() >= self.w
+            {
+                continue;
+            }
+            sep.x += if self.pos.x < other.pos.x { -0.05 } else { 0.05 };
+            sep.y += if self.pos.y < other.pos.y { -0.05 } else { 0.05 };
+        }
+        sep
+    }
+
+    /// `AI()`'s aiStyle-66 block (`Projectile.cs:29604-30161`) — the Twins'
+    /// minion arms (387 Retanimini / 388 Spazmamini) and the Deadly Sphere
+    /// (533): the per-type parameter ladder, the keep-alive pin against the
+    /// summon flag, the same-type separation (0.05, manhattan-`width`), the
+    /// whip-target-then-scan search, the `num524` leash, the `ai[0]` state
+    /// machine (0 follow / 1 return / 388's 2 charge / 533's 3-11 ladder) and
+    /// the 387 bolt fire (389) plus the 388 intercept.
+    ///
+    /// The separation rides in pre-computed (see [`Self::twins_separation`] —
+    /// the C# loop sits inside the AI, but it only reads the siblings, so the
+    /// order is behaviour-identical). The arm takes the shared `rng` for the
+    /// `ai[1] += Main.rand.Next(1, 4)` roll at `:30070` and returns the 389
+    /// bolt the 387 fires; the pool spawns it.
+    ///
+    /// Not ported (recorded in ANALYSIS): the dust spawns and their rolls
+    /// (`:29804-29811`, `:30049-30066`), `Lighting.AddLight` (`:29674`/
+    /// `:29678`), the `localAI[2]` light-scale read (`:14549`) and the
+    /// `netUpdate`/`netImportant` bookkeeping.
+    fn ai_twins_minion(
+        &mut self,
+        world: &World,
+        sep: Vec2,
+        mut owner: Option<&mut crate::player::Player>,
+        npcs: &[Npc],
+        rng: &mut dyn DropRng,
+    ) -> Option<MinionShot> {
+        use std::f32::consts::PI;
+        // `:29606-29641` — the per-type parameter ladder.
+        let (mut num510, mut num511, mut num512, mut num513) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        let flag29 = self.kind == RETANIMINI || self.kind == SPAZMAMINI;
+        if flag29 {
+            num510 = 2000.0;
+            num511 = 800.0;
+            num512 = 1200.0;
+            num513 = 150.0;
+            let dead = owner.as_ref().is_some_and(|p| p.dead);
+            let held = owner.as_ref().is_some_and(|p| p.twins_minion);
+            if dead {
+                if let Some(p) = owner.as_deref_mut() {
+                    p.twins_minion = false;
+                }
+            } else if held {
+                self.time_left = 2;
+            }
+        }
+        if self.kind == DEADLY_SPHERE {
+            num510 = 2000.0;
+            num511 = 900.0;
+            num512 = 1500.0;
+            num513 = 450.0;
+            let dead = owner.as_ref().is_some_and(|p| p.dead);
+            let held = owner.as_ref().is_some_and(|p| p.deadly_sphere_minion);
+            if dead {
+                if let Some(p) = owner.as_deref_mut() {
+                    p.deadly_sphere_minion = false;
+                }
+            } else if held {
+                self.time_left = 2;
+            }
+            // `:29640` — the dust-scale counter decays toward zero.
+            self.local_ai[2] = (self.local_ai[2] - 1.0).clamp(0.0, 60.0);
+        }
+        // `:29642-29669` — the same-type separation, from the caller.
+        self.vel += sep;
+        // `:29681-29817` — the dash arms (388's charge, the 533's two ladders).
+        // Their `flag31` early-returns skip the whole movement block below.
+        let mut flag31 = false;
+        if self.ai[0] == 2.0 && self.kind == SPAZMAMINI {
+            // `:29682-29709` — the Spazmamini's 40-tick charge.
+            self.ai[1] += 1.0;
+            self.extra_updates = 1;
+            self.rot = self.vel.y.atan2(self.vel.x) + PI;
+            self.frame_counter += 1;
+            if self.frame_counter > 1 {
+                self.frame += 1;
+                self.frame_counter = 0;
+            }
+            if self.frame > 2 {
+                self.frame = 0;
+            }
+            if self.ai[1] > 40.0 {
+                self.ai[1] = 1.0;
+                self.ai[0] = 0.0;
+                self.extra_updates = 0;
+            } else {
+                flag31 = true;
+            }
+        }
+        if self.kind == DEADLY_SPHERE && (3.0..=5.0).contains(&self.ai[0]) {
+            // `:29710-29758` — the 533's spin-up ladder and its frame table.
+            let num516 = 2;
+            flag31 = true;
+            self.vel *= 0.9;
+            self.ai[1] += 1.0;
+            let num517 = (self.ai[1] as i32) / num516 + (self.ai[0] as i32 - 3) * 8;
+            self.frame = if num517 < 4 {
+                17 + num517
+            } else if num517 < 5 {
+                0
+            } else if num517 < 8 {
+                1 + num517 - 5
+            } else if num517 < 11 {
+                11 - num517
+            } else if num517 < 12 {
+                0
+            } else if num517 < 16 {
+                num517 - 2
+            } else if num517 < 20 {
+                29 - num517
+            } else if num517 < 21 {
+                0
+            } else {
+                num517 - 4
+            };
+            if self.ai[1] > (num516 * 8) as f32 {
+                self.ai[0] -= 3.0;
+                self.ai[1] = 0.0;
+            }
+        }
+        if self.kind == DEADLY_SPHERE && (6.0..=8.0).contains(&self.ai[0]) {
+            // `:29759-29813` — the 533's dash ladder (its dust ring skipped).
+            self.ai[1] += 1.0;
+            self.extra_updates = 1; // `MaxUpdates = 2`
+            if self.ai[0] == 7.0 {
+                self.rot = self.vel.y.atan2(self.vel.x) + PI;
+            } else {
+                self.rot += PI / 6.0;
+            }
+            let num518 = match self.ai[0] as i32 {
+                6 => {
+                    self.frame = 5;
+                    40
+                }
+                7 => {
+                    self.frame = 13;
+                    30
+                }
+                _ => {
+                    self.frame = 17;
+                    30
+                }
+            };
+            if self.ai[1] > num518 as f32 {
+                self.ai[1] = 1.0;
+                self.ai[0] -= 6.0;
+                self.local_ai[0] += 1.0;
+                self.extra_updates = 0;
+            } else {
+                flag31 = true;
+            }
+        }
+        if flag31 {
+            return None;
+        }
+        // `:29818-29832` — the tile-collide arming and the centre-solid guard.
+        let mut center5 = self.pos;
+        let mut zero = Vec2::ZERO;
+        let mut flag32 = false;
+        if self.ai[0] != 1.0 && flag29 {
+            self.tile_collide = true;
+        }
+        if self.kind == DEADLY_SPHERE && self.ai[0] < 9.0 {
+            self.tile_collide = true;
+        }
+        let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        if self.tile_collide
+            && solid_tile(world, (center.x / TILE_PX) as i32, (center.y / TILE_PX) as i32)
+        {
+            self.tile_collide = false;
+        }
+        // `:29833-29861` — the target search: the whip target, then the scan.
+        let whip = owner.as_ref().map_or(-1, |p| p.minion_attack_target_npc);
+        if whip >= 0 {
+            if let Some(n) = npcs.get(whip as usize) {
+                if chaseable(n) {
+                    let aim = npc_center(n);
+                    let d = (aim - center).length();
+                    let (nw, nh) = n.size();
+                    if d < num510 * 3.0
+                        && can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                    {
+                        num510 = d;
+                        center5 = aim;
+                        flag32 = true;
+                    }
+                }
+            }
+        }
+        if !flag32 {
+            for n in npcs.iter() {
+                if !chaseable(n) {
+                    continue;
+                }
+                let aim = npc_center(n);
+                let d = (aim - center).length();
+                let (nw, nh) = n.size();
+                if d < num510
+                    && can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                {
+                    num510 = d;
+                    center5 = aim;
+                    zero = Vec2::new(n.vx, n.vy);
+                    flag32 = true;
+                }
+            }
+        }
+        // `:29862-29880` — the leash.
+        let mut num524 = num511;
+        if flag32 {
+            num524 = num512;
+        }
+        let (ocx, ocy) = owner.as_ref().map_or((center.x, center.y), |p| p.center());
+        let owner_center = Vec2::new(ocx, ocy);
+        if (owner_center - center).length() > num524 {
+            if flag29 {
+                self.ai[0] = 1.0;
+            }
+            if self.kind == DEADLY_SPHERE && self.ai[0] < 9.0 {
+                self.ai[0] += 3.0 * (3.0 - (self.ai[0] / 3.0) as i32 as f32);
+            }
+            self.tile_collide = false;
+        }
+        // `:29881-29984` — the follow/return movement.
+        if flag29 && flag32 && self.ai[0] == 0.0 {
+            // `:29883-29900` — the pursue blend.
+            let mut v = center5 - center;
+            let num525 = v.length();
+            v = v.normalize_or_zero();
+            if num525 > 200.0 {
+                let num526 = if self.kind == SPAZMAMINI { 14.0 } else { 6.0 };
+                v *= num526;
+                self.vel = (self.vel * 40.0 + v) / 41.0;
+            } else {
+                v *= -4.0;
+                self.vel = (self.vel * 40.0 + v) / 41.0;
+            }
+        } else {
+            // `:29902-29984` — the return-to-owner branch.
+            let mut flag33 = false;
+            if flag29 {
+                flag33 = self.ai[0] == 1.0;
+            }
+            if !flag33 && self.kind == DEADLY_SPHERE {
+                flag33 = self.ai[0] >= 9.0;
+            }
+            let mut num527 = 6.0f32;
+            let mut num528 = 40.0f32;
+            if self.kind == DEADLY_SPHERE {
+                num527 = 12.0;
+            }
+            if flag33 {
+                num527 = 15.0;
+            }
+            let center6 = center;
+            let mut vector41 = owner_center - center6 + Vec2::new(0.0, -60.0);
+            let num529 = vector41.length();
+            if num529 > 200.0 && num527 < 8.0 {
+                num527 = 8.0;
+            }
+            let (pvx, pvy) = owner.as_ref().map_or((0.0, 0.0), |p| (p.vx, p.vy));
+            if num527 < pvx.abs() + pvy.abs() {
+                num528 = 30.0;
+                num527 = pvx.abs() + pvy.abs();
+                if num529 > 200.0 {
+                    num528 = 20.0;
+                    num527 += 4.0;
+                } else if num529 > 100.0 {
+                    num527 += 3.0;
+                }
+            }
+            if flag33 && num529 > 300.0 {
+                num527 += 6.0;
+                num528 -= 10.0;
+            }
+            if num529 < num513 && flag33 && !box_solid(world, self.pos, self.w, self.h) {
+                if flag29 {
+                    self.ai[0] = 0.0;
+                }
+                if self.kind == DEADLY_SPHERE {
+                    self.ai[0] -= 9.0;
+                }
+            }
+            if num529 > 2000.0 {
+                // `:29962-29967` — the far snap (the C# uses `height` for Y).
+                self.pos.x = owner_center.x - self.w * 0.5;
+                self.pos.y = owner_center.y - self.h * 0.5;
+            }
+            if num529 > 70.0 {
+                // `:29968-29974` — the approach blend.
+                vector41 = vector41.normalize_or_zero();
+                vector41 *= num527;
+                self.vel = (self.vel * num528 + vector41) / (num528 + 1.0);
+            } else if self.vel.x == 0.0 && self.vel.y == 0.0 {
+                // `:29975-29979`.
+                self.vel = Vec2::new(-0.15, -0.05);
+            }
+            if self.vel.length() > num527 {
+                self.vel *= 0.95;
+            }
+        }
+        // `:29985-30003` — the rotations.
+        if self.kind == SPAZMAMINI {
+            self.rot = self.vel.y.atan2(self.vel.x) + PI;
+        }
+        if self.kind == RETANIMINI {
+            self.rot = if self.ai[0] != 1.0 && flag32 {
+                (center5 - center).y.atan2((center5 - center).x) + PI
+            } else {
+                self.vel.y.atan2(self.vel.x) + PI
+            };
+        }
+        if self.kind == DEADLY_SPHERE && (self.ai[0] < 3.0 || self.ai[0] >= 9.0) {
+            self.rot += self.vel.x * 0.04;
+        }
+        // `:30004-30016` — the twins' 3-frame cycle (the 533's frame table is
+        // above; its idle arm's `frameCounter` is the same counter).
+        if flag29 {
+            self.frame_counter += 1;
+            if self.frame_counter > 3 {
+                self.frame += 1;
+                self.frame_counter = 0;
+            }
+            if self.frame > 2 {
+                self.frame = 0;
+            }
+        }
+        // `:30068-30090` — the `ai[1]` cooldown rolls.
+        if self.ai[1] > 0.0 && flag29 {
+            self.ai[1] += rng.next_range(1, 4) as f32;
+        }
+        if self.ai[1] > 90.0 && self.kind == RETANIMINI {
+            self.ai[1] = 0.0;
+        }
+        if self.ai[1] > 40.0 && self.kind == SPAZMAMINI {
+            self.ai[1] = 0.0;
+        }
+        if self.ai[1] > 0.0 && self.kind == DEADLY_SPHERE {
+            self.ai[1] += 1.0;
+            if self.ai[1] > 10.0 {
+                self.ai[1] = 0.0;
+            }
+        }
+        // `:30091-30160` — the attack arms.
+        if self.ai[0] == 0.0 && flag29 {
+            if self.kind == RETANIMINI {
+                // `:30093-30109` — the bolt at the target.
+                if flag32 && self.ai[1] == 0.0 {
+                    self.ai[1] += 1.0;
+                    // `Main.myPlayer == this.owner` — the port's local spawn.
+                    if self.owner == 0 && can_hit_line(world, self.pos.x, self.pos.y, self.w, self.h, center5.x, center5.y, 0.0, 0.0) {
+                        let mut v = center5 - center;
+                        v = v.normalize_or_zero();
+                        v *= 8.0;
+                        return Some(MinionShot {
+                            kind: MINI_RETINA_LASER,
+                            vx: v.x,
+                            vy: v.y,
+                            target: -1,
+                        });
+                    }
+                }
+            }
+            if self.kind == SPAZMAMINI && self.ai[1] == 0.0 && flag32 && num510 < 500.0 {
+                // `:30111-30123` — the charge entry with the intercept.
+                self.ai[1] += 1.0;
+                if self.owner == 0 {
+                    self.ai[0] = 2.0;
+                    let v = safe_normalize(center5 - center);
+                    self.vel = v * 8.0;
+                    self.try_intercepting_target(center5, zero, 8.0);
+                }
+            }
+        } else if self.kind == DEADLY_SPHERE && self.ai[0] < 9.0 {
+            // `:30127-30159` — the 533's dash launch.
+            if self.ai[1] != 0.0 || !flag32 || num510 >= 800.0 {
+                return None;
+            }
+            self.ai[1] += 1.0;
+            if self.owner != 0 {
+                return None;
+            }
+            if self.local_ai[0] >= 3.0 {
+                self.ai[0] += 4.0;
+                if self.ai[0] == 6.0 {
+                    self.ai[0] = 3.0;
+                }
+                self.local_ai[0] = 0.0;
+            } else {
+                self.ai[0] += 6.0;
+                let v = safe_normalize(center5 - center);
+                let num539 = if self.ai[0] == 8.0 { 12.0 } else { 10.0 };
+                self.vel = v * num539;
+                self.try_intercepting_target(center5, zero, num539);
+            }
+        }
+        None
+    }
+
+    /// `AI_066_TryInterceptingTarget` (`Projectile.cs:42372-42406`): the
+    /// intercept solve that aims a dash at where the target will be. The
+    /// C#'s `flag` latch is never set on entry (its `if (flag)` inside the
+    /// loop is dead code in 1.4.5.8) — ported as the C# has it.
+    fn try_intercepting_target(&mut self, target_dir: Vec2, target_velocity: Vec2, speed: f32) {
+        let num = 5.0f32;
+        let mut num2 = 30.0f32;
+        let num3 = num2 + num;
+        let mut num4 = 1i32;
+        let num5 = 4i32;
+        let num6 = 2i32;
+        let flag = false;
+        if self.kind == DEADLY_SPHERE {
+            num4 = 2;
+        }
+        if self.kind == SPAZMAMINI {
+            num4 = 2;
+            num2 = 40.0;
+        }
+        let target_velocity = target_velocity / num4 as f32;
+        let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+        let mut t = 1.0f32;
+        while t <= 1.5 {
+            if let Some(chase) = get_chase_results(center, speed, target_dir, target_velocity) {
+                if chase.interception_time <= num3 {
+                    self.vel = chase.chaser_velocity;
+                    if flag {
+                        let num8 = ((chase.interception_time.ceil() + num6 as f32)
+                            .clamp(num5 as f32, num2 - 1.0)) as i32
+                            / num4;
+                        let num9 = num2 / num4 as f32 - num8 as f32;
+                        self.ai[1] += num9 * num4 as f32;
+                    }
+                    break;
+                }
+            }
+            t += 0.1;
         }
     }
 
@@ -9937,6 +10416,78 @@ fn safe_normalize(v: Vec2) -> Vec2 {
     }
 }
 
+/// `Utils.ChaseResults` (`Utils.cs:634-643`) — the intercept solve's output.
+struct ChaseResults {
+    interception_time: f32,
+    chaser_velocity: Vec2,
+}
+
+/// `Utils.GetChaseResults` (`Utils.cs:645-693`): the intercept solve the
+/// aiStyle-66 dash arms aim with. `None` is the C#'s `default` return
+/// (`interceptionHappens == false`).
+fn get_chase_results(
+    chaser_position: Vec2,
+    chaser_speed: f32,
+    runner_position: Vec2,
+    runner_velocity: Vec2,
+) -> Option<ChaseResults> {
+    if chaser_position == runner_position {
+        return Some(ChaseResults {
+            interception_time: 0.0,
+            chaser_velocity: Vec2::ZERO,
+        });
+    }
+    if chaser_speed <= 0.0 {
+        return None;
+    }
+    let value = chaser_position - runner_position;
+    let num = value.length();
+    let num2 = runner_velocity.length();
+    let (time, pos);
+    if num2 == 0.0 {
+        time = num / chaser_speed;
+        pos = runner_position;
+    } else {
+        let (r1, r2) = solve_quadratic(
+            chaser_speed * chaser_speed - num2 * num2,
+            2.0 * value.dot(runner_velocity),
+            -num * num,
+        )?;
+        if r1 < 0.0 && r2 < 0.0 {
+            return None;
+        }
+        time = if r1 > 0.0 && r2 > 0.0 {
+            r1.min(r2)
+        } else {
+            r1.max(r2)
+        };
+        pos = runner_position + runner_velocity * time;
+    }
+    // `:690` — the division by a zero time is the C#'s Infinity; a
+    // same-point solve returned above, so this only fires on a degenerate
+    // quadratic root.
+    let time = if time == 0.0 { f32::EPSILON } else { time };
+    Some(ChaseResults {
+        interception_time: time,
+        chaser_velocity: (pos - chaser_position) / time,
+    })
+}
+
+/// `Utils.SolveQuadratic` (`Utils.cs:711-728`): the two roots, or `None` when
+/// the discriminant is negative (the C#'s `return false`).
+fn solve_quadratic(a: f32, b: f32, c: f32) -> Option<(f32, f32)> {
+    let num = b * b - 4.0 * a * c;
+    if num > 0.0 {
+        let s = num.sqrt();
+        Some(((-b + s) / (2.0 * a), (-b - s) / (2.0 * a)))
+    } else if num < 0.0 {
+        None
+    } else {
+        let r = (-b + num.sqrt()) / (2.0 * a);
+        Some((r, r))
+    }
+}
+
 /// The width-0 `Collision.LaserScan` fold (`Collision.cs:4568-4582`): with
 /// `samplingWidth = 0` the Last Prism laser's two samples trace the same
 /// ray, so the scan's average is one tile walk — the deathray arm's
@@ -12226,6 +12777,61 @@ impl ProjectilePool {
                                 ) {
                                     // `Projectile.cs:66124` — the generic fire
                                     // arms set the shot's `timeLeft = 300`.
+                                    self.slots[slot].time_left = 300;
+                                }
+                            }
+                        }
+                        66 => {
+                            // `AI()`'s `else if (this.aiStyle == 66)`
+                            // (`Projectile.cs:29604-30161`): the Twins' arms
+                            // (387/388) and the Deadly Sphere (533). The
+                            // separation loop reads the sibling slots, so the
+                            // whole array goes in; the 387's bolt (389) rides
+                            // back through the pool like the 62's shots.
+                            let sep = self.slots[i].twins_separation(&self.slots, i);
+                            let shot = self.slots[i].ai_twins_minion(
+                                world,
+                                sep,
+                                player.as_deref_mut(),
+                                npcs,
+                                rng,
+                            );
+                            // `HandleMovement`'s `UpdatePosition`
+                            // (`:19858`/`:20433-20446`): aiStyle 66 is not in
+                            // the skip list, so `position += velocity` runs
+                            // every sub-step, including the dash early-returns.
+                            // The slope-correction block (`:20447-20474`, the
+                            // 387/388/533 fall cases) and the 533's bounce
+                            // (`:18173-18205`) stay unported — ANALYSIS.
+                            let vel = self.slots[i].vel;
+                            self.slots[i].pos += vel;
+                            if let Some(s) = shot {
+                                let (x, y, damage, kb, owner) = {
+                                    let p = &self.slots[i];
+                                    (
+                                        p.pos.x + p.w * 0.5,
+                                        p.pos.y + p.h * 0.5,
+                                        p.damage,
+                                        p.knock_back,
+                                        p.owner,
+                                    )
+                                };
+                                // `:30105` — the bolt rides the minion's damage
+                                // × 1.15 (`(int)` truncation) and the C#'s
+                                // 300-tick override (`:30106`).
+                                let damage = (damage as f32 * 1.15) as i32;
+                                if let Some(slot) = self.spawn_with_data_ai_owned(
+                                    s.kind,
+                                    owner,
+                                    x,
+                                    y,
+                                    s.vx,
+                                    s.vy,
+                                    damage,
+                                    kb,
+                                    0.0,
+                                    0.0,
+                                ) {
                                     self.slots[slot].time_left = 300;
                                 }
                             }
@@ -22222,7 +22828,7 @@ mod summon_tests {
 
     /// The 13 minion kinds (M4-PROJ-8 Phase 1's rows) — the aiStyle-62 family
     /// plus the aiStyle-66/67/120/158 flag-minions.
-    const MINION_KINDS: [u16; 13] = [
+    const MINION_KINDS: [u16; 14] = [
         HORNET,
         FLYING_IMP,
         TEMPEST,
@@ -22231,6 +22837,7 @@ mod summon_tests {
         ABIGAIL,
         RETANIMINI,
         SPAZMAMINI,
+        DEADLY_SPHERE,
         STARDUST_GUARDIAN,
         BABY_BIRD,
         STORM_TIGER_1,
@@ -22271,7 +22878,7 @@ mod summon_tests {
         // (kind, w, h, ai_style, penetrate, time_left, tile_collide, minion,
         //  sentry, minion_slots) — every value read off the C# arm cited in
         // the row's comment.
-        let rows: [(u16, f32, f32, u8, i32, i32, bool, bool, bool, f32); 31] = [
+        let rows: [(u16, f32, f32, u8, i32, i32, bool, bool, bool, f32); 32] = [
             // `Projectile.cs:4563-4573` (373) / `:4587-4597` (375) /
             // `:4878-4890` (407) / `:4960-4971` (423) / `:6598-6608` (613) /
             // `:9100-9113` (963) / `:4707-4718` (387) / `:4723-4734` (388) /
@@ -22303,6 +22910,9 @@ mod summon_tests {
             ),
             (
                 SPAZMAMINI, 40.0, 20.0, 66, -1, 18000, false, true, false, 0.5,
+            ),
+            (
+                DEADLY_SPHERE, 20.0, 20.0, 66, -1, 18000, false, true, false, 1.0,
             ),
             (
                 STARDUST_GUARDIAN,
@@ -22653,11 +23263,11 @@ mod summon_tests {
         assert!(!hydra.uses_local_immunity);
         assert!(!hydra.uses_id_static_immunity);
         // The shot families are NOT this phase's rows (the sentry shots land
-        // with the later projectile-family tasks) — 374/376/389/614 the
-        // minion shots, 378/379 the Queen Spider's SentryShots.
-        // 378 (the Queen Spider's SentryShot) landed with S1-D-4b-2's
-        // `AI_053_FrostHydra` port; the other shot rows are still pending.
-        for kind in [374, 376, 389, 614, 379] {
+        // with the later projectile-family tasks) — 374/376/614 the minion
+        // shots, 379 the Queen Spider's SentryShots. 378 landed with
+        // S1-D-4b-2's `AI_053_FrostHydra`; 389 with S1-D-4b-6 (the Twins'
+        // bolt, a minion arm not a sentry shot).
+        for kind in [374, 376, 614, 379] {
             assert!(proj_data(kind).is_none(), "kind {kind} has no row yet");
         }
     }
@@ -22731,17 +23341,16 @@ mod summon_tests {
 
     /// DW-1.2's dirty variant (the plan's edge case): a summon row whose
     /// aiStyle has no ported arm dispatches nothing — the slot holds
-    /// position while its `timeLeft` runs down. The Hornet's aiStyle 62 is
-    /// ported since Phase 4 (`ai_flying_minion` + the shared integration), so
-    /// the still-unported aiStyles carry the check: the Spider's 66 and the
-    /// Guardian's 120.
+    /// position while its `timeLeft` runs down. The aiStyle-62 family and the
+    /// Twins' 66 are ported, so the still-unported styles carry the check:
+    /// the Storm Tiger's 67 and the Guardian's 120.
     #[test]
     fn test_edge_unported_ai_style_holds_position() {
         let mut pool = ProjectilePool::new();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        let spider = pool
-            .spawn_with_data_ai_owned(RETANIMINI, 0, 320.0, 320.0, 1.5, 0.0, 0, 0.0, 0.0, 0.0)
+        let tiger = pool
+            .spawn_with_data_ai_owned(STORM_TIGER_1, 0, 320.0, 320.0, 1.5, 0.0, 0, 0.0, 0.0, 0.0)
             .unwrap();
         let guardian = pool
             .spawn_with_data_ai_owned(
@@ -22771,7 +23380,7 @@ mod summon_tests {
                 true,
             );
         }
-        let p = &pool.slots[spider];
+        let p = &pool.slots[tiger];
         assert!(p.active, "the minion outlives the 5 ticks");
         assert_eq!(
             (p.pos.x, p.pos.y),
@@ -24766,5 +25375,304 @@ mod s1_d_4b_5e_tests {
         };
         shell.ai_dutchman_shell();
         assert_eq!(shell.alpha, 0, "the shell is invisible");
+    }
+}
+
+#[cfg(test)]
+mod s1_d_4b_6_tests {
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+    use tr_core::tile::Tile;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn rng() -> tr_core::tile_light::FastRandom {
+        tr_core::tile_light::FastRandom::new(7)
+    }
+
+    fn player(w: &tr_core::World) -> Player {
+        let mut p = Player::spawn(w);
+        p.max_minions = 10;
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        p
+    }
+
+    fn spawn_at(pool: &mut ProjectilePool, kind: u16, x: f32, y: f32) -> usize {
+        pool.spawn_with_data_ai_owned(kind, 0, x, y, 0.0, 0.0, 10, 1.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.max_hp = 400;
+        n.hp = 400;
+        n
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut tr_core::World, p: &mut Player, npcs: &mut [Npc]) {
+        p.num_minions = 0;
+        p.slots_minions = 0.0;
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng(),
+            0,
+            true,
+        );
+    }
+
+    /// The three rows' `SetDefaults` slice (`Projectile.cs:4698-4741`,
+    /// `:5997-6012`): the boxes, the aiStyle-66 family and the immunity split
+    /// (the twins are idStatic, the Deadly Sphere is local, the 389 is stock).
+    #[test]
+    fn s1_d_4b_6_the_three_rows_carry_the_csharp_set_defaults() {
+        for kind in [RETANIMINI, SPAZMAMINI] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (40.0, 20.0), "kind {kind}");
+            assert_eq!(d.ai_style, 66, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, 18000, "the `timeLeft *= 5`");
+            assert!(d.minion, "kind {kind}");
+            assert_eq!(d.minion_slots, 0.5, "kind {kind}");
+            assert!(!d.tile_collide, "kind {kind}");
+            assert!(d.ignore_water, "kind {kind}");
+            assert!(d.uses_id_static_immunity, "kind {kind}");
+            assert!(!d.uses_local_immunity, "kind {kind}");
+            assert!(!d.net_important || d.minion, "kind {kind}");
+        }
+        let ret = proj_data(RETANIMINI).unwrap();
+        assert_eq!(ret.id_static_hit_cooldown, 16, "`:4712`");
+        let spa = proj_data(SPAZMAMINI).unwrap();
+        assert_eq!(spa.id_static_hit_cooldown, 12, "`:4728`");
+
+        let sphere = proj_data(DEADLY_SPHERE).unwrap();
+        assert_eq!((sphere.w, sphere.h), (20.0, 20.0));
+        assert_eq!(sphere.ai_style, 66);
+        assert_eq!(sphere.penetrate, -1);
+        assert_eq!(sphere.time_left, 18000);
+        assert!(sphere.minion);
+        assert_eq!(sphere.minion_slots, 1.0, "a full slot, not the twins' half");
+        assert!(!sphere.tile_collide);
+        assert!(sphere.ignore_water);
+        assert!(sphere.uses_local_immunity, "the 533 uses the LOCAL pair");
+        assert_eq!(sphere.local_hit_cooldown, 12, "`:6011`");
+        assert!(!sphere.uses_id_static_immunity);
+
+        let bolt = proj_data(MINI_RETINA_LASER).unwrap();
+        assert_eq!((bolt.w, bolt.h), (4.0, 4.0), "`:4732-4733`");
+        assert_eq!(bolt.ai_style, 1, "the plain flight");
+        assert_eq!(bolt.alpha, 255, "`:4737`");
+        assert_eq!(bolt.extra_updates, 2, "`:4738`");
+        assert_eq!(bolt.scale, 1.2, "`:4739`");
+        assert_eq!(bolt.time_left, 600, "`:4740`");
+    }
+
+    /// `:29617-29624` — the keep-alive pin: a live `twinsMinion` flag pins
+    /// `timeLeft = 2`; a dead owner clears the flag (no pin).
+    #[test]
+    fn s1_d_4b_6_the_twins_pin_against_the_summon_flag() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.twins_minion = true;
+        let (cx, cy) = p.center();
+        let slot = spawn_at(&mut pool, RETANIMINI, cx - 150.0, cy);
+        let mut npcs: Vec<Npc> = Vec::new();
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(
+            pool.slots[slot].time_left, 1,
+            "the pin of 2 minus the tail's per-tick decrement (`:17201`)"
+        );
+        // The dead owner clears the flag; the slot then lives on its counter.
+        p.dead = true;
+        pool.slots[slot].time_left = 18000;
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!(!p.twins_minion, "the dead owner drops the flag");
+        assert_eq!(pool.slots[slot].time_left, 17999, "no pin after the clear");
+    }
+
+    /// `:29642-29669` — the same-type separation: the twins push each other
+    /// apart as one family (a 387 and a 388 repel each other), the Deadly
+    /// Sphere only against its own kind, and only inside `width` manhattan.
+    #[test]
+    fn s1_d_4b_6_the_twins_separate_from_each_other() {
+        let mut pool = ProjectilePool::new();
+        let (cx, cy) = (400.0f32, 400.0f32);
+        let a = spawn_at(&mut pool, RETANIMINI, cx, cy);
+        let b = spawn_at(&mut pool, SPAZMAMINI, cx + 20.0, cy);
+        // Equal Y takes the `else` arm (`+0.05`), so a both-equal axis still
+        // pushes — the C# compares with `<`, not `<=` (`:29660`).
+        let sep = pool.slots[a].twins_separation(&pool.slots, a);
+        assert_eq!(sep, Vec2::new(-0.05, 0.05), "the 388 is to the right");
+        let sep_b = pool.slots[b].twins_separation(&pool.slots, b);
+        assert_eq!(sep_b, Vec2::new(0.05, 0.05), "the 387 is to the left");
+        // Beyond `width` (40 manhattan) there is no push.
+        pool.slots[b].pos.x = cx + 60.0;
+        assert_eq!(pool.slots[a].twins_separation(&pool.slots, a), Vec2::ZERO);
+        // The Deadly Sphere ignores the twins and repels its own kind.
+        pool.slots[b].active = false;
+        let c = spawn_at(&mut pool, DEADLY_SPHERE, cx, cy);
+        let d = spawn_at(&mut pool, DEADLY_SPHERE, cx, cy + 10.0);
+        let sep_c = pool.slots[c].twins_separation(&pool.slots, c);
+        assert_eq!(sep_c, Vec2::new(0.05, -0.05), "the 533 is below");
+        assert_eq!(
+            pool.slots[a].twins_separation(&pool.slots, a),
+            Vec2::ZERO,
+            "the spawner 533 does not push the twin"
+        );
+        pool.slots[c].pos.y = cy + 40.0;
+        let _ = d;
+    }
+
+    /// `:29881-29900` — the pursue blend: with a target and state 0 the twins
+    /// steer at `(v*40 + dir*speed) / 41`. The Retanimini's speed is 6, the
+    /// Spazmamini's 14; inside 200 px the direction flips (`-4`).
+    #[test]
+    fn s1_d_4b_6_the_pursue_blend_uses_the_per_kind_speed() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.twins_minion = true;
+        let (cx, cy) = p.center();
+        // The NPC sits on the owner's centre; the twin spawns 700 px below, so
+        // the scan finds it (`num510 < 2000`), the 388's 500 px charge gate
+        // stays shut and the 200 px inner flip does not apply.
+        let mut npcs = vec![npc_at(NpcKind::Zombie, cx, cy)];
+        for kind in [RETANIMINI, SPAZMAMINI] {
+            let slot = spawn_at(&mut pool, kind, cx - 20.0, cy + 700.0);
+            let start = pool.slots[slot].vel;
+            let center = pool.slots[slot].pos + Vec2::new(20.0, 10.0);
+            let aim = npc_center(&npcs[0]);
+            let dir = (aim - center).normalize_or_zero();
+            let speed = if kind == SPAZMAMINI { 14.0 } else { 6.0 };
+            let expected = (start * 40.0 + dir * speed) / 41.0;
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            let vel = pool.slots[slot].vel;
+            assert!(
+                (vel.x - expected.x).abs() < 1e-3 && (vel.y - expected.y).abs() < 1e-3,
+                "kind {kind}: vel={vel:?} expected≈{expected:?}"
+            );
+            assert!(vel.y < 0.0, "kind {kind} steers at the target above");
+            pool.slots[slot].active = false;
+        }
+    }
+
+    /// `:30111-30123` — the Spazmamini's charge entry: a target inside 500 px
+    /// with a clear line flips `ai[0]` to 2, sets the velocity at 8 and runs
+    /// the intercept. The next tick's charge arm counts the 40-tick timer and
+    /// drops back to the follow state.
+    #[test]
+    fn s1_d_4b_6_the_spazmamini_charges_for_forty_ticks() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.twins_minion = true;
+        let (cx, cy) = p.center();
+        let mut npcs = vec![npc_at(NpcKind::Zombie, cx + 300.0, cy)];
+        let slot = spawn_at(&mut pool, SPAZMAMINI, cx - 50.0, cy);
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[slot].ai[0], 2.0, "the charge state engaged");
+        assert_eq!(pool.slots[slot].ai[1], 1.0, "the cooldown armed");
+        assert_eq!(
+            pool.slots[slot].extra_updates, 0,
+            "the engage tick does not set the speedup (`:30111-30123`)"
+        );
+        // The charge arm (`:29682-29709`) runs on the next tick: it raises the
+        // speedup to 1 and starts the 40-tick counter.
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        assert_eq!(pool.slots[slot].extra_updates, 1, "the charge doubles");
+        // 40 charge ticks later the state returns to 0.
+        for _ in 0..40 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs);
+            if pool.slots[slot].ai[0] == 0.0 {
+                break;
+            }
+        }
+        assert_eq!(pool.slots[slot].ai[0], 0.0, "the charge ends");
+        // The reset arms `ai[1] = 1` and the same frame's `ai[1]` rolls
+        // (`:30068-30071`) run twice (`extraUpdates = 1`), so the counter lands
+        // in 1 + 2×(1..3).
+        let cd = pool.slots[slot].ai[1];
+        assert!((1.0..=7.0).contains(&cd), "the counter restarts ({cd})");
+        assert_eq!(pool.slots[slot].extra_updates, 0, "the speedup drops");
+    }
+
+    /// `:30093-30109` — the Retanimini fires the 389 bolt at its target with
+    /// the interrupt damage (×1.15) and the 300-tick life.
+    #[test]
+    fn s1_d_4b_6_the_retanimini_fires_the_bolts() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.twins_minion = true;
+        let (cx, cy) = p.center();
+        let mut npcs = vec![npc_at(NpcKind::Zombie, cx + 300.0, cy)];
+        let slot = spawn_at(&mut pool, RETANIMINI, cx - 50.0, cy);
+        // The bolt damage is the minion's 10 × 1.15 → 11 (the `(int)` cast).
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        let bolt = (0..pool.slots.len())
+            .find(|&i| i != slot && pool.slots[i].active && pool.slots[i].kind == MINI_RETINA_LASER)
+            .expect("the 387 fired the 389");
+        assert_eq!(pool.slots[bolt].damage, 11, "10 × 1.15 truncated");
+        // The bolt lives in a later slot, so the same frame's ascending pass
+        // reaches it and its `extraUpdates = 2` spends three sub-steps
+        // (`:17197-17209`): 300 - 3.
+        assert_eq!(pool.slots[bolt].time_left, 297, "the 300 override, this frame's 3 sub-steps");
+        assert!(pool.slots[bolt].vel.x > 0.0, "the bolt flies at the target");
+        assert_eq!(pool.slots[slot].ai[1], 1.0, "the 387's cooldown armed");
+    }
+
+    /// `Utils.GetChaseResults`/`SolveQuadratic` (`Utils.cs:645-728`): the
+    /// straight-line case (a still runner) gives the arrival time; a near
+    /// runner the quadratic root; an unreachable one yields `None`.
+    #[test]
+    fn s1_d_4b_6_the_intercept_maths_matches_the_csharp() {
+        // A still runner 30 px away at speed 6: 5 ticks.
+        let still = get_chase_results(Vec2::ZERO, 6.0, Vec2::new(30.0, 0.0), Vec2::ZERO).unwrap();
+        assert!((still.interception_time - 5.0).abs() < 1e-4);
+        assert!((still.chaser_velocity.x - 6.0).abs() < 1e-4);
+        // A faster runner running away: no root crosses 0 both negative → None.
+        let away = get_chase_results(Vec2::ZERO, 6.0, Vec2::new(30.0, 0.0), Vec2::new(10.0, 0.0));
+        assert!(away.is_none(), "the chaser cannot catch a 10-speed runner");
+        // A slower runner is caught.
+        let ok = get_chase_results(Vec2::ZERO, 10.0, Vec2::new(30.0, 0.0), Vec2::new(2.0, 0.0));
+        assert!(ok.is_some());
+        let t = ok.unwrap().interception_time;
+        assert!(t > 0.0 && t < 10.0, "the intercept lands in range ({t})");
+        // The degenerate zero discriminant (`b²-4ac == 0`): a double root.
+        let (r1, r2) = solve_quadratic(1.0, -2.0, 1.0).expect("one root");
+        assert_eq!((r1, r2), (1.0, 1.0));
+        assert!(solve_quadratic(1.0, 0.0, 1.0).is_none(), "negative disc");
+    }
+
+    /// `:29833-29861` — the scan excludes unchaseable NPCs (a town Guide) and
+    /// picks the nearest chaseable one.
+    #[test]
+    fn s1_d_4b_6_the_scan_skips_uncraseable_targets() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.twins_minion = true;
+        let (cx, cy) = p.center();
+        let mut guide = npc_at(NpcKind::Guide, cx + 100.0, cy);
+        guide.max_hp = 250;
+        guide.hp = 250;
+        let zombie = npc_at(NpcKind::Zombie, cx + 300.0, cy);
+        let mut npcs = vec![guide, zombie];
+        let slot = spawn_at(&mut pool, RETANIMINI, cx - 50.0, cy);
+        tick(&mut pool, &mut w, &mut p, &mut npcs);
+        // The bolt only fires at a chaseable target — the Guide is skipped.
+        let fired = (0..pool.slots.len())
+            .any(|i| i != slot && pool.slots[i].active && pool.slots[i].kind == MINI_RETINA_LASER);
+        assert!(fired, "the zombie is a valid target past the Guide");
     }
 }

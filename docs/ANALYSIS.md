@@ -10165,6 +10165,41 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+
+### The Twins' minion arm (S1-D-4b-6)
+
+The aiStyle-66 block (`Projectile.cs:29604-30161`) covers three kinds: 387 Retanimini,
+388 Spazmamini (both `minionSlots = 0.5`) and 533 Deadly Sphere (`minionSlots = 1`).
+The port is `Projectile::ai_twins_minion` plus the pre-computed
+`Projectile::twins_separation` and the `try_intercepting_target` /
+`get_chase_results` / `solve_quadratic` trio. Deviations:
+
+- **The separation loop is hoisted.** The C# runs the 1000-slot scan inline mid-AI;
+  the port computes it first (`twins_separation(&self.slots, i)`) and folds the result
+  into `velocity` as the arm's first act. The loop only reads sibling slots, so the
+  order is behaviour-identical — the hoist exists because the arm borrows `&mut self`
+  while the scan needs the whole `&[Projectile]` (E0502).
+- **`localAI[2]` is carried but unused.** The C# decays it toward 0 every tick
+  (`:29640`) and reads it back in `Update` (`:14549`) to scale the light — the port keeps
+  the decay (so the field tracks) and drops the light read with `Lighting.AddLight`.
+- **Dust and light unported** (same reason as the summon section): the dash trails
+  (`:29804-29811`, `:30049-30066` with their `Main.rand.Next(2)` / `SelectRandom` rolls),
+  the 533's two-colour glow (`:29674`/`:29678`), the gore.
+- **The 389 bolt row** is the twins' own projectile: 4×4, aiStyle 1, alpha 255,
+  `extraUpdates = 2`, scale 1.2, `timeLeft = 300` (`:4732-4740`). Its ×1.15 damage
+  (`(int)(damage * 1.15f)`, `:30105`) is applied in the dispatch, not in the row — the row
+  is a plain flight and the multiplier is the 387 arm's own.
+- **`AI_066_TryInterceptingTarget`'s `flag` stay dead.** The C# local `flag` is initialised
+  false and never set before the `if (flag)` inside the loop, so the whole `ai[1]` bonus
+  block (`:42395-42402`) is unreachable in 1.4.5.8. Ported as a `let flag = false;` with the
+  block present, matching the source.
+- **Slope correction and the 533's bounce unported**: `UpdatePosition`'s fall cases
+  (`:20447-20474`) and the Deadly Sphere's bounce arm (`:18173-18205`) are not in the port;
+  the dispatch runs `position += velocity` only.
+- **`MinionShot` stays 3-field** (`kind`/`vx`/`vy`): the bolt's damage multiplier and the
+  300-tick override are set by the spawning arm's dispatch, so the shot struct needs no
+  extra carrier.
+
 - **The sentry movement layer** (S1-D-4b-2). `AI_053_FrostHydra` (`:37266-37490`) and
   `AI_197_CeilingAndHoverTurret` (`:40307-40479`) carry no `position += velocity` of
   their own — the C# integrates them in `HandleMovement` → `UpdatePosition`
@@ -10191,6 +10226,7 @@ Deviations and notes:
     `netUpdate`. The pool has no sound, dust, gore, light or net layer; the
     sentry-backpack branch (`:40334-40343`, `CanGetPickedUpBySentryBackpack`) is
     likewise unported — no `accSentryBackpack`.
+
 ## Whips & tag damage (M4-PROJ-7)
 
 The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
@@ -13637,9 +13673,57 @@ Deliberate deviations:
    life-regen step); the C#'s `CheckDrowning` sits later in `Player.Update`
    (`:27655`, after `StickyMovement`).
 
-Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `StickyTiles` +
-`Player.StickyMovement`, `SwitchTiles`, `BuildTileContacts`,
-`noSlopeCollision` and `AdvancedTileCollision`.
+Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `SwitchTiles`,
+`BuildTileContacts`, `noSlopeCollision` and `AdvancedTileCollision`.
+## The sticky-surface family (S1-E-13c, 2026-11-16)
+
+`crates/tr-app/src/collision.rs::sticky_tiles` ports `Collision.StickyTiles`
+(`Collision.cs:3362-3435`): the ±1-tile scan window clamped to
+`Main.maxTilesY - 40` (`:3369-3384`), the cobweb (51) arm with its zero margin
+and `16.01` tall box (`:3396-3406`), and the honey-block (229) arm gated on
+`slope() == 0` (`:3410`) with the 1 px margin plus the half brick's `+8` / `-8`
+shrunken box (`:3414-3423`). The source's inline `Main.rand.Next(30)` type-30
+web puff (`:3401`, `:3425`) is drawn **inside** the probe, at the source's
+position relative to the return, and handed back as a flag: the caller owns
+`Main.dust`, so `Player::sticky_movement` queues it. The 229 arm's copy of that
+`if` tests `Main.tile[i, j].type == 51`, which is always false there and
+short-circuits before the `Next(30)`, so the port passes `false` — drawing it
+would add a stream step the C# never takes.
+
+`Player::sticky_movement` (`Player.cs:22910-23087`) keeps the source's order:
+the `Next(20,100)` / `Next(80,300)` break roll for `stickyBreak`
+(`:22938-22954`) — the C#'s bitwise `|` means the draw happens even when the
+`flag` cart test short-circuits the assignment — then the cart-above-5-px
+early return (`:22956-22958`), `fallStart` (`:22960`), the honey's jump
+exemption (`:22961-22964`), the gel/slime mount's halving with its `0.0025`
+floor (`:22965-22972`), the `±1` X cap with the `0.85`/`0.6` damp and the
+`±1`/`-5` Y cap with the `0.96`/`0.3` damp (`:22975-23028`), and the type-153
+honey puffs on the hit row plus the two rows below (`:23030-23081`) with their
+`Next(0,6)` scale / `velocity *= 0.1` / `noGravity` tail. The tick only has
+`&World`, so the tile kill (`WorldGen.KillTile`, `:22949`) and the puffs are
+queued and drained in `world_sim/player.rs` — the same `pending_sparks`
+pattern the minecart uses; the drain runs `DustPool::new_dust` on the
+`UpdatePlayers` stream, so the pool's own rolls stay interleaved exactly as the
+C# interleaves `Main.rand`.
+
+Call site: `Player::update_with_grapple` invokes it between the grapple block
+and `check_drowning`, matching `Player.cs:27653-27655`
+(`GrappleMovement` → `StickyMovement` → `CheckDrowning`).
+
+Deliberate deviations:
+
+1. **No shimmer gate.** `Player.shimmering` (`:22912-22915`) has no port
+   counterpart yet (the shimmer absorption pass is unported), so the early
+   return is absent rather than always-false.
+2. **No gravity flip.** The C# mirrors the Y drag on `gravDir` (`:22991`,
+   `:23010`); the port has no gravity flip, so only the `gravDir == 1` arm
+   (`:23012-23027`) runs, matching the vanilla's default `1f` (`Player.cs:1956`).
+3. **Hook multi-player gates folded.** `whoAmI == Main.myPlayer` (`:22936`)
+   collapses (the port is single-player) and the `Main.netMode == 1` break
+   replication (`:22950-22953`) is net-only.
+4. **`stickyBreak` survives a respawn.** The C# writes the counter at exactly
+   four sites, all inside `StickyMovement` (`:22938`, `:22948`, `:23085`);
+   `Player.Spawn` never clears it, so the port's revive path does not either.
 ## The Brain of Cthulhu's machine (S1-D-3e, 2026-11-14)
 
 `AI_054` (`NPC.cs:32370-32656`) is the Brain of Cthulhu's family machine:
