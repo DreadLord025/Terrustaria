@@ -116,7 +116,7 @@ pub(crate) fn row_count(panel: &Panel, tab: Tab) -> usize {
             .iter()
             .filter(|(_, name, _)| matches(&panel.filter, name))
             .count(),
-        Tab::World => 12,
+        Tab::World => 13,
         Tab::Recipes => crate::craft::RECIPES.len(),
     }
 }
@@ -387,6 +387,7 @@ fn world_rows(world: &tr_core::World, stepper_paused: bool, god_mode: bool) -> V
             format!("God Mode: {}", if god_mode { "ON" } else { "OFF" }),
             if god_mode { R } else { G },
         ),
+        ("Reveal Map (pretty)".to_string(), W),
     ]
 }
 
@@ -780,6 +781,17 @@ fn world_click(app: &mut App, row: usize) {
                 p.debug_god_mode = !p.debug_god_mode;
             }
         }
+        12 => {
+            // The `/map pretty` chat command (`ToolkitDebugCommands.cs:480-494`):
+            // `DebugOptions.unlockMap = 2` then `Main.refreshMap = true`, which
+            // Main consumes by walking `sectionManager`'s draw queue and calling
+            // `Main.Map.UnlockMapSection` on every loaded section (`:61873-61877`).
+            // The port has no section manager (the whole world is resident), so
+            // the walk covers every section directly.
+            if let Some(m) = app.map.as_mut() {
+                m.unlock_map(&app.world, true);
+            }
+        }
         _ => {}
     }
 }
@@ -988,14 +1000,16 @@ mod tests {
     }
 
     #[test]
-    fn s1_e_29_the_world_tab_keeps_its_twelve_rows() {
+    fn s1_e_29_the_world_tab_keeps_its_thirteen_rows() {
         let app = flow_app();
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 12);
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 13);
         let rows = world_rows(&app.world, false, false);
-        assert_eq!(rows.len(), 12, "the draw and the dispatch agree");
+        assert_eq!(rows.len(), 13, "the draw and the dispatch agree");
         assert_eq!(rows[10].0, "Pause World: OFF");
-        // S1-E-34 — the god-mode toggle rides the tail row.
+        // S1-E-34 — the god-mode toggle rides row 11.
         assert_eq!(rows[11].0, "God Mode: OFF");
+        // S1-L-3 — the `/map pretty` reveal rides the tail row.
+        assert_eq!(rows[12].0, "Reveal Map (pretty)");
     }
 
     /// S1-E-34 — the F3 god-mode row flips the debug flag.
@@ -1015,6 +1029,23 @@ mod tests {
         assert!(
             !app.player.as_ref().unwrap().debug_god_mode,
             "the row toggles back off"
+        );
+    }
+
+    /// S1-L-3 — the tail row runs the `/map pretty` reveal
+    /// (`ToolkitDebugCommands.cs:480-494`).
+    #[test]
+    fn s1_l_3_the_reveal_row_unlocks_the_map() {
+        let mut app = flow_app();
+        // The reveal clamps into a 40-tile inset, so the fixture's 8x8 world is
+        // too small to have an interior at all.
+        app.world = tr_core::World::new("reveal".into(), 260, 200);
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        click_world(&mut app, 12);
+        let m = app.map.as_ref().unwrap();
+        assert!(
+            m.tiles.iter().any(|t| t.light > 0),
+            "the reveal walked every section"
         );
     }
 

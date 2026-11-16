@@ -504,7 +504,7 @@ impl App {
                         && self.camera.y
                             < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
                     shimmer: self.scene_metrics.zone_shimmer,
-                    town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                    town_npcs: self.scene_metrics.town_npc_count,
                     // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
                     cloud_alpha: self.rain.visual_alpha(),
                     zone_rain: self.scene_metrics.zone_rain,
@@ -761,6 +761,9 @@ impl App {
             if !paused {
                 self.phase("map");
                 if let Some(m) = self.map.as_mut() {
+                    // `Main.mapTimeMax` (`Main.cs:801`) — the gfx-quality
+                    // budget the countdown re-arms from (`:61818-61821`).
+                    m.map_time_max = self.gfx_quality.map_time_max;
                     m.update(&self.world, self.player.as_ref(), &self.light, dt);
                     // `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:36-39`):
                     // the markers older than 15 s drop while the map is up.
