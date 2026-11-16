@@ -12977,26 +12977,40 @@ rows between the last expansion mark and that call were dropped (the audit's
 now copies that text: the table is **3 206 rows = 2 895 authored + 311
 reverse**, and the pin in `tools/test_gen_recipes.py` re-taken.
 
-## The sliced block light chain (S1-G-9, 2026-11-13)
+## The sliced block light chain (S1-G-9, 2026-11-13; corrected 2026-11-16)
 
-`DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3516-3640`) is the port's
+`DrawSingleTile_SlicedBlock` (`TileDrawing.cs:3517-3664`) is the port's
 `render/tiles.rs::push_sliced` — and the chain now matches the C# exactly:
 `Lighting.GetColor9Slice`'s 3×3 neighbourhood colours average with the
-tile's own light (`(slices[i] + vector) * 0.5`, `:3556-3559` — the port
-used to draw the raw neighbourhood slices, washing the big blocks out
-against vanilla), then `GetFinalLight`'s actuation arm
-(`TileDrawing.cs:4394-4396`, the ×0.4 ghost) applies per slice. The caller
-passes the tile's own light already ghosted (`drawData.tileLight` is
-`GetFinalLight`'s output at `:1019`) plus the actuation flag. The high/medium
+tile's own **raw** light (`(slices[i] + vector) * 0.5`, `:3578-3581`), then
+`GetFinalLight` (`:4391-4402`) applies the tint and the actuation ghost
+(`Tile.actColor`, `Tile.cs:282-288`, ×0.4) to that average. The high/medium
 split (the 9-slice vs the 4-quad paths on `_highQualityLightingRequirement`/
-`_mediumQualityLightingRequirement`) rides the existing thresholds.
+`_mediumQualityLightingRequirement`, `:3524` / `:3605`) rides the existing
+thresholds, and a Glow-coated block replaces every slice with
+`_glowPaintColorSlices` (`:3530-3533` / `:3611-3614`, all `Vector3.One`).
 
-Scope notes: the fullbright glow-paint slices (`:3551-3554`,
-`_glowPaintColorSlices`) and `GetFinalLight`'s shine arm
-(`ShouldTileShine` → `Main.shine`) have no port counterparts yet — both ride
-the paint work (S1-G-2's row). The A/B shot (a placed dirt block at the
-dusk, `TR_CAM=100,78` + `TR_PLACE`) shows the 10 576-px delta the average
-introduces; two identical runs are SHA-equal.
+Two defects in the 2026-11-13 landing, fixed by `S1-G-9-sliced-final-light`:
+
+* **The double ghost.** `GetFinalLight`'s `Color` overload (`:4358`) takes
+  `tileLight` **by value** and `:1019` assigns the result to
+  `drawData.finalColor` — `drawData.tileLight` stays the raw
+  `Lighting.GetColor` (`:871`). Only the `Vector3` overload (`:4391`) writes
+  through `ref`. So `:3528`'s `vector` is unghosted, and the port's caller-side
+  ghost plus the per-slice ghost composed to 0.16 instead of 0.4. `push_sliced`
+  now samples the raw light itself and the `own` argument is gone, so the
+  double-ghost cannot come back.
+* **The Glow slices.** `fullbrightBlock()` blocks draw their slices at
+  `Vector3.One` `_glowPaintColorSlices`; the port fed the neighbourhood light
+  instead, so Glow-coated blocks stayed dark. Both arms apply the replacement.
+
+Each slice is pushed with `push_sprite_paint`, carrying the tile's paint byte
+as the flat arm does.
+
+Scope notes: `GetFinalLight`'s shine arm (`ShouldTileShine` → `Main.shine`)
+has no port counterpart — `Main.tileShine2` is unported (drawdata.rs:509), so
+the branch is unreachable; the non-White `colorTint` is the minecart path
+only (`:3788`). Both ride the paint work (S1-G-2's row).
 
 ## The map overlay layers (S1-L-4, 2026-11-14)
 
