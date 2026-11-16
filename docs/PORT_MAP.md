@@ -338,7 +338,7 @@ re-implement something that already exists, or to port the wrong file.
 
 | C# source | Why |
 | --- | --- |
-| `Social/*` (Steam, Discord, etc.) | platform integrations; not needed for the core port |
+| `Social/*` (Steam, Discord, etc.) | platform integrations; not needed for the core port. **S1-I-6:** the transport is TCP-only by design (`net.rs:3021-3022`/`:3330-3331`, `lobby_id = 0`) while the wire is the vanilla's; the full divergence (unchanged protocol vs the lost lobby/NAT/invite/vanilla-interop) is recorded in `docs/ANALYSIS.md` "The Steam transport divergence" |
 | `BCrypt*` | third-party password hashing |
 | `Achievements/`, `Initializers/` platform hooks | platform-specific |
 | `Achievements/Achievement.cs` + `AchievementManager.cs` + `GameContent/Achievements/*Condition.cs` + `Initializers/AchievementInitializer.cs` + `GameContent/UI/States/UIAchievementsMenu.cs` + `GameContent/UI/Elements/UIAchievementListItem.cs` | `crates/tr-app/src/achievements.rs` (runtime, save path/completion hook, notify wrappers) + `achievements_data.rs` (137 rows / 180 conditions, `CreateMany` expanded) + `ui/achievements.rs` (menu/list rows) + notify sites in `app/saveglue.rs`, `world_sim/{clock,editing,npcs,weather,player,wiring}.rs`, `chest.rs`, `shimmer.rs` | partial (M6-ACH-2 menu/registry; S1-E-18 save + expanded conditions + selected progression/custom/int/float sites; remaining rows blocked on missing systems / S1-F-15) |

@@ -15297,3 +15297,64 @@ Deliberate deviations, recorded rather than guessed:
 * `FocusHelper.AllowPlayerToEmitEffects` (the `!WorldUpdateStepper.DrawnThisUpdate`
   split between a drawn and a stepped frame) is unported, so an inferno-ring
   animation would always advance - moot while the draw is unwritten.
+
+## The Steam transport divergence (S1-I-6, 2026-11-16)
+
+The vanilla runs multiplayer over a pluggable `ISocket`
+(`Net/Sockets/ISocket.cs:3-13`: `Connect`/`AsyncSend`/`AsyncReceive`/
+`StartListening`/`GetRemoteAddress`). Two implementations exist: `TcpSocket`
+(`Net/Sockets/TcpSocket.cs`, 184 lines, the typed-IP path) and `SocialSocket`
+(`Net/Sockets/SocialSocket.cs`, 70 lines), which forwards every call to
+`SocialAPI.Network` — on the retail PC build the Steam module, whose reader and
+writer threads are `Social/Steam/SteamP2PReader.cs` (138) /
+`Social/Steam/SteamP2PWriter.cs` (79) over `Steamworks.Networking`, with the
+lobby browser in `Social/Steam/Lobby.cs` (133) and the client/server modules
+`Social/Steam/NetClientSocialModule.cs` (238) /
+`Social/Steam/NetServerSocialModule.cs` (215). `Netplay.StartListening`
+(`Netplay.cs:222-229`) starts **both** listeners when a social API is present,
+and `Netplay.StartSocialClient` (`:610-617`) is the join path the "Join via
+Steam" row takes; the lobby id the world sync carries is
+`NetSocialModule.GetLobbyId` (`Social/Base/NetSocialModule.cs:37`,
+`Social/Steam/NetClientSocialModule.cs:92`).
+
+**The port's transport is TCP only, deliberately.** `crates/tr-app/src/net.rs`
+binds `TcpListener::bind(("0.0.0.0", port))` (`:3022`, `Server::start` `:3021`)
+and dials `TcpStream::connect(addr)` (`:3331`, `Client::connect` `:3330`); there
+is no `ISocket` trait and no social module. This is the accepted scope of the
+ROADMAP non-goals (`Social/**` — "Steam + WeGame modules, the Workshop, P2P,
+cloud") and `PORT_MAP.md`'s "not ported (by design)" row.
+
+What is **unchanged** by the swap — and why this is a transport divergence, not
+a protocol one:
+
+* the wire frame is the vanilla's (`[u16 LE length][u8 id][body]`,
+  `NetMessage.cs:1677-1684`), the version literal is `Terraria326`
+  (`net.rs:36`), and the join/handshake state machines are ported verbatim
+  (`Netplay.cs:459-544`, the `MessageBuffer.cs` cases);
+* the message ids, the codecs and the send/receive order are the C#'s, so a
+  port-client <-> port-host session behaves as the vanilla wire does.
+
+What **differs**, all observable:
+
+* **No lobby.** `WorldInfo.lobby_id` (`net.rs:1039`) is always `0`
+  (`:3506`/`:3697`); the vanilla client reads the host's lobby id from the join
+  sync. The port cannot be discovered or joined through a lobby browser — the
+  player types an `ip:port`.
+* **No NAT traversal or relay.** Steam P2P (`SteamP2PWriter.QueueSend`,
+  `SteamP2PWriter.cs:41`) reaches peers behind NAT; the port needs a reachable
+  TCP port (default `7777`, `Netplay.cs:33`).
+* **No invites, friends or rich presence.** `SocialAPI.Network.CanInvite`/
+  `OpenInviteInterface` (`IngameOptions.cs:178`/`:264`) stay false, so the invite
+  row is absent exactly as on a no-Steam vanilla build
+  (`crates/tr-app/src/app/settings_ui.rs`), and the multiplayer menu keeps the
+  "Join via Steam" row as a `Hint("Steam join is not ported yet")` dead row
+  (`crates/tr-app/src/menu/pages.rs:411`).
+* **No vanilla interoperability.** The handshake is port-internal (ROADMAP
+  non-goals), so a port client cannot join a Steam-hosted vanilla server even
+  where the wire ids align.
+
+Not ported and not planned: `Terraria/Social/**` (Steam + WeGame), the Workshop,
+Steam Cloud, the overlay / rich-presence / friends modules and the join-request
+manager. Porting the transport would require vendoring Steamworks (its DLL sits
+unused beside the tree) and would not change the port's own wire, so the ROADMAP
+keeps it as this documented divergence rather than a build item.
