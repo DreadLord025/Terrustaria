@@ -2651,6 +2651,10 @@ pub(crate) fn draw_npcs(
                     | NpcKind::PrimeSaw
                     | NpcKind::PrimeVice
                     | NpcKind::PrimeLaser
+                    // Betsy's body roll (`AI_110_Betsy`'s `AngleTowards`
+                    // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
+                    // rotates every NPC by `npc.rotation` (`Main.cs:26632`).
+                    | NpcKind::DD2Betsy
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
