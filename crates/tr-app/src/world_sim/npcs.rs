@@ -3320,6 +3320,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.world.wof_present = true;
         app.world.wof_hp_ratio = wof.hp as f32 / wof.max_hp as f32;
         app.world.wof_x = wof.x;
+        app.world.wof_dir = wof.facing;
     } else {
         app.world.wof_present = false;
     }

@@ -5,6 +5,7 @@ use glam::Vec2;
 use tr_core::{TILE_PX, UnifiedRandom, World};
 
 use crate::npc_ai::HoverParams;
+use crate::projectile::angle_towards;
 use crate::npc_buffs::NpcBuffs;
 use crate::player::{Player, collides_rect};
 
@@ -10419,7 +10420,9 @@ impl Npc {
         } else if self.ai[0] == 1.0 {
             // The approach (`:61886-61900`).
             if self.ai[2] == 0.0 {
-                self.ai[2] = if pcx < cx { 1.0 } else { -1.0 };
+                // `:61899`: `(Center.X < target.Center.X) ? 1 : -1` — positive
+                // when the player is to the RIGHT.
+                self.ai[2] = if cx < pcx { 1.0 } else { -1.0 };
             }
             // The offset: the player + (-ai[2] * 300, -200).
             let (tx, ty) = (pcx - self.ai[2] * 300.0, pcy - 200.0);
@@ -10428,31 +10431,33 @@ impl Npc {
             let inv = 7.5 / d;
             self.vx += (dx * inv - self.vx) * 0.45;
             self.vy += (dy * inv - self.vy) * 0.45;
-            self.facing = if pcx < cx { 1 } else { -1 };
+            // `:61902`: `direction = spriteDirection = (Center.X < target.Center.X) ? 1 : -1`.
+            self.facing = if cx < pcx { 1 } else { -1 };
             self.sprite_dir = self.facing;
-            // The phase pick (the vanilla's `num29` table).
+            // The phase pick — `num29`'s table (`:61905-61941`) verbatim,
+            // including the wrap and the single `ai[3]++` per arrival.
             self.ai[1] += 1.0;
             if self.ai[1] >= 30.0 {
-                let mut pick = 2;
-                // The port's phase-table fold; the roll is the stream
-                // stand-in (the C# `AI_109_DarkMage` carries no `Next(3)`
-                // pick — the port-side cadence).
-                if self.ai[3] == 5.0 && rng.next_float() < 1.0 / 3.0 {
+                let mut pick = 1;
+                if self.ai[3] == 5.0 && rng.next_range(0, 3) == 0 {
                     self.ai[3] += 1.0;
                 }
-                match self.ai[3] as u32 {
-                    2 => pick = 3,
-                    4 | 6 => pick = 5,
-                    _ => pick = 3, // the C# default for 5+ → 6 lands as the
-                                   // next attack family; the port folds 5's pick as 3
-                                   // (the fireball) until it lands.
-                }
-                if self.ai[3] >= 7.0 {
-                    self.ai[3] = 0.0;
-                }
-                self.ai[3] += 1.0;
+                pick = match self.ai[3] as i32 {
+                    0 | 1 | 3 => 2,
+                    2 => 3,
+                    4 => 4,
+                    5 => 5,
+                    6 => 3,
+                    7 => 6,
+                    _ => pick,
+                };
                 self.ai[0] = pick as f32;
                 self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] += 1.0;
+                if self.ai[3] >= 8.0 {
+                    self.ai[3] = 0.0;
+                }
             }
         } else if self.ai[0] == 2.0 {
             // The wind-attack pause (`NPC.cs:61931-61940`): the 30-tick
@@ -10471,7 +10476,8 @@ impl Npc {
             // (the 10-speed lunge + the 687 breath at 35), the 120-tick
             // ride with the 0.5 accel past 550 px.
             self.ai[1] += 1.0;
-            let dir = if pcx < cx { 1.0 } else { -1.0 };
+            // `:61999`: `num30 = (Center.X < target.Center.X) ? 1 : -1`.
+            let dir = if cx < pcx { 1.0 } else { -1.0 };
             if self.ai[1] < 40.0 {
                 let (tx, ty) = (pcx + dir * -600.0, pcy - 250.0);
                 let (dx, dy) = (tx - cx, ty - cy);
@@ -10520,6 +10526,9 @@ impl Npc {
                 let d = (ax * ax + ay * ay).sqrt().max(1.0);
                 ax /= d;
                 ay /= d;
+                // `:62064`: `SafeNormalize(Vector2.UnitX * direction)` then
+                // `spriteDirection = (v.X > 0) ? 1 : -1` — the VELOCITY's side,
+                // not the raw aim.
                 self.facing = if ax > 0.0 { 1 } else { -1 };
                 self.sprite_dir = self.facing;
                 self.rotation = ay.atan2(ax);
@@ -10533,7 +10542,9 @@ impl Npc {
                 self.y += (pcy - cy).signum() * 6.0;
                 let n33 = (self.ai[1] - 60.0 + 1.0) as i32;
                 if n33 <= 60 && n33 % 10 == 0 {
-                    let (mx, my) = rot(170.0, 20.0, self.rotation);
+                    // `:62081`: the muzzle is `(110 + 30) * direction` rotated
+                    // by `rotation` — 140 px off the centre, not 170.
+                    let (mx, my) = rot(140.0 * self.facing as f32, 20.0, self.rotation);
                     self.wants_hostile_shot
                         .push((686u16, cx + mx, cy + my, self.vx, self.vy, 35));
                 }
@@ -10581,7 +10592,8 @@ impl Npc {
                 let inv = 15.0 / d;
                 self.vx += ((dx * inv) - self.vx) * 0.9;
                 self.vy += ((dy * inv) - self.vy) * 0.9;
-                self.facing = if pcx < cx { 1 } else { -1 };
+                // `:62053`: `direction = spriteDirection = (Center.X < target.Center.X) ? 1 : -1`.
+                self.facing = if cx < pcx { 1 } else { -1 };
                 self.sprite_dir = self.facing;
                 self.ai[2] += 1.0;
                 if (pcx - cx).hypot(pcy - cy) < 350.0 || self.ai[2] >= 180.0 {
@@ -10601,6 +10613,54 @@ impl Npc {
                 self.ai[1] = 0.0;
                 self.ai[2] = 0.0;
             }
+        }
+        // `:62256-62301` — the body/wing roll. Every tick the C# aims a
+        // target angle `num40` by the phase and turns `rotation` toward it
+        // with `AngleTowards(rotation, num40, num41)`; the `num41` 0 cases
+        // (2 and 5) leave the aim the phase itself wrote. Without this the
+        // sprite never rolls in phases 3/4/6.
+        let aim = {
+            let (dx, dy) = (pcx - cx, pcy - cy);
+            let d = (dx * dx + dy * dy).sqrt().max(0.0001);
+            dy.atan2(dx)
+        };
+        let (mut num40, mut num41) = (aim, 0.04f32);
+        match self.ai[0] as i32 {
+            2 | 5 => num41 = 0.0,
+            3 => {
+                num41 = 0.01;
+                num40 = 0.0;
+                if self.sprite_dir == -1 {
+                    num40 -= std::f32::consts::PI;
+                }
+                // `:62271-62275` — past the reposition the aim leans off-axis
+                // by `spriteDirection * π/12` and the turn quickens to 0.05.
+                if self.ai[1] >= 40.0 {
+                    num40 += self.sprite_dir as f32 * std::f32::consts::PI / 12.0;
+                    num41 = 0.05;
+                }
+            }
+            4 => {
+                num41 = 0.01;
+                num40 = std::f32::consts::PI;
+                if self.sprite_dir == 1 {
+                    num40 += std::f32::consts::PI;
+                }
+            }
+            6 => {
+                num41 = 0.02;
+                num40 = 0.0;
+                if self.sprite_dir == -1 {
+                    num40 -= std::f32::consts::PI;
+                }
+            }
+            _ => {}
+        }
+        if self.sprite_dir == -1 {
+            num40 += std::f32::consts::PI;
+        }
+        if num41 != 0.0 {
+            self.rotation = angle_towards(self.rotation, num40, num41);
         }
         // The flight (noGravity + noTileCollide).
         self.x += self.vx;
@@ -13287,9 +13347,10 @@ impl Npc {
                 } else {
                     (0.1, 2.0, 0.1, 8.0)
                 };
-                // `:27730-27751` — the vertical band: the 200 band above
-                // the player and the 500 band below it.
-                if self.y > pcy - 200.0 {
+                // `:27716-27738` — the vertical band. Both sides compare
+                // `position.Y` against `player.position.Y` (the TOP edges),
+                // not the centres: the 200 band above and the 500 below.
+                if self.y > player.y - 200.0 {
                     if self.vy > 0.0 {
                         self.vy *= 0.98;
                     }
@@ -13297,7 +13358,7 @@ impl Npc {
                     if self.vy > cap_y {
                         self.vy = cap_y;
                     }
-                } else if self.y < pcy - 500.0 {
+                } else if self.y < player.y - 500.0 {
                     if self.vy < 0.0 {
                         self.vy *= 0.98;
                     }
@@ -13967,36 +14028,54 @@ impl Npc {
             self.hp = 0;
             return;
         }
-        // The life mirror (`:26061-26064`) + the X/direction mirror.
+        // The life mirror (`:26061-26064`) + the X/direction mirror
+        // (`:26066-26068`): `position.X = mainNpc.position.X;
+        // direction = mainNpc.direction; spriteDirection = direction`.
+        // The eye has no flip of its own.
         self.x = world.wof_x - w * 0.5;
-        self.facing = if world.wof_x >= pcx { 1 } else { -1 };
-        // `:26393-26403` (aiStyle 29) — the eye's flip is its own
-        // `num391 = player.Center.X - width/2 - eye.Center.X`, NOT the
-        // wall's `direction` the `:26068` body mirror reads: `a.frame 29`
-        // flips the iris toward the target even when the wall faces away.
-        self.sprite_dir = if pcx - w * 0.5 - (self.x + w * 0.5) > 0.0 {
-            1
-        } else {
-            -1
-        };
+        self.facing = world.wof_dir;
+        self.sprite_dir = world.wof_dir;
         let band_mid = (world.wof_draw_top + world.wof_draw_bottom) * 0.5;
+        // `:26070` — the half-band target with the `- height/2` applied to
+        // BOTH ternary branches (it sits outside the `?:` in the C#).
         let top_half = self.ai[0] > 0.0;
         let target_y = if top_half {
-            (band_mid + world.wof_draw_top) * 0.5
+            (band_mid + world.wof_draw_top) * 0.5 - h * 0.5
         } else {
             (band_mid + world.wof_draw_bottom) * 0.5 - h * 0.5
         };
-        self.vy += (target_y - (self.y + h * 0.5)).signum() * 1.0;
+        // `:26071-26083` — outside a ±1 band the velocity is ±1, inside it
+        // zeroes and `position.Y` snaps to the target.
+        if self.y > target_y + 1.0 {
+            self.vy = -1.0;
+        } else if self.y < target_y - 1.0 {
+            self.vy = 1.0;
+        } else {
+            self.vy = 0.0;
+            self.y = target_y;
+        }
+        // `:26084-26091` — the ±5 clamp.
         self.vy = self.vy.clamp(-5.0, 5.0);
         self.y += self.vy;
-        // The volley (`:26125-26206`): the idle 600, then the 46-tick
-        // shots in bursts of 4.
+        // The volley (`:26125-26206`): the idle 600, then the 45-tick shots
+        // in bursts of `num381` (4 + the hp ladder).
         self.ai[1] += 1.0;
+        let mut burst = 4.0f32;
+        if world.wof_hp_ratio < 0.75 {
+            self.ai[1] += 1.0;
+            burst += 1.0;
+        }
         if world.wof_hp_ratio < 0.5 {
             self.ai[1] += 1.0;
+            burst += 1.0;
         }
         if world.wof_hp_ratio < 0.25 {
             self.ai[1] += 1.0;
+            burst += 2.0;
+        }
+        if world.wof_hp_ratio < 0.1 {
+            self.ai[1] += 2.0;
+            burst += 3.0;
         }
         if self.ai[2] == 0.0 && self.ai[1] > 600.0 {
             self.ai[2] = 1.0;
@@ -14022,7 +14101,8 @@ impl Npc {
             }
             self.ai[1] = 0.0;
             self.ai[2] += 1.0;
-            if self.ai[2] >= 5.0 {
+            // `:26173-26176` — the burst counter wraps at `num381`.
+            if self.ai[2] >= burst {
                 self.ai[2] = 0.0;
             }
             // `:26167`: `CanHit(base.position, base.width, base.height,
@@ -14339,11 +14419,15 @@ impl Npc {
                         .push((NpcKind::GolemHead, cx - 3.0, cy - 57.0));
                 }
                 if self.ai[0] == 0.0 {
-                    // The grounded charge (`:19638-19703`).
-                    self.vx *= 0.8;
-                    self.cast_windup += 1;
-                    if self.cast_windup >= 300 {
-                        self.cast_windup = -20;
+                    // The grounded charge (`:19638-19703`): the C# gates the
+                    // whole block on `velocity.Y == 0f` (`:19640`), the
+                    // literal velocity test — not the tile-contact flag.
+                    if self.vy == 0.0 {
+                        self.vx *= 0.8;
+                        self.cast_windup += 1;
+                        if self.cast_windup >= 300 {
+                            self.cast_windup = -20;
+                        }
                     }
                     if self.cast_windup == -1 {
                         // The slam launch (`:19684-19700`).
@@ -14360,12 +14444,24 @@ impl Npc {
                     }
                 } else {
                     // The flight (`:19704-19766`).
-                    if self.on_ground {
+                    if self.vy == 0.0 {
+                        // `:19706` — the landing (`velocity.Y == 0f`) returns
+                        // the machine to the charge state.
                         self.ai[0] = 0.0;
                     } else {
-                        let over_x = self.x < pcx && self.x + w > pcx;
+                        // `:19724` — "spanning the player": the C# compares
+                        // against the player's position AND `position.X +
+                        // width` against `player.position.X + player.width`
+                        // (the hitbox span, not just the left edge).
+                        let over_x = self.x < player.x && self.x + w > player.x + crate::player::WIDTH;
                         if over_x {
                             self.vx *= 0.9;
+                            // `:19727-19730` — while the bottom is still
+                            // above the player's top, sink at
+                            // `0.2 * (num + 1) / 2` (num = 1 solo).
+                            if self.y + h < player.y {
+                                self.vy += 0.2 * (1.0f32 + 1.0) / 2.0;
+                            }
                         } else {
                             let dir = if self.facing < 0 { -1.0 } else { 1.0 };
                             self.vx += dir * 0.2;
@@ -22065,11 +22161,11 @@ mod tests {
         assert_eq!(n.sprite_dir, -1, "a dead-centre aim keeps the flip");
     }
 
-    /// BUG-07: aiStyle 29 (the WoF eye, `NPC.cs:26393-26403`) flips on its
-    /// own `num391` — the distance from the EYE to the player — not on the
-    /// wall body's `direction` the `:26068` mirror writes.
+    /// BUG-07: the WoF eye has NO flip of its own — `:26066-26068` copies the
+    /// wall's `position.X`, then `direction = spriteDirection = mainNpc.direction`.
+    /// The v1's own-aim flip cited `:26393`, which is aiStyle 29's HUNGRY.
     #[test]
-    fn bug_07_the_wof_eye_flips_on_its_own_aim() {
+    fn bug_07_the_wof_eye_mirrors_the_wall_direction() {
         let mut w = World::new("t".into(), 200, 100);
         w.wof_present = true;
         w.wof_x = 100.0 * 16.0;
@@ -22078,14 +22174,23 @@ mod tests {
         let mut n = bare(NpcKind::WallOfFleshEye);
         n.x = w.wof_x - n.size().0 * 0.5;
         let mut player = crate::player::Player::spawn(&w);
-        // The iris sits at the wall's X; the player is 300 px to its right.
         player.x = w.wof_x + 300.0 - crate::player::WIDTH * 0.5;
         player.y = 600.0;
+        // The wall faces right: the eye flips with it, whatever the player
+        // does — even standing on the far side.
+        w.wof_dir = 1;
         n.update_wof_eye(&w, &player);
-        assert_eq!(n.sprite_dir, 1, "the target is right of the iris");
+        assert_eq!((n.facing, n.sprite_dir), (1, 1), "the wall's right");
         player.x = w.wof_x - 300.0 - crate::player::WIDTH * 0.5;
         n.update_wof_eye(&w, &player);
-        assert_eq!(n.sprite_dir, -1, "the target is left of the iris");
+        assert_eq!((n.facing, n.sprite_dir), (1, 1), "still the wall's side");
+        // The wall turns: the eye follows the wall, not the aim.
+        w.wof_dir = -1;
+        n.update_wof_eye(&w, &player);
+        assert_eq!((n.facing, n.sprite_dir), (-1, -1), "the wall's left");
+        player.x = w.wof_x + 300.0 - crate::player::WIDTH * 0.5;
+        n.update_wof_eye(&w, &player);
+        assert_eq!((n.facing, n.sprite_dir), (-1, -1), "ignores the aim");
     }
 }
 

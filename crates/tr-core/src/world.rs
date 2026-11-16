@@ -336,6 +336,11 @@ pub struct World {
     pub wof_present: bool,
     pub wof_hp_ratio: f32,
     pub wof_x: f32,
+    /// The wall's `direction` — the eye's mirror copies it verbatim
+    /// (`NPC.cs:26067-26068`: `direction = mainNpc.direction;
+    /// spriteDirection = direction`). The `num391`-driven flip the port
+    /// used to cite at `:26393` is aiStyle 29's HUNGRY, not the eye.
+    pub wof_dir: i32,
     /// `NPC.savedAngler` (`NPC.cs:6293`): the Sleeping Angler has been
     /// talked into the Angler — the 376 spawn arms stop looking.
     pub saved_angler: bool,
@@ -555,6 +560,7 @@ impl World {
             wof_present: false,
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
+    wof_dir: 1,
             saved_angler: false,
             saved_wizard: false,
             saved_stylist: false,
