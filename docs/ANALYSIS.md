@@ -14297,12 +14297,29 @@ below are recorded rather than resolved:
   and is *not* a claim about `Recipe`'s availability rules (`Recipe.cs:15162-15191`
   etc. stay unported).
 * **Action semantics are frozen.** The World rows, the spawns and the pause row keep
-  their pre-existing bodies. Their fidelity is **not** claimed: the world-event rows
-  are `PARTIAL_PROJECT_SPECIFIC` (goblin 80 vs the C# `80+40*players`,
-  `Main.cs:64435-64470`; slime rain 43200 vs the C# `32400-53999`,
-  `Main.cs:64742-64806`), and the kill-all row has no C# equivalent. Those are
-  recorded as S1-E-37 in `docs/ROADMAP.md`. The pause row *is* exact
-  (`WorldUpdateStepper.cs:45-49`) and its test pins it.
+  their pre-existing bodies. The pause row *is* exact (`WorldUpdateStepper.cs:45-49`)
+  and its test pins it.
+* **S1-E-37 — the world-event rows now ride the C# entry points.** The panel no longer
+  writes the event state by hand:
+  * Hardmode calls `WorldGen.StartHardmode`'s runner half (`WorldGen.cs:31707-31709`
+    → `spread::initialize_hard_mode`, the two V runners and their RNG order).
+  * Goblin Army calls `Main.StartInvasion` (`Main.cs:64435-64486`) behind
+    `CanStartInvasion`'s 200-life gate (`:64424-64432`) — `80 + 40 × players` instead
+    of the old flat 80, the type-3/type-4 sizes, and the `Next(2)` side pick
+    (`:64476-64483`) on the `UpdateTime` stream.
+  * Slime Rain calls `Main.StartSlimeRain` (`:64742-64785`, the duration
+    `Next(32400, 54000)`) and `Main.StopSlimeRain` (`:64787-64806`, the
+    `-Next(3024, 6048) × 100` cooldown), and refuses a start while it is already
+    raining (`:64761-64764`).
+  Deliberate deviations that remain, all recorded in `docs/ROADMAP.md` S1-E-37:
+  * `StartHardmode`'s `TransformWorldOnBackgroundThread` (`:31721-31742`) and the
+    `UndoSpawnedItemProtection`/achievement/broadcast follow-up are unported — the
+    port's `initialize_hard_mode` runs inline on the growth phase, and the row keeps a
+    toggle-off as the debug revert (the C# has none: `:31703` returns early).
+  * The kill-all row has no C# equivalent (it is the port's own F3 affordance) and
+    stays as is.
+  * `Main.remixWorld`/`isThereAWorldSurface`/the announcements and the `netMode` arms
+    of both functions fold out — the port is single-player and neither flag exists.
 * **Upstream reference only.** The feature set takes *behaviour* references from
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
