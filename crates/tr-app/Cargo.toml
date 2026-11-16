@@ -8,10 +8,18 @@ rust-version.workspace = true
 name = "terraria-rust"
 path = "src/main.rs"
 
+[features]
+default = []
+# The F3 developer workbench (`src/debug_panel.rs` + the `tr-debug` crate).
+# OFF by default: `cargo build --release` excludes the module, its `App` field
+# and every call site. Dev builds: `cargo run --features debug`.
+debug = ["dep:tr-debug"]
+
 [dependencies]
 tr-content = { path = "../tr-content" }
 tr-core = { path = "../tr-core" }
 tr-render = { path = "../tr-render" }
+tr-debug = { path = "../tr-debug", optional = true }
 
 aes.workspace = true
 anyhow.workspace = true

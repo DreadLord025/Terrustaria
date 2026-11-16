@@ -1049,6 +1049,46 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
     },
 ];
 
+// --- special-seed pass pruning ----------------------------------------------
+
+/// `WorldGen.DisablePassesForSpecialSeeds` (`WorldGen.cs:22493-22509`): when
+/// `SecretSeed.dualDungeons` is enabled, twelve passes are `Disable()`d — the
+/// second dungeon replaces the ice/desert/jungle/temple/evil biomes and the
+/// shimmer, so their passes must not run. The C# compares `GenPass.Name`
+/// against the `GenPassNameID` constants; the strings below are the port's
+/// `Step::vanilla` values for those constants (`ID/GenPassNameID.cs:239-325`),
+/// which is where the two vocabularies meet.
+///
+/// Two of the twelve have no executed step in the port yet (`Larva` —
+/// `GenPassNameID.BeeLarvaInBeehives` — and `Shimmer`); listing them keeps the
+/// table 1:1 with the C# so a future step cannot silently un-prune itself.
+pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
+    "Ice",                     // GenPassNameID.IceBiome            "Generate Ice Biome"
+    "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
+    "Jungle",                  // GenPassNameID.Jungle              "Jungle"
+    "Jungle Chests",           // GenPassNameID.JungleShrines       "Jungle Chests"
+    "Jungle Chests Placement", // GenPassNameID.ChestsInJungleShrines
+    "Hives",                   // GenPassNameID.Beehives            "Hives"
+    "Larva",                   // GenPassNameID.BeeLarvaInBeehives  "Larva"
+    "Jungle Temple",           // GenPassNameID.LihzahrdTemple      "Jungle Temple"
+    "Temple",                  // GenPassNameID.LihzahrdTemplePart2 "Temple"
+    "Lihzahrd Altars",         // GenPassNameID.LihzahrdAltar       "Lihzahrd Altars"
+    "Corruption",              // GenPassNameID.CorruptionAndCrimson
+    "Shimmer",                 // GenPassNameID.Shimmer             "Shimmer"
+];
+
+/// Is `vanilla` one of the passes `WorldGen.cs:22504` disables? The gate reads
+/// the micro-seed bit `SecretSeed.dualDungeons` (`WorldGen.cs:22495`);
+/// `SecretSeed.dualDungeons.Enabled` is the port's
+/// [`crate::seeds::MicroSeedFlags::DUAL_DUNGEONS`].
+pub(crate) fn pass_disabled_by_special_seeds(
+    vanilla: &str,
+    flags: crate::seeds::MicroSeedFlags,
+) -> bool {
+    flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
+        && DUAL_DUNGEON_DISABLED_PASSES.contains(&vanilla)
+}
+
 // --- the executed pipeline (today's order, verbatim call sites) -------------
 
 type StepFn = fn(&mut World, &mut GenVars, &mut Streams, &GenOptions, &Noise, &ConfigSection);
@@ -2558,6 +2598,15 @@ pub(crate) fn run(
     gv.crimson_left = reset_rng.range(0, 2) == 1;
     gv.flip_infections = opts.flags.flip_infections();
     for step in EXECUTED_PIPELINE {
+        // `DisablePassesForSpecialSeeds` (`WorldGen.cs:22493-22509`): a
+        // disabled pass returns a `Skipped` result without applying
+        // (`WorldGenerator.cs:488-495`) — no tiles and no draws from its
+        // stream. The port's steps own their streams, so a skipped step is
+        // simply not called.
+        if pass_disabled_by_special_seeds(step.vanilla, opts.micro_flags) {
+            log::debug!("worldgen pass '{}' skipped (dualDungeons)", step.name);
+            continue;
+        }
         // The vanilla `RunPass` trace (`WorldGenerator.cs`: `Trace.WriteLine`
         // per `GenPassResult`) — the executed-step log names the step, its
         // vanilla slot and that slot's progress weight.
@@ -3108,6 +3157,97 @@ mod tests {
             (c.frame_x, c.frame_y),
             (0, 0),
             "without the bit the framer rewrites the chest tile"
+        );
+    }
+
+    // --- S1-K-1: `DisablePassesForSpecialSeeds` ----------------------------
+
+    /// The twelve names are the `GenPassNameID` strings the C# compares
+    /// (`WorldGen.cs:22504`), i.e. `GenPassNameID.cs:239-325`'s values —
+    /// pinned literally so a rename in the chain cannot silently detach one.
+    #[test]
+    fn s1_k_1_dual_dungeons_disables_the_twelve_csharp_named_passes() {
+        assert_eq!(
+            DUAL_DUNGEON_DISABLED_PASSES,
+            [
+                "Ice",
+                "Full Desert",
+                "Jungle",
+                "Jungle Chests",
+                "Jungle Chests Placement",
+                "Hives",
+                "Larva",
+                "Jungle Temple",
+                "Temple",
+                "Lihzahrd Altars",
+                "Corruption",
+                "Shimmer",
+            ]
+        );
+        // The C# loop can only disable a pass that exists in `_passes`; every
+        // name must therefore be a real chain name — `Shimmer` is the one slot
+        // the port's chain does not declare yet (research/12's missing-pass
+        // list), so it is allowed to be absent and pruned vacuously.
+        for name in DUAL_DUNGEON_DISABLED_PASSES {
+            assert!(
+                VANILLA_CHAIN.iter().any(|p| p.name == name) || name == "Shimmer",
+                "'{name}' is not a vanilla chain pass"
+            );
+        }
+    }
+
+    /// The gate itself: a classic world prunes nothing, the `dualDungeons`
+    /// micro-seed prunes exactly the twelve.
+    #[test]
+    fn s1_k_1_the_gate_reads_the_dual_dungeons_micro_seed() {
+        use crate::seeds::MicroSeedFlags;
+        let classic = MicroSeedFlags::none();
+        let dual = MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS);
+        for name in DUAL_DUNGEON_DISABLED_PASSES {
+            assert!(!pass_disabled_by_special_seeds(name, classic));
+            assert!(pass_disabled_by_special_seeds(name, dual));
+        }
+        // A pass outside the list stays enabled under the seed.
+        assert!(!pass_disabled_by_special_seeds("Terrain", dual));
+        // Another micro-seed does not prune.
+        let other = MicroSeedFlags::from_sum(MicroSeedFlags::EXTRA_LIQUID);
+        assert!(!pass_disabled_by_special_seeds("Jungle", other));
+    }
+
+    /// End to end: a `dualDungeons` world runs the shrunken chain. The jungle
+    /// step is the observable one — it paints the jungle grass — so its tile
+    /// count drops to zero with the seed on, while the control world proves
+    /// the same seed places them. The rock count shows the rest still ran.
+    #[test]
+    fn s1_k_1_a_dual_dungeons_world_skips_the_pruned_passes() {
+        use crate::seeds::MicroSeedFlags;
+        let base = || GenOptions {
+            width: 1024,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
+        let count = |w: &World, kind: u16| w.tiles.iter().filter(|t| t.kind == kind).count();
+        // Jungle grass is tile 60 (`TileID.JungleGrass`); the `jungle` step is
+        // the only pass that paints it (it also converts dirt to mud 59).
+        const JUNGLE_GRASS: u16 = 60;
+        let classic = super::super::generate(&base());
+        let dual = super::super::generate(&GenOptions {
+            micro_flags: MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS),
+            ..base()
+        });
+        assert!(
+            count(&classic, JUNGLE_GRASS) > 0,
+            "the control world must place jungle grass"
+        );
+        assert_eq!(
+            count(&dual, JUNGLE_GRASS),
+            0,
+            "the dualDungeons world must skip the Jungle pass"
+        );
+        assert!(
+            count(&dual, 1) > 1000,
+            "every other pass still ran — the world is populated"
         );
     }
 }

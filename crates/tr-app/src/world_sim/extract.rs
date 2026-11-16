@@ -12,7 +12,7 @@
 //! answers "this tile is an extractinator" the way the C# chain tests the kind
 //! literals.
 
-use crate::app::{rand01, App};
+use crate::app::App;
 use crate::registry;
 use crate::world_sim::items;
 use glam::Vec2;
@@ -68,7 +68,12 @@ pub(crate) fn use_extractinator(app: &mut App, tx: i32, ty: i32, world_pos: Vec2
             if slot.count == 0 {
                 slot.kind = 0;
             }
-            items::spawn_item_drop_px(app, giving, 1, world_pos);
+            // `Item.NewItem` on the player-interaction stream: the
+            // extractinator runs inside `Player.PlaceThing` ← `Player.ItemCheck`
+            // under the `UpdatePlayers` swap (`Player.cs:39591`, `:43613`,
+            // `Main.cs:17754`).
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            items::spawn_item_drop_px(&mut app.items, rng, giving, 1, world_pos);
             let _ = &mut secs;
             return Some(secs);
         }
@@ -78,17 +83,17 @@ pub(crate) fn use_extractinator(app: &mut App, tx: i32, ty: i32, world_pos: Vec2
     if mode < 0 {
         return None;
     }
-    // The roll spends the port's `Main.rand` seam (`app.item_rng`) through the
-    // same LootRng wrapper the coin spawns use, so the stream order is the C#
-    // `Main.rand` order (`ExtractinatorHelper.cs:5-525` — the chain order is
+    // The roll spends the `UpdatePlayers` stream (`PlaceThing_ItemInExtractinator`
+    // runs in `Player.ItemCheck` under the `UpdatePlayers` swap —
+    // `Player.cs:39591`/`:41665`, `Main.cs:17754`), so the stream order is the
+    // C# `Main.rand` order (`ExtractinatorHelper.cs:5-525` — the chain order is
     // the roll order).
-    let (item_type, stack) = {
-        let mut rng_state = app.item_rng;
-        let mut rng = super::npcs::LootRng(&mut rng_state);
-        let out = extract::roll_extractinator_drop(mode, tile.kind, app.world.hard_mode, &mut rng);
-        app.item_rng = rng_state;
-        out
-    };
+    let (item_type, stack) = extract::roll_extractinator_drop(
+        mode,
+        tile.kind,
+        app.world.hard_mode,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     // `ExtractinatorUse`'s `itemType > 0` gate (`Player.cs:42075`).
     if item_type <= 0 {
         return None;
@@ -110,8 +115,16 @@ pub(crate) fn use_extractinator(app: &mut App, tx: i32, ty: i32, world_pos: Vec2
     // `DropItemFromExtractinator` (`Player.cs:42081-42089`): the drop spawns at
     // the cursor's world position (the smart-cursor/gamepad player-centre
     // branch has no port mechanic yet — ANALYSIS). The velocity/prefix draws
-    // come after the roll, like `Item.NewItem`.
-    items::spawn_item_drop_px(app, item_type as u16, stack.max(1) as u32, world_pos);
+    // come after the roll, like `Item.NewItem`, all on the same
+    // `UpdatePlayers` stream.
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    items::spawn_item_drop_px(
+        &mut app.items,
+        rng,
+        item_type as u16,
+        stack.max(1) as u32,
+        world_pos,
+    );
     Some(secs)
 }
 
@@ -315,5 +328,62 @@ mod tests {
         use_extractinator(&mut b, tx, ty, pos);
         assert_eq!(a.items.last().unwrap().kind, b.items.last().unwrap().kind);
         assert_eq!(a.items.last().unwrap().count, b.items.last().unwrap().count);
+    }
+
+    /// DW-4.3: the extractinator rides the `UpdatePlayers` stream — its C#
+    /// home is `PlaceThing_ItemInExtractinator` inside `Player.PlaceThing` ←
+    /// `Player.ItemCheck` (`Player.cs:39591`, `:43613`) under the
+    /// `UpdatePlayers` swap (`Main.cs:17754`). One extraction's stream end
+    /// state equals the direct replay (the roll chain, then the spawn
+    /// triplet + prefix), and the other stage streams stay pristine.
+    #[test]
+    fn test_dw_4_3_extract_rides_the_update_players_stream() {
+        let (mut a, tx, ty) = extract_world(219);
+        *a.rngs
+            .stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(4242);
+        let pos = Vec2::new(tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+        use_extractinator(&mut a, tx, ty, pos);
+        assert!(!a.items.is_empty(), "the extraction spawned its drop");
+
+        // The twin: the roll chain, then the spawn's velocity triplet +
+        // prefix — the exact order `use_extractinator` runs.
+        let (mut twin, _, _) = extract_world(219);
+        let held = twin.inventory[twin.selected].kind;
+        let tile = twin.world.tile(tx, ty).unwrap();
+        let mode = tr_core::extract::extractinator_mode(held);
+        let mut rng = tr_core::UnifiedRandom::new(4242);
+        let (it, stack) =
+            tr_core::extract::roll_extractinator_drop(mode, tile.kind, twin.world.hard_mode, &mut rng);
+        let mut twin_items = Vec::new();
+        items::spawn_item_drop_px(&mut twin_items, &mut rng, it as u16, stack.max(1) as u32, pos);
+        assert_eq!(
+            a.items.last().unwrap().kind,
+            twin_items.last().unwrap().kind,
+            "the same roll"
+        );
+        assert_eq!(
+            a.items.last().unwrap().vel,
+            twin_items.last().unwrap().vel,
+            "the same velocity triplet"
+        );
+        assert_eq!(
+            a.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            rng,
+            "the stream ended exactly where the replay does"
+        );
+        // The isolation: the other stage streams never moved.
+        for key in [
+            crate::app::RngKey::UpdateItems,
+            crate::app::RngKey::UpdateNpcs,
+            crate::app::RngKey::UpdateProjectiles,
+            crate::app::RngKey::UpdateWorldGen,
+        ] {
+            assert_eq!(
+                *a.rngs.stream(key),
+                tr_core::UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
     }
 }

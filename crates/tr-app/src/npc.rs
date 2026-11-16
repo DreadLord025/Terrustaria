@@ -2,7 +2,7 @@
 //! modelled on the simplest `NPC.cs` behaviours.
 
 use glam::Vec2;
-use tr_core::{TILE_PX, World};
+use tr_core::{TILE_PX, UnifiedRandom, World};
 
 use crate::npc_ai::HoverParams;
 use crate::npc_buffs::NpcBuffs;
@@ -3331,19 +3331,19 @@ fn brain_pick_tile(
     min: i32,
     max: i32,
     sight_gate: bool,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
 ) -> Option<(i32, i32)> {
     let mut tries = 0;
     loop {
         tries += 1;
         let mut tx = (pcx as i32) / 16;
         let mut ty = (pcy as i32) / 16;
-        let mut ox = crate::app::frame::rand_range_signed(rng, min, max + 1);
-        let mut oy = crate::app::frame::rand_range_signed(rng, min, max + 1);
-        if crate::app::frame::rand_range(rng, 2) == 0 {
+        let mut ox = rng.next_range(min, max + 1);
+        let mut oy = rng.next_range(min, max + 1);
+        if rng.next_max((2) as i32) as u32 == 0 {
             ox = -ox;
         }
-        if crate::app::frame::rand_range(rng, 2) == 0 {
+        if rng.next_max((2) as i32) as u32 == 0 {
             oy = -oy;
         }
         // `:32454-32460` — the player's velocity leads the pick.
@@ -3383,7 +3383,7 @@ fn safe_dir(v: Vec2, default: Vec2) -> Vec2 {
 /// `AI_123_Deerclops_ShootRubbleUp` (`NPC.cs:44448-44465`): the rock lands
 /// on the first solid tile under the Deerclops' top (ten tiles up and three
 /// forward) and flies up at the row's angle.
-fn deerclops_shoot_rubble_up(npc: &mut Npc, world: &World, rng: &mut u64, which_one: i32) {
+fn deerclops_shoot_rubble_up(npc: &mut Npc, world: &World, rng: &mut UnifiedRandom, which_one: i32) {
     let how_many = 20i32;
     let spacing = 1i32;
     let (w, _h) = npc.size();
@@ -3407,7 +3407,7 @@ fn deerclops_shoot_rubble_up(npc: &mut Npc, world: &World, rng: &mut u64, which_
             * (std::f32::consts::PI / 4.0 / how_many as f32);
         let (sin, cos) = angle.sin_cos();
         let v = Vec2::new(sin, -cos);
-        let speed = 8.0 + crate::app::rand01(rng) * 8.0;
+        let speed = 8.0 + rng.next_float() * 8.0;
         npc.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
             kind: crate::projectile::DEERCLOPS_ICE_CHUNK,
             x: x as f32 * 16.0 + 8.0,
@@ -3417,7 +3417,7 @@ fn deerclops_shoot_rubble_up(npc: &mut Npc, world: &World, rng: &mut u64, which_
             damage: 18,
             ai0: 0.0,
             // `:44463` — the chunk's `ai1 = 6 + Next(6)`.
-            ai1: 6.0 + crate::app::frame::rand_range(rng, 6) as f32,
+            ai1: 6.0 + rng.next_max((6) as i32) as u32 as f32,
         });
         break;
     }
@@ -3432,7 +3432,7 @@ fn deerclops_make_spikes(
     npc: &mut Npc,
     world: &World,
     player: &Player,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
     how_many: i32,
     stride: i32,
     trigger: f32,
@@ -3498,7 +3498,7 @@ fn deerclops_try_make_spike(
     npc: &mut Npc,
     world: &World,
     player: &Player,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
     source_x: i32,
     source_y: i32,
     dir: i32,
@@ -3519,7 +3519,7 @@ fn deerclops_try_make_spike(
         Vec2::new(0.0, -1.0).x * sin + Vec2::new(0.0, -1.0).y * cos,
     );
     // `:44582` — the spike's `ai1`: the scale factor.
-    let ai1 = 0.1 + crate::app::rand01(rng) * 0.1 + x_offset as f32 * 1.1 / how_many as f32;
+    let ai1 = 0.1 + rng.next_float() * 0.1 + x_offset as f32 * 1.1 / how_many as f32;
     npc.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
         kind: crate::projectile::DEERCLOPS_ICE_SPIKE,
         x: x as f32 * 16.0 + 8.0,
@@ -3623,7 +3623,7 @@ fn king_slime_find_teleport_spot(
     world: &World,
     player: &Player,
     anti_cheese: bool,
-    rng: &mut u64,
+    rng: &mut UnifiedRandom,
 ) -> (f32, f32) {
     let (pcx, pcy) = player.center();
     let player_bottom = (pcx, player.y + player.height);
@@ -3668,7 +3668,7 @@ fn king_slime_find_teleport_spot(
             }
         }
         if !cache.is_empty() {
-            let pick = crate::app::frame::rand_range(rng, cache.len() as u32) as usize;
+            let pick = rng.next_max(cache.len() as i32) as usize;
             let (x, y) = cache[pick];
             return (x as f32 * 16.0 + 8.0, y as f32 * 16.0);
         }
@@ -5176,17 +5176,18 @@ impl Npc {
         // The deterministic scratch stream — the tests and every
         // non-caster kind never consume it (only the caster teleport
         // search draws `rand01`).
-        let mut scratch = 0u64;
+        let mut scratch = UnifiedRandom::new(0);
         self.update_rng(world, player, dt, &mut scratch);
     }
 
     /// The real step with the caller's RNG stream — the caster teleport
     /// search draws from it where the C# hits `Main.rand` (`NPC.cs:18948`).
-    pub fn update_rng(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut u64) {
-        // `base.oldPosition = base.position` (`NPC.cs:92605`, right before the
-        // position integration) — the switch-tile bridge reads it.
-        self.old_x = self.x;
-        self.old_y = self.y;
+        pub fn update_rng(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
+            // `base.oldPosition = base.position` (`NPC.cs:92605`, right before the
+            // position integration) — the switch-tile bridge reads it.
+            self.old_x = self.x;
+            self.old_y = self.y;
+
         // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
         // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
         // the frame's movement, exactly like the original.
@@ -5393,7 +5394,7 @@ impl Npc {
             NpcKind::StardustSoldier => self.update_stardust_soldier(world, player, rng),
             NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player),
             NpcKind::SolarDrakomireRider => self.update_solar_drakomire_rider(world, player),
-            NpcKind::SolarSroller => self.update_solar_sroller(world, player),
+            NpcKind::SolarSroller => self.update_solar_sroller(world, player, rng),
             NpcKind::SolarCorite => self.update_solar_corite(world, player, rng),
             NpcKind::SolarSelenian => self.update_solar_selenian(world, player),
             // The nebula trio: the floater's aiStyle-97 teleport cycle, the
@@ -7994,7 +7995,7 @@ impl Npc {
     ///
     /// The dust and the gore are SKIPPED — no dust/gore layer. The MP-only
     /// branches use the single-player values.
-    fn update_king_slime(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
+    fn update_king_slime(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
         // `:43123-43131` — the flags and the getGood world's scale factor.
         let mut num = 1.0f32;
         let mut num2 = 1.0f32;
@@ -8154,7 +8155,7 @@ impl Npc {
             return;
         }
         self.ai[3] = self.hp as f32;
-        let count = crate::app::frame::rand_range_signed(rng, 1, 4).max(1);
+        let count = rng.next_range(1, 4).max(1);
         self.wants_minion = true;
         self.wants_minion_batch = count as u32;
         let _ = num2;
@@ -8495,7 +8496,7 @@ impl Npc {
     /// Goblin Summoner (471). C# `NPC.cs:15728` SetDefaults aiStyle 3 and the
     /// type-specific AI block `NPC.cs:56491-56718`. (S1-D-3b: was mis-routed to
     /// `update_caster` / aiStyle 8.)
-    fn update_goblin_summoner(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+    fn update_goblin_summoner(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
         let (pcx, pcy) = player.center();
         let (cx, cy) = self.center();
 
@@ -8646,7 +8647,7 @@ impl Npc {
     /// Lunatic Cultist (439). C# `NPC.cs:14216` SetDefaults aiStyle 84,
     /// `AI_084_LunaticCultist` (`NPC.cs:64414`). (S1-D-3b: was mis-routed to the
     /// pillar aiStyle 94 machine / type-422 row.)
-    fn update_lunatic_cultist(&mut self, _world: &World, player: &Player, _rng: &mut u64) {
+    fn update_lunatic_cultist(&mut self, _world: &World, player: &Player, _rng: &mut UnifiedRandom) {
         // AI_084 core: spawn-in fade/despawn gate (NPC.cs:64554-64585,
         // 64587-64621). The full ritual/attack cycle is not yet ported.
         let (pcx, pcy) = player.center();
@@ -8685,7 +8686,7 @@ impl Npc {
     /// (`:21246`), the Fire Imp → the Burning Sphere 25 at `ai[1] == 10`
     /// (`:21164-21173`). The spawn point keeps `NPC.NewNPC`'s `Bottom`
     /// semantics (`:80771`).
-    fn update_caster(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_caster(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (pcx, pcy) = player.center();
         let params = match self.kind {
             NpcKind::FireImp => crate::npc_ai::CasterParams::FIRE_IMP,
@@ -8806,7 +8807,7 @@ impl Npc {
     ///
     /// The dust (`:22280-22296`) and the sounds are SKIPPED — no dust/sound
     /// layer.
-    fn update_skeletron(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_skeletron(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -8892,15 +8893,15 @@ impl Npc {
                     {
                         let speed = if hands == 0 { 5.0 } else { 3.0 };
                         let mut dx =
-                            pcx - cx + crate::app::frame::rand_range_signed(rng, -20, 21) as f32;
+                            pcx - cx + rng.next_range(-20, 21) as f32;
                         let mut dy =
-                            pcy - cy + crate::app::frame::rand_range_signed(rng, -20, 21) as f32;
+                            pcy - cy + rng.next_range(-20, 21) as f32;
                         let d = (dx * dx + dy * dy).sqrt().max(1.0);
                         dx = dx / d * speed;
                         dy = dy / d * speed;
                         // The jitter (`:22005-22006`).
-                        dx += crate::app::frame::rand_range_signed(rng, -50, 51) as f32 * 0.01;
-                        dy += crate::app::frame::rand_range_signed(rng, -50, 51) as f32 * 0.01;
+                        dx += rng.next_range(-50, 51) as f32 * 0.01;
+                        dy += rng.next_range(-50, 51) as f32 * 0.01;
                         let len = (dx * dx + dy * dy).sqrt().max(1.0);
                         dx = dx / len * speed;
                         dy = dy / len * speed;
@@ -9406,7 +9407,7 @@ impl Npc {
     /// the `GetKnockbackMultiplier_ScaledByDifficulty`/`GetAttackDamage_
     /// ScaledByDifficulty` difficulty arms run as the classic constants
     /// (no difficulty flags).
-    fn update_martian_drone(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_martian_drone(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // The vanilla's 388 param set.
         let speed = 10.0;
         let hover_height = 200.0;
@@ -9493,8 +9494,9 @@ impl Npc {
                 self.ai[0] = 2.0;
                 self.ai[1] = 0.0;
                 // The ai[2]/ai[3] vector + the ±50 × 0.04 jitter, normalized ×14.
-                let jx = (crate::app::rand01(rng) * 2.0 - 1.0) * jitter * 0.04;
-                let jy = (crate::app::rand01(rng) * 2.0 - 1.0) * jitter * 0.04;
+                // `Main.rand.Next(-num1033, num1033 + 1) * 0.04f` (`NPC.cs:35378`).
+                let jx = rng.next_range(-50, 51) as f32 * jitter * 0.04;
+                let jy = rng.next_range(-50, 51) as f32 * jitter * 0.04;
                 let (dx, dy) = (self.ai[2] + jx, self.ai[3] + jy);
                 let len = (dx * dx + dy * dy).sqrt();
                 let inv = if len > 0.0 { dash_speed / len } else { 0.0 };
@@ -9595,7 +9597,7 @@ impl Npc {
     /// shooter engages a still player too); the walk params ride the
     /// walker's (the per-type 5/0.25/0.7 table folds like the other
     /// aiStyle-3 families).
-    fn update_martian_shooter(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_martian_shooter(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (mut cooldown, speed, proj, dmg) = Self::shooter_params(self.kind);
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -9631,21 +9633,34 @@ impl Npc {
             // past 20 the barrage fires the 240 shell (100 dmg, 15 speed,
             // no jitter) on the rolling `max(60, 180 - localAI[3]*20)`
             // cooldown (the port's `cast_windup` as `localAI[3]`).
-            let captain_wounded = self.kind == NpcKind::PirateCaptain && self.caster_counter >= 20;
-            if self.ai[1] * 2.0 >= cooldown as f32 {
-                let mut ax = dx;
-                let mut ay = dy;
-                let (jit, jit_scale) = if captain_wounded {
-                    (0.0, 0.0)
-                } else if self.kind == NpcKind::PirateCaptain {
-                    (50.0, 1.0)
-                } else {
-                    (100.0, 0.4)
-                };
-                ax += (crate::app::rand01(rng) * 2.0 - 1.0) * jit * jit_scale;
-                ay += (crate::app::rand01(rng) * 2.0 - 1.0) * jit * jit_scale;
-                ax *= 0.85 + 0.3 * crate::app::rand01(rng);
-                ay *= 0.85 + 0.3 * crate::app::rand01(rng);
+                let captain_wounded = self.kind == NpcKind::PirateCaptain && self.caster_counter >= 20;
+                if self.ai[1] * 2.0 >= cooldown as f32 {
+                    let mut ax = dx;
+                    let mut ay = dy;
+                    // The per-kind aim jitter (`NPC.cs:59326-59377`): the
+                    // BrainScrambler 381 / RayGunner 382 rays
+                    // `Next(-100, 101) * 0.4f` + the `Next(85, 116) * 0.01f`
+                    // rescale; the Archer 214 `Next(-45, 46)`, the Corsair
+                    // 215 `Next(-40, 41)`, the Captain 216 `Next(-50, 51)` —
+                    // the three arrows carry no rescale.
+                    let (jit_lo, jit_hi, jit_scale, rescale) = if captain_wounded {
+                        (0, 0, 0.0, false)
+                    } else {
+                        match self.kind {
+                            NpcKind::PirateCaptain => (-50, 51, 1.0, false),
+                            NpcKind::PirateArcher => (-45, 46, 1.0, false),
+                            NpcKind::PirateCorsair => (-40, 41, 1.0, false),
+                            _ => (-100, 101, 0.4, true),
+                        }
+                    };
+                    if jit_lo != jit_hi {
+                        ax += rng.next_range(jit_lo, jit_hi) as f32 * jit_scale;
+                        ay += rng.next_range(jit_lo, jit_hi) as f32 * jit_scale;
+                    }
+                    if rescale {
+                        ax *= rng.next_range(85, 116) as f32 * 0.01;
+                        ay *= rng.next_range(85, 116) as f32 * 0.01;
+                    }
                 let len = (ax * ax + ay * ay).sqrt().max(0.001);
                 let shot_speed = if captain_wounded { 15.0 } else { speed };
                 let (shot_proj, shot_dmg) = if captain_wounded {
@@ -9685,8 +9700,9 @@ impl Npc {
                     player.height,
                 )
             {
-                let mut ax = dx + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
-                let mut ay = dy + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
+                // `Next(-40, 41)` on each axis (`NPC.cs:59653-59657`).
+                let mut ax = dx + rng.next_range(-40, 41) as f32;
+                let mut ay = dy + rng.next_range(-40, 41) as f32;
                 if (ax * ax + ay * ay).sqrt() < 700.0 {
                     self.vx *= 0.5;
                     self.ai[2] = octant(ax, ay);
@@ -9744,7 +9760,7 @@ impl Npc {
     /// Deviations: the carrier link is the sim's write-through (the
     /// port has no NPC indices — the nearest living 91 within 800 px
     /// stands in); the idle aim octant rides the vanilla's table.
-    fn update_scutlix_rider(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_scutlix_rider(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // The init (`NPC.cs:35506-35519`): `localAI[0]`'s one-time latch —
         // `ai[0]` stands in (the mount block's own state rides `ai[1]`).
         if self.ai[0] == 0.0 {
@@ -9791,10 +9807,12 @@ impl Npc {
                     self.ai[1] = -60.0;
                     let mut ax = px;
                     let mut ay = py;
-                    ax += (crate::app::rand01(rng) * 2.0 - 1.0) * 50.0;
-                    ay += (crate::app::rand01(rng) * 2.0 - 1.0) * 50.0;
-                    ax *= 0.8 + 0.4 * crate::app::rand01(rng);
-                    ay *= 0.8 + 0.4 * crate::app::rand01(rng);
+                    // `Next(-50, 51)` on the aim, then `Next(80, 121) * 0.01f`
+                    // on each axis (`NPC.cs:35704-35709`).
+                    ax += rng.next_range(-50, 51) as f32;
+                    ay += rng.next_range(-50, 51) as f32;
+                    ax *= rng.next_range(80, 121) as f32 * 0.01;
+                    ay *= rng.next_range(80, 121) as f32 * 0.01;
                     let len = (ax * ax + ay * ay).sqrt().max(0.001);
                     let inv = 7.0 / len;
                     self.wants_hostile_shot
@@ -9874,7 +9892,7 @@ impl Npc {
     /// constants; `Main.npc[localAI[i]]`'s sibling references ride the
     /// pre-pass crew counts; the 448's extra args (0, 20) fold out; the
     /// expert-mode bridge arm is constants-off (no difficulty flags).
-    fn update_saucer_mount(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        fn update_saucer_mount(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         if self.carrier_x < 0.0 {
             return;
         }
@@ -9938,7 +9956,7 @@ impl Npc {
                     if core_open && (t - 280.0) % 6.0 == 0.0 {
                         // The 449 ray at the aim (ai[2] = the rotation).
                         let ang =
-                            self.ai[2] + (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
+                            self.ai[2] + ((rng.next_double() - 0.5) * 0.7853981852531433 / 3.0) as f32;
                         let (vx, vy) = (ang.cos() * 16.0, ang.sin() * 16.0);
                         self.wants_hostile_shot
                             .push((449u16, cx + vx, cy + vy, vx, vy, 35));
@@ -10009,7 +10027,9 @@ impl Npc {
                 let t = self.ai[3];
                 let in_window = t >= 440.0 && t < 580.0;
                 if in_window && core_open && (t - 440.0) % 20.0 == 0.0 {
-                    let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
+                    // `(Main.rand.NextDouble() - 0.5) * 0.7853981852531433`
+                    // (`NPC.cs:35845`).
+                    let ang = ((rng.next_double() - 0.5) * 0.7853981852531433) as f32;
                     let (vx, vy) = (side * ang.cos() * 8.0, ang.sin() * 8.0);
                     // The missile (`:35845`): the C# passes `ai1 = 20f` —
                     // the arm's 20-tick arming delay.
@@ -10058,10 +10078,15 @@ impl Npc {
                 };
                 if fire_window && core_open {
                     let dmg = 30;
-                    let roll = crate::app::rand01(rng);
+                    // The grouped-emitter stand-in: one roll for the
+                    // emitter pair (the C# draws `Next(maxValue4/5)` per
+                    // slot, `NPC.cs:35981-36005` — the grouping is the
+                    // port's, recorded in the phase notes).
+                    let roll = rng.next_float();
                     // The turret emitters (the wide arcs).
                     if self.crew_turrets > 0 && roll < 1.0 / wide {
-                        let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433 / 3.0;
+                        let ang =
+                            ((rng.next_double() - 0.5) * 0.7853981852531433 / 3.0) as f32;
                         let (vx, vy) = (-(roll * 3.0) * ang.cos() * 3.0, ang.sin() * 3.0 + 3.0);
                         self.wants_hostile_shot.push((
                             450u16,
@@ -10072,7 +10097,7 @@ impl Npc {
                             dmg,
                         ));
                     } else if self.crew_cannons > 0 && roll < 1.0 / narrow {
-                        let ang = (crate::app::rand01(rng) - 0.5) * 0.7853981852531433;
+                        let ang = ((rng.next_double() - 0.5) * 0.7853981852531433) as f32;
                         let (vx, vy) = (
                             -(roll * 2.0) * ang.cos() * 3.0 - 1.0,
                             -ang.sin() * 3.0 - 3.0,
@@ -10121,7 +10146,7 @@ impl Npc {
     /// pre-pass's crew count + the write-through; the dust spawns are
     /// unmodelled; the cannons' stagger (the `60*seat` timeLeft) folds
     /// out (the port spawns them at once).
-    fn update_flying_dutchman(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_flying_dutchman(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // The init (`:38859-38872`).
         if !self.wants_scutlix {
             self.wants_scutlix = true; // the init latch
@@ -10135,12 +10160,18 @@ impl Npc {
             return;
         }
         // The pirate drop (`:38892-38902`).
-        if crate::app::rand01(rng) < 1.0 / 300.0 {
+        // `Main.rand.Next(300) == 0` (`NPC.cs:38891`).
+        if rng.next_max(300) == 0 {
             // The rotated side offset: (rand01-0.5)*(width-70) × ±20-height/2-20.
-            let jx = (crate::app::rand01(rng) - 0.5) * (350.0 - 70.0);
-            let jy = (crate::app::rand01(rng) - 0.5) * 20.0 - 120.0 / 2.0 - 20.0;
+            // `(Main.rand.NextFloat() - 0.5f) * (width - 70)` and
+            // `(Main.rand.NextFloat() - 0.5f) * 20f - height / 2 - 20`
+            // (`NPC.cs:38892`).
+            let jx = (rng.next_float() - 0.5) * (350.0 - 70.0);
+            let jy = (rng.next_float() - 0.5) * 20.0 - 120.0 / 2.0 - 20.0;
             let (rx, ry) = rot(jx, jy, self.rotation);
-            let kind = match (crate::app::rand01(rng) * 4.0) as u32 {
+            // `Utils.SelectRandom(Main.rand, 213, 215, 214, 212)` — a 4-way
+            // pick (`NPC.cs:38894`).
+            let kind = match rng.next_max(4) {
                 0 => NpcKind::PirateCaptainsMate,
                 1 => NpcKind::PirateCorsair,
                 2 => NpcKind::PirateArcher,
@@ -10258,7 +10289,7 @@ impl Npc {
     /// vanilla's `flag24`/`flag12`/`flag15` (the chase/park states) and
     /// the `DD2Event.EnemiesShouldChasePlayers` flag ride the DD2Event
     /// framework — constants-off until it lands.
-    fn update_dd2_bomber(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_dd2_bomber(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -10330,7 +10361,7 @@ impl Npc {
     /// `GetAttackDamage_ScaledByDifficulty` runs classic. The tracked sounds
     /// (portal spawn, summon, heal) and the portal dust ride the audio/dust
     /// passes.
-    fn update_dark_mage(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_dark_mage(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // The type-564/565 variant block (`:65813-65827`).
         self.rotation = self.vx * 0.04;
         self.sprite_dir = if self.facing > 0 { 1 } else { -1 };
@@ -10681,7 +10712,7 @@ impl Npc {
     /// target-loss guards. The remaining phases (the fireball 686, the
     /// circle flight, the dash) + the phase-5/6 renders ride the attack
     /// family's follow-ups.
-    fn update_betsy(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_betsy(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -10711,7 +10742,10 @@ impl Npc {
             self.ai[1] += 1.0;
             if self.ai[1] >= 30.0 {
                 let mut pick = 2;
-                if self.ai[3] == 5.0 && crate::app::rand01(rng) < 1.0 / 3.0 {
+                // The port's phase-table fold; the roll is the stream
+                // stand-in (the C# `AI_109_DarkMage` carries no `Next(3)`
+                // pick — the port-side cadence).
+                if self.ai[3] == 5.0 && rng.next_float() < 1.0 / 3.0 {
                     self.ai[3] += 1.0;
                 }
                 match self.ai[3] as u32 {
@@ -10961,7 +10995,7 @@ impl Npc {
     /// Jellyfish: the desired-velocity bands (20/40/80 px → 0.35/0.65/1.0
     /// × 5 of the 250-px-above-the-player vector), the `moveSpeed = 0.15`
     /// fly, the 70-tick 539 shot (60 damage) from the random ring.
-    fn update_stardust_jellyfish(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+    fn update_stardust_jellyfish(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -10995,7 +11029,10 @@ impl Npc {
             let (mut sx, mut sy) = (0.0f32, 0.0f32);
             let mut guard = 0;
             while sx.abs() < 1.5 && guard < 64 {
-                let ang = (crate::app::rand01(rng) * 2.0 - 1.0) * std::f32::consts::FRAC_PI_2;
+                // `Vector2.UnitY.RotatedByRandom(1.5707963705062866)` — the
+                // C# samples `NextDouble()*2 - 1` times π/2 (`NPC.cs:39466`),
+                // resampled until |X| >= 1.5.
+                let ang = rng.next_float_direction() * std::f32::consts::FRAC_PI_2;
                 sx = -ang.sin() * 5.0;
                 sy = ang.cos() * 3.0;
                 guard += 1;
@@ -11105,7 +11142,7 @@ impl Npc {
     /// Deviations: the 242-dust arms (`:62505-62526`, `:62904-62918`) are
     /// unmodelled; the ledge-jump arm's tile probes (`:62806-62903`'s
     /// −8.5/−7.5/−7/−6/−8) fold into the walker's single jump.
-    fn update_nebula_beast(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_nebula_beast(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -11130,7 +11167,8 @@ impl Npc {
             }
             if self.ai[1] >= 60.0 {
                 // `:62536-62539`'s release: the rearm is −320…−600.
-                self.ai[1] = -(320.0 + crate::app::rand01(rng) * 281.0);
+                // `this.ai[1] = -Main.rand.Next(320, 601)` (`NPC.cs:62538`).
+                self.ai[1] = -(rng.next_range(320, 601) as f32);
                 self.ai[2] = 0.0;
             }
         } else {
@@ -11171,7 +11209,7 @@ impl Npc {
     /// separation (`:58543-58564`) and the chase-correction
     /// (`:58606-58613`'s `GetChaseResults`) are unmodelled; the port's
     /// salvo fires the direct aim.
-    fn update_vortex_rifleman(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_vortex_rifleman(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -11257,8 +11295,10 @@ impl Npc {
             for shot in 0..4 {
                 let (mut vx, mut vy) = ((pcx - mx) / d * 20.0, (pcy - my) / d * 20.0);
                 if shot != 0 {
-                    vx += (crate::app::rand01(rng) * 2.0 - 1.0) * 0.8;
-                    vy += (crate::app::rand01(rng) * 2.0 - 1.0) * 0.8;
+                    // The port's per-shot spread stand-in (the C# salvo is
+                    // exact, `NPC.cs:58595-58620` — recorded deviation).
+                    vx += rng.next_float_direction() * 0.8;
+                    vy += rng.next_float_direction() * 0.8;
                 }
                 self.wants_hostile_shot.push((577u16, mx, my, vx, vy, 75));
             }
@@ -11346,12 +11386,12 @@ impl Npc {
     ///
     /// Deviations: `MoonlordDeathDrama` (the light/explosion/pieces event)
     /// is unmodelled — the port's drama is the timer + the 622 smoke.
-    fn update_moon_lord_core(&mut self, _world: &World, player: &Player, rng: &mut u64) {
-        // `:41163-41168`'s init: the first tick arms the spawn phase. The
-        // C#'s latch is `localAI[3]` (0 → 1) — a one-shot; the port's
-        // `ai[0] == 0` test alone re-armed the phase on every return to
-        // the zero state (a second hands+head every 60 ticks).
-        if self.ai[0] == 0.0 && !self.moon_spawn_latch {
+        fn update_moon_lord_core(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
+            // `:41163-41168`'s init: the first tick arms the spawn phase. The
+            // C#'s latch is `localAI[3]` (0 → 1) — a one-shot; the port's
+            // `ai[0] == 0` test alone re-armed the phase on every return to
+            // the zero state (a second hands+head every 60 ticks).
+            if self.ai[0] == 0.0 && !self.moon_spawn_latch {
             self.ai[0] = -1.0;
             self.moon_spawn_latch = true;
         }
@@ -11390,15 +11430,14 @@ impl Npc {
                 if self.ai[1] >= 90.0 && self.ai[1] < 480.0 && (self.ai[1] as i64) % 15 == 0 {
                     // `:41405-41428`'s smoke: one 622 (0 damage) at the
                     // ±(π/8 + π/4·rand) rotation about the down axis.
+                    // `(Next(4) < 2).ToDirectionInt() * (pi/8 + pi/4 *
+                    // NextFloat())` and `(0 - NextFloat()) * 0.5f - 0.5f`
+                    // (`NPC.cs:41421-41422`).
                     let rot = std::f32::consts::FRAC_PI_8
-                        + std::f32::consts::FRAC_PI_4 * crate::app::rand01(rng);
-                    let sign = if crate::app::rand01(rng) < 0.5 {
-                        -1.0
-                    } else {
-                        1.0
-                    };
+                            + std::f32::consts::FRAC_PI_4 * rng.next_float();
+                        let sign = if rng.next_max(4) < 2 { -1.0 } else { 1.0 };
                     let vx = rot.sin() * sign * 6.0;
-                    let vy = -rot.cos() * (crate::app::rand01(rng) * 0.5 + 0.5);
+                    let vy = -rot.cos() * (rng.next_float() * 0.5 + 0.5);
                     self.wants_hostile_shot.push((622u16, cx, cy, vx, vy, 0));
                 }
                 self.x += self.vx;
@@ -11492,7 +11531,7 @@ impl Npc {
     /// Deviations: the 452/454 projectile engines (the vanilla's aiStyle
     /// 82/83) are unmodelled; the release wave fires the wave projectile
     /// through `wants_hostile_shot` instead of rewriting the owned 454s.
-    fn update_moon_lord_hand(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+    fn update_moon_lord_hand(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // `:41579-41583`'s orphan guard (the pre-pass owns the link).
         if !self.moon_core_alive {
             self.hp = 0;
@@ -11645,7 +11684,7 @@ impl Npc {
     /// row of `MoonLordAttacksArray`, the eye's open/close factor, the
     /// phantom deathray (455), the Moon Leech summon (456) and the
     /// retargeting laser (462).
-    fn update_moon_lord_head(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+    fn update_moon_lord_head(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // `:42086-42091`'s orphan guard (the pre-pass owns the link).
         if !self.moon_core_alive {
             self.hp = 0;
@@ -11734,7 +11773,7 @@ impl Npc {
     ///
     /// Deviations: the 454/452 projectile engines (the vanilla's aiStyle
     /// 82/83) are unmodelled.
-    fn update_true_eye(&mut self, _world: &World, player: &Player, rng: &mut u64) {
+    fn update_true_eye(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // `:42466-42470`'s orphan guard (the pre-pass owns the link).
         if !self.moon_core_alive {
             self.hp = 0;
@@ -11809,15 +11848,11 @@ impl Npc {
                 // `:42739-42880`'s ring: the 452 (35) volley every 10
                 // ticks inside the 150-tick window at the 8-px speed.
                 if num >= 45.0 && num < 185.0 && ((num as i64) - 45) % 10 == 0 {
-                    let ang = crate::app::rand01(rng) * std::f32::consts::PI * 2.0;
-                    self.wants_hostile_shot.push((
-                        452u16,
-                        cx,
-                        cy,
-                        ang.cos() * 8.0,
-                        ang.sin() * 8.0,
-                        35,
-                    ));
+                        // The port's ring-angle stand-in (the C# ring fires
+                        // from the emitter fan, `NPC.cs:42739-42880`).
+                        let ang = rng.next_float() * std::f32::consts::PI * 2.0;
+                        self.wants_hostile_shot
+                            .push((452u16, cx, cy, ang.cos() * 8.0, ang.sin() * 8.0, 35));
                 }
             }
             _ => {
@@ -11867,7 +11902,7 @@ impl Npc {
     /// `:59746-59750`) — the 60-tick cycle fires no projectile: it spawns
     /// the 410 small spider at its centre with the carried velocity, and
     /// its walk runs the 2-px cap over the 0.5 accel.
-    fn update_stardust_spider_big(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+    fn update_stardust_spider_big(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -11920,7 +11955,7 @@ impl Npc {
     /// `:62706-62713`) — the aiStyle-26 walker at the 6-px/0.2-accel with
     /// the kamikaze: the 240-tick counter (or a player 800 px below within
     /// a 20-px column) fires three 538s (50) and the spider dies.
-    fn update_stardust_spider_small(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_stardust_spider_small(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -11932,8 +11967,10 @@ impl Npc {
         if armed {
             // `:62486-62492`'s three-shot burst + the self-destruct.
             for _ in 0..3 {
-                let vx = (crate::app::rand01(rng) - 0.5) * 2.0;
-                let vy = -4.0 - 10.0 * crate::app::rand01(rng);
+                // `(Main.rand.NextFloat() - 0.5f) * 2f` and
+                // `-4f - 10f * Main.rand.NextFloat()` (`NPC.cs:62489`).
+                let vx = (rng.next_float() - 0.5) * 2.0;
+                let vy = -4.0 - 10.0 * rng.next_float();
                 self.wants_hostile_shot.push((538u16, cx, cy, vx, vy, 50));
             }
             self.hp = 0;
@@ -11972,7 +12009,7 @@ impl Npc {
     /// Deviations: the [120, 240) aerodynamic window (`:59624-59633`)'s
     /// velocity drag folds into the walker; the `ai[2]` re-pick by the
     /// velocity ratio is unmodelled.
-    fn update_stardust_soldier(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_stardust_soldier(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -11984,8 +12021,9 @@ impl Npc {
         if self.ai[1] * 2.0 >= 330.0 && self.ai[2] > 0.0 {
             let (mut ax, mut ay) = (dx, dy);
             let jit = 40.0;
-            ax += (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
-            ay += (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+            // The type-411 catch-all `Next(-40, 41)` (`NPC.cs:59374-59377`).
+            ax += rng.next_range(-40, 41) as f32;
+            ay += rng.next_range(-40, 41) as f32;
             let len = (ax * ax + ay * ay).sqrt().max(0.001);
             ax = ax / len * 1.0;
             ay = ay / len * 1.0;
@@ -12080,7 +12118,7 @@ impl Npc {
     ///
     /// Deviations: the dust/gore bursts and the `ai[3]` FX layer are
     /// unmodelled; the roll's spin rides the port's rotation.
-    fn update_solar_sroller(&mut self, world: &World, player: &Player) {
+    fn update_solar_sroller(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12114,7 +12152,8 @@ impl Npc {
                 self.ai[1] += 0.5;
                 if self.ai[1] >= 30.0 {
                     self.ai[1] = 0.0;
-                    self.ai[2] = 2.0 + 2.0 * crate::app::rand01(&mut 7u64);
+                    // `Main.rand.Next(2, 5)` — the roll revolutions.
+                    self.ai[2] = rng.next_range(2, 5) as f32;
                     self.ai[0] = 6.0;
                 }
             }
@@ -12156,7 +12195,7 @@ impl Npc {
     ///
     /// Deviations: the dust/lighting arms and the sound cue are
     /// unmodelled; the implosion's 3-tick delay rides the port's own.
-    fn update_solar_corite(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+    fn update_solar_corite(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12259,7 +12298,7 @@ impl Npc {
     /// Deviations: the dust arm (`:51043-51054`) is unmodelled; the mark's
     /// 540 projectile hop folds into a direct spawn (the port has no 540
     /// AI) and the caps live in the sim's resolve.
-    fn update_stardust_worm_head(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+    fn update_stardust_worm_head(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12291,7 +12330,7 @@ impl Npc {
         self.y += self.vy;
     }
 
-    fn update_nebula_floater(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_nebula_floater(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12303,7 +12342,9 @@ impl Npc {
                 let (mut sx, mut sy) = (0.0f32, 0.0f32);
                 let mut guard = 0;
                 while sx.abs() < 1.5 && guard < 64 {
-                    let ang = (crate::app::rand01(rng) * 2.0 - 1.0) * std::f32::consts::FRAC_PI_2;
+                    // `RotatedByRandom(1.5707963705062866)` — the
+                    // `NextDouble * 2 - 1` times pi/2 sample (`:39466`).
+                    let ang = rng.next_float_direction() * std::f32::consts::FRAC_PI_2;
                     sx = -ang.sin() * 4.0;
                     sy = ang.cos() * 2.5;
                     guard += 1;
@@ -12341,8 +12382,10 @@ impl Npc {
             let (tx, ty) = ((ax / TILE_PX) as i32, (ay / TILE_PX) as i32);
             let mut spot = None;
             for _ in 0..24 {
-                let bx = tx + (crate::app::rand01(rng) * 40.0 - 20.0) as i32;
-                let by = ty + (crate::app::rand01(rng) * 24.0 - 12.0) as i32;
+                // The port's scatter pick (the C# floater teleports
+                // without a rand scatter — the stream stands in).
+                let bx = tx + (rng.next_float() * 40.0 - 20.0) as i32;
+                let by = ty + (rng.next_float() * 24.0 - 12.0) as i32;
                 if !(0..world.width).contains(&bx) || !(0..world.height).contains(&by) {
                     continue;
                 }
@@ -12380,7 +12423,7 @@ impl Npc {
     /// the same-type/same-target scan, the snap) and phase 5 (the
     /// `Center = player.Top + direction * 4` ride, the `AddBuff(163,
     /// 59)` obstruct, `hide = true` and the 0.05 separation).
-    fn update_brain_suckler(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+    fn update_brain_suckler(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12480,7 +12523,7 @@ impl Npc {
     /// at `:59159-59192`/`:59475`/`:59578`) — the nebula pillar's shooter:
     /// the 180-tick cycle with the shot at the 179th tick fires four 573s
     /// (60) in the `(-3 + 2*i) * 0.15` fan from the muzzle.
-    fn update_nebula_predictor(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+    fn update_nebula_predictor(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12520,7 +12563,7 @@ impl Npc {
         );
     }
 
-    fn update_vortex_hunter(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_vortex_hunter(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12545,8 +12588,10 @@ impl Npc {
                 // `:59204-59202`'s fire: the 581 at 60 (the classic
                 // constant of `GetAttackDamage_ForProjectiles(60, 45)`).
                 let jit = 30.0 * 0.3;
-                let mut ax = dx + (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
-                let mut ay = dy + (crate::app::rand01(rng) * 2.0 - 1.0) * jit;
+                // The port's aim-spread stand-in (the C# 581 arm draws no
+                // per-shot scatter — recorded deviation).
+                let mut ax = dx + rng.next_float_direction() * jit;
+                let mut ay = dy + rng.next_float_direction() * jit;
                 let len = (ax * ax + ay * ay).sqrt().max(0.001);
                 ax = ax / len * 7.0;
                 ay = ay / len * 7.0;
@@ -12591,7 +12636,7 @@ impl Npc {
     /// accel pairs over the ±6 caps, the 0.98 damping, the 20-px deadband,
     /// the 0.05 separation), the leap arm (`velocity.Y = -5`) and the
     /// 1200-tick `Transform(426)` behind the empty 5x5 box.
-    fn update_vortex_alien(&mut self, world: &World, player: &Player, _rng: &mut u64) {
+    fn update_vortex_alien(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12752,7 +12797,7 @@ impl Npc {
     /// NPC vec) so it lands in `world_sim`; the dust/gore/sound arms are
     /// unmodelled; `localAI[0]`'s fade rides the port's `caster_counter`
     /// and `alpha`.
-    fn update_diving_flyer(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_diving_flyer(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12808,8 +12853,10 @@ impl Npc {
                 let windup = if glide { 30.0 } else { 20.0 };
                 if self.ai[1] >= windup {
                     let jitter = if glide { 3.0 } else { 0.0 };
-                    let jx = self.ai[2] + (crate::app::rand01(rng) * 2.0 - 1.0) * jitter * 0.04;
-                    let jy = self.ai[3] + (crate::app::rand01(rng) * 2.0 - 1.0) * jitter * 0.04;
+                    // The `Next(-n, n+1) * 0.04f` dive jitter
+                    // (`NPC.cs:35378` family, n = 3).
+                    let jx = self.ai[2] + rng.next_range(-3, 4) as f32 * jitter * 0.04;
+                    let jy = self.ai[3] + rng.next_range(-3, 4) as f32 * jitter * 0.04;
                     let len = (jx * jx + jy * jy).sqrt().max(1.0);
                     self.vx = jx / len * dive_max;
                     self.vy = jy / len * dive_max;
@@ -12881,7 +12928,7 @@ impl Npc {
     /// `AI_107`'s 569 arm (`NPC.cs:63348-63432`) — the tier-3 wither
     /// beast's aura/heal walker: the charge and the 60-tick `lifeMax / 20`
     /// self-heal. The walk itself rides `update_wither_beast`.
-    fn update_wither_beast_t3(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_wither_beast_t3(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // `:63351-63360`: the 110-tick charge, the 600-px engage and the
         // 1.4/0.16/0.7 walk tuning ride the shared walker arm; the aura
         // arm is the T2's.
@@ -12900,7 +12947,7 @@ impl Npc {
 
     /// `AI_107`'s 570/571 arm (`NPC.cs:63145-63195`) — the drakins: the
     /// ranger's stand-and-shoot, the 671 projectile at the tier's damage.
-    fn update_drakin(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_drakin(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -12928,7 +12975,7 @@ impl Npc {
                 let spread = if t2 { 2.5 } else { 1.5 };
                 // The ballistic drop `Math.Abs(v.X) * num15` (0.15).
                 let (dx, dy) = (
-                    pcx - sx + (crate::app::rand01(rng) * 2.0 - 1.0) * spread,
+                    pcx - sx + rng.next_float_direction() * spread,
                     pcy - sy - (pcx - sx).abs() * 0.15,
                 );
                 let len = (dx * dx + dy * dy).sqrt().max(1.0);
@@ -12994,7 +13041,7 @@ impl Npc {
     /// `AI_107`'s 576/577 arm (`NPC.cs:63029-63122`) — the ogres: the
     /// chase/spit/pound sub-state machine with the 676/683 throws and the
     /// hop.
-    fn update_ogre(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_ogre(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -13100,7 +13147,7 @@ impl Npc {
         }
     }
 
-    fn update_ancient_cultist(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_ancient_cultist(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // The timer: the 180-tick dissolve (`:39060-39066`'s `ai[1]`).
         self.ai[2] += 1.0;
         if self.ai[2] >= 180.0 {
@@ -13155,7 +13202,7 @@ impl Npc {
         let _ = rng;
     }
 
-    fn update_wither_beast(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_wither_beast(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -13180,9 +13227,11 @@ impl Npc {
             self.caster_counter += 1;
             // The ring dust (the 400-px random radius) — the port's
             // stream stands in for `Main.rand`.
-            if self.caster_counter > 60 && crate::app::rand01(rng) < 0.1 {
-                let ang = crate::app::rand01(rng) * std::f32::consts::TAU;
-                let radius = 400.0 * (0.3 + 0.7 * crate::app::rand01(rng));
+            // The port's ring-dust stand-in (the stream stands in for
+            // the C# dust `RandomVector2` draws).
+            if self.caster_counter > 60 && rng.next_float() < 0.1 {
+                let ang = rng.next_float() * std::f32::consts::TAU;
+                let radius = 400.0 * (0.3 + 0.7 * rng.next_float());
                 let (rx, ry) = (cx + ang.cos() * radius, cy + ang.sin() * radius);
                 // The dust's solid check folds (the port has no dust
                 // system) — the ring lands at the point.
@@ -13201,7 +13250,7 @@ impl Npc {
         }
     }
 
-    fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_dd2_thrower(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -13263,7 +13312,7 @@ impl Npc {
         );
     }
 
-    fn update_saucer_core(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_saucer_core(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         // The init (`:36071-36092`): the guns + the shell, the seat links.
         // The vanilla's `localAI[3]` latch never touches `ai[0]` — the
         // forced phases stand (the debug spawn / the table arm set them).
@@ -13662,7 +13711,7 @@ impl Npc {
     /// The light and the dust are SKIPPED — no dust/light layer. The
     /// day-time `EncourageDespawn(10)` rides the world's own day arm (the
     /// port's NPCs carry no despawn timer).
-    fn update_retinazer(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_retinazer(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -13696,9 +13745,9 @@ impl Npc {
                 if self.ai[1] >= 300.0 {
                     self.ai[1] = 0.0;
                     self.ai[0] = if self.hp * 4 < self.max_hp {
-                        crate::app::frame::rand_range_signed(rng, 3, 5) as f32
+                        rng.next_range(3, 5) as f32
                     } else {
-                        crate::app::frame::rand_range_signed(rng, 1, 3) as f32
+                        rng.next_range(1, 3) as f32
                     };
                 }
             }
@@ -13715,9 +13764,9 @@ impl Npc {
                     dx = dx / d * 10.0;
                     dy = dy / d * 10.0;
                     let sx = dx
-                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.01);
+                        * (1.0 + rng.next_range(-20, 21) as f32 * 0.01);
                     let sy = dy
-                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.01);
+                        * (1.0 + rng.next_range(-20, 21) as f32 * 0.01);
                     self.wants_hostile_shot.push((
                         crate::projectile::FLAMING_WOOD,
                         origin.x,
@@ -13746,16 +13795,16 @@ impl Npc {
                     if shot_speed > 14.0 {
                         shot_speed = 14.0;
                     }
-                    dx += crate::app::frame::rand_range_signed(rng, -50, 51) as f32;
-                    dy -= crate::app::frame::rand_range_signed(rng, 50, 201) as f32;
+                    dx += rng.next_range(-50, 51) as f32;
+                    dy -= rng.next_range(50, 201) as f32;
                     let d = (dx * dx + dy * dy).sqrt().max(0.001);
                     dx = dx / d * shot_speed;
                     dy = dy / d * shot_speed;
-                    let kind = crate::app::frame::rand_range_signed(rng, 326, 329) as u16;
+                    let kind = rng.next_range(326, 329) as u16;
                     let sx = dx
-                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.01);
+                        * (1.0 + rng.next_range(-30, 31) as f32 * 0.01);
                     let sy = dy
-                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.01);
+                        * (1.0 + rng.next_range(-30, 31) as f32 * 0.01);
                     self.wants_hostile_shot
                         .push((kind, origin.x, origin.y, sx, sy, 40));
                 }
@@ -13776,9 +13825,9 @@ impl Npc {
                     dx = dx / d * 16.0;
                     dy = dy / d * 16.0;
                     let sx = dx
-                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.001);
+                        * (1.0 + rng.next_range(-20, 21) as f32 * 0.001);
                     let sy = dy
-                        * (1.0 + crate::app::frame::rand_range_signed(rng, -20, 21) as f32 * 0.001);
+                        * (1.0 + rng.next_range(-20, 21) as f32 * 0.001);
                     self.wants_hostile_shot.push((
                         crate::projectile::FLAMING_WOOD,
                         origin.x,
@@ -13807,16 +13856,16 @@ impl Npc {
                     if shot_speed > 16.0 {
                         shot_speed = 16.0;
                     }
-                    dx += crate::app::frame::rand_range_signed(rng, -50, 51) as f32;
-                    dy -= crate::app::frame::rand_range_signed(rng, 50, 201) as f32;
+                    dx += rng.next_range(-50, 51) as f32;
+                    dy -= rng.next_range(50, 201) as f32;
                     let d = (dx * dx + dy * dy).sqrt().max(0.001);
                     dx = dx / d * shot_speed;
                     dy = dy / d * shot_speed;
-                    let kind = crate::app::frame::rand_range_signed(rng, 326, 329) as u16;
+                    let kind = rng.next_range(326, 329) as u16;
                     let sx = dx
-                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.005);
+                        * (1.0 + rng.next_range(-30, 31) as f32 * 0.005);
                     let sy = dy
-                        * (1.0 + crate::app::frame::rand_range_signed(rng, -30, 31) as f32 * 0.005);
+                        * (1.0 + rng.next_range(-30, 31) as f32 * 0.005);
                     self.wants_hostile_shot
                         .push((kind, origin.x, origin.y, sx, sy, 50));
                 }
@@ -14383,7 +14432,7 @@ impl Npc {
         self.y += self.vy;
     }
 
-    fn update_deerclops(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
+    fn update_deerclops(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -14522,13 +14571,14 @@ impl Npc {
                     // (the spawn must not land on a player other than the
                     // target) never rejects in the port: the only player IS
                     // the target, and the C# skips the target in that check.
-                    let mut shadow_rng = crate::world_sim::npcs::LootRng(rng);
+                    // The pick's rolls ride this pass's stage stream (`UnifiedRandom`
+                    // is itself the `DropRng`, `loot.rs`'s impl).
                     for _ in 0..6 {
                         let (pos, vel, ai0, ai1) = crate::projectile::randomize_insanity_shadow_for(
                             Vec2::new(pcx, pcy),
                             Vec2::new(player.vx, player.vy),
                             true,
-                            &mut shadow_rng,
+                            rng,
                         );
                         self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
                             kind: crate::projectile::SHADOW_HAND,
@@ -14563,8 +14613,10 @@ impl Npc {
 
     /// The shadow-hand burst's angular jitter (`RandomizeInsanityShadowFor`'s
     /// spin, `Projectile.cs:42434-42477`).
-    fn facing_move_phase(&self, rng: &mut u64) -> f32 {
-        (crate::app::rand01(rng) - 0.5) * 0.25
+    fn facing_move_phase(&self, rng: &mut UnifiedRandom) -> f32 {
+        // The port's angular-jitter stand-in for `RandomizeInsanity
+        // ShadowFor`'s spin (`Projectile.cs:42408`).
+        (rng.next_float() - 0.5) * 0.25
     }
 
     fn update_golem(&mut self, world: &World, player: &Player) {
@@ -14998,7 +15050,7 @@ impl Npc {
     /// to the orbit. The brainless Creepers die in the sim
     /// (`NPC.crimsonBoss < 0` -> `active = false`); the brain's anchor
     /// rides the World fields (the WoF's write-through shape).
-    fn update_creeper(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_creeper(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         if !world.brain_present {
             return;
         }
@@ -15020,7 +15072,9 @@ impl Npc {
                 self.vy *= 1.05;
                 self.vx *= 1.05;
             }
-            if crate::app::rand01(rng) < 1.0 / 200.0 {
+            // `Main.rand.Next(200) == 0` (`NPC.cs:32686`, the classic
+            // arm; the expert `Next(100)` half folds - no expert mode).
+            if rng.next_max(200) == 0 {
                 let (pcx, pcy) = player.center();
                 let dx = pcx - cx;
                 let dy = pcy - cy;
@@ -15050,7 +15104,7 @@ impl Npc {
     /// The gore/dust burst (`:32401-32419`) is SKIPPED — no dust/gore layer.
     /// The MP-only branches (`Main.netMode != 0`) use the single-player
     /// values (the port has no multiplayer arm).
-    fn update_brain(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_brain(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -15076,9 +15130,9 @@ impl Npc {
                     self.brain_local[1] += 1.0;
                     if self.hurt_cd > 0.0 {
                         // The C#'s `justHit` roll (`localAI[1] -= Next(5)`).
-                        self.brain_local[1] -= crate::app::frame::rand_range(rng, 5) as f32;
+                        self.brain_local[1] -= rng.next_max((5) as i32) as u32 as f32;
                     }
-                    let period = 60.0 + crate::app::frame::rand_range(rng, 120) as f32;
+                    let period = 60.0 + rng.next_max((120) as i32) as u32 as f32;
                     if self.brain_local[1] >= period {
                         self.brain_local[1] = 0.0;
                         // The tile pick: up to 100 tries, 10-12 tiles out
@@ -15150,7 +15204,7 @@ impl Npc {
                         self.alpha = 0;
                     }
                     self.brain_local[1] += 1.0;
-                    if self.brain_local[1] >= 120.0 + crate::app::frame::rand_range(rng, 300) as f32
+                    if self.brain_local[1] >= 120.0 + rng.next_max((300) as i32) as u32 as f32
                     {
                         self.brain_local[1] = 0.0;
                         // The tile pick: 12-40 tiles out, with the sight gate
@@ -15245,7 +15299,7 @@ impl Npc {
     /// `hurt_cd` window re-arms it, the same ~30-tick pause); the state
     /// exits on the cooldown end (`:59611-59615`'s `ai[1] <= 0` arm —
     /// the airborne exit folds).
-    fn update_archer(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
+    fn update_archer(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -15273,8 +15327,10 @@ impl Npc {
                     ) {
                         let mut dx = pcx - cx;
                         let mut dy = pcy - cy - dx.abs() * 0.1;
-                        dx += crate::app::rand01(rng) * 81.0 - 40.0;
-                        dy += crate::app::rand01(rng) * 81.0 - 40.0;
+                        // The aiStyle-3 catch-all `Next(-40, 41)` per
+                        // axis (`NPC.cs:59374-59377`).
+                        dx += rng.next_range(-40, 41) as f32;
+                        dy += rng.next_range(-40, 41) as f32;
                         let d = (dx * dx + dy * dy).sqrt().max(1.0);
                         self.wants_hostile_shot.push((
                             crate::projectile::WOODEN_ARROW_HOSTILE,
@@ -15384,7 +15440,7 @@ impl Npc {
     /// `CanHit`; the dry path is the beached flop (`:23963-
     /// 23989`: the Shark's `velocity.X *= 0.94` snap, the others' random
     /// jump through `Main.rand`).
-    fn update_swimmer(&mut self, world: &World, player: &Player, rng: &mut u64) {
+    fn update_swimmer(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let params = match self.kind {
             NpcKind::Shark => crate::npc_ai::SwimParams::SHARK,
@@ -15425,10 +15481,10 @@ impl Npc {
             } else {
                 // `:23975-23981`: the random jump (`Next(-50,-20)*0.1`,
                 // `Next(-20,20)*0.1`, the direction coin).
-                self.vy = -(crate::app::frame::rand01(rng) * 2.9 + 2.1);
-                self.vx = (crate::app::frame::rand01(rng) * 39.0 - 20.0) * 0.1;
-                self.facing = if crate::app::frame::rand01(rng) < 0.5 {
-                    self.sprite_dir = self.facing;
+                self.vy = rng.next_range(-50, -20) as f32 * 0.1;
+                self.vx = rng.next_range(-20, 20) as f32 * 0.1;
+                self.facing = if rng.next_max(2) == 0 {
+                self.sprite_dir = self.facing;
                     1
                 } else {
                     -1
@@ -15461,7 +15517,7 @@ impl Npc {
         }
     }
 
-    fn contact(&mut self, player: &mut Player, rng: &mut u64) {
+    fn contact(&mut self, player: &mut Player, rng: &mut UnifiedRandom) {
         // `Player.Update_NPCCollision`'s head (`Player.cs:31321-31324`): the
         // journey godmode power returns before the whole collision pass — no
         // NPC contact damage and none of the EoC shield-dash arm below.
@@ -15539,25 +15595,12 @@ impl Npc {
                     self.damage_override
                         .unwrap_or_else(|| self.kind.contact_damage())
                 };
-                // The NPC-stage `u64` stream wraps into the `DropRng` the hurt
-                // rolls draw from (the C# `Main.rand` at the contact site).
-                struct U64DropRng<'a>(&'a mut u64);
-                impl tr_core::loot::DropRng for U64DropRng<'_> {
-                    fn next_range(&mut self, min: i32, max: i32) -> i32 {
-                        let range = (max - min) as u32;
-                        if range == 0 {
-                            return min;
-                        }
-                        min + (crate::app::frame::next_rand(self.0) % range as u64) as i32
-                    }
-                    fn next_float(&mut self) -> f32 {
-                        crate::app::frame::rand01(self.0)
-                    }
-                }
                 // Player.cs:31387 — `Main.DamageVar((float)npc.damage * damageMultiplier, 0f - luck)`.
                 // S1-C-5: contact damage rolls variance with the player's luck inverted.
+                // The `Main.rand` draws ride the caller's `UnifiedRandom` stream
+                // (the `DropRng` impl, `unified_random.rs`).
                 let dmg = if base_dmg > 0 {
-                    tr_core::damage::damage_var(&mut U64DropRng(rng), base_dmg as f32, -player.luck_state.luck)
+                        tr_core::damage::damage_var(rng, base_dmg as f32, -player.luck_state.luck)
                 } else {
                     0
                 };
@@ -15594,7 +15637,7 @@ impl Npc {
                 // gates `StatusFromNPC`, whose debuff body the port carries
                 // elsewhere (unchanged).
                 if dmg > 0 {
-                    player.hurt(dmg, cx, &mut U64DropRng(rng), self.is_damage_dodgeable());
+                    player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
                 }
             }
         }
@@ -16391,7 +16434,7 @@ mod tests {
         // No-luck: contact damage is varied within the ±15% band (not a fixed raw value).
         let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
         bat.damage_override = Some(100);
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         let mut saw_varied = false;
         for _ in 0..16 {
             let mut player = crate::player::Player::spawn(&w);
@@ -16417,8 +16460,8 @@ mod tests {
 
         // Positive player luck -> negative luck passed to DamageVar (0f - luck),
         // which rerolls and keeps the lower damage (Player.cs:31387).
-        let mut rng_good = 7u64;
-        let mut rng_bad = 7u64;
+        let mut rng_good = UnifiedRandom::new(7);
+        let mut rng_bad = UnifiedRandom::new(7);
         let mut total_good = 0i32;
         let mut total_bad = 0i32;
         for _ in 0..24 {
@@ -16469,7 +16512,7 @@ mod tests {
         let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
         bat.damage_override = Some(100);
         let mut dodged_seen = false;
-        // The contact stream is the NPC-stage `u64` (splitmix); the sweep
+        // The contact rolls ride the NPC-stage `UpdateNpcs` stream; the sweep
         // re-derives the dodging seeds each run — the assert covers every
         // one of them, not one pinned draw sequence.
         for seed in 0..256u64 {
@@ -16490,7 +16533,7 @@ mod tests {
             bat.hp = 10_000;
             bat.max_hp = 10_000;
             let bat_hp = bat.hp;
-            let mut rng = seed;
+            let mut rng = UnifiedRandom::new(seed as i32);
             bat.contact(&mut player, &mut rng);
             if player.hp == player.max_hp {
                 // The belt dodged: hp untouched — and the thorns must still
@@ -16569,7 +16612,7 @@ mod tests {
         player.update(&w, crate::player::PlayerInput::default());
         assert!(player.black_belt, "the belt armed");
         let hp0 = player.hp;
-        let mut rng = 9u64;
+        let mut rng = UnifiedRandom::new(9);
         head.contact(&mut player, &mut rng);
         assert!(
             player.hp < hp0,
@@ -16585,7 +16628,7 @@ mod tests {
         control.y = plain.y;
         control.hp = 10_000;
         control.max_hp = 10_000;
-        let mut rng2 = 9u64;
+        let mut rng2 = UnifiedRandom::new(9);
         plain.contact(&mut control, &mut rng2);
         assert_eq!(
             rng, rng2,
@@ -16624,7 +16667,7 @@ mod tests {
             .expect("the voodoo demon spawns");
         assert_eq!(vd.max_hp, 140);
         // The contact: an overlapping player takes the bat's contact damage.
-        let mut rng = 0u64;
+        let mut rng = UnifiedRandom::new(0);
         let mut player = crate::player::Player::spawn(&w);
         player.x = bat.x;
         player.y = bat.y;
@@ -16934,8 +16977,6 @@ mod tests {
         king.ai[3] = king.max_hp as f32;
         king.hp = 0;
         king.wants_minion = false;
-        let batch = crate::app::rand01(&mut 1u64);
-        let _ = batch;
         // The sim's resolution spawns the batch; here the flag itself.
         king.wants_minion = true;
         assert!(king.wants_minion, "the death batch request");
@@ -17141,7 +17182,7 @@ mod tests {
         rifleman.rifleman_rearmed = true;
         rifleman.ai[3] = 0.0;
         rifleman.vy = 0.0;
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         rifleman.update_vortex_rifleman(&w, &player, &mut rng);
         assert_eq!(rifleman.ai[3], 0.0, "no arming through the blocked walk");
     }
@@ -17237,7 +17278,7 @@ mod tests {
         let mut tim = Npc::new(NpcKind::Tim, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
         tim.hp = tim.max_hp;
         let start = (tim.x, tim.y);
-        let mut rng = 7u64;
+        let mut rng = UnifiedRandom::new(7);
         let mut teleported = false;
         let mut shot = false;
         let _ = start;
@@ -17294,7 +17335,7 @@ mod tests {
         let mut player = surface_player(&w);
         let mut imp = Npc::new(NpcKind::FireImp, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
         imp.hp = imp.max_hp;
-        let mut rng = 11u64;
+        let mut rng = UnifiedRandom::new(11);
         let mut shot = false;
         for _ in 0..400 {
             imp.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
@@ -17318,7 +17359,7 @@ mod tests {
         let (pcx, _) = player.center();
         // The ball sits up-left of the player: the launch aims right/down.
         let mut ball = Npc::new(NpcKind::ChaosBall, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
-        ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         let speed = (ball.vx * ball.vx + ball.vy * ball.vy).sqrt();
         assert!(
             (speed - 6.0).abs() < 0.05,
@@ -17332,7 +17373,7 @@ mod tests {
         // The straight fly: the velocity never re-aims and the dirt passes
         // through (the floor line sits at y = 120*16).
         for _ in 0..100 {
-            ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert_eq!(ball.vx, v.0);
         assert_eq!(ball.vy, v.1);
@@ -17343,7 +17384,7 @@ mod tests {
         );
         // The Burning Sphere's speed is 5 (`:21395-21399`).
         let mut sphere = Npc::new(NpcKind::BurningSphere, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
-        sphere.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        sphere.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         let speed = (sphere.vx * sphere.vx + sphere.vy * sphere.vy).sqrt();
         assert!((speed - 5.0).abs() < 0.05, "the burning sphere speed is 5");
     }
@@ -17419,7 +17460,7 @@ mod tests {
         // The goldfish floats mid-pool: the idle bob never chases.
         let mut fish = Npc::new(NpcKind::Goldfish, 90.0 * 16.0, 124.0 * 16.0, 1, 0.0);
         fish.hp = fish.max_hp;
-        let mut rng = 3u64;
+        let mut rng = UnifiedRandom::new(3);
         let mut rose = false;
         let mut sank = false;
         for _ in 0..600 {
@@ -17458,7 +17499,7 @@ mod tests {
         player.y = 128.0 * 16.0;
         let mut shark = Npc::new(NpcKind::Shark, 70.0 * 16.0, 124.0 * 16.0, 1, 0.0);
         shark.hp = shark.max_hp;
-        let mut rng = 5u64;
+        let mut rng = UnifiedRandom::new(5);
         let start = shark.x;
         for _ in 0..120 {
             shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
@@ -17481,7 +17522,7 @@ mod tests {
         player.y = 128.0 * 16.0;
         let mut fish = Npc::new(NpcKind::Goldfish, 70.0 * 16.0, 124.0 * 16.0, 1, 0.0);
         fish.hp = fish.max_hp;
-        let mut rng = 9u64;
+        let mut rng = UnifiedRandom::new(9);
         for _ in 0..300 {
             fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
             assert!(fish.vx.abs() <= 2.01, "the goldfish stayed idle");
@@ -17505,7 +17546,7 @@ mod tests {
         let mut player = surface_player(&w);
         let mut shark = Npc::new(NpcKind::Shark, 90.0 * 16.0, 120.0 * 16.0, 1, 0.0);
         shark.hp = shark.max_hp;
-        let mut rng = 13u64;
+        let mut rng = UnifiedRandom::new(13);
         for _ in 0..200 {
             shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
@@ -17566,7 +17607,7 @@ mod tests {
         let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::GiantWormHead);
         head.hp = head.max_hp;
         let mut npcs = vec![head];
-        let mut rng = 3u64;
+        let mut rng = UnifiedRandom::new(3);
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         // The chain: the head + the bodies + the tail; the Giant Worm's
@@ -17609,7 +17650,7 @@ mod tests {
         let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::DevourerHead);
         head.hp = head.max_hp;
         let mut npcs = vec![head];
-        let mut rng = 7u64;
+        let mut rng = UnifiedRandom::new(7);
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the devourer assembled ({})", npcs.len());
@@ -17636,7 +17677,7 @@ mod tests {
         let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::DevourerHead);
         head.hp = head.max_hp;
         let mut npcs = vec![head];
-        let mut rng = 7u64;
+        let mut rng = UnifiedRandom::new(7);
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         let pool = npcs[0].max_hp;
@@ -17675,7 +17716,7 @@ mod tests {
         let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::EaterOfWorldsHead);
         head.hp = head.max_hp;
         let mut npcs = vec![head];
-        let mut rng = 7u64;
+        let mut rng = UnifiedRandom::new(7);
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the EoW assembled ({})", npcs.len());
@@ -17697,7 +17738,7 @@ mod tests {
         head.worm_inited = true;
         head.worm_id = 1;
         let mut npcs = vec![head];
-        let mut rng = 11u64;
+        let mut rng = UnifiedRandom::new(11);
         let mut next_id = 1u32;
         // The player parked above the dirt.
         let pc = (100.0 * 16.0, 116.0 * 16.0);
@@ -18187,14 +18228,14 @@ mod tests {
         // then the dash chain arms (`ai[1]` = 1, the wind-up — the full
         // aiStyle-4 machine's state, not the v1 `cast_windup` latch).
         for _ in 0..600 {
-            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert!(
             eoc.ai[1] == 1.0 || eoc.ai[1] == 2.0,
             "the charge phase armed"
         );
         // The charge: the velocity 6 toward the player.
-        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         let speed = (eoc.vx * eoc.vx + eoc.vy * eoc.vy).sqrt();
         assert!((speed - 6.0).abs() < 0.1, "the charge speed ({speed})");
         // The day flee: the boss rises.
@@ -18202,7 +18243,7 @@ mod tests {
         w2.day_time = true;
         let mut eoc2 = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
         eoc2.hp = eoc2.max_hp;
-        eoc2.update_rng(&w2, &mut player, 1.0 / 60.0, &mut 0u64);
+        eoc2.update_rng(&w2, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert!(eoc2.vy < 0.0, "the day flee rises");
     }
 
@@ -18224,12 +18265,12 @@ mod tests {
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
         // The hp gate: the phase-0 arm hands over to the first spin.
-        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert_eq!(eoc.ai[0], 1.0, "the 50% gate starts the spin");
         // The spin: 100 ticks → the second spin phase, the 0.5 spin speed
         // carried over (the C# resets it only at `ai[0] == 3`).
         for _ in 0..100 {
-            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert_eq!(eoc.ai[0], 2.0, "the first spin hands over to the second");
         assert!(
@@ -18241,13 +18282,13 @@ mod tests {
         // phase: the defense drops to 0 and the contact damage rises to
         // the 23 of `GetAttackDamage_LerpBetweenFinalValues(23, 18)`.
         for _ in 0..100 {
-            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert_eq!(eoc.ai[0], 3.0, "the second spin hands over to the final");
         assert_eq!(eoc.ai[2], 0.0, "the final phase stops the spin");
         // The final phase's stats ride its arm (the hand-off tick still ran
         // the spin block).
-        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert_eq!(eoc.defense_override, Some(0), "the defense drops to 0");
         assert_eq!(eoc.damage_override, Some(23), "the final phase's damage");
     }
@@ -18268,7 +18309,7 @@ mod tests {
         player.x = 994.0; // the centre x = 1004 (the servant's = 1000)
         player.y = 1579.0; // the centre y = 1600
         for _ in 0..200 {
-            servant.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            servant.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert!(
             servant.vx.abs() < 0.01,
@@ -18343,10 +18384,10 @@ mod tests {
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
         for _ in 0..480 {
-            qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert!(qb.cast_windup == 1, "the charge phase armed");
-        qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         let speed = (qb.vx * qb.vx + qb.vy * qb.vy).sqrt();
         assert!((speed - 7.0).abs() < 0.1, "the charge speed ({speed})");
     }
@@ -18375,7 +18416,7 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        let mut rng = 0u64;
+        let mut rng = UnifiedRandom::new(0);
         for _ in 0..800 {
             sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
@@ -18415,7 +18456,7 @@ mod tests {
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
         for _ in 0..120 {
-            wof.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            wof.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert!(wof.vx > 0.0, "the wall slides right toward the player");
         assert!(wof.vy == 0.0, "the wall stays level");
@@ -18452,11 +18493,11 @@ mod tests {
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
         // The direction locks from the standstill.
-        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert!(eoc_wall.vx > 0.0, "the slide locks onto the player's side");
         let start_x = eoc_wall.x;
         for _ in 0..60 {
-            eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert!(eoc_wall.x > start_x, "the slide advances");
         let speed = eoc_wall.vx;
@@ -18468,7 +18509,7 @@ mod tests {
         // compares `<` — the exact half keeps the 0.25 tier).
         eoc_wall.hp = eoc_wall.max_hp / 2 - 1;
         eoc_wall.vx = 0.0;
-        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert!((eoc_wall.vx - 2.15).abs() < 0.01, "half hp slides at 2.15");
         // The Y pinning: the wall rides the band's midpoint (vy forced 0;
         // the band starts unset (-1) — the first tick's scan pins it).
@@ -18490,7 +18531,7 @@ mod tests {
         );
         eoc_wall.hp = eoc_wall.max_hp;
         eoc_wall.x = 100.0; // inside the 160 kill line
-        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert!(eoc_wall.hp <= 0, "the edge crossing kills the wall");
     }
 
@@ -18513,7 +18554,7 @@ mod tests {
         eoc_wall.hp = eoc_wall.max_hp;
         player.hp = 0;
         for _ in 0..200 {
-            eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
             if eoc_wall.hp <= 0 {
                 break;
             }
@@ -18539,20 +18580,20 @@ mod tests {
         let mut hungry = Npc::new(NpcKind::Hungry, 40.0 * TILE_PX, 590.0 * TILE_PX, 1, 0.0);
         hungry.hp = hungry.max_hp;
         hungry.ai[0] = 0.45;
-        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert!(hungry.hp > 0, "the wall is alive");
         assert_eq!(hungry.defense(), 10, "full-hp wall keeps the base defense");
         // The wall's hp drops: the defense tier 20 (75%) then 30 (50%).
         w.wof_hp_ratio = 0.6;
-        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert_eq!(hungry.defense(), 20);
         w.wof_hp_ratio = 0.4;
-        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert_eq!(hungry.defense(), 30);
         assert_eq!(hungry.damage_override, Some(60));
         // The wall dies → the minion deactivates.
         w.wof_present = false;
-        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert!(hungry.hp <= 0, "the hungry dies with the wall");
     }
 
@@ -18619,7 +18660,7 @@ mod tests {
         head.hp = head.max_hp;
         head.worm_left = 80;
         let mut npcs = vec![head];
-        let mut rng = 3u64;
+        let mut rng = UnifiedRandom::new(3);
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         // The chain: the head + 80 segments = 81 (the same-kind stop).
@@ -18666,10 +18707,10 @@ mod tests {
         // (`:27628-27630`), so the base is readable before the charge.
         let base_defense = pr.defense();
         for _ in 0..600 {
-            pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert_eq!(pr.ai[1], 1.0, "the enraged charge phase armed");
-        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64); // the charge tick
+        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0)); // the charge tick
         let speed = (pr.vx * pr.vx + pr.vy * pr.vy).sqrt();
         assert!(
             (speed - 2.0).abs() < 0.2,
@@ -18688,12 +18729,12 @@ mod tests {
         );
         // The 400-tick charge falls back to the hover.
         for _ in 0..400 {
-            pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert_eq!(pr.ai[1], 0.0, "the hover resumes");
         // `:27862-27863` — the day-time rage is invulnerable.
         w.day_time = true;
-        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         assert_eq!(pr.ai[1], 2.0, "the day-time rage armed");
         assert_eq!(pr.damage_override, Some(9999), "the rage's damage");
         assert_eq!(pr.defense_override, Some(9999), "the rage's defense");
@@ -18725,7 +18766,7 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        let mut rng = 0u64;
+        let mut rng = UnifiedRandom::new(0);
         for _ in 0..300 {
             ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
@@ -18773,10 +18814,10 @@ mod tests {
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
         for _ in 0..480 {
-            pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         }
         assert!(pl.cast_windup == 1, "the charge phase armed");
-        pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(0));
         let speed = (pl.vx * pl.vx + pl.vy * pl.vy).sqrt();
         assert!((speed - 7.5).abs() < 0.1, "the charge speed ({speed})");
         // The stats round-trip.
@@ -18805,7 +18846,7 @@ mod tests {
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
         player.zones.crimson = true;
-        let mut rng = 0u64;
+        let mut rng = UnifiedRandom::new(0);
         br.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         let speed = (br.vx * br.vx + br.vy * br.vy).sqrt();
         assert!((speed - 1.0).abs() < 0.01, "the normal drift's speed ({speed})");
@@ -18891,7 +18932,7 @@ mod tests {
         // ring).
         let mut c = Npc::new(NpcKind::Creeper, 110.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         c.hp = c.max_hp;
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         c.update_creeper(&w, &player, &mut rng);
         assert!(c.vx < 0.0, "the orbit pulls toward the brain");
         // At the ring: the roll may lunge — hunt a no-lunge seed and a
@@ -18900,7 +18941,7 @@ mod tests {
         for seed in 0..20000u64 {
             let mut c = Npc::new(NpcKind::Creeper, 100.2 * 16.0, 100.0 * 16.0, 1, 0.0);
             c.hp = c.max_hp;
-            let mut rng = seed;
+            let mut rng = UnifiedRandom::new(seed as i32);
             c.update_creeper(&w, &player, &mut rng);
             if c.ai[0] == 1.0 {
                 lunge = Some((seed, c));
@@ -18916,7 +18957,7 @@ mod tests {
         );
         // The lunge holds while the justHit recoil is silent.
         let mut c = c;
-        let mut rng = seed;
+        let mut rng = UnifiedRandom::new(seed as i32);
         c.update_creeper(&w, &player, &mut rng);
         assert_eq!(c.ai[0], 1.0, "the lunge holds");
         // The hit sends it back to the orbit.
@@ -21041,7 +21082,7 @@ mod tests {
         player.hp = player.max_hp;
         let mut d = Npc::new(NpcKind::Deerclops, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         d.hp = d.max_hp;
-        let mut rng = 3u64;
+        let mut rng = UnifiedRandom::new(3);
         // The damage gate (`:44024-44039`): the ramp only reaches 30
         // after 30 ticks with a target in range — the fresh spawn starts
         // at 0 (vulnerable); the spawn state -1 pins it at -10.
@@ -21119,7 +21160,7 @@ mod tests {
         player.y = 115.0 * 16.0;
         let mut a =
             Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         // The gate: the walk tick with the clear line enters the stop.
         a.update_archer(&w, &mut player, &mut rng);
         if a.ai[2] > 0.0 {
@@ -22797,7 +22838,7 @@ mod s1_d_3e_tests {
         // `num818` check).
         b.brain_local[2] = 1.0;
         // The normal phase: the 1-px drift toward the player.
-        b.update_brain(&w, &player, &mut 12345u64);
+        b.update_brain(&w, &player, &mut UnifiedRandom::new(12345));
         assert!(
             (b.vx.hypot(b.vy) - 1.0).abs() < 0.01,
             "the normal phase drifts at 1 px/tick ({:?})",
@@ -22810,7 +22851,7 @@ mod s1_d_3e_tests {
         );
         // The blink timer: after 120 + Next(300) ticks the Brain picks a tile
         // and fades in (alpha += 5 per tick) before teleporting.
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         for _ in 0..500 {
             b.update_brain(&w, &player, &mut rng);
             if b.ai[0] == 1.0 {
@@ -22861,12 +22902,12 @@ mod s1_d_3e_tests {
         player.zones.crimson = true;
         let mut b = brain();
         b.brain_local[2] = 0.0; // no creeper left
-        b.update_brain(&w, &player, &mut 999u64);
+        b.update_brain(&w, &player, &mut UnifiedRandom::new(999));
         assert_eq!(b.ai[0], -1.0, "the Brain retreats without its swarm");
         assert_eq!(b.alpha, 0, "the retreat starts invisible");
         // The retreat's timer picks a tile (60 + Next(120) ticks) and the
         // `-2` state fades the Brain in on it.
-        let mut rng = 999u64;
+        let mut rng = UnifiedRandom::new(999);
         for _ in 0..400 {
             b.update_brain(&w, &player, &mut rng);
             if b.ai[0] == -2.0 {
@@ -22896,7 +22937,7 @@ mod dark_mage_tests {
         let player = Player::spawn(&w);
         let mut mage = Npc::new(NpcKind::DD2DarkMage, 64.0, 64.0, 0, 0.0);
         mage.ai[0] = -1.0;
-        mage.update_dark_mage(&w, &player, &mut 0);
+        mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(0));
         assert_eq!(mage.ai[0], 0.0);
         // `localAI[3] == 0` sets alpha = 255, then the same tick's
         // fade (`localAI[3] < 60`) takes 5 off it.
@@ -22904,7 +22945,7 @@ mod dark_mage_tests {
         assert_eq!(mage.alpha, 250);
         // After 60 ticks the fade stops at zero, fully visible.
         for _ in 0..59 {
-            mage.update_dark_mage(&w, &player, &mut 0);
+            mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(0));
         }
         assert_eq!(mage.caster_counter, 60);
         assert_eq!(mage.alpha, 0);
@@ -22924,7 +22965,7 @@ mod dark_mage_tests {
         mage.ai[1] = 0.0;
         mage.vx = 10.0;
         mage.vy = 10.0;
-        mage.update_dark_mage(&w, &player, &mut 0);
+        mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(0));
         // The cast arm also closes `ai[0]` to zero and rolls `ai[1]` on.
         assert_eq!(mage.ai[0], -20.0, "the `prior == 0` short rest");
         assert_eq!(mage.ai[1], 1.0);
@@ -22944,7 +22985,7 @@ mod dark_mage_tests {
         mage.caster_counter = 60;
         mage.ai[0] = -300.0;
         for _ in 0..20 {
-            mage.update_dark_mage(&w, &player, &mut 0);
+            mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(0));
         }
         assert!((mage.vy - 0.22).abs() < 1e-6, "{}", mage.vy);
         assert!(mage.y > 600.0, "the fall carried: {}", mage.y);
@@ -22962,7 +23003,7 @@ mod dark_mage_tests {
         mage.ai[0] = -300.0;
         for _ in 0..20 {
             mage.facing = 1;
-            mage.update_dark_mage(&w, &player, &mut 0);
+            mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(0));
         }
         assert!((mage.vx - 0.5).abs() < 1e-6, "{}", mage.vx);
     }
@@ -22979,7 +23020,7 @@ mod dark_mage_tests {
         mage.caster_counter = 60;
         mage.ai[0] = 33.0;
         mage.ai[1] = 0.0;
-        mage.update_dark_mage(&w, &player, &mut 0);
+        mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(0));
         // `ai[0]` decremented to the 32 window inside the same tick.
         let shot = mage
             .wants_hostile_shot
@@ -23006,11 +23047,11 @@ mod dark_mage_tests {
         mage.caster_counter = 60;
         mage.ai[0] = 0.0;
         mage.ai[1] = 0.0;
-        mage.update_dark_mage(&w, &player, &mut 0);
+        mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(0));
         assert_eq!(mage.ai[0], 0.0, "the far shadowflame round never armed");
         // Inside the reach with a clear line: it arms the 97 window.
         player.x = 900.0;
-        mage.update_dark_mage(&w, &player, &mut 0);
+        mage.update_dark_mage(&w, &player, &mut UnifiedRandom::new(0));
         assert_eq!(mage.ai[0], 97.0, "the in-reach round armed");
     }
 }
@@ -23052,7 +23093,7 @@ mod s1_d_3f_tests {
         player.y = 200.0;
         let mut sk = Npc::new(NpcKind::SkeletronHead, 200.0, 100.0, 0, 0.0);
         sk.hp = sk.max_hp;
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         // The night: the head spins (the state 0) and hovers.
         sk.update_skeletron(&w, &player, &mut rng);
         assert_eq!(sk.ai[1], 0.0, "the head spins at night");
@@ -23079,7 +23120,7 @@ mod s1_d_3f_tests {
         sk.hp = sk.max_hp;
         sk.ai[1] = 1.0; // the charge state
         let base_defense = sk.defense();
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         sk.update_skeletron(&w, &player, &mut rng);
         assert_eq!(
             sk.defense_override,
@@ -23132,7 +23173,7 @@ mod s1_d_3g_tests {
         player.x = 400.0;
         player.y = 200.0;
         let mut k = king();
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         k.update_king_slime(&w, &mut player, &mut rng);
         // The full-hp scale: 0.5 + 0.75 = 1.25.
         assert!(
@@ -23160,7 +23201,7 @@ mod s1_d_3g_tests {
         player.x = 400.0;
         player.y = 200.0;
         let mut k = king();
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         // The first tick: the `ai[3]` latch is set to the full hp — no batch.
         k.update_king_slime(&w, &mut player, &mut rng);
         assert!(!k.wants_minion, "no batch at the full hp");
@@ -23217,7 +23258,7 @@ mod s1_d_4b_5b_tests {
         player.y = 20.0 * 16.0;
         let mut d = Npc::new(NpcKind::Deerclops, 20.0 * 16.0, 29.0 * 16.0, 1, 0.0);
         d.hp = d.max_hp;
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         // The state 1 (the forward spikes): 36 ticks to the first volley.
         d.ai[0] = 1.0;
         d.ai[1] = 0.0;
@@ -23303,7 +23344,7 @@ mod s1_d_4b_5d_tests {
         player.y = 20.0 * 16.0;
         let mut d = Npc::new(NpcKind::Deerclops, 20.0 * 16.0, 29.0 * 16.0, 1, 0.0);
         d.hp = d.max_hp;
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         // The state 2 (the rubble): 32 ticks to the first rock.
         d.ai[0] = 2.0;
         d.ai[1] = 0.0;
@@ -23346,7 +23387,7 @@ mod s1_d_4b_5d_tests {
         player.y = 25.0 * 16.0;
         let mut d = Npc::new(NpcKind::Deerclops, 30.0 * 16.0, 29.0 * 16.0, 1, 0.0);
         d.hp = d.max_hp;
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         // The state 3 (the chill aura): the buff lands on the 28th tick.
         d.ai[0] = 3.0;
         d.ai[1] = 0.0;
@@ -23402,7 +23443,7 @@ mod s1_d_4b_5d_tests {
         cannon.carrier_x = 30.0 * TILE_PX + 15.0;
         cannon.carrier_y = 29.0 * TILE_PX + 15.0;
         cannon.carrier_timer = 0.0;
-        let mut rng = 12345u64;
+        let mut rng = UnifiedRandom::new(12345);
         // The reload: the shot lands on the 240th tick.
         for _ in 0..240 {
             cannon.update_saucer_mount(&w, &player, &mut rng);

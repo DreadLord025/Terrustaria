@@ -175,17 +175,18 @@ impl ApplicationHandler for App {
                                         self.send_chat_message("", &text);
                                     } else {
                                         let name = self.player_name.clone();
-                                        let mut rng = self.item_rng;
-                                        // The chat commands read the player
-                                        // state (`DeathCommand`'s counters).
+                                        // The chat commands draw the bare
+                                        // `Main.rand` stand-in (the C# chat
+                                        // path runs outside every swap); they
+                                        // also read the player state
+                                        // (`DeathCommand`'s counters).
                                         self.chat.send_with(
                                             &text,
                                             &name,
-                                            &mut rng,
+                                            self.rngs.global(),
                                             &mut self.emotes,
                                             self.player.as_ref(),
                                         );
-                                        self.item_rng = rng;
                                     }
                                     // The host relays the lines its own submit
                                     // produced (slot 0 is the host's author).
@@ -310,6 +311,14 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 60.0,
                 };
+                // The F3 workbench's list scroll (the panel consumes the wheel
+                // while it is open and the pointer is over it).
+                #[cfg(feature = "debug")]
+                if tr_debug::in_rect(self.mouse_pos, self.debug_panel.layout(Vec2::ZERO).panel)
+                    && crate::debug_panel::handle_scroll(self, d)
+                {
+                    return;
+                }
                 // `UIAchievementsMenu`'s list scroll (M6-ACH-2): the wheel
                 // moves the overlay's rows while it is open, before the
                 // hotbar's `HotbarPlus`/`HotbarMinus` cycle claims it.
@@ -461,6 +470,7 @@ impl ApplicationHandler for App {
                             return;
                         }
                         if !pressed {
+                            #[cfg(feature = "debug")]
                             crate::debug_panel::end_drag(self);
                         }
                         self.mine_down = pressed;
@@ -469,6 +479,7 @@ impl ApplicationHandler for App {
                             // The debug panel's click (the self-contained
                             // cheat-sheet — the panel consumes the clicks
                             // inside its rect).
+                            #[cfg(feature = "debug")]
                             crate::debug_panel::handle_click(self, self.mouse_pos);
                         }
                     }
@@ -497,6 +508,7 @@ impl ApplicationHandler for App {
                 let p = Vec2::new(position.x as f32, position.y as f32);
                 // The debug panel's drag (the title-bar drag moves the
                 // panel).
+                #[cfg(feature = "debug")]
                 if crate::debug_panel::handle_drag(self, p) {
                     // The drag consumed the move.
                 }
@@ -609,6 +621,7 @@ impl App {
             }
             KeyCode::F1 => self.debug = !self.debug,
             KeyCode::F3 => {
+                #[cfg(feature = "debug")]
                 crate::debug_panel::handle_key(self, KeyCode::F3);
             }
             KeyCode::F2 => {
@@ -648,6 +661,7 @@ impl App {
                     self.smart_cursor_used = true;
                 }
             }
+            #[cfg(feature = "debug")]
             _ if crate::debug_panel::handle_key(self, code) => {}
             KeyCode::Digit1 => {
                 // The shop open: the 1 key buys the first stock slot (the
