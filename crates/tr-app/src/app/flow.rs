@@ -2235,6 +2235,7 @@ pub(crate) mod front_flow_tests {
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             leaves: Vec::new(),
             gore: tr_core::gore::GorePool::new(),
+            entity_lights: crate::entity_lights::EntityLights::default(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             rngs: NamedRngs::new(0),
