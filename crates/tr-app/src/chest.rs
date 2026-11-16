@@ -635,8 +635,10 @@ fn locked_key_id(world: &World, x: i32, y: i32) -> u16 {
 /// `plant_boss` is `NPC.downedPlantBoss`'s stand-in — the flag has no world
 /// home yet (the recorded assumption fallback: the call site passes `true`;
 /// flip it to the flag when the boss work lands it). The sound (22,
-/// `Chest.cs:408`) and the dust/achievements are the caller's/the phase-6
-/// deviation's — this returns whether the unlock happened.
+/// `Chest.cs:409`) and the achievement (`:366`/:383/:404) are the caller's —
+/// see [`unlock_progression`]; the 4-per-tile dust (`:419-422`) stays out
+/// (the tile-edit dust path, no spawn context on this route). Returns
+/// whether the unlock happened.
 pub(crate) fn unlock_chest(world: &mut World, x: i32, y: i32, plant_boss: bool) -> bool {
     for &(dx, dy) in &[(0, 0), (1, 0), (0, 1), (1, 1)] {
         if world.tile(x + dx, y + dy).is_none() {
@@ -716,6 +718,19 @@ pub(crate) fn lock_chest(world: &mut World, x: i32, y: i32, plant_boss: bool) ->
     // `Chest.cs:483-494` — every 2×2 tile of the chest's type shifts.
     shift_chest_frames(world, x, y, kind, shift);
     true
+}
+
+/// The progression event `Chest.Unlock` fires for this style
+/// (`Chest.cs:366` the Golden Chest's 19, `:383` the Plantera-gated styles'
+/// 20, `:404` the Lihzahrd chest's 20). The frame table above answers the
+/// unlock; the achievement ids sit in the same two arms there.
+fn unlock_progression(kind: u16, style: i16) -> Option<u32> {
+    match (kind, style) {
+        (21, 2) => Some(19),
+        (21, 23..=27) => Some(20),
+        (467, 13) => Some(20),
+        _ => None,
+    }
 }
 
 /// The shared `Unlock`/`Lock` frame pass (`Chest.cs:409-424`/:483-494): the
@@ -894,9 +909,24 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             }
             // The Plantera gate passes until the world flag exists (the
             // recorded fallback — flip to the flag when the boss work lands).
+            // The style is read before the call: `Unlock` shifts the frames,
+            // so afterwards the locked style is gone. `Chest.Unlock` fires the
+            // progression id inside the same arms that answer the shift
+            // (`Chest.cs:366`/:383/:404).
+            let progression = app
+                .world
+                .tile(ox, oy)
+                .and_then(|t| unlock_progression(t.kind, t.frame_x / 36));
             if !unlock_chest(&mut app.world, ox, oy, true) {
                 continue;
             }
+            if let Some(id) = progression {
+                let _ = app.achievements.notify_progression(id);
+            }
+            // `:409` — `SoundEngine.PlaySound(22, X * 16, Y * 16)`: the
+            // `SoundID.Unlock` cue (`SoundID.cs:66`), banked as "Unlock".
+            app.audio
+                .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
             if consumes {
                 // `:33183-33189` — the consumed key's stack decrements; an
                 // emptied slot turns to air.
@@ -2355,6 +2385,62 @@ mod tests {
         // And the unlocked chest opens on the next click.
         assert!(try_open_chest_at_cursor(&mut app, click(40, 10)));
         assert_eq!(app.player.as_ref().unwrap().chest, 0);
+    }
+
+    /// S1-E-18b — `Chest.Unlock` fires the chest achievements inside the same
+    /// arms that answer the frame shift: the Golden Chest's style 2 gives
+    /// progression 19 (`Chest.cs:366`, DUNGEON_HEIST's second condition) and
+    /// the Plantera-gated styles 23-27 / the Lihzahrd 467-13 give 20
+    /// (`:383`/:404, BIG_BOOTY). The other unlockable styles fire neither.
+    #[test]
+    fn s1_e_18b_unlock_fires_the_chest_achievements() {
+        let mut w = world();
+        place_chest(&mut w, 20, 10, 21, 72); // style 2 — progression 19
+        let mut app = interact_app(w);
+        app.inventory[0] = slot(327, 1);
+        let before = app.audio.played_count();
+        assert!(try_open_chest_at_cursor(&mut app, click(20, 10)));
+        assert!(!is_locked(&app.world, 20, 10), "the chest unlocked");
+        assert_eq!(
+            app.audio.played_count() - before,
+            1,
+            "`Chest.cs:409`'s `PlaySound(22)` - the Unlock cue, once"
+        );
+        assert!(progression(&app, 19), "DUNGEON_HEIST's chest arm");
+        assert!(!progression(&app, 20), "the Golden Chest is not BIG_BOOTY");
+
+        // Style 4 (shadow key) also shifts but fires neither id.
+        let mut w = world();
+        place_chest(&mut w, 40, 10, 21, 144);
+        let mut app = interact_app(w);
+        app.inventory[0] = slot(329, 1);
+        assert!(try_open_chest_at_cursor(&mut app, click(40, 10)));
+        assert!(!progression(&app, 19) && !progression(&app, 20));
+
+        // The Plantera-gated style 23 → progression 20.
+        let mut w = world();
+        place_chest(&mut w, 60, 10, 21, 828);
+        let mut app = interact_app(w);
+        app.inventory[0] = slot(1533, 1);
+        assert!(try_open_chest_at_cursor(&mut app, click(60, 10)));
+        assert!(progression(&app, 20), "BIG_BOOTY's Plantera-gated arm");
+
+        // A refused unlock never credits anything: no key, still locked.
+        assert!(!progression(&app, 19));
+    }
+
+    /// Whether the `PROGRESSION_EVENT_<id>` condition (the C# condition's
+    /// `Name`, `AchievementCondition.Name`) is completed on any row. The
+    /// Golden Chest's event closes DUNGEON_HEIST's second condition
+    /// (`AchievementInitializer.cs:67-70`) and the Lihzahrd one closes
+    /// BIG_BOOTY (`:121-123`).
+    fn progression(app: &App, id: u32) -> bool {
+        let key = format!("PROGRESSION_EVENT_{id}");
+        app.achievements
+            .list
+            .iter()
+            .flat_map(|a| a.conditions.iter())
+            .any(|c| c.name == key && c.completed)
     }
 
     /// DW-2.3 — the key scan covers the C# `inventory[0..=58]` array only
