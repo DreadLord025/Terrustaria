@@ -116,7 +116,7 @@ pub(crate) fn row_count(panel: &Panel, tab: Tab) -> usize {
             .iter()
             .filter(|(_, name, _)| matches(&panel.filter, name))
             .count(),
-        Tab::World => 13,
+        Tab::World => 15,
         Tab::Recipes => crate::craft::RECIPES.len(),
     }
 }
@@ -161,6 +161,8 @@ pub fn draw(
     world: &tr_core::World,
     stepper_paused: bool,
     god_mode: bool,
+    raining: bool,
+    sandstorm: bool,
 ) {
     if !panel.open {
         return;
@@ -275,7 +277,7 @@ pub fn draw(
             }
         }
         Tab::World => {
-            let rows = world_rows(world, stepper_paused, god_mode);
+            let rows = world_rows(world, stepper_paused, god_mode, raining, sandstorm);
             for vi in 0..visible {
                 let idx = scroll_row + vi;
                 let Some((label, c)) = rows.get(idx) else {
@@ -332,8 +334,14 @@ fn row_bg(r: &mut SpriteRenderer, l: &Layout, panel: &Panel, vi: usize) {
     }
 }
 
-/// The World tab's 11 rows. The order is the click dispatch's (`world_click`).
-fn world_rows(world: &tr_core::World, stepper_paused: bool, god_mode: bool) -> Vec<(String, [f32; 4])> {
+/// The World tab's 15 rows. The order is the click dispatch's (`world_click`).
+fn world_rows(
+    world: &tr_core::World,
+    stepper_paused: bool,
+    god_mode: bool,
+    raining: bool,
+    sandstorm: bool,
+) -> Vec<(String, [f32; 4])> {
     vec![
         (
             format!("Hardmode: {}", if world.hard_mode { "ON" } else { "OFF" }),
@@ -388,6 +396,21 @@ fn world_rows(world: &tr_core::World, stepper_paused: bool, god_mode: bool) -> V
             if god_mode { R } else { G },
         ),
         ("Reveal Map (pretty)".to_string(), W),
+        // S1-E-35 — the weather toggles. Both ride the vanilla entry
+        // points (never a hand-written state write): the rain row is
+        // `Main.StartRain` / `Main.StopRain`, the storm row is
+        // `Sandstorm.StartSandstorm` / `StopSandstorm`. The mod cited by the
+        // row (HEROsMod `GeneralMessages.cs:467-520`) is not in `decompiled/`
+        // — its local half is exactly these calls, the network sync half is
+        // out of scope for the single-player port (the recorded deviation).
+        (
+            format!("Rain: {}", if raining { "ON" } else { "OFF" }),
+            if raining { R } else { G },
+        ),
+        (
+            format!("Sandstorm: {}", if sandstorm { "ON" } else { "OFF" }),
+            if sandstorm { R } else { G },
+        ),
     ]
 }
 
@@ -792,6 +815,34 @@ fn world_click(app: &mut App, row: usize) {
                 m.unlock_map(&app.world, true);
             }
         }
+        13 => {
+            // S1-E-35 — `Main.StartRain` (`Main.cs:64659-64727`) /
+            // `Main.StopRain` (`:64644-64658`): the vanilla entry points, so
+            // the duration/strength ladders and their Rain-stream rolls run
+            // exactly like a natural start (`rain.start_rain`), and the stop
+            // clears `rainTime`/`maxRaining` for the visual ramp to decay.
+            // `remixWorld` and `GetPlayerWithHighestLuck().luck` are the same
+            // inputs `update_world_tick` passes (`weather.rs:178-187`).
+            if app.rain.is_raining() {
+                app.rain.stop_rain();
+            } else {
+                let remix_world = app.wind.remix_world;
+                let player_luck = app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
+                app.rain.start_rain(&app.world, remix_world, player_luck);
+            }
+        }
+        14 => {
+            // S1-E-35 — `Sandstorm.StartSandstorm` (`Sandstorm.cs:117-122`) /
+            // `StopSandstorm` (`:124-129`): the duration is the C#
+            // `Next(28800, 86401)` draw on the storm's own stream, never a
+            // hardcoded midpoint; the stop re-rolls the severity intention,
+            // which `UpdateSeverity` then ramps the visible severity toward.
+            if app.sandstorm.happening {
+                app.sandstorm.stop_sandstorm();
+            } else {
+                app.sandstorm.start_sandstorm();
+            }
+        }
         _ => {}
     }
 }
@@ -1000,16 +1051,55 @@ mod tests {
     }
 
     #[test]
-    fn s1_e_29_the_world_tab_keeps_its_thirteen_rows() {
+    fn s1_e_35_weather_rows_use_the_vanilla_start_and_stop_paths() {
+        let mut app = flow_app();
+        // `Main.StartRain` consumes the Rain stream's duration/strength rolls;
+        // the natural scheduler pin is off so the row uses those same entry
+        // points. `Main.cs:64661` gates the coin-rain roll on
+        // `Main.worldSurface > 50`.
+        app.rain = crate::rain::Rain::with_forced(1, None, false);
+        app.world.world_surface = 51.0;
+
+        click_world(&mut app, 13);
+        assert!(app.rain.is_raining());
+        // `Main.cs:64676-64722`: the `rainTime` ladder — `Next(28800, 86400)`
+        // plus the six bonuses, times the strength factor (<= 1.5).
+        assert!(
+            (28_800..=230_000).contains(&app.rain.rain_time()),
+            "the rain duration band, got {}",
+            app.rain.rain_time()
+        );
+        assert!(app.rain.max_raining() > 0.0);
+        click_world(&mut app, 13);
+        assert!(!app.rain.is_raining());
+        assert_eq!(app.rain.rain_time(), 0);
+        assert_eq!(app.rain.max_raining(), 0.0);
+
+        // The storm uses `Next(28800, 86401)` and the C# intention ladder.
+        click_world(&mut app, 14);
+        assert!(app.sandstorm.happening);
+        assert!((28800..=86400).contains(&app.sandstorm.time_left));
+        // `Sandstorm.cs:83`: `0.4f + NextFloat()`.
+        assert!((0.4..=1.4).contains(&app.sandstorm.intended_severity));
+        click_world(&mut app, 14);
+        assert!(!app.sandstorm.happening);
+        assert_eq!(app.sandstorm.time_left, 0);
+    }
+
+    #[test]
+    fn s1_e_29_the_world_tab_keeps_its_fifteen_rows() {
         let app = flow_app();
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 13);
-        let rows = world_rows(&app.world, false, false);
-        assert_eq!(rows.len(), 13, "the draw and the dispatch agree");
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 15);
+        let rows = world_rows(&app.world, false, false, false, false);
+        assert_eq!(rows.len(), 15, "the draw and the dispatch agree");
         assert_eq!(rows[10].0, "Pause World: OFF");
         // S1-E-34 — the god-mode toggle rides row 11.
         assert_eq!(rows[11].0, "God Mode: OFF");
         // S1-L-3 — the `/map pretty` reveal rides the tail row.
         assert_eq!(rows[12].0, "Reveal Map (pretty)");
+        // S1-E-35 — the weather toggles ride the last two rows.
+        assert_eq!(rows[13].0, "Rain: OFF");
+        assert_eq!(rows[14].0, "Sandstorm: OFF");
     }
 
     /// S1-E-34 — the F3 god-mode row flips the debug flag.
@@ -1024,7 +1114,10 @@ mod tests {
             app.player.as_ref().unwrap().debug_god_mode,
             "the row toggled the debug flag on"
         );
-        assert_eq!(world_rows(&app.world, false, true)[11].0, "God Mode: ON");
+        assert_eq!(
+            world_rows(&app.world, false, true, false, false)[11].0,
+            "God Mode: ON"
+        );
         super::world_click(&mut app, 11);
         assert!(
             !app.player.as_ref().unwrap().debug_god_mode,
@@ -1185,7 +1278,7 @@ mod tests {
         ] {
             w.invasion_type = ty;
             w.invasion_size = 100;
-            let rows = world_rows(&w, false, false);
+            let rows = world_rows(&w, false, false, false, false);
             assert!(
                 rows[7].0.starts_with(want),
                 "type {ty} row: {:?}",
@@ -1194,7 +1287,9 @@ mod tests {
         }
         w.invasion_type = 0;
         assert!(
-            world_rows(&w, false, false)[7].0.starts_with("Goblin Army: OFF"),
+            world_rows(&w, false, false, false, false)[7]
+                .0
+                .starts_with("Goblin Army: OFF"),
             "the idle row"
         );
     }

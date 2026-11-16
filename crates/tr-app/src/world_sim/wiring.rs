@@ -100,6 +100,9 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // spawn loop after the step — their caps read the projectile pool.
     let mut trap_requests = Vec::new();
     let mut device_shots = Vec::new();
+    // THROW_A_PARTY (25) rides after the fixed step: the `98` broadcast needs
+    // `&mut App`, which the wiring closure holds across its body.
+    let mut party_credits = 0;
     app.wiring_step.tick(dt.min(0.25), |_| {
         app.wiring.update(&mut app.world);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
@@ -243,7 +246,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             let was_up = crate::world_events::party_is_up(&app.world_events);
             app.world_events.manual_party = !app.world_events.manual_party;
             if !was_up && crate::world_events::party_is_up(&app.world_events) {
-                let _ = app.achievements.notify_progression(25);
+                party_credits += 1;
             }
         }
         for (from, to) in app.wiring.take_teleport_events() {
@@ -299,6 +302,9 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             }
         }
     });
+    for _ in 0..party_credits {
+        let _ = app.notify_progression_net(25);
+    }
     // The actuation drops spawn after the fixed step (see the drain comment
     // above); the trap requests and the device shots spawn right after (their
     // caps read the pool).

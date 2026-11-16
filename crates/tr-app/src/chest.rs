@@ -889,6 +889,10 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // `:33175` — `flag16`: the shadow key (329) unlocks without
         // consuming; every other key decrements.
         let consumes = key != 329;
+        // The `Chest.Unlock` progression ids (`Chest.cs:366`/:383/:404) fire
+        // after the key walk: the walk holds a mutable borrow of `app`'s
+        // inventory, so the `98` broadcast waits for the loop to end.
+        let mut unlocked_progression: Option<u32> = None;
         // `:33176-33199` — the key scan over `inventory[0..=58]`: the port's
         // inventory grid (0-49), the coins (50-53), the ammo (54-57) and the
         // trash slot (58) — `EquipSlots` mirrors the C# array layout
@@ -921,7 +925,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 continue;
             }
             if let Some(id) = progression {
-                let _ = app.achievements.notify_progression(id);
+                unlocked_progression = Some(id);
             }
             // `:409` — `SoundEngine.PlaySound(22, X * 16, Y * 16)`: the
             // `SoundID.Unlock` cue (`SoundID.cs:66`), banked as "Unlock".
@@ -942,6 +946,9 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             }
         }
         // `:33200-33221` — the void-bag arm is M3-STORE-1.
+        if let Some(id) = unlocked_progression {
+            let _ = app.notify_progression_net(id);
+        }
     }
     if !locked {
         // `:33225` — `Chest.FindChest` on an unlocked click. The port creates

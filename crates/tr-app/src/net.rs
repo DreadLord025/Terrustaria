@@ -103,6 +103,16 @@ pub mod id {
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
     pub const ITEM_DEAD: u8 = 151; // NetMessage.cs:671-674 / MessageBuffer.cs:1537-1550
     pub const NPC_INFO: u8 = 23; // NetMessage.cs:686-748 / MessageBuffer.cs:1563-1704
+    /// `97` — `AchievementsHelper.NotifyNPCKilled`'s per-player fan-out
+    /// (`AchievementsHelper.cs:210-216`, `NetMessage.cs:1347-1349`): one
+    /// `(short)npcNetId`, read only at `netMode == 1`
+    /// (`MessageBuffer.cs:3558-3563`).
+    pub const NPC_KILLED: u8 = 97;
+    /// `98` — `AchievementsHelper.NotifyProgressionEvent`'s host broadcast
+    /// (`AchievementsHelper.cs:227-237`, `NetMessage.cs:1350-1352`): one
+    /// `(short)eventID`, read only at `netMode == 1`
+    /// (`MessageBuffer.cs:3564-3569`).
+    pub const PROGRESSION_EVENT: u8 = 98;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1509,6 +1519,12 @@ pub enum S2c {
     /// `154 Ping` - the server's echo back to the prober
     /// (`MessageBuffer.cs:4419-4423`), no body.
     Ping,
+    /// `97 AchievementNPCKilled` — the host's per-player kill credit
+    /// (`MessageBuffer.cs:3558-3563`): one `(short)npcNetId`.
+    NpcKilled { npc: i16 },
+    /// `98 AchievementProgressionEvent` — the host's progression broadcast
+    /// (`MessageBuffer.cs:3564-3569`): one `(short)eventID`.
+    ProgressionEvent { event_id: i16 },
     /// `32 SyncChestItem` - one chest slot, relayed to the other clients
     /// (`MessageBuffer.cs:1913-1916`).
     ChestItem(ChestItem),
@@ -1878,6 +1894,8 @@ impl S2c {
             Self::NpcStrike(_) => id::NPC_STRIKE,
             Self::InitialSpawn => id::INITIAL_SPAWN,
             Self::Ping => id::PING,
+            Self::NpcKilled { .. } => id::NPC_KILLED,
+            Self::ProgressionEvent { .. } => id::PROGRESSION_EVENT,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
             Self::PlayerHp { .. } => id::PLAYER_HP,
             Self::NpcInfo(_) => id::NPC_INFO,
@@ -1948,6 +1966,8 @@ impl S2c {
             Self::Status { text, max } => NetText(text.clone()).write_to(w.i32(*max)).u8(0),
             Self::InitialSpawn => w,
             Self::Ping => w,
+            Self::NpcKilled { npc } => w.i16(*npc),
+            Self::ProgressionEvent { event_id } => w.i16(*event_id),
             Self::PlayerActive { player_id, active } => w.u8(*player_id).u8(u8::from(*active)),
             Self::PlayerHp {
                 player_id,
@@ -2066,6 +2086,10 @@ impl S2c {
             id::NPC_STRIKE => Self::NpcStrike(NpcStrike::read_from(r)?),
             id::INITIAL_SPAWN => Self::InitialSpawn,
             id::PING => Self::Ping,
+            id::NPC_KILLED => Self::NpcKilled { npc: r.i16()? },
+            id::PROGRESSION_EVENT => Self::ProgressionEvent {
+                event_id: r.i16()?,
+            },
             id::PLAYER_ACTIVE => Self::PlayerActive {
                 player_id: r.u8()?,
                 active: r.u8()? != 0,
@@ -3979,6 +4003,26 @@ mod tests {
         match back {
             C2s::PlayerSpawn(s) => assert_eq!(s.spawn_context, 1),
             other => panic!("expected 12 PlayerSpawn, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `97`/`98` (`MessageBuffer.cs:3558-3569`): both bodies are one
+    /// `(short)number`, and the ids land at the right bytes.
+    #[test]
+    fn the_achievement_messages_round_trip() {
+        let k = S2c::NpcKilled { npc: 4 }.encode();
+        assert_eq!(k[2], 97);
+        assert_eq!(&k[3..], &4i16.to_le_bytes());
+        match S2c::decode(k[2], &mut NetReader::new(&k[3..])).expect("decode") {
+            S2c::NpcKilled { npc } => assert_eq!(npc, 4),
+            other => panic!("expected 97, got {:?}", other.msg_id()),
+        }
+        let p = S2c::ProgressionEvent { event_id: 29 }.encode();
+        assert_eq!(p[2], 98);
+        assert_eq!(&p[3..], &29i16.to_le_bytes());
+        match S2c::decode(p[2], &mut NetReader::new(&p[3..])).expect("decode") {
+            S2c::ProgressionEvent { event_id } => assert_eq!(event_id, 29),
+            other => panic!("expected 98, got {:?}", other.msg_id()),
         }
     }
 }
