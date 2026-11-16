@@ -2531,6 +2531,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // pass over the updated NPCs: the C#'s per-NPC order is kept by the
     // slot order, and the scan's own effect (the plate trips) does not
     // depend on the other NPCs' updates.
+    // The `59 HitSwitch` send sites (`Collision.cs:3304`/`:3318`/`:3324`/
+    // `:3347`): collected by the scan below, sent once the `app.wiring`/
+    // `app.world` borrows (and the `player` borrow) release.
+    let mut switch_sends: Vec<(i32, i32)> = Vec::new();
     {
         let mut wiring = &mut app.wiring;
         let world = &mut app.world;
@@ -2561,12 +2565,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     y,
                 );
             }
+            // `Collision.cs:3304`/`:3318`/`:3324`/`:3347` — the `59 HitSwitch`
+            // send sits on every fired switch.
+            switch_sends.extend(switch.switches.iter().copied());
         }
     }
     // The eye's climb-away despawn (`EncourageDespawn(10)` from the
     // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
     // far enough off-screen; the port culls it above the player's view).
     let player_y = player.as_ref().map(|p| p.y).unwrap_or(0.0);
+    // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
+    for (x, y) in switch_sends {
+        app.send_hit_switch(x, y);
+    }
     if app.world.day_time {
         app.npcs
             .retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));

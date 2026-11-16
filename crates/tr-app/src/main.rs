@@ -78,6 +78,7 @@ mod tag_effects;
 mod settings;
 mod shop;
 mod shimmer;
+mod signs;
 mod sound;
 mod test_world_helpers;
 mod town;

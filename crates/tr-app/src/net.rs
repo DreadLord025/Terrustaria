@@ -86,6 +86,18 @@ pub mod id {
     /// (`MessageBuffer.cs:4419-4428`). Note the port used NetModule 2 for this
     /// before; module 2 is `NetPingModule`, the *map* ping relay.
     pub const PING: u8 = 154;
+    pub const CHEST_OPEN_REQUEST: u8 = 31; // MessageBuffer.cs:1868-1895
+    pub const CHEST_ITEM: u8 = 32; // MessageBuffer.cs:1897-1918 / NetMessage.cs:864-877
+    pub const PLAYER_CHEST: u8 = 33; // MessageBuffer.cs:1920-1982 / NetMessage.cs:879-911
+    pub const SIGN_REQUEST: u8 = 46; // MessageBuffer.cs:2366-2375
+    pub const SIGN_DATA: u8 = 47; // MessageBuffer.cs:2376-2405 / NetMessage.cs:979-986
+    pub const PLAYER_BUFFS: u8 = 50; // MessageBuffer.cs:2454-2480 / NetMessage.cs:996-1008
+    pub const ADD_NPC_BUFF: u8 = 53; // MessageBuffer.cs:2565-2575 / NetMessage.cs:1019-1022
+    pub const NPC_BUFFS: u8 = 54; // MessageBuffer.cs:2577-2593 / NetMessage.cs:1024-1039
+    pub const HIT_SWITCH: u8 = 59; // MessageBuffer.cs:2682-2693 / NetMessage.cs:1063-1066
+    pub const PLAYER_CHEST_INDEX: u8 = 80; // MessageBuffer.cs:3216-3227 / NetMessage.cs:1175-1178
+    pub const CHEST_SIZE: u8 = 155; // MessageBuffer.cs:4429-4438 / NetMessage.cs:1650-1653
+    pub const CHEST_NAME: u8 = 69; // MessageBuffer.cs:3059-3078 / NetMessage.cs:1334-1341
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -510,9 +522,16 @@ pub struct PlayerNet {
     /// `x + off_x` (see `netglue::decay_net_offsets`).
     pub off_x: f32,
     pub off_y: f32,
-    /// `Main.player[id].inventory` — the peer's slot state, fed by the
+    /// `Main.player[id].inventory` - the peer's slot state, fed by the
     /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`).
     pub inventory: HashMap<u8, NetItem>,
+    /// `Main.player[id].buffType[]`'s live ids, fed by `50 PlayerBuffs`
+    /// (`MessageBuffer.cs:2454-2480` sets every listed buff's time to 60).
+    pub buffs: Vec<u16>,
+    /// `Main.player[id].chest` (`Player.cs` field): which container the peer
+    /// has open, fed by `80 SyncPlayerChestIndex`
+    /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
+    pub chest: Option<i16>,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1229,6 +1248,127 @@ pub struct PlayerSpawn {
     pub spawn_context: u8,
 }
 
+/// `msg 31 RequestChestOpen`'s body (`NetMessage.cs:860-863`): the chest
+/// tile's top-left. The server answers `33` + the whole `32`/`155` contents
+/// (`MessageBuffer.cs:1868-1895`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChestOpenRequest {
+    pub x: i16,
+    pub y: i16,
+}
+
+/// `msg 32 SyncChestItem`'s body (`NetMessage.cs:864-877`): one chest slot's
+/// item. `stack`/`prefix`/`kind` are the C#'s written order (`short stack`,
+/// `byte prefix`, `short type` - the type is zeroed when the item has no
+/// name, `:870-873`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChestItem {
+    /// `Chest` index (`short`).
+    pub chest: i16,
+    /// `Chest.item[]` slot (`byte`).
+    pub slot: u8,
+    pub stack: i16,
+    pub prefix: u8,
+    pub kind: i16,
+}
+
+/// `msg 33 SyncPlayerChest`'s body (`NetMessage.cs:879-911`): the chest index,
+/// its tile position and the optional name (`name_len` = 1..=20 with the text
+/// following, 0 = none, 255 = a too-long name the C# refuses,
+/// `MessageBuffer.cs:1927-1937`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlayerChest {
+    pub chest: i16,
+    pub x: i16,
+    pub y: i16,
+    /// The C#'s `num24` byte: 0 none, 1..=20 a name follows, 255 refused.
+    pub name_len: u8,
+    pub name: String,
+}
+
+/// `msg 46 OpenSignRequest`'s body (`NetMessage.cs:975-978`): the sign tile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SignRequest {
+    pub x: i16,
+    pub y: i16,
+}
+
+/// `msg 47 OpenSignResponse`'s body (`NetMessage.cs:979-986`): the sign index,
+/// its tile position, the text and the two flag bytes (`number2` = the
+/// sender's `whoAmI`, `number3` = a `BitsByte` whose bit 0 suppresses the
+/// client's `OpenSign`, `MessageBuffer.cs:2400-2403`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignData {
+    pub sign: i16,
+    pub x: i16,
+    pub y: i16,
+    pub text: String,
+    pub sender: u8,
+    pub flags: u8,
+}
+
+/// `msg 50 PlayerBuffs`'s body (`NetMessage.cs:996-1008`): the player id then
+/// the live buff ids as `ushort`s, terminated by a zero. The reader gives
+/// every listed buff a time of 60 ticks (`MessageBuffer.cs:2470-2471`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlayerBuffs {
+    pub player_id: u8,
+    pub buffs: Vec<u16>,
+}
+
+/// `msg 53 AddNPCBuff`'s body (`NetMessage.cs:1019-1022`): the NPC slot, the
+/// buff id and its duration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AddNpcBuff {
+    pub npc: i16,
+    pub buff_type: u16,
+    pub time: i16,
+}
+
+/// `msg 54 NPCBuffs`'s body (`NetMessage.cs:1024-1039`): the NPC slot then the
+/// `(buff, time)` pairs as `ushort`s, terminated by a zero buff id
+/// (`MessageBuffer.cs:2584-2589`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NpcBuffs {
+    pub npc: i16,
+    pub buffs: Vec<(u16, u16)>,
+}
+
+/// `msg 59 HitSwitch`'s body (`NetMessage.cs:1063-1066`): the switch tile. The
+/// receiver replays `Wiring.HitSwitch` on it (`MessageBuffer.cs:2682-2693`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HitSwitch {
+    pub x: i16,
+    pub y: i16,
+}
+
+/// `msg 80 SyncPlayerChestIndex`'s body (`NetMessage.cs:1175-1178`): which
+/// chest a player has open (`-3..8000`, `MessageBuffer.cs:3216-3227`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerChestIndex {
+    pub player_id: u8,
+    pub chest: i16,
+}
+
+/// `msg 155 SyncChestSize`'s body (`NetMessage.cs:1650-1653`): the chest index
+/// and its `maxItems` (`MessageBuffer.cs:4429-4438`'s `Chest.Resize`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChestSize {
+    pub chest: i16,
+    pub size: i16,
+}
+
+/// `msg 69 ChestName`'s body (`NetMessage.cs:1334-1341`): the chest index, its
+/// tile and the new name - the `33` rename's relay
+/// (`MessageBuffer.cs:3059-3078`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChestName {
+    pub chest: i16,
+    pub x: i16,
+    pub y: i16,
+    pub name: String,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1288,6 +1428,30 @@ pub enum C2s {
     },
     /// `154 Ping` - this client's RTT probe, no body (`Net/Ping.cs:31`).
     Ping,
+    /// `31 RequestChestOpen` - ask the host for a chest's contents
+    /// (`Player.cs:32897`/`:33116`).
+    ChestOpenRequest(ChestOpenRequest),
+    /// `32 SyncChestItem` - one chest slot this client changed
+    /// (`Player.cs:31520`, the `1023` violin cases; `NetMessage.cs:1878`'s
+    /// chest drops).
+    ChestItem(ChestItem),
+    /// `46 OpenSignRequest` - a client asks for a sign's text
+    /// (`Player.cs:32720`).
+    SignRequest(SignRequest),
+    /// `47 OpenSignResponse` - a client submitted a sign's new text
+    /// (`Main.SubmitSignText`, `Main.cs:40694-40704`).
+    SignData(SignData),
+    /// `33 SyncPlayerChest` - a client set the open chest / its rename
+    /// (`Player.cs:32885`, `:33099`).
+    PlayerChest(PlayerChest),
+    /// `50 PlayerBuffs` - this client's buff ids (`Main.cs:17675`).
+    PlayerBuffs(PlayerBuffs),
+    /// `59 HitSwitch` - a client tripped a switch (`Collision.cs:3303-3304`,
+    /// `Player.cs:32178` and the other `HitSwitch` call sites).
+    HitSwitch(HitSwitch),
+    /// `53 AddNPCBuff` - a client applied a buff to an NPC
+    /// (`NPC.AddBuff`'s `netMode == 1` send, `NPC.cs:89932-89935`).
+    AddNpcBuff(AddNpcBuff),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1345,6 +1509,31 @@ pub enum S2c {
     /// `154 Ping` - the server's echo back to the prober
     /// (`MessageBuffer.cs:4419-4423`), no body.
     Ping,
+    /// `32 SyncChestItem` - one chest slot, relayed to the other clients
+    /// (`MessageBuffer.cs:1913-1916`).
+    ChestItem(ChestItem),
+    /// `33 SyncPlayerChest` - the chest a player opened
+    /// (`MessageBuffer.cs:1880`, `:1980`; `Player.cs:32885`).
+    PlayerChest(PlayerChest),
+    /// `47 OpenSignResponse` - a sign's text (`MessageBuffer.cs:2372`,
+    /// `:2398`).
+    SignData(SignData),
+    /// `50 PlayerBuffs` - a player's buff ids (`MessageBuffer.cs:2478`).
+    PlayerBuffs(PlayerBuffs),
+    /// `54 NPCBuffs` - an NPC's buff pairs (`MessageBuffer.cs:2573`).
+    NpcBuffs(NpcBuffs),
+    /// `59 HitSwitch` - the switch a peer tripped, relayed
+    /// (`MessageBuffer.cs:2691`).
+    HitSwitch(HitSwitch),
+    /// `80 SyncPlayerChestIndex` - which chest a player has open
+    /// (`MessageBuffer.cs:1886`, `:1980`, `NetMessage.cs:2906`).
+    PlayerChestIndex(PlayerChestIndex),
+    /// `155 SyncChestSize` - a chest's `maxItems`, the `32` burst's header
+    /// (`NetMessage.SendChestContentsTo`, `MessageBuffer.cs:4429-4438`).
+    ChestSize(ChestSize),
+    /// `69 ChestName` - a renamed chest, the `33` rename's relay
+    /// (`MessageBuffer.cs:1977`, `:3059-3078`).
+    ChestName(ChestName),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -1418,6 +1607,14 @@ impl C2s {
             Self::Projectile(_) => id::PROJECTILE,
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
             Self::Ping => id::PING,
+            Self::ChestOpenRequest(_) => id::CHEST_OPEN_REQUEST,
+            Self::ChestItem(_) => id::CHEST_ITEM,
+            Self::SignRequest(_) => id::SIGN_REQUEST,
+            Self::SignData(_) => id::SIGN_DATA,
+            Self::HitSwitch(_) => id::HIT_SWITCH,
+            Self::AddNpcBuff(_) => id::ADD_NPC_BUFF,
+            Self::PlayerChest(_) => id::PLAYER_CHEST,
+            Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1441,6 +1638,41 @@ impl C2s {
                 }),
             Self::WorldRequest => w,
             Self::Ping => w,
+            Self::ChestOpenRequest(c) => w.i16(c.x).i16(c.y),
+            Self::ChestItem(c) => w
+                .i16(c.chest)
+                .u8(c.slot)
+                .i16(c.stack)
+                .u8(c.prefix)
+                .i16(c.kind),
+            Self::SignRequest(s) => w.i16(s.x).i16(s.y),
+            Self::SignData(s) => w
+                .i16(s.sign)
+                .i16(s.x)
+                .i16(s.y)
+                .str(&s.text)
+                .u8(s.sender)
+                .u8(s.flags),
+            Self::PlayerChest(c) => {
+                // `NetMessage.cs:903-910`: the length byte, then the C#
+                // `BinaryWriter.Write(string)` (a 7-bit length + bytes) when
+                // the name was accepted — `255`/`0` write no text at all.
+                let w = w.i16(c.chest).i16(c.x).i16(c.y).u8(c.name_len);
+                if c.name_len == 0 || c.name_len == 255 {
+                    w
+                } else {
+                    w.str(&c.name)
+                }
+            }
+            Self::PlayerBuffs(b) => {
+                let mut w = w.u8(b.player_id);
+                for id in &b.buffs {
+                    w = w.u16(*id);
+                }
+                w.u16(0)
+            }
+            Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
+            Self::AddNpcBuff(a) => w.i16(a.npc).u16(a.buff_type).i16(a.time),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -1498,6 +1730,36 @@ impl C2s {
             }
             id::WORLD_REQUEST => Self::WorldRequest,
             id::PING => Self::Ping,
+            id::CHEST_OPEN_REQUEST => Self::ChestOpenRequest(ChestOpenRequest {
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
+            id::CHEST_ITEM => Self::ChestItem(ChestItem {
+                chest: r.i16()?,
+                slot: r.u8()?,
+                stack: r.i16()?,
+                prefix: r.u8()?,
+                kind: r.i16()?,
+            }),
+            id::SIGN_REQUEST => Self::SignRequest(SignRequest {
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
+            id::SIGN_DATA => Self::SignData(read_sign_data(r)?),
+            id::PLAYER_CHEST => Self::PlayerChest(read_player_chest(r)?),
+            id::PLAYER_BUFFS => Self::PlayerBuffs(PlayerBuffs {
+                player_id: r.u8()?,
+                buffs: read_terminated_u16(r),
+            }),
+            id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
+            id::ADD_NPC_BUFF => Self::AddNpcBuff(AddNpcBuff {
+                npc: r.i16()?,
+                buff_type: r.u16()?,
+                time: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -1541,6 +1803,63 @@ impl C2s {
     }
 }
 
+/// The zero-terminated `ushort` run the C# uses for the buff lists
+/// (`MessageBuffer.cs:2468-2473`, `:2584-2589`) - it stops at the first 0.
+fn read_terminated_u16(r: &mut NetReader) -> Vec<u16> {
+    let mut out = Vec::new();
+    while let Some(id) = r.u16() {
+        if id == 0 {
+            break;
+        }
+        out.push(id);
+    }
+    out
+}
+
+/// `47 OpenSignResponse` (`MessageBuffer.cs:2376-2383`): index, tile, text,
+/// then the two flag bytes.
+fn read_sign_data(r: &mut NetReader) -> Option<SignData> {
+    Some(SignData {
+        sign: r.i16()?,
+        x: r.i16()?,
+        y: r.i16()?,
+        text: r.str()?,
+        sender: r.u8()?,
+        flags: r.u8()?,
+    })
+}
+
+/// `33 SyncPlayerChest` (`MessageBuffer.cs:1920-1937`): the length byte gates
+/// the name - `1..=20` reads it, `255` is a refused name and anything else is
+/// treated as "no name" (`num24 = 0`).
+fn read_player_chest(r: &mut NetReader) -> Option<PlayerChest> {
+    let chest = r.i16()?;
+    let x = r.i16()?;
+    let y = r.i16()?;
+    let mut name_len = r.u8()?;
+    let name = if name_len != 0 {
+        if name_len <= 20 {
+            let text = r.str()?;
+            name_len = text.len() as u8;
+            text
+        } else {
+            if name_len != 255 {
+                name_len = 0;
+            }
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+    Some(PlayerChest {
+        chest,
+        x,
+        y,
+        name_len,
+        name,
+    })
+}
+
 impl S2c {
     pub fn msg_id(&self) -> u8 {
         match self {
@@ -1570,6 +1889,15 @@ impl S2c {
             Self::PlayerState(_) => id::PLAYER_STATE,
             Self::Time { .. } => id::INT_TIME,
             Self::Edit { .. } => id::INT_EDIT,
+            Self::ChestItem(_) => id::CHEST_ITEM,
+            Self::PlayerChest(_) => id::PLAYER_CHEST,
+            Self::SignData(_) => id::SIGN_DATA,
+            Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
+            Self::NpcBuffs(_) => id::NPC_BUFFS,
+            Self::HitSwitch(_) => id::HIT_SWITCH,
+            Self::PlayerChestIndex(_) => id::PLAYER_CHEST_INDEX,
+            Self::ChestSize(_) => id::CHEST_SIZE,
+            Self::ChestName(_) => id::CHEST_NAME,
         }
     }
 
@@ -1636,6 +1964,48 @@ impl S2c {
             Self::Time { time, day } => w.f64(*time).bool(*day),
             Self::NpcStrike(st) => st.write_to(w),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
+            Self::ChestItem(c) => w
+                .i16(c.chest)
+                .u8(c.slot)
+                .i16(c.stack)
+                .u8(c.prefix)
+                .i16(c.kind),
+            Self::PlayerChest(c) => {
+                // `NetMessage.cs:903-910`: the length byte, then the C#
+                // `BinaryWriter.Write(string)` (a 7-bit length + bytes) when
+                // the name was accepted — `255`/`0` write no text at all.
+                let w = w.i16(c.chest).i16(c.x).i16(c.y).u8(c.name_len);
+                if c.name_len == 0 || c.name_len == 255 {
+                    w
+                } else {
+                    w.str(&c.name)
+                }
+            }
+            Self::SignData(s) => w
+                .i16(s.sign)
+                .i16(s.x)
+                .i16(s.y)
+                .str(&s.text)
+                .u8(s.sender)
+                .u8(s.flags),
+            Self::PlayerBuffs(b) => {
+                let mut w = w.u8(b.player_id);
+                for id in &b.buffs {
+                    w = w.u16(*id);
+                }
+                w.u16(0)
+            }
+            Self::NpcBuffs(nb) => {
+                let mut w = w.i16(nb.npc);
+                for (id, time) in &nb.buffs {
+                    w = w.u16(*id).u16(*time);
+                }
+                w.u16(0)
+            }
+            Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
+            Self::PlayerChestIndex(c) => w.u8(c.player_id).i16(c.chest),
+            Self::ChestSize(c) => w.i16(c.chest).i16(c.size),
+            Self::ChestName(c) => w.i16(c.chest).i16(c.x).i16(c.y).str(&c.name),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -1725,6 +2095,49 @@ impl S2c {
                 kind: r.u8()?,
                 tile: r.u16()?,
             },
+            id::CHEST_ITEM => Self::ChestItem(ChestItem {
+                chest: r.i16()?,
+                slot: r.u8()?,
+                stack: r.i16()?,
+                prefix: r.u8()?,
+                kind: r.i16()?,
+            }),
+            id::PLAYER_CHEST => Self::PlayerChest(read_player_chest(r)?),
+            id::SIGN_DATA => Self::SignData(read_sign_data(r)?),
+            id::PLAYER_BUFFS => Self::PlayerBuffs(PlayerBuffs {
+                player_id: r.u8()?,
+                buffs: read_terminated_u16(r),
+            }),
+            id::NPC_BUFFS => {
+                let npc = r.i16()?;
+                let mut buffs = Vec::new();
+                loop {
+                    let id = r.u16()?;
+                    if id == 0 {
+                        break;
+                    }
+                    buffs.push((id, r.u16()?));
+                }
+                Self::NpcBuffs(NpcBuffs { npc, buffs })
+            }
+            id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
+            id::PLAYER_CHEST_INDEX => Self::PlayerChestIndex(PlayerChestIndex {
+                player_id: r.u8()?,
+                chest: r.i16()?,
+            }),
+            id::CHEST_SIZE => Self::ChestSize(ChestSize {
+                chest: r.i16()?,
+                size: r.i16()?,
+            }),
+            id::CHEST_NAME => Self::ChestName(ChestName {
+                chest: r.i16()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                name: r.str()?,
+            }),
             _ => return None,
         })
     }
@@ -3176,13 +3589,59 @@ mod tests {
                 key: projectile_key(255, 7, 1),
             },
             C2s::Ping,
+            // `31-33`, `46-47`, `50`, `53`, `59` — the message families of
+            // S1-E-27 (`MessageBuffer.cs:1868-1982`, `:2366-2405`,
+            // `:2454-2480`, `:2565-2575`, `:2682-2693`).
+            C2s::ChestOpenRequest(ChestOpenRequest { x: 100, y: 200 }),
+            C2s::ChestItem(ChestItem {
+                chest: 3,
+                slot: 7,
+                stack: 99,
+                prefix: 2,
+                kind: 42,
+            }),
+            C2s::PlayerChest(PlayerChest {
+                chest: 3,
+                x: 100,
+                y: 200,
+                name_len: 5,
+                name: "chest".into(),
+            }),
+            // `num24 == 0` (`:1925-1936`): no name follows the length byte.
+            C2s::PlayerChest(PlayerChest {
+                chest: 3,
+                x: 100,
+                y: 200,
+                name_len: 0,
+                name: String::new(),
+            }),
+            C2s::SignRequest(SignRequest { x: 10, y: 20 }),
+            C2s::SignData(SignData {
+                sign: 4,
+                x: 10,
+                y: 20,
+                text: "hello".into(),
+                sender: 2,
+                flags: 0,
+            }),
+            C2s::PlayerBuffs(PlayerBuffs {
+                player_id: 3,
+                buffs: vec![1, 2, 24],
+            }),
+            C2s::HitSwitch(HitSwitch { x: 40, y: 50 }),
+            C2s::AddNpcBuff(AddNpcBuff {
+                npc: 6,
+                buff_type: 24,
+                time: 300,
+            }),
         ];
         for msg in &msgs {
             let frame = msg.encode();
             assert!(frame.len() >= MIN_PACKET && frame.len() <= MAX_PACKET);
             assert_eq!(u16::from_le_bytes([frame[0], frame[1]]), frame.len() as u16);
             assert_eq!(frame[2], msg.msg_id());
-            let back = C2s::decode(frame[2], &mut NetReader::new(&frame[3..])).expect("decode");
+            let back = C2s::decode(frame[2], &mut NetReader::new(&frame[3..]))
+                .unwrap_or_else(|| panic!("decode failed for {:?} (id {})", msg, frame[2]));
             let re = back.encode();
             assert_eq!(re, frame, "re-encode mismatch for {:?}", msg.msg_id());
         }
@@ -3427,6 +3886,52 @@ mod tests {
                 x: 16.0,
                 y: 32.0,
             })),
+            // The `32/33/47/50/54/59/69/80/155` families (S1-E-27).
+            S2c::ChestItem(ChestItem {
+                chest: 2,
+                slot: 9,
+                stack: 250,
+                prefix: 1,
+                kind: 700,
+            }),
+            S2c::PlayerChest(PlayerChest {
+                chest: 2,
+                x: 30,
+                y: 40,
+                name_len: 3,
+                name: "abc".into(),
+            }),
+            S2c::SignData(SignData {
+                sign: 1,
+                x: 2,
+                y: 3,
+                text: "sign".into(),
+                sender: 4,
+                flags: 1,
+            }),
+            S2c::PlayerBuffs(PlayerBuffs {
+                player_id: 1,
+                buffs: vec![5, 26],
+            }),
+            S2c::NpcBuffs(NpcBuffs {
+                npc: 12,
+                buffs: vec![(24, 300), (20, 60)],
+            }),
+            S2c::HitSwitch(HitSwitch { x: -1, y: 400 }),
+            S2c::PlayerChestIndex(PlayerChestIndex {
+                player_id: 3,
+                chest: -3,
+            }),
+            S2c::ChestSize(ChestSize {
+                chest: 2,
+                size: 40,
+            }),
+            S2c::ChestName(ChestName {
+                chest: 2,
+                x: 30,
+                y: 40,
+                name: "renamed".into(),
+            }),
         ];
         for msg in &msgs {
             let frame = msg.encode();

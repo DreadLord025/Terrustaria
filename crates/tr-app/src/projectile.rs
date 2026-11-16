@@ -3064,8 +3064,8 @@ impl Projectile {
     /// cry/attack cues), `Lighting.AddLight` (613's glow), the frame machines
     /// (cosmetic — the slot carries no frame fields) and `strongBees` (373's
     /// bee cooldown cap keeps the C# default 90). The `Main.rand` rolls inside
-    /// the cooldown machines (`rand(1,4)`/`rand(3)` extra increments) stand at
-    /// their deterministic minimum, and the LOS check rides the shared
+    /// the cooldown machines DO run (they gate the next shot, not dust) on the
+    /// pass's `UpdateProjectiles` stream, and the LOS check rides the shared
     /// `can_hit_line` walk (`yoyo_can_hit`, the `Collision.CanHitLine`
     /// stand-in) instead of the C#'s exact Bresenham — both recorded.
     fn ai_flying_minion(
@@ -3075,6 +3075,10 @@ impl Projectile {
         queue: u32,
         mut owner: Option<&mut crate::player::Player>,
         npcs: &[Npc],
+        // The pass's `Main.rand` stream (`Main.cs:17775-17777`): the per-kind
+        // fire cooldowns roll on it (`:65931`/`:65950`/`:65966`/`:65982`/
+        // `:65998`).
+        rng: &mut dyn tr_core::loot::DropRng,
     ) -> Option<MinionShot> {
         // `:65039-65045` — the parameter block.
         let (mut num, mut num2, mut num3, mut num4, mut num5) =
@@ -3421,8 +3425,11 @@ impl Projectile {
                 );
             }
             if self.kind == FLYING_IMP {
-                // `:65684-65700` — the whoAmI-ordered queue offset: the nth Imp
-                // of the owner stands 40*n px to the owner's back.
+                // `:65674-65690` — the Imp's queue offset: the nth Imp of the
+                // owner stands 40*n px to the owner's back, and the cooldown is
+                // PINNED at 80 for as long as the return state runs (`:65676`),
+                // so the Imp holds fire until it is back beside the owner.
+                self.ai[1] = 80.0;
                 v2 = owner_center - center;
                 let dir = owner.as_ref().map_or(1.0, |p| p.facing as f32);
                 v2.x -= 10.0 * dir;
@@ -3442,8 +3449,10 @@ impl Projectile {
                 // `:65699` — the int cast before the float store.
                 num27 = (num27 * 0.75) as i32 as f32;
             }
-            if num30 < 100.0 && self.ai[0] == 1.0 {
-                // `:65702-65707` — close enough: back to the follow state.
+            if num30 < 100.0 && self.ai[0] == 1.0 && !box_solid(world, self.pos, self.w, self.h) {
+                // `:65704-65708` — close enough AND not embedded in solid tiles
+                // (a minion walled in keeps the higher return speed until it can
+                // see the owner again): back to the follow state.
                 self.ai[0] = 0.0;
             }
             if num30 > 2000.0 {
@@ -3522,36 +3531,64 @@ impl Projectile {
                 self.direction = if owner_center.x > center.x { 1 } else { -1 };
             }
         }
-        // `:65941-66008` — the per-kind fire cooldowns; the `Main.rand` rolls
-        // inside are dust-only and unported, the counters are 1:1.
+        // `:65928-66008` — the per-kind fire cooldowns. The counters are 1:1
+        // with the C#, `Main.rand` extra increments included: they are NOT
+        // dust-only (they gate the next shot), so the pass's
+        // `UpdateProjectiles` stream supplies them.
         match self.kind {
-            HORNET | FLYING_IMP => {
+            HORNET => {
+                // `:65928-65944` — `ai[1] += Main.rand.Next(1, 4)`. The
+                // `strongBees` cap (70) waits for the accessory layer.
+                if self.ai[1] > 0.0 {
+                    self.ai[1] += rng.next_range(1, 4) as f32;
+                }
+                if self.ai[1] > 90.0 {
+                    self.ai[1] = 0.0;
+                }
+            }
+            FLYING_IMP => {
+                // `:65945-65960` — one tick, plus another on `Next(3) == 0`.
                 if self.ai[1] > 0.0 {
                     self.ai[1] += 1.0;
+                    if rng.next_range(0, 3) == 0 {
+                        self.ai[1] += 1.0;
+                    }
                 }
                 if self.ai[1] > 90.0 {
                     self.ai[1] = 0.0;
                 }
             }
             TEMPEST => {
+                // `:65961-65976` — the extra tick on `Next(3) != 0`.
                 if self.ai[1] > 0.0 {
                     self.ai[1] += 1.0;
+                    if rng.next_range(0, 3) != 0 {
+                        self.ai[1] += 1.0;
+                    }
                 }
                 if self.ai[1] > 50.0 {
                     self.ai[1] = 0.0;
                 }
             }
             UFO_MINION => {
+                // `:65977-65992`.
                 if self.ai[1] > 0.0 {
                     self.ai[1] += 1.0;
+                    if rng.next_range(0, 3) != 0 {
+                        self.ai[1] += 1.0;
+                    }
                 }
                 if self.ai[1] > 45.0 {
                     self.ai[1] = 0.0;
                 }
             }
             STARDUST_CELL => {
+                // `:65993-66008`.
                 if self.ai[1] > 0.0 {
                     self.ai[1] += 1.0;
+                    if rng.next_range(0, 3) != 0 {
+                        self.ai[1] += 1.0;
+                    }
                 }
                 if self.ai[1] > 60.0 {
                     self.ai[1] = 0.0;
@@ -13325,6 +13362,7 @@ impl ProjectilePool {
                                 queue,
                                 player.as_deref_mut(),
                                 npcs,
+                                rng,
                             );
                             // `HandleMovement`'s `UpdatePosition`
                             // (`Projectile.cs:19858`/`:20433-20442`): the shared
@@ -24524,9 +24562,66 @@ mod minion_ai_tests {
             tick(&mut pool, &mut w, &mut p2);
         }
         assert_eq!(pool.slots[ufo].ai[0], 0.0, "the 5-tick counter (num4 = 5)");
+        // The reset cooldown is 30 (`:65986`); the cooldown machine then adds
+        // one tick plus a second on `Main.rand.Next(3) != 0` (`:65978-65985`),
+        // so the observable value on the same tick is 31 or 32.
+        let cd = pool.slots[ufo].ai[1];
+        assert!(
+            (31.0..=32.0).contains(&cd),
+            "the reset cooldown 30 plus the cooldown machine's roll (`:65978-65986`), got {cd}"
+        );
+    }
+
+    /// S1-D-5 — the Imp's return-state details from `AI_062`
+    /// (`Projectile.cs:65674-65708`): the cooldown is pinned at 80 while the
+    /// Imp is flying back (`:65676`), and the follow state is re-entered only
+    /// when the owner is within 100 px AND the Imp is not inside solid tiles
+    /// (`:65704`).
+    #[test]
+    fn test_s1_d_5_the_imp_pins_its_cooldown_and_needs_a_clear_box() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        let mut p = player(&w);
+        p.max_minions = 5;
+        p.imp_minion = true;
+        // Far from the owner on a bare world: the return state runs, ai[1] is
+        // overwritten by the pin whatever it held.
+        let imp = spawn_minion(&mut pool, FLYING_IMP, 100.0);
+        pool.slots[imp].ai[0] = 1.0;
+        pool.slots[imp].ai[1] = 7.0;
+        tick(&mut pool, &mut w, &mut p);
+        // The pin lands at 80 (`:65676`) and the same tick's cooldown machine
+        // then advances it (`:65947-65953`), so the observable value is 80..=82.
+        let pinned = pool.slots[imp].ai[1];
+        assert!(
+            (80.0..=82.0).contains(&pinned),
+            "the return state pins the cooldown (`:65676`), got {pinned}"
+        );
+        // The walled-in case: park the Imp on the owner's centre but fill its
+        // box with solid tiles — the follow state must NOT be re-entered.
+        let mut w2 = world();
+        let mut p2 = player(&w2);
+        p2.max_minions = 5;
+        p2.imp_minion = true;
+        let (ocx, ocy) = p2.center();
+        let mut pool2 = ProjectilePool::new();
+        let imp2 = spawn_minion(&mut pool2, FLYING_IMP, ocx - 17.0);
+        pool2.slots[imp2].pos = Vec2::new(ocx - 17.0, ocy - 13.0);
+        pool2.slots[imp2].vel = Vec2::ZERO;
+        pool2.slots[imp2].ai[0] = 1.0;
+        pool2.slots[imp2].ai[1] = 0.0;
+        for ty in 0..w2.height {
+            for tx in 0..w2.width {
+                if let Some(t) = w2.tile_mut(tx, ty) {
+                    t.kind = 1;
+                    t.flags |= tr_core::tile::FLAG_ACTIVE;
+                }
+            }
+        }
+        tick(&mut pool2, &mut w2, &mut p2);
         assert_eq!(
-            pool.slots[ufo].ai[1], 31.0,
-            "the reset cooldown 30 plus the cooldown machine's increment (`:65985`)"
+            pool2.slots[imp2].ai[0], 1.0,
+            "solid tiles block the re-follow (`:65704`)"
         );
     }
 
