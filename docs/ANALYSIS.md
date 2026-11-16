@@ -10110,6 +10110,32 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+- **The sentry movement layer** (S1-D-4b-2). `AI_053_FrostHydra` (`:37266-37490`) and
+  `AI_197_CeilingAndHoverTurret` (`:40307-40479`) carry no `position += velocity` of
+  their own — the C# integrates them in `HandleMovement` → `UpdatePosition`
+  (`:19858`/`:20445`), after the AI, once per sub-step. The port runs the same two
+  steps as `sentry_hydra_step` / `sentry_turret_step`:
+  - **53** (308 Frost Hydra, 377 Queen Spider, 966 Houndius Shootius): `flag6 = false`
+    (`:17532-17535`, no platform landing) then the plain integrate. These three types
+    are named explicitly in the blocked-move chain's exclusion test (`:18635`), so a
+    blocked sentry neither dies nor bounces — it stops against the tile while its own
+    gravity keeps pushing. Note this is *not* the `kill_step` default: calling that for
+    53 would be a behavioural regression.
+  - **197** (1025 Dead Cells Barnacle, 1128-1146): `flag6 = true` (`:17536-17539`) and
+    the blocked arm runs `AI_197_HandleTileCollision` (`:40246-40305`), whose state
+    half is the one-shot `ai[0] = 1f` latch (`:40250`).
+  - **The `InWorld` fluff margin**. The barnacle's 15-tile ceiling scan
+    (`:40379`) guards with `WorldGen.InWorld(x, y, 2)`, whose margin sits *inside* the
+    bounds (`WorldGen.cs:6553-6554`: `x < 2 || x >= maxTilesX - 2`). An earlier port
+    read the margin as an out-of-bounds overhang (`< -2` / `>= width + 2`) and kept
+    scanning past the world edge.
+  - **Skipped layers** for the three AIs (S1-D-4b-2): `SoundEngine` (`:37274`'s
+    `Item46`, `:40316`'s `Item167`, `:42508`'s tracked `DD2_GhastlyGlaiveImpactGhost`
+    and its per-tick position update), all `Dust`/`Gore` bursts (`:37277-37296`,
+    `:40319-40322`, `:40257-40316`), `Lighting.AddLight`, `Collision.HitTiles`, and
+    `netUpdate`. The pool has no sound, dust, gore, light or net layer; the
+    sentry-backpack branch (`:40334-40343`, `CanGetPickedUpBySentryBackpack`) is
+    likewise unported — no `accSentryBackpack`.
 ## Whips & tag damage (M4-PROJ-7)
 
 The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
