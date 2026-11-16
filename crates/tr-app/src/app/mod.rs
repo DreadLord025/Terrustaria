@@ -4925,8 +4925,13 @@ mod s1_e_18_tests {
         let mut player = crate::player::Player::spawn(&app.world);
         player.hp = player.max_hp / 2;
         app.player = Some(player);
-        app.npcs
-            .push(crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 32.0, 100.0, 1, 0.0));
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Nurse,
+            32.0,
+            100.0,
+            1,
+            0.0,
+        ));
         let cost = app.nurse_heal_cost(0);
         assert!(cost > 0, "half life is a heal");
         // Shy of the price: the C# returns before `HandleNurseService`.
@@ -4937,7 +4942,10 @@ mod s1_e_18_tests {
         app.coins = cost as u64;
         assert!(app.nurse_heal(0));
         assert_eq!(pay(&app), cost);
-        assert_eq!(app.player.as_ref().unwrap().hp, app.player.as_ref().unwrap().max_hp);
+        assert_eq!(
+            app.player.as_ref().unwrap().hp,
+            app.player.as_ref().unwrap().max_hp
+        );
         assert_eq!(app.coins, 0);
     }
 
