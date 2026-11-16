@@ -227,17 +227,27 @@ impl ItemDrop {
     /// stand-in for the C#'s `Collision.shimmer` flag that
     /// `WorldItem.Update`'s wet half sets (`WorldItem.cs:868-877`).
     fn box_in_shimmer(&self, world: &World) -> bool {
+        self.box_in_liquid(world, |t| tr_core::shimmer::tile_is_shimmer(t))
+    }
+
+    /// `Collision.WetCollision(position, width, height)` (`WorldItem.cs:870`):
+    /// the drop's box overlaps any non-empty liquid cell. This is `base.wet`,
+    /// the gate on most `UpdateItem_VisualEffects` light arms.
+    pub fn box_is_wet(&self, world: &World) -> bool {
+        self.box_in_liquid(world, |t| t.liquid > 0)
+    }
+
+    fn box_in_liquid(&self, world: &World, hit: impl Fn(&tr_core::tile::Tile) -> bool) -> bool {
         let x0 = (self.pos.x / tr_core::TILE_PX) as i32;
         let x1 = ((self.pos.x + SIZE) / tr_core::TILE_PX) as i32;
         let y0 = (self.pos.y / tr_core::TILE_PX) as i32;
         let y1 = ((self.pos.y + SIZE) / tr_core::TILE_PX) as i32;
         for ty in y0..=y1 {
             for tx in x0..=x1 {
-                if world
-                    .tile(tx, ty)
-                    .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
-                {
-                    return true;
+                if let Some(t) = world.tile(tx, ty) {
+                    if hit(t) {
+                        return true;
+                    }
                 }
             }
         }
@@ -301,6 +311,21 @@ impl ItemDrop {
             return false;
         }
         self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
+        // `WorldItem.cs:864`: the belt contacts bend the velocity before the
+        // AABB pass. The C# stores the `bool` in `item.onConveyor`, which only
+        // suppresses the draw-side velocity spin (`Main.cs:38613`) - the port
+        // draws drops upright, so the flag has no consumer and is dropped.
+        let mut bp = [self.pos.x, self.pos.y];
+        let mut bv = [self.vel.x, self.vel.y];
+        crate::collision::apply_conveyor_belt_movement_to_velocity(
+            world,
+            &mut bp,
+            &mut bv,
+            SIZE as i32,
+            SIZE as i32,
+        );
+        self.pos = Vec2::new(bp[0], bp[1]);
+        self.vel = Vec2::new(bv[0], bv[1]);
         let nx = self.pos.x + self.vel.x;
         if crate::player::collides_rect(world, nx, self.pos.y, SIZE, SIZE) {
             self.vel.x = -self.vel.x * 0.35;

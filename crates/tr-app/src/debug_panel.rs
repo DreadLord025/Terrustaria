@@ -116,7 +116,7 @@ pub(crate) fn row_count(panel: &Panel, tab: Tab) -> usize {
             .iter()
             .filter(|(_, name, _)| matches(&panel.filter, name))
             .count(),
-        Tab::World => 11,
+        Tab::World => 13,
         Tab::Recipes => crate::craft::RECIPES.len(),
     }
 }
@@ -160,6 +160,7 @@ pub fn draw(
     npcs: &[Npc],
     world: &tr_core::World,
     stepper_paused: bool,
+    god_mode: bool,
 ) {
     if !panel.open {
         return;
@@ -274,7 +275,7 @@ pub fn draw(
             }
         }
         Tab::World => {
-            let rows = world_rows(world, stepper_paused);
+            let rows = world_rows(world, stepper_paused, god_mode);
             for vi in 0..visible {
                 let idx = scroll_row + vi;
                 let Some((label, c)) = rows.get(idx) else {
@@ -332,7 +333,7 @@ fn row_bg(r: &mut SpriteRenderer, l: &Layout, panel: &Panel, vi: usize) {
 }
 
 /// The World tab's 11 rows. The order is the click dispatch's (`world_click`).
-fn world_rows(world: &tr_core::World, stepper_paused: bool) -> Vec<(String, [f32; 4])> {
+fn world_rows(world: &tr_core::World, stepper_paused: bool, god_mode: bool) -> Vec<(String, [f32; 4])> {
     vec![
         (
             format!("Hardmode: {}", if world.hard_mode { "ON" } else { "OFF" }),
@@ -351,14 +352,22 @@ fn world_rows(world: &tr_core::World, stepper_paused: bool) -> Vec<(String, [f32
         ("Set Noon".to_string(), W),
         ("Set Midnight".to_string(), W),
         (
-            if world.invasion_goblins {
-                format!("Goblin Army: {} left (click to end)", world.invasion_size)
+            // The C# has one `invasionType` (1 goblins / 2 frost / 3 pirates /
+            // 4 martians) — the row names whichever army is live.
+            if world.invasion_type > 0 {
+                let army = match world.invasion_type {
+                    2 => "Frost Legion",
+                    3 => "Pirates",
+                    4 => "Martians",
+                    _ => "Goblin Army",
+                };
+                format!("{army}: {} left (click to end)", world.invasion_size)
             } else if world.downed_goblins {
                 "Goblin Army: defeated".to_string()
             } else {
                 "Goblin Army: OFF (click to start)".to_string()
             },
-            if world.invasion_goblins { R } else { Y },
+            if world.invasion_type > 0 { R } else { Y },
         ),
         (
             format!("Slime Rain: {}", if world.slime_rain { "ON" } else { "OFF" }),
@@ -369,6 +378,16 @@ fn world_rows(world: &tr_core::World, stepper_paused: bool) -> Vec<(String, [f32
             format!("Pause World: {}", if stepper_paused { "ON" } else { "OFF" }),
             if stepper_paused { R } else { G },
         ),
+        // S1-E-34 — the debug god-mode toggle. It writes the SAME flag the
+        // journey god-mode power sets (`Player.creative_god_mode`, the
+        // `Player.Hurt` arm `Player.cs:38203-38206`), so `hurt_inner`'s
+        // first gate already swallows every hit; nothing new is needed on the
+        // damage path.
+        (
+            format!("God Mode: {}", if god_mode { "ON" } else { "OFF" }),
+            if god_mode { R } else { G },
+        ),
+        ("Reveal Map (pretty)".to_string(), W),
     ]
 }
 
@@ -660,31 +679,30 @@ fn spawn_boss(app: &mut App, kind: NpcKind) {
 fn world_click(app: &mut App, row: usize) {
     match row {
         0 => {
-            // `WorldGen.StartHardmode` (`WorldGen.cs:31701-31720`): the flag
-            // then the runner half (`initializeHardMode` `:31570` —
-            // `spread::initialize_hard_mode` carries the two V runners and
-            // their RNG order). The C# returns early when already hardmode
-            // unless forced, so the row keeps its toggle-off as the debug
-            // revert (the recorded F3 deviation: the port has no
-            // `UndoSpawnedItemProtection`/achievement half).
-            if app.world.hard_mode {
-                app.world.hard_mode = false;
-            } else {
-                app.world.hard_mode = true;
-                let corruption = (app.world.seed >> 56) & 1 == 1;
-                crate::world_sim::growth::run_hardmode_init(
-                    &mut app.world,
-                    corruption,
-                    app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
-                );
-            }
+            // `WorldGen.StartHardmode` (`WorldGen.cs:31701-31719`): the real
+            // entry — the strip walk plus the broadcast and ITS_HARD. The
+            // panel cannot switch hardmode back off (vanilla can't either).
+            crate::world_sim::growth::start_hardmode(app);
         }
         1 => {
             app.world.day_time = !app.world.day_time;
             app.world.time = 0.0;
         }
         2 => {
-            app.world.blood_moon = !app.world.blood_moon;
+            // The blood-moon hit body (`Main.cs:65344-65346`) — the same
+            // helper the dusk roll uses, so the dial cooldowns force-reset
+            // exactly like a natural start. Off is the dawn clear
+            // (`:65387`, the only place vanilla lowers the flag).
+            if app.world.blood_moon {
+                app.world.blood_moon = false;
+            } else {
+                app.world.start_blood_moon();
+                crate::chat::broadcast_death_text(
+                    &mut app.chat,
+                    &crate::lang::text("LegacyMisc.8"),
+                    crate::chat::COLOR_WORLD,
+                );
+            }
         }
         3 => {
             app.world.day_time = true;
@@ -703,59 +721,40 @@ fn world_click(app: &mut App, row: usize) {
             app.world.time = 16200.0;
         }
         7 => {
-            // The invasion toggle. Both arms ride the C# entry points rather
-            // than writing the state by hand (S1-E-37): `StartInvasion`
-            // (`Main.cs:64435-64486`) computes `80 + 40 * players` (plus the
-            // type-3 `+40+20x` and the type-4 `160+40x`), the march origin
-            // and the size-start bookkeeping; calling it off is the size-0
-            // "cleared" form `CanStartInvasion`'s `invasionType != 0 &&
-            // invasionSize == 0` arm resets (`:64437-64440`).
-            if app.world.invasion_goblins {
-                // The C# clear (`:64437-64440`): a stale `invasionType != 0`
-                // with a zero size resets the type — the type rides along so
-                // the next tick cannot mistake the cancel for a defeat.
-                app.world.invasion_goblins = false;
-                app.world.invasion_size = 0;
-                app.world.invasion_type = 0;
+            // `Main.StartInvasion(1)` (`Main.cs:64435-64486`) through the
+            // item path's gates (`Player.cs:43923-43932`): `CanStartInvasion`
+            // then the delay clear + the start. No hand-written size — the
+            // C# derives `80 + 40 x players` from the live roster.
+            let life_max = app.player.as_ref().map(|p| p.max_hp).unwrap_or(0);
+            if crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
+                app.world.invasion_delay = 0;
+                // The debug console is the chat command dispatcher's stand-in
+                // (S1-E-29's recorded deviation): `Main.rand` at that point is
+                // the bare stream, not a `SwapRandom` stage.
+                crate::world_sim::npcs::start_invasion_in(app, 1, 1, None);
             } else {
-                // `CanStartInvasion`'s 200-life gate (`:64424-64432`).
-                let qualifying = i32::from(
-                    app.player.as_ref().is_some_and(|p| p.max_hp >= 200),
-                );
-                if qualifying > 0 {
-                    // `StartInvasion`'s `Main.rand.Next(2)` march-origin pick
-                    // (`:64476-64483`) draws from the `UpdateTime` stream.
-                    let roll = app.rngs.stream(crate::app::RngKey::UpdateTime).next_max(2);
-                    crate::world_sim::npcs::start_invasion(
-                        &mut app.world,
-                        qualifying,
-                        1,
-                    );
-                    app.world.invasion_x = if roll == 0 {
-                        0.0
-                    } else {
-                        app.world.width as f64
-                    };
-                }
+                // Clicking an active invasion calls it off — the port's
+                // `invasionSize = 0`, which the next `UpdateInvasion`
+                // (`Main.cs:64332-64361`) resolves into the defeat flag, the
+                // warning and the type clear.
+                app.world.invasion_size = 0;
             }
         }
         8 => {
-            // The Slime Rain toggle through the C# entry points (S1-E-37):
-            // `StartSlimeRain` (`Main.cs:64742-64785`) draws the duration
-            // `Main.rand.Next(32400, 54000)` and resets the kill counter;
-            // `StopSlimeRain` (`:64787`) drops the flag and arms the negative
-            // `-Next(3024, 6048) * 100` cooldown. Both draw off `UpdateTime`.
+            // `Main.StartSlimeRain` / `Main.StopSlimeRain`
+            // (`Main.cs:64742-64820`) with their own gates — the duration is
+            // the C# `Next(32400, 54000)` draw, never a hardcoded midpoint.
             if app.world.slime_rain {
                 crate::world_sim::weather::stop_slime_rain(
                     &mut app.world,
-                    app.rngs.stream(crate::app::RngKey::UpdateTime),
+                    app.rngs.global(),
                 );
-            } else if !app.rain.is_raining() {
-                // `:64761-64764`: the start refuses while it is already
-                // raining; `:64767` only re-rolls below zero.
+            } else {
+                let raining = app.rain.is_raining();
                 crate::world_sim::weather::start_slime_rain(
                     &mut app.world,
-                    app.rngs.stream(crate::app::RngKey::UpdateTime),
+                    raining,
+                    app.rngs.global(),
                 );
             }
         }
@@ -774,6 +773,25 @@ fn world_click(app: &mut App, row: usize) {
             // deviation for the absent chat DebugCommand dispatcher).
             app.stepper.toggle_paused(app.game_update_count);
         }
+        11 => {
+            // S1-E-34 — god mode: flip the debug flag, which the player tick
+            // ORs into `creative_god_mode` (the journey power's own flag must
+            // not be clobbered, so the toggle rides a separate field).
+            if let Some(p) = app.player.as_mut() {
+                p.debug_god_mode = !p.debug_god_mode;
+            }
+        }
+        12 => {
+            // The `/map pretty` chat command (`ToolkitDebugCommands.cs:480-494`):
+            // `DebugOptions.unlockMap = 2` then `Main.refreshMap = true`, which
+            // Main consumes by walking `sectionManager`'s draw queue and calling
+            // `Main.Map.UnlockMapSection` on every loaded section (`:61873-61877`).
+            // The port has no section manager (the whole world is resident), so
+            // the walk covers every section directly.
+            if let Some(m) = app.map.as_mut() {
+                m.unlock_map(&app.world, true);
+            }
+        }
         _ => {}
     }
 }
@@ -784,6 +802,13 @@ mod tests {
 
     fn flow_app() -> App {
         crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![])
+    }
+
+    /// The World tab's `row` click, through the real dispatch.
+    fn click_world(app: &mut App, row: usize) {
+        app.debug_panel.open = true;
+        app.debug_panel.tab = Tab::World;
+        apply(app, Event::RowClicked { tab: Tab::World, row });
     }
 
     /// The pause row is `EXACT_EQUIVALENT` to the C# (`WorldUpdateStepper.cs:45-49`)
@@ -953,9 +978,9 @@ mod tests {
             app.world.slime_rain_time
         );
 
-        // The hardmode row runs the `initializeHardMode` runner behind the
-        // flag (`WorldGen.cs:31707-31709`); the second click is the recorded
-        // debug revert (the C# has no un-hardmode).
+        // The hardmode row runs `WorldGen.StartHardmode` (`WorldGen.cs:31701-31719`).
+        // A second click is a no-op: the C# early-returns when `hardMode` is
+        // already set (`:31703`) and there is no un-hardmode in vanilla.
         apply(
             &mut app,
             Event::RowClicked {
@@ -971,15 +996,206 @@ mod tests {
                 row: 0,
             },
         );
-        assert!(!app.world.hard_mode, "the debug revert");
+        assert!(app.world.hard_mode, "no un-hardmode exists (:31703)");
     }
 
     #[test]
-    fn s1_e_29_the_world_tab_keeps_its_eleven_rows() {
+    fn s1_e_29_the_world_tab_keeps_its_thirteen_rows() {
         let app = flow_app();
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 11);
-        let rows = world_rows(&app.world, false);
-        assert_eq!(rows.len(), 11, "the draw and the dispatch agree");
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 13);
+        let rows = world_rows(&app.world, false, false);
+        assert_eq!(rows.len(), 13, "the draw and the dispatch agree");
         assert_eq!(rows[10].0, "Pause World: OFF");
+        // S1-E-34 — the god-mode toggle rides row 11.
+        assert_eq!(rows[11].0, "God Mode: OFF");
+        // S1-L-3 — the `/map pretty` reveal rides the tail row.
+        assert_eq!(rows[12].0, "Reveal Map (pretty)");
+    }
+
+    /// S1-E-34 — the F3 god-mode row flips the debug flag.
+    #[test]
+    fn s1_e_34_the_god_mode_row_flips_the_debug_flag() {
+        let mut app = flow_app();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.debug_panel.open = true;
+        app.debug_panel.tab = Tab::World;
+        super::world_click(&mut app, 11);
+        assert!(
+            app.player.as_ref().unwrap().debug_god_mode,
+            "the row toggled the debug flag on"
+        );
+        assert_eq!(world_rows(&app.world, false, true)[11].0, "God Mode: ON");
+        super::world_click(&mut app, 11);
+        assert!(
+            !app.player.as_ref().unwrap().debug_god_mode,
+            "the row toggles back off"
+        );
+    }
+
+    /// S1-L-3 — the tail row runs the `/map pretty` reveal
+    /// (`ToolkitDebugCommands.cs:480-494`).
+    #[test]
+    fn s1_l_3_the_reveal_row_unlocks_the_map() {
+        let mut app = flow_app();
+        // The reveal clamps into a 40-tile inset, so the fixture's 8x8 world is
+        // too small to have an interior at all.
+        app.world = tr_core::World::new("reveal".into(), 260, 200);
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        click_world(&mut app, 12);
+        let m = app.map.as_ref().unwrap();
+        assert!(
+            m.tiles.iter().any(|t| t.light > 0),
+            "the reveal walked every section"
+        );
+    }
+
+    /// S1-E-37: the goblin row is `Main.StartInvasion(1)`
+    /// (`Main.cs:64435-64486`), not a hardcoded 80 — the size is
+    /// `80 + 40 x the qualifying players`, the side is drawn from the bare
+    /// stream, and the progress dial is initialised.
+    #[test]
+    fn s1_e_37_the_goblin_row_starts_a_sized_invasion() {
+        let mut app = flow_app();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        app.player = Some(player);
+        click_world(&mut app, 7);
+        assert_eq!(app.world.invasion_type, 1);
+        assert_eq!(
+            app.world.invasion_size, 120,
+            "80 + 40 x one qualifying player (not the old 80)"
+        );
+        assert_eq!(app.world.invasion_size_start, 120);
+        assert_eq!(app.invasion_progress_icon, 4, "type + 3");
+        assert_eq!(app.invasion_progress_max, 120);
+        assert!(app.world.invasion_goblins, "the goblin flag stays synced");
+        // The second click is the "call it off" arm: the size zeroes, which
+        // the next `UpdateInvasion` resolves into the defeat.
+        click_world(&mut app, 7);
+        assert_eq!(app.world.invasion_size, 0);
+    }
+
+    /// S1-E-37: the goblin row refuses below the 200-life gate
+    /// (`Main.cs:64427`) — it must not fabricate an invasion.
+    #[test]
+    fn s1_e_37_the_goblin_row_respects_the_life_gate() {
+        let mut app = flow_app();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 100;
+        app.player = Some(player);
+        click_world(&mut app, 7);
+        assert_eq!(app.world.invasion_type, 0, "the 200-life gate refuses");
+        assert_eq!(app.world.invasion_size, 0);
+    }
+
+    /// S1-E-37: the slime-rain row is `Main.StartSlimeRain`
+    /// (`Main.cs:64742-64785`) — the duration is the real
+    /// `Next(32400, 54000)` draw, NEVER the old hardcoded 43200 midpoint.
+    #[test]
+    fn s1_e_37_the_slime_row_rolls_the_csharp_duration() {
+        let mut app = flow_app();
+        app.world.world_surface = 200.0; // `isThereAWorldSurface`
+        // The seed-42 `UpdateTime`-equivalent draw: the bare stream's first
+        // `Next(32400, 54000)`.
+        let mut probe = tr_core::UnifiedRandom::new(app.world.seed as i32);
+        let want = probe.next_range(32400, 54000) as f64;
+        click_world(&mut app, 8);
+        assert!(app.world.slime_rain, "the rain started");
+        assert_eq!(
+            app.world.slime_rain_time, want,
+            "the C# Next(32400, 54000) draw, not a hardcoded 43200"
+        );
+        assert_ne!(app.world.slime_rain_time, 43200.0, "the old literal is gone");
+        assert_eq!(app.world.slime_rain_kills, 0, ":64770");
+        assert_eq!(app.world.slime_warning_time, 420, ":64776");
+        // The stop arm: `StopSlimeRain`'s negative cooldown, not a zeroed
+        // clock, and the kill counter is NOT cleared (`:64787-64820`).
+        app.world.slime_rain_kills = 12;
+        click_world(&mut app, 8);
+        assert!(!app.world.slime_rain);
+        assert!(
+            app.world.slime_rain_time < 0.0,
+            "the cooldown is -Next(3024, 6048) * 100, got {}",
+            app.world.slime_rain_time
+        );
+        assert_eq!(app.world.slime_rain_kills, 12, "the stop keeps the counter");
+        assert_eq!(app.world.slime_warning_time, 420, ":64811");
+    }
+
+    /// S1-E-37: hardmode goes through `WorldGen.StartHardmode`
+    /// (`WorldGen.cs:31701-31719`) — the strip walk plus the broadcast and
+    /// ITS_HARD — and cannot be toggled back off.
+    #[test]
+    fn s1_e_37_the_hardmode_row_runs_start_hardmode() {
+        let mut app = flow_app();
+        app.world = tr_core::World::new("hm".into(), 420, 300);
+        let chat_before = app.chat.messages.len();
+        click_world(&mut app, 0);
+        assert!(app.world.hard_mode);
+        assert_eq!(
+            app.chat.messages.len(),
+            chat_before + 1,
+            "Lang.misc[15] broadcast (WorldGen.cs:31711)"
+        );
+        assert!(
+            app.chat.messages.last().unwrap().text
+                == crate::lang::text("LegacyMisc.15"),
+            "the row broadcasts Lang.misc[15] (WorldGen.cs:31711), got {:?}",
+            app.chat.messages.last().unwrap().text
+        );
+        // A second click is a no-op — vanilla cannot un-hardmode a world.
+        let after_first = app.chat.messages.len();
+        click_world(&mut app, 0);
+        assert!(app.world.hard_mode);
+        assert_eq!(app.chat.messages.len(), after_first, "no repeat broadcast");
+    }
+
+    /// S1-E-37: the blood-moon row takes the C# hit body
+    /// (`Main.cs:65344-65346`) — both dial cooldowns force-reset, exactly
+    /// like a natural dusk roll — and announces it (`:65353`).
+    #[test]
+    fn s1_e_37_the_blood_moon_row_uses_the_hit_body() {
+        let mut app = flow_app();
+        app.world.sundial_cooldown = 3;
+        app.world.moondial_cooldown = 5;
+        click_world(&mut app, 2);
+        assert!(app.world.blood_moon);
+        assert_eq!(app.world.sundial_cooldown, 0, ":65345");
+        assert_eq!(app.world.moondial_cooldown, 0, ":65346");
+        assert!(
+            app.chat.messages.last().unwrap().text == crate::lang::text("LegacyMisc.8"),
+            "the LegacyMisc.8 announcement, got {:?}",
+            app.chat.messages.last().unwrap().text
+        );
+        // Off is the dawn clear (`:65387`).
+        click_world(&mut app, 2);
+        assert!(!app.world.blood_moon);
+    }
+
+    /// S1-E-37: the goblin row's label names whichever army is live — the C#
+    /// has one `invasionType` (1 goblins / 2 frost / 3 pirates / 4 martians).
+    #[test]
+    fn s1_e_37_the_invasion_row_names_the_live_army() {
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        for (ty, want) in [
+            (1, "Goblin Army: 100 left"),
+            (2, "Frost Legion: 100 left"),
+            (3, "Pirates: 100 left"),
+            (4, "Martians: 100 left"),
+        ] {
+            w.invasion_type = ty;
+            w.invasion_size = 100;
+            let rows = world_rows(&w, false, false);
+            assert!(
+                rows[7].0.starts_with(want),
+                "type {ty} row: {:?}",
+                rows[7].0
+            );
+        }
+        w.invasion_type = 0;
+        assert!(
+            world_rows(&w, false, false)[7].0.starts_with("Goblin Army: OFF"),
+            "the idle row"
+        );
     }
 }

@@ -504,7 +504,7 @@ impl App {
                         && self.camera.y
                             < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
                     shimmer: self.scene_metrics.zone_shimmer,
-                    town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                    town_npcs: self.scene_metrics.town_npc_count,
                     // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
                     cloud_alpha: self.rain.visual_alpha(),
                     zone_rain: self.scene_metrics.zone_rain,
@@ -761,6 +761,9 @@ impl App {
             if !paused {
                 self.phase("map");
                 if let Some(m) = self.map.as_mut() {
+                    // `Main.mapTimeMax` (`Main.cs:801`) — the gfx-quality
+                    // budget the countdown re-arms from (`:61818-61821`).
+                    m.map_time_max = self.gfx_quality.map_time_max;
                     m.update(&self.world, self.player.as_ref(), &self.light, dt);
                     // `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:36-39`):
                     // the markers older than 15 s drop while the map is up.
@@ -1099,6 +1102,27 @@ impl App {
                     // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
                     draw_invisible_walls: crate::env::show_invisible(),
                 };
+                // `WorldItem.UpdateItem_VisualEffects`'s `AddLight` arms
+                // (`WorldItem.cs:1204-1649`). The C# runs them once per live
+                // drop per tick, in `Main.item` slot order, at the end of
+                // `WorldItem.Update` (`:436`); `items` here is that same slot
+                // order after the step. No arm draws `Main.rand`, so the
+                // placement relative to the sim leaves the stream untouched.
+                for drop in items.iter() {
+                    let Some(def) = crate::registry::get(drop.kind) else {
+                        continue;
+                    };
+                    let wet = drop.box_is_wet(world);
+                    if let Some((x, y, rgb)) = crate::entity_lights::item_light(
+                        def,
+                        drop.pos,
+                        crate::item::SIZE,
+                        wet,
+                        &params,
+                    ) {
+                        self.entity_lights.add(x, y, rgb);
+                    }
+                }
                 let sky_uv = atlas
                     .as_ref()
                     .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
@@ -1212,12 +1236,19 @@ impl App {
                     self.ambient_waterfall = (wfs[0], wfs[1], wfs[2]);
                     self.ambient_lavafall = (lfs[0], lfs[1], lfs[2]);
                     scratch.waterfall_lights = lights;
+                    // `LightingEngine.ApplyPerFrameLights`'s swap
+                    // (`LightingEngine.cs:228-233`): the list just filled becomes
+                    // the one the next frame's light pass reads. The waterfall
+                    // sources above are swapped by their own manager, so only the
+                    // entity list is swapped here.
+                    self.entity_lights.end_frame();
                     // `WaterfallManager.TrySparkling`: drain the walk's spawns
                     // into the rain module's dust particles.
                     rain.spawn_sparkles(waterfall.take_sparkles());
                 } else {
                     scratch.waterfall_quads.clear();
                     scratch.waterfall_lights.clear();
+                    self.entity_lights.end_frame();
                 }
 
                 // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind WALK
@@ -1421,6 +1452,8 @@ impl App {
                     lookups,
                     sky_tint,
                     self.atmo,
+                    self.game_update_count,
+                    self.mouse_text_color,
                 );
                 draw_phase("world");
                 if !reuse_world {
@@ -1436,6 +1469,7 @@ impl App {
                         light,
                         scratch,
                         &style,
+                        &self.entity_lights,
                         anim_time,
                         waterfall,
                         render_player.as_ref(),
@@ -1723,7 +1757,9 @@ impl App {
                                     .seeds
                                     .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
                         };
-                        craft::available_with_gates(
+                        // `NewCraftingUI.cs:596-611`: the grid shows only the
+                        // recipes whose product passes the filterer.
+                        self.craft_filters.shown(craft::available_with_gates(
                             inventory,
                             &self.world_chests,
                             &in_range,
@@ -1732,7 +1768,7 @@ impl App {
                             self.craft_filter.as_ref(),
                             None,
                             &gates,
-                        )
+                        ))
                     } else {
                         Vec::new()
                     };
@@ -1765,6 +1801,7 @@ impl App {
                         settings.boss_bar_text,
                         self.inventory_open,
                         self.crafting_open,
+                        self.craft_filters.active_flags(),
                         &self.mouse_item,
                         self.mouse_pos,
                         &self.cursor,
@@ -1863,6 +1900,9 @@ impl App {
                         &mut self.buff_removals,
                         right_release,
                         vampire_seed,
+                        // `Player.HasNPCBannerBuff`'s table — the Monster
+                        // Banner's hover list (`Main.cs:21360-21388`).
+                        &self.scene_metrics.npc_banner_buff,
                     );
                     // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                     // the coin cells' animation clocks step per frame after
@@ -2068,6 +2108,7 @@ impl App {
                         npcs,
                         world,
                         self.stepper.paused,
+                        self.player.as_ref().is_some_and(|p| p.debug_god_mode),
                     );
                 }
 

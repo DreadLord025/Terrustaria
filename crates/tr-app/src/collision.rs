@@ -1077,6 +1077,1306 @@ pub fn sticky_tiles(
     None
 }
 
+// ---------------------------------------------------------------------------
+// Conveyor belts (S1-E-13e): `Collision.BuildTileContacts` +
+// `Collision.ApplyConveyorBeltMovementToVelocity` +
+// `Collision.StepConveyorBelt` (`Collision.cs:2135-2290`, `:3918-4188`,
+// `:4190-4320`) and the three geometry helpers they lean on
+// (`Collision.GetEntityEdgeTiles` `:3866-3916`, `Collision.CheckAABBvLineCollision2`
+// `:263-271`, `Utils.RectangleLineCollision` `Utils.cs:1894-1918`).
+// ---------------------------------------------------------------------------
+
+/// `Collision.TileContactSide` (`Collision.cs:11-19`). The variant order is
+/// the C#'s enum order - nothing serialises it, but keep it aligned.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TileContactSide {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    BottomLeft,
+    BottomRight,
+}
+
+/// `Collision.TileContact` (`Collision.cs:21-34`): one touching tile face.
+#[derive(Clone, Copy, Debug)]
+pub struct TileContact {
+    pub side: TileContactSide,
+    /// The overlap in pixels, already floored by the source's `(int)` cast.
+    pub overlap: i32,
+    pub x: i32,
+    pub y: i32,
+    pub slope: i32,
+    pub kind: u16,
+}
+
+/// `Collision.BuildTileContacts` (`Collision.cs:2135-2290`).
+///
+/// The entity box is the C#'s `Width`/`Height`; the source's own `+1`/`+3`
+/// margins, the `0.1f` touch epsilon and the slope-triangle arms are ported
+/// verbatim - including the `(int)` truncations of the overlap.
+pub fn build_tile_contacts(
+    world: &World,
+    pos: [f32; 2],
+    width: i32,
+    height: i32,
+    contacts: &mut Vec<TileContact>,
+) {
+    // `:2137-2138`: `Position.X = (int)Position.X` - truncation, not rounding.
+    let pos_x = pos[0] as i32 as f32;
+    let pos_y = pos[1] as i32 as f32;
+    contacts.clear();
+    // `:2140-2147`: the scan window and its clamps.
+    let value = ((pos_x - 1.0) / 16.0) as i32 - 1;
+    let value2 = ((pos_x + 1.0 + width as f32) / 16.0) as i32 + 1;
+    let value3 = ((pos_y - 1.0) / 16.0) as i32 - 1;
+    let value4 = ((pos_y + 3.0 + height as f32) / 16.0) as i32 + 1;
+    let num = value.clamp(0, world.width - 1);
+    let value2 = value2.clamp(0, world.width - 1);
+    let bottom = scan_bottom(world);
+    let value3 = value3.clamp(0, (bottom - 1).max(0));
+    let value4 = value4.clamp(0, (bottom - 1).max(0));
+    for i in num..value2 {
+        for j in value3..value4 {
+            // `:2153-2157`: null / inactive / actuated are skipped.
+            let Some(t) = world.tile(i, j) else { continue };
+            if !t.active() || t.inactive() {
+                continue;
+            }
+            let kind = t.kind;
+            // `:2159-2167`: the solid gate, with the solid-top `frameY == 0` arm.
+            let mut flag = (kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(kind);
+            if (kind as usize) < td::TILE_COUNT && td::TILE_SOLID_TOP.has(kind) && t.frame_y == 0 {
+                flag = true;
+            }
+            if !flag {
+                continue;
+            }
+            let vx = i as f32 * 16.0;
+            let mut vy = j as f32 * 16.0;
+            let mut num2 = 16;
+            if t.half_brick() {
+                vy += 8.0;
+                num2 -= 8;
+            }
+            let b = t.slope() as i32;
+            // `:2177-2184`: the two vertical faces.
+            if (pos_x - (vx + 16.0)).abs() < 0.1
+                && pos_y + height as f32 > vy
+                && pos_y < vy + num2 as f32
+                && b != 3
+                && b != 1
+            {
+                let ov = ((pos_y + height as f32).min(vy + num2 as f32) - pos_y.max(vy) + 0.5)
+                    .max(1.0);
+                contacts.push(TileContact {
+                    side: TileContactSide::Left,
+                    overlap: ov as i32,
+                    x: i,
+                    y: j,
+                    slope: b,
+                    kind,
+                });
+            }
+            if (pos_x + width as f32 - vx).abs() < 0.1
+                && pos_y + height as f32 > vy
+                && pos_y < vy + num2 as f32
+                && b != 4
+                && b != 2
+            {
+                let ov = ((pos_y + height as f32).min(vy + num2 as f32) - pos_y.max(vy) + 0.5)
+                    .max(1.0);
+                contacts.push(TileContact {
+                    side: TileContactSide::Right,
+                    overlap: ov as i32,
+                    x: i,
+                    y: j,
+                    slope: b,
+                    kind,
+                });
+            }
+            // `:2185-2188`: the vertical zone, or nothing below.
+            if !(pos_y + 3.0 + height as f32 > vy) || !(pos_y - 1.0 < vy + num2 as f32) {
+                continue;
+            }
+            if pos_x + width as f32 > vx && pos_x < vx + 16.0 {
+                // `:2191`: the horizontal overlap, floored.
+                let num3 =
+                    ((pos_x + width as f32).min(vx + 16.0) - pos_x.max(vx) + 0.5).max(1.0) as i32;
+                // `:2192-2258`: the per-slope top/bottom arms.
+                match b {
+                    0 => {
+                        if (pos_y - (vy + num2 as f32)).abs() < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Top,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                        if (pos_y + height as f32 - vy).abs() < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Bottom,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                    }
+                    1 => {
+                        if (pos_y - (vy + num2 as f32)).abs() < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Top,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                        let num7 = (pos_x - vx).max(0.0);
+                        let num8 = pos_y + height as f32;
+                        if num8 - vy > -0.1 && num8 - (vy + num7) < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Bottom,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                    }
+                    2 => {
+                        if (pos_y - (vy + num2 as f32)).abs() < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Top,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                        let num5 = (vx + 16.0 - (pos_x + width as f32)).max(0.0);
+                        let num6 = pos_y + height as f32;
+                        if num6 - vy > -0.1 && num6 - (vy + num5) < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Bottom,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                    }
+                    3 => {
+                        let num9 = (pos_x - vx).max(0.0);
+                        if (pos_y - (vy + num2 as f32 - num9)).abs() < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Top,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                        if (pos_y + height as f32 - vy).abs() < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Bottom,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                    }
+                    4 => {
+                        let num4 = (vx + 16.0 - (pos_x + width as f32)).max(0.0);
+                        if (pos_y - (vy + num2 as f32 - num4)).abs() < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Top,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                        if (pos_y + height as f32 - vy).abs() < 0.1 {
+                            contacts.push(TileContact {
+                                side: TileContactSide::Bottom,
+                                overlap: num3,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                // `:2260-2287`: the corner arms - the box hangs off the side.
+                if !(pos_x + 3.0 + width as f32 > vx)
+                    || !(pos_x - 3.0 < vx + 16.0)
+                    || !(pos_y < vy)
+                {
+                    continue;
+                }
+                let side = if vx < pos_x {
+                    TileContactSide::BottomLeft
+                } else {
+                    TileContactSide::BottomRight
+                };
+                match b {
+                    0 | 3 | 4 => contacts.push(TileContact {
+                        side,
+                        overlap: 0,
+                        x: i,
+                        y: j,
+                        slope: b,
+                        kind,
+                    }),
+                    1 => {
+                        if side == TileContactSide::BottomRight {
+                            contacts.push(TileContact {
+                                side,
+                                overlap: 0,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                    }
+                    2 => {
+                        if side == TileContactSide::BottomLeft {
+                            contacts.push(TileContact {
+                                side,
+                                overlap: 0,
+                                x: i,
+                                y: j,
+                                slope: b,
+                                kind,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// `TileContactSide` as `TileID.Sets.ConveyorDirection` reads it - 0 = not a
+/// belt, +1 = the left belt (421, pushes one way), -1 = the right (422).
+fn conveyor_direction(kind: u16) -> i32 {
+    if (kind as usize) < td::TILE_COUNT {
+        td::SET_CONVEYOR_DIRECTION[kind as usize]
+    } else {
+        0
+    }
+}
+
+/// `Collision.ApplyConveyorBeltMovementToVelocity` (`Collision.cs:3918-4188`):
+/// the belt contacts pull the drop's velocity toward the belt's ±2.5 px/tick
+/// ramp and snap it onto the belt line. Returns the C#'s `flag` (whether a
+/// belt grabbed it).
+///
+/// `pos` is the box's top-left and `vel` its velocity; the C#'s `item.Bottom` /
+/// `item.Right` setters are the same mutation through the box centre, kept
+/// inline so no `Entity` type is needed here.
+pub fn apply_conveyor_belt_movement_to_velocity(
+    world: &World,
+    pos: &mut [f32; 2],
+    vel: &mut [f32; 2],
+    width: i32,
+    height: i32,
+) -> bool {
+    let mut flag = false;
+    // ponytail: a fresh Vec per call - belts are a handful of tiles per world;
+    // swap in a reusable buffer if a profile ever shows it.
+    let mut contacts: Vec<TileContact> = Vec::new();
+    build_tile_contacts(world, *pos, width, height, &mut contacts);
+    if contacts.is_empty() {
+        return flag;
+    }
+    let mut num = -1i32;
+    let mut num2 = -1i32;
+    let mut flag2 = false;
+    let mut side = TileContactSide::Top;
+    let mut side2 = TileContactSide::Top;
+    let mut zero = [0.0f32, 0.0f32];
+    let mut flag3 = false;
+    // `:3930-3932`: `flag4` is *overwritten* by each Top/Bottom contact (last
+    // one wins), so it starts false and is assigned, never OR'd.
+    let mut flag4 = false;
+    let mut flag5 = false;
+    for (k, c) in contacts.iter().enumerate() {
+        let num3 = conveyor_direction(c.kind);
+        match c.side {
+            TileContactSide::Left => {
+                zero[1] += num3 as f32 * c.overlap as f32;
+                flag3 |= num3 != 0;
+            }
+            TileContactSide::Right => {
+                zero[1] += -(num3 as f32) * c.overlap as f32;
+                flag3 |= num3 != 0;
+            }
+            TileContactSide::Top => {
+                zero[0] += -(num3 as f32) * c.overlap as f32;
+                flag4 = num3 != 0;
+            }
+            TileContactSide::Bottom => {
+                flag5 = true;
+                zero[0] += num3 as f32 * c.overlap as f32;
+                flag4 = num3 != 0;
+                // `:3954-3972`: the neighbour above decides the wall snap.
+                if c.slope == 1 {
+                    if ((c.x * 16) as f32) < pos[0] {
+                        if let Some(t3) = world.tile(c.x, c.y - 1) {
+                            if t3.active() && t3.slope() == 3 {
+                                num2 = k as i32;
+                            }
+                        }
+                    }
+                } else if c.slope == 2 && (c.x * 16 + 16) as f32 > pos[0] + width as f32 {
+                    if let Some(t4) = world.tile(c.x, c.y - 1) {
+                        if t4.active() && t4.slope() == 4 {
+                            num = k as i32;
+                        }
+                    }
+                }
+            }
+            TileContactSide::BottomLeft => {
+                if num3 == -1 {
+                    let (x2, y2) = (c.x, c.y);
+                    let (ab_active, ab_slope, ab_dir) = match world.tile(x2, y2 - 1) {
+                        Some(t) => (t.active(), t.slope(), conveyor_direction(t.kind)),
+                        None => (false, 0, 0),
+                    };
+                    if !ab_active || (ab_slope == 1 && ab_dir == -1) {
+                        side = TileContactSide::BottomLeft;
+                        flag2 = world.tile(x2, y2).is_some_and(|t| t.half_brick());
+                    }
+                }
+                if num3 == 1 {
+                    side2 = TileContactSide::BottomLeft;
+                }
+            }
+            TileContactSide::BottomRight => {
+                if num3 == 1 {
+                    let (x, y) = (c.x, c.y);
+                    let (ab_active, ab_slope, ab_dir) = match world.tile(x, y - 1) {
+                        Some(t) => (t.active(), t.slope(), conveyor_direction(t.kind)),
+                        None => (false, 0, 0),
+                    };
+                    if !ab_active || (ab_slope == 2 && ab_dir == 1) {
+                        side = TileContactSide::BottomRight;
+                        flag2 = world.tile(x, y).is_some_and(|t| t.half_brick());
+                    }
+                }
+                if num3 == -1 {
+                    side2 = TileContactSide::BottomRight;
+                }
+            }
+        }
+    }
+    // `:4012-4063`: the magnitude clamps. The `zero.Y < 0` arm's inner test is
+    // `zero.Y < 8f`, which is always true for a negative value - a real vanilla
+    // quirk, ported as written.
+    if zero[0] < 0.0 {
+        zero[0] = if zero[0] < -8.0 {
+            -2.5
+        } else if zero[0] < -4.0 {
+            -1.25
+        } else {
+            -0.75
+        };
+    } else if zero[0] > 0.0 {
+        zero[0] = if zero[0] > 8.0 {
+            2.5
+        } else if zero[0] > 4.0 {
+            1.25
+        } else {
+            0.75
+        };
+    }
+    if zero[1] < 0.0 {
+        zero[1] = if zero[1] < 8.0 { -2.5 } else { -1.25 };
+    } else if zero[1] > 0.0 {
+        zero[1] = if zero[1] > 8.0 { 2.5 } else { 1.25 };
+    } else if flag3 && vel[1] <= 1.0 {
+        vel[1] = 0.0;
+    }
+    if zero[1] == 0.0 {
+        if vel[1] < 0.11 && side != TileContactSide::Top && !flag5 {
+            // `:4072-4101`: the corner lift - snap onto the belt's top edge.
+            let dx = if side == TileContactSide::BottomLeft {
+                Some(-1.25f32)
+            } else if side == TileContactSide::BottomRight {
+                Some(1.25)
+            } else {
+                None
+            };
+            if let Some(vx) = dx {
+                flag = true;
+                let mut bottom_y = (pos[1] + height as f32) as i32;
+                let mut num4 = (bottom_y + 8) / 16 * 16;
+                if flag2 {
+                    num4 += 8;
+                }
+                pos[1] = num4 as f32 - height as f32;
+                bottom_y = num4;
+                let _ = bottom_y;
+                vel[1] = 0.0;
+                vel[0] = vx;
+                zero[0] = if vx < 0.0 { -2.5 } else { 2.5 };
+            }
+        } else if vel[1] < 0.3 && !flag5 {
+            // `:4103-4131`: the side snap onto a belt's face.
+            match side2 {
+                TileContactSide::BottomRight => {
+                    if vel[0] <= 0.75 && vel[0] >= -2.5 && !flag3 {
+                        flag = true;
+                        let num6 = (pos[0] as i32 + 8) / 16;
+                        pos[0] = (num6 * 16) as f32;
+                        vel[0] = 0.0;
+                        vel[1] = 0.75;
+                        zero[1] = 2.5;
+                    }
+                }
+                TileContactSide::BottomLeft => {
+                    if vel[0] >= -0.75 && vel[0] <= 2.5 && !flag3 {
+                        flag = true;
+                        let right = (pos[0] + width as f32) as i32;
+                        let right = (right + 8) / 16 * 16;
+                        pos[0] = right as f32 - width as f32;
+                        vel[0] = 0.0;
+                        vel[1] = 0.75;
+                        zero[1] = 2.5;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    flag |= flag4 | flag3;
+    // `:4134-4149`: the ramp. `* 6f / 60f` keeps the source's two-step float
+    // rounding rather than folding it to `* 0.1`.
+    if zero[1] < 0.0 {
+        vel[1] = (vel[1] + zero[1] * 6.0 / 60.0).max(zero[1]);
+    } else if zero[1] > 0.0 {
+        vel[1] = (vel[1] + zero[1] * 6.0 / 60.0).min(zero[1]);
+    }
+    if zero[0] < 0.0 && vel[0] > zero[0] {
+        vel[0] = (vel[0] + zero[0] * 6.0 / 60.0).max(zero[0]);
+    }
+    if zero[0] > 0.0 && vel[0] < zero[0] {
+        vel[0] = (vel[0] + zero[0] * 6.0 / 60.0).min(zero[0]);
+    }
+    // `:4150-4185`: the slope-quarter wall snaps.
+    if num != -1 && vel[0] > 0.0 {
+        let num7 = contacts[num as usize].x * 16 + (16 - height / 2).max(0);
+        let right = pos[0] + width as f32;
+        if right + vel[0] > num7 as f32 {
+            if right >= num7 as f32 {
+                pos[0] = num7 as f32 - width as f32;
+                vel[0] = 0.0;
+            } else {
+                vel[0] = num7 as f32 - right;
+            }
+        }
+    }
+    if num2 != -1 && vel[0] < 0.0 {
+        let num8 = contacts[num2 as usize].x * 16 + (height / 2).min(16);
+        if pos[0] + vel[0] < num8 as f32 {
+            if pos[0] <= num8 as f32 {
+                pos[0] = num8 as f32;
+                vel[0] = 0.0;
+            } else {
+                vel[0] = num8 as f32 - pos[0];
+            }
+        }
+    }
+    flag
+}
+
+/// `Utils.Between` (`Utils.cs:1718-1725`): the inclusive box test.
+fn between(v: [f32; 2], min: [f32; 2], max: [f32; 2]) -> bool {
+    v[0] >= min[0] && v[0] <= max[0] && v[1] >= min[1] && v[1] <= max[1]
+}
+
+/// `Vector2.ClosestPointOnLine` (`Utils.cs:1860-1873`).
+fn closest_point_on_line(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
+    let value = [p[0] - a[0], p[1] - a[1]];
+    let v = [b[0] - a[0], b[1] - a[1]];
+    let num = v[0] * v[0] + v[1] * v[1];
+    let num2 = (value[0] * v[0] + value[1] * v[1]) / num;
+    if num2 < 0.0 {
+        return a;
+    }
+    if num2 > 1.0 {
+        return b;
+    }
+    [a[0] + v[0] * num2, a[1] + v[1] * num2]
+}
+
+/// `Utils.RectangleLineCollision` (`Utils.cs:1894-1918`).
+///
+/// The source builds four closest points but the loop tests `array[0]` every
+/// iteration - a vanilla bug that makes the other three dead. Ported as
+/// written so the belt line tests agree with the original exactly.
+fn rectangle_line_collision(
+    rect_tl: [f32; 2],
+    rect_br: [f32; 2],
+    line_start: [f32; 2],
+    line_end: [f32; 2],
+) -> bool {
+    if between(line_start, rect_tl, rect_br) || between(line_end, rect_tl, rect_br) {
+        return true;
+    }
+    let p = [rect_br[0], rect_tl[1]];
+    let v = [rect_tl[0], rect_br[1]];
+    let a0 = closest_point_on_line(rect_tl, line_start, line_end);
+    let _ = closest_point_on_line(p, line_start, line_end);
+    let _ = closest_point_on_line(v, line_start, line_end);
+    let _ = closest_point_on_line(rect_br, line_start, line_end);
+    between(a0, rect_tl, v)
+}
+
+/// `Collision.CheckAABBvAABBCollision` (`Collision.cs:184-191`).
+fn check_aabb_v_aabb(p1: [f32; 2], d1: [f32; 2], p2: [f32; 2], d2: [f32; 2]) -> bool {
+    p1[0] < p2[0] + d2[0] && p1[1] < p2[1] + d2[1] && p1[0] + d1[0] > p2[0] && p1[1] + d1[1] > p2[1]
+}
+
+fn rotate(v: [f32; 2], rad: f32) -> [f32; 2] {
+    let (s, c) = rad.sin_cos();
+    [v[0] * c - v[1] * s, v[0] * s + v[1] * c]
+}
+
+/// `Collision.CheckAABBvLineCollision` (`Collision.cs:273-369`) at the
+/// `0.0001f` width its `…2` wrapper passes.
+fn check_aabb_v_line_collision(
+    aabb_pos: [f32; 2],
+    aabb_dim: [f32; 2],
+    line_start: [f32; 2],
+    line_end: [f32; 2],
+) -> bool {
+    let line_width = 0.0001f32;
+    let num = line_width * 0.5;
+    let mut position = line_start;
+    let mut dimensions = [line_end[0] - line_start[0], line_end[1] - line_start[1]];
+    if dimensions[0] > 0.0 {
+        dimensions[0] += line_width;
+        position[0] -= num;
+    } else {
+        position[0] += dimensions[0] - num;
+        dimensions[0] = -dimensions[0] + line_width;
+    }
+    if dimensions[1] > 0.0 {
+        dimensions[1] += line_width;
+        position[1] -= num;
+    } else {
+        position[1] += dimensions[1] - num;
+        dimensions[1] = -dimensions[1] + line_width;
+    }
+    if !check_aabb_v_aabb(aabb_pos, aabb_dim, position, dimensions) {
+        return false;
+    }
+    let v = [aabb_pos[0] - line_start[0], aabb_pos[1] - line_start[1]];
+    let sp = [v[0] + aabb_dim[0], v[1] + aabb_dim[1]];
+    let sp2 = [v[0], sp[1]];
+    let sp3 = [sp[0], v[1]];
+    let v2 = [line_end[0] - line_start[0], line_end[1] - line_start[1]];
+    let num2 = (v2[0] * v2[0] + v2[1] * v2[1]).sqrt();
+    let num3 = v2[1].atan2(v2[0]);
+    let arr = [
+        rotate(v, -num3),
+        rotate(sp3, -num3),
+        rotate(sp, -num3),
+        rotate(sp2, -num3),
+    ];
+    let mut collision_point = num2;
+    let mut result = false;
+    for a in arr {
+        if a[1].abs() < num && a[0] < collision_point && a[0] >= 0.0 {
+            collision_point = a[0];
+            result = true;
+        }
+    }
+    let vector3 = [0.0f32, num];
+    let vector4 = [num2, num];
+    let vector5 = [0.0f32, -num];
+    let vector6 = [num2, -num];
+    for j in 0..arr.len() {
+        let num4 = (j + 1) % arr.len();
+        let mut vector7 = [vector4[0] - vector3[0], vector4[1] - vector3[1]];
+        let vector8 = [arr[num4][0] - arr[j][0], arr[num4][1] - arr[j][1]];
+        let mut num5 = vector7[0] * vector8[1] - vector7[1] * vector8[0];
+        if num5 != 0.0 {
+            let vector9 = [arr[j][0] - vector3[0], arr[j][1] - vector3[1]];
+            let num6 = (vector9[0] * vector8[1] - vector9[1] * vector8[0]) / num5;
+            if (0.0..=1.0).contains(&num6) {
+                let num7 = (vector9[0] * vector7[1] - vector9[1] * vector7[0]) / num5;
+                if (0.0..=1.0).contains(&num7) {
+                    result = true;
+                    collision_point = collision_point.min(vector3[0] + num6 * vector7[0]);
+                }
+            }
+        }
+        vector7 = [vector6[0] - vector5[0], vector6[1] - vector5[1]];
+        num5 = vector7[0] * vector8[1] - vector7[1] * vector8[0];
+        if num5 == 0.0 {
+            continue;
+        }
+        let vector10 = [arr[j][0] - vector5[0], arr[j][1] - vector5[1]];
+        let num8 = (vector10[0] * vector8[1] - vector10[1] * vector8[0]) / num5;
+        if (0.0..=1.0).contains(&num8) {
+            let num9 = (vector10[0] * vector7[1] - vector10[1] * vector7[0]) / num5;
+            if (0.0..=1.0).contains(&num9) {
+                result = true;
+                collision_point = collision_point.min(vector5[0] + num8 * vector7[0]);
+            }
+        }
+    }
+    let _ = collision_point;
+    result
+}
+
+/// `Collision.CheckAABBvLineCollision2` (`Collision.cs:263-271`).
+fn check_aabb_v_line_collision2(
+    aabb_pos: [f32; 2],
+    aabb_dim: [f32; 2],
+    line_start: [f32; 2],
+    line_end: [f32; 2],
+) -> bool {
+    if !rectangle_line_collision(aabb_pos, [aabb_pos[0] + aabb_dim[0], aabb_pos[1] + aabb_dim[1]], line_start, line_end)
+    {
+        return check_aabb_v_line_collision(aabb_pos, aabb_dim, line_start, line_end);
+    }
+    true
+}
+
+/// `Collision.GetEntityEdgeTiles` (`Collision.cs:3866-3916`): the ring of tile
+/// coordinates the box's edges sit in. The `% 16 == 0` nudges keep a flush edge
+/// from landing in the next tile along.
+fn get_entity_edge_tiles(
+    pos: [f32; 2],
+    width: i32,
+    height: i32,
+    left: bool,
+    right: bool,
+    up: bool,
+    down: bool,
+) -> Vec<(i32, i32)> {
+    let mut p = Vec::new();
+    let mut num = pos[0] as i32;
+    let mut num2 = pos[1] as i32;
+    let mut num3 = (pos[0] + width as f32) as i32;
+    let mut num4 = (pos[1] + height as f32) as i32;
+    if num % 16 == 0 {
+        num -= 1;
+    }
+    if num2 % 16 == 0 {
+        num2 -= 1;
+    }
+    if num3 % 16 == 0 {
+        num3 += 1;
+    }
+    if num4 % 16 == 0 {
+        num4 += 1;
+    }
+    let num5 = num3 / 16 - num / 16;
+    let num6 = num4 / 16 - num2 / 16;
+    num /= 16;
+    num2 /= 16;
+    for i in num..=num + num5 {
+        if up {
+            p.push((i, num2));
+        }
+        if down {
+            p.push((i, num2 + num6));
+        }
+    }
+    for j in num2..num2 + num6 {
+        if left {
+            p.push((num, j));
+        }
+        if right {
+            p.push((num + num5, j));
+        }
+    }
+    p
+}
+
+/// `Collision.StepConveyorBelt` (`Collision.cs:4190-4320`) for a Player: the
+/// belt under the feet walks the body along it.
+///
+/// `pos` is the box top-left and is mutated in place; the C#'s
+/// `entity.position += Collision.TileCollision(...)` moves it. `grav_dir` is
+/// kept because it scales both the direction sum and the fall probe, though the
+/// port never flips gravity (so every caller passes `1.0`).
+///
+/// ponytail: `artificialRising` has no port caller (it is the golf/reserved
+/// path) and is not carried.
+pub fn step_conveyor_belt_player(
+    world: &World,
+    pos: &mut [f32; 2],
+    width: i32,
+    height: i32,
+    grav_dir: f32,
+    gfx_off_y: f32,
+    grappling: bool,
+    pulley: bool,
+    on_track: bool,
+) {
+    // `:4192-4202`: the Player guards and the 5 px shrink.
+    if gfx_off_y.abs() > 2.0 || grappling || pulley {
+        return;
+    }
+    let full_height = height;
+    let height = height - 5;
+    pos[1] += 5.0;
+    let mut num = 0i32;
+    let mut num2 = 0i32;
+    let mut flag = false;
+    // `:4206`: the row the on-track skip compares against.
+    let num3 = pos[1] as i32 + height;
+    let edges = get_entity_edge_tiles(*pos, width, height, false, false, true, true);
+    let vector = 0.0001f32;
+    for (px, py) in edges {
+        // `:4223`: out of world, or the cart rides over the belt.
+        if !world.in_bounds(px, py) || (on_track && py < num3) {
+            continue;
+        }
+        let Some(t) = world.tile(px, py) else { continue };
+        if !t.active() || t.inactive() {
+            continue;
+        }
+        let num4 = conveyor_direction(t.kind);
+        if num4 == 0 {
+            continue;
+        }
+        // `:4237-4268`: the belt's top line (lineStart→lineEnd, the physical
+        // surface) and its offset twin (lineStart2→lineEnd2, 8 px up on a
+        // half brick).
+        let mut ls = [0.0f32; 2];
+        let mut ls2 = [0.0f32; 2];
+        let mut le = [0.0f32; 2];
+        let mut le2 = [0.0f32; 2];
+        ls[0] = (px * 16) as f32;
+        ls2[0] = ls[0];
+        le[0] = (px * 16 + 16) as f32;
+        le2[0] = le[0];
+        let top = (py * 16) as f32;
+        let bot = (py * 16 + 16) as f32;
+        match t.slope() {
+            1 => {
+                ls2[1] = top;
+                le2[1] = bot;
+                le[1] = bot;
+                ls[1] = bot;
+            }
+            2 => {
+                le2[1] = top;
+                ls2[1] = bot;
+                le[1] = bot;
+                ls[1] = bot;
+            }
+            3 => {
+                le[1] = top;
+                ls2[1] = top;
+                le2[1] = top;
+                ls[1] = bot;
+            }
+            4 => {
+                ls[1] = top;
+                ls2[1] = top;
+                le2[1] = top;
+                le[1] = bot;
+            }
+            _ => {
+                if t.half_brick() {
+                    ls2[1] = top + 8.0;
+                    le2[1] = top + 8.0;
+                } else {
+                    ls2[1] = top;
+                    le2[1] = top;
+                }
+                ls[1] = bot;
+                le[1] = bot;
+            }
+        }
+        let mut num5 = 0i32;
+        let aabb_pos = [pos[0] - vector, pos[1] - vector];
+        let aabb_dim = [width as f32 + vector * 2.0, height as f32 + vector * 2.0];
+        if !((t.kind as usize) < td::TILE_COUNT && td::SET_PLATFORMS.has(t.kind))
+            && check_aabb_v_line_collision2(aabb_pos, aabb_dim, ls, le)
+        {
+            num5 -= 1;
+        }
+        if check_aabb_v_line_collision2(aabb_pos, aabb_dim, ls2, le2) {
+            num5 += 1;
+        }
+        if num5 != 0 {
+            flag = true;
+            num += num4 * num5 * grav_dir as i32;
+            // `:4282-4289`: the slope sides also push along the tile edge
+            // (`leftSlope` = 2|4, `rightSlope` = 1|3).
+            let s = t.slope();
+            if s == 2 || s == 4 {
+                num2 += grav_dir as i32 * -num4;
+            }
+            if s == 1 || s == 3 {
+                num2 -= grav_dir as i32 * -num4;
+            }
+        }
+    }
+    // `:4292-4296`: the height comes back before the movement probes.
+    pos[1] -= 5.0;
+    let height = full_height;
+    if !flag {
+        return;
+    }
+    if num != 0 {
+        let num = num.signum();
+        let num2 = num2.signum();
+        // `:4309-4312`: the diagonal step, then the fall probe.
+        let dir = [num as f32 * grav_dir, num2 as f32];
+        let len = (dir[0] * dir[0] + dir[1] * dir[1]).sqrt();
+        let vel = [dir[0] / len * 2.5, dir[1] / len * 2.5];
+        let tc = tile_collision(world, *pos, vel, width as f32, height as f32, false, false);
+        pos[0] += tc.vel[0];
+        pos[1] += tc.vel[1];
+        let tc = tile_collision(
+            world,
+            *pos,
+            [0.0, 2.5 * grav_dir],
+            width as f32,
+            height as f32,
+            false,
+            false,
+        );
+        pos[0] += tc.vel[0];
+        pos[1] += tc.vel[1];
+    }
+}
+
+/// `Collision.noSlopeCollision` (`Collision.cs:2033-2133`): `TileCollision`
+/// with the slope gates removed — the caller is on a slope and must not have
+/// the ramp refuse the wall. The up arm keeps the `+0.01`, the down arm has no
+/// `gravDir` nudge (`:2088` vs `:2124`).
+// ponytail: its only caller is `NPC.Collision_MoveSnailOnSlopes`
+// (`NPC.cs:92782`), and the snail family is not ported yet.
+#[allow(dead_code)]
+pub fn no_slope_collision(
+    world: &World,
+    pos: [f32; 2],
+    vel: [f32; 2],
+    width: f32,
+    height: f32,
+    fall_through: bool,
+    fall2: bool,
+) -> TileCollision {
+    let mut up = false;
+    let mut down = false;
+    let mut result = vel;
+    let target = [pos[0] + vel[0], pos[1] + vel[1]];
+    let mut num = -1i32;
+    let mut num2 = -1i32;
+    let mut num3 = -1i32;
+    let mut num4 = -1i32;
+    // `:2041-2052`: the scan window and the four clamps.
+    let cx0 = ((pos[0] / TILE_PX) as i32 - 1).clamp(0, world.width - 1);
+    let cx1 = (((pos[0] + width) / TILE_PX) as i32 + 2).clamp(0, world.width - 1);
+    let bottom = scan_bottom(world);
+    let cy0 = ((pos[1] / TILE_PX) as i32 - 1).clamp(0, bottom);
+    let cy1 = (((pos[1] + height) / TILE_PX) as i32 + 2).clamp(0, bottom);
+    let mut num6 = (cy1 + 3) as f32 * TILE_PX;
+    for i in cx0..cx1 {
+        for j in cy0..cy1 {
+            let Some(t) = world.tile(i, j) else {
+                continue;
+            };
+            // `:2059`: the solid gate — no slope test at all.
+            if !solid(&t) {
+                continue;
+            }
+            let rx = i as f32 * TILE_PX;
+            let mut ry = j as f32 * TILE_PX;
+            let mut rh = TILE_PX;
+            if t.half_brick() {
+                ry += 8.0;
+                rh -= 8.0;
+            }
+            if !(target[0] + width > rx)
+                || !(target[0] < rx + TILE_PX)
+                || !(target[1] + height > ry)
+                || !(target[1] < ry + rh)
+            {
+                continue;
+            }
+            let solid_top = td::TILE_SOLID_TOP.has(t.kind);
+            if pos[1] + height <= ry {
+                down = true;
+                if (!(solid_top && fall_through) || !((vel[1] <= 1.0) | fall2)) && num6 > ry {
+                    num3 = i;
+                    num4 = j;
+                    if rh < TILE_PX {
+                        num4 += 1;
+                    }
+                    if num3 != num {
+                        result[1] = ry - (pos[1] + height);
+                        num6 = ry;
+                    }
+                }
+            } else if pos[0] + width <= rx && !solid_top {
+                num = i;
+                num2 = j;
+                if num2 != num4 {
+                    result[0] = rx - (pos[0] + width);
+                }
+                if num3 == num {
+                    result[1] = vel[1];
+                }
+            } else if pos[0] >= rx + TILE_PX && !solid_top {
+                num = i;
+                num2 = j;
+                if num2 != num4 {
+                    result[0] = rx + TILE_PX - pos[0];
+                }
+                if num3 == num {
+                    result[1] = vel[1];
+                }
+            } else if pos[1] >= ry + rh && !solid_top {
+                up = true;
+                num3 = i;
+                num4 = j;
+                result[1] = ry + rh - pos[1] + 0.01;
+                if num4 == num2 {
+                    result[0] = vel[0];
+                }
+            }
+        }
+    }
+    TileCollision {
+        vel: result,
+        up,
+        down,
+    }
+}
+
+/// `Collision.AdvancedTileCollision` (`Collision.cs:4422-4566`): the sandshark
+/// rule set — slope gates kept, `forcedIgnoredTiles` skipped (`:4449`), the
+/// neighbour-slope exemption on the side arms (`:4514-4518`, `:4534-4538`) and
+/// the `gravDir`-dependent `0.01` nudges (`:4507`, `:4557`).
+// ponytail: its only caller is `NPC.Collision_MoveSandshark`
+// (`NPC.cs:92732`), and the sandshark family is not ported yet.
+#[allow(dead_code)]
+pub fn advanced_tile_collision(
+    world: &World,
+    forced_ignored: &td::TileSet,
+    pos: [f32; 2],
+    vel: [f32; 2],
+    width: f32,
+    height: f32,
+    fall_through: bool,
+    fall2: bool,
+    grav_dir: i32,
+) -> TileCollision {
+    let mut up = false;
+    let mut down = false;
+    let mut result = vel;
+    let target = [pos[0] + vel[0], pos[1] + vel[1]];
+    let mut num = -1i32;
+    let mut num2 = -1i32;
+    let mut num3 = -1i32;
+    let mut num4 = -1i32;
+    let cx0 = ((pos[0] / TILE_PX) as i32 - 1).clamp(0, world.width - 1);
+    let cx1 = (((pos[0] + width) / TILE_PX) as i32 + 2).clamp(0, world.width - 1);
+    let bottom = scan_bottom(world);
+    let cy0 = ((pos[1] / TILE_PX) as i32 - 1).clamp(0, bottom);
+    let cy1 = (((pos[1] + height) / TILE_PX) as i32 + 2).clamp(0, bottom);
+    let mut num6 = (cy1 + 3) as f32 * TILE_PX;
+    for i in cx0..cx1 {
+        for j in cy0..cy1 {
+            let Some(t) = world.tile(i, j) else {
+                continue;
+            };
+            // `:4449`: the ignored-set skip sits in the same conjunct as the
+            // solid gate.
+            if forced_ignored.has(t.kind) || !solid(&t) {
+                continue;
+            }
+            let rx = i as f32 * TILE_PX;
+            let mut ry = j as f32 * TILE_PX;
+            let mut rh = TILE_PX;
+            if t.half_brick() {
+                ry += 8.0;
+                rh -= 8.0;
+            }
+            if !(target[0] + width > rx)
+                || !(target[0] < rx + TILE_PX)
+                || !(target[1] + height > ry)
+                || !(target[1] < ry + rh)
+            {
+                continue;
+            }
+            let mut flag = false;
+            let mut flag2 = false;
+            let s = t.slope();
+            if s > 2 {
+                if s == 3 && pos[1] + vel[0].abs() >= ry && pos[0] >= rx {
+                    flag2 = true;
+                }
+                if s == 4 && pos[1] + vel[0].abs() >= ry && pos[0] + width <= rx + TILE_PX {
+                    flag2 = true;
+                }
+            } else if s > 0 {
+                flag = true;
+                if s == 1 && pos[1] + height - vel[0].abs() <= ry + rh && pos[0] >= rx {
+                    flag2 = true;
+                }
+                if s == 2
+                    && pos[1] + height - vel[0].abs() <= ry + rh
+                    && pos[0] + width <= rx + TILE_PX
+                {
+                    flag2 = true;
+                }
+            }
+            if flag2 {
+                continue;
+            }
+            let solid_top = td::TILE_SOLID_TOP.has(t.kind);
+            if pos[1] + height <= ry {
+                down = true;
+                // `:4497-4508`: the roof arm, minus the `!flag` slope guard's
+                // own `gravDir == -1` nudge.
+                if (!(solid_top && fall_through) || !((vel[1] <= 1.0) | fall2)) && num6 > ry {
+                    num3 = i;
+                    num4 = j;
+                    if rh < TILE_PX {
+                        num4 += 1;
+                    }
+                    if num3 != num && !flag {
+                        result[1] = ry - (pos[1] + height) + if grav_dir == -1 { -0.01 } else { 0.0 };
+                        num6 = ry;
+                    }
+                }
+            } else if pos[0] + width <= rx && !solid_top {
+                // `:4514-4530`: skip when the left neighbour is a right-hand ramp.
+                let ls = world.tile(i - 1, j).map(|t| t.slope()).unwrap_or(0);
+                if ls != 2 && ls != 4 {
+                    num = i;
+                    num2 = j;
+                    if num2 != num4 {
+                        result[0] = rx - (pos[0] + width);
+                    }
+                    if num3 == num {
+                        result[1] = vel[1];
+                    }
+                }
+            } else if pos[0] >= rx + TILE_PX && !solid_top {
+                // `:4534-4550`: skip when the right neighbour is a left ramp.
+                let rs = world.tile(i + 1, j).map(|t| t.slope()).unwrap_or(0);
+                if rs != 1 && rs != 3 {
+                    num = i;
+                    num2 = j;
+                    if num2 != num4 {
+                        result[0] = rx + TILE_PX - pos[0];
+                    }
+                    if num3 == num {
+                        result[1] = vel[1];
+                    }
+                }
+            } else if pos[1] >= ry + rh && !solid_top {
+                up = true;
+                num3 = i;
+                num4 = j;
+                result[1] = ry + rh - pos[1] + if grav_dir == 1 { 0.01 } else { 0.0 };
+                if num4 == num2 {
+                    result[0] = vel[0];
+                }
+            }
+        }
+    }
+    TileCollision {
+        vel: result,
+        up,
+        down,
+    }
+}
+
+/// `Collision.HitTiles` (`Collision.cs:3063-3108`) / `HitTilesInACircle`
+/// (`:3016-3061`): the swept box's solid overlap, inclusive on both ends
+/// (unlike `TileCollision`'s strict comparisons). The C# answers every hit
+/// with `WorldGen.KillTile(fail: true, effectOnly: true)`, which returns at
+/// `WorldGen.cs:63704-63707` after the dust loop — no tile is removed. The
+/// port has no tile-dust layer, so the scan returns the hit cells and
+/// [`tile_dust_amount`] supplies the counts the C# would spawn.
+///
+/// `circle` is the `HitTilesInACircle` arm: the centre-distance gate
+/// `(Width + Height) / 4` at `:3054`.
+fn hit_tiles_scan(
+    world: &World,
+    pos: [f32; 2],
+    vel: [f32; 2],
+    width: i32,
+    height: i32,
+    circle: bool,
+) -> Vec<(i32, i32)> {
+    let target = [pos[0] + vel[0], pos[1] + vel[1]];
+    let mut num = (pos[0] / TILE_PX) as i32 - 1;
+    let mut num2 = ((pos[0] + width as f32) / TILE_PX) as i32 + 2;
+    let mut num3 = (pos[1] / TILE_PX) as i32 - 1;
+    let mut num4 = ((pos[1] + height as f32) / TILE_PX) as i32 + 2;
+    // `:3023-3038` / `:3070-3085`: the four clamps — note `num2` clamps to
+    // `maxTilesX`, not `maxTilesX - 1`.
+    if num < 0 {
+        num = 0;
+    }
+    if num2 > world.width {
+        num2 = world.width;
+    }
+    if num3 < 0 {
+        num3 = 0;
+    }
+    let bottom = scan_bottom(world);
+    if num4 > bottom {
+        num4 = bottom;
+    }
+    let (w, h) = (width as f32, height as f32);
+    let centre = [target[0] + (width / 2) as f32, target[1] + (height / 2) as f32];
+    let radius = ((width + height) / 4) as f32;
+    let mut hits = Vec::new();
+    for i in num..num2 {
+        for j in num3..num4 {
+            let Some(t) = world.tile(i, j) else {
+                continue;
+            };
+            // `:3044`/`:3091`: active, not actuated, solid or a platform top.
+            if !t.active()
+                || t.flags & tr_core::tile::FLAG_INACTIVE != 0
+                || !((td::TILE_SOLID.has(t.kind) && t.kind != 192)
+                    || (td::TILE_SOLID_TOP.has(t.kind) && t.frame_y == 0))
+            {
+                continue;
+            }
+            let mut ty = j as f32 * TILE_PX;
+            let mut rh = TILE_PX;
+            if t.half_brick() {
+                ty += 8.0;
+                rh -= 8.0;
+            }
+            let tx = i as f32 * TILE_PX;
+            if target[0] + w >= tx
+                && target[0] <= tx + TILE_PX
+                && target[1] + h >= ty
+                && target[1] <= ty + rh
+            {
+                if circle {
+                    let dx = centre[0] - (tx + 8.0);
+                    let dy = centre[1] - (ty + 8.0);
+                    if (dx * dx + dy * dy).sqrt() >= radius {
+                        continue;
+                    }
+                }
+                hits.push((i, j));
+            }
+        }
+    }
+    hits
+}
+
+/// `Collision.HitTiles` (`Collision.cs:3063-3108`).
+// ponytail: the ~30 `Projectile.cs` call sites have no generic
+// projectile-to-tile seam in the port (ANALYSIS, E-13).
+#[allow(dead_code)]
+pub fn hit_tiles(
+    world: &World,
+    pos: [f32; 2],
+    vel: [f32; 2],
+    width: i32,
+    height: i32,
+) -> Vec<(i32, i32)> {
+    hit_tiles_scan(world, pos, vel, width, height, false)
+}
+
+/// `Collision.HitTilesInACircle` (`Collision.cs:3016-3061`).
+#[allow(dead_code)]
+pub fn hit_tiles_in_a_circle(
+    world: &World,
+    pos: [f32; 2],
+    vel: [f32; 2],
+    width: i32,
+    height: i32,
+) -> Vec<(i32, i32)> {
+    hit_tiles_scan(world, pos, vel, width, height, true)
+}
+
+/// `WorldGen.KillTile_GetTileDustAmount` (`WorldGen.cs:66597-66685`): the dust
+/// count `KillTile` spawns for a hit cell, which is the whole observable effect
+/// of `HitTiles`'s `effectOnly: true` call.
+#[allow(dead_code)]
+pub fn tile_dust_amount(kind: u16, fail: bool, frame_x: i16) -> i32 {
+    match kind {
+        // `:66607-66611`
+        654 | 630 | 631 => 0,
+        // `:66612-66617`
+        231 => {
+            if fail {
+                3
+            } else {
+                6
+            }
+        }
+        // `:66618-66621`
+        481 | 482 | 483 => 3,
+        // `:66622-66625`
+        541 => 1,
+        549 => 2,
+        // `:66626-66663`: the whole no-dust list.
+        125 | 138 | 172 | 287 | 300 | 301 | 302 | 303 | 304 | 305 | 306 | 307 | 308 | 354 | 355 | 373
+        | 374 | 375 | 376 | 461 | 484 | 499 | 564 | 565 | 593 | 594 | 617 | 664 | 665 | 699 | 709 | 711
+        | 712 | 713 | 714 | 715 | 716 => 0,
+        // `:66664-66673`
+        534 | 536 | 539 | 625 | 627 => {
+            if fail {
+                3
+            } else {
+                5
+            }
+        }
+        // `:66674-66683`: the gem tree's frame decides.
+        184 => {
+            if frame_x / 22 >= 5 {
+                5
+            } else if fail {
+                3
+            } else {
+                10
+            }
+        }
+        // `:66601-66606`
+        _ => {
+            if fail {
+                3
+            } else {
+                10
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1524,5 +2824,236 @@ mod tests {
             ),
             Some((10, 20, false))
         );
+    }
+
+    /// `Collision.cs:3918-4188`: a 16x16 box resting on a belt's top face takes
+    /// the belt's direction - the 421 (left) belt pushes +X, the 422 (right)
+    /// belt pushes -X - and the ramp is `zero * 6f / 60f` per tick, capped at
+    /// the 2.5 clamp.
+    #[test]
+    fn the_conveyor_belt_ramps_the_item_velocity() {
+        let (w, h) = (14i32, 14i32);
+        // The box' bottom sits exactly on the tile's top edge (`y = 320`).
+        let rest = |kind: u16| {
+            let mut wd = world();
+            put(&mut wd, 10, 20, kind);
+            wd
+        };
+        let step = |wd: &World, pos: &mut [f32; 2], vel: &mut [f32; 2]| {
+            apply_conveyor_belt_movement_to_velocity(wd, pos, vel, w, h)
+        };
+        // 421 = +1: the first tick adds 2.5 * 6 / 60 = 0.25 px/tick.
+        let wd = rest(421);
+        let (mut pos, mut vel) = ([160.0f32, 320.0 - h as f32], [0.0f32, 0.0f32]);
+        step(&wd, &mut pos, &mut vel);
+        assert_eq!(vel[0], 0.25, "the belt ramp is zero.X * 6f / 60f");
+        for _ in 0..30 {
+            step(&wd, &mut pos, &mut vel);
+        }
+        assert_eq!(vel[0], 2.5, "the ramp saturates at the 2.5 clamp");
+        // 422 = -1: the mirror.
+        let wd = rest(422);
+        let (mut pos, mut vel) = ([160.0f32, 320.0 - h as f32], [0.0f32, 0.0f32]);
+        step(&wd, &mut pos, &mut vel);
+        assert_eq!(vel[0], -0.25);
+        // A plain solid tile is not a belt: the velocity is untouched.
+        let wd = rest(1);
+        let (mut pos, mut vel) = ([160.0f32, 320.0 - h as f32], [0.0f32, 0.0f32]);
+        step(&wd, &mut pos, &mut vel);
+        assert_eq!(vel, [0.0, 0.0], "dirt does not carry the drop");
+    }
+
+    /// `Collision.StepConveyorBelt` (`:4190-4320`): a 20x42 body standing on a
+    /// left belt (421) is walked +X by the 2.5 px diagonal step; the 422 belt
+    /// mirrors it. The `gfxOffY`/grapple/pulley guards bail out before any
+    /// probing.
+    #[test]
+    fn the_conveyor_belt_walks_the_player() {
+        let mut wd = world();
+        put(&mut wd, 10, 20, 421);
+        let step = |wd: &World, pos: &mut [f32; 2], gfx: f32| {
+            step_conveyor_belt_player(wd, pos, 20, 42, 1.0, gfx, false, false, false)
+        };
+        let (mut pos, mut vel) = ([160.0f32, 320.0 - 42.0], [0.0f32, 0.0f32]);
+        // Sanity: a plain solid tile leaves the body alone.
+        let mut plain = world();
+        put(&mut plain, 10, 20, 1);
+        let mut pp = pos;
+        step(&plain, &mut pp, 0.0);
+        assert_eq!(pp, pos, "dirt does not walk the player");
+        // The belt moves it. The position is the only channel (the C# moves
+        // `entity.position` directly, no velocity), so the test measures that.
+        step(&wd, &mut pos, 0.0);
+        assert!(
+            pos[0] > 160.0,
+            "the left belt walks the body +X, got {}",
+            pos[0]
+        );
+        assert!((pos[0] - 160.0) < 2.6, "one belt step is 2.5 px");
+        // The right belt (422) mirrors it.
+        let mut wr = world();
+        put(&mut wr, 10, 20, 422);
+        let mut rp = [160.0f32, 320.0 - 42.0];
+        step(&wr, &mut rp, 0.0);
+        assert!(rp[0] < 160.0, "the right belt walks the body -X");
+        // The `gfxOffY > 2` guard: a stepped-up body is not carried.
+        let mut gp = [160.0f32, 320.0 - 42.0];
+        step(&wd, &mut gp, 2.5);
+        assert_eq!(gp, [160.0, 320.0 - 42.0], "a step-up offset bails out");
+        let _ = vel;
+    }
+
+    /// `Collision.noSlopeCollision` (`:2033-2133`) vs `Collision.TileCollision`:
+    /// the slope-1 ramp refuses a body sliding into it through the `flag3` gate
+    /// (`:131`-`143` / C# `:4481-4483`), the slope-free variant does not.
+    #[test]
+    fn the_slope_free_collision_ignores_the_ramp_gate() {
+        let mut w = world();
+        put(&mut w, 10, 20, 1);
+        let i = w.index(10, 20);
+        w.tiles[i].set_slope(1);
+        // A 20x20 body resting exactly on the ramp's row, moving down.
+        let gated = tile_collision(&w, [160.0, 300.0], [0.0, 4.0], 20.0, 20.0, false, false);
+        assert!(!gated.down, "the slope gate lets the ramp pass through");
+        assert_eq!(gated.vel[1], 4.0, "the velocity is untouched");
+        let free = no_slope_collision(&w, [160.0, 300.0], [0.0, 4.0], 20.0, 20.0, false, false);
+        assert!(free.down, "without the gate the tile stops the body");
+        assert_eq!(free.vel[1], 0.0, "the body lands on the tile's top");
+    }
+
+    /// `Collision.AdvancedTileCollision` (`:4422-4566`): the `forcedIgnoredTiles`
+    /// conjunct (`:4449`) and the `gravDir`-dependent `0.01` nudge (`:4507`).
+
+    /// `Collision.AdvancedTileCollision` (`:4422-4566`): the `forcedIgnoredTiles`
+    /// conjunct (`:4449`) and the `gravDir`-dependent `0.01` nudge (`:4507`).
+    #[test]
+    fn the_sandshark_collision_skips_its_set_and_nudges_by_gravity() {
+        // A 20x20 body 4 px above the floor row, moving 5 px down: the swept
+        // box reaches the tile's top at 320.
+        let (pos, vel, w, h) = ([128.0f32, 296.0], [0.0f32, 5.0], 20.0f32, 20.0f32);
+        // Sand (53) is in `ForAdvancedCollision.ForSandshark`
+        // (`TileID.cs:125`): the shark swims through it.
+        let mut sand = world();
+        for x in 8..12 {
+            put(&mut sand, x, 20, 53);
+        }
+        let skipped = advanced_tile_collision(
+            &sand,
+            &td::SET_FOR_SANDSHARK,
+            pos,
+            vel,
+            w,
+            h,
+            false,
+            false,
+            1,
+        );
+        assert!(!skipped.down, "the sandshark set is ignored");
+        assert_eq!(skipped.vel[1], 5.0, "the body keeps falling");
+        // The same floor outside the set stops it — a concrete ledge.
+        let mut stone = world();
+        for x in 8..12 {
+            put(&mut stone, x, 20, 1);
+        }
+        let landed =
+            advanced_tile_collision(&stone, &td::SET_FOR_SANDSHARK, pos, vel, w, h, false, false, 1);
+        assert!(landed.down, "stone is not in the set and stops the body");
+        // `:4507`: `vector4.Y - (vector3.Y + Height)` = 320 - 316, and
+        // `gravDir == 1` adds no nudge.
+        assert_eq!(landed.vel[1], 4.0, "the body moves exactly onto the tile");
+        // `:4507`: `+ ((gravDir == -1) ? (-0.01f) : 0f)`.
+        let flipped = advanced_tile_collision(
+            &stone,
+            &td::SET_FOR_SANDSHARK,
+            pos,
+            vel,
+            w,
+            h,
+            false,
+            false,
+            -1,
+        );
+        assert!(flipped.down);
+        assert!(
+            (flipped.vel[1] - 3.99).abs() < 1e-4,
+            "the inverted-gravity nudge: {}",
+            flipped.vel[1]
+        );
+    }
+
+    /// `Collision.HitTiles` (`:3063-3108`): the swept box's solid overlap is
+    /// inclusive, an empty cell answers nothing.
+
+    /// `Collision.HitTiles` (`:3063-3108`): the swept box's solid overlap is
+    /// inclusive, an empty cell answers nothing.
+    #[test]
+    fn the_hit_scan_reports_the_solid_cells_under_the_swept_box() {
+        let mut w = world();
+        put(&mut w, 10, 20, 1);
+        // The box [160,180] x [280,322] reaches the tile's top row.
+        assert_eq!(
+            hit_tiles(&w, [160.0, 280.0], [0.0, 0.0], 20, 42),
+            vec![(10, 20)],
+            "the floor cell is hit"
+        );
+        // One row up: nothing solid in reach.
+        assert!(hit_tiles(&w, [160.0, 240.0], [0.0, 0.0], 20, 42).is_empty());
+    }
+
+    /// `Collision.HitTilesInACircle` (`:3016-3061`): the same scan plus the
+    /// `(Width + Height) / 4` centre-distance gate (`:3054`). The corner cell
+    /// the box still grazes falls outside the radius.
+
+    /// `Collision.HitTilesInACircle` (`:3016-3061`): the same scan plus the
+    /// `(Width + Height) / 4` centre-distance gate (`:3054`). The corner cell
+    /// the box still grazes falls outside the radius.
+    #[test]
+    fn the_circle_hit_scan_drops_the_box_corner() {
+        let mut w = world();
+        put(&mut w, 10, 17, 1);
+        put(&mut w, 9, 16, 1);
+        let pos = [160.0, 250.0];
+        let (width, height) = (20, 42);
+        assert_eq!(
+            hit_tiles(&w, pos, [0.0, 0.0], width, height),
+            vec![(9, 16), (10, 17)],
+            "the box reaches both corner cells"
+        );
+        assert_eq!(
+            hit_tiles_in_a_circle(&w, pos, [0.0, 0.0], width, height),
+            vec![(10, 17)],
+            "only the cell inside the radius survives"
+        );
+    }
+
+    /// `Collision.BuildTileContacts` (`:2135-2290`): the four side contacts,
+    /// their pixel overlap and the corner fallback.
+
+    /// `WorldGen.KillTile_GetTileDustAmount` (`:66597-66685`): the switch's
+    /// spot values, including the `fail` split and the gem tree's frame gate.
+    #[test]
+    fn the_tile_dust_amount_table_matches_the_source() {
+        // The default arm (`:66601-66606`).
+        assert_eq!(tile_dust_amount(1, false, 0), 10);
+        assert_eq!(tile_dust_amount(1, true, 0), 3);
+        // The explicit no-dust cases (`:66607-66611`) and a listed row
+        // (`:66626-66663`).
+        assert_eq!(tile_dust_amount(654, false, 0), 0);
+        assert_eq!(tile_dust_amount(630, true, 0), 0);
+        assert_eq!(tile_dust_amount(125, false, 0), 0);
+        // The fail-split arms (`:66612-66617`, `:66664-66673`).
+        assert_eq!(tile_dust_amount(231, false, 0), 6);
+        assert_eq!(tile_dust_amount(231, true, 0), 3);
+        assert_eq!(tile_dust_amount(534, false, 0), 5);
+        assert_eq!(tile_dust_amount(534, true, 0), 3);
+        // The fixed counts (`:66618-66625`).
+        assert_eq!(tile_dust_amount(481, true, 0), 3);
+        assert_eq!(tile_dust_amount(541, false, 0), 1);
+        assert_eq!(tile_dust_amount(549, false, 0), 2);
+        // The gem tree (`:66674-66683`): `frameX / 22 >= 5` wins over `fail`.
+        assert_eq!(tile_dust_amount(184, false, 110), 5);
+        assert_eq!(tile_dust_amount(184, true, 110), 5);
+        assert_eq!(tile_dust_amount(184, false, 0), 10);
+        assert_eq!(tile_dust_amount(184, true, 0), 3);
     }
 }

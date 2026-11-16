@@ -660,6 +660,12 @@ pub(crate) struct App {
     /// `Recipe.UpdateRecipeList` only while the crafting page is up
     /// (`CraftingUI.cs:112-121`) — the port reads it behind the same gate.
     pub(crate) craft_filter: Option<craft::CraftingFilter>,
+    /// `NewCraftingUI._filterer` (`NewCraftingUI.cs:216`, built at `:281-299`):
+    /// the 11-tab recipe filter strip's state. `Main.focusRecipe` stays an
+    /// `availableRecipe` index while the grid shows only the survivors
+    /// (`:596-611`), which is what `craft::available_with_gates` + [`shown`]
+    /// reproduce.
+    pub(crate) craft_filters: crate::craft_filter::FilterBoard,
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     pub(crate) waterfall: tr_core::waterfall::WaterfallManager,
     pub(crate) waterfall_step: FixedStepper,
@@ -732,6 +738,11 @@ pub(crate) struct App {
     /// the projectiles (`:17767-17775`). Its collision probes are injected once
     /// at init through [`crate::gore_seam::AppGoreCollision`].
     pub(crate) gore: tr_core::gore::GorePool,
+    /// The per-frame `Lighting.AddLight` list pair (`LightingEngine.cs:36-38`):
+    /// `_perFrameLights` / `_oldPerFrameLights`. The light pass reads the
+    /// previous frame's list (`LightingEngine.cs:210-214`), so `end_frame` must
+    /// run once per frame after every source has contributed.
+    pub(crate) entity_lights: crate::entity_lights::EntityLights,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -1215,16 +1226,52 @@ impl App {
         world_sim::growth::update_growth(self, dt);
     }
 
-    /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
-    /// the biome under the screen centre. Supported styles: 0 forest, 2 desert,
-    /// 4 ocean, 7 snow. `SceneMetrics` zones are approximated with the same
-    /// camera-column tests the water style uses (beach before desert before snow).
+    /// `Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`): the surface
+    /// background style wanted by the biome around the scene centre.
+    ///
+    /// Two deviations, both because the style they would select is not ported:
+    /// the forest sub-styles 10/11/12 need `Main.treeX[]` and the three extra
+    /// tree sets (only tree set 1 / `Background_50..52` is packed), and the
+    /// desert-variant styles 5/13/14 need `Main.desertBackgroundSet`. The forest
+    /// branch therefore stays 0 and the desert branch stays 2.
     pub(crate) fn preferred_bg_style(&self) -> i32 {
-        if is_ocean_biome(&self.world, self.camera) {
-            4
-        } else if is_desert_biome(&self.world, self.camera) {
+        // `Main.SceneMetrics.Zone*`, read in the C#'s order.
+        let m = &self.scene_metrics;
+        if m.zone_beach {
+            if m.zone_hallow {
+                6
+            } else if m.zone_corrupt {
+                if m.blood_tile_count <= m.evil_tile_count {
+                    1
+                } else {
+                    8
+                }
+            } else if m.zone_crimson {
+                8
+            } else if m.honey_block_count <= 400 {
+                4
+            } else {
+                3
+            }
+        } else if m.enough_tiles_for_glowing_mushroom() {
+            9
+        } else if m.zone_desert {
+            // `(corrupt && evil > blood && evil > holy) ? 5 : ((crimson &&
+            // blood > holy) ? 14 : (!hallow ? 2 : 13))` — 5/13/14 unported.
             2
-        } else if is_snow_biome(&self.world, self.camera) {
+        } else if m.zone_hallow {
+            6
+        } else if m.zone_corrupt {
+            if m.blood_tile_count <= m.evil_tile_count {
+                1
+            } else {
+                8
+            }
+        } else if m.zone_crimson {
+            8
+        } else if m.zone_jungle {
+            3
+        } else if m.zone_snow {
             7
         } else {
             0
@@ -1251,6 +1298,8 @@ impl App {
             &mut self.bg_alpha_front,
             &mut self.bg_alpha_far,
             self.bg_style,
+            self.world.jungle_bg_style as i32,
+            self.world.hallow_bg_style as i32,
             speed,
         );
     }
@@ -1510,6 +1559,10 @@ impl App {
         // !NurseCannotRemoveDebuff[b]`).
         player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
+        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40111`,
+        // `AchievementsHelper.cs:407-410`): the paid amount rides
+        // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
+        let _ = self.achievements.notify_custom_float("Pay", cost as f32);
         true
     }
 
@@ -2143,7 +2196,7 @@ impl App {
     ) -> App {
         let mut world = world;
         let clouds = make_clouds(&world, &lookups);
-        let sky = make_sky_assets(&atlas);
+        let sky = make_sky_assets(&atlas, &world);
         let stars = make_stars(&world);
         let player_assets = make_player_assets(&atlas);
         let npc_assets = make_npc_assets(&atlas);
@@ -3012,6 +3065,7 @@ impl App {
             // inventory draw together.
             inventory_open: crate::env::inv_open() || tr_chest.is_some(),
             craft_filter: None,
+            craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: app_bestiary,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
@@ -3296,6 +3350,7 @@ impl App {
             // slots plus the refuse sentinel; `goreTime` seeds its 600
             // (`Gore.cs:1507-1510`).
             gore: tr_core::gore::GorePool::new(),
+            entity_lights: crate::entity_lights::EntityLights::default(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             // The C# seeds every `SwapRandom` key with the world seed
@@ -3898,7 +3953,7 @@ fn build_atlas_inner(
     // Play froze for ~1.4 s re-decoding ~7 000 sheets and ~1–2 s more on the
     // fonts, all of them already in memory). `world ++ static ++ font` is the
     // pre-split list's order, so the atlas layout and every UV are unchanged.
-    let mut images = assets::load_world_sheets(&assets_dir, &tile_ids, &wall_ids)?;
+    let mut images = assets::load_world_sheets(&assets_dir, world, &tile_ids, &wall_ids)?;
     let world_len = images.len();
     let cached = static_cache.take();
     let static_reused = cached.is_some();
@@ -4853,6 +4908,55 @@ mod s1_g_7_tests {
         // stays unported (S1-G-7). The arm itself: `Main.SupportWideScreen`
         // forces the floor to 1f (`:61992-61994`).
         assert!(!App::SUPPORT_WIDE_SCREEN);
+    }
+}
+
+#[cfg(test)]
+mod s1_e_18_tests {
+    use super::*;
+
+    /// `NPCChatText_DoNurseHeal` (`Main.cs:40104-40111`): inside the
+    /// `BuyItem(healCost)` success arm, `AchievementsHelper.HandleNurseService`
+    /// adds the paid copper to FREQUENT_FLYER's `Pay` float
+    /// (`AchievementsHelper.cs:407-410`). A purse too short never reaches it.
+    #[test]
+    fn the_nurse_heal_credits_the_paid_copper_to_frequent_flyer() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.hp = player.max_hp / 2;
+        app.player = Some(player);
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Nurse,
+            32.0,
+            100.0,
+            1,
+            0.0,
+        ));
+        let cost = app.nurse_heal_cost(0);
+        assert!(cost > 0, "half life is a heal");
+        // Shy of the price: the C# returns before `HandleNurseService`.
+        app.coins = cost as u64 - 1;
+        assert!(!app.nurse_heal(0));
+        assert_eq!(pay(&app), 0);
+        // The paid heal credits the exact copper and tops the life up.
+        app.coins = cost as u64;
+        assert!(app.nurse_heal(0));
+        assert_eq!(pay(&app), cost);
+        assert_eq!(
+            app.player.as_ref().unwrap().hp,
+            app.player.as_ref().unwrap().max_hp
+        );
+        assert_eq!(app.coins, 0);
+    }
+
+    /// FREQUENT_FLYER's `Pay` tracker value (`AchievementsHelper.cs:408`).
+    fn pay(app: &App) -> i32 {
+        app.achievements
+            .list
+            .iter()
+            .find(|a| a.name == "FREQUENT_FLYER")
+            .and_then(|a| a.tracker_values())
+            .map_or(0, |(v, _)| v)
     }
 }
 

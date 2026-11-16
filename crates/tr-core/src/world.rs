@@ -97,6 +97,16 @@ pub struct World {
     /// part of the `.wld` format and is re-rolled per session at load (`Main.cs:6603`),
     /// so the port fixes it at generation like `moon_type`. Loaded worlds keep 0.
     pub hell_back_style: u8,
+    // Per-biome surface background *style* variants (`WorldGen.corruptBG`,
+    // `jungleBG`, `hallowBG`, `crimsonBG`, `mushroomBG`). The `.wld` stores the
+    // style byte (`IO/WorldFile.cs:1318-1325`, `:1375`) and `WorldGen.setBG`
+    // expands it into the three `Background_<id>` textures — see
+    // [`surface_bg_texture_ids`].
+    pub corrupt_bg_style: u8,
+    pub jungle_bg_style: u8,
+    pub hallow_bg_style: u8,
+    pub crimson_bg_style: u8,
+    pub mushroom_bg_style: u8,
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
     /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
@@ -238,6 +248,11 @@ pub struct World {
     /// `Main.slimeRainKillCount` — the kill counter (the negative half
     /// after the King spawns = the vanilla's hysteresis).
     pub slime_rain_kills: i32,
+    /// `Main.slimeWarningTime` (`Main.cs:1051`) — the announcement
+    /// countdown armed by `StartSlimeRain`/`StopSlimeRain`
+    /// (`:64776`/`:64811`) and run down by `UpdateSlimeRainWarning`
+    /// (`:65504-65522`); `slimeWarningDelay` is 420 (`:66802`).
+    pub slime_warning_time: i32,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -336,6 +351,11 @@ pub struct World {
     pub wof_present: bool,
     pub wof_hp_ratio: f32,
     pub wof_x: f32,
+    /// The wall's `direction` — the eye's mirror copies it verbatim
+    /// (`NPC.cs:26067-26068`: `direction = mainNpc.direction;
+    /// spriteDirection = direction`). The `num391`-driven flip the port
+    /// used to cite at `:26393` is aiStyle 29's HUNGRY, not the eye.
+    pub wof_dir: i32,
     /// `NPC.savedAngler` (`NPC.cs:6293`): the Sleeping Angler has been
     /// talked into the Angler — the 376 spawn arms stop looking.
     pub saved_angler: bool,
@@ -488,11 +508,17 @@ impl World {
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,
+            slime_warning_time: 0,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,
             fast_forward_to_dusk: false,
             hell_back_style: 0,
+            corrupt_bg_style: 0,
+            jungle_bg_style: 0,
+            hallow_bg_style: 0,
+            crimson_bg_style: 0,
+            mushroom_bg_style: 0,
             column_surface: Vec::new(),
             chunks_x: 0,
             chunks_y: 0,
@@ -555,6 +581,7 @@ impl World {
             wof_present: false,
             wof_hp_ratio: 1.0,
             wof_x: 0.0,
+    wof_dir: 1,
             saved_angler: false,
             saved_wizard: false,
             saved_stylist: false,
@@ -655,12 +682,18 @@ impl World {
         if !any_player_life_over_120 {
             return false;
         }
+        self.start_blood_moon();
+        true
+    }
+
+    /// The blood-moon hit body (`Main.cs:65344-65346`), the roll factored out:
+    /// the flag up and both dial cooldowns force-reset ("instantly reusable
+    /// after certain celestial events"). `roll_blood_moon`'s success path and
+    /// the F3 panel's start row share it (S1-E-37).
+    pub fn start_blood_moon(&mut self) {
         self.blood_moon = true;
-        // `:65344-65346` — "instantly reusable after certain celestial
-        // events".
         self.sundial_cooldown = 0;
         self.moondial_cooldown = 0;
-        true
     }
 
     /// `UpdateTime_StartDay`'s solar-eclipse roll (`Main.cs:65421-65430`):
@@ -1010,8 +1043,122 @@ impl World {
     }
 }
 
+/// `WorldGen.setBG` cases 1/2/4/5/8 (`WorldGen.cs:7235-7274`, `7276-7316`,
+/// `7424-7459`, `7460-7500`, `7578-7608`): the three `Background_<id>` texture
+/// ids for a surface style, `-1` meaning "this layer is not drawn".
+///
+/// `bg` is the `setBG` slot: 1 corrupt, 2 jungle, 4 hallow, 5 crimson,
+/// 8 mushroom. The other slots (forest tree sets, snow, desert, ocean,
+/// underworld) have their own tables and are not covered here.
+pub fn surface_bg_texture_ids(bg: i32, style: i32) -> Option<[i32; 3]> {
+    Some(match bg {
+        1 => match style {
+            1 => [56, 57, 58],
+            2 => [211, 212, 213],
+            3 => [225, 226, 227],
+            4 => [240, 241, 242],
+            51 => [324, 323, 322],
+            52 => [324, 226, 322],
+            _ => [12, 13, 14],
+        },
+        2 => match style {
+            1 => [59, 60, 61],
+            2 => [222, 223, 224],
+            3 => [237, 238, 239],
+            4 => [284, 285, 286],
+            5 => [271, 272, 273],
+            6 => [302, 301, 300],
+            _ => [15, 16, 17],
+        },
+        4 => match style {
+            1 => [102, 103, 104],
+            2 => [219, 220, 221],
+            3 => [243, 244, 245],
+            4 => [-1, 261, 262],
+            5 => [327, 326, 325],
+            _ => [29, 30, 31],
+        },
+        5 => match style {
+            1 => [105, 106, 107],
+            2 => [174, -1, 175],
+            3 => [214, 215, 216],
+            4 => [-1, 229, 230],
+            5 => [255, 256, 257],
+            6 => [339, 338, 337],
+            _ => [43, 44, 45],
+        },
+        8 => match style {
+            1 => [231, 232, 233],
+            2 => [234, 235, 236],
+            3 => [287, 288, 289],
+            4 => [321, 320, 319],
+            _ => [46, 47, 48],
+        },
+        _ => return None,
+    })
+}
+
+impl World {
+    /// `WorldGen.setBG(bg, style)` for the five surface variants the port owns
+    /// (`WorldGen.cs:7235-7274`, `7276-7316`, `7424-7459`, `7460-7500`,
+    /// `7578-7608`). Unknown slots are ignored — their tables are unported.
+    pub fn set_surface_bg_style(&mut self, bg: i32, style: i32) {
+        let style = style as u8;
+        match bg {
+            1 => self.corrupt_bg_style = style,
+            2 => self.jungle_bg_style = style,
+            4 => self.hallow_bg_style = style,
+            5 => self.crimson_bg_style = style,
+            8 => self.mushroom_bg_style = style,
+            _ => {}
+        }
+    }
+
+    /// The three `Background_<id>` textures of the corrupt surface style
+    /// (`WorldGen.setBG` case 1).
+    pub fn corrupt_bg(&self) -> [i32; 3] {
+        surface_bg_texture_ids(1, self.corrupt_bg_style as i32).unwrap()
+    }
+    pub fn jungle_bg(&self) -> [i32; 3] {
+        surface_bg_texture_ids(2, self.jungle_bg_style as i32).unwrap()
+    }
+    pub fn hallow_bg(&self) -> [i32; 3] {
+        surface_bg_texture_ids(4, self.hallow_bg_style as i32).unwrap()
+    }
+    pub fn crimson_bg(&self) -> [i32; 3] {
+        surface_bg_texture_ids(5, self.crimson_bg_style as i32).unwrap()
+    }
+    pub fn mushroom_bg(&self) -> [i32; 3] {
+        surface_bg_texture_ids(8, self.mushroom_bg_style as i32).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn surface_bg_style_tables_match_set_bg() {
+        // Spot rows from `WorldGen.setBG`, including the `default:` rows and
+        // the `-1` layers that `DrawSurfaceBG_*` skips.
+        assert_eq!(surface_bg_texture_ids(1, 1), Some([56, 57, 58]));
+        assert_eq!(surface_bg_texture_ids(1, 51), Some([324, 323, 322]));
+        assert_eq!(surface_bg_texture_ids(1, 0), Some([12, 13, 14]));
+        assert_eq!(surface_bg_texture_ids(2, 6), Some([302, 301, 300]));
+        assert_eq!(surface_bg_texture_ids(4, 4), Some([-1, 261, 262]));
+        assert_eq!(surface_bg_texture_ids(5, 2), Some([174, -1, 175]));
+        assert_eq!(surface_bg_texture_ids(5, 6), Some([339, 338, 337]));
+        assert_eq!(surface_bg_texture_ids(8, 4), Some([321, 320, 319]));
+        // Slots with their own tables (snow/desert/ocean/forest/underworld).
+        assert_eq!(surface_bg_texture_ids(3, 0), None);
+        assert_eq!(surface_bg_texture_ids(9, 0), None);
+
+        let mut w = World::new("t".into(), 40, 40);
+        w.set_surface_bg_style(5, 6);
+        assert_eq!(w.crimson_bg(), [339, 338, 337]);
+        assert_eq!(w.crimson_bg_style, 6);
+        w.set_surface_bg_style(3, 1); // unowned slot: unchanged
+        assert_eq!(w.crimson_bg_style, 6);
+    }
+
     #[test]
     fn the_blood_moon_roll_matches_the_dusk_gate() {
         // `Main.cs:65333-65352`: 1-in-9 (1-in-6 on the tenth-anniversary

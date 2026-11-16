@@ -408,8 +408,13 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
                 // runs in `WorldItem.UpdateItem` under the `UpdateItems`
                 // swap (`Main.cs:18024`) — the duration draw rides
                 // `UpdateItems` (S1-A-11 P4 formalizes the items pass).
+                // StartSlimeRain's own gates apply (`Main.cs:64744-64764`):
+                // the item path is `!Main.raining`-gated by the caller only
+                // in vanilla, so pass the live rain state.
+                let raining = app.rain.is_raining();
                 crate::world_sim::weather::start_slime_rain(
                     &mut app.world,
+                    raining,
                     app.rngs.stream(crate::app::RngKey::UpdateItems),
                 );
                 drop_mut.count = drop_mut.count.saturating_sub(1);
