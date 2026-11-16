@@ -329,3 +329,4 @@ crates/tr-app/src/map_layers.rs|pub(crate) fn digtoise_marker|S1-L-4 - the map o
 crates/tr-app/src/chest.rs|fn unlock_progression|S1-E-18b - the locked-chest unlock fires progression 19 (Golden Chest, Chest.cs:366) / 20 (Plantera-gated 23-27 and the Lihzahrd 467-13, :383/:404), both closing DUNGEON_HEIST / BIG_BOOTY
 crates/tr-app/src/world_sim/npcs.rs|notify_progression(10)|S1-E-18c - the four invasion clears fire their achievements (goblins 10, frost 12, pirates 11, martians 13; Main.cs:64335-64354)
 crates/tr-app/src/world_sim/editing.rs|notify_progression(42)|S1-E-18d - the Flymeal hit on a town NPC fires TERRARIST (42), the Player.cs:44377-44387 branch that rides the melee hit
+crates/tr-app/src/shimmer.rs|notify_progression(27)|S1-E-18e - the shimmer decraft/transform tail fires TRANSMUTE_ITEM (27), WorldItem.cs:1849
