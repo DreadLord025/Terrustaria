@@ -10148,6 +10148,41 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+
+### The Twins' minion arm (S1-D-4b-6)
+
+The aiStyle-66 block (`Projectile.cs:29604-30161`) covers three kinds: 387 Retanimini,
+388 Spazmamini (both `minionSlots = 0.5`) and 533 Deadly Sphere (`minionSlots = 1`).
+The port is `Projectile::ai_twins_minion` plus the pre-computed
+`Projectile::twins_separation` and the `try_intercepting_target` /
+`get_chase_results` / `solve_quadratic` trio. Deviations:
+
+- **The separation loop is hoisted.** The C# runs the 1000-slot scan inline mid-AI;
+  the port computes it first (`twins_separation(&self.slots, i)`) and folds the result
+  into `velocity` as the arm's first act. The loop only reads sibling slots, so the
+  order is behaviour-identical — the hoist exists because the arm borrows `&mut self`
+  while the scan needs the whole `&[Projectile]` (E0502).
+- **`localAI[2]` is carried but unused.** The C# decays it toward 0 every tick
+  (`:29640`) and reads it back in `Update` (`:14549`) to scale the light — the port keeps
+  the decay (so the field tracks) and drops the light read with `Lighting.AddLight`.
+- **Dust and light unported** (same reason as the summon section): the dash trails
+  (`:29804-29811`, `:30049-30066` with their `Main.rand.Next(2)` / `SelectRandom` rolls),
+  the 533's two-colour glow (`:29674`/`:29678`), the gore.
+- **The 389 bolt row** is the twins' own projectile: 4×4, aiStyle 1, alpha 255,
+  `extraUpdates = 2`, scale 1.2, `timeLeft = 300` (`:4732-4740`). Its ×1.15 damage
+  (`(int)(damage * 1.15f)`, `:30105`) is applied in the dispatch, not in the row — the row
+  is a plain flight and the multiplier is the 387 arm's own.
+- **`AI_066_TryInterceptingTarget`'s `flag` stay dead.** The C# local `flag` is initialised
+  false and never set before the `if (flag)` inside the loop, so the whole `ai[1]` bonus
+  block (`:42395-42402`) is unreachable in 1.4.5.8. Ported as a `let flag = false;` with the
+  block present, matching the source.
+- **Slope correction and the 533's bounce unported**: `UpdatePosition`'s fall cases
+  (`:20447-20474`) and the Deadly Sphere's bounce arm (`:18173-18205`) are not in the port;
+  the dispatch runs `position += velocity` only.
+- **`MinionShot` stays 3-field** (`kind`/`vx`/`vy`): the bolt's damage multiplier and the
+  300-tick override are set by the spawning arm's dispatch, so the shot struct needs no
+  extra carrier.
+
 - **The sentry movement layer** (S1-D-4b-2). `AI_053_FrostHydra` (`:37266-37490`) and
   `AI_197_CeilingAndHoverTurret` (`:40307-40479`) carry no `position += velocity` of
   their own — the C# integrates them in `HandleMovement` → `UpdatePosition`
@@ -10174,6 +10209,7 @@ Deviations and notes:
     `netUpdate`. The pool has no sound, dust, gore, light or net layer; the
     sentry-backpack branch (`:40334-40343`, `CanGetPickedUpBySentryBackpack`) is
     likewise unported — no `accSentryBackpack`.
+
 ## Whips & tag damage (M4-PROJ-7)
 
 The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
