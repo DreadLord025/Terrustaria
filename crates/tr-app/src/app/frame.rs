@@ -504,7 +504,7 @@ impl App {
                         && self.camera.y
                             < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
                     shimmer: self.scene_metrics.zone_shimmer,
-                    town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                    town_npcs: self.scene_metrics.town_npc_count,
                     // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
                     cloud_alpha: self.rain.visual_alpha(),
                     zone_rain: self.scene_metrics.zone_rain,
@@ -761,6 +761,9 @@ impl App {
             if !paused {
                 self.phase("map");
                 if let Some(m) = self.map.as_mut() {
+                    // `Main.mapTimeMax` (`Main.cs:801`) — the gfx-quality
+                    // budget the countdown re-arms from (`:61818-61821`).
+                    m.map_time_max = self.gfx_quality.map_time_max;
                     m.update(&self.world, self.player.as_ref(), &self.light, dt);
                     // `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:36-39`):
                     // the markers older than 15 s drop while the map is up.
@@ -1754,7 +1757,9 @@ impl App {
                                     .seeds
                                     .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
                         };
-                        craft::available_with_gates(
+                        // `NewCraftingUI.cs:596-611`: the grid shows only the
+                        // recipes whose product passes the filterer.
+                        self.craft_filters.shown(craft::available_with_gates(
                             inventory,
                             &self.world_chests,
                             &in_range,
@@ -1763,7 +1768,7 @@ impl App {
                             self.craft_filter.as_ref(),
                             None,
                             &gates,
-                        )
+                        ))
                     } else {
                         Vec::new()
                     };
@@ -1796,6 +1801,7 @@ impl App {
                         settings.boss_bar_text,
                         self.inventory_open,
                         self.crafting_open,
+                        self.craft_filters.active_flags(),
                         &self.mouse_item,
                         self.mouse_pos,
                         &self.cursor,
@@ -1894,6 +1900,9 @@ impl App {
                         &mut self.buff_removals,
                         right_release,
                         vampire_seed,
+                        // `Player.HasNPCBannerBuff`'s table — the Monster
+                        // Banner's hover list (`Main.cs:21360-21388`).
+                        &self.scene_metrics.npc_banner_buff,
                     );
                     // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                     // the coin cells' animation clocks step per frame after
@@ -2099,6 +2108,7 @@ impl App {
                         npcs,
                         world,
                         self.stepper.paused,
+                        self.player.as_ref().is_some_and(|p| p.debug_god_mode),
                     );
                 }
 

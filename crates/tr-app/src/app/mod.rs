@@ -660,6 +660,12 @@ pub(crate) struct App {
     /// `Recipe.UpdateRecipeList` only while the crafting page is up
     /// (`CraftingUI.cs:112-121`) — the port reads it behind the same gate.
     pub(crate) craft_filter: Option<craft::CraftingFilter>,
+    /// `NewCraftingUI._filterer` (`NewCraftingUI.cs:216`, built at `:281-299`):
+    /// the 11-tab recipe filter strip's state. `Main.focusRecipe` stays an
+    /// `availableRecipe` index while the grid shows only the survivors
+    /// (`:596-611`), which is what `craft::available_with_gates` + [`shown`]
+    /// reproduce.
+    pub(crate) craft_filters: crate::craft_filter::FilterBoard,
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     pub(crate) waterfall: tr_core::waterfall::WaterfallManager,
     pub(crate) waterfall_step: FixedStepper,
@@ -1553,6 +1559,10 @@ impl App {
         // !NurseCannotRemoveDebuff[b]`).
         player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
+        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40111`,
+        // `AchievementsHelper.cs:407-410`): the paid amount rides
+        // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
+        let _ = self.achievements.notify_custom_float("Pay", cost as f32);
         true
     }
 
@@ -3055,6 +3065,7 @@ impl App {
             // inventory draw together.
             inventory_open: crate::env::inv_open() || tr_chest.is_some(),
             craft_filter: None,
+            craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: app_bestiary,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
@@ -4897,6 +4908,55 @@ mod s1_g_7_tests {
         // stays unported (S1-G-7). The arm itself: `Main.SupportWideScreen`
         // forces the floor to 1f (`:61992-61994`).
         assert!(!App::SUPPORT_WIDE_SCREEN);
+    }
+}
+
+#[cfg(test)]
+mod s1_e_18_tests {
+    use super::*;
+
+    /// `NPCChatText_DoNurseHeal` (`Main.cs:40104-40111`): inside the
+    /// `BuyItem(healCost)` success arm, `AchievementsHelper.HandleNurseService`
+    /// adds the paid copper to FREQUENT_FLYER's `Pay` float
+    /// (`AchievementsHelper.cs:407-410`). A purse too short never reaches it.
+    #[test]
+    fn the_nurse_heal_credits_the_paid_copper_to_frequent_flyer() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.hp = player.max_hp / 2;
+        app.player = Some(player);
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Nurse,
+            32.0,
+            100.0,
+            1,
+            0.0,
+        ));
+        let cost = app.nurse_heal_cost(0);
+        assert!(cost > 0, "half life is a heal");
+        // Shy of the price: the C# returns before `HandleNurseService`.
+        app.coins = cost as u64 - 1;
+        assert!(!app.nurse_heal(0));
+        assert_eq!(pay(&app), 0);
+        // The paid heal credits the exact copper and tops the life up.
+        app.coins = cost as u64;
+        assert!(app.nurse_heal(0));
+        assert_eq!(pay(&app), cost);
+        assert_eq!(
+            app.player.as_ref().unwrap().hp,
+            app.player.as_ref().unwrap().max_hp
+        );
+        assert_eq!(app.coins, 0);
+    }
+
+    /// FREQUENT_FLYER's `Pay` tracker value (`AchievementsHelper.cs:408`).
+    fn pay(app: &App) -> i32 {
+        app.achievements
+            .list
+            .iter()
+            .find(|a| a.name == "FREQUENT_FLYER")
+            .and_then(|a| a.tracker_values())
+            .map_or(0, |(v, _)| v)
     }
 }
 
