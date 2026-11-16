@@ -734,6 +734,48 @@ impl App {
         }
     }
 
+    /// `Main.DrawMap`'s fullscreen ping (`Main.cs:55486-55495`): a second
+    /// press within 0.5 s and 2 px of the previous one pins the tile under the
+    /// pointer, converted back through the map's scale/offset
+    /// (`Main.cs:55491`: `(MouseScreen - (num - 10*num5, num2 - 10*num5)) / num5`).
+    ///
+    /// The port's fullscreen branch is the `map.open` draw
+    /// (`app/frame.rs`), so this runs only while it is up; the press edge is
+    /// the frame's `ui_left_press`.
+    pub(crate) fn handle_fullmap_ping(&mut self) {
+        if !self.ui_left_press || self.menu.is_some() || self.front.is_some() {
+            return;
+        }
+        let Some((map_pos, map_scale)) = self.map.as_ref().and_then(|m| {
+            m.open.then(|| (m.pos, m.scale))
+        }) else {
+            return;
+        };
+        if !self.settings.map_enabled {
+            return;
+        }
+        // `(Main.screenPosition + screenWidth/2)/16` is the map origin's tile
+        // (`Main.cs:55420-55428`); `num = -pos*scale + screen/2` becomes the
+        // `num - 10*scale` inset the ping conversion subtracts.
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let origin = crate::map::map_origin(map_pos, map_scale, screen);
+        let now = self.anim_time as f64;
+        let dx = self.mouse_pos.x - self.last_ping_pos.x;
+        let dy = self.mouse_pos.y - self.last_ping_pos.y;
+        if now - self.last_ping_time < 0.5 && (dx * dx + dy * dy) < 4.0 {
+            let tile = [
+                (self.mouse_pos.x - origin[0]) / map_scale,
+                (self.mouse_pos.y - origin[1]) / map_scale,
+            ];
+            if let Some(m) = self.map.as_mut() {
+                m.trigger_ping(tile);
+            }
+        }
+        self.last_ping_time = now;
+        self.last_ping_pos = self.mouse_pos;
+    }
+
     /// `ItemSlot.Handle` (context 0) subset: left click takes, places or swaps a whole
     /// stack, right click takes half or places one; on the closed hotbar a left click
     /// selects the slot like the original.

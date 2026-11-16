@@ -74,7 +74,18 @@ pub mod id {
     pub const PASSWORD_REQUEST: u8 = 37; // MessageBuffer.cs:2203-2216 — no body
     pub const PASSWORD: u8 = 38; // MessageBuffer.cs:2218-2231
     pub const PLAYER_SPAWN: u8 = 12; // MessageBuffer.cs:908-930
-    pub const WORLD_COMPLETE: u8 = 49; // MessageBuffer.cs:2448-2452 — world load done
+    /// `49 InitialSpawn` (`MessageID.cs:111`): the *client* spawns into the
+    /// world - the last message of the join bundle
+    /// (`MessageBuffer.cs:874`, handled at `:2447-2453`). The port used to call
+    /// this `WORLD_COMPLETE` and read it as "world stream done"; the stream is
+    /// in fact complete when the section walk ends, and this id only means
+    /// `State 6 -> 10` + `Player.Spawn(SpawningIntoWorld)`.
+    pub const INITIAL_SPAWN: u8 = 49;
+    /// `154 Ping` (`MessageID.cs:322`): the RTT round trip -
+    /// `Ping.Update` sends it every 250 ms, the server echoes it straight back
+    /// (`MessageBuffer.cs:4419-4428`). Note the port used NetModule 2 for this
+    /// before; module 2 is `NetPingModule`, the *map* ping relay.
+    pub const PING: u8 = 154;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -1275,6 +1286,8 @@ pub enum C2s {
     ProjectileDead {
         key: i32,
     },
+    /// `154 Ping` - this client's RTT probe, no body (`Net/Ping.cs:31`).
+    Ping,
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -1315,8 +1328,9 @@ pub enum S2c {
         text: String,
         max: i32,
     },
-    /// `49 WorldComplete` — the world stream is done.
-    WorldComplete,
+    /// `49 InitialSpawn` - the server's "spawn in now", no body
+    /// (`MessageBuffer.cs:874`/`:2447-2453`).
+    InitialSpawn,
     /// `14 PlayerActive` — another peer's presence.
     PlayerActive {
         player_id: u8,
@@ -1328,7 +1342,10 @@ pub enum S2c {
         hp: i16,
         max_hp: i16,
     },
-    /// `82` — a NetModule envelope (see `C2s::NetModule`).
+    /// `154 Ping` - the server's echo back to the prober
+    /// (`MessageBuffer.cs:4419-4423`), no body.
+    Ping,
+    /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
         body: Vec<u8>,
@@ -1400,6 +1417,7 @@ impl C2s {
             Self::NpcStrike(_) => id::NPC_STRIKE,
             Self::Projectile(_) => id::PROJECTILE,
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
+            Self::Ping => id::PING,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -1422,6 +1440,7 @@ impl C2s {
                     b
                 }),
             Self::WorldRequest => w,
+            Self::Ping => w,
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -1478,6 +1497,7 @@ impl C2s {
                 }
             }
             id::WORLD_REQUEST => Self::WorldRequest,
+            id::PING => Self::Ping,
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -1537,7 +1557,8 @@ impl S2c {
             Self::Projectile(_) => id::PROJECTILE,
             Self::ProjectileDead { .. } => id::PROJECTILE_DEAD,
             Self::NpcStrike(_) => id::NPC_STRIKE,
-            Self::WorldComplete => id::WORLD_COMPLETE,
+            Self::InitialSpawn => id::INITIAL_SPAWN,
+            Self::Ping => id::PING,
             Self::PlayerActive { .. } => id::PLAYER_ACTIVE,
             Self::PlayerHp { .. } => id::PLAYER_HP,
             Self::NpcInfo(_) => id::NPC_INFO,
@@ -1597,7 +1618,8 @@ impl S2c {
                 }),
             Self::WorldInfo(wi) => wi.write_to(w),
             Self::Status { text, max } => NetText(text.clone()).write_to(w.i32(*max)).u8(0),
-            Self::WorldComplete => w,
+            Self::InitialSpawn => w,
+            Self::Ping => w,
             Self::PlayerActive { player_id, active } => w.u8(*player_id).u8(u8::from(*active)),
             Self::PlayerHp {
                 player_id,
@@ -1672,7 +1694,8 @@ impl S2c {
                 y: r.f32()?,
             },
             id::NPC_STRIKE => Self::NpcStrike(NpcStrike::read_from(r)?),
-            id::WORLD_COMPLETE => Self::WorldComplete,
+            id::INITIAL_SPAWN => Self::InitialSpawn,
+            id::PING => Self::Ping,
             id::PLAYER_ACTIVE => Self::PlayerActive {
                 player_id: r.u8()?,
                 active: r.u8()? != 0,
@@ -3152,6 +3175,7 @@ mod tests {
             C2s::ProjectileDead {
                 key: projectile_key(255, 7, 1),
             },
+            C2s::Ping,
         ];
         for msg in &msgs {
             let frame = msg.encode();
@@ -3273,7 +3297,8 @@ mod tests {
                     },
                 ],
             })),
-            S2c::WorldComplete,
+            S2c::InitialSpawn,
+            S2c::Ping,
             S2c::PlayerActive {
                 player_id: 1,
                 active: true,
@@ -3415,5 +3440,40 @@ mod tests {
     fn short_packet_is_a_protocol_error() {
         let mut cursor = std::io::Cursor::new(2u16.to_le_bytes());
         assert!(read_frame(&mut cursor).is_err());
+    }
+
+    /// `MessageID.cs:111` / `:322`: `49` is `InitialSpawn` and `154` is `Ping`.
+    /// The port used to name 49 `WORLD_COMPLETE` and never sent 154 at all -
+    /// the RTT diagnostic rode `NetModule 2` instead, which in the C# is
+    /// `NetPingModule`, the *map* ping relay (`NetworkInitializer.cs:13`).
+    #[test]
+    fn the_spawn_and_ping_ids_match_the_message_table() {
+        assert_eq!(id::INITIAL_SPAWN, 49);
+        assert_eq!(id::PING, 154);
+        assert_eq!(S2c::InitialSpawn.encode()[2], 49);
+        assert_eq!(S2c::Ping.encode()[2], 154);
+        assert_eq!(C2s::Ping.encode()[2], 154);
+        assert_eq!(S2c::InitialSpawn.msg_id(), id::INITIAL_SPAWN);
+        assert_eq!(S2c::Ping.msg_id(), id::PING);
+        assert_eq!(C2s::Ping.msg_id(), id::PING);
+        // `PlayerSpawnContext.SpawningIntoWorld == 1`: `Player.Spawn` re-sends
+        // the context byte (`Player.cs:37578-37581`), so the join answer must
+        // carry 1, not `ReviveFromDeath`'s 0.
+        let spawn = C2s::PlayerSpawn(PlayerSpawn {
+            x: 1,
+            y: 2,
+            respawn_timer: 0,
+            deaths_pve: 0,
+            deaths_pvp: 0,
+            team: 0,
+            spawn_context: 1,
+        })
+        .encode();
+        assert_eq!(*spawn.last().unwrap(), 1u8, "the spawn context byte");
+        let back = C2s::decode(spawn[2], &mut NetReader::new(&spawn[3..])).expect("decode");
+        match back {
+            C2s::PlayerSpawn(s) => assert_eq!(s.spawn_context, 1),
+            other => panic!("expected 12 PlayerSpawn, got {:?}", other.msg_id()),
+        }
     }
 }
