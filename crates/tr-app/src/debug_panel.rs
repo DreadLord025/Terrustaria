@@ -116,7 +116,7 @@ pub(crate) fn row_count(panel: &Panel, tab: Tab) -> usize {
             .iter()
             .filter(|(_, name, _)| matches(&panel.filter, name))
             .count(),
-        Tab::World => 11,
+        Tab::World => 12,
         Tab::Recipes => crate::craft::RECIPES.len(),
     }
 }
@@ -369,6 +369,7 @@ fn world_rows(world: &tr_core::World, stepper_paused: bool) -> Vec<(String, [f32
             format!("Pause World: {}", if stepper_paused { "ON" } else { "OFF" }),
             if stepper_paused { R } else { G },
         ),
+        ("Reveal Map (pretty)".to_string(), W),
     ]
 }
 
@@ -725,6 +726,17 @@ fn world_click(app: &mut App, row: usize) {
             // deviation for the absent chat DebugCommand dispatcher).
             app.stepper.toggle_paused(app.game_update_count);
         }
+        11 => {
+            // The `/map pretty` chat command (`ToolkitDebugCommands.cs:480-494`):
+            // `DebugOptions.unlockMap = 2` then `Main.refreshMap = true`, which
+            // Main consumes by walking `sectionManager`'s draw queue and calling
+            // `Main.Map.UnlockMapSection` on every loaded section (`:61873-61877`).
+            // The port has no section manager (the whole world is resident), so
+            // the walk covers every section directly.
+            if let Some(m) = app.map.as_mut() {
+                m.unlock_map(&app.world, true);
+            }
+        }
         _ => {}
     }
 }
@@ -831,11 +843,12 @@ mod tests {
     }
 
     #[test]
-    fn s1_e_29_the_world_tab_keeps_its_eleven_rows() {
+    fn s1_e_29_the_world_tab_keeps_its_twelve_rows() {
         let app = flow_app();
-        assert_eq!(row_count(&app.debug_panel, Tab::World), 11);
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 12);
         let rows = world_rows(&app.world, false);
-        assert_eq!(rows.len(), 11, "the draw and the dispatch agree");
+        assert_eq!(rows.len(), 12, "the draw and the dispatch agree");
         assert_eq!(rows[10].0, "Pause World: OFF");
+        assert_eq!(rows[11].0, "Reveal Map (pretty)");
     }
 }

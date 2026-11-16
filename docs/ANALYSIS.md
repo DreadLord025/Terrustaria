@@ -12752,6 +12752,32 @@ Scope notes:
 - **The fullscreen-map call site** (`Main.cs:41335`'s column layout) rides
   the map tasks (S1-L-4's layers).
 
+### Second pass (2026-11-16): the driver
+
+The primitives above were already present (the audit's "MISSING" rows for
+`UnlockMapSection`/`ClearEdges`/`MapUpdateQueue` were stale). What was missing
+was the *caller* and the *throttle*:
+
+- **`UnlockMapSection` had no caller.** The `/map` chat command
+  (`ToolkitDebugCommands.cs:480-494`) sets `DebugOptions.unlockMap` and
+  `Main.refreshMap`, which Main consumes at `:61873-61877` by walking the
+  section manager's draw queue. The port has no section manager (the whole
+  world is resident), so `WorldMap::unlock_map` walks every 200×150 section
+  directly; `unlock_section` applies the same `Utils.Clamp(v, 40, max-40)`
+  the C# does (`WorldMap.cs:111-119`) to the dirty rect it re-uploads.
+  Exposed as the F3 World-tab row "Reveal Map (pretty)" — the missing chat
+  dispatcher is why the debug panel carries it.
+- **The refresh was a `dt` timer, not `mapTime`.** `WorldMap::update` used a
+  hardcoded 0.25 s accumulator; the C# gates `ExportToMiniMap` on
+  `Main.mapTime == 0` (`LegacyLighting.cs:349`) after decrementing it per
+  frame (`Main.cs:61818-61821`) and re-arming from `mapTimeMax`
+  (`:16995-17000`, the gfx-quality budget — 0 above quality 0.8, which is why
+  a good machine exports every frame). The port now carries `map_time`/
+  `map_time_max` and the frame feeds `gfx_quality.map_time_max` in; `dt` is
+  ignored. `mapDelay` and the `renderCount == 3` phase gate ride the same
+  legacy-engine state the port has no equivalent of (it exports inline), so
+  only the `mapTime` half is modelled.
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into
