@@ -72,7 +72,7 @@ Rust:
 | `StickyTiles` (`:3362-3435`) | PORTED | `collision.rs::sticky_tiles` (S1-E-13c) + `player.rs::sticky_movement` | The `Player.sticky` field (`player.rs:750`, `FloorVisuals`) stays the floor-flag, not the C# adhesion scan (tiles 51/229 with the dust-30 trail) |
 | `AnyHurtingTiles` / `CanTileHurt` (`:3110-3226`) | PORTED | `touch_damage.rs::hurt_tiles` / `can_tile_hurt` (S1-E-13a) | |
 | `SwitchTiles` (`:3227-3360`) | PORTED | `collision.rs::switch_tiles` | |
-| `BuildTileContacts` (`:2135-2290`) | PORTED | `collision.rs::build_tile_contacts` (S1-E-13d) | Its only caller is `ApplyConveyorBeltMovementToVelocity` (`:3921`), a `WorldItem` routine the port has no owner for — the function is `#[allow(dead_code)]` |
+| `BuildTileContacts` (`:2135-2290`) | PORTED | `collision.rs::build_tile_contacts` (S1-E-13e) | Landed with its caller, `apply_conveyor_belt_movement_to_velocity` (`:3918-4188`) |
 | `noSlopeCollision` (`:2033-2133`) | PORTED | `collision.rs::no_slope_collision` (S1-E-13d) | Only caller is `NPC.Collision_MoveSnailOnSlopes` (`NPC.cs:92782`); the snail family is unported, so it is `#[allow(dead_code)]` |
 | `AdvancedTileCollision` (`:4422-4566`) | PORTED | `collision.rs::advanced_tile_collision` (S1-E-13d) | Only caller is `NPC.Collision_MoveSandshark` (`NPC.cs:92732`); the sandshark family is unported, so it is `#[allow(dead_code)]` |
 | `DrownCollision` / `GetWaterLine` (`:1383-1569`) | PORTED | `collision.rs::drown_collision` / `get_water_line` / `get_water_line_iterate` (S1-E-13b) + `player.rs::check_drowning` | |

@@ -13819,19 +13819,15 @@ Deliberate deviations:
    `world_sim/editing.rs:1350`) and no `SoundEngine` handle in
    `collision.rs`. `tile_dust_amount` is the seam a dust layer would call;
    until it exists the scan is a pure geometry query.
-3. **`advanced_tile_collision`, `no_slope_collision` and `build_tile_contacts`
-   are unexercised.** Their only callers are
-   `NPC.Collision_MoveSandshark` (`NPC.cs:92732`), `NPC.Collision_MoveSnailOnSlopes`
-   (`:92782`) and `Collision.ApplyConveyorBeltMovementToVelocity`
-   (`Collision.cs:3921`, a `WorldItem` routine the port has no owner for). The
-   sandshark/snail NPC families and the world-item conveyor path are unported,
-   so the three functions are marked `#[allow(dead_code)]` with the missing
-   caller named in place rather than inventing one. They are covered by unit
-   tests, not by gameplay.
-4. **`build_tile_contacts` returns its list instead of filling
-   `Collision.contacts`.** The C# passes a shared list and clears it (`:2139`);
-   the port allocates. Same contents, no shared mutable static.
-5. **The `Main.tile[i ± 1, j] == null → new Tile()` allocations**
+3. **`advanced_tile_collision` and `no_slope_collision` are unexercised.**
+   Their only callers are `NPC.Collision_MoveSandshark` (`NPC.cs:92732`) and
+   `NPC.Collision_MoveSnailOnSlopes` (`:92782`); the sandshark and snail NPC
+   families are unported, so both are marked `#[allow(dead_code)]` with the
+   missing caller named in place rather than inventing one. They are covered
+   by unit tests, not by gameplay. `build_tile_contacts` is not among them: it
+   landed with its caller in S1-E-13e (`ApplyConveyorBeltMovementToVelocity`),
+   and that branch's copy is the one in the tree.
+4. **The `Main.tile[i ± 1, j] == null → new Tile()` allocations**
    (`:4514-4517`, `:4534-4537`, `:63533-63536`) fold out: the port's tile array
    is dense, so a missing neighbour reads as an empty tile through
    `world.tile()`'s `Option`, which is what the allocation would have produced.
@@ -14883,3 +14879,47 @@ Count: 1 421 -> 1 582 registrations. The remaining 166 warnings are
 table, not a `Dictionary`, because the C# is a `switch` with three contiguous
 runs (`51..62`, `63..75`, and the `default: 438 + style - 2`) — the run form
 keeps the port readable against `WorldGen.cs:37928-37991`.
+## The conveyor-belt family (S1-E-13e, 2026-11-16)
+
+`crates/tr-app/src/collision.rs::build_tile_contacts` ports
+`Collision.BuildTileContacts` (`Collision.cs:2135-2290`): the `(int)`
+truncation of the box origin, the ±1/`+3` scan window clamped to
+`Main.maxTilesY - 40`, the `tileSolid || (tileSolidTop && frameY == 0)` gate,
+the `0.1f` touch epsilons and all five slope arms (`:2192-2258`) plus the
+corner arms (`:2260-2287`). The per-face overlap keeps the source's
+`(int)Math.Max(... + 0.5f, 1f)` floor.
+
+`apply_conveyor_belt_movement_to_velocity` ports
+`Collision.ApplyConveyorBeltMovementToVelocity` (`:3918-4188`): the
+per-side direction sum, the `±2.5 / ±1.25 / ±0.75` X clamps, the Y clamps,
+the corner lift onto the belt's top edge (`:4072-4101`), the side snap
+(`:4103-4131`), the `zero * 6f / 60f` ramp and the two slope-quarter wall
+snaps (`:4150-4185`). The `zero.Y < 0` arm's inner test is `zero.Y < 8f`,
+always true for a negative value - a real vanilla quirk, ported as written.
+
+`step_conveyor_belt_player` ports `Collision.StepConveyorBelt`
+(`:4190-4320`) for a Player, with the `gfxOffY > 2`/grapple/pulley guards,
+the 5 px body shrink (restored before the movement probes, `:4292-4296`), the
+`GetEntityEdgeTiles` ring, the per-slope belt lines and the two
+`TileCollision` steps. It is called from `Player::move_vanilla` at the
+`Player.cs:28230` position (after `SlopingCollision`).
+
+Deliberate gaps, all recorded here rather than guessed:
+
+* `TryFindingConveyorBeltRising` (`:4322`) is **not** ported: grep across
+  `decompiled/` finds zero callers - dead code.
+* `StepConveyorBelt`'s `artificialRising` argument (`:4301-4318`) is not
+  carried: its only callers are the unported golf/rising paths.
+* The `!shimmering` half of the `:28225` gate is dropped - the port has no
+  `Player.shimmering` (the absorbed state belongs to S1-E-16). The `tongued`
+  half is modelled as `holding(38)`.
+* The `!isLockedToATile` gate (`:28228`) has no port field; no ported
+  mechanism locks the player to a tile.
+* `WorldItem.onConveyor` is dropped: its only consumer is the draw-side
+  velocity spin (`Main.cs:38613`), and the port draws drops upright.
+* The NPC path (`NPC.cs:92575-92578`, gated by `ConveyorBeltCollision`)
+  is **not** wired: the port has no unified `NPC.UpdateCollision` to hang it
+  on, and `NPCID.Sets.ConveyorBeltCollision` is not in `tiledata` yet.
+* The item box stays the port's 14 px (`item.rs::SIZE`) rather than the C#'s
+  16 (`WorldItem.cs:138`): widening it changes every existing drop's
+  collision, which is a separate task.
