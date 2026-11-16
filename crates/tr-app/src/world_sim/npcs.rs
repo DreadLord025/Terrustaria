@@ -3976,38 +3976,16 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
                 .world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
-            // `NPC.downedMechBoss1/2/3` — the `MechBossSpawnersDropRule` gates
-            // (`MechBossSpawnersDropRule.cs:16-23`) and `BeatAnyMechBoss`/
-            // `DownedAllMechBosses`.
-            downed_mech1: app.world.downed_mech_boss1,
-            downed_mech2: app.world.downed_mech_boss2,
-            downed_mech3: app.world.downed_mech_boss3,
-            downed_mech_any: app.world.downed_mech_boss_any(),
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
             kind: if net_id < 0 { 1 } else { net_id },
-            // `info.npc.value` — the `MechBossSpawnersDropRule` `value > 0`
-            // gate and `HalloweenWeapons`' cap (`NPC.value`).
-            value: npc.value(),
+            value: 1.0,
             life_max: npc.max_hp,
             friendly: false,
             spawned_from_statue: npc.spawned_from_statue,
             is_boss: npc.kind == NpcKind::KingSlime,
             has_player_target: true,
-            // `info.npc.ai[1]` — the slime body's swallowed item / the statue
-            // mimic's style (`SlimeBodyItemDropRule.cs:15-22`,
-            // `StatueMimicItemDropRule.cs:15-22`).
-            ai1: npc.ai[1],
-            // The red-hat (Legendary) form: `NPC.RedHatSkeletron` (`:80395`)
-            // and the sitting-Clothier ritual (`PlayerSittingHelper.cs:81`)
-            // are unported, so no NPC carries the `ai[3]/localAI[3] == 1`
-            // pair this build. (The port's Skeletron head reuses `ai[3]` for
-            // the live hand count, so it must not be read as the flag.)
-            red_hat_skeletron: false,
-            // `Conditions.NamedNPC` (`Conditions.cs:971-979`): the given-name
-            // equality folded to one of the three table keys.
-            named: crate::loot_db::named_npc(&npc.given_name),
             ..Default::default()
         },
     };
