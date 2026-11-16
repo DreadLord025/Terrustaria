@@ -14738,6 +14738,58 @@ below are recorded rather than resolved:
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
 
+## The boss sprite direction and roll audit (S1-G-19, 2026-11-16)
+
+Every sprite flip in the renderer comes from one field — `Npc::sprite_dir`
+(`render/entities.rs:2603`) — because that is what the C# does: `Main.cs:23124-23128`
+draws mirrored iff `spriteDirection == 1`. Two failure modes follow, and both were
+present:
+
+* **A sign slip mirrors the whole sprite.** `AI()`'s boss arms write
+  `direction = spriteDirection = (Center.X < target.Center.X) ? 1 : -1`, i.e. **+1
+  when the player is to the right**. The port had four of Betsy's written as
+  `if pcx < cx { 1 } else { -1 }` (`:61899`, `:61902`, `:61999`, `:62053`), so the
+  dragon faced away from the player for half of every phase. Fixed to `cx < pcx`.
+* **A kind absent from the rotation whitelist never rolls.** The renderer opts each
+  kind into the generic `Main.cs:26632` rotation draw by an explicit list
+  (`render/entities.rs:2611-2660`), because most NPC kinds leave `rotation` at zero
+  and would be rotated by garbage. `NpcKind::DD2Betsy` was missing from it while
+  `update_betsy` was already writing `npc.rotation` — the whole `AngleTowards` tail
+  (`:62256-62301`) was dead. The kind is now listed and the tail ported: the
+  per-phase `num40` aim / `num41` turn rate (phases 2 and 5 write `num41 = 0` and so
+  keep the phase's own aim; 3 starts at 0.01 and switches to 0.05 with a
+  `±π/12` lean once `ai[1] >= 40`; 4 aims at `π` or `2π`; 6 at 0.02), then the
+  unconditional `spriteDirection == -1` π fold before `angle_towards`.
+
+The Wall of Flesh's eye was the mirror-image bug in a literal sense: the port had
+invented its own aim logic for the eye, while `AI()`'s aiStyle-28 arm
+(`:26066-26068`) simply copies the parent — `position.X = wof.X - width/2`,
+`direction = spriteDirection = wof.direction`, `position.Y -= height/2` — so the eye
+always looks the way the mouth does. The parent's direction is now carried on the
+world (`World::wof_dir`) because the eye's update has no access to the body NPC, and
+`update_wof_eye` mirrors it.
+
+Two structural traps met in the same pass, both of which had produced *silently*
+wrong port code rather than a visible mirror flip:
+
+* `AI_045_Golem`'s charge block is gated on the literal `velocity.Y == 0f`
+  (`:19640`), this repo's `Npc::on_ground` is the tile-contact flag written by the
+  integration step. They agree for a settled body and disagree for a body whose
+  velocity was just zeroed by a wall or a test fixture; the C# spelling is the one
+  that was ported.
+* The golem's flight `vy` sink (`:19727-19730`) is applied only while
+  `Bottom.Y < player.position.Y` **and** the horizontal span test passes — the span
+  test compares both edges (`position.X < player.position.X && position.X + width >
+  player.position.X + player.width`), not the centres.
+
+Not ported, and now filed as **S1-D-3p**: `NPC.TargetClosest` `:77652-77781`
+including `TryTrackingTarget`/`SetTargetTrackingValues`, `targetRect`,
+`npcTypeNoAggro`, `tankPet` gating, `confused`, `oldTarget` and `DirectionY`. The
+port has no such method; each machine writes `facing`/`sprite_dir` itself, and
+`npc_ai.rs::walker_step`'s `aggro_x`/`aggro_y` window (80×40 tiles at the call sites)
+is an invention with no C# counterpart. Retrofitting it changes which NPC targets
+which for every aiStyle-3 kind, so it needs its own branch and its own test pass.
+
 ## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
 
 `Main.GetBuffTooltip` (`Main.cs:43254-43289`) has a `switch` over the buff id
