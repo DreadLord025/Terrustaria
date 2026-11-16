@@ -229,6 +229,21 @@ multiplayer-client path, never a single-player or menu one (research/42, finding
 - **Bestiary**: the sightings/chats stay empty until the recording behaviour lands
   (owner decision, state + IO only); the kill clamp is one-sided (the file keeps the raw
   value, the in-memory tracker clamps it).
+- **Bestiary kill-credit + progression wires (S1-I-5)**: three deliberate gaps, all
+  recorded rather than faked:
+  (a) `NPC.interactedWithPlayerLocally` (`NPC.cs:6089`) is **not** ported — its only
+  reader is `Player.AnyBossHindersRespawnTime` (`Player.cs:39100`), which the port has
+  not ported; the field's writer (`NPC.cs:81266-81269`) is skipped with it
+  (`npc.rs::player_interaction`'s `ponytail:` comment).
+  (b) `NetBestiaryModule` carries **only** the `Kill` unlock kind
+  (`NetBestiaryModule.cs:16-23`/`:49-56`); the `Sight`/`Chat` bodies
+  (`:25-39`) are never sent and their tag bytes are rejected on read, because
+  `NPCWasNearPlayerTracker`/`NPCWasChatWithTracker` are not net-synced (see the
+  Bestiary collection bullet above).
+  (c) `AchievementsHelper.NotifyNPCKilled`'s SP arm (`:202-208`) and its MP fan-out
+  (`:210-216`) are both keyed on `playerInteraction[]`, but the host's own slot has no
+  client outbox — the port relies on `Server::send` to a non-existent slot being a
+  no-op, where the C#'s `i < 255` bound simply excludes the server. Same net effect.
 - **Creative powers**: the id-8 slider is a `[0,1]` cache on the wire and the ported rate
   1..24 in memory — the codec remaps both directions
   (`ModifyTimeRate.UpdateInfoFromSliderValueCache:877-880`); the three ids the port has
