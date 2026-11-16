@@ -311,6 +311,21 @@ impl ItemDrop {
             return false;
         }
         self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
+        // `WorldItem.cs:864`: the belt contacts bend the velocity before the
+        // AABB pass. The C# stores the `bool` in `item.onConveyor`, which only
+        // suppresses the draw-side velocity spin (`Main.cs:38613`) - the port
+        // draws drops upright, so the flag has no consumer and is dropped.
+        let mut bp = [self.pos.x, self.pos.y];
+        let mut bv = [self.vel.x, self.vel.y];
+        crate::collision::apply_conveyor_belt_movement_to_velocity(
+            world,
+            &mut bp,
+            &mut bv,
+            SIZE as i32,
+            SIZE as i32,
+        );
+        self.pos = Vec2::new(bp[0], bp[1]);
+        self.vel = Vec2::new(bv[0], bv[1]);
         let nx = self.pos.x + self.vel.x;
         if crate::player::collides_rect(world, nx, self.pos.y, SIZE, SIZE) {
             self.vel.x = -self.vel.x * 0.35;

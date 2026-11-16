@@ -908,8 +908,9 @@ items are collectible but not placeable. Desert structures and loot are not port
 
 ## Surface backgrounds
 
-`Main.DrawSurfaceBG` is ported for the four biomes the generator has: forest (0),
-desert (2), ocean (4) and snow (7). Every layer is gated and tinted by its
+`Main.DrawSurfaceBG` is ported for eight of the surface biomes: forest (0), corrupt (1),
+desert (2), jungle (3), ocean (4), hallow (6), snow (7), crimson (8) and mushroom (9).
+Every layer is gated and tinted by its
 `Main.bgAlphaFrontLayer` / `Main.bgAlphaFarBackLayer` entry
 (`ColorOfSurfaceBackgroundsBase * alpha`), so two biomes blend while `Main.bgStyle`
 cross-fades; a zero alpha skips the layer.
@@ -929,9 +930,51 @@ moves only the world) and the X phase is
 `-IEEERemainder(screenLeft·parallax, scaledWidth) − scaledWidth/2` against the screen's
 left edge, as in `DrawSurfaceBG`.
 
-`Main.GetPreferredBGStyleForPlayer` is approximated with the same camera-column biome
-tests the water style uses — beach → 4, desert → 2, snow → 7, otherwise 0 (the dungeon,
-corruption etc. do not exist in our generator). `DrawBG_HandleBackgroundTransition`
+The five remaining surface variants ride the same front-layer path: corrupt (1), jungle
+(3), hallow (6), crimson (8) and mushroom (9). [`World`] stores one **style byte** per
+biome (`corrupt_bg_style`, …), and `surface_bg_texture_ids` resolves it to the three
+`Background_<id>` ids with `WorldGen.setBG`'s cases 1/2/4/5/8 (`WorldGen.cs:7235-7608`);
+`-1` means the row is not drawn. The ids are derived on demand, so a style change needs
+no atlas rebuild — but the world-dependent sheets are packed at load
+(`assets::load_world_sheets`), hence a world's session must see one style set.
+
+Every row goes through `FrontLayer` + `front_layers`, which is a literal port of each
+`DrawSurfaceBG_*` row: the caller's `(scale, parallax, magic·k + top)` magic numbers,
+then `SetBackgroundOffsets` (`Main.cs:60384-60775`) overriding `bgScale`/`bgParallax` and,
+for the ids whose `num`/`num2` pair is non-zero, replacing `bgTopY` wholesale. That is why
+a style whose id is in the offsets table ignores the caller's row constants. Scale is
+doubled by `bgGlobalScaleMultiplier = 2` (`Main.cs:59329`) and every `top` already carries
+the front loop's `pushBGTopHack = -150` (`Main.cs:59302/59346/59525`).
+
+The per-row quirks are applied *after* the offsets, exactly like the source: corrupt's
+`bgTexIndexes[0] == 56` nudge subtracts 100 from **row 0's id on every row**
+(`Main.cs:61128/61154/61199`); jungle subtracts 200/175/150 for `59`/`60`/`61` and adds
+`DrawSurfaceBG_GetLayerYOffset` on every row (`:59740`, `:60944-61008`); crimson nudges
+row 0 by `+50` for `105` and `-350` for `174`, and row 2's `175` by `-1000` in X, `-400` in
+Y plus one extra tile (`:60206-60291`); hallow's first `SkyManager` boundary is
+`1.2f / parallax` after the offset override (`:60788`); snow and mushroom close with
+`DrawToDepth(1f)` (`:60386`, `:60186`). Row 1 of corrupt/jungle/forest is mirrored
+(`SpriteEffects.FlipHorizontally`), mushroom's three rows each replace the tint with the
+glow colour (`:60001/60065/60127`), clamped at or above the base colour's byte.
+
+The animated sheets (`GetBackgroundRect`, `Main.cs:61220-61262`) sample a 2×2 grid: `235`
+every 20 ticks, `219/220/221/271/272/273/302/303/305/307/309/311/313/315/317/326/337/338/341`
+every 15, `281` every 5, then `Inflate(0, -2)`. `background_frame` halves `w`/`h` because
+`Main.backgroundWidth/Height` are already halved for those ids at load (`:59046-59072`).
+
+**Deviation (Mushroom glow RNG).** `DrawSurfaceBG_Mushroom` rolls
+`Main.rand.Next(28, 42)` once per row (`:60002/60066/60128`). The port derives that value
+from `Main.GameUpdateCount` and the row index through `next_rand` instead of consuming
+`Main.rand`, so the draw path never advances the simulation's RNG stream — a hard
+invariant of the port (a draw-time draw would desync world generation against the
+original for the same seed). The resulting glow oscillates over the same 28..41 range at
+a comparable rate; the two rolls are not bit-identical to the original's.
+
+`Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`) is ported in full, including
+the beach/corrupt-blood-count branches and the glowshroom test; only its final
+`Main.treeX[]` forest sub-style selection (10/11/12) collapses to 0, and the desert
+evil variants (5/13/14) to 2 — both because those style tables are unported.
+`DrawBG_HandleBackgroundTransition`
 waits 30 frames before adopting a new style (60 when entering a forest style), then sets
 `bgDelay = -60` as a 60-frame cooldown (0 for a forest target);
 `UpdateBGVisibility_BackLayer`/`_FrontLayer` move 16 alpha slots at
@@ -946,12 +989,14 @@ original's zoom-1 matrix, so the layers hold their screen size at any game zoom.
 are world objects at a fixed altitude above `worldSurface` and drift with the wind; the
 storm `cloudBG` banks (`Background_112/113`) fade in with `cloudAlpha`.
 
-Not ported: the styles that need `SceneMetrics` beyond our four biomes (corruption 1,
-jungle 3, hallow 6, crimson 8, glowshroom 9, the extra forest sets 10..12 and the desert
-evil variants 5/13/14), the saved `treeBG*` / `desertBackgroundSet` randomisation (tree
-set 1 and the pure desert set are assumed), `DrawSurfaceBG_DrawChangeOverlay` (the black
-flash on first entering a background), the far-cloud depth layers
-(`DrawClouds_Distant/Closer`), the ocean water-line ambience and the `Background_49` fog.
+Not ported: the extra forest sets 10..12 and the desert evil variants 5/13/14 (their
+style tables need `Main.treeX[]` / `Main.desertBackgroundSet`, and only the tree set 1 and
+the pure desert set are packed), the forest styles' per-texture quirks
+(`91`/`173`/`178`/`184`/`282`/`328`/`333`/`329`/`334`, `Main.cs:61278-61301`,
+`:61400-61490`), snow's 20-style table (`Main.snowBG`, style 1 assumed),
+`DrawSurfaceBG_GoodEvilDesert`, `DrawSurfaceBG_DrawChangeOverlay` (the black flash on
+first entering a background), the far-cloud depth layers (`DrawClouds_Distant/Closer`),
+the ocean water-line ambience and the `Background_49` fog.
 
 Also not ported: the per-biome **animated screen effects**. In particular the day-time
 desert **heat shimmer** — `SceneState.ApplyVisuals` enables the `HeatDistortion` filter
@@ -14061,6 +14106,31 @@ Deviations:
   the port's carrier link carries the position and the timers only, so the
   cannon keeps its own movement.
 
+## The debug god mode (S1-E-34, 2026-11-16)
+
+No new damage-path code. `Player.creative_god_mode` — the journey Godmode power —
+already gates every way a player can take damage: `Hurt` returns before the
+iframes, the defense reduction and the knockback
+(`Player.cs:38203-38206`), `KillMe` refuses the death (`:38809-38812`),
+`Update_NPCCollision` returns before the whole contact pass (`:31321-31324`) and
+`Main.UpdateWorld_Players` refills life/mana/breath (`Main.cs:17869-17873`).
+
+What the task actually adds is the **debug surface**: a twelfth row on the F3
+panel's World tab (`God Mode: ON/OFF`) that flips a new
+`Player::debug_god_mode`.
+
+Deliberate deviation (one-line-cited at the site): the tick ORs
+`debug_god_mode` into `creative_god_mode` instead of writing it directly,
+because `Player.ResetEffects` re-derives `creative_god_mode` from the journey
+power **every tick** (`:18789` clears it, `:25493-25497` re-reads it), so a
+direct toggle would last exactly one tick. Keeping a separate field also keeps
+the two independent: the journey power's own toggle is untouched, and the debug
+flag cannot silently turn the power on. CheatSheet's `GodMode.cs:56-67` and
+HEROsMod's `GeneralMessages.cs:182-190` are mod sources that are not part of
+`decompiled/`, so this row implements the *behaviour* the ROADMAP row describes
+("damage is swallowed while on") on top of the existing vanilla gate rather
+than porting either mod.
+
 ## The Eye Fire / Flames Trap and the Baby Bird (S1-D-4b-5c, 2026-11-16)
 
 Two leftover styles ride the Eye and Moon Lord chains: **23** and **158**.
@@ -14605,6 +14675,85 @@ below are recorded rather than resolved:
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
 
+## The boss sprite direction and roll audit (S1-G-19, 2026-11-16)
+
+Every sprite flip in the renderer comes from one field — `Npc::sprite_dir`
+(`render/entities.rs:2603`) — because that is what the C# does: `Main.cs:23124-23128`
+draws mirrored iff `spriteDirection == 1`. Two failure modes follow, and both were
+present:
+
+* **A sign slip mirrors the whole sprite.** `AI()`'s boss arms write
+  `direction = spriteDirection = (Center.X < target.Center.X) ? 1 : -1`, i.e. **+1
+  when the player is to the right**. The port had four of Betsy's written as
+  `if pcx < cx { 1 } else { -1 }` (`:61899`, `:61902`, `:61999`, `:62053`), so the
+  dragon faced away from the player for half of every phase. Fixed to `cx < pcx`.
+* **A kind absent from the rotation whitelist never rolls.** The renderer opts each
+  kind into the generic `Main.cs:26632` rotation draw by an explicit list
+  (`render/entities.rs:2611-2660`), because most NPC kinds leave `rotation` at zero
+  and would be rotated by garbage. `NpcKind::DD2Betsy` was missing from it while
+  `update_betsy` was already writing `npc.rotation` — the whole `AngleTowards` tail
+  (`:62256-62301`) was dead. The kind is now listed and the tail ported: the
+  per-phase `num40` aim / `num41` turn rate (phases 2 and 5 write `num41 = 0` and so
+  keep the phase's own aim; 3 starts at 0.01 and switches to 0.05 with a
+  `±π/12` lean once `ai[1] >= 40`; 4 aims at `π` or `2π`; 6 at 0.02), then the
+  unconditional `spriteDirection == -1` π fold before `angle_towards`.
+
+The Wall of Flesh's eye was the mirror-image bug in a literal sense: the port had
+invented its own aim logic for the eye, while `AI()`'s aiStyle-28 arm
+(`:26066-26068`) simply copies the parent — `position.X = wof.X - width/2`,
+`direction = spriteDirection = wof.direction`, `position.Y -= height/2` — so the eye
+always looks the way the mouth does. The parent's direction is now carried on the
+world (`World::wof_dir`) because the eye's update has no access to the body NPC, and
+`update_wof_eye` mirrors it.
+
+Two structural traps met in the same pass, both of which had produced *silently*
+wrong port code rather than a visible mirror flip:
+
+* `AI_045_Golem`'s charge block is gated on the literal `velocity.Y == 0f`
+  (`:19640`), this repo's `Npc::on_ground` is the tile-contact flag written by the
+  integration step. They agree for a settled body and disagree for a body whose
+  velocity was just zeroed by a wall or a test fixture; the C# spelling is the one
+  that was ported.
+* The golem's flight `vy` sink (`:19727-19730`) is applied only while
+  `Bottom.Y < player.position.Y` **and** the horizontal span test passes — the span
+  test compares both edges (`position.X < player.position.X && position.X + width >
+  player.position.X + player.width`), not the centres.
+
+Not ported, and now filed as **S1-D-3p**: `NPC.TargetClosest` `:77652-77781`
+including `TryTrackingTarget`/`SetTargetTrackingValues`, `targetRect`,
+`npcTypeNoAggro`, `tankPet` gating, `confused`, `oldTarget` and `DirectionY`. The
+port has no such method; each machine writes `facing`/`sprite_dir` itself, and
+`npc_ai.rs::walker_step`'s `aggro_x`/`aggro_y` window (80×40 tiles at the call sites)
+is an invention with no C# counterpart. Retrofitting it changes which NPC targets
+which for every aiStyle-3 kind, so it needs its own branch and its own test pass.
+
+## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
+
+`Main.GetBuffTooltip` (`Main.cs:43254-43289`) has a `switch` over the buff id
+whose two arms print a *player-computed* percentage rather than a static
+localization string:
+
+* `case 94` (`ManaSickness`) formats `Player.manaSickReduction` into the
+  `ManaSickness2` row of `Terraria.Localization.Content.en-US.Game.json`.
+* `case 396` (`ManaHeat`) does the same with `Player.manaHeat`.
+
+The port has neither `Player.manaSickReduction` nor `Player.manaHeat`: the
+mana-sickness debuff applies its magic-damage multiplier inline in the damage
+path and stores no reduction field, and 396 does not exist at all. Rather than
+invent a field whose value no other system maintains,
+`ui::resources::buff_tooltip` falls back to the plain `BuffDescription.{name}`
+row for both ids. When the 94/396 buff *effects* land (M2-BUFF-3/4) the fields
+will exist and these two arms can be restored — the ported code is already a
+`match` over the id, so adding them is two arms.
+
+Two further colours are dropped rather than approximated: `MouseTextInner`'s
+`-13` (master) and `-12` (disco) rarity arms read `Main.masterColor` and
+`Main.Disco*`, neither of which the port keeps. The buff hover never passes
+those rarities (`Main.cs:43239-43246` only uses `-10` for the melee buffs and
+`0` otherwise), so they are unreachable from this call site;
+`ui::resources::mouse_text_color` documents them and defers to the shared
+`tooltip::item_name_color` table for every other value.
+
 ## Entity lights (S1-E-5, 2026-11-16)
 
 The C# funnels every `Lighting.AddLight` overload into
@@ -14760,3 +14909,47 @@ and the per-client state. Not ported: the projectile AIs 721/722 and 739-752,
 the golf UI, `FancyGolfPredictionLine`, tee placement, netcode, and the
 dust/sound/chat effects (the listener reports contacts instead of performing
 them, so the caller owns those).
+## The conveyor-belt family (S1-E-13e, 2026-11-16)
+
+`crates/tr-app/src/collision.rs::build_tile_contacts` ports
+`Collision.BuildTileContacts` (`Collision.cs:2135-2290`): the `(int)`
+truncation of the box origin, the ±1/`+3` scan window clamped to
+`Main.maxTilesY - 40`, the `tileSolid || (tileSolidTop && frameY == 0)` gate,
+the `0.1f` touch epsilons and all five slope arms (`:2192-2258`) plus the
+corner arms (`:2260-2287`). The per-face overlap keeps the source's
+`(int)Math.Max(... + 0.5f, 1f)` floor.
+
+`apply_conveyor_belt_movement_to_velocity` ports
+`Collision.ApplyConveyorBeltMovementToVelocity` (`:3918-4188`): the
+per-side direction sum, the `±2.5 / ±1.25 / ±0.75` X clamps, the Y clamps,
+the corner lift onto the belt's top edge (`:4072-4101`), the side snap
+(`:4103-4131`), the `zero * 6f / 60f` ramp and the two slope-quarter wall
+snaps (`:4150-4185`). The `zero.Y < 0` arm's inner test is `zero.Y < 8f`,
+always true for a negative value - a real vanilla quirk, ported as written.
+
+`step_conveyor_belt_player` ports `Collision.StepConveyorBelt`
+(`:4190-4320`) for a Player, with the `gfxOffY > 2`/grapple/pulley guards,
+the 5 px body shrink (restored before the movement probes, `:4292-4296`), the
+`GetEntityEdgeTiles` ring, the per-slope belt lines and the two
+`TileCollision` steps. It is called from `Player::move_vanilla` at the
+`Player.cs:28230` position (after `SlopingCollision`).
+
+Deliberate gaps, all recorded here rather than guessed:
+
+* `TryFindingConveyorBeltRising` (`:4322`) is **not** ported: grep across
+  `decompiled/` finds zero callers - dead code.
+* `StepConveyorBelt`'s `artificialRising` argument (`:4301-4318`) is not
+  carried: its only callers are the unported golf/rising paths.
+* The `!shimmering` half of the `:28225` gate is dropped - the port has no
+  `Player.shimmering` (the absorbed state belongs to S1-E-16). The `tongued`
+  half is modelled as `holding(38)`.
+* The `!isLockedToATile` gate (`:28228`) has no port field; no ported
+  mechanism locks the player to a tile.
+* `WorldItem.onConveyor` is dropped: its only consumer is the draw-side
+  velocity spin (`Main.cs:38613`), and the port draws drops upright.
+* The NPC path (`NPC.cs:92575-92578`, gated by `ConveyorBeltCollision`)
+  is **not** wired: the port has no unified `NPC.UpdateCollision` to hang it
+  on, and `NPCID.Sets.ConveyorBeltCollision` is not in `tiledata` yet.
+* The item box stays the port's 14 px (`item.rs::SIZE`) rather than the C#'s
+  16 (`WorldItem.cs:138`): widening it changes every existing drop's
+  collision, which is a separate task.

@@ -1220,16 +1220,52 @@ impl App {
         world_sim::growth::update_growth(self, dt);
     }
 
-    /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
-    /// the biome under the screen centre. Supported styles: 0 forest, 2 desert,
-    /// 4 ocean, 7 snow. `SceneMetrics` zones are approximated with the same
-    /// camera-column tests the water style uses (beach before desert before snow).
+    /// `Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`): the surface
+    /// background style wanted by the biome around the scene centre.
+    ///
+    /// Two deviations, both because the style they would select is not ported:
+    /// the forest sub-styles 10/11/12 need `Main.treeX[]` and the three extra
+    /// tree sets (only tree set 1 / `Background_50..52` is packed), and the
+    /// desert-variant styles 5/13/14 need `Main.desertBackgroundSet`. The forest
+    /// branch therefore stays 0 and the desert branch stays 2.
     pub(crate) fn preferred_bg_style(&self) -> i32 {
-        if is_ocean_biome(&self.world, self.camera) {
-            4
-        } else if is_desert_biome(&self.world, self.camera) {
+        // `Main.SceneMetrics.Zone*`, read in the C#'s order.
+        let m = &self.scene_metrics;
+        if m.zone_beach {
+            if m.zone_hallow {
+                6
+            } else if m.zone_corrupt {
+                if m.blood_tile_count <= m.evil_tile_count {
+                    1
+                } else {
+                    8
+                }
+            } else if m.zone_crimson {
+                8
+            } else if m.honey_block_count <= 400 {
+                4
+            } else {
+                3
+            }
+        } else if m.enough_tiles_for_glowing_mushroom() {
+            9
+        } else if m.zone_desert {
+            // `(corrupt && evil > blood && evil > holy) ? 5 : ((crimson &&
+            // blood > holy) ? 14 : (!hallow ? 2 : 13))` — 5/13/14 unported.
             2
-        } else if is_snow_biome(&self.world, self.camera) {
+        } else if m.zone_hallow {
+            6
+        } else if m.zone_corrupt {
+            if m.blood_tile_count <= m.evil_tile_count {
+                1
+            } else {
+                8
+            }
+        } else if m.zone_crimson {
+            8
+        } else if m.zone_jungle {
+            3
+        } else if m.zone_snow {
             7
         } else {
             0
@@ -1256,6 +1292,8 @@ impl App {
             &mut self.bg_alpha_front,
             &mut self.bg_alpha_far,
             self.bg_style,
+            self.world.jungle_bg_style as i32,
+            self.world.hallow_bg_style as i32,
             speed,
         );
     }
@@ -2148,7 +2186,7 @@ impl App {
     ) -> App {
         let mut world = world;
         let clouds = make_clouds(&world, &lookups);
-        let sky = make_sky_assets(&atlas);
+        let sky = make_sky_assets(&atlas, &world);
         let stars = make_stars(&world);
         let player_assets = make_player_assets(&atlas);
         let npc_assets = make_npc_assets(&atlas);
@@ -3904,7 +3942,7 @@ fn build_atlas_inner(
     // Play froze for ~1.4 s re-decoding ~7 000 sheets and ~1–2 s more on the
     // fonts, all of them already in memory). `world ++ static ++ font` is the
     // pre-split list's order, so the atlas layout and every UV are unchanged.
-    let mut images = assets::load_world_sheets(&assets_dir, &tile_ids, &wall_ids)?;
+    let mut images = assets::load_world_sheets(&assets_dir, world, &tile_ids, &wall_ids)?;
     let world_len = images.len();
     let cached = static_cache.take();
     let static_reused = cached.is_some();
