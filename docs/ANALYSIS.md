@@ -2147,7 +2147,22 @@ z-order (`docs/UI.md` → "Crafting panel"). The deviations:
 * The panel ships open with the inventory (`NewCraftingUI.Visible`,
   `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it and `TR_CRAFT=1` forces it on
   (mirroring `TR_INV`).
-* No filter, search or scrollbar interaction: the panel is draw-only, without
+* The recipe **filter strip** is live (S1-H-7): `craft_filter.rs` ports the eleven
+  `ItemFilters` predicates (`ItemFilters.cs:71-464`), the exclusive tab toggle
+  (`UICreativeItemsInfiniteFilteringOptions.cs:80-100`) and
+  `EntryFilterer.FitsFilter` (`EntryFilterer.cs:30-55`). Three deviations:
+  `Item.tileWand` is not a field on the port's `ItemDef`, so a tile wand is
+  classified by its `createTile`/`createWall` alone — a wand whose tile is
+  frame-important falls to `MiscFallback` instead of `BuildingBlock`/`Tools`;
+  `MiscFallback`'s per-type `bool?[]` cache (`:410-425`) is omitted because the
+  predicate is already a pure function of the item type (so is the grid's
+  `_filteredRecipes`, which `FilterBoard::shown` recomputes each call — the C#
+  only re-derives when the count changes, `:624-627`); and `ItemFilters.BySearch`
+  (`:16-69`) is not wired to the search box, which has no keyboard text field
+  anywhere in the port (the same reason the char/world-name screens use
+  stand-ins). The `CreativePowers.Tab*` hover label resolves through
+  `Language.GetTextValue`, which the port's `lang::text` already serves.
+* No scrollbar interaction: the panel is draw-only for the recipe grid, without
   `ItemSlot.Handle` (out of scope, as documented for the inventory panels above).
 * The cancel button is always visible — `White * 0.4` at rest, `White` on hover.
   Vanilla's `UIImageButton` never hides the icon (`_visibilityInactive = 0.4f`,
@@ -12826,6 +12841,32 @@ Scope notes:
 - **The fullscreen-map call site** (`Main.cs:41335`'s column layout) rides
   the map tasks (S1-L-4's layers).
 
+### Second pass (2026-11-16): the driver
+
+The primitives above were already present (the audit's "MISSING" rows for
+`UnlockMapSection`/`ClearEdges`/`MapUpdateQueue` were stale). What was missing
+was the *caller* and the *throttle*:
+
+- **`UnlockMapSection` had no caller.** The `/map` chat command
+  (`ToolkitDebugCommands.cs:480-494`) sets `DebugOptions.unlockMap` and
+  `Main.refreshMap`, which Main consumes at `:61873-61877` by walking the
+  section manager's draw queue. The port has no section manager (the whole
+  world is resident), so `WorldMap::unlock_map` walks every 200×150 section
+  directly; `unlock_section` applies the same `Utils.Clamp(v, 40, max-40)`
+  the C# does (`WorldMap.cs:111-119`) to the dirty rect it re-uploads.
+  Exposed as the F3 World-tab row "Reveal Map (pretty)" — the missing chat
+  dispatcher is why the debug panel carries it.
+- **The refresh was a `dt` timer, not `mapTime`.** `WorldMap::update` used a
+  hardcoded 0.25 s accumulator; the C# gates `ExportToMiniMap` on
+  `Main.mapTime == 0` (`LegacyLighting.cs:349`) after decrementing it per
+  frame (`Main.cs:61818-61821`) and re-arming from `mapTimeMax`
+  (`:16995-17000`, the gfx-quality budget — 0 above quality 0.8, which is why
+  a good machine exports every frame). The port now carries `map_time`/
+  `map_time_max` and the frame feeds `gfx_quality.map_time_max` in; `dt` is
+  ignored. `mapDelay` and the `renderCount == 3` phase gate ride the same
+  legacy-engine state the port has no equivalent of (it exports inline), so
+  only the `mapTime` half is modelled.
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into
@@ -13781,6 +13822,69 @@ Deliberate deviations:
 4. **`stickyBreak` survives a respawn.** The C# writes the counter at exactly
    four sites, all inside `StickyMovement` (`:22938`, `:22948`, `:23085`);
    `Player.Spawn` never clears it, so the port's revive path does not either.
+## The remaining collision family (S1-E-13d, 2026-11-16)
+
+`crates/tr-app/src/collision.rs` gains the five functions S1-E-13's parent row
+still listed after the 13a/13b/13c splits.
+
+* `no_slope_collision` (`Collision.cs:2033-2133`) is `tile_collision` with the
+  slope gates removed (`:2059`'s solid conjunct has no `slope()` arm at all).
+  The up arm keeps its `+ 0.01f` (`:2124`); the down arm has no `gravDir` term
+  (`:2088` is bare `vector4.Y - (vector3.Y + Height)`), unlike
+  `TileCollision`'s caller-supplied `gravDir`.
+* `advanced_tile_collision` (`:4422-4566`) keeps the slope gates but adds the
+  `forcedIgnoredTiles` conjunct (`:4449`), the neighbour-slope exemptions on the
+  two side arms (`:4514-4518` skips a slope 2/4 tile to the left,
+  `:4534-4538` a slope 1/3 tile to the right) and the `gravDir`-dependent
+  nudges — `-0.01f` on the down arm when `gravDir == -1` (`:4507`), `+0.01f` on
+  the up arm when `gravDir == 1` (`:4557`).
+* `hit_tiles` / `hit_tiles_in_a_circle` (`:3063-3108`, `:3016-3061`) share one
+  scan. Its box test is **inclusive** on all four edges (`:3101`), unlike
+  `TileCollision`'s strict comparisons, and the horizontal clamp stops at
+  `Main.maxTilesX`, not `maxTilesX - 1` (`:3027`). The circle arm adds the
+  centre-distance gate `(centre - (tile + (8, 8))).Length() < (Width + Height) / 4`
+  (`:3054`).
+* `build_tile_contacts` (`:2135-2290`) enumerates `TileContact`s: the position
+  truncates to whole pixels first (`:2137`), the window is `(x - 1) / 16 - 1 ..
+  (x + 1 + w) / 16 + 1` and `(y - 1) / 16 - 1 .. (y + 3 + h) / 16 + 1`
+  (`:2140-2143`), the Left/Right arms exclude slopes 3/1 and 4/2 respectively
+  (`:2177`/`:2181`), and the Top/Bottom arms switch on the slope with the
+  slope-3/4 inset variants (`:2232-2257`) and a diagonal `BottomLeft`/
+  `BottomRight` fallback when the box only grazes a corner (`:2260-2287`).
+  Overlaps are `(int)Math.Max(Math.Min(...) - Math.Max(...) + 0.5f, 1f)`.
+
+`tile_dust_amount` ports `WorldGen.KillTile_GetTileDustAmount`
+(`WorldGen.cs:66597-66685`) so the hit scan's effect half is expressible.
+
+Deliberate deviations:
+
+1. **`HitTiles` never destroys a tile, because the source does not either.**
+   Both call sites answer a hit with `WorldGen.KillTile(i, j, fail: true,
+   effectOnly: true)`; that overload runs `CheckTileBreakability`, the
+   item/furniture-rack drops and the dust loop, then **returns** at
+   `WorldGen.cs:63704-63707` before any removal, framing or item spawn. The
+   port therefore returns the hit cells and `tile_dust_amount` gives the counts
+   the C# would spawn. `tr_core::edit::kill_tile` is the *destructive*
+   `KillTile` and must not be called here: doing so would break tiles the
+   vanilla only shakes.
+2. **The dust and the shake sound are not spawned.** The port has no tile-dust
+   layer (the same gap the failing mine tick records at
+   `world_sim/editing.rs:1350`) and no `SoundEngine` handle in
+   `collision.rs`. `tile_dust_amount` is the seam a dust layer would call;
+   until it exists the scan is a pure geometry query.
+3. **`advanced_tile_collision` and `no_slope_collision` are unexercised.**
+   Their only callers are `NPC.Collision_MoveSandshark` (`NPC.cs:92732`) and
+   `NPC.Collision_MoveSnailOnSlopes` (`:92782`); the sandshark and snail NPC
+   families are unported, so both are marked `#[allow(dead_code)]` with the
+   missing caller named in place rather than inventing one. They are covered
+   by unit tests, not by gameplay. `build_tile_contacts` is not among them: it
+   landed with its caller in S1-E-13e (`ApplyConveyorBeltMovementToVelocity`),
+   and that branch's copy is the one in the tree.
+4. **The `Main.tile[i ± 1, j] == null → new Tile()` allocations**
+   (`:4514-4517`, `:4534-4537`, `:63533-63536`) fold out: the port's tile array
+   is dense, so a missing neighbour reads as an empty tile through
+   `world.tile()`'s `Option`, which is what the allocation would have produced.
+
 ## The Brain of Cthulhu's machine (S1-D-3e, 2026-11-14)
 
 `AI_054` (`NPC.cs:32370-32656`) is the Brain of Cthulhu's family machine:
@@ -14677,6 +14781,53 @@ below are recorded rather than resolved:
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.
 
+## S1-L-1 - scene metrics: ScanOnScreenTiles / ScanNPCPositions / the ore finder (2026-11-16)
+
+The scan now runs the whole `SceneMetrics.Scan` body (`SceneMetrics.cs:326-351`) in
+source order: `ScanTiles`, `ScanOnScreenTiles`, `ScanNPCPositions`,
+`AggregateTileCounts`, `CalculateZones`. Readings behind deliberate deviations:
+
+* **The visual rect.** `Main.cs:62536-62537` is `Main.GetAreaToLight()` then
+  `.Inflate(28, 28)`; `GetAreaToLight` (`:63926-63936`) is the *scaled* camera rect,
+  `floor(pos/16) - 1` to `floor((pos+size)/16) + 2`. The port has no
+  `GameViewMatrix`, and its `camera` + `screen / zoom` is exactly the world-space
+  view the tile pass already draws (`render/tiles.rs:312-318`), so the rect is
+  derived the same way. Zoom is the only divergence: vanilla's scaled camera differs
+  from ours by the view matrix translation, which the port does not model. The rect
+  only gates the music box / clock / fountain / monolith reads, all of which are
+  single-tile proximity probes - a one-tile difference shifts a fountain colour by at
+  most one tile of the view, never the pixel output of an unrelated pass.
+* **`ScanNPCPositions` is gated on `npcs` being passed**, not on the C#
+  `settings.ScanNPCPositions` bool (`Main.cs:62541` always sets it; `Player.cs:16683`
+  also always sets it). `scan_scene_at` (the unit-test entry) passes none, so the
+  array stays zeroed there - the C# would clear it in `Reset` regardless (`:786`).
+* **`nPC.active` is approximated by `hp > 0`.** The port reaps dead NPCs at the end of
+  the NPC tick (`world_sim/npcs.rs`'s `retain(|n| n.hp > 0)`), so a slot in
+  `app.npcs` with `hp <= 0` is the transient state between the kill and the retain -
+  which the C# would also skip via `active == false`.
+* **`NPCBannerBuff` indexing** keeps the port's `vec![false; 320]`; the C# is
+  `BannerSystem.MaxBannerTypes = 293` (`BannerSystem.cs:1453`). Only ids < 293 are
+  ever written by `banner_num_from_frame`, so the wider vec is inert.
+* **Not ported (no reader in the port):** `PartyMonolithCount` (the party monolith
+  tile is not in the port's tile set), `MoonLordMonolith` (tile 623's state only
+  feeds `ManageSpecialBiomeVisuals("MoonLord", ...)`, unported), `CanPlayCreditsRoll`
+  (`ActiveMusicBox == 85` only gates the credits roll, which the port does not have),
+  and the `AddPlayerEffects` arms for held items 148/3117/5322 plus
+  `player.musicBox`/`musicBoxSilence`/`happyFunTorchTime` (`:747-774`) - the player
+  struct has none of those fields. `shimmerWet` is the one `AddPlayerEffects` input
+  the port does carry and it is wired (it was already).
+* **`ActiveFountainColor` has no consumer yet.** `Main.CalculateWaterStyle`
+  (`Main.cs:57387-57392`) returns it when `>= 0`, but the port's
+  `biome::calculate_water_style` derives the style from the camera alone and does not
+  take the metrics. Wiring it means threading the scan through three call sites
+  (`frame.rs:1131`, `render/tiles.rs:322`, `rain.rs:941`) — the water-style half of
+  the row, not this one.
+* **`TownNPCCount` is now real.** It feeds `MusicEnv.town_npcs` (the `>= 3` town
+  music gate, `Main.cs:12199`) and `SpawnContext.town_npcs` (the spawn-pressure
+  tiers, `NPC.cs:604-621`), both of which were hardcoded to `0` with an "M4-TOWN"
+  comment. The port does spawn town NPCs (`NpcKind::is_town_npc`), so this was a
+  real behavioural gap, not a placeholder.
+
 ### S1-E-37's remaining deviations
 
 Three, all forced by the port's shape:
@@ -14888,6 +15039,47 @@ Count: 1 421 -> 1 582 registrations. The remaining 166 warnings are
 table, not a `Dictionary`, because the C# is a `switch` with three contiguous
 runs (`51..62`, `63..75`, and the `default: 438 + style - 2`) — the run form
 keeps the port readable against `WorldGen.cs:37928-37991`.
+
+## Golf (S1-E-9, 2026-11-16)
+
+Three `tr-core` modules: `ball.rs` (the generic `Terraria.Physics` engine),
+`golf.rs` (`GolfHelper`'s arithmetic/table half) and `golf_state.rs`
+(`GolfState` + `GolfBallTrackRecord`). All ported 1:1 with `file:line`
+citations; 28 tests.
+
+**The `Materials.json` gap.** `GolfHelper.ContactListener` and `HitGolfBall`
+read five per-tile floats (`TileGolfPhysics.{Direct,Side,Club,PassThrough}`
+`ImpactDampening` + `ImpactDampeningResistanceEfficiency`) through
+`TileMaterials.GetByTileId`. `TileMaterials.cs:22-24` deserialises them from
+`Terraria.GameContent.Metadata.MaterialData.Materials.json`, an **embedded
+resource of `Terraria.dll`** - not a file. This repo has neither the DLL nor the
+JSON (`assets/Content/` holds only `Fonts`, `Images`, `Sounds`), so the table is
+unrecoverable. The port therefore reaches it through a `GolfMaterials` trait
+whose default (`DefaultMaterials`) returns `GolfPhysics::default()`, i.e. **1.0
+for every factor**. That is the identity for all four uses (the side/direct
+blend, `velocity * 1.0`, `lerp(v * 1.0, v, e) == v`; the bumper push uses no
+material at all), so an unknown material leaves the ball's motion untouched
+rather than inventing a friction value. Consequence: on real terrain the ball
+does not yet slow on landing; wiring the retail JSON (or a hand-built table)
+into `impl GolfMaterials` is the only remaining work for exact contact feel.
+
+**`GolfBall` is a value snapshot, not a `Projectile`.** `GolfState` keeps a live
+`Projectile` reference and re-validates it on every `GetLastHitBall`
+(`active`, `IsAGolfBall[type]`, `owner == Main.myPlayer`, `ai[1]`). `tr-core` has
+no projectile pool, so the caller supplies a `&GolfBall` snapshot and the same
+four guards read it. `Main.myPlayer` is a real parameter threaded through
+`get_last_hit_ball` - the owner check is a genuine comparison (a test varies both
+sides), not a constant.
+
+**`BALL_RETURN_PENALTY = 1` is dead.** `GolfState.cs:8` declares it and never
+reads it; it is omitted rather than carried as a dead constant.
+
+**Scope.** Ported: the ball engine, the shot model, the club table, the contact
+listener's bounce/bumper/hole-capture/pass-through decisions, the score record
+and the per-client state. Not ported: the projectile AIs 721/722 and 739-752,
+the golf UI, `FancyGolfPredictionLine`, tee placement, netcode, and the
+dust/sound/chat effects (the listener reports contacts instead of performing
+them, so the caller owns those).
 ## The conveyor-belt family (S1-E-13e, 2026-11-16)
 
 `crates/tr-app/src/collision.rs::build_tile_contacts` ports

@@ -4,6 +4,7 @@
 //! world files can be mapped 1:1 without lossy conversion.
 
 pub mod anim;
+pub mod ball;
 pub mod bcrypt;
 pub mod armor_sets;
 pub mod bestiary;
@@ -64,4 +65,6 @@ pub use world::World;
 pub const TILE_PX: f32 = 16.0;
 /// Stride between tiles inside a tileset texture (16 px art + 2 px padding).
 pub const TILE_STRIDE: i32 = 18;
+pub mod golf;
+pub mod golf_state;
 pub mod gore; pub mod gore_id;
