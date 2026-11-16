@@ -1977,6 +1977,7 @@ pub(crate) mod front_flow_tests {
             ambient_lavafall: (0.0, 0.0, 0.0),
             ambient_counter: 0.0,
             craft_filter: None,
+            craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: tr_core::bestiary::WorldBestiary::new(),
             town_rooms: crate::town::TownRooms::new(),
             shimmered_npcs: crate::town::ShimmeredTownNpcs::new(),

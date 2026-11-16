@@ -837,7 +837,9 @@ pub(crate) fn available(
 
 /// [`available`] plus the two world/player gates — the C#'s
 /// `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`) filters through
-/// `Recipe.CanCraft`, which reads them (`Recipe.cs:349-356`).
+/// `Recipe.CanCraft`, which reads them (`Recipe.cs:349-356`). The result is the
+/// raw `availableRecipe` list; [`crate::craft_filter::FilterBoard::shown`] then
+/// narrows what the grid shows (`NewCraftingUI.cs:596-611`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn available_with_gates(
     inv: &[ItemSlot; INV],

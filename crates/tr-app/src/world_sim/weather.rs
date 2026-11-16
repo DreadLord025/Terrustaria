@@ -238,13 +238,21 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
                 world.slime_rain_time = 0.0;
             }
         }
+        // `Main.cs:64925`'s gate: `!Main.raining && !NPC.BusyWithAnyInvasionOfSorts()`
+        // (`NPC.cs:7022-7029` = `slimeRainTime == 0 && !bloodMoon && !eclipse
+        // && !snowMoon && !pumpkinMoon && invasionType == 0 && !DD2Event.Ongoing`),
+        // then `dayTime && time < 27000 && dayRate > 0`.
         if !rain.is_raining()
-            && !world.slime_rain
-            && !world.invasion_goblins
+            && world.slime_rain_time == 0.0
+            && !world.blood_moon
+            && !world.eclipse
+            && !world.snow_moon
+            && !world.pumpkin_moon
             && world.invasion_type == 0
+            && !world.dd2_event_ongoing
             && world.day_time
             && world.time < 27000.0
-            && world.invasion_size <= 0
+            && day_rate > 0
         {
             let mut num3 = 450000.0 / (day_rate.max(1) as f64);
             if !world.downed_slime_king {
@@ -260,14 +268,30 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
                 num3 *= 5.0;
             }
             // The roll + `StartSlimeRain` ride `UpdateTime` (`Main.cs:64945`
-            // inside the rain section of `Main.UpdateTime`).
+            // inside the rain section of `Main.UpdateTime`). `StartSlimeRain`
+            // re-checks the rain/gate arms itself (`:64744-64768`).
             if slime_rain_roll(
                 &world,
                 ready,
                 app.rngs.stream(crate::app::RngKey::UpdateTime),
             ) {
-                start_slime_rain(world, app.rngs.stream(crate::app::RngKey::UpdateTime));
+                start_slime_rain(
+                    world,
+                    rain.is_raining(),
+                    app.rngs.stream(crate::app::RngKey::UpdateTime),
+                );
             }
+        }
+        // `Main.UpdateSlimeRainWarning` (`Main.cs:65006`'s call, body at
+        // `:65504-65522`): the armed countdown's announcement. The C# ticks it
+        // in every `UpdateTime`, outside the slime block, so it runs here
+        // unconditionally.
+        if let Some(key) = update_slime_rain_warning(world) {
+            crate::chat::broadcast_death_text(
+                &mut app.chat,
+                &crate::lang::text(key),
+                crate::chat::COLOR_WORLD,
+            );
         }
         // (7) `Main.cs:65004-65042`: the Travelling Merchant's visit
         // cycle. `NPC.travelNPC` (`NPC.cs:6541`) is raised alive while a
@@ -384,26 +408,74 @@ pub(crate) fn slime_rain_roll(
 /// `Main.StopSlimeRain()` (`Main.cs:64787-64820`): the single-player arm —
 /// the flag down, the clock set to the negative cooldown
 /// `-Next(3024, 6048) * 100` (it climbs back to zero in the tick's slime
-/// clock). The kill counter is NOT cleared here — the C# only resets it in
-/// `StartSlimeRain`. A no-op when the rain is already down (`:64789-64792`).
+/// clock), and the announcement armed (`slimeWarningTime = slimeWarningDelay`,
+/// `:64811`). The kill counter is NOT cleared here — the C# only resets it in
+/// `StartSlimeRain`. A no-op when the rain is already down (`:64789-64792`),
+/// so the guard draws nothing.
 pub(crate) fn stop_slime_rain(world: &mut tr_core::World, rng: &mut UnifiedRandom) {
     if !world.slime_rain {
         return;
     }
     world.slime_rain_time = -(rng.next_range(3024, 6048) as f64) * 100.0;
     world.slime_rain = false;
+    world.slime_warning_time = SLIME_WARNING_DELAY;
 }
 
-/// `StartSlimeRain` (`Main.cs:64742-64776`): the duration
-/// Next(32400, 54000), the kill counter reset; the rain/invasion gates
-/// live at the caller (the tick's morning arm).
-pub(crate) fn start_slime_rain(world: &mut tr_core::World, rng: &mut UnifiedRandom) {
+/// `Main.slimeWarningDelay` (`Main.cs:66802`'s `420`).
+pub(crate) const SLIME_WARNING_DELAY: i32 = 420;
+
+/// `Main.UpdateSlimeRainWarning` (`Main.cs:65504-65522`): the 420-tick
+/// countdown after a start/stop, then the announcement — `Lang.gen[74]`
+/// ("Slime is falling from the sky!") while the rain clock is still
+/// positive, `Lang.gen[75]` once it has gone negative. Returns the message
+/// key to broadcast, if the countdown just expired.
+pub(crate) fn update_slime_rain_warning(world: &mut tr_core::World) -> Option<&'static str> {
+    if world.slime_warning_time <= 0 {
+        return None;
+    }
+    world.slime_warning_time -= 1;
+    if world.slime_warning_time > 0 {
+        return None;
+    }
+    Some(if world.slime_rain_time > 0.0 {
+        "LegacyWorldGen.74"
+    } else {
+        "LegacyWorldGen.75"
+    })
+}
+
+/// `StartSlimeRain` (`Main.cs:64742-64785`) — the single-player arm the
+/// port models: the `remixWorld`/`isThereAWorldSurface`/already-raining/
+/// `Main.raining` gates (`:64744`, `:64761-64764`), the `slimeRainTime <= 0`
+/// re-arm to `Next(32400, 54000)` (`:64765-64768`), the flag + the kill
+/// counter reset and the announcement arm (`:64769-64777`). Returns whether
+/// the rain started.
+pub(crate) fn start_slime_rain(
+    world: &mut tr_core::World,
+    raining: bool,
+    rng: &mut UnifiedRandom,
+) -> bool {
+    if world.slime_rain {
+        return false;
+    }
+    // `Main.remixWorld || !Main.isThereAWorldSurface` (`:64744`): the port has
+    // no remix worldgen, so only a world without a surface refuses.
+    if world.world_surface <= 0.0 {
+        return false;
+    }
+    if raining {
+        return false;
+    }
+    // `:64765-64768`: re-arm only from a spent clock — a running duration or
+    // a live cooldown keeps its value (`StartSlimeRain(announce: false)` from
+    // the save/network path relies on that).
+    if world.slime_rain_time <= 0.0 {
+        world.slime_rain_time = rng.next_range(32400, 54000) as f64;
+    }
     world.slime_rain = true;
-    // `Main.cs:64767`: `slimeRainTime = Main.rand.Next(32400, 54000)` — one
-    // integer draw (the C#'s `slimeRainTime <= 0` re-arm gate is implied by
-    // the roll gate, which requires `!slimeRain`).
-    world.slime_rain_time = rng.next_range(32400, 54000) as f64;
     world.slime_rain_kills = 0;
+    world.slime_warning_time = SLIME_WARNING_DELAY;
+    true
 }
 
 /// `Main.cs:65121-65134`'s midnight-crossing arm: the instantaneous
@@ -1037,13 +1109,19 @@ mod tests {
         assert_eq!(fresh, pristine, "the not-ready gate draws nothing");
         // The start fields: one `Next(32400, 54000)` duration draw
         // (`Main.cs:64767`) and the kill counter reset.
-        crate::world_sim::weather::start_slime_rain(&mut app.world, &mut fresh);
+        assert!(crate::world_sim::weather::start_slime_rain(
+            &mut app.world,
+            false,
+            &mut fresh
+        ));
         assert!(app.world.slime_rain);
         assert_eq!(
             app.world.slime_rain_time, 46831.0,
             "the Next(32400, 54000) duration on seed 42"
         );
         assert_eq!(app.world.slime_rain_kills, 0);
+        // The announcement armed (`Main.cs:64776`): the 420-tick countdown.
+        assert_eq!(app.world.slime_warning_time, 420);
         // The gates: the afternoon tick leaves the state untouched.
         app.world.slime_rain = false;
         app.world.time = 30000.0;
@@ -1428,6 +1506,71 @@ mod tests {
         crate::world_sim::weather::stop_slime_rain(&mut world, &mut rng);
         assert_eq!(rng, pristine, "the !slime_rain guard draws nothing");
         assert_eq!(world.slime_rain_time, want, "the cooldown untouched");
+        // The announcement arms either way (`:64811`).
+        assert_eq!(world.slime_warning_time, super::SLIME_WARNING_DELAY);
+    }
+
+    /// S1-E-37: `StartSlimeRain`'s own gates (`Main.cs:64744-64768`) — the
+    /// surface, the rain, the already-raining arm and the `slimeRainTime <= 0`
+    /// re-arm. The panel used to hardcode 43200 with none of these.
+    #[test]
+    fn s1_e_37_start_slime_rain_gates_and_rearm() {
+        let mut world = tr_core::World::new("t".into(), 64, 64);
+        let mut rng = UnifiedRandom::new(7);
+        // `!Main.isThereAWorldSurface` (`:64744`).
+        world.world_surface = 0.0;
+        assert!(!super::start_slime_rain(&mut world, false, &mut rng));
+        assert!(!world.slime_rain);
+        // `Main.raining` (`:64761-64764`).
+        world.world_surface = 200.0;
+        assert!(!super::start_slime_rain(&mut world, true, &mut rng));
+        assert!(!world.slime_rain);
+        // The real start: one `Next(32400, 54000)` draw.
+        let mut twin = UnifiedRandom::new(7);
+        let want = twin.next_range(32400, 54000) as f64;
+        assert!(super::start_slime_rain(&mut world, false, &mut rng));
+        assert_eq!(world.slime_rain_time, want);
+        assert!(want >= 32400.0 && want < 54000.0, "the band: {want}");
+        // Already raining (`:64744`) — no draw, no change.
+        let pristine = rng.clone();
+        assert!(!super::start_slime_rain(&mut world, false, &mut rng));
+        assert_eq!(rng, pristine, "the slimeRain guard draws nothing");
+        // A live duration survives the call (`:64765-64768` re-arms only a
+        // spent clock) — the `announce: false` save/network path relies on it.
+        world.slime_rain = false;
+        world.slime_rain_time = 40000.0;
+        assert!(super::start_slime_rain(&mut world, false, &mut rng));
+        assert_eq!(
+            world.slime_rain_time, 40000.0,
+            "a positive clock is not re-rolled"
+        );
+    }
+
+    /// S1-E-37: `Main.UpdateSlimeRainWarning` (`Main.cs:65504-65522`) — the
+    /// 420-tick countdown, then `Lang.gen[74]` while the clock is positive and
+    /// `Lang.gen[75]` once it has gone negative.
+    #[test]
+    fn s1_e_37_the_slime_warning_counts_down_and_picks_the_text() {
+        let mut world = tr_core::World::new("t".into(), 64, 64);
+        assert_eq!(super::update_slime_rain_warning(&mut world), None, "idle");
+        world.slime_warning_time = 2;
+        world.slime_rain_time = 30000.0;
+        assert_eq!(super::update_slime_rain_warning(&mut world), None);
+        assert_eq!(world.slime_warning_time, 1);
+        assert_eq!(
+            super::update_slime_rain_warning(&mut world),
+            Some("LegacyWorldGen.74"),
+            "a positive clock = 'Slime is falling from the sky!'"
+        );
+        assert_eq!(world.slime_warning_time, 0);
+        // The stopped arm picks the other row.
+        world.slime_warning_time = 1;
+        world.slime_rain_time = -504_400.0;
+        assert_eq!(
+            super::update_slime_rain_warning(&mut world),
+            Some("LegacyWorldGen.75"),
+            "a negative clock = 'Slime has stopped falling from the sky.'"
+        );
     }
 
     /// The King-death caller (`NPC.cs:79405-79410`'s case 50 through the
