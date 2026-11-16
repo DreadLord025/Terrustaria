@@ -88,19 +88,22 @@ pub type WorldSheets = (Vec<AtlasImage>, Vec<AtlasImage>);
 /// concatenate the two in that order to get the pre-split list.
 pub fn load_world_images(
     dir: &Path,
+    world: &World,
     tiles: &BTreeSet<u16>,
     walls: &BTreeSet<u16>,
 ) -> Result<WorldSheets> {
     Ok((
-        load_world_sheets(dir, tiles, walls)?,
+        load_world_sheets(dir, world, tiles, walls)?,
         load_static_sheets(dir),
     ))
 }
 
 /// The world-dependent half of [`load_world_images`]: the tile and wall sheets
-/// the usage scan asked for, plus the dirt fallback.
+/// the usage scan asked for, the surface-background layer sheets of this
+/// world's own styles, plus the dirt fallback.
 pub fn load_world_sheets(
     dir: &Path,
+    world: &World,
     tiles: &BTreeSet<u16>,
     walls: &BTreeSet<u16>,
 ) -> Result<Vec<AtlasImage>> {
@@ -142,6 +145,41 @@ pub fn load_world_sheets(
         }
     }
 
+    // The surface-background layer sheets of *this* world's own style variants
+    // (`Main.corruptBG`/`jungleBG`/`hallowBG`/`crimsonBG`/`mushroomBG`, filled by
+    // `WorldGen.setBG`). They belong in the world half: which `Background_<id>`
+    // files exist depends on the world's rolled styles, and the whole 95-sheet
+    // variant set is ~300 MB — every world packs only its own five styles.
+    // `-1` is a layer the C# never draws, so no sheet is packed for it.
+    let mut bg_ids: Vec<i32> = [
+        world.corrupt_bg(),
+        world.jungle_bg(),
+        world.hallow_bg(),
+        world.crimson_bg(),
+        world.mushroom_bg(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|&id| id >= 0)
+    .collect();
+    bg_ids.sort_unstable();
+    bg_ids.dedup();
+    let bg_images: Vec<(i32, Result<AtlasImage>)> = bg_ids
+        .par_iter()
+        .map(|&id| {
+            (
+                id,
+                load_png(dir, &format!("Background_{id}"), SheetLayout::Raw),
+            )
+        })
+        .collect();
+    for (id, result) in bg_images {
+        match result {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing background texture Background_{id}"),
+        }
+    }
+
     // Fallback sheet so unknown ids still render something instead of vanishing.
     if !images.iter().any(|i| i.name == "Tiles_0") {
         if let Ok(img) = load_png(dir, "Tiles_0", SheetLayout::Tile) {
@@ -159,6 +197,16 @@ pub fn load_world_sheets(
 
     Ok(images)
 }
+
+/// `Images/Misc/MoonExplosion/*` sheet names, in the order
+/// [`Lookups::moon_explosion`] indexes them (`MoonlordDeathDrama.cs:231-242`).
+const MOON_EXPLOSION_SHEETS: [&str; 5] = [
+    "Misc/MoonExplosion/Spine",
+    "Misc/MoonExplosion/Shoulder",
+    "Misc/MoonExplosion/Torso",
+    "Misc/MoonExplosion/Head",
+    "Misc/MoonExplosion/Explosion",
+];
 
 /// Every whole-image sheet the static half of the atlas packs, in a fixed
 /// order. Exposed so the renderer's tests can assert that a sheet a draw arm
@@ -358,6 +406,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_165",
         "Extra_246",
         "Extra_251",
+        // S1-E-16 screen effects: `Extra_49` is the `ScreenObstruction` border
+        // diamond (`ScreenObstruction.cs:53`), `Extra_98` the paladin-shield
+        // boundary arc (`Main.cs:57248`) and `FlameRing` the inferno halo
+        // (`Main.cs:64321`).
+        "Extra_49",
+        "Extra_98",
+        "FlameRing",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -1077,6 +1132,15 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // `MoonlordDeathDrama`'s parts + blast (`MoonlordDeathDrama.cs:231-242`):
+    // `Images/Misc/MoonExplosion/{Spine,Shoulder,Torso,Head,Explosion}`.
+    for name in ["Spine", "Shoulder", "Torso", "Head", "Explosion"] {
+        match load_misc_png(dir, &format!("MoonExplosion/{name}")) {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing Misc/MoonExplosion/{name}"),
+        }
+    }
+
     // `DrawTile_LiquidBehindTile`: `Liquid_*` is the 16 px partial strip and
     // `LiquidSlope_*` the four diagonal masks drawn behind blocks that stand in
     // liquid.
@@ -1627,6 +1691,19 @@ pub struct Lookups {
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
+    /// (`ScreenObstruction.cs:53`).
+    pub extra_49: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[98]`: the paladin-shield boundary arc
+    /// (`Main.cs:57248`) — loaded for S1-E-16, the draw is gated on
+    /// `Player.hasPaladinShield` (unported).
+    pub extra_98: Option<tr_render::SheetRect>,
+    /// `TextureAssets.FlameRing`: the inferno halo (`Main.cs:64321`), 400×1200
+    /// (3 rings of 400×400) — the draw is gated on `Player.inferno`.
+    pub flame_ring: Option<tr_render::SheetRect>,
+    /// `Images/Misc/MoonExplosion/{Spine,Shoulder,Torso,Head,Explosion}`
+    /// (`MoonlordDeathDrama.cs:231-242`).
+    pub moon_explosion: [Option<tr_render::SheetRect>; 5],
     /// `TextureAssets.Buff[type]` (`Images/Buff_<id>`): the buff bar's icons
     /// (`Main.DrawBuffIcon`, `Main.cs:43310`).
     pub buff_icons: HashMap<u16, tr_render::SheetRect>,
@@ -1998,6 +2075,10 @@ impl Lookups {
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
+            extra_49: atlas.sheet("Extra_49").copied(),
+            extra_98: atlas.sheet("Extra_98").copied(),
+            flame_ring: atlas.sheet("FlameRing").copied(),
+            moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
@@ -2878,7 +2959,8 @@ mod tests {
             let tiles = BTreeSet::new();
             let walls = BTreeSet::new();
             let (mut images, static_sheets) =
-                load_world_images(&images_dir, &tiles, &walls).expect("world image decode");
+                load_world_images(&images_dir, &World::new("t".into(), 8, 8), &tiles, &walls)
+                    .expect("world image decode");
             images.extend(static_sheets);
             let atlas = tr_render::Atlas::build(images, 8192);
             let lookups = Lookups::build(
@@ -2983,7 +3065,8 @@ mod tests {
         let tiles: BTreeSet<u16> = [1u16, 2, 30].into_iter().collect();
         let walls: BTreeSet<u16> = [1u16, 4].into_iter().collect();
 
-        let (world_half, static_half) = load_world_images(&images_dir, &tiles, &walls).unwrap();
+        let (world_half, static_half) =
+            load_world_images(&images_dir, &World::new("t".into(), 8, 8), &tiles, &walls).unwrap();
         let joined: Vec<String> = world_half
             .iter()
             .chain(static_half.iter())
@@ -2991,7 +3074,8 @@ mod tests {
             .collect();
 
         // The halves are exactly the two loaders, in the same order.
-        let world_only = load_world_sheets(&images_dir, &tiles, &walls).unwrap();
+        let world_only =
+            load_world_sheets(&images_dir, &World::new("t".into(), 8, 8), &tiles, &walls).unwrap();
         let static_only = load_static_sheets(&images_dir);
         assert_eq!(
             joined,

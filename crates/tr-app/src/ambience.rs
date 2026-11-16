@@ -18,8 +18,7 @@
 
 use glam::Vec2;
 use tr_core::tile_light::FastRandom;
-
-use crate::app::next_rand;
+use tr_core::UnifiedRandom;
 
 /// `SkyEntityType` (`SkyEntityType.cs:3-24`), C# declaration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -506,10 +505,21 @@ impl Ambience {
         self.pinned_seed = Some(seed);
     }
 
+    /// Test-only: block the regular scheduler (the next `update` steps
+    /// entities only), so a test can drive the forced-spawn path in
+    /// isolation — the relay stream assertions then see exactly that path's
+    /// draws.
+    #[cfg(test)]
+    pub(crate) fn block_scheduler_for_tests(&mut self) {
+        self.updates_until_next_attempt = i32::MAX;
+    }
+
     /// The per-frame entry point: fixed-step 60 Hz like the original's update
     /// cadence (the rain accumulator precedent), so a variable display rate
-    /// does not drift the frame counter.
-    pub(crate) fn update(&mut self, dt: f32, ctx: &AmbienceCtx, rng: &mut u64) {
+    /// does not drift the frame counter. The scheduler's draws ride the bare
+    /// `Main.rand` stand-in (`Main.cs:17214-17216` runs `AmbienceServer.Update`
+    /// outside every `SwapRandom` block — `NamedRngs::global()`).
+    pub(crate) fn update(&mut self, dt: f32, ctx: &AmbienceCtx, rng: &mut UnifiedRandom) {
         self.accumulator += dt;
         const STEP: f32 = 1.0 / 60.0;
         while self.accumulator >= STEP {
@@ -520,7 +530,7 @@ impl Ambience {
 
     /// One 60 Hz tick: `Main.AmbienceServer.Update()` (`Main.cs:17214-17216`)
     /// then `AmbientSky.Update` (`:1343-1367`) ×`max(1, dayRate)`.
-    fn step_once(&mut self, ctx: &AmbienceCtx, rng: &mut u64) {
+    fn step_once(&mut self, ctx: &AmbienceCtx, rng: &mut UnifiedRandom) {
         // The `MoonLord`/`MonolithMoonLord` conflict (`:1350-1353`) has no
         // ported counterpart sky yet — those skies cannot run in M1.
         self.update_scheduler(ctx, rng);
@@ -548,8 +558,14 @@ impl Ambience {
         }
     }
 
-    /// `AmbienceServer.Update` (`:96-128`).
-    fn update_scheduler(&mut self, ctx: &AmbienceCtx, rng: &mut u64) {
+    /// `AmbienceServer.Update` (`:96-128`). Draw census (re-read 2026-11-14):
+    /// `Next(600,7200)` (`:132`), `Next(num)` for the visible-player pick
+    /// (`:170-178`), `Next(5)` for the priority trick (`:117-123`, skipped
+    /// when the secondary pool is empty), `Next(num)` for the pool pick
+    /// (`:126`), and one bare `Next()` for the relay seed
+    /// (`NetAmbienceModule.cs:13`) — each exactly one internal draw, in this
+    /// order, on the bare `Main.rand` stand-in.
+    fn update_scheduler(&mut self, ctx: &AmbienceCtx, rng: &mut UnifiedRandom) {
         self.spawn_forced_entities(ctx, rng);
         if self.updates_until_next_attempt > 0 {
             self.updates_until_next_attempt -= ctx.day_rate.max(1);
@@ -564,15 +580,17 @@ impl Ambience {
         if eligible.is_empty() {
             return;
         }
-        // `FindPlayerThatCanSeeBackgroundAmbience` (`:170-178`): the random
-        // pick always consumes a draw, even with a single eligible player.
+        // `FindPlayerThatCanSeeBackgroundAmbience` (`:170-178`): `Next(num)`
+        // is consumed only when a visible player exists (`num != 0`); the
+        // port is single player, so `num` is 1 and the pick is always 0.
         if !self.player_sees_ambience(ctx) {
             return;
         }
-        let _ = next_rand(rng);
+        let _ = rng.next_max(1);
         // The priority trick (`:117-123`): the first pass only considers
         // types that have a secondary condition AND satisfy it; `num == 0`
-        // short-circuits the `Next(5)` draw.
+        // short-circuits the `Next(5)` draw. The C# takes the broad pool when
+        // `Next(5) < 3`, so the secondary pool wins on `Next(5) >= 3`.
         let secondary: Vec<SkyEntityType> = eligible
             .iter()
             .copied()
@@ -580,7 +598,7 @@ impl Ambience {
                 secondary_zone(*ty).is_some_and(|zone| zone(ctx)) && self.height_gate(*ty, ctx)
             })
             .collect();
-        let pool = if !secondary.is_empty() && next_rand(rng) % 5 >= 3 {
+        let pool = if !secondary.is_empty() && rng.next_max(5) >= 3 {
             secondary
         } else {
             eligible
@@ -597,23 +615,23 @@ impl Ambience {
         // `source2.ElementAt(Main.rand.Next(num))` — the C# enumerates a
         // `Dictionary`, whose order is implementation-defined; the port pins
         // the declaration order of `_spawnConditions` (documented).
-        let ty = pool[(next_rand(rng) % pool.len() as u64) as usize];
+        let ty = pool[rng.next_max(pool.len() as i32) as usize];
         // `SpawnForPlayer` → the `NetAmbienceModule` loopback
         // (`AmbienceServer.cs:199-202`): the seed is one `Main.rand.Next()`
         // draw (`NetAmbienceModule.cs:13`).
-        let seed = next_rand(rng) as i32;
+        let seed = rng.next();
         self.spawn(ctx, ty, seed);
     }
 
     /// `AmbienceServer.ResetSpawnTime` (`:130-137`): `Next(600, 7200)`, halved
     /// on tenth-anniversary worlds (no such worlds in the port).
-    fn reset_spawn_time(&mut self, rng: &mut u64) {
-        self.updates_until_next_attempt = 600 + (next_rand(rng) % (7200 - 600)) as i32;
+    fn reset_spawn_time(&mut self, rng: &mut UnifiedRandom) {
+        self.updates_until_next_attempt = rng.next_range(600, 7200);
     }
 
     /// `SpawnForcedEntities` (`:144-168`): every queued request spawns or dies
     /// in the tick it was processed.
-    fn spawn_forced_entities(&mut self, ctx: &AmbienceCtx, rng: &mut u64) {
+    fn spawn_forced_entities(&mut self, ctx: &AmbienceCtx, rng: &mut UnifiedRandom) {
         if self.forced_spawns.is_empty() {
             return;
         }
@@ -622,10 +640,9 @@ impl Ambience {
             // The `targetPlayer` routing (`:153-161`) collapses to the local
             // player in single player; the height gate still applies.
             if self.height_gate(ty, ctx) && self.player_sees_ambience(ctx) {
-                let seed = self
-                    .pinned_seed
-                    .take()
-                    .unwrap_or_else(|| next_rand(rng) as i32);
+                // The unpinned seed is `SerializeSkyEntitySpawn`'s bare
+                // `Main.rand.Next()` (`NetAmbienceModule.cs:13`).
+                let seed = self.pinned_seed.take().unwrap_or_else(|| rng.next());
                 self.spawn(ctx, ty, seed);
             }
         }
@@ -1700,7 +1717,7 @@ mod tests {
         let fade_start = (life as f32 * e.fade_out) as i32;
         // Block the scheduler so the test drives exactly one entity.
         amb.updates_until_next_attempt = i32::MAX;
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         let c = ctx(&world, true, SURFACE_Y);
         amb.update(ramp_end as f32 / 60.0, &c, &mut rng);
         let e = &amb.entities[0];
@@ -1725,7 +1742,7 @@ mod tests {
         let fade_out_ticks = (life as f32 * amb.entities[0].fade_out) as i32;
         // Block the scheduler; ramp the fade-in to full.
         amb.updates_until_next_attempt = i32::MAX;
-        let mut rng = 1u64;
+        let mut rng = UnifiedRandom::new(1);
         let ramp = (life as f32 * amb.entities[0].fade_in) as i32;
         amb.update(ramp as f32 / 60.0, &ctx(&world, true, SURFACE_Y), &mut rng);
         assert!((amb.entities[0].opacity - 1.0).abs() < 0.02);
@@ -1753,7 +1770,7 @@ mod tests {
         // `Next(600, 7200)` (`:132`).
         let world = test_world();
         let mut amb = Ambience::new();
-        let mut rng = 7u64;
+        let mut rng = UnifiedRandom::new(7);
         for _ in 0..200 {
             amb.reset_spawn_time(&mut rng);
             assert!((600..7200).contains(&amb.updates_until_next_attempt));
@@ -1769,7 +1786,7 @@ mod tests {
         // 0.4 + 0.6/4 = 0.55.
         let world = test_world();
         let mut amb = Ambience::new();
-        let mut rng = 0xDEB_u64;
+        let mut rng = UnifiedRandom::new(0xDEB);
         let mut vulture = 0;
         let runs = 4000;
         for _ in 0..runs {
@@ -1794,7 +1811,7 @@ mod tests {
     fn night_brings_the_eyeball_and_day_brings_the_birds() {
         let world = test_world();
         let mut amb = Ambience::new();
-        let mut rng = 3u64;
+        let mut rng = UnifiedRandom::new(3);
         // Day, no zones: the broad pool keeps only types whose secondary
         // condition is absent or satisfied (`:121`) — here
         // [BirdsV, AirBalloon, Butterflies]; Hellbats fail the height gate and
@@ -1837,7 +1854,7 @@ mod tests {
         // player deep in the underworld only ever gets hellbats.
         let world = test_world();
         let mut amb = Ambience::new();
-        let mut rng = 5u64;
+        let mut rng = UnifiedRandom::new(5);
         for _ in 0..50 {
             amb.entities.clear();
             amb.updates_until_next_attempt = 0;
@@ -1852,7 +1869,7 @@ mod tests {
         // blocks the regular scheduler (no sunny condition holds and the
         // hellbats fail the height gate), so the entity list stays empty.
         let mut amb = Ambience::new();
-        let mut rng = 6u64;
+        let mut rng = UnifiedRandom::new(6);
         let mut rainy = ctx(&world, true, SURFACE_Y);
         rainy.is_raining = true;
         amb.force_spawn(Hellbats, -1);
@@ -1869,13 +1886,104 @@ mod tests {
         // `:112-116`: a player between the bands sees no ambience.
         let world = test_world();
         let mut amb = Ambience::new();
-        let mut rng = 9u64;
+        let mut rng = UnifiedRandom::new(9);
         let between = (SURFACE_Y + 1600.0 + 100.0).min(HELL_Y - 100.0);
         for _ in 0..30 {
             amb.updates_until_next_attempt = 0;
             amb.update(1.0 / 60.0, &ctx(&world, true, between), &mut rng);
             assert!(amb.entities.is_empty());
         }
+    }
+
+    /// DW-5.1 — the scheduler's draw census on the bare-`Main.rand` stand-in
+    /// (`global()`), re-read from `AmbienceServer.cs:96-176`:
+    /// `Next(600,7200)` (`:130-137`) → `Next(num)` for the visible-player
+    /// pick (`:170-178`) → `Next(5)` for the priority trick (`:117-123`,
+    /// skipped when the secondary pool is empty) → `Next(num)` for the pool
+    /// pick (`:126`) → one bare `Next()` for the relay seed
+    /// (`NetAmbienceModule.cs:13`).
+    #[test]
+    fn test_dw_5_1_ambience_scheduler_matches_the_csharp_draw_census() {
+        let world = test_world();
+        // A seed whose priority arm wins: after paying the reset and the
+        // find-player draws, `Next(5) >= 3` keeps the secondary pool.
+        let seed = (1..)
+            .find(|&s| {
+                let mut r = UnifiedRandom::new(s);
+                let _ = r.next_range(600, 7200);
+                let _ = r.next_max(1);
+                r.next_max(5) >= 3
+            })
+            .expect("a priority-arm seed exists");
+        let mut amb = Ambience::new();
+        amb.updates_until_next_attempt = 0;
+        let mut c = ctx(&world, true, SURFACE_Y);
+        c.zone_desert = true; // the secondary pool is [Vulture]
+        let mut rng = UnifiedRandom::new(seed);
+        amb.update(1.0 / 60.0, &c, &mut rng);
+        // The census twin: exactly the five C# draws, in order, on a fresh
+        // stream with the same seed.
+        let mut twin = UnifiedRandom::new(seed);
+        let reset = twin.next_range(600, 7200); // ResetSpawnTime (:130-137)
+        let _ = twin.next_max(1); // FindPlayerThatCanSeeBackgroundAmbience (:170-178)
+        let _ = twin.next_max(5); // the priority trick (:117-123)
+        let _ = twin.next_max(1); // source2.ElementAt(Next(num)) (:126) — pool [Vulture]
+        let expected_seed = twin.next(); // SerializeSkyEntitySpawn (NetAmbienceModule.cs:13)
+        assert_eq!(rng, twin, "the scheduler paid exactly the five census draws");
+        assert_eq!(
+            amb.updates_until_next_attempt, reset,
+            "the reset shape is Next(600, 7200)"
+        );
+        assert_eq!(amb.entities.len(), 1);
+        assert!(
+            matches!(amb.entities[0].kind, SkyKind::Vulture),
+            "the priority pool won: {:?}",
+            amb.entities[0].kind
+        );
+        assert_eq!(
+            amb.spawn_seed, expected_seed,
+            "the relay seed is one bare Next() draw"
+        );
+
+        // A positive attempt timer pays NOTHING (`:101-106` returns before
+        // `ResetSpawnTime`).
+        let mut amb = Ambience::new();
+        amb.updates_until_next_attempt = 10;
+        let mut rng = UnifiedRandom::new(7);
+        amb.update(1.0 / 60.0, &c, &mut rng);
+        assert_eq!(rng, UnifiedRandom::new(7), "a blocked timer pays no draws");
+        assert_eq!(amb.updates_until_next_attempt, 9);
+
+        // Rain: no type spawns, but the eligible list is NEVER empty —
+        // Hellbats' `_spawnConditions` entry is `() => true` (`:60-76`) — so
+        // the visible-player draw IS paid (`:170-178`), then the broad pool
+        // empties on the height gate (`:121`) and the census stops there.
+        let mut amb = Ambience::new();
+        let mut rainy = ctx(&world, true, SURFACE_Y);
+        rainy.is_raining = true;
+        amb.updates_until_next_attempt = 0;
+        let mut rng = UnifiedRandom::new(11);
+        amb.update(1.0 / 60.0, &rainy, &mut rng);
+        let mut twin = UnifiedRandom::new(11);
+        let reset = twin.next_range(600, 7200);
+        let _ = twin.next_max(1);
+        assert_eq!(rng, twin, "rain: reset + find-player, then an empty pool");
+        assert_eq!(amb.updates_until_next_attempt, reset);
+        assert!(amb.entities.is_empty());
+
+        // No visible player (between the bands): eligible types exist but
+        // `FindPlayerThatCanSeeBackgroundAmbience` draws only when `num != 0`
+        // (`:170-178`) — the census still stops after the reset.
+        let mut amb = Ambience::new();
+        amb.updates_until_next_attempt = 0;
+        let between = (SURFACE_Y + 1600.0 + 100.0).min(HELL_Y - 100.0);
+        let mut rng = UnifiedRandom::new(13);
+        amb.update(1.0 / 60.0, &ctx(&world, true, between), &mut rng);
+        let mut twin = UnifiedRandom::new(13);
+        let reset = twin.next_range(600, 7200);
+        assert_eq!(rng, twin, "no visible player: only the reset paid");
+        assert_eq!(amb.updates_until_next_attempt, reset);
+        assert!(amb.entities.is_empty());
     }
 
     // --- Draw colour chain (GetColor overrides, DW-3.4) ---
@@ -2027,9 +2135,9 @@ mod tests {
     #[test]
     fn two_runs_with_the_same_seed_are_identical() {
         let world = test_world();
-        let run = |rng_seed: u64| {
+        let run = |rng_seed: i32| {
             let mut amb = Ambience::new();
-            let mut rng = rng_seed;
+            let mut rng = UnifiedRandom::new(rng_seed);
             for _ in 0..600 {
                 amb.updates_until_next_attempt = 0;
                 let mut c = ctx(&world, true, SURFACE_Y);
@@ -2055,6 +2163,67 @@ mod tests {
         };
         assert_eq!(run(123), run(123));
         assert_ne!(run(123), run(124));
+    }
+
+    /// DW-5.3 — the shared-global determinism pair: two same-seed sessions
+    /// (an ambience schedule plus a `/roll` issued mid-session on the SAME
+    /// bare-`Main.rand` stand-in) replay identically, and the chat command's
+    /// draws shift the following ambience schedule exactly as the C#'s bare
+    /// `Main.rand` interleave would (`Main.cs:17214-17216` runs outside every
+    /// swap, shared with the chat path).
+    #[test]
+    fn test_dw_5_3_same_seed_sessions_reproduce_the_shared_global_stream() {
+        let world = test_world();
+        let run = |with_command: bool| -> (Vec<String>, Option<u32>) {
+            let mut amb = Ambience::new();
+            let mut rng = UnifiedRandom::new(77);
+            let mut schedule = Vec::new();
+            let mut roll = None;
+            for frame in 0..400 {
+                if with_command && frame == 200 {
+                    let mut chat = crate::chat::ChatMonitor::default();
+                    chat.send(
+                        "/roll",
+                        "Belsin",
+                        &mut rng,
+                        &mut crate::emotes::EmoteSystem::default(),
+                    );
+                    roll = chat.messages[0]
+                        .text
+                        .rsplit(' ')
+                        .next()
+                        .and_then(|n| n.parse().ok());
+                }
+                amb.entities.clear();
+                amb.updates_until_next_attempt = 0;
+                amb.update(1.0 / 60.0, &ctx(&world, true, SURFACE_Y), &mut rng);
+                for e in &amb.entities {
+                    schedule.push(format!("{:?}/{}", e.kind, e.net_seed));
+                }
+            }
+            (schedule, roll)
+        };
+        // The determinism pair: same seed + same interleave → byte-identical
+        // schedule and the same roll.
+        let (a_schedule, a_roll) = run(true);
+        let (b_schedule, b_roll) = run(true);
+        assert_eq!(a_schedule, b_schedule, "the shifted schedule replays");
+        assert_eq!(a_roll, b_roll, "the chat command's roll replays");
+        assert!(a_roll.is_some(), "the /roll produced a number");
+        // The interleave is real: the session WITHOUT the command matches up
+        // to the command's frame and diverges after it (the command drew from
+        // the same stream).
+        let (plain_schedule, _) = run(false);
+        assert_eq!(a_schedule.len(), plain_schedule.len(), "one spawn per frame");
+        let cut = 200.min(a_schedule.len());
+        assert_eq!(
+            a_schedule[..cut], plain_schedule[..cut],
+            "frames before the command are identical"
+        );
+        assert_ne!(
+            a_schedule, plain_schedule,
+            "the chat command shifted the ambience stream"
+        );
     }
 }
 

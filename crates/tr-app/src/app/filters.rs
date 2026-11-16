@@ -310,7 +310,7 @@ impl FilterDriver {
         // `:92`: `Main.bloodMoon || BloodMoonMonolith || bloodMoonMonolithShader`.
         self.board.manage(
             FilterId::BloodMoon,
-            state.blood_moon,
+            state.blood_moon || metrics.blood_moon_monolith,
             inputs.skip_transitions,
         );
         // `:96`: `Main.UseStormEffects & (ZoneRain && ZoneSnow)` — the Filter

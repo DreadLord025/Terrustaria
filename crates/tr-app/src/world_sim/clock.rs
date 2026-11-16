@@ -171,12 +171,18 @@ pub(crate) fn advance_time_with_events(
                     && n.kind != crate::npc::NpcKind::TaxCollector
             })
             .collect();
-        crate::world_events::check_morning_party(
+        let party_up = crate::world_events::check_morning_party(
             &mut app.world_events,
             party_girl,
             &partyable,
             &mut |lo, hi| rng.next_range(lo, hi),
         );
+        // `Main.cs:65375` → `BirthdayParty.CheckMorning` → `:142`'s
+        // `CheckForAchievement`: a natural party coming up credits
+        // THROW_A_PARTY (25).
+        if party_up {
+            let _ = app.achievements.notify_progression(25);
+        }
         crate::world_events::check_morning_lanterns(&mut app.world_events);
     }
     (blood_moon_started, eclipse_started)

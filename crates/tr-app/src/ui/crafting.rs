@@ -260,6 +260,14 @@ pub(crate) fn nearby_toggle_hit(screen: Vec2, mouse_pos: Vec2) -> bool {
     toggle_hover(mouse_pos, l.nearby_toggle[0], l.nearby_toggle[1])
 }
 
+/// The index of the filter tab under `mouse_pos`, if any — each tab is its
+/// `filter_button_rect` square (`UICreativeItemsInfiniteFilteringOptions.cs:56-57`:
+/// the 40 px pitch with the 46 px-tall frame hung off the strip's top).
+pub(crate) fn filter_hit(screen: Vec2, mouse_pos: Vec2) -> Option<usize> {
+    let l = layout(screen, 0.0, false);
+    (0..11).find(|&i| in_rect(mouse_pos, filter_button_rect(l.filter_strip, i)))
+}
+
 /// The empty recipe slot: `Main.guideItem` / `recipe.createItem` carry no data in
 /// P3, so every slot draws the empty `Inventory_Back18` background.
 fn empty_slot() -> ItemSlot {
@@ -346,7 +354,9 @@ pub(crate) fn hit_test(
 }
 
 /// Draws the whole panel in the source's z-order. `mouse_pos` only feeds the hover
-/// frames; `guide_mode` selects the `Main.InGuideCraftMenu` variants.
+/// frames; `guide_mode` selects the `Main.InGuideCraftMenu` variants;
+/// `filter_flags` is `EntryFilterer.ActiveFilters` as the strip's eleven slots
+/// (`UICreativeItemsInfiniteFilteringOptions.cs:104-110`).
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -355,6 +365,7 @@ pub fn draw(
     available: &[usize],
     guide_mode: bool,
     difficulty_3_and_creative_unblocked: bool,
+    filter_flags: [bool; 11],
 ) {
     // `UpdateText` (`:417-427`): the search bar's width is inset by the title's
     // measured outer width, so measure it before building the layout.
@@ -453,8 +464,9 @@ pub fn draw(
     panel::draw_scrollbar(r, lookups, l.scrollbar, 1.0, 1.0, true);
 
     // 7. The filter strip (`:387-392`), drawn over the panel subtree, matching
-    //    `totalContainer`'s child order (`:330`, `:392`); no filter is active in P3.
-    draw_filter_strip(r, lookups, &l, mouse_pos, [false; 11]);
+    //    `totalContainer`'s child order (`:330`, `:392`); `active` is the
+    //    filterer's `ActiveFilters` as `UpdateVisuals` reads it (`:104`).
+    draw_filter_strip(r, lookups, &l, mouse_pos, filter_flags);
 
     // 8. The detail area (`DrawChildren`, `:438-482`), drawn after the base pass so
     //    it sits on top of everything.

@@ -14,7 +14,12 @@ use tr_core::scene::{Sandstorm, SceneState};
 use tr_core::scene::{SceneMetrics, ZONE_SCAN_SIZE, is_desert_biome_sand, ocean_depths};
 
 use crate::app::App;
+use crate::npc::{Npc, NpcKind};
 use crate::player::{self, Player};
+
+/// `SceneMetrics.TownNPCRectSize` (`SceneMetrics.cs:920`):
+/// `AssumedConstantScreenSize.ToVector2() * 2f` = (3840, 2400) px.
+const TOWN_NPC_RECT_SIZE: (f32, f32) = (1920.0 * 2.0, 1200.0 * 2.0);
 
 /// `Main.SceneMetrics.Scan(new SceneMetricsScanSettings { BiomeScanCenterPositionInWorld =
 /// player.Center … })` (`Main.cs:62533-62546`, `SceneMetrics.cs:336-351`): reset,
@@ -47,13 +52,40 @@ pub(crate) fn scan_scene(
 
 /// The injectable center variant of `scan_scene`: the headless TR_NOPLAYER
 /// shots stand in the camera centre for the absent player (vanilla has no
-/// such path — a test hook, not a behaviour).
+/// such path — a test hook, not a behaviour). No visual area and no NPCs: the
+/// `ScanOnScreenTiles`/`ScanNPCPositions` halves need both (see
+/// [`scan_scene_full`]).
 pub(crate) fn scan_scene_at(
     world: &World,
     center: [f32; 2],
     raining: bool,
     sandstorm_happening: bool,
     player_shimmering: bool,
+) -> SceneMetrics {
+    scan_scene_full(
+        world,
+        center,
+        raining,
+        sandstorm_happening,
+        player_shimmering,
+        None,
+        &[],
+    )
+}
+
+/// [`scan_scene_at`] plus the two settings the live driver passes and the
+/// unit tests do not need: `visual_area` is the C#'s
+/// `SceneMetricsScanSettings.VisualScanArea` as `(left, top, right, bottom)`
+/// in tiles (`Main.cs:62536-62543`, `Main.GetAreaToLight()` inflated by 28)
+/// and `npcs` is `Main.npc` for `ScanNPCPositions` (`:727-745`).
+pub(crate) fn scan_scene_full(
+    world: &World,
+    center: [f32; 2],
+    raining: bool,
+    sandstorm_happening: bool,
+    player_shimmering: bool,
+    visual_area: Option<(i32, i32, i32, i32)>,
+    npcs: &[Npc],
 ) -> SceneMetrics {
     // `this.TileCenter = Center.ToTileCoordinates().ClampedInWorld()`
     // (`SceneMetrics.cs:333`); `ToTileCoordinates` is `(int)v >> 4`
@@ -69,6 +101,14 @@ pub(crate) fn scan_scene_at(
     metrics.center = center;
     metrics.tile_center = tile_center;
     scan_tiles(world, &mut metrics);
+    // `SceneMetrics.cs:338-341`: the visual-area pass runs only when the
+    // settings carry the rect (`Main.cs:62540` always does).
+    if let Some(area) = visual_area {
+        metrics.scan_on_screen_tiles(world, area);
+    }
+    // `SceneMetrics.cs:342-345`: `ScanNPCPositions` when the settings ask
+    // (`Main.cs:62541` sets `ScanNPCPositions = true`).
+    scan_npc_positions(&mut metrics, npcs);
     // `CalculateZones`'s `BehindBackwall` probe (`SceneMetrics.cs:671-672`):
     // `Framing.GetTileSafely(TileCenter).wall > 0`.
     metrics.behind_backwall = world
@@ -103,6 +143,9 @@ pub(crate) fn scan_scene_at(
     // tile's wall — the temple/granite/marble/hive/gem-cave zones and the
     // underground desert.
     metrics.calculate_wall_zones(world);
+    // `Main.maxTilesX`/`maxTilesY`: the `MoonlordDeathDrama` `Dead` walls
+    // (`MoonlordDeathDrama.cs:29-31`, `:105`).
+    metrics.world_tiles = (world.width, world.height);
     metrics
 }
 
@@ -145,20 +188,6 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
                 && ocean_depths(world.world_surface, world.rock_layer, x, world.width, y)
             {
                 metrics.ocean_sand_tile_count += 1;
-            }
-            // The M6-AUDIO-2 music-box arm (`SceneMetrics.cs:468-480`): tile
-            // 139 with `frameX >= 36` decodes `frameY / 36` into the box id;
-            // 100 is the silent box. The arm sits INSIDE `ScanTiles` — the
-            // C# scans the same 169x124 zone window the port scans (the
-            // research's "visual screen rect" note pointed at a stale line
-            // reference; the port's window is verbatim).
-            if tile.kind == 139 && tile.frame_x >= 36 {
-                let num = tile.frame_y as i32 / 36;
-                if num == 100 {
-                    metrics.music_box_silence = true;
-                } else {
-                    metrics.active_music_box = num;
-                }
             }
             // The M2-BUFF-8 banner arm (`SceneMetrics.cs:416-445`): tile 91
             // decodes to the banner id; the strength-enabled ones raise the
@@ -218,8 +247,66 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
                 }
                 _ => {}
             }
+            // `SceneMetrics.cs:445`: `UpdateOreFinder(new Point(i, j), tile)`
+            // closes the per-tile body of `ScanTiles`.
+            metrics.update_ore_finder((x, y), tile);
         }
     }
+}
+
+/// `SceneMetrics.ScanNPCPositions` (`SceneMetrics.cs:727-745`): the nearest
+/// active NPC of each type (for `WithinRangeOfNPC`) plus `TownNPCCount`.
+///
+/// `TownNPCRectSize` is `AssumedConstantScreenSize.ToVector2() * 2f`
+/// (`:920`) = (3840, 2400) px, so the town rect is the player-centred
+/// ±1920 x ±1200 box; `Utils.CenteredRectangle(Vector2, Vector2)`
+/// (`Utils.cs:947-950`) truncates the origin toward zero.
+fn scan_npc_positions(metrics: &mut SceneMetrics, npcs: &[Npc]) {
+    // `Utils.CenteredRectangle(Vector2, Vector2)` (`Utils.cs:947-950`): the
+    // origin truncates, the size is the vector cast to int.
+    let rect_x = (metrics.center[0] - TOWN_NPC_RECT_SIZE.0 * 0.5) as i32;
+    let rect_y = (metrics.center[1] - TOWN_NPC_RECT_SIZE.1 * 0.5) as i32;
+    let rect_w = TOWN_NPC_RECT_SIZE.0 as i32;
+    let rect_h = TOWN_NPC_RECT_SIZE.1 as i32;
+    for npc in npcs {
+        // `:732`: `nPC.active`. The port drops dead NPCs at the end of the
+        // NPC tick (`npcs.rs`'s `retain(|n| n.hp > 0)`), so `hp > 0` is the
+        // standing-active proxy.
+        if npc.hp <= 0 {
+            continue;
+        }
+        let kind = npc.kind.net_id();
+        let Some(slot) = metrics.closest_npc_position.get_mut(kind as usize) else {
+            continue;
+        };
+        let (cx, cy) = npc.center();
+        // `:734-738`: first sighting or strictly closer wins.
+        if (*slot == [0.0, 0.0])
+            || dist_sq(metrics.center, [cx, cy]) < dist_sq(metrics.center, *slot)
+        {
+            *slot = [cx, cy];
+        }
+        // `:739-742`: `nPC.townNPC && CenteredRectangle(...).Contains(
+        // nPC.Center.ToPoint())` — `ToPoint` truncates, `Contains` is
+        // half-open on the far edge.
+        let px = cx as i32;
+        let py = cy as i32;
+        if npc.kind.is_town_npc()
+            && px >= rect_x
+            && px < rect_x + rect_w
+            && py >= rect_y
+            && py < rect_y + rect_h
+        {
+            metrics.town_npc_count += 1;
+        }
+    }
+}
+
+/// `Vector2.DistanceSquared`.
+fn dist_sq(a: [f32; 2], b: [f32; 2]) -> f32 {
+    let dx = a[0] - b[0];
+    let dy = a[1] - b[1];
+    dx * dx + dy * dy
 }
 
 /// Reads the TR_ determinism forces from the process environment and applies
@@ -283,6 +370,7 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         sandstorm,
         filter_driver,
         settings,
+        npcs,
         ..
     } = app;
     // The TR_ pins re-read per frame (idempotent; the parse glue of phase 1).
@@ -332,13 +420,84 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         .as_ref()
         .map(|p| [p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5])
         .unwrap_or([camera.x, camera.y]);
-    let metrics = scan_scene_at(
+    // `Main.GetAreaToLight()` (`Main.cs:63926-63936`) then `.Inflate(28, 28)`
+    // (`:62537`): the view rect in tiles, one tile of slack on the leading
+    // edges and two on the trailing ones. `ScaledPosition`/`ScaledSize` are
+    // the unscaled screen rect (the port draws at `zoom` inside the same
+    // pixels), so `screen / zoom` is the world-space view.
+    let half = screen * 0.5 / *zoom;
+    let view_min = *camera - half;
+    let view_max = *camera + half;
+    let visual_area = (
+        (view_min.x / 16.0).floor() as i32 - 1 - 28,
+        (view_min.y / 16.0).floor() as i32 - 1 - 28,
+        (view_max.x / 16.0).floor() as i32 + 2 + 28,
+        (view_max.y / 16.0).floor() as i32 + 2 + 28,
+    );
+    let mut metrics = scan_scene_full(
         world,
         center,
         rain.is_raining(),
         sandstorm.happening,
         player.as_ref().is_some_and(|p| p.shimmer_wet),
+        Some(visual_area),
+        npcs,
     );
+    // `SceneMetrics.AddPlayerEffects` (`SceneMetrics.cs:747+`) plus the
+    // `ScreenObstruction`/`ScreenDarkness` inputs. Vanilla reads them off
+    // `PerspectivePlayer` / `Main.npc[]`; the port has neither field, so the
+    // driver fills the metrics directly.
+    if let Some(p) = player.as_ref() {
+        // `Player.headcovered` (`Player.cs:11826-11829`): buff 163.
+        metrics.headcovered = p.buffs.find_buff_index(163).is_some();
+        // `Player.DoUnbreakableWallScan` (`Player.cs:28606-28619`) behind the
+        // `Main.dualDungeonsSeed` gate (`:28608`).
+        metrics.inside_unbreakable_walls = world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::DUAL_DUNGEONS)
+            && tr_core::scene::inside_unbreakable_walls(
+                world,
+                (metrics.center[0] as i32) >> 4,
+                (metrics.center[1] as i32) >> 4,
+            );
+        // `DangerousDungeonCurse` (`DangerousDungeonCurse.cs:5-55`).
+        metrics.curse_progress_needed = tr_core::scene::curse_progress_needed(
+            metrics.zone_lihzhard_temple,
+            metrics.zone_hallow,
+            metrics.zone_dungeon,
+            metrics.zone_jungle,
+            metrics.zone_crimson || metrics.zone_corrupt,
+        );
+        metrics.curse_progress_safely = tr_core::scene::curse_progress_safely(
+            world.downed_mech_boss_any() || world.downed_queen_slime,
+            world.downed_skeletron || world.hard_mode,
+            world.downed_queen_bee,
+            // `NPC.downedBoss2` — the Eater of Worlds / Brain.
+            world.downed_eow,
+            // `NPC.downedSlimeKing || NPC.downedBoss1` (the Eye).
+            world.downed_slime_king || world.downed_eoc,
+        );
+    }
+    // `ScreenDarkness.Update`'s `Main.npc[]` walk (`:17-32`): only the two
+    // kinds with an arm matter, and only while active. Duke Fishron (370) is
+    // not a ported `NpcKind` yet, so only the Wall of Flesh row exists.
+    metrics.screen_darkness_npcs = npcs
+        .iter()
+        .filter(|n| n.hp > 0 && matches!(n.kind, NpcKind::WallOfFlesh))
+        .map(|n| {
+            let (cx, cy) = n.center();
+            tr_core::scene::ScreenDarknessNpc {
+                npc_type: 113,
+                center: [cx, cy],
+                // The C# fields this arm reads are `ai[0]`/`ai[2]` on the
+                // 370 row and `localAI[1]` on this one; the port folds the
+                // WoF abandonment ramp into `ai[0]` (`npc.rs:9160`).
+                ai0: n.ai[0],
+                ai2: n.ai[2],
+                local_ai1: n.ai[0],
+            }
+        })
+        .collect();
     // `Main.SceneState.Update` (`Main.cs:17816`); the `skipTransitions` the
     // manage calls read is the pre-update value — vanilla flips it at `:62`,
     // after `ApplyVisuals` inside `Update`.
@@ -620,10 +779,11 @@ mod tests {
     }
 
     use super::*;
-    use tr_core::scene::{Sandstorm, SceneState, thresholds};
+    use tr_core::scene::{thresholds, Sandstorm, SceneState};
     use tr_core::tile::FLAG_ACTIVE;
 
     use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::NpcKind;
 
     /// A small test world with vanilla-shaped surface lines.
     fn fixture_world() -> World {
@@ -961,5 +1121,139 @@ mod tests {
         if !crate::env::present_raw("TR_WAVES") {
             assert_eq!(app.filter_driver.wave_quality, 0);
         }
+    }
+
+    #[test]
+    fn scan_npc_positions_counts_the_town_rect_and_keeps_the_closest() {
+        // `SceneMetrics.cs:727-745`: `TownNPCRectSize` is the ±1920x1200 box
+        // around `Center`; a resident outside it does not count, and per-type
+        // slots keep the nearest `Center`.
+        let world = fixture_world();
+        let center = [500.0 * 16.0, 50.0 * 16.0];
+        let mut near = Npc::new(NpcKind::Merchant, center[0] + 10.0, center[1], 1, 0.0);
+        near.hp = near.max_hp;
+        // The half-extent is 1920 px: +2000 px is outside, +1900 inside.
+        let mut far = Npc::new(NpcKind::Nurse, center[0] + 2000.0, center[1], 1, 0.0);
+        far.hp = far.max_hp;
+        let mut edge = Npc::new(NpcKind::Dryad, center[0] + 1900.0, center[1], 1, 0.0);
+        edge.hp = edge.max_hp;
+        // A non-town NPC (zombie) rides the closest table but not the count.
+        let mut mob = Npc::new(NpcKind::Zombie, center[0] - 100.0, center[1], 1, 0.0);
+        mob.hp = mob.max_hp;
+        let metrics = scan_scene_full(
+            &world,
+            center,
+            false,
+            false,
+            false,
+            None,
+            &[near.clone(), far.clone(), edge.clone(), mob.clone()],
+        );
+        assert_eq!(metrics.town_npc_count, 2, "the merchant and the dryad");
+        let merchant = metrics.closest_npc_position[NpcKind::Merchant.net_id() as usize];
+        assert_eq!(merchant[0], near.center().0);
+        let nurse = metrics.closest_npc_position[NpcKind::Nurse.net_id() as usize];
+        assert_eq!(
+            nurse[0],
+            far.center().0,
+            "still recorded outside the town rect"
+        );
+        // A dead NPC contributes nothing.
+        let mut dead = Npc::new(NpcKind::Guide, center[0], center[1], 1, 0.0);
+        dead.hp = 0;
+        let metrics = scan_scene_full(&world, center, false, false, false, None, &[dead]);
+        assert_eq!(metrics.town_npc_count, 0);
+        assert_eq!(
+            metrics.closest_npc_position[NpcKind::Guide.net_id() as usize],
+            [0.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn scan_on_screen_tiles_reads_the_clock_fountain_and_monoliths() {
+        // `SceneMetrics.cs:450-577`: the visual-area pass.
+        let mut world = fixture_world();
+        // The clock (104) and the monoliths live outside the 169x124 zone
+        // window but inside the visual rect drawn by the caller: the pass is
+        // driven by `area`, not by the scan window.
+        set_tile(&mut world, 300, 50, 104);
+        set_tile(&mut world, 301, 50, 207);
+        world.tile_mut(301, 50).unwrap().frame_y = 72; // flowing
+        world.tile_mut(301, 50).unwrap().frame_x = 36 * 1; // fountain colour 12
+        set_tile(&mut world, 302, 50, 410);
+        world.tile_mut(302, 50).unwrap().frame_y = 56;
+        world.tile_mut(302, 50).unwrap().frame_x = 36 * 2; // monolith type 2
+        set_tile(&mut world, 303, 50, 480);
+        world.tile_mut(303, 50).unwrap().frame_y = 54;
+        set_tile(&mut world, 304, 50, 658);
+        world.tile_mut(304, 50).unwrap().frame_y = 54; // shimmer state 1
+        set_tile(&mut world, 305, 50, 139);
+        world.tile_mut(305, 50).unwrap().frame_x = 36;
+        world.tile_mut(305, 50).unwrap().frame_y = 36 * 7; // music box 7
+        let center = [300.0 * 16.0, 50.0 * 16.0];
+        let metrics = scan_scene_full(
+            &world,
+            center,
+            false,
+            false,
+            false,
+            Some((290, 40, 320, 60)),
+            &[],
+        );
+        assert!(metrics.has_clock);
+        assert_eq!(metrics.active_fountain_color, 12);
+        assert_eq!(metrics.active_monolith_type, 2);
+        assert!(metrics.blood_moon_monolith);
+        assert_eq!(metrics.shimmer_monolith_state, 1);
+        assert_eq!(metrics.active_music_box, 7);
+        // No visual area = the pass does not run (the C#'s
+        // `settings.VisualScanArea` is `HasValue`-gated, `:338`).
+        let metrics = scan_scene_full(&world, center, false, false, false, None, &[]);
+        assert!(!metrics.has_clock);
+        assert_eq!(metrics.active_fountain_color, -1);
+        // A fountain with a non-flowing frame leaves the colour alone.
+        let mut world = fixture_world();
+        set_tile(&mut world, 300, 50, 207);
+        world.tile_mut(300, 50).unwrap().frame_y = 0;
+        let metrics = scan_scene_full(
+            &world,
+            center,
+            false,
+            false,
+            false,
+            Some((290, 40, 320, 60)),
+            &[],
+        );
+        assert_eq!(metrics.active_fountain_color, -1);
+    }
+
+    #[test]
+    fn the_ore_finder_keeps_the_highest_priority_nearest_ore() {
+        // `SceneMetrics.cs:867-903`: `UpdateOreFinder` from `ScanTiles`; the
+        // priority table is `Main.tileOreFinderPriority` (`Main.cs:6404-6440`)
+        // — copper 7 is 200, iron 6 is 220, gold 8 is 260.
+        let mut world = fixture_world();
+        let center = [300.0 * 16.0, 50.0 * 16.0];
+        // Far gold vs near copper: the priority wins over the distance.
+        set_tile(&mut world, 300, 50, 7);
+        set_tile(&mut world, 320, 50, 8);
+        let metrics = scan_scene_full(&world, center, false, false, false, None, &[]);
+        assert_eq!(metrics.best_ore_type, 8);
+        assert_eq!(metrics.best_ore_position, (320, 50));
+        // Two equal-priority ores: the nearer one wins.
+        let mut world = fixture_world();
+        set_tile(&mut world, 300, 50, 7);
+        set_tile(&mut world, 310, 50, 7);
+        let metrics = scan_scene_full(&world, center, false, false, false, None, &[]);
+        assert_eq!(metrics.best_ore_position, (300, 50));
+        // `IsValidForOreFinder`: tile 227 outside frames 272..=374 is skipped.
+        let mut world = fixture_world();
+        set_tile(&mut world, 300, 50, 227);
+        world.tile_mut(300, 50).unwrap().frame_x = 100;
+        let metrics = scan_scene_full(&world, center, false, false, false, None, &[]);
+        assert_eq!(metrics.best_ore_type, -1);
+        world.tile_mut(300, 50).unwrap().frame_x = 300;
+        let metrics = scan_scene_full(&world, center, false, false, false, None, &[]);
+        assert_eq!(metrics.best_ore_type, 227);
     }
 }

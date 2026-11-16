@@ -664,6 +664,9 @@ pub fn draw_hud(
     boss_bar_text: bool,
     inventory_open: bool,
     crafting_open: bool,
+    // `EntryFilterer.ActiveFilters` as the strip's eleven slots
+    // (`UICreativeItemsInfiniteFilteringOptions.cs:104-110`).
+    craft_filter_flags: [bool; 11],
     mouse_item: &ItemSlot,
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
@@ -696,13 +699,16 @@ pub fn draw_hud(
     buff_removals: &mut Vec<usize>,
     right_release: bool,
     vampire_seed: bool,
+    // `Player.HasNPCBannerBuff`'s table (`Player.cs:44197`): the banner list
+    // the Monster Banner's buff tooltip prints (`Main.cs:21360-21388`).
+    npc_banner_buff: &[bool],
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
     // hotbar (30).
     resources::draw(r, lookups, screen, player, camera, zoom, pulse);
     if let Some(p) = player {
-        resources::draw_buffs(
+        let hovered = resources::draw_buffs(
             r,
             lookups,
             p,
@@ -712,6 +718,36 @@ pub fn draw_hud(
             buff_removals,
             vampire_seed,
         );
+        // `DrawInterface_Resources_Buffs`' tail (`Main.cs:43234-43251`): the
+        // hovered buff's name and description through `MouseTextHackZoom`; the
+        // Monster Banner (147) also flips `Main.bannerMouseOver` on so the
+        // tooltip appends every owned banner's NPC name (`:21360-21388`).
+        if let Some(slot) = hovered {
+            let b = p.buffs.buff_type[slot];
+            if b > 0 {
+                let name = crate::lang::buff_name(b);
+                let tooltip = resources::buff_tooltip(p, b);
+                // `Main.cs:43239-43246`: the melee buffs use rarity -10 (the
+                // green `MouseText` colour); everything else rarity 0.
+                let rarity = if crate::buffs::is_melee_buff(b) { -10 } else { 0 };
+                let banner_names = if b == 147 {
+                    resources::banner_hover_names(npc_banner_buff)
+                } else {
+                    Vec::new()
+                };
+                resources::draw_buff_hover(
+                    r,
+                    lookups,
+                    mouse_pos,
+                    &name,
+                    &tooltip,
+                    rarity,
+                    screen,
+                    pulse,
+                    banner_names,
+                );
+            }
+        }
     }
 
     // `ItemSlot.Draw` / `Main.DrawInventory`: with the inventory open the hotbar is
@@ -896,7 +932,31 @@ pub fn draw_hud(
         // stays off, and a fresh character has neither expert mode nor the
         // creative inventory unblocked.
         if crafting_open {
-            crafting::draw(r, lookups, screen, mouse_pos, craft, false, false);
+            crafting::draw(
+                r,
+                lookups,
+                screen,
+                mouse_pos,
+                craft,
+                false,
+                false,
+                craft_filter_flags,
+            );
+            // The hovered filter tab's label — `ShowButtonName`
+            // (`UICreativeItemsInfiniteFilteringOptions.cs:125-132`):
+            // `MouseTextNoOverride(Language.GetTextValue(GetDisplayNameKey()))`.
+            // It runs on the tab's `OnUpdate`, before the recipe tooltip below,
+            // and the two can never overlap (a tab is outside the grid).
+            if let Some(i) = crafting::filter_hit(screen, mouse_pos) {
+                tooltip::draw_mouse_text(
+                    r,
+                    lookups,
+                    mouse_pos,
+                    &crate::lang::text(crate::craft_filter::FILTERS[i].display_name_key()),
+                    screen,
+                    pulse,
+                );
+            }
             // Hovering a recipe shows the crafted item's tooltip
             // (`Main.HoverOverCraftingItemButton`, `Main.cs:42250`).
             if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft) {

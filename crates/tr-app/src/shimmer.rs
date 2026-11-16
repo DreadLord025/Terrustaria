@@ -324,8 +324,8 @@ pub fn decraft_ingredients(recipe_index: usize) -> Vec<DecraftIngredient> {
 ///
 /// `indices` are the drops whose `shimmer_time` crossed 0.9 this step. The
 /// spawns ride the same 60 Hz step (the C#'s `SyncItem`/net arm is MP-only, so
-/// it is out here); the alchemy discount draws the port's `item_rng` (the C#'s
-/// `Main.rand`) exactly like the pot-loot rolls do.
+/// it is out here); the alchemy discount draws `stream(UpdateItems)` (the C#'s
+/// `Main.rand` under the `UpdateItems` swap) exactly like the pot-loot rolls.
 pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
     // The decraft lock checks read the world's downed flags through the
     // thread-local (the pure helpers stay world-free).
@@ -404,10 +404,19 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
             }
             ShimmerOutcome::SlimeRainStart => {
                 // `:1736-1746` — `Main.StartSlimeRain()` (the SP branch's
-                // duration), the stack-- or `shimmered = true`.
-                let mut rng_state = app.item_rng;
-                crate::world_sim::weather::start_slime_rain(&mut app.world, &mut rng_state);
-                app.item_rng = rng_state;
+                // duration), the stack-- or `shimmered = true`. The C# call
+                // runs in `WorldItem.UpdateItem` under the `UpdateItems`
+                // swap (`Main.cs:18024`) — the duration draw rides
+                // `UpdateItems` (S1-A-11 P4 formalizes the items pass).
+                // StartSlimeRain's own gates apply (`Main.cs:64744-64764`):
+                // the item path is `!Main.raining`-gated by the caller only
+                // in vanilla, so pass the live rain state.
+                let raining = app.rain.is_raining();
+                crate::world_sim::weather::start_slime_rain(
+                    &mut app.world,
+                    raining,
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
+                );
                 drop_mut.count = drop_mut.count.saturating_sub(1);
                 if drop_mut.count == 0 {
                     air_out(app, idx);
@@ -443,6 +452,15 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
             } => {
                 apply_decraft(app, idx, recipe_index, amount);
             }
+        }
+        // `WorldItem.cs:1849` — the shared tail every arm falls through to:
+        // `AchievementsHelper.NotifyProgressionEvent(27)` (TRANSMUTE_ITEM).
+        // `Refused` is the two early returns above it (`:1732` the
+        // already-unlocked rainbow slime, `:1754` the active slime rain), and
+        // `Nothing` is `CanShimmer() == false` — the C# never reaches
+        // `GetShimmered` then, so neither credits.
+        if !matches!(outcome, ShimmerOutcome::Nothing | ShimmerOutcome::Refused) {
+            let _ = app.achievements.notify_progression(27);
         }
     }
     // The air-out sweep (`WorldItem.TurnToAir`'s list effect — the C# marks the
@@ -480,12 +498,11 @@ fn apply_decraft(app: &mut App, idx: u32, recipe_index: usize, amount: u32) {
     for ing in ingredients {
         let mut units = ing.units * amount;
         if alchemy {
-            // `:1794-1800` — one `Main.rand.Next(3) == 0` per unit.
+            // `:1794-1800` — one `Main.rand.Next(3) == 0` per unit; the
+            // decraft runs in `WorldItem.GetShimmered` under the `UpdateItems`
+            // swap (`Main.cs:18024`), so the draws ride `UpdateItems`.
             for _ in 0..ing.units * amount {
-                let mut state = app.item_rng;
-                let r = crate::app::rand01(&mut state);
-                app.item_rng = state;
-                if (r * 3.0) as i32 == 0 {
+                if app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(3) == 0 {
                     units = units.saturating_sub(1);
                 }
             }
@@ -498,7 +515,9 @@ fn apply_decraft(app: &mut App, idx: u32, recipe_index: usize, amount: u32) {
         }
     }
     for (kind, count) in spawns {
-        crate::world_sim::items::spawn_item_drop_px(app, kind, count, pos);
+        // `SpawnShimmeredItem` → `Item.NewItem` on the `UpdateItems` stream.
+        let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
+        crate::world_sim::items::spawn_item_drop_px(&mut app.items, rng, kind, count, pos);
     }
     let create_stack = craft::RECIPES.get(recipe_index).map_or(1, |r| r.create.1);
     if let Some(drop) = app.items.get_mut(idx as usize) {

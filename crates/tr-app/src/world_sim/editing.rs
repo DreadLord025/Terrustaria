@@ -4,7 +4,7 @@
 
 use glam::Vec2;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World, edit};
+use tr_core::{TILE_PX, UnifiedRandom, World, edit};
 
 use crate::achievements;
 use crate::app::App;
@@ -713,10 +713,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
-                    // the item stream lives here, not in the projectile step.
-                    let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                    // the throw runs in `Player.ItemCheck` under the
+                    // `UpdatePlayers` swap (`Main.cs:17754`), so the roll
+                    // rides `stream(UpdatePlayers)`.
+                    let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     let crit =
-                        tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit);
+                        tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + item_crit);
                     // `Player.cs:47119-47130` - the Nebula Blaze's pre-pass: a
                     // 20% roll upgrades the bolt (634→635) at triple damage —
                     // `Damage *= 3` on the weapon-damage int (`:42653`'s
@@ -1177,9 +1179,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     .as_ref()
                     .map(|p| (p.luck(), p.class_crit(class)))
                     .unwrap_or((0.0, 0));
-                let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
-                let crit = tr_core::damage::crit_roll(&mut loot_rng, class_crit + item_crit);
-                let mut dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
+                // `Player.ItemCheck`'s melee hit runs under the
+                // `UpdatePlayers` swap (`Main.cs:17754`).
+                let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
+                let mut dmg = tr_core::damage::damage_var(loot_rng, raw, luck);
                 // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
                 // (`Player.cs:44344-44353`): the Flymeal takes full armour
                 // penetration (`armorPenetrationPercent = 1f`), doubles the
@@ -1191,6 +1195,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     if n.kind == NpcKind::Nurse {
                         dmg *= 2;
                     }
+                    // `:44377-44387` — the Flymeal's second block: a hit on a
+                    // `townNPC` fires TERRARIST (42). The C# splits it from the
+                    // `:44345` multiplier arm but gates on the same item and
+                    // both run before `StrikeNPC` (`:44404`). Both predicates
+                    // collapse to `is_town_npc_like()` here: it *is* the
+                    // vanilla `townNPC` flag, and `isLikeATownNPC` only adds
+                    // type 453, which the port does not ship.
+                    let _ = app.achievements.notify_progression(42);
                 }
                 // `:44383`: `num2 += nPC.checkArmorPenetration(
                 // this.GetArmorPenetration(sItem.melee), armorPenetrationPercent)`
@@ -1392,14 +1404,19 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                         // (`:49107-49108`).
                         break_tile(app, tx, ty);
                         let altars = app.world.altars_smashed;
-                        let mut rng = app.growth_rng;
-                        rng.next_seed_in_place();
-                        let ore = tr_core::ores::smash_altar(
-                            &mut app.world,
-                            &mut app.ore_tiers,
-                            altars,
-                            &mut rng,
-                        );
+                        // The smash's draws ride the `UpdatePlayers` stream
+                        // (the C# hammer hit runs in `Player.ItemCheck` under
+                        // the `UpdatePlayers` swap, `Main.cs:17754`; the old
+                        // `growth_rng` copy + reseed ritual is gone).
+                        let ore = {
+                            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                            tr_core::ores::smash_altar(
+                                &mut app.world,
+                                &mut app.ore_tiers,
+                                altars,
+                                rng,
+                            )
+                        };
                         app.world.altars_smashed = altars + 1;
                         let _ = app.achievements.notify_progression(6);
                         let _ = ore;
@@ -1647,11 +1664,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 if p.ammo_cycling.mode == crate::ammo::AmmoCyclingMode::Random {
                     // `ammoCyclingOffset = Main.rand.Next()` (`:53577`) — one
                     // unbounded draw from the same stream the roll arms below
-                    // read, taken through the app's stream helper (`app::next_rand`
-                    // is the splitmix round `ammo.rs::next` draws with), and
-                    // masked to .NET's non-negative `Random.Next()` range.
+                    // read (`Player.ItemCheck` → the `UpdatePlayers` swap,
+                    // `Main.cs:17754`); `UnifiedRandom::next` is already
+                    // .NET's non-negative `Random.Next()`.
                     p.ammo_cycling.offset =
-                        (crate::app::next_rand(&mut app.item_rng) as u32 as i32) & i32::MAX;
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers).next();
                 }
             }
         }
@@ -1679,7 +1696,8 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             },
             &flags,
             dont_consume,
-            &mut app.item_rng,
+            // `PickAmmo` runs in `Player.ItemCheck` → `UpdatePlayers`.
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         ) {
             let mut equip = std::mem::take(&mut app.equip);
             let mut inv = app.inventory;
@@ -1761,9 +1779,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 return;
             }
             let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+            // The ranged shot rides the same `ItemCheck` → `UpdatePlayers`
+            // stream as the rest of the pass (`Main.cs:17754`).
             let crit = {
-                let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
-                tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + w_crit)
+                let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                tr_core::damage::crit_roll(loot_rng, p.class_crit(class) + w_crit)
             };
             // origin/main’s owned spawner (the owner plumbing of the
             // projectile-ownership task) + this task’s resolution: the pair
@@ -1852,7 +1872,10 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
         return;
     };
     if let Some(id) = registry::by_wall(wall) {
-        spawn_item_drop(app, id, 1, tx, ty);
+        // The wall break runs in `Player.ItemCheck` — the `UpdatePlayers`
+        // stream.
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        spawn_item_drop(&mut app.items, rng, id, 1, tx, ty);
     }
     app.audio
         .play_at("Dig_2", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
@@ -1971,30 +1994,40 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
         .map(|d| i32::from(d.axe))
         .unwrap_or(0);
     let ctx = drop_ctx(app);
+    // `KillTile` runs from the player's tile use — `Player.ItemCheck` under
+    // the `UpdatePlayers` swap (`Main.cs:17754`); the break's `Main.rand`
+    // draws ride `stream(UpdatePlayers)`.
     let (drops, portals) = {
-        let mut main_rng = super::npcs::LootRng(&mut app.item_rng);
+        let main_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         break_drop_events(
             &kill,
             &app.world,
             hit,
             staff_bonus,
             axe_power,
-            &mut main_rng,
+            main_rng,
             &ctx,
         )
     };
     for (id, count, x, y) in drops {
-        spawn_item_drop(app, id, count, x, y);
+        // The tile-break drops draw the same `UpdatePlayers` stream the
+        // break rolls used (`Main.rand` = the active swap, `Main.cs:17754`).
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        spawn_item_drop(&mut app.items, rng, id, count, x, y);
         app.audio
             .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
     }
     // `WorldGen.CheckPalmTree`'s canopy re-roll (`:54385-54388`): the palm
     // cells whose cell above is gone take a fresh canopy frame. The roll
     // needs the `genRand` stream, so the core recorded the request and the
-    // app resolves it here (one `item_rng` throw seeds the `FastRandom`).
+    // app resolves it here (one `UpdatePlayers` throw seeds the `FastRandom`
+    // stand-in).
     for (px, py) in &kill.palm_frame_rolls {
-        let mut gen_stream =
-            tr_core::tile_light::FastRandom::new(crate::app::next_rand(&mut app.item_rng));
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(
+            app.rngs
+                .stream(crate::app::RngKey::UpdatePlayers)
+                .next() as u64,
+        );
         let frame_x = (gen_stream.next_range(7, 10) * 22) as i16;
         if let Some(cell) = app.world.tile_mut(*px, *py) {
             cell.frame_x = frame_x;
@@ -2151,15 +2184,15 @@ struct HitCell {
 /// herb's rolls (:65674-65698) and every 2x1 pile's loot block
 /// (:47130-47245). `(item, stack, x, y)` in spawn order, plus the Coin
 /// Portal projectile requests. Free of `App` — the RNG streams come in as
-/// parameters (`genRand` = the seeded `FastRandom`, `Main.rand` = the
-/// [`super::npcs::LootRng`] over the app's `item_rng`, the owner's seam).
+/// parameters (`genRand` = the seeded `FastRandom` stand-in, `Main.rand` =
+/// the caller's `UnifiedRandom` stage stream).
 fn break_drop_events(
     kill: &edit::TileKill,
     world: &World,
     hit: Option<HitCell>,
     staff_of_regrowth: bool,
     axe_power: i32,
-    main_rng: &mut super::npcs::LootRng<'_>,
+    main_rng: &mut UnifiedRandom,
     ctx: &DropCtx,
 ) -> (Vec<(u16, u32, i32, i32)>, Vec<(i32, i32)>) {
     let mut events = Vec::new();
@@ -2209,7 +2242,7 @@ fn break_drop_events(
                 ..
             } => {
                 let mut gen_stream =
-                    tr_core::tile_light::FastRandom::new(crate::app::next_rand(main_rng.0));
+                    tr_core::tile_light::FastRandom::new(main_rng.next() as u64);
                 for (id, count) in trunk_tree_drops(
                     *tree_type,
                     *frame_x,
@@ -2223,9 +2256,9 @@ fn break_drop_events(
             }
         }
     }
-    // `SpawnThingsFromPot` per pot event: one `item_rng` throw seeds the
-    // `genRand` stream (the owner's contract), `Main.rand` rolls consume the
-    // stream directly, in the C# order. The Coin Portal roll returns a
+    // `SpawnThingsFromPot` per pot event: one `UpdatePlayers` throw seeds the
+    // `genRand` stand-in (the owner's contract), `Main.rand` rolls consume
+    // the stage stream directly, in the C# order. The Coin Portal roll returns a
     // projectile request instead of loot.
     let mut portals = Vec::new();
     for event in &kill.events {
@@ -2233,7 +2266,7 @@ fn break_drop_events(
         let liquid = cell.map(|t| t.liquid).unwrap_or(0);
         let wall = cell.map(|t| t.wall).unwrap_or(0);
         let mut gen_stream =
-            tr_core::tile_light::FastRandom::new(crate::app::next_rand(main_rng.0));
+            tr_core::tile_light::FastRandom::new(main_rng.next() as u64);
         let (loot, portal) = spawn_things_from_pot(
             ctx,
             event.style,
@@ -2279,7 +2312,7 @@ fn break_drop_events(
             continue;
         }
         let mut gen_stream =
-            tr_core::tile_light::FastRandom::new(crate::app::next_rand(main_rng.0));
+            tr_core::tile_light::FastRandom::new(main_rng.next() as u64);
         for (id, count) in pile_loot(pile.frame_x, &mut gen_stream) {
             events.push((id, count.max(1) as u32, pile.x, pile.y));
         }
@@ -2294,16 +2327,16 @@ fn break_drop_events(
 /// marker cell only — `frameX >= 22 && frameY >= 198`), the mushroom roll
 /// (`genRand.Next(2)`), the bonus wood (`genRand.Next(35) <= axe`) and its
 /// second chance (`Main.rand.Next(3) == 0`, short-circuited). The port's
-/// seam: one `item_rng` throw seeds the `FastRandom` that stands in for the
-/// C#'s `genRand` stream, and the `Main.rand` roll spends the item stream
-/// directly — the house convention (PORT_MAP's "the RNG seam").
+/// seam: one `UpdatePlayers` throw seeds the `FastRandom` that stands in for
+/// the C#'s `genRand` stream, and the `Main.rand` roll spends the stage
+/// stream directly — the house convention (PORT_MAP's "the RNG seam").
 fn trunk_tree_drops(
     tree_type: tr_core::tree::TreeType,
     frame_x: i16,
     frame_y: i16,
     axe_power: i32,
     gen_stream: &mut tr_core::tile_light::FastRandom,
-    main_rng: &mut super::npcs::LootRng<'_>,
+    main_rng: &mut UnifiedRandom,
 ) -> Vec<(u16, u32)> {
     let mut drop_item = 0u16;
     let mut secondary_item = 0u16;
@@ -2357,7 +2390,7 @@ fn trunk_tree_drops(
 /// `Main.rand.Next(30) == 0` mints the Terragrim 4144, otherwise the
 /// Enchanted Sword 989. Every other 187 frame sits in the empty
 /// `GetItemDrops` group (:65759-65815).
-fn sword_pile_roll(frame_x: i32, rng: &mut super::npcs::LootRng<'_>) -> Option<u16> {
+fn sword_pile_roll(frame_x: i32, rng: &mut UnifiedRandom) -> Option<u16> {
     if !(918..=970).contains(&frame_x) {
         return None;
     }
@@ -2379,7 +2412,7 @@ fn sword_pile_roll(frame_x: i32, rng: &mut super::npcs::LootRng<'_>) -> Option<u
 fn cell_drops(
     hit: &HitCell,
     staff_of_regrowth: bool,
-    main_rng: &mut super::npcs::LootRng<'_>,
+    main_rng: &mut UnifiedRandom,
     ctx: &DropCtx,
 ) -> Vec<(u16, u32, i32, i32)> {
     let (x, y) = (hit.x, hit.y);
@@ -2450,14 +2483,14 @@ fn is_harvestable_herb_with_seed(kind: u16, style: i32, y: i32, ctx: &DropCtx) -
 /// drops (stack 1, `1..3` with the Staff of Regrowth); the seeds `307 + num`
 /// (6 → 2357) drop `1..6` with the staff, else `1..4` when
 /// `IsHarvestableHerbWithSeed`, else never. All rolls are `Main.rand`
-/// (`Main.cs` drops carry no `genRand` rolls) — the `item_rng` stream.
+/// (`Main.cs` drops carry no `genRand` rolls) — the `UpdatePlayers` stream.
 fn herb_drops(
     kind: u16,
     style: i32,
     y: i32,
     staff_of_regrowth: bool,
     ctx: &DropCtx,
-    main_rng: &mut super::npcs::LootRng<'_>,
+    main_rng: &mut UnifiedRandom,
 ) -> Vec<(u16, i32)> {
     // The case labels are 83/84 only — the immature 82 sits in the empty
     // case group (:65759-65815) and drops nothing.
@@ -2562,9 +2595,9 @@ fn pot_luck_range(num: f32) -> i32 {
 }
 
 /// `WorldGen.SpawnThingsFromPot` (`WorldGen.cs:57089-57811`), the full roll
-/// order. `gen_rand` is the event's `genRand` stream (`FastRandom` seeded
-/// from one `item_rng` throw, the owner's contract), `main_rng` the
-/// `Main.rand` stream (the app `item_rng`). `liquid`/`wall` are the pot
+/// order. `gen_rand` is the event's `genRand` stand-in (`FastRandom` seeded
+/// from one `UpdatePlayers` throw, the owner's contract), `main_rng` the
+/// `Main.rand` stream (the caller's stage stream). `liquid`/`wall` are the pot
 /// origin cell's post-kill state (KillTile keeps liquid and wall) for the
 /// glowstick branch and the dungeon key. Returns the loot plus the Coin
 /// Portal flag (the caller spawns the 518 projectile).
@@ -2582,7 +2615,7 @@ fn spawn_things_from_pot(
     liquid: u8,
     wall: u16,
     gen_rand: &mut tr_core::tile_light::FastRandom,
-    main_rng: &mut super::npcs::LootRng<'_>,
+    main_rng: &mut UnifiedRandom,
 ) -> (Vec<(u16, i32)>, bool) {
     // :57090-57095 — the depth flags (`flag` caves, `flag2` above the
     // underworld; the remix rewrites have no port state).
@@ -2860,7 +2893,7 @@ fn torch_drop(
     ctx: &DropCtx,
     style: i32,
     liquid: u8,
-    main_rng: &mut super::npcs::LootRng<'_>,
+    main_rng: &mut UnifiedRandom,
 ) -> (u16, i32) {
     let mut num14 = main_rng.next_range(2, 7);
     if ctx.expert_mode {
@@ -2913,7 +2946,7 @@ fn coin_drops(
     y: i32,
     flag: bool,
     gen_rand: &mut tr_core::tile_light::FastRandom,
-    main_rng: &mut super::npcs::LootRng<'_>,
+    main_rng: &mut UnifiedRandom,
 ) -> Vec<(u16, i32)> {
     let mut num17: f32 = 200.0 + gen_rand.next_range(-100, 101) as f32;
     if (y as f64) < ctx.world_surface {
@@ -2959,7 +2992,7 @@ fn coin_drops(
 /// (`WorldGen.cs:57752-57810`): platinum/gold/silver/copper with the `> 50`
 /// shrinks — the gate roll is consumed only above 50 (C# `&&`), the copper's
 /// second divisor is `Next(4) + 1`.
-fn split_coins(mut num17: f32, main_rng: &mut super::npcs::LootRng<'_>) -> Vec<(u16, i32)> {
+fn split_coins(mut num17: f32, main_rng: &mut UnifiedRandom) -> Vec<(u16, i32)> {
     let mut drops = Vec::new();
     while (num17 as i32) > 0 {
         // The >50 shrinks: `if (num > 50 && Main.rand.Next(2) == 0)` — the
@@ -3272,8 +3305,11 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
             ] {
                 if edit::kill_wire(&mut app.world, tx, ty, color) {
                     // `WorldGen.KillWire`'s drop (`Item.NewItem(..., 530)`,
-                    // `WorldGen.cs:58130`).
-                    spawn_item_drop(app, WIRE_ITEM, 1, tx, ty);
+                    // `WorldGen.cs:58130`) — the cutter's tile interaction runs
+                    // in `Player.ItemCheck` (`Player.cs:46851-46880`), so the
+                    // drop rides the `UpdatePlayers` stream.
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    spawn_item_drop(&mut app.items, rng, WIRE_ITEM, 1, tx, ty);
                     wire_placed_feedback(app, tx, ty);
                     return true;
                 }
@@ -3685,6 +3721,7 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
             // the click is consumed.
             app.wiring.hit_switch(&mut app.world, *x, *y);
+            app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
             app.world_key = None;
             return true;
         }
@@ -3793,7 +3830,10 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
     }
     for (id, x, y) in drops {
-        spawn_item_drop(app, id, 1, x, y);
+        // The tile-interaction drops ride the `UpdatePlayers` stream (the
+        // interaction runs in `Player.ItemCheck`, `Main.cs:17754`).
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        spawn_item_drop(&mut app.items, rng, id, 1, x, y);
     }
     app.world_key = None;
     true
@@ -4018,8 +4058,7 @@ mod tests {
     /// `WorldGen.cs:66189-66261`).
     #[test]
     fn bug_16_the_trunk_drop_is_the_family_wood_and_the_acorn() {
-        let mut state = 0u64;
-        let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+        let mut rng = tr_core::UnifiedRandom::new(0);
         let mut gen_stream = tr_core::tile_light::FastRandom::new(1);
         // A plain trunk cell: the wood of the tree's family, no acorn (the
         // acorn roll is the canopy marker's only — `frameX >= 22 && frameY >= 198`).
@@ -4037,8 +4076,7 @@ mod tests {
             "a plain trunk cell never drops an acorn"
         );
         // The jungle family drops Rich Mahogany (`GetTreeType`'s switch).
-        let mut state = 0u64;
-        let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+        let mut rng = tr_core::UnifiedRandom::new(0);
         let mut gen_stream = tr_core::tile_light::FastRandom::new(3);
         let drops = trunk_tree_drops(
             tr_core::tree::TreeType::Jungle,
@@ -4053,8 +4091,7 @@ mod tests {
         // but the mushroom and the jungle).
         let mut acorns = 0;
         for seed in 0..24u64 {
-            let mut state = 0u64;
-            let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+            let mut rng = tr_core::UnifiedRandom::new(0);
             let mut gen_stream = tr_core::tile_light::FastRandom::new(seed);
             let drops = trunk_tree_drops(
                 tr_core::tree::TreeType::Forest,
@@ -4073,8 +4110,7 @@ mod tests {
         // The jungle never does (`TreeTypeDropsAcorns`, `WorldGen.cs:63112`).
         let mut jungle_acorns = 0;
         for seed in 0..24u64 {
-            let mut state = 0u64;
-            let mut rng = crate::world_sim::npcs::LootRng(&mut state);
+            let mut rng = tr_core::UnifiedRandom::new(0);
             let mut gen_stream = tr_core::tile_light::FastRandom::new(seed);
             let drops = trunk_tree_drops(
                 tr_core::tree::TreeType::Jungle,
@@ -4112,11 +4148,15 @@ mod tests {
         assert!(a.npcs[0].hp < hp_0, "the sword hit lands (defence-reduced > 0)");
         // The amount is the sword's OWN row through the ±15 % `DamageVar`
         // band and the slime's defence (`CalculateDamageNPCsTake`), x2 on a
-        // crit — `item_rng` starts at 0 in the rig, so the draws are fixed.
+        // crit — the rig's `UpdatePlayers` stream starts pristine at the
+        // world seed, so the draws are fixed.
         // The pre-BUG-09 placeholder never reached this arm (the sword
         // returned early); the flat 15 discriminator is the pick below.
         let sword = hp_0 - a.npcs[0].hp;
-        assert_eq!(sword, 6, "the sword's 7 through DamageVar − defence = {sword}");
+        // (The literal is a stream re-pin: S1-A-11 P4 moved the pass onto the
+        // `UpdatePlayers` stream, so DamageVar's draw — and the landed value —
+        // changed; the value stays inside the ±15 % band + defence.)
+        assert_eq!(sword, 7, "the sword's 7 through DamageVar − defence = {sword}");
         // The Iron Pickaxe (damage 5, knockback 2.0) with the cursor on the
         // NPC over air: the vanilla's `!noMelee && damage > 0` gate runs the
         // melee arm for the tools too — over an idle cursor cell the tool
@@ -4130,7 +4170,8 @@ mod tests {
         // The pick's own 5 (±15 %) after the defence — NOT the pre-BUG-09
         // flat 15 (that row read 14 here: 15 − 2/2).
         let pick = hp_b - b.npcs[0].hp;
-        assert_eq!(pick, 4, "the pick's 5 through DamageVar − defence = {pick}");
+        // (Same stream re-pin — see the sword's note above.)
+        assert_eq!(pick, 5, "the pick's 5 through DamageVar − defence = {pick}");
         // The same pick over a tile under the cursor mines instead — the
         // tile arm runs (the pick's power clears the stone under it).
         let mut c = melee_app();
@@ -4156,7 +4197,8 @@ mod tests {
         let hp_0 = a.npcs[0].hp;
         mine_frames(&mut a, 1);
         let plain = hp_0 - a.npcs[0].hp;
-        assert_eq!(plain, 6, "the baseline hit");
+        // The stream re-pin (S1-A-11 P4) — see BUG-09's note.
+        assert_eq!(plain, 7, "the baseline hit");
         // The Shark Tooth Necklace (3212) adds a flat 5 of penetration;
         // `checkArmorPenetration` caps it at defense / 2 = 1, so the hit
         // gains exactly 1.
@@ -4297,6 +4339,12 @@ mod tests {
         let hp = a.npcs[0].hp;
         mine_frames(&mut a, 1);
         assert!(a.npcs[0].hp < hp, "the Flymeal gets through the friendly gate");
+        // `Player.cs:44377-44387` — the Flymeal's `townNPC` branch fires
+        // TERRARIST (42).
+        assert!(
+            progression(&a, 42),
+            "the Flymeal credits TERRARIST on a town NPC"
+        );
         // The doubled 15 plus the 100 % armour penetration clears the
         // Guide's defence 30 by a wide margin (the sword's ~0 would not).
         assert!(
@@ -4325,6 +4373,22 @@ mod tests {
         c.inventory[c.selected].kind = 24;
         mine_frames(&mut c, 1);
         assert!(c.npcs[0].hp < hp, "the hostile is still hittable");
+        // S1-E-18d — the `townNPC` predicate: a plain slime never credits
+        // TERRARIST, and the Stick of Doom is a different item (`:44345` is
+        // gated on 5129, `:44377` too).
+        assert!(!progression(&c, 42), "a hostile credits nothing");
+        assert!(!progression(&b, 42), "the Stick of Doom is not the Flymeal");
+    }
+
+    /// Whether the `PROGRESSION_EVENT_<id>` condition (`AchievementCondition
+    /// .Name`, the save key) is completed on any row.
+    fn progression(app: &App, id: u32) -> bool {
+        let key = format!("PROGRESSION_EVENT_{id}");
+        app.achievements
+            .list
+            .iter()
+            .flat_map(|a| a.conditions.iter())
+            .any(|c| c.name == key && c.completed)
     }
 
     fn melee_app() -> App {
@@ -4450,13 +4514,17 @@ mod tests {
         let hp_0 = a.npcs[0].hp;
         mine_frames(&mut a, 1);
         assert!(a.npcs[0].hp < hp_0, "the melee hit landed");
-        let state_0 = a.item_rng;
+        let state_0 = a.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
 
         let mut b = melee_app();
         b.player.as_mut().unwrap().luck_state.luck = 1.0;
         mine_frames(&mut b, 1);
         assert!(b.npcs[0].hp < hp_0, "the lucky hit landed too");
-        assert_ne!(b.item_rng, state_0, "luck 1.0 rerolled DamageVar");
+        assert_ne!(
+            *b.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            state_0,
+            "luck 1.0 rerolled DamageVar"
+        );
     }
 
     /// 40x40 world with a stone floor at y = 20 — the core `edit.rs` fixture
@@ -4487,13 +4555,12 @@ mod tests {
         }
     }
     /// The App-free [`break_drop_events`] harness for the record tests: a
-    /// `Default` ctx (the record paths never read it) and a fixed `item_rng`.
+    /// `Default` ctx (the record paths never read it) and a fixed stream.
     fn drop_events(
         kill: &edit::TileKill,
         hit: Option<HitCell>,
     ) -> (Vec<(u16, u32, i32, i32)>, Vec<(i32, i32)>) {
-        let mut rng = 0u64;
-        let mut main = crate::world_sim::npcs::LootRng(&mut rng);
+        let mut main = tr_core::UnifiedRandom::new(0);
         break_drop_events(
             kill,
             &object_world(),
@@ -5370,34 +5437,37 @@ mod tests {
     fn test_DW_4_3_a_random_cycling_pick_spends_one_extra_draw() {
         // The determinism invariant, pinned on the stream: the `Random` mode's
         // `ammoCyclingOffset = Main.rand.Next()` (`Player.cs:53577`) is ONE extra
-        // draw on the shared `item_rng`, spent BEFORE the shot's own crit roll
-        // (the C# updates the cycler inside `PickAmmo`, the roll arms after it).
-        // The Cobalt Repeater carries no roll arm of its own and the ammo has no
-        // flags, so its whole per-shot draw count is the cycler's one plus the
-        // crit's one — asserted against a helper that advances the same splitmix
-        // round, so a later refactor cannot silently add or drop a draw.
-        let draws_after = |seed: u64, n: usize| {
-            let mut state = seed;
+        // draw on the `UpdatePlayers` stream, spent BEFORE the shot's own crit
+        // roll (the C# updates the cycler inside `PickAmmo`, the roll arms after
+        // it). The Cobalt Repeater carries no roll arm of its own and the ammo
+        // has no flags, so its whole per-shot draw count is the cycler's one
+        // plus the crit's one — asserted against a helper that advances the same
+        // stream, so a later refactor cannot silently add or drop a draw
+        // (`draws_after` re-pinned from the splitmix rounds to stream draws,
+        // DW-4.4, same count contract).
+        let draws_after = |seed: i32, n: usize| {
+            let mut rng = tr_core::UnifiedRandom::new(seed);
             for _ in 0..n {
-                crate::app::next_rand(&mut state);
+                rng.next();
             }
-            state
+            rng
         };
+        let stream = |app: &mut App| app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
         // The same shot without the cycler: the crit roll's single draw.
         let mut plain = shooter_rig(435, "Cobalt Repeater", &[(0, 40, 12)]);
-        let seed = 0x5EED_CA5Eu64;
-        plain.item_rng = seed;
+        let seed = 0x5EED_CA5Eu64 as i32;
+        *plain.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
         let screen = plain.screen_size().into();
         let mut log = Vec::new();
         hold(&mut plain, screen, 26, &mut log);
         assert_eq!(log.len(), 1, "one shot");
         assert_eq!(
-            plain.item_rng,
+            stream(&mut plain),
             draws_after(seed, 1),
             "the plain shot spends exactly the crit's draw"
         );
         // With the Random cycler: the cycler's draw comes first, the crit's
-        // second — two rounds in total, in that order.
+        // second — two draws in total, in that order.
         let mut random = shooter_rig(435, "Cobalt Repeater", &[(0, 40, 12)]);
         random.equip.misc_equips[0] = crate::item::ItemSlot {
             kind: 6193, // the Ammo Cycler (Random) (`Player.cs:14538`)
@@ -5405,21 +5475,26 @@ mod tests {
             count: 1,
             prefix: 0,
         };
-        random.item_rng = seed;
+        *random.rngs.stream(crate::app::RngKey::UpdatePlayers) =
+            tr_core::UnifiedRandom::new(seed);
         let screen = random.screen_size().into();
         mastery_tick(&mut random);
         let mut log = Vec::new();
         hold(&mut random, screen, 26, &mut log);
         assert_eq!(log.len(), 1, "one shot");
         assert_eq!(
-            random.item_rng,
+            stream(&mut random),
             draws_after(seed, 2),
             "the Random cycler adds exactly one draw ahead of the crit roll"
         );
+        // The offset is that first draw (`UnifiedRandom::next` is already
+        // .NET's non-negative `Random.Next()`).
+        let mut first_draw = tr_core::UnifiedRandom::new(seed);
+        let expected_offset = first_draw.next();
         assert_eq!(
             random.player.as_ref().unwrap().ammo_cycling.offset,
-            (crate::app::next_rand(&mut { seed }) as u32 as i32) & i32::MAX,
-            "the offset is that first draw, masked to .NET's non-negative range"
+            expected_offset,
+            "the offset is the cycler's first draw"
         );
     }
 
@@ -5434,7 +5509,7 @@ mod tests {
         // drain. The RNG stream's immobility is the assertion (the determinism
         // invariant).
         let mut app = shooter_rig(434, "Clockwork Assault Rifle", &[]);
-        let rng_before = app.item_rng;
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         update_editing(&mut app, ONE_TICK_SECS, screen);
@@ -5442,7 +5517,11 @@ mod tests {
         hold(&mut app, screen, 30, &mut log);
         assert!(log.is_empty(), "nothing fired");
         assert_eq!(shots(&app), 0);
-        assert_eq!(app.item_rng, rng_before, "the stream is untouched");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "the stream is untouched"
+        );
     }
 
     #[test]
@@ -5459,12 +5538,16 @@ mod tests {
             prefix: 0,
         };
         mastery_tick(&mut app);
-        let rng_before = app.item_rng;
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
         let screen = app.screen_size().into();
         let mut log = Vec::new();
         hold(&mut app, screen, 30, &mut log);
         assert!(log.is_empty(), "no shot");
-        assert_eq!(app.item_rng, rng_before, "and no draw spent");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "and no draw spent"
+        );
     }
 
     #[test]
@@ -5570,7 +5653,10 @@ mod tests {
     /// refuses (`:45675-45679`).
     #[test]
     fn the_altar_hammer_smash_seeds_ore_and_fires_begone_evil() {
-        let mut w = World::new("t".into(), 64, 800);
+        // Width 420 (the production minimum): the ore bands draw
+        // `Next(100, maxTilesX - 100)` (`:48945`), which needs maxTilesX > 200
+        // — the C#'s own `Next` assertion rejects the old 64-wide fixture.
+        let mut w = World::new("t".into(), 420, 800);
         let i = w.index(30, 260);
         w.tiles[i] = Tile {
             kind: 26,
@@ -5622,6 +5708,41 @@ mod tests {
             .list
             .iter()
             .any(|a| a.name == "BEGONE_EVIL" && a.completed));
+    }
+
+    /// DW-1.1: the smash's ore draws ride the `UpdatePlayers` stream — the
+    /// hammer hit's stream — and never touch the growth pass's
+    /// `UpdateWorldGen` stream (the two were one `growth_rng` field before
+    /// the S1-A-11 split).
+    #[test]
+    fn test_dw_1_1_altar_smash_draws_the_update_players_stream() {
+        let mut w = World::new("t".into(), 420, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile {
+            kind: 26,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.world.hard_mode = true;
+        app.inventory[app.selected].kind = 367; // the Pwnhammer (hammer 80)
+        let pristine = tr_core::UnifiedRandom::new(app.world.seed as i32);
+        mine_frames(&mut app, 30);
+        // The smash landed (the same rig as the behavioural pin above) and
+        // the `UpdatePlayers` stream left its pristine seed state.
+        assert_eq!(app.world.altars_smashed, 1, "the smash ran");
+        assert_ne!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            pristine,
+            "the smash drew the UpdatePlayers stream"
+        );
+        // The growth pass's stream is untouched by the editing pass.
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+            pristine,
+            "the altar smash never draws UpdateWorldGen"
+        );
     }
 
     /// The whip use path (M4-PROJ-7): one press = one swing, the spawn carries
@@ -6180,12 +6301,14 @@ mod tests {
     // ---- Phase 3 (M1.4-TO-4): drops + RNG streams ---------------------------
 
     /// A staged break rig: the world swapped in, a local player present (the
-    /// `FindClosest` stand-in), the item stream pinned for determinism.
+    /// `FindClosest` stand-in), the `UpdatePlayers` stream pinned for
+    /// determinism.
     fn break_app(world: World, seed: u64) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = world;
         app.player = Some(Player::spawn(&app.world));
-        app.item_rng = seed;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) =
+            tr_core::UnifiedRandom::new(seed as i32);
         app
     }
 
@@ -6261,8 +6384,7 @@ mod tests {
         liquid: u8,
         wall: u16,
     ) -> (Vec<(u16, i32)>, bool) {
-        let mut state = seed;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(seed as i32);
         let mut gen_stream = tr_core::tile_light::FastRandom::new(gen_seed);
         spawn_things_from_pot(ctx, style, 10, y, liquid, wall, &mut gen_stream, &mut main)
     }
@@ -6295,8 +6417,7 @@ mod tests {
     /// `num11` on `want` — the C# draw order with `expertMode`'s shift.
     fn main_seed_for_num11(want: i32, range: i32, expert: bool) -> u64 {
         for seed in 0u64..1_000_000 {
-            let mut state = seed;
-            let mut main = crate::world_sim::npcs::LootRng(&mut state);
+            let mut main = tr_core::UnifiedRandom::new(seed as i32);
             if main.next_range(0, range) == 0 {
                 continue; // the Coin Portal
             }
@@ -6328,8 +6449,7 @@ mod tests {
     }
 
     fn herb_rolls(ctx: &DropCtx, kind: u16, style: i32, staff: bool) -> Vec<(u16, i32)> {
-        let mut state = 7u64;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(7u64 as i32);
         herb_drops(kind, style, 250, staff, ctx, &mut main)
     }
 
@@ -6534,8 +6654,7 @@ mod tests {
         // Coin Portal: the first main draw == 0 → no items, the portal flag.
         let mut portal_seed = 0u64;
         for seed in 0u64..100_000 {
-            let mut state = seed;
-            let mut main = crate::world_sim::npcs::LootRng(&mut state);
+            let mut main = tr_core::UnifiedRandom::new(seed as i32);
             if main.next_range(0, 500) == 0 {
                 portal_seed = seed;
                 break;
@@ -6557,8 +6676,7 @@ mod tests {
         }
         let mut key_main = 0u64;
         for seed in 0u64..100_000 {
-            let mut state = seed;
-            let mut main = crate::world_sim::npcs::LootRng(&mut state);
+            let mut main = tr_core::UnifiedRandom::new(seed as i32);
             if main.next_range(0, 500) != 0 {
                 key_main = seed;
                 break;
@@ -6614,8 +6732,7 @@ mod tests {
 
         // Arrows (num11 == 2): 40 × `Next(10, 21)` above the surface.
         let arrow_seed = main_seed_for_num11(2, 500, false);
-        let mut state = arrow_seed;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(arrow_seed as i32);
         let _ = main.next_range(0, 500);
         let _ = main.next_range(0, 45);
         let _ = main.next_range(0, 7);
@@ -6630,8 +6747,7 @@ mod tests {
 
         // Bombs (num11 == 4 above the underworld): 166 × `Next(4) + 1`.
         let bomb_seed = main_seed_for_num11(4, 500, false);
-        let mut state = bomb_seed;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(bomb_seed as i32);
         let _ = main.next_range(0, 500);
         let _ = main.next_range(0, 45);
         let _ = main.next_range(0, 7);
@@ -6642,8 +6758,7 @@ mod tests {
         // Rope (num11 == 5 above the underworld, pre-hardmode): 965 ×
         // `Next(20, 41)`.
         let rope_seed = main_seed_for_num11(5, 500, false);
-        let mut state = rope_seed;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(rope_seed as i32);
         let _ = main.next_range(0, 500);
         let _ = main.next_range(0, 45);
         let _ = main.next_range(0, 7);
@@ -6655,8 +6770,7 @@ mod tests {
         let mut hurt = pot_ctx();
         hurt.player_hurt = true;
         let heart_seed = main_seed_for_num11(0, 500, false);
-        let mut state = heart_seed;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(heart_seed as i32);
         let _ = main.next_range(0, 500);
         let _ = main.next_range(0, 45);
         let _ = main.next_range(0, 7);
@@ -6679,8 +6793,7 @@ mod tests {
         let _ = g.next_range(0, 35);
         let _ = g.next_range(0, 45);
         let mut num17 = 200.0f32 + g.next_range(-100, 101) as f32;
-        let mut state = coin_seed;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(coin_seed as i32);
         let _ = main.next_range(0, 500);
         let _ = main.next_range(0, 45);
         let _ = main.next_range(0, 7);
@@ -6755,8 +6868,7 @@ mod tests {
         assert_eq!(loot[0].0, 8, "the forced torch branch");
         // The stack is the base `Next(2, 7)` PLUS the vampirism adder — it
         // replayed out of the same stream.
-        let mut state = heart_seed;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(heart_seed as i32);
         let _ = main.next_range(0, 500);
         let _ = main.next_range(0, 45);
         let _ = main.next_range(0, 7);
@@ -6844,8 +6956,7 @@ mod tests {
         let _ = g.next_range(0, 35);
         let _ = g.next_range(0, 45);
         let mut num17 = 200.0f32 + g.next_range(-100, 101) as f32;
-        let mut state = seed;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(seed as i32);
         let _ = main.next_range(0, range);
         let _ = main.next_range(0, 45);
         let _ = main.next_range(0, 7);
@@ -6907,8 +7018,7 @@ mod tests {
         let gen_seed = gen_seed_clean();
         let seed = main_seed_for_num11(1, 500, false);
         // Replay both streams: classic `Next(2, 7)`, expert adds `Next(1, 7)`.
-        let mut state = seed;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(seed as i32);
         let _ = main.next_range(0, 500);
         let _ = main.next_range(0, 45);
         let _ = main.next_range(0, 7);
@@ -6926,16 +7036,14 @@ mod tests {
     fn test_DW_3_5_coin_split_shrinks_above_50() {
         let mut shrunk = 0u64;
         for seed in 0u64..100_000 {
-            let mut state = seed;
-            let mut main = crate::world_sim::npcs::LootRng(&mut state);
+            let mut main = tr_core::UnifiedRandom::new(seed as i32);
             // The copper arm at 51: the gate `Next(2)` fires only above 50.
             if main.next_range(0, 2) == 0 {
                 shrunk = seed;
                 break;
             }
         }
-        let mut state = shrunk;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(shrunk as i32);
         let drops = split_coins(51.0, &mut main);
         assert_eq!(coin_value(&drops) as f32, 51.0, "value conserved");
         assert!(
@@ -6945,15 +7053,13 @@ mod tests {
         // A seed whose gate misses keeps the 51 whole (`Next(2) != 0`).
         let mut whole = 0u64;
         for seed in 0u64..100_000 {
-            let mut state = seed;
-            let mut main = crate::world_sim::npcs::LootRng(&mut state);
+            let mut main = tr_core::UnifiedRandom::new(seed as i32);
             if main.next_range(0, 2) != 0 {
                 whole = seed;
                 break;
             }
         }
-        let mut state = whole;
-        let mut main = crate::world_sim::npcs::LootRng(&mut state);
+        let mut main = tr_core::UnifiedRandom::new(whole as i32);
         assert_eq!(split_coins(51.0, &mut main), vec![(71, 51)]);
         // Sweep: conservation holds across magnitudes and denominations.
         for cents in [
@@ -6966,8 +7072,7 @@ mod tests {
             123_456.0,
             2_500_000.0,
         ] {
-            let mut state = 42u64;
-            let mut main = crate::world_sim::npcs::LootRng(&mut state);
+            let mut main = tr_core::UnifiedRandom::new(42u64 as i32);
             let drops = split_coins(cents, &mut main);
             assert_eq!(coin_value(&drops), cents as i64, "split of {cents}");
             assert!(drops.iter().all(|(_, count)| *count >= 1));
@@ -7352,7 +7457,9 @@ mod tests {
         };
         // The per-tick refresh rides update_player; drive it directly here.
         app.player.as_mut().unwrap().void_vault_enabled = true;
-        crate::world_sim::items::spawn_item_drop(&mut app, 9, 5, 14, 260);
+        seed_stream(&mut app, 0);
+        let mut rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_sim::items::spawn_item_drop(&mut app.items, rng, 9, 5, 14, 260);
         for _ in 0..40 {
             crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
         }
@@ -7514,8 +7621,7 @@ mod tests {
         }
         let mut key_main = 0u64;
         for cand in 0u64..100_000 {
-            let mut state = cand;
-            let mut main = crate::world_sim::npcs::LootRng(&mut state);
+            let mut main = tr_core::UnifiedRandom::new(cand as i32);
             if main.next_range(0, 500) != 0 {
                 key_main = cand;
                 break;
@@ -7689,7 +7795,11 @@ mod tests {
         let seeds_match = |staff: u16| {
             let mut a = staff_app(staff, "Ruby Staff");
             let mut b = staff_app(staff, "Ruby Staff");
-            assert_eq!(a.item_rng, b.item_rng, "the same seed");
+            assert_eq!(
+                *a.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                *b.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                "the same seed"
+            );
             fire_once(&mut a);
             fire_once(&mut b);
             a.projectiles
@@ -7773,13 +7883,28 @@ mod tests {
         app.camera + (app.mouse_pos - Vec2::new(sw * 0.5, sh * 0.5)) / app.zoom
     }
 
-    /// The stream state after `n` splitmix rounds from `seed`.
-    fn draws_after(seed: u64, n: usize) -> u64 {
-        let mut state = seed;
+    /// The stream state after `n` draws from `seed` (the re-pinned
+    /// `draws_after`: splitmix rounds out, `UnifiedRandom` draws in — the
+    /// draw-count contract is unchanged).
+    fn draws_after(seed: i32, n: usize) -> tr_core::UnifiedRandom {
+        let mut rng = tr_core::UnifiedRandom::new(seed);
         for _ in 0..n {
-            crate::app::next_rand(&mut state);
+            rng.next();
         }
-        state
+        rng
+    }
+
+    /// Pins the editing pass's `UpdatePlayers` stream to `seed`.
+    fn seed_stream(app: &mut App, seed: i32) {
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+    }
+
+    /// The editing pass's `UpdatePlayers` stream state (the registry's
+    /// lazy-create needs the mutable app).
+    fn stream_of(app: &mut App) -> tr_core::UnifiedRandom {
+        app.rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone()
     }
 
     #[test]
@@ -7791,7 +7916,7 @@ mod tests {
         // 12 px circular jitter.
         let run = || {
             let mut app = staff_app(1178, "Leaf Blower");
-            app.item_rng = 0x1EAF;
+            seed_stream(&mut app, 0x1EAF);
             fire_once(&mut app);
             app.projectiles
                 .slots()
@@ -7808,7 +7933,7 @@ mod tests {
         // The aim and the un-jittered spawn point, from the same mapping the
         // fire block reads; the fired app's player and cursor did not move.
         let mut app = staff_app(1178, "Leaf Blower");
-        app.item_rng = 0x1EAF;
+        seed_stream(&mut app, 0x1EAF);
         fire_once(&mut app);
         let bolt = app.projectiles.slots().iter().find(|p| p.active).unwrap();
         let aim = staff_aim(&app);
@@ -7834,8 +7959,8 @@ mod tests {
         // (`NextVector2Unit`'s NextFloat) then one radial draw — the whole
         // shot spends exactly the crit's draw plus the pair.
         let mut app = staff_app(1178, "Leaf Blower");
-        let seed = 0x1EAF_B07E;
-        app.item_rng = seed;
+        let seed = 0x1EAF_B07E as i32;
+        seed_stream(&mut app, seed);
         fire_once(&mut app);
         assert_eq!(
             app.projectiles.slots().iter().filter(|p| p.active).count(),
@@ -7843,7 +7968,7 @@ mod tests {
             "one shot"
         );
         assert_eq!(
-            app.item_rng,
+            stream_of(&mut app),
             draws_after(seed, 3),
             "crit, then the circular pair in the C#'s order"
         );
@@ -7856,7 +7981,7 @@ mod tests {
         // byte-equal spawns.
         let run = || {
             let mut app = staff_app(3542, "Nebula Blaze");
-            app.item_rng = 0xB1A2E;
+            seed_stream(&mut app, 0xB1A2E);
             fire_once(&mut app);
             app.projectiles
                 .slots()
@@ -7882,14 +8007,14 @@ mod tests {
         let mut saw_miss = false;
         let mut saw_hit = false;
         for seed in 0..40u64 {
-            let s = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-            // The replay: draw 1 is the crit roll's, draw 2 is the pre-pass's
-            // `Main.rand.Next(100)` — the kind must follow it.
-            let mut state = s;
-            let _crit = crate::app::rand01(&mut state);
-            let hit = ((crate::app::rand01(&mut state) * 100.0) as i32) < 20;
+            let s = (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)) as i32;
+            // The replay: draw 1 is the crit roll's (`Next(1, 101)`), draw 2
+            // is the pre-pass's `Main.rand.Next(100)` — the kind must follow it.
+            let mut state = tr_core::UnifiedRandom::new(s);
+            let _crit = state.next_range(1, 101);
+            let hit = state.next_range(0, 100) < 20;
             let mut app = staff_app(3542, "Nebula Blaze");
-            app.item_rng = s;
+            seed_stream(&mut app, s);
             fire_once(&mut app);
             let bolts: Vec<_> = app
                 .projectiles
@@ -7914,11 +8039,11 @@ mod tests {
             // The multiplier is the stream's fourth draw (0.95 + rand·0.3)
             // over the pre-pass's speed decision; the angle draw (third) is
             // consumed between them.
-            let mut state = s;
-            let _ = crate::app::rand01(&mut state);
-            let _ = crate::app::rand01(&mut state);
-            let _angle = crate::app::rand01(&mut state);
-            let mult = 0.95 + crate::app::rand01(&mut state) * 0.3;
+            let mut state = tr_core::UnifiedRandom::new(s);
+            let _ = state.next_range(1, 101);
+            let _ = state.next_range(0, 100);
+            let _angle = state.next_float();
+            let mult = 0.95 + state.next_float() * 0.3;
             let want = if hit { 6.0 } else { 5.0 } * mult;
             assert!(
                 (bolt.vel.length() - want).abs() < 1e-3,
@@ -7937,7 +8062,7 @@ mod tests {
                 "seed {seed}: the aim angle gate (dev={dev})"
             );
             assert_eq!(
-                app.item_rng,
+                stream_of(&mut app),
                 draws_after(s, 4),
                 "seed {seed}: exactly crit, pre-pass, angle, multiplier"
             );
@@ -7957,7 +8082,7 @@ mod tests {
         // the channel the shoot block feeds (`Projectile.cs:66617`).
         let mut app = staff_app(3541, "Last Prism");
         let seed = 0x915E;
-        app.item_rng = seed;
+        seed_stream(&mut app, seed);
         let (sw, sh) = app.screen_size();
         let screen = Vec2::new(sw, sh);
         // The press edge: one released tick, then the press (`:42733`'s
@@ -7996,8 +8121,12 @@ mod tests {
             "the hold keeps the channel alive"
         );
         // And no special-case rolls: the whole run spends exactly the crit's
-        // draw on the item stream.
-        assert_eq!(app.item_rng, draws_after(seed, 1), "the crit's draw only");
+        // draw on the stream.
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, 1),
+            "the crit's draw only"
+        );
     }
 }
 
@@ -8147,7 +8276,13 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    crate::world_sim::npcs::start_invasion(&mut app.world, 1, 1);
+    app.world.invasion_delay = 0;
+    crate::world_sim::npcs::start_invasion_in(
+        app,
+        1,
+        1,
+        Some(crate::app::RngKey::UpdatePlayers),
+    );
     app.audio.play("Roar_0");
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
@@ -8206,30 +8341,22 @@ pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
 }
 
 pub fn use_snow_globe(app: &mut App) -> bool {
-    if app.world.invasion_type != 0 {
-        return false;
-    }
-    let qualified = app
-        .player
-        .as_ref()
-        .map(|p| p.max_hp >= 200)
-        .unwrap_or(false);
-    if !qualified {
+    // `Player.ItemCheck_UseEventItems`' Snow Globe arm (`Player.cs:43940-43951`):
+    // `CanStartInvasion(2, ignoreDelay: true)` then `invasionDelay = 0` +
+    // `StartInvasion(2)` — the shared body derives the size and the side roll
+    // (`Main.cs:64435-64486`) on the `UpdatePlayers` stream.
+    let life_max = app.player.as_ref().map(|p| p.max_hp).unwrap_or(0);
+    if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
     app.audio.play("Roar_0");
     app.world.invasion_delay = 0;
-    app.world.invasion_goblins = true;
-    app.world.invasion_type = 2;
-    app.world.invasion_warn = 0;
-    app.world.invasion_size = 80 + 40;
-    app.world.invasion_size_start = app.world.invasion_size;
-    let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
-    app.world.invasion_x = if roll == 0 {
-        0.0
-    } else {
-        app.world.width as f64
-    };
+    crate::world_sim::npcs::start_invasion_in(
+        app,
+        1,
+        2,
+        Some(crate::app::RngKey::UpdatePlayers),
+    );
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -8621,15 +8748,16 @@ mod loot_summon_tests {
     #[test]
     fn the_battle_standard_gates_and_sizing() {
         // `Main.CanStartInvasion` (`Main.cs:64414-64432`): the 200-life
-        // gate; `StartInvasion(1)` (`:64435-64460`): 80 + 40 x qualifying.
+        // gate; `StartInvasion(1)` (`:64435-64486`): 80 + 40 x qualifying.
         use crate::world_sim::npcs::{can_start_invasion, start_invasion};
         let mut w = tr_core::World::new("t".into(), 64, 64);
+        let mut rng = tr_core::UnifiedRandom::new(1);
         assert!(!can_start_invasion(&w, 100), "the base life waits");
         assert!(can_start_invasion(&w, 200));
-        start_invasion(&mut w, 1, 1);
+        assert!(start_invasion(&mut w, 1, 1, &mut rng));
         assert!(w.invasion_goblins);
         assert_eq!(w.invasion_size, 120, "80 + 40 x one qualifying player");
-        start_invasion(&mut w, 1, 1);
+        assert!(!start_invasion(&mut w, 1, 1, &mut rng));
         assert_eq!(w.invasion_size, 120, "the active invasion blocks");
     }
 
@@ -8718,48 +8846,26 @@ mod loot_summon_tests {
     }
 }
 
-/// `ItemCheck_UseBossSpawners`' Pirate Invasion arm (`Player.cs:43957-43971`):
-/// the Pirate Map (1315) — the `CanStartInvasion(3, ignoreDelay: true)` gate
-/// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
-/// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(3)` —
-/// the march state rides the World (the morning-roll resolve's shape).
+/// `ItemCheck_UseBossSpawners`' Pirate Invasion arm (`Player.cs:43957-43984`):
+/// the Pirate Map (1315) — the `CanStartInvasion(3, ignoreDelay: true)` gate,
+/// the roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(3)`,
+/// whose body sizes the pirates (`80+40n + 40+20n`) and rolls the side.
 pub fn use_pirate_map(app: &mut App) -> bool {
-    if app.world.invasion_type != 0 {
-        return false;
-    }
-    /// `ItemCheck_Wiring_Gate`'s Eternia arm (`Player.cs:32425-32444`) — the
-    /// Etherian Crystal (3828) placed over the Eternia Crystal Stand (466)
-    /// starts the Old One's Army. The gates verbatim: no ongoing event, no
-    /// crystal alive, no pumpkin/snow moon, the 3828 in the inventory, the
-    /// stand's frame (`frameX/18*16`, `frameY/18*16` — the 3x3 stand
-    /// anchor) gives the spawn point (+40, +64), then `ConsumeItem` and
-    /// `DD2Event.SummonCrystal` (`StartInvasion` + the crystal NPC at the
-    /// point + the starter-crystal drops).
-    ///
-    /// Deviations: `WouldFailSpawningHere` folds to the stand-tile check
-    /// (the port has no lane machinery — the DD2Event framework's slice);
-    /// `DropStarterCrystals`' per-player drops ride the item-drop pass.
-    let qualified = app
-        .player
-        .as_ref()
-        .map(|p| p.max_hp >= 200)
-        .unwrap_or(false);
-    if !qualified {
+    // `Player.cs:43957-43984`: `CanStartInvasion(3, ignoreDelay: true)` then
+    // `invasionDelay = 0` + `StartInvasion(3)` — the shared body sizes the
+    // army (`80+40n + 40+20n`) and rolls the side on `UpdatePlayers`.
+    let life_max = app.player.as_ref().map(|p| p.max_hp).unwrap_or(0);
+    if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
     app.audio.play("Roar_0");
     app.world.invasion_delay = 0;
-    app.world.invasion_goblins = true;
-    app.world.invasion_type = 3;
-    app.world.invasion_warn = 0;
-    app.world.invasion_size = 80 + 40 + 40 + 20;
-    app.world.invasion_size_start = app.world.invasion_size;
-    let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
-    app.world.invasion_x = if roll == 0 {
-        0.0
-    } else {
-        app.world.width as f64
-    };
+    crate::world_sim::npcs::start_invasion_in(
+        app,
+        1,
+        3,
+        Some(crate::app::RngKey::UpdatePlayers),
+    );
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -8772,6 +8878,17 @@ pub fn use_pirate_map(app: &mut App) -> bool {
     app.mine_timer = 0.0;
     true
 }
+/// `Player.cs:32425-32444`'s Etherian arm: the Etherian Crystal (3828)
+/// placed over the Eternia Crystal Stand (466) starts the Old One's Army.
+/// The gates verbatim: no ongoing event, no crystal alive, no pumpkin/snow
+/// moon, the 3828 in the inventory, the stand's frame (`frameX/18*16`,
+/// `frameY/18*16` — the 3x3 stand anchor) gives the spawn point (+40, +64),
+/// then `ConsumeItem` and `DD2Event.SummonCrystal` (`StartInvasion` + the
+/// crystal NPC at the point + the starter-crystal drops).
+///
+/// Deviations: `WouldFailSpawningHere` folds to the stand-tile check (the port
+/// has no lane machinery — the DD2Event framework's slice);
+/// `DropStarterCrystals`' per-player drops ride the item-drop pass.
 pub fn use_etherian_crystal(app: &mut App) -> bool {
     if app.world.invasion_type != 0 || app.world.snow_moon || app.world.pumpkin_moon {
         return false;

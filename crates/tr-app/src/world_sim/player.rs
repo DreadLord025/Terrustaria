@@ -278,11 +278,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // borrow so the closure stays on disjoint field captures; the front
     // state and the pause flag cannot change inside the player tick.
     let spawn_ctx = app.spawn_ctx();
+    // The `59 HitSwitch` sends the tick's switch scans queue
+    // (`Collision.cs:3304`/`:3318`/`:3324`/`:3347`): collected here because
+    // the C# fires them from inside `Player.Update` but the port's closure
+    // holds `app` — they go out once it releases the borrow.
+    let mut switch_sends: Vec<(i32, i32)> = Vec::new();
     if let Some(p) = app.player.as_mut() {
         // `Player.ResetEffects`' journey block, re-run every tick: the godmode
         // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
         // tile-range toggle (`:18815-18828`).
-        p.creative_god_mode = power_god_mode;
+        p.creative_god_mode = power_god_mode || p.debug_god_mode;
         p.far_placement_range = power_far_placement;
         // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
         // global the source reads): the frame's `update_scene` scan feeds
@@ -708,14 +713,16 @@ let spawned = app.projectiles.spawn_hook(
                 // `WorldGen.KillTile`'s drop for the broken plate.
                 crate::world_sim::items::spawn_item_drop_fields(
                     &mut app.items,
-                    &mut app.item_rng,
-                    &mut app.prefix_rng,
+                    rng,
                     item,
                     1,
                     x,
                     y,
                 );
             }
+            // The `59 HitSwitch` send sites (`Collision.cs:3304`/`:3318`/
+            // `:3324`/`:3347`).
+            switch_sends.extend(switch.switches.iter().copied());
             // `PressurePlateHelper.UpdatePlayerPosition(this)`
             // (`Player.cs:28276`): the weighted pressure plates (428) the
             // player stands on.
@@ -767,10 +774,12 @@ let spawned = app.projectiles.spawn_hook(
             // `ApplyTouchDamage`) — the spike hazard the dungeon pass paints,
             // the hellstone's burn, the sands' suffocation and the thorns
             // that break under a touch.
+            // `Player.Update` runs under the `UpdatePlayers` swap
+            // (`Main.cs:17754`): the roll rides `stream(UpdatePlayers)`.
             let touch = crate::touch_damage::apply_touch_damage(
                 &mut app.world,
                 p,
-                &mut app.item_rng,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 crate::player::WIDTH as i32,
                 // `Player.GetHurtTile` (`Player.cs:28956`): the cart's body
                 // sits 16 px higher, so the scan's box is that much shorter.
@@ -784,10 +793,14 @@ let spawned = app.projectiles.spawn_hook(
             // thorns drop nothing in the vanilla, but the drop path is the
             // source's own (`registry::tile_drop`).
             if let Some((x, y, Some(item))) = touch.destroyed {
+                // `WorldGen.KillTile`'s item drop (`Player.cs:29013`) — the
+                // thorns drop nothing in the vanilla, but the drop path is the
+                // source's own (`registry::tile_drop`); the roll rides the same
+                // `UpdatePlayers` stream as the touch pass above.
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 crate::world_sim::items::spawn_item_drop_fields(
                     &mut app.items,
-                    &mut app.item_rng,
-                    &mut app.prefix_rng,
+                    rng,
                     item,
                     1,
                     x,
@@ -796,10 +809,11 @@ let spawned = app.projectiles.spawn_hook(
             }
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires
-            // `Wiring.HitSwitch` at the magnet tile (net message 59 is out of
-            // scope — local only).
+            // `Wiring.HitSwitch` at the magnet tile and announces it as `59`
+            // (`Minecart.cs:1287`).
             if let Some((i, j)) = p.take_switch_trip() {
                 app.wiring.hit_switch(&mut app.world, i, j);
+                switch_sends.push((i, j));
             }
             // The wheel-spark drain: the tick queued fully-rolled dust-213
             // particles (`Minecart.WheelSparks` → `DelegateMethods.Minecart.Sparks`)
@@ -821,6 +835,44 @@ let spawned = app.projectiles.spawn_hook(
             }
             for cue in p.take_cart_sounds() {
                 app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+            }
+            // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
+            // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs
+            // (`:23036-23080` `Dust.NewDust` + the `Next(0,6)`/`velocity *= 0.1`/
+            // `noGravity` post-arms). The tick queues the position; the pool's
+            // own rolls ride the same `UpdatePlayers` stream, so the draw order
+            // is the source's (S1-A-10).
+            if let Some((wx, wy)) = p.take_sticky_kill() {
+                tr_core::edit::kill_tile(&mut app.world, wx, wy, false);
+            }
+            for puff in p.take_sticky_dust() {
+                let idx = app.dust.new_dust(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &spawn_ctx,
+                    &app.world,
+                    puff.pos,
+                    puff.w,
+                    puff.h,
+                    puff.kind,
+                    0.0,
+                    0.0,
+                    if puff.post_arms { 50 } else { 0 },
+                    tr_core::particles::Color::default(),
+                    1.0,
+                );
+                if !puff.post_arms {
+                    continue;
+                }
+                // `Player.cs:23037-23039`: the `Next(0,6)` scale, the ×0.1
+                // velocity and `noGravity`.
+                let slot = app.dust.slot_mut(idx);
+                slot.scale += app
+                    .rngs
+                    .stream(crate::app::RngKey::UpdatePlayers)
+                    .next_range(0, 6) as f32
+                    * 0.1;
+                slot.velocity *= 0.1;
+                slot.no_gravity = true;
             }
             // `Player.PlayHurtSound` (`Player.cs:38525`) and
             // `Player.PlayDeathSound` (`Player.cs:38868`): the player's own
@@ -887,6 +939,11 @@ let spawned = app.projectiles.spawn_hook(
             app.camera = app.camera.lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
         }
     }
+    // The `59 HitSwitch` sends (`Collision.cs:3304`/`:3318`/`:3324`/`:3347`) —
+    // after the tick closure and the player borrow released `app`.
+    for (x, y) in switch_sends {
+        app.send_hit_switch(x, y);
+    }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
     if map_open {
         app.update_map_input();
@@ -897,12 +954,96 @@ let spawned = app.projectiles.spawn_hook(
 mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
     use crate::inv::EquipSlots;
     use crate::item::EMPTY_SLOT;
     use crate::player::Player;
+    use crate::touch_damage::BUFF_BLEEDING;
     use tr_core::tile::FLAG_ACTIVE;
     use tr_core::wiring::WireColor;
-    use tr_core::{Tile, World};
+    use tr_core::{Tile, UnifiedRandom, World};
+
+    /// DW-4.1 (the players group) + DW-4.4: the touch-damage rolls draw the
+    /// `UpdatePlayers` stream — one `update_player` tick standing on spikes
+    /// spends `DamageVar`'s draw and then the landing-hit's bleeding duration
+    /// `Next(600, 1200)` (`Player.cs:28982` + `:28986-28994` — the S1-E-13a
+    /// burning/bleeding arm rides the same `Main.rand`, here the
+    /// `UpdatePlayers` swap, `Player.cs:27608-27614`, `Main.cs:17754`), the
+    /// landed HP and the buff duration match the twin replay, and no other
+    /// stage stream moves (the pass's isolation).
+    #[test]
+    fn test_dw_4_1_the_touch_roll_draws_the_update_players_stream() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // The touch_damage.rs rig shape: a deep world with a 3x3 spike block
+        // the player's box stands in.
+        app.world = World::new("spikes".into(), 40, 200);
+        app.world.compute_column_surface();
+        for x in 10..13 {
+            for y in 30..33 {
+                let i = app.world.index(x, y);
+                app.world.tiles[i] = Tile {
+                    kind: crate::touch_damage::SPIKE,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut p = Player::spawn(&app.world);
+        p.x = 11.0 * 16.0;
+        p.y = 30.0 * 16.0 - 30.0;
+        app.player = Some(p);
+        // Every stream starts pristine at the world seed (flow_app's seed 0).
+        for key in RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} pristine",
+                key.name()
+            );
+        }
+        let hp_0 = app.player.as_ref().unwrap().hp;
+        update_player(&mut app, 1.0 / 60.0);
+
+        // The twin: `DamageVar`'s draw, then the bleeding arm's duration roll
+        // (both off the pristine seed-0 stream).
+        let mut expect = UnifiedRandom::new(0);
+        let expected_dmg = tr_core::damage::damage_var(&mut expect, 60.0, 0.0);
+        let expected_bleed = expect.next_range(600, 1200);
+        assert_eq!(
+            app.player.as_ref().unwrap().hp,
+            hp_0 - expected_dmg,
+            "the spike's rolled 60 landed through the same draws"
+        );
+        let slot = app
+            .player
+            .as_ref()
+            .unwrap()
+            .buffs
+            .find_buff_index(BUFF_BLEEDING)
+            .expect("the spike's bleeding landed");
+        assert_eq!(
+            app.player.as_ref().unwrap().buffs.buff_time[slot],
+            expected_bleed,
+            "the bleeding duration is the same stream's second draw"
+        );
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            expect,
+            "exactly the DamageVar draw on the UpdatePlayers stream"
+        );
+        // The isolation: no other stage stream moved.
+        for key in RngKey::ALL {
+            if key == RngKey::UpdatePlayers {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+    }
 
     /// The ammo-mastery test rig: a plain standing player in an empty world,
     /// with one tick of `update_player`'s fixed step available.
@@ -916,6 +1057,40 @@ mod tests {
     /// One tick of the pass (the stepper runs its closure once per 1/60 s).
     fn tick_ammo(app: &mut App) {
         update_player(app, 1.0 / 60.0);
+    }
+
+    /// S1-E-34 — the F3 debug god mode rides `debug_god_mode` and the tick
+    /// ORs it into `creative_god_mode`, so `Hurt`'s first gate
+    /// (`Player.cs:38203-38206`) swallows the hit even with the journey power
+    /// off. The two flags stay independent: the power's own toggle still
+    /// drives its own half.
+    #[test]
+    fn s1_e_34_the_debug_god_mode_swallows_the_hit_with_the_power_off() {
+        let mut app = ammo_app();
+        app.player.as_mut().unwrap().debug_god_mode = true;
+        let p = app.player.as_mut().unwrap();
+        p.hp = 5;
+        p.mana = 0;
+        p.breath = 0;
+        p.hurt_cd = 0.0;
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            p.creative_god_mode,
+            "the tick ORs the debug flag onto the power flag"
+        );
+        assert_eq!(p.hp, p.max_hp, "the pool refill still runs");
+        let p = app.player.as_mut().unwrap();
+        p.hurt_cd = 0.0;
+        assert!(
+            !p.hurt(10, 0.0, &mut tr_core::UnifiedRandom::default(), true),
+            "the god-mode gate swallows the hit"
+        );
+
+        // Off again: the next tick clears the flag and the hit path is live.
+        app.player.as_mut().unwrap().debug_god_mode = false;
+        tick_ammo(&mut app);
+        assert!(!app.player.as_ref().unwrap().creative_god_mode);
     }
 
     #[test]
