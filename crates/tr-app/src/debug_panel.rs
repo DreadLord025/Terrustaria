@@ -660,7 +660,24 @@ fn spawn_boss(app: &mut App, kind: NpcKind) {
 fn world_click(app: &mut App, row: usize) {
     match row {
         0 => {
-            app.world.hard_mode = !app.world.hard_mode;
+            // `WorldGen.StartHardmode` (`WorldGen.cs:31701-31720`): the flag
+            // then the runner half (`initializeHardMode` `:31570` —
+            // `spread::initialize_hard_mode` carries the two V runners and
+            // their RNG order). The C# returns early when already hardmode
+            // unless forced, so the row keeps its toggle-off as the debug
+            // revert (the recorded F3 deviation: the port has no
+            // `UndoSpawnedItemProtection`/achievement half).
+            if app.world.hard_mode {
+                app.world.hard_mode = false;
+            } else {
+                app.world.hard_mode = true;
+                let corruption = (app.world.seed >> 56) & 1 == 1;
+                crate::world_sim::growth::run_hardmode_init(
+                    &mut app.world,
+                    corruption,
+                    app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
+                );
+            }
         }
         1 => {
             app.world.day_time = !app.world.day_time;
@@ -686,28 +703,60 @@ fn world_click(app: &mut App, row: usize) {
             app.world.time = 16200.0;
         }
         7 => {
-            // The invasion toggle: start (80 invaders = the vanilla's
-            // `invasionSize` for the army) or call it off.
+            // The invasion toggle. Both arms ride the C# entry points rather
+            // than writing the state by hand (S1-E-37): `StartInvasion`
+            // (`Main.cs:64435-64486`) computes `80 + 40 * players` (plus the
+            // type-3 `+40+20x` and the type-4 `160+40x`), the march origin
+            // and the size-start bookkeeping; calling it off is the size-0
+            // "cleared" form `CanStartInvasion`'s `invasionType != 0 &&
+            // invasionSize == 0` arm resets (`:64437-64440`).
             if app.world.invasion_goblins {
+                // The C# clear (`:64437-64440`): a stale `invasionType != 0`
+                // with a zero size resets the type — the type rides along so
+                // the next tick cannot mistake the cancel for a defeat.
                 app.world.invasion_goblins = false;
                 app.world.invasion_size = 0;
+                app.world.invasion_type = 0;
             } else {
-                app.world.invasion_goblins = true;
-                app.world.invasion_size = 80;
+                // `CanStartInvasion`'s 200-life gate (`:64424-64432`).
+                let qualifying = i32::from(
+                    app.player.as_ref().is_some_and(|p| p.max_hp >= 200),
+                );
+                if qualifying > 0 {
+                    // `StartInvasion`'s `Main.rand.Next(2)` march-origin pick
+                    // (`:64476-64483`) draws from the `UpdateTime` stream.
+                    let roll = app.rngs.stream(crate::app::RngKey::UpdateTime).next_max(2);
+                    crate::world_sim::npcs::start_invasion(
+                        &mut app.world,
+                        qualifying,
+                        1,
+                    );
+                    app.world.invasion_x = if roll == 0 {
+                        0.0
+                    } else {
+                        app.world.width as f64
+                    };
+                }
             }
         }
         8 => {
-            // The Slime Rain toggle: the vanilla roll/kill machinery
-            // runs off the flag; the start uses the vanilla duration
-            // band's midpoint.
+            // The Slime Rain toggle through the C# entry points (S1-E-37):
+            // `StartSlimeRain` (`Main.cs:64742-64785`) draws the duration
+            // `Main.rand.Next(32400, 54000)` and resets the kill counter;
+            // `StopSlimeRain` (`:64787`) drops the flag and arms the negative
+            // `-Next(3024, 6048) * 100` cooldown. Both draw off `UpdateTime`.
             if app.world.slime_rain {
-                app.world.slime_rain = false;
-                app.world.slime_rain_time = 0.0;
-                app.world.slime_rain_kills = 0;
-            } else {
-                app.world.slime_rain = true;
-                app.world.slime_rain_time = 43200.0;
-                app.world.slime_rain_kills = 0;
+                crate::world_sim::weather::stop_slime_rain(
+                    &mut app.world,
+                    app.rngs.stream(crate::app::RngKey::UpdateTime),
+                );
+            } else if !app.rain.is_raining() {
+                // `:64761-64764`: the start refuses while it is already
+                // raining; `:64767` only re-rolls below zero.
+                crate::world_sim::weather::start_slime_rain(
+                    &mut app.world,
+                    app.rngs.stream(crate::app::RngKey::UpdateTime),
+                );
             }
         }
         9 => {
@@ -828,6 +877,101 @@ mod tests {
             handle_click(&mut app, Vec2::new(l.panel[0] + 4.0, l.panel[1] + 4.0)),
             "a title-bar click is consumed by the panel"
         );
+    }
+
+    /// `S1-E-37`: the World tab's event rows ride the C# entry points —
+    /// `StartInvasion` sizes the army `80 + 40 x the qualifying players`
+    /// (`Main.cs:64456`) behind the 200-life gate (`:64424-64432`), and
+    /// `StartSlimeRain`/`StopSlimeRain` own the duration/cooldown draws
+    /// (`:64767`, `:64805`) instead of the old hard-coded 43200 midpoint.
+    #[test]
+    fn s1_e_37_world_rows_ride_the_csharp_event_entry_points() {
+        let mut app = flow_app();
+        app.debug_panel.open = true;
+        app.debug_panel.tab = Tab::World;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+
+        // The 200-life gate: a 100-life character cannot call the army.
+        app.player.as_mut().unwrap().max_hp = 100;
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 7,
+            },
+        );
+        assert!(!app.world.invasion_goblins, "under 200 life refuses");
+
+        app.player.as_mut().unwrap().max_hp = 200;
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 7,
+            },
+        );
+        assert!(app.world.invasion_goblins);
+        assert_eq!(
+            app.world.invasion_size, 120,
+            "80 + 40 x 1 qualifying player"
+        );
+        assert_eq!(app.world.invasion_size_start, 120);
+        assert_eq!(app.world.invasion_type, 1, "the goblin type");
+        // The march origin is `StartInvasion`'s `Next(2)` pick (`:64476-64483`).
+        assert!(
+            app.world.invasion_x == 0.0 || app.world.invasion_x == app.world.width as f64,
+            "the side pick lands on one pole"
+        );
+
+        // The slime rain: the C# duration band, not the old 43200 midpoint.
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 8,
+            },
+        );
+        assert!(app.world.slime_rain);
+        assert!(
+            (32400.0..54000.0).contains(&app.world.slime_rain_time),
+            "Next(32400, 54000), got {}",
+            app.world.slime_rain_time
+        );
+        assert_eq!(app.world.slime_rain_kills, 0);
+        // The stop arms the negative `-Next(3024, 6048) * 100` cooldown.
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 8,
+            },
+        );
+        assert!(!app.world.slime_rain);
+        assert!(
+            (-604_800.0..=-302_400.0).contains(&app.world.slime_rain_time),
+            "the cooldown band, got {}",
+            app.world.slime_rain_time
+        );
+
+        // The hardmode row runs the `initializeHardMode` runner behind the
+        // flag (`WorldGen.cs:31707-31709`); the second click is the recorded
+        // debug revert (the C# has no un-hardmode).
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 0,
+            },
+        );
+        assert!(app.world.hard_mode);
+        apply(
+            &mut app,
+            Event::RowClicked {
+                tab: Tab::World,
+                row: 0,
+            },
+        );
+        assert!(!app.world.hard_mode, "the debug revert");
     }
 
     #[test]
