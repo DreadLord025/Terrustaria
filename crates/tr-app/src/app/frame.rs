@@ -1449,6 +1449,8 @@ impl App {
                     lookups,
                     sky_tint,
                     self.atmo,
+                    self.game_update_count,
+                    self.mouse_text_color,
                 );
                 draw_phase("world");
                 if !reuse_world {
@@ -1895,6 +1897,9 @@ impl App {
                         &mut self.buff_removals,
                         right_release,
                         vampire_seed,
+                        // `Player.HasNPCBannerBuff`'s table — the Monster
+                        // Banner's hover list (`Main.cs:21360-21388`).
+                        &self.scene_metrics.npc_banner_buff,
                     );
                     // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                     // the coin cells' animation clocks step per frame after
@@ -2100,6 +2105,7 @@ impl App {
                         npcs,
                         world,
                         self.stepper.paused,
+                        self.player.as_ref().is_some_and(|p| p.debug_god_mode),
                     );
                 }
 

@@ -896,6 +896,13 @@ pub struct Player {
     /// `Main.UpdateWorld_Players` refills the three pools
     /// (`Main.cs:17869-17873`).
     pub creative_god_mode: bool,
+    /// S1-E-34 — the F3 panel's debug god mode. `Player.ResetEffects`
+    /// rewrites `creative_god_mode` from the journey power every tick
+    /// (`Player.cs:18789` / `:25493-25497`), so a debug toggle needs its own
+    /// field: the tick ORs it into `creative_god_mode`, which keeps the three
+    /// existing god-mode gates (`Hurt`, `KillMe`, `Update_NPCCollision` and
+    /// the pool refill) working unchanged.
+    pub debug_god_mode: bool,
     /// `Player.immune` (`Player.cs:2636`-ish): the spawn i-frames flag —
     /// true while `immuneTime` counts down (`UpdateImmunity`,
     /// `Player.cs:18856-18869`).
@@ -1719,6 +1726,7 @@ impl Player {
             breath: BREATH_MAX,
             breath_cd: 0,
             creative_god_mode: false,
+            debug_god_mode: false,
             far_placement_range: false,
             regen: RegenState::default(),
             dot_death: None,
@@ -7464,6 +7472,24 @@ impl Player {
         }
         pos = sc.pos;
         vel = sc.vel;
+        // `Player.cs:28225-28232`: the belt pass rides right after
+        // `SlopingCollision`, skipped while shimmering/tongued (and while
+        // locked to a tile - a state the port has no field for).
+        // ponytail: `!shimmering` guard dropped - the port has no
+        // `Player.shimmering` (the absorbed state, S1-E-16); add it there.
+        if !self.holding(38) {
+            collision::step_conveyor_belt_player(
+                world,
+                &mut pos,
+                WIDTH as i32,
+                body_h as i32,
+                1.0,
+                self.gfx_off_y,
+                self.grappling_active,
+                self.pulley,
+                self.on_track,
+            );
+        }
         self.x = pos[0];
         self.y = pos[1];
         self.vx = vel[0];

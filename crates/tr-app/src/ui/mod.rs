@@ -699,13 +699,16 @@ pub fn draw_hud(
     buff_removals: &mut Vec<usize>,
     right_release: bool,
     vampire_seed: bool,
+    // `Player.HasNPCBannerBuff`'s table (`Player.cs:44197`): the banner list
+    // the Monster Banner's buff tooltip prints (`Main.cs:21360-21388`).
+    npc_banner_buff: &[bool],
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
     // hotbar (30).
     resources::draw(r, lookups, screen, player, camera, zoom, pulse);
     if let Some(p) = player {
-        resources::draw_buffs(
+        let hovered = resources::draw_buffs(
             r,
             lookups,
             p,
@@ -715,6 +718,36 @@ pub fn draw_hud(
             buff_removals,
             vampire_seed,
         );
+        // `DrawInterface_Resources_Buffs`' tail (`Main.cs:43234-43251`): the
+        // hovered buff's name and description through `MouseTextHackZoom`; the
+        // Monster Banner (147) also flips `Main.bannerMouseOver` on so the
+        // tooltip appends every owned banner's NPC name (`:21360-21388`).
+        if let Some(slot) = hovered {
+            let b = p.buffs.buff_type[slot];
+            if b > 0 {
+                let name = crate::lang::buff_name(b);
+                let tooltip = resources::buff_tooltip(p, b);
+                // `Main.cs:43239-43246`: the melee buffs use rarity -10 (the
+                // green `MouseText` colour); everything else rarity 0.
+                let rarity = if crate::buffs::is_melee_buff(b) { -10 } else { 0 };
+                let banner_names = if b == 147 {
+                    resources::banner_hover_names(npc_banner_buff)
+                } else {
+                    Vec::new()
+                };
+                resources::draw_buff_hover(
+                    r,
+                    lookups,
+                    mouse_pos,
+                    &name,
+                    &tooltip,
+                    rarity,
+                    screen,
+                    pulse,
+                    banner_names,
+                );
+            }
+        }
     }
 
     // `ItemSlot.Draw` / `Main.DrawInventory`: with the inventory open the hotbar is
