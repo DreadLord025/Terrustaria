@@ -140,10 +140,17 @@ No `render/tiles.rs` test targets the sliced/flat light paths or the 9-slice geo
    `lighting/mod.rs:490-494` seeds sunlight up to each column's own surface/SDF cutoff; C#
    `TileLightScanner.cs:92` uses the single global `Main.worldSurface`. Comment admits the
    intent (hills/valleys), but it *is* a pixel change; needs a deterministic A/B.
-7. **Sliced path misses per-slice `GetFinalLight`** (pixel, medium) — C# applies
-   `GetFinalLight(tileCache, typeCache, ref tileLight, ref tint)` on every slice
-   (`TileDrawing.cs:3581`, `:4391-4397`); Rust `push_sliced` (`tiles.rs:1367`) only calls
-   `LightStyle::shade`, so paint tint / `light_scale` / actuated ×0.4 do not reach the 9 slices.
+7. **~~Sliced path misses per-slice `GetFinalLight`~~** (pixel, medium) — **CLOSED
+   2026-11-16** (`S1-G-9-sliced-final-light`): `push_sliced` runs the full chain — the
+   slice averages `GetColor9Slice`/`GetColor4Slice` with the tile's own **raw** light
+   (`TileDrawing.cs:3578-3581`, `:3634-3637`; `:3528`'s `vector` is unghosted because
+   `GetFinalLight`'s `Color` overload at `:4358` takes `tileLight` by value), then
+   `GetFinalLight` (`:4391-4402`) applies the tint and the actuated ×0.4 to that average,
+   and a Glow-coated block swaps in the all-`One` `_glowPaintColorSlices`
+   (`:3530-3533` / `:3611-3614`). The 2026-11-13 landing had the ghost on both the
+   caller's own light *and* the slice (0.16, not 0.4) and skipped the Glow slices.
+   Still open, and not this row: `GetFinalLight`'s shine arm (`Main.shine`,
+   `Main.tileShine2` unported) and the minecart-only non-White `colorTint` (`:3788`).
 8. **White/Retro/Trippy are shader approximations** (behavioural, medium) — the 1442-line
    `LegacyLighting` engine (sky-colour swipe, data shifting, `doColors_Mode*`) is unported;
    ROADMAP §4 (`:197-198`) claims "4 modes", which is true only of the style descriptors.
@@ -169,8 +176,12 @@ No `render/tiles.rs` test targets the sliced/flat light paths or the 9-slice geo
 - **[S] Exact water jitter** — replace the multiplicative hash with
   `FastRandom::new(seed).with_modifier(index).next_range(98, 100)/100` semantics in
   `blur_line_*`; precedent: `palette.rs` stream test.
-- **[S] `slotGetFinalLight` in the sliced path** — apply actuation ×0.4 / `light_scale` /
-  paint tint per slice in `push_sliced` (`tiles.rs:1340`), matching `TileDrawing.cs:3578-3601`.
+- **[S] ~~`slotGetFinalLight` in the sliced path~~** — done (S1-G-9, 2026-11-16): the
+  per-slice `GetFinalLight` (tint + actuation ×0.4) and the Glow `_glowPaintColorSlices`
+  replacement are in `push_sliced` (`tiles.rs`), matching `TileDrawing.cs:3578-3601`,
+  `:3611-3614`, `:4391-4402`. `light_scale` stays out: it is not a `TileDrawing` term —
+  `finalColor = tileLight * 0.5f` (`:1076`) is set per case in `DrawSingleTile` and never
+  reaches the sliced arm.
 - **[S] `NON_VISIBLE_PADDING` fixed 18** — done (S1-G-10, 2026-11-13): `blur_pass` uses the fixed 18 pad, matching `LightMap.cs:99-108`.
 - **[M] Per-column vs global surface cutoff A/B** — `TR_SHOT` pair with `world_surface`
   fallback; record the result in ANALYSIS.md; keep `surface_cutoff` only if the diff is
