@@ -10110,6 +10110,32 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+- **The sentry movement layer** (S1-D-4b-2). `AI_053_FrostHydra` (`:37266-37490`) and
+  `AI_197_CeilingAndHoverTurret` (`:40307-40479`) carry no `position += velocity` of
+  their own — the C# integrates them in `HandleMovement` → `UpdatePosition`
+  (`:19858`/`:20445`), after the AI, once per sub-step. The port runs the same two
+  steps as `sentry_hydra_step` / `sentry_turret_step`:
+  - **53** (308 Frost Hydra, 377 Queen Spider, 966 Houndius Shootius): `flag6 = false`
+    (`:17532-17535`, no platform landing) then the plain integrate. These three types
+    are named explicitly in the blocked-move chain's exclusion test (`:18635`), so a
+    blocked sentry neither dies nor bounces — it stops against the tile while its own
+    gravity keeps pushing. Note this is *not* the `kill_step` default: calling that for
+    53 would be a behavioural regression.
+  - **197** (1025 Dead Cells Barnacle, 1128-1146): `flag6 = true` (`:17536-17539`) and
+    the blocked arm runs `AI_197_HandleTileCollision` (`:40246-40305`), whose state
+    half is the one-shot `ai[0] = 1f` latch (`:40250`).
+  - **The `InWorld` fluff margin**. The barnacle's 15-tile ceiling scan
+    (`:40379`) guards with `WorldGen.InWorld(x, y, 2)`, whose margin sits *inside* the
+    bounds (`WorldGen.cs:6553-6554`: `x < 2 || x >= maxTilesX - 2`). An earlier port
+    read the margin as an out-of-bounds overhang (`< -2` / `>= width + 2`) and kept
+    scanning past the world edge.
+  - **Skipped layers** for the three AIs (S1-D-4b-2): `SoundEngine` (`:37274`'s
+    `Item46`, `:40316`'s `Item167`, `:42508`'s tracked `DD2_GhastlyGlaiveImpactGhost`
+    and its per-tick position update), all `Dust`/`Gore` bursts (`:37277-37296`,
+    `:40319-40322`, `:40257-40316`), `Lighting.AddLight`, `Collision.HitTiles`, and
+    `netUpdate`. The pool has no sound, dust, gore, light or net layer; the
+    sentry-backpack branch (`:40334-40343`, `CanGetPickedUpBySentryBackpack`) is
+    likewise unported — no `accSentryBackpack`.
 ## Whips & tag damage (M4-PROJ-7)
 
 The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
@@ -14285,3 +14311,36 @@ port has no swing-stats helper, no NPC-to-NPC strike path and no difficulty
 multiplier for the town-NPC damage. Porting the machine is a follow-up under
 S1-D-3; the preset table lands first so the numbers have one home. `num77`
 and `maxValue4` are not read by the swing code and stay unported.
+
+## The F3 developer workbench (S1-E-29, 2026-11-16)
+
+The F3 cheat-sheet panel is **project-specific**: vanilla Terraria 1.4.5.8 binds F3
+to `Loadout3` (`PlayerInput.cs:2090,2203,2315,2427` в†’ `TriggersSet.cs:813-816` в†’
+`Player.TrySwitchingLoadout(2)`) and ships no debug overlay, so there is no vanilla
+panel to be 1:1 with. The port's panel is therefore a dev tool, and the deviations
+below are recorded rather than resolved:
+
+* **The crate seam.** The panel lives in `tr-debug` (state, layout, hit-testing,
+  `Event` intents) with `tr-app` supplying the rows, the drawing and the action
+  application. The direction is forced: `tr-app` is a binary crate (`[[bin]]`, no
+  `[lib]`), so it cannot be a dependency of `tr-debug`. The gameplay consequence is
+  nil вЂ” the actions are the unchanged code; only the hit-testing moved.
+* **The Cargo feature.** `debug` (default OFF) gates the module, the `App` field,
+  its two initialisers and the six call sites, so a release build without it
+  contains no panel. `TR_DEBUG`/`TR_STATS`/`render/debug.rs` are **not** gated: they
+  are the separate F1 stats overlay and the deterministic-screenshot workflow needs
+  `TR_DEBUG=0`.
+* **Recipes tab.** Gives `craft::RECIPES[i].create` straight into the inventory with
+  no station, ingredient or crafting-hour check. That is deliberate for a debug give
+  and is *not* a claim about `Recipe`'s availability rules (`Recipe.cs:15162-15191`
+  etc. stay unported).
+* **Action semantics are frozen.** The World rows, the spawns and the pause row keep
+  their pre-existing bodies. Their fidelity is **not** claimed: the world-event rows
+  are `PARTIAL_PROJECT_SPECIFIC` (goblin 80 vs the C# `80+40*players`,
+  `Main.cs:64435-64470`; slime rain 43200 vs the C# `32400-53999`,
+  `Main.cs:64742-64806`), and the kill-all row has no C# equivalent. Those are
+  recorded as S1-E-37 in `docs/ROADMAP.md`. The pause row *is* exact
+  (`WorldUpdateStepper.cs:45-49`) and its test pins it.
+* **Upstream reference only.** The feature set takes *behaviour* references from
+  CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
+  or art is copied or adapted, so nothing of theirs ships.
