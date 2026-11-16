@@ -20,7 +20,7 @@ use tr_core::World;
 /// `Main.rand` is active at the trigger; the port's forced path runs inside
 /// the growth phase). Extracted so tests can pin the stream identity without
 /// the `TR_HARDMODE` env pin.
-fn run_hardmode_init(world: &mut World, corruption: bool, rng: &mut UnifiedRandom) {
+pub(crate) fn run_hardmode_init(world: &mut World, corruption: bool, rng: &mut UnifiedRandom) {
     tr_core::spread::initialize_hard_mode(world, corruption, rng);
 }
 

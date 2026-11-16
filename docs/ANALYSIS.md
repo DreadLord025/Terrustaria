@@ -2036,9 +2036,12 @@ The deviations below are deliberate and are the places the port is **not** pixel
   stay deterministic. The equipment columns keep the **loadout-1** colours
   (`ItemSlot.LoadoutSlotColors[0]`, `ItemSlot.cs:365-371`) since loadouts 2/3 are not
   modelled.
-* The page tabs, defence counter, guide text and PVP icons are drawn but not
-  interactive (`ItemSlot.Handle` is out of scope for this milestone), and
+* The page tabs, defence counter and guide text are drawn but not interactive, and
   `Player.statDefense` is not modelled, so the defence counter always shows `0`.
+  `ItemSlot.Handle` over the four equipment columns landed with S1-H-5
+  (`clicks.rs::equip_slot_click` + `ui::inventory::equip_cell_at`), so the armour,
+  vanity, dye and misc cells now take presses, hover tooltips and the right-click
+  ladder.
 * The bestiary/emote/achievement shortcut buttons and the NPC-housing page
   (`EquipPage 1`) are not drawn yet.
 * `Main.inventoryBack`-tinted labels use white instead of the pulsing
@@ -2048,6 +2051,20 @@ The deviations below are deliberate and are the places the port is **not** pixel
   vanilla coordinates (`ui/mod.rs` + `clicks.rs`; the Reforge[0]/[1] button
   textures and the coin breakdown stay out). The guide/crafting slots keep
   their empty frames.
+* **Equipment swaps (S1-H-5) — deviations from `ItemSlot.cs:3283-3650`.**
+  `Item.wingSlot` is not carried by `ItemDef`, so `CanEquipBothAccessories`
+  (`:3451-3472`) loses its `wingSlot > 0` arm: two different wings are accepted
+  together where vanilla refuses them (the 3580 vanity-wings exception has no
+  meaning without the flag). `Player.IsItemSlotUnlockedAndUsable`
+  (`Player.cs:12579-12604`) is reduced to the port's constants — `extraAccessory`
+  (Demon Heart) and `Main.masterMode` are not modelled, so rows 8/9 and their
+  vanity twins 18/19 are permanently unusable and every other row is usable.
+  The achievement hooks (`AchievementsHelper.NotifyItemPickup`/`HandleOnEquip`),
+  the display-doll `NetMessage.SendData` tails and the `AnnounceTransfer` call
+  have no port counterpart (single-player, no achievement events from swaps).
+  `MouseItemSwap`'s favourite clear rides the port's positional `favorite_slots`
+  table instead of a per-`ItemSlot` flag; the equipment arrays are outside that
+  key space, so only the grid cell's entry is dropped.
 
 ### Closed hotbar and mouse item (`ui/mod.rs`, `ui/slot.rs`)
 
@@ -4497,11 +4514,49 @@ town NPC whose home (and the cell above it) is in the room refuses the home
 the port's town kinds all carry the vanilla default category 0 (the
 category-1 kinds 637/638 are not ported), so a housed NPC always conflicts
 and the shared-room arm (`WorldGen.sharedRoomX`, `:5936-5939`) is
-unreachable — the score takes the shared room as an argument.
+unreachable — the score takes the shared room as an argument. (S1-E-11c
+below replaced that shortcut with the real `housingCategory` comparison.)
 
 Deviations: the relocation (`MoveTownNPC`/`moveRoom`, `WorldGen.cs:4685`/
-`:4843`), `GetHouseholdStatus` and the `lookForHomeTimeout` gate are still
-out.
+`:4843`), `GetHouseholdStatus` and the `lookForHomeTimeout` gate were still
+out at 11b.
+
+## Town housing (S1-E-11c, 2026-11-16)
+
+The relocation machinery, the `housingCategory` data and the household status.
+
+- **`housingCategory`** (`ID/HousingCategoryID.cs:3-8`: `CommonNPCs = 0`,
+  `PetNPCs = 1`) is `town.rs::housing_category`, keyed by the vanilla net id —
+  0 for every town NPC (`NPC.cs:8518`) and 1 for TownCat/TownDog 637/638
+  (`:17224`), TownBunny 656 (`:17308`), TownSlimeBlue 670 (`:17494`) and the
+  678-684 slime band (`:17607`). `CanNPCsLiveWithEachOther`
+  (`TownRoomManager.cs:144-156`) is `can_npcs_live_with_each_other`, so
+  `room_occupancy` now compares them the way `ScoreRoom_IsThisRoomOccupiedBySomeone`
+  (`WorldGen.cs:5821-5825`) does: a same-category occupant refuses the room,
+  a different-category one only sets `sharedRoomX` and the loop keeps going.
+  `quick_find_home`/`scan_spot` take the asking NPC's net id for it.
+- **`lookForHomeTimeout`** (`NPC.cs:6547`): `Npc::look_for_home_timeout`,
+  decaying one per tick at the `NPC.UpdateNPC` tail (`NPC.cs:90324-90327`).
+  `kickOut` arms it to `KICK_OUT_LOOK_FOR_HOME_TIMEOUT` = 3600
+  (`NPC.cs:95267`) and `moveRoom` clears it (`WorldGen.cs:4852`); both home
+  scans skip a non-zero timer (`WorldGen.cs:5621`, `:71635`).
+- **`GetHouseholdStatus`** (`TownRoomManager.cs:130-142`) is
+  `TownRooms::household_status`: 1 homeless, else 2 when `HasRoomQuick`, else
+  0. `TownRooms::occupants_at` ports `AddOccupantsToList` (`:22-31`).
+- **The relocation arm**: `town::kick_out`/`town::move_room` port
+  `WorldGen.kickOut` (`:4869-4879`) and `WorldGen.moveRoom` (`:4843-4855`),
+  and the arrival path now prefers a live homeless NPC of the kind over a
+  second spawn (`FindNPCLookingForHomeThatCanMoveIn` `:5428` →
+  `:5453-5463`).
+
+Reachability note: the shared-room arm is now **live in the predicate** but
+still unreachable in gameplay, because the port's `NpcKind` roster carries no
+category-1 pet kind (637/638/656/670/678-684 are unported, they have no AI
+and no bestiary row). The data and the predicate land 1:1 so that the arm
+turns on with the pets rather than needing a second pass. The remaining
+`S1-E-11` items are `MoveTownNPC`'s failure-reason feedback text
+(`:4694-4828`, the housing query UI reads it), which needs the housing-query
+`Main.mouseNPC` model (`ui/housing.rs:12-14`).
 
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
@@ -10110,6 +10165,41 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
+
+### The Twins' minion arm (S1-D-4b-6)
+
+The aiStyle-66 block (`Projectile.cs:29604-30161`) covers three kinds: 387 Retanimini,
+388 Spazmamini (both `minionSlots = 0.5`) and 533 Deadly Sphere (`minionSlots = 1`).
+The port is `Projectile::ai_twins_minion` plus the pre-computed
+`Projectile::twins_separation` and the `try_intercepting_target` /
+`get_chase_results` / `solve_quadratic` trio. Deviations:
+
+- **The separation loop is hoisted.** The C# runs the 1000-slot scan inline mid-AI;
+  the port computes it first (`twins_separation(&self.slots, i)`) and folds the result
+  into `velocity` as the arm's first act. The loop only reads sibling slots, so the
+  order is behaviour-identical — the hoist exists because the arm borrows `&mut self`
+  while the scan needs the whole `&[Projectile]` (E0502).
+- **`localAI[2]` is carried but unused.** The C# decays it toward 0 every tick
+  (`:29640`) and reads it back in `Update` (`:14549`) to scale the light — the port keeps
+  the decay (so the field tracks) and drops the light read with `Lighting.AddLight`.
+- **Dust and light unported** (same reason as the summon section): the dash trails
+  (`:29804-29811`, `:30049-30066` with their `Main.rand.Next(2)` / `SelectRandom` rolls),
+  the 533's two-colour glow (`:29674`/`:29678`), the gore.
+- **The 389 bolt row** is the twins' own projectile: 4×4, aiStyle 1, alpha 255,
+  `extraUpdates = 2`, scale 1.2, `timeLeft = 300` (`:4732-4740`). Its ×1.15 damage
+  (`(int)(damage * 1.15f)`, `:30105`) is applied in the dispatch, not in the row — the row
+  is a plain flight and the multiplier is the 387 arm's own.
+- **`AI_066_TryInterceptingTarget`'s `flag` stay dead.** The C# local `flag` is initialised
+  false and never set before the `if (flag)` inside the loop, so the whole `ai[1]` bonus
+  block (`:42395-42402`) is unreachable in 1.4.5.8. Ported as a `let flag = false;` with the
+  block present, matching the source.
+- **Slope correction and the 533's bounce unported**: `UpdatePosition`'s fall cases
+  (`:20447-20474`) and the Deadly Sphere's bounce arm (`:18173-18205`) are not in the port;
+  the dispatch runs `position += velocity` only.
+- **`MinionShot` stays 3-field** (`kind`/`vx`/`vy`): the bolt's damage multiplier and the
+  300-tick override are set by the spawning arm's dispatch, so the shot struct needs no
+  extra carrier.
+
 - **The sentry movement layer** (S1-D-4b-2). `AI_053_FrostHydra` (`:37266-37490`) and
   `AI_197_CeilingAndHoverTurret` (`:40307-40479`) carry no `position += velocity` of
   their own — the C# integrates them in `HandleMovement` → `UpdatePosition`
@@ -10136,6 +10226,7 @@ Deviations and notes:
     `netUpdate`. The pool has no sound, dust, gore, light or net layer; the
     sentry-backpack branch (`:40334-40343`, `CanGetPickedUpBySentryBackpack`) is
     likewise unported — no `accSentryBackpack`.
+
 ## Whips & tag damage (M4-PROJ-7)
 
 The whip family ports `AI_165_Whip` (`Projectile.cs:47667-48270`) in two halves:
@@ -13582,9 +13673,57 @@ Deliberate deviations:
    life-regen step); the C#'s `CheckDrowning` sits later in `Player.Update`
    (`:27655`, after `StickyMovement`).
 
-Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `StickyTiles` +
-`Player.StickyMovement`, `SwitchTiles`, `BuildTileContacts`,
-`noSlopeCollision` and `AdvancedTileCollision`.
+Out (the rest of S1-E-13): `HitTiles`/`HitTilesInACircle`, `SwitchTiles`,
+`BuildTileContacts`, `noSlopeCollision` and `AdvancedTileCollision`.
+## The sticky-surface family (S1-E-13c, 2026-11-16)
+
+`crates/tr-app/src/collision.rs::sticky_tiles` ports `Collision.StickyTiles`
+(`Collision.cs:3362-3435`): the ±1-tile scan window clamped to
+`Main.maxTilesY - 40` (`:3369-3384`), the cobweb (51) arm with its zero margin
+and `16.01` tall box (`:3396-3406`), and the honey-block (229) arm gated on
+`slope() == 0` (`:3410`) with the 1 px margin plus the half brick's `+8` / `-8`
+shrunken box (`:3414-3423`). The source's inline `Main.rand.Next(30)` type-30
+web puff (`:3401`, `:3425`) is drawn **inside** the probe, at the source's
+position relative to the return, and handed back as a flag: the caller owns
+`Main.dust`, so `Player::sticky_movement` queues it. The 229 arm's copy of that
+`if` tests `Main.tile[i, j].type == 51`, which is always false there and
+short-circuits before the `Next(30)`, so the port passes `false` — drawing it
+would add a stream step the C# never takes.
+
+`Player::sticky_movement` (`Player.cs:22910-23087`) keeps the source's order:
+the `Next(20,100)` / `Next(80,300)` break roll for `stickyBreak`
+(`:22938-22954`) — the C#'s bitwise `|` means the draw happens even when the
+`flag` cart test short-circuits the assignment — then the cart-above-5-px
+early return (`:22956-22958`), `fallStart` (`:22960`), the honey's jump
+exemption (`:22961-22964`), the gel/slime mount's halving with its `0.0025`
+floor (`:22965-22972`), the `±1` X cap with the `0.85`/`0.6` damp and the
+`±1`/`-5` Y cap with the `0.96`/`0.3` damp (`:22975-23028`), and the type-153
+honey puffs on the hit row plus the two rows below (`:23030-23081`) with their
+`Next(0,6)` scale / `velocity *= 0.1` / `noGravity` tail. The tick only has
+`&World`, so the tile kill (`WorldGen.KillTile`, `:22949`) and the puffs are
+queued and drained in `world_sim/player.rs` — the same `pending_sparks`
+pattern the minecart uses; the drain runs `DustPool::new_dust` on the
+`UpdatePlayers` stream, so the pool's own rolls stay interleaved exactly as the
+C# interleaves `Main.rand`.
+
+Call site: `Player::update_with_grapple` invokes it between the grapple block
+and `check_drowning`, matching `Player.cs:27653-27655`
+(`GrappleMovement` → `StickyMovement` → `CheckDrowning`).
+
+Deliberate deviations:
+
+1. **No shimmer gate.** `Player.shimmering` (`:22912-22915`) has no port
+   counterpart yet (the shimmer absorption pass is unported), so the early
+   return is absent rather than always-false.
+2. **No gravity flip.** The C# mirrors the Y drag on `gravDir` (`:22991`,
+   `:23010`); the port has no gravity flip, so only the `gravDir == 1` arm
+   (`:23012-23027`) runs, matching the vanilla's default `1f` (`Player.cs:1956`).
+3. **Hook multi-player gates folded.** `whoAmI == Main.myPlayer` (`:22936`)
+   collapses (the port is single-player) and the `Main.netMode == 1` break
+   replication (`:22950-22953`) is net-only.
+4. **`stickyBreak` survives a respawn.** The C# writes the counter at exactly
+   four sites, all inside `StickyMovement` (`:22938`, `:22948`, `:23085`);
+   `Player.Spawn` never clears it, so the port's revive path does not either.
 ## The Brain of Cthulhu's machine (S1-D-3e, 2026-11-14)
 
 `AI_054` (`NPC.cs:32370-32656`) is the Brain of Cthulhu's family machine:
@@ -13921,6 +14060,58 @@ Deviations:
 * **The cannon inherits the Dutchman's velocity and `timeLeft`** in the C#;
   the port's carrier link carries the position and the timers only, so the
   cannon keeps its own movement.
+
+## The Eye Fire / Flames Trap and the Baby Bird (S1-D-4b-5c, 2026-11-16)
+
+Two leftover styles ride the Eye and Moon Lord chains: **23** and **158**.
+
+* **Style 23 is two types.** `aiStyle = 23` covers the Eye Fire (**101**,
+  `ProjectileID.EyeFire`) and the Flames Trap (**188**,
+  `ProjectileID.FlameTrap`). They share the whole arm; only the trap arms the
+  launch-counter floor (`if (ai[0] < 8) ai[0] = 8;`, `Projectile.cs:25863-25868`)
+  and the 60-tick life cap (`:25871-25874`). Both count launches in
+  `localAI[0]` (`:25869`, `:25892`), which `Damage_CanDealDamage` (`:12448`)
+  reads to refuse the shot while the counter is still below 7 — so the counter
+  is load-bearing state, not decoration.
+* **Style 158 is one type**, the Baby Bird pet (**759**): `projFrames[759] = 5`
+  (`Main.cs:8506`). The arm keeps the pet alive while the `babyBird` buff flag
+  is set (`timeLeft = 2`, `:48760-48769`), walks its five frames at six ticks
+  per frame wrapping at `projFrames - 1` (`:48770-48777`), and snaps onto the
+  owner's home spot on the **last** frame when inside the
+  `8 + |player.velocity|` band (`:48919-48927`) — the walk never reaches the
+  last frame itself, which is why the perch frame is only visible while
+  sitting. The target scan is `Minion_FindTargetInRange` (`:48990-49027`) with
+  the four reach helpers `CanHitWithOwnBody` / `CanHitWithOwnMeleeWeapon`
+  (`:12400-12444`).
+
+Deliberate deviations and skips (all one-line-cited in the code):
+
+* **Dust, gore and sound are skipped** in both arms — the pool has no
+  `Main.dust` layer and no sound sink, matching the `ai_volcano` /
+  `ai_sharp_tears` precedent above. The `Dust.NewDust` calls in the C# blocks
+  are recorded at the site, not ported.
+* **The two separation loops and the group index are computed pool-side.**
+  `AI_158` walks `Main.projectile` twice to find its sibling birds and its own
+  index among them (`:51895-51911`); a slot arm cannot see its siblings, so
+  `ProjectilePool::baby_bird_group` pre-computes the group index and both
+  separation vectors and hands them to `ai_baby_bird`. The arithmetic is the
+  C#'s verbatim; only the *where* moved.
+* **`gravDir = 1` and `mounted_center == center` are folded.** The port has no
+  gravity flip and no mount pivot offset, so `AI_158`'s
+  `RotatedRelativePoint(MountedCenter)` chain reduces to
+  `Center + gfxOffY - (0, 21) + (0, headgear - 2)`. `Player::`
+  `apply_head_offset_from_mount` and `rotated_relative_point` are ported
+  faithfully anyway (the mount ids that do move the head are live), so the fold
+  is one call site, not a missing function.
+* **`correctSlopeCollision` is `projPet`, so `pet_movement` skips the slope
+  pass.** `Projectile.cs:707` sets `correctSlopeCollision = projPet`;
+  `AI_158`'s pet movement therefore runs `Collision.TileCollision` with
+  `fallThrough = fall2 = true` and no `correctSlopeCollision` pass. The port
+  calls `collision::tile_collision(..., fall_through = true, fall2 = true)` and
+  omits the slope correction — faithful to the C# for this flag combination.
+* **`NPC.boss` has no port field.** The arm's boss bypass
+  (`if (npc.boss) ...`) reads `crate::revenge::BOSS_KINDS` instead; the set is
+  derived from the C# `npc.boss` assignments, so the predicate is the same.
 
 ## The Retinazer's machine (S1-D-3i, 2026-11-14)
 
@@ -14312,6 +14503,58 @@ multiplier for the town-NPC damage. Porting the machine is a follow-up under
 S1-D-3; the preset table lands first so the numbers have one home. `num77`
 and `maxValue4` are not read by the swing code and stay unported.
 
+## The Dark Mage's machine (S1-D-3o, 2026-11-16)
+
+`AI_109_DarkMage` (`NPC.cs:65791-66186`) carries the Old One's Army's
+casters (types 564/565). The whole arm is ported in
+`crates/tr-app/src/npc.rs::update_dark_mage`, in the C# statement order:
+
+- the per-kind block (`:65813-65829`: the rotation = `vx * 0.04`,
+  `spriteDirection`, the tunables — `num3` 2, `num4` 0.05, `num5` 0.2,
+  `num6` -0.05, `num7` -0.4, `num8` 0.5, `num9` 0.1, `num10` 0.5,
+  `num11` 0.02; note `flag5 = false`, so the upward probe at
+  `:66058-66078` never runs);
+- the materialize (`:65928-65962`): `localAI[3]` (the port's
+  `caster_counter`) ramps 0 → 60, `alpha = 255` on the first tick, then
+  `alpha -= 5` clamped at 0;
+- the cast cycle (`:65834-65881`) behind `flag6`/`num12 = 0.9`, whose
+  tail (`:66024-66028`) returns before the gravity/steer block: the summon
+  673 at `ai[0] == 64` (`ai[1] == 2`), the shadowflame 675 at 32
+  (`ai[1] == 0`, `direction` re-aimed from the shot vector), the heal 674
+  at 40/48/56 (`ai[1] == 1`), and the `ai[0] <= 0` re-roll (-20 after the
+  shadowflame, -120 otherwise);
+- the re-arm (`:65882-65927`): `ai[0] == 0 && localAI[3] >= 60` picks the
+  97/127/183 window per `ai[1]`, gated by `flag9` (`:65905-65909` — the
+  shadowflame round needs the target within 1000 px and in line of sight);
+- the walk-anchor stuck detector (`:65968-66019`) and the
+  `TargetClosestOldOnesInvasion` retarget / `FaceTarget` write of
+  `direction`+`directionY` (`:66009-66012`, inside the detector's
+  `localAI[2] >= 0` branch);
+- the probe columns (`:66020-66072`), the float gravity (`:66079-66097`),
+  the `collideX`/`collideY` bounces off `oldVelocity` (`:66098-66121`) and
+  the four steer blocks (`:66122-66185`).
+
+`Npc` gained `direction_y`, `collide_x`, `collide_y`, `old_vx`, `old_vy`
+and `dark_mage_local[3]` (the C#'s `directionY`, `collideX`, `collideY`,
+`oldVelocity.X/Y` and `localAI[0..2]`).
+
+**The deliberate gaps.** `DD2Event.RaiseGoblins` (`DD2Event.cs:716-...)`
+needs `_deadGoblinSpots`, the DD2 event's dead-goblin coordinate list, which
+the port's sim does not carry: the summon request rides `wants_sphere` as a
+single `DD2GoblinT1` at the mage's centre instead of one raised goblin per
+recorded death. `DD2Event.CanRaiseGoblinsHere` (`:699-714`, the
+three-deaths-in-800-px gate) is likewise unmodelled, so the `ai[1] == 2` arm
+is never dropped mid-sequence. The re-arm's `flag8` scan (two damaged NPCs
+in the 1200x400 box, `:65884-65896`) needs the NPC list the AI method cannot
+see, and the `OnlyCrystal` half of `TargetClosestOldOnesInvasion`'s search
+(`NPCUtils.cs:268`, the 548 crystal) needs it too — the player arm of the
+search is modelled. `GetAttackDamage_ScaledByDifficulty` runs
+classic (the port has no difficulty-scaled NPC damage for this kind). The
+three tracked sounds (`DD2_EtherianPortalSpawnEnemy` at `localAI[3] == 30`,
+`DD2_DarkMageSummonSkeleton` at `ai[0] == 80`, `DD2_DarkMageCastHeal` at
+`ai[0] == 126`) and the portal dust ramp (`:65944-65961`, dust type 27)
+ride the audio and dust passes, which the port's NPC AI does not drive yet.
+
 ## The F3 developer workbench (S1-E-29, 2026-11-16)
 
 The F3 cheat-sheet panel is **project-specific**: vanilla Terraria 1.4.5.8 binds F3
@@ -14335,12 +14578,29 @@ below are recorded rather than resolved:
   and is *not* a claim about `Recipe`'s availability rules (`Recipe.cs:15162-15191`
   etc. stay unported).
 * **Action semantics are frozen.** The World rows, the spawns and the pause row keep
-  their pre-existing bodies. Their fidelity is **not** claimed: the world-event rows
-  are `PARTIAL_PROJECT_SPECIFIC` (goblin 80 vs the C# `80+40*players`,
-  `Main.cs:64435-64470`; slime rain 43200 vs the C# `32400-53999`,
-  `Main.cs:64742-64806`), and the kill-all row has no C# equivalent. Those are
-  recorded as S1-E-37 in `docs/ROADMAP.md`. The pause row *is* exact
-  (`WorldUpdateStepper.cs:45-49`) and its test pins it.
+  their pre-existing bodies. The pause row *is* exact (`WorldUpdateStepper.cs:45-49`)
+  and its test pins it.
+* **S1-E-37 — the world-event rows now ride the C# entry points.** The panel no longer
+  writes the event state by hand:
+  * Hardmode calls `WorldGen.StartHardmode`'s runner half (`WorldGen.cs:31707-31709`
+    → `spread::initialize_hard_mode`, the two V runners and their RNG order).
+  * Goblin Army calls `Main.StartInvasion` (`Main.cs:64435-64486`) behind
+    `CanStartInvasion`'s 200-life gate (`:64424-64432`) — `80 + 40 × players` instead
+    of the old flat 80, the type-3/type-4 sizes, and the `Next(2)` side pick
+    (`:64476-64483`) on the `UpdateTime` stream.
+  * Slime Rain calls `Main.StartSlimeRain` (`:64742-64785`, the duration
+    `Next(32400, 54000)`) and `Main.StopSlimeRain` (`:64787-64806`, the
+    `-Next(3024, 6048) × 100` cooldown), and refuses a start while it is already
+    raining (`:64761-64764`).
+  Deliberate deviations that remain, all recorded in `docs/ROADMAP.md` S1-E-37:
+  * `StartHardmode`'s `TransformWorldOnBackgroundThread` (`:31721-31742`) and the
+    `UndoSpawnedItemProtection`/achievement/broadcast follow-up are unported — the
+    port's `initialize_hard_mode` runs inline on the growth phase, and the row keeps a
+    toggle-off as the debug revert (the C# has none: `:31703` returns early).
+  * The kill-all row has no C# equivalent (it is the port's own F3 affordance) and
+    stays as is.
+  * `Main.remixWorld`/`isThereAWorldSurface`/the announcements and the `netMode` arms
+    of both functions fold out — the port is single-player and neither flag exists.
 * **Upstream reference only.** The feature set takes *behaviour* references from
   CheatSheet (no licence file, credits Gameiki) and HEROsMod (GPLv3); no code, data
   or art is copied or adapted, so nothing of theirs ships.

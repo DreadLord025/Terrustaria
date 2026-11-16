@@ -968,6 +968,99 @@ pub fn get_water_line_iterate(world: &World, x: i32, y: i32) -> Option<f32> {
     None
 }
 
+/// `Collision.StickyTiles` (`Collision.cs:3362-3435`): the sticky-surface probe
+/// under the player's feet. Returns the cobweb (51) or honey-block (229) cell
+/// the hitbox overlaps, plus whether the C#'s inline type-30 web puff fires
+/// (`:3401`/`:3425`) — the caller owns `Main.dust`, so it queues that puff.
+/// `None` is "no sticky tile" (the C#'s `(-1,-1)`).
+///
+/// Two arms, exactly as the source splits them:
+/// * type **51** (cobweb) — any slope, the `num5 = 0` margin at `:3396`;
+/// * type **229** (honey block) — `slope() == 0` only (`:3410`), the `num6 = 1`
+///   margin and the half-brick's 8 px shrunken box (`:3414-3422`).
+///
+/// The `Next(30)` puff roll is drawn here, in the source's own order — before
+/// `Player.StickyMovement`'s `Next(20,100)` break roll (`Player.cs:22946`).
+/// The type-153 honey dust (`Player.cs:23030-23081`) stays the caller's.
+pub fn sticky_tiles(
+    world: &World,
+    pos_x: f32,
+    pos_y: f32,
+    width: f32,
+    height: f32,
+    vel_x: f32,
+    vel_y: f32,
+    rng: &mut dyn tr_core::loot::DropRng,
+) -> Option<(i32, i32, bool)> {
+    // `:3365-3368`: the ±1 margin scan window.
+    let mut num = (pos_x / 16.0) as i32 - 1;
+    let mut num2 = ((pos_x + width) / 16.0) as i32 + 2;
+    let mut num3 = (pos_y / 16.0) as i32 - 1;
+    let mut num4 = ((pos_y + height) / 16.0) as i32 + 2;
+    // `:3369-3384`: the clamp — the bottom is `maxTilesY - 40`.
+    if num < 0 {
+        num = 0;
+    }
+    if num2 > world.width {
+        num2 = world.width;
+    }
+    if num3 < 0 {
+        num3 = 0;
+    }
+    if num4 > world.height - 40 {
+        num4 = world.height - 40;
+    }
+    for i in num..num2 {
+        for j in num3..num4 {
+            let Some(t) = world.tile(i, j) else { continue };
+            // `:3390`: null/inactive/actuated tiles are skipped.
+            if !t.active() || t.flags & tr_core::tile::FLAG_INACTIVE != 0 {
+                continue;
+            }
+            let tx = (i * 16) as f32;
+            let ty = (j * 16) as f32;
+            if t.kind == 51 {
+                // `:3396-3406`: the cobweb's zero margin, full 16.01 height.
+                let num5 = 0.0f32;
+                if pos_x + width > tx - num5
+                    && pos_x < tx + 16.0 + num5
+                    && pos_y + height > ty
+                    && (pos_y as f64) < (ty as f64) + 16.01
+                {
+                    // `:3401`: the type-30 web puff, drawn before the return.
+                    let puff = (vel_x.abs() + vel_y.abs()) > 0.7 && rng.next_range(0, 30) == 0;
+                    return Some((i, j, puff));
+                }
+            } else {
+                // `:3410`: only the flat honey block counts.
+                if t.kind != 229 || t.slope() != 0 {
+                    continue;
+                }
+                // `:3414-3423`: the one-pixel margin, the half-brick's 8 px shrink.
+                let num6 = 1.0f32;
+                let mut ty2 = ty;
+                let mut num7 = 16.01f32;
+                if t.half_brick() {
+                    ty2 += 8.0;
+                    num7 -= 8.0;
+                }
+                if pos_x + width > tx - num6
+                    && pos_x < tx + 16.0 + num6
+                    && pos_y + height > ty2
+                    && pos_y < ty2 + num7
+                {
+                    // `:3425`: the same `if` in the honey arm tests `type == 51`
+                    // — always false here, and C# `&&` short-circuits, so no
+                    // `Next(30)` is drawn. Keep the dead test's semantics.
+                    return Some((i, j, false));
+                }
+            }
+        }
+    }
+    // `:3434`: `new Vector2(-1f, -1f)`.
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1345,5 +1438,75 @@ mod tests {
         let [sx, sy] = shrink.expect("the shrink never probes tiles");
         assert_eq!(sx, 80.0);
         assert_eq!(sy, 20.0 * 16.0 - 42.0, "the bottom-center is kept");
+    }
+
+    /// `Collision.StickyTiles` (`:3362-3435`): the cobweb (51) is found under a
+    /// resting body, the honey block (229) only when flat, and the half brick's
+    /// 8 px shrink makes the probe miss a body standing on the thin lip.
+    #[test]
+    fn the_sticky_probe_finds_cobwebs_and_flat_honey_only() {
+        // At rest (`Velocity == 0`) the `:3401` puff gate short-circuits before
+        // the `Next(30)` draw, so the probe is deterministic here.
+        let mut rng = tr_core::UnifiedRandom::default();
+        let (w, h) = (20.0f32, 42.0f32);
+        // A cobweb at row 20, the body standing on it.
+        let mut w_web = world();
+        put(&mut w_web, 10, 20, 51);
+        let hit = sticky_tiles(&w_web, 164.0, 20.0 * 16.0 - h + 1.0, w, h, 0.0, 0.0, &mut rng);
+        assert_eq!(hit, Some((10, 20, false)), "the cobweb is under the feet");
+        // The honey block: flat is sticky, any slope is not.
+        let mut w_honey = world();
+        put(&mut w_honey, 10, 20, 229);
+        assert_eq!(
+            sticky_tiles(&w_honey, 164.0, 20.0 * 16.0 - h + 1.0, w, h, 0.0, 0.0, &mut rng),
+            Some((10, 20, false)),
+            "the flat honey block is sticky"
+        );
+        let i = w_honey.index(10, 20);
+        w_honey.tiles[i].set_slope(1);
+        assert_eq!(
+            sticky_tiles(&w_honey, 164.0, 20.0 * 16.0 - h + 1.0, w, h, 0.0, 0.0, &mut rng),
+            None,
+            "a sloped honey block is not (`:3410`)"
+        );
+        // Nothing sticky under an empty floor.
+        assert_eq!(
+            sticky_tiles(&world(), 164.0, 20.0 * 16.0 - h + 1.0, w, h, 0.0, 0.0, &mut rng),
+            None
+        );
+    }
+
+    /// `:3418-3422`: the half brick lifts the box' top 8 px and shortens it to
+    /// 8.01 — a body whose bottom rests on the tile's top edge misses the
+    /// shrunken box.
+    #[test]
+    fn the_half_brick_shrinks_the_honey_box() {
+        let mut rng = tr_core::UnifiedRandom::default();
+        let (w, h) = (20.0f32, 42.0f32);
+        let mut world_hb = world();
+        put(&mut world_hb, 10, 20, 229);
+        let i = world_hb.index(10, 20);
+        world_hb.tiles[i].flags |= tr_core::tile::FLAG_HALF_BRICK;
+        // The body's bottom sits at the tile's top (320): the half brick lifts
+        // the box' top to 328, so `pos_y + height > ty2` is `320 > 328` — false.
+        assert_eq!(
+            sticky_tiles(&world_hb, 164.0, 20.0 * 16.0 - h + 1.0, w, h, 0.0, 0.0, &mut rng),
+            None,
+            "the half brick's box starts 8 px down"
+        );
+        // Ten pixels lower the body reaches into the shrunk box.
+        assert_eq!(
+            sticky_tiles(
+                &world_hb,
+                164.0,
+                20.0 * 16.0 - h + 10.0,
+                w,
+                h,
+                0.0,
+                0.0,
+                &mut rng
+            ),
+            Some((10, 20, false))
+        );
     }
 }
