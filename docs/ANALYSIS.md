@@ -2147,7 +2147,22 @@ z-order (`docs/UI.md` → "Crafting panel"). The deviations:
 * The panel ships open with the inventory (`NewCraftingUI.Visible`,
   `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it and `TR_CRAFT=1` forces it on
   (mirroring `TR_INV`).
-* No filter, search or scrollbar interaction: the panel is draw-only, without
+* The recipe **filter strip** is live (S1-H-7): `craft_filter.rs` ports the eleven
+  `ItemFilters` predicates (`ItemFilters.cs:71-464`), the exclusive tab toggle
+  (`UICreativeItemsInfiniteFilteringOptions.cs:80-100`) and
+  `EntryFilterer.FitsFilter` (`EntryFilterer.cs:30-55`). Three deviations:
+  `Item.tileWand` is not a field on the port's `ItemDef`, so a tile wand is
+  classified by its `createTile`/`createWall` alone — a wand whose tile is
+  frame-important falls to `MiscFallback` instead of `BuildingBlock`/`Tools`;
+  `MiscFallback`'s per-type `bool?[]` cache (`:410-425`) is omitted because the
+  predicate is already a pure function of the item type (so is the grid's
+  `_filteredRecipes`, which `FilterBoard::shown` recomputes each call — the C#
+  only re-derives when the count changes, `:624-627`); and `ItemFilters.BySearch`
+  (`:16-69`) is not wired to the search box, which has no keyboard text field
+  anywhere in the port (the same reason the char/world-name screens use
+  stand-ins). The `CreativePowers.Tab*` hover label resolves through
+  `Language.GetTextValue`, which the port's `lang::text` already serves.
+* No scrollbar interaction: the panel is draw-only for the recipe grid, without
   `ItemSlot.Handle` (out of scope, as documented for the inventory panels above).
 * The cancel button is always visible — `White * 0.4` at rest, `White` on hover.
   Vanilla's `UIImageButton` never hides the icon (`_visibilityInactive = 0.4f`,
