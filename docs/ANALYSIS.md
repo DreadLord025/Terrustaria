@@ -13808,6 +13808,58 @@ Deviations:
   the port's carrier link carries the position and the timers only, so the
   cannon keeps its own movement.
 
+## The Eye Fire / Flames Trap and the Baby Bird (S1-D-4b-5c, 2026-11-16)
+
+Two leftover styles ride the Eye and Moon Lord chains: **23** and **158**.
+
+* **Style 23 is two types.** `aiStyle = 23` covers the Eye Fire (**101**,
+  `ProjectileID.EyeFire`) and the Flames Trap (**188**,
+  `ProjectileID.FlameTrap`). They share the whole arm; only the trap arms the
+  launch-counter floor (`if (ai[0] < 8) ai[0] = 8;`, `Projectile.cs:25863-25868`)
+  and the 60-tick life cap (`:25871-25874`). Both count launches in
+  `localAI[0]` (`:25869`, `:25892`), which `Damage_CanDealDamage` (`:12448`)
+  reads to refuse the shot while the counter is still below 7 — so the counter
+  is load-bearing state, not decoration.
+* **Style 158 is one type**, the Baby Bird pet (**759**): `projFrames[759] = 5`
+  (`Main.cs:8506`). The arm keeps the pet alive while the `babyBird` buff flag
+  is set (`timeLeft = 2`, `:48760-48769`), walks its five frames at six ticks
+  per frame wrapping at `projFrames - 1` (`:48770-48777`), and snaps onto the
+  owner's home spot on the **last** frame when inside the
+  `8 + |player.velocity|` band (`:48919-48927`) — the walk never reaches the
+  last frame itself, which is why the perch frame is only visible while
+  sitting. The target scan is `Minion_FindTargetInRange` (`:48990-49027`) with
+  the four reach helpers `CanHitWithOwnBody` / `CanHitWithOwnMeleeWeapon`
+  (`:12400-12444`).
+
+Deliberate deviations and skips (all one-line-cited in the code):
+
+* **Dust, gore and sound are skipped** in both arms — the pool has no
+  `Main.dust` layer and no sound sink, matching the `ai_volcano` /
+  `ai_sharp_tears` precedent above. The `Dust.NewDust` calls in the C# blocks
+  are recorded at the site, not ported.
+* **The two separation loops and the group index are computed pool-side.**
+  `AI_158` walks `Main.projectile` twice to find its sibling birds and its own
+  index among them (`:51895-51911`); a slot arm cannot see its siblings, so
+  `ProjectilePool::baby_bird_group` pre-computes the group index and both
+  separation vectors and hands them to `ai_baby_bird`. The arithmetic is the
+  C#'s verbatim; only the *where* moved.
+* **`gravDir = 1` and `mounted_center == center` are folded.** The port has no
+  gravity flip and no mount pivot offset, so `AI_158`'s
+  `RotatedRelativePoint(MountedCenter)` chain reduces to
+  `Center + gfxOffY - (0, 21) + (0, headgear - 2)`. `Player::`
+  `apply_head_offset_from_mount` and `rotated_relative_point` are ported
+  faithfully anyway (the mount ids that do move the head are live), so the fold
+  is one call site, not a missing function.
+* **`correctSlopeCollision` is `projPet`, so `pet_movement` skips the slope
+  pass.** `Projectile.cs:707` sets `correctSlopeCollision = projPet`;
+  `AI_158`'s pet movement therefore runs `Collision.TileCollision` with
+  `fallThrough = fall2 = true` and no `correctSlopeCollision` pass. The port
+  calls `collision::tile_collision(..., fall_through = true, fall2 = true)` and
+  omits the slope correction — faithful to the C# for this flag combination.
+* **`NPC.boss` has no port field.** The arm's boss bypass
+  (`if (npc.boss) ...`) reads `crate::revenge::BOSS_KINDS` instead; the set is
+  derived from the C# `npc.boss` assignments, so the predicate is the same.
+
 ## The Retinazer's machine (S1-D-3i, 2026-11-14)
 
 `AI_057` (`NPC.cs:32761-33043`) is the Retinazer's family machine — the
