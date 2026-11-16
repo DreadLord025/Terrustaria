@@ -266,7 +266,7 @@ impl Particles {
 
 impl App {
     /// Sends a module envelope to the host (the client-side send).
-    fn send_module(&self, module: u16, body: &[u8]) {
+    pub(crate) fn send_module(&self, module: u16, body: &[u8]) {
         if let NetRole::Client(client) = &self.net {
             client.send(&C2s::NetModule {
                 module,
@@ -326,19 +326,18 @@ impl App {
                 }
             }
             module_id::PING => {
-                // The port echoes the ping back to the sender so the client
-                // can measure an RTT (the C# uses the module only for its
-                // diagnostics UI and skips the sender — deviation).
-                if let Some(p) = self.remote_players.get(&from) {
-                    let (x, y) = (p.x, p.y);
-                    server.send(
-                        from,
-                        &S2c::NetModule {
-                            module,
-                            body: Ping { x, y }.encode(),
-                        },
-                    );
-                }
+                // `NetPingModule.Deserialize` (`NetPingModule.cs:16-33`): the
+                // host re-broadcasts the marker to everyone but the sender.
+                let Some(p) = Ping::read_from(&mut r) else {
+                    return;
+                };
+                server.broadcast_except(
+                    &S2c::NetModule {
+                        module,
+                        body: Ping { x: p.x, y: p.y }.encode(),
+                    },
+                    from,
+                );
             }
             module_id::PARTICLES => {
                 let Some(p) = Particles::read_from(&mut r) else {
@@ -373,9 +372,14 @@ impl App {
                     .new_text(sm.text, [sm.color.0, sm.color.1, sm.color.2]);
             }
             module_id::PING => {
-                // The echo: the RTT since the request went out.
-                if let Some(sent) = self.net_ping_at.take() {
-                    self.net_rtt_ms = sent.elapsed().as_millis() as u32;
+                // `NetPingModule.Deserialize` on a peer
+                // (`NetPingModule.cs:27-31`): `Main.Pings.Add(position)` - the
+                // marker joins the world map's ping pool.
+                let Some(sp) = Ping::read_from(&mut r) else {
+                    return;
+                };
+                if let Some(m) = self.map.as_mut() {
+                    m.add_ping([sp.x, sp.y]);
                 }
             }
             module_id::AMBIENCE => {
@@ -431,20 +435,41 @@ impl App {
         }
     }
 
-    /// The client's 1 Hz ping request (the RTT diagnostic).
-    pub(crate) fn net_module_tick(&mut self) {
-        if !matches!(self.net, NetRole::Client(_)) || self.net_state < net::client_state::IN_WORLD {
+    /// The `154 Ping` RTT machine (`Net/Ping.cs:24-35`): `net_ping_at` is the
+    /// stopwatch's restart point, `net_ping_waiting` the
+    /// `_waitingForResponse` flag and `net_rtt_ms` the `CurrentPing`
+    /// accumulator (it only ever grows inside one round trip).
+    pub(crate) fn net_ping_tick(&mut self) {
+        if !matches!(self.net, NetRole::Client(_)) {
             return;
         }
-        self.net_module_beat = self.net_module_beat.wrapping_add(1);
-        if self.net_module_beat % 10 != 0 {
-            return; // the net tick runs at 10 Hz → once a second
-        }
-        let Some(p) = self.player.as_ref() else {
+        let Some(sent) = self.net_ping_at else {
             return;
         };
+        let elapsed = sent.elapsed();
+        if self.net_ping_waiting {
+            // `Ping.CurrentPing = Math.Max(CurrentPing, elapsedMs)` (`:27`).
+            let ms = elapsed.as_millis() as u32;
+            self.net_rtt_ms = self.net_rtt_ms.max(ms);
+            return;
+        }
+        // `else if (_stopwatch.ElapsedMilliseconds >= 250)` (`:29-34`).
+        if elapsed.as_millis() < 250 {
+            return;
+        }
         self.net_ping_at = Some(Instant::now());
-        self.send_module(module_id::PING, &Ping { x: p.x, y: p.y }.encode());
+        self.net_ping_waiting = true;
+        if let NetRole::Client(client) = &self.net {
+            client.send(&C2s::Ping);
+        }
+    }
+
+    /// `Ping.PingRecieved` (`Net/Ping.cs:37-48`): the round trip lands.
+    pub(crate) fn ping_received(&mut self) {
+        if let Some(sent) = self.net_ping_at {
+            self.net_rtt_ms = sent.elapsed().as_millis() as u32;
+        }
+        self.net_ping_waiting = false;
     }
 
     /// The host's ambience broadcast: every entity the host has spawned and

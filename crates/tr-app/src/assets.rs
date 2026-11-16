@@ -88,19 +88,22 @@ pub type WorldSheets = (Vec<AtlasImage>, Vec<AtlasImage>);
 /// concatenate the two in that order to get the pre-split list.
 pub fn load_world_images(
     dir: &Path,
+    world: &World,
     tiles: &BTreeSet<u16>,
     walls: &BTreeSet<u16>,
 ) -> Result<WorldSheets> {
     Ok((
-        load_world_sheets(dir, tiles, walls)?,
+        load_world_sheets(dir, world, tiles, walls)?,
         load_static_sheets(dir),
     ))
 }
 
 /// The world-dependent half of [`load_world_images`]: the tile and wall sheets
-/// the usage scan asked for, plus the dirt fallback.
+/// the usage scan asked for, the surface-background layer sheets of this
+/// world's own styles, plus the dirt fallback.
 pub fn load_world_sheets(
     dir: &Path,
+    world: &World,
     tiles: &BTreeSet<u16>,
     walls: &BTreeSet<u16>,
 ) -> Result<Vec<AtlasImage>> {
@@ -139,6 +142,41 @@ pub fn load_world_sheets(
         match result {
             Ok(img) => images.push(img),
             Err(_) => missing.push(image_name_for_wall(wall)),
+        }
+    }
+
+    // The surface-background layer sheets of *this* world's own style variants
+    // (`Main.corruptBG`/`jungleBG`/`hallowBG`/`crimsonBG`/`mushroomBG`, filled by
+    // `WorldGen.setBG`). They belong in the world half: which `Background_<id>`
+    // files exist depends on the world's rolled styles, and the whole 95-sheet
+    // variant set is ~300 MB — every world packs only its own five styles.
+    // `-1` is a layer the C# never draws, so no sheet is packed for it.
+    let mut bg_ids: Vec<i32> = [
+        world.corrupt_bg(),
+        world.jungle_bg(),
+        world.hallow_bg(),
+        world.crimson_bg(),
+        world.mushroom_bg(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|&id| id >= 0)
+    .collect();
+    bg_ids.sort_unstable();
+    bg_ids.dedup();
+    let bg_images: Vec<(i32, Result<AtlasImage>)> = bg_ids
+        .par_iter()
+        .map(|&id| {
+            (
+                id,
+                load_png(dir, &format!("Background_{id}"), SheetLayout::Raw),
+            )
+        })
+        .collect();
+    for (id, result) in bg_images {
+        match result {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing background texture Background_{id}"),
         }
     }
 
@@ -2878,7 +2916,8 @@ mod tests {
             let tiles = BTreeSet::new();
             let walls = BTreeSet::new();
             let (mut images, static_sheets) =
-                load_world_images(&images_dir, &tiles, &walls).expect("world image decode");
+                load_world_images(&images_dir, &World::new("t".into(), 8, 8), &tiles, &walls)
+                    .expect("world image decode");
             images.extend(static_sheets);
             let atlas = tr_render::Atlas::build(images, 8192);
             let lookups = Lookups::build(
@@ -2983,7 +3022,8 @@ mod tests {
         let tiles: BTreeSet<u16> = [1u16, 2, 30].into_iter().collect();
         let walls: BTreeSet<u16> = [1u16, 4].into_iter().collect();
 
-        let (world_half, static_half) = load_world_images(&images_dir, &tiles, &walls).unwrap();
+        let (world_half, static_half) =
+            load_world_images(&images_dir, &World::new("t".into(), 8, 8), &tiles, &walls).unwrap();
         let joined: Vec<String> = world_half
             .iter()
             .chain(static_half.iter())
@@ -2991,7 +3031,8 @@ mod tests {
             .collect();
 
         // The halves are exactly the two loaders, in the same order.
-        let world_only = load_world_sheets(&images_dir, &tiles, &walls).unwrap();
+        let world_only =
+            load_world_sheets(&images_dir, &World::new("t".into(), 8, 8), &tiles, &walls).unwrap();
         let static_only = load_static_sheets(&images_dir);
         assert_eq!(
             joined,

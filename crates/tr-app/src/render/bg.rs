@@ -1101,69 +1101,274 @@ pub(crate) struct AmbiencePass<'a> {
     pub last: &'a mut f32,
 }
 
-/// The three foreground layers of one biome (`DrawSurfaceBG_Forest` /
-/// `_Desert` / `_Snow`).
+/// One row of a `DrawSurfaceBG_*` chain (`Main.cs:59986-61370`).
 ///
-/// `ks`/`tops` are the `backgroundTopMagicNumber * k + c + scAdj` terms from the
-/// original; `pushBGTopHack` is already folded into `tops` (front layers use
-/// `-150`). Every layer is tinted by `ColorOfSurfaceBackgroundsBase * alpha`,
-/// where `alpha` is the biome's `Main.bgAlphaFrontLayer` entry.
+/// `k`/`top` are the `backgroundTopMagicNumber * k + top + scAdj` terms of the
+/// original's `bgTopY`, with `pushBGTopHack` already folded into `top` (the
+/// front layers see `-150`: `30 - 180`, `Main.cs:59302`, `:59346`, `:59525`).
+/// `depth` is the `SkyManager` boundary the row opens with — normally
+/// `1f / bgParallax`, but Hallow's first row uses `1.2f / bgParallax`
+/// (`Main.cs:60788`).
+#[derive(Clone, Copy)]
+pub(crate) struct FrontLayer {
+    pub tex: Option<BgTex>,
+    pub scale: f32,
+    pub parallax: f32,
+    pub k: f32,
+    pub top: f32,
+    pub depth: f32,
+    /// `SpriteEffects.FlipHorizontally` on this row.
+    pub flip: bool,
+    /// `bgStartX` shift (Crimson `175`: `-1000`, `Main.cs:60289`).
+    pub x_shift: f32,
+    /// Extra tiles (`bgLoops++`, Crimson `175`, `Main.cs:60291`).
+    pub extra: u8,
+    /// `GetBackgroundRect` frame step; `0` draws the whole sheet.
+    pub frame_step: u32,
+    /// Per-row `ColorOfSurfaceBackgroundsModified` override (rgb, 0..1); only
+    /// the Mushroom chain replaces it (`Main.cs:60001`, `:60065`, `:60127`).
+    pub tint: Option<[f32; 3]>,
+}
+
+/// Build one biome's three rows from its `Main.<biome>BG` texture ids.
+///
+/// `base` is the hard-coded `(bgScale, bgParallax, num, num2)` of each row **in
+/// call order** (the caller's `bgTopY = magic * num + num2 + scAdj + hack`).
+/// `SetBackgroundOffsets` then overrides `bgScale`/`bgParallax` and, when its
+/// `num`/`num2` pair is non-zero, replaces `bgTopY` wholesale
+/// (`Main.cs:60771-60774`), so a style whose id is in that table wins over the
+/// caller's magic numbers. `bgGlobalScaleMultiplier` is `num4 = 2f`
+/// (`Main.cs:59329`); `hack` is the front loop's `pushBGTopHack` (`-150`).
+///
+/// Per-id row quirks (the `== 56` nudges, `GetLayerYOffset`) are the caller's,
+/// because the C# applies them *after* `SetBackgroundOffsets`.
+pub(crate) fn front_layers(
+    ids: [i32; 3],
+    base: [(f32, f32, f32, f32); 3],
+    texs: [Option<BgTex>; 3],
+    hack: f32,
+) -> [FrontLayer; 3] {
+    std::array::from_fn(|i| {
+        let (mut scale, mut parallax, mut k, mut top) = base[i];
+        if let Some((o_scale, o_parallax, num, num2)) = bg_offsets(ids[i]) {
+            if let Some(p) = o_parallax {
+                parallax = p;
+            }
+            if let Some(s) = o_scale {
+                scale = s;
+            }
+            if num != 0 || num2 != 0 {
+                k = num as f32;
+                top = num2 as f32;
+            }
+        }
+        FrontLayer {
+            tex: texs[i],
+            scale: scale * 2.0,
+            parallax,
+            k,
+            top: top + hack,
+            depth: 1.0 / parallax,
+            flip: false,
+            x_shift: 0.0,
+            extra: 0,
+            frame_step: background_frame_step(ids[i]),
+            tint: None,
+        }
+    })
+}
+
+/// The Mushroom chain's per-row colour (`Main.cs:60001-60035` / `:60065-60099` /
+/// `:60127-60157`): each channel lifted to the glow value, kept at or above the
+/// base colour's byte.
+///
+/// `mul` is the row's `num` (0.5 / 0.625 / 0.75), `rgb` the row's `Vector3`
+/// (already `* 3f`), `num5` the `Main.rand.Next(28, 42) * 0.001f +
+/// (270 - Main.mouseTextColor) / divisor` roll, `alpha` the biome's
+/// `bgAlphaFrontLayer[9]` — the C#'s `num4 = ColorOfSurfaceBackgroundsModified.A
+/// / 255f`, i.e. that alpha (the base colour's own alpha is 255).
+pub(crate) fn mushroom_tint(
+    base: [f32; 3],
+    alpha: f32,
+    mul: f32,
+    rgb: [f32; 3],
+    num5: f32,
+) -> [f32; 3] {
+    let v = [rgb[0], rgb[1] + num5 * 0.5, rgb[2] + num5];
+    std::array::from_fn(|i| {
+        let x = (v[i] * 255.0 * mul * alpha).min(255.0) as i32;
+        // `ColorOfSurfaceBackgroundsModified` = base * alpha, byte-truncated.
+        let base_byte = (base[i] * alpha * 255.0) as i32;
+        base_byte.max(x) as f32 / 255.0
+    })
+}
+
+/// `Main.SetBackgroundOffsets` (`Main.cs:60384-60775`) for the texture ids the
+/// five surface-variant style tables can produce: the `bgScale`/`bgParallax`
+/// overrides (either may be absent — `222`/`223`/`224`/`237`/`238`/`239` only
+/// replace `bgTopY`, `261`/`262`/`219`/`220`/`221`/`321` only the parallax),
+/// plus the `num`/`num2` pair that replaces `bgTopY` when non-zero.
+/// Rows the C# does not list return `None` (the caller keeps its own defaults).
+///
+/// Deliberately absent: the forest tree sets, snow, ocean and underworld ids —
+/// those biomes' style tables are still unported.
+#[allow(clippy::type_complexity)]
+pub(crate) fn bg_offsets(id: i32) -> Option<(Option<f32>, Option<f32>, i32, i32)> {
+    Some(match id {
+        240 => (Some(1.15), Some(0.30), 1800, 1500),
+        241 => (Some(1.21), Some(0.43), 1950, 1300),
+        242 => (Some(1.34), Some(0.49), 2100, 1400),
+        243 => (Some(1.15), Some(0.25), 1800, 1400),
+        244 => (Some(1.21), Some(0.35), 1950, 1550),
+        245 => (Some(1.24), Some(0.45), 2100, 1650),
+        273 => (None, Some(0.49), 2100, 1560),
+        234 => (None, Some(0.23), 1700, 1150),
+        235 => (None, Some(0.33), 1950, 1550),
+        236 => (None, Some(0.41), 2100, 2000),
+        261 => (None, Some(0.27), 0, 0),
+        262 => (None, Some(0.40), 0, 0),
+        219 => (None, Some(0.25), 0, 0),
+        220 => (None, Some(0.34), 0, 0),
+        221 => (None, Some(0.43), 0, 0),
+        222 => (None, None, 1800, 1400),
+        223 => (None, None, 2150, 1850),
+        224 => (None, None, 2500, 2400),
+        237 => (None, None, 1800, 1500),
+        238 => (None, None, 1950, 1500),
+        239 => (None, None, 2100, 1900),
+        284 => (None, Some(0.23), 1600, 900),
+        285 => (None, Some(0.36), 1900, 960),
+        286 => (None, Some(0.42), 2100, 1200),
+        287 => (None, Some(0.21), 1700, 1560),
+        288 => (None, Some(0.33), 1950, 1730),
+        289 => (None, Some(0.41), 2100, 1400),
+        300 => (Some(2.41), Some(0.53), 3000, 2050),
+        301 => (Some(2.36), Some(0.415), 2200, 1700),
+        302 => (Some(2.25), Some(0.24), 1400, 950),
+        319 => (None, Some(0.60), 4600, 3250),
+        320 => (None, Some(0.30), 2250, 1950),
+        321 => (None, Some(0.25), 0, 0),
+        322 => (None, Some(0.45), 2400, 1950),
+        323 => (None, Some(0.35), 1900, 1500),
+        324 => (None, Some(0.25), 1600, 1300),
+        325 => (None, Some(0.49), 2800, 2400),
+        326 => (None, Some(0.33), 2000, 1740),
+        327 => (None, Some(0.22), 1450, 1165),
+        337 => (Some(1.01), Some(0.35), 2500, 2200),
+        338 => (Some(0.98), Some(0.24), 1900, 1650),
+        339 => (Some(0.94), Some(0.20), 1600, 1350),
+        255 => (Some(1.15), Some(0.25), 1800, 1450),
+        256 => (Some(1.21), Some(0.32), 1950, 1550),
+        257 => (Some(1.34), Some(0.40), 2100, 1550),
+        _ => return None,
+    })
+}
+
+/// `Main.DrawSurfaceBG_GetLayerYOffset` (`Main.cs:59740-59797`), reduced to the
+/// ids the five surface-variant styles reach. The rest of the table belongs to
+/// the forest/snow/desert mountain rows and stays unported.
+pub(crate) fn layer_y_offset(id: i32) -> f32 {
+    match id {
+        59 => -550.0,
+        271 => -300.0,
+        272 => -380.0,
+        _ => 0.0,
+    }
+}
+
+/// `Main.GetBackgroundRect`'s `GetBackgroundCounter()` divisor
+/// (`Main.cs:61220-61262`): the animated 2x2 `Background_*` grids advance a
+/// frame every N ticks. `0` = the sheet is not animated (the C# returns `null`
+/// and the whole texture is drawn).
+pub(crate) fn background_frame_step(id: i32) -> u32 {
+    match id {
+        235 => 20,
+        219 | 220 | 221 | 271 | 272 | 273 | 302 | 303 | 305 | 307 | 309 | 311 | 313 | 315 | 317
+        | 326 | 337 | 338 | 341 => 15,
+        281 => 5,
+        _ => 0,
+    }
+}
+
+/// One frame of a `GetBackgroundRect` 2x2 grid, or the whole sheet.
+///
+/// `Frame(2, 2, num % 2, num / 2)` then `Inflate(0, -2)` — XNA's inflate moves
+/// the top down 2 px and shortens the height by 4, in source-texture pixels.
+/// `Main.backgroundWidth/Height` are halved for the animated ids at load
+/// (`Main.cs:59046-59072`), which is why the frame is half the sheet.
+pub(crate) fn background_frame(tex: &BgTex, step: u32, counter: u32) -> BgTex {
+    if step == 0 {
+        return *tex;
+    }
+    let (du, dv) = (tex.uv[2] - tex.uv[0], tex.uv[3] - tex.uv[1]);
+    let num = (counter / step) % 4;
+    let (col, row) = ((num % 2) as f32, (num / 2) as f32);
+    let px = dv / tex.h; // one source pixel, in `v` units
+    let u0 = tex.uv[0] + du * 0.5 * col;
+    let v0 = tex.uv[1] + dv * 0.5 * row + px * 2.0;
+    BgTex {
+        uv: [
+            u0,
+            v0,
+            u0 + du * 0.5,
+            tex.uv[1] + dv * 0.5 * (row + 1.0) - px * 2.0,
+        ],
+        w: tex.w * 0.5,
+        h: tex.h * 0.5 - 4.0,
+    }
+}
+
+/// The three foreground layers of one biome (`DrawSurfaceBG_*`).
+///
+/// Every row is tinted by `ColorOfSurfaceBackgroundsBase * alpha`, where
+/// `alpha` is the biome's `Main.bgAlphaFrontLayer` entry. `counter` is
+/// `Main.GameUpdateCount` (`GetBackgroundCounter`, `Main.cs:61264-61271`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_front_trees(
     r: &mut SpriteRenderer,
     camera: Vec2,
     zoom: f32,
     screen: Vec2,
-    trees: &[Option<BgTex>; 3],
+    layers: &[FrontLayer; 3],
     alpha: f32,
-    scales: [f32; 3],
-    parallax: [f32; 3],
-    ks: [f32; 3],
-    tops: [f32; 3],
-    flip_layer: Option<usize>,
     magic: f32,
     sc_adj: f32,
     tint: [f32; 3],
+    counter: u32,
     mut ambience: Option<&mut AmbiencePass<'_>>,
-    // Only the Snow body ends with `DrawToDepth(1f)` (`Main.cs:60186`); the
-    // other biomes leave the stratum to the flush (`Main.cs:59626`).
+    // Only the Snow (`Main.cs:60186`) and Mushroom (`Main.cs:60186`) bodies end
+    // with `DrawToDepth(1f)`; the others leave the stratum to the flush
+    // (`Main.cs:59626`).
     closes_with_one: bool,
 ) {
     if alpha <= 0.0 {
         return;
     }
-    for i in 0..3 {
-        // The biome's row boundary: `bgParallax = parallax[i]; DrawToDepth(
-        // 1f/bgParallax)` runs before the row draws (`Main.cs:61304-61306`
-        // and its siblings).
+    for l in layers {
         if let Some(p) = ambience.as_deref_mut() {
-            crate::ambience::draw_range_min(
-                r,
-                p.entities,
-                p.lookups,
-                p.ctx,
-                1.0 / parallax[i],
-                p.last,
-            );
+            crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, l.depth, p.last);
         }
-        if let Some(t) = trees[i] {
-            draw_bg_layer(
+        if let Some(t) = l.tex {
+            let tex = background_frame(&t, l.frame_step, counter);
+            draw_tiled(
                 r,
                 camera,
                 zoom,
                 screen,
-                &t,
-                scales[i],
-                parallax[i],
-                magic * ks[i] + tops[i] + sc_adj,
-                flip_layer == Some(i),
-                tint,
+                &tex,
+                l.scale,
+                l.parallax,
+                magic * l.k + l.top + sc_adj,
+                l.flip,
+                l.tint.unwrap_or(tint),
                 alpha,
+                l.x_shift,
+                l.extra,
             );
         }
     }
-    // The Snow chain closes with `DrawToDepth(1f)` (`Main.cs:60186`); the
-    // other biomes' strata wait for the flush.
+    // The Snow/Mushroom chains close with `DrawToDepth(1f)`; the other biomes'
+    // strata wait for the flush.
     if closes_with_one && let Some(p) = ambience.as_deref_mut() {
         crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, 1.0, p.last);
     }
@@ -1184,11 +1389,42 @@ pub(crate) fn draw_bg_layer(
     tint: [f32; 3],
     alpha: f32,
 ) {
+    draw_tiled(
+        r, camera, zoom, screen, tex, scale, parallax, top, flip, tint, alpha, 0.0, 0,
+    );
+}
+
+/// The tiling loop of `DrawSurfaceBG_DrawBackMountainsLayer` /
+/// `DrawSurfaceBG_*`: `bgLoops = screenWidth / bgWidthScaled + 2` copies from
+/// `bgStartX`.
+#[allow(clippy::too_many_arguments)]
+fn draw_tiled(
+    r: &mut SpriteRenderer,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    tex: &BgTex,
+    scale: f32,
+    parallax: f32,
+    top: f32,
+    flip: bool,
+    tint: [f32; 3],
+    alpha: f32,
+    x_shift: f32,
+    extra: u8,
+) {
     // Terraria renders backgrounds through `BackgroundViewMatrix`, whose zoom is
     // `ForcedMinimumZoom` (1): the layers keep their screen size at any game zoom,
     // and `bgTopY` is already a screen-space top, so no further transform applies.
     let sw = tex.w * scale;
     let sh = tex.h * scale;
+    if sw <= 0.0 {
+        return;
+    }
+    // `Main.bgWidthScaled` is `(int)(width * bgScale)` — an int — while the sprite
+    // itself is drawn at the float `bgScale`, so the stride, the phase and the
+    // half-stride offset are all truncated but the quad is not.
+    let stride = sw as i32 as f32;
     let uv = if flip {
         [tex.uv[2], tex.uv[1], tex.uv[0], tex.uv[3]]
     } else {
@@ -1197,8 +1433,11 @@ pub(crate) fn draw_bg_layer(
     // `bgStartX = (int)(-IEEERemainder(screenPosition.X * bgParallax, bgWidthScaled)
     // - bgWidthScaled / 2)`: phase against the screen's left edge, not the camera
     // centre, and half a tile of offset so the tiling is centred on the view.
+    // The `(int)` truncates toward zero over the whole sum (C#), and the halving
+    // is integer division on `bgWidthScaled`.
     let screen_left = camera.x - screen.x * 0.5;
-    let start = -(ieee_remainder(screen_left * parallax, sw) as i32 as f32) - sw * 0.5;
+    let half = (stride as i32 / 2) as f32;
+    let start = (-ieee_remainder(screen_left * parallax, stride) - half) as i32 as f32 + x_shift;
     let mut x = start;
     while x < screen.x {
         push_screen(
@@ -1211,7 +1450,20 @@ pub(crate) fn draw_bg_layer(
             uv,
             [tint[0], tint[1], tint[2], alpha],
         );
-        x += sw;
+        x += stride;
+    }
+    for _ in 0..extra {
+        push_screen(
+            r,
+            camera,
+            zoom,
+            screen,
+            [x, top],
+            [sw, sh],
+            uv,
+            [tint[0], tint[1], tint[2], alpha],
+        );
+        x += stride;
     }
 }
 
@@ -1416,5 +1668,161 @@ mod underground_bg_tests {
         let b = tr_core::worldgen::generate(&opts);
         assert_eq!(a.hell_back_style, b.hell_back_style);
         assert!(a.hell_back_style < 3);
+    }
+}
+
+#[cfg(test)]
+mod surface_variant_bg_tests {
+    use super::*;
+
+    fn sheet() -> BgTex {
+        // 100x200 px at the atlas origin, so `du == tex.w` and `dv == tex.h`.
+        BgTex {
+            uv: [0.0, 0.0, 0.5, 0.5],
+            w: 100.0,
+            h: 200.0,
+        }
+    }
+
+    #[test]
+    fn background_offsets_match_set_background_offsets() {
+        // Spot rows of `Main.SetBackgroundOffsets` (`Main.cs:60384-60775`):
+        // corrupt style 4, jungle style 5, mushroom style 2, crimson style 6.
+        assert_eq!(bg_offsets(240), Some((Some(1.15), Some(0.30), 1800, 1500)));
+        assert_eq!(bg_offsets(242), Some((Some(1.34), Some(0.49), 2100, 1400)));
+        assert_eq!(bg_offsets(273), Some((None, Some(0.49), 2100, 1560)));
+        assert_eq!(bg_offsets(235), Some((None, Some(0.33), 1950, 1550)));
+        assert_eq!(bg_offsets(326), Some((None, Some(0.33), 2000, 1740)));
+        assert_eq!(bg_offsets(337), Some((Some(1.01), Some(0.35), 2500, 2200)));
+        // `261`/`262`/`219`/`220`/`221`/`321` set only the parallax — the caller's
+        // `bgTopY` magic numbers survive.
+        assert_eq!(bg_offsets(261), Some((None, Some(0.27), 0, 0)));
+        // `222`/`223`/`224`/`237`/`238`/`239` set only `num`/`num2` (the caller's
+        // `bgScale`/`bgParallax` survive).
+        assert_eq!(bg_offsets(222), Some((None, None, 1800, 1400)));
+        assert_eq!(bg_offsets(239), Some((None, None, 2100, 1900)));
+        // Ids the five style tables reach but the C# table does not list.
+        for id in [
+            12, 13, 14, 15, 16, 17, 29, 30, 31, 43, 44, 45, 46, 47, 48, 56, 57, 58, 59, 60, 61,
+            102, 103, 104, 105, 106, 107, 174, 175, 211, 212, 213, 214, 215, 216, 225, 226, 227,
+            229, 230, 231, 232, 233, 271, 272,
+        ] {
+            assert_eq!(bg_offsets(id), None, "id {id} must keep the caller's row");
+        }
+    }
+
+    #[test]
+    fn layer_y_offsets_match_get_layer_y_offset() {
+        // `Main.cs:59744-59779` down to the ids the five variants reach.
+        assert_eq!(layer_y_offset(59), -550.0);
+        assert_eq!(layer_y_offset(271), -300.0);
+        assert_eq!(layer_y_offset(272), -380.0);
+        assert_eq!(layer_y_offset(273), 0.0);
+        assert_eq!(layer_y_offset(60), 0.0);
+    }
+
+    #[test]
+    fn background_frame_steps_match_get_background_rect() {
+        // `Main.cs:61226-61258`.
+        assert_eq!(background_frame_step(235), 20);
+        assert_eq!(background_frame_step(219), 15);
+        assert_eq!(background_frame_step(271), 15);
+        assert_eq!(background_frame_step(281), 5);
+        assert_eq!(background_frame_step(240), 0);
+        assert_eq!(background_frame_step(105), 0);
+    }
+
+    #[test]
+    fn background_frame_halves_the_sheet_and_insets_two_pixels() {
+        let tex = sheet();
+        // `step == 0`: the whole sheet (`GetBackgroundRect` returns `null`).
+        assert_eq!(background_frame(&tex, 0, 7).w, 100.0);
+
+        // `Frame(2, 2, num % 2, num / 2)` then `Inflate(0, -2)`:
+        // half the sheet, 4 px shorter, top down 2 px.
+        let f = background_frame(&tex, 15, 0); // num = 0 -> col 0, row 0
+        assert_eq!((f.w, f.h), (50.0, 96.0));
+        assert_eq!(f.uv[0], 0.0);
+        assert_eq!(f.uv[2], 0.25);
+        // 2 px of 200 -> 0.005 in `v`; the bottom keeps the row's end minus 2 px.
+        assert!((f.uv[1] - 0.005).abs() < 1e-6, "v0 = {}", f.uv[1]);
+        assert!((f.uv[3] - 0.245).abs() < 1e-6, "v1 = {}", f.uv[3]);
+
+        // num = 1 -> col 1, row 0; num = 2 -> col 0, row 1.
+        let f = background_frame(&tex, 15, 15);
+        assert!((f.uv[0] - 0.25).abs() < 1e-6, "u0 = {}", f.uv[0]);
+        assert!((f.uv[1] - 0.005).abs() < 1e-6, "v0 = {}", f.uv[1]);
+        let f = background_frame(&tex, 15, 30);
+        assert_eq!(f.uv[0], 0.0);
+        assert!((f.uv[1] - 0.255).abs() < 1e-6, "v0 = {}", f.uv[1]);
+        // num wraps every four frames.
+        assert_eq!(
+            background_frame(&tex, 15, 60).uv[1],
+            background_frame(&tex, 15, 0).uv[1]
+        );
+    }
+
+    #[test]
+    fn front_layers_apply_set_background_offsets_and_double_the_scale() {
+        // Corrupt style 4 = `[240, 241, 242]`: all three rows are in the table,
+        // so both the scale and the `bgTopY` magic numbers are replaced.
+        let l = front_layers(
+            [240, 241, 242],
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            [Some(sheet()), None, None],
+            -150.0,
+        );
+        assert_eq!(l[0].scale, 1.15 * 2.0);
+        assert_eq!(l[0].parallax, 0.30);
+        assert_eq!((l[0].k, l[0].top), (1800.0, 1500.0 - 150.0));
+        assert_eq!(l[2].scale, 1.34 * 2.0);
+        assert_eq!((l[2].k, l[2].top), (2100.0, 1400.0 - 150.0));
+        assert!(l[1].tex.is_none());
+
+        // Jungle style 1 = `[59, 60, 61]`: no offsets, so the caller's rows win.
+        let l = front_layers(
+            [59, 60, 61],
+            [
+                (1.25, 0.40, 1800.0, 1660.0),
+                (1.31, 0.43, 1950.0, 1840.0),
+                (1.34, 0.49, 2100.0, 2060.0),
+            ],
+            [None, None, None],
+            -150.0,
+        );
+        assert_eq!(l[0].scale, 2.5);
+        assert_eq!(l[0].parallax, 0.40);
+        assert_eq!((l[0].k, l[0].top), (1800.0, 1510.0));
+
+        // Mushroom style 2 keeps row 1's 20-tick frame animation.
+        let l = front_layers([234, 235, 236], [(1.25, 0.4, 0.0, 0.0); 3], [None; 3], 0.0);
+        assert_eq!(
+            (l[1].parallax, l[1].top, l[1].frame_step),
+            (0.33, 1550.0, 20)
+        );
+    }
+
+    #[test]
+    fn mushroom_tint_lifts_the_blue_channel_most() {
+        // A dark base so the byte-max never swallows the glow.
+        let base = [0.05, 0.1, 0.2];
+        // `num5` at the middle of `Next(28, 42) * 0.001` with `mouseTextColor`
+        // at its rest value 225: 0.035 + 45/5000 = 0.044.
+        let num5 = 0.035 + (270.0 - 225.0) / 5000.0;
+        let t = mushroom_tint(base, 1.0, 0.5, [0.3, 0.45, 0.9], num5);
+        // `(0.3, 0.45 + num5/2, 0.9 + num5) * 255 * 0.5`, clamped to 255.
+        assert_eq!((t[0] * 255.0) as i32, 38);
+        assert_eq!((t[1] * 255.0) as i32, 60);
+        assert_eq!((t[2] * 255.0) as i32, 120);
+        // The channel is never pushed below the base colour's byte.
+        let dark = mushroom_tint([0.0, 0.0, 0.9], 1.0, 0.5, [0.0, 0.0, 0.0], 0.0);
+        assert_eq!(dark[2], (0.9f32 * 255.0) as i32 as f32 / 255.0);
+        // The cross-fade alpha scales the tint (`num4 = Colour.A / 255`).
+        let faded = mushroom_tint(base, 0.25, 0.5, [0.3, 0.45, 0.9], num5);
+        assert!(faded[2] < t[2] * 0.3, "faded b = {}", faded[2] * 255.0);
     }
 }
