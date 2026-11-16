@@ -4497,11 +4497,49 @@ town NPC whose home (and the cell above it) is in the room refuses the home
 the port's town kinds all carry the vanilla default category 0 (the
 category-1 kinds 637/638 are not ported), so a housed NPC always conflicts
 and the shared-room arm (`WorldGen.sharedRoomX`, `:5936-5939`) is
-unreachable — the score takes the shared room as an argument.
+unreachable — the score takes the shared room as an argument. (S1-E-11c
+below replaced that shortcut with the real `housingCategory` comparison.)
 
 Deviations: the relocation (`MoveTownNPC`/`moveRoom`, `WorldGen.cs:4685`/
-`:4843`), `GetHouseholdStatus` and the `lookForHomeTimeout` gate are still
-out.
+`:4843`), `GetHouseholdStatus` and the `lookForHomeTimeout` gate were still
+out at 11b.
+
+## Town housing (S1-E-11c, 2026-11-16)
+
+The relocation machinery, the `housingCategory` data and the household status.
+
+- **`housingCategory`** (`ID/HousingCategoryID.cs:3-8`: `CommonNPCs = 0`,
+  `PetNPCs = 1`) is `town.rs::housing_category`, keyed by the vanilla net id —
+  0 for every town NPC (`NPC.cs:8518`) and 1 for TownCat/TownDog 637/638
+  (`:17224`), TownBunny 656 (`:17308`), TownSlimeBlue 670 (`:17494`) and the
+  678-684 slime band (`:17607`). `CanNPCsLiveWithEachOther`
+  (`TownRoomManager.cs:144-156`) is `can_npcs_live_with_each_other`, so
+  `room_occupancy` now compares them the way `ScoreRoom_IsThisRoomOccupiedBySomeone`
+  (`WorldGen.cs:5821-5825`) does: a same-category occupant refuses the room,
+  a different-category one only sets `sharedRoomX` and the loop keeps going.
+  `quick_find_home`/`scan_spot` take the asking NPC's net id for it.
+- **`lookForHomeTimeout`** (`NPC.cs:6547`): `Npc::look_for_home_timeout`,
+  decaying one per tick at the `NPC.UpdateNPC` tail (`NPC.cs:90324-90327`).
+  `kickOut` arms it to `KICK_OUT_LOOK_FOR_HOME_TIMEOUT` = 3600
+  (`NPC.cs:95267`) and `moveRoom` clears it (`WorldGen.cs:4852`); both home
+  scans skip a non-zero timer (`WorldGen.cs:5621`, `:71635`).
+- **`GetHouseholdStatus`** (`TownRoomManager.cs:130-142`) is
+  `TownRooms::household_status`: 1 homeless, else 2 when `HasRoomQuick`, else
+  0. `TownRooms::occupants_at` ports `AddOccupantsToList` (`:22-31`).
+- **The relocation arm**: `town::kick_out`/`town::move_room` port
+  `WorldGen.kickOut` (`:4869-4879`) and `WorldGen.moveRoom` (`:4843-4855`),
+  and the arrival path now prefers a live homeless NPC of the kind over a
+  second spawn (`FindNPCLookingForHomeThatCanMoveIn` `:5428` →
+  `:5453-5463`).
+
+Reachability note: the shared-room arm is now **live in the predicate** but
+still unreachable in gameplay, because the port's `NpcKind` roster carries no
+category-1 pet kind (637/638/656/670/678-684 are unported, they have no AI
+and no bestiary row). The data and the predicate land 1:1 so that the arm
+turns on with the pets rather than needing a second pass. The remaining
+`S1-E-11` items are `MoveTownNPC`'s failure-reason feedback text
+(`:4694-4828`, the housing query UI reads it), which needs the housing-query
+`Main.mouseNPC` model (`ui/housing.rs:12-14`).
 
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
