@@ -14164,10 +14164,12 @@ casters (types 564/565). The whole arm is ported in
   at 40/48/56 (`ai[1] == 1`), and the `ai[0] <= 0` re-roll (-20 after the
   shadowflame, -120 otherwise);
 - the re-arm (`:65882-65927`): `ai[0] == 0 && localAI[3] >= 60` picks the
-  97/127/183 window per `ai[1]`;
+  97/127/183 window per `ai[1]`, gated by `flag9` (`:65905-65909` — the
+  shadowflame round needs the target within 1000 px and in line of sight);
 - the walk-anchor stuck detector (`:65968-66019`) and the
   `TargetClosestOldOnesInvasion` retarget / `FaceTarget` write of
-  `direction`+`directionY`;
+  `direction`+`directionY` (`:66009-66012`, inside the detector's
+  `localAI[2] >= 0` branch);
 - the probe columns (`:66020-66072`), the float gravity (`:66079-66097`),
   the `collideX`/`collideY` bounces off `oldVelocity` (`:66098-66121`) and
   the four steer blocks (`:66122-66185`).
@@ -14182,7 +14184,11 @@ the port's sim does not carry: the summon request rides `wants_sphere` as a
 single `DD2GoblinT1` at the mage's centre instead of one raised goblin per
 recorded death. `DD2Event.CanRaiseGoblinsHere` (`:699-714`, the
 three-deaths-in-800-px gate) is likewise unmodelled, so the `ai[1] == 2` arm
-is never dropped mid-sequence. `GetAttackDamage_ScaledByDifficulty` runs
+is never dropped mid-sequence. The re-arm's `flag8` scan (two damaged NPCs
+in the 1200x400 box, `:65884-65896`) needs the NPC list the AI method cannot
+see, and the `OnlyCrystal` half of `TargetClosestOldOnesInvasion`'s search
+(`NPCUtils.cs:268`, the 548 crystal) needs it too — the player arm of the
+search is modelled. `GetAttackDamage_ScaledByDifficulty` runs
 classic (the port has no difficulty-scaled NPC damage for this kind). The
 three tracked sounds (`DD2_EtherianPortalSpawnEnemy` at `localAI[3] == 30`,
 `DD2_DarkMageSummonSkeleton` at `ai[0] == 80`, `DD2_DarkMageCastHeal` at

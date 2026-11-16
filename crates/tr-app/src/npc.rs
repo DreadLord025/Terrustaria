@@ -10324,9 +10324,12 @@ impl Npc {
     /// list (`DD2Event._deadGoblinSpots`, the sim does not carry it) — the
     /// summon request rides `wants_sphere`. `CanRaiseGoblinsHere` (the
     /// three-dead-goblins-in-800-px gate) is likewise unmodelled, so the
-    /// `ai[1] == 2` arm is never dropped. `GetAttackDamage_ScaledByDifficulty`
-    /// runs classic. The tracked sounds (portal spawn, summon, heal) and the
-    /// portal dust ride the audio/dust passes.
+    /// `ai[1] == 2` arm is never dropped. The re-arm's `flag8` damaged-NPC
+    /// scan and `TargetClosestOldOnesInvasion`'s `OnlyCrystal` filter need
+    /// the NPC list this method cannot see — the player arm is modelled.
+    /// `GetAttackDamage_ScaledByDifficulty` runs classic. The tracked sounds
+    /// (portal spawn, summon, heal) and the portal dust ride the audio/dust
+    /// passes.
     fn update_dark_mage(&mut self, world: &World, player: &Player, rng: &mut u64) {
         // The type-564/565 variant block (`:65813-65827`).
         self.rotation = self.vx * 0.04;
@@ -10435,16 +10438,29 @@ impl Npc {
             }
         }
         // `:65882-65927` — the re-arm. The C#'s `flag8` scan (two damaged
-        // NPCs in the 1200×400 box) and `CanRaiseGoblinsHere` are
-        // unmodelled (see the doc comment): with the materialize done and
-        // the rest elapsed the mage rearms on its rolled pattern.
+        // NPCs in the 1200×400 box, `:65884-65896`) and `CanRaiseGoblinsHere`
+        // (`:65901-65904`) are unmodelled (see the doc comment): the
+        // `ai[1]` pattern the cast cycle rolled picks the window.
         if self.ai[0] == 0.0 && self.caster_counter >= 60 {
-            match self.ai[1] as u32 {
-                0 => self.ai[0] = 97.0,
-                1 => self.ai[0] = 127.0,
-                _ => self.ai[0] = 183.0,
+            // `:65905-65909` — `flag9`: a shadowflame round (`ai[1] == 0`)
+            // needs the target within 1000 px and in line of sight.
+            let mut flag9 = true;
+            if self.ai[1] == 0.0 {
+                let d = ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt();
+                if d >= 1000.0
+                    || !crate::projectile::can_hit_line(world, cx, cy, 0.0, 0.0, pcx, pcy, 0.0, 0.0)
+                {
+                    flag9 = false;
+                }
             }
-            flag6 = true;
+            if flag9 {
+                match self.ai[1] as u32 {
+                    0 => self.ai[0] = 97.0,
+                    1 => self.ai[0] = 127.0,
+                    _ => self.ai[0] = 183.0,
+                }
+                flag6 = true;
+            }
         }
         // `:65928-65942`: the portal materialize's alpha fade (`localAI[3]`
         // is the port's `caster_counter`).
@@ -10455,8 +10471,12 @@ impl Npc {
             self.caster_counter += 1;
             self.alpha = self.alpha.saturating_sub(5);
         }
+        // `:65964-65967` — the C# zeroes `localAI[2]` again on `justHit`; the
+        // type-564/565 block above already zeroes it every tick, so the
+        // reset is a no-op here and is folded into that write.
         // `:65968-66019` — the walk-anchor stuck detector and the target
-        // facing.
+        // facing (`flag2` is never set for these types, so the `!flag2`
+        // gate is always open).
         {
             let local = &mut self.dark_mage_local;
             if local[2] >= 0.0 {
@@ -10476,6 +10496,8 @@ impl Npc {
                 }
                 if flag10 & flag11 {
                     local[2] += 1.0;
+                    // `:65991-65994`: 30 ticks at the un-widened 16-px band
+                    // raise `flag`, which the `flag5 == false` arm never reads.
                     if local[2] >= 60.0 {
                         local[2] = -180.0;
                         self.facing = -self.facing;
@@ -10487,31 +10509,35 @@ impl Npc {
                     local[1] = self.y;
                     local[2] = 0.0;
                 }
+                // `:66009-66012` — `flag7` (false on a casting tick) runs
+                // `NPCUtils.TargetClosestOldOnesInvasion` (`NPCUtils.cs:262-278`):
+                // a player within 200 px of the centre is re-targeted and
+                // `FaceTarget` (`NPC.cs:77646-77650`) turns both axes on its
+                // centre. The search's second filter (`OnlyCrystal`, the 548)
+                // needs the NPC list, which this method cannot see — the
+                // player arm is the one modelled (see the doc comment).
+                if flag7 {
+                    let d = ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt();
+                    if !player.dead && d <= 200.0 {
+                        self.facing = if pcx < cx { -1 } else { 1 };
+                        self.direction_y = if pcy < cy { -1 } else { 1 };
+                    }
+                }
             } else {
+                // `:66014-66018` — the `localAI[2] < 0` rest: count up and
+                // face the target's x only.
                 local[2] += 1.0;
                 self.facing = if pcx > cx { 1 } else { -1 };
             }
         }
-        // `:66009-66012` — `flag7` (false on a casting tick) runs
-        // `NPCUtils.TargetClosestOldOnesInvasion` (`NPCUtils.cs:262-278`): the
-        // nearest player within 200 px is re-targeted and `FaceTarget`
-        // (`NPC.cs:77646-77650`) turns both axes on its centre.
-        if flag7 {
-            let d = ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt();
-            if !player.dead && d <= 200.0 {
-                self.facing = if pcx < cx { -1 } else { 1 };
-                self.direction_y = if pcy < cy { -1 } else { 1 };
-            }
-        }
         // `:66020-66023` — the probe columns. `num18` is the walk column two
-        // tiles ahead, `num19` its feet row, `num20`/`num21` the body column
-        // at the bottom's sub-tile coordinate (the 2-tall `num3` scan).
+        // tiles ahead of the centre; `num19` is `(int)(Y + height) / 16`,
+        // `num20` `(int)Bottom.Y / 16` (the same row) and `num21` the
+        // `Bottom.X` column — not the centre.
         let num18 = ((self.x + w * 0.5) / TILE_PX) as i32 + self.facing * 2;
         let num19 = ((self.y + h) / TILE_PX) as i32;
-        // `(int)(v / 16f)` and `(int)v / 16` are both `floor(v / 16)` for the
-        // positive coordinates — the port folds the pair.
-        let num20 = ((self.y + h) / TILE_PX) as i32;
-        let num21 = ((self.x + w * 0.5) / TILE_PX) as i32;
+        let num20 = num19;
+        let num21 = ((self.x + w) / TILE_PX) as i32;
         // `:66024-66028` — a casting tick damps the velocity by `num12` and
         // returns from the AI, skipping the whole probe/gravity/steer tail.
         // The C# still runs `UpdateCollision` after `AI()`
@@ -22965,6 +22991,27 @@ mod dark_mage_tests {
         assert_eq!(mage.facing, 1, "the aim re-set direction rightward");
         let speed = (shot.3 * shot.3 + shot.4 * shot.4).sqrt();
         assert!((speed - 14.0).abs() < 1e-4, "the 14-px aim: {speed}");
+    }
+
+    #[test]
+    fn dark_mage_rearm_gates_the_shadowflame_on_reach_and_los() {
+        // NPC.cs:65905-65909 — `flag9`: the `ai[1] == 0` round only rearms
+        // when the target is under 1000 px away and `Collision.CanHitLine`
+        // is clear.
+        let w = tr_core::World::new("t".into(), 256, 128);
+        let mut player = Player::spawn(&w);
+        // 1200 px away: past the re-arm reach.
+        player.x = 1800.0;
+        let mut mage = Npc::new(NpcKind::DD2DarkMage, 600.0, 600.0, 1, 0.0);
+        mage.caster_counter = 60;
+        mage.ai[0] = 0.0;
+        mage.ai[1] = 0.0;
+        mage.update_dark_mage(&w, &player, &mut 0);
+        assert_eq!(mage.ai[0], 0.0, "the far shadowflame round never armed");
+        // Inside the reach with a clear line: it arms the 97 window.
+        player.x = 900.0;
+        mage.update_dark_mage(&w, &player, &mut 0);
+        assert_eq!(mage.ai[0], 97.0, "the in-reach round armed");
     }
 }
 
