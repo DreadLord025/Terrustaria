@@ -2445,6 +2445,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     n.slot = i;
                     n.update_rng(world, player, step, npcs_rng);
                     black_slime_darkness_touch(n, player, npcs_rng);
+                    // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
+                    // look-for-home timer decays one per tick.
+                    if n.look_for_home_timeout > 0 {
+                        n.look_for_home_timeout -= 1;
+                    }
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
                     // sounds ride the same per-NPC stream after the AI's
                     // draws — the table's rolls, then the legacy family's
@@ -2541,16 +2546,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let npcs = &mut app.npcs;
         // The positions first: the room scan reads the whole NPC list (the
         // occupancy), so the mutable pass runs before it.
-        let mut asking: Vec<(usize, i32, i32)> = Vec::new();
+        let mut asking: Vec<(usize, i32, i32, i32)> = Vec::new();
         for (i, n) in npcs.iter().enumerate() {
-            if n.kind != NpcKind::Guide || n.home.is_some() {
+            if n.kind != NpcKind::Guide || n.home.is_some() || n.look_for_home_timeout > 0 {
                 continue;
             }
-            asking.push((i, (n.x / TILE_PX) as i32, (n.y / TILE_PX) as i32));
+            asking.push((
+                i,
+                (n.x / TILE_PX) as i32,
+                (n.y / TILE_PX) as i32,
+                n.kind.net_id(),
+            ));
         }
-        for (i, tx, ty) in asking {
+        for (i, tx, ty, net_id) in asking {
             // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
-            if let Some((hx, hy)) = crate::town::quick_find_home(world, npcs, tx, ty, Some(i)) {
+            if let Some((hx, hy)) =
+                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), net_id)
+            {
                 // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
                 // the home assigns, the homeless flag clears.
                 npcs[i].home = Some((hx, hy));
@@ -2610,10 +2622,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             if let Some(player) = app.player.as_ref() {
                 let xt = (player.x / TILE_PX) as i32;
                 let yt = (player.y / TILE_PX) as i32;
-                if let Some((hx, hy)) = crate::town::quick_find_home(&app.world, &app.npcs, xt, yt, None) {
-                    if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
-                        // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
-                        // the room assigns and the homeless flag clears.
+                if let Some((hx, hy)) =
+                    crate::town::quick_find_home(&app.world, &app.npcs, xt, yt, None, kind.net_id())
+                {
+                    // `WorldGen.SpawnTownNPC`'s relocation arm
+                    // (`WorldGen.cs:5428` `FindNPCLookingForHomeThatCanMoveIn`
+                    // → `:5453-5463`): an already-live homeless NPC of this
+                    // kind (and not on a `kickOut` cooldown, `:5621`) takes the
+                    // room instead of a second copy spawning. That is what
+                    // `moveRoom` (`:4843-4855`) relies on.
+                    let existing = app
+                        .npcs
+                        .iter()
+                        .position(|n| n.kind == kind && n.home.is_none() && n.look_for_home_timeout == 0);
+                    if let Some(idx) = existing {
+                        let mut rooms = std::mem::take(&mut app.town_rooms);
+                        let npc = &mut app.npcs[idx];
+                        crate::town::move_room(&mut rooms, npc, (hx, hy));
+                        app.town_rooms = rooms;
+                        // `:5460`: the relocation fires NO_HOBO (progression 8).
+                        let _ = app.achievements.notify_progression(8);
+                    } else if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
+                        // `WorldGen.cs:5564-5565`: the arrival writes its room.
                         n.home = Some((hx, hy));
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
