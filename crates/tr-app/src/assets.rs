@@ -198,6 +198,16 @@ pub fn load_world_sheets(
     Ok(images)
 }
 
+/// `Images/Misc/MoonExplosion/*` sheet names, in the order
+/// [`Lookups::moon_explosion`] indexes them (`MoonlordDeathDrama.cs:231-242`).
+const MOON_EXPLOSION_SHEETS: [&str; 5] = [
+    "Misc/MoonExplosion/Spine",
+    "Misc/MoonExplosion/Shoulder",
+    "Misc/MoonExplosion/Torso",
+    "Misc/MoonExplosion/Head",
+    "Misc/MoonExplosion/Explosion",
+];
+
 /// Every whole-image sheet the static half of the atlas packs, in a fixed
 /// order. Exposed so the renderer's tests can assert that a sheet a draw arm
 /// asks `sky_tex` for is actually in here — the M4-NPC-3v bug was exactly that
@@ -396,6 +406,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_165",
         "Extra_246",
         "Extra_251",
+        // S1-E-16 screen effects: `Extra_49` is the `ScreenObstruction` border
+        // diamond (`ScreenObstruction.cs:53`), `Extra_98` the paladin-shield
+        // boundary arc (`Main.cs:57248`) and `FlameRing` the inferno halo
+        // (`Main.cs:64321`).
+        "Extra_49",
+        "Extra_98",
+        "FlameRing",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -1115,6 +1132,15 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // `MoonlordDeathDrama`'s parts + blast (`MoonlordDeathDrama.cs:231-242`):
+    // `Images/Misc/MoonExplosion/{Spine,Shoulder,Torso,Head,Explosion}`.
+    for name in ["Spine", "Shoulder", "Torso", "Head", "Explosion"] {
+        match load_misc_png(dir, &format!("MoonExplosion/{name}")) {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing Misc/MoonExplosion/{name}"),
+        }
+    }
+
     // `DrawTile_LiquidBehindTile`: `Liquid_*` is the 16 px partial strip and
     // `LiquidSlope_*` the four diagonal masks drawn behind blocks that stand in
     // liquid.
@@ -1665,6 +1691,19 @@ pub struct Lookups {
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
+    /// (`ScreenObstruction.cs:53`).
+    pub extra_49: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[98]`: the paladin-shield boundary arc
+    /// (`Main.cs:57248`) — loaded for S1-E-16, the draw is gated on
+    /// `Player.hasPaladinShield` (unported).
+    pub extra_98: Option<tr_render::SheetRect>,
+    /// `TextureAssets.FlameRing`: the inferno halo (`Main.cs:64321`), 400×1200
+    /// (3 rings of 400×400) — the draw is gated on `Player.inferno`.
+    pub flame_ring: Option<tr_render::SheetRect>,
+    /// `Images/Misc/MoonExplosion/{Spine,Shoulder,Torso,Head,Explosion}`
+    /// (`MoonlordDeathDrama.cs:231-242`).
+    pub moon_explosion: [Option<tr_render::SheetRect>; 5],
     /// `TextureAssets.Buff[type]` (`Images/Buff_<id>`): the buff bar's icons
     /// (`Main.DrawBuffIcon`, `Main.cs:43310`).
     pub buff_icons: HashMap<u16, tr_render::SheetRect>,
@@ -2036,6 +2075,10 @@ impl Lookups {
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
+            extra_49: atlas.sheet("Extra_49").copied(),
+            extra_98: atlas.sheet("Extra_98").copied(),
+            flame_ring: atlas.sheet("FlameRing").copied(),
+            moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),

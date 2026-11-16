@@ -14,7 +14,7 @@ use tr_core::scene::{Sandstorm, SceneState};
 use tr_core::scene::{SceneMetrics, ZONE_SCAN_SIZE, is_desert_biome_sand, ocean_depths};
 
 use crate::app::App;
-use crate::npc::Npc;
+use crate::npc::{Npc, NpcKind};
 use crate::player::{self, Player};
 
 /// `SceneMetrics.TownNPCRectSize` (`SceneMetrics.cs:920`):
@@ -143,6 +143,9 @@ pub(crate) fn scan_scene_full(
     // tile's wall — the temple/granite/marble/hive/gem-cave zones and the
     // underground desert.
     metrics.calculate_wall_zones(world);
+    // `Main.maxTilesX`/`maxTilesY`: the `MoonlordDeathDrama` `Dead` walls
+    // (`MoonlordDeathDrama.cs:29-31`, `:105`).
+    metrics.world_tiles = (world.width, world.height);
     metrics
 }
 
@@ -367,6 +370,7 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         sandstorm,
         filter_driver,
         settings,
+        npcs,
         ..
     } = app;
     // The TR_ pins re-read per frame (idempotent; the parse glue of phase 1).
@@ -430,15 +434,70 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         (view_max.x / 16.0).floor() as i32 + 2 + 28,
         (view_max.y / 16.0).floor() as i32 + 2 + 28,
     );
-    let metrics = scan_scene_full(
+    let mut metrics = scan_scene_full(
         world,
         center,
         rain.is_raining(),
         sandstorm.happening,
         player.as_ref().is_some_and(|p| p.shimmer_wet),
         Some(visual_area),
-        &app.npcs,
+        npcs,
     );
+    // `SceneMetrics.AddPlayerEffects` (`SceneMetrics.cs:747+`) plus the
+    // `ScreenObstruction`/`ScreenDarkness` inputs. Vanilla reads them off
+    // `PerspectivePlayer` / `Main.npc[]`; the port has neither field, so the
+    // driver fills the metrics directly.
+    if let Some(p) = player.as_ref() {
+        // `Player.headcovered` (`Player.cs:11826-11829`): buff 163.
+        metrics.headcovered = p.buffs.find_buff_index(163).is_some();
+        // `Player.DoUnbreakableWallScan` (`Player.cs:28606-28619`) behind the
+        // `Main.dualDungeonsSeed` gate (`:28608`).
+        metrics.inside_unbreakable_walls = world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::DUAL_DUNGEONS)
+            && tr_core::scene::inside_unbreakable_walls(
+                world,
+                (metrics.center[0] as i32) >> 4,
+                (metrics.center[1] as i32) >> 4,
+            );
+        // `DangerousDungeonCurse` (`DangerousDungeonCurse.cs:5-55`).
+        metrics.curse_progress_needed = tr_core::scene::curse_progress_needed(
+            metrics.zone_lihzhard_temple,
+            metrics.zone_hallow,
+            metrics.zone_dungeon,
+            metrics.zone_jungle,
+            metrics.zone_crimson || metrics.zone_corrupt,
+        );
+        metrics.curse_progress_safely = tr_core::scene::curse_progress_safely(
+            world.downed_mech_boss_any() || world.downed_queen_slime,
+            world.downed_skeletron || world.hard_mode,
+            world.downed_queen_bee,
+            // `NPC.downedBoss2` — the Eater of Worlds / Brain.
+            world.downed_eow,
+            // `NPC.downedSlimeKing || NPC.downedBoss1` (the Eye).
+            world.downed_slime_king || world.downed_eoc,
+        );
+    }
+    // `ScreenDarkness.Update`'s `Main.npc[]` walk (`:17-32`): only the two
+    // kinds with an arm matter, and only while active. Duke Fishron (370) is
+    // not a ported `NpcKind` yet, so only the Wall of Flesh row exists.
+    metrics.screen_darkness_npcs = npcs
+        .iter()
+        .filter(|n| n.hp > 0 && matches!(n.kind, NpcKind::WallOfFlesh))
+        .map(|n| {
+            let (cx, cy) = n.center();
+            tr_core::scene::ScreenDarknessNpc {
+                npc_type: 113,
+                center: [cx, cy],
+                // The C# fields this arm reads are `ai[0]`/`ai[2]` on the
+                // 370 row and `localAI[1]` on this one; the port folds the
+                // WoF abandonment ramp into `ai[0]` (`npc.rs:9160`).
+                ai0: n.ai[0],
+                ai2: n.ai[2],
+                local_ai1: n.ai[0],
+            }
+        })
+        .collect();
     // `Main.SceneState.Update` (`Main.cs:17816`); the `skipTransitions` the
     // manage calls read is the pre-update value — vanilla flips it at `:62`,
     // after `ApplyVisuals` inside `Update`.
