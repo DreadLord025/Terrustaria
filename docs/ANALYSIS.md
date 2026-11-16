@@ -14546,6 +14546,48 @@ Deliberate deviations:
    hurts, `NPC.cs:81535-81545`) have no ported kinds.
 
 
+## The tile-break sound table (S1-E-21c, 2026-11-16)
+
+`WorldGen.KillTile_PlaySounds` (`WorldGen.cs:66427-66575`, called from
+`KillTile` `:63558`) is the biggest single missing cue table: ~200 tile types
+resolve to one of 13 asset families. It is a pure per-type switch — no state,
+no draw except the 147/224 roll — so it ports as a table.
+
+`tr-core/src/edit.rs::kill_tile_sound(kind, frame_x, fail)` returns
+`KillSounds { primary, extra, shatter }`; the app maps each `(sound id, style)`
+through `world_sim/editing.rs::kill_cue` to a pinned asset and the case's
+volume scale (`LegacySoundPlayer.PlaySound`, `:360-1100`). `break_tile` plays
+the hit cell's cues **once**, before the loot, and the pot events now play
+their real `CheckPot` cues (4/6/13 → `NPC_Killed_1`/`Grass`/`Shatter`) rather
+than the `Dig_1` stand-in.
+
+Deliberate deviations:
+
+1. **Variation families are pinned** (research D3): `Dig_0..2`, `Tink_0..2`
+   and `Item48`/`Item49` are a per-play `Main.rand`/`genRand` pick in the C#;
+   the port plays one fixed member (`Dig_1`, `Tink_1`, `Item_48`). Audio-only:
+   no state depends on the pick.
+2. **The per-play pitch jitter is not applied at the call site**: the
+   `LegacySoundPlayer` cases roll `Main.rand.Next(-10,11)*0.01` (and the
+   item/dig windows) per play. `sound.rs` already carries the roll machinery
+   (`legacy_family_pitch`, S1-E-22) with `Playback.pitch`; the headless
+   `Audio::play_at` path plays without a resampler, so the roll is not wired
+   here. Recorded as an audio-output gap, not a behaviour one.
+3. **The per-family instance pools are not modelled**: the C# stops and
+   recreates `SoundInstanceDig[n]`/`SoundTink[n]`/`SoundItem[n]` per play. The
+   port's `play_at` opens a fresh `rodio` stream per call; the audible result is
+   the same single-shot cue (the tracked-sound layer, S1-E-23, is for the
+   looping/ambient families).
+4. **The per-drop sound is gone**: the port used to play `Dig_1` once per
+   dropped item in `break_tile`. The C# plays the break cue once, at the hit
+   cell, from `KillTile_PlaySounds` — `Item.NewItem` plays nothing. The
+   per-drop cue was an invention and is removed.
+5. **The failure-tick callers stay unported**: `Player.cs:39880` and
+   `Projectile.cs:70219` play the table with `fail: true` while a pickaxe
+   chips an unbreakable tile / a drill bit bites. The port has no per-tick chip
+   path (it refuses the break outright), so only `fail: false` is wired; the
+   table itself carries the `fail` arms (the glass pop and the shatter tail).
+
 ## The hover family's residuals (S1-D-3l, 2026-11-14)
 
 `AI_005_EaterOfSouls` (`NPC.cs:50244-50760`) is the shared fly core of the

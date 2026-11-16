@@ -1938,6 +1938,45 @@ fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
     }
 }
 
+/// Map one legacy `(sound id, style)` cue to the port's pinned asset + volume
+/// scale (`LegacySoundPlayer.PlaySound`, `LegacySoundPlayer.cs:360-1100`):
+/// the per-case asset family and the style's volume multiplier. The port pins
+/// one variation per family (research D3) and does not port the per-play pitch
+/// jitter (`Main.rand.Next(-10,11)*0.01` etc. — an audio-only deviation).
+/// `None` = a family the port has no cue for.
+fn kill_cue((id, style): edit::SoundCue) -> Option<(&'static str, f32)> {
+    Some(match (id, style) {
+        // case 0 (`:440-452`) — `SoundDig[Next(3)]`; pinned to Dig_1.
+        (0, _) => ("Dig_1", 1.0),
+        // case 2 (`:516-644`) — `SoundItem[style]`; style 52's volume 0.35
+        // (`:567-569`).
+        (2, 27) => ("Item_27", 1.0),
+        (2, 48) => ("Item_48", 1.0),
+        (2, 49) => ("Item_49", 1.0),
+        (2, 50) => ("Item_50", 1.0),
+        (2, 52) => ("Item_52", 0.35),
+        (2, 127) => ("Item_127", 1.0),
+        (2, 173) => ("Item_173", 1.0),
+        (2, 177) => ("Item_177", 1.0),
+        // case 3 (`:646-671`) — `SoundNpcHit[style]`; styles 20-54 halve
+        // the volume (`:647-650`).
+        (3, 25) => ("NPC_Hit_25", 0.5),
+        // case 4 (`:673-694`) — `SoundNpcKilled[style]` (styles 23-57 halve
+        // the volume, `:674-677` — neither style used here is in range).
+        (4, 11) => ("NPC_Killed_11", 1.0),
+        (4, _) => ("NPC_Killed_1", 1.0),
+        // case 6 (`:706-715`) — `SoundGrass`.
+        (6, _) => ("Grass", 1.0),
+        // case 13 (`:783-791`) — `SoundShatter`.
+        (13, _) => ("Shatter", 1.0),
+        // case 18 (`:865-869`) — `SoundCoins`.
+        (18, _) => ("Coins", 1.0),
+        // case 21 (`:924-935`) — `SoundTink[Next(3)]`; pinned to Tink_1.
+        (21, _) => ("Tink_1", 1.0),
+        _ => return None,
+    })
+}
+
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // The three `CanKillTile` refusals (`WorldGen.cs:62219-62326`) gate
     // every break source — the C# `KillTile` entry duplicates them through
@@ -1982,16 +2021,33 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
-    // `CheckPot`'s break sound by style (:56856-56867, `pot_break_sound`) —
-    // SoundID 4/6/13 have no ported cues, so the generic break cue stands in
-    // at the event cell (ANALYSIS entry, phase 5).
+    // `WorldGen.KillTile_PlaySounds(i, j, fail, tileCache)` (`WorldGen.cs:
+    // 66427-66575`) for the hit cell, played before the cascade's loot — the
+    // C# calls it at the top of `KillTile` (:63558) and the tile is always a
+    // real break here (`fail: false`; the port's refusal path returns above).
+    if let Some(hit) = &hit {
+        let sounds = edit::kill_tile_sound(hit.kind, hit.frame_x, false);
+        let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+        for cue in [sounds.primary, sounds.extra, sounds.shatter]
+            .into_iter()
+            .flatten()
+        {
+            if let Some((name, volume)) = kill_cue(cue) {
+                app.audio.play_at(name, px, py, volume);
+            }
+        }
+    }
+    // `CheckPot`'s break sound by style (:56856-56867, `pot_break_sound`),
+    // at the event cell.
     for event in &kill.events {
-        app.audio.play_at(
-            "Dig_1",
-            event.x as f32 * TILE_PX,
-            event.y as f32 * TILE_PX,
-            1.0,
-        );
+        if let Some((name, volume)) = kill_cue((edit::pot_break_sound(event.style), 1)) {
+            app.audio.play_at(
+                name,
+                event.x as f32 * TILE_PX,
+                event.y as f32 * TILE_PX,
+                volume,
+            );
+        }
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
@@ -2023,10 +2079,10 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     for (id, count, x, y) in drops {
         // The tile-break drops draw the same `UpdatePlayers` stream the
         // break rolls used (`Main.rand` = the active swap, `Main.cs:17754`).
+        // No per-drop cue: the C# plays the break sound once, from
+        // `KillTile_PlaySounds` (the table above), never per `Item.NewItem`.
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         spawn_item_drop(&mut app.items, rng, id, count, x, y);
-        app.audio
-            .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
     }
     // `WorldGen.CheckPalmTree`'s canopy re-roll (`:54385-54388`): the palm
     // cells whose cell above is gone take a fresh canopy frame. The roll
@@ -4805,6 +4861,53 @@ mod tests {
         .unwrap();
         assert_eq!(cue, None);
         assert_eq!(events, vec![(32, 10, 17)]);
+    }
+
+    #[test]
+    fn s1_e_21c_kill_cue_maps_the_legacy_families() {
+        // The five families the tile-break table can emit, pinned to the
+        // port's asset + the case's volume scale (`LegacySoundPlayer.cs`).
+        assert_eq!(kill_cue((0, 1)), Some(("Dig_1", 1.0)));
+        assert_eq!(kill_cue((6, 1)), Some(("Grass", 1.0)));
+        assert_eq!(kill_cue((13, 1)), Some(("Shatter", 1.0)));
+        assert_eq!(kill_cue((18, 1)), Some(("Coins", 1.0)));
+        assert_eq!(kill_cue((21, 1)), Some(("Tink_1", 1.0)));
+        // Item case: the per-style asset, the style-52 attenuation (:567-569).
+        assert_eq!(kill_cue((2, 27)), Some(("Item_27", 1.0)));
+        assert_eq!(kill_cue((2, 177)), Some(("Item_177", 1.0)));
+        assert_eq!(kill_cue((2, 52)), Some(("Item_52", 0.35)));
+        // NPC hit styles 20-54 halve the volume (:647-650).
+        assert_eq!(kill_cue((3, 25)), Some(("NPC_Hit_25", 0.5)));
+        // The killed family: the mummy's style 11 and the plain style 1.
+        assert_eq!(kill_cue((4, 11)), Some(("NPC_Killed_11", 1.0)));
+        assert_eq!(kill_cue((4, 1)), Some(("NPC_Killed_1", 1.0)));
+        // An unlisted family stays silent rather than guessing a cue.
+        assert_eq!(kill_cue((99, 1)), None);
+    }
+
+    #[test]
+    fn s1_e_21c_a_break_plays_the_tile_cue_once() {
+        // A plain dirt tile (kind 0? no — 1 = stone) breaks with the Tink
+        // cue (`WorldGen.cs:66500-66504`) and nothing per drop.
+        let mut w = World::new("t".into(), 40, 40);
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut app = mining_app(w, 20, 20);
+        let before = app.audio.played_count();
+        break_tile(&mut app, 20, 20);
+        assert_eq!(
+            app.audio.played_count() - before,
+            1,
+            "one break cue, no per-drop sound"
+        );
     }
 
     #[test]
