@@ -56,7 +56,75 @@ const TXT_NAME_EMPTY: &str = "Name is empty.";
 const TXT_NAME_TOO_LONG: &str = "Name is too long.";
 const TXT_NAME_TAKEN: &str = "That name is taken.";
 
+/// `WorldGen.IsChestRigged` (`WorldGen.cs:...`): the Dead Man's Chest is the
+/// 467 tile whose `frameX / 36 == 4`.
+pub(crate) fn is_rigged(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| t.kind == 467 && t.frame_x / 36 == 4)
+}
+
+/// The `54 NPCBuffs` body's pairs (`NetMessage.cs:1028-1037`): every live
+/// `(buffType, buffTime)` with both positive.
+pub(crate) fn npc_buffs_of(npc: &crate::npc::Npc) -> Vec<(u16, u16)> {
+    npc.buffs
+        .buff_type
+        .iter()
+        .zip(npc.buffs.buff_time.iter())
+        .filter(|(t, time)| **t > 0 && **time > 0)
+        .map(|(t, time)| (*t as u16, (*time).clamp(0, u16::MAX as i32) as u16))
+        .collect()
+}
+
 impl App {
+    /// `Main.chest[i]`'s array slot, created when absent: the C# client holds
+    /// the whole 8000-slot array from the world load, the port ships chests
+    /// lazily, so the `155`/`69` arms materialise their slot first.
+    fn materialise_chest_slot(
+        chests: &mut Vec<crate::chest::WorldChest>,
+        idx: usize,
+    ) -> Option<&mut crate::chest::WorldChest> {
+        if idx >= crate::chest::MAX_CHESTS {
+            return None;
+        }
+        while chests.len() <= idx {
+            chests.push(crate::chest::WorldChest {
+                tile: crate::chest::unplaced_tile(),
+                max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+                ..Default::default()
+            });
+        }
+        chests.get_mut(idx)
+    }
+
+    /// `NetMessage.SendChestContentsTo` (`NetMessage.cs:1868-1876`): the `155`
+    /// size header then one `32` per slot, all to the one target.
+    fn send_chest_contents_to(&self, server: &net::Server, chest: usize, target: u32) {
+        let Some(c) = self.world_chests.get(chest) else {
+            return;
+        };
+        let (tx, ty) = c.tile;
+        let max_items = c.max_items;
+        server.send(
+            target,
+            &S2c::ChestSize(net::ChestSize {
+                chest: chest as i16,
+                size: max_items.min(i16::MAX as usize) as i16,
+            }),
+        );
+        for slot in 0..max_items {
+            let item = c.slots.get(slot).copied().unwrap_or(crate::item::EMPTY_SLOT);
+            server.send(
+                target,
+                &S2c::ChestItem(net::ChestItem {
+                    chest: chest as i16,
+                    slot: slot as u8,
+                    stack: item.count.min(i16::MAX as u32) as i16,
+                    prefix: item.prefix.min(u8::MAX as u16) as u8,
+                    kind: item.kind as i16,
+                }),
+            );
+        }
+        let _ = (tx, ty);
+    }
     /// Drains network events without borrowing `self.net` across handlers, and
     // keeps the idle timers alive (`TimeOutTimer`, `MessageBuffer.cs:127-134`).
     pub(crate) fn poll_net(&mut self) {
@@ -192,6 +260,19 @@ impl App {
             return;
         }
         match msg {
+            // `case 50` - a player's buff bar (`MessageBuffer.cs:2454-2480`).
+            // The host forces the subject to the sender (`:2457-2460`), reads
+            // the ids, gives each 60 ticks and relays to the others.
+            C2s::PlayerBuffs(pb) => {
+                self.remote_players.entry(id).or_default().buffs = pb.buffs.clone();
+                server.broadcast_except(
+                    &S2c::PlayerBuffs(net::PlayerBuffs {
+                        player_id: id as u8,
+                        buffs: pb.buffs,
+                    }),
+                    id,
+                ); // `:2478`
+            }
             // `case 1` — the version literal (`MessageBuffer.cs:199-214`).
             C2s::Connect(version) => {
                 if server.state(id) != slot_state::FRESH {
@@ -480,6 +561,187 @@ impl App {
                             server.broadcast(&S2c::ItemDead { slot: drop as i16 });
                         }
                     }
+                }
+            }
+            // `case 31` — the client asks to open a chest
+            // (`MessageBuffer.cs:1868-1895`): `FindChest`, refuse when another
+            // player already browses it, else `SendChestContentsTo` (155 + the
+            // 32 burst), `33` to the asker, `80` to the others and the rigged
+            // chest's `59`.
+            C2s::ChestOpenRequest(req) => {
+                let (cx, cy) = (req.x as i32, req.y as i32);
+                let Some(chest_idx) = crate::chest::find_chest(&self.world_chests, cx, cy) else {
+                    return; // `num254 > -1` (`:1877`)
+                };
+                // `Chest.UsingChest(num254) == -1` (`:1877`): nobody else is
+                // browsing it. The port's other players are the remote slots.
+                if self
+                    .remote_players
+                    .values()
+                    .any(|p| p.chest == Some(chest_idx as i16))
+                {
+                    return;
+                }
+                self.send_chest_contents_to(server, chest_idx, id);
+                let idx = chest_idx as i16;
+                server.send(id, &S2c::PlayerChest(net::PlayerChest {
+                    chest: idx,
+                    x: cx as i16,
+                    y: cy as i16,
+                    name_len: 0,
+                    name: String::new(),
+                })); // `:1880`
+                self.remote_players
+                    .entry(id)
+                    .or_default()
+                    .chest = Some(idx); // `:1881`
+                server.broadcast_except(
+                    &S2c::PlayerChestIndex(net::PlayerChestIndex {
+                        player_id: id as u8,
+                        chest: idx,
+                    }),
+                    id,
+                ); // `:1886`
+                // `:1887-1893` — the Dead Man's Chest trips its wiring.
+                if is_rigged(&self.world, cx, cy) {
+                    self.wiring.hit_switch(&mut self.world, cx, cy);
+                    server.broadcast_except(
+                        &S2c::HitSwitch(net::HitSwitch {
+                            x: cx as i16,
+                            y: cy as i16,
+                        }),
+                        id,
+                    );
+                }
+            }
+            // `case 32` — one chest slot changed; relay to the others
+            // (`MessageBuffer.cs:1897-1918`).
+            C2s::ChestItem(ci) => {
+                let idx = ci.chest;
+                if idx < 0 || (idx as usize) >= self.world_chests.len() {
+                    return; // `num146 >= 0 && num146 < 8000` (`:1904`)
+                }
+                let slot = ci.slot as usize;
+                let value = if ci.kind <= 0 || ci.stack <= 0 {
+                    crate::item::EMPTY_SLOT
+                } else {
+                    crate::item::ItemSlot {
+                        kind: ci.kind as u16,
+                        name: crate::registry::name(ci.kind as u16),
+                        count: ci.stack.max(0) as u32,
+                        prefix: ci.prefix as u16,
+                    }
+                };
+                crate::chest::set_chest_slot(&mut self.world_chests, idx as usize, slot, value);
+                server.broadcast_except(&S2c::ChestItem(ci), id); // `:1915`
+            }
+            // `case 33` — the open chest / its rename (`MessageBuffer.cs:1920-1982`).
+            C2s::PlayerChest(pc) => {
+                if pc.name_len != 0 && pc.name_len != 255 {
+                    // `:1974-1977` — the rename: rewrite the chest and relay
+                    // `69` to the others.
+                    if let Some(chest) = self.world_chests.get_mut(pc.chest.max(0) as usize) {
+                        chest.name = pc.name.clone();
+                        let (tx, ty) = chest.tile;
+                        server.broadcast_except(
+                            &S2c::ChestName(net::ChestName {
+                                chest: pc.chest,
+                                x: tx as i16,
+                                y: ty as i16,
+                                name: pc.name.clone(),
+                            }),
+                            id,
+                        );
+                    }
+                }
+                self.remote_players
+                    .entry(id)
+                    .or_default()
+                    .chest = Some(pc.chest); // `:1979`
+                server.broadcast_except(
+                    &S2c::PlayerChestIndex(net::PlayerChestIndex {
+                        player_id: id as u8,
+                        chest: pc.chest,
+                    }),
+                    id,
+                ); // `:1980`
+            }
+            // `case 46` — a client wants a sign's text
+            // (`MessageBuffer.cs:2366-2375`): `Sign.ReadSign` (create when
+            // missing, `Sign.cs:27-58`) and answer `47` to the asker.
+            C2s::SignRequest(req) => {
+                let Some((sx, sy)) = crate::signs::origin(&self.world, req.x as i32, req.y as i32)
+                else {
+                    return; // `num118 >= 0` (`:2370`)
+                };
+                let Some(idx) = crate::signs::find_or_create(&mut self.world.signs, sx, sy) else {
+                    return;
+                };
+                let (text, px, py) = {
+                    let s = &self.world.signs[idx];
+                    (s.text.clone(), s.x as i16, s.y as i16)
+                };
+                server.send(
+                    id,
+                    &S2c::SignData(net::SignData {
+                        sign: idx as i16,
+                        x: px,
+                        y: py,
+                        text,
+                        sender: id as u8,
+                        flags: 0,
+                    }),
+                ); // `:2372`
+            }
+            // `case 47` — a client's sign text; applied locally, then relayed
+            // when it changed (`MessageBuffer.cs:2376-2405`).
+            C2s::SignData(sd) => {
+                if sd.sign < 0 || sd.sign >= crate::signs::MAX_SIGNS {
+                    return; // `num58 >= 0 && num58 < 32000` (`:2384`)
+                }
+                let idx = sd.sign as usize;
+                let old = self.world.signs.get(idx).map(|s| s.text.clone());
+                crate::signs::text_sign(
+                    &mut self.world,
+                    idx,
+                    sd.x as i32,
+                    sd.y as i32,
+                    sd.text.clone(),
+                ); // `:2391-2394`
+                if old.as_deref() != Some(sd.text.as_str()) {
+                    server.broadcast_except(
+                        &S2c::SignData(net::SignData {
+                            sign: sd.sign,
+                            x: sd.x,
+                            y: sd.y,
+                            text: sd.text,
+                            sender: id as u8, // `:2397`
+                            flags: sd.flags,
+                        }),
+                        id,
+                    ); // `:2398`
+                }
+            }
+            // `case 59` — a tripped switch: apply and relay to the others
+            // (`MessageBuffer.cs:2682-2693`).
+            C2s::HitSwitch(hs) => {
+                self.wiring
+                    .hit_switch(&mut self.world, hs.x as i32, hs.y as i32); // `:2687`
+                self.world_key = None;
+                server.broadcast_except(&S2c::HitSwitch(hs), id); // `:2691`
+            }
+            // `case 53` — a client buffed an NPC; the host applies it and
+            // pushes the full `54` list (`MessageBuffer.cs:2565-2575`).
+            C2s::AddNpcBuff(ab) => {
+                let slot = ab.npc as usize;
+                if let Some(npc) = self.npcs.get_mut(slot) {
+                    npc.buffs
+                        .add_buff(ab.buff_type as i32, ab.time as i32); // `:2570`
+                    let buffs = npc_buffs_of(npc);
+                    server.broadcast(&S2c::NpcBuffs(net::NpcBuffs {
+                        npc: ab.npc,
+                        buffs,
+                    })); // `:2573`
                 }
             }
         }
@@ -1182,6 +1444,199 @@ impl App {
                     .inventory
                     .insert(slot as u8, item);
             }
+            // `case 32` — one chest slot (`MessageBuffer.cs:1897-1918`): the
+            // client writes it into its own chest store.
+            S2c::ChestItem(ci) => {
+                if ci.chest < 0 || ci.chest as usize >= crate::chest::MAX_CHESTS {
+                    return; // `num146 >= 0 && num146 < 8000` (`:1904`)
+                }
+                let idx = ci.chest as usize;
+                // `Main.chest[num146] != null` (`:1904`): the C# client holds
+                // the full array from the world load; the lazy port
+                // materialises the slot the `155` header just sized.
+                if Self::materialise_chest_slot(&mut self.world_chests, idx).is_none() {
+                    return;
+                }
+                let value = if ci.kind <= 0 || ci.stack <= 0 {
+                    crate::item::EMPTY_SLOT
+                } else {
+                    crate::item::ItemSlot {
+                        kind: ci.kind as u16,
+                        name: crate::registry::name(ci.kind as u16),
+                        count: ci.stack.max(0) as u32,
+                        prefix: ci.prefix as u16,
+                    }
+                };
+                crate::chest::set_chest_slot(&mut self.world_chests, idx, ci.slot as usize, value);
+            }
+            // `case 33` — the chest this client opened
+            // (`MessageBuffer.cs:1938-1969`): the local player's `chest` plus
+            // the open/switch/close cues (10/12/11).
+            S2c::PlayerChest(pc) => {
+                let Some(p) = self.player.as_mut() else {
+                    return;
+                };
+                let idx = pc.chest as i32;
+                let cue = if p.chest == -1 {
+                    if idx != -1 {
+                        self.inventory_open = true;
+                    }
+                    10
+                } else if p.chest != idx && idx != -1 {
+                    self.inventory_open = true;
+                    self.crafting_open = false;
+                    12
+                } else if p.chest != -1 && idx == -1 {
+                    11
+                } else {
+                    0
+                };
+                // `:1962-1964` - the C# assigns the index and position
+                // unconditionally.
+                p.chest = idx;
+                p.chest_x = pc.x as i32;
+                p.chest_y = pc.y as i32;
+                let (cx, cy) = (pc.x as i32, pc.y as i32);
+                // The C# client's `Main.chest[num21]` already carries the tile
+                // from the world load; the lazy port materialises the slot the
+                // `155` header just sized and assigns the tile, so the `69`
+                // arm's `chest.x/y` guard (`:3073`) can match.
+                if idx >= 0 && (idx as usize) < crate::chest::MAX_CHESTS {
+                    if let Some(c) = Self::materialise_chest_slot(&mut self.world_chests, idx as usize)
+                    {
+                        if c.tile == crate::chest::unplaced_tile() {
+                            c.tile = (cx, cy);
+                        }
+                    }
+                }
+                if cue != 0 {
+                    self.audio.play(match cue {
+                        10 => "Menu_Open",
+                        11 => "Menu_Close",
+                        _ => "Menu_Tick",
+                    });
+                }
+            }
+            // `case 47` — a sign's text (`MessageBuffer.cs:2376-2405`): the
+            // record is rewritten and, when the sender is us, the editor
+            // opens (unported — S1-E-26 records the gap).
+            S2c::SignData(sd) => {
+                if sd.sign < 0 || sd.sign >= crate::signs::MAX_SIGNS {
+                    return; // `:2384`
+                }
+                crate::signs::text_sign(
+                    &mut self.world,
+                    sd.sign as usize,
+                    sd.x as i32,
+                    sd.y as i32,
+                    sd.text.clone(),
+                );
+            }
+            // `case 50` — a player's buff ids (`MessageBuffer.cs:2454-2480`):
+            // ours is skipped (`:2461-2464`), a peer's lands in its record
+            // with every time forced to 60 (`:2470-2471`).
+            S2c::PlayerBuffs(pb) => {
+                if pb.player_id as u32 == self.local_id {
+                    return; // `:2461-2464`
+                }
+                let peer = pb.player_id as u32;
+                let (px, py) = self.net_peer_spawn_pos();
+                self.remote_players
+                    .entry(peer)
+                    .or_insert_with(|| net::PlayerNet {
+                        id: peer,
+                        name: String::new(),
+                        x: px,
+                        y: py,
+                        ..Default::default()
+                    })
+                    .buffs = pb.buffs; // the `60`-tick times are not part of the port's peer record
+            }
+            // `case 54` — an NPC's buff pairs (`MessageBuffer.cs:2577-2593`):
+            // the client's copy of the NPC gets exactly the listed debuffs.
+            S2c::NpcBuffs(nb) => {
+                let Some(npc) = self.net_npcs.get_mut(&(nb.npc as u32)) else {
+                    return;
+                };
+                for slot in 0..crate::npc_buffs::NPC_MAX_BUFFS {
+                    npc.buffs.buff_type[slot] = 0;
+                    npc.buffs.buff_time[slot] = 0;
+                }
+                for (i, (id, time)) in nb.buffs.iter().enumerate() {
+                    if i >= crate::npc_buffs::NPC_MAX_BUFFS {
+                        break; // the C# array bound (`:2586-2587`)
+                    }
+                    npc.buffs.buff_type[i] = *id as i32;
+                    npc.buffs.buff_time[i] = *time as i32;
+                }
+                self.net_npcs_dirty = true;
+            }
+            // `case 59` — a peer tripped a switch: replay it locally
+            // (`MessageBuffer.cs:2682-2693`).
+            S2c::HitSwitch(hs) => {
+                self.wiring
+                    .hit_switch(&mut self.world, hs.x as i32, hs.y as i32);
+                self.world_key = None;
+            }
+            // `case 80` — which chest a player has open
+            // (`MessageBuffer.cs:3216-3227`): the range gate is `-3..8000`.
+            S2c::PlayerChestIndex(ci) => {
+                let Some(entry) = self.remote_players.get_mut(&(ci.player_id as u32)) else {
+                    return;
+                };
+                if (-3..8000).contains(&ci.chest) {
+                    entry.chest = Some(ci.chest);
+                }
+            }
+            // `case 155` — a chest's `maxItems` (`MessageBuffer.cs:4429-4438`):
+            // `Chest.Resize` grows/shrinks the slot list. The C# client always
+            // has the whole `Main.chest[8000]` array from the world load; the
+            // port ships chests lazily, so the slot is materialised here first
+            // (the `33`/`69` arms fill the tile in).
+            S2c::ChestSize(cs) => {
+                if cs.chest < 0 || cs.chest as usize >= crate::chest::MAX_CHESTS {
+                    return; // `num31 >= 0 && num31 < 8000` (`:4433`)
+                }
+                let Some(c) = Self::materialise_chest_slot(&mut self.world_chests, cs.chest as usize)
+                else {
+                    return;
+                };
+                let size = cs.size.max(0) as usize;
+                c.max_items = size;
+                if c.slots.len() > size {
+                    c.slots.truncate(size);
+                } else {
+                    c.slots.resize(size, crate::item::EMPTY_SLOT);
+                }
+            }
+            // `case 69` — a chest's new name (`MessageBuffer.cs:3059-3078`).
+            S2c::ChestName(cn) => {
+                if cn.chest < 0 || cn.chest as usize >= crate::chest::MAX_CHESTS {
+                    return; // `num18 >= 0 && num18 < 8000` (`:3063`)
+                }
+                let idx = cn.chest as usize;
+                match self.world_chests.get_mut(idx) {
+                    Some(c) if c.tile == (cn.x as i32, cn.y as i32) => c.name = cn.name,
+                    Some(_) => {} // `chest.x != num19 || chest.y != num20 → break` (`:3073`)
+                    None => {
+                        // `Chest.CreateWorldChest(num18, num19, num20)` (`:3071`).
+                        if idx < crate::chest::MAX_CHESTS {
+                            while self.world_chests.len() < idx {
+                                self.world_chests.push(crate::chest::WorldChest {
+                                    tile: (i32::MIN, i32::MIN),
+                                    ..Default::default()
+                                });
+                            }
+                            self.world_chests.push(crate::chest::WorldChest {
+                                tile: (cn.x as i32, cn.y as i32),
+                                name: cn.name,
+                                max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1840,6 +2295,29 @@ impl App {
         }
     }
 
+    /// A local switch trip in MP — the C#'s `NetMessage.SendData(59, -1, -1,
+    /// null, i, j)` (`Collision.cs:3304`/`:3318`/`:3324`/`:3347`,
+    /// `Player.cs:32178`, `:32226`, `:32340`): on a client it goes to the
+    /// server, on the host it broadcasts to every client.
+    pub(crate) fn send_hit_switch(&self, x: i32, y: i32) {
+        let msg = net::HitSwitch {
+            x: x as i16,
+            y: y as i16,
+        };
+        match &self.net {
+            NetRole::Host(server) => server.broadcast(&S2c::HitSwitch(msg)),
+            NetRole::Client(client) => client.send(&C2s::HitSwitch(msg)),
+            NetRole::Off => {}
+        }
+    }
+
+    /// The `switch_tiles` scan's fired switches as `59`s.
+    pub(crate) fn send_switch_outcome(&self, outcome: &crate::collision::SwitchOutcome) {
+        for (x, y) in &outcome.switches {
+            self.send_hit_switch(*x, *y);
+        }
+    }
+
     /// A client-side strike on a networked NPC: the `28` body addressed by the
     /// host's slot and the generation the `23` push delivered
     // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
@@ -2409,7 +2887,7 @@ mod handshake_tests {
 
     /// Pumps both apps at 60 Hz for `frames` frames: the net tick (10 Hz
     /// internally) plus the event drain, as the real frame loop does.
-    fn pump(host: &mut App, client: &mut App, frames: usize) {
+    pub(super) fn pump(host: &mut App, client: &mut App, frames: usize) {
         for _ in 0..frames {
             host.net_tick(1.0 / 60.0);
             client.net_tick(1.0 / 60.0);
@@ -2421,7 +2899,7 @@ mod handshake_tests {
 
     /// A fully joined pair with a live player on the host: the two-app world
     /// the M6-NET-2 sync tests stream snapshots through.
-    fn in_world_pair() -> (App, App) {
+    pub(super) fn in_world_pair() -> (App, App) {
         let (mut host_app, mut client_app) = connect_pair("", "");
         // A dirt row so the NPC ctors find a column surface on both sides
         // (the world transfer carries it to the client).
@@ -3308,5 +3786,153 @@ mod npc_kind_wire_tests {
         ] {
             assert_eq!(wire_round_trip(kind), kind);
         }
+    }
+
+}
+
+/// The S1-E-27 message families' end-to-end shapes: the chest burst, the
+/// switch relay and the NPC-buff round trip.
+#[cfg(test)]
+mod message_family_tests {
+    use super::*;
+    use crate::app::netglue::handshake_tests::{in_world_pair, pump};
+
+    /// `case 31` + `SendChestContentsTo`: the client asks, the host answers
+    /// `155` + one `32` per slot + `33` to the asker and `80` to the others
+    /// (`MessageBuffer.cs:1876-1886`, `NetMessage.cs:1873-1880`).
+    #[test]
+    fn a_chest_open_request_bursts_155_33_and_80() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The `33` arm needs a local player to open the panel (`:1938-1962`).
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // A chest the host owns, with two items.
+        let mut chest = crate::chest::WorldChest {
+            tile: (3, 5),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
+        };
+        chest.slots = vec![
+            crate::item::ItemSlot {
+                kind: 7,
+                name: crate::registry::name(7),
+                count: 5,
+                prefix: 0,
+            },
+            crate::item::ItemSlot {
+                kind: 8,
+                name: crate::registry::name(8),
+                count: 1,
+                prefix: 2,
+            },
+        ];
+        host_app.world_chests.push(chest);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ChestOpenRequest(net::ChestOpenRequest {
+                x: 3,
+                y: 5,
+            })); // `:33116`
+        }
+        let mut opened = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            opened = client_app.player.as_ref().is_some_and(|p| p.chest == 0);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the client opened chest 0 through the 33 answer");
+        // The `155` header resized the client's copy and the `32` burst
+        // carried both slots.
+        let local = client_app.world_chests.first().expect("the 32-burst created it");
+        assert_eq!(
+            local.tile,
+            (3, 5),
+            "the 33 arm places the slot's tile, the way the C# client already has it"
+        );
+        assert_eq!(local.max_items, crate::chest::DEFAULT_MAX_ITEMS as usize);
+        assert_eq!(local.slots.len(), crate::chest::DEFAULT_MAX_ITEMS as usize);
+        assert_eq!(local.slots[0].kind, 7);
+        assert_eq!(local.slots[0].count, 5);
+        assert_eq!(local.slots[1].kind, 8);
+        assert_eq!(local.slots[1].prefix, 2);
+        // `80` told the other players the asker's chest index; here the
+        // host's own record (`:1886`).
+        assert_eq!(host_app.remote_players.get(&1).map(|p| p.chest), Some(Some(0)));
+    }
+
+    /// `case 59` — a client's switch trip replays on the host and relays to
+    /// the other clients (`MessageBuffer.cs:2682-2693`).
+    #[test]
+    fn a_switch_trip_relays_through_the_host() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A lever at (3, 3) on both sides (the lever toggles its frameY).
+        for app in [&mut host_app, &mut client_app] {
+            let mut t = tr_core::Tile {
+                kind: 136,
+                ..Default::default()
+            };
+            t.flags |= tr_core::tile::FLAG_ACTIVE;
+            if let Some(cell) = app.world.tile_mut(3, 3) {
+                *cell = t;
+            }
+        }
+        assert_eq!(client_app.world.tile(3, 3).map(|t| t.frame_y), Some(0));
+        client_app.send_hit_switch(3, 3);
+        let mut flipped = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            flipped = host_app.world.tile(3, 3).map(|t| t.frame_y) == Some(18);
+            if flipped {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(flipped, "the host replayed the lever's trip (`:2687`)");
+    }
+
+    /// `case 53` → `54`: a client's NPC buff lands on the host's NPC and the
+    /// host pushes the full list back (`MessageBuffer.cs:2565-2593`).
+    #[test]
+    fn a_client_npc_buff_pushes_the_full_list_back() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app
+            .npcs
+            .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        // Let the client learn the slot first (the 23 snapshot).
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(client_app.npcs.len(), 1);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::AddNpcBuff(net::AddNpcBuff {
+                npc: 0,
+                buff_type: 24,
+                time: 300,
+            }));
+        }
+        let mut landed = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = client_app.npcs.first().is_some_and(|n| {
+                n.buffs.buff_type[0] == 24 && n.buffs.buff_time[0] == 300
+            });
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 54 list carried the buff back to the client");
+        assert_eq!(
+            host_app.npcs[0].buffs.buff_type[0], 24,
+            "the host applied the 53 (`:2570`)"
+        );
     }
 }

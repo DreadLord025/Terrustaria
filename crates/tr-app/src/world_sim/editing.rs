@@ -3699,6 +3699,7 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
             // the click is consumed.
             app.wiring.hit_switch(&mut app.world, *x, *y);
+            app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
             app.world_key = None;
             return true;
         }

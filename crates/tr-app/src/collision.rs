@@ -774,14 +774,19 @@ fn float_intersect(
 }
 
 /// The outcome of [`switch_tiles`]: the C#'s return value (whether a
-/// pressure plate consumed the entity — the mine and the geyser arms
-/// `continue` the scan, so they never set it) and the item the broken plate
-/// dropped (the C#'s `WorldGen.KillTile` drop, which the app spawns).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// pressure plate consumed the entity - the mine and the geyser arms
+/// `continue` the scan, so they never set it), the item the broken plate
+/// dropped (the C#'s `WorldGen.KillTile` drop, which the app spawns) and the
+/// switch tiles that fired, so the caller can send `59 HitSwitch`
+/// (`Collision.cs:3304`, `:3318`, `:3324`, `:3347`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SwitchOutcome {
     pub hit: bool,
-    /// `(item, x, y)` — the plate's drop.
+    /// `(item, x, y)` - the plate's drop.
     pub dropped: Option<(u16, i32, i32)>,
+    /// Every `Wiring.HitSwitch(i, j)` the scan issued, in scan order - the
+    /// C#'s `NetMessage.SendData(59, ..., i, j)` sits on each of them.
+    pub switches: Vec<(i32, i32)>,
 }
 
 /// `Collision.SwitchTiles` (`Collision.cs:3227-3360`): the entity→switch
@@ -815,6 +820,9 @@ pub fn switch_tiles(
     num2 = num2.min(world.width);
     num3 = num3.max(0);
     num4 = num4.min(world.height - 40);
+    // The `59` send sites sit on every `HitSwitch` that does not return
+    // (`Collision.cs:3318`, `:3324`), so the scan accumulates them.
+    let mut switches: Vec<(i32, i32)> = Vec::new();
     for i in num..num2 {
         for j in num3..num4 {
             let Some(t) = world.tile(i, j) else {
@@ -847,6 +855,7 @@ pub fn switch_tiles(
                         wiring.hit_switch(world, i, j);
                         return SwitchOutcome {
                             hit: true,
+                            switches: vec![(i, j)],
                             ..Default::default()
                         };
                     }
@@ -870,6 +879,7 @@ pub fn switch_tiles(
                 // The land mine explodes through the switch (`:3314-3319`).
                 210 => {
                     wiring.hit_switch(world, i, j);
+                    switches.push((i, j)); // `^:3318`
                     continue;
                 }
                 // The geyser trap only answers the player and the NPCs
@@ -877,6 +887,7 @@ pub fn switch_tiles(
                 443 => {
                     if obj_type == 1 || obj_type == 5 {
                         wiring.hit_switch(world, i, j);
+                        switches.push((i, j)); // `^:3324`
                     }
                     continue;
                 }
@@ -897,13 +908,15 @@ pub fn switch_tiles(
                 continue;
             }
             wiring.hit_switch(world, i, j);
+            switches.push((i, j)); // `^:3347`
             let mut outcome = SwitchOutcome {
                 hit: true,
+                switches,
                 ..Default::default()
             };
             if num5 == 7 {
                 // `:3348-3352`: the row-7 plate breaks under the touch. The
-                // C#'s `WorldGen.KillTile` drops the plate's item — the port's
+                // C#'s `WorldGen.KillTile` drops the plate's item - the port's
                 // core has no item pool, so the drop travels back to the app.
                 let frame_y = world.tile(i, j).map_or(0, |t| t.frame_y);
                 outcome.dropped = crate::registry::tile_drop(kind, frame_y).map(|item| (item, i, j));
@@ -912,7 +925,10 @@ pub fn switch_tiles(
             return outcome;
         }
     }
-    SwitchOutcome::default()
+    SwitchOutcome {
+        switches,
+        ..Default::default()
+    }
 }
 
 /// `Collision.GetWaterLine` (`Collision.cs:1498-1544`): the water surface's
