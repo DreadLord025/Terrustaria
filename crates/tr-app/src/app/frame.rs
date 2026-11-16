@@ -891,6 +891,17 @@ impl App {
             .world
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
+        // `Main.PylonSystem.Pylons` (`TeleportPylonsMapLayer.cs:32`): the map
+        // layers read the live network. The scan walks the TE book, so it stays
+        // off the per-frame path unless the map or the minimap is drawing.
+        let map_layer_pylons = if (self.map.as_ref().is_some_and(|m| m.open)
+            || (self.settings.map_enabled && self.map_style == 1))
+            && !crate::env::no_hud()
+        {
+            tr_core::pylons::scan_pylons(&self.world)
+        } else {
+            Vec::new()
+        };
         // The buff bar's inputs (`Main.DrawInterface_Resources_Buffs`,
         // `Main.cs:43203`): the right-release edge (`Main.mouseRightRelease`)
         // and the vampire-seed gate (`Main.vampireSeed`, the duration hides
@@ -1645,6 +1656,60 @@ impl App {
                         // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
                         ui::minimap::draw_background(renderer, lookups, pos, 1.0, map_scale);
                         m.draw_minimap(renderer, world, screen, view_center, map_scale);
+                        // `Main.cs:55696-55703`: the same layer walk inside the
+                        // `mapStyle == 1` branch, clipped to the 240x240 minimap
+                        // rect and drawn at
+                        // `num46 = ((mapMinimapScale * 0.25 * 2 + 1) / 3)`
+                        // capped at 1 (`:55698-55702`). The context's
+                        // `mapPosition`/`mapOffset` are the transform-space
+                        // `(num12, num13)` and `(num3 + num10, num4 + num11)`
+                        // (`:55539-55544` + `:55703`): the raw panel origin plus
+                        // the sub-tile centres, which `map_minimap_quad` already
+                        // computes for the tile pass, so the clip is its rect.
+                        let q = map::map_minimap_quad(
+                            view_center,
+                            m.minimap_scale,
+                            map_scale,
+                            screen,
+                            world,
+                        );
+                        let num46 = ((m.minimap_scale * 0.25 * 2.0 + 1.0) / 3.0).min(1.0);
+                        let digtoise =
+                            crate::map_layers::digtoise_marker(player.as_ref(), &self.projectiles);
+                        let near_pylon = player.as_ref().is_some_and(|p| {
+                            let (cx, cy) = p.center();
+                            tr_core::pylons::is_player_near_a_pylon(
+                                world,
+                                ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
+                            )
+                        });
+                        let _ = crate::map_layers::map_layers_draw(
+                            renderer,
+                            lookups,
+                            &crate::map_layers::MapIconInputs {
+                                world,
+                                player: player.as_ref(),
+                                item_drops: &self.items,
+                                digtoise,
+                                pings: crate::map_layers::map_pings(m),
+                                pylons: &map_layer_pylons,
+                                near_pylon,
+                                map: Some(m),
+                                team_based_spawns,
+                                mouse: self.mouse_pos,
+                            },
+                            [0.0, 0.0],
+                            ui::minimap::minimap_origin_raw(screen, map_scale),
+                            Some([
+                                q.dest[0],
+                                q.dest[1],
+                                q.dest[0] + q.dest[2],
+                                q.dest[1] + q.dest[3],
+                            ]),
+                            m.minimap_scale,
+                            num46,
+                            1.0,
+                        );
                         // The hover highlight is `MinimapFrame.Update`'s
                         // `buttonUnderMouse.IsHighlighted`
                         // (`MinimapFrame.cs:163`), resolved per frame in
@@ -2010,7 +2075,17 @@ impl App {
                             // registration order, the hover text collected.
                             let (map_offset, map_draw_scale) =
                                 map.draw_full(renderer, lookups, world, screen);
-                            let digtoise: Vec<[f32; 2]> = Vec::new();
+                            let digtoise = crate::map_layers::digtoise_marker(
+                                player.as_ref(),
+                                &self.projectiles,
+                            );
+                            let near_pylon = player.as_ref().is_some_and(|p| {
+                                let (cx, cy) = p.center();
+                                tr_core::pylons::is_player_near_a_pylon(
+                                    world,
+                                    ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
+                                )
+                            });
                             let hover = crate::map_layers::map_layers_draw(
                                 renderer,
                                 lookups,
@@ -2018,9 +2093,11 @@ impl App {
                                     world,
                                     player: player.as_ref(),
                                     item_drops: &self.items,
-                                    digtoise: &digtoise,
+                                    digtoise,
                                     pings: crate::map_layers::map_pings(map),
-                                    pylons: 0,
+                                    pylons: &map_layer_pylons,
+                                    near_pylon,
+                                    map: Some(map),
                                     team_based_spawns,
                                     mouse: self.mouse_pos,
                                 },

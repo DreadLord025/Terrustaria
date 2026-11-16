@@ -13024,18 +13024,38 @@ have port drivers draw: SpawnMapLayer (the world spawn + the bed marker —
 the C# reads `localPlayer.SpawnX/SpawnY`, the port keeps the bed spawn on
 `World.bed_spawn`), BossBagMapLayer (the `ItemID.cs:1383` 21-kind set over
 the drop pool) and PingMapLayer (the 100-cap pool, the 15 s expiry, the 1x5
-row cycling at 10 Hz). The three data-gated layers keep their C# bodies but
-draw nothing: Digtoise (the 1098/1123 projectiles are not spawned),
-TeamBasedSpawn (the seed is in M5-SEED-2's deferred list) and
-TeleportPylons (`TeleportPylonsSystem` is not ported — the tile-entity
-work).
+row cycling at 10 Hz).
+
+**Second pass (2026-11-16, `S1-L-4-map-overlay-layers`)** closed the three
+stubs and the missing call site. Digtoise draws: `digtoise_marker` scans the
+projectile pool for the first active 1098/1123 whose `owner == 0` (the port's
+standing stand-in for `Main.myPlayer`, as in `projectile.rs`/`grapple.rs`),
+yielding `(Bottom, spriteDirection)` — `Bottom / 16 + (0.5, 0)` bottom-aligned,
+column 1 when `spriteDirection <= 0` (`DigtoiseMapLayer.cs:14-26`). TeleportPylons
+draws the live network: `tr_core::pylons::scan_pylons` feeds `MapIconInputs::pylons`,
+each marker anchored at `PositionInTiles.ToVector2() + (1.5, 2)` centre-aligned
+through `MapOverlayContext::draw_tinted` (the `MapOverlayDrawContext.cs:218-242`
+`color * opacity` form), dimmed to `Color.Gray * 0.5f` = 0.25 when
+`is_player_near_a_pylon` is false (`TeleportPylonsMapLayer.cs:39-42`/`:65-89`).
+`PylonType::style()` (`self as u8`) is the inverse of `from_tile_style` and
+supplies the `SpriteFrame` column, since the map layer's column *is* the type
+discriminant. `WorldMap::tile_revealed` (`WorldMap.cs:406-409`) backs the
+`IsRevealed` fog gate (`TeleportPylonsMapLayer.cs:112-119`) with a bounds guard
+the C# gets for free from its world-sized jagged array. TeamBasedSpawn stays
+gated: both `Main.teamBasedSpawnsSeed` and `ExtraSpawnPointManager` are unported
+(M5-SEED-2's deferred list), so the branch is the faithful shape with no data
+behind it.
 
 Scope notes: the fullscreen call rides `Main.cs:55996`'s position (the
 map's top-left minus the 10 px frame inset, `mapPosition = Vector2.Zero`
-is the tile-space identity); the minimap call (`Main.cs:55703`, with the
-clip), `DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are
-their own passes; the hover text feeds the map's text line through
-`ui::text::hud_text` (the C# `ref text`).
+is the tile-space identity); the **minimap** call (`Main.cs:55696-55703`) is
+wired in the same pass — the clip is `map_minimap_quad`'s destination rect and
+the draw scale is the C#'s `num46 = ((mapMinimapScale * 0.25f * 2f + 1f) / 3f)`
+capped at 1. The pylon scan is snapshotted once per frame and only while the map
+or minimap is actually drawing, so the TE walk stays off the hot path.
+`DrawNPCMapIcons` and `NPC.RevengeManager`'s marker layer are their own passes;
+the hover text feeds the map's text line through `ui::text::hud_text` (the C#
+`ref text`).
 
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14)
 
