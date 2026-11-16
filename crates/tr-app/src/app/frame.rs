@@ -382,6 +382,7 @@ impl App {
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
             self.handle_minimap_clicks();
+            self.handle_fullmap_ping();
             self.handle_bestiary_clicks();
             // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
             // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
@@ -761,6 +762,9 @@ impl App {
                 self.phase("map");
                 if let Some(m) = self.map.as_mut() {
                     m.update(&self.world, self.player.as_ref(), &self.light, dt);
+                    // `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:36-39`):
+                    // the markers older than 15 s drop while the map is up.
+                    m.age_pings(dt);
                     // `MapUpdateQueue.Update()` (`Main.cs:61862`): the edit-side
                     // refresh drains through `WorldMap.UpdateType`; the changed
                     // tiles re-upload (`MapRenderer.QueueChange`'s analog).
