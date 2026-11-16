@@ -2102,6 +2102,7 @@ impl App {
                         npcs,
                         world,
                         self.stepper.paused,
+                        self.player.as_ref().is_some_and(|p| p.debug_god_mode),
                     );
                 }
 
