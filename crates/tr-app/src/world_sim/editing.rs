@@ -8231,7 +8231,13 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    crate::world_sim::npcs::start_invasion(&mut app.world, 1, 1);
+    app.world.invasion_delay = 0;
+    crate::world_sim::npcs::start_invasion_in(
+        app,
+        1,
+        1,
+        Some(crate::app::RngKey::UpdatePlayers),
+    );
     app.audio.play("Roar_0");
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
@@ -8290,33 +8296,22 @@ pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
 }
 
 pub fn use_snow_globe(app: &mut App) -> bool {
-    if app.world.invasion_type != 0 {
-        return false;
-    }
-    let qualified = app
-        .player
-        .as_ref()
-        .map(|p| p.max_hp >= 200)
-        .unwrap_or(false);
-    if !qualified {
+    // `Player.ItemCheck_UseEventItems`' Snow Globe arm (`Player.cs:43940-43951`):
+    // `CanStartInvasion(2, ignoreDelay: true)` then `invasionDelay = 0` +
+    // `StartInvasion(2)` — the shared body derives the size and the side roll
+    // (`Main.cs:64435-64486`) on the `UpdatePlayers` stream.
+    let life_max = app.player.as_ref().map(|p| p.max_hp).unwrap_or(0);
+    if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
     app.audio.play("Roar_0");
     app.world.invasion_delay = 0;
-    app.world.invasion_goblins = true;
-    app.world.invasion_type = 2;
-    app.world.invasion_warn = 0;
-    app.world.invasion_size = 80 + 40;
-    app.world.invasion_size_start = app.world.invasion_size;
-    // `Main.StartInvasion`'s side roll — `Main.rand.Next(2) == 0` (`Main.cs:64477-64484`)
-    // — called from the globe's `ItemCheck` arm (`Player.cs:43940`): the
-    // `UpdatePlayers` stream.
-    let roll = app.rngs.stream(crate::app::RngKey::UpdatePlayers).next_max(2);
-    app.world.invasion_x = if roll == 0 {
-        0.0
-    } else {
-        app.world.width as f64
-    };
+    crate::world_sim::npcs::start_invasion_in(
+        app,
+        1,
+        2,
+        Some(crate::app::RngKey::UpdatePlayers),
+    );
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -8658,15 +8653,16 @@ mod loot_summon_tests {
     #[test]
     fn the_battle_standard_gates_and_sizing() {
         // `Main.CanStartInvasion` (`Main.cs:64414-64432`): the 200-life
-        // gate; `StartInvasion(1)` (`:64435-64460`): 80 + 40 x qualifying.
+        // gate; `StartInvasion(1)` (`:64435-64486`): 80 + 40 x qualifying.
         use crate::world_sim::npcs::{can_start_invasion, start_invasion};
         let mut w = tr_core::World::new("t".into(), 64, 64);
+        let mut rng = tr_core::UnifiedRandom::new(1);
         assert!(!can_start_invasion(&w, 100), "the base life waits");
         assert!(can_start_invasion(&w, 200));
-        start_invasion(&mut w, 1, 1);
+        assert!(start_invasion(&mut w, 1, 1, &mut rng));
         assert!(w.invasion_goblins);
         assert_eq!(w.invasion_size, 120, "80 + 40 x one qualifying player");
-        start_invasion(&mut w, 1, 1);
+        assert!(!start_invasion(&mut w, 1, 1, &mut rng));
         assert_eq!(w.invasion_size, 120, "the active invasion blocks");
     }
 
@@ -8755,51 +8751,26 @@ mod loot_summon_tests {
     }
 }
 
-/// `ItemCheck_UseBossSpawners`' Pirate Invasion arm (`Player.cs:43957-43971`):
-/// the Pirate Map (1315) — the `CanStartInvasion(3, ignoreDelay: true)` gate
-/// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
-/// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(3)` —
-/// the march state rides the World (the morning-roll resolve's shape).
+/// `ItemCheck_UseBossSpawners`' Pirate Invasion arm (`Player.cs:43957-43984`):
+/// the Pirate Map (1315) — the `CanStartInvasion(3, ignoreDelay: true)` gate,
+/// the roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(3)`,
+/// whose body sizes the pirates (`80+40n + 40+20n`) and rolls the side.
 pub fn use_pirate_map(app: &mut App) -> bool {
-    if app.world.invasion_type != 0 {
-        return false;
-    }
-    /// `ItemCheck_Wiring_Gate`'s Eternia arm (`Player.cs:32425-32444`) — the
-    /// Etherian Crystal (3828) placed over the Eternia Crystal Stand (466)
-    /// starts the Old One's Army. The gates verbatim: no ongoing event, no
-    /// crystal alive, no pumpkin/snow moon, the 3828 in the inventory, the
-    /// stand's frame (`frameX/18*16`, `frameY/18*16` — the 3x3 stand
-    /// anchor) gives the spawn point (+40, +64), then `ConsumeItem` and
-    /// `DD2Event.SummonCrystal` (`StartInvasion` + the crystal NPC at the
-    /// point + the starter-crystal drops).
-    ///
-    /// Deviations: `WouldFailSpawningHere` folds to the stand-tile check
-    /// (the port has no lane machinery — the DD2Event framework's slice);
-    /// `DropStarterCrystals`' per-player drops ride the item-drop pass.
-    let qualified = app
-        .player
-        .as_ref()
-        .map(|p| p.max_hp >= 200)
-        .unwrap_or(false);
-    if !qualified {
+    // `Player.cs:43957-43984`: `CanStartInvasion(3, ignoreDelay: true)` then
+    // `invasionDelay = 0` + `StartInvasion(3)` — the shared body sizes the
+    // army (`80+40n + 40+20n`) and rolls the side on `UpdatePlayers`.
+    let life_max = app.player.as_ref().map(|p| p.max_hp).unwrap_or(0);
+    if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
     app.audio.play("Roar_0");
     app.world.invasion_delay = 0;
-    app.world.invasion_goblins = true;
-    app.world.invasion_type = 3;
-    app.world.invasion_warn = 0;
-    app.world.invasion_size = 80 + 40 + 40 + 20;
-    app.world.invasion_size_start = app.world.invasion_size;
-    // `Main.StartInvasion`'s side roll — `Main.rand.Next(2) == 0` (`Main.cs:64477-64484`)
-    // — called from the globe's `ItemCheck` arm (`Player.cs:43940`): the
-    // `UpdatePlayers` stream.
-    let roll = app.rngs.stream(crate::app::RngKey::UpdatePlayers).next_max(2);
-    app.world.invasion_x = if roll == 0 {
-        0.0
-    } else {
-        app.world.width as f64
-    };
+    crate::world_sim::npcs::start_invasion_in(
+        app,
+        1,
+        3,
+        Some(crate::app::RngKey::UpdatePlayers),
+    );
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -8812,6 +8783,17 @@ pub fn use_pirate_map(app: &mut App) -> bool {
     app.mine_timer = 0.0;
     true
 }
+/// `Player.cs:32425-32444`'s Etherian arm: the Etherian Crystal (3828)
+/// placed over the Eternia Crystal Stand (466) starts the Old One's Army.
+/// The gates verbatim: no ongoing event, no crystal alive, no pumpkin/snow
+/// moon, the 3828 in the inventory, the stand's frame (`frameX/18*16`,
+/// `frameY/18*16` — the 3x3 stand anchor) gives the spawn point (+40, +64),
+/// then `ConsumeItem` and `DD2Event.SummonCrystal` (`StartInvasion` + the
+/// crystal NPC at the point + the starter-crystal drops).
+///
+/// Deviations: `WouldFailSpawningHere` folds to the stand-tile check (the port
+/// has no lane machinery — the DD2Event framework's slice);
+/// `DropStarterCrystals`' per-player drops ride the item-drop pass.
 pub fn use_etherian_crystal(app: &mut App) -> bool {
     if app.world.invasion_type != 0 || app.world.snow_moon || app.world.pumpkin_moon {
         return false;
