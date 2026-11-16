@@ -2036,7 +2036,8 @@ pub(crate) mod front_flow_tests {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
-            debug_panel: crate::debug_panel::DebugPanel::new(),
+            #[cfg(feature = "debug")]
+            debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
             play_world: None,
             invasion_spawn_timer: 0.0,
@@ -2233,6 +2234,7 @@ pub(crate) mod front_flow_tests {
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             leaves: Vec::new(),
+            gore: tr_core::gore::GorePool::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             rngs: NamedRngs::new(0),
