@@ -564,6 +564,9 @@ pub(crate) struct App {
     /// `TR_ZOOM` pins the zoom for screenshots, ignoring the settings value.
     pub(crate) zoom_pinned: bool,
     pub(crate) debug: bool,
+    /// The debug *window* (the typed always-present overlay, top-left). Its own
+    /// toggle (F4) so it can be up while the large `TR_DEBUG` overlay is off.
+    pub(crate) debug_overlay: bool,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -3263,6 +3266,7 @@ impl App {
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
+            debug_overlay: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),

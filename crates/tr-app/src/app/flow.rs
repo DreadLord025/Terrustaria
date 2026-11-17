@@ -2168,6 +2168,7 @@ pub(crate) mod front_flow_tests {
             zoom: 1.0,
             zoom_pinned: false,
             debug: false,
+            debug_overlay: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
