@@ -1,0 +1,5 @@
+crates/tr-core/src/wld/sections/flags.rs|_tempRaining|wld-roundtrip - the .wld flags block writes/reads the rain snapshot from World.raining/rain_time/max_raining (SaveWorldFlags:1312-1314, LoadWorldFlags:2127-2129, SetOngoingToTemps:159-162), so a saved .wld keeps an in-progress rain
+crates/tr-core/src/wld/sections/flags.rs|_tempSandstormHappening|wld-roundtrip - the sandstorm quad rides the flags block from World.sandstorm_* (SaveWorldFlags:1369-1372, LoadWorldFlags:2277-2283 before the <174 zero arm), restored into scene::Sandstorm on load
+crates/tr-core/src/world.rs|sandstorm_happening|wld-roundtrip - Sandstorm.Happening/TimeLeft/Severity/IntendedSeverity (Sandstorm.cs:14-20) stored on World as the .wld flags block file payload
+crates/tr-core/src/wld/mod.rs|fn wld_roundtrip_tiles_identical|wld-roundtrip - whole-file save->load contract: the tile grid (every SaveWorldTiles:1432 header bit, the paints, the liquids, the four wires) comes back identical
+crates/tr-core/src/wld/mod.rs|fn wld_roundtrip_weather_snapshot|wld-roundtrip - the weather snapshot round-trips through the .wld flags block (the RED->GREEN test of the new section)

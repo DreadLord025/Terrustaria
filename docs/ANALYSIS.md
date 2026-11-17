@@ -150,7 +150,7 @@ reproduced (`bad section pointer N`).
 | # | Section | Wire shape | Rust |
 | --- | --- | --- | --- |
 | 0 | file-format header | `u16 TileID.Count` + the 95-byte importance bitmap | `sections/header.rs` |
-| 1 | world header + flags | name, seed text + generator version, GUID, world id + bounds, `maxTilesY` before `maxTilesX`, then the ~2200-byte flags block in `LoadWorldFlags` order | `sections/header.rs` + `flags.rs` |
+| 1 | world header + flags | name, seed text + generator version, GUID, world id + bounds, `maxTilesY` before `maxTilesX`, then the ~2200-byte flags block in `LoadWorldFlags` order | `sections/header.rs` + `flags.rs` (incl. the rain and sandstorm snapshots) |
 | 2 | tiles | column-major RLE (see above) | `sections/tiles.rs` |
 | 3 | chests | `i16 count` (+ the shared `i16` slot count below 294), then per chest `(i32 x, i32 y, string name, i32 maxItems, maxItems × i16/i16/i32/u8)`; the duplicate-position and tail passes, the `<115` dresser pass, `Chest.FixLoadedData`, and the save-side dead-anchor pre-pass | `sections/chests.rs` + `tr-app/chest.rs::{from_wld,to_wld,fix_dresser_chests,destroy_invalid_anchors}` |
 | 4 | signs | `i16 count`, then `(string text, i32 x, i32 y)` per sign over `Main.sign[0..31999]`; the tile check + dup + tail passes on load | `sections/signs.rs` (the store lives on `World.signs`) |
@@ -197,7 +197,16 @@ multiplayer-client path, never a single-player or menu one (research/42, finding
 - **`LastPlayed` is 0** and the creation-time pair is zero-filled — the port has no
   play-time accounting; `FileMetadata`'s revision increments per save, as vanilla
   (`IncrementAndWrite`), and is the file's only clock-adjacent value.
-- **Wires are not written**: no section carries the wiring state.
+- **The weather snapshot is written** (wld-roundtrip, 2026-11-17): the rain triple
+  (`_tempRaining`/`_tempRainTime`/`_tempMaxRain`, `:1312-1314`) and the sandstorm
+  quad (`_tempSandstorm*`, `:1369-1372`) come from `World.{raining, rain_time,
+  max_raining}` and `World.sandstorm_*`, which `save_world` fills from `App.rain`
+  and `App.sandstorm` (`SetTempToOngoing:1053-1059`) and `App::new` restores
+  (`SetOngoingToTemps:159-172`). Both were written as C# defaults before, so a
+  `.wld` save reset an in-progress rain/sandstorm. `World.sandstorm_*` is not yet
+  in the native `.trwld` flags block (a format bump, out of this slice).
+- **Wires are written** since S1-J-1 (the four bits ride the tile headers through
+  `World.wires`; see "The tile section's four wire bits" above).
 - **GUID and worldId are 0** — the port keeps neither (the footer's worldId likewise).
 - **Seed text**: the port's `u64` seed is persisted as its decimal text; a non-numeric
   seed reads as 0 (`SeedText` is `WorldFileData.cs:355`'s own convention).
