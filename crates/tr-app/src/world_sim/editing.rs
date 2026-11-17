@@ -1226,6 +1226,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
                 let (nx, ny) = (n.x, n.y);
+                let (bw, bh) = n.size();
                 // The kind's hit cue (`NPC.HitSound`) — read before the app
                 // borrows below.
                 let hit_cue = n.kind.hit_sound();
@@ -1242,7 +1243,49 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 if flymeal_town_hit {
                     let _ = app.notify_progression_net(42);
                 }
-                crate::npc::Npc::strike_melee(&mut app.npcs, idx, dmg, pcx, kb, crit, Some(me));
+                let landed =
+                    crate::npc::Npc::strike_melee(&mut app.npcs, idx, dmg, pcx, kb, crit, Some(me));
+                if landed {
+                    // `NPC.cs:81250-81264`: a landed strike on a `lifeMax > 1`
+                    // NPC spawns the combat text with the post-defence number
+                    // (`:81239`) and the crit flag. The local player's strike
+                    // takes the hostile pair (`:81258`) — never the friendly
+                    // (`:81254`) or network (`:81261`) arms.
+                    let text = dmg.to_string();
+                    let font = if crit {
+                        app.lookups.combat_crit_font.as_ref()
+                    } else {
+                        app.lookups.combat_text_font.as_ref()
+                    };
+                    // `FontAssets.CombatText[crit ? 1 : 0].MeasureString`
+                    // (`CombatText.cs:76`) — the placement size.
+                    let size = match font {
+                        Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                        None => [text.chars().count() as f32 * 8.0, 10.0],
+                    };
+                    let location = crate::combat_text::Rect {
+                        x: nx,
+                        y: ny,
+                        width: bw,
+                        height: bh,
+                    };
+                    let color = crate::combat_text::damage_text_color(crit, false, false);
+                    // The port's player carries no flipped-gravity state, so
+                    // `Main.player[Main.myPlayer].gravDir` is the normal 1f
+                    // (`CombatText.cs:93`).
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    crate::combat_text::spawn(
+                        &mut app.combat_texts,
+                        location,
+                        color,
+                        text,
+                        crit,
+                        false,
+                        size,
+                        1.0,
+                        rng,
+                    );
+                }
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
                 app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);

@@ -150,6 +150,9 @@ pub(crate) struct App {
     pub(crate) talk_npc: Option<usize>,
     /// `Main.npcChatText` (`Main.cs:1755`) — the chat dialog's line.
     pub(crate) npc_chat_text: String,
+    /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
+    /// numbers, indexed and updated like the C# pool.
+    pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
@@ -3296,6 +3299,7 @@ impl App {
             shot_path: crate::env::shot_path().map(PathBuf::from),
             shot_at: crate::env::shot_at().unwrap_or(20),
             atlas_stats,
+            combat_texts: Vec::new(),
             static_sheets: None,
             fonts_cache: None,
             light: LightMap::new(),

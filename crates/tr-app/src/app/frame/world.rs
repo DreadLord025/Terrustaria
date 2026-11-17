@@ -469,6 +469,10 @@ impl App {
     fn editing_net_phase(&mut self, dt: f32, screen: Vec2) {
                     self.phase("editing");
                     self.update_editing(dt, screen);
+                    // `Main.cs:18077` — `CombatText.UpdateCombatText()` inside the
+                    // world update, on the same step gate as the strike that
+                    // spawns the numbers.
+                    crate::combat_text::update_all(&mut self.combat_texts);
                     self.phase("net");
                     self.net_tick(dt);
     }
