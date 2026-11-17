@@ -53,11 +53,19 @@ pub struct DropAttemptInfo<'a> {
     pub active_players: u32,
     /// `SpecialSeedFeatures.ShouldDropExtraGel` (`DropBasedOnExtraGel`).
     pub extra_gel: bool,
+    /// `DropAttemptInfo.IsInSimulation` (`DropAttemptInfo.cs:13`) — the loot
+    /// path always passes false (`NPC.cs:78933`); the mech-spawner gate reads
+    /// it (`MechBossSpawnersDropRule.cs:21`).
+    pub is_in_simulation: bool,
+    /// `Language.GetTextValue` (`Conditions.cs:970`) — the live localization
+    /// lookup `NamedNPC`'s key resolves through (the engine is language-free;
+    /// the caller supplies the lookup, `None` makes `NamedNPC` refuse).
+    pub get_text_value: Option<&'a dyn Fn(&str) -> String>,
     /// The world/event state the `Conditions.*` gates read (the caller
     /// snapshots it once per drop attempt).
     pub flags: LootFlags,
     /// The dying NPC's fields the conditions read (`info.npc.*`).
-    pub npc: LootNpc,
+    pub npc: LootNpc<'a>,
 }
 
 /// The world/event snapshot the drop conditions read — `Main.hardMode`,
@@ -137,9 +145,10 @@ pub struct LootFlags {
 }
 
 /// The dying NPC's fields the conditions read (`info.npc.SpawnedFromStatue`,
-/// `.value > 0f`, `.lifeMax > 1`, `.damage > 0`, `.friendly`, `.type`).
+/// `.value > 0f`, `.lifeMax > 1`, `.damage > 0`, `.friendly`, `.type`, `.ai`,
+/// `.localAI`, `.GivenName`).
 #[derive(Clone, Copy, Default, Debug)]
-pub struct LootNpc {
+pub struct LootNpc<'a> {
     pub kind: i32,
     /// `info.npc.value`.
     pub value: f32,
@@ -161,6 +170,18 @@ pub struct LootNpc {
     pub mechdusa_parts_cleared: bool,
     /// `info.npc.HasPlayerTarget` (the yoyo gates).
     pub has_player_target: bool,
+    /// `info.npc.ai` — `ai[1]` carries the slime body's item / the statue
+    /// mimic's style (`SlimeBodyItemDropRule.cs:19-22`,
+    /// `StatueMimicItemDropRule.cs:14-20`), `ai[3]` the RedHat Skeletron
+    /// state (`NPC.cs:66671`).
+    pub ai: [f32; 4],
+    /// `info.npc.localAI` — RedHat Skeletron's types 36/32 read
+    /// `localAI[3]` (`NPC.cs:66673-66675`).
+    pub local_ai: [f32; 4],
+    /// `info.npc.GivenName` (`NPC.cs:6755`) — `Some` only while
+    /// `HasGivenName` (`NPC.cs:6741`, `_givenName.Length != 0`; the caller
+    /// maps the empty string to `None`). `NamedNPC`'s comparison reads it.
+    pub given_name: Option<&'a str>,
 }
 
 /// One resolved drop — the arguments of `CommonCode.DropItemFromNPC`.
@@ -1257,8 +1278,8 @@ impl ItemDropRule for DropOneByOne {
     /// `DropOneByOne.ReportDroprates` (`DropOneByOne.cs:67-72`): the
     /// personal rate and the chunk-scaled stack range.
     fn report_droprates(&self, drops: &mut Vec<DropRateInfo>, feed: &DropRateInfoChainFeed) {
-        let personal_drop_rate = self.params.chance_numerator as f32
-            / self.params.chance_denominator as f32;
+        let personal_drop_rate =
+            self.params.chance_numerator as f32 / self.params.chance_denominator as f32;
         let min = self.params.min_drops_count
             * (self.params.min_stack_per_chunk_base + self.params.bonus_min_per_player);
         let max = self.params.max_drops_count
@@ -1378,7 +1399,10 @@ impl<T: ItemDropRule + 'static> ChainSugar for T {
 /// The erased-rule chain builders (the C# extension methods
 /// `Chains.OnSuccess`/`OnFailedRoll`/`OnFailedConditions` over `IItemDropRule`
 /// references; the `self: Box<Self>` receivers do not erase across `dyn`).
-pub fn chain_on_success(mut rule: Box<dyn ItemDropRule>, sub: Box<dyn ItemDropRule>) -> Box<dyn ItemDropRule> {
+pub fn chain_on_success(
+    mut rule: Box<dyn ItemDropRule>,
+    sub: Box<dyn ItemDropRule>,
+) -> Box<dyn ItemDropRule> {
     rule.chains_mut().push(ChainRule {
         kind: ChainKind::OnSuccess,
         rule: sub,
@@ -1386,7 +1410,10 @@ pub fn chain_on_success(mut rule: Box<dyn ItemDropRule>, sub: Box<dyn ItemDropRu
     rule
 }
 
-pub fn chain_on_failed_roll(mut rule: Box<dyn ItemDropRule>, sub: Box<dyn ItemDropRule>) -> Box<dyn ItemDropRule> {
+pub fn chain_on_failed_roll(
+    mut rule: Box<dyn ItemDropRule>,
+    sub: Box<dyn ItemDropRule>,
+) -> Box<dyn ItemDropRule> {
     rule.chains_mut().push(ChainRule {
         kind: ChainKind::OnFailedRoll,
         rule: sub,
@@ -1394,7 +1421,10 @@ pub fn chain_on_failed_roll(mut rule: Box<dyn ItemDropRule>, sub: Box<dyn ItemDr
     rule
 }
 
-pub fn chain_on_failed_conditions(mut rule: Box<dyn ItemDropRule>, sub: Box<dyn ItemDropRule>) -> Box<dyn ItemDropRule> {
+pub fn chain_on_failed_conditions(
+    mut rule: Box<dyn ItemDropRule>,
+    sub: Box<dyn ItemDropRule>,
+) -> Box<dyn ItemDropRule> {
     rule.chains_mut().push(ChainRule {
         kind: ChainKind::OnDoesntFillConditions,
         rule: sub,
@@ -1434,6 +1464,40 @@ pub struct IsMasterMode;
 impl DropCondition for IsMasterMode {
     fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
         info.is_master
+    }
+}
+
+/// `Conditions.NamedNPC` (`Conditions.cs:962-984`): the npc's given name
+/// equals the localized `neededName` key (the special-name drops — the Guide
+/// "Andrew" green cap, the Steampunker "Whitney", the Painter "Jim").
+pub struct NamedNPC {
+    /// `NamedNPC.neededName` — the localization KEY (`GuideNames.Andrew`).
+    pub needed_name: String,
+}
+
+impl NamedNPC {
+    /// The `NamedNPC(string neededName)` constructor (`:966-970`).
+    pub fn new(needed_name: impl Into<String>) -> Box<Self> {
+        Box::new(Self {
+            needed_name: needed_name.into(),
+        })
+    }
+}
+
+impl DropCondition for NamedNPC {
+    fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
+        // `Conditions.NamedNPC.CanDrop` (`Conditions.cs:971-977`):
+        // `!info.npc.HasGivenName` refuses, then
+        // `info.npc.GivenName == Language.GetTextValue(this.neededName)`.
+        // The engine is language-free — the lookup rides `get_text_value`
+        // (Decision D2); an unwired lookup refuses.
+        let Some(given) = info.npc.given_name else {
+            return false;
+        };
+        match info.get_text_value {
+            Some(text) => given == text(&self.needed_name),
+            None => false,
+        }
     }
 }
 
@@ -1505,7 +1569,13 @@ fn soul_of_whatever_can_drop(info: &DropAttemptInfo) -> bool {
 
 /// The pumpkin/frost moon gates' wave-scaled chance denominator
 /// (`Conditions.cs:55-122`).
-fn moon_wave_gate(rng: &mut dyn DropRng, luck: f32, is_pumpkin: bool, is_expert: bool, wave: i32) -> bool {
+fn moon_wave_gate(
+    rng: &mut dyn DropRng,
+    luck: f32,
+    is_pumpkin: bool,
+    is_expert: bool,
+    wave: i32,
+) -> bool {
     let mut num = wave;
     if is_expert {
         num += 5;
@@ -1614,6 +1684,8 @@ pub enum Cond {
     YoyosHelFire,
     /// `Conditions.NeverTrue` (the explicit dead rule).
     NeverTrue,
+    /// `Conditions.RedHatSkeletron` (`Conditions.cs:543`).
+    RedHatSkeletron,
 }
 
 impl DropCondition for Cond {
@@ -1664,12 +1736,10 @@ impl DropCondition for Cond {
                     && moon_wave_gate(info.rng, info.luck, false, info.is_expert, f.wave_number)
             }
             Cond::PumpkinMoonDropGateForTrophies => {
-                f.pumpkin_moon
-                    && moon_trophy_gate(info.rng, true, info.is_expert, f.wave_number)
+                f.pumpkin_moon && moon_trophy_gate(info.rng, true, info.is_expert, f.wave_number)
             }
             Cond::FrostMoonDropGateForTrophies => {
-                f.frost_moon
-                    && moon_trophy_gate(info.rng, false, info.is_expert, f.wave_number)
+                f.frost_moon && moon_trophy_gate(info.rng, false, info.is_expert, f.wave_number)
             }
             // `HalloweenWeapons` (`Conditions.cs:805-828`): the value/damage/
             // defense caps over the difficulty multipliers (folded into the
@@ -1771,6 +1841,20 @@ impl DropCondition for Cond {
                     && n.value > 0.0
             }
             Cond::NeverTrue => false,
+            // `Conditions.RedHatSkeletron` (`Conditions.cs:543-548`) →
+            // `NPC.RedHatSkeletronAdjustmentsEnabled` (`NPC.cs:66671-66682`):
+            // type 35 → `ai[3] == 1`, 36/32 → `localAI[3] == 1`, 33 →
+            // `ai[3] == 1`; every other kind refuses.
+            Cond::RedHatSkeletron => {
+                if (n.kind != 35 || n.ai[3] != 1.0)
+                    && (n.kind != 36 || n.local_ai[3] != 1.0)
+                    && (n.kind != 32 || n.local_ai[3] != 1.0)
+                {
+                    n.kind == 33 && n.ai[3] == 1.0
+                } else {
+                    true
+                }
+            }
         }
     }
 }
@@ -1924,6 +2008,272 @@ impl ItemDropRule for OneFromRulesRule {
 }
 impl_chains!(OneFromRulesRule);
 
+// --- The skipped rule classes (S1-E-14) ---------------------------------------
+//
+// The four `IItemDropRule` classes `tools/gen_loot.py`'s skip map dropped,
+// ported verbatim (`Terraria/GameContent/ItemDropRules/*.cs`).
+
+/// `ItemID.Count` (`ItemID.cs:14861`) — the `ai[1]` upper bound of the
+/// slime-body and statue-mimic gates.
+pub const ITEM_COUNT: i32 = 6196;
+
+/// `NPCID.Sets.SlimeCanContainItems` (`NPCID.cs:10443`,
+/// `CreateBoolSet(1, 59, 147, 184, 537)`) — the slime kinds whose body can
+/// carry an item.
+const SLIME_CAN_CONTAIN_ITEMS: [i32; 5] = [1, 59, 147, 184, 537];
+
+fn slime_can_contain_items(kind: i32) -> bool {
+    SLIME_CAN_CONTAIN_ITEMS.contains(&kind)
+}
+
+/// `WorldGen.StatueStyleToItem` (`WorldGen.cs:37928-37988`): the statue
+/// spawn style → the item id the statue's mimic drops. The C#'s default arm
+/// (`438 + style - 2`) covers styles 2..42, 83+ and negatives.
+pub fn statue_style_to_item(style: i32) -> i32 {
+    match style {
+        0 => 360,
+        1 => 52,
+        43 => 1152,
+        44 => 1153,
+        45 => 1154,
+        46 => 1408,
+        47 => 1409,
+        48 => 1410,
+        49 => 1462,
+        50 => 2672,
+        51..=62 => 3651 + style - 51,
+        63..=75 => 3708 + style - 63,
+        76 => 4397,
+        77 => 4360,
+        78 => 4342,
+        79 => 4466,
+        80 => 5317,
+        81 => 5318,
+        82 => 5319,
+        _ => 438 + style - 2,
+    }
+}
+
+/// `SlimeBodyItemDropRule` (`SlimeBodyItemDropRule.cs`): the slime body's
+/// carried item — `npc.ai[1]` names it, the stack table scales the payload.
+pub struct SlimeBodyItemDropRule {
+    chains: Vec<ChainRule>,
+}
+
+impl SlimeBodyItemDropRule {
+    /// The parameterless C# constructor.
+    pub fn new() -> Box<Self> {
+        Box::new(Self { chains: Vec::new() })
+    }
+
+    /// `SlimeBodyItemDropRule.GetDropInfo` (`:44-105`): the stack table —
+    /// `(min, max)` per item family, the default `1..1`.
+    pub fn get_drop_info(item_id: i32) -> (i32, i32) {
+        match item_id {
+            8 => (5, 10),
+            166 => (2, 6),
+            965 => (20, 45),
+            // The gem / rare family.
+            11 | 12 | 13 | 14 | 174 | 364 | 365 | 366 | 699 | 700 | 701 | 702 | 1104 | 1105
+            | 1106 | 3347 => (3, 13),
+            71 => (50, 99),
+            72 => (20, 99),
+            73 => (1, 2),
+            4343 | 4344 => (2, 5),
+            // The gel / wood family.
+            2 | 3 | 9 | 150 | 593 | 751 | 1103 | 3081 | 3086 | 3609 | 3610 | 5395 => (10, 25),
+            147 | 314 | 1124 | 1125 | 1345 | 3736 | 3737 | 3738 => (2, 5),
+            _ => (1, 1),
+        }
+    }
+}
+
+impl ItemDropRule for SlimeBodyItemDropRule {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
+        // `SlimeBodyItemDropRule.CanDrop` (`:14-21`): the slime set gates the
+        // kind, then `ai[1]` must name a valid item id.
+        slime_can_contain_items(info.npc.kind)
+            && info.npc.ai[1] > 0.0
+            && info.npc.ai[1] < ITEM_COUNT as f32
+    }
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        // `TryDroppingItem` (`:23-34`): `itemId = (int)npc.ai[1]`, one
+        // `Next(min, max + 1)` stack roll (the inclusive upper bound),
+        // Success. `CommonCode.DropItemFromNPC`'s own `itemId > 0 && <
+        // ItemID.Count` guard rides the caller's request filter (no RNG).
+        let item_id = info.npc.ai[1] as i32;
+        let (min, max) = Self::get_drop_info(item_id);
+        let stack = info.rng.next_range(min, max + 1);
+        out.push(drop_request(item_id, stack, false));
+        DropAttemptResult {
+            state: DropResultState::Success,
+        }
+    }
+}
+impl_chains!(SlimeBodyItemDropRule);
+
+/// `StatueMimicItemDropRule` (`StatueMimicItemDropRule.cs`): NPC 690's item —
+/// `WorldGen.StatueStyleToItem` maps the spawn style (`npc.ai[1]`).
+pub struct StatueMimicItemDropRule {
+    chains: Vec<ChainRule>,
+}
+
+impl StatueMimicItemDropRule {
+    /// The parameterless C# constructor.
+    pub fn new() -> Box<Self> {
+        Box::new(Self { chains: Vec::new() })
+    }
+}
+
+impl ItemDropRule for StatueMimicItemDropRule {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
+        // `StatueMimicItemDropRule.CanDrop` (`:14-20`): `ai[1]` names a valid
+        // item id.
+        info.npc.ai[1] > 0.0 && info.npc.ai[1] < ITEM_COUNT as f32
+    }
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        // `TryDroppingItem` (`:33-40`): the mapped item, stack 1, no roll.
+        let item = statue_style_to_item(info.npc.ai[1] as i32);
+        out.push(drop_request(item, 1, false));
+        DropAttemptResult {
+            state: DropResultState::Success,
+        }
+    }
+}
+impl_chains!(StatueMimicItemDropRule);
+
+/// `MechBossSpawnersDropRule` (`MechBossSpawnersDropRule.cs`): the global
+/// hardmode mech-spawner drop — one sequential arm per un-downed boss, each
+/// a `RollLuck(2500)` draw, the first hit wins.
+pub struct MechBossSpawnersDropRule {
+    chains: Vec<ChainRule>,
+}
+
+impl MechBossSpawnersDropRule {
+    /// The parameterless C# constructor.
+    pub fn new() -> Box<Self> {
+        Box::new(Self { chains: Vec::new() })
+    }
+}
+
+impl ItemDropRule for MechBossSpawnersDropRule {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
+        // `MechBossSpawnersDropRule.CanDrop` (`:15-23`): a valuable NPC in
+        // hardmode with a mech boss still standing, outside the simulation.
+        info.npc.value > 0.0
+            && info.flags.hard_mode
+            && (!info.flags.downed_mech1 || !info.flags.downed_mech2 || !info.flags.downed_mech3)
+            && !info.is_in_simulation
+    }
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        // `TryDroppingItem` (`:25-51`): the three arms run in order — each
+        // arm rolls `player.RollLuck(2500)` ONLY when its boss is un-downed
+        // (`&&` short-circuits both languages); the first hit returns
+        // Success and skips the rest; the fall-through is FailedRandomRoll.
+        if !info.flags.downed_mech1 && roll_luck(info.rng, info.luck, 2500) == 0 {
+            out.push(drop_request(556, 1, false));
+            return DropAttemptResult {
+                state: DropResultState::Success,
+            };
+        }
+        if !info.flags.downed_mech2 && roll_luck(info.rng, info.luck, 2500) == 0 {
+            out.push(drop_request(544, 1, false));
+            return DropAttemptResult {
+                state: DropResultState::Success,
+            };
+        }
+        if !info.flags.downed_mech3 && roll_luck(info.rng, info.luck, 2500) == 0 {
+            out.push(drop_request(557, 1, false));
+            return DropAttemptResult {
+                state: DropResultState::Success,
+            };
+        }
+        DropAttemptResult {
+            state: DropResultState::FailedRandomRoll,
+        }
+    }
+}
+impl_chains!(MechBossSpawnersDropRule);
+
+/// `FromOptionsWithoutRepeatsDropRule` (`FromOptionsWithoutRepeatsDropRule.cs`):
+/// `dropCount` distinct picks — each iteration draws `Next(count)` over the
+/// SHRINKING list and removes the hit (`:29-46`). The C# reuses an instance
+/// field for the temp list; the port builds it per attempt (`Clear` +
+/// `AddRange` reset it every call, so behavior is identical).
+pub struct FromOptionsWithoutRepeatsDropRule {
+    /// `.dropIds`.
+    pub drop_ids: Vec<i32>,
+    /// `.dropCount`.
+    pub drop_count: i32,
+    chains: Vec<ChainRule>,
+}
+
+impl FromOptionsWithoutRepeatsDropRule {
+    /// The `(dropCount, options)` constructor (`:13-19`).
+    pub fn new(drop_count: i32, options: &[i32]) -> Box<Self> {
+        Box::new(Self {
+            drop_count,
+            drop_ids: options.to_vec(),
+            chains: Vec::new(),
+        })
+    }
+}
+
+impl ItemDropRule for FromOptionsWithoutRepeatsDropRule {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    fn can_drop(&self, _info: &mut DropAttemptInfo) -> bool {
+        // `FromOptionsWithoutRepeatsDropRule.CanDrop` (`:21-23`): `true`.
+        true
+    }
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        // `TryDroppingItem` (`:25-46`): the temp list copies `dropIds`, then
+        // `dropCount` iterations of `Next(list.Count)` over the SHRINKING
+        // list — drop `list[index]` stack 1, `RemoveAt(index)` — breaking
+        // when the list empties. Success always, even after the break.
+        let mut available = self.drop_ids.clone();
+        for _ in 0..self.drop_count {
+            if available.is_empty() {
+                break;
+            }
+            let index = info.rng.next_range(0, available.len() as i32);
+            let item = available[index as usize];
+            out.push(drop_request(item, 1, false));
+            available.remove(index as usize);
+        }
+        DropAttemptResult {
+            state: DropResultState::Success,
+        }
+    }
+}
+impl_chains!(FromOptionsWithoutRepeatsDropRule);
+
 // --- The remaining factories (`ItemDropRule.cs:15-115`) ----------------------
 
 /// The `MasterModeCommonDrop` factory (`ItemDropRule.cs:25-27`) — a plain
@@ -1933,7 +2283,10 @@ pub fn master_mode_common_drop(item: i32) -> Box<dyn ItemDropRule> {
 }
 
 /// The `MasterModeDropOnAllPlayers` factory (`ItemDropRule.cs:29-33`).
-pub fn master_mode_drop_on_all_players(item: i32, chance_denominator: i32) -> Box<dyn ItemDropRule> {
+pub fn master_mode_drop_on_all_players(
+    item: i32,
+    chance_denominator: i32,
+) -> Box<dyn ItemDropRule> {
     DropBasedOnMasterMode::new(
         DropNothing::new(),
         DropPerPlayerOnThePlayer::new(
@@ -1974,7 +2327,8 @@ pub fn by_condition(
     max: i32,
     chance_numerator: i32,
 ) -> Box<dyn ItemDropRule> {
-    let mut rule = ItemDropWithCondition::new(Box::new(condition), item, chance_denominator, min, max);
+    let mut rule =
+        ItemDropWithCondition::new(Box::new(condition), item, chance_denominator, min, max);
     rule.chance_numerator = chance_numerator;
     rule
 }
@@ -2138,6 +2492,8 @@ mod tests {
             is_master: false,
             active_players: 1,
             extra_gel: false,
+            is_in_simulation: false,
+            get_text_value: None,
             flags: LootFlags::default(),
             npc: LootNpc::default(),
         }
@@ -2461,6 +2817,736 @@ mod tests {
                 DropRng::next_float(through_trait).to_bits(),
                 want,
                 "seed 42 NextFloat through the trait, draw {i}"
+            );
+        }
+    }
+}
+
+/// The S1-E-14 phase tests — the four skipped rule classes and the two
+/// conditions, each hand-traced against its C# body.
+#[cfg(test)]
+mod s1_e_14_tests {
+    use super::*;
+
+    /// A scripted rng for the draw-order pins: each call pops the next
+    /// scripted value and records the requested `(min, max)` range, so the
+    /// tests pin both the draw ORDER and the requested bounds.
+    struct ScriptRng {
+        floats: std::collections::VecDeque<f32>,
+        values: std::collections::VecDeque<i32>,
+        ranges: Vec<(i32, i32)>,
+    }
+
+    impl ScriptRng {
+        fn new(floats: &[f32], values: &[i32]) -> Self {
+            Self {
+                floats: floats.iter().copied().collect(),
+                values: values.iter().copied().collect(),
+                ranges: Vec::new(),
+            }
+        }
+    }
+
+    impl DropRng for ScriptRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            self.values.pop_front().expect("script exhausted")
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats.pop_front().expect("script exhausted")
+        }
+    }
+
+    fn npc(kind: i32, ai1: f32) -> LootNpc<'static> {
+        LootNpc {
+            kind,
+            ai: [0.0, ai1, 0.0, 0.0],
+            ..Default::default()
+        }
+    }
+
+    fn info_npc<'a>(rng: &'a mut dyn DropRng, npc: LootNpc<'a>) -> DropAttemptInfo<'a> {
+        DropAttemptInfo {
+            rng,
+            luck: 0.0,
+            is_expert: false,
+            is_master: false,
+            active_players: 1,
+            extra_gel: false,
+            is_in_simulation: false,
+            get_text_value: None,
+            flags: LootFlags::default(),
+            npc,
+        }
+    }
+
+    /// DW-1.1: every stack-table family pins its `(min, max)` and the
+    /// `Next(min, max + 1)` draw — the stack equals the same-seed stream's
+    /// own draw and exactly one draw is consumed (the streams re-align after
+    /// the rule's single stack roll).
+    #[test]
+    fn s1_e_14_slime_table_pins_each_family_stack_range() {
+        // (itemId, min, max) — one representative per C# switch arm
+        // (`SlimeBodyItemDropRule.cs:44-105`).
+        let families: [(i32, i32, i32); 11] = [
+            (8, 5, 10),
+            (166, 2, 6),
+            (965, 20, 45),
+            (11, 3, 13),
+            (71, 50, 99),
+            (72, 20, 99),
+            (73, 1, 2),
+            (4343, 2, 5),
+            (2, 10, 25),
+            (147, 2, 5),
+            (5, 1, 1), // the default arm (item 5 is in no listed family)
+        ];
+        for (item, min, max) in families {
+            let mut rng = crate::tile_light::FastRandom::new(77);
+            let mut trace = crate::tile_light::FastRandom::new(77);
+            let mut out = Vec::new();
+            let mut i = info_npc(&mut rng, npc(1, item as f32));
+            let r = resolve_rule(SlimeBodyItemDropRule::new().as_ref(), &mut i, &mut out);
+            assert_eq!(r.state, DropResultState::Success, "item {item}");
+            assert_eq!(out.len(), 1);
+            assert_eq!(
+                out[0],
+                DropRequest {
+                    item,
+                    stack: out[0].stack,
+                    scattered: false,
+                    resets_money: false
+                }
+            );
+            assert!(
+                (min..=max).contains(&out[0].stack),
+                "item {item} stack {}",
+                out[0].stack
+            );
+            // Exactly one draw: after the rule's stack roll both streams
+            // produce the same next value.
+            let _ = trace.next_range(min, max + 1);
+            assert_eq!(
+                rng.next_range(min, max + 1),
+                trace.next_range(min, max + 1),
+                "item {item}: one stack draw, then the streams re-align"
+            );
+        }
+    }
+
+    /// DW-1.1: the default family is exactly `1..1` — the stack is 1 for
+    /// every seed, one draw consumed.
+    #[test]
+    fn s1_e_14_slime_default_family_drops_exactly_one() {
+        for seed in [1, 9, 313] {
+            let mut rng = crate::tile_light::FastRandom::new(seed);
+            let mut out = Vec::new();
+            let mut i = info_npc(&mut rng, npc(1, 37.0));
+            let r = resolve_rule(SlimeBodyItemDropRule::new().as_ref(), &mut i, &mut out);
+            assert_eq!(r.state, DropResultState::Success);
+            assert_eq!(
+                out[0],
+                DropRequest {
+                    item: 37,
+                    stack: 1,
+                    scattered: false,
+                    resets_money: false
+                }
+            );
+        }
+    }
+
+    /// DW-1.1: the gates — a kind outside `SlimeCanContainItems`, an unset
+    /// payload (`ai[1] == 0`) and out-of-range payloads refuse; the five set
+    /// members pass; `ai[1] == ItemID.Count` refuses while `Count - 1` runs.
+    #[test]
+    fn s1_e_14_slime_gates_refuse_out_of_set_and_bad_ai() {
+        // A non-slime kind refuses (DoesntFillConditions at the resolver).
+        let mut rng = crate::tile_light::FastRandom::new(5);
+        let mut out = Vec::new();
+        let mut i = info_npc(&mut rng, npc(22, 8.0));
+        let r = resolve_rule(SlimeBodyItemDropRule::new().as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::DoesntFillConditions);
+        assert!(out.is_empty());
+        // The five set members pass the kind gate (`NPCID.cs:10443`).
+        for kind in [1, 59, 147, 184, 537] {
+            let mut rng = crate::tile_light::FastRandom::new(5);
+            let mut i = info_npc(&mut rng, npc(kind, 8.0));
+            let mut out = Vec::new();
+            let r = resolve_rule(SlimeBodyItemDropRule::new().as_ref(), &mut i, &mut out);
+            assert_eq!(r.state, DropResultState::Success, "kind {kind}");
+        }
+        // ai[1] == 0, negative and >= ItemID.Count refuse.
+        for ai1 in [0.0, -1.0, ITEM_COUNT as f32, 7000.0] {
+            let mut rng = crate::tile_light::FastRandom::new(5);
+            let mut i = info_npc(&mut rng, npc(1, ai1));
+            let mut out = Vec::new();
+            let r = resolve_rule(SlimeBodyItemDropRule::new().as_ref(), &mut i, &mut out);
+            assert_eq!(
+                r.state,
+                DropResultState::DoesntFillConditions,
+                "ai[1] {ai1}"
+            );
+            assert!(out.is_empty());
+        }
+        // ai[1] == 6195 (Count - 1) runs: item 6195 is in no family → 1..1.
+        let mut rng = crate::tile_light::FastRandom::new(5);
+        let mut i = info_npc(&mut rng, npc(1, 6195.0));
+        let mut out = Vec::new();
+        let r = resolve_rule(SlimeBodyItemDropRule::new().as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(
+            out[0],
+            DropRequest {
+                item: 6195,
+                stack: 1,
+                scattered: false,
+                resets_money: false
+            }
+        );
+    }
+
+    /// DW-1.1: `TryDroppingItem` casts `(int)npc.ai[1]` — a fractional
+    /// payload names the truncated item (5.9 → item 5, the default family).
+    #[test]
+    fn s1_e_14_slime_casts_ai1_to_the_item_id() {
+        let mut rng = crate::tile_light::FastRandom::new(11);
+        let mut i = info_npc(&mut rng, npc(1, 5.9));
+        let mut out = Vec::new();
+        let r = resolve_rule(SlimeBodyItemDropRule::new().as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out[0].item, 5);
+        assert_eq!(out[0].stack, 1);
+    }
+
+    /// DW-1.1: the stack table is exhaustive — EVERY member id of every C#
+    /// family asserts its range (a typo'd id cannot hide).
+    #[test]
+    fn s1_e_14_slime_family_table_is_exhaustive() {
+        for item in [8] {
+            assert_eq!(SlimeBodyItemDropRule::get_drop_info(item), (5, 10));
+        }
+        assert_eq!(SlimeBodyItemDropRule::get_drop_info(166), (2, 6));
+        assert_eq!(SlimeBodyItemDropRule::get_drop_info(965), (20, 45));
+        for item in [
+            11, 12, 13, 14, 174, 364, 365, 366, 699, 700, 701, 702, 1104, 1105, 1106, 3347,
+        ] {
+            assert_eq!(
+                SlimeBodyItemDropRule::get_drop_info(item),
+                (3, 13),
+                "item {item}"
+            );
+        }
+        assert_eq!(SlimeBodyItemDropRule::get_drop_info(71), (50, 99));
+        assert_eq!(SlimeBodyItemDropRule::get_drop_info(72), (20, 99));
+        assert_eq!(SlimeBodyItemDropRule::get_drop_info(73), (1, 2));
+        for item in [4343, 4344] {
+            assert_eq!(
+                SlimeBodyItemDropRule::get_drop_info(item),
+                (2, 5),
+                "item {item}"
+            );
+        }
+        for item in [2, 3, 9, 150, 593, 751, 1103, 3081, 3086, 3609, 3610, 5395] {
+            assert_eq!(
+                SlimeBodyItemDropRule::get_drop_info(item),
+                (10, 25),
+                "item {item}"
+            );
+        }
+        for item in [147, 314, 1124, 1125, 1345, 3736, 3737, 3738] {
+            assert_eq!(
+                SlimeBodyItemDropRule::get_drop_info(item),
+                (2, 5),
+                "item {item}"
+            );
+        }
+    }
+
+    /// DW-1.2: `WorldGen.StatueStyleToItem`'s map — the explicit arms, the
+    /// two range arms, and the default arm (styles 2..42, 83+ and negatives).
+    #[test]
+    fn s1_e_14_statue_style_to_item_pins_the_map() {
+        let pins: [(i32, i32); 26] = [
+            (0, 360),
+            (1, 52),
+            (2, 438),
+            (42, 478),
+            (43, 1152),
+            (44, 1153),
+            (45, 1154),
+            (46, 1408),
+            (47, 1409),
+            (48, 1410),
+            (49, 1462),
+            (50, 2672),
+            (51, 3651),
+            (62, 3662),
+            (63, 3708),
+            (75, 3720),
+            (76, 4397),
+            (77, 4360),
+            (78, 4342),
+            (79, 4466),
+            (80, 5317),
+            (81, 5318),
+            (82, 5319),
+            (83, 519), // 438 + 83 - 2
+            (100, 536),
+            (-1, 435), // 438 - 1 - 2
+        ];
+        for (style, item) in pins {
+            assert_eq!(statue_style_to_item(style), item, "style {style}");
+        }
+    }
+
+    /// DW-1.2: the statue rule drops the mapped item, stack 1, consuming no
+    /// draw; the ai[1] gates refuse 0 and >= ItemID.Count.
+    #[test]
+    fn s1_e_14_statue_rule_drops_the_mapped_item_stack_1() {
+        let mut rng = crate::tile_light::FastRandom::new(31);
+        let mut trace = crate::tile_light::FastRandom::new(31);
+        let mut i = info_npc(&mut rng, npc(690, 44.0));
+        let mut out = Vec::new();
+        let r = resolve_rule(StatueMimicItemDropRule::new().as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(
+            out[0],
+            DropRequest {
+                item: 1153,
+                stack: 1,
+                scattered: false,
+                resets_money: false
+            }
+        );
+        // No roll: the stream stays at its first draw.
+        assert_eq!(rng.next_range(0, 1000), trace.next_range(0, 1000));
+        for ai1 in [0.0, ITEM_COUNT as f32] {
+            let mut rng = crate::tile_light::FastRandom::new(31);
+            let mut i = info_npc(&mut rng, npc(690, ai1));
+            let mut out = Vec::new();
+            let r = resolve_rule(StatueMimicItemDropRule::new().as_ref(), &mut i, &mut out);
+            assert_eq!(
+                r.state,
+                DropResultState::DoesntFillConditions,
+                "ai[1] {ai1}"
+            );
+            assert!(out.is_empty());
+        }
+    }
+
+    fn mech_flags(d1: bool, d2: bool, d3: bool) -> LootFlags {
+        LootFlags {
+            hard_mode: true,
+            downed_mech1: d1,
+            downed_mech2: d2,
+            downed_mech3: d3,
+            ..Default::default()
+        }
+    }
+
+    /// DW-1.3: the three arms roll IN ORDER over the scripted stream and the
+    /// first hit short-circuits (the untouched scripted draws prove it); a
+    /// downed boss's arm consumes NO draw.
+    #[test]
+    fn s1_e_14_mech_arms_roll_in_sequence_and_short_circuit() {
+        let rule = MechBossSpawnersDropRule::new();
+        // All three un-downed, rolls [0]: arm 1 wins (556), exactly one draw.
+        let mut rng = ScriptRng::new(&[], &[0]);
+        let mut i = DropAttemptInfo {
+            flags: mech_flags(false, false, false),
+            npc: LootNpc {
+                value: 1.0,
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(
+            out[0],
+            DropRequest {
+                item: 556,
+                stack: 1,
+                scattered: false,
+                resets_money: false
+            }
+        );
+        assert!(rng.values.is_empty());
+        assert_eq!(rng.ranges, [(0, 2500)]);
+        // Rolls [5, 0, 9]: arm 1 misses, arm 2 wins (544), two draws — the
+        // third scripted draw stays untouched.
+        let mut rng = ScriptRng::new(&[], &[5, 0, 9]);
+        let mut i = DropAttemptInfo {
+            flags: mech_flags(false, false, false),
+            npc: LootNpc {
+                value: 1.0,
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out[0].item, 544);
+        assert_eq!(rng.values.len(), 1);
+        // Rolls [5, 7, 0]: arm 3 wins (557), three draws.
+        let mut rng = ScriptRng::new(&[], &[5, 7, 0]);
+        let mut i = DropAttemptInfo {
+            flags: mech_flags(false, false, false),
+            npc: LootNpc {
+                value: 1.0,
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out[0].item, 557);
+        assert!(rng.values.is_empty());
+        // Rolls [5, 7, 9]: all arms miss → FailedRandomRoll, three draws.
+        let mut rng = ScriptRng::new(&[], &[5, 7, 9]);
+        let mut i = DropAttemptInfo {
+            flags: mech_flags(false, false, false),
+            npc: LootNpc {
+                value: 1.0,
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::FailedRandomRoll);
+        assert!(out.is_empty());
+        assert!(rng.values.is_empty());
+        // Boss 1 downed: arm 1 consumes NO draw — the scripted [0] is arm 2's
+        // roll and wins 544 with one draw total.
+        let mut rng = ScriptRng::new(&[], &[0]);
+        let mut i = DropAttemptInfo {
+            flags: mech_flags(true, false, false),
+            npc: LootNpc {
+                value: 1.0,
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out[0].item, 544);
+        assert!(rng.values.is_empty());
+        // Bosses 1+2 downed: the [0] is arm 3's roll → 557, one draw.
+        let mut rng = ScriptRng::new(&[], &[0]);
+        let mut i = DropAttemptInfo {
+            flags: mech_flags(true, true, false),
+            npc: LootNpc {
+                value: 1.0,
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out[0].item, 557);
+        // Boss 1 downed, arms 2+3 miss their rolls [5, 7] → FailedRandomRoll
+        // after exactly two draws (arm 1 never rolled).
+        let mut rng = ScriptRng::new(&[], &[5, 7, 9]);
+        let mut i = DropAttemptInfo {
+            flags: mech_flags(true, false, false),
+            npc: LootNpc {
+                value: 1.0,
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::FailedRandomRoll);
+        assert_eq!(rng.values.len(), 1);
+    }
+
+    /// DW-1.3: the `npc.value > 0 && hardMode && (!d1 || !d2 || !d3) &&
+    /// !IsInSimulation` gate — each miss refuses without consuming a draw.
+    #[test]
+    fn s1_e_14_mech_gates_refuse_without_value_hardmode_or_standing_boss() {
+        let rule = MechBossSpawnersDropRule::new();
+        let cases: [(LootFlags, LootNpc<'static>, &str); 4] = [
+            (
+                mech_flags(false, false, false),
+                LootNpc::default(),
+                "value 0",
+            ),
+            (
+                LootFlags {
+                    hard_mode: false,
+                    downed_mech1: false,
+                    ..Default::default()
+                },
+                LootNpc {
+                    value: 1.0,
+                    ..Default::default()
+                },
+                "not hardmode",
+            ),
+            (
+                mech_flags(true, true, true),
+                LootNpc {
+                    value: 1.0,
+                    ..Default::default()
+                },
+                "all downed",
+            ),
+            (
+                mech_flags(false, false, false),
+                LootNpc {
+                    value: 1.0,
+                    ..Default::default()
+                },
+                "positive",
+            ),
+        ];
+        for (flags, npc_fields, label) in cases {
+            let mut rng = ScriptRng::new(&[], &[0]);
+            let mut i = DropAttemptInfo {
+                flags,
+                npc: npc_fields,
+                ..info_npc(&mut rng, LootNpc::default())
+            };
+            let mut out = Vec::new();
+            let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+            if label == "positive" {
+                assert_eq!(r.state, DropResultState::Success, "{label}");
+                assert_eq!(out[0].item, 556);
+            } else {
+                assert_eq!(r.state, DropResultState::DoesntFillConditions, "{label}");
+                assert!(out.is_empty(), "{label}");
+                assert_eq!(rng.values.len(), 1, "{label}: no draw consumed");
+            }
+        }
+        // The simulation refuses even a passing gate (`MechBossSpawnersDropRule.cs:21`).
+        let mut rng = ScriptRng::new(&[], &[0]);
+        let mut i = DropAttemptInfo {
+            flags: mech_flags(false, false, false),
+            npc: LootNpc {
+                value: 1.0,
+                ..Default::default()
+            },
+            is_in_simulation: true,
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::DoesntFillConditions);
+    }
+
+    /// DW-1.3: the rolls route through `Luck.RollLuck` — luck 0 is one plain
+    /// `Next(0, 2500)`; luck 1.0 takes the shrunk path `(1250, 2500)` then
+    /// `(0, shrunk)` and still hits on the scripted 0.
+    #[test]
+    fn s1_e_14_mech_rolls_through_luck() {
+        // luck 1.0: the gate float 0.5 < 1.0 passes, the shrunk draw is 1300,
+        // the final draw 0 hits → item 556 via the luck path.
+        let mut rng = ScriptRng::new(&[0.5], &[1300, 0]);
+        let mut i = DropAttemptInfo {
+            luck: 1.0,
+            flags: mech_flags(false, false, false),
+            npc: LootNpc {
+                value: 1.0,
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        let mut out = Vec::new();
+        let r = resolve_rule(MechBossSpawnersDropRule::new().as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out[0].item, 556);
+        assert_eq!(rng.ranges, [(1250, 2500), (0, 1300)]);
+    }
+
+    /// DW-1.4: the remove-at-index order — each iteration draws
+    /// `Next(count)` over the SHRINKING list and drops the hit.
+    #[test]
+    fn s1_e_14_without_repeats_removes_at_index_in_order() {
+        // Draws [2, 0] over [100, 200, 300]: pick 300, remove → [100, 200];
+        // pick 100 → out == [300, 100]. The requested ranges pin the
+        // shrinking counts.
+        let mut rng = ScriptRng::new(&[], &[2, 0]);
+        let mut i = info_npc(&mut rng, LootNpc::default());
+        let mut out = Vec::new();
+        let r = resolve_rule(
+            FromOptionsWithoutRepeatsDropRule::new(2, &[100, 200, 300]).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out.len(), 2);
+        assert_eq!((out[0].item, out[1].item), (300, 100));
+        assert!(out
+            .iter()
+            .all(|req| req.stack == 1 && !req.scattered && !req.resets_money));
+        assert_eq!(rng.ranges, [(0, 3), (0, 2)]);
+        // Draws [0, 0]: pick 100, the list shrinks to [200, 300], pick 200.
+        let mut rng = ScriptRng::new(&[], &[0, 0]);
+        let mut i = info_npc(&mut rng, LootNpc::default());
+        let mut out = Vec::new();
+        resolve_rule(
+            FromOptionsWithoutRepeatsDropRule::new(2, &[100, 200, 300]).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert_eq!((out[0].item, out[1].item), (100, 200));
+    }
+
+    /// DW-1.4: `dropCount > options` breaks when the list empties — the
+    /// exhausted attempt still reports Success and stops drawing.
+    #[test]
+    fn s1_e_14_without_repeats_breaks_when_options_exhausted() {
+        let mut rng = ScriptRng::new(&[], &[1, 0]);
+        let mut i = info_npc(&mut rng, LootNpc::default());
+        let mut out = Vec::new();
+        let r = resolve_rule(
+            FromOptionsWithoutRepeatsDropRule::new(5, &[100, 200]).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out.len(), 2);
+        assert_eq!((out[0].item, out[1].item), (200, 100));
+        // Exactly two draws: the empty-list iteration breaks before rolling.
+        assert_eq!(rng.ranges, [(0, 2), (0, 1)]);
+    }
+
+    /// DW-1.4: Success always — `dropCount == 0` draws nothing; a single
+    /// option drops once and breaks; `CanDrop` is unconditionally true.
+    #[test]
+    fn s1_e_14_without_repeats_always_succeeds_and_handles_zero_and_one() {
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = info_npc(&mut rng, LootNpc::default());
+        let mut out = Vec::new();
+        let rule = FromOptionsWithoutRepeatsDropRule::new(0, &[100, 200]);
+        assert!(rule.can_drop(&mut i));
+        let r = resolve_rule(rule.as_ref(), &mut i, &mut out);
+        assert_eq!(r.state, DropResultState::Success);
+        assert!(out.is_empty());
+        assert!(rng.ranges.is_empty());
+        // One option, three requested: `Next(1)` is 0 → 700 once, then break.
+        let mut rng = ScriptRng::new(&[], &[0]);
+        let mut i = info_npc(&mut rng, LootNpc::default());
+        let mut out = Vec::new();
+        let r = resolve_rule(
+            FromOptionsWithoutRepeatsDropRule::new(3, &[700]).as_ref(),
+            &mut i,
+            &mut out,
+        );
+        assert_eq!(r.state, DropResultState::Success);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0],
+            DropRequest {
+                item: 700,
+                stack: 1,
+                scattered: false,
+                resets_money: false
+            }
+        );
+        assert_eq!(rng.ranges, [(0, 1)]);
+    }
+
+    /// DW-1.5: `Conditions.NamedNPC` — the given name must equal the
+    /// localized needed key; `!HasGivenName` refuses BEFORE the lookup (the
+    /// stub records how often it ran); an unwired lookup refuses.
+    #[test]
+    fn s1_e_14_named_npc_compares_given_name_to_localized_key() {
+        let calls = std::cell::Cell::new(0u32);
+        let text = |key: &str| {
+            calls.set(calls.get() + 1);
+            assert_eq!(key, "GuideNames.Andrew");
+            String::from("Andrew")
+        };
+        let cond = NamedNPC::new("GuideNames.Andrew");
+        // The guide named Andrew passes.
+        let mut rng = crate::tile_light::FastRandom::new(1);
+        let mut i = DropAttemptInfo {
+            get_text_value: Some(&text),
+            npc: LootNpc {
+                given_name: Some("Andrew"),
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        assert!(cond.can_drop(&mut i));
+        assert_eq!(calls.get(), 1);
+        // A differently named guide refuses (the lookup ran).
+        let mut rng = crate::tile_light::FastRandom::new(1);
+        let mut i = DropAttemptInfo {
+            get_text_value: Some(&text),
+            npc: LootNpc {
+                given_name: Some("Aaron"),
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        assert!(!cond.can_drop(&mut i));
+        assert_eq!(calls.get(), 2);
+        // No given name refuses BEFORE the lookup (`Conditions.cs:973-975`).
+        let mut rng = crate::tile_light::FastRandom::new(1);
+        let mut i = DropAttemptInfo {
+            get_text_value: Some(&text),
+            npc: LootNpc {
+                given_name: None,
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        assert!(!cond.can_drop(&mut i));
+        assert_eq!(calls.get(), 2);
+        // An unwired lookup refuses (the engine's default).
+        let mut rng = crate::tile_light::FastRandom::new(1);
+        let mut i = DropAttemptInfo {
+            npc: LootNpc {
+                given_name: Some("Andrew"),
+                ..Default::default()
+            },
+            ..info_npc(&mut rng, LootNpc::default())
+        };
+        assert!(!cond.can_drop(&mut i));
+        assert_eq!(calls.get(), 2);
+    }
+
+    /// DW-1.5: the RedHat Skeletron state machine — type 35 reads `ai[3]`,
+    /// 36/32 read `localAI[3]`, 33 reads `ai[3]`, every other kind refuses
+    /// regardless of the state (`NPC.cs:66671-66682`).
+    #[test]
+    fn s1_e_14_red_hat_skeletron_state_machine() {
+        let cases: [(i32, f32, f32, bool); 10] = [
+            // (type, ai[3], localAI[3], expected)
+            (35, 1.0, 0.0, true),
+            (35, 0.0, 1.0, false), // 35 reads ai, not localAI
+            (35, 1.0, 1.0, true),
+            (36, 0.0, 1.0, true),
+            (36, 1.0, 0.0, false), // 36 reads localAI, not ai
+            (32, 0.0, 1.0, true),
+            (32, 1.0, 0.0, false), // 32 reads localAI, not ai
+            (33, 1.0, 0.0, true),
+            (33, 0.0, 1.0, false), // 33 reads ai, not localAI
+            (22, 1.0, 1.0, false), // any other kind refuses
+        ];
+        for (kind, ai3, local3, expected) in cases {
+            let mut rng = crate::tile_light::FastRandom::new(1);
+            let npc = LootNpc {
+                kind,
+                ai: [0.0, 0.0, 0.0, ai3],
+                local_ai: [0.0, 0.0, 0.0, local3],
+                ..Default::default()
+            };
+            let mut i = info_npc(&mut rng, npc);
+            assert_eq!(
+                Cond::RedHatSkeletron.can_drop(&mut i),
+                expected,
+                "type {kind} ai[3] {ai3} localAI[3] {local3}"
             );
         }
     }
