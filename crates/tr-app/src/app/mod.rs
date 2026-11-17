@@ -3392,6 +3392,14 @@ impl App {
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).
         app.wiring.seed_rand(world_seed | 1);
+        // `SetOngoingToTemps:169-172`: the sandstorm snapshot the load read out
+        // of the flags block (`_tempSandstorm*`, `LoadWorldFlags:2277-2283`)
+        // restores the event's live state, exactly as the rain triple above
+        // does for `Main.raining`.
+        app.sandstorm.happening = app.world.sandstorm_happening;
+        app.sandstorm.time_left = app.world.sandstorm_time_left;
+        app.sandstorm.severity = app.world.sandstorm_severity;
+        app.sandstorm.intended_severity = app.world.sandstorm_intended_severity;
         // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {

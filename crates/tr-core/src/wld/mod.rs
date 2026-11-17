@@ -675,6 +675,10 @@ impl<'a> Reader<'a> {
         self.0.f64().ok_or_else(|| eof(self.0.pos()))
     }
 
+    pub(crate) fn f32(&mut self) -> Result<f32> {
+        self.0.f32().ok_or_else(|| eof(self.0.pos()))
+    }
+
     /// .NET `BinaryReader.ReadString`: 7-bit length prefix + UTF-8 payload,
     /// decoded lossily as before.
     pub(crate) fn string(&mut self) -> Result<String> {
@@ -2354,5 +2358,375 @@ mod tests {
                 "the yellow wire at row {y}"
             );
         }
+    }
+
+    // --- round-trip lane: save -> load keeps everything the port models ------
+    //
+    // `SaveWorld_Version2:1150-1168` assembles the sections in C# order and
+    // `LoadWorld_Version2:1760-1851` walks them back; these four tests are the
+    // whole-file contract rather than one section's codec: the tile grid, the
+    // header/flags metadata, the eight payload sections, and the weather-event
+    // snapshot (the newest slice).
+
+    /// One important solid tile: kind 2 (`Main.tileFrameImportant[2]`) so the
+    /// frames ride the wire (`SaveWorldTiles:1449-1459`).
+    fn solid(frame_x: i16, frame_y: i16) -> Tile {
+        let mut t = Tile {
+            kind: 2,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        t.flags |= FLAG_ACTIVE;
+        t
+    }
+
+    /// A 6x5 grid whose cells cover every state `SaveWorldTiles:1432-1604`
+    /// writes: the frames, the paint, the wall (8- and 16-bit), the four
+    /// liquids, the slope/half-brick pair, the actuator/inactive pair, the two
+    /// invisible coats, the block/wall fullbright pair and the four wires.
+    fn tile_zoo() -> World {
+        let mut world = World::new("TileZoo".into(), 6, 5);
+        world.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        world.frame_important[2] = true;
+        for y in 0..world.height {
+            for x in 0..world.width {
+                let idx = world.index(x, y);
+                world.tiles[idx] = solid(18 * (x as i16), 18 * (y as i16));
+            }
+        }
+        // Tile paint + wall paint (`b3` 0x08 / 0x10). The wall paint rides the
+        // `if (tile.wall != 0)` arm (`SaveWorldTiles:1478-1486`), so the cell
+        // needs a wall for it to reach the file.
+        let i = world.index(0, 0);
+        world.tiles[i].set_paint(7);
+        world.tiles[i].wall = 1;
+        world.set_wall_paint(0, 0, 9);
+        // An 8-bit and a 16-bit wall (`b3` 0x40 carries the high byte).
+        let i = world.index(0, 1);
+        world.tiles[i].wall = 5;
+        let i = world.index(0, 2);
+        world.tiles[i].wall = 308;
+        // The four liquid kinds and their amount byte.
+        let i = world.index(1, 0);
+        world.tiles[i].liquid = 128;
+        let i = world.index(1, 1);
+        world.tiles[i].liquid = 200;
+        world.tiles[i].flags |= FLAG_LIQUID_LAVA;
+        let i = world.index(1, 2);
+        world.tiles[i].liquid = 255;
+        world.tiles[i].flags |= FLAG_LIQUID_HONEY;
+        let i = world.index(1, 3);
+        world.tiles[i].liquid = 64;
+        world.tiles[i].flags |= FLAG_LIQUID_SHIMMER;
+        // Slopes 1..=4 and the half-brick alternative (`b2` 0x10 / 0x20..).
+        let i = world.index(2, 0);
+        world.tiles[i].set_slope(1);
+        let i = world.index(2, 1);
+        world.tiles[i].set_slope(3);
+        let i = world.index(2, 2);
+        world.tiles[i].flags |= FLAG_HALF_BRICK;
+        // Actuator + inactive (`b3` 0x02 / 0x04).
+        let i = world.index(3, 0);
+        world.tiles[i].flags |= FLAG_ACTUATOR;
+        let i = world.index(3, 1);
+        world.tiles[i].flags |= FLAG_ACTUATOR | FLAG_INACTIVE;
+        // The two invisible coats (`b4` 0x02 / 0x04) and the two fullbrights
+        // (`b4` 0x08 / 0x10).
+        world.set_invisible_block(4, 0, true);
+        world.set_invisible_wall(4, 1, true);
+        let i = world.index(4, 2);
+        world.tiles[i].flags |= FLAG_FULLBRIGHT;
+        world.set_fullbright_wall(4, 3, true);
+        // The four wire colours (`b2` 0x02/0x04/0x08, `b3` 0x20).
+        for (n, color) in [
+            WireColor::Red,
+            WireColor::Blue,
+            WireColor::Green,
+            WireColor::Yellow,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            world.wires.set(5, n as i32, color, true);
+        }
+        // Everything at once, to pin the header chain's byte order.
+        let i = world.index(5, 4);
+        world.tiles[i].wall = 300;
+        world.tiles[i].liquid = 100;
+        world.tiles[i].flags |= FLAG_LIQUID_LAVA | FLAG_ACTUATOR | FLAG_HALF_BRICK;
+        world.tiles[i].set_paint(31);
+        world.set_wall_paint(5, 4, 31);
+        world.set_invisible_block(5, 4, true);
+        world.set_fullbright_wall(5, 4, true);
+        world.wires.set(5, 4, WireColor::Red, true);
+        world.wires.set(5, 4, WireColor::Green, true);
+        world
+    }
+
+    #[test]
+    fn wld_roundtrip_tiles_identical() {
+        // `SaveWorldTiles:1432-1604` writes (chained headers, payload, RLE) and
+        // `LoadWorldTiles:2519-2721` reads it back; the grid must come out
+        // identical, tile for tile, wire for wire.
+        let world = tile_zoo();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the saved world parses");
+        assert_eq!((back.width, back.height), (world.width, world.height));
+        assert_eq!(back.frame_important, world.frame_important);
+        for y in 0..world.height {
+            for x in 0..world.width {
+                let idx = world.index(x, y);
+                assert_eq!(back.tiles[idx], world.tiles[idx], "tile ({x}, {y})");
+                assert_eq!(
+                    back.wall_paint(x, y),
+                    world.wall_paint(x, y),
+                    "wall paint ({x}, {y})"
+                );
+                assert_eq!(
+                    back.invisible_block(x, y),
+                    world.invisible_block(x, y),
+                    "invisible block ({x}, {y})"
+                );
+                assert_eq!(
+                    back.invisible_wall(x, y),
+                    world.invisible_wall(x, y),
+                    "invisible wall ({x}, {y})"
+                );
+                assert_eq!(
+                    back.fullbright_wall(x, y),
+                    world.fullbright_wall(x, y),
+                    "fullbright wall ({x}, {y})"
+                );
+                for color in [
+                    WireColor::Red,
+                    WireColor::Blue,
+                    WireColor::Green,
+                    WireColor::Yellow,
+                ] {
+                    assert_eq!(
+                        back.wires.get(x, y, color),
+                        world.wires.get(x, y, color),
+                        "{color:?} wire ({x}, {y})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wld_roundtrip_metadata() {
+        // `SaveWorldHeader:1221` + `SaveWorldFlags:1238`: every header field the
+        // port owns, and the footer's name (`SaveFooter:1752`). `spawn_y` is
+        // recomputed from the grid (`parse_table`'s `compute_spawn_y`), so it is
+        // not part of the file contract.
+        let mut world = World::new("Metadata — ünïcode".into(), 8, 6);
+        world.seed = 424242;
+        world.generator_version = 140_015_933_8497;
+        world.unique_id = [0x11; 16];
+        world.world_id = 4242;
+        world.spawn_x = 3;
+        world.time = 1234.0;
+        world.day_time = false;
+        world.moon_type = 3;
+        world.moon_phase = 5;
+        world.world_surface = 4.5;
+        world.rock_layer = 100.25;
+        world.slime_rain_time = 999.0;
+        world.sundial_cooldown = 2;
+        world.moondial_cooldown = 3;
+        world.invasion_delay = 7;
+        world.invasion_size = 8;
+        world.invasion_type = 9;
+        world.invasion_x = 10.5;
+        world.corrupt_bg_style = 2;
+        world.jungle_bg_style = 3;
+        world.hallow_bg_style = 4;
+        world.crimson_bg_style = 5;
+        world.mushroom_bg_style = 6;
+        world.hard_mode = true;
+        world.downed_eoc = true;
+        world.downed_plant_boss = true;
+        world.spawn_meteor = true;
+        world.altars_smashed = 3;
+        world.shadow_orb_smashed = true;
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the saved world parses");
+        assert_eq!(back.name, world.name);
+        assert_eq!(back.seed, world.seed);
+        assert_eq!(back.generator_version, world.generator_version);
+        assert_eq!(back.unique_id, world.unique_id);
+        assert_eq!(back.world_id, world.world_id);
+        // `SaveWorldFlags:1245-1249`: the spawn column (`spawnTileX`); the row
+        // is derived from the tiles on load.
+        assert_eq!(back.spawn_x, world.spawn_x);
+        assert_eq!(back.time, world.time);
+        assert_eq!(back.day_time, world.day_time);
+        assert_eq!(back.moon_type, world.moon_type);
+        assert_eq!(back.moon_phase, world.moon_phase);
+        assert_eq!(back.world_surface, world.world_surface);
+        assert_eq!(back.rock_layer, world.rock_layer);
+        assert_eq!(back.slime_rain_time, world.slime_rain_time);
+        assert_eq!(back.sundial_cooldown, world.sundial_cooldown);
+        assert_eq!(back.moondial_cooldown, world.moondial_cooldown);
+        assert_eq!(back.invasion_delay, world.invasion_delay);
+        assert_eq!(back.invasion_size, world.invasion_size);
+        assert_eq!(back.invasion_type, world.invasion_type);
+        assert_eq!(back.invasion_x, world.invasion_x);
+        assert_eq!(back.corrupt_bg_style, world.corrupt_bg_style);
+        assert_eq!(back.jungle_bg_style, world.jungle_bg_style);
+        assert_eq!(back.hallow_bg_style, world.hallow_bg_style);
+        assert_eq!(back.crimson_bg_style, world.crimson_bg_style);
+        assert_eq!(back.mushroom_bg_style, world.mushroom_bg_style);
+        assert!(back.hard_mode);
+        assert!(back.downed_eoc && back.downed_plant_boss);
+        assert!(back.spawn_meteor);
+        assert_eq!(back.altars_smashed, world.altars_smashed);
+        assert_eq!(back.shadow_orb_smashed, world.shadow_orb_smashed);
+    }
+
+    /// Every one of the eight sections past the tiles, filled with records the
+    /// C# wire shape can carry back (`SaveChests`..`SaveCreativePowers`).
+    fn section_zoo() -> SectionData {
+        let mut data = SectionData::default();
+        data.chests.push(sections::WldChest {
+            x: 3,
+            y: 4,
+            name: "Loot — ünïcode".into(),
+            max_items: 2,
+            slots: vec![
+                sections::WldChestSlot {
+                    stack: 5,
+                    kind: 22,
+                    prefix: 3,
+                },
+                sections::WldChestSlot {
+                    stack: 0,
+                    kind: 0,
+                    prefix: 0,
+                },
+            ],
+        });
+        data.signs.push(sections::WldSign {
+            text: "Read me".into(),
+            x: 6,
+            y: 7,
+        });
+        data.npcs.shimmered = vec![17, 22];
+        data.npcs.town.push(sections::WldTownNpc {
+            net_id: 17,
+            legacy_name: None,
+            given_name: "Hal".into(),
+            x: 120.5,
+            y: 64.25,
+            homeless: false,
+            home_x: 3,
+            home_y: 4,
+            town_npc: true,
+            variation_index: 2,
+            homeless_despawn: true,
+        });
+        data.tile_entities.push(sections::WldTileEntity {
+            id: 0,
+            ty: 0, // `TETrainingDummy`
+            x: 5,
+            y: 6,
+            extra: sections::WldTeExtra::Dummy { npc: 7 },
+        });
+        data.tile_entities.push(sections::WldTileEntity {
+            id: 1,
+            ty: 1, // `TEItemFrame`
+            x: 7,
+            y: 8,
+            extra: sections::WldTeExtra::Item {
+                item: sections::WldTeItem {
+                    kind: 42,
+                    prefix: 4,
+                    stack: 1,
+                },
+            },
+        });
+        data.pressure_plates.push(sections::WldPressurePlate { x: 9, y: 10 });
+        data.town_rooms.push(sections::WldTownRoom {
+            npc_id: 17,
+            x: 3,
+            y: 4,
+        });
+        data.bestiary.kills.push(("BlueSlime".into(), 7));
+        data.bestiary.sights.push("GreenSlime".into());
+        data.bestiary.chats.push("Pinky".into());
+        data.creative_powers
+            .records
+            .push((0, sections::WldCreativeValue::Bool(true)));
+        data.creative_powers
+            .records
+            .push((13, sections::WldCreativeValue::Bool(false)));
+        data
+    }
+
+    #[test]
+    fn wld_roundtrip_every_section_identical() {
+        // The eight payload sections, both directions, in one file:
+        // `SaveChests:1606` (3), `SaveSigns:1678` (4), `SaveNPCs:1703` (5),
+        // `SaveTileEntities:3302` (6), `SaveWeightedPressurePlates:3359` (7),
+        // `SaveTownManager:3385` (8), `SaveBestiary:3396` (9),
+        // `SaveCreativePowers:3412` (10).
+        let world = World::new("Sections".into(), 8, 6);
+        let data = section_zoo();
+        let buf = to_bytes(&world, &data, 1).expect("writes");
+        let back = parse_with_sections(&buf).expect("the saved world parses");
+        assert_eq!(back.sections.chests, data.chests, "chests");
+        assert_eq!(back.sections.signs, data.signs, "signs");
+        assert_eq!(back.sections.npcs, data.npcs, "npcs");
+        assert_eq!(
+            back.sections.tile_entities, data.tile_entities,
+            "tile entities"
+        );
+        assert_eq!(
+            back.sections.pressure_plates, data.pressure_plates,
+            "pressure plates"
+        );
+        assert_eq!(back.sections.town_rooms, data.town_rooms, "town rooms");
+        assert_eq!(back.sections.bestiary, data.bestiary, "bestiary");
+        assert_eq!(
+            back.sections.creative_powers, data.creative_powers,
+            "creative powers"
+        );
+        // The reload is itself stable: a second save is byte-identical.
+        let again = to_bytes(&back.world, &back.sections, 1).expect("re-writes");
+        assert_eq!(again, buf, "save -> load -> save is byte-stable");
+    }
+
+    #[test]
+    fn wld_roundtrip_weather_snapshot() {
+        // `SaveWorldFlags:1312-1314` writes the rain snapshot
+        // (`_tempRaining`/`_tempRainTime`/`_tempMaxRain`) and `:1369-1372` the
+        // sandstorm one (`_tempSandstorm*`); `SetTempToOngoing:1053-1059`
+        // snapshots the live state into them before the write and
+        // `SetOngoingToTemps:159-172` restores it on load. Both events are
+        // ported (`App.rain`, `scene::Sandstorm`), so both must round-trip.
+        let mut world = World::new("Weather".into(), 8, 6);
+        world.raining = true;
+        world.rain_time = 4321;
+        world.max_raining = 0.75;
+        world.sandstorm_happening = true;
+        world.sandstorm_time_left = 1234;
+        world.sandstorm_severity = 0.5;
+        world.sandstorm_intended_severity = 0.625;
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the saved world parses");
+        assert!(back.raining, "the rain event survives the round-trip");
+        assert_eq!(back.rain_time, world.rain_time);
+        assert_eq!(back.max_raining, world.max_raining);
+        assert!(
+            back.sandstorm_happening,
+            "the sandstorm event survives the round-trip"
+        );
+        assert_eq!(back.sandstorm_time_left, world.sandstorm_time_left);
+        assert_eq!(back.sandstorm_severity, world.sandstorm_severity);
+        assert_eq!(
+            back.sandstorm_intended_severity,
+            world.sandstorm_intended_severity
+        );
     }
 }

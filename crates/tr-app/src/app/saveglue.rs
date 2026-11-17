@@ -90,15 +90,19 @@ impl App {
         // `Main.Achievements.Save()`. Achievements are global (one file, not
         // per-world), so every save route writes it before the format branch.
         self.achievements.save();
-        // `SetTempToOngoing` (`WorldFile.cs:1058-1060`, called from
-        // `InternalSaveWorld:913` before the write): the save snapshots the
-        // live rain state into the world's file payload — `SetOngoingToTemps`
-        // (`:159-162`) restores it on load. The `.trwld` v14 block carries
-        // the triple (S1-J-7); the vanilla-shaped `.wld` writer still
-        // zero-fills its rain block (the recorded M6-SAVE value subset).
+        // `SetTempToOngoing` (`WorldFile.cs:1053-1059`, called from
+        // `InternalSaveWorld:913` before the write): the save snapshots the live
+        // weather state into the world's file payload — `SetOngoingToTemps`
+        // (`:159-172`) restores it on load. The `.trwld` v14 block carries the
+        // rain triple (S1-J-7); the `.wld` flags block now carries the same
+        // triple (`:1312-1314`) plus the sandstorm quad (`:1369-1372`).
         self.world.raining = self.rain.is_raining();
         self.world.rain_time = self.rain.rain_time();
         self.world.max_raining = self.rain.max_raining();
+        self.world.sandstorm_happening = self.sandstorm.happening;
+        self.world.sandstorm_time_left = self.sandstorm.time_left;
+        self.world.sandstorm_severity = self.sandstorm.severity;
+        self.world.sandstorm_intended_severity = self.sandstorm.intended_severity;
         // `InternalSaveWorld`'s `array2` (`WorldFile.cs:916-918`): the previous
         // world file, captured before the write — the `.bak` source and the
         // failed-write restore source (S1-J-4).
@@ -1266,6 +1270,52 @@ mod chest_save_tests {
             (back.rain.visual_alpha() - 0.75).abs() < f32::EPSILON,
             "cloudAlpha := maxRaining (WorldFile.cs:162)"
         );
+    }
+
+    #[test]
+    fn s1_j_7_the_wld_weather_snapshot_round_trips_through_the_app() {
+        // The `.wld` flags block: `SaveWorldFlags:1312-1314` (rain) and
+        // `:1369-1372` (sandstorm) write the save-time temps, filled by
+        // `SetTempToOngoing:1053-1059`; the loader restores them through
+        // `SetOngoingToTemps:159-172`. Both events are ported (`App.rain`,
+        // `App.sandstorm`), so a `.wld` save must not reset the weather.
+        let world = chest_rig();
+        let path = std::env::temp_dir().join("tr-s1-j-7-wld-weather-roundtrip.wld");
+        let _ = std::fs::remove_file(&path);
+
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
+        app.rain.restore_saved(true, 12_345, 0.75);
+        app.sandstorm.happening = true;
+        app.sandstorm.time_left = 4_321;
+        app.sandstorm.severity = 0.5;
+        app.sandstorm.intended_severity = 0.625;
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        // The file carried the snapshot (the `.wld` on disk, not the live App).
+        let file = tr_core::wld::load(&path).expect("the saved .wld reads back");
+        assert!(file.raining && file.rain_time == 12_345, "the rain block");
+        assert!((file.max_raining - 0.75).abs() < f32::EPSILON);
+        assert!(file.sandstorm_happening, "the sandstorm block");
+        assert_eq!(file.sandstorm_time_left, 4_321);
+        assert!((file.sandstorm_severity - 0.5).abs() < f32::EPSILON);
+        assert!((file.sandstorm_intended_severity - 0.625).abs() < f32::EPSILON);
+
+        // The reload applies it (`SetOngoingToTemps`'s effect).
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        let back = app_for(world, sections, path);
+        assert!(back.rain.is_raining(), "the rain event survives the reload");
+        assert_eq!(back.rain.rain_time(), 12_345);
+        assert!(back.sandstorm.happening, "the sandstorm survives the reload");
+        assert_eq!(back.sandstorm.time_left, 4_321);
+        assert!((back.sandstorm.severity - 0.5).abs() < f32::EPSILON);
+        assert!((back.sandstorm.intended_severity - 0.625).abs() < f32::EPSILON);
     }
 
     #[test]

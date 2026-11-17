@@ -83,11 +83,14 @@ pub fn write(w: &mut Writer, world: &World) {
     w.f64(world.invasion_x);
     w.f64(world.slime_rain_time);
     w.u8(world.sundial_cooldown);
-    // WorldFile.cs:1313-1315: the rain snapshot — the port's rain/weather
-    // state lives in tr-app, so the written values are the C# defaults.
-    w.boolean(false); // _tempRaining
-    w.i32(0); // _tempRainTime
-    w.f32(0.0); // _tempMaxRain
+    // WorldFile.cs:1312-1314: the rain snapshot. `SetTempToOngoing:1057-1059`
+    // copies `Main.raining`/`rainTime`/`maxRaining` into the three temps before
+    // the write (the port syncs them from `App.rain`, S1-J-7), and
+    // `SetOngoingToTemps:159-162` restores them on load — `Main.cloudAlpha`
+    // comes back as `maxRaining`.
+    w.boolean(world.raining); // _tempRaining
+    w.i32(world.rain_time); // _tempRainTime
+    w.f32(world.max_raining); // _tempMaxRain
     // WorldFile.cs:1316-1325: the hardmode ore tiers (unowned — no port
     // state) and the eight background styles. The five surface-variant styles
     // ride their byte slots (`setBG` 1 corrupt, 2 jungle, 4 hallow,
@@ -155,12 +158,13 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // _tempPartyGenuine
     w.i32(0); // _tempPartyCooldown
     w.i32(0); // TempPartyCelebratingNPCs.Count
-              // WorldFile.cs:1369-1372: the sandstorm snapshot — the sandstorm lives
-              // in tr-app (`scene::Sandstorm`), so defaults are written.
-    w.boolean(false); // _tempSandstormHappening
-    w.i32(0); // _tempSandstormTimeLeft
-    w.f32(0.0); // _tempSandstormSeverity
-    w.f32(0.0); // _tempSandstormIntendedSeverity
+              // WorldFile.cs:1369-1372: the sandstorm snapshot. `SetTempToOngoing:1053-1056`
+              // copies `Sandstorm.Happening`/`TimeLeft`/`Severity`/`IntendedSeverity`
+              // in before the write and `SetOngoingToTemps:169-172` restores them.
+    w.boolean(world.sandstorm_happening); // _tempSandstormHappening
+    w.i32(world.sandstorm_time_left); // _tempSandstormTimeLeft
+    w.f32(world.sandstorm_severity); // _tempSandstormSeverity
+    w.f32(world.sandstorm_intended_severity); // _tempSandstormIntendedSeverity
                 // WorldFile.cs:1373-1375: `DD2Event.Save` — the tavern/old-one's army
                 // progress is unported.
     w.boolean(false); // savedBartender
@@ -417,9 +421,12 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version >= 113 {
         world.sundial_cooldown = r.u8()?;
     }
-    r.skip(1)?; // _tempRaining
-    r.skip(4)?; // _tempRainTime
-    r.skip(4)?; // _tempMaxRain
+    // WorldFile.cs:2127-2129: the rain snapshot, into `Main.raining` /
+    // `rainTime` / `maxRaining` through `_temp*` (restored by
+    // `SetOngoingToTemps:159-162`).
+    world.raining = r.bool()?; // _tempRaining
+    world.rain_time = r.i32()?; // _tempRainTime
+    world.max_raining = r.f32()?; // _tempMaxRain
     r.skip(3 * 4)?; // SavedOreTiers Cobalt/Mythril/Adamantite
     // `setBG` slots 0..7 (`WorldFile.cs:2211-2218`): only the five
     // surface-variant styles are port-owned; the rest are skip-read.
@@ -485,12 +492,13 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         let celebrants = r.i32()?;
         r.skip((celebrants.max(0) as usize) * 4)?;
     }
-    // WorldFile.cs:2207-2213 — the sandstorm snapshot.
+    // WorldFile.cs:2277-2283 — the sandstorm snapshot: below 174 the four
+    // temps are zeroed (`:2272-2275`), else read back.
     if version >= 174 {
-        r.skip(1)?; // happening
-        r.skip(4)?; // timeLeft
-        r.skip(4)?; // severity
-        r.skip(4)?; // intendedSeverity
+        world.sandstorm_happening = r.bool()?; // happening
+        world.sandstorm_time_left = r.i32()?; // timeLeft
+        world.sandstorm_severity = r.f32()?; // severity
+        world.sandstorm_intended_severity = r.f32()?; // intendedSeverity
     }
     // WorldFile.cs:2214-2218 — `DD2Event.Load`: below 178 nothing is read at all.
     if version >= 178 {
