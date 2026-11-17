@@ -1697,4 +1697,25 @@ mod cloud_star_tests {
         let clouds = make_clouds(&w, &assets::Lookups::default());
         assert!(clouds.is_empty());
     }
+
+    #[test]
+    fn day_cycle_sky_color_lerps_per_csharp() {
+        // `Main.cs:63452-63496` (`SetBackColor`): the day is pure white from
+        // 13500 to 37800 (noon is `Color.White`), the 37800..45900 sunset ramp
+        // pulls it to (235,120,170) and past 45900 to the (35,35,35) dusk
+        // floor. The 0..13500 sunrise ramp runs 25..255 on the red channel.
+        let noon = color_of_the_skies(27000.0, true, 0);
+        assert_eq!(noon, [1.0, 1.0, 1.0], "noon is pure white");
+        let morning = color_of_the_skies(6750.0, true, 0);
+        let byte = |v: f32| v * 255.0;
+        assert!((byte(morning[0]) - 140.0).abs() < 1e-3, "sunrise red");
+        assert!((byte(morning[1]) - 145.0).abs() < 1e-3, "sunrise green");
+        let sunset = color_of_the_skies(45900.0, true, 0);
+        assert!((byte(sunset[0]) - 235.0).abs() < 1e-3, "sunset red");
+        assert!((byte(sunset[1]) - 120.0).abs() < 1e-3, "sunset green");
+        assert!((byte(sunset[2]) - 170.0).abs() < 1e-3, "sunset blue");
+        let dusk = color_of_the_skies(53999.0, true, 0);
+        assert!((byte(dusk[0]) - 35.0).abs() < 0.1, "the dusk floor: {dusk:?}");
+        assert!(dusk[0] < sunset[0] && sunset[0] < noon[0], "the day darkens");
+    }
 }

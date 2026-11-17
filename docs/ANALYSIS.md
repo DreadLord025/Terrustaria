@@ -15644,3 +15644,29 @@ Skipped in place: every dust/gore/sound spawn of both branches (no
 dust/gore/sound layer in the pool), the MP-only town-NPC kill of the snowball
 (`:23568-23588`) and the 150-152/493-494 Vilethorn variants (their kinds are
 not ported). `cs-cite`: 55 citations resolved.
+
+## Day cycle: time, spawn gates, sky (daycycle slice, 2026-11-17)
+
+Scope: the clock, the surface spawn gate and the sky tint. Events (blood moon,
+eclipse, weather, music) are out of this slice.
+
+* The two boundary tests in `UpdateTime` are STRICT (`Main.cs:65137`
+  `if (Main.time > 32400.0)`, `:65148` `if (Main.time > 54000.0)`): a clock
+  resting exactly on 32400/54000 is still the old half. The port compared with
+  `>=` and flipped one tick early; `world_sim/clock.rs` now uses `>`.
+* `EncourageDespawn` is modelled as a `time_left`-style window
+  (`crates/tr-app/src/npc.rs`): `encourage_despawn` only ever lowers it
+  (`NPC.cs:7249-7256`), `tick_despawn`/`despawn_expired` are the
+  `NPC.cs:77986-77996` decrement and the `<= 0` deactivation. The Eye of
+  Cthulhu's `Main.IsItDay() | dead` arm (`NPC.cs:20071-20074`) is the only
+  writer, so it leaves 10 ticks after dawn or after the player dies. Deviation:
+  the C# also refreshes `timeLeft` from `NPC.activeTime` (`:8542`) for every
+  other NPC; the port leaves `despawn_timer` idle (-1) for them, so no other
+  NPC can time out yet.
+* `Main.IsItDay()` (`Main.cs:62825-62832`) is `Main.dayTime` except on remix
+  worlds; the port reads `world.day_time` directly (remix is unported).
+* The sky tint is `Main.SetBackColor` (`Main.cs:63452-63496`) exactly: white
+  from 13500 to 37800, the two sunset ramps, the night ramps and the moon-phase
+  floor. The blood-moon and graveyard tint arms are unported (events).
+* Dawn's 53400 sub-threshold (`Main.time >= 53400.0`, the Empress enrage at
+  `NPC.cs:46238-46245`) is out of slice: the Empress is not ported.

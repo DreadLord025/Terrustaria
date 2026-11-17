@@ -2766,18 +2766,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             switch_sends.extend(switch.switches.iter().copied());
         }
     }
-    // The eye's climb-away despawn (`EncourageDespawn(10)` from the
-    // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
-    // far enough off-screen; the port culls it above the player's view).
-    let player_y = player.as_ref().map(|p| p.y).unwrap_or(0.0);
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
     }
-    if app.world.day_time {
-        app.npcs
-            .retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
+    // `NPC.cs:77986-77996`: `this.timeLeft--` once per NPC update, and
+    // `timeLeft <= 0` deactivates it — no distance gate. The aiStyle-4
+    // day/dead arm (`:20071-20074`) is the only writer so far, so this is the
+    // Eye of Cthulhu leaving 10 ticks after dawn.
+    for n in app.npcs.iter_mut() {
+        n.tick_despawn();
     }
+    app.npcs.retain(|n| !n.despawn_expired());
     // The worm pass (`AI_006`): the chain movement after the per-NPC step
     // (the vanilla interleaves it in the slot order; the port's pass reads
     // the same spawn order).

@@ -3414,6 +3414,10 @@ pub struct Npc {
     /// `NPC.homelessDespawn` (`LoadNPCs:2917-2920`, `SaveNPCs:1734`): a
     /// homeless town NPC this far from any room is on the despawn path.
     pub homeless_despawn: bool,
+    /// `NPC.timeLeft`'s despawn window (`NPC.cs:6455`, `:77986-77989`): -1 =
+    /// idle (never armed), 0 = expired (the sim's retain drops the NPC), > 0 =
+    /// the ticks left. `EncourageDespawn(10)` is the only writer so far.
+    pub despawn_timer: i32,
     /// `NPC.lookForHomeTimeout` (`NPC.cs:6547`): ticks left before a
     /// kicked-out NPC looks for a new room again. Decays 1/tick
     /// (`NPC.cs:90324-90327`); `kickOut` arms it to 3600
@@ -4130,6 +4134,27 @@ pub(crate) fn ground_clearance(world: &World, tile_x: i32, tile_y: i32) -> f32 {
 }
 
 impl Npc {
+    /// `NPC.EncourageDespawn` (`NPC.cs:7249-7256`): only ever LOWERS the
+    /// `timeLeft` window — a later arm cannot extend it.
+    pub(crate) fn encourage_despawn(&mut self, ticks: i32) {
+        if self.despawn_timer < 0 || self.despawn_timer > ticks {
+            self.despawn_timer = ticks;
+        }
+    }
+
+    /// `NPC.cs:77986`: `this.timeLeft--`, once per NPC update.
+    pub(crate) fn tick_despawn(&mut self) {
+        if self.despawn_timer > 0 {
+            self.despawn_timer -= 1;
+        }
+    }
+
+    /// `NPC.cs:77987-77996`: `timeLeft <= 0` sets `flag2 = false`, which
+    /// deactivates the NPC on that same update.
+    pub(crate) fn despawn_expired(&self) -> bool {
+        self.despawn_timer == 0
+    }
+
     /// `NPC.CanBeChasedBy` (`NPC.cs:90030-90041`): the gate every minion and
     /// sentry target search runs. The port's liveness is `hp > 0` (the NPC
     /// list carries no `active` field — callers filter on `hp`); the
@@ -4491,6 +4516,7 @@ impl Npc {
             variation_index: 0,
             homeless_despawn: false,
             look_for_home_timeout: 0,
+            despawn_timer: -1,
             caster_counter: 0,
             cast_windup: 0,
             direction_y: 1,
@@ -8243,11 +8269,13 @@ impl Npc {
         if self.rotation > num6 - num7 && self.rotation < num6 + num7 {
             self.rotation = num6;
         }
-        // `Main.IsItDay() | dead`: the climb-away
-        // (`velocity.Y -= 0.04f; EncourageDespawn(10)` — the removal rides
-        // the world sim's distance cull).
+        // `NPC.cs:20071-20074`: `Main.IsItDay() | dead` — the climb-away,
+        // `velocity.Y -= 0.04f; EncourageDespawn(10)`. The 10-tick window is
+        // the C#'s `timeLeft` cap (`:7249-7256`); the sim ticks it down and
+        // drops the NPC at zero (`:77986-77989`), no distance gate.
         if crate::eoc_fight::flees_at_dawn(world.day_time, dead) {
             self.vy -= 0.04;
+            self.encourage_despawn(10);
             self.integrate_no_tile_collide();
             return;
         }
@@ -18916,6 +18944,45 @@ mod tests {
         let prefs = crate::happiness::biome_preferences(NpcKind::Clothier);
         assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Underground);
         assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Hallow);
+    }
+
+    #[test]
+    fn day_cycle_dawn_sends_the_eoc_away() {
+        // `NPC.cs:20071-20074`: the aiStyle-4 arm is `Main.IsItDay() | dead`
+        // -> `velocity.Y -= 0.04f; EncourageDespawn(10)`. `EncourageDespawn`
+        // (`:7249-7256`) only ever LOWERS `timeLeft` to 10, and
+        // `:77986-77989` decrements it and deactivates the NPC at `<= 0` --
+        // no distance gate. So the boss is gone 10 ticks after dawn.
+        let night = {
+            let mut w = ground_air();
+            w.day_time = false;
+            w
+        };
+        let day = {
+            let mut w = ground_air();
+            w.day_time = true;
+            w
+        };
+        let mut player = surface_player(&night);
+        let mut rng = UnifiedRandom::new(0);
+        let mut away = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        away.hp = away.max_hp;
+        let mut stay = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        stay.hp = stay.max_hp;
+        // The night arm leaves it alone: no despawn, however long it idles.
+        for _ in 0..40 {
+            stay.update_rng(&night, &mut player, 1.0 / 60.0, &mut rng);
+            stay.tick_despawn();
+        }
+        assert!(!stay.despawn_expired(), "the night keeps the boss");
+        // Dawn arms the 10-tick window; the boss climbs and is then removed.
+        let start_y = away.y;
+        for _ in 0..10 {
+            away.update_rng(&day, &mut player, 1.0 / 60.0, &mut rng);
+            away.tick_despawn();
+        }
+        assert!(away.y < start_y, "the dawn flee rises");
+        assert!(away.despawn_expired(), "the dawn removes the boss");
     }
 
     #[test]
