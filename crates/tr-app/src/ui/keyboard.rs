@@ -59,6 +59,9 @@ pub fn enter_character_name() -> String { crate::lang::menu(45) }
 /// `Lang.menu[48]` — the world-name keyboard's label
 /// (`UIWorldListItem.cs:418`, `LegacyMenu.48`).
 pub fn enter_world_name() -> String { crate::lang::menu(48) }
+/// `Language.GetText("UI.EnterSeed")` — the seed keyboard's label
+/// (`UIWorldCreation.cs:706`).
+pub fn enter_seed() -> String { crate::lang::text("UI.EnterSeed") }
 /// `Language.GetText("UI.EnterNewName")` — the chest-rename keyboard's label
 /// (`IngameFancyUI.cs:100`).
 pub fn enter_new_name() -> String { crate::lang::text("UI.EnterNewName") }
@@ -806,7 +809,7 @@ pub fn draw(
     // The label (`UIText.DrawSelf`, `UIText.cs:137-166`): `TextOriginX 0.5`
     // centres it, the large font lifts `10*scale`, the ChatManager shadow is
     // 4 directional passes at spread 1.5 (`ChatManager.cs:200-205`, `:376-383`;
-    // `UIText.cs:214`, `_shadowColor` Black `:25`).
+    // `_shadowColor` Black `UIText.cs:25`).
     let label_w = large_text_width(r, lookups, &request.label);
     let lx = l.label[0] + (l.label[2] - label_w * LABEL_SCALE) * 0.5;
     let ly = l.label[1] - 10.0 * LABEL_SCALE;

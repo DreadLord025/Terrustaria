@@ -154,11 +154,15 @@ pub const DIFFICULTY_ROWS: [[u8; 4]; 4] = [
 /// / `Lang.misc[101]` "Corruption" / `Lang.misc[102]` "Crimson" with White /
 /// `Color.MediumPurple` / `Color.IndianRed` (the XNA named colours,
 /// #9370DB / #CD5C5C).
+///
+/// The row reads **`Lang.misc`** (`Lang.cs:484` → `LegacyMisc.*`), not
+/// `Lang.menu`: `LegacyMenu.101/102/103` are "Background Off" / "Select
+/// language" / "Language", which is what this row used to show.
 pub fn evil_row_label(k: usize) -> String {
     match k {
-        1 => crate::lang::menu(101),
-        2 => crate::lang::menu(102),
-        _ => crate::lang::menu(103),
+        1 => crate::lang::misc(101),
+        2 => crate::lang::misc(102),
+        _ => crate::lang::misc(103),
     }
 }
 pub const EVIL_ROWS: [[u8; 4]; 3] = [
@@ -823,6 +827,12 @@ fn mouse_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, text: &str) -
 // `:637-662`) is `ui::cards::fat_button_style` — the `UICharacterSelect`
 // twin's shared copy.
 
+/// The Back/Create labels (`:637` / `:650`): `Language.GetText("UI.Back")` /
+/// `Language.GetText("UI.Create")` on the `UITextPanel<LocalizedText>` ctors
+/// (`MakeBackAndCreatebuttons`).
+fn back_label() -> String { crate::lang::text("UI.Back") }
+fn create_label() -> String { crate::lang::text("UI.Create") }
+
 /// The plate strings (`UICharacterNameButton`'s ctor args, `:236` and `:264`).
 fn name_title() -> String { crate::lang::text("UI.WorldCreationName") }
 fn seed_title() -> String { crate::lang::text("UI.WorldCreationSeed") }
@@ -1235,22 +1245,24 @@ pub fn draw(
 
     // Back / Create (`:635-663`): the hover pair swaps inside
     // `uistate::draw_text_panel` (`FadedMouseOver`, `:676-687`).
+    let back = back_label();
     uistate::draw_text_panel(
         r,
         lookups,
         l.back,
         &fat_button_style(),
-        "Back",
-        mouse_text_width(r, lookups, "Back"),
+        &back,
+        mouse_text_width(r, lookups, &back),
         in_rect(mouse, l.back),
     );
+    let create = create_label();
     uistate::draw_text_panel(
         r,
         lookups,
         l.create,
         &fat_button_style(),
-        "Create",
-        mouse_text_width(r, lookups, "Create"),
+        &create,
+        mouse_text_width(r, lookups, &create),
         in_rect(mouse, l.create),
     );
 }
@@ -1398,11 +1410,61 @@ mod tests {
         assert_eq!(DIFFICULTY_ROWS[1], [255, 255, 255, 255]);
         assert_eq!(DIFFICULTY_ROWS[2], [255, 153, 0, 255]); // mcColor
         assert_eq!(DIFFICULTY_ROWS[3], [255, 38, 25, 255]); // hcColor
-        // The display order maps to the enum ids (`:405-411`).
+        // The display order maps to the enum ids (`:405-411`, `:454-459`).
+        assert_eq!(SIZE_ROW_IDS, [0, 1, 2], "WorldSizeId.Small/Medium/Large");
         assert_eq!(DIFFICULTY_ROW_IDS, [3, 0, 1, 2]);
+        assert_eq!(EVIL_ROW_IDS, [0, 1, 2], "WorldEvilId.Random/Corruption/Crimson");
         // `:460-477` (Lang.misc[103/101/102] + the XNA named colours).
         assert_eq!(EVIL_ROWS[1], [147, 112, 219, 255]); // Color.MediumPurple
         assert_eq!(EVIL_ROWS[2], [205, 92, 92, 255]); // Color.IndianRed
+    }
+
+    /// The evil row's labels (`UIWorldCreation.cs:454-464`): `WorldEvilId.
+    /// Random/Corruption/Crimson` over `Lang.misc[103]`/`[101]`/`[102]`. The row
+    /// used to read `Lang.menu`, whose 101..103 are the *language* options
+    /// ("Background Off"/"Select language"/"Language") — the values below are
+    /// pinned by hand from the en-US resource, never from this code.
+    #[test]
+    fn evil_row_labels_read_the_misc_table_in_display_order() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        assert_eq!(evil_row_label(0), "Random");
+        assert_eq!(evil_row_label(1), "Corruption");
+        assert_eq!(evil_row_label(2), "Crimson");
+        // The key source, not just the value: `Lang.misc` (`Lang.cs:484`), never
+        // the neighbouring menu table (`LegacyMenu.101..103` = "Background
+        // Off"/"Select language"/"Language").
+        assert_eq!(evil_row_label(0), crate::lang::misc(103));
+        assert_eq!(evil_row_label(1), crate::lang::misc(101));
+        assert_eq!(evil_row_label(2), crate::lang::misc(102));
+        assert_ne!(evil_row_label(0), crate::lang::menu(103));
+        assert_ne!(evil_row_label(1), crate::lang::menu(101));
+        assert_ne!(evil_row_label(2), crate::lang::menu(102));
+        // A literal would stay English: the row follows the culture.
+        crate::lang::set_language(tr_core::localization::GameCulture::Russian);
+        assert_eq!(evil_row_label(0), "Случайно");
+        assert_eq!(evil_row_label(1), "Порча");
+        assert_eq!(evil_row_label(2), "Багрянец");
+        crate::lang::set_language(tr_core::localization::GameCulture::English);
+    }
+
+    /// `MakeBackAndCreatebuttons` (`UIWorldCreation.cs:635-663`): the two
+    /// `UITextPanel<LocalizedText>` ctors take `Language.GetText("UI.Back")`
+    /// (`:637`) and `Language.GetText("UI.Create")` (`:650`) — the port used
+    /// plain `"Back"`/`"Create"` literals.
+    #[test]
+    fn back_and_create_labels_resolve_the_ui_keys() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        assert_eq!(back_label(), "Back");
+        assert_eq!(create_label(), "Create");
+        assert_eq!(back_label(), crate::lang::text("UI.Back"));
+        assert_eq!(create_label(), crate::lang::text("UI.Create"));
+        // A literal would stay English under another culture.
+        crate::lang::set_language(tr_core::localization::GameCulture::Russian);
+        assert_eq!(back_label(), "Назад");
+        assert_eq!(create_label(), "Создать");
+        crate::lang::set_language(tr_core::localization::GameCulture::English);
     }
 
     #[test]
