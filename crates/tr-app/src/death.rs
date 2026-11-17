@@ -41,10 +41,13 @@ fn drop_gems(app: &mut App, x: f32, y: f32) {
     }
 }
 
-/// `Player.DropCoins` (`Player.cs:54261-54294`): every coin item in the
-/// inventory drops `stack / 2` (expert `/ 4`, master none — the ported
-/// difficulty is classic), keeping the remainder. The port's coins live in
-/// `App.coins` (a copper total), so the dropped half is split greedily into
+/// `Player.DropCoins` (`Player.cs:54261-54294`): per coin stack,
+/// `int num2 = item.stack / 2` is KEPT and `int num3 = item.stack - num2` (the
+/// ceiling half) is dropped — `/ 4` in expert, `0` in master, the ported
+/// difficulty being classic. The return value is the dropped value
+/// (`num += num3 * denomination`), which `KillMe` books as `lostCoins`
+/// (`:38931-38936`). The port's coins live in `App.coins` (a copper total),
+/// so the purse keeps `coins / 2` and the ceiling half is split greedily into
 /// platinum/gold/silver/copper stacks.
 /// `Main.ValueToCoins` (`Main.cs:55220-55264`): the copper total → the
 /// "1 platinum 2 gold 50 silver 10 copper" string from the localized
@@ -102,7 +105,8 @@ pub fn value_to_coins(value: u64) -> String {
 }
 
 pub fn drop_coins(app: &mut App, x: f32, y: f32) -> u64 {
-    let dropped = app.coins / 2;
+    // `:54273-54275`: `num2 = stack / 2` stays, `num3 = stack - num2` drops.
+    let dropped = app.coins - app.coins / 2;
     if dropped == 0 {
         return 0;
     }
@@ -290,13 +294,16 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     // `KillMe`'s softcore arm (`Player.cs:38931-38936`): `lostCoins =
     // DropCoins()` and `lostCoinString = Main.ValueToCoins(lostCoins)` —
     // the death screen's "Dropped coins" line reads both (`Main.cs:45333`).
+    // The rich-grave gate (`:38921` `DropTombstone(coinsOwned, ...)`) reads
+    // the pre-death purse, so capture it before the halving.
+    let coins_owned = app.coins;
     let lost = drop_coins(app, x, y);
     app.lost_coins = lost;
     app.lost_coin_string = value_to_coins(lost);
     app.death_text = death_text.to_string();
     let mut tomb = {
         let rng = app.rngs.stream(RngKey::UpdatePlayers);
-        roll_tombstone(rng, app.coins)
+        roll_tombstone(rng, coins_owned)
     };
     tomb.pos = Vec2::new(x, y);
     tomb.text = death_text.to_string();
