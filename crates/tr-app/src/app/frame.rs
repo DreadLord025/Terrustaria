@@ -4,6 +4,7 @@
 //! interface draw. Plus the benchmark epilogue and the two RNG helpers the
 //! world simulation shares. (A7: extracted from `main.rs` whole.)
 
+mod world;
 use std::time::Instant;
 
 use glam::Vec2;
@@ -420,439 +421,15 @@ impl App {
         let (screen, m_h) = self.frame_shared_setup(dt);
         let focus_paused = self.frame_focus_pause();
 
+        // S1-B-8 — the in-world branch (`DoUpdateInWorld`'s port): one fn
+        // per phase, in the C#'s order — see `frame/world.rs`.
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
-            // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
-            // ticked before the interface handlers read the state.
-            self.tick_stack_split();
-            // `MinimapFrame.Update` runs before the inventory's click handling
-            // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
-            self.handle_minimap_clicks();
-            self.handle_bestiary_clicks();
-            // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
-            // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
-            // and inventory handlers and consumes the press when a chest
-            // slot, the shift transfer or a chest tile took it.
-            if !self.handle_chest_clicks() && !self.handle_crafting_clicks() {
-                self.handle_inventory_clicks();
-            }
-            // `Main.cs:62466-62473` — the stack-split decay, after the
-            // interface's MouseUI pass.
-            self.decay_stack_split();
-            for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
-                let target = if i == self.selected { 1.0 } else { 0.75 };
-                if *scale < target {
-                    *scale = (*scale + 0.05).min(target);
-                } else if *scale > target {
-                    *scale = (*scale - 0.05).max(target);
-                }
-            }
-            // S1-B-3 — the in-game pause gate (`Main.cs:17194-17201`):
-            // `if (CanPauseGame()) { DoUpdate_WhilePaused(); gamePaused = true;
-            // return; } gamePaused = false;`. The click cluster above it is the
-            // pre-gate interface pass (DW-1.3: the UI stays live while paused).
-            let paused = self.can_pause_game();
-            if paused {
-                self.do_update_while_paused();
-            }
-            self.game_paused = paused;
-            // `DoUpdateInWorld`'s gate (`Main.cs:17278`,
-            // `ShouldUpdateEntities() && WorldUpdateStepper.ShouldUpdateWorld()`
-            // — the stepper half is Phase 2's `world_stepper.rs`, fed the
-            // frame-head snapshot pair). The short-circuit `!paused` mirrors
-            // the C#'s early `return` (`:17197-17199`): a paused frame never
-            // reaches the gate, so the pacing count freezes with it.
-            let step_allowed = !paused
-                && self.should_update_entities()
-                && self
-                    .stepper
-                    .should_update_world(self.step_input_down, self.step_input_was);
-            if step_allowed {
-                self.game_update_count = self.game_update_count.wrapping_add(1);
-                // `WorldUpdateStepper.DrawnThisUpdate = false` at the step
-                // head (`Main.cs:17747`, right after `_gameUpdateCount++`).
-                self.stepper.drawn_this_update = false;
-                // `Main.tileSolid[379] = false` (`Main.cs:17753`): the bubble
-                // is not solid for the entity half of the tick — the liquid
-                // pass re-arms it (`Liquid.cs:451`, S1-L-14).
-                self.liquids.clear_bubble_for_entities();
-                // `CraftingUI.RecipeFilterHack`'s gate (`CraftingUI.cs:112-121`)
-                // plus `NewCraftingUI.OnDeactivate`'s clear (`:912-914`): the
-                // station filter only lives while the crafting page is up.
-                if !self.crafting_open {
-                    self.craft_filter = None;
-                }
-                // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
-                // pass. The sleeping counts it exports (`:17844-17859`) gate the
-                // clock's rate, so they land right after it.
-                self.phase("players");
-                self.update_player(dt);
-                // `UpdateTimeRate` (`Main.cs:6199-6218`): the rate is ×5 while
-                // every active player is fully asleep
-                // (`PlayerSleepingHelper.FullyFallenAsleep`, 120 ticks).
-                self.world.all_players_asleep = self
-                    .player
-                    .as_ref()
-                    .is_some_and(|p| p.sleeping && p.sleep_time >= 120);
-                // `Main.UpdateAudio_DecideOnNewMusic` reads the scene centre, not the
-                // player: underground once the view centre passes the world surface
-                // (`Main.cs:12815`).
-                // The boss scan (`Main.cs:12224-12430`): the screen rect expanded
-                // 5000 px around each active NPC's centre; the type→slot switch
-                // feeds the flag chain. The port's bosses: King Slime (50 → slot
-                // 19 → track 93, outranking the others) and the generic `boss`
-                // slot 1 → 5 (no other ported kind carries `NPC.boss`).
-                let (sw, sh) = self.screen_size();
-                let screen_rect = [self.camera.x - sw * 0.5, self.camera.y - sh * 0.5, sw, sh];
-                let mut king_near = false;
-                let mut eoc_near = false;
-                let mut generic_boss_near = false;
-                for n in &self.npcs {
-                    if n.hp <= 0 {
-                        continue;
-                    }
-                    let (cx, cy) = n.center();
-                    let near = cx + 5000.0 >= screen_rect[0]
-                        && cx - 5000.0 <= screen_rect[0] + screen_rect[2]
-                        && cy + 5000.0 >= screen_rect[1]
-                        && cy - 5000.0 <= screen_rect[1] + screen_rect[3];
-                    if !near {
-                        continue;
-                    }
-                    if n.kind == NpcKind::KingSlime {
-                        king_near = true;
-                    }
-                    if n.kind == NpcKind::EyeOfCthulhu {
-                        eoc_near = true;
-                    }
-                    // `if (num3 == 0 && Main.npc[j].boss) num3 = 1;` (`:12366`).
-                }
-                let boss_music = if king_near {
-                    Some(93) // MusicID.KingSlime (flag19, `:12596`)
-                } else if eoc_near {
-                    Some(5) // MusicID.Boss1 (the generic boss slot, `:12611`)
-                } else {
-                    // No other ported kind sets `boss` — the generic slot stays
-                    // out until a third boss lands.
-                    None
-                };
-                let underworld_px = (self.world.height - 200) as f32 * TILE_PX;
-                self.music.update(audio::MusicEnv {
-                    music_volume: self.settings.music_volume,
-                    day: self.world.day_time,
-                    underground: self.camera.y
-                        >= self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                    rain: self.rain.is_raining(),
-                    boss_music,
-                    clock: self.world.time,
-                    eclipse: self.world.eclipse
-                        && self.camera.y
-                            < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                    shimmer: self.scene_metrics.zone_shimmer,
-                    town_npcs: 0, // no town NPCs yet (M4-TOWN)
-                    // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
-                    cloud_alpha: self.rain.visual_alpha(),
-                    zone_rain: self.scene_metrics.zone_rain,
-                    zone_snow: self.scene_metrics.zone_snow,
-                    surface_atmospherics: self.scene_metrics.surface_atmospherics,
-                    wind_speed: self.wind.speed_current,
-                    shimmer_alpha: self.scene_state.shimmer_alpha,
-                    atmo: crate::render::sky::atmosphere_factor(
-                        self.camera.y,
-                        self.world.world_surface,
-                        self.world.width,
-                    ),
-                    ambient_volume: self.settings.ambient_volume,
-                    shadow_candle: self.scene_metrics.shadow_candle_count > 0,
-                    sandstorm: self.sandstorm.happening,
-                    underworld: self.camera.y > underworld_px,
-                    blood_moon: self.world.blood_moon,
-                    windy_music: self.wind.happy_windy_day,
-                    // The biome chain (`:12686-12920`): the space band with
-                    // `num4 = maxTilesX / 4200`, the temple wall behind the scene
-                    // centre, the metrics zones, the mushroom bg style and the
-                    // storm flag.
-                    space_band: {
-                        let num4 = self.world.width as f32 / 4200.0;
-                        let center_tile_y = self.camera.y / 16.0;
-                        (center_tile_y - (65.0 + 10.0 * num4 * num4))
-                            / (self.world.world_surface as f32 / 5.0)
-                            < 1.0
-                    },
-                    temple_wall: self
-                        .world
-                        .tile((self.camera.x / 16.0) as i32, (self.camera.y / 16.0) as i32)
-                        .is_some_and(|t| t.wall == 87),
-                    dungeon: self.scene_metrics.zone_dungeon,
-                    mushroom_bg: self.bg_style == 9
-                        && self.camera.y
-                            < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                    corrupt: self.scene_metrics.zone_corrupt,
-                    crimson: self.scene_metrics.zone_crimson,
-                    blood_leads_evil: self.scene_metrics.blood_tile_count
-                        > self.scene_metrics.evil_tile_count,
-                    meteor: self.scene_metrics.zone_meteor,
-                    graveyard: self.scene_metrics.zone_graveyard,
-                    desert: self.scene_metrics.zone_desert,
-                    jungle: self.scene_metrics.zone_jungle,
-                    snow: self.scene_metrics.zone_snow,
-                    hallow: self.scene_metrics.zone_hallow,
-                    storm: self.wind.storming,
-                    ocean: self.scene_metrics.zone_beach,
-                    center_y: self.camera.y,
-                    surface_band_px: self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                    rock_band_px: self.world.rock_layer as f32 * TILE_PX + screen.y * 0.5,
-                    jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
-                        + screen.y * 0.5,
-                    quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
-                    menu: false,
-                    menu_flags: Default::default(),
-                    music_box: self.scene_metrics.active_music_box,
-                    music_box_silence: self.scene_metrics.music_box_silence,
-                });
-                // `Main.UpdateWorld_SpawnNPCs` (`Main.cs:17878`) + `UpdateWorld_NPCs`
-                // (`:17898`) — the port runs spawn and update in one pass.
-                if !self.is_client() {
-                    self.phase("npcs");
-                    self.update_npcs(dt);
-                }
-                // `Main.UpdateWorld_Projectiles` (`Main.cs:17976`) runs **before**
-                // `UpdateWorld_Items` (`:18004`).
-                self.phase("projectiles");
-                self.update_projectiles(dt);
-                self.phase("items");
-                self.update_items(dt);
-                // `Main.UpdateWorld_Dust` (`Main.cs:18047`): the minecart sparks
-                // ride this per-frame slot (the same slot the rain/sand dust get in
-                // `world_sim::scene_scan::update_scene`).
-                self.phase("dust");
-                let (sw, sh) = self.screen_size();
-                crate::minecart::tick(&mut self.dust, self.camera, Vec2::new(sw, sh), self.zoom);
-                // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
-                // runs after the entity half, never before it.
-                self.phase("time");
-                if !crate::env::day_pinned() {
-                    // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
-                    // `:1441`): the powers' multiplier folds into the clock tick
-                    // (the freeze stops the advance entirely).
-                    let rate = self.creative_powers.time_rate();
-                    if rate > 0.0 {
-                        // The dawn/dusk event rolls ride the clock's own named
-                        // stream (`Main.SwapRandom("UpdateTime")`, `Main.cs:17795`)
-                        // inside `advance_time_with_events`, which also fires the
-                        // phase-boundary achievements and flag clears
-                        // (`Main.cs:65242-65246`, `:65383-65387`, `:65415`).
-                        let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
-                        let (blood_moon, eclipse) =
-                            advance_time_with_events(self, dt * rate, any_over_120);
-                        if blood_moon {
-                            crate::chat::broadcast_death_text(
-                                &mut self.chat,
-                                &crate::lang::text("LegacyMisc.8"),
-                                crate::chat::COLOR_WORLD,
-                            );
-                        }
-                        if eclipse {
-                            crate::chat::broadcast_death_text(
-                                &mut self.chat,
-                                &crate::lang::text("LegacyMisc.20"),
-                                crate::chat::COLOR_WORLD,
-                            );
-                        }
-                    }
-                }
-                // `WorldGen.UpdateWorld` (`WorldGen.cs:71495-71630`): the
-                // `UpdateWorld_WorldGenAndInvasion` wrapper (`Main.cs:18099`) runs
-                // *after* the time pass and walks `Wiring.UpdateMech` →
-                // `TileEntity.PerformUpdates` → `Liquid.UpdateLiquid` → the growth
-                // loops, in that order.
-                self.phase("wiring");
-                self.update_wiring(dt);
-                self.phase("tile_entities");
-                self.update_tile_entities(dt);
-                self.phase("liquids");
-                self.update_liquids(dt);
-                self.phase("growth");
-                self.update_growth(dt);
-            }
-            // `DoUpdate_AnimateWaterfalls` (`Main.cs:19545-19566`): the
-            // `WaterfallManager.UpdateFrame`/`FindWaterfalls` pass — the
-            // pre-gate Animate cluster (`:17146`), so it ticks while paused.
-            self.phase("waterfalls");
-            self.update_waterfalls(dt, screen);
-            // S1-B-3: the post-gate weather cluster (`Main.cs:17222`'s
-            // `Rain.MakeRain`, `:17228-17231`'s dayRate walks) — frozen while
-            // the pause gate holds, live on stepper-blocked frames (the
-            // `Main.cs:17278` gate sits *after* it in the C#; Phase 2's stepper
-            // must not swallow it).
-            if !paused {
-                // M1.4-BG-22: the shared 60 Hz world tick — `Main.Update`'s
-                // dayRate cluster (`Main.cs:17228-17231`): the `UpdateWeather`
-                // thunder arm once, the wind walk ×`Main.dayRate`, then
-                // `Sandstorm.UpdateTime` (`Main.cs:64966`).
-                self.phase("weather");
-                crate::world_sim::weather::update_world_tick(self, dt);
-                self.phase("rain");
-                self.update_rain(dt, screen);
-                // S1-B-3 Phase 2 (decision #5): `scene_state` moved out of
-                // this pause-gated block — `Main.SceneState.Update` sits in
-                // `DoUpdateInWorld_Inner`'s step-gated tail (`Main.cs:17816`),
-                // so a stepper-blocked frame freezes it too. It now runs in
-                // the `step_allowed` tail below, after the camera walks.
-            }
-            // The SceneState blizzard loops' sound emitter rides inside
-            // `update_scene` (`scene_scan.rs`'s `SceneState::update` call —
-            // the C# keeps the block inside `ApplyVisuals`, `SceneState.cs:189`).
-            // `Main.UpdateWindyDayState` (`Main.cs:12990-13027`, called from
-            // the per-tick audio update): the sticky windy-day/storm flags the
-            // ambience gates read; the hysteresis bands make the per-frame
-            // evaluation equivalent. The pre-gate cluster (`:17182`) — it ticks
-            // while paused, reading the frozen clock.
-            self.phase("windy_day");
-            self.wind.update_windy_day_state(
-                self.rain.visual_alpha(),
-                self.world.time,
-                self.world.day_time,
-            );
-            // S1-B-3: the post-gate tail — `Main.AmbienceServer.Update`'s own
-            // `!gamePaused` arm (`Main.cs:17214`). The tile-edit and net
-            // passes move under the step gate below (batch review fix 1); the
-            // map reveal keeps the pause gate only (see its block).
-            if !paused {
-                // `Main.AmbienceServer.Update` (`Main.cs:17214-17216`) +
-                // `SkyManager.Update` (`Main.cs:17139`): the ambient sky scheduler
-                // and its entities, stepped on the 60 Hz accumulator.
-                self.phase("ambience");
-                {
-                    let ambience = &mut self.ambience;
-                    // The scheduler's draws ride the bare-`Main.rand` stand-in
-                    // (`Main.cs:17214-17216` runs `AmbienceServer.Update` outside
-                    // every swap) — the shared `NamedRngs::global()` stream, which
-                    // chat commands and menu rolls also draw between frames.
-                    let ambience_rng = self.rngs.global();
-                    let ctx = crate::ambience::AmbienceCtx {
-                        world: &self.world,
-                        day_time: self.world.day_time,
-                        eclipse: self.world.eclipse,
-                        blood_moon: self.world.blood_moon,
-                        pumpkin_moon: self.world.pumpkin_moon,
-                        snow_moon: self.world.snow_moon,
-                        hard_mode: self.world.hard_mode,
-                        is_raining: self.rain.is_raining(),
-                        is_storming: self.wind.storming,
-                        happy_windy_day: self.wind.happy_windy_day,
-                        too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),
-                        butterfly_chance: self.world.butterfly_chance,
-                        wind: self.wind.speed_current,
-                        zone_desert: self.scene_metrics.zone_desert,
-                        zone_hallow: self.scene_metrics.zone_hallow,
-                        zone_beach: self.scene_metrics.zone_beach,
-                        zone_corrupt: self.scene_metrics.zone_corrupt,
-                        zone_crimson: self.scene_metrics.zone_crimson,
-                        zone_jungle: self.scene_metrics.zone_jungle,
-                        player_center: self.player.as_ref().map_or(self.camera, |p| {
-                            Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5)
-                        }),
-                        // `plr.position.Y` is the hitbox TOP (`AmbienceServer.cs:191`).
-                        player_y: self.player.as_ref().map_or(self.camera.y, |p| p.y),
-                        // `SkyManager.Update`'s `max(1, dayRate)` loop
-                        // (`SkyManager.cs:24-46`) rides `Main.dayRate`
-                        // (`Main.cs:6199-6206`): 60 while a dial fast-forwards.
-                        day_rate: self.world.day_rate(),
-                    };
-                    ambience.update(dt, &ctx, ambience_rng);
-                }
-            }
-            // S1-B-3 (batch review fix 1) — the `DoUpdateInWorld` body's
-            // tile-edit and net halves move under the step gate: the C#'s
-            // `LookForTileInteractions`/`ItemCheck` (the mining and placing)
-            // ride `Player.Update` inside `DoUpdateInWorld`
-            // (`Player.cs:27430`), and `UpdateWorld_ServerOrClient` sits in
-            // its tail (`Main.cs:17808`) — a stepper-blocked frame cannot
-            // mine, place or sync, exactly like the vanilla. The pass order
-            // is unchanged (ambience → editing → net → map → the
-            // camera/SceneState tail), so no RNG stream reorders: the gate
-            // only removes draws.
-            if step_allowed {
-                self.phase("editing");
-                self.update_editing(dt, screen);
-                self.phase("net");
-                self.net_tick(dt);
-            }
-            // The map reveal keeps the pause gate only — its C# source,
-            // `LightingEngine.ExportToMiniMap` (`LightingEngine.cs:246-270`),
-            // is the draw-side lighting export: Draw keeps running on
-            // stepper-blocked frames, so vanilla keeps revealing the map
-            // while the world steps are frozen. No update-side `UpdateMap`
-            // exists in the 1.4.5.8 decompile to gate it on. The edit-side
-            // refresh drain (`Main.cs:61862`) is itself `!gamePaused`-gated
-            // in the C# (`Main.updateMap.HasValue && !Main.gamePaused`), so
-            // it rides the same gate here.
-            if !paused {
-                self.phase("map");
-                if let Some(m) = self.map.as_mut() {
-                    m.update(&self.world, self.player.as_ref(), &self.light, dt);
-                    // `MapUpdateQueue.Update()` (`Main.cs:61862`): the edit-side
-                    // refresh drains through `WorldMap.UpdateType`; the changed
-                    // tiles re-upload (`MapRenderer.QueueChange`'s analog).
-                    let changed = self.map_queue.update(&self.world, m);
-                    m.push_dirty(changed);
-                }
-            }
-            // The world-branch tail's camera walks (`Main.cs:17814-17815`):
-            // `UpdateCameraPan` (the tracking/pan target's MoveTowards) and
-            // `UpdateCameraLerp` (the teleport transition's timer) — S1-B-4.
-            // They sit inside `DoUpdateInWorld_Inner`'s tail block
-            // (`:17795-17822`), so they freeze with the world step; the
-            // draw-time camera (`update_camera_at_draw`, S1-B-4) keeps
-            // computing from the frozen walk state.
-            if step_allowed {
-                let mut camera_state = std::mem::take(&mut self.camera_state);
-                crate::world_sim::camera::update_camera_pan(self, &mut camera_state);
-                crate::world_sim::camera::update_camera_lerp(self, &mut camera_state);
-                self.camera_state = camera_state;
-                // S1-B-3 Phase 2 (decision #5): `Main.SceneState.Update` rides
-                // the same gated tail — `DoUpdateInWorld_Inner`'s order is
-                // `UpdateCameraPan`, `UpdateCameraLerp`, `SceneState.Update`
-                // (`Main.cs:17814-17816`), so the fades freeze with the world
-                // step. M1.4-BG-18 phase 3: the fused
-                // `Main.UpdateSceneMetrics` + `Main.SceneState.Update` — the
-                // scan, the fades and the `ApplyVisuals` driver; the post
-                // branch consumes `filter_driver.output`.
-                self.phase("scene_state");
-                crate::world_sim::scene_scan::update_scene(self, dt, screen);
-            }
-            // The gfx-quality budgets (`Main.cs:17056-17101`, S1-B-6): the
-            // `qaStyle` overrides, `maxDustToDraw`, `Gore.goreTime`, the
-            // liquid pass pair and the legacy render phases.
-            let mut gfx = std::mem::take(&mut self.gfx_quality);
-            gfx.apply(self);
-            self.gfx_quality = gfx;
+            self.update_world_frame(dt, screen);
         }
-        // S1-B-3 — `WorldUpdateStepper.DrawnThisUpdate = true`
-        // (`Main.cs:62478`, Draw's stack-split block `:62470-62477`). The
-        // fused frame orders the two flag sites as the C#'s Update→Draw
-        // sequence does: a step head resets it (`:17747`), then the draw half
-        // marks the frame — so a stepping frame still ends `true`, the C#'s
-        // post-Draw state. Runs on every in-world frame (Draw-side: a
-        // focus-paused frame draws too); menu/front frames never reach it
-        // (the C# block sits in the in-game Draw branch).
-        if self.menu.is_none() && self.front.is_none() {
-            self.stepper.drawn_this_update = true;
-        }
-        // `TR_NET_EDIT=tx,ty`: one client edit request, used to verify the round trip.
-        if self.is_client() && self.frame_count == 90 {
-            if let Some((x, y)) = crate::env::net_edit() {
-                self.request_edit(x, y, 0, 0);
-                log::info!("net edit requested at {x},{y}");
-            }
-        }
-        self.poll_net();
-        // The `netOffset` decay (`UpdateNetOffset`, `Player.cs:28721-28749`) —
-        // client-only, and after the incoming snapshots are applied.
-        self.net_interp_tick(dt);
-        // `Main.DrawBG`: advance the surface-background cross-fade once per drawn
-        // frame, exactly where the original runs it (inside the draw pass).
-        self.update_bg_visibility();
+        // S1-B-8 — the draw-half pre-snapshot spine (see `frame/world.rs`);
+        // the pure field snapshots below stay inline: the draw region's
+        // borrow scaffolding, consumed by the destructure.
+        self.draw_half_pre_snapshots(dt);
         // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
         // high-refresh displays.
         let player_alpha = (self.player_step.residual() / (1.0 / 60.0)).clamp(0.0, 1.0);
@@ -870,14 +447,6 @@ impl App {
         let mut stats = tr_render::sprite::RenderStats::default();
         let mut tile_stats = self.tile_stats;
 
-        // `Main.DoDraw_UpdateCameraPosition` (`Main.cs:62590-62649`, S1-B-4):
-        // the camera snaps/lerps/clamps at DRAW time, ahead of every read
-        // this frame's render makes of it — the update half above kept the
-        // previous frame's position (the C#'s update reads it too).
-        let mut camera_state = std::mem::take(&mut self.camera_state);
-        crate::world_sim::camera::update_camera_at_draw(self, &mut camera_state);
-        self.camera_state = camera_state;
-
         // The chest-rename editor's per-frame reads — `Main.editChest`
         // (`Main.cs:1747`), `Main.npcChatText`'s editor copy
         // (`UIVirtualKeyboard.cs:1061-1067`) and the stored `Chest.name`
@@ -885,18 +454,6 @@ impl App {
         // M6-SAVE-1 phase-3 fold) — parked before the draw site's field
         // borrows (the keyboard session owns the editor state; the name
         // reads the entity directly so the borrow stays field-scoped).
-        // `Main.DoDraw_UpdateCameraPosition` (`Main.cs:62590-62649`, S1-B-4):
-        // the camera snaps/lerps/clamps at DRAW time, ahead of every read
-        // this frame's render makes of it.
-        let mut camera_state = std::mem::take(&mut self.camera_state);
-        crate::world_sim::camera::update_camera_at_draw(self, &mut camera_state);
-        self.camera_state = camera_state;
-        // `ChildSafety.Disabled = GoreVisualsAllowed` (`Main.cs:4101`,
-        // `:4349`): the gate follows the same live settings copy the cursor
-        // tint reads — synced before the chest reads below pin `&mut self`
-        // out of reach.
-        let menu_blood = self.menu.as_ref().map(|m| m.settings.blood);
-        self.sync_child_safety(menu_blood);
         let chest_editing = self.chest_editing();
         let chest_edit_text = self.chest_edit_text().to_string();
         let chest_open = self.open_container();
@@ -3440,6 +2997,172 @@ mod tests {
         assert!(
             !setup.contains("shot_path"),
             "shot_path belongs to the head, not the setup"
+        );
+    }
+
+    /// S1-B-8 phase 2: the in-world branch lives in `frame::world` as one fn
+    /// per `phase("…")` site, and the orchestrator (`update_world_frame`)
+    /// calls them in the frozen S1-B-1 order. The include scan pins the fn
+    /// set; the behavioural order is `the_world_branch_runs_in_the_csharp_
+    /// update_order`'s, which walks the trace through the new module.
+    #[test]
+    fn s1_b_8_phase2_the_world_branch_calls_the_named_phase_fns() {
+        let world = include_str!("frame/world.rs");
+        for name in [
+            "in_world_click_cluster",
+            "in_world_pause_gates",
+            "in_world_step_gate",
+            "world_step_head",
+            "players_phase",
+            "npcs_phase",
+            "projectiles_phase",
+            "items_phase",
+            "dust_phase",
+            "time_phase",
+            "wiring_phase",
+            "tile_entities_phase",
+            "liquids_phase",
+            "growth_phase",
+            "waterfalls_phase",
+            "weather_cluster",
+            "windy_day_phase",
+            "ambience_phase",
+            "editing_net_phase",
+            "map_phase",
+            "camera_scene_tail",
+            "gfx_quality_apply",
+        ] {
+            assert!(
+                world.contains(&format!("fn {name}(")),
+                "the extracted fn {name} exists in frame/world.rs"
+            );
+        }
+        // The orchestrator's frozen call order — the same sequence the
+        // `phase()` trace walks (the C#'s `DoUpdateInWorld_Inner`, with the
+        // port's documented fusions). The slice is bounded at the next
+        // `pub(super) fn` so the spine's statements don't bleed in.
+        let orch = world
+            .split("pub(super) fn update_world_frame")
+            .nth(1)
+            .expect("the world-branch orchestrator")
+            .split("pub(super) fn draw_half_pre_snapshots")
+            .next()
+            .expect("the spine follows the orchestrator")
+            .to_string();
+        let calls: Vec<&str> = orch
+            .lines()
+            .filter_map(|l| {
+                let l = l.trim();
+                let idx = l.find("self.")?;
+                let rest = &l[idx + 5..];
+                let end = rest.find('(')?;
+                Some(&rest[..end])
+            })
+            .collect();
+        assert_eq!(
+            calls,
+            vec![
+                "in_world_click_cluster",
+                "in_world_pause_gates",
+                "in_world_step_gate",
+                "world_step_head",
+                "players_phase",
+                "npcs_phase",
+                "projectiles_phase",
+                "items_phase",
+                "dust_phase",
+                "time_phase",
+                "wiring_phase",
+                "tile_entities_phase",
+                "liquids_phase",
+                "growth_phase",
+                "waterfalls_phase",
+                "weather_cluster",
+                "windy_day_phase",
+                "ambience_phase",
+                "editing_net_phase",
+                "map_phase",
+                "camera_scene_tail",
+                "gfx_quality_apply",
+            ],
+            "the orchestrator's call order is the frozen phase order"
+        );
+        // The orchestrator is the branch's only body: `frame()` delegates.
+        let src = include_str!("frame.rs");
+        assert!(
+            src.contains("self.update_world_frame(dt, screen);"),
+            "frame() hands the in-world branch to frame::world"
+        );
+    }
+
+    /// S1-B-8 phase 2: the gate arms ride the extracted fns unchanged — the
+    /// pause/step gates wrap exactly the phases they wrapped before the split
+    /// (S1-B-3's per-gate traces assert the behaviour; this pins the text).
+    #[test]
+    fn s1_b_8_phase2_the_gate_arms_are_unchanged() {
+        let orch = include_str!("frame/world.rs")
+            .split("pub(super) fn update_world_frame")
+            .nth(1)
+            .expect("the world-branch orchestrator")
+            .split("pub(super) fn draw_half_pre_snapshots")
+            .next()
+            .expect("the spine follows the orchestrator")
+            .to_string();
+        let arm = |gate: &str, call: &str| {
+            format!("{} {{\n            self.{};\n        }}", gate, call)
+        };
+        assert!(
+            orch.contains(&arm("if !paused", "weather_cluster(dt, screen)")),
+            "weather under !paused"
+        );
+        assert!(
+            orch.contains(&arm("if !paused", "ambience_phase(dt)")),
+            "ambience under !paused"
+        );
+        assert!(
+            orch.contains(&arm("if !paused", "map_phase(dt)")),
+            "map under !paused"
+        );
+        assert!(
+            orch.contains(&arm("if step_allowed", "editing_net_phase(dt, screen)")),
+            "editing/net under the step gate"
+        );
+        assert!(
+            orch.contains(&arm("if step_allowed", "camera_scene_tail(dt, screen)")),
+            "the camera walks + scene_state under the step gate"
+        );
+    }
+
+    /// S1-B-8 phase 2: the duplicated `update_camera_at_draw` pair moved into
+    /// `draw_half_pre_snapshots` verbatim — both calls, no dedupe (the plan's
+    /// constraint; the dedupe needs its own pixel-identity proof).
+    #[test]
+    fn s1_b_8_phase2_the_camera_at_draw_pair_is_preserved() {
+        let spine = include_str!("frame/world.rs")
+            .split("pub(super) fn draw_half_pre_snapshots")
+            .nth(1)
+            .expect("the pre-snapshot spine fn");
+        let calls = spine
+            .matches("crate::world_sim::camera::update_camera_at_draw")
+            .count();
+        assert_eq!(
+            calls, 2,
+            "the duplicated camera-at-draw pair is preserved verbatim in the spine"
+        );
+        // The orchestrator's own body carries no camera walk (they all live in
+        // the spine now).
+        let src = include_str!("frame.rs");
+        let frame_body = src
+            .split("pub(crate) fn frame(&mut self)")
+            .nth(1)
+            .expect("the orchestrator")
+            .split("pub(crate) fn finish_bench")
+            .next()
+            .expect("the epilogue follows the orchestrator");
+        assert_eq!(
+            frame_body.matches("update_camera_at_draw").count(),
+            0,
+            "frame() itself no longer carries the camera walks"
         );
     }
 }
