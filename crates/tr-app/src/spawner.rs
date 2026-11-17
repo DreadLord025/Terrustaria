@@ -4248,4 +4248,208 @@ mod tests {
             "by day the moon arms draw nothing — the flags leave the day stream untouched"
         );
     }
+
+    /// DIRTY (watched RED pre-fix): DW-2.1 — with a night pumpkin moon at
+    /// wave 2 armed, the ladder's ported picks SPAWN: `spawn_npc_at` returns
+    /// `Some(Npc)` of the picked kind at the found tile — the
+    /// `SpawnNPC(spawnTileX * 16 + 8, spawnTileY * 16, type)` → `NewNPC`'s
+    /// `Bottom = (X, Y)` placement (the moon arm `NPC.cs:3224-3548`,
+    /// `NewNPC` `:80772`): the feet on the found tile's top edge, X centred
+    /// 8 px into the tile, facing the player (`TargetClosest`), full hp.
+    /// Wave 2 (`:3529-3533`) is the 326 arm (1/3) falling through to the
+    /// scarecrow band `Next(305, 315)` — Splinterling and all ten
+    /// Scarecrows, the ported kinds the plan names.
+    #[test]
+    fn the_pumpkin_wave_spawns_the_ported_kinds_at_the_found_tile() {
+        let w = moon_world(2, false);
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.moon_boss_cap_count = 0.0; // the cap is open
+        let (tile_x, tile_y) = (210i32, 25i32 * 16);
+        let mut saw_splinterling = 0;
+        let mut kinds_seen = std::collections::BTreeSet::new();
+        for seed in 1..=200u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let spawn = spawn_npc_at(&c, &mut rng, tile_x, tile_y, false, false, false);
+            // The replay (`:1284` the style, `:3529-3533` wave 2's chain):
+            // Next(3) == 0 picks 326, else the scarecrow Next(10).
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // `GetZombieSettings`
+            let expect_ty = if r#ref.next_max(3) == 0 {
+                326u16
+            } else {
+                305 + r#ref.next_max(10) as u16
+            };
+            let kind = NpcKind::moon_wave_kind(expect_ty).expect("a ported wave kind");
+            let n = spawn.expect("the ported wave kind must spawn at the found tile");
+            assert_eq!(n.kind, kind, "seed {seed}: the wrong kind spawned");
+            assert_eq!(
+                kind.pumpkin_moon_type(),
+                Some(expect_ty),
+                "seed {seed}: the u16 → kind map rides the vanilla pick"
+            );
+            // The `NewNPC` Bottom placement: (spawnTileX * 16 + 8,
+            // spawnTileY * 16) is the NPC's bottom-centre.
+            let (nw, nh) = kind.size();
+            assert_eq!(
+                n.x, tile_x as f32 * TILE_PX + 8.0 - nw * 0.5,
+                "seed {seed}: the feet sit centred 8 px into the found tile"
+            );
+            assert_eq!(
+                n.y, tile_y as f32 - nh,
+                "seed {seed}: the feet stand on the found tile's top edge"
+            );
+            // The facing toward the player (`TargetClosest`): the ctx player
+            // sits left of the tile.
+            assert_eq!(n.facing, -1, "seed {seed}: the spawn faces the player");
+            assert_eq!(n.hp, n.max_hp, "seed {seed}: the spawn is at full hp");
+            // The stream consumed exactly the replay's draws.
+            assert_eq!(
+                rng.peek(), r#ref.peek(),
+                "seed {seed}: the pumpkin spawn's stream tail is the vanilla draw order"
+            );
+            if expect_ty == 326 {
+                saw_splinterling += 1;
+            }
+            kinds_seen.insert(expect_ty);
+        }
+        assert!(
+            saw_splinterling > 0,
+            "the 1/3 326 arm must hit across 200 seeds"
+        );
+        assert!(
+            kinds_seen.len() >= 8,
+            "the scarecrow band must spread across its kinds (saw {})",
+            kinds_seen.len()
+        );
+    }
+
+    /// DW-2.4: the boss cap's live counts feed the trio gate — the feed is
+    /// `moon_boss_cap_count` over the LIVE 315/325/327 kinds (the dead weigh
+    /// nothing, `NPC.cs:274-283`), and at wave 20 the pumpkin trio sits
+    /// wholly inside `!reachedInvasionBossCap` (`:3227-3229`): a reached cap
+    /// draws nothing and spawns nothing, an open one spawns the ported boss
+    /// kinds at the found tile.
+    #[test]
+    fn the_boss_cap_live_counts_feed_the_pumpkin_trio_gate() {
+        // Two live MourningWoods (3.0 each) + one live Headless Horseman
+        // (1.0) + one dead Pumpking: the live read is 7 < 11 — the gate is
+        // open, and the dead 327 must not weigh its 5.
+        let roster = [
+            NpcKind::MourningWood,
+            NpcKind::MourningWood,
+            NpcKind::HeadlessHorseman,
+            NpcKind::Pumpking,
+        ];
+        let npcs: Vec<Npc> = roster
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
+                let mut n = Npc::new(*k, i as f32 * 32.0, 100.0, 1, 0.0);
+                if i < 3 {
+                    n.hp = n.max_hp;
+                } else {
+                    n.hp = 0;
+                } // the Pumpking stays dead
+                n
+            })
+            .collect();
+        let count = moon_boss_cap_count(&npcs);
+        assert_eq!(count, 7.0, "the dead boss weighs nothing");
+        assert!(!moon_boss_cap_reached(count), "7 < 11 keeps the gate open");
+        let w = moon_world(20, false);
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.moon_boss_cap_count = count; // the live feed (`npcs.rs:4022`)
+        let mut saw = std::collections::BTreeSet::new();
+        for seed in 1..=150u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let spawn = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // `GetZombieSettings` (`:1284`)
+            // The wave-20 trio (`:3227-3243`): Next(2) == 0 → 327; else
+            // Next(3) != 0 → 325; else the ungated 315 arm (no roll).
+            let expect_ty = if r#ref.next_max(2) == 0 {
+                327u16
+            } else if r#ref.next_max(3) != 0 {
+                325
+            } else {
+                315
+            };
+            let kind = NpcKind::moon_wave_kind(expect_ty).expect("a ported boss kind");
+            let n = spawn.expect("the open gate spawns the ported trio");
+            assert_eq!(n.kind, kind, "seed {seed}: the wrong boss kind spawned");
+            assert_eq!(
+                rng.peek(), r#ref.peek(),
+                "seed {seed}: the open-gate stream tail is the vanilla order"
+            );
+            saw.insert(expect_ty);
+        }
+        assert_eq!(
+            saw,
+            [327u16, 325, 315].into_iter().collect(),
+            "the trio's three arms must all fire under an open gate"
+        );
+        // At/over the bound the gate closes: the ladder returns before any
+        // draw — the stream holds the style draw and nothing spawns.
+        let roster2 = [
+            NpcKind::Pumpking,
+            NpcKind::Pumpking,
+            NpcKind::MourningWood,
+            NpcKind::Pumpking,
+        ];
+        let npcs2: Vec<Npc> = roster2
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
+                let mut n = Npc::new(*k, i as f32 * 32.0, 100.0, 1, 0.0);
+                if i < 3 {
+                    n.hp = n.max_hp;
+                } else {
+                    n.hp = 0;
+                } // one dead Pumpking
+                n
+            })
+            .collect();
+        let count2 = moon_boss_cap_count(&npcs2);
+        assert_eq!(count2, 13.0, "10 + 3 live, the dead weighs nothing");
+        assert!(moon_boss_cap_reached(count2), "13 >= 11 reaches the cap");
+        c.moon_boss_cap_count = count2;
+        for seed in 1..=100u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let spawn = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
+            assert!(
+                spawn.is_none(),
+                "seed {seed}: the reached cap spawns nothing"
+            );
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // only the style draws
+            assert_eq!(
+                rng.peek(), r#ref.peek(),
+                "seed {seed}: the reached cap draws nothing beyond the style"
+            );
+        }
+        // The plan's edge case: the 325 arm's own `CountNPCS(325) < 2` cap
+        // (`:3235`) — two live MourningWoods close the arm while its roll is
+        // still drawn (`moon_arm_count`'s explicit count, the C# `&&`
+        // order), and the chain advances to the next arm.
+        let hit_seed = (1..=100u64)
+            .find(|&s| UnifiedRandom::new(s as i32).next_max(2) == 0)
+            .unwrap();
+        let mut open_rng = UnifiedRandom::new(hit_seed as i32);
+        let mut open_pick = None;
+        assert!(moon_arm_count(&mut open_pick, &mut open_rng, 3, Some(2), 325, 0));
+        assert_eq!(open_pick, Some(325), "the open count lets the arm fire");
+        let mut closed_rng = UnifiedRandom::new(hit_seed as i32);
+        let mut closed_pick = None;
+        assert!(!moon_arm_count(
+            &mut closed_pick, &mut closed_rng, 3, Some(2), 325, 2
+        ));
+        assert_eq!(
+            closed_pick, None,
+            "two live MourningWoods close the 325 arm"
+        );
+        assert_eq!(
+            closed_rng.peek(), open_rng.peek(),
+            "the roll was still drawn (the C# &&)"
+        );
+    }
 }

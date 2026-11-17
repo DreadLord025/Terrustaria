@@ -24615,6 +24615,67 @@ mod s1_f_13b_tests {
         }
     }
 
+    /// DW-2.3: a wave-kind kill credits its points through the kind→type map
+    /// and advances the event — `report_pumpkin_moon_kill(kind.to_u16())`
+    /// drives `CheckProgressPumpkinMoon`'s walk (`NPC.cs:78600-78719`): the
+    /// requirement read at the kill's wave (`NPC.cs:95289-95300` — wave 1 is
+    /// 25, wave 2 is 40), the points into `waveKills`, the advance with
+    /// `waveKills` zeroed, the run's `totalInvasionPoints` accruing across
+    /// the advance (the C# resets `waveKills` only).
+    #[test]
+    fn s1_f_13b_the_wave_kind_kill_advances_the_wave_through_the_type_map() {
+        for r in rows().iter() {
+            let p = r.points;
+            // The kills wave 1's 25-point requirement needs of this kind.
+            let n = (25.0 / p).ceil() as u32;
+            let mut w = tr_core::World::new("t".into(), 40, 40);
+            w.start_pumpkin_moon();
+            assert_eq!((w.wave_number, w.wave_kills), (1, 0.0));
+            for _ in 0..(n - 1) {
+                w.report_pumpkin_moon_kill(r.kind.to_u16());
+            }
+            assert_eq!(
+                (w.wave_number, w.wave_kills),
+                (1, p * (n as f32 - 1.0)),
+                "{:?} holds wave 1 under the requirement",
+                r.kind
+            );
+            // The crossing kill advances the wave and zeroes the wave's
+            // points.
+            w.report_pumpkin_moon_kill(r.kind.to_u16());
+            assert_eq!(
+                (w.wave_number, w.wave_kills),
+                (2, 0.0),
+                "{:?} crosses wave 1 on kill {n}",
+                r.kind
+            );
+            assert_eq!(
+                w.total_invasion_points,
+                p * n as f32,
+                "{:?}: the run's points accrue across the advance",
+                r.kind
+            );
+            // The next wave reads its own (40) requirement: a boss kind's
+            // per-kill points clear it in one kill, a small kind holds.
+            w.report_pumpkin_moon_kill(r.kind.to_u16());
+            if p < 40.0 {
+                assert_eq!(
+                    (w.wave_number, w.wave_kills),
+                    (2, p),
+                    "{:?} holds wave 2",
+                    r.kind
+                );
+            } else {
+                assert_eq!(
+                    (w.wave_number, w.wave_kills),
+                    (3, 0.0),
+                    "{:?} clears wave 2's 40 in one kill too",
+                    r.kind
+                );
+            }
+        }
+    }
+
     /// The map is family-scoped: every kind outside the 16 reads `None`, and
     /// its `Npc::new` defaults stay the hardcoded 1.0 / 0.
     #[test]
@@ -24837,10 +24898,35 @@ mod s1_f_13b_tests {
         let mut ghost = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
         ghost.hp = ghost.max_hp;
         ghost.vx = 2.0;
+        // The stand's park is the C#'s own decay — `velocity.X *= 0.93f`
+        // snapped to 0 inside ±0.1 (`NPC.cs:20831-20835`): from vx 2.0 the
+        // curve reads 0.227 at frame 30 and crosses the snap at frame 42,
+        // where it parks at exact 0.0. (The first draft of this assert
+        // expected 0.0 at frame 30 — under the C#'s curve that frame-30
+        // value is 0.2267, so the test was wrong, not the port.)
         for _ in 0..30 {
             ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
+        let mut expect = 2.0f32;
+        for _ in 0..30 {
+            expect *= 0.93;
+        }
+        assert_eq!(
+            ghost.vx, expect,
+            "the caster stand rides the C#'s 0.93 decay"
+        );
+        for _ in 0..30 {
+            ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            expect *= 0.93;
+            if expect > -0.1 && expect < 0.1 {
+                expect = 0.0;
+            }
+        }
         assert_eq!(ghost.vx, 0.0, "the caster stand parks the Poltergeist");
+        for _ in 0..10 {
+            ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(ghost.vx, 0.0, "the parked ghost stays parked");
     }
 
     #[test]
