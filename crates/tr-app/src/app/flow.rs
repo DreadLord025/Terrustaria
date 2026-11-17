@@ -835,7 +835,7 @@ impl FrontScreenBehaviours for FrontScreen {
                         // there too (`:706`).
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
-                                label: "Enter Seed (Leave Blank For Random)".into(),
+                                label: ui::keyboard::enter_seed(),
                                 initial: String::new(),
                                 allow_empty: true,
                                 max_length: usize::MAX,
@@ -2633,6 +2633,8 @@ pub(crate) mod front_flow_tests {
         // `OpenSeedInputMenu` (`UIWorldCreation.cs:697-708`): "UI.EnterSeed",
         // `allowEmpty: true`, `int.MaxValue`; the seed plate and the icon
         // both route here (the Advanced tab is out of scope).
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = world_creation_app();
         let l = world_creation_layout(&app);
         app.mouse_pos = Vec2::new(
@@ -2644,6 +2646,7 @@ pub(crate) mod front_flow_tests {
             panic!("the seed plate opens the keyboard");
         };
         assert_eq!(session.request.label, "Enter Seed (Leave Blank For Random)");
+        assert_eq!(session.request.label, crate::lang::text("UI.EnterSeed"));
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, usize::MAX);
         assert_eq!(session.tail, KeyboardTail::WorldSeed);
@@ -2656,6 +2659,14 @@ pub(crate) mod front_flow_tests {
             panic!("the creator returns");
         };
         assert_eq!(draft.seed, "51");
+        // The title is the `UI.EnterSeed` key, not a literal: the keyboard
+        // header follows the culture.
+        crate::lang::set_language(tr_core::localization::GameCulture::Russian);
+        assert_eq!(
+            ui::keyboard::enter_seed(),
+            "Укажите семечко (не заполняйте для случайного выбора)"
+        );
+        crate::lang::set_language(tr_core::localization::GameCulture::English);
     }
 
     #[test]

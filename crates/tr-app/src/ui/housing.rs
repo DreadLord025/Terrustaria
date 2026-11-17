@@ -252,15 +252,15 @@ pub fn hover_text(
 /// so the panel can hand a `Copy` pair back to the tooltip layer.
 pub fn label(head: usize, npc: Option<usize>, npcs: &[Npc]) -> Option<String> {
     if head == HOUSING_QUERY {
-        // `Lang.inter[8]`: the housing-query label.
-        return Some(crate::lang::text("Inter.8"));
+        // `Lang.inter[8]`: the housing-query label (`Main.cs:42053`).
+        return Some(crate::lang::inter(8));
     }
     let kind = npcs.get(npc?)?.kind;
     Some(match npc_type_name(kind) {
         Some(name) => name,
         // A head with no key keeps its vanilla type surface rather than an
         // empty tooltip.
-        None => crate::lang::text("Inter.8"),
+        None => crate::lang::inter(8),
     })
 }
 
@@ -425,18 +425,24 @@ mod tests {
 
     #[test]
     fn the_hover_text_names_the_cell() {
+        // The English rows, pinned by value: without the `decompiled/`
+        // resources the manager answers the bare key (`LegacyInterface.8`)
+        // instead of the vanilla text, so a broken load fails here loudly.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let cells = vec![
             Cell { head: HOUSING_QUERY, npc: None, x: 1508.0, y: 324.0 },
             Cell { head: 2, npc: Some(0), x: 1508.0, y: 371.0 },
         ];
         let npcs = vec![npc(NpcKind::Merchant)];
-        // `Lang.inter[8]` — the housing-query label.
+        // `Lang.inter[8]` = "Housing Query" (`Main.cs:42053`) — the key is
+        // `LegacyInterface.8`, not the broken `Inter.8`.
         let query = hover_text(&cells, [1530.0, 340.0], 0.85, &npcs);
-        assert_eq!(query.as_deref(), Some(crate::lang::text("Inter.8").as_str()));
+        assert_eq!(query.as_deref(), Some("Housing Query"));
         // `Main.npc[0].FullName` → the type name while the port has no given
         // names (`NPCName.Merchant`).
         let merchant = hover_text(&cells, [1530.0, 390.0], 0.85, &npcs);
-        assert_eq!(merchant.as_deref(), Some(crate::lang::text("NPCName.Merchant").as_str()));
+        assert_eq!(merchant.as_deref(), Some("Merchant"));
         // Off the cells: no text.
         assert!(hover_text(&cells, [10.0, 10.0], 0.85, &npcs).is_none());
     }
