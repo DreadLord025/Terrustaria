@@ -698,6 +698,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_Head_45",
         "Heart",
         "Bubble",
+        // `TextureAssets.Hb1`/`Hb2` (`AssetInitializer.cs:404-405`): the
+        // ordinary NPC health bar's fill and depleted strips
+        // (`Main.DrawHealthBar`, `Main.cs:21909-21990`).
+        "HealthBar1",
+        "HealthBar2",
         "NPC_Head_Boss_7",
         "UI/UI_BossBar",
         // The map overlay layers (`Main.cs:66551`'s `Main.MapIcons`): the
@@ -1714,13 +1719,19 @@ pub struct Lookups {
     /// `Fonts/Death_Text`: the menu items (`FontAssets.DeathText`).
     pub death_font: Option<UiFont>,
     /// `Fonts/Combat_Text`/`Combat_Crit`: the damage-number fonts
-    /// (`FontAssets.CombatText`, drawn by `PopupText` once that lands).
+    /// (`FontAssets.CombatText`, drawn by [`crate::combat_text::draw`]).
     pub combat_text_font: Option<UiFont>,
     pub combat_crit_font: Option<UiFont>,
     /// `Logo` (menu title) as UV plus native size.
     pub logo: Option<([f32; 4], f32, f32)>,
     pub ui_heart: Option<tr_render::SheetRect>,
     pub ui_bubble: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Hb1` (`Images/HealthBar1`): the health bar's filled
+    /// strip (`Main.cs:21988-21990`).
+    pub ui_health_bar1: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Hb2` (`Images/HealthBar2`): the depleted strip
+    /// (`Main.cs:21980-21984`).
+    pub ui_health_bar2: Option<tr_render::SheetRect>,
     pub ui_boss_bar: Option<tr_render::SheetRect>,
     /// `NPC_Head_Boss_7` — the boss-bar icon (`CommonBossBigProgressBar.cs:34`).
     /// King Slime (NPC 50) is head index 7 in `BossHeadTextures`
@@ -2081,6 +2092,8 @@ impl Lookups {
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
+            ui_health_bar1: atlas.sheet("HealthBar1").copied(),
+            ui_health_bar2: atlas.sheet("HealthBar2").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
             ui_boss_head: atlas.sheet("NPC_Head_Boss_7").copied(),
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
@@ -2745,6 +2758,19 @@ impl Lookups {
         let rect = self.liquid_slopes.get(index)?.as_ref()?;
         let sx = 18 * (slope.clamp(1, 4) as i32 - 1);
         Some(uv_rect(rect, self.atlas_size, sx, sy, 16, h))
+    }
+
+    /// UV of one source rectangle inside a health-bar sheet (`Hb1`/`Hb2`,
+    /// `Images/HealthBar1|2`), the `DrawHealthBar` slices (`Main.cs:21980-21990`).
+    pub fn health_bar_uv(
+        &self,
+        rect: &tr_render::SheetRect,
+        sx: i32,
+        sy: i32,
+        w: u32,
+        h: u32,
+    ) -> [f32; 4] {
+        uv_rect(rect, self.atlas_size, sx, sy, w, h)
     }
 
     /// UV of a whole HUD sheet.

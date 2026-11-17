@@ -746,6 +746,10 @@ impl App {
             if step_allowed {
                 self.phase("editing");
                 self.update_editing(dt, screen);
+                // `Main.cs:18077` — `CombatText.UpdateCombatText()` inside the
+                // world update, on the same step gate as the strike that
+                // spawns the numbers.
+                crate::combat_text::update_all(&mut self.combat_texts);
                 self.phase("net");
                 self.net_tick(dt);
             }
@@ -1657,6 +1661,28 @@ impl App {
                     screen,
                     player_rect,
                     scene_state.screen_obstruction,
+                );
+                // `Main.cs:62340-62396`: the combat-text pass closes `DoDraw`,
+                // under the interface. Then `DrawInterface_14_EntityHealthBars`
+                // (`Main.cs:45810`) paints the ordinary mob bars.
+                draw_phase("combat_text");
+                crate::combat_text::draw(
+                    renderer,
+                    lookups,
+                    &self.combat_texts,
+                    draw_cam,
+                    world_zoom,
+                    screen,
+                );
+                draw_phase("entity_health_bars");
+                crate::render::entities::draw_npc_health_bars(
+                    renderer,
+                    lookups,
+                    npcs,
+                    light,
+                    draw_cam,
+                    world_zoom,
+                    screen,
                 );
 
                 let boss = npcs

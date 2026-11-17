@@ -2003,6 +2003,7 @@ pub(crate) mod front_flow_tests {
             sandstorm: tr_core::scene::Sandstorm::new(1),
             filter_driver: crate::app::filters::FilterDriver::new(),
             atlas: None,
+            combat_texts: Vec::new(),
             static_sheets: None,
             fonts_cache: None,
             font_atlas: None,

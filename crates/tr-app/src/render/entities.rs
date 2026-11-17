@@ -1725,6 +1725,104 @@ pub(crate) fn draw_player_map_icon(
 // each had a faithful arm sitting behind a stale v1 arm — so a duplicate is a
 // hard error here.
 #[deny(unreachable_patterns)]
+/// `Main.DrawInterface_14_EntityHealthBars`'s ordinary arm
+/// (`Main.cs:46018`): every NPC with `life != lifeMax` and `ShowLife`
+/// (`:45835`, default on — `NPC.cs:66668`'s `HealthBarDrawSettings = 1`)
+/// draws `Main.DrawHealthBar` (`:21909-21990`) under its box. The port walks
+/// the list after the world pass (the vanilla interface order, `Main.cs:45810`)
+/// and uses the retail `Hb1`/`Hb2` strips.
+pub(crate) fn draw_npc_health_bars(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    npcs: &[Npc],
+    light: &LightMap,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+) {
+    let (Some(hb1), Some(hb2)) = (
+        lookups.ui_health_bar1.as_ref(),
+        lookups.ui_health_bar2.as_ref(),
+    ) else {
+        // PNG-only runs (`Lookups::default()`) draw no bars.
+        return;
+    };
+    for n in npcs {
+        // `Main.cs:45832` active/type/shimmer gates: dead and fully hidden
+        // NPCs show nothing.
+        if n.hp <= 0 || n.shimmer_transparency > 0.0 {
+            continue;
+        }
+        let (w, h) = n.size();
+        let box_ = crate::combat_text::Rect {
+            x: n.x,
+            y: n.y,
+            width: w,
+            height: h,
+        };
+        // `life != lifeMax && ShowLife` (`Main.cs:45835`).
+        let Some(bar) = crate::combat_text::health_bar_rect(box_, n.hp, n.max_hp) else {
+            continue;
+        };
+        // The boss-scale 1.5 list (`Main.cs:45839-45922`): King Slime (50) and
+        // the Eye of Cthulhu (4) are the port's only shipped entries.
+        let scale = match n.kind {
+            NpcKind::KingSlime | NpcKind::EyeOfCthulhu => 1.5,
+            _ => 1.0,
+        };
+        let ratio = n.hp as f32 / n.max_hp as f32;
+        let rgb = crate::combat_text::bar_color(ratio);
+        // `Lighting.Brightness((int)((position.X + width / 2) / 16f),
+        // (int)((position.Y + height / 2) / 16f))` (`Main.cs:46021-46022`).
+        let tx = ((n.x + w * 0.5) / TILE_PX) as i32;
+        let ty = ((n.y + h * 0.5) / TILE_PX) as i32;
+        let l = light.get(tx, ty);
+        let brightness = l[0].max(l[1]).max(l[2]);
+        // `float num9 = 0.95f; num5 = num5 * alpha * num9` (`Main.cs:21943-21944`).
+        let a = brightness * 0.95;
+        let color = [
+            rgb[0] as f32 / 255.0 * a,
+            rgb[1] as f32 / 255.0 * a,
+            rgb[2] as f32 / 255.0 * a,
+            a,
+        ];
+        // `Main.cs:46018`: `X = position.X + width / 2`, `Y = position.Y +
+        // height + 10f` — then the interface pass's screen mapping.
+        let sx = (n.x + w * 0.5 - camera.x) * zoom + screen.x * 0.5 - 18.0 * scale;
+        let sy = (n.y + h + crate::combat_text::BAR_GAP - camera.y) * zoom + screen.y * 0.5;
+        let filled = bar.width;
+        let empty = crate::combat_text::BAR_WIDTH - filled;
+        // `Main.cs:21980-21984`: the depleted `Hb2` strip at `num3 + num2`.
+        let uv2 = lookups.health_bar_uv(
+            hb2,
+            filled as i32,
+            0,
+            empty as u32,
+            crate::combat_text::BAR_HEIGHT as u32,
+        );
+        r.push_ui_sprite(
+            [sx + filled * scale, sy],
+            [empty * scale, crate::combat_text::BAR_HEIGHT * scale],
+            uv2,
+            color,
+        );
+        // `Main.cs:21988-21990`: the filled `Hb1` strip from the left edge.
+        let uv1 = lookups.health_bar_uv(
+            hb1,
+            0,
+            0,
+            filled as u32,
+            crate::combat_text::BAR_HEIGHT as u32,
+        );
+        r.push_ui_sprite(
+            [sx, sy],
+            [filled * scale, crate::combat_text::BAR_HEIGHT * scale],
+            uv1,
+            color,
+        );
+    }
+}
+
 pub(crate) fn draw_npcs(
     r: &mut SpriteRenderer,
     assets: &NpcAssets,

@@ -16,6 +16,7 @@ mod buffs;
 mod chat;
 mod chest;
 mod collision;
+mod combat_text;
 #[cfg(feature = "debug")]
 mod debug_panel;
 mod death;
