@@ -68,6 +68,12 @@ impl PylonType {
         Self::from_id(style as u8)
     }
 
+    /// The inverse of [`Self::from_tile_style`] — the `SpriteFrame` column the
+    /// map layer draws (`TeleportPylonsMapLayer.cs:73-79`'s `TypeOfPylon`).
+    pub fn style(self) -> u8 {
+        self as u8
+    }
+
     /// `GetPylonItemTypeFromTileStyle` (`:116-131`): the placed item.
     pub fn item_id(self) -> u16 {
         match self {

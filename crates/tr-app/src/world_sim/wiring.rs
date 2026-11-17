@@ -100,6 +100,9 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // spawn loop after the step — their caps read the projectile pool.
     let mut trap_requests = Vec::new();
     let mut device_shots = Vec::new();
+    // THROW_A_PARTY (25) rides after the fixed step: the `98` broadcast needs
+    // `&mut App`, which the wiring closure holds across its body.
+    let mut party_credits = 0;
     app.wiring_step.tick(dt.min(0.25), |_| {
         app.wiring.update(&mut app.world);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
@@ -236,10 +239,15 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         }
         // The party centre's toggles (`HitWireSingle`'s case 455 →
         // `BirthdayParty.ToggleManualParty`, `BirthdayParty.cs:202-217`):
-        // `ManualParty = !ManualParty` per request; the up-state change's
-        // `CheckForAchievement` (progression event 25) is E-18's follow-up.
+        // `ManualParty = !ManualParty` per request, and the up-state edge
+        // fires `CheckForAchievement` — THROW_A_PARTY (25) credits only when
+        // the party came up (`:157-164`, `:167-173`, S1-E-18f).
         for _ in 0..app.wiring.take_party_toggles() {
+            let was_up = crate::world_events::party_is_up(&app.world_events);
             app.world_events.manual_party = !app.world_events.manual_party;
+            if !was_up && crate::world_events::party_is_up(&app.world_events) {
+                party_credits += 1;
+            }
         }
         for (from, to) in app.wiring.take_teleport_events() {
             let ax = (from.0 * 16.0) as i32;
@@ -294,6 +302,9 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             }
         }
     });
+    for _ in 0..party_credits {
+        let _ = app.notify_progression_net(25);
+    }
     // The actuation drops spawn after the fixed step (see the drain comment
     // above); the trap requests and the device shots spawn right after (their
     // caps read the pool).
@@ -600,6 +611,41 @@ mod tests {
         let mut npc = crate::npc::Npc::new(kind, x, y, 1, 0.0);
         npc.hp = npc.max_hp;
         npc
+    }
+
+    /// S1-E-18f — `BirthdayParty.ToggleManualParty`'s up-state edge fires
+    /// `CheckForAchievement` (`BirthdayParty.cs:157-164`, `:167-173`), which
+    /// credits THROW_A_PARTY (25); the down edge credits nothing.
+    #[test]
+    fn s1_e_18f_the_party_centre_fires_throw_a_party() {
+        let mut app = app_with(455, 0, 0);
+        trip_and_tick(&mut app);
+        assert!(app.world_events.manual_party, "the toggle raised the party");
+        assert!(
+            progression(&app, 25),
+            "a party coming up credits THROW_A_PARTY"
+        );
+        // The mirror: a party already up, a trip takes it down — `PartyIsUp`
+        // falls, so `CheckForAchievement`'s `if (PartyIsUp)` never fires.
+        let mut down = app_with(455, 0, 0);
+        down.world_events.manual_party = true;
+        trip_and_tick(&mut down);
+        assert!(!down.world_events.manual_party, "the toggle lowered it");
+        assert!(
+            !progression(&down, 25),
+            "bringing the party down credits nothing"
+        );
+    }
+
+    /// Whether the `PROGRESSION_EVENT_<id>` condition (`AchievementCondition
+    /// .Name`, the save key) is completed on any row.
+    fn progression(app: &App, id: u32) -> bool {
+        let key = format!("PROGRESSION_EVENT_{id}");
+        app.achievements
+            .list
+            .iter()
+            .flat_map(|a| a.conditions.iter())
+            .any(|c| c.name == key && c.completed)
     }
 
     #[test]

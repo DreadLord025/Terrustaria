@@ -25,6 +25,12 @@ pub(crate) fn advance_time(
     let rate = f64::from(world.day_rate());
     let mut t = world.time + dt as f64 * 60.0 * rate;
     if world.day_time {
+        // `Main.cs:65145-65148` (the `UpdateTime` day branch, beside the
+        // blood-moon clear): `stopMoonEvent` runs before the dusk check — the
+        // port carried the blood moon's clear to the dawn boundary
+        // (`advance_time_with_events`), so the day branch stops the moon
+        // event alone. No-op unless a flag is up during the day.
+        world.stop_moon_event();
         if t >= 54000.0 {
             // `Main.cs:65148-65151` -> `UpdateTime_StartNight` (`Main.cs:65208`):
             // the moondial's flag clears and its cooldown ticks down before the
@@ -53,6 +59,10 @@ pub(crate) fn advance_time(
         world.fast_forward_to_dawn = false;
         world.sundial_cooldown = world.sundial_cooldown.saturating_sub(1);
         // `Main.cs:65382`/`:65389`: `Main.time = 0.0; Main.dayTime = true;`.
+        // `UpdateTime_StartDay`'s `Main.stopMoonEvent()` (`Main.cs:65392`):
+        // the moon events end at dawn — the flag clears are unconditional,
+        // the point/wave resets are single-player (both run here).
+        world.stop_moon_event();
         t = 0.0;
         world.day_time = true;
         // `Main.cs:65398-65401`: `moonPhase++` with the wrap at 8 (`:19982`
@@ -109,15 +119,25 @@ pub(crate) fn advance_time_with_events(
         let rng = app.rngs.stream(crate::app::RngKey::UpdateTime);
         advance_time(&mut app.world, dt, rng, any_player_life_over_120)
     };
+    // The eclipse/blood-moon farewell rows ride before the scheduler block:
+    // the RNG borrow below (`UpdateTime`'s stream) is exclusive, so the
+    // achievement fan-out (which needs `&mut App`) resolves first.
+    if was_day && !app.world.day_time && eclipse_was_up {
+        let _ = app.notify_progression_net(3);
+    }
+    if !was_day && app.world.day_time {
+        if blood_moon_was_up {
+            let _ = app.notify_progression_net(5);
+        }
+        // `Main.cs:65374`'s dawn row.
+        let _ = app.notify_progression_net(1);
+    }
     // The event schedulers' draws ride the same UpdateTime stream the
     // boundary rolls consumed (S1-A-10: one stream, the C#'s
     // `UpdateWorld_Time` order).
     let rng = app.rngs.stream(crate::app::RngKey::UpdateTime);
     if was_day && !app.world.day_time {
-        // StartNight: the eclipse row, then the clear.
-        if eclipse_was_up {
-            let _ = app.achievements.notify_progression(3);
-        }
+        // StartNight: the eclipse row cleared above, then the world clear.
         app.world.eclipse = false;
         // `UpdateTime_StartNight`'s event pair (`Main.cs:65225-65226`):
         // `BirthdayParty.CheckNight()` then `LanternNight.CheckNight()` —
@@ -137,12 +157,8 @@ pub(crate) fn advance_time_with_events(
             &mut |lo, hi| rng.next_range(lo, hi),
         );
     } else if !was_day && app.world.day_time {
-        // StartDay: the blood-moon row, the clear, then the dawn row.
-        if blood_moon_was_up {
-            let _ = app.achievements.notify_progression(5);
-        }
+        // StartDay: the blood-moon row cleared above, then the world clear.
         app.world.blood_moon = false;
-        let _ = app.achievements.notify_progression(1);
         // `UpdateTime_StartDay`'s event pair (`Main.cs:65374-65375`):
         // `BirthdayParty.CheckMorning()` then `LanternNight.CheckMorning()`.
         let party_girl = app.npcs.iter().any(|n| {
@@ -161,12 +177,18 @@ pub(crate) fn advance_time_with_events(
                     && n.kind != crate::npc::NpcKind::TaxCollector
             })
             .collect();
-        crate::world_events::check_morning_party(
+        let party_up = crate::world_events::check_morning_party(
             &mut app.world_events,
             party_girl,
             &partyable,
             &mut |lo, hi| rng.next_range(lo, hi),
         );
+        // `Main.cs:65375` → `BirthdayParty.CheckMorning` → `:142`'s
+        // `CheckForAchievement`: a natural party coming up credits
+        // THROW_A_PARTY (25).
+        if party_up {
+            let _ = app.notify_progression_net(25);
+        }
         crate::world_events::check_morning_lanterns(&mut app.world_events);
     }
     (blood_moon_started, eclipse_started)
@@ -291,6 +313,68 @@ mod tests {
     }
 
     use super::*;
+
+    // --- S1-F-13 Phase 1: the moon events stop at both boundaries ---
+
+    /// DW-1.2: the dawn boundary (`UpdateTime_StartDay`'s `stopMoonEvent`,
+    /// `Main.cs:65392`) stops the running event and zeroes the points/waves.
+    #[test]
+    fn the_dawn_boundary_stops_the_moon_event() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.day_time = false;
+        w.time = 32399.0;
+        w.start_snow_moon();
+        w.report_frost_moon_kill(344);
+        w.wave_number = 5;
+        let mut rng = UnifiedRandom::new(1);
+        advance_time(&mut w, 5.0, &mut rng, false);
+        assert!(w.day_time, "the dawn transition ran");
+        assert!(
+            !w.snow_moon && !w.pumpkin_moon,
+            "Main.cs:65392 stops the event"
+        );
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (0, 0.0, 0.0),
+            "the point/wave resets are single-player and both run"
+        );
+    }
+
+    /// DW-1.2: the dusk side — `Main.cs:65147-65148`'s day-branch
+    /// `stopMoonEvent`, which runs beside the blood-moon clear and before the
+    /// `time > 54000` boundary that turns night.
+    #[test]
+    fn the_day_branch_stops_the_moon_event_at_the_dusk_boundary() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.day_time = true;
+        w.time = 53999.0;
+        w.start_pumpkin_moon();
+        w.wave_kills = 60.0;
+        w.total_invasion_points = 210.0;
+        w.wave_number = 4;
+        let mut rng = UnifiedRandom::new(1);
+        advance_time(&mut w, 5.0, &mut rng, false);
+        assert!(!w.day_time, "dusk ran");
+        assert!(
+            !w.pumpkin_moon && !w.snow_moon,
+            "Main.cs:65147-65148 stops the event at the dusk boundary"
+        );
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (0, 0.0, 0.0)
+        );
+        // The stop is a no-op while no event runs: a night that crosses dawn
+        // with no event leaves the world untouched by the machinery.
+        let mut w = World::new("t".into(), 40, 40);
+        w.day_time = false;
+        w.time = 32399.0;
+        let mut rng = UnifiedRandom::new(1);
+        advance_time(&mut w, 5.0, &mut rng, false);
+        assert_eq!(
+            (w.wave_number, w.wave_kills, w.total_invasion_points),
+            (0, 0.0, 0.0)
+        );
+    }
 
     /// A stream whose first `NextDouble()` satisfies `pred`. The boundary rolls
     /// draw exactly once (`Main.cs:65333-65352`, `:65421-65430`), so a fresh

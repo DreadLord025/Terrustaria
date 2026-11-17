@@ -1134,10 +1134,11 @@ pub(crate) fn draw(
         else {
             continue;
         };
-        // `int num2 = (int)(scale / 2.5f * 255f)` — the XNA `Color(int,…)`
-        // ctor byte-casts, so scales past 2.5 wrap.
-        let n = (d.scale / 2.5 * 255.0) as i32;
-        let a = (n as u8) as f32 / 255.0;
+        // `Dust.cs:2498-2501` — the 213 arm of the shared per-type table:
+        // `int num2 = (int)(scale / 2.5f * 255f)` through the ctor's byte cast.
+        // The arm ignores the light colour, so the argument is arbitrary.
+        let a = tr_core::dust_table::get_alpha(d, tr_core::particles::Color::WHITE).a as f32
+            / 255.0;
         // `Main.cs:38974-38977`: draw scale 1 — the 8 px frame at zoom.
         let size = 8.0 * zoom;
         r.push_fx_sprite_rot(

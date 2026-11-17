@@ -136,16 +136,17 @@ ANALYSIS.md:7288-7293).
 | 27 | SyncProjectile | `id::PROJECTILE` | `net.rs:70`; arm `:780-841` |
 | 28 | DamageNPC | `id::NPC_STRIKE` | `net.rs:69`; cascades a 23 when `spawnNeedsSyncing` (`:102-107`) |
 | 29 | KillProjectile | `id::PROJECTILE_DEAD` | `net.rs:71` |
-| 30-36 | TogglePVP, chest/zone/buff arms | NOT-FOUND | no `SendData` arm; 37 has no body |
+| 30-36 | TogglePVP / RequestChestOpen (31) / SyncChestItem (32) / SyncPlayerChest (33) / ChestUpdates / PlayerHeal / SyncPlayerZone | `id::CHEST_OPEN_REQUEST` / `id::CHEST_ITEM` / `id::PLAYER_CHEST` | `net.rs` — 31/32/33 ported by S1-E-27 (`MessageBuffer.cs:1868-1982`, the writer arms `NetMessage.cs:864-911`): the client asks with `31`, the host answers `SendChestContentsTo` (`155` + one `32` per slot), `33` to the asker and `80` to the others, the rigged chest also firing `59`; 32 relays to the other clients (`:1915`). 30 `TogglePVP`, 34 `ChestUpdates`, 35 `PlayerHeal` and 36 `SyncPlayerZone` remain NOT-FOUND (no `SendData` arm of 37's shape) |
 | 37 | RequestPassword | `id::PASSWORD_REQUEST` | `net.rs:74` |
 | 38 | SendPassword | `id::PASSWORD` | `net.rs:75`; the one message the gate lets through at State -1 |
-| 39-48 | ReleaseItemOwnership … LiquidUpdate | NOT-FOUND | no `SendData` arm; 42/68 gate-whitelisted; 48 deprecated for NetLiquidModule (`MessageID.cs:108-109`) |
-| 49 | InitialSpawn | `id::WORLD_COMPLETE` | `net.rs:77` — **renamed**, C# means "client is spawning in", not "world done" |
-| 50-81 | PlayerBuffs … CombatTextInt | NOT-FOUND | 72 has `SendTravelShop` (`NetMessage.cs:2645`); 77 `SendTemporaryAnimation` (:2590); 79 `SendObjectPlacement` (:2573) |
+| 39-48 | ReleaseItemOwnership … OpenSignRequest (46) / OpenSignResponse (47) / LiquidUpdate | `id::SIGN_REQUEST` / `id::SIGN_DATA` | `net.rs` — 46/47 ported by S1-E-27 (`MessageBuffer.cs:2366-2405`, writer `NetMessage.cs:979-986`): `Sign.ReadSign`/`TextSign` live in the new `signs.rs`, the record is rewritten on the host and relayed to the other clients when the text changed (`:2398`). 39-45 and 48 remain NOT-FOUND: no `SendData` arm; 42/68 gate-whitelisted; 48 deprecated for NetLiquidModule (`MessageID.cs:108-109`) |
+| 49 | InitialSpawn | `id::INITIAL_SPAWN` | `net.rs` — the C# meaning (the client spawns in, `MessageBuffer.cs:2447-2453`) is now the port's too: `S2c::InitialSpawn` drives `State 6 → 10` + `12 PlayerSpawn` with `SpawningIntoWorld` |
+| 50-81 | PlayerBuffs (50) … CombatTextInt | `id::PLAYER_BUFFS` / `id::ADD_NPC_BUFF` / `id::NPC_BUFFS` / `id::HIT_SWITCH` / `id::CHEST_NAME` / `id::PLAYER_CHEST_INDEX` | `net.rs` — S1-E-27 ported 50 (`MessageBuffer.cs:2454-2480`: the owner's own list is skipped `:2461-2464`, a peer's lands with every time forced to 60 `:2470-2471`), 53/54 (`:2565-2593`: the host applies `AddBuff(quiet: true)` and pushes the full list back), 59 (`:2682-2693`: `Wiring.HitSwitch` then a relay to every other client), 69 (`:3059-3078`: the rename, `Chest.CreateWorldChest` when the slot is absent) and 80 (`:3216-3227`, the `-3..8000` range gate). The rest stay NOT-FOUND: 72 has `SendTravelShop` (`NetMessage.cs:2645`); 77 `SendTemporaryAnimation` (:2590); 79 `SendObjectPlacement` (:2573) |
 | 82 | NetModules | `id::NET_MODULE` | `net.rs:68`; the C# arm is `switch (b4)` (`NetMessage.cs:746`) |
 | 83 | Unused83 | NOT-FOUND | deprecated (`MessageID.cs:179-180`) |
 | 84-96 | PlayerStealth … TeleportPlayer | NOT-FOUND | 93 gate-whitelisted, no `SendData` arm |
-| 97-119 | Achievement msgs … CombatTextString | NOT-FOUND | `SendPlayerHurt`/`SendPlayerDeath` (`NetMessage.cs:2598,2607`) unported |
+| 97-98 | AchievementNPCKilled : AchievementProgressionEvent | `id::NPC_KILLED` / `id::PROGRESSION_EVENT` | S1-I-5: `net.rs` `S2c::NpcKilled` / `S2c::ProgressionEvent`, each one `(short)` (`NetMessage.cs:1347-1352`), read only at `netMode == 1` (`MessageBuffer.cs:3558-3569`). Host→client only — no `C2s`. The kill credit rides `NPC.playerInteraction[256]` (`NPC.cs:6085`) and the progression id is `Main._progressionEvent` (`AchievementsHelper.cs:227-237`) |
+| 99-119 | CombatTextString | NOT-FOUND | `SendPlayerHurt`/`SendPlayerDeath` (`NetMessage.cs:2598,2607`) unported |
 | 120-128 | Emoji … LandGolfBallInCup | NOT-FOUND | |
 | 129 | FinishedConnectingToServer | NOT-FOUND | no body either side |
 | 130-137 | FishOutNPC … RequestNPCBuffRemoval | NOT-FOUND | |
@@ -155,8 +156,8 @@ ANALYSIS.md:7288-7293).
 | 145 | SyncItemsWithShimmerDeprecated | NOT-FOUND | **not read by `GetData`** |
 | 146-147 | ShimmerActions / SyncLoadout | NOT-FOUND | 147 gate-whitelisted |
 | 148 | SyncItemCannotBeTakenByEnemiesDeprecated | NOT-FOUND | **not read by `GetData`** |
-| 149-153, 155-158 | DeadCellsDisplayJar … ExtraSpawnSection | NOT-FOUND | includes `SyncItemDespawn` (151) and `SyncChestSize` (155) |
-| 154 | Ping | NOT-FOUND | C# sends it every 250 ms (`Net/Ping.cs:31`); the port has no ping msg |
+| 149-153, 155-158 | DeadCellsDisplayJar … SyncChestSize (155) … ExtraSpawnSection | `id::CHEST_SIZE` | `net.rs` — 155 ported by S1-E-27 (`MessageBuffer.cs:4429-4438`): `Chest.Resize` grows/shrinks the slot list, the client materialising the array slot first (`App::materialise_chest_slot`) because the port ships chests lazily where the C# holds all of `Main.chest[8000]`. 149-153, 156-158 stay NOT-FOUND; 151 is `SyncItemDespawn` |
+| 154 | Ping | `id::PING` | `net.rs` — `C2s::Ping`/`S2c::Ping`, the server echoes it back (`MessageBuffer.cs:4419-4428`), timed by `net_ping_tick`/`ping_received` (`Net/Ping.cs:24-48`) |
 | 159 | RequestSection | NOT-FOUND | the port streams sections unrequested on join (`host_stream_sections`) |
 | 160-162 | ItemPosition / HostToken / DamageNPCAck | NOT-FOUND | `161` compares against `Netplay.HostToken` (`MessageBuffer.cs:4471-4476`) |
 | 201-205 | *(internal)* | `INT_EDIT/PICKUP/JOINED/LEFT/TIME` | `net.rs:90-94`, deliberately outside 1..162 so the gate rejects them pre-spawn |
@@ -211,10 +212,13 @@ the edit/pickup request entry points `request_edit` (:1768) and the module sende
   (ANALYSIS.md:7294-7297).
 - **Ping:** C# `Net/Ping.cs` — `SendData(154)` every 250 ms, `CurrentPing` from a
   `Stopwatch`, with `PingRecieved()` closing the round trip; displayed through
-  `Main.ActiveNetDiagnosticsUI`. The port implements it as a NetModule
-  (`netmodules.rs::module_id::PING`, `Ping` at :186, `ModuleBody::encode` at :512) —
-  i.e. **id 154 is unported and the ping rides module 2**, so a ported client is not
-  wire-compatible with a vanilla one for ping.
+  `Main.ActiveNetDiagnosticsUI`. The port now matches: `id::PING = 154`,
+  `C2s::Ping`/`S2c::Ping` (`net.rs`), the server echoes it back
+  (`netglue.rs`, C2s dispatch), and `net_ping_tick`/`ping_received`
+  (`app/netmodules.rs`) are the `Ping.Update`/`PingRecieved` pair, with
+  `Ping.Reset` on connect. NetModule **2** is `NetPingModule` — the *map* ping
+  relay (`NetworkInitializer.cs:13`, `Main.cs:56541-56551`), which now
+  re-broadcasts markers via `broadcast_except` and adds them to `map.pings`.
 - **Chat:** C# carries chat through `NetTextModule` (module id 1) plus the old ids
   25/26 (both deprecated). Rust `netmodules.rs` has `ChatMessage`/`ServerMessage`
   (132-184) and `send_chat_message` (:467), tested by
@@ -282,10 +286,10 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
 
 | # | Mismatch | Severity | Admitted? |
 | --- | --- | --- | --- |
-| 1 | **Only 25 of 163 message ids are ported.** The 774 C# `SendData` sites funnel into ~10 Rust send paths. Every chest/sign/wiring/team/emote/buff/luck/pylon message is a no-op on the Rust wire. | behavioural | yes — ROADMAP.md:1067-1071 parks the per-system passes |
+| 1 | **Most of the 163 message ids are still unported**, though S1-E-27 (2026-11-16) closed the chest/sign/wiring/buff families — `31/32/33/46/47/50/53/54/59/69/80/155` now have bodies, host arms and client arms. The 774 C# `SendData` sites still funnel into ~10 Rust send paths, so the team/emote/luck/pylon/invasion messages remain no-ops on the Rust wire. | behavioural | yes — ROADMAP.md:1067-1071 parks the per-system passes |
 | 2 | **Internal ids 201-205 sit outside the C# 1..162 range.** `INT_EDIT` replaces `17 TileManipulation`, `INT_PICKUP` replaces the `21`/`151` pickup flow, `INT_JOINED`/`INT_LEFT` replace the `4`/`12`/`14` slot pushes. The port cannot talk to a vanilla client and vice versa. | behavioural (wire-incompatible) | yes — `net.rs:84-89` documents the choice |
-| 3 | **`49 InitialSpawn` is reused as "world complete".** `MessageBuffer.cs:2447-2453` uses 49 to move the *client* to State 10 and call `Spawn`, not to mark the host's world transfer done. The Rust name is `WORLD_COMPLETE` (`net.rs:77`). Any later port of the real 49 arm collides. | behavioural | no |
-| 4 | **Ping is id 154 in C#, module 2 in Rust.** `Net/Ping.cs:31` sends a bare `154`; the port sends NetModule 2. Ping is therefore unportable and the vanilla-ping UI has no source. | behavioural | no |
+| 3 | **`49 InitialSpawn` now carries the C# meaning** (fixed 2026-11-16, S1-E-28) — `MessageBuffer.cs:2447-2453` moves the *client* to State 10 and calls `Spawn`; the port's `id::INITIAL_SPAWN` does exactly that (`State 6 → 10` + `12 PlayerSpawn` with `spawn_context = 1`, `Player.cs:37578-37581`). | behavioural | **fixed** (S1-E-28) |
+| 4 | **Ping is id 154 in both** (fixed 2026-11-16, S1-E-28) — `Net/Ping.cs:31` sends a bare `154` and the port's RTT rides the same id (`C2s::Ping`/`S2c::Ping`, echo at `MessageBuffer.cs:4419-4428`); NetModule 2 is back to the `NetPingModule` map-ping relay. | behavioural | **fixed** (S1-E-28) |
 | 5 | **`5 PlayerInventory` is carried** (fixed 2026-11-14, S1-I-2) — the server attributes the slot to the sending client, stores it in that client's inventory copy and relays it to the other clients (`MessageBuffer.cs:409-412`/`:454-457`, the `PlayerItemSlotID.CanRelay` slots). The `2 SyncEquipment` arm (the 59+20+10+5+5+4×40+trash push) now reaches the peers. | behavioural | **fixed** (S1-I-2) |
 | 6 | **`7 WorldInfo` carries defaults** for 11 bg styles, ice/jungle backs, tree/cave backups, 13 tree-top bytes, 14 flag groups, ore tiers, dungeon point, spawn list, `lobbyId` (ANALYSIS.md:7267-7274). `lobbyId = 0` without a social API. | behavioural | yes |
 | 7 | **`NetworkText` is literal-mode only** (mode byte 0 + string, `NetworkText.cs:65-70`); keyed/format text and the substitution list are not ported, so kick/status text is English-literal, not localized (ANALYSIS.md:7256-7260). | behavioural | yes |
@@ -300,6 +304,7 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
 | 16 | **`PlayerSpawnContext.SpawningIntoWorld` / the `WorldGen.clearWorld` arm has no port equivalent** (`Netplay.cs:484-505`); the in-process world swap replaces it (ANALYSIS.md:7288-7293). | behavioural | yes |
 | 17 | **`SendData` fan-out is 774 → ~10 sites**: the join bundle `SyncOnePlayer` + full inventory + NPC houses + travel shop + angler quest + revenge markers (`NetMessage.cs:2806-2853`) is not reproduced; `SendNPCHousesAndTravelShop`, `SyncChestContentsForSection`, `SyncNPCsForSection` (`:2724`, `:2741`) are absent. | behavioural | yes (parked per-system passes) |
 | 18 | **`netSpam` throttle, `netImportant` protection, `DoesPlayerSlotCountAsAHost`** (ROADMAP.md:1063-1065) are unported — the send-throttle behaviour of the C# server has no Rust equivalent. | behavioural | no |
+| 19 | **`NetBestiaryModule` carries only the `Kill` unlock kind** (S1-I-5): the `Sight`/`Chat` bodies (`NetBestiaryModule.cs:25-39`) are not sent and `BestiaryKill::read_from` rejects their tag bytes, because the port's `NPCWasNearPlayerTracker`/`NPCWasChatWithTracker` halves are not net-synced (the sets exist and save, they are just never updated in MP). |
 
 ## Task seeds
 

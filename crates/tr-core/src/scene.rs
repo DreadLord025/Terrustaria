@@ -52,6 +52,8 @@ pub struct SceneMetrics {
     pub evil_tile_count: i32,
     /// `metrics.BloodTileCount` (`SceneMetrics.cs:614`, non-remix branch).
     pub blood_tile_count: i32,
+    /// `metrics.HoneyBlockCount` (`SceneMetrics.cs:595`: `_tileCounts[229]`).
+    pub honey_block_count: i32,
     /// `metrics.SurfaceAtmospherics` (`SceneMetrics.cs:698`, `WorldGen.cs:10976`).
     pub surface_atmospherics: bool,
     /// `metrics.ZoneRain` (`SceneMetrics.cs:701`).
@@ -160,6 +162,84 @@ pub struct SceneMetrics {
     pub active_music_box: i32,
     /// `MusicBoxSilence` — the silent box (`frameY / 36 == 100`).
     pub music_box_silence: bool,
+    // — the S1-E-16 screen-effect inputs (`SceneMetrics.PerspectivePlayer`) —
+    /// `Player.insideUnbreakableWalls` (`Player.cs:2812`): the dual-dungeon
+    /// wall scan says the perspective player is boxed in (`ScreenObstruction`
+    /// `:17`). The `Player` field itself is not ported — the scan driver fills
+    /// this with `UnbreakableWallScan.InsideUnbreakableWalls`.
+    pub inside_unbreakable_walls: bool,
+    /// `Player.headcovered` (`Player.cs:2298`): the Obstructed buff (163) arm
+    /// (`:11826-11829`). No `Player` field yet — filled from the buff.
+    pub headcovered: bool,
+    /// `DangerousDungeonCurse.GetProgressPlayerNeedsToMatch` (`:5-27`): the
+    /// tier the perspective player's own zones demand (S1-E-16).
+    pub curse_progress_needed: i32,
+    /// `DangerousDungeonCurse.GetProgressPlayerCanSafelyMatch` (`:29-52`): the
+    /// tier the world's downed bosses + hardmode let the player match.
+    pub curse_progress_safely: i32,
+    /// The `ScreenDarkness` NPC rows (`ScreenDarkness.cs:17-31` walks
+    /// `Main.npc[]`): only the two kinds with an arm, carrying the fields those
+    /// arms read. The driver fills it — `tr-core` has no NPC list.
+    pub screen_darkness_npcs: Vec<ScreenDarknessNpc>,
+    /// `Main.maxTilesX` / `Main.maxTilesY`: the `MoonlordPiece`/`Explosion`
+    /// `Dead` walls (`MoonlordDeathDrama.cs:29-31`, `:105`).
+    pub world_tiles: (i32, i32),
+    // — the S1-L-1 tail (`ScanOnScreenTiles` `:450-577`, `ScanNPCPositions`
+    // `:727-745`, `UpdateOreFinder` `:867-886`) —
+    /// `HasClock`: tile 104 anywhere in the visual scan area (`:462-465`).
+    pub has_clock: bool,
+    /// `ActiveFountainColor` (`:486-517`): the last fountain row's colour, -1
+    /// = none. `Main.CalculateWaterStyle` returns it when `>= 0`
+    /// (`Main.cs:57390-57392`).
+    pub active_fountain_color: i32,
+    /// `ActiveMonolithType` (`:518-529`): 0..4 = the vortex/nebula/stardust/
+    /// solar/moon-lord monoliths, -1 = none.
+    pub active_monolith_type: i32,
+    /// `BloodMoonMonolith`: tile 480, `frameY >= 54` (`:530-534`).
+    pub blood_moon_monolith: bool,
+    /// `EchoMonolith`: tile 657, `frameY >= 54` (`:535-539`).
+    pub echo_monolith: bool,
+    /// `ShimmerMonolithState` = `frameY / 54` of tile 658 (`:540-542`).
+    pub shimmer_monolith_state: i32,
+    /// `CRTMonolith` / `RetroMonolith` / `NoirMonolith` /
+    /// `RadioThingMonolith`: tiles 720/721/725/733, `frameY >= 54`
+    /// (`:543-561`).
+    pub crt_monolith: bool,
+    /// See [`SceneMetrics::crt_monolith`].
+    pub retro_monolith: bool,
+    /// See [`SceneMetrics::crt_monolith`].
+    pub noir_monolith: bool,
+    /// See [`SceneMetrics::crt_monolith`].
+    pub radio_thing_monolith: bool,
+    /// `TownNPCCount`: the town NPCs whose centre sits in the
+    /// `TownNPCRectSize` rect around `Center` (`:738-742`).
+    pub town_npc_count: i32,
+    /// `ClosestNPCPosition` (`SceneMetrics.cs:138`): the nearest active NPC of
+    /// each type, in world pixels — `[0.0, 0.0]` = none seen. The index space
+    /// is `NPCID.Count` (`NPCID.cs:12581`).
+    pub closest_npc_position: Vec<[f32; 2]>,
+    /// `BestOreType` / `BestOrePosition`: the highest-priority ore in the scan
+    /// window, nearest first (`:867-886`); -1 = none.
+    pub best_ore_type: i32,
+    /// See [`SceneMetrics::best_ore_type`].
+    pub best_ore_position: (i32, i32),
+    /// `_bestOreDistSq`: the squared tile distance of `best_ore_position`.
+    pub best_ore_dist_sq: i32,
+}
+
+/// One NPC row the `ScreenDarkness` walk reads (`ScreenDarkness.cs:19-30`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScreenDarknessNpc {
+    /// `Main.npc[i].type`.
+    pub npc_type: i32,
+    /// `Main.npc[i].Center`.
+    pub center: [f32; 2],
+    /// `Main.npc[i].ai[0]` — only the 370 arm reads it.
+    pub ai0: f32,
+    /// `Main.npc[i].ai[2]` — only the 370 arm reads it.
+    pub ai2: f32,
+    /// `Main.npc[i].localAI[1]` — only the 113 (Wall of Flesh) arm reads it.
+    pub local_ai1: f32,
 }
 
 /// The `Player.SceneMetrics` aura read as a Copy snapshot — what
@@ -234,6 +314,17 @@ pub fn is_dungeon_wall(wall: u16) -> bool {
     matches!(wall, 7 | 8 | 9 | 94..=99)
 }
 
+/// `SceneMetrics.IsValidForOreFinder` (`SceneMetrics.cs:888-903`): the metal
+/// detector skips the frame variants that are not the ore itself — tile 227's
+/// placed-metal frames 272..=374 and tile 129's crystal shard frames 324+.
+pub fn is_valid_for_ore_finder(tile: &crate::tile::Tile) -> bool {
+    match tile.kind {
+        227 => (272..=374).contains(&tile.frame_x),
+        129 => tile.frame_x >= 324,
+        _ => true,
+    }
+}
+
 impl SceneMetrics {
     /// `SceneMetrics.Reset` — zeroed counts and flags.
     pub fn new() -> Self {
@@ -256,6 +347,7 @@ impl SceneMetrics {
             jungle_tile_count: 0,
             evil_tile_count: 0,
             blood_tile_count: 0,
+            honey_block_count: 0,
             surface_atmospherics: false,
             zone_rain: false,
             zone_snow: false,
@@ -298,6 +390,27 @@ impl SceneMetrics {
             zone_shadow_candle: false,
             active_music_box: -1,
             music_box_silence: false,
+            inside_unbreakable_walls: false,
+            headcovered: false,
+            curse_progress_needed: 0,
+            curse_progress_safely: 0,
+            screen_darkness_npcs: Vec::new(),
+            world_tiles: (0, 0),
+            has_clock: false,
+            active_fountain_color: -1,
+            active_monolith_type: -1,
+            blood_moon_monolith: false,
+            echo_monolith: false,
+            shimmer_monolith_state: 0,
+            crt_monolith: false,
+            retro_monolith: false,
+            noir_monolith: false,
+            radio_thing_monolith: false,
+            town_npc_count: 0,
+            closest_npc_position: vec![[0.0; 2]; 697],
+            best_ore_type: -1,
+            best_ore_position: (0, 0),
+            best_ore_dist_sq: i32::MAX,
         }
     }
 
@@ -433,6 +546,8 @@ impl SceneMetrics {
         // `SceneMetrics.cs:610`: the glowing-mushroom block set.
         self.mushroom_tile_count =
             self.count(70) + self.count(71) + self.count(72) + self.count(528);
+        // `SceneMetrics.cs:595`: `HoneyBlockCount = _tileCounts[229]`.
+        self.honey_block_count = self.count(229);
         // `SceneMetrics.cs:611-612`:
         self.meteor_tile_count = self.count(37);
         self.dungeon_tile_count = self.count(41)
@@ -485,9 +600,121 @@ impl SceneMetrics {
         self.desert_sand_tile_count = (self.sand_tile_count - self.ocean_sand_tile_count).max(0);
     }
 
+    /// `SceneMetrics.ScanOnScreenTiles` (`SceneMetrics.cs:450-577`): the
+    /// visual-area pass — the clock, the music box, the fountain colour and
+    /// the monolith states. `area` is the C#'s `visualScanArea` as
+    /// `(left, top, right, bottom)` in tiles, already inflated by 28
+    /// (`Main.cs:62536-62537`); the C# re-clamps it to the world here.
+    pub fn scan_on_screen_tiles(&mut self, world: &World, area: (i32, i32, i32, i32)) {
+        // `WorldUtils.ClampToWorld` (`WorldBuilding/WorldUtils.cs:9-14`, fluff 0).
+        let left = area.0.clamp(0, world.width);
+        let top = area.1.clamp(0, world.height);
+        let right = area.2.clamp(0, world.width);
+        let bottom = area.3.clamp(0, world.height);
+        for x in left..right {
+            for y in top..bottom {
+                let Some(tile) = world.tile(x, y) else {
+                    continue;
+                };
+                // `:458-461`: absent or inactive tiles are skipped.
+                if !tile.active() {
+                    continue;
+                }
+                // `:462-465`.
+                if tile.kind == 104 {
+                    self.has_clock = true;
+                }
+                match tile.kind {
+                    // `:468-481`: the music box — `frameY / 36` is the track,
+                    // 100 the silent box.
+                    139 => {
+                        if tile.frame_x >= 36 {
+                            let num = tile.frame_y as i32 / 36;
+                            if num == 100 {
+                                self.music_box_silence = true;
+                            } else {
+                                self.active_music_box = num;
+                            }
+                        }
+                    }
+                    // `:482-522`: the fountain colour, keyed on the frame
+                    // column (`frameX / 36`) of the flowing frame.
+                    207 => {
+                        if tile.frame_y >= 72 {
+                            self.active_fountain_color = match tile.frame_x as i32 / 36 {
+                                0 => 0,
+                                1 => 12,
+                                2 => 3,
+                                3 => 5,
+                                4 => 2,
+                                5 => 10,
+                                6 => 4,
+                                7 => 9,
+                                8 => 8,
+                                9 => 6,
+                                _ => -1,
+                            };
+                        }
+                    }
+                    // `:523-534`: the four pillar monoliths share tile 410
+                    // (`frameX / 36` picks one), the Moon Lord's is 509.
+                    410 => {
+                        if tile.frame_y >= 56 {
+                            self.active_monolith_type = tile.frame_x as i32 / 36;
+                        }
+                    }
+                    509 => {
+                        if tile.frame_y >= 56 {
+                            self.active_monolith_type = 4;
+                        }
+                    }
+                    // `:535-573`: the six single-purpose monoliths.
+                    480 => {
+                        self.blood_moon_monolith = self.blood_moon_monolith || tile.frame_y >= 54
+                    }
+                    657 => self.echo_monolith = self.echo_monolith || tile.frame_y >= 54,
+                    658 => self.shimmer_monolith_state = tile.frame_y as i32 / 54,
+                    720 => self.crt_monolith = self.crt_monolith || tile.frame_y >= 54,
+                    721 => self.retro_monolith = self.retro_monolith || tile.frame_y >= 54,
+                    725 => self.noir_monolith = self.noir_monolith || tile.frame_y >= 54,
+                    733 => {
+                        self.radio_thing_monolith = self.radio_thing_monolith || tile.frame_y >= 54
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// `_tileCounts[id]` as an `i32` summand.
     fn count(&self, id: u16) -> i32 {
         self.tile_counts[id as usize] as i32
+    }
+
+    /// `SceneMetrics.UpdateOreFinder` (`SceneMetrics.cs:867-886`): keep the
+    /// highest-priority ore, nearest first. Called from `ScanTiles` per active
+    /// tile (`:445`), so the position rides the scan window.
+    pub fn update_ore_finder(&mut self, pos: (i32, i32), tile: &crate::tile::Tile) {
+        let priority = crate::tiledata::ORE_FINDER_PRIORITY[tile.kind as usize];
+        if priority <= 0 {
+            return;
+        }
+        // `num2` = the standing winner's priority, -1 when none (`:874`).
+        let best = if self.best_ore_type < 0 {
+            -1
+        } else {
+            crate::tiledata::ORE_FINDER_PRIORITY[self.best_ore_type as usize] as i32
+        };
+        if priority as i32 >= best && is_valid_for_ore_finder(tile) {
+            let dx = pos.0 - self.tile_center.0;
+            let dy = pos.1 - self.tile_center.1;
+            let dist_sq = dx * dx + dy * dy;
+            if priority as i32 != best || dist_sq < self.best_ore_dist_sq {
+                self.best_ore_type = tile.kind as i32;
+                self.best_ore_position = pos;
+                self.best_ore_dist_sq = dist_sq;
+            }
+        }
     }
 
     /// `SceneMetrics.CalculateZones` (`SceneMetrics.cs:662-707`), M1 subset.
@@ -922,6 +1149,217 @@ impl Sandstorm {
     }
 }
 
+/// `MoonlordDeathDrama.MoonlordPiece` (`MoonlordDeathDrama.cs:11-85`): one
+/// flung boss part. `tr-core` stays render-free, so the field carries the
+/// sheet name instead of a texture.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MoonlordPiece {
+    /// `Images/Misc/MoonExplosion/<name>` (`:231-237`).
+    pub sheet: &'static str,
+    /// `_position` (`:15`), world pixels.
+    pub position: [f32; 2],
+    /// `_velocity` (`:17`).
+    pub velocity: [f32; 2],
+    /// `_origin` (`:19`), sheet pixels.
+    pub origin: [f32; 2],
+    /// `_rotation` (`:21`).
+    pub rotation: f32,
+    /// `_rotationVelocity` (`:23`).
+    pub rotation_velocity: f32,
+}
+
+impl MoonlordPiece {
+    /// `MoonlordPiece.Dead` (`:25-35`): off the bottom, or past either wall.
+    fn dead(&self, max_tiles_x: i32, max_tiles_y: i32) -> bool {
+        self.position[1] > (max_tiles_y * 16) as f32 - 480.0
+            || self.position[0] < 480.0
+            || self.position[0] >= (max_tiles_x * 16) as f32 - 480.0
+    }
+
+    /// `MoonlordPiece.Update` (`:47-53`): gravity, the rotating drag, the step.
+    fn update(&mut self) {
+        self.velocity[1] += 0.3;
+        self.rotation += self.rotation_velocity;
+        self.rotation_velocity *= 0.99;
+        self.position[0] += self.velocity[0];
+        self.position[1] += self.velocity[1];
+    }
+
+    /// `MoonlordPiece.InDrawRange` (`:60-63`) against
+    /// `Utils.CenteredRectangle(screenPosition + screen/2, (screenW + 1000,
+    /// screenH + 1000))` (`:197`): the view rect grown by 500 px per side.
+    /// `centre` is the port's view centre in world pixels and the half extents
+    /// convert the screen size through the zoom.
+    pub fn in_draw_range(&self, centre: [f32; 2], screen: [f32; 2], zoom: f32) -> bool {
+        let half = [screen[0] * 0.5 / zoom + 500.0, screen[1] * 0.5 / zoom + 500.0];
+        (self.position[0] - centre[0]).abs() < half[0]
+            && (self.position[1] - centre[1]).abs() < half[1]
+    }
+}
+
+/// `MoonlordDeathDrama.MoonlordExplosion` (`MoonlordDeathDrama.cs:87-143`): one
+/// 7-frame blast sprite.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MoonlordExplosion {
+    /// `_position` (`:91`), world pixels.
+    pub position: [f32; 2],
+    /// `_frameCounter` (`:97`).
+    pub frame_counter: i32,
+    /// `_frameSpeed` (`:99`) — `Main.rand.Next(2, 4)` at spawn (`:242`).
+    pub frame_speed: i32,
+}
+
+impl MoonlordExplosion {
+    /// `MoonlordExplosion.Dead` (`:101-111`): off the world, or the 7 frames
+    /// are spent (`frameCounter >= frameSpeed * 7`).
+    fn dead(&self, max_tiles_x: i32, max_tiles_y: i32) -> bool {
+        self.position[1] > (max_tiles_y * 16) as f32 - 480.0
+            || self.position[0] < 480.0
+            || self.position[0] >= (max_tiles_x * 16) as f32 - 480.0
+            || self.frame_counter >= self.frame_speed * 7
+    }
+
+    /// `MoonlordExplosion.Update` (`:123-127`): the counter only — the frame
+    /// index is `frameCounter / frameSpeed`, resolved at draw time.
+    fn update(&mut self) {
+        self.frame_counter += 1;
+    }
+
+    /// `MoonlordExplosion.InDrawRange` (`:134-137`), same rect as the piece.
+    pub fn in_draw_range(&self, centre: [f32; 2], screen: [f32; 2], zoom: f32) -> bool {
+        let half = [screen[0] * 0.5 / zoom + 500.0, screen[1] * 0.5 / zoom + 500.0];
+        (self.position[0] - centre[0]).abs() < half[0]
+            && (self.position[1] - centre[1]).abs() < half[1]
+    }
+
+    /// `MoonlordExplosion`'s draw-time frame index (`:126`):
+    /// `frameCounter / frameSpeed` into the `Frame(1, 7)` grid.
+    pub fn frame_index(&self) -> u32 {
+        (self.frame_counter / self.frame_speed).clamp(0, 6) as u32
+    }
+
+    /// `MoonlordExplosion.GetLight` (`:139-142`): the flat `(255,255,255,127)`.
+    pub fn light(&self) -> [f32; 4] {
+        [1.0, 1.0, 1.0, 127.0 / 255.0]
+    }
+}
+
+/// The `DangerousDungeonCurse` tier ladder
+/// (`DualDungeonUnbreakableWallTiers.cs:7-29`).
+pub mod curse_tiers {
+    pub const EARLY_GAME: i32 = 0;
+    pub const EVIL_BOSS: i32 = 1;
+    pub const JUNGLE_BOSS: i32 = 2;
+    pub const DUNGEON: i32 = 3;
+    pub const HALLOW: i32 = 4;
+    pub const TEMPLE: i32 = 5;
+}
+
+/// `DangerousDungeonCurse.GetProgressPlayerNeedsToMatch`
+/// (`DangerousDungeonCurse.cs:5-27`): the tier the player's own zones demand.
+pub fn curse_progress_needed(
+    zone_lihzahrd_temple: bool,
+    zone_hallow: bool,
+    zone_dungeon: bool,
+    zone_jungle: bool,
+    zone_evil_or_blood: bool,
+) -> i32 {
+    if zone_lihzahrd_temple {
+        return curse_tiers::TEMPLE;
+    }
+    if zone_hallow {
+        return curse_tiers::HALLOW;
+    }
+    if zone_dungeon {
+        return curse_tiers::DUNGEON;
+    }
+    if zone_jungle {
+        return curse_tiers::JUNGLE_BOSS;
+    }
+    if zone_evil_or_blood {
+        return curse_tiers::EVIL_BOSS;
+    }
+    curse_tiers::EARLY_GAME
+}
+
+/// `DangerousDungeonCurse.GetProgressPlayerCanSafelyMatch`
+/// (`DangerousDungeonCurse.cs:32-55`): the tier the world's progress unlocks.
+pub fn curse_progress_safely(
+    mech_any_or_queen_slime: bool,
+    boss3_or_hardmode: bool,
+    queen_bee: bool,
+    boss2: bool,
+    slime_king_or_boss1: bool,
+) -> i32 {
+    if mech_any_or_queen_slime {
+        return curse_tiers::TEMPLE;
+    }
+    if boss3_or_hardmode {
+        return curse_tiers::HALLOW;
+    }
+    if queen_bee {
+        return curse_tiers::DUNGEON;
+    }
+    if boss2 {
+        return curse_tiers::JUNGLE_BOSS;
+    }
+    if slime_king_or_boss1 {
+        return curse_tiers::EVIL_BOSS;
+    }
+    curse_tiers::EARLY_GAME
+}
+
+/// `UnbreakableWallScan.ScanDistance` (`UnbreakableWallScan.cs:88`).
+const UNBREAKABLE_SCAN_DISTANCE: i32 = 250;
+/// `UnbreakableWallScan.Directions` (`:89-99`): the 8 rays, clockwise from +X.
+const UNBREAKABLE_SCAN_DIRECTIONS: [(i32, i32); 8] = [
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (-1, 1),
+    (-1, 0),
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+];
+
+/// `UnbreakableWallScan.InsideUnbreakableWalls` (`:39-59`): every 45° sector
+/// must see the unbreakable wall (350) with a paint id >= 16 within 250 tiles.
+pub fn inside_unbreakable_walls(world: &World, tx: i32, ty: i32) -> bool {
+    let mut num = 0u8;
+    for (i, &(dx, dy)) in UNBREAKABLE_SCAN_DIRECTIONS.iter().enumerate() {
+        if unbreakable_line_scan(world, tx, ty, dx, dy) {
+            num |= 1 << i;
+        }
+    }
+    // `:50-57`: eight rotations of the low 5 bits; any empty 5-sector window
+    // fails.
+    for _ in 0..UNBREAKABLE_SCAN_DIRECTIONS.len() {
+        if num & 0x1f == 0 {
+            return false;
+        }
+        num = (num << 1) | (num >> 7);
+    }
+    true
+}
+
+/// `UnbreakableWallScan.LineScan` (`:61-84`): walk the ray out to 250 tiles.
+fn unbreakable_line_scan(world: &World, mut x: i32, mut y: i32, dx: i32, dy: i32) -> bool {
+    for _ in 0..UNBREAKABLE_SCAN_DISTANCE {
+        let Some(tile) = world.tile(x, y) else {
+            // `WorldGen.InWorld` / null tile: the ray fails.
+            return false;
+        };
+        if tile.wall == 350 {
+            // `tile.wallColor() >= 16` — the wall paint byte.
+            return world.wall_paint(x, y) >= 16;
+        }
+        x += dx;
+        y += dy;
+    }
+    false
+}
+
 /// `SceneState` (`SceneState.cs:14-62`) — the M1-owned fades and intensities.
 /// The filter-parameter driver (`ApplyVisuals`) is phase 3 (`tr-app`); this
 /// struct only mutates its own state.
@@ -961,6 +1399,26 @@ pub struct SceneState {
     pub inside_blizzard_sound: crate::slot::SlotId,
     /// `SceneState.skipTransitions` (`:35`).
     pub skip_transitions: bool,
+    /// `ScreenObstruction.screenObstruction` (`ScreenObstruction.cs:11`).
+    pub screen_obstruction: f32,
+    /// `ScreenObstruction.lastSpeed` (`:9`; the static ctor `:72` sets 0.1).
+    pub obstruction_last_speed: f32,
+    /// `ScreenDarkness.screenObstruction` (`ScreenDarkness.cs:8`).
+    pub screen_darkness: f32,
+    /// `ScreenDarkness.frontColor` (`:10`; the static ctor `:54` is
+    /// `Color(0, 0, 120)`), straight r,g,b,a floats — a writer's `* 0.3f`
+    /// bake is already folded in.
+    pub screen_darkness_front: [f32; 4],
+    /// `MoonlordDeathDrama.whitening` (`MoonlordDeathDrama.cs:151`).
+    pub moonlord_whitening: f32,
+    /// `MoonlordDeathDrama.requestedLight` (`:153`).
+    pub moonlord_requested_light: f32,
+    /// `MoonlordDeathDrama._pieces` (`:145`).
+    pub moonlord_pieces: Vec<MoonlordPiece>,
+    /// `MoonlordDeathDrama._explosions` (`:147`).
+    pub moonlord_explosions: Vec<MoonlordExplosion>,
+    /// `MoonlordDeathDrama._lightSources` (`:149`).
+    pub moonlord_light_sources: Vec<[f32; 2]>,
     /// `Main.bloodMoon` — the only M1 reader is the phase-3 BloodMoon filter;
     /// set through [`SceneState::force`].
     pub blood_moon: bool,
@@ -988,6 +1446,15 @@ impl SceneState {
             strong_blizzard_sound: crate::slot::SlotId::INVALID,
             inside_blizzard_sound: crate::slot::SlotId::INVALID,
             skip_transitions: true,
+            screen_obstruction: 0.0,
+            obstruction_last_speed: 0.1,
+            screen_darkness: 0.0,
+            screen_darkness_front: [0.0, 0.0, 120.0 / 255.0, 1.0],
+            moonlord_whitening: 0.0,
+            moonlord_requested_light: 0.0,
+            moonlord_pieces: Vec::new(),
+            moonlord_explosions: Vec::new(),
+            moonlord_light_sources: Vec::new(),
             blood_moon: false,
             forced_severity: None,
             forced_graveyard: None,
@@ -1058,8 +1525,192 @@ impl SceneState {
         self.outside_weather_effect_intensity = self
             .outside_weather_effect_intensity_backing
             .clamp(0.0, 1.0);
+        // `SceneState.cs:75-77`: the three screen-effect state machines, in
+        // exactly this order (obstruction → darkness → moon lord drama).
+        self.update_screen_obstruction(metrics);
+        self.update_screen_darkness(metrics);
+        self.update_moonlord_death_drama(metrics);
         // `SceneState.cs:62`:
         self.skip_transitions = false;
+    }
+
+    /// `ScreenObstruction.Update` (`ScreenObstruction.cs:13-46`): the
+    /// dual-dungeon wall box and the Obstructed buff drive `screenObstruction`.
+    /// `DebugOptions.devLightTilesCheat` is a dev toggle with no port, so the
+    /// 0.9 cap always applies.
+    fn update_screen_obstruction(&mut self, metrics: &SceneMetrics) {
+        let mut num = 0.0f32;
+        let mut amount = 0.1f32;
+        if metrics.inside_unbreakable_walls {
+            // `:19-20` — the tier gap the world lets the player survive.
+            let num2 = metrics.curse_progress_needed - metrics.curse_progress_safely;
+            if num2 > 0 {
+                // `:23-28` — the 0.25 cap is `devLightTilesCheat` only.
+                num = (0.4 * num2 as f32).clamp(0.0, 0.9);
+                amount = 0.01;
+                self.obstruction_last_speed = amount;
+            }
+        }
+        if metrics.headcovered {
+            // `:32-35` — the Obstructed buff (163) is the only writer.
+            num = 0.95;
+            amount = 0.3;
+            self.obstruction_last_speed = amount;
+        }
+        // `:37-44` — hold the speed the last non-zero frame used while fading
+        // out; otherwise remember this frame's.
+        if num == 0.0 && self.screen_obstruction != 0.0 {
+            amount = self.obstruction_last_speed;
+        } else {
+            self.obstruction_last_speed = amount;
+        }
+        let skip = self.skip_transitions;
+        move_towards_impl(skip, &mut self.screen_obstruction, num, amount, amount);
+    }
+
+    /// `ScreenDarkness.Update` (`ScreenDarkness.cs:12-34`): Duke Fishron's
+    /// phase 3 and the Wall of Flesh's abandonment ramp darken the screen.
+    ///
+    /// The C# walks `Main.npc[]` directly; `tr-core` has no NPC list, so the
+    /// scan driver hands the two relevant kinds over through
+    /// [`SceneMetrics::screen_darkness_npcs`]. The loop keeps the C# semantics
+    /// (last match wins).
+    fn update_screen_darkness(&mut self, metrics: &SceneMetrics) {
+        let mut target = 0.0f32;
+        let mut amount = 1.0 / 60.0;
+        for npc in &metrics.screen_darkness_npcs {
+            let dx = npc.center[0] - metrics.center[0];
+            let dy = npc.center[1] - metrics.center[1];
+            let dist_sq = dx * dx + dy * dy;
+            // `:19` — `type == 370` (Duke Fishron) in phase 3 or 9-with-timer.
+            if npc.npc_type == 370
+                && dist_sq < 3000.0 * 3000.0
+                && (npc.ai0 >= 10.0 || (npc.ai0 == 9.0 && npc.ai2 > 120.0))
+            {
+                target = 0.95;
+                // `new Color(0, 0, 120) * 0.3f` — the byte product, truncated
+                // like XNA's `(int)` cast: rgb 120 * 0.3f → 36, alpha 255 → 76.
+                self.screen_darkness_front = [0.0, 0.0, 36.0 / 255.0, 76.0 / 255.0];
+                amount = 0.03;
+            }
+            // `:25` — `type == 113` (Wall of Flesh): the distance ramp times
+            // the abandonment `localAI[1]`.
+            if npc.npc_type == 113 && dist_sq < 3000.0 * 3000.0 {
+                let dist = dist_sq.sqrt();
+                // `Utils.Remap(dist, 2000f, 3000f, 1f, 0f)`, clamped: 1 at
+                // 2000 px, 0 at 3000.
+                let num = lerp(1.0, 0.0, get_lerp_value(2000.0, 3000.0, dist, true));
+                target = npc.local_ai1 * num;
+                amount = 1.0;
+                self.screen_darkness_front = [0.0, 0.0, 0.0, 1.0];
+            }
+        }
+        let skip = self.skip_transitions;
+        move_towards_impl(skip, &mut self.screen_darkness, target, amount, amount);
+    }
+
+    /// `MoonlordDeathDrama.Update` (`MoonlordDeathDrama.cs:155-193`): tick the
+    /// pieces and blasts, then fade `whitening` toward the light the Moon Lord's
+    /// death requested this frame.
+    fn update_moonlord_death_drama(&mut self, metrics: &SceneMetrics) {
+        let (tiles_x, tiles_y) = metrics.world_tiles;
+        let mut i = 0;
+        while i < self.moonlord_pieces.len() {
+            let piece = &mut self.moonlord_pieces[i];
+            piece.update();
+            if piece.dead(tiles_x, tiles_y) {
+                self.moonlord_pieces.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        let mut j = 0;
+        while j < self.moonlord_explosions.len() {
+            let blast = &mut self.moonlord_explosions[j];
+            blast.update();
+            if blast.dead(tiles_x, tiles_y) {
+                self.moonlord_explosions.remove(j);
+            } else {
+                j += 1;
+            }
+        }
+        // `:177-190` — any light source within 2000 px keeps the request alive.
+        let mut in_range = false;
+        for spot in &self.moonlord_light_sources {
+            let dx = metrics.center[0] - spot[0];
+            let dy = metrics.center[1] - spot[1];
+            if dx * dx + dy * dy < 2000.0 * 2000.0 {
+                in_range = true;
+                break;
+            }
+        }
+        self.moonlord_light_sources.clear();
+        if !in_range {
+            self.moonlord_requested_light = 0.0;
+        }
+        let skip = self.skip_transitions;
+        let target = self.moonlord_requested_light;
+        move_towards_impl(skip, &mut self.moonlord_whitening, target, 0.02, 0.02);
+        self.moonlord_requested_light = 0.0;
+    }
+
+    /// `MoonlordDeathDrama.ThrowPieces` (`MoonlordDeathDrama.cs:227-238`): the
+    /// four flung body parts, seeded by `DramaSeed` from its own stream.
+    ///
+    /// No caller yet — the Moon Lord's death path is unported (`NPC.cs:82681`
+    /// is the only call site).
+    #[allow(dead_code)]
+    pub fn throw_pieces(&mut self, core_center: [f32; 2], drama_seed: i32) {
+        let mut r = crate::UnifiedRandom::new(drama_seed);
+        // `Vector2.UnitY.RotatedBy(a)` = `(-sin a, cos a)`.
+        let mut next_vector = |r: &mut crate::UnifiedRandom| {
+            let a = r.next_float() * (std::f32::consts::PI / 2.0) - std::f32::consts::PI / 4.0
+                + std::f32::consts::PI;
+            [-a.sin(), a.cos()]
+        };
+        // `:231-237`: origin, spawn offset from the core, velocity scale.
+        const PARTS: [(&str, [f32; 2], [f32; 2], f32); 4] = [
+            ("Misc/MoonExplosion/Spine", [64.0, 150.0], [0.0, 50.0], 6.0),
+            ("Misc/MoonExplosion/Shoulder", [40.0, 120.0], [50.0, -120.0], 10.0),
+            ("Misc/MoonExplosion/Torso", [192.0, 252.0], [0.0, 0.0], 8.0),
+            ("Misc/MoonExplosion/Head", [138.0, 185.0], [0.0, -200.0], 12.0),
+        ];
+        for (sheet, origin, offset, speed) in PARTS {
+            let v = next_vector(&mut r);
+            let angular = r.next_float() * 0.1 - 0.05;
+            self.moonlord_pieces.push(MoonlordPiece {
+                sheet,
+                position: [core_center[0] + offset[0], core_center[1] + offset[1]],
+                velocity: [v[0] * speed, v[1] * speed],
+                origin,
+                rotation: 0.0,
+                rotation_velocity: angular,
+            });
+        }
+    }
+
+    /// `MoonlordDeathDrama.AddExplosion` (`MoonlordDeathDrama.cs:240-243`): one
+    /// 7-frame blast at `spot`, the frame speed from the shared `Main.rand`
+    /// stream. No caller yet (the Moon Lord's death path is unported).
+    #[allow(dead_code)]
+    pub fn add_explosion(&mut self, spot: [f32; 2], rand: &mut crate::UnifiedRandom) {
+        let frame_speed = rand.next_range(2, 4);
+        self.moonlord_explosions.push(MoonlordExplosion {
+            position: spot,
+            frame_counter: 0,
+            frame_speed,
+        });
+    }
+
+    /// `MoonlordDeathDrama.RequestLight` (`:245-256`): register a light spot and
+    /// raise this frame's whitening request (clamped to 1).
+    #[allow(dead_code)]
+    pub fn request_light(&mut self, light: f32, spot: [f32; 2]) {
+        self.moonlord_light_sources.push(spot);
+        let light = light.min(1.0);
+        if self.moonlord_requested_light < light {
+            self.moonlord_requested_light = light;
+        }
     }
 
     /// `SceneState.MoveTowards(ref value, target, amount)` (`:472-477`).
@@ -2989,5 +3640,356 @@ mod tests {
         m.tile_center = (500, 400); // 200+84 < 400 < 1200-396
         m.calculate_zones(200.0, 1000, 135.0, 4200, 1200, false, false);
         assert!(m.zone_shimmer, "in the window");
+    }
+}
+
+/// The S1-E-16 screen effects (`ScreenObstruction.cs`, `ScreenDarkness.cs`,
+/// `MoonlordDeathDrama.cs`, `DangerousDungeonCurse.cs`).
+#[cfg(test)]
+mod s1_e_16_screen_effect_tests {
+    use super::*;
+
+    fn metrics_with_curse(needed: i32, safely: i32) -> SceneMetrics {
+        let mut m = SceneMetrics::new();
+        m.curse_progress_needed = needed;
+        m.curse_progress_safely = safely;
+        m
+    }
+
+    /// `ScreenObstruction.cs:19-30`: the tier gap sets `0.4 * gap` clamped to
+    /// `0.9`, at the slow `0.01` rate.
+    #[test]
+    fn the_unbreakable_wall_obstruction_scales_with_the_curse_gap() {
+        let mut st = SceneState::new();
+        st.skip_transitions = false;
+        let mut m = metrics_with_curse(curse_tiers::DUNGEON, curse_tiers::EARLY_GAME);
+        m.inside_unbreakable_walls = true;
+        st.update_screen_obstruction(&m);
+        // 0.4 * 3 = 1.2 -> clamped to 0.9, one 0.01 step.
+        assert!((st.screen_obstruction - 0.01).abs() < 1e-6);
+        assert_eq!(st.obstruction_last_speed, 0.01);
+    }
+
+    /// A tier gap of 0 means no obstruction at all (`:21`).
+    #[test]
+    fn a_matched_curse_tier_does_not_obstruct() {
+        let mut st = SceneState::new();
+        st.skip_transitions = false;
+        let mut m = metrics_with_curse(curse_tiers::HALLOW, curse_tiers::HALLOW);
+        m.inside_unbreakable_walls = true;
+        st.update_screen_obstruction(&m);
+        assert_eq!(st.screen_obstruction, 0.0);
+    }
+
+    /// `:32-35`: the Obstructed buff overrides the wall arm at `0.95` / `0.3`.
+    #[test]
+    fn the_headcovered_buff_wins_over_the_wall_scan() {
+        let mut st = SceneState::new();
+        st.skip_transitions = false;
+        let mut m = metrics_with_curse(curse_tiers::TEMPLE, curse_tiers::EARLY_GAME);
+        m.inside_unbreakable_walls = true;
+        m.headcovered = true;
+        st.update_screen_obstruction(&m);
+        assert!((st.screen_obstruction - 0.3).abs() < 1e-6);
+        assert_eq!(st.obstruction_last_speed, 0.3);
+    }
+
+    /// `:37-44`: a fade-out reuses the speed the last non-zero frame used, so
+    /// the wash drains at 0.3 and not the default 0.1.
+    #[test]
+    fn the_fade_out_keeps_the_last_frames_speed() {
+        let mut st = SceneState::new();
+        st.skip_transitions = false;
+        let mut m = SceneMetrics::new();
+        m.headcovered = true;
+        st.update_screen_obstruction(&m);
+        assert_eq!(st.obstruction_last_speed, 0.3);
+        m.headcovered = false;
+        st.update_screen_obstruction(&m);
+        // 0.3 - 0.3 = 0 exactly, i.e. the whole step came from `lastSpeed`.
+        assert_eq!(st.screen_obstruction, 0.0);
+    }
+
+    /// `ScreenDarkness.cs:25-31`: the Wall of Flesh arm ramps its abandonment
+    /// `localAI[1]` by `Remap(dist, 2000, 3000, 1, 0)` at rate 1.
+    #[test]
+    fn the_wall_of_flesh_darkens_by_distance_and_abandonment() {
+        let mut st = SceneState::new();
+        st.skip_transitions = false;
+        let mut m = SceneMetrics::new();
+        m.center = [0.0, 0.0];
+        m.screen_darkness_npcs = vec![ScreenDarknessNpc {
+            npc_type: 113,
+            center: [2500.0, 0.0],
+            ai0: 0.0,
+            ai2: 0.0,
+            local_ai1: 1.0,
+        }];
+        st.update_screen_darkness(&m);
+        // Halfway between 2000 and 3000 -> 0.5, applied at rate 1.
+        assert!((st.screen_darkness - 0.5).abs() < 1e-6);
+        assert_eq!(st.screen_darkness_front, [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    /// `:19-24`: Duke Fishron's phase 3 sets the navy front colour at the slow
+    /// `0.03` rate; the `new Color(0,0,120) * 0.3f` bytes are 36 / 76.
+    #[test]
+    fn the_duke_fishron_phase_three_uses_the_navy_front() {
+        let mut st = SceneState::new();
+        st.skip_transitions = false;
+        let mut m = SceneMetrics::new();
+        m.screen_darkness_npcs = vec![ScreenDarknessNpc {
+            npc_type: 370,
+            center: [100.0, 0.0],
+            ai0: 10.0,
+            ai2: 0.0,
+            local_ai1: 0.0,
+        }];
+        st.update_screen_darkness(&m);
+        assert!((st.screen_darkness - 0.03).abs() < 1e-6);
+        assert!((st.screen_darkness_front[2] - 36.0 / 255.0).abs() < 1e-6);
+        assert!((st.screen_darkness_front[3] - 76.0 / 255.0).abs() < 1e-6);
+    }
+
+    /// `:19`: phase 9 needs `ai[2] > 120`, and anything past 3000 px is out.
+    #[test]
+    fn the_duke_phase_nine_needs_the_timer_and_the_range() {
+        let mut st = SceneState::new();
+        st.skip_transitions = false;
+        let mut m = SceneMetrics::new();
+        m.screen_darkness_npcs = vec![ScreenDarknessNpc {
+            npc_type: 370,
+            center: [0.0, 0.0],
+            ai0: 9.0,
+            ai2: 121.0,
+            local_ai1: 0.0,
+        }];
+        st.update_screen_darkness(&m);
+        assert!(st.screen_darkness > 0.0, "phase 9 + timer darkens");
+        let mut st = SceneState::new();
+        st.skip_transitions = false;
+        m.screen_darkness_npcs[0].ai2 = 120.0;
+        st.update_screen_darkness(&m);
+        assert_eq!(st.screen_darkness, 0.0, "timer at exactly 120 is out");
+    }
+
+    /// `MoonlordDeathDrama.cs:47-53`: gravity 0.3, the rotating drag 0.99, the
+    /// velocity step.
+    #[test]
+    fn a_moonlord_piece_falls_and_spins_down() {
+        let mut p = MoonlordPiece {
+            sheet: "Misc/MoonExplosion/Head",
+            position: [1000.0, 1000.0],
+            velocity: [1.0, -2.0],
+            origin: [138.0, 185.0],
+            rotation: 0.0,
+            rotation_velocity: 0.1,
+        };
+        p.update();
+        assert_eq!(p.velocity, [1.0, -1.7]);
+        assert_eq!(p.position, [1001.0, 998.3]);
+        assert!((p.rotation - 0.1).abs() < 1e-6);
+        assert!((p.rotation_velocity - 0.099).abs() < 1e-6);
+    }
+
+    /// `:29-31`: off the bottom, left of 480 px, or past `maxTilesX*16 - 480`.
+    #[test]
+    fn a_moonlord_piece_dies_at_the_world_edges() {
+        let mut p = MoonlordPiece {
+            sheet: "Misc/MoonExplosion/Torso",
+            position: [1000.0, 1000.0],
+            velocity: [0.0, 0.0],
+            origin: [0.0, 0.0],
+            rotation: 0.0,
+            rotation_velocity: 0.0,
+        };
+        assert!(!p.dead(4200, 1200));
+        p.position[1] = 1200.0 * 16.0 - 481.0;
+        assert!(!p.dead(4200, 1200), "just inside the floor");
+        p.position[1] = 1200.0 * 16.0 - 480.0;
+        assert!(!p.dead(4200, 1200), "exactly on the floor is alive");
+        p.position[1] = 1200.0 * 16.0 - 479.0;
+        assert!(p.dead(4200, 1200), "one pixel past it is dead");
+        p.position = [479.0, 1000.0];
+        assert!(p.dead(4200, 1200));
+        p.position = [4200.0 * 16.0 - 480.0, 1000.0];
+        assert!(p.dead(4200, 1200));
+    }
+
+    /// `:101-111`: the blast also dies once the 7 frames are spent.
+    #[test]
+    fn a_moonlord_blast_dies_after_seven_frames() {
+        let mut b = MoonlordExplosion {
+            position: [1000.0, 1000.0],
+            frame_counter: 0,
+            frame_speed: 3,
+        };
+        for _ in 0..20 {
+            b.update();
+        }
+        assert_eq!(b.frame_counter, 20);
+        assert!(!b.dead(4200, 1200), "20 < 3 * 7");
+        b.frame_counter = 21;
+        assert!(b.dead(4200, 1200));
+        assert_eq!(b.frame_index(), 6, "21 / 3 = the last frame");
+    }
+
+    /// `:227-238`: four pieces, each from one `NextFloat` direction and one
+    /// angular draw, seeded by `DramaSeed`.
+    #[test]
+    fn throwing_the_pieces_consumes_eight_draws_and_spawns_four() {
+        let mut st = SceneState::new();
+        st.throw_pieces([5000.0, 5000.0], 1234);
+        assert_eq!(st.moonlord_pieces.len(), 4);
+        let sheets: Vec<_> = st.moonlord_pieces.iter().map(|p| p.sheet).collect();
+        assert_eq!(
+            sheets,
+            [
+                "Misc/MoonExplosion/Spine",
+                "Misc/MoonExplosion/Shoulder",
+                "Misc/MoonExplosion/Torso",
+                "Misc/MoonExplosion/Head",
+            ]
+        );
+        // The speed scales are 6/10/8/12 off a unit vector.
+        for (p, speed) in st.moonlord_pieces.iter().zip([6.0f32, 10.0, 8.0, 12.0]) {
+            let len = (p.velocity[0] * p.velocity[0] + p.velocity[1] * p.velocity[1]).sqrt();
+            assert!((len - speed).abs() < 1e-3, "{len} != {speed}");
+            assert!(p.rotation_velocity >= -0.05 && p.rotation_velocity <= 0.05);
+        }
+        // Determinism: the same seed reproduces the same four pieces.
+        let mut st2 = SceneState::new();
+        st2.throw_pieces([5000.0, 5000.0], 1234);
+        assert_eq!(st.moonlord_pieces, st2.moonlord_pieces);
+    }
+
+    /// `:245-256`: the light request clamps to 1 and only ever rises.
+    #[test]
+    fn a_light_request_clamps_and_only_rises() {
+        let mut st = SceneState::new();
+        st.request_light(3.0, [0.0, 0.0]);
+        assert_eq!(st.moonlord_requested_light, 1.0);
+        assert_eq!(st.moonlord_light_sources.len(), 1);
+        st.request_light(0.25, [1.0, 1.0]);
+        assert_eq!(st.moonlord_requested_light, 1.0, "a dimmer request loses");
+        let mut st = SceneState::new();
+        st.request_light(0.25, [0.0, 0.0]);
+        st.request_light(0.5, [1.0, 1.0]);
+        assert_eq!(st.moonlord_requested_light, 0.5);
+    }
+
+    /// `:177-190`: no light source within 2000 px zeroes the request, so the
+    /// whitening drains instead of holding.
+    #[test]
+    fn the_whitening_drains_without_a_nearby_light_source() {
+        let mut st = SceneState::new();
+        st.skip_transitions = false;
+        st.moonlord_whitening = 0.5;
+        st.request_light(1.0, [0.0, 0.0]);
+        let mut m = SceneMetrics::new();
+        m.center = [5000.0, 5000.0];
+        st.update_moonlord_death_drama(&m);
+        // The source is 7000 px away -> the request is dropped, so whitening
+        // steps down by 0.02 instead of up.
+        assert!((st.moonlord_whitening - 0.48).abs() < 1e-6);
+        assert_eq!(st.moonlord_requested_light, 0.0);
+        assert!(st.moonlord_light_sources.is_empty());
+    }
+
+    /// `DangerousDungeonCurse.cs:5-27`: the zone ladder is checked in order.
+    #[test]
+    fn the_curse_tier_ladder_follows_the_zone_order() {
+        assert_eq!(curse_progress_needed(true, true, true, true, true), curse_tiers::TEMPLE);
+        assert_eq!(
+            curse_progress_needed(false, true, true, true, true),
+            curse_tiers::HALLOW
+        );
+        assert_eq!(
+            curse_progress_needed(false, false, true, true, true),
+            curse_tiers::DUNGEON
+        );
+        assert_eq!(
+            curse_progress_needed(false, false, false, true, true),
+            curse_tiers::JUNGLE_BOSS
+        );
+        assert_eq!(
+            curse_progress_needed(false, false, false, false, true),
+            curse_tiers::EVIL_BOSS
+        );
+        assert_eq!(
+            curse_progress_needed(false, false, false, false, false),
+            curse_tiers::EARLY_GAME
+        );
+    }
+
+    /// `DangerousDungeonCurse.cs:32-55`: the world-progress ladder.
+    #[test]
+    fn the_safe_curse_tier_ladder_follows_boss_progress() {
+        assert_eq!(curse_progress_safely(true, true, true, true, true), curse_tiers::TEMPLE);
+        assert_eq!(
+            curse_progress_safely(false, true, true, true, true),
+            curse_tiers::HALLOW
+        );
+        assert_eq!(
+            curse_progress_safely(false, false, true, true, true),
+            curse_tiers::DUNGEON
+        );
+        assert_eq!(
+            curse_progress_safely(false, false, false, true, true),
+            curse_tiers::JUNGLE_BOSS
+        );
+        assert_eq!(
+            curse_progress_safely(false, false, false, false, true),
+            curse_tiers::EVIL_BOSS
+        );
+        assert_eq!(
+            curse_progress_safely(false, false, false, false, false),
+            curse_tiers::EARLY_GAME
+        );
+    }
+
+    /// `UnbreakableWallScan.cs:39-59`: the 8-ray hit mask rotated eight times
+    /// must never leave five consecutive rays empty — so a ring of walls on all
+    /// eight rays is inside, two opposite rays still pass (bits 0 and 4 cover
+    /// every 5-window), and a single ray fails.
+    #[test]
+    fn the_unbreakable_wall_scan_needs_rays_in_every_five_sector_window() {
+        let mut w = World::new("t".into(), 200, 200);
+        // Ring of wall 350 painted 16 at radius 6 around (100, 100).
+        for d in 0..360 {
+            let a = (d as f32).to_radians();
+            let x = 100 + (6.0 * a.cos()).round() as i32;
+            let y = 100 + (6.0 * a.sin()).round() as i32;
+            if let Some(t) = w.tile_mut(x, y) {
+                t.wall = 350;
+            }
+            w.set_wall_paint(x, y, 16);
+        }
+        assert!(inside_unbreakable_walls(&w, 100, 100), "a full ring is inside");
+
+        // Two opposite rays only: bits 0 (+X) and 4 (-X) cover every 5-window.
+        let mut two = World::new("t".into(), 200, 200);
+        for (x, y) in [(106, 100), (94, 100)] {
+            two.tile_mut(x, y).unwrap().wall = 350;
+            two.set_wall_paint(x, y, 16);
+        }
+        assert!(inside_unbreakable_walls(&two, 100, 100), "two rays suffice");
+
+        // One ray only: the window starting at sector 1 is empty.
+        let mut one = World::new("t".into(), 200, 200);
+        one.tile_mut(106, 100).unwrap().wall = 350;
+        one.set_wall_paint(106, 100, 16);
+        assert!(!inside_unbreakable_walls(&one, 100, 100), "one ray fails");
+
+        // An unpainted wall 350 fails the `wallColor() >= 16` check (`:77`).
+        let mut unpainted = World::new("t".into(), 200, 200);
+        for d in 0..360 {
+            let a = (d as f32).to_radians();
+            let x = 100 + (6.0 * a.cos()).round() as i32;
+            let y = 100 + (6.0 * a.sin()).round() as i32;
+            unpainted.tile_mut(x, y).unwrap().wall = 350;
+            unpainted.set_wall_paint(x, y, 15);
+        }
+        assert!(!inside_unbreakable_walls(&unpainted, 100, 100));
     }
 }

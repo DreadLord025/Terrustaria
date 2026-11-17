@@ -374,6 +374,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 602 && held.count > 0 && use_snow_globe(app) {
             return;
         }
+        // `ItemCheck_UseEventItems`' moon arms (`Player.cs:43974-43985`,
+        // `:44041-44052`): the Pumpkin Moon Medallion 1844 → `startPumpkinMoon`,
+        // the Naughty Present 1958 → `startSnowMoon` — the
+        // `!dayTime && !pumpkinMoon && !snowMoon && !DD2Event.Ongoing` gates,
+        // the `ApplyItemTime` swing and `SoundEngine.PlaySound(15, ...)`. The
+        // C#'s mid-swing `ItemTimeIsZero && itemAnimation > 0` precondition
+        // rides the port's event-item seam (`mine_down`, the `use_snow_globe`
+        // shape); the `Main.NewText` row is UI — out.
+        if held.kind == 1844 && held.count > 0 && use_pumpkin_moon_medallion(app) {
+            return;
+        }
+        if held.kind == 1958 && held.count > 0 && use_naughty_present(app) {
+            return;
+        }
         // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
         // 44028-44034`): the 3601 use gates on `downedGolemBoss && hardMode
         // && !AnyDanger && !AnyoneNearCultists` and calls
@@ -1121,6 +1135,11 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             });
             if let Some(idx) = hit_idx {
                 let n = &app.npcs[idx];
+                // The Flymeal's TERRARIST (42) fires before the strike in the
+                // C# (`Player.cs:44377-44387` vs `:44404`), but the notify
+                // needs `&mut app` — it lands just ahead of the strike below,
+                // still before `StrikeNPC`.
+                let mut flymeal_town_hit = false;
                 // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
                 // crit roll (`meleeCrit` + the item's crit), `DamageVar`, then
                 // `CalculateDamageNPCsTake` with the NPC's defense
@@ -1181,6 +1200,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     if n.kind == NpcKind::Nurse {
                         dmg *= 2;
                     }
+                    // `:44377-44387` — the Flymeal's second block: a hit on a
+                    // `townNPC` fires TERRARIST (42). The C# splits it from the
+                    // `:44345` multiplier arm but gates on the same item and
+                    // both run before `StrikeNPC` (`:44404`). Both predicates
+                    // collapse to `is_town_npc_like()` here: it *is* the
+                    // vanilla `townNPC` flag, and `isLikeATownNPC` only adds
+                    // type 453, which the port does not ship.
+                    flymeal_town_hit = true;
                 }
                 // `:44383`: `num2 += nPC.checkArmorPenetration(
                 // this.GetArmorPenetration(sItem.melee), armorPenetrationPercent)`
@@ -1208,8 +1235,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 let kb = held_fx.map_or(registry::get(held.kind).map_or(0.0, |d| d.knock_back), |s| s.knock_back);
                 // `NPC.StrikeNPC` (`NPC.cs:81189-81563`): the strike lands on
                 // the carrier's life pool when the hit NPC is a linked
-                // segment (`NPC.realLife`, `NPC.cs:81374-81378`).
-                crate::npc::Npc::strike_melee(&mut app.npcs, idx, dmg, pcx, kb, crit);
+                // segment (`NPC.realLife`, `NPC.cs:81374-81378`). The owner is
+                // this player's slot — `StrikeNPC_Inner`'s interaction gate
+                // key (`NPC.cs:81266-81272`).
+                let me = app.local_id as u8;
+                if flymeal_town_hit {
+                    let _ = app.notify_progression_net(42);
+                }
+                crate::npc::Npc::strike_melee(&mut app.npcs, idx, dmg, pcx, kb, crit, Some(me));
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
                 app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
@@ -1396,7 +1429,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                             )
                         };
                         app.world.altars_smashed = altars + 1;
-                        let _ = app.achievements.notify_progression(6);
+                        let _ = app.notify_progression_net(6);
                         let _ = ore;
                         app.world_key = None;
                     }
@@ -1905,6 +1938,45 @@ fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
     }
 }
 
+/// Map one legacy `(sound id, style)` cue to the port's pinned asset + volume
+/// scale (`LegacySoundPlayer.PlaySound`, `LegacySoundPlayer.cs:360-1100`):
+/// the per-case asset family and the style's volume multiplier. The port pins
+/// one variation per family (research D3) and does not port the per-play pitch
+/// jitter (`Main.rand.Next(-10,11)*0.01` etc. — an audio-only deviation).
+/// `None` = a family the port has no cue for.
+fn kill_cue((id, style): edit::SoundCue) -> Option<(&'static str, f32)> {
+    Some(match (id, style) {
+        // case 0 (`:440-452`) — `SoundDig[Next(3)]`; pinned to Dig_1.
+        (0, _) => ("Dig_1", 1.0),
+        // case 2 (`:516-644`) — `SoundItem[style]`; style 52's volume 0.35
+        // (`:567-569`).
+        (2, 27) => ("Item_27", 1.0),
+        (2, 48) => ("Item_48", 1.0),
+        (2, 49) => ("Item_49", 1.0),
+        (2, 50) => ("Item_50", 1.0),
+        (2, 52) => ("Item_52", 0.35),
+        (2, 127) => ("Item_127", 1.0),
+        (2, 173) => ("Item_173", 1.0),
+        (2, 177) => ("Item_177", 1.0),
+        // case 3 (`:646-671`) — `SoundNpcHit[style]`; styles 20-54 halve
+        // the volume (`:647-650`).
+        (3, 25) => ("NPC_Hit_25", 0.5),
+        // case 4 (`:673-694`) — `SoundNpcKilled[style]` (styles 23-57 halve
+        // the volume, `:674-677` — neither style used here is in range).
+        (4, 11) => ("NPC_Killed_11", 1.0),
+        (4, _) => ("NPC_Killed_1", 1.0),
+        // case 6 (`:706-715`) — `SoundGrass`.
+        (6, _) => ("Grass", 1.0),
+        // case 13 (`:783-791`) — `SoundShatter`.
+        (13, _) => ("Shatter", 1.0),
+        // case 18 (`:865-869`) — `SoundCoins`.
+        (18, _) => ("Coins", 1.0),
+        // case 21 (`:924-935`) — `SoundTink[Next(3)]`; pinned to Tink_1.
+        (21, _) => ("Tink_1", 1.0),
+        _ => return None,
+    })
+}
+
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // The three `CanKillTile` refusals (`WorldGen.cs:62219-62326`) gate
     // every break source — the C# `KillTile` entry duplicates them through
@@ -1949,16 +2021,33 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
-    // `CheckPot`'s break sound by style (:56856-56867, `pot_break_sound`) —
-    // SoundID 4/6/13 have no ported cues, so the generic break cue stands in
-    // at the event cell (ANALYSIS entry, phase 5).
+    // `WorldGen.KillTile_PlaySounds(i, j, fail, tileCache)` (`WorldGen.cs:
+    // 66427-66575`) for the hit cell, played before the cascade's loot — the
+    // C# calls it at the top of `KillTile` (:63558) and the tile is always a
+    // real break here (`fail: false`; the port's refusal path returns above).
+    if let Some(hit) = &hit {
+        let sounds = edit::kill_tile_sound(hit.kind, hit.frame_x, false);
+        let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+        for cue in [sounds.primary, sounds.extra, sounds.shatter]
+            .into_iter()
+            .flatten()
+        {
+            if let Some((name, volume)) = kill_cue(cue) {
+                app.audio.play_at(name, px, py, volume);
+            }
+        }
+    }
+    // `CheckPot`'s break sound by style (:56856-56867, `pot_break_sound`),
+    // at the event cell.
     for event in &kill.events {
-        app.audio.play_at(
-            "Dig_1",
-            event.x as f32 * TILE_PX,
-            event.y as f32 * TILE_PX,
-            1.0,
-        );
+        if let Some((name, volume)) = kill_cue((edit::pot_break_sound(event.style), 1)) {
+            app.audio.play_at(
+                name,
+                event.x as f32 * TILE_PX,
+                event.y as f32 * TILE_PX,
+                volume,
+            );
+        }
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
@@ -1990,10 +2079,10 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     for (id, count, x, y) in drops {
         // The tile-break drops draw the same `UpdatePlayers` stream the
         // break rolls used (`Main.rand` = the active swap, `Main.cs:17754`).
+        // No per-drop cue: the C# plays the break sound once, from
+        // `KillTile_PlaySounds` (the table above), never per `Item.NewItem`.
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         spawn_item_drop(&mut app.items, rng, id, count, x, y);
-        app.audio
-            .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
     }
     // `WorldGen.CheckPalmTree`'s canopy re-roll (`:54385-54388`): the palm
     // cells whose cell above is gone take a fresh canopy frame. The roll
@@ -3699,6 +3788,7 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
             // the click is consumed.
             app.wiring.hit_switch(&mut app.world, *x, *y);
+            app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
             app.world_key = None;
             return true;
         }
@@ -4316,6 +4406,12 @@ mod tests {
         let hp = a.npcs[0].hp;
         mine_frames(&mut a, 1);
         assert!(a.npcs[0].hp < hp, "the Flymeal gets through the friendly gate");
+        // `Player.cs:44377-44387` — the Flymeal's `townNPC` branch fires
+        // TERRARIST (42).
+        assert!(
+            progression(&a, 42),
+            "the Flymeal credits TERRARIST on a town NPC"
+        );
         // The doubled 15 plus the 100 % armour penetration clears the
         // Guide's defence 30 by a wide margin (the sword's ~0 would not).
         assert!(
@@ -4344,6 +4440,22 @@ mod tests {
         c.inventory[c.selected].kind = 24;
         mine_frames(&mut c, 1);
         assert!(c.npcs[0].hp < hp, "the hostile is still hittable");
+        // S1-E-18d — the `townNPC` predicate: a plain slime never credits
+        // TERRARIST, and the Stick of Doom is a different item (`:44345` is
+        // gated on 5129, `:44377` too).
+        assert!(!progression(&c, 42), "a hostile credits nothing");
+        assert!(!progression(&b, 42), "the Stick of Doom is not the Flymeal");
+    }
+
+    /// Whether the `PROGRESSION_EVENT_<id>` condition (`AchievementCondition
+    /// .Name`, the save key) is completed on any row.
+    fn progression(app: &App, id: u32) -> bool {
+        let key = format!("PROGRESSION_EVENT_{id}");
+        app.achievements
+            .list
+            .iter()
+            .flat_map(|a| a.conditions.iter())
+            .any(|c| c.name == key && c.completed)
     }
 
     fn melee_app() -> App {
@@ -4749,6 +4861,53 @@ mod tests {
         .unwrap();
         assert_eq!(cue, None);
         assert_eq!(events, vec![(32, 10, 17)]);
+    }
+
+    #[test]
+    fn s1_e_21c_kill_cue_maps_the_legacy_families() {
+        // The five families the tile-break table can emit, pinned to the
+        // port's asset + the case's volume scale (`LegacySoundPlayer.cs`).
+        assert_eq!(kill_cue((0, 1)), Some(("Dig_1", 1.0)));
+        assert_eq!(kill_cue((6, 1)), Some(("Grass", 1.0)));
+        assert_eq!(kill_cue((13, 1)), Some(("Shatter", 1.0)));
+        assert_eq!(kill_cue((18, 1)), Some(("Coins", 1.0)));
+        assert_eq!(kill_cue((21, 1)), Some(("Tink_1", 1.0)));
+        // Item case: the per-style asset, the style-52 attenuation (:567-569).
+        assert_eq!(kill_cue((2, 27)), Some(("Item_27", 1.0)));
+        assert_eq!(kill_cue((2, 177)), Some(("Item_177", 1.0)));
+        assert_eq!(kill_cue((2, 52)), Some(("Item_52", 0.35)));
+        // NPC hit styles 20-54 halve the volume (:647-650).
+        assert_eq!(kill_cue((3, 25)), Some(("NPC_Hit_25", 0.5)));
+        // The killed family: the mummy's style 11 and the plain style 1.
+        assert_eq!(kill_cue((4, 11)), Some(("NPC_Killed_11", 1.0)));
+        assert_eq!(kill_cue((4, 1)), Some(("NPC_Killed_1", 1.0)));
+        // An unlisted family stays silent rather than guessing a cue.
+        assert_eq!(kill_cue((99, 1)), None);
+    }
+
+    #[test]
+    fn s1_e_21c_a_break_plays_the_tile_cue_once() {
+        // A plain dirt tile (kind 0? no — 1 = stone) breaks with the Tink
+        // cue (`WorldGen.cs:66500-66504`) and nothing per drop.
+        let mut w = World::new("t".into(), 40, 40);
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut app = mining_app(w, 20, 20);
+        let before = app.audio.played_count();
+        break_tile(&mut app, 20, 20);
+        assert_eq!(
+            app.audio.played_count() - before,
+            1,
+            "one break cue, no per-drop sound"
+        );
     }
 
     #[test]
@@ -8231,7 +8390,13 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    crate::world_sim::npcs::start_invasion(&mut app.world, 1, 1);
+    app.world.invasion_delay = 0;
+    crate::world_sim::npcs::start_invasion_in(
+        app,
+        1,
+        1,
+        Some(crate::app::RngKey::UpdatePlayers),
+    );
     app.audio.play("Roar_0");
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
@@ -8290,33 +8455,22 @@ pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
 }
 
 pub fn use_snow_globe(app: &mut App) -> bool {
-    if app.world.invasion_type != 0 {
-        return false;
-    }
-    let qualified = app
-        .player
-        .as_ref()
-        .map(|p| p.max_hp >= 200)
-        .unwrap_or(false);
-    if !qualified {
+    // `Player.ItemCheck_UseEventItems`' Snow Globe arm (`Player.cs:43940-43951`):
+    // `CanStartInvasion(2, ignoreDelay: true)` then `invasionDelay = 0` +
+    // `StartInvasion(2)` — the shared body derives the size and the side roll
+    // (`Main.cs:64435-64486`) on the `UpdatePlayers` stream.
+    let life_max = app.player.as_ref().map(|p| p.max_hp).unwrap_or(0);
+    if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
     app.audio.play("Roar_0");
     app.world.invasion_delay = 0;
-    app.world.invasion_goblins = true;
-    app.world.invasion_type = 2;
-    app.world.invasion_warn = 0;
-    app.world.invasion_size = 80 + 40;
-    app.world.invasion_size_start = app.world.invasion_size;
-    // `Main.StartInvasion`'s side roll — `Main.rand.Next(2) == 0` (`Main.cs:64477-64484`)
-    // — called from the globe's `ItemCheck` arm (`Player.cs:43940`): the
-    // `UpdatePlayers` stream.
-    let roll = app.rngs.stream(crate::app::RngKey::UpdatePlayers).next_max(2);
-    app.world.invasion_x = if roll == 0 {
-        0.0
-    } else {
-        app.world.width as f64
-    };
+    crate::world_sim::npcs::start_invasion_in(
+        app,
+        1,
+        2,
+        Some(crate::app::RngKey::UpdatePlayers),
+    );
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -8327,6 +8481,56 @@ pub fn use_snow_globe(app: &mut App) -> bool {
     app.attack_cd = app.swing_max;
     app.mine_target = None;
     app.mine_timer = 0.0;
+    true
+}
+
+/// The shared moon-item swing: `Player.ApplyItemTime`'s re-arm
+/// (`Player.cs:4416-4418`, the swing timers the `use_snow_globe` shape sets)
+/// plus `SoundEngine.PlaySound(15, ...)` — the `SoundID.Roar` (15) both C#
+/// arms play.
+fn apply_moon_item(app: &mut App) {
+    app.audio.play("Roar_0");
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+}
+
+/// The Pumpkin Moon Medallion 1844 (`ItemCheck_UseEventItems`,
+/// `Player.cs:43974-43985`): `!dayTime && !pumpkinMoon && !snowMoon &&
+/// !DD2Event.Ongoing` — the refusal is free; otherwise `Main.startPumpkinMoon`.
+/// The `Main.NewText` row is UI — out.
+pub(crate) fn use_pumpkin_moon_medallion(app: &mut App) -> bool {
+    if app.world.day_time
+        || app.world.pumpkin_moon
+        || app.world.snow_moon
+        || app.world.dd2_event_ongoing
+    {
+        return false;
+    }
+    apply_moon_item(app);
+    app.world.start_pumpkin_moon();
+    true
+}
+
+/// The Naughty Present 1958 (`Player.cs:44041-44052`): the snow twin — same
+/// gates, `Main.startSnowMoon`.
+pub(crate) fn use_naughty_present(app: &mut App) -> bool {
+    if app.world.day_time
+        || app.world.pumpkin_moon
+        || app.world.snow_moon
+        || app.world.dd2_event_ongoing
+    {
+        return false;
+    }
+    apply_moon_item(app);
+    app.world.start_snow_moon();
     true
 }
 
@@ -8658,15 +8862,16 @@ mod loot_summon_tests {
     #[test]
     fn the_battle_standard_gates_and_sizing() {
         // `Main.CanStartInvasion` (`Main.cs:64414-64432`): the 200-life
-        // gate; `StartInvasion(1)` (`:64435-64460`): 80 + 40 x qualifying.
+        // gate; `StartInvasion(1)` (`:64435-64486`): 80 + 40 x qualifying.
         use crate::world_sim::npcs::{can_start_invasion, start_invasion};
         let mut w = tr_core::World::new("t".into(), 64, 64);
+        let mut rng = tr_core::UnifiedRandom::new(1);
         assert!(!can_start_invasion(&w, 100), "the base life waits");
         assert!(can_start_invasion(&w, 200));
-        start_invasion(&mut w, 1, 1);
+        assert!(start_invasion(&mut w, 1, 1, &mut rng));
         assert!(w.invasion_goblins);
         assert_eq!(w.invasion_size, 120, "80 + 40 x one qualifying player");
-        start_invasion(&mut w, 1, 1);
+        assert!(!start_invasion(&mut w, 1, 1, &mut rng));
         assert_eq!(w.invasion_size, 120, "the active invasion blocks");
     }
 
@@ -8755,51 +8960,26 @@ mod loot_summon_tests {
     }
 }
 
-/// `ItemCheck_UseBossSpawners`' Pirate Invasion arm (`Player.cs:43957-43971`):
-/// the Pirate Map (1315) — the `CanStartInvasion(3, ignoreDelay: true)` gate
-/// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
-/// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(3)` —
-/// the march state rides the World (the morning-roll resolve's shape).
+/// `ItemCheck_UseBossSpawners`' Pirate Invasion arm (`Player.cs:43957-43984`):
+/// the Pirate Map (1315) — the `CanStartInvasion(3, ignoreDelay: true)` gate,
+/// the roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(3)`,
+/// whose body sizes the pirates (`80+40n + 40+20n`) and rolls the side.
 pub fn use_pirate_map(app: &mut App) -> bool {
-    if app.world.invasion_type != 0 {
-        return false;
-    }
-    /// `ItemCheck_Wiring_Gate`'s Eternia arm (`Player.cs:32425-32444`) — the
-    /// Etherian Crystal (3828) placed over the Eternia Crystal Stand (466)
-    /// starts the Old One's Army. The gates verbatim: no ongoing event, no
-    /// crystal alive, no pumpkin/snow moon, the 3828 in the inventory, the
-    /// stand's frame (`frameX/18*16`, `frameY/18*16` — the 3x3 stand
-    /// anchor) gives the spawn point (+40, +64), then `ConsumeItem` and
-    /// `DD2Event.SummonCrystal` (`StartInvasion` + the crystal NPC at the
-    /// point + the starter-crystal drops).
-    ///
-    /// Deviations: `WouldFailSpawningHere` folds to the stand-tile check
-    /// (the port has no lane machinery — the DD2Event framework's slice);
-    /// `DropStarterCrystals`' per-player drops ride the item-drop pass.
-    let qualified = app
-        .player
-        .as_ref()
-        .map(|p| p.max_hp >= 200)
-        .unwrap_or(false);
-    if !qualified {
+    // `Player.cs:43957-43984`: `CanStartInvasion(3, ignoreDelay: true)` then
+    // `invasionDelay = 0` + `StartInvasion(3)` — the shared body sizes the
+    // army (`80+40n + 40+20n`) and rolls the side on `UpdatePlayers`.
+    let life_max = app.player.as_ref().map(|p| p.max_hp).unwrap_or(0);
+    if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
     app.audio.play("Roar_0");
     app.world.invasion_delay = 0;
-    app.world.invasion_goblins = true;
-    app.world.invasion_type = 3;
-    app.world.invasion_warn = 0;
-    app.world.invasion_size = 80 + 40 + 40 + 20;
-    app.world.invasion_size_start = app.world.invasion_size;
-    // `Main.StartInvasion`'s side roll — `Main.rand.Next(2) == 0` (`Main.cs:64477-64484`)
-    // — called from the globe's `ItemCheck` arm (`Player.cs:43940`): the
-    // `UpdatePlayers` stream.
-    let roll = app.rngs.stream(crate::app::RngKey::UpdatePlayers).next_max(2);
-    app.world.invasion_x = if roll == 0 {
-        0.0
-    } else {
-        app.world.width as f64
-    };
+    crate::world_sim::npcs::start_invasion_in(
+        app,
+        1,
+        3,
+        Some(crate::app::RngKey::UpdatePlayers),
+    );
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -8812,6 +8992,17 @@ pub fn use_pirate_map(app: &mut App) -> bool {
     app.mine_timer = 0.0;
     true
 }
+/// `Player.cs:32425-32444`'s Etherian arm: the Etherian Crystal (3828)
+/// placed over the Eternia Crystal Stand (466) starts the Old One's Army.
+/// The gates verbatim: no ongoing event, no crystal alive, no pumpkin/snow
+/// moon, the 3828 in the inventory, the stand's frame (`frameX/18*16`,
+/// `frameY/18*16` — the 3x3 stand anchor) gives the spawn point (+40, +64),
+/// then `ConsumeItem` and `DD2Event.SummonCrystal` (`StartInvasion` + the
+/// crystal NPC at the point + the starter-crystal drops).
+///
+/// Deviations: `WouldFailSpawningHere` folds to the stand-tile check (the port
+/// has no lane machinery — the DD2Event framework's slice);
+/// `DropStarterCrystals`' per-player drops ride the item-drop pass.
 pub fn use_etherian_crystal(app: &mut App) -> bool {
     if app.world.invasion_type != 0 || app.world.snow_moon || app.world.pumpkin_moon {
         return false;
@@ -8856,6 +9047,10 @@ pub fn use_etherian_crystal(app: &mut App) -> bool {
     app.npcs.push(crystal);
     app.world.dd2_event_ongoing = true;
     app.world.dd2_wave = 1;
+    // `StartInvasion` (`DD2Event.cs:273-275`): the counters and the boss
+    // latches start clean (`:268-270`).
+    app.world.dd2_wave_kills = 0.0;
+    app.world.dd2_latches = tr_core::dd2::DownedLatches::default();
     let held = app.inventory[app.selected];
     app.swing_max = crate::item::use_animation_secs(held.kind);
     app.swing = app.swing_max;
@@ -8948,5 +9143,118 @@ mod use_loop_tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");
         assert_eq!(p.slots_minions, 1.0);
+    }
+}
+
+/// S1-F-13 Phase 1: the medallion / Naughty-Present triggers
+/// (`Player.cs:43974-43985`, `:44041-44052`).
+#[cfg(test)]
+mod moon_item_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// A held stack of the given kind in the selected slot, over an app whose
+    /// world is at night with no events running.
+    fn night_app(kind: u16) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.inventory[app.selected] = ItemSlot {
+            kind,
+            name: "test".into(),
+            count: 1,
+            prefix: 0,
+        };
+        app.world.day_time = false;
+        app
+    }
+
+    /// DW-1.1: the medallion at night starts the Pumpkin Moon — the flags,
+    /// the resets, `waveNumber = 1`, the stack payment and the swing.
+    #[test]
+    fn the_medallion_at_night_starts_the_pumpkin_moon() {
+        let mut app = night_app(1844);
+        assert!(use_pumpkin_moon_medallion(&mut app));
+        assert!(app.world.pumpkin_moon && !app.world.snow_moon);
+        assert_eq!(
+            (
+                app.world.wave_number,
+                app.world.wave_kills,
+                app.world.total_invasion_points
+            ),
+            (1, 0.0, 0.0),
+            "Main.cs:10979-10996's single-player resets"
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the use paid one");
+        assert!(app.swing > 0.0, "ApplyItemTime armed the swing");
+    }
+
+    /// DW-1.1: the Naughty Present starts the Snow Moon twin — and the
+    /// mutual clears work in both directions.
+    #[test]
+    fn the_naughty_present_at_night_starts_the_snow_moon() {
+        let mut app = night_app(1958);
+        assert!(use_naughty_present(&mut app));
+        assert!(app.world.snow_moon && !app.world.pumpkin_moon);
+        assert_eq!(
+            (
+                app.world.wave_number,
+                app.world.wave_kills,
+                app.world.total_invasion_points
+            ),
+            (1, 0.0, 0.0)
+        );
+        // The mutual clear lives in `start_*` itself (covered on `World`):
+        // the C# trigger's `!pumpkinMoon && !snowMoon` gate means the medallion
+        // can never be used over the twin — a running snow moon refuses it
+        // and its state stays untouched.
+        let mut app = night_app(1844);
+        app.world.start_snow_moon();
+        app.world.wave_number = 6;
+        assert!(!use_pumpkin_moon_medallion(&mut app));
+        assert!(app.world.snow_moon && !app.world.pumpkin_moon);
+        assert_eq!(app.world.wave_number, 6, "the refusal leaves the twin alone");
+        assert_eq!(app.inventory[app.selected].count, 1, "and it is free");
+        // And the present over a running pumpkin moon refuses the same way.
+        let mut app = night_app(1958);
+        app.world.start_pumpkin_moon();
+        app.world.wave_number = 6;
+        assert!(!use_naughty_present(&mut app));
+        assert!(app.world.pumpkin_moon && !app.world.snow_moon);
+        assert_eq!(app.world.wave_number, 6);
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    /// DW-1.1: by day, with either moon event running, or under the Old One's
+    /// Army the triggers refuse — and the refusal is free (`Player.cs:43974`'s
+    /// `!dayTime && !pumpkinMoon && !snowMoon && !DD2Event.Ongoing`).
+    #[test]
+    fn the_moon_items_refuse_by_day_or_with_an_event_running() {
+        let mut app = night_app(1844);
+        app.world.day_time = true;
+        assert!(!use_pumpkin_moon_medallion(&mut app));
+        assert!(!app.world.pumpkin_moon && !app.world.snow_moon);
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        assert!(!use_naughty_present(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        // A running pumpkin event refuses the present and the twin's arm...
+        let mut app = night_app(1958);
+        app.world.start_pumpkin_moon();
+        assert!(!use_naughty_present(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // ...and a running snow event refuses the medallion.
+        let mut app = night_app(1844);
+        app.world.start_snow_moon();
+        assert!(!use_pumpkin_moon_medallion(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The Old One's Army refuses both.
+        let mut app = night_app(1844);
+        app.world.dd2_event_ongoing = true;
+        assert!(!use_pumpkin_moon_medallion(&mut app));
+        let mut app = night_app(1958);
+        app.world.dd2_event_ongoing = true;
+        assert!(!use_naughty_present(&mut app));
     }
 }
