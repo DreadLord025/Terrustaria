@@ -201,12 +201,35 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     items.swap_remove(i);
                     continue;
                 }
+                // `Player.GetItem`'s slot walk (`Player.cs:39347-39372`) runs
+                // `GetItem_FillIntoOccupiedSlot` per slot (`:39493-39518`): an
+                // occupied slot takes `maxStack - stack` and the leftover
+                // `returnItem.stack -= maxStack - stack` stays in the
+                // `returnItem` the caller swaps back into the world
+                // (`Player.PickupItem`'s `itemToPickUp.ReplaceWith(item)`,
+                // `:35085-35087`) — so the surplus is a drop, never an
+                // over-full slot. `slot_for_pickup` already skips full slots,
+                // so the loop drains through the roomier ones.
+                // The vault took `drop.count - remaining`, so the slot walk
+                // below sees only `remaining` (S1-C-9).
                 let drop_count = remaining;
-                if let Some(slot) = slot_for_pickup(inventory, drop.kind, drop.prefix) {
-                    // `Player.GetItem` (`Player.cs:39330`): the transfer moves the stack once -
-                    // the vault took `drop.count - remaining`, so the inventory receives only
-                    // `remaining` (S1-C-9).
-                    inventory[slot].count = inventory[slot].count.saturating_add(drop_count);
+                let max_stack = registry::max_stack(drop.kind);
+                let mut pending = drop_count;
+                let mut moved = 0u32;
+                while pending > 0 {
+                    let Some(slot) = slot_for_pickup(inventory, drop.kind, drop.prefix) else {
+                        break;
+                    };
+                    let room = max_stack.saturating_sub(inventory[slot].count);
+                    if room == 0 {
+                        break;
+                    }
+                    let take = pending.min(room);
+                    inventory[slot].count += take;
+                    pending -= take;
+                    moved += take;
+                }
+                if moved > 0 {
                     let c = drop.center();
                     audio.play_at("Item_1", c.x, c.y, 1.0);
                     // `AchievementsHelper.NotifyItemPickup` — the pickup
@@ -216,8 +239,13 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     {
                         log::info!("achievement completed");
                     }
-                    items.swap_remove(i);
-                    continue;
+                    // The slot walk took everything: the drop is gone.
+                    if pending == 0 {
+                        items.swap_remove(i);
+                        continue;
+                    }
+                    // The remainder stays where it fell (`ReplaceWith(item)`).
+                    drop.count = pending;
                 }
             }
             items[i] = drop;
