@@ -1089,6 +1089,27 @@ fn portrait_data(
                 .unwrap_or(48.0);
             (sheet_i, h, 38.0, h, white)
         }
+        // The Pumpkin Moon family (`S1-F-13b`): the kinds carry no
+        // bestiary entry yet (Phase 2's render registration lands the
+        // sheets and the entries), so the portrait rests the kind's
+        // `SetDefaults` box — the shape the C#'s `NpcAssets` rows carry
+        // (`NPC.cs:12929-13203`).
+        (NpcKind::Scarecrow1, _)
+        | (NpcKind::Scarecrow2, _)
+        | (NpcKind::Scarecrow3, _)
+        | (NpcKind::Scarecrow4, _)
+        | (NpcKind::Scarecrow5, _)
+        | (NpcKind::Scarecrow6, _)
+        | (NpcKind::Scarecrow7, _)
+        | (NpcKind::Scarecrow8, _)
+        | (NpcKind::Scarecrow9, _)
+        | (NpcKind::Scarecrow10, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Splinterling, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::HeadlessHorseman, _) => (sheet_i, 70.0, 74.0, 70.0, white),
+        (NpcKind::MourningWood, _) => (sheet_i, 154.0, 164.0, 154.0, white),
+        (NpcKind::Pumpking, _) => (sheet_i, 100.0, 100.0, 100.0, white),
+        (NpcKind::Hellhound, _) => (sheet_i, 30.0, 46.0, 30.0, white),
+        (NpcKind::Poltergeist, _) => (sheet_i, 44.0, 24.0, 44.0, white),
     }
 }
 

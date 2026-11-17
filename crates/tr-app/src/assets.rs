@@ -1034,6 +1034,26 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
         // for this sheet and it was never packed (a silent no-draw).
         "NPC_117",
+        // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
+        // kind — the Scarecrows (305-314) and the five named kinds
+        // (315/325/326/327/329/330) — keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`'s PUMPKIN_SHEETS).
+        "NPC_305",
+        "NPC_306",
+        "NPC_307",
+        "NPC_308",
+        "NPC_309",
+        "NPC_310",
+        "NPC_311",
+        "NPC_312",
+        "NPC_313",
+        "NPC_314",
+        "NPC_315",
+        "NPC_325",
+        "NPC_326",
+        "NPC_327",
+        "NPC_329",
+        "NPC_330",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
