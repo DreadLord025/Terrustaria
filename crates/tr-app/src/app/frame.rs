@@ -4,31 +4,16 @@
 //! interface draw. Plus the benchmark epilogue and the two RNG helpers the
 //! world simulation shares. (A7: extracted from `main.rs` whole.)
 
+mod world;
+mod draw;
 use std::time::Instant;
 
 use glam::Vec2;
-use tr_core::TILE_PX;
-use tr_core::lighting::{LightParams, LightStyle};
 use wgpu::util::DeviceExt;
 
-use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
-use crate::app::{App, RngKey, WorldFrameKey};
-use crate::assets;
-use crate::audio;
-use crate::craft;
-use crate::item::{self};
-use crate::map;
-use crate::npc::{self, NpcKind};
-use crate::player;
-use crate::render::bg::cave_parallax;
-use crate::render::debug::{capture_frame, draw_debug};
-use crate::render::entities::draw_player_map_icon;
-use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
-use crate::render::tiles::draw_tiles;
+use crate::app::App;
 use crate::sound;
 use crate::ui;
-use crate::ui::text::{border_string, hud_text, hud_text_width};
-use crate::world_sim::clock::advance_time_with_events;
 
 /// Records one **draw**-branch phase for the draw-order pinning test
 /// (`S1-B-7`). A no-op outside `cfg(test)` — the names make the
@@ -100,12 +85,23 @@ impl App {
         }
     }
 
-    pub(crate) fn frame(&mut self) {
+    /// The per-frame head — `Main.Draw`'s top region, named by S1-B-8: the
+    /// live language substitutions, the `TR_SHOT`-pinned frame step, the
+    /// per-frame counters the rest of the frame reads (the zoom keys, the
+    /// adaptive fps counter, the step-key snapshot pair, the animation clock),
+    /// the always-run UI/animation ticks and the autosave budget. Runs on
+    /// **every** frame — menus and focus pauses included — exactly like the
+    /// vanilla's Update/Draw head, so it must stay out of the in-world branch.
+    ///
+    /// `now` is the frame's `Instant`, taken by the caller because the draw half
+    /// timestamps its filter/render passes off the same stamp. Yields
+    /// `(dt, anim_time)`: the frame step (the `TR_SHOT` pin) and the animation
+    /// clock snapshot the draw passes key on.
+    fn frame_head(&mut self, now: Instant) -> (f32, f32) {
         // `Lang.InitGlobalSubstitutions` (S1-L-12b): refresh live `{Name}` values
         // before any UI/text resolves them this frame (`Lang.cs:100-167`).
         crate::lang::refresh_global_substitutions(self);
 
-        let now = Instant::now();
         // `TR_SHOT` pins the animation clock: the sky's twinkle/drift phases read
         // `anim_time`, and wall-clock jitter between runs would make two shots of
         // the same scene differ in a few pixels. A fixed 1/60 step (what vsync
@@ -208,6 +204,19 @@ impl App {
             }
         }
 
+        (dt, anim_time)
+    }
+
+    /// The shared per-frame setup — the region between the head and the two
+    /// frame branches: the GPU (or the inline 1600×900) screen size the whole
+    /// frame draws into, the minimap's `m_h`, the OS cursor visibility, the
+    /// audio listener and pool update, the ambience waterfall/lavafall loops,
+    /// the menu music, and the front end's pending **world swap** at a frame
+    /// boundary (after the swap, before the world branch, so a half-ticked world
+    /// never shows).
+    ///
+    /// Yields `(screen, m_h)` — both are consumed deep in the draw half.
+    fn frame_shared_setup(&mut self, dt: f32) -> (Vec2, f32) {
         let screen = self
             .gpu
             .as_ref()
@@ -353,6 +362,14 @@ impl App {
             }
         }
 
+        (screen, m_h)
+    }
+
+    /// The focus pause arm (S1-B-3), named by S1-B-8. Returns whether this frame
+    /// is focus-paused; the caller gates the in-world branch on the flag, which
+    /// is how the port's fused frame reproduces the C#'s early `return` from
+    /// *Update* while Draw keeps running (the details at the site below).
+    fn frame_focus_pause(&mut self) -> bool {
         // S1-B-3 — the focus pause (`FocusHelper.UpdateFocus`'s `wantsToPause`
         // arm, `Main.cs:17128-17141`): `wantsToPause = (!IsActive &&
         // netMode == 0) && !SettingPlayWhenUnfocused`. The C# clears the mouse
@@ -375,2048 +392,37 @@ impl App {
             // its per-frame work is draw/event-driven).
             self.game_paused = true;
         }
+
+        focus_paused
+    }
+
+    pub(crate) fn frame(&mut self) {
+        // The frame's wall-clock stamp: the head derives `dt` from it (the
+        // `TR_SHOT` pin aside) and the draw half's filter/render passes
+        // timestamp off it, so the orchestrator takes it and hands it down.
+        let now = Instant::now();
+        let (dt, anim_time) = self.frame_head(now);
+        let (screen, m_h) = self.frame_shared_setup(dt);
+        let focus_paused = self.frame_focus_pause();
+
+        // S1-B-8 — the in-world branch (`DoUpdateInWorld`'s port): one fn
+        // per phase, in the C#'s order — see `frame/world.rs`.
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
-            // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
-            // ticked before the interface handlers read the state.
-            self.tick_stack_split();
-            // `MinimapFrame.Update` runs before the inventory's click handling
-            // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
-            self.handle_minimap_clicks();
-            self.handle_fullmap_ping();
-            self.handle_bestiary_clicks();
-            // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
-            // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
-            // and inventory handlers and consumes the press when a chest
-            // slot, the shift transfer or a chest tile took it.
-            if !self.handle_chest_clicks() && !self.handle_crafting_clicks() {
-                self.handle_inventory_clicks();
-            }
-            // `Main.cs:62466-62473` — the stack-split decay, after the
-            // interface's MouseUI pass.
-            self.decay_stack_split();
-            for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
-                let target = if i == self.selected { 1.0 } else { 0.75 };
-                if *scale < target {
-                    *scale = (*scale + 0.05).min(target);
-                } else if *scale > target {
-                    *scale = (*scale - 0.05).max(target);
-                }
-            }
-            // S1-B-3 — the in-game pause gate (`Main.cs:17194-17201`):
-            // `if (CanPauseGame()) { DoUpdate_WhilePaused(); gamePaused = true;
-            // return; } gamePaused = false;`. The click cluster above it is the
-            // pre-gate interface pass (DW-1.3: the UI stays live while paused).
-            let paused = self.can_pause_game();
-            if paused {
-                self.do_update_while_paused();
-            }
-            self.game_paused = paused;
-            // `DoUpdateInWorld`'s gate (`Main.cs:17278`,
-            // `ShouldUpdateEntities() && WorldUpdateStepper.ShouldUpdateWorld()`
-            // — the stepper half is Phase 2's `world_stepper.rs`, fed the
-            // frame-head snapshot pair). The short-circuit `!paused` mirrors
-            // the C#'s early `return` (`:17197-17199`): a paused frame never
-            // reaches the gate, so the pacing count freezes with it.
-            let step_allowed = !paused
-                && self.should_update_entities()
-                && self
-                    .stepper
-                    .should_update_world(self.step_input_down, self.step_input_was);
-            if step_allowed {
-                self.game_update_count = self.game_update_count.wrapping_add(1);
-                // `WorldUpdateStepper.DrawnThisUpdate = false` at the step
-                // head (`Main.cs:17747`, right after `_gameUpdateCount++`).
-                self.stepper.drawn_this_update = false;
-                // `Main.tileSolid[379] = false` (`Main.cs:17753`): the bubble
-                // is not solid for the entity half of the tick — the liquid
-                // pass re-arms it (`Liquid.cs:451`, S1-L-14).
-                self.liquids.clear_bubble_for_entities();
-                // `CraftingUI.RecipeFilterHack`'s gate (`CraftingUI.cs:112-121`)
-                // plus `NewCraftingUI.OnDeactivate`'s clear (`:912-914`): the
-                // station filter only lives while the crafting page is up.
-                if !self.crafting_open {
-                    self.craft_filter = None;
-                }
-                // `Main.UpdateWorld_Players` (`Main.cs:17825-17859`): the player
-                // pass. The sleeping counts it exports (`:17844-17859`) gate the
-                // clock's rate, so they land right after it.
-                self.phase("players");
-                self.update_player(dt);
-                // `UpdateTimeRate` (`Main.cs:6199-6218`): the rate is ×5 while
-                // every active player is fully asleep
-                // (`PlayerSleepingHelper.FullyFallenAsleep`, 120 ticks).
-                self.world.all_players_asleep = self
-                    .player
-                    .as_ref()
-                    .is_some_and(|p| p.sleeping && p.sleep_time >= 120);
-                // `Main.UpdateAudio_DecideOnNewMusic` reads the scene centre, not the
-                // player: underground once the view centre passes the world surface
-                // (`Main.cs:12815`).
-                // The boss scan (`Main.cs:12224-12430`): the screen rect expanded
-                // 5000 px around each active NPC's centre; the type→slot switch
-                // feeds the flag chain. The port's bosses: King Slime (50 → slot
-                // 19 → track 93, outranking the others) and the generic `boss`
-                // slot 1 → 5 (no other ported kind carries `NPC.boss`).
-                let (sw, sh) = self.screen_size();
-                let screen_rect = [self.camera.x - sw * 0.5, self.camera.y - sh * 0.5, sw, sh];
-                let mut king_near = false;
-                let mut eoc_near = false;
-                let mut generic_boss_near = false;
-                for n in &self.npcs {
-                    if n.hp <= 0 {
-                        continue;
-                    }
-                    let (cx, cy) = n.center();
-                    let near = cx + 5000.0 >= screen_rect[0]
-                        && cx - 5000.0 <= screen_rect[0] + screen_rect[2]
-                        && cy + 5000.0 >= screen_rect[1]
-                        && cy - 5000.0 <= screen_rect[1] + screen_rect[3];
-                    if !near {
-                        continue;
-                    }
-                    if n.kind == NpcKind::KingSlime {
-                        king_near = true;
-                    }
-                    if n.kind == NpcKind::EyeOfCthulhu {
-                        eoc_near = true;
-                    }
-                    // `if (num3 == 0 && Main.npc[j].boss) num3 = 1;` (`:12366`).
-                }
-                let boss_music = if king_near {
-                    Some(93) // MusicID.KingSlime (flag19, `:12596`)
-                } else if eoc_near {
-                    Some(5) // MusicID.Boss1 (the generic boss slot, `:12611`)
-                } else {
-                    // No other ported kind sets `boss` — the generic slot stays
-                    // out until a third boss lands.
-                    None
-                };
-                let underworld_px = (self.world.height - 200) as f32 * TILE_PX;
-                self.music.update(audio::MusicEnv {
-                    music_volume: self.settings.music_volume,
-                    day: self.world.day_time,
-                    underground: self.camera.y
-                        >= self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                    rain: self.rain.is_raining(),
-                    boss_music,
-                    clock: self.world.time,
-                    eclipse: self.world.eclipse
-                        && self.camera.y
-                            < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                    shimmer: self.scene_metrics.zone_shimmer,
-                    town_npcs: self.scene_metrics.town_npc_count,
-                    // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
-                    cloud_alpha: self.rain.visual_alpha(),
-                    zone_rain: self.scene_metrics.zone_rain,
-                    zone_snow: self.scene_metrics.zone_snow,
-                    surface_atmospherics: self.scene_metrics.surface_atmospherics,
-                    wind_speed: self.wind.speed_current,
-                    shimmer_alpha: self.scene_state.shimmer_alpha,
-                    atmo: crate::render::sky::atmosphere_factor(
-                        self.camera.y,
-                        self.world.world_surface,
-                        self.world.width,
-                    ),
-                    ambient_volume: self.settings.ambient_volume,
-                    shadow_candle: self.scene_metrics.shadow_candle_count > 0,
-                    sandstorm: self.sandstorm.happening,
-                    underworld: self.camera.y > underworld_px,
-                    blood_moon: self.world.blood_moon,
-                    windy_music: self.wind.happy_windy_day,
-                    // The biome chain (`:12686-12920`): the space band with
-                    // `num4 = maxTilesX / 4200`, the temple wall behind the scene
-                    // centre, the metrics zones, the mushroom bg style and the
-                    // storm flag.
-                    space_band: {
-                        let num4 = self.world.width as f32 / 4200.0;
-                        let center_tile_y = self.camera.y / 16.0;
-                        (center_tile_y - (65.0 + 10.0 * num4 * num4))
-                            / (self.world.world_surface as f32 / 5.0)
-                            < 1.0
-                    },
-                    temple_wall: self
-                        .world
-                        .tile((self.camera.x / 16.0) as i32, (self.camera.y / 16.0) as i32)
-                        .is_some_and(|t| t.wall == 87),
-                    dungeon: self.scene_metrics.zone_dungeon,
-                    mushroom_bg: self.bg_style == 9
-                        && self.camera.y
-                            < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                    corrupt: self.scene_metrics.zone_corrupt,
-                    crimson: self.scene_metrics.zone_crimson,
-                    blood_leads_evil: self.scene_metrics.blood_tile_count
-                        > self.scene_metrics.evil_tile_count,
-                    meteor: self.scene_metrics.zone_meteor,
-                    graveyard: self.scene_metrics.zone_graveyard,
-                    desert: self.scene_metrics.zone_desert,
-                    jungle: self.scene_metrics.zone_jungle,
-                    snow: self.scene_metrics.zone_snow,
-                    hallow: self.scene_metrics.zone_hallow,
-                    storm: self.wind.storming,
-                    ocean: self.scene_metrics.zone_beach,
-                    center_y: self.camera.y,
-                    surface_band_px: self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-                    rock_band_px: self.world.rock_layer as f32 * TILE_PX + screen.y * 0.5,
-                    jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
-                        + screen.y * 0.5,
-                    quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
-                    menu: false,
-                    menu_flags: Default::default(),
-                    music_box: self.scene_metrics.active_music_box,
-                    music_box_silence: self.scene_metrics.music_box_silence,
-                });
-                // `Main.UpdateWorld_SpawnNPCs` (`Main.cs:17878`) + `UpdateWorld_NPCs`
-                // (`:17898`) — the port runs spawn and update in one pass.
-                if !self.is_client() {
-                    self.phase("npcs");
-                    self.update_npcs(dt);
-                }
-                // `Main.UpdateWorld_Gores` (`Main.cs:17971-17996`, called at
-                // `:17771-17774`): the 600-slot walk, between the NPCs and the
-                // projectiles. Its rolls ride the stage's own named stream
-                // (`Main.SwapRandom("UpdateGores")`).
-                self.phase("gores");
-                {
-                    let rng = self.rngs.stream(crate::app::RngKey::UpdateGores);
-                    let wind_for_visuals = self.wind.speed_current;
-                    self.gore.update(
-                        rng,
-                        &self.world,
-                        &crate::gore_seam::AppGoreCollision,
-                        wind_for_visuals,
-                    );
-                }
-                // `Main.UpdateWorld_Projectiles` (`Main.cs:17976`) runs **before**
-                // `UpdateWorld_Items` (`:18004`).
-                self.phase("projectiles");
-                self.update_projectiles(dt);
-                self.phase("items");
-                self.update_items(dt);
-                // `Main.UpdateWorld_Dust` (`Main.cs:18047`): the ONE dust pass
-                // per frame — the shared loop drives every active slot and the
-                // per-type arms dispatch inside it (`minecart::tick`, S1-E-3).
-                self.phase("dust");
-                let (sw, sh) = self.screen_size();
-                // The tick rides a client stream: the riding player's
-                // `spark_rng` (the cart's own) when a player exists, else the
-                // NamedRngs' global stream (the C#'s single `Main.rand`
-                // equivalent — `self.rngs.global()`, `app/rng.rs`); no new
-                // stream instances either (S1-E-3).
-                let max_dust = self.gfx_quality.max_dust_to_draw;
-                let show_sand = self.sandstorm.show_sandstorm_visuals(
-                    self.scene_metrics.zone_sandstorm,
-                    tr_core::scene::is_desert_bg_style(self.bg_style),
-                    self.bg_delay,
-                );
-                let player_vy = self.player.as_ref().map_or(0.0, |p| p.vy);
-                let dust = &mut self.dust;
-                match self.player.as_mut() {
-                    Some(p) => crate::minecart::tick(
-                        dust,
-                        &mut crate::app::SplitmixRand(&mut p.spark_rng),
-                        max_dust,
-                        self.camera,
-                        Vec2::new(sw, sh),
-                        self.zoom,
-                        &self.world,
-                        player_vy,
-                        show_sand,
-                    ),
-                    None => crate::minecart::tick(
-                        dust,
-                        self.rngs.global(),
-                        max_dust,
-                        self.camera,
-                        Vec2::new(sw, sh),
-                        self.zoom,
-                        &self.world,
-                        player_vy,
-                        show_sand,
-                    ),
-                }
-                // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
-                // runs after the entity half, never before it.
-                self.phase("time");
-                if !crate::env::day_pinned() {
-                    // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
-                    // `:1441`): the powers' multiplier folds into the clock tick
-                    // (the freeze stops the advance entirely).
-                    let rate = self.creative_powers.time_rate();
-                    if rate > 0.0 {
-                        // The dawn/dusk event rolls ride the clock's own named
-                        // stream (`Main.SwapRandom("UpdateTime")`, `Main.cs:17795`)
-                        // inside `advance_time_with_events`, which also fires the
-                        // phase-boundary achievements and flag clears
-                        // (`Main.cs:65242-65246`, `:65383-65387`, `:65415`).
-                        let any_over_120 = self.player.as_ref().is_some_and(|p| p.max_hp > 120);
-                        let (blood_moon, eclipse) =
-                            advance_time_with_events(self, dt * rate, any_over_120);
-                        if blood_moon {
-                            crate::chat::broadcast_death_text(
-                                &mut self.chat,
-                                &crate::lang::text("LegacyMisc.8"),
-                                crate::chat::COLOR_WORLD,
-                            );
-                        }
-                        if eclipse {
-                            crate::chat::broadcast_death_text(
-                                &mut self.chat,
-                                &crate::lang::text("LegacyMisc.20"),
-                                crate::chat::COLOR_WORLD,
-                            );
-                        }
-                    }
-                }
-                // `WorldGen.UpdateWorld` (`WorldGen.cs:71495-71630`): the
-                // `UpdateWorld_WorldGenAndInvasion` wrapper (`Main.cs:18099`) runs
-                // *after* the time pass and walks `Wiring.UpdateMech` →
-                // `TileEntity.PerformUpdates` → `Liquid.UpdateLiquid` → the growth
-                // loops, in that order.
-                self.phase("wiring");
-                self.update_wiring(dt);
-                self.phase("tile_entities");
-                self.update_tile_entities(dt);
-                self.phase("liquids");
-                self.update_liquids(dt);
-                self.phase("growth");
-                self.update_growth(dt);
-            }
-            // `DoUpdate_AnimateWaterfalls` (`Main.cs:19545-19566`): the
-            // `WaterfallManager.UpdateFrame`/`FindWaterfalls` pass — the
-            // pre-gate Animate cluster (`:17146`), so it ticks while paused.
-            self.phase("waterfalls");
-            self.update_waterfalls(dt, screen);
-            // S1-B-3: the post-gate weather cluster (`Main.cs:17222`'s
-            // `Rain.MakeRain`, `:17228-17231`'s dayRate walks) — frozen while
-            // the pause gate holds, live on stepper-blocked frames (the
-            // `Main.cs:17278` gate sits *after* it in the C#; Phase 2's stepper
-            // must not swallow it).
-            if !paused {
-                // M1.4-BG-22: the shared 60 Hz world tick — `Main.Update`'s
-                // dayRate cluster (`Main.cs:17228-17231`): the `UpdateWeather`
-                // thunder arm once, the wind walk ×`Main.dayRate`, then
-                // `Sandstorm.UpdateTime` (`Main.cs:64966`).
-                self.phase("weather");
-                crate::world_sim::weather::update_world_tick(self, dt);
-                self.phase("rain");
-                self.update_rain(dt, screen);
-                // S1-B-3 Phase 2 (decision #5): `scene_state` moved out of
-                // this pause-gated block — `Main.SceneState.Update` sits in
-                // `DoUpdateInWorld_Inner`'s step-gated tail (`Main.cs:17816`),
-                // so a stepper-blocked frame freezes it too. It now runs in
-                // the `step_allowed` tail below, after the camera walks.
-            }
-            // The SceneState blizzard loops' sound emitter rides inside
-            // `update_scene` (`scene_scan.rs`'s `SceneState::update` call —
-            // the C# keeps the block inside `ApplyVisuals`, `SceneState.cs:189`).
-            // `Main.UpdateWindyDayState` (`Main.cs:12990-13027`, called from
-            // the per-tick audio update): the sticky windy-day/storm flags the
-            // ambience gates read; the hysteresis bands make the per-frame
-            // evaluation equivalent. The pre-gate cluster (`:17182`) — it ticks
-            // while paused, reading the frozen clock.
-            self.phase("windy_day");
-            self.wind.update_windy_day_state(
-                self.rain.visual_alpha(),
-                self.world.time,
-                self.world.day_time,
-            );
-            // S1-B-3: the post-gate tail — `Main.AmbienceServer.Update`'s own
-            // `!gamePaused` arm (`Main.cs:17214`). The tile-edit and net
-            // passes move under the step gate below (batch review fix 1); the
-            // map reveal keeps the pause gate only (see its block).
-            if !paused {
-                // `Main.AmbienceServer.Update` (`Main.cs:17214-17216`) +
-                // `SkyManager.Update` (`Main.cs:17139`): the ambient sky scheduler
-                // and its entities, stepped on the 60 Hz accumulator.
-                self.phase("ambience");
-                {
-                    let ambience = &mut self.ambience;
-                    // The scheduler's draws ride the bare-`Main.rand` stand-in
-                    // (`Main.cs:17214-17216` runs `AmbienceServer.Update` outside
-                    // every swap) — the shared `NamedRngs::global()` stream, which
-                    // chat commands and menu rolls also draw between frames.
-                    let ambience_rng = self.rngs.global();
-                    let ctx = crate::ambience::AmbienceCtx {
-                        world: &self.world,
-                        day_time: self.world.day_time,
-                        eclipse: self.world.eclipse,
-                        blood_moon: self.world.blood_moon,
-                        pumpkin_moon: self.world.pumpkin_moon,
-                        snow_moon: self.world.snow_moon,
-                        hard_mode: self.world.hard_mode,
-                        is_raining: self.rain.is_raining(),
-                        is_storming: self.wind.storming,
-                        happy_windy_day: self.wind.happy_windy_day,
-                        too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),
-                        butterfly_chance: self.world.butterfly_chance,
-                        wind: self.wind.speed_current,
-                        zone_desert: self.scene_metrics.zone_desert,
-                        zone_hallow: self.scene_metrics.zone_hallow,
-                        zone_beach: self.scene_metrics.zone_beach,
-                        zone_corrupt: self.scene_metrics.zone_corrupt,
-                        zone_crimson: self.scene_metrics.zone_crimson,
-                        zone_jungle: self.scene_metrics.zone_jungle,
-                        player_center: self.player.as_ref().map_or(self.camera, |p| {
-                            Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5)
-                        }),
-                        // `plr.position.Y` is the hitbox TOP (`AmbienceServer.cs:191`).
-                        player_y: self.player.as_ref().map_or(self.camera.y, |p| p.y),
-                        // `SkyManager.Update`'s `max(1, dayRate)` loop
-                        // (`SkyManager.cs:24-46`) rides `Main.dayRate`
-                        // (`Main.cs:6199-6206`): 60 while a dial fast-forwards.
-                        day_rate: self.world.day_rate(),
-                    };
-                    ambience.update(dt, &ctx, ambience_rng);
-                }
-            }
-            // S1-B-3 (batch review fix 1) — the `DoUpdateInWorld` body's
-            // tile-edit and net halves move under the step gate: the C#'s
-            // `LookForTileInteractions`/`ItemCheck` (the mining and placing)
-            // ride `Player.Update` inside `DoUpdateInWorld`
-            // (`Player.cs:27430`), and `UpdateWorld_ServerOrClient` sits in
-            // its tail (`Main.cs:17808`) — a stepper-blocked frame cannot
-            // mine, place or sync, exactly like the vanilla. The pass order
-            // is unchanged (ambience → editing → net → map → the
-            // camera/SceneState tail), so no RNG stream reorders: the gate
-            // only removes draws.
-            if step_allowed {
-                self.phase("editing");
-                self.update_editing(dt, screen);
-                self.phase("net");
-                self.net_tick(dt);
-            }
-            // The map reveal keeps the pause gate only — its C# source,
-            // `LightingEngine.ExportToMiniMap` (`LightingEngine.cs:246-270`),
-            // is the draw-side lighting export: Draw keeps running on
-            // stepper-blocked frames, so vanilla keeps revealing the map
-            // while the world steps are frozen. No update-side `UpdateMap`
-            // exists in the 1.4.5.8 decompile to gate it on. The edit-side
-            // refresh drain (`Main.cs:61862`) is itself `!gamePaused`-gated
-            // in the C# (`Main.updateMap.HasValue && !Main.gamePaused`), so
-            // it rides the same gate here.
-            if !paused {
-                self.phase("map");
-                if let Some(m) = self.map.as_mut() {
-                    // `Main.mapTimeMax` (`Main.cs:801`) — the gfx-quality
-                    // budget the countdown re-arms from (`:61818-61821`).
-                    m.map_time_max = self.gfx_quality.map_time_max;
-                    m.update(&self.world, self.player.as_ref(), &self.light, dt);
-                    // `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:36-39`):
-                    // the markers older than 15 s drop while the map is up.
-                    m.age_pings(dt);
-                    // `MapUpdateQueue.Update()` (`Main.cs:61862`): the edit-side
-                    // refresh drains through `WorldMap.UpdateType`; the changed
-                    // tiles re-upload (`MapRenderer.QueueChange`'s analog).
-                    let changed = self.map_queue.update(&self.world, m);
-                    m.push_dirty(changed);
-                }
-            }
-            // The world-branch tail's camera walks (`Main.cs:17814-17815`):
-            // `UpdateCameraPan` (the tracking/pan target's MoveTowards) and
-            // `UpdateCameraLerp` (the teleport transition's timer) — S1-B-4.
-            // They sit inside `DoUpdateInWorld_Inner`'s tail block
-            // (`:17795-17822`), so they freeze with the world step; the
-            // draw-time camera (`update_camera_at_draw`, S1-B-4) keeps
-            // computing from the frozen walk state.
-            if step_allowed {
-                let mut camera_state = std::mem::take(&mut self.camera_state);
-                crate::world_sim::camera::update_camera_pan(self, &mut camera_state);
-                crate::world_sim::camera::update_camera_lerp(self, &mut camera_state);
-                self.camera_state = camera_state;
-                // S1-B-3 Phase 2 (decision #5): `Main.SceneState.Update` rides
-                // the same gated tail — `DoUpdateInWorld_Inner`'s order is
-                // `UpdateCameraPan`, `UpdateCameraLerp`, `SceneState.Update`
-                // (`Main.cs:17814-17816`), so the fades freeze with the world
-                // step. M1.4-BG-18 phase 3: the fused
-                // `Main.UpdateSceneMetrics` + `Main.SceneState.Update` — the
-                // scan, the fades and the `ApplyVisuals` driver; the post
-                // branch consumes `filter_driver.output`.
-                self.phase("scene_state");
-                crate::world_sim::scene_scan::update_scene(self, dt, screen);
-            }
-            // The gfx-quality budgets (`Main.cs:17056-17101`, S1-B-6): the
-            // `qaStyle` overrides, `maxDustToDraw`, `Gore.goreTime`, the
-            // liquid pass pair and the legacy render phases.
-            let mut gfx = std::mem::take(&mut self.gfx_quality);
-            gfx.apply(self);
-            self.gfx_quality = gfx;
+            self.update_world_frame(dt, screen);
         }
-        // S1-B-3 — `WorldUpdateStepper.DrawnThisUpdate = true`
-        // (`Main.cs:62478`, Draw's stack-split block `:62470-62477`). The
-        // fused frame orders the two flag sites as the C#'s Update→Draw
-        // sequence does: a step head resets it (`:17747`), then the draw half
-        // marks the frame — so a stepping frame still ends `true`, the C#'s
-        // post-Draw state. Runs on every in-world frame (Draw-side: a
-        // focus-paused frame draws too); menu/front frames never reach it
-        // (the C# block sits in the in-game Draw branch).
-        if self.menu.is_none() && self.front.is_none() {
-            self.stepper.drawn_this_update = true;
-        }
-        // `TR_NET_EDIT=tx,ty`: one client edit request, used to verify the round trip.
-        if self.is_client() && self.frame_count == 90 {
-            if let Some((x, y)) = crate::env::net_edit() {
-                self.request_edit(x, y, 0, 0);
-                log::info!("net edit requested at {x},{y}");
-            }
-        }
-        self.poll_net();
-        // The `netOffset` decay (`UpdateNetOffset`, `Player.cs:28721-28749`) —
-        // client-only, and after the incoming snapshots are applied.
-        self.net_interp_tick(dt);
-        // `Main.DrawBG`: advance the surface-background cross-fade once per drawn
-        // frame, exactly where the original runs it (inside the draw pass).
-        self.update_bg_visibility();
-        // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
-        // high-refresh displays.
-        let player_alpha = (self.player_step.residual() / (1.0 / 60.0)).clamp(0.0, 1.0);
-        // The dead player renders nothing until the respawn (vanilla draws
-        // no corpse; the ghost is master-mode only).
-        let mut render_player = self
-            .player
-            .as_ref()
-            .filter(|p| !p.dead)
-            .map(|p| p.interpolated(player_alpha));
-        // The body rows — the item-use rows included — are all computed by
-        // `Player::update_frames` (`PlayerFrame()`) inside the fixed step.
-        let player_key = render_player.as_ref().map_or(0, |p| p.render_key());
-        let npc_key = npc::render_key(&self.npcs);
-        let mut stats = tr_render::sprite::RenderStats::default();
-        let mut tile_stats = self.tile_stats;
-
-        // `Main.DoDraw_UpdateCameraPosition` (`Main.cs:62590-62649`, S1-B-4):
-        // the camera snaps/lerps/clamps at DRAW time, ahead of every read
-        // this frame's render makes of it — the update half above kept the
-        // previous frame's position (the C#'s update reads it too).
-        let mut camera_state = std::mem::take(&mut self.camera_state);
-        crate::world_sim::camera::update_camera_at_draw(self, &mut camera_state);
-        self.camera_state = camera_state;
-
-        // The chest-rename editor's per-frame reads — `Main.editChest`
-        // (`Main.cs:1747`), `Main.npcChatText`'s editor copy
-        // (`UIVirtualKeyboard.cs:1061-1067`) and the stored `Chest.name`
-        // (`ChestUI.cs:115-122`, the `WorldChest` entity's own field since the
-        // M6-SAVE-1 phase-3 fold) — parked before the draw site's field
-        // borrows (the keyboard session owns the editor state; the name
-        // reads the entity directly so the borrow stays field-scoped).
-        // `Main.DoDraw_UpdateCameraPosition` (`Main.cs:62590-62649`, S1-B-4):
-        // the camera snaps/lerps/clamps at DRAW time, ahead of every read
-        // this frame's render makes of it.
-        let mut camera_state = std::mem::take(&mut self.camera_state);
-        crate::world_sim::camera::update_camera_at_draw(self, &mut camera_state);
-        self.camera_state = camera_state;
-        // `ChildSafety.Disabled = GoreVisualsAllowed` (`Main.cs:4101`,
-        // `:4349`): the gate follows the same live settings copy the cursor
-        // tint reads — synced before the chest reads below pin `&mut self`
-        // out of reach.
-        let menu_blood = self.menu.as_ref().map(|m| m.settings.blood);
-        self.sync_child_safety(menu_blood);
-        let chest_editing = self.chest_editing();
-        let chest_edit_text = self.chest_edit_text().to_string();
-        let chest_open = self.open_container();
-        let chest_stored_name = crate::chest::stored_name(&self.world_chests, chest_open);
-        // `Chest.item.Length` (`ChestUI.cs:376-377`) — the open chest's own
-        // per-chest slot count from the file (`Chest.maxItems`), the default
-        // 40 for every port-created chest.
-        let chest_max_items = crate::chest::chest_max_items(&self.world_chests, chest_open);
-        // `Main.DrawPVPIcons`'s state block, snapshotted before the disjoint
-        // borrow below (it reads `self.player` / `self.net`).
-        let pvp_icon_state = self.pvp_icon_state();
-        // The team-based-spawns seed gate (`TeamBasedSpawnMapLayer.cs:10`)
-        // and the vampire-seed — snapshotted before the disjoint borrows.
-        let team_based_spawns = self
-            .world
-            .micro_seeds
-            .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
-        // `Main.PylonSystem.Pylons` (`TeleportPylonsMapLayer.cs:32`): the map
-        // layers read the live network. The scan walks the TE book, so it stays
-        // off the per-frame path unless the map or the minimap is drawing.
-        let map_layer_pylons = if (self.map.as_ref().is_some_and(|m| m.open)
-            || (self.settings.map_enabled && self.map_style == 1))
-            && !crate::env::no_hud()
-        {
-            tr_core::pylons::scan_pylons(&self.world)
-        } else {
-            Vec::new()
+        // S1-B-8 — the draw-half pre-snapshot spine (see `frame/world.rs`);
+        // the pure field snapshots below stay inline: the draw region's
+        // borrow scaffolding, consumed by the destructure.
+        self.draw_half_pre_snapshots(dt);
+        // S1-B-8 — the draw region (`Main.DoDraw`'s body): the pre-snapshot
+        // locals, the destructure and the gpu block live in
+        // `frame/draw.rs::draw_region`, verbatim; it yields the frame's stats.
+        let (stats, tile_stats) = match self.draw_region(
+            now, dt, anim_time, screen, m_h,
+        ) {
+            Some(pair) => pair,
+            None => return,
         };
-        // The buff bar's inputs (`Main.DrawInterface_Resources_Buffs`,
-        // `Main.cs:43203`): the right-release edge (`Main.mouseRightRelease`)
-        // and the vampire-seed gate (`Main.vampireSeed`, the duration hides
-        // `:43298`). The removals drain in the tick.
-        let right_release = std::mem::take(&mut self.ui_right_release);
-        let vampire_seed = self
-            .world
-            .micro_seeds
-            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
-        // `Player.hideVisibleAccessory` (`Player.cs:1708`) — snapshotted for the
-        // same reason (the accessory ticks, `Main.cs:41425-41460`).
-        let hide_visible_accessory = self
-            .player
-            .as_ref()
-            .map(|p| p.hide_visible_accessory)
-            .unwrap_or([false; 10]);
-        // `Main.ActivePlayerFileData.Player.difficulty` for the world-select
-        // grey-out (`UIWorldSelect.cs:179`) — snapshotted before the disjoint
-        // borrow below (it reads `self.session_draft`).
-        let active_difficulty = self.active_player_difficulty();
-
-        {
-            let App {
-                gpu,
-                renderer,
-                post,
-                noise_tex,
-                water_mask,
-                filter_driver,
-                world,
-                atlas,
-                lookups,
-                clouds,
-                sky,
-                bg_alpha_front,
-                bg_alpha_far,
-                stars,
-                player_assets,
-                player,
-                npcs,
-                npc_assets,
-                inventory,
-                selected,
-                edit_target,
-                camera,
-                zoom,
-                debug,
-                frame_history,
-                last_stats,
-                frame_count,
-                shot_path,
-                shot_at,
-                atlas_stats,
-                light,
-                scratch,
-                debug_cache,
-                light_mode,
-                has_liquids,
-                liquids,
-                waterfall,
-                rain,
-                sandstorm,
-                sand,
-                dust,
-                liquid_alpha,
-                wind,
-                tree_wind_counter,
-                grass_wind_counter,
-                sunflower_wind_counter,
-                sunflower_wind_step,
-                leaves,
-                items,
-                swing,
-                projectiles,
-                world_key,
-                menu,
-                front,
-                front_hint,
-                settings,
-                remote_players,
-                map,
-                hell_black_box_bottom,
-                scene_state,
-                ..
-            } = self;
-
-            if let (Some(gpu), Some(renderer)) = (gpu.as_ref(), renderer.as_mut()) {
-                // `TR_DAY` overrides the time of day (0 = midnight, 1 = noon) so a
-                // screenshot can be compared against the original at a fixed time.
-                // The override only sets the clock — the sky/tile colour comes from
-                // the same `SetBackColor` path as the natural clock (the old
-                // night→day lerp bypassed the ramps and the moon-phase floor).
-                let override_day = crate::env::day_override();
-                let (is_day, natural_time) = match override_day {
-                    Some(d) => {
-                        let is_day = d >= 0.5;
-                        // Pin safely INSIDE the half: the old endpoints sat on the
-                        // day/night boundaries (54000/32400), and one tick of the
-                        // live clock flipped the freshly-ported `SetBackColor`
-                        // ramps into the other half mid-shot.
-                        let clock = if is_day {
-                            // [13500 dawn .. 27000 noon] — `TR_DAY=1.0` = noon.
-                            13500.0 + d as f64 * 13500.0
-                        } else {
-                            // [16215 midnight .. 30800 late night].
-                            16200.0 + (0.5 - d) as f64 * 29200.0
-                        };
-                        (is_day, clock)
-                    }
-                    None => (world.day_time, world.time),
-                };
-                // `Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`. Quantise the
-                // daylight/sky colour to one-second steps: the sun still moves
-                // smoothly on the draw pass, but the light map and world range can
-                // be reused for a second.
-                let quantised = (natural_time / 60.0).floor() * 60.0;
-                let sky_tint = color_of_the_skies(quantised, is_day, world.moon_phase);
-                let clock_time = natural_time;
-                // `SetBackColor`: rain multiplies the sky (and therefore the surface
-                // sunlight) by `1 - cloudAlpha * 0.9`.
-                let rain_alpha = rain.visual_alpha();
-                let rain_dim = (1.0 - rain_alpha * 0.9).max(0.1);
-                let mut sky_tint = [
-                    sky_tint[0] * rain_dim,
-                    sky_tint[1] * rain_dim,
-                    sky_tint[2] * rain_dim,
-                ];
-                // `Main.instance.HorizonRenderer.ModifyHorizonLight`
-                // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
-                // into the sky colour before it becomes the tile light.
-                let atmo = crate::render::sky::atmosphere_factor(
-                    camera.y,
-                    world.world_surface,
-                    world.width,
-                );
-                crate::render::sky::modify_horizon_light(
-                    &mut sky_tint,
-                    world.moon_phase,
-                    is_day,
-                    quantised,
-                    atmo,
-                    rain_alpha,
-                );
-                let sky_light = tile_color(sky_tint);
-                // `Main.DoUpdate_AnimateCursorColors`: mouseTextColor oscillates
-                // 190..=255, changing by 1 per frame, driving light flicker.
-                self.mouse_text_color = (self.mouse_text_color as i32
-                    + self.mouse_text_color_dir as i32)
-                    .clamp(190, 255) as u8;
-                if self.mouse_text_color >= 255 {
-                    self.mouse_text_color_dir = -1;
-                }
-                if self.mouse_text_color <= 190 {
-                    self.mouse_text_color_dir = 1;
-                }
-                // `Main.mouseColor = Main.selColor` runs every frame the colour
-                // screen is open (`Main.cs:50324`), and `CursorColor`
-                // (`Main.cs:52490`) reads that static, so the tint follows the
-                // bars live during a drag and keeps the stored colour once the
-                // menu closes. The menu owns the live copy while it is open.
-                self.cursor.mouse_color = match menu {
-                    Some(m) => m.settings.mouse_color,
-                    None => settings.mouse_color,
-                };
-                // `Main.CursorColor()` (`Main.cs:52477`): the cursor fade pulse.
-                self.cursor.update();
-                // `Main.DoUpdate_AnimateTileGlows`: the demon torch colour ramp.
-                self.demon_torch += self.demon_torch_dir * 0.01;
-                if self.demon_torch > 1.0 {
-                    self.demon_torch = 1.0;
-                    self.demon_torch_dir = -1.0;
-                }
-                if self.demon_torch < 0.0 {
-                    self.demon_torch = 0.0;
-                    self.demon_torch_dir = 1.0;
-                }
-                // `TileLightScanner.Update()`: one `NextSeed()` per frame, then
-                // `WithModifier(x, y)` per tile (done inside the scanner).
-                let mut light_rng = tr_core::tile_light::FastRandom::new(self.light_rng_seed);
-                light_rng.next_seed_in_place();
-                self.light_rng_seed = light_rng.seed;
-                let params = LightParams {
-                    sky: sky_light,
-                    hell_glow: 0.55,
-                    mouse_text_color: self.mouse_text_color,
-                    demon_torch: self.demon_torch,
-                    disco: self.disco,
-                    // `Main.GlobalTimeWrappedHourly = TotalGameTime.TotalSeconds % 3600`.
-                    global_time: anim_time % 3600.0,
-                    // `Main.timeForVisualEffects`: ticks since start, wrapped at 216000.
-                    time_for_visuals: (anim_time * 60.0) % 216000.0,
-                    time: clock_time as f32,
-                    day_time: is_day,
-                    raining: rain.is_raining(),
-                    // `Main.shimmerDarken` / `Main.liquidAlpha[13]`: shimmer is not
-                    // simulated yet, so both stay at their neutral value.
-                    // `Main.shimmerDarken` (SceneState.UpdateShimmer ramps).
-                    shimmer_darken: scene_state.shimmer_darken,
-                    shimmer_alpha: 0.0,
-                    // `Main.sundialCooldown`/`Main.moondialCooldown`
-                    // (`Main.cs:2161`/`:2165`): the scanner and the glow pass
-                    // mute the dial light while one ticks (0..=8, u8 on World).
-                    sundial_cooldown: i32::from(world.sundial_cooldown),
-                    moondial_cooldown: i32::from(world.moondial_cooldown),
-                    // `Main.jellyfishCageMode`: `Main.AnimateTiles` is not ported, so
-                    // every cage stays in mode 0.
-                    cage_mode: [[0u8; tr_core::tile_light::CAGE_FRAMES]; 3],
-                    rng_seed: self.light_rng_seed,
-                    // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`):
-                    // false until the EchoMonolith / 4409-accessory systems land;
-                    // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
-                    draw_invisible_walls: crate::env::show_invisible(),
-                };
-                // `WorldItem.UpdateItem_VisualEffects`'s `AddLight` arms
-                // (`WorldItem.cs:1204-1649`). The C# runs them once per live
-                // drop per tick, in `Main.item` slot order, at the end of
-                // `WorldItem.Update` (`:436`); `items` here is that same slot
-                // order after the step. No arm draws `Main.rand`, so the
-                // placement relative to the sim leaves the stream untouched.
-                for drop in items.iter() {
-                    let Some(def) = crate::registry::get(drop.kind) else {
-                        continue;
-                    };
-                    let wet = drop.box_is_wet(world);
-                    if let Some((x, y, rgb)) = crate::entity_lights::item_light(
-                        def,
-                        drop.pos,
-                        crate::item::SIZE,
-                        wet,
-                        &params,
-                    ) {
-                        self.entity_lights.add(x, y, rgb);
-                    }
-                }
-                let sky_uv = atlas
-                    .as_ref()
-                    .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
-                let mut style = LightStyle::for_mode(*light_mode);
-                // `Lighting.UpdateGlobalBrightness` (`Lighting.cs:108-116`):
-                // the Darkness debuff's `blind` flag drops GlobalBrightness
-                // 1.2 → 1.0 while it lasts.
-                if player
-                    .as_ref()
-                    .is_some_and(|p: &crate::player::Player| p.blind)
-                {
-                    style.brightness = 1.0;
-                }
-                // `Main.ForcedMinimumZoom` (`Main.cs:61989-61994`, computed per
-                // draw) splits the two view matrices: the background chain
-                // zooms to the bare floor (`BackgroundViewMatrix.Zoom`,
-                // `:61998`) and the world chain multiplies it by the clamped
-                // `GameZoomTarget` (`GameViewMatrix.Zoom`, `:61999`) — the
-                // port's `zoom` is that clamp (S1-B-5, S1-G-7).
-                let bg_zoom = App::forced_minimum_zoom((screen.x, screen.y));
-                let world_zoom = bg_zoom * *zoom;
-                // Snap the render camera so integer world coordinates land on whole
-                // screen pixels at any zoom. With a fractional camera, nearest-neighbour
-                // sampling makes every tile texture crawl sub-pixel as the camera moves
-                // while the player (drawn with `snap_to_screen`) stayed crisp, so the
-                // world appeared to slide under the character. Rounding `cam * zoom`
-                // keeps the step at one screen pixel even at 1.5x / 2x.
-                let draw_cam = (*camera * world_zoom).round() / world_zoom;
-                let surface_px = world.world_surface as f32 * TILE_PX;
-                // `Main.DrawWaters` (`Main.cs:57473-57489`): the `liquidAlpha`
-                // cross-fade ramps per frame while the current water style is a
-                // plain water style — lava (1), honey (11) and shimmer (14) sit
-                // outside the ramp.
-                let water_style_now = crate::biome::calculate_water_style(world, draw_cam);
-                if crate::render::liquids::is_liquid_style_water(water_style_now) {
-                    for (i, a) in liquid_alpha.iter_mut().enumerate() {
-                        *a = if i == water_style_now {
-                            (*a + 0.2).min(1.0)
-                        } else {
-                            (*a - 0.2).max(0.0)
-                        };
-                    }
-                }
-                // `Main.DoDraw_Waterfalls` + `WaterfallManager.AddLight`: the
-                // waterfall walk runs once per frame, before the light map and
-                // outside the G6-cached world pass — its quads are buffered for
-                // the tile pass and its `AddLight` list feeds the light compute.
-                // Running it unconditionally (not only on world-range rebuilds)
-                // keeps the light feed a pure function of the frame index.
-                let mut leaf_spawns = Vec::new();
-                let mut leaf_rng = tr_core::tile_light::FastRandom::new(
-                    (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
-                );
-                if !crate::env::no_waterfall() {
-                    let half_v = screen * 0.5 / world_zoom;
-                    let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
-                        .clamp(0, world.width - 1);
-                    let vx1 = (((camera.x + half_v.x) / TILE_PX).ceil() as i32 + 1)
-                        .clamp(0, world.width - 1);
-                    let vy0 = (((camera.y - half_v.y) / TILE_PX).floor() as i32 - 1)
-                        .clamp(0, world.height - 1);
-                    let vy1 = (((camera.y + half_v.y) / TILE_PX).ceil() as i32 + 1)
-                        .clamp(0, world.height - 1);
-                    let lights = waterfall.draw(
-                        world,
-                        light,
-                        &style,
-                        anim_time,
-                        liquid_alpha,
-                        params.mouse_text_color,
-                        (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
-                        [vx0, vy0, vx1, vy1],
-                    );
-                    scratch.waterfall_quads = waterfall.take_quads();
-                    // `WaterfallManager.DrawWaterfall`'s accumulators
-                    // (`WaterfallManager.cs:710-733` + the store `:960-965`):
-                    // per nearby fall segment, `1 - dist/(screenWidth*0.75)`
-                    // summed into the waterfall (any kind except the lava and
-                    // the rain/shimmer falls) or the lavafall (kind 1)
-                    // strength; the nearest segment's world position rides
-                    // along for the loop pan.
-                    let mut wfs: [f32; 3] = [0.0, 0.0, 0.0];
-                    let mut lfs: [f32; 3] = [0.0, 0.0, 0.0];
-                    let cam_c = Vec2::new(camera.x + screen.x * 0.5 - screen.x * 0.5, camera.y);
-                    let _ = cam_c;
-                    for q in &scratch.waterfall_quads {
-                        let (fx, fy) = (q.pos[0], q.pos[1]);
-                        let dx = (fx - camera.x).abs();
-                        let dy = (fy - camera.y).abs();
-                        if dx >= screen.x * 2.0 || dy >= screen.y * 2.0 {
-                            continue;
-                        }
-                        let strength = 1.0 - (dx * dx + dy * dy).sqrt() / (screen.x * 0.75);
-                        if strength <= 0.0 {
-                            continue;
-                        }
-                        let (lava, slot) = if q.texture == 1 {
-                            (true, &mut lfs)
-                        } else {
-                            (false, &mut wfs)
-                        };
-                        let _ = lava;
-                        slot[0] += strength;
-                        if dx < slot[1].abs() || slot[1] == 0.0 {
-                            slot[1] = dx;
-                        }
-                        if dy < slot[2].abs() || slot[2] == 0.0 {
-                            slot[2] = dy;
-                        }
-                    }
-                    self.ambient_waterfall = (wfs[0], wfs[1], wfs[2]);
-                    self.ambient_lavafall = (lfs[0], lfs[1], lfs[2]);
-                    scratch.waterfall_lights = lights;
-                    // `LightingEngine.ApplyPerFrameLights`'s swap
-                    // (`LightingEngine.cs:228-233`): the list just filled becomes
-                    // the one the next frame's light pass reads. The waterfall
-                    // sources above are swapped by their own manager, so only the
-                    // entity list is swapped here.
-                    self.entity_lights.end_frame();
-                    // `WaterfallManager.TrySparkling`: drain the walk's spawns
-                    // into the rain module's dust particles.
-                    rain.spawn_sparkles(waterfall.take_sparkles());
-                } else {
-                    scratch.waterfall_quads.clear();
-                    scratch.waterfall_lights.clear();
-                    self.entity_lights.end_frame();
-                }
-
-                // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind WALK
-                // itself lives on the shared world tick now
-                // (`world_sim::weather::update_world_tick`, ×`Main.dayRate`,
-                // `Main.cs:17228-17231`); the sway counters stay per frame,
-                // faster with stronger wind.
-                wind.sway_enabled = settings.tiles_sway && !crate::env::no_wind();
-                // `TR_WIND_FORCE=<speed>`: pin `windSpeedCurrent` so the sway and
-                // the leaf frequency are screenshotable at a chosen strength.
-                if let Some(f) = crate::env::wind_force() {
-                    wind.speed_current = f.clamp(-1.24, 1.24);
-                }
-                tr_core::wind::advance_tree_counter(tree_wind_counter, wind.speed_current);
-                tr_core::wind::advance_counter(grass_wind_counter, wind.speed_current);
-                // `TileDrawing.Update`'s sunflower counter (`TileDrawing.cs:374`)
-                // runs per world-update tick in the original
-                // (`TilesRenderer.Update()` in `Main.DoUpdateInWorld_Inner`,
-                // `Main.cs:17812`), so it steps on the 1/60 accumulator instead of
-                // the redraw cadence above — the flower's cadence stays
-                // tick-quantised (and screenshotable) at any refresh rate.
-                sunflower_wind_step.tick(dt, |_| {
-                    tr_core::wind::advance_sunflower_counter(
-                        sunflower_wind_counter,
-                        wind.speed_current,
-                    );
-                });
-
-                // `TileDrawing.Update`'s WindGrid chain (`TileDrawing.cs:377-378`,
-                // S1-G-8): the grid covers the screen's draw area
-                // (`EnsureWindGridSize`, `:7773-7778` — the port's view rect is
-                // the waterfall scan's camera±half shape) and ticks every
-                // update; then the moving player stamps the tiles their
-                // hitbox overlaps (`WindGrid.ScanPlayer`, `WindGrid.cs:73-101`
-                // — the single-player arm; the port's roster is the one local
-                // player). The push family's draw-pass consumers are the
-                // S1-G-1 tile passes (the grass/vine sway reads the grid).
-                {
-                    let half = screen * 0.5 / *zoom;
-                    let vx0 = ((camera.x - half.x) / TILE_PX).floor() as i32;
-                    let vx1 = ((camera.x + half.x) / TILE_PX).ceil() as i32;
-                    let vy0 = ((camera.y - half.y) / TILE_PX).floor() as i32;
-                    let vy1 = ((camera.y + half.y) / TILE_PX).ceil() as i32;
-                    wind.wind_grid.set_size(vx1 - vx0, vy1 - vy0);
-                    wind.wind_grid.update();
-                    if wind.sway_enabled {
-                        if let Some(p) = player.as_ref() {
-                            wind.scan_player(
-                                world,
-                                (p.x, p.y),
-                                (p.x + crate::player::WIDTH, p.y + p.height),
-                                (p.vx, p.vy),
-                                (camera.x, camera.y),
-                                (screen.x, screen.y),
-                            );
-                        }
-                    }
-                }
-
-                // Liquids animate the texture at 8 fps; include the frame in the G6
-                // key only when the world has any liquid.
-                let liquid_anim = if *has_liquids {
-                    ((anim_time * 8.0) as u32) & 15
-                } else {
-                    0
-                };
-
-                // G6: the whole world range (sky strips, tiles, walls, dark rects)
-                // depends on exactly these values. A hit reuses last frame's uploaded
-                // instance range and only rebuilds the UI.
-                let key = WorldFrameKey {
-                    cam_tile: [
-                        (camera.x / TILE_PX).floor() as i32,
-                        (camera.y / TILE_PX).floor() as i32,
-                    ],
-                    // The effective GameView zoom — the floor times the
-                    // clamped target (`Main.cs:61999`) — is what the cached
-                    // world range's pixels depend on.
-                    zoom: world_zoom.to_bits(),
-                    screen: [screen.x.to_bits(), screen.y.to_bits()],
-                    sky_light: [
-                        params.sky[0].to_bits(),
-                        params.sky[1].to_bits(),
-                        params.sky[2].to_bits(),
-                    ],
-                    hell_glow: params.hell_glow.to_bits(),
-                    light_params: params.identity(),
-                    light_mode: *light_mode as u32,
-                    anim: if style.perturb > 0.0 {
-                        anim_time.to_bits()
-                    } else {
-                        // `TileDrawing.GetWindCycle`: the sway is zero below
-                        // |wind| 0.08 (`Utils.GetLerpValue(0.08, 0.18, ...)`),
-                        // so a calm world keeps the world range cacheable; a
-                        // windy one animates the sway tiles every frame.
-                        liquid_anim
-                            ^ (if wind.sway_enabled && wind.speed_current.abs() > 0.08 {
-                                (grass_wind_counter.to_bits() as u32)
-                                    ^ (tree_wind_counter.to_bits() as u32)
-                                    ^ (sunflower_wind_counter.to_bits() as u32)
-                            } else {
-                                0
-                            })
-                    },
-                    player_key,
-                    npc_key,
-                    items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15),
-                    hand_key: {
-                        let held = inventory
-                            .get(*selected)
-                            .filter(|s| s.count > 0)
-                            .map_or(0, |s| s.kind as u32);
-                        let phase = if *swing > 0.0 {
-                            (((1.0 - *swing / self.swing_max.max(f32::EPSILON)) * 40.0) as u32)
-                                .min(40)
-                        } else {
-                            0
-                        };
-                        held | (phase << 16)
-                    },
-                    light_generation: light.generation(),
-                    // S1-H-15: `shade` multiplies every tile tint by the style's
-                    // brightness, and the Darkness debuff's `blind` flag drops it
-                    // 1.2 → 1.0 (`Lighting.cs:108-116`) — the input must ride the
-                    // key or a blind gain/loss keeps the previous frame's tints.
-                    brightness: style.brightness.to_bits(),
-                    waterfall: waterfall.anim_key(),
-                    net_key: {
-                        // FNV-1a over the peers' smoothed state and the NPC
-                        // smoothing accumulators (`npc_key` covers the base
-                        // positions; the offsets decay every frame without
-                        // moving the base).
-                        let mut h: u32 = 0xcbf2_9ce4;
-                        let mut mix = |h: &mut u32, v: u32| {
-                            for b in v.to_le_bytes() {
-                                *h = (*h ^ b as u32).wrapping_mul(0x0100_0193);
-                            }
-                        };
-                        for rp in remote_players.values() {
-                            mix(&mut h, rp.id);
-                            mix(&mut h, (rp.x + rp.off_x).to_bits());
-                            mix(&mut h, (rp.y + rp.off_y).to_bits());
-                            mix(&mut h, rp.leg_frame);
-                            mix(&mut h, rp.body_frame);
-                            mix(&mut h, rp.hp as u32);
-                        }
-                        for n in npcs.iter() {
-                            mix(&mut h, n.net_offset.x.to_bits());
-                            mix(&mut h, n.net_offset.y.to_bits());
-                        }
-                        h
-                    },
-                    world_revision: world.revision,
-                };
-                let reuse_world = !crate::env::no_cache() && *world_key == Some(key);
-                if reuse_world {
-                    renderer.begin_frame_keep_world();
-                    tile_stats.draw_ms = 0.0;
-                    tile_stats.light_ms = 0.0;
-                    tile_stats.world_reused = true;
-                } else {
-                    renderer.begin_frame();
-                }
-                // The parallax sky follows the camera continuously; it lives in the
-                // always-rebuilt back range so the world range can stay cached.
-                // `Main.UpdateAtmosphereTransparencyToSkyColor` runs per draw with
-                // `screenPosition.Y + screenHeight / 2` (`Main.cs:61983`) — the
-                // backbuffer-mapped view's top edge plus half the backbuffer. The
-                // port's `draw_cam` is that view's centre and it spans
-                // `screen / zoom` world pixels, so the equivalent input is
-                // `cam.y - screen.y / (2 * zoom) + screen.y / 2`.
-                self.atmo = tr_core::sky::atmosphere_transparency(
-                    draw_cam.y - screen.y / (2.0 * world_zoom) + screen.y / 2.0,
-                    world.world_surface,
-                    world.width,
-                );
-                draw_phase("sky");
-                draw_sky(
-                    renderer,
-                    draw_cam,
-                    bg_zoom,
-                    screen,
-                    world,
-                    clouds,
-                    sky,
-                    stars,
-                    surface_px,
-                    is_day,
-                    clock_time,
-                    anim_time,
-                    sky_uv,
-                    sky_tint,
-                    rain.cloud_bg(),
-                    settings.background,
-                    cave_parallax(settings.parallax_scroll),
-                    bg_alpha_front,
-                    bg_alpha_far,
-                    light,
-                    hell_black_box_bottom,
-                    &self.ambience.entities,
-                    lookups,
-                    sky_tint,
-                    self.atmo,
-                    self.game_update_count,
-                    self.mouse_text_color,
-                );
-                // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
-                // `Overlays.Scene.Draw(Background)`.
-                crate::render::screen_fx::draw_darkness_back(renderer, screen, scene_state);
-                draw_phase("world");
-                if !reuse_world {
-                    tile_stats = draw_tiles(
-                        renderer,
-                        world,
-                        lookups,
-                        atlas.as_ref(),
-                        draw_cam,
-                        world_zoom,
-                        screen,
-                        &params,
-                        light,
-                        scratch,
-                        &style,
-                        &self.entity_lights,
-                        anim_time,
-                        waterfall,
-                        render_player.as_ref(),
-                        player_assets,
-                        // `DrawPlayer_27_HeldItem`'s gate
-                        // (`PlayerDrawLayers.cs:3084-3086`): the item rides the
-                        // player layers while it is being used (`flag =
-                        // itemAnimation > 0 && useStyle != 0`) OR when its
-                        // `holdStyle` keeps it in the hand at rest (`flag2 =
-                        // holdStyle != 0`) — torches.
-                        match render_player.as_ref() {
-                            Some(_)
-                                if *swing > 0.0
-                                    || inventory.get(*selected).is_some_and(|s| {
-                                        s.count > 0 && item::hold_style(s.kind) != 0
-                                    }) =>
-                            {
-                                inventory
-                                    .get(*selected)
-                                    .filter(|slot| slot.count > 0)
-                                    .map(|slot| {
-                                        // The builders consume the remaining
-                                        // use fraction (`itemAnimation /
-                                        // itemAnimationMax`).
-                                        (slot.kind, *swing / self.swing_max.max(f32::EPSILON))
-                                    })
-                            }
-                            _ => None,
-                        },
-                        // `Player.armor[0..3]`'s item kinds — the armor draw
-                        // input (head/body/legs, 0 = the empty slot).
-                        [
-                            self.equip
-                                .armor
-                                .first()
-                                .map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
-                            self.equip
-                                .armor
-                                .get(1)
-                                .map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
-                            self.equip
-                                .armor
-                                .get(2)
-                                .map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
-                        ],
-                        npcs,
-                        npc_assets,
-                        items,
-                        &remote_players.values().cloned().collect::<Vec<_>>(),
-                        *edit_target,
-                        liquid_alpha,
-                        // `TrySparkling`'s draw thread: the frame count pins it.
-                        (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
-                        wind,
-                        *grass_wind_counter,
-                        *tree_wind_counter,
-                        *sunflower_wind_counter,
-                        &mut leaf_spawns,
-                    );
-                    *world_key = Some(key);
-                }
-
-                // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
-                // leaf gores; `Gore_UpdateLeaf` ticks them and the draw rides the
-                // world-effect range like the rain (world content — under the map
-                // batches and the interface). `TR_NO_WIND` is the A/B switch for
-                // the whole wind feature, spawns included.
-                let wind_ab_on = !crate::env::no_wind();
-                let drained: Vec<_> = leaf_spawns.drain(..).collect();
-                for s in drained.into_iter().take_while(|_| wind_ab_on) {
-                    if leaves.len() >= 400 {
-                        break;
-                    }
-                    leaves.push(crate::render::foliage::LeafGore::from_spawn(
-                        s,
-                        &mut leaf_rng,
-                    ));
-                }
-                crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
-
-                draw_phase("rain");
-                rain.draw(renderer, lookups, light, draw_cam, world_zoom, screen);
-                // `Main.DrawDust`'s 268 entries: the flying sand, the same
-                // world-effect range as the rain (`Main.DrawRain`'s draw call
-                // site — world content, under the map batches and the UI).
-                crate::sand::draw(dust, renderer, lookups, light, draw_cam, world_zoom, screen);
-                // The type-213 wheel sparks — `Main.DrawDust`'s generic
-                // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
-                // world-content range as the rain/sand dust.
-                crate::minecart::draw(dust, renderer, lookups, draw_cam, world_zoom, screen);
-                crate::render::foliage::draw_leaves(
-                    renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
-                );
-                // `Main.DrawWires` (`Main.cs:57028-57030`): the wire overlay
-                // rides the tile batch after the liquids, under the
-                // over-wire entities (the port draws it before the
-                // projectiles, matching `DrawCachedProjsOverWiresUI`).
-                draw_phase("wires");
-                crate::render::wires::draw_wires(
-                    renderer, world, light, &style, draw_cam, world_zoom, screen, anim_time,
-                );
-                // `Main.cs:63276-63277` (`DoDraw_WallsTilesNPCs`): the Moon
-                // Lord's death drama pieces + blasts, after the walls and the
-                // WoF/back gore, under the non-solid tiles.
-                crate::render::screen_fx::draw_moonlord_pieces(
-                    renderer,
-                    lookups,
-                    light,
-                    draw_cam,
-                    world_zoom,
-                    screen,
-                    scene_state,
-                );
-                crate::render::screen_fx::draw_moonlord_explosions(
-                    renderer,
-                    lookups,
-                    draw_cam,
-                    world_zoom,
-                    screen,
-                    scene_state,
-                );
-                draw_phase("projectiles");
-                for p in projectiles.slots().iter().filter(|p| p.active) {
-                    // The yoyo family's string anchors on the player's
-                    // centre (`Main.cs:27943-27945`'s mountedCenter +
-                    // gfxOffY) — the frame's rendered player carries both.
-                    let hand = render_player.as_ref().map(|pl| {
-                        let (cx, cy) = pl.center();
-                        (cx, cy + pl.gfx_off_y)
-                    });
-                    // `Main.GlobalTimeWrappedHourly` (`anim_time % 3600`, the
-                    // same wrapped value the world pass keys on) — the Rainbow
-                    // Rod's trail hue scrolls by it (`RainbowRodDrawer.cs:25`).
-                    p.draw_with_hand(
-                        renderer,
-                        lookups,
-                        light,
-                        draw_cam,
-                        world_zoom,
-                        screen,
-                        hand,
-                        anim_time % 3600.0,
-                    );
-                }
-                // `Main.cs:62322-62324`: `ScreenDarkness.DrawFront`,
-                // `MoonlordDeathDrama.DrawWhite` and `ScreenObstruction.Draw`
-                // close the world pass, after the projectiles (`:62251`) and
-                // the over-wire cached projectiles (`:62315`).
-                crate::render::screen_fx::draw_darkness_front(renderer, screen, scene_state);
-                crate::render::screen_fx::draw_white(renderer, screen, scene_state);
-                // `:55` — `PerspectivePlayer.getRect()` in framebuffer pixels.
-                let player_rect = render_player
-                    .as_ref()
-                    .or(player.as_ref())
-                    .map(|p| {
-                        let sx = (p.x - draw_cam.x) * world_zoom + screen.x * 0.5;
-                        let sy = (p.y - draw_cam.y) * world_zoom + screen.y * 0.5;
-                        [
-                            sx,
-                            sy + p.gfx_off_y * world_zoom,
-                            crate::player::WIDTH * world_zoom,
-                            crate::player::HEIGHT * world_zoom,
-                        ]
-                    })
-                    .unwrap_or([0.0, 0.0, 0.0, 0.0]);
-                crate::render::screen_fx::draw_obstruction(
-                    renderer,
-                    lookups,
-                    screen,
-                    player_rect,
-                    scene_state.screen_obstruction,
-                );
-
-                let boss = npcs
-                    .iter()
-                    .find(|n| {
-                        (n.kind == NpcKind::KingSlime || n.kind == NpcKind::EyeOfCthulhu)
-                            && n.hp > 0
-                    })
-                    .map(|n| (n.hp, n.max_hp));
-                // `Main.cs:62147-62181`: while the fullscreen map is open `Main.Draw`
-                // returns early after `DrawMap`, before `DrawInterface` (`62432`), so
-                // the HUD (hotbar, life, inventory) is not drawn over the map.
-                let fullscreen_map = settings.map_enabled && map.as_ref().is_some_and(|m| m.open);
-                // The minimap branch draws **before** the HUD: the vanilla
-                // interface passes are ordered 16 (map/minimap,
-                // `Main.cs:44796`) < 25/27/30 (resources/inventory/hotbar,
-                // `:44831/:44841/:44861`), so the hearts and the open inventory
-                // paint over the frame. `Main.DrawMap`'s `mapStyle == 1`
-                // branch (`Main.cs:55503-55547`): the three vanilla passes in
-                // draw order — the `DrawTo` black backdrop (`:55546`, via
-                // `map_back` so it lands under the tiles), the tile pass
-                // (`MapRenderer.DrawMap`, `:55609`) and the frame foreground
-                // batch (`:55768-55769`). `mapStyle == 2` (the overlay) draws
-                // nothing (out of P4 scope, the whole-UI P4 plan's
-                // Uncertainty 7).
-                let view_center = [camera.x / TILE_PX, camera.y / TILE_PX];
-                // `Main.MapScale` (`Main.cs:67297`, clamp `Main.cs:4494`): the
-                // minimap anchor and the whole panel's render scale, through the
-                // `Matrix.CreateScale(Main.MapScale)` batch transform
-                // (`Main.cs:55309-55329`). The full map keeps
-                // `Main.mapFullscreenScale` (`Main.cs:55390`, default 4f
-                // `:66756`) and the zoom axis `Main.mapMinimapScale` is a
-                // separate multiplier (`Main.cs:55515-55522`).
-                let map_scale = settings.map_scale;
-                if settings.map_enabled
-                    && menu.is_none()
-                    && front.is_none()
-                    && !crate::env::no_hud()
-                    && !fullscreen_map
-                    // `Main.inFancyUI` (`IngameFancyUI.cs:64-72`): the
-                    // bestiary state covers the interface — the minimap HUD
-                    // does not draw under it.
-                    && !self.bestiary_open
-                    && self.map_style == 1
-                {
-                    if let Some(m) = map.as_ref() {
-                        let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin_raw(
-                            screen, map_scale,
-                        ));
-                        // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
-                        ui::minimap::draw_background(renderer, lookups, pos, 1.0, map_scale);
-                        m.draw_minimap(renderer, world, screen, view_center, map_scale);
-                        // `Main.cs:55696-55703`: the same layer walk inside the
-                        // `mapStyle == 1` branch, clipped to the 240x240 minimap
-                        // rect and drawn at
-                        // `num46 = ((mapMinimapScale * 0.25 * 2 + 1) / 3)`
-                        // capped at 1 (`:55698-55702`). The context's
-                        // `mapPosition`/`mapOffset` are the transform-space
-                        // `(num12, num13)` and `(num3 + num10, num4 + num11)`
-                        // (`:55539-55544` + `:55703`): the raw panel origin plus
-                        // the sub-tile centres, which `map_minimap_quad` already
-                        // computes for the tile pass, so the clip is its rect.
-                        let q = map::map_minimap_quad(
-                            view_center,
-                            m.minimap_scale,
-                            map_scale,
-                            screen,
-                            world,
-                        );
-                        let num46 = ((m.minimap_scale * 0.25 * 2.0 + 1.0) / 3.0).min(1.0);
-                        let digtoise =
-                            crate::map_layers::digtoise_marker(player.as_ref(), &self.projectiles);
-                        let near_pylon = player.as_ref().is_some_and(|p| {
-                            let (cx, cy) = p.center();
-                            tr_core::pylons::is_player_near_a_pylon(
-                                world,
-                                ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
-                            )
-                        });
-                        let _ = crate::map_layers::map_layers_draw(
-                            renderer,
-                            lookups,
-                            &crate::map_layers::MapIconInputs {
-                                world,
-                                player: player.as_ref(),
-                                item_drops: &self.items,
-                                digtoise,
-                                pings: crate::map_layers::map_pings(m),
-                                pylons: &map_layer_pylons,
-                                near_pylon,
-                                map: Some(m),
-                                team_based_spawns,
-                                mouse: self.mouse_pos,
-                            },
-                            [0.0, 0.0],
-                            ui::minimap::minimap_origin_raw(screen, map_scale),
-                            Some([
-                                q.dest[0],
-                                q.dest[1],
-                                q.dest[0] + q.dest[2],
-                                q.dest[1] + q.dest[3],
-                            ]),
-                            m.minimap_scale,
-                            num46,
-                            1.0,
-                        );
-                        // The hover highlight is `MinimapFrame.Update`'s
-                        // `buttonUnderMouse.IsHighlighted`
-                        // (`MinimapFrame.cs:163`), resolved per frame in
-                        // `handle_minimap_clicks` — like the source, where
-                        // `DrawTo` runs `Update` before the foreground batch
-                        // (`MinimapFrameManager.cs:45`, `Main.cs:55769`).
-                        let s = ui::minimap::style_index(&settings.minimap_frame);
-                        ui::minimap::draw_foreground(
-                            renderer,
-                            lookups,
-                            s,
-                            pos,
-                            self.minimap_hover,
-                            map_scale,
-                        );
-                    }
-                }
-                if let Some(front) = front.as_mut() {
-                    // `Main.menuMode == 888` (`Main.cs:51059-51064`): the
-                    // front-end draws over the world backdrop the frame
-                    // already rendered — the draw site picks `front` first,
-                    // then `menu` (Review Focus 1).
-                    let mut d = FrontDraw {
-                        renderer: &mut *renderer,
-                        lookups: &*lookups,
-                        screen,
-                        players: &self.players,
-                        worlds: &self.worlds,
-                        active_difficulty,
-                        player_assets: &*player_assets,
-                        anim_time,
-                        mouse: self.mouse_pos,
-                        front_mouse_down: self.front_mouse_down,
-                        vk_grid: self.vk_grid,
-                        frame_count: *frame_count,
-                    };
-                    front.draw(&mut d);
-                    // The port's not-ported notice for the front screens
-                    // (ours, like `Menu.hint` — not in the original).
-                    if let Some(hint) = front_hint {
-                        let w = hud_text_width(renderer, lookups, hint, 0.8);
-                        hud_text(
-                            renderer,
-                            lookups,
-                            (screen.x - w) * 0.5,
-                            screen.y - 64.0,
-                            0.8,
-                            [1.0, 0.8, 0.45, 1.0],
-                            hint,
-                        );
-                    }
-                } else if menu.is_none() && !crate::env::no_hud() && !fullscreen_map {
-                    let craft_available = if self.crafting_open {
-                        // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`): the
-                        // owned counts fold the inventory and the in-range
-                        // chests; the environment reads the adjacency scan
-                        // and the zone flags.
-                        // The reach (`Player.tileRangeX/Y` +
-                        // `TileReachCheckSettings.Simple`): the Extendo Grip /
-                        // the Architect's Gizmo Pack, the held Toolbox, the
-                        // Journey mode's Far Placement Range power and the
-                        // artisan loaf.
-                        let reach = player.as_ref().map_or((5, 3), |p| {
-                            craft::tile_reach(
-                                p.equipped[..10].contains(&2215)
-                                    || p.equipped[..10].contains(&3061),
-                                self.mouse_item.kind == 1923,
-                                self.creative_powers.far_placement_range(),
-                                p.ate_artisan_bread,
-                            )
-                        });
-                        let (adj, in_range) = player
-                            .as_ref()
-                            .map(|p| {
-                                (
-                                    craft::scan_adjacent(world, p, reach),
-                                    craft::chests_in_range(
-                                        world,
-                                        p,
-                                        &self.world_chests,
-                                        settings.craft_from_nearby_chests,
-                                    ),
-                                )
-                            })
-                            .unwrap_or_else(|| {
-                                (
-                                    craft::Adjacent {
-                                        tiles: Vec::new(),
-                                        water: false,
-                                        honey: false,
-                                        lava: false,
-                                        alchemy_table: false,
-                                    },
-                                    Vec::new(),
-                                )
-                            });
-                        let zones = craft::Zones {
-                            snow: self.scene_metrics.zone_snow,
-                            graveyard: self.scene_metrics.zone_graveyard,
-                        };
-                        // `Recipe.CanCraft`'s two gates (`Recipe.cs:349-356`).
-                        let gates = craft::Gates {
-                            unlocked_biome_torches: player
-                                .as_ref()
-                                .map_or(false, |p| p.unlocked_biome_torches),
-                            // `SpecialSeedFeatures.Mechdusa`
-                            // (`SpecialSeedFeatures.cs:119-127`).
-                            mechdusa: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
-                                && world
-                                    .seeds
-                                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
-                        };
-                        // `NewCraftingUI.cs:596-611`: the grid shows only the
-                        // recipes whose product passes the filterer.
-                        self.craft_filters.shown(craft::available_with_gates(
-                            inventory,
-                            &self.world_chests,
-                            &in_range,
-                            &adj,
-                            &zones,
-                            self.craft_filter.as_ref(),
-                            None,
-                            &gates,
-                        ))
-                    } else {
-                        Vec::new()
-                    };
-                    // The unified open-container state (`Player.chest`,
-                    // `Player.cs:2876`/`:2878`/:2880) — the panel reads the
-                    // player's fields now that one field covers every kind.
-                    let panel_chest = player
-                        .as_ref()
-                        .map_or(crate::bank::CHEST_CLOSED, |p| p.chest);
-                    let (panel_chest_x, panel_chest_y) =
-                        player.as_ref().map_or((0, 0), |p| (p.chest_x, p.chest_y));
-                    ui::draw_hud(
-                        renderer,
-                        *camera,
-                        *zoom,
-                        screen,
-                        lookups,
-                        inventory,
-                        &self.favorite_slots,
-                        &self.equip,
-                        self.equip_page,
-                        *selected,
-                        &self.hotbar_scales,
-                        &npcs[..],
-                        player.as_ref(),
-                        boss,
-                        // `BigProgressBarSystem.ShowText` (`ShowBossBarHealthText`,
-                        // `BigProgressBarSystem.cs:231`/`:236`): the gate on the
-                        // boss bar's numbers (`BigProgressBarHelper.cs:53-55`).
-                        settings.boss_bar_text,
-                        self.inventory_open,
-                        self.crafting_open,
-                        self.craft_filters.active_flags(),
-                        &self.mouse_item,
-                        self.mouse_pos,
-                        &self.cursor,
-                        &craft_available,
-                        ui::UiPulse {
-                            // `Main.mouseTextColor / 255` (`Main.cs:20355`).
-                            text: self.mouse_text_color as f32 / 255.0,
-                            cursor_scale: self.cursor.scale(),
-                        },
-                        m_h,
-                        self.map_style,
-                        self.bestiary_open,
-                        self.bestiary_selected,
-                        &self.bestiary.kills,
-                        &mut self.chat,
-                        &self.emotes,
-                        // BUG-11: the in-game options window's state
-                        // (`Main.ingameOptionsWindow`) — the Settings button
-                        // and the panel draw over the open inventory.
-                        Some((settings, &self.ingame_options)),
-                        self.shop_npc.map(|_| {
-                            (
-                                self.shop_stock.as_slice(),
-                                self.shop_mood,
-                                self.discount_available,
-                            )
-                        }),
-                        // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
-                        // + the statics) — the plan-amendment insertion
-                        // (#10): the disjoint `App` fields the panel reads
-                        // and animates per frame. The unified open state is
-                        // `Player.chest` (M3-CHEST-INT) — `panel_chest`
-                        // carries the full index space; the panel itself is
-                        // the world-chest surface (the `>= 0` gate in
-                        // `ui::chest::draw`, the STORE-1 two-panel shape).
-                        ui::chest::PanelState {
-                            chest: panel_chest,
-                            origin: (panel_chest_x, panel_chest_y),
-                            crafting_open: self.crafting_open,
-                            tile: world
-                                .tile(panel_chest_x, panel_chest_y)
-                                .filter(|t| t.active())
-                                .map(|t| (t.kind, t.frame_x)),
-                            slots: (panel_chest > -1)
-                                .then(|| {
-                                    crate::chest::chest_slots(
-                                        &self.world_chests,
-                                        panel_chest as usize,
-                                    )
-                                })
-                                .flatten(),
-                            editing: chest_editing,
-                            name: chest_stored_name,
-                            max_items: chest_max_items,
-                            edit_text: &chest_edit_text,
-                            blinker: &mut self.text_blinker,
-                            scroll_row: &mut self.chest_scroll_row,
-                            button_scales: &mut self.chest_button_scales,
-                            button_hovered: &mut self.chest_button_hovered,
-                            audio: &mut self.audio,
-                        },
-                        self.in_reforge_menu.then(|| {
-                            let cost = self
-                                .reforge_slot
-                                .kind
-                                .gt(&0)
-                                .then(|| {
-                                    crate::shop::reforge_cost(
-                                        crate::prefix::prefixed_stats(
-                                            self.reforge_slot.kind,
-                                            self.reforge_slot.prefix,
-                                        )
-                                        .map(|s| s.value)
-                                        .unwrap_or(0),
-                                        self.reforge_slot.count.max(1),
-                                        self.shop_mood,
-                                    )
-                                })
-                                .unwrap_or(0);
-                            (&self.reforge_slot, cost, self.reforge_cooldown)
-                        }),
-                        player.as_ref().and_then(|p| {
-                            crate::bank::bank_for_chest(p.chest)
-                                .map(|bi| (&p.banks[bi][..], p.chest))
-                        }),
-                        // `Main.DrawPVPIcons`'s state (`Main.cs:42654`): the
-                        // net-mode / team-based-spawns gates, the local
-                        // player's `hostile` + `team` and `Main.teamCooldown`.
-                        &pvp_icon_state,
-                        // `Player.hideVisibleAccessory` (`Player.cs:1708`): the
-                        // accessory visible/hidden ticks in `DrawInventory`
-                        // (`Main.cs:41425-41460`).
-                        &hide_visible_accessory,
-                        // The buff bar (`Main.DrawInterface_Resources_Buffs`).
-                        &mut self.buff_alpha,
-                        &mut self.buff_removals,
-                        right_release,
-                        vampire_seed,
-                        // `Player.HasNPCBannerBuff`'s table — the Monster
-                        // Banner's hover list (`Main.cs:21360-21388`).
-                        &self.scene_metrics.npc_banner_buff,
-                    );
-                    // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
-                    // the coin cells' animation clocks step per frame after
-                    // the interface layers draw.
-                    self.coin_slot.update_slot_anims();
-                    // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
-                    // the death broadcast + the softcore "Dropped coins"
-                    // line while the respawn timer runs.
-                    if let Some(p) = player.as_ref() {
-                        if p.hp <= 0 {
-                            // `Main._framesWithRespawnSkipAvailable`
-                            // (`Main.cs:45348-45376`): the counter the C#
-                            // ticks inside `DrawDeathText` — up while the skip
-                            // is allowed, zeroed otherwise.
-                            if self.respawn_skip_available {
-                                self.respawn_skip_frames =
-                                    self.respawn_skip_frames.saturating_add(1);
-                            } else {
-                                self.respawn_skip_frames = 0;
-                            }
-                            ui::draw_death_screen(
-                                renderer,
-                                lookups,
-                                screen,
-                                &self.death_text,
-                                self.lost_coins,
-                                &self.lost_coin_string,
-                                p.respawn_timer,
-                                self.respawn_skip_frames,
-                            );
-                        }
-                    }
-                    // `Main.DrawInvasionProgress` (`Main.cs:47696-47840`):
-                    // the bar draws while the fade alpha holds (the
-                    // display-timer decay rides the world tick).
-                    ui::draw_invasion_progress(
-                        renderer,
-                        lookups,
-                        screen,
-                        self.invasion_progress,
-                        self.invasion_progress_max,
-                        self.invasion_progress_icon,
-                        self.invasion_progress_wave,
-                        self.invasion_progress_alpha,
-                    );
-                } else if let Some(menu) = menu.as_mut() {
-                    menu.draw(renderer, lookups, screen, dt);
-                }
-                // `UIAchievementsMenu` (`Main.cs:48931`'s menuMode 888 +
-                // `MenuUI.SetState(Main.AchievementsMenu)`): the state draws
-                // over whatever the frame rendered — the menu's world
-                // backdrop here, the world itself in the fancy-UI arm. Its
-                // `OnActivate` picks the container's Top by `Main.gameMenu`.
-                if self.achievements_open {
-                    ui::achievements::draw_screen(
-                        renderer,
-                        lookups,
-                        screen,
-                        &self.achievements,
-                        self.achievements_scroll,
-                        &self.achievements_categories,
-                        self.mouse_pos,
-                        menu.is_some(),
-                    );
-                }
-                // Task 6b: upload the revealed tiles into the world-sized map texture
-                // and clamp/recentre the fullscreen map. Vanilla centres the recentre
-                // and the minimap on the view centre (`Main.cs:55420-55421`,
-                // `55537-55538`): `(screenPosition + screenSize/2)/16` — `view_center`
-                // is computed above, where the minimap branch consumes it.
-                if settings.map_enabled {
-                    if let Some(m) = map.as_mut() {
-                        m.prepare(renderer, gpu, world, screen, view_center);
-                    }
-                }
-                if let Some(map) = map.as_ref() {
-                    if !crate::env::no_hud()
-                        && menu.is_none()
-                        && front.is_none()
-                        && settings.map_enabled
-                    {
-                        if map.open {
-                            // `Main.cs:55483`: the biome `MapBG` backdrop is
-                            // drawn before the wooden frame, so it goes into
-                            // `map_back` first (`draw_full` pushes the frame).
-                            // `Main.player[myPlayer]` always exists in vanilla;
-                            // with no player we fall back to the view centre.
-                            let player_tile = player
-                                .as_ref()
-                                .map(|p| {
-                                    let (cx, cy) = p.center();
-                                    ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32)
-                                })
-                                .unwrap_or((
-                                    (camera.x / TILE_PX) as i32,
-                                    (camera.y / TILE_PX) as i32,
-                                ));
-                            if let Some(bg) = map::map_bg_index(world, *camera, screen, player_tile)
-                            {
-                                let sky = [sky_tint[0], sky_tint[1], sky_tint[2], 1.0];
-                                map::draw_map_background(renderer, bg, screen, sky);
-                            }
-                            // `Main.cs:55996`: the icon overlay layers ride the
-                            // fullscreen map's offset/scale — the layer walk in
-                            // registration order, the hover text collected.
-                            let (map_offset, map_draw_scale) =
-                                map.draw_full(renderer, lookups, world, screen);
-                            let digtoise = crate::map_layers::digtoise_marker(
-                                player.as_ref(),
-                                &self.projectiles,
-                            );
-                            let near_pylon = player.as_ref().is_some_and(|p| {
-                                let (cx, cy) = p.center();
-                                tr_core::pylons::is_player_near_a_pylon(
-                                    world,
-                                    ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
-                                )
-                            });
-                            let hover = crate::map_layers::map_layers_draw(
-                                renderer,
-                                lookups,
-                                &crate::map_layers::MapIconInputs {
-                                    world,
-                                    player: player.as_ref(),
-                                    item_drops: &self.items,
-                                    digtoise,
-                                    pings: crate::map_layers::map_pings(map),
-                                    pylons: &map_layer_pylons,
-                                    near_pylon,
-                                    map: Some(map),
-                                    team_based_spawns,
-                                    mouse: self.mouse_pos,
-                                },
-                                [0.0, 0.0],
-                                map_offset,
-                                None,
-                                map.scale,
-                                map_draw_scale,
-                                1.0,
-                            );
-                            if let Some(t) = hover {
-                                crate::ui::text::hud_text(
-                                    renderer,
-                                    lookups,
-                                    self.mouse_pos.x + 12.0,
-                                    self.mouse_pos.y + 12.0,
-                                    0.85,
-                                    [1.0; 4],
-                                    &t,
-                                );
-                            }
-                            // `Main.cs:55931-55954`: the local player's head icon,
-                            // drawn after the map tiles (`Main.cs:55609`).
-                            if let Some(p) = player.as_ref() {
-                                let (cx, cy) = p.center();
-                                // `Main.cs:55938`: `position.Y + gfxOffY + height/2`.
-                                let center_px = [cx, cy + p.gfx_off_y];
-                                let icon_pos =
-                                    map::head_icon_pos(center_px, map.pos, map.scale, screen);
-                                // `Main.GetPlayerHeadBordersColor` (`Main.cs:56616-56618`)
-                                // → `Main.teamColor[0]` = White (singleplayer).
-                                draw_player_map_icon(
-                                    renderer,
-                                    player_assets,
-                                    p,
-                                    icon_pos,
-                                    self.settings.applied_ui_scale(screen.x, screen.y),
-                                    [1.0; 4],
-                                );
-                            }
-                        }
-                        // The `else if self.map_style == 1` minimap branch
-                        // (`Main.cs:55503-55547`) draws above `ui::draw_hud`
-                        // now — vanilla renders interface layer 16 (the
-                        // minimap, `Main.cs:44796`) before layers 25/27/30
-                        // (`:44831/:44841/:44861`), so the hearts and the
-                        // inventory paint over the frame.
-                    }
-                }
-
-                if *debug {
-                    draw_debug(
-                        renderer,
-                        screen,
-                        tile_stats,
-                        frame_history,
-                        *camera,
-                        *zoom,
-                        *last_stats,
-                        world,
-                        *atlas_stats,
-                        gpu,
-                        dt,
-                        params.sky,
-                        debug_cache,
-                        style.mode.label(),
-                        player.as_ref(),
-                        npcs.len(),
-                        liquids.active_len(),
-                        rain.visual_alpha(),
-                        rain.drop_count(),
-                        rain.snow_count(),
-                    );
-                }
-
-                // The debug cheat-sheet panel (`debug_panel.rs`) — independent
-                // of F1. Compiled only with the `debug` feature.
-                #[cfg(feature = "debug")]
-                if self.debug_panel.open {
-                    crate::debug_panel::draw(
-                        renderer,
-                        lookups,
-                        screen,
-                        &self.debug_panel,
-                        npcs,
-                        world,
-                        self.stepper.paused,
-                        self.player.as_ref().is_some_and(|p| p.debug_god_mode),
-                        rain.is_raining(),
-                        sandstorm.happening,
-                    );
-                }
-
-                // `WorldUpdateStepper.DrawHUD` (`Main.cs:62409`, the
-                // UIScale batch after DrawFPS; `WorldUpdateStepper.cs:51-57`):
-                // the `Updates Since Paused` border string, bottom-right at
-                // `ScreenSize - (5, 22)` with anchorx 1 — the right edge sits
-                // at `screen.x - 5`. The guard is the stepper's own `Paused`
-                // (`:53-54`), so it draws while stepper-paused regardless of
-                // `game_paused`; `Color.White` at scale 1.
-                if let Some(text) = self.stepper.hud_text(self.game_update_count) {
-                    let w = hud_text_width(renderer, lookups, &text, 1.0);
-                    border_string(
-                        renderer,
-                        lookups,
-                        screen.x - 5.0 - w,
-                        screen.y - 22.0,
-                        [1.0, 1.0, 1.0, 1.0],
-                        &text,
-                    );
-                }
-
-                let frame = match gpu.surface.get_current_texture() {
-                    wgpu::CurrentSurfaceTexture::Success(f)
-                    | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
-                    other => {
-                        log::debug!("surface acquire skipped: {other:?}");
-                        return;
-                    }
-                };
-                let view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-
-                renderer.aberration = style.aberration_px;
-                // M1.4-BG-18 phase 3 (`TR_POST=1`): the scene renders into the
-                // offscreen post target, then the `ApplyVisuals` driver's
-                // winner uniform (`filter_driver.output`, computed in
-                // `update_scene`) selects the filter pass. `None` = no filter
-                // — the NEUTRAL/passthrough pair is the pixel-identity pass
-                // (DW-2.1).
-                if let Some(post) = post.as_mut() {
-                    let scene = post.scene_view(gpu);
-                    // The vanilla order puts the filters between the world draw
-                    // and `DrawMap`/`DrawInterface` (`Main.DoDraw`): the world
-                    // and the world-effect ranges render into the post target,
-                    // the filter chain lands on the screen, then the map
-                    // batches and the interface draw over the filtered frame.
-                    let now_secs = now.elapsed().as_secs_f32();
-                    stats = renderer.render_world_fx(
-                        gpu,
-                        scene,
-                        draw_cam.to_array(),
-                        world_zoom,
-                        now_secs,
-                        wgpu::Color {
-                            r: 0.045,
-                            g: 0.055,
-                            b: 0.085,
-                            a: 1.0,
-                        },
-                    );
-                    let noise = noise_tex.as_ref();
-                    // Phase 4: the water mask exists only while the
-                    // WaterDistortion filter is visible AND the liquid pass
-                    // drew water this frame (plan: "the second target only
-                    // while WaterDistortion is active"; with no water the pass
-                    // is the identity, so it and the target are skipped).
-                    let water_in_view =
-                        filter_driver.water_wanted() && !scratch.water_rects.is_empty();
-                    if let Some(mask) = water_mask.as_mut() {
-                        if water_in_view {
-                            mask.render(
-                                &gpu.device,
-                                &gpu.queue,
-                                (gpu.config.width, gpu.config.height),
-                                draw_cam.to_array(),
-                                world_zoom,
-                                &scratch.water_rects,
-                            );
-                        } else {
-                            mask.release();
-                        }
-                    }
-                    let mut chain = filter_driver.chain(water_in_view);
-                    if chain.is_empty() {
-                        // No filter: the NEUTRAL passthrough (DW-2.1 identity).
-                        chain.push(tr_render::FilterPass {
-                            params: tr_render::FilterParams::NEUTRAL,
-                            pass: tr_render::PassId::PASSTHROUGH,
-                        });
-                    }
-                    post.apply_filters(
-                        gpu,
-                        &view,
-                        &chain,
-                        tr_render::FilterImages {
-                            noise,
-                            water_mask: water_mask.as_ref().and_then(|m| m.texture()),
-                        },
-                    );
-                    let ui_stats =
-                        renderer.render_map_ui(gpu, &view, draw_cam.to_array(), *zoom, now_secs);
-                    stats.instances += ui_stats.instances;
-                    stats.draw_calls += ui_stats.draw_calls;
-                    stats.uploaded_bytes += ui_stats.uploaded_bytes;
-                } else {
-                    stats = renderer.render(
-                        gpu,
-                        &view,
-                        draw_cam.to_array(),
-                        world_zoom,
-                        now.elapsed().as_secs_f32(),
-                        wgpu::Color {
-                            r: 0.045,
-                            g: 0.055,
-                            b: 0.085,
-                            a: 1.0,
-                        },
-                    );
-                }
-                if let Some(path) = shot_path.as_ref() {
-                    if *frame_count >= *shot_at {
-                        log::info!(
-                            "shot camera px {:.2},{:.2} (tile {:.3},{:.3}) zoom {:.3}",
-                            camera.x,
-                            camera.y,
-                            camera.x / TILE_PX,
-                            camera.y / TILE_PX,
-                            *zoom
-                        );
-                        capture_frame(gpu, &frame.texture, path);
-                        gpu.queue.present(frame);
-                        std::process::exit(0);
-                    }
-                }
-                gpu.queue.present(frame);
-            }
-        }
-
         self.tile_stats = tile_stats;
         if self.stats_on {
             self.stats_acc.add(&tile_stats);
@@ -2587,7 +593,9 @@ mod tests {
     #[test]
     fn the_draw_passes_run_in_the_csharp_order() {
         let tiles = include_str!("../render/tiles.rs");
-        let frame = include_str!("frame.rs");
+        // The draw passes moved to `frame/draw.rs` with the draw region
+        // (S1-B-8 phase 3); the pin scans that module's text.
+        let frame = include_str!("frame/draw.rs");
         // The world pass's entity phases: the NPCs behind the tiles
         // (`:63293`) → the NPCs over the tiles (`:63301`) → the players
         // (`:62256`) → the dropped items (`:62278`).
@@ -3364,6 +1372,514 @@ mod tests {
             app.game_update_count,
             count0 + 1,
             "the 12th mouse-back-held frame steps"
+        );
+    }
+
+    // ---- S1-B-8 phase 1: the frame's named head / setup / pause arms ----
+
+    /// The source slice of one `impl App` fn — from its signature to the next
+    /// top-level item in the impl block. The S1-B-8 marker scans read it, so a
+    /// citation that slipped out of an extracted body (or a body that lost its
+    /// split) fails the scan instead of passing silently against the whole
+    /// file. The needle is the full signature, so a param-set rewrite of the
+    /// head also drops the slice's start and the test that reads it.
+    fn fn_body<'a>(src: &'a str, sig: &str) -> &'a str {
+        let start = src
+            .find(sig)
+            .unwrap_or_else(|| panic!("frame.rs no longer defines `{sig}`"));
+        let rest = &src[start + sig.len()..];
+        let end = ["\n    fn ", "\n    pub(crate) fn "]
+            .iter()
+            .filter_map(|needle| rest.find(needle))
+            .min()
+            .unwrap_or(rest.len());
+        &rest[..end]
+    }
+
+    /// S1-B-8 DW-1.1 — the three named fns exist with their documented yields,
+    /// the orchestrator is the four-line head that hands the stamp and the
+    /// yields down, and each extracted body still carries its A/B/C citation
+    /// markers: the per-line grep-diff of the phase, made repeatable.
+    #[test]
+    fn s1_b_8_phase1_the_frame_head_is_extracted() {
+        let src = include_str!("frame.rs");
+        let head_sig = "fn frame_head(&mut self, now: Instant) -> (f32, f32)";
+        let setup_sig = "fn frame_shared_setup(&mut self, dt: f32) -> (Vec2, f32)";
+        let pause_sig = "fn frame_focus_pause(&mut self) -> bool";
+        assert!(src.contains(head_sig), "frame_head must keep its shape");
+        assert!(src.contains(setup_sig), "frame_shared_setup must keep its shape");
+        assert!(src.contains(pause_sig), "frame_focus_pause must keep its shape");
+        // The orchestrator takes the stamp at its head and passes it on.
+        assert!(
+            src.contains("let now = Instant::now();"),
+            "frame() takes the frame's Instant at its head"
+        );
+        assert!(
+            src.contains("let (dt, anim_time) = self.frame_head(now);"),
+            "frame() calls frame_head with the stamp"
+        );
+        assert!(
+            src.contains("let (screen, m_h) = self.frame_shared_setup(dt);"),
+            "frame() hands dt to frame_shared_setup and takes both yields"
+        );
+        assert!(
+            src.contains("let focus_paused = self.frame_focus_pause();"),
+            "frame() takes the pause flag from frame_focus_pause"
+        );
+
+        // A — the head: the TR_SHOT dt pin and the per-frame counters.
+        let head = fn_body(src, head_sig);
+        for marker in [
+            "`TR_SHOT` pins the animation clock",
+            "Main.cs:16801-16815,18376",
+            "Main.cs:16961-16964",
+            "WorldUpdateStepper.cs:39-43",
+            "UserInterface.cs:203-204",
+            "Main.cs:17048-17051",
+            "IngameOptions.cs:157-199",
+            "Main.cs:45513-45527",
+            "Main.cs:42864-42867",
+            "Main.cs:19751-19765",
+        ] {
+            assert!(head.contains(marker), "frame_head lost `{marker}`");
+        }
+        // B — the setup: the inline screen, mH, cursor, audio, ambience,
+        // menu music and the world swap.
+        let setup = fn_body(src, setup_sig);
+        for marker in [
+            "Main.cs:45771-45783",
+            "FocusHelper.cs:160-163",
+            "SoundEngine.cs:48-68",
+            "Main.cs:13466-13515",
+            "LegacySoundPlayer.cs:383-397",
+            // The strength/50 multiplier arm (the class name rides the line
+            // above the `:1249-1279` marker).
+            "`:1249-1279`",
+            ":12455",
+            "Main.LoadWorld",
+        ] {
+            assert!(setup.contains(marker), "frame_shared_setup lost `{marker}`");
+        }
+        // C — the focus pause: the wantsToPause arm and its two side effects.
+        let pause = fn_body(src, pause_sig);
+        for marker in [
+            "Main.cs:17128-17141",
+            "Main.cs:17129-17134",
+            "Main.cs:17138",
+        ] {
+            assert!(pause.contains(marker), "frame_focus_pause lost `{marker}`");
+        }
+    }
+
+    /// S1-B-8 DW-1.1 (behavioural half) — `frame_head` yields the pinned frame
+    /// step and the animation clock: dt is the clamped wall step, `anim_time`
+    /// advances by exactly dt, the step-key snapshot shifts, and the `TR_SHOT`
+    /// pin overrides the wall clock with the fixed 1/60 step — all as the
+    /// single `frame()` did before the split.
+    #[test]
+    fn s1_b_8_phase1_the_frame_head_yields_the_pinned_dt_and_clock() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // A frame 100 ms late: the clamp at the head yields exactly 0.1 s.
+        let now = std::time::Instant::now();
+        app.last_frame = now - std::time::Duration::from_millis(100);
+        let frames0 = app.frame_count;
+        let anim0 = app.anim_time;
+        let down0 = app.step_input_down;
+        app.keys.insert(KeyCode::End);
+        let (dt, anim_time) = app.frame_head(now);
+        assert!((dt - 0.1).abs() < 1e-6, "dt is the clamped frame step ({dt})");
+        assert!(app.last_frame == now, "the head stores the caller's stamp");
+        assert_eq!(app.frame_count, frames0 + 1, "one head run per frame");
+        assert!(
+            (app.anim_time - (anim0 + dt)).abs() < 1e-6,
+            "anim_time advanced by exactly dt"
+        );
+        assert!(
+            anim_time == app.anim_time,
+            "the yield is the post-step animation clock"
+        );
+        // The step-key snapshot pair (`WorldUpdateStepper.cs:39-43`): `down`
+        // reads live, the previous frame's value shifts into `was`.
+        assert!(app.step_input_down, "End pinned the live step key");
+        assert!(
+            app.step_input_was == down0,
+            "the previous frame's pin shifted into step_input_was"
+        );
+        // The TR_SHOT pin (`Main.cs`'s deterministic-frame contract): whatever
+        // the wall clock says, the step is the fixed 1/60.
+        app.shot_path = Some(std::path::PathBuf::from("s1-b-8-shot.png"));
+        app.last_frame = now - std::time::Duration::from_millis(100);
+        let (pinned, _) = app.frame_head(now);
+        assert!(
+            (pinned - 1.0 / 60.0).abs() < 1e-9,
+            "TR_SHOT pins dt to 1/60 ({pinned})"
+        );
+    }
+
+    /// S1-B-8 DW-1.3 — the setup's inline 1600x900 fallback (not
+    /// `App::screen_size()`'s 1280x720) is what the whole frame draws into,
+    /// and `m_h` comes from that fallback: with a live minimap the setup
+    /// yields 256 while `App::main_m_h()` — the un-unified twin the plan's
+    /// do-not-unify note covers — clamps to 120 (`Main.cs:45795-45798`).
+    #[test]
+    fn s1_b_8_phase1_the_setup_returns_the_inline_screen_fallback() {
+        let mut app = in_world_app();
+        // A live, non-fullscreen minimap: `mapEnabled && !mapFullscreen &&
+        // mapStyle == 1` (`Main.cs:45771-45783`).
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        let (screen, m_h) = app.frame_shared_setup(1.0 / 60.0);
+        assert_eq!(
+            screen,
+            Vec2::new(1600.0, 900.0),
+            "the headless frame draws into the inline 1600x900 fallback"
+        );
+        assert!(
+            (m_h - 256.0).abs() < 1e-6,
+            "m_h is computed from the 900-tall fallback ({m_h})"
+        );
+        assert!(
+            (app.main_m_h() - 120.0).abs() < 1e-6,
+            "App::main_m_h() clamps against screen_size()'s 720 — the twin \
+             that stays separate"
+        );
+    }
+
+    /// S1-B-8 DW-1.3 — the front end's pending world swap is taken inside the
+    /// setup (a frame boundary: after the front screens' clicks parked it and
+    /// before the world branch), and its failure arm keeps the current world
+    /// with the `front_hint` the menus render (`UIWorldListItem.PlayGame` →
+    /// `Main.LoadWorld`, BUG-04).
+    #[test]
+    fn s1_b_8_phase1_the_world_swap_yields_inside_the_setup() {
+        let mut app = in_world_app();
+        let world0 = app.world.name.clone();
+        app.play_world = Some(std::path::PathBuf::from("nowhere-s1-b-8.wld"));
+        let (screen, _m_h) = app.frame_shared_setup(1.0 / 60.0);
+        assert!(
+            app.play_world.is_none(),
+            "the pending world is taken at the frame boundary"
+        );
+        let hint = app.front_hint.as_deref().unwrap_or_default();
+        assert!(
+            hint.starts_with("world load failed"),
+            "the Err arm keeps the menu with its front_hint ({hint})"
+        );
+        assert_eq!(
+            app.world.name, world0,
+            "a failed load keeps the current world (Main.LoadWorld's failure)"
+        );
+        assert_eq!(
+            screen,
+            Vec2::new(1600.0, 900.0),
+            "the frame still draws at the fallback after the failed swap"
+        );
+    }
+
+    /// S1-B-8 DW-1.4 — the Phase-3 re-borrow contract, pinned: the three
+    /// extracted fns are `&mut self` re-borrows with the documented param sets,
+    /// so a param-set rewrite of the frame head (the shape-A spike the
+    /// discovery rejected) fails this test instead of compiling. The sequence
+    /// below also drives the three sequential re-borrows in the orchestrator's
+    /// own order — the shape the draw phases of Phase 3 follow.
+    #[test]
+    fn s1_b_8_phase1_the_re_borrow_strategy_is_the_frame_contract() {
+        // The signatures as function items: a coercion failure is the pin.
+        let _head: fn(&mut App, std::time::Instant) -> (f32, f32) = App::frame_head;
+        let _setup: fn(&mut App, f32) -> (Vec2, f32) = App::frame_shared_setup;
+        let _pause: fn(&mut App) -> bool = App::frame_focus_pause;
+        // The orchestrator's head, driven straight: one stamp, then the three
+        // sequential `&mut self` re-borrows (each borrow ends at its call).
+        let mut app = in_world_app();
+        let now = std::time::Instant::now();
+        let (dt, anim_time) = app.frame_head(now);
+        let (screen, m_h) = app.frame_shared_setup(dt);
+        let focus_paused = app.frame_focus_pause();
+        assert!(dt > 0.0, "the head yielded a frame step");
+        assert!(anim_time >= dt, "the clock advanced with the step");
+        assert_eq!(screen, Vec2::new(1600.0, 900.0), "the setup yielded the fallback");
+        assert!(m_h >= 0.0, "the setup yielded the minimap height");
+        assert!(
+            !focus_paused,
+            "a focused window is not focus-paused (Main.cs:17128-17141)"
+        );
+    }
+
+    /// S1-B-8 DW-1.3 — the `TR_*` reads stay with the blocks that own them:
+    /// the `TR_SHOT` pin reads `shot_path` inside the head (twice: the dt pin
+    /// and the adaptive fps counter) and the cursor gate reads
+    /// `env::no_hud()` inside the setup; neither read crossed the split.
+    #[test]
+    fn s1_b_8_phase1_the_env_reads_stay_inside_the_extracted_bodies() {
+        let src = include_str!("frame.rs");
+        let head = fn_body(src, "fn frame_head(&mut self, now: Instant) -> (f32, f32)");
+        let setup = fn_body(src, "fn frame_shared_setup(&mut self, dt: f32) -> (Vec2, f32)");
+        let pins = head.matches("self.shot_path.is_some()").count();
+        assert_eq!(
+            pins, 2,
+            "the TR_SHOT pin's two shot_path reads stay in frame_head"
+        );
+        assert!(
+            head.contains("self.last_frame = now;"),
+            "frame_head owns the frame stamp store"
+        );
+        let cursors = setup.matches("crate::env::no_hud()").count();
+        assert_eq!(
+            cursors, 1,
+            "the cursor gate's no_hud read stays in frame_shared_setup"
+        );
+        // The reads did not migrate across the A/B boundary.
+        assert!(
+            !head.contains("crate::env::no_hud"),
+            "no_hud belongs to the setup, not the head"
+        );
+        assert!(
+            !setup.contains("shot_path"),
+            "shot_path belongs to the head, not the setup"
+        );
+    }
+
+    /// S1-B-8 phase 2: the in-world branch lives in `frame::world` as one fn
+    /// per `phase("…")` site, and the orchestrator (`update_world_frame`)
+    /// calls them in the frozen S1-B-1 order. The include scan pins the fn
+    /// set; the behavioural order is `the_world_branch_runs_in_the_csharp_
+    /// update_order`'s, which walks the trace through the new module.
+    #[test]
+    fn s1_b_8_phase2_the_world_branch_calls_the_named_phase_fns() {
+        let world = include_str!("frame/world.rs");
+        for name in [
+            "in_world_click_cluster",
+            "in_world_pause_gates",
+            "in_world_step_gate",
+            "world_step_head",
+            "players_phase",
+            "npcs_phase",
+            "gores_phase",
+            "projectiles_phase",
+            "items_phase",
+            "dust_phase",
+            "time_phase",
+            "wiring_phase",
+            "tile_entities_phase",
+            "liquids_phase",
+            "growth_phase",
+            "waterfalls_phase",
+            "weather_cluster",
+            "windy_day_phase",
+            "ambience_phase",
+            "editing_net_phase",
+            "map_phase",
+            "camera_scene_tail",
+            "gfx_quality_apply",
+        ] {
+            assert!(
+                world.contains(&format!("fn {name}(")),
+                "the extracted fn {name} exists in frame/world.rs"
+            );
+        }
+        // The orchestrator's frozen call order — the same sequence the
+        // `phase()` trace walks (the C#'s `DoUpdateInWorld_Inner`, with the
+        // port's documented fusions). The slice is bounded at the next
+        // `pub(super) fn` so the spine's statements don't bleed in.
+        let orch = world
+            .split("pub(super) fn update_world_frame")
+            .nth(1)
+            .expect("the world-branch orchestrator")
+            .split("pub(super) fn draw_half_pre_snapshots")
+            .next()
+            .expect("the spine follows the orchestrator")
+            .to_string();
+        let calls: Vec<&str> = orch
+            .lines()
+            .filter_map(|l| {
+                let l = l.trim();
+                let idx = l.find("self.")?;
+                let rest = &l[idx + 5..];
+                let end = rest.find('(')?;
+                Some(&rest[..end])
+            })
+            .collect();
+        assert_eq!(
+            calls,
+            vec![
+                "in_world_click_cluster",
+                "in_world_pause_gates",
+                "in_world_step_gate",
+                "world_step_head",
+                "players_phase",
+                "npcs_phase",
+                // `Main.UpdateWorld_Gores` (`Main.cs:17971`, called at
+                // `:17771-17774`): between the NPCs and the projectiles
+                // — landed on main with the S1-E-2 gores port; the pin
+                // gains the phase at the C#'s position.
+                "gores_phase",
+                "projectiles_phase",
+                "items_phase",
+                "dust_phase",
+                "time_phase",
+                "wiring_phase",
+                "tile_entities_phase",
+                "liquids_phase",
+                "growth_phase",
+                "waterfalls_phase",
+                "weather_cluster",
+                "windy_day_phase",
+                "ambience_phase",
+                "editing_net_phase",
+                "map_phase",
+                "camera_scene_tail",
+                "gfx_quality_apply",
+            ],
+            "the orchestrator's call order is the frozen phase order"
+        );
+        // The orchestrator is the branch's only body: `frame()` delegates.
+        let src = include_str!("frame.rs");
+        assert!(
+            src.contains("self.update_world_frame(dt, screen);"),
+            "frame() hands the in-world branch to frame::world"
+        );
+    }
+
+    /// S1-B-8 phase 2: the gate arms ride the extracted fns unchanged — the
+    /// pause/step gates wrap exactly the phases they wrapped before the split
+    /// (S1-B-3's per-gate traces assert the behaviour; this pins the text).
+    #[test]
+    fn s1_b_8_phase2_the_gate_arms_are_unchanged() {
+        let orch = include_str!("frame/world.rs")
+            .replace("\r\n", "\n")
+            .split("pub(super) fn update_world_frame")
+            .nth(1)
+            .expect("the world-branch orchestrator")
+            .split("pub(super) fn draw_half_pre_snapshots")
+            .next()
+            .expect("the spine follows the orchestrator")
+            .to_string();
+        let arm = |gate: &str, call: &str| {
+            format!("{} {{\n            self.{};\n        }}", gate, call)
+        };
+        assert!(
+            orch.contains(&arm("if !paused", "weather_cluster(dt, screen)")),
+            "weather under !paused"
+        );
+        assert!(
+            orch.contains(&arm("if !paused", "ambience_phase(dt)")),
+            "ambience under !paused"
+        );
+        assert!(
+            orch.contains(&arm("if !paused", "map_phase(dt)")),
+            "map under !paused"
+        );
+        assert!(
+            orch.contains(&arm("if step_allowed", "editing_net_phase(dt, screen)")),
+            "editing/net under the step gate"
+        );
+        assert!(
+            orch.contains(&arm("if step_allowed", "camera_scene_tail(dt, screen)")),
+            "the camera walks + scene_state under the step gate"
+        );
+    }
+
+    /// S1-B-8 phase 2: the duplicated `update_camera_at_draw` pair moved into
+    /// `draw_half_pre_snapshots` verbatim — both calls, no dedupe (the plan's
+    /// constraint; the dedupe needs its own pixel-identity proof).
+    #[test]
+    fn s1_b_8_phase2_the_camera_at_draw_pair_is_preserved() {
+        let spine = include_str!("frame/world.rs")
+            .split("pub(super) fn draw_half_pre_snapshots")
+            .nth(1)
+            .expect("the pre-snapshot spine fn");
+        let calls = spine
+            .matches("crate::world_sim::camera::update_camera_at_draw")
+            .count();
+        assert_eq!(
+            calls, 2,
+            "the duplicated camera-at-draw pair is preserved verbatim in the spine"
+        );
+        // The orchestrator's own body carries no camera walk (they all live in
+        // the spine now).
+        let src = include_str!("frame.rs");
+        let frame_body = src
+            .split("pub(crate) fn frame(&mut self)")
+            .nth(1)
+            .expect("the orchestrator")
+            .split("pub(crate) fn finish_bench")
+            .next()
+            .expect("the epilogue follows the orchestrator");
+        assert_eq!(
+            frame_body.matches("update_camera_at_draw").count(),
+            0,
+            "frame() itself no longer carries the camera walks"
+        );
+    }
+
+    /// S1-B-8 phase 3: the draw region (the pre-snapshot locals, the
+    /// destructure and the gpu block) lives in `frame/draw.rs::draw_region`,
+    /// moved verbatim - the `draw_phase` markers and the S1-B-7 order pin
+    /// scan it (repointed), and `frame()` consumes the returned stats.
+    #[test]
+    fn s1_b_8_phase3_the_draw_region_lives_in_frame_draw() {
+        let draw = include_str!("frame/draw.rs");
+        assert!(
+            draw.contains("pub(super) fn draw_region("),
+            "the draw region fn exists in frame/draw.rs"
+        );
+        for marker in ["sky", "world", "rain", "wires", "projectiles"] {
+            assert!(
+                draw.contains(&format!("draw_phase(\"{marker}\")")),
+                "the {marker} marker moved with the draw region"
+            );
+        }
+        assert!(
+            draw.contains("let App {"),
+            "the destructure moved with the region (no name rewriting)"
+        );
+        assert!(
+            draw.contains("if let (Some(gpu), Some(renderer)) ="),
+            "the gpu/renderer gate moved with the region"
+        );
+        assert!(
+            draw.contains("return None;"),
+            "the early return yields None (the epilogue skips, as before)"
+        );
+        let src = include_str!("frame.rs");
+        assert!(
+            src.contains("let (stats, tile_stats) = match self.draw_region("),
+            "frame() consumes draw_region's stats for the epilogue"
+        );
+    }
+
+    /// S1-B-8 phase 3: the orchestrator is thin - its body is the phase-list
+    /// calls plus the epilogue, and the draw region's heavy body lives in the
+    /// module (the file's centre of gravity moved with it).
+    #[test]
+    fn s1_b_8_phase3_the_orchestrator_is_a_phase_list() {
+        let src = include_str!("frame.rs");
+        let frame_body = src
+            .split("pub(crate) fn frame(&mut self)")
+            .nth(1)
+            .expect("the orchestrator")
+            .split("pub(crate) fn finish_bench")
+            .next()
+            .expect("the epilogue follows the orchestrator");
+        for call in [
+            "self.frame_head(now);",
+            "self.frame_shared_setup(dt);",
+            "self.frame_focus_pause();",
+            "self.update_world_frame(dt, screen);",
+            "self.draw_half_pre_snapshots(dt);",
+            "self.draw_region(",
+        ] {
+            assert!(
+                frame_body.contains(call),
+                "the orchestrator calls {call}"
+            );
+        }
+        assert!(
+            !frame_body.contains("let App {"),
+            "the destructure lives in frame/draw.rs"
+        );
+        assert!(
+            !frame_body.contains("if let (Some(gpu), Some(renderer)) ="),
+            "the gpu gate lives in frame/draw.rs"
         );
     }
 }

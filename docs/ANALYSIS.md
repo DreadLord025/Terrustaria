@@ -15561,3 +15561,32 @@ Documented deviations, all deliberate:
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+## The frame phase split (S1-B-8)
+
+`app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
+(51 lines of calls + gate arms) over three modules: `frame/world.rs` (the
+in-world branch, one fn per `phase("…")` site in the C#'s
+`DoUpdateInWorld_Inner` order, `Main.cs:17745-17822`, plus the click cluster,
+the pause/step gates, the env cluster and the step-gated tail),
+`frame/draw.rs::draw_region` (`Main.DoDraw`'s body: the pre-draw state, the
+S1-B-7 marker-ordered passes, the interface, the map, the post/filters and
+the present path) and the orchestrator's own head/setup/focus-pause fns. The
+draw region moved **verbatim** — the 55-field destructure and the gpu gate
+travel with it, the only mechanical change being the surface-acquire early
+return yielding `None` so the caller skips the epilogue's stat write-backs
+exactly like the pre-split frame.
+
+Preserved deviations (each a recorded follow-up, not closed here): the
+pre-world cluster (weather/rain/scene_state/windy_day/ambience) keeps its
+in-world-branch placement — moving it to the C#'s pre-`DoUpdateInWorld` slots
+(`Main.cs:17146-17231`) is a behaviour change owed to research/39 seed #2's
+data-driven tick plan; the duplicated `update_camera_at_draw` pair
+(S1-B-4) survives verbatim inside `draw_half_pre_snapshots`; the inline
+1600×900 `screen` fallback stays distinct from `App::screen_size()`; the
+dust+minecart and time+event fusions stay as landed. The split is proven
+pixel-transparent: `TR_SEED=1 TR_SHOT TR_CAM=400,300 TR_DAY=0.5` pairs are
+SHA256-equal pre/post at zoom 1.0 and 1.5 (all four runs identical), and at
+zoom 2.0 the post-split runs are internally deterministic and byte-equal to a
+pre-split run — the pre-split binary's own zoom-2.0 variance (688 613 px
+between two pre-split runs, `pixel_diff.py`) pre-dates the split and is a
+harness follow-up.
