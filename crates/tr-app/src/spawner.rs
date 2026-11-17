@@ -92,8 +92,10 @@ pub fn moon_boss_slots(npc_type: u16) -> Option<f32> {
 
 /// `Spawner`'s ctor weighted sum over the live boss kinds
 /// (`NPC.cs:274-283`) — the ctx's boss-cap input (the `invasion_saucer_alive`
-/// pattern). All seven kinds are unported until F-13b/c, so the port's count
-/// is structurally 0.
+/// pattern). `S1-F-13b` lands 315/325/327 as real kinds whose `to_u16` rides
+/// the vanilla ids, so the count goes live for exactly those three (1.0/3.0/
+/// 5.0 — their `SetDefaults` `npcSlots` rows); 328/344/345/346 stay unported
+/// and contribute nothing.
 pub fn moon_boss_cap_count(npcs: &[Npc]) -> f32 {
     npcs.iter()
         .filter(|n| n.hp > 0)
@@ -1090,15 +1092,38 @@ fn spawn_npc_at(
         // — the `(double)spawnTileY <= Main.worldSurface` twin is the
         // reduction, and the enclosing `if surface` IS that band.
         if !ctx.day_time && (ctx.world.snow_moon || ctx.world.pumpkin_moon) {
-            let _wave_kind = if ctx.world.snow_moon {
+            let pick = if ctx.world.snow_moon {
                 frost_moon_ladder(ctx, rng)
             } else {
                 pumpkin_moon_ladder(ctx, rng)
             };
-            // All 30 wave kinds are unported until F-13b/c: the ladder's pick
-            // is the vanilla `NPC.type` the C# would spawn, and the dispatch
-            // consumes it without spawning — the Wyvern arm's
-            // consume-and-return-None shape (`spawner.rs:989-994`).
+            // `S1-F-13b` Phase 2: the 16 Pumpkin Moon wave kinds are ported,
+            // so the ladder's vanilla `NPC.type` maps to the kind and spawns
+            // at the found tile — `SpawnNPC(spawnTileX * 16 + 8,
+            // spawnTileY * 16, type)` (`NPC.cs:3224-3548`'s moon arms) →
+            // `NewNPC`'s `Bottom = (X, Y)` (`:80772`): the feet on the found
+            // tile's top edge, X centred 8 px into the tile, the facing
+            // toward the player (`TargetClosest`) — the placement the
+            // invaders arm rides.
+            // Every other pick (the frost-moon kinds, the wave-20 unported
+            // bosses) still consumes its draw and spawns nothing — the Wyvern
+            // arm's consume-and-return-None shape (`spawner.rs:989-994`).
+            if let Some(kind) = pick.and_then(crate::npc::NpcKind::moon_wave_kind) {
+                let (nw, nh) = kind.size();
+                let mut n = Npc::new(
+                    kind,
+                    x as f32 * TILE_PX + 8.0 - nw * 0.5,
+                    y as f32 - nh,
+                    if ctx.player_center.0 >= x as f32 * TILE_PX + 8.0 {
+                        1
+                    } else {
+                        -1
+                    },
+                    0.0,
+                );
+                n.hp = n.max_hp;
+                return Some(n);
+            }
             return None;
         }
         // The surface probe arm (`NPC.cs:4164-4199`, the `surfaceSpawn`
@@ -1545,10 +1570,13 @@ pub(crate) fn invasion_spawn_pick(
 
 /// The live count of a moon wave kind — the C#'s `NPC.CountNPCS(id)`
 /// (`NPC.cs:7982-7995`); `NPC.AnyNPCs(id)` (`:7975-7981`) is "none alive",
-/// which is `CountNPCS(id) < 1`. All 30 wave kinds are unported until
-/// F-13b/c, so the port's count is structurally 0 and every cap gate stands
-/// open. The shape below is verbatim: the live read replaces this one
-/// constant when the kinds land.
+/// which is `CountNPCS(id) < 1`. The 16 Pumpkin Moon wave kinds are ported
+/// (F-13b Phase 2), but the per-kind live read needs the NPC roster threaded
+/// into the ladders — until then the port's count is structurally 0 and every
+/// arm's cap gate stands open (the arm-level `CountNPCS(325) < 2` style gates
+/// are recorded in ANALYSIS; the wave-20 boss-trio gate is the live one — it
+/// rides the ctx's `moon_boss_cap_count`). The shape below is verbatim: the
+/// live read replaces this one constant when it lands.
 const MOON_WAVE_KIND_COUNT: i32 = 0;
 
 /// One arm of a moon roster ladder: draws the arm's roll on the spawner stream
@@ -1610,8 +1638,9 @@ where
 ///
 /// Returns the `NPC.type` the arm would spawn. `None` is the C#'s only
 /// no-spawn outcome: the wave-20 trio behind a reached boss cap (`:2815`).
-/// Every picked kind is an unported wave kind (F-13b/c) — the dispatch consumes
-/// the pick without spawning.
+/// Every picked kind is an unported wave kind (the frost family lands with
+/// F-13c) — the moon arm's [`crate::npc::NpcKind::moon_wave_kind`] map returns
+/// `None` for it and the dispatch consumes the pick without spawning.
 fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16> {
     let wave = ctx.world.wave_number;
     // The 341 head (`:2807-2811`) runs at every wave, before the `>= 20`
@@ -1774,7 +1803,10 @@ where
 /// The pumpkin-moon roster ladder: `SpawnAnNPC`'s `!Main.dayTime &&
 /// Main.pumpkinMoon` arm (`NPC.cs:3224-3548`) — the `waveNumber >= 20` boss
 /// trio (`:3227`) and the `switch (waveNumber2)` cases (`:3246`). Same return
-/// contract as [`frost_moon_ladder`].
+/// contract as [`frost_moon_ladder`]. Every pick is one of the 16 Pumpkin Moon
+/// wave kinds (305-314/315/325/326/327/329/330), ported since `S1-F-13b` Phase
+/// 2 — the moon arm maps it through [`crate::npc::NpcKind::moon_wave_kind`]
+/// and spawns it at the found tile.
 fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16> {
     let wave = ctx.world.wave_number;
     if wave >= 20 {

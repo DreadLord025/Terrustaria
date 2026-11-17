@@ -4,7 +4,7 @@
 use glam::Vec2;
 use tr_core::{TILE_PX, UnifiedRandom, World};
 
-use crate::npc_ai::HoverParams;
+use crate::npc_ai::{HoverParams, HoverRotation};
 use crate::projectile::angle_towards;
 use crate::npc_buffs::NpcBuffs;
 use crate::player::{Player, collides_rect};
@@ -684,6 +684,63 @@ pub enum NpcKind {
     /// `NPCID.PrimeLaser` (131) — the Prime's laser limb (`aiStyle 36`:
     /// 29 dmg, def 20, 6000 HP).
     PrimeLaser,
+
+    // ---- the Pumpkin Moon family (`S1-F-13b`) — 16 kinds whose `SetDefaults`
+    // rows sit in `NPC.cs:12929-12977` (the 305-314 group), `:12978-12996`
+    // (315) and `:13115-13203` (325/326/327/329/330). Their `to_u16`/`from_u16`
+    // ride the VANILLA ids (305-314/315/325/326/327/329/330) — the wave
+    // rosters, `MOON_BOSS_SLOTS` and `CheckProgressPumpkinMoon`'s kill points
+    // all key on the vanilla `NPC.type`, and these ids sit clear of the
+    // 0..188 port-local space (the 78..84 Deerclops/Prime band, `S1-F-1`).
+    /// `NPCID.Scarecrow1` (305) — the scarecrow pair (305, 310): 18x40,
+    /// aiStyle 3, dmg 60, def 18, 500 HP, kb 0.4, value 1200, npcSlots 0.5.
+    Scarecrow1,
+    /// `NPCID.Scarecrow2` (306) — the pair (306, 311): dmg 52, def 14,
+    /// 400 HP, kb 0.2, scale 1.05.
+    Scarecrow2,
+    /// `NPCID.Scarecrow3` (307) — the pair (307, 312): dmg 78, def 16,
+    /// 600 HP, kb 0.25, scale 0.9.
+    Scarecrow3,
+    /// `NPCID.Scarecrow4` (308) — the pair (308, 313): dmg 66, def 14,
+    /// 650 HP, kb 0.35, scale 0.95.
+    Scarecrow4,
+    /// `NPCID.Scarecrow5` (309) — the pair (309, 314): dmg 52, def 26,
+    /// 450 HP, kb 0.5, scale 1.1.
+    Scarecrow5,
+    /// `NPCID.Scarecrow6` (310) — the 305 twin: the C#'s if-chain gives the
+    /// pair one row.
+    Scarecrow6,
+    /// `NPCID.Scarecrow7` (311) — the 306 twin.
+    Scarecrow7,
+    /// `NPCID.Scarecrow8` (312) — the 307 twin.
+    Scarecrow8,
+    /// `NPCID.Scarecrow9` (313) — the 308 twin.
+    Scarecrow9,
+    /// `NPCID.Scarecrow10` (314) — the 309 twin.
+    Scarecrow10,
+    /// `NPCID.HeadlessHorseman` (315) — the wave's flying boss (`aiStyle 26`):
+    /// 74x70, dmg 130, def 40, 5000 HP, kb 0, value 10000; npcSlots rides the
+    /// class default 1f, so it feeds `MOON_BOSS_SLOTS`'s 1.0. The true
+    /// machine lands on the pending S1-F-13b2 row — Phase 2 routes it to the
+    /// closest archetype (ANALYSIS records the stand-in).
+    HeadlessHorseman,
+    /// `NPCID.MourningWood` (325) — the walking boss (`aiStyle 57`): 164x154,
+    /// dmg 120, def 34, 14000 HP, kb 0, value 10000, npcSlots 3.
+    MourningWood,
+    /// `NPCID.Splinterling` (326) — Splinterling's aiStyle-3 chaser (the wave
+    /// walker): 18x40, dmg 100, def 32, 1200 HP, kb 0.2, value 2000.
+    Splinterling,
+    /// `NPCID.Pumpking` (327) — the flying boss (`aiStyle 58`): 100x100,
+    /// dmg 50, def 40, 26000 HP, noGravity + noTileCollide, kb 0, value
+    /// 50000, npcSlots 5.
+    Pumpking,
+    /// `NPCID.Hellhound` (329) — the wave's flyer (`aiStyle 26`): 46x30,
+    /// dmg 80, def 38, 1800 HP, kb 0.3, value 3000.
+    Hellhound,
+    /// `NPCID.Poltergeist` (330) — the wave's caster (`aiStyle 22`): 24x44,
+    /// dmg 90, def 44, 1250 HP, noGravity + noTileCollide, alpha 100, kb 0.4,
+    /// value 4500.
+    Poltergeist,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -845,6 +902,41 @@ pub(crate) fn entry_stats(kind: NpcKind, variant: SlimeVariant) -> EntryStats {
         value: shell.value(),
         kb: shell.knock_back_resist(),
     }
+}
+
+/// The Pumpkin Moon wave family's `SetDefaults` tail (`S1-F-13b`) — the
+/// rows the port's tables carry piecewise for every other kind:
+/// `NPC.aiStyle`, `NPC.scale`, `NPC.alpha` and the
+/// `noGravity`/`noTileCollide` flags, plus the VANILLA `NPC.type`
+/// (`NPC.cs:12929-13203`; the `SetDefaults` head
+/// `NPC.cs:8510-8537` — aiStyle 0, scale 1f, alpha 0, both flags false —
+/// is the default for every field and kind with no row). `None` for every
+/// kind outside the family: the other kinds' scale/alpha ride `Npc::new`'s
+/// 1.0/0 (their C# scale rows are baked into `size()` — the Wall of Flesh's
+/// x1.2) and their machines live in `update_rng`'s dispatch.
+///
+/// [`PumpkinDefaults::vanilla_type`] is the kind→type seam: the wave
+/// rosters pick by it (`spawner.rs`'s moon ladders), `MOON_BOSS_SLOTS`
+/// (`spawner.rs:75`) weights by it and `CheckProgressPumpkinMoon`'s kill
+/// points (`world.rs:726`) key on it — it equals the kind's `to_u16` and
+/// round-trips through `from_u16`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PumpkinDefaults {
+    /// `NPC.type` — the vanilla id the family rides on the wire.
+    pub vanilla_type: u16,
+    /// `NPC.aiStyle` — 3 for the 11 walkers (`AI_003_Fighters`), 26 for
+    /// 315/329, 22 for 330, 57 for 325, 58 for 327.
+    pub ai_style: i32,
+    /// `NPC.scale` — the five scarecrow pairs' scaling rows
+    /// (`NPC.cs:12940-12970`); the 305/310 pair carries no row.
+    pub scale: f32,
+    /// `NPC.alpha` — the Poltergeist's 100 row (`NPC.cs:13202`); every
+    /// other kind spawns at 0.
+    pub alpha: u8,
+    /// `NPC.noGravity` — 327 and 330 (`NPC.cs:13154`/`:13189`).
+    pub no_gravity: bool,
+    /// `NPC.noTileCollide` — 327 and 330 (same rows).
+    pub no_tile_collide: bool,
 }
 
 impl NpcKind {
@@ -1049,6 +1141,34 @@ impl NpcKind {
             NpcKind::Princess => 166,
             NpcKind::DyeTrader => 167,
             NpcKind::PartyGirl => 168,
+            // The Pumpkin Moon family (`S1-F-13b`): these 16 kinds are the
+            // roster that rides the VANILLA `NPC.type` on the wire — the
+            // F-13a moon ladders pick by it, `MOON_BOSS_SLOTS`
+            // (`spawner.rs:75`) and `CheckProgressPumpkinMoon`'s kill points
+            // (`world.rs:726`) key on it, and the ids sit above the whole
+            // 0..188 port-local space (the 78..84 Deerclops/Prime band
+            // included) so nothing collides. The port's other kinds keep
+            // their port-local ids; `NpcKind::pumpkin_moon_type` is the
+            // named kind→type seam the spawn wiring and the kill walk use.
+            // `NPC.cs:12929-12977` (305-314), `:12978` (315), `:13115`
+            // (325), `:13129` (326), `:13142` (327), `:13175` (329),
+            // `:13188` (330).
+            NpcKind::Scarecrow1 => 305,
+            NpcKind::Scarecrow2 => 306,
+            NpcKind::Scarecrow3 => 307,
+            NpcKind::Scarecrow4 => 308,
+            NpcKind::Scarecrow5 => 309,
+            NpcKind::Scarecrow6 => 310,
+            NpcKind::Scarecrow7 => 311,
+            NpcKind::Scarecrow8 => 312,
+            NpcKind::Scarecrow9 => 313,
+            NpcKind::Scarecrow10 => 314,
+            NpcKind::HeadlessHorseman => 315,
+            NpcKind::MourningWood => 325,
+            NpcKind::Splinterling => 326,
+            NpcKind::Pumpking => 327,
+            NpcKind::Hellhound => 329,
+            NpcKind::Poltergeist => 330,
         }
     }
 
@@ -1251,6 +1371,29 @@ impl NpcKind {
             186 => NpcKind::PirateCaptain,
             187 => NpcKind::MartianProbe,
             188 => NpcKind::MartianDrone,
+            // The Pumpkin Moon family (`S1-F-13b`): the vanilla ids
+            // 305-314/315/325/326/327/329/330 decode here (the same ids
+            // `to_u16` encodes above) — they sit above the whole port-local
+            // space, so no decode arm below ever sees them.
+            // `NPC.cs:12929-12977` (305-314), `:12978` (315), `:13115`
+            // (325), `:13129` (326), `:13142` (327), `:13175` (329),
+            // `:13188` (330).
+            305 => NpcKind::Scarecrow1,
+            306 => NpcKind::Scarecrow2,
+            307 => NpcKind::Scarecrow3,
+            308 => NpcKind::Scarecrow4,
+            309 => NpcKind::Scarecrow5,
+            310 => NpcKind::Scarecrow6,
+            311 => NpcKind::Scarecrow7,
+            312 => NpcKind::Scarecrow8,
+            313 => NpcKind::Scarecrow9,
+            314 => NpcKind::Scarecrow10,
+            315 => NpcKind::HeadlessHorseman,
+            325 => NpcKind::MourningWood,
+            326 => NpcKind::Splinterling,
+            327 => NpcKind::Pumpking,
+            329 => NpcKind::Hellhound,
+            330 => NpcKind::Poltergeist,
             _ => return None,
         })
     }
@@ -1496,6 +1639,163 @@ impl NpcKind {
         crate::bestiary::entry_for_npc(self, SlimeVariant::Blue).net_id
     }
 
+    /// The family-scoped defaults above, or `None` outside the 16 kinds.
+    pub fn pumpkin_moon_defaults(self) -> Option<PumpkinDefaults> {
+        Some(match self {
+            // `NPC.cs:12929-12977` — the 305-314 group: the shared row plus
+            // the five stat pairs' scale rows.
+            NpcKind::Scarecrow1 => PumpkinDefaults {
+                vanilla_type: 305,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Scarecrow2 => PumpkinDefaults {
+                vanilla_type: 306,
+                ai_style: 3,
+                scale: 1.05,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Scarecrow3 => PumpkinDefaults {
+                vanilla_type: 307,
+                ai_style: 3,
+                scale: 0.9,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Scarecrow4 => PumpkinDefaults {
+                vanilla_type: 308,
+                ai_style: 3,
+                scale: 0.95,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Scarecrow5 => PumpkinDefaults {
+                vanilla_type: 309,
+                ai_style: 3,
+                scale: 1.1,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Scarecrow6 => PumpkinDefaults {
+                vanilla_type: 310,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Scarecrow7 => PumpkinDefaults {
+                vanilla_type: 311,
+                ai_style: 3,
+                scale: 1.05,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Scarecrow8 => PumpkinDefaults {
+                vanilla_type: 312,
+                ai_style: 3,
+                scale: 0.9,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Scarecrow9 => PumpkinDefaults {
+                vanilla_type: 313,
+                ai_style: 3,
+                scale: 0.95,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Scarecrow10 => PumpkinDefaults {
+                vanilla_type: 314,
+                ai_style: 3,
+                scale: 1.1,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            // `NPC.cs:12978-12996` (315), `:13115-13128` (325), `:13129-13141`
+            // (326), `:13142-13174` (327), `:13175-13187` (329),
+            // `:13188-13203` (330).
+            NpcKind::HeadlessHorseman => PumpkinDefaults {
+                vanilla_type: 315,
+                ai_style: 26,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::MourningWood => PumpkinDefaults {
+                vanilla_type: 325,
+                ai_style: 57,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Splinterling => PumpkinDefaults {
+                vanilla_type: 326,
+                ai_style: 3,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Pumpking => PumpkinDefaults {
+                vanilla_type: 327,
+                ai_style: 58,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: true,
+                no_tile_collide: true,
+            },
+            NpcKind::Hellhound => PumpkinDefaults {
+                vanilla_type: 329,
+                ai_style: 26,
+                scale: 1.0,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+            },
+            NpcKind::Poltergeist => PumpkinDefaults {
+                vanilla_type: 330,
+                ai_style: 22,
+                scale: 1.0,
+                alpha: 100,
+                no_gravity: true,
+                no_tile_collide: true,
+            },
+            _ => return None,
+        })
+    }
+
+    /// The kind→type map — [`PumpkinDefaults::vanilla_type`] as the named seam
+    /// Phase 2's spawn wiring and the kill walk read. `None` outside the
+    /// family.
+    pub fn pumpkin_moon_type(self) -> Option<u16> {
+        self.pumpkin_moon_defaults().map(|d| d.vanilla_type)
+    }
+
+    /// The wave roster's vanilla `NPC.type` → the ported kind — the inverse of
+    /// [`NpcKind::pumpkin_moon_type`] the F-13a moon ladders' picks decode
+    /// through (`S1-F-13b` Phase 2's spawn wiring). `None` for every id outside
+    /// the 16: the frost-moon wave kinds (341-346) and every port-local id
+    /// consume the pick and spawn nothing.
+    pub fn moon_wave_kind(vanilla_type: u16) -> Option<NpcKind> {
+        NpcKind::from_u16(vanilla_type)
+            .filter(|kind| kind.pumpkin_moon_type() == Some(vanilla_type))
+    }
+
     /// `AI_003_Fighters`'s per-type walk-speed caps (`NPC.cs:57403-59800`):
     /// the velocity ceiling each kind walks at.
     ///
@@ -1696,6 +1996,27 @@ impl NpcKind {
             NpcKind::SleepingAngler => "NPC_Hit_1",
             NpcKind::WebbedStylist => "NPC_Hit_1",
             NpcKind::SleepingGolfer => "NPC_Hit_1",
+            // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group's
+            // `NPCHit1` (`NPC.cs:12929-12977`), 315's `NPCHit12` (`:12978`),
+            // 326's `NPCHit7` (`:13129`), 327's `NPCHit1` (`:13142`), 325's
+            // `NPCHit7` (`:13115`), 329's `NPCHit1` (`:13175`), 330's
+            // `NPCHit1` (`:13188`).
+            NpcKind::Scarecrow1
+            | NpcKind::Scarecrow2
+            | NpcKind::Scarecrow3
+            | NpcKind::Scarecrow4
+            | NpcKind::Scarecrow5
+            | NpcKind::Scarecrow6
+            | NpcKind::Scarecrow7
+            | NpcKind::Scarecrow8
+            | NpcKind::Scarecrow9
+            | NpcKind::Scarecrow10 => "NPC_Hit_1",
+            NpcKind::HeadlessHorseman => "NPC_Hit_12",
+            NpcKind::MourningWood => "NPC_Hit_7",
+            NpcKind::Splinterling => "NPC_Hit_7",
+            NpcKind::Pumpking => "NPC_Hit_1",
+            NpcKind::Hellhound => "NPC_Hit_1",
+            NpcKind::Poltergeist => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -1881,6 +2202,27 @@ impl NpcKind {
             NpcKind::SleepingAngler => "NPC_Killed_6",
             NpcKind::WebbedStylist => "NPC_Killed_1",
             NpcKind::SleepingGolfer => "NPC_Killed_1",
+            // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group's
+            // `NPCDeath6` (`NPC.cs:12929-12977`), 315's `NPCDeath18`
+            // (`:12978`), 326's `NPCDeath6` (`:13129`), 327's `NPCDeath1`
+            // (`:13142`), 325's `NPCDeath5` (`:13115`), 329's `NPCDeath5`
+            // (`:13175`), 330's `NPCDeath6` (`:13188`).
+            NpcKind::Scarecrow1
+            | NpcKind::Scarecrow2
+            | NpcKind::Scarecrow3
+            | NpcKind::Scarecrow4
+            | NpcKind::Scarecrow5
+            | NpcKind::Scarecrow6
+            | NpcKind::Scarecrow7
+            | NpcKind::Scarecrow8
+            | NpcKind::Scarecrow9
+            | NpcKind::Scarecrow10 => "NPC_Killed_6",
+            NpcKind::HeadlessHorseman => "NPC_Killed_18",
+            NpcKind::MourningWood => "NPC_Killed_5",
+            NpcKind::Splinterling => "NPC_Killed_6",
+            NpcKind::Pumpking => "NPC_Killed_1",
+            NpcKind::Hellhound => "NPC_Killed_5",
+            NpcKind::Poltergeist => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -1906,6 +2248,24 @@ impl NpcKind {
             NpcKind::MartianEngineer => 1.5,    // its own arm (`:58032`)
             NpcKind::GigaZapper => 2.25,        // the num83 group (`:57653`)
             NpcKind::MartianWalker => 4.0,      // the shooters' group (`:59735`)
+            // The Pumpkin Moon family (`S1-F-13b`): the 11 aiStyle-3
+            // walkers ride the C#'s own scarecrow arm (`NPC.cs:57816-57840`):
+            // the five stat pairs' `num85` caps, one row per pair —
+            // 305/310 → 2f, 306/311 → 1.25f, 307/312 → 2.25f, 308/313 → 1.5f,
+            // 309/314 → 1f — with Splinterling (326) in the cap-2 group
+            // (`:57554-57578`). The Headless Horseman (315) and the
+            // Hellhound (329) are aiStyle 26 (`AI_026_Unicorns`); their true
+            // machine rides the S1-F-13b2 row — until it lands they walk on
+            // this table's 6f cap, the machine's own chase ceiling
+            // (`NPC.cs:62622`), through the wave arm's documented
+            // stand-in routing.
+            NpcKind::Scarecrow1 | NpcKind::Scarecrow6 => 2.0,
+            NpcKind::Scarecrow2 | NpcKind::Scarecrow7 => 1.25,
+            NpcKind::Scarecrow3 | NpcKind::Scarecrow8 => 2.25,
+            NpcKind::Scarecrow4 | NpcKind::Scarecrow9 => 1.5,
+            NpcKind::Scarecrow5 | NpcKind::Scarecrow10 => 1.0,
+            NpcKind::Splinterling => 2.0,
+            NpcKind::HeadlessHorseman | NpcKind::Hellhound => 6.0,
             _ => return None,
         })
     }
@@ -2178,6 +2538,27 @@ impl NpcKind {
             // `NPC.cs`'s 115 (30×30) / 117-118 (14×14).
             NpcKind::Hungry => (30.0, 30.0),
             NpcKind::LeechHead | NpcKind::LeechBody => (14.0, 14.0),
+            // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group and
+            // the Splinterling share the C#'s 18x40 (`NPC.cs:12929-12977`
+            // /`:13129-13133`); 315 is 74x70 (`:12978`), 325 164x154
+            // (`:13115`), 327 100x100 (`:13142`), 329 46x30 (`:13175`),
+            // 330 24x44 (`:13188`).
+            NpcKind::Scarecrow1
+            | NpcKind::Scarecrow2
+            | NpcKind::Scarecrow3
+            | NpcKind::Scarecrow4
+            | NpcKind::Scarecrow5
+            | NpcKind::Scarecrow6
+            | NpcKind::Scarecrow7
+            | NpcKind::Scarecrow8
+            | NpcKind::Scarecrow9
+            | NpcKind::Scarecrow10
+            | NpcKind::Splinterling => (18.0, 40.0),
+            NpcKind::HeadlessHorseman => (74.0, 70.0),
+            NpcKind::MourningWood => (164.0, 154.0),
+            NpcKind::Pumpking => (100.0, 100.0),
+            NpcKind::Hellhound => (46.0, 30.0),
+            NpcKind::Poltergeist => (24.0, 44.0),
         }
     }
 
@@ -2644,6 +3025,22 @@ impl NpcKind {
             // `NPC.cs:8710` (the eye) / `:8722` (the servant).
             NpcKind::EyeOfCthulhu => 2800,
             NpcKind::ServantOfCthulhu => 8,
+            // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group's five
+            // pair rows (`NPC.cs:12929-12977` — 500/400/600/650/450),
+            // 315 5000 (`:12978`), 326 1200 (`:13129`), 327 26000
+            // (`:13142`), 325 14000 (`:13115`), 329 1800 (`:13175`),
+            // 330 1250 (`:13188`).
+            NpcKind::Scarecrow1 | NpcKind::Scarecrow6 => 500,
+            NpcKind::Scarecrow2 | NpcKind::Scarecrow7 => 400,
+            NpcKind::Scarecrow3 | NpcKind::Scarecrow8 => 600,
+            NpcKind::Scarecrow4 | NpcKind::Scarecrow9 => 650,
+            NpcKind::Scarecrow5 | NpcKind::Scarecrow10 => 450,
+            NpcKind::HeadlessHorseman => 5000,
+            NpcKind::MourningWood => 14000,
+            NpcKind::Splinterling => 1200,
+            NpcKind::Pumpking => 26000,
+            NpcKind::Hellhound => 1800,
+            NpcKind::Poltergeist => 1250,
         }
     }
 
@@ -2883,6 +3280,21 @@ impl NpcKind {
             // `NPC.cs:8707` (the eye damage 15) / `:8720` (the servant 12).
             NpcKind::EyeOfCthulhu => 15,
             NpcKind::ServantOfCthulhu => 12,
+            // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group's five
+            // pair rows (`NPC.cs:12929-12977` — 60/52/78/66/52),
+            // 315 130 (`:12978`), 326 100 (`:13129`), 327 50 (`:13142`),
+            // 325 120 (`:13115`), 329 80 (`:13175`), 330 90 (`:13188`).
+            NpcKind::Scarecrow1 | NpcKind::Scarecrow6 => 60,
+            NpcKind::Scarecrow2 | NpcKind::Scarecrow7 => 52,
+            NpcKind::Scarecrow3 | NpcKind::Scarecrow8 => 78,
+            NpcKind::Scarecrow4 | NpcKind::Scarecrow9 => 66,
+            NpcKind::Scarecrow5 | NpcKind::Scarecrow10 => 52,
+            NpcKind::HeadlessHorseman => 130,
+            NpcKind::MourningWood => 120,
+            NpcKind::Splinterling => 100,
+            NpcKind::Pumpking => 50,
+            NpcKind::Hellhound => 80,
+            NpcKind::Poltergeist => 90,
         }
     }
 }
@@ -4067,7 +4479,10 @@ impl Npc {
             frame: 0,
             frame_counter: 0.0,
             rotation: 0.0,
-            scale: 1.0,
+            // `NPC.scale`'s `SetDefaults` row — the kind-level default (the
+            // Pumpkin family's scaling rows, `S1-F-13b`); 1.0 for every
+            // other kind (their C# scale rows ride `size()`).
+            scale: kind.pumpkin_moon_defaults().map_or(1.0, |d| d.scale),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -4135,7 +4550,9 @@ impl Npc {
             uid: 0,
             carrier_uid: 0,
             wants_saucer_crew: false,
-            alpha: 0,
+            // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
+            // Poltergeist's 100, `NPC.cs:13202`); 0 for every other kind.
+            alpha: kind.pumpkin_moon_defaults().map_or(0, |d| d.alpha),
             head_turn: 0,
             wet: false,
             carrier_timer: -1.0,
@@ -4440,6 +4857,22 @@ impl Npc {
             | NpcKind::SolarCrawltipedeBody
             | NpcKind::SolarCrawltipedeTail => 0.0,
             NpcKind::StardustWormHead => 0.0,
+            // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group's five
+            // pair rows (`NPC.cs:12929-12977` — 0.4/0.2/0.25/0.35/0.5), 315
+            // and 327's 0 (`:12978`/`:13142`), 326 0.2 (`:13129`), 325 0
+            // (`:13115`), 329 0.3 (`:13175`), 330 0.4 (`:13188` — the class
+            // default, written outright in the C#).
+            NpcKind::Scarecrow1 | NpcKind::Scarecrow6 => 0.4,
+            NpcKind::Scarecrow2 | NpcKind::Scarecrow7 => 0.2,
+            NpcKind::Scarecrow3 | NpcKind::Scarecrow8 => 0.25,
+            NpcKind::Scarecrow4 | NpcKind::Scarecrow9 => 0.35,
+            NpcKind::Scarecrow5 | NpcKind::Scarecrow10 => 0.5,
+            NpcKind::HeadlessHorseman => 0.0,
+            NpcKind::MourningWood => 0.0,
+            NpcKind::Splinterling => 0.2,
+            NpcKind::Pumpking => 0.0,
+            NpcKind::Hellhound => 0.3,
+            NpcKind::Poltergeist => 0.4,
             _ => 0.4,
         }
     }
@@ -4699,6 +5132,21 @@ impl Npc {
             NpcKind::SnowmanGangsta => 20,
             NpcKind::SnowBalla => 26,
             NpcKind::MysterySnowman => 22,
+            // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group's five
+            // pair rows (`NPC.cs:12929-12977` — 18/14/16/14/26), 315 40
+            // (`:12978`), 326 32 (`:13129`), 327 40 (`:13142`), 325 34
+            // (`:13115`), 329 38 (`:13175`), 330 44 (`:13188`).
+            NpcKind::Scarecrow1 | NpcKind::Scarecrow6 => 18,
+            NpcKind::Scarecrow2 | NpcKind::Scarecrow7 => 14,
+            NpcKind::Scarecrow3 | NpcKind::Scarecrow8 => 16,
+            NpcKind::Scarecrow4 | NpcKind::Scarecrow9 => 14,
+            NpcKind::Scarecrow5 | NpcKind::Scarecrow10 => 26,
+            NpcKind::HeadlessHorseman => 40,
+            NpcKind::MourningWood => 34,
+            NpcKind::Splinterling => 32,
+            NpcKind::Pumpking => 40,
+            NpcKind::Hellhound => 38,
+            NpcKind::Poltergeist => 44,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4955,6 +5403,25 @@ impl Npc {
             // `NPC.cs:8713` (the eye value 30000); the servant has no row.
             NpcKind::EyeOfCthulhu => 30_000.0,
             NpcKind::ServantOfCthulhu => 0.0,
+            // The Pumpkin Moon family (`S1-F-13b`): the 305-314 group's
+            // 1200 (`NPC.cs:12929-12977`), 315 10000 (`:12978`), 326 2000
+            // (`:13129`), 327 50000 (`:13142`), 325 10000 (`:13115`),
+            // 329 3000 (`:13175`), 330 4500 (`:13188`).
+            NpcKind::Scarecrow1
+            | NpcKind::Scarecrow2
+            | NpcKind::Scarecrow3
+            | NpcKind::Scarecrow4
+            | NpcKind::Scarecrow5
+            | NpcKind::Scarecrow6
+            | NpcKind::Scarecrow7
+            | NpcKind::Scarecrow8
+            | NpcKind::Scarecrow9
+            | NpcKind::Scarecrow10 => 1200.0,
+            NpcKind::HeadlessHorseman | NpcKind::MourningWood => 10000.0,
+            NpcKind::Splinterling => 2000.0,
+            NpcKind::Pumpking => 50000.0,
+            NpcKind::Hellhound => 3000.0,
+            NpcKind::Poltergeist => 4500.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5530,6 +5997,68 @@ impl Npc {
             | NpcKind::EaterOfWorldsTail
             | NpcKind::LeechHead
             | NpcKind::LeechBody => {}
+            // ---- the Pumpkin Moon family (`S1-F-13b` Phase 2): the wave
+            // roster rides alive. The 11 aiStyle-3 walkers ride the walker
+            // family on the C#'s per-type speed rows (`AI_003_Fighters`'s
+            // scarecrow arm `NPC.cs:57816-57840` + the 326 cap-2 group
+            // `:57554-57578` — `ai3_walk_speed`'s family arm).
+            NpcKind::Scarecrow1
+            | NpcKind::Scarecrow2
+            | NpcKind::Scarecrow3
+            | NpcKind::Scarecrow4
+            | NpcKind::Scarecrow5
+            | NpcKind::Scarecrow6
+            | NpcKind::Scarecrow7
+            | NpcKind::Scarecrow8
+            | NpcKind::Scarecrow9
+            | NpcKind::Scarecrow10
+            | NpcKind::Splinterling => self.update_skeleton(world, player, dt),
+            // The Headless Horseman (315) and the Hellhound (329): aiStyle 26
+            // (`AI_026_Unicorns`, `NPC.cs:62366+`) — their named machines ride
+            // the S1-F-13b2 row; until it lands the wave arm's documented
+            // stand-in is the walker family at the C#'s own chase cap
+            // (`num10 = 6f`, `:62622` — `ai3_walk_speed`'s family row).
+            NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
+                self.update_skeleton(world, player, dt)
+            }
+            // The Poltergeist (330): aiStyle 22 — the port's own caster
+            // machine (the Fire Imp family; `update_caster`'s shot arm's
+            // `_ => return` leaves it shotless until the named machine lands).
+            NpcKind::Poltergeist => self.update_caster(world, player, rng),
+            // The Mourning Wood (325, aiStyle 57) and the Pumpking (327,
+            // aiStyle 58): the gravity-off floaters. Their named machines ride
+            // the S1-F-13b2 row; until then the wave arm's documented
+            // stand-ins are the hover family at each machine's own base
+            // speed/approach — 325: aiStyle-57's `num836 = 2f` (`:32762`) with
+            // its `(num836 − vx)/21` approach (`:32983`, accel 0.1); 327:
+            // aiStyle-58's `num875 = 6` (`:33087`) with its `/15` lerp (accel
+            // 0.4). Both fly through the tiles (their `noTileCollide` rows).
+            NpcKind::MourningWood => self.update_hover(
+                world,
+                player,
+                HoverParams {
+                    max_speed: 2.0,
+                    accel: 0.1,
+                    surface_damped: false,
+                    double_add: true,
+                    no_tile_collide: true,
+                    bounce: 0.7,
+                    rotation: HoverRotation::Velocity,
+                },
+            ),
+            NpcKind::Pumpking => self.update_hover(
+                world,
+                player,
+                HoverParams {
+                    max_speed: 6.0,
+                    accel: 0.4,
+                    surface_damped: false,
+                    double_add: true,
+                    no_tile_collide: true,
+                    bounce: 0.7,
+                    rotation: HoverRotation::Velocity,
+                },
+            ),
         }
         self.find_frame();
         self.contact(player, rng);
@@ -7446,6 +7975,30 @@ impl Npc {
                 let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
                 self.frame = if mouth { 1 } else { 0 };
             }
+            // The Pumpkin Moon family (`S1-F-13b` Phase 2): all 16 kinds ride
+            // `FindFrame`'s plain walker strip. `FindFrame`'s humanoid-group
+            // case list carries 310-314 and 326 (`NPC.cs:68543-68600`) and its
+            // default arm (`:69481+`, the `|vx| * 2` accumulator, row 0 idle
+            // / rows 2..count-1 walk) carries every other kind — 305-309 and
+            // the five named kinds included — so the walker frame stands for
+            // the whole family, each wrapping over its own `npcFrameCount`
+            // row (`Main.cs:67082`).
+            NpcKind::Scarecrow1
+            | NpcKind::Scarecrow2
+            | NpcKind::Scarecrow3
+            | NpcKind::Scarecrow4
+            | NpcKind::Scarecrow5
+            | NpcKind::Scarecrow6
+            | NpcKind::Scarecrow7
+            | NpcKind::Scarecrow8
+            | NpcKind::Scarecrow9
+            | NpcKind::Scarecrow10
+            | NpcKind::HeadlessHorseman
+            | NpcKind::MourningWood
+            | NpcKind::Splinterling
+            | NpcKind::Pumpking
+            | NpcKind::Hellhound
+            | NpcKind::Poltergeist => self.walker_frame(),
         }
     }
 
@@ -15969,6 +16522,25 @@ impl Npc {
             NpcKind::GolemFistRight => 63,
             NpcKind::GolemHeadFree => 64,
             NpcKind::Deerclops => 65,
+            // The Pumpkin Moon family (`S1-F-13b`): the vanilla type ids
+            // (the same values `to_u16` rides for these kinds) — unused by
+            // every arm above, so the G6 key stays injective.
+            NpcKind::Scarecrow1 => 305,
+            NpcKind::Scarecrow2 => 306,
+            NpcKind::Scarecrow3 => 307,
+            NpcKind::Scarecrow4 => 308,
+            NpcKind::Scarecrow5 => 309,
+            NpcKind::Scarecrow6 => 310,
+            NpcKind::Scarecrow7 => 311,
+            NpcKind::Scarecrow8 => 312,
+            NpcKind::Scarecrow9 => 313,
+            NpcKind::Scarecrow10 => 314,
+            NpcKind::HeadlessHorseman => 315,
+            NpcKind::MourningWood => 325,
+            NpcKind::Splinterling => 326,
+            NpcKind::Pumpking => 327,
+            NpcKind::Hellhound => 329,
+            NpcKind::Poltergeist => 330,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -19384,12 +19956,12 @@ mod tests {
     }
 
     /// The full `NpcKind` roster in declaration order (the enum at
-    /// `npc.rs:31-686`: 182 kinds — the 8 slime colours are `SlimeVariant`,
+    /// `npc.rs:31-686`: 198 kinds — the 8 slime colours are `SlimeVariant`,
     /// not kinds). The driver for
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    const ALL_KINDS: [NpcKind; 182] = [
+    const ALL_KINDS: [NpcKind; 198] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -19572,6 +20144,22 @@ mod tests {
         NpcKind::PrimeSaw,
         NpcKind::PrimeVice,
         NpcKind::PrimeLaser,
+        NpcKind::Scarecrow1,
+        NpcKind::Scarecrow2,
+        NpcKind::Scarecrow3,
+        NpcKind::Scarecrow4,
+        NpcKind::Scarecrow5,
+        NpcKind::Scarecrow6,
+        NpcKind::Scarecrow7,
+        NpcKind::Scarecrow8,
+        NpcKind::Scarecrow9,
+        NpcKind::Scarecrow10,
+        NpcKind::HeadlessHorseman,
+        NpcKind::MourningWood,
+        NpcKind::Splinterling,
+        NpcKind::Pumpking,
+        NpcKind::Hellhound,
+        NpcKind::Poltergeist,
     ];
 
     #[test]
@@ -22837,8 +23425,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            182,
-            "every decodable kind resolves (the wire roster's size)"
+            198,
+            "every decodable kind resolves (the wire roster's size — 198 after S1-F-13b)"
         );
         assert!(
             covered > 43,
@@ -23632,5 +24220,674 @@ mod s1_d_3n_tests {
         assert_eq!(TownWeaponParams::TOWN_PET.knockback, 3.0);
         assert_eq!(TownWeaponParams::TOWN_PET.width, 32);
         assert_eq!(TownWeaponParams::TOWN_PET.height, 32);
+    }
+}
+
+#[cfg(test)]
+mod s1_f_13b_tests {
+    use super::*;
+
+    /// The 16 Pumpkin Moon kinds with the C#'s verbatim `SetDefaults` rows
+    /// (`NPC.cs:12929-12977` the 305-314 group, `:12978` 315, `:13115` 325,
+    /// `:13129` 326, `:13142` 327, `:13175` 329, `:13188` 330): the vanilla
+    /// type, `aiStyle`, the box, damage/defense/lifeMax, knockBackResist,
+    /// scale, alpha, the noGravity/noTileCollide flags, value, the hit/death
+    /// cues, and `CheckProgressPumpkinMoon`'s per-type kill points (the
+    /// port's `pumpkin_moon_points` table, `world.rs`). The scarecrow pairs
+    /// (305/310, 306/311, 307/312, 308/313, 309/314) share the C#'s if-chain
+    /// row — the table carries both twins.
+    struct Row {
+        kind: NpcKind,
+        ty: u16,
+        ai: i32,
+        w: f32,
+        h: f32,
+        dmg: i32,
+        def: i32,
+        life: i32,
+        kb: f32,
+        scale: f32,
+        alpha: u8,
+        no_gravity: bool,
+        no_tile_collide: bool,
+        value: f32,
+        hit: &'static str,
+        death: &'static str,
+        points: f32,
+    }
+
+    fn sc(n: i32) -> NpcKind {
+        match n {
+            1 => NpcKind::Scarecrow1,
+            2 => NpcKind::Scarecrow2,
+            3 => NpcKind::Scarecrow3,
+            4 => NpcKind::Scarecrow4,
+            5 => NpcKind::Scarecrow5,
+            6 => NpcKind::Scarecrow6,
+            7 => NpcKind::Scarecrow7,
+            8 => NpcKind::Scarecrow8,
+            9 => NpcKind::Scarecrow9,
+            _ => NpcKind::Scarecrow10,
+        }
+    }
+
+    /// The five distinct stat rows, one per pair (`NPC.cs:12940-12970`).
+    const PAIR_ROWS: [(i32, i32, i32, f32, f32); 5] = [
+        // (damage, defense, lifeMax, knockBackResist, scale)
+        (60, 18, 500, 0.4, 1.0),
+        (52, 14, 400, 0.2, 1.05),
+        (78, 16, 600, 0.25, 0.9),
+        (66, 14, 650, 0.35, 0.95),
+        (52, 26, 450, 0.5, 1.1),
+    ];
+
+    fn rows() -> Vec<Row> {
+        let mut v = Vec::new();
+        // The 305-314 group: the shared row (18x40, aiStyle 3, value 1200,
+        // NPCHit1/NPCDeath6) plus the pair rows, both twins of each pair.
+        // The C#'s pairs are (305,310)/(306,311)/(307,312)/(308,313)/(309,314)
+        // — kind `i` of the group rides row `i % 5` of the if-chain.
+        for i in 0..10 {
+            let (dmg, def, life, kb, scale) = PAIR_ROWS[i % 5];
+            v.push(Row {
+                kind: sc((i + 1) as i32),
+                ty: 305 + i as u16,
+                ai: 3,
+                w: 18.0,
+                h: 40.0,
+                dmg,
+                def,
+                life,
+                kb,
+                scale,
+                alpha: 0,
+                no_gravity: false,
+                no_tile_collide: false,
+                value: 1200.0,
+                hit: "NPC_Hit_1",
+                death: "NPC_Killed_6",
+                points: 1.0,
+            });
+        }
+        // The five named kinds (`NPC.cs:12978`/`:13115`/`:13129`/`:13142`/
+        // `:13175`/`:13188` — six rows: 315/325/326/327/329/330).
+        v.push(Row {
+            kind: NpcKind::HeadlessHorseman,
+            ty: 315,
+            ai: 26,
+            w: 74.0,
+            h: 70.0,
+            dmg: 130,
+            def: 40,
+            life: 5000,
+            kb: 0.0,
+            scale: 1.0,
+            alpha: 0,
+            no_gravity: false,
+            no_tile_collide: false,
+            value: 10000.0,
+            hit: "NPC_Hit_12",
+            death: "NPC_Killed_18",
+            points: 50.0,
+        });
+        v.push(Row {
+            kind: NpcKind::MourningWood,
+            ty: 325,
+            ai: 57,
+            w: 164.0,
+            h: 154.0,
+            dmg: 120,
+            def: 34,
+            life: 14000,
+            kb: 0.0,
+            scale: 1.0,
+            alpha: 0,
+            no_gravity: false,
+            no_tile_collide: false,
+            value: 10000.0,
+            hit: "NPC_Hit_7",
+            death: "NPC_Killed_5",
+            points: 75.0,
+        });
+        v.push(Row {
+            kind: NpcKind::Splinterling,
+            ty: 326,
+            ai: 3,
+            w: 18.0,
+            h: 40.0,
+            dmg: 100,
+            def: 32,
+            life: 1200,
+            kb: 0.2,
+            scale: 1.0,
+            alpha: 0,
+            no_gravity: false,
+            no_tile_collide: false,
+            value: 2000.0,
+            hit: "NPC_Hit_7",
+            death: "NPC_Killed_6",
+            points: 2.0,
+        });
+        v.push(Row {
+            kind: NpcKind::Pumpking,
+            ty: 327,
+            ai: 58,
+            w: 100.0,
+            h: 100.0,
+            dmg: 50,
+            def: 40,
+            life: 26000,
+            kb: 0.0,
+            scale: 1.0,
+            alpha: 0,
+            no_gravity: true,
+            no_tile_collide: true,
+            value: 50000.0,
+            hit: "NPC_Hit_1",
+            death: "NPC_Killed_1",
+            points: 150.0,
+        });
+        v.push(Row {
+            kind: NpcKind::Hellhound,
+            ty: 329,
+            ai: 26,
+            w: 46.0,
+            h: 30.0,
+            dmg: 80,
+            def: 38,
+            life: 1800,
+            kb: 0.3,
+            scale: 1.0,
+            alpha: 0,
+            no_gravity: false,
+            no_tile_collide: false,
+            value: 3000.0,
+            hit: "NPC_Hit_1",
+            death: "NPC_Killed_5",
+            points: 5.0,
+        });
+        v.push(Row {
+            kind: NpcKind::Poltergeist,
+            ty: 330,
+            ai: 22,
+            w: 24.0,
+            h: 44.0,
+            dmg: 90,
+            def: 44,
+            life: 1250,
+            kb: 0.4,
+            scale: 1.0,
+            alpha: 100,
+            no_gravity: true,
+            no_tile_collide: true,
+            value: 4500.0,
+            hit: "NPC_Hit_1",
+            death: "NPC_Killed_6",
+            points: 10.0,
+        });
+        v
+    }
+
+    /// DW-1.1: every kind's stats pin against the C#'s rows — sizes, aiStyle,
+    /// damage/defense/life, knockBackResist, scale, alpha, the flags and the
+    /// value, through the port's tables.
+    #[test]
+    fn s1_f_13b_the_pumpkin_defaults_match_the_csharp_rows() {
+        let all = rows();
+        assert_eq!(all.len(), 16, "the family is 16 kinds");
+        for r in all.iter() {
+            let shell = Npc::new(r.kind, 0.0, 0.0, 1, 0.0);
+            let d = r.kind.pumpkin_moon_defaults().expect("a family kind");
+            assert_eq!(d.vanilla_type, r.ty, "{:?} type", r.kind);
+            assert_eq!(d.ai_style, r.ai, "{:?} aiStyle", r.kind);
+            assert_eq!(r.kind.size(), (r.w, r.h), "{:?} size", r.kind);
+            assert_eq!(shell.size(), (r.w, r.h), "{:?} npc size", r.kind);
+            assert_eq!(r.kind.contact_damage(), r.dmg, "{:?} damage", r.kind);
+            assert_eq!(shell.defense(), r.def, "{:?} defense", r.kind);
+            assert_eq!(r.kind.max_hp(), r.life, "{:?} lifeMax", r.kind);
+            assert_eq!(shell.knock_back_resist(), r.kb, "{:?} kb", r.kind);
+            assert_eq!(d.scale, r.scale, "{:?} scale", r.kind);
+            assert_eq!(d.alpha, r.alpha, "{:?} alpha", r.kind);
+            assert_eq!(d.no_gravity, r.no_gravity, "{:?} noGravity", r.kind);
+            assert_eq!(
+                d.no_tile_collide, r.no_tile_collide,
+                "{:?} noTileCollide",
+                r.kind
+            );
+            assert_eq!(shell.value(), r.value, "{:?} value", r.kind);
+            assert_eq!(r.kind.hit_sound(), Some(r.hit), "{:?} hit", r.kind);
+            assert_eq!(r.kind.death_sound(), Some(r.death), "{:?} death", r.kind);
+        }
+        // The five stat rows never cross pairs (the C#'s if-chain gives each
+        // pair one row — both twins of a pair read identically).
+        for i in 0..5 {
+            let a = all[i].kind;
+            let b = all[i + 5].kind;
+            assert_eq!(a.contact_damage(), b.contact_damage(), "{a:?}/{b:?}");
+            assert_eq!(
+                Npc::new(a, 0.0, 0.0, 1, 0.0).defense(),
+                Npc::new(b, 0.0, 0.0, 1, 0.0).defense(),
+                "{a:?}/{b:?}"
+            );
+            assert_eq!(a.max_hp(), b.max_hp(), "{a:?}/{b:?}");
+            assert_eq!(
+                Npc::new(a, 0.0, 0.0, 1, 0.0).knock_back_resist(),
+                Npc::new(b, 0.0, 0.0, 1, 0.0).knock_back_resist(),
+                "{a:?}/{b:?}"
+            );
+        }
+    }
+
+    /// DW-1.1: the kind-level defaults ride the spawn — the Poltergeist's
+    /// alpha 100 and the scaled Scarecrows' scale, with no drift for the
+    /// existing kinds (1.0 / 0 stay).
+    #[test]
+    fn s1_f_13b_the_kind_level_defaults_ride_the_spawn() {
+        let polt = Npc::new(NpcKind::Poltergeist, 0.0, 0.0, 1, 0.0);
+        assert_eq!(polt.alpha, 100);
+        assert_eq!(polt.scale, 1.0);
+        let s3 = Npc::new(NpcKind::Scarecrow3, 0.0, 0.0, 1, 0.0);
+        assert_eq!(s3.scale, 0.9);
+        let s5 = Npc::new(NpcKind::Scarecrow5, 0.0, 0.0, 1, 0.0);
+        assert_eq!(s5.scale, 1.1);
+        let s2 = Npc::new(NpcKind::Scarecrow2, 0.0, 0.0, 1, 0.0);
+        assert_eq!(s2.scale, 1.05);
+        // The pair with no scale row (305/310) rides the `SetDefaults` 1f.
+        assert_eq!(Npc::new(NpcKind::Scarecrow6, 0.0, 0.0, 1, 0.0).scale, 1.0);
+        // No drift: the pre-existing kinds keep their hardcoded start state.
+        for kind in [
+            NpcKind::Slime,
+            NpcKind::Zombie,
+            NpcKind::Golem,
+            NpcKind::PirateCaptain,
+        ] {
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(n.scale, 1.0, "{kind:?} scale drifted");
+            assert_eq!(n.alpha, 0, "{kind:?} alpha drifted");
+        }
+    }
+
+    /// DW-1.2: the net-id round-trips are injective over the 16 vanilla ids
+    /// and never touch the 78..84 Deerclops/Skeletron-Prime band.
+    #[test]
+    fn s1_f_13b_the_pumpkin_net_ids_round_trip_and_stay_off_the_deerclops_band() {
+        let mut ids: Vec<u16> = Vec::new();
+        for r in rows().iter() {
+            let id = r.kind.to_u16();
+            assert_eq!(id, r.ty, "{:?} rides its vanilla type", r.kind);
+            assert_eq!(NpcKind::from_u16(id), Some(r.kind), "{:?} round-trip", r.kind);
+            assert!(
+                !(78..=84).contains(&id),
+                "{:?} collides with the Deerclops band",
+                r.kind
+            );
+            ids.push(id);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), 16, "two pumpkin kinds share a net id");
+        // The ids sit above the whole port-local space (0..188), so no
+        // pre-existing decode arm ever sees them.
+        assert!(ids.iter().all(|&id| id > 188));
+    }
+
+    /// DW-1.3: the sound tables resolve the per-kind hit/death cues — the
+    /// scarecrow group's NPCHit1/NPCDeath6 and each named kind's row.
+    #[test]
+    fn s1_f_13b_the_pumpkin_sounds_resolve_per_kind() {
+        for r in rows().iter() {
+            assert_eq!(r.kind.hit_sound(), Some(r.hit), "{:?} hit cue", r.kind);
+            assert_eq!(r.kind.death_sound(), Some(r.death), "{:?} death cue", r.kind);
+        }
+        assert_eq!(NpcKind::Scarecrow1.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Scarecrow10.death_sound(), Some("NPC_Killed_6"));
+        assert_eq!(NpcKind::Splinterling.hit_sound(), Some("NPC_Hit_7"));
+        assert_eq!(NpcKind::HeadlessHorseman.hit_sound(), Some("NPC_Hit_12"));
+        assert_eq!(NpcKind::HeadlessHorseman.death_sound(), Some("NPC_Killed_18"));
+        assert_eq!(NpcKind::MourningWood.hit_sound(), Some("NPC_Hit_7"));
+        assert_eq!(NpcKind::MourningWood.death_sound(), Some("NPC_Killed_5"));
+        assert_eq!(NpcKind::Hellhound.death_sound(), Some("NPC_Killed_5"));
+        assert_eq!(NpcKind::Pumpking.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Pumpking.death_sound(), Some("NPC_Killed_1"));
+    }
+
+    /// DW-1.4: the kind→type map round-trips (kind → vanilla id → kind) and
+    /// feeds the boss-cap counts.
+    #[test]
+    fn s1_f_13b_the_kind_type_map_round_trips_and_feeds_the_cap() {
+        for r in rows().iter() {
+            let ty = r.kind.pumpkin_moon_type().expect("a family kind");
+            assert_eq!(ty, r.ty, "{:?} type", r.kind);
+            assert_eq!(
+                NpcKind::from_u16(ty),
+                Some(r.kind),
+                "{:?} map round-trip",
+                r.kind
+            );
+            // The map agrees with the kind's net id (both ride the vanilla).
+            assert_eq!(Some(r.kind.to_u16()), r.kind.pumpkin_moon_type());
+            // The boss cap: 315/325/327's `npcSlots` (1/3/5 — the class
+            // default and the two rows), `None` for every other kind
+            // (`MOON_BOSS_SLOTS`).
+            let slots = crate::spawner::moon_boss_slots(ty);
+            match r.kind {
+                NpcKind::HeadlessHorseman => assert_eq!(slots, Some(1.0)),
+                NpcKind::MourningWood => assert_eq!(slots, Some(3.0)),
+                NpcKind::Pumpking => assert_eq!(slots, Some(5.0)),
+                _ => assert_eq!(slots, None, "{:?} carries no boss slot", r.kind),
+            }
+        }
+        // The cap counts the LIVE boss kinds only (`Npc.Spawner`'s
+        // weighted sum over `CountNPCS`): a wave carrying 315 + 315 + 325 +
+        // a dead 327 reads 1 + 1 + 3.
+        let mut live1 = Npc::new(NpcKind::HeadlessHorseman, 0.0, 0.0, 1, 0.0);
+        let mut live2 = Npc::new(NpcKind::HeadlessHorseman, 0.0, 0.0, 1, 0.0);
+        let mut live3 = Npc::new(NpcKind::MourningWood, 0.0, 0.0, 1, 0.0);
+        let mut dead = Npc::new(NpcKind::Pumpking, 0.0, 0.0, 1, 0.0);
+        live1.hp = 100;
+        live2.hp = 100;
+        live3.hp = 100;
+        dead.hp = 0;
+        let npcs = [live1.clone(), live2.clone(), live3, dead];
+        assert_eq!(crate::spawner::moon_boss_cap_count(&npcs), 5.0);
+        // A wave-kind that is not a boss contributes nothing.
+        let mut walker = Npc::new(NpcKind::Scarecrow1, 0.0, 0.0, 1, 0.0);
+        walker.hp = 100;
+        assert_eq!(crate::spawner::moon_boss_cap_count(&[walker]), 0.0);
+    }
+
+    /// DW-1.4: the kind→type map feeds the kill points — a pumpkin-moon kill
+    /// credits `CheckProgressPumpkinMoon`'s per-type row (1/50/75/2/150/5/10)
+    /// through the map.
+    #[test]
+    fn s1_f_13b_the_kind_type_map_feeds_the_kill_points() {
+        for r in rows().iter() {
+            let mut world = tr_core::World::new("t".into(), 40, 40);
+            world.pumpkin_moon = true;
+            let before = world.total_invasion_points;
+            world.report_pumpkin_moon_kill(r.kind.pumpkin_moon_type().unwrap());
+            assert_eq!(
+                world.total_invasion_points - before,
+                r.points,
+                "{:?} kills for the wrong points",
+                r.kind
+            );
+        }
+    }
+
+    /// The map is family-scoped: every kind outside the 16 reads `None`, and
+    /// its `Npc::new` defaults stay the hardcoded 1.0 / 0.
+    #[test]
+    fn s1_f_13b_the_type_map_is_none_outside_the_family() {
+        for kind in [
+            NpcKind::Slime,
+            NpcKind::Zombie,
+            NpcKind::Deerclops,
+            NpcKind::PirateCaptain,
+            NpcKind::Pumpking,
+        ] {
+            let expected = match kind {
+                NpcKind::Pumpking => true,
+                _ => false,
+            };
+            assert_eq!(
+                kind.pumpkin_moon_type().is_some(),
+                expected,
+                "{kind:?} outside the family"
+            );
+            if !expected {
+                assert!(kind.pumpkin_moon_defaults().is_none());
+            }
+        }
+    }
+
+    // ---- Phase 2: the spawn map, the speed rows, the stand-in routings,
+    // the sheets ----
+
+    #[test]
+    fn s1_f_13b_the_moon_wave_kind_map_round_trips_and_stays_family_scoped() {
+        // DW-2.1's seam: the ladder's vanilla pick ↔ the kind, both ways, and
+        // every id outside the 16 stays unported — the frost-moon picks, the
+        // wave-20 unported bosses, and the port-local id space must not leak
+        // through the family filter.
+        for r in rows().iter() {
+            assert_eq!(NpcKind::moon_wave_kind(r.ty), Some(r.kind), "{:?}", r.kind);
+            assert_eq!(r.kind.pumpkin_moon_type(), Some(r.ty));
+        }
+        for ty in [
+            0u16, 3, 133, 188, 304, 320, 322, 328, 341, 343, 344, 345, 346, 471,
+        ] {
+            assert_eq!(
+                NpcKind::moon_wave_kind(ty),
+                None,
+                "vanilla id {ty} is outside the family"
+            );
+        }
+        for kind in [
+            NpcKind::Zombie,
+            NpcKind::Deerclops,
+            NpcKind::MartianWalker,
+            NpcKind::PirateCaptain,
+        ] {
+            assert_eq!(
+                NpcKind::moon_wave_kind(kind.to_u16()),
+                None,
+                "{kind:?} rides a port-local id and must not decode as a wave kind"
+            );
+        }
+    }
+
+    #[test]
+    fn s1_f_13b_the_walkers_ride_the_csharp_speed_rows() {
+        // DW-2.2: `AI_003_Fighters`'s scarecrow arm (`NPC.cs:57816-57840`) —
+        // the five stat pairs' `num85` caps (305/310 → 2f, 306/311 → 1.25f,
+        // 307/312 → 2.25f, 308/313 → 1.5f, 309/314 → 1f) — plus Splinterling
+        // in the cap-2 group (`:57554-57578`). The Headless Horseman (315) and
+        // the Hellhound (329) ride their aiStyle-26 stand-in cap
+        // (`num10 = 6f`, `:62622`) while their named machine rides S1-F-13b2.
+        let expected: [(NpcKind, f32); 13] = [
+            (NpcKind::Scarecrow1, 2.0),
+            (NpcKind::Scarecrow2, 1.25),
+            (NpcKind::Scarecrow3, 2.25),
+            (NpcKind::Scarecrow4, 1.5),
+            (NpcKind::Scarecrow5, 1.0),
+            (NpcKind::Scarecrow6, 2.0),
+            (NpcKind::Scarecrow7, 1.25),
+            (NpcKind::Scarecrow8, 2.25),
+            (NpcKind::Scarecrow9, 1.5),
+            (NpcKind::Scarecrow10, 1.0),
+            (NpcKind::Splinterling, 2.0),
+            (NpcKind::HeadlessHorseman, 6.0),
+            (NpcKind::Hellhound, 6.0),
+        ];
+        for (kind, speed) in expected {
+            assert_eq!(
+                kind.ai3_walk_speed(),
+                Some(speed),
+                "{kind:?} walks at the wrong cap"
+            );
+        }
+        // The twins share their pair's row — the C#'s if-chain pairs.
+        for i in 0..5 {
+            assert_eq!(
+                sc((i + 1) as i32).ai3_walk_speed(),
+                sc((i + 6) as i32).ai3_walk_speed(),
+                "pair {i} shares one C# row"
+            );
+        }
+        // "Never reuse another kind's row": the five pair caps are pairwise
+        // distinct (the C# writes a distinct `num85` per pair), so no pair can
+        // borrow another's row.
+        let caps = [
+            sc(1), sc(2), sc(3), sc(4), sc(5),
+        ]
+        .map(|k| k.ai3_walk_speed().unwrap());
+        for i in 0..caps.len() {
+            for j in 0..caps.len() {
+                if i != j {
+                    assert_ne!(caps[i], caps[j], "the C# sets a distinct num85 per pair");
+                }
+            }
+        }
+        // The rows a family kind shares are only the ones the C#'s groups share:
+        // Splinterling's cap-2 2f rides the GoblinThief/BrainScrambler group,
+        // and the 308/313 (1.5) and 309/314 (1.0) caps equal the num83 and
+        // num107 group bases — a cast of the C#'s groups, not a copy.
+        assert_eq!(
+            NpcKind::Splinterling.ai3_walk_speed(),
+            NpcKind::GoblinThief.ai3_walk_speed(),
+            "Splinterling and the cap-2 group share the C#'s 2f row"
+        );
+        assert_eq!(
+            sc(4).ai3_walk_speed(),
+            NpcKind::Skeleton.ai3_walk_speed(),
+            "308/313's cap is the num83 group's base"
+        );
+        assert_eq!(
+            sc(5).ai3_walk_speed(),
+            NpcKind::Zombie.ai3_walk_speed(),
+            "309/314's cap is the num107 default"
+        );
+        // Every other walker's cap stays off the pre-existing rows.
+        for kind in [NpcKind::Scarecrow1, NpcKind::Scarecrow2, NpcKind::Scarecrow3] {
+            assert_eq!(
+                kind.ai3_walk_speed(),
+                Some(match kind {
+                    NpcKind::Scarecrow1 => 2.0,
+                    NpcKind::Scarecrow2 => 1.25,
+                    _ => 2.25,
+                })
+            );
+            for other in [NpcKind::Zombie, NpcKind::Skeleton, NpcKind::GrayGrunt] {
+                assert_ne!(
+                    kind.ai3_walk_speed(),
+                    other.ai3_walk_speed(),
+                    "{kind:?} must not reuse {other:?}'s row"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn s1_f_13b_the_family_machines_route_to_their_stand_ins() {
+        // DW-2.5's routing: the wave roster rides live — the 11 aiStyle-3
+        // walkers and the two aiStyle-26 kinds walk on the walker family (the
+        // speed rows pin their caps), the Mourning Wood and the Pumpking
+        // hover, and the Poltergeist rides the caster stand (it holds still —
+        // its shot arm returns until the named machine lands with S1-F-13b2).
+        let mut w = tr_core::World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * TILE_PX;
+        player.y = 95.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        for kind in [
+            NpcKind::Scarecrow1,
+            NpcKind::Scarecrow5,
+            NpcKind::Scarecrow10,
+            NpcKind::Splinterling,
+            NpcKind::HeadlessHorseman,
+            NpcKind::Hellhound,
+        ] {
+            // The walkers: spawned left of the player, they close the gap and
+            // never exceed their row's cap.
+            let mut n = Npc::new(kind, 60.0 * TILE_PX, 95.0 * TILE_PX, 1, 0.0);
+            n.hp = n.max_hp;
+            let (dx0, _) = (player.center().0 - n.center().0, 0.0);
+            for _ in 0..30 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+                assert!(
+                    n.vx.abs() <= kind.ai3_walk_speed().unwrap() + 0.001,
+                    "{kind:?} walks past its cap"
+                );
+            }
+            assert!(
+                player.center().0 - n.center().0 < dx0,
+                "{kind:?} never closed the gap"
+            );
+        }
+        // The floaters: the Mourning Wood and the Pumpking hold the hover (the
+        // gravity-off fly toward the player), the Poltergeist stands.
+        for kind in [NpcKind::MourningWood, NpcKind::Pumpking] {
+            let mut n = Npc::new(kind, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+            n.hp = n.max_hp;
+            let (dx0, dy0) = {
+                let (pcx, pcy) = player.center();
+                (pcx - n.center().0, pcy - n.center().1)
+            };
+            for _ in 0..30 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            }
+            let (pcx, pcy) = player.center();
+            let (dx1, dy1) = (pcx - n.center().0, pcy - n.center().1);
+            assert!(
+                (dx1 * dx1 + dy1 * dy1) < (dx0 * dx0 + dy0 * dy0),
+                "{kind:?} never flew toward the player"
+            );
+        }
+        let mut ghost = Npc::new(NpcKind::Poltergeist, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        ghost.hp = ghost.max_hp;
+        ghost.vx = 2.0;
+        for _ in 0..30 {
+            ghost.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(ghost.vx, 0.0, "the caster stand parks the Poltergeist");
+    }
+
+    #[test]
+    fn s1_f_13b_the_pumpkin_sheets_resolve_with_the_csharp_frame_counts() {
+        // DW-2.6: each kind's render sheet row resolves — the atlas pack list
+        // (`STATIC_SHEET_NAMES`, the M4-NPC-3v audit), the by-net-id sheet map
+        // (`PUMPKIN_SHEETS`), the frame count the C#'s `Main.npcFrameCount[type]`
+        // gives (`Main.cs:67082` — the port's `NPC_FRAME_COUNT` is the verbatim
+        // table) and the bestiary entry the `net_id` fallback rides.
+        for (ty, rows) in [
+            (305u16, 6u32),
+            (306, 6),
+            (307, 6),
+            (308, 6),
+            (309, 6),
+            (310, 15),
+            (311, 15),
+            (312, 15),
+            (313, 15),
+            (314, 15),
+            (315, 11),
+            (325, 10),
+            (326, 14),
+            (327, 12),
+            (329, 10),
+            (330, 8),
+        ] {
+            let kind = NpcKind::moon_wave_kind(ty).expect("a family kind");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&format!("NPC_{ty}").as_str()),
+                "NPC_{ty} is never packed into the atlas"
+            );
+            assert!(
+                crate::render::entities::PUMPKIN_SHEETS.contains(&(ty as u32)),
+                "NPC_{ty} has no by-net-id sheet row"
+            );
+            assert_eq!(
+                crate::render::entities::npc_rows(ty),
+                rows,
+                "NPC_{ty} rides the wrong frame count"
+            );
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                ty,
+                "{kind:?} draws the wrong sheet"
+            );
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} has the wrong net id");
+        }
     }
 }
