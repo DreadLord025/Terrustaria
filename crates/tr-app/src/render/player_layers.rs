@@ -2865,3 +2865,207 @@ mod tests {
         assert!((arm.pos[1] - 201.0).abs() < 1e-6, "{:?}", arm.pos);
     }
 }
+
+
+/// player-draw audit (task/player-draw): pure-function tests pinning the C#
+/// draw rules (`LegacyPlayerRenderer.cs:163-259` layer order,
+/// `Main.cs:66638-66662` headgear offsets, `PlayerDrawLayers.cs:1217-1219`
+/// composite shift). t1-t3 pin order/offsets; t4 pins the packed sheets the
+/// vanilla arms draw.
+#[cfg(test)]
+mod player_draw_tests {
+    use super::*;
+
+    fn dummy(w: f32, h: f32) -> Option<BgTex> {
+        Some(BgTex { uv: [0.0, 0.0, 1.0, 1.0], w, h })
+    }
+
+    fn assets_all() -> PlayerAssets {
+        PlayerAssets {
+            head: dummy(40.0, 1120.0),
+            eye_whites: dummy(40.0, 1120.0),
+            eyes: dummy(40.0, 1120.0),
+            torso: dummy(80.0, 224.0),
+            shirt: dummy(80.0, 224.0),
+            arm: dummy(360.0, 224.0),
+            undershirt: dummy(80.0, 224.0),
+            under_arm: dummy(360.0, 224.0),
+            arm_shirt: dummy(360.0, 224.0),
+            legs: dummy(40.0, 1120.0),
+            pants: dummy(40.0, 1120.0),
+            shoes: dummy(40.0, 1120.0),
+            hair: dummy(40.0, 784.0),
+            armor_head: [None; 5],
+            armor_body: [None; 5],
+            armor_legs: [None; 5],
+            mount_back: std::array::from_fn(|_| None),
+            mount_front: std::array::from_fn(|_| None),
+        }
+    }
+
+    fn state(body_frame: u32, facing: f32) -> PlayerCompositeState {
+        PlayerCompositeState {
+            origin: [1000.0, 1000.0],
+            gfx_off_y: 0.0,
+            leg_frame: body_frame,
+            body_frame,
+            facing,
+            swing: 0.0,
+            hold_style: 0,
+            use_style: 0,
+            item_rotation: 0.0,
+            swing_anim_ticks: 0.0,
+            swing_max_ticks: 1.0,
+            use_animation: 0,
+            item_uv: None,
+            item_size: [0.0, 0.0],
+            light: [1.0, 1.0, 1.0],
+            mount: None,
+            head_armor: -1,
+            body_armor: -1,
+            leg_armor: -1,
+            front_arm: crate::player::CompositeArmState::DISABLED,
+            back_arm: crate::player::CompositeArmState::DISABLED,
+            c_head: 0,
+            c_body: 0,
+            c_legs: 0,
+            c_mount: 0,
+            sitting: false,
+            seat_y_offset: 0,
+            sleeping: false,
+            full_rotation: 0.0,
+        }
+    }
+
+    /// t1 — C# order: inside 12_Skin_Composite the skin torso draws BEFORE
+    /// the back arm (`PlayerDrawLayers.cs:1238` -> `:1257`); the whole
+    /// 12_Skin block draws BEFORE the shirt torso 17_Torso and the head
+    /// (`LegacyPlayerRenderer.cs:194/208/214`); the FRONT arm is
+    /// 28_ArmOverItem AFTER torso AND head (`:239`) — one arm in front at
+    /// idle, for both directions.
+    #[test]
+    fn t1_player_arm_layer_order_matches_csharp() {
+        for facing in [1.0f32, -1.0f32] {
+            let layers = assemble_layers(&state(0, facing), &assets_all());
+            let idx = |p: PlayerPart| {
+                layers
+                    .iter()
+                    .position(|l| l.part == p)
+                    .unwrap_or_else(|| panic!("part {:?} missing at facing {}", p, facing))
+            };
+            let back = idx(PlayerPart::BackArmSkin);
+            let torso = idx(PlayerPart::TorsoSkin);
+            let shirt = idx(PlayerPart::Shirt);
+            let head = idx(PlayerPart::Head);
+            let front = idx(PlayerPart::FrontArmSkin);
+            assert!(
+                torso < back,
+                "C# PlayerDrawLayers.cs:1238->1257: the skin torso draws BEFORE the back arm (facing {})",
+                facing
+            );
+            assert!(
+                back < shirt,
+                "C# LegacyPlayerRenderer.cs:194->208: the back arm draws BEFORE the shirt torso (facing {})",
+                facing
+            );
+            assert!(
+                torso < head && shirt < head,
+                "C# :208/:214 the torso draws BEFORE the head (facing {})",
+                facing
+            );
+            assert!(
+                head < front,
+                "C# :239 the FRONT arm draws AFTER the head — one arm in front (facing {})",
+                facing
+            );
+            let shoulder = idx(PlayerPart::FrontShoulderSkin);
+            assert!(
+                front < shoulder,
+                "C# PlayerDrawSet.cs:1955-1956 compShoulderOverFrontArm=true at row 0: the shoulder over the arm (facing {})",
+                facing
+            );
+        }
+    }
+
+    /// t2 — C# per-frame Y offsets: the head never moves
+    /// (`PlayerDrawLayers.cs:2061-2068` — no headgear shift), the legs never
+    /// shift, the torso and arms sit `2 - OffsetsPlayerHeadgear.Y` lower
+    /// (`:1217-1219`; `Main.cs:66638-66662`: rows 7-9/14-16 are 0, else 2).
+    #[test]
+    fn t2_player_frame_offsets_match_csharp() {
+        for row in 0..20u32 {
+            let s = state(row, 1.0);
+            let body = body_layers(&s, &assets_all());
+            let pos_of = |p: PlayerPart| {
+                body.iter()
+                    .position(|l| l.part == p)
+                    .and_then(|i| body.get(i))
+                    .unwrap_or_else(|| panic!("part {:?} missing at row {}", p, row))
+                    .pos[1]
+            };
+            let head_y = pos_of(PlayerPart::Head);
+            let torso_y = pos_of(PlayerPart::TorsoSkin);
+            let legs_y = pos_of(PlayerPart::LegsSkin);
+            let back_y = pos_of(PlayerPart::BackArmSkin);
+            assert_eq!(head_y, 1000.0, "C# :2061-2068 the head never shifts (row {})", row);
+            assert_eq!(legs_y, 1000.0, "the legs never shift (row {})", row);
+            let zero_headgear = matches!(row, 7..=9 | 14..=16);
+            let want = if zero_headgear { 1002.0 } else { 1000.0 };
+            assert_eq!(
+                torso_y, want,
+                "C# Main.cs:66638-66662 + :1217-1219 torso shift row {}",
+                row
+            );
+            assert_eq!(back_y, want, "the back arm rides the torso's shift (row {})", row);
+        }
+    }
+
+    /// t3 — no head/torso gap across the walk band (rows 7..=19): the torso
+    /// sits at most 2 px below the head (the vanilla compensation), so the
+    /// head's 56-px frame always overlaps the torso's — the diff number is
+    /// pinned per row.
+    #[test]
+    fn t3_no_head_torso_gap() {
+        for row in 7..=19u32 {
+            let s = state(row, 1.0);
+            let body = body_layers(&s, &assets_all());
+            let pos_of = |p: PlayerPart| {
+                body.iter()
+                    .position(|l| l.part == p)
+                    .and_then(|i| body.get(i))
+                    .unwrap()
+                    .pos[1]
+            };
+            let diff = pos_of(PlayerPart::TorsoSkin) - pos_of(PlayerPart::Head);
+            let zero_headgear = matches!(row, 7..=9 | 14..=16);
+            assert_eq!(
+                diff,
+                if zero_headgear { 2.0 } else { 0.0 },
+                "C# walk row {}: head-torso offset must be exactly the vanilla shift (no empty band)",
+                row
+            );
+            assert!(
+                pos_of(PlayerPart::Head) + 56.0 >= pos_of(PlayerPart::TorsoSkin) + 28.0,
+                "the head frame bottom must overlap the torso's top half (row {})",
+                row
+            );
+        }
+    }
+
+    /// t4 — the packed sheet list must carry every piece the vanilla arm
+    /// stacks draw: the under-shirt torso (`Players[skinVar, 5]`,
+    /// `PlayerDrawLayers.cs:1346-1353`), the under-arm sleeve (`Players[8]`,
+    /// `:1355-1360`/`:3698`) and the shirt sleeve (`Players[13]`,
+    /// `:1362`/`:3702`). `make_player_assets` requests all three
+    /// (entities.rs:111-113); a missing atlas entry leaves them `None` and
+    /// those pieces never draw.
+    #[test]
+    fn t4_player_sleeve_sheets_are_packed() {
+        for name in ["Player_0_5", "Player_0_8", "Player_0_13"] {
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name),
+                "C# PlayerDrawLayers.cs:1346-1362/3698-3705 draws Players[skinVar, {name}] — it must be packed into the atlas"
+            );
+        }
+    }
+}

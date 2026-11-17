@@ -1,0 +1,6 @@
+crates/tr-app/src/assets.rs|"Player_0_13",|player-draw: arm-stack sheets packed (Players[5]/[8]/[13])
+crates/tr-app/src/render/entities.rs|shirt: sky_tex(atlas, "Player_0_6", None)|player-draw: shirt sheet full-width for the FrontShirt arm cells
+crates/tr-app/src/render/player_layers.rs|fn t1_player_arm_layer_order_matches_csharp|player-draw: arm layer order pinned to PlayerDrawLayers.cs:1238->1257/:239
+crates/tr-app/src/render/player_layers.rs|fn t2_player_frame_offsets_match_csharp|player-draw: headgear shift pinned per walk row (Main.cs:66638-66662)
+crates/tr-app/src/render/player_layers.rs|fn t3_no_head_torso_gap|player-draw: head-torso offset pinned gapless across the walk band
+crates/tr-app/src/render/player_layers.rs|fn t4_player_sleeve_sheets_are_packed|player-draw: sleeve/under-arm sheets pinned packed (C# :1346-1362/:3698-3705)
