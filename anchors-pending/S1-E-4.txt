@@ -1,0 +1,2 @@
+crates/tr-core/src/gore.rs|pub struct Gore|S1-E-4 - gore particle system port
+crates/tr-core/src/gore_id.rs|pub const GORE_COUNT|S1-E-4 - GoreID.Sets tables port
