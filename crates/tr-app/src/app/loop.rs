@@ -649,6 +649,7 @@ impl App {
                 }
             }
             KeyCode::F1 => self.debug = !self.debug,
+            KeyCode::F4 => self.debug_overlay = !self.debug_overlay,
             KeyCode::F3 => {
                 #[cfg(feature = "debug")]
                 crate::debug_panel::handle_key(self, KeyCode::F3);

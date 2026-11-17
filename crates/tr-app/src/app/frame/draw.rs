@@ -22,7 +22,10 @@ use crate::item::{self};
 use crate::map;
 use crate::npc::{self, NpcKind};
 use crate::render::bg::cave_parallax;
-use crate::render::debug::{capture_frame, draw_debug};
+use crate::render::debug::{
+    capture_frame, cursor_tile, draw_debug, draw_debug_window, DebugPlayer, DebugTile,
+    DebugWindowInput,
+};
 use crate::render::entities::draw_player_map_icon;
 use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
 use crate::render::tiles::draw_tiles;
@@ -117,6 +120,13 @@ impl App {
             // grey-out (`UIWorldSelect.cs:179`) — snapshotted before the disjoint
             // borrow below (it reads `self.session_draft`).
             let active_difficulty = self.active_player_difficulty();
+            // The F4 debug window's container-free inputs, snapshotted before
+            // the field destructuring (its rows read the pools only by count).
+            let debug_overlay = self.debug_overlay;
+            let debug_mouse = self.mouse_pos;
+            let debug_items = self.items.len();
+            let debug_projectiles = self.projectiles.active_count();
+            let debug_gore = self.gore.slots().iter().filter(|g| g.active).count();
 
             {
                 let App {
@@ -1444,6 +1454,42 @@ impl App {
                             rain.drop_count(),
                             rain.snow_count(),
                         );
+                    }
+
+                    // The debug window (`M2-debug-window`, F4): the static
+                    // Phase-1 rows only — frame timing, the player, the tile
+                    // under the cursor, the entity counts.
+                    if debug_overlay {
+                        let (tile_x, tile_y) = cursor_tile(debug_mouse, screen, *camera, *zoom);
+                        let tile = world.tile(tile_x, tile_y).map(|t| DebugTile {
+                            x: tile_x,
+                            y: tile_y,
+                            active: t.active(),
+                            kind: t.kind,
+                            wall: t.wall,
+                            frame_x: world.tile_frame_x(tile_x, tile_y),
+                            frame_y: world.tile_frame_y(tile_x, tile_y),
+                            slope: t.slope(),
+                            liquid: t.liquid,
+                        });
+                        let input = DebugWindowInput {
+                            screen,
+                            camera: *camera,
+                            zoom: *zoom,
+                            mouse: debug_mouse,
+                            dt,
+                            history: frame_history.iter().copied().collect(),
+                            draw_calls: last_stats.draw_calls,
+                            instances: last_stats.instances,
+                            player: player.as_ref().map(DebugPlayer::from_player),
+                            tile,
+                            npcs: npcs.len(),
+                            projectiles: debug_projectiles,
+                            items: debug_items,
+                            dust: dust.slots().iter().filter(|d| d.active).count(),
+                            gore: debug_gore,
+                        };
+                        draw_debug_window(renderer, &input);
                     }
 
                     // The debug cheat-sheet panel (`debug_panel.rs`) — independent
