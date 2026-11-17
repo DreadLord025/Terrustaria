@@ -4216,4 +4216,35 @@ mod tests {
             "by day the moon arms draw nothing — the flags leave the day stream untouched"
         );
     }
+
+    #[test]
+    fn day_cycle_zombie_spawn_gate() {
+        // `NPC.cs:4199` is the surface day/night fork: while `Main.dayTime`
+        // runs the day ladder and the night ladder (`:4520-4810`, the zombie
+        // fallthrough) is unreachable, so no zombie may appear by day. At
+        // night the same column does produce one, and the gate itself
+        // multiplies the rate x0.6 and the cap x1.3 (`:540-544`).
+        let w = ground_tall();
+        let night = ctx(&w, 295.0 * 16.0, false);
+        let day = ctx(&w, 295.0 * 16.0, true);
+        let (mut day_zombies, mut night_zombies, mut day_slimes) = (0, 0, 0);
+        for seed in 1..2000u64 {
+            match outcome(&day, seed) {
+                Some((NpcKind::Zombie, _)) => day_zombies += 1,
+                Some((NpcKind::Slime, _)) => day_slimes += 1,
+                _ => {}
+            }
+            if matches!(outcome(&night, seed), Some((NpcKind::Zombie, _))) {
+                night_zombies += 1;
+            }
+        }
+        assert_eq!(day_zombies, 0, "no zombie may spawn by day");
+        assert!(day_slimes > 0, "the day ladder's slime arm still runs");
+        assert!(night_zombies > 0, "the night ladder does spawn zombies");
+        // The gate's own numbers: 600/5 -> 360 and (float)6.5 -> 6.
+        let rate = get_spawn_rate(&night, &mut UnifiedRandom::new(1));
+        assert_eq!((rate.spawn_rate, rate.max_spawns), (360, 6));
+        let rate = get_spawn_rate(&day, &mut UnifiedRandom::new(1));
+        assert_eq!((rate.spawn_rate, rate.max_spawns), (600, 5));
+    }
 }

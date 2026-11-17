@@ -31,7 +31,9 @@ pub(crate) fn advance_time(
         // (`advance_time_with_events`), so the day branch stops the moon
         // event alone. No-op unless a flag is up during the day.
         world.stop_moon_event();
-        if t >= 54000.0 {
+        // `Main.cs:65148`: `if (Main.time > 54000.0)` — STRICT, so a clock
+        // resting exactly on 54000.0 is still the day.
+        if t > 54000.0 {
             // `Main.cs:65148-65151` -> `UpdateTime_StartNight` (`Main.cs:65208`):
             // the moondial's flag clears and its cooldown ticks down before the
             // clock reset (`:65210-65220`). C# also rolls night events and the
@@ -51,7 +53,8 @@ pub(crate) fn advance_time(
             t = 0.0;
             world.day_time = false;
         }
-    } else if t >= 32400.0 {
+    // `Main.cs:65137`: `if (Main.time > 32400.0)` — STRICT the other way too.
+    } else if t > 32400.0 {
         // `Main.cs:65137-65140` -> `UpdateTime_StartDay` (`Main.cs:65365`): the
         // sundial's flag clears and its cooldown ticks down (`:65368-65372`,
         // `:65394-65397`). C# rolls the solar eclipse here and force-resets both
@@ -590,5 +593,44 @@ mod tests {
         advance_time_with_events(&mut app, 5.0, false);
         assert!(!done(&app, "KILL_THE_SUN"));
         assert!(!done(&app, "BLOODBATH"));
+    }
+
+    #[test]
+    fn day_cycle_lengths_and_the_strict_boundaries() {
+        // `Main.cs:65137`/`:65148`: the two boundary tests are STRICT —
+        // `Main.time > 32400.0` starts the day, `Main.time > 54000.0` starts
+        // the night — so a clock resting exactly ON the boundary is still the
+        // old half (the naive `>=` flips one tick early).
+        // The lengths: day `0..54000`, night `0..32400`, both at
+        // `Main.dayRate` 1 (`:64960-64962`), i.e. 900 s and 540 s at 60 Hz.
+        let mut w = World::new("t".into(), 8, 8);
+        assert_eq!(w.time, 0.0);
+        assert!(w.day_time, "a world starts at dawn");
+        assert_eq!(54000.0 / 60.0, 900.0, "the 15-minute day");
+        assert_eq!(32400.0 / 60.0, 540.0, "the 9-minute night");
+        // Exactly on the dusk boundary: still day.
+        w.time = 54000.0;
+        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
+        assert!(w.day_time, "54000.0 exactly is still the day");
+        assert_eq!(w.time, 54000.0);
+        // One step past it: the night, overshoot discarded (`:65151`).
+        advance_time(&mut w, 0.05, &mut UnifiedRandom::new(0), false);
+        assert!(!w.day_time, "past 54000.0 the night starts");
+        assert_eq!(w.time, 0.0);
+        // The night boundary is strict in the same way.
+        w.time = 32400.0;
+        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
+        assert!(!w.day_time, "32400.0 exactly is still the night");
+        advance_time(&mut w, 0.05, &mut UnifiedRandom::new(0), false);
+        assert!(w.day_time, "past 32400.0 the day starts");
+        // The mid-half pins: noon 27000 (`:5906-5908`), midnight 16200
+        // (`:5910-5913`) — both inside their half, so no flip.
+        w.time = 27000.0;
+        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
+        assert!(w.day_time, "noon is the middle of the day");
+        w.day_time = false;
+        w.time = 16200.0;
+        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
+        assert!(!w.day_time, "midnight is the middle of the night");
     }
 }
