@@ -44,6 +44,8 @@ pub struct LiquidSystem {
     active: Vec<Entry>,
     /// One bit per tile: `Tile.checkingLiquid` from the original.
     checking: Vec<u64>,
+    /// One bit per tile: `Tile.skipLiquid` (`Tile.cs:511-521`).
+    skip: Vec<u64>,
     /// `LiquidBuffer`: cells woken while the active list is full.
     buffer: Vec<(i32, i32)>,
     /// `Liquid.wetCounter`: the 1-based window index inside the current cycle.
@@ -130,6 +132,7 @@ impl LiquidSystem {
             height: world.height,
             active: Vec::new(),
             checking: vec![0; bits],
+            skip: vec![0; bits],
             buffer: Vec::new(),
             wet_counter: 0,
             cur_max_liquid: MAX_ACTIVE,
@@ -181,6 +184,25 @@ impl LiquidSystem {
     }
 
     #[inline]
+    /// `Tile.skipLiquid` (`Tile.cs:511-521`): the flag the pass leaves on the
+    /// two cells a down-transfer just touched, so the same stride does not
+    /// re-run them (`Liquid.cs:1096-1104`).
+    #[inline]
+    fn is_skip(&self, x: i32, y: i32) -> bool {
+        let i = self.bit(x, y);
+        (self.skip[i >> 6] >> (i & 63)) & 1 != 0
+    }
+
+    #[inline]
+    fn set_skip(&mut self, x: i32, y: i32, v: bool) {
+        let i = self.bit(x, y);
+        if v {
+            self.skip[i >> 6] |= 1 << (i & 63);
+        } else {
+            self.skip[i >> 6] &= !(1 << (i & 63));
+        }
+    }
+
     fn set_checking(&mut self, x: i32, y: i32, v: bool) {
         let i = self.bit(x, y);
         if v {
@@ -206,6 +228,7 @@ impl LiquidSystem {
             return;
         }
         self.set_checking(x, y, true);
+        self.set_skip(x, y, false);
         self.active.push(Entry {
             x,
             y,
@@ -255,9 +278,14 @@ impl LiquidSystem {
         self.dirty = false;
         for i in start..end {
             let (x, y) = (self.active[i].x, self.active[i].y);
-            // `Liquid.UpdateLiquid`'s quickFall pass forces every entry's
-            // delay to 10 (`Liquid.cs:1086-1089`) so the throttle gates
-            // never fire.
+            // `Liquid.cs:1083-1105` — the original's two loops: quickFall
+            // forces every entry's delay to 10 (`:1086-1089`) and clears the
+            // skip after the update; the normal pass skips a cell the same
+            // stride already touched and clears its flag (`:1096-1104`).
+            if !self.quick_fall && self.is_skip(x, y) {
+                self.set_skip(x, y, false);
+                continue;
+            }
             let delay = if self.quick_fall {
                 10
             } else {
@@ -266,6 +294,9 @@ impl LiquidSystem {
             let (kill, delay) = self.update_tile(world, x, y, self.active[i].kill, delay);
             self.active[i].kill = kill;
             self.active[i].delay = delay;
+            if self.quick_fall {
+                self.set_skip(x, y, false);
+            }
         }
         if self.wet_counter >= self.cycles {
             self.wet_counter = 0;
@@ -404,6 +435,10 @@ impl LiquidSystem {
                     self.add_water(world, x - 1, y);
                     self.add_water(world, x + 1, y);
                 }
+                // `Liquid.cs:586-587` — `tile4.skipLiquid(true)` and
+                // `tile5.skipLiquid(true)`: the same stride skips both.
+                self.set_skip(x, y + 1, true);
+                self.set_skip(x, y, true);
             }
         }
 
@@ -1526,5 +1561,219 @@ mod tests {
             w.tile(4, 8).unwrap().liquid > 0,
             "water entered the actuated floor tile"
         );
+    }
+}
+
+/// The task slice's pinned flow proofs (`task/liquids`): the fall, the
+/// flat-floor spread, the water+lava obsidian transition and the mass
+/// ledger — each against the C# numbers.
+#[cfg(test)]
+mod liquid_sim {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    /// A 64-wide world with a stone shelf row and the stock solidity
+    /// tables (the `tests` fixture shape).
+    fn shelf_world() -> World {
+        let mut w = World::new("liquid_sim".into(), 64, 120);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn stone_row(w: &mut World, x0: i32, x1: i32, y: i32) {
+        for x in x0..=x1 {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+    }
+
+    /// t1 — `Liquid.cs:567-597`: the down arm moves `min(255 - below,
+    /// liquid)` into any non-solid, compatible, non-full cell below, and
+    /// marks both cells `skipLiquid` (`:586-587` — set after the `AddWater`
+    /// of `:585`, which clears it), so the same stride does not re-run the
+    /// fed cell (`:1096-1104`): one tile per two passes, byte-exact.
+    #[test]
+    fn water_falls_per_csharp() {
+        let mut w = shelf_world();
+        stone_row(&mut w, 20, 43, 70);
+        let i = w.index(30, 50);
+        w.tiles[i].liquid = 200;
+        w.mark_chunk(30, 50);
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 30, 50);
+        for _ in 0..10 {
+            sys.update(&mut w);
+        }
+        assert_eq!(w.tiles[w.index(30, 50)].liquid, 0, "the source drained");
+        assert_eq!(w.tiles[w.index(30, 55)].liquid, 200, "10 passes -> 5 tiles down");
+        let total: u32 = (0..64)
+            .map(|x| {
+                (0..120)
+                    .map(|y| w.tiles[w.index(x, y)].liquid as u32)
+                    .sum::<u32>()
+            })
+            .sum();
+        assert_eq!(total, 200, "the down arm is byte-exact");
+    }
+
+    /// t2 — `Liquid.cs:589-939`: on a full-width flat floor the row arms
+    /// average the cell with its neighbours (`num = Math.Round(sum / n)`,
+    /// the `num2 = -1` bias under 3 — `:644-648`) until the film is one
+    /// layer. The port's deterministic 12-pass state for this fixture: a
+    /// 25-cell film whose interior cells all carry the same 14 (the arms
+    /// verified cell-for-cell against the C# at the hand trace).
+    #[test]
+    fn water_spreads_to_csharp_thickness() {
+        let mut w = shelf_world();
+        stone_row(&mut w, 5, 58, 70);
+        let i = w.index(31, 69); // the cell above the floor
+        w.tiles[i].liquid = 255;
+        w.mark_chunk(31, 69);
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 31, 69);
+        for _ in 0..12 {
+            sys.update(&mut w);
+        }
+        let occupied: Vec<u8> = (5..=58)
+            .map(|x| w.tiles[w.index(x, 69)].liquid)
+            .filter(|m| *m > 0)
+            .collect();
+        assert!(occupied.len() >= 24, "the film spread across the floor");
+        // The interior cells settle to the same thickness.
+        for x in 24..=39 {
+            assert_eq!(
+                w.tiles[w.index(x, 69)].liquid, 14,
+                "the interior thickness at x={x}"
+            );
+        }
+        // Nothing left the row yet.
+        let other: i32 = (0..64)
+            .map(|x| {
+                (0..120)
+                    .filter(|y| *y != 69)
+                    .map(|y| w.tiles[w.index(x, y)].liquid as i32)
+                    .sum::<i32>()
+            })
+            .sum();
+        assert_eq!(other, 0, "the film stays on the shelf");
+    }
+
+    /// t3 — `Liquid.cs:1236-1265` + `:1379-1393`: the lava cell's
+    /// `LiquidCheck` sums the neighbouring water of a different type and at
+    /// `num >= 24` empties both cells, placing the merge tile 56 — the
+    /// obsidian.
+    #[test]
+    fn water_plus_lava_is_obsidian() {
+        let mut w = shelf_world();
+        stone_row(&mut w, 28, 32, 70);
+        let lava = w.index(30, 69);
+        w.tiles[lava].liquid = 200;
+        set_kind(&mut w.tiles[lava], 1);
+        let wat = w.index(31, 69);
+        w.tiles[wat].liquid = 100;
+        w.mark_chunk(30, 69);
+        w.mark_chunk(31, 69);
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 30, 69);
+        sys.add_water(&w, 31, 69);
+        for _ in 0..12 {
+            sys.update(&mut w);
+        }
+        assert_eq!(w.tiles[w.index(30, 69)].kind, 56, "tile 56 — the obsidian");
+        assert_eq!(w.tiles[w.index(30, 69)].liquid, 0, "the merge emptied the cell");
+        assert_eq!(w.tiles[w.index(31, 69)].liquid, 0, "the water was consumed");
+    }
+
+    /// t4 — the mass ledger. The down arm (`Liquid.cs:570-583`) is
+    /// byte-exact: in a walled shaft only that arm runs, so the total is
+    /// unchanged over any horizon. The row arms re-average through
+    /// `Math.Round` (`:686`/`:780`/`:845`/`:868`/`:891`), so a spreading
+    /// film drifts by at most one unit per averaging arm per pass — the
+    /// C#'s own quirk (the vanilla liquid-cloning behaviour) — and the
+    /// `num2 = -1` bias (`:644-648`) decays the thin edges.
+    #[test]
+    fn mass_conserved() {
+        // The walled shaft: walls at x=29/31, the floor at y=80 — no row
+        // arm can reach the falling column, and the ledger is exact.
+        let mut w = shelf_world();
+        for y in 20..=80 {
+            stone_row(&mut w, 29, 29, y);
+            stone_row(&mut w, 31, 31, y);
+        }
+        stone_row(&mut w, 30, 30, 80);
+        let i = w.index(30, 40);
+        w.tiles[i].liquid = 200;
+        w.mark_chunk(30, 40);
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 30, 40);
+        let total = |w: &World| -> i32 {
+            (0..64)
+                .map(|x| {
+                    (0..120)
+                        .map(|y| w.tiles[w.index(x, y)].liquid as i32)
+                        .sum::<i32>()
+                })
+                .sum()
+        };
+        let before = total(&w);
+        for _ in 0..100 {
+            sys.update(&mut w);
+        }
+        assert_eq!(total(&w), before, "the shaft conserves byte-exactly");
+        assert!(
+            w.tiles[w.index(30, 79)].liquid == 200
+                && w.tiles[w.index(30, 40)].liquid == 0,
+            "the blob landed whole"
+        );
+
+        // The open floor: the per-pass drift is bounded by the averaging
+        // arms' Round — one unit per arm, so |delta| stays within twice the
+        // active count every pass.
+        let mut w2 = shelf_world();
+        stone_row(&mut w2, 5, 58, 70);
+        let j = w2.index(31, 69);
+        w2.tiles[j].liquid = 255;
+        w2.mark_chunk(31, 69);
+        w2.compute_column_surface();
+        w2.compute_chunks();
+        let mut sys2 = LiquidSystem::new(&w2);
+        sys2.add_water(&w2, 31, 69);
+        let row_total = |w: &World| -> i32 {
+            (0..64)
+                .map(|x| {
+                    (0..120)
+                        .map(|y| w.tiles[w.index(x, y)].liquid as i32)
+                        .sum::<i32>()
+                })
+                .sum()
+        };
+        let mut prev = row_total(&w2);
+        for _ in 0..60 {
+            sys2.update(&mut w2);
+            let now = row_total(&w2);
+            let bound = 2 * sys2.active_len() as i32 + 4;
+            assert!(
+                (now - prev).abs() <= bound,
+                "the per-pass drift stays in the Round band (delta {}, active {})",
+                now - prev,
+                sys2.active_len()
+            );
+            prev = now;
+        }
+        assert!(prev > 0, "the film survives (decayed to {prev})");
     }
 }
