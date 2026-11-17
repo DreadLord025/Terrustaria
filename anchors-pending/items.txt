@@ -1,0 +1,3 @@
+crates/tr-app/src/world_sim/items.rs|pending -= take|ITEMS-2 — Player.GetItem's slot walk fills to Item.CommonMaxStack (9999) and leaves the surplus in the world (Player.cs:39493-39518, Player.cs:35085-35087)
+crates/tr-app/src/item.rs|const FRICTION_X: f32 = 0.95|ITEMS-4 — WorldItem.MoveInWorld's air physics: gravity 0.1/maxFall 7 (WorldItem.cs:363-364), velocity.X *= 0.95 + the <0.1 snap (:854-860), the flush stop of Collision.TileCollision (Collision.cs:2446-2451)
+crates/tr-app/src/world_sim/editing.rs|mod item_mechanics|ITEMS-1/3 — the item-mechanics slice: KillTile→drop (WorldGen.cs:64057-64062, :63947-63958), pickup→stack, torch placement (Player.cs:39580)

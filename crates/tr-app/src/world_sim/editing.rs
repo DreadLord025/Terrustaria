@@ -1517,7 +1517,7 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         .map(|d| d.use_time as f32 / 60.0)
         .filter(|t| *t > 0.0)
         .unwrap_or(swing_secs);
-    // `Player.channel` (`Item.cs:52960-52965` sets it; `Player.cs:43576`'s
+    // `Player.channel` (`Player.cs:52954-52965` sets it; `Player.cs:43576`'s
     // `if (!this.channel)` guards the animation decrement): while the
     // button is held the item's animation HOLDS instead of ending — the
     // channel persists until the release.
@@ -7574,7 +7574,10 @@ mod tests {
         seed_stream(&mut app, 0);
         let mut rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
         crate::world_sim::items::spawn_item_drop(&mut app.items, rng, 9, 5, 14, 260);
-        for _ in 0..40 {
+        // The spawn pop (`Item.NewItem`'s vy) then the fall. The window covers
+        // the `WorldItem.cs:363-364` air gravity of 0.1/tick: the arc back
+        // down to the magnet radius is longer than the old 0.3 tuning assumed.
+        for _ in 0..200 {
             crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
         }
         let p = app.player.as_ref().unwrap();
@@ -8427,7 +8430,7 @@ pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
     if !app.world.downed_golem || !app.world.hard_mode {
         return false;
     }
-    // `!AnyDanger()`: no invasion and no active event (`Main.cs:80246`).
+    // `!AnyDanger()`: no invasion and no active event (`NPC.cs:80243`).
     if app.world.invasion_type != 0 || app.world.dd2_event_ongoing {
         return false;
     }
@@ -9256,5 +9259,168 @@ mod moon_item_tests {
         let mut app = night_app(1958);
         app.world.dd2_event_ongoing = true;
         assert!(!use_naughty_present(&mut app));
+    }
+}
+/// The item-mechanics slice: the three player-facing flows the port keeps
+/// (KillTile → drop, pickup → stack to `maxStack`, item → tile placement) plus
+/// the dropped-item physics pinned to `WorldItem.MoveInWorld`'s constants.
+#[cfg(test)]
+mod item_mechanics {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::{EMPTY_SLOT, ItemDrop, INV};
+    use tr_core::tile::Tile;
+    use tr_core::tile::FLAG_ACTIVE;
+
+    fn slot(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        }
+    }
+
+    /// A flat world with one solid stone row at `y = 20` — the floor the
+    /// placement and the drop physics need.
+    fn flat_world() -> World {
+        let mut w = World::new("items".into(), 40, 40);
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn flat_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = flat_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 18.0 * TILE_PX;
+        app.player = Some(player);
+        app.inventory = std::array::from_fn(|_| EMPTY_SLOT);
+        app
+    }
+
+    fn set(app: &mut App, x: i32, y: i32, kind: u16) {
+        let i = app.world.index(x, y);
+        app.world.tiles[i] = Tile {
+            kind,
+            ..Default::default()
+        };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// t1 — `WorldGen.KillTile_GetItemDrops`'s dirt arm
+    /// (`WorldGen.cs:64057-64062`: `case 0/case 2/… → dropItem = 2`) and the
+    /// `KillTile_DropItems` spawn (`WorldGen.cs:63947-63958`): breaking a dirt
+    /// tile leaves one Dirt Block drop at the tile (`x*16, y*16, 16, 16`).
+    #[test]
+    fn breaking_dirt_drops_dirt_item() {
+        // Pins: `ItemID.DirtBlock` = 2, `TileID.Dirt` = 0.
+        assert_eq!(registry::tile_drop(0, 0), Some(2), "dirt drops dirt");
+        let mut app = flat_app();
+        set(&mut app, 10, 19, 0);
+        break_tile(&mut app, 10, 19);
+        assert!(!app.world.tile(10, 19).unwrap().active(), "the tile broke");
+        assert_eq!(app.items.len(), 1, "exactly one drop");
+        assert_eq!(app.items[0].kind, 2, "the Dirt Block item");
+        assert_eq!(app.items[0].count, 1, "one tile, one block");
+    }
+
+    /// t2 — `Player.GetItem_FillIntoOccupiedSlot`
+    /// (`Player.cs:39493-39518`): a partial fill stops at `maxStack` and the
+    /// remainder stays in the world as the drop (`PickupItem`,
+    /// `Player.cs:35085-35087`: `itemToPickUp.ReplaceWith(item)`).
+    #[test]
+    fn pickup_merges_to_maxstack() {
+        // `Item.CommonMaxStack = 9999` (`Item.cs:49966`) is what `SetDefaults`
+        // stamps on every row (`Item.cs:49017`), so stone and dirt both cap
+        // there.
+        const MAX: u32 = 9999;
+        assert_eq!(registry::max_stack(3), MAX, "Item.CommonMaxStack");
+        let mut app = flat_app();
+        app.inventory[0] = slot(3, MAX - 3);
+        let pc = app.player.as_ref().unwrap().center();
+        let mut drop = ItemDrop::new(3, 10, 0, pc.0 - 4.0, pc.1 - 4.0, 0.0, 0.0, 0.0);
+        drop.age = 1.0;
+        app.items.push(drop);
+        crate::world_sim::items::update_items(&mut app, ONE_TICK_SECS);
+        assert_eq!(app.inventory[0].count, MAX, "the slot fills to maxStack");
+        assert_eq!(app.items.len(), 1, "the remainder is still on the ground");
+        assert_eq!(app.items[0].count, 7, "10 - (maxStack - 9996) = 7");
+        assert_eq!(
+            app.inventory.iter().filter(|s| s.kind == 3).count(),
+            1,
+            "no second stone stack while the first still has room"
+        );
+    }
+
+    /// t3 — `Player.PlaceThing` (`Player.cs:39580`) through the item route:
+    /// the torch item (8) resolves `createTile = 4` (`Item.cs:33745-33754`'s
+    /// `placeStyle`/`createTile` pair) and `place_item_and_consume` spends one
+    /// from the held stack.
+    #[test]
+    fn placing_torch_consumes_item_and_spawns_tile() {
+        // Pins: `ItemID.Torch` = 8, `TileID.Torch` = 4.
+        assert_eq!(registry::place_tile(8), Some(4), "the torch places tile 4");
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(8, 5);
+        // Away from the player's own box — `can_place` refuses the cells the
+        // player's 20x42 body covers (`Player.cs:41427`'s
+        // `BlockPlacementIfOverPlayers` stand-in).
+        assert!(use_tile_item(&mut app, 15, 19), "the placement succeeds");
+        let t = *app.world.tile(15, 19).unwrap();
+        assert!(t.active() && t.kind == 4, "a torch stands on the floor");
+        assert_eq!(app.inventory[app.selected].count, 4, "one torch consumed");
+        assert_eq!(app.inventory[app.selected].kind, 8, "the stack stays torch");
+    }
+
+    /// t4 — `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`:
+    /// `gravity = 0.1f`, `maxFallSpeed = 7f`), the horizontal friction of
+    /// `MoveInWorld` (`WorldItem.cs:854-860`: `velocity.X *= 0.95f`, then the
+    /// `< 0.1` snap) and the flush stop of `Collision.TileCollision`
+    /// (`Collision.cs:2446-2451` — the blocked axis keeps only the residual, so
+    /// the drop does not bounce).
+    #[test]
+    fn dropped_item_lies_on_ground_with_csharp_physics() {
+        let mut app = flat_app();
+        let floor_top = 20.0 * TILE_PX;
+        // In the air: one step adds exactly `gravity` and applies the friction.
+        let mut drop = ItemDrop::new(2, 1, 0, 100.0, 100.0, 2.0, 0.0, 0.0);
+        drop.update(&app.world, None, ONE_TICK_SECS);
+        assert!(
+            (drop.vel.y - 0.1).abs() < 1e-6,
+            "gravity is 0.1, got {}",
+            drop.vel.y
+        );
+        assert!(
+            (drop.vel.x - 1.9).abs() < 1e-6,
+            "friction is 0.95, got {}",
+            drop.vel.x
+        );
+        // The fall speed caps at 7.
+        let mut fast = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 40.0, 0.0);
+        fast.update(&app.world, None, ONE_TICK_SECS);
+        assert!((fast.vel.y - 7.0).abs() < 1e-6, "maxFall is 7, got {}", fast.vel.y);
+        // Resting on the floor: the drop lies still, it never bounces.
+        let mut rest = ItemDrop::new(2, 1, 0, 100.0, floor_top - 14.0, 0.0, 0.0, 0.0);
+        for _ in 0..30 {
+            rest.update(&app.world, None, ONE_TICK_SECS);
+        }
+        assert_eq!(rest.vel.y, 0.0, "no restitution off the ground");
+        assert_eq!(rest.vel.x, 0.0, "friction settles the slide");
+        assert!(
+            (rest.pos.y - (floor_top - 14.0)).abs() < 0.5,
+            "the drop lies flush on the floor, at {}",
+            rest.pos.y
+        );
     }
 }
