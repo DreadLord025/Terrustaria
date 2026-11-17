@@ -3220,11 +3220,15 @@ mod tests {
         assert_eq!(crate::projectile::proj_frames(34), 6);
         assert_eq!(crate::projectile::proj_frames(645), 7);
         assert_eq!(crate::projectile::proj_frames(0), 1, "the default row");
-        // The fallback seam: a kind with no packed sheet answers `None`, which
-        // is what keeps the 22x22 shuriken stand-in reachable (`SHURIKEN` 3 is
-        // spawned by the dev path but carries no `proj_data` row).
-        assert!(lookups.proj_frame(3, 0).is_none());
-        assert!(lookups.shuriken_uv().is_some(), "the fallback sprite exists");
+        // The fallback seam: a kind with no packed sheet answers `None`. The
+        // shuriken (3) now carries a `proj_data` row (the projectile-ai task's
+        // `Projectile.cs:826-836` port), so its own sheet packs like every
+        // other row's and the 16 px stand-in is no longer the path for it.
+        assert!(
+            lookups.proj_frame(3, 0).is_some(),
+            "the shuriken's sheet packs"
+        );
+        assert!(lookups.shuriken_uv().is_some(), "the fallback sprite stays");
         assert!(lookups.proj_frame(65_000, 0).is_none());
     }
 

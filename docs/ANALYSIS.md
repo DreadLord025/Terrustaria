@@ -15599,3 +15599,48 @@ zoom 2.0 the post-split runs are internally deterministic and byte-equal to a
 pre-split run — the pre-split binary's own zoom-2.0 variance (688 613 px
 between two pre-split runs, `pixel_diff.py`) pre-dates the split and is a
 harness follow-up.
+## The starting weapons' projectile AI (projectile-ai, 2026-11-17)
+
+**Intent.** A starting weapon's shot must fly the C# trajectory, not a
+stand-in. The three families the goal names are the bow's arrows (aiStyle 1,
+`Projectile.cs:23201-23203` → `AI_001`), the shuriken (aiStyle 2,
+`:23205-23688`) and the musket's ball (aiStyle 1, the type-14 row `:950-961`).
+Two of the three already rode ported arms; the shuriken did not — it was
+carried by a hand-written two-half-step bounce (`ai_shuriken`, 0.6 damped)
+that the C# never runs, and its data row was absent.
+
+**Inventory, aiStyle 2 and 4 (`Projectile.cs`).**
+
+| aiStyle | C# extent | kinds the C# routes there | port before |
+|---|---|---|---|
+| 2 | `23205-23688` (485 lines) | 3 Shuriken, 48 ThrowingKnife, 93, 54, 69/70/621, 166 Snowball, 240 Dutchman shell, 249, 300, 304, 306, 347, 370/371/936, 497, 501, 504/954/979, 510, 520, 599, 861, 909, 968, 1085 (41 ids) | **missing** — the shuriken had a placeholder bounce, the shell a 2-line alpha arm only |
+| 4 | `23694-23828` (135 lines) | 7 VilethornBase, 8 VilethornTip, 150/151/152, 493/494 | **missing** — no `proj_data` row, the arm fell to `_ => {}` |
+| 1 | `23201-23203` → `AI_001` | 153 ids (1/2/4/5 arrows, 14 MusketBall, 51 Seed, 81/82 hostile arrows, 121-126 gem bolts via 29, …) | ported (`ai_arrow` / `ai_style1_flight`) |
+| 3 | `23690-23692` | 19 ids (boomerangs) | ported (`ai_boomerang`) |
+| 29 | `26676-26678` | the six gem bolts | ported (`ai_gem_staff`) |
+
+**Choice.** aiStyle 2 + aiStyle 4, the two missing styles the starting tier
+actually fires: the shuriken, the throwing knife, the snowball and the Wand of
+Sparkings' spark (aiStyle 2) and the Vilethorn (aiStyle 4). The rest of the
+thrown family's ids (93/240/249/300/304/306/347/370/371/497/501/504/510/861/
+909/968/1085) fly on the same arm without new rows — only their `SetDefaults`
+row would be needed.
+
+**OUT-OF-SLICE** (unported styles the early weapons also need): aiStyle 19
+(the spears 47/49/130 — `AI_019_Spears` `45857-46221`, needs the extension
+hitbox), aiStyle 33 (the flares 163/310/1008-1011, `:27049-27134`), aiStyle 13
+(the harpoon 23, `:24636-24828`), aiStyle 5 (9/12/503, `:23830-24098`), and
+every hostile/thrown id without a `proj_data` row.
+
+**Ported.** aiStyle 2 as `Projectile::ai_style2` (`ai[0]` ladder per kind, the
+wind head, the rotation ladder, the 32 px/tick clamp, the movement chain's
+default tile arm = one last step in then `Kill()`); aiStyle 4 as
+`Projectile::ai_style4` + the pool's `vilethorn_step` (the fade-in/chain spawn
+through `NewProjectile`'s seam, the `ai[1] + 1f` depth, the tip at
+`ai[1] >= 6f`, the fade-out kill). Data rows: 3, 48, 166, 954 (aiStyle 2) and
+7/8 (aiStyle 4, `tileCollide = false`, `ignoreWater`, `alpha = 255`). aiStyle 2
+joined `uses_wind_physics` (`ShouldUseWindPhysics`'s list, `:22110-22132`).
+Skipped in place: every dust/gore/sound spawn of both branches (no
+dust/gore/sound layer in the pool), the MP-only town-NPC kill of the snowball
+(`:23568-23588`) and the 150-152/493-494 Vilethorn variants (their kinds are
+not ported). `cs-cite`: 55 citations resolved.
