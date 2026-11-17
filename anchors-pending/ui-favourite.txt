@@ -1,0 +1,10 @@
+# WAVE2/F3 (task/ui-favourite) — anchors pending merge into `anchors.txt`.
+# Format:  <path relative to the repo root>|<marker>|<feature name>
+# The marker must be a string that only exists while the feature does.
+# Fold by appending these rows to anchors.txt; anchors.txt is not edited on this branch.
+crates/tr-app/src/player_file.rs|fn favorite_marker_path|WAVE2/F3 — the character favourite is the `<stem>.trfav` sidecar beside the `.plr` (the FavoritesFile stand-in), never the re-writable file's metadata bit
+crates/tr-app/src/player_file.rs|fn set_favorite_marker|WAVE2/F3 — the star click's store write/remove: `FileData.SetFavorite` -> `FavoritesFile.SaveFavorite` (IO/FileData.cs:48-54, IO/FavoritesFile.cs:27-36) applied to the character marker
+crates/tr-app/src/app/flow.rs|set_favorite_marker(|WAVE2/F3 — `CardAction::ToggleFavorite` saves the character star immediately (was in-memory only, A8)
+crates/tr-app/src/ui/save_list.rs|is_favorite_marker|WAVE2/F3 — the `.plr` listing reads the favourite sidecar back into the card (`list_players`), ORing a legacy header bit
+crates/tr-app/src/app/flow.rs|fn char_select_favorite_click_writes_the_sidecar_and_the_relist_reads_it|WAVE2/F3 — the star-click pin: click -> `.trfav` on disk -> re-list shows the star -> second click removes it
+crates/tr-app/src/ui/save_list.rs|fn the_player_favourite_marker_survives_a_resave_and_reads_back|WAVE2/F3 — the re-save pin: rewriting the `.plr` keeps the star, un-favouriting clears it, the favourite sorts first

@@ -8,7 +8,7 @@
 //! exactly AES-128). The port writes the same section order so vanilla save
 //! editors and the vanilla client can read the port's characters.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use aes::Aes128;
@@ -342,7 +342,13 @@ pub fn write_player_bytes(file: &PlayerFileWrite) -> Vec<u8> {
     // `FileMetadata.Write` (`FileMetadata.cs:19-27`).
     w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
     w.u32(0); // the revision
-    w.u64(0); // the favorites
+    // `FileMetadata.Write`'s favourites flags (`FileMetadata.cs:26`): the bit
+    // is dead in the vanilla too — `IsFavorite` is only ever set `false`
+    // (`FileMetadata.cs:41`) and the live state sits in `favorites.json`
+    // (`IO/FavoritesFile.cs:27-36`). The port's carrier is the `<stem>.trfav`
+    // sidecar beside this file ([`favorite_marker_path`]), which this writer
+    // never opens — so re-saving a character cannot clear its star.
+    w.u64(0); // the favorites (see the sidecar above)
     w.cs_string(&file.name);
     w.u8(file.difficulty);
     w.u64(0); // the play time
@@ -401,6 +407,36 @@ pub fn write_player_bytes(file: &PlayerFileWrite) -> Vec<u8> {
 
 /// `PlayerFileData.CreateAndSave` (`Player.cs:54560`): the write to
 /// `Players/<name>.plr`.
+/// The favourite marker beside a character's `.plr`: `<stem>.trfav` in the
+/// same directory — the port's stand-in for `Main.LocalFavoriteData`
+/// (`Main.cs:66548`), keyed by the file name like `IO/FavoritesFile.cs:34`.
+/// The same carrier the world uses (`ui/save_list.rs:219`), so the star never
+/// rides a file the engine re-writes wholesale (`writer` below rebuilds the
+/// metadata from defaults, which is why the in-file bit could not survive).
+pub fn favorite_marker_path(path: &Path) -> PathBuf {
+    path.with_extension("trfav")
+}
+
+/// `FavoritesFile.IsFavorite` (`IO/FavoritesFile.cs:48`) for a `.plr`.
+pub fn is_favorite_marker(path: &Path) -> bool {
+    favorite_marker_path(path).exists()
+}
+
+/// `FileData.SetFavorite` -> `FavoritesFile.SaveFavorite`
+/// (`IO/FileData.cs:48-54`, `IO/FavoritesFile.cs:27-36`): the click saves the
+/// store at once, outside the character file. A zero-byte marker, exactly like
+/// the world's (`app/flow.rs:904-911`).
+pub fn set_favorite_marker(path: &Path, favorite: bool) -> std::io::Result<()> {
+    let marker = favorite_marker_path(path);
+    if favorite {
+        return std::fs::write(&marker, b"");
+    }
+    match std::fs::remove_file(&marker) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 pub fn write_player_file(path: &Path, file: &PlayerFileWrite) -> Result<(), PlayerFileError> {
     // `Player.SavePlayer` (`Player.cs:54740-54744`) streams through
     // `FileUtilities.WriteAllBytes` after the path's directory exists — the
