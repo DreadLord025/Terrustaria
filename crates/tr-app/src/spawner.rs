@@ -191,6 +191,10 @@ pub struct SpawnContext<'a> {
     /// compare it against [`moon_boss_cap_reached`]. Structurally 0 until the
     /// kinds land (F-13b/c).
     pub moon_boss_cap_count: f32,
+    /// The live vanilla types of the active NPC roster — the C#'s
+    /// `NPC.CountNPCS(id)`'s scan source (`NPC.cs:7982-7995`): the moon
+    /// ladders' `CountNPCS(id) < cap` gates read it per arm.
+    pub moon_npc_counts: &'a [u16],
 }
 
 /// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap,
@@ -1568,29 +1572,26 @@ pub(crate) fn invasion_spawn_pick(
 
 // ---- S1-F-13: the moon-event roster ladders (`NPC.cs:2804-3548`) ----
 
-/// The live count of a moon wave kind — the C#'s `NPC.CountNPCS(id)`
-/// (`NPC.cs:7982-7995`); `NPC.AnyNPCs(id)` (`:7975-7981`) is "none alive",
-/// which is `CountNPCS(id) < 1`. The 16 Pumpkin Moon wave kinds are ported
-/// (F-13b Phase 2), but the per-kind live read needs the NPC roster threaded
-/// into the ladders — until then the port's count is structurally 0 and every
-/// arm's cap gate stands open (the arm-level `CountNPCS(325) < 2` style gates
-/// are recorded in ANALYSIS; the wave-20 boss-trio gate is the live one — it
-/// rides the ctx's `moon_boss_cap_count`). The shape below is verbatim: the
-/// live read replaces this one constant when it lands.
-const MOON_WAVE_KIND_COUNT: i32 = 0;
-
 /// One arm of a moon roster ladder: draws the arm's roll on the spawner stream
 /// and, when it hits and the `CountNPCS(id) < cap` gate is open, records the
 /// vanilla `NPC.type`. `cap` is `Some(c)` for the C#'s `CountNPCS(id) < c`
 /// (`Some(1)` = `!AnyNPCs(id)`) and `None` for an ungated roll. Returns
 /// whether the arm's whole condition held — the C#'s `else if` chain draws the
 /// next roll only while the previous arm's did not.
-fn moon_arm(picked: &mut Option<u16>, rng: &mut UnifiedRandom, n: i32, cap: Option<i32>, kind: u16) -> bool {
-    moon_arm_count(picked, rng, n, cap, kind, MOON_WAVE_KIND_COUNT)
+fn moon_arm(
+    ctx: &SpawnContext,
+    picked: &mut Option<u16>,
+    rng: &mut UnifiedRandom,
+    n: i32,
+    cap: Option<i32>,
+    kind: u16,
+) -> bool {
+    let count = ctx.moon_npc_counts.iter().filter(|&&t| t == kind).count() as i32;
+    moon_arm_count(picked, rng, n, cap, kind, count)
 }
 
-/// [`moon_arm`] with the live count explicit — the production path passes
-/// [`MOON_WAVE_KIND_COUNT`]; the tests close a gate to prove the `CountNPCS`
+/// [`moon_arm`] with the live count explicit — the production path reads
+/// the ctx's roster scan; the tests close a gate to prove the `CountNPCS`
 /// cap actually gates the arm (a closed cap suppresses the pick and the C#'s
 /// `else if` chain advances to the next arm).
 fn moon_arm_count(
@@ -1612,7 +1613,12 @@ fn moon_arm_count(
 /// no earlier arm fired (the `else if` short-circuit), and the chain falls
 /// through to `fallback` — the C#'s final `else` type, or `None` for the snow
 /// wave 14, whose chain has no `else` (`NPC.cs:2958`).
-fn moon_chain<F>(rng: &mut UnifiedRandom, arms: &[(i32, Option<i32>, u16)], fallback: F) -> Option<u16>
+fn moon_chain<F>(
+    ctx: &SpawnContext,
+    rng: &mut UnifiedRandom,
+    arms: &[(i32, Option<i32>, u16)],
+    fallback: F,
+) -> Option<u16>
 where
     F: FnOnce(&mut UnifiedRandom) -> Option<u16>,
 {
@@ -1621,7 +1627,7 @@ where
         if picked.is_some() {
             break;
         }
-        moon_arm(&mut picked, rng, *n, *cap, *kind);
+        moon_arm(ctx, &mut picked, rng, *n, *cap, *kind);
     }
     if picked.is_none() {
         fallback(rng)
@@ -1645,7 +1651,9 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     let wave = ctx.world.wave_number;
     // The 341 head (`:2807-2811`) runs at every wave, before the `>= 20`
     // check, and is the block's only arm that returns on a hit.
-    if rng.next_max(30) == 0 && MOON_WAVE_KIND_COUNT < 4 {
+    if rng.next_max(30) == 0
+        && (ctx.moon_npc_counts.iter().filter(|&&t| t == 341).count() as i32) < 4
+    {
         return Some(341);
     }
     if wave >= 20 {
@@ -1666,6 +1674,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     // first branch it reaches, then the switch below.
     if wave >= 19 {
         return moon_chain(
+            ctx,
             rng,
             &[(10, Some(4), 345), (10, Some(5), 346), (10, Some(7), 344)],
             |_| Some(343),
@@ -1673,6 +1682,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     }
     if wave >= 18 {
         return moon_chain(
+            ctx,
             rng,
             &[
                 (10, Some(3), 345),
@@ -1686,6 +1696,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     }
     if wave >= 17 {
         return moon_chain(
+            ctx,
             rng,
             &[
                 (10, Some(2), 345),
@@ -1699,6 +1710,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     }
     if wave >= 16 {
         return moon_chain(
+            ctx,
             rng,
             &[(10, Some(2), 345), (10, Some(2), 346), (10, Some(4), 344), (2, None, 352)],
             |_| Some(343),
@@ -1706,6 +1718,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     }
     if wave >= 15 {
         return moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 345), (10, Some(2), 346), (10, Some(3), 344), (3, None, 347)],
             |_| Some(343),
@@ -1717,11 +1730,13 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
         // `NPC.cs:2958` — case 14's `else if` chain has NO final `else`: when
         // all four arms miss, the C# spawns nothing.
         14 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 345), (10, Some(1), 346), (10, Some(1), 344), (3, None, 343)],
             |_| None,
         ),
         13 => moon_chain(
+            ctx,
             rng,
             &[
                 (10, Some(1), 345),
@@ -1733,15 +1748,17 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
             |_| Some(347),
         ),
         12 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 345), (10, Some(1), 344), (8, None, 343), (3, None, 342)],
             // `Main.rand.Next(338, 341)` (`:3021`) IS the chosen type.
             |r| Some(338 + r.next_max(3) as u16),
         ),
-        11 => moon_chain(rng, &[(10, Some(1), 345), (6, None, 352), (2, None, 342)], |r| {
+        11 => moon_chain(ctx, rng, &[(10, Some(1), 345), (6, None, 352), (2, None, 342)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
         10 => moon_chain(
+            ctx,
             rng,
             &[
                 (10, Some(1), 346),
@@ -1753,30 +1770,32 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
             |r| Some(338 + r.next_max(3) as u16),
         ),
         9 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 346), (10, Some(1), 344), (2, None, 348), (3, None, 347)],
             |_| Some(342),
         ),
         8 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 346), (8, None, 351), (3, None, 348), (3, None, 347)],
             |_| Some(350),
         ),
-        7 => moon_chain(rng, &[(10, Some(1), 346), (3, None, 342), (4, None, 350)], |r| {
+        7 => moon_chain(ctx, rng, &[(10, Some(1), 346), (3, None, 342), (4, None, 350)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
-        6 => moon_chain(rng, &[(10, Some(2), 344), (4, None, 347), (2, None, 348)], |_| Some(350)),
-        5 => moon_chain(rng, &[(10, Some(1), 344), (4, None, 350), (8, None, 348)], |r| {
+        6 => moon_chain(ctx, rng, &[(10, Some(2), 344), (4, None, 347), (2, None, 348)], |_| Some(350)),
+        5 => moon_chain(ctx, rng, &[(10, Some(1), 344), (4, None, 350), (8, None, 348)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
-        4 => moon_chain(rng, &[(10, Some(1), 344), (4, None, 350), (3, None, 342)], |r| {
+        4 => moon_chain(ctx, rng, &[(10, Some(1), 344), (4, None, 350), (3, None, 342)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
-        3 => moon_chain(rng, &[(8, None, 348), (4, None, 350), (3, None, 342)], |r| {
+        3 => moon_chain(ctx, rng, &[(8, None, 348), (4, None, 350), (3, None, 342)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
-        2 => moon_chain(rng, &[(3, None, 350)], |r| Some(338 + r.next_max(3) as u16)),
-        _ => moon_chain(rng, &[(3, None, 342)], |r| Some(338 + r.next_max(3) as u16)),
+        2 => moon_chain(ctx, rng, &[(3, None, 350)], |r| Some(338 + r.next_max(3) as u16)),
+        _ => moon_chain(ctx, rng, &[(3, None, 342)], |r| Some(338 + r.next_max(3) as u16)),
     }
 }
 
@@ -1786,6 +1805,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
 /// C# spawns BOTH NPCs in one attempt (the picker returns the first; the stream
 /// stays 1:1 — the deviation is recorded in ANALYSIS).
 fn pumpkin_327_chain<F>(
+    ctx: &SpawnContext,
     rng: &mut UnifiedRandom,
     n: i32,
     cap: Option<i32>,
@@ -1796,8 +1816,8 @@ where
     F: FnOnce(&mut UnifiedRandom) -> Option<u16>,
 {
     let mut picked = None;
-    moon_arm(&mut picked, rng, n, cap, 327);
-    picked.or(moon_chain(rng, chain, fallback))
+    moon_arm(ctx, &mut picked, rng, n, cap, 327);
+    picked.or(moon_chain(ctx, rng, chain, fallback))
 }
 
 /// The pumpkin-moon roster ladder: `SpawnAnNPC`'s `!Main.dayTime &&
@@ -1816,15 +1836,17 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             return None;
         }
         let mut picked = None;
-        if moon_arm(&mut picked, rng, 2, Some(2), 327) {
+        if moon_arm(ctx, &mut picked, rng, 2, Some(2), 327) {
             return picked; // 327
         }
         // `Next(3) != 0 && CountNPCS(325) < 2` (`:3235`) — the inverted roll.
-        if rng.next_max(3) != 0 && MOON_WAVE_KIND_COUNT < 2 {
+        if rng.next_max(3) != 0
+            && (ctx.moon_npc_counts.iter().filter(|&&t| t == 325).count() as i32) < 2
+        {
             return Some(325);
         }
         // The 315 arm (`:3239`) draws no roll.
-        if MOON_WAVE_KIND_COUNT < 3 {
+        if (ctx.moon_npc_counts.iter().filter(|&&t| t == 315).count() as i32) < 3 {
             return Some(315);
         }
         return None;
@@ -1834,17 +1856,18 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             // `:3249-3260`: 327, 325, then the 315 arm whose gate ALSO carries
             // `!reachedInvasionBossCap`; the case has no final `else`.
             let mut picked = None;
-            if !moon_arm(&mut picked, rng, 5, Some(2), 327)
-                && !moon_arm(&mut picked, rng, 5, Some(2), 325)
+            if !moon_arm(ctx, &mut picked, rng, 5, Some(2), 327)
+                && !moon_arm(ctx, &mut picked, rng, 5, Some(2), 325)
                 && !moon_boss_cap_reached(ctx.moon_boss_cap_count)
-                && MOON_WAVE_KIND_COUNT < 5
+                && (ctx.moon_npc_counts.iter().filter(|&&t| t == 315).count() as i32) < 5
             {
                 picked = Some(315);
             }
             picked
         }
-        18 => pumpkin_327_chain(rng, 7, Some(2), &[(7, Some(2), 325), (7, Some(3), 315)], |_| Some(330)),
+        18 => pumpkin_327_chain(ctx, rng, 7, Some(2), &[(7, Some(2), 325), (7, Some(3), 315)], |_| Some(330)),
         17 => pumpkin_327_chain(
+            ctx,
             rng,
             7,
             Some(2),
@@ -1852,11 +1875,13 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             |_| Some(329),
         ),
         16 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(2), 327), (10, Some(2), 315), (6, None, 330), (3, None, 329)],
             |_| Some(326),
         ),
         15 => pumpkin_327_chain(
+            ctx,
             rng,
             10,
             Some(1),
@@ -1864,6 +1889,7 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             |r| Some(305 + r.next_max(10) as u16),
         ),
         14 => pumpkin_327_chain(
+            ctx,
             rng,
             10,
             Some(1),
@@ -1877,35 +1903,37 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             |r| Some(305 + r.next_max(10) as u16),
         ),
         13 => moon_chain(
+            ctx,
             rng,
             &[(7, Some(2), 325), (10, Some(2), 315), (6, None, 330), (3, None, 329)],
             |_| Some(326),
         ),
-        12 => moon_chain(rng, &[(5, Some(1), 327)], |_| Some(330)),
-        11 => moon_chain(rng, &[(7, Some(2), 325), (3, None, 330)], |_| Some(326)),
-        10 => moon_chain(rng, &[(10, Some(1), 327), (3, None, 329)], |r| {
+        12 => moon_chain(ctx, rng, &[(5, Some(1), 327)], |_| Some(330)),
+        11 => moon_chain(ctx, rng, &[(7, Some(2), 325), (3, None, 330)], |_| Some(326)),
+        10 => moon_chain(ctx, rng, &[(10, Some(1), 327), (3, None, 329)], |r| {
             Some(305 + r.next_max(10) as u16)
         }),
         9 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(2), 325), (8, None, 330), (5, None, 329), (2, None, 326)],
             |r| Some(305 + r.next_max(10) as u16),
         ),
-        8 => moon_chain(rng, &[(8, Some(2), 315), (4, None, 330)], |_| Some(329)),
-        7 => moon_chain(rng, &[(7, Some(2), 325), (4, None, 330)], |_| Some(329)),
-        6 => moon_chain(rng, &[(7, Some(2), 325), (2, None, 326)], |r| {
+        8 => moon_chain(ctx, rng, &[(8, Some(2), 315), (4, None, 330)], |_| Some(329)),
+        7 => moon_chain(ctx, rng, &[(7, Some(2), 325), (4, None, 330)], |_| Some(329)),
+        6 => moon_chain(ctx, rng, &[(7, Some(2), 325), (2, None, 326)], |r| {
             Some(305 + r.next_max(10) as u16)
         }),
-        5 => moon_chain(rng, &[(10, Some(1), 315)], |_| Some(329)),
+        5 => moon_chain(ctx, rng, &[(10, Some(1), 315)], |_| Some(329)),
         4 => {
             // Verbatim quirk (`:3511-3513`): the roll gates on `!AnyNPCs(325)`
             // but the arm spawns 330.
-            moon_chain(rng, &[(8, Some(1), 330), (2, None, 326)], |r| {
+            moon_chain(ctx, rng, &[(8, Some(1), 330), (2, None, 326)], |r| {
                 Some(305 + r.next_max(10) as u16)
             })
         }
-        3 => moon_chain(rng, &[(3, None, 329)], |_| Some(326)),
-        2 => moon_chain(rng, &[(3, None, 326)], |r| Some(305 + r.next_max(10) as u16)),
+        3 => moon_chain(ctx, rng, &[(3, None, 329)], |_| Some(326)),
+        2 => moon_chain(ctx, rng, &[(3, None, 326)], |r| Some(305 + r.next_max(10) as u16)),
         // `:3545` — the C#'s default: no roll gate, the type is `Next(305, 315)`.
         _ => Some(305 + rng.next_max(10) as u16),
     }
@@ -2009,6 +2037,7 @@ mod tests {
 
     fn ctx(world: &World, y_px: f32, day: bool) -> SpawnContext<'_> {
         SpawnContext {
+            moon_npc_counts: &[],
             world,
             player_center: (0.0, y_px),
             player_pos: (0.0, y_px),
@@ -2871,6 +2900,7 @@ mod tests {
 
     fn ctx_at<'a>(w: &'a World, day: bool) -> SpawnContext<'a> {
         SpawnContext {
+            moon_npc_counts: &[],
             world: w,
             player_center: (200.0 * TILE_PX, 295.0 * TILE_PX),
             player_pos: (200.0 * TILE_PX, 295.0 * TILE_PX),
@@ -3066,6 +3096,7 @@ mod tests {
             let mut state = seed;
             for _ in 0..900 {
                 let ctx = SpawnContext {
+                    moon_npc_counts: &[],
                     world: &w,
                     player_center: (200.0 * TILE_PX, 295.0 * TILE_PX),
                     player_pos: (200.0 * TILE_PX, 295.0 * TILE_PX),
@@ -3327,6 +3358,7 @@ mod tests {
     /// band, and `AnyDanger`'s refusal (`NPC.cs:1385-1402`/`:4194-4198`).
     fn probe_ctx(world: &World) -> SpawnContext<'_> {
         SpawnContext {
+            moon_npc_counts: &[],
             world,
             player_center: (world.width as f32 * TILE_PX / 2.0, 120.0 * TILE_PX),
             player_pos: (world.width as f32 * TILE_PX / 2.0, 120.0 * TILE_PX),

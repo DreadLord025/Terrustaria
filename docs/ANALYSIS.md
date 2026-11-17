@@ -7966,7 +7966,7 @@ stitched them back together 2026-11-07 (commits `9069134`, `3418a59`→
   `App.world_chests` store index — `Player.cs:2876/:2878/:2880`); `App.chest`
   is deleted and every reader re-pointed. Bank open/close rides
   `chest::toggle_open` (the shared C# block `Player.cs:33233-33252`, sounds
-  10/11/12) behind the C# prologue (`close_shop` `:33087-33096`,
+  10/11/12) behind the C# prologue (`close_shop` `:33147-33096`,
   `bank_open_origin` `:33060-33079` incl. the 463/491 ±1/+=2 adjustment),
   and `tick_open` is the full `HandleBeingInChestRange` port
   (`:31015-31097`, minus the projectile trackers — remote opens are out)
@@ -15495,3 +15495,5 @@ Documented deviations, all deliberate:
 - **`pumpkin_moon_type`'s family scoping**: the map returns `Some` only for
   the 16 pumpkin kinds — the frost family's kinds (F-13c) keep consuming
   until their row lands.
+
+**Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.

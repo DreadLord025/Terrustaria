@@ -3856,6 +3856,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
         // blocks the attempt (the journey and Moon Lord gates have no
         // sources yet).
+        // `NPC.CountNPCS(id)`'s scan source (`NPC.cs:7982-7995`): the active
+        // roster's vanilla types — the moon ladders' per-kind cap gates
+        // (`CountNPCS(id) < cap`) read it per arm.
+        let moon_counts: Vec<u16> = app
+            .npcs
+            .iter()
+            .filter(|n| n.hp > 0)
+            .map(|n| n.kind.to_u16())
+            .collect();
         let ctx = app.player.as_ref().and_then(|player| {
             if player.dead {
                 return None;
@@ -3878,6 +3887,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // player's zone flags come from the scene metrics, and the
                 // spawn gates read them (`NPC.SetSpawnFlags` →
                 // `GetSpawnRate`, `NPC.cs:311-313`).
+                moon_npc_counts: &moon_counts,
                 flags: spawner::SpawnFlags {
                     zone_dungeon: app.scene_metrics.zone_dungeon,
                     zone_jungle: app.scene_metrics.zone_jungle,
@@ -4641,6 +4651,7 @@ mod tests {
                     player_pos: (32.0 * 16.0, 500.0 * 16.0),
                     nearby_active_npcs: 0.0,
                     town_npcs: 0,
+                    moon_npc_counts: &[],
                     day_time: true,
                     player_life_max: 100,
                     underworld_for_bats: false,
