@@ -1,5 +1,5 @@
 crates/tr-app/src/npc_chat.rs|fn get_chat|S1-E-10 — town NPC chatter/dialogue selection (NPC.GetChat port)
 crates/tr-app/src/npc_chat.rs|struct ChatContext|S1-E-10 — town NPC chatter/dialogue selection (state passed to chat ladder)
-crates/tr-app/src/npc_chat.rs|fn presence_flags|S1-E-10 — town NPC chatter/dialogue selection (seventeen presence flags from NPC list)
+crates/tr-app/src/npc_chat.rs|struct Flags|S1-E-10 — town NPC chatter/dialogue selection (seventeen presence flags from NPC list)
 crates/tr-app/src/lang.rs|fn dialog|S1-E-10 — town NPC chatter/dialogue selection (LegacyDialog lookup)
 crates/tr-app/src/lang.rs|fn random_from_category|S1-E-10 — town NPC chatter/dialogue selection (Language.SelectRandom over Lang.CreateDialogFilter)
