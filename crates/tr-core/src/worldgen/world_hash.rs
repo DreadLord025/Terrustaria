@@ -212,7 +212,13 @@ mod tests {
     // the frame pixels are.) Values measured on the merged tree (BUG-25 +
     // S1-A-3 together).
     const SEED42_512: u32 = 2673964944;
-    const DEFAULT_WORLD: u32 = 594519700;
+    // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
+    // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
+    // surface-opening tunnels before `Shinies`, so the default world's
+    // tiles move downstream of the carve. Measured on this branch. (The
+    // 512 world's pin survives: its single small runner lands in the beach
+    // zone the `Beaches` pass re-shapes anyway, and the final bytes match.)
+    const DEFAULT_WORLD: u32 = 3439477718;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
     // x-jitter (`WorldGen.cs:10170-10196`/`:17220`), the pyramid's main-item

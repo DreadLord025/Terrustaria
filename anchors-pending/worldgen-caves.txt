@@ -1,0 +1,1 @@
+crates/tr-core/src/worldgen/caves.rs|fn surface_caves|worldgen-caves - the SurfaceCaves pass (WorldGen.cs:12162-12270) ported on its own pass_rng stream: the four surface-opening TileRunner groups; the copper/iron bands verified against WorldGen.cs:13399-13460
