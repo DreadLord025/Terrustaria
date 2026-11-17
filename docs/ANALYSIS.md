@@ -4505,10 +4505,58 @@ the evil drops gate on `Conditions.IsCorruption/CrimsonAndNotExpert`
 which read `WorldGen.crimson` (the WORLD type). The skipped rows
 (13, warned): the NamedNPC localization gates, the RedHat legendary
 gate, the MechBossSpawners/SlimeBody/StatueMimic/
-FromOptionsWithoutRepeats rule classes (each needs its own event state).
+FromOptionsWithoutRepeats rule classes (each needs its own event state) —
+S1-E-14 has since landed all four classes and both conditions ("Loot rule
+classes (S1-E-14, 2026-11-17)" below).
 The unknown item ids (the ~20 warn-only OneFromOptions sets) emit and
 resolve - the executor drops only registry-known items, so they surface
 as the registry scale-up work.
+
+## Loot rule classes (S1-E-14, 2026-11-17)
+
+The four rule classes and two conditions the M4-LOOT-1/-2 build skipped
+are ported verbatim in `crates/tr-core/src/loot.rs`:
+
+- **`SlimeBodyItemDropRule`** — the ai[1] item rain: the stack table's
+  seven families + the default 1..1, `Next(min, max+1)`, behind the
+  `SlimeCanContainItems` + ai[1] gates.
+- **`StatueMimicItemDropRule`** — `statue_style_to_item`
+  (`WorldGen.cs:37928`, 26 cases), stack 1.
+- **`MechBossSpawnersDropRule`** — the three sequential short-circuit
+  arms (`!downedMechBossN && player.RollLuck(2500)==0` → 556/544/557)
+  behind `npc.value > 0 && hardMode && (!d1||!d2||!d3) &&
+  !is_in_simulation`.
+- **`FromOptionsWithoutRepeatsDropRule`** — the temp-list `Next(count)`
+  + `RemoveAt` loop.
+
+The conditions: **`NamedNPC`** compares the given name to the localized
+key through the `get_text_value` seam, reading `LootNpc.given_name`;
+**`RedHatSkeletron`** is a `Cond` variant with the 35/36/32/33 ×
+ai[3]/localAI[3] matrix. The `LootNpc`/`DropAttemptInfo` seam fields
+carry all of it; `world_sim/npcs.rs::spawn_loot` fills
+`is_in_simulation=false`, `get_text_value`, the real `npc.value()`, the
+ai/local_ai zeros, the `given_name` Some-path and the four `downed_mech*`
+flags (previously dead, C# 1:1 `MechBossSpawnersDropRule.cs:15`).
+
+**The generator.** `tools/gen_loot.py` retires the four-rule/
+two-condition skip rows and splices WHOLE C# methods; `loot_db_gen.rs`
+regenerates 1421→1445 register calls — the diff is the 24 new rows only,
+the existing rows byte-identical (`gen_loot.py --check` green).
+
+**Deviations.**
+
+- RedHat's 36/32 paths are unreachable at runtime — the port's `Npc` has
+  no `localAI` (the ai[3] paths for 35/33 work); the field port is
+  follow-up S1-E-14b.
+- The mech-flags fill is a deliberate hardmode behavior change: mech
+  spawner drops become possible.
+- The generator splices whole methods — 24 registrations, not 12;
+  half-body emission would drop C# rows.
+- NamedNPC's key comparison rides the `get_text_value` seam.
+
+Follow-up S1-E-14a records the pre-existing generator limitation the
+splice exposed: the `RegisterBoss_*` subtree at `ItemDropDatabase.cs:655`
+is not spliced (the 655-site boss-subtree gap).
 
 ## Buff slots (M2-BUFF-1)
 

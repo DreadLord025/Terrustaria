@@ -348,3 +348,4 @@ crates/tr-app/src/lang.rs|fn dialog|S1-E-10 — town NPC chatter/dialogue select
 crates/tr-app/src/lang.rs|fn random_from_category|S1-E-10 — town NPC chatter/dialogue selection (Language.SelectRandom over Lang.CreateDialogFilter)
 crates/tr-core/src/gore.rs|pub struct Gore|S1-E-4 - gore particle system port
 crates/tr-core/src/gore_id.rs|pub const GORE_COUNT|S1-E-4 - GoreID.Sets tables port
+crates/tr-core/src/loot.rs|pub struct SlimeBodyItemDropRule|S1-E-14 — the skipped loot rule classes and conditions (the four rules, NamedNPC, RedHatSkeletron)
