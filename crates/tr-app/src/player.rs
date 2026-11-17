@@ -2281,9 +2281,10 @@ impl Player {
         // fresh 100-life character revives FULL; the `spawnMax` Journey arm
         // (`:37609-37611`) has no port counterpart.
         self.hp = (self.max_hp / 2).max(100).min(self.max_hp.max(100));
-        // `:37614-37618`: the i-frames — `immune = true`, the context arm
-        // below lands 180 (the port's respawn is always the death revive;
-        // the 60 arm rides the other `PlayerSpawnContext`s).
+        // `:37658-37666`: the i-frames — `immune = true` (`:37594`) and the
+        // `PlayerSpawnContext.ReviveFromDeath` arm lands 180 (the port's
+        // respawn is always the death revive; the 60 arm rides the other
+        // `PlayerSpawnContext`s).
         self.immune = true;
         self.immune_time = 180;
         self.immune_no_blink = true;
@@ -2454,6 +2455,8 @@ impl Player {
         moon_event_live: bool,
     ) -> bool {
         self.dead_time += 1;
+        // `Player.cs:17016`: the dead tick zeroes the life pool.
+        self.hp = 0;
         self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
         // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
         // budget zeroes while dead — the pool stays until AI_062's dead-owner
@@ -2933,10 +2936,18 @@ impl Player {
         // also selects the 20-tick immunity window below, not 40).
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
-        // `Player.Hurt`'s immunity window (`Player.cs:38385`): 40 ticks
-        // for normal damage (no long-invincibility source yet), 20 when
-        // the damage is exactly 1; PVP 8 is unreachable in single-player.
-        self.hurt_cd = tr_core::damage::iframes_for(amount, false, false) as f32 / 60.0;
+        // `Player.Hurt`'s immunity window (`Player.cs:38382-38385`):
+        // `int num7 = (pvp ? 8 : ((num2 != 1.0) ? (this.longInvince ? 80 : 40)
+        // : (this.longInvince ? 40 : 20)));` then, on the General lane,
+        // `this.immune = true; this.immuneTime = num7;`. The write lands on
+        // the same `immune`/`immuneTime` fields the dodge handlers arm, so
+        // `UpdateImmunity` (`:18856-18869`) runs the window down. PVP 8 is
+        // unreachable in single-player. `hurt_cd` keeps carrying the window
+        // in seconds for the single collapsed damage lane.
+        let iframes = tr_core::damage::iframes_for(amount, false, self.long_invince);
+        self.immune = true;
+        self.immune_time = iframes;
+        self.hurt_cd = iframes as f32 / 60.0;
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
         // `Player.Hurt`'s tail (`Player.cs:38525`): the hurt cue. The C#'s
@@ -2951,10 +2962,13 @@ impl Player {
             } else {
                 -1.0
             };
-            // The fixed contact knockback (`Player.cs` Hurt: `4.5 * dir` with
-            // `-3.5` vertical unless noKnockback).
+            // The fixed contact knockback (`Player.cs:38519-38524`):
+            // `base.velocity.X = 4.5f * hitDirection`, `Y = -3.5f` and the
+            // fall origin reset to the current row (`this.fallStart =
+            // (int)(base.position.Y / 16f)`) so the pop never books a fall.
             self.vx = dir * 4.5;
             self.vy = -3.5;
+            self.fall_start = (self.y / TILE_PX) as i32;
             self.on_ground = false;
         }
         true
@@ -2964,6 +2978,9 @@ impl Player {
     /// forces `immune = false` BEFORE the Hurt — the hit lands through any
     /// iframes — and hitDirection 0 means no knockback and no fallStart reset.
     fn hurt_fall(&mut self, amount: i32, rng: &mut dyn tr_core::loot::DropRng) -> bool {
+        // `Player.cs:25361`: `this.immune = false;` BEFORE the Hurt — a
+        // landing ignores the i-frames the contact/lava lanes armed.
+        self.immune = false;
         self.hurt_cd = 0.0;
         let cx = self.x + WIDTH * 0.5;
         // The landing hit keeps `Hurt`'s default `dodgeable = true` — a
@@ -8080,6 +8097,8 @@ mod tests {
         // A 1-damage hit past 25% endurance truncates to 0, then the
         // `num2 < 1 -> 1` floor (`Player.cs:38378-38381`) lifts it back to 1.
         p.hurt_cd = 0.0;
+        p.immune = false; // the first hit armed the 40-tick window
+        p.immune_time = 0;
         p.hurt_inner(
             1,
             p.x - 10.0,
@@ -8316,12 +8335,15 @@ mod tests {
         // `statDefense * 0.5`, floored at 1 (M3-EQUIP-2).
         let mut p = Player::spawn(&World::new("t".into(), 64, 800));
         p.hurt_cd = 0.0;
+        p.immune = false; // the window `UpdateImmunity` would have run out
         p.stat_defense = 20; // 10 damage reduction
         p.hp = 100;
         p.hurt(20, 0.0, &mut tr_core::UnifiedRandom::default(), true);
         assert_eq!(p.hp, 90, "20 - 20*0.5 = 10 taken");
         // The floor: a huge defense leaves 1.
         p.hurt_cd = 0.0;
+        p.immune = false;
+        p.immune_time = 0;
         p.hp = 100;
         p.stat_defense = 400;
         p.hurt(20, 0.0, &mut tr_core::UnifiedRandom::default(), true);
@@ -13437,6 +13459,181 @@ mod tests {
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 299);
         p.respawn();
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 0);
+    }
+
+    /// The player-vitals slice: `Player.Hurt`'s i-frame write, the fall/lava
+    /// hazards, the death coin drop and the respawn timer — each pinned to
+    /// the decompiled C# blocks (see the per-test citations).
+    mod player_vitals {
+        use super::*;
+
+        /// The tick head's counters (`Player.Update` `:25456` `UpdateImmunity`
+        /// and the hurt-cooldown decay) replayed, so the survival arm can be
+        /// driven without the movement block re-deriving `in_lava` from the
+        /// liquid scan (`:27728`).
+        fn tick_counters(p: &mut Player) {
+            p.update_immunity();
+            p.hurt_cd = (p.hurt_cd - 1.0 / 60.0).max(0.0);
+        }
+
+        /// t1 — `Player.Hurt`'s immunity write (`Player.cs:38382-38385`):
+        /// `num7 = pvp ? 8 : (num2 != 1 ? (longInvince ? 80 : 40) : (longInvince
+        /// ? 40 : 20))`, then `immune = true` and `immuneTime = num7` on the
+        /// General lane. The write rides the same `immunity` fields the dodge
+        /// handlers use, not `hurtCooldowns` alone.
+        #[test]
+        fn hit_gives_csharp_iframes() {
+            let w = ground_world();
+            let mut rng = DodgeRng::with_rolls(&[]);
+            let mut p = Player::spawn(&w);
+            p.stat_defense = 0;
+            p.immune = false;
+            p.immune_time = 0;
+            p.hurt_cd = 0.0;
+            assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+            assert_eq!(p.hp, 80, "20 damage, no defense");
+            assert!(p.immune, "the hit arms the immunity flag");
+            assert_eq!(p.immune_time, 40, "num7 = 40 for damage != 1");
+            assert_eq!(p.hurt_cd, 40.0 / 60.0, "the same 40-tick window");
+            // The knockback (`:38519-38524`): `4.5 * hitDirection`, `-3.5` Y.
+            assert_eq!((p.vx, p.vy), (-4.5, -3.5), "hit from the right pushes left");
+            // `num2 != 1.0` picks the 40 window; an exact 1 selects 20.
+            let mut q = Player::spawn(&w);
+            q.stat_defense = 0;
+            q.immune = false;
+            q.immune_time = 0;
+            q.hurt_cd = 0.0;
+            assert!(q.hurt(1, q.x + 100.0, &mut rng, true));
+            assert_eq!(q.hp, 99);
+            assert_eq!(q.immune_time, 20, "num7 = 20 for exactly 1 damage");
+            // `longInvince` doubles the pair (`:38382`).
+            let mut r = Player::spawn(&w);
+            r.stat_defense = 0;
+            r.immune = false;
+            r.immune_time = 0;
+            r.hurt_cd = 0.0;
+            r.long_invince = true;
+            assert!(r.hurt(20, r.x + 100.0, &mut rng, true));
+            assert_eq!(r.immune_time, 80, "longInvince: 80 ticks");
+        }
+
+        /// t2 — the landing curve: `num10 = 25 + extraFall` (`:25301`), the
+        /// strict `num11 > num10` gate (`:25360`) and
+        /// `num17 = (num11 - num10) * 10` (`:25363`); plus the `immune = false`
+        /// forced BEFORE the Hurt (`:25361`) so a fall lands through i-frames.
+        #[test]
+        fn fall_damage_threshold_and_curve() {
+            let w = ground_world();
+            // The feet rest on row 57 in `ground_world`.
+            let (lost, landed) = drop_and_settle(&w, 32); // fell 25
+            assert_eq!((lost, landed), (0, 57), "25 tiles is the free edge");
+            assert_eq!(drop_and_settle(&w, 31).0, 10, "fell 26 -> 1 tile * 10");
+            assert_eq!(drop_and_settle(&w, 25).0, 70, "fell 32 -> 7 tiles * 10");
+            assert_eq!(drop_and_settle(&w, 23).0, 90, "fell 34 -> 9 tiles * 10");
+            // Mid-iframes (a contact hit landed a moment ago): `:25361`
+            // clears `immune` before the Hurt, so the fall still lands.
+            let mut p = Player::spawn(&w);
+            p.immune = true;
+            p.immune_time = 600;
+            p.hurt_cd = 10.0;
+            p.y = 25.0 * TILE_PX;
+            p.fall_start = 25;
+            for _ in 0..600 {
+                p.update(&w, PlayerInput::default());
+                if p.on_ground {
+                    break;
+                }
+            }
+            assert!(p.hp < 100, "the fall lands through iframes, hp {}", p.hp);
+        }
+
+        /// t3 — `Player.cs:27696-27712`: 80 damage per lava hit (`num79`), the
+        /// hit armed only once the Lava lane's window is free — `num7 = 40`
+        /// (`:38382`) — and OnFire (24) for 420 ticks on a landed hit.
+        #[test]
+        fn lava_ticks_per_second() {
+            let w = ground_world();
+            let mut rng = tr_core::UnifiedRandom::default();
+            let mut p = Player::spawn(&w);
+            p.max_hp = 500;
+            p.hp = 500;
+            let mut hits: Vec<(i32, i32)> = Vec::new();
+            let mut prev = p.hp;
+            for tick in 0..80 {
+                if tick > 0 {
+                    tick_counters(&mut p);
+                }
+                p.in_lava = true;
+                p.lava_wet = true;
+                p.update_survival(&w, &mut rng);
+                // Only the 80-damage hits count: the OnFire DoT also drains.
+                if prev - p.hp >= 40 {
+                    hits.push((tick, prev - p.hp));
+                }
+                prev = p.hp;
+            }
+            assert_eq!(
+                hits.iter().map(|h| h.0).collect::<Vec<_>>(),
+                vec![0, 40],
+                "one lava hit per 40 ticks"
+            );
+            assert_eq!(hits[0].1, 80, "80 damage per landing hit");
+            assert!(p.buffs.find_buff_index(24).is_some(), "OnFire granted");
+        }
+
+        /// t4 — `Player.DropCoins` (`Player.cs:54261-54294`): per coin stack
+        /// `num2 = stack / 2` is KEPT and `num3 = stack - num2` (the ceiling
+        /// half) is dropped — classic; expert `stack / 4`, master `0`.
+        #[test]
+        fn death_drops_coins_per_csharp_rule() {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            app.coins = 7;
+            assert_eq!(
+                crate::death::drop_coins(&mut app, 0.0, 0.0),
+                4,
+                "7 copper: 3 kept, 4 dropped"
+            );
+            assert_eq!(app.coins, 3, "the kept half stays");
+            app.coins = 1000;
+            assert_eq!(crate::death::drop_coins(&mut app, 0.0, 0.0), 500);
+            assert_eq!(app.coins, 500);
+            // The death entry point books the same loss (`:38931-38936`).
+            app.coins = 10_050;
+            crate::death::on_player_death(&mut app, 0.0, 0.0, "x");
+            assert_eq!(app.lost_coins, 5025);
+            assert_eq!(app.coins, 5025);
+        }
+
+        /// t5 — `Player.GetRespawnTime` (`:39060-39082`) and the
+        /// `UpdateDead` tick (`:17016` `statLife = 0`, `:17055-17058`
+        /// `respawnTimer` clamped 0..3600), then `Spawn`'s revive
+        /// (`:37600-37618`, `:37658-37666`: `max(max/2, 100)` life, 180
+        /// i-frames).
+        #[test]
+        fn respawn_timer_matches() {
+            assert_eq!(Player::get_respawn_time(false, false), 600);
+            assert_eq!(Player::get_respawn_time(true, false), 1200, "boss +600");
+            assert_eq!(Player::get_respawn_time(false, true), 900, "expert x1.5");
+            assert_eq!(Player::get_respawn_time(true, true), 1800);
+            let w = ground_world();
+            let mut p = Player::spawn(&w);
+            p.start_death(&w, false, false);
+            assert!(p.dead);
+            assert_eq!(p.respawn_timer, 600);
+            for _ in 0..599 {
+                assert!(!p.update_dead(false, false, false, false));
+            }
+            assert_eq!(p.respawn_timer, 1);
+            assert!(p.update_dead(false, false, false, false), "revive on tick 600");
+            // The dead tick zeroes the life (`:17016`).
+            p.hp = 40;
+            p.update_dead(false, false, false, false);
+            assert_eq!(p.hp, 0, "UpdateDead sets statLife = 0");
+            p.revive();
+            assert!(!p.dead);
+            assert_eq!(p.hp, 100, "max(max/2, 100)");
+            assert!(p.immune && p.immune_time == 180, "180 revive i-frames");
+        }
     }
 }
 
