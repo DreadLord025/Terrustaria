@@ -405,15 +405,6 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         world,
         &mut app.dust,
     );
-    crate::sand::tick(
-        &mut app.dust,
-        show,
-        player_vy,
-        *camera,
-        screen,
-        *zoom,
-        world,
-    );
     // `Main.UpdateSceneMetrics` (`Main.cs:62560`): the scan center is the
     // local player's center; headless shots (TR_NOPLAYER) stand in the camera.
     let center = player

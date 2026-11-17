@@ -194,6 +194,19 @@ pub struct SpawnCtx {
     pub max_dust_to_draw: i32,
 }
 
+/// The per-tick inputs `Dust.UpdateDust` reads as statics (`Dust.cs:420-2423`,
+/// S1-E-3). Deliberately NOT a reuse of [`SpawnCtx`]: its `screen_height`
+/// scalar (`Dust.cs:2343`) differs in kind from the spawn cull's `screen_size`
+/// box, and the update reads no menu/generating guard.
+pub struct UpdateCtx {
+    /// `Main.maxDustToDraw` — the loop's budget split (`Dust.cs:432`).
+    pub max_dust_to_draw: i32,
+    /// `Main.screenPosition` (`Dust.cs:2343`).
+    pub screen_position: Vec2,
+    /// `Main.screenHeight` (`Dust.cs:2343`).
+    pub screen_height: f32,
+}
+
 /// The wet probe seam for the type-34 arm: `Collision.WetCollision(pos, 4, 4)`
 /// (`Dust.cs:248`). The port's probe lives in `tr-app` (`player.rs::
 /// wet_collision`, the `Collision.cs:1572-1651` port), which tr-core cannot
@@ -264,6 +277,153 @@ impl DustPool {
     /// Inject the type-34 wet probe (`Dust.cs:248`); see [`WetProbe`].
     pub fn set_wet_probe(&mut self, probe: WetProbe) {
         self.wet_probe = Some(probe);
+    }
+
+    /// `Dust.UpdateDust` (`Dust.cs:420-2423`) — the generic per-tick loop,
+    /// verbatim (S1-E-3): the head + counter resets, the `i < maxDustToDraw`
+    /// split whose `else` arm kills the past-budget slots (`:2393-2395`),
+    /// `dCount++` per active slot (`:440`), the `scale > 10` kill (no
+    /// `continue` — the C# body falls through, `:447`), the ChildSafety
+    /// firstFrame re-type arm (`:445-466`, rolled on the caller's stream),
+    /// `position += velocity` (`:477`), the per-type hook (the `:467-2334`
+    /// chain + its standalone arms are S1-E-2's), the gravity tail as the
+    /// chain's final `else if` (`:2335-2342`), the screen-bottom kill
+    /// (`:2343-2346`), the `dCount` nibbles (`:2347-2366`) and the `num86`
+    /// floor ladder (`:2367-2391`) with the scale-floor kill (`:2388-2391`).
+    ///
+    /// **Two C# dead arms, ported dead.** (a) The live counter `num` is
+    /// declared at `:426` and never incremented anywhere in the pass, so the
+    /// post-loop recompute (`:2398-2422`) always falls to its final
+    /// `else { dCount = 0f }`. (b) The nibble/floor comparisons use `==`
+    /// against `Dust.dCount`, which the pass leaves integral (reset to 0, then
+    /// `++` per active slot), so 0.5/0.6/0.7/0.8/0.9 never matches in any
+    /// reachable state. Both blocks are transcribed verbatim, citation
+    /// attached — the port mirrors the source, not a tidied one.
+    ///
+    /// The `customData` follower arms (325/its family, `:493-508`-region)
+    /// and the light arms ride the same hook position; they are S1-E-2's.
+    pub fn update_dust<R: DustRng>(
+        &mut self,
+        ctx: &UpdateCtx,
+        rng: &mut R,
+        mut type_arm: impl FnMut(&mut Dust) -> bool,
+    ) {
+        let max = ctx.max_dust_to_draw.max(0) as usize;
+        let child_safety_on = !self.child_safety.disabled;
+        // `:426` — the live counter, never incremented below (dead, see the
+        // method doc); it exists for the verbatim post-loop ladder.
+        let num = 0;
+        // `:427-431` — the head resets. `Main.snowDust` is a `Main` static
+        // (`Main.cs:621`, read at `:13057`), not a `Dust` one: the pool does
+        // not carry it and nothing in the port consumes it.
+        self.lava_bubbles = 0;
+        self.sand_storm_count = 0;
+        let mut d_count = self.d_count;
+        let bottom = ctx.screen_position.y + ctx.screen_height;
+        for i in 0..DUST_SENTINEL {
+            if i >= max {
+                // `:2393-2395` — the else arm: past-budget slots die, active or not.
+                self.slots[i].active = false;
+                continue;
+            }
+            let mut dust = self.slots[i];
+            if !dust.active {
+                continue;
+            }
+            // `:440` — the running pressure (the spawn cull/bands read it).
+            d_count += 1.0;
+            if dust.scale > 10.0 {
+                dust.active = false;
+            }
+            if dust.first_frame && child_safety_on && ChildSafety::dangerous_dust(dust.dust_type) {
+                if rng.next_max(2) == 0 {
+                    dust.first_frame = false;
+                    dust.dust_type = 16;
+                    dust.scale = rng.next_float() * 1.6 + 0.3;
+                    dust.color = Color::TRANSPARENT;
+                    dust.frame_x = 10 * dust.dust_type;
+                    dust.frame_y = 10 * rng.next_max(3);
+                    let num2 = dust.dust_type / 100;
+                    dust.frame_x -= 1000 * num2;
+                    dust.frame_y += 30 * num2;
+                    dust.no_gravity = true;
+                } else {
+                    dust.active = false;
+                }
+            }
+            // `:477` — the move.
+            dust.position += dust.velocity;
+            // `:467-2334` — the per-type chain + its standalone arms: S1-E-2
+            // ports them; the hook returns true when an arm matched, because
+            // the generic gravity tail below is the chain's final `else if`
+            // (`:2335`) and must not run when an arm did.
+            let matched = type_arm(&mut dust);
+            if !matched && dust.dust_type != 304 && dust.no_gravity {
+                // `:2336-2341` — the no-gravity drift; `fadeIn` gates the scale.
+                dust.velocity *= 0.92;
+                if dust.fade_in == 0.0 {
+                    dust.scale -= 0.04;
+                }
+            }
+            if dust.position.y > bottom {
+                dust.active = false;
+            }
+            // `:2347-2366` — the `==` dCount nibbles (dead: dCount is integral,
+            // see the method doc). Transcribed verbatim.
+            if d_count == 0.5 {
+                dust.scale -= 0.001;
+            }
+            if d_count == 0.6 {
+                dust.scale -= 0.0025;
+            }
+            if d_count == 0.7 {
+                dust.scale -= 0.005;
+            }
+            if d_count == 0.8 {
+                dust.scale -= 0.01;
+            }
+            if d_count == 0.9 {
+                dust.scale -= 0.02;
+            }
+            // `:2367-2387` — the `num86` scale floor (same dead `==` form).
+            let mut num86 = 0.1f32;
+            if d_count == 0.5 {
+                num86 = 0.11;
+            }
+            if d_count == 0.6 {
+                num86 = 0.13;
+            }
+            if d_count == 0.7 {
+                num86 = 0.16;
+            }
+            if d_count == 0.8 {
+                num86 = 0.22;
+            }
+            if d_count == 0.9 {
+                num86 = 0.25;
+            }
+            if dust.scale < num86 {
+                dust.active = false;
+            }
+            self.slots[i] = dust;
+        }
+        // `:2398-2422` — the recompute ladder over the (never-incremented)
+        // live count: only its final `else { dCount = 0f }` is reachable.
+        let num87 = num;
+        if num87 as f64 > ctx.max_dust_to_draw as f64 * 0.9 {
+            d_count = 0.9;
+        } else if num87 as f64 > ctx.max_dust_to_draw as f64 * 0.8 {
+            d_count = 0.8;
+        } else if num87 as f64 > ctx.max_dust_to_draw as f64 * 0.7 {
+            d_count = 0.7;
+        } else if num87 as f64 > ctx.max_dust_to_draw as f64 * 0.6 {
+            d_count = 0.6;
+        } else if num87 as f64 > ctx.max_dust_to_draw as f64 * 0.5 {
+            d_count = 0.5;
+        } else {
+            d_count = 0.0;
+        }
+        self.d_count = d_count;
     }
 
     /// `Dust.NewDust` (`Dust.cs:75-256`) — the only allocator, verbatim:
@@ -1726,5 +1886,296 @@ mod tests {
             Color::new(7, 7, 7, 7),
         );
         assert_eq!(pool.slot(0).color, Color::new(7, 7, 7, 7));
+    }
+
+    /// The tick ctx: a 1920x1080 screen at the origin with the full budget.
+    fn uctx(max: i32) -> UpdateCtx {
+        UpdateCtx {
+            max_dust_to_draw: max,
+            screen_position: Vec2::ZERO,
+            screen_height: 1080.0,
+        }
+    }
+
+    /// One no-op-hook tick (`type_arm` is E-2's position).
+    fn tick(pool: &mut DustPool, rng: &mut UnifiedRandom, c: &UpdateCtx) {
+        pool.update_dust(c, rng, |_| false);
+    }
+
+    /// DW-1.4 — the gravity tail as the chain's final `else if`
+    /// (`Dust.cs:2335-2342`): no-gravity dust damps (`velocity *= 0.92`) and
+    /// loses scale only while `fadeIn == 0`; type 304 is exempt; gravity dust
+    /// is untouched.
+    #[test]
+    fn s1_e_3_the_gravity_tail_damps_the_fade_in_gate_and_the_304_exemption() {
+        let mut pool = new_pool();
+        let mut rng = UnifiedRandom::new(42);
+        let t = uctx(6000);
+        let ng = 3;
+        {
+            let s = pool.slot_mut(ng);
+            s.active = true;
+            s.no_gravity = true;
+            s.fade_in = 0.0;
+            s.scale = 1.0;
+            s.position = Vec2::new(100.0, 200.0);
+            s.velocity = Vec2::new(2.0, -2.0);
+            s.dust_type = 60;
+        }
+        let faded = 4;
+        {
+            let s = pool.slot_mut(faded);
+            s.active = true;
+            s.no_gravity = true;
+            s.fade_in = 1.0;
+            s.scale = 1.0;
+            s.position = Vec2::new(100.0, 200.0);
+            s.velocity = Vec2::new(2.0, -2.0);
+            s.dust_type = 60;
+        }
+        let exempt = 5;
+        {
+            let s = pool.slot_mut(exempt);
+            s.active = true;
+            s.no_gravity = true;
+            s.fade_in = 0.0;
+            s.scale = 1.0;
+            s.position = Vec2::new(100.0, 200.0);
+            s.velocity = Vec2::new(2.0, -2.0);
+            s.dust_type = 304;
+        }
+        let grav = 6;
+        {
+            let s = pool.slot_mut(grav);
+            s.active = true;
+            s.no_gravity = false;
+            s.fade_in = 0.0;
+            s.scale = 1.0;
+            s.position = Vec2::new(100.0, 200.0);
+            s.velocity = Vec2::new(2.0, -2.0);
+            s.dust_type = 60;
+        }
+        tick(&mut pool, &mut rng, &t);
+        assert_eq!(pool.slot(ng).velocity, Vec2::new(2.0 * 0.92, -2.0 * 0.92));
+        assert_eq!(pool.slot(ng).scale, 1.0 - 0.04, "fadeIn == 0 loses scale");
+        assert_eq!(pool.slot(faded).velocity, Vec2::new(2.0 * 0.92, -2.0 * 0.92), "velocity damps regardless");
+        assert_eq!(pool.slot(faded).scale, 1.0, "fadeIn != 0 keeps its scale");
+        assert_eq!(pool.slot(exempt).velocity, Vec2::new(2.0, -2.0), "304 exempt from the damp");
+        assert_eq!(pool.slot(exempt).scale, 1.0);
+        assert_eq!(pool.slot(grav).velocity, Vec2::new(2.0, -2.0), "gravity dust takes no tail");
+        assert_eq!(pool.slot(grav).scale, 1.0);
+    }
+
+    /// DW-1.5 — the screen-bottom kill at the exact boundary
+    /// (`Dust.cs:2343-2346`): `position.y > screenPosition.y + screenHeight`
+    /// dies, the slot just above lives.
+    #[test]
+    fn s1_e_3_the_screen_bottom_kill_sits_at_the_exact_boundary() {
+        let mut pool = new_pool();
+        let mut rng = UnifiedRandom::new(42);
+        let t = uctx(6000);
+        for (i, y) in [(3, 1079.0), (4, 1080.0), (5, 1080.001)] {
+            let s = pool.slot_mut(i);
+            s.active = true;
+            s.no_gravity = true;
+            s.fade_in = 1.0;
+            s.scale = 1.0;
+            s.position = Vec2::new(100.0, y);
+            s.velocity = Vec2::new(0.0, 0.0);
+            s.dust_type = 60;
+        }
+        tick(&mut pool, &mut rng, &t);
+        assert!(pool.slot(3).active, "just above the bottom lives");
+        assert!(pool.slot(4).active, "exactly at the bottom lives (strict >)");
+        assert!(!pool.slot(5).active, "one step past the bottom dies");
+    }
+
+    /// DW-1.6 — the `==` dCount nibbles are DEAD in 1.4.5.8: the pass leaves
+    /// dCount integral (reset to 0, then `++` per active slot), so 0.5/0.6/…
+    /// never matches (`Dust.cs:2347-2366`). A pre-set 0.5 does not survive the
+    /// first active slot (`+1.0`), and the block still never fires.
+    #[test]
+    fn s1_e_3_the_nibbles_never_fire_because_d_count_is_integral() {
+        let mut pool = new_pool();
+        let mut rng = UnifiedRandom::new(42);
+        let t = uctx(6000);
+        let mut any_nibbled = false;
+        for tick_no in 0..6 {
+            pool.d_count = 0.5; // the "would-be" nibble level, pre-set each pass
+            for i in 0..6 {
+                let s = pool.slot_mut(i);
+                s.active = true;
+                s.no_gravity = false;
+                s.scale = 1.0;
+                s.position = Vec2::new(100.0, 200.0);
+                s.velocity = Vec2::new(0.0, 0.0);
+                s.dust_type = 60;
+            }
+            let pre_scale: Vec<f32> = (0..6).map(|i| pool.slot(i).scale).collect();
+            tick(&mut pool, &mut rng, &t);
+            for (i, pre) in pre_scale.iter().enumerate() {
+                if pool.slot(i).scale != *pre {
+                    any_nibbled = true;
+                }
+            }
+            let _ = tick_no;
+        }
+        assert!(!any_nibbled, "no nibble ever fires on an integral dCount");
+    }
+
+    /// DW-1.1 + DW-1.7 — the golden frame sequence and the dead recompute:
+    /// a fixed pool state ticks a pinned number of frames and the per-slot
+    /// end state matches the hand-derived C# trace (the position moves first,
+    /// the gravity tail follows, the kills and the reset at the pass end).
+    #[test]
+    fn s1_e_3_the_golden_frame_sequence_pins_the_loop_order() {
+        let mut pool = new_pool();
+        let mut rng = UnifiedRandom::new(42);
+        let w = world();
+        let sc = ctx(6000);
+        let t = uctx(6000);
+        // Two spawns ride the verbatim allocator (their own vectors); a
+        // hand-set slot pins the golden arithmetic.
+        let a = spawn(&mut pool, &mut rng, &w, &sc, 213);
+        let b = spawn(&mut pool, &mut rng, &w, &sc, 268);
+        assert_ne!(a, b, "the first two slots");
+        let a_v0 = pool.slot(a).velocity;
+        let b_v0 = pool.slot(b).velocity;
+        let mut c = pool.slot_mut(5);
+        c.active = true;
+        c.dust_type = 60;
+        c.no_gravity = true;
+        c.fade_in = 0.0;
+        c.scale = 1.0;
+        c.position = Vec2::new(100.0, 200.0);
+        c.velocity = Vec2::new(1.0, 2.0);
+        let _ = &mut c;
+        // Three ticks.
+        tick(&mut pool, &mut rng, &t);
+        tick(&mut pool, &mut rng, &t);
+        tick(&mut pool, &mut rng, &t);
+        // The spawned pair: no-gravity spawns (type 213/268 carry no tail of
+        // their own here — the hook is a no-op) move by their velocity and are
+        // untouched by the gravity tail to an integ...
+        let av = pool.slot(a).velocity;
+        assert_eq!(av, a_v0, "a gravity-type spawn keeps its velocity (no arm matched)");
+        let bv = pool.slot(b).velocity;
+        assert_eq!(bv, b_v0, "the 268 spawn likewise");
+        // The hand-set slot: position integrates with the PRE-damp velocity
+        // each frame, then the tail damps — the C# order (`:477` before
+        // `:2336`). The expected sequence is replayed move-then-damp: a damp-
+        // first implementation would land on a different position.
+        let mut ex = 100.0f32;
+        let mut ev = 1.0f32;
+        let mut ey = 200.0f32;
+        let mut evy = 2.0f32;
+        let mut escale = 1.0f32;
+        for _ in 0..3 {
+            ex += ev;
+            ey += evy;
+            escale -= 0.04;
+            ev *= 0.92;
+            evy *= 0.92;
+        }
+        let c5 = pool.slot(5);
+        assert_eq!(c5.position, Vec2::new(ex, ey));
+        assert_eq!(c5.velocity, Vec2::new(ev, evy));
+        assert_eq!(c5.scale, escale);
+        assert!(c5.active);
+        // The dead recompute: dCount lands at 0 no matter how many were active.
+        assert_eq!(pool.d_count, 0.0);
+        // The counters reset each pass.
+        pool.lava_bubbles = 7;
+        pool.sand_storm_count = 9;
+        tick(&mut pool, &mut rng, &t);
+        assert_eq!(pool.lava_bubbles, 0);
+        assert_eq!(pool.sand_storm_count, 0);
+    }
+
+    /// DW-1.2 — the loop's `else` arm kills the past-budget slots, active or
+    /// not, at the exact `maxDustToDraw` boundary (`Dust.cs:2393-2395`).
+    #[test]
+    fn s1_e_3_past_budget_slots_die_at_the_boundary() {
+        let mut pool = new_pool();
+        let mut rng = UnifiedRandom::new(42);
+        let w = world();
+        let sc = ctx(6000);
+        let _a = spawn(&mut pool, &mut rng, &w, &sc, 60);
+        let _b = spawn(&mut pool, &mut rng, &w, &sc, 60);
+        let _c = spawn(&mut pool, &mut rng, &w, &sc, 60);
+        let t = uctx(2);
+        tick(&mut pool, &mut rng, &t);
+        assert!(pool.slot(0).active && pool.slot(1).active, "slots below the budget live");
+        assert!(!pool.slot(2).active, "slot 2 >= max 2 dies");
+        // The else arm has no active check: an inactive slot past the budget
+        // is simply rewritten inactive (no panic, no revival).
+        assert!(!pool.slot(5).active, "the inactive past-budget slot stays dead");
+        // And a budget of 0 kills everything.
+        let t0 = uctx(0);
+        tick(&mut pool, &mut rng, &t0);
+        assert!(!pool.slot(0).active && !pool.slot(1).active, "budget 0 kills all");
+    }
+
+    /// DW-1.3 — the head: `dCount++` per active slot, the `scale > 10` kill
+    /// with the body's fall-through (the position still moves — no `continue`
+    /// in the C#), and the ChildSafety firstFrame re-type arm both ways.
+    #[test]
+    fn s1_e_3_the_head_increments_and_kills_and_the_child_safety_arm_fires() {
+        let mut pool = new_pool();
+        let mut rng = UnifiedRandom::new(42);
+        let w = world();
+        let sc = ctx(6000);
+        // A runaway-scale dust: killed, but still moved (the fall-through).
+        let a = spawn(&mut pool, &mut rng, &w, &sc, 60);
+        {
+            let s = pool.slot_mut(a);
+            s.scale = 11.0;
+            s.position = Vec2::new(100.0, 200.0);
+            s.velocity = Vec2::new(1.0, 0.0);
+        }
+        let t = uctx(6000);
+        tick(&mut pool, &mut rng, &t);
+        assert!(!pool.slot(a).active, "scale > 10 dies");
+        assert_eq!(pool.slot(a).position.x, 101.0, "the body falls through: it still moved");
+        assert_eq!(pool.d_count, 0.0, "one active slot then the dead recompute resets");
+        // The ChildSafety tick arm: a dangerous first-frame dust with the gate
+        // armed (settings blood off) re-types or deactivates by the first draw.
+        let mut pool = new_pool();
+        let mut rng = UnifiedRandom::new(42);
+        pool.child_safety.disabled = false;
+        let mut d = pool.slot_mut(3);
+        d.active = true;
+        d.dust_type = 5; // the blood family
+        d.first_frame = true;
+        d.scale = 1.0;
+        d.position = Vec2::new(100.0, 200.0);
+        d.velocity = Vec2::new(0.0, 0.0);
+        d.frame_x = 50;
+        d.frame_y = 10;
+        let _ = &mut d;
+        let first = UnifiedRandom::new(42).next_max(2);
+        tick(&mut pool, &mut rng, &t);
+        let after = pool.slot(3);
+        if first == 0 {
+            assert!(after.active && !after.first_frame, "armed: the 50% half re-types");
+            assert_eq!(after.dust_type, 16, "re-typed to the smoke puff");
+            assert_eq!(after.color, Color::TRANSPARENT);
+            assert_eq!(after.frame_x, 160, "frame recomputed for type 16");
+            assert_eq!(after.frame_y, 10 * UnifiedRandom::new(42).next_max(3));
+            assert!(after.no_gravity, "the re-typed particle is no-gravity");
+        } else {
+            assert!(!after.active, "armed: the other half deactivates");
+        }
+        // Disabled (the vanilla default): the arm does not fire, first_frame stays.
+        let mut pool2 = new_pool();
+        let mut rng2 = UnifiedRandom::new(42);
+        let mut d2 = pool2.slot_mut(3);
+        d2.active = true;
+        d2.dust_type = 5;
+        d2.first_frame = true;
+        d2.position = Vec2::new(100.0, 200.0);
+        let _ = &mut d2;
+        tick(&mut pool2, &mut rng2, &t);
+        assert!(pool2.slot(3).first_frame, "disabled: the arm is skipped");
     }
 }
