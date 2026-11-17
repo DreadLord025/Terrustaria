@@ -310,6 +310,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Player_0_3",
         "Player_0_6",
         "Player_0_7",
+        // The arm-stack sheets the composite skin draws (`Players[skinVar, 5]`
+        // the under-skin torso `PlayerDrawLayers.cs:1348`, `Players[skinVar, 8]`
+        // the under-shirt sleeve `:1357`/`:3702`, `Players[skinVar, 13]` the
+        // shirt sleeve `:1359`/`:3703`); `make_player_assets` requests all
+        // three (entities.rs `make_player_assets`).
+        "Player_0_5",
+        "Player_0_8",
+        "Player_0_13",
         "Player_0_10",
         "Player_0_11",
         "Player_0_12",

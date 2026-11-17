@@ -101,12 +101,15 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         head: sky_tex(atlas, "Player_0_0", None),
         eye_whites: sky_tex(atlas, "Player_0_1", None),
         eyes: sky_tex(atlas, "Player_0_2", None),
-        // Torso and shirt sheets are 9 columns wide (`Player_0_3`/`_0_6` are
-        // 360x224 = 9x4 cells); keep the two columns `torso_cell` can reach,
-        // cell (0,0) plus the row-5 override's column 1 (`PlayerDrawSet.cs:
-        // 1940,1975`). The old 40-px crop clamped the override back to 0.
+        // Torso sheet cropped to the two columns `torso_cell` can reach, cell
+        // (0,0) plus the row-5 override's column 1 (`PlayerDrawSet.cs:1940,
+        // 1975`). The SHIRT sheet stays FULL: its arm columns 2-6 are the
+        // front-arm stack's `FrontShirt` art (`PlayerDrawLayers.cs:3704`
+        // draws `Players[skinVar, 6]` at `compFrontArmFrame`), so the old
+        // 80-px crop clamped the arm cell back onto torso column 1 and drew
+        // chest art over the arm.
         torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 80, 224))),
-        shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 80, 224))),
+        shirt: sky_tex(atlas, "Player_0_6", None),
         arm: sky_tex(atlas, "Player_0_7", None),
         undershirt: sky_tex(atlas, "Player_0_5", None),
         under_arm: sky_tex(atlas, "Player_0_8", None),
