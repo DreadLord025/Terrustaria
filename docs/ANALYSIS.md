@@ -14197,3 +14197,33 @@ port has no swing-stats helper, no NPC-to-NPC strike path and no difficulty
 multiplier for the town-NPC damage. Porting the machine is a follow-up under
 S1-D-3; the preset table lands first so the numbers have one home. `num77`
 and `maxValue4` are not read by the swing code and stay unported.
+
+## The frame phase split (S1-B-8)
+
+`app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
+(51 lines of calls + gate arms) over three modules: `frame/world.rs` (the
+in-world branch, one fn per `phase("…")` site in the C#'s
+`DoUpdateInWorld_Inner` order, `Main.cs:17745-17822`, plus the click cluster,
+the pause/step gates, the env cluster and the step-gated tail),
+`frame/draw.rs::draw_region` (`Main.DoDraw`'s body: the pre-draw state, the
+S1-B-7 marker-ordered passes, the interface, the map, the post/filters and
+the present path) and the orchestrator's own head/setup/focus-pause fns. The
+draw region moved **verbatim** — the 55-field destructure and the gpu gate
+travel with it, the only mechanical change being the surface-acquire early
+return yielding `None` so the caller skips the epilogue's stat write-backs
+exactly like the pre-split frame.
+
+Preserved deviations (each a recorded follow-up, not closed here): the
+pre-world cluster (weather/rain/scene_state/windy_day/ambience) keeps its
+in-world-branch placement — moving it to the C#'s pre-`DoUpdateInWorld` slots
+(`Main.cs:17146-17231`) is a behaviour change owed to research/39 seed #2's
+data-driven tick plan; the duplicated `update_camera_at_draw` pair
+(S1-B-4) survives verbatim inside `draw_half_pre_snapshots`; the inline
+1600×900 `screen` fallback stays distinct from `App::screen_size()`; the
+dust+minecart and time+event fusions stay as landed. The split is proven
+pixel-transparent: `TR_SEED=1 TR_SHOT TR_CAM=400,300 TR_DAY=0.5` pairs are
+SHA256-equal pre/post at zoom 1.0 and 1.5 (all four runs identical), and at
+zoom 2.0 the post-split runs are internally deterministic and byte-equal to a
+pre-split run — the pre-split binary's own zoom-2.0 variance (688 613 px
+between two pre-split runs, `pixel_diff.py`) pre-dates the split and is a
+harness follow-up.

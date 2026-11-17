@@ -1753,6 +1753,7 @@ mod tests {
     #[test]
     fn s1_b_8_phase2_the_gate_arms_are_unchanged() {
         let orch = include_str!("frame/world.rs")
+            .replace("\r\n", "\n")
             .split("pub(super) fn update_world_frame")
             .nth(1)
             .expect("the world-branch orchestrator")
