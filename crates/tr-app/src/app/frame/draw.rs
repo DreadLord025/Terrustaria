@@ -29,7 +29,6 @@ use crate::render::debug::{capture_frame, draw_debug};
 use crate::render::entities::draw_player_map_icon;
 use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
 use crate::render::tiles::{draw_tiles, TileDrawStats};
-use crate::sound;
 use crate::ui;
 use crate::ui::text::{border_string, hud_text, hud_text_width};
 

@@ -9,7 +9,6 @@ mod draw;
 use std::time::Instant;
 
 use glam::Vec2;
-use tr_core::TILE_PX;
 use tr_core::lighting::{LightParams, LightStyle};
 use wgpu::util::DeviceExt;
 
