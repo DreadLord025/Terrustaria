@@ -1,0 +1,5 @@
+crates/tr-app/src/eoc_fight.rs|pub fn enters_spin_phase|EOC-FIGHT-1 -- NPC.cs:20270-20284: the 50%/65% hp gate into the spin phases
+crates/tr-app/src/eoc_fight.rs|pub fn dash_velocity|EOC-FIGHT-2 -- NPC.cs:20140-20158,20478-20496: the 6.0 / 6.8 px-tick dive velocities
+crates/tr-app/src/eoc_fight.rs|pub fn servant_due|EOC-FIGHT-3 -- NPC.cs:20128-20138: the servant burst cadence (110 classic / 44 expert)
+crates/tr-app/src/eoc_fight.rs|pub fn flees_at_dawn|EOC-FIGHT-4 -- NPC.cs:20066-20073: Main.IsItDay() | dead -> the climb-away and EncourageDespawn(10)
+crates/tr-app/src/world_sim/editing.rs|use_suspicious_looking_eye|EOC-FIGHT-5 -- Player.cs:43759-43771: the Suspicious Looking Eye's night + SummonItemCheck gates and NPC.SpawnOnPlayer(4)

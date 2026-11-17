@@ -7693,7 +7693,7 @@ impl Npc {
         // `Main.IsItDay() | dead`: the climb-away
         // (`velocity.Y -= 0.04f; EncourageDespawn(10)` — the removal rides
         // the world sim's distance cull).
-        if world.day_time || dead {
+        if crate::eoc_fight::flees_at_dawn(world.day_time, dead) {
             self.vy -= 0.04;
             self.integrate_no_tile_collide();
             return;
@@ -7738,7 +7738,7 @@ impl Npc {
                     self.ai[3] = 0.0;
                 } else if (self.y + h < player.y && num14 < 500.0) && !dead {
                     self.ai[3] += 1.0;
-                    if self.ai[3] >= 110.0 {
+                    if crate::eoc_fight::servant_due(self.ai[3], false) {
                         // The servant burst (the `NPC.NewNPC(..., 5)` arm).
                         self.ai[3] = 0.0;
                         self.rotation = num6;
@@ -7755,11 +7755,13 @@ impl Npc {
                 self.rotation = num6;
                 let cx = self.x + w * 0.5;
                 let cy = self.y + h * 0.5;
-                let num23 = pcx - cx;
-                let num24 = pcy - cy;
-                let num25 = 6.0 / (num23 * num23 + num24 * num24).sqrt();
-                self.vx = num23 * num25;
-                self.vy = num24 * num25;
+                let (vx, vy) = crate::eoc_fight::dash_velocity(
+                    (cx, cy),
+                    (pcx, pcy),
+                    crate::eoc_fight::PHASE_HOVER,
+                );
+                self.vx = vx;
+                self.vy = vy;
                 self.ai[1] = 2.0;
             } else if self.ai[1] == 2.0 {
                 // The dash flight: 40 free ticks, then the 0.98 damp; the
@@ -7789,7 +7791,7 @@ impl Npc {
                     }
                 }
             }
-            if (self.hp as f32) < self.max_hp as f32 * 0.5 {
+            if crate::eoc_fight::enters_spin_phase(self.hp, self.max_hp, false) {
                 self.ai[0] = 1.0;
                 self.ai[1] = 0.0;
                 self.ai[2] = 0.0;
@@ -7817,7 +7819,7 @@ impl Npc {
             }
             self.rotation += self.ai[2];
             self.ai[1] += 1.0;
-            if self.ai[1] >= 100.0 {
+            if self.ai[1] >= crate::eoc_fight::SPIN_TICKS as f32 {
                 if self.ai[3] == 1.0 {
                     self.ai[3] = 0.0;
                     self.ai[1] = 0.0;
@@ -7896,11 +7898,13 @@ impl Npc {
             self.rotation = num6;
             let cx = self.x + w * 0.5;
             let cy = self.y + h * 0.5;
-            let num43 = pcx - cx;
-            let num44 = pcy - cy;
-            let num45 = 6.8 / (num43 * num43 + num44 * num44).sqrt();
-            self.vx = num43 * num45;
-            self.vy = num44 * num45;
+            let (vx, vy) = crate::eoc_fight::dash_velocity(
+                (cx, cy),
+                (pcx, pcy),
+                crate::eoc_fight::PHASE_FINAL,
+            );
+            self.vx = vx;
+            self.vy = vy;
             self.ai[1] = 2.0;
         } else if self.ai[1] == 2.0 {
             self.ai[2] += 1.0;
