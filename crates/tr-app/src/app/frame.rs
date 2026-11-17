@@ -592,12 +592,48 @@ impl App {
                 self.update_projectiles(dt);
                 self.phase("items");
                 self.update_items(dt);
-                // `Main.UpdateWorld_Dust` (`Main.cs:18047`): the minecart sparks
-                // ride this per-frame slot (the same slot the rain/sand dust get in
-                // `world_sim::scene_scan::update_scene`).
+                // `Main.UpdateWorld_Dust` (`Main.cs:18047`): the ONE dust pass
+                // per frame — the shared loop drives every active slot and the
+                // per-type arms dispatch inside it (`minecart::tick`, S1-E-3).
                 self.phase("dust");
                 let (sw, sh) = self.screen_size();
-                crate::minecart::tick(&mut self.dust, self.camera, Vec2::new(sw, sh), self.zoom);
+                // The tick rides a client stream: the riding player's
+                // `spark_rng` (the cart's own) when a player exists, else the
+                // NamedRngs' global stream (the C#'s single `Main.rand`
+                // equivalent — `self.rngs.global()`, `app/rng.rs`); no new
+                // stream instances either (S1-E-3).
+                let max_dust = self.gfx_quality.max_dust_to_draw;
+                let show_sand = self.sandstorm.show_sandstorm_visuals(
+                    self.scene_metrics.zone_sandstorm,
+                    tr_core::scene::is_desert_bg_style(self.bg_style),
+                    self.bg_delay,
+                );
+                let player_vy = self.player.as_ref().map_or(0.0, |p| p.vy);
+                let dust = &mut self.dust;
+                match self.player.as_mut() {
+                    Some(p) => crate::minecart::tick(
+                        dust,
+                        &mut crate::app::SplitmixRand(&mut p.spark_rng),
+                        max_dust,
+                        self.camera,
+                        Vec2::new(sw, sh),
+                        self.zoom,
+                        &self.world,
+                        player_vy,
+                        show_sand,
+                    ),
+                    None => crate::minecart::tick(
+                        dust,
+                        self.rngs.global(),
+                        max_dust,
+                        self.camera,
+                        Vec2::new(sw, sh),
+                        self.zoom,
+                        &self.world,
+                        player_vy,
+                        show_sand,
+                    ),
+                }
                 // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
                 // runs after the entity half, never before it.
                 self.phase("time");
