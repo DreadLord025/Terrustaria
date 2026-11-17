@@ -145,6 +145,11 @@ pub(crate) struct App {
     pub(crate) player_step: FixedStepper,
     pub(crate) npc_step: FixedStepper,
     pub(crate) npcs: Vec<Npc>,
+    /// `Player.talkNPC` (`Player.cs:27494`'s latch) — the NPC the chat dialog
+    /// is open for; `None` is the C#'s `-1`.
+    pub(crate) talk_npc: Option<usize>,
+    /// `Main.npcChatText` (`Main.cs:1755`) — the chat dialog's line.
+    pub(crate) npc_chat_text: String,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
@@ -2906,6 +2911,8 @@ impl App {
         let cursor_mouse_color = settings.mouse_color;
         let mut app = App {
             window: None,
+            talk_npc: None,
+            npc_chat_text: String::new(),
             gpu: None,
             renderer: None,
             post: None,

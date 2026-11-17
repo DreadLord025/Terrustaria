@@ -118,6 +118,170 @@ pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
     true
 }
 
+/// `TileReachCheckSettings.Simple.GetWorldRegion`
+/// (`TileReachCheckSettings.cs:76-89`): the player's tile box —
+/// `LX = (int)(position.X / 16f) - x` … `HX = (int)Ceiling((position.X +
+/// width) / 16f) - 1 + x` with `x = Player.tileRangeX * multiplier` capped
+/// by the 20-tile `TileReachLimit` (`:11-22`) — converted back to pixels
+/// with the `HX += 15` / `HY += 15` corrections (`:68-69`). `Simple` is
+/// `TileRangeMultiplier = 1`, `TileReachLimit = 20` (`:83-87`), and
+/// `Player.DefaultTileRangeX/Y = 5/3` (`Player.cs:57113-57114`).
+///
+/// Returns `(LX, LY, HX, HY)` in world pixels.
+fn chat_world_region(p: &crate::player::Player) -> (f32, f32, f32, f32) {
+    let lx = ((p.x / 16.0) as i32 - 5) as f32 * 16.0;
+    let ly = ((p.y / 16.0) as i32 - 3) as f32 * 16.0;
+    let hx = (((p.x + crate::player::WIDTH) / 16.0).ceil() as i32 - 1 + 5) as f32 * 16.0 + 15.0;
+    let hy = (((p.y + crate::player::HEIGHT) / 16.0).ceil() as i32 - 1 + 3) as f32 * 16.0 + 15.0;
+    (lx, ly, hx, hy)
+}
+
+/// The right-click talk action (`Main.cs:42993-43083`) — the live route to
+/// [`crate::npc_chat::get_chat`].
+///
+/// **The close rule** (`Player.cs:27494-27503`) runs every tick: while
+/// `talkNPC >= 0`, the world region no longer intersecting the NPC's box, a
+/// chest being open, or the NPC gone clears the latch (`SetTalkNPC(-1)`,
+/// `Main.npcChatText = ""`) with sound 11 unless the chest path took it.
+///
+/// **The open arm** fires on the fresh right-press edge — the C# gate
+/// `Main.mouseRight && Main.npcChatRelease` (`Main.cs:43070`) with
+/// `npcChatRelease` the inverted `mouseRight` latch of
+/// `DrawInterface_41_InterfaceLogic4` (`Main.cs:45000-45009`) — for the
+/// first live `townNPC` under the world region (`:43047`'s
+/// `worldRegion.Intersects(nPC box)`, the `!player.dead` gate at `:43068`)
+/// that is not already latched (`:43077`'s `player.talkNPC != i`). It latches
+/// `SetTalkNPC(i)` (`:43081`) and answers `GetChat()` (`:43082`).
+///
+/// The RNG rides [`crate::app::NamedRngs::global`] — the C#'s `Main.rand`
+/// draws `GetChat` outside every `Main.SwapRandom` stage, so the bare-Main.rand
+/// stand-in stream is the named stream (the S1-A-10 contract).
+///
+/// `Some(text)` consumes the right-click press; `None` falls through to the
+/// chest/tile routes — and to the collapsed shop arms, which stay reachable
+/// through the same-NPC re-click (`talkNPC == i` declines here).
+pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
+    // The per-tick close (`Player.cs:27494-27503`).
+    if let Some(i) = app.talk_npc {
+        let region = app
+            .player
+            .as_ref()
+            .map(chat_world_region)
+            .unwrap_or((0.0, 0.0, 0.0, 0.0));
+        let (lx, ly, hx, hy) = region;
+        let inside = app.npcs.get(i).is_some_and(|n| {
+            n.hp > 0 && {
+                let (w, h) = n.size();
+                n.x < hx && n.x + w > lx && n.y < hy && n.y + h > ly
+            }
+        });
+        if !inside || app.open_container() != -1 {
+            if app.open_container() == -1 {
+                crate::chest::play_menu_sound(app, 11);
+            }
+            app.talk_npc = None;
+            app.npc_chat_text.clear();
+        }
+    }
+    // The open arm's gates: a fresh press, no inventory panel over the world.
+    if !app.place_down || prev_place_down || app.inventory_open {
+        return None;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return None;
+    };
+    if p.hp <= 0 {
+        return None; // `:43068` — `flag3 && !player.dead`
+    }
+    let region = chat_world_region(p);
+    let i = app.npcs.iter().position(|n| {
+        n.hp > 0
+            && n.kind.is_town_npc_like()
+            && {
+                let (w, h) = n.size();
+                let (lx, ly, hx, hy) = region;
+                // `Rectangle.Intersects` of the region and the NPC box.
+                n.x < hx && n.x + w > lx && n.y < hy && n.y + h > ly
+            }
+    })?;
+    if app.talk_npc == Some(i) {
+        return None; // `:43077` — the same NPC re-clicked falls through
+    }
+    app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    // The context off the live state. The world flags the port does not
+    // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
+    // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
+    // default off — each noted at its field.
+    let day_time = app.world.day_time;
+    let time = app.world.time;
+    let blood_moon = app.world.blood_moon;
+    let eclipse = app.world.eclipse;
+    let slime_rain = app.world.slime_rain;
+    let hard_mode = app.world.hard_mode;
+    let moon_phase = app.world.moon_phase;
+    let raining = app.world.raining;
+    let (life, life_max, deaths) = app
+        .player
+        .as_ref()
+        .map(|p| (p.hp, p.max_hp, p.deaths_pve as i32))
+        .unwrap_or((0, 0, 0));
+    let angler_quests = app
+        .player
+        .as_ref()
+        .map(|p| p.angler_quests_finished)
+        .unwrap_or(0);
+    let golfer_score = app.player.as_ref().map(|p| p.golfer_score).unwrap_or(0);
+    // `Player.HasItem(5275)` — the cola the Dryad's line asks about; the
+    // port scans the inventory slots (no equipment scans yet).
+    let has_cola = app.inventory.iter().any(|s| s.kind == 5275);
+    let dd2_t1 = app.world.dd2_latches.dark_mage_t1;
+    let dd2_t2 = app.world.dd2_latches.ogre_t2;
+    let dd2_ongoing = app.world.dd2_event_ongoing;
+    let rng = app.rngs.global();
+    let mut draw = |n: i32| rng.next_max(n);
+    let mut ctx = crate::npc_chat::ChatContext {
+        npcs: &app.npcs,
+        rng: &mut draw,
+        day_time,
+        time,
+        blood_moon,
+        eclipse,
+        slime_rain,
+        hard_mode,
+        moon_phase,
+        remix_world: false,    // `Main.remixWorld` — no remix flag in the port
+        raining,
+        storming: false,       // `Main.cloudAlpha`'s storm — no storm clock yet
+        windy_day: false,      // `Main.IsItAHappyWindyDay` — no wind-day state
+        zone_graveyard: false, // `Player.ZoneGraveyard` — the zone rides the biome pass
+        party_is_up: false,    // `BirthdayParty.PartyIsUp` — unported
+        crimson: false,        // `WorldGen.crimson` — the world-evil flag
+        downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
+        downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
+        downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
+        downed_moonlord: false, // `NPC.downedMoonlord` — unported
+        dd2_downed_t1: dd2_t1,
+        dd2_downed_t2: dd2_t2,
+        dd2_ongoing,
+        lanterns_up: false, // `LanternNight.LanternsUp` — unported
+        player_life: life,
+        player_life_max: life_max,
+        player_base_life_max: life_max, // `Player.statLifeMax` — the port keeps one max
+        player_defense: 0,   // `Player.statDefense` — no defense field yet
+        player_male: true,   // `Player.Male` — the spawn default
+        player_head: 0,      // `Player.head` — no armor slots yet
+        player_deaths_pve: deaths,
+        player_luck: 0.0,    // `Player.NormalizedLuck` — no luck feed yet
+        player_has_cola: has_cola,
+        angler_quest_finished: false, // `Main.anglerQuestFinished` — unported
+        angler_quests_finished: angler_quests,
+        golfer_score,
+    };
+    let text = crate::npc_chat::get_chat(&app.npcs[i], &mut ctx);
+    app.npc_chat_text = text.clone(); // `:43082` — `Main.npcChatText = GetChat()`
+    Some(text)
+}
+
 /// The right-click dispatch's Tax Collector arm — the `TaxCollectorCollectTaxes`
 /// interaction (`NPCInteractions.cs:221-244`); he offers no shop.
 fn try_tax_collect_at_cursor(app: &mut App, world_pos: Vec2) -> Option<usize> {
