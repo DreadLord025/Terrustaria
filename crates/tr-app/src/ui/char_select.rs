@@ -124,6 +124,37 @@ pub struct Layout {
     pub back: [f32; 4],
     /// The fat New button — `CopyStyle(back)` + `HAlign 1` (`:76-84`).
     pub new: [f32; 4],
+    /// `UIScrollbar.ViewPosition` / `UIList`'s `_innerList.Top` (`UIList.cs:181`):
+    /// the list's scroll offset in px. `0` is the top; [`max_scroll`] is the
+    /// bottom. Both the row rects (via [`Layout::inner_list`]) and the
+    /// scrollbar handle ([`panel::scrollbar_handle_at`]) read it, so a scrolled
+    /// row and its hit-test stay one rect (Review Focus 2).
+    pub scroll: f32,
+}
+
+impl Layout {
+    /// `UIInnerList`'s translated rect — `_innerList.Top.Set(0f - GetValue(), 0f)`
+    /// (`UIList.cs:181`): the rows ride at `list.y - scroll` while the list
+    /// itself stays the viewport the draw clips and the hit-test filters by
+    /// (`UIList.cs:59`'s `OverflowHidden`, `framework.rs`'s `viewport`).
+    pub fn inner_list(&self) -> [f32; 4] {
+        [
+            self.list[0],
+            self.list[1] - self.scroll,
+            self.list[2],
+            self.list[3],
+        ]
+    }
+
+    /// The screen with `scroll` applied and clamped by `UIList.UpdateScrollbar`'s
+    /// `SetView` (`UIList.cs:130-137` -> `UIScrollbar.cs:72-78`): the view is the
+    /// list's inner height, the max view the content height, and the position is
+    /// pinned into `[0, maxViewSize - viewSize]` (`UIScrollbar.cs:75`).
+    pub fn with_scroll(&self, scroll: f32, cards: usize) -> Layout {
+        let mut l = *self;
+        l.scroll = clamp_scroll(scroll, l.list[3], list_content_height(cards));
+        l
+    }
 }
 
 /// The root element's rect (`UICharacterSelect.cs:37-42`): `Width (0, 0.8)`,
@@ -253,6 +284,9 @@ pub fn layout(screen: Vec2, header_w: f32, list_w: f32) -> Layout {
         header,
         back,
         new,
+        // A freshly built screen is unscrolled; the wheel and the scrollbar
+        // write the offset through [`Layout::with_scroll`].
+        scroll: 0.0,
     }
 }
 
@@ -271,6 +305,74 @@ pub fn list_content_height(cards: usize) -> f32 {
         1 => CARD_H,
         n => n as f32 * CARD_PITCH,
     }
+}
+
+/// `UserInterface`'s wheel accumulator is XNA's raw counter, so one detent is
+/// 120 units (`PlayerInput.cs:898-899` copies `ScrollWheelValue -
+/// ScrollWheelValueOld` into `ScrollWheelDeltaForUI`) — and `UIList.ScrollWheel`
+/// spends it 1:1 on `ViewPosition` (`UIList.cs:112`). The port's pointer machine
+/// carries notches (winit `LineDelta`), so the px travel is `notches * 120`.
+pub const WHEEL_STEP: f32 = 120.0;
+
+/// The scroll range — `UIScrollbar.SetView`'s clamp upper bound
+/// `maxViewSize - viewSize` (`UIScrollbar.cs:75`): the content height the
+/// `UIList` reports (`UIList.cs:130-137`) minus the list's own inner height.
+pub fn max_scroll(view_h: f32, content_h: f32) -> f32 {
+    (content_h - view_h).max(0.0)
+}
+
+/// [`max_scroll`] as a clamp — `ViewPosition`'s setter (`UIScrollbar.cs:43-46`)
+/// and `SetView` (`:75`) pin the offset into the same range.
+pub fn clamp_scroll(scroll: f32, view_h: f32, content_h: f32) -> f32 {
+    scroll.clamp(0.0, max_scroll(view_h, content_h))
+}
+
+/// `UIList.ScrollWheel` (`UIList.cs:107-114`): `_scrollbar.ViewPosition -=
+/// evt.ScrollWheelValue`. The port's `delta` is in notches (positive = wheel
+/// up), so one notch up walks the view back [`WHEEL_STEP`] px (`:112`'s `-=`),
+/// clamped by `SetView` (`UIScrollbar.cs:75`).
+pub fn scroll_wheel(scroll: f32, delta: i32, view_h: f32, content_h: f32) -> f32 {
+    clamp_scroll(scroll - delta as f32 * WHEEL_STEP, view_h, content_h)
+}
+
+/// Whether the wheel reaches the list at `mouse` — `UserInterface.Update`
+/// dispatches the wheel to `GetElementAt` (`:219-221`), and the `UIList`'s inner
+/// list answers `ContainsPoint` with `true` (`UIList.cs:16-19`), so the whole
+/// list rect (gaps included) scrolls, and the attached `UIScrollbar`
+/// (`:42`) is its own target.
+pub fn wheel_target(l: &Layout, cards: usize, mouse: Vec2) -> bool {
+    let content_h = list_content_height(cards);
+    in_rect(mouse, l.list)
+        || (scrollbar_attaches(l.list[3], content_h) && in_rect(mouse, l.scrollbar))
+}
+
+/// What a press on the attached scrollbar does (`UIScrollbar.LeftMouseDown`,
+/// `UIScrollbar.cs:126-143`): `(new view position, drag latch)`. `Some(offset)`
+/// is the `_isDragging` half — `_dragYOffset = mouse.Y - handle.Y` (`:134-135`);
+/// `None` is the track jump, which needs no latch (`:137-141`). `None` as a whole
+/// means the press was not the scrollbar's (detached bar, or outside it).
+pub fn scrollbar_press(l: &Layout, cards: usize, mouse: Vec2) -> Option<(f32, Option<f32>)> {
+    let content_h = list_content_height(cards);
+    if !scrollbar_attaches(l.list[3], content_h) || !in_rect(mouse, l.scrollbar) {
+        return None;
+    }
+    let handle = panel::scrollbar_handle_at(l.scrollbar, l.list[3], content_h, l.scroll);
+    if in_rect(mouse, handle) {
+        // `:134-135` — the grab keeps the pointer's offset inside the handle.
+        return Some((l.scroll, Some(mouse.y - handle[1])));
+    }
+    // `:140` — a track press centres the handle under the pointer.
+    Some((
+        panel::scrollbar_jump_value(l.scrollbar, l.list[3], content_h, handle[3], mouse.y),
+        None,
+    ))
+}
+
+/// The drag frame (`UIScrollbar.DrawSelf`, `UIScrollbar.cs:109-112`): while
+/// `_isDragging` the position follows the pointer with the latched offset.
+pub fn scrollbar_drag(l: &Layout, cards: usize, drag_offset: f32, mouse_y: f32) -> f32 {
+    let content_h = list_content_height(cards);
+    panel::scrollbar_drag_value(l.scrollbar, l.list[3], content_h, drag_offset, mouse_y)
 }
 
 /// The `Recalculate` scrollbar branch's `CanScroll` half (`UICharacterSelect.cs:
@@ -332,7 +434,7 @@ pub struct CardLayout {
     pub delete: [f32; 4],
     /// The hover label, `Left num` where the ctor's `num` is
     /// 4 + 24 + 24 + 24 + 4 = 80 (`:71-122`), `Top -3`, `VAlign 1` (`:122-127`);
-    /// the empty `UIText` is 0 wide and 16 tall (`UIText.cs:208-212`).
+    /// the empty `UIText` is 0 wide and 16 tall (`UIText.cs:186-189`).
     pub label: [f32; 4],
     /// The delete hover label, `Left -30`, `HAlign 1`, `Top -3`, `VAlign 1`
     /// (`:128-133`) — its right edge is the anchor; the text grows leftward.
@@ -379,7 +481,7 @@ pub fn card_layout(row_rect: [f32; 4], index: usize) -> CardLayout {
     // (rename at 52; the cloud slot's +24 is skipped with `SocialAPI.Cloud`),
     // +24 (the delete slot), +4 -> the label at 80.
     let num = 4.0 + 24.0 + 24.0 + 24.0 + 4.0;
-    // `UIText` is 16 tall at scale 1 and 0 wide while empty (`UIText.cs:208-212`).
+    // `UIText` is 16 tall at scale 1 and 0 wide while empty (`UIText.cs:186-189`).
     let label_h = 16.0;
     let label_y = bottom - label_h - 3.0; // `Top.Set(-3f)` + `VAlign 1`
 
@@ -587,8 +689,11 @@ pub fn card_hit(
 /// the edge is half-painted and still hit above it.
 fn elements(l: &Layout, favorites: &[bool]) -> Vec<super::framework::Element> {
     let mut out = Vec::with_capacity(favorites.len() * select_hit::PARTS as usize + 2);
+    // The rows ride on the translated inner list (`UIList.cs:181`); the
+    // viewport stays the `UIList`'s own rect (`UIList.cs:59`).
+    let rows = l.inner_list();
     for i in 0..favorites.len() {
-        let c = card_layout(l.list, i);
+        let c = card_layout(rows, i);
         // The body first: the buttons are the card's appended children
         // (`UICharacterListItem.cs:71-121`), so the reverse walk tests them
         // before the panel they sit on. Each button carries the panel as its
@@ -659,7 +764,7 @@ fn draw_card(
     entry: &save_list::PlayerEntry,
     mouse: Vec2,
 ) {
-    let c = card_layout(l.list, index);
+    let c = card_layout(l.inner_list(), index);
     let hovered = in_rect(mouse, c.card); // `MouseOver`/`MouseOut` (`:294-308`)
     let (bg, border) = card_colors(hovered);
     // `UIPanel.DrawSelf` (`UIPanel.cs:68-76`): background, then border.
@@ -854,9 +959,10 @@ pub fn draw(
     screen: Vec2,
     header_w: f32,
     players: &[save_list::PlayerEntry],
+    scroll: f32,
     mouse: Vec2,
 ) {
-    let l = resolved_layout(screen, header_w, players.len());
+    let l = resolved_layout(screen, header_w, players.len()).with_scroll(scroll, players.len());
     // `_containerPanel`: bg `(33, 43, 79) * 0.8` (`:46`), border the `UIPanel`
     // default black (`UIPanel.cs:18`).
     panel::draw_panel(r, lookups, lookups.ui_panel_bg, l.panel, color::tint(CONTAINER_PANEL_BG));
@@ -878,7 +984,9 @@ pub fn draw(
     // fed it (`UIList.cs:130-136`).
     let content_h = list_content_height(players.len());
     if scrollbar_attaches(l.list[3], content_h) {
-        panel::draw_scrollbar(r, lookups, l.scrollbar, l.list[3], content_h, false);
+        // `UIScrollbar.DrawSelf` (`:103-124`) draws the handle at the live
+        // `_viewPosition` — the same value `UIList.cs:181` lifts the rows by.
+        panel::draw_scrollbar(r, lookups, l.scrollbar, l.list[3], content_h, l.scroll, false);
     }
 
     // The header never hovers — no `OnMouseOver` is subscribed (`:59-64`).
@@ -924,7 +1032,7 @@ mod tests {
 
     // Expected values hand-derived from the C# (`UICharacterSelect.cs:35-157`,
     // `UICharacterListItem.cs:49-380`, `UICharacter.cs:34-130`,
-    // `UITextPanel.cs:126-134`, `UIText.cs:175-212`, `UIList.cs:120-136`,
+    // `UITextPanel.cs:126-134`, `UIText.cs:175-189`, `UIList.cs:120-136`,
     // `UIScrollbar.cs:49-82`) — never from this code.
     const SCREEN: Vec2 = Vec2::new(1600.0, 900.0);
     const LIST: [f32; 4] = [487.0, 232.0, 626.0, 546.0];
@@ -1050,7 +1158,7 @@ mod tests {
         assert_eq!(c.rename, [545.0, 300.0, 22.0, 22.0]);
         assert_eq!(c.delete, [1085.0, 300.0, 22.0, 22.0]);
         // The labels: Left 80 (4+24+24+24+4, `:71-122`), Top -3 + VAlign 1 with
-        // the 16-tall empty `UIText` (`UIText.cs:208-212`); the delete label's
+        // the 16-tall empty `UIText` (`UIText.cs:186-189`); the delete label's
         // right edge anchors 30 px in (`:128-133`).
         assert_eq!(c.label, [573.0, 303.0, 0.0, 16.0]);
         assert_eq!(c.delete_label, [1077.0, 303.0, 0.0, 16.0]);
@@ -1322,5 +1430,259 @@ mod tests {
             players.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
             vec!["A", "B"]
         );
+    }
+
+    // --- WAVE2/F1: the list's scroll offset (`UIList._innerList.Top`) ----------
+    //
+    // Every expected number below is the A6 geometry harness's (`_a6_geom.py`,
+    // `UI-INPUT-RUST` §5.3) or hand-derived from `UIList.cs`/`UIScrollbar.cs`:
+    // list rects 1280x720 [327,232,626,366], 1600x900 [487,232,626,546],
+    // 1920x1080 [647,232,626,726]; a card is 96 tall on a 101 px pitch; the
+    // attached list is 25 px narrower (`UICharacterSelect.cs:102`).
+
+    #[test]
+    fn f1_max_scroll_is_the_content_height_minus_the_view() {
+        // `UIScrollbar.SetView` clamps the position into `[0, maxViewSize -
+        // viewSize]` (`UIScrollbar.cs:75`), with `viewSize` the `UIList`'s inner
+        // height and `maxViewSize` its `_innerListHeight` (`UIList.cs:130-137`).
+        assert_eq!(
+            resolved_layout(Vec2::new(1280.0, 720.0), 100.0, 4).list,
+            [327.0, 232.0, 601.0, 366.0] // attached: 626 - 25
+        );
+        assert_eq!(
+            resolved_layout(SCREEN, 100.0, 6).list,
+            [487.0, 232.0, 601.0, 546.0]
+        );
+        assert_eq!(
+            resolved_layout(Vec2::new(1920.0, 1080.0), 100.0, 8).list,
+            [647.0, 232.0, 601.0, 726.0]
+        );
+        // 4 cards: 404 px of rows in a 366 px view -> 38 px of travel.
+        assert_eq!(list_content_height(4), 404.0);
+        assert_eq!(max_scroll(366.0, list_content_height(4)), 38.0);
+        // 6 cards at 1600x900: 606 - 546.
+        assert_eq!(max_scroll(546.0, list_content_height(6)), 60.0);
+        // 8 cards at 1920x1080: 808 - 726.
+        assert_eq!(max_scroll(726.0, list_content_height(8)), 82.0);
+        // A list shorter than its view cannot scroll (`CanScroll`, `:49`):
+        // 5 cards (505 px) and a single card (96 px) both sit at 0.
+        assert_eq!(max_scroll(546.0, list_content_height(5)), 0.0);
+        assert_eq!(max_scroll(546.0, list_content_height(1)), 0.0);
+        // The clamp itself is `ViewPosition`'s setter (`UIScrollbar.cs:43-46`).
+        assert_eq!(clamp_scroll(500.0, 546.0, 606.0), 60.0);
+        assert_eq!(clamp_scroll(-40.0, 546.0, 606.0), 0.0);
+    }
+
+    #[test]
+    fn f1_the_wheel_moves_the_view_120_px_per_notch_and_clamps() {
+        // `UIList.ScrollWheel` (`UIList.cs:107-114`) spends the C# wheel value
+        // 1:1 on `ViewPosition` (`:112`), and that value is XNA's raw counter —
+        // 120 units per detent (`PlayerInput.cs:898-899` copies
+        // `ScrollWheelValue - ScrollWheelValueOld` into `ScrollWheelDeltaForUI`).
+        assert_eq!(WHEEL_STEP, 120.0);
+        // One notch down from the top of the 6-card 1600x900 list: 120 px is
+        // clamped to the 60 px range (`UIScrollbar.cs:45`).
+        assert_eq!(scroll_wheel(0.0, -1, 546.0, 606.0), 60.0);
+        // One notch up from the bottom returns to the top.
+        assert_eq!(scroll_wheel(60.0, 1, 546.0, 606.0), 0.0);
+        // 8 cards at 1280x720 (366 px view over 808 px of rows): 120, then
+        // 240, then 400 clamped to the 442 px range.
+        assert_eq!(scroll_wheel(0.0, -1, 366.0, 808.0), 120.0);
+        assert_eq!(scroll_wheel(120.0, -1, 366.0, 808.0), 240.0);
+        assert_eq!(scroll_wheel(400.0, -1, 366.0, 808.0), 442.0);
+        // Nothing to scroll: the wheel is inert.
+        assert_eq!(scroll_wheel(0.0, -1, 546.0, 505.0), 0.0);
+    }
+
+    #[test]
+    fn f1_the_last_cards_delete_hits_delete_not_new() {
+        // A6: at 1600x900 with 6 cards the list is 546 tall while the content is
+        // 606, so card 5 spans y 737-833 and its `ButtonDelete` sits at
+        // y 805-827 — below the list bottom 778. `GetElementAt` cannot descend
+        // into it (`framework.rs:128`'s viewport, `UIElement.cs:327-341`) and the
+        // point lands on the fat `New` button (y 805-855): the A6 harness
+        // measured `hit_id=1`, so Delete opened the creation screen.
+        let l = resolved_layout(SCREEN, 100.0, 6);
+        assert_eq!(l.new, [810.0, 805.0, 315.0, 50.0]);
+        assert_eq!(card_layout(l.list, 5).delete, [1060.0, 805.0, 22.0, 22.0]);
+        assert_eq!(l.scroll, 0.0, "a fresh screen starts at the top");
+        let favorites = [false; 6];
+        assert_eq!(
+            card_hit(&l, &favorites, Vec2::new(1071.0, 816.0), false),
+            (None, Some(CardAction::New))
+        );
+        // Scrolled to the bottom `UIList.cs:181` lifts the rows by the scroll
+        // value, 606 - 546 = 60 px: the same button sits at y 745-767, inside
+        // the view (bottom 778), and the click is the card's own handler
+        // (`UICharacterListItem.cs:242-254`).
+        let l = l.with_scroll(60.0, 6);
+        assert_eq!(l.scroll, 60.0);
+        assert_eq!(l.inner_list(), [487.0, 172.0, 601.0, 546.0]);
+        assert_eq!(
+            card_layout(l.inner_list(), 5).delete,
+            [1060.0, 745.0, 22.0, 22.0]
+        );
+        assert_eq!(
+            card_hit(&l, &favorites, Vec2::new(1071.0, 756.0), false),
+            (Some(5), Some(CardAction::Delete(5)))
+        );
+    }
+
+    #[test]
+    fn f1_every_resolution_reaches_the_last_cards_delete_after_scrolling() {
+        // The A6 table, one row per resolution: with no scroll the last card's
+        // Delete is below the view (or, where the fat buttons overlap, lands on
+        // `New`); at the maximum scroll it is inside the view and routes to
+        // `Delete`. `delete_x` is the attached list's HAlign-1 column
+        // (`ix + iw - 22`, `UICharacterListItem.cs:109-113`).
+        struct Case {
+            screen: Vec2,
+            cards: usize,
+            max: f32,
+            delete_x: f32,
+            blocked_y: f32,
+            blocked: (Option<usize>, Option<CardAction>),
+            scrolled_y: f32,
+        }
+        let cases = [
+            // 1280x720, 4 cards: delete y 603-625 vs the 598 px view bottom —
+            // a dead click (A6 `hit_id=None`).
+            Case {
+                screen: Vec2::new(1280.0, 720.0),
+                cards: 4,
+                max: 38.0,
+                delete_x: 911.0,
+                blocked_y: 614.0,
+                blocked: (None, None),
+                scrolled_y: 576.0,
+            },
+            // 1600x900, 6 cards: delete y 805-827, below 778 — the fat `New`
+            // button's row 805-855 takes it (A6 `hit_id=1`).
+            Case {
+                screen: SCREEN,
+                cards: 6,
+                max: 60.0,
+                delete_x: 1071.0,
+                blocked_y: 816.0,
+                blocked: (None, Some(CardAction::New)),
+                scrolled_y: 756.0,
+            },
+            // 1920x1080, 8 cards: delete y 1007-1029 vs the 958 px view — the
+            // fat `New` button (y 985-1035) takes it (A6 `hit_id=1`).
+            Case {
+                screen: Vec2::new(1920.0, 1080.0),
+                cards: 8,
+                max: 82.0,
+                delete_x: 1231.0,
+                blocked_y: 1018.0,
+                blocked: (None, Some(CardAction::New)),
+                scrolled_y: 936.0,
+            },
+        ];
+        for case in cases {
+            let favorites = vec![false; case.cards];
+            let last = case.cards - 1;
+            let l = resolved_layout(case.screen, 100.0, case.cards);
+            assert_eq!(
+                max_scroll(l.list[3], list_content_height(case.cards)),
+                case.max,
+                "{:?} {} cards",
+                case.screen,
+                case.cards
+            );
+            // Card i's Delete row: 300 + 101*i - scroll .. +22 (`list.y` 232,
+            // card padding 6, card 96 tall with VAlign 1 22 px buttons).
+            let blocked = Vec2::new(case.delete_x, case.blocked_y);
+            assert_eq!(
+                card_hit(&l, &favorites, blocked, false),
+                case.blocked,
+                "{:?} {} cards, unscrolled",
+                case.screen,
+                case.cards
+            );
+            let l = l.with_scroll(case.max, case.cards);
+            let delete = card_layout(l.inner_list(), last).delete;
+            assert_eq!(delete[0], case.delete_x - 11.0);
+            assert_eq!(delete[1], case.scrolled_y - 11.0);
+            assert_eq!(
+                card_hit(
+                    &l,
+                    &favorites,
+                    Vec2::new(case.delete_x, case.scrolled_y),
+                    false
+                ),
+                (Some(last), Some(CardAction::Delete(last))),
+                "{:?} {} cards, scrolled to {}",
+                case.screen,
+                case.cards,
+                case.max
+            );
+        }
+    }
+
+    #[test]
+    fn f1_the_scrollbar_handle_follows_the_written_position() {
+        // `UIScrollbar.GetHandleRectangle` (`UIScrollbar.cs:85-94`): the inner
+        // rect drops the 5 px `PaddingTop`/`PaddingBottom` (`:68-69`), the
+        // handle top is `inner.Y + inner.H * (pos/maxView) - 3` and its height
+        // `inner.H * (view/maxView) + 7`. At 1600x900 the bar is
+        // [1093,232,20,546] -> inner y 237, height 536; with 8 cards the view is
+        // 546 and the max view 808, so the handle is 369 tall and travels
+        // 0..262.
+        let l = resolved_layout(SCREEN, 100.0, 8); // attached
+        assert_eq!(l.scrollbar, [1093.0, 232.0, 20.0, 546.0]);
+        assert_eq!(max_scroll(546.0, list_content_height(8)), 262.0);
+        let handle = |pos: f32| panel::scrollbar_handle_at(l.scrollbar, 546.0, 808.0, pos);
+        assert_eq!(handle(0.0), [1093.0, 234.0, 20.0, 369.0]);
+        // 536 * 82/808 = 54.396 -> trunc 291 - 3.
+        assert_eq!(handle(82.0), [1093.0, 288.0, 20.0, 369.0]);
+        // 536 * 262/808 = 173.80 -> trunc 410 - 3.
+        assert_eq!(handle(262.0), [1093.0, 407.0, 20.0, 369.0]);
+    }
+
+    #[test]
+    fn f1_a_press_on_the_scrollbar_grabs_the_handle_or_jumps_the_track() {
+        // `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`): a press on the
+        // handle latches `_isDragging` with `_dragYOffset = mouse.Y - handle.Y`
+        // (`:134-135`); a track press jumps the view to
+        // `(mouse.Y - inner.Y - handle.Height/2) / inner.H * maxView`, clamped
+        // to `[0, maxView - view]` (`:140`). The held drag re-derives the
+        // position every frame (`:109-112`).
+        let l = resolved_layout(SCREEN, 100.0, 8); // view 546, content 808, max 262
+        let over_bar = |y: f32| Vec2::new(1103.0, y);
+        // The handle at the top spans y 234-603, so a press at y 300 grabs it
+        // with a 66 px offset and leaves the view where it was.
+        assert_eq!(
+            scrollbar_press(&l, 8, over_bar(300.0)),
+            Some((0.0, Some(66.0)))
+        );
+        // A press on the track below the handle (y 700 is inside the inner
+        // 237..773) jumps to (700 - 237 - 184) / 536 * 808 = 420.6, clamped to
+        // the 262 px range.
+        assert_eq!(scrollbar_press(&l, 8, over_bar(700.0)), Some((262.0, None)));
+        // 20 cards: 2020 px of rows, so the handle is 151 tall (234..385) and
+        // y 500 is track: (500 - 237 - 75) / 536 * 2020 = 708.5075, inside the
+        // 1474 px range.
+        let tall = resolved_layout(SCREEN, 100.0, 20);
+        let Some((jump, None)) = scrollbar_press(&tall, 20, over_bar(500.0)) else {
+            panic!("the track press must jump, not drag");
+        };
+        assert!((jump - 708.5075).abs() < 1e-3, "{jump}");
+        // The drag frame with the latched offset: y 600 -> 532.1, clamped; y
+        // 250 -> (250 - 237 - 10) / 536 * 808 = 4.522.
+        assert_eq!(scrollbar_drag(&l, 8, 10.0, 600.0), 262.0);
+        let dragged = scrollbar_drag(&l, 8, 10.0, 250.0);
+        assert!((dragged - 4.522_39).abs() < 1e-3, "{dragged}");
+        // A press off the bar is not the scrollbar's, and a short list has no
+        // attached bar at all (`CanScroll`, `UIScrollbar.cs:49`).
+        assert_eq!(scrollbar_press(&l, 8, Vec2::new(500.0, 300.0)), None);
+        let short = resolved_layout(SCREEN, 100.0, 2);
+        assert_eq!(scrollbar_press(&short, 2, over_bar(300.0)), None);
+        // The wheel reaches the list over a gap (`UIInnerList.ContainsPoint` is
+        // `true`, `UIList.cs:16-19`) and over the attached bar, but not over
+        // the header/Back/New outside the list rect.
+        assert!(wheel_target(&l, 8, Vec2::new(500.0, 400.0)));
+        assert!(wheel_target(&l, 8, over_bar(400.0)));
+        assert!(!wheel_target(&l, 8, Vec2::new(500.0, 830.0)));
     }
 }

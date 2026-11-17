@@ -368,6 +368,18 @@ pub(crate) struct App {
     /// held between the press and release events while `front` is live — the
     /// creation screen's HSL sliders drag off it, like the menu's value bars.
     pub(crate) front_mouse_down: bool,
+    /// The two list screens' `UIScrollbar.ViewPosition` (`UIList.cs:181` lifts
+    /// `_innerList.Top` by it every draw): the scrolled px of the live
+    /// `UIList`, clamped into `[0, maxViewSize - viewSize]` wherever it is
+    /// written (`UIScrollbar.cs:45`/`:75`). Reset on every `SetState`
+    /// (`UserInterface.cs:295-299` builds fresh elements, so a re-entered
+    /// screen starts at the top).
+    pub(crate) front_scroll: f32,
+    /// `UIScrollbar._isDragging` + `_dragYOffset` (`UIScrollbar.cs:23`/`:27`):
+    /// `Some(offset)` while the handle is dragged, so the pointer's grab point
+    /// inside the handle is kept (`:134-135`). `LeftMouseUp` clears it
+    /// (`:145-149`).
+    pub(crate) front_scroll_drag: Option<f32>,
     /// `Main.PendingPlayer`'s recorded twin — `FinishCreatingCharacter`'s
     /// `PlayerFileData.CreateAndSave` + `Main.LoadPlayers` port: the created
     /// draft feeds the implicit session entry's name/difficulty
@@ -1820,6 +1832,11 @@ impl App {
         }
         self.park_menu();
         self.front = Some(front);
+        // A fresh `UIState` builds a fresh `UIList`, whose scrollbar starts at
+        // `_viewPosition = 0` (`UIScrollbar.cs:17`) — re-entering a screen is
+        // not a continuation of the last visit's scroll.
+        self.front_scroll = 0.0;
+        self.front_scroll_drag = None;
         // `UserInterface.SetState`'s `ResetState` (`UserInterface.cs:295-299`):
         // a button held across the switch must not read as a fresh press edge
         // on the new screen, and the next press is locked out for 200 ms.
@@ -3180,6 +3197,8 @@ impl App {
             front_hint: None,
             front_hover_hit: None,
             front_mouse_down: false,
+            front_scroll: 0.0,
+            front_scroll_drag: None,
             session_draft: None,
             vk_grid: crate::env::vk_grid(),
             settings,
