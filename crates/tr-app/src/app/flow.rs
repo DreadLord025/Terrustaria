@@ -497,13 +497,26 @@ impl FrontScreenBehaviours for FrontScreen {
                     {
                         Some(FlowClick::CharPlay(i))
                     }
-                    // `FavoriteButtonClick` (`:264-283`): the flag flips and
-                    // the list re-orders (`UpdateOrder`). No `.plr` exists to
-                    // persist it — the toggle is session-only (documented
-                    // deviation).
+                    // `FavoriteButtonClick` (`UICharacterListItem.cs:264-283`):
+                    // `_data.ToggleFavorite()` (`IO/FileData.cs:38-41`) ->
+                    // `SetFavorite(!IsFavorite)` (`:48-54`) ->
+                    // `FavoritesFile.SaveFavorite` (`IO/FavoritesFile.cs:27-36`)
+                    // saves the store at once — outside the `.plr`, whose own
+                    // favourite flag is dead in the vanilla (`FileMetadata.cs:41`).
+                    // The port's store is the `<stem>.trfav` sidecar, the same
+                    // carrier the world's toggle writes (`:900-911`), so the star
+                    // survives a re-list and any future `.plr` re-save.
                     Some(ui::char_select::CardAction::ToggleFavorite(i)) => {
                         if let Some(p) = app.players.get_mut(i) {
                             p.is_favorite = !p.is_favorite;
+                            if let Some(path) = &p.path {
+                                if let Err(e) = crate::player_file::set_favorite_marker(
+                                    path,
+                                    p.is_favorite,
+                                ) {
+                                    log::warn!("character favourite write failed: {e}");
+                                }
+                            }
                         }
                         ui::char_select::sort_players(&mut app.players);
                         None
@@ -2295,6 +2308,89 @@ pub(crate) mod front_flow_tests {
         assert!(app.front.is_none(), "the 888 state clears");
         let m = app.menu.as_ref().expect("the legacy page opens");
         assert_eq!(m.page, P::Main);
+    }
+
+    #[test]
+    fn char_select_favorite_click_writes_the_sidecar_and_the_relist_reads_it() {
+        // The star's live path (A8/F3): `FavoriteButtonClick`
+        // (`UICharacterListItem.cs:264-283`) -> `FileData.ToggleFavorite`
+        // (`IO/FileData.cs:38-41`) -> `FavoritesFile.SaveFavorite`
+        // (`IO/FavoritesFile.cs:27-36`) saves a store beside the character, not
+        // inside it; the next re-list (a re-entry into the screen) reads it
+        // back. Before the fix the click only flipped the in-memory flag.
+        let dir = std::env::temp_dir().join("tr-flow-char-fav");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Belsin.plr");
+        let mut inventory = [(0i32, 0i32, 0u8); 58];
+        inventory[0] = (3507, 1, 0);
+        crate::player_file::write_player_file(
+            &path,
+            &crate::player_file::PlayerFileWrite {
+                name: "Belsin".into(),
+                difficulty: 0,
+                skin_variant: 0,
+                hair: 0,
+                life: 100,
+                life_max: 100,
+                mana: 20,
+                mana_max: 20,
+                hair_color: [215, 90, 55],
+                skin_color: [255, 125, 90],
+                eye_color: [105, 90, 75],
+                shirt_color: [175, 165, 140],
+                undershirt_color: [160, 180, 215],
+                pants_color: [255, 230, 175],
+                shoe_color: [160, 105, 60],
+                inventory,
+                inv_favorites: 0,
+            },
+        )
+        .unwrap();
+
+        let mut belsin = entry("Belsin", true);
+        belsin.path = Some(path.clone());
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("Aaron", true), belsin],
+            Vec::new(),
+        );
+        let layout = |app: &App| {
+            ui::char_select::resolved_layout(
+                Vec2::new(1280.0, 720.0),
+                app.front_header_w(&ui::char_select::select_player()),
+                app.players.len(),
+            )
+        };
+
+        // Belsin is card 1 in the fixture order (Aaron first by name); its
+        // star is the hit target.
+        let l = layout(&app);
+        app.mouse_pos = centre(ui::char_select::card_layout(l.list, 1).favorite);
+        app.handle_front_click();
+
+        assert!(app.players[0].is_favorite, "the click flips the card");
+        assert_eq!(app.players[0].name, "Belsin", "`UpdateOrder` sorts it first");
+        assert!(
+            crate::player_file::favorite_marker_path(&path).exists(),
+            "the click wrote `<stem>.trfav` beside the .plr"
+        );
+        let relisted = ui::save_list::list_players(Some(&dir), None, 0);
+        assert_eq!(relisted.len(), 1);
+        assert!(
+            relisted[0].is_favorite,
+            "a fresh listing (the screen re-entry) reads the star back"
+        );
+
+        // The second click takes it off: the marker goes, the re-list agrees.
+        let l = layout(&app);
+        app.mouse_pos = centre(ui::char_select::card_layout(l.list, 0).favorite);
+        app.handle_front_click();
+        assert!(!app.players[0].is_favorite);
+        assert!(!crate::player_file::favorite_marker_path(&path).exists());
+        assert!(!ui::save_list::list_players(Some(&dir), None, 0)[0].is_favorite);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
