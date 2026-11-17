@@ -4505,10 +4505,58 @@ the evil drops gate on `Conditions.IsCorruption/CrimsonAndNotExpert`
 which read `WorldGen.crimson` (the WORLD type). The skipped rows
 (13, warned): the NamedNPC localization gates, the RedHat legendary
 gate, the MechBossSpawners/SlimeBody/StatueMimic/
-FromOptionsWithoutRepeats rule classes (each needs its own event state).
+FromOptionsWithoutRepeats rule classes (each needs its own event state) —
+S1-E-14 has since landed all four classes and both conditions ("Loot rule
+classes (S1-E-14, 2026-11-17)" below).
 The unknown item ids (the ~20 warn-only OneFromOptions sets) emit and
 resolve - the executor drops only registry-known items, so they surface
 as the registry scale-up work.
+
+## Loot rule classes (S1-E-14, 2026-11-17)
+
+The four rule classes and two conditions the M4-LOOT-1/-2 build skipped
+are ported verbatim in `crates/tr-core/src/loot.rs`:
+
+- **`SlimeBodyItemDropRule`** — the ai[1] item rain: the stack table's
+  seven families + the default 1..1, `Next(min, max+1)`, behind the
+  `SlimeCanContainItems` + ai[1] gates.
+- **`StatueMimicItemDropRule`** — `statue_style_to_item`
+  (`WorldGen.cs:37928`, 26 cases), stack 1.
+- **`MechBossSpawnersDropRule`** — the three sequential short-circuit
+  arms (`!downedMechBossN && player.RollLuck(2500)==0` → 556/544/557)
+  behind `npc.value > 0 && hardMode && (!d1||!d2||!d3) &&
+  !is_in_simulation`.
+- **`FromOptionsWithoutRepeatsDropRule`** — the temp-list `Next(count)`
+  + `RemoveAt` loop.
+
+The conditions: **`NamedNPC`** compares the given name to the localized
+key through the `get_text_value` seam, reading `LootNpc.given_name`;
+**`RedHatSkeletron`** is a `Cond` variant with the 35/36/32/33 ×
+ai[3]/localAI[3] matrix. The `LootNpc`/`DropAttemptInfo` seam fields
+carry all of it; `world_sim/npcs.rs::spawn_loot` fills
+`is_in_simulation=false`, `get_text_value`, the real `npc.value()`, the
+ai/local_ai zeros, the `given_name` Some-path and the four `downed_mech*`
+flags (previously dead, C# 1:1 `MechBossSpawnersDropRule.cs:15`).
+
+**The generator.** `tools/gen_loot.py` retires the four-rule/
+two-condition skip rows and splices WHOLE C# methods; `loot_db_gen.rs`
+regenerates 1421→1445 register calls — the diff is the 24 new rows only,
+the existing rows byte-identical (`gen_loot.py --check` green).
+
+**Deviations.**
+
+- RedHat's 36/32 paths are unreachable at runtime — the port's `Npc` has
+  no `localAI` (the ai[3] paths for 35/33 work); the field port is
+  follow-up S1-E-14b.
+- The mech-flags fill is a deliberate hardmode behavior change: mech
+  spawner drops become possible.
+- The generator splices whole methods — 24 registrations, not 12;
+  half-body emission would drop C# rows.
+- NamedNPC's key comparison rides the `get_text_value` seam.
+
+Follow-up S1-E-14a records the pre-existing generator limitation the
+splice exposed: the `RegisterBoss_*` subtree at `ItemDropDatabase.cs:655`
+is not spliced (the 655-site boss-subtree gap).
 
 ## Buff slots (M2-BUFF-1)
 
@@ -7966,7 +8014,7 @@ stitched them back together 2026-11-07 (commits `9069134`, `3418a59`→
   `App.world_chests` store index — `Player.cs:2876/:2878/:2880`); `App.chest`
   is deleted and every reader re-pointed. Bank open/close rides
   `chest::toggle_open` (the shared C# block `Player.cs:33233-33252`, sounds
-  10/11/12) behind the C# prologue (`close_shop` `:33087-33096`,
+  10/11/12) behind the C# prologue (`close_shop` `:33147-33096`,
   `bank_open_origin` `:33060-33079` incl. the 463/491 ±1/+=2 adjustment),
   and `tick_open` is the full `HandleBeingInChestRange` port
   (`:31015-31097`, minus the projectile trackers — remote opens are out)
@@ -15472,6 +15520,47 @@ Steam Cloud, the overlay / rich-presence / friends modules and the join-request
 manager. Porting the transport would require vendoring Steamworks (its DLL sits
 unused beside the tree) and would not change the port's own wire, so the ROADMAP
 keeps it as this documented divergence rather than a build item.
+
+## The Pumpkin Moon family (S1-F-13b, 2026-11-17)
+
+The 16 wave kinds land on `S1-F-13b-pumpkin-family` (phases: the identity
+`908637f4`, the live roster `822c0a23`). The verbatim defaults, the net ids,
+the sounds and the kind→type map (`pumpkin_moon_type` — the one new seam the
+boss cap, the kill points and the walkers' speeds reuse) are the identity
+half; the live half is the F-13a moon arms mapping the ladder's picks through
+`moon_wave_kind` and spawning at the found tile (the `NewNPC Bottom`
+placement, `:80772`), the 11 aiStyle-3 walkers on the C#'s per-type speed
+rows (`AI_003`'s scarecrow arm `:57816-57840` + Splinterling's cap-2 group)
+and the render sheets resolving with the C#'s `npcFrameCount`.
+
+Documented deviations, all deliberate:
+- **The five bespoke machines ride stand-ins** until S1-F-13b2: the
+  Headless Horseman (315) and the Hellhound (329) — aiStyle 26
+  (`AI_026_Unicorns`, `NPC.cs:62366+`) — walk on the walker family at the
+  C#'s own chase cap (`num10 = 6f`, `:62622`); the Poltergeist (330) —
+  aiStyle 22 — rides the port's caster machine (its shot arm's `_ => return`
+  leaves it shotless until the named machine lands); the MourningWood (325,
+  aiStyle 57) and the Pumpking (327, aiStyle 58) hover at their machines'
+  own base speeds/approaches (`num836 = 2f` with the `/21` approach, `num875
+  = 6` with the `/15` lerp) and fly through tiles (their `noTileCollide`
+  rows). Each stand-in cites its machine's own constants.
+- **The unported wave kinds still consume**: the frost family (F-13c) and
+  the wave-20 unported bosses draw their vanilla rolls and spawn nothing
+  (the Wyvern-arm shape) — only the 16 pumpkin kinds spawn.
+- **`ImmuneToAllBuffsThatAreNotWhips`** (330) is unmodelled — the port's
+  table carries `SpecificallyImmuneTo` only; noted at the arm, pending
+  S1-F-13b2.
+- **The Poltergeist caster-stand test was rewritten** (2026-11-17): the
+  pre-existing test asserted `vx == 0.0` at frame 30 from `vx 2.0`, but the
+  C#'s verbatim stand is `velocity.X *= 0.93f` with the ±0.1 snap
+  (`NPC.cs:20831-20835`) — the exact park is frame 42 (`2.0×0.93³⁰ =
+  0.22673497` at frame 30). The test now asserts the iterated decay curve,
+  the exact park and the hold.
+- **`pumpkin_moon_type`'s family scoping**: the map returns `Some` only for
+  the 16 pumpkin kinds — the frost family's kinds (F-13c) keep consuming
+  until their row lands.
+
+**Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator

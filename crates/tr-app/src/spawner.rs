@@ -92,8 +92,10 @@ pub fn moon_boss_slots(npc_type: u16) -> Option<f32> {
 
 /// `Spawner`'s ctor weighted sum over the live boss kinds
 /// (`NPC.cs:274-283`) — the ctx's boss-cap input (the `invasion_saucer_alive`
-/// pattern). All seven kinds are unported until F-13b/c, so the port's count
-/// is structurally 0.
+/// pattern). `S1-F-13b` lands 315/325/327 as real kinds whose `to_u16` rides
+/// the vanilla ids, so the count goes live for exactly those three (1.0/3.0/
+/// 5.0 — their `SetDefaults` `npcSlots` rows); 328/344/345/346 stay unported
+/// and contribute nothing.
 pub fn moon_boss_cap_count(npcs: &[Npc]) -> f32 {
     npcs.iter()
         .filter(|n| n.hp > 0)
@@ -189,6 +191,10 @@ pub struct SpawnContext<'a> {
     /// compare it against [`moon_boss_cap_reached`]. Structurally 0 until the
     /// kinds land (F-13b/c).
     pub moon_boss_cap_count: f32,
+    /// The live vanilla types of the active NPC roster — the C#'s
+    /// `NPC.CountNPCS(id)`'s scan source (`NPC.cs:7982-7995`): the moon
+    /// ladders' `CountNPCS(id) < cap` gates read it per arm.
+    pub moon_npc_counts: &'a [u16],
 }
 
 /// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap,
@@ -1090,15 +1096,38 @@ fn spawn_npc_at(
         // — the `(double)spawnTileY <= Main.worldSurface` twin is the
         // reduction, and the enclosing `if surface` IS that band.
         if !ctx.day_time && (ctx.world.snow_moon || ctx.world.pumpkin_moon) {
-            let _wave_kind = if ctx.world.snow_moon {
+            let pick = if ctx.world.snow_moon {
                 frost_moon_ladder(ctx, rng)
             } else {
                 pumpkin_moon_ladder(ctx, rng)
             };
-            // All 30 wave kinds are unported until F-13b/c: the ladder's pick
-            // is the vanilla `NPC.type` the C# would spawn, and the dispatch
-            // consumes it without spawning — the Wyvern arm's
-            // consume-and-return-None shape (`spawner.rs:989-994`).
+            // `S1-F-13b` Phase 2: the 16 Pumpkin Moon wave kinds are ported,
+            // so the ladder's vanilla `NPC.type` maps to the kind and spawns
+            // at the found tile — `SpawnNPC(spawnTileX * 16 + 8,
+            // spawnTileY * 16, type)` (`NPC.cs:3224-3548`'s moon arms) →
+            // `NewNPC`'s `Bottom = (X, Y)` (`:80772`): the feet on the found
+            // tile's top edge, X centred 8 px into the tile, the facing
+            // toward the player (`TargetClosest`) — the placement the
+            // invaders arm rides.
+            // Every other pick (the frost-moon kinds, the wave-20 unported
+            // bosses) still consumes its draw and spawns nothing — the Wyvern
+            // arm's consume-and-return-None shape (`spawner.rs:989-994`).
+            if let Some(kind) = pick.and_then(crate::npc::NpcKind::moon_wave_kind) {
+                let (nw, nh) = kind.size();
+                let mut n = Npc::new(
+                    kind,
+                    x as f32 * TILE_PX + 8.0 - nw * 0.5,
+                    y as f32 - nh,
+                    if ctx.player_center.0 >= x as f32 * TILE_PX + 8.0 {
+                        1
+                    } else {
+                        -1
+                    },
+                    0.0,
+                );
+                n.hp = n.max_hp;
+                return Some(n);
+            }
             return None;
         }
         // The surface probe arm (`NPC.cs:4164-4199`, the `surfaceSpawn`
@@ -1543,26 +1572,26 @@ pub(crate) fn invasion_spawn_pick(
 
 // ---- S1-F-13: the moon-event roster ladders (`NPC.cs:2804-3548`) ----
 
-/// The live count of a moon wave kind — the C#'s `NPC.CountNPCS(id)`
-/// (`NPC.cs:7982-7995`); `NPC.AnyNPCs(id)` (`:7975-7981`) is "none alive",
-/// which is `CountNPCS(id) < 1`. All 30 wave kinds are unported until
-/// F-13b/c, so the port's count is structurally 0 and every cap gate stands
-/// open. The shape below is verbatim: the live read replaces this one
-/// constant when the kinds land.
-const MOON_WAVE_KIND_COUNT: i32 = 0;
-
 /// One arm of a moon roster ladder: draws the arm's roll on the spawner stream
 /// and, when it hits and the `CountNPCS(id) < cap` gate is open, records the
 /// vanilla `NPC.type`. `cap` is `Some(c)` for the C#'s `CountNPCS(id) < c`
 /// (`Some(1)` = `!AnyNPCs(id)`) and `None` for an ungated roll. Returns
 /// whether the arm's whole condition held — the C#'s `else if` chain draws the
 /// next roll only while the previous arm's did not.
-fn moon_arm(picked: &mut Option<u16>, rng: &mut UnifiedRandom, n: i32, cap: Option<i32>, kind: u16) -> bool {
-    moon_arm_count(picked, rng, n, cap, kind, MOON_WAVE_KIND_COUNT)
+fn moon_arm(
+    ctx: &SpawnContext,
+    picked: &mut Option<u16>,
+    rng: &mut UnifiedRandom,
+    n: i32,
+    cap: Option<i32>,
+    kind: u16,
+) -> bool {
+    let count = ctx.moon_npc_counts.iter().filter(|&&t| t == kind).count() as i32;
+    moon_arm_count(picked, rng, n, cap, kind, count)
 }
 
-/// [`moon_arm`] with the live count explicit — the production path passes
-/// [`MOON_WAVE_KIND_COUNT`]; the tests close a gate to prove the `CountNPCS`
+/// [`moon_arm`] with the live count explicit — the production path reads
+/// the ctx's roster scan; the tests close a gate to prove the `CountNPCS`
 /// cap actually gates the arm (a closed cap suppresses the pick and the C#'s
 /// `else if` chain advances to the next arm).
 fn moon_arm_count(
@@ -1584,7 +1613,12 @@ fn moon_arm_count(
 /// no earlier arm fired (the `else if` short-circuit), and the chain falls
 /// through to `fallback` — the C#'s final `else` type, or `None` for the snow
 /// wave 14, whose chain has no `else` (`NPC.cs:2958`).
-fn moon_chain<F>(rng: &mut UnifiedRandom, arms: &[(i32, Option<i32>, u16)], fallback: F) -> Option<u16>
+fn moon_chain<F>(
+    ctx: &SpawnContext,
+    rng: &mut UnifiedRandom,
+    arms: &[(i32, Option<i32>, u16)],
+    fallback: F,
+) -> Option<u16>
 where
     F: FnOnce(&mut UnifiedRandom) -> Option<u16>,
 {
@@ -1593,7 +1627,7 @@ where
         if picked.is_some() {
             break;
         }
-        moon_arm(&mut picked, rng, *n, *cap, *kind);
+        moon_arm(ctx, &mut picked, rng, *n, *cap, *kind);
     }
     if picked.is_none() {
         fallback(rng)
@@ -1610,13 +1644,16 @@ where
 ///
 /// Returns the `NPC.type` the arm would spawn. `None` is the C#'s only
 /// no-spawn outcome: the wave-20 trio behind a reached boss cap (`:2815`).
-/// Every picked kind is an unported wave kind (F-13b/c) — the dispatch consumes
-/// the pick without spawning.
+/// Every picked kind is an unported wave kind (the frost family lands with
+/// F-13c) — the moon arm's [`crate::npc::NpcKind::moon_wave_kind`] map returns
+/// `None` for it and the dispatch consumes the pick without spawning.
 fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16> {
     let wave = ctx.world.wave_number;
     // The 341 head (`:2807-2811`) runs at every wave, before the `>= 20`
     // check, and is the block's only arm that returns on a hit.
-    if rng.next_max(30) == 0 && MOON_WAVE_KIND_COUNT < 4 {
+    if rng.next_max(30) == 0
+        && (ctx.moon_npc_counts.iter().filter(|&&t| t == 341).count() as i32) < 4
+    {
         return Some(341);
     }
     if wave >= 20 {
@@ -1637,6 +1674,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     // first branch it reaches, then the switch below.
     if wave >= 19 {
         return moon_chain(
+            ctx,
             rng,
             &[(10, Some(4), 345), (10, Some(5), 346), (10, Some(7), 344)],
             |_| Some(343),
@@ -1644,6 +1682,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     }
     if wave >= 18 {
         return moon_chain(
+            ctx,
             rng,
             &[
                 (10, Some(3), 345),
@@ -1657,6 +1696,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     }
     if wave >= 17 {
         return moon_chain(
+            ctx,
             rng,
             &[
                 (10, Some(2), 345),
@@ -1670,6 +1710,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     }
     if wave >= 16 {
         return moon_chain(
+            ctx,
             rng,
             &[(10, Some(2), 345), (10, Some(2), 346), (10, Some(4), 344), (2, None, 352)],
             |_| Some(343),
@@ -1677,6 +1718,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
     }
     if wave >= 15 {
         return moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 345), (10, Some(2), 346), (10, Some(3), 344), (3, None, 347)],
             |_| Some(343),
@@ -1688,11 +1730,13 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
         // `NPC.cs:2958` — case 14's `else if` chain has NO final `else`: when
         // all four arms miss, the C# spawns nothing.
         14 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 345), (10, Some(1), 346), (10, Some(1), 344), (3, None, 343)],
             |_| None,
         ),
         13 => moon_chain(
+            ctx,
             rng,
             &[
                 (10, Some(1), 345),
@@ -1704,15 +1748,17 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
             |_| Some(347),
         ),
         12 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 345), (10, Some(1), 344), (8, None, 343), (3, None, 342)],
             // `Main.rand.Next(338, 341)` (`:3021`) IS the chosen type.
             |r| Some(338 + r.next_max(3) as u16),
         ),
-        11 => moon_chain(rng, &[(10, Some(1), 345), (6, None, 352), (2, None, 342)], |r| {
+        11 => moon_chain(ctx, rng, &[(10, Some(1), 345), (6, None, 352), (2, None, 342)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
         10 => moon_chain(
+            ctx,
             rng,
             &[
                 (10, Some(1), 346),
@@ -1724,30 +1770,32 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
             |r| Some(338 + r.next_max(3) as u16),
         ),
         9 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 346), (10, Some(1), 344), (2, None, 348), (3, None, 347)],
             |_| Some(342),
         ),
         8 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(1), 346), (8, None, 351), (3, None, 348), (3, None, 347)],
             |_| Some(350),
         ),
-        7 => moon_chain(rng, &[(10, Some(1), 346), (3, None, 342), (4, None, 350)], |r| {
+        7 => moon_chain(ctx, rng, &[(10, Some(1), 346), (3, None, 342), (4, None, 350)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
-        6 => moon_chain(rng, &[(10, Some(2), 344), (4, None, 347), (2, None, 348)], |_| Some(350)),
-        5 => moon_chain(rng, &[(10, Some(1), 344), (4, None, 350), (8, None, 348)], |r| {
+        6 => moon_chain(ctx, rng, &[(10, Some(2), 344), (4, None, 347), (2, None, 348)], |_| Some(350)),
+        5 => moon_chain(ctx, rng, &[(10, Some(1), 344), (4, None, 350), (8, None, 348)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
-        4 => moon_chain(rng, &[(10, Some(1), 344), (4, None, 350), (3, None, 342)], |r| {
+        4 => moon_chain(ctx, rng, &[(10, Some(1), 344), (4, None, 350), (3, None, 342)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
-        3 => moon_chain(rng, &[(8, None, 348), (4, None, 350), (3, None, 342)], |r| {
+        3 => moon_chain(ctx, rng, &[(8, None, 348), (4, None, 350), (3, None, 342)], |r| {
             Some(338 + r.next_max(3) as u16)
         }),
-        2 => moon_chain(rng, &[(3, None, 350)], |r| Some(338 + r.next_max(3) as u16)),
-        _ => moon_chain(rng, &[(3, None, 342)], |r| Some(338 + r.next_max(3) as u16)),
+        2 => moon_chain(ctx, rng, &[(3, None, 350)], |r| Some(338 + r.next_max(3) as u16)),
+        _ => moon_chain(ctx, rng, &[(3, None, 342)], |r| Some(338 + r.next_max(3) as u16)),
     }
 }
 
@@ -1757,6 +1805,7 @@ fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16>
 /// C# spawns BOTH NPCs in one attempt (the picker returns the first; the stream
 /// stays 1:1 — the deviation is recorded in ANALYSIS).
 fn pumpkin_327_chain<F>(
+    ctx: &SpawnContext,
     rng: &mut UnifiedRandom,
     n: i32,
     cap: Option<i32>,
@@ -1767,14 +1816,17 @@ where
     F: FnOnce(&mut UnifiedRandom) -> Option<u16>,
 {
     let mut picked = None;
-    moon_arm(&mut picked, rng, n, cap, 327);
-    picked.or(moon_chain(rng, chain, fallback))
+    moon_arm(ctx, &mut picked, rng, n, cap, 327);
+    picked.or(moon_chain(ctx, rng, chain, fallback))
 }
 
 /// The pumpkin-moon roster ladder: `SpawnAnNPC`'s `!Main.dayTime &&
 /// Main.pumpkinMoon` arm (`NPC.cs:3224-3548`) — the `waveNumber >= 20` boss
 /// trio (`:3227`) and the `switch (waveNumber2)` cases (`:3246`). Same return
-/// contract as [`frost_moon_ladder`].
+/// contract as [`frost_moon_ladder`]. Every pick is one of the 16 Pumpkin Moon
+/// wave kinds (305-314/315/325/326/327/329/330), ported since `S1-F-13b` Phase
+/// 2 — the moon arm maps it through [`crate::npc::NpcKind::moon_wave_kind`]
+/// and spawns it at the found tile.
 fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16> {
     let wave = ctx.world.wave_number;
     if wave >= 20 {
@@ -1784,15 +1836,17 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             return None;
         }
         let mut picked = None;
-        if moon_arm(&mut picked, rng, 2, Some(2), 327) {
+        if moon_arm(ctx, &mut picked, rng, 2, Some(2), 327) {
             return picked; // 327
         }
         // `Next(3) != 0 && CountNPCS(325) < 2` (`:3235`) — the inverted roll.
-        if rng.next_max(3) != 0 && MOON_WAVE_KIND_COUNT < 2 {
+        if rng.next_max(3) != 0
+            && (ctx.moon_npc_counts.iter().filter(|&&t| t == 325).count() as i32) < 2
+        {
             return Some(325);
         }
         // The 315 arm (`:3239`) draws no roll.
-        if MOON_WAVE_KIND_COUNT < 3 {
+        if (ctx.moon_npc_counts.iter().filter(|&&t| t == 315).count() as i32) < 3 {
             return Some(315);
         }
         return None;
@@ -1802,17 +1856,18 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             // `:3249-3260`: 327, 325, then the 315 arm whose gate ALSO carries
             // `!reachedInvasionBossCap`; the case has no final `else`.
             let mut picked = None;
-            if !moon_arm(&mut picked, rng, 5, Some(2), 327)
-                && !moon_arm(&mut picked, rng, 5, Some(2), 325)
+            if !moon_arm(ctx, &mut picked, rng, 5, Some(2), 327)
+                && !moon_arm(ctx, &mut picked, rng, 5, Some(2), 325)
                 && !moon_boss_cap_reached(ctx.moon_boss_cap_count)
-                && MOON_WAVE_KIND_COUNT < 5
+                && (ctx.moon_npc_counts.iter().filter(|&&t| t == 315).count() as i32) < 5
             {
                 picked = Some(315);
             }
             picked
         }
-        18 => pumpkin_327_chain(rng, 7, Some(2), &[(7, Some(2), 325), (7, Some(3), 315)], |_| Some(330)),
+        18 => pumpkin_327_chain(ctx, rng, 7, Some(2), &[(7, Some(2), 325), (7, Some(3), 315)], |_| Some(330)),
         17 => pumpkin_327_chain(
+            ctx,
             rng,
             7,
             Some(2),
@@ -1820,11 +1875,13 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             |_| Some(329),
         ),
         16 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(2), 327), (10, Some(2), 315), (6, None, 330), (3, None, 329)],
             |_| Some(326),
         ),
         15 => pumpkin_327_chain(
+            ctx,
             rng,
             10,
             Some(1),
@@ -1832,6 +1889,7 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             |r| Some(305 + r.next_max(10) as u16),
         ),
         14 => pumpkin_327_chain(
+            ctx,
             rng,
             10,
             Some(1),
@@ -1845,35 +1903,37 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
             |r| Some(305 + r.next_max(10) as u16),
         ),
         13 => moon_chain(
+            ctx,
             rng,
             &[(7, Some(2), 325), (10, Some(2), 315), (6, None, 330), (3, None, 329)],
             |_| Some(326),
         ),
-        12 => moon_chain(rng, &[(5, Some(1), 327)], |_| Some(330)),
-        11 => moon_chain(rng, &[(7, Some(2), 325), (3, None, 330)], |_| Some(326)),
-        10 => moon_chain(rng, &[(10, Some(1), 327), (3, None, 329)], |r| {
+        12 => moon_chain(ctx, rng, &[(5, Some(1), 327)], |_| Some(330)),
+        11 => moon_chain(ctx, rng, &[(7, Some(2), 325), (3, None, 330)], |_| Some(326)),
+        10 => moon_chain(ctx, rng, &[(10, Some(1), 327), (3, None, 329)], |r| {
             Some(305 + r.next_max(10) as u16)
         }),
         9 => moon_chain(
+            ctx,
             rng,
             &[(10, Some(2), 325), (8, None, 330), (5, None, 329), (2, None, 326)],
             |r| Some(305 + r.next_max(10) as u16),
         ),
-        8 => moon_chain(rng, &[(8, Some(2), 315), (4, None, 330)], |_| Some(329)),
-        7 => moon_chain(rng, &[(7, Some(2), 325), (4, None, 330)], |_| Some(329)),
-        6 => moon_chain(rng, &[(7, Some(2), 325), (2, None, 326)], |r| {
+        8 => moon_chain(ctx, rng, &[(8, Some(2), 315), (4, None, 330)], |_| Some(329)),
+        7 => moon_chain(ctx, rng, &[(7, Some(2), 325), (4, None, 330)], |_| Some(329)),
+        6 => moon_chain(ctx, rng, &[(7, Some(2), 325), (2, None, 326)], |r| {
             Some(305 + r.next_max(10) as u16)
         }),
-        5 => moon_chain(rng, &[(10, Some(1), 315)], |_| Some(329)),
+        5 => moon_chain(ctx, rng, &[(10, Some(1), 315)], |_| Some(329)),
         4 => {
             // Verbatim quirk (`:3511-3513`): the roll gates on `!AnyNPCs(325)`
             // but the arm spawns 330.
-            moon_chain(rng, &[(8, Some(1), 330), (2, None, 326)], |r| {
+            moon_chain(ctx, rng, &[(8, Some(1), 330), (2, None, 326)], |r| {
                 Some(305 + r.next_max(10) as u16)
             })
         }
-        3 => moon_chain(rng, &[(3, None, 329)], |_| Some(326)),
-        2 => moon_chain(rng, &[(3, None, 326)], |r| Some(305 + r.next_max(10) as u16)),
+        3 => moon_chain(ctx, rng, &[(3, None, 329)], |_| Some(326)),
+        2 => moon_chain(ctx, rng, &[(3, None, 326)], |r| Some(305 + r.next_max(10) as u16)),
         // `:3545` — the C#'s default: no roll gate, the type is `Next(305, 315)`.
         _ => Some(305 + rng.next_max(10) as u16),
     }
@@ -1977,6 +2037,7 @@ mod tests {
 
     fn ctx(world: &World, y_px: f32, day: bool) -> SpawnContext<'_> {
         SpawnContext {
+            moon_npc_counts: &[],
             world,
             player_center: (0.0, y_px),
             player_pos: (0.0, y_px),
@@ -2839,6 +2900,7 @@ mod tests {
 
     fn ctx_at<'a>(w: &'a World, day: bool) -> SpawnContext<'a> {
         SpawnContext {
+            moon_npc_counts: &[],
             world: w,
             player_center: (200.0 * TILE_PX, 295.0 * TILE_PX),
             player_pos: (200.0 * TILE_PX, 295.0 * TILE_PX),
@@ -3034,6 +3096,7 @@ mod tests {
             let mut state = seed;
             for _ in 0..900 {
                 let ctx = SpawnContext {
+                    moon_npc_counts: &[],
                     world: &w,
                     player_center: (200.0 * TILE_PX, 295.0 * TILE_PX),
                     player_pos: (200.0 * TILE_PX, 295.0 * TILE_PX),
@@ -3295,6 +3358,7 @@ mod tests {
     /// band, and `AnyDanger`'s refusal (`NPC.cs:1385-1402`/`:4194-4198`).
     fn probe_ctx(world: &World) -> SpawnContext<'_> {
         SpawnContext {
+            moon_npc_counts: &[],
             world,
             player_center: (world.width as f32 * TILE_PX / 2.0, 120.0 * TILE_PX),
             player_pos: (world.width as f32 * TILE_PX / 2.0, 120.0 * TILE_PX),
@@ -4214,6 +4278,210 @@ mod tests {
         assert_eq!(
             rng_moon.peek(), rng_plain.peek(),
             "by day the moon arms draw nothing — the flags leave the day stream untouched"
+        );
+    }
+
+    /// DIRTY (watched RED pre-fix): DW-2.1 — with a night pumpkin moon at
+    /// wave 2 armed, the ladder's ported picks SPAWN: `spawn_npc_at` returns
+    /// `Some(Npc)` of the picked kind at the found tile — the
+    /// `SpawnNPC(spawnTileX * 16 + 8, spawnTileY * 16, type)` → `NewNPC`'s
+    /// `Bottom = (X, Y)` placement (the moon arm `NPC.cs:3224-3548`,
+    /// `NewNPC` `:80772`): the feet on the found tile's top edge, X centred
+    /// 8 px into the tile, facing the player (`TargetClosest`), full hp.
+    /// Wave 2 (`:3529-3533`) is the 326 arm (1/3) falling through to the
+    /// scarecrow band `Next(305, 315)` — Splinterling and all ten
+    /// Scarecrows, the ported kinds the plan names.
+    #[test]
+    fn the_pumpkin_wave_spawns_the_ported_kinds_at_the_found_tile() {
+        let w = moon_world(2, false);
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.moon_boss_cap_count = 0.0; // the cap is open
+        let (tile_x, tile_y) = (210i32, 25i32 * 16);
+        let mut saw_splinterling = 0;
+        let mut kinds_seen = std::collections::BTreeSet::new();
+        for seed in 1..=200u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let spawn = spawn_npc_at(&c, &mut rng, tile_x, tile_y, false, false, false);
+            // The replay (`:1284` the style, `:3529-3533` wave 2's chain):
+            // Next(3) == 0 picks 326, else the scarecrow Next(10).
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // `GetZombieSettings`
+            let expect_ty = if r#ref.next_max(3) == 0 {
+                326u16
+            } else {
+                305 + r#ref.next_max(10) as u16
+            };
+            let kind = NpcKind::moon_wave_kind(expect_ty).expect("a ported wave kind");
+            let n = spawn.expect("the ported wave kind must spawn at the found tile");
+            assert_eq!(n.kind, kind, "seed {seed}: the wrong kind spawned");
+            assert_eq!(
+                kind.pumpkin_moon_type(),
+                Some(expect_ty),
+                "seed {seed}: the u16 → kind map rides the vanilla pick"
+            );
+            // The `NewNPC` Bottom placement: (spawnTileX * 16 + 8,
+            // spawnTileY * 16) is the NPC's bottom-centre.
+            let (nw, nh) = kind.size();
+            assert_eq!(
+                n.x, tile_x as f32 * TILE_PX + 8.0 - nw * 0.5,
+                "seed {seed}: the feet sit centred 8 px into the found tile"
+            );
+            assert_eq!(
+                n.y, tile_y as f32 - nh,
+                "seed {seed}: the feet stand on the found tile's top edge"
+            );
+            // The facing toward the player (`TargetClosest`): the ctx player
+            // sits left of the tile.
+            assert_eq!(n.facing, -1, "seed {seed}: the spawn faces the player");
+            assert_eq!(n.hp, n.max_hp, "seed {seed}: the spawn is at full hp");
+            // The stream consumed exactly the replay's draws.
+            assert_eq!(
+                rng.peek(), r#ref.peek(),
+                "seed {seed}: the pumpkin spawn's stream tail is the vanilla draw order"
+            );
+            if expect_ty == 326 {
+                saw_splinterling += 1;
+            }
+            kinds_seen.insert(expect_ty);
+        }
+        assert!(
+            saw_splinterling > 0,
+            "the 1/3 326 arm must hit across 200 seeds"
+        );
+        assert!(
+            kinds_seen.len() >= 8,
+            "the scarecrow band must spread across its kinds (saw {})",
+            kinds_seen.len()
+        );
+    }
+
+    /// DW-2.4: the boss cap's live counts feed the trio gate — the feed is
+    /// `moon_boss_cap_count` over the LIVE 315/325/327 kinds (the dead weigh
+    /// nothing, `NPC.cs:274-283`), and at wave 20 the pumpkin trio sits
+    /// wholly inside `!reachedInvasionBossCap` (`:3227-3229`): a reached cap
+    /// draws nothing and spawns nothing, an open one spawns the ported boss
+    /// kinds at the found tile.
+    #[test]
+    fn the_boss_cap_live_counts_feed_the_pumpkin_trio_gate() {
+        // Two live MourningWoods (3.0 each) + one live Headless Horseman
+        // (1.0) + one dead Pumpking: the live read is 7 < 11 — the gate is
+        // open, and the dead 327 must not weigh its 5.
+        let roster = [
+            NpcKind::MourningWood,
+            NpcKind::MourningWood,
+            NpcKind::HeadlessHorseman,
+            NpcKind::Pumpking,
+        ];
+        let npcs: Vec<Npc> = roster
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
+                let mut n = Npc::new(*k, i as f32 * 32.0, 100.0, 1, 0.0);
+                if i < 3 {
+                    n.hp = n.max_hp;
+                } else {
+                    n.hp = 0;
+                } // the Pumpking stays dead
+                n
+            })
+            .collect();
+        let count = moon_boss_cap_count(&npcs);
+        assert_eq!(count, 7.0, "the dead boss weighs nothing");
+        assert!(!moon_boss_cap_reached(count), "7 < 11 keeps the gate open");
+        let w = moon_world(20, false);
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.moon_boss_cap_count = count; // the live feed (`npcs.rs:4022`)
+        let mut saw = std::collections::BTreeSet::new();
+        for seed in 1..=150u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let spawn = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // `GetZombieSettings` (`:1284`)
+            // The wave-20 trio (`:3227-3243`): Next(2) == 0 → 327; else
+            // Next(3) != 0 → 325; else the ungated 315 arm (no roll).
+            let expect_ty = if r#ref.next_max(2) == 0 {
+                327u16
+            } else if r#ref.next_max(3) != 0 {
+                325
+            } else {
+                315
+            };
+            let kind = NpcKind::moon_wave_kind(expect_ty).expect("a ported boss kind");
+            let n = spawn.expect("the open gate spawns the ported trio");
+            assert_eq!(n.kind, kind, "seed {seed}: the wrong boss kind spawned");
+            assert_eq!(
+                rng.peek(), r#ref.peek(),
+                "seed {seed}: the open-gate stream tail is the vanilla order"
+            );
+            saw.insert(expect_ty);
+        }
+        assert_eq!(
+            saw,
+            [327u16, 325, 315].into_iter().collect(),
+            "the trio's three arms must all fire under an open gate"
+        );
+        // At/over the bound the gate closes: the ladder returns before any
+        // draw — the stream holds the style draw and nothing spawns.
+        let roster2 = [
+            NpcKind::Pumpking,
+            NpcKind::Pumpking,
+            NpcKind::MourningWood,
+            NpcKind::Pumpking,
+        ];
+        let npcs2: Vec<Npc> = roster2
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
+                let mut n = Npc::new(*k, i as f32 * 32.0, 100.0, 1, 0.0);
+                if i < 3 {
+                    n.hp = n.max_hp;
+                } else {
+                    n.hp = 0;
+                } // one dead Pumpking
+                n
+            })
+            .collect();
+        let count2 = moon_boss_cap_count(&npcs2);
+        assert_eq!(count2, 13.0, "10 + 3 live, the dead weighs nothing");
+        assert!(moon_boss_cap_reached(count2), "13 >= 11 reaches the cap");
+        c.moon_boss_cap_count = count2;
+        for seed in 1..=100u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let spawn = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
+            assert!(
+                spawn.is_none(),
+                "seed {seed}: the reached cap spawns nothing"
+            );
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // only the style draws
+            assert_eq!(
+                rng.peek(), r#ref.peek(),
+                "seed {seed}: the reached cap draws nothing beyond the style"
+            );
+        }
+        // The plan's edge case: the 325 arm's own `CountNPCS(325) < 2` cap
+        // (`:3235`) — two live MourningWoods close the arm while its roll is
+        // still drawn (`moon_arm_count`'s explicit count, the C# `&&`
+        // order), and the chain advances to the next arm.
+        let hit_seed = (1..=100u64)
+            .find(|&s| UnifiedRandom::new(s as i32).next_max(2) == 0)
+            .unwrap();
+        let mut open_rng = UnifiedRandom::new(hit_seed as i32);
+        let mut open_pick = None;
+        assert!(moon_arm_count(&mut open_pick, &mut open_rng, 3, Some(2), 325, 0));
+        assert_eq!(open_pick, Some(325), "the open count lets the arm fire");
+        let mut closed_rng = UnifiedRandom::new(hit_seed as i32);
+        let mut closed_pick = None;
+        assert!(!moon_arm_count(
+            &mut closed_pick, &mut closed_rng, 3, Some(2), 325, 2
+        ));
+        assert_eq!(
+            closed_pick, None,
+            "two live MourningWoods close the 325 arm"
+        );
+        assert_eq!(
+            closed_rng.peek(), open_rng.peek(),
+            "the roll was still drawn (the C# &&)"
         );
     }
 }

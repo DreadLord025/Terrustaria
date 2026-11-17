@@ -513,17 +513,17 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
         .filter(|s| s.kind != 0 && s.count > 0)
         .map(|s| s.kind)
         .collect();
-        // The turn-in is the player's item-use interaction (`Player.ItemCheck`
-        // under the `UpdatePlayers` swap) — the reward rolls ride
-        // `stream(UpdatePlayers)`.
-        let lines = crate::angler::angler_reward(
-            quests_done,
-            hard_mode,
-            quest_item,
-            adjustment,
-            &owned,
-            app.rngs.stream(RngKey::UpdatePlayers),
-        );
+    // The turn-in is the player's item-use interaction (`Player.ItemCheck`
+    // under the `UpdatePlayers` swap) — the reward rolls ride
+    // `stream(UpdatePlayers)`.
+    let lines = crate::angler::angler_reward(
+        quests_done,
+        hard_mode,
+        quest_item,
+        adjustment,
+        &owned,
+        app.rngs.stream(RngKey::UpdatePlayers),
+    );
     let (ax, ay) = app.npcs[angler_idx].center();
     for line in lines {
         // The reward spawns join the turn-in's `UpdatePlayers` stream.
@@ -637,8 +637,8 @@ pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
         return false;
     }
     let water = app.world.tile(tx, ty).is_some_and(|t| t.has_any_liquid());
-        // `Next(8) == 0` (`NPC.cs:1670`'s spider-wall arm).
-        if water || app.rngs.stream(RngKey::UpdateTime).next_max(8) != 0 {
+    // `Next(8) == 0` (`NPC.cs:1670`'s spider-wall arm).
+    if water || app.rngs.stream(RngKey::UpdateTime).next_max(8) != 0 {
         return false;
     }
     let mut m = Npc::new(
@@ -1045,10 +1045,10 @@ pub(crate) fn update_worms_in(
                     if crate::projectile::can_hit(
                         world, npcs[i].x, npcs[i].y, lw, lh, pcx, pcy, 0.0, 0.0,
                     ) {
-                            // The four `Next(-20, 21)` draws
-                            // (`NPC.cs:49866-49871`).
-                            let mut dx = pcx - cx + rng.next_range(-20, 21) as f32;
-                            let mut dy = pcy - cy + rng.next_range(-20, 21) as f32;
+                        // The four `Next(-20, 21)` draws
+                        // (`NPC.cs:49866-49871`).
+                        let mut dx = pcx - cx + rng.next_range(-20, 21) as f32;
+                        let mut dy = pcy - cy + rng.next_range(-20, 21) as f32;
                         let d = (dx * dx + dy * dy).sqrt().max(1.0);
                         dx = dx / d * 8.0 + rng.next_range(-20, 21) as f32 * 0.05;
                         dy = dy / d * 8.0 + rng.next_range(-20, 21) as f32 * 0.05;
@@ -1825,11 +1825,9 @@ fn spawn_dd2_from_gate(app: &mut App, sx: f32, sy: f32, left_gate: bool) -> Vec<
             &mut kills.clone(),
             app.world.dd2_latches.ogre_t2,
         ),
-        3 => tr_core::dd2::required_wave_kills_t3(
-            wave,
-            &mut kills.clone(),
-            dd2_betsy_hp_ratio(app),
-        ),
+        3 => {
+            tr_core::dd2::required_wave_kills_t3(wave, &mut kills.clone(), dd2_betsy_hp_ratio(app))
+        }
         _ => tr_core::dd2::required_wave_kills(
             wave,
             &mut kills.clone(),
@@ -2562,7 +2560,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         }
                     }
                 }
-                }
+            }
         });
     }
     app.npc_step.cap_backlog();
@@ -2582,14 +2580,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         for n in app.npcs.iter() {
             let (w, h) = n.size();
             let switch = crate::collision::switch_tiles(
-                wiring,
-                world,
-                n.x,
-                n.y,
-                n.old_x,
-                n.old_y,
-                w as i32,
-                h as i32,
+                wiring, world, n.x, n.y, n.old_x, n.old_y, w as i32, h as i32,
                 2, // the NPC's objType (`NPC.cs:90504`)
             );
             if let Some((item, x, y)) = switch.dropped {
@@ -2724,10 +2715,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // kind (and not on a `kickOut` cooldown, `:5621`) takes the
                     // room instead of a second copy spawning. That is what
                     // `moveRoom` (`:4843-4855`) relies on.
-                    let existing = app
-                        .npcs
-                        .iter()
-                        .position(|n| n.kind == kind && n.home.is_none() && n.look_for_home_timeout == 0);
+                    let existing = app.npcs.iter().position(|n| {
+                        n.kind == kind && n.home.is_none() && n.look_for_home_timeout == 0
+                    });
                     if let Some(idx) = existing {
                         let mut rooms = std::mem::take(&mut app.town_rooms);
                         let npc = &mut app.npcs[idx];
@@ -2825,7 +2815,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // guard: the kinds with no row play nothing).
         if let Some(cue) = npc.kind.death_sound() {
             let (w, h) = npc.size();
-            app.audio.play_at(cue, npc.x + w * 0.5, npc.y + h * 0.5, 1.0);
+            app.audio
+                .play_at(cue, npc.x + w * 0.5, npc.y + h * 0.5, 1.0);
         }
     }
     // The Golem's death chain (`:79346`'s event-flag case 245 + the
@@ -3856,6 +3847,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
         // blocks the attempt (the journey and Moon Lord gates have no
         // sources yet).
+        // `NPC.CountNPCS(id)`'s scan source (`NPC.cs:7982-7995`): the active
+        // roster's vanilla types — the moon ladders' per-kind cap gates
+        // (`CountNPCS(id) < cap`) read it per arm.
+        let moon_counts: Vec<u16> = app
+            .npcs
+            .iter()
+            .filter(|n| n.hp > 0)
+            .map(|n| n.kind.to_u16())
+            .collect();
         let ctx = app.player.as_ref().and_then(|player| {
             if player.dead {
                 return None;
@@ -3878,12 +3878,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // player's zone flags come from the scene metrics, and the
                 // spawn gates read them (`NPC.SetSpawnFlags` →
                 // `GetSpawnRate`, `NPC.cs:311-313`).
+                moon_npc_counts: &moon_counts,
                 flags: spawner::SpawnFlags {
                     zone_dungeon: app.scene_metrics.zone_dungeon,
                     zone_jungle: app.scene_metrics.zone_jungle,
                     // `Player.ZoneEvil` = the corrupt or crimson zone.
-                    zone_evil: app.scene_metrics.zone_corrupt
-                        || app.scene_metrics.zone_crimson,
+                    zone_evil: app.scene_metrics.zone_corrupt || app.scene_metrics.zone_crimson,
                     zone_temple: app.scene_metrics.zone_lihzhard_temple,
                     zone_underground_desert: app.scene_metrics.zone_underground_desert,
                     zone_meteor: app.scene_metrics.zone_meteor,
@@ -4055,6 +4055,10 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
     let zones = &app.scene_metrics;
     // The drop rules read the killer's luck (`info.player.RollLuck`,
     // `CommonDrop.cs:36` — the port's single player).
+    // `Language.GetTextValue` rides the seam (`Conditions.cs:970` — the
+    // `NamedNPC` keys resolve through the same tables the name system uses);
+    // the loot path is never the simulation (`NPC.cs:78933`).
+    let get_text = |key: &str| crate::lang::text(key);
     let mut info = tr_core::loot::DropAttemptInfo {
         rng: &mut *rng,
         luck: app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
@@ -4062,8 +4066,17 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
         is_master: false,
         active_players: 1,
         extra_gel: false,
+        is_in_simulation: false,
+        get_text_value: Some(&get_text),
         flags: tr_core::loot::LootFlags {
             hard_mode: app.world.hard_mode,
+            // The mech-spawner gates + `BeatAnyMechBoss`/
+            // `DownedAllMechBosses` read the real downed state
+            // (`MechBossSpawnersDropRule.cs:15-23`, `Conditions.cs`).
+            downed_mech1: app.world.downed_mech_boss1,
+            downed_mech2: app.world.downed_mech_boss2,
+            downed_mech3: app.world.downed_mech_boss3,
+            downed_mech_any: app.world.downed_mech_boss_any(),
             day_time: app.world.day_time,
             zone_snow: zones.zone_snow,
             zone_corrupt: zones.zone_corrupt,
@@ -4107,12 +4120,25 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
         },
         npc: tr_core::loot::LootNpc {
             kind: if net_id < 0 { 1 } else { net_id },
-            value: 1.0,
+            // `info.npc.value` reads the real base (`MechBossSpawner's
+            // `npc.value > 0f` gate, `HalloweenWeapons`' cap) — not the
+            // placeholder 1.0.
+            value: npc.value(),
             life_max: npc.max_hp,
             friendly: false,
             spawned_from_statue: npc.spawned_from_statue,
             is_boss: npc.kind == NpcKind::KingSlime,
             has_player_target: true,
+            // The slime-body rain / statue-mimic style (`ai[1]`) and the
+            // RedHat Skeletron state (`ai[3]`) ride the live ai vector
+            // (`SlimeBodyItemDropRule.cs:19-22`, `NPC.cs:66671`). The port's
+            // `Npc` has no `localAI` vector — the 36/32 `localAI[3]` paths
+            // stay zeros until the port models it.
+            ai: npc.ai,
+            local_ai: [0.0; 4],
+            // `HasGivenName` = the non-empty name (`NPC.cs:6741`); the empty
+            // string maps to `None` (Decision D2).
+            given_name: (!npc.given_name.is_empty()).then_some(npc.given_name.as_str()),
             ..Default::default()
         },
     };
@@ -4641,6 +4667,7 @@ mod tests {
                     player_pos: (32.0 * 16.0, 500.0 * 16.0),
                     nearby_active_npcs: 0.0,
                     town_npcs: 0,
+                    moon_npc_counts: &[],
                     day_time: true,
                     player_life_max: 100,
                     underworld_for_bats: false,
@@ -5007,6 +5034,50 @@ mod tests {
         );
     }
 
+    // DW-2.5 — the runtime seams drive the new arms end to end: the slime
+    // rain's carried item (`npc.ai[1]`, `SlimeBodyItemDropRule.cs:19-22`)
+    // reaches the world's items through `spawn_loot`'s wired `DropAttemptInfo`
+    // (the ai fill, the global-first resolution, the registry filter).
+    #[test]
+    fn s1_e_14_spawn_loot_resolves_the_slime_rain_carried_item_end_to_end() {
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut a = flow_app(None, vec![], vec![]);
+        // A floor row gives the spawner a surface (flow_app's world is bare;
+        // y 5 keeps top < height - 2 on the 8-tall world).
+        for x in 0..a.world.width {
+            let i = a.world.index(x, 5);
+            a.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            a.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        let mut npc = Npc::spawn_slime_variant(
+            &a.world,
+            (a.player.as_ref().unwrap().x / 16.0) as i32,
+            SlimeVariant::Blue,
+        )
+        .expect("the surface spawns a blue slime");
+        // The carried item: ai[1] = 8 (Torch — `GetDropInfo(8)`'s 5..10
+        // family), the seam the statue-spawned slime path feeds.
+        npc.ai[1] = 8.0;
+        spawn_loot(&mut a, &npc);
+        let drops: Vec<&crate::item::ItemDrop> = a.items.iter().filter(|it| it.kind == 8).collect();
+        assert!(
+            !drops.is_empty(),
+            "the slime-body rain dropped the carried item"
+        );
+        for it in &drops {
+            assert!(
+                (5..=10).contains(&(it.count as i32)),
+                "the GetDropInfo(8) stack range: {}",
+                it.count
+            );
+        }
+    }
+
     // M5-SEED-2: `endlessHalloween` / `endlessChristmas`
     // (`Main.forceHalloweenForever` / `Main.forceXMasForever`,
     // `Main.cs:13168` / `:13135`, set by `InitializeSecretSeeds`
@@ -5034,6 +5105,10 @@ mod tests {
                     is_master: false,
                     active_players: 1,
                     extra_gel: false,
+                    // The holiday rows read no localization and the loot path
+                    // is never the simulation (`NPC.cs:78933`).
+                    is_in_simulation: false,
+                    get_text_value: None,
                     flags: tr_core::loot::LootFlags {
                         halloween,
                         xmas,
@@ -7957,7 +8032,7 @@ mod dd2_goblin_tests {
         // missing hp) and the walk through the harness.
         let (_app, mut player) = app_with_player();
         let world = surface_world();
-            let mut rng = UnifiedRandom::new(7);
+        let mut rng = UnifiedRandom::new(7);
         let mut n = Npc::new(
             NpcKind::DD2WitherBeast,
             145.0 * TILE_PX,
@@ -8495,8 +8570,8 @@ mod tower_shield_tests {
 #[cfg(test)]
 mod lunar_chain_tests {
     use super::*;
-    use crate::app::App;
     use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::App;
 
     fn surface_world() -> World {
         let mut w = World::new("t".into(), 300, 200);
@@ -8907,7 +8982,9 @@ mod worm_tests {
         let tail = npcs.len() - 1;
         assert_eq!(npcs[tail].kind, NpcKind::SolarCrawltipedeTail);
         let tail_x = npcs[tail].x;
-        assert!(Npc::strike_melee(&mut npcs, tail, 7, tail_x, 0.0, false, None));
+        assert!(Npc::strike_melee(
+            &mut npcs, tail, 7, tail_x, 0.0, false, None
+        ));
         assert_eq!(npcs[0].hp, pool - 70, "the tail's hit is multiplied by ten");
     }
 
@@ -8944,7 +9021,11 @@ mod worm_tests {
                 &mut next_id,
             );
         }
-        assert!(app.npcs.len() >= 10, "the chain assembled ({})", app.npcs.len());
+        assert!(
+            app.npcs.len() >= 10,
+            "the chain assembled ({})",
+            app.npcs.len()
+        );
         let items_before = app.items.len();
         // The carrier dies: the pool is empty, so the whole chain falls.
         app.npcs[0].hp = 0;
