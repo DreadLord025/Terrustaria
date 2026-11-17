@@ -2022,6 +2022,8 @@ pub(crate) mod front_flow_tests {
             player_step: FixedStepper::new(1.0 / 60.0, 8),
             npc_step: FixedStepper::new(1.0 / 60.0, 8),
             npcs: Vec::new(),
+            talk_npc: None,
+            npc_chat_text: String::new(),
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             next_worm_id: 1,

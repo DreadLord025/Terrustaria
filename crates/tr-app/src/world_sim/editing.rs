@@ -1536,14 +1536,12 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     // right-click press — `UpdateReleaseUseTile` (`:29224`) clears
     // `releaseUseTile` right after the attempt, so the door branch fires on
     // the press edge. A handled interaction consumes the click; anything else
-    // falls through to the place path unchanged.
-    if app.place_down
-        && !prev_place_down
-        && !app.inventory_open
-        && crate::world_sim::npcs::try_open_shop_at_cursor(app, world_pos)
-    {
-        return;
-    }
+    // falls through to the place path unchanged. The dispatch order mirrors
+    // the C#'s priority: the chest and tile routes first (they set the
+    // `player.tileInteractionHappened` the chat arm checks, `Main.cs:43077`),
+    // then the town-NPC chat (`Main.cs:42993-43083`), then the collapsed
+    // shop arms — the vanilla's chat-panel buttons, which stay reachable
+    // through the same-NPC re-click (`talkNPC == i` declines the talk).
     if app.place_down
         && !prev_place_down
         && !app.inventory_open
@@ -1552,6 +1550,19 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         return;
     }
     if app.place_down && !prev_place_down && !app.inventory_open && interact_tile(app, tx, ty) {
+        return;
+    }
+    // The town-NPC chat arm (`Main.cs:43069-43083`): the region-gated fresh
+    // press latches `SetTalkNPC(i)` and fills `Main.npcChatText = GetChat()`;
+    // the per-tick close rule (`Player.cs:27494-27503`) rides inside the call.
+    if crate::world_sim::npcs::talk_to_npc(app, prev_place_down).is_some() {
+        return;
+    }
+    if app.place_down
+        && !prev_place_down
+        && !app.inventory_open
+        && crate::world_sim::npcs::try_open_shop_at_cursor(app, world_pos)
+    {
         return;
     }
     // `ItemCheck_Shoot` (`Player.cs:47056+`): the ammo shooters fire at
