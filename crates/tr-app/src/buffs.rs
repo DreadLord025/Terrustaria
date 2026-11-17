@@ -219,7 +219,7 @@ impl BuffSlots {
         }
         if self.expert_mode && buff_time_is_extended_with_game_difficulty(buff_type) {
             // `GameDifficultyData.DebuffTimeMultiplier.Sample(Main.Difficulty)`:
-            // Classic 1 → Expert 2 → Master 2.5 (`GameDifficultyData.cs:96-100`).
+            // Classic 1 → Expert 2 → Master 2.5 (`GameDifficultyData.cs:81-92`).
             // The port has no difficulty modes yet, so expert is the only step.
             return (if self.expert_mode { 2.0f32 } else { 1.0f32 } * time as f32) as i32;
         }

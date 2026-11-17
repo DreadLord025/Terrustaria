@@ -604,7 +604,7 @@ impl WorldMap {
         self.map_time
     }
 
-    /// `WorldMap.IsRevealed` (`WorldMap.cs:406-409`): the tile has been
+    /// `WorldMap.IsRevealed` (`WorldMap.cs:44-47`): the tile has been
     /// explored. The C# reads `_tiles[x, y].Light > 0`; the port's guard is on
     /// the bounds because its array is flat.
     pub fn tile_revealed(&self, world: &World, x: i32, y: i32) -> bool {

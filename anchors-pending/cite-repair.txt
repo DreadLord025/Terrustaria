@@ -1,0 +1,4 @@
+crates/tr-app/src/buffs.rs|fn add_buff_determine_buff_time_to_add|cite-repair - GameDifficultyData.cs cite points at the static ctor declaring DebuffTimeMultiplier
+crates/tr-app/src/map.rs|fn tile_revealed|cite-repair - WorldMap.cs cite points at the IsRevealed method
+crates/tr-app/src/projectile.rs|fn whip_on_hit|cite-repair - Projectile.cs cite un-reversed to the aiStyle-165 on-hit arms
+crates/tr-core/src/tileobject.rs|enum LiquidPlacement|cite-repair - LiquidPlacement.cs cite points at the enum declaration

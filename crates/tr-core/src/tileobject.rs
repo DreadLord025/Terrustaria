@@ -141,7 +141,7 @@ pub enum TileObjectDirection {
     PlaceRight,
 }
 
-/// `Terraria.Enums.LiquidPlacement` (`LiquidPlacement.cs:5-10`).
+/// `Terraria.Enums.LiquidPlacement` (`LiquidPlacement.cs:3-9`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum LiquidPlacement {
     #[default]

@@ -12375,10 +12375,10 @@ impl ProjectilePool {
             _ => {}
         }
     }
-    /// The aiStyle-165 on-hit arms after the tag application
-    /// (`Projectile.cs:14258-13956`'s `TryDoingOnHitEffects` positions): the
-    /// `MinionAttackTargetNPC` override (`:14258-14263`) and the per-type
-    /// switch (`:13882-13956`) with the tag stack's seams filled.
+    /// The aiStyle-165 on-hit arms after the tag application, inside
+    /// `Damage_PVE_Inner` (`Projectile.cs:13904-14263`): the `MinionAttackTargetNPC`
+    /// override (`:14257-14263`) and the per-type whip switch
+    /// (`:13904-13956`) with the tag stack's seams filled.
     fn whip_on_hit(
         &mut self,
         slot: usize,
@@ -12387,14 +12387,14 @@ impl ProjectilePool {
     ) {
         let kind = self.slots[slot].kind;
         let tag_type = self.slots[slot].tag_effect_type;
-        // `:14258-14263`: every aiStyle-165 hit retargets the minions.
+        // `:14257-14263`: every aiStyle-165 hit retargets the minions.
         if let Some(p) = player.as_deref_mut() {
             p.minion_attack_target_npc = npc_idx as i32;
         }
-        // `:13882-13956`: the per-type switch.
+        // `:13904-13956`: the per-type switch.
         match kind {
             FIRE_WHIP | METEOR_WHIP | FLOWER_WHIP => {
-                // `:13907-13911`: the first hit of this slot arms the proc
+                // `:13909-13912`: the first hit of this slot arms the proc
                 // window in the player's stack.
                 if self.slots[slot].local_ai[0] == 0.0 {
                     self.slots[slot].local_ai[0] = 1.0;
@@ -12418,7 +12418,7 @@ impl ProjectilePool {
                 }
             }
             SWORD_WHIP | EEL_WHIP | MOON_LORD_WHIP => {
-                // `:13947-13951`: the proc arms on every hit.
+                // `:13945-13949`: the proc arms on every hit.
                 if let Some(p) = player.as_deref_mut() {
                     p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
                 }
