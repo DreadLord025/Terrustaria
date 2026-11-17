@@ -20,15 +20,19 @@ Handled forms (everything else is skipped with a warning):
   RULE := ItemDropRule.<ctor>(args) | new <RuleClass>(args) | rule.OnSuccess(R) |
           rule.OnFailedRoll(R)
 
-Skipped (no port system yet): the NamedNPC/RedHatSkeletron conditions and the
-FromOptionsWithoutRepeats/MechBossSpawners/SlimeBody/StatueMimic rule classes.
+Skipped (no port system yet): nothing — the NamedNPC/RedHatSkeletron conditions
+and the FromOptionsWithoutRepeats/MechBossSpawners/SlimeBody/StatueMimic rule
+classes emit since S1-E-14. `RegisterBoss_Skeletron`/`RegisterBoss_MoonLord`
+splice through the `Populate → RegisterBosses → RegisterBoss_X` two-level
+nesting (FOLLOW_METHODS); the rest of the boss subtree stays unspliced (its
+rows are a separate coverage gap, kept out of the emitted diff).
 """
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DECOMP = Path(r"C:/Users/DreadLord/Desktop/Terraria-Rust/decompiled") / "Terraria"
+DECOMP = ROOT / "decompiled" / "Terraria"
 OUT = ROOT / "crates" / "tr-app" / "src" / "loot_db_gen.rs"
 
 # The conditions the generator can express (the `Cond` enum variants); the
@@ -91,17 +95,16 @@ COND_NAMES = {
     "YoyosYelets": "YoyosYelets",
     "YoyosHelFire": "YoyosHelFire",
     "NeverTrue": "NeverTrue",
+    # `Conditions.RedHatSkeletron` (`Conditions.cs:543` — the state machine
+    # behind Skeletron's five RedHat items, `ItemDropDatabase.cs:570-574`).
+    "RedHatSkeletron": "RedHatSkeletron",
 }
 
-# The skipped conditions (no port system) - reported per use.
-SKIP_CONDITIONS = {"NamedNPC": "needs the localized given name", "RedHatSkeletron": "needs the legendary difficulty + the NPC adjustment flag"}
-
-SKIP_RULE_CLASSES = {
-    "FromOptionsWithoutRepeatsDropRule": "no without-repeats engine rule yet",
-    "MechBossSpawnersDropRule": "the mech spawner pick needs the downed-mechs pickup state",
-    "SlimeBodyItemDropRule": "the slime-body rain needs the slime-rain event state",
-    "StatueMimicItemDropRule": "the statue-mimic switch needs the mimic spawn state",
-}
+# The `Populate → RegisterBosses → RegisterBoss_X` two-level nesting: only the
+# two methods this slice registers splice through (the emitted diff stays
+# exactly the new registrations; the rest of the boss subtree keeps its
+# pre-existing unspliced state).
+FOLLOW_METHODS = {"RegisterBoss_Skeletron", "RegisterBoss_MoonLord"}
 
 
 def body_of(src, sig):
@@ -267,18 +270,26 @@ class Gen:
         return None
 
     def cond_arg(self, expr, where, locals_=None):
-        """`new Conditions.X()` -> `Cond::X` (or None to skip)."""
+        """`new Conditions.X()` -> `Cond::X` (or None to skip).
+
+        The struct conditions (`NamedNPC("K")`) return a `Box<dyn
+        DropCondition>` expression instead of a `Cond::` enum value — the
+        callers that can only take a `Cond` guard on the prefix.
+        """
         expr = expr.strip()
         if locals_ and expr in locals_:
             return locals_[expr]
+        m = re.fullmatch(r'new Conditions\.NamedNPC\("([^"]+)"\)', expr)
+        if m:
+            # `Conditions.NamedNPC` (`Conditions.cs:962-984`): the localized
+            # given-name key comparison; the port keeps the KEY in the struct
+            # (Decision D2) and resolves it through the runtime seam.
+            return f'NamedNPC::new("{m.group(1)}")'
         m = re.fullmatch(r"new Conditions\.(\w+)\(\)", expr)
         if m:
             name = m.group(1)
             if name in COND_NAMES:
                 return f"Cond::{COND_NAMES[name]}"
-            if name in SKIP_CONDITIONS:
-                self.warn(f"{where}: condition {name} skipped ({SKIP_CONDITIONS[name]})")
-                return None
             self.warn(f"{where}: unknown condition {name}")
             return None
         m = re.fullmatch(r"new Conditions\.(\w+)\((-?\d+)\)", expr)
@@ -286,9 +297,6 @@ class Gen:
             return f"Cond::FromCertainWaveAndAbove({m.group(2)})"
         m = re.match(r"new Conditions\.(\w+)\(", expr)
         if m:
-            if m.group(1) in SKIP_CONDITIONS:
-                self.warn(f"{where}: condition {m.group(1)} skipped ({SKIP_CONDITIONS[m.group(1)]})")
-                return None
             self.warn(f"{where}: unknown condition {m.group(1)}")
             return None
         self.warn(f"{where}: unhandled condition expr `{expr[:80]}`")
@@ -315,6 +323,9 @@ class Gen:
             # ByCondition(cond, item[, denom[, min[, max[, numerator]]]])
             cond = self.cond_arg(a[0], where, locals_)
             if cond is None:
+                return None
+            if not cond.startswith("Cond::"):
+                self.warn(f"{where}: ByCondition needs a Cond gate")
                 return None
             item = inta[1]
             num = inta[5] if len(inta) > 5 and inta[5] is not None else 1
@@ -354,6 +365,9 @@ class Gen:
             cond = self.cond_arg(a[0], where, locals_)
             if cond is None:
                 return None
+            if not cond.startswith("Cond::"):
+                self.warn(f"{where}: BossBagByCondition needs a Cond gate")
+                return None
             return self.check_item(inta[1], where) or f"boss_bag_by_condition({cond}, {inta[1]})"
         if name == "MasterModeCommonDrop":
             return self.check_item(inta[0], where) or f"master_mode_common_drop({inta[0]})"
@@ -386,6 +400,9 @@ class Gen:
             cond = self.cond_arg(args, where, locals_)
             if cond is None:
                 return None
+            if not cond.startswith("Cond::"):
+                self.warn(f"{where}: LeadingConditionRule needs a Cond gate")
+                return None
             return f"leading_condition({cond})"
         if cls == "ItemDropWithConditionRule":
             a = split_args(args)
@@ -394,9 +411,17 @@ class Gen:
                 return None
             item = int(a[0])
             num = int(a[5]) if len(a) > 5 else 1
+            if cond.startswith("Cond::"):
+                return (
+                    self.check_item(item, where)
+                    or f"by_condition({cond}, {item}, {a[1]}, {a[2]}, {a[3]}, {num})"
+                )
+            # A struct condition (`NamedNPC`) rides `ItemDropWithCondition`'s
+            # `Box<dyn DropCondition>` ctor; `chanceNumerator` stays the
+            # default 1 (all the C# sites pass 1/1/1 + the condition).
             return (
                 self.check_item(item, where)
-                or f"by_condition({cond}, {item}, {a[1]}, {a[2]}, {a[3]}, {num})"
+                or f"ItemDropWithCondition::new({cond}, {item}, {a[1]}, {a[2]}, {a[3]})"
             )
         if cls == "DropBasedOnExpertMode":
             a = split_args(args)
@@ -453,9 +478,22 @@ class Gen:
                 self.warn(f"{where}: OneFromRulesRule with a skipped sub-rule")
                 return None
             return f"OneFromRulesRule::new(vec![{', '.join(rust)}])"
-        if cls in SKIP_RULE_CLASSES:
-            self.warn(f"{where}: rule class {cls} skipped ({SKIP_RULE_CLASSES[cls]})")
-            return None
+        if cls == "FromOptionsWithoutRepeatsDropRule":
+            # `FromOptionsWithoutRepeatsDropRule.cs` — the temp-list
+            # `Next(count)`/`RemoveAt` loop (S1-E-14); `dropCount` first, the
+            # options variadic.
+            a = split_args(args)
+            options = [int(x) for x in a[1:]]
+            bad = [i for i in options if not self.check_item(i, where, warn=False)]
+            if bad:
+                self.warn(f"{where}: FromOptionsWithoutRepeats unknown items {bad}")
+            return f"FromOptionsWithoutRepeatsDropRule::new({a[0]}, &[{', '.join(map(str, options))}])"
+        if cls in ("MechBossSpawnersDropRule", "SlimeBodyItemDropRule", "StatueMimicItemDropRule"):
+            # The three parameterless S1-E-14 rule classes (`MechBoss
+            # SpawnersDropRule.cs`, `SlimeBodyItemDropRule.cs`,
+            # `StatueMimicItemDropRule.cs`) — the engine carries their state
+            # reads (`DropAttemptInfo`).
+            return f"{cls}::new()"
         self.warn(f"{where}: unknown rule class {cls}")
         return None
 
@@ -494,6 +532,9 @@ class Gen:
                 ids += [int(v) for v in re.findall(r"-?\d+", m.group(1))]
             elif x in locals_ and isinstance(locals_[x], list):
                 ids += locals_[x]
+            elif x in locals_ and isinstance(locals_[x], int):
+                # The `short type = N;` local id.
+                ids += [locals_[x]]
             elif rule_expr is None:
                 rule_expr = x
             else:
@@ -528,7 +569,11 @@ class Gen:
             if rule is None:
                 return
             rule = self.apply_chains(rule, chains, where, locals_)
-            nid = int(a[0])
+            # The `short type = N;` local (the boss methods' npc id).
+            nid_arg = a[0]
+            if locals_ and nid_arg in locals_ and isinstance(locals_[nid_arg], int):
+                nid_arg = locals_[nid_arg]
+            nid = int(nid_arg)
             ids = [nid]
             if nid > 0:
                 ids += self.families.get(nid, [])
@@ -614,7 +659,7 @@ ARRAY_RE = re.compile(r"int\[\] (\w+) = new int\[\d*\]\s*\{([^}]*)\};")
 LOCAL_COND_RE = re.compile(r"[\w.]+ (\w+) = new Conditions\.(\w+)\(\);")
 
 
-def process_stream(g, statements, gen, locals_):
+def process_stream(g, statements, gen, locals_, src=None):
     """Parse one method's statement stream with its local scope."""
     for st in statements:
         m = ARRAY_RE.search(st)
@@ -624,6 +669,23 @@ def process_stream(g, statements, gen, locals_):
         m = LOCAL_COND_RE.fullmatch(st)
         if m:
             locals_[m.group(1)] = f"Cond::{m.group(2)}"
+            continue
+        # `short type = 35;` — the per-method npc-id local (the boss methods
+        # register through it; `RegisterToNPC(type, ...)` resolves below).
+        m = re.fullmatch(r"(?:short|ushort|int) (\w+) = (-?\d+);", st)
+        if m:
+            locals_[m.group(1)] = int(m.group(2))
+            continue
+        m = re.fullmatch(r"this\.(\w+)\(\);", st)
+        if m and src is not None and m.group(1) in FOLLOW_METHODS:
+            # The two-level nesting (`Populate → RegisterBosses →
+            # RegisterBoss_X`): the followed methods splice with a fresh
+            # local scope, keeping the C# statement order.
+            meth = body_of(src, r"private void %s\(\)" % m.group(1))
+            if meth is None:
+                print(f"generator: method {m.group(1)} not found")
+                continue
+            process_stream(g, split_statements(meth), gen, {}, src)
             continue
         g.statement(st, gen, locals_)
 
@@ -650,8 +712,9 @@ def main():
         "    not_scaling_with_luck, one_from_options, one_from_options_not_scaling_with_luck,",
         "    scaling_with_only_bad_luck, status_immunity_item, with_rerolls, Cond,",
         "    chain_on_failed_roll, chain_on_success, CommonDrop, DropBasedOnExpertMode,",
-        "    DropBasedOnMasterMode,",
-        "    ItemDropDatabase, OneFromRulesRule,",
+        "    DropBasedOnMasterMode, FromOptionsWithoutRepeatsDropRule,",
+        "    ItemDropDatabase, ItemDropWithCondition, MechBossSpawnersDropRule, NamedNPC,",
+        "    OneFromRulesRule, SlimeBodyItemDropRule, StatueMimicItemDropRule,",
         "};",
         "",
         "pub fn populate(db: &mut ItemDropDatabase) {",
@@ -666,9 +729,9 @@ def main():
             if meth is None:
                 print(f"generator: method {m.group(1)} not found")
                 continue
-            process_stream(g, split_statements(meth), gen, {})
+            process_stream(g, split_statements(meth), gen, {}, src)
             continue
-        process_stream(g, [st], gen, {})
+        process_stream(g, [st], gen, {}, src)
     gen.append("}")
     text = "\n".join(gen) + "\n"
 
