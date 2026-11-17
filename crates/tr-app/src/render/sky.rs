@@ -3,7 +3,8 @@
 //! underground backdrop it tails into lives in [`super::bg`].
 use super::BgTex;
 use super::bg::{
-    bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees, push_screen_rot,
+    FrontLayer, bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees, front_layers,
+    layer_y_offset, mushroom_tint, push_screen_rot,
 };
 use crate::app::{next_rand, rand01};
 use crate::assets;
@@ -365,6 +366,19 @@ pub(crate) struct SkyAssets {
     /// Storm cloud banks (`Background_112/113`), faded in by `cloudBGAlpha`.
     pub(crate) storm_far: Option<BgTex>,
     pub(crate) storm_near: Option<BgTex>,
+    // Per-biome foreground layers, indexed by style variant then layer (0-2).
+    // These are loaded on demand from the atlas by texture ID; each biome's
+    // `*_bg` field on `World` holds the 3 active C# texture IDs.
+    /// `DrawSurfaceBG_Corrupt` textures (`Background_12/13/14` style 0 default).
+    pub(crate) corrupt_layers: [Option<BgTex>; 3],
+    /// `DrawSurfaceBG_Jungle` (style 0: `Background_15/16/17`).
+    pub(crate) jungle_layers: [Option<BgTex>; 3],
+    /// `DrawSurfaceBG_Hallow` (style 0: `Background_29/30/31`).
+    pub(crate) hallow_layers: [Option<BgTex>; 3],
+    /// `DrawSurfaceBG_Crimson` (style 0: `Background_43/44/45`).
+    pub(crate) crimson_layers: [Option<BgTex>; 3],
+    /// `DrawSurfaceBG_Mushroom` (style 0: `Background_46/47/48`).
+    pub(crate) mushroom_layers: [Option<BgTex>; 3],
     /// `Background_1`: the one-row surface transition into the underground backdrop.
     pub(crate) underground_transition: Option<BgTex>,
     /// `Background_2`: the tiled dirt backdrop (`_drawBackground_backTexture[1]`).
@@ -435,7 +449,18 @@ pub(crate) fn sky_tex(
     })
 }
 
-pub(crate) fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
+pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
+    // The five surface variants draw whatever `WorldGen.setBG` rolled for this
+    // world (`Main.corruptBG` etc.); `-1` means the C# layer is skipped.
+    let layers = |ids: [i32; 3]| {
+        ids.map(|i| {
+            if i >= 0 {
+                sky_tex(atlas, &format!("Background_{i}"), None)
+            } else {
+                None
+            }
+        })
+    };
     SkyAssets {
         far: sky_tex(atlas, "Background_7", None),
         near: sky_tex(atlas, "Background_8", None),
@@ -450,6 +475,11 @@ pub(crate) fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
         desert_near_mnt: sky_tex(atlas, "Background_22", None),
         storm_far: sky_tex(atlas, "Background_112", None),
         storm_near: sky_tex(atlas, "Background_113", None),
+        corrupt_layers: layers(world.corrupt_bg()),
+        jungle_layers: layers(world.jungle_bg()),
+        hallow_layers: layers(world.hallow_bg()),
+        crimson_layers: layers(world.crimson_bg()),
+        mushroom_layers: layers(world.mushroom_bg()),
         underground_transition: sky_tex(atlas, "Background_1", None),
         underground: sky_tex(atlas, "Background_2", None),
         rock: sky_tex(atlas, "Background_3", None),
@@ -607,14 +637,19 @@ pub(crate) fn draw_sky(
     // the underworld black box consumes the previous frame's hell floor line.
     hell_black_box_bottom: &mut f32,
     // The ambient-sky creatures (`AmbientSky`): the live entities and the
-    // sheets they sample. Drawn between the passes at the C# `DrawToDepth`
-    // boundaries — see the `DRAW_TO_DEPTH` table below.
+    // lookups/context their sheets need. Drawn between the passes at the C#
+    // `DrawToDepth` boundaries — see the `DRAW_TO_DEPTH` table below.
     ambience: &[crate::ambience::SkyEntity],
     lookups: &crate::assets::Lookups,
     // `Main.ColorOfTheSkies` (the rain-dimmed sky tint, `Main.cs:63209`) and
     // `Main.atmo` — the entity colour chain (`AmbientSky.cs:63`).
     sky_color: [f32; 3],
     atmo: f32,
+    // `Main.GameUpdateCount` (`GetBackgroundCounter`, `Main.cs:61264`) — the
+    // animated background sheets' frame counter.
+    counter: u32,
+    // `Main.mouseTextColor` (`Main.cs:1683`): the Mushroom glow's pulse.
+    mouse_text_color: u8,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -1179,66 +1214,309 @@ pub(crate) fn draw_sky(
         last: &mut amb_last,
     });
     if show_bg {
-        // `DrawSurfaceBG_Forest` (tree set 1 = `Background_50..52`): bgScale 1.25/1.31/1.34 (C# 61275/61304)
-        // x2 (C# 59329); bgParallax 0.40/0.43/0.49 (C# 61276); tops 1350/1600/1850 = C# 61277/61399/61473 min pushBG 150.
-        // layer is mirrored horizontally (`tex == 51`).
+        // `pushBGTopHack` for the front loop is `30 - 180` (`Main.cs:59302`,
+        // `:59346`, `:59525`): every `top` below is the C# constant minus 150.
+        const HACK: f32 = -150.0;
+        // Dispatch order is the C# `l` loop's (`Main.cs:59529-59597`).
+
+        // `DrawSurfaceBG_Forest` (`Main.cs:61273-61370`, tree set 1 =
+        // `Background_50..52`): bgScale 1.25/1.31/1.34 (C# 61275) x2 (C# 59329);
+        // bgParallax 0.40/0.43/0.49; tops 1500/1750/2000 (`Main.cs:61277`).
+        // Layer 1 is mirrored horizontally.
+        let forest = front_layers(
+            [50, 51, 52],
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            sky.forest,
+            HACK,
+        );
+        let forest = [
+            forest[0],
+            FrontLayer {
+                flip: true,
+                ..forest[1]
+            },
+            forest[2],
+        ];
         draw_front_trees(
             r,
             camera,
             zoom,
             screen,
-            &sky.forest,
+            &forest,
             front_forest,
-            [2.5, 2.62, 2.68],
-            [0.40, 0.43, 0.49],
-            [1800.0, 1950.0, 2100.0],
-            [1350.0, 1600.0, 1850.0],
-            Some(1),
             magic,
             sc_adj,
             tint,
+            counter,
             amb_pass.as_mut(),
             false,
         );
-        // `DrawSurfaceBG_Desert`: two dune layers (21/20), parallax 0.37/0.49,
-        // scale 2.5/2.68, tops +1600/+2000, no tree line.
-        let desert_trees = [sky.desert_far, sky.desert_near, None];
+
+        // `DrawSurfaceBG_Corrupt` (`Main.cs:61109-61218`). Row 1 is mirrored; the
+        // `ids[0] == 56` nudge (`:61128`, `:61199`) applies to every row and reads
+        // row 0's id, not the row's own.
+        let corrupt_ids = world.corrupt_bg();
+        let corrupt = front_layers(
+            corrupt_ids,
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            sky.corrupt_layers,
+            HACK,
+        );
+        let nudge = if corrupt_ids[0] == 56 { -100.0 } else { 0.0 };
+        let corrupt: [FrontLayer; 3] = std::array::from_fn(|i| FrontLayer {
+            top: corrupt[i].top + nudge,
+            flip: i == 1,
+            ..corrupt[i]
+        });
         draw_front_trees(
             r,
             camera,
             zoom,
             screen,
-            &desert_trees,
+            &corrupt,
+            bg_alpha_front[1],
+            magic,
+            sc_adj,
+            tint,
+            counter,
+            amb_pass.as_mut(),
+            false,
+        );
+
+        // `DrawSurfaceBG_Desert` (`Main.cs:61019-61096`): two dune layers (21/20),
+        // parallax 0.37/0.49, scale 1.25/1.34, tops 1750/2150.
+        let desert = front_layers(
+            [21, 20, -1],
+            [
+                (1.25, 0.37, 1800.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+            ],
+            [sky.desert_far, sky.desert_near, None],
+            HACK,
+        );
+        draw_front_trees(
+            r,
+            camera,
+            zoom,
+            screen,
+            &desert,
             front_desert,
-            [2.5, 2.68, 2.68],
-            [0.37, 0.49, 0.49],
-            [1800.0, 2100.0, 2100.0],
-            [1600.0, 2000.0, 2000.0],
-            None,
             magic,
             sc_adj,
             tint,
+            counter,
             amb_pass.as_mut(),
             false,
         );
-        // `DrawSurfaceBG_Snow` (tree set `Main.snowBG` style 1 = `Background_37..39`):
-        // same parallax/scale/top as the forest, but none of the layers is mirrored
-        // and there is no -50 texture tweak.
+
+        // `DrawSurfaceBG_Jungle` (`Main.cs:60928-61017`): `GetLayerYOffset`
+        // (`:59740`) applies to every row, plus the per-row `59/60/61` nudges.
+        // Row 1 is mirrored.
+        let jungle_ids = world.jungle_bg();
+        let jungle = front_layers(
+            jungle_ids,
+            [
+                (1.25, 0.40, 1800.0, 1660.0),
+                (1.31, 0.43, 1950.0, 1840.0),
+                (1.34, 0.49, 2100.0, 2060.0),
+            ],
+            sky.jungle_layers,
+            HACK,
+        );
+        let jungle: [FrontLayer; 3] = std::array::from_fn(|i| {
+            let nudge = match (i, jungle_ids[i]) {
+                (0, 59) => -200.0,
+                (1, 60) => -175.0,
+                (2, 61) => -150.0,
+                _ => 0.0,
+            };
+            FrontLayer {
+                top: jungle[i].top + nudge + layer_y_offset(jungle_ids[i]),
+                flip: i == 1,
+                ..jungle[i]
+            }
+        });
         draw_front_trees(
             r,
             camera,
             zoom,
             screen,
-            &sky.snow_trees,
-            front_snow,
-            [2.5, 2.62, 2.68],
-            [0.40, 0.43, 0.49],
-            [1800.0, 1950.0, 2100.0],
-            [1350.0, 1600.0, 1850.0],
-            None,
+            &jungle,
+            bg_alpha_front[3],
             magic,
             sc_adj,
             tint,
+            counter,
+            amb_pass.as_mut(),
+            false,
+        );
+
+        // `DrawSurfaceBG_Hallow` (`Main.cs:60777-60866`): the rows are gated on
+        // `id > 0` (`:60779`, `:60807`, `:60836`) — no style table yields 0, so
+        // the `Option` guard is equivalent; the first row's `SkyManager`
+        // boundary is `1.2f / parallax` (`:60788`).
+        let hallow = front_layers(
+            world.hallow_bg(),
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            sky.hallow_layers,
+            HACK,
+        );
+        let hallow = [
+            FrontLayer {
+                // `1.2f / this.bgParallax` runs *after* `SetBackgroundOffsets`, so
+                // the divisor is the overridden parallax.
+                depth: 1.2 / hallow[0].parallax,
+                ..hallow[0]
+            },
+            hallow[1],
+            hallow[2],
+        ];
+        draw_front_trees(
+            r,
+            camera,
+            zoom,
+            screen,
+            &hallow,
+            bg_alpha_front[6],
+            magic,
+            sc_adj,
+            tint,
+            counter,
+            amb_pass.as_mut(),
+            false,
+        );
+
+        // `DrawSurfaceBG_Snow` (`Main.cs:60302-60383`, `Main.snowBG` style 1 =
+        // `Background_37..39`): same parallax/scale/top as the forest, but no
+        // layer is mirrored.
+        let snow = front_layers(
+            [37, 38, 39],
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            sky.snow_trees,
+            HACK,
+        );
+        draw_front_trees(
+            r,
+            camera,
+            zoom,
+            screen,
+            &snow,
+            front_snow,
+            magic,
+            sc_adj,
+            tint,
+            counter,
+            amb_pass.as_mut(),
+            true,
+        );
+
+        // `DrawSurfaceBG_Crimson` (`Main.cs:60189-60300`): rows gated on
+        // `id > -1`. Row 0 nudges for 105/174; row 2 shifts `175` left by 1000,
+        // up by 400 and adds one tile (`:60287-60292`).
+        let crimson_ids = world.crimson_bg();
+        let crimson = front_layers(
+            crimson_ids,
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            sky.crimson_layers,
+            HACK,
+        );
+        let crimson: [FrontLayer; 3] = std::array::from_fn(|i| {
+            let (mut top, mut x_shift, mut extra) = (crimson[i].top, 0.0, 0);
+            match (i, crimson_ids[i]) {
+                (0, 105) => top += 50.0,
+                (0, 174) => top -= 350.0,
+                (2, 175) => {
+                    x_shift = -1000.0;
+                    top -= 400.0;
+                    extra = 1;
+                }
+                _ => {}
+            }
+            FrontLayer {
+                top,
+                x_shift,
+                extra,
+                ..crimson[i]
+            }
+        });
+        draw_front_trees(
+            r,
+            camera,
+            zoom,
+            screen,
+            &crimson,
+            bg_alpha_front[8],
+            magic,
+            sc_adj,
+            tint,
+            counter,
+            amb_pass.as_mut(),
+            false,
+        );
+
+        // `DrawSurfaceBG_Mushroom` (`Main.cs:59986-60187`): the only chain that
+        // recolours each row. `num5` is a fresh `Main.rand.Next(28, 42)` per row
+        // (`:60002`, `:60066`, `:60128`); the port derives it from the frame
+        // counter instead of consuming `Main.rand`, so the draw path stays out of
+        // the sim's RNG streams (documented in `docs/ANALYSIS.md`).
+        let mushroom_alpha = bg_alpha_front[9];
+        let mut mushroom = front_layers(
+            world.mushroom_bg(),
+            [
+                (1.25, 0.40, 1800.0, 1400.0),
+                (1.32, 0.43, 1950.0, 1675.0),
+                (1.36, 0.49, 2100.0, 1950.0),
+            ],
+            sky.mushroom_layers,
+            HACK,
+        );
+        // (row tint `Vector3 * 3f`, row `num`, the `num5` divisor)
+        let glow = [
+            ([0.1, 0.15, 0.3], 0.5, 5000.0),
+            ([0.1, 0.175, 0.3], 0.625, 5000.0),
+            ([0.125, 0.2, 0.3], 0.75, 3000.0),
+        ];
+        for (i, (rgb, mul, divisor)) in glow.into_iter().enumerate() {
+            // One `Main.rand.Next(28, 42)` per row; the port derives it from the
+            // frame counter and the row index so the draw stays deterministic.
+            let mut seed = (counter as u64).wrapping_mul(3).wrapping_add(i as u64);
+            let rand = 28 + (next_rand(&mut seed) % 14) as i32;
+            let num5 = rand as f32 * 0.001 + (270.0 - mouse_text_color as f32) / divisor;
+            let rgb = [rgb[0] * 3.0, rgb[1] * 3.0, rgb[2] * 3.0];
+            mushroom[i].tint = Some(mushroom_tint(tint, mushroom_alpha, mul, rgb, num5));
+        }
+        draw_front_trees(
+            r,
+            camera,
+            zoom,
+            screen,
+            &mushroom,
+            mushroom_alpha,
+            magic,
+            sc_adj,
+            tint,
+            counter,
             amb_pass.as_mut(),
             true,
         );

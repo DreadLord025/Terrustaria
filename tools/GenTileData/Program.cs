@@ -596,6 +596,32 @@ foreach (var (name, table) in valueSets.OrderBy(kv => kv.Key, StringComparer.Ord
     sbSets.AppendLine("];");
 }
 
+// `Main.tileOreFinderPriority` (`Main.cs:6404-6440`): the metal-detector
+// priority per tile type, written as a sparse block of assignments over the
+// zero default (S1-L-1's `SceneMetrics.UpdateOreFinder`).
+{
+    var oreFinder = new short[TileCount];
+    foreach (Match m in Regex.Matches(mainSrc,
+                 @"^\s*Main\.tileOreFinderPriority\[(\d+)\]\s*=\s*(\d+)\s*;",
+                 RegexOptions.Multiline))
+    {
+        var idx = int.Parse(m.Groups[1].Value);
+        if (idx >= 0 && idx < TileCount) oreFinder[idx] = short.Parse(m.Groups[2].Value);
+    }
+    sbSets.AppendLine();
+    sbSets.AppendLine("/// `Main.tileOreFinderPriority`: the per-tile metal-detector priority");
+    sbSets.AppendLine("/// (`Main.cs:6404-6440`), 0 = not an ore.");
+    sbSets.AppendLine("pub static ORE_FINDER_PRIORITY: [i16; super::TILE_COUNT] = [");
+    for (int i = 0; i < TileCount; i += 16)
+    {
+        sbSets.Append("    ");
+        for (int k = i; k < Math.Min(i + 16, TileCount); k++)
+            sbSets.Append($"{oreFinder[k]}, ");
+        sbSets.AppendLine();
+    }
+    sbSets.AppendLine("];");
+}
+
 sbLight.AppendLine();
 sbLight.AppendLine("/// `Main.wallLight`: walls that transmit sky light.");
 sbLight.AppendLine("pub static WALL_LIGHT: [bool; WALL_COUNT] = [");

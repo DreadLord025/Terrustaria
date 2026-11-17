@@ -252,42 +252,99 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     app.nurse_heal(nurse_idx)
 }
 
-/// `Main.CanStartInvasion` (`Main.cs:64414-64432`): no active invasion
-/// (the port's `invasion_goblins` covers `invasionType`), and at least one
+/// `Main.CanStartInvasion` (`Main.cs:64414-64432`): `invasionType != 0`
+/// blocks (every invasion type, not just the goblins), plus at least one
 /// qualifying player — the 200-life gate (`statLifeMax >= 200`); the
 /// multiplayer count folds to the session player. The item path passes
 /// `ignoreDelay: true`, so the `invasionDelay` scouting arm folds out.
 pub(crate) fn can_start_invasion(world: &tr_core::World, player_life_max: i32) -> bool {
-    !world.invasion_goblins && player_life_max >= 200
+    world.invasion_type == 0 && player_life_max >= 200
 }
 
-/// `Main.StartInvasion(1)` (`Main.cs:64435-64460`): the goblin type, the
-/// size `80 + 40 x the qualifying players` (the CanStart gate guarantees
-/// >= 1); the active-invasion early return holds (`invasionType != 0`).
+/// `Main.StartInvasion(type)` (`Main.cs:64435-64486`): the stale-type
+/// clear, the active-invasion early return, the size
+/// `80 + 40 x the qualifying players` (+40+20x for the pirates' type 3,
+/// `160 + 40x` for the martians' type 4), the full march/warn state and
+/// the `Next(2)` side roll. `rng` is the caller's `Main.rand` — the
+/// `UpdateTime` stream from the morning roll, `UpdatePlayers` from the
+/// items, the bare stream from the debug panel.
 pub(crate) fn start_invasion(
     world: &mut tr_core::World,
     qualifying_players: i32,
     invasion_type: i32,
-) {
-    if world.invasion_goblins {
-        return;
+    rng: &mut UnifiedRandom,
+) -> bool {
+    // `:64437-64444`: a finished invasion clears its stale type, then any
+    // live one refuses the new start.
+    if world.invasion_type != 0 && world.invasion_size == 0 {
+        world.invasion_type = 0;
     }
-    world.invasion_goblins = true;
-    // `Main.invasionType = type` + the march/warn state (`:64455-64510`) —
-    // the morning-roll resolve and the item paths share the state. The
-    // pirate bonus (`type == 3`'s `+40+20x`) rides the type-3 slice.
+    if world.invasion_type != 0 {
+        return false;
+    }
+    // `:64445-64453`: the start needs at least one live 200+-life player —
+    // with none the C# does nothing (the type is never assigned).
+    if qualifying_players <= 0 {
+        return false;
+    }
+    let n = qualifying_players;
+    // The panel/kill paths read the goblin flag (C# only has the type).
     world.invasion_type = invasion_type;
-    world.invasion_warn = 0;
-    // `:64457-64464`: the base 80+40x; the pirates (type 3) add 40+20x,
+    world.invasion_goblins = invasion_type == 1;
+    // `:64456-64464`: the base 80+40x; the pirates (type 3) add 40+20x,
     // the martians (type 4) use 160+40x.
-    world.invasion_size = 80 + 40 * qualifying_players.max(1);
+    world.invasion_size = 80 + 40 * n;
     if invasion_type == 3 {
-        world.invasion_size += 40 + 20 * qualifying_players.max(1);
+        world.invasion_size += 40 + 20 * n;
     }
     if invasion_type == 4 {
-        world.invasion_size = 160 + 40 * qualifying_players.max(1);
+        world.invasion_size = 160 + 40 * n;
     }
     world.invasion_size_start = world.invasion_size;
+    world.invasion_warn = 0;
+    // `:64471-64483`: the martians telegraph from one tile west of spawn with
+    // `invasionWarn = 2`; every other type marches in from a random side.
+    if invasion_type == 4 {
+        world.invasion_x = world.spawn_x as f64 - 1.0;
+        world.invasion_warn = 2;
+    } else {
+        // `Main.rand.Next(2) == 0 → invasionX = 0` else `maxTilesX`.
+        world.invasion_x = if rng.next_max(2) == 0 {
+            0.0
+        } else {
+            world.width as f64
+        };
+    }
+    true
+}
+
+/// `Main.StartInvasion`'s whole body (`Main.cs:64435-64486`) for an `App`:
+/// the `World` half plus the progress-dial fields that live on the host
+/// (`invasionProgress`/`Icon`/`Wave`/`Max`, `:64466-64469`). Returns whether
+/// the invasion actually started (the C# gives no answer; the callers need
+/// one to decide on the sound/chat side effects).
+///
+/// `key: None` is the bare `Main.rand` — the debug console is the chat
+/// command dispatcher's stand-in (S1-E-29), which the C# runs outside every
+/// `Main.SwapRandom` block.
+pub(crate) fn start_invasion_in(
+    app: &mut App,
+    qualifying_players: i32,
+    invasion_type: i32,
+    key: Option<crate::app::RngKey>,
+) -> bool {
+    let rng = match key {
+        Some(k) => app.rngs.stream(k),
+        None => app.rngs.global(),
+    };
+    if !start_invasion(&mut app.world, qualifying_players, invasion_type, rng) {
+        return false;
+    }
+    app.invasion_progress = 0;
+    app.invasion_progress_icon = invasion_type + 3;
+    app.invasion_progress_wave = 0;
+    app.invasion_progress_max = app.world.invasion_size_start;
+    true
 }
 
 /// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
@@ -1459,15 +1516,26 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         return;
     }
     if app.world.invasion_size <= 0 {
-        // `SetEventFlagCleared(ref NPC.downedGoblins, 0)` +
-        // `AchievementsHelper.NotifyProgressionEvent(10)` — the port's
-        // achievement engine has no progression-kind rows yet (the
-        // flag-set state carries the defeat).
+        // `SetEventFlagCleared(ref NPC.downedX, n)` + the matching
+        // `AchievementsHelper.NotifyProgressionEvent` (`Main.cs:64335-64354`):
+        // goblins 10, frost 12, pirates 11, martians 13.
         match app.world.invasion_type {
-            2 => app.world.downed_frost = true,
-            3 => app.world.downed_pirates = true,
-            4 => app.world.downed_martians = true,
-            _ => app.world.downed_goblins = true,
+            2 => {
+                app.world.downed_frost = true;
+                let _ = app.notify_progression_net(12);
+            }
+            3 => {
+                app.world.downed_pirates = true;
+                let _ = app.notify_progression_net(11);
+            }
+            4 => {
+                app.world.downed_martians = true;
+                let _ = app.notify_progression_net(13);
+            }
+            _ => {
+                app.world.downed_goblins = true;
+                let _ = app.notify_progression_net(10);
+            }
         }
         invasion_warning(app);
         app.world.invasion_type = 0;
@@ -1592,57 +1660,79 @@ fn dd2_tier(app: &App) -> i32 {
 /// `Difficulty_N_GetRequiredWaveKills`) opens the next wave with the
 /// 1800-tick break, and the wave-6 sentinel is the win (`WonThisRun`).
 fn dd2_report_kill(app: &mut App, kind: NpcKind) {
-    // The event's tier (`FindProperDifficulty`, `:358-370`): the wave
-    // rosters, the budgets and the kill worth all ride it.
-    let tier = dd2_tier(app);
-    let wave = app.world.dd2_wave;
-    let roster: &[u16] = match tier {
-        3 => tr_core::dd2::enemies_for_wave_t3(wave).0,
-        2 => tr_core::dd2::enemies_for_wave_t2(wave).0,
-        _ => tr_core::dd2::enemies_for_wave(wave).0,
-    };
-    if !roster.iter().any(|k| nid_of(*k) == Some(kind)) {
-        // The kill outside the wave's roster scores nothing.
-        return;
-    }
-    // The hold's refusal runs FIRST (the vanilla's early return) — the
-    // kill under the break scores nothing at all.
+    // `:364`: the hold's refusal runs FIRST — the kill under the break
+    // scores nothing at all.
     if app.world.dd2_spawn_hold != 0 {
         return;
     }
-    // `GetMonsterPointsWorth` (`:546-554`): the tier's worth row.
-    let worth = match tier {
-        3 => tr_core::dd2::KILL_WORTH_T3,
-        2 => tr_core::dd2::KILL_WORTH_T2,
-        _ => tr_core::dd2::KILL_WORTH_T1,
-    };
-    // `GetInvasionStatus` (`:517-536`): the bucket is the wave's kills
-    // BEFORE this kill lands; the tier's table may replace it (the
-    // wave-7 Betsy bucket, `FindFirstNPC(551)`, `:1487-1494`).
-    let mut kills_i = app.world.dd2_wave_kills as i32;
+    // The event's tier (`FindProperDifficulty`, `:358-370`): the wave
+    // budgets and the kill worth ride it.
+    let tier = dd2_tier(app);
+    let wave = app.world.dd2_wave;
+    // `GetInvasionStatus` (`:517-536`) runs next (`:368`): the bucket is
+    // the wave's kills BEFORE this kill lands; the tier's table may replace
+    // it (the wave-7 Betsy bucket, `FindFirstNPC(551)`, `:1487-1494`) and
+    // clamp it (the wave-5/-7 caps read the downed latches, `:993`,
+    // `:1181`).
+    let wave_kills_before = app.world.dd2_wave_kills;
+    let mut kills_i = wave_kills_before as i32;
     let required = match tier {
-        2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills_i),
+        2 => {
+            tr_core::dd2::required_wave_kills_t2(wave, &mut kills_i, app.world.dd2_latches.ogre_t2)
+        }
         3 => tr_core::dd2::required_wave_kills_t3(wave, &mut kills_i, dd2_betsy_hp_ratio(app)),
-        _ => tr_core::dd2::required_wave_kills(wave, &mut kills_i),
+        _ => tr_core::dd2::required_wave_kills(
+            wave,
+            &mut kills_i,
+            app.world.dd2_latches.dark_mage_t1,
+        ),
     };
-    app.world.dd2_wave_kills += worth;
-    // `DD2Event.CheckProgress` (`DD2Event.cs:376-392`): the wave report rides
-    // `Main.ReportInvasionProgress(currentKillCount, requiredKillCount, 3,
-    // currentWave)` — icon 3 is the `Extra[79]` Old One's Army sheet and the
-    // `> 0` wave selects `DrawInvasionProgress`'s `Game.WaveMessage` arm.
-    // `currentKillCount += (int)num` (`:373`) adds the kill's worth.
-    app.invasion_progress = kills_i + worth as i32;
-    app.invasion_progress_max = required;
-    app.invasion_progress_icon = 3;
-    app.invasion_progress_wave = wave;
-    app.invasion_progress_display_left = 160;
-        let passed =
-            tr_core::dd2::wave_budget_passed(app.world.dd2_wave, &mut app.world.dd2_wave_kills);
-    if passed {
+    // `GetMonsterPointsWorth` (`:546-554`): the tier's worth row — 0 for
+    // any id outside the two Old One's Army ranges (`:1117`); the wave-5/-7
+    // boss rows latch (`:1112`, `:1205`).
+    let Some(slain_id) = dd2_pool_id(kind) else {
+        return;
+    };
+    let worth = tr_core::dd2::monster_points_worth(
+        tier,
+        wave,
+        wave_kills_before,
+        slain_id,
+        &mut app.world.dd2_latches,
+    );
+    app.world.dd2_wave_kills += worth as f32;
+    // `:376-380`: the count at or past the tier's budget resets the counter,
+    // opens the next wave and sets `flag`; `:404`'s 1800-tick break follows.
+    // The second `GetInvasionStatus` (`:381`) — the wave-6/8 win sentinel
+    // and its victory scene — is a separate task.
+    let mut completed = false;
+    if app.world.dd2_wave_kills >= required as f32 && required != 0 {
         app.world.dd2_wave_kills = 0.0;
         app.world.dd2_wave += 1;
         app.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_WAVE_BREAK;
+        completed = true;
     }
+    // `:451-454`: a kill that moved no count reports nothing.
+    if (kills_i + worth) as f32 == wave_kills_before {
+        return;
+    }
+    // `:455-478`: the wave-completing kill reports the fresh 1/1 pair under
+    // the wave that just finished; the ordinary kill reports the tier's
+    // pair under the current wave.
+    if completed {
+        app.invasion_progress = 1;
+        app.invasion_progress_max = 1;
+    } else {
+        // `currentKillCount += (int)num` (`:373`) adds the kill's worth.
+        app.invasion_progress = kills_i + worth;
+        app.invasion_progress_max = required;
+    }
+    // The report rides `Main.ReportInvasionProgress(…, 3, wave)`: icon 3 is
+    // the `Extra[79]` Old One's Army sheet and the `> 0` wave selects
+    // `DrawInvasionProgress`'s `Game.WaveMessage` arm.
+    app.invasion_progress_icon = 3;
+    app.invasion_progress_wave = wave;
+    app.invasion_progress_display_left = 160;
 }
 
 /// The kind id's reverse — the wave rosters' NPC ids to the port's kinds.
@@ -1730,13 +1820,21 @@ fn spawn_dd2_from_gate(app: &mut App, sx: f32, sy: f32, left_gate: bool) -> Vec<
     // `GetInvasionStatus`'s pair: the wave's budget and the score so far.
     let kills = app.world.dd2_wave_kills as i32;
     let required = match tier {
-        2 => tr_core::dd2::required_wave_kills_t2(wave, &mut kills.clone()),
+        2 => tr_core::dd2::required_wave_kills_t2(
+            wave,
+            &mut kills.clone(),
+            app.world.dd2_latches.ogre_t2,
+        ),
         3 => tr_core::dd2::required_wave_kills_t3(
             wave,
             &mut kills.clone(),
             dd2_betsy_hp_ratio(app),
         ),
-        _ => tr_core::dd2::required_wave_kills(wave, &mut kills.clone()),
+        _ => tr_core::dd2::required_wave_kills(
+            wave,
+            &mut kills.clone(),
+            app.world.dd2_latches.dark_mage_t1,
+        ),
     };
     // The pool's live counts (`NPC.CountNPCS`) — the roll reads them per id.
     let counts: std::collections::HashMap<u16, i32> = {
@@ -2305,29 +2403,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // (the item-path flag) stays synced for the panel/kill paths.
     if app.world.invasion_arm_pending {
         app.world.invasion_arm_pending = false;
-        let qualified = app
-            .player
-            .as_ref()
-            .map(|p| p.max_hp >= 200)
-            .unwrap_or(false);
-        if qualified && !app.world.invasion_goblins {
+        let life_max = app.player.as_ref().map(|p| p.max_hp).unwrap_or(0);
+        if can_start_invasion(&app.world, life_max) {
+            // `Main.StartInvasion()`'s full body (`Main.cs:64435-64486`),
+            // called from `UpdateTime_StartDay` (`:65454`) — its `Next(2)`
+            // side roll rides the `UpdateTime` stream.
             let num = 1; // the session player (the multiplayer count folds)
-            app.world.invasion_size = 80 + 40 * num;
-            app.world.invasion_size_start = app.world.invasion_size;
-            app.world.invasion_warn = 0;
-            // `StartInvasion`'s `Main.rand.Next(2) == 0 → invasionX = 0`
-            // (`Main.cs:64473-64479`); the body runs from
-            // `UpdateTime_StartDay` (`Main.cs:65454`) — the draw rides the
-            // `UpdateTime` stream.
-            let roll = app.rngs.stream(RngKey::UpdateTime).next_max(2);
-            app.world.invasion_x = if roll == 0 {
-                0.0
-            } else {
-                app.world.width as f64
-            };
-            start_invasion(&mut app.world, num, 1);
-            // The march state rides the World fields (the app-level pass
-            // reads them in `update_invasion_state`).
+            start_invasion_in(app, num, 1, Some(RngKey::UpdateTime));
         }
     }
     // `Main.UpdateInvasion` (`Main.cs:64328-64386`): the per-tick state
@@ -2445,6 +2527,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     n.slot = i;
                     n.update_rng(world, player, step, npcs_rng);
                     black_slime_darkness_touch(n, player, npcs_rng);
+                    // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
+                    // look-for-home timer decays one per tick.
+                    if n.look_for_home_timeout > 0 {
+                        n.look_for_home_timeout -= 1;
+                    }
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
                     // sounds ride the same per-NPC stream after the AI's
                     // draws — the table's rolls, then the legacy family's
@@ -2485,6 +2572,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // pass over the updated NPCs: the C#'s per-NPC order is kept by the
     // slot order, and the scan's own effect (the plate trips) does not
     // depend on the other NPCs' updates.
+    // The `59 HitSwitch` send sites (`Collision.cs:3304`/`:3318`/`:3324`/
+    // `:3347`): collected by the scan below, sent once the `app.wiring`/
+    // `app.world` borrows (and the `player` borrow) release.
+    let mut switch_sends: Vec<(i32, i32)> = Vec::new();
     {
         let mut wiring = &mut app.wiring;
         let world = &mut app.world;
@@ -2515,12 +2606,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     y,
                 );
             }
+            // `Collision.cs:3304`/`:3318`/`:3324`/`:3347` — the `59 HitSwitch`
+            // send sits on every fired switch.
+            switch_sends.extend(switch.switches.iter().copied());
         }
     }
     // The eye's climb-away despawn (`EncourageDespawn(10)` from the
     // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
     // far enough off-screen; the port culls it above the player's view).
     let player_y = player.as_ref().map(|p| p.y).unwrap_or(0.0);
+    // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
+    for (x, y) in switch_sends {
+        app.send_hit_switch(x, y);
+    }
     if app.world.day_time {
         app.npcs
             .retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
@@ -2541,16 +2639,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let npcs = &mut app.npcs;
         // The positions first: the room scan reads the whole NPC list (the
         // occupancy), so the mutable pass runs before it.
-        let mut asking: Vec<(usize, i32, i32)> = Vec::new();
+        let mut asking: Vec<(usize, i32, i32, i32)> = Vec::new();
         for (i, n) in npcs.iter().enumerate() {
-            if n.kind != NpcKind::Guide || n.home.is_some() {
+            if n.kind != NpcKind::Guide || n.home.is_some() || n.look_for_home_timeout > 0 {
                 continue;
             }
-            asking.push((i, (n.x / TILE_PX) as i32, (n.y / TILE_PX) as i32));
+            asking.push((
+                i,
+                (n.x / TILE_PX) as i32,
+                (n.y / TILE_PX) as i32,
+                n.kind.net_id(),
+            ));
         }
-        for (i, tx, ty) in asking {
+        for (i, tx, ty, net_id) in asking {
             // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
-            if let Some((hx, hy)) = crate::town::quick_find_home(world, npcs, tx, ty, Some(i)) {
+            if let Some((hx, hy)) =
+                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), net_id)
+            {
                 // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
                 // the home assigns, the homeless flag clears.
                 npcs[i].home = Some((hx, hy));
@@ -2610,10 +2715,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             if let Some(player) = app.player.as_ref() {
                 let xt = (player.x / TILE_PX) as i32;
                 let yt = (player.y / TILE_PX) as i32;
-                if let Some((hx, hy)) = crate::town::quick_find_home(&app.world, &app.npcs, xt, yt, None) {
-                    if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
-                        // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
-                        // the room assigns and the homeless flag clears.
+                if let Some((hx, hy)) =
+                    crate::town::quick_find_home(&app.world, &app.npcs, xt, yt, None, kind.net_id())
+                {
+                    // `WorldGen.SpawnTownNPC`'s relocation arm
+                    // (`WorldGen.cs:5428` `FindNPCLookingForHomeThatCanMoveIn`
+                    // → `:5453-5463`): an already-live homeless NPC of this
+                    // kind (and not on a `kickOut` cooldown, `:5621`) takes the
+                    // room instead of a second copy spawning. That is what
+                    // `moveRoom` (`:4843-4855`) relies on.
+                    let existing = app
+                        .npcs
+                        .iter()
+                        .position(|n| n.kind == kind && n.home.is_none() && n.look_for_home_timeout == 0);
+                    if let Some(idx) = existing {
+                        let mut rooms = std::mem::take(&mut app.town_rooms);
+                        let npc = &mut app.npcs[idx];
+                        crate::town::move_room(&mut rooms, npc, (hx, hy));
+                        app.town_rooms = rooms;
+                        // `:5460`: the relocation fires NO_HOBO (progression 8).
+                        let _ = app.notify_progression_net(8);
+                    } else if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
+                        // `WorldGen.cs:5564-5565`: the arrival writes its room.
                         n.home = Some((hx, hy));
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
@@ -2621,7 +2744,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // `:5580`) waits on a ported Truffle kind, and
                         // REAL_ESTATE_AGENT (17, `:5671`) on the full
                         // `CheckAchievement_RealEstateAndTownSlimes` roster.
-                        let _ = app.achievements.notify_progression(8);
+                        let _ = app.notify_progression_net(8);
                     }
                 }
             }
@@ -2687,6 +2810,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             continue;
         }
         report_invasion_kill(app, npc.kind);
+        // `NPC.cs:78230-78232`'s death-site pair — `CheckProgressFrostMoon`
+        // then `CheckProgressPumpkinMoon` — the C# runs them right after
+        // `DD2Event.CheckProgress` and before the invasion group's match. The
+        // port bundles the DD2 walk and the group accounting inside
+        // `report_invasion_kill` (disjoint state: the invasion size vs the
+        // moon-event waves, and neither draws the RNG), so the moon walks
+        // ride right behind it; each walk self-gates on its own flag, so a
+        // single running event walks alone.
+        app.world.report_frost_moon_kill(npc.kind.to_u16());
+        app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
         // `NPC.checkDead` plays `this.DeathSound` at `base.Center`
         // (`NPC.cs:91852`) — the kind's own death cue (the C#'s `null`
         // guard: the kinds with no row play nothing).
@@ -2823,15 +2956,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // kill, and no ported kind fails `IsNPCValidForBestiaryKillCredit`.
         let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
         app.bestiary.kills.register_kill(entry.credit_id);
+        // `NPCKillsTracker.RegisterKill`'s `netMode == 2` half
+        // (`NPCKillsTracker.cs:29-32`): the host broadcasts the new count
+        // through `NetBestiaryModule.SerializeKillCount`.
+        app.broadcast_bestiary_kill(
+            entry.net_id,
+            app.bestiary.kills.get_kill_count(entry.credit_id),
+        );
         // `AchievementsHelper.TryGrantingBestiary100PercentAchievement` (`AchievementsHelper.cs:81-84`):
         // when the bestiary completion reaches 100%, fire progression event 29 (BOOK_WORM).
-        let _ = app.achievements.try_grant_bestiary_100(&app.bestiary.kills);
-        // `AchievementsHelper.NotifyNPCKilled` (`GameContent/Achievements/`):
-        // the kill feeds the NPCKilledCondition rows (the M6-ACH-1 hook —
-        // the original wire pass lost it to a mid-script assert).
-        let _ = app
-            .achievements
-            .notify(achievements::CondKind::NpcKilled(entry.net_id));
+        let _ = app.try_grant_bestiary_100_net();
+        // `AchievementsHelper.NotifyNPCKilled` (`AchievementsHelper.cs:200-217`):
+        // the process whose player interacted gets the credit locally
+        // (`:202-208`, and in MP the host's own `97` loops back through its
+        // player slot, `:210-216`); a host additionally fans `97` out to every
+        // other interactor.
+        if npc.player_interaction[app.local_id as usize] {
+            let _ = app
+                .achievements
+                .notify(achievements::CondKind::NpcKilled(entry.net_id));
+        }
+        app.send_npc_killed(npc, entry.net_id as i16);
         // `NPC.CountKillForBannersAndDropThem` (`NPC.cs:79818-79827`) →
         // `BannerSystem.AddNPCKillBy` (M2-BUFF-8): the milestone spawns the
         // banner item at the death spot and announces the tally in the
@@ -2870,7 +3015,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         &mut app.world,
                         app.rngs.stream(crate::app::RngKey::UpdateNpcs),
                     );
-                    let _ = app.achievements.notify_progression(16);
+                    let _ = app.notify_progression_net(16);
                 }
             }
             NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
@@ -2911,7 +3056,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // early-return so a repeat death cannot re-fire it.
                 if !app.world.hard_mode {
                     app.world.hard_mode = true;
-                    let _ = app.achievements.notify_progression(9);
+                    let _ = app.notify_progression_net(9);
                 }
             }
             _ => {}
@@ -3320,6 +3465,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.world.wof_present = true;
         app.world.wof_hp_ratio = wof.hp as f32 / wof.max_hp as f32;
         app.world.wof_x = wof.x;
+        app.world.wof_dir = wof.facing;
     } else {
         app.world.wof_present = false;
     }
@@ -3334,7 +3480,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         .iter()
         .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe && n.wants_martian_invasion)
     {
-        start_invasion(&mut app.world, 1, 4);
+        // `NPC.AI` runs inside `UpdateNPCs` (`Main.cs:17767-17769`), so the
+        // type-4 body's side roll (absent — type 4 telegraphs from spawn)
+        // rides that stream.
+        start_invasion_in(app, 1, 4, Some(RngKey::UpdateNpcs));
         app.npcs
             .retain(|n| !(n.kind == NpcKind::MartianProbe && n.wants_martian_invasion));
     }
@@ -3749,13 +3898,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     zone_sandstorm: app.scene_metrics.zone_sandstorm,
                     zone_water_candle: app.scene_metrics.zone_water_candle,
                     zone_peace_candle: app.scene_metrics.zone_peace_candle,
+                    // `Main.pumpkinMoon || Main.snowMoon` — the raid pacing's
+                    // moon override (`NPC.cs:771-774`): the events force
+                    // `5·2.3` max spawns / rate 20 the moment they are up.
+                    moon_event: app.world.pumpkin_moon || app.world.snow_moon,
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,
                 player_center: (pcx, pcy),
                 player_pos: (player.x, player.y),
                 nearby_active_npcs: nearby,
-                town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                town_npcs: app.scene_metrics.town_npc_count,
                 day_time: app.world.day_time,
                 player_life_max: app.player.as_ref().map_or(100, |p| p.max_hp),
                 underworld_for_bats: (app.camera.y / 16.0) as i32 > app.world.height - 200,
@@ -3863,6 +4016,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         .tile(px, py)
                         .is_some_and(|t| spawner::LIGHT_WALLS.contains(&t.wall) || t.wall == 73)
                 },
+                // `Spawner`'s ctor boss cap (`NPC.cs:262-286`): the weighted
+                // slots count over the live wave-20 boss kinds — structurally
+                // 0 until the kinds land.
+                moon_boss_cap_count: spawner::moon_boss_cap_count(&app.npcs),
             })
         });
         // The one spawn path (`NPC.cs:308-342`) on the persistent `SpawnNPC`
@@ -4508,6 +4665,7 @@ mod tests {
                     any_danger: false,
                     probe_exists: false,
                     sky_behind_player: false,
+                    moon_boss_cap_count: 0.0,
                 };
                 let mut rng = UnifiedRandom::new((seed + 1) as i32);
                 if let Some(n) = crate::spawner::try_spawn_an_npc(&ctx, &mut rng) {
@@ -5194,8 +5352,9 @@ mod invasion_tests {
 
     #[test]
     fn start_invasion_sizes_the_army_and_picks_the_side() {
-        // `StartInvasion`: size = 80 + 40/qualified-player; the march X is
-        // 0 or maxTilesX (the deterministic roll).
+        // `StartInvasion` (`Main.cs:64435-64486`): size = 80 + 40 per
+        // qualifying player; the march X is 0 or maxTilesX (the `Next(2)`
+        // side roll), the warn/progress state zeroed.
         let mut app = flow_app(None, vec![], vec![]);
         app.world = surface_world();
         let mut player = crate::player::Player::spawn(&app.world);
@@ -5203,18 +5362,117 @@ mod invasion_tests {
         player.x = 150.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         app.player = Some(player);
-        start_invasion(&mut app.world, 1, 1);
+        let seed = app.world.seed as i32;
+        assert!(start_invasion_in(&mut app, 1, 1, Some(RngKey::UpdateTime)));
         assert_eq!(app.world.invasion_type, 1);
         assert_eq!(app.world.invasion_size, 120);
         assert_eq!(app.world.invasion_size_start, 120);
+        assert_eq!(app.world.invasion_warn, 0);
+        assert_eq!(app.invasion_progress, 0, "64466: invasionProgress = 0");
+        assert_eq!(app.invasion_progress_icon, 4, "64467: type + 3");
+        assert_eq!(app.invasion_progress_max, 120);
         assert!(
             app.world.invasion_x == 0.0 || app.world.invasion_x == 300.0,
             "the side roll ({})",
             app.world.invasion_x
         );
-        // The second call refuses (the invasion is active).
-        start_invasion(&mut app.world, 1, 1);
+        // The second call refuses (the invasion is active, `:64441-64444`) —
+        // and draws nothing: a fresh stream with the same seed is untouched
+        // up to the one draw the first start consumed.
+        assert!(!start_invasion_in(&mut app, 1, 1, Some(RngKey::UpdateTime)));
         assert_eq!(app.world.invasion_type, 1);
+        assert_eq!(app.world.invasion_size, 120);
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        probe.next_max(2);
+        assert_eq!(
+            app.rngs.stream(RngKey::UpdateTime).next(),
+            probe.next(),
+            "the active-invasion early return draws nothing"
+        );
+    }
+
+    #[test]
+    fn s1_e_37_start_invasion_matches_the_csharp_size_table() {
+        // `Main.cs:64456-64464` verbatim: base 80+40n, the pirates (3) add
+        // 40+20n, the martians (4) are 160+40n.
+        for (ty, n, want) in [
+            (1_i32, 1_i32, 120_i32),
+            (1, 2, 160),
+            (2, 1, 120),
+            (3, 1, 180),
+            (3, 2, 240),
+            (4, 1, 200),
+            (4, 3, 280),
+        ] {
+            let mut w = tr_core::World::new("t".into(), 300, 300);
+            let mut rng = tr_core::UnifiedRandom::new(1);
+            assert!(start_invasion(&mut w, n, ty, &mut rng), "type {ty} n {n}");
+            assert_eq!(w.invasion_type, ty);
+            assert_eq!(w.invasion_size, want, "type {ty} with {n} players");
+            assert_eq!(w.invasion_size_start, want);
+        }
+    }
+
+    #[test]
+    fn s1_e_37_start_invasion_refuses_with_no_qualifying_player() {
+        // `:64445-64453`: the type/size block only runs when `num > 0` — with
+        // no 200-life player the C# leaves `invasionType` at 0.
+        let mut w = tr_core::World::new("t".into(), 300, 300);
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        assert!(!start_invasion(&mut w, 0, 1, &mut rng));
+        assert_eq!(w.invasion_type, 0, "no army without a qualifying player");
+        assert_eq!(w.invasion_size, 0);
+    }
+
+    #[test]
+    fn s1_e_37_the_martians_telegraph_from_spawn_and_draw_nothing() {
+        // `:64471-64475`: type 4 sits one tile west of spawn with warn 2 and
+        // no side roll; every other type draws `Next(2)` (`:64476-64483`).
+        let mut w = tr_core::World::new("t".into(), 300, 300);
+        w.spawn_x = 150;
+        let mut rng = tr_core::UnifiedRandom::new(9);
+        let pristine = rng.clone();
+        start_invasion(&mut w, 1, 4, &mut rng);
+        assert_eq!(w.invasion_x, 149.0, "spawnTileX - 1");
+        assert_eq!(rng, pristine, "the martian arm consumes no draw");
+        assert_eq!(w.invasion_warn, 2, ":64474");
+    }
+
+    #[test]
+    fn s1_e_37_a_finished_invasion_clears_its_stale_type() {
+        // `:64437-64440`: type set + size 0 → the type clears and the new
+        // invasion may start; a live one still refuses.
+        let mut w = tr_core::World::new("t".into(), 300, 300);
+        w.invasion_type = 2;
+        w.invasion_size = 0;
+        let mut rng = tr_core::UnifiedRandom::new(3);
+        assert!(start_invasion(&mut w, 1, 1, &mut rng));
+        assert_eq!(w.invasion_type, 1, "the stale frost type was cleared");
+        assert_eq!(w.invasion_size, 120);
+
+        let mut live = tr_core::World::new("t".into(), 300, 300);
+        live.invasion_type = 2;
+        live.invasion_size = 40;
+        assert!(!start_invasion(&mut live, 1, 1, &mut rng));
+        assert_eq!(live.invasion_type, 2, "a live invasion blocks");
+        assert_eq!(live.invasion_size, 40);
+    }
+
+    #[test]
+    fn s1_e_37_can_start_invasion_blocks_every_type_not_just_the_goblins() {
+        // `Main.cs:64414-64432`: `invasionType != 0` refuses — the pre-fix
+        // port only checked the goblin flag, so a frost/pirate/martian army
+        // could be overlaid.
+        let mut w = tr_core::World::new("t".into(), 300, 300);
+        assert!(!can_start_invasion(&w, 100), "the 200-life gate");
+        assert!(can_start_invasion(&w, 200));
+        for ty in [1, 2, 3, 4] {
+            w.invasion_type = ty;
+            assert!(
+                !can_start_invasion(&w, 400),
+                "type {ty} must block a new invasion"
+            );
+        }
     }
 
     #[test]
@@ -5500,7 +5758,11 @@ mod invasion_tests {
             assert!(use_snow_globe(&mut app));
             assert_eq!(app.world.invasion_type, 2);
             assert_eq!(app.world.invasion_size, 120);
-            assert!(app.world.invasion_goblins, "the active-invasion flag");
+            assert_eq!(app.world.invasion_type, 2, "the frost legion's type");
+            assert!(
+                !app.world.invasion_goblins,
+                "type 2 is not the goblins' army (the C# has one invasionType)"
+            );
             app.inventory[app.selected] = crate::item::ItemSlot {
                 kind: 602,
                 name: "Snow Globe".into(),
@@ -5526,6 +5788,48 @@ mod invasion_tests {
             assert!(app.world.downed_frost, "the frost defeat flag");
             assert!(!app.world.downed_goblins, "the goblin flag untouched");
             assert_eq!(app.world.invasion_type, 0);
+            // `Main.cs:64343` — the clear also fires the frost achievement
+            // (TIN_FOIL_HATTER's `PROGRESSION_EVENT_12`).
+            assert!(progression(&app, 12), "the frost clear credits 12");
+            assert!(!progression(&app, 10), "the goblin id stays untouched");
+        }
+
+        /// Whether the `PROGRESSION_EVENT_<id>` condition is completed on any
+        /// row (`AchievementCondition.Name`, the save key).
+        fn progression(app: &App, id: u32) -> bool {
+            let key = format!("PROGRESSION_EVENT_{id}");
+            app.achievements
+                .list
+                .iter()
+                .flat_map(|a| a.conditions.iter())
+                .any(|c| c.name == key && c.completed)
+        }
+
+        /// S1-E-18c — all four invasion clears fire their `Main.cs:64335-64354`
+        /// ids: goblins 10 (GOBLIN_PUNTER), pirates 11 (WALK_THE_PLANK),
+        /// frost 12 (DO_YOU_WANT_TO_SLAY_A_SNOWMAN), martians 13
+        /// (TIN_FOIL_HATTER).
+        #[test]
+        fn s1_e_18c_each_invasion_clear_fires_its_achievement() {
+            for (invasion_type, id) in [(1i32, 10u32), (2, 12), (3, 11), (4, 13)] {
+                let mut app = flow_app(None, vec![], vec![]);
+                app.world = surface_world();
+                app.world.invasion_type = invasion_type;
+                app.world.invasion_size = 0;
+                app.world.invasion_size_start = 120;
+                update_invasion_state(&mut app);
+                assert_eq!(app.world.invasion_type, 0, "type {invasion_type} cleared");
+                assert!(progression(&app, id), "type {invasion_type} credits {id}");
+                // Exactly one id: the other three stay open.
+                for other in [10u32, 11, 12, 13] {
+                    if other != id {
+                        assert!(
+                            !progression(&app, other),
+                            "type {invasion_type} must not credit {other}"
+                        );
+                    }
+                }
+            }
         }
 
         #[test]
@@ -5602,7 +5906,10 @@ mod pirate_invasion_tests {
         assert_eq!(app.world.invasion_type, 3);
         assert_eq!(app.world.invasion_size, 180);
         assert_eq!(app.world.invasion_size_start, 180);
-        assert!(app.world.invasion_goblins, "the active-invasion flag");
+        assert!(
+            !app.world.invasion_goblins,
+            "type 3 is not the goblins' army (the C# has one invasionType)"
+        );
         // The second map refuses while the invasion is active.
         app.inventory[app.selected] = crate::item::ItemSlot {
             kind: 1315,
@@ -5847,7 +6154,7 @@ mod invasion_bar_tests {
             player.x = 150.0 * TILE_PX;
             player.y = 118.0 * TILE_PX;
             app.player = Some(player);
-            start_invasion(&mut app.world, 1, 4);
+            assert!(start_invasion_in(&mut app, 1, 4, Some(RngKey::UpdateNpcs)));
             assert_eq!(app.world.invasion_type, 4);
             assert_eq!(app.world.invasion_size, 200);
             assert_eq!(app.world.invasion_size_start, 200);
@@ -6071,7 +6378,10 @@ mod probe_tests {
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.world.invasion_type, 4, "the type-4 invasion started");
         assert_eq!(app.world.invasion_size, 200, "160 + 40 x 1 qualifying");
-        assert!(app.world.invasion_goblins, "the active-invasion latch");
+        assert!(
+            !app.world.invasion_goblins,
+            "type 4 is not the goblins' army — the type field carries it"
+        );
         assert!(
             !app.npcs.iter().any(|m| m.kind == NpcKind::MartianProbe),
             "the probe left without dropping anything"
@@ -7868,6 +8178,61 @@ mod dd2_wave_tests {
     }
 
     #[test]
+    fn the_fifth_wave_waits_for_the_dark_mage() {
+        // `Difficulty_1_GetMonsterPointsWorth` (`:1108-1116`): at wave 5
+        // with `waveKills >= 139` only the Dark Mage (564) scores — the
+        // ordinary kill leaves the count, the boss kill passes the budget
+        // and latches (`:1112`).
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        app.world.dd2_wave = 5;
+        app.world.dd2_wave_kills = 139.0;
+        app.world.dd2_spawn_hold = 0;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT1);
+        assert_eq!(app.world.dd2_wave_kills, 139.0, "the gate scores 0");
+        assert_eq!(app.world.dd2_wave, 5);
+        assert!(!app.world.dd2_latches.dark_mage_t1);
+        report_invasion_kill(&mut app, NpcKind::DD2DarkMage);
+        assert!(app.world.dd2_latches.dark_mage_t1, "`:1112`'s latch");
+        assert_eq!(app.world.dd2_wave, 6, "the boss kill passes the budget");
+        assert_eq!(app.world.dd2_wave_kills, 0.0);
+        // `:455-462`: the wave-completing report is the fresh 1/1 pair.
+        assert_eq!(app.invasion_progress, 1);
+        assert_eq!(app.invasion_progress_max, 1);
+        assert_eq!(app.invasion_progress_wave, 5);
+    }
+
+    #[test]
+    fn the_seventh_tier_two_wave_waits_for_the_ogre() {
+        // `Difficulty_2_GetMonsterPointsWorth` (`:1201-1209`): at wave 7 with
+        // `waveKills >= 219` only the Ogre (576) scores and latches.
+        let (mut app, _player) = {
+            let mut a = base_app();
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        app.world.dd2_event_ongoing = true;
+        // The tier-2 gate: hardmode with a mech boss down.
+        app.world.hard_mode = true;
+        app.world.downed_mech_boss1 = true;
+        app.world.dd2_wave = 7;
+        app.world.dd2_wave_kills = 219.0;
+        app.world.dd2_spawn_hold = 0;
+        report_invasion_kill(&mut app, NpcKind::DD2GoblinT2);
+        assert_eq!(app.world.dd2_wave_kills, 219.0, "the gate scores 0");
+        assert!(!app.world.dd2_latches.ogre_t2);
+        // `:451-454`: the zero-worth kill reports nothing at all.
+        assert_eq!(app.invasion_progress_max, 0);
+        report_invasion_kill(&mut app, NpcKind::DD2OgreT2);
+        assert!(app.world.dd2_latches.ogre_t2, "`:1205`'s latch");
+        assert_eq!(app.world.dd2_wave, 8, "the Ogre passes the budget");
+    }
+
+    #[test]
     fn the_betsy_anchor_drives_the_seventh_wave() {
         // `Difficulty_3_GetRequiredWaveKills`'s wave-7 arm
         // (`DD2Event.cs:1487-1494`): the wave's progress is the Betsy's
@@ -7892,8 +8257,9 @@ mod dd2_wave_tests {
         report_invasion_kill(&mut app, NpcKind::DD2Betsy);
         assert_eq!(app.invasion_progress_max, 100, "the wave's budget");
         assert_eq!(
-            app.invasion_progress, 50 + 4,
-            "the Betsy's HP bucket plus the kill's worth"
+            app.invasion_progress,
+            50 + 1,
+            "the Betsy's HP bucket plus the kill's worth (`:1513` — 551 scores 1)"
         );
         // No Betsy on the field: the C#'s `-1` arm takes the budget of 1.
         app.npcs.clear();
@@ -8541,7 +8907,7 @@ mod worm_tests {
         let tail = npcs.len() - 1;
         assert_eq!(npcs[tail].kind, NpcKind::SolarCrawltipedeTail);
         let tail_x = npcs[tail].x;
-        assert!(Npc::strike_melee(&mut npcs, tail, 7, tail_x, 0.0, false));
+        assert!(Npc::strike_melee(&mut npcs, tail, 7, tail_x, 0.0, false, None));
         assert_eq!(npcs[0].hp, pool - 70, "the tail's hit is multiplied by ten");
     }
 

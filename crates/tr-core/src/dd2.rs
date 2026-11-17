@@ -35,10 +35,11 @@ pub fn enemies_for_wave(wave: i32) -> (&'static [u16], i32) {
     }
 }
 
-/// `DD2Event.Difficulty_1_GetRequiredWaveKills` (`:987-1012`) — the wave's
-/// kill budget. Wave 5 caps `currentKillCount` at 139 (`:990-992`) and
-/// wave 6 is the win sentinel (`:397`'s `return` after `StartVictoryScene`).
-pub fn required_wave_kills(wave: i32, current_kills: &mut i32) -> i32 {
+/// `DD2Event.Difficulty_1_GetRequiredWaveKills` (`:977-1009`) — the wave's
+/// kill budget. Wave 5 caps `currentKillCount` at 139 (`:992-996`, unless
+/// the Dark Mage is downed) and wave 6 is the win sentinel (`:397`'s
+/// `return` after `StartVictoryScene`).
+pub fn required_wave_kills(wave: i32, current_kills: &mut i32, dark_mage_t1: bool) -> i32 {
     match wave {
         0 => 0,
         1 => 60,
@@ -46,7 +47,7 @@ pub fn required_wave_kills(wave: i32, current_kills: &mut i32) -> i32 {
         3 => 100,
         4 => 120,
         5 => {
-            if *current_kills > 139 {
+            if !dark_mage_t1 && *current_kills > 139 {
                 *current_kills = 139;
             }
             140
@@ -59,29 +60,68 @@ pub fn required_wave_kills(wave: i32, current_kills: &mut i32) -> i32 {
 /// The wave-5's `currentKillCount > 139` clamp's value.
 pub const WAVE_5_KILL_CAP: i32 = 139;
 
-/// `DD2Event.CheckProgress`'s wave-complete test (`:383-391`): the count
-/// at or past the wave's budget opens the next wave; the counter's reset
-/// and the warp ride the caller.
-pub fn wave_budget_passed(wave: i32, kills: &mut f32) -> bool {
-    let required = required_wave_kills(wave, &mut (*kills as i32)).max(0) as f32;
-    if *kills < 0.0 {
-        return false;
-    }
-    if *kills >= required && required != 0.0 {
-        *kills = 0.0;
-        true
-    } else {
-        false
-    }
+/// `DD2Event.GetRequiredWaveKills`'s clamp and the worth rows' latches —
+/// `DD2Event._downedDarkMageT1` / `_downedOgreT2` (`:61-63`): the wave
+/// bosses' deaths lift their wave's kill cap (`:993`, `:1181`). The
+/// invasion's start clears them (`:268-269`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DownedLatches {
+    pub dark_mage_t1: bool,
+    pub ogre_t2: bool,
 }
 
-/// `DD2Event.GetMonsterPointsWorth` (`:1042-1090`) — the kill's point
-/// worth by the slain kind, gated by the event's tier. The port's
-/// goblin-family rows first (552-555 the base worth 1, the T2/Bomber
-/// rows ride the tier gates).
-pub const KILL_WORTH_T1: f32 = 1.0;
-pub const KILL_WORTH_T2: f32 = 2.0;
-pub const KILL_WORTH_T3: f32 = 4.0;
+/// `(uint)(slainMonsterID - 551) <= 14u || (uint)(slainMonsterID - 568) <= 10u`
+/// (`:1117`): the two Old One's Army id ranges the worth rows score.
+fn in_worth_band(slain_id: u16) -> bool {
+    (551..=565).contains(&slain_id) || (568..=578).contains(&slain_id)
+}
+
+/// `DD2Event.GetMonsterPointsWorth` (`:546-554`) — the kill's worth: the
+/// tier bodies at `:1106-1130` (T1), `:1199-1223` (T2), `:1509-1528` (T3).
+///
+/// `Main.expertMode` is constants-off (the world carries no game mode), so
+/// the band's `!expertMode ? 1 : 2` collapses to 1; the bosses' special
+/// rows (`waveKills == 138` T1 `:1119`, `== 218` T2 `:1212`) score the same
+/// 1 here and only keep an expert run from overshooting its budget.
+pub fn monster_points_worth(
+    tier: i32,
+    wave: i32,
+    wave_kills: f32,
+    slain_id: u16,
+    latches: &mut DownedLatches,
+) -> i32 {
+    match tier {
+        3 => {
+            // `:1511-1518`: wave 7 scores Betsy (551) alone.
+            if wave == 7 {
+                return i32::from(slain_id == 551);
+            }
+            i32::from(in_worth_band(slain_id))
+        }
+        2 => {
+            // `:1201-1209`: wave 7's 219+ gate waits for the Ogres.
+            if wave == 7 && wave_kills >= 219.0 {
+                if slain_id == 576 || slain_id == 577 {
+                    latches.ogre_t2 = true;
+                    return 1;
+                }
+                return 0;
+            }
+            i32::from(in_worth_band(slain_id))
+        }
+        _ => {
+            // `:1108-1116`: wave 5's 139+ gate waits for the Dark Mages.
+            if wave == 5 && wave_kills >= 139.0 {
+                if slain_id == 564 || slain_id == 565 {
+                    latches.dark_mage_t1 = true;
+                    return 1;
+                }
+                return 0;
+            }
+            i32::from(in_worth_band(slain_id))
+        }
+    }
+}
 
 /// `NPC.waveKills` / `totalInvasionPoints`' advance (`:363-370`) — the
 /// wave's check runs while the event is on, no wave break is active and
@@ -96,13 +136,14 @@ pub fn check_progress(
     wave_kills: f32,
     points: f32,
     worth: f32,
+    dark_mage_t1: bool,
 ) -> Option<i32> {
     if !ongoing || lost || won || spawn_hold != 0 {
         return None;
     }
     let mut current_kills = wave_kills as i32 + worth as i32;
     let mut current_wave = wave;
-    let required = required_wave_kills(wave, &mut current_kills);
+    let required = required_wave_kills(wave, &mut current_kills, dark_mage_t1);
     if wave_kills + worth >= required as f32 && required != 0 {
         let _ = points;
         Some(current_wave)
@@ -117,16 +158,16 @@ mod tests {
 
     #[test]
     fn the_wave_budgets_climb() {
-        // `Difficulty_1_GetRequiredWaveKills` (`:987-1012`) — the tiers
+        // `Difficulty_1_GetRequiredWaveKills` (`:977-1009`) — the tiers
         // 60/80/100/120/140 with the wave-6 win sentinel.
         let mut kills = 0;
-        assert_eq!(required_wave_kills(1, &mut kills), 60);
-        assert_eq!(required_wave_kills(2, &mut kills), 80);
-        assert_eq!(required_wave_kills(3, &mut kills), 100);
-        assert_eq!(required_wave_kills(4, &mut kills), 120);
-        assert_eq!(required_wave_kills(5, &mut kills), 140);
+        assert_eq!(required_wave_kills(1, &mut kills, false), 60);
+        assert_eq!(required_wave_kills(2, &mut kills, false), 80);
+        assert_eq!(required_wave_kills(3, &mut kills, false), 100);
+        assert_eq!(required_wave_kills(4, &mut kills, false), 120);
+        assert_eq!(required_wave_kills(5, &mut kills, false), 140);
         let mut kills = 139;
-        assert_eq!(required_wave_kills(5, &mut kills), 140);
+        assert_eq!(required_wave_kills(5, &mut kills, false), 140);
         assert_eq!(kills, WAVE_5_KILL_CAP);
     }
 
@@ -146,16 +187,16 @@ mod tests {
     fn the_kill_progress_advances_the_wave() {
         // `CheckProgress` (`:363-392`): the kills that pass the wave's
         // budget advance it; the hold/lost/won gates refuse.
-        let started = check_progress(true, false, false, 0, 1, 59.0, 59.0, 1.0);
+        let started = check_progress(true, false, false, 0, 1, 59.0, 59.0, 1.0, false);
         assert_eq!(started, Some(1), "the wave completes");
-        assert!(check_progress(true, false, false, 0, 1, 59.0, 59.0, 0.5).is_none());
+        assert!(check_progress(true, false, false, 0, 1, 59.0, 59.0, 0.5, false).is_none());
         // The spawn hold's refusal.
-        assert!(check_progress(true, false, false, 100, 1, 59.0, 59.0, 1.0).is_none());
+        assert!(check_progress(true, false, false, 100, 1, 59.0, 59.0, 1.0, false).is_none());
         // The lost/won refusals.
-        assert!(check_progress(true, true, false, 0, 1, 59.0, 59.0, 1.0).is_none());
-        assert!(check_progress(true, false, true, 0, 1, 59.0, 59.0, 1.0).is_none());
+        assert!(check_progress(true, true, false, 0, 1, 59.0, 59.0, 1.0, false).is_none());
+        assert!(check_progress(true, false, true, 0, 1, 59.0, 59.0, 1.0, false).is_none());
         // Not ongoing.
-        assert!(check_progress(false, false, false, 0, 1, 59.0, 59.0, 1.0).is_none());
+        assert!(check_progress(false, false, false, 0, 1, 59.0, 59.0, 1.0, false).is_none());
     }
 }
 
@@ -189,10 +230,10 @@ pub fn enemies_for_wave_t3(wave: i32) -> (&'static [u16], i32) {
     }
 }
 
-/// `DD2Event.Difficulty_2_GetRequiredWaveKills` (`:1162-1195`) — the
-/// tier-2 budgets: 60/80/100/120/140/180/220 (the wave-7's 219 cap), the
-/// wave-8 win sentinel.
-pub fn required_wave_kills_t2(wave: i32, current_kills: &mut i32) -> i32 {
+/// `DD2Event.Difficulty_2_GetRequiredWaveKills` (`:1162-1197`) — the
+/// tier-2 budgets: 60/80/100/120/140/180/220 (the wave-7's 219 cap unless
+/// the Ogre is downed, `:1181-1184`), the wave-8 win sentinel.
+pub fn required_wave_kills_t2(wave: i32, current_kills: &mut i32, ogre_t2: bool) -> i32 {
     match wave {
         0 => 0,
         1 => 60,
@@ -202,7 +243,7 @@ pub fn required_wave_kills_t2(wave: i32, current_kills: &mut i32) -> i32 {
         5 => 140,
         6 => 180,
         7 => {
-            if *current_kills > 219 {
+            if !ogre_t2 && *current_kills > 219 {
                 *current_kills = 219;
             }
             220
@@ -257,15 +298,14 @@ mod tier_tests {
 
     #[test]
     fn the_tier2_rosters_and_budgets_climb() {
-        // `Difficulty_2_*` (`:1132-1195`): the rosters grow, the budgets
+        // `Difficulty_2_*` (`:1132-1197`): the rosters grow, the budgets
         // climb 60→220 with the wave-7 cap.
         assert_eq!(enemies_for_wave_t2(1), (&[553, 562][..], 90));
         assert_eq!(enemies_for_wave_t2(7).0.len(), 8);
-        let mut wave = 1;
         let mut kills = 260;
-        assert_eq!(required_wave_kills_t2(1, &mut kills), 60);
+        assert_eq!(required_wave_kills_t2(1, &mut kills, false), 60);
         // The wave-7 cap reads the over-219 count down.
-        assert_eq!(required_wave_kills_t2(7, &mut kills), 220);
+        assert_eq!(required_wave_kills_t2(7, &mut kills, false), 220);
         assert_eq!(kills, 219);
     }
 
@@ -726,5 +766,108 @@ fn roll_second(rng01: &impl Fn() -> f32, n: f32, kind: u16) -> Option<u16> {
         Some(kind)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod worth_tests {
+    use super::*;
+
+    #[test]
+    fn the_worth_band_is_the_two_family_ranges() {
+        // `(uint)(id - 551) <= 14u || (uint)(id - 568) <= 10u` (`:1117`) —
+        // 551-565 and 568-578; the skeletons (566/567) sit between them.
+        for id in [551, 565, 568, 578] {
+            assert!(in_worth_band(id), "{id}");
+        }
+        for id in [0, 550, 566, 567, 579, 650] {
+            assert!(!in_worth_band(id), "{id}");
+        }
+    }
+
+    #[test]
+    fn tier1_scores_the_band_and_latches_the_dark_mage() {
+        // `Difficulty_1_GetMonsterPointsWorth` (`:1106-1130`).
+        let mut latches = DownedLatches::default();
+        assert_eq!(monster_points_worth(1, 1, 0.0, 552, &mut latches), 1);
+        assert_eq!(
+            monster_points_worth(1, 1, 0.0, 566, &mut latches),
+            0,
+            "the skeletons are out of band"
+        );
+        assert_eq!(
+            monster_points_worth(1, 4, 200.0, 552, &mut latches),
+            1,
+            "only wave 5 reads the count"
+        );
+        assert_eq!(monster_points_worth(1, 5, 137.0, 552, &mut latches), 1);
+        assert_eq!(
+            monster_points_worth(1, 5, 138.0, 552, &mut latches),
+            1,
+            "the 138 special case refuses the overshoot"
+        );
+        assert_eq!(
+            monster_points_worth(1, 5, 139.0, 552, &mut latches),
+            0,
+            "the wave waits for the Dark Mage"
+        );
+        assert!(!latches.dark_mage_t1);
+        assert_eq!(monster_points_worth(1, 5, 139.0, 558, &mut latches), 0);
+        assert_eq!(monster_points_worth(1, 5, 139.0, 564, &mut latches), 1);
+        assert!(latches.dark_mage_t1, "the Dark Mage's death latches");
+        // 565 is the tier-3 Dark Mage; it latches too (`:1110`).
+        let mut latches = DownedLatches::default();
+        assert_eq!(monster_points_worth(1, 5, 139.0, 565, &mut latches), 1);
+        assert!(latches.dark_mage_t1);
+    }
+
+    #[test]
+    fn tier2_scores_the_band_and_latches_the_ogre() {
+        // `Difficulty_2_GetMonsterPointsWorth` (`:1199-1223`).
+        let mut latches = DownedLatches::default();
+        assert_eq!(monster_points_worth(2, 7, 218.0, 553, &mut latches), 1);
+        assert_eq!(
+            monster_points_worth(2, 7, 219.0, 553, &mut latches),
+            0,
+            "the wave waits for the Ogre"
+        );
+        assert!(!latches.ogre_t2 && !latches.dark_mage_t1);
+        assert_eq!(monster_points_worth(2, 7, 219.0, 576, &mut latches), 1);
+        assert!(latches.ogre_t2, "the Ogre's death latches");
+        let mut latches = DownedLatches::default();
+        assert_eq!(monster_points_worth(2, 7, 219.0, 577, &mut latches), 1);
+        assert!(latches.ogre_t2);
+    }
+
+    #[test]
+    fn tier3_pins_the_seventh_wave_to_betsy() {
+        // `Difficulty_3_GetMonsterPointsWorth` (`:1509-1528`): at wave 7 only
+        // Betsy (551) scores; earlier waves read the shared band.
+        let mut latches = DownedLatches::default();
+        assert_eq!(monster_points_worth(3, 7, 0.0, 551, &mut latches), 1);
+        assert_eq!(monster_points_worth(3, 7, 0.0, 552, &mut latches), 0);
+        assert_eq!(monster_points_worth(3, 6, 219.0, 552, &mut latches), 1);
+        assert_eq!(monster_points_worth(3, 6, 0.0, 566, &mut latches), 0);
+        assert!(
+            !latches.ogre_t2 && !latches.dark_mage_t1,
+            "tier 3 latches nothing"
+        );
+    }
+
+    #[test]
+    fn the_boss_latches_lift_the_caps() {
+        // `:993` / `:1181`: the wave-5/-7 clamps read the latches.
+        let mut kills = 200;
+        assert_eq!(required_wave_kills(5, &mut kills, false), 140);
+        assert_eq!(kills, 139);
+        let mut kills = 200;
+        assert_eq!(required_wave_kills(5, &mut kills, true), 140);
+        assert_eq!(kills, 200, "the latch lifts the cap");
+        let mut kills = 260;
+        assert_eq!(required_wave_kills_t2(7, &mut kills, false), 220);
+        assert_eq!(kills, 219);
+        let mut kills = 260;
+        assert_eq!(required_wave_kills_t2(7, &mut kills, true), 220);
+        assert_eq!(kills, 260);
     }
 }

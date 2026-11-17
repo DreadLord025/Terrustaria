@@ -9,27 +9,11 @@ mod draw;
 use std::time::Instant;
 
 use glam::Vec2;
-use tr_core::lighting::{LightParams, LightStyle};
 use wgpu::util::DeviceExt;
 
-use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
-use crate::app::{App, RngKey, WorldFrameKey};
-use crate::assets;
-use crate::audio;
-use crate::craft;
-use crate::item::{self};
-use crate::map;
-use crate::npc::{self, NpcKind};
-use crate::player;
-use crate::render::bg::cave_parallax;
-use crate::render::debug::{capture_frame, draw_debug};
-use crate::render::entities::draw_player_map_icon;
-use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
-use crate::render::tiles::draw_tiles;
+use crate::app::App;
 use crate::sound;
 use crate::ui;
-use crate::ui::text::{border_string, hud_text, hud_text_width};
-use crate::world_sim::clock::advance_time_with_events;
 
 /// Records one **draw**-branch phase for the draw-order pinning test
 /// (`S1-B-7`). A no-op outside `cfg(test)` — the names make the
@@ -554,9 +538,12 @@ mod tests {
     ///   windy day / ambience), the tile-edit pass, the net pass and the map.
     ///
     /// Every phase name is emitted once per in-world frame.
-    const WORLD_PHASES: [&str; 19] = [
+    const WORLD_PHASES: [&str; 20] = [
         "players",
         "npcs",
+        // `Main.UpdateWorld_Gores` (`Main.cs:17971`, called at `:17771`) sits
+        // between the NPCs and the projectiles.
+        "gores",
         "projectiles",
         "items",
         "dust",
@@ -1666,6 +1653,7 @@ mod tests {
             "world_step_head",
             "players_phase",
             "npcs_phase",
+            "gores_phase",
             "projectiles_phase",
             "items_phase",
             "dust_phase",
@@ -1719,6 +1707,11 @@ mod tests {
                 "world_step_head",
                 "players_phase",
                 "npcs_phase",
+                // `Main.UpdateWorld_Gores` (`Main.cs:17971`, called at
+                // `:17771-17774`): between the NPCs and the projectiles
+                // — landed on main with the S1-E-2 gores port; the pin
+                // gains the phase at the C#'s position.
+                "gores_phase",
                 "projectiles_phase",
                 "items_phase",
                 "dust_phase",

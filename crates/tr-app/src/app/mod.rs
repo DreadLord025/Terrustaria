@@ -7,6 +7,7 @@
 //! `main.rs`.)
 
 pub(crate) mod clicks;
+pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
@@ -158,7 +159,9 @@ pub(crate) struct App {
     pub(crate) creative_powers: crate::creative::CreativePowers,
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
     /// module; delete the field + the module + the call sites to remove).
-    pub(crate) debug_panel: crate::debug_panel::DebugPanel,
+    /// Compiled only with the `debug` feature (see `tr-app/Cargo.toml`).
+    #[cfg(feature = "debug")]
+    pub(crate) debug_panel: tr_debug::Panel,
     /// The favorited inventory slots (`Item.favorited`'s port — the slot
     /// indices, not the per-item flag; the v1 tracks the slot positions).
     pub(crate) favorite_slots: Vec<usize>,
@@ -207,6 +210,9 @@ pub(crate) struct App {
     /// by `ItemSlot.SelectEquipPage` (`ItemSlot.cs:4622-4652`) from the held item
     /// and falling back to this when nothing overrides it (`Main.cs:42864-42867`).
     pub(crate) equip_page_selected: i32,
+    /// `ItemSlot.dyeSwapCounter` (`ItemSlot.cs:3549-3564`): the round-robin
+    /// slot `DyeSwap` starts its empty scan from and advances past.
+    pub(crate) dye_swap_counter: usize,
     pub(crate) selected: usize,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     pub(crate) hotbar_scales: [f32; HOTBAR],
@@ -381,7 +387,7 @@ pub(crate) struct App {
     /// (`Netplay.cs:469-543`); stays at 0 while hosting.
     pub(crate) net_state: i32,
     /// The `10 TileBlock` sections buffered while the host streams the world,
-    /// applied in order at `WorldComplete` (the C#'s section stream,
+    /// applied in order at `49 InitialSpawn` (the C#'s section stream,
     /// `MessageBuffer.cs:812-841`).
     pub(crate) net_pending_sections: Vec<net::TileBlock>,
     /// The `7 WorldInfo` header, held until the blob completes the install.
@@ -432,11 +438,16 @@ pub(crate) struct App {
     /// The host slot id per client-npc index (the `28 NPCStrike` target and
     /// the `23` order), parallel to `npcs` on a joining client.
     pub(crate) net_npc_slots: Vec<u32>,
-    /// The `82` module cadence counter and the last ping send stamp (the
-    /// client's RTT diagnostic, `NetPingModule`).
-    pub(crate) net_module_beat: u32,
+    /// The `154 Ping` round trip (`Net/Ping.cs`: the stopwatch restart point
+    /// and the `_waitingForResponse` flag).
     pub(crate) net_ping_at: Option<Instant>,
+    pub(crate) net_ping_waiting: bool,
     pub(crate) net_rtt_ms: u32,
+    /// `Main._lastPingMousePosition` / `_lastPingMouseDownTime`
+    /// (`Main.cs:377,379`): the double-click detector for the fullscreen
+    /// map's ping (`:55486-55495` - two presses within 0.5 s and 2 px).
+    pub(crate) last_ping_pos: Vec2,
+    pub(crate) last_ping_time: f64,
     pub(crate) join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     pub(crate) map: Option<map::WorldMap>,
@@ -649,6 +660,12 @@ pub(crate) struct App {
     /// `Recipe.UpdateRecipeList` only while the crafting page is up
     /// (`CraftingUI.cs:112-121`) — the port reads it behind the same gate.
     pub(crate) craft_filter: Option<craft::CraftingFilter>,
+    /// `NewCraftingUI._filterer` (`NewCraftingUI.cs:216`, built at `:281-299`):
+    /// the 11-tab recipe filter strip's state. `Main.focusRecipe` stays an
+    /// `availableRecipe` index while the grid shows only the survivors
+    /// (`:596-611`), which is what `craft::available_with_gates` + [`shown`]
+    /// reproduce.
+    pub(crate) craft_filters: crate::craft_filter::FilterBoard,
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     pub(crate) waterfall: tr_core::waterfall::WaterfallManager,
     pub(crate) waterfall_step: FixedStepper,
@@ -716,6 +733,16 @@ pub(crate) struct App {
     pub(crate) sunflower_wind_step: FixedStepper,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
+    /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
+    /// `UpdateWorld_Gores` (`Main.cs:17971-17996`) after the NPCs and before
+    /// the projectiles (`:17767-17775`). Its collision probes are injected once
+    /// at init through [`crate::gore_seam::AppGoreCollision`].
+    pub(crate) gore: tr_core::gore::GorePool,
+    /// The per-frame `Lighting.AddLight` list pair (`LightingEngine.cs:36-38`):
+    /// `_perFrameLights` / `_oldPerFrameLights`. The light pass reads the
+    /// previous frame's list (`LightingEngine.cs:210-214`), so `end_frame` must
+    /// run once per frame after every source has contributed.
+    pub(crate) entity_lights: crate::entity_lights::EntityLights,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -999,7 +1026,11 @@ impl App {
     /// while it is open, so `menu_blood` carries that copy's flag and `None`
     /// falls back to the stored settings; run once per frame from `frame()`.
     pub(crate) fn sync_child_safety(&mut self, menu_blood: Option<bool>) {
-        self.dust.child_safety.disabled = menu_blood.unwrap_or(self.settings.blood);
+        let disabled = menu_blood.unwrap_or(self.settings.blood);
+        self.dust.child_safety.disabled = disabled;
+        // `ChildSafety.Disabled` is one static in the C# (`ChildSafety.cs:15`),
+        // so the gore spawn gate reads the same flag.
+        self.gore.child_safety.disabled = disabled;
     }
 
     /// `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): `EquipPage` is the
@@ -1195,16 +1226,52 @@ impl App {
         world_sim::growth::update_growth(self, dt);
     }
 
-    /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
-    /// the biome under the screen centre. Supported styles: 0 forest, 2 desert,
-    /// 4 ocean, 7 snow. `SceneMetrics` zones are approximated with the same
-    /// camera-column tests the water style uses (beach before desert before snow).
+    /// `Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`): the surface
+    /// background style wanted by the biome around the scene centre.
+    ///
+    /// Two deviations, both because the style they would select is not ported:
+    /// the forest sub-styles 10/11/12 need `Main.treeX[]` and the three extra
+    /// tree sets (only tree set 1 / `Background_50..52` is packed), and the
+    /// desert-variant styles 5/13/14 need `Main.desertBackgroundSet`. The forest
+    /// branch therefore stays 0 and the desert branch stays 2.
     pub(crate) fn preferred_bg_style(&self) -> i32 {
-        if is_ocean_biome(&self.world, self.camera) {
-            4
-        } else if is_desert_biome(&self.world, self.camera) {
+        // `Main.SceneMetrics.Zone*`, read in the C#'s order.
+        let m = &self.scene_metrics;
+        if m.zone_beach {
+            if m.zone_hallow {
+                6
+            } else if m.zone_corrupt {
+                if m.blood_tile_count <= m.evil_tile_count {
+                    1
+                } else {
+                    8
+                }
+            } else if m.zone_crimson {
+                8
+            } else if m.honey_block_count <= 400 {
+                4
+            } else {
+                3
+            }
+        } else if m.enough_tiles_for_glowing_mushroom() {
+            9
+        } else if m.zone_desert {
+            // `(corrupt && evil > blood && evil > holy) ? 5 : ((crimson &&
+            // blood > holy) ? 14 : (!hallow ? 2 : 13))` — 5/13/14 unported.
             2
-        } else if is_snow_biome(&self.world, self.camera) {
+        } else if m.zone_hallow {
+            6
+        } else if m.zone_corrupt {
+            if m.blood_tile_count <= m.evil_tile_count {
+                1
+            } else {
+                8
+            }
+        } else if m.zone_crimson {
+            8
+        } else if m.zone_jungle {
+            3
+        } else if m.zone_snow {
             7
         } else {
             0
@@ -1231,6 +1298,8 @@ impl App {
             &mut self.bg_alpha_front,
             &mut self.bg_alpha_far,
             self.bg_style,
+            self.world.jungle_bg_style as i32,
+            self.world.hallow_bg_style as i32,
             speed,
         );
     }
@@ -1490,6 +1559,10 @@ impl App {
         // !NurseCannotRemoveDebuff[b]`).
         player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
+        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40111`,
+        // `AchievementsHelper.cs:407-410`): the paid amount rides
+        // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
+        let _ = self.achievements.notify_custom_float("Pay", cost as f32);
         true
     }
 
@@ -2123,7 +2196,7 @@ impl App {
     ) -> App {
         let mut world = world;
         let clouds = make_clouds(&world, &lookups);
-        let sky = make_sky_assets(&atlas);
+        let sky = make_sky_assets(&atlas, &world);
         let stars = make_stars(&world);
         let player_assets = make_player_assets(&atlas);
         let npc_assets = make_npc_assets(&atlas);
@@ -2893,7 +2966,8 @@ impl App {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
-            debug_panel: crate::debug_panel::DebugPanel::new(),
+            #[cfg(feature = "debug")]
+            debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
             play_world: None,
             invasion_spawn_timer: 0.0,
@@ -2979,6 +3053,7 @@ impl App {
             // `TR_EQUIPPAGE` seeds the *selected* page too, so the pin survives
             // the per-frame `SelectEquipPage` resolution below.
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
+            dye_swap_counter: 0,
             selected: 0,
             hotbar_scales: {
                 let mut s = [0.75; HOTBAR];
@@ -2990,6 +3065,7 @@ impl App {
             // inventory draw together.
             inventory_open: crate::env::inv_open() || tr_chest.is_some(),
             craft_filter: None,
+            craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: app_bestiary,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
@@ -3121,12 +3197,14 @@ impl App {
             net_reserved: HashMap::new(),
             net_ps_last: net::PlayerState::default(),
             net_beat: 0,
-            net_module_beat: 0,
             net_proj_last: HashMap::new(),
             net_proj_spam: HashMap::new(),
             net_npc_slots: Vec::new(),
             net_ping_at: None,
+            net_ping_waiting: false,
             net_rtt_ms: 0,
+            last_ping_pos: Vec2::ZERO,
+            last_ping_time: 0.0,
             join_target,
             map: Some(world_map),
             map_queue: map::MapUpdateQueue::default(),
@@ -3268,6 +3346,11 @@ impl App {
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             leaves: Vec::new(),
+            // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
+            // slots plus the refuse sentinel; `goreTime` seeds its 600
+            // (`Gore.cs:1507-1510`).
+            gore: tr_core::gore::GorePool::new(),
+            entity_lights: crate::entity_lights::EntityLights::default(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             // The C# seeds every `SwapRandom` key with the world seed
@@ -3870,7 +3953,7 @@ fn build_atlas_inner(
     // Play froze for ~1.4 s re-decoding ~7 000 sheets and ~1–2 s more on the
     // fonts, all of them already in memory). `world ++ static ++ font` is the
     // pre-split list's order, so the atlas layout and every UV are unchanged.
-    let mut images = assets::load_world_sheets(&assets_dir, &tile_ids, &wall_ids)?;
+    let mut images = assets::load_world_sheets(&assets_dir, world, &tile_ids, &wall_ids)?;
     let world_len = images.len();
     let cached = static_cache.take();
     let static_reused = cached.is_some();
@@ -4825,6 +4908,55 @@ mod s1_g_7_tests {
         // stays unported (S1-G-7). The arm itself: `Main.SupportWideScreen`
         // forces the floor to 1f (`:61992-61994`).
         assert!(!App::SUPPORT_WIDE_SCREEN);
+    }
+}
+
+#[cfg(test)]
+mod s1_e_18_tests {
+    use super::*;
+
+    /// `NPCChatText_DoNurseHeal` (`Main.cs:40104-40111`): inside the
+    /// `BuyItem(healCost)` success arm, `AchievementsHelper.HandleNurseService`
+    /// adds the paid copper to FREQUENT_FLYER's `Pay` float
+    /// (`AchievementsHelper.cs:407-410`). A purse too short never reaches it.
+    #[test]
+    fn the_nurse_heal_credits_the_paid_copper_to_frequent_flyer() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.hp = player.max_hp / 2;
+        app.player = Some(player);
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Nurse,
+            32.0,
+            100.0,
+            1,
+            0.0,
+        ));
+        let cost = app.nurse_heal_cost(0);
+        assert!(cost > 0, "half life is a heal");
+        // Shy of the price: the C# returns before `HandleNurseService`.
+        app.coins = cost as u64 - 1;
+        assert!(!app.nurse_heal(0));
+        assert_eq!(pay(&app), 0);
+        // The paid heal credits the exact copper and tops the life up.
+        app.coins = cost as u64;
+        assert!(app.nurse_heal(0));
+        assert_eq!(pay(&app), cost);
+        assert_eq!(
+            app.player.as_ref().unwrap().hp,
+            app.player.as_ref().unwrap().max_hp
+        );
+        assert_eq!(app.coins, 0);
+    }
+
+    /// FREQUENT_FLYER's `Pay` tracker value (`AchievementsHelper.cs:408`).
+    fn pay(app: &App) -> i32 {
+        app.achievements
+            .list
+            .iter()
+            .find(|a| a.name == "FREQUENT_FLYER")
+            .and_then(|a| a.tracker_values())
+            .map_or(0, |(v, _)| v)
     }
 }
 

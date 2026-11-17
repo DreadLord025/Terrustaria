@@ -25,6 +25,7 @@ impl App {
     // `MinimapFrame.Update` runs before the inventory's click handling
     // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
     self.handle_minimap_clicks();
+    self.handle_fullmap_ping();
     self.handle_bestiary_clicks();
     // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
@@ -64,11 +65,12 @@ impl App {
     /// `DoUpdateInWorld`'s gate (`Main.cs:17278`,
     /// `ShouldUpdateEntities() && WorldUpdateStepper.ShouldUpdateWorld()`).
     fn in_world_step_gate(&mut self, paused: bool) -> bool {
-        !paused
-&& self.should_update_entities()
-&& self
-.stepper
-.should_update_world(self.step_input_down, self.step_input_was)
+        let step_allowed = !paused
+            && self.should_update_entities()
+            && self
+                .stepper
+                .should_update_world(self.step_input_down, self.step_input_was);
+        step_allowed
     }
 
     /// The step body's head (`Main.cs:17747`/`:17753` + the crafting
@@ -161,7 +163,7 @@ impl App {
             && self.camera.y
                 < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
         shimmer: self.scene_metrics.zone_shimmer,
-        town_npcs: 0, // no town NPCs yet (M4-TOWN)
+        town_npcs: self.scene_metrics.town_npc_count,
         // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
         cloud_alpha: self.rain.visual_alpha(),
         zone_rain: self.scene_metrics.zone_rain,
@@ -235,6 +237,24 @@ impl App {
     }
     }
 
+    /// `Main.UpdateWorld_Gores` (`Main.cs:17971-17996`, called at
+    /// `:17771-17774`): the 600-slot walk, between the NPCs and the
+    /// projectiles. Its rolls ride the stage's own named stream
+    /// (`Main.SwapRandom("UpdateGores")`).
+    fn gores_phase(&mut self) {
+        self.phase("gores");
+        {
+            let rng = self.rngs.stream(crate::app::RngKey::UpdateGores);
+            let wind_for_visuals = self.wind.speed_current;
+            self.gore.update(
+                rng,
+                &self.world,
+                &crate::gore_seam::AppGoreCollision,
+                wind_for_visuals,
+            );
+        }
+    }
+
     /// `Main.UpdateWorld_Projectiles` (`Main.cs:17976`) — **before** items.
     fn projectiles_phase(&mut self, dt: f32) {
     // `Main.UpdateWorld_Projectiles` (`Main.cs:17976`) runs **before**
@@ -257,7 +277,43 @@ impl App {
     // `world_sim::scene_scan::update_scene`).
     self.phase("dust");
     let (sw, sh) = self.screen_size();
-    crate::minecart::tick(&mut self.dust, self.camera, Vec2::new(sw, sh), self.zoom);
+    // The tick rides a client stream: the riding player's
+    // `spark_rng` (the cart's own) when a player exists, else the
+    // NamedRngs' global stream (the C#'s single `Main.rand`
+    // equivalent - `self.rngs.global()`, `app/rng.rs`); no new
+    // stream instances either (S1-E-3).
+    let max_dust = self.gfx_quality.max_dust_to_draw;
+    let show_sand = self.sandstorm.show_sandstorm_visuals(
+        self.scene_metrics.zone_sandstorm,
+        tr_core::scene::is_desert_bg_style(self.bg_style),
+        self.bg_delay,
+    );
+    let player_vy = self.player.as_ref().map_or(0.0, |p| p.vy);
+    let dust = &mut self.dust;
+    match self.player.as_mut() {
+        Some(p) => crate::minecart::tick(
+            dust,
+            &mut crate::app::SplitmixRand(&mut p.spark_rng),
+            max_dust,
+            self.camera,
+            Vec2::new(sw, sh),
+            self.zoom,
+            &self.world,
+            player_vy,
+            show_sand,
+        ),
+        None => crate::minecart::tick(
+            dust,
+            self.rngs.global(),
+            max_dust,
+            self.camera,
+            Vec2::new(sw, sh),
+            self.zoom,
+            &self.world,
+            player_vy,
+            show_sand,
+        ),
+    }
     }
 
     /// `Main.UpdateWorld_Time` (`Main.cs:18083`) — the clock's own named
@@ -422,7 +478,13 @@ impl App {
     fn map_phase(&mut self, dt: f32) {
                     self.phase("map");
                     if let Some(m) = self.map.as_mut() {
+    // `Main.mapTimeMax` (`Main.cs:801`) — the gfx-quality
+    // budget the countdown re-arms from (`:61818-61821`).
+    m.map_time_max = self.gfx_quality.map_time_max;
     m.update(&self.world, self.player.as_ref(), &self.light, dt);
+    // `PingMapLayer.Draw`'s expiry (`PingMapLayer.cs:36-39`):
+    // the markers older than 15 s drop while the map is up.
+    m.age_pings(dt);
     // `MapUpdateQueue.Update()` (`Main.cs:61862`): the edit-side
     // refresh drains through `WorldMap.UpdateType`; the changed
     // tiles re-upload (`MapRenderer.QueueChange`'s analog).
@@ -471,6 +533,7 @@ impl App {
             self.world_step_head();
             self.players_phase(dt, screen);
             self.npcs_phase(dt);
+            self.gores_phase();
             self.projectiles_phase(dt);
             self.items_phase(dt);
             self.dust_phase(dt);

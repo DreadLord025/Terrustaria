@@ -265,16 +265,17 @@ mod summon_fixture_tests {
             app.world.width as f32 * 16.0,
             app.world.height as f32 * 16.0,
         );
-        // The sentry (aiStyle 53, no arm yet) holds its anchor exactly; the
-        // Hornet is AI-driven since Phase 4 and drifts toward the owner on the
-        // same tick — it stays anchored to within one tick's step.
-        assert_eq!(
-            hydra,
-            Some((
-                (cx + 24.0).clamp(0.0, ww - 80.0 - 1.0),
-                (cy - 48.0).clamp(0.0, wh - 74.0 - 1.0),
-            )),
-            "the sentry anchored on the player's center (world-clamped)"
+        // The sentry (aiStyle 53) free-falls and `HandleMovement` integrates it
+        // on the same tick, so both members stay anchored to within one tick's
+        // step rather than exactly.
+        let sentry_anchor = (
+            (cx + 24.0).clamp(0.0, ww - 80.0 - 1.0),
+            (cy - 48.0).clamp(0.0, wh - 74.0 - 1.0),
+        );
+        let (sx, sy) = hydra.expect("the Frost Hydra renders");
+        assert!(
+            (sx - sentry_anchor.0).abs() < 8.0 && (sy - sentry_anchor.1).abs() < 8.0,
+            "the sentry anchored within one tick's fall: {sx},{sy} vs {sentry_anchor:?}"
         );
         let (hx, hy) = hornet.expect("the Hornet renders");
         let anchor = (

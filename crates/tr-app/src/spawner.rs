@@ -68,6 +68,51 @@ pub struct SpawnFlags {
     pub wof_active: bool,
 }
 
+/// The wave-20 boss kinds the `Spawner` ctor weights (`NPC.cs:273-286`):
+/// 315/325/327/328/344/345/346, each with its `SetDefaults` `npcSlots`
+/// (the common reset is `npcSlots = 1f`, `NPC.cs:8510`; the per-type writes
+/// are `NPC.cs:12978`/`:13115`/`:13142`/`:13158`/`:13355`/`:13369`/`:13386`).
+pub const MOON_BOSS_SLOTS: [(u16, f32); 7] = [
+    (315, 1.0),
+    (325, 3.0),
+    (327, 5.0),
+    (328, 0.0),
+    (344, 3.0),
+    (345, 5.0),
+    (346, 4.0),
+];
+
+/// A boss kind's weight in the ctor's sum — `None` for every other type.
+pub fn moon_boss_slots(npc_type: u16) -> Option<f32> {
+    MOON_BOSS_SLOTS
+        .iter()
+        .find(|(id, _)| *id == npc_type)
+        .map(|(_, slots)| *slots)
+}
+
+/// `Spawner`'s ctor weighted sum over the live boss kinds
+/// (`NPC.cs:274-283`) — the ctx's boss-cap input (the `invasion_saucer_alive`
+/// pattern). All seven kinds are unported until F-13b/c, so the port's count
+/// is structurally 0.
+pub fn moon_boss_cap_count(npcs: &[Npc]) -> f32 {
+    npcs.iter()
+        .filter(|n| n.hp > 0)
+        .filter_map(|n| moon_boss_slots(n.kind.to_u16()))
+        .sum()
+}
+
+/// The ctor's bound for the port's single active player
+/// (`NPC.cs:285`): `(int)(defaultMaxSpawns × (2 + 0.3 × players))` = 11 — the
+/// same `5·2.3` the moon raid pacing reads (`spawner.rs:396`).
+pub fn moon_boss_cap_bound() -> i32 {
+    (DEFAULT_MAX_SPAWNS as f64 * (2.0 + 0.3 * 1.0)) as i32
+}
+
+/// `Spawner.reachedInvasionBossCap` (`NPC.cs:286`): the C#'s `>=` compare.
+pub fn moon_boss_cap_reached(count: f32) -> bool {
+    count >= moon_boss_cap_bound() as f32
+}
+
 /// `Main.wallLight` (`Main.cs:10578-10595`) — the wall list
 /// `SetSpawnFlags`' `skyBehindPlayer` gate reads (plus wall 73's separate
 /// `||` arm, `NPC.cs:412`).
@@ -139,6 +184,11 @@ pub struct SpawnContext<'a> {
     /// player's tile is light-passing (or wall 73) — the skyMob probe
     /// arm's open-sky gate.
     pub sky_behind_player: bool,
+    /// The `Spawner` ctor's boss cap input (`NPC.cs:262-286`): the weighted
+    /// `npcSlots` count over the live wave-20 boss kinds — the moon ladders
+    /// compare it against [`moon_boss_cap_reached`]. Structurally 0 until the
+    /// kinds land (F-13b/c).
+    pub moon_boss_cap_count: f32,
 }
 
 /// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap,
@@ -1026,6 +1076,31 @@ fn spawn_npc_at(
         // map to the port's closest kinds there).
     }
     if surface {
+        // ---- the moon-event roster ladders (`NPC.cs:2804-3548`) ---- the
+        // C#'s `!Main.dayTime && (snowMoon || pumpkinMoon)` arms sit in the
+        // zone chain's `else` after ZoneMeteor (`:2798`) — after every water
+        // arm above (`:1763-2079`) and ahead of the `surfaceSpawn` probe arm
+        // and the natural ladders (`:4164`+), and matching an arm skips the
+        // chain's remaining branches, so the port's arm is terminal: it draws
+        // the vanilla rolls and returns. The events are mutually exclusive
+        // (each start clears the other, `Main.cs:10979-11017`), so which flag
+        // is alive picks the ladder.
+        //
+        // `Main.remixWorld`'s surface-band alternative has no port counterpart
+        // — the `(double)spawnTileY <= Main.worldSurface` twin is the
+        // reduction, and the enclosing `if surface` IS that band.
+        if !ctx.day_time && (ctx.world.snow_moon || ctx.world.pumpkin_moon) {
+            let _wave_kind = if ctx.world.snow_moon {
+                frost_moon_ladder(ctx, rng)
+            } else {
+                pumpkin_moon_ladder(ctx, rng)
+            };
+            // All 30 wave kinds are unported until F-13b/c: the ladder's pick
+            // is the vanilla `NPC.type` the C# would spawn, and the dispatch
+            // consumes it without spawning — the Wyvern arm's
+            // consume-and-return-None shape (`spawner.rs:989-994`).
+            return None;
+        }
         // The surface probe arm (`NPC.cs:4164-4199`, the `surfaceSpawn`
         // branch): the graveyard/snow-rain/rain specials ahead of it sit
         // behind unmodelled flags and consume nothing; `flag17` is the
@@ -1466,6 +1541,344 @@ pub(crate) fn invasion_spawn_pick(
     })
 }
 
+// ---- S1-F-13: the moon-event roster ladders (`NPC.cs:2804-3548`) ----
+
+/// The live count of a moon wave kind — the C#'s `NPC.CountNPCS(id)`
+/// (`NPC.cs:7982-7995`); `NPC.AnyNPCs(id)` (`:7975-7981`) is "none alive",
+/// which is `CountNPCS(id) < 1`. All 30 wave kinds are unported until
+/// F-13b/c, so the port's count is structurally 0 and every cap gate stands
+/// open. The shape below is verbatim: the live read replaces this one
+/// constant when the kinds land.
+const MOON_WAVE_KIND_COUNT: i32 = 0;
+
+/// One arm of a moon roster ladder: draws the arm's roll on the spawner stream
+/// and, when it hits and the `CountNPCS(id) < cap` gate is open, records the
+/// vanilla `NPC.type`. `cap` is `Some(c)` for the C#'s `CountNPCS(id) < c`
+/// (`Some(1)` = `!AnyNPCs(id)`) and `None` for an ungated roll. Returns
+/// whether the arm's whole condition held — the C#'s `else if` chain draws the
+/// next roll only while the previous arm's did not.
+fn moon_arm(picked: &mut Option<u16>, rng: &mut UnifiedRandom, n: i32, cap: Option<i32>, kind: u16) -> bool {
+    moon_arm_count(picked, rng, n, cap, kind, MOON_WAVE_KIND_COUNT)
+}
+
+/// [`moon_arm`] with the live count explicit — the production path passes
+/// [`MOON_WAVE_KIND_COUNT`]; the tests close a gate to prove the `CountNPCS`
+/// cap actually gates the arm (a closed cap suppresses the pick and the C#'s
+/// `else if` chain advances to the next arm).
+fn moon_arm_count(
+    picked: &mut Option<u16>,
+    rng: &mut UnifiedRandom,
+    n: i32,
+    cap: Option<i32>,
+    kind: u16,
+    count: i32,
+) -> bool {
+    let hit = rng.next_max(n) == 0 && cap.map_or(true, |c| count < c);
+    if hit && picked.is_none() {
+        *picked = Some(kind);
+    }
+    hit
+}
+
+/// A C# `else if` chain in the vanilla arm order: each arm draws its roll while
+/// no earlier arm fired (the `else if` short-circuit), and the chain falls
+/// through to `fallback` — the C#'s final `else` type, or `None` for the snow
+/// wave 14, whose chain has no `else` (`NPC.cs:2958`).
+fn moon_chain<F>(rng: &mut UnifiedRandom, arms: &[(i32, Option<i32>, u16)], fallback: F) -> Option<u16>
+where
+    F: FnOnce(&mut UnifiedRandom) -> Option<u16>,
+{
+    let mut picked: Option<u16> = None;
+    for (n, cap, kind) in arms {
+        if picked.is_some() {
+            break;
+        }
+        moon_arm(&mut picked, rng, *n, *cap, *kind);
+    }
+    if picked.is_none() {
+        fallback(rng)
+    } else {
+        picked
+    }
+}
+
+/// The frost-moon roster ladder: `SpawnAnNPC`'s
+/// `!Main.dayTime && Main.snowMoon` arm (`NPC.cs:2804-3222`), transcribed with
+/// the vanilla branch order — the 341 head (`:2807`) at every wave, the
+/// `waveNumber >= 20` boss trio (`:2812`), the `>= 19 … >= 15` ladder
+/// (`:2832`), then the `switch (waveNumber)` cases (`:2956`).
+///
+/// Returns the `NPC.type` the arm would spawn. `None` is the C#'s only
+/// no-spawn outcome: the wave-20 trio behind a reached boss cap (`:2815`).
+/// Every picked kind is an unported wave kind (F-13b/c) — the dispatch consumes
+/// the pick without spawning.
+fn frost_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16> {
+    let wave = ctx.world.wave_number;
+    // The 341 head (`:2807-2811`) runs at every wave, before the `>= 20`
+    // check, and is the block's only arm that returns on a hit.
+    if rng.next_max(30) == 0 && MOON_WAVE_KIND_COUNT < 4 {
+        return Some(341);
+    }
+    if wave >= 20 {
+        // `num44 = Next(3)` (`:2814`) is drawn BEFORE the boss-cap gate
+        // (`:2815`): the stream consumes even when the cap is reached.
+        let num44 = rng.next_max(3);
+        if moon_boss_cap_reached(ctx.moon_boss_cap_count) {
+            return None;
+        }
+        return Some(match num44 {
+            0 => 345,
+            1 => 346,
+            _ => 344,
+        });
+    }
+    // The `waveNumber >= 19 … >= 15` ladder (`NPC.cs:2832-2954`): the C#'s
+    // sequential `if (waveNumber >= N) { … return; }` chain — a wave takes the
+    // first branch it reaches, then the switch below.
+    if wave >= 19 {
+        return moon_chain(
+            rng,
+            &[(10, Some(4), 345), (10, Some(5), 346), (10, Some(7), 344)],
+            |_| Some(343),
+        );
+    }
+    if wave >= 18 {
+        return moon_chain(
+            rng,
+            &[
+                (10, Some(3), 345),
+                (10, Some(4), 346),
+                (10, Some(6), 344),
+                (3, None, 348),
+                (3, None, 351),
+            ],
+            |_| Some(343),
+        );
+    }
+    if wave >= 17 {
+        return moon_chain(
+            rng,
+            &[
+                (10, Some(2), 345),
+                (10, Some(3), 346),
+                (10, Some(5), 344),
+                (4, None, 347),
+                (2, None, 351),
+            ],
+            |_| Some(343),
+        );
+    }
+    if wave >= 16 {
+        return moon_chain(
+            rng,
+            &[(10, Some(2), 345), (10, Some(2), 346), (10, Some(4), 344), (2, None, 352)],
+            |_| Some(343),
+        );
+    }
+    if wave >= 15 {
+        return moon_chain(
+            rng,
+            &[(10, Some(1), 345), (10, Some(2), 346), (10, Some(3), 344), (3, None, 347)],
+            |_| Some(343),
+        );
+    }
+    // The `switch (waveNumber)` (`NPC.cs:2956-3222`): the C#'s cases 14 … 2
+    // plus the default — wave 1 (and any out-of-range value) takes the default.
+    match wave {
+        // `NPC.cs:2958` — case 14's `else if` chain has NO final `else`: when
+        // all four arms miss, the C# spawns nothing.
+        14 => moon_chain(
+            rng,
+            &[(10, Some(1), 345), (10, Some(1), 346), (10, Some(1), 344), (3, None, 343)],
+            |_| None,
+        ),
+        13 => moon_chain(
+            rng,
+            &[
+                (10, Some(1), 345),
+                (10, Some(1), 346),
+                (3, None, 352),
+                (6, None, 343),
+                (3, None, 342),
+            ],
+            |_| Some(347),
+        ),
+        12 => moon_chain(
+            rng,
+            &[(10, Some(1), 345), (10, Some(1), 344), (8, None, 343), (3, None, 342)],
+            // `Main.rand.Next(338, 341)` (`:3021`) IS the chosen type.
+            |r| Some(338 + r.next_max(3) as u16),
+        ),
+        11 => moon_chain(rng, &[(10, Some(1), 345), (6, None, 352), (2, None, 342)], |r| {
+            Some(338 + r.next_max(3) as u16)
+        }),
+        10 => moon_chain(
+            rng,
+            &[
+                (10, Some(1), 346),
+                (10, Some(2), 344),
+                (6, None, 351),
+                (3, None, 348),
+                (3, None, 347),
+            ],
+            |r| Some(338 + r.next_max(3) as u16),
+        ),
+        9 => moon_chain(
+            rng,
+            &[(10, Some(1), 346), (10, Some(1), 344), (2, None, 348), (3, None, 347)],
+            |_| Some(342),
+        ),
+        8 => moon_chain(
+            rng,
+            &[(10, Some(1), 346), (8, None, 351), (3, None, 348), (3, None, 347)],
+            |_| Some(350),
+        ),
+        7 => moon_chain(rng, &[(10, Some(1), 346), (3, None, 342), (4, None, 350)], |r| {
+            Some(338 + r.next_max(3) as u16)
+        }),
+        6 => moon_chain(rng, &[(10, Some(2), 344), (4, None, 347), (2, None, 348)], |_| Some(350)),
+        5 => moon_chain(rng, &[(10, Some(1), 344), (4, None, 350), (8, None, 348)], |r| {
+            Some(338 + r.next_max(3) as u16)
+        }),
+        4 => moon_chain(rng, &[(10, Some(1), 344), (4, None, 350), (3, None, 342)], |r| {
+            Some(338 + r.next_max(3) as u16)
+        }),
+        3 => moon_chain(rng, &[(8, None, 348), (4, None, 350), (3, None, 342)], |r| {
+            Some(338 + r.next_max(3) as u16)
+        }),
+        2 => moon_chain(rng, &[(3, None, 350)], |r| Some(338 + r.next_max(3) as u16)),
+        _ => moon_chain(rng, &[(3, None, 342)], |r| Some(338 + r.next_max(3) as u16)),
+    }
+}
+
+/// The 327-arm quirk of the pumpkin cases 18/17/15/14 (`NPC.cs:3263`/`:3281`/
+/// `3329`/`:3351`): the leading 327 `if` is a SEPARATE statement from the
+/// `else if` chain after it, so its roll always draws — and when both fire the
+/// C# spawns BOTH NPCs in one attempt (the picker returns the first; the stream
+/// stays 1:1 — the deviation is recorded in ANALYSIS).
+fn pumpkin_327_chain<F>(
+    rng: &mut UnifiedRandom,
+    n: i32,
+    cap: Option<i32>,
+    chain: &[(i32, Option<i32>, u16)],
+    fallback: F,
+) -> Option<u16>
+where
+    F: FnOnce(&mut UnifiedRandom) -> Option<u16>,
+{
+    let mut picked = None;
+    moon_arm(&mut picked, rng, n, cap, 327);
+    picked.or(moon_chain(rng, chain, fallback))
+}
+
+/// The pumpkin-moon roster ladder: `SpawnAnNPC`'s `!Main.dayTime &&
+/// Main.pumpkinMoon` arm (`NPC.cs:3224-3548`) — the `waveNumber >= 20` boss
+/// trio (`:3227`) and the `switch (waveNumber2)` cases (`:3246`). Same return
+/// contract as [`frost_moon_ladder`].
+fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u16> {
+    let wave = ctx.world.wave_number;
+    if wave >= 20 {
+        // The trio sits WHOLLY inside `!reachedInvasionBossCap` (`:3229`): a
+        // reached cap draws nothing and spawns nothing.
+        if moon_boss_cap_reached(ctx.moon_boss_cap_count) {
+            return None;
+        }
+        let mut picked = None;
+        if moon_arm(&mut picked, rng, 2, Some(2), 327) {
+            return picked; // 327
+        }
+        // `Next(3) != 0 && CountNPCS(325) < 2` (`:3235`) — the inverted roll.
+        if rng.next_max(3) != 0 && MOON_WAVE_KIND_COUNT < 2 {
+            return Some(325);
+        }
+        // The 315 arm (`:3239`) draws no roll.
+        if MOON_WAVE_KIND_COUNT < 3 {
+            return Some(315);
+        }
+        return None;
+    }
+    match wave {
+        19 => {
+            // `:3249-3260`: 327, 325, then the 315 arm whose gate ALSO carries
+            // `!reachedInvasionBossCap`; the case has no final `else`.
+            let mut picked = None;
+            if !moon_arm(&mut picked, rng, 5, Some(2), 327)
+                && !moon_arm(&mut picked, rng, 5, Some(2), 325)
+                && !moon_boss_cap_reached(ctx.moon_boss_cap_count)
+                && MOON_WAVE_KIND_COUNT < 5
+            {
+                picked = Some(315);
+            }
+            picked
+        }
+        18 => pumpkin_327_chain(rng, 7, Some(2), &[(7, Some(2), 325), (7, Some(3), 315)], |_| Some(330)),
+        17 => pumpkin_327_chain(
+            rng,
+            7,
+            Some(2),
+            &[(7, Some(2), 325), (7, Some(2), 315), (3, None, 330)],
+            |_| Some(329),
+        ),
+        16 => moon_chain(
+            rng,
+            &[(10, Some(2), 327), (10, Some(2), 315), (6, None, 330), (3, None, 329)],
+            |_| Some(326),
+        ),
+        15 => pumpkin_327_chain(
+            rng,
+            10,
+            Some(1),
+            &[(7, Some(2), 325), (5, None, 330), (3, None, 326)],
+            |r| Some(305 + r.next_max(10) as u16),
+        ),
+        14 => pumpkin_327_chain(
+            rng,
+            10,
+            Some(1),
+            &[
+                (7, Some(2), 325),
+                (10, Some(1), 315),
+                (10, None, 330),
+                (7, None, 329),
+                (3, None, 326),
+            ],
+            |r| Some(305 + r.next_max(10) as u16),
+        ),
+        13 => moon_chain(
+            rng,
+            &[(7, Some(2), 325), (10, Some(2), 315), (6, None, 330), (3, None, 329)],
+            |_| Some(326),
+        ),
+        12 => moon_chain(rng, &[(5, Some(1), 327)], |_| Some(330)),
+        11 => moon_chain(rng, &[(7, Some(2), 325), (3, None, 330)], |_| Some(326)),
+        10 => moon_chain(rng, &[(10, Some(1), 327), (3, None, 329)], |r| {
+            Some(305 + r.next_max(10) as u16)
+        }),
+        9 => moon_chain(
+            rng,
+            &[(10, Some(2), 325), (8, None, 330), (5, None, 329), (2, None, 326)],
+            |r| Some(305 + r.next_max(10) as u16),
+        ),
+        8 => moon_chain(rng, &[(8, Some(2), 315), (4, None, 330)], |_| Some(329)),
+        7 => moon_chain(rng, &[(7, Some(2), 325), (4, None, 330)], |_| Some(329)),
+        6 => moon_chain(rng, &[(7, Some(2), 325), (2, None, 326)], |r| {
+            Some(305 + r.next_max(10) as u16)
+        }),
+        5 => moon_chain(rng, &[(10, Some(1), 315)], |_| Some(329)),
+        4 => {
+            // Verbatim quirk (`:3511-3513`): the roll gates on `!AnyNPCs(325)`
+            // but the arm spawns 330.
+            moon_chain(rng, &[(8, Some(1), 330), (2, None, 326)], |r| {
+                Some(305 + r.next_max(10) as u16)
+            })
+        }
+        3 => moon_chain(rng, &[(3, None, 329)], |_| Some(326)),
+        2 => moon_chain(rng, &[(3, None, 326)], |r| Some(305 + r.next_max(10) as u16)),
+        // `:3545` — the C#'s default: no roll gate, the type is `Next(305, 315)`.
+        _ => Some(305 + rng.next_max(10) as u16),
+    }
+}
+
 /// `Spawner.GetBasicSlimeToSpawn` (`NPC.cs:5625-5654`) + the Pinky swap
 /// (`:5238-5246`): the surface forest ladder (1/3 green or close, 1/10
 /// purple far, else blue) and the underground ladder (1/5 yellow, ½
@@ -1592,6 +2005,7 @@ mod tests {
             any_danger: false,
             probe_exists: false,
             sky_behind_player: false,
+            moon_boss_cap_count: 0.0,
         }
     }
 
@@ -2451,6 +2865,7 @@ mod tests {
             any_danger: false,
             probe_exists: false,
             sky_behind_player: false,
+            moon_boss_cap_count: 0.0,
         }
     }
 
@@ -2648,6 +3063,7 @@ mod tests {
                     any_danger: false,
                     probe_exists: false,
                     sky_behind_player: false,
+                    moon_boss_cap_count: 0.0,
                 };
                 let (spawned, _) = spawn_npc_call(Some(ctx), &mut rng, false);
                 decisions.push(spawned.map(|n| (n.kind as u8, n.x.to_bits())));
@@ -2908,6 +3324,7 @@ mod tests {
             any_danger: false,
             probe_exists: false,
             sky_behind_player: true,
+            moon_boss_cap_count: 0.0,
         }
     }
 
@@ -3450,5 +3867,353 @@ mod tests {
             saw_ground |= n.kind != NpcKind::MartianDrone;
         }
         assert!(saw_ground, "the ground ladder ran on the unlatched tile");
+    }
+
+    // --- S1-F-13 Phase 1: the wave-20 boss cap (`Spawner`'s ctor) ---
+
+    /// DW-1.4: the slots table, transcribed from each kind's `SetDefaults`
+    /// (`NPC.cs:8510`'s common reset is 1; the writes are `:12978` (315),
+    /// `:13115` (325), `:13142` (327), `:13158` (328), `:13355` (344),
+    /// `:13369` (345), `:13386` (346)).
+    #[test]
+    fn the_boss_cap_slots_table_matches_the_c_sharp() {
+        for (id, slots) in [
+            (315u16, 1.0f32),
+            (325, 3.0),
+            (327, 5.0),
+            (328, 0.0),
+            (344, 3.0),
+            (345, 5.0),
+            (346, 4.0),
+        ] {
+            assert_eq!(moon_boss_slots(id), Some(slots), "kind {id} weighs {slots}");
+        }
+        // Every other type is outside the ctor's switch.
+        for id in [4u16, 50, 305, 338, 352, 1253, 6296] {
+            assert_eq!(moon_boss_slots(id), None, "kind {id} is not a wave-20 boss");
+        }
+        assert_eq!(moon_boss_slots(0), None);
+    }
+
+    /// DW-1.4: the weighted count over the live NPCs is 0 while the seven
+    /// kinds are unported (F-13b/c) — so the cap stays false, and any number
+    /// of ported NPCs never moves it.
+    #[test]
+    fn the_boss_cap_counts_zero_while_the_kinds_are_unported() {
+        let npcs: Vec<Npc> = (0..24)
+            .map(|i| Npc::new(NpcKind::Zombie, i as f32 * 32.0, 100.0, 1, 0.0))
+            .collect();
+        assert_eq!(moon_boss_cap_count(&npcs), 0.0);
+        assert!(!moon_boss_cap_reached(0.0));
+        assert_eq!(moon_boss_cap_count(&[]), 0.0);
+    }
+
+    /// DW-1.4: the bound — the port's single active player reads
+    /// `(int)(defaultMaxSpawns × (2 + 0.3 × players))` = 11 (`NPC.cs:285`), the
+    /// same `5·2.3` the moon raid pacing forces, and the C# `>=` compare.
+    #[test]
+    fn the_boss_cap_bound_is_the_single_player_5_2_3() {
+        assert_eq!(moon_boss_cap_bound(), 11);
+        assert!(!moon_boss_cap_reached(10.9), "10.9 < 11 stays open");
+        assert!(moon_boss_cap_reached(11.0), "the C# >= reaches at 11");
+        assert!(moon_boss_cap_reached(20.0));
+    }
+
+    // ---- S1-F-13 Phase 2: the roster ladders in the shared spawn chain ----
+
+    /// A night surface world with the frost moon running at a given wave.
+    fn moon_world(wave: i32, snow: bool) -> World {
+        let mut w = World::new("t".into(), 400, 700);
+        w.world_surface = 30.0;
+        w.snow_moon = snow;
+        w.pumpkin_moon = !snow;
+        w.wave_number = wave;
+        w
+    }
+
+    /// DIRTY (watched RED pre-fix): DW-2.1 — with a night + snow moon +
+    /// wave 20 armed, the ladder draws the vanilla boss-trio `Next(3)`
+    /// sequence on the spawner stream and spawns nothing (the wave kinds
+    /// are unported until F-13b/c).
+    ///
+    /// The reference replay (`NPC.cs:2804-2830`): `GetZombieSettings`' style
+    /// `Next(7)` (`:1284`), then the arm head EXACTLY as the C# runs it — the
+    /// 341 `Next(30) == 0 && CountNPCS(341) < 4` arm (`:2807-2811`) hits only
+    /// 1/30 of the time and RETURNS on the hit (no `num44` draw); otherwise
+    /// the wave-20 branch draws `num44 = Next(3)` (`:2814`) and picks
+    /// 345/346/344 per num44 (`:2820-2826`). The kinds are unported, so no NPC
+    /// comes back — but the picks and both stream tails (the ladder's and
+    /// `spawn_npc_at`'s, which is the style draw + the arm) must match the
+    /// replay seed for seed.
+    #[test]
+    fn the_snow_wave_20_boss_trio_replays_the_vanilla_next3_sequence() {
+        let w = moon_world(20, true);
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.moon_boss_cap_count = 0.0; // the cap is open
+        let mut saw_head = 0;
+        let mut saw_trio = 0;
+        for seed in 1..=200u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let spawn = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
+            // The ladder's pick on its own stream: after the style draw
+            // `GetZombieSettings` puts ahead of every arm (`NPC.cs:1284`).
+            let mut pick_rng = UnifiedRandom::new(seed as i32);
+            let _style = pick_rng.next_max(7);
+            let picked = frost_moon_ladder(&c, &mut pick_rng);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // `GetZombieSettings` (`NPC.cs:1284`)
+            if r#ref.next_max(30) == 0 {
+                // The 341 head hit (`:2807-2811`): the C# spawns and returns —
+                // the trio's `Next(3)` is never drawn, so the replay stops
+                // here. `CountNPCS(341) < 4` is open (the count is
+                // structurally 0 until F-13b/c).
+                saw_head += 1;
+                assert_eq!(
+                    picked,
+                    Some(341),
+                    "seed {seed}: the head arm picks the vanilla Eskimo type"
+                );
+            } else {
+                let num44 = r#ref.next_max(3); // the boss-trio pick (`:2814`)
+                let trio = match num44 {
+                    0 => 345u16,
+                    1 => 346,
+                    _ => 344,
+                };
+                saw_trio += 1;
+                assert_eq!(
+                    picked,
+                    Some(trio),
+                    "seed {seed}: the ladder picks the vanilla trio type"
+                );
+            }
+            assert!(
+                spawn.is_none(),
+                "seed {seed}: the unported trio kind must not spawn"
+            );
+            assert_eq!(
+                pick_rng.peek(), r#ref.peek(),
+                "seed {seed}: the ladder's stream tail is the vanilla draw order"
+            );
+            assert_eq!(
+                rng.peek(), r#ref.peek(),
+                "seed {seed}: `spawn_npc_at`'s stream tail is the vanilla draw order"
+            );
+        }
+        assert!(
+            saw_head > 0 && saw_trio > 0,
+            "the 200 seeds must exercise both head outcomes (head {saw_head}, trio {saw_trio})"
+        );
+    }
+
+    /// DW-2.1's cap half: the wave-20 trio sits behind `!reachedInvasionBossCap`
+    /// (`NPC.cs:2815`) — a reached cap draws `num44 = Next(3)` anyway (the draw
+    /// precedes the gate, `:2813-2815`) and spawns nothing.
+    #[test]
+    fn the_snow_wave_20_trio_spawns_nothing_with_the_boss_cap_reached() {
+        let w = moon_world(20, true);
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.moon_boss_cap_count = 20.0; // >= the bound (11): the cap is reached
+        for seed in 1..=200u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let spawn = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
+            let mut pick_rng = UnifiedRandom::new(seed as i32);
+            let _style = pick_rng.next_max(7);
+            let picked = frost_moon_ladder(&c, &mut pick_rng);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _style = r#ref.next_max(7); // `GetZombieSettings` (`NPC.cs:1284`)
+            let _head = r#ref.next_max(30); // the 341 head arm (`:2807`) — still drawn
+            if _head == 0 {
+                // The head arm's hit still spawns 341 behind the cap — only
+                // the boss trio is gated (`:2815`).
+                assert_eq!(picked, Some(341), "seed {seed}: the head arm is not gated");
+            } else {
+                let _num44 = r#ref.next_max(3); // `:2814` — drawn BEFORE the cap gate
+                assert_eq!(
+                    picked, None,
+                    "seed {seed}: the reached cap suppresses the trio (and keeps its draw)"
+                );
+            }
+            assert!(
+                spawn.is_none(),
+                "seed {seed}: nothing spawns with the cap reached"
+            );
+            assert_eq!(
+                pick_rng.peek(), r#ref.peek(),
+                "seed {seed}: the cap-reached stream tail is the vanilla draw order"
+            );
+            assert_eq!(
+                rng.peek(), r#ref.peek(),
+                "seed {seed}: `spawn_npc_at`'s cap-reached tail is the vanilla order"
+            );
+        }
+    }
+
+    /// DW-2.2: the per-wave ladder fires in the C# branch order — wave 19
+    /// (`NPC.cs:2832-2840`) is the chain `Next(10)==0 && CountNPCS(345)<4` →
+    /// 345, `<5` → 346, `<7` → 344, else 343 — and each arm's roll is only
+    /// drawn while no earlier arm fired (the `else if` short-circuit).
+    #[test]
+    fn the_wave_19_ladder_fires_the_csharp_branch_order() {
+        let w = moon_world(19, true);
+        let c = ctx(&w, 25.0 * 16.0, false);
+        // The reference replay: an arm that hits stops the chain (one Next(10)
+        // consumed); an arm that misses draws its Next(10) and advances.
+        for seed in 1..=200u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let _style = rng.next_max(7); // `GetZombieSettings` (`NPC.cs:1284`)
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let _s = r#ref.next_max(7); // the style draw (outside the ladder)
+            // The 341 head arm (`:2807-2811`) is INSIDE the ladder and returns
+            // on its hit — the replay mirrors it.
+            let head = r#ref.next_max(30);
+            let expect = if head == 0 {
+                Some(341u16)
+            } else {
+                let n1 = r#ref.next_max(10); // arm 1: 345 (`:2832-2835`)
+                if n1 == 0 {
+                    Some(345)
+                } else {
+                    let n2 = r#ref.next_max(10); // arm 2: 346 (`:2836-2839`)
+                    if n2 == 0 {
+                        Some(346)
+                    } else {
+                        let n3 = r#ref.next_max(10); // arm 3: 344 (`:2840-2843`)
+                        if n3 == 0 {
+                            Some(344)
+                        } else {
+                            Some(343) // the `else` (`:2844-2846`)
+                        }
+                    }
+                }
+            };
+            assert_eq!(
+                frost_moon_ladder(&c, &mut rng),
+                expect,
+                "seed {seed}: the wave-19 chain must replay the C# branch order"
+            );
+            assert_eq!(
+                rng.peek(), r#ref.peek(),
+                "seed {seed}: the else-if short-circuit consumes exactly one Next(10) per fired arm"
+            );
+        }
+    }
+
+    /// DW-2.2's cap half: a closed `CountNPCS` gate suppresses its arm's pick
+    /// while its roll is still drawn (the C#'s `&&` — `NPC.cs:2832-2835`), so
+    /// the chain advances to the next arm. The live counts are 0 until
+    /// F-13c (the kinds are unported), which is exactly `moon_arm_count`'s
+    /// closed-gate mode.
+    #[test]
+    fn a_closed_count_cap_suppresses_its_arm_and_advances() {
+        let mut picked = None;
+        let mut rng = UnifiedRandom::new(1);
+        // A seed whose first Next(10) hits, with the cap open: the arm fires.
+        let hit_seed = (1..=100u64).find(|&s| UnifiedRandom::new(s as i32).next_max(10) == 0).unwrap();
+        let mut rng = UnifiedRandom::new(hit_seed as i32);
+        assert!(moon_arm_count(
+            &mut picked, &mut rng, 10, Some(4), 345, 0
+        ));
+        assert_eq!(picked, Some(345));
+        // The same roll, the cap closed (count 4 >= 4): suppressed, no pick,
+        // the draw consumed.
+        let mut picked2 = None;
+        let mut rng2 = UnifiedRandom::new(hit_seed as i32);
+        let fired = moon_arm_count(&mut picked2, &mut rng2, 10, Some(4), 345, 4);
+        assert!(!fired, "the closed cap suppresses the pick");
+        assert_eq!(picked2, None, "nothing picked behind the closed cap");
+        assert_eq!(rng2.peek(), rng.peek(), "the roll was still drawn (the C# && order)");
+    }
+
+    /// DW-2.3: every unported wave-kind arm consumes the C#'s draws and returns
+    /// no spawn (the Wyvern-arm consume-and-return-None shape) — across the
+    /// whole snow wave range the production dispatch never produces an NPC,
+    /// and the ladder's picks (when Some) are vanilla `NPC.type` wave ids.
+    #[test]
+    fn the_snow_ladder_picks_are_wave_ids_and_never_spawn() {
+        const SNOW_WAVE_IDS: std::ops::RangeInclusive<u16> = 338..=352;
+        for wave in 1..=20i32 {
+            let w = moon_world(wave, true);
+            let c = ctx(&w, 25.0 * 16.0, false);
+            for seed in 1..=100u64 {
+                let mut rng = UnifiedRandom::new(seed as i32);
+                let picked = frost_moon_ladder(&c, &mut rng);
+                if let Some(kind) = picked {
+                    assert!(
+                        SNOW_WAVE_IDS.contains(&kind),
+                        "wave {wave} seed {seed}: picked {kind} is not a vanilla snow wave id"
+                    );
+                }
+                let spawns = spawn_npc_at(&c, &mut UnifiedRandom::new(seed as i32), 210, 25 * 16, false, false, false);
+                assert!(
+                    spawns.is_none(),
+                    "wave {wave} seed {seed}: no unported wave kind spawns"
+                );
+            }
+        }
+    }
+
+    /// DW-2.4: the mutual exclusion — the snow event dispatches the frost
+    /// ladder only, the pumpkin event the pumpkin ladder only, and by day the
+    /// moon arms never draw (the flags leave the day path's stream untouched).
+    #[test]
+    fn the_moon_arms_are_mutually_exclusive_and_gated_by_day() {
+        // (a) snow only: the dispatch's stream equals the frost ladder's
+        // replay (style + head + the ladder) — the pumpkin arm never runs.
+        let w = moon_world(5, true);
+        let c = ctx(&w, 25.0 * 16.0, false);
+        let mut rng = UnifiedRandom::new(7);
+        let _ = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
+        // The ladder draws its own head arm internally (`NPC.cs:2807`) — the
+        // replay is the style draw then the ladder on the same stream.
+        let mut pick_rng = UnifiedRandom::new(7);
+        pick_rng.next_max(7); // `GetZombieSettings` (`NPC.cs:1284`)
+        let _ = frost_moon_ladder(&c, &mut pick_rng);
+        let mut pumpkin_only = UnifiedRandom::new(7);
+        pumpkin_only.next_max(7);
+        let _ = pumpkin_moon_ladder(&c, &mut pumpkin_only);
+        assert_eq!(
+            rng.peek(), pick_rng.peek(),
+            "the snow dispatch replays the frost ladder exactly"
+        );
+        assert_ne!(
+            rng.peek(), pumpkin_only.peek(),
+            "the snow dispatch must NOT run the pumpkin ladder"
+        );
+        // (b) pumpkin only: the dispatch replays the pumpkin ladder, not the
+        // frost one (their draws differ from wave 5 on).
+        let w = moon_world(5, false);
+        let c = ctx(&w, 25.0 * 16.0, false);
+        let mut rng = UnifiedRandom::new(7);
+        let _ = spawn_npc_at(&c, &mut rng, 210, 25 * 16, false, false, false);
+        let mut frost_only = UnifiedRandom::new(7);
+        frost_only.next_max(7);
+        let _ = frost_moon_ladder(&c, &mut frost_only);
+        let mut pumpkin_only = UnifiedRandom::new(7);
+        pumpkin_only.next_max(7);
+        let _ = pumpkin_moon_ladder(&c, &mut pumpkin_only);
+        assert_eq!(
+            rng.peek(), pumpkin_only.peek(),
+            "the pumpkin dispatch replays the pumpkin ladder"
+        );
+        assert_ne!(
+            rng.peek(), frost_only.peek(),
+            "the pumpkin dispatch must NOT run the frost ladder"
+        );
+        // (c) by day the moon arms never draw: the day dispatch's stream is
+        // identical with and without the event flags on.
+        let mut w_day = moon_world(5, true);
+        let c_day_moon = ctx(&w_day, 25.0 * 16.0, true);
+        let mut w_plain = World::new("t".into(), 400, 700);
+        w_plain.world_surface = 30.0;
+        let c_day_plain = ctx(&w_plain, 25.0 * 16.0, true);
+        let mut rng_moon = UnifiedRandom::new(7);
+        let _ = spawn_npc_at(&c_day_moon, &mut rng_moon, 210, 25 * 16, false, false, false);
+        let mut rng_plain = UnifiedRandom::new(7);
+        let _ = spawn_npc_at(&c_day_plain, &mut rng_plain, 210, 25 * 16, false, false, false);
+        assert_eq!(
+            rng_moon.peek(), rng_plain.peek(),
+            "by day the moon arms draw nothing — the flags leave the day stream untouched"
+        );
     }
 }

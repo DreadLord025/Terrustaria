@@ -68,14 +68,14 @@ Rust:
 | `DryCollision` pipeline (`Player.cs:23436-23541`) | PORTED | `player.rs::move_vanilla` `:5584-5687` | StepDown → StepUp → TileCollision → wet displacement → SlopeCollision → `stair` gfx (`:5675-5678`) matches the C# order, incl. the cart `height−10` body (`:5631`) |
 | `WetCollision` / `LavaCollision` (`:1572-1684`) | PARTIAL | `player.rs:2484-2493` | Wet flags come from a **single mid-tile** sample, not the C# box scan: no `(256−liquid)/32*2` surface offset, no sloped-tile support arm (`:1628-1646`); `honey`/`shimmer` → separate bools. Shallow-liquid standing and slope-over-liquid wet detection diverge |
 | Liquid slow/damage flags (`Player.cs:27008-27017`, `:27728-27910`, `:28168-28195`) | PORTED (flags+speed) | `player.rs:169-176`, `:755-758`, `:5643-5660` | `movement_speed_for` (honey 0.25, shimmer 0.375, water/lava 0.5), `liquid_move_speed` applied to free axes only. ROADMAP M2-PHYS-3 claim verified PASS |
-| `HitTiles` / `HitTilesInACircle` (`:3016-3108`) | MISSING | — | No `hit_tiles` anywhere in `crates/`; swung weapons/items do not damage tiles |
-| `StickyTiles` (`:3362-3435`) | MISSING | — | No `sticky_tiles` in `crates/`; the `Player.sticky` field that exists (`player.rs:750`, set from cobweb 229 at `:5375`, `FloorVisuals`) is the floor-flag, not the C# adhesion scan (tiles 51/229 with the dust-30 trail) |
-| `AnyHurtingTiles` / `CanTileHurt` (`:3110-3226`) | MISSING | — | No `hurting` symbol in `crates/`; spikes/lava-tile/geyser tile damage absent |
-| `SwitchTiles` (`:3227-3360`) | MISSING | — | Sensor/toggle tile activation absent |
-| `BuildTileContacts` (`:2135-2290`) | MISSING | — | Tile-contact enumeration absent |
-| `noSlopeCollision` (`:2033-2133`) | MISSING | — | Only used by the hoik/minecart-cart paths; nothing ported |
-| `AdvancedTileCollision` (`:4422-4546`) | MISSING | — | Forced-ignore-tile walk absent |
-| `DrownCollision` / `GetWaterLine` (`:1383-1569`) | MISSING | — | No `water_line`/`drown` symbols in `crates/` |
+| `HitTiles` / `HitTilesInACircle` (`:3016-3108`) | PORTED | `collision.rs::hit_tiles` / `hit_tiles_in_a_circle` (S1-E-13d) | The scan is geometry-only: `KillTile(effectOnly: true)` returns at `WorldGen.cs:63704-63707` before any removal, so nothing is destroyed — the dust half is `collision.rs::tile_dust_amount`. The ~30 `Projectile.cs` call sites have no generic projectile-to-tile seam yet |
+| `StickyTiles` (`:3362-3435`) | PORTED | `collision.rs::sticky_tiles` (S1-E-13c) + `player.rs::sticky_movement` | The `Player.sticky` field (`player.rs:750`, `FloorVisuals`) stays the floor-flag, not the C# adhesion scan (tiles 51/229 with the dust-30 trail) |
+| `AnyHurtingTiles` / `CanTileHurt` (`:3110-3226`) | PORTED | `touch_damage.rs::hurt_tiles` / `can_tile_hurt` (S1-E-13a) | |
+| `SwitchTiles` (`:3227-3360`) | PORTED | `collision.rs::switch_tiles` | |
+| `BuildTileContacts` (`:2135-2290`) | PORTED | `collision.rs::build_tile_contacts` (S1-E-13e) | Landed with its caller, `apply_conveyor_belt_movement_to_velocity` (`:3918-4188`) |
+| `noSlopeCollision` (`:2033-2133`) | PORTED | `collision.rs::no_slope_collision` (S1-E-13d) | Only caller is `NPC.Collision_MoveSnailOnSlopes` (`NPC.cs:92782`); the snail family is unported, so it is `#[allow(dead_code)]` |
+| `AdvancedTileCollision` (`:4422-4566`) | PORTED | `collision.rs::advanced_tile_collision` (S1-E-13d) | Only caller is `NPC.Collision_MoveSandshark` (`NPC.cs:92732`); the sandshark family is unported, so it is `#[allow(dead_code)]` |
+| `DrownCollision` / `GetWaterLine` (`:1383-1569`) | PORTED | `collision.rs::drown_collision` / `get_water_line` / `get_water_line_iterate` (S1-E-13b) + `player.rs::check_drowning` | |
 | `CanHit` (`:371-423`) | PORTED | `projectile.rs::can_hit` `:8669-8718` | Anchor clamps, dominant-axis walk, full-height flank test, do/while exit — cited to `:388-423`, `:476-477`. `pub(crate)`; the 15 `1,1`-anchor and box-form NPC AI sites call it (S1-D-7) |
 | `CanHitLine` (`:588-778`) | PORTED | `projectile.rs::can_hit_line` `:8745+` | Faithful; called by the Vortex Rifleman arm (`NPC.cs:58587`) and the Ancient Cultist's ritual gate (`NPC.cs:39275`) — the `#[allow(dead_code)]` is gone (S1-D-7) |
 | AI line-of-sight | PORTED (S1-D-7) | `projectile.rs::can_hit` / `can_hit_line` + `player.rs::solid_collision` (S1-D-7) | The old `npc_ai.rs::line_clear` half-tile sampler is deleted; the sites now run the faithful walks (centres `1,1` for `CanHit`, `0,0` for `CanHitLine`, `position/width/height` boxes where the C# boxes) |
@@ -83,14 +83,25 @@ Rust:
 | `TileCollisionInStepsOf16` (`:2455-2483`) | PORTED | `collision.rs::tile_collision_in_steps_of_16` `:505-545` | `Width−1` slope probes, `vector5.Length()` return |
 | `TryChangingSizeFromBottomCenter` (`:2486-2533`) | PORTED | `collision.rs:552-606` | Split arithmetic kept verbatim incl. the no-op second add |
 
-PORT_MAP `:167` ("Collision.cs / Physics/* → collision.rs — partial") is **confirmed
-PARTIAL**, not optimistic: the four movement routines are genuinely 1:1, everything else
-in the 4 598-line file is absent.
+PORT_MAP `:167` ("Collision.cs / Physics/* → collision.rs — partial") was **confirmed
+PARTIAL** at the wave-2 audit; after S1-E-13a/b/c/d the collision family (the movement
+routines, the hurting/sticky/drowning families, the hit scans, the contact enumeration
+and the two alternate collision variants) is 1:1. What stays absent is the rest of the
+4 598-line file: the line-of-sight walks beyond `CanHit`/`CanHitLine`, the laser/mass
+scans, and the wet-flags box scan (line above, PARTIAL).
 
 ## Tests
 
-- `crates/tr-app/src/collision.rs::tests` (2 tests): `the_actuated_block_is_walk_through`
-  (`:681`), `dismount_space_check_blocks_growth_under_a_two_tile_ceiling` (`:729`).
+- `crates/tr-app/src/collision.rs::tests` (25 tests). S1-E-13d's six, one per function:
+  `the_slope_free_collision_ignores_the_ramp_gate`,
+  `the_sandshark_collision_skips_its_set_and_nudges_by_gravity`,
+  `the_hit_scan_reports_the_solid_cells_under_the_swept_box`,
+  `the_circle_hit_scan_drops_the_box_corner`,
+  `the_contacts_name_the_side_and_the_overlap`,
+  `the_tile_dust_amount_table_matches_the_source`. The earlier rows:
+  `the_actuated_block_is_walk_through`,
+  `dismount_space_check_blocks_growth_under_a_two_tile_ceiling`, the drowning family's
+  four and the sticky family's two.
 - `crates/tr-app/src/player.rs` movement tests: `walks_down_a_slope_smoothly` (`:7858`),
   `ceiling_slopes_block_by_their_triangle` (`:8099`), `standing_on_a_ground_slope`
   (`:8122`), plus the collides-filtered companions around `:5757`.
