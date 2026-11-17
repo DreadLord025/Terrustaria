@@ -338,3 +338,8 @@ docs/ANALYSIS.md|## The Steam transport divergence (S1-I-6, 2026-11-16)|S1-I-6 -
 crates/tr-app/src/debug_panel.rs|fn world_rows|S1-E-35 - the F3 World tab weather toggles: Rain rides Main.StartRain/StopRain (Main.cs:64659-64727 / :64644-64658), Sandstorm rides Sandstorm.StartSandstorm/StopSandstorm (Sandstorm.cs:117-129)
 crates/tr-core/src/edit.rs|pub fn kill_tile_sound|S1-E-21c - the WorldGen.KillTile_PlaySounds table (WorldGen.cs:66427-66575): the per-type tile-break cue family + style and the !fail shatter tail, played once per break from break_tile
 crates/tr-core/src/dd2.rs|pub fn monster_points_worth|S1-E-12 - the Old One's Army's per-tier kill worth: the GetMonsterPointsWorth dispatch (DD2Event.cs:546-554) to the three tier bodies (:1106-1130 / :1199-1223 / :1509-1528) with the 551-565 / 568-578 id bands, the wave-5 139 / wave-7 219 boss gates and the _downedDarkMageT1/_downedOgreT2 latches that lift the wave-5/-7 kill caps (:993, :1181)
+crates/tr-app/src/npc_chat.rs|fn get_chat|S1-E-10 — town NPC chatter/dialogue selection (NPC.GetChat port)
+crates/tr-app/src/npc_chat.rs|struct ChatContext|S1-E-10 — town NPC chatter/dialogue selection (state passed to chat ladder)
+crates/tr-app/src/npc_chat.rs|struct Flags|S1-E-10 — town NPC chatter/dialogue selection (seventeen presence flags from NPC list)
+crates/tr-app/src/lang.rs|fn dialog|S1-E-10 — town NPC chatter/dialogue selection (LegacyDialog lookup)
+crates/tr-app/src/lang.rs|fn random_from_category|S1-E-10 — town NPC chatter/dialogue selection (Language.SelectRandom over Lang.CreateDialogFilter)
