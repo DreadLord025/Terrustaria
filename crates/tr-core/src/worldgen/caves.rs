@@ -260,6 +260,143 @@ fn ore_blob(world: &mut World, x: i32, y: i32, kind: u16, size: i32, rng: &mut R
     }
 }
 
+/// The `SurfaceCaves` pass (`WorldGen.cs:12162-12270`) — groups 1-4, the
+/// surface-opening tunnels: each group rolls its column with the C#
+/// rejection loop (the spawn middle 0.4-0.6 and the beach margins
+/// excluded), scans from the sky down to `GenVars.worldSurfaceHigh` for the
+/// first active tile — the runner starts AT the surface, so every passage
+/// opens the ground — and walks `TileRunner(type = -1)`, the air dig, with
+/// the group's strength/steps/speed table. The draw order is the C#'s:
+/// column roll(s) → strength → steps → speed X, then the runner's own
+/// ledger. Group 5's `Caverer` call (`:12251-12268`) is deferred (it needs
+/// `digTunnel`, `WorldGen.cs:79110+`); the remix `×3` arms are out with the
+/// remix seeds themselves.
+pub(crate) fn surface_caves(
+    world: &mut World,
+    rng: &mut Rng,
+    layers: &Layers,
+    left_beach_end: i32,
+    right_beach_start: i32,
+) {
+    let width = world.width;
+    let world_surface = layers.world_surface;
+    let scan_to = layers.surface_high;
+    // Group 1 (`:12176-12192`): the small diggers, `maxTilesX * 0.002`.
+    for _ in 0..((width as f64) * 0.002) as i32 {
+        let x = open_column(rng, width, 0.45, 0.55, left_beach_end, right_beach_start);
+        if let Some(j) = first_active(world, x, scan_to) {
+            let strength = rng.range(3, 6);
+            let steps = rng.range(5, 50);
+            let vx = (rng.range(-10, 11) as f64) * 0.1;
+            dig_shaft(world, rng, x, j, strength, steps, vx, 1.0, false, world_surface);
+        }
+    }
+    // Group 2 (`:12194-12210`): the mid diggers, `maxTilesX * 0.0007`.
+    for _ in 0..((width as f64) * 0.0007) as i32 {
+        let x = open_column(rng, width, 0.43, 0.57, left_beach_end, right_beach_start);
+        if let Some(j) = first_active(world, x, scan_to) {
+            let strength = rng.range(10, 15);
+            let steps = rng.range(50, 130);
+            let vx = (rng.range(-10, 11) as f64) * 0.1;
+            dig_shaft(world, rng, x, j, strength, steps, vx, 2.0, false, world_surface);
+        }
+    }
+    // Group 3 (`:12212-12230`): the large three-runner digs,
+    // `maxTilesX * 0.0003` — the trio's draw order is the call order.
+    for _ in 0..((width as f64) * 0.0003) as i32 {
+        let x = open_column(rng, width, 0.4, 0.6, left_beach_end, right_beach_start);
+        if let Some(j) = first_active(world, x, scan_to) {
+            let (s1, t1) = (rng.range(12, 25), rng.range(150, 500));
+            let vx1 = (rng.range(-10, 11) as f64) * 0.1;
+            dig_shaft(world, rng, x, j, s1, t1, vx1, 4.0, false, world_surface);
+            let (s2, t2) = (rng.range(8, 17), rng.range(60, 200));
+            let vx2 = (rng.range(-10, 11) as f64) * 0.1;
+            dig_shaft(world, rng, x, j, s2, t2, vx2, 2.0, false, world_surface);
+            let (s3, t3) = (rng.range(5, 13), rng.range(40, 170));
+            let vx3 = (rng.range(-10, 11) as f64) * 0.1;
+            dig_shaft(world, rng, x, j, s3, t3, vx3, 2.0, false, world_surface);
+        }
+    }
+    // Group 4 (`:12232-12249`): the horizontal digs, `maxTilesX * 0.0004` —
+    // the C# passes literal `0.0` speed X and `noYChange: true`, so the
+    // group's only draws are the column roll, the strength and the steps.
+    for _ in 0..((width as f64) * 0.0004) as i32 {
+        let x = open_column(rng, width, 0.4, 0.6, left_beach_end, right_beach_start);
+        if let Some(j) = first_active(world, x, scan_to) {
+            let strength = rng.range(7, 12);
+            let steps = rng.range(150, 250);
+            dig_shaft(world, rng, x, j, strength, steps, 0.0, 1.0, true, world_surface);
+        }
+    }
+}
+
+/// One `TileRunner(type = -1)` dig from the group tables
+/// (`WorldGen.cs:12188`/`:12206`/`:12224-12226`/`:12245`): the air dig from
+/// the surface tile the sky scan found.
+#[allow(clippy::too_many_arguments)]
+fn dig_shaft(
+    world: &mut World,
+    rng: &mut Rng,
+    x: i32,
+    j: i32,
+    strength: i32,
+    steps: i32,
+    speed_x: f64,
+    speed_y: f64,
+    no_y_change: bool,
+    world_surface: f64,
+) {
+    tile_runner(
+        world,
+        rng,
+        x,
+        j,
+        strength as f64,
+        steps,
+        -1,
+        world_surface,
+        &TileRunnerOpts {
+            speed_x,
+            speed_y,
+            no_y_change,
+            ..TileRunnerOpts::for_world(world)
+        },
+    );
+}
+
+/// The pass's column roll (`WorldGen.cs:12179-12183` and friends): the C#
+/// rejection loop over the spawn middle and the beach margins, verbatim,
+/// with one documented small-world guard — vanilla never generates worlds
+/// narrower than 4200 tiles (where the beach window plus the middle
+/// exclusion always leave rolls); a port test world (512) can make the
+/// beach interval empty, and there the gate collapses to the middle
+/// exclusion instead of spinning forever.
+fn open_column(
+    rng: &mut Rng,
+    width: i32,
+    mid_lo: f64,
+    mid_hi: f64,
+    left_beach_end: i32,
+    right_beach_start: i32,
+) -> i32 {
+    let beach_gate = left_beach_end + 20 < right_beach_start - 20;
+    let mut x = rng.range(0, width);
+    while ((x as f64) > width as f64 * mid_lo && (x as f64) < width as f64 * mid_hi)
+        || (beach_gate && (x < left_beach_end + 20 || x > right_beach_start - 20))
+    {
+        x = rng.range(0, width);
+    }
+    x
+}
+
+/// The sky scan (`:12184-12191` and friends): the first active tile down to
+/// `GenVars.worldSurfaceHigh` — `None` when the column is open all the way,
+/// and the C# skips the runner (and its draws) for that column.
+fn first_active(world: &World, x: i32, scan_to: f64) -> Option<i32> {
+    let top = (scan_to as i32).min(world.height);
+    (0..top).find(|&j| world.tile(x, j).is_some_and(|t| t.active()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,5 +514,209 @@ mod tests {
         let area = (4200 * 1200) as f64;
         assert_eq!((area * 6e-5) as i32, 302);
         assert_eq!((area * 2.25e-5) as i32, 113);
+    }
+}
+
+/// The `worldgen-caves` slice pins (`task/worldgen-caves`): the world's
+/// caves and the copper/iron veins inside the C# depth/size ranges, on the
+/// named per-pass streams.
+mod worldgen_caves {
+    use super::*;
+    use crate::ores::ore_runner;
+    use crate::UnifiedRandom;
+    use crate::worldgen::TILE_COPPER;
+    use crate::worldgen::world_hash::world_hash;
+    use crate::worldgen::{generate, GenOptions};
+
+    /// A flat synthetic canvas: dirt for the first 20 rows below the
+    /// surface, stone below, everything active — the passes' playfield.
+    fn flat_world(width: i32, height: i32, surface: i32) -> World {
+        let mut w = World::new("worldgen-caves".into(), width, height);
+        for x in 0..width {
+            for y in surface..height {
+                let i = w.index(x, y);
+                w.tiles[i].kind = if y < surface + 20 { TILE_DIRT } else { TILE_STONE };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    /// A synthetic `Layers` for the canvas: the GenVars quartet brackets the
+    /// surface at the same distances a real terrain map produces.
+    fn layers_for(surface: i32, height: i32) -> Layers {
+        Layers {
+            avg_surface: surface as f64,
+            world_surface: surface as f64 + 5.0,
+            rock_layer: (surface + 40) as f64,
+            hell_top: height - 60,
+            surface_low: (surface + 2) as f64,
+            surface_high: (surface + 22) as f64,
+            rock_low: (surface + 45) as f64,
+            rock_high: (surface + 80) as f64,
+        }
+    }
+
+    /// t1 — the world contract: the same seed generates byte-identical
+    /// tiles (and the generated world carries the copper/iron tier veins).
+    #[test]
+    fn same_seed_same_tiles() {
+        let opts = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
+        let a = generate(&opts);
+        let b = generate(&opts);
+        assert_eq!(a.tiles.len(), b.tiles.len());
+        for (ta, tb) in a.tiles.iter().zip(b.tiles.iter()) {
+            assert_eq!(ta.kind, tb.kind);
+            assert_eq!(ta.wall, tb.wall);
+            assert_eq!(ta.flags, tb.flags);
+            assert_eq!(ta.liquid, tb.liquid);
+        }
+        assert_eq!(world_hash(&a), world_hash(&b));
+        // The copper/iron tier veins exist in the generated world.
+        for tier in [a.ore_tiers.copper as u16, a.ore_tiers.iron as u16] {
+            assert!(
+                a.tiles.iter().any(|t| t.active() && t.kind == tier),
+                "the tier vein {tier} is missing from the generated world"
+            );
+        }
+    }
+
+    /// t2 — the copper veins land inside the C# band depths
+    /// (`WorldGen.cs:13399-13444`, the normal branch): the three bands roll
+    /// their seed points inside `[worldSurfaceLow, worldSurfaceHigh)` at
+    /// `6E-05`, `[worldSurfaceHigh, rockLayerHigh)` at `8E-05` and
+    /// `[rockLayerLow, maxTilesY)` at `2E-04`; every placed tile stays
+    /// within a walker's reach of its band.
+    #[test]
+    fn copper_depth_range() {
+        let (w, h) = (420, 240);
+        let surface = 60;
+        let mut world = flat_world(w, h, surface);
+        let layers = layers_for(surface, h);
+        let mut rng = Rng(0x0CAFE);
+        ores_and_shinies(&mut world, &mut rng, &layers, w, h, false);
+        let copper = world.ore_tiers.copper as u16;
+        let in_band = |lo: f64, hi: f64| -> bool {
+            let lo = lo as i32;
+            let hi = (hi as i32).min(h);
+            (lo.max(0)..hi).any(|y| {
+                (0..w).any(|x| world.tile(x, y).is_some_and(|t| t.active() && t.kind == copper))
+            })
+        };
+        // Each band's depth window carries at least one vein tile.
+        assert!(
+            in_band(layers.surface_low, layers.surface_high),
+            "no copper in the surface band"
+        );
+        assert!(
+            in_band(layers.surface_high, layers.rock_high),
+            "no copper in the mid band"
+        );
+        assert!(
+            in_band(layers.rock_low, h as f64),
+            "no copper in the deep band"
+        );
+        // And no copper above the surface band minus one walker's reach
+        // (the deepest band 1 strength is 5, so the walk climbs ≤ ~8).
+        let lo = layers.surface_low as i32;
+        let shallowest = (0..w)
+            .filter_map(|x| {
+                (0..h).find(|&y| {
+                    world.tile(x, y).is_some_and(|t| t.active() && t.kind == copper)
+                })
+            })
+            .min();
+        assert!(
+            shallowest.unwrap_or(lo) >= lo - 10,
+            "copper above the C# surface band: row {shallowest:?}"
+        );
+    }
+
+    /// t3 — the vein size inside the C# walker's bounds: `OreRunner`
+    /// (`WorldGen.cs:48831-48900`) lays shrinking Manhattan discs — per
+    /// step the radius is `strength · (left/steps) · 0.5 · (1 +
+    /// Next(-10, 11) · 0.015)`, so the copper/iron deep band's worst case
+    /// (strength 8, steps 8) sums to ≈ 217 placed tiles.
+    #[test]
+    fn vein_size_bounds() {
+        // The worst case: the deep band's upper corners.
+        let mut world = flat_world(160, 120, 40);
+        let mut rng = UnifiedRandom::new(1234);
+        ore_runner(&mut world, 80, 70, 8, 8, TILE_COPPER, &mut rng);
+        let placed = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == TILE_COPPER)
+            .count();
+        assert!(placed >= 10, "the max-parameter vein places {placed}");
+        assert!(placed <= 220, "the C# walker bound: {placed} tiles");
+        // The shallow band's smallest vein stays tiny.
+        let mut world = flat_world(160, 120, 40);
+        let mut rng = UnifiedRandom::new(1234);
+        ore_runner(&mut world, 80, 70, 3, 2, TILE_COPPER, &mut rng);
+        let small = world
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == TILE_COPPER)
+            .count();
+        assert!(small >= 1 && small <= 40, "the min-parameter vein: {small}");
+    }
+
+    /// t4 — the SurfaceCaves passages open the surface: the C# scan starts
+    /// every runner at the first active tile from the sky
+    /// (`WorldGen.cs:12184-12191`), so each passage's mouth is the surface
+    /// itself. The canvas is the vanilla small world's 4200-tile width —
+    /// the group counts (`maxTilesX * 0.002` and friends) round to zero on
+    /// anything narrower. Pinned for the fixed pass seed on the flat
+    /// canvas.
+    #[test]
+    fn caves_connected() {
+        let (w, h) = (4200, 400);
+        let surface = 60;
+        let mut world = flat_world(w, h, surface);
+        let layers = layers_for(surface, h);
+        let mut rng = Rng(0xCAFE);
+        surface_caves(&mut world, &mut rng, &layers, 0, w);
+        // An opening: a column whose first active tile moved below the flat
+        // surface row; a passage: the mouth's air run keeps descending into
+        // the ground (the C# walker carries speed Y 1.0 down from the
+        // surface, so the centre columns trench).
+        let mut openings = 0;
+        let mut passable = 0;
+        let mut first: Option<(i32, i32)> = None;
+        for x in 0..w {
+            let mut y = 0;
+            while y < h && world.tile(x, y).is_some_and(|t| !t.active()) {
+                y += 1;
+            }
+            if y <= surface {
+                continue;
+            }
+            openings += 1;
+            let air_run = (y..(y + 6).min(h))
+                .filter(|&yy| world.tile(x, yy).is_some_and(|t| !t.active()))
+                .count();
+            if air_run >= 3 {
+                passable += 1;
+                if first.is_none() {
+                    first = Some((x, y));
+                }
+            }
+        }
+        assert!(openings >= 1, "no surface openings ({openings})");
+        assert!(
+            passable >= 1,
+            "openings {openings} but none descends into the ground"
+        );
+        let (ox, oy) = first.unwrap();
+        assert!(
+            oy > surface,
+            "the pinned passage at ({ox},{oy}) is not a surface breach"
+        );
     }
 }
