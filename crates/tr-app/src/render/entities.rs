@@ -492,6 +492,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         prime_laser: npc_tex(atlas, "NPC_131"),
         npc_sheets: PILLAR_SHEETS
             .iter()
+            .chain(PUMPKIN_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1077,12 +1078,49 @@ const PILLAR_SHEETS: &[u32] = &[
     518, // the solar spear-man
 ];
 
+/// The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one sheet per
+/// kind, exactly as the vanilla's `TextureAssets.Npc[type]` — each Scarecrow
+/// (305-314) and the five named kinds (315/325/326/327/329/330) draws its own
+/// `NPC_<id>` art. Keyed by the vanilla net id
+/// ([`NpcKind::pumpkin_moon_type`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
+    305, 306, 307, 308, 309, 310, 311, 312, 313, 314, // Scarecrow1-10
+    315, // the Headless Horseman
+    325, // the Mourning Wood
+    326, // Splinterling
+    327, // the Pumpking
+    329, // the Hellhound
+    330, // the Poltergeist
+];
+
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
 /// sheet whose height is not a multiple of its row count loses the leftover
 /// pixels at the bottom instead of bleeding them into the last frame.
 fn vanilla_row_h(tex: &BgTex, rows: u32) -> f32 {
     (tex.h as i32 / rows.max(1) as i32) as f32
+}
+
+/// The Pumpkin Moon family's draw (`S1-F-13b`): the sheet's real row
+/// (`NPC.SetFrameSize`'s integer-division height over `Main.npcFrameCount[type]`
+/// — the kind's own count) at the generic anchor (`Main.cs:25511-25516`) — the
+/// shape the martian walker draw carries, one row per kind so no kind reads a
+/// neighbour's strip.
+fn pumpkin_moon_draw<'a>(
+    tex: Option<&'a BgTex>,
+    rows: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(0.0, |t| vanilla_row_h(t, rows));
+    let fw = tex.map_or(0.0, |t| t.w);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
+    )
 }
 
 /// The Moon Lord hand's / free eye's body draw: `DrawNPCDirect` puts the frame
@@ -2538,6 +2576,33 @@ pub(crate) fn draw_npcs(
             // (`Main.npcFrameCount[5]` = 2); the v1 kept the row height but
             // drew a 20x20 quad.
             NpcKind::ServantOfCthulhu => boss_draw(assets.servant_of_cthulhu.as_ref(), 2, n, w, h),
+            // The Pumpkin Moon family (`S1-F-13b` Phase 2): each kind draws
+            // its own sheet (the vanilla's `TextureAssets.Npc[type]` — the
+            // `PUMPKIN_SHEETS` rows) at `SetFrameSize`'s row height
+            // (`NPC.cs:90780-90800`'s integer division over the sheet, the
+            // row count the C#'s `Main.npcFrameCount[type]` gives —
+            // `Main.cs:67082`: 305-309 six frames, 310-314 fifteen, 315
+            // eleven, 325 ten, 326 fourteen, 327 twelve, 329 ten, 330 eight)
+            // with the generic centred anchor (`Main.cs:25511-25516`).
+            NpcKind::Scarecrow1
+            | NpcKind::Scarecrow2
+            | NpcKind::Scarecrow3
+            | NpcKind::Scarecrow4
+            | NpcKind::Scarecrow5
+            | NpcKind::Scarecrow6
+            | NpcKind::Scarecrow7
+            | NpcKind::Scarecrow8
+            | NpcKind::Scarecrow9
+            | NpcKind::Scarecrow10
+            | NpcKind::HeadlessHorseman
+            | NpcKind::MourningWood
+            | NpcKind::Splinterling
+            | NpcKind::Pumpking
+            | NpcKind::Hellhound
+            | NpcKind::Poltergeist => {
+                let ty = n.kind.pumpkin_moon_type().expect("a family kind");
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
         };
         let Some(tex) = tex else {
             continue;
