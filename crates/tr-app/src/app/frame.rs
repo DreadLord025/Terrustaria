@@ -1796,6 +1796,7 @@ impl App {
                         anim_time,
                         mouse: self.mouse_pos,
                         front_mouse_down: self.front_mouse_down,
+                        scroll: self.front_scroll,
                         vk_grid: self.vk_grid,
                         frame_count: *frame_count,
                     };

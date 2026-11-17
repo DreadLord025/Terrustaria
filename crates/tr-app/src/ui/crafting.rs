@@ -31,7 +31,8 @@ pub struct Layout {
     pub state: [f32; 4],
     /// The background `UIPanel`'s outer rect (`:319-325`).
     pub panel: [f32; 4],
-    /// The panel's content rect — padding 12 (`UIPanel.cs:32`), right 8 (`:324`).
+    /// The panel's content rect — padding 12 (`UIPanel.cs:32`), right 8
+    /// (`NewCraftingUI.cs:324`).
     pub inner: [f32; 4],
     /// `UIText` draw origin, already shifted by `Y -= 2*textScale`
     /// (`:331-337`, `UIText.cs:138`).
@@ -461,7 +462,9 @@ pub fn draw(
 
     // 6. The scrollbar (`:376-384`): an empty list views 1 of 1, and
     //    `AutoHide` hides it when it cannot scroll (`UIScrollbar.cs:105`).
-    panel::draw_scrollbar(r, lookups, l.scrollbar, 1.0, 1.0, true);
+    // `auto_hide` with `view == max_view`: nothing scrolls yet, so the handle
+    // is drawn at `pos` 0 (`UIScrollbar.cs:93`).
+    panel::draw_scrollbar(r, lookups, l.scrollbar, 1.0, 1.0, 0.0, true);
 
     // 7. The filter strip (`:387-392`), drawn over the panel subtree, matching
     //    `totalContainer`'s child order (`:330`, `:392`); `active` is the
@@ -630,7 +633,7 @@ pub fn filter_frame_col_row(active: bool, hover: bool) -> (usize, usize) {
 /// The `Infinite_Tabs_B_2` source rect for frame `(col, row)`:
 /// `SetFrame(2, 4, ...)` cells are 42x48 on the 84x192 sheet (`:28-30`
 /// `barFramesX = 2`, `barFramesY = 4`), and `OffsetSize(-2, -2)` (`:106`,
-/// `UIImageFramed.cs:59`) trims them to 40x46.
+/// `UIImageFramed.cs:40-43`) trims them to 40x46.
 pub fn filter_button_src(col: usize, row: usize) -> [f32; 4] {
     [42.0 * col as f32, 48.0 * row as f32, 40.0, 46.0]
 }
@@ -710,7 +713,8 @@ pub fn draw_filter_strip(
     for (i, &flag) in active.iter().enumerate() {
         let button = filter_button_rect(strip, i);
         // The tab: `UIImageFramed` draws at its default `Color = Color.White`
-        // (`UIImageFramed.cs:21`), unlit or hovered alike (`:63`'s DrawSelf).
+        // (`UIImageFramed.cs:21`), unlit or hovered alike (`UIImageFramed.cs:45-49`'s
+        // DrawSelf).
         let (col, row) = filter_frame_col_row(flag, in_rect(mouse_pos, button));
         push_sheet_rect(
             r,
@@ -753,10 +757,11 @@ pub fn draw_search_bar(
     mouse_pos: Vec2,
 ) {
     // 1. The magnifier button (`:102-109`): the 22x22 `Button_Search_2` sheet
-    //    (`:100`, `UIImageButton.cs:31-32`). `SetVisibility(1f, 1f)` (`:108`) means
-    //    it draws at full White hovered or not (`UIImageButton.cs:51`); the
-    //    `Button_Search_Border` hover frame is drawn *over* the base image, not
-    //    instead of it (`UIImageButton.cs:52-55`).
+    //    (`:100`, `UIImageButton.cs:31-32`). `SetVisibility(1f, 1f)`
+    //    (`UIWrappedSearchBar.cs:108`) means it draws at full White hovered or
+    //    not (`UIImageButton.cs:51`); the `Button_Search_Border` hover frame is
+    //    drawn *over* the base image, not instead of it
+    //    (`UIImageButton.cs:52-55`).
     let button = layout.search_button;
     push_full_sheet(r, lookups, lookups.ui_search_icon.as_ref(), button, [1.0; 4]);
     if in_rect(mouse_pos, button) {
@@ -818,7 +823,7 @@ mod tests {
         assert_eq!(l.state, [20.0, 312.0, 490.0, 550.0]);
         // `:319-325`: Top 38, H = 550 - 38.
         assert_eq!(l.panel, [20.0, 350.0, 490.0, 512.0]);
-        // `UIPanel.cs:32` + `:324`: 490 - 12 - 8 = 470.
+        // `UIPanel.cs:32` + `NewCraftingUI.cs:324`: 490 - 12 - 8 = 470.
         assert_eq!(l.inner, [32.0, 362.0, 470.0, 488.0]);
         // `:331-337` + `UIText.cs:138`.
         assert_eq!(l.title, [31.0, 358.0]);

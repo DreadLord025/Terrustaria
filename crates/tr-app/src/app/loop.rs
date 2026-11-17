@@ -336,6 +336,15 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // `UIList.ScrollWheel` through `UserInterface.Update`'s wheel
+                // arm (`:219-222`): while a list screen is live the `UIList`
+                // under the pointer owns the notch — `ViewPosition -=
+                // evt.ScrollWheelValue` (`UIList.cs:107-114`). The C# consumes
+                // the accumulator whatever the hit, so the hotbar arm below
+                // never sees a front-screen wheel.
+                if self.front_wheel(d.round() as i32) {
+                    return;
+                }
                 if self.map.as_ref().is_some_and(|m| m.open) {
                     // `Player.cs:25190-25197`: while the map is fullscreen the wheel
                     // zooms it instead of cycling the hotbar.
@@ -442,6 +451,21 @@ impl ApplicationHandler for App {
                             // held flag rides along for the creation screen's
                             // HSL drags (`Main.mouseLeft`, `Main.cs:51101`).
                             self.front_mouse_down = pressed;
+                            if !pressed {
+                                // `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`):
+                                // the drag latch clears on release.
+                                self.front_scroll_drag = None;
+                            }
+                            // `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`):
+                            // a press on the attached bar grabs the handle or
+                            // jumps the track — `evt.Target == this` keeps it
+                            // off the cards, so no click table runs.
+                            if pressed
+                                && !self.pointer.clicks_disabled()
+                                && self.front_scrollbar_press()
+                            {
+                                return;
+                            }
                             // `UserInterface.HandleClick` (`:230-255`)'s front
                             // path: the machine owns the press/release →
                             // click/`DoubleClick` edges. The existing single-click
@@ -529,6 +553,11 @@ impl ApplicationHandler for App {
                     if m.hover != before && m.hover.is_some() {
                         self.audio.play("Menu_Tick");
                     }
+                }
+                // `UIScrollbar.DrawSelf`'s drag (`UIScrollbar.cs:109-112`):
+                // while the handle is held the view follows the pointer.
+                if self.front_scroll_drag.is_some() {
+                    self.front_scrollbar_drag();
                 }
                 // Bug 17: the front-end hover edge — `FadedMouseOver`'s
                 // menu tick (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`)

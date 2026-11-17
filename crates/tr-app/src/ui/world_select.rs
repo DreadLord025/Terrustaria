@@ -140,7 +140,7 @@ pub fn joinable(active_difficulty: u8, world_difficulty: u8) -> bool {
     (active_difficulty == 3) == (world_difficulty == 3)
 }
 
-/// `Terraria.ID.GameModeID.IsValid` (`GameModeID.cs:19-26`): `0 <= gameMode < 4`
+/// `Terraria.ID.GameModeID.IsValid` (`GameModeID.cs:15-22`): `0 <= gameMode < 4`
 /// (Normal/Expert/Master/Creative). The port stores the mode as a `u8`, so only
 /// the upper bound can fail.
 pub fn game_mode_is_valid(game_mode: u8) -> bool {
@@ -248,7 +248,7 @@ pub struct CardLayout {
     /// 4 (`:94`) + 24 (`:103`) + 24 (`:112`) + 24 (`:145`) + 4 (`:159`) = 80 —
     /// every slot's `num += 24` fires even though the cloud/seed buttons
     /// themselves are skipped — `Top -3`, `VAlign 1` (`:160-164`); the empty
-    /// `UIText` is 0 wide and 16 tall (`UIText.cs:208-212`).
+    /// `UIText` is 0 wide and 16 tall (`UIText.cs:186-189`).
     pub label: [f32; 4],
     /// The delete hover label, `Left -30`, `HAlign 1`, `Top -3`, `VAlign 1`
     /// (`:165-170`) — its right edge is the anchor; the text grows leftward.
@@ -299,7 +299,7 @@ pub fn card_layout(row_rect: [f32; 4], index: usize, has_been_played: bool) -> C
     // `num += 24f` are skipped with their buttons), +24 (`:145`, the slot
     // after rename), +4 (`:159`) -> the label at 80.
     let num = 4.0 + 24.0 + 24.0 + 24.0 + 4.0;
-    // `UIText` is 16 tall at scale 1 and 0 wide while empty (`UIText.cs:208-212`).
+    // `UIText` is 16 tall at scale 1 and 0 wide while empty (`UIText.cs:186-189`).
     let label_h = 16.0;
     let label_y = bottom - label_h - 3.0; // `Top.Set(-3f)` + `VAlign 1`
 
@@ -374,7 +374,7 @@ pub fn card_layout(row_rect: [f32; 4], index: usize, has_been_played: bool) -> C
 /// seed-flag data (the newly-generated pin is Task 8's), so the overlays stay
 /// unconditionally off (plan Task 4 step 3's documented deviation). This pins
 /// the geometry for the record — including the `MaxWidth`/`MaxHeight =
-/// StyleDimension.Fill` clamp (`UIElement.cs:33-34`, `StyleDimension.cs:44-46`)
+/// StyleDimension.Fill` clamp (`UIElement.cs:33-34`, `StyleDimension.cs:39-43`)
 /// that squeezes the completion overlay's *element box* to the 60x58 icon
 /// inner, while `UIImage.DrawSelf` still draws the texture at its own size
 /// from that box's position.
@@ -582,8 +582,11 @@ pub fn card_hit(
 /// the edge is half-painted and still hit above it.
 fn elements(l: &Layout, favorites: &[bool]) -> Vec<super::framework::Element> {
     let mut out = Vec::with_capacity(favorites.len() * select_hit::PARTS as usize + 2);
+    // The rows ride on the translated inner list (`UIList.cs:181`); the
+    // viewport stays the `UIList`'s own rect (`UIList.cs:59`).
+    let rows = l.inner_list();
     for i in 0..favorites.len() {
-        let c = card_layout(l.list, i, false);
+        let c = card_layout(rows, i, false);
         // The body first: the buttons are the card's appended children
         // (`UIWorldListItem.cs:94-158`), so the reverse walk tests them before
         // the panel they sit on. Each button carries the panel as its `Parent`
@@ -650,7 +653,7 @@ fn draw_card(
     active_difficulty: u8,
     mouse: Vec2,
 ) {
-    let c = card_layout(l.list, index, entry.has_been_played);
+    let c = card_layout(l.inner_list(), index, entry.has_been_played);
     let hovered = in_rect(mouse, c.card); // `MouseOver`/`MouseOut` (`:475-485`)
     let joinable = joinable(active_difficulty, entry.difficulty);
     let (bg, border) = card_colors(hovered, joinable);
@@ -847,9 +850,10 @@ pub fn draw(
     header_w: f32,
     worlds: &[save_list::WorldEntry],
     active_difficulty: u8,
+    scroll: f32,
     mouse: Vec2,
 ) {
-    let l = resolved_layout(screen, header_w, worlds.len());
+    let l = resolved_layout(screen, header_w, worlds.len()).with_scroll(scroll, worlds.len());
     // `_containerPanel`: bg `(33, 43, 79) * 0.8` (`:49`), border the `UIPanel`
     // default black (`UIPanel.cs:18`).
     panel::draw_panel(r, lookups, lookups.ui_panel_bg, l.panel, color::tint(CONTAINER_PANEL_BG));
@@ -869,7 +873,7 @@ pub fn draw(
     // `UIList.UpdateScrollbar` fed it (`UIList.cs:130-136`).
     let content_h = list_content_height(worlds.len());
     if scrollbar_attaches(l.list[3], content_h) {
-        panel::draw_scrollbar(r, lookups, l.scrollbar, l.list[3], content_h, false);
+        panel::draw_scrollbar(r, lookups, l.scrollbar, l.list[3], content_h, l.scroll, false);
     }
 
     // The header never hovers — no `OnMouseOver` is subscribed (`:62-66`).
@@ -914,7 +918,7 @@ mod tests {
 
     // Expected values hand-derived from the C# (`UIWorldSelect.cs:38-186`,
     // `UIWorldListItem.cs:59-532`, `AWorldListItem.cs:43-200`,
-    // `UIImage.cs` DrawSelf, `UIText.cs:175-212`) — never from this code.
+    // `UIImage.cs` DrawSelf, `UIText.cs:175-189`) — never from this code.
     const SCREEN: Vec2 = Vec2::new(1600.0, 900.0);
     const LIST: [f32; 4] = [487.0, 232.0, 626.0, 546.0];
 
@@ -1041,7 +1045,7 @@ mod tests {
         assert_eq!(c.rename, [545.0, 300.0, 22.0, 22.0]);
         assert_eq!(c.delete, [1085.0, 300.0, 22.0, 22.0]);
         // The labels: Left 80 (4+24+24+24+4, `:94-159`), Top -3 + VAlign 1 with
-        // the 16-tall empty `UIText` (`:160-164`, `UIText.cs:208-212`); the
+        // the 16-tall empty `UIText` (`:160-164`, `UIText.cs:186-189`); the
         // delete label's right edge anchors 30 px in (`:165-170`).
         assert_eq!(c.label, [573.0, 303.0, 0.0, 16.0]);
         assert_eq!(c.delete_label, [1077.0, 303.0, 0.0, 16.0]);
@@ -1178,7 +1182,7 @@ mod tests {
     #[test]
     fn rejection_key_ports_try_moving_to_rejection_menu_if_needed() {
         use super::{game_mode_is_valid, rejection_key};
-        // `GameModeID.IsValid` (`GameModeID.cs:19-26`): 0..=3 valid, 4+ not.
+        // `GameModeID.IsValid` (`GameModeID.cs:15-22`): 0..=3 valid, 4+ not.
         for m in 0u8..4 {
             assert!(game_mode_is_valid(m), "mode {m} is valid");
         }
@@ -1409,5 +1413,34 @@ mod tests {
         let text = created_text(Some(&file));
         assert_eq!(text.split_whitespace().count(), 3, "{text}");
         std::fs::remove_file(&file).unwrap();
+    }
+
+    #[test]
+    fn f1_the_world_list_scrolls_the_same_way() {
+        // The world screen's ctor is the char select twin
+        // (`UIWorldSelect.cs:40-87`), so the same `UIList`/`UIScrollbar` pair
+        // drives it: 8 worlds at 1920x1080 put card 7's delete at y 1007-1029,
+        // below the 958 px view (A6), and at the maximum scroll 82 it sits at
+        // 925-947 and clicks as `Delete` — never as the fat `New` (y 985-1035)
+        // that took the unscrolled click.
+        let l = resolved_layout(Vec2::new(1920.0, 1080.0), 100.0, 8);
+        let favorites = [false; 8];
+        assert_eq!(
+            card_layout(l.list, 7, false).delete,
+            [1220.0, 1007.0, 22.0, 22.0]
+        );
+        assert_eq!(
+            card_hit(&l, &favorites, Vec2::new(1231.0, 1018.0), false),
+            (None, Some(CardAction::New))
+        );
+        let l = l.with_scroll(82.0, 8);
+        assert_eq!(
+            card_layout(l.inner_list(), 7, false).delete,
+            [1220.0, 925.0, 22.0, 22.0]
+        );
+        assert_eq!(
+            card_hit(&l, &favorites, Vec2::new(1231.0, 936.0), false),
+            (Some(7), Some(CardAction::Delete(7)))
+        );
     }
 }
