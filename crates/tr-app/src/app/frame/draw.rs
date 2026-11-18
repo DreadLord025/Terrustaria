@@ -200,6 +200,7 @@ impl App {
                     sandstorm,
                     sand,
                     dust,
+                    gore,
                     liquid_alpha,
                     wind,
                     tree_wind_counter,
@@ -895,6 +896,13 @@ impl App {
 
                     draw_phase("rain");
                     rain.draw(renderer, lookups, light, draw_cam, world_zoom, screen);
+                    // `Main.DrawGore` (`Main.cs:62282`, body `:21873-21907`):
+                    // the gore pool's front pass between the rain and the
+                    // dust, in the same world-effect range (S1-E-4b).
+                    crate::render::gore::draw(
+                        gore, renderer, lookups, light, &style, anim_time, draw_cam, world_zoom,
+                        screen,
+                    );
                     // `Main.DrawDust`'s 268 entries: the flying sand, the same
                     // world-effect range as the rain (`Main.DrawRain`'s draw call
                     // site — world content, under the map batches and the UI).

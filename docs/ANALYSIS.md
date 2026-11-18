@@ -13775,7 +13775,8 @@ phase of the fixed step — between `npcs` and `projectiles`, the C# order at
 `Main.WindForVisuals` = `Wind::speed_current` (`Main.cs:2823`). The blood
 toggle drives the same `ChildSafety.Disabled` static for both pools
 (`ChildSafety.cs:15` — one static in the C#, so `sync_child_safety` sets both).
-The draw pass stays unported, which is why no gore is visible yet.
+The front draw pass landed with S1-E-4b (below); `DrawGoreBehind` stays
+unported.
 
 Tested (`cargo test -p tr-core gore --lib`, 14 passing): the spawn order and
 velocity, the drip sheet, the `SpecialAI` 1/2/3/4-6 arms, the balloon rows, and
@@ -13784,6 +13785,76 @@ gore's double-speed fade `:1020-1023`; the floor cloud's wind drift and expiry
 `:112-136`). The seam has its own forward test (`gore_seam::tests`), and the
 App's phase-order golden test now pins `gores` between `npcs` and
 `projectiles`.
+
+## The gore draw pass (S1-E-4b, 2026-11-18)
+
+`crates/tr-app/src/render/gore.rs` ports `Main.DrawGore`
+(`Main.cs:21873-21907`) read-only over `App.gore`: the 600-slot walk, the
+inactive/`type <= 0` skip (`:21879-21882`), the drip gate (`:21883-21887` —
+`GoreID.Sets.IsDrip` rows outside frames 7..=9 belong to `DrawGoreBehind`
+and latch `Main.drawBackGore`), the framed/unframed source split
+(`:21889`/`:21900`) and the `SpriteBatch.Draw` call's integer-half origins,
+the framed path's `- 2f` Y lift and the type-1217 `+ 4f` nudge
+(`:21892-21898`). The seam sits between the rain and the dust draws in
+`app/frame/draw.rs` — the C# order `DrawRain` (`Main.cs:62279`) → `DrawGore`
+(`:62282`) → `DrawDust` (`:62293`) — in the same world-effect (fx) range the
+rain/sand/leaf draws use. No kill-at-draw arm exists in `DrawGore` (unlike
+`DrawDust`'s black-death), and none was added: the pool update is untouched.
+
+The tint is `Gore.GetAlpha` (`Gore.cs:1464-1505`) verbatim — the 16/17,
+716/1383, 570-572 (`b/2` integer), 331 and 1225 (float ctor) arms, the
+default path's `(int)(byte * num)` truncating multiplies, the alpha clamp
+(`:1491-1499`) and the 1202-1204 cap at 20. The light input is
+`Lighting.GetColor(int, int)` (`Lighting.cs:216-242`) through the active
+`LightStyle::shade` (the wires-pass convention), byte-truncated at 255 with
+alpha 255. The source cell is `SpriteFrame.GetSourceRectangle`
+(`SpriteFrame.cs:72-77`): `texture / count` integer cells, the 2 px padding
+subtracted only on multi-cell axes. The light-sample tile keeps both C#
+cast orders (`Main.cs:21897`/`:21902`): X casts the sum before the integer
+`/ 16`, Y divides before the cast. The rotation emulation is the
+`push_sprite_origin_rot` top-left shift with `origin · scale · zoom`, in the
+fx range (no world-range cache key change — the fx range rebuilds per frame
+like the rain).
+
+Asset loading: `LoadGore` (`Main.cs:59100-59106`) is a lazy texture request;
+the port packs every `Images/Gore_<id>.xnb` up front beside the item/buff
+icons (`assets.rs::load_static_sheets`, `enumerate_gore_sheet_ids` — the
+same file-scan shape, ~1 400 small sheets, ~0.7 MB compressed), exposed as
+`Lookups.gore_sheets` keyed by the parsed id. The leaf gores 910/911 keep
+their existing `STATIC_SHEET_NAMES` slot (the enumeration excludes them so
+nothing double-packs) and appear in both maps.
+
+Atlas packing: the ~1 400 same-band gore sheets overflowed the 8192 px
+strict-GPU height bound under the old next-fit shelf pass (each shelf
+stranded its width tail), so `tr-render/src/atlas.rs::build_ref` now uses
+**first-fit decreasing-height shelves** — the height-descending sort
+guarantees a later image fits any open shelf's height, and an image takes
+the first shelf whose width tail fits it. Deterministic (the same sort +
+scan over the same input, the world-swap `build_ref` contract, pinned by
+`build_ref_matches_build_bit_for_bit`), but it **moves every sheet's
+atlas position** relative to the old packer: all UVs shift, so the golden
+screenshot SHA256s change by construction and must be re-taken when a
+build is next allowed (no pixel-behaviour change — the same texels, new
+addresses).
+
+Documented drops: **`DrawGoreBehind`** (`Main.cs:21842-21871`, the
+behind-tiles drip rows at `:56937`/`:63424`) is not ported — it needs a
+draw seam inside the tile batch, and the `drawBackGore` latch is therefore
+not carried; hanging drips simply do not draw until that seam lands. A
+gore type whose sheet file is absent stays undrawn (the lazy `LoadGore`
+never resolving). Six tests (`s1_e_4b_*`) pin the source-rect maths, every
+`GetAlpha` arm, the byte multiplies, the light-tile cast orders, the quad
+geometry (lift/nudge/scaled origin/rotation) and the drip gate.
+
+**Code-only mode (user directive, 2026-11-18):** this pass was written and
+committed without invoking any compiler — no cargo/rustc/rustfmt/test
+runs. The six tests are written NOT run; the tint's TWO-step truncation
+(the light byte `(int)(c·255)` first, then `GetAlpha`'s `(int)(byte·num)`
+— never fused into one multiply, the G-3 verifier finding on fused
+tints) was hand-checked against the C# literals, as was every test's
+expected value. Compilation, the test run and the re-taken screenshots
+are owed before this branch merges.
+
 ## The carrier's life pool (S1-D-6, 2026-11-14)
 
 `NPC.realLife` (`NPC.cs:6161`) is the C#'s carrier link: an NPC index that

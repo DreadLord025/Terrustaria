@@ -72,6 +72,30 @@ fn enumerate_buff_icon_ids(images_dir: &Path) -> Vec<u16> {
     ids
 }
 
+/// The `Images/Gore_<id>.xnb` sheet ids (`enumerate_item_icon_ids`'s shape) —
+/// `AssetInitializer.cs:135-137` fills `TextureAssets.Gore[l]` with
+/// `Images/Gore_<l>` for the whole range. The two ambient leaf gores
+/// (910/911) are excluded: they already ride `STATIC_SHEET_NAMES` at their
+/// fixed slot, so a second decode would double-pack them.
+fn enumerate_gore_sheet_ids(images_dir: &Path) -> Vec<u16> {
+    let Ok(entries) = std::fs::read_dir(images_dir) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<u16> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            let id = name.strip_prefix("Gore_")?.strip_suffix(".xnb")?;
+            let id = id.parse::<u16>().ok()?;
+            (id != 910 && id != 911).then_some(id)
+        })
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
 /// The two halves of the atlas content: the world-derived sheets (the tile and
 /// wall sheets this world's usage scan asked for) and the world-independent
 /// ones (backgrounds, NPCs, items, UI, …).
@@ -1169,6 +1193,21 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
             images.push(img);
         }
     }
+    // The gore sheets (`TextureAssets.Gore[type]`, `Images/Gore_<id>`,
+    // `AssetInitializer.cs:135-137`): the `Main.DrawGore` source
+    // (`Main.cs:21873-21907`). The C# `LoadGore` requests them lazily
+    // (`Main.cs:59100-59106`); the port packs the whole ~0.7 MB set up front
+    // like the items — a missing file just leaves that type undrawn.
+    let gore_ids = enumerate_gore_sheet_ids(dir);
+    let gore_images: Vec<(u16, Result<AtlasImage>)> = gore_ids
+        .par_iter()
+        .map(|&id| (id, load_png(dir, &format!("Gore_{id}"), SheetLayout::Raw)))
+        .collect();
+    for (id, result) in gore_images {
+        if let Ok(img) = result {
+            images.push(img);
+        }
+    }
     if !failed_items.is_empty() {
         log::warn!(
             "{} item icons failed to decode (first 10: {:?})",
@@ -1739,6 +1778,11 @@ pub struct Lookups {
     /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
     /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
     pub leaf_gores: [Option<tr_render::SheetRect>; 2],
+    /// `TextureAssets.Gore[type]` — one packed sheet per gore id whose
+    /// `Images/Gore_<id>` file exists (`AssetInitializer.cs:135-137`), the
+    /// `Main.DrawGore` source (`Main.cs:21873-21907`). Includes the leaf
+    /// gores 910/911 (they also ride `leaf_gores` for the foliage pass).
+    pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
@@ -2121,6 +2165,19 @@ impl Lookups {
                 })
                 .collect(),
             leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
+            // Every `Gore_<id>` sheet that made it into the atlas, keyed by
+            // the parsed id (`AssetInitializer.cs:135-137` names them
+            // `Images/Gore_<l>`) — the same prefix scan as `item_icons`; an
+            // id without a texture file never registers, so `DrawGore`
+            // skips it like the lazy `LoadGore` never resolving.
+            gore_sheets: atlas
+                .sheets
+                .iter()
+                .filter_map(|(name, rect)| {
+                    let id = name.strip_prefix("Gore_")?.parse::<u16>().ok()?;
+                    Some((id, *rect))
+                })
+                .collect(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),

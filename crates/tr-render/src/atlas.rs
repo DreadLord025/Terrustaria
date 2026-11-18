@@ -95,22 +95,36 @@ impl Atlas {
         // Tallest first keeps the shelf count low.
         order.sort_by(|a, b| b.height.cmp(&a.height).then(b.width.cmp(&a.width)));
 
-        let mut x = PAD;
-        let mut y = PAD;
-        let mut shelf_height = 0;
+        // First-fit decreasing-height shelves: the height-descending sort
+        // guarantees every later image fits any open shelf's height, so an
+        // image takes the FIRST shelf whose width tail fits it and only
+        // opens a new shelf when none does. The backfill is what keeps the
+        // many small same-band sheets (the ~1400 gore textures, S1-E-4b)
+        // from stranding a width tail per shelf — the plain next-fit pass
+        // overflowed the 8192 px strict-GPU bound with them. Deterministic:
+        // the same sort + scan over the same input gives the same layout
+        // (the world-swap `build_ref` contract).
+        let mut shelves: Vec<(u32, u32)> = Vec::new(); // (cursor x, y)
         let mut layout = Vec::with_capacity(order.len());
-
+        let mut height = PAD;
         for img in &order {
-            if x + img.width + PAD > max_width {
-                x = PAD;
-                y += shelf_height + PAD;
-                shelf_height = 0;
+            let mut placed = None;
+            for s in shelves.iter_mut() {
+                if s.0 + img.width + PAD <= max_width {
+                    placed = Some((s.0, s.1));
+                    s.0 += img.width + PAD;
+                    break;
+                }
             }
-            layout.push((x, y));
-            x += img.width + PAD;
-            shelf_height = shelf_height.max(img.height);
+            match placed {
+                Some(p) => layout.push(p),
+                None => {
+                    layout.push((PAD, height));
+                    shelves.push((PAD + img.width + PAD, height));
+                    height += img.height + PAD;
+                }
+            }
         }
-        let height = y + shelf_height + PAD;
         let width = max_width;
 
         let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
