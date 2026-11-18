@@ -3515,13 +3515,26 @@ pub struct Npc {
     /// shoot tick (`AI_008`), resolved by the world sim after the update
     /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
     /// the (kind, bottom-centre x, bottom-centre y) spawn point.
-    pub wants_sphere: Vec<(NpcKind, f32, f32)>,
+    /// is the (kind, bottom-centre x, bottom-centre y, `ai[3]`) spawn
+    /// point — the 4th slot carries `NPC.NewNPC`'s `ai3` argument
+    /// (`NPC.cs:21246`'s `flag4 ? 1 : 0`; every other caller passes 0).
+    pub wants_sphere: Vec<(NpcKind, f32, f32, f32)>,
     /// `ai[3]`: x position while descending through water, for the bounce flip.
     wet_x: f32,
     /// `NPC.ai[0..4]` — the EoC phase machine's state
     /// (`ai[0]` the phase, `ai[1]` the sub-state, `ai[2]` the timer,
     /// `ai[3]` the dash/servant counter; `AI()`'s aiStyle-4 block).
     pub ai: [f32; 4],
+    /// `NPC.localAI = new float[NPC.maxAI]` (`NPC.cs:6447`, `maxAI` = 4,
+    /// `Main.cs`'s init) — the client-local AI slots the vanilla never
+    /// nets. S1-E-14b: the RedHat state lives here for the hand 36
+    /// (`aiStyle 12` mirrors the head's `ai[3]`, `NPC.cs:22315`) and the
+    /// Dark Caster 32 (`aiStyle 8` latches from `FindFirstNPC(35)`,
+    /// `NPC.cs:20820-20827`); the loot seam feeds it to
+    /// `RedHatSkeletronAdjustmentsEnabled` (`NPC.cs:66671-66682`). The
+    /// other AIs keep their bespoke named localAI stand-ins
+    /// (`caster_counter` etc.) — recorded in ANALYSIS.
+    pub local_ai: [f32; 4],
     /// The servant spawn request — the `NPC.NewNPC(..., 5)` calls in the
     /// aiStyle-4 block (`NPC.cs:4598`/`:4651` of the AI()), resolved by the
     /// world sim after the update pass (the `wants_sphere` shape; the payload
@@ -4546,6 +4559,7 @@ impl Npc {
             dark_mage_local: [0.0; 3],
             frost_stuck_x: 0.0,
             wants_sphere: Vec::new(),
+        local_ai: [0.0; 4],
             swim_phase: 0.0,
             worm_id: 0,
             seg_index: 0,
@@ -7603,6 +7617,11 @@ impl Npc {
                 } else {
                     0
                 };
+                // `NPC.cs:77050-77053`: `type == 32 && localAI[3] == 1`
+                // banks 3 rows down — the Skeletron-pose strip.
+                if self.kind == NpcKind::DarkCaster && self.local_ai[3] == 1.0 {
+                    self.frame += 3;
+                }
             }
             // The Desert Djinn (`FindFrame`'s case 533,
             // `NPC.cs:69978-69992`): the 8-row hover cycle — the counter
@@ -9341,6 +9360,18 @@ impl Npc {
         }
     }
 
+    /// `NPC.RedHatSkeletronAdjustmentsEnabled` (`NPC.cs:66671-66682`):
+    /// type 35 reads `ai[3] == 1` (the loot seam's live hand-count write
+    /// keeps its own model — `world_sim/npcs.rs`), 36/32 read
+    /// `localAI[3] == 1`, 33 reads `ai[3] == 1`, everything else false.
+    pub fn red_hat_skeletron_adjustments_enabled(&self) -> bool {
+        match self.kind {
+            NpcKind::SkeletronHead | NpcKind::WaterSphere => self.ai[3] == 1.0,
+            NpcKind::SkeletronHand | NpcKind::DarkCaster => self.local_ai[3] == 1.0,
+            _ => false,
+        }
+    }
+
     /// `AI_008` through the framework's `caster_cycle` (`NPC.cs`'s aiStyle
     /// 8 block, `:20817-21278`). The shoot tick spawns the sphere through
     /// `wants_sphere`: the Goblin Sorcerer → the Chaos Ball 30 (`:21238`),
@@ -9350,6 +9381,13 @@ impl Npc {
     /// (`:21164-21173`). The spawn point keeps `NPC.NewNPC`'s `Bottom`
     /// semantics (`:80771`).
     fn update_caster(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        // `AI()`'s aiStyle-8 head (`NPC.cs:20819-20827`): the Dark
+        // Caster latches `localAI[3] = 1` while a live Skeletron head's
+        // `ai[3] == 1` (`FindFirstNPC(35)` — the sim's write-through
+        // mirror). No reset arm exists in the C#: the latch sticks.
+        if self.kind == NpcKind::DarkCaster && world.skeletron_red_hat {
+            self.local_ai[3] = 1.0;
+        }
         let (pcx, pcy) = player.center();
         let params = match self.kind {
             NpcKind::FireImp => crate::npc_ai::CasterParams::FIRE_IMP,
@@ -9374,13 +9412,24 @@ impl Npc {
                 NpcKind::FireImp => (self.x + w * 0.5 + self.facing as f32 * 8.0, self.y + 20.0),
                 _ => return,
             };
+            // `:21246`: the Dark Caster's sphere carries
+            // `ai[3] = flag4 ? 1 : 0` — the red-hat state propagates to
+            // the Water Sphere 33 (`RedHatSkeletronAdjustmentsEnabled`'s
+            // `ai[3]` arm, `NPC.cs:66676-66679`).
+            let sphere_ai3 = if self.kind == NpcKind::DarkCaster
+                && self.red_hat_skeletron_adjustments_enabled()
+            {
+                1.0
+            } else {
+                0.0
+            };
             let sphere = match self.kind {
                 NpcKind::GoblinSorcerer | NpcKind::Tim => NpcKind::ChaosBall,
                 NpcKind::DarkCaster => NpcKind::WaterSphere,
                 NpcKind::FireImp => NpcKind::BurningSphere,
                 _ => return,
             };
-            self.wants_sphere.push((sphere, sx, sy));
+            self.wants_sphere.push((sphere, sx, sy, sphere_ai3));
         }
     }
 
@@ -11072,7 +11121,7 @@ impl Npc {
                     0,
                 ));
                 // `DD2Event.RaiseGoblins` — the port's summon request.
-                self.wants_sphere.push((NpcKind::DD2GoblinT1, cx, cy));
+                self.wants_sphere.push((NpcKind::DD2GoblinT1, cx, cy, 0.0));
             }
             // `:65849-65857` — the shadowflame: the aim re-sets `direction`
             // from the vector's signed x, then the 675 leaves from the
@@ -12637,7 +12686,7 @@ impl Npc {
             // `:59585-59589`'s spawn: the 410 spider at the centre with the
             // carried velocity.
             self.wants_sphere
-                .push((NpcKind::StardustSpiderSmall, cx, cy));
+                .push((NpcKind::StardustSpiderSmall, cx, cy, 0.0));
             self.ai[2] = 0.0;
         }
         if self.ai[1] <= 0.0 {
@@ -15109,6 +15158,11 @@ impl Npc {
     /// (the WoF write-through shape). The vanilla's `ai[2] += 10f`
     /// head-death despawn rides the sim.
     fn update_skeletron_hand(&mut self, world: &World, player: &Player) {
+        // `NPC.cs:22313-22316` — while the head is a live aiStyle-11 NPC
+        // the hand mirrors its `ai[3]` into `localAI[3]` (the red-hat
+        // latch rides the head; the sim's `skeletron_x/y` write-through
+        // stands for the active-head check).
+        self.local_ai[3] = if world.skeletron_red_hat { 1.0 } else { 0.0 };
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -15383,11 +15437,11 @@ impl Npc {
                 if self.caster_counter == 0 && self.cast_windup == 0 {
                     self.caster_counter = 1;
                     self.wants_sphere
-                        .push((NpcKind::GolemFistRight, cx - 84.0, cy - 9.0));
+                        .push((NpcKind::GolemFistRight, cx - 84.0, cy - 9.0, 0.0));
                     self.wants_sphere
-                        .push((NpcKind::GolemFistLeft, cx + 78.0, cy - 9.0));
+                        .push((NpcKind::GolemFistLeft, cx + 78.0, cy - 9.0, 0.0));
                     self.wants_sphere
-                        .push((NpcKind::GolemHead, cx - 3.0, cy - 57.0));
+                        .push((NpcKind::GolemHead, cx - 3.0, cy - 57.0, 0.0));
                 }
                 if self.ai[0] == 0.0 {
                     // The grounded charge (`:19638-19703`): the C# gates the
@@ -18068,7 +18122,7 @@ mod tests {
             let (px, py) = (tim.x, tim.y);
             tim.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
             let req = tim.wants_sphere.drain(..).next();
-            if let Some((kind, sx, sy)) = req {
+            if let Some((kind, sx, sy, _ai3)) = req {
                 assert_eq!(kind, NpcKind::ChaosBall);
                 // The Chaos Ball spawn point: Tim's bottom-centre, 8 px
                 // above the top (`:21242`'s NewNPC(x + w/2, y - 8) with the
@@ -18122,7 +18176,7 @@ mod tests {
         for _ in 0..400 {
             imp.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
             let req = imp.wants_sphere.drain(..).next();
-            if let Some((kind, _, _)) = req {
+            if let Some((kind, _, _, _)) = req {
                 assert_eq!(kind, NpcKind::BurningSphere);
                 shot = true;
                 break;
@@ -19294,6 +19348,131 @@ mod tests {
             sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
         assert_eq!(sk.ai[1], 0.0, "the spin resumed");
+    }
+
+    #[test]
+    fn s1_e_14b_red_hat_36_32_local_ai_state_machine() {
+        // S1-E-14b acceptance — the 36/32 `localAI[3]` paths
+        // (`NPC.RedHatSkeletronAdjustmentsEnabled`, `NPC.cs:66671-66682`)
+        // become reachable through the ported `Npc.local_ai` vector.
+        let w = ground_air();
+        let mut player = surface_player(&w);
+        let mut rng = UnifiedRandom::new(7);
+
+        // The predicate itself: the C#'s full 10-case matrix on the real
+        // Npc (35/33 read `ai[3]`, 36/32 read `local_ai[3]`, others refuse).
+        let cases: [(NpcKind, f32, f32, bool); 10] = [
+            (NpcKind::SkeletronHead, 1.0, 0.0, true),
+            (NpcKind::SkeletronHead, 0.0, 1.0, false),
+            (NpcKind::SkeletronHead, 1.0, 1.0, true),
+            (NpcKind::SkeletronHand, 0.0, 1.0, true),
+            (NpcKind::SkeletronHand, 1.0, 0.0, false),
+            (NpcKind::DarkCaster, 0.0, 1.0, true),
+            (NpcKind::DarkCaster, 1.0, 0.0, false),
+            (NpcKind::WaterSphere, 1.0, 0.0, true),
+            (NpcKind::WaterSphere, 0.0, 1.0, false),
+            (NpcKind::Slime, 1.0, 1.0, false),
+        ];
+        for (kind, ai3, local3, expected) in cases {
+            let mut n = Npc::new(kind, 100.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            n.ai[3] = ai3;
+            n.local_ai[3] = local3;
+            assert_eq!(
+                n.red_hat_skeletron_adjustments_enabled(),
+                expected,
+                "{kind:?} ai[3] {ai3} localAI[3] {local3}"
+            );
+        }
+
+        // 36 — the hand mirrors the head's `ai[3]` into `localAI[3]`
+        // (`NPC.cs:22313-22316`; the sim's `skeletron_red_hat` mirror
+        // stands for the active-head check).
+        let mut wh = ground_air();
+        let mut hand = Npc::new(NpcKind::SkeletronHand, 112.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        hand.ai[0] = -1.0;
+        wh.skeletron_x = 100.0 * 16.0;
+        wh.skeletron_y = 100.0 * 16.0;
+        hand.update_skeletron_hand(&wh, &player);
+        assert_eq!(hand.local_ai[3], 0.0, "no red-hat head, no latch");
+        assert!(!hand.red_hat_skeletron_adjustments_enabled());
+        wh.skeletron_red_hat = true;
+        hand.update_skeletron_hand(&wh, &player);
+        assert_eq!(hand.local_ai[3], 1.0, "`:22315`'s mirror");
+        assert!(hand.red_hat_skeletron_adjustments_enabled());
+        wh.skeletron_red_hat = false;
+        hand.update_skeletron_hand(&wh, &player);
+        assert_eq!(hand.local_ai[3], 0.0, "the mirror tracks the head");
+
+        // 32 — the Dark Caster latches from `FindFirstNPC(35)`'s
+        // `ai[3] == 1` (`NPC.cs:20820-20827`); no reset arm exists.
+        let mut wd = ground_air();
+        let mut dc = Npc::new(NpcKind::DarkCaster, 100.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        dc.hp = dc.max_hp;
+        dc.update_caster(&wd, &player, &mut rng);
+        assert_eq!(dc.local_ai[3], 0.0, "no head, no latch");
+        wd.skeletron_red_hat = true;
+        dc.update_caster(&wd, &player, &mut rng);
+        assert_eq!(dc.local_ai[3], 1.0, "`:20825`'s latch");
+        assert!(dc.red_hat_skeletron_adjustments_enabled());
+        wd.skeletron_red_hat = false;
+        dc.update_caster(&wd, &player, &mut rng);
+        assert_eq!(dc.local_ai[3], 1.0, "the C# has no reset arm");
+        // `FindFrame`'s `:77050-77053`: the latched caster banks 3 rows.
+        dc.vy = 0.0;
+        dc.cast_windup = 0;
+        dc.find_frame();
+        assert_eq!(dc.frame, 3, "the Skeletron-pose strip");
+
+        // The sphere spawn carries the latch as `ai[3]` (`:21246`'s
+        // `flag4 ? 1 : 0`) — the Water Sphere 33's `ai[3]` path.
+        let mut fired = false;
+        for _ in 0..1200 {
+            dc.wants_sphere.clear();
+            dc.update_caster(&wd, &player, &mut rng);
+            if let Some((kind, _, _, ai3)) = dc.wants_sphere.first().copied() {
+                assert_eq!(kind, NpcKind::WaterSphere);
+                assert_eq!(ai3, 1.0, "the latched caster's sphere rides ai[3]=1");
+                let mut sphere = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+                sphere.ai[3] = ai3;
+                assert!(sphere.red_hat_skeletron_adjustments_enabled());
+                fired = true;
+                break;
+            }
+        }
+        assert!(fired, "the caster fired its sphere");
+
+        // The loot seam: the ported vector reaches `Cond::RedHatSkeletron`
+        // (`Conditions.cs` RedHatSkeletron.CanDrop → the same predicate).
+        for (npc, kind, expected) in [
+            (&hand, 36, false),
+            (&dc, 32, true),
+        ] {
+            let mut rng = UnifiedRandom::new(7);
+            let mut info = tr_core::loot::DropAttemptInfo {
+                rng: &mut rng,
+                luck: 0.0,
+                is_expert: false,
+                is_master: false,
+                active_players: 1,
+                extra_gel: false,
+                is_in_simulation: false,
+                get_text_value: None,
+                flags: tr_core::loot::LootFlags::default(),
+                npc: tr_core::loot::LootNpc {
+                    kind,
+                    ai: npc.ai,
+                    local_ai: npc.local_ai,
+                    ..Default::default()
+                },
+            };
+            use tr_core::loot::DropCondition as _;
+            assert_eq!(
+                tr_core::loot::Cond::RedHatSkeletron.can_drop(&mut info),
+                expected,
+                "kind {kind} through the seam"
+            );
+        }
+        let _ = w;
     }
 
     #[test]
