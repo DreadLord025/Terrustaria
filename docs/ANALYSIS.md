@@ -17625,3 +17625,80 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The aiStyle-63 census (S1-D-3, 2026-11-18, code-only mode)
+
+The 2026-11-18 aiStyle-63 round ran the escape-clause census before porting:
+a whole-tree `aiStyle\s*=\s*63` grep over `decompiled/` finds **exactly
+one NPC SetDefaults row** — Flocko, type 352 (`NPC.cs:13471-13487`, the
+`aiStyle = 63` at `:13475`; `NPCID.cs:11381` `Flocko = 352`). The only
+other hit is `Projectile.cs:4639` (projectile type 379) — the projectile
+machine's own style space, out of NPC scope. There is no named `AI_063`
+method: the arm is the inline `else if (this.aiStyle == 63)` block of
+`NPC.AI` (`NPC.cs:33971-34018`), and it carries **no per-type branch** —
+the whole family is one kind. The two other `type == 352` sites are
+non-AI (the HitEffect dust burst `:84776-84783` and the GetAlpha
+white-200 tint `:93593-93595`).
+
+**Census verdict: Flocko only → no non-frost kind to port, so no
+`npc_ai_style63.rs` was created.** The round is the docs-only
+distrust-verbatim audit of the sibling's coverage: `5ef9b24b`
+(`task/S1-F-13c-mob-ai`, S1-F-13c slice D, in flight — NOT an ancestor of
+main, verified `git merge-base --is-ancestor` exit 1) ports the arm as
+`crates/tr-app/src/npc_ai_frost_mob.rs::flocko_ai`. The audit read the
+whole arm against the sibling's fn line-for-line and found it
+**faithful**:
+
+* `:33973` `TargetClosest()` — the sibling documents it as the caller's
+  job (the `FrostTarget` seam); the wiring runs
+  `npc_target::target_closest` (S1-D-3p, already on main).
+* `:33974-33981` — `num953 = 11f`; `vector120 = Center + (direction*20,
+  +6)`; the aim deltas use the player's `position.X + width*0.5f` and
+  `Center.Y` (the CENTER, unlike the ElfCopter's chase which uses
+  position.Y); normalise by `11f/dist`. The sibling replays each op in
+  the same order; `FrostMobState::center()` = `position + size*0.5`
+  (`Entity.cs:50-55`'s float halves — identical for the even 54x54 /
+  20x42 boxes).
+* `:33982-33986` — the day reversal is the literal `0f - num954` /
+  `0f - num955` (kept as `0.0 - x`, not `-x` — same IEEE result, same
+  shape).
+* `:33987-34004` — `ai[0]--` runs BEFORE the latch test; the latch
+  `dist < 200 || ai[0] > 0` re-arms `ai[0] = 20` only inside 200px, sets
+  `direction` from the velocity sign (`vx < 0 → -1` else `+1` — zero
+  goes `+1`), `rotation += direction * 0.3f` and RETURNS (velocity
+  untouched). The sibling matches, early return included.
+* `:34005-34016` — the three SEQUENTIAL lerp tiers, each re-reading the
+  just-written velocity: 50/51 always, then 10/11 if `dist < 350`, then
+  7/8 if `dist < 300` (so inside 300px all three fire in order — the
+  sibling's witness `flocko_chases_with_the_three_lerp_tiers` replays
+  exactly this chain in C# f32 ops).
+* `:34017` — `rotation = velocity.X * 0.15f` (assignment, not `+=`).
+
+Defaults check: `FrostMobState::new` seeds direction 1 (`Entity.cs:20`
+`public int direction = 1`), ai/localAI zeroed, and the (54, 54, 1.0,
+450) row matches `NPC.cs:13473-13478` (the 54x54 box, lifeMax 450; scale
+unset = 1). The full stat row (dmg 75, def 8, kb 0.4, value 500,
+noGravity + noTileCollide, npcSlots 2, coldDamage, `:13476-13486`)
+belongs to workers A/B's SetDefaults tables — the sibling's module
+header records that split.
+
+**RNG argument (by construction):** the arm draws no `Main.rand.Next` —
+every value is a deterministic aim/lerp/counter computation, and
+`TargetClosest` is the deterministic Manhattan scan
+(`NPC.cs:77652-77781`, ported as `npc_target.rs`). `flocko_ai` therefore
+takes no RNG parameter and cannot perturb any stream; the sibling's
+dispatch (`frost_mob_ai_step`) passes `rng` only to the ElfCopter's shot
+arm (style 62, the six draws `:33960-33967`), never to 63.
+
+**Main-side state (this round's grep):** the style axis (`npc.rs:3255`)
+claims only 5; `npc/data.rs::ai_style` carries no 63 row and no
+`NpcKind::Flocko` exists (the `BoundGoblin => 63` hit at
+`npc/data.rs:347` is the internal `to_u16` save id, NOT aiStyle —
+BoundGoblin's aiStyle is 0, `:1476`). So on main aiStyle 63 is MISSING;
+the faithful coverage lands when the sibling branch merges with workers
+A/B's kinds/defaults + the wiring (`npc_target::target_closest` at the
+`:33973` call site, the noGravity/noTileCollide direct integration). The
+Flocko `FindFrame` arm (`:72413+`) stays deferred with the sibling's
+other animation arms. The sibling was NOT touched by this round
+(byte-identical on its branch); no compiler was invoked — the audit is
+read-only against `git show 5ef9b24b:...`.
