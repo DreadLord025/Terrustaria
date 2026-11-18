@@ -752,7 +752,7 @@ before claiming a row; push the task branch as the claim.
 | S1-K-3 | `task/S1-K-3` | split `growth.rs` — tree family landed in `growth/trees.rs` 2026-11-18; grass/spread/decorations/herbs/pumpkins groups remain |
 | S1-K-4 | — | split `edit.rs` (6 791) and `world_sim/editing.rs` (7 738) |
 | S1-B-8 | — | split `app/frame.rs` (1 824-line single function) |
-| S1-G-1 | — | split `projectile.rs` (17 411 lines) and `npc.rs` (17 134) — the entity half's god-files, which the 2026-11-01 refactor did not remove |
+| S1-G-1 | `refactor/projectile-split-a` | split `projectile.rs` (27 973 lines) and `npc.rs` (17 134) — the entity half's god-files, which the 2026-11-01 refactor did not remove. **Split A landed 2026-11-18** (`refactor/projectile-split-a`): the data tables moved verbatim to `projectile/data.rs` (2 454 lines — kind consts, `ProjData`/`proj_data`, the yoyo `ProjectileID.Sets` tables, the flail parameter table, the M4-PROJ-8 summon consts, `proj_frames`); `projectile.rs` down to 26 334. Behaviour frozen: pre/post `proj_data`/`proj_frames`/`flail_params`/yoyo-table dumps over kinds 0..=1200 SHA256-equal; the AI arms and the dispatch match untouched. The AI-family half and `npc.rs` remain |
 | — | — | `App` has 257 fields (the docs say 118) and `World` mixes ~50 runtime event flags into the tile container — S2-1 needs both cleaned up first |
 | E1 (paint byte) | — | paint byte landed with TILE-DRAW-4; further tile packing (12→8-10 B) stays deferred |
 
