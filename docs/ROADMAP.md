@@ -754,7 +754,7 @@ before claiming a row; push the task branch as the claim.
 | S1-K-3 | `task/S1-K-3` | split `growth.rs` — tree family landed in `growth/trees.rs` 2026-11-18; grass/spread/decorations/herbs/pumpkins groups remain |
 | S1-K-4 | 🟡 rounds 1+2: `edit/place.rs` (task/S1-K-4) + `edit/wall.rs` (task/S1-K-4b) extracted | split `edit.rs` (6 791) and `world_sim/editing.rs` (7 738) — kill cascade / actuation / editing.rs remain |
 | S1-B-8 | — | split `app/frame.rs` (1 824-line single function) |
-| S1-G-1 | — | split `projectile.rs` (17 411 lines) and `npc.rs` (17 134) — the entity half's god-files, which the 2026-11-01 refactor did not remove |
+| S1-G-1 | `refactor/npc-split-data` | split `projectile.rs` (17 411 lines) and `npc.rs` — the entity half's god-files, which the 2026-11-01 refactor did not remove. **NPC data half landed 2026-11-18**: the static tables (`SlimeVariant`+`SlimeStats`, `EntryStats`+`entry_stats`, `PumpkinDefaults`, the whole `impl NpcKind` lookup block — protocol ids `to_u16`/`from_u16`, `net_id`, hit/death sounds, `size`, `cs_id`, frame counts, `max_hp`, `contact_damage` — and `kind_from_net_id`/`kind_from_legacy_name`) moved verbatim into `npc/data.rs` (2 600 lines; npc.rs 25 144 → 22 561), re-exported from `npc`; only visibility seam `pub(super)` on `contact_damage`; moved blocks proven byte-identical to `origin/main`; the `NpcKind` enum, `Npc` struct and AI arms untouched (D-2/D-3p/E-14b in flight). Remaining: the NPC AI/entity half + `projectile.rs` |
 | — | — | `App` has 257 fields (the docs say 118) and `World` mixes ~50 runtime event flags into the tile container — S2-1 needs both cleaned up first |
 | E1 (paint byte) | — | paint byte landed with TILE-DRAW-4; further tile packing (12→8-10 B) stays deferred |
 
