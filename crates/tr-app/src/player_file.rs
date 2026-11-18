@@ -200,8 +200,15 @@ fn read_player_bytes(plain: &[u8]) -> Result<PlayerFile, PlayerFileError> {
     if (magic & 0x00FF_FFFF_FFFF_FFFF) != FILE_METADATA_MAGIC & 0x00FF_FFFF_FFFF_FFFF {
         return Err(PlayerFileError::NotReLogicFormat);
     }
-    if ((magic >> 56) & 0xFF) != FILE_TYPE_PLAYER {
-        return Err(PlayerFileError::WrongFileType);
+    let type_byte = (magic >> 56) & 0xFF;
+    if type_byte != FILE_TYPE_PLAYER {
+        // Pre-S1-J-3 port saves stamped the type byte 1 (Map) by mistake;
+        // accept that ONLY for the port's own legacy release 279 so old
+        // dev characters still load. Vanilla files (and the corrected
+        // writer) stamp 3 (FileType.cs:8); anything else is WrongFileType.
+        if !(type_byte == 1 && version == LEGACY_PORT_RELEASE) {
+            return Err(PlayerFileError::WrongFileType);
+        }
     }
     let revision = r.u32().ok_or(PlayerFileError::Truncated("revision"))?;
     let favorite_bits = r.u64().ok_or(PlayerFileError::Truncated("fav"))?;
@@ -1001,9 +1008,65 @@ mod tests {
     }
 
     #[test]
+    fn a_genuine_legacy_type_byte_one_file_still_loads() {
+        // Pre-S1-J-3 port saves stamped the type byte 1 (Map) by mistake.
+        // The corrected constant is 3 (FileType.cs:8), but real on-disk old
+        // dev characters carry 1; accept type-byte 1 ONLY for release 279 so
+        // they still load (the legacy shim path). Build the old layout with
+        // the WRONG type byte 1 and confirm it reads.
+        let s = sample();
+        let mut w = Writer::new();
+        w.i32(279);
+        w.u64(FILE_METADATA_MAGIC | (1u64 << 56)); // the old mistaken Map byte
+        w.u32(0);
+        w.u64(0);
+        w.cs_string(&s.name);
+        w.u8(s.difficulty);
+        w.u64(0);
+        w.i32(s.hair);
+        w.u8(0);
+        w.bytes(&[0, 0]);
+        w.u8(s.skin_variant);
+        w.i32(s.life);
+        w.i32(s.life_max);
+        w.i32(s.mana);
+        w.i32(s.mana_max);
+        for _ in 0..11 {
+            w.boolean(false);
+        }
+        w.i32(0);
+        w.i32(0);
+        w.i32(0);
+        for color in [
+            s.hair_color, s.skin_color, s.eye_color, s.shirt_color,
+            s.undershirt_color, s.pants_color, s.shoe_color,
+        ] {
+            w.bytes(&color);
+        }
+        for _ in 0..30 {
+            w.i32(0);
+            w.u8(0);
+        }
+        for (i, (id, stack, prefix)) in s.inventory.iter().enumerate() {
+            w.i32(*id);
+            w.i32(*stack);
+            w.u8(*prefix);
+            w.boolean(s.inv_favorites & (1 << i) != 0);
+        }
+        let file = match read_player_bytes(&w.into_inner()) { Ok(f) => f, Err(e) => panic!("legacy type-1 read err: {e:?}") };
+        assert_eq!(file.name, "Belsin");
+        assert_eq!(file.inventory, s.inventory);
+        // A non-279 file with the wrong type byte must STILL be rejected.
+        let mut w2 = Writer::new();
+        w2.i32(326);
+        w2.u64(FILE_METADATA_MAGIC | (1u64 << 56));
+        assert!(matches!(read_player_bytes(&w2.into_inner()), Err(PlayerFileError::WrongFileType)));
+    }
+
+    #[test]
     fn the_metadata_carries_the_player_type() {
         // FileMetadata.Read: the top byte of the magic word is the FileType —
-        // the player files carry 1.
+        // the player files carry 3 (FileType.cs:8; the port once stamped 1).
         let bytes = write_player_bytes(&sample());
         let plain = cbc_decrypt(&bytes);
         let magic = u64::from_le_bytes(plain[4..12].try_into().unwrap());
