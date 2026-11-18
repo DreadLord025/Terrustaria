@@ -15,8 +15,8 @@ use tr_render::SpriteRenderer;
 use tr_core::bestiary::{KillTracker, UnlockState};
 
 use super::push_whole;
-use super::uistate::{self, Style};
 use super::text;
+use super::uistate::{self, Style};
 use crate::assets::{self, Lookups};
 use crate::npc::{NpcKind, SlimeVariant};
 
@@ -62,10 +62,10 @@ const BACKDROP: [f32; 4] = [0.0, 0.0, 0.0, 0.5];
 pub fn panel_rect(screen: Vec2) -> [f32; 4] {
     uistate::resolve(
         [0.0, 0.0, screen.x, screen.y], // the `UIState` root (`UIState.cs:9-11`)
-        Style::px(0.0),        // `Left` unset (`StyleDimension.Empty`)
-        Style::px(180.0),      // `Top.Set(180f, 0f)` (`:74`)
-        Style::new(0.0, 0.875), // `Width.Set(0f, 0.875f)` (`:71`)
-        Style::new(-220.0, 1.0), // `Height.Set(-220f, 1f)` (`:76`)
+        Style::px(0.0),                 // `Left` unset (`StyleDimension.Empty`)
+        Style::px(180.0),               // `Top.Set(180f, 0f)` (`:74`)
+        Style::new(0.0, 0.875),         // `Width.Set(0f, 0.875f)` (`:71`)
+        Style::new(-220.0, 1.0),        // `Height.Set(-220f, 1f)` (`:76`)
         0.5,                            // `HAlign = 0.5f` (`:77`)
         0.0,                            // `VAlign` unset
         700.0,                          // `MinWidth` (`:73`)
@@ -170,7 +170,13 @@ pub fn draw_emote_button(r: &mut SpriteRenderer, lookups: &Lookups, mouse: Vec2)
     let Some(sheet) = lookups.ui_emote_button else {
         return;
     };
-    draw_two_frame_button(r, lookups, &sheet, EMOTE_BUTTON_RECT, emote_button_hit(mouse));
+    draw_two_frame_button(
+        r,
+        lookups,
+        &sheet,
+        EMOTE_BUTTON_RECT,
+        emote_button_hit(mouse),
+    );
 }
 
 /// The shared `value.Frame(2, 1, flag ? 1 : 0)` + the 2 px inset body of
@@ -336,20 +342,26 @@ fn draw_card(
     idx: usize,
     hover: bool,
 ) {
-    let inner = [cell[0] + 2.0, cell[1] + 2.0, CELL - 4.0, CELL - 4.0];
-    let cx = inner[0] + inner[2] * 0.5;
-    let cy = inner[1] + inner[3] * 0.5;
+    let inner = inner_box(cell);
+    let state = crate::bestiary::unlock_state(entry, tracker);
+    // The inner container is `OverflowHidden = true`
+    // (`UIBestiaryEntryButton.cs:30-38`): the back, the portrait and the
+    // locked icon are its children and clip to the 68 px box; the overlay /
+    // front / selection are appended to the *outer* element (`:84-91`) and
+    // draw unclipped. `push_clip` is `UIElement.Draw`'s scissor enter
+    // (`UIElement.cs:222-237`).
+    r.push_clip(inner);
     if let Some(sheet) = lookups.ui_bestiary_slot_back {
         push_whole(r, lookups, &sheet, inner, [1.0; 4]);
     }
-    let state = crate::bestiary::unlock_state(entry, tracker);
     if state.known() {
-        draw_portrait(r, lookups, entry, cx, cy, inner[2], inner[3]);
+        draw_portrait(r, lookups, entry, inner, false);
     } else if let Some(locked) = lookups.ui_bestiary_locked {
         // `UIBestiaryEntryIcon.DrawSelf`'s locked branch (`:44-56`): the
         // texture at white * 0.15, centred.
         push_whole(r, lookups, &locked, inner, [0.15; 4]);
     }
+    r.pop_clip();
     if let Some(overlay) = lookups.ui_bestiary_slot_overlay {
         push_whole(r, lookups, &overlay, inner, [0.6; 4]);
     }
@@ -389,49 +401,143 @@ fn entry_sheet<'a>(
     lookups.bestiary_npc_sheets.get(slot)?.as_ref()
 }
 
-/// `UnlockableNPCEntryIcon.Draw` (`:194-211`) — the NPC drawn through
-/// `Main.DrawNPCDirect` at the icon box: non-floaters bottom-anchored
-/// `topLeft + size*(0.5, 1) + (0, -8)` (`UpdatePosition`, `:112-123`),
-/// floaters centred. The UI draws with full light; the slime variants keep
-/// their `NPC.color` tint.
+/// The entry button's inner container — `Width/Height (-4, 1)` centred in
+/// the 72 px cell (`UIBestiaryEntryButton.cs:30-38`): the 68 px box, inset
+/// 2 px per side. The `OverflowHidden` scissor rect and the icon box are
+/// this same rect (`UIBestiaryEntryIcon.Update`'s `dimensions.ToRectangle()`).
+fn inner_box(cell: [f32; 4]) -> [f32; 4] {
+    [cell[0] + 2.0, cell[1] + 2.0, cell[2] - 4.0, cell[3] - 4.0]
+}
+
+/// The draw geometry of `UnlockableNPCEntryIcon.Update`/`UpdatePosition`
+/// (`UnlockableNPCEntryIcon.cs:52-82`, `:112-123`) with the
+/// `NPCID.Sets.NPCBestiaryDrawOffset` row applied: the NPC's position inside
+/// the icon box, its scale and its draw frame. Pure so the tests can check
+/// the per-NPC rows without a renderer.
+///
+/// `is_portrait` selects the `PortraitScale` /
+/// `PortraitPositionX-YOverride` arms (`:56-59`, `:66-73`); the grid icon
+/// passes `false` (`UIBestiaryEntryGrid.cs:61` — `isAPrettyPortrait: false`),
+/// the info-page portrait `true` (`UIBestiaryNPCEntryPortrait.cs:56`).
+fn portrait_layout(
+    net_id: i32,
+    floats: bool,
+    frame_w: f32,
+    frame_h: f32,
+    iconbox: [f32; 4],
+    is_portrait: bool,
+) -> ([f32; 2], f32, usize) {
+    let mut scale = 1.0;
+    let mut offset = [0.0f32; 2];
+    let mut frame_override: Option<i32> = None;
+    if let Some(m) = super::bestiary_draw_offsets::get(net_id) {
+        // `:54-64`: rotation/scale first, then the portrait-scale override.
+        scale = m.scale;
+        if is_portrait {
+            if let Some(ps) = m.portrait_scale {
+                scale = ps;
+            }
+        }
+        offset = m.position;
+        frame_override = m.frame;
+        if is_portrait {
+            if let Some(x) = m.portrait_position_x_override {
+                offset[0] = x;
+            }
+            if let Some(y) = m.portrait_position_y_override {
+                offset[1] = y;
+            }
+        }
+    }
+    // `UpdatePosition` (`:112-123`): `noGravity` NPCs centre on the box,
+    // the rest bottom-anchor at `topLeft + size*(0.5, 1) + (0, -8)`; the
+    // offset rides both, then `position.Floor()` (`:122`). The anchor uses
+    // the NPC's unscaled `width`/`height` (`NPC.Bottom`/`Center` are
+    // `position + width/height`, scale is draw-only).
+    let (x, y) = if floats {
+        (
+            iconbox[0] + (iconbox[2] - frame_w) * 0.5 + offset[0],
+            iconbox[1] + (iconbox[3] - frame_h) * 0.5 + offset[1],
+        )
+    } else {
+        (
+            iconbox[0] + iconbox[2] * 0.5 - frame_w * 0.5 + offset[0],
+            iconbox[1] + iconbox[3] - frame_h - 8.0 + offset[1],
+        )
+    };
+    // `:100-109`: without a `Frame` override the icon rests on the
+    // `FindFrame` result (frame 0 at rest, velocity 0); with one,
+    // `frame.Y = frame.Height * num`.
+    let frame = frame_override.filter(|f| *f >= 0).unwrap_or(0) as usize;
+    ([x.floor(), y.floor()], scale, frame)
+}
+
+/// `UnlockableNPCEntryIcon.Draw` (`:194-207`) — the NPC drawn through
+/// `Main.DrawNPCDirect` at the icon box with the
+/// `NPCID.Sets.NPCBestiaryDrawOffset` row's scale/position/frame
+/// (`portrait_layout`); spill is clipped by the caller's `OverflowHidden`
+/// scissor, never fit-scaled. The UI draws with full light; the slime
+/// variants keep their `NPC.color` tint.
 fn draw_portrait(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     entry: &crate::bestiary::BestiaryEntryDef,
-    cx: f32,
-    cy: f32,
-    box_w: f32,
-    box_h: f32,
+    iconbox: [f32; 4],
+    is_portrait: bool,
 ) {
+    let mods = super::bestiary_draw_offsets::get(entry.net_id);
     // `sheet_i` is the derived slot `portrait_data` reports; the sheet
     // itself comes back through `entry_sheet` (the same derivation, the
     // bounds-checked form), so the index is not read again here.
     let (_sheet_i, frame_h, w, h, tint) = portrait_data(entry, lookups);
+    let floats = entry.net_id == 2 || entry.net_id == 133; // the demon-eye family noGravity
+                                                           // The NPC cache keeps its `SetDefaults` box even with a custom texture
+                                                           // — `UpdatePosition` anchors on it, not on the portrait's size.
+    let ([x, y], scale, frame) = portrait_layout(entry.net_id, floats, w, h, iconbox, is_portrait);
+    // The custom single-frame portrait (`:74-81` load, `:197-201` draw):
+    // drawn centred on the NPC position, rotation 0, origin = size/2,
+    // `Color.White` — the NPC tint does not apply to it.
+    if let Some(sheet) = mods
+        .and_then(|m| m.custom_texture_path)
+        .and_then(|_| lookups.bestiary_custom_portraits.get(&entry.net_id))
+    {
+        let (cw, ch) = (sheet.width as f32 * scale, sheet.height as f32 * scale);
+        let dst = [x + w * 0.5 - cw * 0.5, y + h * 0.5 - ch * 0.5, cw, ch];
+        push_whole(r, lookups, sheet, dst, [1.0; 4]);
+        return;
+    }
     let Some(sheet) = entry_sheet(lookups, entry) else {
         return;
     };
-    let floats = entry.net_id == 2 || entry.net_id == 133; // the demon-eye family noGravity
-    // The icon box bounds the sprite: the non-floater's bottom anchor keeps
-    // an 8 px inset (`UpdatePosition`, `:120`), so the height budget is the
-    // box minus that inset. Vanilla sizes big NPCs down through
-    // `NPCID.Sets.NPCBestiaryDrawOffset`'s `Scale`/`PortraitScale`
-    // (`UnlockableNPCEntryIcon.cs:52-59`); the fit keeps the same intent —
-    // nothing spills out of the cell.
-    let budget_h = if floats { box_h } else { box_h - 8.0 };
-    let (w, h) = portrait_fit(w, h, box_w, budget_h);
-    let (x, y) = if floats {
-        (cx - w * 0.5, cy - h * 0.5)
-    } else {
-        let top = cy + box_h * 0.5;
-        (cx - w * 0.5, top - h - 8.0)
-    };
+    let (dw, dh) = (w * scale, h * scale);
+    // `DrawNPCDirect` draws at `npc.Center` with origin = frame/2 and
+    // `npc.scale` (`Main.cs:22513+`): the scaled frame stays centred on the
+    // NPC's unscaled box centre (`position + (width, height)/2`).
+    let (x, y) = (x + (w - dw) * 0.5, y + (h - dh) * 0.5);
     // `DrawNPCDirect` draws the NPC's single `npc.frame` rect
     // (`UnlockableNPCEntryIcon.cs:194-207`), never the whole animation
     // sheet: `FindFrame` leaves `frame.Height` at one frame and the idle
     // icon rests on frame 0 (`Update`, `:100-109`). The sheet's row count
     // comes from the frame height `portrait_data` reports.
     let frames_y = portrait_frames_y(sheet.height, frame_h);
-    draw_sheet_frame(r, lookups, &sheet, 1, frames_y, 0, [x, y, w, h], tint);
+    let uv = sheet_frame_uv(&sheet, lookups.atlas_size, 1, frames_y, frame);
+    let rotation = mods.map(|m| m.rotation).unwrap_or(0.0);
+    if rotation == 0.0 {
+        r.push_ui_sprite([x, y], [dw, dh], uv, tint);
+    } else {
+        // `DrawNPCDirect` draws at the NPC centre with origin = frame/2
+        // (`Main.cs:22513+`, the `npc.rotation` arm): rotate about the
+        // frame centre. `push_ui_sprite_rot` pivots the top-left, so shift
+        // it by `origin − R(rot)·origin` (the `push_sprite_origin_rot`
+        // form, `sprite.rs:786-801`).
+        let origin = [dw * 0.5, dh * 0.5];
+        let (s, c) = rotation.sin_cos();
+        let tl = [
+            x + origin[0] - (origin[0] * c - origin[1] * s),
+            y + origin[1] - (origin[0] * s + origin[1] * c),
+        ];
+        r.push_ui_sprite_rot(tl, [dw, dh], uv, tint, rotation);
+    }
 }
 
 /// The sheet's vertical frame count for a portrait: `sheet.height /
@@ -444,14 +550,6 @@ fn portrait_frames_y(sheet_h: u32, frame_h: f32) -> usize {
     } else {
         1
     }
-}
-
-/// Scale a portrait down (never up) so it fits its icon box — the intent of
-/// `NPCID.Sets.NPCBestiaryDrawOffset`'s `Scale`/`PortraitScale`
-/// (`UnlockableNPCEntryIcon.cs:52-59`) without the per-NPC table.
-fn portrait_fit(w: f32, h: f32, box_w: f32, box_h: f32) -> (f32, f32) {
-    let s = (box_w / w).min(box_h / h).min(1.0);
-    (w * s, h * s)
 }
 
 /// The portrait parameters — the `NpcAssets` table's sizes
@@ -472,7 +570,9 @@ fn portrait_data(
     // per-arm literal slots that survived here drifted the same way (the
     // Solar Selenian arm read `bestiary_npc_sheets[174]` — one past the
     // 174-entry table's last slot, so its page panicked).
-    let sheet_i = lookups.bestiary_sheet_index(entry.net_id as u16).unwrap_or(0);
+    let sheet_i = lookups
+        .bestiary_sheet_index(entry.net_id as u16)
+        .unwrap_or(0);
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
         (NpcKind::Golem, _) => (sheet_i, 140.0, 140.0, 140.0, white),
@@ -797,10 +897,10 @@ fn portrait_data(
         // was the Stardust row for every kind).
         (
             NpcKind::StardustTower
-                | NpcKind::NebulaTower
-                | NpcKind::SolarTower
-                | NpcKind::VortexTower,
-            _
+            | NpcKind::NebulaTower
+            | NpcKind::SolarTower
+            | NpcKind::VortexTower,
+            _,
         ) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32)
@@ -1177,14 +1277,20 @@ fn draw_info_page(
         let px = panel[0] + 24.0;
         let py = panel[1] + 60.0;
         let inner = [px + 2.0, py + 2.0, size - 4.0, size - 4.0];
+        // The portrait card's inner container is `OverflowHidden` too
+        // (`UIBestiaryNPCEntryPortrait.cs:20-28`), and its icon draws with
+        // `isPortrait: true` (`:56`) — the `PortraitScale` /
+        // `PortraitPositionX-YOverride` arms of the offset table.
+        r.push_clip(inner);
         if let Some(back) = lookups.ui_bestiary_slot_back {
             push_whole(r, lookups, &back, inner, [1.0; 4]);
         }
         if state.known() {
-            draw_portrait(r, lookups, entry, px + size * 0.5, py + size * 0.5, size, size);
+            draw_portrait(r, lookups, entry, inner, true);
         } else if let Some(locked) = lookups.ui_bestiary_locked {
             push_whole(r, lookups, &locked, inner, [0.15; 4]);
         }
+        r.pop_clip();
         if let Some(front) = lookups.ui_bestiary_slot_front {
             push_whole(r, lookups, &front, inner, [1.0; 4]);
         }
@@ -1205,15 +1311,7 @@ fn draw_info_page(
     } else {
         "???".to_string()
     };
-    text::hud_text(
-        r,
-        lookups,
-        tx,
-        ty,
-        1.2,
-        [1.0, 0.9, 0.4, 1.0],
-        &shown_name,
-    );
+    text::hud_text(r, lookups, tx, ty, 1.2, [1.0, 0.9, 0.4, 1.0], &shown_name);
     ty += 34.0;
 
     // The stat rows — tier 2+ (`CanShowStats`).
@@ -1295,7 +1393,10 @@ fn draw_info_page(
                 } else {
                     format!(" ({})", row.stack_min)
                 };
-                format!("  {name}{stack_range} {}", prettify_percent_display(row.drop_rate))
+                format!(
+                    "  {name}{stack_range} {}",
+                    prettify_percent_display(row.drop_rate)
+                )
             } else {
                 format!("  {name}")
             };
@@ -1524,13 +1625,16 @@ mod tests {
         let lk = full_bestiary_lookups();
         for entry in crate::bestiary::ENTRIES.iter() {
             let (_sheet_i, frame_h, w, h, tint) = portrait_data(entry, &lk);
-            assert!(frame_h > 0.0 && w > 0.0 && h > 0.0, "{} portrait", entry.name);
+            assert!(
+                frame_h > 0.0 && w > 0.0 && h > 0.0,
+                "{} portrait",
+                entry.name
+            );
             assert!(tint.iter().all(|c| c.is_finite()), "{} tint", entry.name);
             if entry.net_id >= 0 {
                 // A positive net id resolves a sheet exactly when it is one of
                 // the table's 174 rows (the table drives `bestiary_sheet_index`).
-                let tabled =
-                    crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&(entry.net_id as u16));
+                let tabled = crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&(entry.net_id as u16));
                 assert_eq!(entry_sheet(&lk, entry).is_some(), tabled, "{}", entry.name);
             }
         }
@@ -1566,21 +1670,94 @@ mod tests {
     }
 
     #[test]
-    fn portrait_dest_fits_the_icon_cell() {
-        // The 140x140 Golem portrait must shrink into the grid's inner 68 px
-        // cell (the non-floater's height budget keeps the 8 px bottom inset,
-        // `UnlockableNPCEntryIcon.cs:120`); a small sprite stays unscaled.
-        let (w, h) = portrait_fit(140.0, 140.0, 68.0, 68.0 - 8.0);
-        assert_eq!((w, h), (60.0, 60.0));
-        assert!(w <= 68.0 && h <= 60.0);
-        // Fits without scaling: the 38x48 humanoid in the same cell.
-        assert_eq!(portrait_fit(38.0, 48.0, 68.0, 60.0), (38.0, 48.0));
-        // Wide sheet (the 160x110 brain) scales by the width bound.
-        let (w, h) = portrait_fit(160.0, 110.0, 68.0, 60.0);
-        assert!(w <= 68.0 + 1e-4 && h <= 60.0 + 1e-4);
-        assert!((w / h - 160.0 / 110.0).abs() < 1e-4, "aspect kept");
-        // Never scaled up.
-        assert_eq!(portrait_fit(20.0, 20.0, 68.0, 60.0), (20.0, 20.0));
+    fn the_draw_offset_table_carries_the_vanilla_rows() {
+        use super::super::bestiary_draw_offsets::get;
+        // KingSlime (50): `Position (0, 90)`, `PortraitScale 1.1`,
+        // `PortraitPositionYOverride 70` (`NPCID.cs:1585-1592`).
+        let ks = get(50).expect("KingSlime row");
+        assert_eq!(ks.position, [0.0, 90.0]);
+        assert_eq!(ks.scale, 1.0);
+        assert_eq!(ks.portrait_scale, Some(1.1));
+        assert_eq!(ks.portrait_position_y_override, Some(70.0));
+        // MoonLordCore (398): `Scale 0.4`, `PortraitScale 0.7`, the
+        // dedicated portrait texture (`NPCID.cs:3880-3890`).
+        let ml = get(398).expect("MoonLordCore row");
+        assert_eq!(ml.scale, 0.4);
+        assert_eq!(ml.portrait_scale, Some(0.7));
+        assert_eq!(ml.position, [0.0, 5.0]);
+        assert_eq!(ml.portrait_position_y_override, Some(0.0));
+        assert_eq!(
+            ml.custom_texture_path,
+            Some("Images/UI/Bestiary/NPCs/NPC_398")
+        );
+        // The four towers at `Scale 0.4` (`NPCID.cs:4033-4043`,
+        // `:4494-4504`, `:4596-4606`, `:4679-4689`).
+        for id in [422, 493, 507, 517] {
+            let t = get(id).unwrap_or_else(|| panic!("tower {id} row"));
+            assert_eq!(t.scale, 0.4, "tower {id} scale");
+            assert_eq!(t.position, [1.0, 44.0], "tower {id} position");
+        }
+        // An id without a row resolves `None` (the `TryGetValue` miss).
+        assert!(get(1).is_none());
+    }
+
+    #[test]
+    fn the_eye_of_cthulhu_icon_uses_frame_4() {
+        // EoC (4): `Position (25, -30)`, `Rotation 0.7`, `Frame 4`
+        // (`NPCID.cs:1281-1289`) — `frame.Y = frame.Height * 4`
+        // (`UnlockableNPCEntryIcon.cs:105-109`).
+        let iconbox = [100.0, 100.0, 68.0, 68.0];
+        let ([x, y], scale, frame) = portrait_layout(4, false, 100.0, 110.0, iconbox, false);
+        assert_eq!(frame, 4);
+        assert_eq!(scale, 1.0);
+        // Bottom anchor + offset, floored (`UpdatePosition`, `:120-122`):
+        // x = 100 + 34 - 50 + 25 = 109; y = 100 + 68 - 110 - 8 - 30 = 20.
+        assert_eq!([x, y], [109.0, 20.0]);
+    }
+
+    #[test]
+    fn portrait_scale_and_overrides_apply_per_mode() {
+        // KingSlime's `PortraitScale 1.1` + `PortraitPositionYOverride 70`
+        // apply only with `IsPortrait` (`UnlockableNPCEntryIcon.cs:56-59`,
+        // `:70-73`); the grid icon keeps `Scale 1` and `Position (0, 90)`.
+        let iconbox = [0.0, 0.0, 68.0, 68.0];
+        let ([_, gy], gs, _) = portrait_layout(50, false, 174.0, 120.0, iconbox, false);
+        assert_eq!(gs, 1.0);
+        assert_eq!(gy, (68.0f32 - 120.0 - 8.0 + 90.0).floor()); // 30
+        let ([_, py], ps, _) = portrait_layout(50, false, 174.0, 120.0, iconbox, true);
+        assert_eq!(ps, 1.1);
+        assert_eq!(py, (68.0f32 - 120.0 - 8.0 + 70.0).floor()); // 10
+                                                             // MoonLordCore: grid 0.4, portrait 0.7 (`NPCID.cs:3880-3890`).
+        let (_, gs, _) = portrait_layout(398, false, 46.0, 66.0, iconbox, false);
+        let (_, ps, _) = portrait_layout(398, false, 46.0, 66.0, iconbox, true);
+        assert_eq!((gs, ps), (0.4, 0.7));
+        // An id with no row draws at scale 1, frame 0, no offset.
+        let ([x, y], s, f) = portrait_layout(1, false, 32.0, 26.0, iconbox, false);
+        assert_eq!((s, f), (1.0, 0));
+        assert_eq!([x, y], [18.0, 34.0]); // 34-16, 68-26-8
+    }
+
+    #[test]
+    fn the_clip_rect_is_the_inner_68_box_inside_the_cell() {
+        // `UIBestiaryEntryButton.cs:30-38`: the `OverflowHidden` container
+        // is `Width/Height (-4, 1)` centred — the 68 px box inset 2 px per
+        // side, fully inside the 72 px cell.
+        let cell = [144.0, 216.0, CELL, CELL];
+        let inner = inner_box(cell);
+        assert_eq!(inner, [146.0, 218.0, 68.0, 68.0]);
+        assert!(inner[0] >= cell[0] && inner[1] >= cell[1]);
+        assert!(inner[0] + inner[2] <= cell[0] + cell[2]);
+        assert!(inner[1] + inner[3] <= cell[1] + cell[3]);
+        // The scissor stack intersects nested rects (`UIElement.cs:265-268`
+        // via `ClipStack::push`, the stack behind `push_clip`) — the inner
+        // box survives a full-screen clip and pops back to it.
+        let mut stack = tr_render::ClipStack::new();
+        stack.push([0.0, 0.0, 1600.0, 900.0]);
+        stack.push(inner);
+        assert_eq!(stack.current(), inner);
+        stack.pop();
+        assert_eq!(stack.current(), [0.0, 0.0, 1600.0, 900.0]);
+        stack.pop();
     }
 
     #[test]
@@ -1592,12 +1769,21 @@ mod tests {
         assert_eq!(BUTTON_RECT, [498.0, 278.0, 30.0, 30.0]);
         assert_eq!(EMOTE_BUTTON_RECT, [534.0, 278.0, 30.0, 30.0]);
         assert_eq!(BUTTON_RECT[0] + BUTTON_RECT[2], 528.0, "bestiary 498..528");
-        assert_eq!(EMOTE_BUTTON_RECT[0] + EMOTE_BUTTON_RECT[2], 564.0, "emote 534..564");
+        assert_eq!(
+            EMOTE_BUTTON_RECT[0] + EMOTE_BUTTON_RECT[2],
+            564.0,
+            "emote 534..564"
+        );
         assert!(BUTTON_RECT[0] + BUTTON_RECT[2] < EMOTE_BUTTON_RECT[0]);
-        assert_eq!(EMOTE_BUTTON_RECT[0] - (BUTTON_RECT[0] + BUTTON_RECT[2]), 6.0);
+        assert_eq!(
+            EMOTE_BUTTON_RECT[0] - (BUTTON_RECT[0] + BUTTON_RECT[2]),
+            6.0
+        );
         // Same row: the two hover frames stay mutually exclusive at every
         // cursor position, edges included.
-        for x in [497.0, 498.0, 512.0, 527.0, 528.0, 533.0, 534.0, 549.0, 564.0, 565.0] {
+        for x in [
+            497.0, 498.0, 512.0, 527.0, 528.0, 533.0, 534.0, 549.0, 564.0, 565.0,
+        ] {
             let m = Vec2::new(x, 290.0);
             assert!(
                 !(button_hit(m) && emote_button_hit(m)),
@@ -1673,6 +1859,8 @@ fn prettify_percent_display(rate: f32) -> String {
 /// The trailing-zero trim of `PrettifyPercentDisplay`: `TrimEnd('0', '%', ' ')`
 /// then `TrimEnd('.', ' ')` then `TrimStart('0', ' ')`.
 fn trim_percent(s: &str) -> String {
-    let trimmed = s.trim_end_matches(['0', '%', ' ']).trim_end_matches(['.', ' ']);
+    let trimmed = s
+        .trim_end_matches(['0', '%', ' '])
+        .trim_end_matches(['.', ' ']);
     format!("{}%", trimmed.trim_start_matches(['0', ' ']))
 }
