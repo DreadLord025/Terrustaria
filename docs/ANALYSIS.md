@@ -15351,6 +15351,30 @@ A part whose carrier died falls with it (`Main.npc[ai[3]]` inactive), and a
 second Moon Lord never steals the first one's parts — with the kind search
 it did.
 
+**Per-carrier resolution (re-verified 2026-11-18).** Each carrier family now
+has its own resolution test: `the_moon_lord_parts_keep_their_own_core` (the
+hands/head ↔ core, `NPC.cs:41229-41232`/`:41579-41583`),
+`the_leech_blob_keeps_its_own_head` (the clot ↔ head, `AI_082`'s anchor
+`NPC.cs:36630-36640` — two families on the field, the clot mirrors ITS
+head's centre and falls with it while the other head lives) and
+`the_true_eye_keeps_its_own_core` (the True Eye ↔ core, `AI_081`'s anchor
+`NPC.cs:42466-42470`, the link handed out by `MoonLord_SpawnTrueEyeOfCthulhu`
+`:41154` — the eye survives the OTHER core's death and falls with its own).
+
+**Deliberate deviation — the unlinked-part fallback.** The C# resolves
+`Main.npc[(int)ai[3]]` unconditionally: a part whose `ai[3]` was never set
+points at slot 0 and dies when slot 0 is inactive or the wrong type
+(`NPC.cs:41579-41583`). The port's pre-pass instead falls back to a KIND
+search for the first alive core/head of the family when `carrier_uid == 0`
+(`world_sim/npcs.rs`'s carrier pre-pass) — a part spawned outside the Moon
+Lord's spawn arm (the debug spawn, a save load) still finds its family.
+Once the link is handed out it is explicit and never re-searched, so the
+two-family isolation above holds. The True Eye's spawn site
+(`MoonLord_SpawnTrueEyeOfCthulhu`, `NPC.cs:41134-41155` — the head-loop
+phase maths over `CountNPCS(400)`) is not ported; the eyes reach the field
+through the debug/net spawns and the pre-pass resolves their links the same
+way.
+
 **The Old One's Army's wave-7 anchor.** `DD2Event`'s tier-3 budget reads
 the Betsy's own life (`NPC.FindFirstNPC(551)`, `DD2Event.cs:1487-1494`):
 `currentKillCount = 100 - life/lifeMax*100` and the budget is 100; with no
