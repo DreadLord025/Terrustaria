@@ -879,6 +879,15 @@ pub struct Player {
     pub brain_of_confusion: bool,
     pub shadow_dodge: bool,
     pub long_invince: bool,
+    /// `Player.magicCuffs` (`Player.cs:2248`): the Magic Cuffs (1595,
+    /// `ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
+    /// `:14949-14953`) arm it per tick; `ResetEffects` clears it (`:18599`).
+    /// `Hurt` (`:38291-38303`) restores the RAW incoming damage (the C# `num`,
+    /// pre-defense, crit-doubled) as mana, capped at `statManaMax2`, and calls
+    /// `ManaEffect` (`:4531-4538`) — the port queues the HealMana combat text.
+    /// The items' +40 `statManaMax2` stat rows ride C-12 (the accessory stat
+    /// chain); 2221's `manaMagnet` half is its own unported family.
+    pub magic_cuffs: bool,
     /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
@@ -1175,6 +1184,12 @@ pub struct Player {
     /// `(SoundType, SoundStyle, position.X, position.Y)` — the caller owns
     /// the audio device and the `UpdatePlayers` stream.
     pending_step_sound: Option<(u16, i16, f32, f32)>,
+    /// `Player.ManaEffect` (`Player.cs:4531-4538`): the mana-restore combat
+    /// text the cuffs arm queues from `Hurt` (`:38291-38303`) — the caller
+    /// owns `Main.combatText`, so the Player hands the amount over (the
+    /// `pending_hurt_sound` convention). The C# `CombatText.NewText` rect is
+    /// the player's own hitbox at the hurt position.
+    pending_mana_effect: Option<i32>,
     /// The wheel-spark rolls' named stream (the per-consumer convention — C#
     /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
     /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
@@ -1776,6 +1791,7 @@ impl Player {
             brain_of_confusion: false,
             shadow_dodge: false,
             long_invince: false,
+            magic_cuffs: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
@@ -1870,6 +1886,7 @@ impl Player {
             // `Player.cs:35947-35949` — the default until `PlayerFrame` runs.
             hermes_step_sound: (17, -1, 9),
             pending_step_sound: None,
+            pending_mana_effect: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
@@ -2236,6 +2253,12 @@ impl Player {
         self.pending_step_sound.take()
     }
 
+    /// Takes the queued mana-restore text amount (`Player.ManaEffect`,
+    /// `Player.cs:4531-4538`) — the caller owns `Main.combatText`.
+    pub(crate) fn take_mana_effect(&mut self) -> Option<i32> {
+        self.pending_mana_effect.take()
+    }
+
     /// Takes the tick's queued spark spawn requests (the `Main.dust`
     /// handoff — the caller owns the pool).
     pub(crate) fn take_cart_sparks(&mut self) -> Vec<crate::minecart::SparkSpawn> {
@@ -2398,6 +2421,7 @@ impl Player {
         self.pending_cart_sounds.clear();
         self.pending_sticky_dust.clear();
         self.pending_sticky_kill = None;
+        self.pending_mana_effect = None;
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
         // the only writers are `StickyMovement`'s own four sites), so the port
         // keeps the counter across a revive too.
@@ -3000,8 +3024,24 @@ impl Player {
             }
         }
         // `Player.Hurt`'s defense reduction (the classic
-        // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2).
+        // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
+        // incoming raw damage stays the C# `num` (`Player.cs:38246`) — the
+        // cuffs below restore it, NOT the reduced `num2` (`:38247`).
+        let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
+        // `Player.Hurt`'s magicCuffs arm (`Player.cs:38291-38303`): after the
+        // invis strip (`:38281-38290`, unported) and BEFORE the endurance step
+        // (`:38304`) — `num3 = (int)(num * 1f)` is the raw damage (crit-doubled
+        // at `:38248-38251`; the port's callers carry no crit flag yet), the
+        // mana restores and caps at `statManaMax2`, then `ManaEffect(num3)`
+        // queues the HealMana text (the NetMessage 43 send is MP-only).
+        if self.magic_cuffs {
+            self.mana += raw;
+            if self.mana > self.mana_max {
+                self.mana = self.mana_max;
+            }
+            self.pending_mana_effect = Some(raw);
+        }
         // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
         // damage)` after the defense reduction.
         let amount = ((1.0 - self.endurance) * amount as f32) as i32;
@@ -3551,6 +3591,9 @@ impl Player {
         // summon arms pass in `world_sim/player.rs`).
         self.reset_projectile_caches();
         self.mana_regen_bonus = 0;
+        // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
+        // accessory rows below re-arm it from the live items each tick.
+        self.magic_cuffs = false;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
@@ -4184,6 +4227,12 @@ impl Player {
                 963 | 984 => self.black_belt = true,
                 6189 => self.mystic_sash_dodge = true,
                 3223 => self.brain_of_confusion = true,
+                // The Magic Cuffs (1595, `ApplyEquipFunctional`
+                // `Player.cs:14936-14939`) and the Celestial Cuffs (2221,
+                // `:14949-14953`) arm `magicCuffs`. Their +40 `statManaMax2`
+                // rows (`:14925-14934`) ride C-12; 2221's `manaMagnet` half
+                // (`:14951`) is a separate unported family.
+                1595 | 2221 => self.magic_cuffs = true,
                 // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
                 // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
                 // (The `Item.lifeRegen` rows are generic now — the loop after
@@ -10029,6 +10078,74 @@ mod tests {
         p.legs_armor = 0;
         p.update_frames(&w);
         assert_eq!(p.hermes_step_sound, (17, -1, 9));
+    }
+
+    #[test]
+    fn s1_c_7_magic_cuffs_arm_from_the_two_cuffs_and_clear() {
+        // `ApplyEquipFunctional`: the Magic Cuffs 1595 (`Player.cs:14936-
+        // 14939`) and the Celestial Cuffs 2221 (`:14949-14953`) arm
+        // `magicCuffs`; `ResetEffects` clears it per frame (`:18599`) and the
+        // fold re-arms from the live items.
+        let p = player_with_accessory(1595);
+        assert!(p.magic_cuffs);
+        let p = player_with_accessory(2221);
+        assert!(p.magic_cuffs, "the Celestial Cuffs arm the same flag");
+        let p = player_with_accessory(0);
+        assert!(!p.magic_cuffs);
+        // Armed while equipped, cleared by the next fold without the source.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1595;
+        p.update(&w, PlayerInput::default());
+        assert!(p.magic_cuffs);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.magic_cuffs, "the next fold without the source clears it");
+    }
+
+    #[test]
+    fn s1_c_7_magic_cuffs_restore_the_raw_damage_and_queue_the_text() {
+        // `Hurt`'s magicCuffs arm (`Player.cs:38291-38303`): `num3` is the RAW
+        // incoming damage (`num`, `:38246` — NOT the defense-reduced `num2`),
+        // `statMana += num3` and `ManaEffect(num3)` queues the text.
+        let mut p = player_with_accessory(1595);
+        p.mana = 0;
+        p.mana_max = 100;
+        p.stat_defense = 10; // reduces the hit to 15 — the restore stays 20
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let hp = p.hp;
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.hp, hp - 15, "the life loss is the reduced amount");
+        assert_eq!(p.mana, 20, "the restore is the raw pre-defense damage");
+        assert_eq!(p.take_mana_effect(), Some(20));
+        assert!(p.take_mana_effect().is_none(), "the text is a one-shot");
+    }
+
+    #[test]
+    fn s1_c_7_magic_cuffs_cap_the_restore_at_the_mana_max() {
+        // `Player.cs:38295-38298`: `if (statMana > statManaMax2) statMana =
+        // statManaMax2`. The `ManaEffect` amount stays the uncapped `num3`.
+        let mut p = player_with_accessory(2221);
+        p.mana = 95;
+        p.mana_max = 100;
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.mana, 100, "capped at statManaMax2");
+        assert_eq!(p.take_mana_effect(), Some(20), "the text keeps the raw num3");
+    }
+
+    #[test]
+    fn s1_c_7_without_the_cuffs_the_hit_restores_nothing() {
+        let mut p = player_with_accessory(0);
+        p.mana = 10;
+        p.mana_max = 100;
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.mana, 10);
+        assert!(p.take_mana_effect().is_none());
     }
 
     #[test]

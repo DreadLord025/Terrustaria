@@ -890,6 +890,36 @@ let spawned = app.projectiles.spawn_hook(
             if let Some(cue) = p.take_hurt_sound() {
                 app.audio.play(cue);
             }
+            // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
+            // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
+            // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
+            // is MP-only. Same `UpdatePlayers` stream as the other player-tick
+            // spawns (S1-A-10); the placement draws run inside `spawn`.
+            if let Some(amount) = p.take_mana_effect() {
+                let text = amount.to_string();
+                let size = match app.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                let location = crate::combat_text::Rect {
+                    x: p.x,
+                    y: p.y,
+                    width: crate::player::WIDTH,
+                    height: p.height,
+                };
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                crate::combat_text::spawn_amount(
+                    &mut app.combat_texts,
+                    location,
+                    crate::combat_text::HEAL_MANA,
+                    amount,
+                    false,
+                    false,
+                    size,
+                    1.0,
+                    rng,
+                );
+            }
             if let Some(cue) = p.take_death_sound() {
                 let (px, py) = p.center();
                 app.audio.play_at(cue, px, py, 1.0);
@@ -1113,6 +1143,58 @@ mod tests {
         app.player.as_mut().unwrap().debug_god_mode = false;
         tick_ammo(&mut app);
         assert!(!app.player.as_ref().unwrap().creative_god_mode);
+    }
+
+    #[test]
+    fn s1_c_7_the_cuffs_mana_text_drains_into_the_combat_pool() {
+        // `Player.ManaEffect` (`Player.cs:4531-4538`) — the cuffs' queued
+        // amount spawns one `CombatText.NewText(playerRect, HealMana, amount)`
+        // (`:4533`) with the placement draws on the `UpdatePlayers` stream.
+        let mut app = ammo_app();
+        // The tick copies `app.equip.armor` into `p.equipped` (`Player.cs:12892`).
+        app.equip.armor[3].kind = 1595;
+        tick_ammo(&mut app); // the fold arms magicCuffs
+        assert!(app.player.as_ref().unwrap().magic_cuffs);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana = 0;
+            p.mana_max = 100;
+            p.hurt_cd = 0.0;
+            p.immune = false;
+            assert!(p.hurt(20, p.x + 100.0, &mut UnifiedRandom::new(0), true));
+        }
+        let before = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        tick_ammo(&mut app);
+        assert_eq!(app.player.as_ref().unwrap().mana, 20);
+        let t = app
+            .combat_texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the HealMana text spawned");
+        assert_eq!(t.text, "20");
+        assert_eq!(t.color, crate::combat_text::HEAL_MANA);
+        assert!(!t.crit && !t.dot);
+        // The spawn's two placement `Next` rolls (`CombatText.cs:88-89`) drew
+        // the player-tick stream — nothing else moved.
+        assert_ne!(*app.rngs.stream(RngKey::UpdatePlayers), before);
+        for key in RngKey::ALL {
+            if key == RngKey::UpdatePlayers {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+        // A one-shot: the next tick without a new hurt adds no text.
+        tick_ammo(&mut app);
+        assert_eq!(
+            app.combat_texts.iter().filter(|t| t.active).count(),
+            1,
+            "the queued amount drained exactly once"
+        );
     }
 
     #[test]

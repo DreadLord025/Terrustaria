@@ -331,7 +331,13 @@ const LIQUID_CHANGE_CUES: &[&str] = &[
 /// (`Sounds/Custom/<cue>.xnb`, `LegacySoundPlayer.cs:257`; S1-E-23): the
 /// SceneState blizzard loops (`SoundID.cs:1598-1599`) — the styles carry
 /// their own volume (`ambient_sound::blizzard_strong_loop_style`).
-const TRACKED_CUES: &[&str] = &["blizzard_strong_loop", "blizzard_inside_building_loop"];
+const TRACKED_CUES: &[&str] = &[
+    "blizzard_strong_loop",
+    "blizzard_inside_building_loop",
+    // `SoundID.AchievementComplete` (`SoundID.cs:1597`) — the unlock toast's
+    // cue (`AchievementInitializer.cs:731-734`, S1-E-26 wave A).
+    "achievement_complete",
+];
 
 /// The `Sounds/Custom/` trackables the item-use wave names
 /// (`Item.UseSound` → `SoundID.CreateTrackable`, `SoundID.cs:1607-1729`;
@@ -1172,6 +1178,17 @@ impl Audio {
         id: tr_core::slot::SlotId,
     ) -> Option<&mut crate::tracked_sound::ActiveSound> {
         self.tracked.get_active_sound_mut(id)
+    }
+
+    /// `SoundEngine.FindActiveSound(style)` (`SoundEngine.cs` →
+    /// `SoundPlayer.FindActiveSound`): the first live instance of the style,
+    /// or `None` — the achievement-completion subscriber's "already playing"
+    /// guard (`AchievementInitializer.cs:731`).
+    pub fn find_active_tracked(
+        &self,
+        style: &crate::tracked_sound::TrackedStyle,
+    ) -> Option<&crate::tracked_sound::ActiveSound> {
+        self.tracked.find_active_sound(style)
     }
 }
 
