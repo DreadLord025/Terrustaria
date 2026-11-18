@@ -323,6 +323,31 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | `ui/crafting.rs` | `NewCraftingUI.cs` (+ `UIWrappedSearchBar`, `UICreativeItemsInfiniteFilteringOptions`, `CraftingUI.DrawGridToggle`) | the modern crafting panel: frame, title, search bar, filter strip, separator, empty grid, scrollbar, detail area, toggles |
 | `ui/chest.rs` | `Terraria/UI/ChestUI.cs` | the world-chest panel: name line, rename buttons, the Loot All/Deposit All/Quick Stack/Restock button row, the 10×4 chest slot window, context-3 slot backgrounds |
 | `ui/ingame_options.rs` | `IngameOptions.Draw` + `Main.DrawSettingButton` | the in-game Settings window: the 670×480 panel, the eight-row left navigation (DeathText, 47.5 px pitch) and the four right pages (General/Interface/Video/Controls) with the 0.75-scale value bars, the HSL colour bars and the per-row hover animation; the Settings word-button bottom-right |
+| `ui/bestiary.rs` | `UIBestiaryTest.cs` + `UIBestiaryEntryGrid`/`EntryButton`/`EntryIcon`/`EntryInfoPage` | the bestiary screen: the 72 px entry grid with the lock-tier portraits (`tr_core::bestiary` unlock ladder), the per-entry info page (stats/flavor/kill counter/drop lines gated by the five reveal tiers), the completion bar and the Back panel; opens from the inventory's bestiary button (`Main.DrawBestiaryIcon`) |
+
+### Bestiary screen (`ui/bestiary.rs`, `UIBestiaryTest.cs`)
+
+Opens from the inventory's bestiary button (`Main.DrawBestiaryIcon`,
+`Main.cs:42423-42485`, the 30×30 rect at (498, 278)) or `TR_BESTIARY=1`;
+Escape or the Back panel closes it (`IngameFancyUI`). The entry grid uses
+the C#'s 72 px cells and the `GetEntriesToShow` division
+(`UIBestiaryEntryGrid.cs:79-85`); each card is the `Slot_Back` + portrait /
+15 %-white `Icon_Locked` + `Slot_Overlay`/`Slot_Front` stack with the
+`Slot_Selection` hover frame (`UIBestiaryEntryButton.cs:24-102`), the
+portrait geometry rides the generated `NPCBestiaryDrawOffset` table
+(`ui/bestiary_draw_offsets.rs`). The hover prints the NPC name or "???"
+(`UnlockableNPCEntryIcon.GetHoverText`). Selecting a card swaps to the info
+page: the portrait, the name plate ("???" below tier 1), the stats block
+(tier 1 shows "???", tier 2 the values + the High/Med/Low/None knockback
+label), the flavor text (tier 2, `Bestiary_FlavorText.npc_*` behind
+`Language.Exists`), the kill counter (`BestiaryInfo.Slain` hover) and the
+drop lines (tier 2 locked icons, tier 3 "???" rates, tier 4 stack + rate).
+The completion bar counts every known entry
+(`UIBestiaryTest.GetUnlockProgress`) with the `BestiaryInfo.PercentCollected`
+hover. **Deferred** (S1-E-26 wave C, code-only — see ANALYSIS "The bestiary
+UI parity pass"): the filter/sort/search grids, Back/Forward paging (the
+grid grows rows instead), the side-by-side grid+info layout, the info
+scrollbar, the gamepad points.
 
 ### In-game Settings window (`ui/ingame_options.rs`, `IngameOptions.cs`)
 

@@ -10706,6 +10706,69 @@ the chat line prints the raw `[a:NAME]` tag (the port's chat carries no
 snippet markup yet, `chat.rs`); the popup's `gameMenu && menuMode == 0` click
 gate is moot for the same reason.
 
+## The bestiary UI parity pass (S1-E-26 wave C)
+
+**Code-only mode (2026-11-18):** this wave ran without cargo/rustc/rustfmt —
+the tests below are WRITTEN NOT RUN and no compiler was invoked; the branch
+needs the catalog test run before it merges.
+
+The bestiary screen (`ui/bestiary.rs`, `UIBestiaryTest.cs`) already carried
+the grid, the lock-tier portraits and the info page from earlier tasks; this
+wave read the main grid + entry-display classes whole
+(`UIBestiaryEntryGrid.cs`, `UIBestiaryEntryButton.cs`, `UIBestiaryEntryIcon.cs`,
+`UIBestiaryEntryInfoPage.cs`, `UnlockableNPCEntryIcon.cs`,
+`NPCStatsReportInfoElement.cs`, `NPCKillCounterInfoElement.cs`,
+`FlavorTextBestiaryInfoElement.cs`, `ItemDropBestiaryInfoElement.cs`,
+`UIBestiaryInfoItemLine.cs`) and closed the gaps against them:
+
+- **Completion bar.** `GetUnlockProgress` (`UIBestiaryTest.cs:497-513`)
+  counts every entry `> NotKnownAtAll_0` — the port's old bar counted only
+  tier-4 entries and read far too low. `completion_percent` now mirrors
+  `BestiaryUnlockProgressReport.CompletionPercent` (`:9-19`, 1 for an empty
+  roster). The bar is the `UIColoredSliderSimple` of `FillProgressBottomBar`
+  (`:158-179`): 15 px, bottom-aligned, FilledColor (51, 137, 255) /
+  EmptyColor (35, 43, 81); the hover prints
+  `BestiaryInfo.PercentCollected` ("{Percent} Collected") through
+  `PrettifyPercentDisplay(_, "P2")` (`ShowStats_Completion`, `:181-196`).
+- **Grid range + clamp.** `grid_range_text`/`fix_grid_range` port
+  `GetRangeText`/`FixBestiaryRange` (`UIBestiaryEntryGrid.cs:87-123`); the
+  range label rides the top strip (`_indexesRangeText`, `:248-254`).
+- **Card hover.** `entry_hover_text` = `UnlockableNPCEntryIcon.GetHoverText`
+  (`:209-221`): the localized NPC name from tier 1, "???" below — drawn as
+  the `UIBestiaryEntryButton.DrawSelf` MouseText (`:142-148`).
+- **Info-page tier gates.** The stats block appears from tier 1 with every
+  value "???" until tier 2 (`NPCStatsReportInfoElement.cs:57-128`), the
+  knockback column is the High/Med/Low/None label (`:123`, the exact
+  `> 0.8` / `> 0.4` / `!(x > 0)` gates). The flavor text is the
+  `Bestiary_FlavorText.npc_<ConstName>` row behind `Language.Exists`
+  (`BestiaryEntry.cs:46-50`), shown from tier 2
+  (`FlavorTextBestiaryInfoElement.cs:20-23`) — new `lang::exists` seam. The
+  kill counter is the raw count from the first kill with the
+  `BestiaryInfo.Slain` hover (`NPCKillCounterInfoElement.cs:24-96`) — the
+  old "Kills: x/y" fraction was a port invention. The drop lines appear
+  from tier 2 (`ItemDropBestiaryInfoElement.cs:20-23`): locked-icon rows
+  below tier 3 (`UIBestiaryInfoItemLine.cs:36-55`), "???" rates at tier 3,
+  stack range + prettified rate at tier 4 (`:92-109`).
+
+**Deferred (documented, not silently dropped):** the filter/sort/search
+grids (`UIBestiaryFilteringOptionsGrid`/`SortingOptionsGrid`/
+`UIWrappedSearchBar`, `EntryFilterer`/`EntrySorter`); the Back/Forward page
+buttons (`OffsetLibraryByPages`) — the port's grid grows its rows to fit the
+roster instead of paging, the clamp math is in place for when paging lands;
+the side-by-side grid + 230 px info panel layout (`BuildPage`, `:97-146`) —
+the port keeps its grid-or-info-page switch; the info-page `UIScrollbar`;
+the gamepad link points (`SetupGamepadPoints`, ids 3000+); the pretty
+portrait's background providers (`NPCPortraitInfoElement`'s biome
+backdrops). The `PrettifyPercentDisplay` `TrimStart('0', ' ')` quirk is kept
+1:1 (a sub-1 % value prints ".01%", zero prints "%").
+
+Tests (written, not run): `ui::bestiary::tests` — `grid_range_text_matches_get_range_text`,
+`fix_grid_range_clamps_like_utils_clamp`, `the_completion_bar_rides_the_bottom_strip`,
+`completion_counts_every_known_entry_not_only_tier_4`, `hover_text_is_the_name_or_question_marks`,
+`kill_counter_needs_a_first_kill`, `drop_rate_text_gates_by_tier`,
+`knockback_label_matches_the_four_way_gate`, `flavor_text_gates_at_tier_2_and_the_language_key`,
+`prettify_percent_display_trims_like_utils`.
+
 ## The pillar worms (M4-EVENT-14)
 
 The Crawltipede (412/413/414) is the Solar tower's worm: the head
