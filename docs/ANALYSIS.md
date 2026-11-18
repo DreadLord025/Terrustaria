@@ -4715,6 +4715,17 @@ turns on with the pets rather than needing a second pass. The remaining
 (`:4694-4828`, the housing query UI reads it), which needs the housing-query
 `Main.mouseNPC` model (`ui/housing.rs:12-14`).
 
+### Stinkbug flags (S1-E-11b, 2026-11-18)
+
+`RoomScan.has_stinkbug`/`has_echo_stinkbug` are added by this change and
+set by `check_tile` from the active tiles 630/631
+(`CheckRoom`, `WorldGen.cs:6189-6198`) — the cages are not solid, so the fill
+keeps running and only the flags are written; `check_room` clears both per
+scan (`StartRoomCheck:6047-6048`). Deferred: the consumers — `MoveTownNPC`'s
+pet-exempt rejection (`:4777-4799`, `flag2 = NPCID.Sets.IsTownPet[type]`) and
+the arrival gate (`:5431`) — ride the relocation round. No RNG draws in any
+ported block (`Main.rand` untouched; the flags are pure tile reads).
+
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
