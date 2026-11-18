@@ -17351,6 +17351,47 @@ core's part-alive check `:41251-41269`):
   families) and the spatial hash — the ROADMAP S1-D-8 row stays 🟡 until then. No
   spatial hash was introduced; the scan count is unchanged (the seam only changes
   what the scans borrow, not how many there are).
+
+## The NPC spatial hash + the carrier family migration (S1-D-8b, task/S1-D-8b-spatial, 2026-11-18)
+
+The spatial slice of S1-D-8, building on the seam above:
+
+- `crates/tr-app/src/npc_spatial.rs::NpcSpatial` — a cell-bucketed index over the
+  per-tick `NpcSnapshot`: each slot buckets by its centre into a 1600 px grid
+  (`CELL_PX` — an index granularity ONLY, it never enters a predicate). `near()`
+  visits the conservative cell window (`k = ceil(radius / CELL_PX)` cells past the
+  query cell per axis — a superset of the disc) and yields candidates in ASCENDING
+  SLOT ORDER, the exact order the linear `npcs.iter()` scan visited. `hp` is not
+  indexed, so the seam's kill mirror (`NpcSnapshot::kill`) stays visible without a
+  rebuild.
+- ONE more scan family migrated: `world_sim/npcs.rs::carrier_link_pre_pass` — the
+  saucer/scutlix/dutchman carrier pre-pass (the `AI_075` type-390 nearest-carrier
+  lookup, the `AI_093` Dutchman crew count, the saucer mounts' turret/cannon crew
+  counts). Its 4 radius scans now read `NpcSpatial::nearest_living_kind` /
+  `count_living_kind_within` over the same snapshot the Moon-Lord family uses; the
+  predicates, the strict `< 1600.0` reach and the first-wins tie-break (`d < bd`)
+  are verbatim. The pass mirrors its own fall-with-carrier `hp = 0` kills via
+  `snap.kill`. The display inheritance stays a live write pass (it mutates other
+  slots); the family runs at the same fixed-step position (extracted to a function,
+  called where the inline loop stood).
+- Behaviour frozen — proof: the A/B twin-seed equivalence tests.
+  `npc_spatial::tests` (4 tests) compares the spatial candidate sequences against
+  the linear scan slot-by-slot and distance-bit-by-bit over 4 seeds × 60 query
+  centres × 8 kinds, plus exact cell-boundary/strict-reach cases (a centre exactly
+  1600 px away is excluded, one at 1599.9 included), the kill-mirror visibility and
+  empty/all-dead pools.
+  `world_sim::npcs::tests::the_spatial_carrier_pass_matches_the_linear_scan_over_twin_seeds`
+  runs the WHOLE migrated pass against the verbatim pre-migration linear scan
+  (kept as the `#[cfg(test)]` reference `carrier_link_pre_pass_linear`) over
+  byte-identical twin pools (4 seeds × 120 NPCs incl. linked/unlinked mounts, dead
+  slots, cell-edge positions) and asserts every write-visible field
+  (hp/carrier_x/y/timer/phase/rot/facing/crew counts) bit-for-bit equal — including
+  the kill cascade. The world-hash pins stay green.
+- **Left (deferred)**: the projectile pool's 18 `npcs.iter()` sites
+  (`projectile.rs`), the separation/target-selection families
+  (`npc.rs`/`npc_target.rs`), and the remaining `world_sim/npcs.rs` scans — the
+  ROADMAP S1-D-8 row stays 🟡. No TR_BENCH A/B was taken this round (the slice's
+  contract is the equivalence proof; the perf measurement rides the next slice).
 ## The join-bundle message ids (S1-I-1 wave A, 2026-11-18)
 
 Wave A of the message-id remap ports the JOIN bundle's eleven missing ids as
