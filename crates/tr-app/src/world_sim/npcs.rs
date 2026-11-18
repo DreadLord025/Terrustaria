@@ -10088,6 +10088,143 @@ mod moon_lord_tests {
     }
 
     #[test]
+    fn the_leech_blob_keeps_its_own_head() {
+        // `AI_082`'s anchor (`NPC.cs:36630-36640`): the clot resolves its
+        // head's id (`ai[0]`'s index + 1 in the vanilla) — not "the first
+        // head of the kind". Two Moon Lord families on the field: the clot
+        // mirrors ITS head's centre and falls with it, ignoring the other.
+        let (mut app, _player) = app_player();
+        let mut core_a = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core_a.hp = core_a.max_hp;
+        let mut core_b = Npc::new(NpcKind::MoonLordCore, 60.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core_b.hp = core_b.max_hp;
+        app.npcs.push(core_a);
+        app.npcs.push(core_b);
+        // One pass hands out the stable ids (`NPC.whoAmI`, `NPC.cs:6145`).
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let (uid_a, uid_b) = {
+            let cores: Vec<u32> = app
+                .npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::MoonLordCore)
+                .map(|n| n.uid)
+                .collect();
+            (cores[0], cores[1])
+        };
+        let mut head_a = linked(NpcKind::MoonLordHead, 150.0 * TILE_PX, 60.0 * TILE_PX, 0);
+        head_a.carrier_uid = uid_a;
+        let mut head_b = linked(NpcKind::MoonLordHead, 60.0 * TILE_PX, 60.0 * TILE_PX, 0);
+        head_b.carrier_uid = uid_b;
+        app.npcs.push(head_a);
+        app.npcs.push(head_b);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let head_a_uid = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MoonLordHead && n.carrier_uid == uid_a)
+            .map(|n| n.uid)
+            .expect("the first head");
+        // The clot, anchored to the FIRST head (`AI_079`'s spawn hands out
+        // the head's link, `NPC.cs:42303-42318`).
+        let mut clot = Npc::new(NpcKind::MoonLordLeechBlob, 120.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        clot.hp = clot.max_hp;
+        clot.carrier_uid = head_a_uid;
+        app.npcs.push(clot);
+        let (ax, ay) = app
+            .npcs
+            .iter()
+            .find(|n| n.uid == head_a_uid)
+            .map(|n| n.center())
+            .expect("the first head");
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let clot_i = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordLeechBlob)
+            .expect("the clot lives while its head lives");
+        assert!(app.npcs[clot_i].hp > 0);
+        assert_eq!(app.npcs[clot_i].carrier_uid, head_a_uid);
+        // The pre-pass mirrors the anchor's centre BEFORE the step moves it.
+        assert_eq!(app.npcs[clot_i].carrier_x, ax, "the clot mirrors ITS head");
+        assert_eq!(app.npcs[clot_i].carrier_y, ay);
+        // The first head dies; the second family lives on.
+        let head_i = app.npcs.iter().position(|n| n.uid == head_a_uid).expect("the head");
+        app.npcs[head_i].hp = 0;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let clot_alive = app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::MoonLordLeechBlob && n.hp > 0);
+        assert!(!clot_alive, "the clot falls with ITS head (`:36635-36640`)");
+        let other_head = app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::MoonLordHead && n.carrier_uid == uid_b && n.hp > 0);
+        assert!(other_head, "the second family's head is untouched");
+    }
+
+    #[test]
+    fn the_true_eye_keeps_its_own_core() {
+        // `AI_081`'s anchor (`NPC.cs:42466-42470`): the True Eye resolves
+        // its core's id (`ai[3]`, handed out by `MoonLord_SpawnTrueEyeOfCthulhu`
+        // `:41154`) — a second Moon Lord never adopts it.
+        let (mut app, _player) = app_player();
+        let mut core_a = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core_a.hp = core_a.max_hp;
+        let mut core_b = Npc::new(NpcKind::MoonLordCore, 60.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core_b.hp = core_b.max_hp;
+        app.npcs.push(core_a);
+        app.npcs.push(core_b);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let (uid_a, uid_b) = {
+            let cores: Vec<u32> = app
+                .npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::MoonLordCore)
+                .map(|n| n.uid)
+                .collect();
+            (cores[0], cores[1])
+        };
+        // The eye rides the SECOND core's link.
+        let mut eye = Npc::new(NpcKind::MoonLordFreeEye, 60.0 * TILE_PX, 80.0 * TILE_PX, 1, 0.0);
+        eye.hp = eye.max_hp;
+        eye.carrier_uid = uid_b;
+        eye.ai[3] = uid_b as f32;
+        app.npcs.push(eye);
+        let (bx, by) = app
+            .npcs
+            .iter()
+            .find(|n| n.uid == uid_b)
+            .map(|n| n.center())
+            .expect("the second core");
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let eye_i = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::MoonLordFreeEye)
+            .expect("the eye lives while its core lives");
+        assert!(app.npcs[eye_i].hp > 0);
+        assert_eq!(app.npcs[eye_i].carrier_x, bx, "the eye mirrors ITS core");
+        assert_eq!(app.npcs[eye_i].carrier_y, by);
+        // The FIRST core dies — the eye's link is explicit, so it lives.
+        let core_i = app.npcs.iter().position(|n| n.uid == uid_a).expect("the first core");
+        app.npcs[core_i].hp = 0;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::MoonLordFreeEye && n.hp > 0),
+            "the eye does not fall with another family's core"
+        );
+        // Its OWN core dies — the eye falls (`:42466-42470`).
+        let core_i = app.npcs.iter().position(|n| n.uid == uid_b).expect("the second core");
+        app.npcs[core_i].hp = 0;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::MoonLordFreeEye && n.hp > 0),
+            "the eye falls with its own core"
+        );
+    }
+
+    #[test]
     fn the_core_spawns_its_parts_once() {
         // `AI_077`'s init latch (`NPC.cs:41163-41168`'s `localAI[3]` 0 → 1):
         // the core arms the spawn phase once and the two hands + the head
