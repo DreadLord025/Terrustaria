@@ -813,6 +813,35 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Bestiary/Stat_Defense",
         "UI/Bestiary/Stat_Knockback",
         "UI/Bestiary/Stat_Copper",
+        // The dedicated single-frame bestiary portraits — the
+        // `CustomTexturePath` rows of `NPCID.Sets.NPCBestiaryDrawOffset`
+        // (`UnlockableNPCEntryIcon.cs:74-81` requests them by path). One
+        // whole-image sheet per entry id, loaded in `load_static_sheets`.
+        "UI/Bestiary/NPCs/NPC_7",
+        "UI/Bestiary/NPCs/NPC_10",
+        "UI/Bestiary/NPCs/NPC_13",
+        "UI/Bestiary/NPCs/NPC_39",
+        "UI/Bestiary/NPCs/NPC_87",
+        "UI/Bestiary/NPCs/NPC_95",
+        "UI/Bestiary/NPCs/NPC_98",
+        "UI/Bestiary/NPCs/NPC_113",
+        "UI/Bestiary/NPCs/NPC_115",
+        "UI/Bestiary/NPCs/NPC_117",
+        "UI/Bestiary/NPCs/NPC_127",
+        "UI/Bestiary/NPCs/NPC_134",
+        "UI/Bestiary/NPCs/NPC_245",
+        "UI/Bestiary/NPCs/NPC_259",
+        "UI/Bestiary/NPCs/NPC_260",
+        "UI/Bestiary/NPCs/NPC_395",
+        "UI/Bestiary/NPCs/NPC_398",
+        "UI/Bestiary/NPCs/NPC_402",
+        "UI/Bestiary/NPCs/NPC_412",
+        "UI/Bestiary/NPCs/NPC_454",
+        "UI/Bestiary/NPCs/NPC_491",
+        "UI/Bestiary/NPCs/NPC_510",
+        "UI/Bestiary/NPCs/NPC_513",
+        "UI/Bestiary/NPCs/NPC_594",
+        "UI/Bestiary/NPCs/NPC_621",
         "UI/Bestiary/Button_Search_2",
         "UI/Bestiary/Button_Search_Border",
         "UI/SearchCancel",
@@ -1237,7 +1266,10 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
     // the four-colour wire sheet (16 px mask columns × the 18 px colour rows)
     // and `TextureAssets.Actuator` the actuator plate drawn on every
     // actuator-carrying tile.
-    for name in ["WiresNew", "Actuator"] {
+    // `TextureAssets.TileCrack` (`Images/TileCracks`, the mining-progress
+    // crack overlay — `Main.DrawTileCracks`, `Main.cs:61533-61626`,
+    // S1-G-1 wave C): the 16 px crack cells on the 18 px grid.
+    for name in ["WiresNew", "Actuator", "TileCracks"] {
         if let Ok(img) = load_png(dir, name, SheetLayout::Raw) {
             images.push(img);
         }
@@ -1530,6 +1562,10 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "Glow_299",
     "Glow_300",
     "Glow_325",
+    // The shimmer-vine glowmask (`GetTileDrawData` case 638,
+    // `TileDrawing.cs:6080-6084`) — the vine strip pass draws it over the
+    // segment (`DrawVineStrip`, `:9125-9128`, S1-G-1).
+    "Glow_327",
     "Glow_334",
     "Glow_335",
     // The named single-sheet textures.
@@ -1878,6 +1914,10 @@ pub struct Lookups {
     pub ui_bestiary_locked: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Portrait_Front`: the info page's portrait backdrop.
     pub ui_bestiary_portrait: Option<tr_render::SheetRect>,
+    /// The dedicated single-frame portraits — the `CustomTexturePath` rows
+    /// of `NPCID.Sets.NPCBestiaryDrawOffset` (`UnlockableNPCEntryIcon.cs:74-81`),
+    /// keyed by vanilla net id (`UI/Bestiary/NPCs/NPC_<id>`).
+    pub bestiary_custom_portraits: std::collections::HashMap<i32, tr_render::SheetRect>,
     /// The info page's stat icons (`UIBestiaryInfoItemLine`'s
     /// `Stat_HP`/`Stat_Attack`/`Stat_Defense`/`Stat_Knockback`/
     /// `Stat_Copper` sheets).
@@ -2199,6 +2239,21 @@ impl Lookups {
             ui_bestiary_slot_front: atlas.sheet("UI/Bestiary/Slot_Front").copied(),
             ui_bestiary_locked: atlas.sheet("UI/Bestiary/Icon_Locked").copied(),
             ui_bestiary_portrait: atlas.sheet("UI/Bestiary/Portrait_Front").copied(),
+            // `UnlockableNPCEntryIcon.cs:74-81`: the `CustomTexturePath`
+            // assets, one single-frame portrait per id (the 25 rows the
+            // `NPCBestiaryDrawOffset` dictionaries carry).
+            bestiary_custom_portraits: [
+                7, 10, 13, 39, 87, 95, 98, 113, 115, 117, 127, 134, 245, 259, 260, 395, 398,
+                402, 412, 454, 491, 510, 513, 594, 621,
+            ]
+            .iter()
+            .filter_map(|&id| {
+                atlas
+                    .sheet(&format!("UI/Bestiary/NPCs/NPC_{id}"))
+                    .copied()
+                    .map(|s| (id, s))
+            })
+            .collect(),
             ui_bestiary_stat_hp: atlas.sheet("UI/Bestiary/Stat_HP").copied(),
             ui_bestiary_stat_attack: atlas.sheet("UI/Bestiary/Stat_Attack").copied(),
             ui_bestiary_stat_defense: atlas.sheet("UI/Bestiary/Stat_Defense").copied(),

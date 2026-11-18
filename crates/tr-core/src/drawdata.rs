@@ -12,8 +12,9 @@
 //! deviation comment; cases without any static part fall to the 16x16 default.
 //!
 //! The world-probing parts C# keeps in `GetTileDrawData` / `DrawSingleTile`
-//! live here too: the palm biome row, the dye-plant frame rewrite, the cactus
-//! ground shift and the cog parity shift, applied by
+//! live here too: the tree biome/variant trunk shift (case 5), the palm
+//! biome row, the dye-plant frame rewrite, the cactus ground shift and the
+//! cog parity shift, applied by
 //! [`TileDrawData::apply_world_corrections`] (the caller owns the `World`).
 
 use crate::tiledata::TILE_SOLID;
@@ -209,10 +210,18 @@ pub fn draw_data(
                 data.add_fr_x = (((n40 + tile_frame) % 6 - n40) * 18) as i16;
             }
         }
-        // `case 5` (trees) is unreachable in the port: `tree::is_tree` routes
-        // kind 5 through the dedicated tree path before `draw_data`, and its
-        // frame rewrite needs `GetTreeBiome` (TileDrawing.cs:4645-4649).
-        // `case 583..589 / 596 / 616 / 634` — tree variants: 20x20 sprites
+        // `case 5` — trees: 20x20; C# shifts the sheet section with
+        // `tileFrameX += 176 * (GetTreeBiome(x, y, fx, fy) + 1)`
+        // (TileDrawing.cs:4645-4649) — applied by `apply_world_corrections`
+        // (the probe needs the world). The app routes kind 5 through the
+        // dedicated tree path (`tree::trunk_sheet_offset_at`) before
+        // `draw_data`, so this arm is the table's faithful static part.
+        5 => {
+            data.width = 20;
+            data.height = 20;
+        }
+        // `case 583..589 / 596 / 616 / 634` — tree variants: 20x20 sprites,
+        // no biome shift — each variant kind has its own trunk sheet
         // (TileDrawing.cs:4650-4662). Dead in the app for the same reason;
         // the metrics themselves are complete.
         583..=589 | 596 | 616 | 634 => {
@@ -1093,6 +1102,88 @@ pub fn palm_frame_y(biome: i32) -> i32 {
     22 * biome
 }
 
+/// `TileDrawing.GetTreeVariant` (TileDrawing.cs:1778-1808): the ground tile
+/// under the trunk names the biome variant — 0 corruption (23/661), 1 surface
+/// jungle (60), 5 UNDERGROUND jungle (60 below `Main.worldSurface`), 6
+/// mushroom (70), 2 hallow (109/492), 3 snow (147), 4 crimson (199/662),
+/// -1 forest / anything else. A null or inactive ground tile returns -1.
+pub fn tree_variant(world: &World, x: i32, y: i32) -> i32 {
+    let Some(t) = world.tile(x, y) else {
+        return -1;
+    };
+    if !t.active() {
+        return -1;
+    }
+    match t.kind {
+        23 | 661 => 0,
+        // `if (!((double)y > Main.worldSurface)) return 1; return 5;`
+        // (TileDrawing.cs:1789-1794).
+        60 => {
+            if !(y as f64 > world.world_surface) {
+                1
+            } else {
+                5
+            }
+        }
+        70 => 6,
+        109 | 492 => 2,
+        147 => 3,
+        199 | 662 => 4,
+        _ => -1,
+    }
+}
+
+/// `TileDrawing.GetTreeBiome` (TileDrawing.cs:1735-1776): shifts the probe
+/// column by the trunk/branch marker frame, walks down while the cells stay
+/// active with the START cell's type (read before the column shift), then
+/// classifies the ground with [`tree_variant`]. The C# walk has no bounds
+/// check; a tile outside the world behaves like an empty (inactive) one,
+/// which stops the walk (the palm-probe convention above).
+pub fn tree_biome(world: &World, x: i32, y: i32, frame_x: i16, frame_y: i16) -> i32 {
+    let mut num = x;
+    let mut i = y;
+    // `int type = Main.tile[num, i].type;` (TileDrawing.cs:1739) — read
+    // before the shifts, regardless of `active()`. Out of world there is no
+    // type; kind 0 walks nothing and classifies -1.
+    let kind = world.tile(num, i).map(|t| t.kind).unwrap_or(0);
+    let fx = frame_x as i32;
+    let fy = frame_y as i32;
+    if fx == 66 && fy <= 45 {
+        num += 1;
+    }
+    if fx == 88 && fy >= 66 && fy <= 110 {
+        num -= 1;
+    }
+    if fy >= 198 {
+        match fx {
+            66 => num -= 1,
+            44 => num += 1,
+            _ => {}
+        }
+    } else if fy >= 132 {
+        match fx {
+            22 => num -= 1,
+            44 => num += 1,
+            _ => {}
+        }
+    }
+    while let Some(t) = world.tile(num, i) {
+        if !(t.active() && t.kind == kind) {
+            break;
+        }
+        i += 1;
+    }
+    tree_variant(world, num, i)
+}
+
+/// The trunk sheet section: `tileFrameX += 176 * (GetTreeBiome(...) + 1)`
+/// (`GetTileDrawData` case 5, TileDrawing.cs:4648). Forest (-1) keeps offset
+/// 0. Only kind 5 shifts — the variant trunks 583-589/596/616/634 have their
+/// own sheets and no biome shift (TileDrawing.cs:4650-4662).
+pub fn tree_frame_x_offset(world: &World, x: i32, y: i32, frame_x: i16, frame_y: i16) -> i32 {
+    176 * (tree_biome(world, x, y, frame_x, frame_y) + 1)
+}
+
 /// `WorldGen.GetCactusType` (WorldGen.cs:47687-47737): walks down the cactus
 /// column to the ground and reports which sand family it grows from —
 /// (evil, good, crimson) for ebonsand 112 / pearlsand 116 / crimsand 234.
@@ -1208,6 +1299,12 @@ impl TileDrawData {
         tile_frame: i32,
     ) {
         match kind {
+            // `case 5`: `tileFrameX += 176 * (GetTreeBiome(x, y, fx, fy) + 1)`
+            // — the trunk's biome sheet section (TileDrawing.cs:4645-4649).
+            5 => {
+                self.frame_x_override =
+                    Some((frame_x as i32 + tree_frame_x_offset(world, x, y, frame_x, frame_y)) as i16);
+            }
             // `case 323`: `tileFrameY = 22 * GetPalmTreeBiome(x, y)` — a
             // replacement of the stored frame row (TileDrawing.cs:4670).
             323 => {
@@ -2071,9 +2168,12 @@ mod tests {
         // default at t=0 (documented deviations; every one cites its C#
         // branch in drawdata.rs). 529/530/485/489/490 moved to static-part
         // arms in Phase 4 — covered by test_DW_4_1_s3b_static_parts.
-        for kind in [453, 456, 507, 508, 518, 719, 541, 579, 5] {
+        for kind in [453, 456, 507, 508, 518, 719, 541, 579] {
             assert_eq!(dd(kind, 3, 7, 90, 144, 0), DEFAULT, "kind {kind}");
         }
+        // Kind 5 left this list in S1-F-9 wave A: its static part is 20x20
+        // (TileDrawing.cs:4645-4649); the biome shift lands in
+        // apply_world_corrections (test_DW_F9_tree_case).
     }
 
     #[test]
@@ -2180,6 +2280,111 @@ mod tests {
         }
         put(&mut w2, 500, 14, 2);
         assert_eq!(palm_tree_biome(&w2, 500, 10), 3);
+    }
+
+    // ---- S1-F-9 wave A: the tree-biome/variant probes (case 5) ----
+
+    #[test]
+    fn test_DW_F9_tree_variant_table() {
+        // `GetTreeVariant` (TileDrawing.cs:1778-1808): the ground kind picks
+        // the variant; the jungle splits on `y > Main.worldSurface`.
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 16.0;
+        for (ground, expect) in [
+            (23u16, 0i32),
+            (661, 0),
+            (70, 6),
+            (109, 2),
+            (492, 2),
+            (147, 3),
+            (199, 4),
+            (662, 4),
+            (2, -1), // dirt: forest
+            (53, -1),
+        ] {
+            put(&mut w, 20, 10, ground);
+            assert_eq!(tree_variant(&w, 20, 10), expect, "ground {ground}");
+        }
+        // Jungle: `!((double)y > worldSurface)` → 1, else 5
+        // (TileDrawing.cs:1789-1794). The boundary row itself is surface.
+        put(&mut w, 20, 16, 60);
+        assert_eq!(tree_variant(&w, 20, 16), 1, "y == surface");
+        put(&mut w, 20, 15, 60);
+        assert_eq!(tree_variant(&w, 20, 15), 1, "above surface");
+        put(&mut w, 20, 17, 60);
+        assert_eq!(tree_variant(&w, 20, 17), 5, "below surface");
+        // Inactive ground → -1; out of world → -1 (null tile).
+        w.tile_mut(20, 17).unwrap().flags &= !FLAG_ACTIVE;
+        assert_eq!(tree_variant(&w, 20, 17), -1);
+        assert_eq!(tree_variant(&w, 1000, 10), -1);
+    }
+
+    #[test]
+    fn test_DW_F9_tree_biome_probe_reads_type_before_shift() {
+        // `int type = Main.tile[num, i].type` runs BEFORE the column shift
+        // and regardless of active() (TileDrawing.cs:1737-1739): an inactive
+        // start cell of kind 5 still walks kind-5 cells in the shifted
+        // column.
+        let mut w = World::new("t".into(), 64, 64);
+        let mut t = crate::tile::Tile::default();
+        t.kind = 5; // inactive start cell
+        let i = w.index(20, 10);
+        w.tiles[i] = t;
+        for y in 10..13 {
+            put(&mut w, 21, y, 5);
+        }
+        put(&mut w, 21, 13, 147);
+        // Marker (66, fy <= 45) shifts to x+1 (TileDrawing.cs:1740-1743).
+        assert_eq!(tree_biome(&w, 20, 10, 66, 0), 3);
+        assert_eq!(tree_frame_x_offset(&w, 20, 10, 66, 0), 176 * 4);
+        // Without the shift the inactive start cell stops the walk at once
+        // and classifies itself: inactive → -1 → offset 0.
+        assert_eq!(tree_biome(&w, 20, 10, 0, 0), -1);
+        assert_eq!(tree_frame_x_offset(&w, 20, 10, 0, 0), 0);
+        // The walk stops at the first cell whose kind differs from the
+        // START kind — a foreign active tile is the ground
+        // (TileDrawing.cs:1772-1774).
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 30.0;
+        put(&mut w, 20, 10, 5);
+        put(&mut w, 20, 11, 60);
+        put(&mut w, 20, 12, 5);
+        put(&mut w, 20, 13, 23);
+        assert_eq!(tree_biome(&w, 20, 10, 0, 0), 1);
+    }
+
+    #[test]
+    fn test_DW_F9_tree_case() {
+        // `case 5` static part: 20x20, no frame rewrite without the world
+        // (TileDrawing.cs:4645-4649).
+        let d = dd(5, 3, 7, 0, 0, 0);
+        assert_eq!((d.width, d.height, d.top), (20, 20, 0));
+        assert_eq!(d.frame_x_override, None);
+        // The correction adds `176 * (GetTreeBiome + 1)` to the stored frame.
+        let mut w = World::new("t".into(), 64, 64);
+        for y in 10..14 {
+            put(&mut w, 20, y, 5);
+        }
+        put(&mut w, 20, 14, 109); // hallow → variant 2 → +528
+        let mut d = dd(5, 20, 10, 22, 198, 0);
+        d.apply_world_corrections(&w, 5, 20, 10, 22, 198, 0);
+        assert_eq!(d.frame_x_override, Some(22 + 176 * 3));
+        // Forest ground (dirt): variant -1 → the frame is untouched.
+        put(&mut w, 20, 14, 2);
+        let mut d = dd(5, 20, 10, 22, 198, 0);
+        d.apply_world_corrections(&w, 5, 20, 10, 22, 198, 0);
+        assert_eq!(d.frame_x_override, Some(22));
+        // i16 wrap: C#'s `(short)` cast wraps, the port's `as i16` too.
+        put(&mut w, 20, 14, 23); // variant 0 → +176
+        let mut d = dd(5, 20, 10, 32700, 0, 0);
+        d.apply_world_corrections(&w, 5, 20, 10, 32700, 0, 0);
+        assert_eq!(d.frame_x_override, Some(((32700 + 176) as i32) as i16));
+        // The variant trunks never shift (TileDrawing.cs:4650-4662).
+        for kind in [583u16, 589, 596, 616, 634] {
+            let mut d = dd(kind, 20, 10, 22, 198, 0);
+            d.apply_world_corrections(&w, kind, 20, 10, 22, 198, 0);
+            assert_eq!(d.frame_x_override, None, "kind {kind}");
+        }
     }
 
     #[test]
