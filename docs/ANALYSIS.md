@@ -7444,6 +7444,53 @@ M3-EQUIP-4's plumbing; M3-PREFIX's `GrantPrefixBenefits` landed — the
 grant pass), the vanity slots (the vanilla grants the
 functional 0..9 only), the balloon combos beyond the id list (the
 exclusive-combination items land as their ids appear).
+
+### The UpdateEquip seam (S1-C-12 wave A, 2026-11-18)
+
+The dispatch is now a named seam, not an inline match: `Player::update_equips`
+(`player.rs`) ports `UpdateEquips`' functional-accessory loop
+(`Player.cs:12946-12952`) — for the slots 3..10,
+`is_item_slot_unlocked_and_usable` (`:12579-12604`) gates the slot, then
+`apply_equip_functional(slot, kind)` (`:14368`) runs the per-kind grant chain
+(the old inline match moved verbatim). The `:12922` gates ride along: `IsAir`
+(kind 0), the `item.accessory` demand of `UpdateEquips_CanItemGrantBenefits`
+(`:12869-12890` — the slots 3..9) and the accessory-only
+`GrantPrefixBenefits` (`:12924-12927`). `GetEffectiveArmor` (`:5684-5710`)
+collapses to `equipped[slot]` — no loadout system in the port.
+
+Wave A landed the movement-speed family on the seam: Hermes 54 / Flurry 1579 /
+Sailfish 3200 (`accRunSpeed = 6f`, `:15005-15020`), the Aglet 285 (+5%) and the
+Anklet of the Wind 212 (+10%) (`:15114-15121`), the Amphibian Boots 3990
+(`:14399-14404`: 6f + `autoJump` + `jumpSpeedBoost += 1.6` + `extraFall += 10`
+— the new `jump_speed_boost` field folds at `UpdateJumpHeight` `:19618`), the
+Fairy Boots 3993 (`:14418-14421`), the Sand Boots 4055 (`:14422-14425`,
+`desertBoots`), and the dash granters Tabi 977 / EoC Shield 3097 / Master Ninja
+Gear 984 (`dashType` 1/2/1, `:15050-15067` — `ResetEffects`' `dashType = 0`
+`:18659` now clears per tick before the set/accessory re-arm; `TR_DASH` moved
+to `pinned_dash`). The debuff multiply `moveSpeed *= strongestMoveSpeedDebuff`
+moved to its C# site (`:26004`, after `UpdateEquips` `:25633`) — the accessory
+`moveSpeed` adds now ride the Slow/Chilled debuff too.
+
+Deviations (deliberate):
+* `IsItemSlotUnlockedAndUsable`: slot 8 reads `extraAccessory && expert_mode`
+  (the new `Player.extra_accessory` field — the Demon Heart's use-grant
+  `:45197` is unported, so it stays false in play); slot 9 stays locked (no
+  master difficulty); the `Main.gameMenu` escape arms read false in the sim.
+* The `expertOnly` gate (`:12922`/`:14370-14373`) is unmodelled: `ItemDef`
+  carries no `expert_only` and every ported grant kind is classic.
+* The generic defense/lifeRegen loop still sums every `equipped[..10]` kind
+  regardless of slot type — the slot-typed `GrantArmorBenefits` gate
+  (head/body/leg in 0/1/2) is its own pass.
+* `oldStyleParkour` (`:26007`'s accRunSpeed-debuff escape, item 6190) and
+  `spikedBoots` (`:15066`, the wall cling) have no port fields — skipped.
+* The buff effect arms (`UpdateBuffs`' remaining rows) stay E-7's scope; the
+  hurt pipeline stays C-7's — untouched here.
+
+Tests (`player.rs`): `the_movement_speed_accessories_stack_their_rows` (the
+per-item table incl. the tiers), `the_speed_prefixes_ride_the_accessory_slot`
+(`:14015-14030`), `the_slow_debuff_damps_the_accessory_speeds` (`:26004-26009`
+order), `the_dash_accessories_arm_the_dash_type`,
+`the_equip_dispatch_gates_the_slots`.
 ### M1.4-TO-4 merge sync (2026-11-06)
 
 - The M4-TOWN furniture merge registered the piano 87, which re-routed the
@@ -12515,10 +12562,10 @@ so the set is exactly the town kinds).
   `ResetEffects` clears them every tick (`:18365-18366`). The gate reads the
   per-tick `Player.equipped` snapshot (`world_sim/player.rs` fills it from
   `App.equip.armor`), so the previous inventory-wide scan — a doll sitting in the
-  bag used to arm the easter egg — is gone. The snapshot is the closest the
-  current equip model gets: the vanilla skips locked accessory slots through
-  `IsItemSlotUnlockedAndUsable`, which the port does not model (every slot is
-  treated as unlocked, the default character's 5 + the Demon Heart's 6th).
+  bag used to arm the easter egg — is gone. Since S1-C-12 wave A the vanilla's
+  `IsItemSlotUnlockedAndUsable` gate is ported on the `update_equips` seam
+  (slot 8 needs the Demon Heart flag + expert, slot 9 stays locked — see
+  "The UpdateEquip seam"); `doll_flags` itself still reads the raw snapshot.
 * The Flymeal (5129) and the Tax Collector's Stick of Doom (3351) are the only
   melee items the C# whitelists against town NPCs (`:44274`). Both are hitbox
   melee items with no `shoot`, so the melee arm is their only damage path.
@@ -17264,6 +17311,101 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
 
+## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
+
+`crates/tr-app/src/buff_effects_accessory.rs` ports the `Player.UpdateBuffs`
+arms whose C# heads start in `Player.cs:10800-11400` (minus the summon
+keep-alives already in `player.rs::SUMMON_BUFF_ARMS`) plus the weapon imbues
+(`:12013-12044`). Deliberate deviations:
+
+- **Disjoint module by design.** Waves A (`:9875-10048`) and B
+  (`:10049-10300`) edit the `player.rs` effect match; wave C owns a separate
+  module + one dispatch call at the `world_sim/player.rs` post-tick seam
+  (after `update_summon_buff_arms`). Titan (108, `:10164`), Panic (63,
+  `:10130`) and Flipper (109, `:10168`) are accessory buffs but their arms
+  sit in wave B's range — left to B so no effect is applied twice.
+- **Sunflower (146)** is split: the movement half already runs in the
+  `player.rs` match; wave C adds only the missing `sunflower` flag half
+  (`Player.cs:11003`). Together they are 1:1.
+- **Torch God's Favor (376)** is DEFERRED: `TorchGodsFlavor`
+  (`Player.cs:40185-40235`) needs `BiomeTorchPlaceStyle` and the aiStyle-1084
+  torch projectile, neither ported. The arm draws NO RNG in the port (the
+  C# `Main.rand.Next(10)` gate included), so the streams are unchanged.
+- **Pet spawns ride the plain `pool.spawn`** — `proj_data` has no pet rows
+  yet, so the pets occupy their slot (kind/owner/center, damage 0) without
+  the C# `SetDefaults` box/AI. The buff pin (18000), the per-pet flags and
+  the spawn-once gate are 1:1; the pet AI/box lands with the pet-AI task.
+  The C# `petFlag*` bools map onto `Player::pet_flags` indexed by the PET
+  PROJECTILE id (buff 341 sets the 881+934 flags shared with 284/317).
+- **Rabid (148) RNG mirrored exactly**: `Next(1200)`, then only on a hit
+  `Next(6)` + `Next(60,100)`, on the caller's `UpdatePlayers` stage stream;
+  the `(int)(60f * num18 * mult)` truncation is f32 (80 → num18 ≈ 0.80000001
+  → Slow 167 ticks, NOT 168 — pinned by test).
+- **Flag clears at the pass head** stand in for the `ResetEffects` lines
+  (`Player.cs:18413-18600`, `:18486`, `:18707-18708`, `:18758`): the seam
+  runs after `ResetEffects` and before any consumer — observably identical.
+- The `meleeEnchant` on-hit consumers (`Player.cs:44925-45015`) are not
+  ported yet; the flag is the ported half (like `ballista_panic`).
+
+Tests: `buff_effects_accessory::tests::s1_e_7c_*` (13).
+
+## S1-C-12 wave C - the defense/immunity accessory family (2026-11-18)
+
+`crates/tr-app/src/accessory_defense.rs` carries the DEFENSE/IMMUNITY
+accessory rows of `Player.ApplyEquipFunctional` that the port lacked; the
+hook runs right after the main accessory match in `Player::update` (a
+second pass over slots 3..10 - every row is a boolean OR grant with no RNG
+draw, so it is order-identical to the C#'s interleaved rows).
+
+Landed (citations in the module):
+
+* Obsidian Shield 397: `noKnockback` + `fireWalk` (`Player.cs:15209-15213`).
+* Paladin's/Frozen/Hero shields 938/3997/3998: `noKnockback` always,
+  `hasPaladinShield` only at a strict `statLife > statLifeMax2 * 0.25f`
+  (`:15348-15353`).
+* Silver Shield 6183 (`:14605-14609`), Restoration Shield 6188
+  (`:14629-14631`), the Ankh Shield 1613's non-immunity half
+  (`:15552-15554`).
+* The nine `fireWalk` granters: 193, 396, 907, 908/5000, 3999, 4003, 4004,
+  4038 (`:15130-15133`, `:15203-15208`, `:15158-15173`, `:14448-14475`).
+  `touch_damage.rs::apply_touch_damage` now reads `player.fire_walk`
+  instead of the hardcoded `false` (`Collision.cs:3220`'s hot arm). The
+  skipped scan draws NO random numbers - the determinism test pins the
+  stream byte-equal to pristine.
+* New player fields `fire_walk` (`Player.cs:1878`, reset `:18355`) and
+  `has_paladin_shield` (`:1408`, reset `:18777`).
+
+Verified already-ported (pinned by the new per-accessory tests, not
+re-granted): the Cobalt Shield 156 (`player.rs`'s accessory match), all
+`buffImmune` rows via `BUFF_IMMUNITY_ROWS` (`player.rs:401-420`) - hand
+warmer 1921 (Chilled 46 + Frozen 47), pocket mirror 3781 (Stoned 156),
+blindfold 888 (Darkness 22), nazar 891 (Cursed 23), megaphone 890
+(Silenced 35), armor polish 886 (Broken Armor 36), vitamins 892 (Weak 33),
+bezoar 887 (Poisoned 20), the ankh charm/shield 1612/1613 - and every
+`Item.defense` through the generic `GrantArmorBenefits` sum
+(`Player.cs:13121`).
+
+Deliberate deviations / scope cuts:
+
+* The wave brief's "cobalt/palladium/mythril/orichalcum/titanium/
+  chlorophyte shield defenses" and "plantera bulb immunity grants": no
+  such accessories exist in `ItemID.cs` (only CobaltShield 156,
+  ObsidianShield 397, PaladinsShield 938, EoCShield 3097, SquireShield
+  3810, FrozenShield 3997, HeroShield 3998, BouncingShield 4760,
+  SilverShield 6183, RestorationShield 6188, AnkhShield 1613). The real
+  family above is what landed; nothing was invented.
+* `accSilverBracer` (6183/6182, `Player.cs:12970-12974`: `maxTagEffects++`
+  + `tagEffectDuration += 2`) stays out - whip-tag territory (wave B).
+* The Frozen Shield's half-life Ice Barrier buff (`:14888-14891`,
+  `AddBuff(62, 5)`) stays out - buff arms ride E-7.
+* The `waterWalk`/`waterWalk2`/`lavaRose` halves of the boot rows stay
+  out (movement = wave A; `lavaRose` has no consumer). The `lavaMax +=
+  420` halves already ride the main match.
+* The Paladin's Shield multiplayer team-dust arm (`:15354-15365`) and
+  the hurt-side team redirect (`:38190`) stay out (single player / C-7).
+* The Shimmer Cloak 5355's `shimmerImmune` (`:15528-15531`, the
+  `controlDownHold` 45-tick gate `:25074`) stays out - the shimmer float
+  machine (`:23455`) is unported.
 ## Buff effect table (S1-E-7 wave B)
 
 The `UpdateBuffs` DEBUFF block (`Player.cs:10049-10317`, 47 arms) is ported
@@ -17439,3 +17581,42 @@ the send-path pass (S1-I-4), so the live net message order is unchanged. The
 per-id round-trip tests `net::tests::s1_i_1_*` (11) pin the frame's id byte,
 the exact C# body bytes and the decode round trip; the travel shop test also
 pins the fixed 40-slot length (a 39-slot body fails to decode).
+## The buff misc block (S1-E-7 wave D, 2026-11-18)
+
+`crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`
+MOUNT/PET/MISC block (`Player.cs:11400-12069`, plus the pet family's head
+`:11005-11241` and the mount arm `:9881-9913`) as a PURE effect table:
+`apply_misc_effect_arm` folds one slot's writes into a `MiscEffects`
+accumulator (the wave-B `buff_effects.rs` pattern), so the module is
+disjoint from waves A/B/C — no `player.rs`/`buffs.rs` edits, the buff
+timer engine untouched. Deliberate deviations:
+
+- **Wiring deferred**: the accumulator is not yet copied onto the live
+  `Player` fields — the `player.rs` scan wiring is the waves' merge step
+  (same admission as wave B's `DebuffEffects`). Until then the module is
+  test-only; no runtime behaviour changes.
+- **Pet spawns are requests**: `pet_spawns` records `(kind, dx)` at the
+  entity centre (the buff-341 ±10·direction offset, `:12242-12253`); the
+  `NewProjectile` call itself rides the wiring step (the pet projectile
+  AIs/draw are M4-PROJ territory). The spawn GATE (owned count == 0) is exact
+  from the `UpdateProjectileCaches` recount.
+- **Crystal Leaf dedupe**: the arm's kill-every-226-beyond-the-first pool
+  walk (`:11663-11673`) is recorded as `crystal_leaf_dedupe`; the walk
+  rides the wiring step. The count gates (spawn at 0, dedupe at >1) are exact.
+- **Rabid's RNG** (`:11324-11327`): the `Next(1200)` → `Next(6)` →
+  `Next(60,100)` triple rides the caller's `UnifiedRandom` in the C#
+  order; the two inner draws happen ONLY on the 1/1200 hit. Tests mirror the
+  stream and check the truncating `(int)(60f * scale * mult)` durations.
+- **Shimmering's tile scan** (`:11807-11816`) is ported verbatim against a
+  caller-supplied `SolidTile3` predicate (the table stays world-free); the
+  underworld-layer gate and the 60/6/DelBuff outcomes are exact.
+- **Webbed** records the full lockdown (velocity epsilon, jumpHeight 0,
+  gravity 0, moveSpeed 0, dash/dashType 0, noKnockback, hook removal) as
+  accumulator fields; the existing `player.rs` webbed arm keeps its
+  current behaviour until the wiring step reconciles the two.
+- **WellFed/hunger `pickSpeed` sign**: the deltas are kept signed like the
+  C# (WellFed subtracts, Hungry/Starving add — a lower pickSpeed mines
+  faster); the wiring step maps them onto `pick_speed_bonus` with the
+  port's sign convention.
+- **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
+  block covers 71, 73-79 only, verbatim.
