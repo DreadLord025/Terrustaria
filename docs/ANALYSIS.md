@@ -17625,3 +17625,66 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The Plantera hook-centroid anchor (S1-D-3-plantera-minions, rescoped, code-only mode, 2026-11-18)
+
+**Rescope (Lead coordination note):** the three minion machines were
+already ported by sibling branches while this task ran — kind 263
+PlanterasHook (aiStyle 52) in `npc_ai_style52.rs` (commit 61e1bd5c,
+`task/S1-D-3-aistyle52`), kind 264 PlanterasTentacle (aiStyle 53) in
+`npc_ai_style53.rs` (89a9b808, `task/S1-D-3-aistyle53`), kind 265 Spore
+(+261 FungiSpore, aiStyle 50) in `npc_ai_style50.rs` (613aac92,
+`task/S1-D-3-aistyle50`). The duplicated machines written here were
+REMOVED; the only remaining gap was the boss's leash-anchor
+computation — none of the four modules computes it (the boss core
+`npc_ai_plantera.rs`, ba8159fc `task/S1-D-3-plantera-audit`, only
+RECEIVES `hook_anchor: (f32, f32)`; its sim currently passes Plantera's
+own centre). This task delivers exactly that seam.
+
+`crates/tr-app/src/npc_ai_plantera_anchor.rs` ports `NPC.cs:31743-31762`
+(the anchor block inside the aiStyle-51 boss arm) as pure fns over the
+NPC pool:
+
+- `hook_centroid(npcs, type_of) -> Option<(f32, f32)>` — walk the slots
+  in order (`:31747`), take the first three live aiStyle-52 hooks
+  (`:31749`, the `num745 > 2` break `:31755-31758`), sum their
+  `Npc::center()`s as f32 in slot order (`:31751-31752`), divide by the
+  count (`:31761-31762`). aiStyle 52 has ONE member — 263
+  (`ID/NPCID.cs:11203`, `SetDefaults :12402`) — so the filter rides the
+  caller's `type_of` closure, the SAME convention `npc_ai_style52.rs`
+  uses for its `:32129` same-type scan.
+- `hook_anchor(npcs, type_of, boss) -> (f32, f32)` — the merge-union
+  call site: the centroid when hooks live, the boss centre otherwise.
+
+Faithful details: `Center` is `Entity.Center`'s FLOAT width/2
+(`Entity.cs:50-55`, the port's `Npc::center()`) — NOT the tentacle
+anchor's integer-width centre (`:32301-32302`); the sums accumulate in
+slot order before the divide; `array2` (`:31743`/`:31753`) is a DEAD
+store (written, never read anywhere in the arm — verified) and is not
+ported; the block draws NO RNG.
+
+Deliberate deviations:
+
+- **`NPC.active` → `hp > 0`** — the pool's live-slot convention, the
+  same reading `npc_ai_style52.rs` uses for the boss slot
+  (`:32080-32085`); absent slots do not exist in the dense pool.
+- **Zero hooks → `None` + boss-centre fallback**: the C# divides by a
+  zero count → NaN (`:31761-31762`) and the leash reads NaN; the port
+  returns `None` and `hook_anchor` falls back to Plantera's own centre
+  — the sibling boss module's documented stand-in until hooks spawn.
+- **UNWIRED**: no `NpcKind` variant for 263 exists on main, so no caller
+  passes hooks yet; the module is declared in `main.rs` with
+  `#![allow(dead_code)]` (the `drawdata_anim.rs` wiring-deferred
+  precedent). **Code-only mode**: no compiler invoked (no
+  cargo/rustc/rustfmt/tests/graphify); the 5 witness tests are WRITTEN
+  NOT RUN, verified by C#/Rust side-by-side reads.
+
+**THE MERGE UNION (four modules, no file overlap).** At merge, the
+sim's kind-262 dispatch replaces the centre fallback with
+`hook_anchor(&app.npcs, type_of, boss)` and passes the result into
+`npc_ai_plantera::step`'s `hook_anchor` parameter. No edit to any of the
+four sibling modules (`npc_ai_plantera.rs`, `npc_ai_style52.rs`,
+`npc_ai_style53.rs`, `npc_ai_style50.rs`) is needed — this module is
+new and disjoint. The sibling branches are NOT merged to main yet
+(verified `git merge-base --is-ancestor` for all four); the union rides
+their merge order, and this branch touches none of their files.
