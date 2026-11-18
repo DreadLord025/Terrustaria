@@ -871,6 +871,11 @@ impl App {
                             *tree_wind_counter,
                             *sunflower_wind_counter,
                             &mut leaf_spawns,
+                            // S1-F-9 slice B: the engine-driven DrawData cases'
+                            // inputs (plates 428, party 455, echo sight 541).
+                            &self.wiring,
+                            crate::world_events::party_is_up(&self.world_events),
+                            crate::env::show_invisible(),
                         );
                         *world_key = Some(key);
                     }
