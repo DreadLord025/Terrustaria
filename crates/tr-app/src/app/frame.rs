@@ -414,7 +414,16 @@ impl App {
         // S1-B-8 — the in-world branch (`DoUpdateInWorld`'s port): one fn
         // per phase, in the C#'s order — see `frame/world.rs`.
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
-            self.update_world_frame(dt, screen);
+            // S1-E-17: `DoUpdate`'s capture gate (`Main.cs:16886-16890`):
+            // `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
+            // return; }` — while a capture renders the ENTIRE game update
+            // freezes (Sandstorm.EmitDust at :17247, SceneState.Update at
+            // :17816, the world sim, all sit AFTER this return). The capture
+            // interface itself still updates (it rides the interface pass,
+            // not DoUpdate's world branch), so update_capture runs regardless.
+            if !self.capture.is_capturing() {
+                self.update_world_frame(dt, screen);
+            }
             // S1-E-17: `CaptureManager.Instance.Update` at the interface-pass
             // call site (`Main.cs:46187` world / `:62166` map) — the capture
             // selection UI is an in-game interface, so it rides the world
@@ -658,6 +667,39 @@ mod tests {
         // A second frame records the same sequence: the trace is per frame.
         app.frame();
         assert_eq!(phase_trace::take(), WORLD_PHASES);
+    }
+
+    /// S1-E-17: the `DoUpdate` capture gate (`Main.cs:16886-16890`):
+    /// `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
+    /// return; }` — while a capture renders the whole world update freezes
+    /// (the sim, Sandstorm.EmitDust's dust RNG, SceneState.Update all sit
+    /// after the return). The world clock must not age and no world phase
+    /// may run while capturing; the capture interface itself still updates.
+    #[test]
+    fn capturing_freezes_the_world_update() {
+        let mut app = in_world_app();
+        app.frame();
+        phase_trace::take(); // drain the warm-up frame
+        let settings = crate::capture::CaptureSettings {
+            // 300x300 tiles -> a 3x3 grid of 126-stride chunks (9 chunks), so
+            // the capture spans multiple frames (draw_tick drains one chunk
+            // per frame); a 1-chunk capture would finish on frame 1 and the
+            // gate would clear before the later frames.
+            area: crate::capture::CaptureRect::new(0, 0, 300, 300),
+            ..Default::default()
+        };
+        app.capture.capture(settings).unwrap();
+        assert!(app.capture.is_capturing());
+        let frozen_time = app.world.time;
+        for _ in 0..3 {
+            app.frame();
+            assert!(app.capture.is_capturing(), "the 9-chunk capture must still be active");
+        }
+        assert_eq!(app.world.time, frozen_time, "the world clock must not age while capturing");
+        assert!(
+            phase_trace::take().is_empty(),
+            "no world phase may run while capturing (DoUpdate returns early)"
+        );
     }
 
     /// S1-B-2, landed with the clock move: the C# returns on `Main.gameMenu`

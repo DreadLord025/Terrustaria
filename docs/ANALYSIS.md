@@ -16191,12 +16191,19 @@ blit / finish machine (`CaptureCamera.cs:17-425`), `CaptureSettings`
 (`CaptureSettings.cs:6-28`) and `CaptureBiome`'s style table + biome pick
 (`CaptureBiome.cs:3-246`). The App owns the one `CaptureManager.Instance`
 (`App.capture`); `app/capture_driver.rs` pumps it per frame at the C# call
-sites (`Update` at `Main.cs:46187`/`:62166`, `DrawTick` at `:61729`) and
-`update_scene` reads `is_capturing()` for the `Main.UpdateSceneMetrics`
-gate (`Main.cs:62518-62521`) — narrowed to the metrics scan alone: the
-`Sandstorm.EmitDust` (it consumes the dust RNG), `SceneState.Update` and
-the visuals/sound driver keep running against the parked metrics, exactly
-as the C# gate sits inside `UpdateSceneMetrics` only. Deviations:
+sites (`Update` at `Main.cs:46187`/`:62166`, `DrawTick` at `:61729`). The
+capture freeze has TWO halves, both ported: (1) the `DoUpdate` gate
+(`Main.cs:16886-16890`, `if (IsCapturing) { FocusHelper.UpdateFocus; return; }`)
+— while a capture renders the ENTIRE world update skips: `Sandstorm.EmitDust`
+(`:17247`, it consumes the dust RNG), `SceneState.Update` (`:17816`) and the
+whole sim sit AFTER that return. Ported in `frame.rs`: `update_world_frame`
+is gated on `!is_capturing()` (the capture interface itself still updates —
+it rides the interface pass, not DoUpdate's world branch). (2) The
+`UpdateSceneMetrics` gate (`Main.cs:62518-62521`) — the DRAW-SIDE guard for
+the lighting engines' ExportMetrics callers (`LightingEngine.cs:93`,
+`LegacyLighting.cs:722`): `update_scene` reads `is_capturing()` and keeps the
+parked metrics (no rescan) for any draw-side caller that still runs.
+Deviations:
 
 - **The selection UI has no sprite draw yet — state only.** The
   `CaptureInterface` state machine (modes, toolbar actions, countdown) is

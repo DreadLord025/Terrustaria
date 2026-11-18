@@ -426,12 +426,16 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         (view_max.y / 16.0).floor() as i32 + 2 + 28,
     );
     // `Main.UpdateSceneMetrics`'s capture gate (`Main.cs:62518-62521`):
-    // `if (CaptureManager.Instance.IsCapturing) return;` — ONLY the metrics
-    // scan freezes while a capture renders (the chunk draws read the parked
-    // `Main.SceneMetrics`, not a live rescan). The C# gate sits inside
-    // `UpdateSceneMetrics` alone: `Sandstorm.EmitDust` above (it consumes
-    // the dust RNG), `SceneState.Update` and the visuals/sound driver below
-    // all keep running against the parked metrics. S1-E-17.
+    // `if (CaptureManager.Instance.IsCapturing) return;` — the metrics scan
+    // freezes while a capture renders (the chunk draws read the parked
+    // `Main.SceneMetrics`, not a live rescan). This is the DRAW-SIDE guard
+    // (the lighting engines' ExportMetrics callers, LightingEngine.cs:93 /
+    // LegacyLighting.cs:722). The UPDATE-SIDE freeze is the DoUpdate gate
+    // (`Main.cs:16886-16890`, ported in frame.rs): while capturing the whole
+    // world update — Sandstorm.EmitDust (:17247, dust RNG), SceneState.Update
+    // (:17816), the sim — skips, so update_scene is not even reached from the
+    // world branch. This guard keeps the metrics parked for any draw-side
+    // caller that still runs. S1-E-17.
     let capturing = app.capture.is_capturing();
     let mut metrics = if capturing {
         app.scene_metrics.clone()
@@ -1056,11 +1060,13 @@ mod tests {
         assert_eq!(out.screen_resolution, [1280.0, 720.0]);
     }
 
-    /// The narrowed capture gate (`Main.cs:62518-62521` sits inside
-    /// `UpdateSceneMetrics` alone): while capturing, the metrics scan is
-    /// skipped (the parked `Main.SceneMetrics` feeds the driver) but
-    /// `SceneState.Update` and the visuals driver keep running — only the
-    /// old over-broad whole-`update_scene` return froze them.
+    /// The capture gate has TWO halves (`Main.cs:16886-16890` DoUpdate return
+    /// + `:62518-62521` UpdateSceneMetrics return). While capturing, the whole
+    /// world update freezes (EmitDust/SceneState.Update/sim skip — the DoUpdate
+    /// gate, ported in frame.rs), AND any draw-side update_scene caller reads
+    /// the parked metrics (this guard). This test pins the draw-side half:
+    /// update_scene called directly while capturing keeps the parked metrics
+    /// (no rescan) and still runs SceneState.Update + the driver against them.
     #[test]
     fn s1_e_17_capturing_freezes_the_scan_but_not_the_scene_update() {
         let mut app = graveyard_app();
