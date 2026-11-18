@@ -702,35 +702,6 @@ pub fn caster_cycle(
     false
 }
 
-/// `AI_009`'s sphere core (`NPC.cs:21404-21429`): the velocity points at
-/// the player ONCE (`target == 255`'s launch arm — `TargetClosest` + the
-/// normalized delta × `num120`), then the ball flies straight
-/// (`noGravity` + `noTileCollide`: the generic `position += velocity`
-/// integration, `:90495-90498`). The port launches while the velocity is
-/// still zero. `num120` is 6, the Burning Sphere 5 (`:21395-21399`).
-pub fn sphere_step(npc: &mut Npc, target_x: f32, target_y: f32, world: &World) {
-    let (w, h) = npc.size();
-    if npc.vx == 0.0 && npc.vy == 0.0 {
-        let dx = target_x - (npc.x + w * 0.5);
-        let dy = target_y - (npc.y + h * 0.5);
-        let d = (dx * dx + dy * dy).sqrt().max(1.0);
-        let speed = match npc.kind {
-            NpcKind::BurningSphere => 5.0,
-            _ => 6.0,
-        };
-        npc.vx = dx / d * speed;
-        npc.vy = dy / d * speed;
-    }
-    npc.x += npc.vx;
-    npc.y += npc.vy;
-    npc.facing = if npc.vx >= 0.0 { 1 } else { -1 };
-    // The off-world guard (the flyer_step shape): the balls fly through
-    // everything, so the only stop is the world edge.
-    if npc.y > world.height as f32 * TILE_PX + 200.0 {
-        npc.hp = 0;
-    }
-}
-
 /// The swim tunables — `AI_016`'s per-kind constants (`NPC.cs`'s aiStyle 16
 /// block: the chase accel/caps and the aggro gate).
 #[derive(Clone, Copy, Debug)]
