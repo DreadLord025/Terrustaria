@@ -194,7 +194,7 @@ impl Default for CreationState {
 }
 
 /// The seven draft colours the preview tints (`Main.PlayerRenderer.DrawPlayer`'s
-/// per-part colours, `UICharacter.cs:118`; the category stack tint, `:800-808`).
+/// per-part colours, `UICharacter.cs:118`; the category stack tint, `UICharacterCreation.cs:800-808`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PreviewColors {
     pub hair: [u8; 4],
@@ -2189,7 +2189,17 @@ fn draw_hairstyles_menu(
         draw_hair_button(r, lookups, rect, state.draft.hair == *hair, in_rect(mouse, rect));
     }
     r.pop_clip();
-    panel::draw_scrollbar(r, lookups, l.hair_scrollbar, l.hair_menu[3], l.hair_grid[3], false);
+    // The hair grid has no scroll state yet (a recorded gap), so the handle
+    // sits at the top: `pos` 0 is `_viewPosition == 0` (`UIScrollbar.cs:93`).
+    panel::draw_scrollbar(
+        r,
+        lookups,
+        l.hair_scrollbar,
+        l.hair_menu[3],
+        l.hair_grid[3],
+        0.0,
+        false,
+    );
 }
 
 /// `MakeClothStylesMenu` (`:311-528`): the ten 44x80 cloth-style buttons, the

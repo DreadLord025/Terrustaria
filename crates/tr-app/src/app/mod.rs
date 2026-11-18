@@ -145,6 +145,14 @@ pub(crate) struct App {
     pub(crate) player_step: FixedStepper,
     pub(crate) npc_step: FixedStepper,
     pub(crate) npcs: Vec<Npc>,
+    /// `Player.talkNPC` (`Player.cs:27494`'s latch) — the NPC the chat dialog
+    /// is open for; `None` is the C#'s `-1`.
+    pub(crate) talk_npc: Option<usize>,
+    /// `Main.npcChatText` (`Main.cs:1755`) — the chat dialog's line.
+    pub(crate) npc_chat_text: String,
+    /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
+    /// numbers, indexed and updated like the C# pool.
+    pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
@@ -360,6 +368,18 @@ pub(crate) struct App {
     /// held between the press and release events while `front` is live — the
     /// creation screen's HSL sliders drag off it, like the menu's value bars.
     pub(crate) front_mouse_down: bool,
+    /// The two list screens' `UIScrollbar.ViewPosition` (`UIList.cs:181` lifts
+    /// `_innerList.Top` by it every draw): the scrolled px of the live
+    /// `UIList`, clamped into `[0, maxViewSize - viewSize]` wherever it is
+    /// written (`UIScrollbar.cs:45`/`:75`). Reset on every `SetState`
+    /// (`UserInterface.cs:295-299` builds fresh elements, so a re-entered
+    /// screen starts at the top).
+    pub(crate) front_scroll: f32,
+    /// `UIScrollbar._isDragging` + `_dragYOffset` (`UIScrollbar.cs:23`/`:27`):
+    /// `Some(offset)` while the handle is dragged, so the pointer's grab point
+    /// inside the handle is kept (`:134-135`). `LeftMouseUp` clears it
+    /// (`:145-149`).
+    pub(crate) front_scroll_drag: Option<f32>,
     /// `Main.PendingPlayer`'s recorded twin — `FinishCreatingCharacter`'s
     /// `PlayerFileData.CreateAndSave` + `Main.LoadPlayers` port: the created
     /// draft feeds the implicit session entry's name/difficulty
@@ -564,6 +584,9 @@ pub(crate) struct App {
     /// `TR_ZOOM` pins the zoom for screenshots, ignoring the settings value.
     pub(crate) zoom_pinned: bool,
     pub(crate) debug: bool,
+    /// The debug *window* (the typed always-present overlay, top-left). Its own
+    /// toggle (F4) so it can be up while the large `TR_DEBUG` overlay is off.
+    pub(crate) debug_overlay: bool,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -1812,6 +1835,11 @@ impl App {
         }
         self.park_menu();
         self.front = Some(front);
+        // A fresh `UIState` builds a fresh `UIList`, whose scrollbar starts at
+        // `_viewPosition = 0` (`UIScrollbar.cs:17`) — re-entering a screen is
+        // not a continuation of the last visit's scroll.
+        self.front_scroll = 0.0;
+        self.front_scroll_drag = None;
         // `UserInterface.SetState`'s `ResetState` (`UserInterface.cs:295-299`):
         // a button held across the switch must not read as a fresh press edge
         // on the new screen, and the next press is locked out for 200 ms.
@@ -2906,6 +2934,8 @@ impl App {
         let cursor_mouse_color = settings.mouse_color;
         let mut app = App {
             window: None,
+            talk_npc: None,
+            npc_chat_text: String::new(),
             gpu: None,
             renderer: None,
             post: None,
@@ -3170,6 +3200,8 @@ impl App {
             front_hint: None,
             front_hover_hit: None,
             front_mouse_down: false,
+            front_scroll: 0.0,
+            front_scroll_drag: None,
             session_draft: None,
             vk_grid: crate::env::vk_grid(),
             settings,
@@ -3263,6 +3295,7 @@ impl App {
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
+            debug_overlay: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
@@ -3289,6 +3322,7 @@ impl App {
             shot_path: crate::env::shot_path().map(PathBuf::from),
             shot_at: crate::env::shot_at().unwrap_or(20),
             atlas_stats,
+            combat_texts: Vec::new(),
             static_sheets: None,
             fonts_cache: None,
             light: LightMap::new(),
@@ -3392,6 +3426,14 @@ impl App {
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).
         app.wiring.seed_rand(world_seed | 1);
+        // `SetOngoingToTemps:169-172`: the sandstorm snapshot the load read out
+        // of the flags block (`_tempSandstorm*`, `LoadWorldFlags:2277-2283`)
+        // restores the event's live state, exactly as the rain triple above
+        // does for `Main.raining`.
+        app.sandstorm.happening = app.world.sandstorm_happening;
+        app.sandstorm.time_left = app.world.sandstorm_time_left;
+        app.sandstorm.severity = app.world.sandstorm_severity;
+        app.sandstorm.intended_severity = app.world.sandstorm_intended_severity;
         // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {

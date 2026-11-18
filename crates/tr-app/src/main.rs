@@ -16,6 +16,7 @@ mod buffs;
 mod chat;
 mod chest;
 mod collision;
+mod combat_text;
 #[cfg(feature = "debug")]
 mod debug_panel;
 mod death;
@@ -24,6 +25,7 @@ mod emotes;
 mod env;
 mod entity_lights;
 mod npc_lights;
+mod eoc_fight;
 mod input_map;
 mod inv;
 mod luck;

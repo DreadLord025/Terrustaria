@@ -841,6 +841,71 @@ fn princess(ctx: &mut ChatContext) -> String {
     }
 }
 
+// ---- the chat dialog's minimal renderer (task wire-npc-chat) -----------
+
+/// The chat dialog's screen box — `NPCChatPanel.Draw`'s rectangle
+/// (`NPCChatPanel.cs:65-66`): `new Rectangle(Main.screenWidth / 2 - 250,
+/// 100, 500, 30)`, grown per text/interaction row by [`chat_box_height`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChatRect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+/// `NPCChatPanel.cs:65-66` — the base box: `x = Main.screenWidth / 2 - 250`,
+/// `y = 100`, `w = 500`, `h = 30` (the screen height plays no part in the
+/// C# layout — the panel hangs 100 px under the top edge).
+pub fn chat_box_rect(screen_w: i32, _screen_h: i32) -> ChatRect {
+    ChatRect {
+        x: screen_w / 2 - 250,
+        y: 100,
+        w: 500,
+        h: 30,
+    }
+}
+
+/// `NPCChatPanel.cs:67-68` — the height additions: `30 * AmountOfLines`
+/// plus `30 * _neededInteractionLines + Math.Max(0, 2 *
+/// (_neededInteractionLines - 1))` (`AllowedInteractionsPerLine = 4`,
+/// `:30`, and `_neededInteractionLines = ceil(count / 4)`, `:174`; the
+/// port renders text only, so its callers pass 0).
+pub fn chat_box_height(text_lines: usize, interaction_lines: usize) -> i32 {
+    let il = interaction_lines as i32;
+    30 + 30 * text_lines as i32 + 30 * il + 2 * (il - 1).max(0)
+}
+
+/// The panel's inner text width — the `+ (20f, 20f)` text origin
+/// (`NPCChatPanel.cs:217`) inside the 500-wide box leaves 460 px, the same
+/// number the IME overflow guard uses (`:246`).
+pub const CHAT_TEXT_WRAP_WIDTH: i32 = 460;
+
+/// The word wrap the panel's `TextDisplayCache` performs over the drawn
+/// rows (`NPCChatPanel.cs:26`'s cache, drawn line-by-line at `:221-235`):
+/// greedy, breaking on spaces, one word per row minimum. The C# measures
+/// the words with the `MouseText` font; the port has no metrics yet, so it
+/// wraps by characters at the same width — a recorded approximation.
+pub fn format_chat_lines(line: &str, wrap_width: i32) -> Vec<String> {
+    let limit = wrap_width.max(1) as usize;
+    let mut rows: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for word in line.split(' ') {
+        if cur.is_empty() {
+            // A single word longer than the row still occupies one row.
+            cur.push_str(word);
+        } else if cur.chars().count() + 1 + word.chars().count() <= limit {
+            cur.push(' ');
+            cur.push_str(word);
+        } else {
+            rows.push(std::mem::take(&mut cur));
+            cur.push_str(word);
+        }
+    }
+    rows.push(cur);
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -972,5 +1037,83 @@ mod tests {
         let mut rng = draws(&[0]);
         let mut ctx = context(&npcs, &mut rng);
         assert_eq!(get_chat(&npcs[0], &mut ctx), "");
+    }
+
+    // ---- the live wiring (task wire-npc-chat) --------------------------
+
+    /// `Main.cs:43081-43082` — the right-click talk: a town NPC under the
+    /// `TileReachCheckSettings.Simple.GetWorldRegion` box answers `GetChat`,
+    /// the app latches `talkNPC = i` and stores `Main.npcChatText`.
+    #[test]
+    fn the_talk_action_returns_the_guides_chat_for_a_town_npc() {
+        init_lang();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_ref().unwrap();
+        let mut guide = npc(NpcKind::Guide);
+        // One tile right of the player — well inside the ±5-tile world
+        // region (`Main.cs:43047`'s `worldRegion.Intersects(npc box)`).
+        guide.x = p.x + 16.0;
+        guide.y = p.y;
+        app.npcs.push(guide);
+        app.place_down = true; // the fresh right press (`Main.mouseRight && Main.npcChatRelease`)
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false);
+        let text = text.expect("a town NPC under the region opens the chat");
+        assert!(!text.is_empty(), "the Guide answers a line");
+        assert_eq!(app.talk_npc, Some(0), "SetTalkNPC(i), `:43081`");
+        assert_eq!(app.npc_chat_text, text, "Main.npcChatText = GetChat(), `:43082`");
+    }
+
+    /// `Main.cs:43047` — the gate is `nPC.townNPC || type in {...}`: a zombie
+    /// (no townNPC flag) is never talkable and the click falls through.
+    #[test]
+    fn the_talk_action_returns_none_for_a_non_town_npc() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_ref().unwrap();
+        let mut zombie = npc(NpcKind::Zombie);
+        zombie.x = p.x + 16.0;
+        zombie.y = p.y;
+        app.npcs.push(zombie);
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false);
+        assert!(text.is_none(), "a zombie is not talkable");
+        assert_eq!(app.talk_npc, None);
+        assert!(app.npc_chat_text.is_empty());
+    }
+
+    /// `NPCChatPanel.cs:65-68` — the panel's box: x = `screenWidth / 2 - 250`,
+    /// y = 100, w = 500, h = 30 + 30·textLines + 30·interactionLines +
+    /// max(0, 2·(interactionLines − 1)); the text origin is `+ (20, 20)`
+    /// (`:217`) and the text area is the 460 px the IME guard uses (`:246`).
+    #[test]
+    fn the_chat_box_rect_matches_the_csharp_geometry() {
+        let r = crate::npc_chat::chat_box_rect(1920, 1080);
+        assert_eq!((r.x, r.y, r.w, r.h), (710, 100, 500, 30), "the base box");
+        assert_eq!(crate::npc_chat::chat_box_rect(800, 600).x, 150, "half of 800 minus 250");
+        assert_eq!(crate::npc_chat::chat_box_height(3, 0), 120, "30 + 30·3");
+        assert_eq!(crate::npc_chat::chat_box_height(2, 1), 120, "30 + 60 + 30 + 0");
+        assert_eq!(
+            crate::npc_chat::chat_box_height(1, 2),
+            122,
+            "30 + 30 + 60 + 2·(2−1)"
+        );
+        // The wrap: a line longer than the text area breaks (the C# wraps at
+        // the font-measured 460 px — `NPCChatPanel.cs:246`'s number; the port
+        // wraps by characters at the same width), a short one stays whole.
+        let long_line = "You should stay indoors at night. ".repeat(16); // > 460 chars
+        let lines =
+            crate::npc_chat::format_chat_lines(&long_line, crate::npc_chat::CHAT_TEXT_WRAP_WIDTH);
+        assert!(lines.len() > 1, "a 460+-char line wraps");
+        for ln in &lines {
+            assert!(
+                ln.chars().count() <= crate::npc_chat::CHAT_TEXT_WRAP_WIDTH as usize,
+                "no row exceeds the text area"
+            );
+        }
+        assert_eq!(
+            crate::npc_chat::format_chat_lines("short line", 460),
+            vec!["short line".to_string()]
+        );
     }
 }

@@ -1,0 +1,2 @@
+crates/tr-app/src/world_sim/npcs.rs|talk_to_npc|wire-npc-chat - the right-click talk action (Main.cs:42993-43083 + Player.cs:27494-27503)
+crates/tr-app/src/npc_chat.rs|chat_box_rect|wire-npc-chat - the chat dialog's minimal renderer (NPCChatPanel.cs:65-68)

@@ -999,18 +999,41 @@ impl Menu {
         ]
     }
 
-    // menuMode 9 (`Main.cs:49674-49692`): the world twin — the header
-    // names `Main.WorldList[Main.selectedWorld].Name` (`:49675`), the
-    // same Yes/No rows (`:49677-49678`).
+    // menuMode 5 (`Main.cs:49418-49439`): the player twin — the header is
+    // `Lang.menu[46] + " " + Main.PlayerList[Main.selectedPlayer].Name + "?"`
+    // (`:49422`), the Yes/No rows `Lang.menu[104]`/`[105]` (`:49424-49425`).
     fn confirm_delete_player_items(&self) -> Vec<Item> {
         vec![
             Item::new(
-                format!("Delete {}?", self.confirm_name.as_deref().unwrap_or_default()),
+                format!(
+                    "{} {}?",
+                    crate::lang::menu(46),
+                    self.confirm_name.as_deref().unwrap_or_default()
+                ),
                 Act::None,
             )
             .heading(),
-            Item::new("Yes", Act::Out(Action::ConfirmYes)),
-            Item::new("No", Act::Out(Action::ConfirmNo)),
+            Item::new(crate::lang::menu(104), Act::Out(Action::ConfirmYes)),
+            Item::new(crate::lang::menu(105), Act::Out(Action::ConfirmNo)),
+        ]
+    }
+
+    // menuMode 9 (`Main.cs:49674-49692`): the world twin — the header names
+    // `Main.WorldList[Main.selectedWorld].Name` (`:49676`), the same
+    // `Lang.menu[46]`/`[104]`/`[105]` rows (`:49678-49679`).
+    fn confirm_delete_world_items(&self) -> Vec<Item> {
+        vec![
+            Item::new(
+                format!(
+                    "{} {}?",
+                    crate::lang::menu(46),
+                    self.confirm_name.as_deref().unwrap_or_default()
+                ),
+                Act::None,
+            )
+            .heading(),
+            Item::new(crate::lang::menu(104), Act::Out(Action::ConfirmYes)),
+            Item::new(crate::lang::menu(105), Act::Out(Action::ConfirmNo)),
         ]
     }
 
@@ -1020,36 +1043,33 @@ impl Menu {
     // otherwise (`:49441-49448`), rows `…WarningYes`
     // "Yes, discard edits!" (`:49449`) and `…WarningNo`
     // "No, keep editing..." (`:49450`).
-    fn confirm_delete_world_items(&self) -> Vec<Item> {
+    fn confirm_discard_items(&self) -> Vec<Item> {
         vec![
             Item::new(
-                format!("Delete {}?", self.confirm_name.as_deref().unwrap_or_default()),
+                match &self.confirm_name {
+                    Some(name) => crate::lang::text_args(
+                        "UI.PlayerCreateDiscardWarningWithName",
+                        &[name.clone()],
+                    ),
+                    None => crate::lang::text("UI.PlayerCreateDiscardWarningNoName"),
+                },
                 Act::None,
             )
             .heading(),
-            Item::new("Yes", Act::Out(Action::ConfirmYes)),
-            Item::new("No", Act::Out(Action::ConfirmNo)),
+            Item::new(
+                crate::lang::text("UI.PlayerCreateDiscardWarningYes"),
+                Act::Out(Action::ConfirmYes),
+            ),
+            Item::new(
+                crate::lang::text("UI.PlayerCreateDiscardWarningNo"),
+                Act::Out(Action::ConfirmNo),
+            ),
         ]
     }
 
     // menuMode 3000 (`Main.cs:49693-49704`): `num5 = 1`, `num2 = 500`,
     // `array7[0] = 0.9f`, `array9[0] = Lang.menu[5]` "Back" — the
     // click (or `flag5`) returns to menuMode 0 (`:49700-49703`).
-    fn confirm_discard_items(&self) -> Vec<Item> {
-        vec![
-            Item::new(
-                match &self.confirm_name {
-                    Some(name) => format!("Discard {name}?"),
-                    None => "Discard your new player?".to_string(),
-                },
-                Act::None,
-            )
-            .heading(),
-            Item::new("Yes, discard edits!", Act::Out(Action::ConfirmYes)),
-            Item::new("No, keep editing...", Act::Out(Action::ConfirmNo)),
-        ]
-    }
-
     fn credits_items(&self) -> Vec<Item> {
         vec![Item::new(crate::lang::menu(5), Act::Nav(Page::Main)).scaled(0.9)]
     }

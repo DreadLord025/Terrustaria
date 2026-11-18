@@ -2911,10 +2911,14 @@ mod tests {
 
     #[test]
     fn confirm_delete_pages_match_the_vanilla_rows() {
-        // `Main.cs:49420-49439` (mode 5) and `:49674-49692` (mode 9): the
+        // `Main.cs:49422-49425` (mode 5) and `:49676-49679` (mode 9): the
         // `Lang.menu[46] + " " + name + "?"` header (`array[0] = true`),
         // rows 1-2 `Lang.menu[104]`/`[105]`, `num5 = 3` — three rows over the
-        // 250/80 defaults.
+        // 250/80 defaults. The English labels below come from the en-US
+        // resource, so the row must resolve the key (a bare literal would
+        // stay English under the ru-RU assertions at the end).
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let m = Menu::open_confirm_delete_player(Settings::default(), "Bob".into());
         assert_eq!(m.page, Page::ConfirmDeletePlayer);
         let items = m.items();
@@ -2942,13 +2946,27 @@ mod tests {
         let mut m = Menu::open_confirm_delete_player(Settings::default(), "Bob".into());
         assert!(matches!(m.activate(1), Action::ConfirmYes));
         assert!(matches!(m.activate(2), Action::ConfirmNo));
+        // The rows are `Lang.menu` reads, not literals: both confirm screens
+        // follow the culture (`decompiled/…ru-RU.Legacy.json`).
+        crate::lang::set_language(tr_core::localization::GameCulture::Russian);
+        let m = Menu::open_confirm_delete_player(Settings::default(), "Bob".into());
+        let labels: Vec<String> = m.items().iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, ["Удалить Bob?", "Да", "Нет"]);
+        let m = Menu::open_confirm_delete_world(Settings::default(), "World 1".into());
+        let labels: Vec<String> = m.items().iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, ["Удалить World 1?", "Да", "Нет"]);
+        crate::lang::set_language(tr_core::localization::GameCulture::English);
     }
 
     #[test]
     fn confirm_discard_page_names_the_draft() {
         // `Main.cs:49441-49450`: `UI.PlayerCreateDiscardWarningNoName` while
         // `Main.PendingPlayer.name` is empty, `…WithName` ("Discard {0}?")
-        // otherwise; rows `…WarningYes` / `…WarningNo`.
+        // otherwise; rows `…WarningYes` / `…WarningNo`. The English labels are
+        // the en-US resource values, and the ru-RU block at the end proves the
+        // rows resolve the keys instead of literals.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let m = Menu::open_confirm_discard(Settings::default(), None);
         assert_eq!(m.page, Page::ConfirmDiscard);
         let items = m.items();
@@ -2958,6 +2976,21 @@ mod tests {
         assert!(!items[1].header && !items[2].header);
         let m = Menu::open_confirm_discard(Settings::default(), Some("Zealot".into()));
         assert_eq!(m.items()[0].label, "Discard Zealot?");
+        // The `{0}` substitution and the two answers follow the culture.
+        crate::lang::set_language(tr_core::localization::GameCulture::Russian);
+        let m = Menu::open_confirm_discard(Settings::default(), None);
+        let labels: Vec<String> = m.items().iter().map(|i| i.label.clone()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Удалить вашего нового персонажа?",
+                "Да, удалить изменения!",
+                "Нет, продолжить редактирование..."
+            ]
+        );
+        let m = Menu::open_confirm_discard(Settings::default(), Some("Zealot".into()));
+        assert_eq!(m.items()[0].label, "Удалить: Zealot?");
+        crate::lang::set_language(tr_core::localization::GameCulture::English);
     }
 
     #[test]

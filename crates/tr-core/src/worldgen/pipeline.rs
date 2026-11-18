@@ -1156,6 +1156,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("granite and marble", "Marble", step_granite_marble),
     step!("stone-in-dirt blobs", "Rocks In Dirt", step_stone_in_dirt),
     step!("dirt-in-stone blobs", "Dirt In Rocks", step_dirt_in_stone),
+    // The vanilla Surface Caves slot (`WorldGen.cs:12162`): after Dirt In
+    // Rocks (`:11926`) and before Wavy Caves (`:12271`) — the
+    // worldgen-caves slice's surface-opening tunnels. The step draws from
+    // its own `pass_rng("Surface Caves")` stream, so the insertion shifts
+    // no other step's ledger.
+    step!("surface caves", "Surface Caves", step_surface_caves),
     // The vanilla Wavy Caves slot (`WorldGen.cs:12271`): after the cave
     // family (Dirt In Rocks `:11935`) and before the ice/grass pair —
     // M5-SEED-1's Don't Starve pass, whose body exists only for that seed
@@ -1702,6 +1708,23 @@ fn step_cave_fields(
 ) {
     let (width, heights, hell_top) = (world.width, &gv.map().heights, gv.layers().hell_top);
     caves::carve_caves(world, width, noise, heights, hell_top);
+}
+
+fn step_surface_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    caves::surface_caves(
+        world,
+        &mut streams.pass_rng("Surface Caves"),
+        gv.layers(),
+        gv.left_beach_end,
+        gv.right_beach_start,
+    );
 }
 
 fn step_stone_in_dirt(
@@ -2650,6 +2673,8 @@ mod tests {
     #[test]
     fn the_executed_pipeline_is_59_named_steps() {
         let names = executed_pass_names();
+        // WORLDGEN-CAVES: + `surface caves` (vanilla "Surface Caves",
+        // `WorldGen.cs:12162`) between `dirt-in-stone blobs` and `wavy caves`.
         // M5-TEMPLE: + `temple part 2` (vanilla "Temple", `WorldGen.cs:17701`)
         // and + `lihzahrd altar` (vanilla "Lihzahrd Altars", `:21943`).
         // M5-STRUCT-5: + `spider caves` + `gem caves` + `moss` + `webs and
@@ -2657,7 +2682,7 @@ mod tests {
         // M5-DESERT-structures: + `dunes` + `full desert` (vanilla `:11517` /
         // `:12500`).
         // M5-SEED-1: + `wavy caves` + `constant lava layer` + `seed finish`.
-        assert_eq!(names.len(), 62);
+        assert_eq!(names.len(), 63);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -2703,6 +2728,7 @@ mod tests {
                 "granite and marble",
                 "stone-in-dirt blobs",
                 "dirt-in-stone blobs",
+                "surface caves",
                 "wavy caves",
                 "dirt to mud",
                 "ash blobs",
@@ -2768,7 +2794,9 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("mud caves to grass"), pos("jungle") + 1);
-        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 2); // + wavy caves (M5-SEED-1)
+        // + surface caves (WORLDGEN-CAVES, the vanilla SurfaceCaves slot
+        // `WorldGen.cs:12162`) + wavy caves (M5-SEED-1).
+        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 3);
         assert_eq!(names[pos("dirt to mud") + 1], "ash blobs");
         // The vanilla chain carries both passes in the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN

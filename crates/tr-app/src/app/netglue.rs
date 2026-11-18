@@ -2763,7 +2763,34 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // `NPCID.DesertDjinn` (533) — the desert caster hovers like the
+        // other casters (`spawn_hover`; aiStyle 8).
         crate::npc::NpcKind::DesertDjinn => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // The Pumpkin Moon family (`S1-F-13b` Phase 2): the wave roster's
+        // seed follows their machines — the walkers (the ten Scarecrows,
+        // Splinterling, the Headless Horseman and the Hellhound, whose
+        // aiStyle-3/26 stand-ins ride the walker family) plant the feet on the
+        // column surface; the gravity-off floaters (the Mourning Wood, the
+        // Pumpking and the Poltergeist) ride the hover ctor.
+        crate::npc::NpcKind::Scarecrow1
+        | crate::npc::NpcKind::Scarecrow2
+        | crate::npc::NpcKind::Scarecrow3
+        | crate::npc::NpcKind::Scarecrow4
+        | crate::npc::NpcKind::Scarecrow5
+        | crate::npc::NpcKind::Scarecrow6
+        | crate::npc::NpcKind::Scarecrow7
+        | crate::npc::NpcKind::Scarecrow8
+        | crate::npc::NpcKind::Scarecrow9
+        | crate::npc::NpcKind::Scarecrow10
+        | crate::npc::NpcKind::Splinterling
+        | crate::npc::NpcKind::HeadlessHorseman
+        | crate::npc::NpcKind::Hellhound => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::MourningWood
+        | crate::npc::NpcKind::Pumpking
+        | crate::npc::NpcKind::Poltergeist => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

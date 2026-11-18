@@ -152,11 +152,20 @@ pub fn draw_horizontal_separator(
     }
 }
 
-/// `UIScrollbar.GetHandleRectangle` (`UIScrollbar.cs:85-94`): the outer bar rect and
-/// `(bar, handle)`. `view`/`max_view` are `_viewSize`/`_maxViewSize`; `_viewPosition`
-/// is 0 in P3. Width is 20 (`UIScrollbar.cs:59`); the inner rect drops the 5 px
-/// `PaddingTop`/`PaddingBottom` (`:68-69`).
-pub fn scrollbar_rects(rect: [f32; 4], view: f32, max_view: f32) -> ([f32; 4], [f32; 4]) {
+/// `UIScrollbar.GetHandleRectangle` (`UIScrollbar.cs:85-94`) at an arbitrary
+/// `_viewPosition` (`pos`): the outer bar rect and `(bar, handle)`. `view`/
+/// `max_view` are `_viewSize`/`_maxViewSize`. Width is 20 (`UIScrollbar.cs:59`);
+/// the inner rect drops the 5 px `PaddingTop`/`PaddingBottom` (`:68-69`).
+///
+/// The handle travels while the list scrolls — the same rect is what
+/// `LeftMouseDown` hit-tests for the drag latch (`:131-135`) and what the draw
+/// paints (`:113`), so the port's one function feeds both.
+pub fn scrollbar_rects_at(
+    rect: [f32; 4],
+    view: f32,
+    max_view: f32,
+    pos: f32,
+) -> ([f32; 4], [f32; 4]) {
     // `dimensions.ToRectangle()` (`:121`, `CalculatedStyle.cs:17`) truncates to ints.
     let bar = [
         rect[0].trunc(),
@@ -174,10 +183,57 @@ pub fn scrollbar_rects(rect: [f32; 4], view: f32, max_view: f32) -> ([f32; 4], [
     let iy = bar[1] + 5.0;
     let ih = bar[3] - 10.0;
     // `Rectangle((int)inner.X, (int)(inner.Y + inner.Height * (viewPos/maxView)) - 3,
-    // 20, (int)(inner.Height * (viewSize/maxView)) + 7)` (`:93`), `viewPos = 0`.
-    let hy = (iy + ih * (0.0 / max_view)).trunc() - 3.0;
+    // 20, (int)(inner.Height * (viewSize/maxView)) + 7)` (`:93`).
+    let hy = (iy + ih * (pos / max_view)).trunc() - 3.0;
     let hh = (ih * (view / max_view)).trunc() + 7.0;
     (bar, [ix, hy, 20.0, hh])
+}
+
+/// [`scrollbar_rects_at`] at `_viewPosition = 0` — the P3 callers that pin the
+/// unscrolled handle.
+pub fn scrollbar_rects(rect: [f32; 4], view: f32, max_view: f32) -> ([f32; 4], [f32; 4]) {
+    scrollbar_rects_at(rect, view, max_view, 0.0)
+}
+
+/// The handle alone ([`scrollbar_rects_at`]'s second half) — the rect the
+/// select screens hit-test for the drag latch (`UIScrollbar.cs:131-135`) and
+/// paint (`:113`).
+pub fn scrollbar_handle_at(rect: [f32; 4], view: f32, max_view: f32, pos: f32) -> [f32; 4] {
+    scrollbar_rects_at(rect, view, max_view, pos).1
+}
+
+/// `UIScrollbar.DrawSelf`'s drag (`UIScrollbar.cs:109-112`): while `_isDragging`
+/// the view position is re-derived from the pointer every frame,
+/// `(mouseY - inner.Y - _dragYOffset) / inner.Height * _maxViewSize`, clamped to
+/// `[0, maxViewSize - viewSize]` (`MathHelper.Clamp`, `:111`).
+pub fn scrollbar_drag_value(
+    rect: [f32; 4],
+    view: f32,
+    max_view: f32,
+    drag_y_offset: f32,
+    mouse_y: f32,
+) -> f32 {
+    let iy = rect[1].trunc() + 5.0;
+    let ih = rect[3].trunc() - 10.0;
+    let value = (mouse_y - iy - drag_y_offset) / ih * max_view;
+    value.clamp(0.0, (max_view - view).max(0.0))
+}
+
+/// `UIScrollbar.LeftMouseDown`'s track arm (`UIScrollbar.cs:137-141`): a press
+/// off the handle jumps the view to centre the handle under the pointer,
+/// `(mouseY - inner.Y - handle.Height / 2) / inner.Height * _maxViewSize`,
+/// clamped the same way.
+pub fn scrollbar_jump_value(
+    rect: [f32; 4],
+    view: f32,
+    max_view: f32,
+    handle_h: f32,
+    mouse_y: f32,
+) -> f32 {
+    let iy = rect[1].trunc() + 5.0;
+    let ih = rect[3].trunc() - 10.0;
+    let value = (mouse_y - iy - ((handle_h as i32) >> 1) as f32) / ih * max_view;
+    value.clamp(0.0, (max_view - view).max(0.0))
 }
 
 /// `UIScrollbar.CanScroll` (`UIScrollbar.cs:49`): `_maxViewSize != _viewSize`.
@@ -215,12 +271,13 @@ pub fn draw_scrollbar(
     rect: [f32; 4],
     view: f32,
     max_view: f32,
+    pos: f32,
     auto_hide: bool,
 ) {
     if auto_hide && !scrollbar_can_scroll(view, max_view) {
         return;
     }
-    let (bar, handle) = scrollbar_rects(rect, view, max_view);
+    let (bar, handle) = scrollbar_rects_at(rect, view, max_view, pos);
     if let Some(sheet) = lookups.ui_scrollbar {
         draw_scrollbar_bar(r, lookups, &sheet, bar, [1.0; 4]);
     }

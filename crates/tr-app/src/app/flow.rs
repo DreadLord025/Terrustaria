@@ -288,6 +288,10 @@ pub(crate) struct FrontDraw<'a> {
     /// `Main.mouseLeft`'s port for the front screens — the HSL drags ride
     /// off it (`Main.cs:51101`'s role).
     pub(crate) front_mouse_down: bool,
+    /// The two list screens' live `UIScrollbar.ViewPosition` (`App.front_scroll`):
+    /// the draw lifts the rows by it (`UIList.cs:181`) and paints the handle at
+    /// it (`UIScrollbar.cs:93`), so the painted list is the clickable list.
+    pub(crate) scroll: f32,
     /// `TR_VK_GRID=1` — the keyboard's 50-key grid layer (Review Focus 6).
     pub(crate) vk_grid: bool,
     /// The caret's `UITextBox._frameCount`.
@@ -392,6 +396,7 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.screen,
                     header_w,
                     d.players,
+                    d.scroll,
                     d.mouse,
                 );
             }
@@ -409,6 +414,7 @@ impl FrontScreenBehaviours for FrontScreen {
                     header_w,
                     d.worlds,
                     d.active_difficulty,
+                    d.scroll,
                     d.mouse,
                 );
             }
@@ -469,11 +475,7 @@ impl FrontScreenBehaviours for FrontScreen {
     ) -> Option<FlowClick> {
         match self {
             FrontScreen::CharSelect => {
-                let l = ui::char_select::resolved_layout(
-                    screen,
-                    app.front_header_w(&self.header()),
-                    app.players.len(),
-                );
+                let l = app.select_layout(screen, &self.header(), app.players.len());
                 let favorites: Vec<bool> = app.players.iter().map(|p| p.is_favorite).collect();
                 match ui::char_select::card_hit(&l, &favorites, mouse, double_click).1 {
                     Some(ui::char_select::CardAction::Back) => Some(FlowClick::CharBack),
@@ -497,13 +499,26 @@ impl FrontScreenBehaviours for FrontScreen {
                     {
                         Some(FlowClick::CharPlay(i))
                     }
-                    // `FavoriteButtonClick` (`:264-283`): the flag flips and
-                    // the list re-orders (`UpdateOrder`). No `.plr` exists to
-                    // persist it — the toggle is session-only (documented
-                    // deviation).
+                    // `FavoriteButtonClick` (`UICharacterListItem.cs:264-283`):
+                    // `_data.ToggleFavorite()` (`IO/FileData.cs:38-41`) ->
+                    // `SetFavorite(!IsFavorite)` (`:48-54`) ->
+                    // `FavoritesFile.SaveFavorite` (`IO/FavoritesFile.cs:27-36`)
+                    // saves the store at once — outside the `.plr`, whose own
+                    // favourite flag is dead in the vanilla (`FileMetadata.cs:41`).
+                    // The port's store is the `<stem>.trfav` sidecar, the same
+                    // carrier the world's toggle writes (`:900-911`), so the star
+                    // survives a re-list and any future `.plr` re-save.
                     Some(ui::char_select::CardAction::ToggleFavorite(i)) => {
                         if let Some(p) = app.players.get_mut(i) {
                             p.is_favorite = !p.is_favorite;
+                            if let Some(path) = &p.path {
+                                if let Err(e) = crate::player_file::set_favorite_marker(
+                                    path,
+                                    p.is_favorite,
+                                ) {
+                                    log::warn!("character favourite write failed: {e}");
+                                }
+                            }
                         }
                         ui::char_select::sort_players(&mut app.players);
                         None
@@ -542,6 +557,18 @@ impl FrontScreenBehaviours for FrontScreen {
                         if app.players.get(i).is_some_and(|p| p.deletable) =>
                     {
                         Some(FlowClick::CharDelete(i))
+                    }
+                    // The port-only session card (`app/session.rs`: `deletable:
+                    // false`, `path: None`) has no file to erase, so it cannot
+                    // reach the confirm. Answering with nothing made the button
+                    // look broken (UI-INPUT-RUST §5.2 break 1) — the port's own
+                    // notice says why, the way `Menu.hint` does (ours, not in
+                    // the original).
+                    Some(ui::char_select::CardAction::Delete(_)) => {
+                        app.front_hint = Some(
+                            "Cannot Delete: this entry has no save file".to_string(),
+                        );
+                        None
                     }
                     _ => None,
                 }
@@ -822,7 +849,7 @@ impl FrontScreenBehaviours for FrontScreen {
                         // there too (`:706`).
                         app.open_keyboard_with_tail(
                             ui::keyboard::Request {
-                                label: "Enter Seed (Leave Blank For Random)".into(),
+                                label: ui::keyboard::enter_seed(),
                                 initial: String::new(),
                                 allow_empty: true,
                                 max_length: usize::MAX,
@@ -864,12 +891,9 @@ impl FrontScreenBehaviours for FrontScreen {
             FrontScreen::WorldSelect => {
                 // The world screen's ctor is the char select's twin
                 // (`UIWorldSelect.cs:40-87`), so the shared `resolved_layout`
-                // lives on `char_select` and serves both hit-tests.
-                let l = ui::char_select::resolved_layout(
-                    screen,
-                    app.front_header_w(&self.header()),
-                    app.worlds.len(),
-                );
+                // lives on `char_select` and serves both hit-tests — including
+                // the live scroll offset.
+                let l = app.select_layout(screen, &self.header(), app.worlds.len());
                 let favorites: Vec<bool> = app.worlds.iter().map(|w| w.is_favorite).collect();
                 match ui::world_select::card_hit(&l, &favorites, mouse, double_click).1 {
                     Some(ui::world_select::CardAction::Back) => Some(FlowClick::WorldBack),
@@ -940,6 +964,15 @@ impl FrontScreenBehaviours for FrontScreen {
                         if app.worlds.get(i).is_some_and(|w| w.path.is_some()) =>
                     {
                         Some(FlowClick::WorldDelete(i))
+                    }
+                    // The world twin: a `TR_FAKE_WORLDS` card carries `path:
+                    // None`, so there is nothing to delete — say so instead of
+                    // dropping the click (UI-INPUT-RUST §5.2 break 1).
+                    Some(ui::world_select::CardAction::Delete(_)) => {
+                        app.front_hint = Some(
+                            "Cannot Delete: this entry has no save file".to_string(),
+                        );
+                        None
                     }
                     _ => None,
                 }
@@ -1035,6 +1068,94 @@ impl FrontScreenBehaviours for FrontScreen {
 }
 
 impl App {
+    /// The live list screen's `(card count, header text)` — `UICharacterSelect`'s
+    /// `_playerList` or `UIWorldSelect`'s `_worldList`; `None` when the live
+    /// front screen has no `UIList`.
+    fn front_list(&self) -> Option<(usize, String)> {
+        let front = self.front.as_ref()?;
+        match front {
+            FrontScreen::CharSelect => Some((self.players.len(), front.header())),
+            FrontScreen::WorldSelect => Some((self.worlds.len(), front.header())),
+            _ => None,
+        }
+    }
+
+    /// The two list screens' live layout: `Recalculate`'s result plus the
+    /// `UIScrollbar.ViewPosition` the wheel and the bar write, clamped by
+    /// `SetView` (`UIScrollbar.cs:72-78`). The hit-test, the click table and the
+    /// draw all build the screen through this, so a scrolled row, its
+    /// clickable rect and its pixels stay one rect (Review Focus 2).
+    pub(crate) fn select_layout(
+        &self,
+        screen: Vec2,
+        header: &str,
+        cards: usize,
+    ) -> ui::char_select::Layout {
+        ui::char_select::resolved_layout(screen, self.front_header_w(header), cards)
+            .with_scroll(self.front_scroll, cards)
+    }
+
+    /// `UIList.ScrollWheel` (`UIList.cs:107-114`) for the live list screen:
+    /// `UserInterface.Update` hands the wheel to the element under the pointer
+    /// (`:219-221`) and zeroes the accumulator whatever the hit (`:222`), so the
+    /// return value is "a list screen was live" — the hotbar arm must not also
+    /// consume the notch. `_scrollbar.ViewPosition -= evt.ScrollWheelValue`
+    /// (`:112`), clamped by `SetView` (`UIScrollbar.cs:75`).
+    pub(crate) fn front_wheel(&mut self, delta: i32) -> bool {
+        let Some((cards, header)) = self.front_list() else {
+            return false;
+        };
+        let (sw, sh) = self.screen_size();
+        let l = self.select_layout(Vec2::new(sw, sh), &header, cards);
+        // The `UIList`'s inner list answers `ContainsPoint` with `true`
+        // (`UIList.cs:16-19`), so the whole list rect scrolls; the attached
+        // scrollbar is its own target.
+        if ui::char_select::wheel_target(&l, cards, self.mouse_pos) {
+            self.front_scroll = ui::char_select::scroll_wheel(
+                l.scroll,
+                delta,
+                l.list[3],
+                ui::char_select::list_content_height(cards),
+            );
+        }
+        true
+    }
+
+    /// `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`): a press on the
+    /// attached bar grabs the handle (`:134-135`, `_dragYOffset = mouse.Y -
+    /// handle.Y`) or jumps the track (`:137-141`). Returns whether the bar took
+    /// the press — the same press must not also reach a card button, exactly as
+    /// the C#'s `evt.Target == this` keeps it on the bar.
+    pub(crate) fn front_scrollbar_press(&mut self) -> bool {
+        let Some((cards, header)) = self.front_list() else {
+            return false;
+        };
+        let (sw, sh) = self.screen_size();
+        let l = self.select_layout(Vec2::new(sw, sh), &header, cards);
+        let Some((scroll, drag)) = ui::char_select::scrollbar_press(&l, cards, self.mouse_pos)
+        else {
+            return false;
+        };
+        self.front_scroll = scroll;
+        self.front_scroll_drag = drag;
+        true
+    }
+
+    /// The drag frame (`UIScrollbar.DrawSelf`'s `_isDragging` arm,
+    /// `UIScrollbar.cs:109-112`): the position follows the pointer with the
+    /// latched grab offset while the button is held.
+    pub(crate) fn front_scrollbar_drag(&mut self) {
+        let Some(offset) = self.front_scroll_drag else {
+            return;
+        };
+        let Some((cards, header)) = self.front_list() else {
+            return;
+        };
+        let (sw, sh) = self.screen_size();
+        let l = self.select_layout(Vec2::new(sw, sh), &header, cards);
+        self.front_scroll = ui::char_select::scrollbar_drag(&l, cards, offset, self.mouse_pos.y);
+    }
+
     /// The element id under the pointer on the live front screen — the
     /// framework's `GetElementAt` (`UIElement.cs:324-352`), fed to the pointer
     /// machine so its `LastClicked` compares elements and a card's double-click
@@ -1048,21 +1169,15 @@ impl App {
         match front {
             FrontScreen::CharSelect => {
                 let header = front.header();
-                let l = ui::char_select::resolved_layout(
-                    screen,
-                    self.front_header_w(&header),
-                    self.players.len(),
-                );
+                // The scrolled layout (`UIList.cs:181`'s `_innerList.Top`): the
+                // rows the draw paints are the rows this hit-test addresses.
+                let l = self.select_layout(screen, &header, self.players.len());
                 let favorites: Vec<bool> = self.players.iter().map(|p| p.is_favorite).collect();
                 ui::char_select::hit_element(&l, &favorites, self.mouse_pos)
             }
             FrontScreen::WorldSelect => {
                 let header = front.header();
-                let l = ui::world_select::resolved_layout(
-                    screen,
-                    self.front_header_w(&header),
-                    self.worlds.len(),
-                );
+                let l = self.select_layout(screen, &header, self.worlds.len());
                 let favorites: Vec<bool> = self.worlds.iter().map(|w| w.is_favorite).collect();
                 ui::world_select::hit_element(&l, &favorites, self.mouse_pos)
             }
@@ -2003,6 +2118,7 @@ pub(crate) mod front_flow_tests {
             sandstorm: tr_core::scene::Sandstorm::new(1),
             filter_driver: crate::app::filters::FilterDriver::new(),
             atlas: None,
+            combat_texts: Vec::new(),
             static_sheets: None,
             fonts_cache: None,
             font_atlas: None,
@@ -2022,6 +2138,8 @@ pub(crate) mod front_flow_tests {
             player_step: FixedStepper::new(1.0 / 60.0, 8),
             npc_step: FixedStepper::new(1.0 / 60.0, 8),
             npcs: Vec::new(),
+            talk_npc: None,
+            npc_chat_text: String::new(),
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             next_worm_id: 1,
@@ -2081,6 +2199,8 @@ pub(crate) mod front_flow_tests {
             front_hint: None,
             front_hover_hit: None,
             front_mouse_down: false,
+            front_scroll: 0.0,
+            front_scroll_drag: None,
             session_draft: None,
             vk_grid: false,
             settings: settings::Settings::default(),
@@ -2168,6 +2288,7 @@ pub(crate) mod front_flow_tests {
             zoom: 1.0,
             zoom_pinned: false,
             debug: false,
+            debug_overlay: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
@@ -2298,6 +2419,89 @@ pub(crate) mod front_flow_tests {
     }
 
     #[test]
+    fn char_select_favorite_click_writes_the_sidecar_and_the_relist_reads_it() {
+        // The star's live path (A8/F3): `FavoriteButtonClick`
+        // (`UICharacterListItem.cs:264-283`) -> `FileData.ToggleFavorite`
+        // (`IO/FileData.cs:38-41`) -> `FavoritesFile.SaveFavorite`
+        // (`IO/FavoritesFile.cs:27-36`) saves a store beside the character, not
+        // inside it; the next re-list (a re-entry into the screen) reads it
+        // back. Before the fix the click only flipped the in-memory flag.
+        let dir = std::env::temp_dir().join("tr-flow-char-fav");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Belsin.plr");
+        let mut inventory = [(0i32, 0i32, 0u8); 58];
+        inventory[0] = (3507, 1, 0);
+        crate::player_file::write_player_file(
+            &path,
+            &crate::player_file::PlayerFileWrite {
+                name: "Belsin".into(),
+                difficulty: 0,
+                skin_variant: 0,
+                hair: 0,
+                life: 100,
+                life_max: 100,
+                mana: 20,
+                mana_max: 20,
+                hair_color: [215, 90, 55],
+                skin_color: [255, 125, 90],
+                eye_color: [105, 90, 75],
+                shirt_color: [175, 165, 140],
+                undershirt_color: [160, 180, 215],
+                pants_color: [255, 230, 175],
+                shoe_color: [160, 105, 60],
+                inventory,
+                inv_favorites: 0,
+            },
+        )
+        .unwrap();
+
+        let mut belsin = entry("Belsin", true);
+        belsin.path = Some(path.clone());
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("Aaron", true), belsin],
+            Vec::new(),
+        );
+        let layout = |app: &App| {
+            ui::char_select::resolved_layout(
+                Vec2::new(1280.0, 720.0),
+                app.front_header_w(&ui::char_select::select_player()),
+                app.players.len(),
+            )
+        };
+
+        // Belsin is card 1 in the fixture order (Aaron first by name); its
+        // star is the hit target.
+        let l = layout(&app);
+        app.mouse_pos = centre(ui::char_select::card_layout(l.list, 1).favorite);
+        app.handle_front_click();
+
+        assert!(app.players[0].is_favorite, "the click flips the card");
+        assert_eq!(app.players[0].name, "Belsin", "`UpdateOrder` sorts it first");
+        assert!(
+            crate::player_file::favorite_marker_path(&path).exists(),
+            "the click wrote `<stem>.trfav` beside the .plr"
+        );
+        let relisted = ui::save_list::list_players(Some(&dir), None, 0);
+        assert_eq!(relisted.len(), 1);
+        assert!(
+            relisted[0].is_favorite,
+            "a fresh listing (the screen re-entry) reads the star back"
+        );
+
+        // The second click takes it off: the marker goes, the re-list agrees.
+        let l = layout(&app);
+        app.mouse_pos = centre(ui::char_select::card_layout(l.list, 0).favorite);
+        app.handle_front_click();
+        assert!(!app.players[0].is_favorite);
+        assert!(!crate::player_file::favorite_marker_path(&path).exists());
+        assert!(!ui::save_list::list_players(Some(&dir), None, 0)[0].is_favorite);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn delete_click_opens_the_mode_5_confirm_with_the_front_cleared() {
         // `DeleteButtonClick` (`UICharacterListItem.cs:242-254`) -> `menuMode
         // = 5`: the confirm opens alone, parking the target name/index
@@ -2352,6 +2556,62 @@ pub(crate) mod front_flow_tests {
         assert_eq!(m.page, P::ConfirmDeleteWorld);
         assert_eq!(m.confirm_name.as_deref(), Some("World 1"));
         assert_eq!(m.confirm_index, 0);
+    }
+
+    #[test]
+    fn f1_delete_on_a_card_without_a_save_file_explains_instead_of_dropping_the_click() {
+        // WAVE2/F1. The delete click reached the table but the `p.deletable`
+        // arm dropped it with `_ => None` — and `enter_front` always prepends a
+        // session entry with `deletable: false` (`app/session.rs`), so its
+        // Delete button was dead with **no** feedback at all (`UI-INPUT-RUST`
+        // §5.2 break 1). The C# subscribes the handler unconditionally
+        // (`UICharacterListItem.cs:109-121`), so the port answers with its own
+        // notice (`front_hint`, the `Menu.hint` stand-in) instead of nothing.
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("Session", false)],
+            vec![],
+        );
+        let l = ui::char_select::resolved_layout(
+            Vec2::new(1280.0, 720.0),
+            app.front_header_w(&ui::char_select::select_player()),
+            app.players.len(),
+        );
+        let delete = ui::char_select::card_layout(l.list, 0).delete;
+        app.mouse_pos = Vec2::new(delete[0] + delete[2] * 0.5, delete[1] + delete[3] * 0.5);
+        app.handle_front_click();
+        assert!(
+            app.front.is_some(),
+            "no confirm page: the click cannot open mode 5 without a file"
+        );
+        assert!(
+            app.front_hint.is_some(),
+            "the dead delete must say why, not drop the click silently"
+        );
+    }
+
+    #[test]
+    fn f1_delete_on_a_world_without_a_path_explains_instead_of_dropping_the_click() {
+        // The world twin: `w.path == None` (`TR_FAKE_WORLDS` cards) dropped
+        // `CardAction::Delete(i)` the same silent way (`UI-INPUT-RUST` §5.2).
+        let mut app = flow_app(
+            Some(FrontScreen::WorldSelect),
+            vec![],
+            vec![world_entry("Fake 1")],
+        );
+        let l = ui::char_select::resolved_layout(
+            Vec2::new(1280.0, 720.0),
+            app.front_header_w(&ui::world_select::select_world()),
+            app.worlds.len(),
+        );
+        let delete = ui::world_select::card_layout(l.list, 0, false).delete;
+        app.mouse_pos = Vec2::new(delete[0] + delete[2] * 0.5, delete[1] + delete[3] * 0.5);
+        app.handle_front_click();
+        assert!(app.front.is_some(), "no confirm page for a path-less world");
+        assert!(
+            app.front_hint.is_some(),
+            "the dead delete must say why, not drop the click silently"
+        );
     }
 
     // --- Task 8: the world creator's flow hops --------------------------------
@@ -2535,6 +2795,8 @@ pub(crate) mod front_flow_tests {
         // `OpenSeedInputMenu` (`UIWorldCreation.cs:697-708`): "UI.EnterSeed",
         // `allowEmpty: true`, `int.MaxValue`; the seed plate and the icon
         // both route here (the Advanced tab is out of scope).
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = world_creation_app();
         let l = world_creation_layout(&app);
         app.mouse_pos = Vec2::new(
@@ -2546,6 +2808,7 @@ pub(crate) mod front_flow_tests {
             panic!("the seed plate opens the keyboard");
         };
         assert_eq!(session.request.label, "Enter Seed (Leave Blank For Random)");
+        assert_eq!(session.request.label, crate::lang::text("UI.EnterSeed"));
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, usize::MAX);
         assert_eq!(session.tail, KeyboardTail::WorldSeed);
@@ -2558,6 +2821,14 @@ pub(crate) mod front_flow_tests {
             panic!("the creator returns");
         };
         assert_eq!(draft.seed, "51");
+        // The title is the `UI.EnterSeed` key, not a literal: the keyboard
+        // header follows the culture.
+        crate::lang::set_language(tr_core::localization::GameCulture::Russian);
+        assert_eq!(
+            ui::keyboard::enter_seed(),
+            "Укажите семечко (не заполняйте для случайного выбора)"
+        );
+        crate::lang::set_language(tr_core::localization::GameCulture::English);
     }
 
     #[test]
@@ -3306,5 +3577,59 @@ pub(crate) mod front_flow_tests {
         }
         app.update_menu_music();
         assert_eq!(app.music.cur_music, 11, "the anniversary title track");
+    }
+
+    #[test]
+    fn f1_the_wheel_scrolls_the_list_and_the_last_delete_opens_the_confirm() {
+        // `flow_app` runs at the deterministic 1280x720, so the 6-card list is
+        // [327,232,601,366] over 606 px of rows: 240 px of travel
+        // (`UIScrollbar.cs:75`). Two notches down (2 * 120 px, `UIList.cs:112`)
+        // reach the bottom, where card 5's Delete sits at y 565-587 — inside
+        // the 598 px view — and the click opens menuMode 5 (`:242-254`).
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("P", true); 6],
+            vec![],
+        );
+        app.mouse_pos = Vec2::new(600.0, 400.0); // over the list, on no button
+        assert!(app.front_wheel(-1), "the list screen consumes the wheel");
+        assert_eq!(app.front_scroll, 120.0);
+        assert!(app.front_wheel(-1));
+        assert_eq!(app.front_scroll, 240.0, "clamped to 606 - 366");
+        let screen = Vec2::new(1280.0, 720.0);
+        let l = app.select_layout(screen, &ui::char_select::select_player(), app.players.len());
+        let delete = ui::char_select::card_layout(l.inner_list(), 5).delete;
+        assert_eq!(delete, [900.0, 565.0, 22.0, 22.0]);
+        app.mouse_pos = Vec2::new(delete[0] + 11.0, delete[1] + 11.0);
+        app.handle_front_click();
+        assert!(app.front.is_none(), "mode 5 clears the 888 state");
+        let m = app.menu.as_ref().expect("the confirm opens");
+        assert_eq!(m.page, P::ConfirmDeletePlayer);
+        assert_eq!(m.confirm_index, 5);
+    }
+
+    #[test]
+    fn f1_a_scrollbar_press_on_the_track_jumps_the_list_and_takes_the_press() {
+        // `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`) on the track
+        // below the handle jumps the view; the same press must not also fire a
+        // card button (`evt.Target == this`). 8 players at 1280x720: view 366,
+        // content 808, inner 237..593 (356 tall), handle 168 tall
+        // (356*366/808 truncated + 7) from y 234, so y 500 is track and jumps to
+        // (500 - 237 - 84) / 356 * 808 = 406.27.
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("P", true); 8],
+            vec![],
+        );
+        let screen = Vec2::new(1280.0, 720.0);
+        let bar = app
+            .select_layout(screen, &ui::char_select::select_player(), app.players.len())
+            .scrollbar;
+        assert_eq!(bar, [933.0, 232.0, 20.0, 366.0]);
+        app.mouse_pos = Vec2::new(bar[0] + 10.0, 500.0);
+        assert!(app.front_scrollbar_press(), "the bar takes the press");
+        assert_eq!(app.front_scroll_drag, None, "a track press does not drag");
+        assert!((app.front_scroll - 406.27).abs() < 0.1, "{}", app.front_scroll);
+        assert!(app.front.is_some(), "no card click fired");
     }
 }

@@ -140,6 +140,22 @@ pub const SQUIRREL_HOOK: u16 = 865;
 /// latch teleports its owner.
 pub const QUEEN_SLIME_HOOK: u16 = 935;
 pub const SHURIKEN: u16 = 3;
+/// `ProjectileID.VilethornBase` (7) — the Vilethorn's first segment
+/// (`Projectile.cs:874-884`).
+pub const VILE_BASE: u16 = 7;
+/// `ProjectileID.VilethornTip` (8) — the Vilethorn's last segment, the type
+/// the base chains into once `ai[1] >= 6` (`Projectile.cs:23737-23741`).
+pub const VILE_TIP: u16 = 8;
+/// `ProjectileID.ThrowingKnife` (48) — the thrown aiStyle-2 kind
+/// (`Projectile.cs:1310-1316`).
+pub const THROWING_KNIFE: u16 = 48;
+/// `ProjectileID.Snowball` (166) — the thrown aiStyle-2 kind with the
+/// 20-tick/`+0.3f` ladder (`Projectile.cs:2549-2557`, `:23566-23596`).
+pub const SNOWBALL: u16 = 166;
+/// `ProjectileID.WandOfSparkingSpark` (954) — the starting magic weapon's
+/// spark, aiStyle 2 with the 20-tick alpha-out kill (`Projectile.cs:9002-9011`,
+/// `:23520-23556`).
+pub const SPARK: u16 = 954;
 /// `ProjectileID.WoodenArrow` (`Projectile.cs:807-815`).
 pub const WOODEN_ARROW: u16 = 1;
 /// `ProjectileID.WoodenArrowHostile` (`ProjectileID.cs:716`) — the
@@ -1141,6 +1157,43 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:817-827`'s hostile twin — the same 10x10 box, the aiStyle-1
             // flight, `timeLeft = 1200`.
             WOODEN_ARROW_HOSTILE => (10.0, 10.0, 1, 1, 1200, 0, true, true, false, RESET_STATE),
+            // `Projectile.cs:828-836` — the shuriken (3): the 22x22 box, aiStyle 2,
+            // `penetrate = 4`, the stock 3600 life and the stock `tileCollide`.
+            SHURIKEN => (22.0, 22.0, 2, 4, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
+            // 2, `penetrate = 2`.
+            THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:2549-2557` — the snowball (166): 14x14, aiStyle 2.
+            SNOWBALL => (14.0, 14.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9002-9011` — the Wand of Sparking's spark (954):
+            // 10x10, aiStyle 2, `penetrate = 2`, the spawn `alpha = 255`.
+            SPARK => (
+                10.0,
+                10.0,
+                2,
+                2,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:874-884` — the Vilethorn's base (7) and tip (8):
+            // 28x28, aiStyle 4, `penetrate = -1`, `tileCollide = false`,
+            // `alpha = 255` and `ignoreWater`.
+            VILE_BASE | VILE_TIP => (
+                28.0,
+                28.0,
+                4,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:1871-1882` — the laser: 4x4, the aiStyle-1
             // flight, `penetrate = 3`, `extraUpdates = 2`, `timeLeft = 2700`
             // (the AI_037 arm overrides to 300 post-spawn).
@@ -2521,8 +2574,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         sentry,
         minion_slots,
         net_important: minion || sentry,
-        ignore_water: (minion || sentry)
-            && !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3),
+        ignore_water: ((minion || sentry)
+            && !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3))
+            // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
+            || matches!(kind, VILE_BASE | VILE_TIP),
     })
 }
 
@@ -4300,27 +4355,261 @@ impl Projectile {
         }
     }
 
-    /// The aiStyle-2 physics (the first pass's body, unchanged): two half-steps
-    /// so 11 px/tick cannot tunnel, 0.6-damped bounces.
-    fn ai_shuriken(&mut self, world: &World) {
-        self.rot += if self.vel.x >= 0.0 { 0.42 } else { -0.42 };
-        for _ in 0..2 {
-            let step = self.vel * 0.5;
-            let nx = self.pos.x + step.x;
-            if crate::player::collides_rect(world, nx, self.pos.y, SIZE, SIZE) {
-                self.vel.x = -self.vel.x * 0.6;
-                self.bounces += 1;
-            } else {
-                self.pos.x = nx;
+    /// `AI()`'s aiStyle-2 branch (`Projectile.cs:23205-23688`) — the thrown
+    /// family the starting weapons fire: the shuriken (3), the throwing knife
+    /// (48), the snowball (166), the Wand of Sparking's spark (954) and the
+    /// Dutchman's shell (240). The branch is the wind head
+    /// (`:23207-23210`), the rotation ladder (`:23245-23256`), the per-kind
+    /// gravity-delay ladder (`:23257-23680`), the `velocity.Y > 32f` clamp
+    /// (`:23681-23684`) and the movement chain's **default** arm
+    /// (`:19849-19853`: one last step into the tile, then `Kill()`) — a thrown
+    /// item dies on the first solid tile, it never bounces.
+    ///
+    /// The per-kind arms' dust, gore and sound spawns (`:23211-23218`,
+    /// `:23219-23244`, the 909/162/281/240/497/861/306/304 visual blocks) are
+    /// SKIPPED — the pool has no dust/gore/sound layer — while the state each
+    /// of them writes is ported where the trajectory reads it (`ai[0]`, the
+    /// `alpha`/`frame` markers, the `damage * 0.9f` decay of 304).
+    ///
+    /// `rng` is the update pass's named stream: the type-93 arm's
+    /// `28 + Main.rand.Next(6)` delay is the branch's only trajectory roll
+    /// (`:23662-23665`).
+    fn ai_style2(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng, wind: f32) {
+        // `:23207-23210` — `Main.windPhysics`'s head (the general tail at
+        // `:16777` applies the same term again to every eligible style, and
+        // aiStyle 2 is on `ShouldUseWindPhysics`'s list `:22110-22132`, and
+        // the general tail sits at `:16777`).
+        if wind != 0.0 {
+            self.vel.x += wind * WIND_PHYSICS_STRENGTH;
+        }
+        // `:23245-23256` — the rotation ladder.
+        if self.kind == 1085 {
+            self.rot += self.direction as f32 * 0.4;
+        } else if self.kind == 510 {
+            self.rot += self.vel.x.abs() * 0.04 * self.direction as f32;
+        } else {
+            self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.03 * self.direction as f32;
+        }
+        // `:23219-23244`'s type 968 is the one arm that leaves `ai[0]` alone
+        // (its clock rides `localAI[0]`); every other arm counts the age here.
+        if self.kind != 968 {
+            self.ai[0] += 1.0;
+        }
+        match self.kind {
+            // `:23257-23275` — the 38-tick arm.
+            909 => {
+                if self.ai[0] >= 38.0 {
+                    self.vel.y += 0.4;
+                    self.vel.x *= 0.97;
+                }
             }
-            let ny = self.pos.y + step.y;
-            if crate::player::collides_rect(world, self.pos.x, ny, SIZE, SIZE) {
-                self.vel.y = -self.vel.y * 0.6;
-                self.bounces += 1;
-            } else {
-                self.pos.y = ny;
+            // `:23276-23365` — the 18-tick pair (the "spent" alpha marker and
+            // the `SoundID.Item14` latch are the ported state; the dust/gore
+            // of the `ai[0] == 3f` burst are SKIPPED).
+            162 | 281 => {
+                self.ai[1] = self.ai[1].max(1.0);
+                if self.ai[0] >= 18.0 {
+                    self.vel.y += 0.28;
+                    self.vel.x *= 0.99;
+                }
+                if self.ai[0] > 2.0 {
+                    self.alpha = 0;
+                }
+            }
+            // `:23366-23410` — the Dutchman's shell: the 16-tick arm.
+            240 => {
+                self.ai[1] = self.ai[1].max(1.0);
+                if self.ai[0] >= 16.0 {
+                    self.vel.y += 0.18;
+                    self.vel.x *= 0.991;
+                }
+                if self.ai[0] > 2.0 {
+                    self.alpha = 0;
+                }
+            }
+            // `:23411-23428` — the 30-tick arm that aims while rising.
+            497 => {
+                if self.ai[0] >= 30.0 {
+                    self.vel.x *= 0.99;
+                    self.vel.y += 0.5;
+                } else {
+                    self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+                }
+            }
+            // `:23429-23494` — the glow-stick: the ground friction, the
+            // `velocity.X` dead zone, the `Kill()` at rest and the +0.1 fall.
+            861 => {
+                if self.vel.y == 0.0 {
+                    self.vel.x *= 0.95;
+                } else {
+                    self.vel.x *= 0.995;
+                }
+                if self.vel.x.abs() < 0.5 {
+                    self.vel.x = 0.0;
+                }
+                if self.vel.x == 0.0 && self.vel.y == 0.0 {
+                    self.active = false;
+                    self.time_left = 0;
+                }
+                self.vel.y += 0.1;
+            }
+            // `:23495-23502` — the always-on +0.25 fall.
+            249 => self.vel.y += 0.25,
+            // `:23503-23510` — the 5-tick arm.
+            347 => {
+                if self.ai[0] >= 5.0 {
+                    self.vel.y += 0.25;
+                }
+            }
+            // `:23511-23519` — the 18-tick `0.995`/`+0.2` arm.
+            501 => {
+                if self.ai[0] >= 18.0 {
+                    self.vel.x *= 0.995;
+                    self.vel.y += 0.2;
+                }
+            }
+            // `:23520-23556` — the spark family: the alpha-out kill at
+            // `ai[0] >= 60f` (the C#'s `ai[0] - 20f >= 40f`) and the
+            // `+0.1f`/`0.99` fall past tick 20 (the dust is SKIPPED).
+            504 | 954 | 979 => {
+                self.alpha = 255;
+                if self.ai[0] >= 20.0 {
+                    self.vel.x *= 0.99;
+                    self.vel.y += 0.1;
+                }
+                if self.ai[0] >= 60.0 {
+                    self.active = false;
+                    self.time_left = 0;
+                }
+            }
+            // `:23557-23565` — the 10-tick arm.
+            69 | 70 | 621 => {
+                if self.ai[0] >= 10.0 {
+                    self.vel.y += 0.25;
+                    self.vel.x *= 0.99;
+                }
+            }
+            // `:23566-23596` — the snowball's 20-tick arm (the town-NPC /
+            // other-player kill of `:23568-23588` is SKIPPED: the pool's
+            // friendly-refusal pass owns the town-NPC rules).
+            166 => {
+                if self.ai[0] >= 20.0 {
+                    self.vel.y += 0.3;
+                    self.vel.x *= 0.98;
+                }
+            }
+            // `:23597-23609` — the 60-tick arm.
+            300 => {
+                if self.ai[0] >= 60.0 {
+                    self.vel.y += 0.2;
+                    self.vel.x *= 0.99;
+                }
+            }
+            // `:23610-23631` — the fading, `pi/4`-oriented arm.
+            306 => {
+                self.alpha = (self.alpha - 50).max(0);
+                self.rot = self.vel.y.atan2(self.vel.x) + 0.785;
+            }
+            // `:23632-23649` — the 30-tick decay: the alpha ramp, the 0.9
+            // damage/knockback decay and the `alpha >= 255` kill.
+            304 => {
+                if self.ai[0] >= 30.0 {
+                    self.alpha += 10;
+                    self.damage = (self.damage as f32 * 0.9) as i32;
+                    self.knock_back *= 0.9;
+                    if self.alpha >= 255 {
+                        self.active = false;
+                        self.time_left = 0;
+                    }
+                } else {
+                    self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+                }
+            }
+            // `:23650-23658` — the 15-tick arm.
+            370 | 371 | 936 => {
+                if self.ai[0] >= 15.0 {
+                    self.vel.y += 0.3;
+                    self.vel.x *= 0.98;
+                }
+            }
+            // `:23659-23680` — the branch's tail: the type-93 roll, the
+            // default 20-tick arm and the five kinds that aim while rising.
+            _ => {
+                let delay = if self.kind == 93 {
+                    28.0 + rng.next_range(0, 6) as f32
+                } else {
+                    20.0
+                };
+                if self.ai[0] >= delay {
+                    if self.kind == 93 {
+                        self.ai[0] = 40.0;
+                    }
+                    self.vel.y += 0.4;
+                    self.vel.x *= 0.97;
+                } else if matches!(self.kind, 48 | 54 | 93 | 520 | 599) {
+                    self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+                }
             }
         }
+        // `:23681-23684` — the fall clamp (the type-54 dust roll is SKIPPED).
+        if self.vel.y > 32.0 {
+            self.vel.y = 32.0;
+        }
+        // `:19849-19853` — the movement chain's default arm.
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-4 branch (`Projectile.cs:23694-23828`) — the
+    /// Vilethorn chain. Each segment fades in at `alpha -= 50` (`:23714`),
+    /// and the tick it reaches zero flips `ai[0] = 1` (`:23728`), bumps `ai[1]`
+    /// (`:23729-23732`) and spawns the next segment one velocity step ahead of
+    /// its own centre (`:23734-23745`); from then it fades out at `alpha += 5`
+    /// and dies at 255 (`:23823-23828`). The base (7) chains the segments and hands the
+    /// `ai[1] >= 6f` last one the tip's type (8); the tip itself spawns
+    /// nothing.
+    ///
+    /// Returns the segment spawn request — `(kind, x, y, ai1)` — which the pool
+    /// resolves through `Projectile.NewProjectile`'s seam, or `None`.
+    /// `tileCollide = false` (`:874-884`) is the row's own field: the vine
+    /// grows straight through walls.
+    fn ai_style4(&mut self) -> Option<(u16, f32, f32, f32)> {
+        // `:23706` — the orientation.
+        self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        let mut spawn = None;
+        if self.ai[0] == 0.0 {
+            // `:23714` — the fade-in (the 150-152/493-494 variants' extra
+            // steps at `:23716-23721` are
+            // not ported kinds).
+            self.alpha -= 50;
+            if self.alpha <= 0 {
+                self.alpha = 0;
+                self.ai[0] = 1.0;
+                if self.ai[1] == 0.0 {
+                    self.ai[1] += 1.0;
+                    self.pos += self.vel;
+                }
+                // `:23734-23745` — the base's child (the tip spawns nothing).
+                if self.kind == VILE_BASE && self.owner == 0 {
+                    let child = if self.ai[1] >= 6.0 { VILE_TIP } else { VILE_BASE };
+                    spawn = Some((
+                        child,
+                        self.pos.x + self.vel.x + self.w * 0.5,
+                        self.pos.y + self.vel.y + self.h * 0.5,
+                        self.ai[1] + 1.0,
+                    ));
+                }
+            }
+        } else {
+            // `:23823-23828` — the fade-out and the `alpha >= 255` kill.
+            self.alpha += 5;
+            if self.alpha >= 255 {
+                self.active = false;
+                self.time_left = 0;
+            }
+        }
+        // `:19855-19858` — the `tileCollide == false` movement.
+        self.pos += self.vel;
+        spawn
     }
 
     /// The aiStyle-99 yoyo family — `AI_099_2_Yoyos`, `Projectile.cs:67733-
@@ -10527,12 +10816,13 @@ fn trail_segments(
 const AI_STYLE_1_RIDERS: [u16; 4] = [GREEN_LASER, PURPLE_LASER, VENOM_FANG, SKY_FRACTURE];
 
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
-/// The styles whose arms this port has are 8/24/28 (Phase 3) and 29 (Phase
-/// 4a's gem bolts) — the styles that already had ported arms (1 the arrows, 2
-/// the shuriken, 16 the bombs) keep their pre-existing no-wind behaviour, and
-/// the rest (10/14/…) port in a later phase or not at all.
+/// The styles whose arms this port has are 2 (the thrown family, whose own
+/// branch head applies the same term), 8/24/28 (Phase 3), 29 (Phase 4a's gem
+/// bolts) and the styles that already had ported arms (1 the arrows, 16 the
+/// bombs) keep their pre-existing no-wind behaviour; the rest (10/14/…) port
+/// in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 8 | 24 | 28 | 29)
+    matches!(ai_style, 2 | 8 | 24 | 28 | 29)
 }
 
 /// The `!tile.inActive() && tile.active() && tileSolid[type] &&
@@ -12375,10 +12665,10 @@ impl ProjectilePool {
             _ => {}
         }
     }
-    /// The aiStyle-165 on-hit arms after the tag application
-    /// (`Projectile.cs:14258-13956`'s `TryDoingOnHitEffects` positions): the
-    /// `MinionAttackTargetNPC` override (`:14258-14263`) and the per-type
-    /// switch (`:13882-13956`) with the tag stack's seams filled.
+    /// The aiStyle-165 on-hit arms after the tag application, inside
+    /// `Damage_PVE_Inner` (`Projectile.cs:13904-14263`): the `MinionAttackTargetNPC`
+    /// override (`:14257-14263`) and the per-type whip switch
+    /// (`:13904-13956`) with the tag stack's seams filled.
     fn whip_on_hit(
         &mut self,
         slot: usize,
@@ -12387,14 +12677,14 @@ impl ProjectilePool {
     ) {
         let kind = self.slots[slot].kind;
         let tag_type = self.slots[slot].tag_effect_type;
-        // `:14258-14263`: every aiStyle-165 hit retargets the minions.
+        // `:14257-14263`: every aiStyle-165 hit retargets the minions.
         if let Some(p) = player.as_deref_mut() {
             p.minion_attack_target_npc = npc_idx as i32;
         }
-        // `:13882-13956`: the per-type switch.
+        // `:13904-13956`: the per-type switch.
         match kind {
             FIRE_WHIP | METEOR_WHIP | FLOWER_WHIP => {
-                // `:13907-13911`: the first hit of this slot arms the proc
+                // `:13909-13912`: the first hit of this slot arms the proc
                 // window in the player's stack.
                 if self.slots[slot].local_ai[0] == 0.0 {
                     self.slots[slot].local_ai[0] = 1.0;
@@ -12418,7 +12708,7 @@ impl ProjectilePool {
                 }
             }
             SWORD_WHIP | EEL_WHIP | MOON_LORD_WHIP => {
-                // `:13947-13951`: the proc arms on every hit.
+                // `:13945-13949`: the proc arms on every hit.
                 if let Some(p) = player.as_deref_mut() {
                     p.tag_effects.try_enable_proc(tag_type, npc_idx as usize);
                 }
@@ -12528,9 +12818,6 @@ impl ProjectilePool {
                 // (the port zeroes `time_left` on death, its own convention).
                 if !self.slots[i].active {
                     continue;
-                }
-                if self.slots[i].kind == SHURIKEN {
-                    self.slots[i].ai_shuriken(world);
                 }
                 // The aiStyle dispatch (`AI()`'s if/else chain, the port's
                 // `match data.ai_style`): the arrow/bullet family (aiStyle 1,
@@ -12714,7 +13001,22 @@ impl ProjectilePool {
                         157 => self.slots[i].ai_sharp_tears(world, rng),
                         // The aiStyle-2 Flying Dutchman shell
                         // (`:23366-23417`): the shell is invisible.
-                        2 => self.slots[i].ai_dutchman_shell(),
+                        2 => {
+                            // `:23366-23410` — the shell's own invisibility
+                            // arm rides ahead of the shared flight.
+                            if self.slots[i].kind == DUTCHMAN_SHELL {
+                                self.slots[i].ai_dutchman_shell();
+                            }
+                            // The type-93 delay roll draws the pass's named
+                            // stream, and the wind head reads the pool's
+                            // `Main.windSpeedCurrent`.
+                            let wind = self.wind_speed;
+                            self.slots[i].ai_style2(world, rng, wind);
+                        }
+                        // `:23694-23828` — the Vilethorn chain: the arm hands
+                        // its segment spawn back to the pool, so it is a
+                        // pool-side step like the magnet sphere's.
+                        4 => self.vilethorn_step(i),
                         // The aiStyle-79 Saucer deathray (`:30791-30910`):
                         // the owner check and the beam that hangs from the
                         // owner to the ground.
@@ -13719,6 +14021,24 @@ impl ProjectilePool {
     /// normalized to 6 toward the NPC centre). The C#'s `TryAttacking` is
     /// owner-only, so the whole step gates on the local player (slot owner
     /// 0).
+    /// `AI()`'s aiStyle-4 branch (`Projectile.cs:23694-23828`) as a pool step:
+    /// the Vilethorn segment's own tick runs on the slot, and the segment it
+    /// hands back rides `Projectile.NewProjectile`'s seam
+    /// (`:23737-23741`) — the child kind, its one-velocity-step-ahead centre
+    /// and its `ai[1] + 1f` depth.
+    fn vilethorn_step(&mut self, slot: usize) {
+        let Some((kind, x, y, ai1)) = self.slots[slot].ai_style4() else {
+            return;
+        };
+        let (owner, damage, knock_back, vel) = {
+            let p = &self.slots[slot];
+            (p.owner, p.damage, p.knock_back, p.vel)
+        };
+        self.spawn_with_data_ai_owned(
+            kind, owner, x, y, vel.x, vel.y, damage, knock_back, 0.0, ai1,
+        );
+    }
+
     fn magnet_sphere_step(&mut self, slot: usize, world: &World, npcs: &[Npc]) {
         self.magnet_sphere_dedupe(slot);
         if self.slots[slot].owner != 0 {
@@ -15154,6 +15474,12 @@ mod tests {
             .unwrap();
         pool.set_immunity(a, 2, false, -2, true, 30);
         pool.set_immunity(b, 2, false, -2, true, 30);
+        // The ported aiStyle-2 arm (`Projectile.cs:23659-23674`) starts falling
+        // at `ai[0] >= 20f`, which walks the shot out of the zombie's 18 px box
+        // inside the stamp's 30-tick window. This test pins the stamp, not the
+        // flight, so the age counters start 100 ticks short of the gravity.
+        pool.slots[a].ai[0] = -100.0;
+        pool.slots[b].ai[0] = -100.0;
         let hp0 = npc.hp;
         tick(&mut world, &mut pool, &mut npc);
         // Both slots overlap the NPC in the same tick: the ID-static stamp
@@ -15510,8 +15836,14 @@ mod arrow_tests {
         // The flame jet 187 (aiStyle 38) is unported — no data, the emission
         // drops at the drain.
         assert!(proj_data(187).is_none());
-        // The shuriken keeps its aiStyle-2 path, not the data table.
-        assert!(proj_data(SHURIKEN).is_none());
+        // The projectile-ai task moved the shuriken onto the data table: its
+        // `SetDefaults` row (`Projectile.cs:828-836`) is the 22x22 aiStyle-2
+        // box with `penetrate = 4`.
+        let shuriken = proj_data(SHURIKEN).expect("the shuriken row");
+        assert_eq!((shuriken.w, shuriken.h), (22.0, 22.0));
+        assert_eq!(shuriken.ai_style, 2);
+        assert_eq!(shuriken.penetrate, 4);
+        assert!(shuriken.tile_collide);
         assert_eq!(SHURIKEN, 3, "the C# ProjectileID.Shuriken");
     }
 
@@ -26626,5 +26958,204 @@ mod s1_d_4b_6_tests {
         let fired = (0..pool.slots.len())
             .any(|i| i != slot && pool.slots[i].active && pool.slots[i].kind == MINI_RETINA_LASER);
         assert!(fired, "the zombie is a valid target past the Guide");
+    }
+}
+
+#[cfg(test)]
+mod projectile_ai_tests {
+    //! The projectile-ai task's own fixtures: the aiStyle-2 thrown family
+    //! (`Projectile.cs:23205-23688`) and the aiStyle-4 Vilethorn chain
+    //! (`:23694-23828`) flown tick by tick against the C# numbers.
+
+    use super::*;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// A world with no tiles at all — the flights under test never touch one
+    /// unless the test says so.
+    fn empty(width: i32, height: i32) -> World {
+        World::new("t".into(), width, height)
+    }
+
+    /// [`empty`] with the dirt floor the other modules use: solid from row 30
+    /// down.
+    fn ground() -> World {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn step(pool: &mut ProjectilePool, w: &mut World) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+    }
+
+    fn ticks(pool: &mut ProjectilePool, w: &mut World, n: usize) {
+        for _ in 0..n {
+            step(pool, w);
+        }
+    }
+
+    // --- aiStyle 2: the thrown family (`Projectile.cs:23205-23688`).
+
+    /// t1 — the shuriken's (type 3) C# trajectory over 20 ticks: the default
+    /// arm's 20-tick gravity delay (`:23659-23674`), then `velocity.Y += 0.4f`
+    /// and `velocity.X *= 0.97f` once, with the rotation ladder
+    /// `(|vx| + |vy|) * 0.03f * direction` (`:23253-23256`) every tick.
+    #[test]
+    fn projectile_ai_style2_position_after_n_ticks() {
+        let mut w = empty(64, 64);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_owned(SHURIKEN, 0, 100.0, 100.0, 6.0, 2.0, 10, 0.0, 0.0, 0.0)
+            .expect("the shuriken row (`Projectile.cs:828-836`)");
+        pool.slots[slot].direction = 1;
+        ticks(&mut pool, &mut w, 20);
+        let p = &pool.slots[slot];
+        assert!(p.active, "the shuriken is still in flight");
+        // 19 straight ticks of (6, 2), then the 20th applies the friction.
+        assert!((p.pos.x - 219.82).abs() < 0.01, "x = {}", p.pos.x);
+        assert!((p.pos.y - 140.4).abs() < 0.01, "y = {}", p.pos.y);
+        assert!((p.rot - 4.8).abs() < 0.01, "rot = {}", p.rot);
+    }
+
+    /// t2 — the constants of the default arm: the velocity is untouched for
+    /// 19 ticks, `velocity.Y += 0.4f` / `velocity.X *= 0.97f` on the 20th
+    /// (`:23659-23674`), and the `velocity.Y > 32f` clamp (`:23681-23684`)
+    /// holds the fall at 32 px/tick.
+    #[test]
+    fn projectile_ai_style2_gravity_bounce() {
+        let mut w = empty(64, 200);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_owned(SHURIKEN, 0, 100.0, 8.0, 6.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the shuriken row");
+        ticks(&mut pool, &mut w, 19);
+        assert_eq!(pool.slots[slot].vel.y, 0.0, "no gravity before tick 20");
+        assert_eq!(pool.slots[slot].vel.x, 6.0, "and no friction");
+        step(&mut pool, &mut w);
+        assert!((pool.slots[slot].vel.y - 0.4).abs() < 1e-6, "the +0.4 tick");
+        assert!(
+            (pool.slots[slot].vel.x - 5.82).abs() < 1e-5,
+            "the 0.97 friction, x = {}",
+            pool.slots[slot].vel.x
+        );
+        ticks(&mut pool, &mut w, 100);
+        assert_eq!(pool.slots[slot].vel.y, 32.0, "the 32 px/tick clamp");
+    }
+
+    /// t3 — the thrown family dies on the first solid tile, one last step in:
+    /// the movement chain's default arm (`:19849-19853`, `position +=
+    /// velocity; Kill()`) — a shuriken does not bounce.
+    #[test]
+    fn projectile_ai_style2_dies_on_tile() {
+        let mut w = ground();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_owned(SHURIKEN, 0, 100.0, 400.0, 0.0, 6.0, 10, 0.0, 0.0, 0.0)
+            .expect("the shuriken row");
+        ticks(&mut pool, &mut w, 20);
+        let p = &pool.slots[slot];
+        assert!(!p.active, "the dirt row kills the shuriken");
+        assert_eq!(p.vel.y, 6.0, "and the velocity never reverses");
+        assert!(p.pos.y > 458.0, "the last step lands in the tile");
+    }
+
+    // --- aiStyle 4: the Vilethorn chain (`Projectile.cs:23694-23828`).
+
+    /// t1 — the base's (type 7) chain: five ticks of fading at `alpha -= 50`
+    /// (`:23714`), then `ai[0] = 1` (`:23728`), `ai[1] = 1` (`:23729`),
+    /// `position += velocity` (`:23732`) and the child spawn at
+    /// `position + velocity + (w/2, h/2)` (`:23734-23745`), whose `ai[1]` is
+    /// the parent's plus one.
+    #[test]
+    fn projectile_ai_style4_position_after_n_ticks() {
+        let mut w = empty(64, 64);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_owned(VILE_BASE, 0, 100.0, 100.0, 32.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .expect("the Vilethorn row (`Projectile.cs:874-884`)");
+        ticks(&mut pool, &mut w, 6);
+        let parent = &pool.slots[slot];
+        assert!(parent.active, "the base still fades");
+        assert!((parent.pos.x - 324.0).abs() < 1e-4, "x = {}", parent.pos.x);
+        assert_eq!(parent.ai[0], 1.0, "the segment is spent");
+        assert_eq!(parent.ai[1], 1.0, "the depth counter");
+        let child = pool
+            .slots()
+            .iter()
+            .find(|p| p.kind == VILE_BASE && p.ai[1] == 2.0)
+            .expect("the child segment");
+        assert!((child.pos.x - 370.0).abs() < 1e-4, "x = {}", child.pos.x);
+        assert!((child.pos.y - 114.0).abs() < 1e-4, "y = {}", child.pos.y);
+        assert_eq!(child.alpha, 205, "the child's own fade");
+    }
+
+    /// t2 — the Vilethorn constants: no gravity, no bounce (`tileCollide =
+    /// false`, `:874-884`), the `atan2 + 1.57` orientation (`:23706`), the
+    /// `alpha -= 50` fade-in (`:23714`) and the `alpha += 5` fade-out that
+    /// kills at 255 (`:23823-23828`).
+    #[test]
+    fn projectile_ai_style4_gravity_bounce() {
+        let mut w = empty(64, 64);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_owned(VILE_BASE, 0, 100.0, 100.0, 32.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .expect("the Vilethorn row");
+        ticks(&mut pool, &mut w, 5);
+        let p = &pool.slots[slot];
+        assert_eq!(p.vel.y, 0.0, "no gravity");
+        assert_eq!(p.vel.x, 32.0, "and no friction");
+        assert_eq!(p.alpha, 5, "255 - 5 * 50");
+        // The C# adds the literal `1.57f` (`:23723`), not pi/2.
+        assert!((p.rot - 1.57).abs() < 1e-6, "atan2 + 1.57, {}", p.rot);
+        ticks(&mut pool, &mut w, 52);
+        assert!(
+            !pool.slots[slot].active,
+            "the +5 fade reaches 255 and kills"
+        );
+    }
+
+    /// t3 — the segment does NOT die on a tile: `tileCollide = false`
+    /// (`Projectile.cs:874-884`) is what lets the vine grow through walls.
+    #[test]
+    fn projectile_ai_style4_dies_on_tile() {
+        let mut w = ground();
+        let mut pool = ProjectilePool::new();
+        // Buried in the dirt row (rows 30+), flying right.
+        let slot = pool
+            .spawn_with_data_owned(VILE_BASE, 0, 100.0, 500.0, 32.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .expect("the Vilethorn row");
+        ticks(&mut pool, &mut w, 6);
+        assert!(pool.slots[slot].active, "the vine ignores the tile");
+        assert!(
+            (pool.slots[slot].pos.x - 324.0).abs() < 1e-4,
+            "and flies on, x = {}",
+            pool.slots[slot].pos.x
+        );
     }
 }

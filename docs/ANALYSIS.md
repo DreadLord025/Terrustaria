@@ -150,7 +150,7 @@ reproduced (`bad section pointer N`).
 | # | Section | Wire shape | Rust |
 | --- | --- | --- | --- |
 | 0 | file-format header | `u16 TileID.Count` + the 95-byte importance bitmap | `sections/header.rs` |
-| 1 | world header + flags | name, seed text + generator version, GUID, world id + bounds, `maxTilesY` before `maxTilesX`, then the ~2200-byte flags block in `LoadWorldFlags` order | `sections/header.rs` + `flags.rs` |
+| 1 | world header + flags | name, seed text + generator version, GUID, world id + bounds, `maxTilesY` before `maxTilesX`, then the ~2200-byte flags block in `LoadWorldFlags` order | `sections/header.rs` + `flags.rs` (incl. the rain and sandstorm snapshots) |
 | 2 | tiles | column-major RLE (see above) | `sections/tiles.rs` |
 | 3 | chests | `i16 count` (+ the shared `i16` slot count below 294), then per chest `(i32 x, i32 y, string name, i32 maxItems, maxItems × i16/i16/i32/u8)`; the duplicate-position and tail passes, the `<115` dresser pass, `Chest.FixLoadedData`, and the save-side dead-anchor pre-pass | `sections/chests.rs` + `tr-app/chest.rs::{from_wld,to_wld,fix_dresser_chests,destroy_invalid_anchors}` |
 | 4 | signs | `i16 count`, then `(string text, i32 x, i32 y)` per sign over `Main.sign[0..31999]`; the tile check + dup + tail passes on load | `sections/signs.rs` (the store lives on `World.signs`) |
@@ -197,7 +197,16 @@ multiplayer-client path, never a single-player or menu one (research/42, finding
 - **`LastPlayed` is 0** and the creation-time pair is zero-filled — the port has no
   play-time accounting; `FileMetadata`'s revision increments per save, as vanilla
   (`IncrementAndWrite`), and is the file's only clock-adjacent value.
-- **Wires are not written**: no section carries the wiring state.
+- **The weather snapshot is written** (wld-roundtrip, 2026-11-17): the rain triple
+  (`_tempRaining`/`_tempRainTime`/`_tempMaxRain`, `:1312-1314`) and the sandstorm
+  quad (`_tempSandstorm*`, `:1369-1372`) come from `World.{raining, rain_time,
+  max_raining}` and `World.sandstorm_*`, which `save_world` fills from `App.rain`
+  and `App.sandstorm` (`SetTempToOngoing:1053-1059`) and `App::new` restores
+  (`SetOngoingToTemps:159-172`). Both were written as C# defaults before, so a
+  `.wld` save reset an in-progress rain/sandstorm. `World.sandstorm_*` is not yet
+  in the native `.trwld` flags block (a format bump, out of this slice).
+- **Wires are written** since S1-J-1 (the four bits ride the tile headers through
+  `World.wires`; see "The tile section's four wire bits" above).
 - **GUID and worldId are 0** — the port keeps neither (the footer's worldId likewise).
 - **Seed text**: the port's `u64` seed is persisted as its decimal text; a non-numeric
   seed reads as 0 (`SeedText` is `WorldFileData.cs:355`'s own convention).
@@ -4505,10 +4514,58 @@ the evil drops gate on `Conditions.IsCorruption/CrimsonAndNotExpert`
 which read `WorldGen.crimson` (the WORLD type). The skipped rows
 (13, warned): the NamedNPC localization gates, the RedHat legendary
 gate, the MechBossSpawners/SlimeBody/StatueMimic/
-FromOptionsWithoutRepeats rule classes (each needs its own event state).
+FromOptionsWithoutRepeats rule classes (each needs its own event state) —
+S1-E-14 has since landed all four classes and both conditions ("Loot rule
+classes (S1-E-14, 2026-11-17)" below).
 The unknown item ids (the ~20 warn-only OneFromOptions sets) emit and
 resolve - the executor drops only registry-known items, so they surface
 as the registry scale-up work.
+
+## Loot rule classes (S1-E-14, 2026-11-17)
+
+The four rule classes and two conditions the M4-LOOT-1/-2 build skipped
+are ported verbatim in `crates/tr-core/src/loot.rs`:
+
+- **`SlimeBodyItemDropRule`** — the ai[1] item rain: the stack table's
+  seven families + the default 1..1, `Next(min, max+1)`, behind the
+  `SlimeCanContainItems` + ai[1] gates.
+- **`StatueMimicItemDropRule`** — `statue_style_to_item`
+  (`WorldGen.cs:37928`, 26 cases), stack 1.
+- **`MechBossSpawnersDropRule`** — the three sequential short-circuit
+  arms (`!downedMechBossN && player.RollLuck(2500)==0` → 556/544/557)
+  behind `npc.value > 0 && hardMode && (!d1||!d2||!d3) &&
+  !is_in_simulation`.
+- **`FromOptionsWithoutRepeatsDropRule`** — the temp-list `Next(count)`
+  + `RemoveAt` loop.
+
+The conditions: **`NamedNPC`** compares the given name to the localized
+key through the `get_text_value` seam, reading `LootNpc.given_name`;
+**`RedHatSkeletron`** is a `Cond` variant with the 35/36/32/33 ×
+ai[3]/localAI[3] matrix. The `LootNpc`/`DropAttemptInfo` seam fields
+carry all of it; `world_sim/npcs.rs::spawn_loot` fills
+`is_in_simulation=false`, `get_text_value`, the real `npc.value()`, the
+ai/local_ai zeros, the `given_name` Some-path and the four `downed_mech*`
+flags (previously dead, C# 1:1 `MechBossSpawnersDropRule.cs:15`).
+
+**The generator.** `tools/gen_loot.py` retires the four-rule/
+two-condition skip rows and splices WHOLE C# methods; `loot_db_gen.rs`
+regenerates 1421→1445 register calls — the diff is the 24 new rows only,
+the existing rows byte-identical (`gen_loot.py --check` green).
+
+**Deviations.**
+
+- RedHat's 36/32 paths are unreachable at runtime — the port's `Npc` has
+  no `localAI` (the ai[3] paths for 35/33 work); the field port is
+  follow-up S1-E-14b.
+- The mech-flags fill is a deliberate hardmode behavior change: mech
+  spawner drops become possible.
+- The generator splices whole methods — 24 registrations, not 12;
+  half-body emission would drop C# rows.
+- NamedNPC's key comparison rides the `get_text_value` seam.
+
+Follow-up S1-E-14a records the pre-existing generator limitation the
+splice exposed: the `RegisterBoss_*` subtree at `ItemDropDatabase.cs:655`
+is not spliced (the 655-site boss-subtree gap).
 
 ## Buff slots (M2-BUFF-1)
 
@@ -7966,7 +8023,7 @@ stitched them back together 2026-11-07 (commits `9069134`, `3418a59`→
   `App.world_chests` store index — `Player.cs:2876/:2878/:2880`); `App.chest`
   is deleted and every reader re-pointed. Bank open/close rides
   `chest::toggle_open` (the shared C# block `Player.cs:33233-33252`, sounds
-  10/11/12) behind the C# prologue (`close_shop` `:33087-33096`,
+  10/11/12) behind the C# prologue (`close_shop` `:33147-33096`,
   `bank_open_origin` `:33060-33079` incl. the 463/491 ±1/+=2 adjustment),
   and `tick_open` is the full `HandleBeingInChestRange` port
   (`:31015-31097`, minus the projectile trackers — remote opens are out)
@@ -13097,7 +13154,7 @@ or minimap is actually drawing, so the TE walk stays off the hot path.
 the hover text feeds the map's text line through `ui::text::hud_text` (the C#
 `ref text`).
 
-## Dust & gore (module 15) (S1-E-1, 2026-11-14)
+## Dust & gore (module 15) (S1-E-1, 2026-11-14; S1-E-3, 2026-11-17)
 
 `crates/tr-core/src/particles.rs` is the `Main.dust` analog: the C# keeps the pool as the static `Main.dust[6001]` array plus the three static pressure counters (`Dust.dCount`, `lavaBubbles`, `SandStormCount`, `Dust.cs:12-16`), and the port carries the same global-pool semantics — one pool the App owns, spawns addressed by slot, slot 6000 the refuse sentinel `NewDust` returns and never scans (`Main.cs:66985`, `Dust.cs:79`/`:103`). The spawn path is a 1:1 transcription of `Dust.cs:10-407`: the guard chain (`:77-101`), the off-screen cull with the `400*(1-dCount)` margin (`:89-97`), the first-inactive-slot scan and the five pressure bands (`:103-152`), the default block with the per-100 frame shift (`:153-193`), the `ChildSafety` re-type arm (`:194-213`, `ChildSafety.cs:33`) and the per-type tweak chain (`:214-252`). The pool draws from the caller-passed stream (the `DustRng` seam, the C# `Next`/`NextFloat` conversions `UnifiedRandom.cs:120-141`), so per-consumer streams are preserved: the pool's band rolls are the only added draws on the clients' streams. The sand spawn site additionally regained the C# `NewDust` velocity/scale rolls the stand-in had skipped (`Sandstorm.cs:226`; the final 0.9 scale pin unchanged), and `Settings::blood` arms `pool.child_safety` at spawn — blood on is the vanilla default (the gate skipped), blood off sets `ChildSafety.Disabled` false and the re-type fires.
 
@@ -13105,7 +13162,23 @@ The migration retired one stand-in cap: the wheel sparks' `MAX_SPARKS` = 500 (th
 
 Scope notes and documented drops, each recorded at its site: the `shader`/`customData` record fields (no draw-shader chain; the `customData` followers live in `UpdateDust`, S1-E-3), the `Main.rand == null` re-seed and `Main.netMode == 2` server guards and the dead `Main.NoPooling` realloc arm (`Main.cs:67208` sets it false), and the `DANGEROUS` set = the 8 listed ids (5, 227, 273, 237, 248, 249, 250, 251 — `SetFactory.cs:97-107`; research/15's earlier inverted reading of that set is corrected). tr-app injects the wet probe through the seam (`player::wet_collision`, the `Dust.cs:248` probe). The child-safety sync runs `sync_child_safety` once per frame, so a settings toggle lands one tick late; `max_dust_to_draw`'s first frame reads the seed 0 (unreachable in production — the frame loop sets it before any spawn); the 268 draw keeps the stand-in's 10-px cell until E-3 ports the real draw, and the `NewDust` `Next(1)` gate draw is absent in both the stand-in and the port (pre-existing).
 
-What remains: E-2 (the per-type table + `GetAlpha`/`GetColor`), E-3 (the generic `UpdateDust` tail + the `maxDustToDraw` gate + the dust light), E-4 (gore: `NewGore`/`GoreID.Sets`/`Gore.Update` + the leaves), the `rain.rs` re-point and the NPC/Projectile/player call sites — the caller-coverage table in `docs/research/15-dust-gore.md` stays authoritative.
+**The shared update loop (S1-E-3, 2026-11-17).** `UpdateCtx` + `DustPool::update_dust` transcribe the whole `Dust.cs:420-2423` skeleton verbatim: the head resets (`lava_bubbles`/`SandStormCount` — `snow_dust` is a `Main` static `Main.cs:621` and is not carried, the omission cited at the site), the `i < maxDustToDraw` split with the `else` kill (`:2393-2395`), `d_count++` (`:440`), the scale>10 kill with fall-through (`:447-449`), the `ChildSafety` firstFrame re-type (`:445-466`), `position += velocity` (`:477`), the per-type hook, the gravity tail (`:2335-2342`, 304 exempt and fadeIn-gated), the screen-bottom kill (`:2343-2346`), the `==` dCount nibbles (`:2347-2366`), the num86 ladder (`:2367-2391`), the scale-floor kill and the post-loop recompute (`:2398-2422`).
+
+**Two dead arms, ported DEAD.** Both keep their C# citations because neither can fire in the C# either: `num` never increments (only the recompute's `else { dCount = 0 }` is reachable), and the `==` dCount nibbles never match — the C# compares the rounded-down byte-width drawing count against an integral `dCount`.
+
+**The clients fold to one pass.** `minecart::tick` (frame.rs's dust phase — `Main.cs:18045-18047`'s single ported pass) runs `update_dust` ONCE per frame, dispatching the type-213 arm (its own body) and type 268 (`sand::type_268_arm`, world/player_vy/sandstorm-visuals as captured inputs). `scene_scan.rs`'s separate sand tick call is deleted (its emit stays, `Main.cs:17247`), the duplicated generic tails are deleted, and the per-tick `dust_index` pin is deleted — `Main.cs:18062-18066` is the crash-recovery re-init in `UpdateWorld_Dust`'s catch, not a per-tick reset.
+
+**The corrected chain reading.** The 213/268 arms are standalone statements of the C# FIRST ladder (`Dust.cs:2119-2127`, `:2127`): the burn-out `else if (type != 304)` closes that ladder and the fresh `if (dust.type >= 130 ...)` chain head follows. They therefore do NOT exclude the second chain's final `else if (type != 304 && noGravity)` tail (`:2335`) — the hooks return false, and the weightless-213 test re-pins the ×0.92 damp and the fadeIn-gated −0.04 on top of the folded pass.
+
+**Stream-draw enumeration.** The loop draws nothing new: the `ChildSafety` firstFrame re-type's `Next` reads ride the client streams through the pool's `DustRng` seam exactly as at spawn (S1-E-1), and the 213/268 arms draw none — they read only captured inputs. 15 `s1_e_3_*` tests pin the skeleton, the dead arms, the fold and the chain reading.
+
+**Review path and its deviations.** Independent review round 1 PASSED the tr-core skeleton (`0d1cb0e9`); the tr-app fold's round 1 FAILED and produced the two defects fixed forward in `c361d656` — the double head-run per frame and the wrong either/or reading of the arms vs the gravity tail. The round-2 review agent was quota-cut three times before it could land verdicts (an infrastructure deviation, recorded); the fix was instead verified in-session — the single call-site grep, the one-move/damp pins and the 4094/0 test counts.
+
+What remains: E-2 (the per-type table + `GetAlpha`/`GetColor` — the `Dust.cs:467-2334` if-chain arms and light arms that E-3's skeleton skips), E-4 (gore: `NewGore`/`GoreID.Sets`/`Gore.Update` + the leaves, incl. the foliage leaf tail), the `rain.rs` re-point and the NPC/Projectile/player call sites — the caller-coverage table in `docs/research/15-dust-gore.md` stays authoritative.
+
+
+What remains: E-2's if-chain arms and light arms (`Dust.cs:467-2334`) and the `customData` follower arms, E-4's remaining `Gore.NewGore*` drop sites and the gore draw pass, the `rain.rs` re-point and the NPC/Projectile/player call sites — the caller-coverage table in `docs/research/15-dust-gore.md` stays authoritative; the band's neighbours landed alongside (S1-E-2's colour table and S1-E-4's gore pool/update — their own sections below), so only the parts named here stay outstanding.
+
 
 ## Dust colour table (S1-E-2, 2026-11-16)
 
@@ -15192,11 +15265,65 @@ feed cannot change the fixed-step order or any stream.
   divergence that a later refactor could misread as a *missing* port. The
   Cursed Torch (523) is the visible case — a `WaterTorches` row, so it stays lit
   under water where a plain torch goes dark.
-* **Remaining source families.** Projectile (107 call sites), NPC (80), Player (46),
+* **Remaining source families.** Projectile (107 call sites), Player (46),
   Dust (94), Mount (14), TileDrawing (6) and the particles/gore rows are **not**
   ported. `Gore.Update`'s own lights (`Gore.cs:258`, `:940`, `:1076-1080`) can now be
   expressed through `EntityLights` but still need a seam from `tr-core` — the gore
-  pool has no light sink, so they stay dropped.
+  pool has no light sink, so they stay dropped. The NPC family is **started**
+  (2 of 80 call sites), see below.
+
+### The NPC family (S1-E-5, 2026-11-18)
+
+`crates/tr-app/src/npc_lights.rs::npc_light` ports the aiStyle-8 light tail at
+the end of `NPC.AI` (`NPC.cs:21280-21373`) — the type chain the C# runs after
+`base.position += netOffset` (`:21279`; the feed reads the offset position too,
+restored at `:21374`). It feeds the **same** `EntityLights` pair as the item
+family (one list pair per engine in the C#, not one per family) and shares the
+tile-anchor vocabulary (`entity_lights.rs::XAnchor`/`tile_x`/`tile_y`); both
+feeds run in the frame pass (`app/frame/draw.rs`), after the step, in `Main.npc`
+slot order. Of the NPC family's **80 `Lighting.AddLight` call sites, 2 landed**:
+
+* **`NPC.cs:21360` — the Desert Djinn (533)**: `AddLight(base.Top, 0.6f, 0.6f,
+  0.3f)`. `base.Top` is `(position.X + width/2f, position.Y)` (`Entity.cs:86-91`)
+  — centre x, top y — and the `Vector2` overload truncates the quotient per
+  axis (`Lighting.cs:140-143`); the port models it as `XAnchor::Top`. The kind
+  itself landed with this task: `SetDefaults` 28x62 / damage 40 / defense 20 /
+  lifeMax 220 / kb 0 / value 1200 (`NPC.cs:14974-14987`), `FindFrame` case 533's
+  8-row hover cycle + the cast windup's `+8` row bank (`:69978-69992`,
+  `npcFrameCount[533]` = 16, `Main.cs:67082`), and the AI cycle's own constants
+  (`CasterParams::DESERT_DJINN`): the single `ai[0] == 180` trigger sets
+  `ai[1] = 181` (`:21031-21038`) and the wrap fires at 360 (`:21079-21082`),
+  not the standard 100/200/300 → 30 / 650.
+* **`NPC.cs:21365` — the aiStyle-8 else arm**: `AddLight(base.Center, 0.6f,
+  0.6*0.65f, 0.6*0.4f)` — the Fire Imp (24) is the port's only remaining
+  aiStyle-8 kind. The arm's `Main.rand.Next(6)` dust half (`:21366-21372`) is
+  skipped wholesale (the RNG rule below).
+
+**What stays dropped, exactly:**
+
+* The 29/45/32 arms (`:21280-21300`) are **dust-only** — no `AddLight` — so the
+  sorcerer/Tim/Dark Caster stay dark; nothing to port until the dust system.
+* The Djinn's curse volley (`:21117-21230`) draws `Main.rand`
+  (`:21140-21141`'s target-tile rolls, `:21195-21196`'s velocity jitter) — the
+  whole volley is skipped (`shoot_tick: None`), so the Djinn never fires and
+  the `Main.rand` stream stays untouched. The teleport half of its cycle is
+  RNG-shared with the standard casters and rides the existing
+  `find_teleport_spot` draws in the same order.
+* The aiStyle-23 chain (`:25239-25250`) lights types **83 = CursedHammer** and
+  **179 = CrimsonAxe** (`NPCID.cs:10843`/`:11035`) plus a fallback — neither
+  kind is in the port's roster (PrimeVice 130 rides aiStyle 34,
+  DD2KoboldFlyerT3 575 aiStyle 108; they never reach that chain). The three
+  arms wait for those kinds.
+* The remaining **76 NPC call sites** (the aiStyle-9 sphere glow `:21561`, the
+  boss AIs' lights, the `UpdateNPC` tail's torch/buff lights `:90841-92412`,
+  etc.) are not ported; each needs its AI family or a rand-bearing dust arm
+  first.
+
+Tests: `npc_lights.rs` pins the Djinn's Top-anchor tile + colour (incl. the
+centre-x vs left-edge difference and negative-coordinate truncation), the Fire
+Imp's else-arm centre light, and the dark casters; `npc.rs`'s
+`the_desert_djinn_rides_its_own_trigger_and_wrap` pins the 180/181/360 cycle and
+the skipped volley; the protocol round-trip roster grew 198 → 199.
 
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 
@@ -15456,3 +15583,161 @@ Steam Cloud, the overlay / rich-presence / friends modules and the join-request
 manager. Porting the transport would require vendoring Steamworks (its DLL sits
 unused beside the tree) and would not change the port's own wire, so the ROADMAP
 keeps it as this documented divergence rather than a build item.
+
+## The Pumpkin Moon family (S1-F-13b, 2026-11-17)
+
+The 16 wave kinds land on `S1-F-13b-pumpkin-family` (phases: the identity
+`908637f4`, the live roster `822c0a23`). The verbatim defaults, the net ids,
+the sounds and the kind→type map (`pumpkin_moon_type` — the one new seam the
+boss cap, the kill points and the walkers' speeds reuse) are the identity
+half; the live half is the F-13a moon arms mapping the ladder's picks through
+`moon_wave_kind` and spawning at the found tile (the `NewNPC Bottom`
+placement, `:80772`), the 11 aiStyle-3 walkers on the C#'s per-type speed
+rows (`AI_003`'s scarecrow arm `:57816-57840` + Splinterling's cap-2 group)
+and the render sheets resolving with the C#'s `npcFrameCount`.
+
+Documented deviations, all deliberate:
+- **The five bespoke machines ride stand-ins** until S1-F-13b2: the
+  Headless Horseman (315) and the Hellhound (329) — aiStyle 26
+  (`AI_026_Unicorns`, `NPC.cs:62366+`) — walk on the walker family at the
+  C#'s own chase cap (`num10 = 6f`, `:62622`); the Poltergeist (330) —
+  aiStyle 22 — rides the port's caster machine (its shot arm's `_ => return`
+  leaves it shotless until the named machine lands); the MourningWood (325,
+  aiStyle 57) and the Pumpking (327, aiStyle 58) hover at their machines'
+  own base speeds/approaches (`num836 = 2f` with the `/21` approach, `num875
+  = 6` with the `/15` lerp) and fly through tiles (their `noTileCollide`
+  rows). Each stand-in cites its machine's own constants.
+- **The unported wave kinds still consume**: the frost family (F-13c) and
+  the wave-20 unported bosses draw their vanilla rolls and spawn nothing
+  (the Wyvern-arm shape) — only the 16 pumpkin kinds spawn.
+- **`ImmuneToAllBuffsThatAreNotWhips`** (330) is unmodelled — the port's
+  table carries `SpecificallyImmuneTo` only; noted at the arm, pending
+  S1-F-13b2.
+- **The Poltergeist caster-stand test was rewritten** (2026-11-17): the
+  pre-existing test asserted `vx == 0.0` at frame 30 from `vx 2.0`, but the
+  C#'s verbatim stand is `velocity.X *= 0.93f` with the ±0.1 snap
+  (`NPC.cs:20831-20835`) — the exact park is frame 42 (`2.0×0.93³⁰ =
+  0.22673497` at frame 30). The test now asserts the iterated decay curve,
+  the exact park and the hold.
+- **`pumpkin_moon_type`'s family scoping**: the map returns `Some` only for
+  the 16 pumpkin kinds — the frost family's kinds (F-13c) keep consuming
+  until their row lands.
+
+**Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+## The frame phase split (S1-B-8)
+
+`app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
+(51 lines of calls + gate arms) over three modules: `frame/world.rs` (the
+in-world branch, one fn per `phase("…")` site in the C#'s
+`DoUpdateInWorld_Inner` order, `Main.cs:17745-17822`, plus the click cluster,
+the pause/step gates, the env cluster and the step-gated tail),
+`frame/draw.rs::draw_region` (`Main.DoDraw`'s body: the pre-draw state, the
+S1-B-7 marker-ordered passes, the interface, the map, the post/filters and
+the present path) and the orchestrator's own head/setup/focus-pause fns. The
+draw region moved **verbatim** — the 55-field destructure and the gpu gate
+travel with it, the only mechanical change being the surface-acquire early
+return yielding `None` so the caller skips the epilogue's stat write-backs
+exactly like the pre-split frame.
+
+Preserved deviations (each a recorded follow-up, not closed here): the
+pre-world cluster (weather/rain/scene_state/windy_day/ambience) keeps its
+in-world-branch placement — moving it to the C#'s pre-`DoUpdateInWorld` slots
+(`Main.cs:17146-17231`) is a behaviour change owed to research/39 seed #2's
+data-driven tick plan; the duplicated `update_camera_at_draw` pair
+(S1-B-4) survives verbatim inside `draw_half_pre_snapshots`; the inline
+1600×900 `screen` fallback stays distinct from `App::screen_size()`; the
+dust+minecart and time+event fusions stay as landed. The split is proven
+pixel-transparent: `TR_SEED=1 TR_SHOT TR_CAM=400,300 TR_DAY=0.5` pairs are
+SHA256-equal pre/post at zoom 1.0 and 1.5 (all four runs identical), and at
+zoom 2.0 the post-split runs are internally deterministic and byte-equal to a
+pre-split run — the pre-split binary's own zoom-2.0 variance (688 613 px
+between two pre-split runs, `pixel_diff.py`) pre-dates the split and is a
+harness follow-up.
+## The starting weapons' projectile AI (projectile-ai, 2026-11-17)
+
+**Intent.** A starting weapon's shot must fly the C# trajectory, not a
+stand-in. The three families the goal names are the bow's arrows (aiStyle 1,
+`Projectile.cs:23201-23203` → `AI_001`), the shuriken (aiStyle 2,
+`:23205-23688`) and the musket's ball (aiStyle 1, the type-14 row `:950-961`).
+Two of the three already rode ported arms; the shuriken did not — it was
+carried by a hand-written two-half-step bounce (`ai_shuriken`, 0.6 damped)
+that the C# never runs, and its data row was absent.
+
+**Inventory, aiStyle 2 and 4 (`Projectile.cs`).**
+
+| aiStyle | C# extent | kinds the C# routes there | port before |
+|---|---|---|---|
+| 2 | `23205-23688` (485 lines) | 3 Shuriken, 48 ThrowingKnife, 93, 54, 69/70/621, 166 Snowball, 240 Dutchman shell, 249, 300, 304, 306, 347, 370/371/936, 497, 501, 504/954/979, 510, 520, 599, 861, 909, 968, 1085 (41 ids) | **missing** — the shuriken had a placeholder bounce, the shell a 2-line alpha arm only |
+| 4 | `23694-23828` (135 lines) | 7 VilethornBase, 8 VilethornTip, 150/151/152, 493/494 | **missing** — no `proj_data` row, the arm fell to `_ => {}` |
+| 1 | `23201-23203` → `AI_001` | 153 ids (1/2/4/5 arrows, 14 MusketBall, 51 Seed, 81/82 hostile arrows, 121-126 gem bolts via 29, …) | ported (`ai_arrow` / `ai_style1_flight`) |
+| 3 | `23690-23692` | 19 ids (boomerangs) | ported (`ai_boomerang`) |
+| 29 | `26676-26678` | the six gem bolts | ported (`ai_gem_staff`) |
+
+**Choice.** aiStyle 2 + aiStyle 4, the two missing styles the starting tier
+actually fires: the shuriken, the throwing knife, the snowball and the Wand of
+Sparkings' spark (aiStyle 2) and the Vilethorn (aiStyle 4). The rest of the
+thrown family's ids (93/240/249/300/304/306/347/370/371/497/501/504/510/861/
+909/968/1085) fly on the same arm without new rows — only their `SetDefaults`
+row would be needed.
+
+**OUT-OF-SLICE** (unported styles the early weapons also need): aiStyle 19
+(the spears 47/49/130 — `AI_019_Spears` `45857-46221`, needs the extension
+hitbox), aiStyle 33 (the flares 163/310/1008-1011, `:27049-27134`), aiStyle 13
+(the harpoon 23, `:24636-24828`), aiStyle 5 (9/12/503, `:23830-24098`), and
+every hostile/thrown id without a `proj_data` row.
+
+**Ported.** aiStyle 2 as `Projectile::ai_style2` (`ai[0]` ladder per kind, the
+wind head, the rotation ladder, the 32 px/tick clamp, the movement chain's
+default tile arm = one last step in then `Kill()`); aiStyle 4 as
+`Projectile::ai_style4` + the pool's `vilethorn_step` (the fade-in/chain spawn
+through `NewProjectile`'s seam, the `ai[1] + 1f` depth, the tip at
+`ai[1] >= 6f`, the fade-out kill). Data rows: 3, 48, 166, 954 (aiStyle 2) and
+7/8 (aiStyle 4, `tileCollide = false`, `ignoreWater`, `alpha = 255`). aiStyle 2
+joined `uses_wind_physics` (`ShouldUseWindPhysics`'s list, `:22110-22132`).
+Skipped in place: every dust/gore/sound spawn of both branches (no
+dust/gore/sound layer in the pool), the MP-only town-NPC kill of the snowball
+(`:23568-23588`) and the 150-152/493-494 Vilethorn variants (their kinds are
+not ported). `cs-cite`: 55 citations resolved.
+
+## Day cycle: time, spawn gates, sky (daycycle slice, 2026-11-17)
+
+Scope: the clock, the surface spawn gate and the sky tint. Events (blood moon,
+eclipse, weather, music) are out of this slice.
+
+* The two boundary tests in `UpdateTime` are STRICT (`Main.cs:65137`
+  `if (Main.time > 32400.0)`, `:65148` `if (Main.time > 54000.0)`): a clock
+  resting exactly on 32400/54000 is still the old half. The port compared with
+  `>=` and flipped one tick early; `world_sim/clock.rs` now uses `>`.
+* `EncourageDespawn` is modelled as a `time_left`-style window
+  (`crates/tr-app/src/npc.rs`): `encourage_despawn` only ever lowers it
+  (`NPC.cs:7249-7256`), `tick_despawn`/`despawn_expired` are the
+  `NPC.cs:77986-77996` decrement and the `<= 0` deactivation. The Eye of
+  Cthulhu's `Main.IsItDay() | dead` arm (`NPC.cs:20071-20074`) is the only
+  writer, so it leaves 10 ticks after dawn or after the player dies. Deviation:
+  the C# also refreshes `timeLeft` from `NPC.activeTime` (`:8542`) for every
+  other NPC; the port leaves `despawn_timer` idle (-1) for them, so no other
+  NPC can time out yet.
+* `Main.IsItDay()` (`Main.cs:62825-62832`) is `Main.dayTime` except on remix
+  worlds; the port reads `world.day_time` directly (remix is unported).
+* The sky tint is `Main.SetBackColor` (`Main.cs:63452-63496`) exactly: white
+  from 13500 to 37800, the two sunset ramps, the night ramps and the moon-phase
+  floor. The blood-moon and graveyard tint arms are unported (events).
+* Dawn's 53400 sub-threshold (`Main.time >= 53400.0`, the Empress enrage at
+  `NPC.cs:46238-46245`) is out of slice: the Empress is not ported.
+
+### Citation repairs (cite-repair)
+
+Four out-of-range C# citations were corrected by comment-only edits (no behaviour
+change); each new range was verified against the decompiled source line by line:
+
+* crates/tr-app/src/buffs.rs:222 -> GameDifficultyData.cs:81-92 (was :96-100;
+  the file is 93 lines and the static ctor at :81-92 is what seeds
+  DebuffTimeMultiplier with Classic 1 / Expert 2 / Master 2.5 at :89).
+* crates/tr-app/src/map.rs:607 -> WorldMap.cs:44-47 (was :406-409; the file is
+  291 lines and IsRevealed at :44-47 is `return this._tiles[x, y].Light > 0`).
+* crates/tr-app/src/projectile.rs:12378 -> Projectile.cs:13904-14263 (was the
+  reversed 14258-13956; the corrected span is the first line of the per-type
+  whip switch through the aiStyle-165 MinionAttackTargetNPC write at
+  :14257-14263, which is where the Rust fn's arms live).
+* crates/tr-core/src/tileobject.rs:144 -> LiquidPlacement.cs:3-9 (was :5-10;
+  the enum declaration plus body spans :3-9, ending at the closing brace on :9).

@@ -310,6 +310,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Player_0_3",
         "Player_0_6",
         "Player_0_7",
+        // The arm-stack sheets the composite skin draws (`Players[skinVar, 5]`
+        // the under-skin torso `PlayerDrawLayers.cs:1348`, `Players[skinVar, 8]`
+        // the under-shirt sleeve `:1357`/`:3702`, `Players[skinVar, 13]` the
+        // shirt sleeve `:1359`/`:3703`); `make_player_assets` requests all
+        // three (entities.rs `make_player_assets`).
+        "Player_0_5",
+        "Player_0_8",
+        "Player_0_13",
         "Player_0_10",
         "Player_0_11",
         "Player_0_12",
@@ -443,6 +451,8 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_45",
         "NPC_32",
         "NPC_24",
+        // The Desert Djinn (S1-E-5) — the 16-frame NPC_533 strip.
+        "NPC_533",
         "NPC_30",
         "NPC_25",
         "NPC_33",
@@ -698,6 +708,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_Head_45",
         "Heart",
         "Bubble",
+        // `TextureAssets.Hb1`/`Hb2` (`AssetInitializer.cs:404-405`): the
+        // ordinary NPC health bar's fill and depleted strips
+        // (`Main.DrawHealthBar`, `Main.cs:21909-21990`).
+        "HealthBar1",
+        "HealthBar2",
         "NPC_Head_Boss_7",
         "UI/UI_BossBar",
         // The map overlay layers (`Main.cs:66551`'s `Main.MapIcons`): the
@@ -1034,6 +1049,26 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
         // for this sheet and it was never packed (a silent no-draw).
         "NPC_117",
+        // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
+        // kind — the Scarecrows (305-314) and the five named kinds
+        // (315/325/326/327/329/330) — keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`'s PUMPKIN_SHEETS).
+        "NPC_305",
+        "NPC_306",
+        "NPC_307",
+        "NPC_308",
+        "NPC_309",
+        "NPC_310",
+        "NPC_311",
+        "NPC_312",
+        "NPC_313",
+        "NPC_314",
+        "NPC_315",
+        "NPC_325",
+        "NPC_326",
+        "NPC_327",
+        "NPC_329",
+        "NPC_330",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1589,7 +1624,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 174] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 175] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1613,6 +1648,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 174] = [
         // after the lane gate so the earlier slots keep their indexes.
         558, 559, 560, 565, 569, 570, 571,
         572, 573, 574, 575, 576, 577,
+        // The Desert Djinn (S1-E-5) — appended last so the earlier slots
+        // keep their indexes.
+        533,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -1714,13 +1752,19 @@ pub struct Lookups {
     /// `Fonts/Death_Text`: the menu items (`FontAssets.DeathText`).
     pub death_font: Option<UiFont>,
     /// `Fonts/Combat_Text`/`Combat_Crit`: the damage-number fonts
-    /// (`FontAssets.CombatText`, drawn by `PopupText` once that lands).
+    /// (`FontAssets.CombatText`, drawn by [`crate::combat_text::draw`]).
     pub combat_text_font: Option<UiFont>,
     pub combat_crit_font: Option<UiFont>,
     /// `Logo` (menu title) as UV plus native size.
     pub logo: Option<([f32; 4], f32, f32)>,
     pub ui_heart: Option<tr_render::SheetRect>,
     pub ui_bubble: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Hb1` (`Images/HealthBar1`): the health bar's filled
+    /// strip (`Main.cs:21988-21990`).
+    pub ui_health_bar1: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Hb2` (`Images/HealthBar2`): the depleted strip
+    /// (`Main.cs:21980-21984`).
+    pub ui_health_bar2: Option<tr_render::SheetRect>,
     pub ui_boss_bar: Option<tr_render::SheetRect>,
     /// `NPC_Head_Boss_7` — the boss-bar icon (`CommonBossBigProgressBar.cs:34`).
     /// King Slime (NPC 50) is head index 7 in `BossHeadTextures`
@@ -2081,6 +2125,8 @@ impl Lookups {
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
+            ui_health_bar1: atlas.sheet("HealthBar1").copied(),
+            ui_health_bar2: atlas.sheet("HealthBar2").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
             ui_boss_head: atlas.sheet("NPC_Head_Boss_7").copied(),
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
@@ -2301,6 +2347,8 @@ impl Lookups {
                 atlas.sheet("NPC_575").copied(),
                 atlas.sheet("NPC_576").copied(),
                 atlas.sheet("NPC_577").copied(),
+                // The Desert Djinn (S1-E-5) — the 16-frame NPC_533 strip.
+                atlas.sheet("NPC_533").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
@@ -2745,6 +2793,19 @@ impl Lookups {
         let rect = self.liquid_slopes.get(index)?.as_ref()?;
         let sx = 18 * (slope.clamp(1, 4) as i32 - 1);
         Some(uv_rect(rect, self.atlas_size, sx, sy, 16, h))
+    }
+
+    /// UV of one source rectangle inside a health-bar sheet (`Hb1`/`Hb2`,
+    /// `Images/HealthBar1|2`), the `DrawHealthBar` slices (`Main.cs:21980-21990`).
+    pub fn health_bar_uv(
+        &self,
+        rect: &tr_render::SheetRect,
+        sx: i32,
+        sy: i32,
+        w: u32,
+        h: u32,
+    ) -> [f32; 4] {
+        uv_rect(rect, self.atlas_size, sx, sy, w, h)
     }
 
     /// UV of a whole HUD sheet.
@@ -3192,11 +3253,15 @@ mod tests {
         assert_eq!(crate::projectile::proj_frames(34), 6);
         assert_eq!(crate::projectile::proj_frames(645), 7);
         assert_eq!(crate::projectile::proj_frames(0), 1, "the default row");
-        // The fallback seam: a kind with no packed sheet answers `None`, which
-        // is what keeps the 22x22 shuriken stand-in reachable (`SHURIKEN` 3 is
-        // spawned by the dev path but carries no `proj_data` row).
-        assert!(lookups.proj_frame(3, 0).is_none());
-        assert!(lookups.shuriken_uv().is_some(), "the fallback sprite exists");
+        // The fallback seam: a kind with no packed sheet answers `None`. The
+        // shuriken (3) now carries a `proj_data` row (the projectile-ai task's
+        // `Projectile.cs:826-836` port), so its own sheet packs like every
+        // other row's and the 16 px stand-in is no longer the path for it.
+        assert!(
+            lookups.proj_frame(3, 0).is_some(),
+            "the shuriken's sheet packs"
+        );
+        assert!(lookups.shuriken_uv().is_some(), "the fallback sprite stays");
         assert!(lookups.proj_frame(65_000, 0).is_none());
     }
 

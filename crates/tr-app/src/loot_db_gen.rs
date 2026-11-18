@@ -12,11 +12,14 @@ use tr_core::loot::{
     not_scaling_with_luck, one_from_options, one_from_options_not_scaling_with_luck,
     scaling_with_only_bad_luck, status_immunity_item, with_rerolls, Cond,
     chain_on_failed_roll, chain_on_success, CommonDrop, DropBasedOnExpertMode,
-    DropBasedOnMasterMode,
-    ItemDropDatabase, OneFromRulesRule,
+    DropBasedOnMasterMode, FromOptionsWithoutRepeatsDropRule,
+    ItemDropDatabase, ItemDropWithCondition, MechBossSpawnersDropRule, NamedNPC,
+    OneFromRulesRule, SlimeBodyItemDropRule, StatueMimicItemDropRule,
 };
 
 pub fn populate(db: &mut ItemDropDatabase) {
+    db.register_global(MechBossSpawnersDropRule::new());
+    db.register_global(SlimeBodyItemDropRule::new());
     db.register_global(chain_on_failed_roll(by_condition(Cond::HalloweenWeapons, 1825, 2000, 1, 1, 1), common(1827, 2000, 1, 1)));
     db.register_global(by_condition(Cond::JungleKeyCondition, 1533, 2500, 1, 1, 1));
     db.register_global(by_condition(Cond::CorruptKeyCondition, 1534, 2500, 1, 1, 1));
@@ -146,6 +149,9 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(526, normalvs_expert(5489, 200, 150));
     db.register_to_npc(529, normalvs_expert(5489, 200, 150));
     db.register_to_npc(533, normalvs_expert(5489, 200, 150));
+    db.register_to_npc(22, ItemDropWithCondition::new(NamedNPC::new("GuideNames.Andrew"), 867, 1, 1, 1));
+    db.register_to_npc(178, ItemDropWithCondition::new(NamedNPC::new("SteampunkerNames.Whitney"), 4372, 1, 1, 1));
+    db.register_to_npc(227, ItemDropWithCondition::new(NamedNPC::new("PainterNames.Jim"), 5290, 1, 1, 1));
     db.register_to_npc(353, common(3352, 8, 1, 1));
     db.register_to_npc(441, common(3351, 8, 1, 1));
     db.register_to_npc(227, common(3350, 8, 1, 1));
@@ -856,6 +862,7 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(98, by_condition(Cond::DontStarveIsNotUp, 5091, 1500, 1, 1, 1));
     db.register_to_npc(99, by_condition(Cond::DontStarveIsNotUp, 5091, 1500, 1, 1, 1));
     db.register_to_npc(100, by_condition(Cond::DontStarveIsNotUp, 5091, 1500, 1, 1, 1));
+    db.register_to_npc(690, StatueMimicItemDropRule::new());
     db.register_to_npc(10, DropBasedOnExpertMode::new(common(215, 50, 1, 1), with_rerolls(215, 1, 50, 1, 1)));
     db.register_to_npc(11, DropBasedOnExpertMode::new(common(215, 50, 1, 1), with_rerolls(215, 1, 50, 1, 1)));
     db.register_to_npc(12, DropBasedOnExpertMode::new(common(215, 50, 1, 1), with_rerolls(215, 1, 50, 1, 1)));
@@ -1314,6 +1321,24 @@ pub fn populate(db: &mut ItemDropDatabase) {
     db.register_to_npc(565, common(3867, 10, 1, 1));
     db.register_to_npc(576, common(3868, 10, 1, 1));
     db.register_to_npc(577, common(3868, 10, 1, 1));
+    db.register_to_npc(35, boss_bag(3323));
+    db.register_to_npc(35, master_mode_common_drop(4927));
+    db.register_to_npc(35, master_mode_drop_on_all_players(4801, 1));
+    db.register_to_npc(35, chain_on_failed_roll(chain_on_failed_roll(by_condition(Cond::NotExpert, 1281, 7, 1, 1, 1), common(1273, 7, 1, 1)), common(1313, 7, 1, 1)));
+    db.register_to_npc(35, common(4993, 7, 1, 1));
+    db.register_to_npc(35, by_condition(Cond::RedHatSkeletron, 5624, 1, 1, 1, 1));
+    db.register_to_npc(35, by_condition(Cond::RedHatSkeletron, 5625, 1, 1, 1, 1));
+    db.register_to_npc(35, by_condition(Cond::RedHatSkeletron, 5626, 1, 1, 1, 1));
+    db.register_to_npc(35, by_condition(Cond::RedHatSkeletron, 5737, 1, 1, 1, 1));
+    db.register_to_npc(35, by_condition(Cond::RedHatSkeletron, 5628, 1, 1, 1, 1));
+    db.register_to_npc(398, boss_bag(3332));
+    db.register_to_npc(398, master_mode_common_drop(4938));
+    db.register_to_npc(398, master_mode_drop_on_all_players(4810, 1));
+    db.register_to_npc(398, by_condition(Cond::NotExpert, 3373, 7, 1, 1, 1));
+    db.register_to_npc(398, by_condition(Cond::NotExpert, 4469, 10, 1, 1, 1));
+    db.register_to_npc(398, by_condition(Cond::NotExpert, 3384, 1, 1, 1, 1));
+    db.register_to_npc(398, by_condition(Cond::NotExpert, 3460, 1, 70, 90, 1));
+    db.register_to_npc(398, chain_on_success(leading_condition(Cond::NotExpert), FromOptionsWithoutRepeatsDropRule::new(2, &[3063, 3389, 3065, 1553, 3930, 3541, 3570, 3571, 3569, 5480])));
     db.register_to_npc(290, expert_gets_rerolls(1513, 15, 1));
     db.register_to_npc(290, expert_gets_rerolls(938, 10, 1));
     db.register_to_npc(287, expert_gets_rerolls(977, 12, 1));

@@ -353,6 +353,30 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::PrimeSaw => &[],
         NpcKind::PrimeVice => &[],
         NpcKind::PrimeLaser => &[],
+        // The Pumpkin Moon family (`S1-F-13b` — `Sets.DebuffImmunitySets`,
+        // `NPCID.cs:6075+`): the 305-314 group and the Splinterling have no
+        // row; 315 and 327 the ({20, 24, 31, 323}) row (`:7945`/`:7997`), 325
+        // the ({20, 31}) row (`:7989`), 329 the ({20, 24, 323}) row
+        // (`:8011`). 330's row is `ImmuneToAllBuffsThatAreNotWhips = true`
+        // (`:8018`) — this table carries `SpecificallyImmuneTo` only and the
+        // mask loop is unmodelled, so the kind rides `&[]` here (the port's
+        // documented gap for every such row).
+        NpcKind::Scarecrow1
+        | NpcKind::Scarecrow2
+        | NpcKind::Scarecrow3
+        | NpcKind::Scarecrow4
+        | NpcKind::Scarecrow5
+        | NpcKind::Scarecrow6
+        | NpcKind::Scarecrow7
+        | NpcKind::Scarecrow8
+        | NpcKind::Scarecrow9
+        | NpcKind::Scarecrow10
+        | NpcKind::Splinterling
+        | NpcKind::Poltergeist => &[],
+        NpcKind::HeadlessHorseman => &[20, 24, 31, 323],
+        NpcKind::MourningWood => &[20, 31],
+        NpcKind::Pumpking => &[20, 24, 31, 323],
+        NpcKind::Hellhound => &[20, 24, 323],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
 }

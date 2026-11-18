@@ -28,7 +28,10 @@ pub struct PlayerEntry {
     pub life_max: i32,
     /// `Player.statManaMax` (`Player.cs:56075`, 20 fresh).
     pub mana_max: i32,
-    /// `FileData.IsFavorite` (`FileData.cs:23`).
+    /// `FileData.IsFavorite` (`FileData.cs:23`); the port reads the
+    /// `<stem>.trfav` sidecar (`player_file::favorite_marker_path`) — the
+    /// stand-in for `Main.LocalFavoriteData` (`FileData.cs:22-24`), written by
+    /// the star click like `FavoritesFile.SaveFavorite` (`IO/FavoritesFile.cs:27-36`).
     pub is_favorite: bool,
     /// `loadStatus == Ok` (`StatusID.cs:16`, `WorldFileData.cs:75`); a
     /// sidecar-less session entry is playable.
@@ -287,16 +290,20 @@ pub fn list_players(
                 .collect();
             paths.sort();
             for path in paths.into_iter().take(MAX_LOAD) {
-                // `GetFileData`'s null-on-failure skip (`Player.cs:55862-55881`).
+                    // `GetFileData`'s null-on-failure skip (`Player.cs:55862-55881`).
                 let Ok(file) = crate::player_file::read_player_file(&path) else {
                     continue;
                 };
+                // `FileData`'s ctor pulls the state from `LocalFavoriteData`
+                // (`FileData.cs:35`), not from the file's dead metadata flag;
+                // the OR keeps a header bit written by some other tool alive.
+                let is_favorite = crate::player_file::is_favorite_marker(&path) || file.is_favorite;
                 disk.push(PlayerEntry {
                     name: file.name,
                     difficulty: file.difficulty,
                     life_max: file.life_max,
                     mana_max: file.mana_max,
-                    is_favorite: file.is_favorite,
+                    is_favorite,
                     playable: true,
                     deletable: true,
                     path: Some(path),
@@ -694,6 +701,93 @@ mod tests {
         other.name = "Hero".into();
         let both = list_players(Some(&dir), Some(other), 0);
         assert_eq!(both.len(), 2);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A minimal real `.plr` through the port's own writer.
+    fn write_plr(path: &Path, name: &str) {
+        let mut inventory = [(0i32, 0i32, 0u8); 58];
+        inventory[0] = (3507, 1, 0);
+        let file = crate::player_file::PlayerFileWrite {
+            name: name.into(),
+            difficulty: 2,
+            skin_variant: 0,
+            hair: 3,
+            life: 400,
+            life_max: 400,
+            mana: 100,
+            mana_max: 100,
+            hair_color: [215, 90, 55],
+            skin_color: [255, 125, 90],
+            eye_color: [105, 90, 75],
+            shirt_color: [175, 165, 140],
+            undershirt_color: [160, 180, 215],
+            pants_color: [255, 230, 175],
+            shoe_color: [160, 105, 60],
+            inventory,
+            inv_favorites: 0,
+        };
+        crate::player_file::write_player_file(path, &file).unwrap();
+    }
+
+    /// The character favourite rides the `<stem>.trfav` sidecar, not the
+    /// `.plr`'s dead metadata bit: `IO/FavoritesFile.SaveFavorite` writes a
+    /// separate store on the click (`IO/FavoritesFile.cs:27-36`), which is why
+    /// a `.plr` re-save cannot clear the star (A8/F3).
+    #[test]
+    fn the_player_favourite_marker_survives_a_resave_and_reads_back() {
+        let dir = temp_dir("tr-savelist-player-fav");
+        let path = dir.join("Belsin.plr");
+        write_plr(&path, "Belsin");
+        write_plr(&dir.join("Aaron.plr"), "Aaron");
+
+        // Fresh files: the writer emits flags 0 (`player_file.rs`'s metadata),
+        // so no card is starred and the list stays name-ordered.
+        let fresh = list_players(Some(&dir), None, 0);
+        assert_eq!(fresh.len(), 2);
+        assert!(fresh.iter().all(|p| !p.is_favorite));
+        assert_eq!(fresh[0].name, "Aaron");
+
+        // The star click's write (`app/flow.rs`'s `set_favorite_marker` call).
+        crate::player_file::set_favorite_marker(&path, true).unwrap();
+        assert!(crate::player_file::favorite_marker_path(&path).exists());
+        assert_eq!(
+            crate::player_file::favorite_marker_path(&path),
+            dir.join("Belsin.trfav"),
+            "the marker is the `<stem>.trfav` sibling, like the world's"
+        );
+        let listed = list_players(Some(&dir), None, 0);
+        let belsin = listed.iter().find(|p| p.name == "Belsin").expect("card");
+        assert!(belsin.is_favorite, "the star came back from the sidecar");
+
+        // A full `.plr` re-save rebuilds the metadata from zero — the star
+        // must not go with it, because the carrier is the sibling file.
+        write_plr(&path, "Belsin");
+        let mut relisted = list_players(Some(&dir), None, 0);
+        assert!(
+            relisted
+                .iter()
+                .find(|p| p.name == "Belsin")
+                .expect("card")
+                .is_favorite,
+            "re-saving the character keeps the star"
+        );
+
+        // `orderby IsFavorite descending, ... Name` (`UICharacterSelect.cs:150`)
+        // over the disk cards: the starred Belsin jumps ahead of Aaron.
+        sort_players(&mut relisted);
+        assert_eq!(relisted[0].name, "Belsin");
+        assert_eq!(relisted[1].name, "Aaron");
+
+        // Un-favourite removes the marker, and the next listing drops the star.
+        crate::player_file::set_favorite_marker(&path, false).unwrap();
+        assert!(!crate::player_file::favorite_marker_path(&path).exists());
+        assert!(list_players(Some(&dir), None, 0)
+            .iter()
+            .all(|p| !p.is_favorite));
+        // Removing an absent marker is a no-op, not an error.
+        crate::player_file::set_favorite_marker(&path, false).unwrap();
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

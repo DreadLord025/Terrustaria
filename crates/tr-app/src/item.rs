@@ -149,9 +149,18 @@ pub(crate) fn slot_for_pickup(
 }
 
 pub const SIZE: f32 = 14.0;
+/// `Player.defaultItemGrabRange = 42` (`Player.cs:57121`, read by
+/// `GetItemGrabRange`, `Player.cs:35132`) — the px radius the magnet pulls in.
 const MAGNET_RADIUS: f32 = 42.0;
-const GRAVITY: f32 = 0.3;
-const MAX_FALL: f32 = 6.0;
+/// `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`):
+/// `float gravity = 0.1f; float maxFallSpeed = 7f;` — the wet/shimmer/honey
+/// arms override them (`:380-396`), the air case is this pair.
+const GRAVITY: f32 = 0.1;
+const MAX_FALL: f32 = 7.0;
+/// `WorldItem.MoveInWorld` (`WorldItem.cs:854-860`): the horizontal friction
+/// `base.velocity.X *= 0.95f` and the snap to rest below `0.1`.
+const FRICTION_X: f32 = 0.95;
+const FRICTION_EPSILON: f32 = 0.1;
 /// Seconds before a drop can be collected (vanilla `Item.instanced` pickup delay).
 const PICKUP_DELAY: f32 = 0.35;
 
@@ -310,7 +319,14 @@ impl ItemDrop {
             self.shimmer_time = 1.0;
             return false;
         }
+        // `WorldItem.cs:363-364` — the air gravity and the fall cap.
         self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
+        // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap, both
+        // applied BEFORE the collision pass (`MoveInWorld`'s order).
+        self.vel.x *= FRICTION_X;
+        if self.vel.x.abs() < FRICTION_EPSILON {
+            self.vel.x = 0.0;
+        }
         // `WorldItem.cs:864`: the belt contacts bend the velocity before the
         // AABB pass. The C# stores the `bool` in `item.onConveyor`, which only
         // suppresses the draw-side velocity spin (`Main.cs:38613`) - the port
@@ -328,7 +344,10 @@ impl ItemDrop {
         self.vel = Vec2::new(bv[0], bv[1]);
         let nx = self.pos.x + self.vel.x;
         if crate::player::collides_rect(world, nx, self.pos.y, SIZE, SIZE) {
-            self.vel.x = -self.vel.x * 0.35;
+            // `Collision.TileCollision` (`Collision.cs:2415-2426`) leaves only
+            // the residual that fit on the blocked axis (`result.X = …`), so a
+            // drop stops dead against a wall instead of bouncing back.
+            self.vel.x = 0.0;
         } else {
             self.pos.x = nx;
         }
@@ -337,17 +356,14 @@ impl ItemDrop {
             if self.vel.y > 0.0 {
                 let ty = ((ny + SIZE) / TILE_PX).floor() as i32;
                 self.pos.y = ty as f32 * TILE_PX - SIZE;
-                if self.vel.y > 2.0 {
-                    self.vel.y = -self.vel.y * 0.3;
-                } else {
-                    self.vel.y = 0.0;
-                    self.vel.x *= 0.6;
-                }
             } else {
                 let ty = (ny / TILE_PX).floor() as i32;
                 self.pos.y = (ty + 1) as f32 * TILE_PX;
-                self.vel.y = 0.0;
             }
+            // `Collision.cs:2446-2451`: `result.Y` collapses to the flush
+            // residual (`+ 0.01f` for `gravDir == 1`), i.e. no restitution —
+            // the drop lies where it landed.
+            self.vel.y = 0.0;
         } else {
             self.pos.y = ny;
         }

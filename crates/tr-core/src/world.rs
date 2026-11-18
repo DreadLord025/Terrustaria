@@ -157,6 +157,17 @@ pub struct World {
     pub raining: bool,
     pub rain_time: i32,
     pub max_raining: f32,
+    /// `Sandstorm.Happening` / `TimeLeft` / `Severity` / `IntendedSeverity`
+    /// (`Sandstorm.cs:14-20`): the sandstorm event's persisted state. The
+    /// C# writes the save-time snapshot `_tempSandstorm*` in the flags block
+    /// (`WorldFile.cs:1369-1372`, filled by `SetTempToOngoing:1053-1056`) and
+    /// restores it on load (`SetOngoingToTemps:169-172`). The live state lives
+    /// on the App (`App.sandstorm`, `tr_core::scene::Sandstorm`); these are the
+    /// file payload the save path syncs both ways.
+    pub sandstorm_happening: bool,
+    pub sandstorm_time_left: i32,
+    pub sandstorm_severity: f32,
+    pub sandstorm_intended_severity: f32,
     /// `CurrentFrameFlags.SleepingPlayersCount == ActivePlayersCount &&
     /// SleepingPlayersCount > 0` (`Main.cs:17856-17859` → `UpdateTimeRate`'s
     /// all-asleep flag, `Main.cs:6209`): every present player is fully asleep
@@ -552,6 +563,10 @@ impl World {
             raining: false,
             rain_time: 0,
             max_raining: 0.0,
+            sandstorm_happening: false,
+            sandstorm_time_left: 0,
+            sandstorm_severity: 0.0,
+            sandstorm_intended_severity: 0.0,
             all_players_asleep: false,
             pumpkin_moon: false,
             snow_moon: false,

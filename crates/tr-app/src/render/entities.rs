@@ -101,12 +101,15 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         head: sky_tex(atlas, "Player_0_0", None),
         eye_whites: sky_tex(atlas, "Player_0_1", None),
         eyes: sky_tex(atlas, "Player_0_2", None),
-        // Torso and shirt sheets are 9 columns wide (`Player_0_3`/`_0_6` are
-        // 360x224 = 9x4 cells); keep the two columns `torso_cell` can reach,
-        // cell (0,0) plus the row-5 override's column 1 (`PlayerDrawSet.cs:
-        // 1940,1975`). The old 40-px crop clamped the override back to 0.
+        // Torso sheet cropped to the two columns `torso_cell` can reach, cell
+        // (0,0) plus the row-5 override's column 1 (`PlayerDrawSet.cs:1940,
+        // 1975`). The SHIRT sheet stays FULL: its arm columns 2-6 are the
+        // front-arm stack's `FrontShirt` art (`PlayerDrawLayers.cs:3704`
+        // draws `Players[skinVar, 6]` at `compFrontArmFrame`), so the old
+        // 80-px crop clamped the arm cell back onto torso column 1 and drew
+        // chest art over the arm.
         torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 80, 224))),
-        shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 80, 224))),
+        shirt: sky_tex(atlas, "Player_0_6", None),
         arm: sky_tex(atlas, "Player_0_7", None),
         undershirt: sky_tex(atlas, "Player_0_5", None),
         under_arm: sky_tex(atlas, "Player_0_8", None),
@@ -494,6 +497,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         prime_laser: npc_tex(atlas, "NPC_131"),
         npc_sheets: PILLAR_SHEETS
             .iter()
+            .chain(PUMPKIN_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -790,8 +794,10 @@ fn npc_add_height(n: &Npc) -> f32 {
         EaterOfSouls | MeteorHead => 26.0,
         // `:22035` 94 (the Goblin Archer).
         GoblinArcher => 14.0,
-        // `:22039` 7/8/9 (the Devourer's segments + the Zombie).
-        DevourerHead | DevourerBody | DevourerTail | Zombie => 13.0,
+        // `:22037-22039` 7/8/9 (the Devourer's segments — `NPCID.cs:10691-10695`;
+        // Zombie is 3, `NPCID.cs:10683`, and has NO arm — the default 0,
+        // `Main.cs:22004`).
+        DevourerHead | DevourerBody | DevourerTail => 13.0,
         // `:22043` 98/99/100 (the DD2 bombers).
         DD2GoblinBomberT1 | DD2GoblinBomberT2 | DD2GoblinBomberT3 => 13.0,
         // `:22049` 10/11/12 (the Giant Worm's segments).
@@ -947,6 +953,19 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
     num45 + num46 + num47
 }
 
+/// The generic path's anchor shift: the C#'s drawn top (`Main.cs:25511-25512`)
+/// minus the frame-centred top the match arms produce. The Draw's
+/// `origin = halfSize` cancels the formula's `+ halfSize.Y * scale` term, so
+/// the `:23048`-switch `halfSize` overrides are PIVOT-ONLY — they steer the
+/// rotation, never the position — and the net top is
+/// `pos.Y + height - frame_h * scale + 4 + num47 + num46 + gfxOffY` (the
+/// audit's collapse). The v2 model carried the override as a translation
+/// (`boss_half_size - frame_h / 2`), which put the boss trio 24 px and every
+/// humanoid whose box is not `frame_h - 8` off the C# anchor.
+fn generic_anchor_shift_y(n: &Npc, h: f32, frame_h: f32) -> f32 {
+    (h - frame_h * n.scale) * 0.5 + 4.0 + npc_anchor_nudge(n)
+}
+
 /// The generic NPC anchor (`Main.cs:25453-25514`) for a sheet-only draw:
 /// the frame is `t.w x (t.h / count)` pixels and XNA draws it with
 /// `origin = halfSize` at
@@ -1080,12 +1099,49 @@ const PILLAR_SHEETS: &[u32] = &[
     518, // the solar spear-man
 ];
 
+/// The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one sheet per
+/// kind, exactly as the vanilla's `TextureAssets.Npc[type]` — each Scarecrow
+/// (305-314) and the five named kinds (315/325/326/327/329/330) draws its own
+/// `NPC_<id>` art. Keyed by the vanilla net id
+/// ([`NpcKind::pumpkin_moon_type`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
+    305, 306, 307, 308, 309, 310, 311, 312, 313, 314, // Scarecrow1-10
+    315, // the Headless Horseman
+    325, // the Mourning Wood
+    326, // Splinterling
+    327, // the Pumpking
+    329, // the Hellhound
+    330, // the Poltergeist
+];
+
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
 /// sheet whose height is not a multiple of its row count loses the leftover
 /// pixels at the bottom instead of bleeding them into the last frame.
 fn vanilla_row_h(tex: &BgTex, rows: u32) -> f32 {
     (tex.h as i32 / rows.max(1) as i32) as f32
+}
+
+/// The Pumpkin Moon family's draw (`S1-F-13b`): the sheet's real row
+/// (`NPC.SetFrameSize`'s integer-division height over `Main.npcFrameCount[type]`
+/// — the kind's own count) at the generic anchor (`Main.cs:25511-25516`) — the
+/// shape the martian walker draw carries, one row per kind so no kind reads a
+/// neighbour's strip.
+fn pumpkin_moon_draw<'a>(
+    tex: Option<&'a BgTex>,
+    rows: u32,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(0.0, |t| vanilla_row_h(t, rows));
+    let fw = tex.map_or(0.0, |t| t.w);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
+    )
 }
 
 /// The Moon Lord hand's / free eye's body draw: `DrawNPCDirect` puts the frame
@@ -1260,10 +1316,15 @@ fn boss_draw<'a>(
 }
 
 /// The kinds whose draw rides the generic anchor (`Main.cs:25505-25512`)
-/// and therefore takes the `halfSize`/`num47` overrides. The towers'
-/// dedicated arm (`Main.cs:24159`), the saucer family's Centre-anchored
-/// block (`:24586`), the Deerclops' Bottom-anchored one (`:26338`) and the
-/// Prime masks' overlays compute their own positions and are excluded.
+/// and therefore takes the C#'s collapsed top shift (`generic_anchor_shift_y`).
+/// The dedicated `DrawNPCDirect` arms — the towers' Centre anchor
+/// (`Main.cs:24159`, the DD2 lane portal rides `tower_draw` too), the
+/// saucers' block (`:24586`) and the Deerclops' Bottom anchor (`:26338`) —
+/// the Moon Lord's origin/cell draws (`:24846-24927`, `:24765-24845`,
+/// `:24951-25059`) and the corner-parked raw-tuple arms compute (or park)
+/// their own positions and are excluded: their quads are not the centred
+/// base the shift completes, and their C# draws were not part of the
+/// audited claims.
 fn uses_generic_anchor(kind: NpcKind) -> bool {
     !matches!(
         kind,
@@ -1271,11 +1332,51 @@ fn uses_generic_anchor(kind: NpcKind) -> bool {
             | NpcKind::NebulaTower
             | NpcKind::SolarTower
             | NpcKind::VortexTower
+            | NpcKind::DD2LanePortal
             | NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon
             | NpcKind::MartianSaucerCore
             | NpcKind::Deerclops
+            | NpcKind::MoonLordHead
+            | NpcKind::MoonLordHand
+            | NpcKind::MoonLordFreeEye
+            | NpcKind::Slime
+            | NpcKind::KingSlime
+            | NpcKind::BoundGoblin
+            | NpcKind::BoundWizard
+            | NpcKind::BoundMechanic
+            | NpcKind::SleepingGolfer
+            | NpcKind::WebbedStylist
+            | NpcKind::SleepingAngler
+            | NpcKind::FlyingDutchman
+            | NpcKind::FlyingDutchmanCannon
+            | NpcKind::MartianWalker
+            | NpcKind::AncientCultist
+            | NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain
+            | NpcKind::DD2DarkMage
+            | NpcKind::DD2DarkMageT3
+            | NpcKind::DD2Betsy
+            | NpcKind::DD2WitherBeast
+            | NpcKind::DD2WitherBeastT3
+            | NpcKind::DD2WyvernT1
+            | NpcKind::DD2WyvernT2
+            | NpcKind::DD2WyvernT3
+            | NpcKind::DD2KoboldFlyerT2
+            | NpcKind::DD2KoboldFlyerT3
+            | NpcKind::DD2KoboldWalkerT2
+            | NpcKind::DD2KoboldWalkerT3
+            | NpcKind::DD2OgreT2
+            | NpcKind::DD2OgreT3
+            | NpcKind::DD2Bartender
+            | NpcKind::DD2EterniaCrystal
+            | NpcKind::ChaosBall
+            | NpcKind::BurningSphere
+            | NpcKind::WaterSphere
     )
 }
 
@@ -1728,6 +1829,104 @@ pub(crate) fn draw_player_map_icon(
 // each had a faithful arm sitting behind a stale v1 arm — so a duplicate is a
 // hard error here.
 #[deny(unreachable_patterns)]
+/// `Main.DrawInterface_14_EntityHealthBars`'s ordinary arm
+/// (`Main.cs:46018`): every NPC with `life != lifeMax` and `ShowLife`
+/// (`:45835`, default on — `NPC.cs:66668`'s `HealthBarDrawSettings = 1`)
+/// draws `Main.DrawHealthBar` (`:21909-21990`) under its box. The port walks
+/// the list after the world pass (the vanilla interface order, `Main.cs:45810`)
+/// and uses the retail `Hb1`/`Hb2` strips.
+pub(crate) fn draw_npc_health_bars(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    npcs: &[Npc],
+    light: &LightMap,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+) {
+    let (Some(hb1), Some(hb2)) = (
+        lookups.ui_health_bar1.as_ref(),
+        lookups.ui_health_bar2.as_ref(),
+    ) else {
+        // PNG-only runs (`Lookups::default()`) draw no bars.
+        return;
+    };
+    for n in npcs {
+        // `Main.cs:45832` active/type/shimmer gates: dead and fully hidden
+        // NPCs show nothing.
+        if n.hp <= 0 || n.shimmer_transparency > 0.0 {
+            continue;
+        }
+        let (w, h) = n.size();
+        let box_ = crate::combat_text::Rect {
+            x: n.x,
+            y: n.y,
+            width: w,
+            height: h,
+        };
+        // `life != lifeMax && ShowLife` (`Main.cs:45835`).
+        let Some(bar) = crate::combat_text::health_bar_rect(box_, n.hp, n.max_hp) else {
+            continue;
+        };
+        // The boss-scale 1.5 list (`Main.cs:45839-45922`): King Slime (50) and
+        // the Eye of Cthulhu (4) are the port's only shipped entries.
+        let scale = match n.kind {
+            NpcKind::KingSlime | NpcKind::EyeOfCthulhu => 1.5,
+            _ => 1.0,
+        };
+        let ratio = n.hp as f32 / n.max_hp as f32;
+        let rgb = crate::combat_text::bar_color(ratio);
+        // `Lighting.Brightness((int)((position.X + width / 2) / 16f),
+        // (int)((position.Y + height / 2) / 16f))` (`Main.cs:46021-46022`).
+        let tx = ((n.x + w * 0.5) / TILE_PX) as i32;
+        let ty = ((n.y + h * 0.5) / TILE_PX) as i32;
+        let l = light.get(tx, ty);
+        let brightness = l[0].max(l[1]).max(l[2]);
+        // `float num9 = 0.95f; num5 = num5 * alpha * num9` (`Main.cs:21943-21944`).
+        let a = brightness * 0.95;
+        let color = [
+            rgb[0] as f32 / 255.0 * a,
+            rgb[1] as f32 / 255.0 * a,
+            rgb[2] as f32 / 255.0 * a,
+            a,
+        ];
+        // `Main.cs:46018`: `X = position.X + width / 2`, `Y = position.Y +
+        // height + 10f` — then the interface pass's screen mapping.
+        let sx = (n.x + w * 0.5 - camera.x) * zoom + screen.x * 0.5 - 18.0 * scale;
+        let sy = (n.y + h + crate::combat_text::BAR_GAP - camera.y) * zoom + screen.y * 0.5;
+        let filled = bar.width;
+        let empty = crate::combat_text::BAR_WIDTH - filled;
+        // `Main.cs:21980-21984`: the depleted `Hb2` strip at `num3 + num2`.
+        let uv2 = lookups.health_bar_uv(
+            hb2,
+            filled as i32,
+            0,
+            empty as u32,
+            crate::combat_text::BAR_HEIGHT as u32,
+        );
+        r.push_ui_sprite(
+            [sx + filled * scale, sy],
+            [empty * scale, crate::combat_text::BAR_HEIGHT * scale],
+            uv2,
+            color,
+        );
+        // `Main.cs:21988-21990`: the filled `Hb1` strip from the left edge.
+        let uv1 = lookups.health_bar_uv(
+            hb1,
+            0,
+            0,
+            filled as u32,
+            crate::combat_text::BAR_HEIGHT as u32,
+        );
+        r.push_ui_sprite(
+            [sx, sy],
+            [filled * scale, crate::combat_text::BAR_HEIGHT * scale],
+            uv1,
+            color,
+        );
+    }
+}
+
 pub(crate) fn draw_npcs(
     r: &mut SpriteRenderer,
     assets: &NpcAssets,
@@ -1781,12 +1980,12 @@ pub(crate) fn draw_npcs(
                     cy - 13.0 * n.slime.stats().scale,
                 ],
             ),
-            NpcKind::DemonEye => (
-                assets.eye.as_ref(),
-                24.0,
-                [38.0, 24.0],
-                [n.x - 4.0, n.y + 2.0],
-            ),
+            // The eye rides the generic anchor like the C#'s generic path
+            // (`Main.cs:25511-25512`): NPC_2 is 38x48 — two 24-px rows —
+            // and the v2 magic `[n.x - 4, n.y + 2]` drew it 10 px above the
+            // C# anchor. The centred base plus `generic_anchor_shift_y`
+            // lands the frame's bottom 4 px below the box.
+            NpcKind::DemonEye => generic_anchor(assets.eye.as_ref(), 2, n, w, h),
             NpcKind::WanderingEye => (
                 assets.wandering_eye.as_ref(),
                 // `Main.npcFrameCount[133] = 4` (Main.cs:67082).
@@ -2384,17 +2583,21 @@ pub(crate) fn draw_npcs(
             }
             // The Cave Bat: the 5-frame flap over the 22x18 frames.
             // The casters: the humanoid sheets — the sorcerer's strip is 3
-            // frames, the Dark Caster's 6, the Desert Djinn's 3 (`Main.npcFrameCount`
-            // 29/32/45/533, `Main.cs:67082`), the display box the zombie's 38x48 shape.
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::DesertDjinn => {
+            // frames, the Dark Caster's 6 (`Main.npcFrameCount` 29/32/45,
+            // `Main.cs:67082`), the display box the zombie's 38x48 shape.
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
                 let (tex, count) = match n.kind {
                     NpcKind::GoblinSorcerer => (assets.goblin_sorcerer.as_ref(), 3),
                     NpcKind::Tim => (assets.tim.as_ref(), 3),
-                    NpcKind::DesertDjinn => (assets.desert_djinn.as_ref(), 3),
                     _ => (assets.dark_caster.as_ref(), 6),
                 };
                 humanoid_draw(tex, count, n, w, h)
             }
+            // The Desert Djinn: the 16-frame `NPC_533` strip
+            // (`Main.npcFrameCount[533]` = 16, `Main.cs:67082`) — rows 0..7
+            // hover, 8..15 cast (`FindFrame` case 533's `+ num * 8` bank,
+            // `NPC.cs:69989-69992`).
+            NpcKind::DesertDjinn => humanoid_draw(assets.desert_djinn.as_ref(), 16, n, w, h),
             // The Fire Imp: the 10-frame strip (`Main.npcFrameCount[24]`).
             NpcKind::FireImp => humanoid_draw(assets.fire_imp.as_ref(), 10, n, w, h),
             // The spheres: the single-frame 16x16 sheets.
@@ -2542,6 +2745,33 @@ pub(crate) fn draw_npcs(
             // (`Main.npcFrameCount[5]` = 2); the v1 kept the row height but
             // drew a 20x20 quad.
             NpcKind::ServantOfCthulhu => boss_draw(assets.servant_of_cthulhu.as_ref(), 2, n, w, h),
+            // The Pumpkin Moon family (`S1-F-13b` Phase 2): each kind draws
+            // its own sheet (the vanilla's `TextureAssets.Npc[type]` — the
+            // `PUMPKIN_SHEETS` rows) at `SetFrameSize`'s row height
+            // (`NPC.cs:90780-90800`'s integer division over the sheet, the
+            // row count the C#'s `Main.npcFrameCount[type]` gives —
+            // `Main.cs:67082`: 305-309 six frames, 310-314 fifteen, 315
+            // eleven, 325 ten, 326 fourteen, 327 twelve, 329 ten, 330 eight)
+            // with the generic centred anchor (`Main.cs:25511-25516`).
+            NpcKind::Scarecrow1
+            | NpcKind::Scarecrow2
+            | NpcKind::Scarecrow3
+            | NpcKind::Scarecrow4
+            | NpcKind::Scarecrow5
+            | NpcKind::Scarecrow6
+            | NpcKind::Scarecrow7
+            | NpcKind::Scarecrow8
+            | NpcKind::Scarecrow9
+            | NpcKind::Scarecrow10
+            | NpcKind::HeadlessHorseman
+            | NpcKind::MourningWood
+            | NpcKind::Splinterling
+            | NpcKind::Pumpking
+            | NpcKind::Hellhound
+            | NpcKind::Poltergeist => {
+                let ty = n.kind.pumpkin_moon_type().expect("a family kind");
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            },
         };
         let Some(tex) = tex else {
             continue;
@@ -2562,7 +2792,7 @@ pub(crate) fn draw_npcs(
         // (`bottom + 4 - frame_h/2`), the missing terms are `halfSize.Y -
         // frame_h/2` (the `:23048` overrides) plus `num45/num46/num47`.
         let anchor_shift = if uses_generic_anchor(n.kind) {
-            boss_half_size(n.kind, frame_h) - frame_h * 0.5 + npc_anchor_nudge(n)
+            generic_anchor_shift_y(n, h, frame_h)
         } else {
             0.0
         };
@@ -3172,14 +3402,15 @@ mod anchor_tests {
         }
         assert_eq!(npc_anchor_nudge(&bare(NpcKind::DD2WitherBeast)), -3.0);
         // `Main.NPCAddHeight`'s own rows (`Main.cs:22002-22184`): the Twins'
-        // 30 (`:22011`), the Eater of Souls' 26 (`:22031`), the zombie's 13
-        // (`:22039`), the hellbat's 10 (`:22079`), the Skeletron's -4
-        // (`:22099`) and the Wall of Flesh's -2 (`:22103`).
+        // 30 (`:22011`), the Eater of Souls' 26 (`:22031`), the Devourer's
+        // 13 (`:22037-22039` — type 3, the Zombie, has NO arm and takes the
+        // default 0, `Main.cs:22004`), the hellbat's 10 (`:22079`), the
+        // Skeletron's -4 (`:22099`) and the Wall of Flesh's -2 (`:22103`).
         for (kind, want) in [
             (NpcKind::Retinazer, 30.0),
             (NpcKind::Spazmatism, 30.0),
             (NpcKind::EaterOfSouls, 26.0),
-            (NpcKind::Zombie, 13.0),
+            (NpcKind::Zombie, 0.0),
             (NpcKind::DevourerHead, 13.0),
             (NpcKind::GiantWormHead, 8.0),
             (NpcKind::Hellbat, 10.0),
@@ -3240,5 +3471,76 @@ mod anchor_tests {
                 "{kind:?}'s halfSize shift"
             );
         }
+    }
+}
+
+/// The task/offsets pins: the three audit claims the branch fixes, each
+/// recomputed against the C# source before the fix was written.
+mod offset_fix {
+    use super::*;
+
+    fn bare(kind: NpcKind) -> Npc {
+        Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    fn sheet(w: f32, h: f32) -> BgTex {
+        BgTex {
+            uv: [0.0, 0.0, 1.0, 1.0],
+            w,
+            h,
+        }
+    }
+
+    /// CLAIM-1: `Main.cs:25511-25512` positions the frame at
+    /// `pos.Y + height - frame_h * scale + 4 + num47 + num46` because the
+    /// Draw's `origin = halfSize` cancels the formula's `+ halfSize.Y *
+    /// scale` term — pivot-only. Type 4 has no `num47`/`num46` arms, so the
+    /// EoC top is 110 - 166 + 4 = -52; the v2 model drew it at
+    /// -28 + (107 - 83) = -4, 48 px too low.
+    #[test]
+    fn eoc_top_matches_the_csharp_formula() {
+        let n = bare(NpcKind::EyeOfCthulhu);
+        let (w, h) = n.kind.size();
+        let t = sheet(110.0, 996.0);
+        let (_, fh, _, pos) = boss_draw(Some(&t), 6, &n, w, h);
+        let top = pos[1] + generic_anchor_shift_y(&n, h, fh);
+        assert!(
+            (top - n.y - (-52.0)).abs() < 1e-4,
+            "EoC top offset {:+} px, the C# anchor wants -52",
+            top - n.y
+        );
+    }
+
+    /// CLAIM-2: `Main.NPCAddHeight`'s default is 0 (`Main.cs:22004`) and the
+    /// 13f arm (`Main.cs:22037-22039`) covers the Devourer's 7/8/9 only
+    /// (`NPCID.cs:10691-10695`); Zombie is 3 (`NPCID.cs:10683`) and has no
+    /// arm of its own.
+    #[test]
+    fn zombie_has_no_npc_add_height() {
+        assert!(
+            (npc_add_height(&bare(NpcKind::Zombie)) - 0.0).abs() < 1e-4,
+            "Zombie's NPCAddHeight must be the default 0, got {}",
+            npc_add_height(&bare(NpcKind::Zombie))
+        );
+        assert!(
+            (npc_add_height(&bare(NpcKind::DevourerHead)) - 13.0).abs() < 1e-4,
+            "the Devourer keeps its 13"
+        );
+    }
+
+    /// CLAIM-3 (the guide half): the town NPC's drawn top follows the same
+    /// collapse — 40 - 56 + 4 = -12; the v2 model drew -8, 4 px too low.
+    #[test]
+    fn town_npc_top_uses_the_csharp_formula() {
+        let n = bare(NpcKind::Guide);
+        let (w, h) = n.kind.size();
+        let t = sheet(40.0, 1456.0);
+        let (_, fh, _, pos) = humanoid_draw(Some(&t), 26, &n, w, h);
+        let top = pos[1] + generic_anchor_shift_y(&n, h, fh);
+        assert!(
+            (top - n.y - (-12.0)).abs() < 1e-4,
+            "Guide top offset {:+} px, the C# anchor wants -12",
+            top - n.y
+        );
     }
 }
