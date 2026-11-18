@@ -3454,6 +3454,39 @@ pub struct Npc {
     /// `FaceTarget` writes it (`:77649`) and the steering tails read it
     /// (`AI_109`'s `:66154-66185`).
     pub direction_y: i32,
+    /// `NPC.target` (`NPC.cs:6457`, field default -1; `SetDefaults`'
+    /// `ClearTarget` (`:8539`, `:42924-42927`) sets 255): the player slot
+    /// the shared selection (`npc_target::target_closest`,
+    /// `NPC.cs:77652-77666`) picked. The port has one session player, so
+    /// a live pick is always slot 0.
+    pub target: i32,
+    /// `NPC.targetRect` (`NPC.cs:6483`): the picked target's box —
+    /// `(x, y, width, height)` with the int-truncated position
+    /// (`:77717`/`:77735`). Written by `SetTargetTrackingValues`.
+    pub target_rect: (i32, i32, i32, i32),
+    /// `NPC.targetSetFrame` (`NPC.cs:6459`): the `Main.EverLastingTicker`
+    /// stamp of the last selection (`:77780`). Its only C# reader is the
+    /// target-line fade (`Main.cs:57174`), unported.
+    pub target_set_frame: u64,
+    /// `NPC.oldTarget` (`NPC.cs:6501`): the previous tick's `target`,
+    /// latched by `UpdateNPC` before the AI (`NPC.cs:90393`). The
+    /// facing-inheritance gate reads it (`:77748`).
+    pub old_target: i32,
+    /// `Entity.oldDirection` / `NPC.oldDirectionY`: the previous tick's
+    /// facings, latched beside `oldTarget` (`NPC.cs:90394-90395`); the
+    /// `netUpdate` change flag compares them (`:77776`).
+    pub old_direction: i32,
+    pub old_direction_y: i32,
+    /// `NPC.netUpdate` (`NPC.cs:6133`): the selection arms it when the
+    /// target/facing changed and neither collision axis blocked
+    /// (`:77776-77779`). The wire send path lands with the NPC net sync.
+    pub net_update: bool,
+    /// `NPC.boss` (`NPC.cs:6513`, the per-type `SetDefaults` rows): the
+    /// facing-inheritance gate's `!this.boss` term (`:77749`). The port's
+    /// kinds carry no general boss table yet — the rows land with the
+    /// caller migration (S1-D-3p follow-up); every kind keeps the stock
+    /// false until then.
+    pub boss: bool,
     /// `NPC.collideX`/`collideY` (`NPC.cs:6447-6448`): the axes the last
     /// tick's collision pass blocked. The AI reads them a tick later
     /// (`AI_109`'s `:66098-66121` bounce).
@@ -4552,6 +4585,17 @@ impl Npc {
             caster_counter: 0,
             cast_windup: 0,
             direction_y: 1,
+            // `SetDefaults`' `ClearTarget()` (`NPC.cs:8539`,
+            // `:42924-42927`): the fresh NPC targets the 255 sentinel.
+            target: 255,
+            target_rect: (0, 0, 0, 0),
+            target_set_frame: 0,
+            // `SetDefaults` latches `oldTarget = target` (`NPC.cs:8540`).
+            old_target: 255,
+            old_direction: facing,
+            old_direction_y: 1,
+            net_update: false,
+            boss: false,
             collide_x: false,
             collide_y: false,
             old_vx: 0.0,
@@ -8209,17 +8253,53 @@ impl Npc {
     /// `AI_003_Fighters`: walk toward the player and jump when the path is blocked.
     fn update_zombie(&mut self, world: &World, player: &mut Player, _dt: f32) {
         let (w, h) = NpcKind::Zombie.size();
-        let (pcx, pcy) = player.center();
-        let (cx, cy) = self.center();
-        let dx = pcx - cx;
-        let dy = pcy - cy;
-        let near = dx.abs() < 80.0 * TILE_PX && dy.abs() < 40.0 * TILE_PX;
-        if near {
-            self.facing = if dx >= 0.0 { 1 } else { -1 };
+        // S1-D-3p — the shared selection (`NPC.TargetClosest`,
+        // `NPC.cs:77652-77781`, `npc_target.rs`) replaces the ad-hoc
+        // dx-sign facing and the invented 80×40-tile aggro window:
+        // `AI_003_Fighters` calls `TargetClosest()` at `NPC.cs:57369`
+        // under the `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
+        // gate (`:57336`, `:60300-60330`). For the zombie (type 3) that
+        // gate is false only on a non-eclipse day above the surface
+        // (`!Main.eclipse && IsItDay() && !SpawnedFromStatue &&
+        // !(position.Y > worldSurface * 16)`); the graveyard/invasion/
+        // event terms cannot fire for this kind in the port.
+        let cand = crate::npc_target::TargetCandidate {
+            active: true,
+            dead: player.dead,
+            // The port has no hardcore ghosts (`Player.ghost`).
+            ghost: false,
+            x: player.x,
+            y: player.y,
+            width: crate::player::WIDTH as i32,
+            height: crate::player::HEIGHT as i32,
+            // `Player.aggro`/`npcTypeNoAggro`/`tankPet` have no port
+            // fields yet (the stealth/tank systems are unported) — the
+            // stock 0/false/None keep the C# metric's plain form.
+            aggro: 0,
+            item_animation: player.frame_inputs.swing_anim as i32,
+            npc_type_no_aggro: false,
+            tank_pet: None,
+        };
+        let discouraged = !world.eclipse
+            && world.day_time
+            && !self.spawned_from_statue
+            && !((self.y as f64) > world.world_surface * 16.0);
+        if !discouraged {
+            // The `EverLastingTicker` is not plumbed into `Npc::update`
+            // yet; the stamp's only C# reader is the unported target-line
+            // fade (`Main.cs:57174`) — 0 until the caller migration.
+            crate::npc_target::target_closest(self, world, &[cand], true, 3, 0);
             self.sprite_dir = self.facing;
-            // The C#'s cap for the zombie (`AI_003_Fighters`'s `num107`
-            // default group, `NPC.cs:58322-58374`): 1f.
-            self.vx = self.facing as f32 * NpcKind::Zombie.ai3_walk_speed().unwrap_or(1.0);
+            if !player.dead {
+                // The C#'s cap for the zombie (`AI_003_Fighters`'s `num107`
+                // default group, `NPC.cs:58322-58374`): 1f. The port keeps
+                // its direct velocity write (the C#'s 0.07 approach lands
+                // with the full AI_003 migration — ANALYSIS, S1-D-3p).
+                self.vx =
+                    self.facing as f32 * NpcKind::Zombie.ai3_walk_speed().unwrap_or(1.0);
+            } else {
+                self.vx *= 0.9;
+            }
         } else {
             self.vx *= 0.9;
         }
