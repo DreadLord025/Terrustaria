@@ -2084,6 +2084,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the other unported styles), 24x16, `penetrate = -1`,
             // `timeLeft *= 5` and the idStatic-12 pair.
             SLIME_MINION => (24.0, 16.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // AI_026 slice B (S1-D-4b-11) — the two spinning boss-head
+            // pets. `Projectile.cs:8486-8495` (the 884-886 range block;
+            // 885 SkeletronPet) and `:8521-8530` (the 889-892 range
+            // block; 889 SkeletronPrimePet): 20x20, aiStyle 26,
+            // friendly, `penetrate = -1`, `timeLeft *= 5` (3600 →
+            // 18000), the stock `tileCollide = true` reset (`:745`) —
+            // the arm sets it false on its first tick (`:60096`), so
+            // `HandleMovement` never collides them. `netImportant`
+            // (`:8488`/`:8523`) rides the overlay below.
+            SKELETRON_PET | SKELETRON_PRIME_PET => {
+                (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE)
+            }
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -2310,7 +2322,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         minion,
         sentry,
         minion_slots,
-        net_important: minion || sentry,
+        net_important: minion
+            || sentry
+            // AI_026 slice B: the boss-head pets' `netImportant = true`
+            // (`Projectile.cs:8488`/`:8523`).
+            || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET),
         ignore_water: ((minion || sentry)
             && !matches!(kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
@@ -2335,6 +2351,14 @@ pub const STARDUST_CELL: u16 = 613;
 pub const STARDUST_GUARDIAN: u16 = 623;
 pub const BABY_BIRD: u16 = 759;
 pub const SLIME_MINION: u16 = 266;
+/// `ProjectileID.SkeletronPet` (885) — AI_026 slice B (S1-D-4b-11): the
+/// spinning Skeletron-head pet (`Projectile.cs:60092-60253`'s shared
+/// 885/889 arm; buff 288's pet, `Player.cs:11105`).
+pub const SKELETRON_PET: u16 = 885;
+/// `ProjectileID.SkeletronPrimePet` (889) — AI_026 slice B: the spinning
+/// Skeletron-Prime-head pet with the `localAI[0]` laser-eye accumulator
+/// (buff 292's pet, `Player.cs:11121`).
+pub const SKELETRON_PRIME_PET: u16 = 889;
 pub const STORM_TIGER_1: u16 = 833;
 pub const STORM_TIGER_2: u16 = 834;
 pub const STORM_TIGER_3: u16 = 835;
@@ -2434,6 +2458,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The baby bird's 5-frame sheet (`Main.cs:8506`) — `AI_158`'s
         // `frame == projFrames - 1` perch test reads it (`:48773`, `:12480`).
         BABY_BIRD => 5,
+        // AI_026 slice B: the boss-head pets' sheets (`Main.cs:8673`
+        // 885 → 10, `:8677` 889 → 11) — the spin arm pins frame 6
+        // (`Projectile.cs:60192`) and the walk steps frames 0-5
+        // (`:60240-60247`).
+        SKELETRON_PET => 10,
+        SKELETRON_PRIME_PET => 11,
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap
         // (`Projectile.cs:69336`) and `AI_139`'s kill test (`:69406`) read it.

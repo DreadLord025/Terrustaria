@@ -691,8 +691,9 @@ tile.active()
 /// `Collision.SolidCollision(position, width, height)` — the Tempest's alpha
 /// ramp (`AI_062`'s `Projectile.cs:65314`/:66093`): the box's four corners plus
 /// its centre over active non-top solids. The C#'s exact point cloud is a
-/// margin-level difference — recorded in ANALYSIS.
-fn box_solid(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+/// margin-level difference — recorded in ANALYSIS. `pub(crate)`: the
+/// AI_026 slices' grounded-reset gate (`:60106` etc.) shares it.
+pub(crate) fn box_solid(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
 let pts = [
     (pos.x, pos.y),
     (pos.x + w, pos.y),
@@ -12520,6 +12521,27 @@ impl ProjectilePool {
                                     b.knock_back,
                                 );
                             }
+                        }
+                        // `AI()`'s `else if (this.aiStyle == 26)`
+                        // (`Projectile.cs:26416-26419`) → `AI_026` —
+                        // SLICE B ONLY (S1-D-4b-11): the two spinning
+                        // boss-head pets 885/889
+                        // (`projectile_ai026_b::AI_026_B_KINDS`, the
+                        // shared arm `:60092-60253`). Every other
+                        // aiStyle-26 kind (the 266 slime minion today;
+                        // slice A's 14 flyers land on
+                        // task/S1-D-4b-10-melee-a and chain ahead of
+                        // this gate at merge time) keeps the
+                        // pre-existing `_ => {}` fall-through,
+                        // byte-identical: the gate returns false and
+                        // nothing mutates.
+                        26 => {
+                            let _ = crate::projectile_ai026_b::ai026_b_tick(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref_mut(),
+                                rng,
+                            );
                         }
                         _ => {}
                     }
