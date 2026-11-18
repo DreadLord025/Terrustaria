@@ -832,6 +832,50 @@ diff exactly inside the rectangle against the unpainted frame (3756 px each);
 the unpainted branch is pixel-identical to main; the extras round-trip test
 covers the sparse save.
 
+### The blend batches (S1-G-3, 2026-11-18)
+
+The vanilla frame runs three `SpriteBatch.Begin` blend configurations the port
+now expresses (`Main.cs:27457-27494`, research/41 D-2): the alpha-blend default
+(`Main.cs:22193`), `BlendState.Additive` (`:27490`) and the custom
+`Main._multiplyBlendState` (`:27462-27470` — `ReverseSubtract` with
+`SourceAlpha`/`One` on both the color and the alpha channels, i.e.
+`dst − src·srcAlpha` clamped at 0). `sprite.rs::BlendMode` builds one pipeline
+per mode over the same shader — exactly like XNA, where only the device blend
+state changes between `Begin` calls. The per-instance `blend` tag rides the
+instance buffer and `draw_blend_runs` splits each range into contiguous
+same-mode runs: a run boundary is the C#'s `End()`/`Begin(blendState)` batch
+boundary, so push order (and therefore composite order) is preserved; an
+all-alpha range stays a single draw, leaving the default path byte-identical.
+
+The only vanilla consumer of the two extra states is `DrawProj_LightsBane`
+(`Main.cs:27455-27495`), ported as `projectile.rs::draw_lights_bane`: the
+13-row frame slice (the drawer's own `Frame(1, 13, …)`, NOT
+`Main.projFrames[974]` = 1), the `(0.7, 0.7)·scale` quads, two
+`White·0.3·num` stretched ghosts of row 12 (`(1, 6)` and `(2, 2)` stretches)
+plus four `Color.White` copies in the multiply batch, then two `Color.Magenta`
+copies in the additive batch. `num = Remap(frame, 0, 3, 0, 1) · Remap(frame,
+4, 12, 1, 0)` (`:27480`). No light tint — the C# draws raw White/Magenta here.
+The aiStyle-188 frame machine (`Projectile.cs:42229-42262`) and the SetDefaults
+row (`:9237-9252`) landed with it; the sound cue and the dust streak (with
+their `Main.rand` draws) are skipped like `ai_volcano`'s (no sound/dust layer
+in the pool). The pool's `timeLeft = 30` kills the slash before the frame
+machine's own frame-12 kill at tick 36 — both gates are ported and tested.
+
+Deviations kept: the alpha-blend default's *premultiplied* convention stays
+asserted (XNA's `BlendState.AlphaBlend` definition is not in the decompile —
+research/41 D-2's original note); the additive/multiply equations themselves
+are pinned by `blend_equations_land_on_the_csharp_batches` on both an sRGB
+target (the port's swapchain) and a plain UNORM target (the vanilla's non-sRGB
+backbuffer, where the blend maths runs on the stored bytes directly).
+
+Verification: `blend_states_match_the_csharp_fields`,
+`blend_runs_split_only_at_batch_boundaries`, the headless GPU equation test,
+and `lights_bane_tests` (4). Screenshots
+`docs/screenshots/s1-g-3-lights-bane-{base,blend}.png` (golden.wld, TR_DAY=1,
+TR_THROW=974, frame 20): two identical runs SHA256-equal (`61c19b9b…`), the
+blend frame differs from the base only in the slash's bbox (32 826 px,
+`tools/pixel_diff.py`).
+
 ## Living trees (M5-LIVING-trees)
 
 `crates/tr-core/src/worldgen/living_trees.rs` ports the "Living Trees"

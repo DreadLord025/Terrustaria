@@ -1404,14 +1404,12 @@ impl SpriteRenderer {
             pass.set_vertex_buffer(0, buffer.slice(..));
             if world_half && !self.back.is_empty() {
                 pass.set_bind_group(0, &self.bind_world, &[]);
-                stats.draw_calls +=
-                    draw_blend_runs(&mut pass, &self.pipelines, &self.back, 0);
+                stats.draw_calls += draw_blend_runs(&mut pass, &self.pipelines, &self.back, 0);
             }
             if world_half && !self.world.is_empty() {
                 let start = self.back.len() as u32;
                 pass.set_bind_group(0, &self.bind_world, &[]);
-                stats.draw_calls +=
-                    draw_blend_runs(&mut pass, &self.pipelines, &self.world, start);
+                stats.draw_calls += draw_blend_runs(&mut pass, &self.pipelines, &self.world, start);
             }
             // The world-effect range: the UI camera transform, the world draw
             // order — under the map batches and the interface.
@@ -1786,7 +1784,11 @@ mod tests {
                 bind_group_layouts: &[],
                 immediate_size: 0,
             });
-            for mode in [BlendMode::AlphaBlend, BlendMode::Additive, BlendMode::Multiply] {
+            for mode in [
+                BlendMode::AlphaBlend,
+                BlendMode::Additive,
+                BlendMode::Multiply,
+            ] {
                 let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                     label: Some("blend-test-pipeline"),
                     layout: Some(&layout),
@@ -1863,7 +1865,12 @@ mod tests {
                 // the shader's output in both cases — never decoded again.
                 let s = src;
                 let d = if format == wgpu::TextureFormat::Rgba8UnormSrgb {
-                    [srgb_decode(dst[0]), srgb_decode(dst[1]), srgb_decode(dst[2]), dst[3]]
+                    [
+                        srgb_decode(dst[0]),
+                        srgb_decode(dst[1]),
+                        srgb_decode(dst[2]),
+                        dst[3],
+                    ]
                 } else {
                     dst
                 };

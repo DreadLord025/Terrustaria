@@ -18,7 +18,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         let empty = app.projectiles.slots().iter().all(|p| !p.active);
         if empty {
             if let Some(p) = &app.player {
-            let (cx, cy) = p.center();
+                let (cx, cy) = p.center();
                 if kind == crate::projectile::LIGHTS_BANE {
                     // The slash's scale rides `ai[0]` (`AI_188_LightsBane`,
                     // `Projectile.cs:42240`) — the fixture spawns it through
