@@ -54,6 +54,7 @@ mod npc_chat;
 mod revenge;
 mod npc_ai;
 mod npc_target;
+mod npc_ai_style21;
 mod npc_buffs;
 mod persist;
 mod grapple;
