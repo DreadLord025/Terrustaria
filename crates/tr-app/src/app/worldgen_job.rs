@@ -258,6 +258,10 @@ mod tests {
     /// 1.0 (`WorldGenerator.cs:424`'s weight sum + the Start/End bookends).
     #[test]
     fn s1_e_17_the_worker_generates_and_saves_a_world() {
+        // The language lock: the worker reads `lang::text` (the step
+        // messages); pin the culture against the tooltip tests.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let dir = std::env::temp_dir().join(format!("tr-s1-e-17-job-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let opts = tr_core::worldgen::GenOptions {
@@ -299,6 +303,8 @@ mod tests {
     /// (`WorldGen.cs:6595-6598` skips SaveNewWorld).
     #[test]
     fn s1_e_17_the_abort_arm_skips_the_save() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let dir = std::env::temp_dir().join(format!("tr-s1-e-17-abort-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let opts = tr_core::worldgen::GenOptions {

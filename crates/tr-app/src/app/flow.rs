@@ -2912,6 +2912,11 @@ pub(crate) mod front_flow_tests {
     /// flags/evil mirror the draft's seed resolution.
     #[test]
     fn s1_e_17_create_opens_the_loading_screen_with_a_live_job() {
+        // The language lock: the worker reads `lang::text` and the test
+        // drains it before returning, so the culture stays pinned against
+        // the tooltip tests' register→read sequence.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = world_creation_app();
         if let Some(FrontScreen::WorldCreation(draft)) = app.front.as_mut() {
             draft.name = "LoadTest".into();
@@ -2968,6 +2973,8 @@ pub(crate) mod front_flow_tests {
     /// world saved.
     #[test]
     fn s1_e_17_the_abort_tail_reopens_the_world_select() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = flow_app(None, vec![], vec![]);
         // A small world through the job's own spawn (the draft path would
         // generate a 6400x1800 world — too slow for the abort race).
