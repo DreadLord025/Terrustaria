@@ -15640,6 +15640,73 @@ port has no such method; each machine writes `facing`/`sprite_dir` itself, and
 `npc_ai.rs::walker_step`'s `aggro_x`/`aggro_y` window (80×40 tiles at the call sites)
 is an invention with no C# counterpart. Retrofitting it changes which NPC targets
 which for every aiStyle-3 kind, so it needs its own branch and its own test pass.
+**The helper landed with S1-D-3p (2026-11-18)** — see "The shared target selection
+(S1-D-3p)" below; the caller migration is the documented remainder.
+
+## The shared target selection (S1-D-3p, 2026-11-18)
+
+`NPC.TargetClosest`/`TryTrackingTarget`/`SetTargetTrackingValues`
+(`NPC.cs:77652-77781`) is now ported as `crates/tr-app/src/npc_target.rs`
+(`target_closest` + the `TargetCandidate`/`TankPet` inputs). The port is
+1:1: the slot-order scan with the strict `<` replacement (first slot wins
+ties, `:77693`), the Manhattan metric minus `Player.aggro` (`:77687-77688`),
+the `npcTypeNoAggro && direction != 0` +1000 penalty (`:77689-77692`), the
+tank-pet steal (`distance − 200`, both `< distance` and `< 200`, plus the
+1×1-centre `Collision.CanHit` walk, `:77701-77709` — the port's
+`projectile::can_hit`, S1-D-7), the int-truncated `targetRect`
+(`:77717`/`:77735`), the INTEGER half-extent centre facing (the C# casts
+`(float)(base.width / 2)` AFTER the int divide, `:77719`/`:77752`), the
+aiStyle-3 bottom-edge `directionY` with `<=` (`:77761-77768`), the dead /
+no-aggro facing suppression (`:77736-77743`), the `oldTarget ∈ 0..=254 &&
+itemAnimation == 0 && aggro < 0 && !boss` facing-inheritance gate
+(`:77748-77749`), the buff-31 confused flip (`:77772-77775`; the C# latches
+`this.confused` in the buff scan `:92029-92032`, the port reads
+`NpcBuffs::find_buff_index(31)`), the collide-gated `netUpdate`
+(`:77776-77779`) and the `targetSetFrame` stamp (`:77780`). The `Npc`
+struct gained `target` (the `ClearTarget` 255 default, `NPC.cs:8539`,
+`:42924-42927`), `target_rect`, `target_set_frame`, `old_target`,
+`old_direction`, `old_direction_y`, `net_update`, `boss`.
+
+Deliberate deviations (the migration remainder):
+
+* **One caller wired.** `update_zombie` (`npc.rs`) is the representative:
+  it calls the helper under the `AI_003` chase gate
+  (`DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`, `NPC.cs:57336`,
+  `:60300-60330` — for type 3 only the non-eclipse-day-above-surface terms
+  can fire) and drops the invented 80×40-tile aggro window. The other ~29
+  `walker_step` callers and every ad-hoc-facing AI keep their current
+  writes until the migration; `walker_step`'s `aggro_x`/`aggro_y` params
+  stay for them (the C# has no such window — the chase is gated by the
+  despawn-discouragement arm, not a distance box).
+* **Stock player inputs.** `Player.aggro`, `npcTypeNoAggro` and `tankPet`
+  have no port fields (the stealth armour / tank pets are unported
+  systems); the wiring passes 0/false/None, the C# stock values. The
+  helper itself implements all three gates and the parity tests exercise
+  them through `TargetCandidate`.
+* **The zombie's velocity write stays direct** (`facing * 1f`): the C#'s
+  0.07-per-tick approach with the 0.8 overspeed brake (`NPC.cs:58378-58400`)
+  belongs to the full `AI_003_Fighters` migration, not the target helper.
+  A dead target keeps the port's 0.9 decay (the C# keeps walking toward
+  the corpse; the facing suppression is ported, the walk arm is the
+  migration's).
+* **The `old_*` latches** (`NPC.cs:90393-90395`, `UpdateNPC`'s head) are
+  not yet run from `Npc::update_rng`; the helper reads whatever the caller
+  latched. Until the migration adds the head latch, `old_target` holds
+  the spawn-time 255, so the inheritance gate stays inert in live play
+  (the tests drive it explicitly).
+* **`targetSetFrame` stamps 0** from the zombie wiring: the
+  `Main.EverLastingTicker` (`Main.cs:413`, `:17177`) is not plumbed into
+  `Npc::update`; the stamp's only C# reader is the target-line fade
+  (`Main.cs:57174`), unported. The helper takes the ticker as a parameter.
+* **`NPC.boss` defaults false for every kind** — the per-type
+  `SetDefaults` boss rows land with the caller migration; the gate's
+  `!boss` term is ported and tested.
+
+11 parity tests (`npc_target::tests`): the aggro metric, the no-aggro
+penalty + facing suppression, the rect truncation + int-centre ties, the
+aiStyle-3 bottom-edge arm, the oldTarget inheritance (swing/fresh/boss
+breaks), the confused flip, the tank steal + its LOS wall, the dead/absent
+fallback, the netUpdate collide gate, and the zombie wiring proof.
 
 ## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
 
@@ -16973,6 +17040,47 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
 
+## The footstep sound wave (S1-E-21 wave D, 2026-11-18)
+
+**Source correction:** vanilla 1.4.5.8 has NO per-tile-type player footstep
+cues. The whole decompile carries no `footstep`/`StepSound` surface table and
+no Snow/Stone step assets exist in `Content/Sounds` — the grass (`Grass`,
+sound 6), stone (`Tink`, 21) and dig cues are the tile-break families
+(`WorldGen.KillTile_PlaySounds`, wave C). The only footstep path is the
+Hermes-boot fast run: `Player.SpawnFastRunParticles` (`Player.cs:20205-20216`)
+plays `hermesStepSound` when `runSoundDelay == 0 && velocity.Y == 0`
+(`:20212`) at `position` (the top-left, `:20214`) and re-arms
+`runSoundDelay = IntendedCooldown` (`:20215`). The callers are
+`HorizontalMovement`'s two 0.2x-acceleration arms past the
+`(accRunSpeed + maxRunSpeed) / 2` threshold (`:19779`), grounded and
+unmounted (`:19987-19990`, `:20017-20020`). `PlayerFrame` re-derives the cue
+every frame: default `(SoundType 17, Style -1, Cooldown 9)`
+(`:35947-35949`), the Moon Lord legs (`legs == 140`) override to
+`(2, 24, 6)` (`:35959-35964`). `Player.Update` ticks the delay down
+(`:24706-24708`).
+
+The port: `Player::spawn_fast_run_particles` queues the play
+(`pending_step_sound`), `update_frames` re-derives `hermes_step_sound`, the
+decrement sits after `purge_immune_buffs` and before `update_frames` (the
+C# order), and `world_sim/player.rs` drains the queue through
+`Audio::play_step_sound` with the `UpdatePlayers` stream (`Player.Update`
+runs under the `Main.cs:17754` swap). Case 17 (`LegacySoundPlayer.cs:854-864`)
+plays `Sounds/Run` and rolls `Main.rand.Next(-10, 11) * 0.01` for the pitch
+(`:862`, `sound::Family::Run`) — the draw runs only AFTER the attenuation
+gate passed (`:369-436` precedes the switch); the int overload
+(`SoundEngine.cs:102-108`) draws no `GetRandomPitch` NextFloat. The Item-24
+arm delegates to wave A's `play_use_sound` façade (the audio-only
+`GetRandomPitch` + the case-2 pitch draw after the gate). `Run` and
+`Item_24` join `SFX_CUES`.
+
+Deviations: the `SpawnFastRunParticles` dust trails (`:20217-20300` — the
+wings-3/rocket-6, sailDash and shoe-dye arms) are visual seams, unported;
+the legs-140 override is coded but unreachable — the port's `legs_armor`
+has no producer yet (the C#'s `:35767` effective-legSlot assignment is part
+of the unported armor visuals); the `SoundInstanceRun` stop/re-create pool
+is the standing D4 (a fresh source per play). Tests
+`s1_e_21d_the_fast_run_queues_the_footstep_cue_and_cooldown`,
+`s1_e_21d_the_footstep_pitch_draw_rides_the_passed_stream`.
 ## The read-only NPC snapshot seam (S1-D-8 partial, task/S1-D-8, 2026-11-18)
 
 Stage-2 prerequisite (research/39 "Phase A"): the NPC pass scans `app.npcs.iter()`
