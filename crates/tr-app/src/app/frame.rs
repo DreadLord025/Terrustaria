@@ -538,7 +538,7 @@ mod tests {
     ///   windy day / ambience), the tile-edit pass, the net pass and the map.
     ///
     /// Every phase name is emitted once per in-world frame.
-    const WORLD_PHASES: [&str; 20] = [
+    const WORLD_PHASES: [&str; 21] = [
         "players",
         "npcs",
         // `Main.UpdateWorld_Gores` (`Main.cs:17971`, called at `:17771`) sits
@@ -564,6 +564,11 @@ mod tests {
         // `DoUpdateInWorld_Inner`'s step-gated tail (`Main.cs:17816`), after
         // the camera walks — it stepped from the post-rain slot down here.
         "scene_state",
+        // `Main.chatMonitor.Update()` (`Main.cs:17282`): after the gated
+        // `DoUpdateInWorld` (`:17278-17281`), before the `!paused` gate's
+        // siblings end — the chat corner-visibility timers decay on every
+        // unpaused frame, stepper-blocked included.
+        "chat",
     ];
 
     /// An in-world headless `App`: the flow fixture plus a spawned player, so
@@ -1272,7 +1277,10 @@ mod tests {
                 "rain",
                 "windy_day",
                 "ambience",
-                "map"
+                "map",
+                // `Main.chatMonitor.Update()` (`Main.cs:17282`) sits after
+                // the `DoUpdateInWorld` gate — it ticks on blocked frames.
+                "chat",
             ],
             "a stepper-blocked frame runs no editing or net pass"
         );
@@ -1680,6 +1688,7 @@ mod tests {
             "editing_net_phase",
             "map_phase",
             "camera_scene_tail",
+            "chat_phase",
             "gfx_quality_apply",
         ] {
             assert!(
@@ -1738,6 +1747,9 @@ mod tests {
                 "editing_net_phase",
                 "map_phase",
                 "camera_scene_tail",
+                // `Main.chatMonitor.Update()` (`Main.cs:17282`) — after
+                // the gated `DoUpdateInWorld`, under the `!paused` arm.
+                "chat_phase",
                 "gfx_quality_apply",
             ],
             "the orchestrator's call order is the frozen phase order"
@@ -1786,6 +1798,10 @@ mod tests {
         assert!(
             orch.contains(&arm("if step_allowed", "camera_scene_tail(dt, screen)")),
             "the camera walks + scene_state under the step gate"
+        );
+        assert!(
+            orch.contains(&arm("if !paused", "chat_phase()")),
+            "the chat timers decay under the pause gate only (Main.cs:17282 is post-step-gate)"
         );
     }
 

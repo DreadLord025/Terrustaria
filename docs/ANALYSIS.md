@@ -15313,11 +15313,65 @@ feed cannot change the fixed-step order or any stream.
   divergence that a later refactor could misread as a *missing* port. The
   Cursed Torch (523) is the visible case — a `WaterTorches` row, so it stays lit
   under water where a plain torch goes dark.
-* **Remaining source families.** Projectile (107 call sites), NPC (80), Player (46),
+* **Remaining source families.** Projectile (107 call sites), Player (46),
   Dust (94), Mount (14), TileDrawing (6) and the particles/gore rows are **not**
   ported. `Gore.Update`'s own lights (`Gore.cs:258`, `:940`, `:1076-1080`) can now be
   expressed through `EntityLights` but still need a seam from `tr-core` — the gore
-  pool has no light sink, so they stay dropped.
+  pool has no light sink, so they stay dropped. The NPC family is **started**
+  (2 of 80 call sites), see below.
+
+### The NPC family (S1-E-5, 2026-11-18)
+
+`crates/tr-app/src/npc_lights.rs::npc_light` ports the aiStyle-8 light tail at
+the end of `NPC.AI` (`NPC.cs:21280-21373`) — the type chain the C# runs after
+`base.position += netOffset` (`:21279`; the feed reads the offset position too,
+restored at `:21374`). It feeds the **same** `EntityLights` pair as the item
+family (one list pair per engine in the C#, not one per family) and shares the
+tile-anchor vocabulary (`entity_lights.rs::XAnchor`/`tile_x`/`tile_y`); both
+feeds run in the frame pass (`app/frame/draw.rs`), after the step, in `Main.npc`
+slot order. Of the NPC family's **80 `Lighting.AddLight` call sites, 2 landed**:
+
+* **`NPC.cs:21360` — the Desert Djinn (533)**: `AddLight(base.Top, 0.6f, 0.6f,
+  0.3f)`. `base.Top` is `(position.X + width/2f, position.Y)` (`Entity.cs:86-91`)
+  — centre x, top y — and the `Vector2` overload truncates the quotient per
+  axis (`Lighting.cs:140-143`); the port models it as `XAnchor::Top`. The kind
+  itself landed with this task: `SetDefaults` 28x62 / damage 40 / defense 20 /
+  lifeMax 220 / kb 0 / value 1200 (`NPC.cs:14974-14987`), `FindFrame` case 533's
+  8-row hover cycle + the cast windup's `+8` row bank (`:69978-69992`,
+  `npcFrameCount[533]` = 16, `Main.cs:67082`), and the AI cycle's own constants
+  (`CasterParams::DESERT_DJINN`): the single `ai[0] == 180` trigger sets
+  `ai[1] = 181` (`:21031-21038`) and the wrap fires at 360 (`:21079-21082`),
+  not the standard 100/200/300 → 30 / 650.
+* **`NPC.cs:21365` — the aiStyle-8 else arm**: `AddLight(base.Center, 0.6f,
+  0.6*0.65f, 0.6*0.4f)` — the Fire Imp (24) is the port's only remaining
+  aiStyle-8 kind. The arm's `Main.rand.Next(6)` dust half (`:21366-21372`) is
+  skipped wholesale (the RNG rule below).
+
+**What stays dropped, exactly:**
+
+* The 29/45/32 arms (`:21280-21300`) are **dust-only** — no `AddLight` — so the
+  sorcerer/Tim/Dark Caster stay dark; nothing to port until the dust system.
+* The Djinn's curse volley (`:21117-21230`) draws `Main.rand`
+  (`:21140-21141`'s target-tile rolls, `:21195-21196`'s velocity jitter) — the
+  whole volley is skipped (`shoot_tick: None`), so the Djinn never fires and
+  the `Main.rand` stream stays untouched. The teleport half of its cycle is
+  RNG-shared with the standard casters and rides the existing
+  `find_teleport_spot` draws in the same order.
+* The aiStyle-23 chain (`:25239-25250`) lights types **83 = CursedHammer** and
+  **179 = CrimsonAxe** (`NPCID.cs:10843`/`:11035`) plus a fallback — neither
+  kind is in the port's roster (PrimeVice 130 rides aiStyle 34,
+  DD2KoboldFlyerT3 575 aiStyle 108; they never reach that chain). The three
+  arms wait for those kinds.
+* The remaining **76 NPC call sites** (the aiStyle-9 sphere glow `:21561`, the
+  boss AIs' lights, the `UpdateNPC` tail's torch/buff lights `:90841-92412`,
+  etc.) are not ported; each needs its AI family or a rand-bearing dust arm
+  first.
+
+Tests: `npc_lights.rs` pins the Djinn's Top-anchor tile + colour (incl. the
+centre-x vs left-edge difference and negative-coordinate truncation), the Fire
+Imp's else-arm centre light, and the dark casters; `npc.rs`'s
+`the_desert_djinn_rides_its_own_trigger_and_wrap` pins the 180/181/360 cycle and
+the skipped volley; the protocol round-trip roster grew 198 → 199.
 
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 
@@ -15822,3 +15876,48 @@ bar and the worm families' `DrawInterface_Healthbar_Worm` stay with the
 open S1-D-6b row; `npc.gfxOffY` (unported on NPCs) and the flipped-gravity
 mirror (`Main.cs:21923-21927`; the port has no gravity-flip state) are
 absent; `HealthBarDrawSettings` is fixed at the default 1.
+
+## The corner chat HUD (fix/chat-corner-display)
+
+The bug: typed messages were invisible until the chat was opened. Cause:
+`ui::draw_chat` returned early on `!chat.open` **before** the log walk, so
+the always-on corner HUD was never drawn - a "never-called" failure, not a
+zero-alpha one. The C# splits the two halves: the blinker/input strip live
+inside `if (Main.drawingPlayerChat)` (`Main.cs:40932-40996`) but
+`Main.chatMonitor.DrawChat(Main.drawingPlayerChat)` runs unconditionally
+(`:40997`), and `RemadeChatMonitor.DrawChat` gates each line on
+`drawingPlayerChat | CanBeShownWhenChatIsClosed` (`:79`).
+
+The fix ports the missing state and tick:
+
+- `ChatLine.time_left` = `ChatMessageContainer._timeLeft`, armed to 600 by
+  `SetContents` (`ChatMessageContainer.cs:33`) on every `new_text`;
+  `can_be_shown_when_chat_is_closed()` is `_timeLeft > 0` (`:23`).
+- `ChatMonitor::update` = `RemadeChatMonitor.Update` (`:115-129`) ->
+  `ChatMessageContainer.Update` (`:45-52`), ticked by the new `chat_phase`
+  at the `Main.cs:17282` site: after the gated `DoUpdateInWorld`
+  (`:17278-17281`), under the `!paused` arm (the `CanPauseGame` early
+  return `:17194-17199` precedes it), so stepper-blocked frames decay the
+  timers but the pause freezes them. The frame-order pins gained the
+  `chat` phase at that position.
+- `visible_lines(open)` = the `DrawChat` window: `_showCount = 10`
+  (`RemadeChatMonitor.cs:25`, was the port's invented 20), newest first,
+  and closed the walk **breaks** at the first expired container (`:79-82`)
+  - an expired line hides the rows behind it, it is not skipped.
+- The row anchor is the C# constant `(88, screenHeight - 30 - 28 - i*22)`
+  (`RemadeChatMonitor.cs:83`), extracted as `ui::chat_row_anchor`.
+- The blinker now advances only while the input is open (the C# block sits
+  inside `drawingPlayerChat`, `Main.cs:40932-40946`); the port previously
+  ticked it every drawn frame.
+
+Vanilla "fade" note: there is **no alpha decay** - the line draws at its
+stored full colour until the 600-tick (10 s) timer expires, then only the
+open chat shows it. The old `LegacyChatMonitor` has the same binary
+`showTime > 0` gate (`LegacyChatMonitor.cs:194`).
+
+Deliberate deviations (unchanged by this fix, recorded here): the port's
+lines carry flat text - no `WordwrapStringSmart` wrap (`LineCount` is
+always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
+(`Offset`/`ResetOffset`, `RemadeChatMonitor.cs:131-179`), and no snippet
+hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
+not a scrollable 500-line view.

@@ -246,6 +246,8 @@ pub(crate) struct NpcAssets {
     pub(crate) hornet: Option<BgTex>,
     pub(crate) meteor_head: Option<BgTex>,
     pub(crate) goblin_sorcerer: Option<BgTex>,
+    /// `NPC_533` — the Desert Djinn caster.
+    pub(crate) desert_djinn: Option<BgTex>,
     /// `NPC_143/144/145` — the Frost Legion strips (4/5/7 frames of 26x40).
     pub(crate) snowman_gangsta: Option<BgTex>,
     pub(crate) snow_balla: Option<BgTex>,
@@ -512,6 +514,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         hornet: npc_tex(atlas, "NPC_42"),
         meteor_head: npc_tex(atlas, "NPC_23"),
         goblin_sorcerer: npc_tex(atlas, "NPC_29"),
+        desert_djinn: npc_tex(atlas, "NPC_533"),
         snowman_gangsta: npc_tex(atlas, "NPC_143"),
         snow_balla: npc_tex(atlas, "NPC_144"),
         mystery_snowman: npc_tex(atlas, "NPC_145"),
@@ -2652,6 +2655,11 @@ pub(crate) fn draw_npcs(
                 };
                 humanoid_draw(tex, count, n, w, h)
             }
+            // The Desert Djinn: the 16-frame `NPC_533` strip
+            // (`Main.npcFrameCount[533]` = 16, `Main.cs:67082`) — rows 0..7
+            // hover, 8..15 cast (`FindFrame` case 533's `+ num * 8` bank,
+            // `NPC.cs:69989-69992`).
+            NpcKind::DesertDjinn => humanoid_draw(assets.desert_djinn.as_ref(), 16, n, w, h),
             // The Fire Imp: the 10-frame strip (`Main.npcFrameCount[24]`).
             NpcKind::FireImp => humanoid_draw(assets.fire_imp.as_ref(), 10, n, w, h),
             // The spheres: the single-frame 16x16 sheets.
