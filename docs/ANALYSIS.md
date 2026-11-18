@@ -8411,6 +8411,74 @@ semantics; the world-hash pins are re-taken (`SEED42_512 = 1586971478`,
 `DEFAULT_WORLD = 4240603701`) and `worldgen/biomes.rs`'s divergence note
 updated — its own `spread_jungle_grass` already carried the C# gate.
 
+### The downward-spread report, re-verified (fix/grass-spread-direction)
+
+A user report ("grass grows INTO the soil below a slope, green veins inside
+dirt") pointed at the same function. Re-verification against
+`WorldGen.cs:74269-74867` + `:75146-75257` found the enclosure gate already
+correct on main (the M5-SPREAD-1 fix above): a probe massif converted grass
+only on exposed faces — the top fringe AND the exposed cliff sides, which is
+vanilla behaviour. **The C# has no "cell above must be open" rule**; the
+surface gate is the 3×3 enclosure scan, so grass legitimately rides down an
+exposed cliff face one column wide. Buried soil (fully solid 3×3) never
+converts. Pinned by `growth::tests::buried_soil_stays_soil_and_exposed_soil_converts`
+and `the_grass_scan_leaves_buried_soil_and_the_draw_count_is_outcome_independent`.
+The screenshot's veins are consistent with the pre-M5-SPREAD-1 inverted gate
+(which converted enclosed subsoil and refused open surfaces).
+
+Two residual divergences in the same slice were fixed on this branch
+(both RNG-free — `spread_grass` and its callees draw nothing, so the
+UnifiedRandom stream's count/order is untouched; the lockstep test above
+pins it):
+
+- **The surface rule wrongly bound the infection grasses.** The port refused
+  every `dirt == 0 && j >= worldSurface` conversion; the C# (`:75162`)
+  exempts grass 23/199/661/662 — corrupt/crimson grass converts dirt at any
+  depth (the enclosure gate still applies). Plain grass 2 / jungle 60 /
+  mushroom 70 / hallow 109 keep the surface rule. Pinned by
+  `the_surface_rule_exempts_the_infection_grasses`.
+- **The `CanBeClearedDuringGeneration` gate was missing** (`:75202` →
+  `:80168-80175`, `skipDualDungeonCheck: true` reduces it to the bare
+  `TileID.Sets.CanBeClearedDuringGeneration` set, `TileID.cs:573` — default
+  true, {396-401, 404, 368, 367, 41, 43, 44, 481-483, 226, 237} false).
+  Restored; dirt 0 / mud 59 / stone 1 / grass 2 are all in the set, so no
+  existing conversion arm changes. The world-hash pins are UNCHANGED
+  (`SEED42_512 = 2673964944`, `DEFAULT_WORLD = 3439477718` — the current
+  post-S1-A-3 values), proving worldgen output is byte-identical.
+
+**Arm audit** (which conversions the enclosure gate binds): every arm of the
+ported `update_world_grass_growth` table routes through `spread_grass`, so
+all were affected by the old inverted gate and all are now correct — plain
+grass 0→2, corrupt 0→23 / mud 59→661, crimson 0→199 / 59→662, the 661/662
+reverse arms (59→661/0→23, 59→662/0→199), jungle 59→60, mushroom 59→70, ash
+57→633. Chlorophyte does NOT ride this function (`spread.rs::hard_update_world`
+→ `convert_cell`, C# `:69646-69685` — no enclosure gate in the C# either;
+chlorophyte legitimately converts buried mud). The moss arm
+(`grow_moss_arm`) and the neon-moss worldgen sweep share `spread_grass` and
+inherit the fixes.
+
+**Genuinely unported arms** (documented divergence, NOT ported here — each
+adds RNG draws the frozen stream does not make): the C# overground body
+(`underground: false`, `:74510-74866`) is a different switch from the
+underground table the port implements for both dispatchers. Unported:
+the halloween pumpkin roll (`:74524-74546`, `Next(75)`); the plant-above
+rolls for grass 2 (`Next(12)` → 3), corrupt 23 (`Next(10)` → 24), crimson
+199 (`Next(10)` → 201), 661/662 (`Next(10)`), hallow 109 (`Next(10)` → 110),
+ash 633 (`Next(10)` → 637) (`:74547-74590`); the 32/352 thorn and 477/492
+golf-grass source remaps (`:74592-74614` — the port's table has no 2/109/
+477/492/32/352 rows, so overground plain-grass spread currently rides the
+underground-style 0→2 row instead); the overground cross-infection scan
+(`:74628-74697` — grass↔evil↔hallow conversions of ALREADY-grassed
+neighbours, 2→23/199, 109→… etc.); the overground jungle/mushroom tree and
+plant arms (`:74704-74813`, `Next(7)`/`Next(500)`/`Next(25)`/`Next(300)`);
+the 226 lihzahrd plant arm (`:74815-74828`); the 633 ash plant + scan
+(`:74829-74865`). The underground body's jungle special arms (plantera
+bulbs 238 `:74414-74495`, jungle roses 236/233, the mushroom cattail/tree
+arm `:74497-74506`) are likewise unported. These are plant-placement and
+cross-grass-conversion features, not soil-direction bugs; porting them
+changes the draw ledger and belongs to a dedicated M5-SPREAD task.
+
+
 ## Chest loot rows + the family probes (M5-CHEST-gen)
 
 The remaining `AddBuriedChest` tail rows landed 2026-11-09 with two
@@ -15313,11 +15381,65 @@ feed cannot change the fixed-step order or any stream.
   divergence that a later refactor could misread as a *missing* port. The
   Cursed Torch (523) is the visible case — a `WaterTorches` row, so it stays lit
   under water where a plain torch goes dark.
-* **Remaining source families.** Projectile (107 call sites), NPC (80), Player (46),
+* **Remaining source families.** Projectile (107 call sites), Player (46),
   Dust (94), Mount (14), TileDrawing (6) and the particles/gore rows are **not**
   ported. `Gore.Update`'s own lights (`Gore.cs:258`, `:940`, `:1076-1080`) can now be
   expressed through `EntityLights` but still need a seam from `tr-core` — the gore
-  pool has no light sink, so they stay dropped.
+  pool has no light sink, so they stay dropped. The NPC family is **started**
+  (2 of 80 call sites), see below.
+
+### The NPC family (S1-E-5, 2026-11-18)
+
+`crates/tr-app/src/npc_lights.rs::npc_light` ports the aiStyle-8 light tail at
+the end of `NPC.AI` (`NPC.cs:21280-21373`) — the type chain the C# runs after
+`base.position += netOffset` (`:21279`; the feed reads the offset position too,
+restored at `:21374`). It feeds the **same** `EntityLights` pair as the item
+family (one list pair per engine in the C#, not one per family) and shares the
+tile-anchor vocabulary (`entity_lights.rs::XAnchor`/`tile_x`/`tile_y`); both
+feeds run in the frame pass (`app/frame/draw.rs`), after the step, in `Main.npc`
+slot order. Of the NPC family's **80 `Lighting.AddLight` call sites, 2 landed**:
+
+* **`NPC.cs:21360` — the Desert Djinn (533)**: `AddLight(base.Top, 0.6f, 0.6f,
+  0.3f)`. `base.Top` is `(position.X + width/2f, position.Y)` (`Entity.cs:86-91`)
+  — centre x, top y — and the `Vector2` overload truncates the quotient per
+  axis (`Lighting.cs:140-143`); the port models it as `XAnchor::Top`. The kind
+  itself landed with this task: `SetDefaults` 28x62 / damage 40 / defense 20 /
+  lifeMax 220 / kb 0 / value 1200 (`NPC.cs:14974-14987`), `FindFrame` case 533's
+  8-row hover cycle + the cast windup's `+8` row bank (`:69978-69992`,
+  `npcFrameCount[533]` = 16, `Main.cs:67082`), and the AI cycle's own constants
+  (`CasterParams::DESERT_DJINN`): the single `ai[0] == 180` trigger sets
+  `ai[1] = 181` (`:21031-21038`) and the wrap fires at 360 (`:21079-21082`),
+  not the standard 100/200/300 → 30 / 650.
+* **`NPC.cs:21365` — the aiStyle-8 else arm**: `AddLight(base.Center, 0.6f,
+  0.6*0.65f, 0.6*0.4f)` — the Fire Imp (24) is the port's only remaining
+  aiStyle-8 kind. The arm's `Main.rand.Next(6)` dust half (`:21366-21372`) is
+  skipped wholesale (the RNG rule below).
+
+**What stays dropped, exactly:**
+
+* The 29/45/32 arms (`:21280-21300`) are **dust-only** — no `AddLight` — so the
+  sorcerer/Tim/Dark Caster stay dark; nothing to port until the dust system.
+* The Djinn's curse volley (`:21117-21230`) draws `Main.rand`
+  (`:21140-21141`'s target-tile rolls, `:21195-21196`'s velocity jitter) — the
+  whole volley is skipped (`shoot_tick: None`), so the Djinn never fires and
+  the `Main.rand` stream stays untouched. The teleport half of its cycle is
+  RNG-shared with the standard casters and rides the existing
+  `find_teleport_spot` draws in the same order.
+* The aiStyle-23 chain (`:25239-25250`) lights types **83 = CursedHammer** and
+  **179 = CrimsonAxe** (`NPCID.cs:10843`/`:11035`) plus a fallback — neither
+  kind is in the port's roster (PrimeVice 130 rides aiStyle 34,
+  DD2KoboldFlyerT3 575 aiStyle 108; they never reach that chain). The three
+  arms wait for those kinds.
+* The remaining **76 NPC call sites** (the aiStyle-9 sphere glow `:21561`, the
+  boss AIs' lights, the `UpdateNPC` tail's torch/buff lights `:90841-92412`,
+  etc.) are not ported; each needs its AI family or a rand-bearing dust arm
+  first.
+
+Tests: `npc_lights.rs` pins the Djinn's Top-anchor tile + colour (incl. the
+centre-x vs left-edge difference and negative-coordinate truncation), the Fire
+Imp's else-arm centre light, and the dark casters; `npc.rs`'s
+`the_desert_djinn_rides_its_own_trigger_and_wrap` pins the 180/181/360 cycle and
+the skipped volley; the protocol round-trip roster grew 198 → 199.
 
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 
@@ -15777,6 +15899,51 @@ change); each new range was verified against the decompiled source line by line:
 * crates/tr-core/src/tileobject.rs:144 -> LiquidPlacement.cs:3-9 (was :5-10;
   the enum declaration plus body spans :3-9, ending at the closing brace on :9).
 
+## The duplicate entity health bar (fix/duplicate-entity-health-bars, 2026-11-18)
+
+Every damaged NPC showed TWO bars: a bogus red strip ABOVE the hitbox and the
+faithful green one below. The duplicate was an uncited ad-hoc block inside
+`render/entities.rs`'s `draw_npcs` (a dark backing quad plus a
+`[0.85, 0.15, 0.15]` fill at `[n.x, n.y - 9]` whenever `hp < max_hp`).
+The C# world pass draws no NPC bar at all — `Main.DrawNPC`
+(`Main.cs:22469`) / `DrawNPCDirect` never call `DrawHealthBar`; the only
+NPC bar is `Main.DrawInterface_14_EntityHealthBars` (`Main.cs:45810`),
+ported by `draw_npc_health_bars`. `combat_text::draw` was NOT the
+duplicate: it draws only the floating damage text (`Main.cs:62340-62396`).
+The ad-hoc block is deleted; the interface pass is the single source.
+
+The surviving pass was also brought pixel-exact with `Main.DrawHealthBar`
+(`Main.cs:21909-22000`) and the ordinary arm (`:46021-46024`):
+
+* The C# keeps a 2 px seam below 34 filled pixels (Hb2 columns 2..4 at the
+  fill edge, Hb1 columns 32..34 capping it, `:21976-21990`); the port used
+  the 34+ two-sheet butt for every ratio. `combat_text::bar_slices` now
+  carries both layouts in the C# draw order, pinned by
+  `the_bar_slices_match_the_csharp_seam_layout`.
+* `num3 += Main.NPCAddHeight(npc)` (`:46023`) now shifts the bar's Y
+  (the port already had `npc_add_height` verbatim for the draw anchors).
+* `Lighting.Brightness` is the channel MEAN times GlobalBrightness
+  (`Lighting.cs:118-122`), not the max channel; the pass now reads the
+  light through `LightStyle::shade` (which carries GlobalBrightness and
+  the blind drop) and clamps the tint AND alpha into [0,255]
+  (`Main.cs:21947-21969` — with brightness 1.2 the product can exceed 1).
+* The boss-scale 1.5 list (`Main.cs:45839-45922`) covered only King Slime
+  and the Eye; every shipped boss id now scales (Skeletron + hands, the WoF
+  pair, the Twins, Prime + limbs, Queen Bee, the Golem family, Plantera,
+  the Brain, Betsy, the Dark Mages, the Ogres, the Cultist).
+* The gate now carries `ShowLife` (`NPC.cs:6832-6842`:
+  `dontTakeDamage ? dontTakeDamageStillShowLife : true` — only type 412
+  defaults the override, `NPC.cs:15279-15280`) and the cultist ritual
+  exclusion (`Main.cs:45928`'s `ai[0] != 5` term), plus the
+  `position += netOffset` draw wrapper (`:45831`). A damaged town NPC
+  DOES show its bar — the C# gate is `life != lifeMax && ShowLife`, with
+  no townNPC term.
+
+Still approximate (unchanged by this fix): the Destroyer's smoothed shared
+bar and the worm families' `DrawInterface_Healthbar_Worm` stay with the
+open S1-D-6b row; `npc.gfxOffY` (unported on NPCs) and the flipped-gravity
+mirror (`Main.cs:21923-21927`; the port has no gravity-flip state) are
+absent; `HealthBarDrawSettings` is fixed at the default 1.
 
 ## The corner chat HUD (fix/chat-corner-display)
 
