@@ -161,9 +161,11 @@ an agent needs before touching code.
   and `KillTile_GetItemDrops` empty-group tables. See `ANALYSIS.md#s1-f-7-wave-a`.
 - `edit.rs` — single-tile break/place: preserves the wall, bumps the revision, marks the
   chunk, recomputes the column surface and re-frames a 5×5 neighbourhood
-  (`framing::reframe_area`), so edits do not need a full-world framing pass. Placement
-  routes the registry kinds (`place_item_tile`, incl. the seed `PlaceAlch` branch and the
-  planter box); breaking runs the per-type KillTile cascade (`check_object`'s arms —
+  (`framing::reframe_area`), so edits do not need a full-world framing pass. The
+  tile-placement family lives in `edit/place.rs` (S1-K-4, extracted verbatim):
+  `place_tile`, `place_item_tile` (incl. the seed `PlaceAlch` branch and the
+  planter box 380), re-exported at `edit::` so every caller seam is unchanged.
+  Breaking runs the per-type KillTile cascade (`check_object`'s arms —
   doors, chair, bench, chest, `check_3x2`, sunflower, pot, piles, alch, on-table) behind
   `kill_tile`, whose `TileKill` contract carries the drops and the pot/herb/pile loot
   events out to the app. The three `CanKillTile` break refusals (`can_kill_tile`) gate
