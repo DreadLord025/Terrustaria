@@ -331,9 +331,24 @@ fn title_width(lookups: &assets::Lookups) -> f32 {
     }
 }
 
+/// The `i`-th recipe cell's origin and 40x40 hover/click rect, laid out
+/// left-to-right on a fixed 44 px pitch from the grid's top-left
+/// (`UIDynamicItemCollection.cs:75-79` `GetItemSlotHitbox`:
+/// `startX + num % _itemsPerLine * 44, startY + num / _itemsPerLine * 44` —
+/// **integer** division, so every recipe in a row shares one Y and the row
+/// pitch is constant; `:21-23` `sizePerEntryX/Y = 44`, `:162`
+/// `_itemsPerLine = Width / 44`). The shared geometry for the draw pass and
+/// `hit_test` — a fractional `i / cols` here drifts each icon 44/cols px down.
+pub fn recipe_cell(l: &Layout, i: usize) -> [f32; 4] {
+    let cols = (((l.grid[2] - 4.0) / 44.0).floor() as usize).max(1);
+    let col = (i % cols) as f32;
+    let row = (i / cols) as f32;
+    [l.grid[0] + col * 44.0, l.grid[1] + row * 44.0, 40.0, 40.0]
+}
+
 /// The recipe grid cell the mouse is over, mapped back to the available
 /// recipe list (`NewCraftingUI`'s clickable recipe slots). Cells are 40x40 on
-/// a 44 px pitch from the grid's top-left.
+/// a 44 px pitch from the grid's top-left ([`recipe_cell`]).
 pub(crate) fn hit_test(
     screen: Vec2,
     lookups: &assets::Lookups,
@@ -341,13 +356,9 @@ pub(crate) fn hit_test(
     available: &[usize],
 ) -> Option<usize> {
     let l = layout(screen, title_width(lookups), false);
-    let cols = ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
     for (i, recipe) in available.iter().enumerate() {
-        let col = i as f32 % cols;
-        let row = (i as f32) / cols;
-        let x = l.grid[0] + col * 44.0;
-        let y = l.grid[1] + row * 44.0;
-        if mouse.x >= x && mouse.x <= x + 40.0 && mouse.y >= y && mouse.y <= y + 40.0 {
+        let [x, y, w, h] = recipe_cell(&l, i);
+        if mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h {
             return Some(*recipe);
         }
     }
@@ -416,14 +427,13 @@ pub fn draw(
     );
 
     // 5. The grid area (`UIDynamicItemCollection.cs:38-71`): the available
-    //    recipes as 40x40 icon cells on a 44 px pitch — the same cells
-    //    `hit_test` maps clicks back to. The hovered cell takes the cyan
-    //    hover frame (`ItemSlot`'s hover, `ItemSlot.cs:2264+` family).
+    //    recipes as 40x40 icon cells on a fixed 44 px row pitch
+    //    (`GetItemSlotHitbox`, `:75-79` — integer `num / _itemsPerLine`) — the
+    //    same cells `hit_test` maps clicks back to ([`recipe_cell`]). The
+    //    hovered cell takes the cyan hover frame (`ItemSlot`'s hover,
+    //    `ItemSlot.cs:2264+` family).
     for (i, recipe_idx) in available.iter().enumerate() {
-        let col = i as f32 % ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
-        let row = (i as f32) / ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
-        let x = l.grid[0] + col * 44.0;
-        let y = l.grid[1] + row * 44.0;
+        let [x, y, _, _] = recipe_cell(&l, i);
         let hovered = mouse_pos.x >= x
             && mouse_pos.x <= x + 40.0
             && mouse_pos.y >= y
@@ -998,6 +1008,67 @@ mod tests {
         assert_eq!(filter_button_src(0, 1), [0.0, 48.0, 40.0, 46.0]);
         assert_eq!(filter_button_src(1, 2), [42.0, 96.0, 40.0, 46.0]);
         assert_eq!(filter_button_src(1, 3), [42.0, 144.0, 40.0, 46.0]);
+    }
+
+    #[test]
+    fn recipe_cells_share_a_row_y_on_a_constant_44px_pitch() {
+        // `UIDynamicItemCollection.cs:75-79`: integer `num / _itemsPerLine`
+        // gives every recipe in a row the same Y; `:21-23` the pitch is 44;
+        // `:162` `_itemsPerLine = Width / 44` — the port's list width is
+        // grid.w - 20 = 450, and floor((470 - 4) / 44) = 10 columns, the same
+        // 450 / 44 = 10. The grid origin at 1600x900 is (32, 439)
+        // (`layout_matches_the_source_table_at_1600x900`).
+        let l = layout(Vec2::new(1600.0, 900.0), W, false);
+        let cols = 10usize; // 450 / 44, integer division (C# `:162`)
+        let n = 25usize; // two full rows plus a partial third
+        for i in 0..n {
+            let cell = recipe_cell(&l, i);
+            let row = i / cols;
+            let col = i % cols;
+            // Y is a pure function of the row index: top + row * 44.
+            assert_eq!(cell[1], 439.0 + row as f32 * 44.0, "recipe {i}");
+            // X wraps left-to-right on the same pitch.
+            assert_eq!(cell[0], 32.0 + col as f32 * 44.0, "recipe {i}");
+            assert_eq!([cell[2], cell[3]], [40.0, 40.0]);
+            // (y[i] - y[0]) divides evenly by the row index times the pitch.
+            assert_eq!(cell[1] - 439.0, row as f32 * 44.0);
+        }
+        // Every recipe of the first row shares one Y, the second row the
+        // next pitch — no per-iteration accumulation (the old float
+        // `i as f32 / cols` drifted each icon by 44/cols = 4.4 px).
+        for i in 0..cols {
+            assert_eq!(recipe_cell(&l, i)[1], 439.0);
+        }
+        for i in cols..2 * cols {
+            assert_eq!(recipe_cell(&l, i)[1], 483.0);
+        }
+        assert_eq!(recipe_cell(&l, 2 * cols)[1], 527.0);
+    }
+
+    #[test]
+    fn recipe_hit_test_matches_the_drawn_cells() {
+        // The click path maps through the same `recipe_cell` rects the draw
+        // pass uses: the centre of cell i selects recipe i, for cells beyond
+        // the first row too.
+        let screen = Vec2::new(1600.0, 900.0);
+        let lookups = assets::Lookups::default();
+        let l = layout(screen, title_width(&lookups), false);
+        let available: Vec<usize> = (0..25).collect();
+        for (i, &recipe) in available.iter().enumerate() {
+            let [x, y, _, _] = recipe_cell(&l, i);
+            let centre = Vec2::new(x + 20.0, y + 20.0);
+            assert_eq!(
+                hit_test(screen, &lookups, centre, &available),
+                Some(recipe),
+                "cell {i}"
+            );
+        }
+        // A point in the 4 px gap between cells hits nothing.
+        let [x, y, _, _] = recipe_cell(&l, 0);
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(x + 42.0, y + 20.0), &available),
+            None
+        );
     }
 
     #[test]
