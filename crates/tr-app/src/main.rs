@@ -55,6 +55,7 @@ mod revenge;
 mod npc_ai;
 mod npc_target;
 mod npc_buffs;
+mod npc_findframe_b;
 mod persist;
 mod grapple;
 mod gore_seam;

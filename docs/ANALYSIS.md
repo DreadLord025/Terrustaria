@@ -17625,3 +17625,68 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## S1-D-3 FindFrame wave B (code-only mode, task/S1-D-3-findframe-b, 2026-11-18)
+
+`crates/tr-app/src/npc_findframe_b.rs` ports `NPC.FindFrame`
+(`NPC.cs:66684-77370`) for **25 MID/HIGH-id kinds** the port's `npc.rs`
+`find_frame` match does not carry: the 12 humanoid-group fighters (31
+AngryBones, 77 ArmoredSkeleton, 78/79/80 Mummy/DarkMummy/LightMummy, 104
+Werewolf, 140 PossessedArmor, 167 UndeadViking, 197 ArmoredViking, 294/296
+AngryBonesBig/BigHelmet, 630 BloodMummy) and 13 dedicated arms (34
+CursedSkull, 75 Pixie, 82 Wraith, 85 Mimic, 86 Unicorn, 109 Clown, 110
+SkeletonArcher, 122 Gastropod, 155 Wolf, 174 Herpling, 177 Derpling, 206
+IcyMerman, 289 GiantCursedSkull). Wave A (`task/S1-D-3-findframe-a`) owns
+the LOW-id kinds; 330 landed with `df4d98aa`, 338-352 ride the frost
+siblings, the pumpkin family rides S1-F-13b, and the bosses with in-flight
+AI keep their own arms — none of those are touched here.
+
+**Code-only mode**: this wave ran with NO cargo/rustc/rustfmt/tests — the
+17 test functions (the 25-row `Main.npcFrameCount` pin plus 16 sequence
+pins covering all 25 kinds) are WRITTEN NOT RUN; their sequences were
+hand-derived from the C# literals. The frame counts were extracted entry-by-entry from the
+`Main.cs:67082` 697-entry initializer (entry `type` = line `67084 +
+type/10`, slot `type % 10`) and cross-checked against every count the
+existing port already cites (35/36 = 2, 113/114 = 2, 222 = 12, 368 = 26,
+376 = 2, 589 = 13 — all agree).
+
+Shape and deviations:
+
+- **Wiring deferred** (the `drawdata_anim.rs`/`buff_effects_misc.rs`
+  precedent): the kinds are not in `NpcKind` yet, so the machines are pure
+  functions over `FrameState`/`FrameInput`; when a kind joins the roster
+  its `find_frame` arm calls `find_frame_b` and copies
+  row/counter/sprite_dir/rotation back. No arm draws `Main.rand`, so the
+  wiring cannot move an RNG stream.
+- **Row indices, not pixels**: the C#'s `num` (sheet height /
+  `npcFrameCount`, `NPC.cs:66694`) cancels out — the existing `npc.rs`
+  convention.
+- **`frameCounter` is f32** like the port's `Npc::frame_counter`; the C#
+  field is a `double` (`NPC.cs:6485`). At these magnitudes the cadence
+  thresholds compare identically; the wolf's `-= 8` remainder keeps the
+  f32 accumulation (the test pins `1.6f32 * 6.0 - 8.0`, not a rounded
+  literal).
+- **Humanoid town zones skipped**: the `ai[0]` pose chain
+  (`NPC.cs:68662-69488`) is unreachable for these kinds — all 12 are
+  aiStyle 3 (`SetDefaults` rows cited in the module) and
+  `AI_003_Fighters`' turn counter only ever leaves `ai[0]` at 0 or 1
+  (`NPC.cs:57381-57397`; the 1000+ carrier-link band belongs to type 111
+  only, `NPC.cs:56972-57015`, not this wave). `num57` = 0 (none is `isLikeATownNPC`,
+  `NPC.cs:6856-6866`), so the walk wraps at the FULL `npcFrameCount`.
+- **Vanilla quirks kept verbatim**: the PossessedArmor idles on row 1
+  (`:69510-69514`); the air pin list (`:69647`) snaps 31/77/140/167/197/
+  294/296 to row 0 while the mummies/werewolf keep row 1; the Mimic's
+  counter clamp at 12 makes its `>= 24` reset (`:73501-73504`) dead code
+  (kept); the GiantCursedSkull's `> 12` check after the zeroing
+  (`:72666-72669`) is dead (dropped with a citation, the GolemHeadFree
+  precedent); the Derpling parks its counter at 30 (`:73209`) so the
+  crouch holds; the Unicorn's trot/gallop wrap INSIDE their bands
+  (rows 1..8 / 9..14), never to row 0; the Wolf's air rows keep the
+  counter and landing enters the run at row 12 (`:74357-74361`).
+- **Bestiary dummies not ported**: the `IsABestiaryIconDummy` branches
+  (Herpling `:73173-73185`, Wolf `:74314-74317`, Mimic `:73507`) — the
+  port has no bestiary dummy.
+- **Group siblings' side effects not carried**: the case-48 floater
+  group's dust spawns (types 60/634) and the 210/211 double-increment
+  (`NPC.cs:74839-74863`) belong to other kinds; the Wraith arm keeps only
+  its own reads/writes.
