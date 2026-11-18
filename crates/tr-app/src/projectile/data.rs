@@ -1412,6 +1412,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // `Projectile.cs:3219-3227` — the Flying Dutchman's shell (240):
+            // 16x16, aiStyle 2, `penetrate = -1`, `alpha = 255` (the arm's
+            // `ai[0] > 2f` gate turns it invisible on tick 3). The C#'s
+            // `hostile = true` rides the hostile spawn sites, not the row.
             DUTCHMAN_SHELL => (
                 16.0,
                 16.0,
@@ -1422,7 +1426,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // The DD2 families' weapons (`Projectile.cs`'s SetDefaults): the
             // javelin throwers' spears 662/685 (16x16, aiStyle 1, penetrate
@@ -2482,6 +2486,17 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 3-tick frame machine (`Projectile.cs:37113-37120`) wraps at it.
         // The turret 641 has no `projFrames` row (the stock 1).
         RAINBOW_CRYSTAL => 8,
+        // The glow-stick's 4-frame sheet (`Main.cs:8664`) — the aiStyle-2
+        // arm's 5-tick frame machine (`Projectile.cs:23477-23486`) wraps at
+        // it, back to frame 1.
+        861 => 4,
+        // The 909's 6-frame sheet (`Main.cs:8691`) — the arm's
+        // `1 + rand.Next(6)` frame roll (`Projectile.cs:23268-23274`) pins
+        // one of its rows.
+        909 => 6,
+        // The 968's 24-frame sheet (`Main.cs:8706`) — the arm's
+        // `frame = (int)ai[1]` pin (`Projectile.cs:23238`) reads it.
+        968 => 24,
         _ => 1,
     }
 }

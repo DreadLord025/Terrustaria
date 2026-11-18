@@ -15081,9 +15081,13 @@ The arm now carries both halves:
   the sprite reads back), and the aim clears when the sight line is lost.
   The cannon owns its `ai[3]` (the C#'s block counts its own reload), so
   the core's timer no longer mirrors into it.
-* **the shell** (the aiStyle-2 block, `Projectile.cs:23366-23417`): the
-  shell is invisible (the alpha 0) and bursts into dust and gore when its
-  `ai[0]` reaches 3.
+* **the shell** (the aiStyle-2 block, `Projectile.cs:23366-23410`): the
+  shell spawns at alpha 255 (`SetDefaults` `:3226`) and turns invisible on
+  tick 3 (the `ai[0] > 2f` gate); the `ai[0] == 3f` dust/gore burst is
+  skipped. S1-D-4b-8 completed the arm: the sound latch, the age counter
+  and the 16-tick `+0.18f`/`×0.991f` gravity delay now run inside
+  `ai_style2`'s per-kind ladder (the earlier landing's unconditional
+  alpha-0 pre-step is gone).
 
 Deviations:
 
@@ -15092,6 +15096,69 @@ Deviations:
 * **The cannon inherits the Dutchman's velocity and `timeLeft`** in the C#;
   the port's carrier link carries the position and the timers only, so the
   cannon keeps its own movement.
+
+## The thrown family completed (S1-D-4b-8, 2026-11-18)
+
+The aiStyle-2 arm (`ai_style2`, `Projectile.cs:23205-23689`) landed its
+flight ladder earlier; this round completes the family's state machines
+and pins the exact per-arm `ai[0]` increment semantics:
+
+* **The 968 head** (`:23219-23239`): the one-shot `localAI[0]` latch, the
+  `alpha - 50` fade floored at 0 and the `frame = (int)ai[1]` pin. The 968
+  is absent from the per-kind chain, so it falls to the default tail arm
+  (the 20-tick gravity) — the earlier port's "968 owns no counter"
+  blanket skip was wrong and is fixed.
+* **The 909 frame roll** (`:23257-23275`): `ai[1] = 1 + rand.Next(6)`
+  latches once (one draw, on tick 1) and `frame = ai[1] - 1` pins the
+  sheet row every tick. `projFrames[909] = 6` (`Main.cs:8691`).
+* **The 861 glow-stick** (`:23429-23494`): the owner pickup timer (the
+  30-tick grace, then the hitbox-overlap `Kill`), the two-mode frame
+  machine (the spent `ai[1] == 1` stick resets to frame 0 and keeps the
+  shared spin; the flying stick animates frames 1..3 at 5 ticks/frame,
+  `projFrames[861] = 4`, `Main.cs:8664`) and the velocity aim (+π/4, the
+  left-facing +π/2 flip with the `spriteDirection` write). The arm owns
+  no `ai[0]` counter — its clock is `localAI[0]`. The C#'s
+  `Main.myPlayer == this.owner` gate folds to the pool's `simulated`
+  test (only the owner's machine runs the arm), and the 255-slot player
+  scan folds to the single local player (the `whoAmI != owner` arm is
+  unreachable in the port).
+* **The 304 spawn latch** (`:23240-23244`): `localAI[0]++` and alpha 0 on
+  the first tick; the decay arm's two `if`s are kept separate (the aim
+  runs while `ai[0] < 30`, not as the decay's `else`).
+* **The 166 town-NPC refusal** (`:23568-23577`): the `ai[1] == 1` Rotten
+  Egg mode kills the snowball on a town-NPC hitbox overlap. The C#
+  `return` leaves `AI()` only — `HandleMovement` still runs (`:17015`),
+  so the port runs its `kill_step` after the kill. The
+  `owner == Main.myPlayer` gate folds like the 861's; the
+  `netMode == 1` other-player scan (`:23578-23588`) is MP scope.
+* **The exact counters**: each chain arm increments `ai[0]` at its own
+  C# site (the 909/162/281/240/497/249/347/501/spark/69-70-621/166/300/
+  304/370-371-936 arms and the tail); the 968 head, the 306 and the 861
+  own none (the 968 counts in the tail). The 249's `ai[0] >= 0f` gate is
+  verbatim (a negative spawn payload delays the fall). The spark kill
+  (`ai[0] - 20f >= 40f` inside the `ai[0] > 3f` window) does not return —
+  the gravity tail still runs on the kill tick.
+* **The shell row**: `DUTCHMAN_SHELL`'s `proj_data` row gains the C#'s
+  `alpha = 255` (`Projectile.cs:3226`); the arm's `ai[0] > 2f` gate turns
+  it invisible on tick 3 (the S1-D-4b-5e unconditional alpha-0 pre-step
+  is retired).
+
+RNG proof: the arm's behaviour rolls are the 909 frame roll (one
+`Next(6)`, tick 1) and the type-93 delay re-roll (`28 + Next(6)`, every
+tick) — in the C#'s order, on the pass's named stream. The skipped
+cosmetic blocks take their rolls with them (the `ai_volcano`/yoyo
+precedent): the 93 dust `Next(5)` (`:23211`), the 968 dust loop's 16
+`NextFloat` (`:23229-23231`), the 162/281/240 gore `Next(61,64)`
+(`:23312`/`:23357`/`:23402`), the spark dust `Next(100)` (`:23541`) and
+the 54 dust `Next(20)` (`:23685`). No roll is consumed for an unrendered
+effect; the counting-stream tests pin the draw counts per arm
+(`s1_d_4b_8_tests`).
+
+Deviations: the dust/gore/sound spawns are SKIPPED (no dust/gore/sound
+layer — the state each block writes is ported where the trajectory or
+the draw reads it); the 909's `netUpdate` flag is MP bookkeeping; the
+861's pickup scan and the 166's owner gate fold to the single-player
+shape as above.
 
 ## The debug god mode (S1-E-34, 2026-11-16)
 
