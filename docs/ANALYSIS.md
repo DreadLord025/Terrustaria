@@ -17143,6 +17143,32 @@ play); the wire/actuator placement feedback (`wire_placed_feedback`,
 wave is a follow-up. Tests `s1_e_21b_the_placement_cue_follows_the_tile_type`,
 `s1_e_21b_the_dig_variation_draws_ride_the_passed_stream`.
 
+## Buff effect table (S1-E-7 wave B)
+
+The `UpdateBuffs` DEBUFF block (`Player.cs:10049-10317`, 47 arms) is ported
+as a PURE effect table in `crates/tr-app/src/buff_effects.rs`:
+`apply_debuff_effect_arm` folds one arm's writes into a `DebuffEffects`
+accumulator (flags OR-ed, stats added per slot — the C# chain's sequential
+semantics, incl. Dryad's Ward's per-slot `thorns < 1` clamp and Lifeforce's
+double integer division `statLifeMax / 5 / 20 * 20`). Deliberate deviations:
+
+* **Disjoint-wave shape**: wave A (`task/S1-E-7a`) edits the `player.rs`
+  potion-block arms; wave B adds no `player.rs` code. The scan wiring
+  (copying the accumulator onto the live fields per active slot) rides wave
+  A's merge. Until then the module is test-only — no behaviour change, no RNG
+  or fixed-step-order change.
+* **Inferno's aura scan deferred** (`:10224-10263`): the NPC loop (AddBuff
+  323/120 + 20 damage on `infernoCounter % 60 == 0`) and the PvP twin need
+  the world roster; the constants (`INFERNO_DEBUFF_ID/RADIUS/DAMAGE/DEBUFF_TIME`),
+  the flag, the light RGB and the cadence bit are ported.
+* **The two `Lighting.AddLight` sites record RGB only** (`:10215`, `:10316`);
+  the tile coords ride the wiring. Note the C# asymmetry: Inferno uses
+  `(int)(Center.X / 16f)` while Electrified uses `(int)Center.X / 16` — they
+  differ for negative centers; the wiring must keep each form.
+* **Stinky's `talkNPC = -1`** is recorded as `talk_npc_reset` (the port has
+  no open-dialogue field yet; the luck flag is already live in `player.rs`).
+
+Tests: 19 `s1_e_7b_*` per-buff tests in the module.
 ## The NPC aiStyle dispatch axis (S1-D-2, 2026-11-18)
 
 The C# dispatches NPC AI on `aiStyle` first (`NPC.AI`, `NPC.cs:19819-41132`:
