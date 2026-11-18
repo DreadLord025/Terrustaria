@@ -16434,6 +16434,61 @@ Documented deviations, all deliberate:
   until their row lands.
 
 **Batch-review fix (2026-11-17)**: the moon ladders' per-kind `CountNPCS(id) < cap` gates are now LIVE — `SpawnContext` carries the active roster's vanilla types (`moon_npc_counts`, the `NPC.CountNPCS` scan `NPC.cs:7982-7995` built from the fixed-step's roster) and `moon_arm` reads the per-kind count per arm; the F-13a-era "structurally 0" stand-in (the arm-level gates standing open) is resolved for the pumpkin family, and the DW-2.4 edge case (two live MourningWoods close the 325 arm while its roll still draws) holds in production. The frost family's gates go live the same way for F-13c's kinds.
+## The Frost Moon family, slice A (S1-F-13c, 2026-11-18)
+
+The first 7 wave kinds (338 `ZombieElf`, 339 `ZombieElfBeard`, 340
+`ZombieElfGirl`, 341 `PresentMimic`, 342 `GingerbreadMan`, 343 `Yeti`, 344
+`Everscream`) land on `task/S1-F-13c-defaults-a` in **code-only mode**: the
+defaults, the net ids, the sounds, the frames and the tables are ported and
+pinned by tests-as-code (the `s1_f_13c_tests` module in `npc.rs`), but **no
+compiler was invoked** — the tests are written, NOT run, and the branch ships
+unverified-by-build by directive. Worker B owns kinds 345-352 (the second
+slice); this slice stops at 344 to keep the `to_u16` id space collision-free.
+
+The identity half mirrors F-13b: `FrostDefaults` + `frost_moon_defaults` /
+`frost_moon_type` in `npc/data.rs` carry the verbatim `SetDefaults` rows
+(`NPC.cs:13281-13368`), the per-kind points (`:78517-78549`: 1/1/1/20/2/18/50)
+feed the already-live kill wiring (`world_sim/npcs.rs`), and the boss cap's
+`(344, 3.0)` row was already in `MOON_BOSS_SLOTS`. The live half: the F-13a
+frost ladder's picks now map through `moon_wave_kind` to real kinds, the six
+walkers ride the aiStyle-3 family at the C#'s per-type speed rows (`AI_003`:
+the Yeti's cap-2 arm `:57554`, the num83 group `:57606` — 338: 1.75, 339:
+1.25, 340: 2, 342: 1.5×(1+(1-scale))), the FindFrame arms port the humanoid
+15-frame group (`:68603-68605` + `:69481-69585`), the Present Mimic's chest
+rows (`:73444-73515`), the Yeti's rows (`:75779-75824`), the Gingerbread Man's
+case-3 group (`:76324-76391`) and the Everscream's own arm (`:72463-72490`);
+`Main.npcFrameCount` (`Main.cs:67117-67118`) pins 338-340=15, 341=6, 342=3,
+343/344=10, and the render sheets resolve through `SNOW_SHEETS`.
+
+Documented deviations, all deliberate:
+- **The Present Mimic (341) rides a walker stand-in** until its bespoke
+  aiStyle-25 machine lands (a follow-up F-13c2 slice): `AI_025`
+  (`NPC.cs:25538-25630`) is the chest's pin/hop state machine — the ai[3]=1
+  pin at spawn, the 3.5f hop. The port walks it on the aiStyle-3 family at
+  that 3.5f cap; the chest frame rows themselves ARE ported (FindFrame's
+  open/closed states ride the ai[0] pin the stand-in never leaves).
+- **The Everscream (344) rides the Mourning-Wood hover stand-in**: aiStyle 57
+  (`AI_057`, `NPC.cs:32762+`) — the port reuses the F-13b hover params at the
+  machine's own base speed (`num836 = 2f`, `:32762`) and `/21` approach
+  (`:32983`), noTileCollide. The bespoke ornament/needle shot arms land with
+  F-13c2.
+- **The Yeti's (343) `coldDamage` is documented-only**: `SetDefaults` sets
+  `coldDamage = true` (`:13352`), but the port's contact-damage path has no
+  cold slot field yet — the flag's Chilled/Frostburn application rides the
+  damage-slot work, noted at the defaults arm.
+- **`npcSlots` rides the existing seams**: the trio's 0.5 and the Yeti's 2 /
+  the Everscream's 3 are recorded in the defaults comments; the spawn-budget
+  slot accounting is the F-13b-era boss-cap seam (`MOON_BOSS_SLOTS`), which
+  only the Everscream consumes.
+- **Banners need no new rows**: tr-core's `npc_to_banner` already maps
+  338/339/340→185, 341→154, 342→117, 343→184 (`BannerSystem.cs:731`/`:809`/
+  `:874`/`:878`); the Everscream is a boss with no banner row (the C#'s own
+  shape). The bestiary display names share "Zombie Elf" across the trio
+  (`en-US.NPCs.json:296-299`), the Scarecrow shared-name precedent.
+- **The remaining 7 kinds (345-352) still consume**: worker B's slice owns
+  them; until then the frost ladder's late-wave rolls draw and spawn nothing
+  (the F-13b-era Wyvern-arm shape).
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
