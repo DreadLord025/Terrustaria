@@ -1470,6 +1470,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                         app.mine_timer = 0.0;
                     }
                     let hardness = 0.35 * 35.0 / tool_hammer.max(1) as f32;
+                    // The crack overlay's damage denominator
+                    // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+                    app.mine_hardness = hardness;
                     if app.mine_timer >= hardness {
                         app.mine_timer = 0.0;
                         // `WorldGen.KillTile`'s case 26 (`:49444-49449`): the
@@ -1524,6 +1527,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                 } else {
                     base * tr_core::tool::pick_speed_scale(tool_pick as i32) * fed_speed.max(0.25)
                 };
+                // The crack overlay's damage denominator
+                // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+                app.mine_hardness = hardness;
                 if app.mine_timer >= hardness {
                     break_tile(app, tx, ty);
                     app.mine_target = None;
@@ -1556,6 +1562,9 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         } else {
             let hardness =
                 (if tile.wall == 1 { 0.7 } else { 0.35 }) * 35.0 / tool_hammer.max(1) as f32;
+            // The crack overlay's damage denominator
+            // (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+            app.mine_hardness = hardness;
             if app.mine_timer >= hardness {
                 break_wall(app, tx, ty);
                 app.mine_target = None;

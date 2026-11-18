@@ -598,6 +598,20 @@ pub(crate) struct App {
     pub(crate) place_down: bool,
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
+    /// The current dig's break interval in seconds — the `mine_timer`
+    /// denominator the tile-crack overlay maps onto the C# `HitTile`
+    /// 0..100 damage (`render/tile_cracks.rs`, `Main.cs:61533-61626`).
+    pub(crate) mine_hardness: f32,
+    /// `HitTile.lastCrack` (`HitTile.cs:80`, static, default 0): the last
+    /// rolled crack style the no-repeat reroll compares against.
+    pub(crate) mine_crack_style: i32,
+    /// The dig target the current crack style was rolled for (the C# rolls
+    /// on `HitTileObject.Clear`, i.e. slot reuse — `HitTile.cs:29-46`).
+    pub(crate) mine_crack_target: Option<(i32, i32)>,
+    /// `HitTile.rand` (`HitTile.cs:78`): the crack-style stream. Deviation:
+    /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
+    /// (determinism rule, ANALYSIS "The tile-crack overlay").
+    pub(crate) mine_crack_rng: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -3423,6 +3437,10 @@ impl App {
             place_down: false,
             mine_target: None,
             mine_timer: 0.0,
+            mine_hardness: 0.0,
+            mine_crack_style: 0,
+            mine_crack_target: None,
+            mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
