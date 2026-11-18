@@ -349,12 +349,24 @@ impl App {
                         // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
                         draw_invisible_walls: crate::env::show_invisible(),
                     };
+                    // `Main.essScale`'s drift (`Main.cs:62264-62277`), which
+                    // the C# runs once per draw pass just before `DrawItems`
+                    // (`:62278`), behind `!Main.gamePaused`. The step-time
+                    // flicker arms above read the value the last draw left.
+                    if !self.game_paused {
+                        crate::item_lights::update_ess_scale(
+                            &mut self.ess_scale,
+                            &mut self.ess_dir,
+                        );
+                    }
                     // `WorldItem.Update`'s `UpdateItem_VisualEffects` lights (S1-E-5)
-                    // (`WorldItem.cs:1204-1649`). The C# runs them once per live
+                    // (`WorldItem.cs:1295-1648`). The C# runs them once per live
                     // drop per tick, in `Main.item` slot order, at the end of
                     // `WorldItem.Update` (`:436`); `items` here is that same slot
-                    // order after the step. No arm draws `Main.rand`, so the
-                    // placement relative to the sim leaves the stream untouched.
+                    // order after the step. No arm in THIS feed draws `Main.rand`
+                    // (the rand/essScale head `:1206-1293` feeds from the fixed
+                    // step instead, `item_lights.rs`), so the placement relative
+                    // to the sim leaves the stream untouched.
                     for drop in items.iter() {
                         let Some(def) = crate::registry::get(drop.kind) else {
                             continue;

@@ -25,6 +25,7 @@ mod dye;
 mod emotes;
 mod env;
 mod entity_lights;
+mod item_lights;
 mod npc_lights;
 mod eoc_fight;
 mod input_map;

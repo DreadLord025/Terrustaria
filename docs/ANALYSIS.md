@@ -15921,27 +15921,26 @@ The pass runs in `app/frame.rs` after `LightParams` is built, because that is th
 only place the struct exists; `tr-core`'s `compute_into_with_lights` takes a single
 `&[DynamicLight]`, so `render/tiles.rs` concatenates the waterfall list and the
 entity list into `DrawScratch::all_lights` before the compute. **List order is the
-only ordering constraint** — no ported arm draws RNG, so the frame position of the
-feed cannot change the fixed-step order or any stream.
+only ordering constraint for the frame feed** — its arms draw no RNG. The
+rand-drawing item arms feed the same list from the fixed step instead
+(`item_lights.rs`, "The item rand arms" below), so their draws ride the
+`UpdateItems` stream in `Main.item` slot order.
 
-* **14 arms that draw `Main.rand` are not ported at all** — 5043, 116, 3191,
-  520/3454, 521/3455, 547/3453, 548, 575, 549, 58/1734/1867, 184/1735/1868/4143,
-  522 and 1332 (`WorldItem.cs:1206, 1211, 1224, 1229, 1234, 1239, 1244, 1249, 1254,
-  1259, 1264, 1269, 1274`). Each mixes its `AddLight` with a `Dust.NewDust` whose
-  draws ride `Main.rand`, and the dust system belongs to the S1-E-2/S1-E-3 branches.
-  Skipping a whole arm leaves the stream untouched, which is exact — the port does
-  not consume the `Next(90, 111)` those arms would have drawn.
+* **The rand/essScale head (5043, 3191, 520/3454, 521/3455, 547/3453, 548, 575,
+  549, 58/1734/1867, 184/1735/1868/4143, 522, 1332 + the four fragment arms
+  3456-3459) is now ported** — `crates/tr-app/src/item_lights.rs::rand_light`,
+  fed from the fixed step (see "The item rand arms" below). The dust-gated
+  arms (116, 501, the `% 12` halves of 75/`BossBag`) remain draw-free skips.
 * **Two arms are ported for their light half only**: 75 (`:1624-1635`) and the
   `BossBag` set (`:1636-1648`). Both draw `Main.rand` only inside a
   `timeSinceItemSpawned % 12 == 0` dust branch that the port does not run, so the
   `AddLight` line itself is RNG-free and exact; the dust is the dust task's.
   Because the port omits the whole branch, the `Main.rand` calls are never reached
   and that arm's stream position is skipped rather than shortened.
-* **The four `Main.essScale` arms (3456-3459) are not ported.** `Main.essScale`
-  drifts between 0.7 and 1.0 once per draw pass (`Main.cs:62264-62277`, seeded 1.0
-  at `:66673`) and has no port field yet. The four rows are all-`Vector3` scaled
-  colours with no other state, so they are cheap to add once `essScale` exists; until
-  then the four gemspark blocks emit no light.
+* **The four `Main.essScale` arms (3456-3459) are now ported** with the field
+  itself — see "The item rand arms" below. (Historical note: the rows were
+  first read as gemspark blocks; the ids are the lunar fragments —
+  `ItemID.cs:8595-8601`, Vortex/Nebula/Solar/Stardust.)
 * **`base.wet` is the gate, not `Collision.WetCollision` verbatim.** The C# sets
   `base.wet` from `Collision.WetCollision(position, width, height)`
   (`WorldItem.cs:870`) in the movement half that runs *before*
@@ -16022,6 +16021,63 @@ centre-x vs left-edge difference and negative-coordinate truncation), the Fire
 Imp's else-arm centre light, and the dark casters; `npc.rs`'s
 `the_desert_djinn_rides_its_own_trigger_and_wrap` pins the 180/181/360 cycle and
 the skipped volley; the protocol round-trip roster grew 198 → 199.
+
+### The item rand arms (S1-E-5, 2026-11-18)
+
+`crates/tr-app/src/item_lights.rs::rand_light` ports the head of
+`WorldItem.UpdateItem_VisualEffects` (`WorldItem.cs:1206-1293`): the **twelve
+flicker arms** — 5043 (Torch God's Favor), 3191 (Enchanted Nightcrawler),
+520/3454, 521/3455, 547/3453 (souls + Nebula pickups), 548, 575, 549,
+58/1734/1867 (Heart/Candy Apple/Candy Cane), 184/1735/1868/4143
+(Star/Soul Cake/Sugar Plum/Mana Cloak Star), 522 (Cursed Flame), 1332 (Ichor) —
+each draws exactly one `Main.rand.Next(90, 111)` and multiplies it by the
+arm's `essScale` factor (`1`, `(ess+0.5)/2`, `ess*0.5` or `ess*0.2`) and its
+fixed RGB base, plus the **four lunar-fragment arms** 3456-3459
+(`ItemID.cs:8595-8601`), `Vector3 * Main.essScale` through the
+`AddLight(Vector2, Vector3)` overload's quotient truncation
+(`Lighting.cs:135-138`), RNG-free.
+
+**Stream placement.** The C# runs `UpdateItem_VisualEffects` at
+`WorldItem.cs:436` — after the movement half, per live drop, in `Main.item`
+slot order — under the `UpdateItems` swap (`Main.cs:18024`). The port feeds
+from `world_sim/items.rs`'s step loop at the same position (right after
+`drop.update`, before the pickup handling), on
+`app.rngs.stream(RngKey::UpdateItems)`. A collected drop contributes nothing
+(the C# `TurnToAir`s it before `:436`). The RNG-free table
+(`entity_lights::item_light`) stays in the frame feed; both append to the one
+`EntityLights` pair. Witness tests
+(`world_sim/items.rs::rand_light_witness`): a mixed slot list
+(520, 116, 521, 501, 58, 2, 3456) spends exactly three `Next(90, 111)` draws
+in slot order (twin-replayed stream equality), the lights carry the C#
+products, every other stage stream stays pristine; a draw-free world
+(116/501/2/fragments) spends nothing across 30 ticks.
+
+**`Main.essScale` landed with it**: `App::ess_scale`/`ess_dir`, seeded
+1.0/-1 (`Main.cs:66673-66674`), drifted once per draw pass behind
+`!gamePaused` (`Main.cs:62264-62277`, `item_lights::update_ess_scale`, called
+in `app/frame/draw.rs` just before the item-light feed — the C# updates it
+right before `DrawItems`, `:62278`). The step-time arms read the value the
+last draw left, exactly like the C# (update runs before draw within a frame).
+The `(double)essScale < 0.7` comparison keeps the f64 promotion.
+
+**What stays dropped, exactly (draw-free skips):**
+
+* **116** (`:1211-1222`): the flicker draw is followed by a `Next(250) == 0`
+  gate whose `Dust.NewDust` chain draws a pool-state-dependent number of
+  further rolls (the pressure bands + the default block, `Dust.cs:114-191`)
+  and a `Next(3)` alpha roll — porting the light half alone would shorten the
+  stream on 1/250 of ticks. The whole arm waits for the item dust pass.
+* **501** (`:1295-1303`): dust-only (`Next(6) == 0` gate), no `AddLight`.
+* **75 / `BossBag`** (`:1624-1648`): the light halves are in the RNG-free
+  table; the `timeSinceItemSpawned % 12` dust halves
+  (`NextVector2CircularEdge` + two `NextFloat`s + the `NewDustPerfect` chain)
+  stay skipped — the port has no `timeSinceItemSpawned` tick counter yet
+  (`ItemDrop::age` is seconds, not the C# int tick count).
+
+Tests: `item_lights.rs` pins the one-draw-per-arm witness for all 20 flicker
+ids, the draw-free skips, the fragment products + negative-coordinate
+truncation, the essScale dimming and the 0.7/1.0 bounce; the integration
+witness above pins the slot order and stream isolation.
 
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 
