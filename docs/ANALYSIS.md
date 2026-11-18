@@ -17625,3 +17625,85 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## Plantera's Tentacle (S1-D-3 aiStyle-53, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/npc_ai_style53.rs` ports `NPC.AI`'s inline
+`else if (this.aiStyle == 53)` block (`NPC.cs:32241-32369`) as a PURE
+velocity machine. Family identity verified from the C#: NPC aiStyle 53 is
+NOT the projectile sentry family (`Projectile.cs`'s `AI_053_FrostHydra`,
+landed with S1-D-4b-2) — its one member is `NPCID.PlanterasTentacle` (264)
+(`ID/NPCID.cs:11205`), the only `this.aiStyle = 53;` row in `SetDefaults`
+(`NPC.cs:12410-12422`: 24x24, damage 60, defense 20, lifeMax 1000,
+noGravity + noTileCollide). There is no `AI_053_*` method in `NPC.cs`; the
+arm is inline. The tentacles spawn from Plantera's own aiStyle-51 arm
+(`NPC.NewNPC(..., 264, whoAmI)`, `:31993`/`:32003`/`:32022`); the expert
+hook batch writes `ai[3] = hookSlot + 1` (`:32004`), read at `:32261-32264`.
+
+**Code-only mode**: no cargo/rustc/tests were run on this branch — the 15
+witness tests in the module are WRITTEN, NOT RUN. The RNG witnesses mirror
+the cited `Next` calls on a cloned `UnifiedRandom` and compare the stream
+state, so a drifted draw order fails by construction once executed.
+
+**RNG by construction** — the arm's only `Main.rand` draws:
+1. the ftw reflect re-roll `Next(10)` (`:32245`) — EVERY getGoodWorld
+   tick, drawn BEFORE the `NPC.plantBoss < 0` early return: an orphan
+   tentacle still consumes one draw on its death tick (witness
+   `s1_d_3_s53_the_ftw_orphan_draws_the_reflect_roll_before_dying`).
+2. the rearm triple `Next(120, 480)`, `Next(-100, 101)`,
+   `Next(-100, 101)` (`:32270-32272`) — only at `localAI[0] <= 0`, in
+   that order, and BEFORE the anchor-active check (`:32296`): a tentacle
+   whose anchor died still draws on its deactivation tick (witness
+   `s1_d_3_s53_the_dead_anchor_deactivates_after_the_rearm_draw`).
+Nothing else draws; the classic orphan path and every steering tick are
+zero-draw (witnessed by untouched-stream comparisons).
+
+**Wiring deferred** (the `npc_ai_style16.rs` fish precedent, 8754ef9f):
+the port has no `NpcKind::PlanterasTentacle`; Plantera runs the
+aiStyle-51 v1 stand-in (`npc.rs::update_plantera`) which never spawns
+tentacles. The merge step adds the kind + the `SetDefaults` row + the
+style-axis claim + the spawn batch; the module is keyed on the vanilla
+type so the arm is reachable and testable now. Deliberate folds, all
+cited in the module:
+- `Main.netMode != 1` → true (single-player port): the rearm block
+  always runs.
+- `StrikeNPCNoInteraction(9999, 0f, 0)` (`:32256`) → an
+  `Ai53Effects::orphan_strike` request + `hp = 0` (the port's
+  `active = false` convention). The C# path is the `flag` instant kill
+  (`NPC.cs:81184-81187`, `:81237`: `Damage >= 9999 && owner == 255`);
+  knockBack 0 skips the knockback block (`:81387`). The 262/263/264
+  `HitEffect` dust/gore burst (`:87165-87199`, with its `Next(3)` /
+  `Next(-2, 3)` rolls) is the documented skip — the stream divergence
+  starts only on a tick where the original NPC is already dead and
+  removed.
+- `this.active = false` (`:32298`, the anchor-lost death) → `hp = 0`.
+- `Main.expertMode`/`Main.getGoodWorld` have no runtime flags yet —
+  `Ai53Ctx` carries them (the style9 `Style9Flags` precedent); the rows
+  are complete and witnessed.
+- `reflectsProjectiles` has no `Npc` field — the ftw re-roll leaves as
+  `Ai53Effects::reflects_projectiles` (`Some` on every ftw tick, `None`
+  otherwise); the DRAW is kept in-stream regardless.
+- The boss/anchor slots resolve through `Ai53Ctx` (`Ai53NpcView`): the
+  C# reads `Main.npc[NPC.plantBoss]` for the hp bands and
+  `Main.npc[num790]` for the anchor — two different slots when the
+  expert hook link (`ai[3] > 0`) is set.
+- Position integration stays OUT of the arm (the C# AI ends before
+  `UpdateCollision`); noGravity + noTileCollide integrates straight
+  through in the generic pass.
+
+**Faithfulness details pinned by the witnesses** (the W66 defect
+classes): the anchor centre halves are INTEGER divisions
+(`(float)(width / 2)`, `:32301-32302`); the orbit vector keeps the C#'s
+add-then-subtract round-trip (`(centre + ai) - centre`, `:32304-32307` —
+NOT simplified to `ai`, f32 rounding differs at large centres);
+`Math.Sqrt` is f64 on the f32 sum with the result cast back BEFORE the
+divide (`:32308`) and there is NO zero guard — at `ai == (0, 0)` the C#
+produces NaN and every steering/rotation compare fails, leaving the
+state untouched (Rust IEEE reproduces it; a guard would be an
+invention); the boss hp bands are DOUBLE compares on `NPC.plantBoss`
+(exclusive `<`) while the expert radius term reads the TENTACLE's own
+hp in f32 (`:32289`); the steering compares ride `base.position`, not
+Center; the X and Y steer pairs are separate if/else-ifs (both axes
+steer per tick); the rotation tail is two separate ifs (at
+`num797 == 0` neither fires) and the left fold adds the LITERAL `3.14f`,
+not PI (`:32367`).
