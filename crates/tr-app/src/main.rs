@@ -21,6 +21,7 @@ mod combat_text;
 #[cfg(feature = "debug")]
 mod debug_panel;
 mod death;
+mod drawdata_cases_a;
 mod dye;
 mod emotes;
 mod env;
