@@ -10524,7 +10524,8 @@ Deviations and notes:
     The 123/84/966/308/377/1025/130 anchor arms are ported for the citation's completeness
     but their own AI arms (53/197/123/130) do not call the reposition yet — only 134/137/138
     reach it. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
-    C# does (`Mount.cs:389` keeps the last type when inactive).
+    C# does (`Mount.Dismount` calls `Reset()`, `Mount.cs:6171`, which sets
+    `_type = -1`; the port's `dismount()` likewise resets the kind).
   - **Skips**: the `Lighting.AddLight`/`PlotTileLine` casts (`:69332`/`:68956-68957`/
     `:69412-69413`) — no pool light layer; the tracked sounds (`:68615`/`:68905`/`:69362`)
     — no sound layer; the aura's three dust loops (`:68959-69015`) and their `Main.rand`
