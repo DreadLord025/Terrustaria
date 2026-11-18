@@ -15841,92 +15841,6 @@ source order: `ScanTiles`, `ScanOnScreenTiles`, `ScanNPCPositions`,
   take the metrics. Wiring it means threading the scan through three call sites
   (`frame.rs:1131`, `render/tiles.rs:322`, `rain.rs:941`) — the water-style half of
   the row, not this one.
-
-## The Creeper family (S1-D-3 aiStyle-55, 2026-11-18, code-only mode)
-
-`crates/tr-app/src/npc_ai_style55.rs` ports `NPC.AI`'s whole
-`else if (this.aiStyle == 55)` block (`NPC.cs:32657-32741`) as a PURE
-velocity machine. **Family identity verified from the C#**: the only
-`this.aiStyle = 55;` row in `SetDefaults` is the **Creeper**, type 267
-(`NPC.cs:12456-12469`, `NPCID.cs:11211`). The Brain of Cthulhu (266) is
-aiStyle **54** (`:12443`) — style 55 is not a Brain phase-2 arm; it is the
-orbiting swarm's own machine, reading the Brain's centre through the static
-`NPC.crimsonBoss` slot (set at `:32372` by the Brain's AI head, cleared
-at `:8397`/`:95176`). The port's `npc/data.rs` style table already
-carried the correct row (`Creeper => 55`, `:1567`).
-
-The arm carries every branch: the brainless despawn (`:32659-32664`),
-the orbit state's `ai[1]` reset, the strict `> 90f` ring with the
-8-px homeward drift through the 15/16 blend and its early return, the
-strict `< 8f` Manhattan amplify (Y then X), the lunge roll
-(`:32686`), the `TargetClosest` + reciprocal-first unguarded 8-px aim
-(`:32688-32694`), the expert homing steer (the unguarded `Normalize`,
-the ftw 12f/49-50 row and the expert 9f/99-100 row, `:32700-32714`), the
-strict `> 700f` leash reset (`:32715-32721`), and the `justHit`
-recoil with the `knockBackResist == 0f` six-hit counter (`ai[1] > 5f`,
-`:32724-32739`).
-
-**RNG by construction** (the `npc_ai_style16` precedent): the arm's only
-draws are the lunge roll at `:32686`,
-`Main.netMode != 1 && ((Main.expertMode && Main.rand.Next(100) == 0) || Main.rand.Next(200) == 0)`.
-Classic: the `&&` short-circuits before `Next(100)` (never drawn);
-`Next(200)` is drawn EVERY in-ring state-0 tick, even when the roll
-fails. Expert: `Next(100)` every in-ring tick; `Next(200)` only when
-the first roll is non-zero (the `||` short-circuits on a zero — one
-draw, not two). The far-orbit return and the whole state-1 tail draw
-nothing. The witnesses mirror the cited draws on a cloned
-`UnifiedRandom` and compare the full stream state (`PartialEq`),
-including a ten-tick replay; a drifted draw count/order fails by
-construction once executed.
-
-**Code-only mode**: no cargo/rustc/tests were run on this branch — the 14
-witness tests in the module are WRITTEN, NOT RUN.
-
-**Wiring deferred**: the live routing keeps the `update_creeper`
-stand-in (`npc.rs:13424`) untouched this round; the merge step swaps it
-onto `ai_055_step` (the `Ai55Effects::deactivate` request then feeds
-the pool removal the sim's `update_brain_state` pass already does).
-The line-by-line audit of the stand-in against the C# block (the W66
-defect classes) found these real deviations, all fixed in the module:
-- **Missing 700-px leash** (`:32715-32721`): the stand-in's lunging
-  Creepers never drop back to the orbit on distance — they lunge forever.
-- **Missing `TargetClosest`** (`:32688`): the stand-in aims at the
-  session player directly, never updating `target`/`targetRect`/
-  `direction`/`directionY`/`targetSetFrame`.
-- **Invented `.max(1.0)` distance floor**: the C#'s `8f / sqrt` at
-  `:32692` is unguarded (a coincident centre gives `inf`/`NaN`);
-  the stand-in floors the distance at 1.
-- **f32 operation order**: the stand-in computes `dx / d * 8.0`
-  (divide-then-multiply); the C# computes `num829 = 8f / d` then
-  `dx * num829` (reciprocal-first) — different rounding (the (15, 20)
-  witness fixture discriminates them: 4.7999997 vs 4.8000002).
-- **`hurt_cd` vs `justHit`**: the stand-in reads the ~11-tick damage
-  cooldown as the recoil gate; the C# reads the ONE-TICK `justHit`
-  flag, so a struck Creeper should recoil on the strike tick only.
-- **Missing gates/branches**: the `netUpdate` writes (`:32662`,
-  `:32696`), the expert/ftw homing steer (`:32700-32714`) and the
-  `knockBackResist == 0f` six-hit counter (`:32728-32735`, dead for
-  the vanilla Creeper's 0.8f row but part of the arm).
-
-Deliberate folds, all cited in the module:
-- `Main.netMode != 1` → true (single-player port) — on a client the C#
-  draws nothing at the roll.
-- `NPC.crimsonBoss` → `Ai55Ctx::crimson_boss_center` (`None` = the
-  `< 0` despawn), fed by `brain_anchor` over the sim's
-  `world.brain_present`/`brain_x`/`brain_y` anchor
-  (`world_sim/npcs.rs:993-995`).
-- `active = false` leaves as `Ai55Effects::deactivate` (the port's
-  `Npc` has no `active` field; the sim's pass retains the Creepers
-  away when the Brain dies).
-- `NPC.justHit` has no port field — `Ai55Ctx::just_hit` carries it
-  (the `Ai16Ctx::just_hit` precedent); the strike path supplies it at
-  the wiring step.
-- `Math.Sqrt` keeps the C#'s f32-sum → f64-root → f32-cast shape
-  (provably bit-identical to a direct f32 sqrt for this input shape, but
-  transcribed literally); `Vector2.Normalize()` is XNA's
-  reciprocal-multiply, unguarded.
-- Position integration stays OUT of the arm (the C# AI ends before
-  `UpdateCollision`).
 * **`TownNPCCount` is now real.** It feeds `MusicEnv.town_npcs` (the `>= 3` town
   music gate, `Main.cs:12199`) and `SpawnContext.town_npcs` (the spawn-pressure
   tiers, `NPC.cs:604-621`), both of which were hardcoded to `0` with an "M4-TOWN"
@@ -17711,3 +17625,89 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The Creeper family (S1-D-3 aiStyle-55, 2026-11-18, code-only mode)
+
+`crates/tr-app/src/npc_ai_style55.rs` ports `NPC.AI`'s whole
+`else if (this.aiStyle == 55)` block (`NPC.cs:32657-32741`) as a PURE
+velocity machine. **Family identity verified from the C#**: the only
+`this.aiStyle = 55;` row in `SetDefaults` is the **Creeper**, type 267
+(`NPC.cs:12456-12469`, `NPCID.cs:11211`). The Brain of Cthulhu (266) is
+aiStyle **54** (`:12443`) — style 55 is not a Brain phase-2 arm; it is the
+orbiting swarm's own machine, reading the Brain's centre through the static
+`NPC.crimsonBoss` slot (set at `:32372` by the Brain's AI head, cleared
+at `:8397`/`:95176`). The port's `npc/data.rs` style table already
+carried the correct row (`Creeper => 55`, `:1567`).
+
+The arm carries every branch: the brainless despawn (`:32659-32664`),
+the orbit state's `ai[1]` reset, the strict `> 90f` ring with the
+8-px homeward drift through the 15/16 blend and its early return, the
+strict `< 8f` Manhattan amplify (Y then X), the lunge roll
+(`:32686`), the `TargetClosest` + reciprocal-first unguarded 8-px aim
+(`:32688-32694`), the expert homing steer (the unguarded `Normalize`,
+the ftw 12f/49-50 row and the expert 9f/99-100 row, `:32700-32714`), the
+strict `> 700f` leash reset (`:32715-32721`), and the `justHit`
+recoil with the `knockBackResist == 0f` six-hit counter (`ai[1] > 5f`,
+`:32724-32739`).
+
+**RNG by construction** (the `npc_ai_style16` precedent): the arm's only
+draws are the lunge roll at `:32686`,
+`Main.netMode != 1 && ((Main.expertMode && Main.rand.Next(100) == 0) || Main.rand.Next(200) == 0)`.
+Classic: the `&&` short-circuits before `Next(100)` (never drawn);
+`Next(200)` is drawn EVERY in-ring state-0 tick, even when the roll
+fails. Expert: `Next(100)` every in-ring tick; `Next(200)` only when
+the first roll is non-zero (the `||` short-circuits on a zero — one
+draw, not two). The far-orbit return and the whole state-1 tail draw
+nothing. The witnesses mirror the cited draws on a cloned
+`UnifiedRandom` and compare the full stream state (`PartialEq`),
+including a ten-tick replay; a drifted draw count/order fails by
+construction once executed.
+
+**Code-only mode**: no cargo/rustc/tests were run on this branch — the 14
+witness tests in the module are WRITTEN, NOT RUN.
+
+**Wiring deferred**: the live routing keeps the `update_creeper`
+stand-in (`npc.rs:13424`) untouched this round; the merge step swaps it
+onto `ai_055_step` (the `Ai55Effects::deactivate` request then feeds
+the pool removal the sim's `update_brain_state` pass already does).
+The line-by-line audit of the stand-in against the C# block (the W66
+defect classes) found these real deviations, all fixed in the module:
+- **Missing 700-px leash** (`:32715-32721`): the stand-in's lunging
+  Creepers never drop back to the orbit on distance — they lunge forever.
+- **Missing `TargetClosest`** (`:32688`): the stand-in aims at the
+  session player directly, never updating `target`/`targetRect`/
+  `direction`/`directionY`/`targetSetFrame`.
+- **Invented `.max(1.0)` distance floor**: the C#'s `8f / sqrt` at
+  `:32692` is unguarded (a coincident centre gives `inf`/`NaN`);
+  the stand-in floors the distance at 1.
+- **f32 operation order**: the stand-in computes `dx / d * 8.0`
+  (divide-then-multiply); the C# computes `num829 = 8f / d` then
+  `dx * num829` (reciprocal-first) — different rounding (the (15, 20)
+  witness fixture discriminates them: 4.7999997 vs 4.8000002).
+- **`hurt_cd` vs `justHit`**: the stand-in reads the ~11-tick damage
+  cooldown as the recoil gate; the C# reads the ONE-TICK `justHit`
+  flag, so a struck Creeper should recoil on the strike tick only.
+- **Missing gates/branches**: the `netUpdate` writes (`:32662`,
+  `:32696`), the expert/ftw homing steer (`:32700-32714`) and the
+  `knockBackResist == 0f` six-hit counter (`:32728-32735`, dead for
+  the vanilla Creeper's 0.8f row but part of the arm).
+
+Deliberate folds, all cited in the module:
+- `Main.netMode != 1` → true (single-player port) — on a client the C#
+  draws nothing at the roll.
+- `NPC.crimsonBoss` → `Ai55Ctx::crimson_boss_center` (`None` = the
+  `< 0` despawn), fed by `brain_anchor` over the sim's
+  `world.brain_present`/`brain_x`/`brain_y` anchor
+  (`world_sim/npcs.rs:993-995`).
+- `active = false` leaves as `Ai55Effects::deactivate` (the port's
+  `Npc` has no `active` field; the sim's pass retains the Creepers
+  away when the Brain dies).
+- `NPC.justHit` has no port field — `Ai55Ctx::just_hit` carries it
+  (the `Ai16Ctx::just_hit` precedent); the strike path supplies it at
+  the wiring step.
+- `Math.Sqrt` keeps the C#'s f32-sum → f64-root → f32-cast shape
+  (provably bit-identical to a direct f32 sqrt for this input shape, but
+  transcribed literally); `Vector2.Normalize()` is XNA's
+  reciprocal-multiply, unguarded.
+- Position integration stays OUT of the arm (the C# AI ends before
+  `UpdateCollision`).
