@@ -142,6 +142,9 @@ pub enum RowAct {
     Header,
     /// A `DrawValueBar` row.
     Bar(Bar),
+    /// A cursor/border colour HSL bar (`:1079-1350`): the same `DrawValueBar`
+    /// mechanics with a `DelegateMethods.ColorLerp_HSL_*` gradient.
+    ColorBar(ColorBar),
     /// An on/off row whose label flips between two keys.
     Toggle(Toggle),
     /// A multi-state row (`Lang.menu[247 + mode]`, `Lang.menu[59 + qaStyle]`, …).
@@ -166,6 +169,36 @@ pub enum Bar {
     UiScale,
     /// `Lang.menu[52]` + `Main.bgScroll` (`:911-945`) → `parallax_scroll`.
     Parallax,
+    /// `GameUI.MapScale` + `Main.MapScale` (`:761-796`) → `map_scale` (the
+    /// bar's track spans the C# slider's 0.5..1.0 range, `(MapScale - 0.5f) /
+    /// 0.5f` at `:776`).
+    MapScale,
+}
+
+/// The cursor/border colour HSL bars of the Controls page (`:1079-1350`).
+/// Each bar edits one channel of the colour's HSL vector
+/// (`Main.mouseColorSlider` / `Main.mouseBorderColorSlider`,
+/// `ColorSlidersSet.cs:7-13`); the gradient is the matching
+/// `DelegateMethods.ColorLerp_HSL_*` (`DelegateMethods.cs:438-456`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColorBar {
+    /// `Main.mouseColorSlider.Hue` (`:1091-1099`) → `mouse_color`'s hue.
+    MouseHue,
+    /// `Main.mouseColorSlider.Saturation` (`:1127-1135`).
+    MouseSat,
+    /// `Main.mouseColorSlider.Luminance` (`:1163-1172`), floored at 0.15
+    /// (`GetLerpValue(0.15f, 1f, ...)` on the read, `x * 0.85f + 0.15f` on
+    /// the write).
+    MouseLum,
+    /// `Main.mouseBorderColorSlider.Hue` (`:1219-1227`) →
+    /// `mouse_border_color`'s hue.
+    BorderHue,
+    /// `Main.mouseBorderColorSlider.Saturation` (`:1255-1263`).
+    BorderSat,
+    /// `Main.mouseBorderColorSlider.Luminance` (`:1291-1299`), full range.
+    BorderLum,
+    /// `Main.mouseBorderColorSlider.Alpha` (`:1327-1336`).
+    BorderAlpha,
 }
 
 /// The on/off rows, mapped onto the port's [`Settings`].
@@ -182,9 +215,6 @@ pub enum Toggle {
     /// `Lang.menu[71]/[72]` + `Main.hidePlayerCraftingMenu`-style pickup text
     /// (`:693-701`, the Interface page's first row).
     PickupText,
-    /// `Lang.menu[123]` `Main.showItemToolTips`-paired progress-bar row
-    /// (`:702-714`).
-    EventProgress,
     /// `Lang.menu[128]/[129]` + `Main.placePreview` (`:715-723`).
     PlacementPreview,
     /// `Lang.inter[117]/[116]` + `Main.highlightNewItems` (`:724-732`).
@@ -216,11 +246,17 @@ pub enum Toggle {
     ScreenShake,
     /// `Main.FlashyEffectsWorld` (`:1055-1063`).
     FlashyEffectsWorld,
+    /// `Main.SettingsEnabled_OpaqueBoxBehindTooltips` (`:832-840`) →
+    /// `opaque_tooltip_box`.
+    OpaqueTooltipBox,
 }
 
 /// The multi-state rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cycle {
+    /// `Lang.menu[123] + " " + Lang.menu[124 + Main.invasionProgressMode]`
+    /// (`:702-714`) → `event_progress`, `(mode + 1) % 3`.
+    EventProgress,
     /// `Lang.menu[247 + Main.FrameSkipMode]` (`:946-954`) → `frame_skip`.
     FrameSkip,
     /// `"UI.LightMode_" + Lighting.Mode` (`:955-963`) → `light_mode`.
@@ -243,6 +279,20 @@ pub enum Cycle {
     /// `UI.HoverControlSettingIs{Hold,Click}` — `Player.Settings.HoverControl`
     /// (`:659-675`, `Player.cs:379-383`).
     HoverControl,
+    /// `UI.SelectMapBorder` + `UI.MinimapFrame_{key}` —
+    /// `MinimapFrameManagerInstance.CycleSelection()` (`:751-758`) →
+    /// `minimap_frame`.
+    MinimapFrame,
+    /// `UI.SelectHealthStyle` + `UI.HealthManaStyle_{key}` —
+    /// `ResourceSetsManager.CycleResourceSet()` (`:799-806`) → `resource_sets`.
+    ResourceSets,
+    /// `Main.DialoguePortraitPreference` switch → `Main.CycleNPCPortraitMode()`
+    /// (`:808-821`) → `portrait_preference`.
+    PortraitPreference,
+    /// `LockOnHelper.UseMode` switch (`Lang.menu[232/233/234]`) →
+    /// `LockOnHelper.CycleUseModes()` (`:1359-1379`, `LockOnHelper.cs:103-117`)
+    /// → `lock_on_priority`.
+    LockOnPriority,
 }
 
 /// The page table for a category (`:400-1441`). Rows are in the vanilla order and
@@ -304,8 +354,9 @@ static GENERAL: &[Row] = &[
 static INTERFACE: &[Row] = &[
     // 0 pickup text (`:693`).
     Row { label: Label::Menu(71), act: RowAct::Toggle(Toggle::PickupText) },
-    // 1 event progress bar (`:702`).
-    Row { label: Label::Menu(123), act: RowAct::Toggle(Toggle::EventProgress) },
+    // 1 event progress bar (`:702`) — the three-state `invasionProgressMode`
+    // cycle, `Lang.menu[123] + " " + Lang.menu[124 + mode]`.
+    Row { label: Label::Menu(123), act: RowAct::Cycle(Cycle::EventProgress) },
     // 2 placement preview (`:715`).
     Row { label: Label::Menu(128), act: RowAct::Toggle(Toggle::PlacementPreview) },
     // 3 highlight new items (`:724`).
@@ -314,23 +365,27 @@ static INTERFACE: &[Row] = &[
     Row { label: Label::Menu(229), act: RowAct::Toggle(Toggle::TileGrid) },
     // 5 gamepad instructions (`:742`).
     Row { label: Label::Menu(241), act: RowAct::Toggle(Toggle::GamepadInstructions) },
-    // 6 `UI.SelectMapBorder` — the map-frame cycle (`:751-765`) — no port field.
-    Row { label: Label::Text("UI.SelectMapBorder"), act: RowAct::Parked },
-    // 7 the map-frame colour picker (`:766-798`).
-    Row { label: Label::Blank, act: RowAct::Parked },
-    // 8 `UI.SelectHealthStyle` (`:799-807`).
-    Row { label: Label::Text("UI.SelectHealthStyle"), act: RowAct::Parked },
-    // 9 the dialogue-portrait preference (`:808-822`).
-    Row { label: Label::Text("UI.PortraitPreference"), act: RowAct::Parked },
+    // 6 `UI.SelectMapBorder` — the map-frame cycle (`:751-758`).
+    Row { label: Label::Text("UI.SelectMapBorder"), act: RowAct::Cycle(Cycle::MinimapFrame) },
+    // 7 `GameUI.MapScale` — the map-scale bar (`:761-796`), drawn with the
+    // `vector6.X -= num` shift like every other bar row.
+    Row { label: Label::Text("GameUI.MapScale"), act: RowAct::Bar(Bar::MapScale) },
+    // 8 `UI.SelectHealthStyle` (`:799-806`).
+    Row { label: Label::Text("UI.SelectHealthStyle"), act: RowAct::Cycle(Cycle::ResourceSets) },
+    // 9 the dialogue-portrait preference (`:808-821`).
+    Row { label: Label::Text("UI.PortraitPreference"), act: RowAct::Cycle(Cycle::PortraitPreference) },
     // 10 the big progress-bar text (`:823-831`).
-    Row { label: Label::Text("GameUI.BigProgressBar"), act: RowAct::Toggle(Toggle::BossBarText) },
+    Row { label: Label::Text("UI.ShowBossLifeTextOn"), act: RowAct::Toggle(Toggle::BossBarText) },
     // 11 the opaque tooltip box (`:832-840`).
-    Row { label: Label::Text("UI.OpaqueBoxBehindTooltips"), act: RowAct::Parked },
+    Row {
+        label: Label::Text("GameUI.HoverTextBoxesOn"),
+        act: RowAct::Toggle(Toggle::OpaqueTooltipBox),
+    },
     // 12 the quick-trash key (`:841-862`).
     Row { label: Label::Menu(253), act: RowAct::Cycle(Cycle::QuickTrash) },
     // 13 flashy interface effects (`:863-871`).
     Row {
-        label: Label::Text("UI.FlashyEffectsInterface"),
+        label: Label::Text("UI.FlashyEffectsInterfaceOn"),
         act: RowAct::Toggle(Toggle::FlashyEffectsInterface),
     },
 ];
@@ -346,8 +401,9 @@ static VIDEO: &[Row] = &[
     Row { label: Label::Menu(52), act: RowAct::Bar(Bar::Parallax) },
     // 3 frame skip (`:946-954`).
     Row { label: Label::Menu(247), act: RowAct::Cycle(Cycle::FrameSkip) },
-    // 4 lighting mode (`:955-963`).
-    Row { label: Label::Text("UI.LightMode_0"), act: RowAct::Cycle(Cycle::LightMode) },
+    // 4 lighting mode (`:955-963`) — `"UI.LightMode_" + Lighting.Mode`, the
+    // enum *name* (Color/White/Retro/Trippy), not an ordinal.
+    Row { label: Label::Text("UI.LightMode_Color"), act: RowAct::Cycle(Cycle::LightMode) },
     // 5 quality (`:964-976`).
     Row { label: Label::Menu(59), act: RowAct::Cycle(Cycle::Quality) },
     // 6 background (`:977-985`).
@@ -363,37 +419,43 @@ static VIDEO: &[Row] = &[
     // 11 wave quality (`:1022-1036`).
     Row { label: Label::Text("GameUI.WaveQuality"), act: RowAct::Cycle(Cycle::WaveQuality) },
     // 12 tiles sway in wind (`:1037-1045`).
-    Row { label: Label::Text("UI.TilesSwayInWind"), act: RowAct::Toggle(Toggle::TilesSway) },
+    Row { label: Label::Text("UI.TilesSwayInWindOn"), act: RowAct::Toggle(Toggle::TilesSway) },
     // 13 screen shake (`:1046-1054`).
     Row { label: Label::Text("GameUI.ScreenShake"), act: RowAct::Toggle(Toggle::ScreenShake) },
     // 14 flashy world effects (`:1055-1063`).
-    Row { label: Label::Text("UI.FlashyEffectsWorld"), act: RowAct::Toggle(Toggle::FlashyEffectsWorld) },
+    Row { label: Label::Text("UI.FlashyEffectsWorldOn"), act: RowAct::Toggle(Toggle::FlashyEffectsWorld) },
 ];
 
 /// The `Controls` page (`:1065-1441`, `num11 = 15`): the cursor-colour block
-/// (`:1075-1202`), the border-colour block (`:1203-1355`), a caption row
-/// (`:1356-1371`) and the three smart-cursor rows (`:1372-1440`).
+/// (`:1075-1197`), the border-colour block (`:1198-1358`), the lock-on row
+/// (`:1359-1380`) and the three smart-cursor rows (`:1381-1407`). The colour
+/// rows draw **blank labels** in the C# (the bars carry the meaning); the
+/// captions are `Lang.menu[64]`/`[217]`.
 static CONTROLS: &[Row] = &[
     // 0 `Lang.menu[64]` "Cursor Color" (`:1075`).
     Row { label: Label::Menu(64), act: RowAct::Header },
-    // 1-4 the four cursor-colour bars R/G/B/A (`:1079-1194`).
-    Row { label: Label::Text("UI.MouseColorR"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseColorG"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseColorB"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseColorA"), act: RowAct::Parked },
+    // 1-3 the cursor-colour H/S/L bars (`:1079-1186`) — the C# has no alpha
+    // bar for the cursor colour (vanilla persists R/G/B only).
+    Row { label: Label::Blank, act: RowAct::ColorBar(ColorBar::MouseHue) },
+    Row { label: Label::Blank, act: RowAct::ColorBar(ColorBar::MouseSat) },
+    Row { label: Label::Blank, act: RowAct::ColorBar(ColorBar::MouseLum) },
+    // 4 `""` spacer (`:1195`).
+    Row { label: Label::Blank, act: RowAct::Header },
     // 5 `Lang.menu[217]` "Border Color" (`:1203`).
     Row { label: Label::Menu(217), act: RowAct::Header },
-    // 6-10 the four border-colour bars + the caption row (`:1207-1371`).
-    Row { label: Label::Text("UI.MouseBorderR"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseBorderG"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseBorderB"), act: RowAct::Parked },
-    Row { label: Label::Text("UI.MouseBorderA"), act: RowAct::Parked },
-    Row { label: Label::Blank, act: RowAct::Parked },
-    // 11-14 the smart-cursor block (`:1372-1440`).
+    // 6-9 the border-colour H/S/L/A bars (`:1207-1350`).
+    Row { label: Label::Blank, act: RowAct::ColorBar(ColorBar::BorderHue) },
+    Row { label: Label::Blank, act: RowAct::ColorBar(ColorBar::BorderSat) },
+    Row { label: Label::Blank, act: RowAct::ColorBar(ColorBar::BorderLum) },
+    Row { label: Label::Blank, act: RowAct::ColorBar(ColorBar::BorderAlpha) },
+    // 10 `""` spacer (`:1356`).
+    Row { label: Label::Blank, act: RowAct::Header },
+    // 11 the lock-on priority (`:1359-1379`).
+    Row { label: Label::Menu(232), act: RowAct::Cycle(Cycle::LockOnPriority) },
+    // 12-14 the smart-cursor block (`:1381-1407`).
     Row { label: Label::Menu(215), act: RowAct::Cycle(Cycle::SmartBlocks) },
     Row { label: Label::Menu(121), act: RowAct::Cycle(Cycle::SmartCursorMode) },
     Row { label: Label::Menu(214), act: RowAct::Cycle(Cycle::SmartCursorPriority) },
-    Row { label: Label::Blank, act: RowAct::Header },
 ];
 
 /// `SoundEngine.PlaySound` ids the window emits (`:421-436`).
@@ -418,10 +480,15 @@ pub struct IngameOptions {
     pub right_hover: i32,
     /// `IngameOptions.rightLock` (`:38`) — the sticky bar grab.
     pub right_lock: i32,
+    /// `IngameOptions.notBar` (`:42`) — a bar row's label (or the wide band)
+    /// is hovered while no grab is held, so the bar must not follow the mouse.
+    pub not_bar: bool,
     /// `IngameOptions.leftScale` (`:22`).
     pub left_scale: [f32; LEFT_SLOTS],
-    /// `IngameOptions.rightScale` (`:24`) — 17 slots is the widest page.
-    pub right_scale: [f32; 17],
+    /// `IngameOptions.rightScale` (`:24`, the static ctor's `new float[20]`,
+    /// `:1583-1587`) — 20 slots, so the General page's 18th row (the trailing
+    /// spacer) has its own.
+    pub right_scale: [f32; 20],
     /// The action a left row asked for, drained by the caller (the vanilla calls
     /// `IngameFancyUI.OpenKeybinds`/`OpenAchievements`/`SaveAndQuit` inline).
     pub pending: Option<LeftAction>,
@@ -448,10 +515,11 @@ impl Default for IngameOptions {
             left_hover: -1,
             right_hover: -1,
             right_lock: -1,
+            not_bar: false,
             // `leftScale`/`rightScale` start at their `minscale` (`:157-199`,
             // `:333-380` subtract then clamp).
             left_scale: [LEFT_SCALE_MIN; LEFT_SLOTS],
-            right_scale: [0.0; 17],
+            right_scale: [0.0; 20],
             pending: None,
             button_scale: BUTTON_SCALE_MIN,
             button_mouse_over: false,
@@ -587,24 +655,51 @@ pub fn left_anchor(screen: Vec2) -> [f32; 2] {
     [x, o[1] + COLUMN_ANCHOR_Y]
 }
 
-/// `vector5 = (0, vector2.Y - num3 * 5) / (num7 + 1)` (`:209`): the left pitch.
+/// `vector5 = (0, vector2.Y - num3 * 5) / (num7 + 1)` (`:181`): the left pitch.
+/// `num7 = 7` without the social invite arm (`:178-179`), so the divisor is
+/// `num7 + 1 = 8` — the port's [`LEFT_SLOTS`], **not** `LEFT_SLOTS + 1`: the
+/// eight rows ride `offset * (1 + i)` for `i` in `0..=num7` (`:187`), the last
+/// row landing at `anchor + offset * 8 = 50 + 380 = 430` inside the 480 panel.
 pub fn left_pitch() -> f32 {
-    (PANEL_H - PAD * 5.0) / (LEFT_SLOTS as f32 + 1.0)
+    (PANEL_H - PAD * 5.0) / LEFT_SLOTS as f32
 }
 
 /// Row `i`'s label anchor in the left column — `anchor + offset * (1 + i)`
-/// (`DrawLeftSide`'s `anchor + offset * (1 + i)`, `:1468`).
+/// (`DrawLeftSide`'s `anchor + offset * (1 + i)`, `:1469`).
 pub fn left_row_anchor(screen: Vec2, i: usize) -> [f32; 2] {
     let a = left_anchor(screen);
     [a[0], a[1] + left_pitch() * (1 + i) as f32]
 }
 
-/// The left row's hover rect — the label's own line (the C# measures the drawn
-/// string; the port uses the row pitch's first 26 px, the text height at these
-/// scales).
-pub fn left_row_rect(screen: Vec2, i: usize) -> [f32; 4] {
-    let a = left_row_anchor(screen, i);
-    [a[0], a[1] - 2.0, 120.0, left_pitch() - 8.0]
+/// The left row's label (`Lang.menu[i]` / `Lang.inter[35]`, `:214-306`).
+pub fn left_row_label(i: usize) -> String {
+    let row = LEFT_ROWS[i];
+    match (row.menu, row.inter) {
+        (Some(m), _) => crate::lang::menu(m as usize),
+        (None, Some(k)) => crate::lang::inter(k as usize),
+        _ => String::new(),
+    }
+}
+
+/// The left row's hover rect — `DrawLeftSide`'s measured-string box
+/// (`:1470`): `Rectangle(anchor.X - size.X/2, anchor.Y + offset.Y*(1+i) -
+/// size.Y/2, size.X, size.Y)` with every component int-truncated, where
+/// `size = DeathText.MeasureString(label) * scale` (`DrawBorderStringBig`,
+/// `Utils.cs:2535`). The box is **centred** on the anchor — the old port rect
+/// started at the anchor and extended right, so the left half of every label
+/// was unclickable.
+pub fn left_row_rect(screen: Vec2, lookups: &Lookups, i: usize, scale: f32) -> [f32; 4] {
+    let a = left_anchor(screen);
+    let label = left_row_label(i);
+    let w = text::death_font_width(lookups, &label).unwrap_or(7.0 * label.chars().count() as f32)
+        * scale;
+    let h = text::death_line_height(lookups) * scale;
+    [
+        (a[0] - w * 0.5) as i32 as f32,
+        (a[1] + left_pitch() * (1 + i) as f32 - h * 0.5) as i32 as f32,
+        w as i32 as f32,
+        h as i32 as f32,
+    ]
 }
 
 /// `vector6` (`:359-360`): the right column's label anchor.
@@ -631,17 +726,18 @@ pub fn right_pitch(category: u8) -> f32 {
 }
 
 /// Row `i`'s label anchor in the right column — `anchor + offset * (1 + i)`
-/// (`DrawRightSide`'s `anchor + offset * (1 + i)`, `:1488`).
+/// (`DrawRightSide`'s `anchor + offset * (1 + i)`, `:1490`).
 ///
 /// A **bar** row's anchor is `BAR_SHIFT` (`num = 70`) further left: the C# moves
 /// the shared `vector6.X` before a bar group and restores it before the next
 /// non-bar row (`:406`/`:506`/`:513` on General, `:760`/`:798` on Interface,
-/// `:911`/`:926` etc. on Video). Every row inside a shifted span turns out to be
-/// the bar itself, so "bars shift, everything else does not" reproduces the
-/// vanilla layout without replaying the anchor's state machine.
+/// `:910`/`:945` on Video, `:1078`/`:1194`/`:1206`/`:1355` on Controls). Every
+/// row inside a shifted span turns out to be the bar itself, so "bars shift,
+/// everything else does not" reproduces the vanilla layout without replaying
+/// the anchor's state machine.
 pub fn right_row_anchor(screen: Vec2, category: u8, i: usize) -> [f32; 2] {
     let a = right_anchor(screen, category);
-    let shift = if matches!(page(category)[i].act, RowAct::Bar(_)) {
+    let shift = if matches!(page(category)[i].act, RowAct::Bar(_) | RowAct::ColorBar(_)) {
         BAR_SHIFT
     } else {
         0.0
@@ -662,7 +758,9 @@ fn gray_to_white(t: f32) -> [f32; 4] {
 /// `Color.Gold` — the selected category's tint (`:1469`).
 const GOLD: [f32; 4] = [1.0, 215.0 / 255.0, 0.0, 1.0];
 
-/// `Utils.DrawBorderStringBig`'s centred anchor (`origin 0.5, 0.5`, `:1470`).
+/// `Utils.DrawBorderStringMeasured`'s centred anchor (`origin 0.5, 0.5`,
+/// `:1490`): the MouseText label with `ChatManager`'s four-way black shadow at
+/// `spread = 1.5f` (`Utils.cs:2506`, `ChatManager.cs:333-344`).
 fn centred_text(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -672,39 +770,116 @@ fn centred_text(
     label: &str,
 ) {
     let w = text::hud_text_width(r, lookups, label, scale);
-    let h = lookups
-        .ui_font
-        .as_ref()
-        .map_or(26.0, |f| f.line_spacing)
-        * scale;
-    text::hud_text(
+    let h = text::line_height(lookups) * scale;
+    text::draw_border_string(
         r,
         lookups,
+        text::BorderFont::Ui,
         anchor[0] - w * 0.5,
         anchor[1] - h * 0.5,
         scale,
+        &[[-1.5, 0.0], [1.5, 0.0], [0.0, -1.5], [0.0, 1.5]],
         colour,
         label,
     );
 }
 
-/// The right row's hover rect — centred on the **drawn** anchor, so the bar
-/// rows' box follows them left (`DrawRightSide` hit-tests the string it draws).
-pub fn right_row_rect(screen: Vec2, category: u8, i: usize) -> [f32; 4] {
-    let a = right_row_anchor(screen, category, i);
+/// `Utils.DrawBorderStringBig`'s centred anchor (`origin 0.5, 0.5`, `:1469`):
+/// the **DeathText** label with the 3x3 black ring at ±1 px
+/// (`Utils.cs:2527-2534`) — the left column's font, not the MouseText one.
+fn centred_big_text(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    anchor: [f32; 2],
+    scale: f32,
+    colour: [f32; 4],
+    label: &str,
+) {
+    let w = text::large_text_width(r, lookups, label) * scale;
+    let h = text::death_line_height(lookups) * scale;
+    let ring: Vec<[f32; 2]> = (-1..=1)
+        .flat_map(|i| (-1..=1).map(move |j| [i as f32, j as f32]))
+        .collect();
+    text::draw_border_string(
+        r,
+        lookups,
+        text::BorderFont::Death,
+        anchor[0] - w * 0.5,
+        anchor[1] - h * 0.5,
+        scale,
+        &ring,
+        colour,
+        label,
+    );
+}
+
+/// The right row's hover rect — `DrawRightSide`'s measured-string box
+/// (`:1492`): the same centred, int-truncated rectangle as [`left_row_rect`],
+/// but over the **drawn** label (the bar rows' box follows them left) at the
+/// row's draw scale ([`row_draw_scale`]). The MouseText font measures it
+/// (`DrawBorderStringMeasured`, `Utils.cs:2504-2507`).
+pub fn right_row_rect(
+    screen: Vec2,
+    lookups: &Lookups,
+    settings: &Settings,
+    category: u8,
+    i: usize,
+    scale: f32,
+) -> [f32; 4] {
+    let a = right_anchor(screen, category);
+    let row = &page(category)[i];
+    let label = row_label(row, settings);
+    let draw_scale = scale * row_draw_scale(category, i);
+    let w = text::ui_font_width(lookups, &label, draw_scale)
+        .unwrap_or(7.0 * label.chars().count() as f32 * draw_scale);
+    let h = text::line_height(lookups) * draw_scale;
     [
-        a[0] - 120.0,
-        a[1] - right_pitch(category) * 0.5,
-        240.0,
-        right_pitch(category),
+        (a[0] - w * 0.5) as i32 as f32,
+        (a[1] + right_pitch(category) * (1 + i) as f32 - h * 0.5) as i32 as f32,
+        w as i32 as f32,
+        h as i32 as f32,
     ]
 }
 
+/// The per-row scale multiplier the C# passes to `DrawRightSide`: the zoom
+/// label draws at `rightScale * 0.85f` (`:519`), the UI-scale label at
+/// `* 0.75f` (`:561`), the map-scale label at `* 0.85f` (`:766`), and the
+/// lock-on / smart-blocks / smart-priority rows at `* 0.9f` (`:1372`, `:1381`,
+/// `:1399`); every other row at 1.
+pub fn row_draw_scale(category: u8, i: usize) -> f32 {
+    match (category, i) {
+        (0, 6) | (1, 7) => 0.85,
+        (0, 7) => 0.75,
+        (3, 11) | (3, 12) | (3, 14) => 0.9,
+        _ => 1.0,
+    }
+}
+
 /// `IngameOptions.valuePosition.X = vector3.X + vector2.X - num3 / 2 - 20`
-/// (`:437`): the value bar's track right edge.
+/// (`:416`): the value bar's track right edge.
 pub fn bar_right_x(screen: Vec2) -> f32 {
     panel_origin(screen)[0] + PANEL_W - PAD * 0.5 - 20.0
 }
+
+/// The bar's vertical centre: `DrawRightSide` leaves
+/// `valuePosition = anchor + offset * (1 + i) + size * (0.5, 0)` (`:1491`),
+/// the caller then does `valuePosition.Y -= 3f` (`:417`) before
+/// `DrawValueBar` centres the track on it. The X half is overwritten by
+/// [`bar_right_x`] before every bar, so only the row's Y matters.
+pub fn bar_center_y(screen: Vec2, category: u8, i: usize) -> f32 {
+    right_row_anchor(screen, category, i)[1] - 3.0
+}
+
+/// The colour bars' extra left shift: `valuePosition.X -= num2` with
+/// `num2 = 60f` (`:117`, `:1089` etc.) — 126 in the long cultures (`:1071`).
+pub fn color_bar_right_x(screen: Vec2) -> f32 {
+    let num2 = if long_label_culture() { 126.0 } else { 60.0 };
+    bar_right_x(screen) - num2
+}
+
+/// The in-game window's bar draw scale — `float scale = 0.75f` (`:116`),
+/// passed to every `DrawValueBar` call in `Draw`.
+pub const BAR_SCALE: f32 = 0.75;
 
 /// `Language.GetTextValue` through the port's table ([`crate::lang`]).
 pub fn label_text(label: Label) -> String {
@@ -740,6 +915,8 @@ pub fn bar_value(settings: &Settings, bar: Bar) -> f32 {
         Bar::UiScale => ((settings.ui_scale - 0.5) / 1.5).clamp(0.0, 1.0),
         // `Main.bgScroll` 0..100 (`:911-945`).
         Bar::Parallax => f32::from(settings.parallax_scroll) / 100.0,
+        // `(Main.MapScale - 0.5f) / 0.5f` (`:776`): the 0.5..1.0 range.
+        Bar::MapScale => ((settings.map_scale - 0.5) / 0.5).clamp(0.0, 1.0),
     }
 }
 
@@ -750,11 +927,70 @@ pub fn set_bar_value(settings: &mut Settings, bar: Bar, v: f32) {
         Bar::Sound => settings.sound_volume = v,
         Bar::Ambient => settings.ambient_volume = v,
         Bar::Zoom => settings.zoom = 1.0 + v,
-        Bar::Parallax => settings.parallax_scroll = (v * 100.0).round().clamp(0.0, 100.0) as u8,
+        // `Main.bgScroll = (int)(num19 * 100f)` (`:928`) — truncation, not
+        // rounding.
+        Bar::Parallax => settings.parallax_scroll = (v * 100.0) as u8,
         // `Main.temporaryGUIScaleSlider = num14 * 1.5f + 0.5f` then truncated
         // to two decimals (`(float)(int)(x * 100f) / 100f`, `:577-578`); the
         // provisional slider becomes `Main.UIScale` on the drop (`:585`).
         Bar::UiScale => settings.ui_scale = ((v * 1.5 + 0.5) * 100.0).trunc() / 100.0,
+        // `Main.MapScale = num16 * 0.5f + 0.5f` (`:782`).
+        Bar::MapScale => settings.map_scale = v * 0.5 + 0.5,
+    }
+}
+
+/// A colour bar's current `0..1` value — the HSL channel of the stored colour
+/// (`ColorSlidersSet.GetHSLVector`, `ColorSlidersSet.cs:37-40`).
+pub fn color_bar_value(settings: &Settings, bar: ColorBar) -> f32 {
+    let rgb = match bar {
+        ColorBar::MouseHue | ColorBar::MouseSat | ColorBar::MouseLum => settings.mouse_color,
+        _ => settings.mouse_border_color,
+    };
+    let (h, s, l) = crate::ui::color::rgb_to_hsl(rgb);
+    match bar {
+        ColorBar::MouseHue | ColorBar::BorderHue => h as f32,
+        ColorBar::MouseSat | ColorBar::BorderSat => s as f32,
+        // The cursor luminance bar reads `GetLerpValue(0.15f, 1f, l, clamped)`
+        // (`:1163`); the border one reads the raw luminance (`:1291`).
+        ColorBar::MouseLum => ((l as f32 - 0.15) / 0.85).clamp(0.0, 1.0),
+        ColorBar::BorderLum => l as f32,
+        ColorBar::BorderAlpha => f32::from(settings.mouse_border_color[3]) / 255.0,
+    }
+}
+
+/// Write a colour bar's value back — the `hSLVector.X/Y/Z = x` arms
+/// (`:1097`, `:1133`, `:1170`, `:1225`, `:1261`, `:1297`, `:1334`) followed by
+/// `SetHSL` + `GetColor` (`:1192-1193`, `:1352-1354`). The cursor colour keeps
+/// alpha 255 (vanilla persists R/G/B only, `Main.cs:4164-4176`); the border
+/// colour's alpha rides its own bar (`ColorSlidersSet.cs:33`).
+pub fn set_color_bar_value(settings: &mut Settings, bar: ColorBar, v: f32) {
+    let is_mouse = matches!(bar, ColorBar::MouseHue | ColorBar::MouseSat | ColorBar::MouseLum);
+    let rgb = if is_mouse { settings.mouse_color } else { settings.mouse_border_color };
+    let (mut h, mut s, mut l) = crate::ui::color::rgb_to_hsl(rgb);
+    match bar {
+        ColorBar::MouseHue | ColorBar::BorderHue => h = v as f64,
+        ColorBar::MouseSat | ColorBar::BorderSat => s = v as f64,
+        // `hSLVector.Z = x * 0.85f + 0.15f` (`:1170`) — the cursor's floored
+        // luminance; the border's is the raw `x` (`:1297`).
+        ColorBar::MouseLum => l = (v * 0.85 + 0.15) as f64,
+        ColorBar::BorderLum => l = v as f64,
+        ColorBar::BorderAlpha => {
+            // `Alpha = x` then `A = (byte)(Alpha * 255f)` (`:1334`,
+            // `ColorSlidersSet.cs:33`) — truncation.
+            settings.mouse_border_color[3] = (v * 255.0) as u8;
+            return;
+        }
+    }
+    // `if (hSLVector.Z < 0.15f) hSLVector.Z = 0.15f` (`:1188-1191`) — the
+    // cursor's post-write floor.
+    if is_mouse && l < 0.15 {
+        l = 0.15;
+    }
+    let out = crate::ui::color::hsl_to_rgb(h, s, l, rgb[3]);
+    if is_mouse {
+        settings.mouse_color = [out[0], out[1], out[2], 255];
+    } else {
+        settings.mouse_border_color = out;
     }
 }
 
@@ -766,7 +1002,6 @@ pub fn toggle_state(settings: &Settings, t: Toggle) -> bool {
         Toggle::PlayWhenUnfocused => settings.play_when_unfocused,
         Toggle::ReversedArmorBonuses => settings.reversed_armor_bonuses,
         Toggle::PickupText => settings.pickup_text,
-        Toggle::EventProgress => settings.event_progress > 0,
         Toggle::PlacementPreview => settings.placement_preview,
         Toggle::HighlightNewItems => settings.highlight_new_items,
         Toggle::TileGrid => settings.tile_grid,
@@ -783,6 +1018,8 @@ pub fn toggle_state(settings: &Settings, t: Toggle) -> bool {
         Toggle::FlashyEffectsWorld => settings.flashy_effects_world,
         // `Main.SettingsEnabled_AutoReuseAllItems` (`:677-684`).
         Toggle::AutoReuseAll => settings.auto_reuse_all,
+        // `Main.SettingsEnabled_OpaqueBoxBehindTooltips` (`:832-840`).
+        Toggle::OpaqueTooltipBox => settings.opaque_tooltip_box,
     }
 }
 
@@ -795,7 +1032,6 @@ pub fn flip_toggle(settings: &mut Settings, t: Toggle) {
         Toggle::PlayWhenUnfocused => settings.play_when_unfocused = on,
         Toggle::ReversedArmorBonuses => settings.reversed_armor_bonuses = on,
         Toggle::PickupText => settings.pickup_text = on,
-        Toggle::EventProgress => settings.event_progress = u8::from(on),
         Toggle::PlacementPreview => settings.placement_preview = on,
         Toggle::HighlightNewItems => settings.highlight_new_items = on,
         Toggle::TileGrid => settings.tile_grid = on,
@@ -811,6 +1047,7 @@ pub fn flip_toggle(settings: &mut Settings, t: Toggle) {
         Toggle::ScreenShake => settings.use_screen_shake = on,
         Toggle::FlashyEffectsWorld => settings.flashy_effects_world = on,
         Toggle::AutoReuseAll => settings.auto_reuse_all = on,
+        Toggle::OpaqueTooltipBox => settings.opaque_tooltip_box = on,
     }
 }
 
@@ -828,10 +1065,6 @@ pub fn toggle_label(settings: &Settings, t: Toggle) -> String {
         }),
         Toggle::ReversedArmorBonuses => crate::lang::menu(if on { 220 } else { 221 }),
         Toggle::PickupText => crate::lang::menu(if on { 71 } else { 72 }),
-        Toggle::EventProgress => crate::lang::text_args(
-            "GameUI.EventProgressBar",
-            &[enabled_word(on)],
-        ),
         Toggle::PlacementPreview => crate::lang::menu(if on { 128 } else { 129 }),
         Toggle::HighlightNewItems => {
             crate::lang::inter(if on { 117 } else { 116 })
@@ -839,14 +1072,19 @@ pub fn toggle_label(settings: &Settings, t: Toggle) -> String {
         Toggle::TileGrid => crate::lang::menu(if on { 229 } else { 230 }),
         // `Lang.menu[242]` "Gamepad Instructions On" / `[241]` "… Off".
         Toggle::GamepadInstructions => crate::lang::menu(if on { 242 } else { 241 }),
-        Toggle::BossBarText => crate::lang::text_args(
-            "GameUI.BigProgressBar",
-            &[enabled_word(on)],
-        ),
-        Toggle::FlashyEffectsInterface => crate::lang::text_args(
-            "UI.FlashyEffectsInterface",
-            &[enabled_word(on)],
-        ),
+        // `BigProgressBarSystem.ShowText ? "UI.ShowBossLifeTextOn" :
+        // "UI.ShowBossLifeTextOff"` (`:823`).
+        Toggle::BossBarText => crate::lang::text(if on {
+            "UI.ShowBossLifeTextOn"
+        } else {
+            "UI.ShowBossLifeTextOff"
+        }),
+        // `UI.FlashyEffectsInterfaceOn/Off` (`:863`).
+        Toggle::FlashyEffectsInterface => crate::lang::text(if on {
+            "UI.FlashyEffectsInterfaceOn"
+        } else {
+            "UI.FlashyEffectsInterfaceOff"
+        }),
         Toggle::Background => crate::lang::menu(if on { 100 } else { 101 }),
         Toggle::Blood => crate::lang::menu(if on { 132 } else { 133 }),
         Toggle::ForegroundSunlight => crate::lang::text_args(
@@ -860,16 +1098,21 @@ pub fn toggle_label(settings: &Settings, t: Toggle) -> String {
         Toggle::StormEffects => {
             crate::lang::text_args("GameUI.StormEffects", &[enabled_word(on)])
         }
-        Toggle::TilesSway => {
-            crate::lang::text_args("UI.TilesSwayInWind", &[enabled_word(on)])
-        }
+        // `"UI.TilesSwayInWind" + (On ? "On" : "Off")` (`:1037`).
+        Toggle::TilesSway => crate::lang::text(if on {
+            "UI.TilesSwayInWindOn"
+        } else {
+            "UI.TilesSwayInWindOff"
+        }),
         Toggle::ScreenShake => {
             crate::lang::text_args("GameUI.ScreenShake", &[enabled_word(on)])
         }
-        Toggle::FlashyEffectsWorld => crate::lang::text_args(
-            "UI.FlashyEffectsWorld",
-            &[enabled_word(on)],
-        ),
+        // `UI.FlashyEffectsWorldOn/Off` (`:1055`).
+        Toggle::FlashyEffectsWorld => crate::lang::text(if on {
+            "UI.FlashyEffectsWorldOn"
+        } else {
+            "UI.FlashyEffectsWorldOff"
+        }),
         // `Main.SettingsEnabled_AutoReuseAllItems ? "UI.AutoReuseAllOn" :
         // "UI.AutoReuseAllOff"` (`:677`).
         Toggle::AutoReuseAll => crate::lang::text(if on {
@@ -877,25 +1120,46 @@ pub fn toggle_label(settings: &Settings, t: Toggle) -> String {
         } else {
             "UI.AutoReuseAllOff"
         }),
+        // `GameUI.HoverTextBoxesOn/Off` (`:832`).
+        Toggle::OpaqueTooltipBox => crate::lang::text(if on {
+            "GameUI.HoverTextBoxesOn"
+        } else {
+            "GameUI.HoverTextBoxesOff"
+        }),
     }
 }
 
 /// A cycle row's current index and its label.
 pub fn cycle_label(settings: &Settings, c: Cycle) -> String {
     match c {
+        // `Lang.menu[123] + " " + Lang.menu[124 + Main.invasionProgressMode]`
+        // (`:702`): Off / Timed / On.
+        Cycle::EventProgress => format!(
+            "{} {}",
+            crate::lang::menu(123),
+            crate::lang::menu(124 + settings.event_progress.min(2) as usize)
+        ),
         // `Lang.menu[(int)(247 + Main.FrameSkipMode)]` (`:946`).
         Cycle::FrameSkip => crate::lang::menu(247 + settings.frame_skip as usize),
-        // `"UI.LightMode_" + Lighting.Mode` (`:955`).
-        Cycle::LightMode => crate::lang::text(&format!("UI.LightMode_{}", settings.light_mode)),
+        // `"UI.LightMode_" + Lighting.Mode` (`:955`) — the enum's **name**
+        // (`LightMode.cs:3-9`), through the port's internal order
+        // (`lighting::params::LightMode::ALL`).
+        Cycle::LightMode => crate::lang::text(&format!(
+            "UI.LightMode_{}",
+            tr_core::lighting::LightMode::ALL[(settings.light_mode as usize).min(3)].label()
+        )),
         // `Lang.menu[59 + Main.qaStyle]` (`:964`).
         Cycle::Quality => crate::lang::menu(59 + settings.quality as usize),
-        // `GameUI.WaveQuality` (`:1022-1036`): the vanilla switches on the level;
-        // the port names the level through the same Enabled/Disabled pair the
-        // neighbouring rows use, plus the level's own ordinal.
-        Cycle::WaveQuality => format!(
-            "{} {}",
-            crate::lang::text("GameUI.WaveQuality"),
-            settings.wave_quality
+        // `GameUI.WaveQuality` with the level's own word (`:1022-1028`):
+        // 1 Low, 2 Medium, 3 High, anything else Off.
+        Cycle::WaveQuality => crate::lang::text_args(
+            "GameUI.WaveQuality",
+            &[crate::lang::text(match settings.wave_quality {
+                1 => "GameUI.QualityLow",
+                2 => "GameUI.QualityMedium",
+                3 => "GameUI.QualityHigh",
+                _ => "GameUI.QualityOff",
+            })],
         ),
         // `Lang.menu[253]` Disabled / `[224]` Left Control / `[223]` Left Shift
         // (`:841-862`): the C# `PreferenceSettings` switch.
@@ -933,16 +1197,61 @@ pub fn cycle_label(settings: &Settings, c: Cycle) -> String {
         } else {
             "UI.HoverControlSettingIsClick"
         }),
+        // `UI.SelectMapBorder` with `UI.MinimapFrame_{ActiveSelectionKeyName}`
+        // (`:751`); an unknown key normalizes to the first option
+        // (`SelectionHolder.cs:67-78`).
+        Cycle::MinimapFrame => {
+            let key = if crate::menu::MINIMAP_FRAME_KEYS.contains(&settings.minimap_frame.as_str()) {
+                settings.minimap_frame.as_str()
+            } else {
+                crate::menu::MINIMAP_FRAME_KEYS[0]
+            };
+            crate::lang::text_args(
+                "UI.SelectMapBorder",
+                &[crate::lang::text(&format!("UI.MinimapFrame_{key}"))],
+            )
+        }
+        // `UI.SelectHealthStyle` with `UI.HealthManaStyle_{ActiveSetKeyName}`
+        // (`:799`); unknown keys normalize to the first set
+        // (`PlayerResourceSetsManager.cs:74-83`).
+        Cycle::ResourceSets => {
+            let key = if crate::menu::RESOURCE_SET_KEYS.contains(&settings.resource_sets.as_str()) {
+                settings.resource_sets.as_str()
+            } else {
+                crate::menu::RESOURCE_SET_KEYS[0]
+            };
+            crate::lang::text_args(
+                "UI.SelectHealthStyle",
+                &[crate::lang::text(&format!("UI.HealthManaStyle_{key}"))],
+            )
+        }
+        // `Main.DialoguePortraitPreference` switch (`:808-814`).
+        Cycle::PortraitPreference => crate::lang::text(match settings.portrait_preference {
+            1 => "UI.PortraitsCloseUp",
+            2 => "UI.PortraitsFullBody",
+            3 => "UI.PortraitsDisabled",
+            _ => "UI.PortraitsDetailed",
+        }),
+        // `LockOnHelper.UseMode` switch (`:1360-1371`): FocusTarget [232],
+        // TargetClosest [233], ThreeDS [234].
+        Cycle::LockOnPriority => crate::lang::menu(match settings.lock_on_priority {
+            0 => 232,
+            1 => 233,
+            _ => 234,
+        }),
     }
 }
 
 /// Advance a cycle row to its next state (the C#'s click arms).
 pub fn advance_cycle(settings: &mut Settings, c: Cycle) {
     match c {
+        // `Main.invasionProgressMode++; if (>= 3) = 0` (`:707-711`).
+        Cycle::EventProgress => settings.event_progress = (settings.event_progress + 1) % 3,
         Cycle::FrameSkip => settings.frame_skip = (settings.frame_skip + 1) % 3,
         Cycle::LightMode => settings.light_mode = (settings.light_mode + 1) % 4,
         Cycle::Quality => settings.quality = (settings.quality + 1) % 4,
-        Cycle::WaveQuality => settings.wave_quality = (settings.wave_quality + 1) % 3,
+        // `Main.WaveQuality = (Main.WaveQuality + 1) % 4` (`:1033`).
+        Cycle::WaveQuality => settings.wave_quality = (settings.wave_quality + 1) % 4,
         Cycle::QuickTrash => {
             // Disabled -> Left Control -> Left Shift -> Disabled (`:841-862`).
             if !settings.quick_trash {
@@ -973,28 +1282,55 @@ pub fn advance_cycle(settings: &mut Settings, c: Cycle) {
         // `Player.Settings.CycleHoverControl` (`Player.cs:379-383`) — the row
         // only distinguishes Hold from everything else (`IngameOptions.cs:660`).
         Cycle::HoverControl => settings.hover_control = if settings.hover_control == 0 { 1 } else { 0 },
+        // `MinimapFrameManagerInstance.CycleSelection()` (`:756`) — the
+        // backwards `SelectionHolder` walk (`SelectionHolder.cs:44-58`).
+        Cycle::MinimapFrame => {
+            settings.minimap_frame =
+                crate::menu::cycle_previous(&crate::menu::MINIMAP_FRAME_KEYS, &settings.minimap_frame)
+        }
+        // `ResourceSetsManager.CycleResourceSet()` (`:804`) — the same walk
+        // (`PlayerResourceSetsManager.cs:84-101`).
+        Cycle::ResourceSets => {
+            settings.resource_sets =
+                crate::menu::cycle_previous(&crate::menu::RESOURCE_SET_KEYS, &settings.resource_sets)
+        }
+        // `Main.CycleNPCPortraitMode()` (`:819`, `Main.cs:40297-40315`):
+        // Detailed -> CloseUp -> FullBodyRetro -> Disabled -> Detailed.
+        Cycle::PortraitPreference => {
+            settings.portrait_preference = (settings.portrait_preference + 1) % 4
+        }
+        // `LockOnHelper.CycleUseModes()` (`:1377`, `LockOnHelper.cs:103-117`):
+        // the vanilla quirk — ThreeDS cycles back to TargetClosest, not
+        // FocusTarget.
+        Cycle::LockOnPriority => {
+            settings.lock_on_priority = match settings.lock_on_priority {
+                0 => 1,
+                1 => 2,
+                _ => 1,
+            }
+        }
     }
 }
 
 /// A right row's drawn label, with the bar percentage the C# concatenates
 /// (`Lang.menu[99].Value + " " + Math.Round(Main.musicVolume * 100f) + "%"`,
-/// `:407`).
+/// `:407`). `Math.Round` is banker's rounding (`round_ties_even`).
 pub fn row_label(row: &Row, settings: &Settings) -> String {
     match row.act {
         RowAct::Toggle(t) => toggle_label(settings, t),
         RowAct::Cycle(c) => cycle_label(settings, c),
         RowAct::Bar(bar) => {
-            let pct = (bar_value(settings, bar) * 100.0).round();
+            let pct = (bar_value(settings, bar) * 100.0).round_ties_even();
             match bar {
                 // `GameUI.GameZoom` takes the **target zoom in percent**, not the
-                // bar's fraction (`:512`:
+                // bar's fraction (`:514`:
                 // `Language.GetTextValue("GameUI.GameZoom",
                 // Math.Round(Main.GameZoomTarget * 100f),
                 // Math.Round(Main.GameViewMatrix.Zoom.X * 100f))`) while the bar
                 // itself is fed `GameZoomTarget - 1f` (`:529`). The port has no
                 // separate live matrix zoom, so both numbers are the target.
                 Bar::Zoom => {
-                    let zoom_pct = (settings.zoom * 100.0).round();
+                    let zoom_pct = (settings.zoom * 100.0).round_ties_even();
                     crate::lang::text_args(
                         "GameUI.GameZoom",
                         &[format!("{zoom_pct}"), format!("{zoom_pct}")],
@@ -1007,25 +1343,47 @@ pub fn row_label(row: &Row, settings: &Settings) -> String {
                 // numbers are the stored (wanted) scale — the same simplification
                 // the zoom row makes above.
                 Bar::UiScale => {
-                    let pct = (settings.ui_scale * 100.0).round();
+                    let pct = (settings.ui_scale * 100.0).round_ties_even();
                     crate::lang::text_args(
                         "GameUI.UIScale",
                         &[format!("{pct}"), format!("{pct}")],
                     )
                 }
+                // `GameUI.MapScale` with `Math.Round(Main.MapScale * 100f)`
+                // (`:761`) — the scale in percent, not the bar fraction.
+                Bar::MapScale => {
+                    let pct = (settings.map_scale * 100.0).round_ties_even();
+                    crate::lang::text_args("GameUI.MapScale", &[format!("{pct}")])
+                }
+                // `Lang.menu[52].Value + ": " + Main.bgScroll + "%"` (`:911`)
+                // — the parallax row's own colon (the volume labels carry
+                // theirs in the lang value).
+                Bar::Parallax => {
+                    format!("{}: {}%", label_text(row.label), settings.parallax_scroll)
+                }
                 _ => format!("{} {pct}%", label_text(row.label)),
             }
         }
+        // The colour bars draw blank labels — the bars carry the meaning
+        // (`DrawRightSide(sb, "", ...)`, `:1079` etc.).
+        RowAct::ColorBar(_) => String::new(),
         RowAct::Header | RowAct::Parked => label_text(row.label),
     }
 }
 
 /// The per-frame hover/animation pass — the state half of `IngameOptions.Draw`
-/// (`:157-199` left, `:333-390` right), split out so `frame()` can run it
+/// (`:150-210` left, `:371-395` right), split out so `frame()` can run it
 /// before the HUD borrows the state. Returns the sound cue the frame should
-/// play (`SoundEngine.PlaySound(12)`, `:187`/`:191`).
+/// play (`SoundEngine.PlaySound(12)`, `:163-170`).
+///
+/// The C# reads the *previous* frame's hover for the scale steps and the tick
+/// cues, then recomputes the hover from the measured label boxes; the port
+/// keeps that order — the hover rects are measured at the current scales, so
+/// `lookups`/`settings` ride along.
 pub fn tick_hover(
     state: &mut IngameOptions,
+    lookups: &Lookups,
+    settings: &Settings,
     screen: Vec2,
     mouse: Vec2,
     mouse_down: bool,
@@ -1033,57 +1391,104 @@ pub fn tick_hover(
     if !state.open {
         return None;
     }
-    // `if (!Main.mouseLeft) rightLock = -1;` (`:385-388`).
-    if !mouse_down {
-        state.right_lock = -1;
-    }
     let mut cue = None;
-    // The left column (`:187-199`).
+    // `:163-170`: the tick cues fire off the previous frame's hover change.
+    if state.old_left_hover != state.left_hover && state.left_hover != -1 {
+        cue = Some(Cue::Tick);
+    }
+    if state.old_right_hover != state.right_hover && state.right_hover != -1 {
+        cue = Some(Cue::Tick);
+    }
+    state.old_left_hover = state.left_hover;
+    state.old_right_hover = state.right_hover;
+    // The left column's scale steps (`:187-210`): hovered **or selected**
+    // (`(leftHover == j) | flag6`, `:194`) — the selected category's row stays
+    // at the plateau even without the mouse.
     let (lmin, lmax, lspeed) = left_scale_band();
-    state.left_hover = (0..LEFT_SLOTS)
-        .find(|i| contains(mouse, left_row_rect(screen, *i)))
-        .map_or(-1, |i| i as i32);
     for i in 0..LEFT_SLOTS {
-        let target = state.left_hover == i as i32;
+        let selected = matches!(LEFT_ROWS[i].action, LeftAction::Category(c) if c == state.category);
+        let target = state.left_hover == i as i32 || selected;
         let s = &mut state.left_scale[i];
         *s += if target { lspeed } else { -lspeed };
         *s = s.clamp(lmin, lmax);
     }
-    if state.old_left_hover != state.left_hover && state.left_hover != -1 {
-        cue = Some(Cue::Tick);
-    }
-    state.old_left_hover = state.left_hover;
+    // `leftHover = -1` then the per-row hit test (`:211-306`); the first row
+    // under the mouse wins (`_canConsumeHover`, `:1471-1479`).
+    state.left_hover = (0..LEFT_SLOTS)
+        .find(|i| contains(mouse, left_row_rect(screen, lookups, *i, state.left_scale[*i])))
+        .map_or(-1, |i| i as i32);
 
-    // The right column (`:371-390`): a row is hovered over its label or, for a
-    // bar row, over the bar's own hit rect.
+    // The right column's scale steps (`:371-389`).
     let category = state.category;
-    let page = page(category);
     let (rmin, rmax, rspeed) = right_scale_band(category);
-    let mut hover = -1i32;
-    for (i, row) in page.iter().enumerate() {
-        let hit = contains(mouse, right_row_rect(screen, category, i))
-            || matches!(row.act, RowAct::Bar(_))
-                && contains(mouse, sliders::value_bar_rects(bar_right_x(screen), right_row_anchor(screen, category, i)[1]).1);
-        if hit {
-            hover = i as i32;
-            break;
-        }
-    }
-    state.right_hover = hover;
-    for i in 0..17 {
+    for i in 0..20 {
         let locked = state.right_lock == i as i32;
         let target = locked || (state.right_hover == i as i32 && state.right_lock == -1);
         let s = &mut state.right_scale[i];
         *s += if target { rspeed } else { -rspeed };
         *s = s.clamp(rmin, rmax);
     }
-    if state.old_right_hover != state.right_hover && state.right_hover != -1 {
-        cue = Some(Cue::Tick);
+    // `if (!Main.mouseLeft) rightLock = -1;` (`:392-395`).
+    if !mouse_down {
+        state.right_lock = -1;
     }
-    state.old_right_hover = state.right_hover;
-    if state.right_lock != -1 && state.right_hover == -1 && cue.is_none() {
-        // The C# re-points the lock onto the hovered row while dragging; the
-        // port keeps the lock until the release (the caller clears it).
+    // `if (rightLock == -1) notBar = false;` (`:396-399`).
+    if state.right_lock == -1 {
+        state.not_bar = false;
+    }
+    // `rightHover = -1` then the per-row hit test (`:391`, `:400-1408`): the
+    // label box (first wins — `_canConsumeHover`, `:1493-1500`), then — for a
+    // bar row — the bar's own hit rect (`inBar`, `:1567-1572`) and the wide
+    // `mouseX > 2/3 panel + 20 && mouseX < valuePosition.X + 3.75` band
+    // (`:427-434`), both of which overwrite `rightHover` unconditionally.
+    let page = page(category);
+    let mut hover = -1i32;
+    let mut consumed = false;
+    let band_left = panel_origin(screen)[0] + PANEL_W * 2.0 / 3.0 + PAD;
+    for (i, row) in page.iter().enumerate() {
+        let scale = state.right_scale[i];
+        if !consumed
+            && contains(mouse, right_row_rect(screen, lookups, settings, category, i, scale))
+        {
+            consumed = true;
+            hover = i as i32;
+            // A bar row's label hover arms `notBar` while no grab is held
+            // (`:409-412`): the label must not drag the bar.
+            if matches!(row.act, RowAct::Bar(_) | RowAct::ColorBar(_))
+                && state.right_lock == -1
+            {
+                state.not_bar = true;
+            }
+        }
+        let (right_x, cy) = match row.act {
+            RowAct::Bar(_) => (bar_right_x(screen), bar_center_y(screen, category, i)),
+            RowAct::ColorBar(_) => (color_bar_right_x(screen), bar_center_y(screen, category, i)),
+            _ => continue,
+        };
+        let (_rect, hit) = sliders::value_bar_rects_at(right_x, cy, BAR_SCALE);
+        let in_bar = contains(mouse, hit);
+        let locked = state.right_lock == i as i32;
+        // `(inBar || rightLock == num12) && !notBar` (`:419-426`).
+        if (in_bar || locked) && !state.not_bar {
+            hover = i as i32;
+        }
+        // The wide band (`:427`): from the 2/3 mark to the bar's left edge
+        // (`valuePosition.X` after `-= vector.X`), ±10 px around the centre.
+        if mouse.x > band_left
+            && mouse.x < right_x - (sliders::BAR_W * BAR_SCALE) as i32 as f32 + 3.75
+            && mouse.y > cy - 10.0
+            && mouse.y <= cy + 10.0
+        {
+            if state.right_lock == -1 {
+                state.not_bar = true;
+            }
+            hover = i as i32;
+        }
+    }
+    state.right_hover = hover;
+    // `:1409-1412`: the lock follows the hover while no grab is held.
+    if state.right_hover != -1 && state.right_lock == -1 {
+        state.right_lock = state.right_hover;
     }
     cue
 }
@@ -1091,7 +1496,8 @@ pub fn tick_hover(
 /// The per-frame tick the frame loop runs while the window is open: the hover
 /// animation ([`tick_hover`]) plus the sticky bar drag (the C#'s
 /// `Main.musicVolume = musicVolume` while `mouseLeft && rightLock == slot`,
-/// `:424`, `:456`, `:489`). Returns the cue's name for the caller to play.
+/// `:422-425`, `:454-458`, `:487-491`). Returns the cue's name for the caller
+/// to play.
 pub fn update(app: &mut crate::app::App, mouse_down: bool) -> Option<&'static str> {
     if !app.ingame_options.open {
         return None;
@@ -1099,17 +1505,40 @@ pub fn update(app: &mut crate::app::App, mouse_down: bool) -> Option<&'static st
     let (sw, sh) = app.screen_size();
     let screen = Vec2::new(sw, sh);
     let mouse = app.mouse_pos;
-    let cue = tick_hover(&mut app.ingame_options, screen, mouse, mouse_down);
+    let cue = tick_hover(
+        &mut app.ingame_options,
+        &app.lookups,
+        &app.settings,
+        screen,
+        mouse,
+        mouse_down,
+    );
     let category = app.ingame_options.category;
-    if mouse_down {
+    // `(inBar || rightLock == i) && !notBar` gates the write (`:419-425`);
+    // with the lock held the `inBar` half is redundant, so the port's
+    // condition is `mouseLeft && rightLock == i && !notBar`.
+    if mouse_down && !app.ingame_options.not_bar {
         let locked = app.ingame_options.right_lock;
         if locked >= 0 && (locked as usize) < page(category).len() {
             let i = locked as usize;
-            if let RowAct::Bar(bar) = page(category)[i].act {
-                let (rect, _hit) =
-                    sliders::value_bar_rects(bar_right_x(screen), right_row_anchor(screen, category, i)[1]);
-                let v = sliders::value_bar_value(rect, mouse.x);
-                set_bar_value(&mut app.settings, bar, v);
+            let cy = bar_center_y(screen, category, i);
+            match page(category)[i].act {
+                RowAct::Bar(bar) => {
+                    let (rect, _hit) =
+                        sliders::value_bar_rects_at(bar_right_x(screen), cy, BAR_SCALE);
+                    let v = sliders::value_bar_value_at(rect, mouse.x, BAR_SCALE);
+                    set_bar_value(&mut app.settings, bar, v);
+                    // The renderer reads zoom/light/quality off the App, not
+                    // the settings clone (`apply_settings`).
+                    app.apply_settings();
+                }
+                RowAct::ColorBar(bar) => {
+                    let (rect, _hit) =
+                        sliders::value_bar_rects_at(color_bar_right_x(screen), cy, BAR_SCALE);
+                    let v = sliders::value_bar_value_at(rect, mouse.x, BAR_SCALE);
+                    set_color_bar_value(&mut app.settings, bar, v);
+                }
+                _ => {}
             }
         }
     }
@@ -1119,37 +1548,64 @@ pub fn update(app: &mut crate::app::App, mouse_down: bool) -> Option<&'static st
     })
 }
 
-/// The click pass (`:132`'s `flag4`): a left row selects a category or arms an
-/// action, a right bar grabs and sets its value, a toggle flips and a cycle
-/// advances. Returns `true` when the click was consumed.
+/// The click pass (`:128`'s `flag4`): a left row selects a category or runs an
+/// action, a right bar grabs, a toggle flips and a cycle advances. Returns
+/// `true` when the click was consumed. The bar's *value* write happens in
+/// [`update`] on the following frames (`Main.mouseLeft && rightLock == i`,
+/// `:422-425`) — the C# sets `rightLock` only at the end of the click's Draw
+/// (`:1409-1412`), so the press frame itself never writes.
 pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
     if !app.ingame_options.open {
         return false;
     }
     // The left column.
-    let row_hit = (0..LEFT_SLOTS).find(|i| contains(mouse, left_row_rect(screen, *i)));
+    let row_hit = (0..LEFT_SLOTS).find(|i| {
+        contains(
+            mouse,
+            left_row_rect(screen, &app.lookups, *i, app.ingame_options.left_scale[*i]),
+        )
+    });
     if let Some(i) = row_hit {
         let action = LEFT_ROWS[i].action;
         match action {
             LeftAction::Category(c) => {
                 if app.ingame_options.category != c {
-                    // `:307-311`: a category change resets every right scale.
-                    app.ingame_options.right_scale = [0.0; 17];
+                    // `:308-314`: a category change resets every right scale.
+                    app.ingame_options.right_scale = [0.0; 20];
                 }
                 app.ingame_options.category = c;
+                // `SoundEngine.PlaySound(10)` (`:220`).
+                app.audio.play("Menu_Open");
             }
             other => {
                 app.ingame_options.pending = Some(other);
                 match other {
-                    LeftAction::Close => app.ingame_options.close(),
+                    LeftAction::Close => {
+                        app.ingame_options.close();
+                        // `Close()`'s `SoundEngine.PlaySound(11)` (`:96`).
+                        app.audio.play("Menu_Close");
+                    }
                     LeftAction::Achievements => {
                         app.ingame_options.close();
+                        app.audio.play("Menu_Close");
                         app.achievements_open = true;
                     }
-                    // `:252-256`: the keybinding screen is M7-UI-5 — stays
-                    // on `pending` for the caller.
+                    // `:252-256`: `Close()` + `IngameFancyUI.OpenKeybinds()`
+                    // (`IngameFancyUI.cs:59-62` → `ManageControlsMenu`). The
+                    // port's keybinding screen is the legacy menuMode 27 page
+                    // (`menu::Page::Keybindings`), so the row opens it over
+                    // the world — the same settings-clone handoff the menu
+                    // openers use; `close_menu` copies the edits back.
                     LeftAction::Keybinds => {
                         app.ingame_options.close();
+                        app.audio.play("Menu_Close");
+                        let mut m = crate::menu::Menu::new(
+                            app.settings.clone(),
+                            app.player_name.clone(),
+                        );
+                        m.page = crate::menu::Page::Keybindings;
+                        m.in_game_keybinds = true;
+                        app.menu = Some(m);
                     }
                     // `IngameOptions.cs:296-305`: Close() + menuMode 10 +
                     // gameMenu = true + `WorldGen.SaveAndQuit()` — the save
@@ -1168,26 +1624,44 @@ pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
     let category = app.ingame_options.category;
     let page = page(category);
     for (i, row) in page.iter().enumerate() {
-        let y = right_row_anchor(screen, category, i)[1];
+        let scale = app.ingame_options.right_scale[i];
         match row.act {
-            RowAct::Bar(bar) => {
-                let (rect, hit) = sliders::value_bar_rects(bar_right_x(screen), y);
+            RowAct::Bar(_) | RowAct::ColorBar(_) => {
+                let right_x = if matches!(row.act, RowAct::Bar(_)) {
+                    bar_right_x(screen)
+                } else {
+                    color_bar_right_x(screen)
+                };
+                let (_rect, hit) =
+                    sliders::value_bar_rects_at(right_x, bar_center_y(screen, category, i), BAR_SCALE);
                 if contains(mouse, hit) {
-                    let v = sliders::value_bar_value(rect, mouse.x);
+                    // The grab only — the value follows in `update` while the
+                    // button is held (`:422-425`).
                     app.ingame_options.right_lock = i as i32;
-                    set_bar_value(&mut app.settings, bar, v);
+                    app.ingame_options.not_bar = false;
                     return true;
                 }
             }
             RowAct::Toggle(t) => {
-                if contains(mouse, right_row_rect(screen, category, i)) {
+                if contains(
+                    mouse,
+                    right_row_rect(screen, &app.lookups, &app.settings, category, i, scale),
+                ) {
                     flip_toggle(&mut app.settings, t);
+                    app.apply_settings();
+                    // `flag4 && rightHover != -1` → `PlaySound(12)` (`:171-174`).
+                    app.audio.play("Menu_Tick");
                     return true;
                 }
             }
             RowAct::Cycle(c) => {
-                if contains(mouse, right_row_rect(screen, category, i)) {
+                if contains(
+                    mouse,
+                    right_row_rect(screen, &app.lookups, &app.settings, category, i, scale),
+                ) {
                     advance_cycle(&mut app.settings, c);
+                    app.apply_settings();
+                    app.audio.play("Menu_Tick");
                     return true;
                 }
             }
@@ -1195,7 +1669,7 @@ pub fn click(app: &mut crate::app::App, screen: Vec2, mouse: Vec2) -> bool {
         }
     }
     // Anywhere else on the panel is swallowed (the vanilla's `mouseInterface`
-    // set over `_GUIHover`, `:130-133`); off the panel the window closes.
+    // set over `_GUIHover`, `:135-138`); off the panel the window closes.
     if contains(mouse, panel_rect(screen)) {
         return true;
     }
@@ -1488,9 +1962,10 @@ pub fn draw_options(
         ],
         column_tint,
     );
-    // The left column (`:214-330`): `DrawLeftSide` centres each label on its
-    // anchor, lerps Gray->White by the scale fraction and paints the selected
-    // category Gold (`:1465-1470`).
+    // The left column (`:214-330`): `DrawLeftSide` draws each label through
+    // `DrawBorderStringBig` (the **DeathText** font, `Utils.cs:2520-2536`),
+    // centred on its anchor, lerps Gray->White by the scale fraction and
+    // paints the selected category Gold (`:1464-1469`).
     let (lmin, lmax, _) = left_scale_band();
     for (i, row) in LEFT_ROWS.iter().enumerate() {
         let a = left_row_anchor(screen, i);
@@ -1506,16 +1981,16 @@ pub fn draw_options(
         } else {
             gray_to_white((scale - lmin) / (lmax - lmin))
         };
-        centred_text(r, lookups, a, scale, colour, &label);
+        centred_big_text(r, lookups, a, scale, colour, &label);
     }
     // The right column (`:400-1441`): `DrawRightSide` uses the same centring and
-    // the `colorScale` lerp (`:1483-1504`).
+    // the `colorScale` lerp (`:1483-1504`), with the per-row scale multipliers
+    // (`row_draw_scale`) and the bars at the window's 0.75 scale (`:116`).
     let category = options.category;
     let (rmin, rmax, _) = right_scale_band(category);
     for (i, row) in page(category).iter().enumerate() {
         let a = right_row_anchor(screen, category, i);
-        let idx = i.min(options.right_scale.len() - 1);
-        let scale = options.right_scale[idx];
+        let scale = options.right_scale[i];
         let label = row_label(row, settings);
         let dim = matches!(row.act, RowAct::Parked);
         let colour = if dim {
@@ -1524,17 +1999,73 @@ pub fn draw_options(
             gray_to_white((scale - rmin) / (rmax - rmin))
         };
         // The bar rows carry their track on the panel's right edge
-        // (`valuePosition.X = ...`, `:437`), the label centred as usual.
-        centred_text(r, lookups, a, scale, colour, &label);
-        if let RowAct::Bar(bar) = row.act {
-            sliders::draw_value_bar(
-                r,
-                lookups,
-                bar_right_x(screen),
-                a[1],
-                bar_value(settings, bar),
-                mouse,
-            );
+        // (`valuePosition.X = ...`, `:416`), the label centred as usual at
+        // its own draw scale.
+        centred_text(r, lookups, a, scale * row_draw_scale(category, i), colour, &label);
+        let cy = bar_center_y(screen, category, i);
+        match row.act {
+            RowAct::Bar(bar) => {
+                sliders::draw_value_bar_at(
+                    r,
+                    lookups,
+                    bar_right_x(screen),
+                    cy,
+                    bar_value(settings, bar),
+                    mouse,
+                    BAR_SCALE,
+                    sliders::color_lerp_black_to_white,
+                );
+            }
+            RowAct::ColorBar(bar) => {
+                sliders::draw_value_bar_at(
+                    r,
+                    lookups,
+                    color_bar_right_x(screen),
+                    cy,
+                    color_bar_value(settings, bar),
+                    mouse,
+                    BAR_SCALE,
+                    color_bar_lerp(settings, bar),
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The colour bar's blip gradient — the `DelegateMethods.ColorLerp_HSL_*`
+/// family (`DelegateMethods.cs:438-456`) with `v3_1` the colour's current HSL
+/// vector. The hue bar sweeps the full hue circle at S=1/L=0.5; the
+/// saturation/luminosity bars sweep their channel at the stored hue; the
+/// alpha bar lerps White→the colour.
+fn color_bar_lerp(settings: &Settings, bar: ColorBar) -> impl Fn(f32) -> [u8; 4] {
+    let rgb = match bar {
+        ColorBar::MouseHue | ColorBar::MouseSat | ColorBar::MouseLum => settings.mouse_color,
+        _ => settings.mouse_border_color,
+    };
+    let (h, s, l) = crate::ui::color::rgb_to_hsl(rgb);
+    move |t| match bar {
+        // `Main.hslToRgb(percent, 1f, 0.5f)` (`:440`).
+        ColorBar::MouseHue | ColorBar::BorderHue => {
+            crate::ui::color::hsl_to_rgb(t as f64, 1.0, 0.5, 255)
+        }
+        // `Main.hslToRgb(v3_1.X, percent, v3_1.Z)` (`:445`).
+        ColorBar::MouseSat | ColorBar::BorderSat => {
+            crate::ui::color::hsl_to_rgb(h, t as f64, l, 255)
+        }
+        // `Main.hslToRgb(v3_1.X, v3_1.Y, 0.15f + 0.85f * percent)` (`:450`) —
+        // both luminance bars use `ColorLerp_HSL_L`, whose gradient rides the
+        // delegate's own 0.15 floor (the border's *value* read is unfloored,
+        // `:1291`, but its gradient is the same delegate).
+        ColorBar::MouseLum | ColorBar::BorderLum => {
+            crate::ui::color::hsl_to_rgb(h, s, (0.15 + 0.85 * t) as f64, 255)
+        }
+        // `Color.Lerp(Color.White, hslToRgb(v3_1), percent)` (`:455`) — XNA
+        // byte lerp, truncating.
+        ColorBar::BorderAlpha => {
+            let c = crate::ui::color::hsl_to_rgb(h, s, l, 255);
+            let lerp = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t) as u8;
+            [lerp(255, c[0]), lerp(255, c[1]), lerp(255, c[2]), 255]
         }
     }
 }
@@ -1709,12 +2240,15 @@ mod tests {
         assert_eq!(right_anchor(screen, 0)[0], 625.0 + PANEL_W * 0.75);
     }
 
-    /// The left pitch is `(480 - 100) / (7 + 1 + 1)` — `vector5` at `:209` with
-    /// `num7 + 1` slots for the port's eight rows.
+    /// The left pitch is `(480 - 100) / (num7 + 1) = 380 / 8 = 47.5` —
+    /// `vector5` at `:181` with `num7 = 7` (no social invite row). The eight
+    /// rows ride `offset * (1 + i)`, the last landing at `50 + 8 * 47.5 = 430`
+    /// inside the 480 panel (`:187`'s `for j = 0; j <= num7`).
     #[test]
     fn the_left_pitch_is_the_c_sharp_slot_rule() {
         assert_eq!(LEFT_SLOTS, 8);
-        assert!((left_pitch() - (PANEL_H - PAD * 5.0) / 9.0).abs() < 1e-6);
+        assert!((left_pitch() - (PANEL_H - PAD * 5.0) / 8.0).abs() < 1e-6);
+        assert!((left_pitch() - 47.5).abs() < 1e-6);
     }
 
     /// `num11` per category (`:296-330`) and the video page's own -2 px tweak
@@ -1794,7 +2328,7 @@ mod tests {
         app.ingame_options.open = true;
         let screen = Vec2::new(1600.0, 900.0);
         // The centre of the Save & Exit row (LEFT_ROWS[7], `Lang.inter[35]`).
-        let r = left_row_rect(screen, 7);
+        let r = left_row_rect(screen, &app.lookups, 7, LEFT_SCALE_MIN);
         let mouse = Vec2::new(r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
         assert!(click(&mut app, screen, mouse), "the row consumes the click");
         assert!(!app.ingame_options.open, "`IngameOptions.Close()` (`:301`)");
@@ -1873,15 +2407,27 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         crate::lang::set_language(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
+        let lookups = Lookups::default();
+        let settings = Settings::default();
         let mut st = IngameOptions::new();
         st.open = true;
-        assert_eq!(tick_hover(&mut st, screen, Vec2::new(0.0, 0.0), false), None);
+        assert_eq!(
+            tick_hover(&mut st, &lookups, &settings, screen, Vec2::new(0.0, 0.0), false),
+            None
+        );
         let a = left_row_anchor(screen, 1);
-        let cue = tick_hover(&mut st, screen, Vec2::new(a[0] + 4.0, a[1] + 2.0), true);
+        // The C# reads the previous frame's hover for the cue: the first
+        // frame over the row only latches it, the second emits the tick.
+        let mouse = Vec2::new(a[0] + 4.0, a[1] + 2.0);
+        tick_hover(&mut st, &lookups, &settings, screen, mouse, true);
+        let cue = tick_hover(&mut st, &lookups, &settings, screen, mouse, true);
         assert_eq!(cue, Some(Cue::Tick), "the C#'s PlaySound(12) on enter");
         assert_eq!(st.left_hover, 1);
         assert!(st.left_scale[1] > LEFT_SCALE_MIN, "the hovered row grows");
-        assert!((st.left_scale[0] - LEFT_SCALE_MIN).abs() < 1e-6, "and the others stay");
+        // Row 0 is the selected category — it grows too (`(leftHover == j) |
+        // flag6`, `:194`); the unselected, unhovered rows stay at the floor.
+        assert!(st.left_scale[0] > LEFT_SCALE_MIN, "the selected row grows");
+        assert!((st.left_scale[2] - LEFT_SCALE_MIN).abs() < 1e-6, "and the others stay");
     }
 
     /// The right scale band clamps at its plateau and never overshoots
@@ -1896,17 +2442,19 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         crate::lang::set_language(GameCulture::English);
         let screen = Vec2::new(1920.0, 1080.0);
+        let lookups = Lookups::default();
+        let settings = Settings::default();
         let mut st = IngameOptions::new();
         st.open = true;
         let a = right_row_anchor(screen, 0, 10);
         for _ in 0..50 {
-            tick_hover(&mut st, screen, Vec2::new(a[0] + 5.0, a[1]), true);
+            tick_hover(&mut st, &lookups, &settings, screen, Vec2::new(a[0] + 5.0, a[1]), true);
         }
         let (_, rmax, _) = right_scale_band(0);
         assert!(st.right_scale[10] <= rmax + 1e-6);
         assert!(st.right_scale[10] > 1.0, "the hovered row rose above the floor");
         for _ in 0..50 {
-            tick_hover(&mut st, screen, Vec2::new(0.0, 0.0), false);
+            tick_hover(&mut st, &lookups, &settings, screen, Vec2::new(0.0, 0.0), false);
         }
         let (rmin, _, _) = right_scale_band(0);
         assert!((st.right_scale[10] - rmin).abs() < 1e-6, "and decays back");
@@ -1951,7 +2499,6 @@ mod tests {
             Toggle::PlayWhenUnfocused,
             Toggle::ReversedArmorBonuses,
             Toggle::PickupText,
-            Toggle::EventProgress,
             Toggle::PlacementPreview,
             Toggle::HighlightNewItems,
             Toggle::TileGrid,
@@ -2001,9 +2548,17 @@ mod tests {
         s.light_mode = 3;
         advance_cycle(&mut s, Cycle::LightMode);
         assert_eq!(s.light_mode, 0);
-        s.wave_quality = 2;
+        // `Main.WaveQuality = (WaveQuality + 1) % 4` (`:1033`).
+        s.wave_quality = 3;
         advance_cycle(&mut s, Cycle::WaveQuality);
         assert_eq!(s.wave_quality, 0);
+        s.wave_quality = 0;
+        advance_cycle(&mut s, Cycle::WaveQuality);
+        assert_eq!(s.wave_quality, 1, "Off -> Low, not Off -> Off");
+        // `Main.invasionProgressMode++` wraps at 3 (`:707-711`).
+        s.event_progress = 2;
+        advance_cycle(&mut s, Cycle::EventProgress);
+        assert_eq!(s.event_progress, 0);
 
         // The three boolean cycles are two-state rows.
         s.smart_blocks = true;
@@ -2039,9 +2594,14 @@ mod tests {
         }
         for mode in 0..4u8 {
             s.light_mode = mode;
+            // `"UI.LightMode_" + Lighting.Mode` — the enum name, not the
+            // ordinal (`:955`, `LightMode.cs:3-9`).
             assert_eq!(
                 cycle_label(&s, Cycle::LightMode),
-                crate::lang::text(&format!("UI.LightMode_{mode}"))
+                crate::lang::text(&format!(
+                    "UI.LightMode_{}",
+                    tr_core::lighting::LightMode::ALL[mode as usize].label()
+                ))
             );
         }
         s.smart_axes_labels();
@@ -2107,7 +2667,7 @@ mod tests {
         st.category = 0;
         st.right_scale[3] = 1.0;
         // The reset the click arm performs.
-        st.right_scale = [0.0; 17];
+        st.right_scale = [0.0; 20];
         st.category = 1;
         assert_eq!(st.right_scale[3], 0.0);
         assert_eq!(st.category, 1);
@@ -2144,18 +2704,24 @@ mod tests {
     }
 
     /// Every row of every page resolves a non-empty label except the explicit
-    /// `""` spacers (a `Header` row with a `Blank` label), so no page draws a
-    /// blank setting line.
+    /// `""` spacers (a `Header` row with a `Blank` label) and the colour bars
+    /// (the C# draws them with blank labels — the bars carry the meaning,
+    /// `:1079` etc.), so no page draws a blank *setting* line.
     #[test]
     fn every_row_resolves_a_label() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(GameCulture::English);
         let s = Settings::default();
         for cat in 0..4u8 {
             for (i, row) in page(cat).iter().enumerate() {
                 let label = row_label(row, &s);
                 let spacer = row.label == Label::Blank
                     && matches!(row.act, RowAct::Header | RowAct::Parked);
-                if spacer {
-                    assert!(label.is_empty(), "cat {cat} row {i} is a spacer");
+                let color_bar = matches!(row.act, RowAct::ColorBar(_));
+                if spacer || color_bar {
+                    assert!(label.is_empty(), "cat {cat} row {i} is a spacer/colour bar");
                 } else {
                     assert!(!label.is_empty(), "cat {cat} row {i} must have a label");
                 }
@@ -2175,7 +2741,7 @@ mod tests {
         let _guard = crate::lang::test_lock()
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        crate::lang::set_language(GameCulture::English);
+        crate::lang::init(GameCulture::English);
         let mut s = Settings::default();
         let rows = page(0);
         // `:644-657`: the doors row cycles Disabled -> Everything -> Gamepad.
@@ -2222,5 +2788,295 @@ mod tests {
             let l = row_label(&rows[i], &s);
             assert!(!l.starts_with("UI."), "row {i} still draws a bare key: {l}");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // The layout pass against the C# constants (fix/settings-menu-layout).
+    // -----------------------------------------------------------------------
+
+    /// The left column's eight row anchors: `vector4 + vector5 * (1 + i)`
+    /// (`IngameOptions.cs:180-181`, `:1469`) with `vector5.Y = 380/8 = 47.5`.
+    /// At 1600x900 the panel origin is `(465, 210)`, the anchor
+    /// `(465 + 167.5, 210 + 50) = (632.5, 260)`; row 0 sits at 307.5 and the
+    /// last row (Save & Exit) at `260 + 8 * 47.5 = 640`, inside the panel's
+    /// `210..690` span.
+    #[test]
+    fn the_left_row_anchors_are_the_c_sharp_pitch_times_one_plus_i() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(GameCulture::English);
+        let screen = Vec2::new(1600.0, 900.0);
+        assert_eq!(left_anchor(screen), [632.5, 260.0]);
+        for i in 0..LEFT_SLOTS {
+            let a = left_row_anchor(screen, i);
+            assert_eq!(a[0], 632.5, "row {i} shares the column x");
+            assert!(
+                (a[1] - (260.0 + 47.5 * (1 + i) as f32)).abs() < 1e-4,
+                "row {i} at y {}",
+                a[1]
+            );
+        }
+        // The last row stays inside the panel (`:125-129`).
+        assert!(left_row_anchor(screen, 7)[1] < 210.0 + PANEL_H);
+    }
+
+    /// The left hit box is the measured DeathText string centred on the anchor
+    /// (`DrawLeftSide`, `:1470`), not a box starting at the anchor: with the
+    /// bitmap fallback's 7 px advance, "General" at scale 0.7 measures
+    /// `7 * 7 * 0.7 = 34.3` wide, so the box spans `632.5 ± 17` — the mouse
+    /// **left** of the anchor hits the row too.
+    #[test]
+    fn the_left_hit_box_is_centred_on_the_anchor() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(GameCulture::English);
+        let lookups = Lookups::default();
+        let screen = Vec2::new(1600.0, 900.0);
+        let r = left_row_rect(screen, &lookups, 0, LEFT_SCALE_MIN);
+        let a = left_row_anchor(screen, 0);
+        // The box straddles the anchor x.
+        assert!(r[0] < a[0], "the box starts left of the anchor");
+        assert!(r[0] + r[2] > a[0], "and ends right of it");
+        // A click on the left half of the label reaches the row.
+        assert!(contains(Vec2::new(a[0] - 5.0, a[1]), r));
+        assert!(contains(Vec2::new(a[0] + 5.0, a[1]), r));
+    }
+
+    /// Every right row's anchor: `vector6 + vector7 * (1 + i)` (`:360-361`,
+    /// `:1490`) with the per-category pitch (`num11 + 1` divisor, the video
+    /// `-2f`) and the bar rows' 70 px left shift (`vector6.X -= num`).
+    #[test]
+    fn the_right_row_anchors_follow_the_per_category_pitch() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(GameCulture::English);
+        let screen = Vec2::new(1600.0, 900.0);
+        let o = panel_origin(screen);
+        let anchor_x = o[0] + PANEL_W * 0.75;
+        let anchor_y = o[1] + 50.0;
+        for cat in 0..4u8 {
+            let pitch = right_pitch(cat);
+            for i in 0..page(cat).len() {
+                let a = right_row_anchor(screen, cat, i);
+                let bar = matches!(page(cat)[i].act, RowAct::Bar(_) | RowAct::ColorBar(_));
+                let want_x = anchor_x - if bar { BAR_SHIFT } else { 0.0 };
+                assert!(
+                    (a[0] - want_x).abs() < 1e-4,
+                    "cat {cat} row {i} x {} (want {want_x})",
+                    a[0]
+                );
+                assert!(
+                    (a[1] - (anchor_y + pitch * (1 + i) as f32)).abs() < 1e-4,
+                    "cat {cat} row {i} y {}",
+                    a[1]
+                );
+            }
+        }
+        // The General pitch is 420/18 = 23.333..., the video 420/15 - 2 = 26.
+        assert!((right_pitch(0) - 420.0 / 18.0).abs() < 1e-4);
+        assert!((right_pitch(2) - 26.0).abs() < 1e-4);
+    }
+
+    /// The bar geometry: the track's right edge is
+    /// `vector3.X + vector2.X - num3/2 - 20` (`:416`), the centre is the row
+    /// anchor's Y minus the `valuePosition.Y -= 3f` (`:417`), and the drawn
+    /// rect is the 0.75-scaled ColorBar (`:116`, `:1544-1546`): 133x12 with
+    /// the int truncations.
+    #[test]
+    fn the_value_bar_geometry_is_the_c_sharp_scaled_track() {
+        let screen = Vec2::new(1600.0, 900.0);
+        // 465 + 670 - 10 - 20 = 1105.
+        assert_eq!(bar_right_x(screen), 1105.0);
+        // General row 1 (music): anchor y = 260 + 23.333.. * 2 = 306.666..,
+        // centre = 303.666...
+        let cy = bar_center_y(screen, 0, 1);
+        assert!((cy - (right_row_anchor(screen, 0, 1)[1] - 3.0)).abs() < 1e-6);
+        let (rect, hit) = sliders::value_bar_rects_at(bar_right_x(screen), cy, BAR_SCALE);
+        // 178 * 0.75 = 133.5 -> 133; 16 * 0.75 = 12.
+        assert_eq!(rect[2], 133.0);
+        assert_eq!(rect[3], 12.0);
+        assert_eq!(rect[0], 1105.0 - 133.0);
+        // Inflate((int)(-5 * 0.75), 0) = Inflate(-3, 0).
+        assert_eq!(hit[0], rect[0] + 3.0);
+        assert_eq!(hit[2], rect[2] - 6.0);
+        // The colour bars sit a further 60 px left (`num2 = 60f`, `:1089`).
+        assert_eq!(color_bar_right_x(screen), 1105.0 - 60.0);
+    }
+
+    /// The per-row draw scales: zoom 0.85 (`:519`), UI scale 0.75 (`:561`),
+    /// map scale 0.85 (`:766`), the lock-on/smart rows 0.9 (`:1372-1399`).
+    #[test]
+    fn the_row_draw_scales_are_the_c_sharp_multipliers() {
+        assert_eq!(row_draw_scale(0, 6), 0.85);
+        assert_eq!(row_draw_scale(0, 7), 0.75);
+        assert_eq!(row_draw_scale(1, 7), 0.85);
+        assert_eq!(row_draw_scale(3, 11), 0.9);
+        assert_eq!(row_draw_scale(3, 12), 0.9);
+        assert_eq!(row_draw_scale(3, 14), 0.9);
+        assert_eq!(row_draw_scale(0, 1), 1.0);
+        assert_eq!(row_draw_scale(2, 4), 1.0);
+    }
+
+    /// The Interface page's formerly-parked rows are live: the map-frame
+    /// cycle, the map-scale bar, the health-style cycle, the portrait cycle
+    /// and the hover-text-boxes toggle (`:751-840`).
+    #[test]
+    fn the_interface_page_rows_are_wired() {
+        let rows = page(1);
+        assert_eq!(rows[6].act, RowAct::Cycle(Cycle::MinimapFrame));
+        assert_eq!(rows[7].act, RowAct::Bar(Bar::MapScale));
+        assert_eq!(rows[8].act, RowAct::Cycle(Cycle::ResourceSets));
+        assert_eq!(rows[9].act, RowAct::Cycle(Cycle::PortraitPreference));
+        assert_eq!(rows[10].act, RowAct::Toggle(Toggle::BossBarText));
+        assert_eq!(rows[11].act, RowAct::Toggle(Toggle::OpaqueTooltipBox));
+        // The Controls page: three cursor HSL bars, four border HSLA bars,
+        // the lock-on row and the three smart rows (`:1075-1407`).
+        let rows = page(3);
+        assert_eq!(rows[1].act, RowAct::ColorBar(ColorBar::MouseHue));
+        assert_eq!(rows[2].act, RowAct::ColorBar(ColorBar::MouseSat));
+        assert_eq!(rows[3].act, RowAct::ColorBar(ColorBar::MouseLum));
+        assert_eq!(rows[6].act, RowAct::ColorBar(ColorBar::BorderHue));
+        assert_eq!(rows[9].act, RowAct::ColorBar(ColorBar::BorderAlpha));
+        assert_eq!(rows[11].act, RowAct::Cycle(Cycle::LockOnPriority));
+        assert_eq!(rows[12].act, RowAct::Cycle(Cycle::SmartBlocks));
+        // No page draws a Parked row any more except the video page's
+        // window-mode/resolution pair (the unported display backend).
+        for cat in 0..4u8 {
+            for (i, row) in page(cat).iter().enumerate() {
+                if matches!(row.act, RowAct::Parked) {
+                    assert_eq!(cat, 2, "only the video display rows stay parked");
+                    assert!(i < 2, "cat {cat} row {i}");
+                }
+            }
+        }
+    }
+
+    /// The map-scale bar rides the C# slider's 0.5..1.0 range
+    /// (`(MapScale - 0.5f) / 0.5f`, `:776`; `MapScale = x * 0.5f + 0.5f`,
+    /// `:782`).
+    #[test]
+    fn the_map_scale_bar_round_trips() {
+        let mut s = Settings::default();
+        set_bar_value(&mut s, Bar::MapScale, 0.5);
+        assert!((s.map_scale - 0.75).abs() < 1e-6);
+        assert!((bar_value(&s, Bar::MapScale) - 0.5).abs() < 1e-6);
+        set_bar_value(&mut s, Bar::MapScale, 0.0);
+        assert!((s.map_scale - 0.5).abs() < 1e-6);
+        set_bar_value(&mut s, Bar::MapScale, 1.0);
+        assert!((s.map_scale - 1.0).abs() < 1e-6);
+    }
+
+    /// The colour bars edit the stored colour's HSL channels and recompose
+    /// through `Main.hslToRgb` (`:1192-1193`, `:1352-1354`); the cursor's
+    /// luminance is floored at 0.15 (`:1170`, `:1188-1191`) and its alpha
+    /// stays 255, the border's alpha rides its own bar (`:1334`).
+    #[test]
+    fn the_colour_bars_edit_the_hsl_channels() {
+        let mut s = Settings::default();
+        // Writing a channel and reading it back returns the same fraction
+        // (within the byte quantisation of the rgb->hsl->rgb round trip).
+        for bar in [
+            ColorBar::MouseHue,
+            ColorBar::MouseSat,
+            ColorBar::MouseLum,
+            ColorBar::BorderHue,
+            ColorBar::BorderSat,
+            ColorBar::BorderLum,
+            ColorBar::BorderAlpha,
+        ] {
+            let before = color_bar_value(&s, bar);
+            set_color_bar_value(&mut s, bar, before);
+            let after = color_bar_value(&s, bar);
+            assert!(
+                (after - before).abs() < 0.02,
+                "{bar:?}: {before} -> {after} (the byte quantisation)"
+            );
+        }
+        // The cursor alpha never moves off 255.
+        set_color_bar_value(&mut s, ColorBar::MouseHue, 0.6);
+        assert_eq!(s.mouse_color[3], 255);
+        // The cursor luminance floor: a 0 write lands at L = 0.15. From a
+        // grey (S = 0) that quantises to byte 38 (round(0.15 * 255) = 38);
+        // reading it back gives (38/255 - 0.15) / 0.85 ≈ 0.0014 — the byte
+        // quantisation, not a floor miss.
+        s.mouse_color = [128, 128, 128, 255];
+        set_color_bar_value(&mut s, ColorBar::MouseLum, 0.0);
+        assert!(color_bar_value(&s, ColorBar::MouseLum) < 0.01);
+        assert!(s.mouse_color.iter().take(3).all(|&c| c == 38), "L = 0.15 -> grey 38");
+        // The border alpha truncates `(byte)(x * 255f)`.
+        set_color_bar_value(&mut s, ColorBar::BorderAlpha, 0.5);
+        assert_eq!(s.mouse_border_color[3], 127);
+    }
+
+    /// The newly-wired cycles walk their C# ladders: the minimap frame and
+    /// the resource set run **backwards** through the registration order
+    /// (`SelectionHolder.cs:44-58`), the portrait walks forwards
+    /// (`Main.cs:40297-40315`) and the lock-on mode skips FocusTarget on the
+    /// wrap (`LockOnHelper.cs:103-117`).
+    #[test]
+    fn the_new_cycles_walk_their_c_sharp_ladders() {
+        let mut s = Settings::default();
+        s.minimap_frame = "Default".into();
+        advance_cycle(&mut s, Cycle::MinimapFrame);
+        assert_eq!(s.minimap_frame, "Valkyrie", "the first option wraps to the last");
+        advance_cycle(&mut s, Cycle::MinimapFrame);
+        assert_eq!(s.minimap_frame, "Retro");
+        s.resource_sets = "Default".into();
+        advance_cycle(&mut s, Cycle::ResourceSets);
+        assert_eq!(s.resource_sets, "New", "the backwards walk");
+        s.portrait_preference = 3;
+        advance_cycle(&mut s, Cycle::PortraitPreference);
+        assert_eq!(s.portrait_preference, 0, "Disabled -> Detailed");
+        s.lock_on_priority = 2;
+        advance_cycle(&mut s, Cycle::LockOnPriority);
+        assert_eq!(s.lock_on_priority, 1, "ThreeDS -> TargetClosest, not FocusTarget");
+        s.lock_on_priority = 0;
+        advance_cycle(&mut s, Cycle::LockOnPriority);
+        assert_eq!(s.lock_on_priority, 1);
+    }
+
+    /// The Keybinds row opens the port's keybinding screen over the world
+    /// (`IngameOptions.cs:252-256` → `IngameFancyUI.OpenKeybinds` →
+    /// `ManageControlsMenu`): the window closes and the legacy menuMode 27
+    /// page comes up flagged in-game, so its Back returns to gameplay.
+    #[test]
+    fn the_keybinds_row_opens_the_in_game_keybinding_screen() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.ingame_options.open = true;
+        let screen = Vec2::new(1600.0, 900.0);
+        let r = left_row_rect(screen, &app.lookups, 4, LEFT_SCALE_MIN);
+        let mouse = Vec2::new(r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
+        assert!(click(&mut app, screen, mouse));
+        assert!(!app.ingame_options.open);
+        let m = app.menu.as_ref().expect("the keybinding screen opened");
+        assert_eq!(m.page, crate::menu::Page::Keybindings);
+        assert!(m.in_game_keybinds, "Back returns to gameplay, not the front end");
+    }
+
+    /// A toggle click flips the setting **and** applies it — the renderer
+    /// reads `App.light_mode`/`App.zoom`, not the settings clone, so the
+    /// options window must run `apply_settings` like the menu's close does.
+    #[test]
+    fn a_toggle_click_applies_the_setting_to_the_app() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.ingame_options.open = true;
+        app.ingame_options.category = 2; // Video
+        let screen = Vec2::new(1600.0, 900.0);
+        // Row 4 is the lighting-mode cycle; seed a known scale so the
+        // measured box is deterministic.
+        app.ingame_options.right_scale = [1.0; 20];
+        let before = app.settings.light_mode;
+        let r = right_row_rect(screen, &app.lookups, &app.settings, 2, 4, 1.0);
+        let mouse = Vec2::new(r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
+        assert!(click(&mut app, screen, mouse), "the lighting row takes the click");
+        assert_eq!(app.settings.light_mode, (before + 1) % 4);
+        assert_eq!(
+            app.light_mode,
+            tr_core::lighting::LightMode::ALL[app.settings.light_mode as usize],
+            "apply_settings ran — the live light mode follows"
+        );
     }
 }

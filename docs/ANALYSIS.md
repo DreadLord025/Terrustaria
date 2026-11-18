@@ -4617,24 +4617,34 @@ the existing rows byte-identical (`gen_loot.py --check` green).
   half-body emission would drop C# rows.
 - NamedNPC's key comparison rides the `get_text_value` seam.
 
-Follow-up S1-E-14a (2026-11-18, `task/S1-E-14a`): `gen_loot.py`'s
-`FOLLOW_METHODS` now spans all 22 `RegisterBoss_X` the C# `RegisterBosses`
-calls (`ItemDropDatabase.cs:655` subtree), splicing +136 boss rows in C#
-order (1445→1581 registrations). `s1_e_14a_the_boss_subtree_registrations_are_spliced`
-pins post-splice-only rows (EoC NotExpert 2112/1299 + a real `try_dropping`
-attempt; the boss bags via `rules_for_npc`). Remaining generator gaps
-(skipped with a warning, not faked): 88 `LeadingConditionRule`/`rule.OnSuccess`
-local-var statements, 8 `DropOneByOne.Parameters` (LunarTowers), 8 unhandled
-local-var rule refs, 4 `OneFromRulesRule` skipped sub-rules/chains; 15
-`OneFromOptions` rows referencing unported items are warn-and-emit (the
-established policy). Documented deviation: the 15 new master-mode rows
+Follow-up S1-E-14a (2026-11-18, `task/S1-E-14a`, COMPLETED): `gen_loot.py`'s
+`FOLLOW_METHODS` spans all 22 `RegisterBoss_X` the C# `RegisterBosses` calls
+(`ItemDropDatabase.cs:655` subtree). Stage 1 spliced +136 boss rows
+(1445→1581); stage 2's rule-reference model (Rule objects + `§gN§` markers
+resolved to each object's FINAL chain state at method end) closed the
+remaining rule-local gaps — `LeadingConditionRule x = …` + post-registration
+`x.OnSuccess(…)` mutations, `IItemDropRule` bind-then-mutate, local aliasing
+(Plantera `:420-433`, Twins `:464-473`), `OneFromRulesRule`,
+`DropOneByOne.Parameters` — reaching **1599 registrations**. The C# chain
+RETURN semantics (`Chains.cs:93-103`: `.OnSuccess(A).OnFailedRoll(B)` chains
+B onto A) fixed KingSlime `:409`, Skeletron `:568`, DukeFishron `:674-675`,
+FrostMoon `:380/:386`. All 5 `OneFromRulesRule` C# sites now supply the
+`chance_denominator` ctor arg (Golem `:661`, Plantera `:433`, MourningWood
+`:355`, Pumpking `:365`, Deerclops `:539`). Engine: `LeadingConditionRule.report_droprates`
+(`LeadingConditionRule.cs:22-26`, was the empty default) + per-kind chain
+report scaling (`Chains.cs:24-30` failed-roll `1-rate` vs `:50-56/:76-82`
+success/conditions `rate`) — report-only C#-parity fixes, drop-roll
+untouched. `s1_e_14a_the_boss_subtree_registrations_are_spliced` pins
+post-splice-only rows (EoC NotExpert 2112/1299 + a real `try_dropping`
+attempt) + 7 per-boss id/chance/forced-pick/gate tests. Non-boss rows
+byte-identical (1386, sequence-identical); the one changed old row is the
+Skeletron chain-return fix. Documented deviation: the 32 master-mode rows
 (`MasterModeDropOnAllPlayers`) carry denominator 1, not the C#
-`_masterModeDropRng` = 4 (`ItemDropDatabase.cs:15`) — a pre-existing generator
-limitation (7 such rows already on main), inert at runtime (`spawn_loot`
-passes `is_master: false`). The salvaged `OneFromRulesRule` chance-gate port
-(`OneFromRulesRule.cs:33-49`) has no construction sites yet (the generator's
-`OneFromRulesRule` handler still emits the old 1-arg form; all 5 C# sites are
-skipped via local-var sub-rules).
+`_masterModeDropRng` = 4 (`ItemDropDatabase.cs:15`) — pre-existing since
+M4-LOOT-2 (7 rows already on main), kept for row stability, inert at runtime
+(`spawn_loot` passes `is_master: false`); a dedicated fix should change all
+32 together. 15 `OneFromOptions` rows referencing unported items remain
+warn-and-emit (the established policy).
 
 ## Buff slots (M2-BUFF-1)
 
@@ -10510,26 +10520,65 @@ Deviations and notes:
   `timeLeft * 5` and the idStatic-12 pair.
 - **Phase 5's scan guard**: `AI_053_HandleSentryNPCTargeting`'s full scan runs only when
   the whip target supplied no answer (`if (!flag)`) — ported verbatim.
-- **S1-D-4b-2 (2026-11-18) ported aiStyle 138 only** — the Explosive Trap sentry
-  (`AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`). The blast kinds 694/695/696
-  ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139, alpha 255, the
-  local-immunity 30 pair) so the 138 arm's `NewProjectile` (`:69364`) lands, but the
-  aiStyle-139 arm itself (`AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick
-  alpha fade, the latch, the 3-tick wrap-kill) is the next slice: a spawned blast
-  holds at alpha 255 until its `timeLeft` expires; its `Damage_PVE` half already
-  works through the shared pass. Skips: the `Lighting.AddLight` (`:69332`) — no pool
-  light layer; the tracked explode sound (`:69362`) — no sound layer; the
-  sentry-backpack branch (`:69317-69331`, `CanGetPickedUpBySentryBackpack` `:78785-78805`)
-  — the Player has no `accSentryBackpack`, so `ai[2]` stays 0 and the branch is
-  unreachable (same ponytail as the 53/197 arms). `GetExplosiveTrapCooldown`
-  (`:69376-69388`) returns the stock 90 — the `setHuntressT2`/`T3` overrides (60/30)
-  wait on the armor-set flags. RNG: the AI arm body draws no `Main.rand`; the
-  blocked-move chain's tile-cut prologue (`:17910-17948`) would draw `Main.rand.Next(3)`
-  (`:17948`) for this friendly, damage > 0, `CanCutTiles()`-true trap, but the pool
-  skips the whole tile-cut chain (no 484/cracked-brick cutting layer, the
-  `sentry_hydra_step`/`sentry_turret_step` precedent), so that draw is skipped with it.
-  The blocked-move path is the DD2 sentry arm (`:17986-17990`): one last step into
-  the tile, `velocity = Zero`, no kill.
+- **S1-D-4b-2 (2026-11-18) ported the sentry-backpack family** — aiStyle **138**
+  (Explosive Trap, `AI_138_ExplosiveTrap`, `Projectile.cs:69301-69374`), **139** (the
+  blast, `AI_139_ExplosiveTrapExplosion`, `:69390-69414` — the 25/tick alpha fade, the
+  one-shot latch, the 3-tick frame-wrap kill), **134** (Ballista, `AI_134_Ballista`,
+  `:68510-68651`) and **137** (Lightning Aura, `AI_137_LightningAura`, `:68854-69023`),
+  plus the shared `CanGetPickedUpBySentryBackpack`/`SetAsSelectedSentryBackpackTarget`
+  (`:78785-78810`) and `AI_Sentries_HeavySlingReposition` (`:69025-69299`). The blast
+  kinds 694/695/696 ride their `SetDefaults` rows (`:7354-7365` — 144x144, aiStyle 139,
+  alpha 255, the local-immunity 30 pair); the Ballista's 680 bolt gained its row
+  (`:7253-7262` — 16x16, aiStyle 1, penetrate 4, local-immunity −1) and the towers/auras
+  their `proj_frames` (`Main.cs:8461-8466`).
+  - **The backpack accessory is wired.** `Player.accSentryBackpack` (the four slings
+    6172/6175/6176/6177, `Player.cs:14507`/`:14565`/`:14573`/`:14577`), the grab cooldown
+    (`accSentryBackpackGrabCooldown`, `Update_SentryBackpack` `:28428-28434`, decremented
+    in `world_sim/player.rs` beside the ammo cycler) and the DD2 set flags
+    (`setSquireT2/T3`, `setHuntressT2/T3`, `setMonkT2/T3` from `ArmorSetBonuses.Benefits`
+    `:68-118`, `ballistaPanic` from buff 205 `:11843-11846`) re-derive per tick after
+    `ResetEffects` clears them. The 6175 Scout Sling's +5% all-class damage and the 6177
+    Harness's `noKnockback` ride along; the 6176 `accGolemSentryBackpack` half and the
+    6175 `aggro -= 400` half have no port consumer (the Golem-backpack crit arm
+    `Projectile.cs:12930` and the aggro system are unported). The DD2 sets' `maxTurrets++`
+    halves land in `Player::update`'s armor-set block.
+  - **The reposition's gravDir folds to 1.** `AI_Sentries_HeavySlingReposition`'s
+    `player.gravDir` multipliers (`:69038`/`:69064`/`:69111`/`:69139`/`:69147`/`:69169`)
+    take their positive branch (no gravity potion in the port); the sleeping/sitting
+    offset arms of `RotatedRelativePoint` (`Player.cs:4240-4249`) fold with the accessor.
+    The 123/84/966/308/377/1025/130 anchor arms are ported for the citation's completeness
+    but their own AI arms (53/197/123/130) do not call the reposition yet — only 134/137/138
+    reach it. The per-mount arms (52/54/55/56/61) read `mount.Type` unconditionally as the
+    C# does (`Mount.Dismount` calls `Reset()`, `Mount.cs:6171`, which sets
+    `_type = -1`; the port's `dismount()` likewise resets the kind).
+  - **Skips**: the `Lighting.AddLight`/`PlotTileLine` casts (`:69332`/`:68956-68957`/
+    `:69412-69413`) — no pool light layer; the tracked sounds (`:68615`/`:68905`/`:69362`)
+    — no sound layer; the aura's three dust loops (`:68959-69015`) and their `Main.rand`
+    gating rolls (`Next(6)`/`NextVector2Unit`/`Next(10)`) — no dust layer (the
+    `ai_volcano`/`ai_eye_fire` precedent). The 680 bolt's aiStyle-1 per-type flight
+    (`AI_001`'s `type == 680` arms `:57471-57478`/`:57658-57661`) rides the generic arrow
+    flight — the per-type `AI_001` table is S1-D-4b-8. The aura's `Colliding` arm
+    (`:15800-15814`, the `AI_137_LightningAura_CanHit` reach test) and the blast's
+    `StatusNPC` Oiled debuff (`:11434-11437`) + the aura's full armor-penetration
+    (`:13232-13235`) are damage-side arms under the S1-C-8 `Colliding`/`StatusNPC` skip —
+    the shared `Damage_PVE` pass uses the plain box overlap. `AI_137_LightningAura_CanHit`
+    (`:70470-70500`) is ported as a helper for that future wiring.
+  - **The reposition-kill edge follows the port's dead-slot convention.** In C#, when
+    the backpack accessory is removed mid-carry, `AI_Sentries_HeavySlingReposition`
+    calls `Kill()` (`:69030`) but the calling arm's remaining body still runs on the
+    dead slot (a Ballista can even fire one last bolt that tick — the spawn gate reads
+    only `owner == Main.myPlayer`). The port's arms stop at the kill (`killed` flag),
+    the same "a dead slot pays nothing further" convention the pool documents at its
+    AI-dispatch guard — the dead slot's writes are unobservable (the spawn seam fully
+    resets a recycled slot). The accessory-removal tick is the only reachable case.
+  - **RNG**: the four AI arm bodies draw no `Main.rand` (proven by the seed-untouched
+    test `s1_d_4b_2_the_sentry_arms_draw_no_rng`). The blocked-move chain's tile-cut
+    prologue (`:17910-17948`) would draw `Main.rand.Next(3)` (`:17948`) for a friendly,
+    damage > 0, `CanCutTiles()`-true sentry, but the pool skips the whole tile-cut chain
+    (no 484/cracked-brick cutting layer, the `sentry_hydra_step`/`sentry_turret_step`
+    precedent), so that draw is skipped with it; the aura is on `CanCutTiles`'s refusal
+    list (`:15329`) anyway. The blocked-move path is the DD2 sentry arm (`:17986-17990`,
+    the `dd2_sentry_step` helper): one last step into the tile, `velocity = Zero`, no kill.
 
 ### The Twins' minion arm (S1-D-4b-6)
 
@@ -11767,6 +11816,13 @@ port's flat six-row list:
   (`:437`) with the label hanging 70 px left (`vector6.X -= num`, `:417`).
 
 **Deviations (all deliberate, each row cited in `page()`):**
+
+> **Superseded in part by "The Settings menu layout + dead buttons
+> (fix/settings-menu-layout, round 2)" below** — the parked rows of item 1
+> are wired now (only the Video page's window-mode/resolution pair stays
+> parked), item 3's wave-quality label and item 4's Keybinds/Save & Exit
+> arms are ported, and item 5's metrics are the measured boxes. The list is
+> kept as the M7-UI-4 record.
 
 1. **Parked rows.** A vanilla row whose state the port has no field for is
    drawn dimmed and inert rather than invented: the UI scale (`:561`), the
@@ -16124,6 +16180,238 @@ always 1), no `[c/...]` snippet parsing, no `_startChatLine` scroll offset
 hover/click handling (`:98-107`). The open chat shows the newest 10 lines,
 not a scrollable 500-line view.
 
+## The loading screen + capture mode (S1-E-17)
+
+`crates/tr-app/src/ui/world_load.rs` ports the loading screen:
+`UIGenProgressBar`'s progress math (`UIGenProgressBar.cs:51-55`, `:68-80`,
+`:118-121`) and `UIWorldLoad`'s state machine (`UIWorldLoad.cs:24-136`),
+plus the sprite draw (`UIGenProgressBar.cs:70-84`'s two `DrawFilling2` bars
++ the `Outer_*` frames, `UIHeader.cs:46-62`'s four-corner Death-font header).
+`crates/tr-app/src/capture.rs` ports the capture family
+(`CaptureManager.cs`, `CaptureInterface.cs`, `CaptureCamera.cs`,
+`CaptureSettings.cs`, `CaptureBiome.cs`). Deliberate deviations:
+
+- **The "smoothing" is a verbatim copy in 1.4.5.8.** `DrawSelf` assigns
+  `_visualOverallProgress = _targetOverallProgress` (and the current pair)
+  directly (`UIGenProgressBar.cs:68-69`) — no lerp exists in this version.
+  The port keeps both field pairs and pins the copy in a test so a later
+  smoothing lerp cannot land silently.
+- **Wired (round 2).** `FrontScreen::WorldLoad` is the sixth front screen;
+  `finish_creating_world` (`app/session.rs`) starts the generation job and
+  opens the screen (`WorldGen.CreateNewWorld`, `WorldGen.cs:6607-6625`);
+  `update_world_load` polls the result and hops to the world select
+  (`worldGenCallback`'s `menuMode = 6`, `:6599-6602` → `Main.cs:49468-49472`).
+  The generation runs on a worker thread (`app/worldgen_job.rs`, the C#'s
+  `Task.Factory.StartNew`) through the `GenProgressHook` seam
+  (`tr_core::worldgen::pipeline`); the progress/controller pair is the
+  `WorldGenerator.CurrentGenerationProgress`/`CurrentController` statics
+  (`WorldGenerator.cs:398-400`). The bar's four `Outer_*` textures load
+  (`assets.rs`, `UIGenProgressBar.cs:34-37`). The Inventory trigger queues
+  the abort (`UIWorldLoad.cs:54-58`); the abort arm skips the save
+  (`WorldGen.cs:6595-6598`).
+- **The drunk-world `Main.rand` arms are deferred.** The evil-texture
+  flicker (`UIGenProgressBar.cs:63-67`) and the random-digit message
+  (`UIWorldLoad.cs:93-103`) draw from `Main.rand`; wiring them would perturb
+  that stream's call order (the RNG-order invariant). The ported
+  `draw_frame` takes the evil flags as inputs.
+- **`placingTraps` stays false.** It is a pass-runtime static
+  (`WorldGen.cs:18662`) the port's compact pipeline never sets; the
+  get-good message reversal's `noTraps && placingTraps` gate
+  (`UIWorldLoad.cs:108`) therefore always takes the reversal arm on a
+  For-the-Worthy world.
+- **`GetStatusText`'s `0.0%` formatting rides the shared
+  `tr_core::generation_progress::format_percent`** (`(v*1000).round()/10`,
+  half-away-from-zero — .NET's `"0.0%"` custom specifier). An earlier round
+  used Rust's `{:.1}` (half-to-even) and claimed the tie input was not
+  binary-representable; that claim was false — e.g. `0.0625` scales to
+  exactly `6.25`, where .NET prints `6.3%` and `{:.1}` prints `6.2%`. Both
+  the status text and the `Message` `{0:0.0%}` substitution now use the one
+  formatter, pinned by the `0.0625 → "6.3%"` test.
+- **The get-good message reversal walks Unicode scalars, not UTF-16 code
+  units.** The C# reverses via `Text.Substring(num, 1)` per UTF-16 unit
+  (`UIWorldLoad.cs:110-115`); the port's `chars().rev()` reverses whole
+  scalars. The two differ only for surrogate-pair characters (emoji, rare
+  CJK extensions), which the `Lang.gen`/`WorldGeneration.*` messages never
+  contain — ASCII and the localized messages are identical in practice.
+- **`worldGenCallback` plays sound 10 twice; the port plays the completion
+  one only.** The C# plays `SoundEngine.PlaySound(10)` at entry AND exit
+  (`WorldGen.cs:6592`/`:6603`); the port plays `Menu_Open` on the completion
+  poll (`app/session.rs::update_world_load`, `:6603`). The entry cue is
+  deferred: the worker thread has no audio seam, and playing it on the
+  frame thread at job start would shift the cue's frame relative to the
+  C# task-start ordering — a documented deviation, not a silent drop.
+- **`CreateNewWorld` reseeds `Main.rand`; the port does not.** The C#
+  assigns `Main.rand = new UnifiedRandom(Main.ActiveWorldFileData.Seed)`
+  (`WorldGen.cs:6612`) before the task starts. The port keeps its `Main.rand`
+  stream untouched (the RNG-order invariant): reseeding at world creation
+  would change every subsequent menu/gameplay roll's provenance. Documented
+  deviation; revisit with the faithful `UnifiedRandom` port.
+- `Main.gameTips` (`UIWorldLoad.cs:117-118`) is research/19 M3
+  (`GameTipsDisplay`), out of scope; the gamepad squiggle (`:122-127`) and
+  F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug pieces, unported.
+- **The `TR_UI=worldload` preset latches a fixed snapshot.** The screenshot
+  preset (`settings_ui.rs`) parks a mid-generation progress (42.5% overall /
+  60% current, the `LegacyWorldGen.11` "Generating jungle" label) with no
+  worker thread, so the shot is SHA256-stable; `update_world_load` only
+  re-latches the snapshot while a job is live (a job-less frame keeps the
+  preset's). Baseline `docs/screenshots/s1-e-17-worldload.png`,
+  `TR_SHOT` + `TR_UI=worldload` + `TR_NAME=ShotPin` + `TR_DEBUG=0` +
+  `TR_DAY=1.0`, two runs SHA256-equal
+  (`8f308c82c27b29ad523dfd2baa48dedb5887f55d6514ce1967e6c0e316496b9a`).
+
+### The capture mode (S1-E-17)
+
+`crates/tr-app/src/capture.rs` ports the capture family's state machines
+1:1: the `CaptureManager` facade (`CaptureManager.cs:8-114`), the
+`CaptureInterface` selection state machine (the three modes — edge selection, drag
+bounds, change settings — the toolbar, the camera countdown,
+`CaptureInterface.cs:15-1607`), the `CaptureCamera` chunk queue / scaling /
+blit / finish machine (`CaptureCamera.cs:17-425`), `CaptureSettings`
+(`CaptureSettings.cs:6-28`) and `CaptureBiome`'s style table + biome pick
+(`CaptureBiome.cs:3-246`). The App owns the one `CaptureManager.Instance`
+(`App.capture`); `app/capture_driver.rs` pumps it per frame at the C# call
+sites (`Update` at `Main.cs:46187`/`:62166`, `DrawTick` at `:61729`). The
+capture freeze has TWO halves, both ported: (1) the `DoUpdate` gate
+(`Main.cs:16886-16890`, `if (IsCapturing) { FocusHelper.UpdateFocus; return; }`)
+— while a capture renders the ENTIRE world update skips: `Sandstorm.EmitDust`
+(`:17247`, it consumes the dust RNG), `SceneState.Update` (`:17816`) and the
+whole sim sit AFTER that return. Ported in `frame.rs`: `update_world_frame`
+is gated on `!is_capturing()` (the capture interface itself still updates —
+it rides the interface pass, not DoUpdate's world branch). (2) The
+`UpdateSceneMetrics` gate (`Main.cs:62518-62521`) — the DRAW-SIDE guard for
+the lighting engines' ExportMetrics callers (`LightingEngine.cs:93`,
+`LegacyLighting.cs:722`): `update_scene` reads `is_capturing()` and keeps the
+parked metrics (no rescan) for any draw-side caller that still runs.
+Deviations:
+
+- **The selection UI has no sprite draw yet — state only.** The
+  `CaptureInterface` state machine (modes, toolbar actions, countdown) is
+  ported and live, but `capture.rs` has no sprite-draw function: the
+  selection rectangle, the toolbar buttons and the countdown digits do
+  not render on screen. The UI draw lands with the S1-G-13 render-target
+  seam (the GPU chunk render needs the same targets); until then capture
+  mode is driven blind (F6 toggle + the state machine). Earlier
+  ROADMAP/PORT_MAP wording calling the selection UI "live" meant the
+  state machine only — corrected.
+
+- **The GPU render half is the S1-G-13 seam.** `Main.DrawCapture`
+  (`Main.cs:56673-57066`) renders each chunk into the 2048² framebuffer
+  through the layer targets; the port's `CaptureRenderer` trait is a no-op
+  stub until the render-target family lands, so a started capture drains
+  its queue without producing pixels. The selection state machine, the
+  countdown and the `IsCapturing` metrics gate are live (the selection
+  UI's sprite draw is NOT — see the bullet above); the write-out waits on
+  the targets.
+- **The capture toggle rides F6, not F4.** The vanilla binds
+  `ToggleCameraMode` to F4 (`PlayerInput.cs:2091`); the port's F4 is the
+  debug-overlay toggle (`loop.rs:652`), so the capture toggle uses F6.
+- **The fullscreen-map selection arm is a gap.** `GetMapCoords`
+  (`CaptureInterface.cs:1318-1458`) needs the map renderer's texture
+  geometry; the port's selection modes run the world arm only.
+- **`Player.ghost`/`gravDir` and `Main.treeX` are unported**, so the
+  capture input's ghost/gravity gates read false and `GetPurityForPlayer`
+  takes the no-treeX fall-through (`CaptureBiome.cs:206-222`).
+- **`Utils.OpenFolder` is a no-op** (the port has no folder-open seam);
+  the toolbar's open-folder button plays its cue only.
+
+## S1-F-7 wave A - the generated TileObjectData registry (2026-11-18)
+
+`tools/GenTileObjectData/gen.py` interprets `TileObjectData.Initialize`
+(`TileObjectData.cs:2110-5014`) statement-by-statement and emits all 389
+registered tiles (604 defs) into `crates/tr-core/src/tileobject/registry.rs`,
+retiring the 33 hand-written defs. The generator reproduces the copy-on-write
+builder chain (module sharing via `CopyFrom`, the `_hasOwn*` no-op-compare
+setters, `Calculate`'s liquid-death fold, `LinkedAlternates` propagation,
+`addTile`/`addSubTile`/`addAlternate`/`addBaseTile` cursor resets) and two C#
+bugs verbatim:
+
+* **`FullCopyFrom` empties the sub-tiles** (`TileObjectData.cs:1722-1741` +
+  `TileObjectSubTilesModule.cs:17-27`): the copy ctor loops `i < this.data.Count`
+  over the FRESH list (Count 0, capacity != count), so tiles 83/84
+  (`FullCopyFrom(82)`/`(83)`, :4785-4788) and 389 (`FullCopyFrom(388)`, :2323)
+  resolve NO sub-tiles in vanilla. The hand defs wrongly carried 82's sub-tiles
+  into 83/84; the generated table reproduces the bug.
+* **`AnchorAlternateTiles` compares against `tileInvalid`** (:449) — a no-op
+  write when the alternate list equals the INVALID list (a C# typo, reproduced).
+
+The shared-reference alternates/sub-tile cycles (C# heap references; `CopyFrom`
+shares the lists, then `addAlternate`/`addSubTile` appends) emit acyclic:
+top-level defs AND sub-tile nodes keep their OWN alternates lists verbatim —
+`GetTileData` (`TileObjectData.cs:5148-5157`) does `alternate--` then indexes the
+RESOLVED sub-tile's Alternates, so dropping them refused placements the C#
+accepts (S1-F-7a: chair style 16 right-facing, torch sub8 wall-anchor; 69
+sub-tiles carry non-empty alternates). Alternate NODES are leaves (scalar
+fields + empty nested lists): their deeper nested lists are the cycle depth no
+consumer reads — `GetTileData` resolves only one level past the sub-tile and
+`can_place`/`custom_place` read the base's lists plus one resolution level.
+Verified over the interpreted graph: every sub-tile alternate target is a pure
+leaf (never a top/sub-tile object, no self-references), so top -> sub ->
+alternate-leaf emission is acyclic (the DFS test in `test_gen.py`). Sub-tiles'
+nested sub-tile lists are likewise not emitted (the deeper C# cycles; no
+consumer resolves a sub-tile's sub-tiles).
+
+### Divergences vs the 33 hand defs (the C# wins)
+
+Field-level diff of the hand-resolved baseline against the generated table
+(the regression dump). Every row is the C# chain's truth; the hand def was wrong:
+
+| Tile / def | Field | Hand | Generated (C#) | C# cite |
+|---|---|---|---|---|
+| safe 97 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style2x2 :3454, no override :3589-3590 |
+| safe 97 | StyleHorizontal | true | false | Style2x2 never sets it (:3451-3460) |
+| sink 172 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style2x2 :3454, no override :3576-3583 |
+| sink 172 | StyleHorizontal | true | false | Style2x2 never sets it |
+| void vault 491 | bottom anchor | SWTSS (11) | SWTSS+Table (15) | Style3x3 :3100, no override :3798-3800 |
+| void vault 491 | StyleHorizontal | true | false | Style3x3 never sets it (:3097-3105) |
+| candelabra 100 | StyleHorizontal | true | false | Style2x2 never sets it (:3594-3606) |
+| lamp 93 | WaterPlacement | Allowed | NotAllowed | :2407-2408 WaterDeath=true + fold |
+| lamp 93 | StyleLineSkip | 1 | 2 | :2405 |
+| dresser 88 | LavaPlacement | Allowed | NotAllowed | :3204 LavaDeath=false keeps the baked NotAllowed |
+| dresser 88 | HookCheckIfCanPlace | none | Chest.FindEmptyChest (-1,0,true) | :3201 |
+| chest 21 | HookCheckIfCanPlace metadata | (0,0,false) | (-1,0,true) | :3464 (name now generated) |
+| bed 79 alt1 | CoordinateHeights | [16,18] | [16,16] | Style4x2 alternate copies the preset, not the bed override (:2564-2566) |
+| bed 79 alt1 | CoordinatePaddingFix | (0,-2) | (0,0) | same — the alternate is the Style4x2 base |
+| bathtub 90 alt1 | whole def | base_def() 1x1 | full Style4x2 4x2 PlaceRight | :2564-2566 copies newTile (the full def) |
+| hanging lantern 42 alt1 | whole def | base_def() 1x1 | full Style1x2Top 1x2 + platform anchor | :2444-2447 copies newTile |
+| large piles 187 sub0-8,29-34 | StyleWrapLimit | 0 | 35 | :3296 set on newTile before the sub-tile CopyFrom |
+| herbs 83/84 sub1-6 | present | 6 sub-tiles | empty (FullCopyFrom bug) | :4785-4788 + TileObjectSubTilesModule.cs:17-27 |
+| table 14 | sub-tiles | empty | 13, 25 | :3182-3190 |
+| tile 220 (Solidifier) | registered | absent | present (Style3x3) | :4048 |
+
+Plus the sub-tile families the hand slice left empty (now generated): doors
+10/11 sub 19/48, work bench 18 sub 14/43, candle 33 sub 25/39/41, chandelier 34
+sub 32/46/48, chair 15 sub 16/47 + 51..67, bed 79 sub 8/42 + 56..64, piano 87
+sub 15/42, dresser 88 sub 9/42, bookcase 101 sub 4/43, clock 104 sub 17/43,
+candelabra 100 sub 25/40/42, sink 172 sub 13/43, lantern 42 sub 32/46/48.
+
+### Consumer switch (minimal, behaviour-preserving)
+
+* `edit::place_item_tile` gates on `tileobject::routes_through_tile_object`
+  (`CustomPlace(type, style)` + the 82/227/4 exclusions, `Player.cs:39771-39772`),
+  NOT mere registration — the natural objects (pots 28, small piles 185,
+  platforms 19, plants, torches 4, dye plants 227) keep the legacy
+  `WorldGen.PlaceTile` route. The large piles 186/187 ARE `CustomPlace`-true and
+  ride the TileObject route.
+* `editing::legacy_precheck_applies` mirrors that gate; alch seeds (82/83/84)
+  bypass the neighbour pre-check because `BlockPlacementForAssortedThings`
+  forces `canPlace = true` for them (`Player.cs:41294-41296`).
+* `editing::cell_drops` reads the generated `KILL_TILE_NO_CELL_DROP` table (the
+  `KillTile_GetItemDrops` empty case group, `WorldGen.cs:63988-66090`) instead of
+  `def_for_tile(...).is_some()` — the full registry registers torches/platforms/
+  orbs/plants that DO drop per-cell, so the old proxy would swallow their drops.
+
+### Wave B (remaining, documented callbacks)
+
+The dynamic `GetStyle`/`RandomStyleRange` runtime hooks stay callbacks: the
+`Main.rand` path (`TileObject.cs:787-793`), the `randomCache` stickiness
+(:764-781), the tile-based `GetTileData(Tile)` frameY resolution
+(`TileObjectData.cs:5196-5261`, the `GetStyle_Detritus`/`SmallPiles`/`Stalactite`
+tags :5294-5327), and the runtime hook bodies (`Chest.FindEmptyChest`,
+`WorldGen.PlantCheck_CanPlaceHook`, the `TE*` tile-entity hooks). The generated
+defs carry the C# method NAME in `PlacementHook::callback` with `hook: None`;
+the `GetStyleOverride` tag is generated data. The `RandomStyleRange` RNG-order
+test lands with that wiring.
+
 ## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
 
 `crates/tr-core/src/lighting/legacy.rs` ports `Terraria.Graphics.Light.LegacyLighting`
@@ -16260,6 +16548,103 @@ in the fn's doc comment, alongside the unmodelled `StopTrackedSounds` /
 multiplayer `netMode == 0` gate + force-disconnect arm is out of scope until
 the MP pause-menu flow lands. The Settings panel layout deviations remain a
 follow-up round.
+
+## The Settings menu layout + dead buttons (fix/settings-menu-layout, round 2)
+
+The window's geometry and several rows were still the port's own invention
+after M7-UI-4/4b. This round ports them to the C# constants
+(`IngameOptions.cs` unless noted) and wires every row whose backing feature
+the port already has.
+
+**Layout corrections (the misplaced panel contents):**
+
+1. **Left pitch** — `vector5.Y = (480 - 100) / (num7 + 1) = 380 / 8 = 47.5`
+   (`:181`, `num7 = 7` without the social invite row). The port divided by
+   `LEFT_SLOTS + 1 = 9` (42.2 px), compressing the column and lifting every
+   row off its vanilla position. Fixed: `left_pitch() = 380 / LEFT_SLOTS`.
+2. **Left hit boxes** — `DrawLeftSide` hit-tests the *measured string box
+   centred on the anchor* (`:1470`); the port's rect started **at** the
+   anchor and extended 120 px right, so the left half of every label was
+   unclickable and the right half of the column swallowed clicks that
+   belong to no row. Fixed: `left_row_rect` measures the DeathText label at
+   the row's scale and centres it, with the C#'s int truncations.
+3. **Left column font** — `DrawBorderStringBig` draws **DeathText** with the
+   3x3 black ring (`Utils.cs:2520-2536`); the port drew the MouseText font
+   with no border. Fixed (`centred_big_text`).
+4. **Right labels** — `DrawBorderStringMeasured` carries ChatManager's
+   four-way shadow at `spread = 1.5f` (`Utils.cs:2506`); the port drew flat
+   text. The per-row scale multipliers are now ported: zoom 0.85 (`:519`),
+   UI scale 0.75 (`:561`), map scale 0.85 (`:766`), lock-on/smart rows 0.9
+   (`:1372-1399`).
+5. **Value bars** — the window draws every `DrawValueBar` at `scale = 0.75f`
+   (`:116`), not the menu screens' 1.0; the track is 133x12 (int-truncated
+   178x16 * 0.75) and its centre is the row anchor's Y **minus 3**
+   (`valuePosition.Y -= 3f`, `:417`). The port drew full-size bars centred
+   on the raw anchor. Fixed: `sliders::value_bar_rects_at` /
+   `draw_value_bar_at` carry the scale; `bar_center_y` the -3.
+6. **Hover/lock state machine** — the C# steps the scales off the *previous*
+   frame's hover, keeps the **selected** category's left row at the plateau
+   (`(leftHover == j) | flag6`, `:194`), re-arms `rightLock` from the hover
+   at the end of every Draw (`:1409-1412`) and gates the bar write on
+   `!notBar` (a label/band hover must not drag the bar, `:409-412`). The
+   port now models `notBar`, the selected-row plateau, the wide hover band
+   (`:427-434`) and the end-of-draw lock re-arm; the bar's value write moved
+   from the click to the held-drag tick (`:422-425`), so a click on a bar
+   label no longer zeroes the value.
+7. **Settings apply** — the options clicks wrote `App.settings` but never
+   ran `apply_settings`, so zoom/lighting/quality changes did not reach the
+   renderer (`App.zoom`/`App.light_mode`). Every mutating click and the bar
+   drag now apply, like the menu's close does.
+8. **The bar drag's held-button source** — `frame_head` fed
+   `pointer.left_held()` (the front-end pointer machine, which only tracks
+   the 888 screens' presses) into the window's drag, so in-world the button
+   never read as held and the bars could not be dragged at all. The C# reads
+   `Main.mouseLeft` — the physical button, the port's `mine_down`
+   (`app/frame.rs`).
+
+**Rows wired (were dead or wrong):**
+
+| row | C# | what changed |
+| --- | --- | --- |
+| Event Progress Bar | `:702-714` | was a bool flip; now the 3-state `invasionProgressMode` cycle, label `Lang.menu[123] + " " + [124 + mode]` (Off/Timed/On) |
+| Wave Quality | `:1022-1034` | was `% 3` + an ordinal; now `% 4` with the `GameUI.QualityOff/Low/Medium/High` words |
+| Lighting mode label | `:955` | was `UI.LightMode_{ordinal}` (no such key); now the enum **name** (`UI.LightMode_Color` etc.) |
+| Boss bar numbers | `:823` | was the invented `GameUI.BigProgressBar` key; now `UI.ShowBossLifeTextOn/Off` |
+| Inventory Effects / Thunder Effects / Windy Environment | `:863`, `:1055`, `:1037` | were `{0}`-format keys that do not exist; now the real `...On/Off` key pairs |
+| Minimap Border | `:751-758` | was Parked; now cycles `Settings.minimap_frame` through the shared `SelectionHolder` backwards walk (the minimap re-renders live) |
+| Map Scale | `:761-796` | was a Parked "colour picker" row; it is the **map-scale bar** (0.5..1.0), now drawn and draggable |
+| Health and Mana Style | `:799-806` | was Parked; now cycles `Settings.resource_sets` (stored; the HUD still renders the Classic set — the Task 7 deviation stands) |
+| Portraits Style | `:808-821` | was Parked; now cycles `Settings.portrait_preference` (stored; the NPC-chat portrait renderer is not ported) |
+| Hover Text Boxes | `:832-840` | was Parked with an invented key; new `Settings.opaque_tooltip_box` (`SettingsEnabled_OpaqueBoxBehindTooltips`, `Main.cs:4155`/`:4542`, default true `:66513`), wired into `draw_item_tooltip` (`Main.cs:20381-20403`: no box + the 4 px clamp margin when off) |
+| Cursor / Border colour | `:1075-1355` | were eight Parked R/G/B/A-labelled rows; now the C#'s **H/S/L(+A)** bars with the `DelegateMethods.ColorLerp_HSL_*` gradients, editing `Settings.mouse_color`/`mouse_border_color` through `rgbToHsl`/`hslToRgb` (the cursor's L floored at 0.15, alpha 255; the border's alpha rides its bar). The bars sit 60 px left of the value bars (`num2`, `:1089`) |
+| Lock On Priority | `:1359-1379` | was missing (the Controls page had a phantom trailing spacer); now the `LockOnHelper.CycleUseModes` row with the ThreeDS→TargetClosest quirk (`LockOnHelper.cs:103-117`) |
+| Keybinds (left column) | `:252-256` | was a no-op close; now opens the port's menuMode 27 keybinding page over the world (`Menu::in_game_keybinds`), whose Back/Escape returns to gameplay (`IngameFancyUI.Close`, new `menu::Action::ReturnToWorld`) |
+
+**Still parked (deliberate, the backing feature is unported):** the Video
+page's **Go Fullscreen/Windowed** (`:876-884`, `Main.ToggleFullScreen`) and
+**Resolution** (`:885-910`, `Main.SetResolution`) rows — the port has no
+display-mode/resolution switch (the window backend row). They draw dimmed
+and inert, exactly as before.
+
+**Test-harness fix:** the process-global `LanguageManager` was mutated and
+read by tests without a consistent `test_lock` discipline, so a culture
+reload in one test could land between another test's registration and its
+assertions (bare keys mid-reload) — the source of the flaky
+`s1_e_20_the_hover_name_carries_the_affix_and_the_stack` and options-label
+failures. `lang::test_register_source` now loads the shipped sources first
+when the manager is empty (a partial fragment could become the *only*
+registered file, since `lang::init` early-returns on a non-empty source list)
+and documents that the **caller holds `test_lock`** for the whole test (the
+lock is not reentrant); the tooltip/buff-tooltip registration tests and
+`npc_chat::init_lang` now take the guard.
+
+**Verification.** 11 new unit tests: the left anchors/pitch (47.5) and the
+centred hit box, the per-category right anchors + bar shift, the 0.75 bar
+geometry (133x12, the -3 centre, the 60 px colour offset), the per-row draw
+scales, the Interface/Controls wiring, the map-scale round trip, the colour
+bars' HSL round trips + floors, the new cycles' ladders, the Keybinds
+click→screen mapping and the toggle click→`apply_settings` path; the stale
+pitch/label expectations were corrected to the C# values.
 
 ## The C#-written golden fixture (S1-J-3)
 

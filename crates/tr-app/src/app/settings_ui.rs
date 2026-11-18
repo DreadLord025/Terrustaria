@@ -53,6 +53,25 @@ impl App {
                     FrontScreen::CharSelect,
                 );
             }
+            TrUiPreset::WorldLoad => {
+                // The loading-screen screenshot (`TR_UI=worldload`): a
+                // deterministic mid-generation snapshot — no worker thread
+                // (the shot must be SHA256-stable), the progress latched at
+                // 42.5% overall / 60% current with a real pass label. The
+                // bar reads the corrupt-evil colour (the classic default).
+                let mut state = ui::world_load::WorldLoadState::new();
+                state.set_progress(Some(ui::world_load::GenerationProgress {
+                    total_progress: 0.425,
+                    value: 0.6,
+                    message: crate::lang::text("LegacyWorldGen.11"),
+                }));
+                let (sw, sh) = self.screen_size();
+                let _ = sw;
+                state.update_layout(sh);
+                self.front_backup = None;
+                self.front = None;
+                self.enter_front(FrontScreen::WorldLoad(Box::new(state)));
+            }
             TrUiPreset::Credits => {
                 self.front = None;
                 self.front_backup = None;

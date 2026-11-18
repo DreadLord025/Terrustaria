@@ -23,6 +23,11 @@ mod actions;
 mod pages;
 
 pub use actions::Action;
+// The in-game options window cycles the same selection holders the legacy
+// screens do (`IngameOptions.cs:751-806` → `MinimapFrameManager.CycleSelection`
+// / `PlayerResourceSetsManager.CycleResourceSet`), so the key tables and the
+// backwards walk are shared, not copied.
+pub(crate) use pages::{cycle_previous, MINIMAP_FRAME_KEYS, RESOURCE_SET_KEYS};
 
 use actions::Act;
 use pages::{default_keybinds, default_map_binds};
@@ -256,6 +261,12 @@ pub fn slider_label_color(backdrop_r: u8) -> [u8; 4] {
 
 pub struct Menu {
     pub page: Page,
+    /// The menu was opened **in-world** by the options window's Keybinds row
+    /// (`IngameOptions.cs:252-256` → `IngameFancyUI.OpenKeybinds` →
+    /// `ManageControlsMenu`): Back/Escape returns to gameplay
+    /// (`IngameFancyUI.Close`, `IngameFancyUI.cs:162-188`) instead of walking
+    /// the front-end page chain.
+    pub in_game_keybinds: bool,
     /// Keyboard cursor (`focusMenu` while the mouse is elsewhere).
     pub selected: usize,
     /// Item under the mouse, if any.
@@ -375,6 +386,7 @@ impl Menu {
         let seed_map_binds = settings.map_binds.clone();
         let mut me = Self {
             page: Page::Main,
+            in_game_keybinds: false,
             selected: 0,
             hover: None,
             focus_keyboard: false,

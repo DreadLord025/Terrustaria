@@ -111,6 +111,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Menu_Open", 10),
     ("Menu_Close", 11),
     ("Menu_Tick", 12),
+    // `SoundEngine.PlaySound(40)` — the capture camera's shutter
+    // (`CaptureInterface.cs:1592`); `SoundID.Camera = 40` (`SoundID.cs:102`),
+    // the `Sounds/Camera` cue (`LegacySoundPlayer.cs:210`, case 40 `:1359`).
+    ("Camera", 40),
     // `SoundEngine.PlaySound(22, X*16, Y*16)` — `Chest.Unlock`/`Chest.Lock`
     // (`Chest.cs:408`/:482); `SoundID.Unlock = 22` (`SoundID.cs:66`), the
     // positional `Unlock.xnb` cue.

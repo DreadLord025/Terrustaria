@@ -153,8 +153,11 @@ impl App {
         // `IngameOptions.Draw`'s per-frame hover/animation state and its
         // `SoundEngine.PlaySound(12)`/`(10)` cues (`IngameOptions.cs:157-199`,
         // `:421-436`) — plus the sticky bar drag (`:424`). Runs on every frame
-        // like the vanilla's, and before the HUD borrows the state.
-        if let Some(cue) = crate::ui::ingame_options::update(self, self.pointer.left_held()) {
+        // like the vanilla's, and before the HUD borrows the state. The drag
+        // reads `Main.mouseLeft` — the physical left button (`mine_down`), not
+        // the front-end pointer machine's `left_held`, which only tracks the
+        // 888 screens' presses.
+        if let Some(cue) = crate::ui::ingame_options::update(self, self.mine_down) {
             self.audio.play(cue);
         }
         // `Main.DrawInterface_29_SettingsButton` (`Main.cs:45513-45527`): the
@@ -333,6 +336,12 @@ impl App {
             self.update_menu_music();
         }
 
+        // S1-E-17: the loading screen's per-frame update (`UIWorldLoad.Update`
+        // + the `worldGenCallback` completion tail) — the progress latch and
+        // the result poll run before the draw, exactly as the C# `UpdateMenu`
+        // drives `MenuUI.Update` ahead of `DoDraw`.
+        self.update_world_load();
+
         // The front end's Play tail (`UIWorldListItem.PlayGame` →
         // `Main.LoadWorld`, BUG-04): the pending world is swapped at a frame
         // boundary — after the front screens' clicks parked it and before the
@@ -408,12 +417,30 @@ impl App {
         // S1-B-8 — the in-world branch (`DoUpdateInWorld`'s port): one fn
         // per phase, in the C#'s order — see `frame/world.rs`.
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
-            self.update_world_frame(dt, screen);
+            // S1-E-17: `DoUpdate`'s capture gate (`Main.cs:16886-16890`):
+            // `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
+            // return; }` — while a capture renders the ENTIRE game update
+            // freezes (Sandstorm.EmitDust at :17247, SceneState.Update at
+            // :17816, the world sim, all sit AFTER this return). The capture
+            // interface itself still updates (it rides the interface pass,
+            // not DoUpdate's world branch), so update_capture runs regardless.
+            if !self.capture.is_capturing() {
+                self.update_world_frame(dt, screen);
+            }
+            // S1-E-17: `CaptureManager.Instance.Update` at the interface-pass
+            // call site (`Main.cs:46187` world / `:62166` map) — the capture
+            // selection UI is an in-game interface, so it rides the world
+            // branch (the front end never draws it).
+            self.update_capture(screen);
         }
         // S1-B-8 — the draw-half pre-snapshot spine (see `frame/world.rs`);
         // the pure field snapshots below stay inline: the draw region's
         // borrow scaffolding, consumed by the destructure.
         self.draw_half_pre_snapshots(dt);
+        // S1-E-17: `CaptureManager.Instance.DrawTick()` at the `DoDraw` head
+        // (`Main.cs:61729`) — the countdown advances and a started capture
+        // drains one chunk (the GPU render is the S1-G-13 seam).
+        self.capture_draw_tick();
         // S1-B-8 — the draw region (`Main.DoDraw`'s body): the pre-snapshot
         // locals, the destructure and the gpu block live in
         // `frame/draw.rs::draw_region`, verbatim; it yields the frame's stats.
@@ -643,6 +670,39 @@ mod tests {
         // A second frame records the same sequence: the trace is per frame.
         app.frame();
         assert_eq!(phase_trace::take(), WORLD_PHASES);
+    }
+
+    /// S1-E-17: the `DoUpdate` capture gate (`Main.cs:16886-16890`):
+    /// `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
+    /// return; }` — while a capture renders the whole world update freezes
+    /// (the sim, Sandstorm.EmitDust's dust RNG, SceneState.Update all sit
+    /// after the return). The world clock must not age and no world phase
+    /// may run while capturing; the capture interface itself still updates.
+    #[test]
+    fn capturing_freezes_the_world_update() {
+        let mut app = in_world_app();
+        app.frame();
+        phase_trace::take(); // drain the warm-up frame
+        let settings = crate::capture::CaptureSettings {
+            // 300x300 tiles -> a 3x3 grid of 126-stride chunks (9 chunks), so
+            // the capture spans multiple frames (draw_tick drains one chunk
+            // per frame); a 1-chunk capture would finish on frame 1 and the
+            // gate would clear before the later frames.
+            area: crate::capture::CaptureRect::new(0, 0, 300, 300),
+            ..Default::default()
+        };
+        app.capture.capture(settings).unwrap();
+        assert!(app.capture.is_capturing());
+        let frozen_time = app.world.time;
+        for _ in 0..3 {
+            app.frame();
+            assert!(app.capture.is_capturing(), "the 9-chunk capture must still be active");
+        }
+        assert_eq!(app.world.time, frozen_time, "the world clock must not age while capturing");
+        assert!(
+            phase_trace::take().is_empty(),
+            "no world phase may run while capturing (DoUpdate returns early)"
+        );
     }
 
     /// S1-B-2, landed with the clock move: the C# returns on `Main.gameMenu`

@@ -673,6 +673,9 @@ mod s1_e_6_tests {
 
     #[test]
     fn get_buff_tooltip_swaps_the_well_fed_rows_under_expert() {
+        // `test_register_source` reloads the process-global language manager;
+        // hold the guard for the registration and the reads alike.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.GetBuffTooltip` (`Main.cs:43254-43289`): the three fed tiers
         // (26 / 206 / 207) use their `_Expert` rows in expert mode, everything
         // else is the plain description.
