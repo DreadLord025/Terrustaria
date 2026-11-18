@@ -34,6 +34,7 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Tink_2", 21),
     ("Coins", 18),
     ("Item_27", 2),
+    ("Item_30", 2),
     ("Item_48", 2),
     ("Item_49", 2),
     ("Item_50", 2),

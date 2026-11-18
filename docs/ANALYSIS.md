@@ -16689,3 +16689,15 @@ byte-identical.
   (`Map`) where `FileType.cs:8` says `Player = 3` — every real vanilla
   character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
   writer's own byte parity stays S1-J-5's.
+
+## The tile-place sound wave (S1-E-21 wave B, 2026-11-18)
+
+`editing::place_cue` resolves `tr_core::edit::place_tile_sound` (the
+`WorldGen.PlaceTile` placement-sound switch, `WorldGen.cs:60263-60282`)
+to the port's pinned asset + volume: 127 (Actuator) -> Item30, 314 (Logic
+Sensor) -> Item52 (case 2 halves it to 0.35, LegacySoundPlayer.cs:567-569),
+330-333 (coin piles) -> Coins (sound 18), default -> Dig_0 (sound 0).
+place_tile plays it at the tile centre. Item_30 joins the bank. The Dig
+case-0 Next(3) variation + Next(-10,11)*0.01 pitch stay the pinned Dig_0
+(audio-only D3 deviation, same as the break side). PlaceObject (:51441),
+PlaceThing_Tiles_PlaceIt (:40124), PlaceWall (:75141) play sound 0 in C#.

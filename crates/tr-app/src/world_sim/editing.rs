@@ -3694,6 +3694,23 @@ fn try_replanting_herbs(app: &mut App, tx: i32, ty: i32, herb_style: i32) {
     }
 }
 
+/// `WorldGen.PlaceTile`'s placement-sound switch (`WorldGen.cs:60263-60282`),
+/// resolved to the port's pinned asset + volume. The switch itself is
+/// `tr_core::edit::place_tile_sound` (the `SoundCue` pair); this maps it to
+/// the bank: 127 -> Item30, 314 -> Item52 (case 2 halves it to 0.35,
+/// `LegacySoundPlayer.cs:567-569`), 330-333 -> Coins (sound 18), default ->
+/// Dig_0 (sound 0; the case-0 `Next(3)` variation + pitch jitter stay the
+/// port's pinned audio-only D3 deviation, same as the break side). S1-E-21
+/// wave B.
+fn place_cue(kind: u16) -> (&'static str, f32) {
+    match edit::place_tile_sound(kind) {
+        (2, 30) => ("Item_30", 1.0),
+        (2, 52) => ("Item_52", 0.35),
+        (18, _) => ("Coins", 1.0),
+        _ => ("Dig_0", 1.0),
+    }
+}
+
 pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     // `Item.placeStyle` + `Player.direction` are what `TileObject.CanPlace`
     // receives in vanilla (`Player.cs:39772`); the dispatcher resolves style
@@ -3720,8 +3737,9 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         let _ = app.achievements.notify_custom_int("Do", 1);
     }
     app.liquids.wake_around(&app.world, tx, ty, 3);
+    let (cue, vol) = place_cue(kind);
     app.audio
-        .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+        .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, vol);
     app.request_edit(tx, ty, 1, kind);
     app.world_key = None;
     true
@@ -4211,6 +4229,26 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
 mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// S1-E-21 wave B: the placement-sound switch (`WorldGen.cs:60263-60282`).
+    #[test]
+    fn s1_e_21b_the_placement_cue_follows_the_tile_type() {
+        assert_eq!(place_cue(127), ("Item_30", 1.0)); // Actuator
+        assert_eq!(place_cue(314), ("Item_52", 0.35)); // Logic Sensor (case 2 x0.35)
+        assert_eq!(place_cue(330), ("Coins", 1.0));
+        assert_eq!(place_cue(331), ("Coins", 1.0));
+        assert_eq!(place_cue(332), ("Coins", 1.0));
+        assert_eq!(place_cue(333), ("Coins", 1.0));
+        assert_eq!(place_cue(0), ("Dig_0", 1.0)); // dirt
+        assert_eq!(place_cue(4), ("Dig_0", 1.0)); // torch
+        assert_eq!(place_cue(21), ("Dig_0", 1.0)); // chest
+        assert_eq!(place_cue(128), ("Dig_0", 1.0)); // not 127
+        // The tr-core switch is the source of truth.
+        assert_eq!(edit::place_tile_sound(127), (2, 30));
+        assert_eq!(edit::place_tile_sound(314), (2, 52));
+        assert_eq!(edit::place_tile_sound(330), (18, 1));
+        assert_eq!(edit::place_tile_sound(0), (0, 1));
+    }
 
     /// BUG-16: the killed trunk cell's drop — the wood of the tree's family
     /// and the canopy marker's acorn (`WorldGen.KillTile_GetTreeDrops`,
