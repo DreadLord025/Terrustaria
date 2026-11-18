@@ -21,6 +21,7 @@ pub mod housing;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
+pub mod notifications;
 pub mod panel;
 pub mod pointer;
 pub mod resources;
