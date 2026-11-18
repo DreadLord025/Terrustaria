@@ -484,3 +484,6 @@ crates/tr-core/src/world.rs|sandstorm_happening|wld-roundtrip - Sandstorm.Happen
 crates/tr-core/src/wld/mod.rs|fn wld_roundtrip_tiles_identical|wld-roundtrip - whole-file save->load contract: the tile grid (every SaveWorldTiles:1432 header bit, the paints, the liquids, the four wires) comes back identical
 crates/tr-core/src/wld/mod.rs|fn wld_roundtrip_weather_snapshot|wld-roundtrip - the weather snapshot round-trips through the .wld flags block (the RED->GREEN test of the new section)
 crates/tr-core/src/worldgen/caves.rs|fn surface_caves|worldgen-caves - the SurfaceCaves pass (WorldGen.cs:12162-12270) ported on its own pass_rng stream: the four surface-opening TileRunner groups; the copper/iron bands verified against WorldGen.cs:13399-13460
+crates/tr-app/src/app/net_proj_sync.rs|fn update_cadence|S1-I-4c - the projectile per-update SendData cadence: netSpam budget 60/cost 5/refill 1, per sub-step, owner gate + tail clear (Projectile.cs:17210-17244)
+crates/tr-app/src/app/net_proj_sync.rs|fn kill_sync|S1-I-4c - the Kill-site 29 send: owner == myPlayer gate + the entry-position snapshot (Projectile.cs:77254-77257, :70648)
+crates/tr-app/src/app/net_proj_sync.rs|fn recheck_sections|S1-I-4c - the section recheck targeted 27 + flag3 culling exemption (Projectile.cs:17246-17256, NetMessage.cs:1774-1800)

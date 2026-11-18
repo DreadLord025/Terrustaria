@@ -1,3 +1,0 @@
-crates/tr-app/src/app/net_proj_sync.rs|fn update_cadence|S1-I-4c - the projectile per-update SendData cadence: netSpam budget 60/cost 5/refill 1, per sub-step, owner gate + tail clear (Projectile.cs:17210-17244)
-crates/tr-app/src/app/net_proj_sync.rs|fn kill_sync|S1-I-4c - the Kill-site 29 send: owner == myPlayer gate + the entry-position snapshot (Projectile.cs:77254-77257, :70648)
-crates/tr-app/src/app/net_proj_sync.rs|fn recheck_sections|S1-I-4c - the section recheck targeted 27 + flag3 culling exemption (Projectile.cs:17246-17256, NetMessage.cs:1774-1800)

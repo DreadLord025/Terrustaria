@@ -545,3 +545,13 @@ rows refine. Do not duplicate that row; replace or extend it.
 | `IO/WorldFile.cs` `SaveWorldFlags:1238`/`LoadWorldFlags:1981` weather snapshot вЂ” the rain triple (`:1312-1314`, read `:2127-2129`) and the sandstorm quad (`:1369-1372`, read `:2277-2283`), snapshotted by `SetTempToOngoing:1053-1059` and restored by `SetOngoingToTemps:159-172` | `crates/tr-core/src/wld/sections/flags.rs` (`write`/`read` over `World.{raining, rain_time, max_raining}` and `World.sandstorm_*`) + `crates/tr-app/src/app/saveglue.rs::save_world` (the live `App.rain`/`App.sandstorm` snapshot) + `crates/tr-app/src/app/mod.rs::App::new` (the restore) вЂ” wld-roundtrip, done 2026-11-17 | done |
 
 | WorldGen.cs:12162-12270 (SurfaceCaves: the four surface-opening TileRunner groups) | crates/tr-core/src/worldgen/caves.rs | done (worldgen-caves - the cave slice; the Caverer group deferred) |
+
+<!-- Folded pending PORT_MAP entry (S1-I-4c sync fold, 2026-11-19) -->
+# PORT_MAP pending entry вЂ” S1-I-4 wave C (projectile SendData cadence)
+
+Append to the `Net/*` row's family (the `NetMessage.cs` row at
+`docs/PORT_MAP.md:332`):
+
+| C# source (under `Terraria/`) | Rust target | State |
+| --- | --- | --- |
+| `Projectile.cs:11096` (NewProjectile spawn 27), `:77254-77257` + `:70648` (Kill 29 + entry position), `:17210-17244` (the netUpdate/netSpam budget, per sub-step `:16676`), `:17246-17256` (RecheckSectionsForSkippedUpdates), `:23744`/`:23760`/`:23780`/`:52472`/`:57818`/`:73866`/`:74845` (AI immediate 27s); `Main.cs:37899-37906` (the yoyo despawn mark); `NetMessage.cs:776-841`/`:852-855` (the 27/29 writer bodies), `:1774-1800`/`:1821-1823` (flag3 section culling + the targeted-send flag clear) | `crates/tr-app/src/app/net_proj_sync.rs` (`ProjSync`: `spawn_sync`, `kill_sync`, `update_cadence`, `recheck_sections`, `note_broadcast`, `sync_now`, `despawn_mark_applies`, `state_of`, `sync_ignores_sections`, the `step` hook; 10 per-site tests) | ported, dead-code parity (S1-I-4c; the live-loop swap from `netglue.rs::projectile_sync_plan` + the 337 `netUpdate = true` AI producers are the wave-merge follow-up) |
