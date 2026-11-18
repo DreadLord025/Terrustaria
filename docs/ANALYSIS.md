@@ -4243,6 +4243,79 @@ The latches are not saved: `DD2Event.Save` (`:151-156`) writes only the
 three tier flags, so a reload mid-wave starts a fresh invasion's latch
 state, as the C#'s statics do.
 
+## The Old One's Army's loss path (S1-E-12a)
+
+**Code-only mode** (user directive, 2026-11-18): this round ran no
+cargo/rustc/rustfmt/tests — the 5 core `loss_tests` + 6 sim
+`dd2_loss_tests` are written, NOT run; every citation was re-verified by
+reading the decompiled source. The victory half is the sibling branch
+`dd2_victory.rs` (0ffce2ee) — untouched here.
+
+The chain, in the C#'s order: the crystal's `checkDead` intercept
+(`NPC.cs:78087-78095`: `type == 548 && ai[1] != 1` → `ai[1] = 1`,
+`ai[0] = 0`, `life = lifeMax`, no death) → the scene's first-tick arm
+(`:40868-40885`: every active portal 549 flips to its fade, then
+`DD2Event.ReportLoss`) → `ReportLoss` (`DD2Event.cs:507-515`:
+`LostThisRun = true` + the 30-tick spawn hold) → `UpdateTime`'s hold
+zero-crossing (`:219-236`) broadcasts `LoseInvasionMessage`
+(`:344-347`) in `INFO_FAILURE_INVASION_COLOR` (255,0,0, `:1812`) → the
+aiStyle-105 loss arm (`NPC.cs:40862-40967`: the 96-tick rise
+`vy = Lerp(0,-1,ai[0]/96)`, the `alpha += 50` fade capped 255, the
+600-tick end) → `StopInvasion(win: false)` (`:293-312`: the counters
+clear) → `WipeEntities` (`:629-692`): the `IsADD2Turret`
+(`ProjectileID.cs:526`, 12 ids) tower kills, the
+`BelongsToInvasionOldOnesArmy` (`NPCID.cs:10432`, 30 ids — the
+bartender 550 is OUT) hostile removal via direct `active = false`
+(no death chain: no loot, no kill credit, no death sound), and the
+open chests' 3822 stacks `TurnToAir`. `CheckProgress`'s `LostThisRun`
+refusal (`:364`) gates `dd2_report_kill` for the whole scene.
+`StartInvasion`'s reset (`:268-275`), the `LostThisRun` clear (`:271`),
+the 300-tick hold (`:288`) and the wipe (`:289`) land in
+`use_etherian_crystal` BEFORE the crystal's `NewNPC`, so the wipe
+cannot eat the fresh crystal.
+
+Recorded deviations:
+
+- **The batched intercept.** The C# flips the crystal inside
+  `StrikeNPC`'s `checkDead` (the player pass); the port resolves it in
+  `update_dd2_event` after the AI pass and before the death retain —
+  the same batched-death architecture as the death sounds (S1-E-21c).
+  The scene's first-tick arm (portal marks + `ReportLoss`) rides that
+  resolve instead of the next AI tick, and the hold decays on the same
+  tick: the loss broadcast lands 29 ticks after the killing blow where
+  the C#'s `UpdateTime`-before-players order gives 30 (the test pins
+  `SPAWN_HOLD_LOSS - 1`). The scene counter starts clean (`ai[0] = 0`)
+  and ticks from the next frame.
+- **The shield fold.** `dontTakeDamageFromHostiles` folds into the full
+  `dont_take_damage` — the mid-scene player re-kill edge is unmodelled.
+- **The scene's RNG draws are unmodelled.** The dust ring
+  (`:40941-40952`) spends 12+ `Main.rand.NextFloat()` draws per tick
+  and `MoonlordDeathDrama.RequestLight` (`:40887-40891`) lights the
+  fade; the port draws nothing and consumes nothing — the same
+  dust-deviation class as the rest of the port. The ported loss path
+  itself draws NO RNG, and the fixed-step order is preserved by
+  construction: the intercept/broadcast/stop all ride the existing
+  `update_dd2_event` slot, no new pass.
+- **The scene-end crystal removal rides the retain** (no gore/death
+  sound chain) — the pre-existing win-death shape (M4-EVENT-5p).
+- **Single-player chest sweep.** `Chest.GetCurrentlyOpenChests` is the
+  multiplayer open-chest list; the port sweeps the local player's one
+  open chest (`Player.chest`).
+- **The double tower clear folds to one.** `StartInvasion` clears the
+  towers at `:276` and again inside `WipeEntities` (`:289`); the port
+  wipes once at the `:289` point — no tower can spawn between the two
+  C# calls, so the states agree.
+
+Deferrals (the follow-up slices): the 672 defeat-scene projectile
+(`:40883`, aiStyle 132's filters/sound/gore drama) and the
+`CrystalDestructionVortex`/`Color` filter activation/deactivation
+(`:40959-40961`, `UpdateTime` `:198-200`); the scene dust +
+`MoonlordDeathDrama` light; `_damageTracker.Stop(won: false)`
+(`:509-512` — the port carries no damage tracker); `UpdateTime`'s
+`!NPC.AnyNPCs(548)` → `StopInvasion` guard (`:203-206`); the
+`InvasionStart` broadcast (`:278`, pre-existing gap); the netplay
+tails (`SendData(114/23/32/7)`).
+
 ## The Ancient Cultist (M4-EVENT-6)
 
 The Lunar Events' summoner (422, aiStyle 94): the 180-tick ritual

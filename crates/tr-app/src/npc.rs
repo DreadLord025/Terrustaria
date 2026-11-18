@@ -9255,14 +9255,58 @@ impl Npc {
     /// 60-tick self-heal (`lifeMax / 20` capped to the missing hp); the
     /// wave ramp rides `localAI[3]` (the port's `caster_counter`); the
     /// 683 crystal shots ride the shooter block (the follow-up).
-    /// `AI()`'s aiStyle-105 block (`NPC.cs:40971-41040`) — the Etherian
-    /// Crystal's machine. The spawn-in shield: `localAI[0]` counts to 180
-    /// (the port's `caster_counter`) while `dontTakeDamage` holds; the
-    /// count's expiry makes the crystal vulnerable. The hp's tier is baked
-    /// by the `SetDefaults` row (the 1000/3000/5000 difficulty arms ride
-    /// the difficulty system); the lane spawning + the 600-tick win-death
-    /// (`DD2Event.StopInvasion`) = the follow-ups.
+    /// `AI()`'s aiStyle-105 block (`NPC.cs:40728-40968`) — the Etherian
+    /// Crystal's machine. The spawn-in shield (`ai[1] == 0`): `localAI[0]`
+    /// counts to 180 (the port's `caster_counter`) while `dontTakeDamage`
+    /// holds; the count's expiry makes the crystal vulnerable. The loss
+    /// scene (`ai[1] == 1`, `:40862-40967`): the rise + fade + the 600-tick
+    /// `StopInvasion` end. The hp's tier is baked by the `SetDefaults` row
+    /// (the 1000/3000/5000 difficulty arms ride the difficulty system);
+    /// the lane spawning + the win scene (`ai[1] == 2`) = the follow-ups.
     fn update_eternia_crystal(&mut self, world: &World, player: &Player) {
+        // `AI()`'s aiStyle-105 loss-scene arm (`NPC.cs:40862-40967`,
+        // `ai[1] == 1`): the crystal floats up and fades over 600 ticks,
+        // then `DD2Event.StopInvasion()` + the real death (`:40954-40967`).
+        // The scene's entry (the `checkDead` intercept `:78087-78095` and
+        // the `ai[0] == 0` arm's `ReportLoss` + portal marks, `:40868-40885`)
+        // rides `update_dd2_event` — the machine holds no `App`.
+        if self.ai[1] == 1.0 {
+            // `:40866-40867`: `dontTakeDamageFromHostiles = true;
+            // life = lifeMax` every scene tick. The port folds the
+            // hostile-only shield into the full `dont_take_damage`
+            // (ANALYSIS: the mid-scene player re-kill edge is unmodelled).
+            self.dont_take_damage = true;
+            self.hp = self.max_hp;
+            // `:40886`: `ai[0]++` (the `ai[0] == 0` first-tick arm ran at
+            // the sim's intercept).
+            self.ai[0] += 1.0;
+            // `:40892-40896`: the 96-tick rise — `velocity.Y =
+            // Lerp(0, -1, ai[0]/96)` while under 96.
+            if self.ai[0] < 96.0 {
+                self.vy = -1.0 * (self.ai[0] / 96.0);
+            }
+            // `:40897-40904`: at 96+ the fade — `alpha += 50` capped 255.
+            if self.ai[0] >= 96.0 {
+                self.alpha = (i32::from(self.alpha) + 50).min(255) as u8;
+            }
+            // `:40954-40967`: the 600-tick end — `StopInvasion()`,
+            // `dontTakeDamage = false`, `life = 0`, `checkDead` (the
+            // intercept no longer fires: `ai[1] == 1`). The filters'
+            // deactivation (`:40959-40961`) is unmodelled (no scene
+            // filters yet — ANALYSIS).
+            if self.ai[0] >= 600.0 {
+                self.wants_event_stop = true;
+                self.dont_take_damage = false;
+                self.hp = 0;
+            }
+            // The scene flight (the velocity the arm wrote; the dust
+            // `:40941-40952` and the `MoonlordDeathDrama.RequestLight`
+            // `:40887-40891` are unmodelled — they draw the C#'s dust RNG,
+            // the port draws nothing here).
+            self.y += self.vy;
+            let _ = (world, player);
+            return;
+        }
         self.caster_counter += 1;
         self.dont_take_damage = self.caster_counter < 180;
         // The 600-tick win-death (`NPC.cs`'s aiStyle-105 arm,
