@@ -13022,6 +13022,32 @@ World's downed flags, and the Discount Card's
 The expert ×2 (`:40091-40093`) stays constants-off — the difficulty flag
 plumbing is R-03-6's row.
 
+## The `.plr` legacy-subset shim + default policy (S1-J-5 increment 1)
+
+The pre-S1-J-5 `.plr` writer was a **subset mirror** stamped release 279: it
+stopped after the 58-slot inventory and omitted `team` (release 283),
+`hideMisc` (119), the dead 324 bool and the 322 armour/dye favourited bools.
+Those files are **not valid vanilla 279 files** — the C# `Deserialize` gates
+would read `hideMisc` and run off the end — so they cannot be read through the
+C# walk. `player_file::read_legacy_port_subset` is a **port-only backward-compat
+shim**: `read_player_bytes` first tries the faithful gate walk, and on a
+truncation error for a file stamped exactly 279 retries the old subset layout.
+This is a deliberate deviation (the shim has no C# counterpart); it exists only
+so characters saved by older port builds keep loading. New saves stamp 326
+(`Player.cs:54738`) and never take the shim.
+
+**Default-value policy.** The port models only the character-card state; every
+other field the writer emits through `voidVaultInfo` (`Serialize:54863`) carries
+the fresh-vanilla default (the `Player` ctor `Player.cs:56036-56096` + field
+initializers) — play time 0, empty banks/misc slots, no favourites outside the
+inventory. The reader's inventory guard uses `ItemID.Count = 6196`
+(`ItemID.cs:14861`); the old subset reader's 5455 was stale and wrongly
+air-gapped the 5455..6195 band (the shim keeps the corrected constant — the old
+writer never emitted ids in that band, so old saves read identically).
+Increment 1 ends at `voidVaultInfo`; the `Serialize` tail (`:54864-54933`) is
+the next round, so a port `.plr` is byte-comparable with vanilla **through the
+vault byte** only until then.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
