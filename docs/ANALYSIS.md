@@ -16237,3 +16237,47 @@ in the fn's doc comment, alongside the unmodelled `StopTrackedSounds` /
 multiplayer `netMode == 0` gate + force-disconnect arm is out of scope until
 the MP pause-menu flow lands. The Settings panel layout deviations remain a
 follow-up round.
+
+## The C#-written golden fixture (S1-J-3)
+
+`assets/test/golden.wld` (3666 bytes) and `assets/test/golden.plr` (3840 bytes)
+are written by the **real decompiled save path** through
+`tools/WldFixtureHarness`: `extract.ps1` slices the save-path method bodies
+verbatim out of `decompiled/` (`WorldFile.SetTempToOngoing` +
+`SaveWorld_Version2` and every section writer, `WorldFile.cs:1040-1758`;
+`Player.Serialize`, `Player.cs:54750+`; `Tile`, `TileEntity.Write` + the
+per-kind `WriteExtraData`, the bestiary/creative/town/banner/DD2/spawn/treetops
+`Save` bodies, `Item.Serialize`), and `Program.cs` builds the smallest real
+world — a fixed 40x30 tile array, every value a literal, no genRand — plus a
+fresh player. The shims (`Shims/*.cs`) carry only the global statics the bodies
+read, at the C# types/defaults; no serialization logic is reimplemented.
+
+**The one substitution:** `DateTime.UtcNow` -> `FixtureClock.UtcNow` (pinned
+2026-11-18T00:00:00Z). The vanilla writers stamp the wall clock
+(`SaveWorldFlags:1251`, `Player.Serialize:54909`); a reproducible fixture
+cannot carry it. Everything else is byte-for-byte the decompiled body. The
+importance bitmap is parsed from the real `Main.cs` at runtime (direct
+assignments + for-loop ranges + `AddEchoFurnitureTile`), not transcribed.
+Regen: `powershell -File tools/WldFixtureHarness/extract.ps1` then
+`dotnet run --project tools/WldFixtureHarness -- assets/test`; two runs are
+byte-identical.
+
+**Byte-compare result** (`s1_j_3_*` in `wld/mod.rs`, `player_file.rs`):
+- The port decodes every section of the fixture (all eleven pointers land
+  exactly; the app-side fix-ups keep 2 signs, 11 tile entities, 2 plates).
+- Re-write is **byte-identical for sections 2..10** (tiles, chests, signs,
+  NPCs, tile entities, pressure plates, town rooms, bestiary, creative powers)
+  **and the footer**; the prologue framing + importance bitmap match with the
+  pointer table zeroed.
+- The header/flags block diverges in **exactly the unowned fields**, pinned
+  field-by-field: `CreationTime` (unowned), `spawnTileY` (derived from the
+  tiles on load, `compute_spawn_y`), the seven ore tiers (Cobalt/Mythril/
+  Adamantite/Copper/Iron/Silver/Gold — the `.wld` flags writer writes zeros;
+  the port keeps tiers on the `.trwld` side), the banner kill/claimable counts
+  (no `.wld` store), the tree-top variations (no store) and the world-gen
+  manifest JSON (the port writes the empty string). These are documented
+  divergences, not faked parity.
+- The `.plr` fixture exposed a real reader bug: `FILE_TYPE_PLAYER` was 1
+  (`Map`) where `FileType.cs:8` says `Player = 3` — every real vanilla
+  character was rejected with `WrongFileType`. Fixed (read parity); the `.plr`
+  writer's own byte parity stays S1-J-5's.
